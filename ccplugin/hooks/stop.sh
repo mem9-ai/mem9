@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# stop.sh — Summarize the last assistant turn and save to mnemo.
+# Hook: Stop (async, timeout: 120s)
+# Async means this runs in the background — it won't block Claude from responding.
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/common.sh"
+
+read_stdin
+
+# If not configured, exit silently.
+if ! mnemo_check_env 2>/dev/null; then
+  exit 0
+fi
+
+# Prevent recursion: if we're already in a stop hook, don't re-trigger.
+# Also extract last assistant message from the hook input.
+# Note: Claude Code Stop hook provides 'stopHookActive' and 'transcript' fields.
+eval "$(echo "$HOOK_INPUT" | python3 -c "
+import json, sys, shlex
+data = json.load(sys.stdin)
+
+# Check recursion guard
+active = str(data.get('stopHookActive', data.get('stop_hook_active', False))).lower()
+print(f'stop_hook_active={shlex.quote(active)}')
+
+# Extract last assistant message from transcript (array of turns)
+transcript = data.get('transcript', [])
+msg = ''
+for turn in reversed(transcript):
+    if turn.get('role') == 'assistant':
+        msg = turn.get('content', '')
+        break
+# Fallback: try legacy field name
+if not msg:
+    msg = data.get('last_assistant_message', '')
+if len(msg) > 8000:
+    msg = msg[:8000] + '...'
+print(f'last_message={shlex.quote(msg)}')
+" 2>/dev/null)" || { stop_hook_active="false"; last_message=""; }
+
+if [[ "$stop_hook_active" == "true" ]]; then
+  exit 0
+fi
+
+if [[ -z "$last_message" || ${#last_message} -lt 50 ]]; then
+  # Too short to be worth saving.
+  exit 0
+fi
+
+# Summarize using Claude haiku (fast, cheap).
+# The -p flag runs a single prompt, --model picks haiku.
+summary=$(echo "$last_message" | claude -p --model haiku "Summarize the following assistant response into a concise memory (1-3 sentences) capturing the key decisions, facts, or actions taken. Focus on what would be useful to recall in future sessions. Output ONLY the summary, nothing else." 2>/dev/null || echo "")
+
+if [[ -z "$summary" || ${#summary} -lt 10 ]]; then
+  exit 0
+fi
+
+# Determine tags from the working directory.
+project_name=$(basename "${CLAUDE_PROJECT_DIR:-$(pwd)}" 2>/dev/null || echo "unknown")
+
+# Save to mnemo server.
+# Use environment variables to avoid shell injection via triple-quote.
+body=$(MNEMO_SUMMARY="$summary" MNEMO_PROJECT="$project_name" python3 -c "
+import json, os
+payload = {
+    'content': os.environ['MNEMO_SUMMARY'],
+    'tags': ['auto-captured', os.environ['MNEMO_PROJECT']]
+}
+print(json.dumps(payload))
+" 2>/dev/null || echo "")
+
+if [[ -n "$body" ]]; then
+  mnemo_post "/api/memories" "$body" >/dev/null 2>&1 || true
+fi

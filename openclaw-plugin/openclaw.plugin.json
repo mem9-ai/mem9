@@ -1,0 +1,32 @@
+{
+  "id": "mnemo",
+  "name": "Mnemo Memory",
+  "description": "Shared multi-agent memory via mnemo-server. Stores, searches, and manages memories across agents and sessions.",
+  "kind": "memory",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "apiUrl": {
+        "type": "string",
+        "description": "Base URL of the mnemo server (e.g. https://your-server.example.com)"
+      },
+      "apiToken": {
+        "type": "string",
+        "description": "API token for authentication (mnemo_xxx)"
+      }
+    },
+    "required": ["apiUrl", "apiToken"]
+  },
+  "uiHints": {
+    "apiUrl": {
+      "label": "Server URL",
+      "placeholder": "https://your-server.example.com"
+    },
+    "apiToken": {
+      "label": "API Token",
+      "placeholder": "mnemo_...",
+      "sensitive": true
+    }
+  }
+}

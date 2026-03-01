@@ -1,0 +1,13 @@
+{
+  "name": "@mnemo/openclaw-plugin",
+  "version": "0.1.0",
+  "description": "OpenClaw shared memory plugin backed by mnemo-server",
+  "main": "index.ts",
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  },
+  "dependencies": {
+    "openclaw": "^0.1.0"
+  },
+  "license": "MIT"
+}

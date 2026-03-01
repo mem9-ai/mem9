@@ -1,0 +1,10 @@
+{
+  "name": "mnemo-ccplugin",
+  "version": "0.1.0",
+  "description": "Shared multi-agent memory for Claude Code via mnemo-server. Automatically captures and recalls memories across sessions.",
+  "author": {
+    "name": "qiffang"
+  },
+  "hooks": "./hooks/hooks.json",
+  "skills": "./skills/"
+}
