@@ -1,24 +1,72 @@
 {
   "id": "mnemo",
   "name": "Mnemo Memory",
-  "description": "Shared multi-agent memory via mnemo-server. Stores, searches, and manages memories across agents and sessions.",
+  "description": "AI agent memory — direct (TiDB Serverless) or server (mnemo-server) mode. Hybrid vector + keyword search.",
   "kind": "memory",
   "configSchema": {
     "type": "object",
-    "additionalProperties": false,
     "properties": {
+      "host": {
+        "type": "string",
+        "description": "TiDB Serverless host (direct mode)"
+      },
+      "username": {
+        "type": "string",
+        "description": "TiDB username (direct mode)"
+      },
+      "password": {
+        "type": "string",
+        "description": "TiDB password (direct mode)"
+      },
+      "database": {
+        "type": "string",
+        "description": "Database name (direct mode, default: mnemos)"
+      },
       "apiUrl": {
         "type": "string",
-        "description": "Base URL of the mnemo server (e.g. https://your-server.example.com)"
+        "description": "mnemo-server URL (server mode)"
       },
       "apiToken": {
         "type": "string",
-        "description": "API token for authentication (mnemo_xxx)"
+        "description": "API token (server mode)"
+      },
+      "embedding": {
+        "type": "object",
+        "description": "Embedding provider config (optional — omit for keyword-only search)",
+        "properties": {
+          "apiKey": {
+            "type": "string",
+            "description": "OpenAI key or 'local' for Ollama"
+          },
+          "baseUrl": {
+            "type": "string",
+            "description": "Custom endpoint (e.g. http://localhost:11434/v1)"
+          },
+          "model": {
+            "type": "string",
+            "description": "Model name (default: text-embedding-3-small)"
+          },
+          "dims": {
+            "type": "number",
+            "description": "Vector dimensions (default: 1536)"
+          }
+        }
       }
-    },
-    "required": ["apiUrl", "apiToken"]
+    }
   },
   "uiHints": {
+    "host": {
+      "label": "TiDB Host",
+      "placeholder": "gateway01.us-east-1.prod.aws.tidbcloud.com"
+    },
+    "username": {
+      "label": "Username",
+      "placeholder": "xxx.root"
+    },
+    "password": {
+      "label": "Password",
+      "sensitive": true
+    },
     "apiUrl": {
       "label": "Server URL",
       "placeholder": "https://your-server.example.com"

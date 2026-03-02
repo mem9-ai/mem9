@@ -1,13 +1,23 @@
 {
   "name": "@mnemo/openclaw-plugin",
-  "version": "0.1.0",
-  "description": "OpenClaw shared memory plugin backed by mnemo-server",
-  "main": "index.ts",
-  "openclaw": {
-    "extensions": ["./index.ts"]
+  "version": "0.2.0",
+  "description": "OpenClaw shared memory plugin — direct (TiDB Serverless) or server (mnemo-server) mode",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.1.26"
   },
   "dependencies": {
-    "openclaw": "^0.1.0"
+    "@tidbcloud/serverless": "^0.2.0",
+    "openai": "^4.0.0"
   },
-  "license": "MIT"
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  },
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  }
 }

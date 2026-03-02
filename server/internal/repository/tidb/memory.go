@@ -20,13 +20,17 @@ func NewMemoryRepo(db *sql.DB) *MemoryRepo {
 	return &MemoryRepo{db: db}
 }
 
+// allColumns is the standard column list for SELECT queries.
+const allColumns = `id, space_id, content, key_name, source, tags, metadata, embedding, version, updated_by, created_at, updated_at`
+
 func (r *MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
 	tagsJSON := marshalTags(m.Tags)
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO memories (id, space_id, content, key_name, source, tags, version, updated_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+		`INSERT INTO memories (id, space_id, content, key_name, source, tags, metadata, embedding, version, updated_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
 		m.ID, m.SpaceID, m.Content, nullString(m.KeyName), nullString(m.Source),
-		tagsJSON, m.Version, nullString(m.UpdatedBy),
+		tagsJSON, nullJSON(m.Metadata), vecToString(m.Embedding),
+		m.Version, nullString(m.UpdatedBy),
 	)
 	if err != nil {
 		return fmt.Errorf("create memory: %w", err)
@@ -34,22 +38,23 @@ func (r *MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
 	return nil
 }
 
-// Upsert atomically inserts or updates a memory keyed by (space_id, key_name).
-// Uses INSERT ... ON DUPLICATE KEY UPDATE to avoid read-then-write races.
 func (r *MemoryRepo) Upsert(ctx context.Context, m *domain.Memory) error {
 	tagsJSON := marshalTags(m.Tags)
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO memories (id, space_id, content, key_name, source, tags, version, updated_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 1, ?, NOW(), NOW())
+		`INSERT INTO memories (id, space_id, content, key_name, source, tags, metadata, embedding, version, updated_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW(), NOW())
 		 ON DUPLICATE KEY UPDATE
 		   content = VALUES(content),
 		   source = VALUES(source),
 		   tags = VALUES(tags),
+		   metadata = VALUES(metadata),
+		   embedding = VALUES(embedding),
 		   version = version + 1,
 		   updated_by = VALUES(updated_by),
 		   updated_at = NOW()`,
 		m.ID, m.SpaceID, m.Content, nullString(m.KeyName), nullString(m.Source),
-		tagsJSON, nullString(m.UpdatedBy),
+		tagsJSON, nullJSON(m.Metadata), vecToString(m.Embedding),
+		nullString(m.UpdatedBy),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert memory: %w", err)
@@ -59,30 +64,24 @@ func (r *MemoryRepo) Upsert(ctx context.Context, m *domain.Memory) error {
 
 func (r *MemoryRepo) GetByID(ctx context.Context, spaceID, id string) (*domain.Memory, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, space_id, content, key_name, source, tags, version, updated_by, created_at, updated_at
-		 FROM memories WHERE id = ? AND space_id = ?`, id, spaceID,
+		`SELECT `+allColumns+` FROM memories WHERE id = ? AND space_id = ?`, id, spaceID,
 	)
 	return scanMemory(row)
 }
 
 func (r *MemoryRepo) GetByKey(ctx context.Context, spaceID, keyName string) (*domain.Memory, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, space_id, content, key_name, source, tags, version, updated_by, created_at, updated_at
-		 FROM memories WHERE space_id = ? AND key_name = ?`, spaceID, keyName,
+		`SELECT `+allColumns+` FROM memories WHERE space_id = ? AND key_name = ?`, spaceID, keyName,
 	)
 	return scanMemory(row)
 }
 
-// UpdateOptimistic performs an atomic version-checked update.
-// The version is incremented in SQL: SET version = version + 1.
-// If expectedVersion > 0 and doesn't match, the row won't be updated (returns ErrNotFound).
-// If expectedVersion == 0, skips the version check (unconditional update, still atomic increment).
 func (r *MemoryRepo) UpdateOptimistic(ctx context.Context, m *domain.Memory, expectedVersion int) error {
 	tagsJSON := marshalTags(m.Tags)
 
-	query := `UPDATE memories SET content = ?, key_name = ?, tags = ?, version = version + 1, updated_by = ?, updated_at = NOW()
+	query := `UPDATE memories SET content = ?, key_name = ?, tags = ?, metadata = ?, embedding = ?, version = version + 1, updated_by = ?, updated_at = NOW()
 		 WHERE id = ? AND space_id = ?`
-	args := []any{m.Content, nullString(m.KeyName), tagsJSON, nullString(m.UpdatedBy), m.ID, m.SpaceID}
+	args := []any{m.Content, nullString(m.KeyName), tagsJSON, nullJSON(m.Metadata), vecToString(m.Embedding), nullString(m.UpdatedBy), m.ID, m.SpaceID}
 
 	if expectedVersion > 0 {
 		query += " AND version = ?"
@@ -134,7 +133,7 @@ func (r *MemoryRepo) List(ctx context.Context, spaceID string, f domain.MemoryFi
 		offset = 0
 	}
 
-	dataQuery := "SELECT id, space_id, content, key_name, source, tags, version, updated_by, created_at, updated_at FROM memories WHERE " +
+	dataQuery := "SELECT " + allColumns + " FROM memories WHERE " +
 		where + " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
 	// Copy args to avoid mutating the original slice (append may reuse underlying array).
 	dataArgs := make([]any, len(args), len(args)+2)
@@ -177,8 +176,8 @@ func (r *MemoryRepo) BulkCreate(ctx context.Context, memories []*domain.Memory) 
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx,
-		`INSERT INTO memories (id, space_id, content, key_name, source, tags, version, updated_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`)
+		`INSERT INTO memories (id, space_id, content, key_name, source, tags, metadata, embedding, version, updated_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`)
 	if err != nil {
 		return fmt.Errorf("prepare: %w", err)
 	}
@@ -188,9 +187,9 @@ func (r *MemoryRepo) BulkCreate(ctx context.Context, memories []*domain.Memory) 
 		tagsJSON := marshalTags(m.Tags)
 		if _, err := stmt.ExecContext(ctx,
 			m.ID, m.SpaceID, m.Content, nullString(m.KeyName), nullString(m.Source),
-			tagsJSON, m.Version, nullString(m.UpdatedBy),
+			tagsJSON, nullJSON(m.Metadata), vecToString(m.Embedding),
+			m.Version, nullString(m.UpdatedBy),
 		); err != nil {
-			// Detect MySQL duplicate entry error (1062) and return a domain error.
 			var mysqlErr *mysql.MySQLError
 			if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
 				return fmt.Errorf("bulk insert memory %s: %w", m.ID, domain.ErrDuplicateKey)
@@ -201,15 +200,92 @@ func (r *MemoryRepo) BulkCreate(ctx context.Context, memories []*domain.Memory) 
 	return tx.Commit()
 }
 
-// buildWhere constructs a WHERE clause from the filter.
-func buildWhere(spaceID string, f domain.MemoryFilter) (string, []any) {
-	conds := []string{"space_id = ?"}
-	args := []any{spaceID}
+// VectorSearch performs ANN search using cosine distance.
+// VEC_COSINE_DISTANCE must appear identically in SELECT and ORDER BY for TiDB VECTOR INDEX usage.
+func (r *MemoryRepo) VectorSearch(ctx context.Context, spaceID string, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	vecStr := vecToString(queryVec)
+	if vecStr == nil {
+		return nil, nil
+	}
 
+	conds, args := buildFilterConds(spaceID, f)
+	conds = append(conds, "embedding IS NOT NULL")
+
+	where := strings.Join(conds, " AND ")
+
+	query := `SELECT ` + allColumns + `, VEC_COSINE_DISTANCE(embedding, ?) AS distance
+		 FROM memories
+		 WHERE ` + where + `
+		 ORDER BY VEC_COSINE_DISTANCE(embedding, ?)
+		 LIMIT ?`
+
+	// args order: vecStr (SELECT), filter args..., vecStr (ORDER BY), limit
+	fullArgs := make([]any, 0, len(args)+3)
+	fullArgs = append(fullArgs, vecStr)
+	fullArgs = append(fullArgs, args...)
+	fullArgs = append(fullArgs, vecStr, limit)
+
+	rows, err := r.db.QueryContext(ctx, query, fullArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("vector search: %w", err)
+	}
+	defer rows.Close()
+
+	var memories []domain.Memory
+	for rows.Next() {
+		m, err := scanMemoryRowsWithDistance(rows)
+		if err != nil {
+			return nil, err
+		}
+		memories = append(memories, *m)
+	}
+	return memories, rows.Err()
+}
+
+// KeywordSearch performs substring search on content.
+func (r *MemoryRepo) KeywordSearch(ctx context.Context, spaceID string, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	conds, args := buildFilterConds(spaceID, f)
+	if query != "" {
+		conds = append(conds, "content LIKE CONCAT('%', ?, '%')")
+		args = append(args, query)
+	}
+
+	where := strings.Join(conds, " AND ")
+	sqlQuery := `SELECT ` + allColumns + ` FROM memories WHERE ` + where + ` ORDER BY updated_at DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("keyword search: %w", err)
+	}
+	defer rows.Close()
+
+	var memories []domain.Memory
+	for rows.Next() {
+		m, err := scanMemoryRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		memories = append(memories, *m)
+	}
+	return memories, rows.Err()
+}
+
+// buildWhere constructs a WHERE clause from the filter (used by List).
+func buildWhere(spaceID string, f domain.MemoryFilter) (string, []any) {
+	conds, args := buildFilterConds(spaceID, f)
 	if f.Query != "" {
 		conds = append(conds, "content LIKE ?")
 		args = append(args, "%"+f.Query+"%")
 	}
+	return strings.Join(conds, " AND "), args
+}
+
+// buildFilterConds builds WHERE conditions without the keyword query (shared by vector/keyword search).
+func buildFilterConds(spaceID string, f domain.MemoryFilter) ([]string, []any) {
+	conds := []string{"space_id = ?"}
+	args := []any{spaceID}
+
 	if f.Source != "" {
 		conds = append(conds, "source = ?")
 		args = append(args, f.Source)
@@ -219,8 +295,6 @@ func buildWhere(spaceID string, f domain.MemoryFilter) (string, []any) {
 		args = append(args, f.Key)
 	}
 	for _, tag := range f.Tags {
-		// Use json.Marshal to safely encode the tag as a JSON string value,
-		// avoiding injection if tag contains special characters like `"`.
 		tagJSON, err := json.Marshal(tag)
 		if err != nil {
 			continue
@@ -228,17 +302,17 @@ func buildWhere(spaceID string, f domain.MemoryFilter) (string, []any) {
 		conds = append(conds, "JSON_CONTAINS(tags, ?)")
 		args = append(args, string(tagJSON))
 	}
-	return strings.Join(conds, " AND "), args
+	return conds, args
 }
 
 // scanMemory scans a single row into a Memory.
 func scanMemory(row *sql.Row) (*domain.Memory, error) {
 	var m domain.Memory
 	var keyName, source, updatedBy sql.NullString
-	var tagsJSON []byte
+	var tagsJSON, metadataJSON, embeddingStr []byte
 
 	err := row.Scan(&m.ID, &m.SpaceID, &m.Content, &keyName, &source,
-		&tagsJSON, &m.Version, &updatedBy, &m.CreatedAt, &m.UpdatedAt)
+		&tagsJSON, &metadataJSON, &embeddingStr, &m.Version, &updatedBy, &m.CreatedAt, &m.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, domain.ErrNotFound
 	}
@@ -249,17 +323,19 @@ func scanMemory(row *sql.Row) (*domain.Memory, error) {
 	m.Source = source.String
 	m.UpdatedBy = updatedBy.String
 	m.Tags = unmarshalTags(tagsJSON)
+	m.Metadata = unmarshalRawJSON(metadataJSON)
+	// embedding is not loaded in normal reads (large data, not needed for API responses)
 	return &m, nil
 }
 
-// scanMemoryRows scans from *sql.Rows (used by List).
+// scanMemoryRows scans from *sql.Rows (used by List and KeywordSearch).
 func scanMemoryRows(rows *sql.Rows) (*domain.Memory, error) {
 	var m domain.Memory
 	var keyName, source, updatedBy sql.NullString
-	var tagsJSON []byte
+	var tagsJSON, metadataJSON, embeddingStr []byte
 
 	err := rows.Scan(&m.ID, &m.SpaceID, &m.Content, &keyName, &source,
-		&tagsJSON, &m.Version, &updatedBy, &m.CreatedAt, &m.UpdatedAt)
+		&tagsJSON, &metadataJSON, &embeddingStr, &m.Version, &updatedBy, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("scan memory row: %w", err)
 	}
@@ -267,6 +343,30 @@ func scanMemoryRows(rows *sql.Rows) (*domain.Memory, error) {
 	m.Source = source.String
 	m.UpdatedBy = updatedBy.String
 	m.Tags = unmarshalTags(tagsJSON)
+	m.Metadata = unmarshalRawJSON(metadataJSON)
+	return &m, nil
+}
+
+// scanMemoryRowsWithDistance scans a row that includes a trailing distance column (used by VectorSearch).
+func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
+	var m domain.Memory
+	var keyName, source, updatedBy sql.NullString
+	var tagsJSON, metadataJSON, embeddingStr []byte
+	var distance float64
+
+	err := rows.Scan(&m.ID, &m.SpaceID, &m.Content, &keyName, &source,
+		&tagsJSON, &metadataJSON, &embeddingStr, &m.Version, &updatedBy, &m.CreatedAt, &m.UpdatedAt,
+		&distance)
+	if err != nil {
+		return nil, fmt.Errorf("scan memory row with distance: %w", err)
+	}
+	m.KeyName = keyName.String
+	m.Source = source.String
+	m.UpdatedBy = updatedBy.String
+	m.Tags = unmarshalTags(tagsJSON)
+	m.Metadata = unmarshalRawJSON(metadataJSON)
+	score := 1 - distance
+	m.Score = &score
 	return &m, nil
 }
 
@@ -294,9 +394,42 @@ func unmarshalTags(data []byte) []string {
 	return tags
 }
 
+func unmarshalRawJSON(data []byte) json.RawMessage {
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+	return json.RawMessage(data)
+}
+
 func nullString(s string) sql.NullString {
 	if s == "" {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: s, Valid: true}
+}
+
+// nullJSON returns nil (NULL) for empty/nil JSON, otherwise the raw bytes.
+func nullJSON(data json.RawMessage) any {
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+	return []byte(data)
+}
+
+// vecToString converts a float32 slice to the TiDB VECTOR string format: "[0.1,0.2,...]".
+// Returns nil for empty/nil slices.
+func vecToString(embedding []float32) any {
+	if len(embedding) == 0 {
+		return nil
+	}
+	var sb strings.Builder
+	sb.WriteByte('[')
+	for i, v := range embedding {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString(fmt.Sprintf("%g", v))
+	}
+	sb.WriteByte(']')
+	return sb.String()
 }

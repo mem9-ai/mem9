@@ -17,6 +17,13 @@ type MemoryRepo interface {
 	List(ctx context.Context, spaceID string, f domain.MemoryFilter) (memories []domain.Memory, total int, err error)
 	Count(ctx context.Context, spaceID string) (int, error)
 	BulkCreate(ctx context.Context, memories []*domain.Memory) error
+
+	// VectorSearch performs ANN search using cosine distance.
+	// Returns memories with Score populated, ordered by distance ascending.
+	VectorSearch(ctx context.Context, spaceID string, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
+
+	// KeywordSearch performs substring search on content, returns memories ordered by updated_at DESC.
+	KeywordSearch(ctx context.Context, spaceID string, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
 }
 
 // SpaceTokenRepo defines storage operations for space tokens.

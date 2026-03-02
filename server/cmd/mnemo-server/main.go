@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/config"
+	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/handler"
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/repository/tidb"
@@ -32,12 +33,25 @@ func main() {
 	}
 	defer db.Close()
 
+	// Embedder (nil if not configured → keyword-only search).
+	embedder := embed.New(embed.Config{
+		APIKey:  cfg.EmbedAPIKey,
+		BaseURL: cfg.EmbedBaseURL,
+		Model:   cfg.EmbedModel,
+		Dims:    cfg.EmbedDims,
+	})
+	if embedder != nil {
+		logger.Info("embedding provider configured", "model", cfg.EmbedModel, "dims", cfg.EmbedDims)
+	} else {
+		logger.Info("no embedding provider configured, keyword-only search active")
+	}
+
 	// Repositories.
 	memoryRepo := tidb.NewMemoryRepo(db)
 	tokenRepo := tidb.NewSpaceTokenRepo(db)
 
 	// Services.
-	memorySvc := service.NewMemoryService(memoryRepo)
+	memorySvc := service.NewMemoryService(memoryRepo, embedder)
 	spaceSvc := service.NewSpaceService(tokenRepo, memoryRepo)
 
 	// Middleware.

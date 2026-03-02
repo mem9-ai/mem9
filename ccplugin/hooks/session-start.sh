@@ -12,16 +12,14 @@ if ! mnemo_check_env 2>/dev/null; then
   exit 0
 fi
 
-# Fetch the 20 most recent memories.
-response=$(mnemo_get "/api/memories?limit=20" 2>/dev/null || echo "")
+# Fetch the 20 most recent memories (mode-agnostic).
+response=$(mnemo_get_memories 20 2>/dev/null || echo "")
 
 if [[ -z "$response" ]]; then
   exit 0
 fi
 
 # Extract memories into a readable context block.
-# Use Python for reliable JSON parsing (available on macOS and most Linux).
-# Pipe response via stdin to avoid shell injection via triple-quote.
 context=$(echo "$response" | python3 -c "
 import json, sys
 try:
@@ -33,7 +31,7 @@ try:
     lines.append('')
     for m in memories:
         tags = ', '.join(m.get('tags') or [])
-        key = m.get('key', '')
+        key = m.get('key', m.get('key_name', ''))
         source = m.get('source', '')
         header_parts = []
         if key:
@@ -61,7 +59,6 @@ if [[ -z "$context" ]]; then
 fi
 
 # Return additionalContext to inject into Claude's context.
-# Use environment variable to avoid shell injection via triple-quote.
 MNEMO_CONTEXT="$context" python3 -c "
 import json, os
 output = {

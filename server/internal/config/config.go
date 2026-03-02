@@ -11,6 +11,12 @@ type Config struct {
 	DSN       string
 	RateLimit float64
 	RateBurst int
+
+	// Embedding provider (optional — omit for keyword-only search).
+	EmbedAPIKey  string
+	EmbedBaseURL string
+	EmbedModel   string
+	EmbedDims    int
 }
 
 func Load() (*Config, error) {
@@ -20,10 +26,14 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Port:      envOr("MNEMO_PORT", "8080"),
-		DSN:       dsn,
-		RateLimit: envFloat("MNEMO_RATE_LIMIT", 100),
-		RateBurst: envInt("MNEMO_RATE_BURST", 200),
+		Port:         envOr("MNEMO_PORT", "8080"),
+		DSN:          dsn,
+		RateLimit:    envFloat("MNEMO_RATE_LIMIT", 100),
+		RateBurst:    envInt("MNEMO_RATE_BURST", 200),
+		EmbedAPIKey:  os.Getenv("MNEMO_EMBED_API_KEY"),
+		EmbedBaseURL: os.Getenv("MNEMO_EMBED_BASE_URL"),
+		EmbedModel:   os.Getenv("MNEMO_EMBED_MODEL"),
+		EmbedDims:    envInt("MNEMO_EMBED_DIMS", 1536),
 	}
 	return cfg, nil
 }

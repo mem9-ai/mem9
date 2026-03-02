@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,9 +13,10 @@ import (
 )
 
 type createMemoryRequest struct {
-	Content string   `json:"content"`
-	Key     string   `json:"key,omitempty"`
-	Tags    []string `json:"tags,omitempty"`
+	Content  string          `json:"content"`
+	Key      string          `json:"key,omitempty"`
+	Tags     []string        `json:"tags,omitempty"`
+	Metadata json.RawMessage `json:"metadata,omitempty"`
 }
 
 func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
@@ -25,7 +27,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	auth := authInfo(r)
-	mem, err := s.memory.Create(r.Context(), auth.SpaceID, auth.AgentName, req.Content, req.Key, req.Tags)
+	mem, err := s.memory.Create(r.Context(), auth.SpaceID, auth.AgentName, req.Content, req.Key, req.Tags, req.Metadata)
 	if err != nil {
 		s.handleError(w, err)
 		return
@@ -100,8 +102,9 @@ func (s *Server) getMemory(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateMemoryRequest struct {
-	Content string   `json:"content,omitempty"`
-	Tags    []string `json:"tags,omitempty"`
+	Content  string          `json:"content,omitempty"`
+	Tags     []string        `json:"tags,omitempty"`
+	Metadata json.RawMessage `json:"metadata,omitempty"`
 }
 
 func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +122,7 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 		ifMatch, _ = strconv.Atoi(h)
 	}
 
-	mem, err := s.memory.Update(r.Context(), auth.SpaceID, auth.AgentName, id, req.Content, req.Tags, ifMatch)
+	mem, err := s.memory.Update(r.Context(), auth.SpaceID, auth.AgentName, id, req.Content, req.Tags, req.Metadata, ifMatch)
 	if err != nil {
 		s.handleError(w, err)
 		return

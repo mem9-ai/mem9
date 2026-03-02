@@ -15,7 +15,6 @@ fi
 
 # Prevent recursion: if we're already in a stop hook, don't re-trigger.
 # Also extract last assistant message from the hook input.
-# Note: Claude Code Stop hook provides 'stopHookActive' and 'transcript' fields.
 eval "$(echo "$HOOK_INPUT" | python3 -c "
 import json, sys, shlex
 data = json.load(sys.stdin)
@@ -49,7 +48,6 @@ if [[ -z "$last_message" || ${#last_message} -lt 50 ]]; then
 fi
 
 # Summarize using Claude haiku (fast, cheap).
-# The -p flag runs a single prompt, --model picks haiku.
 summary=$(echo "$last_message" | claude -p --model haiku "Summarize the following assistant response into a concise memory (1-3 sentences) capturing the key decisions, facts, or actions taken. Focus on what would be useful to recall in future sessions. Output ONLY the summary, nothing else." 2>/dev/null || echo "")
 
 if [[ -z "$summary" || ${#summary} -lt 10 ]]; then
@@ -59,8 +57,7 @@ fi
 # Determine tags from the working directory.
 project_name=$(basename "${CLAUDE_PROJECT_DIR:-$(pwd)}" 2>/dev/null || echo "unknown")
 
-# Save to mnemo server.
-# Use environment variables to avoid shell injection via triple-quote.
+# Save to mnemo (mode-agnostic).
 body=$(MNEMO_SUMMARY="$summary" MNEMO_PROJECT="$project_name" python3 -c "
 import json, os
 payload = {
@@ -71,5 +68,5 @@ print(json.dumps(payload))
 " 2>/dev/null || echo "")
 
 if [[ -n "$body" ]]; then
-  mnemo_post "/api/memories" "$body" >/dev/null 2>&1 || true
+  mnemo_post_memory "$body" >/dev/null 2>&1 || true
 fi

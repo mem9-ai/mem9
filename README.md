@@ -5,8 +5,8 @@
 <h1 align="center">mnemos</h1>
 
 <p align="center">
-  <strong>Shared memory for AI agents.</strong><br/>
-  Write once from Claude Code. Recall anywhere — across agents, machines, and people.
+  <strong>AI Agent Memory, Everywhere.</strong><br/>
+  Personal cloud memory or shared team memory — one plugin, two modes.
 </p>
 
 <p align="center">
@@ -18,182 +18,39 @@
 ---
 
 > AI agents each maintain their own memory files — siloed, local, forgotten between sessions.
-> **mnemos** gives them a shared pool of long-term memories through a single API.
-> One token + one URL, and every agent on your team can remember and recall.
+> **mnemos** gives them cloud-persistent memory with hybrid vector + keyword search.
+> Start with zero-ops direct mode, scale to a shared server when you need it.
 
-## Why mnemos?
+## Two Modes, One Plugin
 
-- **One API, all agents** — Any agent with a Bearer token can read/write shared memories. No SDKs required, just HTTP.
-- **Spaces, not permissions** — Same space = shared. Different space = isolated. That's the entire access model.
-- **Conflict resolution built in** — Version-tracked writes with automatic last-writer-wins. LLM-powered merge coming in Phase 2.
-- **Zero-config agent plugins** — First-class integrations for [Claude Code](#claude-code-plugin) and [OpenClaw](#openclaw-plugin). Install, set a token, done.
+| | Direct Mode | Server Mode |
+|---|---|---|
+| **Who** | Individual developer, small team | Organization, multi-agent teams |
+| **Deploy** | Nothing. TiDB Cloud Serverless free tier | Self-host `mnemo-server` |
+| **Config** | Database credentials | API URL + token |
+| **Vector search** | Yes (TiDB native VECTOR) | Yes (server-side) |
+| **Conflict resolution** | LWW (client-side) | LWW → LLM merge (Phase 2) |
 
-## Quick Start
+**Direct mode is the default.** Mode is inferred from config: `host` → direct, `apiUrl` → server.
 
-### 1. Start the server
+## Quick Start (Direct Mode — 30 seconds)
 
+Create a free [TiDB Cloud Serverless](https://tidbcloud.com) cluster, then:
+
+**Claude Code:**
 ```bash
-# Build and run
-cd server
-MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
-
-# Or with Docker
-docker build -t mnemo-server ./server
-docker run -p 8080:8080 -e MNEMO_DSN="..." mnemo-server
+export MNEMO_DB_HOST="gateway01.us-east-1.prod.aws.tidbcloud.com"
+export MNEMO_DB_USER="xxx.root"
+export MNEMO_DB_PASS="xxx"
+export MNEMO_DB_NAME="mnemos"
+# Optional: enable vector search
+export MNEMO_EMBED_API_KEY="sk-..."
 ```
 
-### 2. Create a space
+Done. Next time you start Claude Code, it auto-creates the table, loads past memories, and saves new ones.
 
-```bash
-curl -s -X POST localhost:8080/api/spaces \
-  -H "Content-Type: application/json" \
-  -d '{"name": "my-team", "agent_name": "claude-code", "agent_type": "claude_code"}'
-```
-
-Returns `{"ok": true, "space_id": "...", "api_token": "mnemo_..."}`.
-
-### 3. Write a memory
-
-```bash
-export TOKEN="mnemo_..."  # from step 2
-
-curl -s -X POST localhost:8080/api/memories \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"content": "TiKV compaction: set level0-file-num to 4 for write-heavy workloads", "key": "tikv/compaction", "tags": ["tikv", "performance"]}'
-```
-
-### 4. Recall from any agent
-
-```bash
-# Search by keyword
-curl -s "localhost:8080/api/memories?q=compaction" -H "Authorization: Bearer $TOKEN"
-
-# Filter by tags
-curl -s "localhost:8080/api/memories?tags=tikv,performance" -H "Authorization: Bearer $TOKEN"
-```
-
-Any agent in the same space — Claude Code, OpenClaw, or a plain `curl` — sees the same memories.
-
-## Core Concepts
-
-```
-Space "backend-team"
-  ├── Agent: sj-claude-code   (token: mnemo_aaa)
-  ├── Agent: sj-openclaw      (token: mnemo_bbb)
-  └── Agent: bob-claude       (token: mnemo_ccc)
-  └── Memories: [shared pool — everyone reads and writes]
-```
-
-| Concept | What it is |
-|---------|-----------|
-| **Space** | A shared memory pool. All agents in a space can read/write all memories. Want isolation? Different spaces. Want sharing? Same space. |
-| **Memory** | A piece of knowledge with `content`, optional `key` (for upsert), optional `tags` (for filtering), auto-tracked `version`, and auto-filled `source` (from token). |
-| **Token** | A Bearer token (`mnemo_xxx`) that maps to a space + agent identity. One token per agent. The server resolves everything — agents never deal with space IDs. |
-
-## Architecture
-
-```
-    Claude Code            OpenClaw           Any HTTP Client
-  ┌────────────────┐   ┌────────────────┐   ┌────────────────┐
-  │  ccplugin      │   │  openclaw-     │   │  curl / fetch  │
-  │  (Hooks+Skills)│   │  plugin        │   │                │
-  │                │   │  (kind:memory) │   │                │
-  │  auto-capture  │   │                │   │                │
-  │  auto-recall   │   │  5 agent tools │   │                │
-  └───────┬────────┘   └───────┬────────┘   └───────┬────────┘
-          │                    │                     │
-          └──────────┬─────────┴─────────────────────┘
-                     ▼
-          ┌─────────────────────┐
-          │   mnemo-server (Go) │
-          │                     │
-          │  Bearer token auth  │
-          │  Keyword search     │
-          │  Upsert + versioning│
-          │  Rate limiting      │
-          └──────────┬──────────┘
-                     │
-                     ▼
-          ┌─────────────────────┐
-          │     TiDB / MySQL    │
-          │  Row-level isolation│
-          │  via space_id       │
-          └─────────────────────┘
-```
-
-## API Reference
-
-All endpoints use `Authorization: Bearer <token>`. The server resolves the token to a space and agent identity automatically.
-
-<details>
-<summary><strong>Memory endpoints</strong></summary>
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/memories` | Create a memory. If `key` exists in the space, upserts. |
-| `GET` | `/api/memories` | Search/list. Query params: `q`, `tags`, `source`, `key`, `limit`, `offset`. |
-| `GET` | `/api/memories/:id` | Get a single memory. |
-| `PUT` | `/api/memories/:id` | Update. Optional `If-Match` header for version check. |
-| `DELETE` | `/api/memories/:id` | Delete a memory. |
-| `POST` | `/api/memories/bulk` | Bulk create (max 100). |
-
-</details>
-
-<details>
-<summary><strong>Space endpoints</strong></summary>
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/spaces` | Create a space + first agent token. **No auth required** (bootstrap). |
-| `POST` | `/api/spaces/:id/tokens` | Add an agent to the space. Requires auth. |
-| `GET` | `/api/spaces/:id/info` | Space metadata: name, memory count, agent list. |
-
-</details>
-
-<details>
-<summary><strong>Health check</strong></summary>
-
-```
-GET /healthz → {"status": "ok"}
-```
-
-</details>
-
-## Agent Plugins
-
-### Claude Code Plugin
-
-Automatic memory capture and recall — no manual tool calls needed. Uses Claude Code's native [Hooks + Skills](https://docs.anthropic.com/en/docs/claude-code/hooks) system.
-
-```bash
-# Install the plugin
-claude plugin add ./ccplugin   # or from marketplace when published
-
-# Configure
-export MNEMO_API_URL="http://localhost:8080"
-export MNEMO_API_TOKEN="mnemo_xxx"
-```
-
-**How it works:**
-
-| Lifecycle Hook | What happens |
-|---------------|-------------|
-| **Session Start** | Loads the 20 most recent memories into Claude's context |
-| **User Prompt** | Adds a hint: *"[mnemo] Shared team memory is available"* |
-| **Stop** | Summarizes the session with Haiku and saves it as a new memory |
-| **Memory Recall** | A forked skill that searches memories on demand — zero main context cost |
-
-### OpenClaw Plugin
-
-Replaces OpenClaw's built-in memory with mnemos. Declares `kind: "memory"`.
-
-```bash
-openclaw plugins install @mnemo/openclaw-plugin
-```
-
+**OpenClaw:**
 ```json
-// openclaw.json
 {
   "plugins": {
     "slots": { "memory": "mnemo" },
@@ -201,8 +58,14 @@ openclaw plugins install @mnemo/openclaw-plugin
       "mnemo": {
         "enabled": true,
         "config": {
-          "apiUrl": "http://localhost:8080",
-          "apiToken": "mnemo_xxx"
+          "host": "gateway01.us-east-1.prod.aws.tidbcloud.com",
+          "username": "xxx.root",
+          "password": "xxx",
+          "database": "mnemos",
+          "embedding": {
+            "apiKey": "sk-...",
+            "model": "text-embedding-3-small"
+          }
         }
       }
     }
@@ -210,31 +73,107 @@ openclaw plugins install @mnemo/openclaw-plugin
 }
 ```
 
-**Tools exposed to the agent:**
-
-| Tool | Maps to |
-|------|---------|
-| `memory_store` | `POST /api/memories` |
-| `memory_search` | `GET /api/memories` |
-| `memory_get` | `GET /api/memories/:id` |
-| `memory_update` | `PUT /api/memories/:id` |
-| `memory_delete` | `DELETE /api/memories/:id` |
-
-### Any Agent — Plain HTTP
+## Quick Start (Server Mode — Team Setup)
 
 ```bash
-curl -X POST https://your-server/api/memories \
-  -H "Authorization: Bearer mnemo_xxx" \
+# 1. Deploy server
+cd server && MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
+
+# 2. Create space
+curl -s -X POST localhost:8080/api/spaces \
   -H "Content-Type: application/json" \
-  -d '{"content": "...", "key": "topic/name", "tags": ["tag1"]}'
+  -d '{"name":"backend-team","agent_name":"alice-claude","agent_type":"claude_code"}'
+# → {"ok":true, "space_id":"...", "api_token":"mnemo_abc"}
+
+# 3. Configure agents
+export MNEMO_API_URL="http://localhost:8080"
+export MNEMO_API_TOKEN="mnemo_abc"
 ```
 
-## Self-Hosting
+## Hybrid Search (Vector + Keyword)
 
-### Prerequisites
+Search auto-upgrades to hybrid mode when an embedding provider is configured:
 
-- Go 1.22+ (for building from source)
-- TiDB Cloud or any MySQL-compatible database
+- **No embedding config** → keyword search works immediately
+- **Add an API key** → hybrid search activates automatically
+- **No schema migration** — VECTOR column is nullable from day one
+
+Supports OpenAI, Ollama, LM Studio, or any OpenAI-compatible endpoint.
+
+```bash
+# OpenAI
+export MNEMO_EMBED_API_KEY="sk-..."
+
+# Ollama (local, free)
+export MNEMO_EMBED_BASE_URL="http://localhost:11434/v1"
+export MNEMO_EMBED_MODEL="nomic-embed-text"
+export MNEMO_EMBED_DIMS="768"
+```
+
+## Architecture
+
+```
+     Claude Code              OpenClaw              Any Client
+  ┌────────────────┐    ┌────────────────┐    ┌────────────────┐
+  │ ccplugin       │    │ openclaw-      │    │ curl / fetch   │
+  │ (Hooks+Skills) │    │ plugin         │    │                │
+  └───────┬────────┘    └───────┬────────┘    └───────┬────────┘
+          │                     │                      │
+          └──────────┬──────────┴──────────────────────┘
+                     │
+        ┌────────────┴────────────┐
+        │                         │
+   has `host` →              has `apiUrl` →
+   (direct)                  (server)
+        │                         │
+        ▼                         ▼
+ ┌──────────────┐      ┌───────────────────┐
+ │ TiDB Cloud   │      │  mnemo-server     │
+ │ Serverless   │      │  (Go, self-host)  │
+ │ HTTP Data API│      │  → TiDB / MySQL   │
+ └──────────────┘      └───────────────────┘
+```
+
+## Agent Plugins
+
+### Claude Code Plugin
+
+Automatic memory capture and recall via [Hooks + Skills](https://docs.anthropic.com/en/docs/claude-code/hooks).
+
+| Lifecycle Hook | What happens |
+|---------------|-------------|
+| **Session Start** | Loads recent memories into Claude's context |
+| **User Prompt** | Hint: *"[mnemo] Shared memory is available"* |
+| **Stop** | Summarizes session with Haiku, saves as memory |
+| **Memory Recall** | Forked skill for on-demand search |
+
+Works in both modes — set `MNEMO_DB_HOST` (direct) or `MNEMO_API_URL` (server).
+
+### OpenClaw Plugin
+
+Replaces OpenClaw's built-in memory with mnemos. Declares `kind: "memory"`.
+
+Tools: `memory_store`, `memory_search`, `memory_get`, `memory_update`, `memory_delete`
+
+Set `host` in config (direct) or `apiUrl` (server).
+
+## API Reference (Server Mode)
+
+Auth: `Authorization: Bearer <token>`. Server resolves token → space + agent.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/memories` | Create/upsert. Server generates embedding if configured. |
+| `GET` | `/api/memories` | Search: `?q=`, `?tags=`, `?source=`, `?key=`, `?limit=`, `?offset=` |
+| `GET` | `/api/memories/:id` | Get single memory |
+| `PUT` | `/api/memories/:id` | Update. Optional `If-Match` for version check. |
+| `DELETE` | `/api/memories/:id` | Delete |
+| `POST` | `/api/memories/bulk` | Bulk create (max 100) |
+| `POST` | `/api/spaces` | Create space + first token (no auth) |
+| `POST` | `/api/spaces/:id/tokens` | Add agent to space |
+| `GET` | `/api/spaces/:id/info` | Space metadata |
+
+## Self-Hosting (Server Mode)
 
 ### Environment Variables
 
@@ -243,13 +182,11 @@ curl -X POST https://your-server/api/memories \
 | `MNEMO_DSN` | Yes | — | Database connection string |
 | `MNEMO_PORT` | No | `8080` | HTTP listen port |
 | `MNEMO_RATE_LIMIT` | No | `100` | Requests/sec per IP |
-| `MNEMO_RATE_BURST` | No | `200` | Rate limiter burst size |
-
-### Database Setup
-
-```bash
-mysql -h <host> -P 4000 -u <user> -p < server/schema.sql
-```
+| `MNEMO_RATE_BURST` | No | `200` | Burst size |
+| `MNEMO_EMBED_API_KEY` | No | — | Embedding provider API key |
+| `MNEMO_EMBED_BASE_URL` | No | OpenAI | Custom embedding endpoint |
+| `MNEMO_EMBED_MODEL` | No | `text-embedding-3-small` | Model name |
+| `MNEMO_EMBED_DIMS` | No | `1536` | Vector dimensions |
 
 ### Build & Run
 
@@ -259,53 +196,51 @@ go build -o mnemo-server ./cmd/mnemo-server
 MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" ./mnemo-server
 ```
 
-### Docker
-
-```bash
-docker build -t mnemo-server ./server
-docker run -p 8080:8080 -e MNEMO_DSN="..." mnemo-server
-```
-
 ## Project Structure
 
 ```
 mnemos/
-├── server/                     # Go API server
+├── server/                     # Go API server (server mode)
 │   ├── cmd/mnemo-server/       # Entry point
 │   ├── internal/
 │   │   ├── config/             # Environment variable loading
 │   │   ├── domain/             # Core types, errors, token generation
+│   │   ├── embed/              # Embedding provider (OpenAI/Ollama/any)
 │   │   ├── handler/            # HTTP handlers + chi router
-│   │   ├── middleware/         # Auth (token → context) + rate limiter
+│   │   ├── middleware/         # Auth + rate limiter
 │   │   ├── repository/         # Interface + TiDB SQL implementation
-│   │   └── service/            # Business logic (upsert, LWW, validation)
-│   ├── schema.sql              # Database DDL
+│   │   └── service/            # Business logic (upsert, LWW, hybrid search)
+│   ├── schema.sql
 │   └── Dockerfile
 │
 ├── openclaw-plugin/            # OpenClaw agent plugin (TypeScript)
-│   ├── index.ts                # 5 agent tools
-│   ├── api-client.ts           # HTTP client for mnemo API
+│   ├── index.ts                # Tool registration (mode-agnostic)
+│   ├── backend.ts              # MemoryBackend interface
+│   ├── direct-backend.ts       # Direct: @tidbcloud/serverless → SQL
+│   ├── server-backend.ts       # Server: fetch → mnemo API
+│   ├── embedder.ts             # Embedding provider abstraction
+│   ├── schema.ts               # Auto schema init (direct mode)
+│   ├── types.ts                # Shared type definitions
 │   └── openclaw.plugin.json    # Plugin manifest (kind: "memory")
 │
 ├── ccplugin/                   # Claude Code plugin (Hooks + Skills)
-│   ├── hooks/                  # 4 lifecycle hooks (bash + curl)
-│   └── skills/memory-recall/   # Forked recall skill
+│   ├── hooks/
+│   │   ├── common.sh           # Mode-aware helpers (direct: curl→SQL, server: curl→API)
+│   │   ├── session-start.sh
+│   │   ├── stop.sh
+│   │   └── user-prompt-submit.sh
+│   └── skills/memory-recall/   # Forked search skill
 │
-└── docs/
-    └── DESIGN.md               # Full design document
+└── docs/DESIGN.md              # Full design document
 ```
 
 ## Roadmap
 
 | Phase | What | Status |
 |-------|------|--------|
-| **Phase 1: Core** | Server + CRUD + auth + keyword search + upsert + plugins | Done |
-| **Phase 2: Smart** | LLM conflict merge, server-side embeddings, hybrid vector+keyword search | Planned |
-| **Phase 3: Polish** | Web dashboard, bulk import/export, usage analytics | Planned |
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+| **Phase 1** | Core server + CRUD + auth + hybrid search + upsert + dual-mode plugins | Done |
+| **Phase 2** | LLM conflict merge, auto-tagging | Planned |
+| **Phase 3** | Web dashboard, bulk import/export, CLI wizard | Planned |
 
 ## License
 
