@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Concurrent edit test on the real claw-memory-v2-proposal memory.
+Concurrent edit test with a real-document-like memory.
 
-Phase A: Convert the existing plain-text memory to section-doc format
-         (10 sections matching the proposal structure).
+Phase A: Create a section-doc memory with 10 sections (proposal-like content).
 Phase B: Both agents read, make disjoint edits concurrently.
          Agent A: revises odd sections (1,3,5,7,9).
          Agent B: revises even sections (2,4,6,8,10).
@@ -11,22 +10,39 @@ Phase C: Verify server merges both agents' edits atomically.
 Phase D: Both agents read back — must see all edits.
 """
 
-import json, uuid, urllib.request, urllib.error, sys, copy
+import json, uuid, urllib.request, urllib.error, sys, copy, time
 
 BASE     = "http://127.0.0.1:18081"
-TOKEN_A  = "REDACTED_TOKEN"
-TOKEN_B  = "REDACTED_TOKEN"
-DOC_ID   = "4a421c79-1559-44fd-b019-6f686107d8e4"
-DOC_KEY  = "claw-memory-v2-proposal"
+USER_TOKEN = "REDACTED_TOKEN"
+AGENT_A  = "agent-a"
+AGENT_B  = "agent-b"
+DOC_KEY  = f"real-doc-test-{int(time.time())}"
 
 PASS = 0; FAIL = 0
 def p(label): global PASS; PASS += 1; print(f"  PASS  {label}")
 def f(label): global FAIL; FAIL += 1; print(f"  FAIL  {label}")
 
-def req(method, path, token, body=None):
+def provision(workspace_key, agent_id):
+    url = BASE + "/api/spaces/provision"
+    body = json.dumps({"workspace_key": workspace_key, "agent_id": agent_id}).encode()
+    headers = {"Authorization": f"Bearer {USER_TOKEN}", "Content-Type": "application/json"}
+    r = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    with urllib.request.urlopen(r) as resp:
+        data = json.loads(resp.read())
+    token = data.get("space_token")
+    if not token:
+        print(f"FATAL: provision failed for {agent_id}: {data}")
+        sys.exit(1)
+    return token
+
+def req(method, path, token, agent, body=None):
     url = BASE + path
     data = json.dumps(body).encode() if body is not None else None
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "X-Mnemo-Agent-Id": agent,
+    }
     r = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(r) as resp:
@@ -36,8 +52,8 @@ def req(method, path, token, body=None):
         raw = e.read()
         return e.code, json.loads(raw) if raw else {}, dict(e.headers)
 
-def get_doc(token):
-    s, m, _ = req("GET", f"/api/memories/{DOC_ID}", token)
+def get_doc(token, agent, doc_id):
+    s, m, _ = req("GET", f"/api/memories/{doc_id}", token, agent)
     return m if s == 200 else None
 
 def render_index(sections):
@@ -48,18 +64,18 @@ def render_index(sections):
         lines.append(f"[{name}] {s['title']} | {first}")
     return "\n".join(lines)
 
-# ── Phase A: convert to section-doc format ───────────────────────────────────
 print("=" * 68)
-print("  Concurrent Edit — claw-memory-v2-proposal (real document)")
+print("  Concurrent Edit — real document (user/space model)")
 print("=" * 68)
-print("\n[PHASE A] Convert plain-text memory to section-doc format")
 
-current = get_doc(TOKEN_A)
-if not current:
-    print("  ERROR: cannot read document"); sys.exit(1)
+WS_KEY = f"e2e-realdoc-{int(time.time())}"
+print("\nProvisioning agents...")
+TOKEN_A = provision(WS_KEY, AGENT_A)
+TOKEN_B = provision(WS_KEY, AGENT_B)
+print(f"  Agent A token: {TOKEN_A[:20]}...")
+print(f"  Agent B token: {TOKEN_B[:20]}...")
 
-print(f"  Current: version={current['version']}, clock={current.get('clock')}")
-print(f"  Has sections: {'sections' in (current.get('metadata') or {})}")
+print("\n[PHASE A] Create section-doc memory")
 
 sections_v1 = {
     "section-01": {
@@ -200,11 +216,9 @@ sections_v1 = {
 index_v1 = render_index(sections_v1)
 meta_v1  = {"sections": sections_v1, "schema": "section-doc-v1"}
 
-# Read current clock, increment agent-a
-cur_clock = dict(current.get("clock") or {})
-cur_clock["agent-a"] = cur_clock.get("agent-a", 0) + 1
+cur_clock = {AGENT_A: 1}
 
-s, m, hdrs = req("POST", "/api/memories", TOKEN_A, {
+s, m, hdrs = req("POST", "/api/memories", TOKEN_A, AGENT_A, {
     "content":  index_v1,
     "key":      DOC_KEY,
     "metadata": meta_v1,
@@ -213,15 +227,15 @@ s, m, hdrs = req("POST", "/api/memories", TOKEN_A, {
 })
 dominated = hdrs.get("X-Mnemo-Dominated","").lower() == "true"
 if s == 201 and not dominated:
-    p(f"Converted to section-doc format: 10 sections, clock={m.get('clock')}, version={m.get('version')}")
+    DOC_ID = m["id"]
+    p(f"Created section-doc: 10 sections, clock={m.get('clock')}, version={m.get('version')}, id={DOC_ID}")
 else:
     f(f"Conversion failed: status={s}, dominated={dominated}, err={m.get('error','')}")
     sys.exit(1)
 
-# ── Phase B: both agents read snapshot ───────────────────────────────────────
 print("\n[PHASE B] Both agents read current snapshot")
-snap_a = get_doc(TOKEN_A)
-snap_b = get_doc(TOKEN_B)
+snap_a = get_doc(TOKEN_A, AGENT_A, DOC_ID)
+snap_b = get_doc(TOKEN_B, AGENT_B, DOC_ID)
 if not snap_a or not snap_b:
     f("Read failed"); sys.exit(1)
 
@@ -229,45 +243,41 @@ base_sections = snap_a["metadata"]["sections"]
 clock_at_read = snap_a.get("clock", {})
 p(f"Both agents read version={snap_a['version']}, clock={clock_at_read}")
 
-# ── Phase C: disjoint concurrent edits ───────────────────────────────────────
 print("\n[PHASE C] Concurrent edits — Agent A: odd sections, Agent B: even sections")
 
 secs_a = copy.deepcopy(base_sections)
 secs_b = copy.deepcopy(base_sections)
 
-# Agent A edits sections 1,3,5,7,9
 for name in ["section-01","section-03","section-05","section-07","section-09"]:
     secs_a[name]["body"] += (
         f"\n\n[AGENT-A REVISION] Updated by agent-a: clarified scope, "
         f"added implementation notes, cross-referenced with current server code in "
         f"server/internal/service/ and server/internal/repository/."
     )
-    secs_a[name]["last_author"] = "agent-a"
+    secs_a[name]["last_author"] = AGENT_A
 
-# Agent B edits sections 2,4,6,8,10
 for name in ["section-02","section-04","section-06","section-08","section-10"]:
     secs_b[name]["body"] += (
         f"\n\n[AGENT-B REVISION] Updated by agent-b: added operational details, "
-        f"deployment considerations, and lessons learned from the CRDT E2E test run "
-        f"on 2026-03-02 with crdt_test_01 database."
+        f"deployment considerations, and lessons learned from the CRDT E2E test run."
     )
-    secs_b[name]["last_author"] = "agent-b"
+    secs_b[name]["last_author"] = AGENT_B
 
-clock_a = dict(clock_at_read); clock_a["agent-a"] = clock_a.get("agent-a", 0) + 1
-clock_b = dict(clock_at_read); clock_b["agent-b"] = clock_b.get("agent-b", 0) + 1
+clock_a = dict(clock_at_read); clock_a[AGENT_A] = clock_a.get(AGENT_A, 0) + 1
+clock_b = dict(clock_at_read); clock_b[AGENT_B] = clock_b.get(AGENT_B, 0) + 1
 
 print(f"  Agent A clock: {clock_a}")
 print(f"  Agent B clock: {clock_b}")
 print(f"  Both clocks are concurrent — server should merge, not dominate")
 
-s_a, m_a, hdrs_a = req("POST", "/api/memories", TOKEN_A, {
+s_a, m_a, hdrs_a = req("POST", "/api/memories", TOKEN_A, AGENT_A, {
     "content":  render_index(secs_a),
     "key":      DOC_KEY,
     "metadata": {"sections": secs_a, "schema": "section-doc-v1"},
     "clock":    clock_a,
     "write_id": str(uuid.uuid4()),
 })
-s_b, m_b, hdrs_b = req("POST", "/api/memories", TOKEN_B, {
+s_b, m_b, hdrs_b = req("POST", "/api/memories", TOKEN_B, AGENT_B, {
     "content":  render_index(secs_b),
     "key":      DOC_KEY,
     "metadata": {"sections": secs_b, "schema": "section-doc-v1"},
@@ -294,8 +304,8 @@ else:
 
 # ── Phase D: both agents read final state ────────────────────────────────────
 print("\n[PHASE D] Both agents read final document")
-final_a = get_doc(TOKEN_A)
-final_b = get_doc(TOKEN_B)
+final_a = get_doc(TOKEN_A, AGENT_A, DOC_ID)
+final_b = get_doc(TOKEN_B, AGENT_B, DOC_ID)
 if not final_a or not final_b:
     f("Read failed"); sys.exit(1)
 
@@ -363,8 +373,8 @@ if FAIL == 0:
     print(f"""
 Real-document concurrent edit verified:
 
-  Document : claw-memory-v2-proposal (ID: {DOC_ID})
-  Sections : 10 (converted from plain-text in Phase A)
+  Document : {DOC_KEY} (ID: {DOC_ID})
+  Sections : 10 (created as section-doc in Phase A)
   Edit     : Agent A revised sections 1,3,5,7,9 simultaneously with
              Agent B revising sections 2,4,6,8,10
   Merge    : Server merged atomically — no domination, no client re-write

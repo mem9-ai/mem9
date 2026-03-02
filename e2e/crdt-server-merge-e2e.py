@@ -10,8 +10,9 @@ No client re-write required.
 import json, uuid, urllib.request, urllib.error, sys, time, copy
 
 BASE = "http://127.0.0.1:18081"
-TOKEN_A = "REDACTED_TOKEN"
-TOKEN_B = "REDACTED_TOKEN"
+USER_TOKEN = "REDACTED_TOKEN"
+AGENT_A = "agent-a"
+AGENT_B = "agent-b"
 
 SECTION_COUNT = 10
 LINES_PER_SECTION = 50
@@ -20,10 +21,27 @@ PASS = 0; FAIL = 0
 def p(label): global PASS; PASS += 1; print(f"  PASS  {label}")
 def f(label): global FAIL; FAIL += 1; print(f"  FAIL  {label}")
 
-def req(method, path, token, body=None):
+def provision(workspace_key, agent_id):
+    url = BASE + "/api/spaces/provision"
+    body = json.dumps({"workspace_key": workspace_key, "agent_id": agent_id}).encode()
+    headers = {"Authorization": f"Bearer {USER_TOKEN}", "Content-Type": "application/json"}
+    r = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    with urllib.request.urlopen(r) as resp:
+        data = json.loads(resp.read())
+    token = data.get("space_token")
+    if not token:
+        print(f"FATAL: provision failed for {agent_id}: {data}")
+        sys.exit(1)
+    return token
+
+def req(method, path, token, agent, body=None):
     url = BASE + path
     data = json.dumps(body).encode() if body is not None else None
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "X-Mnemo-Agent-Id": agent,
+    }
     r = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(r) as resp:
@@ -33,8 +51,8 @@ def req(method, path, token, body=None):
         raw = e.read()
         return e.code, json.loads(raw) if raw else {}, dict(e.headers)
 
-def get_memory(token, mid):
-    s, m, _ = req("GET", f"/api/memories/{mid}", token)
+def get_memory(token, agent, mid):
+    s, m, _ = req("GET", f"/api/memories/{mid}", token, agent)
     return m if s == 200 else None
 
 def build_sections():
@@ -73,16 +91,22 @@ def agent_edit(sections, agent, owns_odd):
 
 ts = int(time.time())
 DOC_KEY = f"server-merge-{ts}"
+WS_KEY = f"e2e-merge-{ts}"
 
 print("=" * 68)
-print("  Server-Side Section Merge — E2E Verification")
+print("  Server-Side Section Merge — E2E Verification (user/space model)")
 print("=" * 68)
 
-# ── Phase 1: create initial document ────────────────────────────────────────
+print("\nProvisioning agents...")
+TOKEN_A = provision(WS_KEY, AGENT_A)
+TOKEN_B = provision(WS_KEY, AGENT_B)
+print(f"  Agent A token: {TOKEN_A[:20]}...")
+print(f"  Agent B token: {TOKEN_B[:20]}...")
+
 print("\n[PHASE 1] Create initial document")
 initial = build_sections()
 total_lines = sum(len(v["body"].splitlines()) for v in initial.values())
-s, m_v1, _ = req("POST", "/api/memories", TOKEN_A, {
+s, m_v1, _ = req("POST", "/api/memories", TOKEN_A, AGENT_A, {
     "content": render_index(initial),
     "key": DOC_KEY,
     "metadata": {"sections": initial, "schema": "section-doc-v1"},
@@ -96,37 +120,34 @@ else:
     f(f"Create failed: {s} {m_v1.get('error','')}")
     sys.exit(1)
 
-# ── Phase 2: both agents read ────────────────────────────────────────────────
 print("\n[PHASE 2] Both agents read concurrently")
-snap = get_memory(TOKEN_A, DOC_ID)
+snap = get_memory(TOKEN_A, AGENT_A, DOC_ID)
 base_sections = snap["metadata"]["sections"]
 clock_at_read = snap.get("clock", {})
 print(f"  Clock at read: {clock_at_read}")
 p("Both agents have same snapshot")
 
-# ── Phase 3: disjoint edits ──────────────────────────────────────────────────
 print("\n[PHASE 3] Disjoint local edits")
-secs_a = agent_edit(base_sections, "agent-a", owns_odd=True)   # 1,3,5,7,9
-secs_b = agent_edit(base_sections, "agent-b", owns_odd=False)  # 2,4,6,8,10
+secs_a = agent_edit(base_sections, AGENT_A, owns_odd=True)
+secs_b = agent_edit(base_sections, AGENT_B, owns_odd=False)
 
-# ── Phase 4: concurrent writes — expect server-side merge ───────────────────
 print("\n[PHASE 4] Concurrent writes — server should merge (not dominate)")
-clock_a = dict(clock_at_read); clock_a["agent-a"] = clock_a.get("agent-a", 0) + 1
-clock_b = dict(clock_at_read); clock_b["agent-b"] = clock_b.get("agent-b", 0) + 1
+clock_a = dict(clock_at_read); clock_a[AGENT_A] = clock_a.get(AGENT_A, 0) + 1
+clock_b = dict(clock_at_read); clock_b[AGENT_B] = clock_b.get(AGENT_B, 0) + 1
 print(f"  Agent A clock: {clock_a}  (concurrent with B)")
 print(f"  Agent B clock: {clock_b}  (concurrent with A — neither dominates)")
 
 # Agent A writes first, setting DB clock to {agent-a:2}
 # Then Agent B writes with {agent-a:1, agent-b:1}
 # {agent-a:1,agent-b:1} vs {agent-a:2} → ClockConcurrent (A has a:2>1, B has b:1>0)
-s_a, m_a, hdrs_a = req("POST", "/api/memories", TOKEN_A, {
+s_a, m_a, hdrs_a = req("POST", "/api/memories", TOKEN_A, AGENT_A, {
     "content": render_index(secs_a),
     "key": DOC_KEY,
     "metadata": {"sections": secs_a, "schema": "section-doc-v1"},
     "clock": clock_a,
     "write_id": str(uuid.uuid4()),
 })
-s_b, m_b, hdrs_b = req("POST", "/api/memories", TOKEN_B, {
+s_b, m_b, hdrs_b = req("POST", "/api/memories", TOKEN_B, AGENT_B, {
     "content": render_index(secs_b),
     "key": DOC_KEY,
     "metadata": {"sections": secs_b, "schema": "section-doc-v1"},
@@ -156,8 +177,8 @@ else:
 
 # ── Phase 5: read back — both see merged content ─────────────────────────────
 print("\n[PHASE 5] Both agents read final document")
-final_a = get_memory(TOKEN_A, DOC_ID)
-final_b = get_memory(TOKEN_B, DOC_ID)
+final_a = get_memory(TOKEN_A, AGENT_A, DOC_ID)
+final_b = get_memory(TOKEN_B, AGENT_B, DOC_ID)
 
 if final_a["content"] == final_b["content"]:
     p("Agent A and Agent B read identical content")
@@ -209,16 +230,15 @@ if "agent-a" in final_clock and "agent-b" in final_clock:
 else:
     f(f"Clock incomplete: {final_clock}")
 
-# ── Phase 6: backward compat — plain write still works ──────────────────────
 print("\n[PHASE 6] Backward compat — plain write (no sections) still uses tie-break")
 PLAIN_KEY = f"plain-compat-{ts}"
-s_p1, m_p1, _ = req("POST", "/api/memories", TOKEN_A, {
+s_p1, m_p1, _ = req("POST", "/api/memories", TOKEN_A, AGENT_A, {
     "content": "plain content from agent-a",
     "key": PLAIN_KEY,
     "clock": {"agent-a": 1},
     "write_id": str(uuid.uuid4()),
 })
-s_p2, m_p2, hdrs_p2 = req("POST", "/api/memories", TOKEN_B, {
+s_p2, m_p2, hdrs_p2 = req("POST", "/api/memories", TOKEN_B, AGENT_B, {
     "content": "plain content from agent-b",
     "key": PLAIN_KEY,
     "clock": {"agent-b": 1},
