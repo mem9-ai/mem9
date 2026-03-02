@@ -12,7 +12,7 @@ const SPACE_ID = "default";
 const MAX_CONTENT = 50_000;
 
 interface TiDBResponse {
-  columns?: { name: string }[];
+  types?: { name: string }[];
   rows?: unknown[][];
 }
 
@@ -34,9 +34,28 @@ export class DirectBackend implements MemoryBackend {
     this.dims = cfg.embedDims;
   }
 
+  private escape(val: unknown): string {
+    if (val === null || val === undefined) return "NULL";
+    if (typeof val === "number") return String(val);
+    if (typeof val === "boolean") return val ? "1" : "0";
+    const s = String(val)
+      .replace(/\\/g, "\\\\")
+      .replace(/'/g, "\\'")
+      .replace(/\0/g, "\\0")
+      .replace(/\n/g, "\\n")
+      .replace(/\r/g, "\\r")
+      .replace(/\x1a/g, "\\Z");
+    return `'${s}'`;
+  }
+
+  private interpolate(query: string, params?: unknown[]): string {
+    if (!params || params.length === 0) return query;
+    let i = 0;
+    return query.replace(/\?/g, () => this.escape(params[i++]));
+  }
+
   private async sql(query: string, params?: unknown[]): Promise<TiDBResponse> {
-    const body: Record<string, unknown> = { database: this.db, query };
-    if (params) body.params = params;
+    const body: Record<string, unknown> = { database: this.db, query: this.interpolate(query, params) };
 
     const resp = await fetch(this.url, {
       method: "POST",
@@ -83,7 +102,7 @@ export class DirectBackend implements MemoryBackend {
   }
 
   private rowsToMemories(data: TiDBResponse): Memory[] {
-    const cols = data.columns?.map((c) => c.name) ?? [];
+    const cols = data.types?.map((c) => c.name) ?? [];
     return (data.rows ?? []).map((row) => {
       const obj: Record<string, unknown> = {};
       cols.forEach((col, i) => (obj[col] = row[i]));

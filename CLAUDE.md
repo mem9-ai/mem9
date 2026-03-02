@@ -81,3 +81,37 @@ ccplugin/skills/memory-recall/      — Forked skill for on-demand search
 - Tags stored as JSON column, filtered with `JSON_CONTAINS`; empty tags stored as `[]` (not NULL)
 - `POST /api/spaces` has no auth — bootstrap endpoint
 - Direct mode uses `space_id = "default"` for schema compatibility with server mode
+
+## Server mode: token bootstrap
+
+Server mode uses a two-token system. The `userToken` in plugin config must be created once
+manually via the unauthenticated `POST /api/users` bootstrap endpoint.
+
+```bash
+# Step 1: create a user token (no auth required)
+curl -s -X POST http://<server>/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"alice"}' | jq .
+# → { "ok": true, "user_id": "...", "api_token": "mnemo_..." }
+```
+
+Put the returned `api_token` into the plugin config as `userToken`:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "mnemo": {
+        "config": {
+          "apiUrl": "http://<server>",
+          "userToken": "mnemo_..."
+        }
+      }
+    }
+  }
+}
+```
+
+On first tool call, the plugin automatically calls `POST /api/spaces/provision` (authenticated
+with `userToken`) to obtain a workspace-scoped `spaceToken`, which is then used for all memory
+operations. The `userToken` is never sent to memory endpoints directly.
