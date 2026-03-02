@@ -18,9 +18,10 @@ func NewSpaceTokenRepo(db *sql.DB) *SpaceTokenRepo {
 
 func (r *SpaceTokenRepo) CreateToken(ctx context.Context, st *domain.SpaceToken) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO space_tokens (api_token, space_id, space_name, agent_name, agent_type, created_at)
-		 VALUES (?, ?, ?, ?, ?, NOW())`,
+		`INSERT INTO space_tokens (api_token, space_id, space_name, agent_name, agent_type, user_id, workspace_key, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
 		st.APIToken, st.SpaceID, st.SpaceName, st.AgentName, nullString(st.AgentType),
+		st.UserID, st.WorkspaceKey,
 	)
 	if err != nil {
 		return fmt.Errorf("create token: %w", err)
@@ -66,4 +67,22 @@ func (r *SpaceTokenRepo) ListBySpace(ctx context.Context, spaceID string) ([]dom
 		tokens = append(tokens, st)
 	}
 	return tokens, rows.Err()
+}
+
+func (r *SpaceTokenRepo) GetByUserWorkspace(ctx context.Context, userID, workspaceKey string) (*domain.SpaceToken, error) {
+	var st domain.SpaceToken
+	var agentType sql.NullString
+	err := r.db.QueryRowContext(ctx,
+		`SELECT api_token, space_id, space_name, agent_name, agent_type, user_id, workspace_key, created_at
+		 FROM space_tokens WHERE user_id = ? AND workspace_key = ? LIMIT 1`,
+		userID, workspaceKey,
+	).Scan(&st.APIToken, &st.SpaceID, &st.SpaceName, &st.AgentName, &agentType, &st.UserID, &st.WorkspaceKey, &st.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, domain.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get by user workspace: %w", err)
+	}
+	st.AgentType = agentType.String
+	return &st, nil
 }

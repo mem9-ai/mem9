@@ -36,7 +36,11 @@
       },
       "apiToken": {
         "type": "string",
-        "description": "API token (server mode)"
+        "description": "API token (server mode, legacy — space-level token)"
+      },
+      "userToken": {
+        "type": "string",
+        "description": "User token (server mode — enables automatic workspace-based space provisioning)"
       },
       "embedding": {
         "type": "object",

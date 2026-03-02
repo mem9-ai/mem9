@@ -10,12 +10,13 @@ import (
 )
 
 type SpaceService struct {
-	tokens   repository.SpaceTokenRepo
-	memories repository.MemoryRepo
+	tokens     repository.SpaceTokenRepo
+	userTokens repository.UserTokenRepo
+	memories   repository.MemoryRepo
 }
 
-func NewSpaceService(tokens repository.SpaceTokenRepo, memories repository.MemoryRepo) *SpaceService {
-	return &SpaceService{tokens: tokens, memories: memories}
+func NewSpaceService(tokens repository.SpaceTokenRepo, userTokens repository.UserTokenRepo, memories repository.MemoryRepo) *SpaceService {
+	return &SpaceService{tokens: tokens, userTokens: userTokens, memories: memories}
 }
 
 // CreateSpace creates a new space and returns the space ID and the first agent's API token.
@@ -128,7 +129,67 @@ func validateSpaceInput(name, agentName string) error {
 	return nil
 }
 
-// IsNotFound is a convenience to check domain.ErrNotFound.
 func IsNotFound(err error) bool {
 	return errors.Is(err, domain.ErrNotFound)
+}
+
+func (s *SpaceService) CreateUser(ctx context.Context, userName string) (string, string, error) {
+	if userName == "" {
+		return "", "", &domain.ValidationError{Field: "name", Message: "required"}
+	}
+	if len(userName) > 255 {
+		return "", "", &domain.ValidationError{Field: "name", Message: "too long (max 255)"}
+	}
+
+	userID := uuid.New().String()
+	token, err := domain.GenerateToken()
+	if err != nil {
+		return "", "", err
+	}
+
+	ut := &domain.UserToken{
+		APIToken: token,
+		UserID:   userID,
+		UserName: userName,
+	}
+	if err := s.userTokens.CreateToken(ctx, ut); err != nil {
+		return "", "", err
+	}
+	return userID, token, nil
+}
+
+func (s *SpaceService) Provision(ctx context.Context, userID, workspaceKey, agentID string) (string, error) {
+	if workspaceKey == "" {
+		return "", &domain.ValidationError{Field: "workspace_key", Message: "required"}
+	}
+	if agentID == "" {
+		return "", &domain.ValidationError{Field: "agent_id", Message: "required"}
+	}
+
+	existing, err := s.tokens.GetByUserWorkspace(ctx, userID, workspaceKey)
+	if err == nil {
+		return existing.APIToken, nil
+	}
+	if !errors.Is(err, domain.ErrNotFound) {
+		return "", err
+	}
+
+	spaceID := uuid.New().String()
+	token, err := domain.GenerateToken()
+	if err != nil {
+		return "", err
+	}
+
+	st := &domain.SpaceToken{
+		APIToken:     token,
+		SpaceID:      spaceID,
+		SpaceName:    workspaceKey,
+		AgentName:    agentID,
+		UserID:       userID,
+		WorkspaceKey: workspaceKey,
+	}
+	if err := s.tokens.CreateToken(ctx, st); err != nil {
+		return "", err
+	}
+	return token, nil
 }

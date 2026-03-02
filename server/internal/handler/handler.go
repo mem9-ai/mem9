@@ -45,17 +45,22 @@ func (s *Server) Router(authMW, rateLimitMW func(http.Handler) http.Handler) htt
 	// Create space — no auth (bootstrap endpoint).
 	r.Post("/api/spaces", s.createSpace)
 
+	// Create user — no auth (bootstrap endpoint).
+	r.Post("/api/users", s.createUser)
+
 	// Authenticated routes.
 	r.Group(func(r chi.Router) {
 		r.Use(authMW)
 
 		// Space management.
+		r.Post("/api/spaces/provision", s.provisionSpace)
 		r.Post("/api/spaces/{spaceID}/tokens", s.addToken)
 		r.Get("/api/spaces/{spaceID}/info", s.getSpaceInfo)
 
 		// Memory CRUD.
 		r.Post("/api/memories", s.createMemory)
 		r.Get("/api/memories", s.listMemories)
+		r.Get("/api/memories/bootstrap", s.bootstrapMemories)
 		r.Post("/api/memories/bulk", s.bulkCreateMemories)
 		r.Get("/api/memories/{id}", s.getMemory)
 		r.Put("/api/memories/{id}", s.updateMemory)
@@ -86,6 +91,8 @@ func (s *Server) handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		respondError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, domain.ErrWriteConflict):
+		respondError(w, http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, domain.ErrConflict):
 		respondError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, domain.ErrDuplicateKey):

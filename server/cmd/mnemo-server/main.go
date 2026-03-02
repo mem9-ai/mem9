@@ -51,13 +51,14 @@ func main() {
 	// Repositories.
 	memoryRepo := tidb.NewMemoryRepo(db, cfg.EmbedAutoModel)
 	tokenRepo := tidb.NewSpaceTokenRepo(db)
+	userTokenRepo := tidb.NewUserTokenRepo(db)
 
 	// Services.
 	memorySvc := service.NewMemoryService(memoryRepo, embedder, cfg.EmbedAutoModel)
-	spaceSvc := service.NewSpaceService(tokenRepo, memoryRepo)
+	spaceSvc := service.NewSpaceService(tokenRepo, userTokenRepo, memoryRepo)
 
 	// Middleware.
-	authMW := middleware.Auth(tokenRepo)
+	authMW := middleware.Auth(tokenRepo, userTokenRepo)
 	rl := middleware.NewRateLimiter(cfg.RateLimit, cfg.RateBurst)
 	defer rl.Stop()
 	rateMW := rl.Middleware()

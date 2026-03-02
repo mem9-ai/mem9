@@ -32,9 +32,7 @@ func NewMemoryService(memories repository.MemoryRepo, embedder *embed.Embedder, 
 	return &MemoryService{memories: memories, embedder: embedder, autoModel: autoModel}
 }
 
-// Create stores a new memory. If keyName is provided and already exists, it upserts
-// atomically via INSERT ... ON DUPLICATE KEY UPDATE to avoid race conditions.
-func (s *MemoryService) Create(ctx context.Context, spaceID, agentName, content, keyName string, tags []string, metadata json.RawMessage) (*domain.Memory, error) {
+func (s *MemoryService) Create(ctx context.Context, spaceID, agentName, content, keyName string, tags []string, metadata json.RawMessage, clock map[string]uint64, writeID string) (*domain.WriteResult, error) {
 	if err := validateMemoryInput(content, keyName, tags); err != nil {
 		return nil, err
 	}
@@ -50,37 +48,123 @@ func (s *MemoryService) Create(ctx context.Context, spaceID, agentName, content,
 
 	now := time.Now()
 	m := &domain.Memory{
-		ID:        uuid.New().String(),
-		SpaceID:   spaceID,
-		Content:   content,
-		KeyName:   keyName,
-		Source:    agentName,
-		Tags:      tags,
-		Metadata:  metadata,
-		Embedding: embedding,
-		Version:   1,
-		UpdatedBy: agentName,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          uuid.New().String(),
+		SpaceID:     spaceID,
+		Content:     content,
+		KeyName:     keyName,
+		Source:      agentName,
+		Tags:        tags,
+		Metadata:    metadata,
+		Embedding:   embedding,
+		Version:     1,
+		UpdatedBy:   agentName,
+		OriginAgent: agentName,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		WriteID:     writeID,
 	}
 
+	if clock != nil {
+		return s.createWithClock(ctx, spaceID, agentName, keyName, m, clock)
+	}
+
+	return s.createLWW(ctx, spaceID, keyName, m)
+}
+
+func (s *MemoryService) createLWW(ctx context.Context, spaceID, keyName string, m *domain.Memory) (*domain.WriteResult, error) {
 	if keyName != "" {
-		// Atomic upsert: INSERT ... ON DUPLICATE KEY UPDATE.
 		if err := s.memories.Upsert(ctx, m); err != nil {
 			return nil, err
 		}
-		// Re-read to get the actual state (version may have been incremented by ON DUPLICATE KEY).
 		existing, err := s.memories.GetByKey(ctx, spaceID, keyName)
 		if err != nil {
-			return m, nil
+			return &domain.WriteResult{Memory: m}, nil
 		}
-		return existing, nil
+		return &domain.WriteResult{Memory: existing}, nil
 	}
 
 	if err := s.memories.Create(ctx, m); err != nil {
 		return nil, err
 	}
-	return m, nil
+	return &domain.WriteResult{Memory: m}, nil
+}
+
+func (s *MemoryService) createWithClock(ctx context.Context, spaceID, agentName, keyName string, incoming *domain.Memory, clock map[string]uint64) (*domain.WriteResult, error) {
+	if keyName == "" {
+		incoming.VectorClock = clock
+		if err := s.memories.Create(ctx, incoming); err != nil {
+			return nil, err
+		}
+		return &domain.WriteResult{Memory: incoming, Winner: agentName}, nil
+	}
+
+	isSectionMerge := false
+
+	decide := func(existing *domain.Memory) (*domain.Memory, bool, error) {
+		if existing == nil {
+			incoming.VectorClock = clock
+			return incoming, false, nil
+		}
+
+		existingClock := existing.VectorClock
+		if existingClock == nil {
+			existingClock = make(map[string]uint64)
+		}
+
+		rel := CompareClocks(clock, existingClock)
+		merged := MergeVectorClocks(clock, existingClock)
+
+		switch rel {
+		case ClockDominates:
+			incoming.VectorClock = merged
+			return incoming, false, nil
+
+		case ClockDominated, ClockEqual:
+			return nil, true, nil
+
+		case ClockConcurrent:
+			mergedMeta, mergedContent, canMerge := MergeSectionMetadata(
+				existing.Metadata, incoming.Metadata, incoming.OriginAgent,
+			)
+			if canMerge {
+				incoming.Metadata = mergedMeta
+				incoming.Content = mergedContent
+				incoming.VectorClock = merged
+				isSectionMerge = true
+				return incoming, false, nil
+			}
+
+			incomingCandidate := &WriteCandidate{ID: incoming.ID, OriginAgent: incoming.OriginAgent}
+			existingCandidate := &WriteCandidate{ID: existing.ID, OriginAgent: existing.OriginAgent}
+			winner := TieBreak(incomingCandidate, existingCandidate)
+
+			if winner.ID == incoming.ID {
+				incoming.VectorClock = merged
+				return incoming, false, nil
+			}
+			return nil, true, nil
+
+		default:
+			return nil, true, nil
+		}
+	}
+
+	mem, dominated, err := s.memories.CRDTUpsert(ctx, spaceID, keyName, incoming, decide)
+	if err != nil {
+		return nil, err
+	}
+
+	winner := agentName
+	if dominated && mem != nil {
+		winner = mem.OriginAgent
+	}
+
+	return &domain.WriteResult{
+		Memory:    mem,
+		Dominated: dominated,
+		Winner:    winner,
+		Merged:    isSectionMerge,
+	}, nil
 }
 
 // Get returns a single memory by ID.
@@ -307,9 +391,18 @@ func (s *MemoryService) Update(ctx context.Context, spaceID, agentName, id, cont
 	return updated, nil
 }
 
-// Delete removes a memory.
-func (s *MemoryService) Delete(ctx context.Context, spaceID, id string) error {
-	return s.memories.Delete(ctx, spaceID, id)
+func (s *MemoryService) Delete(ctx context.Context, spaceID, id, agentName string) error {
+	return s.memories.SoftDelete(ctx, spaceID, id, agentName)
+}
+
+func (s *MemoryService) Bootstrap(ctx context.Context, spaceID string, limit int) ([]domain.Memory, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	return s.memories.ListBootstrap(ctx, spaceID, limit)
 }
 
 // BulkCreate creates multiple memories at once.

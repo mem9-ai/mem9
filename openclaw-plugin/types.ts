@@ -8,6 +8,11 @@ export interface PluginConfig {
   // Server mode (apiUrl present → server)
   apiUrl?: string;
   apiToken?: string;
+  userToken?: string;
+
+  // Agent identity for CRDT vector clock (server mode only).
+  // Defaults to "agent" if not set. Overridden by ctx.agentId at runtime.
+  agentName?: string;
 
   // Auto-embedding via TiDB EMBED_TEXT() — takes priority over client-side embedding.
   // Example: "tidbcloud_free/amazon/titan-embed-text-v2"
@@ -37,6 +42,9 @@ export interface Memory {
   created_at: string;
   updated_at: string;
   score?: number;
+  clock?: Record<string, number> | null;
+  origin_agent?: string | null;
+  tombstone?: boolean;
 }
 
 export interface SearchResult {
@@ -52,6 +60,8 @@ export interface CreateMemoryInput {
   source?: string;
   tags?: string[];
   metadata?: Record<string, unknown>;
+  clock?: Record<string, number>;
+  write_id?: string;
 }
 
 export interface UpdateMemoryInput {
