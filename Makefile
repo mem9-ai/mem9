@@ -1,4 +1,4 @@
-.PHONY: build vet clean run test test-integration check-schema
+.PHONY: build vet clean run test test-integration docker
 
 build:
 	cd server && go build -o mnemo-server ./cmd/mnemo-server
@@ -21,5 +21,3 @@ run: build
 docker:
 	docker build -t mnemo-server ./server
 
-check-schema:
-	@scripts/check-schema.sh

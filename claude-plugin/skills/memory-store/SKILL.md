@@ -9,15 +9,7 @@ You are a memory storage agent for the mnemo shared memory system. Your job is t
 
 ## Environment
 
-Mnemo supports two modes (auto-detected):
-
-**Direct mode** (TiDB Serverless):
-- `MNEMO_DB_HOST` — the TiDB host
-- `MNEMO_DB_USER` — username
-- `MNEMO_DB_PASS` — password
-- `MNEMO_DB_NAME` — database name (default: mnemos)
-
-**Server mode** (mnemo-server):
+Mnemo uses server mode (mnemo-server):
 - `MNEMO_API_URL` — the server base URL
 - `MNEMO_API_TOKEN` — the authentication token
 
@@ -34,19 +26,18 @@ Mnemo supports two modes (auto-detected):
 source "$(find ~ -path '*/mnemos/claude-plugin/hooks/common.sh' -print -quit 2>/dev/null || echo /dev/null)"
 
 # Store the memory
-mnemo_post_memory '{"content":"THE MEMORY CONTENT HERE","tags":["tag1","tag2"],"source":"claude-code","key":"optional-unique-key"}'
+mnemo_post_memory '{"content":"THE MEMORY CONTENT HERE","tags":["tag1","tag2"],"source":"claude-code"}'
 ```
 
 If common.sh isn't available, use direct curl:
 
 ```bash
-# Direct mode (TiDB HTTP Data API):
-SQL="INSERT INTO memories (id, space_id, content, key_name, source, tags, version, updated_by) VALUES ('$(python3 -c \"import uuid; print(uuid.uuid4())\")', 'default', 'THE MEMORY CONTENT', 'optional-key', 'claude-code', '[\"tag1\",\"tag2\"]', 1, 'claude-code')"
-
-curl -sf -u "${MNEMO_DB_USER}:${MNEMO_DB_PASS}" \
+# Server mode (mnemo-server REST API):
+curl -sf --max-time 8 \
+  -H "Authorization: Bearer ${MNEMO_API_TOKEN}" \
   -H "Content-Type: application/json" \
-  -d "$(python3 -c "import json; print(json.dumps({'database': '${MNEMO_DB_NAME:-mnemos}', 'query': '''$SQL'''}))")" \
-  "https://http-${MNEMO_DB_HOST}/v1beta/sql"
+  -d '{"content":"THE MEMORY CONTENT","tags":["tag1","tag2"],"source":"claude-code"}' \
+  "${MNEMO_API_URL}/api/memories"
 ```
 
 4. **Confirm**: Tell the user what was saved. Be specific about the content stored.
@@ -54,6 +45,5 @@ curl -sf -u "${MNEMO_DB_USER}:${MNEMO_DB_PASS}" \
 ## Guidelines
 
 - Keep memory content concise but complete — include specific values (IPs, versions, names)
-- Use a `key` field for memories that should be unique (e.g., `server-ip-analytics` so it can be updated later)
 - Set `source` to `claude-code`
 - If the user says "remember X", "note down X", "save X for later" — this is your cue

@@ -2,14 +2,12 @@
 
 ## What is this repo?
 
-mnemos is cloud-persistent memory for AI agents. Two modes, one plugin:
-- **Direct mode**: Plugin → TiDB Serverless (zero deployment)
-- **Server mode**: Plugin → mnemo-server (Go) → TiDB/MySQL (multi-agent, space isolation)
+mnemos is cloud-persistent memory for AI agents. Plugins connect to mnemo-server (Go) for multi-agent, space-isolated memory with hybrid vector + keyword search.
 
 Three components:
 - `server/` — Go REST API (chi router, TiDB/MySQL, optional embedding)
-- `openclaw-plugin/` — Agent plugin for OpenClaw (direct + server backends)
-- `claude-plugin/` — Claude Code plugin (bash hooks + skills, mode-aware)
+- `openclaw-plugin/` — Agent plugin for OpenClaw (server backend)
+- `claude-plugin/` — Claude Code plugin (bash hooks + skills)
 
 ## Commands
 
@@ -40,15 +38,13 @@ server/internal/repository/         — Repository interfaces + TiDB SQL (vector
 server/internal/service/            — Business logic: upsert, LWW, hybrid search, embedding on write
 server/schema.sql                   — Database DDL (memories with VECTOR column + space_tokens)
 
-openclaw-plugin/index.ts            — Tool registration (mode-agnostic via MemoryBackend interface)
+openclaw-plugin/index.ts            — Tool registration via MemoryBackend interface
 openclaw-plugin/backend.ts          — MemoryBackend interface (store/search/get/update/remove)
-openclaw-plugin/direct-backend.ts   — Direct mode: @tidbcloud/serverless + hybrid search
 openclaw-plugin/server-backend.ts   — Server mode: fetch → mnemo API
-openclaw-plugin/embedder.ts         — OpenAI-compatible embedding provider
-openclaw-plugin/schema.ts           — Auto schema init with VECTOR column
+openclaw-plugin/hooks.ts            — Lifecycle hooks (auto-recall, auto-capture, compact/reset)
 openclaw-plugin/types.ts            — Shared TypeScript types
 
-claude-plugin/hooks/common.sh            — Mode detection + helpers (direct: TiDB HTTP API, server: REST)
+claude-plugin/hooks/common.sh            — Server helpers (REST API calls)
 claude-plugin/hooks/session-start.sh     — Load recent memories → additionalContext
 claude-plugin/hooks/stop.sh              — Save last response as memory
 claude-plugin/hooks/user-prompt-submit.sh — System hint about available memory
@@ -67,7 +63,7 @@ claude-plugin/skills/memory-store/       — On-demand save skill
 
 ## Key design decisions
 
-- **Two modes, one plugin**: `host` in config → direct, `apiUrl` → server. No explicit mode field.
+- **Server-only architecture**: All plugins connect to mnemo-server via REST API. No direct DB access from plugins.
 - **Plugin over skill**: Memory uses `kind: "memory"` plugin (automatic) not skill (agent-dependent)
 - **Hooks over MCP tools**: Claude Code memory is via lifecycle hooks (guaranteed) not tools (optional)
 - **Hybrid search**: Vector + keyword with graceful degradation. No embedder → keyword only.
@@ -81,8 +77,6 @@ claude-plugin/skills/memory-store/       — On-demand save skill
 - Version increment is atomic in SQL: `SET version = version + 1`
 - Tags stored as JSON column, filtered with `JSON_CONTAINS`; empty tags stored as `[]` (not NULL)
 - `POST /api/spaces` has no auth — bootstrap endpoint
-- Direct mode uses `space_id = "default"` (single-tenant, no isolation needed)
-- **Direct/server schemas are intentionally independent**: direct-mode schema (`openclaw-plugin/schema.ts`, `opencode-plugin/src/direct-backend.ts`, `claude-plugin/hooks/common.sh`) carries only columns direct-mode actually uses. Server-mode schema (`server/schema.sql`) carries CRDT columns because the Go server needs them. The two schemas evolve independently — no compatibility obligation. Pointing a direct-mode plugin at a server-mode database is not a supported path.
 
 ## Server mode: token bootstrap
 
@@ -127,9 +121,8 @@ If a user asks to install or set up the claude-plugin, read `claude-plugin/READM
 1. In Claude Code: `/plugin marketplace add qiffang/mnemos`
 2. Then: `/plugin install mnemo-memory@mnemos`
 3. Accept the hook permissions when prompted
-4. Add database credentials to `~/.claude/settings.json` under `env`:
-   - **Direct mode** (default): set `MNEMO_DB_HOST`, `MNEMO_DB_USER`, `MNEMO_DB_PASS`, `MNEMO_DB_NAME`
-   - **Server mode**: set `MNEMO_API_URL` and `MNEMO_API_TOKEN`
+4. Add server credentials to `~/.claude/settings.json` under `env`:
+   - Set `MNEMO_API_URL` and `MNEMO_API_TOKEN`
 5. Restart Claude Code
 
 **Manual install (alternative):**
@@ -137,7 +130,6 @@ If a user asks to install or set up the claude-plugin, read `claude-plugin/READM
 1. `chmod +x claude-plugin/hooks/*.sh`
 2. Copy skills: `cp -r claude-plugin/skills/memory-{recall,store} ~/.claude/skills/`
 3. Add `env` + `hooks` entries to `~/.claude/settings.json` (see `claude-plugin/README.md` for full config)
-4. Direct mode only: hooks auto-create the `mnemos.memories` table on first run
 
 ## Installing the OpenCode plugin
 
@@ -146,10 +138,8 @@ If a user asks to install mnemo for OpenCode, read `opencode-plugin/README.md` f
 **npm plugin (recommended):**
 
 1. Add to `opencode.json`: `{"plugin": ["mnemo-opencode"]}`
-2. Set env vars:
-   - **Direct mode** (default): `MNEMO_DB_HOST`, `MNEMO_DB_USER`, `MNEMO_DB_PASS`
-   - **Server mode**: `MNEMO_API_URL` and `MNEMO_API_TOKEN`
-3. Restart OpenCode — plugin auto-installs from npm and logs `[mnemo] Direct mode...` or `[mnemo] Server mode...`
+2. Set env vars: `MNEMO_API_URL` and `MNEMO_API_TOKEN`
+3. Restart OpenCode — plugin auto-installs from npm and logs `[mnemo] Server mode...`
 
 **From source (alternative):**
 
@@ -165,6 +155,5 @@ If a user asks to install mnemo for OpenClaw, read `openclaw-plugin/README.md` f
 2. Add to `openclaw.json`:
    - Set `plugins.slots.memory` to `"mnemo"`
    - Add `plugins.entries.mnemo` with `enabled: true` and config
-   - **Direct mode** (default): set `host`, `username`, `password` in config
-   - **Server mode**: set `apiUrl`, `apiToken` in config
+   - Set `apiUrl` and `userToken` in config
 3. Plugin is `kind: "memory"` — OpenClaw framework manages the lifecycle automatically

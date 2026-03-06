@@ -2,46 +2,32 @@
 
 Persistent memory for Claude Code — auto-loads memories on session start, auto-saves on stop, with on-demand store/recall skills.
 
-> **For AI agents**: If a user asks you to install this plugin, follow the Quick Start below. Use TiDB Cloud Zero for instant setup with no signup required.
+> **For AI agents**: If a user asks you to install this plugin, follow the Quick Start below.
 
-## 🚀 Quick Start (30 seconds with TiDB Cloud Zero)
+## 🚀 Quick Start (Server mode)
 
-**Zero signup. Zero config. Instant database.**
+**Connect to a running mnemo-server instance.**
 
 ```bash
-# 1. Get a free database instantly (no account needed)
-curl -s -X POST https://zero.tidbapi.com/v1alpha1/instances \
-  -H "Content-Type: application/json" \
-  -d '{"tag":"mnemos-claude"}' | tee /tmp/tidb-zero.json | jq .
-
-# 2. Extract credentials
-MNEMO_DB_HOST=$(jq -r '.instance.connection.host' /tmp/tidb-zero.json)
-MNEMO_DB_USER=$(jq -r '.instance.connection.username' /tmp/tidb-zero.json)
-MNEMO_DB_PASS=$(jq -r '.instance.connection.password' /tmp/tidb-zero.json)
-
-# 3. Add to ~/.claude/settings.json
+# 1. Add to ~/.claude/settings.json
 cat << EOF
 Add this to your ~/.claude/settings.json:
 
 {
   "env": {
-    "MNEMO_DB_HOST": "$MNEMO_DB_HOST",
-    "MNEMO_DB_USER": "$MNEMO_DB_USER",
-    "MNEMO_DB_PASS": "$MNEMO_DB_PASS",
-    "MNEMO_DB_NAME": "test"
+    "MNEMO_API_URL": "http://your-server:8080",
+    "MNEMO_API_TOKEN": "mnemo_your_token_here"
   }
 }
 EOF
 
-# 4. Install plugin via marketplace
+# 2. Install plugin via marketplace
 # In Claude Code, run:
 #   /plugin marketplace add qiffang/mnemos
 #   /plugin install mnemo-memory@mnemos
 ```
 
 **That's it!** Restart Claude Code and your agent now has persistent cloud memory.
-
-> ⏰ **Note**: TiDB Cloud Zero instances expire in 30 days. To keep your data permanently, visit the `claimUrl` in the response to convert to a free TiDB Starter account.
 
 ---
 
@@ -68,10 +54,7 @@ Three lifecycle hooks + two skills:
 ## Prerequisites
 
 - Claude Code installed
-- **One** of the following backends:
-  - A [TiDB Starter](https://tidbcloud.com) cluster (free tier) — **Direct mode** (default, recommended)
-  - [TiDB Cloud Zero](https://zero.tidbcloud.com) — instant database, no signup (see Quick Start above)
-  - A running [mnemo-server](../server/) instance — **Server mode** (for teams / multi-agent setups)
+- A running [mnemo-server](../server/) instance
 
 ## Installation
 
@@ -97,22 +80,7 @@ Claude Code will prompt you to approve the hooks. Accept to enable automatic mem
 
 #### Step 3: Configure credentials
 
-Add your database credentials to `~/.claude/settings.json`:
-
-**Direct Mode (TiDB Starter — default, recommended):**
-
-```json
-{
-  "env": {
-    "MNEMO_DB_HOST": "<your-tidb-host>",
-    "MNEMO_DB_USER": "<your-tidb-username>",
-    "MNEMO_DB_PASS": "<your-tidb-password>",
-    "MNEMO_DB_NAME": "mnemos"
-  }
-}
-```
-
-**Server Mode (mnemo-server):**
+Add your server credentials to `~/.claude/settings.json`:
 
 ```json
 {
@@ -123,13 +91,9 @@ Add your database credentials to `~/.claude/settings.json`:
 }
 ```
 
-The plugin auto-detects the mode:
-- `MNEMO_DB_HOST` set → **Direct mode**
-- `MNEMO_API_URL` set → **Server mode**
-
 #### Step 4: Restart Claude Code
 
-Restart to activate the plugin. On the first session, the hooks will auto-create the `mnemos.memories` table (Direct mode only).
+Restart to activate the plugin.
 
 #### Updating
 
@@ -172,10 +136,8 @@ Add the `env` and `hooks` sections (merge with existing config):
 ```json
 {
   "env": {
-    "MNEMO_DB_HOST": "<your-tidb-host>",
-    "MNEMO_DB_USER": "<your-tidb-username>",
-    "MNEMO_DB_PASS": "<your-tidb-password>",
-    "MNEMO_DB_NAME": "mnemos"
+    "MNEMO_API_URL": "http://your-server:8080",
+    "MNEMO_API_TOKEN": "mnemo_your_token_here"
   },
   "hooks": {
     "SessionStart": [
@@ -215,25 +177,7 @@ Add the `env` and `hooks` sections (merge with existing config):
 
 Replace `<PLUGIN_DIR>` with the actual absolute path (e.g. `/home/you/mnemos/claude-plugin`).
 
-For **Server mode**, replace the `env` block with `MNEMO_API_URL` and `MNEMO_API_TOKEN` instead.
-
-#### 5. Create the database (Direct mode only)
-
-The hooks auto-create the table on first run, but you can do it manually:
-
-```bash
-curl -sf --max-time 10 \
-  -u "<USER>:<PASS>" \
-  -H "Content-Type: application/json" \
-  -d '{"database":"test","query":"CREATE DATABASE IF NOT EXISTS mnemos"}' \
-  "https://http-<HOST>/v1beta/sql"
-```
-
-> **Note**: The TiDB Serverless HTTP API ignores the `database` field. All SQL in the hooks uses fully-qualified table names (`mnemos.memories`) to work around this.
-
-For **Server mode**, the mnemo-server handles database setup — skip this step.
-
-#### 6. Verify
+#### 5. Verify
 
 ```bash
 claude -p "say hi"
@@ -275,6 +219,5 @@ claude-plugin/
 |---|---|---|
 | Claude hangs on startup | Hook script path wrong or not executable | Check paths in `settings.json`, run `chmod +x` on hook scripts |
 | Memories not saving | Stop hook only fires on normal session end | Use `/memory-store` for on-demand saves |
-| `database` field ignored | TiDB Serverless HTTP API limitation | Already handled — hooks use `mnemos.memories` (fully-qualified) |
-| Plugin not loading after marketplace install | Credentials not configured | Add `env` block to `~/.claude/settings.json` with DB or API credentials |
+| Plugin not loading after marketplace install | Credentials not configured | Add `env` block to `~/.claude/settings.json` with API credentials |
 | Hook approval prompt | Normal for marketplace plugins | Accept the hook permissions when prompted |

@@ -1,80 +1,22 @@
 {
   "id": "mnemo",
   "name": "Mnemo Memory",
-  "description": "AI agent memory — direct (TiDB Serverless) or server (mnemo-server) mode. Hybrid vector + keyword search.",
+  "description": "AI agent memory — server mode (mnemo-server). Hybrid vector + keyword search.",
   "kind": "memory",
   "configSchema": {
     "type": "object",
     "properties": {
-      "host": {
-        "type": "string",
-        "description": "TiDB Serverless host (direct mode)"
-      },
-      "username": {
-        "type": "string",
-        "description": "TiDB username (direct mode)"
-      },
-      "password": {
-        "type": "string",
-        "description": "TiDB password (direct mode)"
-      },
-      "database": {
-        "type": "string",
-        "description": "Database name (direct mode, default: mnemos)"
-      },
-      "autoEmbedModel": {
-        "type": "string",
-        "description": "TiDB auto-embedding model (e.g. tidbcloud_free/amazon/titan-embed-text-v2). Takes priority over client-side embedding."
-      },
-      "autoEmbedDims": {
-        "type": "number",
-        "description": "Auto-embedding vector dimensions (default: 1024)"
-      },
       "apiUrl": {
         "type": "string",
         "description": "mnemo-server URL (server mode)"
       },
       "userToken": {
         "type": "string",
-        "description": "User token (server mode — enables automatic workspace-based space provisioning)"
-      },
-      "embedding": {
-        "type": "object",
-        "description": "Embedding provider config (optional — omit for keyword-only search)",
-        "properties": {
-          "apiKey": {
-            "type": "string",
-            "description": "OpenAI key or 'local' for Ollama"
-          },
-          "baseUrl": {
-            "type": "string",
-            "description": "Custom endpoint (e.g. http://localhost:11434/v1)"
-          },
-          "model": {
-            "type": "string",
-            "description": "Model name (default: text-embedding-3-small)"
-          },
-          "dims": {
-            "type": "number",
-            "description": "Vector dimensions (default: 1536)"
-          }
-        }
+        "description": "User token (enables automatic workspace-based space provisioning)"
       }
     }
   },
   "uiHints": {
-    "host": {
-      "label": "TiDB Host",
-      "placeholder": "gateway01.us-east-1.prod.aws.tidbcloud.com"
-    },
-    "username": {
-      "label": "Username",
-      "placeholder": "xxx.root"
-    },
-    "password": {
-      "label": "Password",
-      "sensitive": true
-    },
     "apiUrl": {
       "label": "Server URL",
       "placeholder": "https://your-server.example.com"

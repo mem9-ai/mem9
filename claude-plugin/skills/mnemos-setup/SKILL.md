@@ -1,53 +1,47 @@
 ---
 name: mnemos-setup
-description: "Setup mnemos persistent memory with TiDB Cloud Zero (instant, no signup) or your own database. Triggers: set up mnemos, install mnemo, configure memory."
+description: "Setup mnemos persistent memory with mnemo-server. Triggers: set up mnemos, install mnemo, configure memory."
 context: fork
 allowed-tools: Bash
 ---
 
 # mnemos Setup for Claude Code
 
-**Persistent memory for Claude Code.** This skill helps you set up mnemos.
+**Persistent memory for Claude Code.** This skill helps you set up mnemos with a mnemo-server instance.
 
-## 🚀 Quick Start — TiDB Cloud Zero (Recommended)
+## Prerequisites
 
-**Zero signup. Zero config. Instant database.**
+You need a running mnemo-server instance. See [server README](https://github.com/qiffang/mnemos/tree/main/server) for deployment instructions.
 
-### Step 1: Provision database
+## Setup Steps
 
-Run this command:
+### Step 1: Get your API credentials
+
+You need `MNEMO_API_URL` and `MNEMO_API_TOKEN` from your mnemo-server administrator.
+
+If you're setting up a new server:
 
 ```bash
-curl -s -X POST https://zero.tidbapi.com/v1alpha1/instances \
+# Deploy server (requires a TiDB/MySQL database)
+cd server && MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
+
+# Create a tenant and get a token
+curl -s -X POST http://localhost:8080/api/tenants/register \
   -H "Content-Type: application/json" \
-  -d '{"tag":"mnemos-claude"}' | tee /tmp/tidb-zero.json | jq .
+  -d '{"name":"my-tenant","agent_name":"claude-code","agent_type":"claude_code"}' | jq .
 ```
 
-### Step 2: Extract and display credentials
+### Step 2: Configure credentials
 
-```bash
-MNEMO_DB_HOST=$(jq -r '.instance.connection.host' /tmp/tidb-zero.json)
-MNEMO_DB_USER=$(jq -r '.instance.connection.username' /tmp/tidb-zero.json)
-MNEMO_DB_PASS=$(jq -r '.instance.connection.password' /tmp/tidb-zero.json)
-CLAIM_URL=$(jq -r '.instance.claimInfo.claimUrl' /tmp/tidb-zero.json)
+Add to `~/.claude/settings.json`:
 
-cat << EOF
-
-✅ Database provisioned! Add this to ~/.claude/settings.json:
-
+```json
 {
   "env": {
-    "MNEMO_DB_HOST": "$MNEMO_DB_HOST",
-    "MNEMO_DB_USER": "$MNEMO_DB_USER",
-    "MNEMO_DB_PASS": "$MNEMO_DB_PASS",
-    "MNEMO_DB_NAME": "test"
+    "MNEMO_API_URL": "http://your-server:8080",
+    "MNEMO_API_TOKEN": "mnemo_your_token_here"
   }
 }
-
-⏰ Instance expires in 30 days.
-   To keep your data permanently, visit: $CLAIM_URL
-
-EOF
 ```
 
 ### Step 3: Install plugin
@@ -61,14 +55,6 @@ Tell the user to run in Claude Code:
 ### Step 4: Restart Claude Code
 
 Tell the user to restart Claude Code to activate the plugin.
-
-## Alternative: User's Own Database
-
-If the user already has a TiDB or MySQL database:
-
-1. Ask for their connection credentials (host, username, password)
-2. Help them add the `env` block to `~/.claude/settings.json`
-3. Install the plugin via marketplace
 
 ## Verification
 

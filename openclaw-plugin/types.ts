@@ -1,10 +1,4 @@
 export interface PluginConfig {
-  // Direct mode (host present → direct)
-  host?: string;
-  username?: string;
-  password?: string;
-  database?: string;
-
   // Server mode (apiUrl present → server)
   apiUrl?: string;
   apiToken?: string;
@@ -16,29 +10,13 @@ export interface PluginConfig {
   // Defaults to "agent" if not set. Overridden by ctx.agentId at runtime.
   agentName?: string;
 
-  // Auto-embedding via TiDB EMBED_TEXT() — takes priority over client-side embedding.
-  // Example: "tidbcloud_free/amazon/titan-embed-text-v2"
-  autoEmbedModel?: string;
-  autoEmbedDims?: number;
-
-  // Client-side embedding provider (optional — omit for keyword-only search)
-  embedding?: EmbedConfig;
-
   // Ingest: size-aware message selection for smart pipeline
   maxIngestBytes?: number;
-}
-
-export interface EmbedConfig {
-  apiKey?: string;
-  baseUrl?: string;
-  model?: string;
-  dims?: number;
 }
 
 export interface Memory {
   id: string;
   content: string;
-  key?: string | null;  // direct-mode only — server mode ignores this field
   source?: string | null;
   tags?: string[] | null;
   metadata?: Record<string, unknown> | null;
@@ -64,7 +42,6 @@ export interface SearchResult {
 
 export interface CreateMemoryInput {
   content: string;
-  key?: string;    // direct-mode only — server mode ignores this field
   source?: string;
   tags?: string[];
   metadata?: Record<string, unknown>;
@@ -72,7 +49,6 @@ export interface CreateMemoryInput {
 
 export interface UpdateMemoryInput {
   content?: string;
-  key?: string;    // direct-mode only — server mode ignores this field
   source?: string;
   tags?: string[];
   metadata?: Record<string, unknown>;
@@ -82,7 +58,6 @@ export interface SearchInput {
   q?: string;
   tags?: string;
   source?: string;
-  key?: string;
   limit?: number;
   offset?: number;
 }

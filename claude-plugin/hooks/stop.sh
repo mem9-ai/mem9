@@ -65,7 +65,7 @@ fi
 # Determine tags from the working directory.
 project_name=$(basename "${CLAUDE_PROJECT_DIR:-$(pwd)}" 2>/dev/null || echo "unknown")
 
-# Save to mnemo (mode-agnostic).
+# Save to mnemo.
 body=$(MNEMO_SUMMARY="$summary" MNEMO_PROJECT="$project_name" python3 -c "
 import json, os
 payload = {

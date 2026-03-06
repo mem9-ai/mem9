@@ -9,8 +9,7 @@ import type {
 } from "./types.js";
 
 /**
- * MemoryBackend — the abstraction that both direct and server mode implement.
- * All tools call through this interface, making them mode-agnostic.
+ * MemoryBackend — the abstraction that tools and hooks call through.
  */
 export interface MemoryBackend {
   store(input: CreateMemoryInput): Promise<Memory>;
@@ -21,8 +20,7 @@ export interface MemoryBackend {
 
   /**
    * Ingest messages into the smart memory pipeline.
-   * Server mode: POST /api/memories/ingest → LLM extraction + reconciliation.
-   * Direct mode: Falls back to store() with raw content (no LLM).
+   * POST /api/memories/ingest → LLM extraction + reconciliation.
    */
   ingest(input: IngestInput): Promise<IngestResult>;
 }

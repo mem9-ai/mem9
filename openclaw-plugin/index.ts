@@ -1,7 +1,5 @@
 import type { MemoryBackend } from "./backend.js";
-import { DirectBackend } from "./direct-backend.js";
 import { ServerBackend } from "./server-backend.js";
-import { createEmbedder } from "./embedder.js";
 import { registerHooks } from "./hooks.js";
 import type {
   PluginConfig,
@@ -83,57 +81,19 @@ async function provisionSpaceToken(
   return data.space_token;
 }
 
-function createDirectBackend(
-  cfg: PluginConfig,
-  logger: OpenClawPluginApi["logger"]
-): MemoryBackend | null {
-  if (!cfg.username || !cfg.password) {
-    logger.error(
-      "[mnemo] Direct mode requires host, username, and password. Plugin disabled."
-    );
-    return null;
-  }
-  if (cfg.autoEmbedModel) {
-    logger.info(`[mnemo] Direct mode (auto-embedding: ${cfg.autoEmbedModel})`);
-    return new DirectBackend(
-      cfg.host!,
-      cfg.username,
-      cfg.password,
-      cfg.database ?? "mnemos",
-      null,
-      cfg.autoEmbedModel,
-      cfg.autoEmbedDims
-    );
-  }
-  const embedder = createEmbedder(cfg.embedding);
-  const mode = embedder ? "hybrid search" : "keyword-only";
-  logger.info(`[mnemo] Direct mode (${mode})`);
-  return new DirectBackend(
-    cfg.host!,
-    cfg.username,
-    cfg.password,
-    cfg.database ?? "mnemos",
-    embedder
-  );
-}
-
 function buildTools(backend: MemoryBackend): AnyAgentTool[] {
   return [
     {
       name: "memory_store",
       label: "Store Memory",
       description:
-        "Store a memory. If a key is provided and already exists, the memory is updated (upsert). Key-based upsert is only available in direct mode; server mode ignores the key field. Returns the stored memory with its assigned id.",
+        "Store a memory. Returns the stored memory with its assigned id.",
       parameters: {
         type: "object",
         properties: {
           content: {
             type: "string",
             description: "Memory content (required, max 50000 chars)",
-          },
-          key: {
-            type: "string",
-            description: "Optional named key for upsert-style lookup (direct-mode only — server mode ignores this)",
           },
           source: {
             type: "string",
@@ -169,8 +129,7 @@ function buildTools(backend: MemoryBackend): AnyAgentTool[] {
       name: "memory_search",
       label: "Search Memories",
       description:
-        "Search memories using hybrid vector + keyword search when an embedding provider " +
-        "is configured, otherwise keyword-only. Higher score = more relevant.",
+        "Search memories using hybrid vector + keyword search. Higher score = more relevant.",
       parameters: {
         type: "object",
         properties: {
@@ -180,7 +139,6 @@ function buildTools(backend: MemoryBackend): AnyAgentTool[] {
             description: "Comma-separated tags to filter by (AND)",
           },
           source: { type: "string", description: "Filter by source agent" },
-          key: { type: "string", description: "Filter by key name (direct-mode only)" },
           limit: {
             type: "number",
             description: "Max results (default 20, max 200)",
@@ -240,7 +198,6 @@ function buildTools(backend: MemoryBackend): AnyAgentTool[] {
         properties: {
           id: { type: "string", description: "Memory id to update" },
           content: { type: "string", description: "New content" },
-          key: { type: "string", description: "New key name (direct-mode only)" },
           source: { type: "string", description: "New source" },
           tags: {
             type: "array",
@@ -300,87 +257,76 @@ const mnemoPlugin = {
   id: "mnemo",
   name: "Mnemo Memory",
   description:
-    "AI agent memory — direct (TiDB Serverless) or server (mnemo-server) mode with hybrid vector + keyword search.",
+    "AI agent memory — server mode (mnemo-server) with hybrid vector + keyword search.",
 
   register(api: OpenClawPluginApi) {
     const cfg = (api.pluginConfig ?? {}) as PluginConfig;
 
-    if (cfg.host) {
-      const backend = createDirectBackend(cfg, api.logger);
-      if (!backend) return;
-      const tools = buildTools(backend);
-      api.registerTool(() => tools, {
-        names: toolNames,
-      });
-      registerHooks(api, backend, api.logger, { maxIngestBytes: cfg.maxIngestBytes });
-      return;
-    }
-
-    if (cfg.apiUrl) {
-      const configuredToken = cfg.apiToken ?? cfg.userToken;
-      const registerTenant = async (agentName: string): Promise<string> => {
-        const tenantName = cfg.tenantName ?? `${agentName}-tenant`;
-        const backend = new ServerBackend(cfg.apiUrl!, "", agentName);
-        const result = await backend.register(tenantName);
-        const claimUrl = result.claim_url ?? "unknown";
-        api.logger.info(
-          `[mnemo] Auto-registered tenant: ${result.tenant_id}, claim your TiDB instance at: ${claimUrl}`
-        );
-        return result.token;
-      };
-      let registrationPromise: Promise<string> | null = null;
-      const resolveTenantToken = (agentName: string): Promise<string> => {
-        if (configuredToken) return Promise.resolve(configuredToken);
-        if (!registrationPromise) {
-          registrationPromise = registerTenant(agentName);
-        }
-        return registrationPromise;
-      };
-
-      api.logger.info("[mnemo] Server mode (workspace isolation)");
-      const spaceTokenCache = new Map<string, string>();
-
-      const factory: ToolFactory = (ctx: ToolContext) => {
-        const agentId = ctx.agentId ?? cfg.agentName ?? "agent";
-        const workspaceDir = ctx.workspaceDir ?? "default";
-        const cacheKey = `${workspaceDir}::${agentId}`;
-
-        const cached = spaceTokenCache.get(cacheKey);
-        if (cached) {
-          return buildTools(new ServerBackend(cfg.apiUrl!, cached, agentId));
-        }
-
-        const workspaceKey = hashWorkspaceDir(workspaceDir);
-        const backend = new LazyServerBackend(
-          cfg.apiUrl!,
-          () => resolveTenantToken(agentId),
-          workspaceKey,
-          agentId,
-          spaceTokenCache,
-          cacheKey,
-        );
-        return buildTools(backend);
-      };
-
-      api.registerTool(factory, { names: toolNames });
-
-      // Register hooks with a lazy backend for lifecycle memory management.
-      // Uses the default workspace/agent context for hook-triggered operations.
-      const hookBackend = new LazyServerBackend(
-        cfg.apiUrl!,
-        () => resolveTenantToken(cfg.agentName ?? "agent"),
-        hashWorkspaceDir("default"),
-        cfg.agentName ?? "agent",
-        spaceTokenCache,
-        "default::" + (cfg.agentName ?? "agent"),
+    if (!cfg.apiUrl) {
+      api.logger.error(
+        "[mnemo] No apiUrl configured. Set apiUrl in plugin config. Plugin disabled."
       );
-      registerHooks(api, hookBackend, api.logger, { maxIngestBytes: cfg.maxIngestBytes });
       return;
     }
 
-    api.logger.error(
-      "[mnemo] No mode configured. Set host (direct) or apiUrl (server). Plugin disabled."
+    const configuredToken = cfg.apiToken ?? cfg.userToken;
+    const registerTenant = async (agentName: string): Promise<string> => {
+      const tenantName = cfg.tenantName ?? `${agentName}-tenant`;
+      const backend = new ServerBackend(cfg.apiUrl!, "", agentName);
+      const result = await backend.register(tenantName);
+      const claimUrl = result.claim_url ?? "unknown";
+      api.logger.info(
+        `[mnemo] Auto-registered tenant: ${result.tenant_id}, claim your TiDB instance at: ${claimUrl}`
+      );
+      return result.token;
+    };
+    let registrationPromise: Promise<string> | null = null;
+    const resolveTenantToken = (agentName: string): Promise<string> => {
+      if (configuredToken) return Promise.resolve(configuredToken);
+      if (!registrationPromise) {
+        registrationPromise = registerTenant(agentName);
+      }
+      return registrationPromise;
+    };
+
+    api.logger.info("[mnemo] Server mode (workspace isolation)");
+    const spaceTokenCache = new Map<string, string>();
+
+    const factory: ToolFactory = (ctx: ToolContext) => {
+      const agentId = ctx.agentId ?? cfg.agentName ?? "agent";
+      const workspaceDir = ctx.workspaceDir ?? "default";
+      const cacheKey = `${workspaceDir}::${agentId}`;
+
+      const cached = spaceTokenCache.get(cacheKey);
+      if (cached) {
+        return buildTools(new ServerBackend(cfg.apiUrl!, cached, agentId));
+      }
+
+      const workspaceKey = hashWorkspaceDir(workspaceDir);
+      const backend = new LazyServerBackend(
+        cfg.apiUrl!,
+        () => resolveTenantToken(agentId),
+        workspaceKey,
+        agentId,
+        spaceTokenCache,
+        cacheKey,
+      );
+      return buildTools(backend);
+    };
+
+    api.registerTool(factory, { names: toolNames });
+
+    // Register hooks with a lazy backend for lifecycle memory management.
+    // Uses the default workspace/agent context for hook-triggered operations.
+    const hookBackend = new LazyServerBackend(
+      cfg.apiUrl!,
+      () => resolveTenantToken(cfg.agentName ?? "agent"),
+      hashWorkspaceDir("default"),
+      cfg.agentName ?? "agent",
+      spaceTokenCache,
+      "default::" + (cfg.agentName ?? "agent"),
     );
+    registerHooks(api, hookBackend, api.logger, { maxIngestBytes: cfg.maxIngestBytes });
   },
 };
 

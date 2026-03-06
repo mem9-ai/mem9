@@ -10,17 +10,12 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
   return {
     memory_store: tool({
       description:
-        "Store a memory. If a key is provided and already exists, the memory is updated (upsert). " +
-        "Returns the stored memory with its assigned id.",
+        "Store a memory. Returns the stored memory with its assigned id.",
       args: {
         content: tool.schema
           .string()
           .max(50000)
           .describe("Memory content (required, max 50000 chars)"),
-        key: tool.schema
-          .string()
-          .optional()
-          .describe("Optional named key for upsert-style lookup"),
         source: tool.schema
           .string()
           .optional()
@@ -39,7 +34,6 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
         try {
           const input: CreateMemoryInput = {
             content: args.content,
-            key: args.key,
             source: args.source,
             tags: args.tags,
             metadata: args.metadata as Record<string, unknown> | undefined,
@@ -57,8 +51,7 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
 
     memory_search: tool({
       description:
-        "Search memories using hybrid vector + keyword search when an embedding provider " +
-        "is configured, otherwise keyword-only. Higher score = more relevant.",
+        "Search memories using hybrid vector + keyword search. Higher score = more relevant.",
       args: {
         q: tool.schema.string().optional().describe("Search query"),
         tags: tool.schema
@@ -69,7 +62,6 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
           .string()
           .optional()
           .describe("Filter by source agent"),
-        key: tool.schema.string().optional().describe("Filter by key name"),
         limit: tool.schema
           .number()
           .int()
@@ -90,7 +82,6 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
             q: args.q,
             tags: args.tags,
             source: args.source,
-            key: args.key,
             limit: args.limit,
             offset: args.offset,
           };
@@ -132,7 +123,6 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
       args: {
         id: tool.schema.string().describe("Memory id to update"),
         content: tool.schema.string().optional().describe("New content"),
-        key: tool.schema.string().optional().describe("New key name"),
         source: tool.schema.string().optional().describe("New source"),
         tags: tool.schema
           .array(tool.schema.string())
@@ -148,7 +138,6 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
           const { id, ...rest } = args;
           const input: UpdateMemoryInput = {
             content: rest.content,
-            key: rest.key,
             source: rest.source,
             tags: rest.tags,
             metadata: rest.metadata as Record<string, unknown> | undefined,

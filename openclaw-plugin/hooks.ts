@@ -4,7 +4,7 @@
  * Provides automatic memory recall and capture via OpenClaw's hook system:
  * - before_prompt_build: inject relevant memories into every LLM call
  *   (grouped by type: pinned → insights → digests)
- * - after_compaction: invalidate cache so post-compact prompts get fresh memories
+ * - after_compaction: (no-op placeholder for future use)
  * - before_reset: save session context before /reset wipes it
  * - agent_end: auto-capture via smart pipeline with size-aware message selection
  *
@@ -18,7 +18,6 @@ import type { Memory, IngestMessage } from "./types.js";
 // Constants
 // ---------------------------------------------------------------------------
 
-const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes
 const MAX_INJECT = 10; // max memories to inject per prompt
 const MIN_PROMPT_LEN = 5; // skip very short prompts
 const AUTO_CAPTURE_SOURCE = "openclaw-auto";
@@ -32,11 +31,6 @@ const MAX_INGEST_MESSAGES = 20; // absolute cap even if small messages
 // Types
 // ---------------------------------------------------------------------------
 
-interface CacheEntry {
-  memories: Memory[];
-  ts: number;
-  queryHash: string;
-}
 
 /** Minimal logger — matches OpenClaw's PluginLogger shape. */
 interface Logger {
@@ -46,8 +40,7 @@ interface Logger {
 
 /**
  * Hook handler types mirroring OpenClaw's PluginHookHandlerMap.
- * We define them locally to avoid importing OpenClaw types at the module level,
- * keeping the plugin dependency-light for direct consumers.
+ * We define them locally to avoid importing OpenClaw types at the module level.
  */
 interface HookApi {
   on: (hookName: string, handler: (...args: unknown[]) => unknown, opts?: { priority?: number }) => void;
@@ -128,11 +121,10 @@ function formatMemoriesBlock(memories: Memory[]): string {
 
   const formatMem = (m: Memory): string => {
     const tags = m.tags?.length ? ` [${m.tags.join(", ")}]` : "";
-    const key = m.key ? ` (${m.key})` : "";
     const content = m.content.length > MAX_CONTENT_LEN
       ? m.content.slice(0, MAX_CONTENT_LEN) + "..."
       : m.content;
-    return `${idx++}.${key}${tags} ${escapeForPrompt(content)}`;
+    return `${idx++}.${tags} ${escapeForPrompt(content)}`;
   };
 
   if (pinned.length > 0) {
@@ -193,30 +185,6 @@ export function registerHooks(
 ): void {
   const maxIngestBytes = options?.maxIngestBytes ?? DEFAULT_MAX_INGEST_BYTES;
 
-  // Cache scoped to this plugin instance.
-  // NOTE: queryHash is the full prompt string, so cache only hits on exact repeated
-  // prompts within CACHE_TTL_MS. Hit rate is ~0% for normal interactive use;
-  // the TTL exists as a safety net for repeated identical prompts.
-  let memoryCache: CacheEntry | null = null;
-
-  function getCached(prompt: string): Memory[] | null {
-    if (!memoryCache) return null;
-    if (Date.now() - memoryCache.ts > CACHE_TTL_MS) {
-      memoryCache = null;
-      return null;
-    }
-    if (memoryCache.queryHash !== prompt) return null;
-    return memoryCache.memories;
-  }
-
-  function setCache(memories: Memory[], prompt: string): void {
-    memoryCache = { memories, ts: Date.now(), queryHash: prompt };
-  }
-
-  function invalidateCache(): void {
-    memoryCache = null;
-  }
-
   // --------------------------------------------------------------------------
   // before_prompt_build — inject relevant memories into every LLM call
   // --------------------------------------------------------------------------
@@ -228,13 +196,8 @@ export function registerHooks(
         const prompt = evt?.prompt;
         if (!prompt || prompt.length < MIN_PROMPT_LEN) return;
 
-        // Check cache first — avoid querying DB on every turn
-        let memories = getCached(prompt);
-        if (!memories) {
-          const result = await backend.search({ q: prompt, limit: MAX_INJECT });
-          memories = result.data ?? [];
-          setCache(memories, prompt);
-        }
+        const result = await backend.search({ q: prompt, limit: MAX_INJECT });
+        const memories = result.data ?? [];
 
         if (memories.length === 0) return;
 
@@ -252,11 +215,10 @@ export function registerHooks(
   );
 
   // --------------------------------------------------------------------------
-  // after_compaction — invalidate cache so post-compact prompts get fresh data
+  // after_compaction — no-op placeholder (no client-side cache to invalidate)
   // --------------------------------------------------------------------------
   api.on("after_compaction", async (_event: unknown) => {
-    invalidateCache();
-    logger.info("[mnemo] Cache invalidated after compaction — next prompt will re-query memories");
+    logger.info("[mnemo] Compaction detected — memories will be re-queried on next prompt");
   });
 
   // --------------------------------------------------------------------------
@@ -293,7 +255,6 @@ export function registerHooks(
         tags: ["auto-capture", "session-summary", "pre-reset"],
       });
 
-      invalidateCache();
       logger.info("[mnemo] Session context saved before reset");
     } catch (err) {
       // Best-effort — never block /reset
@@ -375,7 +336,6 @@ export function registerHooks(
         mode: "smart",
       });
 
-      invalidateCache();
 
       if (result.digest_stored || result.insights_added > 0) {
         logger.info(

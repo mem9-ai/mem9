@@ -1,7 +1,7 @@
 {
   "name": "mnemo-opencode",
   "version": "0.1.0",
-  "description": "OpenCode memory plugin — cloud-persistent AI agent memory with hybrid vector + keyword search via TiDB Serverless or mnemo-server",
+  "description": "OpenCode memory plugin — cloud-persistent AI agent memory with hybrid vector + keyword search via mnemo-server",
   "type": "module",
   "main": "src/index.ts",
   "exports": {

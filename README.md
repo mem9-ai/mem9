@@ -18,24 +18,16 @@
 
 ---
 
-## 🚀 30-Second Quick Start (TiDB Cloud Zero)
+## 🚀 Quick Start
 
-**Zero signup. Zero config. Instant database.**
+**Server-based memory via mnemo-server.**
 
 ```bash
-# 1. Get a free database instantly (no account needed)
-curl -s -X POST https://zero.tidbapi.com/v1alpha1/instances \
-  -H "Content-Type: application/json" \
-  -d '{"tag":"mnemos"}' | tee ~/.mnemos-zero.json | jq .
-
-# 2. Extract credentials
-export MNEMO_DB_HOST=$(jq -r '.instance.connection.host' ~/.mnemos-zero.json)
-export MNEMO_DB_USER=$(jq -r '.instance.connection.username' ~/.mnemos-zero.json)
-export MNEMO_DB_PASS=$(jq -r '.instance.connection.password' ~/.mnemos-zero.json)
-export MNEMO_DB_NAME="test"
-
-# 3. Install plugin for your agent (pick one)
+# 1. Deploy mnemo-server
+cd server && MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
 ```
+
+**2. Install plugin for your agent (pick one):**
 
 | Platform | Install |
 |----------|---------|
@@ -43,9 +35,18 @@ export MNEMO_DB_NAME="test"
 | **OpenCode** | Add `"plugin": ["mnemo-opencode"]` to `opencode.json` |
 | **OpenClaw** | Add `mnemo` to `openclaw.json` plugins (see [openclaw-plugin/README](openclaw-plugin/README.md)) |
 
-**That's it!** Your agent now has persistent cloud memory.
+```bash
+# 3. Create a space and set credentials
+curl -s -X POST localhost:8080/api/spaces \
+  -H "Content-Type: application/json" \
+  -d '{"name":"backend-team","agent_name":"alice-claude","agent_type":"claude_code"}'
+# → {"ok":true, "space_id":"...", "api_token":"mnemo_abc"}
 
-> ⏰ **Note**: TiDB Cloud Zero instances expire in 30 days. To keep your data permanently, visit the `claimUrl` in the response to convert to a free TiDB Starter account.
+export MNEMO_API_URL="http://localhost:8080"
+export MNEMO_API_TOKEN="mnemo_abc"
+```
+
+Each agent uses its own token. All agents in the same space share one memory pool.
 
 ---
 
@@ -62,7 +63,7 @@ AI coding agents — Claude Code, OpenCode, OpenClaw, and others — often maint
 
 ## Why TiDB Starter?
 
-mnemos uses [TiDB Starter](https://tidbcloud.com) (formerly TiDB Serverless) as its storage layer:
+mnemos uses [TiDB Starter](https://tidbcloud.com) (formerly TiDB Serverless) as the backing store for mnemo-server:
 
 | Feature | What it means for you |
 |---|---|
@@ -70,11 +71,10 @@ mnemos uses [TiDB Starter](https://tidbcloud.com) (formerly TiDB Serverless) as 
 | **TiDB Cloud Zero** | Instant database provisioning via API — no signup required for first 30 days |
 | **Native VECTOR type** | Hybrid search (vector + keyword) without a separate vector database |
 | **Auto-embedding (`EMBED_TEXT`)** | TiDB generates embeddings server-side — no OpenAI key needed for semantic search |
-| **HTTP Data API** | Plugins talk to TiDB via `fetch`/`curl` — no database drivers, no connection pools |
 | **Zero ops** | No servers to manage, no scaling to worry about, automatic backups |
 | **MySQL compatible** | Migrate to self-hosted TiDB or MySQL anytime |
 
-This architecture means your agent plugins are **truly stateless** — all state lives in TiDB, making deployments simple and portable.
+This architecture keeps agent plugins **stateless** — all state lives in mnemo-server, backed by TiDB.
 
 ## Supported Agents
 
@@ -85,193 +85,22 @@ mnemos provides native plugins for major AI coding agent platforms:
 | **Claude Code** | Hooks + Skills | Auto-loads memories on session start, auto-saves on stop | [`claude-plugin/README.md`](claude-plugin/README.md) |
 | **OpenCode** | Plugin SDK | `system.transform` injects memories, `session.idle` auto-captures | [`opencode-plugin/README.md`](opencode-plugin/README.md) |
 | **OpenClaw** | Memory Plugin | Replaces built-in memory slot (`kind: "memory"`), framework manages lifecycle | [`openclaw-plugin/README.md`](openclaw-plugin/README.md) |
-| **Any HTTP client** | REST API / SQL | `curl` to mnemo-server or TiDB HTTP Data API directly | [API Reference](#api-reference-server-mode) |
+| **Any HTTP client** | REST API | `curl` to mnemo-server | [API Reference](#api-reference) |
 
 All plugins expose the same 5 tools: `memory_store`, `memory_search`, `memory_get`, `memory_update`, `memory_delete`.
 
-> **🤖 For AI Agents**: To install mnemos for a user, run the curl command in Quick Start above to provision a database, then follow the platform-specific README for detailed configuration.
-
-## Two Modes, One Plugin
-
-The same plugin works in two modes — just change the config:
-
-```
-                          ┌─────────────────────────┐
-                          │     Agent Plugin         │
-                          │ (Claude Code / OpenCode  │
-                          │  / OpenClaw / curl)      │
-                          └────────────┬─────────────┘
-                                       │
-                          ┌────────────┴────────────┐
-                          │                         │
-                   MNEMO_DB_HOST →           MNEMO_API_URL →
-                    (direct mode)            (server mode)
-                          │                         │
-                          ▼                         ▼
-                ┌──────────────────┐     ┌───────────────────┐
-                │  TiDB Starter    │     │  mnemo-server     │
-                │                  │     │  (Go, self-host)  │
-                │  Free tier       │     │                   │
-                │  Zero ops        │     │  Multi-agent      │
-                │  HTTP Data API   │     │  Space isolation  │
-                └──────────────────┘     │  LLM merge (v2)   │
-                                         └────────┬──────────┘
-                                                  │
-                                         ┌────────┴────────┐
-                                         │  TiDB / MySQL   │
-                                         └─────────────────┘
-```
-
-| | Direct Mode | Server Mode |
-|---|---|---|
-| **For** | Individual developer, small team | Organization, multi-agent teams |
-| **Deploy** | Nothing — use TiDB Cloud free tier | Self-host `mnemo-server` |
-| **Config** | Database credentials | API URL + token |
-| **Vector search** | Yes (TiDB native VECTOR) | Yes (server-side) |
-| **Conflict resolution** | LWW (last writer wins) | Vector Clock CRDT + LWW fallback |
-
-**Direct mode is the default.** Mode is inferred from config: `MNEMO_DB_HOST` → direct, `MNEMO_API_URL` → server.
-
-## Alternative: Use Your Own Database
-
-If you prefer not to use TiDB Cloud Zero, you can:
-
-1. **Create a TiDB Starter cluster** at [tidbcloud.com](https://tidbcloud.com) (free tier available)
-2. **Use any MySQL-compatible database** — just set the connection credentials
-
-Then configure your plugin with your own credentials instead of the Zero-provisioned ones.
-
-## Quick Start — Server Mode (Team Setup)
-
-For teams with multiple agents that need to share memory. Deploy a mnemo-server that manages spaces, tokens, and (soon) LLM conflict merge.
-
-**Why server mode?**
-- **Space isolation** — each team/project gets its own memory pool
-- **Per-agent tokens** — every agent instance gets a scoped API token
-- **Centralized control** — rate limiting, auth, and audit in one place
-- **CRDT conflict resolution** — vector clock-based merge when two agents update the same memory concurrently
-
-```bash
-# 1. Deploy server
-cd server && MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
-
-# 2. Create a shared space (no auth required for bootstrap)
-curl -s -X POST localhost:8080/api/spaces \
-  -H "Content-Type: application/json" \
-  -d '{"name":"backend-team","agent_name":"alice-claude","agent_type":"claude_code"}'
-# → {"ok":true, "space_id":"...", "api_token":"mnemo_abc"}
-
-# 3. Add more agents to the same space
-curl -s -X POST localhost:8080/api/spaces/<space_id>/tokens \
-  -H "Authorization: Bearer mnemo_abc" \
-  -H "Content-Type: application/json" \
-  -d '{"agent_name":"bob-opencode","agent_type":"opencode"}'
-# → {"ok":true, "api_token":"mnemo_def"}
-
-# 4. Configure any agent to use its token
-export MNEMO_API_URL="http://localhost:8080"
-export MNEMO_API_TOKEN="mnemo_abc"
-```
-
-Each agent uses its own token. All agents in the same space share one memory pool.
+> **🤖 For AI Agents**: Use the Quick Start above to deploy mnemo-server and generate a token, then follow the platform-specific README for configuration details.
 
 ## Stateless Agents, Cloud Memory
 
-A key design principle: **agent plugins carry zero state.** All memory lives in TiDB (direct mode) or mnemo-server (server mode). This means:
+A key design principle: **agent plugins carry zero state.** All memory lives in mnemo-server, backed by TiDB/MySQL. This means:
 
-- **Agent plugins stay stateless** — deploy any number of agent instances freely; they all share the same memory pool via TiDB
+- **Agent plugins stay stateless** — deploy any number of agent instances freely; they all share the same memory pool via mnemo-server
 - **Switch machines freely** — your agent's memory follows you, not your laptop
-- **Multi-agent collaboration** — Claude Code, OpenCode, OpenClaw, and any HTTP client share the same memories when pointed at the same database
-- **No migration needed** — start with Direct mode, switch to Server mode by changing one env var
+- **Multi-agent collaboration** — Claude Code, OpenCode, OpenClaw, and any HTTP client share memories when pointed at the same server
+- **Centralized control** — authentication, rate limits, and audit live in one place
 
-## Hybrid Search (Vector + Keyword)
-
-Search auto-upgrades when an embedding provider is configured:
-
-```
-                    Embedding provider configured?
-                    ┌─────────┴─────────┐
-                   Yes                  No
-                    │                    │
-              Hybrid search        Keyword only
-              (vector + keyword)   (LIKE '%q%')
-                    │
-         ┌──────────┴──────────┐
-    Vector results         Keyword results
-    (ANN cosine)           (substring match)
-         └──────────┬──────────┘
-              Merge & rank
-```
-
-- **No embedding config** → keyword search works immediately
-- **Add an API key** → hybrid search activates automatically
-- **No schema migration** — VECTOR column is nullable from day one
-
-Supports OpenAI, Ollama, LM Studio, or any OpenAI-compatible endpoint:
-
-```bash
-# OpenAI (default)
-export MNEMO_EMBED_API_KEY="sk-..."
-
-# Ollama (local, free)
-export MNEMO_EMBED_BASE_URL="http://localhost:11434/v1"
-export MNEMO_EMBED_MODEL="nomic-embed-text"
-export MNEMO_EMBED_DIMS="768"
-```
-
-**Or use TiDB auto-embedding — no external API needed:**
-
-TiDB Starter can generate embeddings server-side via `EMBED_TEXT()`. Set `autoEmbedModel` in your plugin config and TiDB handles the rest — no OpenAI key, no Ollama, no extra cost:
-
-```json
-{
-  "autoEmbedModel": "tidbcloud_free/amazon/titan-embed-text-v2",
-  "autoEmbedDims": 1024
-}
-```
-
-## Multi-Agent Conflict Resolution (CRDT)
-
-When multiple agents write to the same memory concurrently, who wins? mnemos uses **vector clocks** — a proven distributed systems primitive — to detect and resolve conflicts without coordination.
-
-```
-Agent A writes key "deploy-config"       Agent B writes key "deploy-config"
-  clock: {A:3, B:1}                          clock: {A:2, B:2}
-         \                                     /
-          \                                   /
-           └──── Server compares clocks ─────┘
-                         │
-                 Neither dominates →
-                 Concurrent conflict!
-                         │
-              Deterministic tie-break
-            (agent name → ID, no randomness)
-                         │
-                  Winner's content saved
-                  Both clocks merged:
-                  {A:3, B:2}
-```
-
-**How it works:**
-
-| Scenario | What happens |
-|---|---|
-| A's clock dominates B's | A wins — newer write, B is stale |
-| B's clock dominates A's | B wins — A's write is outdated |
-| Neither dominates (concurrent) | Deterministic tie-break — no data loss, no randomness |
-| No clock sent (legacy client) | LWW fast path — backward compatible, same as Phase 1 |
-
-**Key design decisions:**
-
-- **Server-authoritative** — all merge logic lives in the Go server, not in plugins. Plugins stay simple.
-- **Tombstone deletion** — deletes are soft (`tombstone=true`) with clock increment. Prevents ghost resurrection when an agent hasn't seen a delete.
-- **Idempotent writes** — optional `write_id` for exactly-once semantics on retry.
-- **Zero coordination** — agents never talk to each other. The server detects concurrency from clocks alone.
-- **Backward compatible** — clients that don't send clocks get LWW (last writer wins), same as before.
-
-For the full design including implementation phases, tombstone revival rules, and the endpoint behavior matrix, see [`docs/DESIGN.md`](docs/DESIGN.md) and [`claude-notes/crdt-memory-proposal.md`](claude-notes/crdt-memory-proposal.md).
-
-## API Reference (Server Mode)
+## API Reference
 
 Auth: `Authorization: Bearer <token>`. Server resolves token → space + agent.
 
@@ -321,7 +150,7 @@ docker run -e MNEMO_DSN="..." -p 8080:8080 mnemo-server
 
 ```
 mnemos/
-├── server/                     # Go API server (server mode)
+├── server/                     # Go API server
 │   ├── cmd/mnemo-server/       # Entry point
 │   ├── internal/
 │   │   ├── config/             # Env var config loading
@@ -335,20 +164,18 @@ mnemos/
 │   └── Dockerfile
 │
 ├── opencode-plugin/            # OpenCode agent plugin (TypeScript)
-│   └── src/                    # Plugin SDK tools + hooks + dual-mode backend
+│   └── src/                    # Plugin SDK tools + hooks + server backend
 │
 ├── openclaw-plugin/            # OpenClaw agent plugin (TypeScript)
-│   ├── index.ts                # Tool registration (mode-agnostic)
-│   ├── direct-backend.ts       # Direct: @tidbcloud/serverless → SQL
-│   ├── server-backend.ts       # Server: fetch → mnemo API
-│   └── embedder.ts             # Embedding provider abstraction
+│   ├── index.ts                # Tool registration
+│   └── server-backend.ts       # Server: fetch → mnemo API
 │
 ├── claude-plugin/              # Claude Code plugin (Hooks + Skills)
 │   ├── hooks/                  # Lifecycle hooks (bash + curl)
 │   └── skills/                 # memory-recall + memory-store + mnemos-setup
 │
 ├── skills/                     # Shared skills (OpenClaw ClawHub format)
-│   └── mnemos-setup/           # Setup skill with TiDB Cloud Zero quick start
+│   └── mnemos-setup/           # Setup skill
 │
 └── docs/DESIGN.md              # Full design document
 ```
@@ -357,10 +184,11 @@ mnemos/
 
 | Phase | What | Status |
 |-------|------|--------|
-| **Phase 1** | Core server + CRUD + auth + hybrid search + upsert + dual-mode plugins | ✅ Done |
-| **Phase 2** | Vector Clock CRDT for multi-agent conflict resolution | 📐 Designed ([proposal](claude-notes/crdt-memory-proposal.md)) |
+| **Phase 1** | Core server + CRUD + auth + hybrid search + upsert + plugins | ✅ Done |
 | **Phase 3** | LLM-assisted conflict merge, auto-tagging | 🔜 Planned |
 | **Phase 4** | Web dashboard, bulk import/export, CLI wizard | 📋 Planned |
+
+Vector Clock CRDT was deferred and removed from the roadmap.
 
 ## Contributing
 

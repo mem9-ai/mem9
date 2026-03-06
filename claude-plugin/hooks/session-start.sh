@@ -12,7 +12,7 @@ if ! mnemo_check_env 2>/dev/null; then
   exit 0
 fi
 
-# Fetch the 20 most recent memories (mode-agnostic).
+# Fetch the 20 most recent memories.
 response=$(mnemo_get_memories 20 2>/dev/null || echo "")
 
 if [[ -z "$response" ]]; then
@@ -31,11 +31,10 @@ try:
     lines.append('')
     for m in memories:
         tags = ', '.join(m.get('tags') or [])
-        key = m.get('key', m.get('key_name', ''))
         source = m.get('source', '')
         header_parts = []
-        if key:
-            header_parts.append(key)
+        if source:
+            header_parts.append(f'by {source}')
         if source:
             header_parts.append(f'by {source}')
         if tags:

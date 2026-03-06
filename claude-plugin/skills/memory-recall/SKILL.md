@@ -9,15 +9,7 @@ You are a memory retrieval agent for the mnemo shared memory system. Your job is
 
 ## Environment
 
-Mnemo supports two modes (auto-detected):
-
-**Direct mode** (TiDB Serverless):
-- `MNEMO_DB_HOST` — the TiDB host
-- `MNEMO_DB_USER` — username
-- `MNEMO_DB_PASS` — password
-- `MNEMO_DB_NAME` — database name (default: mnemos)
-
-**Server mode** (mnemo-server):
+Mnemo uses server mode (mnemo-server):
 - `MNEMO_API_URL` — the server base URL
 - `MNEMO_API_TOKEN` — the authentication token
 
@@ -25,34 +17,31 @@ Mnemo supports two modes (auto-detected):
 
 1. **Analyze the query**: Identify 2-3 search keywords from the user's question. Think about what terms would appear in useful memories.
 
-2. **Search**: Source the common.sh helpers and use the mode-agnostic search function:
+2. **Search**: Source the common.sh helpers and use the search function:
 
 ```bash
 # Source the helpers
-SCRIPT_DIR="$(cd "$(dirname "$(find . -path '*/claude-plugin/hooks/common.sh' -print -quit 2>/dev/null || echo /dev/null)")" && pwd)"
-if [[ -f "${SCRIPT_DIR}/common.sh" ]]; then
-  source "${SCRIPT_DIR}/common.sh"
-fi
+source "$(find ~ -path '*/mnemos/claude-plugin/hooks/common.sh' -print -quit 2>/dev/null || echo /dev/null)"
 
-# If common.sh isn't available, use direct curl:
-# Server mode:
+# Search memories
+mnemo_search "KEYWORD" 10
+```
+
+If common.sh isn't available, use direct curl:
+
+```bash
+# Server mode (mnemo-server REST API):
 curl -sf -H "Authorization: Bearer $MNEMO_API_TOKEN" \
   "$MNEMO_API_URL/api/memories?q=KEYWORD&limit=10"
-
-# Direct mode (TiDB HTTP Data API):
-curl -sf -u "${MNEMO_DB_USER}:${MNEMO_DB_PASS}" \
-  -H "Content-Type: application/json" \
-  -d '{"database":"'"${MNEMO_DB_NAME:-mnemos}"'","query":"SELECT * FROM memories WHERE space_id = '\''default'\'' AND content LIKE '\''%KEYWORD%'\'' ORDER BY updated_at DESC LIMIT 10"}' \
-  "https://http-${MNEMO_DB_HOST}/v1beta/sql"
 ```
 
 You can also filter by tags or source:
 ```bash
-# Server mode — filter by tags
+# Filter by tags
 curl -sf -H "Authorization: Bearer $MNEMO_API_TOKEN" \
   "$MNEMO_API_URL/api/memories?tags=tikv,performance&limit=10"
 
-# Server mode — filter by source agent
+# Filter by source agent
 curl -sf -H "Authorization: Bearer $MNEMO_API_TOKEN" \
   "$MNEMO_API_URL/api/memories?source=claude-code&limit=10"
 ```

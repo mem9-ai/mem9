@@ -7,7 +7,7 @@ import type {
 } from "./types.js";
 
 /**
- * MemoryBackend — abstraction for both direct and server modes.
+ * MemoryBackend — abstraction for server mode.
  * All tools and hooks call through this interface.
  */
 export interface MemoryBackend {
