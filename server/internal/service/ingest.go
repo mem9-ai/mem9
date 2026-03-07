@@ -22,9 +22,8 @@ import (
 type IngestMode string
 
 const (
-	ModeSmart   IngestMode = "smart"   // Extract + Reconcile
-	ModeExtract IngestMode = "extract" // Extract + Reconcile (alias for smart)
-	ModeRaw     IngestMode = "raw"     // Store as-is (no LLM)
+	ModeSmart IngestMode = "smart" // Extract + Reconcile
+	ModeRaw   IngestMode = "raw"   // Store as-is (no LLM)
 )
 
 // IngestRequest is the input for the ingest pipeline.
@@ -43,11 +42,11 @@ type IngestMessage struct {
 
 // IngestResult is the output of the ingest pipeline.
 type IngestResult struct {
-	Status        string   `json:"status"` // complete | partial | failed
-	InsightsAdded int      `json:"insights_added"`
-	InsightIDs    []string `json:"insight_ids,omitempty"`
-	Warnings      int      `json:"warnings,omitempty"`
-	Error         string   `json:"error,omitempty"`
+	Status         string   `json:"status"`          // complete | partial | failed
+	MemoriesChanged int      `json:"memories_changed"` // count of ADD + UPDATE actions executed
+	InsightIDs     []string `json:"insight_ids,omitempty"`
+	Warnings       int      `json:"warnings,omitempty"`
+	Error          string   `json:"error,omitempty"`
 }
 
 // IngestService orchestrates the two-phase smart memory pipeline.
@@ -90,6 +89,10 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 		mode = s.mode
 	}
 
+	// Validate mode.
+	if mode != ModeSmart && mode != ModeRaw {
+		return nil, &domain.ValidationError{Field: "mode", Message: fmt.Sprintf("unsupported mode %q", mode)}
+	}
 	// For raw mode or no LLM, skip pipeline.
 	if mode == ModeRaw || s.llm == nil {
 		return s.ingestRaw(ctx, agentName, req)
@@ -116,7 +119,7 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 
 	return &IngestResult{
 		Status:        "complete",
-		InsightsAdded: len(insightIDs),
+		MemoriesChanged: len(insightIDs),
 		InsightIDs:    insightIDs,
 		Warnings:      warnings,
 	}, nil
@@ -159,13 +162,15 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 	}
 	return &IngestResult{
 		Status:        "complete",
-		InsightsAdded: 1,
+		MemoriesChanged: 1,
 		InsightIDs:    []string{m.ID},
 	}, nil
 }
 
 // extractAndReconcile runs Phase 1a (extraction) + Phase 2 (reconciliation).
 func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agentID, sessionID, conversation string) ([]string, int, error) {
+	const maxFacts = 30 // Cap extracted facts to bound reconciliation prompt size
+
 	// Phase 1a: Extract facts.
 	facts, err := s.extractFacts(ctx, conversation)
 	if err != nil {
@@ -173,6 +178,12 @@ func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agen
 	}
 	if len(facts) == 0 {
 		return nil, 0, nil
+	}
+
+	// Cap facts to prevent LLM context overflow.
+	if len(facts) > maxFacts {
+		slog.Warn("extractAndReconcile: truncating extracted facts", "count", len(facts), "max", maxFacts)
+		facts = facts[:maxFacts]
 	}
 
 	// Phase 2: Reconcile each fact against existing memories.

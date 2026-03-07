@@ -2,15 +2,22 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/llm"
 )
 
 type memoryRepoMock struct {
-	createCalls []*domain.Memory
-	setStateErr error // configurable return value for SetState
+	createCalls    []*domain.Memory
+	setStateCalls  []setStateCall // track SetState invocations
+	setStateErr    error          // configurable return value for SetState
+	vectorResults  []domain.Memory // configurable results for AutoVectorSearch
 }
 
 func (m *memoryRepoMock) Create(ctx context.Context, mem *domain.Memory) error {
@@ -39,7 +46,13 @@ func (m *memoryRepoMock) ArchiveAndCreate(ctx context.Context, archiveID, supers
 }
 
 func (m *memoryRepoMock) SetState(ctx context.Context, id string, state domain.MemoryState) error {
+	m.setStateCalls = append(m.setStateCalls, setStateCall{ID: id, State: state})
 	return m.setStateErr
+}
+
+	type setStateCall struct {
+	ID    string
+	State domain.MemoryState
 }
 
 func (m *memoryRepoMock) List(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, int, error) {
@@ -59,6 +72,9 @@ func (m *memoryRepoMock) VectorSearch(ctx context.Context, queryVec []float32, f
 }
 
 func (m *memoryRepoMock) AutoVectorSearch(ctx context.Context, queryText string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	if m.vectorResults != nil {
+		return m.vectorResults, nil
+	}
 	return nil, nil
 }
 
@@ -309,7 +325,7 @@ func TestIngestModeRawStoresInsight(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)
 	}
-	if res == nil || res.InsightsAdded != 1 {
+	if res == nil || res.MemoriesChanged != 1 {
 		t.Fatalf("expected 1 insight added, got %#v", res)
 	}
 	if len(memRepo.createCalls) != 1 {
@@ -346,7 +362,7 @@ func TestIngestNilLLMFallsBackToRaw(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)
 	}
-	if res == nil || res.InsightsAdded != 1 {
+	if res == nil || res.MemoriesChanged != 1 {
 		t.Fatalf("expected 1 insight added, got %#v", res)
 	}
 	if len(memRepo.createCalls) != 1 {
@@ -354,40 +370,160 @@ func TestIngestNilLLMFallsBackToRaw(t *testing.T) {
 	}
 }
 
-// TestDeleteReconcileErrNotFoundIsNotWarning verifies that the DELETE reconcile
-// path silently skips ErrNotFound (e.g., row already archived/moved by a concurrent
-// operation) without counting it as a warning.
-func TestDeleteReconcileErrNotFoundIsNotWarning(t *testing.T) {
+// TestReconcileDeleteErrNotFoundIsNotWarning verifies the DELETE path in reconcile()
+// silently skips ErrNotFound (e.g., row already archived by a concurrent operation)
+// without counting it as a warning. Uses a mock LLM server to exercise the full path.
+func TestReconcileDeleteErrNotFoundIsNotWarning(t *testing.T) {
 	t.Parallel()
 
-	// The reconcile DELETE path (ingest.go:520-526) does:
-	//   if delErr := s.memories.SetState(...); delErr != nil {
-	//       if !errors.Is(delErr, domain.ErrNotFound) {
-	//           warnings++
-	//       }
-	//   }
-	// Verify that ErrNotFound is NOT treated as a warning.
-	delErr := domain.ErrNotFound
-	warnings := 0
-	if delErr != nil {
-		if !errors.Is(delErr, domain.ErrNotFound) {
-			warnings++
+	// Mock LLM: first call returns extraction with one fact, second returns DELETE action.
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var resp string
+		if callCount == 1 {
+			// extractFacts response.
+			resp = `{"facts": ["user prefers dark mode"]}`
+		} else {
+			// reconcile response — DELETE the existing memory.
+			resp = `{"memory": [{"id": "0", "text": "user prefers dark mode", "event": "DELETE"}]}`
 		}
-	}
-	if warnings != 0 {
-		t.Fatalf("expected 0 warnings for ErrNotFound, got %d", warnings)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: mockLLM.URL,
+		Model:   "test-model",
+	})
+
+	// Repository: SetState returns ErrNotFound (simulating already-archived row).
+	// AutoVectorSearch returns an existing memory so reconcile has something to DELETE.
+	memRepo := &memoryRepoMock{
+		setStateErr: domain.ErrNotFound,
+		vectorResults: []domain.Memory{
+			{ID: "mem-123", Content: "user prefers dark mode", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
 	}
 
-	// Also verify that a real error IS counted as a warning.
-	delErr = errors.New("database connection lost")
-	warnings = 0
-	if delErr != nil {
-		if !errors.Is(delErr, domain.ErrNotFound) {
-			warnings++
-		}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	res, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-1",
+		AgentID:   "agent-1",
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I prefer dark mode"},
+			{Role: "assistant", Content: "Noted, dark mode preference saved."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
 	}
-	if warnings != 1 {
-		t.Fatalf("expected 1 warning for real error, got %d", warnings)
+	if res == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	// ErrNotFound from SetState should NOT count as a warning.
+	if res.Warnings != 0 {
+		t.Fatalf("expected 0 warnings for ErrNotFound, got %d", res.Warnings)
+	}
+
+	// Verify SetState was actually called with the correct ID and state.
+	if len(memRepo.setStateCalls) != 1 {
+		t.Fatalf("expected 1 SetState call, got %d", len(memRepo.setStateCalls))
+	}
+	if memRepo.setStateCalls[0].ID != "mem-123" {
+		t.Fatalf("expected SetState on mem-123, got %q", memRepo.setStateCalls[0].ID)
+	}
+	if memRepo.setStateCalls[0].State != domain.StateDeleted {
+		t.Fatalf("expected StateDeleted, got %q", memRepo.setStateCalls[0].State)
+	}
+}
+
+// TestReconcileDeleteRealErrorCountsAsWarning verifies that a real database error
+// (not ErrNotFound) during DELETE IS counted as a warning.
+func TestReconcileDeleteRealErrorCountsAsWarning(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var resp string
+		if callCount == 1 {
+			resp = `{"facts": ["user prefers dark mode"]}`
+		} else {
+			resp = `{"memory": [{"id": "0", "text": "user prefers dark mode", "event": "DELETE"}]}`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: mockLLM.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &memoryRepoMock{
+		setStateErr: fmt.Errorf("database connection lost"),
+		vectorResults: []domain.Memory{
+			{ID: "mem-456", Content: "user prefers dark mode", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	res, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-2",
+		AgentID:   "agent-1",
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I prefer dark mode"},
+			{Role: "assistant", Content: "Noted."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	// Real error from SetState SHOULD count as a warning.
+	if res.Warnings != 1 {
+		t.Fatalf("expected 1 warning for real error, got %d", res.Warnings)
+	}
+}
+
+func TestIngestInvalidModeReturnsValidationError(t *testing.T) {
+	t.Parallel()
+
+	svc := NewIngestService(&memoryRepoMock{}, nil, nil, "", ModeSmart)
+	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:     IngestMode("unknown"),
+		Messages: []IngestMessage{{Role: "user", Content: "hello"}},
+	})
+	if err == nil {
+		t.Fatal("expected validation error for invalid mode")
+	}
+	var vErr *domain.ValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("expected ValidationError, got %T: %v", err, err)
+	}
+	if vErr.Field != "mode" {
+		t.Fatalf("expected field 'mode', got %q", vErr.Field)
 	}
 }
 
