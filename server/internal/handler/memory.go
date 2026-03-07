@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
@@ -40,6 +41,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	hasMessages := len(req.Messages) > 0
 	hasContent := strings.TrimSpace(req.Content) != ""
 
+	if hasMessages && hasContent {
+		s.handleError(w, &domain.ValidationError{Field: "body", Message: "provide either content or messages, not both"})
+		return
+	}
+
 	if hasMessages {
 		messages := append([]service.IngestMessage(nil), req.Messages...)
 		ingestReq := service.IngestRequest{
@@ -57,6 +63,9 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			}
 			slog.Info("async memories ingest complete", "agent", req.AgentID, "session", req.SessionID, "status", result.Status, "memories_changed", result.MemoriesChanged)
 		}(auth.AgentName, ingestReq)
+
+		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
+		return
 	}
 
 	if !hasContent {
