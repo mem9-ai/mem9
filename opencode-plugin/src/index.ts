@@ -7,7 +7,7 @@ import { buildHooks } from "./hooks.js";
 /**
  * mnemo-opencode — AI agent memory plugin for OpenCode.
  *
- * Requires MNEMO_API_URL + MNEMO_API_TOKEN to connect to mnemo-server.
+ * Requires MNEMO_API_URL + MNEMO_TENANT_ID to connect to mnemo-server.
  */
 const mnemoPlugin: Plugin = async (_input) => {
   const cfg = loadConfig();
@@ -19,9 +19,9 @@ const mnemoPlugin: Plugin = async (_input) => {
     return {};
   }
 
-  if (!cfg.apiToken) {
+  if (!cfg.tenantID) {
     console.warn(
-      "[mnemo] Server mode requires MNEMO_API_TOKEN. Plugin disabled."
+      "[mnemo] Server mode requires MNEMO_TENANT_ID (or legacy MNEMO_API_TOKEN). Plugin disabled."
     );
     return {};
   }

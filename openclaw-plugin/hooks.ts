@@ -258,7 +258,7 @@ export function registerHooks(
   // agent_end — auto-capture via smart ingest pipeline
   //
   // Size-aware message selection: walk backwards from most recent messages,
-  // accumulating until byte budget is hit. Then POST to /api/memories/ingest
+  // accumulating until byte budget is hit. Then POST to tenant-scoped ingest endpoint.
   // for server-side LLM extraction + reconciliation.
   // --------------------------------------------------------------------------
   api.on("agent_end", async (event: unknown) => {

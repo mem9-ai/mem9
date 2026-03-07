@@ -20,7 +20,7 @@ export interface MemoryBackend {
 
   /**
    * Ingest messages into the smart memory pipeline.
-   * POST /api/memories/ingest → LLM extraction + reconciliation.
+   * POST /v1alpha1/mem9s/{tenantID}/memories/ingest → LLM extraction + reconciliation.
    */
   ingest(input: IngestInput): Promise<IngestResult>;
 }

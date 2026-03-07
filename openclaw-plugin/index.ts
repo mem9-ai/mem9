@@ -14,16 +14,6 @@ function jsonResult(data: unknown) {
   return data;
 }
 
-function hashWorkspaceDir(dir: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < dir.length; i++) {
-    h ^= dir.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(16).padStart(8, "0") +
-    ((h >>> 0) ^ dir.length).toString(16).padStart(8, "0");
-}
-
 interface OpenClawPluginApi {
   pluginConfig?: unknown;
   logger: {
@@ -56,29 +46,6 @@ interface AnyAgentTool {
     required: string[];
   };
   execute: (_id: string, params: unknown) => Promise<unknown>;
-}
-
-async function provisionSpaceToken(
-  apiUrl: string,
-  userToken: string,
-  workspaceKey: string,
-  agentId: string,
-): Promise<string> {
-  const url = apiUrl.replace(/\/+$/, "") + "/api/spaces/provision";
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${userToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ workspace_key: workspaceKey, agent_id: agentId }),
-  });
-  if (!resp.ok) {
-    const body = await resp.text();
-    throw new Error(`provision failed (${resp.status}): ${body}`);
-  }
-  const data = (await resp.json()) as { space_token: string };
-  return data.space_token;
 }
 
 function buildTools(backend: MemoryBackend): AnyAgentTool[] {
@@ -269,51 +236,36 @@ const mnemoPlugin = {
       return;
     }
 
-    const configuredToken = cfg.apiToken ?? cfg.userToken;
+    const configuredTenantID = cfg.tenantID ?? cfg.apiToken ?? cfg.userToken;
     const registerTenant = async (agentName: string): Promise<string> => {
-      const tenantName = cfg.tenantName ?? `${agentName}-tenant`;
       const backend = new ServerBackend(cfg.apiUrl!, "", agentName);
-      const result = await backend.register(tenantName);
-      const claimUrl = result.claim_url ?? "unknown";
+      const result = await backend.register();
+      const claimUrl = result.claim_url ?? "(not provided)";
       api.logger.info(
-        `[mnemo] *** Auto-registered tenant_id=${result.tenant_id} *** Save this token to your config: ${result.token}`
+        `[mnemo] *** Auto-provisioned tenant_id=${result.id} *** Save this tenant ID to your config as tenantID`
       );
       api.logger.info(
         `[mnemo] Claim your TiDB instance at: ${claimUrl}`
       );
-      return result.token;
+      return result.id;
     };
     let registrationPromise: Promise<string> | null = null;
-    const resolveTenantToken = (agentName: string): Promise<string> => {
-      if (configuredToken) return Promise.resolve(configuredToken);
+    const resolveTenantID = (agentName: string): Promise<string> => {
+      if (configuredTenantID) return Promise.resolve(configuredTenantID);
       if (!registrationPromise) {
         registrationPromise = registerTenant(agentName);
       }
       return registrationPromise;
     };
 
-    api.logger.info("[mnemo] Server mode (workspace isolation)");
-    // NOTE: spaceTokenCache is process-lifetime and grows with distinct workspaces.
-    const spaceTokenCache = new Map<string, string>();
+    api.logger.info("[mnemo] Server mode (tenant-scoped mem9 API)");
 
     const factory: ToolFactory = (ctx: ToolContext) => {
       const agentId = ctx.agentId ?? cfg.agentName ?? "agent";
-      const workspaceDir = ctx.workspaceDir ?? "default";
-      const cacheKey = `${workspaceDir}::${agentId}`;
-
-      const cached = spaceTokenCache.get(cacheKey);
-      if (cached) {
-        return buildTools(new ServerBackend(cfg.apiUrl!, cached, agentId));
-      }
-
-      const workspaceKey = hashWorkspaceDir(workspaceDir);
       const backend = new LazyServerBackend(
         cfg.apiUrl!,
-        () => resolveTenantToken(agentId),
-        workspaceKey,
+        () => resolveTenantID(agentId),
         agentId,
-        spaceTokenCache,
-        cacheKey,
       );
       return buildTools(backend);
     };
@@ -324,11 +276,8 @@ const mnemoPlugin = {
     // Uses the default workspace/agent context for hook-triggered operations.
     const hookBackend = new LazyServerBackend(
       cfg.apiUrl!,
-      () => resolveTenantToken(cfg.agentName ?? "agent"),
-      hashWorkspaceDir("default"),
+      () => resolveTenantID(cfg.agentName ?? "agent"),
       cfg.agentName ?? "agent",
-      spaceTokenCache,
-      "default::" + (cfg.agentName ?? "agent"),
     );
     registerHooks(api, hookBackend, api.logger, { maxIngestBytes: cfg.maxIngestBytes });
   },
@@ -348,26 +297,17 @@ class LazyServerBackend implements MemoryBackend {
 
   constructor(
     private apiUrl: string,
-    private tokenProvider: () => Promise<string>,
-    private workspaceKey: string,
+    private tenantIDProvider: () => Promise<string>,
     private agentId: string,
-    private cache: Map<string, string>,
-    private cacheKey: string,
   ) {}
 
   private async resolve(): Promise<ServerBackend> {
     if (this.resolved) return this.resolved;
     if (this.resolving) return this.resolving;
 
-    this.resolving = this.tokenProvider().then((tenantToken) =>
-      provisionSpaceToken(
-        this.apiUrl,
-        tenantToken,
-        this.workspaceKey,
-        this.agentId,
-      ).then((spaceToken) => {
-        this.cache.set(this.cacheKey, spaceToken);
-        this.resolved = new ServerBackend(this.apiUrl, spaceToken, this.agentId);
+    this.resolving = this.tenantIDProvider().then((tenantID) =>
+      Promise.resolve().then(() => {
+        this.resolved = new ServerBackend(this.apiUrl, tenantID, this.agentId);
         return this.resolved;
       })
     ).catch((err) => {

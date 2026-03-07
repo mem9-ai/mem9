@@ -9,55 +9,51 @@ import type {
   IngestResult,
 } from "./types.js";
 
-type TenantRegisterResponse = {
-  ok: boolean;
-  tenant_id: string;
-  token: string;
+type ProvisionMem9sResponse = {
+  id: string;
   claim_url?: string;
-  status: string;
 };
 
 export class ServerBackend implements MemoryBackend {
   private baseUrl: string;
-  private token: string;
+  private tenantID: string;
   private agentName: string;
 
-  constructor(apiUrl: string, apiToken: string, agentName: string) {
+  constructor(apiUrl: string, tenantID: string, agentName: string) {
     this.baseUrl = apiUrl.replace(/\/+$/, "");
-    this.token = apiToken;
+    this.tenantID = tenantID;
     this.agentName = agentName;
   }
 
-  async register(tenantName?: string): Promise<TenantRegisterResponse> {
-    const name = tenantName ?? `${this.agentName}-tenant`;
-    const resp = await fetch(this.baseUrl + "/api/tenants/register", {
+  async register(): Promise<ProvisionMem9sResponse> {
+    const resp = await fetch(this.baseUrl + "/v1alpha1/mem9s", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name,
-        agent_name: this.agentName,
-        agent_type: "openclaw",
-      }),
+      signal: AbortSignal.timeout(8_000),
     });
 
     if (!resp.ok) {
       const body = await resp.text();
-      throw new Error(`tenant registration failed (${resp.status}): ${body}`);
+      throw new Error(`mem9s provision failed (${resp.status}): ${body}`);
     }
 
-    const data = (await resp.json()) as TenantRegisterResponse;
-    if (!data?.token) {
-      throw new Error("tenant registration did not return a token");
+    const data = (await resp.json()) as ProvisionMem9sResponse;
+    if (!data?.id) {
+      throw new Error("mem9s provision did not return tenant ID");
     }
 
-    this.token = data.token;
+    this.tenantID = data.id;
     return data;
   }
 
+  private tenantPath(path: string): string {
+    if (!this.tenantID) {
+      throw new Error("tenant ID is not configured");
+    }
+    return `/v1alpha1/mem9s/${this.tenantID}${path}`;
+  }
+
   async store(input: CreateMemoryInput): Promise<Memory> {
-    return this.request("POST", "/api/memories", input);
+    return this.request("POST", this.tenantPath("/memories"), input);
   }
 
   async search(input: SearchInput): Promise<SearchResult> {
@@ -74,7 +70,7 @@ export class ServerBackend implements MemoryBackend {
       total: number;
       limit: number;
       offset: number;
-    }>("GET", `/api/memories${qs ? "?" + qs : ""}`);
+    }>("GET", `${this.tenantPath("/memories")}${qs ? "?" + qs : ""}`);
     return {
       data: raw.memories ?? [],
       total: raw.total,
@@ -85,7 +81,7 @@ export class ServerBackend implements MemoryBackend {
 
   async get(id: string): Promise<Memory | null> {
     try {
-      return await this.request<Memory>("GET", `/api/memories/${id}`);
+      return await this.request<Memory>("GET", this.tenantPath(`/memories/${id}`));
     } catch {
       return null;
     }
@@ -93,7 +89,7 @@ export class ServerBackend implements MemoryBackend {
 
   async update(id: string, input: UpdateMemoryInput): Promise<Memory | null> {
     try {
-      return await this.request<Memory>("PUT", `/api/memories/${id}`, input);
+      return await this.request<Memory>("PUT", this.tenantPath(`/memories/${id}`), input);
     } catch {
       return null;
     }
@@ -101,7 +97,7 @@ export class ServerBackend implements MemoryBackend {
 
   async remove(id: string): Promise<boolean> {
     try {
-      await this.request("DELETE", `/api/memories/${id}`);
+      await this.request("DELETE", this.tenantPath(`/memories/${id}`));
       return true;
     } catch {
       return false;
@@ -109,7 +105,7 @@ export class ServerBackend implements MemoryBackend {
   }
 
   async ingest(input: IngestInput): Promise<IngestResult> {
-    return this.request<IngestResult>("POST", "/api/memories/ingest", input);
+    return this.request<IngestResult>("POST", this.tenantPath("/memories/ingest"), input);
   }
 
   private async requestRaw(
@@ -119,7 +115,6 @@ export class ServerBackend implements MemoryBackend {
   ): Promise<Response> {
     const url = this.baseUrl + path;
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.token}`,
       "Content-Type": "application/json",
       "X-Mnemo-Agent-Id": this.agentName,
     };

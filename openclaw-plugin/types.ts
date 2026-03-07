@@ -1,6 +1,7 @@
 export interface PluginConfig {
   // Server mode (apiUrl present → server)
   apiUrl?: string;
+  tenantID?: string;
   apiToken?: string;
   userToken?: string;
 

@@ -10,22 +10,28 @@ import type {
 
 /**
  * ServerBackend — talks to mnemo-server REST API.
- * Used when MNEMO_API_URL + MNEMO_API_TOKEN are set.
+ * Used when MNEMO_API_URL + MNEMO_TENANT_ID are set.
  */
 export class ServerBackend implements MemoryBackend {
   private baseUrl: string;
-  private token: string;
+  private tenantID: string;
 
   constructor(cfg: MnemoConfig) {
     this.baseUrl = (cfg.apiUrl ?? "").replace(/\/+$/, "");
-    this.token = cfg.apiToken ?? "";
+    this.tenantID = cfg.tenantID ?? cfg.apiToken ?? "";
+  }
+
+  private tenantPath(path: string): string {
+    if (!this.tenantID) {
+      throw new Error("MNEMO_TENANT_ID is required");
+    }
+    return `/v1alpha1/mem9s/${this.tenantID}${path}`;
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const resp = await fetch(this.baseUrl + path, {
       method,
       headers: {
-        Authorization: `Bearer ${this.token}`,
         "Content-Type": "application/json",
       },
       body: body != null ? JSON.stringify(body) : undefined,
@@ -42,7 +48,7 @@ export class ServerBackend implements MemoryBackend {
   }
 
   async store(input: CreateMemoryInput): Promise<Memory> {
-    return this.request<Memory>("POST", "/api/memories", input);
+    return this.request<Memory>("POST", this.tenantPath("/memories"), input);
   }
 
   async search(input: SearchInput): Promise<SearchResult> {
@@ -59,7 +65,7 @@ export class ServerBackend implements MemoryBackend {
       total: number;
       limit: number;
       offset: number;
-    }>("GET", `/api/memories${qs ? "?" + qs : ""}`);
+    }>("GET", `${this.tenantPath("/memories")}${qs ? "?" + qs : ""}`);
 
     return {
       memories: raw.memories ?? [],
@@ -71,7 +77,7 @@ export class ServerBackend implements MemoryBackend {
 
   async get(id: string): Promise<Memory | null> {
     try {
-      return await this.request<Memory>("GET", `/api/memories/${id}`);
+      return await this.request<Memory>("GET", this.tenantPath(`/memories/${id}`));
     } catch (err) {
       if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
         return null;
@@ -82,7 +88,7 @@ export class ServerBackend implements MemoryBackend {
 
   async update(id: string, input: UpdateMemoryInput): Promise<Memory | null> {
     try {
-      return await this.request<Memory>("PUT", `/api/memories/${id}`, input);
+      return await this.request<Memory>("PUT", this.tenantPath(`/memories/${id}`), input);
     } catch (err) {
       if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
         return null;
@@ -93,7 +99,7 @@ export class ServerBackend implements MemoryBackend {
 
   async remove(id: string): Promise<boolean> {
     try {
-      await this.request("DELETE", `/api/memories/${id}`);
+      await this.request("DELETE", this.tenantPath(`/memories/${id}`));
       return true;
     } catch (err) {
       if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {

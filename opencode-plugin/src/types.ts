@@ -2,6 +2,7 @@
 export interface MnemoConfig {
   // Server mode (mnemo-server REST API)
   apiUrl?: string;
+  tenantID?: string;
   apiToken?: string;
 }
 
@@ -57,6 +58,7 @@ export interface SearchInput {
 export function loadConfig(): MnemoConfig {
   return {
     apiUrl: process.env.MNEMO_API_URL || undefined,
+    tenantID: process.env.MNEMO_TENANT_ID || process.env.MNEMO_API_TOKEN || undefined,
     apiToken: process.env.MNEMO_API_TOKEN || undefined,
   };
 }

@@ -10,13 +10,17 @@
         "type": "string",
         "description": "mnemo-server URL (server mode)"
       },
+      "tenantID": {
+        "type": "string",
+        "description": "Tenant ID for v1alpha1 mem9s routes (preferred)"
+      },
       "apiToken": {
         "type": "string",
-        "description": "API token for mnemo-server authentication (preferred over userToken)"
+        "description": "Legacy alias for tenantID (kept for backward compatibility)"
       },
       "userToken": {
         "type": "string",
-        "description": "User token (legacy alias for apiToken; use apiToken for new setups)"
+        "description": "Legacy alias for tenantID"
       }
     }
   },
@@ -25,14 +29,18 @@
       "label": "Server URL",
       "placeholder": "https://your-server.example.com"
     },
+    "tenantID": {
+      "label": "Tenant ID",
+      "placeholder": "uuid..."
+    },
     "apiToken": {
-      "label": "API Token",
-      "placeholder": "mnemo_...",
+      "label": "Legacy Tenant ID Alias",
+      "placeholder": "uuid...",
       "sensitive": true
     },
     "userToken": {
-      "label": "User Token",
-      "placeholder": "mnemo_...",
+      "label": "Legacy Tenant ID Alias",
+      "placeholder": "uuid...",
       "sensitive": true
     }
   }
