@@ -78,19 +78,23 @@ func (s *MemoryService) Search(ctx context.Context, filter domain.MemoryFilter) 
 	if filter.Query == "" {
 		return s.memories.List(ctx, filter)
 	}
+	searchFilter := filter
+	searchFilter.SessionID = ""
+	searchFilter.Source = ""
+
 	slog.Info("memory search", "query", filter.Query, "auto_model", s.autoModel, "fts", s.memories.FTSAvailable())
 	if s.autoModel != "" {
-		return s.autoHybridSearch(ctx, filter)
+		return s.autoHybridSearch(ctx, searchFilter)
 	}
 	if s.embedder != nil {
-		return s.hybridSearch(ctx, filter)
+		return s.hybridSearch(ctx, searchFilter)
 	}
 	if s.memories.FTSAvailable() {
-		return s.ftsOnlySearch(ctx, filter)
+		return s.ftsOnlySearch(ctx, searchFilter)
 	}
 	// FTS probe still running (cold start) — fall back to LIKE-based keyword search.
 	slog.Warn("search: FTS not yet available, falling back to keyword search")
-	return s.keywordOnlySearch(ctx, filter)
+	return s.keywordOnlySearch(ctx, searchFilter)
 }
 
 const rrfK = 60.0

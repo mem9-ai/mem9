@@ -43,9 +43,9 @@ GET    /v1alpha1/mem9s/{tenantID}/memories          → search (?q=, ?tags=, ?li
 GET    /v1alpha1/mem9s/{tenantID}/memories/{id}     → get by id
 PUT    /v1alpha1/mem9s/{tenantID}/memories/{id}     → update
 DELETE /v1alpha1/mem9s/{tenantID}/memories/{id}     → delete
-POST   /v1alpha1/mem9s/{tenantID}/tasks             → upload file (multipart)
-GET    /v1alpha1/mem9s/{tenantID}/tasks             → list upload tasks
-GET    /v1alpha1/mem9s/{tenantID}/tasks/{id}        → task status
+POST   /v1alpha1/mem9s/{tenantID}/imports           → upload file (multipart)
+GET    /v1alpha1/mem9s/{tenantID}/imports           → list upload tasks
+GET    /v1alpha1/mem9s/{tenantID}/imports/{id}      → task status
 ```
 
 Header: `X-Mnemo-Agent-Id: <agent-name>` (optional, for multi-agent)
@@ -109,7 +109,7 @@ for AGENT in $AGENTS; do
   
   # Upload memory.json if exists
   [ -f "$WORKSPACE/memory.json" ] && \
-    curl -sX POST "https://api.mem9.ai/v1alpha1/mem9s/$TENANT_ID/tasks" \
+curl -sX POST "https://api.mem9.ai/v1alpha1/mem9s/$TENANT_ID/imports" \
       -F "file=@$WORKSPACE/memory.json" \
       -F "agent_id=$AGENT" \
       -F "file_type=memory"
@@ -117,7 +117,7 @@ for AGENT in $AGENTS; do
   # Upload session files
   for SESSION in "$WORKSPACE"/sessions/*.json; do
     [ -f "$SESSION" ] && \
-      curl -sX POST "https://api.mem9.ai/v1alpha1/mem9s/$TENANT_ID/tasks" \
+curl -sX POST "https://api.mem9.ai/v1alpha1/mem9s/$TENANT_ID/imports" \
         -F "file=@$SESSION" \
         -F "agent_id=$AGENT" \
         -F "session_id=$(basename "$SESSION" .json)" \
@@ -174,7 +174,7 @@ curl -s "https://api.mem9.ai/v1alpha1/mem9s/$TENANT_ID/memories?q=database&limit
 
 **Check upload task:**
 ```bash
-curl -s "https://api.mem9.ai/v1alpha1/mem9s/$TENANT_ID/tasks/$TASK_ID"
+curl -s "https://api.mem9.ai/v1alpha1/mem9s/$TENANT_ID/imports/$TASK_ID"
 ```
 
 ---
@@ -186,7 +186,7 @@ curl -s "https://api.mem9.ai/v1alpha1/mem9s/$TENANT_ID/tasks/$TASK_ID"
 | `[mnemo] No mode configured` | Check `openclaw.json` has `apiUrl` + `tenantID` |
 | `Plugin not loading` | Verify `slots.memory = "mnemo"` |
 | `401 / 404` | Confirm tenantID is correct |
-| Upload stuck | `GET /tasks` to check status |
+| Upload stuck | `GET /imports` to check status |
 
 ---
 

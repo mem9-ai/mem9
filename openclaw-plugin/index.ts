@@ -1,6 +1,7 @@
 import type { MemoryBackend } from "./backend.js";
 import { ServerBackend } from "./server-backend.js";
 import { registerHooks } from "./hooks.js";
+import { runBootstrapImport } from "./init.js";
 import type {
   PluginConfig,
   CreateMemoryInput,
@@ -9,6 +10,8 @@ import type {
   IngestInput,
   IngestResult,
 } from "./types.js";
+
+const DEFAULT_API_URL = "https://api.mem9.ai";
 
 function jsonResult(data: unknown) {
   return data;
@@ -226,19 +229,24 @@ const mnemoPlugin = {
   description:
     "AI agent memory — server mode (mnemo-server) with hybrid vector + keyword search.",
 
-  register(api: OpenClawPluginApi) {
+  async register(api: OpenClawPluginApi) {
     const cfg = (api.pluginConfig ?? {}) as PluginConfig;
-
+    const effectiveApiUrl = cfg.apiUrl ?? DEFAULT_API_URL;
     if (!cfg.apiUrl) {
-      api.logger.error(
-        "[mnemo] No apiUrl configured. Set apiUrl in plugin config. Plugin disabled."
-      );
-      return;
+      api.logger.info(`[mnemo] apiUrl not configured, using default ${DEFAULT_API_URL}`);
     }
 
-    const configuredTenantID = cfg.tenantID ?? cfg.apiToken ?? cfg.userToken;
+    try {
+      await runBootstrapImport(api.logger);
+    } catch (err) {
+      api.logger.error(
+        `[mnemo] init: bootstrap import failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    const configuredTenantID = cfg.tenantID;
     const registerTenant = async (agentName: string): Promise<string> => {
-      const backend = new ServerBackend(cfg.apiUrl!, "", agentName);
+      const backend = new ServerBackend(effectiveApiUrl, "", agentName);
       const result = await backend.register();
       const claimUrl = result.claim_url ?? "(not provided)";
       api.logger.info(
@@ -263,7 +271,7 @@ const mnemoPlugin = {
     const factory: ToolFactory = (ctx: ToolContext) => {
       const agentId = ctx.agentId ?? cfg.agentName ?? "agent";
       const backend = new LazyServerBackend(
-        cfg.apiUrl!,
+        effectiveApiUrl,
         () => resolveTenantID(agentId),
         agentId,
       );
@@ -275,7 +283,7 @@ const mnemoPlugin = {
     // Register hooks with a lazy backend for lifecycle memory management.
     // Uses the default workspace/agent context for hook-triggered operations.
     const hookBackend = new LazyServerBackend(
-      cfg.apiUrl!,
+      effectiveApiUrl,
       () => resolveTenantID(cfg.agentName ?? "agent"),
       cfg.agentName ?? "agent",
     );

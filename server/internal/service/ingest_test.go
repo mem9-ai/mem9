@@ -14,16 +14,20 @@ import (
 )
 
 type memoryRepoMock struct {
-	createCalls   []*domain.Memory
-	setStateCalls []setStateCall  // track SetState invocations
-	setStateErr   error           // configurable return value for SetState
-	vectorResults []domain.Memory // configurable results for AutoVectorSearch
-	vectorErr     error           // configurable error for AutoVectorSearch / VectorSearch
-	ftsResults    []domain.Memory // configurable results for FTSSearch
-	ftsErr        error           // configurable error for FTSSearch
-	kwResults     []domain.Memory // configurable results for KeywordSearch
-	kwErr         error           // configurable error for KeywordSearch
-	ftsAvail      bool            // configurable FTSAvailable() return
+	createCalls          []*domain.Memory
+	setStateCalls        []setStateCall  // track SetState invocations
+	setStateErr          error           // configurable return value for SetState
+	vectorResults        []domain.Memory // configurable results for AutoVectorSearch
+	vectorErr            error           // configurable error for AutoVectorSearch / VectorSearch
+	ftsResults           []domain.Memory // configurable results for FTSSearch
+	ftsErr               error           // configurable error for FTSSearch
+	kwResults            []domain.Memory // configurable results for KeywordSearch
+	kwErr                error           // configurable error for KeywordSearch
+	ftsAvail             bool            // configurable FTSAvailable() return
+	lastVectorFilter     domain.MemoryFilter
+	lastAutoVectorFilter domain.MemoryFilter
+	lastKeywordFilter    domain.MemoryFilter
+	lastFTSFilter        domain.MemoryFilter
 }
 
 type setStateCall struct {
@@ -74,10 +78,12 @@ func (m *memoryRepoMock) BulkCreate(ctx context.Context, memories []*domain.Memo
 }
 
 func (m *memoryRepoMock) VectorSearch(ctx context.Context, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	m.lastVectorFilter = f
 	return nil, nil
 }
 
 func (m *memoryRepoMock) AutoVectorSearch(ctx context.Context, queryText string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	m.lastAutoVectorFilter = f
 	if m.vectorErr != nil {
 		return nil, m.vectorErr
 	}
@@ -88,6 +94,7 @@ func (m *memoryRepoMock) AutoVectorSearch(ctx context.Context, queryText string,
 }
 
 func (m *memoryRepoMock) KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	m.lastKeywordFilter = f
 	if m.kwErr != nil {
 		return nil, m.kwErr
 	}
@@ -98,6 +105,7 @@ func (m *memoryRepoMock) KeywordSearch(ctx context.Context, query string, f doma
 }
 
 func (m *memoryRepoMock) FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	m.lastFTSFilter = f
 	if m.ftsErr != nil {
 		return nil, m.ftsErr
 	}
@@ -833,5 +841,39 @@ func TestGatherExistingMemoriesFTSOnlyTotalOutage(t *testing.T) {
 	_, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"test fact"})
 	if err == nil {
 		t.Fatal("expected error on FTS-only total outage, got nil")
+	}
+}
+
+func TestReconcileContentRequiresLLM(t *testing.T) {
+	t.Parallel()
+
+	svc := NewIngestService(&memoryRepoMock{}, nil, nil, "", ModeSmart)
+	_, err := svc.ReconcileContent(context.Background(), "agent", "agent", "", []string{"prefers dark mode"})
+	if err == nil {
+		t.Fatal("expected error when llm is nil")
+	}
+	var ve *domain.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected ValidationError, got %T", err)
+	}
+	if ve.Field != "llm" {
+		t.Fatalf("expected field llm, got %s", ve.Field)
+	}
+}
+
+func TestReconcileContentValidatesInput(t *testing.T) {
+	t.Parallel()
+
+	svc := NewIngestService(&memoryRepoMock{}, nil, nil, "", ModeSmart)
+	_, err := svc.ReconcileContent(context.Background(), "agent", "agent", "", nil)
+	if err == nil {
+		t.Fatal("expected validation error for empty contents")
+	}
+	var ve *domain.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected ValidationError, got %T", err)
+	}
+	if ve.Field != "content" {
+		t.Fatalf("expected field content, got %s", ve.Field)
 	}
 }

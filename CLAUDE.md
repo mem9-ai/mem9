@@ -96,9 +96,6 @@ GET    /v1alpha1/mem9s/{tenantID}/memories           — Search/list
 GET    /v1alpha1/mem9s/{tenantID}/memories/{id}      — Get by ID
 PUT    /v1alpha1/mem9s/{tenantID}/memories/{id}      — Update
 DELETE /v1alpha1/mem9s/{tenantID}/memories/{id}      — Delete
-POST   /v1alpha1/mem9s/{tenantID}/memories/ingest    — Smart pipeline
-POST   /v1alpha1/mem9s/{tenantID}/memories/bulk      — Bulk create
-GET    /v1alpha1/mem9s/{tenantID}/memories/bootstrap  — Recent memories
 ```
 
 Agent identity is passed via the `X-Mnemo-Agent-Id` header.

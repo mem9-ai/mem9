@@ -46,7 +46,7 @@ type taskListResponse struct {
 // --- Handlers ---
 
 // createTask accepts a file upload and enqueues it for async ingest.
-// POST /v1alpha1/mem9s/{tenantID}/tasks
+// POST /v1alpha1/mem9s/{tenantID}/imports
 func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 	// Limit request body size BEFORE ParseMultipartForm to prevent large temp file creation.
 	// This closes the body after maxUploadSize bytes, causing ParseMultipartForm to fail early.
@@ -96,7 +96,11 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fileName := filepath.Base(header.Filename)
+	fileName, err := sanitizeFilename(filepath.Base(header.Filename))
+	if err != nil {
+		s.handleError(w, &domain.ValidationError{Field: "file", Message: err.Error()})
+		return
+	}
 
 	// Use O_EXCL to atomically create file and detect collisions.
 	// If collision, append random suffix and retry.
@@ -155,14 +159,14 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	task := &domain.UploadTask{
-		TaskID:   taskID,
-		TenantID: auth.TenantID,
-		FileName: fileName,
-		FilePath: filePath,
-		AgentID:  agentID,
+		TaskID:    taskID,
+		TenantID:  auth.TenantID,
+		FileName:  fileName,
+		FilePath:  filePath,
+		AgentID:   agentID,
 		SessionID: sessionID,
-		FileType: domain.FileType(fileType),
-		Status:   domain.TaskPending,
+		FileType:  domain.FileType(fileType),
+		Status:    domain.TaskPending,
 	}
 	if err := s.uploadTasks.Create(r.Context(), task); err != nil {
 		if removeErr := os.Remove(filePath); removeErr != nil {
@@ -176,7 +180,7 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 }
 
 // listTasks returns all tasks for a tenant with an aggregate status.
-// GET /v1alpha1/mem9s/{tenantID}/tasks
+// GET /v1alpha1/mem9s/{tenantID}/imports
 func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 	auth := authInfo(r)
 	tasks, err := s.uploadTasks.ListByTenant(r.Context(), auth.TenantID)
@@ -218,7 +222,7 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 // getTask returns a single task by ID.
-// GET /v1alpha1/mem9s/{tenantID}/tasks/{id}
+// GET /v1alpha1/mem9s/{tenantID}/imports/{id}
 func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
@@ -254,4 +258,16 @@ func randomSuffix(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func sanitizeFilename(name string) (string, error) {
+	name = strings.ReplaceAll(name, "\x00", "")
+	name = strings.TrimSpace(name)
+	if name == "" || name == "." || name == ".." {
+		return "", fmt.Errorf("invalid filename")
+	}
+	if strings.ContainsAny(name, "/\\") {
+		return "", fmt.Errorf("invalid filename")
+	}
+	return name, nil
 }

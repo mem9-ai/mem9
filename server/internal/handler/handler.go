@@ -122,20 +122,15 @@ func (s *Server) Router(tenantMW, rateLimitMW func(http.Handler) http.Handler) h
 		// Memory CRUD.
 		r.Post("/memories", s.createMemory)
 		r.Get("/memories", s.listMemories)
-		r.Get("/memories/bootstrap", s.bootstrapMemories)
-		r.Post("/memories/bulk", s.bulkCreateMemories)
 		r.Get("/memories/{id}", s.getMemory)
 		r.Put("/memories/{id}", s.updateMemory)
 		r.Delete("/memories/{id}", s.deleteMemory)
-		r.Post("/memories/ingest", s.ingestMemories)
 
-		// Tasks (async file ingest).
-		r.Post("/tasks", s.createTask)
-		r.Get("/tasks", s.listTasks)
-		r.Get("/tasks/{id}", s.getTask)
+		// Imports (async file ingest).
+		r.Post("/imports", s.createTask)
+		r.Get("/imports", s.listTasks)
+		r.Get("/imports/{id}", s.getTask)
 
-		// Tenant info.
-		r.Get("/info", s.getTenantInfo)
 	})
 
 	return r

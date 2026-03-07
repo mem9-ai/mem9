@@ -105,15 +105,11 @@ Agent identity: `X-Mnemo-Agent-Id` header.
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/v1alpha1/mem9s` | Provision tenant (no auth). Returns `{ "id", "claim_url" }`. |
-| `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Create/upsert. Server generates embedding if configured. |
+| `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Unified write endpoint: `{content,...}` for direct create or `{messages,...}` for ingest pipeline. |
 | `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Search: `?q=`, `?tags=`, `?source=`, `?key=`, `?limit=`, `?offset=` |
 | `GET` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Get single memory |
 | `PUT` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Update. Optional `If-Match` for version check. |
 | `DELETE` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Delete |
-| `POST` | `/v1alpha1/mem9s/{tenantID}/memories/ingest` | Ingest content for embedding + storage |
-| `POST` | `/v1alpha1/mem9s/{tenantID}/memories/bulk` | Bulk create (max 100) |
-| `GET` | `/v1alpha1/mem9s/{tenantID}/memories/bootstrap` | Bootstrap memories for agent startup |
-| `GET` | `/v1alpha1/mem9s/{tenantID}/info` | Tenant metadata |
 
 ## Self-Hosting
 

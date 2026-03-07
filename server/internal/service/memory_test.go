@@ -390,3 +390,36 @@ func TestSearchEmptyQueryReturnsList(t *testing.T) {
 		t.Fatalf("expected empty results from List(), got total=%d results=%d", total, len(results))
 	}
 }
+
+func TestSearchIgnoresSessionAndSourceFilters(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		ftsAvail: false,
+		kwResults: []domain.Memory{
+			{ID: "kw-1", Content: "result from keyword search", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, "")
+
+	_, _, err := svc.Search(context.Background(), domain.MemoryFilter{
+		Query:     "test query",
+		Source:    "legacy-source",
+		SessionID: "session-123",
+		AgentID:   "agent-1",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+
+	if memRepo.lastKeywordFilter.Source != "" {
+		t.Fatalf("expected keyword search Source filter cleared, got %q", memRepo.lastKeywordFilter.Source)
+	}
+	if memRepo.lastKeywordFilter.SessionID != "" {
+		t.Fatalf("expected keyword search SessionID filter cleared, got %q", memRepo.lastKeywordFilter.SessionID)
+	}
+	if memRepo.lastKeywordFilter.AgentID != "agent-1" {
+		t.Fatalf("expected keyword search AgentID preserved, got %q", memRepo.lastKeywordFilter.AgentID)
+	}
+}

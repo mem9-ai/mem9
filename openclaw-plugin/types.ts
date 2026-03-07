@@ -76,9 +76,11 @@ export interface IngestInput {
 }
 
 export interface IngestResult {
-  status: "complete" | "failed";
+  status: "complete" | "partial" | "failed";
   memories_changed: number;
   insight_ids?: string[];
   warnings?: number;
   error?: string;
 }
+
+export type StoreResult = Memory | IngestResult;

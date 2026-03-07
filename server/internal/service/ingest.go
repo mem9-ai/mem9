@@ -109,7 +109,7 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 	}
 
 	// Cap conversation size to avoid blowing LLM token limits.
-	const maxConversationRunes = 32000
+	const maxConversationRunes = 200000
 	formatted = truncateRunes(formatted, maxConversationRunes)
 
 	insightIDs, warnings, err := s.extractAndReconcile(ctx, agentName, req.AgentID, req.SessionID, formatted)
@@ -128,6 +128,92 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 		MemoriesChanged: len(insightIDs),
 		InsightIDs:      insightIDs,
 		Warnings:        warnings,
+	}, nil
+}
+
+// HasLLM returns true if an LLM client is configured for smart processing.
+func (s *IngestService) HasLLM() bool {
+	return s.llm != nil
+}
+
+// ReconcileContent runs the full ingest pipeline (extract facts + reconcile)
+// for raw content strings (as opposed to conversation messages).
+// Each content string is wrapped as a single user message for fact extraction.
+func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID, sessionID string, contents []string) (*IngestResult, error) {
+	if len(contents) == 0 {
+		return nil, &domain.ValidationError{Field: "content", Message: "required"}
+	}
+
+	slog.Info("reconcile content pipeline started", "agent", agentName, "agent_id", agentID, "contents", len(contents))
+
+	// Reconciliation requires LLM; do not silently degrade to raw writes.
+	if s.llm == nil {
+		return nil, &domain.ValidationError{Field: "llm", Message: "LLM is required for reconciliation"}
+	}
+
+	// Extract facts first, then run one batched reconciliation over all facts.
+	var allFacts []string
+	var totalWarnings int
+	var failures int
+
+	for _, content := range contents {
+		content = strings.TrimSpace(content)
+		if content == "" {
+			continue
+		}
+
+		// Cap content size to avoid blowing LLM token limits.
+		const maxContentRunes = 32000
+		formatted := truncateRunes(content, maxContentRunes)
+
+		// Wrap as a single user message for fact extraction.
+		conversation := "User: " + formatted
+
+		facts, err := s.extractFacts(ctx, conversation)
+		if err != nil {
+			slog.Error("reconcile content: fact extraction failed", "err", err, "content", truncateRunes(content, 80))
+			totalWarnings++
+			failures++
+			continue
+		}
+		allFacts = append(allFacts, facts...)
+	}
+
+	if len(allFacts) == 0 {
+		status := "complete"
+		if failures > 0 {
+			status = "failed"
+		}
+		return &IngestResult{
+			Status:          status,
+			MemoriesChanged: 0,
+			Warnings:        totalWarnings,
+		}, nil
+	}
+
+	insightIDs, warnings, err := s.reconcile(ctx, agentName, agentID, sessionID, allFacts)
+	totalWarnings += warnings
+	if err != nil {
+		slog.Error("reconcile content: batched reconciliation failed", "err", err)
+		return &IngestResult{
+			Status:          "failed",
+			MemoriesChanged: 0,
+			Warnings:        totalWarnings + 1,
+		}, nil
+	}
+
+	status := "complete"
+	if failures > 0 && len(insightIDs) == 0 {
+		status = "failed"
+	} else if totalWarnings > 0 || failures > 0 {
+		status = "partial"
+	}
+
+	return &IngestResult{
+		Status:          status,
+		MemoriesChanged: len(insightIDs),
+		InsightIDs:      insightIDs,
+		Warnings:        totalWarnings,
 	}, nil
 }
 
@@ -175,7 +261,7 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 
 // extractAndReconcile runs Phase 1a (extraction) + Phase 2 (reconciliation).
 func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agentID, sessionID, conversation string) ([]string, int, error) {
-	const maxFacts = 30 // Cap extracted facts to bound reconciliation prompt size
+	const maxFacts = 50 // Cap extracted facts to bound reconciliation prompt size
 
 	// Phase 1a: Extract facts.
 	facts, err := s.extractFacts(ctx, conversation)
@@ -273,7 +359,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
-			return nil, nil // Give up, treat as no facts.
+			return nil, fmt.Errorf("extraction parse after retry: %w", err)
 		}
 	}
 
@@ -437,13 +523,17 @@ Analyze the new facts and determine whether each should be added, updated, or de
 
 		case "UPDATE":
 			intID := parseIntID(event.ID)
+			if intID < 0 || intID >= len(existingMemories) {
+				slog.Warn("skipping UPDATE with out-of-range ID", "id", event.ID)
+				continue
+			}
 			realID, ok := idMap[intID]
 			if !ok || event.Text == "" {
 				slog.Warn("skipping UPDATE with invalid ID or empty text", "id", event.ID)
 				continue
 			}
 			// Guard: never auto-update pinned memories — treat as ADD instead.
-			if intID >= 0 && intID < len(existingMemories) && existingMemories[intID].MemoryType == domain.TypePinned {
+			if existingMemories[intID].MemoryType == domain.TypePinned {
 				slog.Warn("skipping UPDATE for pinned memory — treating as ADD", "id", realID)
 				newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text)
 				if addErr != nil {
@@ -464,13 +554,17 @@ Analyze the new facts and determine whether each should be added, updated, or de
 
 		case "DELETE":
 			intID := parseIntID(event.ID)
+			if intID < 0 || intID >= len(existingMemories) {
+				slog.Warn("skipping DELETE with out-of-range ID", "id", event.ID)
+				continue
+			}
 			realID, ok := idMap[intID]
 			if !ok {
 				slog.Warn("skipping DELETE with invalid ID", "id", event.ID)
 				continue
 			}
 			// Guard: never auto-delete pinned memories.
-			if intID >= 0 && intID < len(existingMemories) && existingMemories[intID].MemoryType == domain.TypePinned {
+			if existingMemories[intID].MemoryType == domain.TypePinned {
 				slog.Warn("skipping DELETE for pinned memory", "id", realID)
 				warnings++
 				continue

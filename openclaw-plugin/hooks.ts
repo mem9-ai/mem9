@@ -320,7 +320,7 @@ export function registerHooks(
         ? evt.agentId
         : AUTO_CAPTURE_SOURCE;
 
-      // POST to ingest endpoint — server handles LLM extraction + reconciliation
+      // POST messages to unified memories endpoint — server handles LLM extraction + reconciliation
       const result = await backend.ingest({
         messages: selected,
         session_id: sessionId,

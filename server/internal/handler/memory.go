@@ -13,9 +13,13 @@ import (
 )
 
 type createMemoryRequest struct {
-	Content  string          `json:"content"`
-	Tags     []string        `json:"tags,omitempty"`
-	Metadata json.RawMessage `json:"metadata,omitempty"`
+	Content   string                  `json:"content,omitempty"`
+	AgentID   string                  `json:"agent_id,omitempty"`
+	Tags      []string                `json:"tags,omitempty"`
+	Metadata  json.RawMessage         `json:"metadata,omitempty"`
+	Messages  []service.IngestMessage `json:"messages,omitempty"`
+	SessionID string                  `json:"session_id,omitempty"`
+	Mode      service.IngestMode      `json:"mode,omitempty"`
 }
 
 func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
@@ -27,13 +31,79 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 
 	auth := authInfo(r)
 	svc := s.resolveServices(auth)
-	mem, err := svc.memory.Create(r.Context(), auth.AgentName, req.Content, req.Tags, req.Metadata)
+
+	agentID := req.AgentID
+	if agentID == "" {
+		agentID = auth.AgentName
+	}
+
+	hasMessages := len(req.Messages) > 0
+	hasContent := strings.TrimSpace(req.Content) != ""
+
+	if hasMessages && hasContent {
+		s.handleError(w, &domain.ValidationError{Field: "body", Message: "provide either content or messages, not both"})
+		return
+	}
+
+	if hasMessages {
+		if len(req.Tags) > 0 || len(req.Metadata) > 0 {
+			s.handleError(w, &domain.ValidationError{Field: "body", Message: "tags/metadata are not supported with messages ingest"})
+			return
+		}
+
+		ingestReq := service.IngestRequest{
+			Messages:  req.Messages,
+			SessionID: req.SessionID,
+			AgentID:   agentID,
+			Mode:      req.Mode,
+		}
+
+		result, err := svc.ingest.Ingest(r.Context(), auth.AgentName, ingestReq)
+		if err != nil {
+			s.handleError(w, err)
+			return
+		}
+
+		status := http.StatusOK
+		switch result.Status {
+		case "complete":
+			status = http.StatusOK
+		case "partial":
+			status = 207 // Multi-Status
+		case "failed":
+			status = http.StatusBadGateway
+		}
+
+		respond(w, status, result)
+		return
+	}
+
+	if !hasContent {
+		s.handleError(w, &domain.ValidationError{Field: "content", Message: "content or messages required"})
+		return
+	}
+	if len(req.Tags) > 0 || len(req.Metadata) > 0 || req.Mode != "" {
+		s.handleError(w, &domain.ValidationError{Field: "body", Message: "content mode does not accept tags/metadata/mode"})
+		return
+	}
+
+	result, err := svc.ingest.ReconcileContent(r.Context(), auth.AgentName, agentID, req.SessionID, []string{req.Content})
 	if err != nil {
 		s.handleError(w, err)
 		return
 	}
 
-	respond(w, http.StatusCreated, mem)
+	status := http.StatusCreated
+	switch result.Status {
+	case "complete":
+		status = http.StatusCreated
+	case "partial":
+		status = 207 // Multi-Status
+	case "failed":
+		status = http.StatusBadGateway
+	}
+
+	respond(w, status, result)
 }
 
 type listResponse struct {
@@ -71,15 +141,6 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		SessionID:  q.Get("session_id"),
 		Limit:      limit,
 		Offset:     offset,
-	}
-	if v := q.Get("min_score"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= -1 && f <= 1 {
-			if f == 0 {
-				filter.MinScore = -1
-			} else {
-				filter.MinScore = f
-			}
-		}
 	}
 	svc := s.resolveServices(auth)
 	memories, total, err := svc.memory.Search(r.Context(), filter)

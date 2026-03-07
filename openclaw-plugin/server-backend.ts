@@ -1,6 +1,7 @@
 import type { MemoryBackend } from "./backend.js";
 import type {
   Memory,
+  StoreResult,
   SearchResult,
   CreateMemoryInput,
   UpdateMemoryInput,
@@ -52,8 +53,8 @@ export class ServerBackend implements MemoryBackend {
     return `/v1alpha1/mem9s/${this.tenantID}${path}`;
   }
 
-  async store(input: CreateMemoryInput): Promise<Memory> {
-    return this.request("POST", this.tenantPath("/memories"), input);
+  async store(input: CreateMemoryInput): Promise<StoreResult> {
+    return this.request<StoreResult>("POST", this.tenantPath("/memories"), input);
   }
 
   async search(input: SearchInput): Promise<SearchResult> {
@@ -105,7 +106,7 @@ export class ServerBackend implements MemoryBackend {
   }
 
   async ingest(input: IngestInput): Promise<IngestResult> {
-    return this.request<IngestResult>("POST", this.tenantPath("/memories/ingest"), input);
+    return this.request<IngestResult>("POST", this.tenantPath("/memories"), input);
   }
 
   private async requestRaw(

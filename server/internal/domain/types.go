@@ -123,7 +123,7 @@ type TenantToken struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// TenantInfo is the response for GET /v1alpha1/mem9s/{tenantID}/info.
+// TenantInfo describes tenant metadata.
 type TenantInfo struct {
 	TenantID    string       `json:"tenant_id"`
 	Name        string       `json:"name"`
