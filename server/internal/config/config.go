@@ -37,6 +37,10 @@ type Config struct {
 	TenantPoolMaxOpen     int
 	TenantPoolIdleTimeout time.Duration
 	TenantPoolTotalLimit  int
+
+	// Upload directory for file storage.
+	// Files are stored at {UploadDir}/{tenantID}/{agentID}/{filename}.
+	UploadDir string
 }
 
 func Load() (*Config, error) {
@@ -67,6 +71,7 @@ func Load() (*Config, error) {
 		TenantPoolMaxOpen:     envInt("MNEMO_TENANT_POOL_MAX_OPEN", 10),
 		TenantPoolIdleTimeout: envDuration("MNEMO_TENANT_POOL_IDLE_TIMEOUT", 10*time.Minute),
 		TenantPoolTotalLimit:  envInt("MNEMO_TENANT_POOL_TOTAL_LIMIT", 200),
+		UploadDir:             envOr("MNEMO_UPLOAD_DIR", "./uploads"),
 	}
 	// Validate ingest mode.
 	switch cfg.IngestMode {

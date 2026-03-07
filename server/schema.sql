@@ -107,3 +107,23 @@ CREATE TABLE IF NOT EXISTS memories (
 -- Step 4: Drop tombstone (separate deployment).
 -- ALTER TABLE memories DROP COLUMN tombstone;
 -- DROP INDEX idx_tombstone ON memories;
+
+-- Upload task tracking (control plane).
+CREATE TABLE IF NOT EXISTS upload_tasks (
+  task_id       VARCHAR(36)   PRIMARY KEY,
+  tenant_id     VARCHAR(36)   NOT NULL,
+  file_name     VARCHAR(255)  NOT NULL,
+  file_path     TEXT          NOT NULL,
+  agent_id      VARCHAR(100)  NULL,
+  session_id    VARCHAR(100)  NULL,
+  file_type     VARCHAR(20)   NOT NULL COMMENT 'session|memory',
+  total_chunks  INT           NOT NULL DEFAULT 0,
+  done_chunks   INT           NOT NULL DEFAULT 0,
+  status        VARCHAR(20)   NOT NULL DEFAULT 'pending'
+                COMMENT 'pending|processing|done|failed',
+  error_msg     TEXT          NULL,
+  created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_upload_tenant (tenant_id),
+  INDEX idx_upload_poll (status, created_at)
+);

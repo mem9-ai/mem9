@@ -1,5 +1,5 @@
 {
-  "name": "mnemo-openclaw",
+  "name": "mem9-openclaw",
   "version": "0.2.0",
   "description": "OpenClaw shared memory plugin — cloud-persistent memory with hybrid vector + keyword search via mnemo-server",
   "type": "module",

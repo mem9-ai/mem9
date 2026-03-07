@@ -53,3 +53,15 @@ type TenantTokenRepo interface {
 	GetByToken(ctx context.Context, token string) (*domain.TenantToken, error)
 	ListByTenant(ctx context.Context, tenantID string) ([]domain.TenantToken, error)
 }
+
+// UploadTaskRepo manages upload task records in the control plane DB.
+type UploadTaskRepo interface {
+	Create(ctx context.Context, task *domain.UploadTask) error
+	GetByID(ctx context.Context, taskID string) (*domain.UploadTask, error)
+	ListByTenant(ctx context.Context, tenantID string) ([]domain.UploadTask, error)
+	UpdateStatus(ctx context.Context, taskID string, status domain.TaskStatus, errorMsg string) error
+	UpdateProgress(ctx context.Context, taskID string, doneChunks int) error
+	UpdateTotalChunks(ctx context.Context, taskID string, totalChunks int) error
+	FetchPending(ctx context.Context, limit int) ([]domain.UploadTask, error)
+	ResetProcessing(ctx context.Context) (int64, error)
+}

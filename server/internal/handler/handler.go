@@ -16,13 +16,16 @@ import (
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/llm"
 	"github.com/qiffang/mnemos/server/internal/middleware"
+	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/repository/tidb"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
 
 // Server holds the HTTP handlers and their dependencies.
 type Server struct {
-	tenant *service.TenantService
+	tenant      *service.TenantService
+	uploadTasks repository.UploadTaskRepo
+	uploadDir   string
 	// Dependencies for creating tenant-mode services on-the-fly.
 	embedder   *embed.Embedder
 	llmClient  *llm.Client
@@ -35,6 +38,8 @@ type Server struct {
 // NewServer creates a new HTTP handler server.
 func NewServer(
 	tenantSvc *service.TenantService,
+	uploadTasks repository.UploadTaskRepo,
+	uploadDir string,
 	embedder *embed.Embedder,
 	llmClient *llm.Client,
 	autoModel string,
@@ -42,12 +47,14 @@ func NewServer(
 	logger *slog.Logger,
 ) *Server {
 	return &Server{
-		tenant:     tenantSvc,
-		embedder:   embedder,
-		llmClient:  llmClient,
-		autoModel:  autoModel,
-		ingestMode: ingestMode,
-		logger:     logger,
+		tenant:      tenantSvc,
+		uploadTasks: uploadTasks,
+		uploadDir:   uploadDir,
+		embedder:    embedder,
+		llmClient:   llmClient,
+		autoModel:   autoModel,
+		ingestMode:  ingestMode,
+		logger:      logger,
 	}
 }
 
@@ -119,6 +126,11 @@ func (s *Server) Router(tenantMW, rateLimitMW func(http.Handler) http.Handler) h
 		r.Put("/memories/{id}", s.updateMemory)
 		r.Delete("/memories/{id}", s.deleteMemory)
 		r.Post("/memories/ingest", s.ingestMemories)
+
+		// Tasks (async file ingest).
+		r.Post("/tasks", s.createTask)
+		r.Get("/tasks", s.listTasks)
+		r.Get("/tasks/{id}", s.getTask)
 
 		// Tenant info.
 		r.Get("/info", s.getTenantInfo)

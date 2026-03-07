@@ -64,6 +64,7 @@ func main() {
 
 	// Repositories.
 	tenantRepo := tidb.NewTenantRepo(db)
+	uploadTaskRepo := tidb.NewUploadTaskRepo(db)
 	tenantPool := tenant.NewPool(tenant.PoolConfig{
 		MaxIdle:     cfg.TenantPoolMaxIdle,
 		MaxOpen:     cfg.TenantPoolMaxOpen,
@@ -86,7 +87,7 @@ func main() {
 	rateMW := rl.Middleware()
 
 	// Handler.
-	srv := handler.NewServer(tenantSvc, embedder, llmClient, cfg.EmbedAutoModel, service.IngestMode(cfg.IngestMode), logger)
+	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, service.IngestMode(cfg.IngestMode), logger)
 	router := srv.Router(tenantMW, rateMW)
 
 	httpSrv := &http.Server{
@@ -97,12 +98,33 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Upload worker (async file ingest).
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel()
+	uploadWorker := service.NewUploadWorker(
+		uploadTaskRepo,
+		tenantRepo,
+		tenantPool,
+		embedder,
+		llmClient,
+		cfg.EmbedAutoModel,
+		service.IngestMode(cfg.IngestMode),
+		logger,
+	)
+	go func() {
+		if err := uploadWorker.Run(workerCtx); err != nil {
+			logger.Error("upload worker error", "err", err)
+		}
+	}()
+
 	// Graceful shutdown.
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		sig := <-sigCh
 		logger.Info("received signal, shutting down", "signal", sig)
+
+		workerCancel() // Stop upload worker first.
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
