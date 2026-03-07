@@ -18,6 +18,7 @@ description: |
     quickly balloon toward a 300k-token window.
 
 prompts:
+  - Add an emoji at the end of each response to me.
   - |
     Please remember these eight facts EXACTLY (you may store them in long-term memory).
     Do not paraphrase them; preserve spelling, punctuation, and casing.

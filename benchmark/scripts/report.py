@@ -134,7 +134,7 @@ def generate_html(data):
         <div class="response-card response-a">
           <details{open_attr}>
             <summary>
-              <span class="profile-label">A (Baseline)</span>
+              <span class="profile-label">A (Memory Files)</span>
               <span class="elapsed">{elapsed_a}s</span>
               {_status_indicator(resp_a)}
               <span class="preview">{html.escape(preview_a)}</span>
@@ -145,7 +145,7 @@ def generate_html(data):
         <div class="response-card response-b">
           <details{open_attr}>
             <summary>
-              <span class="profile-label">B (Treatment)</span>
+              <span class="profile-label">B (mem9)</span>
               <span class="elapsed">{elapsed_b}s</span>
               {_status_indicator(resp_b)}
               <span class="preview">{html.escape(preview_b)}</span>
