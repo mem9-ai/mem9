@@ -1,27 +1,23 @@
 name: agent-memory-value-300k
 
 description: |
-  High-efficiency context-filler (~300k tokens target) that still makes agent-memory
-  value obvious.
+  Wikipedia-assisted stress test targeting ~300k context window utilization while
+  still making long-term agent memory value obvious.
 
-  Strategy:
-  - Plant a small set of crisp, easily-graded facts early.
-  - Force the agent to emit very large outputs repeatedly (log-dump / encyclopedia)
-    using a CONTINUE protocol to bypass per-message output limits.
-  - Insert recall checks after heavy context pressure so it is obvious whether the
-    agent forgot.
+  Idea:
+  - Instead of injecting huge CHUNKs directly, the agent is instructed to fetch a
+    handful of large Wikipedia pages and include substantial verbatim excerpts.
+  - This can fill context quickly, but it is less deterministic than direct chunk
+    injection because web access and per-response output caps vary by runtime.
 
   Notes:
-  - Many runtimes enforce per-response output caps; therefore we ask the model to
-    output as much as allowed and end with the sentinel token CONTINUE.
-  - The harness should send the next prompt(s) sequentially; the conversation will
-    quickly balloon toward a 300k-token window.
+  - If the runtime has strict per-response output limits, the agent should split
+    excerpts across multiple turns using the EXACT token CONTINUE.
 
 prompts:
-  - Add an emoji at the end of each response to me.
   - |
-    Please remember these eight facts EXACTLY (you may store them in long-term memory).
-    Do not paraphrase them; preserve spelling, punctuation, and casing.
+    Context: Here are eight exact facts that may be useful later in this conversation.
+    (Keep spelling, punctuation, and casing exactly as written.)
 
     1) ContactName = "Avery Park"
     2) Company = "Northstar Robotics"
@@ -33,75 +29,72 @@ prompts:
     8) IncidentTicket = "INC-88421"
 
   - |
-    Context filler block A.
+    Wikipedia filler block #1.
 
-    Generate an extremely long JSONL dataset of synthetic agent events.
-    Requirements:
-    - Output JSONL (one JSON object per line).
-    - Each object MUST include: ts, actor, action, entity, attributes, trace_id.
-    - Produce as many lines as you are allowed to output in a single response.
-    - Do NOT include commentary.
-    - End your response with the single token: CONTINUE
+    Task:
+    1) Open and read these Wikipedia pages:
+       - https://en.wikipedia.org/wiki/Transformer_(machine_learning_model)
+       - https://en.wikipedia.org/wiki/Vector_database
+       - https://en.wikipedia.org/wiki/Retrieval-augmented_generation
 
-  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
-  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
-  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
-  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
-  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
-  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
-  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
-  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
-  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
-  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
+    2) For EACH page, paste LARGE verbatim excerpts into the chat (not just a summary).
+       - Include the lead section and at least 2 additional sections.
+       - Keep the original wording as much as possible.
+       - Label each excerpt with: PAGE_TITLE / SECTION_TITLE.
+
+    3) After pasting the excerpts for all pages, write a short bullet summary (max 10 bullets).
+
+    Output control:
+    - If you hit an output limit, stop immediately and print only: CONTINUE
+
+  - "Continue the Wikipedia filler block #1 exactly where you left off. End with CONTINUE if you hit an output limit."
+  - "Continue the Wikipedia filler block #1 exactly where you left off. End with CONTINUE if you hit an output limit."
 
   - |
     Memory check #1 (answer in one line, exact values):
     ContactName | ProductCodename | VerificationPhrase | IncidentTicket
 
   - |
-    Context filler block B.
+    Wikipedia filler block #2.
 
-    Write an ultra-verbose "Agent Memory Systems" encyclopedia chapter.
-    Requirements:
-    - Minimum 25,000 words OR as much as you are allowed to output.
-    - Use many headings/subheadings.
-    - Include at least 25 bullet lists.
-    - Include at least 10 code blocks (any language), each with 20-40 lines.
-    - End your response with the single token: CONTINUE
+    Task:
+    1) Open and read these Wikipedia pages:
+       - https://en.wikipedia.org/wiki/Database
+       - https://en.wikipedia.org/wiki/Distributed_database
+       - https://en.wikipedia.org/wiki/ACID
 
-  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
-  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
-  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
-  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
-  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
-  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
-  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
-  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
+    2) For EACH page, paste LARGE verbatim excerpts into the chat.
+       - Include the lead section and at least 2 additional sections.
+       - Label each excerpt with: PAGE_TITLE / SECTION_TITLE.
+
+    3) Then write a short bullet summary (max 10 bullets).
+
+    Output control:
+    - If you hit an output limit, stop immediately and print only: CONTINUE
+
+  - "Continue the Wikipedia filler block #2 exactly where you left off. End with CONTINUE if you hit an output limit."
+  - "Continue the Wikipedia filler block #2 exactly where you left off. End with CONTINUE if you hit an output limit."
 
   - |
     Memory check #2 (answer succinctly, exact strings):
     What are Company, SupportEmail, and BillingPlan?
 
   - |
-    Context filler block C.
+    Wikipedia filler block #3.
 
-    Produce a long, realistic 120-turn transcript between:
-    - Sales
-    - Staff Engineer
-    - Security
-    - SRE
+    Task:
+    1) Open and read these Wikipedia pages:
+       - https://en.wikipedia.org/wiki/Information_retrieval
+       - https://en.wikipedia.org/wiki/Knowledge_graph
 
-    Requirements:
-    - Make it at least 20,000 words OR as much as allowed.
-    - Add technical digressions, clarifying questions, and disagreements.
-    - End your response with the single token: CONTINUE
+    2) Paste LARGE verbatim excerpts (lead + 2 sections per page) with labels.
 
-  - Continue the transcript from exactly where you left off. Output as much as allowed. End with CONTINUE.
-  - Continue the transcript from exactly where you left off. Output as much as allowed. End with CONTINUE.
-  - Continue the transcript from exactly where you left off. Output as much as allowed. End with CONTINUE.
-  - Continue the transcript from exactly where you left off. Output as much as allowed. End with CONTINUE.
-  - Continue the transcript from exactly where you left off. Output as much as allowed. End with CONTINUE.
-  - Continue the transcript from exactly where you left off. Output as much as allowed. End with CONTINUE.
+    3) Then write a short bullet summary (max 10 bullets).
+
+    Output control:
+    - If you hit an output limit, stop immediately and print only: CONTINUE
+
+  - "Continue the Wikipedia filler block #3 exactly where you left off. End with CONTINUE if you hit an output limit."
 
   - |
     Final memory check (one line, exact values):
