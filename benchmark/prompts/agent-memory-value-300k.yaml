@@ -1,0 +1,107 @@
+name: agent-memory-value-300k
+
+description: |
+  High-efficiency context-filler (~300k tokens target) that still makes agent-memory
+  value obvious.
+
+  Strategy:
+  - Plant a small set of crisp, easily-graded facts early.
+  - Force the agent to emit very large outputs repeatedly (log-dump / encyclopedia)
+    using a CONTINUE protocol to bypass per-message output limits.
+  - Insert recall checks after heavy context pressure so it is obvious whether the
+    agent forgot.
+
+  Notes:
+  - Many runtimes enforce per-response output caps; therefore we ask the model to
+    output as much as allowed and end with the sentinel token CONTINUE.
+  - The harness should send the next prompt(s) sequentially; the conversation will
+    quickly balloon toward a 300k-token window.
+
+prompts:
+  - |
+    Please remember these eight facts EXACTLY (you may store them in long-term memory).
+    Do not paraphrase them; preserve spelling, punctuation, and casing.
+
+    1) ContactName = "Avery Park"
+    2) Company = "Northstar Robotics"
+    3) ProductCodename = "ORCHID-7"
+    4) LaunchDate = "2031-04-19"
+    5) VerificationPhrase = "glass-cactus"
+    6) SupportEmail = "support@northstar-robotics.example"
+    7) BillingPlan = "Zero-Signup"
+    8) IncidentTicket = "INC-88421"
+
+  - |
+    Context filler block A.
+
+    Generate an extremely long JSONL dataset of synthetic agent events.
+    Requirements:
+    - Output JSONL (one JSON object per line).
+    - Each object MUST include: ts, actor, action, entity, attributes, trace_id.
+    - Produce as many lines as you are allowed to output in a single response.
+    - Do NOT include commentary.
+    - End your response with the single token: CONTINUE
+
+  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
+  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
+  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
+  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
+  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
+  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
+  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
+  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
+  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
+  - Continue exactly where you left off in the JSONL dataset. Output as much as allowed. End with CONTINUE.
+
+  - |
+    Memory check #1 (answer in one line, exact values):
+    ContactName | ProductCodename | VerificationPhrase | IncidentTicket
+
+  - |
+    Context filler block B.
+
+    Write an ultra-verbose "Agent Memory Systems" encyclopedia chapter.
+    Requirements:
+    - Minimum 25,000 words OR as much as you are allowed to output.
+    - Use many headings/subheadings.
+    - Include at least 25 bullet lists.
+    - Include at least 10 code blocks (any language), each with 20-40 lines.
+    - End your response with the single token: CONTINUE
+
+  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
+  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
+  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
+  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
+  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
+  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
+  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
+  - Continue the encyclopedia chapter from exactly where you left off. Output as much as allowed. End with CONTINUE.
+
+  - |
+    Memory check #2 (answer succinctly, exact strings):
+    What are Company, SupportEmail, and BillingPlan?
+
+  - |
+    Context filler block C.
+
+    Produce a long, realistic 120-turn transcript between:
+    - Sales
+    - Staff Engineer
+    - Security
+    - SRE
+
+    Requirements:
+    - Make it at least 20,000 words OR as much as allowed.
+    - Add technical digressions, clarifying questions, and disagreements.
+    - End your response with the single token: CONTINUE
+
+  - Continue the transcript from exactly where you left off. Output as much as allowed. End with CONTINUE.
+  - Continue the transcript from exactly where you left off. Output as much as allowed. End with CONTINUE.
+  - Continue the transcript from exactly where you left off. Output as much as allowed. End with CONTINUE.
+  - Continue the transcript from exactly where you left off. Output as much as allowed. End with CONTINUE.
+  - Continue the transcript from exactly where you left off. Output as much as allowed. End with CONTINUE.
+  - Continue the transcript from exactly where you left off. Output as much as allowed. End with CONTINUE.
+
+  - |
+    Final memory check (one line, exact values):
+    ContactName | Company | ProductCodename | LaunchDate | VerificationPhrase | SupportEmail | BillingPlan | IncidentTicket

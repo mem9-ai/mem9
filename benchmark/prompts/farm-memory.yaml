@@ -1,0 +1,365 @@
+description: Tests long-term memory retention over 100 simulated farm days with deterministic
+  store/query pairs
+name: farm-memory
+prompts:
+- I'll telling a farm story of 40 days.
+- 'Day1: pig chased bucket'
+- What happened in Day1
+- Write a fairy tale (at least 500 words) set on Day 1 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day2: chicken found fence'
+- What happened in Day1
+- Write a fairy tale (at least 500 words) set on Day 2 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day3: horse carried apple'
+- What happened in Day3
+- Write a fairy tale (at least 500 words) set on Day 3 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day4: sheep watched bucket'
+- What happened in Day3
+- Write a fairy tale (at least 500 words) set on Day 4 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day5: cow kicked fence'
+- What happened in Day2
+- Write a fairy tale (at least 500 words) set on Day 5 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day6: pig licked apple'
+- What happened in Day2
+- Write a fairy tale (at least 500 words) set on Day 6 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day7: chicken ate bucket'
+- What happened in Day2
+- Write a fairy tale (at least 500 words) set on Day 7 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day8: horse chased fence'
+- What happened in Day2
+- Write a fairy tale (at least 500 words) set on Day 8 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day9: sheep found apple'
+- What happened in Day9
+- Write a fairy tale (at least 500 words) set on Day 9 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day10: cow carried bucket'
+- What happened in Day2
+- Write a fairy tale (at least 500 words) set on Day 10 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day11: pig watched fence'
+- What happened in Day10
+- Write a fairy tale (at least 500 words) set on Day 11 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day12: chicken kicked apple'
+- What happened in Day7
+- Write a fairy tale (at least 500 words) set on Day 12 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day13: horse licked bucket'
+- What happened in Day1
+- Write a fairy tale (at least 500 words) set on Day 13 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day14: sheep ate fence'
+- What happened in Day1
+- Write a fairy tale (at least 500 words) set on Day 14 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day15: cow chased apple'
+- What happened in Day2
+- Write a fairy tale (at least 500 words) set on Day 15 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day16: pig found bucket'
+- What happened in Day7
+- Write a fairy tale (at least 500 words) set on Day 16 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day17: chicken carried fence'
+- What happened in Day8
+- Write a fairy tale (at least 500 words) set on Day 17 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day18: horse watched apple'
+- What happened in Day17
+- Write a fairy tale (at least 500 words) set on Day 18 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day19: sheep kicked bucket'
+- What happened in Day1
+- Write a fairy tale (at least 500 words) set on Day 19 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day20: cow licked fence'
+- What happened in Day18
+- Write a fairy tale (at least 500 words) set on Day 20 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day21: pig ate apple'
+- What happened in Day7
+- Write a fairy tale (at least 500 words) set on Day 21 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day22: chicken chased bucket'
+- What happened in Day21
+- Write a fairy tale (at least 500 words) set on Day 22 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day23: horse found fence'
+- What happened in Day23
+- Write a fairy tale (at least 500 words) set on Day 23 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day24: sheep carried apple'
+- What happened in Day18
+- Write a fairy tale (at least 500 words) set on Day 24 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day25: cow watched bucket'
+- What happened in Day14
+- Write a fairy tale (at least 500 words) set on Day 25 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day26: pig kicked fence'
+- What happened in Day8
+- Write a fairy tale (at least 500 words) set on Day 26 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day27: chicken licked apple'
+- What happened in Day15
+- Write a fairy tale (at least 500 words) set on Day 27 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day28: horse ate bucket'
+- What happened in Day19
+- Write a fairy tale (at least 500 words) set on Day 28 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day29: sheep chased fence'
+- What happened in Day9
+- Write a fairy tale (at least 500 words) set on Day 29 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day30: cow found apple'
+- What happened in Day26
+- Write a fairy tale (at least 500 words) set on Day 30 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day31: pig carried bucket'
+- What happened in Day28
+- Write a fairy tale (at least 500 words) set on Day 31 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day32: chicken watched fence'
+- What happened in Day1
+- Write a fairy tale (at least 500 words) set on Day 32 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day33: horse kicked apple'
+- What happened in Day11
+- Write a fairy tale (at least 500 words) set on Day 33 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day34: sheep licked bucket'
+- What happened in Day28
+- Write a fairy tale (at least 500 words) set on Day 34 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day35: cow ate fence'
+- What happened in Day22
+- Write a fairy tale (at least 500 words) set on Day 35 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day36: pig chased apple'
+- What happened in Day18
+- Write a fairy tale (at least 500 words) set on Day 36 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day37: chicken found bucket'
+- What happened in Day10
+- Write a fairy tale (at least 500 words) set on Day 37 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day38: horse carried fence'
+- What happened in Day14
+- Write a fairy tale (at least 500 words) set on Day 38 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day39: sheep watched apple'
+- What happened in Day22
+- Write a fairy tale (at least 500 words) set on Day 39 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.
+- 'Day40: cow kicked bucket'
+- What happened in Day7
+- Write a fairy tale (at least 500 words) set on Day 40 of the farm. The tale must
+  reference and build upon the specific events that happened on ALL previous days
+  — recall every animal, action, and object from each prior day and weave them into
+  the narrative. For each previous day, mention what happened and show how it connects
+  to today's events. Include named characters for the animals, elaborate dialogue,
+  vivid descriptions, and a moral lesson that ties together the entire history so
+  far. Be as lengthy and descriptive as possible.

@@ -31,6 +31,10 @@ node_modules/
 dist/
 *.tgz
 
+# Benchmark results
+benchmark/results/*
+!benchmark/results/.gitkeep
+
 # Claude Code
 .claude/
 __pycache__/
