@@ -18,7 +18,11 @@ type memoryRepoMock struct {
 	setStateCalls []setStateCall  // track SetState invocations
 	setStateErr   error           // configurable return value for SetState
 	vectorResults []domain.Memory // configurable results for AutoVectorSearch
+	vectorErr     error           // configurable error for AutoVectorSearch / VectorSearch
 	ftsResults    []domain.Memory // configurable results for FTSSearch
+	ftsErr        error           // configurable error for FTSSearch
+	kwResults     []domain.Memory // configurable results for KeywordSearch
+	kwErr         error           // configurable error for KeywordSearch
 	ftsAvail      bool            // configurable FTSAvailable() return
 }
 
@@ -74,6 +78,9 @@ func (m *memoryRepoMock) VectorSearch(ctx context.Context, queryVec []float32, f
 }
 
 func (m *memoryRepoMock) AutoVectorSearch(ctx context.Context, queryText string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	if m.vectorErr != nil {
+		return nil, m.vectorErr
+	}
 	if m.vectorResults != nil {
 		return m.vectorResults, nil
 	}
@@ -81,10 +88,19 @@ func (m *memoryRepoMock) AutoVectorSearch(ctx context.Context, queryText string,
 }
 
 func (m *memoryRepoMock) KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	if m.kwErr != nil {
+		return nil, m.kwErr
+	}
+	if m.kwResults != nil {
+		return m.kwResults, nil
+	}
 	return nil, nil
 }
 
 func (m *memoryRepoMock) FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	if m.ftsErr != nil {
+		return nil, m.ftsErr
+	}
 	if m.ftsResults != nil {
 		return m.ftsResults, nil
 	}
@@ -744,5 +760,78 @@ func TestGatherExistingMemoriesHybridDedup(t *testing.T) {
 	}
 	if !ids["shared-1"] || !ids["vec-only"] || !ids["fts-only"] {
 		t.Fatalf("expected shared-1, vec-only, fts-only; got %v", ids)
+	}
+}
+
+// TestGatherExistingMemoriesTotalOutageReturnsError verifies that when every
+// single search attempt fails (total outage), gatherExistingMemories returns
+// an error instead of silently returning an empty list (which would cause
+// addAllFacts to create duplicate memories).
+func TestGatherExistingMemoriesTotalOutageReturnsError(t *testing.T) {
+	t.Parallel()
+
+	// All search backends fail.
+	memRepo := &memoryRepoMock{
+		vectorErr: errors.New("connection refused"),
+		kwErr:     errors.New("connection refused"),
+	}
+
+	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	_, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"test fact"})
+	if err == nil {
+		t.Fatal("expected error on total search outage, got nil")
+	}
+	if !errors.Is(err, err) { // sanity check
+		t.Fatalf("unexpected error type: %v", err)
+	}
+}
+
+// TestGatherExistingMemoriesPartialLegFailureContinues verifies that when one
+// search leg fails but the other succeeds, results from the successful leg are
+// returned (no hard abort).
+func TestGatherExistingMemoriesPartialLegFailureContinues(t *testing.T) {
+	t.Parallel()
+
+	highScore := 0.8
+	// Vector succeeds, keyword/FTS fails.
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "vec-1", Content: "from vector", MemoryType: domain.TypeInsight, State: domain.StateActive, Score: &highScore},
+		},
+		kwErr: errors.New("FTS temporarily unavailable"),
+	}
+
+	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"test fact"})
+	if err != nil {
+		t.Fatalf("expected partial success, got error: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 memory from vector leg, got %d", len(result))
+	}
+	if result[0].ID != "vec-1" {
+		t.Fatalf("expected vec-1, got %s", result[0].ID)
+	}
+}
+
+// TestGatherExistingMemoriesFTSOnlyTotalOutage verifies the no-vector path
+// also detects total outage when all keyword/FTS searches fail.
+func TestGatherExistingMemoriesFTSOnlyTotalOutage(t *testing.T) {
+	t.Parallel()
+
+	// No vector configured, FTS available but all FTS searches fail.
+	memRepo := &memoryRepoMock{
+		ftsAvail: true,
+		ftsErr:   errors.New("connection refused"),
+	}
+
+	// No embedder, no autoModel — FTS-only deployment.
+	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart)
+
+	_, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"test fact"})
+	if err == nil {
+		t.Fatal("expected error on FTS-only total outage, got nil")
 	}
 }

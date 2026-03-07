@@ -494,15 +494,17 @@ Analyze the new facts and determine whether each should be added, updated, or de
 }
 
 // gatherExistingMemories searches relevant memories for each fact, deduplicates
-// by ID, and returns a single flat list. Returns an error if any search backend
-// fails — on TiDB Serverless, search features are always available so failures
-// indicate a real problem that should be surfaced.
+// by ID, and returns a single flat list. Individual per-fact search failures are
+// logged and skipped (partial recall is acceptable for the LLM reconciler).
+// However, if every single search attempt fails (total outage), an error is
+// returned to prevent silent duplicate writes via addAllFacts.
 func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID string, facts []string) ([]domain.Memory, error) {
 	const perFactLimit = 5
 	const contentMaxLen = 150
 	const maxExistingMemories = 60
 	const minSimilarityScore = 0.3 // Skip vector results with score below this threshold
 
+	var searchAttempts, searchSuccesses int
 	filter := domain.MemoryFilter{
 		State:      "active",
 		MemoryType: "insight,pinned",
@@ -539,11 +541,17 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 			} else {
 				kwMatches, kwErr = s.memories.KeywordSearch(ctx, fact, filter, perFactLimit)
 			}
+			searchAttempts++
 			if kwErr != nil {
 				slog.Warn("gatherExistingMemories: keyword/FTS search failed for fact, skipping", "fact", truncateRunes(fact, 50), "err", kwErr)
 				continue
 			}
+			searchSuccesses++
 			addUnseen(kwMatches, false)
+		}
+		// If every search attempt failed, return an error to prevent silent duplicate writes.
+		if searchAttempts > 0 && searchSuccesses == 0 {
+			return nil, fmt.Errorf("all %d search attempts failed: search backends may be unavailable", searchAttempts)
 		}
 		if len(result) > maxExistingMemories {
 			result = result[:maxExistingMemories]
@@ -554,13 +562,19 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 	for _, fact := range facts {
 		// Leg 1: Vector search.
 		var vecMatches []domain.Memory
+		var vecLegOK bool
 		if s.autoModel != "" {
+			searchAttempts++
 			var vecErr error
 			vecMatches, vecErr = s.memories.AutoVectorSearch(ctx, fact, filter, perFactLimit)
 			if vecErr != nil {
 				slog.Warn("gatherExistingMemories: auto vector search failed for fact, continuing with keyword leg", "fact", truncateRunes(fact, 50), "err", vecErr)
+			} else {
+				searchSuccesses++
+				vecLegOK = true
 			}
 		} else {
+			searchAttempts++
 			vec, embedErr := s.embedder.Embed(ctx, fact)
 			if embedErr != nil {
 				slog.Warn("gatherExistingMemories: embed failed for fact, continuing with keyword leg", "fact", truncateRunes(fact, 50), "err", embedErr)
@@ -569,6 +583,9 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 				vecMatches, vecErr = s.memories.VectorSearch(ctx, vec, filter, perFactLimit)
 				if vecErr != nil {
 					slog.Warn("gatherExistingMemories: vector search failed for fact, continuing with keyword leg", "fact", truncateRunes(fact, 50), "err", vecErr)
+				} else {
+					searchSuccesses++
+					vecLegOK = true
 				}
 			}
 		}
@@ -582,11 +599,24 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 		} else {
 			kwMatches, kwErr = s.memories.KeywordSearch(ctx, fact, filter, perFactLimit)
 		}
+		searchAttempts++
 		if kwErr != nil {
 			slog.Warn("gatherExistingMemories: keyword/FTS search failed for fact, skipping", "fact", truncateRunes(fact, 50), "err", kwErr)
 		} else {
+			searchSuccesses++
 			addUnseen(kwMatches, false) // No threshold for keyword/FTS results
 		}
+
+		// If neither leg succeeded for this fact, log it clearly.
+		if !vecLegOK && kwErr != nil {
+			slog.Error("gatherExistingMemories: both search legs failed for fact", "fact", truncateRunes(fact, 50))
+		}
+	}
+
+	// If every single search attempt failed, we have a total outage.
+	// Return an error to prevent silent duplicate writes via addAllFacts.
+	if searchAttempts > 0 && searchSuccesses == 0 {
+		return nil, fmt.Errorf("all %d search attempts failed: search backends may be unavailable", searchAttempts)
 	}
 
 	if len(result) > maxExistingMemories {

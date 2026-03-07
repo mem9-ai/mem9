@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"math"
 	"strings"
@@ -303,5 +304,89 @@ func TestSortByScore(t *testing.T) {
 	}
 	if result[3].ID != "low" {
 		t.Fatalf("expected low score last, got %s", result[3].ID)
+	}
+}
+
+// TestSearchColdStartFallbackToKeyword verifies that when no embedder and no
+// autoModel are configured and FTS is not yet available (cold start), Search()
+// falls back to KeywordSearch instead of returning a hard error.
+func TestSearchColdStartFallbackToKeyword(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		ftsAvail: false, // FTS probe still running
+		kwResults: []domain.Memory{
+			{ID: "kw-1", Content: "result from keyword search", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+
+	// No embedder, no autoModel — cold start, FTS not yet available.
+	svc := NewMemoryService(memRepo, nil, "")
+
+	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
+		Query: "test query",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Search() should fall back to keyword, got error: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected total=1, got %d", total)
+	}
+	if len(results) != 1 || results[0].ID != "kw-1" {
+		t.Fatalf("expected kw-1 result from keyword fallback, got %v", results)
+	}
+}
+
+// TestSearchFTSOnlyWhenAvailable verifies that when FTS is available and no
+// vector search is configured, Search() uses FTS (not keyword fallback).
+func TestSearchFTSOnlyWhenAvailable(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		ftsAvail: true,
+		ftsResults: []domain.Memory{
+			{ID: "fts-1", Content: "result from FTS", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+		kwResults: []domain.Memory{
+			{ID: "kw-1", Content: "should not appear"},
+		},
+	}
+
+	svc := NewMemoryService(memRepo, nil, "")
+
+	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
+		Query: "test query",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Search() FTS-only error: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected total=1, got %d", total)
+	}
+	if len(results) != 1 || results[0].ID != "fts-1" {
+		t.Fatalf("expected fts-1 from FTS search, got %v", results)
+	}
+}
+
+// TestSearchEmptyQueryReturnsList verifies that Search() with empty query
+// delegates to List() instead of any search path.
+func TestSearchEmptyQueryReturnsList(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{}
+	svc := NewMemoryService(memRepo, nil, "")
+
+	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
+		Query: "",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Search() empty query error: %v", err)
+	}
+	// List returns nil, 0, nil from mock.
+	if total != 0 || len(results) != 0 {
+		t.Fatalf("expected empty results from List(), got total=%d results=%d", total, len(results))
 	}
 }
