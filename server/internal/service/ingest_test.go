@@ -892,3 +892,45 @@ func TestReconcileContentValidatesInput(t *testing.T) {
 		t.Fatalf("expected field content, got %s", ve.Field)
 	}
 }
+
+func TestParseExtractedFacts_StringArray(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"facts":["A"," B ",""]}`
+	facts, err := parseExtractedFacts(raw)
+	if err != nil {
+		t.Fatalf("parseExtractedFacts() error = %v", err)
+	}
+	if len(facts) != 2 {
+		t.Fatalf("expected 2 facts, got %d (%#v)", len(facts), facts)
+	}
+	if facts[0] != "A" || facts[1] != "B" {
+		t.Fatalf("unexpected facts: %#v", facts)
+	}
+}
+
+func TestParseExtractedFacts_ObjectArray(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"facts":[{"fact":"喜欢 Rust"},{"text":"常用 Go"}]}`
+	facts, err := parseExtractedFacts(raw)
+	if err != nil {
+		t.Fatalf("parseExtractedFacts() error = %v", err)
+	}
+	if len(facts) != 2 {
+		t.Fatalf("expected 2 facts, got %d (%#v)", len(facts), facts)
+	}
+	if facts[0] != "喜欢 Rust" || facts[1] != "常用 Go" {
+		t.Fatalf("unexpected facts: %#v", facts)
+	}
+}
+
+func TestParseExtractedFacts_MissingFactsField(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"items":["x"]}`
+	_, err := parseExtractedFacts(raw)
+	if err == nil {
+		t.Fatalf("expected error for missing facts field")
+	}
+}
