@@ -85,7 +85,7 @@ Add to `openclaw.json`:
 | Platform | Install |
 |---|---|
 | **Claude Code** | `/plugin marketplace add qiffang/mnemos` → `/plugin install mnemo-memory@mnemos` |
-| **OpenCode** | `"plugin": ["mnemo-opencode"]` in `opencode.json` |
+| **OpenCode** | `bash opencode-plugin/scripts/setup-opencode-plugin.sh` |
 | **Any HTTP client** | REST API via mnemo-server |
 
 ## 5 Memory Tools
