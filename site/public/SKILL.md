@@ -253,12 +253,28 @@ Or if no `openclaw.json` exists, create:
 
 If result returns stored memory → setup successful.
 
-### Step 5 — What's Next
+### Step 5 — Restart Gateway
+
+`[AGENT]` Tell the user:
+
+> Configuration complete! Now I need to restart the OpenClaw Gateway to load the mem9 plugin.
+>
+> Restarting in 3 seconds...
+
+Then restart the gateway:
+
+```bash
+openclaw gateway restart
+```
+
+After the gateway restarts, wait for it to come back online (usually takes 5-10 seconds), then proceed to Step 6.
+
+### Step 6 — What's Next
 
 `[AGENT]` Print the following to the user:
 
 ```
-✅ mem9 installed!
+✅ mem9 installed and loaded!
 
 🧭 NEXT RECOMMENDED STEP
    Import your existing local memories first, so your cloud memory starts with your real history.
