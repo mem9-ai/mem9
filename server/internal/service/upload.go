@@ -1,11 +1,14 @@
 package service
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -180,8 +183,8 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 
 	switch task.FileType {
 	case domain.FileTypeSession:
-		var file SessionFile
-		if err := json.Unmarshal(data, &file); err != nil {
+		file, err := parseSessionFile(data)
+		if err != nil {
 			return w.failTask(ctx, task, fmt.Errorf("parse session file: %w", err), logger)
 		}
 		if file.AgentID == "" {
@@ -356,6 +359,117 @@ func marshalMetadata(metadata map[string]any) (json.RawMessage, error) {
 		return nil, err
 	}
 	return json.RawMessage(b), nil
+}
+
+// parseSessionFile tries to parse data as a JSON SessionFile first.
+// If that fails, it tries JSONL format (one JSON object per line).
+// Supports both simple {role, content} lines and OpenClaw's nested
+// format: {"type":"message","message":{"role":"...","content":[...]}}.
+func parseSessionFile(data []byte) (SessionFile, error) {
+	var file SessionFile
+	if err := json.Unmarshal(data, &file); err == nil && (len(file.Messages) > 0 || file.AgentID != "" || file.SessionID != "") {
+		return file, nil
+	}
+
+	// Try JSONL: parse each line, skipping non-message lines.
+	var messages []IngestMessage
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // up to 10MB per line
+	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+
+		// Try simple {role, content} format first.
+		var simple IngestMessage
+		if err := json.Unmarshal(line, &simple); err != nil {
+			// Skip lines that aren't valid JSON (metadata, etc.)
+			continue
+		}
+		if simple.Role != "" && simple.Content != "" {
+			messages = append(messages, simple)
+			continue
+		}
+
+		// Try OpenClaw format: {"type":"message","message":{"role":"...","content":[...]}}
+		msg := parseOpenClawLine(line)
+		if msg != nil {
+			messages = append(messages, *msg)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return SessionFile{}, fmt.Errorf("JSONL scan: %w", err)
+	}
+	if len(messages) == 0 {
+		return SessionFile{}, fmt.Errorf("no valid messages found in file")
+	}
+
+	return SessionFile{Messages: messages}, nil
+}
+
+// parseOpenClawLine extracts an IngestMessage from an OpenClaw JSONL line.
+// OpenClaw format: {"type":"message","message":{"role":"user","content":[{"type":"text","text":"..."}]}}
+func parseOpenClawLine(line []byte) *IngestMessage {
+	var entry struct {
+		Type    string `json:"type"`
+		Message struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(line, &entry); err != nil {
+		return nil
+	}
+	if entry.Type != "message" || entry.Message.Role == "" {
+		return nil
+	}
+	// Only keep user and assistant messages for ingest.
+	role := entry.Message.Role
+	if role != "user" && role != "assistant" {
+		return nil
+	}
+
+	content := flattenContentBlocks(entry.Message.Content)
+	if content == "" {
+		return nil
+	}
+	return &IngestMessage{Role: role, Content: content}
+}
+
+// flattenContentBlocks converts a content field to a plain string.
+// Handles both string content and array-of-blocks content
+// (e.g. [{"type":"text","text":"..."},{"type":"thinking","thinking":"..."}]).
+func flattenContentBlocks(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	// Try plain string first.
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+
+	// Try array of content blocks.
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &blocks) != nil {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, b := range blocks {
+		if b.Type == "text" && b.Text != "" {
+			if sb.Len() > 0 {
+				sb.WriteString("\n\n")
+			}
+			sb.WriteString(b.Text)
+		}
+	}
+	return sb.String()
 }
 
 func chunkMessages(msgs []IngestMessage, size int) [][]IngestMessage {
