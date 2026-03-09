@@ -47,7 +47,9 @@ func main() {
 		if cfg.DBBackend == "tidb" {
 			logger.Info("auto-embedding enabled (TiDB EMBED_TEXT)", "model", cfg.EmbedAutoModel, "dims", cfg.EmbedAutoDims)
 		} else {
-			logger.Info("auto-embedding model configured (not supported with PostgreSQL, using client-side embedding)", "model", cfg.EmbedAutoModel)
+			logger.Warn("auto-embedding (EMBED_TEXT) is only supported with TiDB; clearing and falling back to client-side embedding", "model", cfg.EmbedAutoModel, "backend", cfg.DBBackend)
+			cfg.EmbedAutoModel = ""
+			cfg.EmbedAutoDims = 0
 		}
 	} else if embedder != nil {
 		logger.Info("client-side embedding configured", "model", cfg.EmbedModel, "dims", cfg.EmbedDims)

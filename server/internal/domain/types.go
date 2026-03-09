@@ -107,23 +107,11 @@ type Tenant struct {
 	DeletedAt     *time.Time   `json:"-"`
 }
 
-// DSN builds a connection string for this tenant's database.
-// The format depends on the provider: "tidb_zero" and others default to MySQL,
-// while "local" with PostgreSQL uses the postgres:// scheme.
-// Use DSNForBackend for explicit control.
-func (t *Tenant) DSN() string {
-	return t.DSNForBackend("")
-}
-
 // DSNForBackend builds a connection string for the specified backend.
-// If backend is empty, it auto-detects: provider "local" defaults to postgres, otherwise mysql.
+// backend must be "postgres" or "tidb" (MySQL-compatible); empty string panics.
 func (t *Tenant) DSNForBackend(backend string) string {
 	if backend == "" {
-		if t.Provider == "local" {
-			backend = "postgres"
-		} else {
-			backend = "tidb"
-		}
+		panic("DSNForBackend: backend must be specified explicitly (\"postgres\" or \"tidb\")")
 	}
 	switch backend {
 	case "postgres":
