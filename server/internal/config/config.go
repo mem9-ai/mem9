@@ -13,6 +13,9 @@ type Config struct {
 	RateLimit float64
 	RateBurst int
 
+	// DBBackend selects the database driver: "tidb" (default, MySQL-compatible) or "postgres".
+	DBBackend string
+
 	// Auto-embedding: TiDB Serverless generates embeddings via EMBED_TEXT().
 	// When set, takes priority over client-side embedding.
 	// Example: "tidbcloud_free/amazon/titan-embed-text-v2"
@@ -62,6 +65,7 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Port:                  envOr("MNEMO_PORT", "8080"),
 		DSN:                   dsn,
+		DBBackend:             envOr("MNEMO_DB_BACKEND", "tidb"),
 		RateLimit:             envFloat("MNEMO_RATE_LIMIT", 100),
 		RateBurst:             envInt("MNEMO_RATE_BURST", 200),
 		EmbedAutoModel:        os.Getenv("MNEMO_EMBED_AUTO_MODEL"),
@@ -91,6 +95,14 @@ func Load() (*Config, error) {
 		// ok
 	default:
 		return nil, fmt.Errorf("unsupported MNEMO_INGEST_MODE %q; valid values are \"smart\" and \"raw\"", cfg.IngestMode)
+	}
+
+	// Validate DB backend.
+	switch cfg.DBBackend {
+	case "tidb", "postgres":
+		// ok
+	default:
+		return nil, fmt.Errorf("unsupported MNEMO_DB_BACKEND %q; valid values are \"tidb\" and \"postgres\"", cfg.DBBackend)
 	}
 
 	return cfg, nil

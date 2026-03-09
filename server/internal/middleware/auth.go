@@ -43,7 +43,7 @@ func ResolveTenant(
 				return
 			}
 
-			db, err := pool.Get(r.Context(), t.ID, t.DSN())
+			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			if err != nil {
 				writeError(w, http.StatusServiceUnavailable, "cannot connect to tenant database")
 				return

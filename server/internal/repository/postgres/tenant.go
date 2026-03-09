@@ -1,0 +1,159 @@
+package postgres
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"time"
+
+	"github.com/qiffang/mnemos/server/internal/domain"
+)
+
+type TenantRepoImpl struct {
+	db *sql.DB
+}
+
+func NewTenantRepo(db *sql.DB) *TenantRepoImpl {
+	return &TenantRepoImpl{db: db}
+}
+
+func (r *TenantRepoImpl) Create(ctx context.Context, t *domain.Tenant) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO tenants (id, name, db_host, db_port, db_user, db_password, db_name, db_tls, provider, cluster_id, claim_url, claim_expires_at, status, schema_version, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())`,
+		t.ID, t.Name, t.DBHost, t.DBPort, t.DBUser, t.DBPassword, t.DBName, t.DBTLS,
+		t.Provider, nullString(t.ClusterID), nullString(t.ClaimURL), nullTime(t.ClaimExpiresAt), string(t.Status), t.SchemaVersion,
+	)
+	if err != nil {
+		return fmt.Errorf("create tenant: %w", err)
+	}
+	return nil
+}
+
+func (r *TenantRepoImpl) GetByID(ctx context.Context, id string) (*domain.Tenant, error) {
+	row := r.db.QueryRowContext(ctx,
+		`SELECT id, name, db_host, db_port, db_user, db_password, db_name, db_tls, provider, cluster_id, claim_url, claim_expires_at,
+		 status, schema_version, created_at, updated_at, deleted_at
+		 FROM tenants WHERE id = $1`, id,
+	)
+	return scanTenant(row)
+}
+
+func (r *TenantRepoImpl) GetByName(ctx context.Context, name string) (*domain.Tenant, error) {
+	row := r.db.QueryRowContext(ctx,
+		`SELECT id, name, db_host, db_port, db_user, db_password, db_name, db_tls, provider, cluster_id, claim_url, claim_expires_at,
+		 status, schema_version, created_at, updated_at, deleted_at
+		 FROM tenants WHERE name = $1 AND status != 'deleted'`, name,
+	)
+	return scanTenant(row)
+}
+
+func (r *TenantRepoImpl) UpdateStatus(ctx context.Context, id string, status domain.TenantStatus) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE tenants SET status = $1, updated_at = NOW() WHERE id = $2`,
+		string(status), id,
+	)
+	if err != nil {
+		return fmt.Errorf("update tenant status: %w", err)
+	}
+	return nil
+}
+
+func (r *TenantRepoImpl) UpdateSchemaVersion(ctx context.Context, id string, version int) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE tenants SET schema_version = $1, updated_at = NOW() WHERE id = $2`,
+		version, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update tenant schema version: %w", err)
+	}
+	return nil
+}
+
+type TenantTokenRepoImpl struct {
+	db *sql.DB
+}
+
+func NewTenantTokenRepo(db *sql.DB) *TenantTokenRepoImpl {
+	return &TenantTokenRepoImpl{db: db}
+}
+
+func (r *TenantTokenRepoImpl) CreateToken(ctx context.Context, tt *domain.TenantToken) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO tenant_tokens (api_token, tenant_id, created_at)
+		 VALUES ($1, $2, NOW())`,
+		tt.APIToken, tt.TenantID,
+	)
+	if err != nil {
+		return fmt.Errorf("create tenant token: %w", err)
+	}
+	return nil
+}
+
+func (r *TenantTokenRepoImpl) GetByToken(ctx context.Context, token string) (*domain.TenantToken, error) {
+	var tt domain.TenantToken
+	row := r.db.QueryRowContext(ctx,
+		`SELECT api_token, tenant_id, created_at
+		 FROM tenant_tokens WHERE api_token = $1`, token,
+	)
+	if err := row.Scan(&tt.APIToken, &tt.TenantID, &tt.CreatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("get tenant token: %w", err)
+	}
+	return &tt, nil
+}
+
+func (r *TenantTokenRepoImpl) ListByTenant(ctx context.Context, tenantID string) ([]domain.TenantToken, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT api_token, tenant_id, created_at
+		 FROM tenant_tokens WHERE tenant_id = $1 ORDER BY created_at`, tenantID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list tenant tokens: %w", err)
+	}
+	defer rows.Close()
+
+	var tokens []domain.TenantToken
+	for rows.Next() {
+		var tt domain.TenantToken
+		if err := rows.Scan(&tt.APIToken, &tt.TenantID, &tt.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan tenant token: %w", err)
+		}
+		tokens = append(tokens, tt)
+	}
+	return tokens, rows.Err()
+}
+
+func scanTenant(row *sql.Row) (*domain.Tenant, error) {
+	var t domain.Tenant
+	var clusterID, claimURL sql.NullString
+	var claimExpiresAt sql.NullTime
+	var status string
+	var deletedAt sql.NullTime
+	if err := row.Scan(&t.ID, &t.Name, &t.DBHost, &t.DBPort, &t.DBUser, &t.DBPassword, &t.DBName, &t.DBTLS,
+		&t.Provider, &clusterID, &claimURL, &claimExpiresAt, &status, &t.SchemaVersion, &t.CreatedAt, &t.UpdatedAt, &deletedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("scan tenant: %w", err)
+	}
+	t.ClusterID = clusterID.String
+	t.ClaimURL = claimURL.String
+	t.Status = domain.TenantStatus(status)
+	if claimExpiresAt.Valid {
+		t.ClaimExpiresAt = &claimExpiresAt.Time
+	}
+	if deletedAt.Valid {
+		t.DeletedAt = &deletedAt.Time
+	}
+	return &t, nil
+}
+
+func nullTime(t *time.Time) sql.NullTime {
+	if t == nil {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: *t, Valid: true}
+}

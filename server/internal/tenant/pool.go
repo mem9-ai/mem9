@@ -16,6 +16,7 @@ type TenantPool struct {
 	lifetime    time.Duration
 	idleTimeout time.Duration
 	totalLimit  int
+	backend     string // "tidb" or "postgres"
 	stopCh      chan struct{}
 }
 
@@ -31,6 +32,7 @@ type PoolConfig struct {
 	Lifetime    time.Duration
 	IdleTimeout time.Duration
 	TotalLimit  int
+	Backend     string // "tidb" (default) or "postgres"
 }
 
 func NewPool(cfg PoolConfig) *TenantPool {
@@ -49,6 +51,10 @@ func NewPool(cfg PoolConfig) *TenantPool {
 	if cfg.TotalLimit == 0 {
 		cfg.TotalLimit = 200
 	}
+	backend := cfg.Backend
+	if backend == "" {
+		backend = "tidb"
+	}
 
 	p := &TenantPool{
 		conns:       make(map[string]*tenantConn),
@@ -57,6 +63,7 @@ func NewPool(cfg PoolConfig) *TenantPool {
 		lifetime:    cfg.Lifetime,
 		idleTimeout: cfg.IdleTimeout,
 		totalLimit:  cfg.TotalLimit,
+		backend:     backend,
 		stopCh:      make(chan struct{}),
 	}
 
@@ -95,7 +102,11 @@ func (p *TenantPool) Get(ctx context.Context, tenantID string, dsn string) (*sql
 		return nil, fmt.Errorf("tenant pool: total limit %d reached", p.totalLimit)
 	}
 
-	db, err := sql.Open("mysql", dsn)
+	driver := "mysql"
+	if p.backend == "postgres" {
+		driver = "pgx"
+	}
+	db, err := sql.Open(driver, dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -157,6 +168,11 @@ func (p *TenantPool) Stats() map[string]time.Time {
 		stats[tenantID] = conn.lastUsed
 	}
 	return stats
+}
+
+// Backend returns the configured database backend ("tidb" or "postgres").
+func (p *TenantPool) Backend() string {
+	return p.backend
 }
 
 func (p *TenantPool) evictLoop() {
