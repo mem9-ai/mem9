@@ -8,13 +8,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # ---------------------------------------------------------------------------
 TIDB_ZERO_API="${TIDB_ZERO_API:-https://zero.tidbapi.com/v1alpha1/instances}"
 DB_NAME="${MNEMO_DB_NAME:-test}"
-MNEMO_SERVER_PORT="${MNEMO_BENCH_PORT:-18082}"
+MNEMO_SERVER_PORT="${MNEMO_BENCH_PORT:-18081}"
 PROFILE_A="mnemos_test_a"
 PROFILE_B="mnemos_test_b"
 PORT_A=50789
 PORT_B=51789
 GATEWAY_TOKEN="bench-token-123456"
-BENCH_PROMPT_FILE="${BENCH_PROMPT_FILE:-$ROOT/benchmark/prompts/farm-memory.yaml}"
+BENCH_PROMPT_FILE="${BENCH_PROMPT_FILE:-}"
 PROMPT_TIMEOUT="${BENCH_PROMPT_TIMEOUT:-600}"
 
 # ---------------------------------------------------------------------------
@@ -23,6 +23,12 @@ PROMPT_TIMEOUT="${BENCH_PROMPT_TIMEOUT:-600}"
 if [[ -z "${CLAUDE_CODE_TOKEN:-}" ]]; then
   echo "ERROR: CLAUDE_CODE_TOKEN is required but not set."
   echo "  export CLAUDE_CODE_TOKEN='your-api-key'"
+  exit 1
+fi
+
+if [[ -z "$BENCH_PROMPT_FILE" ]]; then
+  echo "ERROR: BENCH_PROMPT_FILE is required but not set."
+  echo "  export BENCH_PROMPT_FILE='path/to/prompts.yaml'"
   exit 1
 fi
 
