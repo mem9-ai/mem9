@@ -1,3 +1,6 @@
+import path from "node:path";
+import fs from "node:fs";
+import { pathToFileURL } from "node:url";
 import type { MemoryBackend } from "./backend.js";
 import type { IngestMessage, Memory } from "./types.js";
 
@@ -157,25 +160,77 @@ async function tryLegacyCompact(params: {
   customInstructions?: string;
   legacyParams?: Record<string, unknown>;
 }): Promise<CompactResult | null> {
-  const candidates = [
-    "openclaw/context-engine/legacy",
-    "openclaw/dist/context-engine/legacy.js",
-  ];
+  try {
+    // Derive openclaw's plugin-sdk dir from process.argv[1] (openclaw entry point).
+    // This avoids require.resolve("openclaw/plugin-sdk") which fails when openclaw
+    // is not in the plugin's node_modules resolution chain.
+    const openclawDist = path.dirname(process.argv[1] ?? "");
+    const pluginSdkDir = path.join(openclawDist, "plugin-sdk");
+    const runtimeCandidates = fs.readdirSync(pluginSdkDir)
+      .filter((name) => /^compact\.runtime-.*\.js$/.test(name))
+      .sort();
 
-  for (const path of candidates) {
-    try {
-      const mod = (await import(path)) as { LegacyContextEngine?: new () => { compact: (arg: typeof params) => Promise<CompactResult> } };
-      if (!mod?.LegacyContextEngine) continue;
-      const legacy = new mod.LegacyContextEngine();
-      return legacy.compact(params);
-    } catch {
+    for (const runtimeName of runtimeCandidates) {
+      const runtimePath = path.join(pluginSdkDir, runtimeName);
+      const mod = (await import(pathToFileURL(runtimePath).href)) as {
+        compactEmbeddedPiSessionDirect?: (arg: {
+          sessionId: string;
+          sessionFile: string;
+          tokenBudget?: number;
+          force?: boolean;
+          customInstructions?: string;
+          workspaceDir: string;
+        }) => Promise<{
+          ok: boolean;
+          compacted: boolean;
+          reason?: string;
+          result?: {
+            summary?: string;
+            firstKeptEntryId?: string;
+            tokensBefore: number;
+            tokensAfter?: number;
+            details?: unknown;
+          };
+        }>;
+      };
+      if (typeof mod.compactEmbeddedPiSessionDirect !== "function") continue;
+
+      // runtimeContext carries the full CompactEmbeddedPiSessionParams passed by OpenClaw
+      // (workspaceDir, config, model, provider, sessionKey, etc.). Spread it first so all
+      // required fields are present, then override with the explicit compact() params.
+      const runtimeContext = (params as unknown as Record<string, unknown>).runtimeContext as Record<string, unknown> ?? {};
+      const result = await mod.compactEmbeddedPiSessionDirect({
+        workspaceDir: process.cwd(),
+        ...runtimeContext,
+        sessionId: params.sessionId,
+        sessionFile: params.sessionFile,
+        tokenBudget: params.tokenBudget,
+        force: params.force,
+        customInstructions: params.customInstructions,
+      });
+
+      return {
+        ok: result.ok,
+        compacted: result.compacted,
+        reason: result.reason,
+        result: result.result ? {
+          summary: result.result.summary,
+          firstKeptEntryId: result.result.firstKeptEntryId,
+          tokensBefore: result.result.tokensBefore,
+          tokensAfter: result.result.tokensAfter,
+          details: result.result.details,
+        } : undefined,
+      };
     }
-  }
 
-  return null;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export function createMem9ContextEngine(backend: MemoryBackend, logger: Logger): ContextEngine {
+  // Keep afterTurn undefined so the beta.1 runner can continue to use ingest/ingestBatch fallback.
   return {
     info: {
       id: "mem9",

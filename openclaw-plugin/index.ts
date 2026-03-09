@@ -276,7 +276,7 @@ const mnemoPlugin = {
       warnOrInfo(
         api.logger,
         "[mem9] Hook mode active. On OpenClaw beta.1+, hook-based memory injection requires " +
-          "plugins.entries.mem9.hooks.allowPromptInjection = true."
+        "plugins.entries.mem9.hooks.allowPromptInjection = true."
       );
     }
 
@@ -357,7 +357,7 @@ class LazyServerBackend implements MemoryBackend {
     private apiUrl: string,
     private tenantIDProvider: () => Promise<string>,
     private agentId: string,
-  ) {}
+  ) { }
 
   private async resolve(): Promise<ServerBackend> {
     if (this.resolved) return this.resolved;
