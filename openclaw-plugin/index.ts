@@ -1,6 +1,7 @@
 import type { MemoryBackend } from "./backend.js";
 import { ServerBackend } from "./server-backend.js";
 import { registerHooks } from "./hooks.js";
+import { createMem9ContextEngine } from "./context-engine.js";
 import type {
   PluginConfig,
   CreateMemoryInput,
@@ -19,6 +20,7 @@ function jsonResult(data: unknown) {
 interface OpenClawPluginApi {
   config?: {
     plugins?: {
+      slots?: { contextEngine?: string };
       entries?: Record<string, { hooks?: { allowPromptInjection?: boolean } }>;
     };
   };
@@ -261,9 +263,10 @@ const mnemoPlugin = {
   register(api: OpenClawPluginApi) {
     const cfg = (api.pluginConfig ?? {}) as PluginConfig;
     const effectiveApiUrl = cfg.apiUrl ?? DEFAULT_API_URL;
-    const fallbackSessionId = `ses_${Date.now().toString(36)}`;
     // beta.1 introduced registerContextEngine and the new hook payloads we rely on here.
     const supportsBeta1Hooks = typeof api.registerContextEngine === "function";
+    const contextEngineSlot = api.config?.plugins?.slots?.contextEngine;
+    const contextEngineActive = supportsBeta1Hooks && contextEngineSlot === mnemoPlugin.id;
     const allowPromptInjection =
       api.config?.plugins?.entries?.[mnemoPlugin.id]?.hooks?.allowPromptInjection === true;
     if (!cfg.apiUrl) {
@@ -317,12 +320,24 @@ const mnemoPlugin = {
       () => resolveTenantID(cfg.agentName ?? "agent"),
       cfg.agentName ?? "agent",
     );
+
+    if (supportsBeta1Hooks) {
+      const registerContextEngine = api.registerContextEngine as ((id: string, factory: () => unknown) => void);
+      registerContextEngine(mnemoPlugin.id, () => createMem9ContextEngine(hookBackend, api.logger));
+      api.logger.info("[mem9] Registered context engine implementation");
+    }
+
     registerHooks(api, hookBackend, api.logger, {
       maxIngestBytes: cfg.maxIngestBytes,
       enableToolResultPersist: supportsBeta1Hooks,
       supportsPrependSystemContext: supportsBeta1Hooks,
-      fallbackSessionId,
+      enableBeforePromptBuild: !contextEngineActive,
+      enableAgentEndIngest: !contextEngineActive,
     });
+
+    if (contextEngineActive) {
+      api.logger.info("[mem9] contextEngine slot points to mem9; hook recall/ingest is disabled to avoid duplicate writes");
+    }
   },
 };
 

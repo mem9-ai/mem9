@@ -284,48 +284,54 @@ export function registerHooks(
     enableToolResultPersist?: boolean;
     supportsPrependSystemContext?: boolean;
     fallbackSessionId?: string;
+    enableBeforePromptBuild?: boolean;
+    enableAgentEndIngest?: boolean;
   },
 ): void {
   const maxIngestBytes = options?.maxIngestBytes ?? DEFAULT_MAX_INGEST_BYTES;
   const supportsPrependSystemContext = options?.supportsPrependSystemContext === true;
+  const enableBeforePromptBuild = options?.enableBeforePromptBuild !== false;
+  const enableAgentEndIngest = options?.enableAgentEndIngest !== false;
 
   // --------------------------------------------------------------------------
   // before_prompt_build — inject relevant memories into every LLM call
   // --------------------------------------------------------------------------
-  api.on(
-    "before_prompt_build",
-    async (event: unknown) => {
-      try {
-        const evt = event as { prompt?: string };
-        const prompt = evt?.prompt;
-        if (!prompt || prompt.length < MIN_PROMPT_LEN) return;
+  if (enableBeforePromptBuild) {
+    api.on(
+      "before_prompt_build",
+      async (event: unknown) => {
+        try {
+          const evt = event as { prompt?: string };
+          const prompt = evt?.prompt;
+          if (!prompt || prompt.length < MIN_PROMPT_LEN) return;
 
-        const result = await backend.search({ q: prompt, limit: MAX_INJECT });
-        const memories = result.data ?? [];
+          const result = await backend.search({ q: prompt, limit: MAX_INJECT });
+          const memories = result.data ?? [];
 
-        if (memories.length === 0) return;
+          if (memories.length === 0) return;
 
-        const { pinned, dynamic } = splitMemories(memories);
+          const { pinned, dynamic } = splitMemories(memories);
 
-        logger.info(`[mem9] Injecting ${memories.length} memories into prompt context`);
+          logger.info(`[mem9] Injecting ${memories.length} memories into prompt context`);
 
-        if (!supportsPrependSystemContext) {
+          if (!supportsPrependSystemContext) {
+            return {
+              prependContext: formatMemoriesBlock(memories),
+            };
+          }
+
           return {
-            prependContext: formatMemoriesBlock(memories),
+            prependSystemContext: pinned.length ? formatMemoriesBlock(pinned) : undefined,
+            prependContext: dynamic.length ? formatMemoriesBlock(dynamic) : undefined,
           };
+        } catch (err) {
+          // Graceful degradation — never block the LLM call
+          logger.error(`[mem9] before_prompt_build failed: ${String(err)}`);
         }
-
-        return {
-          prependSystemContext: pinned.length ? formatMemoriesBlock(pinned) : undefined,
-          prependContext: dynamic.length ? formatMemoriesBlock(dynamic) : undefined,
-        };
-      } catch (err) {
-        // Graceful degradation — never block the LLM call
-        logger.error(`[mem9] before_prompt_build failed: ${String(err)}`);
-      }
-    },
-    { priority: 50 }, // Run after most plugins but before agent start
-  );
+      },
+      { priority: 50 }, // Run after most plugins but before agent start
+    );
+  }
 
   // --------------------------------------------------------------------------
   // after_compaction — no-op placeholder (no client-side cache to invalidate)
@@ -393,14 +399,17 @@ export function registerHooks(
   // accumulating until byte budget is hit. Then POST to tenant-scoped ingest endpoint.
   // for server-side LLM extraction + reconciliation.
   // --------------------------------------------------------------------------
-  api.on("agent_end", async (event: unknown, ctx: unknown) => {
-    try {
-      const evt = event as {
-        success?: boolean;
-        messages?: unknown[];
-      };
-      const hookCtx = (ctx ?? {}) as HookAgentContext;
-      if (!evt?.success || !evt.messages || evt.messages.length === 0) return;
+  if (enableAgentEndIngest) {
+    api.on("agent_end", async (event: unknown, ctx: unknown) => {
+      try {
+        const evt = event as {
+          success?: boolean;
+          messages?: unknown[];
+          sessionId?: string;
+          agentId?: string;
+        };
+        const hookCtx = (ctx ?? {}) as HookAgentContext;
+        if (!evt?.success || !evt.messages || evt.messages.length === 0) return;
 
       // Format raw messages into IngestMessage format
       const formatted: IngestMessage[] = [];
@@ -428,34 +437,39 @@ export function registerHooks(
 
       if (selected.length === 0) return;
 
-      const sessionId = typeof hookCtx.sessionId === "string"
-        ? hookCtx.sessionId
-        : typeof hookCtx.sessionKey === "string"
-        ? hookCtx.sessionKey
-        : typeof options?.fallbackSessionId === "string"
-        ? options.fallbackSessionId
-        : `ses_${Date.now()}`;
+        const sessionId = typeof hookCtx.sessionId === "string"
+          ? hookCtx.sessionId
+          : typeof hookCtx.sessionKey === "string"
+          ? hookCtx.sessionKey
+          : typeof evt.sessionId === "string"
+          ? evt.sessionId
+          : typeof options?.fallbackSessionId === "string"
+          ? options.fallbackSessionId
+          : `ses_${Date.now()}`;
 
-      const agentId = typeof hookCtx.agentId === "string"
-        ? hookCtx.agentId
-        : AUTO_CAPTURE_SOURCE;
+        const agentId = typeof hookCtx.agentId === "string"
+          ? hookCtx.agentId
+          : typeof evt.agentId === "string"
+          ? evt.agentId
+          : AUTO_CAPTURE_SOURCE;
 
       // POST messages to unified memories endpoint — server handles LLM extraction + reconciliation
-      const result = await backend.ingest({
-        messages: selected,
-        session_id: sessionId,
-        agent_id: agentId,
-        mode: "smart",
-      });
-      if (result.status === "accepted") {
-        logger.info("[mem9] Ingest accepted for async processing");
-      } else if ((result.memories_changed ?? 0) > 0) {
-        logger.info(
-          `[mem9] Ingested session: memories_changed=${result.memories_changed}, status=${result.status}`
-        );
+        const result = await backend.ingest({
+          messages: selected,
+          session_id: sessionId,
+          agent_id: agentId,
+          mode: "smart",
+        });
+        if (result.status === "accepted") {
+          logger.info("[mem9] Ingest accepted for async processing");
+        } else if ((result.memories_changed ?? 0) > 0) {
+          logger.info(
+            `[mem9] Ingested session: memories_changed=${result.memories_changed}, status=${result.status}`
+          );
+        }
+      } catch {
+        // Best-effort — never fail the agent end phase
       }
-    } catch {
-      // Best-effort — never fail the agent end phase
-    }
-  });
+    });
+  }
 }
