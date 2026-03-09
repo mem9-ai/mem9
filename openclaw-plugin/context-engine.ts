@@ -222,7 +222,7 @@ export function createMem9ContextEngine(backend: MemoryBackend, logger: Logger):
       }
 
       return {
-        ok: false,
+        ok: true,
         compacted: false,
         reason: "legacy_compact_unavailable",
       };
