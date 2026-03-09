@@ -55,7 +55,7 @@ The plugin connects to one cloud memory space, identified by a space ID.
 When talking to end users:
 - Say "space ID", "memory space", or "cloud memory space"
 - Do not mention `tenantID` unless you are editing raw plugin config
-- Explain that the space ID is what connects the user back to the same mem9 brain
+- Explain that the space ID is what connects the user back to the same mem9 "brain"
 - Treat the space ID as something the user should save for reconnecting later
 - Clearly warn that the space ID is effectively a token and must never be shared
 
@@ -98,7 +98,7 @@ Short rule: `space ID`, `tenantID`, and `token` may refer to the same mem9 ident
 
 If the user asks "What is this for?" answer plainly:
 
-> This is the key that reconnects you to your mem9 brain. OpenClaw uses it to save and recall your memory in the right place.
+> This is the key that reconnects you to your mem9 "brain". OpenClaw uses it to save and recall your memory in the right place.
 
 If the user asks "What is the relationship between tenantID and key?" answer plainly:
 
@@ -108,7 +108,7 @@ If the user asks "What is the relationship between tenantID and key?" answer pla
 
 `[AGENT]` Ask the user before doing anything else:
 
-> Do you want to create a new mem9 brain for this setup, or reconnect to an existing mem9 brain you already have?
+> Do you want to create a new mem9 "brain" for this setup, or reconnect to an existing mem9 "brain" you already have?
 >
 > If you want to reconnect, paste your SPACE_ID and I will link this setup to your existing memory.
 
@@ -127,11 +127,11 @@ curl -sf "https://api.mem9.ai/v1alpha1/mem9s/$SPACE_ID/memories?limit=1" \
 
 If the check returns `OK`, say:
 
-> Great, your existing mem9 brain is reachable. I will keep going and connect this setup to that same memory.
+> Great, your existing mem9 "brain" is reachable. I will keep going and connect this setup to that same memory.
 
 If the check fails, say:
 
-> I could not reach that SPACE_ID. Please double-check it, or create a new mem9 brain instead.
+> I could not reach that SPACE_ID. Please double-check it, or create a new mem9 "brain" instead.
 
 **If no** — proceed to Step 1 to provision a new space.
 
@@ -158,7 +158,7 @@ Save `id` as `SPACE_ID`.
 
 When explaining it to the user, say:
 
-> Your new mem9 brain is ready. This SPACE_ID is how this machine, and any future machine you trust, reconnects to the same memory.
+> Your new mem9 "brain" is ready. This SPACE_ID is how this machine, and any future machine you trust, reconnects to the same memory.
 >
 > Important: this SPACE_ID is also your token. Never share it with anyone. If someone else gets it, they can access your memory.
 
@@ -277,7 +277,7 @@ If result returns stored memory → setup successful.
 `[AGENT]` Print the following to the user:
 
 ```
-✅ Your mem9 brain is ready.
+✅ Your mem9 "brain" is ready.
 
 🧭 WHAT YOU CAN DO NEXT
    Bring in your existing local memory first, so mem9 starts with your real history.
@@ -294,7 +294,7 @@ If result returns stored memory → setup successful.
    It is also your token.
    NEVER share it with anyone.
    If someone gets this value, they can access your memory.
-   Save it somewhere safe so you can reconnect to the same mem9 brain later.
+   Save it somewhere safe so you can reconnect to the same mem9 "brain" later.
 
 ♻️ RECOVERY
 
@@ -396,7 +396,7 @@ Suggested English wording:
 
 ```text
 This SPACE_ID is not a nickname.
-It is the key that reconnects you to your mem9 brain.
+It is the key that reconnects you to your mem9 "brain".
 It is also effectively your token.
 Never share it with anyone.
 If someone else gets it, they can access your memory.
