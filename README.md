@@ -32,7 +32,7 @@
 
     | Platform | Install |
     |----------|---------|
-    | **Claude Code** | `/plugin marketplace add qiffang/mnemos` then `/plugin install mnemo-memory@mnemos` |
+    | **Claude Code** | `/plugin marketplace add mem9-ai/mem9` then `/plugin install mnemo-memory@mnemos` |
     | **OpenCode** | Add `"plugin": ["mnemo-opencode"]` to `opencode.json` |
     | **OpenClaw** | Add `mnemo` to `openclaw.json` plugins (see [openclaw-plugin/README](openclaw-plugin/README.md)) |
 
