@@ -38,7 +38,12 @@ type ContextEngine = {
   info: ContextEngineInfo;
   ingest: (params: { sessionId: string; message: AgentMessage; isHeartbeat?: boolean }) => Promise<IngestResult>;
   ingestBatch?: (params: { sessionId: string; messages: AgentMessage[]; isHeartbeat?: boolean }) => Promise<IngestResult>;
-  afterTurn?: (params: { sessionId: string; messages: AgentMessage[]; isHeartbeat?: boolean }) => Promise<void>;
+  afterTurn?: (params: {
+    sessionId: string;
+    messages: AgentMessage[];
+    prePromptMessageCount?: number;
+    isHeartbeat?: boolean;
+  }) => Promise<void>;
   assemble: (params: { sessionId: string; messages: AgentMessage[]; tokenBudget?: number }) => Promise<AssembleResult>;
   compact: (params: {
     sessionId: string;
@@ -118,11 +123,28 @@ function toIngestMessages(messages: AgentMessage[]): IngestMessage[] {
   const out: IngestMessage[] = [];
   for (const m of messages) {
     if (typeof m.role !== "string") continue;
+    if (m.role !== "user" && m.role !== "assistant") continue;
     const content = extractTextContent(m.content).trim();
     if (!content) continue;
     out.push({ role: m.role, content });
   }
   return out;
+}
+
+async function ingestTurnMessages(
+  backend: MemoryBackend,
+  sessionId: string,
+  messages: AgentMessage[],
+): Promise<IngestResult> {
+  const payload = toIngestMessages(messages);
+  if (payload.length === 0) return { ingested: false };
+  await backend.ingest({
+    messages: payload,
+    session_id: sessionId,
+    agent_id: "openclaw-auto",
+    mode: "smart",
+  });
+  return { ingested: true };
 }
 
 async function tryLegacyCompact(params: {
@@ -162,27 +184,20 @@ export function createMem9ContextEngine(backend: MemoryBackend, logger: Logger):
     },
 
     async ingest(params): Promise<IngestResult> {
-      const payload = toIngestMessages([params.message]);
-      if (payload.length === 0) return { ingested: false };
-      await backend.ingest({
-        messages: payload,
-        session_id: params.sessionId,
-        agent_id: "openclaw-auto",
-        mode: "smart",
-      });
-      return { ingested: true };
+      return ingestTurnMessages(backend, params.sessionId, [params.message]);
     },
 
     async ingestBatch(params): Promise<IngestResult> {
-      const payload = toIngestMessages(params.messages);
-      if (payload.length === 0) return { ingested: false };
-      await backend.ingest({
-        messages: payload,
-        session_id: params.sessionId,
-        agent_id: "openclaw-auto",
-        mode: "smart",
-      });
-      return { ingested: true };
+      return ingestTurnMessages(backend, params.sessionId, params.messages);
+    },
+
+    async afterTurn(params): Promise<void> {
+      const start =
+        typeof params.prePromptMessageCount === "number" && params.prePromptMessageCount >= 0
+          ? params.prePromptMessageCount
+          : 0;
+      const delta = params.messages.slice(start);
+      await ingestTurnMessages(backend, params.sessionId, delta);
     },
 
     async assemble(params): Promise<AssembleResult> {
