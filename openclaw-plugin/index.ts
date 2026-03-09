@@ -258,7 +258,7 @@ const mnemoPlugin = {
   description:
     "AI agent memory — server mode (mnemo-server) with hybrid vector + keyword search.",
 
-  async register(api: OpenClawPluginApi) {
+  register(api: OpenClawPluginApi) {
     const cfg = (api.pluginConfig ?? {}) as PluginConfig;
     const effectiveApiUrl = cfg.apiUrl ?? DEFAULT_API_URL;
     const fallbackSessionId = `ses_${Date.now().toString(36)}`;
