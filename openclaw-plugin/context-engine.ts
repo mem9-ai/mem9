@@ -1,3 +1,6 @@
+import path from "node:path";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import type { MemoryBackend } from "./backend.js";
 import type { IngestMessage, Memory } from "./types.js";
 
@@ -62,6 +65,8 @@ type Logger = {
   warn?: (msg: string) => void;
   error: (msg: string) => void;
 };
+
+const require = createRequire(import.meta.url);
 
 function escapeForPrompt(text: string): string {
   return text
@@ -157,25 +162,27 @@ async function tryLegacyCompact(params: {
   customInstructions?: string;
   legacyParams?: Record<string, unknown>;
 }): Promise<CompactResult | null> {
-  const candidates = [
-    "openclaw/context-engine/legacy",
-    "openclaw/dist/context-engine/legacy.js",
-  ];
-
-  for (const path of candidates) {
-    try {
-      const mod = (await import(path)) as { LegacyContextEngine?: new () => { compact: (arg: typeof params) => Promise<CompactResult> } };
-      if (!mod?.LegacyContextEngine) continue;
-      const legacy = new mod.LegacyContextEngine();
-      return legacy.compact(params);
-    } catch {
+  try {
+    const pluginSdkEntry = require.resolve("openclaw/plugin-sdk");
+    const legacyPath = path.resolve(path.dirname(pluginSdkEntry), "../context-engine/legacy.js");
+    const mod = (await import(pathToFileURL(legacyPath).href)) as {
+      LegacyContextEngine?: new () => {
+        compact: (arg: typeof params) => Promise<CompactResult>;
+      };
+    };
+    if (!mod?.LegacyContextEngine) {
+      return null;
     }
-  }
 
-  return null;
+    const legacy = new mod.LegacyContextEngine();
+    return legacy.compact(params);
+  } catch {
+    return null;
+  }
 }
 
 export function createMem9ContextEngine(backend: MemoryBackend, logger: Logger): ContextEngine {
+  // Keep afterTurn undefined so the beta.1 runner can continue to use ingest/ingestBatch fallback.
   return {
     info: {
       id: "mem9",
