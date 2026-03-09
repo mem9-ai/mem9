@@ -299,6 +299,28 @@ questions first:
 That future proposal can reuse the verified upstream contract documented above, but it should be a
 separate design, not implied by this MVP.
 
+For experimentation only, if we want to observe OpenClaw's `ContextEngine` lifecycle before
+building a real compactor, the preferred minimal `compact()` stub is:
+
+```ts
+async compact(): Promise<CompactResult> {
+  return {
+    ok: false,
+    compacted: false,
+    reason: "mem9 MVP: compact not implemented",
+  };
+}
+```
+
+Why this stub is preferred:
+
+- it is explicit that compaction is unsupported
+- it does not pretend long-session compaction succeeded
+- it lets us test how OpenClaw behaves when `mem9` is selected as the active `ContextEngine`
+  without silently masking the missing feature
+
+This is an **experimental diagnostic path only**, not part of the MVP shipping scope.
+
 ---
 
 ## File Changes Summary
