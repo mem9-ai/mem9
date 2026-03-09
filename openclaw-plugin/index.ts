@@ -313,6 +313,10 @@ const mnemoPlugin = {
 
     api.registerTool(factory, { names: toolNames });
 
+    const sessionAgentIds = new Map<string, string>();
+    const resolveContextEngineAgentId = (sessionId: string): string =>
+      sessionAgentIds.get(sessionId) ?? cfg.agentName ?? "agent";
+
     // Register hooks with a lazy backend for lifecycle memory management.
     // Uses the default workspace/agent context for hook-triggered operations.
     const hookBackend = new LazyServerBackend(
@@ -323,7 +327,10 @@ const mnemoPlugin = {
 
     if (supportsBeta1Hooks) {
       const registerContextEngine = api.registerContextEngine as ((id: string, factory: () => unknown) => void);
-      registerContextEngine(mnemoPlugin.id, () => createMem9ContextEngine(hookBackend, api.logger));
+      registerContextEngine(
+        mnemoPlugin.id,
+        () => createMem9ContextEngine(hookBackend, api.logger, resolveContextEngineAgentId),
+      );
       api.logger.info("[mem9] Registered context engine implementation");
     }
 
@@ -333,6 +340,7 @@ const mnemoPlugin = {
       supportsPrependSystemContext: supportsBeta1Hooks,
       enableBeforePromptBuild: true,
       enableAgentEndIngest: !contextEngineActive,
+      sessionAgentIds,
     });
 
     if (contextEngineActive) {

@@ -53,6 +53,23 @@ type HookAgentContext = {
   sessionKey?: string;
 };
 
+function rememberSessionAgentId(
+  sessionAgentIds: Map<string, string> | undefined,
+  ctx: HookAgentContext | undefined,
+): void {
+  if (!sessionAgentIds || !ctx || typeof ctx.agentId !== "string" || ctx.agentId.length === 0) {
+    return;
+  }
+
+  if (typeof ctx.sessionId === "string" && ctx.sessionId.length > 0) {
+    sessionAgentIds.set(ctx.sessionId, ctx.agentId);
+  }
+
+  if (typeof ctx.sessionKey === "string" && ctx.sessionKey.length > 0) {
+    sessionAgentIds.set(ctx.sessionKey, ctx.agentId);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Message selection (size-aware)
 // ---------------------------------------------------------------------------
@@ -286,6 +303,7 @@ export function registerHooks(
     fallbackSessionId?: string;
     enableBeforePromptBuild?: boolean;
     enableAgentEndIngest?: boolean;
+    sessionAgentIds?: Map<string, string>;
   },
 ): void {
   const maxIngestBytes = options?.maxIngestBytes ?? DEFAULT_MAX_INGEST_BYTES;
@@ -299,8 +317,9 @@ export function registerHooks(
   if (enableBeforePromptBuild) {
     api.on(
       "before_prompt_build",
-      async (event: unknown) => {
+      async (event: unknown, ctx: unknown) => {
         try {
+          rememberSessionAgentId(options?.sessionAgentIds, (ctx ?? {}) as HookAgentContext);
           const evt = event as { prompt?: string };
           const prompt = evt?.prompt;
           if (!prompt || prompt.length < MIN_PROMPT_LEN) return;
@@ -409,6 +428,7 @@ export function registerHooks(
           agentId?: string;
         };
         const hookCtx = (ctx ?? {}) as HookAgentContext;
+        rememberSessionAgentId(options?.sessionAgentIds, hookCtx);
         if (!evt?.success || !evt.messages || evt.messages.length === 0) return;
 
       // Format raw messages into IngestMessage format
@@ -470,6 +490,10 @@ export function registerHooks(
       } catch {
         // Best-effort — never fail the agent end phase
       }
+    });
+  } else {
+    api.on("agent_end", async (_event: unknown, ctx: unknown) => {
+      rememberSessionAgentId(options?.sessionAgentIds, (ctx ?? {}) as HookAgentContext);
     });
   }
 }

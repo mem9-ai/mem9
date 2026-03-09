@@ -133,6 +133,7 @@ function toIngestMessages(messages: AgentMessage[]): IngestMessage[] {
 
 async function ingestTurnMessages(
   backend: MemoryBackend,
+  resolveAgentId: (sessionId: string) => string,
   sessionId: string,
   messages: AgentMessage[],
 ): Promise<IngestResult> {
@@ -141,7 +142,7 @@ async function ingestTurnMessages(
   await backend.ingest({
     messages: payload,
     session_id: sessionId,
-    agent_id: "openclaw-auto",
+    agent_id: resolveAgentId(sessionId),
     mode: "smart",
   });
   return { ingested: true };
@@ -175,7 +176,11 @@ async function tryLegacyCompact(params: {
   return null;
 }
 
-export function createMem9ContextEngine(backend: MemoryBackend, logger: Logger): ContextEngine {
+export function createMem9ContextEngine(
+  backend: MemoryBackend,
+  logger: Logger,
+  resolveAgentId: (sessionId: string) => string,
+): ContextEngine {
   return {
     info: {
       id: "mem9",
@@ -184,11 +189,11 @@ export function createMem9ContextEngine(backend: MemoryBackend, logger: Logger):
     },
 
     async ingest(params): Promise<IngestResult> {
-      return ingestTurnMessages(backend, params.sessionId, [params.message]);
+      return ingestTurnMessages(backend, resolveAgentId, params.sessionId, [params.message]);
     },
 
     async ingestBatch(params): Promise<IngestResult> {
-      return ingestTurnMessages(backend, params.sessionId, params.messages);
+      return ingestTurnMessages(backend, resolveAgentId, params.sessionId, params.messages);
     },
 
     async afterTurn(params): Promise<void> {
@@ -197,7 +202,7 @@ export function createMem9ContextEngine(backend: MemoryBackend, logger: Logger):
           ? params.prePromptMessageCount
           : 0;
       const delta = params.messages.slice(start);
-      await ingestTurnMessages(backend, params.sessionId, delta);
+      await ingestTurnMessages(backend, resolveAgentId, params.sessionId, delta);
     },
 
     async assemble(params): Promise<AssembleResult> {
