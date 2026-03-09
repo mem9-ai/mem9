@@ -172,7 +172,8 @@ mnemos/
 ├── skills/                     # Shared skills (OpenClaw ClawHub format)
 │   └── mnemos-setup/           # Setup skill
 │
-└── docs/DESIGN.md              # Full design document
+├── docs/DESIGN.md              # Full design document
+└── docs/BENCHMARK.md           # A/B benchmark pipeline guide
 ```
 
 ## Roadmap
