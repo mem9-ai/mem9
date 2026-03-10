@@ -279,6 +279,18 @@ Decision rule:
 - If both are reachable, but the official registry is materially slower, prefer `npmmirror`.
 - Do not run `npm config set registry ...` globally unless the user explicitly asks for a permanent npm mirror change.
 
+**Immediately after install completes**, tell the user (before restarting anything):
+
+> ✅ mem9 plugin installed. Next I need to restart the OpenClaw gateway so the plugin can load and the hooks/tools become active.
+>
+> The restart will take about 1 minute. After that, send me a message to confirm mem9 is functional.
+
+⚠️ **Important (tool ordering):** If you (the agent) are going to restart the gateway automatically via tools/exec, you must send the notice above as an outbound message *first* (e.g. via the `message` tool). Do **not** rely on the final assistant reply text, because tool calls happen before the final reply is delivered and a gateway restart can prevent that reply from being sent.
+
+Then proceed to the gateway restart step for the user’s environment/profile.
+
+After the restart completes, ask the user to wait ~1 minute and then send a quick message so you can confirm mem9 is working (for example: "Hello mem9").
+
 ### Step 3 — Detect OpenClaw version
 
 `[AGENT]` Check the installed OpenClaw version before editing config:
