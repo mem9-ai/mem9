@@ -89,16 +89,6 @@ func createTables(db *sql.DB) error {
 		return fmt.Errorf("create tenants table: %w", err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS tenant_tokens (
-		api_token     VARCHAR(64)   PRIMARY KEY,
-		tenant_id     VARCHAR(36)   NOT NULL,
-		created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
-		INDEX idx_tenant (tenant_id)
-	)`)
-	if err != nil {
-		return fmt.Errorf("create tenant_tokens table: %w", err)
-	}
-
 	// Data plane table (memories). Note: VECTOR column omitted for MySQL compatibility.
 	// TiDB-specific VECTOR(1536) replaced with TEXT NULL for cross-DB compatibility.
 	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS memories (
@@ -134,7 +124,7 @@ func createTables(db *sql.DB) error {
 func truncateAll(db *sql.DB) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	for _, table := range []string{"tenant_tokens", "tenants", "memories"} {
+	for _, table := range []string{"tenants", "memories"} {
 		if _, err := db.ExecContext(ctx, "DELETE FROM "+table); err != nil {
 			return fmt.Errorf("truncate %s: %w", table, err)
 		}
@@ -155,10 +145,6 @@ func truncateTenants(t *testing.T) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	// Delete tokens first (references tenants).
-	if _, err := testDB.ExecContext(ctx, "DELETE FROM tenant_tokens"); err != nil {
-		t.Fatalf("truncate tenant_tokens: %v", err)
-	}
 	if _, err := testDB.ExecContext(ctx, "DELETE FROM tenants"); err != nil {
 		t.Fatalf("truncate tenants: %v", err)
 	}
@@ -205,13 +191,6 @@ func newTestTenant(overrides ...func(*domain.Tenant)) *domain.Tenant {
 		fn(t)
 	}
 	return t
-}
-
-func newTestToken(tenantID string) *domain.TenantToken {
-	return &domain.TenantToken{
-		APIToken: "mnemo_test_" + uuid.New().String()[:16],
-		TenantID: tenantID,
-	}
 }
 
 // newMemoryRepo creates a MemoryRepo pointing at testDB with no auto-embedding and FTS disabled.

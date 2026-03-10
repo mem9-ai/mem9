@@ -100,7 +100,7 @@ func (s *MemoryService) Search(ctx context.Context, filter domain.MemoryFilter) 
 	searchFilter.SessionID = ""
 	searchFilter.Source = ""
 
-	slog.Info("memory search", "query", filter.Query, "auto_model", s.autoModel, "fts", s.memories.FTSAvailable())
+	slog.Info("memory search", "query_len", len(filter.Query), "auto_model", s.autoModel, "fts", s.memories.FTSAvailable())
 	if s.autoModel != "" {
 		return s.autoHybridSearch(ctx, searchFilter)
 	}
@@ -155,7 +155,7 @@ func (s *MemoryService) ftsOnlySearch(ctx context.Context, filter domain.MemoryF
 	if err != nil {
 		return nil, 0, fmt.Errorf("FTS search: %w", err)
 	}
-	slog.Info("fts search completed", "query", filter.Query, "results", len(ftsResults))
+	slog.Info("fts search completed", "query_len", len(filter.Query), "results", len(ftsResults))
 
 	page, total := s.paginate(ftsResults, offset, limit)
 	return page, total, nil
@@ -178,7 +178,7 @@ func (s *MemoryService) keywordOnlySearch(ctx context.Context, filter domain.Mem
 	if err != nil {
 		return nil, 0, fmt.Errorf("keyword search: %w", err)
 	}
-	slog.Info("keyword search completed (FTS unavailable)", "query", filter.Query, "results", len(kwResults))
+	slog.Info("keyword search completed (FTS unavailable)", "query_len", len(filter.Query), "results", len(kwResults))
 
 	page, total := s.paginate(kwResults, offset, limit)
 	return page, total, nil
@@ -234,7 +234,7 @@ func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFi
 		}
 	}
 
-	slog.Info("hybrid search completed", "query", filter.Query, "vec_results", len(vecResults), "kw_results", len(kwResults))
+	slog.Info("hybrid search completed", "query_len", len(filter.Query), "vec_results", len(vecResults), "kw_results", len(kwResults))
 
 	scores := rrfMerge(kwResults, vecResults)
 	mems := collectMems(kwResults, vecResults)
@@ -290,7 +290,7 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 		}
 	}
 
-	slog.Info("auto hybrid search completed", "query", filter.Query, "vec_results", len(vecResults), "kw_results", len(kwResults))
+	slog.Info("auto hybrid search completed", "query_len", len(filter.Query), "vec_results", len(vecResults), "kw_results", len(kwResults))
 
 	scores := rrfMerge(kwResults, vecResults)
 	mems := collectMems(kwResults, vecResults)

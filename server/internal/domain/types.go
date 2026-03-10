@@ -117,13 +117,6 @@ func (t *Tenant) DSN() string {
 	return dsn
 }
 
-// TenantToken represents an API token bound to a tenant.
-type TenantToken struct {
-	APIToken  string    `json:"api_token"`
-	TenantID  string    `json:"tenant_id"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 // TenantInfo describes tenant metadata.
 type TenantInfo struct {
 	TenantID    string       `json:"tenant_id"`

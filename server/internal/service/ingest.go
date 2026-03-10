@@ -171,7 +171,7 @@ func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID
 
 		facts, err := s.extractFacts(ctx, conversation)
 		if err != nil {
-			slog.Error("reconcile content: fact extraction failed", "err", err, "content", truncateRunes(content, 80))
+			slog.Error("reconcile content: fact extraction failed", "err", err)
 			totalWarnings++
 			failures++
 			continue
@@ -519,7 +519,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 			}
 			newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text)
 			if addErr != nil {
-				slog.Warn("failed to add insight", "err", addErr, "text", event.Text)
+				slog.Warn("failed to add insight", "err", addErr)
 				warnings++
 				continue
 			}
@@ -641,7 +641,7 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 			}
 			searchAttempts++
 			if kwErr != nil {
-				slog.Warn("gatherExistingMemories: keyword/FTS search failed for fact, skipping", "fact", truncateRunes(fact, 50), "err", kwErr)
+				slog.Warn("gatherExistingMemories: keyword/FTS search failed for fact, skipping", "fact_len", len(fact), "err", kwErr)
 				continue
 			}
 			searchSuccesses++
@@ -666,7 +666,7 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 			var vecErr error
 			vecMatches, vecErr = s.memories.AutoVectorSearch(ctx, fact, filter, perFactLimit)
 			if vecErr != nil {
-				slog.Warn("gatherExistingMemories: auto vector search failed for fact, continuing with keyword leg", "fact", truncateRunes(fact, 50), "err", vecErr)
+				slog.Warn("gatherExistingMemories: auto vector search failed for fact, continuing with keyword leg", "fact_len", len(fact), "err", vecErr)
 			} else {
 				searchSuccesses++
 				vecLegOK = true
@@ -675,12 +675,12 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 			searchAttempts++
 			vec, embedErr := s.embedder.Embed(ctx, fact)
 			if embedErr != nil {
-				slog.Warn("gatherExistingMemories: embed failed for fact, continuing with keyword leg", "fact", truncateRunes(fact, 50), "err", embedErr)
+				slog.Warn("gatherExistingMemories: embed failed for fact, continuing with keyword leg", "fact_len", len(fact), "err", embedErr)
 			} else {
 				var vecErr error
 				vecMatches, vecErr = s.memories.VectorSearch(ctx, vec, filter, perFactLimit)
 				if vecErr != nil {
-					slog.Warn("gatherExistingMemories: vector search failed for fact, continuing with keyword leg", "fact", truncateRunes(fact, 50), "err", vecErr)
+					slog.Warn("gatherExistingMemories: vector search failed for fact, continuing with keyword leg", "fact_len", len(fact), "err", vecErr)
 				} else {
 					searchSuccesses++
 					vecLegOK = true
@@ -699,7 +699,7 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 		}
 		searchAttempts++
 		if kwErr != nil {
-			slog.Warn("gatherExistingMemories: keyword/FTS search failed for fact, skipping", "fact", truncateRunes(fact, 50), "err", kwErr)
+			slog.Warn("gatherExistingMemories: keyword/FTS search failed for fact, skipping", "fact_len", len(fact), "err", kwErr)
 		} else {
 			searchSuccesses++
 			addUnseen(kwMatches, false) // No threshold for keyword/FTS results
@@ -707,7 +707,7 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 
 		// If neither leg succeeded for this fact, log it clearly.
 		if !vecLegOK && kwErr != nil {
-			slog.Error("gatherExistingMemories: both search legs failed for fact", "fact", truncateRunes(fact, 50))
+			slog.Error("gatherExistingMemories: both search legs failed for fact", "fact_len", len(fact))
 		}
 	}
 
@@ -732,7 +732,7 @@ func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, ses
 	for _, fact := range facts {
 		id, err := s.addInsight(ctx, agentName, agentID, sessionID, fact)
 		if err != nil {
-			slog.Warn("failed to add fact", "err", err, "fact", fact)
+			slog.Warn("failed to add fact", "err", err, "fact_len", len(fact))
 			warnings++
 			continue
 		}
