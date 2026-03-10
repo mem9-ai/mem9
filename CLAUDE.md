@@ -123,16 +123,16 @@ If a user asks to install or set up the claude-plugin, read `claude-plugin/READM
 
 If a user asks to install mnemo for OpenCode, read `opencode-plugin/README.md` for the full guide.
 
-**npm plugin (recommended):**
+**Local symlink install (recommended):**
 
-1. Add to `opencode.json`: `{"plugin": ["mnemo-opencode"]}`
+1. Run `bash opencode-plugin/scripts/setup-opencode-plugin.sh`
 2. Set env vars: `MNEMO_API_URL` and `MNEMO_TENANT_ID`
-3. Restart OpenCode — plugin auto-installs from npm and logs `[mnemo] Server mode...`
+3. Restart OpenCode — it auto-loads `~/.config/opencode/plugins/mnemo.js` and logs `[mnemo] Server mode...`
 
-**From source (alternative):**
+**Manual source install (alternative):**
 
 1. `cd opencode-plugin && npm install`
-2. Add to `opencode.json`: `{"plugins": {"mnemo": {"path": "/absolute/path/to/mnemos/opencode-plugin"}}}`
+2. `mkdir -p ~/.config/opencode/plugins && ln -s "$(pwd)/plugin.js" ~/.config/opencode/plugins/mnemo.js`
 3. Set env vars (same as above)
 
 ## Installing the OpenClaw plugin

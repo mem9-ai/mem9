@@ -74,11 +74,12 @@ export MNEMO_API_URL="http://localhost:8080"
 export MNEMO_TENANT_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 ```
 
-Add to `opencode.json`:
-```json
-{
-  "plugin": ["mnemo-opencode"]
-}
+Install the local plugin loader from this repo:
+
+```bash
+git clone https://github.com/qiffang/mnemos.git
+cd mnemos
+bash opencode-plugin/scripts/setup-opencode-plugin.sh
 ```
 
 Restart OpenCode. You should see:
@@ -129,4 +130,4 @@ The agent should recall the information from memory.
 |---------|-----|
 | `No MNEMO_API_URL configured` | Set `MNEMO_API_URL` env var or `apiUrl` in plugin config |
 | `MNEMO_TENANT_ID is not set` | Set `MNEMO_TENANT_ID` env var or `tenantID` in plugin config |
-| Plugin not loading | Check platform-specific config format |
+| Plugin not loading | Run `bash opencode-plugin/scripts/setup-opencode-plugin.sh` and restart OpenCode |
