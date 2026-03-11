@@ -34,6 +34,30 @@ var (
 		},
 		[]string{"method", "route"},
 	)
+
+	// ProvisionStepDuration observes the duration of each step in the provision flow.
+	// step labels: tidb_zero_create_instance, create_tenant_record,
+	//              init_schema_create_table, init_schema_vector_index,
+	//              init_schema_fts_index, update_status, update_schema_version, total
+	ProvisionStepDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "mnemo",
+			Name:      "provision_step_duration_seconds",
+			Help:      "Duration of each step in the provision flow.",
+			Buckets:   []float64{0.05, 0.1, 0.5, 1, 2, 5, 10, 20, 30},
+		},
+		[]string{"step"},
+	)
+
+	// ProvisionTotal counts provision attempts by result (success or error).
+	ProvisionTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "provision_total",
+			Help:      "Total number of provision attempts.",
+		},
+		[]string{"result"}, // "success" | "error"
+	)
 )
 
 // Middleware records HTTP request count and duration for each request.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/tenant"
 )
@@ -127,10 +128,13 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 
 	t0 := time.Now()
 	instance, err := s.zero.CreateInstance(ctx, "mem9s")
+	elapsed := time.Since(t0)
+	s.logger.Info("provision step", "step", "tidb_zero_create_instance", "duration_ms", elapsed.Milliseconds())
+	metrics.ProvisionStepDuration.WithLabelValues("tidb_zero_create_instance").Observe(elapsed.Seconds())
 	if err != nil {
+		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		return nil, fmt.Errorf("provision TiDB Zero instance: %w", err)
 	}
-	s.logger.Info("provision step", "step", "tidb_zero_create_instance", "duration_ms", time.Since(t0).Milliseconds())
 
 	// Use the TiDB Zero instance ID as the tenant ID.
 	tenantID := instance.ID
@@ -154,32 +158,47 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 
 	t0 = time.Now()
 	if err := s.tenants.Create(ctx, t); err != nil {
+		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		return nil, fmt.Errorf("create tenant record: %w", err)
 	}
-	s.logger.Info("provision step", "step", "create_tenant_record", "duration_ms", time.Since(t0).Milliseconds())
+	elapsed = time.Since(t0)
+	s.logger.Info("provision step", "step", "create_tenant_record", "duration_ms", elapsed.Milliseconds())
+	metrics.ProvisionStepDuration.WithLabelValues("create_tenant_record").Observe(elapsed.Seconds())
 
 	t0 = time.Now()
 	if err := s.initSchema(ctx, t); err != nil {
 		if s.logger != nil {
 			s.logger.Error("tenant schema init failed", "tenant_id", tenantID, "err", err)
 		}
+		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		return nil, fmt.Errorf("init tenant schema: %w", err)
 	}
-	s.logger.Info("provision step", "step", "init_schema", "duration_ms", time.Since(t0).Milliseconds())
+	elapsed = time.Since(t0)
+	s.logger.Info("provision step", "step", "init_schema", "duration_ms", elapsed.Milliseconds())
+	metrics.ProvisionStepDuration.WithLabelValues("init_schema").Observe(elapsed.Seconds())
 
 	t0 = time.Now()
 	if err := s.tenants.UpdateStatus(ctx, tenantID, domain.TenantActive); err != nil {
+		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		return nil, fmt.Errorf("activate tenant: %w", err)
 	}
-	s.logger.Info("provision step", "step", "update_status", "duration_ms", time.Since(t0).Milliseconds())
+	elapsed = time.Since(t0)
+	s.logger.Info("provision step", "step", "update_status", "duration_ms", elapsed.Milliseconds())
+	metrics.ProvisionStepDuration.WithLabelValues("update_status").Observe(elapsed.Seconds())
 
 	t0 = time.Now()
 	if err := s.tenants.UpdateSchemaVersion(ctx, tenantID, 1); err != nil {
+		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		return nil, fmt.Errorf("update schema version: %w", err)
 	}
-	s.logger.Info("provision step", "step", "update_schema_version", "duration_ms", time.Since(t0).Milliseconds())
+	elapsed = time.Since(t0)
+	s.logger.Info("provision step", "step", "update_schema_version", "duration_ms", elapsed.Milliseconds())
+	metrics.ProvisionStepDuration.WithLabelValues("update_schema_version").Observe(elapsed.Seconds())
 
-	s.logger.Info("provision step", "step", "total", "duration_ms", time.Since(total).Milliseconds(), "tenant_id", tenantID)
+	totalElapsed := time.Since(total)
+	s.logger.Info("provision step", "step", "total", "duration_ms", totalElapsed.Milliseconds(), "tenant_id", tenantID)
+	metrics.ProvisionStepDuration.WithLabelValues("total").Observe(totalElapsed.Seconds())
+	metrics.ProvisionTotal.WithLabelValues("success").Inc()
 
 	return &ProvisionResult{
 		ID: tenantID,
@@ -226,33 +245,56 @@ func (s *TenantService) initSchema(ctx context.Context, t *domain.Tenant) error 
 	}
 
 	if s.pool.Backend() == "postgres" {
-		// PostgreSQL: enable pgvector, then apply PG-specific schema.
+		t0 := time.Now()
 		if _, err := db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
 			return fmt.Errorf("init tenant schema: pgvector extension: %w", err)
 		}
+		elapsed := time.Since(t0)
+		s.logger.Info("provision step", "step", "init_schema_pgvector_extension", "duration_ms", elapsed.Milliseconds())
+		metrics.ProvisionStepDuration.WithLabelValues("init_schema_pgvector_extension").Observe(elapsed.Seconds())
+
+		t0 = time.Now()
 		if _, err := db.ExecContext(ctx, tenantMemorySchemaPostgres); err != nil {
 			return fmt.Errorf("init tenant schema: memories: %w", err)
 		}
-	} else {
-		// TiDB/MySQL: apply MySQL schema with optional auto-embedding.
-		if _, err := db.ExecContext(ctx, buildMemorySchema(s.autoModel, s.autoDims)); err != nil {
-			return fmt.Errorf("init tenant schema: memories: %w", err)
-		}
-		if s.autoModel != "" {
-			_, err := db.ExecContext(ctx,
-				`ALTER TABLE memories ADD VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
-			if err != nil && !isIndexExistsError(err) {
-				return fmt.Errorf("init tenant schema: vector index: %w", err)
-			}
-		}
-		if s.ftsEnabled {
-			_, err := db.ExecContext(ctx,
-				`ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
-			if err != nil && !isIndexExistsError(err) {
-				return fmt.Errorf("init tenant schema: fulltext index: %w", err)
-			}
-		}
+		elapsed = time.Since(t0)
+		s.logger.Info("provision step", "step", "init_schema_create_table", "duration_ms", elapsed.Milliseconds())
+		metrics.ProvisionStepDuration.WithLabelValues("init_schema_create_table").Observe(elapsed.Seconds())
+		return nil
 	}
+
+	t0 := time.Now()
+	if _, err := db.ExecContext(ctx, buildMemorySchema(s.autoModel, s.autoDims)); err != nil {
+		return fmt.Errorf("init tenant schema: memories: %w", err)
+	}
+	elapsed := time.Since(t0)
+	s.logger.Info("provision step", "step", "init_schema_create_table", "duration_ms", elapsed.Milliseconds())
+	metrics.ProvisionStepDuration.WithLabelValues("init_schema_create_table").Observe(elapsed.Seconds())
+
+	if s.autoModel != "" {
+		t0 = time.Now()
+		_, err := db.ExecContext(ctx,
+			`ALTER TABLE memories ADD VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+		elapsed = time.Since(t0)
+		if err != nil && !isIndexExistsError(err) {
+			return fmt.Errorf("init tenant schema: vector index: %w", err)
+		}
+		s.logger.Info("provision step", "step", "init_schema_vector_index", "duration_ms", elapsed.Milliseconds())
+		metrics.ProvisionStepDuration.WithLabelValues("init_schema_vector_index").Observe(elapsed.Seconds())
+	}
+
+	if s.ftsEnabled {
+		t0 = time.Now()
+		_, err := db.ExecContext(ctx,
+			`ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+		elapsed = time.Since(t0)
+		if err != nil && !isIndexExistsError(err) {
+			return fmt.Errorf("init tenant schema: fulltext index: %w", err)
+		}
+		s.logger.Info("provision step", "step", "init_schema_fts_index", "duration_ms", elapsed.Milliseconds())
+		metrics.ProvisionStepDuration.WithLabelValues("init_schema_fts_index").Observe(elapsed.Seconds())
+	}
+
 	return nil
 }
 
