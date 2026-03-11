@@ -1,8 +1,13 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/tenant"
 )
 
 func TestBuildMemorySchema(t *testing.T) {
@@ -47,4 +52,25 @@ func TestBuildMemorySchema(t *testing.T) {
 			t.Fatal("schema missing model name")
 		}
 	})
+}
+
+func TestProvisionRejectsNonTiDBBackend(t *testing.T) {
+	t.Parallel()
+
+	pool := tenant.NewPool(tenant.PoolConfig{Backend: "db9"})
+	defer pool.Close()
+
+	svc := NewTenantService(nil, nil, pool, nil, "", 0, false)
+	_, err := svc.Provision(context.Background())
+	if err == nil {
+		t.Fatal("expected validation error for non-tidb backend")
+	}
+
+	var ve *domain.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected ValidationError, got %T", err)
+	}
+	if !strings.Contains(ve.Message, "requires tidb backend") {
+		t.Fatalf("unexpected error message: %q", ve.Message)
+	}
 }

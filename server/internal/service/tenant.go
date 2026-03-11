@@ -120,6 +120,12 @@ type ProvisionResult struct {
 // Provision creates a new TiDB Zero instance and registers it as a tenant.
 // The TiDB Zero instance ID is used as the tenant ID.
 func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error) {
+	if s.pool == nil {
+		return nil, fmt.Errorf("tenant pool not configured")
+	}
+	if s.pool.Backend() != "tidb" {
+		return nil, &domain.ValidationError{Message: fmt.Sprintf("auto-provisioning requires tidb backend; got %q", s.pool.Backend())}
+	}
 	if s.zero == nil {
 		return nil, &domain.ValidationError{Message: "provisioning disabled (TiDB Zero not configured)"}
 	}

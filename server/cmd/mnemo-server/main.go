@@ -83,8 +83,10 @@ func main() {
 
 	// Services.
 	var zeroClient *tenant.ZeroClient
-	if cfg.TiDBZeroEnabled {
+	if cfg.TiDBZeroEnabled && cfg.DBBackend == "tidb" {
 		zeroClient = tenant.NewZeroClient(cfg.TiDBZeroAPIURL)
+	} else if cfg.TiDBZeroEnabled {
+		logger.Warn("TiDB Zero provisioning is only supported with tidb backend; disabling auto-provisioning", "backend", cfg.DBBackend)
 	}
 	tenantSvc := service.NewTenantService(tenantRepo, zeroClient, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled)
 
