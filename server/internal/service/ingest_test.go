@@ -415,6 +415,37 @@ func TestIngestNilLLMFallsBackToRaw(t *testing.T) {
 	if len(memRepo.createCalls) != 1 {
 		t.Fatalf("expected 1 Create call, got %d", len(memRepo.createCalls))
 	}
+	if got := memRepo.createCalls[0].Content; got != "User: hello" {
+		t.Fatalf("unexpected content: %q", got)
+	}
+}
+
+func TestIngestRawStripsInjectedContextWithoutLLM(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{}
+	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart)
+
+	res, err := svc.Ingest(context.Background(), "agent-3", IngestRequest{
+		Mode:    ModeSmart,
+		AgentID: "agent-3",
+		Messages: []IngestMessage{{
+			Role:    "user",
+			Content: "<relevant-memories>remove this</relevant-memories>keep this",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if res == nil || res.MemoriesChanged != 1 {
+		t.Fatalf("expected 1 insight added, got %#v", res)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 Create call, got %d", len(memRepo.createCalls))
+	}
+	if got := memRepo.createCalls[0].Content; got != "User: keep this" {
+		t.Fatalf("unexpected sanitized content: %q", got)
+	}
 }
 
 // TestReconcileDeleteErrNotFoundIsNotWarning verifies the DELETE path in reconcile()

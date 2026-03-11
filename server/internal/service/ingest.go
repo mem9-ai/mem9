@@ -94,16 +94,16 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 	if mode != ModeSmart && mode != ModeRaw {
 		return nil, &domain.ValidationError{Field: "mode", Message: fmt.Sprintf("unsupported mode %q", mode)}
 	}
+	// Strip plugin-injected context before any storage path.
+	req.Messages = stripInjectedContext(req.Messages)
+
 	// For raw mode or no LLM, skip smart pipeline and store conversation directly.
 	if mode == ModeRaw || s.llm == nil {
 		return s.ingestRaw(ctx, agentName, req)
 	}
 
-	// Strip previously injected memory context from messages.
-	cleaned := stripInjectedContext(req.Messages)
-
 	// Format conversation for LLM.
-	formatted := formatConversation(cleaned)
+	formatted := formatConversation(req.Messages)
 	if formatted == "" {
 		return &IngestResult{Status: "complete"}, nil
 	}
