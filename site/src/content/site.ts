@@ -126,7 +126,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     meta: {
       title: 'mem9 - Unlimited Memory Infrastructure for OpenClaw, Claude Code, and OpenCode',
       description:
-        'mem9.ai is unlimited AI agent memory infrastructure for OpenClaw, Claude Code, OpenCode, and custom tools. Persistent recall, hybrid search, shared context, and long-term memory for AI agents.',
+        'mem9.ai is unlimite memory infrastructure for OpenClaw, Claude Code, OpenCode. Persistent recall, hybrid search, shared context, and long-term memory for AI agents and custom tools.',
     },
     nav: {
       home: 'Home',
