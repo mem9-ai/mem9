@@ -1,18 +1,61 @@
-# MR-NIAH Benchmark Agents
+---
+title: benchmark/MR-NIAH — Benchmark harness
+---
 
-The MR-NIAH benchmark replicates the full memory lifecycle used in MR-NIAH, so each agent maps to a concrete step in the workflow:
+## Overview
 
-## Pipeline
+MR-NIAH is a bridge from the MiniMax benchmark corpus to OpenClaw sessions and mem9 comparison runs.
 
-- **fetch_data** – Clones or updates the benchmark dataset directly from GitHub into the local `origin/` cache so every downstream step works with the same canonical files.
-- **transcript** – Reads the raw data in `origin/` and rewrites it into OpenClaw-compliant `session` JSON, emitting the processed conversations to the `output/` directory for evaluation.
-- **run_batch** – Launches an OpenClaw profile run that exercises the scripted scenario once per profile; `run_mem_compare` depends on these logs to stay reproducible.
-- **run_mem_compare** – Executes the comparison experiment that contrasts MR-NIAH with its baselines, aggregates metrics from the `run_batch` outputs, and surfaces the final benchmark tables.
-- **score** – Invokes the MR-NIAH scoring script so that every experimental run shares the same grading rubric used by the upstream benchmark.
+## Files and workflow
 
-## TODO
+| File | Role |
+|------|------|
+| `fetch_data.py` | Mirror/update upstream dataset into `origin/` |
+| `mr-niah-transcript.py` | Convert raw turns into OpenClaw session JSON |
+| `run_batch.py` | Replay generated sessions through an OpenClaw profile |
+| `run_mem_compare.sh` | Compare baseline vs mem9-enabled profile |
+| `score.py` | Apply MR-NIAH scoring rubric to predictions |
+| `USAGE.md` | Full prerequisites and end-to-end usage |
 
-1. Persist comparison scores to files instead of only printing them to `stdio`.
-2. Surface a `--model` flag in `run_mem_compare` so different models can be compared in one pass.
-3. Add a `--hack-memory` boolean switch plus the underlying trigger logic to force manual memory hacks during evaluation.
-4. Annotate each result artifact with an explicit flag that states whether automatic compaction was triggered.
+## Where to look
+
+- Dataset cache and raw source: `origin/`
+- Generated sessions and index: `output/`
+- Latest run outputs: `results/`
+- Preserved comparison outputs: `results-*/`
+- Helper state: `.cache/`
+
+## Commands
+
+```bash
+cd benchmark/MR-NIAH && python3 fetch_data.py
+cd benchmark/MR-NIAH && python3 mr-niah-transcript.py
+cd benchmark/MR-NIAH && python3 run_batch.py --profile mrniah_local --agent main --local --limit 30
+cd benchmark/MR-NIAH && MRNIAH_LIMIT=30 bash run_mem_compare.sh
+cd benchmark/MR-NIAH && python3 score.py results/predictions.jsonl
+```
+
+## Local conventions
+
+- Treat this as pipeline code, not product code; scripts are orchestrators around local files and external tools.
+- Keep generated artifacts out of the source files under review; `origin/`, `output/`, and `results*/` are working directories.
+- `run_mem_compare.sh` depends on the rest of the pipeline being reproducible; avoid hidden local assumptions.
+- Preserve benchmark comparability: do not change the scoring rubric casually.
+
+## Gotchas
+
+- `run_mem_compare.sh` expects Python 3.10+.
+- On macOS, `mysql-client` may need to be added to `PATH` before compare/setup helpers work.
+- TiDB Zero provisioning can rate-limit; a retry after a short wait is normal.
+
+## Anti-patterns
+
+- Do NOT hardcode one-off local result paths into reusable scripts.
+- Do NOT mix transcript generation and scoring logic in the same script.
+- Do NOT overwrite canonical benchmark data in `origin/` with transformed output.
+
+## Outstanding follow-ups
+
+- Persist comparison scores to files instead of only printing to stdout.
+- Add a `--model` flag to `run_mem_compare.sh`.
+- Add an explicit flag for forced memory hacks / compaction behavior.
