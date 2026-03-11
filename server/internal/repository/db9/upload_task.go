@@ -19,6 +19,25 @@ func NewUploadTaskRepo(db *sql.DB) *UploadTaskRepoImpl {
 
 const uploadTaskColumns = `task_id, tenant_id, file_name, file_path, agent_id, session_id, file_type, total_chunks, done_chunks, status, error_msg, created_at, updated_at`
 
+const (
+	defaultFetchPendingLimit = 10
+	maxFetchPendingLimit     = 100
+)
+
+func clampFetchPendingLimit(limit int) int {
+	if limit <= 0 {
+		return defaultFetchPendingLimit
+	}
+	if limit > maxFetchPendingLimit {
+		return maxFetchPendingLimit
+	}
+	return limit
+}
+
+func buildFetchPendingQuery(limit int) string {
+	return fmt.Sprintf(`SELECT %s FROM upload_tasks WHERE status = 'pending' ORDER BY created_at LIMIT %d FOR UPDATE SKIP LOCKED`, uploadTaskColumns, clampFetchPendingLimit(limit))
+}
+
 func (r *UploadTaskRepoImpl) Create(ctx context.Context, task *domain.UploadTask) error {
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO upload_tasks (task_id, tenant_id, file_name, file_path, agent_id, session_id, file_type, total_chunks, done_chunks, status, error_msg, created_at, updated_at)
@@ -107,17 +126,9 @@ func (r *UploadTaskRepoImpl) FetchPending(ctx context.Context, limit int) ([]dom
 	// (FOR UPDATE SKIP LOCKED), while PostgreSQL accepts placeholders.
 	// To keep worker polling functional on db9, we clamp to a safe range and
 	// inline a trusted integer constant into SQL.
-	boundedLimit := limit
-	if boundedLimit <= 0 {
-		boundedLimit = 10
-	}
-	if boundedLimit > 100 {
-		boundedLimit = 100
-	}
-
 	// NOTE: keep this in db9 backend only. The postgres backend should keep
 	// parameterized LIMIT for standard PostgreSQL compatibility.
-	query := fmt.Sprintf(`SELECT %s FROM upload_tasks WHERE status = 'pending' ORDER BY created_at LIMIT %d FOR UPDATE SKIP LOCKED`, uploadTaskColumns, boundedLimit)
+	query := buildFetchPendingQuery(limit)
 	rows, err := tx.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("fetch pending upload tasks: %w", err)
