@@ -92,7 +92,6 @@ claude plugin install mem9@mem9
 **If `claude plugin marketplace add` fails with "already exists"**, that's fine — skip it and continue to install.
 
 **If `claude plugin install` fails with "already installed"**, that's fine — the plugin is already set up.
-
 ## Step 4: Confirm and tell user to restart
 
 Summarize what was done:

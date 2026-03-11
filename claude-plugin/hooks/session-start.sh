@@ -27,7 +27,7 @@ try:
     memories = data.get('memories', [])
     if not memories:
         sys.exit(0)
-    lines = ['[mnemo] Shared memories from your team:']
+    lines = ['[mem9] Shared memories from your team:']
     lines.append('')
     for m in memories:
         tags = ', '.join(m.get('tags') or [])

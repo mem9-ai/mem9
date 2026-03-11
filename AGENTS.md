@@ -15,7 +15,7 @@ and a small Astro site.
 | `server/`            | Go API server, business logic, TiDB SQL, tenant provisioning |
 | `cli/`               | Standalone Go CLI for exercising mnemo-server endpoints      |
 | `openclaw-plugin/`   | OpenClaw memory plugin (`kind: "memory"`)                    |
-| `opencode-plugin/`   | OpenCode plugin (`mnemo-opencode`)                           |
+| `opencode-plugin/`   | OpenCode plugin (`@mem9/opencode`)                           |
 | `claude-plugin/`     | Claude Code plugin (hooks + skills)                          |
 | `site/`              | Astro marketing/docs site                                    |
 | `e2e/`               | Live end-to-end scripts against a running server             |

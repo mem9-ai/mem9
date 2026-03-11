@@ -1,25 +1,29 @@
 {
-  "name": "mnemo-opencode",
+  "name": "@mem9/opencode",
   "version": "0.1.0",
-  "description": "OpenCode memory plugin — cloud-persistent AI agent memory with hybrid vector + keyword search via mnemo-server",
+  "description": "OpenCode memory plugin — cloud-persistent AI agent memory with hybrid vector + keyword search via mem9",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts"
   },
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "qiffang",
   "repository": {
     "type": "git",
-    "url": "https://github.com/qiffang/mnemos.git",
+    "url": "https://github.com/mem9-ai/mem9.git",
     "directory": "opencode-plugin"
   },
-  "homepage": "https://github.com/qiffang/mnemos/tree/main/opencode-plugin#readme",
+  "homepage": "https://github.com/mem9-ai/mem9/tree/main/opencode-plugin#readme",
   "keywords": [
     "opencode",
     "opencode-plugin",
     "memory",
     "agent-memory",
+    "mem9",
     "tidb",
     "vector-search",
     "persistent-memory",

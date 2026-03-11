@@ -18,10 +18,10 @@
 
 ## 🚀 Quick Start
 
-**Server-based memory via mnemo-server.**
+**Server-based memory via mem9-server.**
 
 ```bash
-# 1. Deploy mnemo-server
+# 1. Deploy mem9-server
 cd server && MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
 ```
 
@@ -29,8 +29,8 @@ cd server && MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run .
 
 | Platform | Install |
 |----------|---------|
-| **Claude Code** | `/plugin marketplace add qiffang/mnemos` then `/plugin install mnemo-memory@mnemos` |
-| **OpenCode** | Add `"plugin": ["mnemo-opencode"]` to `opencode.json` |
+| **Claude Code** | `/plugin marketplace add mem9-ai/mem9` then `/plugin install mem9@mem9` |
+| **OpenCode** | Add `"plugin": ["@mem9/opencode"]` to `opencode.json` |
 | **OpenClaw** | Add `mnemo` to `openclaw.json` plugins (see [openclaw-plugin/README](openclaw-plugin/README.md)) |
 
 ```bash
@@ -38,8 +38,8 @@ cd server && MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run .
 curl -s -X POST localhost:8080/v1alpha1/mem9s
 # → {"id":"...", "claim_url":"..."}
 
-export MNEMO_API_URL="http://localhost:8080"
-export MNEMO_TENANT_ID="..."
+export MEM9_API_URL="http://localhost:8080"
+export MEM9_TENANT_ID="..."
 ```
 
 All agents pointing at the same tenant ID share one memory pool.
@@ -170,7 +170,8 @@ mnemos/
 ├── skills/                     # Shared skills (OpenClaw ClawHub format)
 │   └── mnemos-setup/           # Setup skill
 │
-└── docs/DESIGN.md              # Full design document
+├── docs/DESIGN.md              # Full design document
+└── docs/BENCHMARK.md           # A/B benchmark pipeline guide
 ```
 
 ## Roadmap

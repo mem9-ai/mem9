@@ -1,7 +1,7 @@
 MAKEFILE_DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 IMG ?= $(REGISTRY)/mnemo-server:$(COMMIT)
 
-.PHONY: build vet clean run test test-integration docker
+.PHONY: build vet clean run test test-integration docker benchmark
 
 build:
 	mkdir -p $(MAKEFILE_DIR)/server/bin
@@ -28,3 +28,6 @@ run: build
 
 docker: build-linux
 	docker build --platform=linux/amd64 -q -f ./server/Dockerfile -t $(IMG) .
+
+benchmark:
+	@scripts/benchmark.sh

@@ -6,14 +6,13 @@ Persistent cloud memory for Claude Code — auto-loads memories on session start
 
 ## Quick Start
 
-1. Install the plugin in Claude Code:
+### Option 1: CoWork Install (one command)
 
-```
-/plugin marketplace add mem9-ai/mem9
-/plugin install mem9@mem9
+```bash
+cowork install mem9-ai/mem9-claude-plugin --plugin
 ```
 
-2. Add your tenant ID to `~/.claude/settings.json`:
+Then add your tenant ID to `~/.claude/settings.json`:
 
 ```json
 {
@@ -23,9 +22,16 @@ Persistent cloud memory for Claude Code — auto-loads memories on session start
 }
 ```
 
-3. Restart Claude Code.
+Restart Claude Code. Done.
 
-**That's it!** Your agent now has persistent cloud memory backed by `https://api.mem9.ai`.
+### Option 2: Marketplace Install
+
+```
+/plugin marketplace add mem9-ai/mem9
+/plugin install mem9@mem9
+```
+
+Then add `MEM9_TENANT_ID` to `~/.claude/settings.json` as above, and restart.
 
 ---
 
@@ -53,12 +59,52 @@ Three lifecycle hooks + two skills:
 
 - Claude Code installed
 - A `MEM9_TENANT_ID` (provision one at `https://api.mem9.ai`)
+- [CoWork CLI](https://github.com/ZhangHanDong/cowork-skills) (for CoWork install method)
 
 ## Installation
 
-### Method A: Marketplace Install (Recommended)
+### Method A: CoWork Install (Recommended)
 
-The simplest way to install — Claude Code handles plugin caching, updates, and hook registration automatically.
+One command installs the full plugin — hooks, skills, and registration:
+
+```bash
+cowork install mem9-ai/mem9-claude-plugin --plugin
+```
+
+This will:
+1. Clone the plugin repo
+2. Copy it to `~/.claude/mem9-claude-plugin/`
+3. Register it in Claude Code's plugin system
+4. Enable it in `settings.json`
+
+Then configure your tenant ID:
+
+```json
+// ~/.claude/settings.json
+{
+  "env": {
+    "MEM9_TENANT_ID": "your-tenant-uuid"
+  }
+}
+```
+
+Restart Claude Code to activate.
+
+**Update:**
+```bash
+cowork install mem9-ai/mem9-claude-plugin --plugin --update
+```
+
+**Uninstall:**
+```bash
+cowork install --uninstall mem9-claude-plugin
+```
+
+---
+
+### Method B: Marketplace Install
+
+Claude Code's built-in plugin marketplace.
 
 #### Step 1: Add the marketplace
 
@@ -100,9 +146,9 @@ Restart to activate the plugin.
 
 ---
 
-### Method B: Manual Install (settings.json hooks)
+### Method C: Manual Install (settings.json hooks)
 
-If you prefer not to use the marketplace, you can configure hooks directly in `settings.json`.
+If you prefer not to use the marketplace or CoWork, you can configure hooks directly in `settings.json`.
 
 #### 1. Clone this repo
 
@@ -122,8 +168,8 @@ chmod +x "$PLUGIN_DIR"/hooks/*.sh
 
 ```bash
 mkdir -p ~/.claude/skills
-cp -r "$PLUGIN_DIR/skills/memory-recall" ~/.claude/skills/memory-recall
-cp -r "$PLUGIN_DIR/skills/memory-store" ~/.claude/skills/memory-store
+cp -r "$PLUGIN_DIR/skills/mem9-recall" ~/.claude/skills/mem9-recall
+cp -r "$PLUGIN_DIR/skills/mem9-store" ~/.claude/skills/mem9-store
 ```
 
 #### 4. Configure `~/.claude/settings.json`
@@ -205,8 +251,9 @@ claude-plugin/
 │   ├── session-end.sh           # Cleanup placeholder
 │   └── user-prompt-submit.sh    # Inject memory hints
 └── skills/
-    ├── memory-recall/SKILL.md   # On-demand search skill
-    └── memory-store/SKILL.md    # On-demand save skill
+    ├── mem9-recall/SKILL.md     # On-demand search skill
+    ├── mem9-store/SKILL.md      # On-demand save skill
+    └── mem9-setup/SKILL.md      # Automated installer skill
 ```
 
 ## Troubleshooting
