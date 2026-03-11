@@ -24,7 +24,7 @@ The current mnemos server (Phase 1) works for single-agent or low-contention mul
 - Preserve a causal history of who wrote what
 - Soft-delete records without ghost resurrections from agents that haven't seen the delete
 
-The original claw-memory v2 memo (`claude-notes/claw-memory-v2-memo.md`) proposes vector clocks, tombstones, and a bootstrap endpoint. This proposal adapts those ideas to the existing Go server codebase.
+The original claw-memory v2 memo (`docs/design/claw-memory-v2-memo.md`) proposes vector clocks, tombstones, and a bootstrap endpoint. This proposal adapts those ideas to the existing Go server codebase.
 
 ## Scope
 

@@ -17,6 +17,7 @@ and a small Astro site.
 | `openclaw-plugin/`   | OpenClaw memory plugin (`kind: "memory"`)                    |
 | `opencode-plugin/`   | OpenCode plugin (`@mem9/opencode`)                           |
 | `claude-plugin/`     | Claude Code plugin (hooks + skills)                          |
+| `docs/design/`       | Architecture/proposal notes and design drafts                |
 | `site/`              | Astro marketing/docs site                                    |
 | `e2e/`               | Live end-to-end scripts against a running server             |
 | `k8s/`               | Deployment and gateway manifests                             |
@@ -107,6 +108,7 @@ cd server && MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" go run ./cmd
 | Tenant provisioning  | `server/internal/service/tenant.go`         |
 | CLI command wiring   | `cli/main.go`                               |
 | Claude hooks         | `claude-plugin/hooks/`                      |
+| Architecture notes   | `docs/design/`                              |
 | OpenCode wiring      | `opencode-plugin/src/index.ts`              |
 | OpenClaw wiring      | `openclaw-plugin/index.ts`                  |
 | Site copy/content    | `site/src/content/site.ts`                  |
