@@ -13,7 +13,7 @@ type Config struct {
 	RateLimit float64
 	RateBurst int
 
-	// DBBackend selects the database driver: "tidb" (default, MySQL-compatible) or "postgres".
+	// DBBackend selects the database driver: "tidb" (default), "postgres", or "db9".
 	DBBackend string
 
 	// Auto-embedding: TiDB Serverless generates embeddings via EMBED_TEXT().
@@ -99,10 +99,10 @@ func Load() (*Config, error) {
 
 	// Validate DB backend.
 	switch cfg.DBBackend {
-	case "tidb", "postgres":
+	case "tidb", "postgres", "db9":
 		// ok
 	default:
-		return nil, fmt.Errorf("unsupported MNEMO_DB_BACKEND %q; valid values are \"tidb\" and \"postgres\"", cfg.DBBackend)
+		return nil, fmt.Errorf("unsupported MNEMO_DB_BACKEND %q; valid values are \"tidb\", \"postgres\", and \"db9\"", cfg.DBBackend)
 	}
 
 	return cfg, nil

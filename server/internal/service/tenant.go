@@ -245,7 +245,8 @@ func (s *TenantService) initSchema(ctx context.Context, t *domain.Tenant) error 
 	}
 
 	switch s.pool.Backend() {
-	case "postgres":
+	case "postgres", "db9":
+		// PostgreSQL/db9 path: enable pgvector, then apply PG-compatible schema.
 		t0 := time.Now()
 		if _, err := db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
 			return fmt.Errorf("init tenant schema: pgvector extension: %w", err)
