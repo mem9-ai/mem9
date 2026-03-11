@@ -17,6 +17,7 @@ type memoryRepoMock struct {
 	createCalls          []*domain.Memory
 	getByID              map[string]*domain.Memory
 	getByIDErr           error
+	updateOptimisticErr  error
 	setStateCalls        []setStateCall  // track SetState invocations
 	setStateErr          error           // configurable return value for SetState
 	vectorResults        []domain.Memory // configurable results for AutoVectorSearch
@@ -60,7 +61,7 @@ func (m *memoryRepoMock) GetByID(ctx context.Context, id string) (*domain.Memory
 }
 
 func (m *memoryRepoMock) UpdateOptimistic(ctx context.Context, mem *domain.Memory, expectedVersion int) error {
-	return nil
+	return m.updateOptimisticErr
 }
 
 func (m *memoryRepoMock) SoftDelete(ctx context.Context, id, agentName string) error {

@@ -75,11 +75,14 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 			mem.Metadata = metadata
 		}
 		if len(tags) > 0 || len(metadata) > 0 {
-			if err := s.memories.UpdateOptimistic(ctx, mem, 0); err == nil {
-				if refreshed, refreshErr := s.memories.GetByID(ctx, latestID); refreshErr == nil {
-					mem = refreshed
-				}
+			if err := s.memories.UpdateOptimistic(ctx, mem, 0); err != nil {
+				return nil, fmt.Errorf("apply tags/metadata to raw memory %s: %w", latestID, err)
 			}
+			refreshed, refreshErr := s.memories.GetByID(ctx, latestID)
+			if refreshErr != nil {
+				return nil, fmt.Errorf("refetch raw memory %s after update: %w", latestID, refreshErr)
+			}
+			mem = refreshed
 		}
 		return mem, nil
 	}

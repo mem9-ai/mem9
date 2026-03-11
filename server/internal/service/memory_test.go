@@ -449,6 +449,21 @@ func TestCreateFallsBackToRawWhenLLMUnavailable(t *testing.T) {
 	}
 }
 
+func TestCreateRawFallbackReturnsErrorWhenMetadataUpdateFails(t *testing.T) {
+	t.Parallel()
+
+	repo := &memoryRepoMock{updateOptimisticErr: errors.New("write failed")}
+	svc := NewMemoryService(repo, nil, nil, "", ModeSmart)
+
+	_, err := svc.Create(context.Background(), "agent-1", "user prefers dark mode", []string{"prefs"}, json.RawMessage(`{"source":"manual"}`))
+	if err == nil {
+		t.Fatal("expected error when raw metadata update fails")
+	}
+	if !strings.Contains(err.Error(), "apply tags/metadata to raw memory") {
+		t.Fatalf("expected wrapped update error, got: %v", err)
+	}
+}
+
 func TestCreateRunsReconcilePipeline(t *testing.T) {
 	t.Parallel()
 
