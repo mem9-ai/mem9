@@ -50,39 +50,33 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 	}
 
 	if !s.ingest.HasLLM() {
-		result, err := s.ingest.ingestRaw(ctx, agentID, IngestRequest{
-			Messages: []IngestMessage{{Role: "user", Content: content}},
-			AgentID:  agentID,
-			Mode:     ModeRaw,
-		})
-		if err != nil {
-			return nil, err
-		}
-		if len(result.InsightIDs) == 0 {
-			return nil, nil
+		var embedding []float32
+		if s.autoModel == "" && s.embedder != nil {
+			embeddingResult, embedErr := s.embedder.Embed(ctx, content)
+			if embedErr != nil {
+				return nil, fmt.Errorf("embed raw content: %w", embedErr)
+			}
+			embedding = embeddingResult
 		}
 
-		latestID := result.InsightIDs[len(result.InsightIDs)-1]
-		mem, getErr := s.memories.GetByID(ctx, latestID)
-		if getErr != nil {
-			return nil, fmt.Errorf("fetch raw memory %s: %w", latestID, getErr)
+		now := time.Now()
+		mem := &domain.Memory{
+			ID:         uuid.New().String(),
+			Content:    content,
+			Source:     agentID,
+			Tags:       tags,
+			Metadata:   metadata,
+			Embedding:  embedding,
+			MemoryType: domain.TypeInsight,
+			AgentID:    agentID,
+			State:      domain.StateActive,
+			Version:    1,
+			UpdatedBy:  agentID,
+			CreatedAt:  now,
+			UpdatedAt:  now,
 		}
-
-		if len(tags) > 0 {
-			mem.Tags = tags
-		}
-		if len(metadata) > 0 {
-			mem.Metadata = metadata
-		}
-		if len(tags) > 0 || len(metadata) > 0 {
-			if err := s.memories.UpdateOptimistic(ctx, mem, 0); err != nil {
-				return nil, fmt.Errorf("apply tags/metadata to raw memory %s: %w", latestID, err)
-			}
-			refreshed, refreshErr := s.memories.GetByID(ctx, latestID)
-			if refreshErr != nil {
-				return nil, fmt.Errorf("refetch raw memory %s after update: %w", latestID, refreshErr)
-			}
-			mem = refreshed
+		if err := s.memories.Create(ctx, mem); err != nil {
+			return nil, fmt.Errorf("create raw memory: %w", err)
 		}
 		return mem, nil
 	}

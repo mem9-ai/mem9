@@ -444,23 +444,11 @@ func TestCreateFallsBackToRawWhenLLMUnavailable(t *testing.T) {
 	if len(repo.createCalls) != 1 {
 		t.Fatalf("expected 1 raw memory create, got %d", len(repo.createCalls))
 	}
+	if mem.Content != "user prefers dark mode" {
+		t.Fatalf("expected raw content unchanged, got %q", mem.Content)
+	}
 	if mem.MemoryType != domain.TypeInsight {
 		t.Fatalf("expected insight memory type, got %s", mem.MemoryType)
-	}
-}
-
-func TestCreateRawFallbackReturnsErrorWhenMetadataUpdateFails(t *testing.T) {
-	t.Parallel()
-
-	repo := &memoryRepoMock{updateOptimisticErr: errors.New("write failed")}
-	svc := NewMemoryService(repo, nil, nil, "", ModeSmart)
-
-	_, err := svc.Create(context.Background(), "agent-1", "user prefers dark mode", []string{"prefs"}, json.RawMessage(`{"source":"manual"}`))
-	if err == nil {
-		t.Fatal("expected error when raw metadata update fails")
-	}
-	if !strings.Contains(err.Error(), "apply tags/metadata to raw memory") {
-		t.Fatalf("expected wrapped update error, got: %v", err)
 	}
 }
 
