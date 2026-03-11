@@ -124,9 +124,9 @@ const localeNames: Record<SiteLocale, string> = {
 export const siteCopy: Record<SiteLocale, SiteDictionary> = {
   en: {
     meta: {
-      title: 'mem9 - Unlimited Memory Infrastructure for OpenClaw',
+      title: 'mem9 - AI Agent Memory for Claude Code, OpenClaw, and OpenCode',
       description:
-        'mem9.ai is unlimited memory infrastructure for OpenClaw. Persistent recall, hybrid search, and multi-agent context for Claude Code, OpenCode, OpenClaw, and custom tools.',
+        'mem9.ai is AI agent memory infrastructure for Claude Code, OpenClaw, OpenCode, and custom tools. Persistent recall, hybrid search, shared context, and long-term memory for coding agents.',
     },
     nav: {
       home: 'Home',

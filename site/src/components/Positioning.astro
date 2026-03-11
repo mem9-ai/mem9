@@ -1,0 +1,137 @@
+---
+import type { DiscoverabilityPositioningCopy } from "../content/discoverability";
+
+interface Props {
+  positioning: DiscoverabilityPositioningCopy;
+}
+
+const { positioning } = Astro.props;
+---
+
+<section id="positioning" class="positioning">
+  <div class="container">
+    <div class="section-head">
+      <p class="section-kicker" data-i18n="positioning.kicker">{positioning.kicker}</p>
+      <h2 class="section-title positioning-title" data-i18n="positioning.title">
+        {positioning.title}
+      </h2>
+      <p class="section-desc" data-i18n="positioning.description">
+        {positioning.description}
+      </p>
+    </div>
+
+    <div class="positioning-grid">
+      <article class="surface-card positioning-card">
+        <h3 class="positioning-card-title" data-i18n="positioning.factsTitle">
+          {positioning.factsTitle}
+        </h3>
+        <ul class="fact-list">
+          {positioning.facts.map((fact, index) => (
+            <li class="fact-item" data-i18n={`positioning.facts.${index}`}>
+              {fact}
+            </li>
+          ))}
+        </ul>
+      </article>
+
+      <article class="surface-card positioning-card">
+        <h3 class="positioning-card-title" data-i18n="positioning.queriesTitle">
+          {positioning.queriesTitle}
+        </h3>
+        <div
+          class="query-list"
+          aria-label={positioning.queriesTitle}
+          data-i18n-attr="aria-label:positioning.queriesTitle"
+        >
+          {positioning.queries.map((query, index) => (
+            <span class="query-chip" data-i18n={`positioning.queries.${index}`}>
+              {query}
+            </span>
+          ))}
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<style>
+  .positioning {
+    padding: 4rem 0;
+  }
+
+  .positioning-title {
+    max-width: 12ch;
+  }
+
+  .section-head {
+    width: min(100%, var(--content-rail));
+    margin: 0 auto 2rem;
+  }
+
+  .positioning-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+    width: min(100%, var(--section-grid));
+    margin: 0 auto;
+  }
+
+  .positioning-card {
+    padding: 1.5rem;
+  }
+
+  .positioning-card-title {
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+  }
+
+  .fact-list {
+    list-style: none;
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .fact-item {
+    position: relative;
+    padding-left: 1rem;
+    color: var(--text-dim);
+    line-height: 1.65;
+  }
+
+  .fact-item::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.72em;
+    width: 0.38rem;
+    height: 0.38rem;
+    border-radius: 999px;
+    background: var(--accent);
+  }
+
+  .query-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .query-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.2rem;
+    padding: 0.35rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--button-bg);
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    letter-spacing: 0.04em;
+  }
+
+  @media (max-width: 640px) {
+    .positioning-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
