@@ -56,12 +56,12 @@ if [[ -z "$context" ]]; then
 fi
 
 # Return additionalContext to inject into Claude's context.
-MNEMO_CONTEXT="$context" python3 -c "
+MEM9_CONTEXT="$context" python3 -c "
 import json, os
 output = {
     'hookSpecificOutput': {
         'hookEventName': 'SessionStart',
-        'additionalContext': os.environ['MNEMO_CONTEXT']
+        'additionalContext': os.environ['MEM9_CONTEXT']
     }
 }
 print(json.dumps(output))

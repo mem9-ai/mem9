@@ -1,42 +1,33 @@
 ---
 name: mnemos-setup
-description: "Setup mnemos persistent memory with mnemo-server. Triggers: set up mnemos, install mnemo, configure memory."
+description: "Setup Mem9 persistent memory. Triggers: set up mem9, install mem9, configure memory."
 context: fork
 allowed-tools: Bash
 ---
 
-# mnemos Setup for Claude Code
+# Mem9 Setup for Claude Code
 
-**Persistent memory for Claude Code.** This skill helps you set up mnemos with a mnemo-server instance.
-
-## Prerequisites
-
-You need a running mnemo-server instance. See [server README](https://github.com/qiffang/mnemos/tree/main/server) for deployment instructions.
+**Persistent cloud memory for Claude Code.**
 
 ## Setup Steps
 
 ### Step 1: Provision a tenant
 
 ```bash
-# Deploy server (requires a TiDB/MySQL database)
-cd server && MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
-
-# Provision a tenant (no auth required)
-curl -s -X POST http://localhost:8080/v1alpha1/mem9s | jq .
+curl -s -X POST https://api.mem9.ai/v1alpha1/mem9s | jq .
 # → { "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "claim_url": "..." }
 ```
 
-Save the returned `id` — this is your `MNEMO_TENANT_ID`.
+Save the returned `id` — this is your `MEM9_TENANT_ID`.
 
-### Step 2: Configure credentials
+### Step 2: Configure tenant ID
 
 Add to `~/.claude/settings.json`:
 
 ```json
 {
   "env": {
-    "MNEMO_API_URL": "http://your-server:8080",
-    "MNEMO_TENANT_ID": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    "MEM9_TENANT_ID": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
   }
 }
 ```
@@ -45,8 +36,8 @@ Add to `~/.claude/settings.json`:
 
 Tell the user to run in Claude Code:
 ```
-/plugin marketplace add qiffang/mnemos
-/plugin install mnemo-memory@mnemos
+/plugin marketplace add mem9-ai/mem9
+/plugin install mem9@mem9
 ```
 
 ### Step 4: Restart Claude Code

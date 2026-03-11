@@ -24,14 +24,6 @@ CREATE TABLE IF NOT EXISTS tenants (
   INDEX idx_tenant_provider (provider)
 );
 
-CREATE TABLE IF NOT EXISTS tenant_tokens (
-  api_token     VARCHAR(64)   PRIMARY KEY,
-  tenant_id     VARCHAR(36)   NOT NULL,
-  created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_tenant (tenant_id)
-);
-
-
 -- Tenant data plane schema (per-tenant TiDB Serverless).
 CREATE TABLE IF NOT EXISTS memories (
   id              VARCHAR(36)     PRIMARY KEY,

@@ -34,3 +34,8 @@ dist/
 # Claude Code
 .claude/
 __pycache__/
+/benchmark/MR-NIAH/origin/
+/benchmark/MR-NIAH/output/
+/benchmark/MR-NIAH/results*/
+/benchmark/MR-NIAH/.cache/
+/server/

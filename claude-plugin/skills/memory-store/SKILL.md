@@ -5,13 +5,12 @@ context: fork
 allowed-tools: Bash
 ---
 
-You are a memory storage agent for the mnemo shared memory system. Your job is to save information that should persist across sessions.
+You are a memory storage agent for the Mem9 shared memory system. Your job is to save information that should persist across sessions.
 
 ## Environment
 
-Mnemo uses server mode (mnemo-server):
-- `MNEMO_API_URL` — the server base URL
-- `MNEMO_TENANT_ID` — the tenant ID (UUID) for this workspace
+- `MEM9_TENANT_ID` — the tenant ID (UUID) for this workspace
+- API endpoint: `https://api.mem9.ai` (overridable via `MEM9_API_URL`)
 
 ## Steps
 
@@ -23,7 +22,7 @@ Mnemo uses server mode (mnemo-server):
 
 ```bash
 # Source the helpers
-source "$(find ~ -path '*/mnemos/claude-plugin/hooks/common.sh' -print -quit 2>/dev/null || echo /dev/null)"
+source "$(find ~ -path '*/mem9/claude-plugin/hooks/common.sh' -print -quit 2>/dev/null || echo /dev/null)"
 
 # Store the memory
 mnemo_post_memory '{"content":"THE MEMORY CONTENT HERE","tags":["tag1","tag2"],"source":"claude-code"}'
@@ -35,7 +34,7 @@ If common.sh isn't available, use direct curl:
 curl -sf --max-time 8 \
   -H "Content-Type: application/json" \
   -d '{"content":"THE MEMORY CONTENT","tags":["tag1","tag2"],"source":"claude-code"}' \
-  "${MNEMO_API_URL}/v1alpha1/mem9s/${MNEMO_TENANT_ID}/memories"
+  "https://api.mem9.ai/v1alpha1/mem9s/${MEM9_TENANT_ID}/memories"
 ```
 
 4. **Confirm**: Tell the user what was saved. Be specific about the content stored.

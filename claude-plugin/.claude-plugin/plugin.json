@@ -1,11 +1,11 @@
 {
-  "name": "mnemo-memory",
+  "name": "mem9",
   "version": "0.1.0",
-  "description": "Persistent memory for Claude Code. Auto-loads memories on session start, auto-saves on stop, with on-demand store/recall skills.",
+  "description": "Persistent cloud memory for Claude Code. Auto-loads memories on session start, auto-saves on stop, with on-demand store/recall skills.",
   "author": {
-    "name": "qiffang"
+    "name": "mem9-ai"
   },
-  "repository": "https://github.com/qiffang/mnemos",
+  "repository": "https://github.com/mem9-ai/mem9",
   "license": "Apache-2.0",
   "hooks": "./hooks/hooks.json"
 }

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"golang.org/x/time/rate"
 )
 
@@ -14,7 +15,9 @@ type visitor struct {
 	lastSeen time.Time
 }
 
-// RateLimiter provides per-IP rate limiting middleware.
+// RateLimiter provides per-tenant rate limiting middleware.
+// The rate-limit key is the tenantID extracted from the URL path parameter {tenantID}.
+// For routes without a tenantID (e.g. POST /v1alpha1/mem9s), the client IP is used as fallback.
 type RateLimiter struct {
 	mu       sync.Mutex
 	visitors map[string]*visitor
@@ -49,11 +52,18 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 				ip = r.RemoteAddr
 			}
 
-			limiter := rl.getLimiter(ip)
-			if !limiter.Allow() {
+			if !rl.getLimiter(ip).Allow() {
 				writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
 				return
 			}
+
+			if tenantID := chi.URLParam(r, "tenantID"); tenantID != "" {
+				if !rl.getLimiter(tenantID).Allow() {
+					writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
+					return
+				}
+			}
+
 			next.ServeHTTP(w, r)
 		})
 	}

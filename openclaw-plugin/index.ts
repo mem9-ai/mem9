@@ -13,7 +13,17 @@ import type {
 const DEFAULT_API_URL = "https://api.mem9.ai";
 
 function jsonResult(data: unknown) {
-  return data;
+  // Older OpenClaw versions may assume tool results have a normalized
+  // assistant-content shape and can crash on plain objects that omit `content`.
+  // Returning a JSON string keeps results readable while remaining compatible
+  // with both old and new hosts.
+  // https://github.com/openclaw/openclaw/blob/936607ca221a2f0c37ad976ddefcd39596f54793/CHANGELOG.md?plain=1#L1144
+  if (typeof data === "string") return data;
+  try {
+    return JSON.stringify(data, null, 2);
+  } catch {
+    return String(data);
+  }
 }
 
 interface OpenClawPluginApi {

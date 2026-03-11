@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -122,10 +123,14 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 		return nil, &domain.ValidationError{Message: "provisioning disabled (TiDB Zero not configured)"}
 	}
 
+	total := time.Now()
+
+	t0 := time.Now()
 	instance, err := s.zero.CreateInstance(ctx, "mem9s")
 	if err != nil {
 		return nil, fmt.Errorf("provision TiDB Zero instance: %w", err)
 	}
+	s.logger.Info("provision step", "step", "tidb_zero_create_instance", "duration_ms", time.Since(t0).Milliseconds())
 
 	// Use the TiDB Zero instance ID as the tenant ID.
 	tenantID := instance.ID
@@ -146,23 +151,35 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 		Status:         domain.TenantProvisioning,
 		SchemaVersion:  0,
 	}
+
+	t0 = time.Now()
 	if err := s.tenants.Create(ctx, t); err != nil {
 		return nil, fmt.Errorf("create tenant record: %w", err)
 	}
+	s.logger.Info("provision step", "step", "create_tenant_record", "duration_ms", time.Since(t0).Milliseconds())
 
+	t0 = time.Now()
 	if err := s.initSchema(ctx, t); err != nil {
 		if s.logger != nil {
 			s.logger.Error("tenant schema init failed", "tenant_id", tenantID, "err", err)
 		}
 		return nil, fmt.Errorf("init tenant schema: %w", err)
 	}
+	s.logger.Info("provision step", "step", "init_schema", "duration_ms", time.Since(t0).Milliseconds())
 
+	t0 = time.Now()
 	if err := s.tenants.UpdateStatus(ctx, tenantID, domain.TenantActive); err != nil {
 		return nil, fmt.Errorf("activate tenant: %w", err)
 	}
+	s.logger.Info("provision step", "step", "update_status", "duration_ms", time.Since(t0).Milliseconds())
+
+	t0 = time.Now()
 	if err := s.tenants.UpdateSchemaVersion(ctx, tenantID, 1); err != nil {
 		return nil, fmt.Errorf("update schema version: %w", err)
 	}
+	s.logger.Info("provision step", "step", "update_schema_version", "duration_ms", time.Since(t0).Milliseconds())
+
+	s.logger.Info("provision step", "step", "total", "duration_ms", time.Since(total).Milliseconds(), "tenant_id", tenantID)
 
 	return &ProvisionResult{
 		ID: tenantID,

@@ -78,6 +78,28 @@ claude-plugin/skills/memory-store/       — On-demand save skill
 - Tags stored as JSON column, filtered with `JSON_CONTAINS`; empty tags stored as `[]` (not NULL)
 - **No auth required**: Tenant ID in URL path is the only identification. No Bearer tokens, no API keys.
 
+## Database schema
+
+`server/schema.sql` contains DDL for two separate planes:
+
+| Plane | Database | Tables |
+|-------|----------|--------|
+| **Control plane** | `MNEMO_DSN` (shared) | `tenants`, `upload_tasks` |
+| **Tenant data plane** | Per-tenant DB provisioned by TiDB Zero | `memories` |
+
+The `memories` table is **never created in the control plane DB**. It is created in each tenant's own dedicated database when a tenant is provisioned (automatically via TiDB Zero, or manually).
+
+When deploying a new server environment, only run the control-plane tables against `MNEMO_DSN`:
+
+```sql
+-- Run against MNEMO_DSN only
+CREATE TABLE IF NOT EXISTS tenants (...);
+CREATE TABLE IF NOT EXISTS upload_tasks (...);
+-- DO NOT run memories table here
+```
+
+The `memories` table DDL in `schema.sql` is reference only — used when manually setting up a tenant DB. For auto-embedding environments, use the generated column variant (see comments in `schema.sql`).
+
 ## Tenant provisioning
 
 Provision a new tenant via the unauthenticated bootstrap endpoint:
@@ -99,6 +121,19 @@ DELETE /v1alpha1/mem9s/{tenantID}/memories/{id}      — Delete
 ```
 
 Agent identity is passed via the `X-Mnemo-Agent-Id` header.
+
+## Metrics
+
+Prometheus metrics are exposed at `GET /metrics` (no auth).
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `mnemo_http_requests_total` | Counter | `method`, `route`, `status` | Total HTTP requests |
+| `mnemo_http_request_duration_seconds` | Histogram | `method`, `route` | HTTP request latency |
+
+`route` uses the chi route pattern (e.g. `/v1alpha1/mem9s/{tenantID}/memories`) — not the raw URL — to avoid high cardinality from tenant IDs.
+
+Source: `server/internal/metrics/metrics.go`
 
 ## Installing the Claude Code plugin
 

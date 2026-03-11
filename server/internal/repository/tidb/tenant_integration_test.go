@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -161,96 +160,5 @@ func TestTenantUpdateSchemaVersion(t *testing.T) {
 	}
 	if got.SchemaVersion != 5 {
 		t.Fatalf("schema_version mismatch: got %d want 5", got.SchemaVersion)
-	}
-}
-
-// --- TenantToken tests ---
-
-func TestTokenCreate(t *testing.T) {
-	truncateTenants(t)
-	repo := NewTenantTokenRepo(testDB)
-	tenantRepo := NewTenantRepo(testDB)
-	ctx := context.Background()
-
-	// Need a tenant first.
-	tenant := newTestTenant()
-	if err := tenantRepo.Create(ctx, tenant); err != nil {
-		t.Fatalf("Create tenant: %v", err)
-	}
-
-	token := newTestToken(tenant.ID)
-	if err := repo.CreateToken(ctx, token); err != nil {
-		t.Fatalf("CreateToken: %v", err)
-	}
-
-	got, err := repo.GetByToken(ctx, token.APIToken)
-	if err != nil {
-		t.Fatalf("GetByToken: %v", err)
-	}
-	if got.TenantID != tenant.ID {
-		t.Fatalf("tenant_id mismatch: got %q want %q", got.TenantID, tenant.ID)
-	}
-}
-
-func TestTokenGetByTokenNotFound(t *testing.T) {
-	truncateTenants(t)
-	repo := NewTenantTokenRepo(testDB)
-	ctx := context.Background()
-
-	_, err := repo.GetByToken(ctx, "nonexistent-token")
-	if !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("expected ErrNotFound, got %v", err)
-	}
-}
-
-func TestTokenListByTenant(t *testing.T) {
-	truncateTenants(t)
-	tokenRepo := NewTenantTokenRepo(testDB)
-	tenantRepo := NewTenantRepo(testDB)
-	ctx := context.Background()
-
-	tenant := newTestTenant()
-	if err := tenantRepo.Create(ctx, tenant); err != nil {
-		t.Fatalf("Create tenant: %v", err)
-	}
-
-	// Create 3 tokens with small delays for ordering.
-	var tokenStrs []string
-	for i := 0; i < 3; i++ {
-		tok := newTestToken(tenant.ID)
-		if err := tokenRepo.CreateToken(ctx, tok); err != nil {
-			t.Fatalf("CreateToken %d: %v", i, err)
-		}
-		tokenStrs = append(tokenStrs, tok.APIToken)
-		time.Sleep(50 * time.Millisecond)
-	}
-
-	tokens, err := tokenRepo.ListByTenant(ctx, tenant.ID)
-	if err != nil {
-		t.Fatalf("ListByTenant: %v", err)
-	}
-	if len(tokens) != 3 {
-		t.Fatalf("expected 3 tokens, got %d", len(tokens))
-	}
-
-	// Verify ordered by created_at.
-	for i := 1; i < len(tokens); i++ {
-		if tokens[i].CreatedAt.Before(tokens[i-1].CreatedAt) {
-			t.Fatalf("not ordered by created_at: %v before %v", tokens[i].CreatedAt, tokens[i-1].CreatedAt)
-		}
-	}
-}
-
-func TestTokenListByTenantEmpty(t *testing.T) {
-	truncateTenants(t)
-	repo := NewTenantTokenRepo(testDB)
-	ctx := context.Background()
-
-	tokens, err := repo.ListByTenant(ctx, "nonexistent-tenant")
-	if err != nil {
-		t.Fatalf("ListByTenant: %v", err)
-	}
-	if len(tokens) != 0 {
-		t.Fatalf("expected 0 tokens, got %d", len(tokens))
 	}
 }

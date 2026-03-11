@@ -1,6 +1,6 @@
 {
   "name": "@mem9/mem9",
-  "version": "0.3.3",
+  "version": "0.3.4-beta.1",
   "description": "OpenClaw shared memory plugin — cloud-persistent memory with hybrid vector + keyword search via mnemo-server",
   "type": "module",
   "license": "Apache-2.0",

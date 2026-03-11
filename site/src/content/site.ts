@@ -18,13 +18,22 @@ export interface SiteHeroHighlight {
   description: string;
 }
 
+export interface SiteHeroFeature {
+  title: string;
+  description: string;
+}
+
 export interface SiteHeroCopy {
   eyebrow: string;
   titleLead: string;
   titleAccent: string;
   subtitle: string;
   onboardingLabel: string;
-  onboardingCommand: string;
+  onboardingStableLabel: string;
+  onboardingBetaLabel: string;
+  onboardingCommandStable: string;
+  onboardingCommandBeta: string;
+  betaFeature: SiteHeroFeature;
   highlights: SiteHeroHighlight[];
 }
 
@@ -131,8 +140,17 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       subtitle:
         'Your agents forget everything between sessions. mem9 fixes that. Persistent memory infrastructure with hybrid search, shared spaces, and cross-agent recall from first write to forever.',
       onboardingLabel: 'Agent Onboarding',
-      onboardingCommand:
+      onboardingStableLabel: 'Stable',
+      onboardingBetaLabel: 'Beta',
+      onboardingCommandStable:
         'Read https://mem9.ai/SKILL.md and follow the instructions to install and configure mem9 for OpenClaw',
+      onboardingCommandBeta:
+        'Read https://mem9.ai/beta/SKILL.md and follow the instructions to install and configure mem9 for OpenClaw',
+      betaFeature: {
+        title: 'Context Engine Support',
+        description:
+          'Now with support for the latest Context Engine, mem9 helps your agent remember what matters and bring in only the right memory for each task—so users repeat less, responses stay more accurate, and prompts stay lean. The result is a faster, more focused agent experience with lower token usage and less wasted cost.',
+      },
       highlights: [
         {
           title: 'Never forget again',
@@ -242,8 +260,17 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       subtitle:
         '你的 Agent 会在每次会话结束后忘掉一切，mem9 负责修复这件事。它提供持久化记忆基础设施，支持混合搜索、共享空间和跨 Agent 召回，从第一次写入一直保留到未来。',
       onboardingLabel: 'Agent 接入',
-      onboardingCommand:
+      onboardingStableLabel: 'Stable',
+      onboardingBetaLabel: 'Beta',
+      onboardingCommandStable:
         '阅读 https://mem9.ai/SKILL.md ，按照说明为 OpenClaw 安装并配置 mem9',
+      onboardingCommandBeta:
+        '阅读 https://mem9.ai/beta/SKILL.md ，按照说明为 OpenClaw 安装并配置 mem9',
+      betaFeature: {
+        title: 'Context Engine 支持',
+        description:
+          '现在已支持最新的 Context Engine，mem9 能帮助你的 Agent 记住真正重要的内容，并在每个任务里只带入最合适的记忆。这样用户不需要反复重复信息，回复会更准确，提示词也能保持精简。最终效果是 Agent 体验更快、更聚焦，同时减少 token 消耗和无谓成本。',
+      },
       highlights: [
         {
           title: '不再遗忘',
@@ -350,8 +377,17 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       subtitle:
         '你的 Agent 會在每次會話結束後忘掉一切，mem9 負責修復這件事。它提供持久化記憶基礎設施，支援混合搜尋、共享空間和跨 Agent 召回，從第一次寫入一路保留到未來。',
       onboardingLabel: 'Agent 接入',
-      onboardingCommand:
+      onboardingStableLabel: 'Stable',
+      onboardingBetaLabel: 'Beta',
+      onboardingCommandStable:
         '閱讀 https://mem9.ai/SKILL.md，按照說明為 OpenClaw 安裝並配置 mem9',
+      onboardingCommandBeta:
+        '閱讀 https://mem9.ai/beta/SKILL.md，按照說明為 OpenClaw 安裝並配置 mem9',
+      betaFeature: {
+        title: 'Context Engine 支援',
+        description:
+          '現在已支援最新的 Context Engine，mem9 能幫助你的 Agent 記住真正重要的內容，並在每個任務中只帶入最合適的記憶。這樣使用者不必反覆重複資訊，回覆會更準確，提示詞也能保持精簡。最終效果是 Agent 體驗更快、更聚焦，同時降低 token 消耗與不必要的成本。',
+      },
       highlights: [
         {
           title: '不再遺忘',
@@ -458,8 +494,17 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       subtitle:
         'エージェントはセッションが変わるたびにすべてを忘れます。mem9 はそれを解決します。ハイブリッド検索、共有スペース、エージェント間リコールを備えた永続メモリ基盤で、最初の書き込みからずっと記憶を保ちます。',
       onboardingLabel: 'エージェント導入',
-      onboardingCommand:
+      onboardingStableLabel: 'Stable',
+      onboardingBetaLabel: 'Beta',
+      onboardingCommandStable:
         'https://mem9.ai/SKILL.md を読み、手順に沿って OpenClaw 向けに mem9 をインストールして設定してください',
+      onboardingCommandBeta:
+        'https://mem9.ai/beta/SKILL.md を読み、手順に沿って OpenClaw 向けに mem9 をインストールして設定してください',
+      betaFeature: {
+        title: 'Context Engine サポート',
+        description:
+          '最新の Context Engine に対応したことで、mem9 はエージェントが本当に重要なことを覚え、各タスクに必要な記憶だけを適切に取り込めるようにします。これにより、ユーザーが同じ説明を繰り返す場面が減り、応答の精度が上がり、プロンプトも無駄なく保てます。その結果、より速く、より焦点の合ったエージェント体験を、低いトークン消費と無駄なコスト削減とともに実現できます。',
+      },
       highlights: [
         {
           title: 'もう忘れない',
@@ -569,8 +614,17 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       subtitle:
         '에이전트는 세션이 바뀔 때마다 모든 것을 잊습니다. mem9가 이를 해결합니다. 하이브리드 검색, 공유 공간, 에이전트 간 리콜을 갖춘 지속 메모리 인프라로 첫 번째 기록부터 계속 기억을 유지합니다.',
       onboardingLabel: '에이전트 온보딩',
-      onboardingCommand:
+      onboardingStableLabel: 'Stable',
+      onboardingBetaLabel: 'Beta',
+      onboardingCommandStable:
         'https://mem9.ai/SKILL.md 를 읽고 안내에 따라 OpenClaw용 mem9를 설치하고 설정하세요',
+      onboardingCommandBeta:
+        'https://mem9.ai/beta/SKILL.md 를 읽고 안내에 따라 OpenClaw용 mem9를 설치하고 설정하세요',
+      betaFeature: {
+        title: 'Context Engine 지원',
+        description:
+          '이제 최신 Context Engine을 지원하면서, mem9는 에이전트가 정말 중요한 내용을 기억하고 각 작업마다 꼭 맞는 메모리만 가져오도록 도와줍니다. 그 결과 사용자는 같은 내용을 덜 반복하게 되고, 응답은 더 정확해지며, 프롬프트는 더 간결하게 유지됩니다. 결국 더 빠르고 더 집중된 에이전트 경험을, 더 낮은 토큰 사용량과 불필요한 비용 감소와 함께 얻을 수 있습니다.',
+      },
       highlights: [
         {
           title: '다시는 잊지 않습니다',
@@ -677,8 +731,17 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       subtitle:
         'Agent Anda melupakan semuanya di antara sesi. mem9 memperbaikinya. Infrastruktur memori persisten dengan pencarian hybrid, ruang bersama, dan recall lintas agent dari penulisan pertama hingga seterusnya.',
       onboardingLabel: 'Onboarding Agent',
-      onboardingCommand:
+      onboardingStableLabel: 'Stable',
+      onboardingBetaLabel: 'Beta',
+      onboardingCommandStable:
         'Baca https://mem9.ai/SKILL.md lalu ikuti petunjuk untuk menginstal dan mengonfigurasi mem9 untuk OpenClaw',
+      onboardingCommandBeta:
+        'Baca https://mem9.ai/beta/SKILL.md lalu ikuti petunjuk untuk menginstal dan mengonfigurasi mem9 untuk OpenClaw',
+      betaFeature: {
+        title: 'Dukungan Context Engine',
+        description:
+          'Dengan dukungan terbaru untuk Context Engine, mem9 membantu agent Anda mengingat hal yang penting dan hanya membawa memori yang tepat untuk setiap tugas. Hasilnya, pengguna tidak perlu terlalu sering mengulang informasi, respons menjadi lebih akurat, dan prompt tetap ringkas. Dampaknya adalah pengalaman agent yang lebih cepat, lebih fokus, dengan penggunaan token yang lebih rendah dan biaya yang tidak terbuang.',
+      },
       highlights: [
         {
           title: 'Tidak lupa lagi',
@@ -788,8 +851,17 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       subtitle:
         'เอเจนต์ของคุณลืมทุกอย่างระหว่างแต่ละเซสชัน mem9 เข้ามาแก้ปัญหานี้ด้วยโครงสร้างพื้นฐานหน่วยความจำแบบถาวรที่มีการค้นหาแบบ hybrid พื้นที่ร่วมกัน และการเรียกคืนข้ามเอเจนต์ตั้งแต่การเขียนครั้งแรกไปจนตลอดการใช้งาน',
       onboardingLabel: 'การตั้งค่าเอเจนต์',
-      onboardingCommand:
+      onboardingStableLabel: 'Stable',
+      onboardingBetaLabel: 'Beta',
+      onboardingCommandStable:
         'อ่าน https://mem9.ai/SKILL.md แล้วทำตามขั้นตอนเพื่อติดตั้งและตั้งค่า mem9 สำหรับ OpenClaw',
+      onboardingCommandBeta:
+        'อ่าน https://mem9.ai/beta/SKILL.md แล้วทำตามขั้นตอนเพื่อติดตั้งและตั้งค่า mem9 สำหรับ OpenClaw',
+      betaFeature: {
+        title: 'รองรับ Context Engine',
+        description:
+          'ตอนนี้ mem9 รองรับ Context Engine รุ่นล่าสุดแล้ว ช่วยให้เอเจนต์ของคุณจำสิ่งที่สำคัญ และดึงเข้ามาเฉพาะหน่วยความจำที่เหมาะกับแต่ละงานเท่านั้น ผู้ใช้จึงไม่ต้องพูดซ้ำบ่อย คำตอบแม่นยำขึ้น และ prompt ก็ยังคงกระชับ ผลลัพธ์คือประสบการณ์เอเจนต์ที่เร็วขึ้น โฟกัสมากขึ้น ใช้โทเค็นน้อยลง และลดค่าใช้จ่ายที่สูญเปล่า。',
+      },
       highlights: [
         {
           title: 'ไม่ลืมอีกต่อไป',

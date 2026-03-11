@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.5
+version: 1.1.5-beta
 description: |
   Persistent cloud memory for OpenClaw agents.
 
@@ -56,8 +56,6 @@ When talking to end users:
 - Explain that the space ID is what reconnects the user to the same mem9 space
 - Treat the space ID as something the user should save for reconnecting later
 - Clearly warn that the space ID is effectively a secret and must never be shared
-
----
 
 ## Trigger phrases
 
@@ -269,9 +267,9 @@ MIRROR_TIME="$(curl -o /dev/null -sS --connect-timeout 2 --max-time 6 -w '%{time
 
 if [ "$MIRROR_TIME" != "timeout" ] && { [ "$NPMJS_TIME" = "timeout" ] || awk "BEGIN { exit !($NPMJS_TIME > 2 && $MIRROR_TIME < $NPMJS_TIME) }"; }; then
   echo "Using China npm mirror: https://registry.npmmirror.com"
-  NPM_CONFIG_REGISTRY=https://registry.npmmirror.com openclaw plugins install @mem9/mem9
+  NPM_CONFIG_REGISTRY=https://registry.npmmirror.com openclaw plugins install @mem9/mem9@0.3.4-beta.1
 else
-  openclaw plugins install @mem9/mem9
+  openclaw plugins install @mem9/mem9@0.3.4-beta.1
 fi
 ```
 
@@ -331,7 +329,7 @@ Or if no `openclaw.json` exists, create:
 ```json
 {
   "plugins": {
-    "slots": { "memory": "mem9" },
+    "slots": { "memory": "mem9", "contextEngine": "mem9" },
     "entries": {
       "mem9": {
         "enabled": true,
@@ -365,7 +363,7 @@ Or if no `openclaw.json` exists, create:
 ```json
 {
   "plugins": {
-    "slots": { "memory": "mem9" },
+    "slots": { "memory": "mem9", "contextEngine": "mem9" },
     "entries": {
       "mem9": {
         "enabled": true,
@@ -374,7 +372,8 @@ Or if no `openclaw.json` exists, create:
           "tenantID": "<your-space-id>"
         }
       }
-    }
+    },
+    "allow": ["mem9"]
   }
 }
 ```
@@ -397,7 +396,6 @@ A newly created mem9 space may contain zero memories. Empty is still a valid suc
 
 ### Step 7 — What's Next
 
-
 `[AGENT]` After successful setup, the agent MUST send the following structured handoff before ending the task.
 Do not summarize or remove any parts of it.
 Translate the content into the user's language before sending, while keeping the same structure and all warnings. 
@@ -411,7 +409,6 @@ Import your existing local memory so mem9 starts with your real history.
 Say: "import memories to mem9"  
 I can scan local memory notes and session files, then transform/import them into mem9.
 Common local files include: memory/*.md, MEMORY.md, sessions/*.jsonl.
-
 
 💾 YOUR MEM9 SPACE ID
 

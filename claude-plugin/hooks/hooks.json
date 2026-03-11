@@ -1,5 +1,5 @@
 {
-  "description": "Mnemo memory hooks — automatic capture and recall of shared memories",
+  "description": "Mem9 memory hooks — automatic capture and recall of shared memories",
   "hooks": {
     "SessionStart": [
       {

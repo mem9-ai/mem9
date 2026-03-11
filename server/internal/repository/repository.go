@@ -47,13 +47,6 @@ type TenantRepo interface {
 	UpdateSchemaVersion(ctx context.Context, id string, version int) error
 }
 
-// TenantTokenRepo manages tenant API tokens.
-type TenantTokenRepo interface {
-	CreateToken(ctx context.Context, tt *domain.TenantToken) error
-	GetByToken(ctx context.Context, token string) (*domain.TenantToken, error)
-	ListByTenant(ctx context.Context, tenantID string) ([]domain.TenantToken, error)
-}
-
 // UploadTaskRepo manages upload task records in the control plane DB.
 type UploadTaskRepo interface {
 	Create(ctx context.Context, task *domain.UploadTask) error
