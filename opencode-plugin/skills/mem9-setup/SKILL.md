@@ -86,7 +86,7 @@ For self-hosted servers, also set:
 export MEM9_API_URL="http://your-server:8080"
 ```
 
-**Legacy env vars** (`MNEMO_API_URL`, `MNEMO_TENANT_ID`) still work as fallbacks but are deprecated.
+
 
 ---
 

@@ -8,7 +8,7 @@ import { buildHooks } from "./hooks.js";
  * mem9-opencode — AI agent memory plugin for OpenCode.
  *
  * Connects to mem9 API (default: https://api.mem9.ai).
- * Requires MEM9_TENANT_ID (or legacy MNEMO_TENANT_ID).
+ * Requires MEM9_TENANT_ID.
  */
 const mem9Plugin: Plugin = async (_input) => {
   const cfg = loadConfig();

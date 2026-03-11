@@ -94,7 +94,7 @@ For self-hosted servers, also set:
 export MEM9_API_URL="http://your-server:8080"
 ```
 
-Legacy env vars (`MNEMO_API_URL`, `MNEMO_TENANT_ID`, `MNEMO_API_TOKEN`) still work as fallbacks but are deprecated.
+
 
 ### Verify
 
@@ -112,9 +112,7 @@ If you see `[mem9] No MEM9_TENANT_ID configured...`, check your env vars.
 |---|---|---|---|
 | `MEM9_TENANT_ID` | Yes | — | Mem9 space ID for URL routing (`/v1alpha1/mem9s/{tenantID}/memories/...`) |
 | `MEM9_API_URL` | No | `https://api.mem9.ai` | mem9 API base URL |
-| `MNEMO_API_URL` | No (legacy) | — | Legacy fallback for `MEM9_API_URL` |
-| `MNEMO_TENANT_ID` | No (legacy) | — | Legacy fallback for `MEM9_TENANT_ID` |
-| `MNEMO_API_TOKEN` | No (legacy) | — | Legacy fallback for tenant ID |
+| `MEM9_API_TOKEN` | No | — | API token (if server requires auth) |
 
 ## File Structure
 

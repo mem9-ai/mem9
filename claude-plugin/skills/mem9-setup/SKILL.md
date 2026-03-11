@@ -77,19 +77,9 @@ print(f'OK: MEM9_TENANT_ID={tenant_id} written to {path}')
 
 Replace `REPLACE_WITH_ACTUAL_TENANT_ID` with the actual tenant ID from Step 2a.
 
-## Step 3: Install plugin
+## Step 3: Install plugin via CLI
 
-Try CoWork first (preferred), fall back to marketplace if CoWork is not installed.
-
-### Option A: CoWork
-
-```bash
-cowork install mem9-ai/mem9-claude-plugin --plugin
-```
-
-**If `cowork` is not installed**, fall back to Option B.
-
-### Option B: Marketplace CLI
+These are CLI commands — run them directly in Bash:
 
 ```bash
 claude plugin marketplace add mem9-ai/mem9

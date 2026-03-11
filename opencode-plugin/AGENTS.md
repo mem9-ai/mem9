@@ -27,7 +27,7 @@ cd opencode-plugin && npm run typecheck
 ## Local conventions
 
 - Plugin startup is fail-soft: missing env vars log a warning and return `{}`.
-- `MEM9_TENANT_ID` is preferred; `MNEMO_TENANT_ID` and `MNEMO_API_TOKEN` are legacy fallbacks.
+- `MEM9_TENANT_ID` is required; `MEM9_API_URL` defaults to `https://api.mem9.ai`.
 - Default API URL is `https://api.mem9.ai` when no `MEM9_API_URL` is set.
 - Tool handlers return JSON strings with `{ ok, ... }` payloads.
 - Known 404s return `null`/`false`; unexpected errors are re-thrown.

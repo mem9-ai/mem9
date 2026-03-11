@@ -79,18 +79,11 @@ export interface IngestResult {
 
 export type StoreResult = Memory | IngestResult;
 
-/** Load config from env vars. Supports both MEM9_ and legacy MNEMO_ prefixes. */
+/** Load config from env vars. */
 export function loadConfig(): Mem9Config {
   return {
-    apiUrl:
-      process.env.MEM9_API_URL
-      ?? process.env.MNEMO_API_URL
-      ?? undefined,
-    tenantID:
-      process.env.MEM9_TENANT_ID
-      ?? process.env.MNEMO_TENANT_ID
-      ?? process.env.MNEMO_API_TOKEN
-      ?? undefined,
-    apiToken: process.env.MNEMO_API_TOKEN ?? undefined,
+    apiUrl: process.env.MEM9_API_URL ?? undefined,
+    tenantID: process.env.MEM9_TENANT_ID ?? undefined,
+    apiToken: process.env.MEM9_API_TOKEN ?? undefined,
   };
 }
