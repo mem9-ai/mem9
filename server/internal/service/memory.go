@@ -45,8 +45,43 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 		return nil, err
 	}
 
-	if s.ingest == nil || !s.ingest.HasLLM() {
-		return nil, &domain.ValidationError{Field: "llm", Message: "LLM is required for content reconciliation"}
+	if s.ingest == nil {
+		return nil, fmt.Errorf("ingest service not configured")
+	}
+
+	if !s.ingest.HasLLM() {
+		result, err := s.ingest.ingestRaw(ctx, agentID, IngestRequest{
+			Messages: []IngestMessage{{Role: "user", Content: content}},
+			AgentID:  agentID,
+			Mode:     ModeRaw,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(result.InsightIDs) == 0 {
+			return nil, nil
+		}
+
+		latestID := result.InsightIDs[len(result.InsightIDs)-1]
+		mem, getErr := s.memories.GetByID(ctx, latestID)
+		if getErr != nil {
+			return nil, fmt.Errorf("fetch raw memory %s: %w", latestID, getErr)
+		}
+
+		if len(tags) > 0 {
+			mem.Tags = tags
+		}
+		if len(metadata) > 0 {
+			mem.Metadata = metadata
+		}
+		if len(tags) > 0 || len(metadata) > 0 {
+			if err := s.memories.UpdateOptimistic(ctx, mem, 0); err == nil {
+				if refreshed, refreshErr := s.memories.GetByID(ctx, latestID); refreshErr == nil {
+					mem = refreshed
+				}
+			}
+		}
+		return mem, nil
 	}
 
 	result, err := s.ingest.ReconcileContent(ctx, agentID, agentID, "", []string{content})
