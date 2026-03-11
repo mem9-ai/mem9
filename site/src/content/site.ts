@@ -94,8 +94,8 @@ export interface SiteSecurityPageCopy {
   dataBody: string;
   protectionsTitle: string;
   protections: SiteSecurityProtectionCopy[];
-  trustTitle: string;
-  trustBody: string;
+  foundationTitle: string;
+  foundationBody: string;
   learnMoreTitle: string;
   learnMoreBody: string;
 }
@@ -313,9 +313,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             'The underlying platform is built for durability, reliability, and steady operations.',
         },
       ],
-      trustTitle: 'Trust foundation',
-      trustBody:
-        'mem9 is built on enterprise-grade cloud infrastructure and benefits from mature security practices, controls, and operational standards behind the scenes.',
+      foundationTitle: 'Production-grade cloud infrastructure / Trust foundation',
+      foundationBody:
+        'The underlying platform is built for durability, reliability, and steady operations. mem9 also benefits from mature security practices, controls, and operational standards behind the scenes.',
       learnMoreTitle: 'Learn more',
       learnMoreBody: 'Read the security overview and white paper for additional detail.',
     },
@@ -489,9 +489,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           description: '底层基础设施面向可靠性、持久性和稳定运营构建。',
         },
       ],
-      trustTitle: '信任基础',
-      trustBody:
-        'mem9 构建在企业级云基础设施之上，并受益于幕后成熟的安全实践、控制措施和运营标准。',
+      foundationTitle: '生产级云基础设施 / 信任基础',
+      foundationBody:
+        '底层基础设施面向可靠性、持久性和稳定运营构建。与此同时，mem9 也受益于幕后成熟的安全实践、控制措施和运营标准。',
       learnMoreTitle: '了解更多',
       learnMoreBody: '更多细节可查看安全概览和白皮书。',
     },
@@ -665,9 +665,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           description: '底層平台以耐久性、可靠性與穩定營運為前提打造。',
         },
       ],
-      trustTitle: '信任基礎',
-      trustBody:
-        'mem9 建立在企業級雲端基礎設施之上，並受益於幕後成熟的安全實務、控制措施與營運標準。',
+      foundationTitle: '正式環境等級雲端基礎設施 / 信任基礎',
+      foundationBody:
+        '底層平台以耐久性、可靠性與穩定營運為前提打造。同時，mem9 也受益於幕後成熟的安全實務、控制措施與營運標準。',
       learnMoreTitle: '了解更多',
       learnMoreBody: '更多細節可查看安全概覽與白皮書。',
     },
@@ -844,9 +844,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           description: '基盤となるプラットフォームは耐久性、信頼性、安定運用を前提に構成されています。',
         },
       ],
-      trustTitle: '信頼の基盤',
-      trustBody:
-        'mem9 はエンタープライズグレードのクラウド基盤上で構築されており、裏側では成熟したセキュリティ実務、統制、運用標準の恩恵を受けています。',
+      foundationTitle: '本番グレードのクラウド基盤 / 信頼の基盤',
+      foundationBody:
+        '基盤となるプラットフォームは耐久性、信頼性、安定運用を前提に構成されています。あわせて、mem9 は裏側で成熟したセキュリティ実務、統制、運用標準の恩恵を受けています。',
       learnMoreTitle: 'さらに詳しく',
       learnMoreBody: '詳しい内容はセキュリティ概要とホワイトペーパーをご覧ください。',
     },
@@ -1020,9 +1020,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           description: '기반 플랫폼은 내구성, 신뢰성, 안정적인 운영을 목표로 구축됩니다.',
         },
       ],
-      trustTitle: '신뢰 기반',
-      trustBody:
-        'mem9는 엔터프라이즈급 클라우드 인프라 위에 구축되며, 그 뒤에서 성숙한 보안 관행, 통제, 운영 표준의 이점을 활용합니다.',
+      foundationTitle: '프로덕션급 클라우드 인프라 / 신뢰 기반',
+      foundationBody:
+        '기반 플랫폼은 내구성, 신뢰성, 안정적인 운영을 목표로 구축됩니다. 동시에 mem9는 그 뒤에서 성숙한 보안 관행, 통제, 운영 표준의 이점을 활용합니다.',
       learnMoreTitle: '더 알아보기',
       learnMoreBody: '자세한 내용은 보안 개요와 백서를 참고하세요.',
     },
@@ -1199,9 +1199,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           description: 'Platform dasarnya dibangun untuk durabilitas, keandalan, dan operasi yang stabil.',
         },
       ],
-      trustTitle: 'Fondasi kepercayaan',
-      trustBody:
-        'mem9 dibangun di atas infrastruktur cloud kelas enterprise dan mendapat manfaat dari praktik keamanan yang matang, kontrol, dan standar operasional di balik layar.',
+      foundationTitle: 'Infrastruktur cloud kelas production / Fondasi kepercayaan',
+      foundationBody:
+        'Platform dasarnya dibangun untuk durabilitas, keandalan, dan operasi yang stabil. Pada saat yang sama, mem9 mendapat manfaat dari praktik keamanan yang matang, kontrol, dan standar operasional di balik layar.',
       learnMoreTitle: 'Pelajari lebih lanjut',
       learnMoreBody: 'Baca ringkasan keamanan dan white paper untuk detail tambahan.',
     },
@@ -1378,9 +1378,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           description: 'แพลตฟอร์มพื้นฐานถูกสร้างเพื่อความทนทาน ความน่าเชื่อถือ และการปฏิบัติงานที่เสถียร',
         },
       ],
-      trustTitle: 'รากฐานของความไว้วางใจ',
-      trustBody:
-        'mem9 ทำงานบนโครงสร้างพื้นฐานคลาวด์ระดับ enterprise และได้ประโยชน์จากแนวปฏิบัติด้านความปลอดภัย มาตรการควบคุม และมาตรฐานการปฏิบัติงานที่เป็นผู้ใหญ่ในเบื้องหลัง',
+      foundationTitle: 'โครงสร้างพื้นฐานคลาวด์ระดับ production / รากฐานของความไว้วางใจ',
+      foundationBody:
+        'แพลตฟอร์มพื้นฐานถูกสร้างเพื่อความทนทาน ความน่าเชื่อถือ และการปฏิบัติงานที่เสถียร ขณะเดียวกัน mem9 ก็ได้ประโยชน์จากแนวปฏิบัติด้านความปลอดภัย มาตรการควบคุม และมาตรฐานการปฏิบัติงานที่เป็นผู้ใหญ่ในเบื้องหลัง',
       learnMoreTitle: 'ดูเพิ่มเติม',
       learnMoreBody: 'อ่านภาพรวมด้านความปลอดภัยและ white paper เพื่อดูรายละเอียดเพิ่มเติม',
     },
