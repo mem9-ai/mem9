@@ -3,7 +3,7 @@ title: Multi-Database Backend Architecture (MySQL/PostgreSQL-Compatible)
 status: draft
 created: 2026-03-11
 last_updated: 2026-03-11
-open_questions: 6
+open_questions: 7
 blocked_by: ""
 ---
 
@@ -118,6 +118,24 @@ Every backend integration must declare and satisfy a minimal contract:
 Backends may differ in implementation details, but must not violate service/API
 semantics.
 
+## Support Levels
+
+To avoid binary "supported vs unsupported" ambiguity, each backend should be
+labeled across two dimensions:
+
+1. **Tier**
+   - **Core**: CRUD, tenant isolation, and baseline keyword search.
+   - **Extended**: Core + vector/FTS and auto-embedding integration.
+   - **Full**: Extended + operational capabilities such as auto-provisioning.
+
+2. **Maturity**
+   - **GA**: production-ready with full conformance gates.
+   - **Beta**: functionally complete but still under tighter release controls.
+   - **Experimental**: development-stage backend, not for production traffic.
+
+This labeling is orthogonal to backend family and provides a clearer release
+contract to operators and contributors.
+
 ## Compatibility and API Invariants
 
 The following behavior must remain invariant across supported backends:
@@ -196,6 +214,8 @@ This plan is intentionally backend-agnostic.
 - Standardize startup diagnostics (backend, capabilities, degraded modes).
 - Standardize migration and rollback runbook template for each backend.
 - Add backend health checks to smoke/e2e scripts.
+- Add schema/feature drift detection checks so backend capabilities cannot
+  silently diverge from declared contracts over time.
 
 ## Conformance Testing Strategy
 
@@ -219,6 +239,13 @@ Each backend must pass four levels:
    - Same test fixtures across backends with expected parity windows
    - Explicitly documented tolerated deltas where unavoidable
 
+Conformance implementation priority should be:
+
+1. Tenant isolation (highest security and data-boundary risk)
+2. CRUD idempotency and correctness
+3. Search ordering and result consistency
+4. Concurrency and lease semantics (including `FOR UPDATE SKIP LOCKED` paths)
+
 ## Risks and Mitigations
 
 1. **Risk: duplication between adapters**
@@ -237,7 +264,19 @@ Each backend must pass four levels:
 
 5. **Risk: operational complexity**
    - Mitigation: backend-specific runbooks with a shared template and explicit
-     rollback steps.
+      rollback steps.
+
+6. **Risk: connection pool behavior divergence**
+   - Mitigation: define backend-specific pool defaults and monitor exhaustion,
+     wait latency, and connection churn with consistent telemetry.
+
+7. **Risk: transaction isolation variance**
+   - Mitigation: document required isolation assumptions per critical path and
+     validate them in backend conformance and integration tests.
+
+8. **Risk: timestamp precision differences**
+   - Mitigation: avoid correctness logic that depends on fine-grained timestamp
+     ordering; use deterministic ordering keys where precision can differ.
 
 ## Open Questions
 
@@ -253,6 +292,9 @@ Each backend must pass four levels:
    the current raw-SQL convention?
 6. What is the CI matrix policy that balances confidence and runtime cost as
    backend count grows?
+7. What is the migration/rollback compatibility policy across backend upgrades
+   (for example, required compatibility window, fallback guarantees, and
+   rollback preconditions)?
 
 ## Decision Log
 
