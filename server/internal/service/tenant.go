@@ -120,6 +120,12 @@ type ProvisionResult struct {
 // Provision creates a new TiDB Zero instance and registers it as a tenant.
 // The TiDB Zero instance ID is used as the tenant ID.
 func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error) {
+	if s.pool == nil {
+		return nil, fmt.Errorf("tenant pool not configured")
+	}
+	if s.pool.Backend() != "tidb" {
+		return nil, &domain.ValidationError{Message: fmt.Sprintf("auto-provisioning requires tidb backend; got %q", s.pool.Backend())}
+	}
 	if s.zero == nil {
 		return nil, &domain.ValidationError{Message: "provisioning disabled (TiDB Zero not configured)"}
 	}
@@ -245,7 +251,12 @@ func (s *TenantService) initSchema(ctx context.Context, t *domain.Tenant) error 
 	}
 
 	switch s.pool.Backend() {
-	case "postgres":
+	case "postgres", "db9":
+		// PostgreSQL/db9 path: enable pgvector, then apply PG-compatible schema.
+		// Verified against a live db9 instance (2026-03-11):
+		// - CREATE EXTENSION IF NOT EXISTS vector
+		// - tenantMemorySchemaPostgres (table/index/function/trigger)
+		// all execute successfully.
 		t0 := time.Now()
 		if _, err := db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
 			return fmt.Errorf("init tenant schema: pgvector extension: %w", err)

@@ -67,17 +67,14 @@ That's it. OpenCode will install `@mem9/opencode` from npm automatically on next
 git clone https://github.com/mem9-ai/mem9.git
 cd mem9/opencode-plugin
 npm install
+npm run build
 ```
 
 Then register in `opencode.json`:
 
 ```json
 {
-  "plugins": {
-    "mem9": {
-      "path": "/absolute/path/to/mem9/opencode-plugin"
-    }
-  }
+  "plugin": ["file:///absolute/path/to/mem9/opencode-plugin/dist/index.js"]
 }
 ```
 
@@ -93,6 +90,8 @@ For self-hosted servers, also set:
 ```bash
 export MEM9_API_URL="http://your-server:8080"
 ```
+
+`MEM9_TENANT_ID` must be present in the environment used to launch OpenCode. For project-scoped setup, prefer `direnv` or a project launch script instead of storing env vars in `opencode.json` or editing shell RC files from automation.
 
 ### Migrating from MNEMO_ env vars
 

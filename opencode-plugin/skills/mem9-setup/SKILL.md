@@ -21,9 +21,25 @@ Security note: Treat the space ID like a secret. Anyone who has it can access th
 
 ---
 
-## Step 0 — Check for existing configuration
+## Step 0 — Choose plugin install scope
 
 Ask the user before doing anything else:
+
+> Where do you want to install the mem9 plugin?
+> 1. **Global** — available in every OpenCode project on this machine
+> 2. **Project** — only active in the current project directory
+
+**Branching:**
+- If **global** → target file is `~/.config/opencode/opencode.json` (create if absent).
+- If **project** → target file is `opencode.json` in the current project root (create if absent).
+
+Save the chosen target file path — it is used in Step 3.
+
+---
+
+## Step 1 — Choose or provide mem9 space
+
+Ask the user:
 
 > Which setup do you want?
 > 1. Create a new mem9 space
@@ -32,25 +48,36 @@ Ask the user before doing anything else:
 > If you choose reconnect, paste your existing space ID.
 
 **Branching:**
-- If reconnect with existing ID → verify it first (Step 0b), then skip to Step 2.
-- If create new → continue to Step 1.
+- If reconnect with existing ID → verify it first (Step 1b), then skip to Step 3.
+- If create new → continue to Step 2.
 
-### Step 0b — Verify existing space
+### Step 1b — Verify existing space
+
+First check that the API is reachable, then confirm the space ID is valid:
+
+```bash
+curl -sf --max-time 8 "https://api.mem9.ai/healthz" \
+  && echo "API_OK" || echo "API_UNREACHABLE"
+```
+
+If `API_UNREACHABLE` → network problem; ask user to check connectivity to `api.mem9.ai`.
+
+If `API_OK`, verify the space ID resolves:
 
 ```bash
 curl -sf --max-time 8 \
   "https://api.mem9.ai/v1alpha1/mem9s/$SPACE_ID/memories?limit=1" \
-  && echo "OK" || echo "UNREACHABLE"
+  && echo "SPACE_OK" || echo "SPACE_INVALID"
 ```
 
-If `OK` → continue to Step 2.
-If `UNREACHABLE` → ask user to re-check or create a new space.
+If `SPACE_OK` → continue to Step 3.
+If `SPACE_INVALID` → space ID not found; ask user to re-check or create a new space.
 
 ---
 
-## Step 1 — Create a new mem9 space
+## Step 2 — Create a new mem9 space
 
-> Skip if the user provided an existing space ID in Step 0.
+> Skip if the user provided an existing space ID in Step 1.
 
 ```bash
 curl -sX POST https://api.mem9.ai/v1alpha1/mem9s
@@ -58,10 +85,10 @@ curl -sX POST https://api.mem9.ai/v1alpha1/mem9s
 
 Response:
 ```json
-{ "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" }
+{ "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "claim_url": "https://..." }
 ```
 
-Save the `id` as `SPACE_ID`. Tell the user:
+Save the `id` as `SPACE_ID`. The `claim_url` is only relevant for self-hosted TiDB Zero setups — ignore it for the managed `api.mem9.ai` service. Tell the user:
 
 > Your new mem9 space is ready. This space ID is how you reconnect to the same memory from any machine.
 >
@@ -69,32 +96,13 @@ Save the `id` as `SPACE_ID`. Tell the user:
 
 ---
 
-## Step 2 — Configure environment variables
+## Step 3 — Install the plugin and configure
 
-Set the mem9 connection in the user's shell profile or environment:
-
-```bash
-export MEM9_TENANT_ID="<space-id>"
-```
-
-For persistent config, add to `~/.bashrc`, `~/.zshrc`, or the relevant shell profile.
-
-**No `MEM9_API_URL` is needed** — the plugin defaults to `https://api.mem9.ai`.
-
-For self-hosted servers, also set:
-```bash
-export MEM9_API_URL="http://your-server:8080"
-```
-
-
-
----
-
-## Step 3 — Install the plugin
+Write the plugin entry into the target `opencode.json` chosen in Step 0. Configure `MEM9_TENANT_ID` in the environment before starting OpenCode.
 
 ### Method A: npm plugin (Recommended)
 
-Add to your project's `opencode.json`:
+Add `"@mem9/opencode"` to the target `opencode.json`:
 
 ```json
 {
@@ -104,6 +112,26 @@ Add to your project's `opencode.json`:
 
 OpenCode will auto-install the plugin from npm on next startup.
 
+Set `MEM9_TENANT_ID` in the shell environment before launching OpenCode:
+
+```bash
+export MEM9_TENANT_ID="<space-id>"
+```
+
+Do not modify shell RC files directly. Tell the user that `MEM9_TENANT_ID` must be present in the environment used to launch OpenCode.
+
+If the user asks how to persist it, give guidance only. For example:
+
+```bash
+# zsh
+echo 'export MEM9_TENANT_ID="<space-id>"' >> ~/.zshrc
+
+# bash
+echo 'export MEM9_TENANT_ID="<space-id>"' >> ~/.bashrc
+```
+
+For project-scoped setup, suggest a tool like `direnv` or a project launch script instead of putting env vars into `opencode.json`.
+
 ### Method B: From source
 
 ```bash
@@ -112,16 +140,28 @@ cd mem9/opencode-plugin
 npm install
 ```
 
-Then register in `opencode.json`:
+Then add the local plugin path to the target `opencode.json`:
 
 ```json
 {
-  "plugins": {
-    "mem9": {
-      "path": "/absolute/path/to/mem9/opencode-plugin"
-    }
-  }
+  "plugin": ["file:///absolute/path/to/mem9/opencode-plugin/dist/index.js"]
 }
+```
+
+Set `MEM9_TENANT_ID` in the shell environment before launching OpenCode:
+
+```bash
+export MEM9_TENANT_ID="<space-id>"
+```
+
+Do not modify shell RC files directly. Tell the user that `MEM9_TENANT_ID` must be present in the environment used to launch OpenCode. If the user asks how to persist it, provide shell-specific examples as guidance only.
+
+If the plugin has not been built yet, build it first:
+
+```bash
+cd mem9/opencode-plugin
+npm install
+npm run build
 ```
 
 ---
@@ -148,12 +188,15 @@ If you see `[mem9] No MEM9_TENANT_ID configured`, check your env vars.
 After successful setup, send the user:
 
 ```
-✅ Your mem9 space is ready.
+Your mem9 space is ready.
 
-🧭 WHAT YOU CAN DO NEXT
+WHAT YOU CAN DO NEXT
 
-Your agent now has persistent cloud memory. Memories are automatically
-injected into context at the start of every chat turn.
+Your agent now has persistent cloud memory. At the start of every chat turn,
+recent memories are automatically injected into the system prompt as context.
+
+Memories are NOT saved automatically — you control what gets stored using
+the memory tools below.
 
 Available tools:
 - memory_store: Save facts, decisions, context
@@ -162,19 +205,19 @@ Available tools:
 - memory_update: Modify existing memory
 - memory_delete: Remove
 
-💾 YOUR MEM9 SPACE ID
+YOUR MEM9 SPACE ID
 
 SPACE_ID: <your-space-id>
 
 This ID is your access key to mem9.
 Keep it private and store it somewhere safe.
 
-♻️ RECOVERY
+RECOVERY
 
-Set the same MEM9_TENANT_ID on any machine to reconnect to your memory.
+Set the same MEM9_TENANT_ID in the environment on any machine to reconnect.
 Your memory will reconnect instantly.
 
-📦 BACKUP PLAN
+BACKUP PLAN
 
 Save the space ID in a password manager or secure vault.
 ```
@@ -184,18 +227,17 @@ Save the space ID in a password manager or secure vault.
 ## API Reference
 
 Base: `https://api.mem9.ai`
-Routes: `/v1alpha1/mem9s/{tenantID}/...`
 Header: `X-Mnemo-Agent-Id: <name>` (optional)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/v1alpha1/mem9s` | Provision tenant |
 | GET | `/healthz` | Health check |
-| POST | `/{tenantID}/memories` | Create memory |
-| GET | `/{tenantID}/memories` | Search (`?q=`, `?tags=`, `?source=`, `?limit=`) |
-| GET | `/{tenantID}/memories/{id}` | Get by ID |
-| PUT | `/{tenantID}/memories/{id}` | Update |
-| DELETE | `/{tenantID}/memories/{id}` | Delete |
+| POST | `/v1alpha1/mem9s` | Provision tenant |
+| POST | `/v1alpha1/mem9s/{tenantID}/memories` | Create memory |
+| GET | `/v1alpha1/mem9s/{tenantID}/memories` | Search (`?q=`, `?tags=`, `?source=`, `?limit=`) |
+| GET | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Get by ID |
+| PUT | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Update |
+| DELETE | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Delete |
 
 ---
 
@@ -203,7 +245,7 @@ Header: `X-Mnemo-Agent-Id: <name>` (optional)
 
 | Symptom | Fix |
 |---------|-----|
-| `No MEM9_TENANT_ID configured` | Set `MEM9_TENANT_ID` env var |
-| Plugin not loading | Check `opencode.json` has `"plugin": ["@mem9/opencode"]` |
+| `No MEM9_TENANT_ID configured` | Set `MEM9_TENANT_ID` in the shell environment before starting OpenCode |
+| Plugin not loading | Check `opencode.json` has a valid `"plugin"` entry and restart OpenCode |
 | `404` on API call | Verify space ID; run `curl https://api.mem9.ai/healthz` |
 | Existing space ID unreachable | Re-check for typos; confirm network access to `api.mem9.ai` |

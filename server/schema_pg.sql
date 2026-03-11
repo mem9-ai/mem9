@@ -1,3 +1,10 @@
+-- PostgreSQL-compatible control-plane schema used by postgres/db9 backends.
+-- Verified on a live db9 instance (2026-03-11):
+-- - CREATE EXTENSION vector
+-- - tenants/memories/upload_tasks DDL
+-- - update_updated_at() trigger function and table triggers
+-- all apply successfully.
+
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS tenants (
@@ -22,7 +29,6 @@ CREATE TABLE IF NOT EXISTS tenants (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_name ON tenants(name);
 CREATE INDEX IF NOT EXISTS idx_tenant_status ON tenants(status);
 CREATE INDEX IF NOT EXISTS idx_tenant_provider ON tenants(provider);
-
 
 CREATE TABLE IF NOT EXISTS memories (
     id              VARCHAR(36)     PRIMARY KEY,

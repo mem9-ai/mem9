@@ -45,8 +45,43 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 		return nil, err
 	}
 
-	if s.ingest == nil || !s.ingest.HasLLM() {
-		return nil, &domain.ValidationError{Field: "llm", Message: "LLM is required for content reconciliation"}
+	if s.ingest == nil {
+		return nil, fmt.Errorf("ingest service not configured")
+	}
+
+	if !s.ingest.HasLLM() {
+		// Keep no-LLM create as a single write so API semantics remain predictable.
+		// This branch intentionally avoids a "create then patch tags/metadata" flow,
+		// which could otherwise return an error after content is already persisted.
+		var embedding []float32
+		if s.autoModel == "" && s.embedder != nil {
+			embeddingResult, embedErr := s.embedder.Embed(ctx, content)
+			if embedErr != nil {
+				return nil, fmt.Errorf("embed raw content: %w", embedErr)
+			}
+			embedding = embeddingResult
+		}
+
+		now := time.Now()
+		mem := &domain.Memory{
+			ID:         uuid.New().String(),
+			Content:    content,
+			Source:     agentID,
+			Tags:       tags,
+			Metadata:   metadata,
+			Embedding:  embedding,
+			MemoryType: domain.TypeInsight,
+			AgentID:    agentID,
+			State:      domain.StateActive,
+			Version:    1,
+			UpdatedBy:  agentID,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}
+		if err := s.memories.Create(ctx, mem); err != nil {
+			return nil, fmt.Errorf("create raw memory: %w", err)
+		}
+		return mem, nil
 	}
 
 	result, err := s.ingest.ReconcileContent(ctx, agentID, agentID, "", []string{content})

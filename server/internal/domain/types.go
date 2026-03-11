@@ -108,13 +108,13 @@ type Tenant struct {
 }
 
 // DSNForBackend builds a connection string for the specified backend.
-// backend must be "postgres" or "tidb" (MySQL-compatible); empty string panics.
+// backend must be "postgres", "db9", or "tidb" (MySQL-compatible); empty string panics.
 func (t *Tenant) DSNForBackend(backend string) string {
 	if backend == "" {
-		panic("DSNForBackend: backend must be specified explicitly (\"postgres\" or \"tidb\")")
+		panic("DSNForBackend: backend must be specified explicitly (\"postgres\", \"db9\", or \"tidb\")")
 	}
 	switch backend {
-	case "postgres":
+	case "postgres", "db9":
 		sslmode := "disable"
 		if t.DBTLS {
 			sslmode = "require"
