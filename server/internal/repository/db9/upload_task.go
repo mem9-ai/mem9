@@ -103,6 +103,10 @@ func (r *UploadTaskRepoImpl) FetchPending(ctx context.Context, limit int) ([]dom
 	}
 	defer tx.Rollback()
 
+	// db9 currently rejects parameterized LIMIT/OFFSET in this query shape
+	// (FOR UPDATE SKIP LOCKED), while PostgreSQL accepts placeholders.
+	// To keep worker polling functional on db9, we clamp to a safe range and
+	// inline a trusted integer constant into SQL.
 	boundedLimit := limit
 	if boundedLimit <= 0 {
 		boundedLimit = 10
@@ -111,7 +115,8 @@ func (r *UploadTaskRepoImpl) FetchPending(ctx context.Context, limit int) ([]dom
 		boundedLimit = 100
 	}
 
-	// db9 requires a constant integer for LIMIT/OFFSET in this query shape.
+	// NOTE: keep this in db9 backend only. The postgres backend should keep
+	// parameterized LIMIT for standard PostgreSQL compatibility.
 	query := fmt.Sprintf(`SELECT %s FROM upload_tasks WHERE status = 'pending' ORDER BY created_at LIMIT %d FOR UPDATE SKIP LOCKED`, uploadTaskColumns, boundedLimit)
 	rows, err := tx.QueryContext(ctx, query)
 	if err != nil {
