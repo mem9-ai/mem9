@@ -29,7 +29,7 @@ cd server && MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run .
 
 | Platform | Install |
 |----------|---------|
-| **Claude Code** | `/plugin marketplace add qiffang/mnemos` then `/plugin install mnemo-memory@mnemos` |
+| **Claude Code** | `/plugin marketplace add mem9-ai/mem9` then `/plugin install mem9@mem9` |
 | **OpenCode** | Add `"plugin": ["mnemo-opencode"]` to `opencode.json` |
 | **OpenClaw** | Add `mnemo` to `openclaw.json` plugins (see [openclaw-plugin/README](openclaw-plugin/README.md)) |
 
