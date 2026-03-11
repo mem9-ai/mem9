@@ -244,7 +244,8 @@ func (s *TenantService) initSchema(ctx context.Context, t *domain.Tenant) error 
 		return err
 	}
 
-	if s.pool.Backend() == "postgres" {
+	switch s.pool.Backend() {
+	case "postgres":
 		t0 := time.Now()
 		if _, err := db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
 			return fmt.Errorf("init tenant schema: pgvector extension: %w", err)
@@ -254,6 +255,8 @@ func (s *TenantService) initSchema(ctx context.Context, t *domain.Tenant) error 
 		metrics.ProvisionStepDuration.WithLabelValues("init_schema_pgvector_extension").Observe(elapsed.Seconds())
 
 		t0 = time.Now()
+		// PostgreSQL schema includes CREATE INDEX and updated_at trigger statements,
+		// so no extra ALTER TABLE index creation is needed here.
 		if _, err := db.ExecContext(ctx, tenantMemorySchemaPostgres); err != nil {
 			return fmt.Errorf("init tenant schema: memories: %w", err)
 		}
@@ -261,41 +264,42 @@ func (s *TenantService) initSchema(ctx context.Context, t *domain.Tenant) error 
 		s.logger.Info("provision step", "step", "init_schema_create_table", "duration_ms", elapsed.Milliseconds())
 		metrics.ProvisionStepDuration.WithLabelValues("init_schema_create_table").Observe(elapsed.Seconds())
 		return nil
-	}
-
-	t0 := time.Now()
-	if _, err := db.ExecContext(ctx, buildMemorySchema(s.autoModel, s.autoDims)); err != nil {
-		return fmt.Errorf("init tenant schema: memories: %w", err)
-	}
-	elapsed := time.Since(t0)
-	s.logger.Info("provision step", "step", "init_schema_create_table", "duration_ms", elapsed.Milliseconds())
-	metrics.ProvisionStepDuration.WithLabelValues("init_schema_create_table").Observe(elapsed.Seconds())
-
-	if s.autoModel != "" {
-		t0 = time.Now()
-		_, err := db.ExecContext(ctx,
-			`ALTER TABLE memories ADD VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
-		elapsed = time.Since(t0)
-		if err != nil && !isIndexExistsError(err) {
-			return fmt.Errorf("init tenant schema: vector index: %w", err)
+	case "tidb":
+		t0 := time.Now()
+		if _, err := db.ExecContext(ctx, buildMemorySchema(s.autoModel, s.autoDims)); err != nil {
+			return fmt.Errorf("init tenant schema: memories: %w", err)
 		}
-		s.logger.Info("provision step", "step", "init_schema_vector_index", "duration_ms", elapsed.Milliseconds())
-		metrics.ProvisionStepDuration.WithLabelValues("init_schema_vector_index").Observe(elapsed.Seconds())
-	}
+		elapsed := time.Since(t0)
+		s.logger.Info("provision step", "step", "init_schema_create_table", "duration_ms", elapsed.Milliseconds())
+		metrics.ProvisionStepDuration.WithLabelValues("init_schema_create_table").Observe(elapsed.Seconds())
 
-	if s.ftsEnabled {
-		t0 = time.Now()
-		_, err := db.ExecContext(ctx,
-			`ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
-		elapsed = time.Since(t0)
-		if err != nil && !isIndexExistsError(err) {
-			return fmt.Errorf("init tenant schema: fulltext index: %w", err)
+		if s.autoModel != "" {
+			t0 = time.Now()
+			_, err := db.ExecContext(ctx,
+				`ALTER TABLE memories ADD VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+			elapsed = time.Since(t0)
+			if err != nil && !isIndexExistsError(err) {
+				return fmt.Errorf("init tenant schema: vector index: %w", err)
+			}
+			s.logger.Info("provision step", "step", "init_schema_vector_index", "duration_ms", elapsed.Milliseconds())
+			metrics.ProvisionStepDuration.WithLabelValues("init_schema_vector_index").Observe(elapsed.Seconds())
 		}
-		s.logger.Info("provision step", "step", "init_schema_fts_index", "duration_ms", elapsed.Milliseconds())
-		metrics.ProvisionStepDuration.WithLabelValues("init_schema_fts_index").Observe(elapsed.Seconds())
-	}
 
-	return nil
+		if s.ftsEnabled {
+			t0 = time.Now()
+			_, err := db.ExecContext(ctx,
+				`ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+			elapsed = time.Since(t0)
+			if err != nil && !isIndexExistsError(err) {
+				return fmt.Errorf("init tenant schema: fulltext index: %w", err)
+			}
+			s.logger.Info("provision step", "step", "init_schema_fts_index", "duration_ms", elapsed.Milliseconds())
+			metrics.ProvisionStepDuration.WithLabelValues("init_schema_fts_index").Observe(elapsed.Seconds())
+		}
+		return nil
+	default:
+		return fmt.Errorf("init tenant schema: unsupported backend %q", s.pool.Backend())
+	}
 }
 
 func isIndexExistsError(err error) bool {
