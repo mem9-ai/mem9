@@ -9,16 +9,17 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    if: ${{ secrets.CLAUDE_PLUGIN_DEPLOY_KEY != '' }}
     permissions:
       contents: read
     steps:
       - name: Checkout monorepo
+        if: ${{ env.HAS_DEPLOY_KEY == 'true' }}
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Push claude-plugin/ to mem9-claude-plugin
+        if: ${{ env.HAS_DEPLOY_KEY == 'true' }}
         uses: cpina/github-action-push-to-another-repository@v1.7.2
         env:
           SSH_DEPLOY_KEY: ${{ secrets.CLAUDE_PLUGIN_DEPLOY_KEY }}
@@ -28,3 +29,5 @@ jobs:
           destination-repository-name: 'mem9-claude-plugin'
           target-branch: 'main'
           commit-message: 'sync from mem9-ai/mem9@${{ github.sha }}'
+    env:
+      HAS_DEPLOY_KEY: ${{ secrets.CLAUDE_PLUGIN_DEPLOY_KEY != '' }}
