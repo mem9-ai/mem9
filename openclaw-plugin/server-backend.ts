@@ -61,6 +61,9 @@ export class ServerBackend implements MemoryBackend {
     if (input.q) params.set("q", input.q);
     if (input.tags) params.set("tags", input.tags);
     if (input.source) params.set("source", input.source);
+    if (input.memory_type) params.set("memory_type", input.memory_type);
+    if (input.agent_id) params.set("agent_id", input.agent_id);
+    if (input.session_id) params.set("session_id", input.session_id);
     if (input.limit != null) params.set("limit", String(input.limit));
     if (input.offset != null) params.set("offset", String(input.offset));
 

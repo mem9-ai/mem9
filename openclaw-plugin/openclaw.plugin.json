@@ -1,14 +1,14 @@
 {
   "id": "mem9",
-  "name": "Mnemo Memory",
-  "description": "AI agent memory — server mode (mnemo-server). Hybrid vector + keyword search.",
+  "name": "Mem9 Memory",
+  "description": "AI agent memory — server mode (mem9-server). Hybrid vector + keyword search.",
   "kind": "memory",
   "configSchema": {
     "type": "object",
     "properties": {
       "apiUrl": {
         "type": "string",
-        "description": "mnemo-server URL (server mode)"
+        "description": "mem9-server URL (server mode)"
       },
       "tenantID": {
         "type": "string",

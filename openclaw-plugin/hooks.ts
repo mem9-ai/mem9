@@ -35,6 +35,7 @@ const MAX_INGEST_MESSAGES = 20; // absolute cap even if small messages
 /** Minimal logger — matches OpenClaw's PluginLogger shape. */
 interface Logger {
   info: (msg: string) => void;
+  warn?: (msg: string) => void;
   error: (msg: string) => void;
 }
 
@@ -44,6 +45,29 @@ interface Logger {
  */
 interface HookApi {
   on: (hookName: string, handler: (...args: unknown[]) => unknown, opts?: { priority?: number }) => void;
+}
+
+type HookAgentContext = {
+  agentId?: string;
+  sessionId?: string;
+  sessionKey?: string;
+};
+
+function rememberSessionAgentId(
+  sessionAgentIds: Map<string, string> | undefined,
+  ctx: HookAgentContext | undefined,
+): void {
+  if (!sessionAgentIds || !ctx || typeof ctx.agentId !== "string" || ctx.agentId.length === 0) {
+    return;
+  }
+
+  if (typeof ctx.sessionId === "string" && ctx.sessionId.length > 0) {
+    sessionAgentIds.set(ctx.sessionId, ctx.agentId);
+  }
+
+  if (typeof ctx.sessionKey === "string" && ctx.sessionKey.length > 0) {
+    sessionAgentIds.set(ctx.sessionKey, ctx.agentId);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +170,21 @@ function formatMemoriesBlock(memories: Memory[]): string {
   ].join("\n");
 }
 
+function splitMemories(memories: Memory[]): { pinned: Memory[]; dynamic: Memory[] } {
+  const pinned: Memory[] = [];
+  const dynamic: Memory[] = [];
+
+  for (const memory of memories) {
+    if ((memory.memory_type ?? "pinned") === "pinned") {
+      pinned.push(memory);
+    } else {
+      dynamic.push(memory);
+    }
+  }
+
+  return { pinned, dynamic };
+}
+
 // ---------------------------------------------------------------------------
 // Context stripping (prevent re-ingesting injected memories)
 // ---------------------------------------------------------------------------
@@ -165,6 +204,90 @@ function stripInjectedContext(content: string): string {
   return s.trim();
 }
 
+function extractTextContent(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return "";
+  }
+
+  let text = "";
+  for (const block of content) {
+    if (
+      block &&
+      typeof block === "object" &&
+      (block as Record<string, unknown>).type === "text" &&
+      typeof (block as Record<string, unknown>).text === "string"
+    ) {
+      text += (block as Record<string, unknown>).text as string;
+    }
+  }
+
+  return text;
+}
+
+function cleanMessageContent(content: unknown): { changed: boolean; content: unknown } {
+  if (typeof content === "string") {
+    const cleaned = stripInjectedContext(content);
+    return {
+      changed: cleaned !== content,
+      content: cleaned,
+    };
+  }
+
+  if (!Array.isArray(content)) {
+    return { changed: false, content };
+  }
+
+  let changed = false;
+  const cleanedBlocks = content.map((block) => {
+    if (
+      !block ||
+      typeof block !== "object" ||
+      (block as Record<string, unknown>).type !== "text" ||
+      typeof (block as Record<string, unknown>).text !== "string"
+    ) {
+      return block;
+    }
+
+    const text = (block as Record<string, unknown>).text as string;
+    const cleaned = stripInjectedContext(text);
+    if (cleaned === text) {
+      return block;
+    }
+
+    changed = true;
+    return {
+      ...(block as Record<string, unknown>),
+      text: cleaned,
+    };
+  });
+
+  return {
+    changed,
+    content: changed ? cleanedBlocks : content,
+  };
+}
+
+function cleanAgentMessage(message: unknown): Record<string, unknown> | null {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+
+  const msg = message as Record<string, unknown>;
+  const cleaned = cleanMessageContent(msg.content);
+  if (!cleaned.changed) {
+    return null;
+  }
+
+  return {
+    ...msg,
+    content: cleaned.content,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Hook registration
 // ---------------------------------------------------------------------------
@@ -173,45 +296,78 @@ export function registerHooks(
   api: HookApi,
   backend: MemoryBackend,
   logger: Logger,
-  options?: { maxIngestBytes?: number },
+  options?: {
+    maxIngestBytes?: number;
+    enableToolResultPersist?: boolean;
+    supportsPrependSystemContext?: boolean;
+    fallbackSessionId?: string;
+    enableBeforePromptBuild?: boolean;
+    enableAgentEndIngest?: boolean;
+    sessionAgentIds?: Map<string, string>;
+  },
 ): void {
   const maxIngestBytes = options?.maxIngestBytes ?? DEFAULT_MAX_INGEST_BYTES;
+  const supportsPrependSystemContext = options?.supportsPrependSystemContext === true;
+  const enableBeforePromptBuild = options?.enableBeforePromptBuild !== false;
+  const enableAgentEndIngest = options?.enableAgentEndIngest !== false;
 
   // --------------------------------------------------------------------------
   // before_prompt_build — inject relevant memories into every LLM call
   // --------------------------------------------------------------------------
-  api.on(
-    "before_prompt_build",
-    async (event: unknown) => {
-      try {
-        const evt = event as { prompt?: string };
-        const prompt = evt?.prompt;
-        if (!prompt || prompt.length < MIN_PROMPT_LEN) return;
+  if (enableBeforePromptBuild) {
+    api.on(
+      "before_prompt_build",
+      async (event: unknown, ctx: unknown) => {
+        try {
+          rememberSessionAgentId(options?.sessionAgentIds, (ctx ?? {}) as HookAgentContext);
+          const evt = event as { prompt?: string };
+          const prompt = evt?.prompt;
+          if (!prompt || prompt.length < MIN_PROMPT_LEN) return;
 
-        const result = await backend.search({ q: prompt, limit: MAX_INJECT });
-        const memories = result.data ?? [];
+          const result = await backend.search({ q: prompt, limit: MAX_INJECT });
+          const memories = result.data ?? [];
 
-        if (memories.length === 0) return;
+          if (memories.length === 0) return;
 
-        logger.info(`[mnemo] Injecting ${memories.length} memories into prompt context`);
+          const { pinned, dynamic } = splitMemories(memories);
 
-        return {
-          prependContext: formatMemoriesBlock(memories),
-        };
-      } catch (err) {
-        // Graceful degradation — never block the LLM call
-        logger.error(`[mnemo] before_prompt_build failed: ${String(err)}`);
-      }
-    },
-    { priority: 50 }, // Run after most plugins but before agent start
-  );
+          logger.info(`[mem9] Injecting ${memories.length} memories into prompt context`);
+
+          if (!supportsPrependSystemContext) {
+            return {
+              prependContext: formatMemoriesBlock(memories),
+            };
+          }
+
+          return {
+            prependSystemContext: pinned.length ? formatMemoriesBlock(pinned) : undefined,
+            prependContext: dynamic.length ? formatMemoriesBlock(dynamic) : undefined,
+          };
+        } catch (err) {
+          // Graceful degradation — never block the LLM call
+          logger.error(`[mem9] before_prompt_build failed: ${String(err)}`);
+        }
+      },
+      { priority: 50 }, // Run after most plugins but before agent start
+    );
+  }
 
   // --------------------------------------------------------------------------
   // after_compaction — no-op placeholder (no client-side cache to invalidate)
   // --------------------------------------------------------------------------
   api.on("after_compaction", async (_event: unknown) => {
-    logger.info("[mnemo] Compaction detected — memories will be re-queried on next prompt");
+    logger.info("[mem9] Compaction detected — memories will be re-queried on next prompt");
   });
+
+  if (options?.enableToolResultPersist) {
+    api.on("tool_result_persist", (event: unknown) => {
+      const evt = event as { message?: unknown };
+      const cleaned = cleanAgentMessage(evt?.message);
+      // undefined = no mutation; OpenClaw persists the original message unchanged.
+      if (!cleaned) return;
+      return { message: cleaned };
+    });
+  }
 
   // --------------------------------------------------------------------------
   // before_reset — save session context before /reset wipes it
@@ -228,8 +384,9 @@ export function registerHooks(
         if (!msg || typeof msg !== "object") continue;
         const m = msg as Record<string, unknown>;
         if (m.role !== "user") continue;
-        if (typeof m.content === "string" && m.content.length > 10) {
-          userTexts.push(m.content);
+        const content = extractTextContent(m.content);
+        if (content.length > 10) {
+          userTexts.push(content);
         }
       }
 
@@ -247,10 +404,10 @@ export function registerHooks(
         tags: ["auto-capture", "session-summary", "pre-reset"],
       });
 
-      logger.info("[mnemo] Session context saved before reset");
+      logger.info("[mem9] Session context saved before reset");
     } catch (err) {
       // Best-effort — never block /reset
-      logger.error(`[mnemo] before_reset save failed: ${String(err)}`);
+      logger.error(`[mem9] before_reset save failed: ${String(err)}`);
     }
   });
 
@@ -261,15 +418,18 @@ export function registerHooks(
   // accumulating until byte budget is hit. Then POST to tenant-scoped ingest endpoint.
   // for server-side LLM extraction + reconciliation.
   // --------------------------------------------------------------------------
-  api.on("agent_end", async (event: unknown) => {
-    try {
-      const evt = event as {
-        success?: boolean;
-        messages?: unknown[];
-        sessionId?: string;
-        agentId?: string;
-      };
-      if (!evt?.success || !evt.messages || evt.messages.length === 0) return;
+  if (enableAgentEndIngest) {
+    api.on("agent_end", async (event: unknown, ctx: unknown) => {
+      try {
+        const evt = event as {
+          success?: boolean;
+          messages?: unknown[];
+          sessionId?: string;
+          agentId?: string;
+        };
+        const hookCtx = (ctx ?? {}) as HookAgentContext;
+        rememberSessionAgentId(options?.sessionAgentIds, hookCtx);
+        if (!evt?.success || !evt.messages || evt.messages.length === 0) return;
 
       // Format raw messages into IngestMessage format
       const formatted: IngestMessage[] = [];
@@ -279,22 +439,7 @@ export function registerHooks(
         const role = typeof m.role === "string" ? m.role : "";
         if (!role) continue;
 
-        let content = "";
-        if (typeof m.content === "string") {
-          content = m.content;
-        } else if (Array.isArray(m.content)) {
-          // Handle array content blocks (e.g., Claude's content blocks)
-          for (const block of m.content) {
-            if (
-              block &&
-              typeof block === "object" &&
-              (block as Record<string, unknown>).type === "text" &&
-              typeof (block as Record<string, unknown>).text === "string"
-            ) {
-              content += (block as Record<string, unknown>).text as string;
-            }
-          }
-        }
+        const content = extractTextContent(m.content);
 
         if (!content) continue;
 
@@ -312,32 +457,43 @@ export function registerHooks(
 
       if (selected.length === 0) return;
 
-      const sessionId = typeof evt.sessionId === "string"
-        ? evt.sessionId
-        : `ses_${Date.now()}`;
+        const sessionId = typeof hookCtx.sessionId === "string"
+          ? hookCtx.sessionId
+          : typeof hookCtx.sessionKey === "string"
+          ? hookCtx.sessionKey
+          : typeof evt.sessionId === "string"
+          ? evt.sessionId
+          : typeof options?.fallbackSessionId === "string"
+          ? options.fallbackSessionId
+          : `ses_${Date.now()}`;
 
-      const agentId = typeof evt.agentId === "string"
-        ? evt.agentId
-        : AUTO_CAPTURE_SOURCE;
+        const agentId = typeof hookCtx.agentId === "string"
+          ? hookCtx.agentId
+          : typeof evt.agentId === "string"
+          ? evt.agentId
+          : AUTO_CAPTURE_SOURCE;
 
       // POST messages to unified memories endpoint — server handles LLM extraction + reconciliation
-      const result = await backend.ingest({
-        messages: selected,
-        session_id: sessionId,
-        agent_id: agentId,
-        mode: "smart",
-      });
-
-
-      if (result.status === "accepted") {
-        logger.info("[mnemo] Ingest accepted for async processing");
-      } else if ((result.memories_changed ?? 0) > 0) {
-        logger.info(
-          `[mnemo] Ingested session: memories_changed=${result.memories_changed}, status=${result.status}`
-        );
+        const result = await backend.ingest({
+          messages: selected,
+          session_id: sessionId,
+          agent_id: agentId,
+          mode: "smart",
+        });
+        if (result.status === "accepted") {
+          logger.info("[mem9] Ingest accepted for async processing");
+        } else if ((result.memories_changed ?? 0) > 0) {
+          logger.info(
+            `[mem9] Ingested session: memories_changed=${result.memories_changed}, status=${result.status}`
+          );
+        }
+      } catch {
+        // Best-effort — never fail the agent end phase
       }
-    } catch {
-      // Best-effort — never fail the agent end phase
-    }
-  });
+    });
+  } else {
+    api.on("agent_end", async (_event: unknown, ctx: unknown) => {
+      rememberSessionAgentId(options?.sessionAgentIds, (ctx ?? {}) as HookAgentContext);
+    });
+  }
 }

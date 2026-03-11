@@ -61,6 +61,9 @@ export interface SearchInput {
   source?: string;
   limit?: number;
   offset?: number;
+  memory_type?: string;
+  agent_id?: string;
+  session_id?: string;
 }
 
 export interface IngestMessage {
