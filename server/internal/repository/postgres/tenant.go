@@ -70,7 +70,6 @@ func (r *TenantRepoImpl) UpdateSchemaVersion(ctx context.Context, id string, ver
 	return nil
 }
 
-
 func scanTenant(row *sql.Row) (*domain.Tenant, error) {
 	var t domain.Tenant
 	var clusterID, claimURL sql.NullString

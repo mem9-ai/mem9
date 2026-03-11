@@ -30,7 +30,6 @@ func NewTenantRepo(backend string, db *sql.DB) TenantRepo {
 	}
 }
 
-
 // NewUploadTaskRepo creates an UploadTaskRepo for the specified backend.
 func NewUploadTaskRepo(backend string, db *sql.DB) UploadTaskRepo {
 	switch backend {
