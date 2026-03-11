@@ -50,6 +50,9 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 	}
 
 	if !s.ingest.HasLLM() {
+		// Keep no-LLM create as a single write so API semantics remain predictable.
+		// This branch intentionally avoids a "create then patch tags/metadata" flow,
+		// which could otherwise return an error after content is already persisted.
 		var embedding []float32
 		if s.autoModel == "" && s.embedder != nil {
 			embeddingResult, embedErr := s.embedder.Embed(ctx, content)
