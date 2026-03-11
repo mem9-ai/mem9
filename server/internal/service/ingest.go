@@ -95,9 +95,9 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 		return nil, &domain.ValidationError{Field: "mode", Message: fmt.Sprintf("unsupported mode %q", mode)}
 	}
 	// For raw mode or no LLM, skip pipeline.
-	//if mode == ModeRaw || s.llm == nil {
-	//	return s.ingestRaw(ctx, agentName, req)
-	//}
+	if mode == ModeRaw || s.llm == nil {
+		return s.ingestRaw(ctx, agentName, req)
+	}
 
 	// Strip previously injected memory context from messages.
 	cleaned := stripInjectedContext(req.Messages)
@@ -350,10 +350,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		return nil, fmt.Errorf("extraction LLM call: %w", err)
 	}
 
-	type extractResponse struct {
-		Facts []string `json:"facts"`
-	}
-	parsed, err := llm.ParseJSON[extractResponse](raw)
+	facts, err := parseExtractedFacts(raw)
 	if err != nil {
 		// Retry once.
 		raw2, retryErr := s.llm.CompleteJSON(ctx, systemPrompt,
@@ -361,21 +358,67 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		if retryErr != nil {
 			return nil, fmt.Errorf("extraction retry: %w", retryErr)
 		}
-		parsed, err = llm.ParseJSON[extractResponse](raw2)
+		facts, err = parseExtractedFacts(raw2)
 		if err != nil {
 			return nil, fmt.Errorf("extraction parse after retry: %w", err)
 		}
 	}
 
-	// Filter out empty strings.
-	var facts []string
-	for _, f := range parsed.Facts {
-		f = strings.TrimSpace(f)
-		if f != "" {
-			facts = append(facts, f)
+	slog.Info("facts extracted", "count", len(facts))
+	return facts, nil
+}
+
+func parseExtractedFacts(raw string) ([]string, error) {
+	cleaned := llm.StripMarkdownFences(raw)
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(cleaned), &payload); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %w", err)
+	}
+
+	rawFacts, ok := payload["facts"]
+	if !ok {
+		return nil, fmt.Errorf("facts field missing")
+	}
+
+	items, ok := rawFacts.([]any)
+	if !ok {
+		return nil, fmt.Errorf("facts field is not an array")
+	}
+
+	if len(items) == 0 {
+		return nil, fmt.Errorf("facts field empty")
+	}
+
+	facts := make([]string, 0, len(items))
+	for _, item := range items {
+		switch v := item.(type) {
+		case string:
+			if fact := strings.TrimSpace(v); fact != "" {
+				facts = append(facts, fact)
+			}
+		case map[string]any:
+			extracted := ""
+			for _, key := range []string{"fact", "text", "content", "value"} {
+				if s, ok := v[key].(string); ok && strings.TrimSpace(s) != "" {
+					extracted = s
+					break
+				}
+			}
+			if extracted == "" {
+				if b, marshalErr := json.Marshal(v); marshalErr == nil {
+					extracted = string(b)
+				}
+			}
+			if fact := strings.TrimSpace(extracted); fact != "" {
+				facts = append(facts, fact)
+			}
 		}
 	}
-	slog.Info("facts extracted", "count", len(facts))
+
+	if len(facts) == 0 {
+		return nil, fmt.Errorf("facts field has no usable entries")
+	}
 	return facts, nil
 }
 
