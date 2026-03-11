@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -445,6 +448,98 @@ func TestIngestRawStripsInjectedContextWithoutLLM(t *testing.T) {
 	}
 	if got := memRepo.createCalls[0].Content; got != "User: keep this" {
 		t.Fatalf("unexpected sanitized content: %q", got)
+	}
+}
+
+func TestIngestStripsInjectedContextAcrossModes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		mode               IngestMode
+		withLLM            bool
+		wantCreatedContent string
+		wantLLMCalls       int
+	}{
+		{name: "raw mode without llm", mode: ModeRaw, withLLM: false, wantCreatedContent: "User: keep this", wantLLMCalls: 0},
+		{name: "smart mode without llm", mode: ModeSmart, withLLM: false, wantCreatedContent: "User: keep this", wantLLMCalls: 0},
+		{name: "raw mode with llm", mode: ModeRaw, withLLM: true, wantCreatedContent: "User: keep this", wantLLMCalls: 0},
+		{name: "smart mode with llm", mode: ModeSmart, withLLM: true, wantCreatedContent: "keep this", wantLLMCalls: 2},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			memRepo := &memoryRepoMock{}
+			if tt.withLLM && tt.mode == ModeSmart {
+				memRepo.vectorResults = []domain.Memory{{ID: "mem-1", Content: "existing", MemoryType: domain.TypeInsight, State: domain.StateActive}}
+			}
+			var llmClient *llm.Client
+			llmBodies := make([]string, 0, 2)
+			var mu sync.Mutex
+			callCount := 0
+
+			if tt.withLLM {
+				mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					body, _ := io.ReadAll(r.Body)
+					mu.Lock()
+					llmBodies = append(llmBodies, string(body))
+					callCount++
+					currentCall := callCount
+					mu.Unlock()
+
+					resp := `{"facts": ["keep this"]}`
+					if currentCall == 2 {
+						resp = `{"memory": [{"id": "new", "text": "keep this", "event": "ADD"}]}`
+					}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(map[string]any{
+						"choices": []map[string]any{{"message": map[string]string{"content": resp}}},
+					})
+				}))
+				defer mockLLM.Close()
+
+				llmClient = llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+			}
+
+			svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+			res, err := svc.Ingest(context.Background(), "agent-strip", IngestRequest{
+				Mode:    tt.mode,
+				AgentID: "agent-strip",
+				Messages: []IngestMessage{{
+					Role:    "user",
+					Content: "<relevant-memories>drop this</relevant-memories>keep this",
+				}},
+			})
+			if err != nil {
+				t.Fatalf("Ingest() error = %v", err)
+			}
+			if res == nil || res.MemoriesChanged != 1 {
+				t.Fatalf("expected 1 insight added, got %#v", res)
+			}
+			if len(memRepo.createCalls) != 1 {
+				t.Fatalf("expected 1 Create call, got %d", len(memRepo.createCalls))
+			}
+
+			created := memRepo.createCalls[0]
+			if created.Content != tt.wantCreatedContent {
+				t.Fatalf("unexpected content: %q", created.Content)
+			}
+			if strings.Contains(created.Content, "<relevant-memories>") {
+				t.Fatalf("injected context leaked into stored content: %q", created.Content)
+			}
+
+			if callCount != tt.wantLLMCalls {
+				t.Fatalf("unexpected llm call count: got %d want %d", callCount, tt.wantLLMCalls)
+			}
+			for _, reqBody := range llmBodies {
+				if strings.Contains(reqBody, "<relevant-memories>") {
+					t.Fatalf("injected context leaked into llm request: %s", reqBody)
+				}
+			}
+		})
 	}
 }
 
