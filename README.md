@@ -127,9 +127,9 @@ Agent identity: `X-Mnemo-Agent-Id` header.
 ### Build & Run
 
 ```bash
+make build
 cd server
-go build -o mnemo-server ./cmd/mnemo-server
-MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" ./mnemo-server
+MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" ./bin/mnemo-server
 ```
 
 ### Docker
