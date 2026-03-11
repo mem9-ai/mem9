@@ -22,7 +22,7 @@
 
 ```bash
 # 1. Deploy mem9-server
-cd server && MEM9_DSN="user:pass@tcp(host:4000)/mem9?parseTime=true" go run ./cmd/mnemo-server
+cd server && MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
 ```
 
 **2. Install plugin for your agent (pick one):**

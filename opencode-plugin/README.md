@@ -114,7 +114,6 @@ If you see `[mem9] No MEM9_TENANT_ID configured...`, check your env vars.
 |---|---|---|---|
 | `MEM9_TENANT_ID` | Yes | — | Mem9 space ID for URL routing (`/v1alpha1/mem9s/{tenantID}/memories/...`) |
 | `MEM9_API_URL` | No | `https://api.mem9.ai` | mem9 API base URL |
-| `MEM9_API_TOKEN` | No | — | API token (if server requires auth) |
 
 ## File Structure
 

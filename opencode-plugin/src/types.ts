@@ -6,7 +6,6 @@ export interface Mem9Config {
   // Server mode (mem9-server REST API)
   apiUrl?: string;
   tenantID?: string;
-  apiToken?: string;
 }
 
 export interface Memory {
@@ -64,6 +63,5 @@ export function loadConfig(): Mem9Config {
   return {
     apiUrl: process.env.MEM9_API_URL ?? undefined,
     tenantID: process.env.MEM9_TENANT_ID ?? undefined,
-    apiToken: process.env.MEM9_API_TOKEN ?? undefined,
   };
 }
