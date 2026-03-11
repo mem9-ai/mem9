@@ -23,12 +23,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_name ON tenants(name);
 CREATE INDEX IF NOT EXISTS idx_tenant_status ON tenants(status);
 CREATE INDEX IF NOT EXISTS idx_tenant_provider ON tenants(provider);
 
-CREATE TABLE IF NOT EXISTS tenant_tokens (
-    api_token     VARCHAR(64)   PRIMARY KEY,
-    tenant_id     VARCHAR(36)   NOT NULL,
-    created_at    TIMESTAMPTZ   DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_tenant_token_tenant ON tenant_tokens(tenant_id);
 
 CREATE TABLE IF NOT EXISTS memories (
     id              VARCHAR(36)     PRIMARY KEY,

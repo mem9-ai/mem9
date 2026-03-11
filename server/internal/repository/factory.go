@@ -30,15 +30,6 @@ func NewTenantRepo(backend string, db *sql.DB) TenantRepo {
 	}
 }
 
-// NewTenantTokenRepo creates a TenantTokenRepo for the specified backend.
-func NewTenantTokenRepo(backend string, db *sql.DB) TenantTokenRepo {
-	switch backend {
-	case "postgres":
-		return postgres.NewTenantTokenRepo(db)
-	default:
-		return tidb.NewTenantTokenRepo(db)
-	}
-}
 
 // NewUploadTaskRepo creates an UploadTaskRepo for the specified backend.
 func NewUploadTaskRepo(backend string, db *sql.DB) UploadTaskRepo {
