@@ -2,17 +2,15 @@
 import Layout from '../layouts/Layout.astro';
 import Navbar from '../components/Navbar.astro';
 import Hero from '../components/Hero.astro';
-import Positioning from '../components/Positioning.astro';
 import Features from '../components/Features.astro';
-import UseCases from '../components/UseCases.astro';
 import Agents from '../components/Agents.astro';
 import Faq from '../components/Faq.astro';
 import Footer from '../components/Footer.astro';
 import { DEFAULT_LOCALE, siteCopy } from '../content/site';
-import { discoverabilityCopy, seoKeywords } from '../content/discoverability';
+import { faqCopy, seoKeywords } from '../content/discoverability';
 
 const copy = siteCopy[DEFAULT_LOCALE];
-const discoverability = discoverabilityCopy[DEFAULT_LOCALE];
+const faq = faqCopy[DEFAULT_LOCALE];
 const siteUrl = Astro.site ?? new URL('https://mem9.ai');
 const socialImage = new URL('/mem9-wordmark-square.png', siteUrl).toString();
 const structuredData = {
@@ -55,7 +53,7 @@ const structuredData = {
     {
       '@type': 'FAQPage',
       '@id': new URL('/#faq', siteUrl).toString(),
-      mainEntity: discoverability.faq.items.map((item) => ({
+      mainEntity: faq.items.map((item) => ({
         '@type': 'Question',
         name: item.question,
         acceptedAnswer: {
@@ -83,11 +81,9 @@ const structuredData = {
   />
   <main>
     <Hero hero={copy.hero} aria={copy.aria} />
-    <Positioning positioning={discoverability.positioning} />
     <Features features={copy.features} />
-    <UseCases useCases={discoverability.useCases} />
     <Agents platforms={copy.platforms} />
-    <Faq faq={discoverability.faq} />
+    <Faq faq={faq} />
   </main>
   <Footer footer={copy.footer} />
 </Layout>

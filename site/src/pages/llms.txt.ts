@@ -1,11 +1,11 @@
 import type { APIRoute } from "astro";
-import { discoverabilityCopy, seoKeywords } from "../content/discoverability";
+import { faqCopy, seoKeywords } from "../content/discoverability";
 import { DEFAULT_LOCALE, siteCopy } from "../content/site";
 
 export const GET: APIRoute = ({ site }) => {
   const siteUrl = site ?? new URL("https://mem9.ai");
   const copy = siteCopy[DEFAULT_LOCALE];
-  const discoverability = discoverabilityCopy[DEFAULT_LOCALE];
+  const faq = faqCopy[DEFAULT_LOCALE];
   const body = [
     "# mem9",
     "",
@@ -24,7 +24,7 @@ export const GET: APIRoute = ({ site }) => {
     ...seoKeywords.map((keyword) => `- ${keyword}`),
     "",
     "## Key questions",
-    ...discoverability.faq.items.map((item) => `- ${item.question}`),
+    ...faq.items.map((item) => `- ${item.question}`),
     "",
     `For a longer machine-readable summary, see ${new URL("/llms-full.txt", siteUrl).toString()}.`,
     "",

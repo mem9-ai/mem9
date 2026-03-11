@@ -12,7 +12,7 @@ import {
   type SiteResolvedTheme,
   type SiteThemePreference,
 } from '../content/site';
-import { discoverabilityCopy } from '../content/discoverability';
+import { faqCopy } from '../content/discoverability';
 
 type MenuName = 'language' | 'theme';
 type OnboardingVersion = 'stable' | 'beta';
@@ -38,7 +38,7 @@ function getValue(dictionary: TranslationCatalog, path: string): unknown {
 }
 
 function catalogsFor(locale: SiteLocale): TranslationCatalog[] {
-  return [siteCopy[locale], discoverabilityCopy[locale]];
+  return [siteCopy[locale], faqCopy[locale]];
 }
 
 function textFor(catalogs: TranslationCatalog[], path: string): string {

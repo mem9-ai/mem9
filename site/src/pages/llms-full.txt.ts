@@ -1,29 +1,27 @@
 import type { APIRoute } from "astro";
-import { discoverabilityCopy } from "../content/discoverability";
+import { faqCopy } from "../content/discoverability";
 import { DEFAULT_LOCALE, siteCopy } from "../content/site";
 
 export const GET: APIRoute = ({ site }) => {
   const siteUrl = site ?? new URL("https://mem9.ai");
   const copy = siteCopy[DEFAULT_LOCALE];
-  const discoverability = discoverabilityCopy[DEFAULT_LOCALE];
+  const faq = faqCopy[DEFAULT_LOCALE];
   const body = [
     "# mem9",
     "",
     `> ${copy.meta.description}`,
     "",
     "## What it is",
-    discoverability.positioning.description,
+    copy.hero.subtitle,
     "",
-    "## Product facts",
-    ...discoverability.positioning.facts.map((fact) => `- ${fact}`),
+    "## Core features",
+    ...copy.features.items.map((item) => `- ${item.title}: ${item.description}`),
     "",
-    "## Main use cases",
-    ...discoverability.useCases.items.map(
-      (item) => `- ${item.title}: ${item.description}`,
-    ),
+    "## Agent support",
+    ...copy.platforms.items.map((item) => `- ${item.name}: ${item.detail}`),
     "",
     "## FAQ",
-    ...discoverability.faq.items.flatMap((item) => [`- Q: ${item.question}`, `  A: ${item.answer}`]),
+    ...faq.items.flatMap((item) => [`- Q: ${item.question}`, `  A: ${item.answer}`]),
     "",
     "## Canonical resources",
     `- Home: ${new URL("/", siteUrl).toString()}`,
