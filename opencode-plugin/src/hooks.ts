@@ -40,7 +40,7 @@ function formatMemoriesBlock(memories: Memory[]): string {
   let idx = 1;
 
   const formatMem = (m: Memory): string => {
-    const tags = m.tags?.length ? ` [${m.tags.join(", ")}]` : "";
+    const tags = m.tags?.length ? ` [${m.tags.map(escapeForPrompt).join(", ")}]` : "";
     const content = m.content.length > MAX_CONTENT_LEN
       ? m.content.slice(0, MAX_CONTENT_LEN) + "..."
       : m.content;

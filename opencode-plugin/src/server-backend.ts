@@ -6,13 +6,7 @@ import type {
   CreateMemoryInput,
   UpdateMemoryInput,
   SearchInput,
-  IngestInput,
-  IngestResult,
 } from "./types.js";
-
-type ProvisionMem9sResponse = {
-  id: string;
-};
 
 /**
  * ServerBackend — talks to mem9 REST API.
@@ -27,26 +21,6 @@ export class ServerBackend implements MemoryBackend {
     this.baseUrl = apiUrl.replace(/\/+$/, "");
     this.tenantID = tenantID;
     this.agentName = agentName;
-  }
-
-  async register(): Promise<ProvisionMem9sResponse> {
-    const resp = await fetch(this.baseUrl + "/v1alpha1/mem9s", {
-      method: "POST",
-      signal: AbortSignal.timeout(8_000),
-    });
-
-    if (!resp.ok) {
-      const body = await resp.text();
-      throw new Error(`mem9 provision failed (${resp.status}): ${body}`);
-    }
-
-    const data = (await resp.json()) as ProvisionMem9sResponse;
-    if (!data?.id) {
-      throw new Error("mem9 provision did not return tenant ID");
-    }
-
-    this.tenantID = data.id;
-    return data;
   }
 
   private tenantPath(path: string): string {
@@ -138,10 +112,6 @@ export class ServerBackend implements MemoryBackend {
       }
       throw err;
     }
-  }
-
-  async ingest(input: IngestInput): Promise<IngestResult> {
-    return this.request<IngestResult>("POST", this.tenantPath("/memories"), input);
   }
 
   async listRecent(limit: number): Promise<Memory[]> {

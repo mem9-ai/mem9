@@ -8,6 +8,9 @@
     ".": "./src/index.ts"
   },
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "qiffang",
   "repository": {
     "type": "git",

@@ -57,27 +57,7 @@ export interface SearchInput {
   offset?: number;
 }
 
-export interface IngestMessage {
-  role: string;
-  content: string;
-}
-
-export interface IngestInput {
-  messages: IngestMessage[];
-  session_id: string;
-  agent_id: string;
-  mode?: "smart" | "raw";
-}
-
-export interface IngestResult {
-  status: "accepted" | "complete" | "partial" | "failed";
-  memories_changed?: number;
-  insight_ids?: string[];
-  warnings?: number;
-  error?: string;
-}
-
-export type StoreResult = Memory | IngestResult;
+export type StoreResult = Memory;
 
 /** Load config from env vars. */
 export function loadConfig(): Mem9Config {

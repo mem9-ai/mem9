@@ -9,6 +9,7 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    if: ${{ secrets.CLAUDE_PLUGIN_DEPLOY_KEY != '' }}
     permissions:
       contents: read
     steps:

@@ -94,7 +94,9 @@ For self-hosted servers, also set:
 export MEM9_API_URL="http://your-server:8080"
 ```
 
+### Migrating from MNEMO_ env vars
 
+> **Breaking change (v0.1.0):** `MNEMO_API_URL`, `MNEMO_TENANT_ID`, and `MNEMO_API_TOKEN` are no longer supported. Rename to `MEM9_API_URL`, `MEM9_TENANT_ID`, and `MEM9_API_TOKEN`.
 
 ### Verify
 
