@@ -38,7 +38,7 @@ function getValue(dictionary: TranslationCatalog, path: string): unknown {
 }
 
 function catalogsFor(locale: SiteLocale): TranslationCatalog[] {
-  return [siteCopy[locale], faqCopy[locale]];
+  return [siteCopy[locale], { faq: faqCopy[locale] }];
 }
 
 function textFor(catalogs: TranslationCatalog[], path: string): string {
