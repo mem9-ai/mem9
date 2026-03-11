@@ -94,10 +94,10 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 	if mode != ModeSmart && mode != ModeRaw {
 		return nil, &domain.ValidationError{Field: "mode", Message: fmt.Sprintf("unsupported mode %q", mode)}
 	}
-	// For raw mode or no LLM, skip pipeline.
-	//if mode == ModeRaw || s.llm == nil {
-	//	return s.ingestRaw(ctx, agentName, req)
-	//}
+	// For raw mode or no LLM, skip smart pipeline and store conversation directly.
+	if mode == ModeRaw || s.llm == nil {
+		return s.ingestRaw(ctx, agentName, req)
+	}
 
 	// Strip previously injected memory context from messages.
 	cleaned := stripInjectedContext(req.Messages)
