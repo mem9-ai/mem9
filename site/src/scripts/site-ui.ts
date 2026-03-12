@@ -12,11 +12,13 @@ import {
   type SiteResolvedTheme,
   type SiteThemePreference,
 } from '../content/site';
+import { faqCopy } from '../content/discoverability';
 
 type MenuName = 'language' | 'theme';
 type OnboardingVersion = 'stable' | 'beta';
+type TranslationCatalog = object;
 
-function getValue(dictionary: SiteDictionary, path: string): unknown {
+function getValue(dictionary: TranslationCatalog, path: string): unknown {
   return path.split('.').reduce<unknown>((current, segment) => {
     if (current === null || current === undefined) {
       return undefined;
@@ -35,9 +37,19 @@ function getValue(dictionary: SiteDictionary, path: string): unknown {
   }, dictionary);
 }
 
-function textFor(dictionary: SiteDictionary, path: string): string {
-  const value = getValue(dictionary, path);
-  return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+function catalogsFor(locale: SiteLocale): TranslationCatalog[] {
+  return [siteCopy[locale], { faq: faqCopy[locale] }];
+}
+
+function textFor(catalogs: TranslationCatalog[], path: string): string {
+  for (const catalog of catalogs) {
+    const value = getValue(catalog, path);
+    if (typeof value === 'string' || typeof value === 'number') {
+      return String(value);
+    }
+  }
+
+  return '';
 }
 
 function resolveBrowserLocale(): SiteLocale {
@@ -192,12 +204,17 @@ function applyTheme(
 }
 
 function updateMeta(locale: SiteLocale, dictionary: SiteDictionary): void {
-  document.documentElement.lang = localeToLang(locale);
+  const lang = localeToLang(locale);
+  document.documentElement.lang = lang;
   document.title = dictionary.meta.title;
 
   const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
   const ogTitle = document.querySelector<HTMLMetaElement>('meta[property="og:title"]');
   const ogDescription = document.querySelector<HTMLMetaElement>('meta[property="og:description"]');
+  const ogLocale = document.querySelector<HTMLMetaElement>('meta[property="og:locale"]');
+  const twitterTitle = document.querySelector<HTMLMetaElement>('meta[name="twitter:title"]');
+  const twitterDescription =
+    document.querySelector<HTMLMetaElement>('meta[name="twitter:description"]');
 
   if (description) {
     description.content = dictionary.meta.description;
@@ -210,16 +227,30 @@ function updateMeta(locale: SiteLocale, dictionary: SiteDictionary): void {
   if (ogDescription) {
     ogDescription.content = dictionary.meta.description;
   }
+
+  if (ogLocale) {
+    ogLocale.content = lang;
+  }
+
+  if (twitterTitle) {
+    twitterTitle.content = dictionary.meta.title;
+  }
+
+  if (twitterDescription) {
+    twitterDescription.content = dictionary.meta.description;
+  }
 }
 
-function updateTranslations(dictionary: SiteDictionary): void {
+function updateTranslations(locale: SiteLocale): void {
+  const catalogs = catalogsFor(locale);
+
   document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((element) => {
     const key = element.dataset.i18n;
     if (!key) {
       return;
     }
 
-    element.textContent = textFor(dictionary, key);
+    element.textContent = textFor(catalogs, key);
   });
 
   document.querySelectorAll<HTMLElement>('[data-i18n-attr]').forEach((element) => {
@@ -234,7 +265,7 @@ function updateTranslations(dictionary: SiteDictionary): void {
         return;
       }
 
-      element.setAttribute(attribute, textFor(dictionary, key));
+      element.setAttribute(attribute, textFor(catalogs, key));
     });
   });
 
@@ -244,7 +275,7 @@ function updateTranslations(dictionary: SiteDictionary): void {
       return;
     }
 
-    element.dataset.copyText = textFor(dictionary, copyKey);
+    element.dataset.copyText = textFor(catalogs, copyKey);
   });
 
   document.querySelectorAll<HTMLButtonElement>('[data-set-locale]').forEach((button) => {
@@ -318,7 +349,7 @@ function applyLocale(locale: SiteLocale): void {
   const dictionary = siteCopy[locale];
   document.documentElement.dataset.locale = locale;
   updateMeta(locale, dictionary);
-  updateTranslations(dictionary);
+  updateTranslations(locale);
   const command = document.querySelector<HTMLElement>('[data-onboarding-command]');
   if (command) {
     command.dataset.commandStable = dictionary.hero.onboardingCommandStable;
@@ -374,13 +405,15 @@ function initMenuControls(): void {
   });
 
   document.addEventListener('click', (event) => {
-    if (!(event.target instanceof Node)) {
+    const target = event.target;
+
+    if (!(target instanceof Node)) {
       return;
     }
 
     const insideMenuShell = Array.from(
       document.querySelectorAll<HTMLElement>('[data-menu-shell]'),
-    ).some((shell) => shell.contains(event.target));
+    ).some((shell) => shell.contains(target));
 
     if (!insideMenuShell) {
       setOpenMenu(null);

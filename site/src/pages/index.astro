@@ -4,13 +4,75 @@ import Navbar from '../components/Navbar.astro';
 import Hero from '../components/Hero.astro';
 import Features from '../components/Features.astro';
 import Agents from '../components/Agents.astro';
+import Faq from '../components/Faq.astro';
 import Footer from '../components/Footer.astro';
 import { DEFAULT_LOCALE, siteCopy } from '../content/site';
+import { faqCopy, seoKeywords } from '../content/discoverability';
 
 const copy = siteCopy[DEFAULT_LOCALE];
+const faq = faqCopy[DEFAULT_LOCALE];
+const siteUrl = Astro.site ?? new URL('https://mem9.ai');
+const socialImage = new URL('/mem9-wordmark-square.png', siteUrl).toString();
+const structuredData = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': new URL('/#organization', siteUrl).toString(),
+      name: 'mem9',
+      url: siteUrl.toString(),
+      logo: new URL('/logo.png', siteUrl).toString(),
+      sameAs: ['https://github.com/mem9-ai/mem9'],
+    },
+    {
+      '@type': 'WebSite',
+      '@id': new URL('/#website', siteUrl).toString(),
+      name: 'mem9',
+      url: siteUrl.toString(),
+      description: copy.meta.description,
+      inLanguage: 'en',
+    },
+    {
+      '@type': 'SoftwareApplication',
+      '@id': new URL('/#app', siteUrl).toString(),
+      name: 'mem9',
+      applicationCategory: 'DeveloperApplication',
+      operatingSystem: 'Web',
+      url: siteUrl.toString(),
+      description: copy.meta.description,
+      image: socialImage,
+      keywords: seoKeywords.join(', '),
+      featureList: [
+        'Persistent memory for coding agents',
+        'Hybrid keyword and vector search',
+        'Cloud-backed cross-session recall',
+        'Shared memory for multi-agent workflows',
+        'Open source and self-hostable',
+      ],
+    },
+    {
+      '@type': 'FAQPage',
+      '@id': new URL('/#faq', siteUrl).toString(),
+      mainEntity: faq.items.map((item) => ({
+        '@type': 'Question',
+        name: item.question,
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: item.answer,
+        },
+      })),
+    },
+  ],
+};
 ---
 
-<Layout meta={copy.meta} locale={DEFAULT_LOCALE}>
+<Layout
+  meta={copy.meta}
+  locale={DEFAULT_LOCALE}
+  keywords={seoKeywords}
+  socialImage={socialImage}
+  structuredData={structuredData}
+>
   <Navbar
     nav={copy.nav}
     aria={copy.aria}
@@ -21,6 +83,7 @@ const copy = siteCopy[DEFAULT_LOCALE];
     <Hero hero={copy.hero} aria={copy.aria} />
     <Features features={copy.features} />
     <Agents platforms={copy.platforms} />
+    <Faq faq={faq} />
   </main>
   <Footer footer={copy.footer} />
 </Layout>

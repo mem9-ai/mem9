@@ -1,0 +1,81 @@
+---
+import type { DiscoverabilityFaqCopy } from "../content/discoverability";
+
+interface Props {
+  faq: DiscoverabilityFaqCopy;
+}
+
+const { faq } = Astro.props;
+---
+
+<section id="faq" class="faq">
+  <div class="container">
+    <div class="section-head">
+      <p class="section-kicker" data-i18n="faq.kicker">{faq.kicker}</p>
+      <h2 class="section-title faq-title" data-i18n="faq.title">{faq.title}</h2>
+      <p class="section-desc" data-i18n="faq.description">
+        {faq.description}
+      </p>
+    </div>
+
+    <div class="faq-list">
+      {faq.items.map((item, index) => (
+        <details class="faq-item surface-card">
+          <summary class="faq-question" data-i18n={`faq.items.${index}.question`}>
+            {item.question}
+          </summary>
+          <p class="faq-answer" data-i18n={`faq.items.${index}.answer`}>
+            {item.answer}
+          </p>
+        </details>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .faq {
+    padding: 4rem 0 5rem;
+  }
+
+  .faq-title {
+    max-width: 13ch;
+  }
+
+  .section-head {
+    width: min(100%, var(--content-rail));
+    margin: 0 auto 2rem;
+  }
+
+  .faq-list {
+    display: grid;
+    gap: 1rem;
+    width: min(100%, var(--section-grid));
+    margin: 0 auto;
+  }
+
+  .faq-item {
+    padding: 1.15rem 1.25rem;
+  }
+
+  .faq-question {
+    list-style: none;
+    cursor: pointer;
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.45;
+    color: var(--text);
+  }
+
+  .faq-question::-webkit-details-marker {
+    display: none;
+  }
+
+  .faq-answer {
+    color: var(--text-dim);
+    line-height: 1.68;
+    margin-top: 0.9rem;
+    padding-right: 1rem;
+  }
+</style>

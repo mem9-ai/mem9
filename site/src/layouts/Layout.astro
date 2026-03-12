@@ -4,16 +4,24 @@ import type { SiteLocale, SiteMeta } from '../content/site';
 interface Props {
   meta: SiteMeta;
   locale?: SiteLocale;
+  keywords?: string[];
+  socialImage?: string;
+  structuredData?: Record<string, unknown> | Array<Record<string, unknown>>;
 }
 
 const {
   meta,
   locale = 'en',
+  keywords = [],
+  socialImage,
+  structuredData,
 } = Astro.props;
 
 const base = import.meta.env.BASE_URL;
 const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://mem9.ai').toString();
 const htmlLang = locale === 'zh' ? 'zh-CN' : locale === 'zh-Hant' ? 'zh-Hant' : locale;
+const ogImage = socialImage ?? new URL(`${base}mem9-wordmark-square.png`, Astro.site ?? 'https://mem9.ai').toString();
+const serializedStructuredData = structuredData ? JSON.stringify(structuredData) : null;
 ---
 
 <!doctype html>
@@ -22,13 +30,33 @@ const htmlLang = locale === 'zh' ? 'zh-CN' : locale === 'zh-Hant' ? 'zh-Hant' : 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={meta.description} />
+    <meta
+      name="robots"
+      content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
+    />
+    <meta
+      name="googlebot"
+      content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
+    />
+    {keywords.length > 0 ? <meta name="keywords" content={keywords.join(', ')} /> : null}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={meta.title} />
+    <meta name="twitter:description" content={meta.description} />
+    <meta name="twitter:image" content={ogImage} />
     <meta property="og:title" content={meta.title} />
     <meta property="og:description" content={meta.description} />
     <meta property="og:site_name" content="mem9" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:alt" content="mem9 wordmark" />
+    <meta property="og:locale" content={htmlLang} />
     <link rel="canonical" href={canonical} />
     <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
+    <link rel="alternate" type="text/plain" href={`${base}llms.txt`} title="LLMs.txt" />
+    {serializedStructuredData ? (
+      <script type="application/ld+json" set:html={serializedStructuredData}></script>
+    ) : null}
     <script is:inline>
       (() => {
         const localeStorageKey = 'mem9.locale';
