@@ -82,24 +82,30 @@ provision_tenant() {
   echo "$tenant_id"
 }
 
-ensure_base_profile() {
+configure_base_profile() {
   if [[ "$BASE_PROFILE" == "$MEM_PROFILE" ]]; then
     echo "ERROR: BASE_PROFILE and MEM_PROFILE must differ." >&2
     exit 2
   fi
   local base_dir="$HOME/.openclaw-${BASE_PROFILE}"
-  if [[ ! -d "$base_dir" ]]; then
-    cat >&2 <<EOF
-ERROR: Base profile directory not found: $base_dir
-Run openclaw at least once with --profile $BASE_PROFILE so openclaw.json exists.
-EOF
-    exit 2
+  local base_ws="$HOME/.openclaw/workspace-${BASE_PROFILE}"
+  if [[ -d "$base_dir" ]]; then
+    log "Resetting existing base profile dir: $base_dir"
+    rm -rf "$base_dir"
   fi
+  if [[ -d "$base_ws" ]]; then
+    log "Resetting existing base workspace dir: $base_ws"
+    rm -rf "$base_ws"
+  fi
+
+  log "Configuring base profile: $BASE_PROFILE"
+  openclaw --profile "$BASE_PROFILE" config set gateway.mode local >/dev/null
 }
 
 clone_profile() {
   local base_dir="$HOME/.openclaw-${BASE_PROFILE}"
   local target_dir="$HOME/.openclaw-${MEM_PROFILE}"
+  local target_ws="$HOME/.openclaw/workspace-${MEM_PROFILE}"
 
   if [[ -d "$target_dir" ]]; then
     if [[ "${MRNIAH_RESET_MEM_PROFILE:-0}" == "1" ]]; then
@@ -112,6 +118,10 @@ clone_profile() {
       log "Mem profile already exists: $target_dir (set MRNIAH_RESET_MEM_PROFILE=1 to regenerate)"
       return
     fi
+  fi
+  if [[ -d "$target_ws" ]]; then
+    log "Resetting existing mem workspace dir: $target_ws"
+    rm -rf "$target_ws"
   fi
 
   log "Creating mem profile dir by copying $base_dir -> $target_dir"
@@ -213,7 +223,7 @@ main() {
   require_python310
   require_cmds "${BASE_CMDS[@]}"
   ensure_dataset
-  ensure_base_profile
+  configure_base_profile
   clone_profile
 
   log "Using mem9 service: $MEM9_BASE_URL"
