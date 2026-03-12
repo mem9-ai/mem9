@@ -1,0 +1,109 @@
+{
+  "_locale": "zh-CN",
+  "connect": {
+    "title": "Your Memory",
+    "subtitle": "进入你的记忆空间",
+    "placeholder": "Space ID",
+    "submit": "进入 Space",
+    "security": "Space ID 是你的私密标识，请勿分享给他人",
+    "error": {
+      "invalid": "无法访问此 Space，请检查 ID 后重试"
+    },
+    "how_title": "mem9 是什么",
+    "how_1": "你的 agent 在对话中自动积累记忆",
+    "how_2": "你也可以让 agent 明确记住特定内容",
+    "how_3": "这里展示的是已经存下来的记忆"
+  },
+  "space": {
+    "title": "Your Memory",
+    "disconnect": "断开连接",
+    "stats": {
+      "total": "条记忆",
+      "pinned": "你保存的",
+      "insight": "对话中学到的"
+    }
+  },
+  "tabs": {
+    "all": "全部",
+    "pinned": "你保存的",
+    "insight": "对话中学到的"
+  },
+  "search": {
+    "placeholder": "搜索你的记忆…",
+    "no_results": "没有找到匹配的记忆",
+    "no_results_hint": "试试换个说法，或清空搜索查看全部"
+  },
+  "list": {
+    "load_more": "加载更多",
+    "via": "来自",
+    "copied": "已复制到剪贴板"
+  },
+  "detail": {
+    "type": {
+      "pinned": "你保存的",
+      "insight": "对话中学到的"
+    },
+    "source": "来源",
+    "agent": "Agent",
+    "session": "Session",
+    "created": "创建时间",
+    "updated": "更新时间",
+    "tags": "标签",
+    "metadata": "元数据",
+    "delete": "删除这条记忆",
+    "edit": "编辑"
+  },
+  "add": {
+    "button": "添加记忆",
+    "title": "添加一条记忆",
+    "prompt": "你希望 agent 记住什么？",
+    "tags_label": "标签（可选）",
+    "tags_placeholder": "例如：偏好, 项目",
+    "cancel": "取消",
+    "save": "保存",
+    "footer": "这条记忆将标记为「你保存的」",
+    "success": "记忆已保存"
+  },
+  "edit": {
+    "title": "编辑记忆",
+    "prompt": "修改记忆内容和标签",
+    "tags_label": "标签",
+    "tags_placeholder": "例如：偏好, 项目",
+    "cancel": "取消",
+    "save": "保存修改",
+    "success": "记忆已更新"
+  },
+  "delete": {
+    "title": "删除这条记忆？",
+    "warning": "删除后 agent 将不再记住这条内容",
+    "cancel": "取消",
+    "confirm": "删除",
+    "success": "记忆已删除"
+  },
+  "empty": {
+    "title": "这个 space 还没有记忆",
+    "description": "记忆会在你和 agent 对话时自动积累，你也可以现在手动保存第一条",
+    "cta": "保存第一条记忆"
+  },
+  "legend": {
+    "pinned": "你明确要求记住的",
+    "insight": "AI 从对话中提取的"
+  },
+  "info": {
+    "toggle": "了解记忆类型",
+    "pinned": "「你保存的」是你明确要求 agent 记住的内容",
+    "insight": "「对话中学到的」是 AI 从你们的对话中自动提取的记忆",
+    "note": "这里展示的是已经存下来的记忆，不是 agent 每次回复的推理过程"
+  },
+  "error": {
+    "api": "请求失败，请稍后重试",
+    "session_expired": "会话已过期，请重新连接"
+  },
+  "time": {
+    "just_now": "刚刚",
+    "minutes_ago": "{{n}} 分钟前",
+    "hours_ago": "{{n}} 小时前",
+    "yesterday": "昨天",
+    "days_ago": "{{n}} 天前"
+  }
+}
