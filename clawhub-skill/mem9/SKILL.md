@@ -630,15 +630,15 @@ routes are working — the motivating incident was exactly "healthz OK, memories
 
 ### Step 4 — Classify
 
-| /healthz    | Business endpoint                                 | Discriminators                                              | Likely cause                                             |
-| ----------- | ------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------- |
-| unreachable | —                                                 | —                                                           | network or service outage                                |
-| OK          | `404` + `X-Request-Id` present, JSON body         | response shape matches `{"error":"...","request_id":"..."}` | bad space/tenant ID — verify `tenantID` in plugin config |
-| OK          | `404` + no `X-Request-Id`, non-JSON or empty body | response from ALB/ingress, not server                       | ingress or path-rewrite failure — check gateway routing  |
-| OK          | `403`                                             | server-emitted JSON error                                   | tenant not active — check tenant status                  |
-| OK          | `429`                                             | server-emitted JSON error                                   | rate limit exceeded — back off and retry                 |
-| OK          | `500`                                             | —                                                           | server-side bug                                          |
-| OK          | `503`                                             | —                                                           | transient overload or DB unavailable — retry after 30s   |
+| /healthz | Business endpoint | Body shape | Likely cause |
+|---|---|---|---|
+| unreachable | — | — | network or service outage |
+| OK | `404` or `405` | JSON `{"error":"...","request_id":"..."}` | bad space/tenant ID or wrong HTTP method — verify URL and `tenantID` in plugin config |
+| OK | `404` or `405` | non-JSON or empty | ingress or path-rewrite failure, or chi route/method mismatch — check gateway routing |
+| OK | `403` | JSON server error | tenant not active — check tenant status |
+| OK | `429` | JSON server error | rate limit exceeded — back off and retry |
+| OK | `500` | — | server-side bug |
+| OK | `503` | — | transient overload or DB unavailable — retry after 30s |
 
 ### Step 5 — Report to the user
 
