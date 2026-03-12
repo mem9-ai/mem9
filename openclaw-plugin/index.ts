@@ -258,7 +258,7 @@ const mnemoPlugin = {
       const backend = new ServerBackend(effectiveApiUrl, "", agentName);
       const result = await backend.register();
       api.logger.info(
-        `[mnemo] *** Auto-provisioned tenant_id=${result.id} *** Save this to your config as apiKey`
+        `[mnemo] *** Auto-provisioned apiKey=${result.id} *** Save this to your config as apiKey`
       );
       return result.id;
     };
