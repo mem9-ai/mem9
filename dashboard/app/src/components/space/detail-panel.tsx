@@ -18,6 +18,7 @@ export function DetailPanel({
   t: TFunction;
 }) {
   const isPinned = m.memory_type === "pinned";
+  const tags = m.tags ?? [];
 
   function handleCopy() {
     navigator.clipboard.writeText(m.content);
@@ -103,11 +104,11 @@ export function DetailPanel({
             )}
           </div>
 
-          {m.tags.length > 0 && (
+          {tags.length > 0 && (
             <div className="mt-4">
               <p className="text-xs text-soft-foreground">{t("detail.tags")}</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {m.tags.map((tag) => (
+                {tags.map((tag) => (
                   <span
                     key={tag}
                     className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground"

@@ -13,6 +13,7 @@ import { mockMemories, mockSpaceInfo } from "./mock-data";
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 const API_BASE = import.meta.env.VITE_API_BASE || "/your-memory/api";
 const AGENT_ID = "dashboard";
+const EMPTY_TIMESTAMP = new Date(0).toISOString();
 
 function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -23,6 +24,43 @@ function normalizeSpaceId(spaceId: string): string {
 }
 
 let mockStore = mockMemories.map((m) => ({ ...m }));
+
+function normalizeTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) return [];
+  return tags.filter((tag): tag is string => typeof tag === "string");
+}
+
+function normalizeMemory(memory: Partial<Memory>): Memory {
+  return {
+    id: memory.id ?? "",
+    content: memory.content ?? "",
+    memory_type: memory.memory_type ?? "pinned",
+    source: memory.source ?? "",
+    tags: normalizeTags(memory.tags),
+    metadata: memory.metadata ?? null,
+    agent_id: memory.agent_id ?? "",
+    session_id: memory.session_id ?? "",
+    state: memory.state ?? "active",
+    version: memory.version ?? 0,
+    updated_by: memory.updated_by ?? "",
+    created_at: memory.created_at ?? EMPTY_TIMESTAMP,
+    updated_at: memory.updated_at ?? EMPTY_TIMESTAMP,
+    score: memory.score,
+  };
+}
+
+function normalizeMemoryListResponse(
+  response: Partial<MemoryListResponse>,
+): MemoryListResponse {
+  return {
+    memories: Array.isArray(response.memories)
+      ? response.memories.map(normalizeMemory)
+      : [],
+    total: response.total ?? 0,
+    limit: response.limit ?? 0,
+    offset: response.offset ?? 0,
+  };
+}
 
 async function request<T>(
   spaceId: string,
@@ -134,7 +172,11 @@ export const api = {
     if (params.memory_type) qs.set("memory_type", params.memory_type);
     qs.set("limit", String(params.limit ?? 50));
     qs.set("offset", String(params.offset ?? 0));
-    return request<MemoryListResponse>(spaceId, `/memories?${qs}`);
+    const response = await request<MemoryListResponse>(
+      spaceId,
+      `/memories?${qs}`,
+    );
+    return normalizeMemoryListResponse(response);
   },
 
   async getStats(spaceId: string): Promise<MemoryStats> {
@@ -167,7 +209,8 @@ export const api = {
       if (!mem) throw new Error("Memory not found");
       return { ...mem };
     }
-    return request<Memory>(spaceId, `/memories/${memoryId}`);
+    const response = await request<Memory>(spaceId, `/memories/${memoryId}`);
+    return normalizeMemory(response);
   },
 
   async createMemory(
@@ -204,7 +247,7 @@ export const api = {
     );
     const created = res.memories[0];
     if (!created) throw new Error("No memory returned from batch create");
-    return created;
+    return normalizeMemory(created);
   },
 
   async deleteMemory(spaceId: string, memoryId: string): Promise<void> {
@@ -242,11 +285,12 @@ export const api = {
     }
     const headers: Record<string, string> = {};
     if (version !== undefined) headers["If-Match"] = String(version);
-    return request<Memory>(spaceId, `/memories/${memoryId}`, {
+    const response = await request<Memory>(spaceId, `/memories/${memoryId}`, {
       method: "PUT",
       headers,
       body: JSON.stringify(input),
     });
+    return normalizeMemory(response);
   },
 
   resetMockData(): void {

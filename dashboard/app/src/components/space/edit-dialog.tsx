@@ -29,12 +29,12 @@ export function EditMemoryDialog({
   t: TFunction;
 }) {
   const [content, setContent] = useState(memory.content);
-  const [tags, setTags] = useState(memory.tags.join(", "));
+  const [tags, setTags] = useState((memory.tags ?? []).join(", "));
 
   useEffect(() => {
     if (open) {
       setContent(memory.content);
-      setTags(memory.tags.join(", "));
+      setTags((memory.tags ?? []).join(", "));
     }
   }, [open, memory]);
 
