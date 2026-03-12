@@ -297,7 +297,7 @@ func (r *MemoryRepo) VectorSearch(ctx context.Context, queryVec []float32, f dom
 		return nil, nil
 	}
 
-	conds, args := r.buildFilterConds(f)
+	conds, args := r.BuildFilterConds(f)
 	conds = append(conds, "embedding IS NOT NULL")
 
 	// The query vector is the next parameter
@@ -341,7 +341,7 @@ func (r *MemoryRepo) AutoVectorSearch(ctx context.Context, queryText string, f d
 
 // KeywordSearch performs substring search on content.
 func (r *MemoryRepo) KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
-	conds, args := r.buildFilterConds(f)
+	conds, args := r.BuildFilterConds(f)
 	if query != "" {
 		nextParam := len(args) + 1
 		conds = append(conds, fmt.Sprintf("content ILIKE '%%' || $%d || '%%'", nextParam))
@@ -372,7 +372,7 @@ func (r *MemoryRepo) KeywordSearch(ctx context.Context, query string, f domain.M
 
 // FTSSearch performs full-text search using PostgreSQL tsvector/tsquery.
 func (r *MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
-	conds, args := r.buildFilterConds(f)
+	conds, args := r.BuildFilterConds(f)
 	where := strings.Join(conds, " AND ")
 
 	queryParamIdx := len(args) + 1
@@ -407,7 +407,7 @@ func (r *MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Memor
 // ---- WHERE builder ----
 
 func (r *MemoryRepo) buildWhere(f domain.MemoryFilter) (string, []any) {
-	conds, args := r.buildFilterConds(f)
+	conds, args := r.BuildFilterConds(f)
 	if f.Query != "" {
 		nextParam := len(args) + 1
 		conds = append(conds, fmt.Sprintf("content ILIKE '%%' || $%d || '%%'", nextParam))
@@ -416,7 +416,7 @@ func (r *MemoryRepo) buildWhere(f domain.MemoryFilter) (string, []any) {
 	return strings.Join(conds, " AND "), args
 }
 
-func (r *MemoryRepo) buildFilterConds(f domain.MemoryFilter) ([]string, []any) {
+func (r *MemoryRepo) BuildFilterConds(f domain.MemoryFilter) ([]string, []any) {
 	conds := []string{}
 	args := []any{}
 	paramIdx := 1

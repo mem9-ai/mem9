@@ -7,8 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-
-	"github.com/pgvector/pgvector-go"
+	"sync/atomic"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/repository/postgres"
@@ -19,8 +18,10 @@ import (
 // Create, Update, AutoVectorSearch and FTSSearch to leverage db9's native capabilities.
 type DB9MemoryRepo struct {
 	*postgres.MemoryRepo
-	db        *sql.DB
-	autoModel string
+	db            *sql.DB
+	autoModel     string
+	jiebaChecked  atomic.Bool
+	jiebaDisabled atomic.Bool
 }
 
 // NewMemoryRepo creates the db9 memory repository.
@@ -190,7 +191,7 @@ func (r *DB9MemoryRepo) AutoVectorSearch(ctx context.Context, queryText string, 
 		limit = 10
 	}
 
-	conds, args := r.buildFilterConds(f)
+	conds, args := r.BuildFilterConds(f)
 	conds = append(conds, "embedding IS NOT NULL")
 
 	where := strings.Join(conds, " AND ")
@@ -229,6 +230,7 @@ func (r *DB9MemoryRepo) AutoVectorSearch(ctx context.Context, queryText string, 
 
 // FTSSearch performs full-text search using db9's jieba tokenizer.
 // jieba provides better Chinese and English tokenization than the default 'english' config.
+// Jieba availability is probed once and cached to avoid repeated failure queries.
 func (r *DB9MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
 	if query == "" {
 		return nil, nil
@@ -236,8 +238,12 @@ func (r *DB9MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Me
 	if limit <= 0 {
 		limit = 10
 	}
+	// Fast path: if jieba was already found unavailable, skip directly to parent.
+	if r.jiebaChecked.Load() && r.jiebaDisabled.Load() {
+		return r.MemoryRepo.FTSSearch(ctx, query, f, limit)
+	}
 
-	conds, args := r.buildFilterConds(f)
+	conds, args := r.BuildFilterConds(f)
 	where := strings.Join(conds, " AND ")
 
 	queryParamIdx := len(args) + 1
@@ -256,15 +262,21 @@ func (r *DB9MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Me
 
 	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
 	if err != nil {
-		// If jieba is not available, fall back to parent's FTSSearch (english tokenizer)
-		// Check for specific PostgreSQL error about missing text search configuration
+		// If jieba is not available, cache the result and fall back to parent's FTSSearch (english tokenizer)
 		if strings.Contains(err.Error(), "text search configuration") && strings.Contains(err.Error(), "jieba") {
-			slog.Warn("db9 jieba tokenizer not available, falling back to english", "error", err)
+			slog.Warn("db9 jieba tokenizer not available, falling back to english (cached)", "error", err)
+			r.jiebaChecked.Store(true)
+			r.jiebaDisabled.Store(true)
 			return r.MemoryRepo.FTSSearch(ctx, query, f, limit)
 		}
 		return nil, fmt.Errorf("db9 fts search: %w", err)
 	}
 	defer rows.Close()
+
+	// Mark jieba as available on first successful query.
+	if !r.jiebaChecked.Load() {
+		r.jiebaChecked.Store(true)
+	}
 
 	var memories []domain.Memory
 	for rows.Next() {
@@ -275,70 +287,6 @@ func (r *DB9MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Me
 		memories = append(memories, *m)
 	}
 	return memories, rows.Err()
-}
-
-// buildFilterConds builds WHERE conditions without the keyword query.
-// Uses PostgreSQL $N placeholders.
-func (r *DB9MemoryRepo) buildFilterConds(f domain.MemoryFilter) ([]string, []any) {
-	conds := []string{}
-	args := []any{}
-	paramIdx := 1
-
-	if f.State == "all" {
-		// no state filter
-	} else if f.State != "" {
-		conds = append(conds, fmt.Sprintf("state = $%d", paramIdx))
-		args = append(args, f.State)
-		paramIdx++
-	} else {
-		conds = append(conds, "state = 'active'")
-	}
-
-	if f.MemoryType != "" {
-		types := strings.Split(f.MemoryType, ",")
-		if len(types) == 1 {
-			conds = append(conds, fmt.Sprintf("memory_type = $%d", paramIdx))
-			args = append(args, types[0])
-			paramIdx++
-		} else {
-			placeholders := make([]string, len(types))
-			for i, t := range types {
-				placeholders[i] = fmt.Sprintf("$%d", paramIdx)
-				args = append(args, strings.TrimSpace(t))
-				paramIdx++
-			}
-			conds = append(conds, "memory_type IN ("+strings.Join(placeholders, ",")+")")
-		}
-	}
-
-	if f.AgentID != "" {
-		conds = append(conds, fmt.Sprintf("agent_id = $%d", paramIdx))
-		args = append(args, f.AgentID)
-		paramIdx++
-	}
-	if f.SessionID != "" {
-		conds = append(conds, fmt.Sprintf("session_id = $%d", paramIdx))
-		args = append(args, f.SessionID)
-		paramIdx++
-	}
-	if f.Source != "" {
-		conds = append(conds, fmt.Sprintf("source = $%d", paramIdx))
-		args = append(args, f.Source)
-		paramIdx++
-	}
-	for _, tag := range f.Tags {
-		tagJSON, err := json.Marshal(tag)
-		if err != nil {
-			continue
-		}
-		conds = append(conds, fmt.Sprintf("tags @> $%d::jsonb", paramIdx))
-		args = append(args, "["+string(tagJSON)+"]")
-		paramIdx++
-	}
-	if len(conds) == 0 {
-		conds = append(conds, "1=1")
-	}
-	return conds, args
 }
 
 // scanMemoryRowsWithDistance scans a row with distance score appended.
@@ -453,13 +401,6 @@ func nullJSON(data json.RawMessage) any {
 		return nil
 	}
 	return []byte(data)
-}
-
-func vecToParam(embedding []float32) any {
-	if len(embedding) == 0 {
-		return nil
-	}
-	return pgvector.NewVector(embedding)
 }
 
 func isDuplicateKey(err error) bool {

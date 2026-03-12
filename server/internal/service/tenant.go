@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 
@@ -74,8 +73,11 @@ const tenantMemorySchemaPostgres = `CREATE TABLE IF NOT EXISTS memories (
 func buildMemorySchema(autoModel string, autoDims int) string {
 	var embeddingCol string
 	if autoModel != "" {
-		dims := strconv.Itoa(autoDims)
-		embeddingCol = `embedding VECTOR(` + dims + `) GENERATED ALWAYS AS (EMBED_TEXT('` + autoModel + `', content)) STORED,`
+		sanitizedModel := strings.ReplaceAll(autoModel, "'", "''")
+		embeddingCol = fmt.Sprintf(
+			`embedding VECTOR(%d) GENERATED ALWAYS AS (EMBED_TEXT('%s', content, '{"dimensions": %d}')) STORED,`,
+			autoDims, sanitizedModel, autoDims,
+		)
 	} else {
 		embeddingCol = `embedding VECTOR(1536) NULL,`
 	}
@@ -115,8 +117,11 @@ const tenantMemorySchemaDB9Base = `CREATE TABLE IF NOT EXISTS memories (
 func buildDB9MemorySchema(autoModel string, autoDims int) string {
 	var embeddingCol string
 	if autoModel != "" {
-		dims := strconv.Itoa(autoDims)
-		embeddingCol = `embedding VECTOR(` + dims + `) GENERATED ALWAYS AS (EMBED_TEXT('` + autoModel + `', content)) STORED,`
+		sanitizedModel := strings.ReplaceAll(autoModel, "'", "''")
+		embeddingCol = fmt.Sprintf(
+			`embedding VECTOR(%d) GENERATED ALWAYS AS (EMBED_TEXT('%s', content, '{"dimensions": %d}')) STORED,`,
+			autoDims, sanitizedModel, autoDims,
+		)
 	} else {
 		embeddingCol = `embedding VECTOR(1536) NULL,`
 	}
@@ -333,18 +338,16 @@ func (s *TenantService) initSchema(ctx context.Context, t *domain.Tenant) error 
 		s.logger.Info("provision step", "step", "init_schema_create_table", "duration_ms", elapsed.Milliseconds())
 		metrics.ProvisionStepDuration.WithLabelValues("init_schema_create_table").Observe(elapsed.Seconds())
 
-		// Add HNSW index for vector search (if auto-embedding enabled)
-		if s.autoModel != "" {
-			t0 = time.Now()
-			_, err := db.ExecContext(ctx,
-				`CREATE INDEX IF NOT EXISTS idx_memory_embedding ON memories USING hnsw (embedding vector_cosine_ops)`)
-			elapsed = time.Since(t0)
-			if err != nil && !isIndexExistsError(err) {
-				return fmt.Errorf("init tenant schema: hnsw index: %w", err)
-			}
-			s.logger.Info("provision step", "step", "init_schema_hnsw_index", "duration_ms", elapsed.Milliseconds())
-			metrics.ProvisionStepDuration.WithLabelValues("init_schema_hnsw_index").Observe(elapsed.Seconds())
+		// Add HNSW index for vector search (supports auto and client-side embeddings)
+		t0 = time.Now()
+		_, err := db.ExecContext(ctx,
+			`CREATE INDEX IF NOT EXISTS idx_memory_embedding ON memories USING hnsw (embedding vector_cosine_ops)`)
+		elapsed = time.Since(t0)
+		if err != nil && !isIndexExistsError(err) {
+			return fmt.Errorf("init tenant schema: hnsw index: %w", err)
 		}
+		s.logger.Info("provision step", "step", "init_schema_hnsw_index", "duration_ms", elapsed.Milliseconds())
+		metrics.ProvisionStepDuration.WithLabelValues("init_schema_hnsw_index").Observe(elapsed.Seconds())
 		return nil
 	case "tidb":
 		t0 := time.Now()

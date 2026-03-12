@@ -1,9 +1,23 @@
+-- ============================================================================
+-- MANUAL USE ONLY — NOT used by tenant provisioning.
+-- ============================================================================
+--
 -- db9-specific schema with native auto-embedding support.
 -- db9 uses EMBED_TEXT to generate embeddings automatically (GENERATED ALWAYS AS).
--- This is separate from schema_pg.sql to allow different embedding dimensions
--- and leverage db9's native capabilities.
+--
+-- IMPORTANT:
+--   - The model name ('amazon.titan-embed-text-v2:0') and dimensions (1024) below
+--     are EXAMPLE values only.
+--   - Model and dimensions MUST match MNEMO_EMBED_AUTO_MODEL and MNEMO_EMBED_AUTO_DIMS
+--     used by the running application.
+--   - If you change the embedding configuration, update BOTH:
+--       * the VECTOR(1024) type to VECTOR(<new_dims>)
+--       * the EMBED_TEXT(...) arguments (model name and "dimensions" JSON value)
+--     to avoid silent mismatches between stored vectors and runtime expectations.
+--   - For tenant provisioning, tenant_service.go builds the schema dynamically
+--     based on the runtime embedding configuration.
+--
 
--- Required extensions
 CREATE EXTENSION IF NOT EXISTS embedding;
 CREATE EXTENSION IF NOT EXISTS vector;
 
@@ -40,8 +54,10 @@ CREATE TABLE IF NOT EXISTS memories (
     source          VARCHAR(100),
     tags            JSONB,
     metadata        JSONB,
-    -- Auto-embedding: db9 generates embeddings automatically on INSERT/UPDATE
-    -- Model and dimensions should match MNEMO_EMBED_AUTO_MODEL and MNEMO_EMBED_AUTO_DIMS
+    -- Auto-embedding: db9 generates embeddings automatically on INSERT/UPDATE.
+    -- IMPORTANT: Model and dimensions below are example values.
+    -- They MUST match MNEMO_EMBED_AUTO_MODEL and MNEMO_EMBED_AUTO_DIMS.
+    -- See file header for details.
     embedding       VECTOR(1024)    GENERATED ALWAYS AS (
         EMBED_TEXT('amazon.titan-embed-text-v2:0', content, '{"dimensions": 1024}')
     ) STORED,
