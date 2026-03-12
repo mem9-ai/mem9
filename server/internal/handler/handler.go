@@ -3,10 +3,8 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -34,7 +32,6 @@ type Server struct {
 	ingestMode  service.IngestMode
 	dbBackend   string
 	logger      *slog.Logger
-	svcCache    sync.Map
 }
 
 // NewServer creates a new HTTP handler server.
@@ -71,34 +68,13 @@ type resolvedSvc struct {
 	ingest *service.IngestService
 }
 
-type tenantSvcKey string
-
 // resolveServices returns the correct services for a request.
 func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
-	if auth.TenantID == "" {
-		key := tenantSvcKey(fmt.Sprintf("db-%p", auth.TenantDB))
-		if cached, ok := s.svcCache.Load(key); ok {
-			return cached.(resolvedSvc)
-		}
-		memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled)
-		svc := resolvedSvc{
-			memory: service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
-			ingest: service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
-		}
-		s.svcCache.Store(key, svc)
-		return svc
-	}
-	key := tenantSvcKey(fmt.Sprintf("%s-%p", auth.TenantID, auth.TenantDB))
-	if cached, ok := s.svcCache.Load(key); ok {
-		return cached.(resolvedSvc)
-	}
 	memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled)
-	svc := resolvedSvc{
+	return resolvedSvc{
 		memory: service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 		ingest: service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 	}
-	s.svcCache.Store(key, svc)
-	return svc
 }
 
 // Router builds the chi router with all routes and middleware.
