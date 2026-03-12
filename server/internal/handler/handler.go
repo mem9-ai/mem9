@@ -129,6 +129,9 @@ func (s *Server) Router(tenantMW, rateLimitMW func(http.Handler) http.Handler) h
 		// Memory CRUD.
 		r.Post("/memories", s.createMemory)
 		r.Get("/memories", s.listMemories)
+		// Static subroutes must be registered explicitly alongside /{id}.
+		r.Post("/memories/bulk", s.bulkCreateMemories)
+		r.Get("/memories/bootstrap", s.bootstrapMemories)
 		r.Get("/memories/{id}", s.getMemory)
 		r.Put("/memories/{id}", s.updateMemory)
 		r.Delete("/memories/{id}", s.deleteMemory)
