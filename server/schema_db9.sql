@@ -2,11 +2,9 @@
 -- db9 uses EMBED_TEXT to generate embeddings automatically (GENERATED ALWAYS AS).
 -- This is separate from schema_pg.sql to allow different embedding dimensions
 -- and leverage db9's native capabilities.
---
--- Prerequisites:
--- - Run: CREATE EXTENSION IF NOT EXISTS embedding;
--- - Run: CREATE EXTENSION IF NOT EXISTS vector;
 
+-- Required extensions
+CREATE EXTENSION IF NOT EXISTS embedding;
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS tenants (
@@ -33,8 +31,9 @@ CREATE INDEX IF NOT EXISTS idx_tenant_status ON tenants(status);
 CREATE INDEX IF NOT EXISTS idx_tenant_provider ON tenants(provider);
 
 -- memories table with auto-embedding column.
--- embedding uses db9 EMBED_TEXT function to generate embeddings automatically.
--- Model: amazon.titan-embed-text-v2:0 with 1024 dimensions.
+-- Note: The embedding column definition depends on whether auto-embedding is enabled.
+-- When using schema_db9.sql directly (manual setup), use this version with GENERATED ALWAYS.
+-- For tenant provisioning, tenant_service.go builds the schema dynamically.
 CREATE TABLE IF NOT EXISTS memories (
     id              VARCHAR(36)     PRIMARY KEY,
     content         TEXT            NOT NULL,
@@ -42,6 +41,7 @@ CREATE TABLE IF NOT EXISTS memories (
     tags            JSONB,
     metadata        JSONB,
     -- Auto-embedding: db9 generates embeddings automatically on INSERT/UPDATE
+    -- Model and dimensions should match MNEMO_EMBED_AUTO_MODEL and MNEMO_EMBED_AUTO_DIMS
     embedding       VECTOR(1024)    GENERATED ALWAYS AS (
         EMBED_TEXT('amazon.titan-embed-text-v2:0', content, '{"dimensions": 1024}')
     ) STORED,
@@ -84,12 +84,7 @@ CREATE INDEX IF NOT EXISTS idx_upload_tenant ON upload_tasks(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_upload_poll ON upload_tasks(status, created_at);
 
 CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_tenants_updated ON tenants;
 CREATE TRIGGER trg_tenants_updated BEFORE UPDATE ON tenants FOR EACH ROW EXECUTE FUNCTION update_updated_at();

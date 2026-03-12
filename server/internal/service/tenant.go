@@ -82,6 +82,47 @@ func buildMemorySchema(autoModel string, autoDims int) string {
 	return fmt.Sprintf(tenantMemorySchemaBase, embeddingCol)
 }
 
+// tenantMemorySchemaDB9Base is the db9/PostgreSQL schema template with auto-embedding support.
+// The %s placeholder is replaced with the embedding column definition.
+const tenantMemorySchemaDB9Base = `CREATE TABLE IF NOT EXISTS memories (
+	    id              VARCHAR(36)     PRIMARY KEY,
+	    content         TEXT            NOT NULL,
+	    source          VARCHAR(100),
+	    tags            JSONB,
+	    metadata        JSONB,
+	    %s
+	    memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned',
+	    agent_id        VARCHAR(100)    NULL,
+	    session_id      VARCHAR(100)    NULL,
+	    state           VARCHAR(20)     NOT NULL DEFAULT 'active',
+	    version         INT             DEFAULT 1,
+	    updated_by      VARCHAR(100),
+	    superseded_by   VARCHAR(36)     NULL,
+	    created_at      TIMESTAMPTZ     DEFAULT NOW(),
+	    updated_at      TIMESTAMPTZ     DEFAULT NOW()
+	);
+	CREATE INDEX IF NOT EXISTS idx_memory_type ON memories(memory_type);
+	CREATE INDEX IF NOT EXISTS idx_memory_source ON memories(source);
+	CREATE INDEX IF NOT EXISTS idx_memory_state ON memories(state);
+	CREATE INDEX IF NOT EXISTS idx_memory_agent ON memories(agent_id);
+	CREATE INDEX IF NOT EXISTS idx_memory_session ON memories(session_id);
+	CREATE INDEX IF NOT EXISTS idx_memory_updated ON memories(updated_at);
+	CREATE OR REPLACE FUNCTION update_updated_at() RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql;
+	DROP TRIGGER IF EXISTS trg_memories_updated ON memories;
+	CREATE TRIGGER trg_memories_updated BEFORE UPDATE ON memories FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+	`
+
+func buildDB9MemorySchema(autoModel string, autoDims int) string {
+	var embeddingCol string
+	if autoModel != "" {
+		dims := strconv.Itoa(autoDims)
+		embeddingCol = `embedding VECTOR(` + dims + `) GENERATED ALWAYS AS (EMBED_TEXT('` + autoModel + `', content)) STORED,`
+	} else {
+		embeddingCol = `embedding VECTOR(1536) NULL,`
+	}
+	return fmt.Sprintf(tenantMemorySchemaDB9Base, embeddingCol)
+}
+
 type TenantService struct {
 	tenants    repository.TenantRepo
 	zero       *tenant.ZeroClient
@@ -251,12 +292,8 @@ func (s *TenantService) initSchema(ctx context.Context, t *domain.Tenant) error 
 	}
 
 	switch s.pool.Backend() {
-	case "postgres", "db9":
-		// PostgreSQL/db9 path: enable pgvector, then apply PG-compatible schema.
-		// Verified against a live db9 instance (2026-03-11):
-		// - CREATE EXTENSION IF NOT EXISTS vector
-		// - tenantMemorySchemaPostgres (table/index/function/trigger)
-		// all execute successfully.
+	case "postgres":
+		// PostgreSQL path: enable pgvector, then apply PG-compatible schema.
 		t0 := time.Now()
 		if _, err := db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
 			return fmt.Errorf("init tenant schema: pgvector extension: %w", err)
@@ -266,14 +303,48 @@ func (s *TenantService) initSchema(ctx context.Context, t *domain.Tenant) error 
 		metrics.ProvisionStepDuration.WithLabelValues("init_schema_pgvector_extension").Observe(elapsed.Seconds())
 
 		t0 = time.Now()
-		// PostgreSQL schema includes CREATE INDEX and updated_at trigger statements,
-		// so no extra ALTER TABLE index creation is needed here.
 		if _, err := db.ExecContext(ctx, tenantMemorySchemaPostgres); err != nil {
 			return fmt.Errorf("init tenant schema: memories: %w", err)
 		}
 		elapsed = time.Since(t0)
 		s.logger.Info("provision step", "step", "init_schema_create_table", "duration_ms", elapsed.Milliseconds())
 		metrics.ProvisionStepDuration.WithLabelValues("init_schema_create_table").Observe(elapsed.Seconds())
+		return nil
+	case "db9":
+		// db9 path: enable embedding + vector extensions, then apply db9-specific schema.
+		// db9 supports EMBED_TEXT for auto-embedding and jieba for FTS.
+		t0 := time.Now()
+		if _, err := db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS embedding`); err != nil {
+			s.logger.Warn("db9 embedding extension not available", "error", err)
+			// Continue anyway - embedding extension may not be required for all setups
+		}
+		if _, err := db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
+			return fmt.Errorf("init tenant schema: vector extension: %w", err)
+		}
+		elapsed := time.Since(t0)
+		s.logger.Info("provision step", "step", "init_schema_extensions", "duration_ms", elapsed.Milliseconds())
+		metrics.ProvisionStepDuration.WithLabelValues("init_schema_extensions").Observe(elapsed.Seconds())
+
+		t0 = time.Now()
+		if _, err := db.ExecContext(ctx, buildDB9MemorySchema(s.autoModel, s.autoDims)); err != nil {
+			return fmt.Errorf("init tenant schema: memories: %w", err)
+		}
+		elapsed = time.Since(t0)
+		s.logger.Info("provision step", "step", "init_schema_create_table", "duration_ms", elapsed.Milliseconds())
+		metrics.ProvisionStepDuration.WithLabelValues("init_schema_create_table").Observe(elapsed.Seconds())
+
+		// Add HNSW index for vector search (if auto-embedding enabled)
+		if s.autoModel != "" {
+			t0 = time.Now()
+			_, err := db.ExecContext(ctx,
+				`CREATE INDEX IF NOT EXISTS idx_memory_embedding ON memories USING hnsw (embedding vector_cosine_ops)`)
+			elapsed = time.Since(t0)
+			if err != nil && !isIndexExistsError(err) {
+				return fmt.Errorf("init tenant schema: hnsw index: %w", err)
+			}
+			s.logger.Info("provision step", "step", "init_schema_hnsw_index", "duration_ms", elapsed.Milliseconds())
+			metrics.ProvisionStepDuration.WithLabelValues("init_schema_hnsw_index").Observe(elapsed.Seconds())
+		}
 		return nil
 	case "tidb":
 		t0 := time.Now()
