@@ -102,7 +102,11 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 }
 
 // Router builds the chi router with all routes and middleware.
-func (s *Server) Router(tenantMW, rateLimitMW func(http.Handler) http.Handler) http.Handler {
+func (s *Server) Router(
+	tenantMW func(http.Handler) http.Handler,
+	rateLimitMW func(http.Handler) http.Handler,
+	apiKeyMW func(http.Handler) http.Handler,
+) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware.
@@ -138,6 +142,20 @@ func (s *Server) Router(tenantMW, rateLimitMW func(http.Handler) http.Handler) h
 		r.Get("/imports", s.listTasks)
 		r.Get("/imports/{id}", s.getTask)
 
+	})
+
+	r.Route("/v1alpha2/mem9s", func(r chi.Router) {
+		r.Use(apiKeyMW)
+
+		r.Post("/memories", s.createMemory)
+		r.Get("/memories", s.listMemories)
+		r.Get("/memories/{id}", s.getMemory)
+		r.Put("/memories/{id}", s.updateMemory)
+		r.Delete("/memories/{id}", s.deleteMemory)
+
+		r.Post("/imports", s.createTask)
+		r.Get("/imports", s.listTasks)
+		r.Get("/imports/{id}", s.getTask)
 	})
 
 	return r

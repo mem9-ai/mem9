@@ -1,6 +1,6 @@
 # OpenClaw Plugin for mnemos
 
-Memory plugin for [OpenClaw](https://github.com/openclaw) — replaces the built-in memory slot with cloud-persistent shared memory. Runs in server mode only, connecting to `mnemo-server` via `apiUrl` + `tenantID`.
+Memory plugin for [OpenClaw](https://github.com/openclaw) — replaces the built-in memory slot with cloud-persistent shared memory. Runs in server mode only, connecting to `mnemo-server` via `apiUrl` + `apiKey` (preferred) or legacy `tenantID`.
 
 ## 🚀 Quick Start (Server Mode)
 
@@ -17,7 +17,7 @@ curl -s -X POST http://localhost:8080/v1alpha1/mem9s \
   -d '{"name":"openclaw-tenant"}'
 
 # Response:
-# {"id": "uuid", "claim_url": "..."}
+# {"id": "uuid"}
 ```
 
 Add mnemo to your project's `openclaw.json`:
@@ -31,7 +31,7 @@ Add mnemo to your project's `openclaw.json`:
         "enabled": true,
         "config": {
           "apiUrl": "http://localhost:8080",
-          "tenantID": "uuid"
+          "apiKey": "uuid"
         }
       }
     }
@@ -41,7 +41,7 @@ Add mnemo to your project's `openclaw.json`:
 
 **That's it!** Restart OpenClaw and your agent now has persistent cloud memory.
 
-All memory calls use `/v1alpha1/mem9s/{tenantID}/memories/...` — the tenant ID is carried in the URL path, and no special headers are required.
+When `apiKey` is configured, memory calls use `/v1alpha2/mem9s/memories/...` with `X-API-Key: <key>`. Legacy `tenantID` config is still supported and uses `/v1alpha1/mem9s/{tenantID}/memories/...`.
 
 ---
 
@@ -127,12 +127,12 @@ curl -s -X POST http://localhost:8080/v1alpha1/mem9s \
   -d '{"name":"openclaw-tenant"}'
 
 # Response:
-# {"id": "uuid", "claim_url": "..."}
+# {"id": "uuid"}
 ```
 
 **Step 3: Configure each OpenClaw instance**
 
-Each agent uses the same `tenantID` for the shared memory pool. The tenant ID is part of the URL path for all memory calls.
+Each agent uses the same `apiKey` for the shared memory pool. With the preferred config, the key is sent in `X-API-Key` and never appears in the URL path. Legacy `tenantID` config still works against v1alpha1.
 
 ```json
 {
@@ -145,7 +145,7 @@ Each agent uses the same `tenantID` for the shared memory pool. The tenant ID is
         "enabled": true,
         "config": {
           "apiUrl": "http://your-server:8080",
-          "tenantID": "uuid"
+          "apiKey": "uuid"
         }
       }
     }
@@ -153,7 +153,7 @@ Each agent uses the same `tenantID` for the shared memory pool. The tenant ID is
 }
 ```
 
-That's it. The server handles scoping and conflict resolution. Conceptually, the only required values are `apiUrl` + `tenantID`.
+That's it. The server handles scoping and conflict resolution. Conceptually, the only required values are `apiUrl` + `apiKey`.
 
 ### Verify
 
@@ -172,11 +172,10 @@ Defined in `openclaw.plugin.json`:
 | Field | Type | Description |
 |---|---|---|
 | `apiUrl` | string | mnemo-server URL |
-| `tenantID` | string | Tenant ID used in `/v1alpha1/mem9s/{tenantID}/memories` (preferred) |
-| `apiToken` | string | Legacy alias for `tenantID` — kept for backward compatibility |
-| `userToken` | string | Legacy alias for `tenantID` — kept for backward compatibility |
+| `apiKey` | string | Preferred key. Uses `/v1alpha2/mem9s/...` with `X-API-Key` header |
+| `tenantID` | string | Legacy fallback. Uses `/v1alpha1/mem9s/{tenantID}/memories` |
 
-> **Note**: `tenantID` is the preferred config field. For legacy setups, the plugin checks `tenantID` first, then falls back to `apiToken`, then `userToken`.
+> **Note**: `apiKey` takes precedence when both fields are set. If only `tenantID` is present, the plugin keeps using the legacy v1alpha1 route shape and logs a deprecation warning once at startup.
 
 ## File Structure
 
@@ -196,6 +195,6 @@ openclaw-plugin/
 
 | Problem | Cause | Fix |
 |---|---|---|
-| `No mode configured` | Missing config | Add `apiUrl` and `tenantID` (or legacy `apiToken`/`userToken`) to plugin config |
-| `Server mode requires...` | Missing tenant ID | Add `tenantID` (or legacy `apiToken`/`userToken`) to config |
+| `No mode configured` | Missing config | Add `apiUrl` and `apiKey` (or legacy `tenantID`) to plugin config |
+| `Server mode requires...` | Missing key | Add `apiKey` (or legacy `tenantID`) to config |
 | Plugin not loading | Not in memory slot | Set `"slots": {"memory": "openclaw"}` in openclaw.json |

@@ -16,8 +16,9 @@ type visitor struct {
 }
 
 // RateLimiter provides per-tenant rate limiting middleware.
-// The rate-limit key is the tenantID extracted from the URL path parameter {tenantID}.
-// For routes without a tenantID (e.g. POST /v1alpha1/mem9s), the client IP is used as fallback.
+// The rate-limit key is the tenantID extracted from the URL path parameter
+// {tenantID} or the X-API-Key header on v1alpha2 routes. For routes without a
+// tenant key (e.g. POST /v1alpha1/mem9s), the client IP is used as fallback.
 type RateLimiter struct {
 	mu       sync.Mutex
 	visitors map[string]*visitor
@@ -57,8 +58,12 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 				return
 			}
 
-			if tenantID := chi.URLParam(r, "tenantID"); tenantID != "" {
-				if !rl.getLimiter(tenantID).Allow() {
+			key := chi.URLParam(r, "tenantID")
+			if key == "" {
+				key = r.Header.Get(APIKeyHeader)
+			}
+			if key != "" {
+				if !rl.getLimiter(key).Allow() {
 					writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
 					return
 				}

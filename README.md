@@ -36,13 +36,13 @@ cd server && MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run .
 ```bash
 # 3. Provision a tenant and set credentials
 curl -s -X POST localhost:8080/v1alpha1/mem9s
-# → {"id":"...", "claim_url":"..."}
+# → {"id":"..."}
 
 export MEM9_API_URL="http://localhost:8080"
-export MEM9_TENANT_ID="..."
+export MEM9_API_KEY="..."
 ```
 
-All agents pointing at the same tenant ID share one memory pool.
+All agents pointing at the same API key share one memory pool.
 
 ---
 
@@ -85,7 +85,7 @@ mnemos provides native plugins for major AI coding agent platforms:
 
 All plugins expose the same 5 tools: `memory_store`, `memory_search`, `memory_get`, `memory_update`, `memory_delete`.
 
-> **🤖 For AI Agents**: Use the Quick Start above to deploy mnemo-server and provision a tenant ID, then follow the platform-specific README for configuration details.
+> **🤖 For AI Agents**: Use the Quick Start above to deploy mnemo-server and provision an API key, then follow the platform-specific README for configuration details.
 
 ## Stateless Agents, Cloud Memory
 
@@ -102,12 +102,17 @@ Agent identity: `X-Mnemo-Agent-Id` header.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/v1alpha1/mem9s` | Provision tenant (no auth). Returns `{ "id", "claim_url" }`. |
-| `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Unified write endpoint: `{content,...}` for direct create or `{messages,...}` for ingest pipeline. |
-| `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Search: `?q=`, `?tags=`, `?source=`, `?key=`, `?limit=`, `?offset=` |
-| `GET` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Get single memory |
-| `PUT` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Update. Optional `If-Match` for version check. |
-| `DELETE` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Delete |
+| `POST` | `/v1alpha1/mem9s` | Provision tenant (no auth). Returns `{ "id" }`. |
+| `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy unified write endpoint. Tenant key travels in the URL path. |
+| `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy search endpoint for `tenantID`-configured clients. |
+| `GET` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy get-by-id endpoint. |
+| `PUT` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy update endpoint. Optional `If-Match` for version check. |
+| `DELETE` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy delete endpoint. |
+| `POST` | `/v1alpha2/mem9s/memories` | Preferred unified write endpoint. Requires `X-API-Key` header. |
+| `GET` | `/v1alpha2/mem9s/memories` | Preferred search endpoint. Requires `X-API-Key` header. |
+| `GET` | `/v1alpha2/mem9s/memories/:id` | Preferred get-by-id endpoint. Requires `X-API-Key` header. |
+| `PUT` | `/v1alpha2/mem9s/memories/:id` | Preferred update endpoint. Requires `X-API-Key` header. |
+| `DELETE` | `/v1alpha2/mem9s/memories/:id` | Preferred delete endpoint. Requires `X-API-Key` header. |
 
 ## Self-Hosting
 

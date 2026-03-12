@@ -10,6 +10,8 @@ import type {
   IngestResult,
 } from "./types.js";
 
+export type ApiVersion = "v1alpha1" | "v1alpha2";
+
 type ProvisionMem9sResponse = {
   id: string;
 };
@@ -18,11 +20,20 @@ export class ServerBackend implements MemoryBackend {
   private baseUrl: string;
   private tenantID: string;
   private agentName: string;
+  private apiVersion: ApiVersion;
 
-  constructor(apiUrl: string, tenantID: string, agentName: string) {
+  // The value originates from the apiKey config field for v1alpha2, but this
+  // field name still matches the v1alpha1 URL shape used for legacy requests.
+  constructor(
+    apiUrl: string,
+    tenantID: string,
+    agentName: string,
+    apiVersion: ApiVersion = "v1alpha1"
+  ) {
     this.baseUrl = apiUrl.replace(/\/+$/, "");
     this.tenantID = tenantID;
     this.agentName = agentName;
+    this.apiVersion = apiVersion;
   }
 
   async register(): Promise<ProvisionMem9sResponse> {
@@ -45,15 +56,18 @@ export class ServerBackend implements MemoryBackend {
     return data;
   }
 
-  private tenantPath(path: string): string {
+  private memoryPath(path: string): string {
     if (!this.tenantID) {
       throw new Error("tenant ID is not configured");
+    }
+    if (this.apiVersion === "v1alpha2") {
+      return `/v1alpha2/mem9s${path}`;
     }
     return `/v1alpha1/mem9s/${this.tenantID}${path}`;
   }
 
   async store(input: CreateMemoryInput): Promise<StoreResult> {
-    return this.request<StoreResult>("POST", this.tenantPath("/memories"), input);
+    return this.request<StoreResult>("POST", this.memoryPath("/memories"), input);
   }
 
   async search(input: SearchInput): Promise<SearchResult> {
@@ -70,7 +84,7 @@ export class ServerBackend implements MemoryBackend {
       total: number;
       limit: number;
       offset: number;
-    }>("GET", `${this.tenantPath("/memories")}${qs ? "?" + qs : ""}`);
+    }>("GET", `${this.memoryPath("/memories")}${qs ? "?" + qs : ""}`);
     return {
       data: raw.memories ?? [],
       total: raw.total,
@@ -81,7 +95,7 @@ export class ServerBackend implements MemoryBackend {
 
   async get(id: string): Promise<Memory | null> {
     try {
-      return await this.request<Memory>("GET", this.tenantPath(`/memories/${id}`));
+      return await this.request<Memory>("GET", this.memoryPath(`/memories/${id}`));
     } catch {
       return null;
     }
@@ -89,7 +103,7 @@ export class ServerBackend implements MemoryBackend {
 
   async update(id: string, input: UpdateMemoryInput): Promise<Memory | null> {
     try {
-      return await this.request<Memory>("PUT", this.tenantPath(`/memories/${id}`), input);
+      return await this.request<Memory>("PUT", this.memoryPath(`/memories/${id}`), input);
     } catch {
       return null;
     }
@@ -97,7 +111,7 @@ export class ServerBackend implements MemoryBackend {
 
   async remove(id: string): Promise<boolean> {
     try {
-      await this.request("DELETE", this.tenantPath(`/memories/${id}`));
+      await this.request("DELETE", this.memoryPath(`/memories/${id}`));
       return true;
     } catch {
       return false;
@@ -105,7 +119,7 @@ export class ServerBackend implements MemoryBackend {
   }
 
   async ingest(input: IngestInput): Promise<IngestResult> {
-    return this.request<IngestResult>("POST", this.tenantPath("/memories"), input);
+    return this.request<IngestResult>("POST", this.memoryPath("/memories"), input);
   }
 
   private async requestRaw(
@@ -118,6 +132,9 @@ export class ServerBackend implements MemoryBackend {
       "Content-Type": "application/json",
       "X-Mnemo-Agent-Id": this.agentName,
     };
+    if (this.apiVersion === "v1alpha2") {
+      headers["X-API-Key"] = this.tenantID;
+    }
     return fetch(url, {
       method,
       headers,

@@ -92,13 +92,14 @@ func main() {
 
 	// Middleware.
 	tenantMW := middleware.ResolveTenant(tenantRepo, tenantPool)
+	apiKeyMW := middleware.ResolveApiKey(tenantRepo, tenantPool)
 	rl := middleware.NewRateLimiter(cfg.RateLimit, cfg.RateBurst)
 	defer rl.Stop()
 	rateMW := rl.Middleware()
 
 	// Handler.
 	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger)
-	router := srv.Router(tenantMW, rateMW)
+	router := srv.Router(tenantMW, rateMW, apiKeyMW)
 
 	httpSrv := &http.Server{
 		Addr:         ":" + cfg.Port,

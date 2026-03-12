@@ -50,7 +50,7 @@ The core insight: **personal memory and team memory are the same problem at diff
 |---|---|---|
 | **Who** | Individual developer, small team | Organization, multi-agent teams |
 | **Deploy** | Nothing. TiDB Cloud Serverless free tier | Self-host `mnemo-server` (Go binary or Docker) |
-| **Config** | Database credentials (`host`/`username`/`password`) | `apiUrl` + `apiToken` |
+| **Config** | Database credentials (`host`/`username`/`password`) | `apiUrl` + `apiKey` (`tenantID` legacy) |
 | **Isolation** | Database-level (each DB is a boundary) | Space-level (server manages space_id scoping) |
 | **Multi-agent sharing** | Share DB credentials = shared memory | Create space, issue tokens per agent |
 | **Vector search** | Yes (TiDB native VECTOR type) | Yes (server-side embedding + vector) |
@@ -123,10 +123,8 @@ and saves new ones — all transparently.
       "mnemo": {
         "enabled": true,
         "config": {
-          "host": "gateway01.us-east-1.prod.aws.tidbcloud.com",
-          "username": "xxx.root",
-          "password": "xxx",
-          "database": "mnemos"
+          "apiUrl": "http://localhost:8080",
+          "apiKey": "uuid"
         }
       }
     }
@@ -554,6 +552,11 @@ Plus **memory-recall** skill (`context: fork`) for on-demand search.
 
 Declares `kind: "memory"`, replacing the built-in memory provider.
 
+In the current server-mode design, OpenClaw prefers `apiUrl + apiKey`. When
+`apiKey` is present, requests go to `/v1alpha2/mem9s/...` and send the key in
+the `X-API-Key` header. Legacy `tenantID` config remains supported and uses the
+older `/v1alpha1/mem9s/{tenantID}/...` path-based routes.
+
 **Why plugin (kind: "memory") instead of skill?**
 
 | | Plugin (`kind: "memory"`) | Skill |
@@ -575,14 +578,8 @@ This is the same philosophy as the Claude Code side: Hooks (automatic) over MCP 
   "mnemo": {
     "enabled": true,
     "config": {
-      "host": "gateway01.us-east-1.prod.aws.tidbcloud.com",
-      "username": "xxx.root",
-      "password": "xxx",
-      "database": "mnemos",
-      "embedding": {
-        "apiKey": "sk-...",
-        "model": "text-embedding-3-small"
-      }
+      "apiUrl": "http://localhost:8080",
+      "apiKey": "uuid"
     }
   }
 }
