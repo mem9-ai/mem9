@@ -96,8 +96,8 @@ openclaw plugins install @mem9/openclaw
 ### Method B: From source
 
 ```bash
-git clone https://github.com/qiffang/mnemos.git
-cd mnemos/openclaw-plugin
+git clone https://github.com/mem9-ai/mem9.git
+cd mem9/openclaw-plugin
 npm install
 ```
 

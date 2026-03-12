@@ -10,8 +10,8 @@ Thanks for your interest in contributing!
 # Prerequisites: Go 1.22+, a MySQL-compatible database (TiDB or MySQL 8.0+)
 
 # Clone and build
-git clone https://github.com/qiffang/mnemos.git
-cd mnemos/server
+git clone https://github.com/mem9-ai/mem9.git
+cd mem9/server
 go mod download
 go build ./cmd/mnemo-server
 
@@ -75,7 +75,7 @@ When adding a new feature, start from the domain types and work outward.
 
 ## Reporting Issues
 
-Please use [GitHub Issues](https://github.com/qiffang/mnemos/issues) with:
+Please use [GitHub Issues](https://github.com/mem9-ai/mem9/issues) with:
 - Steps to reproduce
 - Expected vs actual behavior
 - Server version and database type

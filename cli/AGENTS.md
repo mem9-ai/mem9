@@ -4,7 +4,7 @@ title: cli — Standalone Go CLI
 
 ## Overview
 
-`cli/` is a separate Go module (`github.com/qiffang/mnemos/cli`) used for manual testing of mnemo-server HTTP endpoints. It does not share code with `server/`.
+`cli/` is a separate Go module (`github.com/qiffang/mnemos/cli`) used for manual testing of mnemo-server HTTP endpoints. It does not share code with `server/`. Note: the Go module path still uses the old import path for build compatibility.
 
 ## Commands
 

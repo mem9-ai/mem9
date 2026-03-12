@@ -13,7 +13,7 @@ description: |
 
 ## Prerequisites
 
-You need a running mnemo-server instance. See the [server README](https://github.com/qiffang/mnemos/tree/main/server) for deployment instructions.
+You need a running mnemo-server instance. See the [server README](https://github.com/mem9-ai/mem9/tree/main/server) for deployment instructions.
 
 ## Step 1: Deploy mnemo-server
 
@@ -103,7 +103,7 @@ Add to `~/.claude/settings.json`:
 
 Install plugin:
 ```
-/plugin marketplace add qiffang/mnemos
+/plugin marketplace add mem9-ai/mem9
 /plugin install mnemo-memory@mnemos
 ```
 

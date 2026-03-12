@@ -4,13 +4,13 @@
   "description": "OpenClaw shared memory plugin — cloud-persistent memory with hybrid vector + keyword search via mnemo-server",
   "type": "module",
   "license": "Apache-2.0",
-  "author": "qiffang",
+  "author": "mem9-ai",
   "repository": {
     "type": "git",
-    "url": "https://github.com/qiffang/mnemos.git",
+    "url": "https://github.com/mem9-ai/mem9.git",
     "directory": "openclaw-plugin"
   },
-  "homepage": "https://github.com/qiffang/mnemos/tree/main/openclaw-plugin#readme",
+  "homepage": "https://github.com/mem9-ai/mem9/tree/main/openclaw-plugin#readme",
   "keywords": [
     "openclaw",
     "openclaw-plugin",
