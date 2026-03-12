@@ -18,6 +18,10 @@ function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function normalizeSpaceId(spaceId: string): string {
+  return spaceId.trim();
+}
+
 let mockStore = mockMemories.map((m) => ({ ...m }));
 
 async function request<T>(
@@ -25,7 +29,7 @@ async function request<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const url = `${API_BASE}/${spaceId}${path}`;
+  const url = `${API_BASE}/${encodeURIComponent(normalizeSpaceId(spaceId))}${path}`;
   const res = await fetch(url, {
     ...init,
     headers: {
@@ -85,14 +89,36 @@ function mockStats(): MemoryStats {
 
 export const api = {
   async verifySpace(spaceId: string): Promise<SpaceInfo> {
+    const normalizedSpaceId = normalizeSpaceId(spaceId);
     if (USE_MOCK) {
       await delay(400);
-      if (!spaceId || spaceId.length < 8) {
+      if (!normalizedSpaceId || normalizedSpaceId.length < 8) {
         throw new Error("Cannot access this space. Please check your ID.");
       }
-      return { ...mockSpaceInfo, tenant_id: spaceId };
+      return { ...mockSpaceInfo, tenant_id: normalizedSpaceId };
     }
-    return request<SpaceInfo>(spaceId, "/info");
+    try {
+      return await request<SpaceInfo>(normalizedSpaceId, "/info");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!/not found|API error 404/i.test(message)) {
+        throw err;
+      }
+
+      // Some deployed API versions expose list endpoints before /info.
+      const fallback = await request<MemoryListResponse>(
+        normalizedSpaceId,
+        "/memories?limit=1",
+      );
+      return {
+        tenant_id: normalizedSpaceId,
+        name: normalizedSpaceId,
+        status: "active",
+        provider: "unknown",
+        memory_count: fallback.total,
+        created_at: "",
+      };
+    }
   },
 
   async listMemories(

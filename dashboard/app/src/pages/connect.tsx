@@ -19,9 +19,10 @@ export function ConnectPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
+    const normalizedInput = input.trim();
     try {
-      await api.verifySpace(input);
-      setSpaceId(input);
+      await api.verifySpace(normalizedInput);
+      setSpaceId(normalizedInput);
       navigate({ to: "/space" });
     } catch (err) {
       setError(
