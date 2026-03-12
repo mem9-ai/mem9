@@ -3,6 +3,7 @@ package middleware
 import (
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,10 +48,7 @@ func (rl *RateLimiter) Stop() {
 func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-			if ip == "" {
-				ip = r.RemoteAddr
-			}
+			ip := clientIP(r)
 
 			if !rl.getLimiter(ip).Allow() {
 				writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
@@ -67,6 +65,29 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		for _, part := range strings.Split(xff, ",") {
+			ip := strings.TrimSpace(part)
+			if parsed := net.ParseIP(ip); parsed != nil {
+				return parsed.String()
+			}
+		}
+	}
+
+	if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" {
+		if parsed := net.ParseIP(xri); parsed != nil {
+			return parsed.String()
+		}
+	}
+
+	if host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr)); err == nil && host != "" {
+		return host
+	}
+
+	return strings.TrimSpace(r.RemoteAddr)
 }
 
 func (rl *RateLimiter) getLimiter(key string) *rate.Limiter {
