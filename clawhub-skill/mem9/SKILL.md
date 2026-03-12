@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.6
+version: 1.0.7
 description: |
   Persistent cloud memory for OpenClaw agents.
 
@@ -327,7 +327,7 @@ jq --arg api_key "$API_KEY" '
   .plugins.slots.memory = "mem9" |
   .plugins.entries.mem9 = {
     enabled: true,
-    config: { apiUrl: "https://api.mem9.ai", apiKey: $api_key }
+    config: { apiUrl: "https://api.mem9.ai", apiKey: $api_key, tenantID: $api_key }
   } |
   .plugins.allow = ((.plugins.allow // []) + ["mem9"] | unique)
 ' openclaw.json > tmp.json && mv tmp.json openclaw.json
@@ -346,7 +346,8 @@ Or if no `openclaw.json` exists, create:
         "enabled": true,
         "config": {
           "apiUrl": "https://api.mem9.ai",
-          "apiKey": "<your-api-key>"
+          "apiKey": "<your-api-key>",
+          "tenantID": "<your-api-key>"
         }
       }
     },
@@ -364,7 +365,7 @@ jq --arg api_key "$API_KEY" '
   .plugins.slots.memory = "mem9" |
   .plugins.entries.mem9 = {
     enabled: true,
-    config: { apiUrl: "https://api.mem9.ai", apiKey: $api_key }
+    config: { apiUrl: "https://api.mem9.ai", apiKey: $api_key, tenantID: $api_key }
   }
 ' openclaw.json > tmp.json && mv tmp.json openclaw.json
 ```
@@ -380,7 +381,8 @@ Or if no `openclaw.json` exists, create:
         "enabled": true,
         "config": {
           "apiUrl": "https://api.mem9.ai",
-          "apiKey": "<your-api-key>"
+          "apiKey": "<your-api-key>",
+          "tenantID": "<your-api-key>"
         }
       }
     }
@@ -390,7 +392,8 @@ Or if no `openclaw.json` exists, create:
 
 Compatibility rule:
 
-- New setup: write `apiKey`
+- New setup: write both `apiKey` and `tenantID` with the same value during the migration window
+- Current plugin versions read `apiKey`; older plugin versions still read `tenantID`
 - Existing configs that already use `tenantID` continue to work as a legacy alias for `apiKey`
 - Do not use `apiToken` or `userToken`
 
