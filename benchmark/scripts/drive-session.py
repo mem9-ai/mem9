@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-drive-session.py — Parallel prompt driver for mnemos Layer 2b benchmarks.
+drive-session.py — Parallel prompt driver for mem9 Layer 2b benchmarks.
 
 Sends identical prompts to two OpenClaw profiles (A=baseline, B=treatment)
 in parallel, captures outputs, and produces structured results + a
@@ -148,7 +148,7 @@ def write_transcript(scenario: dict, turns: list, results_dir: str):
         lines.append(resp_a["parsed_response"])
         lines.append("")
 
-        lines.append("### Profile B (Treatment / mnemo)")
+        lines.append("### Profile B (Treatment / mem9)")
         lines.append("")
         resp_b = turn["response_b"]
         lines.append(f"*Elapsed: {resp_b['elapsed_seconds']}s | "

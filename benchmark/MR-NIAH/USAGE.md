@@ -18,9 +18,7 @@ This document explains how to prepare an OpenClaw profile, set up the required d
 | Python 3.10+ & pip                                                        | Runs `fetch_data.py`, `mr-niah-transcript.py`, `run_batch.py`, and `score.py`.                  | Install dependencies with `python3 -m pip install -r requirements.txt` from the repo root if available, or install `requests`, `click`, and `rich` manually. |
 | Git + network access to MiniMax’s MR-NIAH repo                            | `fetch_data.py` mirrors upstream datasets via GitHub.                                           | Works with anonymous HTTPS; provide a token if your network requires it.                                                                                     |
 | OpenClaw CLI (latest)                                                     | Executes agents for each regenerated session.                                                   | Verify `openclaw --version` works and that the CLI can run your chosen profile interactively.                                                                |
-| Go 1.21+ & `make`                                                         | Builds `mnemo-server` when `run_mem_compare.sh` provisions a local memory backend.              | The script compiles from the repo root, so make sure `$GOROOT`/`$GOPATH` are configured.                                                                     |
-| MySQL-compatible database (TiDB Zero, MySQL 8.0, or an existing mem9 API) | Stores mem9 state whenever you run the comparison flow.                                         | By default the script auto-provisions TiDB Zero; you can instead point `MNEMO_API_URL` to an existing server.                                                |
-| Optional: Docker or Kubernetes credentials                                | Only required if you use external automation for mnemo or TiDB instead of the baked-in helpers. | Skip if you rely on the included scripts.                                                                                                                    |
+| Access to the hosted mem9 API (or another mem9-compatible endpoint)       | Stores mem9 state whenever you run the comparison flow.                                         | By default the script uses `https://api.mem9.ai`; set `MEM9_BASE_URL` if you want a different endpoint.                                                      |
 
 ## Pipeline
 
@@ -68,12 +66,11 @@ MRNIAH_LIMIT=30 ./run_mem_compare.sh
 
 1. Verifies `output/index.jsonl` exists (generate it if missing).
 2. Clones `~/.openclaw-${MRNIAH_BASE_PROFILE}` to `~/.openclaw-${MRNIAH_MEM_PROFILE}` unless you export `MRNIAH_RESET_MEM_PROFILE=1`.
-3. Provisions a mem9 backend:
-   - If `MNEMO_API_URL`/`MNEMO_TENANT_ID` are set, reuses that tenant.
-   - Otherwise provisions TiDB Zero, runs `server/schema.sql`, builds `mnemo-server` with Go, and starts it locally (logs in `/tmp/mrniah-mnemo-server.log`).
-4. Installs the `openclaw-plugin` into the memory profile, adds `plugins.allow=["mnemo"]`, and writes the tenant credentials into `plugins.entries.mnemo.config`.
-5. Calls `run_batch.py` twice (baseline vs mem), renaming each `results/` directory to `results-${profile}`.
-6. Prints accuracy for both runs and the delta.
+3. Uses the hosted mem9 API by default (`https://api.mem9.ai`), or the endpoint you provide via `MEM9_BASE_URL`.
+4. Reuses `MEM9_TENANT_ID` if provided; otherwise provisions a fresh mem9 space.
+5. Installs the `openclaw-plugin` into the memory profile, adds `plugins.allow=["mem9"]`, and writes the tenant credentials into `plugins.entries.mem9.config`.
+6. Calls `run_batch.py` twice (baseline vs mem), renaming each `results/` directory to `results-${profile}`.
+7. Prints accuracy for both runs and the delta.
 
 Common environment variables:
 
@@ -84,13 +81,10 @@ Common environment variables:
 | `MRNIAH_AGENT`             | `main`                                        | Agent passed through to `run_batch.py`.                         |
 | `MRNIAH_LIMIT`             | `300`                                         | Samples processed per run.                                      |
 | `MRNIAH_LOCAL`             | `1`                                           | When `1`, adds `--local` to every OpenClaw invocation.          |
-| `MNEMO_API_URL`            | _(unset)_                                     | Existing mem9 API endpoint; empty triggers local provisioning.  |
-| `MNEMO_TENANT_ID`          | _(unset)_                                     | Tenant identifier to reuse; otherwise auto-created.             |
+| `MEM9_BASE_URL`            | `https://api.mem9.ai`                         | mem9 API endpoint used for the comparison run.                  |
+| `MEM9_TENANT_ID`           | _(unset)_                                     | Space identifier to reuse; otherwise auto-created.              |
 | `MRNIAH_CACHE_TENANT`      | `1`                                           | Cache `{apiUrl → tenantId}` in `.cache/mem_compare_state.json`. |
 | `MRNIAH_RESET_MEM_PROFILE` | `0`                                           | Set to `1` to delete the mem profile before cloning.            |
-| `TIDB_ZERO_API`            | `https://zero.tidbapi.com/v1alpha1/instances` | Endpoint for temporary TiDB instances.                          |
-| `MNEMO_DB_NAME`            | `test`                                        | Database name used by the local mem9 server.                    |
-| `MNEMO_SERVER_PORT`        | `18082`                                       | Port for the local mem9 server during comparisons.              |
 
 ### 5. Score predictions
 
@@ -106,4 +100,4 @@ python3 score.py [results/predictions.jsonl] [--max-errors 5]
 
 - Regenerating transcripts is safe—`mr-niah-transcript.py` deletes and recreates `output/` on every run.
 - If OpenClaw logs include ANSI escape sequences, `run_batch.py` strips them before parsing JSON. Check `results/raw/*.stderr.txt` when a session fails.
-- TiDB Zero provisioning is rate limited; rerun after a few minutes or point `MNEMO_API_URL` to your own MySQL-compatible deployment to skip the queue.
+- If the hosted mem9 API rejects provisioning or rate-limits requests, wait a bit and rerun, or point `MEM9_BASE_URL` to another mem9-compatible endpoint.

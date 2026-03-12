@@ -45,8 +45,8 @@ cd benchmark/MR-NIAH && python3 score.py results/predictions.jsonl
 ## Gotchas
 
 - `run_mem_compare.sh` expects Python 3.10+.
-- On macOS, `mysql-client` may need to be added to `PATH` before compare/setup helpers work.
-- TiDB Zero provisioning can rate-limit; a retry after a short wait is normal.
+- `run_mem_compare.sh` expects the mem9 API endpoint to be reachable; by default it uses `https://api.mem9.ai`.
+- If mem9 space provisioning is rate-limited, wait briefly and rerun, or point `MEM9_BASE_URL` at another mem9-compatible endpoint.
 
 ## Anti-patterns
 

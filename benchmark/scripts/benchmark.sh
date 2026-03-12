@@ -1,21 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 # ---------------------------------------------------------------------------
 # Configuration (override via env vars)
 # ---------------------------------------------------------------------------
-TIDB_ZERO_API="${TIDB_ZERO_API:-https://zero.tidbapi.com/v1alpha1/instances}"
-DB_NAME="${MNEMO_DB_NAME:-test}"
-MNEMO_SERVER_PORT="${MNEMO_BENCH_PORT:-18081}"
-PROFILE_A="mnemos_test_a"
-PROFILE_B="mnemos_test_b"
+MEM9_BASE_URL="${MEM9_BASE_URL:-https://api.mem9.ai}"
+MEM9_BASE_URL="${MEM9_BASE_URL%/}"
+MEM9_TENANT_ID="${MEM9_TENANT_ID:-}"
+PROFILE_A="mem9_test_a"
+PROFILE_B="mem9_test_b"
 PORT_A=50789
 PORT_B=51789
 GATEWAY_TOKEN="bench-token-123456"
 BENCH_PROMPT_FILE="${BENCH_PROMPT_FILE:-}"
 PROMPT_TIMEOUT="${BENCH_PROMPT_TIMEOUT:-600}"
+
+# Clean up legacy profile names from older runs too.
+LEGACY_PROFILE_A="mnemos_test_a"
+LEGACY_PROFILE_B="mnemos_test_b"
 
 # ---------------------------------------------------------------------------
 # Preflight checks
@@ -32,7 +36,7 @@ if [[ -z "$BENCH_PROMPT_FILE" ]]; then
   exit 1
 fi
 
-for cmd in jq mysql openclaw python3; do
+for cmd in jq curl openclaw python3; do
   command -v "$cmd" >/dev/null 2>&1 || {
     echo "ERROR: $cmd is required but not installed."
     exit 1
@@ -45,25 +49,11 @@ python3 -c "import yaml" 2>/dev/null || {
 }
 
 # ---------------------------------------------------------------------------
-# Cleanup handler — only cleans up mnemo-server, NOT gateways
-# ---------------------------------------------------------------------------
-SERVER_PID=""
-cleanup() {
-  if [[ -n "$SERVER_PID" ]]; then
-    echo "--- Stopping mnemo-server (pid $SERVER_PID)"
-    kill "$SERVER_PID" 2>/dev/null || true
-    wait "$SERVER_PID" 2>/dev/null || true
-  fi
-}
-trap cleanup EXIT
-
-# ---------------------------------------------------------------------------
 # Phase 1: Cleanup leftover profiles
 # ---------------------------------------------------------------------------
 echo "=== Phase 1: Cleanup leftover profiles ==="
 
-for profile in "$PROFILE_A" "$PROFILE_B"; do
-  # Stop gateway if running from a previous benchmark
+for profile in "$PROFILE_A" "$PROFILE_B" "$LEGACY_PROFILE_A" "$LEGACY_PROFILE_B"; do
   if openclaw --profile "$profile" health >/dev/null 2>&1; then
     echo "    Stopping leftover gateway for profile: $profile"
     openclaw --profile "$profile" gateway stop 2>/dev/null || true
@@ -83,94 +73,26 @@ done
 echo "    Cleanup complete."
 
 # ---------------------------------------------------------------------------
-# Phase 2: Provision TiDB Zero + mnemo-server
+# Phase 2: Provision or reuse mem9 space
 # ---------------------------------------------------------------------------
-echo "=== Phase 2: Provision TiDB Zero + mnemo-server ==="
+echo "=== Phase 2: Configure mem9 space ==="
 
-echo "--- Provisioning TiDB Zero cluster"
-ZERO_RESP=$(curl -sf --retry 3 -X POST "$TIDB_ZERO_API" \
-  -H "Content-Type: application/json" \
-  -d '{"tag":"mnemo-bench"}')
+echo "--- mem9 base URL: $MEM9_BASE_URL"
+if [[ -n "$MEM9_TENANT_ID" ]]; then
+  echo "--- Reusing provided mem9 space ID"
+else
+  echo "--- Provisioning mem9 space"
+  TENANT_RESP=$(curl -sf -X POST "${MEM9_BASE_URL}/v1alpha1/mem9s")
+  MEM9_TENANT_ID=$(echo "$TENANT_RESP" | jq -r '.id')
 
-DB_HOST=$(echo "$ZERO_RESP" | jq -r '.instance.connection.host')
-DB_PORT=$(echo "$ZERO_RESP" | jq -r '.instance.connection.port')
-DB_USER=$(echo "$ZERO_RESP" | jq -r '.instance.connection.username')
-DB_PASS=$(echo "$ZERO_RESP" | jq -r '.instance.connection.password')
-CLUSTER_ID=$(echo "$ZERO_RESP" | jq -r '.instance.id')
-CLAIM_URL=$(echo "$ZERO_RESP" | jq -r '.instance.claimInfo.claimUrl')
-
-if [[ -z "$DB_HOST" || "$DB_HOST" == "null" ]]; then
-  echo "ERROR: Failed to parse TiDB Zero response:"
-  echo "$ZERO_RESP" | jq . 2>/dev/null || echo "$ZERO_RESP"
-  exit 1
-fi
-
-echo "    Cluster ID: $CLUSTER_ID"
-echo "    Host:       $DB_HOST:$DB_PORT"
-echo "    Claim URL:  $CLAIM_URL"
-
-DSN="${DB_USER}:${DB_PASS}@tcp(${DB_HOST}:${DB_PORT})/${DB_NAME}?parseTime=true&tls=true"
-
-echo "    Waiting for TiDB at ${DB_HOST}:${DB_PORT}..."
-for i in $(seq 1 60); do
-  if MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" \
-       --ssl-mode=REQUIRED -e "SELECT 1" >/dev/null 2>&1; then
-    echo "    TiDB ready."
-    break
-  fi
-  sleep 2
-done
-
-if ! MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" \
-     --ssl-mode=REQUIRED -e "SELECT 1" >/dev/null 2>&1; then
-  echo "ERROR: TiDB Zero cluster failed to become ready within 120s."
-  exit 1
-fi
-
-echo "--- Applying schema to ${DB_HOST}:${DB_PORT}/${DB_NAME}"
-MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -D "$DB_NAME" \
-  --ssl-mode=REQUIRED < "$ROOT/server/schema.sql"
-echo "    Schema applied."
-
-echo "--- Building mnemo-server"
-cd "$ROOT/server"
-go build -o "$ROOT/server/mnemo-server" ./cmd/mnemo-server
-cd "$ROOT"
-
-echo "--- Starting mnemo-server on port $MNEMO_SERVER_PORT"
-MNEMO_DSN="$DSN" MNEMO_PORT="$MNEMO_SERVER_PORT" "$ROOT/server/mnemo-server" \
-  > /tmp/mnemo-bench-server.log 2>&1 &
-SERVER_PID=$!
-
-for i in $(seq 1 30); do
-  if curl -sf "http://localhost:${MNEMO_SERVER_PORT}/healthz" >/dev/null 2>&1; then
-    echo "    Server ready (pid $SERVER_PID)."
-    break
-  fi
-  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-    echo "ERROR: Server exited unexpectedly. Logs:"
-    cat /tmp/mnemo-bench-server.log
+  if [[ -z "$MEM9_TENANT_ID" || "$MEM9_TENANT_ID" == "null" ]]; then
+    echo "ERROR: Failed to provision mem9 space:"
+    echo "$TENANT_RESP" | jq . 2>/dev/null || echo "$TENANT_RESP"
     exit 1
   fi
-  sleep 0.5
-done
-
-if ! curl -sf "http://localhost:${MNEMO_SERVER_PORT}/healthz" >/dev/null 2>&1; then
-  echo "ERROR: Server failed to start within 15s. Logs:"
-  cat /tmp/mnemo-bench-server.log
-  exit 1
 fi
 
-echo "--- Provisioning tenant"
-TENANT_RESP=$(curl -sf -X POST "http://localhost:${MNEMO_SERVER_PORT}/v1alpha1/mem9s")
-MNEMO_TENANT_ID=$(echo "$TENANT_RESP" | jq -r '.id')
-
-if [[ -z "$MNEMO_TENANT_ID" || "$MNEMO_TENANT_ID" == "null" ]]; then
-  echo "ERROR: Failed to provision tenant:"
-  echo "$TENANT_RESP" | jq . 2>/dev/null || echo "$TENANT_RESP"
-  exit 1
-fi
-echo "    Tenant ID: $MNEMO_TENANT_ID"
+echo "    Space ID: $MEM9_TENANT_ID"
 
 # ---------------------------------------------------------------------------
 # Phase 3: Create profiles
@@ -192,14 +114,15 @@ openclaw --profile "$PROFILE_B" config set gateway.auth.token "$GATEWAY_TOKEN"
 openclaw --profile "$PROFILE_B" config set agents.defaults.model.primary "anthropic/claude-sonnet-4-6"
 echo "ANTHROPIC_API_KEY=${CLAUDE_CODE_TOKEN}" > "$HOME/.openclaw-${PROFILE_B}/.env"
 echo "    Wrote API key to $HOME/.openclaw-${PROFILE_B}/.env"
-echo "--- Installing mnemo plugin into profile B"
-openclaw --profile "$PROFILE_B" plugins install --link "$ROOT/openclaw-plugin"
-openclaw --profile "$PROFILE_B" config set plugins.slots.memory mnemo
-openclaw --profile "$PROFILE_B" config set plugins.entries.mnemo.enabled true
-openclaw --profile "$PROFILE_B" config set plugins.entries.mnemo.config.apiUrl "http://localhost:${MNEMO_SERVER_PORT}"
-openclaw --profile "$PROFILE_B" config set plugins.entries.mnemo.config.tenantID "${MNEMO_TENANT_ID}"
 
-# reinstall & restart daemon
+echo "--- Installing mem9 plugin into profile B"
+openclaw --profile "$PROFILE_B" plugins install --link "$ROOT/openclaw-plugin"
+openclaw --profile "$PROFILE_B" config set --strict-json plugins.allow '["mem9"]'
+openclaw --profile "$PROFILE_B" config set plugins.slots.memory mem9
+openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.enabled true
+openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.config.apiUrl "$MEM9_BASE_URL"
+openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.config.tenantID "$MEM9_TENANT_ID"
+
 openclaw --profile "$PROFILE_A" daemon install
 openclaw --profile "$PROFILE_B" daemon install
 openclaw --profile "$PROFILE_A" daemon restart
@@ -226,8 +149,8 @@ done
 # ---------------------------------------------------------------------------
 echo "=== Phase 5: Start gateways ==="
 
-GW_A_LOG="/tmp/mnemo-bench-gw-a.log"
-GW_B_LOG="/tmp/mnemo-bench-gw-b.log"
+GW_A_LOG="/tmp/mem9-bench-gw-a.log"
+GW_B_LOG="/tmp/mem9-bench-gw-b.log"
 
 echo "--- Starting gateway A (baseline) on port $PORT_A"
 nohup openclaw --profile "$PROFILE_A" gateway > "$GW_A_LOG" 2>&1 &
@@ -283,30 +206,25 @@ python3 "$ROOT/benchmark/scripts/report.py" \
 echo "    Report written to $RESULTS_DIR/report.html"
 
 # ---------------------------------------------------------------------------
-# Phase 7: Summary (leave environment running)
+# Phase 7: Summary
 # ---------------------------------------------------------------------------
 echo ""
 echo "============================================================"
 echo "  Benchmark complete!"
 echo "============================================================"
 echo ""
+echo "  mem9 base URL: $MEM9_BASE_URL"
+echo "  Space ID:      $MEM9_TENANT_ID"
 echo "  Results:       $RESULTS_DIR"
 echo "  HTML report:   $RESULTS_DIR/report.html"
 echo "  Transcript:    $RESULTS_DIR/transcript.md"
 echo "  JSON output:   $RESULTS_DIR/benchmark-results.json"
 echo ""
 echo "  Running processes:"
-echo "    mnemo-server  pid=$SERVER_PID  port=$MNEMO_SERVER_PORT"
 echo "    Gateway A     pid=$GW_A_PID   port=$PORT_A (baseline)"
-echo "    Gateway B     pid=$GW_B_PID   port=$PORT_B (treatment/mnemo)"
+echo "    Gateway B     pid=$GW_B_PID   port=$PORT_B (treatment/mem9)"
 echo ""
 echo "  Web UIs:"
 echo "    Baseline:   http://localhost:$PORT_A  (password: $GATEWAY_TOKEN)"
 echo "    Treatment:  http://localhost:$PORT_B  (password: $GATEWAY_TOKEN)"
-echo ""
-echo "  To teardown manually:"
-echo "    kill $GW_A_PID $GW_B_PID $SERVER_PID"
 echo "============================================================"
-
-# Disable the cleanup trap so server stays running
-trap - EXIT
