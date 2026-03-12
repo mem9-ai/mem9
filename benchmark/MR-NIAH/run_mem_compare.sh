@@ -100,6 +100,9 @@ configure_base_profile() {
 
   log "Configuring base profile: $BASE_PROFILE"
   openclaw --profile "$BASE_PROFILE" config set gateway.mode local >/dev/null
+
+  cp -r "$ROOT/benchmark/workspace" "$base_ws"
+  log "Copied workspace files to $base_ws"
 }
 
 clone_profile() {
@@ -108,16 +111,8 @@ clone_profile() {
   local target_ws="$HOME/.openclaw/workspace-${MEM_PROFILE}"
 
   if [[ -d "$target_dir" ]]; then
-    if [[ "${MRNIAH_RESET_MEM_PROFILE:-0}" == "1" ]]; then
-      log "Resetting existing mem profile dir: $target_dir"
-      if ! rm -rf "$target_dir"; then
-        echo "ERROR: Failed to remove $target_dir. Remove it manually or unset MRNIAH_RESET_MEM_PROFILE." >&2
-        exit 2
-      fi
-    else
-      log "Mem profile already exists: $target_dir (set MRNIAH_RESET_MEM_PROFILE=1 to regenerate)"
-      return
-    fi
+    log "Resetting existing mem profile dir: $target_dir"
+    rm -rf "$target_dir"
   fi
   if [[ -d "$target_ws" ]]; then
     log "Resetting existing mem workspace dir: $target_ws"
@@ -127,6 +122,9 @@ clone_profile() {
   log "Creating mem profile dir by copying $base_dir -> $target_dir"
   mkdir -p "$(dirname "$target_dir")"
   cp -a "$base_dir" "$target_dir"
+
+  cp -r "$ROOT/benchmark/workspace" "$target_ws"
+  log "Copied workspace files to $target_ws"
 }
 
 configure_mem_profile() {
