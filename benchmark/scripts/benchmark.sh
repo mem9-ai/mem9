@@ -8,7 +8,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # ---------------------------------------------------------------------------
 MEM9_BASE_URL="${MEM9_BASE_URL:-https://api.mem9.ai}"
 MEM9_BASE_URL="${MEM9_BASE_URL%/}"
-MEM9_TENANT_ID="${MEM9_TENANT_ID:-}"
+MEM9_SPACE_ID=""
 PROFILE_A="mem9_test_a"
 PROFILE_B="mem9_test_b"
 PORT_A=50789
@@ -73,26 +73,22 @@ done
 echo "    Cleanup complete."
 
 # ---------------------------------------------------------------------------
-# Phase 2: Provision or reuse mem9 space
+# Phase 2: Provision fresh mem9 space
 # ---------------------------------------------------------------------------
 echo "=== Phase 2: Configure mem9 space ==="
 
 echo "--- mem9 base URL: $MEM9_BASE_URL"
-if [[ -n "$MEM9_TENANT_ID" ]]; then
-  echo "--- Reusing provided mem9 space ID"
-else
-  echo "--- Provisioning mem9 space"
-  TENANT_RESP=$(curl -sf -X POST "${MEM9_BASE_URL}/v1alpha1/mem9s")
-  MEM9_TENANT_ID=$(echo "$TENANT_RESP" | jq -r '.id')
+echo "--- Provisioning fresh mem9 space"
+TENANT_RESP=$(curl -sf -X POST "${MEM9_BASE_URL}/v1alpha1/mem9s")
+MEM9_SPACE_ID=$(echo "$TENANT_RESP" | jq -r '.id')
 
-  if [[ -z "$MEM9_TENANT_ID" || "$MEM9_TENANT_ID" == "null" ]]; then
-    echo "ERROR: Failed to provision mem9 space:"
-    echo "$TENANT_RESP" | jq . 2>/dev/null || echo "$TENANT_RESP"
-    exit 1
-  fi
+if [[ -z "$MEM9_SPACE_ID" || "$MEM9_SPACE_ID" == "null" ]]; then
+  echo "ERROR: Failed to provision mem9 space:"
+  echo "$TENANT_RESP" | jq . 2>/dev/null || echo "$TENANT_RESP"
+  exit 1
 fi
 
-echo "    Space ID: $MEM9_TENANT_ID"
+echo "    Fresh space ID: $MEM9_SPACE_ID"
 
 # ---------------------------------------------------------------------------
 # Phase 3: Create profiles
@@ -121,7 +117,7 @@ openclaw --profile "$PROFILE_B" config set --strict-json plugins.allow '["mem9"]
 openclaw --profile "$PROFILE_B" config set plugins.slots.memory mem9
 openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.enabled true
 openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.config.apiUrl "$MEM9_BASE_URL"
-openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.config.tenantID "$MEM9_TENANT_ID"
+openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.config.tenantID "$MEM9_SPACE_ID"
 
 openclaw --profile "$PROFILE_A" daemon install
 openclaw --profile "$PROFILE_B" daemon install
@@ -214,7 +210,7 @@ echo "  Benchmark complete!"
 echo "============================================================"
 echo ""
 echo "  mem9 base URL: $MEM9_BASE_URL"
-echo "  Space ID:      $MEM9_TENANT_ID"
+echo "  Fresh space ID: $MEM9_SPACE_ID"
 echo "  Results:       $RESULTS_DIR"
 echo "  HTML report:   $RESULTS_DIR/report.html"
 echo "  Transcript:    $RESULTS_DIR/transcript.md"

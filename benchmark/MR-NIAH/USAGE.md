@@ -67,7 +67,7 @@ MRNIAH_LIMIT=30 ./run_mem_compare.sh
 1. Verifies `output/index.jsonl` exists (generate it if missing).
 2. Clones `~/.openclaw-${MRNIAH_BASE_PROFILE}` to `~/.openclaw-${MRNIAH_MEM_PROFILE}` unless you export `MRNIAH_RESET_MEM_PROFILE=1`.
 3. Uses the hosted mem9 API by default (`https://api.mem9.ai`), or the endpoint you provide via `MEM9_BASE_URL`.
-4. Reuses `MEM9_TENANT_ID` if provided; otherwise provisions a fresh mem9 space.
+4. Provisions a fresh mem9 space for the run.
 5. Installs the `openclaw-plugin` into the memory profile, adds `plugins.allow=["mem9"]`, and writes the tenant credentials into `plugins.entries.mem9.config`.
 6. Calls `run_batch.py` twice (baseline vs mem), renaming each `results/` directory to `results-${profile}`.
 7. Prints accuracy for both runs and the delta.
@@ -82,8 +82,6 @@ Common environment variables:
 | `MRNIAH_LIMIT`             | `300`                                         | Samples processed per run.                                      |
 | `MRNIAH_LOCAL`             | `1`                                           | When `1`, adds `--local` to every OpenClaw invocation.          |
 | `MEM9_BASE_URL`            | `https://api.mem9.ai`                         | mem9 API endpoint used for the comparison run.                  |
-| `MEM9_TENANT_ID`           | _(unset)_                                     | Space identifier to reuse; otherwise auto-created.              |
-| `MRNIAH_CACHE_TENANT`      | `1`                                           | Cache `{apiUrl → tenantId}` in `.cache/mem_compare_state.json`. |
 | `MRNIAH_RESET_MEM_PROFILE` | `0`                                           | Set to `1` to delete the mem profile before cloning.            |
 
 ### 5. Score predictions

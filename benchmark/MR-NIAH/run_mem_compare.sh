@@ -12,14 +12,9 @@ SAMPLE_LIMIT="${MRNIAH_LIMIT:-300}"
 USE_LOCAL="${MRNIAH_LOCAL:-1}"
 
 MEM9_BASE_URL="${MEM9_BASE_URL:-${MNEMO_API_URL:-https://api.mem9.ai}}"
-MEM9_TENANT_ID="${MEM9_TENANT_ID:-${MNEMO_TENANT_ID:-}}"
+MEM9_SPACE_ID=""
 
 BASE_CMDS=(openclaw python3 jq curl)
-
-# Cache tenant IDs to avoid re-provisioning when hitting the same API URL.
-STATE_DIR="$MRNIAH_DIR/.cache"
-STATE_FILE="$STATE_DIR/mem_compare_state.json"
-CACHE_TENANT="${MRNIAH_CACHE_TENANT:-1}"
 
 log() {
   echo "[$(date '+%H:%M:%S')] $*" >&2
@@ -66,51 +61,6 @@ normalize_url() {
   local raw="$1"
   raw="${raw%%/}"
   echo "$raw"
-}
-
-read_cached_tenant() {
-  local api_url="$1"
-  if [[ ! -f "$STATE_FILE" ]]; then
-    echo ""
-    return
-  fi
-  python3 - <<'PY' "$STATE_FILE" "$api_url"
-import json, sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-api = sys.argv[2]
-try:
-    data = json.loads(path.read_text())
-except Exception:
-    print("")
-    raise SystemExit(0)
-tenants = data.get("tenants", {})
-print(tenants.get(api, ""))
-PY
-}
-
-write_cached_tenant() {
-  local api_url="$1"
-  local tenant_id="$2"
-  mkdir -p "$STATE_DIR"
-  python3 - <<'PY' "$STATE_FILE" "$api_url" "$tenant_id"
-import json, sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-api = sys.argv[2]
-tenant = sys.argv[3]
-data = {}
-if path.exists():
-    try:
-        data = json.loads(path.read_text())
-    except Exception:
-        data = {}
-tenants = data.setdefault("tenants", {})
-tenants[api] = tenant
-path.write_text(json.dumps(data, indent=2))
-PY
 }
 
 provision_tenant() {
@@ -173,25 +123,8 @@ configure_mem_profile() {
   local api_url
   api_url="$(normalize_url "$MEM9_BASE_URL")"
 
-  if [[ -z "$MEM9_TENANT_ID" ]]; then
-    if [[ "$CACHE_TENANT" != "0" ]]; then
-      local cached
-      cached="$(read_cached_tenant "$api_url")"
-      if [[ -n "$cached" ]]; then
-        MEM9_TENANT_ID="$cached"
-        log "Reusing cached mem9 space ID: $MEM9_TENANT_ID"
-      fi
-    fi
-    if [[ -z "$MEM9_TENANT_ID" ]]; then
-      MEM9_TENANT_ID="$(provision_tenant)"
-      log "mem9 space ID: $MEM9_TENANT_ID"
-      if [[ "$CACHE_TENANT" != "0" ]]; then
-        write_cached_tenant "$api_url" "$MEM9_TENANT_ID"
-      fi
-    fi
-  else
-    log "Using existing mem9 space ID: $MEM9_TENANT_ID"
-  fi
+  MEM9_SPACE_ID="$(provision_tenant)"
+  log "Provisioned fresh mem9 space ID: $MEM9_SPACE_ID"
 
   log "Configuring mem profile: $MEM_PROFILE"
   openclaw --profile "$MEM_PROFILE" config set gateway.mode local >/dev/null
@@ -200,7 +133,7 @@ configure_mem_profile() {
   openclaw --profile "$MEM_PROFILE" config set plugins.slots.memory mem9 >/dev/null
   openclaw --profile "$MEM_PROFILE" config set plugins.entries.mem9.enabled true >/dev/null
   openclaw --profile "$MEM_PROFILE" config set plugins.entries.mem9.config.apiUrl "$api_url" >/dev/null
-  openclaw --profile "$MEM_PROFILE" config set plugins.entries.mem9.config.tenantID "$MEM9_TENANT_ID" >/dev/null
+  openclaw --profile "$MEM_PROFILE" config set plugins.entries.mem9.config.tenantID "$MEM9_SPACE_ID" >/dev/null
 }
 
 run_batch_for_profile() {

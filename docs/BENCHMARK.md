@@ -2,17 +2,15 @@
 
 ## Overview
 
-Run the top-level A/B benchmark directly with:
+Run the top-level A/B benchmark with:
 
 ```bash
 bash benchmark/scripts/benchmark.sh
 ```
 
-The repo-level `make benchmark` shortcut was removed on purpose so benchmark execution stays explicit.
-
 The harness compares an agent **without** mem9 memory (Profile A / baseline) vs. **with** mem9 memory (Profile B / treatment). Both profiles receive the same prompts within a persistent session, and results are compared side-by-side in an HTML report.
 
-By default the script provisions a fresh mem9 space on the hosted mem9 service at `https://api.mem9.ai`. You can override the backend with `MEM9_BASE_URL`.
+By default the script provisions a fresh mem9 space on the hosted mem9 service at `https://api.mem9.ai` for every run. You can override the backend with `MEM9_BASE_URL`.
 
 ## Prerequisites
 
@@ -30,7 +28,6 @@ By default the script provisions a fresh mem9 space on the hosted mem9 service a
 | Variable | Default | Description |
 |---|---|---|
 | `MEM9_BASE_URL` | `https://api.mem9.ai` | Base URL for the mem9 API |
-| `MEM9_TENANT_ID` | _(unset)_ | Existing mem9 space ID to reuse instead of provisioning a new one |
 | `BENCH_PROMPT_TIMEOUT` | `600` | Per-prompt timeout in seconds |
 
 ## Pipeline phases
@@ -44,8 +41,7 @@ Stops any leftover gateways from previous runs and removes old temporary profile
 ### Phase 2 — Configure mem9 space
 
 1. Normalizes `MEM9_BASE_URL`.
-2. Reuses `MEM9_TENANT_ID` if supplied.
-3. Otherwise provisions a fresh mem9 space via `POST /v1alpha1/mem9s`.
+2. Provisions a fresh mem9 space via `POST /v1alpha1/mem9s`.
 
 ### Phase 3 — Create profiles
 
