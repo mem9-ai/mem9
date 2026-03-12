@@ -193,22 +193,30 @@ function applyTheme(
 
 function updateMeta(locale: SiteLocale, dictionary: SiteDictionary): void {
   document.documentElement.lang = localeToLang(locale);
-  document.title = dictionary.meta.title;
 
+  const titleElement = document.querySelector<HTMLTitleElement>('title');
   const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
   const ogTitle = document.querySelector<HTMLMetaElement>('meta[property="og:title"]');
   const ogDescription = document.querySelector<HTMLMetaElement>('meta[property="og:description"]');
+  const title = textFor(dictionary, titleElement?.dataset.metaTitleKey ?? 'meta.title')
+    || dictionary.meta.title;
+  const descriptionText = textFor(
+    dictionary,
+    description?.dataset.metaDescriptionKey ?? 'meta.description',
+  ) || dictionary.meta.description;
+
+  document.title = title;
 
   if (description) {
-    description.content = dictionary.meta.description;
+    description.content = descriptionText;
   }
 
   if (ogTitle) {
-    ogTitle.content = dictionary.meta.title;
+    ogTitle.content = title;
   }
 
   if (ogDescription) {
-    ogDescription.content = dictionary.meta.description;
+    ogDescription.content = descriptionText;
   }
 }
 

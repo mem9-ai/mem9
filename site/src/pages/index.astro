@@ -4,6 +4,8 @@ import Navbar from '../components/Navbar.astro';
 import Hero from '../components/Hero.astro';
 import Features from '../components/Features.astro';
 import Agents from '../components/Agents.astro';
+import SecuritySection from '../components/SecuritySection.astro';
+import FAQ from '../components/FAQ.astro';
 import Footer from '../components/Footer.astro';
 import { DEFAULT_LOCALE, siteCopy } from '../content/site';
 
@@ -21,6 +23,8 @@ const copy = siteCopy[DEFAULT_LOCALE];
     <Hero hero={copy.hero} aria={copy.aria} />
     <Features features={copy.features} />
     <Agents platforms={copy.platforms} />
+    <SecuritySection security={copy.securityPage} />
+    <FAQ faq={copy.faq} />
   </main>
   <Footer footer={copy.footer} />
 </Layout>
