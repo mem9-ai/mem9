@@ -1,9 +1,10 @@
-package repository
+package wiring
 
 import (
 	"database/sql"
 	"fmt"
 
+	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/repository/db9"
 	"github.com/qiffang/mnemos/server/internal/repository/postgres"
 	"github.com/qiffang/mnemos/server/internal/repository/tidb"
@@ -24,7 +25,7 @@ func NewDB(backend, dsn string) (*sql.DB, error) {
 }
 
 // NewTenantRepo creates a TenantRepo for the specified backend.
-func NewTenantRepo(backend string, db *sql.DB) TenantRepo {
+func NewTenantRepo(backend string, db *sql.DB) repository.TenantRepo {
 	switch backend {
 	case "db9":
 		return db9.NewTenantRepo(db)
@@ -36,7 +37,7 @@ func NewTenantRepo(backend string, db *sql.DB) TenantRepo {
 }
 
 // NewUploadTaskRepo creates an UploadTaskRepo for the specified backend.
-func NewUploadTaskRepo(backend string, db *sql.DB) UploadTaskRepo {
+func NewUploadTaskRepo(backend string, db *sql.DB) repository.UploadTaskRepo {
 	switch backend {
 	case "db9":
 		return db9.NewUploadTaskRepo(db)
@@ -49,7 +50,7 @@ func NewUploadTaskRepo(backend string, db *sql.DB) UploadTaskRepo {
 
 // NewMemoryRepo creates a MemoryRepo for the specified backend.
 // autoModel is used by tidb and db9 backends for auto-embedding features.
-func NewMemoryRepo(backend string, db *sql.DB, autoModel string, ftsEnabled bool) MemoryRepo {
+func NewMemoryRepo(backend string, db *sql.DB, autoModel string, ftsEnabled bool) repository.MemoryRepo {
 	switch backend {
 	case "db9":
 		return db9.NewMemoryRepo(db, autoModel, ftsEnabled)
