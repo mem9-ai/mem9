@@ -17,10 +17,6 @@ GATEWAY_TOKEN="bench-token-123456"
 BENCH_PROMPT_FILE="${BENCH_PROMPT_FILE:-}"
 PROMPT_TIMEOUT="${BENCH_PROMPT_TIMEOUT:-600}"
 
-# Clean up legacy profile names from older runs too.
-LEGACY_PROFILE_A="mnemos_test_a"
-LEGACY_PROFILE_B="mnemos_test_b"
-
 # ---------------------------------------------------------------------------
 # Preflight checks
 # ---------------------------------------------------------------------------
@@ -53,7 +49,7 @@ python3 -c "import yaml" 2>/dev/null || {
 # ---------------------------------------------------------------------------
 echo "=== Phase 1: Cleanup leftover profiles ==="
 
-for profile in "$PROFILE_A" "$PROFILE_B" "$LEGACY_PROFILE_A" "$LEGACY_PROFILE_B"; do
+for profile in "$PROFILE_A" "$PROFILE_B"; do
   if openclaw --profile "$profile" health >/dev/null 2>&1; then
     echo "    Stopping leftover gateway for profile: $profile"
     openclaw --profile "$profile" gateway stop 2>/dev/null || true
