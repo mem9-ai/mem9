@@ -20,6 +20,7 @@ export function MemoryCard({
   delay: number;
 }) {
   const isPinned = m.memory_type === "pinned";
+  const tags = m.tags ?? [];
 
   function handleCopy(e: React.MouseEvent) {
     e.stopPropagation();
@@ -71,8 +72,8 @@ export function MemoryCard({
                 {m.source}
               </span>
             )}
-            {m.tags.length > 0 &&
-              m.tags.map((tag) => (
+            {tags.length > 0 &&
+              tags.map((tag) => (
                 <span key={tag} className="text-soft-foreground">
                   #{tag}
                 </span>
