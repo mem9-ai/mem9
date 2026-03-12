@@ -32,7 +32,7 @@ curl -s -X POST http://localhost:8080/v1alpha1/mem9s | jq .
 Save the returned `id`.
 
 - For OpenClaw, this is the value you should store as `apiKey` (preferred).
-- Legacy OpenClaw config can still store the same value as `tenantID`.
+- Legacy OpenClaw config can still store the same value as `tenantID`, but the plugin will still use v1alpha2.
 - For Claude Code / OpenCode env vars, this remains the tenant ID value used by the current server API.
 
 ## Step 3: Configure your agent platform
@@ -64,13 +64,13 @@ Add to `openclaw.json`:
 
 Restart OpenClaw. You should see:
 ```
-[mnemo] Server mode (v1alpha2)
+[mem9] Server mode (v1alpha2)
 ```
 
 Compatibility note:
 
 - Preferred config: `apiKey` -> plugin uses v1alpha2 with `X-API-Key`.
-- Legacy config: `tenantID` -> plugin stays compatible on v1alpha1 path-based routes.
+- Legacy config: `tenantID` -> plugin treats it as an alias for `apiKey` and still uses v1alpha2.
 - The underlying value is the same UUID either way.
 
 ---
@@ -93,7 +93,7 @@ Add to `opencode.json`:
 
 Restart OpenCode. You should see:
 ```
-[mnemo] Server mode (mnemo-server REST API)
+[mem9] Server mode (mnemo-server REST API)
 ```
 
 ---

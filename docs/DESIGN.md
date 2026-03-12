@@ -542,7 +542,7 @@ export MNEMO_API_TOKEN="mnemo_xxx"
 | Hook | Async | What it does |
 |------|-------|-------------|
 | **SessionStart** | no | Load 20 most recent memories → inject as `additionalContext` |
-| **UserPromptSubmit** | no | Return hint: `"[mnemo] Shared memory available"` |
+| **UserPromptSubmit** | no | Return hint: `"[mem9] Shared memory available"` |
 | **Stop** | yes | Summarize last turn (via haiku), save as new memory |
 | **SessionEnd** | no | Cleanup |
 
@@ -554,8 +554,9 @@ Declares `kind: "memory"`, replacing the built-in memory provider.
 
 In the current server-mode design, OpenClaw prefers `apiUrl + apiKey`. When
 `apiKey` is present, requests go to `/v1alpha2/mem9s/...` and send the key in
-the `X-API-Key` header. Legacy `tenantID` config remains supported and uses the
-older `/v1alpha1/mem9s/{tenantID}/...` path-based routes.
+the `X-API-Key` header. Legacy `tenantID` config remains supported as an alias
+for the same value; the plugin still uses `/v1alpha2/mem9s/...` rather than
+keeping a separate v1alpha1 codepath.
 
 **Why plugin (kind: "memory") instead of skill?**
 

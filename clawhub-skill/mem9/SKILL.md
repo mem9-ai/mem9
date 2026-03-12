@@ -185,7 +185,7 @@ Use this distinction consistently:
 | `secret`          | Treat as the same value as the mem9 API key unless the user clearly means something else |
 | "recovery key"    | Avoid this term; say "API key" instead                                                   |
 
-Short rule: `API key`, `apiKey`, and `secret` may refer to the same mem9 identifier. Prefer saying `API key` to users, use `apiKey` in new config examples, and mention `tenantID` only as the legacy fallback.
+Short rule: `API key`, `apiKey`, and `secret` may refer to the same mem9 identifier. Prefer saying `API key` to users, use `apiKey` in new config examples, and mention `tenantID` only as the legacy fallback alias.
 Security note:
 Treat the API key like a secret. Anyone who has it can access that mem9 space.
 
@@ -391,7 +391,7 @@ Or if no `openclaw.json` exists, create:
 Compatibility rule:
 
 - New setup: write `apiKey`
-- Existing configs that already use `tenantID` continue to work on legacy v1alpha1 routes
+- Existing configs that already use `tenantID` continue to work as a legacy alias for `apiKey`
 - Do not use `apiToken` or `userToken`
 
 If result returns stored memory → setup successful.

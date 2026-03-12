@@ -10,30 +10,23 @@ import type {
   IngestResult,
 } from "./types.js";
 
-export type ApiVersion = "v1alpha1" | "v1alpha2";
-
 type ProvisionMem9sResponse = {
   id: string;
 };
 
 export class ServerBackend implements MemoryBackend {
   private baseUrl: string;
-  private tenantID: string;
+  private apiKey: string;
   private agentName: string;
-  private apiVersion: ApiVersion;
 
-  // The value originates from the apiKey config field for v1alpha2, but this
-  // field name still matches the v1alpha1 URL shape used for legacy requests.
   constructor(
     apiUrl: string,
-    tenantID: string,
+    apiKey: string,
     agentName: string,
-    apiVersion: ApiVersion = "v1alpha1"
   ) {
     this.baseUrl = apiUrl.replace(/\/+$/, "");
-    this.tenantID = tenantID;
+    this.apiKey = apiKey;
     this.agentName = agentName;
-    this.apiVersion = apiVersion;
   }
 
   async register(): Promise<ProvisionMem9sResponse> {
@@ -49,21 +42,18 @@ export class ServerBackend implements MemoryBackend {
 
     const data = (await resp.json()) as ProvisionMem9sResponse;
     if (!data?.id) {
-      throw new Error("mem9s provision did not return tenant ID");
+      throw new Error("mem9s provision did not return API key");
     }
 
-    this.tenantID = data.id;
+    this.apiKey = data.id;
     return data;
   }
 
   private memoryPath(path: string): string {
-    if (!this.tenantID) {
-      throw new Error("tenant ID is not configured");
+    if (!this.apiKey) {
+      throw new Error("API key is not configured");
     }
-    if (this.apiVersion === "v1alpha2") {
-      return `/v1alpha2/mem9s${path}`;
-    }
-    return `/v1alpha1/mem9s/${this.tenantID}${path}`;
+    return `/v1alpha2/mem9s${path}`;
   }
 
   async store(input: CreateMemoryInput): Promise<StoreResult> {
@@ -131,10 +121,8 @@ export class ServerBackend implements MemoryBackend {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "X-Mnemo-Agent-Id": this.agentName,
+      "X-API-Key": this.apiKey,
     };
-    if (this.apiVersion === "v1alpha2") {
-      headers["X-API-Key"] = this.tenantID;
-    }
     return fetch(url, {
       method,
       headers,

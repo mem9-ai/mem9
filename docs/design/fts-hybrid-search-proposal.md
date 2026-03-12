@@ -445,9 +445,9 @@ keywordSearch()             ->  FTSSearch when ftsAvailable, else LIKE fallback
 `index.ts` startup log updated from "does not support hybrid search yet" to:
 ```
 // MNEMO_AUTO_EMBED_MODEL set:
-"[mnemo] Direct mode (auto-embed hybrid: <model>)"
+"[mem9] Direct mode (auto-embed hybrid: <model>)"
 // no vector leg:
-"[mnemo] Direct mode (keyword search: FTS preferred, LIKE fallback)"
+"[mem9] Direct mode (keyword search: FTS preferred, LIKE fallback)"
 ```
 
 ### Graceful degradation

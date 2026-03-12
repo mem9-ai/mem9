@@ -41,7 +41,7 @@ Add mnemo to your project's `openclaw.json`:
 
 **That's it!** Restart OpenClaw and your agent now has persistent cloud memory.
 
-When `apiKey` is configured, memory calls use `/v1alpha2/mem9s/memories/...` with `X-API-Key: <key>`. Legacy `tenantID` config is still supported and uses `/v1alpha1/mem9s/{tenantID}/memories/...`.
+The plugin always uses `/v1alpha2/mem9s/memories/...` with `X-API-Key: <key>`. Legacy `tenantID` config is still supported as an alias for `apiKey`.
 
 ---
 
@@ -132,7 +132,7 @@ curl -s -X POST http://localhost:8080/v1alpha1/mem9s \
 
 **Step 3: Configure each OpenClaw instance**
 
-Each agent uses the same `apiKey` for the shared memory pool. With the preferred config, the key is sent in `X-API-Key` and never appears in the URL path. Legacy `tenantID` config still works against v1alpha1.
+Each agent uses the same `apiKey` for the shared memory pool. The plugin sends that value in `X-API-Key` and never places it in the URL path. Legacy `tenantID` config still works as an alias for the same value.
 
 ```json
 {
@@ -160,10 +160,10 @@ That's it. The server handles scoping and conflict resolution. Conceptually, the
 Start OpenClaw. You should see:
 
 ```
-[mnemo] Server mode
+[mem9] Server mode
 ```
 
-If you see `[mnemo] No mode configured...`, check your `openclaw.json` config.
+If you see `[mem9] No mode configured...`, check your `openclaw.json` config.
 
 ## Config Schema
 
@@ -173,9 +173,9 @@ Defined in `openclaw.plugin.json`:
 |---|---|---|
 | `apiUrl` | string | mnemo-server URL |
 | `apiKey` | string | Preferred key. Uses `/v1alpha2/mem9s/...` with `X-API-Key` header |
-| `tenantID` | string | Legacy fallback. Uses `/v1alpha1/mem9s/{tenantID}/memories` |
+| `tenantID` | string | Legacy alias for `apiKey`. The plugin still uses `/v1alpha2/mem9s/...` with `X-API-Key`. |
 
-> **Note**: `apiKey` takes precedence when both fields are set. If only `tenantID` is present, the plugin keeps using the legacy v1alpha1 route shape and logs a deprecation warning once at startup.
+> **Note**: `apiKey` takes precedence when both fields are set. If only `tenantID` is present, the plugin treats it as a legacy alias for `apiKey`, still uses v1alpha2, and logs a deprecation warning once at startup.
 
 ## File Structure
 

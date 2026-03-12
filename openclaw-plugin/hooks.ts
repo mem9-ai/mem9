@@ -193,14 +193,14 @@ export function registerHooks(
 
         if (memories.length === 0) return;
 
-        logger.info(`[mnemo] Injecting ${memories.length} memories into prompt context`);
+        logger.info(`[mem9] Injecting ${memories.length} memories into prompt context`);
 
         return {
           prependContext: formatMemoriesBlock(memories),
         };
       } catch (err) {
         // Graceful degradation — never block the LLM call
-        logger.error(`[mnemo] before_prompt_build failed: ${String(err)}`);
+        logger.error(`[mem9] before_prompt_build failed: ${String(err)}`);
       }
     },
     { priority: 50 }, // Run after most plugins but before agent start
@@ -210,7 +210,7 @@ export function registerHooks(
   // after_compaction — no-op placeholder (no client-side cache to invalidate)
   // --------------------------------------------------------------------------
   api.on("after_compaction", async (_event: unknown) => {
-    logger.info("[mnemo] Compaction detected — memories will be re-queried on next prompt");
+    logger.info("[mem9] Compaction detected — memories will be re-queried on next prompt");
   });
 
   // --------------------------------------------------------------------------
@@ -247,10 +247,10 @@ export function registerHooks(
         tags: ["auto-capture", "session-summary", "pre-reset"],
       });
 
-      logger.info("[mnemo] Session context saved before reset");
+      logger.info("[mem9] Session context saved before reset");
     } catch (err) {
       // Best-effort — never block /reset
-      logger.error(`[mnemo] before_reset save failed: ${String(err)}`);
+      logger.error(`[mem9] before_reset save failed: ${String(err)}`);
     }
   });
 
@@ -330,10 +330,10 @@ export function registerHooks(
 
 
       if (result.status === "accepted") {
-        logger.info("[mnemo] Ingest accepted for async processing");
+        logger.info("[mem9] Ingest accepted for async processing");
       } else if ((result.memories_changed ?? 0) > 0) {
         logger.info(
-          `[mnemo] Ingested session: memories_changed=${result.memories_changed}, status=${result.status}`
+          `[mem9] Ingested session: memories_changed=${result.memories_changed}, status=${result.status}`
         );
       }
     } catch {

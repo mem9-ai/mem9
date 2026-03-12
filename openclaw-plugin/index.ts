@@ -1,6 +1,5 @@
 import type { MemoryBackend } from "./backend.js";
 import { ServerBackend } from "./server-backend.js";
-import type { ApiVersion } from "./server-backend.js";
 import { registerHooks } from "./hooks.js";
 import type {
   PluginConfig,
@@ -243,22 +242,20 @@ const mnemoPlugin = {
     const cfg = (api.pluginConfig ?? {}) as PluginConfig;
     const effectiveApiUrl = cfg.apiUrl ?? DEFAULT_API_URL;
     if (!cfg.apiUrl) {
-      api.logger.info(`[mnemo] apiUrl not configured, using default ${DEFAULT_API_URL}`);
+      api.logger.info(`[mem9] apiUrl not configured, using default ${DEFAULT_API_URL}`);
     }
 
     const configuredApiKey = cfg.apiKey ?? cfg.tenantID;
-    let apiVersion: ApiVersion = "v1alpha2";
     if (cfg.apiKey && cfg.tenantID) {
-      api.logger.info("[mnemo] both apiKey and tenantID set; using apiKey (v1alpha2)");
+      api.logger.info("[mem9] both apiKey and tenantID set; using apiKey");
     } else if (cfg.tenantID) {
-      apiVersion = "v1alpha1";
-      api.logger.info("[mnemo] tenantID is deprecated, please migrate to apiKey");
+      api.logger.info("[mem9] tenantID is deprecated; treating it as apiKey for v1alpha2");
     }
     const registerTenant = async (agentName: string): Promise<string> => {
       const backend = new ServerBackend(effectiveApiUrl, "", agentName);
       const result = await backend.register();
       api.logger.info(
-        `[mnemo] *** Auto-provisioned apiKey=${result.id} *** Save this to your config as apiKey`
+        `[mem9] *** Auto-provisioned apiKey=${result.id} *** Save this to your config as apiKey`
       );
       return result.id;
     };
@@ -271,7 +268,7 @@ const mnemoPlugin = {
       return registrationPromise;
     };
 
-    api.logger.info(`[mnemo] Server mode (${apiVersion})`);
+    api.logger.info("[mem9] Server mode (v1alpha2)");
 
     const factory: ToolFactory = (ctx: ToolContext) => {
       const agentId = ctx.agentId ?? cfg.agentName ?? "agent";
@@ -279,7 +276,6 @@ const mnemoPlugin = {
         effectiveApiUrl,
         () => resolveAPIKey(agentId),
         agentId,
-        apiVersion,
       );
       return buildTools(backend);
     };
@@ -292,7 +288,6 @@ const mnemoPlugin = {
       effectiveApiUrl,
       () => resolveAPIKey(cfg.agentName ?? "agent"),
       cfg.agentName ?? "agent",
-      apiVersion,
     );
     registerHooks(api, hookBackend, api.logger, { maxIngestBytes: cfg.maxIngestBytes });
   },
@@ -314,7 +309,6 @@ class LazyServerBackend implements MemoryBackend {
     private apiUrl: string,
     private apiKeyProvider: () => Promise<string>,
     private agentId: string,
-    private apiVersion: ApiVersion,
   ) {}
 
   private async resolve(): Promise<ServerBackend> {
@@ -323,7 +317,7 @@ class LazyServerBackend implements MemoryBackend {
 
     this.resolving = this.apiKeyProvider().then((apiKey) =>
       Promise.resolve().then(() => {
-        this.resolved = new ServerBackend(this.apiUrl, apiKey, this.agentId, this.apiVersion);
+        this.resolved = new ServerBackend(this.apiUrl, apiKey, this.agentId);
         return this.resolved;
       })
     ).catch((err) => {
