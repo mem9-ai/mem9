@@ -1,0 +1,149 @@
+import type { TFunction } from "i18next";
+import { toast } from "sonner";
+import { Bookmark, Sparkles, Copy, X, Trash2, Pencil } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import type { Memory } from "@/types/memory";
+
+export function DetailPanel({
+  memory: m,
+  onClose,
+  onDelete,
+  onEdit,
+  t,
+}: {
+  memory: Memory;
+  onClose: () => void;
+  onDelete: () => void;
+  onEdit?: () => void;
+  t: TFunction;
+}) {
+  const isPinned = m.memory_type === "pinned";
+
+  function handleCopy() {
+    navigator.clipboard.writeText(m.content);
+    toast.success(t("list.copied"));
+  }
+
+  return (
+    <div
+      className="w-[400px] shrink-0 py-8"
+      style={{ animation: "slide-in-right 0.2s cubic-bezier(0.16,1,0.3,1)" }}
+    >
+      <div className="surface-card sticky top-[calc(3.5rem+2rem)] overflow-hidden">
+        <div
+          className={`h-1 ${isPinned ? "bg-type-pinned" : "bg-type-insight"}`}
+        />
+
+        <div className="flex items-center justify-between border-b px-5 py-3">
+          <div
+            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ${
+              isPinned
+                ? "bg-type-pinned/10 text-type-pinned"
+                : "bg-type-insight/10 text-type-insight"
+            }`}
+          >
+            {isPinned ? (
+              <Bookmark className="size-3" />
+            ) : (
+              <Sparkles className="size-3" />
+            )}
+            {t(`detail.type.${m.memory_type}`)}
+          </div>
+          <div className="flex items-center gap-1">
+            {isPinned && onEdit && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={onEdit}
+                className="text-soft-foreground hover:text-foreground"
+                title={t("detail.edit")}
+              >
+                <Pencil className="size-3.5" />
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={handleCopy}
+              className="text-soft-foreground hover:text-foreground"
+              title="Copy content"
+            >
+              <Copy className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={onClose}
+              className="text-soft-foreground hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="max-h-[60vh] overflow-y-auto px-5 py-4">
+          <p className="whitespace-pre-wrap text-sm leading-[1.8] text-foreground">
+            {m.content}
+          </p>
+
+          <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3">
+            <MetaCell
+              label={t("detail.updated")}
+              value={new Date(m.updated_at).toLocaleDateString()}
+            />
+            <MetaCell
+              label={t("detail.created")}
+              value={new Date(m.created_at).toLocaleDateString()}
+            />
+            {m.source && (
+              <MetaCell label={t("detail.source")} value={m.source} />
+            )}
+            {m.agent_id && (
+              <MetaCell label={t("detail.agent")} value={m.agent_id} />
+            )}
+          </div>
+
+          {m.tags.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs text-soft-foreground">{t("detail.tags")}</p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {m.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between border-t px-5 py-2.5">
+          <span className="font-mono text-[11px] text-soft-foreground">
+            v{m.version}
+          </span>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={onDelete}
+            className="gap-1 text-xs text-destructive/70 hover:text-destructive"
+          >
+            <Trash2 className="size-3" />
+            {t("detail.delete")}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MetaCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs text-soft-foreground">{label}</dt>
+      <dd className="mt-0.5 text-sm text-foreground/80">{value}</dd>
+    </div>
+  );
+}
