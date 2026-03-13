@@ -46,6 +46,19 @@ interface HookApi {
   on: (hookName: string, handler: (...args: unknown[]) => unknown, opts?: { priority?: number }) => void;
 }
 
+/**
+ * Runtime context passed as the second argument to agent_end by the OpenClaw
+ * framework. Fields are inferred from observed OpenClaw runtime behavior — no
+ * official SDK type is published. Kept local to avoid importing OpenClaw types
+ * at the module level (same pattern as HookApi above).
+ */
+interface HookContext {
+  agentId?: string;
+  sessionId?: string;
+  /** Legacy alias for sessionId used by older OpenClaw versions. */
+  sessionKey?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Message selection (size-aware)
 // ---------------------------------------------------------------------------
@@ -165,6 +178,10 @@ function stripInjectedContext(content: string): string {
   return s.trim();
 }
 
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
 // ---------------------------------------------------------------------------
 // Hook registration
 // ---------------------------------------------------------------------------
@@ -173,7 +190,7 @@ export function registerHooks(
   api: HookApi,
   backend: MemoryBackend,
   logger: Logger,
-  options?: { maxIngestBytes?: number },
+  options?: { maxIngestBytes?: number; fallbackAgentId?: string },
 ): void {
   const maxIngestBytes = options?.maxIngestBytes ?? DEFAULT_MAX_INGEST_BYTES;
 
@@ -261,7 +278,7 @@ export function registerHooks(
   // accumulating until byte budget is hit. Then POST to tenant-scoped ingest endpoint.
   // for server-side LLM extraction + reconciliation.
   // --------------------------------------------------------------------------
-  api.on("agent_end", async (event: unknown) => {
+  api.on("agent_end", async (event: unknown, context: unknown) => {
     try {
       const evt = event as {
         success?: boolean;
@@ -269,6 +286,7 @@ export function registerHooks(
         sessionId?: string;
         agentId?: string;
       };
+      const hookCtx = (context ?? {}) as HookContext;
       if (!evt?.success || !evt.messages || evt.messages.length === 0) return;
 
       // Format raw messages into IngestMessage format
@@ -312,13 +330,15 @@ export function registerHooks(
 
       if (selected.length === 0) return;
 
-      const sessionId = typeof evt.sessionId === "string"
-        ? evt.sessionId
-        : `ses_${Date.now()}`;
+      const sessionId = nonEmptyString(evt.sessionId)
+        ?? nonEmptyString(hookCtx.sessionId)
+        ?? nonEmptyString(hookCtx.sessionKey)
+        ?? `ses_${Date.now()}`;
 
-      const agentId = typeof evt.agentId === "string"
-        ? evt.agentId
-        : AUTO_CAPTURE_SOURCE;
+      const agentId = nonEmptyString(evt.agentId)
+        ?? nonEmptyString(hookCtx.agentId)
+        ?? nonEmptyString(options?.fallbackAgentId)
+        ?? AUTO_CAPTURE_SOURCE;
 
       // POST messages to unified memories endpoint — server handles LLM extraction + reconciliation
       const result = await backend.ingest({

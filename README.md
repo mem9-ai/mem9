@@ -7,12 +7,11 @@
 </p>
 
 <p align="center">
-  <a href="https://tidbcloud.com"><img src="https://img.shields.io/badge/Powered%20by-TiDB%20Starter-E60C0C?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj48cGF0aCBkPSJNMTEuOTk4NCAxLjk5OTAyTDMuNzE4NzUgNy40OTkwMkwzLjcxODc1IDE3TDExLjk5NjQgMjIuNUwyMC4yODE0IDE3VjcuNDk5MDJMMTEuOTk4NCAxLjk5OTAyWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=" alt="Powered by TiDB Starter"></a>
+  <a href="https://tidbcloud.com"><img src="https://img.shields.io/badge/Powered%20by-TiDB%20Cloud%20Starter-E60C0C?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj48cGF0aCBkPSJNMTEuOTk4NCAxLjk5OTAyTDMuNzE4NzUgNy40OTkwMkwzLjcxODc1IDE3TDExLjk5NjQgMjIuNUwyMC4yODE0IDE3VjcuNDk5MDJMMTEuOTk4NCAxLjk5OTAyWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=" alt="Powered by TiDB Cloud Starter"></a>
   <a href="https://goreportcard.com/report/github.com/mem9-ai/mem9/server"><img src="https://goreportcard.com/badge/github.com/mem9-ai/mem9/server" alt="Go Report Card"></a>
-  <a href="https://github.com//mem9-ai/mem9/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License"></a>
+  <a href="https://github.com/mem9-ai/mem9/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
   <a href="https://github.com/mem9-ai/mem9"><img src="https://img.shields.io/github/stars/mem9-ai/mem9?style=social" alt="Stars"></a>
 </p>
-
 
 ---
 
@@ -20,46 +19,48 @@
 
 **Server-based memory via mem9-server.**
 
-```bash
-# 1. Deploy mem9-server
-cd server && MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
-```
+1. **Deploy mnemo-server.**
 
-**2. Install plugin for your agent (pick one):**
+    ```bash
+    cd server && MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
+    ```
 
-| Platform | Install |
-|----------|---------|
-| **Claude Code** | `/plugin marketplace add mem9-ai/mem9` then `/plugin install mem9@mem9` |
-| **OpenCode** | Add `"plugin": ["@mem9/opencode"]` to `opencode.json` |
-| **OpenClaw** | Add `mnemo` to `openclaw.json` plugins (see [openclaw-plugin/README](openclaw-plugin/README.md)) |
+2. **Install the plugin for your agent (pick one).**
 
-```bash
-# 3. Provision a tenant and set credentials
-curl -s -X POST localhost:8080/v1alpha1/mem9s
-# → {"id":"..."}
+    | Platform | Install |
+    |----------|---------|
+    | **Claude Code** | `/plugin marketplace add mem9-ai/mem9` then `/plugin install mem9@mem9` |
+    | **OpenCode** | Add `"plugin": ["@mem9/opencode"]` to `opencode.json` |
+    | **OpenClaw** | Add `mnemo` to `openclaw.json` plugins (see [openclaw-plugin/README](openclaw-plugin/README.md)) |
 
-export MEM9_API_URL="http://localhost:8080"
-export MEM9_API_KEY="..."
-```
+3. **Provision a tenant and set credentials.**
 
-All agents pointing at the same API key share one memory pool.
+    ```bash
+    curl -s -X POST localhost:8080/v1alpha1/mem9s
+    # → {"id":"..."}
+
+    export MEM9_API_URL="http://localhost:8080"
+    export MEM9_API_KEY="..."
+    ```
+
+    All agents pointing at the same tenant ID share one memory pool.
 
 ---
 
 ## The Problem
 
-AI coding agents — Claude Code, OpenCode, OpenClaw, and others — often maintain separate local memory files. The result:
+AI coding agents — Claude Code, OpenCode, OpenClaw, and others — often maintain separate local memory files. As a result:
 
-- 🧠 **Amnesia** — Agent forgets everything when a session ends
+- 🧠 **Amnesia** — Agents forget everything when a session ends
 - 🏝️ **Silos** — One agent can't access what another learned yesterday
 - 📁 **Local files** — Memory is tied to a single machine, lost when you switch devices
 - 🚫 **No team sharing** — Your teammate's agent can't benefit from your agent's discoveries
 
-**mnemos** gives every agent a shared, cloud-persistent memory with hybrid vector + keyword search — powered by [TiDB Starter](https://tidbcloud.com).
+**mnemos** gives every agent a shared, cloud-persistent memory with hybrid vector + keyword search — powered by [TiDB Cloud Starter](https://tidbcloud.com).
 
-## Why TiDB Starter?
+## Why TiDB Cloud Starter?
 
-mnemos uses [TiDB Starter](https://tidbcloud.com) (formerly TiDB Serverless) as the backing store for mnemo-server:
+mnemos uses [TiDB Cloud Starter](https://tidbcloud.com) (formerly TiDB Cloud Serverless) as the backing store for mnemo-server:
 
 | Feature | What it means for you |
 |---|---|
@@ -85,7 +86,9 @@ mnemos provides native plugins for major AI coding agent platforms:
 
 All plugins expose the same 5 tools: `memory_store`, `memory_search`, `memory_get`, `memory_update`, `memory_delete`.
 
-> **🤖 For AI Agents**: Use the Quick Start above to deploy mnemo-server and provision an API key, then follow the platform-specific README for configuration details.
+> [!NOTE]
+>
+> **🤖 For AI Agents**: Use the [Quick Start](#-quick-start) above to deploy mnemo-server and provision an API key, then follow the platform-specific README for configuration details.
 
 ## Stateless Agents, Cloud Memory
 
