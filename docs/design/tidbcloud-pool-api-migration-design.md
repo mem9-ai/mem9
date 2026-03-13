@@ -21,7 +21,7 @@ Migrate the tenant provisioning mechanism from **TiDB Zero API** to **TiDB Cloud
 | Response | `{"instance": {...}}` | Direct cluster object |
 | Cluster Type | Temporary (requires claim) | Permanent Starter |
 | Schema | Application creates | Pre-configured |
-| `initSchema` | Execute DDL | Verify schema exists (`SELECT 1 FROM memories`) |
+| `initSchema` | Execute DDL | No-op (schema pre-configured) |
 
 ## Environment Variables
 
@@ -122,7 +122,7 @@ type TiDBCloudProvisioner struct {
     httpClient *http.Client
 }
 
-func NewTiDBCloudProvisioner(apiURL, apiKey, apiSecret, poolID string) *TiDBCloudProvisioner
+func NewTiDBCloudProvisioner(apiURL, poolID string) *TiDBCloudProvisioner
 
 func (c *TiDBCloudProvisioner) Provision(ctx context.Context) (*ClusterInfo, error) {
     // 1. Generate random password (16 chars)
@@ -137,10 +137,7 @@ func (c *TiDBCloudProvisioner) Provision(ctx context.Context) (*ClusterInfo, err
 }
 
 func (c *TiDBCloudProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
-    // Verify pre-configured schema exists via SELECT (do not run DDL)
-    if _, err := db.ExecContext(ctx, "SELECT 1 FROM memories LIMIT 1"); err != nil {
-        return fmt.Errorf("schema verification failed: %w", err)
-    }
+    // No-op: TiDB Cloud Pool clusters have pre-configured schema
     return nil
 }
 ```
@@ -222,15 +219,10 @@ var provisioner tenant.Provisioner
 
 if cfg.TiDBZeroEnabled {
     // Zero mode (explicit toggle takes precedence)
-    provisioner = tenant.NewZeroProvisioner(cfg.TiDBZeroAPIURL)
+    provisioner = tenant.NewZeroProvisioner(cfg.TiDBZeroAPIURL, cfg.DBBackend, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled)
 } else if os.Getenv("TIDBCLOUD_API_KEY") != "" && os.Getenv("TIDBCLOUD_API_SECRET") != "" {
     // TiDB Cloud Pool mode
-    provisioner = tenant.NewTiDBCloudProvisioner(
-        cfg.TiDBCloudAPIURL,
-        os.Getenv("TIDBCLOUD_API_KEY"),
-        os.Getenv("TIDBCLOUD_API_SECRET"),
-        cfg.TiDBCloudPoolID,
-    )
+    provisioner = tenant.NewTiDBCloudProvisioner(cfg.TiDBCloudAPIURL, cfg.TiDBCloudPoolID)
 }
 // Note: nil provisioner is valid at startup for deployments with pre-existing tenants
 // TenantService.Provision() returns error if called with nil provisioner
