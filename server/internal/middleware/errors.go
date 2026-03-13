@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -15,6 +16,6 @@ func writeError(w http.ResponseWriter, r *http.Request, status int, msg string) 
 		"error":      msg,
 		"request_id": reqID,
 	}); err != nil {
-		_ = err
+		slog.Warn("failed to encode error response", "err", err, "request_id", reqID)
 	}
 }
