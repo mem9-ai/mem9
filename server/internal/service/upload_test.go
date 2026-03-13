@@ -151,8 +151,8 @@ func TestParseSessionFile(t *testing.T) {
 			wantMsgs: 2, // only user + assistant, not toolResult
 		},
 		{
-			name: "OpenClaw JSONL with multi-block content",
-			data: `{"type":"message","id":"msg1","message":{"role":"assistant","content":[{"type":"thinking","thinking":"let me think"},{"type":"text","text":"first part"},{"type":"text","text":"second part"}]}}`,
+			name:     "OpenClaw JSONL with multi-block content",
+			data:     `{"type":"message","id":"msg1","message":{"role":"assistant","content":[{"type":"thinking","thinking":"let me think"},{"type":"text","text":"first part"},{"type":"text","text":"second part"}]}}`,
 			wantMsgs: 1,
 		},
 		{
@@ -178,6 +178,74 @@ func TestParseSessionFile(t *testing.T) {
 			}
 			if len(file.Messages) != tt.wantMsgs {
 				t.Errorf("got %d messages, want %d", len(file.Messages), tt.wantMsgs)
+			}
+		})
+	}
+}
+
+func TestParseMemoryFile(t *testing.T) {
+	tests := []struct {
+		name            string
+		data            string
+		fallbackAgentID string
+		wantAgentID     string
+		wantMemories    int
+		wantContent     string
+	}{
+		{
+			name:         "valid JSON memory file",
+			data:         `{"agent_id":"a1","memories":[{"content":"fact one"},{"content":"fact two"}]}`,
+			wantAgentID:  "a1",
+			wantMemories: 2,
+		},
+		{
+			name:            "JSON missing agent_id uses fallback",
+			data:            `{"memories":[{"content":"fact"}]}`,
+			fallbackAgentID: "fallback",
+			wantAgentID:     "fallback",
+			wantMemories:    1,
+		},
+		{
+			name:         "markdown plain text",
+			data:         "# My Notes\n\nThis is a memory stored as markdown.",
+			wantMemories: 1,
+			wantContent:  "# My Notes\n\nThis is a memory stored as markdown.",
+		},
+		{
+			name:            "markdown uses fallback agent_id",
+			data:            "some plain text memory",
+			fallbackAgentID: "agent-x",
+			wantAgentID:     "agent-x",
+			wantMemories:    1,
+			wantContent:     "some plain text memory",
+		},
+		{
+			name:         "empty file yields zero memories",
+			data:         "   \n  ",
+			wantMemories: 0,
+		},
+		{
+			name:         "JSON with empty memories array falls back to plaintext",
+			data:         `{"memories":[]}`,
+			wantMemories: 1,
+			wantContent:  `{"memories":[]}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file, err := parseMemoryFile([]byte(tt.data), tt.fallbackAgentID)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(file.Memories) != tt.wantMemories {
+				t.Errorf("got %d memories, want %d", len(file.Memories), tt.wantMemories)
+			}
+			if tt.wantAgentID != "" && file.AgentID != tt.wantAgentID {
+				t.Errorf("agentID = %q, want %q", file.AgentID, tt.wantAgentID)
+			}
+			if tt.wantContent != "" && tt.wantMemories == 1 && file.Memories[0].Content != tt.wantContent {
+				t.Errorf("content = %q, want %q", file.Memories[0].Content, tt.wantContent)
 			}
 		})
 	}
