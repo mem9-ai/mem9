@@ -1,39 +1,37 @@
-# Claude Plugin for mnemos
+# Claude Plugin for Mem9
 
-Persistent memory for Claude Code — auto-loads memories on session start, auto-saves on stop, with on-demand store/recall skills.
+Persistent cloud memory for Claude Code — auto-loads memories on session start, auto-saves on stop, with on-demand store/recall skills.
 
 > **For AI agents**: If a user asks you to install this plugin, follow the Quick Start below.
 
-## 🚀 Quick Start (Server mode)
+## Quick Start
 
-**Connect to a running mnemo-server instance.**
-
-First, provision a tenant and capture the returned `id`:
+### Option 1: CoWork Install (one command)
 
 ```bash
-# 1. Provision a tenant (no auth headers)
-curl -s -X POST http://localhost:8080/v1alpha1/mem9s
-# → { "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "claim_url": "..." }
-
-# 2. Add to ~/.claude/settings.json
-cat << EOF
-Add this to your ~/.claude/settings.json:
-
-{
-  "env": {
-    "MNEMO_API_URL": "http://your-server:8080",
-    "MNEMO_TENANT_ID": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
-  }
-}
-EOF
-
-# 3. Install plugin via marketplace
-# In Claude Code, run:
-#   /plugin marketplace add qiffang/mnemos
-#   /plugin install mnemo-memory@mnemos
+cowork install mem9-ai/mem9-claude-plugin --plugin
 ```
 
-**That's it!** Restart Claude Code and your agent now has persistent cloud memory.
+Then add your tenant ID to `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "MEM9_TENANT_ID": "your-tenant-uuid"
+  }
+}
+```
+
+Restart Claude Code. Done.
+
+### Option 2: Marketplace Install
+
+```
+/plugin marketplace add mem9-ai/mem9
+/plugin install mem9@mem9
+```
+
+Then add `MEM9_TENANT_ID` to `~/.claude/settings.json` as above, and restart.
 
 ---
 
@@ -45,12 +43,6 @@ Session Start → Load recent memories into context
 User Prompt  → Hint: memory-store / memory-recall available
      ↓
 Session Stop → Capture last response → save to database
-```
-
-All memory calls are routed by tenant ID in the URL path:
-
-```
-/v1alpha1/mem9s/{tenantID}/memories/...
 ```
 
 Three lifecycle hooks + two skills:
@@ -66,26 +58,66 @@ Three lifecycle hooks + two skills:
 ## Prerequisites
 
 - Claude Code installed
-- A running [mnemo-server](../server/) instance
+- A `MEM9_TENANT_ID` (provision one at `https://api.mem9.ai`)
+- [CoWork CLI](https://github.com/ZhangHanDong/cowork-skills) (for CoWork install method)
 
 ## Installation
 
-### Method A: Marketplace Install (Recommended)
+### Method A: CoWork Install (Recommended)
 
-The simplest way to install — Claude Code handles plugin caching, updates, and hook registration automatically.
+One command installs the full plugin — hooks, skills, and registration:
+
+```bash
+cowork install mem9-ai/mem9-claude-plugin --plugin
+```
+
+This will:
+1. Clone the plugin repo
+2. Copy it to `~/.claude/mem9-claude-plugin/`
+3. Register it in Claude Code's plugin system
+4. Enable it in `settings.json`
+
+Then configure your tenant ID:
+
+```json
+// ~/.claude/settings.json
+{
+  "env": {
+    "MEM9_TENANT_ID": "your-tenant-uuid"
+  }
+}
+```
+
+Restart Claude Code to activate.
+
+**Update:**
+```bash
+cowork install mem9-ai/mem9-claude-plugin --plugin --update
+```
+
+**Uninstall:**
+```bash
+cowork install --uninstall mem9-claude-plugin
+```
+
+---
+
+### Method B: Marketplace Install
+
+Claude Code's built-in plugin marketplace.
 
 #### Step 1: Add the marketplace
 
 In Claude Code, run:
 
 ```
-/plugin marketplace add qiffang/mnemos
+/plugin marketplace add mem9-ai/mem9
 ```
 
 #### Step 2: Install the plugin
 
 ```
-/plugin install mnemo-memory@mnemos
+/plugin install mem9@mem9
 ```
 
 Claude Code will prompt you to approve the hooks. Accept to enable automatic memory capture.
@@ -97,8 +129,7 @@ Add your tenant ID to `~/.claude/settings.json`:
 ```json
 {
   "env": {
-    "MNEMO_API_URL": "http://your-server:8080",
-    "MNEMO_TENANT_ID": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+    "MEM9_TENANT_ID": "your-tenant-uuid"
   }
 }
 ```
@@ -115,15 +146,15 @@ Restart to activate the plugin.
 
 ---
 
-### Method B: Manual Install (settings.json hooks)
+### Method C: Manual Install (settings.json hooks)
 
-If you prefer not to use the marketplace, you can configure hooks directly in `settings.json`.
+If you prefer not to use the marketplace or CoWork, you can configure hooks directly in `settings.json`.
 
 #### 1. Clone this repo
 
 ```bash
-git clone https://github.com/qiffang/mnemos.git
-cd mnemos
+git clone https://github.com/mem9-ai/mem9.git
+cd mem9
 PLUGIN_DIR="$(pwd)/claude-plugin"
 ```
 
@@ -137,8 +168,8 @@ chmod +x "$PLUGIN_DIR"/hooks/*.sh
 
 ```bash
 mkdir -p ~/.claude/skills
-cp -r "$PLUGIN_DIR/skills/memory-recall" ~/.claude/skills/memory-recall
-cp -r "$PLUGIN_DIR/skills/memory-store" ~/.claude/skills/memory-store
+cp -r "$PLUGIN_DIR/skills/mem9-recall" ~/.claude/skills/mem9-recall
+cp -r "$PLUGIN_DIR/skills/mem9-store" ~/.claude/skills/mem9-store
 ```
 
 #### 4. Configure `~/.claude/settings.json`
@@ -148,8 +179,7 @@ Add the `env` and `hooks` sections (merge with existing config):
 ```json
 {
   "env": {
-    "MNEMO_API_URL": "http://your-server:8080",
-    "MNEMO_TENANT_ID": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+    "MEM9_TENANT_ID": "your-tenant-uuid"
   },
   "hooks": {
     "SessionStart": [
@@ -187,7 +217,7 @@ Add the `env` and `hooks` sections (merge with existing config):
 }
 ```
 
-Replace `<PLUGIN_DIR>` with the actual absolute path (e.g. `/home/you/mnemos/claude-plugin`).
+Replace `<PLUGIN_DIR>` with the actual absolute path (e.g. `/home/you/mem9/claude-plugin`).
 
 #### 5. Verify
 
@@ -214,15 +244,16 @@ claude-plugin/
 ├── .claude-plugin/
 │   └── plugin.json              # Plugin manifest (name, version, hooks)
 ├── hooks/
-│   ├── common.sh                # Shared helpers (SQL, HTTP, mode detection)
+│   ├── common.sh                # Shared helpers (HTTP requests, env check)
 │   ├── hooks.json               # Hook definitions (used by plugin system)
 │   ├── session-start.sh         # Load memories on start
 │   ├── stop.sh                  # Save memory on stop
 │   ├── session-end.sh           # Cleanup placeholder
 │   └── user-prompt-submit.sh    # Inject memory hints
 └── skills/
-    ├── memory-recall/SKILL.md   # On-demand search skill
-    └── memory-store/SKILL.md    # On-demand save skill
+    ├── mem9-recall/SKILL.md     # On-demand search skill
+    ├── mem9-store/SKILL.md      # On-demand save skill
+    └── mem9-setup/SKILL.md      # Automated installer skill
 ```
 
 ## Troubleshooting
@@ -231,5 +262,5 @@ claude-plugin/
 |---|---|---|
 | Claude hangs on startup | Hook script path wrong or not executable | Check paths in `settings.json`, run `chmod +x` on hook scripts |
 | Memories not saving | Stop hook only fires on normal session end | Use `/memory-store` for on-demand saves |
-| Plugin not loading after marketplace install | Tenant ID not configured | Add `env` block to `~/.claude/settings.json` with `MNEMO_TENANT_ID` |
+| Plugin not loading after marketplace install | Tenant ID not configured | Add `env` block to `~/.claude/settings.json` with `MEM9_TENANT_ID` |
 | Hook approval prompt | Normal for marketplace plugins | Accept the hook permissions when prompted |

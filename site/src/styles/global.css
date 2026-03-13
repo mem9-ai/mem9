@@ -81,10 +81,7 @@ html[data-theme='dark'] {
   --control-hover-bg: rgba(255, 255, 255, 0.08);
   --menu-surface: #141414;
   --menu-shadow: 0 18px 48px rgba(0, 0, 0, 0.34);
-  --page-gradient:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.06), transparent 28%),
-    radial-gradient(circle at 80% 18%, rgba(166, 166, 166, 0.08), transparent 24%),
-    linear-gradient(180deg, #0a0a0a 0%, #0e0e0e 100%);
+  --page-gradient: none;
 }
 
 html {

@@ -17,7 +17,6 @@ import (
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/llm"
 	"github.com/qiffang/mnemos/server/internal/repository"
-	"github.com/qiffang/mnemos/server/internal/repository/tidb"
 	"github.com/qiffang/mnemos/server/internal/tenant"
 )
 
@@ -162,12 +161,12 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 		return w.failTask(ctx, task, fmt.Errorf("resolve tenant: %w", err), logger)
 	}
 
-	db, err := w.pool.Get(taskCtx, tenantInfo.ID, tenantInfo.DSN())
+	db, err := w.pool.Get(taskCtx, tenantInfo.ID, tenantInfo.DSNForBackend(w.pool.Backend()))
 	if err != nil {
 		return w.failTask(ctx, task, fmt.Errorf("get tenant db: %w", err), logger)
 	}
 
-	memRepo := tidb.NewMemoryRepo(db, w.autoModel, w.ftsEnabled)
+	memRepo := repository.NewMemoryRepo(w.pool.Backend(), db, w.autoModel, w.ftsEnabled)
 	ingestSvc := NewIngestService(memRepo, w.llmClient, w.embedder, w.autoModel, w.mode)
 
 	data, err := os.ReadFile(task.FilePath)

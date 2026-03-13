@@ -14,6 +14,7 @@ import {
 } from '../content/site';
 
 type MenuName = 'language' | 'theme';
+type OnboardingVersion = 'stable' | 'beta';
 
 function getValue(dictionary: SiteDictionary, path: string): unknown {
   return path.split('.').reduce<unknown>((current, segment) => {
@@ -146,6 +147,17 @@ function currentThemePreference(): SiteThemePreference {
     : readStoredThemePreference();
 }
 
+function isOnboardingVersion(value: string | null | undefined): value is OnboardingVersion {
+  return value === 'stable' || value === 'beta';
+}
+
+function currentOnboardingVersion(): OnboardingVersion {
+  const shell = document.querySelector<HTMLElement>('[data-onboarding-shell]');
+  return isOnboardingVersion(shell?.dataset.onboardingVersion)
+    ? shell.dataset.onboardingVersion
+    : 'stable';
+}
+
 function syncControlLabels(locale: SiteLocale, preference: SiteThemePreference): void {
   const dictionary = siteCopy[locale];
   const languageToggle = document.querySelector<HTMLButtonElement>('[data-language-toggle]');
@@ -181,22 +193,30 @@ function applyTheme(
 
 function updateMeta(locale: SiteLocale, dictionary: SiteDictionary): void {
   document.documentElement.lang = localeToLang(locale);
-  document.title = dictionary.meta.title;
 
+  const titleElement = document.querySelector<HTMLTitleElement>('title');
   const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
   const ogTitle = document.querySelector<HTMLMetaElement>('meta[property="og:title"]');
   const ogDescription = document.querySelector<HTMLMetaElement>('meta[property="og:description"]');
+  const title = textFor(dictionary, titleElement?.dataset.metaTitleKey ?? 'meta.title')
+    || dictionary.meta.title;
+  const descriptionText = textFor(
+    dictionary,
+    description?.dataset.metaDescriptionKey ?? 'meta.description',
+  ) || dictionary.meta.description;
+
+  document.title = title;
 
   if (description) {
-    description.content = dictionary.meta.description;
+    description.content = descriptionText;
   }
 
   if (ogTitle) {
-    ogTitle.content = dictionary.meta.title;
+    ogTitle.content = title;
   }
 
   if (ogDescription) {
-    ogDescription.content = dictionary.meta.description;
+    ogDescription.content = descriptionText;
   }
 }
 
@@ -242,6 +262,43 @@ function updateTranslations(dictionary: SiteDictionary): void {
   });
 }
 
+function applyOnboardingVersion(version: OnboardingVersion): void {
+  const shell = document.querySelector<HTMLElement>('[data-onboarding-shell]');
+  const command = document.querySelector<HTMLElement>('[data-onboarding-command]');
+  const copyButton = document.querySelector<HTMLButtonElement>('[data-copy-button]');
+  const betaHighlights = document.querySelector<HTMLElement>('[data-beta-highlights]');
+
+  if (!shell || !command || !copyButton || !betaHighlights) {
+    return;
+  }
+
+  shell.dataset.onboardingVersion = version;
+
+  const stableText = command.dataset.commandStable ?? '';
+  const betaText = command.dataset.commandBeta ?? '';
+  const nextText = version === 'beta' ? betaText : stableText;
+
+  command.textContent = nextText;
+  copyButton.dataset.copyText = nextText;
+
+  if (version === 'beta') {
+    betaHighlights.hidden = false;
+    betaHighlights.classList.remove('is-visible');
+    window.requestAnimationFrame(() => {
+      betaHighlights.classList.add('is-visible');
+    });
+  } else {
+    betaHighlights.classList.remove('is-visible');
+    betaHighlights.hidden = true;
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-onboarding-version-tab]').forEach((button) => {
+    const isActive = button.dataset.onboardingVersionTab === version;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-selected', String(isActive));
+  });
+}
+
 function setOpenMenu(nextOpenMenu: MenuName | null): void {
   document.querySelectorAll<HTMLElement>('[data-menu-shell]').forEach((shell) => {
     const menuName = shell.dataset.menuShell as MenuName | undefined;
@@ -270,6 +327,12 @@ function applyLocale(locale: SiteLocale): void {
   document.documentElement.dataset.locale = locale;
   updateMeta(locale, dictionary);
   updateTranslations(dictionary);
+  const command = document.querySelector<HTMLElement>('[data-onboarding-command]');
+  if (command) {
+    command.dataset.commandStable = dictionary.hero.onboardingCommandStable;
+    command.dataset.commandBeta = dictionary.hero.onboardingCommandBeta;
+  }
+  applyOnboardingVersion(currentOnboardingVersion());
   syncControlLabels(locale, currentThemePreference());
 
   const feedback = document.querySelector<HTMLElement>('[data-copy-feedback]');
@@ -426,6 +489,21 @@ function initCopyButton(): void {
   });
 }
 
+function initOnboardingVersionControls(): void {
+  document.querySelectorAll<HTMLButtonElement>('[data-onboarding-version-tab]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const nextVersion = button.dataset.onboardingVersionTab;
+      if (!isOnboardingVersion(nextVersion)) {
+        return;
+      }
+
+      applyOnboardingVersion(nextVersion);
+    });
+  });
+
+  applyOnboardingVersion('stable');
+}
+
 export function initSiteUI(): void {
   const locale = isSiteLocale(document.documentElement.dataset.locale)
     ? document.documentElement.dataset.locale
@@ -444,5 +522,6 @@ export function initSiteUI(): void {
   initThemeControls();
   initSystemThemeListener();
   initCopyButton();
+  initOnboardingVersionControls();
   setOpenMenu(null);
 }

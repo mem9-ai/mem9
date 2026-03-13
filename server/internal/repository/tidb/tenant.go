@@ -70,62 +70,6 @@ func (r *TenantRepoImpl) UpdateSchemaVersion(ctx context.Context, id string, ver
 	return nil
 }
 
-type TenantTokenRepoImpl struct {
-	db *sql.DB
-}
-
-func NewTenantTokenRepo(db *sql.DB) *TenantTokenRepoImpl {
-	return &TenantTokenRepoImpl{db: db}
-}
-
-func (r *TenantTokenRepoImpl) CreateToken(ctx context.Context, tt *domain.TenantToken) error {
-	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO tenant_tokens (api_token, tenant_id, created_at)
-		 VALUES (?, ?, NOW())`,
-		tt.APIToken, tt.TenantID,
-	)
-	if err != nil {
-		return fmt.Errorf("create tenant token: %w", err)
-	}
-	return nil
-}
-
-func (r *TenantTokenRepoImpl) GetByToken(ctx context.Context, token string) (*domain.TenantToken, error) {
-	var tt domain.TenantToken
-	row := r.db.QueryRowContext(ctx,
-		`SELECT api_token, tenant_id, created_at
-		 FROM tenant_tokens WHERE api_token = ?`, token,
-	)
-	if err := row.Scan(&tt.APIToken, &tt.TenantID, &tt.CreatedAt); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, domain.ErrNotFound
-		}
-		return nil, fmt.Errorf("get tenant token: %w", err)
-	}
-	return &tt, nil
-}
-
-func (r *TenantTokenRepoImpl) ListByTenant(ctx context.Context, tenantID string) ([]domain.TenantToken, error) {
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT api_token, tenant_id, created_at
-		 FROM tenant_tokens WHERE tenant_id = ? ORDER BY created_at`, tenantID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list tenant tokens: %w", err)
-	}
-	defer rows.Close()
-
-	var tokens []domain.TenantToken
-	for rows.Next() {
-		var tt domain.TenantToken
-		if err := rows.Scan(&tt.APIToken, &tt.TenantID, &tt.CreatedAt); err != nil {
-			return nil, fmt.Errorf("scan tenant token: %w", err)
-		}
-		tokens = append(tokens, tt)
-	}
-	return tokens, rows.Err()
-}
-
 func scanTenant(row *sql.Row) (*domain.Tenant, error) {
 	var t domain.Tenant
 	var clusterID, claimURL sql.NullString

@@ -1,0 +1,8 @@
+name: simple-recall-smoke
+description: Minimal A/B recall scenario for file memory vs mem9.
+prompts:
+  - "[store] Remember that the project codename is Aurora Finch."
+  - "[store] Also remember that the deployment window is next Tuesday at 14:30 JST, and the staging region is osaka-3."
+  - "[query] What is the project codename?"
+  - "[query] When is the deployment window?"
+  - "[query] Which staging region should we use?"

@@ -14,7 +14,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/handler"
 	"github.com/qiffang/mnemos/server/internal/llm"
 	"github.com/qiffang/mnemos/server/internal/middleware"
-	"github.com/qiffang/mnemos/server/internal/repository/tidb"
+	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/service"
 	"github.com/qiffang/mnemos/server/internal/tenant"
 )
@@ -28,12 +28,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	db, err := tidb.NewDB(cfg.DSN)
+	db, err := repository.NewDB(cfg.DBBackend, cfg.DSN)
 	if err != nil {
 		logger.Error("failed to connect database", "err", err)
 		os.Exit(1)
 	}
 	defer db.Close()
+	logger.Info("database connected", "backend", cfg.DBBackend)
 
 	// Embedder (nil if not configured → keyword-only search).
 	embedder := embed.New(embed.Config{
@@ -43,7 +44,13 @@ func main() {
 		Dims:    cfg.EmbedDims,
 	})
 	if cfg.EmbedAutoModel != "" {
-		logger.Info("auto-embedding enabled (TiDB EMBED_TEXT)", "model", cfg.EmbedAutoModel, "dims", cfg.EmbedAutoDims)
+		if cfg.DBBackend == "tidb" || cfg.DBBackend == "db9" {
+			logger.Info("auto-embedding enabled (EMBED_TEXT)", "model", cfg.EmbedAutoModel, "dims", cfg.EmbedAutoDims)
+		} else {
+			logger.Warn("auto-embedding (EMBED_TEXT) is only supported with TiDB or db9; clearing and falling back to client-side embedding", "model", cfg.EmbedAutoModel, "backend", cfg.DBBackend)
+			cfg.EmbedAutoModel = ""
+			cfg.EmbedAutoDims = 0
+		}
 	} else if embedder != nil {
 		logger.Info("client-side embedding configured", "model", cfg.EmbedModel, "dims", cfg.EmbedDims)
 	} else {
@@ -63,32 +70,36 @@ func main() {
 	}
 
 	// Repositories.
-	tenantRepo := tidb.NewTenantRepo(db)
-	uploadTaskRepo := tidb.NewUploadTaskRepo(db)
+	tenantRepo := repository.NewTenantRepo(cfg.DBBackend, db)
+	uploadTaskRepo := repository.NewUploadTaskRepo(cfg.DBBackend, db)
 	tenantPool := tenant.NewPool(tenant.PoolConfig{
 		MaxIdle:     cfg.TenantPoolMaxIdle,
 		MaxOpen:     cfg.TenantPoolMaxOpen,
 		IdleTimeout: cfg.TenantPoolIdleTimeout,
 		TotalLimit:  cfg.TenantPoolTotalLimit,
+		Backend:     cfg.DBBackend,
 	})
 	defer tenantPool.Close()
 
 	// Services.
 	var zeroClient *tenant.ZeroClient
-	if cfg.TiDBZeroEnabled {
+	if cfg.TiDBZeroEnabled && cfg.DBBackend == "tidb" {
 		zeroClient = tenant.NewZeroClient(cfg.TiDBZeroAPIURL)
+	} else if cfg.TiDBZeroEnabled {
+		logger.Warn("TiDB Zero provisioning is only supported with tidb backend; disabling auto-provisioning", "backend", cfg.DBBackend)
 	}
 	tenantSvc := service.NewTenantService(tenantRepo, zeroClient, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled)
 
 	// Middleware.
 	tenantMW := middleware.ResolveTenant(tenantRepo, tenantPool)
+	apiKeyMW := middleware.ResolveApiKey(tenantRepo, tenantPool)
 	rl := middleware.NewRateLimiter(cfg.RateLimit, cfg.RateBurst)
 	defer rl.Stop()
 	rateMW := rl.Middleware()
 
 	// Handler.
-	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), logger)
-	router := srv.Router(tenantMW, rateMW)
+	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger)
+	router := srv.Router(tenantMW, rateMW, apiKeyMW)
 
 	httpSrv := &http.Server{
 		Addr:         ":" + cfg.Port,

@@ -428,20 +428,27 @@ func TestSearchIgnoresSessionAndSourceFilters(t *testing.T) {
 	}
 }
 
-func TestCreateRequiresLLMForReconciliation(t *testing.T) {
+func TestCreateFallsBackToRawWhenLLMUnavailable(t *testing.T) {
 	t.Parallel()
 
-	svc := NewMemoryService(&memoryRepoMock{}, nil, nil, "", ModeSmart)
-	_, err := svc.Create(context.Background(), "agent-1", "user prefers dark mode", nil, nil)
-	if err == nil {
-		t.Fatal("expected validation error when llm is nil")
+	repo := &memoryRepoMock{}
+	svc := NewMemoryService(repo, nil, nil, "", ModeSmart)
+
+	mem, err := svc.Create(context.Background(), "agent-1", "user prefers dark mode", []string{"prefs"}, json.RawMessage(`{"source":"manual"}`))
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
 	}
-	var ve *domain.ValidationError
-	if !errors.As(err, &ve) {
-		t.Fatalf("expected ValidationError, got %T", err)
+	if mem == nil {
+		t.Fatal("expected created memory")
 	}
-	if ve.Field != "llm" {
-		t.Fatalf("expected field llm, got %s", ve.Field)
+	if len(repo.createCalls) != 1 {
+		t.Fatalf("expected 1 raw memory create, got %d", len(repo.createCalls))
+	}
+	if mem.Content != "user prefers dark mode" {
+		t.Fatalf("expected raw content unchanged, got %q", mem.Content)
+	}
+	if mem.MemoryType != domain.TypeInsight {
+		t.Fatalf("expected insight memory type, got %s", mem.MemoryType)
 	}
 }
 

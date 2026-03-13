@@ -1,9 +1,11 @@
-/** Env-based configuration for mnemo plugin. */
-export interface MnemoConfig {
-  // Server mode (mnemo-server REST API)
+/** Default mem9 API endpoint. */
+export const DEFAULT_API_URL = "https://api.mem9.ai";
+
+/** Env-based configuration for mem9 plugin. */
+export interface Mem9Config {
+  // Server mode (mem9-server REST API)
   apiUrl?: string;
   tenantID?: string;
-  apiToken?: string;
 }
 
 export interface Memory {
@@ -54,11 +56,12 @@ export interface SearchInput {
   offset?: number;
 }
 
+export type StoreResult = Memory;
+
 /** Load config from env vars. */
-export function loadConfig(): MnemoConfig {
+export function loadConfig(): Mem9Config {
   return {
-    apiUrl: process.env.MNEMO_API_URL || undefined,
-    tenantID: process.env.MNEMO_TENANT_ID || process.env.MNEMO_API_TOKEN || undefined,
-    apiToken: process.env.MNEMO_API_TOKEN || undefined,
+    apiUrl: process.env.MEM9_API_URL ?? undefined,
+    tenantID: process.env.MEM9_TENANT_ID ?? undefined,
   };
 }

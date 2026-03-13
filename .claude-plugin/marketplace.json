@@ -1,25 +1,13 @@
 {
-  "name": "mnemos",
+  "name": "mem9",
   "owner": {
-    "name": "qiffang"
-  },
-  "metadata": {
-    "description": "Cloud-persistent memory plugins for AI agents, powered by TiDB Serverless",
-    "version": "0.1.0"
+    "name": "mem9-ai"
   },
   "plugins": [
     {
-      "name": "mnemo-memory",
+      "name": "mem9",
       "source": "./claude-plugin",
-      "description": "Persistent memory for Claude Code. Auto-loads memories on session start, auto-saves on stop, with on-demand store/recall skills.",
-      "version": "0.1.0",
-      "author": {
-        "name": "qiffang"
-      },
-      "repository": "https://github.com/qiffang/mnemos",
-      "license": "Apache-2.0",
-      "keywords": ["memory", "persistence", "tidb", "agent-memory", "cross-session"],
-      "category": "productivity"
+      "description": "Persistent cloud memory for Claude Code. Auto-loads memories on session start, auto-saves on stop, with on-demand store/recall skills."
     }
   ]
 }

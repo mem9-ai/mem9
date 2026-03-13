@@ -33,6 +33,10 @@ const { footer } = Astro.props;
       >
         {footer.contributing}
       </a>
+      <span class="sep">/</span>
+      <a href="/#security" data-i18n="footer.security">
+        {footer.security}
+      </a>
     </div>
     <p class="copyright" data-i18n="footer.copyright">
       {footer.copyright}
@@ -67,6 +71,8 @@ const { footer } = Astro.props;
 
   .footer-links {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
     gap: 0.5rem;
     font-family: var(--font-body);
     font-size: 0.85rem;

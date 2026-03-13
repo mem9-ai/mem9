@@ -1,0 +1,133 @@
+---
+import type { SiteSecurityPageCopy } from '../content/site';
+
+interface Props {
+  security: SiteSecurityPageCopy;
+}
+
+const { security } = Astro.props;
+const protections = security.protections.slice(0, 4);
+---
+
+<section id="security" class="security-section">
+  <div class="container security-stack">
+    <div class="section-head">
+      <p class="section-kicker" data-i18n="securityPage.kicker">{security.kicker}</p>
+      <h2 class="section-title" data-i18n="securityPage.title">{security.title}</h2>
+      <p class="section-desc" data-i18n="securityPage.intro">
+        {security.intro}
+      </p>
+    </div>
+
+    <article class="security-panel surface-card">
+      <h3 class="panel-title" data-i18n="securityPage.dataTitle">{security.dataTitle}</h3>
+      <p class="panel-body" data-i18n="securityPage.dataBody">
+        {security.dataBody}
+      </p>
+    </article>
+
+    <div class="security-section-head">
+      <h3 class="panel-title" data-i18n="securityPage.protectionsTitle">
+        {security.protectionsTitle}
+      </h3>
+    </div>
+
+    <div class="protection-grid">
+      {protections.map((item, index) => (
+        <article class="protection-card surface-card">
+          <h4 class="protection-title" data-i18n={`securityPage.protections.${index}.title`}>
+            {item.title}
+          </h4>
+          <p class="protection-body" data-i18n={`securityPage.protections.${index}.description`}>
+            {item.description}
+          </p>
+        </article>
+      ))}
+    </div>
+
+    <article class="security-panel surface-card foundation-panel">
+      <h3 class="panel-title" data-i18n="securityPage.foundationTitle">
+        {security.foundationTitle}
+      </h3>
+      <p class="panel-body" data-i18n="securityPage.foundationBody">
+        {security.foundationBody}
+      </p>
+    </article>
+  </div>
+</section>
+
+<style>
+  .security-section {
+    padding-top: 3.5rem;
+    padding-bottom: 4rem;
+  }
+
+  .security-stack {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .section-head,
+  .security-panel,
+  .security-section-head,
+  .protection-grid {
+    width: min(100%, var(--section-grid));
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .section-head {
+    width: min(100%, var(--content-rail));
+    margin-bottom: 0.25rem;
+  }
+
+  .security-panel {
+    padding: 1.5rem;
+    background: linear-gradient(180deg, var(--surface-elevated-start), var(--surface-elevated-end));
+  }
+
+  .panel-title {
+    font-size: 1.2rem;
+    margin-bottom: 0.65rem;
+    letter-spacing: -0.03em;
+  }
+
+  .panel-body {
+    color: var(--text-dim);
+    font-size: 1rem;
+    line-height: 1.68;
+  }
+
+  .protection-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem;
+  }
+
+  .protection-card {
+    padding: 1.35rem;
+    background: linear-gradient(180deg, var(--surface-gradient-start), var(--surface-gradient-end));
+  }
+
+  .protection-title {
+    font-size: 1.05rem;
+    margin-bottom: 0.55rem;
+    letter-spacing: -0.03em;
+  }
+
+  .protection-body {
+    color: var(--text-dim);
+    font-size: 0.96rem;
+    line-height: 1.58;
+  }
+
+  .foundation-panel .panel-title {
+    max-width: 34ch;
+  }
+
+  @media (max-width: 720px) {
+    .protection-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

@@ -11,13 +11,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/llm"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/repository"
-	"github.com/qiffang/mnemos/server/internal/repository/tidb"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
 
@@ -31,6 +32,7 @@ type Server struct {
 	autoModel   string
 	ftsEnabled  bool
 	ingestMode  service.IngestMode
+	dbBackend   string
 	logger      *slog.Logger
 	svcCache    sync.Map
 }
@@ -45,6 +47,7 @@ func NewServer(
 	autoModel string,
 	ftsEnabled bool,
 	ingestMode service.IngestMode,
+	dbBackend string,
 	logger *slog.Logger,
 ) *Server {
 	return &Server{
@@ -56,6 +59,7 @@ func NewServer(
 		autoModel:   autoModel,
 		ftsEnabled:  ftsEnabled,
 		ingestMode:  ingestMode,
+		dbBackend:   dbBackend,
 		logger:      logger,
 	}
 }
@@ -76,7 +80,7 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		if cached, ok := s.svcCache.Load(key); ok {
 			return cached.(resolvedSvc)
 		}
-		memRepo := tidb.NewMemoryRepo(auth.TenantDB, s.autoModel, s.ftsEnabled)
+		memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled)
 		svc := resolvedSvc{
 			memory: service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 			ingest: service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
@@ -88,7 +92,7 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	if cached, ok := s.svcCache.Load(key); ok {
 		return cached.(resolvedSvc)
 	}
-	memRepo := tidb.NewMemoryRepo(auth.TenantDB, s.autoModel, s.ftsEnabled)
+	memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled)
 	svc := resolvedSvc{
 		memory: service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 		ingest: service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
@@ -98,7 +102,11 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 }
 
 // Router builds the chi router with all routes and middleware.
-func (s *Server) Router(tenantMW, rateLimitMW func(http.Handler) http.Handler) http.Handler {
+func (s *Server) Router(
+	tenantMW func(http.Handler) http.Handler,
+	rateLimitMW func(http.Handler) http.Handler,
+	apiKeyMW func(http.Handler) http.Handler,
+) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware.
@@ -106,11 +114,14 @@ func (s *Server) Router(tenantMW, rateLimitMW func(http.Handler) http.Handler) h
 	r.Use(chimw.RequestID)
 	r.Use(requestLogger(s.logger))
 	r.Use(rateLimitMW)
+	r.Use(metrics.Middleware)
 
 	// Health check.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+
+	r.Get("/metrics", promhttp.Handler().ServeHTTP)
 
 	// Provision a new tenant — no auth, no body.
 	r.Post("/v1alpha1/mem9s", s.provisionMem9s)
@@ -131,6 +142,20 @@ func (s *Server) Router(tenantMW, rateLimitMW func(http.Handler) http.Handler) h
 		r.Get("/imports", s.listTasks)
 		r.Get("/imports/{id}", s.getTask)
 
+	})
+
+	r.Route("/v1alpha2/mem9s", func(r chi.Router) {
+		r.Use(apiKeyMW)
+
+		r.Post("/memories", s.createMemory)
+		r.Get("/memories", s.listMemories)
+		r.Get("/memories/{id}", s.getMemory)
+		r.Put("/memories/{id}", s.updateMemory)
+		r.Delete("/memories/{id}", s.deleteMemory)
+
+		r.Post("/imports", s.createTask)
+		r.Get("/imports", s.listTasks)
+		r.Get("/imports/{id}", s.getTask)
 	})
 
 	return r
@@ -189,15 +214,25 @@ func authInfo(r *http.Request) *domain.AuthInfo {
 }
 
 // requestLogger returns a middleware that logs each request.
+// It uses the chi route pattern (e.g. /v1alpha1/mem9s/{tenantID}/memories)
+// instead of the raw URL path to avoid logging sensitive tenant IDs.
 func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
 			next.ServeHTTP(ww, r)
+			// Use route pattern to avoid exposing sensitive path params (e.g. tenantID).
+			routeCtx := chi.RouteContext(r.Context())
+			path := r.URL.Path
+			if routeCtx != nil {
+				if pattern := routeCtx.RoutePattern(); pattern != "" {
+					path = pattern
+				}
+			}
 			logger.Info("request",
 				"method", r.Method,
-				"path", r.URL.Path,
+				"path", path,
 				"status", ww.Status(),
 				"duration_ms", time.Since(start).Milliseconds(),
 				"request_id", chimw.GetReqID(r.Context()),

@@ -1,0 +1,59 @@
+---
+import type { SiteFaqCopy } from '../content/site';
+
+interface Props {
+  faq: SiteFaqCopy;
+}
+
+const { faq } = Astro.props;
+---
+
+<section id="faq" class="faq">
+  <div class="container">
+    <div class="section-head">
+      <p class="section-kicker" data-i18n="faq.kicker">{faq.kicker}</p>
+      <h2 class="section-title" data-i18n="faq.title">{faq.title}</h2>
+    </div>
+
+    <article class="faq-card surface-card">
+      <h3 class="faq-question" data-i18n="faq.question">{faq.question}</h3>
+      <p class="faq-answer" data-i18n="faq.answer">
+        {faq.answer}
+      </p>
+    </article>
+  </div>
+</section>
+
+<style>
+  .faq {
+    padding-top: 3.25rem;
+    padding-bottom: 4.5rem;
+  }
+
+  .section-head,
+  .faq-card {
+    width: min(100%, var(--content-rail));
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .section-head {
+    margin-bottom: 1.5rem;
+  }
+
+  .faq-card {
+    padding: 1.5rem;
+    background: linear-gradient(180deg, var(--surface-elevated-start), var(--surface-elevated-end));
+  }
+
+  .faq-question {
+    font-size: 1.2rem;
+    margin-bottom: 0.7rem;
+  }
+
+  .faq-answer {
+    color: var(--text-dim);
+    font-size: 1rem;
+    line-height: 1.65;
+  }
+</style>

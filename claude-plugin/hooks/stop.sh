@@ -66,11 +66,11 @@ fi
 project_name=$(basename "${CLAUDE_PROJECT_DIR:-$(pwd)}" 2>/dev/null || echo "unknown")
 
 # Save to mnemo.
-body=$(MNEMO_SUMMARY="$summary" MNEMO_PROJECT="$project_name" python3 -c "
+body=$(MEM9_SUMMARY="$summary" MEM9_PROJECT="$project_name" python3 -c "
 import json, os
 payload = {
-    'content': os.environ['MNEMO_SUMMARY'],
-    'tags': ['auto-captured', os.environ['MNEMO_PROJECT']]
+    'content': os.environ['MEM9_SUMMARY'],
+    'tags': ['auto-captured', os.environ['MEM9_PROJECT']]
 }
 print(json.dumps(payload))
 " 2>/dev/null || echo "")

@@ -1,28 +1,26 @@
 #!/usr/bin/env bash
-# common.sh — Shared helpers for mnemo hooks.
+# common.sh — Shared helpers for mem9 hooks.
 # Sourced by all hook scripts.
 #
-# Requires MNEMO_API_URL + MNEMO_TENANT_ID to connect to mnemo-server.
+# MEM9_API_URL defaults to https://api.mem9.ai. Only MEM9_TENANT_ID is required.
 
 set -euo pipefail
 
+MEM9_API_URL="${MEM9_API_URL:-https://api.mem9.ai}"
+
 mnemo_check_env() {
-  if [[ -z "${MNEMO_API_URL:-}" ]]; then
-    echo '{"error":"MNEMO_API_URL is not set"}' >&2
-    return 1
-  fi
-  if [[ -z "${MNEMO_TENANT_ID:-}" ]]; then
-    echo '{"error":"MNEMO_TENANT_ID is not set"}' >&2
+  if [[ -z "${MEM9_TENANT_ID:-}" ]]; then
+    echo '{"error":"MEM9_TENANT_ID is not set"}' >&2
     return 1
   fi
 }
 
 # Tenant-scoped base path.
 mnemo_base() {
-  echo "${MNEMO_API_URL}/v1alpha1/mem9s/${MNEMO_TENANT_ID}"
+  echo "${MEM9_API_URL}/v1alpha1/mem9s/${MEM9_TENANT_ID}"
 }
 
-# mnemo_server_get <path> — GET request to mnemo-server (tenant-scoped).
+# GET request (tenant-scoped).
 mnemo_server_get() {
   local path="$1"
   curl -sf --max-time 8 \
@@ -30,7 +28,7 @@ mnemo_server_get() {
     "$(mnemo_base)${path}"
 }
 
-# mnemo_server_post <path> <json_body> — POST request to mnemo-server (tenant-scoped).
+# POST request (tenant-scoped).
 mnemo_server_post() {
   local path="$1"
   local body="$2"

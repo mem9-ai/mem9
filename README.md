@@ -1,12 +1,9 @@
 <p align="center">
-  <img src="assets/logo.png" alt="mnemos" width="180" />
+  <img src="site/public/mem9-wordmark-square.svg" alt="mem9" width="180" />
 </p>
-
-<h1 align="center">mnemos</h1>
-
 <p align="center">
   <strong>Persistent Memory for AI Agents.</strong><br/>
-  Your agents forget everything between sessions. mnemos fixes that.
+  Your agents forget everything between sessions. mem9 fixes that.
 </p>
 
 <p align="center">
@@ -20,7 +17,7 @@
 
 ## 🚀 Quick Start
 
-**Server-based memory via mnemo-server.**
+**Server-based memory via mem9-server.**
 
 1. **Deploy mnemo-server.**
 
@@ -32,18 +29,18 @@
 
     | Platform | Install |
     |----------|---------|
-    | **Claude Code** | `/plugin marketplace add qiffang/mnemos` then `/plugin install mnemo-memory@mnemos` |
-    | **OpenCode** | Add `"plugin": ["mnemo-opencode"]` to `opencode.json` |
+    | **Claude Code** | `/plugin marketplace add mem9-ai/mem9` then `/plugin install mem9@mem9` |
+    | **OpenCode** | Add `"plugin": ["@mem9/opencode"]` to `opencode.json` |
     | **OpenClaw** | Add `mnemo` to `openclaw.json` plugins (see [openclaw-plugin/README](openclaw-plugin/README.md)) |
 
 3. **Provision a tenant and set credentials.**
 
     ```bash
     curl -s -X POST localhost:8080/v1alpha1/mem9s
-    # → {"id":"...", "claim_url":"..."}
+    # → {"id":"..."}
 
-    export MNEMO_API_URL="http://localhost:8080"
-    export MNEMO_TENANT_ID="..."
+    export MEM9_API_URL="http://localhost:8080"
+    export MEM9_API_KEY="..."
     ```
 
     All agents pointing at the same tenant ID share one memory pool.
@@ -91,7 +88,7 @@ All plugins expose the same 5 tools: `memory_store`, `memory_search`, `memory_ge
 
 > [!NOTE]
 >
-> **🤖 For AI Agents**: Use the [Quick Start](#-quick-start) above to deploy mnemo-server and provision a tenant ID, then follow the platform-specific README for configuration details.
+> **🤖 For AI Agents**: Use the [Quick Start](#-quick-start) above to deploy mnemo-server and provision an API key, then follow the platform-specific README for configuration details.
 
 ## Stateless Agents, Cloud Memory
 
@@ -108,12 +105,17 @@ Agent identity: `X-Mnemo-Agent-Id` header.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/v1alpha1/mem9s` | Provision tenant (no auth). Returns `{ "id", "claim_url" }`. |
-| `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Unified write endpoint: `{content,...}` for direct create or `{messages,...}` for ingest pipeline. |
-| `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Search: `?q=`, `?tags=`, `?source=`, `?key=`, `?limit=`, `?offset=` |
-| `GET` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Get single memory |
-| `PUT` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Update. Optional `If-Match` for version check. |
-| `DELETE` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Delete |
+| `POST` | `/v1alpha1/mem9s` | Provision tenant (no auth). Returns `{ "id" }`. |
+| `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy unified write endpoint. Tenant key travels in the URL path. |
+| `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy search endpoint for `tenantID`-configured clients. |
+| `GET` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy get-by-id endpoint. |
+| `PUT` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy update endpoint. Optional `If-Match` for version check. |
+| `DELETE` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy delete endpoint. |
+| `POST` | `/v1alpha2/mem9s/memories` | Preferred unified write endpoint. Requires `X-API-Key` header. |
+| `GET` | `/v1alpha2/mem9s/memories` | Preferred search endpoint. Requires `X-API-Key` header. |
+| `GET` | `/v1alpha2/mem9s/memories/:id` | Preferred get-by-id endpoint. Requires `X-API-Key` header. |
+| `PUT` | `/v1alpha2/mem9s/memories/:id` | Preferred update endpoint. Requires `X-API-Key` header. |
+| `DELETE` | `/v1alpha2/mem9s/memories/:id` | Preferred delete endpoint. Requires `X-API-Key` header. |
 
 ## Self-Hosting
 
@@ -133,9 +135,9 @@ Agent identity: `X-Mnemo-Agent-Id` header.
 ### Build & Run
 
 ```bash
+make build
 cd server
-go build -o mnemo-server ./cmd/mnemo-server
-MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" ./mnemo-server
+MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" ./bin/mnemo-server
 ```
 
 ### Docker
@@ -176,7 +178,8 @@ mnemos/
 ├── skills/                     # Shared skills (OpenClaw ClawHub format)
 │   └── mnemos-setup/           # Setup skill
 │
-└── docs/DESIGN.md              # Full design document
+├── docs/DESIGN.md              # Full design document
+└── docs/BENCHMARK.md           # A/B benchmark pipeline guide
 ```
 
 ## Roadmap

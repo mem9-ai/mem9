@@ -15,5 +15,5 @@ fi
 # Return a system message hint. Claude will see this and may invoke
 # the memory-recall skill if it judges the query needs historical context.
 cat <<'EOF'
-{"systemMessage":"[mnemo] Shared memory is available. Use /memory-store to save information the user wants to remember. Use /memory-recall to search past memories when context would help."}
+{"systemMessage":"[mem9] Shared memory is available. Use /memory-store to save information the user wants to remember. Use /memory-recall to search past memories when context would help."}
 EOF
