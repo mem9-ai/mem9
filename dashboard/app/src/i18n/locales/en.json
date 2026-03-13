@@ -19,8 +19,8 @@
     "disconnect": "Disconnect",
     "stats": {
       "total": "memories",
-      "pinned": "Saved by you",
-      "insight": "Learned from chats"
+      "pinned": "Saved",
+      "insight": "Learned"
     }
   },
   "tabs": {
@@ -29,7 +29,7 @@
     "insight": "Learned from chats"
   },
   "search": {
-    "placeholder": "Search your memories…",
+    "placeholder": "Search your memories — try natural language…",
     "no_results": "No matching memories found",
     "no_results_hint": "Try different words, or clear the search to see all"
   },
@@ -105,5 +105,80 @@
     "hours_ago": "{{n}}h ago",
     "yesterday": "yesterday",
     "days_ago": "{{n}}d ago"
+  },
+  "tools": {
+    "title": "Space Tools",
+    "export": "Export",
+    "import": "Import",
+    "import_history": "Import history",
+    "import_status": "Import history"
+  },
+  "export": {
+    "title": "Export memories",
+    "description": "Download all active memories to your device. The file is in JSON format.",
+    "count": "{{count}} memories will be exported",
+    "breakdown": "{{pinned}} saved by you · {{insight}} learned from chats",
+    "note": "The export includes all active memories regardless of filters. Original timestamps are preserved.",
+    "cancel": "Cancel",
+    "button": "Download",
+    "done": "Downloaded",
+    "success": "Memories exported successfully"
+  },
+  "import": {
+    "title": "Import memories",
+    "description": "Upload a previously exported memory file (JSON format) to add memories to this space.",
+    "drop_hint": "Click to select a file",
+    "note": "Imported memories will be processed in the background. Original timestamps may not be preserved.",
+    "cancel": "Cancel",
+    "button": "Upload",
+    "error_format": "Only .json files are accepted",
+    "error_size": "File is too large (max 50 MB)",
+    "error_upload": "Upload failed. Please try again.",
+    "success": "File uploaded. Memories are being imported."
+  },
+  "import_status": {
+    "title": "Import history",
+    "empty": "No imports yet",
+    "close": "Close",
+    "status": {
+      "pending": "Pending",
+      "processing": "Processing…",
+      "done": "Completed",
+      "failed": "Failed"
+    }
+  },
+  "time_range": {
+    "7d": "7 days",
+    "30d": "30 days",
+    "90d": "90 days",
+    "all": "All time"
+  },
+  "topics": {
+    "label": "Browse by topic"
+  },
+  "facet": {
+    "about_you": "About You",
+    "preferences": "Preferences",
+    "important_people": "People",
+    "experiences": "Experiences",
+    "plans": "Plans",
+    "routines": "Routines",
+    "constraints": "Boundaries",
+    "other": "Other"
+  },
+  "facet_desc": {
+    "about_you": "Your identity, background, skills & projects",
+    "preferences": "Tools, styles & how you like things done",
+    "important_people": "People & teammates you mentioned",
+    "experiences": "Events and stories you've been through",
+    "plans": "Goals, plans & to-dos",
+    "routines": "Daily habits & work patterns",
+    "constraints": "Rules & boundaries you've set",
+    "other": "Uncategorized memories"
+  },
+  "filter": {
+    "active": "Filtered by",
+    "clear_all": "Clear all",
+    "results": "{{count}} results"
   }
 }
