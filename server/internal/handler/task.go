@@ -76,10 +76,8 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 			s.handleError(w, &domain.ValidationError{Field: "agent_id", Message: "invalid characters in agent_id"})
 			return
 		}
-		// Validate length against schema constraint VARCHAR(100)
 		if len(agentID) > maxAgentIDLength {
-			s.handleError(w, &domain.ValidationError{Field: "agent_id", Message: fmt.Sprintf("agent_id exceeds %d characters", maxAgentIDLength)})
-			return
+			agentID = ""
 		}
 	}
 	sessionID := r.FormValue("session_id")
