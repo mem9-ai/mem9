@@ -66,6 +66,12 @@ async function request<T>(
   }
 
   const body = await readJson<T>(response);
+  if (body === null) {
+    throw new AnalysisApiError(
+      "Analysis API returned an empty or invalid JSON response",
+      response.status,
+    );
+  }
   return body as T;
 }
 

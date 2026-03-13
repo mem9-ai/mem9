@@ -37,6 +37,9 @@ Vite + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui + TanStack Query + Tan
 | API client (conditional re-export of mock/http provider) | `src/api/client.ts` |
 | Mock provider implementation | `src/api/provider-mock.ts` |
 | HTTP provider implementation | `src/api/provider-http.ts` |
+| Analysis API client and error mapping | `src/api/analysis-client.ts` |
+| Analysis TanStack Query workflow | `src/api/analysis-queries.ts` |
+| Analysis panel UI | `src/components/space/analysis-panel.tsx` |
 | TanStack Query hooks (useStats, useMemories, mutations, export/import/topics) | `src/api/queries.ts` |
 | Mock data (24 realistic memories + import fixtures) | `src/api/mock-data.ts` |
 | i18next initialization | `src/i18n/index.ts` |
@@ -69,8 +72,8 @@ Vite + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui + TanStack Query + Tan
 - Package manager is `pnpm`.
 - Path alias `@/` resolves to `src/`. Use `@/` in all imports.
 - Mock/real API switch currently uses `VITE_USE_MOCK` (`"true"` = mock, anything else = real). Shared `.env` currently sets `"false"`. For UI-first work, copy `.env.local.example` to `.env.local` and override locally instead of editing shared `.env`.
-- Feature flags live in `src/config/features.ts`. Currently: `useMock`, `enableManualAdd`, `enableTimeRange`, `enableFacet`, `enableTopicSummary`. UI components check these flags before rendering gated features.
-- API proxy: frontend calls `/your-memory/api/...` (relative path). Vite dev server proxies to `api.mem9.ai`; Netlify rewrite does the same in production. No CORS needed.
+- Feature flags live in `src/config/features.ts`. Currently: `useMock`, `enableManualAdd`, `enableTimeRange`, `enableFacet`, `enableTopicSummary`, `enableAnalysis`. UI components check these flags before rendering gated features.
+- API proxy: frontend calls `/your-memory/api/...` and `/your-memory/analysis-api/...` (relative paths). Vite dev server proxies them to `api.mem9.ai` and `napi.mem9.ai`; Netlify rewrites do the same in production. No CORS needed.
 - When dashboard is shipped under the main `mem9.ai` site, the production Netlify rewrites live in `site/netlify.toml`. `public/_redirects` remains the standalone-dashboard fallback.
 - i18n keys are nested JSON (`connect.title` → `{ "connect": { "title": "..." } }`). Translations live in `src/i18n/locales/`. All user-facing text must go through `t()`, never hardcoded.
 - API types in `src/types/memory.ts` mirror the backend data contract (`../docs/data-contract.md`). Keep them in sync.
@@ -99,4 +102,4 @@ Vite + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui + TanStack Query + Tan
 - Do NOT add SSR or server-side logic. This is a pure client-side SPA.
 - Do NOT import from `@tanstack/react-router` in `src/api/` or `src/lib/`. Keep routing concerns in `src/router.tsx` and `src/pages/`.
 - Do NOT modify mock data structure without updating `src/types/memory.ts` to match.
-- Do NOT make cross-origin API calls. Use the proxy path (`/your-memory/api/...`).
+- Do NOT make cross-origin API calls. Use the proxy paths (`/your-memory/api/...`, `/your-memory/analysis-api/...`).

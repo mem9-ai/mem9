@@ -17,10 +17,14 @@ Use `.env.local` for local overrides. Keep the shared `.env` unchanged.
 |----------|---------|-------------|-------|
 | `VITE_USE_MOCK` | `"true"` | active | shared `.env` currently sets `"false"`; `.env.local` should override it for UI-first work |
 | `VITE_API_BASE` | `/your-memory/api` | active | use the same relative path in dev and production |
+| `VITE_ANALYSIS_API_BASE` | `/your-memory/analysis-api` | active | same-origin proxy for `napi.mem9.ai` in dev and production |
 | `VITE_ENABLE_MANUAL_ADD` | `"true"` | planned | add in `src/config/features.ts` before wiring gated UI |
 | `VITE_ENABLE_TIME_RANGE` | `"true"` | planned | keep off in real mode until backend params exist |
 | `VITE_ENABLE_FACET` | `"true"` | planned | controls facet label visibility |
 | `VITE_ENABLE_TOPIC_SUMMARY` | `"true"` | planned | controls topic strip visibility |
+| `VITE_ENABLE_ANALYSIS` | `"true"` | active | hidden automatically when `VITE_USE_MOCK="true"` |
+| `VITE_ANALYSIS_BATCH_SIZE` | `100` | active | client-side batch size for upload chunks |
+| `VITE_ANALYSIS_POLL_MS` | `1500` | active | default poll interval before server overrides |
 
 ```bash
 # UI-first local work
@@ -42,7 +46,9 @@ The frontend never makes cross-origin requests. All API calls go through a same-
 | Environment | Proxy | Frontend Path | Backend Target |
 |-------------|-------|---------------|----------------|
 | Dev | Vite dev server | `/your-memory/api/...` | `https://api.mem9.ai/v1alpha1/mem9s/...` |
+| Dev | Vite dev server | `/your-memory/analysis-api/...` | `https://napi.mem9.ai/...` |
 | Prod | Netlify rewrite | `/your-memory/api/...` | `https://api.mem9.ai/v1alpha1/mem9s/...` |
+| Prod | Netlify rewrite | `/your-memory/analysis-api/...` | `https://napi.mem9.ai/...` |
 
 ## Working Rules
 
