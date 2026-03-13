@@ -135,7 +135,10 @@ func (c *TiDBCloudProvisioner) Provision(ctx context.Context) (*ClusterInfo, err
 }
 
 func (c *TiDBCloudProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
-    // TiDB Cloud clusters have pre-configured schema, no-op
+    // Verify pre-configured schema exists (do not run DDL)
+    if _, err := db.ExecContext(ctx, "SELECT 1 FROM memories LIMIT 1"); err != nil {
+        return fmt.Errorf("schema verification failed: %w", err)
+    }
     return nil
 }
 ```
@@ -186,7 +189,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
     s.tenants.Create(ctx, tenant)
     
     // 3. Get DB connection from pool
-    db, err := s.pool.Get(ctx, tenant.ID, tenant.DSN())
+    db, err := s.pool.Get(ctx, tenant.ID, tenant.DSNForBackend(s.pool.Backend()))
     
     // 4. Call Provisioner.InitSchema() (Zero: DDL, TiDB Cloud: no-op)
     if err := s.provisioner.InitSchema(ctx, db); err != nil {
@@ -194,9 +197,9 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
         return nil, err
     }
     
-    // 5. Update status to "active"
-    s.tenants.UpdateStatus(ctx, tenant.ID, domain.TenantActive)
+    // 5. Update schema version first, then mark active
     s.tenants.UpdateSchemaVersion(ctx, tenant.ID, 1)
+    s.tenants.UpdateStatus(ctx, tenant.ID, domain.TenantActive)
     
     return &ProvisionResult{ID: tenant.ID}, nil
 }
@@ -221,9 +224,9 @@ if cfg.TiDBZeroEnabled {
         os.Getenv("TIDBCLOUD_API_SECRET"),
         cfg.TiDBCloudPoolID,
     )
-} else {
-    log.Fatal("provisioning not configured: set MNEMO_TIDB_ZERO_ENABLED=true or both TIDBCLOUD_API_KEY and TIDBCLOUD_API_SECRET")
 }
+// Note: nil provisioner is valid at startup for deployments with pre-existing tenants
+// TenantService.Provision() returns error if called with nil provisioner
 
 tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, ...)
 ```
@@ -252,7 +255,7 @@ Authorization: Digest ...
 | Port | `endpoints.public.port` | `DBPort` | Always `4000` |
 | User Prefix | `userPrefix` | `DBUser` | Concatenate: `userPrefix + ".root"` |
 | Password | (request body) | `DBPassword` | Code-generated random password |
-| DB Name | (hardcoded) | `DBName` | Always `"test"` (same as Zero) |
+| DB Name | (hardcoded) | `DBName` | `"test"` (same as Zero; verified via `SELECT 1` before persisting) |
 
 ### Example Response
 
@@ -304,16 +307,19 @@ type Tenant struct {
 ## Migration Path
 
 1. **Phase 1**: Deploy code with both provisioners supported
-2. **Phase 2**: Configure `TIDBCLOUD_API_KEY` to switch to TiDB Cloud mode
-3. **Phase 3**: (Optional) Disable Zero mode by setting `MNEMO_TIDB_ZERO_ENABLED=false`
-4. **Phase 4**: (Future) Remove Zero mode support entirely
+2. **Phase 2**: To switch to TiDB Cloud mode:
+   - Set `TIDBCLOUD_API_KEY` and `TIDBCLOUD_API_SECRET`
+   - **Set `MNEMO_TIDB_ZERO_ENABLED=false`** (required, since default is `true`)
+3. **Phase 3**: (Future) Remove Zero mode support entirely
+
+**Note:** The explicit toggle prevents accidental mode switching when adding credentials.
 
 ## Error Handling & Recovery
 
 | Scenario | Behavior |
 |----------|----------|
-| TiDB Cloud API returns error | Return error, no tenant record created, caller gets HTTP 503 |
-| Cluster acquired but `tenants.Create` fails | Cluster consumed but unregistered - logged for manual cleanup |
+| TiDB Cloud API returns error | Return error, no tenant record created, caller gets HTTP 5xx |
+| Cluster acquired but `tenants.Create` fails | Cluster is orphaned (no automated release API exists). Log cluster ID at ERROR level for manual operator cleanup |
 | `InitSchema` fails | Tenant stays in `"provisioning"` status for retry/compensation |
 
 ## Security Considerations
@@ -328,8 +334,12 @@ type Tenant struct {
 1. **Unit tests** for Digest Auth implementation (required)
 2. **Mock tests** for TiDBCloudProvisioner with fake TiDB Cloud Pool API server
 3. **Integration tests** for ZeroProvisioner (existing)
-4. **Fallback tests** (verify mode selection logic; note: fallback is at config time, not runtime)
+4. **Fallback tests** (verify mode selection logic; note: fallback is at config time, not runtime; no runtime fallback from TiDB Cloud to Zero)
 5. **End-to-end provisioning test** with real TiDB Cloud Pool API credentials in staging
+
+**Metrics Updates:**
+- Generalize `tidb_zero_create_instance` to `cluster_acquire_duration` with `provider` label ("zero" or "tidb_cloud")
+- Update `provision_step_duration` to include `provider` label
 
 ## Related Files to Modify
 
