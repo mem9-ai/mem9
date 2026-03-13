@@ -64,20 +64,21 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	auth := authInfo(r)
+
 	agentID := r.FormValue("agent_id")
 	if agentID == "" {
-		s.handleError(w, &domain.ValidationError{Field: "agent_id", Message: "agent_id is required"})
-		return
+		agentID = auth.AgentName
 	}
-	// Reject path traversal characters to prevent arbitrary file write/delete.
-	if strings.ContainsAny(agentID, "/\\") || strings.Contains(agentID, "..") {
-		s.handleError(w, &domain.ValidationError{Field: "agent_id", Message: "invalid characters in agent_id"})
-		return
-	}
-	// Validate length against schema constraint VARCHAR(100)
-	if len(agentID) > maxAgentIDLength {
-		s.handleError(w, &domain.ValidationError{Field: "agent_id", Message: fmt.Sprintf("agent_id exceeds %d characters", maxAgentIDLength)})
-		return
+	if agentID != "" {
+		// Reject path traversal characters to prevent arbitrary file write/delete.
+		if strings.ContainsAny(agentID, "/\\") || strings.Contains(agentID, "..") {
+			s.handleError(w, &domain.ValidationError{Field: "agent_id", Message: "invalid characters in agent_id"})
+			return
+		}
+		if len(agentID) > maxAgentIDLength {
+			agentID = ""
+		}
 	}
 	sessionID := r.FormValue("session_id")
 	fileType := r.FormValue("file_type")
@@ -86,7 +87,6 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth := authInfo(r)
 	taskID := uuid.New().String()
 
 	// Directory: {uploadDir}/{tenantID}/{agentID}/

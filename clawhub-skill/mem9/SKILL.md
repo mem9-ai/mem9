@@ -529,11 +529,17 @@ curl -sX DELETE "$API/memories/{id}" -H "X-API-Key: $API_KEY"
 **Import files:**
 
 ```bash
+# Read agent id from openclaw.json — same field the plugin uses at runtime (agents.list[].id).
+# Falls back to plugins.entries.mem9.config.agentName if agents.list is absent.
+AGENT_ID="$(jq -r '(.agents.list[0].id) // (.plugins.entries.mem9.config.agentName) // empty' openclaw.json 2>/dev/null)"
+AGENT_FIELD=""
+[ -n "$AGENT_ID" ] && AGENT_FIELD="-F agent_id=$AGENT_ID"
+
 # Memory file
-curl -sX POST "$API/imports" -H "X-API-Key: $API_KEY" -F "file=@memory.json" -F "agent_id=agent-1" -F "file_type=memory"
+curl -sX POST "$API/imports" -H "X-API-Key: $API_KEY" $AGENT_FIELD -F "file=@memory.json" -F "file_type=memory"
 
 # Session file
-curl -sX POST "$API/imports" -H "X-API-Key: $API_KEY" -F "file=@session.json" -F "agent_id=agent-1" -F "file_type=session" -F "session_id=ses-001"
+curl -sX POST "$API/imports" -H "X-API-Key: $API_KEY" $AGENT_FIELD -F "file=@session.json" -F "file_type=session" -F "session_id=ses-001"
 
 # Check status
 curl -s -H "X-API-Key: $API_KEY" "$API/imports"
@@ -578,7 +584,20 @@ When user says "import memories to mem9" without specifying files:
 1. Scan agent workspace for memory/session files
 2. Upload **15 most recent** (by mtime)
 3. **Upload in parallel** for speed
-   **Paths to scan:**
+
+Before uploading, read the agent id from the active openclaw.json config — using the same resolution order the plugin uses at runtime:
+
+```bash
+# agents.list[0].id is what the plugin receives as ctx.agentId at runtime.
+# Falls back to plugins.entries.mem9.config.agentName (explicit plugin override).
+AGENT_ID="$(jq -r '(.agents.list[0].id) // (.plugins.entries.mem9.config.agentName) // empty' openclaw.json 2>/dev/null)"
+AGENT_FIELD=""
+[ -n "$AGENT_ID" ] && AGENT_FIELD="-F agent_id=$AGENT_ID"
+```
+
+Include `-F "agent_id=$AGENT_ID"` in each upload only when a value is found; omit it entirely otherwise.
+
+**Paths to scan:**
 
 ```
 ./memory.json         → file_type=memory
