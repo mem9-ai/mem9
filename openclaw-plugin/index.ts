@@ -270,6 +270,8 @@ const mnemoPlugin = {
 
     api.logger.info("[mem9] Server mode (v1alpha2)");
 
+    const hookAgentId = cfg.agentName ?? "agent";
+
     const factory: ToolFactory = (ctx: ToolContext) => {
       const agentId = ctx.agentId ?? cfg.agentName ?? "agent";
       const backend = new LazyServerBackend(
@@ -286,10 +288,13 @@ const mnemoPlugin = {
     // Uses the default workspace/agent context for hook-triggered operations.
     const hookBackend = new LazyServerBackend(
       effectiveApiUrl,
-      () => resolveAPIKey(cfg.agentName ?? "agent"),
-      cfg.agentName ?? "agent",
+      () => resolveAPIKey(hookAgentId),
+      hookAgentId,
     );
-    registerHooks(api, hookBackend, api.logger, { maxIngestBytes: cfg.maxIngestBytes });
+    registerHooks(api, hookBackend, api.logger, {
+      maxIngestBytes: cfg.maxIngestBytes,
+      fallbackAgentId: hookAgentId,
+    });
   },
 };
 
