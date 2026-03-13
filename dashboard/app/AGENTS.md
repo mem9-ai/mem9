@@ -62,7 +62,7 @@ Vite + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui + TanStack Query + Tan
 | shadcn/ui components (auto-generated) | `src/components/ui/` |
 | Shared environment defaults | `.env` |
 | Local UI-first overrides | `.env.local.example` |
-| Netlify redirects (API proxy + SPA fallback) | `public/_redirects` |
+| Standalone Netlify redirects | `public/_redirects` |
 
 ## Local conventions
 
@@ -71,6 +71,7 @@ Vite + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui + TanStack Query + Tan
 - Mock/real API switch currently uses `VITE_USE_MOCK` (`"true"` = mock, anything else = real). Shared `.env` currently sets `"false"`. For UI-first work, copy `.env.local.example` to `.env.local` and override locally instead of editing shared `.env`.
 - Feature flags live in `src/config/features.ts`. Currently: `useMock`, `enableManualAdd`, `enableTimeRange`, `enableFacet`, `enableTopicSummary`. UI components check these flags before rendering gated features.
 - API proxy: frontend calls `/your-memory/api/...` (relative path). Vite dev server proxies to `api.mem9.ai`; Netlify rewrite does the same in production. No CORS needed.
+- When dashboard is shipped under the main `mem9.ai` site, the production Netlify rewrites live in `site/netlify.toml`. `public/_redirects` remains the standalone-dashboard fallback.
 - i18n keys are nested JSON (`connect.title` → `{ "connect": { "title": "..." } }`). Translations live in `src/i18n/locales/`. All user-facing text must go through `t()`, never hardcoded.
 - API types in `src/types/memory.ts` mirror the backend data contract (`../docs/data-contract.md`). Keep them in sync.
 - TanStack Query hooks in `src/api/queries.ts` handle caching and mutation invalidation. Components should use these hooks, not call `api` directly.
