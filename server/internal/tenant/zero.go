@@ -5,11 +5,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 type ZeroClient struct {
@@ -138,12 +141,14 @@ func (p *ZeroProvisioner) Provision(ctx context.Context) (*ClusterInfo, error) {
 	}
 
 	return &ClusterInfo{
-		ID:       inst.ID,
-		Host:     inst.Host,
-		Port:     inst.Port,
-		Username: inst.Username,
-		Password: inst.Password,
-		DBName:   "test",
+		ID:             inst.ID,
+		Host:           inst.Host,
+		Port:           inst.Port,
+		Username:       inst.Username,
+		Password:       inst.Password,
+		DBName:         "test",
+		ClaimURL:       inst.ClaimURL,
+		ClaimExpiresAt: inst.ClaimExpiresAt,
 	}, nil
 }
 
@@ -186,17 +191,28 @@ func (p *ZeroProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("init schema: create table: %w", err)
 	}
 	if p.autoModel != "" {
-		if _, err := db.ExecContext(ctx,
-			`ALTER TABLE memories ADD VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil {
+		_, err := db.ExecContext(ctx,
+			`ALTER TABLE memories ADD VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+		if err != nil && !isIndexExistsError(err) {
 			return fmt.Errorf("init schema: vector index: %w", err)
 		}
 	}
 	if p.ftsEnabled {
-		if _, err := db.ExecContext(ctx,
-			`ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil {
+		_, err := db.ExecContext(ctx,
+			`ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+		if err != nil && !isIndexExistsError(err) {
 			return fmt.Errorf("init schema: fulltext index: %w", err)
 		}
 	}
 	return nil
 
+}
+
+// isIndexExistsError checks if the error is a duplicate index error.
+func isIndexExistsError(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	if errors.As(err, &mysqlErr) {
+		return mysqlErr.Number == 1061
+	}
+	return strings.Contains(err.Error(), "already exists")
 }

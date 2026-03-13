@@ -36,6 +36,7 @@ const TenantMemorySchemaPostgres = `CREATE TABLE IF NOT EXISTS memories (
     content         TEXT            NOT NULL,
     source          VARCHAR(100),
     tags            JSONB,
+    metadata        JSONB,
     embedding       vector(1536)    NULL,
     memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned',
     agent_id        VARCHAR(100)    NULL,

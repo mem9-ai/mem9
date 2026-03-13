@@ -77,18 +77,20 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 
 	// Build tenant record
 	t := &domain.Tenant{
-		ID:            tenantID,
-		Name:          tenantID,
-		DBHost:        info.Host,
-		DBPort:        info.Port,
-		DBUser:        info.Username,
-		DBPassword:    info.Password,
-		DBName:        info.DBName,
-		DBTLS:         true,
-		Provider:      providerType,
-		ClusterID:     info.ID,
-		Status:        domain.TenantProvisioning,
-		SchemaVersion: 0,
+		ID:             tenantID,
+		Name:           tenantID,
+		DBHost:         info.Host,
+		DBPort:         info.Port,
+		DBUser:         info.Username,
+		DBPassword:     info.Password,
+		DBName:         info.DBName,
+		DBTLS:          true,
+		Provider:       providerType,
+		ClusterID:      info.ID,
+		ClaimURL:       info.ClaimURL,
+		ClaimExpiresAt: info.ClaimExpiresAt,
+		Status:         domain.TenantProvisioning,
+		SchemaVersion:  0,
 	}
 
 	t0 = time.Now()

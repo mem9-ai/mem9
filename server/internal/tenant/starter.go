@@ -46,9 +46,16 @@ func (p *TiDBCloudProvisioner) Provision(ctx context.Context) (*ClusterInfo, err
 	}
 
 	endpoint := fmt.Sprintf("%s/v1beta1/clusters:takeoverFromPool", strings.TrimRight(p.apiURL, "/"))
-	body := fmt.Sprintf(`{"pool_id":"%s","root_password":"%s"}`, p.poolID, password)
+	payload := map[string]string{
+		"pool_id":       p.poolID,
+		"root_password": password,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request body: %w", err)
+	}
 
-	resp, err := p.doDigestAuthRequest(ctx, http.MethodPost, endpoint, []byte(body))
+	resp, err := p.doDigestAuthRequest(ctx, http.MethodPost, endpoint, body)
 	if err != nil {
 		return nil, fmt.Errorf("tidb cloud provision: %w", err)
 	}
@@ -175,7 +182,10 @@ func buildDigestAuth(username, password, method, uri, nonce, realm, qop string) 
 	ha1 := md5Hash(fmt.Sprintf("%s:%s:%s", username, realm, password))
 
 	// HA2 = MD5(method:uri)
-	parsedURL, _ := url.Parse(uri)
+	parsedURL, err := url.Parse(uri)
+	if err != nil {
+		return "", fmt.Errorf("parse uri: %w", err)
+	}
 	path := parsedURL.Path
 	if parsedURL.RawQuery != "" {
 		path = path + "?" + parsedURL.RawQuery
