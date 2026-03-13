@@ -70,6 +70,12 @@ To rerun only one side (useful when baseline already exists and you just want to
 SAMPLE_LIMIT=30 ./run_mem_compare.sh --profile mrniah_mem
 ```
 
+To resume a failed single-profile run from a specific sample id (keeps `benchmark/MR-NIAH/results/` and appends to `predictions.jsonl`):
+
+```
+MRNIAH_MEM9_ISOLATION=tenant ./run_mem_compare.sh --profile mrniah_mem --resume 91
+```
+
 To compare existing runs without re-running (e.g. baseline succeeded earlier, mem was re-run later):
 
 ```
@@ -79,7 +85,9 @@ To compare existing runs without re-running (e.g. baseline succeeded earlier, me
 1. Verifies `output/index.jsonl` exists (generate it if missing).
 2. Creates `~/.openclaw-${MRNIAH_MEM_PROFILE}` by cloning `~/.openclaw-${MRNIAH_BASE_PROFILE}` when the mem profile is missing, or when you export `MRNIAH_RESET_MEM_PROFILE=1`.
 3. Uses the hosted mem9 API by default (`https://api.mem9.ai`), or the endpoint you provide via `MEM9_BASE_URL` (aliases: `MEM9_API_URL`, `MNEMO_API_URL`).
-4. Provisions a fresh mem9 space for the run.
+4. Chooses a mem9 isolation strategy via `MRNIAH_MEM9_ISOLATION`:
+   - `tenant` (default): provisions a fresh mem9 space per case (strong isolation; recommended).
+   - `clear`: provisions one mem9 space for the run and clears memories before/after each case.
 5. Installs the `openclaw-plugin` into the memory profile, adds `plugins.allow=["mem9"]`, and writes the tenant credentials into `plugins.entries.mem9.config`.
 6. Calls `run_batch.py` twice (baseline vs mem), renaming each `results/` directory to `results-${profile}`.
 7. Prints accuracy for both runs and the delta.
@@ -93,6 +101,7 @@ Common environment variables:
 | `MRNIAH_AGENT`             | `main`                                        | Agent passed through to `run_batch.py`.                         |
 | `SAMPLE_LIMIT`             | `300`                                         | Samples processed per run (alias: `MRNIAH_LIMIT`).              |
 | `MEM9_BASE_URL`            | `https://api.mem9.ai`                         | mem9 API endpoint used for the comparison run.                  |
+| `MRNIAH_MEM9_ISOLATION`    | `tenant`                                      | mem9 isolation strategy for the mem profile (`tenant` or `clear`). |
 | `MRNIAH_RESET_MEM_PROFILE` | `0`                                           | Set to `1` to recreate the mem profile from the base profile.   |
 | `MRNIAH_CLEAN_SESSIONS`    | `1`                                           | Set to `0` to skip cleaning prior benchmark sessions.           |
 | `MRNIAH_WIPE_AGENT_SESSIONS` | `1`                                         | Set to `0` to avoid wiping `<profile>/agents/<agent>/sessions/` before/after the run (default archives sessions into `results-logs/raw/`). |
