@@ -2,7 +2,9 @@ import type { TFunction } from "i18next";
 import { toast } from "sonner";
 import { Bookmark, Sparkles, Copy, Trash2 } from "lucide-react";
 import { formatRelativeTime } from "@/lib/time";
-import type { Memory } from "@/types/memory";
+import type { Memory, MemoryFacet } from "@/types/memory";
+import { FacetBadge } from "./topic-strip";
+import { features } from "@/config/features";
 
 export function MemoryCard({
   memory: m,
@@ -21,6 +23,11 @@ export function MemoryCard({
 }) {
   const isPinned = m.memory_type === "pinned";
   const tags = m.tags ?? [];
+  const facet = features.enableFacet
+    ? ((m.metadata as Record<string, unknown> | null)?.facet as
+        | MemoryFacet
+        | undefined)
+    : undefined;
 
   function handleCopy(e: React.MouseEvent) {
     e.stopPropagation();
@@ -31,17 +38,17 @@ export function MemoryCard({
   return (
     <button
       onClick={onClick}
-      className={`surface-card group relative w-full text-left transition-all duration-150 hover:shadow-md ${
+      className={`surface-card group relative w-full overflow-hidden text-left transition-all duration-150 ${
         isSelected
-          ? "ring-2 ring-primary/25 shadow-md"
-          : ""
+          ? "surface-card-selected"
+          : "hover:shadow-md"
       }`}
       style={{
         animation: `slide-up 0.3s cubic-bezier(0.16,1,0.3,1) ${delay}ms both`,
       }}
     >
       <div
-        className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-[1rem] ${
+        className={`absolute inset-y-0 left-0 w-1 ${
           isPinned ? "bg-type-pinned" : "bg-type-insight"
         }`}
       />
@@ -72,12 +79,18 @@ export function MemoryCard({
                 {m.source}
               </span>
             )}
+            {facet && <FacetBadge facet={facet} t={t} />}
             {tags.length > 0 &&
-              tags.map((tag) => (
+              tags.slice(0, 3).map((tag) => (
                 <span key={tag} className="text-soft-foreground">
                   #{tag}
                 </span>
               ))}
+            {tags.length > 3 && (
+              <span className="text-soft-foreground/60">
+                +{tags.length - 3}
+              </span>
+            )}
           </div>
         </div>
 
