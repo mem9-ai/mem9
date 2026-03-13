@@ -5,28 +5,35 @@
 ```bash
 cd dashboard/app
 pnpm install
+cp .env.local.example .env.local
 pnpm dev
 ```
 
 ## Environment Variables
 
-Managed via `.env` files (`.env` for development, `.env.production` for builds):
+Use `.env.local` for local overrides. Keep the shared `.env` unchanged.
 
-| Variable | Dev Default | Prod Default | Description |
-|----------|-------------|--------------|-------------|
-| `VITE_USE_MOCK` | `"true"` | `"false"` | `"true"` enables mock data; anything else uses real API |
-| `VITE_API_BASE` | `/your-memory/api` | `/your-memory/api` | API base path (proxied to backend) |
+| Variable | Example | Current use | Notes |
+|----------|---------|-------------|-------|
+| `VITE_USE_MOCK` | `"true"` | active | shared `.env` currently sets `"false"`; `.env.local` should override it for UI-first work |
+| `VITE_API_BASE` | `/your-memory/api` | active | use the same relative path in dev and production |
+| `VITE_ENABLE_MANUAL_ADD` | `"true"` | planned | add in `src/config/features.ts` before wiring gated UI |
+| `VITE_ENABLE_TIME_RANGE` | `"true"` | planned | keep off in real mode until backend params exist |
+| `VITE_ENABLE_FACET` | `"true"` | planned | controls facet label visibility |
+| `VITE_ENABLE_TOPIC_SUMMARY` | `"true"` | planned | controls topic strip visibility |
 
 ```bash
-# Default: mock mode (VITE_USE_MOCK=true from .env)
+# UI-first local work
 pnpm dev
 
-# Real API via Vite proxy to api.mem9.ai
+# Real API through the Vite proxy
 VITE_USE_MOCK=false pnpm dev
 
 # Real API via custom backend
 VITE_USE_MOCK=false VITE_API_BASE=http://localhost:8080/v1alpha1/mem9s pnpm dev
 ```
+
+See `../docs/ui-first-mock-plan.md` and `../docs/ui-first-mock-plan.zh-CN.md` for the planned feature-flag matrix and provider split.
 
 ## API Proxy
 
@@ -36,6 +43,22 @@ The frontend never makes cross-origin requests. All API calls go through a same-
 |-------------|-------|---------------|----------------|
 | Dev | Vite dev server | `/your-memory/api/...` | `https://api.mem9.ai/v1alpha1/mem9s/...` |
 | Prod | Netlify rewrite | `/your-memory/api/...` | `https://api.mem9.ai/v1alpha1/mem9s/...` |
+
+## Working Rules
+
+- `src/api/client.ts` is the current mixed client. Treat it as transitional code.
+- New gated features should go through `src/config/features.ts`.
+- Keep user-facing copy in i18n only.
+- Keep UI data access inside TanStack Query hooks.
+- The current dependency set is enough for the planned UI-first pass. Prefer browser APIs for export and import helpers before adding packages.
+
+## Reference Docs
+
+- `../docs/dashboard-mvp-spec.md`
+- `../docs/information-architecture.md`
+- `../docs/data-contract.md`
+- `../docs/dev-tasks.md`
+- `../docs/ui-first-mock-plan.md`
 
 ## Project Structure
 
@@ -50,9 +73,9 @@ src/
 ├── types/
 │   └── memory.ts           — API type definitions
 ├── api/
-│   ├── client.ts           — Mock/real API client
+│   ├── client.ts           — Current mixed API client, to be split
 │   ├── queries.ts          — TanStack Query hooks
-│   └── mock-data.ts        — 20 mock memories
+│   └── mock-data.ts        — Current mock memories
 ├── i18n/
 │   ├── index.ts            — i18next initialization
 │   └── locales/
