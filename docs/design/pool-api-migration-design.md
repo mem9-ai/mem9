@@ -2,7 +2,7 @@
 
 ## Summary
 
-Migrate the tenant provisioning mechanism from **TiDB Zero API** to **TiDB Cloud Starter Pool API**, with support for fallback to Zero mode via feature toggle.
+Migrate the tenant provisioning mechanism from **TiDB Zero API** to **TiDB Cloud Starter Pool API**, with explicit mode selection via configuration toggle.
 
 ## Motivation
 
@@ -28,7 +28,7 @@ Migrate the tenant provisioning mechanism from **TiDB Zero API** to **TiDB Cloud
 ### New Variables (Pool Mode)
 
 ```bash
-# Required for Pool mode (has priority over Zero mode)
+# Required for Pool mode
 TIDBCLOUD_API_KEY         # Digest Auth App Key (Public Key)
 TIDBCLOUD_API_SECRET      # Digest Auth App Secret (Private Key)
 
@@ -213,7 +213,7 @@ var provisioner tenant.Provisioner
 if cfg.TiDBZeroEnabled {
     // Zero mode (explicit toggle takes precedence)
     provisioner = tenant.NewZeroProvisioner(cfg.TiDBZeroAPIURL)
-} else if os.Getenv("TIDBCLOUD_API_KEY") != "" {
+} else if os.Getenv("TIDBCLOUD_API_KEY") != "" && os.Getenv("TIDBCLOUD_API_SECRET") != "" {
     // Pool mode
     provisioner = tenant.NewTiDBCloudProvisioner(
         cfg.TiDBCloudAPIURL,
@@ -222,7 +222,7 @@ if cfg.TiDBZeroEnabled {
         cfg.TiDBCloudPoolID,
     )
 } else {
-    log.Fatal("provisioning not configured: set MNEMO_TIDB_ZERO_ENABLED=true or TIDBCLOUD_API_KEY")
+    log.Fatal("provisioning not configured: set MNEMO_TIDB_ZERO_ENABLED=true or both TIDBCLOUD_API_KEY and TIDBCLOUD_API_SECRET")
 }
 
 tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, ...)
@@ -299,6 +299,8 @@ type Tenant struct {
 
 **Note:** `ClaimURL` and `ClaimExpiresAt` are kept for backward compatibility with existing Zero tenants. Pool tenants will have empty values. Code using these fields must check `Provider` first.
 
+**Lifecycle Note:** Both Zero and Pool tenants follow the same lifecycle: created with `Status: provisioning`, then transitioned to `active` after `InitSchema()` succeeds. For Pool tenants, `InitSchema()` is a no-op since schema is pre-configured, but the state transition ensures consistent recovery semantics.
+
 ## Migration Path
 
 1. **Phase 1**: Deploy code with both provisioners supported
@@ -326,7 +328,7 @@ type Tenant struct {
 1. **Unit tests** for Digest Auth implementation (required)
 2. **Mock tests** for TiDBCloudProvisioner with fake Pool API server
 3. **Integration tests** for ZeroProvisioner (existing)
-4. **Fallback tests** (Pool unavailable -> error, not Zero fallback)
+4. **Fallback tests** (verify mode selection logic; note: fallback is at config time, not runtime)
 5. **End-to-end provisioning test** with real credentials in staging
 
 ## Related Files to Modify
