@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -30,23 +29,23 @@ func ResolveTenant(
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tenantID := chi.URLParam(r, "tenantID")
 			if tenantID == "" {
-				writeError(w, http.StatusBadRequest, "missing tenant ID in path")
+				writeError(w, r, http.StatusBadRequest, "missing tenant ID in path")
 				return
 			}
 
 			t, err := tenantRepo.GetByID(r.Context(), tenantID)
 			if err != nil {
-				writeError(w, http.StatusNotFound, "tenant not found")
+				writeError(w, r, http.StatusNotFound, "tenant not found")
 				return
 			}
 			if t.Status != domain.TenantActive {
-				writeError(w, http.StatusForbidden, "tenant not active")
+				writeError(w, r, http.StatusForbidden, "tenant not active")
 				return
 			}
 
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			if err != nil {
-				writeError(w, http.StatusServiceUnavailable, "cannot connect to tenant database")
+				writeError(w, r, http.StatusServiceUnavailable, "cannot connect to tenant database")
 				return
 			}
 
@@ -75,23 +74,23 @@ func ResolveApiKey(
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			apiKey := r.Header.Get(APIKeyHeader)
 			if apiKey == "" {
-				writeError(w, http.StatusBadRequest, "missing API key")
+				writeError(w, r, http.StatusBadRequest, "missing API key")
 				return
 			}
 
 			t, err := tenantRepo.GetByID(r.Context(), apiKey)
 			if err != nil {
-				writeError(w, http.StatusBadRequest, "invalid API key")
+				writeError(w, r, http.StatusBadRequest, "invalid API key")
 				return
 			}
 			if t.Status != domain.TenantActive {
-				writeError(w, http.StatusBadRequest, "invalid API key")
+				writeError(w, r, http.StatusBadRequest, "invalid API key")
 				return
 			}
 
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			if err != nil {
-				writeError(w, http.StatusServiceUnavailable, "cannot connect to tenant database")
+				writeError(w, r, http.StatusServiceUnavailable, "cannot connect to tenant database")
 				return
 			}
 
@@ -112,10 +111,4 @@ func ResolveApiKey(
 func AuthFromContext(ctx context.Context) *domain.AuthInfo {
 	info, _ := ctx.Value(authInfoKey).(*domain.AuthInfo)
 	return info
-}
-
-func writeError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }

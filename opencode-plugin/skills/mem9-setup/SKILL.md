@@ -249,3 +249,66 @@ Header: `X-Mnemo-Agent-Id: <name>` (optional)
 | Plugin not loading | Check `opencode.json` has a valid `"plugin"` entry and restart OpenCode |
 | `404` on API call | Verify space ID; run `curl https://api.mem9.ai/healthz` |
 | Existing space ID unreachable | Re-check for typos; confirm network access to `api.mem9.ai` |
+
+---
+
+## Diagnosing Errors
+
+When any mem9 operation fails, follow these steps before asking the user for help.
+
+### Step 1 — Extract key information from the error
+
+From the error message, collect:
+- `request_id` — the value inside `[request_id: ...]` if present
+- HTTP status code (e.g. `404`, `500`)
+- Error message text
+
+### Step 2 — Check service health
+
+Run:
+
+    curl -sS --max-time 8 "https://api.mem9.ai/healthz"
+
+- `{"status":"ok"}` — service is up; proceed to Step 3
+- Non-zero exit / empty output / connection error — service is down or unreachable
+
+Note: do NOT use `-f` here or in Step 3. `-f` (--fail) causes curl to suppress the
+response body and exit non-zero on 4xx/5xx, which is exactly the signal needed in Step 4.
+
+### Step 3 — Probe a business endpoint
+
+Run (replace `$SPACE_ID` with the configured space ID):
+
+    curl -i -sS --max-time 8 \
+      "https://api.mem9.ai/v1alpha1/mem9s/$SPACE_ID/memories?limit=1"
+
+`-i` prints response headers (required to see `X-Request-Id`). `-sS` suppresses
+the progress meter but still shows errors. No `-f` so the body is always captured
+regardless of HTTP status.
+
+This step is required. `/healthz` returning `200` does not guarantee business
+routes are working — the motivating incident was exactly "healthz OK, memories 404."
+
+### Step 4 — Classify
+
+| /healthz | Business endpoint | Body shape | Likely cause |
+|---|---|---|---|
+| unreachable | — | — | network or service outage |
+| OK | `404` or `405` | JSON `{"error":"...","request_id":"..."}` | bad space/tenant ID or wrong HTTP method — verify URL and `MEM9_TENANT_ID` in config |
+| OK | `404` or `405` | non-JSON or empty | ingress or path-rewrite failure, or chi route/method mismatch — check gateway routing |
+| OK | `403` | JSON server error | tenant not active — check tenant status |
+| OK | `429` | JSON server error | rate limit exceeded — back off and retry |
+| OK | `500` | — | server-side bug |
+| OK | `503` | — | transient overload or DB unavailable — retry after 30s |
+
+### Step 5 — Report to the user
+
+Always tell the user:
+
+> mem9 encountered an error. If this persists, please send the following to the mem9 team:
+> - request_id: `<value or "not present">`
+> - Error: `<message>`
+> - /healthz: `<ok or unreachable>`
+> - Business endpoint status: `<status code or error>`
+
+Never ask the user to inspect server logs — they cannot access them.

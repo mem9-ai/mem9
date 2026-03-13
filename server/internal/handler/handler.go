@@ -112,6 +112,7 @@ func (s *Server) Router(
 	// Global middleware.
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RequestID)
+	r.Use(requestIDHeader)
 	r.Use(requestLogger(s.logger))
 	r.Use(rateLimitMW)
 	r.Use(metrics.Middleware)
@@ -161,6 +162,17 @@ func (s *Server) Router(
 	return r
 }
 
+// requestIDHeader mirrors the chi request ID into the response header for every
+// request handled by chi, including native 404/405 and panic recovery paths.
+func requestIDHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if reqID := chimw.GetReqID(r.Context()); reqID != "" {
+			w.Header().Set(chimw.RequestIDHeader, reqID)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // respond writes a JSON response.
 func respond(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -172,27 +184,31 @@ func respond(w http.ResponseWriter, status int, data any) {
 	}
 }
 
-// respondError writes a JSON error response.
-func respondError(w http.ResponseWriter, status int, msg string) {
-	respond(w, status, map[string]string{"error": msg})
+// respondError writes a JSON error response including the request ID.
+func respondError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	reqID := chimw.GetReqID(r.Context())
+	respond(w, status, map[string]string{
+		"error":      msg,
+		"request_id": reqID,
+	})
 }
 
 // handleError maps domain errors to HTTP status codes.
-func (s *Server) handleError(w http.ResponseWriter, err error) {
+func (s *Server) handleError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
-		respondError(w, http.StatusNotFound, err.Error())
+		respondError(w, r, http.StatusNotFound, err.Error())
 	case errors.Is(err, domain.ErrWriteConflict):
-		respondError(w, http.StatusServiceUnavailable, err.Error())
+		respondError(w, r, http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, domain.ErrConflict):
-		respondError(w, http.StatusConflict, err.Error())
+		respondError(w, r, http.StatusConflict, err.Error())
 	case errors.Is(err, domain.ErrDuplicateKey):
-		respondError(w, http.StatusConflict, "duplicate key: "+err.Error())
+		respondError(w, r, http.StatusConflict, "duplicate key: "+err.Error())
 	case errors.Is(err, domain.ErrValidation):
-		respondError(w, http.StatusBadRequest, err.Error())
+		respondError(w, r, http.StatusBadRequest, err.Error())
 	default:
 		s.logger.Error("internal error", "err", err)
-		respondError(w, http.StatusInternalServerError, "internal server error")
+		respondError(w, r, http.StatusInternalServerError, "internal server error")
 	}
 }
 

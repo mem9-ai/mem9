@@ -11,7 +11,7 @@ type provisionResponse struct {
 func (s *Server) provisionMem9s(w http.ResponseWriter, r *http.Request) {
 	result, err := s.tenant.Provision(r.Context())
 	if err != nil {
-		s.handleError(w, err)
+		s.handleError(w, r, err)
 		return
 	}
 
@@ -25,7 +25,7 @@ func (s *Server) getTenantInfo(w http.ResponseWriter, r *http.Request) {
 
 	info, err := s.tenant.GetInfo(r.Context(), auth.TenantID)
 	if err != nil {
-		s.handleError(w, err)
+		s.handleError(w, r, err)
 		return
 	}
 

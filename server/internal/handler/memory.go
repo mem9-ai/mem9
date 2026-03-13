@@ -26,7 +26,7 @@ type createMemoryRequest struct {
 func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	var req createMemoryRequest
 	if err := decode(r, &req); err != nil {
-		s.handleError(w, err)
+		s.handleError(w, r, err)
 		return
 	}
 
@@ -42,7 +42,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	hasContent := strings.TrimSpace(req.Content) != ""
 
 	if hasMessages && hasContent {
-		s.handleError(w, &domain.ValidationError{Field: "body", Message: "provide either content or messages, not both"})
+		s.handleError(w, r, &domain.ValidationError{Field: "body", Message: "provide either content or messages, not both"})
 		return
 	}
 
@@ -69,11 +69,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !hasContent {
-		s.handleError(w, &domain.ValidationError{Field: "content", Message: "content or messages required"})
+		s.handleError(w, r, &domain.ValidationError{Field: "content", Message: "content or messages required"})
 		return
 	}
 	if req.Mode != "" {
-		s.handleError(w, &domain.ValidationError{Field: "body", Message: "content mode does not accept mode"})
+		s.handleError(w, r, &domain.ValidationError{Field: "body", Message: "content mode does not accept mode"})
 		return
 	}
 
@@ -136,7 +136,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	svc := s.resolveServices(auth)
 	memories, total, err := svc.memory.Search(r.Context(), filter)
 	if err != nil {
-		s.handleError(w, err)
+		s.handleError(w, r, err)
 		return
 	}
 
@@ -159,7 +159,7 @@ func (s *Server) getMemory(w http.ResponseWriter, r *http.Request) {
 
 	mem, err := svc.memory.Get(r.Context(), id)
 	if err != nil {
-		s.handleError(w, err)
+		s.handleError(w, r, err)
 		return
 	}
 
@@ -175,7 +175,7 @@ type updateMemoryRequest struct {
 func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 	var req updateMemoryRequest
 	if err := decode(r, &req); err != nil {
-		s.handleError(w, err)
+		s.handleError(w, r, err)
 		return
 	}
 
@@ -190,7 +190,7 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 
 	mem, err := svc.memory.Update(r.Context(), auth.AgentName, id, req.Content, req.Tags, req.Metadata, ifMatch)
 	if err != nil {
-		s.handleError(w, err)
+		s.handleError(w, r, err)
 		return
 	}
 
@@ -204,7 +204,7 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	if err := svc.memory.Delete(r.Context(), id, auth.AgentName); err != nil {
-		s.handleError(w, err)
+		s.handleError(w, r, err)
 		return
 	}
 
@@ -218,7 +218,7 @@ type bulkCreateRequest struct {
 func (s *Server) bulkCreateMemories(w http.ResponseWriter, r *http.Request) {
 	var req bulkCreateRequest
 	if err := decode(r, &req); err != nil {
-		s.handleError(w, err)
+		s.handleError(w, r, err)
 		return
 	}
 
@@ -226,7 +226,7 @@ func (s *Server) bulkCreateMemories(w http.ResponseWriter, r *http.Request) {
 	svc := s.resolveServices(auth)
 	memories, err := svc.memory.BulkCreate(r.Context(), auth.AgentName, req.Memories)
 	if err != nil {
-		s.handleError(w, err)
+		s.handleError(w, r, err)
 		return
 	}
 
@@ -247,7 +247,7 @@ func (s *Server) bootstrapMemories(w http.ResponseWriter, r *http.Request) {
 
 	memories, err := svc.memory.Bootstrap(r.Context(), limit)
 	if err != nil {
-		s.handleError(w, err)
+		s.handleError(w, r, err)
 		return
 	}
 

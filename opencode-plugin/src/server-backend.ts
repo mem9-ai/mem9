@@ -12,6 +12,23 @@ import type {
  * ServerBackend — talks to mem9 REST API.
  * Used when MEM9_API_URL + MEM9_TENANT_ID are set.
  */
+type ErrorResponse = {
+  error?: string;
+  request_id?: string;
+};
+
+class Mem9HttpError extends Error {
+  readonly status: number;
+  readonly requestID: string | null;
+
+  constructor(status: number, message: string, requestID: string | null) {
+    super(requestID ? `${message} [request_id: ${requestID}]` : message);
+    this.name = "Mem9HttpError";
+    this.status = status;
+    this.requestID = requestID;
+  }
+}
+
 export class ServerBackend implements MemoryBackend {
   private baseUrl: string;
   private tenantID: string;
@@ -45,10 +62,11 @@ export class ServerBackend implements MemoryBackend {
 
     if (resp.status === 204) return undefined as T;
 
-    const data = await resp.json();
     if (!resp.ok) {
-      throw new Error((data as { error?: string }).error ?? `HTTP ${resp.status}`);
+      await this.throwErrorResponse(resp);
     }
+
+    const data = await resp.json();
     return data as T;
   }
 
@@ -84,7 +102,7 @@ export class ServerBackend implements MemoryBackend {
     try {
       return await this.request<Memory>("GET", this.tenantPath(`/memories/${id}`));
     } catch (err) {
-      if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
         return null;
       }
       throw err;
@@ -95,7 +113,7 @@ export class ServerBackend implements MemoryBackend {
     try {
       return await this.request<Memory>("PUT", this.tenantPath(`/memories/${id}`), input);
     } catch (err) {
-      if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
         return null;
       }
       throw err;
@@ -107,7 +125,7 @@ export class ServerBackend implements MemoryBackend {
       await this.request("DELETE", this.tenantPath(`/memories/${id}`));
       return true;
     } catch (err) {
-      if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
         return false;
       }
       throw err;
@@ -117,5 +135,31 @@ export class ServerBackend implements MemoryBackend {
   async listRecent(limit: number): Promise<Memory[]> {
     const result = await this.search({ limit, offset: 0 });
     return result.memories;
+  }
+
+  private async throwErrorResponse(resp: Response, fallbackMessage?: string): Promise<never> {
+    const headerRequestID = resp.headers.get("X-Request-Id");
+    const contentType = resp.headers.get("Content-Type") ?? "";
+    const body = await resp.text();
+    const rawBody = body.trim();
+
+    let message = rawBody || fallbackMessage || `HTTP ${resp.status}`;
+    let bodyRequestID: string | null = null;
+
+    if (contentType.includes("application/json") && body) {
+      try {
+        const data = JSON.parse(body) as ErrorResponse;
+        if (data.error) {
+          message = data.error;
+        }
+        if (data.request_id) {
+          bodyRequestID = data.request_id;
+        }
+      } catch {
+        // fall through to raw body text
+      }
+    }
+
+    throw new Mem9HttpError(resp.status, message, bodyRequestID ?? headerRequestID);
   }
 }

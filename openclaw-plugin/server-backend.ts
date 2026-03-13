@@ -14,6 +14,23 @@ type ProvisionMem9sResponse = {
   id: string;
 };
 
+type ErrorResponse = {
+  error?: string;
+  request_id?: string;
+};
+
+class Mem9HttpError extends Error {
+  readonly status: number;
+  readonly requestID: string | null;
+
+  constructor(status: number, message: string, requestID: string | null) {
+    super(requestID ? `${message} [request_id: ${requestID}]` : message);
+    this.name = "Mem9HttpError";
+    this.status = status;
+    this.requestID = requestID;
+  }
+}
+
 export class ServerBackend implements MemoryBackend {
   private baseUrl: string;
   private apiKey: string;
@@ -36,8 +53,7 @@ export class ServerBackend implements MemoryBackend {
     });
 
     if (!resp.ok) {
-      const body = await resp.text();
-      throw new Error(`mem9s provision failed (${resp.status}): ${body}`);
+      await this.throwErrorResponse(resp, "mem9s provision failed");
     }
 
     const data = (await resp.json()) as ProvisionMem9sResponse;
@@ -86,16 +102,22 @@ export class ServerBackend implements MemoryBackend {
   async get(id: string): Promise<Memory | null> {
     try {
       return await this.request<Memory>("GET", this.memoryPath(`/memories/${id}`));
-    } catch {
-      return null;
+    } catch (err) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
+        return null;
+      }
+      throw err;
     }
   }
 
   async update(id: string, input: UpdateMemoryInput): Promise<Memory | null> {
     try {
       return await this.request<Memory>("PUT", this.memoryPath(`/memories/${id}`), input);
-    } catch {
-      return null;
+    } catch (err) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
+        return null;
+      }
+      throw err;
     }
   }
 
@@ -103,8 +125,11 @@ export class ServerBackend implements MemoryBackend {
     try {
       await this.request("DELETE", this.memoryPath(`/memories/${id}`));
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
+        return false;
+      }
+      throw err;
     }
   }
 
@@ -142,10 +167,41 @@ export class ServerBackend implements MemoryBackend {
       return undefined as T;
     }
 
-    const data = await resp.json();
     if (!resp.ok) {
-      throw new Error((data as { error?: string }).error || `HTTP ${resp.status}`);
+      await this.throwErrorResponse(resp);
     }
+
+    const data = await resp.json();
     return data as T;
+  }
+
+  private async throwErrorResponse(resp: Response, context?: string): Promise<never> {
+    const headerRequestID = resp.headers.get("X-Request-Id");
+    const contentType = resp.headers.get("Content-Type") ?? "";
+    const body = await resp.text();
+    const rawBody = body.trim();
+
+    let message = rawBody || `HTTP ${resp.status}`;
+    let bodyRequestID: string | null = null;
+
+    if (contentType.includes("application/json") && body) {
+      try {
+        const data = JSON.parse(body) as ErrorResponse;
+        if (data.error) {
+          message = data.error;
+        }
+        if (data.request_id) {
+          bodyRequestID = data.request_id;
+        }
+      } catch {
+        // fall through to raw body text
+      }
+    }
+
+    if (context) {
+      message = `${context}: ${message}`;
+    }
+
+    throw new Mem9HttpError(resp.status, message, bodyRequestID ?? headerRequestID);
   }
 }

@@ -54,7 +54,7 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 			}
 
 			if !rl.getLimiter(ip).Allow() {
-				writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
+				writeError(w, r, http.StatusTooManyRequests, "rate limit exceeded")
 				return
 			}
 
@@ -64,7 +64,7 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 			}
 			if key != "" {
 				if !rl.getLimiter(key).Allow() {
-					writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
+					writeError(w, r, http.StatusTooManyRequests, "rate limit exceeded")
 					return
 				}
 			}
