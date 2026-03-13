@@ -346,8 +346,7 @@ Or if no `openclaw.json` exists, create:
         "enabled": true,
         "config": {
           "apiUrl": "https://api.mem9.ai",
-          "apiKey": "<your-api-key>",
-          "tenantID": "<your-api-key>"
+          "apiKey": "<your-api-key>"
         }
       }
     },
@@ -381,8 +380,7 @@ Or if no `openclaw.json` exists, create:
         "enabled": true,
         "config": {
           "apiUrl": "https://api.mem9.ai",
-          "apiKey": "<your-api-key>",
-          "tenantID": "<your-api-key>"
+          "apiKey": "<your-api-key>"
         }
       }
     }
