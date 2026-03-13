@@ -41,6 +41,10 @@ type Config struct {
 	TenantPoolIdleTimeout time.Duration
 	TenantPoolTotalLimit  int
 
+	// TiDB Cloud Pool configuration
+	TiDBCloudAPIURL    string
+	TiDBCloudPoolID    string
+
 	// FTSEnabled controls whether full-text search is attempted.
 	// Set MNEMO_FTS_ENABLED=true only when the TiDB cluster supports
 	// FULLTEXT INDEX and FTS_MATCH_WORD with constant strings.
@@ -81,6 +85,8 @@ func Load() (*Config, error) {
 		IngestMode:            envOr("MNEMO_INGEST_MODE", "smart"),
 		TiDBZeroEnabled:       envBool("MNEMO_TIDB_ZERO_ENABLED", true),
 		TiDBZeroAPIURL:        envOr("MNEMO_TIDB_ZERO_API_URL", "https://zero.tidbapi.com/v1alpha1"),
+		TiDBCloudAPIURL:       envOr("TIDBCLOUD_API_URL", "https://serverless.tidbapi.com"),
+		TiDBCloudPoolID:       envOr("TIDBCLOUD_POOL_ID", "2"),
 		TenantPoolMaxIdle:     envInt("MNEMO_TENANT_POOL_MAX_IDLE", 5),
 		TenantPoolMaxOpen:     envInt("MNEMO_TENANT_POOL_MAX_OPEN", 10),
 		TenantPoolIdleTimeout: envDuration("MNEMO_TENANT_POOL_IDLE_TIMEOUT", 10*time.Minute),

@@ -82,13 +82,30 @@ func main() {
 	defer tenantPool.Close()
 
 	// Services.
-	var zeroClient *tenant.ZeroClient
+	// Select provisioner based on configuration
+	var provisioner tenant.Provisioner
 	if cfg.TiDBZeroEnabled && cfg.DBBackend == "tidb" {
-		zeroClient = tenant.NewZeroClient(cfg.TiDBZeroAPIURL)
+		// Zero mode (explicit toggle takes precedence)
+		provisioner = tenant.NewZeroProvisioner(cfg.TiDBZeroAPIURL)
+		logger.Info("using TiDB Zero provisioner")
 	} else if cfg.TiDBZeroEnabled {
 		logger.Warn("TiDB Zero provisioning is only supported with tidb backend; disabling auto-provisioning", "backend", cfg.DBBackend)
 	}
-	tenantSvc := service.NewTenantService(tenantRepo, zeroClient, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled)
+
+	// Check for TiDB Cloud credentials (only if Zero is not enabled)
+	if provisioner == nil && cfg.DBBackend == "tidb" {
+		if os.Getenv("TIDBCLOUD_API_KEY") != "" && os.Getenv("TIDBCLOUD_API_SECRET") != "" {
+			provisioner = tenant.NewTiDBCloudProvisioner(cfg.TiDBCloudAPIURL, cfg.TiDBCloudPoolID)
+			logger.Info("using TiDB Cloud Pool provisioner")
+		}
+	}
+
+	// Note: nil provisioner is valid for deployments with pre-existing tenants
+	if provisioner == nil {
+		logger.Info("no provisioner configured (pre-existing tenants mode)")
+	}
+
+	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled)
 
 	// Middleware.
 	tenantMW := middleware.ResolveTenant(tenantRepo, tenantPool)

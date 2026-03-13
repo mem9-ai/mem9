@@ -1,0 +1,209 @@
+package tenant
+
+import (
+	"bytes"
+	"context"
+	"crypto/md5"
+	"crypto/rand"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"time"
+)
+
+// TiDBCloudProvisioner implements service.Provisioner for TiDB Cloud Pool API.
+// Note: TIDBCLOUD_API_KEY and TIDBCLOUD_API_SECRET are read via os.Getenv()
+// (not Config) as these are sensitive credentials that should not be persisted.
+type TiDBCloudProvisioner struct {
+	apiURL    string
+	apiKey    string
+	apiSecret string
+	poolID    string
+	client    *http.Client
+}
+
+// NewTiDBCloudProvisioner creates a provisioner for TiDB Cloud Pool API.
+func NewTiDBCloudProvisioner(apiURL, poolID string) *TiDBCloudProvisioner {
+	return &TiDBCloudProvisioner{
+		apiURL:    apiURL,
+		apiKey:    os.Getenv("TIDBCLOUD_API_KEY"),
+		apiSecret: os.Getenv("TIDBCLOUD_API_SECRET"),
+		poolID:    poolID,
+		client:    &http.Client{Timeout: 60 * time.Second},
+	}
+}
+
+// Provision acquires a cluster from the TiDB Cloud Pool.
+func (p *TiDBCloudProvisioner) Provision(ctx context.Context) (*ClusterInfo, error) {
+	password := generateRandomPassword(16)
+
+	endpoint := fmt.Sprintf("%s/v1beta1/clusters:takeoverFromPool", strings.TrimRight(p.apiURL, "/"))
+	body := fmt.Sprintf(`{"pool_id":"%s","root_password":"%s"}`, p.poolID, password)
+
+	resp, err := p.doDigestAuthRequest(ctx, http.MethodPost, endpoint, []byte(body))
+	if err != nil {
+		return nil, fmt.Errorf("tidb cloud provision: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("tidb cloud provision: status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		ClusterID string `json:"clusterId"`
+		Endpoints struct {
+			Public struct {
+				Host string `json:"host"`
+				Port int    `json:"port"`
+			} `json:"public"`
+		} `json:"endpoints"`
+		UserPrefix string `json:"userPrefix"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("tidb cloud provision: decode response: %w", err)
+	}
+
+	return &ClusterInfo{
+		ID:       result.ClusterID,
+		Host:     result.Endpoints.Public.Host,
+		Port:     result.Endpoints.Public.Port,
+		Username: result.UserPrefix + ".root",
+		Password: password,
+		DBName:   "test",
+	}, nil
+}
+
+// InitSchema verifies the pre-configured schema exists.
+// For TiDB Cloud Pool, the schema is pre-configured; we just verify it.
+func (p *TiDBCloudProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
+	// Verify pre-configured schema exists via SELECT (do not run DDL)
+	if _, err := db.ExecContext(ctx, "SELECT 1 FROM memories LIMIT 1"); err != nil {
+		return fmt.Errorf("schema verification failed: %w", err)
+	}
+	return nil
+}
+
+// doDigestAuthRequest performs an HTTP request with Digest authentication.
+func (p *TiDBCloudProvisioner) doDigestAuthRequest(ctx context.Context, method, urlStr string, body []byte) (*http.Response, error) {
+	// Step 1: Initial request to get nonce
+	req, err := http.NewRequestWithContext(ctx, method, urlStr, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		// Expected 401 to get nonce
+		return resp, nil
+	}
+	resp.Body.Close()
+
+	// Parse WWW-Authenticate header
+	wwwAuth := resp.Header.Get("WWW-Authenticate")
+	if wwwAuth == "" {
+		return nil, fmt.Errorf("missing WWW-Authenticate header")
+	}
+
+	nonce, realm, qop := parseDigestChallenge(wwwAuth)
+	if nonce == "" {
+		return nil, fmt.Errorf("invalid digest challenge")
+	}
+
+	// Step 2: Build authenticated request
+	authHeader := buildDigestAuth(p.apiKey, p.apiSecret, method, urlStr, nonce, realm, qop)
+
+	req, err = http.NewRequestWithContext(ctx, method, urlStr, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+
+	return p.client.Do(req)
+}
+
+// parseDigestChallenge extracts nonce, realm, and qop from WWW-Authenticate header.
+func parseDigestChallenge(header string) (nonce, realm, qop string) {
+	// Strip "Digest " prefix
+	header = strings.TrimPrefix(header, "Digest ")
+
+	parts := strings.Split(header, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, "nonce=") {
+			nonce = strings.Trim(strings.TrimPrefix(part, "nonce="), `"`)
+		}
+		if strings.HasPrefix(part, "realm=") {
+			realm = strings.Trim(strings.TrimPrefix(part, "realm="), `"`)
+		}
+		if strings.HasPrefix(part, "qop=") {
+			qop = strings.Trim(strings.TrimPrefix(part, "qop="), `"`)
+		}
+	}
+	return
+}
+
+// buildDigestAuth constructs the Digest Authorization header.
+func buildDigestAuth(username, password, method, uri, nonce, realm, qop string) string {
+	nc := "00000001"
+	cnonce := generateNonce()
+
+	// HA1 = MD5(username:realm:password)
+	ha1 := md5Hash(fmt.Sprintf("%s:%s:%s", username, realm, password))
+
+	// HA2 = MD5(method:uri)
+	parsedURL, _ := url.Parse(uri)
+	path := parsedURL.Path
+	if parsedURL.RawQuery != "" {
+		path = path + "?" + parsedURL.RawQuery
+	}
+	ha2 := md5Hash(fmt.Sprintf("%s:%s", method, path))
+
+	// Response = MD5(HA1:nonce:nc:cnonce:qop:HA2)
+	var response string
+	if qop == "auth" {
+		response = md5Hash(fmt.Sprintf("%s:%s:%s:%s:%s:%s", ha1, nonce, nc, cnonce, qop, ha2))
+	} else {
+		response = md5Hash(fmt.Sprintf("%s:%s:%s", ha1, nonce, ha2))
+	}
+
+	if qop == "auth" {
+		return fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", qop=%s, nc=%s, cnonce="%s", response="%s"`,
+			username, realm, nonce, path, qop, nc, cnonce, response)
+	}
+	return fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", response="%s"`,
+		username, realm, nonce, path, response)
+}
+
+func md5Hash(s string) string {
+	return fmt.Sprintf("%x", md5.Sum([]byte(s)))
+}
+
+func generateNonce() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return fmt.Sprintf("%x", b)
+}
+
+func generateRandomPassword(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, length)
+	rand.Read(b)
+	for i := range b {
+		b[i] = charset[int(b[i])%len(charset)]
+	}
+	return string(b)
+}

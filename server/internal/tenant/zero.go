@@ -3,6 +3,7 @@ package tenant
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -106,4 +107,41 @@ func (c *ZeroClient) CreateInstance(ctx context.Context, tag string) (*ZeroInsta
 		}
 	}
 	return inst, nil
+}
+
+// ZeroProvisioner implements service.Provisioner for TiDB Zero API.
+type ZeroProvisioner struct {
+	client *ZeroClient
+}
+
+// NewZeroProvisioner creates a provisioner for TiDB Zero API.
+func NewZeroProvisioner(baseURL string) *ZeroProvisioner {
+	return &ZeroProvisioner{
+		client: NewZeroClient(baseURL),
+	}
+}
+
+// Provision acquires a cluster from TiDB Zero.
+func (p *ZeroProvisioner) Provision(ctx context.Context) (*ClusterInfo, error) {
+	inst, err := p.client.CreateInstance(ctx, "mem9s")
+	if err != nil {
+		return nil, err
+	}
+
+	return &ClusterInfo{
+		ID:       inst.ID,
+		Host:     inst.Host,
+		Port:     inst.Port,
+		Username: inst.Username,
+		Password: inst.Password,
+		DBName:   "test",
+	}, nil
+}
+
+// InitSchema executes DDL to create the schema for Zero clusters.
+func (p *ZeroProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
+	// Schema creation is handled by TenantService.initSchema()
+	// This method exists to satisfy the Provisioner interface
+	// Actual DDL is executed in TenantService using buildMemorySchema
+	return nil
 }
