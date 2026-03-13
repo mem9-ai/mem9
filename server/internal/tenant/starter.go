@@ -40,7 +40,10 @@ func NewTiDBCloudProvisioner(apiURL, poolID string) *TiDBCloudProvisioner {
 
 // Provision acquires a cluster from the TiDB Cloud Pool.
 func (p *TiDBCloudProvisioner) Provision(ctx context.Context) (*ClusterInfo, error) {
-	password := generateRandomPassword(16)
+	password, err := generateRandomPassword(16)
+	if err != nil {
+		return nil, fmt.Errorf("generate random password: %w", err)
+	}
 
 	endpoint := fmt.Sprintf("%s/v1beta1/clusters:takeoverFromPool", strings.TrimRight(p.apiURL, "/"))
 	body := fmt.Sprintf(`{"pool_id":"%s","root_password":"%s"}`, p.poolID, password)
@@ -124,7 +127,10 @@ func (p *TiDBCloudProvisioner) doDigestAuthRequest(ctx context.Context, method, 
 	}
 
 	// Step 2: Build authenticated request
-	authHeader := buildDigestAuth(p.apiKey, p.apiSecret, method, urlStr, nonce, realm, qop)
+	authHeader, err := buildDigestAuth(p.apiKey, p.apiSecret, method, urlStr, nonce, realm, qop)
+	if err != nil {
+		return nil, fmt.Errorf("build digest auth: %w", err)
+	}
 
 	req, err = http.NewRequestWithContext(ctx, method, urlStr, bytes.NewReader(body))
 	if err != nil {
@@ -158,9 +164,12 @@ func parseDigestChallenge(header string) (nonce, realm, qop string) {
 }
 
 // buildDigestAuth constructs the Digest Authorization header.
-func buildDigestAuth(username, password, method, uri, nonce, realm, qop string) string {
+func buildDigestAuth(username, password, method, uri, nonce, realm, qop string) (string, error) {
 	nc := "00000001"
-	cnonce := generateNonce()
+	cnonce, err := generateNonce()
+	if err != nil {
+		return "", err
+	}
 
 	// HA1 = MD5(username:realm:password)
 	ha1 := md5Hash(fmt.Sprintf("%s:%s:%s", username, realm, password))
@@ -183,28 +192,32 @@ func buildDigestAuth(username, password, method, uri, nonce, realm, qop string) 
 
 	if qop == "auth" {
 		return fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", qop=%s, nc=%s, cnonce="%s", response="%s"`,
-			username, realm, nonce, path, qop, nc, cnonce, response)
+			username, realm, nonce, path, qop, nc, cnonce, response), nil
 	}
 	return fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", response="%s"`,
-		username, realm, nonce, path, response)
+		username, realm, nonce, path, response), nil
 }
 
 func md5Hash(s string) string {
 	return fmt.Sprintf("%x", md5.Sum([]byte(s)))
 }
 
-func generateNonce() string {
+func generateNonce() (string, error) {
 	b := make([]byte, 8)
-	rand.Read(b)
-	return fmt.Sprintf("%x", b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", b), nil
 }
 
-func generateRandomPassword(length int) string {
+func generateRandomPassword(length int) (string, error) {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, length)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
 	for i := range b {
 		b[i] = charset[int(b[i])%len(charset)]
 	}
-	return string(b)
+	return string(b), nil
 }
