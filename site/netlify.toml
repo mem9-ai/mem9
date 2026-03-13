@@ -1,0 +1,18 @@
+[build]
+  command = "bash ./scripts/netlify-build.sh"
+  publish = "dist"
+
+[[redirects]]
+  from = "/your-memory/api/*"
+  to = "https://api.mem9.ai/v1alpha1/mem9s/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/your-memory/napi/*"
+  to = "https://napi.mem9.ai/v1/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/your-memory/*"
+  to = "/your-memory/index.html"
+  status = 200
