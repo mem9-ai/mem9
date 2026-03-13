@@ -6,22 +6,25 @@ import {
   Search,
   Plus,
   LogOut,
-  Globe,
-  Bookmark,
-  Sparkles,
+  Download,
+  Upload,
   X,
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LangToggle } from "@/components/lang-toggle";
 import {
   useStats,
   useMemories,
   useCreateMemory,
   useDeleteMemory,
   useUpdateMemory,
+  useExportMemories,
+  useImportMemories,
+  useImportTasks,
+  useTopicSummary,
 } from "@/api/queries";
 import { getSpaceId, clearSpace, maskSpaceId } from "@/lib/session";
 import { MemoryCard } from "@/components/space/memory-card";
@@ -30,37 +33,68 @@ import { EmptyState } from "@/components/space/empty-state";
 import { AddMemoryDialog } from "@/components/space/add-dialog";
 import { EditMemoryDialog } from "@/components/space/edit-dialog";
 import { DeleteDialog } from "@/components/space/delete-dialog";
-import type { Memory, MemoryType } from "@/types/memory";
+import { TimeRangeSelector } from "@/components/space/time-range";
+import { TopicStrip } from "@/components/space/topic-strip";
+import { ExportDialog } from "@/components/space/export-dialog";
+import { ImportDialog } from "@/components/space/import-dialog";
+import { ImportStatusDialog } from "@/components/space/import-status";
+import { features } from "@/config/features";
+import type { Memory, MemoryType, MemoryFacet } from "@/types/memory";
+import type { TimeRangePreset } from "@/types/time-range";
 
 const route = getRouteApi("/space");
 
 export function SpacePage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const search = route.useSearch();
   const spaceId = getSpaceId() ?? "";
 
+  // UI state
   const [selected, setSelected] = useState<Memory | null>(null);
   const [searchInput, setSearchInput] = useState(search.q ?? "");
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Memory | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Memory | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importStatusOpen, setImportStatusOpen] = useState(false);
+
+  const range: TimeRangePreset = search.range ?? "all";
+  const facet: MemoryFacet | undefined = search.facet;
 
   useEffect(() => {
     if (!spaceId) navigate({ to: "/" });
   }, [spaceId, navigate]);
 
-  const { data: stats } = useStats(spaceId);
+  // Queries
+  const { data: stats } = useStats(spaceId, range);
+  const { data: totalStats } = useStats(spaceId);
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
-    useMemories(spaceId, { q: search.q, memory_type: search.type });
+    useMemories(spaceId, {
+      q: search.q,
+      memory_type: search.type,
+      range,
+      facet,
+    });
   const createMutation = useCreateMemory(spaceId);
   const deleteMutation = useDeleteMemory(spaceId);
   const updateMutation = useUpdateMemory(spaceId);
+  const exportMutation = useExportMemories(spaceId);
+  const importMutation = useImportMemories(spaceId);
+  const { data: topicData } = useTopicSummary(
+    spaceId,
+    range,
+    features.enableTopicSummary,
+  );
+  const { data: importTaskData } = useImportTasks(spaceId, importStatusOpen);
 
   const memories = data?.pages.flatMap((p) => p.memories) ?? [];
+  const firstPageSize = data?.pages[0]?.memories.length ?? 0;
 
   if (!spaceId) return null;
 
+  // Handlers
   function disconnect() {
     clearSpace();
     navigate({ to: "/" });
@@ -75,9 +109,23 @@ export function SpacePage() {
     }
   }
 
-  function handleTabChange(value: string) {
-    const type = value === "all" ? undefined : (value as MemoryType);
-    navigate({ to: "/space", search: { ...search, type } });
+  function handleTypeClick(clicked: MemoryType) {
+    const next = search.type === clicked ? undefined : clicked;
+    navigate({ to: "/space", search: { ...search, type: next } });
+  }
+
+  function handleRangeChange(preset: TimeRangePreset) {
+    navigate({
+      to: "/space",
+      search: { ...search, range: preset === "all" ? undefined : preset },
+    });
+  }
+
+  function handleFacetChange(f: MemoryFacet | undefined) {
+    navigate({
+      to: "/space",
+      search: { ...search, facet: f },
+    });
   }
 
   async function handleCreate(content: string, tagsStr: string) {
@@ -127,11 +175,36 @@ export function SpacePage() {
     }
   }
 
-  const toggleLang = () =>
-    i18n.changeLanguage(i18n.language === "zh-CN" ? "en" : "zh-CN");
+  async function handleExport() {
+    try {
+      const exportFile = await exportMutation.mutateAsync();
+      const blob = new Blob([JSON.stringify(exportFile, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mem9-export-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(t("export.success"));
+    } catch {
+      toast.error(t("error.api"));
+    }
+  }
+
+  async function handleImport(file: File) {
+    try {
+      await importMutation.mutateAsync(file);
+      toast.success(t("import.success"));
+    } catch {
+      toast.error(t("error.api"));
+      throw new Error("import failed");
+    }
+  }
 
   const isEmpty =
-    !isLoading && memories.length === 0 && !search.q && !search.type;
+    !isLoading && memories.length === 0 && !search.q && !search.type && !facet;
 
   return (
     <div className="min-h-screen">
@@ -144,26 +217,16 @@ export function SpacePage() {
               alt="mem9"
               className="h-5 w-auto dark:invert"
             />
+            <span className="hidden text-sm font-semibold text-foreground sm:inline">
+              {t("space.title")}
+            </span>
             <span className="rounded-md bg-secondary px-2 py-0.5 font-mono text-xs text-soft-foreground">
               {maskSpaceId(spaceId)}
             </span>
           </div>
           <div className="flex items-center gap-1">
             <ThemeToggle />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={toggleLang}
-              className="gap-1 text-soft-foreground hover:text-foreground"
-              title={
-                i18n.language === "zh-CN" ? "Switch to English" : "切换到中文"
-              }
-            >
-              <Globe className="size-4" />
-              <span className="text-xs">
-                {i18n.language === "zh-CN" ? "EN" : "中文"}
-              </span>
-            </Button>
+            <LangToggle />
             <Button
               variant="ghost"
               size="icon-sm"
@@ -183,121 +246,229 @@ export function SpacePage() {
       >
         <div className={`flex ${selected ? "gap-8" : ""}`}>
           <div className="min-w-0 flex-1 py-8">
-            {/* Stats */}
+            {/* Stats cards (clickable for type filtering) */}
             {stats && (
               <div
-                className="grid grid-cols-3 gap-4"
                 style={{
                   animation: "slide-up 0.4s cubic-bezier(0.16,1,0.3,1)",
                 }}
               >
-                <div className="surface-card p-5">
-                  <div className="text-3xl font-bold tracking-[-0.04em]">
-                    {stats.total}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="grid flex-1 grid-cols-3 gap-2">
+                    <button
+                      onClick={() =>
+                        search.type
+                          ? navigate({
+                              to: "/space",
+                              search: { ...search, type: undefined },
+                            })
+                          : undefined
+                      }
+                      className={`rounded-xl border px-3 py-2.5 text-left transition-all ${
+                        !search.type
+                          ? "border-foreground/15 bg-foreground/[0.03]"
+                          : "border-transparent hover:border-foreground/10"
+                      }`}
+                    >
+                      <div className="text-xl font-bold tracking-tight text-foreground">
+                        {stats.total}
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {t("space.stats.total")}
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => handleTypeClick("pinned")}
+                      className={`rounded-xl border px-3 py-2.5 text-left transition-all ${
+                        search.type === "pinned"
+                          ? "border-type-pinned/30 bg-type-pinned/5"
+                          : "border-transparent hover:border-type-pinned/20"
+                      }`}
+                    >
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="size-2 shrink-0 rounded-full bg-type-pinned" />
+                        <span className="text-xl font-bold tracking-tight text-foreground">
+                          {stats.pinned}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {t("space.stats.pinned")}
+                      </div>
+                      <div className="mt-0.5 text-[10px] leading-tight text-soft-foreground">
+                        {t("legend.pinned")}
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => handleTypeClick("insight")}
+                      className={`rounded-xl border px-3 py-2.5 text-left transition-all ${
+                        search.type === "insight"
+                          ? "border-type-insight/30 bg-type-insight/5"
+                          : "border-transparent hover:border-type-insight/20"
+                      }`}
+                    >
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="size-2 shrink-0 rounded-full bg-type-insight" />
+                        <span className="text-xl font-bold tracking-tight text-foreground">
+                          {stats.insight}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {t("space.stats.insight")}
+                      </div>
+                      <div className="mt-0.5 text-[10px] leading-tight text-soft-foreground">
+                        {t("legend.insight")}
+                      </div>
+                    </button>
                   </div>
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    {t("space.stats.total")}
-                  </div>
-                </div>
-                <div className="surface-card relative overflow-hidden p-5">
-                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-type-pinned" />
-                  <div className="text-3xl font-bold tracking-[-0.04em] text-type-pinned">
-                    {stats.pinned}
-                  </div>
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    {t("space.stats.pinned")}
-                  </div>
-                </div>
-                <div className="surface-card relative overflow-hidden p-5">
-                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-type-insight" />
-                  <div className="text-3xl font-bold tracking-[-0.04em] text-type-insight">
-                    {stats.insight}
-                  </div>
-                  <div className="mt-1 text-sm text-muted-foreground">
-                    {t("space.stats.insight")}
-                  </div>
+                  {features.enableTimeRange && !selected && (
+                    <TimeRangeSelector
+                      value={range}
+                      onChange={handleRangeChange}
+                      t={t}
+                    />
+                  )}
                 </div>
               </div>
             )}
 
-            {/* Type legend — compact inline context */}
-            {stats && (stats.pinned > 0 || stats.insight > 0) && (
-              <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1.5">
-                  <Bookmark className="size-3 text-type-pinned" />
-                  <span className="text-foreground/70">
-                    {t("tabs.pinned")}
-                  </span>
-                  <span className="text-soft-foreground">
-                    — {t("legend.pinned")}
-                  </span>
-                </span>
-                <span className="text-border">·</span>
-                <span className="flex items-center gap-1.5">
-                  <Sparkles className="size-3 text-type-insight" />
-                  <span className="text-foreground/70">
-                    {t("tabs.insight")}
-                  </span>
-                  <span className="text-soft-foreground">
-                    — {t("legend.insight")}
-                  </span>
-                </span>
-              </div>
-            )}
+            {/* Search (full-width, prominent) */}
+            <div className="relative mt-5">
+              <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-soft-foreground" />
+              <Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={handleSearch}
+                placeholder={t("search.placeholder")}
+                className="h-11 bg-popover pl-10 pr-9 text-sm placeholder:text-soft-foreground"
+              />
+              {searchInput && (
+                <button
+                  onClick={() => {
+                    setSearchInput("");
+                    navigate({
+                      to: "/space",
+                      search: { ...search, q: undefined },
+                    });
+                  }}
+                  className="absolute top-1/2 right-3.5 -translate-y-1/2 text-soft-foreground hover:text-foreground"
+                >
+                  <X className="size-4" />
+                </button>
+              )}
+            </div>
 
-            {/* Search + add */}
-            <div className="mt-6 flex items-center gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-soft-foreground" />
-                <Input
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  onKeyDown={handleSearch}
-                  placeholder={t("search.placeholder")}
-                  className="h-10 bg-popover pl-9 pr-8 text-sm placeholder:text-soft-foreground"
-                />
-                {searchInput && (
+            {/* Active filters indicator (right below search) */}
+            {(search.type || facet || search.q) && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span>{t("filter.active")}</span>
+                {search.q && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-foreground">
+                    &ldquo;{search.q}&rdquo;
+                    <button
+                      onClick={() => {
+                        setSearchInput("");
+                        navigate({
+                          to: "/space",
+                          search: { ...search, q: undefined },
+                        });
+                      }}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                )}
+                {search.type && (
+                  <button
+                    onClick={() =>
+                      navigate({
+                        to: "/space",
+                        search: { ...search, type: undefined },
+                      })
+                    }
+                    className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-foreground hover:bg-secondary/80"
+                  >
+                    {t(
+                      search.type === "pinned"
+                        ? "space.stats.pinned"
+                        : "space.stats.insight",
+                    )}
+                    <X className="size-3" />
+                  </button>
+                )}
+                {facet && (
+                  <button
+                    onClick={() => handleFacetChange(undefined)}
+                    className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-foreground hover:bg-secondary/80"
+                  >
+                    {t(`facet.${facet}`)}
+                    <X className="size-3" />
+                  </button>
+                )}
+                {(search.type || facet || search.q) && (search.type ? 1 : 0) + (facet ? 1 : 0) + (search.q ? 1 : 0) > 1 && (
                   <button
                     onClick={() => {
                       setSearchInput("");
                       navigate({
                         to: "/space",
-                        search: { ...search, q: undefined },
+                        search: {},
                       });
                     }}
-                    className="absolute top-1/2 right-3 -translate-y-1/2 text-soft-foreground hover:text-foreground"
+                    className="text-primary/70 hover:text-primary hover:underline"
                   >
-                    <X className="size-4" />
+                    {t("filter.clear_all")}
                   </button>
                 )}
               </div>
-              <Button
-                onClick={() => setAddOpen(true)}
-                className="h-10 gap-2 px-4 text-sm"
-              >
-                <Plus className="size-4" />
-                {t("add.button")}
-              </Button>
-            </div>
+            )}
 
-            {/* Tabs */}
-            <div className="mt-4">
-              <Tabs
-                value={search.type ?? "all"}
-                onValueChange={handleTabChange}
+            {/* Topic Strip */}
+            {features.enableTopicSummary &&
+              topicData &&
+              topicData.topics.length > 0 && (
+                <div className="mt-4">
+                  <TopicStrip
+                    data={topicData}
+                    activeFacet={facet}
+                    onSelect={handleFacetChange}
+                    t={t}
+                  />
+                </div>
+              )}
+
+            {/* Action Bar */}
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setExportOpen(true)}
+                className="gap-1.5"
               >
-                <TabsList variant="line">
-                  <TabsTrigger value="all">{t("tabs.all")}</TabsTrigger>
-                  <TabsTrigger value="pinned" className="gap-1.5">
-                    <span className="size-2 rounded-full bg-type-pinned" />
-                    {t("tabs.pinned")}
-                  </TabsTrigger>
-                  <TabsTrigger value="insight" className="gap-1.5">
-                    <span className="size-2 rounded-full bg-type-insight" />
-                    {t("tabs.insight")}
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
+                <Download className="size-3.5" />
+                {t("tools.export")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setImportOpen(true)}
+                className="gap-1.5"
+              >
+                <Upload className="size-3.5" />
+                {t("tools.import")}
+              </Button>
+              {features.enableManualAdd && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAddOpen(true)}
+                  className="gap-1.5"
+                >
+                  <Plus className="size-3.5" />
+                  {t("add.button")}
+                </Button>
+              )}
             </div>
 
             {/* Memory list */}
@@ -328,7 +499,7 @@ export function SpacePage() {
                       onClick={() => setSelected(m)}
                       onDelete={() => setDeleteTarget(m)}
                       t={t}
-                      delay={i * 30}
+                      delay={i < firstPageSize ? i * 30 : 0}
                     />
                   ))}
                   {hasNextPage && (
@@ -350,6 +521,8 @@ export function SpacePage() {
                 </div>
               )}
             </div>
+
+            
           </div>
 
           {/* Detail panel */}
@@ -371,13 +544,15 @@ export function SpacePage() {
       </div>
 
       {/* Dialogs */}
-      <AddMemoryDialog
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        onSave={handleCreate}
-        loading={createMutation.isPending}
-        t={t}
-      />
+      {features.enableManualAdd && (
+        <AddMemoryDialog
+          open={addOpen}
+          onOpenChange={setAddOpen}
+          onSave={handleCreate}
+          loading={createMutation.isPending}
+          t={t}
+        />
+      )}
       {editTarget && (
         <EditMemoryDialog
           memory={editTarget}
@@ -398,6 +573,28 @@ export function SpacePage() {
           t={t}
         />
       )}
+      <ExportDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        onExport={handleExport}
+        stats={totalStats}
+        loading={exportMutation.isPending}
+        t={t}
+      />
+      <ImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImport={handleImport}
+        onViewHistory={() => setImportStatusOpen(true)}
+        loading={importMutation.isPending}
+        t={t}
+      />
+      <ImportStatusDialog
+        open={importStatusOpen}
+        onOpenChange={setImportStatusOpen}
+        tasks={importTaskData?.tasks ?? []}
+        t={t}
+      />
     </div>
   );
 }

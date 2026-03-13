@@ -29,7 +29,7 @@
     "insight": "对话中学到的"
   },
   "search": {
-    "placeholder": "搜索你的记忆…",
+    "placeholder": "搜索你的记忆，试试用自然语言描述…",
     "no_results": "没有找到匹配的记忆",
     "no_results_hint": "试试换个说法，或清空搜索查看全部"
   },
@@ -105,5 +105,80 @@
     "hours_ago": "{{n}} 小时前",
     "yesterday": "昨天",
     "days_ago": "{{n}} 天前"
+  },
+  "tools": {
+    "title": "Space 工具",
+    "export": "导出",
+    "import": "导入",
+    "import_history": "导入记录",
+    "import_status": "导入记录"
+  },
+  "export": {
+    "title": "导出记忆",
+    "description": "将所有活跃记忆下载到本地，文件格式为 JSON。",
+    "count": "将导出 {{count}} 条记忆",
+    "breakdown": "{{pinned}} 条你保存的 · {{insight}} 条对话中学到的",
+    "note": "导出包含所有活跃记忆，不受当前筛选条件影响。原始时间戳会保留。",
+    "cancel": "取消",
+    "button": "下载",
+    "done": "已下载",
+    "success": "记忆导出成功"
+  },
+  "import": {
+    "title": "导入记忆",
+    "description": "上传之前导出的记忆文件（JSON 格式），将记忆添加到当前 space。",
+    "drop_hint": "点击选择文件",
+    "note": "导入的记忆将在后台处理。原始时间戳可能不会保留。",
+    "cancel": "取消",
+    "button": "上传",
+    "error_format": "仅接受 .json 文件",
+    "error_size": "文件过大（最大 50 MB）",
+    "error_upload": "上传失败，请重试",
+    "success": "文件已上传，记忆正在导入中"
+  },
+  "import_status": {
+    "title": "导入记录",
+    "empty": "暂无导入记录",
+    "close": "关闭",
+    "status": {
+      "pending": "等待中",
+      "processing": "处理中…",
+      "done": "已完成",
+      "failed": "失败"
+    }
+  },
+  "time_range": {
+    "7d": "7 天",
+    "30d": "30 天",
+    "90d": "90 天",
+    "all": "全部"
+  },
+  "topics": {
+    "label": "按主题浏览"
+  },
+  "facet": {
+    "about_you": "关于你",
+    "preferences": "偏好",
+    "important_people": "重要的人",
+    "experiences": "经历",
+    "plans": "计划",
+    "routines": "日常",
+    "constraints": "边界",
+    "other": "其他"
+  },
+  "facet_desc": {
+    "about_you": "你的身份、背景、技能和项目",
+    "preferences": "工具、风格和做事偏好",
+    "important_people": "你提到的人和团队成员",
+    "experiences": "你经历过的事件和故事",
+    "plans": "目标、计划和待办事项",
+    "routines": "日常习惯和工作模式",
+    "constraints": "你设定的规则和底线",
+    "other": "未归类的记忆"
+  },
+  "filter": {
+    "active": "已筛选",
+    "clear_all": "清除全部",
+    "results": "{{count}} 条结果"
   }
 }

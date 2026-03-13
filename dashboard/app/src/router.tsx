@@ -5,7 +5,8 @@ import {
   Outlet,
 } from "@tanstack/react-router";
 import { Toaster } from "sonner";
-import type { MemoryType } from "@/types/memory";
+import type { MemoryType, MemoryFacet } from "@/types/memory";
+import type { TimeRangePreset } from "@/types/time-range";
 import { ConnectPage } from "@/pages/connect";
 import { SpacePage } from "@/pages/space";
 
@@ -28,9 +29,24 @@ const connectRoute = createRoute({
   component: ConnectPage,
 });
 
+const VALID_TYPES = ["pinned", "insight"];
+const VALID_RANGES = ["7d", "30d", "90d", "all"];
+const VALID_FACETS = [
+  "about_you",
+  "preferences",
+  "important_people",
+  "experiences",
+  "plans",
+  "routines",
+  "constraints",
+  "other",
+];
+
 export interface SpaceSearch {
   q?: string;
   type?: MemoryType;
+  range?: TimeRangePreset;
+  facet?: MemoryFacet;
 }
 
 const spaceRoute = createRoute({
@@ -39,8 +55,14 @@ const spaceRoute = createRoute({
   component: SpacePage,
   validateSearch: (search: Record<string, unknown>): SpaceSearch => ({
     q: typeof search.q === "string" ? search.q || undefined : undefined,
-    type: ["pinned", "insight"].includes(search.type as string)
+    type: VALID_TYPES.includes(search.type as string)
       ? (search.type as MemoryType)
+      : undefined,
+    range: VALID_RANGES.includes(search.range as string)
+      ? (search.range as TimeRangePreset)
+      : undefined,
+    facet: VALID_FACETS.includes(search.facet as string)
+      ? (search.facet as MemoryFacet)
       : undefined,
   }),
 });
