@@ -793,6 +793,30 @@ def _coerce_int(value: Any) -> Optional[int]:
     return None
 
 
+def load_processed_sample_ids(pred_path: Path) -> set[int]:
+    """Load completed sample IDs from an existing predictions.jsonl (best-effort)."""
+    if not pred_path.exists():
+        return set()
+    ids: set[int] = set()
+    try:
+        for ln in pred_path.read_text(encoding="utf-8").splitlines():
+            ln = ln.strip()
+            if not ln:
+                continue
+            try:
+                obj = json.loads(ln)
+            except Exception:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            sid = _coerce_int(obj.get("id"))
+            if sid is not None:
+                ids.add(sid)
+    except Exception:
+        return ids
+    return ids
+
+
 def build_session_entry(
     *,
     session_id: str,
@@ -883,6 +907,12 @@ def main() -> int:
     ap.add_argument("--profile", default="mrniah_local")
     ap.add_argument("--agent", default="main")
     ap.add_argument("--limit", type=int, default=30)
+    ap.add_argument(
+        "--resume",
+        type=int,
+        default=-1,
+        help="Resume from sample id (inclusive) by appending to results/predictions.jsonl instead of overwriting it.",
+    )
     group = ap.add_mutually_exclusive_group()
     group.add_argument("--reset", action="store_true", help="Prefix each question with /reset")
     group.add_argument("--new", action="store_true", help="Prefix each question with /new")
@@ -937,7 +967,7 @@ def main() -> int:
     ap.add_argument(
         "--mem9-import-timeout",
         type=int,
-        default=300,
+        default=3600,
         help="Timeout (seconds) for each mem9 /imports task (only when --import-sessions is set).",
     )
     ap.add_argument(
@@ -1000,7 +1030,16 @@ def main() -> int:
     index_entries = load_index(INDEX)[: args.limit]
 
     pred_path = RESULTS / "predictions.jsonl"
-    pred_path.write_text("", encoding="utf-8")
+    resume_from = int(args.resume) if args.resume is not None else -1
+    processed_ids: set[int] = set()
+    if resume_from >= 0:
+        processed_ids = load_processed_sample_ids(pred_path)
+        print(
+            f"[resume] from={resume_from} already_done={len(processed_ids)} pred_path={pred_path}",
+            flush=True,
+        )
+    else:
+        pred_path.write_text("", encoding="utf-8")
 
     gateway_proc: Optional[subprocess.Popen[str]] = None
     gateway_log_path = Path(args.gateway_log).expanduser() if (args.gateway_log or "").strip() else None
@@ -1008,11 +1047,19 @@ def main() -> int:
         atexit.register(lambda: _stop_process(gateway_proc))
     for entry in index_entries:
         sample_id = entry["id"]
+        sample_id_int = _coerce_int(sample_id)
+        if sample_id_int is None:
+            raise RuntimeError(f"index entry missing int-like id: {entry!r}")
+        if resume_from >= 0 and sample_id_int < resume_from:
+            continue
+        if resume_from >= 0 and sample_id_int in processed_ids:
+            print(f"[{sample_id_int}] skipping=already_done", flush=True)
+            continue
         session_id = entry["session"]
         question = entry["question"]
         answer = entry.get("answer", "")
 
-        print(f"[{sample_id}] session={session_id} running=prepare", flush=True)
+        print(f"[{sample_id_int}] session={session_id} running=prepare", flush=True)
 
         src = SESS_OUT / f"{session_id}.jsonl"
         if not src.exists():
@@ -1022,7 +1069,7 @@ def main() -> int:
         shutil.copy2(src, dst)
 
         # Register into sessions.json under a unique bench key
-        bench_key = f"bench:mrniah:{sample_id:04d}"
+        bench_key = f"bench:mrniah:{sample_id_int:04d}"
         store_before = load_store(paths)
         template = pick_template_entry(store_before)
         bench_entry = build_session_entry(
@@ -1039,7 +1086,7 @@ def main() -> int:
         if mem9_cfg is not None:
             api_url, tenant_id = mem9_cfg
             if args.mem9_provision_per_case:
-                print(f"[{sample_id}] session={session_id} running=mem9_provision", flush=True)
+                print(f"[{sample_id_int}] session={session_id} running=mem9_provision", flush=True)
                 mem9_tenant_id = mem9_provision_tenant(api_url=api_url)
                 print(
                     f"[mem9] provisioned tenant={mem9_tenant_id} session={session_id}",
@@ -1074,7 +1121,7 @@ def main() -> int:
                 tenant_id = mem9_tenant_id
 
             if args.mem9_clear_memories:
-                print(f"[{sample_id}] session={session_id} running=mem9_clear_pre", flush=True)
+                print(f"[{sample_id_int}] session={session_id} running=mem9_clear_pre", flush=True)
                 mem9_clear_pre = mem9_clear_memories(
                     api_url=api_url,
                     tenant_id=tenant_id,
@@ -1086,9 +1133,9 @@ def main() -> int:
                 )
                 if mem9_clear_pre.get("verified") is not True:
                     raise RuntimeError(f"mem9 clear(pre) did not verify empty: {mem9_clear_pre!r}")
-            import_path = RAW / f"{sample_id}-{session_id}.import.session.jsonl"
+            import_path = RAW / f"{sample_id_int}-{session_id}.import.session.jsonl"
             shutil.copy2(dst, import_path)
-            print(f"[{sample_id}] session={session_id} running=mem9_import", flush=True)
+            print(f"[{sample_id_int}] session={session_id} running=mem9_import", flush=True)
             mem9_import = mem9_import_session(
                 api_url=api_url,
                 tenant_id=tenant_id,
@@ -1130,12 +1177,12 @@ def main() -> int:
         if args.openclaw_timeout and args.openclaw_timeout > 0:
             cmd.extend(["--timeout", str(int(args.openclaw_timeout))])
 
-        print(f"[{sample_id}] session={session_id} running=openclaw", flush=True)
+        print(f"[{sample_id_int}] session={session_id} running=openclaw", flush=True)
         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
         # Save raw for debugging as early as possible (even if mem9 cleanup flakes).
-        raw_out = RAW / f"{sample_id}-{session_id}.stdout.json"
-        raw_err = RAW / f"{sample_id}-{session_id}.stderr.txt"
+        raw_out = RAW / f"{sample_id_int}-{session_id}.stdout.json"
+        raw_err = RAW / f"{sample_id_int}-{session_id}.stderr.txt"
         raw_out.write_text(proc.stdout, encoding="utf-8")
         raw_err.write_text(proc.stderr, encoding="utf-8")
 
@@ -1189,11 +1236,11 @@ def main() -> int:
                 event_summary, int(args.compaction_summary_max_chars)
             )
 
-        raw_meta = RAW / f"{sample_id}-{session_id}{META_SUFFIX}"
+        raw_meta = RAW / f"{sample_id_int}-{session_id}{META_SUFFIX}"
         write_json(
             raw_meta,
             {
-                "id": sample_id,
+                "id": sample_id_int,
                 "session": session_id,
                 "sessionEffective": effective_session_id,
                 "sessionEffectiveChanged": bool(effective_session_id and effective_session_id != session_id),
@@ -1235,7 +1282,7 @@ def main() -> int:
             f.write(
                 json.dumps(
                     {
-                        "id": sample_id,
+                        "id": sample_id_int,
                         "session": session_id,
                         "sessionEffective": effective_session_id,
                         "sessionEffectiveChanged": bool(effective_session_id and effective_session_id != session_id),
@@ -1279,13 +1326,13 @@ def main() -> int:
 
         comp = "yes" if compaction["compactionTriggered"] else "no"
         print(
-            f"[{sample_id}] session={session_id} pred_len={len(prediction)} compaction={comp}",
+            f"[{sample_id_int}] session={session_id} pred_len={len(prediction)} compaction={comp}",
             flush=True,
         )
 
         if mem9_cfg is not None and args.mem9_clear_memories:
             api_url, tenant_id = mem9_cfg
-            print(f"[{sample_id}] session={session_id} running=mem9_clear_post", flush=True)
+            print(f"[{sample_id_int}] session={session_id} running=mem9_clear_post", flush=True)
             mem9_clear_post = mem9_clear_memories(
                 api_url=api_url,
                 tenant_id=tenant_id,

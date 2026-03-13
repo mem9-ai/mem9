@@ -25,6 +25,9 @@ RUN_ONLY_PROFILE=""
 # Compare existing results without running OpenClaw.
 COMPARE_ONLY=0
 
+# Resume mode (single profile only): resume from a sample id without deleting partial results.
+RESUME_FROM=""
+
 # Pass-through OpenClaw agent timeout (seconds) to avoid runaway runs.
 # 0 = let OpenClaw decide (may be profile-config dependent).
 MRNIAH_OPENCLAW_TIMEOUT="${MRNIAH_OPENCLAW_TIMEOUT:-0}"
@@ -69,6 +72,7 @@ Notes:
   with "/reset " or "/new " during run_batch.py.
 - --profile runs only that OpenClaw profile (skips baseline-vs-mem comparison).
 - --compare skips runs and compares existing results-* directories for BASE_PROFILE/MEM_PROFILE.
+- --resume <id> resumes a single-profile run from sample id (requires --profile; keeps benchmark/MR-NIAH/results).
 - Set MRNIAH_OPENCLAW_TIMEOUT=<seconds> to force an explicit openclaw agent timeout.
 - Set MRNIAH_MEM9_ISOLATION=tenant (default) to provision a fresh mem9 tenant per case.
 - Set MRNIAH_MEM9_ISOLATION=clear to reuse one tenant and clear memories per case.
@@ -426,10 +430,17 @@ run_batch_for_profile() {
   if [[ "${MRNIAH_WIPE_AGENT_SESSIONS}" == "0" ]]; then
     clean_bench_sessions "$profile"
   fi
-  rm -rf "$MRNIAH_DIR/results"
+  if [[ -n "$RESUME_FROM" ]]; then
+    log "Resume enabled: keeping existing results dir at ${MRNIAH_DIR}/results"
+  else
+    rm -rf "$MRNIAH_DIR/results"
+  fi
 
   # Use -u to avoid Python stdout buffering when output is piped through tee.
   local cmd=(python3 -u run_batch.py --profile "$profile" --agent "$AGENT_NAME" --limit "$SAMPLE_LIMIT")
+  if [[ -n "$RESUME_FROM" ]]; then
+    cmd+=(--resume "$RESUME_FROM")
+  fi
   if [[ "$profile" == "$MEM_PROFILE" ]]; then
     cmd+=(--import-sessions --mem9-api-url "$MEM9_BASE_URL")
     if [[ "$MRNIAH_MEM9_ISOLATION" == "clear" ]]; then
@@ -549,6 +560,14 @@ main() {
         COMPARE_ONLY=1
         shift
         ;;
+      --resume)
+        if [[ $# -lt 2 ]]; then
+          echo "ERROR: --resume requires a value" >&2
+          exit 2
+        fi
+        RESUME_FROM="$2"
+        shift 2
+        ;;
       --profile)
         if [[ $# -lt 2 ]]; then
           echo "ERROR: --profile requires a value" >&2
@@ -591,6 +610,16 @@ main() {
   if [[ "$RESET_MODE" == "1" && "$NEW_MODE" == "1" ]]; then
     echo "ERROR: --reset and --new are mutually exclusive." >&2
     exit 2
+  fi
+  if [[ -n "$RESUME_FROM" ]]; then
+    if [[ "$COMPARE_ONLY" == "1" ]]; then
+      echo "ERROR: --resume is only supported with single-profile runs (do not use with --compare)." >&2
+      exit 2
+    fi
+    if [[ -z "$RUN_ONLY_PROFILE" ]]; then
+      echo "ERROR: --resume requires --profile <name>." >&2
+      exit 2
+    fi
   fi
 
   mkdir -p "$LOG_DIR"
