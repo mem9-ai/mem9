@@ -46,9 +46,16 @@ interface HookApi {
   on: (hookName: string, handler: (...args: unknown[]) => unknown, opts?: { priority?: number }) => void;
 }
 
+/**
+ * Runtime context passed as the second argument to agent_end by the OpenClaw
+ * framework. Fields are inferred from observed OpenClaw runtime behavior — no
+ * official SDK type is published. Kept local to avoid importing OpenClaw types
+ * at the module level (same pattern as HookApi above).
+ */
 interface HookContext {
   agentId?: string;
   sessionId?: string;
+  /** Legacy alias for sessionId used by older OpenClaw versions. */
   sessionKey?: string;
 }
 
@@ -172,7 +179,7 @@ function stripInjectedContext(content: string): string {
 }
 
 function nonEmptyString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
 // ---------------------------------------------------------------------------
