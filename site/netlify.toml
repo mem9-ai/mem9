@@ -8,8 +8,8 @@
   status = 200
 
 [[redirects]]
-  from = "/your-memory/napi/*"
-  to = "https://napi.mem9.ai/v1/:splat"
+  from = "/your-memory/analysis-api/*"
+  to = "https://napi.mem9.ai/:splat"
   status = 200
 
 [[redirects]]
