@@ -180,5 +180,61 @@
     "active": "Filtered by",
     "clear_all": "Clear all",
     "results": "{{count}} results"
+  },
+  "analysis": {
+    "title": "Memory Analysis",
+    "taxonomy_version": "Taxonomy {{version}}",
+    "taxonomy_fallback": "Using fallback labels",
+    "taxonomy_warning": "Taxonomy is unavailable right now. Showing local fallback labels.",
+    "loading_source": "Preparing memories in the current range…",
+    "empty": "No memories to analyze in the current time range.",
+    "progress": "Analysis progress",
+    "cards": "Aggregate cards",
+    "summary": "Summary",
+    "top_topics": "Top topics",
+    "top_tags": "Top tags",
+    "batch_progress": "Batch progress",
+    "recent_updates": "Recent updates",
+    "retry": "Retry analysis",
+    "retrying_updates": "Update polling failed. Retrying with backoff…",
+    "degraded_title": "Analysis unavailable",
+    "degraded_body": "The live analysis service is currently returning server errors. Your memory list still works normally, and you can retry later.",
+    "failed_title": "Analysis failed",
+    "failed_body": "This analysis run did not complete. You can start it again later.",
+    "batch_label": "Batch {{index}}",
+    "batch_memories": "{{count}} memories",
+    "confidence": "Share {{value}}",
+    "phase": {
+      "idle": "Idle",
+      "creating": "Creating",
+      "uploading": "Uploading",
+      "processing": "Processing",
+      "completed": "Completed",
+      "degraded": "Degraded",
+      "failed": "Failed"
+    },
+    "metrics": {
+      "memories": "Total memories",
+      "processed": "Processed",
+      "uploaded": "Uploaded batches",
+      "failed": "Failed batches"
+    },
+    "batch_status": {
+      "EXPECTED": "Expected",
+      "UPLOADED": "Uploaded",
+      "QUEUED": "Queued",
+      "RUNNING": "Running",
+      "SUCCEEDED": "Succeeded",
+      "FAILED": "Failed",
+      "RETRYING": "Retrying",
+      "DLQ": "Dead-lettered"
+    },
+    "category": {
+      "identity": "Identity",
+      "emotion": "Emotion",
+      "preference": "Preference",
+      "experience": "Experience",
+      "activity": "Activity"
+    }
   }
 }

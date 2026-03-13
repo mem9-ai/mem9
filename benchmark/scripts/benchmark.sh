@@ -113,7 +113,7 @@ openclaw --profile "$PROFILE_B" config set --strict-json plugins.allow '["mem9"]
 openclaw --profile "$PROFILE_B" config set plugins.slots.memory mem9
 openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.enabled true
 openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.config.apiUrl "$MEM9_BASE_URL"
-openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.config.tenantID "$MEM9_SPACE_ID"
+openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.config.apiKey "$MEM9_SPACE_ID"
 
 openclaw --profile "$PROFILE_A" daemon install
 openclaw --profile "$PROFILE_B" daemon install

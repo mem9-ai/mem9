@@ -29,7 +29,11 @@ curl -s -X POST http://localhost:8080/v1alpha1/mem9s | jq .
 # → { "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "claim_url": "..." }
 ```
 
-Save the returned `id` — this is your tenant ID used in all subsequent API calls.
+Save the returned `id`.
+
+- For OpenClaw, this is the value you should store as `apiKey` (preferred).
+- Legacy OpenClaw config can still store the same value as `tenantID`, but the plugin will still use v1alpha2.
+- For Claude Code / OpenCode env vars, this remains the tenant ID value used by the current server API.
 
 ## Step 3: Configure your agent platform
 
@@ -50,7 +54,7 @@ Add to `openclaw.json`:
         "enabled": true,
         "config": {
           "apiUrl": "http://localhost:8080",
-          "tenantID": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+          "apiKey": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
         }
       }
     }
@@ -60,8 +64,14 @@ Add to `openclaw.json`:
 
 Restart OpenClaw. You should see:
 ```
-[mnemo] Server mode (tenant-scoped mem9 API)
+[mem9] Server mode (v1alpha2)
 ```
+
+Compatibility note:
+
+- Preferred config: `apiKey` -> plugin uses v1alpha2 with `X-API-Key`.
+- Legacy config: `tenantID` -> plugin treats it as an alias for `apiKey` and still uses v1alpha2.
+- The underlying value is the same UUID either way.
 
 ---
 
@@ -83,7 +93,7 @@ Add to `opencode.json`:
 
 Restart OpenCode. You should see:
 ```
-[mnemo] Server mode (mnemo-server REST API)
+[mem9] Server mode (mnemo-server REST API)
 ```
 
 ---
@@ -128,5 +138,5 @@ The agent should recall the information from memory.
 | Problem | Fix |
 |---------|-----|
 | `No MNEMO_API_URL configured` | Set `MNEMO_API_URL` env var or `apiUrl` in plugin config |
-| `MNEMO_TENANT_ID is not set` | Set `MNEMO_TENANT_ID` env var or `tenantID` in plugin config |
+| `MNEMO_TENANT_ID is not set` | Set `MNEMO_TENANT_ID` for env-based clients, or use `apiKey` (preferred) / legacy `tenantID` in OpenClaw plugin config |
 | Plugin not loading | Check platform-specific config format |

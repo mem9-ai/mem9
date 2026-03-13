@@ -1,6 +1,24 @@
--- PostgreSQL-compatible control-plane schema (postgres backend only).
--- For db9-specific schema with auto-embedding, see schema_db9.sql.
+-- ============================================================================
+-- MANUAL USE ONLY — NOT used by tenant provisioning.
+-- ============================================================================
+--
+-- db9-specific schema with native auto-embedding support.
+-- db9 uses EMBED_TEXT to generate embeddings automatically (GENERATED ALWAYS AS).
+--
+-- IMPORTANT:
+--   - The model name ('amazon.titan-embed-text-v2:0') and dimensions (1024) below
+--     are EXAMPLE values only.
+--   - Model and dimensions MUST match MNEMO_EMBED_AUTO_MODEL and MNEMO_EMBED_AUTO_DIMS
+--     used by the running application.
+--   - If you change the embedding configuration, update BOTH:
+--       * the VECTOR(1024) type to VECTOR(<new_dims>)
+--       * the EMBED_TEXT(...) arguments (model name and "dimensions" JSON value)
+--     to avoid silent mismatches between stored vectors and runtime expectations.
+--   - For tenant provisioning, tenant_service.go builds the schema dynamically
+--     based on the runtime embedding configuration.
+--
 
+CREATE EXTENSION IF NOT EXISTS embedding;
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS tenants (
@@ -26,13 +44,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_name ON tenants(name);
 CREATE INDEX IF NOT EXISTS idx_tenant_status ON tenants(status);
 CREATE INDEX IF NOT EXISTS idx_tenant_provider ON tenants(provider);
 
+-- memories table with auto-embedding column.
+-- Note: The embedding column definition depends on whether auto-embedding is enabled.
+-- When using schema_db9.sql directly (manual setup), use this version with GENERATED ALWAYS.
+-- For tenant provisioning, tenant_service.go builds the schema dynamically.
 CREATE TABLE IF NOT EXISTS memories (
     id              VARCHAR(36)     PRIMARY KEY,
     content         TEXT            NOT NULL,
     source          VARCHAR(100),
     tags            JSONB,
     metadata        JSONB,
-    embedding       vector(1536)    NULL,
+    -- Auto-embedding: db9 generates embeddings automatically on INSERT/UPDATE.
+    -- IMPORTANT: Model and dimensions below are example values.
+    -- They MUST match MNEMO_EMBED_AUTO_MODEL and MNEMO_EMBED_AUTO_DIMS.
+    -- See file header for details.
+    embedding       VECTOR(1024)    GENERATED ALWAYS AS (
+        EMBED_TEXT('amazon.titan-embed-text-v2:0', content, '{"dimensions": 1024}')
+    ) STORED,
     memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned',
     agent_id        VARCHAR(100)    NULL,
     session_id      VARCHAR(100)    NULL,
@@ -49,6 +77,9 @@ CREATE INDEX IF NOT EXISTS idx_memory_state ON memories(state);
 CREATE INDEX IF NOT EXISTS idx_memory_agent ON memories(agent_id);
 CREATE INDEX IF NOT EXISTS idx_memory_session ON memories(session_id);
 CREATE INDEX IF NOT EXISTS idx_memory_updated ON memories(updated_at);
+
+-- HNSW vector index for efficient ANN search
+CREATE INDEX IF NOT EXISTS idx_memory_embedding ON memories USING hnsw (embedding vector_cosine_ops);
 
 CREATE TABLE IF NOT EXISTS upload_tasks (
     task_id       VARCHAR(36)   PRIMARY KEY,
@@ -69,12 +100,7 @@ CREATE INDEX IF NOT EXISTS idx_upload_tenant ON upload_tasks(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_upload_poll ON upload_tasks(status, created_at);
 
 CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_tenants_updated ON tenants;
 CREATE TRIGGER trg_tenants_updated BEFORE UPDATE ON tenants FOR EACH ROW EXECUTE FUNCTION update_updated_at();

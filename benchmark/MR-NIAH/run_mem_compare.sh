@@ -141,7 +141,7 @@ configure_mem_profile() {
   openclaw --profile "$MEM_PROFILE" config set plugins.slots.memory mem9 >/dev/null
   openclaw --profile "$MEM_PROFILE" config set plugins.entries.mem9.enabled true >/dev/null
   openclaw --profile "$MEM_PROFILE" config set plugins.entries.mem9.config.apiUrl "$api_url" >/dev/null
-  openclaw --profile "$MEM_PROFILE" config set plugins.entries.mem9.config.tenantID "$MEM9_SPACE_ID" >/dev/null
+  openclaw --profile "$MEM_PROFILE" config set plugins.entries.mem9.config.apiKey "$MEM9_SPACE_ID" >/dev/null
 }
 
 run_batch_for_profile() {

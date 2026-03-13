@@ -22,8 +22,8 @@
 set -euo pipefail
 
 BASE="${MNEMO_BASE:-https://api.mem9.ai}"
+API_VERSION="${MNEMO_API_VERSION:-v1alpha1}"
 AGENT_A="smoke-agent-alpha"
-AGENT_B="smoke-agent-beta"
 SESSION_ID="smoke-session-$(date +%s)"
 PASS=0
 FAIL=0
@@ -41,7 +41,7 @@ fail()  { echo -e "${RED}  FAIL${RESET} $*"; }
 step()  { echo -e "\n${YELLOW}[$1]${RESET} $2"; }
 
 curl_json() {
-  curl -s -w '\n__HTTP__%{http_code}' "$@"
+  curl -s --connect-timeout 5 --max-time 30 -w '\n__HTTP__%{http_code}' "$@"
 }
 
 http_code() { printf '%s' "$1" | grep '__HTTP__' | sed 's/__HTTP__//'; }
@@ -75,9 +75,27 @@ check_contains() {
   fi
 }
 
+curl_mem_json() {
+  local url="$1"
+  shift
+
+  if [ "$API_VERSION" = "v1alpha2" ]; then
+    curl_json "$@" \
+      -H "X-Mnemo-Agent-Id: $AGENT_A" \
+      -H "X-API-Key: $API_KEY" \
+      "$url"
+    return
+  fi
+
+  curl_json "$@" \
+    -H "X-Mnemo-Agent-Id: $AGENT_A" \
+    "$url"
+}
+
 echo "========================================================"
 echo "  mnemos API smoke test"
 echo "  Base URL : $BASE"
+echo "  API Mode : $API_VERSION"
 echo "  Session  : $SESSION_ID"
 echo "  Started  : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "========================================================"
@@ -108,19 +126,25 @@ if [ -z "$TENANT_ID" ]; then
   exit 1
 fi
 info "Tenant provisioned: $TENANT_ID"
+API_KEY="$TENANT_ID"
 
 CLAIM_URL=$(printf '%s' "$bdy" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('claim_url',''))" 2>/dev/null || true)
 [ -n "$CLAIM_URL" ] && info "Claim URL: $CLAIM_URL"
 
-MEM_BASE="$BASE/v1alpha1/mem9s/$TENANT_ID/memories"
+if [ "$API_VERSION" = "v1alpha2" ]; then
+  MEM_BASE="$BASE/v1alpha2/mem9s/memories"
+  info "Using v1alpha2 header auth with X-API-Key"
+else
+  MEM_BASE="$BASE/v1alpha1/mem9s/$TENANT_ID/memories"
+  info "Using v1alpha1 path auth with tenantID"
+fi
 
 # ============================================================================
 # TEST 3 — Ingest via messages (async)
 # ============================================================================
 step "3" "Ingest via messages (POST /memories with messages array)"
-resp=$(curl_json -X POST "$MEM_BASE" \
+resp=$(curl_mem_json "$MEM_BASE" -X POST \
   -H "Content-Type: application/json" \
-  -H "X-Mnemo-Agent-Id: $AGENT_A" \
   -d "{
     \"messages\": [
       {\"role\": \"user\", \"content\": \"How do I run the mnemos server locally?\"},
@@ -139,9 +163,8 @@ check_contains "response has status=accepted" "$bdy" '"accepted"'
 # TEST 4 — Ingest via content (async reconcile)
 # ============================================================================
 step "4" "Ingest via content (POST /memories with content field)"
-resp=$(curl_json -X POST "$MEM_BASE" \
+resp=$(curl_mem_json "$MEM_BASE" -X POST \
   -H "Content-Type: application/json" \
-  -H "X-Mnemo-Agent-Id: $AGENT_A" \
   -d "{
     \"content\": \"The mnemos server uses a chi router with tenant-scoped routes. Each tenant gets a dedicated TiDB database. Hybrid search combines vector cosine distance with keyword LIKE matching.\",
     \"session_id\": \"$SESSION_ID\"
@@ -157,25 +180,22 @@ check_contains "response has status=accepted" "$bdy" '"accepted"'
 step "5" "Validation: rejected request shapes"
 
 info "Both content and messages — should be 400"
-resp=$(curl_json -X POST "$MEM_BASE" \
+resp=$(curl_mem_json "$MEM_BASE" -X POST \
   -H "Content-Type: application/json" \
-  -H "X-Mnemo-Agent-Id: $AGENT_A" \
   -d '{"content":"hello","messages":[{"role":"user","content":"hi"}]}')
 code=$(http_code "$resp")
 check "content+messages returns 400" "$code" "400"
 
 info "Content with tags — should be 202 (tags are valid on content writes)"
-resp=$(curl_json -X POST "$MEM_BASE" \
+resp=$(curl_mem_json "$MEM_BASE" -X POST \
   -H "Content-Type: application/json" \
-  -H "X-Mnemo-Agent-Id: $AGENT_A" \
   -d '{"content":"hello","tags":["test"]}')
 code=$(http_code "$resp")
 check "content+tags returns 202" "$code" "202"
 
 info "Empty body — should be 400"
-resp=$(curl_json -X POST "$MEM_BASE" \
+resp=$(curl_mem_json "$MEM_BASE" -X POST \
   -H "Content-Type: application/json" \
-  -H "X-Mnemo-Agent-Id: $AGENT_A" \
   -d '{}')
 code=$(http_code "$resp")
 check "empty body returns 400" "$code" "400"
@@ -184,8 +204,7 @@ check "empty body returns 400" "$code" "400"
 # TEST 6 — List memories
 # ============================================================================
 step "6" "List memories (GET /memories)"
-resp=$(curl_json "$MEM_BASE?limit=50" \
-  -H "X-Mnemo-Agent-Id: $AGENT_A")
+resp=$(curl_mem_json "$MEM_BASE?limit=50")
 code=$(http_code "$resp")
 bdy=$(body "$resp")
 check "GET /memories returns 200" "$code" "200"
@@ -204,8 +223,7 @@ print(mems[0]['id'] if mems else '')
 # TEST 7 — Search by query
 # ============================================================================
 step "7" "Search capability probe (?q=)"
-PROBE_RESP=$(curl_json "$MEM_BASE?q=probe&limit=1" \
-  -H "X-Mnemo-Agent-Id: $AGENT_A")
+PROBE_RESP=$(curl_mem_json "$MEM_BASE?q=probe&limit=1")
 PROBE_CODE=$(http_code "$PROBE_RESP")
 SEARCH_OK=false
 if [ "$PROBE_CODE" = "200" ]; then
@@ -217,15 +235,13 @@ fi
 
 if [ "$SEARCH_OK" = "true" ]; then
   info "Searching: q=TiDB"
-  resp=$(curl_json "$MEM_BASE?q=TiDB&limit=10" \
-    -H "X-Mnemo-Agent-Id: $AGENT_A")
+  resp=$(curl_mem_json "$MEM_BASE?q=TiDB&limit=10")
   code=$(http_code "$resp")
   bdy=$(body "$resp")
   check "GET /memories?q=TiDB returns 200" "$code" "200"
 
   info "Searching: q=xyzzy_nonexistent_term_abc123"
-  resp=$(curl_json "$MEM_BASE?q=xyzzy_nonexistent_term_abc123&limit=10" \
-    -H "X-Mnemo-Agent-Id: $AGENT_A")
+  resp=$(curl_mem_json "$MEM_BASE?q=xyzzy_nonexistent_term_abc123&limit=10")
   code=$(http_code "$resp")
   check "GET /memories?q=<nomatch> returns 200" "$code" "200"
 fi
@@ -234,8 +250,7 @@ fi
 # TEST 8 — Search by tags
 # ============================================================================
 step "8" "Tag filter search (?tags=)"
-resp=$(curl_json "$MEM_BASE?tags=tidb&limit=10" \
-  -H "X-Mnemo-Agent-Id: $AGENT_A")
+resp=$(curl_mem_json "$MEM_BASE?tags=tidb&limit=10")
 code=$(http_code "$resp")
 bdy=$(body "$resp")
 check "GET /memories?tags=tidb returns 200" "$code" "200"
@@ -246,8 +261,7 @@ check_contains "response has memories array" "$bdy" '"memories"'
 # ============================================================================
 if [ -n "$FIRST_MEM_ID" ]; then
   step "9" "Get memory by ID (GET /memories/{id})"
-  resp=$(curl_json "$MEM_BASE/$FIRST_MEM_ID" \
-    -H "X-Mnemo-Agent-Id: $AGENT_A")
+  resp=$(curl_mem_json "$MEM_BASE/$FIRST_MEM_ID")
   code=$(http_code "$resp")
   bdy=$(body "$resp")
   check "GET /{id} returns 200" "$code" "200"
@@ -260,9 +274,8 @@ if [ -n "$FIRST_MEM_ID" ]; then
   info "Original version: $ORIG_VERSION"
   NEXT_VERSION=$((ORIG_VERSION+1))
 
-  resp=$(curl_json -X PUT "$MEM_BASE/$FIRST_MEM_ID" \
+  resp=$(curl_mem_json "$MEM_BASE/$FIRST_MEM_ID" -X PUT \
     -H "Content-Type: application/json" \
-    -H "X-Mnemo-Agent-Id: $AGENT_A" \
     -d "{
       \"content\": \"${ORIG_CONTENT} (smoke-updated)\",
       \"tags\": [\"smoke\", \"updated\"]
@@ -275,13 +288,11 @@ if [ -n "$FIRST_MEM_ID" ]; then
   check_contains "updated tag present" "$bdy" '"updated"'
 
   step "11" "Delete memory + verify 404"
-  resp=$(curl_json -X DELETE "$MEM_BASE/$FIRST_MEM_ID" \
-    -H "X-Mnemo-Agent-Id: $AGENT_A")
+  resp=$(curl_mem_json "$MEM_BASE/$FIRST_MEM_ID" -X DELETE)
   code=$(http_code "$resp")
   check "DELETE /{id} returns 204" "$code" "204"
 
-  resp=$(curl_json "$MEM_BASE/$FIRST_MEM_ID" \
-    -H "X-Mnemo-Agent-Id: $AGENT_A")
+  resp=$(curl_mem_json "$MEM_BASE/$FIRST_MEM_ID")
   code=$(http_code "$resp")
   check "GET deleted memory returns 404" "$code" "404"
 else

@@ -26,6 +26,7 @@ import {
   useImportTasks,
   useTopicSummary,
 } from "@/api/queries";
+import { useSpaceAnalysis } from "@/api/analysis-queries";
 import { getSpaceId, clearSpace, maskSpaceId } from "@/lib/session";
 import { MemoryCard } from "@/components/space/memory-card";
 import { DetailPanel } from "@/components/space/detail-panel";
@@ -35,6 +36,7 @@ import { EditMemoryDialog } from "@/components/space/edit-dialog";
 import { DeleteDialog } from "@/components/space/delete-dialog";
 import { TimeRangeSelector } from "@/components/space/time-range";
 import { TopicStrip } from "@/components/space/topic-strip";
+import { AnalysisPanel } from "@/components/space/analysis-panel";
 import { ExportDialog } from "@/components/space/export-dialog";
 import { ImportDialog } from "@/components/space/import-dialog";
 import { ImportStatusDialog } from "@/components/space/import-status";
@@ -82,10 +84,11 @@ export function SpacePage() {
   const updateMutation = useUpdateMemory(spaceId);
   const exportMutation = useExportMemories(spaceId);
   const importMutation = useImportMemories(spaceId);
+  const analysis = useSpaceAnalysis(spaceId, range);
   const { data: topicData } = useTopicSummary(
     spaceId,
     range,
-    features.enableTopicSummary,
+    features.enableTopicSummary && !features.enableAnalysis,
   );
   const { data: importTaskData } = useImportTasks(spaceId, importStatusOpen);
 
@@ -242,9 +245,13 @@ export function SpacePage() {
 
       {/* Content */}
       <div
-        className={`mx-auto px-6 ${selected ? "max-w-[1180px]" : "max-w-3xl"}`}
+        className={`mx-auto px-6 ${
+          features.enableAnalysis || selected
+            ? "max-w-[1560px]"
+            : "max-w-3xl"
+        }`}
       >
-        <div className={`flex ${selected ? "gap-8" : ""}`}>
+        <div className="flex flex-col gap-8 xl:flex-row">
           <div className="min-w-0 flex-1 py-8">
             {/* Stats cards (clickable for type filtering) */}
             {stats && (
@@ -426,6 +433,7 @@ export function SpacePage() {
 
             {/* Topic Strip */}
             {features.enableTopicSummary &&
+              !features.enableAnalysis &&
               topicData &&
               topicData.topics.length > 0 && (
                 <div className="mt-4">
@@ -524,6 +532,20 @@ export function SpacePage() {
 
             
           </div>
+
+          {features.enableAnalysis && (
+            <div className="py-8 xl:py-8">
+              <AnalysisPanel
+                state={analysis.state}
+                sourceCount={analysis.sourceCount}
+                sourceLoading={analysis.sourceLoading}
+                taxonomy={analysis.taxonomy}
+                taxonomyUnavailable={analysis.taxonomyUnavailable}
+                onRetry={analysis.retry}
+                t={t}
+              />
+            </div>
+          )}
 
           {/* Detail panel */}
           {selected && (

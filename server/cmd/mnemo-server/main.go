@@ -44,10 +44,10 @@ func main() {
 		Dims:    cfg.EmbedDims,
 	})
 	if cfg.EmbedAutoModel != "" {
-		if cfg.DBBackend == "tidb" {
-			logger.Info("auto-embedding enabled (TiDB EMBED_TEXT)", "model", cfg.EmbedAutoModel, "dims", cfg.EmbedAutoDims)
+		if cfg.DBBackend == "tidb" || cfg.DBBackend == "db9" {
+			logger.Info("auto-embedding enabled (EMBED_TEXT)", "model", cfg.EmbedAutoModel, "dims", cfg.EmbedAutoDims)
 		} else {
-			logger.Warn("auto-embedding (EMBED_TEXT) is only supported with TiDB; clearing and falling back to client-side embedding", "model", cfg.EmbedAutoModel, "backend", cfg.DBBackend)
+			logger.Warn("auto-embedding (EMBED_TEXT) is only supported with TiDB or db9; clearing and falling back to client-side embedding", "model", cfg.EmbedAutoModel, "backend", cfg.DBBackend)
 			cfg.EmbedAutoModel = ""
 			cfg.EmbedAutoDims = 0
 		}
@@ -92,13 +92,14 @@ func main() {
 
 	// Middleware.
 	tenantMW := middleware.ResolveTenant(tenantRepo, tenantPool)
+	apiKeyMW := middleware.ResolveApiKey(tenantRepo, tenantPool)
 	rl := middleware.NewRateLimiter(cfg.RateLimit, cfg.RateBurst)
 	defer rl.Stop()
 	rateMW := rl.Middleware()
 
 	// Handler.
 	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger)
-	router := srv.Router(tenantMW, rateMW)
+	router := srv.Router(tenantMW, rateMW, apiKeyMW)
 
 	httpSrv := &http.Server{
 		Addr:         ":" + cfg.Port,
