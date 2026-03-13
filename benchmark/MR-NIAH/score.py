@@ -13,7 +13,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_PREDS = HERE / "results" / "predictions.jsonl"
@@ -83,8 +83,8 @@ def score_response(response: str, gt_label: str, language: str) -> float:
     return sum(hits) / len(hits) if hits else 0.0
 
 
-def load_predictions(path: Path) -> List[Dict[str, str]]:
-    rows: List[Dict[str, str]] = []
+def load_predictions(path: Path) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as handle:
         for line_no, line in enumerate(handle, start=1):
             line = line.strip()
@@ -95,6 +95,72 @@ def load_predictions(path: Path) -> List[Dict[str, str]]:
             except json.JSONDecodeError as exc:
                 raise ValueError(f"Invalid JSON on line {line_no}: {exc}") from exc
     return rows
+
+
+def _coerce_bool(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ("true", "yes", "y", "1"):
+            return True
+        if v in ("false", "no", "n", "0"):
+            return False
+    return None
+
+
+def _coerce_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        v = value.strip()
+        if not v:
+            return None
+        try:
+            return int(v, 10)
+        except ValueError:
+            return None
+    return None
+
+
+def resolve_compaction_tag(rec: Dict[str, Any]) -> Tuple[Optional[bool], str]:
+    """Return (compacted?, source). compacted? is None if unavailable."""
+    v = _coerce_bool(rec.get("compactionTriggered"))
+    if v is not None:
+        return v, "compactionTriggered"
+    delta = _coerce_int(rec.get("compactionCountDelta"))
+    if delta is not None:
+        return delta > 0, "compactionCountDelta"
+    after = _coerce_int(rec.get("compactionCountAfter"))
+    if after is not None:
+        return after > 0, "compactionCountAfter"
+    return None, "missing"
+
+
+def summarize_group(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    total = len(rows)
+    total_score = 0.0
+    perfect = 0
+    for rec in rows:
+        prediction = rec.get("prediction", "") or ""
+        answer = rec.get("answer", "") or ""
+        language = detect_language(answer)
+        score = score_response(prediction, answer, language)
+        total_score += score
+        if score >= 0.999999:
+            perfect += 1
+    return {
+        "total": total,
+        "perfect": perfect,
+        "accuracy": (perfect / total) if total else 0.0,
+        "mean_score": (total_score / total) if total else 0.0,
+    }
 
 
 def main() -> int:
@@ -111,6 +177,11 @@ def main() -> int:
         default=0,
         help="Print the first N samples whose score < 1.0",
     )
+    parser.add_argument(
+        "--by-compaction",
+        action="store_true",
+        help="Also print accuracy/mean score split by compactionTriggered (if present).",
+    )
     args = parser.parse_args()
 
     path = Path(args.predictions).expanduser()
@@ -122,6 +193,21 @@ def main() -> int:
     if not rows:
         print(f"No records found in {path}", file=sys.stderr)
         return 2
+
+    # Optional split by compaction flag (when available).
+    compaction_source_counts: Dict[str, int] = {}
+    compacted_rows: List[Dict[str, Any]] = []
+    uncompressed_rows: List[Dict[str, Any]] = []
+    unknown_rows: List[Dict[str, Any]] = []
+    for rec in rows:
+        tag, source = resolve_compaction_tag(rec)
+        compaction_source_counts[source] = compaction_source_counts.get(source, 0) + 1
+        if tag is True:
+            compacted_rows.append(rec)
+        elif tag is False:
+            uncompressed_rows.append(rec)
+        else:
+            unknown_rows.append(rec)
 
     total = len(rows)
     total_score = 0.0
@@ -154,6 +240,35 @@ def main() -> int:
     print(f"Exact matches : {perfect}")
     print(f"Accuracy      : {accuracy:.4f}")
     print(f"Mean score    : {mean_score:.4f}")
+
+    should_split = bool(args.by_compaction) or (
+        compaction_source_counts.get("missing", 0) < len(rows)
+    )
+    if should_split:
+        print("\n--- Split by compaction ---")
+        print(
+            "Compaction tag source counts: "
+            + ", ".join(f"{k}={v}" for k, v in sorted(compaction_source_counts.items()))
+        )
+        if unknown_rows:
+            print(
+                f"Warning: {len(unknown_rows)}/{len(rows)} rows missing compaction fields; "
+                "they are excluded from the compact/no-compact split."
+            )
+        compacted_summary = summarize_group(compacted_rows)
+        uncompressed_summary = summarize_group(uncompressed_rows)
+        print(
+            "Compacted    : "
+            f"total={compacted_summary['total']} "
+            f"accuracy={compacted_summary['accuracy']:.4f} "
+            f"mean_score={compacted_summary['mean_score']:.4f}"
+        )
+        print(
+            "No compaction: "
+            f"total={uncompressed_summary['total']} "
+            f"accuracy={uncompressed_summary['accuracy']:.4f} "
+            f"mean_score={uncompressed_summary['mean_score']:.4f}"
+        )
 
     if mismatches:
         print("\nFirst mismatches (score < 1.0):")
