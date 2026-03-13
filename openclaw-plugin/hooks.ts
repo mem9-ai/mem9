@@ -46,6 +46,11 @@ interface HookApi {
   on: (hookName: string, handler: (...args: unknown[]) => unknown, opts?: { priority?: number }) => void;
 }
 
+interface HookContext {
+  agentId?: string;
+  sessionId?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Message selection (size-aware)
 // ---------------------------------------------------------------------------
@@ -261,14 +266,14 @@ export function registerHooks(
   // accumulating until byte budget is hit. Then POST to tenant-scoped ingest endpoint.
   // for server-side LLM extraction + reconciliation.
   // --------------------------------------------------------------------------
-  api.on("agent_end", async (event: unknown) => {
+  api.on("agent_end", async (event: unknown, ctx?: unknown) => {
     try {
       const evt = event as {
         success?: boolean;
         messages?: unknown[];
         sessionId?: string;
-        agentId?: string;
       };
+      const hookCtx = ctx as HookContext | undefined;
       if (!evt?.success || !evt.messages || evt.messages.length === 0) return;
 
       // Format raw messages into IngestMessage format
@@ -312,12 +317,14 @@ export function registerHooks(
 
       if (selected.length === 0) return;
 
-      const sessionId = typeof evt.sessionId === "string"
+      const sessionId = typeof hookCtx?.sessionId === "string"
+        ? hookCtx.sessionId
+        : typeof evt.sessionId === "string"
         ? evt.sessionId
         : `ses_${Date.now()}`;
 
-      const agentId = typeof evt.agentId === "string"
-        ? evt.agentId
+      const agentId = typeof hookCtx?.agentId === "string"
+        ? hookCtx.agentId
         : AUTO_CAPTURE_SOURCE;
 
       // POST messages to unified memories endpoint — server handles LLM extraction + reconciliation
