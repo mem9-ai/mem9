@@ -96,8 +96,10 @@ func (p *TiDBCloudProvisioner) ProviderType() string {
 	return "tidb_cloud_starter"
 }
 
-// InitSchema for TiDB Cloud Pool is a no-op.
-// The cluster is pre-configured with schema already initialized.
+// InitSchema for TiDB Cloud Pool is intentionally a no-op.
+// The Pool API guarantees every claimed cluster already has the memories
+// table pre-created before takeover. If this guarantee is ever violated,
+// activation failure will surface at first memory write (no cluster_id context).
 func (p *TiDBCloudProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
 	return nil
 }
@@ -150,24 +152,60 @@ func (p *TiDBCloudProvisioner) doDigestAuthRequest(ctx context.Context, method, 
 }
 
 // parseDigestChallenge extracts nonce, realm, and qop from WWW-Authenticate header.
+// Handles quoted-string values correctly (RFC 7616) - commas inside quotes are not delimiters.
 func parseDigestChallenge(header string) (nonce, realm, qop string) {
 	// Strip "Digest " prefix
 	header = strings.TrimPrefix(header, "Digest ")
 
-	parts := strings.Split(header, ",")
+	// Tokenize respecting quoted strings
+	parts := tokenizeDigestHeader(header)
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		if strings.HasPrefix(part, "nonce=") {
-			nonce = strings.Trim(strings.TrimPrefix(part, "nonce="), `"`)
+			nonce = unquote(strings.TrimPrefix(part, "nonce="))
 		}
 		if strings.HasPrefix(part, "realm=") {
-			realm = strings.Trim(strings.TrimPrefix(part, "realm="), `"`)
+			realm = unquote(strings.TrimPrefix(part, "realm="))
 		}
 		if strings.HasPrefix(part, "qop=") {
-			qop = strings.Trim(strings.TrimPrefix(part, "qop="), `"`)
+			qop = unquote(strings.TrimPrefix(part, "qop="))
 		}
 	}
 	return
+}
+
+// tokenizeDigestHeader splits the header by commas, but not commas inside quoted strings.
+func tokenizeDigestHeader(header string) []string {
+	var parts []string
+	var current strings.Builder
+	inQuote := false
+
+	for i := 0; i < len(header); i++ {
+		ch := header[i]
+		switch ch {
+		case '"':
+			inQuote = !inQuote
+			current.WriteByte(ch)
+		case ',':
+			if inQuote {
+				current.WriteByte(ch)
+			} else {
+				parts = append(parts, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteByte(ch)
+		}
+	}
+	if current.Len() > 0 {
+		parts = append(parts, current.String())
+	}
+	return parts
+}
+
+// unquote removes surrounding quotes from a value.
+func unquote(s string) string {
+	return strings.Trim(s, `"`)
 }
 
 // buildDigestAuth constructs the Digest Authorization header.

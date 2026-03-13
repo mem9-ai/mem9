@@ -96,6 +96,10 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	t0 = time.Now()
 	if err := s.tenants.Create(ctx, t); err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
+		s.logger.Error("orphaned cluster: tenants.Create failed",
+			"cluster_id", info.ID,
+			"provider", providerType,
+			"err", err)
 		return nil, fmt.Errorf("create tenant record: %w", err)
 	}
 	elapsed = time.Since(t0)

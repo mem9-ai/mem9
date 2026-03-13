@@ -160,6 +160,9 @@ func (p *ZeroProvisioner) ProviderType() string {
 // InitSchema executes DDL to create the schema for Zero clusters.
 // Note: Zero mode only supports tidb backend for auto-provisioning.
 func (p *ZeroProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
+	if db == nil {
+		return fmt.Errorf("init schema: db connection is nil")
+	}
 	/*
 		case "postgres":
 			if _, err := db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
