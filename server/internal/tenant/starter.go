@@ -86,13 +86,9 @@ func (p *TiDBCloudProvisioner) ProviderType() string {
 	return "tidb_cloud_starter"
 }
 
-// InitSchema verifies the pre-configured schema exists.
-// For TiDB Cloud Pool, the schema is pre-configured; we just verify it.
+// InitSchema for TiDB Cloud Pool is a no-op.
+// The cluster is pre-configured with schema already initialized.
 func (p *TiDBCloudProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
-	// Verify pre-configured schema exists via SELECT (do not run DDL)
-	if _, err := db.ExecContext(ctx, "SELECT 1 FROM memories LIMIT 1"); err != nil {
-		return fmt.Errorf("schema verification failed: %w", err)
-	}
 	return nil
 }
 
