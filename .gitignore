@@ -30,6 +30,7 @@ Thumbs.db
 node_modules/
 dist/
 *.tgz
+.netlify/
 
 # Benchmark results
 benchmark/results/*
