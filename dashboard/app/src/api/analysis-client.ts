@@ -47,13 +47,16 @@ async function request<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  const headers = new Headers(init?.headers);
+  headers.set("x-mem9-api-key", spaceId.trim());
+
+  if (init?.body !== undefined && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const response = await fetch(`${ANALYSIS_API_BASE}${path}`, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      "x-mem9-api-key": spaceId.trim(),
-      ...init?.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {
