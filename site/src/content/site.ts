@@ -11,6 +11,7 @@ export interface SiteNavCopy {
   home: string;
   features: string;
   platforms: string;
+  yourMemory: string;
   security: string;
 }
 
@@ -70,6 +71,7 @@ export interface SitePlatformItem {
   name: string;
   desc: string;
   detail: string;
+  badge?: string;
 }
 
 export interface SitePlatformsCopy {
@@ -77,6 +79,7 @@ export interface SitePlatformsCopy {
   title: string;
   description: string;
   items: SitePlatformItem[];
+  ctaLabel: string;
   note: string;
 }
 
@@ -172,6 +175,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'Home',
       features: 'Features',
       platforms: 'Platforms',
+      yourMemory: 'Your Memory',
       security: 'Security',
     },
     hero: {
@@ -262,7 +266,15 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'Give your OpenClaw agents memory that never expires. Recall past conversations, reuse learned knowledge, and stay consistent session after session.',
         },
+        {
+          name: 'Your Memory',
+          desc: 'Official mem9.ai app',
+          detail:
+            'Visualize, manage, analyze, import, and export your memories from the official mem9.ai interface.',
+          badge: 'Beta',
+        },
       ],
+      ctaLabel: 'Try Your Memory',
       note: 'Also works with any client that can read or write through the mem9 API layer.',
     },
     faq: {
@@ -356,6 +368,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: '首页',
       features: '能力',
       platforms: '平台',
+      yourMemory: '你的记忆',
       security: '安全',
     },
     hero: {
@@ -443,7 +456,15 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             '为你的 OpenClaw Agent 提供永不过期的记忆。回忆过去的对话，复用已经学到的知识，并在一轮又一轮会话中保持一致。',
         },
+        {
+          name: '你的记忆',
+          desc: 'mem9.ai 官方应用',
+          detail:
+            '通过 mem9.ai 官方界面可视化管理、分析，并导入导出你的 memories。',
+          badge: 'Beta',
+        },
       ],
+      ctaLabel: '试试你的记忆',
       note: '任何能够通过 mem9 API 层读写的客户端也都可以接入。',
     },
     faq: {
@@ -532,6 +553,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: '首頁',
       features: '能力',
       platforms: '平台',
+      yourMemory: '你的記憶',
       security: '安全',
     },
     hero: {
@@ -619,7 +641,15 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             '為你的 OpenClaw Agent 提供永不過期的記憶。回想過去的對話，重用已學到的知識，並在一輪又一輪會話中保持一致。',
         },
+        {
+          name: '你的記憶',
+          desc: 'mem9.ai 官方應用',
+          detail:
+            '透過 mem9.ai 官方介面，以視覺化方式管理、分析，並匯入匯出你的 memories。',
+          badge: 'Beta',
+        },
       ],
+      ctaLabel: '試試你的記憶',
       note: '任何能夠透過 mem9 API 層讀寫的客戶端也都可以接入。',
     },
     faq: {
@@ -708,6 +738,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'ホーム',
       features: '機能',
       platforms: '対応環境',
+      yourMemory: 'あなたの記憶',
       security: 'セキュリティ',
     },
     hero: {
@@ -798,7 +829,15 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'OpenClaw エージェントに期限のない記憶を与えます。過去の会話を呼び戻し、学習済みの知識を再利用し、セッションをまたいで一貫性を保てます。',
         },
+        {
+          name: 'あなたの記憶',
+          desc: 'mem9.ai 公式アプリ',
+          detail:
+            'mem9.ai の公式 UI から、あなたの memories を可視化して管理し、分析し、インポートとエクスポートを行えます。',
+          badge: 'Beta',
+        },
       ],
+      ctaLabel: 'あなたの記憶を試す',
       note: 'mem9 API レイヤー経由で読み書きできるクライアントなら、そのまま利用できます。',
     },
     faq: {
@@ -887,6 +926,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: '홈',
       features: '기능',
       platforms: '플랫폼',
+      yourMemory: '당신의 기억',
       security: '보안',
     },
     hero: {
@@ -974,7 +1014,15 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'OpenClaw 에이전트에 만료되지 않는 메모리를 제공합니다. 이전 대화를 다시 불러오고, 배운 지식을 재사용하며, 세션이 바뀌어도 일관성을 유지합니다.',
         },
+        {
+          name: '당신의 기억',
+          desc: 'mem9.ai 공식 앱',
+          detail:
+            'mem9.ai 공식 인터페이스에서 당신의 memories 를 시각화해 관리하고, 분석하고, 가져오고 내보낼 수 있습니다.',
+          badge: 'Beta',
+        },
       ],
+      ctaLabel: '당신의 기억 사용해보기',
       note: 'mem9 API 레이어를 통해 읽고 쓸 수 있는 모든 클라이언트와도 함께 동작합니다.',
     },
     faq: {
@@ -1063,6 +1111,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'Beranda',
       features: 'Fitur',
       platforms: 'Platform',
+      yourMemory: 'Memori Anda',
       security: 'Keamanan',
     },
     hero: {
@@ -1153,7 +1202,15 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'Berikan agent OpenClaw Anda memori yang tidak pernah kedaluwarsa. Panggil kembali percakapan lama, gunakan ulang pengetahuan yang sudah dipelajari, dan tetap konsisten dari sesi ke sesi.',
         },
+        {
+          name: 'Memori Anda',
+          desc: 'Aplikasi resmi mem9.ai',
+          detail:
+            'Visualisasikan, kelola, analisis, impor, dan ekspor memories Anda dari antarmuka resmi mem9.ai.',
+          badge: 'Beta',
+        },
       ],
+      ctaLabel: 'Coba Memori Anda',
       note: 'Juga bekerja dengan klien apa pun yang dapat membaca atau menulis melalui lapisan API mem9.',
     },
     faq: {
@@ -1242,6 +1299,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'หน้าแรก',
       features: 'ความสามารถ',
       platforms: 'แพลตฟอร์ม',
+      yourMemory: 'ความทรงจำของคุณ',
       security: 'ความปลอดภัย',
     },
     hero: {
@@ -1332,7 +1390,15 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'มอบหน่วยความจำที่ไม่มีวันหมดอายุให้กับเอเจนต์ OpenClaw ของคุณ เรียกดูบทสนทนาเก่า ใช้ความรู้ที่เคยเรียนรู้ซ้ำ และคงความสม่ำเสมอได้ในทุกเซสชัน',
         },
+        {
+          name: 'ความทรงจำของคุณ',
+          desc: 'แอปทางการของ mem9.ai',
+          detail:
+            'ดูภาพรวม จัดการ วิเคราะห์ นำเข้า และส่งออก memories ของคุณผ่านอินเทอร์เฟซทางการของ mem9.ai',
+          badge: 'Beta',
+        },
       ],
+      ctaLabel: 'ลองใช้ความทรงจำของคุณ',
       note: 'ยังทำงานได้กับไคลเอนต์ใดก็ตามที่อ่านหรือเขียนผ่านชั้น API ของ mem9 ได้',
     },
     faq: {

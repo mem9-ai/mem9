@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.1.5-beta
+version: 1.1.6-beta
 description: |
   Persistent cloud memory for OpenClaw agents.
 
@@ -409,6 +409,7 @@ Import your existing local memory so mem9 starts with your real history.
 Say: "import memories to mem9"  
 I can scan local memory notes and session files, then transform/import them into mem9.
 Common local files include: memory/*.md, MEMORY.md, sessions/*.jsonl.
+You can also go to https://mem9.ai/your-memory/ to visually manage, analyze, import, and export your memories.
 
 💾 YOUR MEM9 SPACE ID
 

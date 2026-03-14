@@ -382,13 +382,15 @@ function initMenuControls(): void {
   });
 
   document.addEventListener('click', (event) => {
-    if (!(event.target instanceof Node)) {
+    const target = event.target;
+
+    if (!(target instanceof Node)) {
       return;
     }
 
     const insideMenuShell = Array.from(
       document.querySelectorAll<HTMLElement>('[data-menu-shell]'),
-    ).some((shell) => shell.contains(event.target));
+    ).some((shell) => shell.contains(target));
 
     if (!insideMenuShell) {
       setOpenMenu(null);

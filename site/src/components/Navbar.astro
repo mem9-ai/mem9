@@ -25,10 +25,14 @@ const { nav, aria, localeNames, themeOptions } = Astro.props;
 
     <div class="nav-right">
       <div class="nav-links">
-        <a href="/#top" data-i18n="nav.home">{nav.home}</a>
-        <a href="/#features" data-i18n="nav.features">{nav.features}</a>
-        <a href="/#platforms" data-i18n="nav.platforms">{nav.platforms}</a>
-        <a href="/#security" data-i18n="nav.security">{nav.security}</a>
+        <a href="/#top" class="nav-section-link" data-i18n="nav.home">{nav.home}</a>
+        <a href="/#features" class="nav-section-link" data-i18n="nav.features">{nav.features}</a>
+        <a href="/#platforms" class="nav-section-link" data-i18n="nav.platforms">{nav.platforms}</a>
+        <a href="https://mem9.ai/your-memory" class="nav-product-link">
+          <span data-i18n="nav.yourMemory">{nav.yourMemory}</span>
+          <span class="nav-badge">Beta</span>
+        </a>
+        <a href="/#security" class="nav-section-link" data-i18n="nav.security">{nav.security}</a>
       </div>
 
       <div class="nav-actions">
@@ -258,6 +262,27 @@ const { nav, aria, localeNames, themeOptions } = Astro.props;
     color: inherit;
   }
 
+  .nav-product-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .nav-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid var(--button-active-border);
+    background: var(--button-active-bg);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    line-height: 1;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
   .nav-actions {
     display: flex;
     align-items: center;
@@ -363,8 +388,18 @@ const { nav, aria, localeNames, themeOptions } = Astro.props;
       gap: 0.7rem;
     }
 
-    .nav-links a {
+    .nav-links .nav-section-link {
       display: none;
+    }
+
+    .nav-links .nav-product-link {
+      font-size: 0.82rem;
+      gap: 0.32rem;
+    }
+
+    .nav-badge {
+      padding: 0.14rem 0.38rem;
+      font-size: 0.58rem;
     }
 
     .language-menu {
