@@ -175,27 +175,6 @@ export function SpacePage() {
   }, [analysisFilteredMemories, displayedMemories, usingLocalAnalysisList]);
 
   useEffect(() => {
-    if (!usingLocalAnalysisList || isMemoryLoading) return;
-
-    if (displayedMemories.length === 0) {
-      setSelected(null);
-      return;
-    }
-
-    if (
-      !selected ||
-      !displayedMemories.some((memory) => memory.id === selected.id)
-    ) {
-      setSelected(displayedMemories[0] ?? null);
-    }
-  }, [
-    displayedMemories,
-    isMemoryLoading,
-    selected,
-    usingLocalAnalysisList,
-  ]);
-
-  useEffect(() => {
     if (isMemoryLoading || !selected) return;
 
     if (displayedMemories.length === 0) {
@@ -204,7 +183,7 @@ export function SpacePage() {
     }
 
     if (!displayedMemories.some((memory) => memory.id === selected.id)) {
-      setSelected(displayedMemories[0] ?? null);
+      setSelected(null);
     }
   }, [displayedMemories, isMemoryLoading, selected]);
 

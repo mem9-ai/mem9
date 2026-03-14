@@ -237,7 +237,7 @@ describe("SpacePage", () => {
     });
   });
 
-  it("filters memories by clicked analysis category and auto-selects the first match", async () => {
+  it("filters memories by clicked analysis category without auto-opening detail", async () => {
     render(<RouterProvider router={router} />);
 
     fireEvent.click(screen.getByRole("button", { name: /Activity/ }));
@@ -246,9 +246,64 @@ describe("SpacePage", () => {
       expect(screen.queryByText("Prefer Neovim for edits")).not.toBeInTheDocument();
     });
 
-    expect(screen.getAllByText("Deploy dashboard status update")).toHaveLength(2);
+    expect(screen.getByText("Deploy dashboard status update")).toBeInTheDocument();
     expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Delete this memory" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Delete this memory" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the detail panel closed after the user closes it in analysis mode", async () => {
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Activity/ }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Prefer Neovim for edits")).not.toBeInTheDocument();
+    });
+
+    const activityCard = screen
+      .getByText("Deploy dashboard status update")
+      .closest('[role="button"]');
+
+    expect(activityCard).not.toBeNull();
+    fireEvent.click(activityCard!);
+
+    expect(
+      screen.getByRole("button", { name: "Delete this memory" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(
+      screen.queryByRole("button", { name: "Delete this memory" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
+  });
+
+  it("closes the detail panel when the selected memory is filtered out", async () => {
+    render(<RouterProvider router={router} />);
+
+    const preferenceCard = screen
+      .getByText("Prefer Neovim for edits")
+      .closest('[role="button"]');
+
+    expect(preferenceCard).not.toBeNull();
+    fireEvent.click(preferenceCard!);
+
+    expect(
+      screen.getByRole("button", { name: "Delete this memory" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Activity/ }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Delete this memory" }),
+      ).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
   });
 
   it("shows tag chips and filters the list by tag", async () => {
