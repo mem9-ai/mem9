@@ -1027,25 +1027,21 @@ func TestReconcileContentValidatesInput(t *testing.T) {
 func TestReconcileIncludesMemoryAge(t *testing.T) {
 	t.Parallel()
 
-	callCount := 0
 	var reconcileBody string
 	var mu sync.Mutex
 
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		mu.Lock()
-		callCount++
-		current := callCount
-		if current == 2 {
-			reconcileBody = string(body)
-		}
-		mu.Unlock()
+		bodyStr := string(body)
 
 		var resp string
-		if current == 1 {
-			resp = `{"facts": ["Lives in Shanghai"]}`
-		} else {
+		if strings.Contains(bodyStr, "Current memory contents:") {
+			mu.Lock()
+			reconcileBody = bodyStr
+			mu.Unlock()
 			resp = `{"memory": [{"id": "0", "text": "Lives in Shanghai", "event": "UPDATE", "old_memory": "Lives in Beijing"}]}`
+		} else {
+			resp = `{"facts": ["Lives in Shanghai"]}`
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
@@ -1110,25 +1106,21 @@ func TestReconcileIncludesMemoryAge(t *testing.T) {
 func TestReconcileOmitsAgeForZeroTimestamp(t *testing.T) {
 	t.Parallel()
 
-	callCount := 0
 	var reconcileBody string
 	var mu sync.Mutex
 
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		mu.Lock()
-		callCount++
-		current := callCount
-		if current == 2 {
-			reconcileBody = string(body)
-		}
-		mu.Unlock()
+		bodyStr := string(body)
 
 		var resp string
-		if current == 1 {
-			resp = `{"facts": ["Prefers dark mode"]}`
-		} else {
+		if strings.Contains(bodyStr, "Current memory contents:") {
+			mu.Lock()
+			reconcileBody = bodyStr
+			mu.Unlock()
 			resp = `{"memory": [{"id": "0", "text": "Prefers dark mode", "event": "NOOP"}]}`
+		} else {
+			resp = `{"facts": ["Prefers dark mode"]}`
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{

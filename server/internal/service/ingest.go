@@ -465,6 +465,11 @@ Example 5 — Age as tiebreaker for ambiguous conflicts:
   New facts: ["Prefers VS Code", "Works at company Y"]
   Result: {"memory": [{"id": "0", "text": "Prefers VS Code", "event": "UPDATE", "old_memory": "Prefers vim"}, {"id": "1", "text": "Works at company Y", "event": "UPDATE", "old_memory": "Works at startup X"}]}
 
+Example 6 — Age does NOT trigger UPDATE without content conflict:
+  Existing memories: [{"id": 0, "text": "Likes coffee", "age": "2 years ago"}]
+  New facts: ["Enjoys coffee"]
+  Result: {"memory": [{"id": "0", "text": "Likes coffee", "event": "NOOP"}]}
+
 ## Output Format
 
 Return ONLY valid JSON. No markdown fences.
