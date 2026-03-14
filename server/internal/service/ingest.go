@@ -396,14 +396,21 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 	}
 
 	// Step 2: Map real UUIDs to integer IDs to prevent LLM hallucination.
+	// Include relative age so the LLM can resolve temporal conflicts
+	// (e.g., "Lives in Beijing" from 1 year ago vs new fact "Lives in Shanghai").
 	type memoryRef struct {
 		IntID int    `json:"id"`
 		Text  string `json:"text"`
+		Age   string `json:"age,omitempty"`
 	}
 	refs := make([]memoryRef, len(existingMemories))
 	idMap := make(map[int]string, len(existingMemories))
 	for i, m := range existingMemories {
-		refs[i] = memoryRef{IntID: i, Text: m.Content}
+		ref := memoryRef{IntID: i, Text: m.Content}
+		if !m.UpdatedAt.IsZero() {
+			ref.Age = relativeAge(m.UpdatedAt)
+		}
+		refs[i] = ref
 		idMap[i] = m.ID
 	}
 
@@ -429,28 +436,34 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 5. When the fact covers a topic not in any existing memory, use ADD.
 6. When the fact means the same thing as an existing memory (even if worded differently), use NOOP.
 7. Preserve the language of the original facts. Do not translate.
+8. Each existing memory has an "age" field showing when it was last updated. Use age as a tiebreaker: when a new fact conflicts with an existing memory on the same topic and there is no other signal, older memories are more likely outdated. Age alone is NOT sufficient reason to UPDATE or DELETE — the content must also conflict or supersede the existing memory.
 
 ## Examples
 
 Example 1 — ADD new information:
-  Existing memories: [{"id": 0, "text": "Is a software engineer"}]
+  Existing memories: [{"id": 0, "text": "Is a software engineer", "age": "2 months ago"}]
   New facts: ["Name is John"]
   Result: {"memory": [{"id": "0", "text": "Is a software engineer", "event": "NOOP"}, {"id": "new", "text": "Name is John", "event": "ADD"}]}
 
 Example 2 — UPDATE with more detail:
-  Existing memories: [{"id": 0, "text": "Likes to play cricket"}, {"id": 1, "text": "Is a software engineer"}]
+  Existing memories: [{"id": 0, "text": "Likes to play cricket", "age": "3 weeks ago"}, {"id": 1, "text": "Is a software engineer", "age": "2 months ago"}]
   New facts: ["Loves to play cricket with friends on weekends"]
   Result: {"memory": [{"id": "0", "text": "Loves to play cricket with friends on weekends", "event": "UPDATE", "old_memory": "Likes to play cricket"}, {"id": "1", "text": "Is a software engineer", "event": "NOOP"}]}
 
 Example 3 — DELETE contradicted information:
-  Existing memories: [{"id": 0, "text": "Name is John"}, {"id": 1, "text": "Loves cheese pizza"}]
+  Existing memories: [{"id": 0, "text": "Name is John", "age": "5 months ago"}, {"id": 1, "text": "Loves cheese pizza", "age": "3 months ago"}]
   New facts: ["Dislikes cheese pizza"]
   Result: {"memory": [{"id": "0", "text": "Name is John", "event": "NOOP"}, {"id": "1", "text": "Loves cheese pizza", "event": "DELETE"}, {"id": "new", "text": "Dislikes cheese pizza", "event": "ADD"}]}
 
 Example 4 — NOOP for equivalent information:
-  Existing memories: [{"id": 0, "text": "Name is John"}, {"id": 1, "text": "Loves cheese pizza"}]
+  Existing memories: [{"id": 0, "text": "Name is John", "age": "5 months ago"}, {"id": 1, "text": "Loves cheese pizza", "age": "3 months ago"}]
   New facts: ["Name is John"]
   Result: {"memory": [{"id": "0", "text": "Name is John", "event": "NOOP"}, {"id": "1", "text": "Loves cheese pizza", "event": "NOOP"}]}
+
+Example 5 — Age as tiebreaker for ambiguous conflicts:
+  Existing memories: [{"id": 0, "text": "Prefers vim", "age": "1 year ago"}, {"id": 1, "text": "Works at startup X", "age": "8 months ago"}]
+  New facts: ["Prefers VS Code", "Works at company Y"]
+  Result: {"memory": [{"id": "0", "text": "Prefers VS Code", "event": "UPDATE", "old_memory": "Prefers vim"}, {"id": "1", "text": "Works at company Y", "event": "UPDATE", "old_memory": "Works at startup X"}]}
 
 ## Output Format
 

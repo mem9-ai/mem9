@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/llm"
@@ -1017,5 +1018,170 @@ func TestReconcileContentValidatesInput(t *testing.T) {
 	}
 	if ve.Field != "content" {
 		t.Fatalf("expected field content, got %s", ve.Field)
+	}
+}
+
+// TestReconcileIncludesMemoryAge verifies that the reconciliation prompt sent to
+// the LLM includes the "age" field for existing memories, giving the LLM temporal
+// context to resolve conflicts (e.g., stale "Lives in Beijing" vs new "Lives in Shanghai").
+func TestReconcileIncludesMemoryAge(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	var reconcileBody string
+	var mu sync.Mutex
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		callCount++
+		current := callCount
+		if current == 2 {
+			reconcileBody = string(body)
+		}
+		mu.Unlock()
+
+		var resp string
+		if current == 1 {
+			resp = `{"facts": ["Lives in Shanghai"]}`
+		} else {
+			resp = `{"memory": [{"id": "0", "text": "Lives in Shanghai", "event": "UPDATE", "old_memory": "Lives in Beijing"}]}`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": resp}}},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+
+	// Existing memory has a non-zero UpdatedAt so age will be populated.
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{
+				ID:         "mem-old",
+				Content:    "Lives in Beijing",
+				MemoryType: domain.TypeInsight,
+				State:      domain.StateActive,
+				UpdatedAt:  time.Now().Add(-365 * 24 * time.Hour), // ~1 year ago
+			},
+		},
+	}
+
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	res, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-age",
+		AgentID:   "agent-1",
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I moved to Shanghai last month"},
+			{Role: "assistant", Content: "Got it!"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	// Verify the reconciliation LLM call includes "age" in the prompt body.
+	mu.Lock()
+	body := reconcileBody
+	mu.Unlock()
+
+	if !strings.Contains(body, `"age"`) && !strings.Contains(body, `\"age\"`) {
+		t.Fatalf("expected reconciliation prompt to contain age field, got: %s", body)
+	}
+	if !strings.Contains(body, "year") {
+		t.Fatalf("expected age to contain 'year' for a 1-year-old memory, got: %s", body)
+	}
+
+	if len(memRepo.createCalls) == 0 {
+		t.Fatal("expected ArchiveAndCreate to create a new memory")
+	}
+}
+
+// TestReconcileOmitsAgeForZeroTimestamp verifies that when a memory has a zero
+// UpdatedAt (e.g., from test fixtures without timestamps), the "age" field is
+// omitted from the JSON sent to the LLM rather than showing a nonsensical value.
+func TestReconcileOmitsAgeForZeroTimestamp(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	var reconcileBody string
+	var mu sync.Mutex
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		callCount++
+		current := callCount
+		if current == 2 {
+			reconcileBody = string(body)
+		}
+		mu.Unlock()
+
+		var resp string
+		if current == 1 {
+			resp = `{"facts": ["Prefers dark mode"]}`
+		} else {
+			resp = `{"memory": [{"id": "0", "text": "Prefers dark mode", "event": "NOOP"}]}`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": resp}}},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+
+	// Zero UpdatedAt — age should be omitted.
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{
+				ID:         "mem-notime",
+				Content:    "Prefers light mode",
+				MemoryType: domain.TypeInsight,
+				State:      domain.StateActive,
+				// UpdatedAt is zero value
+			},
+		},
+	}
+
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-noage",
+		AgentID:   "agent-1",
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I prefer dark mode"},
+			{Role: "assistant", Content: "Noted."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+
+	mu.Lock()
+	body := reconcileBody
+	mu.Unlock()
+
+	// Check only the memory data section (system prompt examples contain "age").
+	if idx := strings.Index(body, "Current memory contents:"); idx >= 0 {
+		endIdx := strings.Index(body[idx:], "New facts")
+		if endIdx < 0 {
+			t.Fatal("could not find 'New facts' marker in reconciliation body")
+		}
+		memorySection := body[idx : idx+endIdx]
+		if strings.Contains(memorySection, "age") {
+			t.Fatalf("expected no age in memory data for zero timestamp, but found it in: %s", memorySection)
+		}
+	} else {
+		t.Fatal("could not find 'Current memory contents:' marker in reconciliation body")
 	}
 }
