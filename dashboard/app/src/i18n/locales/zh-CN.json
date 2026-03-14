@@ -189,6 +189,7 @@
   },
   "analysis": {
     "title": "记忆分析",
+    "open": "分析",
     "taxonomy_version": "分类版本 {{version}}",
     "taxonomy_fallback": "使用默认分类标签",
     "taxonomy_warning": "分类定义暂不可用，当前展示为本地兜底标签。",

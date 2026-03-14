@@ -156,6 +156,60 @@ export function AnalysisPanel({
   state,
   sourceCount,
   sourceLoading,
+  taxonomy,
+  taxonomyUnavailable,
+  cards,
+  activeCategory,
+  onSelectCategory,
+  onRetry,
+  t,
+}: {
+  state: SpaceAnalysisState;
+  sourceCount: number;
+  sourceLoading: boolean;
+  taxonomy: TaxonomyResponse | null;
+  taxonomyUnavailable: boolean;
+  cards: AnalysisCategoryCard[];
+  activeCategory?: AnalysisCategory;
+  onSelectCategory: (category: AnalysisCategory | undefined) => void;
+  onRetry: () => void;
+  t: TFunction;
+}) {
+  return (
+    <aside className="w-full shrink-0 xl:sticky xl:top-[calc(3.5rem+2rem)] xl:self-start xl:w-[312px] 2xl:w-[320px]">
+      <div className="surface-card overflow-hidden xl:max-h-[calc(100vh-6rem)]">
+        <div className="border-b px-4 py-4 xl:sticky xl:top-0 xl:z-10 xl:bg-card/95 xl:backdrop-blur-sm">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="size-4 text-primary" />
+            <h2 className="text-sm font-semibold text-foreground">
+              {t("analysis.title")}
+            </h2>
+          </div>
+        </div>
+
+        <div className="analysis-scroll-area space-y-4 px-4 py-4 xl:max-h-[calc(100vh-9.5rem)] xl:overflow-y-auto">
+          <AnalysisPanelBody
+            state={state}
+            sourceCount={sourceCount}
+            sourceLoading={sourceLoading}
+            taxonomy={taxonomy}
+            taxonomyUnavailable={taxonomyUnavailable}
+            cards={cards}
+            activeCategory={activeCategory}
+            onSelectCategory={onSelectCategory}
+            onRetry={onRetry}
+            t={t}
+          />
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+export function AnalysisPanelBody({
+  state,
+  sourceCount,
+  sourceLoading,
   taxonomy: _taxonomy,
   taxonomyUnavailable,
   cards,
@@ -195,211 +249,198 @@ export function AnalysisPanel({
   const showRunDetails = snapshot !== null;
 
   return (
-    <aside className="w-full shrink-0 xl:sticky xl:top-[calc(3.5rem+2rem)] xl:self-start xl:w-[312px] 2xl:w-[320px]">
-      <div className="surface-card overflow-hidden xl:max-h-[calc(100vh-6rem)]">
-        <div className="border-b px-4 py-4 xl:sticky xl:top-0 xl:z-10 xl:bg-card/95 xl:backdrop-blur-sm">
-          <div className="flex items-center gap-2">
-            <BarChart3 className="size-4 text-primary" />
-            <h2 className="text-sm font-semibold text-foreground">
-              {t("analysis.title")}
-            </h2>
+    <>
+      {sourceLoading && (
+        <div className="flex items-center gap-2 rounded-xl bg-secondary/60 px-3 py-3 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          {t("analysis.loading_source")}
+        </div>
+      )}
+
+      {!sourceLoading && sourceCount === 0 && (
+        <div className="rounded-xl border border-dashed px-4 py-5 text-sm text-muted-foreground">
+          {t("analysis.empty")}
+        </div>
+      )}
+
+      {(state.phase === "degraded" || state.phase === "failed") && (
+        <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 size-4 text-destructive" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-foreground">
+                {state.phase === "degraded"
+                  ? t("analysis.degraded_title")
+                  : t("analysis.failed_title")}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {state.error === "analysis_unavailable"
+                  ? t("analysis.degraded_body")
+                  : t("analysis.failed_body")}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onRetry}
+                className="mt-3 w-full gap-1.5"
+              >
+                <RefreshCcw className="size-3.5" />
+                {t("analysis.retry")}
+              </Button>
+            </div>
           </div>
         </div>
+      )}
 
-        <div className="analysis-scroll-area space-y-4 px-4 py-4 xl:max-h-[calc(100vh-9.5rem)] xl:overflow-y-auto">
-          {sourceLoading && (
-            <div className="flex items-center gap-2 rounded-xl bg-secondary/60 px-3 py-3 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" />
-              {t("analysis.loading_source")}
-            </div>
-          )}
-
-          {!sourceLoading && sourceCount === 0 && (
-            <div className="rounded-xl border border-dashed px-4 py-5 text-sm text-muted-foreground">
-              {t("analysis.empty")}
-            </div>
-          )}
-
-          {(state.phase === "degraded" || state.phase === "failed") && (
-            <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-4">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="mt-0.5 size-4 text-destructive" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground">
-                    {state.phase === "degraded"
-                      ? t("analysis.degraded_title")
-                      : t("analysis.failed_title")}
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {state.error === "analysis_unavailable"
-                      ? t("analysis.degraded_body")
-                      : t("analysis.failed_body")}
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={onRetry}
-                    className="mt-3 w-full gap-1.5"
-                  >
-                    <RefreshCcw className="size-3.5" />
-                    {t("analysis.retry")}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {showCompactProgress && (
-            <section className="rounded-xl border bg-secondary/20 px-3 py-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ring">
-                    {t("analysis.status")}
-                  </p>
-                  <p className="mt-1 text-sm font-medium text-foreground">
-                    {formatPhaseLabel(t, state.phase)}
-                  </p>
-                </div>
-                <span className="rounded-full bg-secondary px-2 py-1 text-[11px] font-medium text-muted-foreground">
-                  {progress?.current ?? 0}/{progress?.total ?? 0}
-                </span>
-              </div>
-              <div className="mt-3">
-                <Progress value={progress?.ratio ?? 0} />
-              </div>
-              <p className="mt-2 text-xs text-soft-foreground">
-                {formatBatchSummary(t, state.phase, snapshot!)}
+      {showCompactProgress && (
+        <section className="rounded-xl border bg-secondary/20 px-3 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ring">
+                {t("analysis.status")}
               </p>
-            </section>
-          )}
+              <p className="mt-1 text-sm font-medium text-foreground">
+                {formatPhaseLabel(t, state.phase)}
+              </p>
+            </div>
+            <span className="rounded-full bg-secondary px-2 py-1 text-[11px] font-medium text-muted-foreground">
+              {progress?.current ?? 0}/{progress?.total ?? 0}
+            </span>
+          </div>
+          <div className="mt-3">
+            <Progress value={progress?.ratio ?? 0} />
+          </div>
+          <p className="mt-2 text-xs text-soft-foreground">
+            {formatBatchSummary(t, state.phase, snapshot!)}
+          </p>
+        </section>
+      )}
 
-          {cards.length > 0 && (
-            <section>
-              <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-ring">
-                {t("analysis.cards")}
-              </h3>
-              <div className="mt-2 space-y-2">
-                {cards.map((card) => (
-                  <button
-                    key={card.category}
-                    type="button"
-                    onClick={() =>
-                      onSelectCategory(
-                        activeCategory === card.category ? undefined : card.category,
-                      )
-                    }
-                    className={`w-full rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                      activeCategory === card.category
-                        ? "border-primary/20 bg-primary/8 ring-1 ring-primary/25"
-                        : "border-transparent bg-secondary/55 hover:border-foreground/10 hover:bg-secondary/80"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-medium text-foreground">
-                        {formatCategoryLabel(t, card.category)}
-                      </span>
-                      <span className="text-sm text-muted-foreground">
-                        {card.count}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-[11px] text-soft-foreground">
-                      {t("analysis.confidence", {
-                        value: `${Math.round(card.confidence * 100)}%`,
-                      })}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {(topTagStats.length > 0 || topTopicStats.length > 0) && (
-            <section className="space-y-3">
-              {topTopicStats.length > 0 && (
-                <FacetSection
-                  kind="topics"
-                  title={t("analysis.top_topics")}
-                  stats={topTopicStats}
-                  t={t}
-                />
-              )}
-              {topTagStats.length > 0 && (
-                <FacetSection
-                  kind="tags"
-                  title={t("analysis.top_tags")}
-                  stats={topTagStats}
-                  t={t}
-                />
-              )}
-            </section>
-          )}
-
-          {showRunDetails && (
-            <InlineCollapsibleSection
-              title={t("analysis.run_details")}
-              defaultOpen={state.phase !== "completed"}
-              t={t}
-            >
-              <>
-                {!showCompactProgress && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{t("analysis.progress")}</span>
-                      <span>{progress?.current ?? 0}/{progress?.total ?? 0}</span>
-                    </div>
-                    <Progress value={progress?.ratio ?? 0} />
-                    <p className="text-xs text-soft-foreground">
-                      {formatBatchSummary(t, state.phase, snapshot!)}
-                    </p>
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <MetricCard
-                    label={t("analysis.metrics.memories")}
-                    value={String(snapshot!.expectedTotalMemories)}
-                  />
-                  <MetricCard
-                    label={t("analysis.metrics.processed")}
-                    value={String(snapshot!.progress.processedMemories)}
-                  />
-                  <MetricCard
-                    label={t("analysis.metrics.uploaded")}
-                    value={String(snapshot!.progress.uploadedBatches)}
-                  />
-                  <MetricCard
-                    label={t("analysis.metrics.failed")}
-                    value={String(snapshot!.progress.failedBatches)}
-                  />
+      {cards.length > 0 && (
+        <section>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-ring">
+            {t("analysis.cards")}
+          </h3>
+          <div className="mt-2 space-y-2">
+            {cards.map((card) => (
+              <button
+                key={card.category}
+                type="button"
+                onClick={() =>
+                  onSelectCategory(
+                    activeCategory === card.category ? undefined : card.category,
+                  )
+                }
+                className={`w-full rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                  activeCategory === card.category
+                    ? "border-primary/20 bg-primary/8 ring-1 ring-primary/25"
+                    : "border-transparent bg-secondary/55 hover:border-foreground/10 hover:bg-secondary/80"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-foreground">
+                    {formatCategoryLabel(t, card.category)}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {card.count}
+                  </span>
                 </div>
+                <div className="mt-1 text-[11px] text-soft-foreground">
+                  {t("analysis.confidence", {
+                    value: `${Math.round(card.confidence * 100)}%`,
+                  })}
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
-                {taxonomyUnavailable && (
-                  <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-                    {t("analysis.taxonomy_warning")}
-                  </div>
-                )}
-
-                {state.warning === "poll_retrying" && (
-                  <div className="rounded-lg bg-secondary px-3 py-2 text-xs text-muted-foreground">
-                    {t("analysis.retrying_updates")}
-                  </div>
-                )}
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onRetry}
-                  disabled={sourceLoading || sourceCount === 0}
-                  className="w-full gap-1.5"
-                >
-                  <RefreshCcw className="size-3.5" />
-                  {t("analysis.reanalyze")}
-                </Button>
-              </>
-            </InlineCollapsibleSection>
+      {(topTagStats.length > 0 || topTopicStats.length > 0) && (
+        <section className="space-y-3">
+          {topTopicStats.length > 0 && (
+            <FacetSection
+              kind="topics"
+              title={t("analysis.top_topics")}
+              stats={topTopicStats}
+              t={t}
+            />
           )}
-        </div>
-      </div>
-    </aside>
+          {topTagStats.length > 0 && (
+            <FacetSection
+              kind="tags"
+              title={t("analysis.top_tags")}
+              stats={topTagStats}
+              t={t}
+            />
+          )}
+        </section>
+      )}
+
+      {showRunDetails && (
+        <InlineCollapsibleSection
+          title={t("analysis.run_details")}
+          defaultOpen={state.phase !== "completed"}
+          t={t}
+        >
+          <>
+            {!showCompactProgress && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{t("analysis.progress")}</span>
+                  <span>{progress?.current ?? 0}/{progress?.total ?? 0}</span>
+                </div>
+                <Progress value={progress?.ratio ?? 0} />
+                <p className="text-xs text-soft-foreground">
+                  {formatBatchSummary(t, state.phase, snapshot!)}
+                </p>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <MetricCard
+                label={t("analysis.metrics.memories")}
+                value={String(snapshot!.expectedTotalMemories)}
+              />
+              <MetricCard
+                label={t("analysis.metrics.processed")}
+                value={String(snapshot!.progress.processedMemories)}
+              />
+              <MetricCard
+                label={t("analysis.metrics.uploaded")}
+                value={String(snapshot!.progress.uploadedBatches)}
+              />
+              <MetricCard
+                label={t("analysis.metrics.failed")}
+                value={String(snapshot!.progress.failedBatches)}
+              />
+            </div>
+
+            {taxonomyUnavailable && (
+              <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                {t("analysis.taxonomy_warning")}
+              </div>
+            )}
+
+            {state.warning === "poll_retrying" && (
+              <div className="rounded-lg bg-secondary px-3 py-2 text-xs text-muted-foreground">
+                {t("analysis.retrying_updates")}
+              </div>
+            )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRetry}
+              disabled={sourceLoading || sourceCount === 0}
+              className="w-full gap-1.5"
+            >
+              <RefreshCcw className="size-3.5" />
+              {t("analysis.reanalyze")}
+            </Button>
+          </>
+        </InlineCollapsibleSection>
+      )}
+    </>
   );
 }
 

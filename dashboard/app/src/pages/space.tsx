@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
   Search,
+  BarChart3,
   Plus,
   LogOut,
   Download,
@@ -39,6 +40,8 @@ import { TimeRangeSelector } from "@/components/space/time-range";
 import { TopicStrip } from "@/components/space/topic-strip";
 import { TagStrip, type TagSummary } from "@/components/space/tag-strip";
 import { AnalysisPanel } from "@/components/space/analysis-panel";
+import { MobileAnalysisSheet } from "@/components/space/mobile-analysis-sheet";
+import { MobileDetailSheet } from "@/components/space/mobile-detail-sheet";
 import { ExportDialog } from "@/components/space/export-dialog";
 import { ImportDialog } from "@/components/space/import-dialog";
 import { ImportStatusDialog } from "@/components/space/import-status";
@@ -49,12 +52,34 @@ import type { TimeRangePreset } from "@/types/time-range";
 
 const route = getRouteApi("/space");
 const LOCAL_PAGE_SIZE = 50;
+const DESKTOP_BREAKPOINT = 1280;
+
+function getIsDesktopViewport(): boolean {
+  if (typeof window === "undefined") return true;
+  return window.innerWidth >= DESKTOP_BREAKPOINT;
+}
+
+function useIsDesktopViewport(): boolean {
+  const [isDesktop, setIsDesktop] = useState(getIsDesktopViewport);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsDesktop(getIsDesktopViewport());
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  return isDesktop;
+}
 
 export function SpacePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const search = route.useSearch();
   const spaceId = getActiveSpaceId() ?? "";
+  const isDesktopViewport = useIsDesktopViewport();
 
   // UI state
   const [selected, setSelected] = useState<Memory | null>(null);
@@ -65,6 +90,7 @@ export function SpacePage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importStatusOpen, setImportStatusOpen] = useState(false);
+  const [mobileAnalysisOpen, setMobileAnalysisOpen] = useState(false);
   const [localVisibleCount, setLocalVisibleCount] = useState(LOCAL_PAGE_SIZE);
 
   const range: TimeRangePreset = search.range ?? "all";
@@ -83,6 +109,12 @@ export function SpacePage() {
   useEffect(() => {
     setLocalVisibleCount(LOCAL_PAGE_SIZE);
   }, [analysisCategory, range, search.q, search.type, spaceId]);
+
+  useEffect(() => {
+    if (isDesktopViewport) {
+      setMobileAnalysisOpen(false);
+    }
+  }, [isDesktopViewport]);
 
   // Queries
   const { data: stats } = useStats(spaceId, range);
@@ -248,6 +280,13 @@ export function SpacePage() {
         q: nextCategory ? undefined : search.q,
       },
     });
+  }
+
+  function handleMobileAnalysisCategoryChange(
+    category: AnalysisCategory | undefined,
+  ) {
+    handleAnalysisCategoryChange(category);
+    setMobileAnalysisOpen(false);
   }
 
   async function handleCreate(content: string, tagsStr: string) {
@@ -608,6 +647,17 @@ export function SpacePage() {
 
             {/* Action Bar */}
             <div className="mt-4 flex flex-wrap items-center gap-2">
+              {!isDesktopViewport && features.enableAnalysis && (
+                <Button
+                  variant={analysisCategory ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => setMobileAnalysisOpen(true)}
+                  className="gap-1.5"
+                >
+                  <BarChart3 className="size-3.5" />
+                  {t("analysis.open")}
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -696,10 +746,9 @@ export function SpacePage() {
               )}
             </div>
 
-            
           </div>
 
-          {features.enableAnalysis && (
+          {features.enableAnalysis && isDesktopViewport && (
             <div className="py-8 xl:order-1 xl:py-8">
               <AnalysisPanel
                 state={analysis.state}
@@ -717,7 +766,7 @@ export function SpacePage() {
           )}
 
           {/* Detail panel */}
-          {selected && (
+          {selected && isDesktopViewport && (
             <DetailPanel
               key={selected.id}
               memory={selected}
@@ -733,6 +782,45 @@ export function SpacePage() {
           )}
         </div>
       </div>
+
+      {!isDesktopViewport && features.enableAnalysis && (
+        <MobileAnalysisSheet
+          open={mobileAnalysisOpen}
+          onOpenChange={setMobileAnalysisOpen}
+          state={analysis.state}
+          sourceCount={analysis.sourceCount}
+          sourceLoading={analysis.sourceLoading}
+          taxonomy={analysis.taxonomy}
+          taxonomyUnavailable={analysis.taxonomyUnavailable}
+          cards={analysis.cards}
+          activeCategory={analysisCategory}
+          onSelectCategory={handleMobileAnalysisCategoryChange}
+          onRetry={analysis.retry}
+          t={t}
+        />
+      )}
+
+      {!isDesktopViewport && (
+        <MobileDetailSheet
+          memory={selected}
+          open={!!selected}
+          onOpenChange={(open) => !open && setSelected(null)}
+          onDelete={() => {
+            if (!selected) return;
+            setDeleteTarget(selected);
+            setSelected(null);
+          }}
+          onEdit={
+            selected?.memory_type === "pinned"
+              ? () => {
+                  setEditTarget(selected);
+                  setSelected(null);
+                }
+              : undefined
+          }
+          t={t}
+        />
+      )}
 
       {/* Dialogs */}
       {features.enableManualAdd && (

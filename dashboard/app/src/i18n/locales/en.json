@@ -189,6 +189,7 @@
   },
   "analysis": {
     "title": "Memory Analysis",
+    "open": "Analysis",
     "taxonomy_version": "Taxonomy {{version}}",
     "taxonomy_fallback": "Using fallback labels",
     "taxonomy_warning": "Taxonomy is unavailable right now. Showing local fallback labels.",
