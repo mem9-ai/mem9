@@ -1,5 +1,5 @@
 import "@/i18n";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { RouterProvider } from "@tanstack/react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { router } from "@/router";
@@ -229,6 +229,8 @@ vi.mock("@/api/analysis-queries", () => ({
 
 describe("SpacePage", () => {
   beforeEach(async () => {
+    window.innerWidth = 1440;
+    window.dispatchEvent(new Event("resize"));
     mocks.useMemories.mockClear();
     await i18n.changeLanguage("en");
     window.history.pushState({}, "", "/your-memory/space");
@@ -269,6 +271,9 @@ describe("SpacePage", () => {
     expect(activityCard).not.toBeNull();
     fireEvent.click(activityCard!);
 
+    expect(screen.getByTestId("detail-scroll-area")).toHaveClass(
+      "max-h-[60vh]",
+    );
     expect(
       screen.getByRole("button", { name: "Delete this memory" }),
     ).toBeInTheDocument();
@@ -304,6 +309,57 @@ describe("SpacePage", () => {
     });
 
     expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
+  });
+
+  it("uses mobile analysis and detail overlays on narrow screens", async () => {
+    window.innerWidth = 390;
+    window.dispatchEvent(new Event("resize"));
+
+    render(<RouterProvider router={router} />);
+
+    expect(
+      screen.getByRole("button", { name: "Analysis" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Activity/ }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Analysis" }));
+
+    const analysisDialog = screen.getByRole("dialog");
+    expect(analysisDialog).toBeInTheDocument();
+    expect(analysisDialog).toHaveClass("right-0", "left-auto");
+
+    fireEvent.click(within(analysisDialog).getByRole("button", { name: "Close" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    const memoryCard = screen
+      .getByText("Deploy dashboard status update")
+      .closest('[role="button"]');
+
+    expect(memoryCard).not.toBeNull();
+    fireEvent.click(memoryCard!);
+
+    const detailDialog = screen.getByRole("dialog");
+    expect(detailDialog).toHaveClass("right-0", "left-auto");
+    expect(within(detailDialog).getByTestId("detail-scroll-area")).toHaveClass(
+      "flex-1",
+    );
+    expect(
+      within(detailDialog).getByTestId("detail-scroll-area"),
+    ).not.toHaveClass("max-h-[60vh]");
+    expect(
+      screen.getByRole("button", { name: "Delete this memory" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(detailDialog).getByRole("button", { name: "Close" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
   });
 
   it("shows tag chips and filters the list by tag", async () => {
