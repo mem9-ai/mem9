@@ -34,7 +34,7 @@ export function DetailPanel({
 
   return (
     <div
-      className="w-[400px] shrink-0 py-8"
+      className="w-full shrink-0 py-8 xl:order-3 xl:w-[390px]"
       style={{ animation: "slide-in-right 0.2s cubic-bezier(0.16,1,0.3,1)" }}
     >
       <div className="surface-card sticky top-[calc(3.5rem+2rem)] overflow-hidden">

@@ -383,7 +383,7 @@ export function SpacePage() {
         }`}
       >
         <div className="flex flex-col gap-8 xl:flex-row">
-          <div className="min-w-0 flex-1 py-8">
+          <div className="min-w-0 flex-1 py-8 xl:order-2">
             {/* Stats cards (clickable for type filtering) */}
             {stats && (
               <div
@@ -700,7 +700,7 @@ export function SpacePage() {
           </div>
 
           {features.enableAnalysis && (
-            <div className="py-8 xl:py-8">
+            <div className="py-8 xl:order-1 xl:py-8">
               <AnalysisPanel
                 state={analysis.state}
                 sourceCount={analysis.sourceCount}
