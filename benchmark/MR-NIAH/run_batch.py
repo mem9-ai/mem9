@@ -51,6 +51,7 @@ SESS_OUT = OUTPUT / "sessions"
 RESULTS = HERE / "results"
 RAW = RESULTS / "raw"
 META_SUFFIX = ".meta.json"
+PROFILE_MEMORY_DIR = "memory"
 
 
 def now_ms() -> int:
@@ -529,7 +530,7 @@ def mem9_clear_memories(
     stable_empty_interval_s: float = 1.0,
     max_duration_s: float = 90.0,
 ) -> Dict[str, Any]:
-    """Delete all tenant memories (best-effort scoped by X-Mnemo-Agent-Id on server side).
+    """Delete all tenant memories (best-effort).
 
     mem9 may add new memories asynchronously (e.g. smart ingest finishing late). To avoid
     flakiness, we require the list endpoint to be empty for N consecutive checks.
@@ -901,6 +902,43 @@ def extract_compaction_metrics(
         "cacheWrite": _coerce_int(entry_after.get("cacheWrite")),
     }
 
+def wipe_profile_local_memory(paths: StorePaths) -> Dict[str, Any]:
+    """Wipe the OpenClaw profile's local memory store (best-effort).
+
+    This prevents cross-case contamination when a profile uses local persistent memory.
+    OpenClaw stores this under ~/.openclaw-<profile>/memory/ (e.g. main.sqlite).
+    """
+    start = time.time()
+    memory_dir = paths.profile_dir / PROFILE_MEMORY_DIR
+    existed = memory_dir.exists()
+    deleted = 0
+    err: Optional[str] = None
+
+    if existed:
+        try:
+            for p in memory_dir.rglob("*"):
+                if p.is_file():
+                    deleted += 1
+            shutil.rmtree(memory_dir)
+        except Exception as e:
+            err = str(e)
+
+    try:
+        memory_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        if err:
+            err = err + "; " + str(e)
+        else:
+            err = str(e)
+
+    return {
+        "ok": err is None,
+        "existed": existed,
+        "deletedFiles": deleted,
+        "error": err,
+        "durationMs": int((time.time() - start) * 1000),
+        "path": str(memory_dir),
+    }
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -927,6 +965,11 @@ def main() -> int:
         type=int,
         default=0,
         help="Pass --timeout to `openclaw agent` (0 = let OpenClaw decide).",
+    )
+    ap.add_argument(
+        "--wipe-local-memory",
+        action="store_true",
+        help="Wipe the OpenClaw profile's local persistent memory before each case (~/.openclaw-<profile>/memory/*).",
     )
     ap.add_argument(
         "--import-sessions",
@@ -1060,6 +1103,20 @@ def main() -> int:
         answer = entry.get("answer", "")
 
         print(f"[{sample_id_int}] session={session_id} running=prepare", flush=True)
+
+        local_memory_wipe: Optional[Dict[str, Any]] = None
+        if args.wipe_local_memory:
+            # If a gateway is running from a previous case (mem9 per-case mode),
+            # stop it before deleting the profile's SQLite files.
+            _stop_process(gateway_proc)
+            gateway_proc = None
+            print(
+                f"[{sample_id_int}] session={session_id} running=wipe_local_memory",
+                flush=True,
+            )
+            local_memory_wipe = wipe_profile_local_memory(paths)
+            if local_memory_wipe.get("ok") is not True:
+                raise RuntimeError(f"wipe local memory failed: {local_memory_wipe!r}")
 
         src = SESS_OUT / f"{session_id}.jsonl"
         if not src.exists():
@@ -1259,6 +1316,7 @@ def main() -> int:
                 }
                 if mem9_cfg is not None and args.mem9_clear_memories
                 else None,
+                "localMemoryWipe": local_memory_wipe,
                 "compaction": compaction,
                 "compactionEvent": {
                     "occurred": compaction_occurred,

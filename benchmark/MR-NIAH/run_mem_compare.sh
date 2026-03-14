@@ -35,6 +35,7 @@ MRNIAH_OPENCLAW_TIMEOUT="${MRNIAH_OPENCLAW_TIMEOUT:-0}"
 # Isolation toggles.
 MRNIAH_CLEAN_SESSIONS="${MRNIAH_CLEAN_SESSIONS:-1}"
 MRNIAH_WIPE_AGENT_SESSIONS="${MRNIAH_WIPE_AGENT_SESSIONS:-1}"
+MRNIAH_WIPE_LOCAL_MEMORY="${MRNIAH_WIPE_LOCAL_MEMORY:-1}"
 
 # mem9 isolation strategy for the mem-enabled profile:
 # - "clear": reuse one tenant and clear memories pre/post each case
@@ -459,6 +460,9 @@ run_batch_for_profile() {
     cmd+=(--reset)
   elif [[ "$NEW_MODE" == "1" ]]; then
     cmd+=(--new)
+  fi
+  if [[ "${MRNIAH_WIPE_LOCAL_MEMORY}" != "0" ]]; then
+    cmd+=(--wipe-local-memory)
   fi
 
   if ! (cd "$MRNIAH_DIR" && "${cmd[@]}") >&2; then

@@ -105,6 +105,7 @@ Common environment variables:
 | `MRNIAH_RESET_MEM_PROFILE` | `0`                                           | Set to `1` to recreate the mem profile from the base profile.   |
 | `MRNIAH_CLEAN_SESSIONS`    | `1`                                           | Set to `0` to skip cleaning prior benchmark sessions.           |
 | `MRNIAH_WIPE_AGENT_SESSIONS` | `1`                                         | Set to `0` to avoid wiping `<profile>/agents/<agent>/sessions/` before/after the run (default archives sessions into `results-logs/raw/`). |
+| `MRNIAH_WIPE_LOCAL_MEMORY`  | `1`                                           | Set to `0` to skip wiping the OpenClaw profile's local persistent memory store (`~/.openclaw-<profile>/memory/*`) between cases. |
 | `MRNIAH_OPENCLAW_TIMEOUT`  | `0`                                           | If set, passes `--timeout` to `openclaw agent` via `run_batch`. |
 
 ### 5. Score predictions
