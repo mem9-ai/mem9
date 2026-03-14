@@ -157,6 +157,10 @@
   "topics": {
     "label": "按主题浏览"
   },
+  "tag_strip": {
+    "label": "按标签浏览",
+    "filter_label": "按标签 {{tag}} 筛选（{{count}}）"
+  },
   "facet": {
     "about_you": "关于你",
     "preferences": "偏好",
@@ -194,6 +198,8 @@
     "summary": "摘要",
     "top_topics": "高频主题",
     "top_tags": "高频标签",
+    "more": "更多",
+    "less": "收起",
     "batch_progress": "批次进度",
     "recent_updates": "最近更新",
     "retry": "重试分析",

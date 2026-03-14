@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AnalysisApiError } from "./analysis-client";
 import {
+  buildFacetStats,
   buildCreateJobRequest,
   chunkAnalysisMemories,
   createMemoryFingerprint,
@@ -190,6 +191,72 @@ describe("analysis helpers", () => {
     expect(merged.aggregate.categoryCounts.identity).toBe(1);
     expect(merged.batchSummaries[0]?.status).toBe("SUCCEEDED");
     expect(merged.topTags).toEqual(["ai"]);
+    expect(merged.topTopics).toEqual(["ai"]);
+    expect(merged.topTagStats).toEqual([{ value: "ai", count: 1 }]);
+    expect(merged.topTopicStats).toEqual([{ value: "ai", count: 1 }]);
+  });
+
+  it("builds facet stats with stable sorting and a 50 item limit", () => {
+    const counts: Record<string, number> = Object.fromEntries(
+      Array.from({ length: 51 }, (_, index) => [
+        `term-${index.toString().padStart(2, "0")}`,
+        1,
+      ]),
+    );
+
+    counts.priority = 53;
+    counts.beta = 5;
+    counts.alpha = 5;
+
+    const stats = buildFacetStats(counts);
+
+    expect(stats).toHaveLength(50);
+    expect(stats[0]).toEqual({ value: "priority", count: 53 });
+    expect(stats[1]).toEqual({ value: "alpha", count: 5 });
+    expect(stats[2]).toEqual({ value: "beta", count: 5 });
+    expect(stats[49]).toEqual({ value: "term-46", count: 1 });
+  });
+
+  it("keeps snapshot facet stats when snapshot is at least as new as updates", () => {
+    const snapshot = createSnapshot();
+    snapshot.progress.resultVersion = 3;
+    snapshot.aggregate.resultVersion = 3;
+    snapshot.topTagStats = [
+      { value: "priority", count: 7 },
+      { value: "alpha", count: 5 },
+    ];
+    snapshot.topTopicStats = [
+      { value: "project", count: 9 },
+      { value: "roadmap", count: 9 },
+    ];
+    snapshot.topTags = ["priority", "alpha"];
+    snapshot.topTopics = ["project", "roadmap"];
+    snapshot.aggregate.tagCounts = { priority: 7, alpha: 5 };
+    snapshot.aggregate.topicCounts = { project: 9, roadmap: 9 };
+
+    const updates: AnalysisJobUpdatesResponse = {
+      cursor: 0,
+      nextCursor: 2,
+      events: [],
+      completedBatchResults: [],
+      aggregate: {
+        ...snapshot.aggregate,
+        resultVersion: 2,
+        tagCounts: { stale: 1 },
+        topicCounts: { stale: 1 },
+      },
+      progress: {
+        ...snapshot.progress,
+        resultVersion: 2,
+      },
+    };
+
+    const merged = mergeSnapshotWithUpdates(snapshot, updates);
+
+    expect(merged.topTagStats).toEqual(snapshot.topTagStats);
+    expect(merged.topTopicStats).toEqual(snapshot.topTopicStats);
+    expect(merged.topTags).toEqual(["priority", "alpha"]);
+    expect(merged.topTopics).toEqual(["project", "roadmap"]);
   });
 
   it("stores cached job ids per space and range", async () => {

@@ -45,6 +45,7 @@ const VALID_FACETS = [
 
 export interface SpaceSearch {
   q?: string;
+  tag?: string;
   type?: MemoryType;
   range?: TimeRangePreset;
   facet?: MemoryFacet;
@@ -57,6 +58,7 @@ const spaceRoute = createRoute({
   component: SpacePage,
   validateSearch: (search: Record<string, unknown>): SpaceSearch => ({
     q: typeof search.q === "string" ? search.q || undefined : undefined,
+    tag: typeof search.tag === "string" ? search.tag || undefined : undefined,
     type: VALID_TYPES.includes(search.type as string)
       ? (search.type as MemoryType)
       : undefined,

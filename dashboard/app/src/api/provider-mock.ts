@@ -114,6 +114,14 @@ function mockList(params: MemoryListParams): MemoryListResponse {
     );
   }
 
+  if (params.tags?.length) {
+    result = result.filter((m) =>
+      params.tags?.every((tag) =>
+        m.tags.some((memoryTag) => memoryTag.toLowerCase() === tag.toLowerCase()),
+      ),
+    );
+  }
+
   if (params.memory_type) {
     result = result.filter((m) => m.memory_type === params.memory_type);
   }

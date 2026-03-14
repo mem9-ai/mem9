@@ -37,6 +37,7 @@ import { EditMemoryDialog } from "@/components/space/edit-dialog";
 import { DeleteDialog } from "@/components/space/delete-dialog";
 import { TimeRangeSelector } from "@/components/space/time-range";
 import { TopicStrip } from "@/components/space/topic-strip";
+import { TagStrip, type TagSummary } from "@/components/space/tag-strip";
 import { AnalysisPanel } from "@/components/space/analysis-panel";
 import { ExportDialog } from "@/components/space/export-dialog";
 import { ImportDialog } from "@/components/space/import-dialog";
@@ -69,6 +70,7 @@ export function SpacePage() {
   const range: TimeRangePreset = search.range ?? "all";
   const facet: MemoryFacet | undefined = search.facet;
   const analysisCategory: AnalysisCategory | undefined = search.analysisCategory;
+  const tag = search.tag;
 
   useEffect(() => {
     if (!spaceId) navigate({ to: "/", replace: true });
@@ -88,6 +90,7 @@ export function SpacePage() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useMemories(spaceId, {
       q: search.q,
+      tag,
       memory_type: search.type,
       range,
       facet,
@@ -128,13 +131,20 @@ export function SpacePage() {
     search.q,
     search.type,
   ]);
+  const tagFilteredAnalysisMemories = useMemo(
+    () =>
+      filterMemoriesForView(analysisFilteredMemories, {
+        tag,
+      }),
+    [analysisFilteredMemories, tag],
+  );
 
   const usingLocalAnalysisList = !!analysisCategory;
   const displayedMemories = usingLocalAnalysisList
-    ? analysisFilteredMemories.slice(0, localVisibleCount)
+    ? tagFilteredAnalysisMemories.slice(0, localVisibleCount)
     : memories;
   const hasMoreMemories = usingLocalAnalysisList
-    ? analysisFilteredMemories.length > localVisibleCount
+    ? tagFilteredAnalysisMemories.length > localVisibleCount
     : hasNextPage;
   const isMemoryLoading = usingLocalAnalysisList
     ? analysis.sourceLoading
@@ -143,27 +153,60 @@ export function SpacePage() {
   const displayedFirstPageSize = usingLocalAnalysisList
     ? Math.min(displayedMemories.length, LOCAL_PAGE_SIZE)
     : firstPageSize;
+  const tagOptions = useMemo<TagSummary[]>(() => {
+    const source = usingLocalAnalysisList ? analysisFilteredMemories : displayedMemories;
+    const counts = new Map<string, number>();
+
+    for (const memory of source) {
+      for (const memoryTag of memory.tags) {
+        const normalized = memoryTag.trim();
+        if (!normalized) continue;
+        counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+      }
+    }
+
+    return [...counts.entries()]
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "en"))
+      .slice(0, 24)
+      .map(([value, count]) => ({
+        tag: value,
+        count,
+      }));
+  }, [analysisFilteredMemories, displayedMemories, usingLocalAnalysisList]);
 
   useEffect(() => {
     if (!usingLocalAnalysisList || isMemoryLoading) return;
 
-    if (analysisFilteredMemories.length === 0) {
+    if (displayedMemories.length === 0) {
       setSelected(null);
       return;
     }
 
     if (
       !selected ||
-      !analysisFilteredMemories.some((memory) => memory.id === selected.id)
+      !displayedMemories.some((memory) => memory.id === selected.id)
     ) {
-      setSelected(analysisFilteredMemories[0] ?? null);
+      setSelected(displayedMemories[0] ?? null);
     }
   }, [
-    analysisFilteredMemories,
+    displayedMemories,
     isMemoryLoading,
     selected,
     usingLocalAnalysisList,
   ]);
+
+  useEffect(() => {
+    if (isMemoryLoading || !selected) return;
+
+    if (displayedMemories.length === 0) {
+      setSelected(null);
+      return;
+    }
+
+    if (!displayedMemories.some((memory) => memory.id === selected.id)) {
+      setSelected(displayedMemories[0] ?? null);
+    }
+  }, [displayedMemories, isMemoryLoading, selected]);
 
   if (!spaceId) return null;
 
@@ -197,7 +240,14 @@ export function SpacePage() {
   function handleFacetChange(f: MemoryFacet | undefined) {
     navigate({
       to: "/space",
-      search: { ...search, facet: f },
+      search: { ...search, facet: f, tag: undefined },
+    });
+  }
+
+  function handleTagChange(nextTag: string | undefined) {
+    navigate({
+      to: "/space",
+      search: { ...search, tag: nextTag },
     });
   }
 
@@ -300,6 +350,7 @@ export function SpacePage() {
     !isMemoryLoading &&
     displayedMemories.length === 0 &&
     !search.q &&
+    !tag &&
     !search.type &&
     !facet &&
     !analysisCategory;
@@ -307,6 +358,7 @@ export function SpacePage() {
     (search.type ? 1 : 0) +
     (facet ? 1 : 0) +
     (search.q ? 1 : 0) +
+    (tag ? 1 : 0) +
     (analysisCategory ? 1 : 0);
 
   return (
@@ -467,7 +519,7 @@ export function SpacePage() {
             </div>
 
             {/* Active filters indicator (right below search) */}
-            {(search.type || facet || search.q || analysisCategory) && (
+            {(search.type || facet || search.q || tag || analysisCategory) && (
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span>{t("filter.active")}</span>
                 {search.q && (
@@ -514,6 +566,15 @@ export function SpacePage() {
                     <X className="size-3" />
                   </button>
                 )}
+                {tag && (
+                  <button
+                    onClick={() => handleTagChange(undefined)}
+                    className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-foreground hover:bg-secondary/80"
+                  >
+                    #{tag}
+                    <X className="size-3" />
+                  </button>
+                )}
                 {analysisCategory && (
                   <button
                     onClick={() => handleAnalysisCategoryChange(undefined)}
@@ -537,6 +598,17 @@ export function SpacePage() {
                     {t("filter.clear_all")}
                   </button>
                 )}
+              </div>
+            )}
+
+            {tagOptions.length > 0 && (
+              <div className="mt-4">
+                <TagStrip
+                  tags={tagOptions}
+                  activeTag={tag}
+                  onSelect={handleTagChange}
+                  t={t}
+                />
               </div>
             )}
 

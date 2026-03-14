@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import type { TFunction } from "i18next";
 import {
   AlertTriangle,
@@ -6,15 +7,26 @@ import {
   Loader2,
   RefreshCcw,
 } from "lucide-react";
+import { buildFacetStats } from "@/api/analysis-helpers";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import type {
   AnalysisCategory,
   AnalysisCategoryCard,
+  AnalysisFacetStat,
   AnalysisJobSnapshotResponse,
   SpaceAnalysisState,
   TaxonomyResponse,
 } from "@/types/analysis";
+
+const TERMINAL_SNAPSHOT_STATUSES = new Set([
+  "COMPLETED",
+  "PARTIAL_FAILED",
+  "FAILED",
+  "CANCELLED",
+  "EXPIRED",
+]);
+const COLLAPSED_FACET_LIMIT = 8;
 
 function formatCategoryLabel(t: TFunction, category: AnalysisCategory): string {
   return t(`analysis.category.${category}`);
@@ -24,17 +36,91 @@ function formatPhaseLabel(t: TFunction, phase: SpaceAnalysisState["phase"]): str
   return t(`analysis.phase.${phase}`);
 }
 
-function getCompletionRatio(snapshot: AnalysisJobSnapshotResponse): number {
-  if (snapshot.expectedTotalBatches === 0) return 0;
-  return Math.round(
-    ((snapshot.progress.completedBatches + snapshot.progress.failedBatches) /
-      snapshot.expectedTotalBatches) *
-      100,
-  );
+function getFacetStats(
+  snapshot: AnalysisJobSnapshotResponse,
+  kind: "tags" | "topics",
+): AnalysisFacetStat[] {
+  if (kind === "tags") {
+    if (snapshot.topTagStats !== undefined) {
+      return snapshot.topTagStats;
+    }
+
+    if (snapshot.topTags.length > 0) {
+      return snapshot.topTags
+        .map((value) => ({
+          value,
+          count: snapshot.aggregate.tagCounts[value] ?? 0,
+        }))
+        .filter((stat) => stat.count > 0);
+    }
+
+    return buildFacetStats(snapshot.aggregate.tagCounts);
+  }
+
+  if (snapshot.topTopicStats !== undefined) {
+    return snapshot.topTopicStats;
+  }
+
+  if (snapshot.topTopics.length > 0) {
+    return snapshot.topTopics
+      .map((value) => ({
+        value,
+        count: snapshot.aggregate.topicCounts[value] ?? 0,
+      }))
+      .filter((stat) => stat.count > 0);
+  }
+
+  return buildFacetStats(snapshot.aggregate.topicCounts);
 }
 
-function getBatchProgressCount(snapshot: AnalysisJobSnapshotResponse): number {
-  return snapshot.progress.completedBatches + snapshot.progress.failedBatches;
+function getDisplayedBatchProgress(
+  phase: SpaceAnalysisState["phase"],
+  snapshot: AnalysisJobSnapshotResponse,
+): { current: number; total: number; ratio: number } {
+  const total = snapshot.expectedTotalBatches;
+
+  if (total === 0) {
+    return {
+      current: 0,
+      total: 0,
+      ratio: 0,
+    };
+  }
+
+  if (phase === "completed" || TERMINAL_SNAPSHOT_STATUSES.has(snapshot.status)) {
+    return {
+      current: total,
+      total,
+      ratio: 100,
+    };
+  }
+
+  if (phase === "uploading") {
+    const current = Math.min(snapshot.progress.uploadedBatches, total);
+    return {
+      current,
+      total,
+      ratio: Math.round((current / total) * 100),
+    };
+  }
+
+  if (phase === "processing") {
+    const current = Math.min(
+      snapshot.progress.completedBatches + snapshot.progress.failedBatches,
+      total,
+    );
+    return {
+      current,
+      total,
+      ratio: Math.round((current / total) * 100),
+    };
+  }
+
+  return {
+    current: 0,
+    total,
+    ratio: 0,
+  };
 }
 
 function formatBatchSummary(
@@ -42,26 +128,25 @@ function formatBatchSummary(
   phase: SpaceAnalysisState["phase"],
   snapshot: AnalysisJobSnapshotResponse,
 ): string {
-  const progressed = getBatchProgressCount(snapshot);
-  const total = snapshot.expectedTotalBatches;
+  const progress = getDisplayedBatchProgress(phase, snapshot);
 
   if (phase === "creating" || phase === "uploading") {
     return t("analysis.batch_summary.syncing", {
-      current: snapshot.progress.uploadedBatches,
-      total,
+      current: progress.current,
+      total: progress.total,
     });
   }
 
   if (phase === "processing") {
     return t("analysis.batch_summary.processing", {
-      current: progressed,
-      total,
+      current: progress.current,
+      total: progress.total,
     });
   }
 
   return t("analysis.batch_summary.completed", {
-    current: progressed,
-    total,
+    current: progress.current,
+    total: progress.total,
   });
 }
 
@@ -109,6 +194,17 @@ export function AnalysisPanel({
   t: TFunction;
 }) {
   const snapshot = state.snapshot;
+  const progress = snapshot
+    ? getDisplayedBatchProgress(state.phase, snapshot)
+    : null;
+  const topTopicStats = useMemo(
+    () => (snapshot ? getFacetStats(snapshot, "topics") : []),
+    [snapshot],
+  );
+  const topTagStats = useMemo(
+    () => (snapshot ? getFacetStats(snapshot, "tags") : []),
+    [snapshot],
+  );
 
   return (
     <aside className="w-full shrink-0 xl:w-[360px]">
@@ -192,12 +288,9 @@ export function AnalysisPanel({
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>{t("analysis.progress")}</span>
-                  <span>
-                    {getBatchProgressCount(snapshot)}/
-                    {snapshot.expectedTotalBatches}
-                  </span>
+                  <span>{progress?.current ?? 0}/{progress?.total ?? 0}</span>
                 </div>
-                <Progress value={getCompletionRatio(snapshot)} />
+                <Progress value={progress?.ratio ?? 0} />
                 <p className="text-xs text-soft-foreground">
                   {formatBatchSummary(t, state.phase, snapshot)}
                 </p>
@@ -297,23 +390,23 @@ export function AnalysisPanel({
                 </section>
               )}
 
-              {(snapshot.topTags.length > 0 || snapshot.topTopics.length > 0) && (
+              {(topTagStats.length > 0 || topTopicStats.length > 0) && (
                 <section className="space-y-3">
-                  {snapshot.topTopics.length > 0 && (
-                    <div>
-                      <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-ring">
-                        {t("analysis.top_topics")}
-                      </h3>
-                      <ChipRow items={snapshot.topTopics} />
-                    </div>
+                  {topTopicStats.length > 0 && (
+                    <FacetSection
+                      kind="topics"
+                      title={t("analysis.top_topics")}
+                      stats={topTopicStats}
+                      t={t}
+                    />
                   )}
-                  {snapshot.topTags.length > 0 && (
-                    <div>
-                      <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-ring">
-                        {t("analysis.top_tags")}
-                      </h3>
-                      <ChipRow items={snapshot.topTags.map((tag) => `#${tag}`)} />
-                    </div>
+                  {topTagStats.length > 0 && (
+                    <FacetSection
+                      kind="tags"
+                      title={t("analysis.top_tags")}
+                      stats={topTagStats}
+                      t={t}
+                    />
                   )}
                 </section>
               )}
@@ -362,17 +455,56 @@ function MetricCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ChipRow({ items }: { items: string[] }) {
+function FacetSection({
+  kind,
+  title,
+  stats,
+  t,
+}: {
+  kind: "topics" | "tags";
+  title: string;
+  stats: AnalysisFacetStat[];
+  t: TFunction;
+}) {
+  const items = useMemo(() => stats.slice(0, 50), [stats]);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const isOverflowing = items.length > COLLAPSED_FACET_LIMIT;
+  const displayedItems =
+    isExpanded || !isOverflowing
+      ? items
+      : items.slice(0, COLLAPSED_FACET_LIMIT);
+
   return (
-    <div className="mt-2 flex flex-wrap gap-2">
-      {items.map((item) => (
-        <span
-          key={item}
-          className="rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground"
+    <div>
+      <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-ring">
+        {title}
+      </h3>
+      <div
+        data-testid={`analysis-facets-${kind}`}
+        className="mt-2 flex flex-wrap gap-2"
+      >
+        {displayedItems.map((stat) => (
+          <span
+            key={stat.value}
+            className="rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground"
+          >
+            {stat.value}({stat.count})
+          </span>
+        ))}
+      </div>
+      {isOverflowing && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setIsExpanded((current) => !current);
+          }}
+          aria-expanded={isExpanded}
+          className="-ml-2 mt-1 h-auto px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
         >
-          {item}
-        </span>
-      ))}
+          {isExpanded ? t("analysis.less") : t("analysis.more")}
+        </Button>
+      )}
     </div>
   );
 }

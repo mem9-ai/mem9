@@ -2,6 +2,10 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 
+declare global {
+  var __triggerResizeObserver__: (() => void) | undefined;
+}
+
 class MemoryStorage implements Storage {
   private readonly store = new Map<string, string>();
 
@@ -51,8 +55,62 @@ function ensureStorage(name: "localStorage" | "sessionStorage"): void {
 ensureStorage("localStorage");
 ensureStorage("sessionStorage");
 
+class ResizeObserverMock implements ResizeObserver {
+  private static instances: ResizeObserverMock[] = [];
+
+  public readonly targets = new Set<Element>();
+
+  public constructor(private readonly callback: ResizeObserverCallback) {
+    ResizeObserverMock.instances.push(this);
+  }
+
+  public disconnect(): void {
+    this.targets.clear();
+  }
+
+  public observe(target: Element): void {
+    this.targets.add(target);
+  }
+
+  public unobserve(target: Element): void {
+    this.targets.delete(target);
+  }
+
+  public trigger(): void {
+    const entries = [...this.targets].map(
+      (target) =>
+        ({
+          target,
+          contentRect: target.getBoundingClientRect(),
+        }) as ResizeObserverEntry,
+    );
+
+    this.callback(entries, this);
+  }
+
+  public static triggerAll(): void {
+    for (const instance of ResizeObserverMock.instances) {
+      instance.trigger();
+    }
+  }
+
+  public static reset(): void {
+    ResizeObserverMock.instances = [];
+  }
+}
+
+Object.defineProperty(globalThis, "ResizeObserver", {
+  value: ResizeObserverMock,
+  configurable: true,
+});
+
+globalThis.__triggerResizeObserver__ = () => {
+  ResizeObserverMock.triggerAll();
+};
+
 afterEach(() => {
   cleanup();
   localStorage.clear();
   sessionStorage.clear();
+  ResizeObserverMock.reset();
 });

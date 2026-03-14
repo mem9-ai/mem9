@@ -36,6 +36,7 @@ import { features } from "@/config/features";
 import { filterMemoriesForView, sortMemoriesByUpdatedAtDesc } from "@/lib/memory-filters";
 import type {
   AnalysisCategoryCard,
+  AnalysisJobSnapshotResponse,
   MemoryAnalysisMatch,
   SpaceAnalysisState,
   TaxonomyResponse,
@@ -45,6 +46,7 @@ import type { TimeRangePreset } from "@/types/time-range";
 import { presetToParams } from "@/types/time-range";
 
 const PAGE_SIZE = 200;
+const TERMINAL_BATCH_STATUSES = new Set(["SUCCEEDED", "FAILED", "DLQ"]);
 
 const INITIAL_STATE: SpaceAnalysisState = {
   phase: "idle",
@@ -58,6 +60,26 @@ const INITIAL_STATE: SpaceAnalysisState = {
   pollAfterMs: getDefaultPollMs(),
   isRetrying: false,
 };
+
+export function shouldStopPollingSnapshot(
+  snapshot: AnalysisJobSnapshotResponse,
+): boolean {
+  if (isTerminalJobStatus(snapshot.status)) {
+    return true;
+  }
+
+  if (snapshot.expectedTotalBatches === 0) {
+    return false;
+  }
+
+  return (
+    snapshot.progress.uploadedBatches >= snapshot.expectedTotalBatches &&
+    snapshot.batchSummaries.length >= snapshot.expectedTotalBatches &&
+    snapshot.batchSummaries.every((batch) =>
+      TERMINAL_BATCH_STATUSES.has(batch.status),
+    )
+  );
+}
 
 async function syncAllMemories(spaceId: string): Promise<Memory[]> {
   const all: Memory[] = [];
@@ -313,6 +335,7 @@ export function useSpaceAnalysis(
         if (cancelled || runRef.current !== currentRun) return;
 
         const mergedSnapshot = mergeSnapshotWithUpdates(snapshot, updates);
+        const shouldStop = shouldStopPollingSnapshot(mergedSnapshot);
         await persistAnalysisSnapshot(
           spaceId,
           range,
@@ -323,7 +346,7 @@ export function useSpaceAnalysis(
 
         updateState((current) => ({
           ...current,
-          phase: isTerminalJobStatus(snapshot.status) ? "completed" : "processing",
+          phase: shouldStop ? "completed" : "processing",
           snapshot: mergedSnapshot,
           events: trimEvents([...updates.events].reverse(), 8),
           cursor: updates.nextCursor,
@@ -335,7 +358,7 @@ export function useSpaceAnalysis(
           isRetrying: false,
         }));
 
-        if (isTerminalJobStatus(snapshot.status)) return;
+        if (shouldStop) return;
 
         timer = window.setTimeout(() => {
           void poll(jobId, fingerprint, updates.nextCursor, delayMs);
@@ -387,11 +410,10 @@ export function useSpaceAnalysis(
         cached.snapshot
       ) {
         const cachedSnapshot = cached.snapshot;
+        const shouldStop = shouldStopPollingSnapshot(cachedSnapshot);
         updateState((current) => ({
           ...current,
-          phase: isTerminalJobStatus(cachedSnapshot.status)
-            ? "completed"
-            : "processing",
+          phase: shouldStop ? "completed" : "processing",
           snapshot: cachedSnapshot,
           events: current.events,
           cursor: current.cursor,
@@ -403,7 +425,7 @@ export function useSpaceAnalysis(
           isRetrying: false,
         }));
 
-        if (!isTerminalJobStatus(cachedSnapshot.status)) {
+        if (!shouldStop) {
           await poll(cached.jobId, fingerprint, 0, getDefaultPollMs());
         }
         return;
@@ -509,7 +531,7 @@ export function useSpaceAnalysis(
 
         updateState((current) => ({
           ...current,
-          phase: isTerminalJobStatus(snapshot.status) ? "completed" : "processing",
+          phase: shouldStopPollingSnapshot(snapshot) ? "completed" : "processing",
           snapshot,
           error: null,
           warning: taxonomyUnavailable ? "taxonomy_unavailable" : null,
@@ -518,7 +540,7 @@ export function useSpaceAnalysis(
           pollAfterMs: createResponse.pollAfterMs,
         }));
 
-        if (!isTerminalJobStatus(snapshot.status)) {
+        if (!shouldStopPollingSnapshot(snapshot)) {
           await poll(
             createResponse.jobId,
             fingerprint,

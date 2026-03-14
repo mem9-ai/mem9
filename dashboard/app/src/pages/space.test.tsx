@@ -10,6 +10,7 @@ import type { SpaceAnalysisState } from "@/types/analysis";
 const mocks = vi.hoisted(() => ({
   clearSpace: vi.fn(),
   retry: vi.fn(),
+  useMemories: vi.fn(),
 }));
 
 function createMemory(
@@ -17,13 +18,14 @@ function createMemory(
   content: string,
   updatedAt: string,
   memoryType: Memory["memory_type"] = "insight",
+  tags: string[] = [],
 ): Memory {
   return {
     id,
     content,
     memory_type: memoryType,
     source: "agent",
-    tags: [],
+    tags,
     metadata: null,
     agent_id: "agent",
     session_id: "",
@@ -39,16 +41,22 @@ const activityNewest = createMemory(
   "mem-activity-1",
   "Deploy dashboard status update",
   "2026-03-03T00:00:00Z",
+  "insight",
+  ["launch", "release"],
 );
 const preferenceMemory = createMemory(
   "mem-preference-1",
   "Prefer Neovim for edits",
   "2026-03-02T00:00:00Z",
+  "insight",
+  ["editor"],
 );
 const activityOlder = createMemory(
   "mem-activity-2",
   "Weekly activity planning notes",
   "2026-03-01T00:00:00Z",
+  "insight",
+  ["launch"],
 );
 
 const analysisState: SpaceAnalysisState = {
@@ -121,22 +129,31 @@ vi.mock("@/api/queries", () => ({
       insight: 3,
     },
   }),
-  useMemories: () => ({
-    data: {
-      pages: [
-        {
-          memories: [activityNewest, preferenceMemory, activityOlder],
-          total: 3,
-          limit: 50,
-          offset: 0,
-        },
-      ],
-    },
-    fetchNextPage: vi.fn(),
-    hasNextPage: false,
-    isFetchingNextPage: false,
-    isLoading: false,
-  }),
+  useMemories: (_spaceId: string, params: { tag?: string }) => {
+    mocks.useMemories(params);
+    const memories = [activityNewest, preferenceMemory, activityOlder].filter(
+      (memory) =>
+        !params.tag ||
+        memory.tags.some((tag) => tag.toLowerCase() === params.tag?.toLowerCase()),
+    );
+
+    return {
+      data: {
+        pages: [
+          {
+            memories,
+            total: memories.length,
+            limit: 50,
+            offset: 0,
+          },
+        ],
+      },
+      fetchNextPage: vi.fn(),
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      isLoading: false,
+    };
+  },
   useCreateMemory: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteMemory: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateMemory: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -212,6 +229,7 @@ vi.mock("@/api/analysis-queries", () => ({
 
 describe("SpacePage", () => {
   beforeEach(async () => {
+    mocks.useMemories.mockClear();
     await i18n.changeLanguage("en");
     window.history.pushState({}, "", "/your-memory/space");
     await act(async () => {
@@ -231,5 +249,23 @@ describe("SpacePage", () => {
     expect(screen.getAllByText("Deploy dashboard status update")).toHaveLength(2);
     expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete this memory" })).toBeInTheDocument();
+  });
+
+  it("shows tag chips and filters the list by tag", async () => {
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByText("Browse by tag")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /filter by tag launch/i }),
+    );
+
+    await waitFor(() => {
+      expect(mocks.useMemories).toHaveBeenLastCalledWith(
+        expect.objectContaining({ tag: "launch" }),
+      );
+    });
+
+    expect(screen.getByRole("button", { name: /^#launch$/ })).toBeInTheDocument();
+    expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
   });
 });

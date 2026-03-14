@@ -1,6 +1,7 @@
 import type {
   AggregateSnapshot,
   AnalysisCategory,
+  AnalysisFacetStat,
   AnalysisJobSnapshotResponse,
   AnalysisJobUpdatesResponse,
   AnalysisMemoryInput,
@@ -21,6 +22,7 @@ export const TERMINAL_JOB_STATUSES: JobStatus[] = [
 ];
 
 export const DEFAULT_TAXONOMY_VERSION = "v2";
+export const MAX_ANALYSIS_FACETS = 50;
 
 const EMPTY_AGGREGATE: AggregateSnapshot = {
   categoryCounts: {
@@ -156,6 +158,8 @@ export function createPendingSnapshot(
     },
     aggregate: EMPTY_AGGREGATE,
     aggregateCards: [],
+    topTagStats: [],
+    topTopicStats: [],
     topTags: [],
     topTopics: [],
     batchSummaries: makeBatchSummaries(input.batchSize, memories),
@@ -201,6 +205,74 @@ function toAggregateCards(
     .sort((left, right) => right.count - left.count);
 }
 
+function compareFacetValues(left: string, right: string): number {
+  return left.localeCompare(right, "en");
+}
+
+function normalizeFacetStats(stats: AnalysisFacetStat[]): AnalysisFacetStat[] {
+  return [...stats]
+    .filter((stat) => stat.count > 0)
+    .sort(
+      (left, right) =>
+        right.count - left.count || compareFacetValues(left.value, right.value),
+    )
+    .slice(0, MAX_ANALYSIS_FACETS);
+}
+
+export function buildFacetStats(
+  counts: Record<string, number>,
+  limit = MAX_ANALYSIS_FACETS,
+): AnalysisFacetStat[] {
+  return Object.entries(counts)
+    .filter(([, count]) => count > 0)
+    .sort((left, right) => right[1] - left[1] || compareFacetValues(left[0], right[0]))
+    .slice(0, limit)
+    .map(([value, count]) => ({
+      value,
+      count,
+    }));
+}
+
+function toFacetStatsFromLegacyValues(
+  values: string[] | undefined,
+  counts: Record<string, number>,
+): AnalysisFacetStat[] {
+  if (!Array.isArray(values) || values.length === 0) {
+    return buildFacetStats(counts);
+  }
+
+  const stats = values
+    .map((value) => ({
+      value,
+      count: counts[value] ?? 0,
+    }))
+    .filter((stat) => stat.count > 0);
+
+  return stats.length > 0 ? normalizeFacetStats(stats) : buildFacetStats(counts);
+}
+
+function toFacetValues(stats: AnalysisFacetStat[]): string[] {
+  return stats.map((stat) => stat.value);
+}
+
+function getMoreRecentProgress(
+  snapshot: AnalysisJobSnapshotResponse,
+  updates: AnalysisJobUpdatesResponse,
+) {
+  return snapshot.progress.resultVersion >= updates.progress.resultVersion
+    ? snapshot.progress
+    : updates.progress;
+}
+
+function getMoreRecentAggregate(
+  snapshot: AnalysisJobSnapshotResponse,
+  updates: AnalysisJobUpdatesResponse,
+) {
+  return snapshot.aggregate.resultVersion >= updates.aggregate.resultVersion
+    ? snapshot.aggregate
+    : updates.aggregate;
+}
+
 function mergeBatchSummaries(
   base: BatchSummary[],
   completed: BatchSummary[],
@@ -219,22 +291,30 @@ export function mergeSnapshotWithUpdates(
   snapshot: AnalysisJobSnapshotResponse,
   updates: AnalysisJobUpdatesResponse,
 ): AnalysisJobSnapshotResponse {
+  const progress = getMoreRecentProgress(snapshot, updates);
+  const aggregate = getMoreRecentAggregate(snapshot, updates);
+  const usesSnapshotAggregate =
+    snapshot.aggregate.resultVersion >= aggregate.resultVersion;
+  const topTagStats = usesSnapshotAggregate
+    ? snapshot.topTagStats !== undefined
+      ? normalizeFacetStats(snapshot.topTagStats)
+      : toFacetStatsFromLegacyValues(snapshot.topTags, aggregate.tagCounts)
+    : buildFacetStats(aggregate.tagCounts);
+  const topTopicStats = usesSnapshotAggregate
+    ? snapshot.topTopicStats !== undefined
+      ? normalizeFacetStats(snapshot.topTopicStats)
+      : toFacetStatsFromLegacyValues(snapshot.topTopics, aggregate.topicCounts)
+    : buildFacetStats(aggregate.topicCounts);
+
   return {
     ...snapshot,
-    progress: updates.progress,
-    aggregate: updates.aggregate,
-    aggregateCards: toAggregateCards(
-      updates.aggregate,
-      updates.progress.processedMemories,
-    ),
-    topTags: Object.entries(updates.aggregate.tagCounts)
-      .sort((left, right) => right[1] - left[1])
-      .slice(0, 5)
-      .map(([tag]) => tag),
-    topTopics: Object.entries(updates.aggregate.topicCounts)
-      .sort((left, right) => right[1] - left[1])
-      .slice(0, 5)
-      .map(([topic]) => topic),
+    progress,
+    aggregate,
+    aggregateCards: toAggregateCards(aggregate, progress.processedMemories),
+    topTagStats,
+    topTopicStats,
+    topTags: toFacetValues(topTagStats),
+    topTopics: toFacetValues(topTopicStats),
     batchSummaries: mergeBatchSummaries(
       snapshot.batchSummaries,
       updates.completedBatchResults,

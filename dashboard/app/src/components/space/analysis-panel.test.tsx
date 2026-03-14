@@ -3,6 +3,7 @@ import type { TFunction } from "i18next";
 import { describe, expect, it, vi } from "vitest";
 import { AnalysisPanel } from "./analysis-panel";
 import type {
+  AnalysisFacetStat,
   AnalysisJobSnapshotResponse,
   SpaceAnalysisState,
 } from "@/types/analysis";
@@ -18,9 +19,21 @@ const t = vi.fn((key: string, options?: Record<string, unknown>) => {
   return key;
 }) as unknown as TFunction;
 
+function createFacetStats(
+  entries: Array<[string, number]>,
+): AnalysisFacetStat[] {
+  return entries.map(([value, count]) => ({
+    value,
+    count,
+  }));
+}
+
 function createSnapshot(
   overrides: Partial<AnalysisJobSnapshotResponse> = {},
 ): AnalysisJobSnapshotResponse {
+  const topTagStats = createFacetStats([["priority", 3]]);
+  const topTopicStats = createFacetStats([["agents", 2]]);
+
   return {
     jobId: "aj_1",
     status: "PROCESSING",
@@ -50,7 +63,7 @@ function createSnapshot(
         experience: 0,
         activity: 0,
       },
-      tagCounts: { ai: 2 },
+      tagCounts: { priority: 3 },
       topicCounts: { agents: 2 },
       summarySnapshot: ["identity:1", "preference:1"],
       resultVersion: 1,
@@ -59,8 +72,10 @@ function createSnapshot(
       { category: "identity", count: 1, confidence: 0.5 },
       { category: "preference", count: 1, confidence: 0.5 },
     ],
-    topTags: ["ai"],
-    topTopics: ["agents"],
+    topTagStats,
+    topTopicStats,
+    topTags: topTagStats.map((stat) => stat.value),
+    topTopics: topTopicStats.map((stat) => stat.value),
     batchSummaries: [
       {
         batchIndex: 1,
@@ -68,7 +83,7 @@ function createSnapshot(
         memoryCount: 2,
         processedMemories: 2,
         topCategories: [{ category: "identity", count: 1, confidence: 0.5 }],
-        topTags: ["ai"],
+        topTags: ["priority"],
       },
       {
         batchIndex: 2,
@@ -131,6 +146,8 @@ describe("AnalysisPanel", () => {
     expect(screen.getByText("analysis.phase.uploading")).toBeInTheDocument();
     expect(screen.getByText("analysis.cards")).toBeInTheDocument();
     expect(screen.getByText("analysis.top_topics")).toBeInTheDocument();
+    expect(screen.getByText("agents(2)")).toBeInTheDocument();
+    expect(screen.getByText("priority(3)")).toBeInTheDocument();
     expect(
       screen.getByText("analysis.batch_summary.syncing:2/2"),
     ).toBeInTheDocument();
@@ -142,6 +159,42 @@ describe("AnalysisPanel", () => {
       }),
     );
     expect(onSelectCategory).toHaveBeenCalledWith("preference");
+  });
+
+  it("uses uploaded batches for uploading progress", () => {
+    const { container } = render(
+      <AnalysisPanel
+        state={createState({
+          phase: "uploading",
+          snapshot: createSnapshot({
+            progress: {
+              expectedTotalBatches: 2,
+              uploadedBatches: 1,
+              completedBatches: 0,
+              failedBatches: 0,
+              processedMemories: 0,
+              resultVersion: 1,
+            },
+          }),
+        })}
+        sourceCount={4}
+        sourceLoading={false}
+        taxonomy={null}
+        taxonomyUnavailable={false}
+        cards={createSnapshot().aggregateCards}
+        onSelectCategory={() => {}}
+        onRetry={() => {}}
+        t={t}
+      />,
+    );
+
+    expect(screen.getByText("analysis.batch_summary.syncing:1/2")).toBeInTheDocument();
+    expect(screen.getByText("1/2")).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-slot="progress-indicator"]'),
+    ).toHaveStyle({
+      transform: "translateX(-50%)",
+    });
   });
 
   it("renders completed state with recent updates", () => {
@@ -193,7 +246,9 @@ describe("AnalysisPanel", () => {
     );
 
     expect(screen.getByText("analysis.degraded_title")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "analysis.retry" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "analysis.retry" }),
+    ).toBeInTheDocument();
   });
 
   it("renders empty state when there are no memories in range", () => {
@@ -218,5 +273,132 @@ describe("AnalysisPanel", () => {
     );
 
     expect(screen.getByText("analysis.empty")).toBeInTheDocument();
+  });
+
+  it("shows 8 facet items by default and expands to the full list", async () => {
+    const topicStats = createFacetStats([
+      ["topic-1", 9],
+      ["topic-2", 8],
+      ["topic-3", 7],
+      ["topic-4", 6],
+      ["topic-5", 5],
+      ["topic-6", 4],
+      ["topic-7", 3],
+      ["topic-8", 2],
+      ["topic-9", 1],
+    ]);
+
+    render(
+      <AnalysisPanel
+        state={createState({
+          snapshot: createSnapshot({
+            aggregate: {
+              categoryCounts: {
+                identity: 1,
+                emotion: 0,
+                preference: 1,
+                experience: 0,
+                activity: 0,
+              },
+              tagCounts: {},
+              topicCounts: Object.fromEntries(
+                topicStats.map((stat) => [stat.value, stat.count]),
+              ),
+              summarySnapshot: ["identity:1", "preference:1"],
+              resultVersion: 1,
+            },
+            topTagStats: [],
+            topTopicStats: topicStats,
+            topTags: [],
+            topTopics: topicStats.map((stat) => stat.value),
+          }),
+        })}
+        sourceCount={4}
+        sourceLoading={false}
+        taxonomy={null}
+        taxonomyUnavailable={false}
+        cards={createSnapshot().aggregateCards}
+        onSelectCategory={() => {}}
+        onRetry={() => {}}
+        t={t}
+      />,
+    );
+
+    const container = screen.getByTestId("analysis-facets-topics");
+    const expandButton = await screen.findByRole("button", {
+      name: "analysis.more",
+    });
+
+    expect(expandButton).toBeInTheDocument();
+    expect(screen.getByText("topic-8(2)")).toBeInTheDocument();
+    expect(screen.queryByText("topic-9(1)")).not.toBeInTheDocument();
+    expect(container.children).toHaveLength(8);
+
+    fireEvent.click(expandButton);
+    expect(
+      screen.getByRole("button", { name: "analysis.less" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("topic-9(1)")).toBeInTheDocument();
+    expect(container.children).toHaveLength(9);
+
+    fireEvent.click(screen.getByRole("button", { name: "analysis.less" }));
+    expect(
+      screen.getByRole("button", { name: "analysis.more" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("topic-9(1)")).not.toBeInTheDocument();
+    expect(container.children).toHaveLength(8);
+  });
+
+  it("does not show more when facet count is 8 or fewer", () => {
+    const topicStats = createFacetStats([
+      ["topic-1", 9],
+      ["topic-2", 8],
+      ["topic-3", 7],
+      ["topic-4", 6],
+      ["topic-5", 5],
+      ["topic-6", 4],
+      ["topic-7", 3],
+      ["topic-8", 2],
+    ]);
+
+    render(
+      <AnalysisPanel
+        state={createState({
+          snapshot: createSnapshot({
+            aggregate: {
+              categoryCounts: {
+                identity: 1,
+                emotion: 0,
+                preference: 1,
+                experience: 0,
+                activity: 0,
+              },
+              tagCounts: {},
+              topicCounts: Object.fromEntries(
+                topicStats.map((stat) => [stat.value, stat.count]),
+              ),
+              summarySnapshot: ["identity:1", "preference:1"],
+              resultVersion: 1,
+            },
+            topTagStats: [],
+            topTopicStats: topicStats,
+            topTags: [],
+            topTopics: topicStats.map((stat) => stat.value),
+          }),
+        })}
+        sourceCount={4}
+        sourceLoading={false}
+        taxonomy={null}
+        taxonomyUnavailable={false}
+        cards={createSnapshot().aggregateCards}
+        onSelectCategory={() => {}}
+        onRetry={() => {}}
+        t={t}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "analysis.more" }),
+    ).not.toBeInTheDocument();
   });
 });

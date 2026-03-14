@@ -157,6 +157,10 @@
   "topics": {
     "label": "Browse by topic"
   },
+  "tag_strip": {
+    "label": "Browse by tag",
+    "filter_label": "Filter by tag {{tag}} ({{count}})"
+  },
   "facet": {
     "about_you": "About You",
     "preferences": "Preferences",
@@ -194,6 +198,8 @@
     "summary": "Summary",
     "top_topics": "Top topics",
     "top_tags": "Top tags",
+    "more": "More",
+    "less": "Less",
     "batch_progress": "Batch progress",
     "recent_updates": "Recent updates",
     "retry": "Retry analysis",

@@ -29,6 +29,14 @@ export function memoryMatchesQuery(memory: Memory, query?: string): boolean {
   );
 }
 
+export function memoryMatchesTag(memory: Memory, tag?: string): boolean {
+  if (!tag) return true;
+  const normalized = tag.trim().toLowerCase();
+  if (!normalized) return true;
+
+  return memory.tags.some((memoryTag) => memoryTag.toLowerCase() === normalized);
+}
+
 export function memoryMatchesType(
   memory: Memory,
   memoryType?: MemoryType,
@@ -41,6 +49,7 @@ export function filterMemoriesForView(
   memories: Memory[],
   params: {
     q?: string;
+    tag?: string;
     memoryType?: MemoryType;
     range?: TimeRangePreset;
   },
@@ -49,6 +58,7 @@ export function filterMemoriesForView(
     memories.filter(
       (memory) =>
         memoryMatchesQuery(memory, params.q) &&
+        memoryMatchesTag(memory, params.tag) &&
         memoryMatchesType(memory, params.memoryType) &&
         (!params.range || memoryMatchesRange(memory, params.range)),
     ),

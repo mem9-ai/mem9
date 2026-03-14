@@ -60,6 +60,7 @@ export interface ApiError {
 
 export interface MemoryListParams {
   q?: string;
+  tags?: string[];
   memory_type?: MemoryType;
   limit?: number;
   offset?: number;

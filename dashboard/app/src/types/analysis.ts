@@ -104,6 +104,11 @@ export interface AnalysisCategoryCard {
   confidence: number;
 }
 
+export interface AnalysisFacetStat {
+  value: string;
+  count: number;
+}
+
 export interface MemoryAnalysisMatch {
   memoryId: string;
   categories: AnalysisCategory[];
@@ -156,6 +161,8 @@ export interface AnalysisJobSnapshotResponse {
   progress: JobProgressSnapshot;
   aggregate: AggregateSnapshot;
   aggregateCards: AnalysisCategoryCard[];
+  topTagStats?: AnalysisFacetStat[];
+  topTopicStats?: AnalysisFacetStat[];
   topTags: string[];
   topTopics: string[];
   batchSummaries: BatchSummary[];

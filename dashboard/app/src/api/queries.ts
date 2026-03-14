@@ -31,6 +31,7 @@ export function useMemories(
   spaceId: string,
   params: {
     q?: string;
+    tag?: string;
     memory_type?: MemoryType;
     range?: TimeRangePreset;
     facet?: MemoryFacet;
@@ -42,6 +43,7 @@ export function useMemories(
     queryFn: ({ pageParam }) =>
       api.listMemories(spaceId, {
         q: params.q,
+        tags: params.tag ? [params.tag] : undefined,
         memory_type: params.memory_type,
         facet: params.facet,
         ...timeParams,

@@ -121,6 +121,7 @@ export const httpProvider: DashboardProvider = {
   ): Promise<MemoryListResponse> {
     const qs = new URLSearchParams();
     if (params.q) qs.set("q", params.q);
+    if (params.tags?.length) qs.set("tags", params.tags.join(","));
     if (params.memory_type) qs.set("memory_type", params.memory_type);
     if (params.updated_from) qs.set("updated_from", params.updated_from);
     if (params.updated_to) qs.set("updated_to", params.updated_to);
