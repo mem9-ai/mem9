@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { Toaster } from "sonner";
 import type { MemoryType, MemoryFacet } from "@/types/memory";
+import { ANALYSIS_CATEGORIES, type AnalysisCategory } from "@/types/analysis";
 import type { TimeRangePreset } from "@/types/time-range";
 import { ConnectPage } from "@/pages/connect";
 import { SpacePage } from "@/pages/space";
@@ -47,6 +48,7 @@ export interface SpaceSearch {
   type?: MemoryType;
   range?: TimeRangePreset;
   facet?: MemoryFacet;
+  analysisCategory?: AnalysisCategory;
 }
 
 const spaceRoute = createRoute({
@@ -63,6 +65,9 @@ const spaceRoute = createRoute({
       : undefined,
     facet: VALID_FACETS.includes(search.facet as string)
       ? (search.facet as MemoryFacet)
+      : undefined,
+    analysisCategory: ANALYSIS_CATEGORIES.includes(search.analysisCategory as AnalysisCategory)
+      ? (search.analysisCategory as AnalysisCategory)
       : undefined,
   }),
 });

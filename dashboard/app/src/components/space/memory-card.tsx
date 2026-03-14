@@ -35,9 +35,18 @@ export function MemoryCard({
     toast.success(t("list.copied"));
   }
 
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    onClick();
+  }
+
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={handleKeyDown}
       className={`surface-card group relative w-full overflow-hidden text-left transition-all duration-150 ${
         isSelected
           ? "surface-card-selected"
@@ -114,6 +123,6 @@ export function MemoryCard({
           </button>
         </div>
       </div>
-    </button>
+    </div>
   );
 }

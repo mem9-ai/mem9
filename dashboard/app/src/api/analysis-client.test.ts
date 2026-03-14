@@ -60,7 +60,7 @@ describe("analysisApi", () => {
       batchSize: 1,
       options: {
         lang: "zh-CN",
-        taxonomyVersion: "v1",
+        taxonomyVersion: "v2",
         llmEnabled: false,
         includeItems: true,
         includeSummary: true,

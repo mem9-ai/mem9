@@ -13,6 +13,10 @@ import type {
 } from "@/types/memory";
 import type { TimeRangeParams } from "@/types/time-range";
 import type { ImportTask, ImportTaskList } from "@/types/import";
+import {
+  removeCachedMemory,
+  upsertCachedMemories,
+} from "./local-cache";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "/your-memory/api";
 const AGENT_ID = "dashboard";
@@ -126,7 +130,9 @@ export const httpProvider: DashboardProvider = {
       spaceId,
       `/memories?${qs}`,
     );
-    return normalizeMemoryListResponse(response);
+    const normalized = normalizeMemoryListResponse(response);
+    void upsertCachedMemories(spaceId, normalized.memories);
+    return normalized;
   },
 
   async getStats(
@@ -159,7 +165,9 @@ export const httpProvider: DashboardProvider = {
       spaceId,
       `/memories/${memoryId}`,
     );
-    return normalizeMemory(response);
+    const normalized = normalizeMemory(response);
+    void upsertCachedMemories(spaceId, [normalized]);
+    return normalized;
   },
 
   async createMemory(
@@ -176,7 +184,9 @@ export const httpProvider: DashboardProvider = {
     );
     const created = res.memories[0];
     if (!created) throw new Error("No memory returned from batch create");
-    return normalizeMemory(created);
+    const normalized = normalizeMemory(created);
+    await upsertCachedMemories(spaceId, [normalized]);
+    return normalized;
   },
 
   async updateMemory(
@@ -196,13 +206,16 @@ export const httpProvider: DashboardProvider = {
         body: JSON.stringify(input),
       },
     );
-    return normalizeMemory(response);
+    const normalized = normalizeMemory(response);
+    await upsertCachedMemories(spaceId, [normalized]);
+    return normalized;
   },
 
   async deleteMemory(spaceId: string, memoryId: string): Promise<void> {
-    return request<void>(spaceId, `/memories/${memoryId}`, {
+    await request<void>(spaceId, `/memories/${memoryId}`, {
       method: "DELETE",
     });
+    await removeCachedMemory(spaceId, memoryId);
   },
 
   async exportMemories(spaceId: string): Promise<MemoryExportFile> {

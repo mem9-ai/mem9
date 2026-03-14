@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Loader2, Globe, ArrowRight } from "lucide-react";
@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { api } from "@/api/client";
-import { setSpaceId } from "@/lib/session";
+import { getActiveSpaceId, setSpaceId } from "@/lib/session";
 
 export function ConnectPage() {
   const { t, i18n } = useTranslation();
@@ -14,6 +14,13 @@ export function ConnectPage() {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [rememberLogin, setRememberLogin] = useState(false);
+
+  useEffect(() => {
+    if (getActiveSpaceId()) {
+      navigate({ to: "/space", replace: true });
+    }
+  }, [navigate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -22,8 +29,8 @@ export function ConnectPage() {
     const normalizedInput = input.trim();
     try {
       await api.verifySpace(normalizedInput);
-      setSpaceId(normalizedInput);
-      navigate({ to: "/space" });
+      setSpaceId(normalizedInput, rememberLogin);
+      navigate({ to: "/space", replace: true });
     } catch (err) {
       setError(
         err instanceof Error ? err.message : t("connect.error.invalid"),
@@ -102,6 +109,15 @@ export function ConnectPage() {
                 </p>
               )}
             </div>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={rememberLogin}
+                onChange={(e) => setRememberLogin(e.target.checked)}
+                className="size-4 rounded border-input text-primary focus-visible:ring-ring/50"
+              />
+              <span>{t("connect.remember_login")}</span>
+            </label>
             <Button
               type="submit"
               disabled={loading || !input.trim()}

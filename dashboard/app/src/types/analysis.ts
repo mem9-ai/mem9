@@ -104,6 +104,12 @@ export interface AnalysisCategoryCard {
   confidence: number;
 }
 
+export interface MemoryAnalysisMatch {
+  memoryId: string;
+  categories: AnalysisCategory[];
+  categoryScores: Partial<Record<AnalysisCategory, number>>;
+}
+
 export interface BatchSummary {
   batchIndex: number;
   status: BatchStatus;

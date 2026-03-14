@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./client";
-import { readAnalysisCache, writeAnalysisCache, clearAnalysisCache } from "./analysis-cache";
+import { clearAnalysisCache, readAnalysisCache, writeAnalysisCache } from "./analysis-cache";
 import { analysisApi, AnalysisApiError } from "./analysis-client";
 import {
   applyUploadedBatch,
@@ -10,6 +10,7 @@ import {
   createBatchHash,
   createMemoryFingerprint,
   createPendingSnapshot,
+  DEFAULT_TAXONOMY_VERSION,
   getAnalysisBatchSize,
   getDefaultPollMs,
   isDegradedAnalysisError,
@@ -17,8 +18,28 @@ import {
   mergeSnapshotWithUpdates,
   toAnalysisMemoryInput,
 } from "./analysis-helpers";
+import {
+  buildAnalysisCardsFromMatches,
+  createAnalysisMatchMap,
+  matchMemoriesToTaxonomy,
+} from "./analysis-matcher";
+import {
+  clearCachedAnalysisMatches,
+  patchSyncState,
+  readCachedAnalysisMatches,
+  readCachedMemories,
+  readSyncState,
+  upsertCachedMemories,
+  writeCachedAnalysisMatches,
+} from "./local-cache";
 import { features } from "@/config/features";
-import type { SpaceAnalysisState, TaxonomyResponse } from "@/types/analysis";
+import { filterMemoriesForView, sortMemoriesByUpdatedAtDesc } from "@/lib/memory-filters";
+import type {
+  AnalysisCategoryCard,
+  MemoryAnalysisMatch,
+  SpaceAnalysisState,
+  TaxonomyResponse,
+} from "@/types/analysis";
 import type { Memory } from "@/types/memory";
 import type { TimeRangePreset } from "@/types/time-range";
 import { presetToParams } from "@/types/time-range";
@@ -38,18 +59,13 @@ const INITIAL_STATE: SpaceAnalysisState = {
   isRetrying: false,
 };
 
-async function listAllMemories(
-  spaceId: string,
-  range?: TimeRangePreset,
-): Promise<Memory[]> {
-  const params = range ? presetToParams(range) : undefined;
+async function syncAllMemories(spaceId: string): Promise<Memory[]> {
   const all: Memory[] = [];
   let offset = 0;
   let total = Number.POSITIVE_INFINITY;
 
   while (offset < total) {
     const page = await api.listMemories(spaceId, {
-      ...params,
       limit: PAGE_SIZE,
       offset,
     });
@@ -58,11 +74,50 @@ async function listAllMemories(
     offset += page.limit;
   }
 
-  return all;
+  await upsertCachedMemories(spaceId, all);
+  await patchSyncState(spaceId, {
+    hasFullCache: true,
+    lastSyncedAt: new Date().toISOString(),
+  });
+
+  return sortMemoriesByUpdatedAtDesc(all);
+}
+
+async function loadSourceMemories(spaceId: string): Promise<Memory[]> {
+  const [cached, syncState] = await Promise.all([
+    readCachedMemories(spaceId),
+    readSyncState(spaceId),
+  ]);
+
+  if (syncState?.hasFullCache) {
+    return sortMemoriesByUpdatedAtDesc(cached);
+  }
+
+  return syncAllMemories(spaceId);
 }
 
 function trimEvents<T>(items: T[], limit: number): T[] {
   return items.slice(0, limit);
+}
+
+async function persistAnalysisSnapshot(
+  spaceId: string,
+  range: TimeRangePreset,
+  jobId: string,
+  fingerprint: string,
+  snapshot: SpaceAnalysisState["snapshot"],
+): Promise<void> {
+  try {
+    await writeAnalysisCache(spaceId, range, {
+      fingerprint,
+      jobId,
+      updatedAt: new Date().toISOString(),
+      taxonomyVersion: snapshot?.taxonomyVersion ?? DEFAULT_TAXONOMY_VERSION,
+      snapshot,
+    });
+  } catch {
+    // Ignore cache write failures so the main analysis flow can continue.
+  }
 }
 
 export function useSpaceAnalysis(
@@ -72,12 +127,19 @@ export function useSpaceAnalysis(
   state: SpaceAnalysisState;
   taxonomy: TaxonomyResponse | null;
   taxonomyUnavailable: boolean;
+  cards: AnalysisCategoryCard[];
+  matches: MemoryAnalysisMatch[];
+  matchMap: Map<string, MemoryAnalysisMatch>;
+  sourceMemories: Memory[];
   sourceCount: number;
   sourceLoading: boolean;
   retry: () => void;
 } {
   const [state, setState] = useState<SpaceAnalysisState>(INITIAL_STATE);
   const [attempt, setAttempt] = useState(0);
+  const [matches, setMatches] = useState<MemoryAnalysisMatch[]>([]);
+  const [cards, setCards] = useState<AnalysisCategoryCard[]>([]);
+  const [matchesLoading, setMatchesLoading] = useState(false);
   const runRef = useRef(0);
   const enabled = features.enableAnalysis && !!spaceId;
   const timeParams = useMemo(
@@ -86,21 +148,34 @@ export function useSpaceAnalysis(
   );
 
   const sourceQuery = useQuery({
-    queryKey: ["analysis", "source-memories", spaceId, range, attempt],
-    queryFn: () => listAllMemories(spaceId, range),
+    queryKey: ["analysis", "source-memories", spaceId, attempt],
+    queryFn: () => loadSourceMemories(spaceId),
     enabled,
     staleTime: 30_000,
     retry: 1,
   });
 
+  const sourceMemories = useMemo(
+    () =>
+      filterMemoriesForView(sourceQuery.data ?? [], {
+        range,
+      }),
+    [range, sourceQuery.data],
+  );
+
   const taxonomyQuery = useQuery({
-    queryKey: ["analysis", "taxonomy", spaceId],
-    queryFn: () => analysisApi.getTaxonomy(spaceId, "v1"),
+    queryKey: ["analysis", "taxonomy", spaceId, DEFAULT_TAXONOMY_VERSION],
+    queryFn: () => analysisApi.getTaxonomy(spaceId, DEFAULT_TAXONOMY_VERSION),
     enabled,
     staleTime: 5 * 60_000,
     retry: false,
   });
   const taxonomyUnavailable = taxonomyQuery.error !== null;
+
+  const matchMap = useMemo(
+    () => createAnalysisMatchMap(matches),
+    [matches],
+  );
 
   useEffect(() => {
     if (!enabled) return;
@@ -115,10 +190,82 @@ export function useSpaceAnalysis(
 
   useEffect(() => {
     if (!enabled) {
+      setMatches([]);
+      setCards([]);
+      setMatchesLoading(false);
+      return;
+    }
+
+    if (sourceQuery.data === undefined) return;
+
+    let cancelled = false;
+
+    const loadMatches = async (): Promise<void> => {
+      setMatchesLoading(true);
+
+      if (sourceMemories.length === 0) {
+        if (!cancelled) {
+          setMatches([]);
+          setCards([]);
+          setMatchesLoading(false);
+        }
+        return;
+      }
+
+      try {
+        if (taxonomyQuery.data) {
+          const computedMatches = matchMemoriesToTaxonomy(
+            sourceMemories,
+            taxonomyQuery.data,
+          );
+          await clearCachedAnalysisMatches(spaceId, range);
+          await writeCachedAnalysisMatches(spaceId, range, computedMatches);
+          if (cancelled) return;
+
+          setMatches(computedMatches);
+          setCards(
+            buildAnalysisCardsFromMatches(
+              computedMatches,
+              sourceMemories.length,
+            ),
+          );
+          return;
+        }
+
+        const cachedMatches = await readCachedAnalysisMatches(spaceId, range);
+        if (cancelled) return;
+
+        setMatches(cachedMatches);
+        setCards(
+          buildAnalysisCardsFromMatches(cachedMatches, sourceMemories.length),
+        );
+      } finally {
+        if (!cancelled) {
+          setMatchesLoading(false);
+        }
+      }
+    };
+
+    void loadMatches();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    enabled,
+    range,
+    sourceMemories,
+    sourceQuery.data,
+    spaceId,
+    taxonomyQuery.data,
+  ]);
+
+  useEffect(() => {
+    if (!enabled) {
       setState(INITIAL_STATE);
       return;
     }
-    if (!sourceQuery.data) return;
+    if (sourceQuery.data === undefined) return;
 
     const currentRun = runRef.current + 1;
     runRef.current = currentRun;
@@ -165,10 +312,19 @@ export function useSpaceAnalysis(
 
         if (cancelled || runRef.current !== currentRun) return;
 
+        const mergedSnapshot = mergeSnapshotWithUpdates(snapshot, updates);
+        await persistAnalysisSnapshot(
+          spaceId,
+          range,
+          jobId,
+          fingerprint,
+          mergedSnapshot,
+        );
+
         updateState((current) => ({
           ...current,
           phase: isTerminalJobStatus(snapshot.status) ? "completed" : "processing",
-          snapshot: mergeSnapshotWithUpdates(snapshot, updates),
+          snapshot: mergedSnapshot,
           events: trimEvents([...updates.events].reverse(), 8),
           cursor: updates.nextCursor,
           error: null,
@@ -200,66 +356,65 @@ export function useSpaceAnalysis(
           error instanceof AnalysisApiError &&
           (error.status === 404 || error.status === 403)
         ) {
-          clearAnalysisCache(spaceId, range);
+          await clearAnalysisCache(spaceId, range);
         }
       }
     };
 
     const run = async (): Promise<void> => {
-      const memories = sourceQuery.data;
+      const memories = sourceMemories;
       if (memories.length === 0) {
         updateState(() => ({
           ...INITIAL_STATE,
           phase: "completed",
           warning: taxonomyUnavailable ? "taxonomy_unavailable" : null,
         }));
-        clearAnalysisCache(spaceId, range);
+        await Promise.all([
+          clearAnalysisCache(spaceId, range),
+          clearCachedAnalysisMatches(spaceId, range),
+        ]);
         return;
       }
 
       const fingerprint = await createMemoryFingerprint(memories);
       if (cancelled || runRef.current !== currentRun) return;
 
-      const cached = readAnalysisCache(spaceId, range);
-      if (cached && cached.fingerprint === fingerprint) {
-        try {
-          const snapshot = await analysisApi.getSnapshot(spaceId, cached.jobId);
-          if (cancelled || runRef.current !== currentRun) return;
-          updateState((current) => ({
-            ...current,
-            phase: isTerminalJobStatus(snapshot.status)
-              ? "completed"
-              : "processing",
-            snapshot,
-            events: current.events,
-            cursor: current.cursor,
-            error: null,
-            warning: taxonomyUnavailable ? "taxonomy_unavailable" : null,
-            jobId: cached.jobId,
-            fingerprint,
-            pollAfterMs: current.pollAfterMs,
-            isRetrying: false,
-          }));
-          if (!isTerminalJobStatus(snapshot.status)) {
-            await poll(cached.jobId, fingerprint, 0, getDefaultPollMs());
-          }
-          return;
-        } catch (error) {
-          if (
-            error instanceof AnalysisApiError &&
-            (error.status === 404 || error.status === 403)
-          ) {
-            clearAnalysisCache(spaceId, range);
-          } else if (isDegradedAnalysisError(error)) {
-            finishWithError(
-              "degraded",
-              "analysis_unavailable",
-              fingerprint,
-              cached.jobId,
-            );
-            return;
-          }
+      const cached = await readAnalysisCache(spaceId, range);
+      if (
+        cached &&
+        cached.fingerprint === fingerprint &&
+        cached.taxonomyVersion === DEFAULT_TAXONOMY_VERSION &&
+        cached.snapshot
+      ) {
+        const cachedSnapshot = cached.snapshot;
+        updateState((current) => ({
+          ...current,
+          phase: isTerminalJobStatus(cachedSnapshot.status)
+            ? "completed"
+            : "processing",
+          snapshot: cachedSnapshot,
+          events: current.events,
+          cursor: current.cursor,
+          error: null,
+          warning: taxonomyUnavailable ? "taxonomy_unavailable" : null,
+          jobId: cached.jobId,
+          fingerprint,
+          pollAfterMs: current.pollAfterMs,
+          isRetrying: false,
+        }));
+
+        if (!isTerminalJobStatus(cachedSnapshot.status)) {
+          await poll(cached.jobId, fingerprint, 0, getDefaultPollMs());
         }
+        return;
+      }
+
+      if (
+        cached &&
+        (cached.fingerprint !== fingerprint ||
+          cached.taxonomyVersion !== DEFAULT_TAXONOMY_VERSION)
+      ) {
+        await clearAnalysisCache(spaceId, range);
       }
 
       const batchSize = getAnalysisBatchSize();
@@ -288,6 +443,14 @@ export function useSpaceAnalysis(
           createInput,
           memories,
         );
+        await persistAnalysisSnapshot(
+          spaceId,
+          range,
+          createResponse.jobId,
+          fingerprint,
+          initialSnapshot,
+        );
+
         updateState((current) => ({
           ...current,
           phase: "uploading",
@@ -296,12 +459,6 @@ export function useSpaceAnalysis(
           fingerprint,
           pollAfterMs: createResponse.pollAfterMs,
         }));
-
-        writeAnalysisCache(spaceId, range, {
-          fingerprint,
-          jobId: createResponse.jobId,
-          updatedAt: new Date().toISOString(),
-        });
 
         const chunks = chunkAnalysisMemories(
           memories.map(toAnalysisMemoryInput),
@@ -319,6 +476,13 @@ export function useSpaceAnalysis(
           });
           if (cancelled || runRef.current !== currentRun) return;
           workingSnapshot = applyUploadedBatch(workingSnapshot, batchIndex);
+          await persistAnalysisSnapshot(
+            spaceId,
+            range,
+            createResponse.jobId,
+            fingerprint,
+            workingSnapshot,
+          );
           updateState((current) => ({
             ...current,
             phase: "uploading",
@@ -334,6 +498,14 @@ export function useSpaceAnalysis(
           createResponse.jobId,
         );
         if (cancelled || runRef.current !== currentRun) return;
+
+        await persistAnalysisSnapshot(
+          spaceId,
+          range,
+          createResponse.jobId,
+          fingerprint,
+          snapshot,
+        );
 
         updateState((current) => ({
           ...current,
@@ -355,7 +527,7 @@ export function useSpaceAnalysis(
           );
         }
       } catch (error) {
-        clearAnalysisCache(spaceId, range);
+        await clearAnalysisCache(spaceId, range);
         if (isDegradedAnalysisError(error)) {
           finishWithError("degraded", "analysis_unavailable", fingerprint, null);
           return;
@@ -375,21 +547,33 @@ export function useSpaceAnalysis(
   }, [
     enabled,
     range,
+    sourceMemories,
     sourceQuery.data,
     spaceId,
     timeParams,
+    taxonomyUnavailable,
   ]);
 
   return {
     state,
     taxonomy: taxonomyQuery.data ?? null,
     taxonomyUnavailable,
-    sourceCount: sourceQuery.data?.length ?? 0,
-    sourceLoading: sourceQuery.isLoading,
+    cards: cards.length > 0 ? cards : state.snapshot?.aggregateCards ?? [],
+    matches,
+    matchMap,
+    sourceMemories,
+    sourceCount: sourceMemories.length,
+    sourceLoading: sourceQuery.isLoading || sourceQuery.isFetching || matchesLoading,
     retry: () => {
-      clearAnalysisCache(spaceId, range);
-      setAttempt((current) => current + 1);
-      setState(INITIAL_STATE);
+      void Promise.all([
+        clearAnalysisCache(spaceId, range),
+        clearCachedAnalysisMatches(spaceId, range),
+      ]).finally(() => {
+        setAttempt((current) => current + 1);
+        setMatches([]);
+        setCards([]);
+        setState(INITIAL_STATE);
+      });
     },
   };
 }

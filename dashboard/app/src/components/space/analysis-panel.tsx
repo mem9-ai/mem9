@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import type {
   AnalysisCategory,
+  AnalysisCategoryCard,
   AnalysisJobSnapshotResponse,
-  BatchStatus,
   SpaceAnalysisState,
   TaxonomyResponse,
 } from "@/types/analysis";
@@ -24,25 +24,6 @@ function formatPhaseLabel(t: TFunction, phase: SpaceAnalysisState["phase"]): str
   return t(`analysis.phase.${phase}`);
 }
 
-function formatBatchStatusLabel(t: TFunction, status: BatchStatus): string {
-  return t(`analysis.batch_status.${status}`);
-}
-
-function getBatchStatusClass(status: BatchStatus): string {
-  switch (status) {
-    case "SUCCEEDED":
-      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
-    case "FAILED":
-    case "DLQ":
-      return "bg-destructive/10 text-destructive";
-    case "RUNNING":
-    case "RETRYING":
-      return "bg-amber-500/10 text-amber-700 dark:text-amber-300";
-    default:
-      return "bg-secondary text-muted-foreground";
-  }
-}
-
 function getCompletionRatio(snapshot: AnalysisJobSnapshotResponse): number {
   if (snapshot.expectedTotalBatches === 0) return 0;
   return Math.round(
@@ -50,6 +31,38 @@ function getCompletionRatio(snapshot: AnalysisJobSnapshotResponse): number {
       snapshot.expectedTotalBatches) *
       100,
   );
+}
+
+function getBatchProgressCount(snapshot: AnalysisJobSnapshotResponse): number {
+  return snapshot.progress.completedBatches + snapshot.progress.failedBatches;
+}
+
+function formatBatchSummary(
+  t: TFunction,
+  phase: SpaceAnalysisState["phase"],
+  snapshot: AnalysisJobSnapshotResponse,
+): string {
+  const progressed = getBatchProgressCount(snapshot);
+  const total = snapshot.expectedTotalBatches;
+
+  if (phase === "creating" || phase === "uploading") {
+    return t("analysis.batch_summary.syncing", {
+      current: snapshot.progress.uploadedBatches,
+      total,
+    });
+  }
+
+  if (phase === "processing") {
+    return t("analysis.batch_summary.processing", {
+      current: progressed,
+      total,
+    });
+  }
+
+  return t("analysis.batch_summary.completed", {
+    current: progressed,
+    total,
+  });
 }
 
 function parseSummaryLine(
@@ -78,6 +91,9 @@ export function AnalysisPanel({
   sourceLoading,
   taxonomy,
   taxonomyUnavailable,
+  cards,
+  activeCategory,
+  onSelectCategory,
   onRetry,
   t,
 }: {
@@ -86,6 +102,9 @@ export function AnalysisPanel({
   sourceLoading: boolean;
   taxonomy: TaxonomyResponse | null;
   taxonomyUnavailable: boolean;
+  cards: AnalysisCategoryCard[];
+  activeCategory?: AnalysisCategory;
+  onSelectCategory: (category: AnalysisCategory | undefined) => void;
   onRetry: () => void;
   t: TFunction;
 }) {
@@ -108,9 +127,21 @@ export function AnalysisPanel({
                 : t("analysis.taxonomy_fallback")}
             </p>
           </div>
-          <span className="rounded-full bg-secondary px-2 py-1 text-[11px] font-medium text-muted-foreground">
-            {formatPhaseLabel(t, state.phase)}
-          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRetry}
+              disabled={sourceLoading || sourceCount === 0}
+              className="gap-1.5 text-xs"
+            >
+              <RefreshCcw className="size-3.5" />
+              {t("analysis.reanalyze")}
+            </Button>
+            <span className="rounded-full bg-secondary px-2 py-1 text-[11px] font-medium text-muted-foreground">
+              {formatPhaseLabel(t, state.phase)}
+            </span>
+          </div>
         </div>
 
         <div className="space-y-4 px-5 py-4">
@@ -162,11 +193,14 @@ export function AnalysisPanel({
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>{t("analysis.progress")}</span>
                   <span>
-                    {snapshot.progress.completedBatches}/
+                    {getBatchProgressCount(snapshot)}/
                     {snapshot.expectedTotalBatches}
                   </span>
                 </div>
                 <Progress value={getCompletionRatio(snapshot)} />
+                <p className="text-xs text-soft-foreground">
+                  {formatBatchSummary(t, state.phase, snapshot)}
+                </p>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <MetricCard
                     label={t("analysis.metrics.memories")}
@@ -199,16 +233,26 @@ export function AnalysisPanel({
                 </div>
               )}
 
-              {snapshot.aggregateCards.length > 0 && (
+              {cards.length > 0 && (
                 <section>
                   <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-ring">
                     {t("analysis.cards")}
                   </h3>
                   <div className="mt-2 space-y-2">
-                    {snapshot.aggregateCards.map((card) => (
-                      <div
+                    {cards.map((card) => (
+                      <button
                         key={card.category}
-                        className="rounded-xl bg-secondary/55 px-3 py-2"
+                        type="button"
+                        onClick={() =>
+                          onSelectCategory(
+                            activeCategory === card.category ? undefined : card.category,
+                          )
+                        }
+                        className={`w-full rounded-xl px-3 py-2 text-left transition-colors ${
+                          activeCategory === card.category
+                            ? "bg-primary/8 ring-1 ring-primary/25"
+                            : "bg-secondary/55 hover:bg-secondary/80"
+                        }`}
                       >
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-sm font-medium text-foreground">
@@ -223,7 +267,7 @@ export function AnalysisPanel({
                             value: `${Math.round(card.confidence * 100)}%`,
                           })}
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </section>
@@ -271,50 +315,6 @@ export function AnalysisPanel({
                       <ChipRow items={snapshot.topTags.map((tag) => `#${tag}`)} />
                     </div>
                   )}
-                </section>
-              )}
-
-              {snapshot.batchSummaries.length > 0 && (
-                <section>
-                  <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-ring">
-                    {t("analysis.batch_progress")}
-                  </h3>
-                  <div className="mt-2 space-y-2">
-                    {[...snapshot.batchSummaries]
-                      .sort((left, right) => right.batchIndex - left.batchIndex)
-                      .slice(0, 6)
-                      .map((batch) => (
-                        <div
-                          key={batch.batchIndex}
-                          className="rounded-xl border px-3 py-2"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <div className="text-sm font-medium text-foreground">
-                                {t("analysis.batch_label", {
-                                  index: batch.batchIndex,
-                                })}
-                              </div>
-                              <div className="mt-0.5 text-xs text-soft-foreground">
-                                {t("analysis.batch_memories", {
-                                  count: batch.memoryCount,
-                                })}
-                              </div>
-                            </div>
-                            <span
-                              className={`rounded-full px-2 py-1 text-[11px] font-medium ${getBatchStatusClass(batch.status)}`}
-                            >
-                              {formatBatchStatusLabel(t, batch.status)}
-                            </span>
-                          </div>
-                          {batch.errorMessage && (
-                            <p className="mt-2 text-xs text-destructive">
-                              {batch.errorMessage}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                  </div>
                 </section>
               )}
 

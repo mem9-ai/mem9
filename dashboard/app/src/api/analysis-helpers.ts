@@ -20,6 +20,8 @@ export const TERMINAL_JOB_STATUSES: JobStatus[] = [
   "EXPIRED",
 ];
 
+export const DEFAULT_TAXONOMY_VERSION = "v2";
+
 const EMPTY_AGGREGATE: AggregateSnapshot = {
   categoryCounts: {
     identity: 0,
@@ -104,7 +106,7 @@ export function buildCreateJobRequest(
     batchSize,
     options: {
       lang: "zh-CN",
-      taxonomyVersion: "v1",
+      taxonomyVersion: DEFAULT_TAXONOMY_VERSION,
       llmEnabled: true,
       includeItems: true,
       includeSummary: true,

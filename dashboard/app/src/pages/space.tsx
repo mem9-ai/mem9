@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, getRouteApi } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -27,7 +27,8 @@ import {
   useTopicSummary,
 } from "@/api/queries";
 import { useSpaceAnalysis } from "@/api/analysis-queries";
-import { getSpaceId, clearSpace, maskSpaceId } from "@/lib/session";
+import { filterMemoriesForView } from "@/lib/memory-filters";
+import { getActiveSpaceId, clearSpace, maskSpaceId } from "@/lib/session";
 import { MemoryCard } from "@/components/space/memory-card";
 import { DetailPanel } from "@/components/space/detail-panel";
 import { EmptyState } from "@/components/space/empty-state";
@@ -42,15 +43,17 @@ import { ImportDialog } from "@/components/space/import-dialog";
 import { ImportStatusDialog } from "@/components/space/import-status";
 import { features } from "@/config/features";
 import type { Memory, MemoryType, MemoryFacet } from "@/types/memory";
+import type { AnalysisCategory } from "@/types/analysis";
 import type { TimeRangePreset } from "@/types/time-range";
 
 const route = getRouteApi("/space");
+const LOCAL_PAGE_SIZE = 50;
 
 export function SpacePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const search = route.useSearch();
-  const spaceId = getSpaceId() ?? "";
+  const spaceId = getActiveSpaceId() ?? "";
 
   // UI state
   const [selected, setSelected] = useState<Memory | null>(null);
@@ -61,13 +64,23 @@ export function SpacePage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importStatusOpen, setImportStatusOpen] = useState(false);
+  const [localVisibleCount, setLocalVisibleCount] = useState(LOCAL_PAGE_SIZE);
 
   const range: TimeRangePreset = search.range ?? "all";
   const facet: MemoryFacet | undefined = search.facet;
+  const analysisCategory: AnalysisCategory | undefined = search.analysisCategory;
 
   useEffect(() => {
-    if (!spaceId) navigate({ to: "/" });
+    if (!spaceId) navigate({ to: "/", replace: true });
   }, [spaceId, navigate]);
+
+  useEffect(() => {
+    setSearchInput(search.q ?? "");
+  }, [search.q]);
+
+  useEffect(() => {
+    setLocalVisibleCount(LOCAL_PAGE_SIZE);
+  }, [analysisCategory, range, search.q, search.type, spaceId]);
 
   // Queries
   const { data: stats } = useStats(spaceId, range);
@@ -94,13 +107,70 @@ export function SpacePage() {
 
   const memories = data?.pages.flatMap((p) => p.memories) ?? [];
   const firstPageSize = data?.pages[0]?.memories.length ?? 0;
+  const analysisFilteredMemories = useMemo(() => {
+    if (!analysisCategory) return [];
+
+    return filterMemoriesForView(
+      analysis.sourceMemories.filter((memory) =>
+        analysis.matchMap.get(memory.id)?.categories.includes(analysisCategory),
+      ),
+      {
+        q: search.q,
+        memoryType: search.type,
+        range,
+      },
+    );
+  }, [
+    analysis.matchMap,
+    analysis.sourceMemories,
+    analysisCategory,
+    range,
+    search.q,
+    search.type,
+  ]);
+
+  const usingLocalAnalysisList = !!analysisCategory;
+  const displayedMemories = usingLocalAnalysisList
+    ? analysisFilteredMemories.slice(0, localVisibleCount)
+    : memories;
+  const hasMoreMemories = usingLocalAnalysisList
+    ? analysisFilteredMemories.length > localVisibleCount
+    : hasNextPage;
+  const isMemoryLoading = usingLocalAnalysisList
+    ? analysis.sourceLoading
+    : isLoading;
+  const isFetchingMore = usingLocalAnalysisList ? false : isFetchingNextPage;
+  const displayedFirstPageSize = usingLocalAnalysisList
+    ? Math.min(displayedMemories.length, LOCAL_PAGE_SIZE)
+    : firstPageSize;
+
+  useEffect(() => {
+    if (!usingLocalAnalysisList || isMemoryLoading) return;
+
+    if (analysisFilteredMemories.length === 0) {
+      setSelected(null);
+      return;
+    }
+
+    if (
+      !selected ||
+      !analysisFilteredMemories.some((memory) => memory.id === selected.id)
+    ) {
+      setSelected(analysisFilteredMemories[0] ?? null);
+    }
+  }, [
+    analysisFilteredMemories,
+    isMemoryLoading,
+    selected,
+    usingLocalAnalysisList,
+  ]);
 
   if (!spaceId) return null;
 
   // Handlers
   function disconnect() {
     clearSpace();
-    navigate({ to: "/" });
+    navigate({ to: "/", replace: true });
   }
 
   function handleSearch(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -128,6 +198,26 @@ export function SpacePage() {
     navigate({
       to: "/space",
       search: { ...search, facet: f },
+    });
+  }
+
+  function handleAnalysisCategoryChange(
+    category: AnalysisCategory | undefined,
+  ) {
+    const nextCategory =
+      analysisCategory === category ? undefined : category;
+
+    if (nextCategory) {
+      setSearchInput("");
+    }
+
+    navigate({
+      to: "/space",
+      search: {
+        ...search,
+        analysisCategory: nextCategory,
+        q: nextCategory ? undefined : search.q,
+      },
     });
   }
 
@@ -207,7 +297,17 @@ export function SpacePage() {
   }
 
   const isEmpty =
-    !isLoading && memories.length === 0 && !search.q && !search.type && !facet;
+    !isMemoryLoading &&
+    displayedMemories.length === 0 &&
+    !search.q &&
+    !search.type &&
+    !facet &&
+    !analysisCategory;
+  const activeFilterCount =
+    (search.type ? 1 : 0) +
+    (facet ? 1 : 0) +
+    (search.q ? 1 : 0) +
+    (analysisCategory ? 1 : 0);
 
   return (
     <div className="min-h-screen">
@@ -367,7 +467,7 @@ export function SpacePage() {
             </div>
 
             {/* Active filters indicator (right below search) */}
-            {(search.type || facet || search.q) && (
+            {(search.type || facet || search.q || analysisCategory) && (
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span>{t("filter.active")}</span>
                 {search.q && (
@@ -414,7 +514,16 @@ export function SpacePage() {
                     <X className="size-3" />
                   </button>
                 )}
-                {(search.type || facet || search.q) && (search.type ? 1 : 0) + (facet ? 1 : 0) + (search.q ? 1 : 0) > 1 && (
+                {analysisCategory && (
+                  <button
+                    onClick={() => handleAnalysisCategoryChange(undefined)}
+                    className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-foreground hover:bg-secondary/80"
+                  >
+                    {t(`analysis.category.${analysisCategory}`)}
+                    <X className="size-3" />
+                  </button>
+                )}
+                {activeFilterCount > 1 && (
                   <button
                     onClick={() => {
                       setSearchInput("");
@@ -483,11 +592,11 @@ export function SpacePage() {
             <div className="mt-4">
               {isEmpty ? (
                 <EmptyState t={t} onAdd={() => setAddOpen(true)} />
-              ) : isLoading ? (
+              ) : isMemoryLoading ? (
                 <div className="flex h-40 items-center justify-center">
                   <Loader2 className="size-5 animate-spin text-soft-foreground" />
                 </div>
-              ) : memories.length === 0 ? (
+              ) : displayedMemories.length === 0 ? (
                 <div className="flex flex-col items-center justify-center gap-2 py-16">
                   <Search className="size-8 text-foreground/15" />
                   <p className="text-sm font-medium text-muted-foreground">
@@ -499,7 +608,7 @@ export function SpacePage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {memories.map((m, i) => (
+                  {displayedMemories.map((m, i) => (
                     <MemoryCard
                       key={m.id}
                       memory={m}
@@ -507,19 +616,25 @@ export function SpacePage() {
                       onClick={() => setSelected(m)}
                       onDelete={() => setDeleteTarget(m)}
                       t={t}
-                      delay={i < firstPageSize ? i * 30 : 0}
+                      delay={i < displayedFirstPageSize ? i * 30 : 0}
                     />
                   ))}
-                  {hasNextPage && (
+                  {hasMoreMemories && (
                     <div className="py-4 text-center">
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => fetchNextPage()}
-                        disabled={isFetchingNextPage}
+                        onClick={() => {
+                          if (usingLocalAnalysisList) {
+                            setLocalVisibleCount((current) => current + LOCAL_PAGE_SIZE);
+                            return;
+                          }
+                          fetchNextPage();
+                        }}
+                        disabled={isFetchingMore}
                         className="text-sm text-soft-foreground"
                       >
-                        {isFetchingNextPage && (
+                        {isFetchingMore && (
                           <Loader2 className="size-4 animate-spin" />
                         )}
                         {t("list.load_more")}
@@ -541,6 +656,9 @@ export function SpacePage() {
                 sourceLoading={analysis.sourceLoading}
                 taxonomy={analysis.taxonomy}
                 taxonomyUnavailable={analysis.taxonomyUnavailable}
+                cards={analysis.cards}
+                activeCategory={analysisCategory}
+                onSelectCategory={handleAnalysisCategoryChange}
                 onRetry={analysis.retry}
                 t={t}
               />

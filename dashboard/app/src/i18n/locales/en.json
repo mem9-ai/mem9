@@ -5,6 +5,7 @@
     "subtitle": "Enter your memory space",
     "placeholder": "Space ID",
     "submit": "Enter space",
+    "remember_login": "Keep me signed in for 15 days",
     "security": "Space ID is your private key. Do not share it with others.",
     "error": {
       "invalid": "Cannot access this space. Please check your ID and try again."
@@ -196,6 +197,7 @@
     "batch_progress": "Batch progress",
     "recent_updates": "Recent updates",
     "retry": "Retry analysis",
+    "reanalyze": "Reanalyze",
     "retrying_updates": "Update polling failed. Retrying with backoff…",
     "degraded_title": "Analysis unavailable",
     "degraded_body": "The live analysis service is currently returning server errors. Your memory list still works normally, and you can retry later.",
@@ -204,6 +206,11 @@
     "batch_label": "Batch {{index}}",
     "batch_memories": "{{count}} memories",
     "confidence": "Share {{value}}",
+    "batch_summary": {
+      "syncing": "Synchronizing {{current}}/{{total}} batches...",
+      "processing": "Analyzing {{current}}/{{total}} batches...",
+      "completed": "Synchronized {{current}}/{{total}} batches"
+    },
     "phase": {
       "idle": "Idle",
       "creating": "Creating",

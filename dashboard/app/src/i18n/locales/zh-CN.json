@@ -5,6 +5,7 @@
     "subtitle": "进入你的记忆空间",
     "placeholder": "Space ID",
     "submit": "进入 Space",
+    "remember_login": "保留登录状态 15 天",
     "security": "Space ID 是你的私密标识，请勿分享给他人",
     "error": {
       "invalid": "无法访问此 Space，请检查 ID 后重试"
@@ -196,6 +197,7 @@
     "batch_progress": "批次进度",
     "recent_updates": "最近更新",
     "retry": "重试分析",
+    "reanalyze": "重新分析",
     "retrying_updates": "更新轮询失败，正在退避重试…",
     "degraded_title": "分析服务暂不可用",
     "degraded_body": "线上分析服务当前返回了服务端错误。记忆列表仍可正常使用，你可以稍后重试。",
@@ -204,6 +206,11 @@
     "batch_label": "批次 {{index}}",
     "batch_memories": "{{count}} 条记忆",
     "confidence": "占比 {{value}}",
+    "batch_summary": {
+      "syncing": "Synchronizing {{current}}/{{total}} batches...",
+      "processing": "Analyzing {{current}}/{{total}} batches...",
+      "completed": "Synchronized {{current}}/{{total}} batches"
+    },
     "phase": {
       "idle": "未开始",
       "creating": "创建中",

@@ -1,41 +1,37 @@
+import {
+  clearCachedAnalysisResult,
+  readCachedAnalysisResult,
+  writeCachedAnalysisResult,
+} from "./local-cache";
+import type { AnalysisJobSnapshotResponse } from "@/types/analysis";
 import type { TimeRangePreset } from "@/types/time-range";
 
-interface AnalysisCacheEntry {
+export interface AnalysisCacheEntry {
   fingerprint: string;
   jobId: string;
   updatedAt: string;
-}
-
-const CACHE_PREFIX = "mem9-analysis-cache";
-
-function getCacheKey(spaceId: string, range: TimeRangePreset): string {
-  return `${CACHE_PREFIX}:${spaceId}:${range}`;
+  taxonomyVersion: string;
+  snapshot: AnalysisJobSnapshotResponse | null;
 }
 
 export function readAnalysisCache(
   spaceId: string,
   range: TimeRangePreset,
-): AnalysisCacheEntry | null {
-  try {
-    const raw = sessionStorage.getItem(getCacheKey(spaceId, range));
-    if (!raw) return null;
-    return JSON.parse(raw) as AnalysisCacheEntry;
-  } catch {
-    return null;
-  }
+): Promise<AnalysisCacheEntry | null> {
+  return readCachedAnalysisResult(spaceId, range);
 }
 
 export function writeAnalysisCache(
   spaceId: string,
   range: TimeRangePreset,
   entry: AnalysisCacheEntry,
-): void {
-  sessionStorage.setItem(getCacheKey(spaceId, range), JSON.stringify(entry));
+): Promise<void> {
+  return writeCachedAnalysisResult(spaceId, range, entry);
 }
 
 export function clearAnalysisCache(
   spaceId: string,
   range: TimeRangePreset,
-): void {
-  sessionStorage.removeItem(getCacheKey(spaceId, range));
+): Promise<void> {
+  return clearCachedAnalysisResult(spaceId, range);
 }

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { TFunction } from "i18next";
 import { describe, expect, it, vi } from "vitest";
 import { AnalysisPanel } from "./analysis-panel";
@@ -12,6 +12,9 @@ const t = vi.fn((key: string, options?: Record<string, unknown>) => {
   if (options?.index) return `${key}:${options.index}`;
   if (options?.count) return `${key}:${options.count}`;
   if (options?.value) return `${key}:${options.value}`;
+  if (options?.current && options?.total) {
+    return `${key}:${options.current}/${options.total}`;
+  }
   return key;
 }) as unknown as TFunction;
 
@@ -25,7 +28,7 @@ function createSnapshot(
     expectedTotalBatches: 2,
     batchSize: 2,
     pipelineVersion: "v1",
-    taxonomyVersion: "v1",
+    taxonomyVersion: "v2",
     llmEnabled: true,
     createdAt: "2026-03-03T00:00:00Z",
     startedAt: null,
@@ -109,6 +112,7 @@ function createState(
 
 describe("AnalysisPanel", () => {
   it("renders processing state with aggregate data", () => {
+    const onSelectCategory = vi.fn();
     render(
       <AnalysisPanel
         state={createState({ phase: "uploading" })}
@@ -116,6 +120,8 @@ describe("AnalysisPanel", () => {
         sourceLoading={false}
         taxonomy={null}
         taxonomyUnavailable={false}
+        cards={createSnapshot().aggregateCards}
+        onSelectCategory={onSelectCategory}
         onRetry={() => {}}
         t={t}
       />,
@@ -125,6 +131,17 @@ describe("AnalysisPanel", () => {
     expect(screen.getByText("analysis.phase.uploading")).toBeInTheDocument();
     expect(screen.getByText("analysis.cards")).toBeInTheDocument();
     expect(screen.getByText("analysis.top_topics")).toBeInTheDocument();
+    expect(
+      screen.getByText("analysis.batch_summary.syncing:2/2"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("analysis.batch_label:1")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /analysis\.category\.preference/,
+      }),
+    );
+    expect(onSelectCategory).toHaveBeenCalledWith("preference");
   });
 
   it("renders completed state with recent updates", () => {
@@ -136,8 +153,10 @@ describe("AnalysisPanel", () => {
         })}
         sourceCount={4}
         sourceLoading={false}
-        taxonomy={{ version: "v1", updatedAt: "", categories: [], rules: [] }}
+        taxonomy={{ version: "v2", updatedAt: "", categories: [], rules: [] }}
         taxonomyUnavailable={false}
+        cards={createSnapshot().aggregateCards}
+        onSelectCategory={() => {}}
         onRetry={() => {}}
         t={t}
       />,
@@ -145,7 +164,10 @@ describe("AnalysisPanel", () => {
 
     expect(screen.getByText("analysis.phase.completed")).toBeInTheDocument();
     expect(screen.getByText("Batch 1 completed")).toBeInTheDocument();
-    expect(screen.getByText("analysis.taxonomy_version:v1")).toBeInTheDocument();
+    expect(screen.getByText("analysis.taxonomy_version:v2")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "analysis.reanalyze" }),
+    ).toBeInTheDocument();
   });
 
   it("renders degraded state with retry action", () => {
@@ -163,6 +185,8 @@ describe("AnalysisPanel", () => {
         sourceLoading={false}
         taxonomy={null}
         taxonomyUnavailable={true}
+        cards={[]}
+        onSelectCategory={() => {}}
         onRetry={() => {}}
         t={t}
       />,
@@ -186,6 +210,8 @@ describe("AnalysisPanel", () => {
         sourceLoading={false}
         taxonomy={null}
         taxonomyUnavailable={false}
+        cards={[]}
+        onSelectCategory={() => {}}
         onRetry={() => {}}
         t={t}
       />,

@@ -4,6 +4,7 @@ import {
   buildCreateJobRequest,
   chunkAnalysisMemories,
   createMemoryFingerprint,
+  DEFAULT_TAXONOMY_VERSION,
   isDegradedAnalysisError,
   mergeSnapshotWithUpdates,
   toAnalysisMemoryInput,
@@ -42,7 +43,7 @@ function createSnapshot(): AnalysisJobSnapshotResponse {
     expectedTotalBatches: 2,
     batchSize: 1,
     pipelineVersion: "v1",
-    taxonomyVersion: "v1",
+    taxonomyVersion: "v2",
     llmEnabled: true,
     createdAt: "2026-03-03T00:00:00Z",
     startedAt: null,
@@ -111,6 +112,7 @@ describe("analysis helpers", () => {
     expect(input.expectedTotalBatches).toBe(1);
     expect(input.dateRange.start).toBe("2026-03-01T00:00:00Z");
     expect(input.dateRange.end).toBe("2026-03-05T00:00:00.000Z");
+    expect(input.options.taxonomyVersion).toBe(DEFAULT_TAXONOMY_VERSION);
   });
 
   it("chunks and maps memories for batch upload", () => {
@@ -190,15 +192,17 @@ describe("analysis helpers", () => {
     expect(merged.topTags).toEqual(["ai"]);
   });
 
-  it("stores cached job ids per space and range", () => {
-    writeAnalysisCache("space-1", "30d", {
+  it("stores cached job ids per space and range", async () => {
+    await writeAnalysisCache("space-1", "30d", {
       fingerprint: "abc",
       jobId: "aj_cached",
       updatedAt: "2026-03-03T00:00:00Z",
+      taxonomyVersion: DEFAULT_TAXONOMY_VERSION,
+      snapshot: null,
     });
 
-    expect(readAnalysisCache("space-1", "30d")?.jobId).toBe("aj_cached");
-    expect(readAnalysisCache("space-1", "7d")).toBeNull();
+    expect((await readAnalysisCache("space-1", "30d"))?.jobId).toBe("aj_cached");
+    expect(await readAnalysisCache("space-1", "7d")).toBeNull();
   });
 
   it("flags 5xx prisma errors as degraded", () => {
