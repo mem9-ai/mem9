@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { TFunction } from "i18next";
 import { describe, expect, it, vi } from "vitest";
 import { AnalysisPanel } from "./analysis-panel";
@@ -197,7 +197,7 @@ describe("AnalysisPanel", () => {
     });
   });
 
-  it("renders completed state with recent updates", () => {
+  it("renders completed state with collapsible run details", () => {
     render(
       <AnalysisPanel
         state={createState({
@@ -215,9 +215,23 @@ describe("AnalysisPanel", () => {
       />,
     );
 
-    expect(screen.getByText("analysis.phase.completed")).toBeInTheDocument();
-    expect(screen.getByText("Batch 1 completed")).toBeInTheDocument();
-    expect(screen.getByText("analysis.taxonomy_version:v2")).toBeInTheDocument();
+    expect(screen.getByText("analysis.run_details")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "analysis.reanalyze" }),
+    ).not.toBeInTheDocument();
+
+    const runDetailsSection = screen
+      .getByText("analysis.run_details")
+      .closest("section");
+
+    expect(runDetailsSection).not.toBeNull();
+
+    fireEvent.click(
+      within(runDetailsSection!).getByRole("button", {
+        name: "analysis.expand_section",
+      }),
+    );
+
     expect(
       screen.getByRole("button", { name: "analysis.reanalyze" }),
     ).toBeInTheDocument();
