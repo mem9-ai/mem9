@@ -9,7 +9,7 @@
 #   4. Ingest via content (async reconcile, expect 202)
 #   5. Validation errors (bad request shapes)
 #   6. List memories
-#   7. Search by query (?q=)
+#   7. Search by query (?q=) — includes relative_age check on results
 #   8. Search by tags (?tags=)
 #   9. Get memory by ID (uses first ID from list, if any)
 #  10. Update memory (PUT /{id})
@@ -219,6 +219,22 @@ mems = json.load(sys.stdin).get('memories', [])
 print(mems[0]['id'] if mems else '')
 " 2>/dev/null || true)
 
+if [ -n "$FIRST_MEM_ID" ]; then
+  FIRST_RELATIVE_AGE=$(printf '%s' "$bdy" | python3 -c "
+import sys, json
+mems = json.load(sys.stdin).get('memories', [])
+print(mems[0].get('relative_age', '') if mems else '')
+" 2>/dev/null || true)
+  TOTAL=$((TOTAL+1))
+  if [ -n "$FIRST_RELATIVE_AGE" ]; then
+    ok "list: first memory has relative_age (got='$FIRST_RELATIVE_AGE')"
+    PASS=$((PASS+1))
+  else
+    fail "list: first memory missing relative_age field"
+    FAIL=$((FAIL+1))
+  fi
+fi
+
 # ============================================================================
 # TEST 7 — Search by query
 # ============================================================================
@@ -239,6 +255,23 @@ if [ "$SEARCH_OK" = "true" ]; then
   code=$(http_code "$resp")
   bdy=$(body "$resp")
   check "GET /memories?q=TiDB returns 200" "$code" "200"
+  SEARCH_RELATIVE_AGE=$(printf '%s' "$bdy" | python3 -c "
+import sys, json
+mems = json.load(sys.stdin).get('memories', [])
+print(mems[0].get('relative_age', '') if mems else 'no-results')
+" 2>/dev/null || true)
+  if [ "$SEARCH_RELATIVE_AGE" = "no-results" ]; then
+    info "search: no results yet — relative_age check skipped"
+  else
+    TOTAL=$((TOTAL+1))
+    if [ -n "$SEARCH_RELATIVE_AGE" ]; then
+      ok "search: first result has relative_age (got='$SEARCH_RELATIVE_AGE')"
+      PASS=$((PASS+1))
+    else
+      fail "search: first result missing relative_age field"
+      FAIL=$((FAIL+1))
+    fi
+  fi
 
   info "Searching: q=xyzzy_nonexistent_term_abc123"
   resp=$(curl_mem_json "$MEM_BASE?q=xyzzy_nonexistent_term_abc123&limit=10")

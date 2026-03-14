@@ -47,8 +47,8 @@ any memories by the time the list runs.
 | 3 | Ingest via messages | `POST /memories` with `messages[]` returns 202 `accepted` |
 | 4 | Ingest via content | `POST /memories` with `content` field returns 202 `accepted` |
 | 5 | Validation errors | `content+messages` → 400; `content+tags` → 202; empty body → 400 |
-| 6 | List memories | `GET /memories` returns 200 with `memories` array and `total` field |
-| 7 | Search by query | `GET /memories?q=TiDB` and no-match query both return 200 |
+| 6 | List memories | `GET /memories` returns 200 with `memories` array and `total` field; `relative_age` non-empty on first memory (if any) |
+| 7 | Search by query | `GET /memories?q=TiDB` and no-match query both return 200; `relative_age` non-empty on first result (if any) |
 | 8 | Search by tags | `GET /memories?tags=tidb` returns 200 with `memories` array |
 | 9 | Get by ID | `GET /memories/{id}` returns 200 with matching `id` field |
 | 10 | Update memory | `PUT /memories/{id}` returns 200, version bumps, tag change reflected |
