@@ -125,8 +125,13 @@ It is hosted on Netlify and **automatically deployed from the `main` branch**.
 | `site/public/SKILL.md` | **Production** SKILL.md — served at `https://mem9.ai/SKILL.md` |
 | `site/public/beta/SKILL.md` | **Beta** SKILL.md — served at `https://mem9.ai/beta/SKILL.md` |
 
-When updating the SKILL.md that agents fetch, edit these files (not any other copy).
-Do **not** edit `clawhub-skill/mem9/SKILL.md` — that directory has been removed.
+When updating the SKILL.md that agents fetch, edit **only** these two files:
+
+- `site/public/SKILL.md` — production, changes go live within seconds after merging to `main`
+- `site/public/beta/SKILL.md` — beta, same deployment pipeline
+
+Do **not** edit any other copy (e.g. `clawhub-skill/mem9/SKILL.md` has been removed).
+Do **not** manually sync to clawhub — Netlify handles publishing automatically.
 
 ## Hierarchical AGENTS.md files
 
