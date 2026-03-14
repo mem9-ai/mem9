@@ -42,4 +42,6 @@ __pycache__/
 /benchmark/MR-NIAH/origin/
 /benchmark/MR-NIAH/output/
 /benchmark/MR-NIAH/results*/
+/benchmark/MR-NIAH/logs/
+/benchmark/MR-NIAH/results-logs/
 /benchmark/MR-NIAH/.cache/
