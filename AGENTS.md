@@ -131,6 +131,23 @@ Use the local file when you work in these areas:
 - `k8s/AGENTS.md`
 - `benchmark/MR-NIAH/AGENTS.md`
 
+## GitHub access
+
+Prefer `gh` CLI to read GitHub content (issues, PRs, file contents, comments). Fall back
+to `curl` or `webfetch` only when `gh` is unavailable or does not work. Examples:
+
+```bash
+# View a PR
+gh pr view <number>
+
+# Read a file from a specific ref
+gh api repos/{owner}/{repo}/contents/{path}?ref={branch} --jq '.content' | base64 -d
+
+# List issues or PR comments
+gh issue view <number> --comments
+gh pr view <number> --comments
+```
+
 ## Explicitly absent
 
 - No `.cursor/rules/`, `.cursorrules`, or `.github/copilot-instructions.md` were found.
