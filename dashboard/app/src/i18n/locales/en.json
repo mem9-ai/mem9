@@ -52,7 +52,8 @@
     "tags": "Tags",
     "metadata": "Metadata",
     "delete": "Delete this memory",
-    "edit": "Edit"
+    "edit": "Edit",
+    "close": "Close"
   },
   "add": {
     "button": "Add memory",

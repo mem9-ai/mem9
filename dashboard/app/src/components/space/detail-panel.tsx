@@ -85,6 +85,8 @@ export function DetailPanel({
               variant="ghost"
               size="icon-xs"
               onClick={onClose}
+              aria-label={t("detail.close")}
+              title={t("detail.close")}
               className="text-soft-foreground hover:text-foreground"
             >
               <X className="size-3.5" />

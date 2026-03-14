@@ -52,7 +52,8 @@
     "tags": "标签",
     "metadata": "元数据",
     "delete": "删除这条记忆",
-    "edit": "编辑"
+    "edit": "编辑",
+    "close": "关闭"
   },
   "add": {
     "button": "添加记忆",
