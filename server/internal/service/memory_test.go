@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/llm"
@@ -485,5 +486,100 @@ func TestCreateRunsReconcilePipeline(t *testing.T) {
 	}
 	if repo.createCalls[0].MemoryType != domain.TypeInsight {
 		t.Fatalf("expected insight memory type, got %s", repo.createCalls[0].MemoryType)
+	}
+}
+
+func TestRelativeAge(t *testing.T) {
+	now := time.Now()
+
+	cases := []struct {
+		name string
+		t    time.Time
+		want string
+	}{
+		{
+			name: "future returns just now",
+			t:    now.Add(10 * time.Minute),
+			want: "just now",
+		},
+		{
+			name: "30 seconds returns just now",
+			t:    now.Add(-30 * time.Second),
+			want: "just now",
+		},
+		{
+			name: "1 minute singular",
+			t:    now.Add(-90 * time.Second),
+			want: "1 minute ago",
+		},
+		{
+			name: "45 minutes plural",
+			t:    now.Add(-45 * time.Minute),
+			want: "45 minutes ago",
+		},
+		{
+			name: "1 hour singular",
+			t:    now.Add(-90 * time.Minute),
+			want: "1 hour ago",
+		},
+		{
+			name: "5 hours plural",
+			t:    now.Add(-5 * time.Hour),
+			want: "5 hours ago",
+		},
+		{
+			name: "1 day singular",
+			t:    now.Add(-36 * time.Hour),
+			want: "1 day ago",
+		},
+		{
+			name: "3 days plural",
+			t:    now.Add(-3 * 24 * time.Hour),
+			want: "3 days ago",
+		},
+		{
+			name: "1 week singular",
+			t:    now.Add(-10 * 24 * time.Hour),
+			want: "1 week ago",
+		},
+		{
+			name: "3 weeks plural",
+			t:    now.Add(-25 * 24 * time.Hour),
+			want: "3 weeks ago",
+		},
+		{
+			name: "1 month singular",
+			t:    now.Add(-45 * 24 * time.Hour),
+			want: "1 month ago",
+		},
+		{
+			name: "6 months plural",
+			t:    now.Add(-180 * 24 * time.Hour),
+			want: "6 months ago",
+		},
+		{
+			name: "364 days caps at 1 year ago",
+			t:    now.Add(-364 * 24 * time.Hour),
+			want: "1 year ago",
+		},
+		{
+			name: "400 days is 1 year ago",
+			t:    now.Add(-400 * 24 * time.Hour),
+			want: "1 year ago",
+		},
+		{
+			name: "3 years plural",
+			t:    now.Add(-3 * 365 * 24 * time.Hour),
+			want: "3 years ago",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := relativeAge(tc.t)
+			if got != tc.want {
+				t.Errorf("relativeAge() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

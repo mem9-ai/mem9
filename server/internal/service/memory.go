@@ -193,10 +193,9 @@ func (s *MemoryService) ftsOnlySearch(ctx context.Context, filter domain.MemoryF
 	slog.Info("fts search completed", "query_len", len(filter.Query), "results", len(ftsResults))
 
 	page, total := s.paginate(ftsResults, offset, limit)
-	return page, total, nil
+	return populateRelativeAge(page), total, nil
 }
 
-// keywordOnlySearch uses LIKE-based keyword search as a fallback when FTS
 // is not yet available (e.g., during cold start probe window).
 func (s *MemoryService) keywordOnlySearch(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
 	limit := filter.Limit
@@ -216,7 +215,7 @@ func (s *MemoryService) keywordOnlySearch(ctx context.Context, filter domain.Mem
 	slog.Info("keyword search completed (FTS unavailable)", "query_len", len(filter.Query), "results", len(kwResults))
 
 	page, total := s.paginate(kwResults, offset, limit)
-	return page, total, nil
+	return populateRelativeAge(page), total, nil
 }
 
 func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
@@ -277,7 +276,7 @@ func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFi
 	merged := sortByScore(mems, scores)
 
 	page, total := s.paginate(merged, offset, limit)
-	return setScores(page, scores), total, nil
+	return populateRelativeAge(setScores(page, scores)), total, nil
 }
 
 func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
@@ -333,7 +332,7 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 	merged := sortByScore(mems, scores)
 
 	page, total := s.paginate(merged, offset, limit)
-	return setScores(page, scores), total, nil
+	return populateRelativeAge(setScores(page, scores)), total, nil
 }
 
 func collectMems(kwResults, vecResults []domain.Memory) map[string]domain.Memory {
@@ -382,6 +381,65 @@ func applyTypeWeights(mems map[string]domain.Memory, scores map[string]float64) 
 			scores[id] *= 1.5
 		}
 	}
+}
+
+// relativeAge returns a human-readable recency string for the given timestamp.
+// Returns "just now" for timestamps in the future (clock skew) or under 1 minute.
+func relativeAge(t time.Time) string {
+	d := time.Since(t)
+	if d < 0 {
+		return "just now"
+	}
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		n := int(d.Minutes())
+		if n == 1 {
+			return "1 minute ago"
+		}
+		return fmt.Sprintf("%d minutes ago", n)
+	case d < 24*time.Hour:
+		n := int(d.Hours())
+		if n == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", n)
+	case d < 7*24*time.Hour:
+		n := int(d.Hours() / 24)
+		if n == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", n)
+	case d < 30*24*time.Hour:
+		n := int(d.Hours() / (24 * 7))
+		if n == 1 {
+			return "1 week ago"
+		}
+		return fmt.Sprintf("%d weeks ago", n)
+	case d < 365*24*time.Hour:
+		n := int(d.Hours() / (24 * 30))
+		if n >= 12 {
+			return "1 year ago"
+		}
+		if n == 1 {
+			return "1 month ago"
+		}
+		return fmt.Sprintf("%d months ago", n)
+	default:
+		n := int(d.Hours() / (24 * 365))
+		if n == 1 {
+			return "1 year ago"
+		}
+		return fmt.Sprintf("%d years ago", n)
+	}
+}
+
+func populateRelativeAge(memories []domain.Memory) []domain.Memory {
+	for i := range memories {
+		memories[i].RelativeAge = relativeAge(memories[i].UpdatedAt)
+	}
+	return memories
 }
 
 // Update modifies an existing memory with LWW conflict resolution.

@@ -46,6 +46,10 @@ type Memory struct {
 	UpdatedAt time.Time   `json:"updated_at"`
 
 	Score *float64 `json:"score,omitempty"`
+
+	// RelativeAge is a human-readable recency string (e.g. "3 days ago").
+	// Populated server-side at query time for search results only; never stored.
+	RelativeAge string `json:"relative_age,omitempty"`
 }
 
 type AuthInfo struct {

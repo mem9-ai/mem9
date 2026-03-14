@@ -25,6 +25,8 @@ export interface Memory {
   state?: string;
   agent_id?: string;
   session_id?: string;
+
+  relative_age?: string;
 }
 
 export interface SearchResult {

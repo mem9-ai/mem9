@@ -44,7 +44,9 @@ try:
         # Truncate very long content for context injection.
         if len(content) > 500:
             content = content[:500] + '...'
-        lines.append(f'  {content}')
+        age = m.get('relative_age', '')
+        age_prefix = f'({age}) ' if age else ''
+        lines.append(f'  {age_prefix}{content}')
         lines.append('')
     print('\n'.join(lines))
 except Exception:

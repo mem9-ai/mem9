@@ -163,6 +163,7 @@ func (s *Server) getMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RelativeAge is intentionally absent here — it is query-time only (search endpoint).
 	respond(w, http.StatusOK, mem)
 }
 

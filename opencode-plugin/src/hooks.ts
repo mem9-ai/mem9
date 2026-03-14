@@ -40,11 +40,14 @@ function formatMemoriesBlock(memories: Memory[]): string {
   let idx = 1;
 
   const formatMem = (m: Memory): string => {
-    const tags = m.tags?.length ? ` [${m.tags.map(escapeForPrompt).join(", ")}]` : "";
+    const tagStr = m.tags?.length ? `[${m.tags.map(escapeForPrompt).join(", ")}]` : "";
+    const age = m.relative_age ? `(${m.relative_age})` : "";
+    const middle = [tagStr, age].filter(Boolean).join(" ");
+    const sep = middle ? " " + middle + " " : " ";
     const content = m.content.length > MAX_CONTENT_LEN
       ? m.content.slice(0, MAX_CONTENT_LEN) + "..."
       : m.content;
-    return `${idx++}.${tags} ${escapeForPrompt(content)}`;
+    return `${idx++}.${sep}${escapeForPrompt(content)}`;
   };
 
   if (pinned.length > 0) {
