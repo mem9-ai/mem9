@@ -36,11 +36,11 @@ func TestNewTenantRepoSelectsBackend(t *testing.T) {
 		},
 		{
 			name:    "default tidb",
-			backend: "unknown",
+			backend: "tidb",
 			assert: func(t *testing.T, got any) {
 				t.Helper()
 				if _, ok := got.(*tidb.TenantRepoImpl); !ok {
-					t.Fatalf("NewTenantRepo(%q) returned %T, want *tidb.TenantRepoImpl", "unknown", got)
+					t.Fatalf("NewTenantRepo(%q) returned %T, want *tidb.TenantRepoImpl", "tidb", got)
 				}
 			},
 		},
@@ -85,11 +85,11 @@ func TestNewUploadTaskRepoSelectsBackend(t *testing.T) {
 		},
 		{
 			name:    "default tidb",
-			backend: "unknown",
+			backend: "tidb",
 			assert: func(t *testing.T, got any) {
 				t.Helper()
 				if _, ok := got.(*tidb.UploadTaskRepoImpl); !ok {
-					t.Fatalf("NewUploadTaskRepo(%q) returned %T, want *tidb.UploadTaskRepoImpl", "unknown", got)
+					t.Fatalf("NewUploadTaskRepo(%q) returned %T, want *tidb.UploadTaskRepoImpl", "tidb", got)
 				}
 			},
 		},
@@ -134,11 +134,11 @@ func TestNewMemoryRepoSelectsBackend(t *testing.T) {
 		},
 		{
 			name:    "default tidb",
-			backend: "unknown",
+			backend: "tidb",
 			assert: func(t *testing.T, got any) {
 				t.Helper()
 				if _, ok := got.(*tidb.MemoryRepo); !ok {
-					t.Fatalf("NewMemoryRepo(%q) returned %T, want *tidb.MemoryRepo", "unknown", got)
+					t.Fatalf("NewMemoryRepo(%q) returned %T, want *tidb.MemoryRepo", "tidb", got)
 				}
 			},
 		},
