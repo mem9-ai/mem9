@@ -6,6 +6,5 @@
     "name": "mem9-ai"
   },
   "repository": "https://github.com/mem9-ai/mem9-claude-plugin",
-  "license": "Apache-2.0",
-  "hooks": "./hooks/hooks.json"
+  "license": "Apache-2.0"
 }
