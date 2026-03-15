@@ -17,7 +17,7 @@ import (
 )
 
 // TiDBCloudProvisioner implements service.Provisioner for TiDB Cloud Pool API.
-// Note: TIDBCLOUD_API_KEY and TIDBCLOUD_API_SECRET are read via os.Getenv()
+// Note: MNEMO_TIDBCLOUD_API_KEY and MNEMO_TIDBCLOUD_API_SECRET are read via os.Getenv()
 // (not Config) as these are sensitive credentials that should not be persisted.
 type TiDBCloudProvisioner struct {
 	apiURL    string
@@ -31,8 +31,8 @@ type TiDBCloudProvisioner struct {
 func NewTiDBCloudProvisioner(apiURL, poolID string) *TiDBCloudProvisioner {
 	return &TiDBCloudProvisioner{
 		apiURL:    apiURL,
-		apiKey:    os.Getenv("TIDBCLOUD_API_KEY"),
-		apiSecret: os.Getenv("TIDBCLOUD_API_SECRET"),
+		apiKey:    os.Getenv("MNEMO_TIDBCLOUD_API_KEY"),
+		apiSecret: os.Getenv("MNEMO_TIDBCLOUD_API_SECRET"),
 		poolID:    poolID,
 		client:    &http.Client{Timeout: 60 * time.Second},
 	}

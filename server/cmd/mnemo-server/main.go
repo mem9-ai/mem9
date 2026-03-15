@@ -94,7 +94,7 @@ func main() {
 
 	// Check for TiDB Cloud credentials (only if Zero is not enabled)
 	if provisioner == nil && cfg.DBBackend == "tidb" {
-		if os.Getenv("TIDBCLOUD_API_KEY") != "" && os.Getenv("TIDBCLOUD_API_SECRET") != "" {
+		if os.Getenv("MNEMO_TIDBCLOUD_API_KEY") != "" && os.Getenv("MNEMO_TIDBCLOUD_API_SECRET") != "" {
 			provisioner = tenant.NewTiDBCloudProvisioner(cfg.TiDBCloudAPIURL, cfg.TiDBCloudPoolID)
 			logger.Info("using TiDB Cloud Pool provisioner")
 		}

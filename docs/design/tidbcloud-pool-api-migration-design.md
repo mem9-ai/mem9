@@ -29,12 +29,12 @@ Migrate the tenant provisioning mechanism from **TiDB Zero API** to **TiDB Cloud
 
 ```bash
 # Required for TiDB Cloud Pool mode
-TIDBCLOUD_API_KEY         # Digest Auth App Key (Public Key)
-TIDBCLOUD_API_SECRET      # Digest Auth App Secret (Private Key)
+MNEMO_TIDBCLOUD_API_KEY         # Digest Auth App Key (Public Key)
+MNEMO_TIDBCLOUD_API_SECRET      # Digest Auth App Secret (Private Key)
 
 # Optional (with defaults)
-TIDBCLOUD_API_URL   # Default: https://serverless.tidbapi.com
-TIDBCLOUD_POOL_ID   # Default: "2" (configurable per environment)
+MNEMO_TIDBCLOUD_API_URL   # Default: https://serverless.tidbapi.com
+MNEMO_TIDBCLOUD_POOL_ID   # Default: "2" (configurable per environment)
 ```
 
 ### Existing Variables (Zero Mode - for fallback)
@@ -53,8 +53,8 @@ type Config struct {
     // ... existing configs ...
     
     // TiDB Cloud Pool configuration
-    TiDBCloudAPIURL    string  // env: TIDBCLOUD_API_URL
-    TiDBCloudPoolID    string  // env: TIDBCLOUD_POOL_ID, default "2"
+    TiDBCloudAPIURL    string  // env: MNEMO_TIDBCLOUD_API_URL
+    TiDBCloudPoolID    string  // env: MNEMO_TIDBCLOUD_POOL_ID, default "2"
     
     // TiDB Zero configuration (backward compatible)
     TiDBZeroEnabled    bool    // env: MNEMO_TIDB_ZERO_ENABLED
@@ -97,12 +97,12 @@ type ZeroProvisioner struct { ... }
 
 // server/internal/tenant/starter.go
 // TiDBCloudProvisioner implements Provisioner for TiDB Cloud Pool API
-// Note: TIDBCLOUD_API_KEY and TIDBCLOUD_API_SECRET are read via os.Getenv()
+// Note: MNEMO_TIDBCLOUD_API_KEY and MNEMO_TIDBCLOUD_API_SECRET are read via os.Getenv()
 // (not Config) as these are sensitive credentials that should not be persisted
 type TiDBCloudProvisioner struct {
     apiURL    string
-    apiKey    string      // from TIDBCLOUD_API_KEY env
-    apiSecret string      // from TIDBCLOUD_API_SECRET env
+    apiKey    string      // from MNEMO_TIDBCLOUD_API_KEY env
+    apiSecret string      // from MNEMO_TIDBCLOUD_API_SECRET env
     poolID    string
 }
 ```
@@ -155,7 +155,7 @@ func (c *TiDBCloudProvisioner) InitSchema(ctx context.Context, db *sql.DB) error
 
 **Command equivalent:**
 ```bash
-curl --digest --user 'TIDBCLOUD_API_KEY:TIDBCLOUD_API_SECRET' \
+curl --digest --user 'MNEMO_TIDBCLOUD_API_KEY:MNEMO_TIDBCLOUD_API_SECRET' \
   -X POST https://serverless.tidbapi.com/v1beta1/clusters:takeoverFromPool \
   -H 'Content-Type: application/json' \
   -d '{"pool_id":"2","root_password":"xxx"}'
@@ -220,7 +220,7 @@ var provisioner tenant.Provisioner
 if cfg.TiDBZeroEnabled {
     // Zero mode (explicit toggle takes precedence)
     provisioner = tenant.NewZeroProvisioner(cfg.TiDBZeroAPIURL, cfg.DBBackend, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled)
-} else if os.Getenv("TIDBCLOUD_API_KEY") != "" && os.Getenv("TIDBCLOUD_API_SECRET") != "" {
+} else if os.Getenv("MNEMO_TIDBCLOUD_API_KEY") != "" && os.Getenv("MNEMO_TIDBCLOUD_API_SECRET") != "" {
     // TiDB Cloud Pool mode
     provisioner = tenant.NewTiDBCloudProvisioner(cfg.TiDBCloudAPIURL, cfg.TiDBCloudPoolID)
 }
@@ -307,7 +307,7 @@ type Tenant struct {
 
 1. **Phase 1**: Deploy code with both provisioners supported
 2. **Phase 2**: To switch to TiDB Cloud mode:
-   - Set `TIDBCLOUD_API_KEY` and `TIDBCLOUD_API_SECRET`
+   - Set `MNEMO_TIDBCLOUD_API_KEY` and `MNEMO_TIDBCLOUD_API_SECRET`
    - **Set `MNEMO_TIDB_ZERO_ENABLED=false`** (required, since default is `true`)
 3. **Phase 3**: (Future) Remove Zero mode support entirely
 
@@ -323,7 +323,7 @@ type Tenant struct {
 
 ## Security Considerations
 
-1. **API Credentials**: `TIDBCLOUD_API_KEY` and `TIDBCLOUD_API_SECRET` are sensitive and must be injected via environment variables only
+1. **API Credentials**: `MNEMO_TIDBCLOUD_API_KEY` and `MNEMO_TIDBCLOUD_API_SECRET` are sensitive and must be injected via environment variables only
 2. **Password Generation**: Root password is randomly generated (16 characters, crypto/rand) for each cluster acquisition
 3. **TLS**: All connections use TLS (port 4000 with TLS enabled)
 4. **Digest Auth**: Never log or expose the Authorization header

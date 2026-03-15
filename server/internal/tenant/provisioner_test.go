@@ -14,13 +14,13 @@ import (
 
 func setupTiDBCloudEnv(t *testing.T) func() {
 	t.Helper()
-	oldKey := os.Getenv("TIDBCLOUD_API_KEY")
-	oldSecret := os.Getenv("TIDBCLOUD_API_SECRET")
-	os.Setenv("TIDBCLOUD_API_KEY", "test-api-key")
-	os.Setenv("TIDBCLOUD_API_SECRET", "test-api-secret")
+	oldKey := os.Getenv("MNEMO_TIDBCLOUD_API_KEY")
+	oldSecret := os.Getenv("MNEMO_TIDBCLOUD_API_SECRET")
+	os.Setenv("MNEMO_TIDBCLOUD_API_KEY", "test-api-key")
+	os.Setenv("MNEMO_TIDBCLOUD_API_SECRET", "test-api-secret")
 	return func() {
-		os.Setenv("TIDBCLOUD_API_KEY", oldKey)
-		os.Setenv("TIDBCLOUD_API_SECRET", oldSecret)
+		os.Setenv("MNEMO_TIDBCLOUD_API_KEY", oldKey)
+		os.Setenv("MNEMO_TIDBCLOUD_API_SECRET", oldSecret)
 	}
 }
 
