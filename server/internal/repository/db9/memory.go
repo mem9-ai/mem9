@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/repository/postgres"
 )
 
@@ -26,7 +27,7 @@ type DB9MemoryRepo struct {
 
 // NewMemoryRepo creates the db9 memory repository.
 // When autoModel is set, it enables db9's native EMBED_TEXT auto-embedding.
-func NewMemoryRepo(db *sql.DB, autoModel string, ftsEnabled bool) *DB9MemoryRepo {
+func NewMemoryRepo(db *sql.DB, autoModel string, ftsEnabled bool) repository.MemoryRepo {
 	if autoModel != "" {
 		slog.Info("db9 auto-embedding enabled", "model", autoModel)
 	}
