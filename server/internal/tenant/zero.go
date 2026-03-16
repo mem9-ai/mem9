@@ -153,7 +153,7 @@ func (p *ZeroProvisioner) Provision(ctx context.Context) (*ClusterInfo, error) {
 	}, nil
 }
 
-const ZeroProvisionerType = "zero"
+const ZeroProvisionerType = "tidb_zero"
 
 // ProviderType returns the provider identifier.
 func (p *ZeroProvisioner) ProviderType() string {
