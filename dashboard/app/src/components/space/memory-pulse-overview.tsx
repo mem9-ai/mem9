@@ -11,64 +11,30 @@ import type { TimeRangePreset } from "@/types/time-range";
 
 function PulseOverviewSkeleton() {
   return (
-    <section className="surface-card relative mt-5 overflow-hidden px-4 py-5 sm:px-6">
+    <section
+      data-testid="memory-pulse-skeleton"
+      className="surface-card relative mt-5 overflow-hidden px-4 py-5 sm:px-6"
+    >
       <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,color-mix(in_srgb,var(--foreground)_14%,transparent),transparent)]" />
       <div className="relative animate-pulse">
         <div className="flex flex-col gap-3 border-b border-foreground/6 pb-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="h-3 w-16 rounded bg-foreground/10" />
-            <div className="mt-3 h-8 w-48 rounded-md bg-foreground/10" />
-            <div className="mt-3 h-4 w-64 max-w-full rounded bg-foreground/10" />
+            <div className="mt-3 h-8 w-40 rounded-md bg-foreground/10" />
+            <div className="mt-3 h-4 w-60 max-w-full rounded bg-foreground/10" />
           </div>
-          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-foreground/8 bg-background/55 px-3 py-1.5 backdrop-blur-sm">
-            <span className="size-1.5 rounded-full bg-foreground/30" />
-            <div className="h-3 w-24 rounded bg-foreground/10" />
-          </div>
+          <div className="h-8 w-28 rounded-full bg-foreground/8" />
         </div>
 
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.95fr)_minmax(0,1fr)] xl:gap-6">
           <div className="xl:border-r xl:border-foreground/6 xl:pr-6">
-            <div className="flex items-end justify-between">
-              <div>
-                <div className="h-3 w-12 rounded bg-foreground/10" />
-                <div className="mt-2 h-4 w-24 rounded bg-foreground/10" />
-              </div>
-              <div className="flex flex-col items-end">
-                <div className="h-6 w-8 rounded bg-foreground/10" />
-                <div className="mt-2 h-3 w-16 rounded bg-foreground/10" />
-              </div>
-            </div>
-            <div className="mt-5 h-44 w-full rounded-md bg-foreground/5" />
-            <div className="mt-3 flex justify-between">
-              <div className="h-3 w-10 rounded bg-foreground/10" />
-              <div className="h-3 w-10 rounded bg-foreground/10" />
-              <div className="h-3 w-10 rounded bg-foreground/10" />
-            </div>
+            <div className="h-44 rounded-2xl bg-foreground/5" />
           </div>
-
           <div className="border-t border-foreground/6 pt-5 xl:border-t-0 xl:border-r xl:border-foreground/6 xl:pt-0 xl:pr-6">
-            <div>
-              <div className="h-3 w-16 rounded bg-foreground/10" />
-              <div className="mt-2 h-4 w-20 rounded bg-foreground/10" />
-            </div>
-            <div className="mt-5 flex flex-col items-center justify-center">
-              <div className="h-[220px] w-[220px] rounded-full border-[18px] border-foreground/5" />
-              <div className="mt-5 grid w-full grid-cols-2 gap-2">
-                <div className="h-[54px] rounded-xl bg-foreground/5" />
-                <div className="h-[54px] rounded-xl bg-foreground/5" />
-                <div className="h-[54px] rounded-xl bg-foreground/5" />
-                <div className="h-[54px] rounded-xl bg-foreground/5" />
-              </div>
-            </div>
+            <div className="mx-auto h-[220px] w-[220px] rounded-full border-[18px] border-foreground/5" />
           </div>
-
           <div className="border-t border-foreground/6 pt-5 xl:border-t-0 xl:pt-0">
-            <div>
-              <div className="h-3 w-20 rounded bg-foreground/10" />
-              <div className="mt-2 h-4 w-32 rounded bg-foreground/10" />
-            </div>
-            <div className="mt-5 space-y-2">
-              <div className="h-[62px] rounded-2xl bg-foreground/5" />
+            <div className="space-y-2">
               <div className="h-[62px] rounded-2xl bg-foreground/5" />
               <div className="h-[62px] rounded-2xl bg-foreground/5" />
               <div className="h-[62px] rounded-2xl bg-foreground/5" />
@@ -118,8 +84,12 @@ export function MemoryPulseOverview({
     });
   }, [cards, memories, range, snapshot, stats]);
 
+  if (loading && (!stats || memories.length === 0)) {
+    return <PulseOverviewSkeleton />;
+  }
+
   if (!stats) {
-    return loading ? <PulseOverviewSkeleton /> : null;
+    return null;
   }
 
   if (stats.total === 0 || pulse === null) {
@@ -129,8 +99,7 @@ export function MemoryPulseOverview({
   return (
     <section
       className={cn(
-        "surface-card relative mt-5 overflow-hidden px-4 py-5 sm:px-6 transition-opacity duration-300",
-        loading && "pointer-events-none opacity-50",
+        "surface-card relative mt-5 overflow-hidden px-4 py-5 sm:px-6",
       )}
       style={{
         animation: "slide-up 0.45s cubic-bezier(0.16,1,0.3,1)",

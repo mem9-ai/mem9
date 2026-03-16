@@ -36,6 +36,7 @@
   },
   "list": {
     "load_more": "Load more",
+    "loading": "Loading memories...",
     "via": "via",
     "copied": "Copied to clipboard"
   },

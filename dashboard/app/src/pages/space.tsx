@@ -524,7 +524,7 @@ export function SpacePage() {
               cards={analysis.cards}
               snapshot={analysis.state.snapshot}
               range={range}
-              loading={analysis.sourceLoading}
+              loading={!stats || isLoading || analysis.sourceLoading}
               activeType={search.type}
               activeTag={tag}
               onTypeSelect={handleTypeClick}
@@ -714,11 +714,7 @@ export function SpacePage() {
             <div className="mt-4">
               {isEmpty ? (
                 <EmptyState t={t} onAdd={() => setAddOpen(true)} />
-              ) : isMemoryLoading ? (
-                <div className="flex h-40 items-center justify-center">
-                  <Loader2 className="size-5 animate-spin text-soft-foreground" />
-                </div>
-              ) : displayedMemories.length === 0 ? (
+              ) : displayedMemories.length === 0 && !isMemoryLoading ? (
                 <div className="flex flex-col items-center justify-center gap-2 py-16">
                   <Search className="size-8 text-foreground/15" />
                   <p className="text-sm font-medium text-muted-foreground">
@@ -730,6 +726,12 @@ export function SpacePage() {
                 </div>
               ) : (
                 <div className="space-y-3">
+                  {isMemoryLoading && (
+                    <div className="flex items-center gap-2 rounded-xl bg-secondary/55 px-3 py-3 text-sm text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" />
+                      {t("list.loading")}
+                    </div>
+                  )}
                   {displayedMemories.map((m, i) => (
                     <MemoryCard
                       key={m.id}
