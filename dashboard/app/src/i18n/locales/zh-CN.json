@@ -36,6 +36,7 @@
   },
   "list": {
     "load_more": "加载更多",
+    "loading": "正在加载记忆…",
     "via": "来自",
     "copied": "已复制到剪贴板"
   },
@@ -254,6 +255,30 @@
       "preference": "偏好",
       "experience": "经历",
       "activity": "活动"
+    }
+  },
+  "memory_pulse": {
+    "eyebrow": "概览",
+    "title": "Memory Pulse",
+    "subtitle": "用一块更安静的总览，快速看到这个空间最近的记忆节奏。",
+    "range": "当前范围：{{range}}",
+    "rhythm": {
+      "title": "节奏",
+      "caption": "当前时间范围内的记忆活跃度",
+      "empty": "当前还没有足够的活跃度形成脉冲。"
+    },
+    "composition": {
+      "title": "组成",
+      "total": "总记忆数",
+      "total_hint": "当前范围内",
+      "by_analysis": "内环来自分析分类",
+      "by_facets": "内环来自记忆 facet"
+    },
+    "signals": {
+      "title": "Signal Stack",
+      "caption": "当前范围内反复出现的标签信号",
+      "empty": "还没有形成稳定的标签信号。",
+      "count": "出现 {{count}} 次"
     }
   }
 }

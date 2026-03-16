@@ -36,6 +36,7 @@
   },
   "list": {
     "load_more": "Load more",
+    "loading": "Loading memories...",
     "via": "via",
     "copied": "Copied to clipboard"
   },
@@ -254,6 +255,30 @@
       "preference": "Preference",
       "experience": "Experience",
       "activity": "Activity"
+    }
+  },
+  "memory_pulse": {
+    "eyebrow": "Overview",
+    "title": "Memory Pulse",
+    "subtitle": "A quiet read on how this space has been evolving lately.",
+    "range": "Current range: {{range}}",
+    "rhythm": {
+      "title": "Rhythm",
+      "caption": "Recent memory activity across the current range",
+      "empty": "Not enough activity to draw a pulse yet."
+    },
+    "composition": {
+      "title": "Composition",
+      "total": "Total memories",
+      "total_hint": "across this range",
+      "by_analysis": "Inner ring from analysis categories",
+      "by_facets": "Inner ring from memory facets"
+    },
+    "signals": {
+      "title": "Signal Stack",
+      "caption": "Recurring tags that keep surfacing in this range",
+      "empty": "No recurring tags yet.",
+      "count": "{{count}} mentions"
     }
   }
 }

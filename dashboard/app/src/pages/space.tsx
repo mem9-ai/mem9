@@ -40,6 +40,7 @@ import { TimeRangeSelector } from "@/components/space/time-range";
 import { TopicStrip } from "@/components/space/topic-strip";
 import { TagStrip, type TagSummary } from "@/components/space/tag-strip";
 import { AnalysisPanel } from "@/components/space/analysis-panel";
+import { MemoryPulseOverview } from "@/components/space/memory-pulse-overview";
 import { MobileAnalysisSheet } from "@/components/space/mobile-analysis-sheet";
 import { MobileDetailSheet } from "@/components/space/mobile-detail-sheet";
 import { ExportDialog } from "@/components/space/export-dialog";
@@ -205,6 +206,13 @@ export function SpacePage() {
         count,
       }));
   }, [analysisFilteredMemories, displayedMemories, usingLocalAnalysisList]);
+  const pulseMemories = useMemo(() => {
+    if (analysis.sourceMemories.length > 0) {
+      return analysis.sourceMemories;
+    }
+
+    return memories;
+  }, [analysis.sourceMemories, memories]);
 
   useEffect(() => {
     if (isMemoryLoading || !selected) return;
@@ -510,6 +518,19 @@ export function SpacePage() {
               </div>
             )}
 
+            <MemoryPulseOverview
+              stats={stats}
+              memories={pulseMemories}
+              cards={analysis.cards}
+              snapshot={analysis.state.snapshot}
+              range={range}
+              loading={!stats || isLoading || analysis.sourceLoading}
+              activeType={search.type}
+              activeTag={tag}
+              onTypeSelect={handleTypeClick}
+              onTagSelect={handleTagChange}
+            />
+
             {/* Search (full-width, prominent) */}
             <div className="relative mt-5">
               <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-soft-foreground" />
@@ -693,11 +714,7 @@ export function SpacePage() {
             <div className="mt-4">
               {isEmpty ? (
                 <EmptyState t={t} onAdd={() => setAddOpen(true)} />
-              ) : isMemoryLoading ? (
-                <div className="flex h-40 items-center justify-center">
-                  <Loader2 className="size-5 animate-spin text-soft-foreground" />
-                </div>
-              ) : displayedMemories.length === 0 ? (
+              ) : displayedMemories.length === 0 && !isMemoryLoading ? (
                 <div className="flex flex-col items-center justify-center gap-2 py-16">
                   <Search className="size-8 text-foreground/15" />
                   <p className="text-sm font-medium text-muted-foreground">
@@ -709,6 +726,12 @@ export function SpacePage() {
                 </div>
               ) : (
                 <div className="space-y-3">
+                  {isMemoryLoading && (
+                    <div className="flex items-center gap-2 rounded-xl bg-secondary/55 px-3 py-3 text-sm text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" />
+                      {t("list.loading")}
+                    </div>
+                  )}
                   {displayedMemories.map((m, i) => (
                     <MemoryCard
                       key={m.id}
