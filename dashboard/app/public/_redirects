@@ -1,5 +1,5 @@
 # API proxy — server-side rewrite (no CORS)
-/your-memory/api/*  https://api.mem9.ai/v1alpha1/mem9s/:splat  200
+/your-memory/api/*  https://api.mem9.ai/v1alpha2/mem9s/:splat  200
 /your-memory/analysis-api/*  https://napi.mem9.ai/:splat  200
 
 # SPA fallback — all non-file routes serve index.html

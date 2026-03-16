@@ -18,7 +18,10 @@ import {
   upsertCachedMemories,
 } from "./local-cache";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "/your-memory/api";
+const API_BASE = (import.meta.env.VITE_API_BASE || "/your-memory/api").replace(
+  /\/+$/,
+  "",
+);
 const AGENT_ID = "dashboard";
 const EMPTY_TIMESTAMP = new Date(0).toISOString();
 
@@ -64,14 +67,15 @@ async function request<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const url = `${API_BASE}/${encodeURIComponent(spaceId.trim())}${path}`;
+  const headers = new Headers(init?.headers);
+  headers.set("Content-Type", "application/json");
+  headers.set("X-API-Key", spaceId.trim());
+  headers.set("X-Mnemo-Agent-Id", AGENT_ID);
+
+  const url = `${API_BASE}${path}`;
   const res = await fetch(url, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      "X-Mnemo-Agent-Id": AGENT_ID,
-      ...init?.headers,
-    },
+    headers,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -86,13 +90,14 @@ async function requestRaw(
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
-  const url = `${API_BASE}/${encodeURIComponent(spaceId.trim())}${path}`;
+  const headers = new Headers(init?.headers);
+  headers.set("X-API-Key", spaceId.trim());
+  headers.set("X-Mnemo-Agent-Id", AGENT_ID);
+
+  const url = `${API_BASE}${path}`;
   const res = await fetch(url, {
     ...init,
-    headers: {
-      "X-Mnemo-Agent-Id": AGENT_ID,
-      ...init?.headers,
-    },
+    headers,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
