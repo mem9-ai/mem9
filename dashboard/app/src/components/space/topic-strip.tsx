@@ -48,6 +48,9 @@ export function TopicStrip({
             <button
               key={facet}
               onClick={() => onSelect(isActive ? undefined : facet)}
+              data-mp-event="Dashboard/Topic/SelectClicked"
+              data-mp-page-name="space"
+              data-mp-facet={facet}
               className={`rounded-xl border px-3 py-2 text-left transition-all ${FACET_STYLES[facet]} ${
                 isActive
                   ? `ring-2 ${FACET_ACTIVE[facet]}`

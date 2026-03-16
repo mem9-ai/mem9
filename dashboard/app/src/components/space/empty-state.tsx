@@ -20,7 +20,12 @@ export function EmptyState({
           {t("empty.description")}
         </p>
       </div>
-      <Button onClick={onAdd} className="gap-2 text-sm">
+      <Button
+        onClick={onAdd}
+        data-mp-event="Dashboard/EmptyState/AddClicked"
+        data-mp-page-name="space"
+        className="gap-2 text-sm"
+      >
         <Plus className="size-4" />
         {t("empty.cta")}
       </Button>

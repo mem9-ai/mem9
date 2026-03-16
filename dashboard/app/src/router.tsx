@@ -3,15 +3,29 @@ import {
   createRoute,
   createRootRoute,
   Outlet,
+  useLocation,
 } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { Toaster } from "sonner";
 import type { MemoryType, MemoryFacet } from "@/types/memory";
 import { ANALYSIS_CATEGORIES, type AnalysisCategory } from "@/types/analysis";
 import type { TimeRangePreset } from "@/types/time-range";
+import { trackMixpanelPageView } from "@/lib/mixpanel";
 import { ConnectPage } from "@/pages/connect";
 import { SpacePage } from "@/pages/space";
 
 function RootLayout() {
+  const location = useLocation({
+    select: (currentLocation) => ({
+      pathname: currentLocation.pathname,
+      searchStr: currentLocation.searchStr,
+    }),
+  });
+
+  useEffect(() => {
+    trackMixpanelPageView(location.pathname);
+  }, [location.pathname]);
+
   return (
     <>
       <Outlet />

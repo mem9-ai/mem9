@@ -79,6 +79,8 @@ export function ExportDialog({
               size="sm"
               onClick={() => handleOpenChange(false)}
               disabled={loading}
+              data-mp-event="Dashboard/ExportDialog/CancelClicked"
+              data-mp-page-name="space"
             >
               {t("export.cancel")}
             </Button>
@@ -86,6 +88,8 @@ export function ExportDialog({
               size="sm"
               onClick={handleExport}
               disabled={loading || done}
+              data-mp-event="Dashboard/ExportDialog/ConfirmClicked"
+              data-mp-page-name="space"
               className="gap-2"
             >
               {loading ? (

@@ -131,6 +131,8 @@ export function ImportDialog({
                 onOpenChange(false);
                 onViewHistory();
               }}
+              data-mp-event="Dashboard/ImportDialog/ViewHistoryClicked"
+              data-mp-page-name="space"
               className="shrink-0 text-xs text-primary/70 underline-offset-2 hover:text-primary hover:underline"
             >
               {t("tools.import_status")}
@@ -143,6 +145,8 @@ export function ImportDialog({
               size="sm"
               onClick={() => handleOpenChange(false)}
               disabled={loading}
+              data-mp-event="Dashboard/ImportDialog/CancelClicked"
+              data-mp-page-name="space"
             >
               {t("import.cancel")}
             </Button>
@@ -150,6 +154,8 @@ export function ImportDialog({
               size="sm"
               onClick={handleImport}
               disabled={!file || loading}
+              data-mp-event="Dashboard/ImportDialog/ConfirmClicked"
+              data-mp-page-name="space"
               className="gap-2"
             >
               {loading ? (

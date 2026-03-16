@@ -31,6 +31,9 @@ export function TagStrip({
               key={tag}
               type="button"
               onClick={() => onSelect(isActive ? undefined : tag)}
+              data-mp-event="Dashboard/Tag/SelectClicked"
+              data-mp-page-name="space"
+              data-mp-tag={tag}
               aria-label={t("tag_strip.filter_label", { tag, count })}
               className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-all ${
                 isActive

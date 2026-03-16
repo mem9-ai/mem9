@@ -49,6 +49,8 @@ export function DeleteDialog({
             variant="outline"
             size="sm"
             onClick={() => onOpenChange(false)}
+            data-mp-event="Dashboard/DeleteDialog/CancelClicked"
+            data-mp-page-name="space"
           >
             {t("delete.cancel")}
           </Button>
@@ -57,6 +59,9 @@ export function DeleteDialog({
             size="sm"
             onClick={onConfirm}
             disabled={loading}
+            data-mp-event="Dashboard/DeleteDialog/ConfirmClicked"
+            data-mp-page-name="space"
+            data-mp-memory-id={memory.id}
           >
             {loading && <Loader2 className="size-4 animate-spin" />}
             {t("delete.confirm")}

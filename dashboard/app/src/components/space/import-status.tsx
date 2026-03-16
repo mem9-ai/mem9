@@ -64,6 +64,8 @@ export function ImportStatusDialog({
             variant="outline"
             size="sm"
             onClick={() => onOpenChange(false)}
+            data-mp-event="Dashboard/ImportStatus/CloseClicked"
+            data-mp-page-name="space"
           >
             <X className="mr-1.5 size-3.5" />
             {t("import_status.close")}

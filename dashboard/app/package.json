@@ -17,6 +17,7 @@
     "clsx": "^2.1.1",
     "i18next": "^25.8.18",
     "lucide-react": "^0.577.0",
+    "mixpanel-browser": "^2.75.0",
     "radix-ui": "^1.4.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -30,9 +31,9 @@
     ]
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.2.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
-    "@tailwindcss/vite": "^4.2.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",

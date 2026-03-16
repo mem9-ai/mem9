@@ -18,6 +18,9 @@ export function TimeRangeSelector({
         <button
           key={preset}
           onClick={() => onChange(preset)}
+          data-mp-event="Dashboard/TimeRange/SelectClicked"
+          data-mp-page-name="space"
+          data-mp-range={preset}
           className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
             value === preset
               ? "bg-background text-foreground shadow-sm"

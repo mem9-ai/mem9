@@ -50,6 +50,7 @@ export function MobilePanelShell({
                 onClick={() => onOpenChange(false)}
                 aria-label={closeLabel}
                 title={closeLabel}
+                data-mp-event="Dashboard/MobilePanel/CloseClicked"
                 className="text-soft-foreground hover:text-foreground"
               >
                 <X className="size-4" />

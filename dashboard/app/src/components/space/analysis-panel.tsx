@@ -282,6 +282,8 @@ export function AnalysisPanelBody({
                 variant="outline"
                 size="sm"
                 onClick={onRetry}
+                data-mp-event="Dashboard/Analysis/RetryClicked"
+                data-mp-page-name="space"
                 className="mt-3 w-full gap-1.5"
               >
                 <RefreshCcw className="size-3.5" />
@@ -331,6 +333,9 @@ export function AnalysisPanelBody({
                     activeCategory === card.category ? undefined : card.category,
                   )
                 }
+                data-mp-event="Dashboard/Analysis/CategoryClicked"
+                data-mp-page-name="space"
+                data-mp-category={card.category}
                 className={`w-full rounded-xl border px-3 py-2.5 text-left transition-colors ${
                   activeCategory === card.category
                     ? "border-primary/20 bg-primary/8 ring-1 ring-primary/25"
@@ -432,6 +437,8 @@ export function AnalysisPanelBody({
               size="sm"
               onClick={onRetry}
               disabled={sourceLoading || sourceCount === 0}
+              data-mp-event="Dashboard/Analysis/ReanalyzeClicked"
+              data-mp-page-name="space"
               className="w-full gap-1.5"
             >
               <RefreshCcw className="size-3.5" />
@@ -500,6 +507,9 @@ function FacetSection({
             setIsExpanded((current) => !current);
           }}
           aria-expanded={isExpanded}
+          data-mp-event="Dashboard/Analysis/FacetToggleClicked"
+          data-mp-page-name="space"
+          data-mp-kind={kind}
           className="-ml-2 mt-1 h-auto px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
         >
           {isExpanded ? t("analysis.less") : t("analysis.more")}
@@ -533,6 +543,8 @@ function InlineCollapsibleSection({
           size="sm"
           onClick={() => setIsOpen((current) => !current)}
           aria-expanded={isOpen}
+          data-mp-event="Dashboard/Analysis/SectionToggleClicked"
+          data-mp-page-name="space"
           className="-mr-2 h-auto gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
         >
           {isOpen ? t("analysis.collapse_section") : t("analysis.expand_section")}

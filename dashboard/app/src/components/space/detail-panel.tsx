@@ -100,6 +100,9 @@ export function DetailPanelContent({
               variant="ghost"
               size="icon-xs"
               onClick={onEdit}
+              data-mp-event="Dashboard/Detail/EditClicked"
+              data-mp-page-name="space"
+              data-mp-memory-id={m.id}
               className="text-soft-foreground hover:text-foreground"
               title={t("detail.edit")}
             >
@@ -110,6 +113,9 @@ export function DetailPanelContent({
             variant="ghost"
             size="icon-xs"
             onClick={handleCopy}
+            data-mp-event="Dashboard/Detail/CopyClicked"
+            data-mp-page-name="space"
+            data-mp-memory-id={m.id}
             className="text-soft-foreground hover:text-foreground"
             title="Copy content"
           >
@@ -119,6 +125,9 @@ export function DetailPanelContent({
             variant="ghost"
             size="icon-xs"
             onClick={onClose}
+            data-mp-event="Dashboard/Detail/CloseClicked"
+            data-mp-page-name="space"
+            data-mp-memory-id={m.id}
             aria-label={t("detail.close")}
             title={t("detail.close")}
             className="text-soft-foreground hover:text-foreground"
@@ -176,6 +185,9 @@ export function DetailPanelContent({
           variant="ghost"
           size="xs"
           onClick={onDelete}
+          data-mp-event="Dashboard/Detail/DeleteClicked"
+          data-mp-page-name="space"
+          data-mp-memory-id={m.id}
           className="gap-1 text-xs text-destructive/70 hover:text-destructive"
         >
           <Trash2 className="size-3" />

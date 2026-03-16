@@ -22,6 +22,8 @@ export function LangToggle() {
         <Button
           variant="ghost"
           size="icon-sm"
+          data-mp-event="Dashboard/Space/LanguageToggleClicked"
+          data-mp-page-name="space"
           className="text-soft-foreground hover:text-foreground"
         >
           <Globe className="size-4" />

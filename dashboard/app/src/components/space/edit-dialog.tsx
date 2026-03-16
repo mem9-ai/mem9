@@ -75,6 +75,8 @@ export function EditMemoryDialog({
             variant="outline"
             size="sm"
             onClick={() => onOpenChange(false)}
+            data-mp-event="Dashboard/EditDialog/CancelClicked"
+            data-mp-page-name="space"
           >
             {t("edit.cancel")}
           </Button>
@@ -82,6 +84,8 @@ export function EditMemoryDialog({
             size="sm"
             onClick={handleSave}
             disabled={!content.trim() || loading}
+            data-mp-event="Dashboard/EditDialog/SaveClicked"
+            data-mp-page-name="space"
           >
             {loading && <Loader2 className="size-4 animate-spin" />}
             {t("edit.save")}

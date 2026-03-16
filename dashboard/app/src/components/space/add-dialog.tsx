@@ -78,6 +78,8 @@ export function AddMemoryDialog({
             variant="outline"
             size="sm"
             onClick={() => onOpenChange(false)}
+            data-mp-event="Dashboard/AddDialog/CancelClicked"
+            data-mp-page-name="space"
           >
             {t("add.cancel")}
           </Button>
@@ -85,6 +87,8 @@ export function AddMemoryDialog({
             size="sm"
             onClick={handleSave}
             disabled={!content.trim() || loading}
+            data-mp-event="Dashboard/AddDialog/SaveClicked"
+            data-mp-page-name="space"
           >
             {loading && <Loader2 className="size-4 animate-spin" />}
             {t("add.save")}

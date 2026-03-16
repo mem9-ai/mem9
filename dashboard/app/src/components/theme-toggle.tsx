@@ -32,6 +32,7 @@ export function ThemeToggle() {
         <Button
           variant="ghost"
           size="icon-sm"
+          data-mp-event="Dashboard/ThemeToggleClicked"
           className="text-soft-foreground hover:text-foreground"
         >
           <Icon className="size-4" />

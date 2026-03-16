@@ -106,6 +106,9 @@ export function MemoryCard({
         <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <button
             onClick={handleCopy}
+            data-mp-event="Dashboard/MemoryCard/CopyClicked"
+            data-mp-page-name="space"
+            data-mp-memory-id={m.id}
             className="flex size-7 items-center justify-center rounded-md text-soft-foreground hover:bg-secondary hover:text-foreground"
             title="Copy"
           >
@@ -116,6 +119,9 @@ export function MemoryCard({
               e.stopPropagation();
               onDelete();
             }}
+            data-mp-event="Dashboard/MemoryCard/DeleteClicked"
+            data-mp-page-name="space"
+            data-mp-memory-id={m.id}
             className="flex size-7 items-center justify-center rounded-md text-soft-foreground hover:bg-destructive/10 hover:text-destructive"
             title="Delete"
           >

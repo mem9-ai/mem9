@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { api } from "@/api/client";
+import { initMixpanelOnLogin, trackMixpanelEvent } from "@/lib/mixpanel";
 import { getActiveSpaceId, setSpaceId } from "@/lib/session";
 
 export function ConnectPage() {
@@ -29,6 +30,10 @@ export function ConnectPage() {
     const normalizedInput = input.trim();
     try {
       await api.verifySpace(normalizedInput);
+      initMixpanelOnLogin();
+      trackMixpanelEvent("Dashboard/Connect/SubmitClicked", {
+        pageName: "connect",
+      });
       setSpaceId(normalizedInput, rememberLogin);
       navigate({ to: "/space", replace: true });
     } catch (err) {
@@ -51,6 +56,8 @@ export function ConnectPage() {
           variant="ghost"
           size="sm"
           onClick={toggleLang}
+          data-mp-event="Dashboard/Connect/LanguageToggleClicked"
+          data-mp-page-name="connect"
           className="gap-1.5 text-soft-foreground hover:text-foreground"
         >
           <Globe className="size-4" />
@@ -121,6 +128,8 @@ export function ConnectPage() {
             <Button
               type="submit"
               disabled={loading || !input.trim()}
+              data-mp-event="Dashboard/Connect/SubmitClicked"
+              data-mp-page-name="connect"
               className="h-11 w-full text-sm font-medium"
             >
               {loading ? (

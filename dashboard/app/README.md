@@ -18,6 +18,7 @@ Use `.env.local` for local overrides. Keep the shared `.env` unchanged.
 | `VITE_USE_MOCK` | `"true"` | active | shared `.env` currently sets `"false"`; `.env.local` should override it for UI-first work |
 | `VITE_API_BASE` | `/your-memory/api` | active | use the same relative path in dev and production |
 | `VITE_ANALYSIS_API_BASE` | `/your-memory/analysis-api` | active | same-origin proxy for `napi.mem9.ai` in dev and production |
+| `VITE_MIXPANEL_TOKEN` | `xxxxxxxxxxxxxxxx` | active | optional; when set, Mixpanel initializes once after login succeeds |
 | `VITE_ENABLE_MANUAL_ADD` | `"true"` | planned | add in `src/config/features.ts` before wiring gated UI |
 | `VITE_ENABLE_TIME_RANGE` | `"true"` | planned | keep off in real mode until backend params exist |
 | `VITE_ENABLE_FACET` | `"true"` | planned | controls facet label visibility |
