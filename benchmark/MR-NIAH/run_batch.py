@@ -48,8 +48,6 @@ HERE = Path(__file__).resolve().parent
 OUTPUT = HERE / "output"
 INDEX = OUTPUT / "index.jsonl"
 SESS_OUT = OUTPUT / "sessions"
-RESULTS = HERE / "results"
-RAW = RESULTS / "raw"
 META_SUFFIX = ".meta.json"
 PROFILE_MEMORY_DIR = "memory"
 
@@ -143,6 +141,11 @@ def read_json(path: Path) -> Dict[str, Any]:
 
 def write_json(path: Path, obj: Any) -> None:
     path.write_text(json.dumps(obj, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+def append_jsonl(path: Path, obj: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
 
 def safe_extract_text(payload_obj: Any) -> str:
@@ -795,7 +798,11 @@ def _coerce_int(value: Any) -> Optional[int]:
 
 
 def load_processed_sample_ids(pred_path: Path) -> set[int]:
-    """Load completed sample IDs from an existing predictions.jsonl (best-effort)."""
+    """Load completed sample IDs from an existing predictions.jsonl (best-effort).
+
+    Records written by this script include `ok` / `error`. When resuming, we
+    treat failed records as *not processed* so they can be retried automatically.
+    """
     if not pred_path.exists():
         return set()
     ids: set[int] = set()
@@ -811,6 +818,16 @@ def load_processed_sample_ids(pred_path: Path) -> set[int]:
             if not isinstance(obj, dict):
                 continue
             sid = _coerce_int(obj.get("id"))
+            if sid is None:
+                continue
+
+            ok = obj.get("ok")
+            if ok is False:
+                continue
+            err = obj.get("error")
+            if isinstance(err, str) and err.strip():
+                continue
+
             if sid is not None:
                 ids.add(sid)
     except Exception:
@@ -967,6 +984,30 @@ def main() -> int:
         help="Pass --timeout to `openclaw agent` (0 = let OpenClaw decide).",
     )
     ap.add_argument(
+        "--results-dir",
+        default="",
+        help="Write outputs into this directory (default: benchmark/MR-NIAH/results).",
+    )
+    ap.add_argument(
+        "--case-id",
+        type=int,
+        default=-1,
+        help="Run a single sample id (useful for re-running failures).",
+    )
+    ap.set_defaults(continue_on_error=True)
+    ap.add_argument(
+        "--continue-on-error",
+        dest="continue_on_error",
+        action="store_true",
+        help="Continue running when a case fails (default).",
+    )
+    ap.add_argument(
+        "--fail-fast",
+        dest="continue_on_error",
+        action="store_false",
+        help="Abort the batch on the first failed case.",
+    )
+    ap.add_argument(
         "--wipe-local-memory",
         action="store_true",
         help="Wipe the OpenClaw profile's local persistent memory before each case (~/.openclaw-<profile>/memory/*).",
@@ -1024,8 +1065,14 @@ def main() -> int:
     if not INDEX.exists():
         raise SystemExit(f"Missing {INDEX}. Run mr-niah-transcript.py first.")
 
-    RESULTS.mkdir(parents=True, exist_ok=True)
-    RAW.mkdir(parents=True, exist_ok=True)
+    results_dir = (
+        Path(args.results_dir).expanduser()
+        if (args.results_dir or "").strip()
+        else (HERE / "results")
+    )
+    raw_dir = results_dir / "raw"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir.mkdir(parents=True, exist_ok=True)
 
     paths = resolve_store_paths(args.profile, args.agent)
     ensure_store_initialized(paths)
@@ -1070,357 +1117,427 @@ def main() -> int:
         if args.mem9_clear_memories:
             raise SystemExit("ERROR: --mem9-provision-per-case and --mem9-clear-memories are mutually exclusive")
 
-    index_entries = load_index(INDEX)[: args.limit]
+    if args.case_id is not None and int(args.case_id) >= 0:
+        # Single-case runs should ignore --limit so any id can be rerun.
+        index_entries = load_index(INDEX)
+        wanted = int(args.case_id)
+        index_entries = [e for e in index_entries if _coerce_int(e.get("id")) == wanted]
+        if not index_entries:
+            raise SystemExit(f"ERROR: --case-id={wanted} not found in {INDEX}.")
+    else:
+        index_entries = load_index(INDEX)[: args.limit]
 
-    pred_path = RESULTS / "predictions.jsonl"
+    pred_path = results_dir / "predictions.jsonl"
     resume_from = int(args.resume) if args.resume is not None else -1
     processed_ids: set[int] = set()
-    if resume_from >= 0:
+    if resume_from >= 0 and args.case_id < 0:
         processed_ids = load_processed_sample_ids(pred_path)
         print(
             f"[resume] from={resume_from} already_done={len(processed_ids)} pred_path={pred_path}",
             flush=True,
         )
-    else:
+    elif args.case_id < 0:
         pred_path.write_text("", encoding="utf-8")
 
     gateway_proc: Optional[subprocess.Popen[str]] = None
     gateway_log_path = Path(args.gateway_log).expanduser() if (args.gateway_log or "").strip() else None
     if args.mem9_provision_per_case:
         atexit.register(lambda: _stop_process(gateway_proc))
+    failures: List[Dict[str, Any]] = []
     for entry in index_entries:
-        sample_id = entry["id"]
-        sample_id_int = _coerce_int(sample_id)
-        if sample_id_int is None:
-            raise RuntimeError(f"index entry missing int-like id: {entry!r}")
-        if resume_from >= 0 and sample_id_int < resume_from:
-            continue
-        if resume_from >= 0 and sample_id_int in processed_ids:
-            print(f"[{sample_id_int}] skipping=already_done", flush=True)
-            continue
-        session_id = entry["session"]
-        question = entry["question"]
-        answer = entry.get("answer", "")
+        stage = "init"
+        sample_id_int: Optional[int] = None
+        session_id: Optional[str] = None
+        question: Optional[str] = None
+        answer: str = ""
+        raw_meta: Optional[Path] = None
+        try:
+            sample_id = entry["id"]
+            sample_id_int = _coerce_int(sample_id)
+            if sample_id_int is None:
+                raise RuntimeError(f"index entry missing int-like id: {entry!r}")
 
-        print(f"[{sample_id_int}] session={session_id} running=prepare", flush=True)
+            if args.case_id < 0:
+                if resume_from >= 0 and sample_id_int < resume_from:
+                    continue
+                if resume_from >= 0 and sample_id_int in processed_ids:
+                    print(f"[{sample_id_int}] skipping=already_done", flush=True)
+                    continue
 
-        local_memory_wipe: Optional[Dict[str, Any]] = None
-        if args.wipe_local_memory:
-            # If a gateway is running from a previous case (mem9 per-case mode),
-            # stop it before deleting the profile's SQLite files.
-            _stop_process(gateway_proc)
-            gateway_proc = None
-            print(
-                f"[{sample_id_int}] session={session_id} running=wipe_local_memory",
-                flush=True,
-            )
-            local_memory_wipe = wipe_profile_local_memory(paths)
-            if local_memory_wipe.get("ok") is not True:
-                raise RuntimeError(f"wipe local memory failed: {local_memory_wipe!r}")
+            session_id = entry["session"]
+            question = entry["question"]
+            answer = entry.get("answer", "")
+            if not isinstance(session_id, str) or not session_id:
+                raise RuntimeError(f"index entry missing session: {entry!r}")
+            if not isinstance(question, str) or not question:
+                raise RuntimeError(f"index entry missing question: {entry!r}")
 
-        src = SESS_OUT / f"{session_id}.jsonl"
-        if not src.exists():
-            raise FileNotFoundError(f"Missing generated session: {src}")
+            raw_meta = raw_dir / f"{sample_id_int}-{session_id}{META_SUFFIX}"
+            print(f"[{sample_id_int}] session={session_id} running=prepare", flush=True)
 
-        dst = paths.sessions_dir / src.name
-        shutil.copy2(src, dst)
-
-        # Register into sessions.json under a unique bench key
-        bench_key = f"bench:mrniah:{sample_id_int:04d}"
-        store_before = load_store(paths)
-        template = pick_template_entry(store_before)
-        bench_entry = build_session_entry(
-            session_id=session_id,
-            session_file=dst,
-            template=template,
-        )
-        upsert_store_entry(paths=paths, key=bench_key, entry=bench_entry)
-
-        mem9_import: Optional[Dict[str, Any]] = None
-        mem9_clear_pre: Optional[Dict[str, Any]] = None
-        mem9_clear_post: Optional[Dict[str, Any]] = None
-        mem9_tenant_id: Optional[str] = None
-        if mem9_cfg is not None:
-            api_url, tenant_id = mem9_cfg
-            if args.mem9_provision_per_case:
-                print(f"[{sample_id_int}] session={session_id} running=mem9_provision", flush=True)
-                mem9_tenant_id = mem9_provision_tenant(api_url=api_url)
-                print(
-                    f"[mem9] provisioned tenant={mem9_tenant_id} session={session_id}",
-                    flush=True,
-                )
-                # Update OpenClaw profile config so the gateway uses this tenant for this case.
-                try:
-                    subprocess.run(
-                        [
-                            "openclaw",
-                            "--profile",
-                            args.profile,
-                            "config",
-                            "set",
-                            "plugins.entries.mem9.config.tenantID",
-                            mem9_tenant_id,
-                        ],
-                        check=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                    )
-                except subprocess.CalledProcessError as e:
-                    msg = (e.stderr or e.stdout or "").strip()
-                    raise RuntimeError(f"openclaw config set tenantID failed: {msg}") from e
-                # Restart gateway per case to ensure it picks up the new tenant config.
+            stage = "wipe_local_memory"
+            local_memory_wipe: Optional[Dict[str, Any]] = None
+            if args.wipe_local_memory:
+                # If a gateway is running from a previous case (mem9 per-case mode),
+                # stop it before deleting the profile's SQLite files.
                 _stop_process(gateway_proc)
                 gateway_proc = None
-                assert gateway_log_path is not None
-                gateway_proc = _start_gateway(profile=args.profile, log_path=gateway_log_path)
-                _wait_gateway_healthy(port=int(args.gateway_port), timeout_s=60)
-                tenant_id = mem9_tenant_id
+                print(
+                    f"[{sample_id_int}] session={session_id} running=wipe_local_memory",
+                    flush=True,
+                )
+                local_memory_wipe = wipe_profile_local_memory(paths)
+                if local_memory_wipe.get("ok") is not True:
+                    raise RuntimeError(f"wipe local memory failed: {local_memory_wipe!r}")
 
-            if args.mem9_clear_memories:
-                print(f"[{sample_id_int}] session={session_id} running=mem9_clear_pre", flush=True)
-                mem9_clear_pre = mem9_clear_memories(
+            stage = "prepare_session"
+            src = SESS_OUT / f"{session_id}.jsonl"
+            if not src.exists():
+                raise FileNotFoundError(f"Missing generated session: {src}")
+
+            dst = paths.sessions_dir / src.name
+            shutil.copy2(src, dst)
+
+            # Register into sessions.json under a unique bench key
+            bench_key = f"bench:mrniah:{sample_id_int:04d}"
+            store_before = load_store(paths)
+            template = pick_template_entry(store_before)
+            bench_entry = build_session_entry(
+                session_id=session_id,
+                session_file=dst,
+                template=template,
+            )
+            upsert_store_entry(paths=paths, key=bench_key, entry=bench_entry)
+
+            stage = "mem9"
+            mem9_import: Optional[Dict[str, Any]] = None
+            mem9_clear_pre: Optional[Dict[str, Any]] = None
+            mem9_clear_post: Optional[Dict[str, Any]] = None
+            mem9_tenant_id: Optional[str] = None
+            if mem9_cfg is not None:
+                api_url, tenant_id = mem9_cfg
+                if args.mem9_provision_per_case:
+                    stage = "mem9_provision"
+                    print(f"[{sample_id_int}] session={session_id} running=mem9_provision", flush=True)
+                    mem9_tenant_id = mem9_provision_tenant(api_url=api_url)
+                    print(
+                        f"[mem9] provisioned tenant={mem9_tenant_id} session={session_id}",
+                        flush=True,
+                    )
+                    # Update OpenClaw profile config so the gateway uses this tenant for this case.
+                    try:
+                        subprocess.run(
+                            [
+                                "openclaw",
+                                "--profile",
+                                args.profile,
+                                "config",
+                                "set",
+                                "plugins.entries.mem9.config.tenantID",
+                                mem9_tenant_id,
+                            ],
+                            check=True,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                        )
+                    except subprocess.CalledProcessError as e:
+                        msg = (e.stderr or e.stdout or "").strip()
+                        raise RuntimeError(f"openclaw config set tenantID failed: {msg}") from e
+                    # Restart gateway per case to ensure it picks up the new tenant config.
+                    _stop_process(gateway_proc)
+                    gateway_proc = None
+                    assert gateway_log_path is not None
+                    gateway_proc = _start_gateway(profile=args.profile, log_path=gateway_log_path)
+                    _wait_gateway_healthy(port=int(args.gateway_port), timeout_s=60)
+                    tenant_id = mem9_tenant_id
+
+                if args.mem9_clear_memories:
+                    stage = "mem9_clear_pre"
+                    print(f"[{sample_id_int}] session={session_id} running=mem9_clear_pre", flush=True)
+                    mem9_clear_pre = mem9_clear_memories(
+                        api_url=api_url,
+                        tenant_id=tenant_id,
+                        agent_id=args.agent,
+                    )
+                    print(
+                        f"[mem9] clear(pre) deleted={mem9_clear_pre.get('deleted')} remaining={mem9_clear_pre.get('remaining')} verified={mem9_clear_pre.get('verified')}",
+                        flush=True,
+                    )
+                    if mem9_clear_pre.get("verified") is not True:
+                        raise RuntimeError(f"mem9 clear(pre) did not verify empty: {mem9_clear_pre!r}")
+
+                stage = "mem9_import"
+                import_path = raw_dir / f"{sample_id_int}-{session_id}.import.session.jsonl"
+                shutil.copy2(dst, import_path)
+                print(f"[{sample_id_int}] session={session_id} running=mem9_import", flush=True)
+                mem9_import = mem9_import_session(
                     api_url=api_url,
                     tenant_id=tenant_id,
                     agent_id=args.agent,
+                    session_id=session_id,
+                    import_file=import_path,
+                    timeout_s=int(args.mem9_import_timeout),
+                    poll_interval_s=float(args.mem9_import_poll_interval),
                 )
-                print(
-                    f"[mem9] clear(pre) deleted={mem9_clear_pre.get('deleted')} remaining={mem9_clear_pre.get('remaining')} verified={mem9_clear_pre.get('verified')}",
-                    flush=True,
-                )
-                if mem9_clear_pre.get("verified") is not True:
-                    raise RuntimeError(f"mem9 clear(pre) did not verify empty: {mem9_clear_pre!r}")
-            import_path = RAW / f"{sample_id_int}-{session_id}.import.session.jsonl"
-            shutil.copy2(dst, import_path)
-            print(f"[{sample_id_int}] session={session_id} running=mem9_import", flush=True)
-            mem9_import = mem9_import_session(
-                api_url=api_url,
-                tenant_id=tenant_id,
-                agent_id=args.agent,
-                session_id=session_id,
-                import_file=import_path,
-                timeout_s=int(args.mem9_import_timeout),
-                poll_interval_s=float(args.mem9_import_poll_interval),
-            )
-            if mem9_import.get("status") != "done" or mem9_import.get("verified") is not True:
-                raise RuntimeError(f"mem9 import did not complete successfully: {mem9_import!r}")
-            try:
-                memories_page = mem9_list_memories(api_url=api_url, tenant_id=tenant_id, agent_id=args.agent)
-                summary = _summarize_memories_page(memories_page)
-                mem9_import["memoriesAfterImport"] = summary
-                print(
-                    f"[mem9] memories after import count={summary.get('count')} total={summary.get('total')}",
-                    flush=True,
-                )
-            except Exception as e:
-                print(f"[mem9] WARNING: list memories after import failed: {e}", flush=True)
+                if mem9_import.get("status") != "done" or mem9_import.get("verified") is not True:
+                    raise RuntimeError(f"mem9 import did not complete successfully: {mem9_import!r}")
 
-        cmd = [
-            "openclaw",
-            "--profile",
-            args.profile,
-            "agent",
-        ]
-        maybe_add_agent_arg(cmd, args.agent)
-        cmd.extend(
-            [
-                "--session-id",
-                session_id,
-                "--message",
-                (f"/reset {question}" if args.reset else f"/new {question}" if args.new else question),
-                "--json",
+                try:
+                    memories_page = mem9_list_memories(api_url=api_url, tenant_id=tenant_id, agent_id=args.agent)
+                    summary = _summarize_memories_page(memories_page)
+                    mem9_import["memoriesAfterImport"] = summary
+                    print(
+                        f"[mem9] memories after import count={summary.get('count')} total={summary.get('total')}",
+                        flush=True,
+                    )
+                except Exception as e:
+                    print(f"[mem9] WARNING: list memories after import failed: {e}", flush=True)
+
+            stage = "openclaw"
+            sent_message = f"/reset {question}" if args.reset else f"/new {question}" if args.new else question
+            cmd = [
+                "openclaw",
+                "--profile",
+                args.profile,
+                "agent",
             ]
-        )
-        if args.openclaw_timeout and args.openclaw_timeout > 0:
-            cmd.extend(["--timeout", str(int(args.openclaw_timeout))])
+            maybe_add_agent_arg(cmd, args.agent)
+            cmd.extend(["--session-id", session_id, "--message", sent_message, "--json"])
+            if args.openclaw_timeout and args.openclaw_timeout > 0:
+                cmd.extend(["--timeout", str(int(args.openclaw_timeout))])
 
-        print(f"[{sample_id_int}] session={session_id} running=openclaw", flush=True)
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            print(f"[{sample_id_int}] session={session_id} running=openclaw", flush=True)
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-        # Save raw for debugging as early as possible (even if mem9 cleanup flakes).
-        raw_out = RAW / f"{sample_id_int}-{session_id}.stdout.json"
-        raw_err = RAW / f"{sample_id_int}-{session_id}.stderr.txt"
-        raw_out.write_text(proc.stdout, encoding="utf-8")
-        raw_err.write_text(proc.stderr, encoding="utf-8")
+            raw_out = raw_dir / f"{sample_id_int}-{session_id}.stdout.json"
+            raw_err = raw_dir / f"{sample_id_int}-{session_id}.stderr.txt"
+            raw_out.write_text(proc.stdout, encoding="utf-8")
+            raw_err.write_text(proc.stderr, encoding="utf-8")
 
-        parsed_obj: Optional[Any] = None
-        if proc.returncode == 0:
-            parsed_obj = parse_json_stdout(proc.stdout)
-            if parsed_obj is None:
-                parsed_obj = parse_json_stdout(proc.stderr)
+            parsed_obj: Optional[Any] = None
+            if proc.returncode == 0:
+                parsed_obj = parse_json_stdout(proc.stdout)
+                if parsed_obj is None:
+                    parsed_obj = parse_json_stdout(proc.stderr)
 
-        store_after = load_store(paths)
-        effective_session_id = (
-            extract_effective_session_id(parsed_obj) if parsed_obj is not None else None
-        )
-        if not effective_session_id:
-            effective_session_id = session_id
+            store_after = load_store(paths)
+            effective_session_id = extract_effective_session_id(parsed_obj) if parsed_obj is not None else None
+            if not effective_session_id:
+                effective_session_id = session_id
 
-        resolved_key, entry_after = find_store_entry(
-            store=store_after, session_id=effective_session_id, preferred_key=bench_key
-        )
-        compaction = extract_compaction_metrics(entry_before=bench_entry, entry_after=entry_after)
-
-        effective_session_file = dst
-        session_file_raw = entry_after.get("sessionFile") if isinstance(entry_after, dict) else None
-        if isinstance(session_file_raw, str) and session_file_raw.strip():
-            effective_session_file = Path(session_file_raw).expanduser()
-
-        compaction_event: Optional[Dict[str, Any]] = None
-        # MR-NIAH dataset transcripts contain no compaction events by construction.
-        # Only scan the transcript if OpenClaw reports that compaction happened in this run.
-        if compaction["compactionCountDelta"] > 0:
-            compaction_event = extract_last_compaction_event(effective_session_file)
-        compaction_occurred = isinstance(compaction_event, dict)
-
-        # Prefer detecting compaction from transcript event deltas; fall back to session-store delta.
-        compaction["compactionTriggered"] = bool(compaction_occurred) or bool(
-            compaction["compactionCountDelta"]
-        )
-        event_first_kept = (
-            coerce_str(compaction_event.get("firstKeptEntryId"))
-            if isinstance(compaction_event, dict)
-            else None
-        )
-        event_summary = (
-            compaction_event.get("summary") if isinstance(compaction_event, dict) else None
-        )
-        if not isinstance(event_summary, str):
-            event_summary = None
-        summary_truncated = False
-        if event_summary is not None:
-            event_summary, summary_truncated = maybe_truncate(
-                event_summary, int(args.compaction_summary_max_chars)
+            resolved_key, entry_after = find_store_entry(
+                store=store_after, session_id=effective_session_id, preferred_key=bench_key
             )
+            compaction = extract_compaction_metrics(entry_before=bench_entry, entry_after=entry_after)
 
-        raw_meta = RAW / f"{sample_id_int}-{session_id}{META_SUFFIX}"
-        write_json(
-            raw_meta,
-            {
-                "id": sample_id_int,
-                "session": session_id,
-                "sessionEffective": effective_session_id,
-                "sessionEffectiveChanged": bool(effective_session_id and effective_session_id != session_id),
-                "sessionFileEffective": str(effective_session_file),
-                "profile": args.profile,
-                "agent": args.agent,
-                "returncode": proc.returncode,
-                "runId": extract_run_id(parsed_obj) if parsed_obj is not None else None,
-                "storeKey": resolved_key,
-                "storePath": str(paths.store_path),
-                "mem9TenantId": mem9_tenant_id,
-                "mem9Import": mem9_import,
-                "mem9Clear": {
-                    "pre": mem9_clear_pre,
-                    "post": mem9_clear_post,
-                }
-                if mem9_cfg is not None and args.mem9_clear_memories
-                else None,
-                "localMemoryWipe": local_memory_wipe,
-                "compaction": compaction,
-                "compactionEvent": {
-                    "occurred": compaction_occurred,
-                    "firstKeptEntryId": event_first_kept,
-                    "summaryChars": len(event_summary) if event_summary is not None else None,
-                    "summaryTruncated": summary_truncated if event_summary is not None else None,
-                    "tokensBefore": compaction_event.get("tokensBefore")
-                    if isinstance(compaction_event, dict)
-                    else None,
-                },
-            },
-        )
+            effective_session_file = dst
+            session_file_raw = entry_after.get("sessionFile") if isinstance(entry_after, dict) else None
+            if isinstance(session_file_raw, str) and session_file_raw.strip():
+                effective_session_file = Path(session_file_raw).expanduser()
 
-        prediction = ""
-        if proc.returncode == 0:
-            if parsed_obj is not None:
-                prediction = safe_extract_text(parsed_obj)
+            compaction_event: Optional[Dict[str, Any]] = None
+            if compaction["compactionCountDelta"] > 0:
+                compaction_event = extract_last_compaction_event(effective_session_file)
+            compaction_occurred = isinstance(compaction_event, dict)
+            compaction["compactionTriggered"] = bool(compaction_occurred) or bool(compaction["compactionCountDelta"])
 
-        sent_message = f"/reset {question}" if args.reset else f"/new {question}" if args.new else question
-        with pred_path.open("a", encoding="utf-8") as f:
-            f.write(
-                json.dumps(
-                    {
-                        "id": sample_id_int,
-                        "session": session_id,
-                        "sessionEffective": effective_session_id,
-                        "sessionEffectiveChanged": bool(effective_session_id and effective_session_id != session_id),
-                        "question": question,
-                        "message": sent_message,
-                        "reset": bool(args.reset),
-                        "new": bool(args.new),
-                        "prediction": prediction,
-                        "answer": answer,
-                        "profile": args.profile,
-                        "agent": args.agent,
-                        "mem9TenantId": mem9_tenant_id,
-                        "mem9ImportTaskId": mem9_import.get("taskId")
-                        if isinstance(mem9_import, dict)
-                        else None,
-                        "mem9ImportStatus": mem9_import.get("status")
-                        if isinstance(mem9_import, dict)
-                        else None,
-                        "mem9ImportVerified": mem9_import.get("verified")
-                        if isinstance(mem9_import, dict)
-                        else None,
-                        "mem9ImportTotalChunks": mem9_import.get("totalChunks")
-                        if isinstance(mem9_import, dict)
-                        else None,
-                        "mem9ImportDoneChunks": mem9_import.get("doneChunks")
-                        if isinstance(mem9_import, dict)
-                        else None,
-                        "compactionTriggered": compaction["compactionTriggered"],
-                        "compactionCountDelta": compaction["compactionCountDelta"],
-                        "compactionCountAfter": compaction["compactionCountAfter"],
-                        "totalTokens": compaction["totalTokens"],
-                        "totalTokensFresh": compaction["totalTokensFresh"],
-                        "firstKeptEntryId": event_first_kept,
-                        "compactionSummary": event_summary,
-                        "compactionSummaryTruncated": summary_truncated if event_summary is not None else None,
-                    },
-                    ensure_ascii=False,
+            event_first_kept = (
+                coerce_str(compaction_event.get("firstKeptEntryId"))
+                if isinstance(compaction_event, dict)
+                else None
+            )
+            event_summary = compaction_event.get("summary") if isinstance(compaction_event, dict) else None
+            if not isinstance(event_summary, str):
+                event_summary = None
+            summary_truncated = False
+            if event_summary is not None:
+                event_summary, summary_truncated = maybe_truncate(
+                    event_summary, int(args.compaction_summary_max_chars)
                 )
-                + "\n"
+
+            write_json(
+                raw_meta,
+                {
+                    "id": sample_id_int,
+                    "session": session_id,
+                    "sessionEffective": effective_session_id,
+                    "sessionEffectiveChanged": bool(effective_session_id and effective_session_id != session_id),
+                    "sessionFileEffective": str(effective_session_file),
+                    "profile": args.profile,
+                    "agent": args.agent,
+                    "returncode": proc.returncode,
+                    "runId": extract_run_id(parsed_obj) if parsed_obj is not None else None,
+                    "storeKey": resolved_key,
+                    "storePath": str(paths.store_path),
+                    "mem9TenantId": mem9_tenant_id,
+                    "mem9Import": mem9_import,
+                    "mem9Clear": {
+                        "pre": mem9_clear_pre,
+                        "post": mem9_clear_post,
+                    }
+                    if mem9_cfg is not None and args.mem9_clear_memories
+                    else None,
+                    "localMemoryWipe": local_memory_wipe,
+                    "compaction": compaction,
+                    "compactionEvent": {
+                        "occurred": compaction_occurred,
+                        "firstKeptEntryId": event_first_kept,
+                        "summaryChars": len(event_summary) if event_summary is not None else None,
+                        "summaryTruncated": summary_truncated if event_summary is not None else None,
+                        "tokensBefore": compaction_event.get("tokensBefore")
+                        if isinstance(compaction_event, dict)
+                        else None,
+                    },
+                },
             )
 
-        comp = "yes" if compaction["compactionTriggered"] else "no"
-        print(
-            f"[{sample_id_int}] session={session_id} pred_len={len(prediction)} compaction={comp}",
-            flush=True,
-        )
+            prediction = ""
+            ok = proc.returncode == 0
+            error: Optional[str] = None
+            error_stage: Optional[str] = None
+            if proc.returncode == 0:
+                if parsed_obj is not None:
+                    prediction = safe_extract_text(parsed_obj)
+            else:
+                error_stage = "openclaw"
+                error = f"openclaw agent exited with code {proc.returncode}"
 
-        if mem9_cfg is not None and args.mem9_clear_memories:
-            api_url, tenant_id = mem9_cfg
-            print(f"[{sample_id_int}] session={session_id} running=mem9_clear_post", flush=True)
-            mem9_clear_post = mem9_clear_memories(
-                api_url=api_url,
-                tenant_id=tenant_id,
-                agent_id=args.agent,
+            append_jsonl(
+                pred_path,
+                {
+                    "id": sample_id_int,
+                    "session": session_id,
+                    "sessionEffective": effective_session_id,
+                    "sessionEffectiveChanged": bool(effective_session_id and effective_session_id != session_id),
+                    "question": question,
+                    "message": sent_message,
+                    "reset": bool(args.reset),
+                    "new": bool(args.new),
+                    "prediction": prediction,
+                    "answer": answer,
+                    "profile": args.profile,
+                    "agent": args.agent,
+                    "ok": ok,
+                    "error": error,
+                    "errorStage": error_stage,
+                    "stdoutPath": str(raw_out),
+                    "stderrPath": str(raw_err),
+                    "metaPath": str(raw_meta),
+                    "mem9TenantId": mem9_tenant_id,
+                    "mem9ImportTaskId": mem9_import.get("taskId") if isinstance(mem9_import, dict) else None,
+                    "mem9ImportStatus": mem9_import.get("status") if isinstance(mem9_import, dict) else None,
+                    "mem9ImportVerified": mem9_import.get("verified") if isinstance(mem9_import, dict) else None,
+                    "mem9ImportTotalChunks": mem9_import.get("totalChunks") if isinstance(mem9_import, dict) else None,
+                    "mem9ImportDoneChunks": mem9_import.get("doneChunks") if isinstance(mem9_import, dict) else None,
+                    "compactionTriggered": compaction["compactionTriggered"],
+                    "compactionCountDelta": compaction["compactionCountDelta"],
+                    "compactionCountAfter": compaction["compactionCountAfter"],
+                    "totalTokens": compaction["totalTokens"],
+                    "totalTokensFresh": compaction["totalTokensFresh"],
+                    "firstKeptEntryId": event_first_kept,
+                    "compactionSummary": event_summary,
+                    "compactionSummaryTruncated": summary_truncated if event_summary is not None else None,
+                },
             )
+
+            comp = "yes" if compaction["compactionTriggered"] else "no"
+            status = "ok" if ok else "failed"
             print(
-                f"[mem9] clear(post) deleted={mem9_clear_post.get('deleted')} remaining={mem9_clear_post.get('remaining')} verified={mem9_clear_post.get('verified')}",
+                f"[{sample_id_int}] session={session_id} status={status} pred_len={len(prediction)} compaction={comp}",
                 flush=True,
             )
-            # Post-clear is best-effort: async ingest may still be finishing. Pre-clear enforces
-            # isolation before the next case.
-            if mem9_clear_post.get("verified") is not True:
-                print(
-                    f"[mem9] WARNING: clear(post) did not verify empty (will rely on next pre-clear): {mem9_clear_post!r}",
-                    flush=True,
-                )
-            # Backfill into the per-case meta JSON for debugging/reproducibility.
-            try:
-                meta_obj = json.loads(raw_meta.read_text(encoding="utf-8"))
-                if isinstance(meta_obj, dict) and isinstance(meta_obj.get("mem9Clear"), dict):
-                    meta_obj["mem9Clear"]["post"] = mem9_clear_post
-                    raw_meta.write_text(
-                        json.dumps(meta_obj, ensure_ascii=False, indent=2) + "\n",
-                        encoding="utf-8",
-                    )
-            except Exception:
-                pass
 
+            # Post-clear is best-effort: do not let it abort the batch.
+            if mem9_cfg is not None and args.mem9_clear_memories:
+                try:
+                    api_url, tenant_id = mem9_cfg
+                    stage = "mem9_clear_post"
+                    print(f"[{sample_id_int}] session={session_id} running=mem9_clear_post", flush=True)
+                    mem9_clear_post = mem9_clear_memories(
+                        api_url=api_url,
+                        tenant_id=tenant_id,
+                        agent_id=args.agent,
+                    )
+                    print(
+                        f"[mem9] clear(post) deleted={mem9_clear_post.get('deleted')} remaining={mem9_clear_post.get('remaining')} verified={mem9_clear_post.get('verified')}",
+                        flush=True,
+                    )
+                    if mem9_clear_post.get("verified") is not True:
+                        print(
+                            f"[mem9] WARNING: clear(post) did not verify empty (will rely on next pre-clear): {mem9_clear_post!r}",
+                            flush=True,
+                        )
+                    try:
+                        meta_obj = json.loads(raw_meta.read_text(encoding="utf-8"))
+                        if isinstance(meta_obj, dict) and isinstance(meta_obj.get("mem9Clear"), dict):
+                            meta_obj["mem9Clear"]["post"] = mem9_clear_post
+                            raw_meta.write_text(
+                                json.dumps(meta_obj, ensure_ascii=False, indent=2) + "\n",
+                                encoding="utf-8",
+                            )
+                    except Exception:
+                        pass
+                except Exception as e:
+                    print(f"[mem9] WARNING: clear(post) failed: {e}", flush=True)
+
+            if not ok:
+                failures.append({"id": sample_id_int, "session": session_id, "stage": error_stage, "error": error})
+
+        except Exception as e:
+            if sample_id_int is not None and session_id:
+                if raw_meta is None:
+                    raw_meta = raw_dir / f"{sample_id_int}-{session_id}{META_SUFFIX}"
+                try:
+                    write_json(
+                        raw_meta,
+                        {
+                            "id": sample_id_int,
+                            "session": session_id,
+                            "profile": args.profile,
+                            "agent": args.agent,
+                            "errorStage": stage,
+                            "error": str(e),
+                        },
+                    )
+                except Exception:
+                    pass
+                try:
+                    append_jsonl(
+                        pred_path,
+                        {
+                            "id": sample_id_int,
+                            "session": session_id,
+                            "question": question,
+                            "message": None,
+                            "reset": bool(args.reset),
+                            "new": bool(args.new),
+                            "prediction": "",
+                            "answer": answer,
+                            "profile": args.profile,
+                            "agent": args.agent,
+                            "ok": False,
+                            "error": str(e),
+                            "errorStage": stage,
+                            "metaPath": str(raw_meta),
+                        },
+                    )
+                except Exception:
+                    pass
+            failures.append({"id": sample_id_int, "session": session_id, "stage": stage, "error": str(e)})
+            print(f"[{sample_id_int}] session={session_id} status=failed stage={stage} err={e}", flush=True)
+            if not args.continue_on_error:
+                raise
+
+    if failures:
+        ids = sorted({f["id"] for f in failures if isinstance(f.get("id"), int)})
+        preview = ids[:30]
+        print(
+            f"[summary] failed_cases={len(ids)} ids={preview}{'...' if len(ids) > len(preview) else ''}",
+            flush=True,
+        )
     print(f"Wrote predictions -> {pred_path}", flush=True)
-    print(f"Raw outputs -> {RAW}", flush=True)
+    print(f"Raw outputs -> {raw_dir}", flush=True)
     print(f"Store -> {paths.store_path}", flush=True)
     return 0
 

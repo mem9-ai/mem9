@@ -70,11 +70,20 @@ To rerun only one side (useful when baseline already exists and you just want to
 SAMPLE_LIMIT=30 ./run_mem_compare.sh --profile mrniah_mem
 ```
 
-To resume a failed single-profile run from a specific sample id (keeps `benchmark/MR-NIAH/results/` and appends to `predictions.jsonl`):
+To resume a failed single-profile run from a specific sample id (keeps `benchmark/MR-NIAH/results-<profile>/` and appends to `predictions.jsonl`):
 
 ```
 MRNIAH_MEM9_ISOLATION=tenant ./run_mem_compare.sh --profile mrniah_mem --resume 91
 ```
+
+To re-run a single case (useful for patching up failures after the batch finishes):
+
+```
+MRNIAH_MEM9_ISOLATION=tenant ./run_mem_compare.sh --profile mrniah_mem --case 91
+```
+
+By default, the runner continues on per-case failures and records them into `predictions.jsonl`.
+To stop immediately on the first failure, add `--fail-fast`.
 
 To compare existing runs without re-running (e.g. baseline succeeded earlier, mem was re-run later):
 
@@ -89,7 +98,7 @@ To compare existing runs without re-running (e.g. baseline succeeded earlier, me
    - `tenant` (default): provisions a fresh mem9 space per case (strong isolation; recommended).
    - `clear`: provisions one mem9 space for the run and clears memories before/after each case.
 5. Installs the `openclaw-plugin` into the memory profile, adds `plugins.allow=["mem9"]`, and writes the tenant credentials into `plugins.entries.mem9.config`.
-6. Calls `run_batch.py` twice (baseline vs mem), renaming each `results/` directory to `results-${profile}`.
+6. Calls `run_batch.py` twice (baseline vs mem), writing into `results-${profile}` for each profile.
 7. Prints accuracy for both runs and the delta.
 
 Common environment variables:

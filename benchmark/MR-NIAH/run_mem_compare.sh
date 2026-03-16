@@ -27,6 +27,8 @@ COMPARE_ONLY=0
 
 # Resume mode (single profile only): resume from a sample id without deleting partial results.
 RESUME_FROM=""
+RUN_ONLY_CASE=""
+CONTINUE_ON_ERROR=1
 
 # Pass-through OpenClaw agent timeout (seconds) to avoid runaway runs.
 # 0 = let OpenClaw decide (may be profile-config dependent).
@@ -72,8 +74,10 @@ Notes:
 - --reset/--new are mutually exclusive and, when enabled, prefix each question
   with "/reset " or "/new " during run_batch.py.
 - --profile runs only that OpenClaw profile (skips baseline-vs-mem comparison).
+- --case <id> runs a single sample id (single-profile only; appends into results-\$profile).
+- By default, continues on per-case failure and records it. Use --fail-fast to stop immediately.
 - --compare skips runs and compares existing results-* directories for BASE_PROFILE/MEM_PROFILE.
-- --resume <id> resumes a single-profile run from sample id (requires --profile; keeps benchmark/MR-NIAH/results).
+- --resume <id> resumes a single-profile run from sample id (requires --profile; keeps benchmark/MR-NIAH/results-<profile>).
 - Set MRNIAH_OPENCLAW_TIMEOUT=<seconds> to force an explicit openclaw agent timeout.
 - Set MRNIAH_MEM9_ISOLATION=tenant (default) to provision a fresh mem9 tenant per case.
 - Set MRNIAH_MEM9_ISOLATION=clear to reuse one tenant and clear memories per case.
@@ -426,21 +430,30 @@ configure_mem_profile() {
 run_batch_for_profile() {
   local profile="$1"
   local label="$2"
+  local out_dir="$MRNIAH_DIR/results-${label}"
 
   log "Running run_batch.py for profile=$profile (label=$label)"
   if [[ "${MRNIAH_WIPE_AGENT_SESSIONS}" == "0" ]]; then
     clean_bench_sessions "$profile"
   fi
-  if [[ -n "$RESUME_FROM" ]]; then
-    log "Resume enabled: keeping existing results dir at ${MRNIAH_DIR}/results"
+  if [[ -n "$RESUME_FROM" || -n "$RUN_ONLY_CASE" ]]; then
+    log "Keeping results dir: ${out_dir}"
   else
-    rm -rf "$MRNIAH_DIR/results"
+    rm -rf "$out_dir"
   fi
 
   # Use -u to avoid Python stdout buffering when output is piped through tee.
-  local cmd=(python3 -u run_batch.py --profile "$profile" --agent "$AGENT_NAME" --limit "$SAMPLE_LIMIT")
+  local cmd=(python3 -u run_batch.py --profile "$profile" --agent "$AGENT_NAME" --limit "$SAMPLE_LIMIT" --results-dir "$out_dir")
+  if [[ "$CONTINUE_ON_ERROR" == "1" ]]; then
+    cmd+=(--continue-on-error)
+  else
+    cmd+=(--fail-fast)
+  fi
   if [[ -n "$RESUME_FROM" ]]; then
     cmd+=(--resume "$RESUME_FROM")
+  fi
+  if [[ -n "$RUN_ONLY_CASE" ]]; then
+    cmd+=(--case-id "$RUN_ONLY_CASE")
   fi
   if [[ "$profile" == "$MEM_PROFILE" ]]; then
     cmd+=(--import-sessions --mem9-api-url "$MEM9_BASE_URL")
@@ -470,10 +483,7 @@ run_batch_for_profile() {
     exit 2
   fi
 
-  local dest="$MRNIAH_DIR/results-${label}"
-  rm -rf "$dest"
-  mv "$MRNIAH_DIR/results" "$dest"
-  echo "$dest"
+  echo "$out_dir"
 }
 
 summarize_accuracy() {
@@ -487,13 +497,13 @@ summarize_accuracy() {
   echo ""
   echo "======== Accuracy Summary ========"
   echo "--- ${base_label} ---"
-  python "$score_script" "${base_path}/predictions.jsonl"
+  python3 "$score_script" "${base_path}/predictions.jsonl"
   echo ""
   echo "--- ${mem_label} ---"
-  python "$score_script" "${mem_path}/predictions.jsonl"
+  python3 "$score_script" "${mem_path}/predictions.jsonl"
 
   # Print delta using score.py's scoring logic
-  python - <<'PY' "$score_script" "$base_path" "$base_label" "$mem_path" "$mem_label"
+  python3 - <<'PY' "$score_script" "$base_path" "$base_label" "$mem_path" "$mem_label"
 import importlib.util, sys
 from pathlib import Path
 
@@ -504,24 +514,31 @@ spec.loader.exec_module(score_mod)
 def mean_score(pred_path):
     rows = score_mod.load_predictions(Path(pred_path))
     if not rows:
-        return 0.0
+        return 0.0, 0
     total = 0.0
+    failed = 0
     for rec in rows:
         prediction = rec.get("prediction", "") or ""
+        ok = rec.get("ok")
+        err = rec.get("error")
+        if ok is False or (isinstance(err, str) and err.strip()):
+            failed += 1
         answer = rec.get("answer", "") or ""
         language = score_mod.detect_language(answer)
         total += score_mod.score_response(prediction, answer, language)
-    return total / len(rows)
+    return total / len(rows), failed
 
 base_path, base_label, mem_path, mem_label = sys.argv[2:6]
-base_score = mean_score(Path(base_path) / "predictions.jsonl")
-mem_score = mean_score(Path(mem_path) / "predictions.jsonl")
+base_score, base_failed = mean_score(Path(base_path) / "predictions.jsonl")
+mem_score, mem_failed = mean_score(Path(mem_path) / "predictions.jsonl")
 delta = mem_score - base_score
 
 print("")
 print(f"--- Comparison ---")
 print(f"{base_label} mean_score={base_score:.4f}")
 print(f"{mem_label} mean_score={mem_score:.4f}")
+print(f"{base_label} failed={base_failed}")
+print(f"{mem_label} failed={mem_failed}")
 print(f"Δ mean_score (mem - base): {delta:+.4f}")
 PY
 }
@@ -564,12 +581,28 @@ main() {
         COMPARE_ONLY=1
         shift
         ;;
+      --continue-on-error)
+        CONTINUE_ON_ERROR=1
+        shift
+        ;;
+      --fail-fast)
+        CONTINUE_ON_ERROR=0
+        shift
+        ;;
       --resume)
         if [[ $# -lt 2 ]]; then
           echo "ERROR: --resume requires a value" >&2
           exit 2
         fi
         RESUME_FROM="$2"
+        shift 2
+        ;;
+      --case)
+        if [[ $# -lt 2 ]]; then
+          echo "ERROR: --case requires a value" >&2
+          exit 2
+        fi
+        RUN_ONLY_CASE="$2"
         shift 2
         ;;
       --profile)
@@ -625,6 +658,24 @@ main() {
       exit 2
     fi
   fi
+  if [[ -n "$RUN_ONLY_CASE" ]]; then
+    if [[ "$COMPARE_ONLY" == "1" ]]; then
+      echo "ERROR: --case is only supported with single-profile runs (do not use with --compare)." >&2
+      exit 2
+    fi
+    if [[ -z "$RUN_ONLY_PROFILE" ]]; then
+      echo "ERROR: --case requires --profile <name>." >&2
+      exit 2
+    fi
+    if ! [[ "$RUN_ONLY_CASE" =~ ^[0-9]+$ ]]; then
+      echo "ERROR: --case must be an integer sample id; got: $RUN_ONLY_CASE" >&2
+      exit 2
+    fi
+  fi
+  if [[ -n "$RUN_ONLY_CASE" && -n "$RESUME_FROM" ]]; then
+    echo "ERROR: --case and --resume are mutually exclusive." >&2
+    exit 2
+  fi
 
   mkdir -p "$LOG_DIR"
   RUN_ID="$(date -u +%Y%m%d-%H%M%S)"
@@ -634,7 +685,7 @@ main() {
   exec > >(tee -a "$LOG_FILE") 2> >(tee -a "$LOG_FILE" >&2)
   log "Logging to $LOG_FILE"
 
-  # require_python310
+  require_python310
   require_cmds "${BASE_CMDS[@]}"
   if [[ "$COMPARE_ONLY" == "1" ]]; then
     local base_dir="$MRNIAH_DIR/results-${BASE_PROFILE}"

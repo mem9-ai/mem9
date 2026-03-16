@@ -84,16 +84,50 @@ def score_response(response: str, gt_label: str, language: str) -> float:
 
 
 def load_predictions(path: Path) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
+    # Deduplicate by sample id, keeping the last record for each id. This allows
+    # re-running a single case (appending a new JSONL line) without breaking
+    # summaries.
+    by_id: Dict[int, Dict[str, Any]] = {}
+    order: List[int] = []
+    rows_no_id: List[Dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as handle:
         for line_no, line in enumerate(handle, start=1):
             line = line.strip()
             if not line:
                 continue
             try:
-                rows.append(json.loads(line))
+                rec = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise ValueError(f"Invalid JSON on line {line_no}: {exc}") from exc
+            if not isinstance(rec, dict):
+                continue
+
+            raw_id = rec.get("id")
+            sid: Optional[int] = None
+            if isinstance(raw_id, bool):
+                sid = None
+            elif isinstance(raw_id, int):
+                sid = raw_id
+            elif isinstance(raw_id, float) and raw_id.is_integer():
+                sid = int(raw_id)
+            elif isinstance(raw_id, str):
+                v = raw_id.strip()
+                if v:
+                    try:
+                        sid = int(v, 10)
+                    except ValueError:
+                        sid = None
+
+            if sid is None:
+                rows_no_id.append(rec)
+                continue
+
+            if sid not in by_id:
+                order.append(sid)
+            by_id[sid] = rec
+
+    rows: List[Dict[str, Any]] = [by_id[sid] for sid in order]
+    rows.extend(rows_no_id)
     return rows
 
 
@@ -210,6 +244,12 @@ def main() -> int:
             unknown_rows.append(rec)
 
     total = len(rows)
+    failed_rows: List[Dict[str, Any]] = []
+    for rec in rows:
+        ok = _coerce_bool(rec.get("ok"))
+        err = rec.get("error")
+        if ok is False or (isinstance(err, str) and err.strip()):
+            failed_rows.append(rec)
     total_score = 0.0
     perfect = 0
     mismatches: List[Dict[str, object]] = []
@@ -237,6 +277,11 @@ def main() -> int:
     accuracy = perfect / total if total else 0.0
 
     print(f"Total samples : {total}")
+    if failed_rows:
+        failed_ids = [rec.get("id") for rec in failed_rows]
+        preview = failed_ids[:30]
+        print(f"Failed cases  : {len(failed_rows)}")
+        print(f"Failed ids    : {preview}{'...' if len(failed_ids) > len(preview) else ''}")
     print(f"Exact matches : {perfect}")
     print(f"Accuracy      : {accuracy:.4f}")
     print(f"Mean score    : {mean_score:.4f}")
