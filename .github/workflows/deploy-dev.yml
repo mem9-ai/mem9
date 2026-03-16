@@ -1,0 +1,78 @@
+name: Deploy server to dev
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+
+env:
+  AWS_REGION: ap-southeast-1
+  ECR_REGISTRY: 401696231252.dkr.ecr.ap-southeast-1.amazonaws.com
+  ECR_REPOSITORY: mnemo-server
+  EKS_CLUSTER: dev-mem9-eks-ap-southeast-1
+  DEPLOY_NAMESPACE: mnemos
+  K8S_DEPLOYMENT: mnemos-server
+
+jobs:
+  deploy:
+    name: Build and deploy to dev
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Vet
+        run: make vet
+
+      - name: Test
+        run: make test
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::401696231252:role/dev-mem9-eks-ap-southeast-1-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        run: |
+          REF_NAME=${{ github.ref_name }}
+          REF_NAME=${REF_NAME/\//-}
+          TAG="${REF_NAME}-${GITHUB_SHA::7}"
+          REGISTRY=${{ env.ECR_REGISTRY }} COMMIT=$TAG make docker
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$TAG
+          echo "IMAGE_TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Deploy
+        run: |
+          kubectl set image deployment/${{ env.K8S_DEPLOYMENT }} \
+            ${{ env.K8S_DEPLOYMENT }}=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
+            -n ${{ env.DEPLOY_NAMESPACE }}
+          kubectl rollout status deployment/${{ env.K8S_DEPLOYMENT }} \
+            -n ${{ env.DEPLOY_NAMESPACE }} \
+            --timeout=120s
+
+      - name: Rollback on failed deploy
+        if: failure()
+        run: |
+          kubectl rollout undo deployment/${{ env.K8S_DEPLOYMENT }} \
+            -n ${{ env.DEPLOY_NAMESPACE }}
