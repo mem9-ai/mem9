@@ -40,6 +40,7 @@ import { TimeRangeSelector } from "@/components/space/time-range";
 import { TopicStrip } from "@/components/space/topic-strip";
 import { TagStrip, type TagSummary } from "@/components/space/tag-strip";
 import { AnalysisPanel } from "@/components/space/analysis-panel";
+import { MemoryPulseOverview } from "@/components/space/memory-pulse-overview";
 import { MobileAnalysisSheet } from "@/components/space/mobile-analysis-sheet";
 import { MobileDetailSheet } from "@/components/space/mobile-detail-sheet";
 import { ExportDialog } from "@/components/space/export-dialog";
@@ -205,6 +206,13 @@ export function SpacePage() {
         count,
       }));
   }, [analysisFilteredMemories, displayedMemories, usingLocalAnalysisList]);
+  const pulseMemories = useMemo(() => {
+    if (analysis.sourceMemories.length > 0) {
+      return analysis.sourceMemories;
+    }
+
+    return memories;
+  }, [analysis.sourceMemories, memories]);
 
   useEffect(() => {
     if (isMemoryLoading || !selected) return;
@@ -509,6 +517,19 @@ export function SpacePage() {
                 </div>
               </div>
             )}
+
+            <MemoryPulseOverview
+              stats={stats}
+              memories={pulseMemories}
+              cards={analysis.cards}
+              snapshot={analysis.state.snapshot}
+              range={range}
+              loading={analysis.sourceLoading}
+              activeType={search.type}
+              activeTag={tag}
+              onTypeSelect={handleTypeClick}
+              onTagSelect={handleTagChange}
+            />
 
             {/* Search (full-width, prominent) */}
             <div className="relative mt-5">
