@@ -34,7 +34,7 @@ pnpm dev
 VITE_USE_MOCK=false pnpm dev
 
 # Real API via custom backend
-VITE_USE_MOCK=false VITE_API_BASE=http://localhost:8080/v1alpha1/mem9s pnpm dev
+VITE_USE_MOCK=false VITE_API_BASE=http://localhost:8080/v1alpha2/mem9s pnpm dev
 ```
 
 See `../docs/ui-first-mock-plan.md` and `../docs/ui-first-mock-plan.zh-CN.md` for the planned feature-flag matrix and provider split.
@@ -45,9 +45,9 @@ The frontend never makes cross-origin requests. All API calls go through a same-
 
 | Environment | Proxy | Frontend Path | Backend Target |
 |-------------|-------|---------------|----------------|
-| Dev | Vite dev server | `/your-memory/api/...` | `https://api.mem9.ai/v1alpha1/mem9s/...` |
+| Dev | Vite dev server | `/your-memory/api/...` | `https://api.mem9.ai/v1alpha2/mem9s/...` |
 | Dev | Vite dev server | `/your-memory/analysis-api/...` | `https://napi.mem9.ai/...` |
-| Prod | Netlify rewrite | `/your-memory/api/...` | `https://api.mem9.ai/v1alpha1/mem9s/...` |
+| Prod | Netlify rewrite | `/your-memory/api/...` | `https://api.mem9.ai/v1alpha2/mem9s/...` |
 | Prod | Netlify rewrite | `/your-memory/analysis-api/...` | `https://napi.mem9.ai/...` |
 
 ## Working Rules

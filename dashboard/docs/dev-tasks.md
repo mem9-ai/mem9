@@ -8,7 +8,7 @@ Date: 2026-03-13
 - app shape: React + Vite SPA
 - deploy path: `/your-memory`
 - route baseline: `/your-memory`, `/your-memory/space`
-- API access: always through `/your-memory/api/{spaceID}/...`
+- API access: always through `/your-memory/api/...` with `X-API-Key`
 - launch must include export and import
 - launch does not depend on SSR
 

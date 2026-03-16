@@ -43,11 +43,14 @@ If deployment later changes to direct cross-origin browser calls to `api.mem9.ai
 
 The frontend should always call:
 
-`/your-memory/api/{spaceID}/...`
+`/your-memory/api/...`
 
 Use the same relative path in both dev and production. The actual target is:
 
-`https://api.mem9.ai/v1alpha1/mem9s/{spaceID}/...`
+`https://api.mem9.ai/v1alpha2/mem9s/...`
+
+The browser must send the space key in the `X-API-Key` header rather than embedding
+it in the URI.
 
 ### 3.2 Config locations
 
@@ -100,11 +103,13 @@ Rules:
 
 ### 5.1 Connect
 
-Preferred path:
+Preferred path when a dedicated info route exists:
 
-`GET /v1alpha1/mem9s/{spaceID}/info`
+`GET /v1alpha2/mem9s/info`
 
-Current response shape:
+The browser sends `X-API-Key: {spaceID}`.
+
+Expected response shape:
 
 ```json
 {
@@ -119,7 +124,7 @@ Current response shape:
 
 If `/info` is still not routed, fall back to:
 
-`GET /v1alpha1/mem9s/{spaceID}/memories?limit=1`
+`GET /v1alpha2/mem9s/memories?limit=1`
 
 Connect only needs to know whether the space is accessible.
 

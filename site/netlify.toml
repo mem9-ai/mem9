@@ -7,7 +7,7 @@
 
 [[redirects]]
   from = "/your-memory/api/*"
-  to = "https://api.mem9.ai/v1alpha1/mem9s/:splat"
+  to = "https://api.mem9.ai/v1alpha2/mem9s/:splat"
   status = 200
 
 [[redirects]]

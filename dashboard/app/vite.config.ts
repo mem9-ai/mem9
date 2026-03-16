@@ -25,7 +25,7 @@ export default defineConfig({
         target: "https://api.mem9.ai",
         changeOrigin: true,
         rewrite: (path) =>
-          path.replace(/^\/your-memory\/api/, "/v1alpha1/mem9s"),
+          path.replace(/^\/your-memory\/api/, "/v1alpha2/mem9s"),
       },
       "/your-memory/analysis-api": {
         target: "https://napi.mem9.ai",
