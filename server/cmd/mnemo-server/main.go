@@ -14,7 +14,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/handler"
 	"github.com/qiffang/mnemos/server/internal/llm"
 	"github.com/qiffang/mnemos/server/internal/middleware"
-	"github.com/qiffang/mnemos/server/internal/repository"
+	"github.com/qiffang/mnemos/server/internal/repository/wiring"
 	"github.com/qiffang/mnemos/server/internal/service"
 	"github.com/qiffang/mnemos/server/internal/tenant"
 )
@@ -28,7 +28,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	db, err := repository.NewDB(cfg.DBBackend, cfg.DSN)
+	db, err := wiring.NewDB(cfg.DBBackend, cfg.DSN)
 	if err != nil {
 		logger.Error("failed to connect database", "err", err)
 		os.Exit(1)
@@ -70,8 +70,8 @@ func main() {
 	}
 
 	// Repositories.
-	tenantRepo := repository.NewTenantRepo(cfg.DBBackend, db)
-	uploadTaskRepo := repository.NewUploadTaskRepo(cfg.DBBackend, db)
+	tenantRepo := wiring.NewTenantRepo(cfg.DBBackend, db)
+	uploadTaskRepo := wiring.NewUploadTaskRepo(cfg.DBBackend, db)
 	tenantPool := tenant.NewPool(tenant.PoolConfig{
 		MaxIdle:     cfg.TenantPoolMaxIdle,
 		MaxOpen:     cfg.TenantPoolMaxOpen,
