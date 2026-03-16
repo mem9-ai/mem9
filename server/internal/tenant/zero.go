@@ -142,6 +142,7 @@ func (p *ZeroProvisioner) Provision(ctx context.Context) (*ClusterInfo, error) {
 
 	return &ClusterInfo{
 		ID:             inst.ID,
+		ClusterID:      inst.ID, // Zero provisioner issues real UUIDs; no derivation needed
 		Host:           inst.Host,
 		Port:           inst.Port,
 		Username:       inst.Username,
