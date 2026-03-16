@@ -73,12 +73,10 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 		return nil, fmt.Errorf("provision cluster: %w", err)
 	}
 
-	tenantID := info.ID
-
 	// Build tenant record
 	t := &domain.Tenant{
-		ID:             tenantID,
-		Name:           tenantID,
+		ID:             info.ID,
+		Name:           info.ID,
 		DBHost:         info.Host,
 		DBPort:         info.Port,
 		DBUser:         info.Username,
@@ -86,7 +84,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 		DBName:         info.DBName,
 		DBTLS:          true,
 		Provider:       providerType,
-		ClusterID:      info.ID,
+		ClusterID:      info.ClusterID,
 		ClaimURL:       info.ClaimURL,
 		ClaimExpiresAt: info.ClaimExpiresAt,
 		Status:         domain.TenantProvisioning,
@@ -97,7 +95,8 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	if err := s.tenants.Create(ctx, t); err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		s.logger.Error("orphaned cluster: tenants.Create failed",
-			"cluster_id", info.ID,
+			"tenant_id", info.ID,
+			"cluster_id", info.ClusterID,
 			"provider", providerType,
 			"err", err)
 		return nil, fmt.Errorf("create tenant record: %w", err)
@@ -107,7 +106,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	metrics.ProvisionStepDuration.WithLabelValues("create_tenant_record").Observe(elapsed.Seconds())
 
 	// Get DB connection for schema initialization
-	db, err := s.pool.Get(ctx, tenantID, t.DSNForBackend(s.pool.Backend()))
+	db, err := s.pool.Get(ctx, info.ID, t.DSNForBackend(s.pool.Backend()))
 	if err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		return nil, fmt.Errorf("get tenant db: %w", err)
@@ -116,7 +115,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	t0 = time.Now()
 	if err := s.provisioner.InitSchema(ctx, db); err != nil {
 		if s.logger != nil {
-			s.logger.Error("tenant schema init failed", "tenant_id", tenantID, "err", err)
+			s.logger.Error("tenant schema init failed", "tenant_id", info.ID, "err", err)
 		}
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		return nil, fmt.Errorf("init tenant schema: %w", err)
@@ -126,7 +125,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	metrics.ProvisionStepDuration.WithLabelValues("init_schema").Observe(elapsed.Seconds())
 
 	t0 = time.Now()
-	if err := s.tenants.UpdateSchemaVersion(ctx, tenantID, 1); err != nil {
+	if err := s.tenants.UpdateSchemaVersion(ctx, info.ID, 1); err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		return nil, fmt.Errorf("update schema version: %w", err)
 	}
@@ -135,7 +134,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	metrics.ProvisionStepDuration.WithLabelValues("update_schema_version").Observe(elapsed.Seconds())
 
 	t0 = time.Now()
-	if err := s.tenants.UpdateStatus(ctx, tenantID, domain.TenantActive); err != nil {
+	if err := s.tenants.UpdateStatus(ctx, info.ID, domain.TenantActive); err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		return nil, fmt.Errorf("activate tenant: %w", err)
 	}
@@ -144,12 +143,12 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	metrics.ProvisionStepDuration.WithLabelValues("update_status").Observe(elapsed.Seconds())
 
 	totalElapsed := time.Since(total)
-	s.logger.Info("provision step", "step", "total", "duration_ms", totalElapsed.Milliseconds(), "tenant_id", tenantID)
+	s.logger.Info("provision step", "step", "total", "duration_ms", totalElapsed.Milliseconds(), "tenant_id", info.ID)
 	metrics.ProvisionStepDuration.WithLabelValues("total").Observe(totalElapsed.Seconds())
 	metrics.ProvisionTotal.WithLabelValues("success").Inc()
 
 	return &ProvisionResult{
-		ID: tenantID,
+		ID: info.ID,
 	}, nil
 }
 

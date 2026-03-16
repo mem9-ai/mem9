@@ -98,8 +98,12 @@ func TestTiDBCloudProvisioner_Provision_Success(t *testing.T) {
 		t.Fatalf("Provision failed: %v", err)
 	}
 	
-	if info.ID != "cluster-123" {
-		t.Errorf("expected ID=cluster-123, got %s", info.ID)
+	// ID should be a generated UUID (not the raw cluster ID)
+	if info.ClusterID != "cluster-123" {
+		t.Errorf("expected ClusterID=cluster-123, got %s", info.ClusterID)
+	}
+	if info.ID == "" || info.ID == "cluster-123" {
+		t.Errorf("expected ID to be a generated UUID, got %s", info.ID)
 	}
 	if info.Host != "test.cluster.tidbcloud.com" {
 		t.Errorf("expected Host=test.cluster.tidbcloud.com, got %s", info.Host)
@@ -224,6 +228,9 @@ func TestZeroProvisioner_Provision_Success(t *testing.T) {
 	
 	if info.ID != "zero-123" {
 		t.Errorf("expected ID=zero-123, got %s", info.ID)
+	}
+	if info.ClusterID != "zero-123" {
+		t.Errorf("expected ClusterID=zero-123, got %s", info.ClusterID)
 	}
 	if info.Host != "zero.cluster.tidbcloud.com" {
 		t.Errorf("expected Host=zero.cluster.tidbcloud.com, got %s", info.Host)

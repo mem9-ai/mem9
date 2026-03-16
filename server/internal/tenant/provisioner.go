@@ -15,12 +15,13 @@ type Provisioner interface {
 
 // ClusterInfo contains connection details for a provisioned cluster
 type ClusterInfo struct {
-	ID             string
-	Host           string
-	Port           int
-	Username       string
-	Password       string
-	DBName         string
-	ClaimURL       string     // Only for Zero provisioner
+	ID        string // Tenant-facing ID (random UUID, opaque to provider)
+	ClusterID string // Original cluster ID from provider
+	Host      string
+	Port      int
+	Username  string
+	Password  string
+	DBName    string
+	ClaimURL  string     // Only for Zero provisioner
 	ClaimExpiresAt *time.Time // Only for Zero provisioner
 }

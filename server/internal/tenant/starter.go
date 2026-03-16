@@ -14,6 +14,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // TiDBCloudProvisioner implements service.Provisioner for TiDB Cloud Pool API.
@@ -82,12 +84,13 @@ func (p *TiDBCloudProvisioner) Provision(ctx context.Context) (*ClusterInfo, err
 	}
 
 	return &ClusterInfo{
-		ID:       result.ClusterID,
-		Host:     result.Endpoints.Public.Host,
-		Port:     result.Endpoints.Public.Port,
-		Username: result.UserPrefix + ".root",
-		Password: password,
-		DBName:   "test",
+		ID:        uuid.New().String(),
+		ClusterID: result.ClusterID,
+		Host:      result.Endpoints.Public.Host,
+		Port:      result.Endpoints.Public.Port,
+		Username:  result.UserPrefix + ".root",
+		Password:  password,
+		DBName:    "test",
 	}, nil
 }
 
@@ -269,3 +272,4 @@ func generateRandomPassword(length int) (string, error) {
 	}
 	return string(b), nil
 }
+
