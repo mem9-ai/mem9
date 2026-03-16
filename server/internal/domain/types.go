@@ -56,8 +56,9 @@ type AuthInfo struct {
 	AgentName string
 
 	// Dedicated-cluster model (non-empty when using tenant token)
-	TenantID string
-	TenantDB *sql.DB
+	TenantID  string
+	TenantDB  *sql.DB
+	ClusterID string
 }
 
 // MemoryFilter encapsulates search/list query parameters.

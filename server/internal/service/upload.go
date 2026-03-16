@@ -166,7 +166,7 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 		return w.failTask(ctx, task, fmt.Errorf("get tenant db: %w", err), logger)
 	}
 
-	memRepo := repository.NewMemoryRepo(w.pool.Backend(), db, w.autoModel, w.ftsEnabled)
+	memRepo := repository.NewMemoryRepo(w.pool.Backend(), db, w.autoModel, w.ftsEnabled, tenantInfo.ClusterID)
 	ingestSvc := NewIngestService(memRepo, w.llmClient, w.embedder, w.autoModel, w.mode)
 
 	data, err := os.ReadFile(task.FilePath)

@@ -49,13 +49,13 @@ func NewUploadTaskRepo(backend string, db *sql.DB) UploadTaskRepo {
 
 // NewMemoryRepo creates a MemoryRepo for the specified backend.
 // autoModel is used by tidb and db9 backends for auto-embedding features.
-func NewMemoryRepo(backend string, db *sql.DB, autoModel string, ftsEnabled bool) MemoryRepo {
+func NewMemoryRepo(backend string, db *sql.DB, autoModel string, ftsEnabled bool, clusterID string) MemoryRepo {
 	switch backend {
 	case "db9":
-		return db9.NewMemoryRepo(db, autoModel, ftsEnabled)
+		return db9.NewMemoryRepo(db, autoModel, ftsEnabled, clusterID)
 	case "postgres":
-		return postgres.NewMemoryRepo(db, ftsEnabled)
+		return postgres.NewMemoryRepo(db, ftsEnabled, clusterID)
 	default:
-		return tidb.NewMemoryRepo(db, autoModel, ftsEnabled)
+		return tidb.NewMemoryRepo(db, autoModel, ftsEnabled, clusterID)
 	}
 }

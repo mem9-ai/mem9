@@ -39,8 +39,10 @@ func ResolveTenant(
 				writeError(w, http.StatusNotFound, "tenant not found")
 				return
 			}
-			if t.Status != domain.TenantActive {
-				writeError(w, http.StatusForbidden, "tenant not active")
+
+			// only zero cluster provisioner blocks non-active tenants, starter cluster provisioner allows non-active to used
+			if t.Status != domain.TenantActive && t.Provider == tenant.ZeroProvisionerType {
+				writeError(w, http.StatusForbidden, "tenant is not active")
 				return
 			}
 
@@ -51,8 +53,9 @@ func ResolveTenant(
 			}
 
 			info := &domain.AuthInfo{
-				TenantID: t.ID,
-				TenantDB: db,
+				TenantID:  t.ID,
+				TenantDB:  db,
+				ClusterID: t.ClusterID,
 			}
 			if agentID := r.Header.Get(AgentIDHeader); agentID != "" {
 				info.AgentName = agentID
@@ -96,8 +99,9 @@ func ResolveApiKey(
 			}
 
 			info := &domain.AuthInfo{
-				TenantID: t.ID,
-				TenantDB: db,
+				TenantID:  t.ID,
+				TenantDB:  db,
+				ClusterID: t.ClusterID,
 			}
 			if agentID := r.Header.Get(AgentIDHeader); agentID != "" {
 				info.AgentName = agentID

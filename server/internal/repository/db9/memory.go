@@ -22,18 +22,20 @@ type DB9MemoryRepo struct {
 	autoModel     string
 	jiebaChecked  atomic.Bool
 	jiebaDisabled atomic.Bool
+	clusterID     string
 }
 
 // NewMemoryRepo creates the db9 memory repository.
 // When autoModel is set, it enables db9's native EMBED_TEXT auto-embedding.
-func NewMemoryRepo(db *sql.DB, autoModel string, ftsEnabled bool) *DB9MemoryRepo {
+func NewMemoryRepo(db *sql.DB, autoModel string, ftsEnabled bool, clusterID string) *DB9MemoryRepo {
 	if autoModel != "" {
 		slog.Info("db9 auto-embedding enabled", "model", autoModel)
 	}
 	return &DB9MemoryRepo{
-		MemoryRepo: postgres.NewMemoryRepo(db, ftsEnabled),
+		MemoryRepo: postgres.NewMemoryRepo(db, ftsEnabled, clusterID),
 		db:         db,
 		autoModel:  autoModel,
+		clusterID:  clusterID,
 	}
 }
 
@@ -213,7 +215,7 @@ func (r *DB9MemoryRepo) AutoVectorSearch(ctx context.Context, queryText string, 
 
 	rows, err := r.db.QueryContext(ctx, query, fullArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("db9 auto vector search: %w", err)
+		return nil, fmt.Errorf("db9 auto vector search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	defer rows.Close()
 
@@ -269,7 +271,7 @@ func (r *DB9MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Me
 			r.jiebaDisabled.Store(true)
 			return r.MemoryRepo.FTSSearch(ctx, query, f, limit)
 		}
-		return nil, fmt.Errorf("db9 fts search: %w", err)
+		return nil, fmt.Errorf("db9 fts search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	defer rows.Close()
 

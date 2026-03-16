@@ -17,10 +17,11 @@ import (
 type MemoryRepo struct {
 	db           *sql.DB
 	ftsAvailable atomic.Bool
+	clusterID    string
 }
 
-func NewMemoryRepo(db *sql.DB, ftsEnabled bool) *MemoryRepo {
-	r := &MemoryRepo{db: db}
+func NewMemoryRepo(db *sql.DB, ftsEnabled bool, clusterID string) *MemoryRepo {
+	r := &MemoryRepo{db: db, clusterID: clusterID}
 	r.ftsAvailable.Store(ftsEnabled)
 	if ftsEnabled {
 		slog.Info("FTS search enabled via MNEMO_FTS_ENABLED")
@@ -389,7 +390,7 @@ func (r *MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Memor
 
 	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("fts search: %w", err)
+		return nil, fmt.Errorf("fts search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	defer rows.Close()
 

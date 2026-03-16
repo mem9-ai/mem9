@@ -18,10 +18,11 @@ type MemoryRepo struct {
 	db           *sql.DB
 	autoModel    string
 	ftsAvailable atomic.Bool
+	clusterID    string
 }
 
-func NewMemoryRepo(db *sql.DB, autoModel string, ftsEnabled bool) *MemoryRepo {
-	r := &MemoryRepo{db: db, autoModel: autoModel}
+func NewMemoryRepo(db *sql.DB, autoModel string, ftsEnabled bool, clusterID string) *MemoryRepo {
+	r := &MemoryRepo{db: db, autoModel: autoModel, clusterID: clusterID}
 	r.ftsAvailable.Store(ftsEnabled)
 	if ftsEnabled {
 		slog.Info("FTS search enabled via MNEMO_FTS_ENABLED")
@@ -406,7 +407,7 @@ func (r *MemoryRepo) AutoVectorSearch(ctx context.Context, queryText string, f d
 
 	rows, err := r.db.QueryContext(ctx, query, fullArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("auto vector search: %w", err)
+		return nil, fmt.Errorf("auto vector search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	defer rows.Close()
 
@@ -484,7 +485,7 @@ func (r *MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Memor
 
 	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("fts search: %w", err)
+		return nil, fmt.Errorf("fts search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	defer rows.Close()
 

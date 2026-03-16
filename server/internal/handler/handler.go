@@ -80,7 +80,7 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		if cached, ok := s.svcCache.Load(key); ok {
 			return cached.(resolvedSvc)
 		}
-		memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled)
+		memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		svc := resolvedSvc{
 			memory: service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 			ingest: service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
@@ -92,7 +92,7 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	if cached, ok := s.svcCache.Load(key); ok {
 		return cached.(resolvedSvc)
 	}
-	memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled)
+	memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	svc := resolvedSvc{
 		memory: service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 		ingest: service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),

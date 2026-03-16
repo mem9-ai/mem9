@@ -195,5 +195,5 @@ func newTestTenant(overrides ...func(*domain.Tenant)) *domain.Tenant {
 
 // newMemoryRepo creates a MemoryRepo pointing at testDB with no auto-embedding and FTS disabled.
 func newMemoryRepo() *MemoryRepo {
-	return NewMemoryRepo(testDB, "", false)
+	return NewMemoryRepo(testDB, "", false, "")
 }
