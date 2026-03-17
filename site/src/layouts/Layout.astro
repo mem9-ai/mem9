@@ -18,6 +18,7 @@ const {
 const base = import.meta.env.BASE_URL;
 const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://mem9.ai').toString();
 const htmlLang = locale === 'zh' ? 'zh-CN' : locale === 'zh-Hant' ? 'zh-Hant' : locale;
+const ga4MeasurementID = import.meta.env.PUBLIC_GA4_MEASUREMENT_ID?.trim() ?? '';
 ---
 
 <!doctype html>
@@ -41,6 +42,19 @@ const htmlLang = locale === 'zh' ? 'zh-CN' : locale === 'zh-Hant' ? 'zh-Hant' : 
     <meta property="og:url" content={canonical} />
     <link rel="canonical" href={canonical} />
     <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
+    {ga4MeasurementID && (
+      <>
+        <script async src={`https://www.googletagmanager.com/gtag/js?id=${ga4MeasurementID}`}></script>
+        <script is:inline define:vars={{ ga4MeasurementID }}>
+          window.dataLayer = window.dataLayer || [];
+          function gtag() {
+            window.dataLayer.push(arguments);
+          }
+          gtag('js', new Date());
+          gtag('config', ga4MeasurementID);
+        </script>
+      </>
+    )}
     <script is:inline>
       (() => {
         const localeStorageKey = 'mem9.locale';
