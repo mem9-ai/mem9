@@ -90,6 +90,18 @@ func (r *SessionRepo) BulkCreate(ctx context.Context, sessions []*domain.Session
 	return tx.Commit()
 }
 
+func (r *SessionRepo) PatchTags(ctx context.Context, sessionID, contentHash string, tags []string) error {
+	tagsJSON := marshalTags(tags)
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE sessions SET tags = ? WHERE session_id = ? AND content_hash = ?`,
+		tagsJSON, sessionID, contentHash,
+	)
+	if err != nil && internaltenant.IsTableNotFoundError(err) {
+		return nil
+	}
+	return err
+}
+
 func (r *SessionRepo) buildSessionFilterConds(f domain.MemoryFilter) ([]string, []any) {
 	conds := []string{}
 	args := []any{}

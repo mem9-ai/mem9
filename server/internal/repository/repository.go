@@ -65,6 +65,7 @@ type UploadTaskRepo interface {
 // BulkCreate silently skips MySQL 1146 (table not yet migrated) at DEBUG level.
 type SessionRepo interface {
 	BulkCreate(ctx context.Context, sessions []*domain.Session) error
+	PatchTags(ctx context.Context, sessionID, contentHash string, tags []string) error
 	AutoVectorSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
 	VectorSearch(ctx context.Context, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
 	FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error)

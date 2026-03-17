@@ -56,20 +56,43 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		}
 
 		go func(agentName string, req service.IngestRequest) {
+			// Step 1: store raw sessions immediately — preserved even if LLM fails.
 			if err := svc.session.BulkCreate(context.Background(), agentName, req); err != nil {
 				slog.Error("async session raw save failed",
-					"cluster_id", auth.ClusterID,
-					"session", req.SessionID, "err", err)
+					"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
 			}
-		}(auth.AgentName, ingestReq)
 
-		go func(agentName string, req service.IngestRequest) {
-			result, err := svc.ingest.Ingest(context.Background(), agentName, req)
+			// Step 2: Phase 1 — extract facts + per-message tags in one LLM call.
+			phase1, err := svc.ingest.ExtractPhase1(context.Background(), req.Messages)
 			if err != nil {
-				slog.Error("async memories ingest failed", "agent", req.AgentID, "session", req.SessionID, "err", err)
+				slog.Error("phase1 extraction failed", "session", req.SessionID, "err", err)
 				return
 			}
-			slog.Info("async memories ingest complete", "agent", req.AgentID, "session", req.SessionID, "status", result.Status, "memories_changed", result.MemoriesChanged)
+
+			// Step 3: fan out — patch session tags and reconcile memories in parallel.
+			go func() {
+				for i, msg := range req.Messages {
+					hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content)
+					tags := tagsAtIndex(phase1.MessageTags, i)
+					if err := svc.session.PatchTags(context.Background(), req.SessionID, hash, tags); err != nil {
+						slog.Warn("session tag patch failed",
+							"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
+					}
+				}
+			}()
+
+			go func() {
+				result, err := svc.ingest.ReconcilePhase2(
+					context.Background(), agentName, req.AgentID, req.SessionID, phase1.Facts)
+				if err != nil {
+					slog.Error("async memories reconcile failed",
+						"session", req.SessionID, "err", err)
+					return
+				}
+				slog.Info("async memories reconcile complete",
+					"session", req.SessionID, "status", result.Status,
+					"memories_changed", result.MemoriesChanged)
+			}()
 		}(auth.AgentName, ingestReq)
 
 		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
@@ -290,4 +313,11 @@ func (s *Server) bootstrapMemories(w http.ResponseWriter, r *http.Request) {
 		"memories": memories,
 		"total":    len(memories),
 	})
+}
+
+func tagsAtIndex(tags [][]string, i int) []string {
+	if i < len(tags) && tags[i] != nil {
+		return tags[i]
+	}
+	return []string{}
 }

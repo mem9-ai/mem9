@@ -865,3 +865,277 @@ until the goroutine succeeds; smart ingest is never affected.
    `VECTOR(1536) NULL` (nullable static column for client-side or no embedding).
    `1536` is the OpenAI `text-embedding-ada-002` dimension used as the static
    fallback, matching the existing pattern. No extra guard needed.
+
+---
+
+## Phase 2 addition — LLM-generated tags for sessions
+
+### Background
+
+The `sessions.tags` column is always written as `[]` today. The LLM never
+sees session messages in the current write path (it only processes the
+formatted conversation for fact extraction). This section documents the
+design to populate `tags` via Phase 1 extraction.
+
+Tags on `memories` rows are **not changed** — memories tags remain
+empty by default (set only via explicit `memory_store` tool calls or file
+import). This is an experiment scoped to sessions only.
+
+### Design decisions
+
+**D1 — LLM assigns tags, free-form vocabulary (experimental)**
+
+The goal is to observe what the LLM naturally produces without constraining
+it to a fixed taxonomy. Vocabulary inconsistency (`"golang"` vs `"go"`) is
+accepted for this experiment. A controlled vocabulary can be introduced
+later if the experiment shows value.
+
+**D2 — Tags produced in Phase 1 (extraction), not a separate call**
+
+Phase 1 already reads the full conversation to extract facts. Extending
+its response to also return per-message tags adds zero extra LLM calls.
+The same `CompleteJSON` call returns `facts[]` and `message_tags[][]`.
+
+**D3 — Goroutine A: insert first, then LLM, then fan-out**
+
+The write sequence inside goroutine A is:
+
+```
+goroutine A:
+  Step 1: SessionService.BulkCreate(messages, tags=[])   ← 10-30ms, raw rows saved
+  Step 2: IngestService.ExtractPhase1(messages)           ← 500ms-3s LLM call
+  goroutine A1: SessionRepo.PatchTags(session_id, hash→tags)  ← UPDATE existing rows
+  goroutine A2: IngestService.ReconcilePhase2(facts)          ← Phase 2 → memories
+```
+
+Sessions are written **before** the LLM call — raw data is preserved
+even if Phase 1 fails. Tags are patched onto already-inserted rows
+after Phase 1 completes.
+
+This is strictly better than Phase1-first because:
+- Sessions survive LLM failures unconditionally (not as a fallback case)
+- BulkCreate (10-30ms) runs during the first ~30ms of the LLM's 500ms+ wait
+- Failure isolation is clean: session storage never depends on LLM availability
+
+**D4 — Services stay independent (no cross-service dependency)**
+
+`IngestService` is not changed to depend on `SessionService`.
+The fan-out coordination lives in the handler goroutine (Option 2).
+This keeps both services independently testable.
+
+**D5 — `message_tags` is a parallel array to `messages`**
+
+The LLM returns one tag array per message, in the same order as the
+input `messages` slice. Length mismatch (LLM returns fewer arrays than
+messages) is handled defensively: missing entries default to `[]`.
+
+**D6 — Tags patched via `(session_id, content_hash)` natural key**
+
+After Phase 1, goroutine A1 updates already-inserted session rows using
+the natural dedup key rather than UUIDs. `BulkCreate` returns no IDs;
+the hash is recomputed deterministically from `session_id + role + content`
+— the same function used during insert:
+
+```go
+for i, msg := range req.Messages {
+    hash := sessionContentHash(req.SessionID, msg.Role, msg.Content)
+    tags := tagsForIndex(phase1.MessageTags, i)
+    // UPDATE sessions SET tags=? WHERE session_id=? AND content_hash=?
+}
+```
+
+No signature change to `BulkCreate`. `UNIQUE INDEX idx_sessions_dedup
+(session_id, content_hash)` serves as both dedup key and update key.
+
+**D6 — Tags on sessions only; memories table untouched**
+
+`ReconcilePhase2` (`addInsight`, `updateInsight`) signature is unchanged.
+Tags from Phase 1 are never passed into the memories write path.
+
+**D7 — Phase 1 still required for raw mode / no-LLM path**
+
+If `mode == ModeRaw` or `s.llm == nil`, Phase 1 is skipped entirely.
+Sessions are written with `tags: []` in this case — same as before.
+
+### New Phase 1 extraction prompt
+
+The existing `extractFacts` system prompt is extended with a new
+`message_tags` section. Facts extraction rules are unchanged.
+
+```
+You are an information extraction engine. Your task is to identify distinct,
+atomic facts from a conversation AND assign short descriptive tags to each
+message.
+
+## Rules — facts (unchanged)
+
+1. Extract facts ONLY from the user's messages. Ignore assistant and system
+   messages entirely.
+2. Each fact must be a single, self-contained statement (one idea per fact).
+3. Prefer specific details over vague summaries.
+4. Preserve the user's original language.
+5. Omit ephemeral information (greetings, filler, debugging chatter).
+6. Omit information only relevant to the current task with no future reuse.
+7. If no meaningful facts exist, return an empty facts array.
+
+## Rules — message_tags
+
+1. Assign 1-3 short lowercase tags to EVERY message (user, assistant, tool,
+   system) — not just user messages.
+2. Tags describe the message topic or type, e.g.:
+   "tech", "work", "personal", "preference", "location", "question",
+   "answer", "tool-call", "tool-result", "error", "code", "debug"
+3. Use your own judgment — there is no fixed vocabulary.
+4. Tags must be lowercase, no spaces (use hyphens for multi-word: "tool-call").
+5. Return exactly one array entry per message, in the same order as the input.
+   If a message has no meaningful tags, return an empty array [] for it.
+
+## Output Format
+
+Return ONLY valid JSON. No markdown fences, no explanation.
+
+{
+  "facts": ["fact one", "fact two", ...],
+  "message_tags": [
+    ["tag1", "tag2"],
+    ["tag3"],
+    [],
+    ["tag4", "tag5", "tag6"]
+  ]
+}
+```
+
+### Example
+
+Input conversation (3 messages):
+```
+User: I'm debugging a memory leak in our Go service.
+Assistant: Let's look at the heap profile. Can you share the pprof output?
+User: Here it is: [pprof data...]
+```
+
+Expected LLM response:
+```json
+{
+  "facts": [
+    "Debugging a memory leak in a Go service"
+  ],
+  "message_tags": [
+    ["tech", "debug", "go"],
+    ["tech", "question", "debug"],
+    ["tech", "tool-result", "code"]
+  ]
+}
+```
+
+### Interface changes (delta from existing proposal)
+
+**`service/ingest.go`**
+
+Split `Ingest` smart path into two exported methods:
+
+```go
+type Phase1Result struct {
+    Facts       []string   // extracted facts — feeds ReconcilePhase2
+    MessageTags [][]string // per-message tags — feeds SessionRepo.PatchTags
+                           // parallel to input messages; missing entries = []
+}
+
+// ExtractPhase1 runs fact extraction + message tagging in one LLM call.
+// Returns Phase1Result. If LLM is nil or mode==ModeRaw, returns empty result.
+func (s *IngestService) ExtractPhase1(ctx context.Context, messages []IngestMessage) (*Phase1Result, error)
+
+// ReconcilePhase2 runs the reconciliation pipeline against existing memories.
+// Equivalent to the existing reconcile() logic, now exported.
+func (s *IngestService) ReconcilePhase2(ctx context.Context, agentName, agentID, sessionID string, facts []string) (*IngestResult, error)
+```
+
+**`repository/repository.go`**
+
+New method on `SessionRepo`:
+
+```go
+// PatchTags updates tags on an already-inserted session row identified by
+// (session_id, content_hash). Used by goroutine A1 after Phase 1 completes.
+// Silently skips rows that no longer exist (INSERT IGNORE may have skipped them).
+PatchTags(ctx context.Context, sessionID, contentHash string, tags []string) error
+```
+
+**`repository/tidb/sessions.go`**
+
+Implement `PatchTags`:
+
+```go
+func (r *SessionRepo) PatchTags(ctx context.Context, sessionID, contentHash string, tags []string) error {
+    tagsJSON := marshalTags(tags)
+    _, err := r.db.ExecContext(ctx,
+        `UPDATE sessions SET tags = ? WHERE session_id = ? AND content_hash = ?`,
+        tagsJSON, sessionID, contentHash,
+    )
+    if err != nil && internaltenant.IsTableNotFoundError(err) {
+        return nil
+    }
+    return err
+}
+```
+
+**`handler/memory.go`** — `createMemory`, `hasMessages` branch:
+
+```go
+go func(agentName string, req service.IngestRequest) {
+    // Step 1: store raw sessions immediately — survives LLM failure
+    if err := svc.session.BulkCreate(context.Background(), agentName, req); err != nil {
+        slog.Error("async session raw save failed",
+            "cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
+    }
+
+    // Step 2: Phase 1 — shared LLM call (facts + message tags)
+    phase1, err := svc.ingest.ExtractPhase1(context.Background(), req.Messages)
+    if err != nil {
+        slog.Error("phase1 extraction failed", "session", req.SessionID, "err", err)
+        return // sessions already stored with tags=[]; memories not updated
+    }
+
+    // Step 3: fan out — patch session tags and reconcile memories in parallel
+    go func() {
+        for i, msg := range req.Messages {
+            hash := sessionContentHash(req.SessionID, msg.Role, msg.Content)
+            tags := tagsAtIndex(phase1.MessageTags, i)
+            if err := svc.session.PatchTags(context.Background(), req.SessionID, hash, tags); err != nil {
+                slog.Warn("session tag patch failed",
+                    "cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
+            }
+        }
+    }()
+
+    go func() {
+        result, err := svc.ingest.ReconcilePhase2(
+            context.Background(), agentName, req.AgentID, req.SessionID, phase1.Facts)
+        if err != nil {
+            slog.Error("async memories reconcile failed", "session", req.SessionID, "err", err)
+            return
+        }
+        slog.Info("async memories reconcile complete",
+            "session", req.SessionID, "status", result.Status,
+            "memories_changed", result.MemoriesChanged)
+    }()
+}(auth.AgentName, ingestReq)
+```
+
+`tagsAtIndex(tags [][]string, i int) []string` — safe index helper,
+returns `[]string{}` if `i >= len(tags)` or `tags[i]` is nil.
+
+`sessionContentHash` is the existing function in `service/session.go`,
+called directly since handler and session service are in the same module.
+
+### Effort estimate (delta)
+
+| Area | Change | LoC |
+|------|--------|-----|
+| `service/ingest.go` | `ExtractPhase1` + `ReconcilePhase2` split; extended prompt + `Phase1Result` struct | ~55 |
+| `repository/repository.go` | `PatchTags` on `SessionRepo` interface | ~5 |
+| `repository/tidb/sessions.go` | `PatchTags` implementation | ~15 |
+| `service/session.go` | No change (`BulkCreate` signature unchanged) | 0 |
+| `handler/memory.go` | Revised goroutine A: insert → Phase1 → fan-out | ~30 |
+
+**Total delta: ~105 LoC on top of the existing ~580 LoC.**

@@ -31,6 +31,10 @@ func NewSessionService(sessions repository.SessionRepo, embedder *embed.Embedder
 	}
 }
 
+func (s *SessionService) PatchTags(ctx context.Context, sessionID, contentHash string, tags []string) error {
+	return s.sessions.PatchTags(ctx, sessionID, contentHash, tags)
+}
+
 func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req IngestRequest) error {
 	sessions := make([]*domain.Session, 0, len(req.Messages))
 	for i, msg := range req.Messages {
@@ -173,6 +177,11 @@ func applyMinScore(results []domain.Memory, minScore float64) []domain.Memory {
 func sessionContentHash(sessionID, role, content string) string {
 	h := sha256.Sum256([]byte(sessionID + role + content))
 	return hex.EncodeToString(h[:])
+}
+
+// SessionContentHash is the exported version for use by the handler fan-out goroutine.
+func SessionContentHash(sessionID, role, content string) string {
+	return sessionContentHash(sessionID, role, content)
 }
 
 func newSessionFromIngestMessage(sessionID, agentID, source string, seq int, role, content string) *domain.Session {
