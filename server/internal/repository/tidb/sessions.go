@@ -338,17 +338,12 @@ func scanSessionRow(rows *sql.Rows, hasScore bool) (*domain.Memory, error) {
 	return &m, nil
 }
 
-func marshalSessionTags(tags []string) []byte {
-	if len(tags) == 0 {
-		return []byte("[]")
-	}
-	b, err := json.Marshal(tags)
-	if err != nil {
-		return []byte("[]")
-	}
-	return b
-}
-
+// SessionContentHash returns SHA-256(sessionID+role+content) as a hex string.
+// Two sends of the same message content within the same session produce the same
+// hash, so INSERT IGNORE deduplicates them. This is intentional: the plugin sends
+// cumulative overlapping slices on every agent turn; verbatim logging would store
+// each message N times. Identical messages in different sessions or roles are always
+// distinct (session_id and role are part of the input).
 func SessionContentHash(sessionID, role, content string) string {
 	h := sha256.Sum256([]byte(sessionID + role + content))
 	return hex.EncodeToString(h[:])
@@ -368,6 +363,17 @@ func NewSessionFromIngestMessage(sessionID, agentID, source string, seq int, rol
 		Tags:        []string{},
 		State:       domain.StateActive,
 	}
+}
+
+func marshalSessionTags(tags []string) []byte {
+	if len(tags) == 0 {
+		return []byte("[]")
+	}
+	b, err := json.Marshal(tags)
+	if err != nil {
+		return []byte("[]")
+	}
+	return b
 }
 
 func detectContentType(content string) string {

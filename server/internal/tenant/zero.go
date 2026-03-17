@@ -212,14 +212,14 @@ func (p *ZeroProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
 	}
 	if p.autoModel != "" {
 		_, err := db.ExecContext(ctx,
-			`ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+			`ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
 		if err != nil && !IsIndexExistsError(err) {
 			return fmt.Errorf("init schema: sessions vector index: %w", err)
 		}
 	}
 	if p.ftsEnabled {
 		_, err := db.ExecContext(ctx,
-			`ALTER TABLE sessions ADD FULLTEXT INDEX idx_sess_fts (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+			`ALTER TABLE sessions ADD FULLTEXT INDEX idx_sessions_fts (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
 		if err != nil && !IsIndexExistsError(err) {
 			return fmt.Errorf("init schema: sessions fulltext index: %w", err)
 		}

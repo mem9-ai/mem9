@@ -189,14 +189,14 @@ func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) err
 	}
 	if s.autoModel != "" {
 		_, err := db.ExecContext(ctx,
-			`ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+			`ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
 		if err != nil && !tenant.IsIndexExistsError(err) {
 			return fmt.Errorf("ensure sessions table: vector index: %w", err)
 		}
 	}
 	if s.ftsEnabled {
 		_, err := db.ExecContext(ctx,
-			`ALTER TABLE sessions ADD FULLTEXT INDEX idx_sess_fts (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+			`ALTER TABLE sessions ADD FULLTEXT INDEX idx_sessions_fts (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
 		if err != nil && !tenant.IsIndexExistsError(err) {
 			return fmt.Errorf("ensure sessions table: fts index: %w", err)
 		}

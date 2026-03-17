@@ -49,16 +49,19 @@ func (s *SessionService) Search(ctx context.Context, f domain.MemoryFilter) ([]d
 	}
 	fetchLimit := limit * defaultSessionFetchMultiplier
 
+	sf := f
+	sf.Offset = 0
+
 	if s.autoModel != "" {
-		return s.autoHybridSearch(ctx, f, limit, fetchLimit)
+		return s.autoHybridSearch(ctx, sf, limit, fetchLimit)
 	}
 	if s.embedder != nil {
-		return s.hybridSearch(ctx, f, limit, fetchLimit)
+		return s.hybridSearch(ctx, sf, limit, fetchLimit)
 	}
 	if s.sessions.FTSAvailable() {
-		return s.ftsSearch(ctx, f, limit, fetchLimit)
+		return s.ftsSearch(ctx, sf, limit, fetchLimit)
 	}
-	return s.keywordSearch(ctx, f, limit, fetchLimit)
+	return s.keywordSearch(ctx, sf, limit, fetchLimit)
 }
 
 func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
