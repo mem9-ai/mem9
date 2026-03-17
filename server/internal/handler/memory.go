@@ -56,6 +56,14 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		}
 
 		go func(agentName string, req service.IngestRequest) {
+			if err := svc.session.BulkCreate(context.Background(), agentName, req); err != nil {
+				slog.Error("async session raw save failed",
+					"cluster_id", auth.ClusterID,
+					"session", req.SessionID, "err", err)
+			}
+		}(auth.AgentName, ingestReq)
+
+		go func(agentName string, req service.IngestRequest) {
 			result, err := svc.ingest.Ingest(context.Background(), agentName, req)
 			if err != nil {
 				slog.Error("async memories ingest failed", "agent", req.AgentID, "session", req.SessionID, "err", err)
@@ -134,10 +142,29 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		Offset:     offset,
 	}
 	svc := s.resolveServices(auth)
-	memories, total, err := svc.memory.Search(r.Context(), filter)
-	if err != nil {
-		s.handleError(w, err)
-		return
+
+	onlySession := filter.MemoryType == string(domain.TypeSession)
+
+	var memories []domain.Memory
+	var total int
+	var err error
+
+	if !onlySession {
+		memories, total, err = svc.memory.Search(r.Context(), filter)
+		if err != nil {
+			s.handleError(w, err)
+			return
+		}
+	}
+
+	if filter.Query != "" && (onlySession || filter.MemoryType == "") {
+		sessionMems, sessErr := svc.session.Search(r.Context(), filter)
+		if sessErr != nil {
+			slog.Warn("session search failed", "err", sessErr)
+		} else {
+			memories = append(memories, sessionMems...)
+			total += len(sessionMems)
+		}
 	}
 
 	if memories == nil {

@@ -117,3 +117,40 @@ func BuildDB9MemorySchema(autoModel string, autoDims int) string {
 	}
 	return fmt.Sprintf(TenantMemorySchemaDB9Base, embeddingCol)
 }
+
+const TenantSessionsSchemaBase = `CREATE TABLE IF NOT EXISTS sessions (
+    id           VARCHAR(36)     PRIMARY KEY,
+    session_id   VARCHAR(100)    NULL,
+    agent_id     VARCHAR(100)    NULL,
+    source       VARCHAR(100)    NULL,
+    seq          INT             NOT NULL,
+    role         VARCHAR(20)     NOT NULL,
+    content      MEDIUMTEXT      NOT NULL,
+    content_type VARCHAR(20)     NOT NULL DEFAULT 'text',
+    content_hash VARCHAR(64)     NOT NULL,
+    tags         JSON,
+    %s
+    state        VARCHAR(20)     NOT NULL DEFAULT 'active',
+    created_at   TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP       DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX        idx_sess_session (session_id),
+    INDEX        idx_sess_agent   (agent_id),
+    INDEX        idx_sess_state   (state),
+    INDEX        idx_sess_created (created_at),
+    UNIQUE INDEX idx_sess_dedup   (session_id, content_hash)
+)`
+
+// BuildSessionsSchema builds the TiDB sessions schema with optional auto-embedding.
+func BuildSessionsSchema(autoModel string, autoDims int) string {
+	var embeddingCol string
+	if autoModel != "" {
+		sanitizedModel := strings.ReplaceAll(autoModel, "'", "''")
+		embeddingCol = fmt.Sprintf(
+			`embedding VECTOR(%d) GENERATED ALWAYS AS (EMBED_TEXT('%s', content, '{"dimensions": %d}')) STORED,`,
+			autoDims, sanitizedModel, autoDims,
+		)
+	} else {
+		embeddingCol = `embedding VECTOR(1536) NULL,`
+	}
+	return fmt.Sprintf(TenantSessionsSchemaBase, embeddingCol)
+}

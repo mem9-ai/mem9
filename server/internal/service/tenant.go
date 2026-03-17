@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"time"
@@ -180,4 +181,25 @@ func (s *TenantService) GetInfo(ctx context.Context, tenantID string) (*domain.T
 		MemoryCount: count,
 		CreatedAt:   t.CreatedAt,
 	}, nil
+}
+
+func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) error {
+	if _, err := db.ExecContext(ctx, tenant.BuildSessionsSchema(s.autoModel, s.autoDims)); err != nil {
+		return fmt.Errorf("ensure sessions table: create: %w", err)
+	}
+	if s.autoModel != "" {
+		_, err := db.ExecContext(ctx,
+			`ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+		if err != nil && !tenant.IsIndexExistsError(err) {
+			return fmt.Errorf("ensure sessions table: vector index: %w", err)
+		}
+	}
+	if s.ftsEnabled {
+		_, err := db.ExecContext(ctx,
+			`ALTER TABLE sessions ADD FULLTEXT INDEX idx_sess_fts (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+		if err != nil && !tenant.IsIndexExistsError(err) {
+			return fmt.Errorf("ensure sessions table: fts index: %w", err)
+		}
+	}
+	return nil
 }

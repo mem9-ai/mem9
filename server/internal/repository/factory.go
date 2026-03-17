@@ -59,3 +59,8 @@ func NewMemoryRepo(backend string, db *sql.DB, autoModel string, ftsEnabled bool
 		return tidb.NewMemoryRepo(db, autoModel, ftsEnabled, clusterID)
 	}
 }
+
+// NewSessionRepo creates a SessionRepo. Only supported on tidb backend.
+func NewSessionRepo(backend string, db *sql.DB, autoModel string, ftsEnabled bool, clusterID string) SessionRepo {
+	return tidb.NewSessionRepo(db, autoModel, ftsEnabled, clusterID)
+}

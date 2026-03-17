@@ -13,6 +13,7 @@ type MemoryType string
 const (
 	TypePinned  MemoryType = "pinned"
 	TypeInsight MemoryType = "insight"
+	TypeSession MemoryType = "session"
 )
 
 // MemoryState represents the lifecycle state of a memory.
@@ -145,4 +146,24 @@ type TenantInfo struct {
 	Provider    string       `json:"provider"`
 	MemoryCount int          `json:"memory_count"`
 	CreatedAt   time.Time    `json:"created_at"`
+}
+
+// Session represents a single raw message persisted from a conversation.
+// Messages are stored per-ingest-call with content-hash deduplication so
+// re-sent overlapping slices (cumulative agent_end hook) produce one row.
+type Session struct {
+	ID          string      `json:"id"`
+	SessionID   string      `json:"session_id,omitempty"`
+	AgentID     string      `json:"agent_id,omitempty"`
+	Source      string      `json:"source,omitempty"`
+	Seq         int         `json:"seq"`
+	Role        string      `json:"role"`
+	Content     string      `json:"content"`
+	ContentType string      `json:"content_type"`
+	ContentHash string      `json:"content_hash"`
+	Tags        []string    `json:"tags"`
+	Embedding   []float32   `json:"-"`
+	State       MemoryState `json:"state"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
 }

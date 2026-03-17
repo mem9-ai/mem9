@@ -1,0 +1,379 @@
+package tidb
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/go-sql-driver/mysql"
+	"github.com/google/uuid"
+	"github.com/qiffang/mnemos/server/internal/domain"
+	internaltenant "github.com/qiffang/mnemos/server/internal/tenant"
+)
+
+type SessionRepo struct {
+	db           *sql.DB
+	autoModel    string
+	ftsAvailable atomic.Bool
+	clusterID    string
+}
+
+func NewSessionRepo(db *sql.DB, autoModel string, ftsEnabled bool, clusterID string) *SessionRepo {
+	r := &SessionRepo{db: db, autoModel: autoModel, clusterID: clusterID}
+	r.ftsAvailable.Store(ftsEnabled)
+	return r
+}
+
+func (r *SessionRepo) FTSAvailable() bool { return r.ftsAvailable.Load() }
+
+func (r *SessionRepo) BulkCreate(ctx context.Context, sessions []*domain.Session) error {
+	if len(sessions) == 0 {
+		return nil
+	}
+
+	var stmtSQL string
+	if r.autoModel != "" {
+		stmtSQL = `INSERT IGNORE INTO sessions
+			(id, session_id, agent_id, source, seq, role, content, content_type, content_hash, tags, state, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())`
+	} else {
+		stmtSQL = `INSERT IGNORE INTO sessions
+			(id, session_id, agent_id, source, seq, role, content, content_type, content_hash, tags, embedding, state, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())`
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("sessions bulk create begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, stmtSQL)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			slog.Debug("sessions table not yet ready, skipping raw save", "cluster_id", r.clusterID)
+			return nil
+		}
+		return fmt.Errorf("sessions bulk create prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, s := range sessions {
+		tagsJSON := marshalSessionTags(s.Tags)
+		var execErr error
+		if r.autoModel != "" {
+			_, execErr = stmt.ExecContext(ctx,
+				s.ID, nullString(s.SessionID), nullString(s.AgentID), nullString(s.Source),
+				s.Seq, s.Role, s.Content, s.ContentType, s.ContentHash, tagsJSON,
+			)
+		} else {
+			_, execErr = stmt.ExecContext(ctx,
+				s.ID, nullString(s.SessionID), nullString(s.AgentID), nullString(s.Source),
+				s.Seq, s.Role, s.Content, s.ContentType, s.ContentHash, tagsJSON,
+				vecToString(s.Embedding),
+			)
+		}
+		if execErr != nil {
+			var mysqlErr *mysql.MySQLError
+			if errors.As(execErr, &mysqlErr) && mysqlErr.Number == 1146 {
+				slog.Debug("sessions table not yet ready, skipping raw save", "cluster_id", r.clusterID)
+				return nil
+			}
+			return fmt.Errorf("sessions bulk insert: %w", execErr)
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *SessionRepo) buildSessionFilterConds(f domain.MemoryFilter) ([]string, []any) {
+	conds := []string{}
+	args := []any{}
+
+	if f.State == "all" {
+		// no state filter
+	} else if f.State != "" {
+		conds = append(conds, "state = ?")
+		args = append(args, f.State)
+	} else {
+		conds = append(conds, "state = 'active'")
+	}
+
+	if f.AgentID != "" {
+		conds = append(conds, "agent_id = ?")
+		args = append(args, f.AgentID)
+	}
+	if f.SessionID != "" {
+		conds = append(conds, "session_id = ?")
+		args = append(args, f.SessionID)
+	}
+	if f.Source != "" {
+		conds = append(conds, "source = ?")
+		args = append(args, f.Source)
+	}
+	for _, tag := range f.Tags {
+		tagJSON, err := json.Marshal(tag)
+		if err != nil {
+			continue
+		}
+		conds = append(conds, "JSON_CONTAINS(tags, ?)")
+		args = append(args, string(tagJSON))
+	}
+	if len(conds) == 0 {
+		conds = append(conds, "1=1")
+	}
+	return conds, args
+}
+
+func (r *SessionRepo) AutoVectorSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	conds, args := r.buildSessionFilterConds(f)
+	conds = append(conds, "embedding IS NOT NULL")
+	where := strings.Join(conds, " AND ")
+
+	sqlQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at,
+		VEC_EMBED_COSINE_DISTANCE(embedding, ?) AS distance
+		FROM sessions
+		WHERE ` + where + `
+		ORDER BY VEC_EMBED_COSINE_DISTANCE(embedding, ?)
+		LIMIT ?`
+
+	fullArgs := make([]any, 0, len(args)+3)
+	fullArgs = append(fullArgs, query)
+	fullArgs = append(fullArgs, args...)
+	fullArgs = append(fullArgs, query, limit)
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("sessions auto vector search: cluster_id=%s: %w", r.clusterID, err)
+	}
+	defer rows.Close()
+	return scanSessionRowsWithDistance(rows)
+}
+
+func (r *SessionRepo) VectorSearch(ctx context.Context, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	vecStr := vecToString(queryVec)
+	if vecStr == nil {
+		return nil, nil
+	}
+
+	conds, args := r.buildSessionFilterConds(f)
+	conds = append(conds, "embedding IS NOT NULL")
+	where := strings.Join(conds, " AND ")
+
+	sqlQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at,
+		VEC_COSINE_DISTANCE(embedding, ?) AS distance
+		FROM sessions
+		WHERE ` + where + `
+		ORDER BY VEC_COSINE_DISTANCE(embedding, ?)
+		LIMIT ?`
+
+	fullArgs := make([]any, 0, len(args)+3)
+	fullArgs = append(fullArgs, vecStr)
+	fullArgs = append(fullArgs, args...)
+	fullArgs = append(fullArgs, vecStr, limit)
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("sessions vector search: %w", err)
+	}
+	defer rows.Close()
+	return scanSessionRowsWithDistance(rows)
+}
+
+func (r *SessionRepo) FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	conds, args := r.buildSessionFilterConds(f)
+	where := strings.Join(conds, " AND ")
+
+	safeQ := ftsSafeLiteral(query)
+	sqlQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at,
+		fts_match_word('` + safeQ + `', content) AS fts_score
+		FROM sessions
+		WHERE ` + where + ` AND fts_match_word('` + safeQ + `', content)
+		ORDER BY fts_match_word('` + safeQ + `', content) DESC
+		LIMIT ?`
+
+	fullArgs := make([]any, 0, len(args)+1)
+	fullArgs = append(fullArgs, args...)
+	fullArgs = append(fullArgs, limit)
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("sessions fts search: cluster_id=%s: %w", r.clusterID, err)
+	}
+	defer rows.Close()
+	return scanSessionRowsWithFTSScore(rows)
+}
+
+func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	conds, args := r.buildSessionFilterConds(f)
+	if query != "" {
+		conds = append(conds, "content LIKE CONCAT('%', ?, '%')")
+		args = append(args, query)
+	}
+	where := strings.Join(conds, " AND ")
+
+	sqlQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at
+		FROM sessions
+		WHERE ` + where + `
+		ORDER BY created_at DESC
+		LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("sessions keyword search: %w", err)
+	}
+	defer rows.Close()
+	return scanSessionRows(rows)
+}
+
+func scanSessionRows(rows *sql.Rows) ([]domain.Memory, error) {
+	var result []domain.Memory
+	for rows.Next() {
+		m, err := scanSessionRow(rows, false)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *m)
+	}
+	return result, rows.Err()
+}
+
+func scanSessionRowsWithDistance(rows *sql.Rows) ([]domain.Memory, error) {
+	var result []domain.Memory
+	for rows.Next() {
+		m, err := scanSessionRow(rows, true)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *m)
+	}
+	return result, rows.Err()
+}
+
+func scanSessionRowsWithFTSScore(rows *sql.Rows) ([]domain.Memory, error) {
+	var result []domain.Memory
+	for rows.Next() {
+		m, err := scanSessionRow(rows, true)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *m)
+	}
+	return result, rows.Err()
+}
+
+func scanSessionRow(rows *sql.Rows, hasScore bool) (*domain.Memory, error) {
+	var (
+		sessionID, agentID, source, role, contentType sql.NullString
+		tagsJSON                                      []byte
+		state                                         sql.NullString
+		seq                                           int
+		createdAt                                     time.Time
+		m                                             domain.Memory
+	)
+
+	if hasScore {
+		var score float64
+		err := rows.Scan(
+			&m.ID, &sessionID, &agentID, &source,
+			&seq, &role, &m.Content, &contentType,
+			&tagsJSON, &state, &createdAt,
+			&score,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan session row with score: %w", err)
+		}
+		sc := 1 - score
+		m.Score = &sc
+	} else {
+		err := rows.Scan(
+			&m.ID, &sessionID, &agentID, &source,
+			&seq, &role, &m.Content, &contentType,
+			&tagsJSON, &state, &createdAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan session row: %w", err)
+		}
+	}
+
+	m.MemoryType = domain.TypeSession
+	m.SessionID = sessionID.String
+	m.AgentID = agentID.String
+	m.Source = source.String
+	m.State = domain.MemoryState(state.String)
+	if m.State == "" {
+		m.State = domain.StateActive
+	}
+	m.Tags = unmarshalTags(tagsJSON)
+	m.CreatedAt = createdAt
+	m.UpdatedAt = createdAt
+
+	metaBytes, _ := json.Marshal(map[string]any{
+		"role":         role.String,
+		"seq":          seq,
+		"content_type": contentType.String,
+	})
+	m.Metadata = metaBytes
+
+	return &m, nil
+}
+
+func marshalSessionTags(tags []string) []byte {
+	if len(tags) == 0 {
+		return []byte("[]")
+	}
+	b, err := json.Marshal(tags)
+	if err != nil {
+		return []byte("[]")
+	}
+	return b
+}
+
+func SessionContentHash(sessionID, role, content string) string {
+	h := sha256.Sum256([]byte(sessionID + role + content))
+	return hex.EncodeToString(h[:])
+}
+
+func NewSessionFromIngestMessage(sessionID, agentID, source string, seq int, role, content string) *domain.Session {
+	return &domain.Session{
+		ID:          uuid.New().String(),
+		SessionID:   sessionID,
+		AgentID:     agentID,
+		Source:      source,
+		Seq:         seq,
+		Role:        role,
+		Content:     content,
+		ContentType: detectContentType(content),
+		ContentHash: SessionContentHash(sessionID, role, content),
+		Tags:        []string{},
+		State:       domain.StateActive,
+	}
+}
+
+func detectContentType(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') && json.Valid([]byte(trimmed)) {
+		return "json"
+	}
+	return "text"
+}

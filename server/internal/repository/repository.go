@@ -58,3 +58,16 @@ type UploadTaskRepo interface {
 	FetchPending(ctx context.Context, limit int) ([]domain.UploadTask, error)
 	ResetProcessing(ctx context.Context, staleTimeout time.Duration) (int64, error)
 }
+
+// SessionRepo handles raw session message storage and search.
+// Search methods accept domain.MemoryFilter for consistency with MemoryRepo.
+// All search methods return []domain.Memory (projected as TypeSession rows).
+// BulkCreate silently skips MySQL 1146 (table not yet migrated) at DEBUG level.
+type SessionRepo interface {
+	BulkCreate(ctx context.Context, sessions []*domain.Session) error
+	AutoVectorSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
+	VectorSearch(ctx context.Context, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
+	FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
+	KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
+	FTSAvailable() bool
+}

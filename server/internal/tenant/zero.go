@@ -5,14 +5,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/go-sql-driver/mysql"
 )
 
 type ZeroClient struct {
@@ -199,26 +196,34 @@ func (p *ZeroProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
 	if p.autoModel != "" {
 		_, err := db.ExecContext(ctx,
 			`ALTER TABLE memories ADD VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
-		if err != nil && !isIndexExistsError(err) {
+		if err != nil && !IsIndexExistsError(err) {
 			return fmt.Errorf("init schema: vector index: %w", err)
 		}
 	}
 	if p.ftsEnabled {
 		_, err := db.ExecContext(ctx,
 			`ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
-		if err != nil && !isIndexExistsError(err) {
+		if err != nil && !IsIndexExistsError(err) {
 			return fmt.Errorf("init schema: fulltext index: %w", err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, BuildSessionsSchema(p.autoModel, p.autoDims)); err != nil {
+		return fmt.Errorf("init schema: sessions table: %w", err)
+	}
+	if p.autoModel != "" {
+		_, err := db.ExecContext(ctx,
+			`ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+		if err != nil && !IsIndexExistsError(err) {
+			return fmt.Errorf("init schema: sessions vector index: %w", err)
+		}
+	}
+	if p.ftsEnabled {
+		_, err := db.ExecContext(ctx,
+			`ALTER TABLE sessions ADD FULLTEXT INDEX idx_sess_fts (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+		if err != nil && !IsIndexExistsError(err) {
+			return fmt.Errorf("init schema: sessions fulltext index: %w", err)
 		}
 	}
 	return nil
 
-}
-
-// isIndexExistsError checks if the error is a duplicate index error.
-func isIndexExistsError(err error) bool {
-	var mysqlErr *mysql.MySQLError
-	if errors.As(err, &mysqlErr) {
-		return mysqlErr.Number == 1061
-	}
-	return strings.Contains(err.Error(), "already exists")
 }
