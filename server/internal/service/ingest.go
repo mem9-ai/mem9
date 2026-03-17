@@ -322,8 +322,9 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agentID, sessionID, conversation string) ([]string, int, error) {
 	const maxFacts = 50 // Cap extracted facts to bound reconciliation prompt size
 
-	// Phase 1a: Extract facts (tags discarded — extractAndReconcile is used by ReconcileContent only).
-	facts, _, err := s.extractFactsAndTags(ctx, conversation, 0)
+	// Phase 1a: Extract facts only — no message_tags needed here (ReconcileContent path).
+	// Use extractFacts instead of extractFactsAndTags to avoid wasting tokens on tag generation.
+	facts, err := s.extractFacts(ctx, conversation)
 	if err != nil {
 		return nil, 0, fmt.Errorf("extract facts: %w", err)
 	}
@@ -339,6 +340,72 @@ func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agen
 
 	// Phase 2: Reconcile each fact against existing memories.
 	return s.reconcile(ctx, agentName, agentID, sessionID, facts)
+}
+
+// extractFacts calls the LLM to extract atomic facts only, without per-message tag generation.
+// Used by extractAndReconcile (ReconcileContent path) where message_tags are not needed.
+func (s *IngestService) extractFacts(ctx context.Context, conversation string) ([]string, error) {
+	if s.llm == nil || conversation == "" {
+		return nil, nil
+	}
+
+	currentDate := time.Now().Format("2006-01-02")
+
+	systemPrompt := `You are an information extraction engine. Your task is to identify distinct,
+atomic facts from a conversation.
+
+## Rules
+
+1. Extract facts ONLY from the user's messages. Ignore assistant and system messages entirely.
+2. Each fact must be a single, self-contained statement (one idea per fact).
+3. Prefer specific details over vague summaries.
+   - Good: "Uses Go 1.22 for backend services"
+   - Bad: "Knows some programming languages"
+4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
+5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
+6. Omit information that is only relevant to the current task and has no future reuse value.
+7. If no meaningful facts exist in the conversation, return an empty facts array.
+
+## Output Format
+
+Return ONLY valid JSON. No markdown fences, no explanation.
+
+{"facts": ["fact one", "fact two", ...]}`
+
+	userPrompt := fmt.Sprintf("Extract facts. Today's date is %s.\n\n%s", currentDate, conversation)
+
+	type extractResponse struct {
+		Facts []string `json:"facts"`
+	}
+
+	raw, err := s.llm.CompleteJSON(ctx, systemPrompt, userPrompt)
+	if err != nil {
+		return nil, fmt.Errorf("extraction LLM call: %w", err)
+	}
+
+	parsed, err := llm.ParseJSON[extractResponse](raw)
+	if err != nil {
+		raw2, retryErr := s.llm.CompleteJSON(ctx, systemPrompt,
+			"Your previous response was not valid JSON. Return ONLY the JSON object.\n\n"+userPrompt)
+		if retryErr != nil {
+			return nil, fmt.Errorf("extraction retry: %w", retryErr)
+		}
+		parsed, err = llm.ParseJSON[extractResponse](raw2)
+		if err != nil {
+			return nil, fmt.Errorf("extraction parse after retry: %w", err)
+		}
+	}
+
+	var facts []string
+	for _, f := range parsed.Facts {
+		f = strings.TrimSpace(f)
+		if f != "" {
+			facts = append(facts, f)
+		}
+	}
+
+	slog.Info("facts extracted", "facts", len(facts))
+	return facts, nil
 }
 
 // extractFactsAndTags calls the LLM to extract atomic facts and per-message tags
