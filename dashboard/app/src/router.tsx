@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Toaster } from "sonner";
+import { trackGa4PageView } from "@/lib/ga4";
 import type { MemoryType, MemoryFacet } from "@/types/memory";
 import { ANALYSIS_CATEGORIES, type AnalysisCategory } from "@/types/analysis";
 import type { TimeRangePreset } from "@/types/time-range";
@@ -23,8 +24,9 @@ function RootLayout() {
   });
 
   useEffect(() => {
+    trackGa4PageView(location.pathname, location.searchStr);
     trackMixpanelPageView(location.pathname);
-  }, [location.pathname]);
+  }, [location.pathname, location.searchStr]);
 
   return (
     <>
