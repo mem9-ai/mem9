@@ -20,6 +20,15 @@ Persist each raw session message-by-message into a dedicated `sessions`
 table in the tenant database, in parallel with smart ingest. Enable unified
 search that appends session results after memory results in `GET /memories`.
 
+**Scope of raw storage**: the table stores a *deduplicated message set* —
+not a verbatim append log. Two sends of the same message content within the
+same session produce one row. This is a deliberate trade-off: the plugin
+sends overlapping cumulative slices on every turn (verified against OpenClaw
+source), so verbatim logging would multiply every message N times. The
+deduplication key is `SHA-256(session_id + role + content)`; identical
+content from different sessions or different roles always produces distinct
+rows.
+
 ## Non-Goals
 
 - Re-ingestion pipeline triggered from stored sessions (future work)
@@ -167,7 +176,11 @@ Pros: no extra schema change beyond the hash column.
 Cons: extra read per ingest call; adds latency to the background goroutine.
 Not worth the complexity over Option A.
 
-**Decision needed:** Option A is recommended. Confirm before implementation.
+**Decision: Option A (content hash + `INSERT IGNORE`).**
+Rationale: no read-before-write, idempotent, aligns with the goal of
+storing a deduplicated message set. The "identical greetings" case is
+accepted — it is rare and the stored content is still correct.
+Option B (read-before-write delta) is not used.
 
 ### New table: `sessions`
 
@@ -337,7 +350,7 @@ Sessions surface as `Memory` objects with:
 |----------------|--------|
 | `id`           | `sessions.id` |
 | `content`      | `sessions.content` (raw message text) |
-| `memory_type`  | `"session"` (new constant `TypeSession`) |
+| `memory_type`  | `"session"` (new constant `TypeSession = "session"`) |
 | `agent_id`     | `sessions.agent_id` |
 | `session_id`   | `sessions.session_id` |
 | `source`       | `sessions.source` |
@@ -346,12 +359,45 @@ Sessions surface as `Memory` objects with:
 | `created_at`   | `sessions.created_at` |
 | `metadata`     | `{"role": "user", "seq": 3, "content_type": "text"}` |
 
+`TypeSession = "session"` must be added to `domain/types.go` alongside
+`TypePinned` and `TypeInsight`.
+
 `metadata` encodes session-specific fields (`role`, `seq`, `content_type`)
 that have no counterpart in `Memory`. Callers can inspect them without a
 separate API.
 
-Filter `memory_type=session` to retrieve session rows only;
-`memory_type=insight,pinned` retains existing behaviour.
+### `memory_type=session` filter routing
+
+When a caller passes `memory_type=session` in `GET /memories`:
+
+- `MemoryService.Search` is **skipped entirely** — the `memories` table
+  has no `memory_type=session` rows.
+- Only `SessionService.Search` is called.
+- The `MemoryType` field in `MemoryFilter` is checked in `listMemories`
+  before invoking either service:
+
+```go
+onlySession := filter.MemoryType == string(domain.TypeSession)
+
+var memories []domain.Memory
+var total int
+if !onlySession {
+    memories, total, err = svc.memory.Search(r.Context(), filter)
+    // handle err ...
+}
+if filter.Query != "" && svc.session != nil {
+    if onlySession || filter.MemoryType == "" {
+        sessionMems, _ := svc.session.Search(r.Context(), filter)
+        memories = append(memories, sessionMems...)
+        total += len(sessionMems)
+    }
+}
+```
+
+This means:
+- `memory_type=` (empty) → both memory + session results
+- `memory_type=session` → session results only
+- `memory_type=insight` or `memory_type=pinned` → memory results only, no sessions
 
 ### Search implementation
 
@@ -367,6 +413,13 @@ so all search modes are supported:
 | `FTSAvailable()` | FTS only | `fts_match_word('...', content)` |
 | fallback | Keyword | `content LIKE '%...%'` |
 
+Note: `SessionRepo.VectorSearch(ctx, []float32, ...)` is only reachable
+when `embedder != nil` AND `autoModel == ""` — i.e. client-side embedding
+mode. In `autoModel` mode only `AutoVectorSearch` is called.
+`VectorSearch` is included in the interface for completeness and to
+match the `MemoryRepo` pattern; it is dead code in the default Starter
+deployment (which uses `autoModel`).
+
 `rrfMerge`, `collectMems`, `sortByScore`, `setScores`, `populateRelativeAge`
 from `service/memory.go` are reused as-is — they operate on
 `[]domain.Memory` and `map[string]float64`, both table-agnostic.
@@ -380,6 +433,14 @@ RRF is applied **within** session results only. Sessions are **not**
 re-ranked against memories — they are appended after the memory result
 set. This keeps sessions clearly separated in the response.
 
+**2×limit behaviour (explicit API contract change):** when both memory
+and session results are returned, the combined slice contains up to
+`2×limit` entries. The `Limit` field in `listResponse` still reflects
+the original query parameter. Clients must not assume `len(memories) <=
+Limit` when `memory_type` is empty or `session`. This is intentional —
+sessions are supplementary results appended after the primary memory
+set.
+
 ---
 
 ## Interface Changes
@@ -388,17 +449,23 @@ set. This keeps sessions clearly separated in the response.
 
 ```go
 // SessionRepo handles raw message storage and search.
+// Search methods accept domain.MemoryFilter for consistency with MemoryRepo
+// and to support tag/state/session_id filtering on sessions.
 // All four search methods return []domain.Memory (already projected),
 // so rrfMerge/collectMems/sortByScore from service/memory.go are reused as-is.
 type SessionRepo interface {
     BulkCreate(ctx context.Context, sessions []*domain.Session) error
-    AutoVectorSearch(ctx context.Context, query string, agentID string, limit int) ([]domain.Memory, error)
-    VectorSearch(ctx context.Context, queryVec []float32, agentID string, limit int) ([]domain.Memory, error)
-    FTSSearch(ctx context.Context, query string, agentID string, limit int) ([]domain.Memory, error)
-    KeywordSearch(ctx context.Context, query string, agentID string, limit int) ([]domain.Memory, error)
+    AutoVectorSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
+    VectorSearch(ctx context.Context, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
+    FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
+    KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
     FTSAvailable() bool
 }
 ```
+
+`domain.MemoryFilter` is reused directly. The session repo ignores
+`MemoryType` (not a column on `sessions`) but honours `AgentID`, `Tags`,
+`SessionID`, `State`, `Limit`, and `Offset`.
 
 ### New service
 
@@ -414,7 +481,7 @@ func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req I
 
 // Search runs the same hybrid pipeline as MemoryService.autoHybridSearch.
 // Returns []domain.Memory (projected) for direct append into listMemories response.
-func (s *SessionService) Search(ctx context.Context, query, agentID string, limit int) ([]domain.Memory, error)
+func (s *SessionService) Search(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, error)
 ```
 
 `Search` selects its mode identically to `MemoryService.Search`:
@@ -432,9 +499,6 @@ func (s *SessionService) Search(ctx context.Context, query, agentID string, limi
 ```go
 // Launch raw save and smart ingest in parallel.
 go func(agentName string, req service.IngestRequest) {
-    if svc.session == nil {
-        return
-    }
     if err := svc.session.BulkCreate(context.Background(), agentName, req); err != nil {
         slog.Error("async session raw save failed",
             "cluster_id", auth.ClusterID,
@@ -450,15 +514,35 @@ go func(agentName string, req service.IngestRequest) {
 respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 ```
 
+Note: `svc.session` is always non-nil (constructed at cache time). The
+nil-guard is removed. Instead, `SessionRepo.BulkCreate` swallows MySQL
+error 1146 (table not found) internally, logging at DEBUG — see B2 fix
+in "Existing tenants" section. This means during the migration window,
+session write failures are silent at DEBUG level, not ERROR floods.
+
 `handler/memory.go` `listMemories`:
 
 ```go
-// Append session results after memory results (only when q is provided).
-if filter.Query != "" && svc.session != nil {
-    sessionMems, _ := svc.session.Search(r.Context(), filter.Query, auth.AgentName, filter.Limit)
-    memories = append(memories, sessionMems...)
-    total += len(sessionMems)   // rough approximation — total counts memories + sessions
+onlySession := filter.MemoryType == string(domain.TypeSession)
+
+var memories []domain.Memory
+var total int
+var err error
+if !onlySession {
+    memories, total, err = svc.memory.Search(r.Context(), filter)
+    if err != nil {
+        s.handleError(w, err)
+        return
+    }
 }
+if filter.Query != "" {
+    if onlySession || filter.MemoryType == "" {
+        sessionMems, _ := svc.session.Search(r.Context(), filter)
+        memories = append(memories, sessionMems...)
+        total += len(sessionMems)
+    }
+}
+// NOTE: combined len(memories) may exceed filter.Limit (up to 2×limit by design)
 ```
 
 ### `Server` struct and `resolvedSvc`
@@ -473,7 +557,6 @@ type Server struct {
     embedder    *embed.Embedder
     llmClient   *llm.Client
     autoModel   string
-    autoDims    int       // new — needed by ensureSessionsTable for VECTOR(N) DDL
     ftsEnabled  bool
     ingestMode  service.IngestMode
     dbBackend   string
@@ -482,8 +565,8 @@ type Server struct {
 }
 ```
 
-`NewServer` gains one extra parameter: `autoDims int`. Caller `main.go:118`
-passes `cfg.EmbedAutoDims`.
+`NewServer` signature is **unchanged** — `autoDims` is not added.
+`TenantService` already holds it from construction (`main.go:108`).
 
 `resolvedSvc`:
 
@@ -491,7 +574,7 @@ passes `cfg.EmbedAutoDims`.
 type resolvedSvc struct {
     memory  *service.MemoryService
     ingest  *service.IngestService
-    session *service.SessionService   // nil until ensureSessionsTable succeeds
+    session *service.SessionService   // always non-nil; BulkCreate swallows 1146
 }
 ```
 
@@ -506,10 +589,10 @@ svc := resolvedSvc{
 }
 s.svcCache.Store(key, svc)
 
+// Fire background migration — TenantService owns the DDL logic (not handler).
 go func() {
-    if err := ensureSessionsTable(context.Background(), auth.TenantDB,
-        s.autoModel, s.autoDims, s.ftsEnabled); err != nil {
-        s.logger.Warn("sessions table migration failed — session writes skipped",
+    if err := s.tenant.EnsureSessionsTable(context.Background(), auth.TenantDB); err != nil {
+        s.logger.Warn("sessions table migration failed",
             "cluster_id", auth.ClusterID,
             "tenant", auth.TenantID, "err", err)
     }
@@ -590,30 +673,17 @@ NOT EXISTS`** — no `schema_version` tracking needed.
 
 When `resolveServices` builds a new `resolvedSvc` for a tenant (once per
 tenant per server cold start, due to `svcCache`), it fires a background
-goroutine to ensure the sessions table exists:
+goroutine delegating to `TenantService.EnsureSessionsTable` (C5 fix —
+DDL lives in the service layer, not the handler):
 
 ```go
-// In resolveServices, after caching the new svc:
-go func() {
-    if err := ensureSessionsTable(context.Background(), auth.TenantDB,
-        s.autoModel, s.autoDims, s.ftsEnabled); err != nil {
-        s.logger.Warn("sessions table migration failed — session writes skipped",
-            "cluster_id", auth.ClusterID,
-            "tenant", auth.TenantID, "err", err)
-    }
-}()
-```
-
-`ensureSessionsTable` is a new unexported function in `handler/handler.go`:
-
-```go
-func ensureSessionsTable(ctx context.Context, db *sql.DB,
-    autoModel string, autoDims int, ftsEnabled bool) error {
-
-    if _, err := db.ExecContext(ctx, tenant.BuildSessionsSchema(autoModel, autoDims)); err != nil {
+// service/tenant.go — new method
+func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) error {
+    if _, err := db.ExecContext(ctx,
+        tenant.BuildSessionsSchema(s.autoModel, s.autoDims)); err != nil {
         return fmt.Errorf("ensure sessions table: create: %w", err)
     }
-    if autoModel != "" {
+    if s.autoModel != "" {
         _, err := db.ExecContext(ctx,
             `ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine `+
             `((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
@@ -621,7 +691,7 @@ func ensureSessionsTable(ctx context.Context, db *sql.DB,
             return fmt.Errorf("ensure sessions table: vector index: %w", err)
         }
     }
-    if ftsEnabled {
+    if s.ftsEnabled {
         _, err := db.ExecContext(ctx,
             `ALTER TABLE sessions ADD FULLTEXT INDEX idx_sess_fts (content) `+
             `WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
@@ -633,55 +703,62 @@ func ensureSessionsTable(ctx context.Context, db *sql.DB,
 }
 ```
 
-`tenant.IsIndexExistsError` is moved from the current unexported
-`isIndexExistsError` in `tenant/zero.go` to a new shared file
-`tenant/util.go`, exported for use by both `zero.go` and `handler.go`:
+**B2 fix — MySQL 1146 swallowed in `SessionRepo.BulkCreate`:**
+
+`svc.session` is always non-nil (constructed before the goroutine fires).
+To avoid a silent SQL error flood during the migration window, `BulkCreate`
+swallows MySQL error 1146 (ER_NO_SUCH_TABLE) at DEBUG level instead of
+returning it:
 
 ```go
-// tenant/util.go
-package tenant
-
-import (
-    "strings"
-    "github.com/go-sql-driver/mysql"
-)
-
-// IsIndexExistsError reports whether err is a duplicate index error (MySQL 1061).
-// Used by InitSchema and ensureSessionsTable to make index creation idempotent.
-func IsIndexExistsError(err error) bool {
-    var mysqlErr *mysql.MySQLError
-    if errors.As(err, &mysqlErr) {
-        return mysqlErr.Number == 1061
-    }
-    return strings.Contains(err.Error(), "already exists")
+// In tidb/sessions.go BulkCreate:
+var mysqlErr *mysql.MySQLError
+if errors.As(execErr, &mysqlErr) && mysqlErr.Number == 1146 {
+    slog.Debug("sessions table not yet ready, skipping raw save",
+        "cluster_id", r.clusterID)
+    return nil
 }
+return execErr
 ```
 
-`zero.go` replaces its local `isIndexExistsError` calls with
-`IsIndexExistsError` and removes the local definition.
+The same guard applies in all four search methods — if the table doesn't
+exist, return empty results rather than an error.
 
-**Fail-open behaviour:** If `ensureSessionsTable` fails (e.g. the cluster
-is temporarily unavailable), session writes and searches are silently
-skipped for that tenant — logged at WARN level. Smart ingest and all memory
-operations are completely unaffected. The goroutine will retry on the next
-cold start (i.e. next server restart or pool eviction).
+**Fail-open behaviour:** session writes are silently skipped at DEBUG
+level until `EnsureSessionsTable` completes. Smart ingest and all memory
+operations are completely unaffected. The goroutine runs once per tenant
+per cold start; `CREATE TABLE IF NOT EXISTS` is idempotent on all
+subsequent cold starts.
 
 ---
 
 ## Deploy Notes
 
-### TiDB Cloud Starter pool template
+### Safe deployment order
 
-The Starter provisioner relies on a pre-created cluster pool managed via
-TiDB Cloud. The pool cluster template must include the `sessions` DDL.
+**The pool template must be updated BEFORE the binary is deployed.**
+Rationale: if the binary deploys first, any new tenant provisioned from
+an old-template cluster during the drain window will have no `sessions`
+table. The lazy migration (`EnsureSessionsTable`) is the safety net for
+that case, but it is better not to rely on it for brand-new tenants.
 
-Update steps:
-1. Add `sessions` table DDL (with embedding and FTS indexes) to the
-   pool cluster template SQL script.
-2. Recycle the pool (drain old clusters, let the provisioner claim fresh
-   ones with the new schema).
-3. Existing tenants already claimed from the pool are migrated via the
-   lazy migration path (Option A above).
+Numbered sequence:
+
+1. **Update pool cluster template** — add `sessions` DDL (with embedding
+   and FTS indexes) to the TiDB Cloud pool cluster template SQL script.
+2. **Drain old-template clusters** — let the pool recycler replace
+   old-template clusters with new ones. No immediate action required;
+   this happens automatically as old clusters expire.
+3. **Deploy binary** — roll out the new server image.
+4. **Coverage**: all tenant cases are covered:
+   - New tenants after step 3: claimed from new-template pool → have `sessions` already.
+   - New tenants during drain window (steps 2-3): claimed from old-template cluster →
+     no `sessions` table → `EnsureSessionsTable` fires on first request → migrated.
+   - Existing tenants (pre-deploy): `EnsureSessionsTable` fires on first
+     request after server restart → migrated.
+
+All straggler cases (new or existing tenants from old-template clusters)
+are covered by the lazy migration path.
 
 The `sessions` DDL to add to the pool template:
 
@@ -740,14 +817,15 @@ until the goroutine succeeds; smart ingest is never affected.
 | `tenant/util.go` | New file: `IsIndexExistsError` (moved + exported from `zero.go`) | ~15 |
 | `tenant/schema.go` | `BuildSessionsSchema()` — embedding col + FTS/vector ALTER pattern | ~50 |
 | `tenant/zero.go` | Call `BuildSessionsSchema` + vector/FTS ALTERs; replace `isIndexExistsError` with `IsIndexExistsError` | ~20 |
-| `repository/repository.go` | `SessionRepo` interface | ~15 |
-| `repository/tidb/sessions.go` | New file: `BulkCreate`, `KeywordSearch`, `FTSSearch`, `AutoVectorSearch`, tag filter, hash dedup | ~180 |
-| `service/session.go` | New file: `SessionService.BulkCreate`, `Search` (full hybrid RRF pipeline) | ~100 |
-| `handler/handler.go` | `autoDims` field + `NewServer` param; `resolvedSvc` + `resolveServices` wiring; `ensureSessionsTable` | ~50 |
-| `handler/memory.go` | Parallel goroutine for raw save; append sessions in search path | ~30 |
+| `service/tenant.go` | `EnsureSessionsTable(ctx, db)` — reads `autoModel`/`autoDims`/`ftsEnabled` from receiver | ~35 |
+| `repository/repository.go` | `SessionRepo` interface (with `domain.MemoryFilter`) | ~15 |
+| `repository/tidb/sessions.go` | New file: `BulkCreate` (MySQL 1146 swallow), `KeywordSearch`, `FTSSearch`, `AutoVectorSearch`, `VectorSearch`, tag/state filter, hash dedup | ~200 |
+| `service/session.go` | New file: `SessionService.BulkCreate`, `Search` (full hybrid RRF pipeline, `domain.MemoryFilter`) | ~100 |
+| `handler/handler.go` | `resolvedSvc`; `resolveServices` wiring; delegate to `s.tenant.EnsureSessionsTable(ctx, db)` | ~30 |
+| `handler/memory.go` | Parallel goroutine; `memory_type=session` routing; append sessions in search | ~40 |
 | `server/schema.sql` | Add sessions DDL (reference) | ~30 |
 
-**Total: ~520 LoC**
+**Total: ~580 LoC**
 
 ---
 
@@ -759,7 +837,31 @@ until the goroutine succeeds; smart ingest is never affected.
 
 2. **Session search in list (no query)** — sessions are appended to results
    only when `q` is provided. Plain `GET /memories` (no query) returns
-   memories only; pagination semantics are unchanged.
+   memories only — pagination semantics unchanged.
 
 3. **`content_type` auto-detection** — `json.Valid()` check only. Detected
    as `"json"` if valid JSON, otherwise `"text"`. No Markdown detection.
+
+4. **Dedup strategy** — Option A (content hash + `INSERT IGNORE`). The table
+   stores a deduplicated message set, not a verbatim log. Goal section updated
+   to reflect this.
+
+5. **`memory_type=session` routing** — `MemoryService.Search` is skipped
+   entirely when `memory_type=session`; only `SessionService.Search` is called.
+
+6. **`SessionRepo.VectorSearch` reachability** — only reachable in
+   client-side embedding mode (`embedder != nil`, `autoModel == ""`). Dead code
+   in the default Starter deployment. Kept for interface symmetry with
+   `MemoryRepo`.
+
+7. **Goroutine shutdown context** — `EnsureSessionsTable` runs with
+   `context.Background()`. DDL statements are short-lived (seconds); graceful
+   shutdown typically waits longer. No cancellation signal needed.
+
+8. **`autoDims = 0` guard** — `BuildSessionsSchema` mirrors `BuildMemorySchema`
+   exactly (`schema.go:92`): when `autoModel != ""`, `autoDims` is used directly
+   in `VECTOR(%d)` with no guard (same as memories — misconfiguration is a
+   deployment error, not a schema concern); when `autoModel == ""`, emit
+   `VECTOR(1536) NULL` (nullable static column for client-side or no embedding).
+   `1536` is the OpenAI `text-embedding-ada-002` dimension used as the static
+   fallback, matching the existing pattern. No extra guard needed.
