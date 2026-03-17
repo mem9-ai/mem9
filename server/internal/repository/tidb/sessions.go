@@ -93,7 +93,7 @@ func (r *SessionRepo) BulkCreate(ctx context.Context, sessions []*domain.Session
 func (r *SessionRepo) PatchTags(ctx context.Context, sessionID, contentHash string, tags []string) error {
 	tagsJSON := marshalTags(tags)
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE sessions SET tags = ? WHERE session_id = ? AND content_hash = ?`,
+		`UPDATE sessions SET tags = ? WHERE session_id = ? AND content_hash = ? AND JSON_LENGTH(COALESCE(tags, '[]')) = 0`,
 		tagsJSON, sessionID, contentHash,
 	)
 	if err != nil && internaltenant.IsTableNotFoundError(err) {

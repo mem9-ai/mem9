@@ -72,8 +72,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			// Step 3: fan out — patch session tags and reconcile memories in parallel.
 			go func() {
 				for i, msg := range req.Messages {
-					hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content)
 					tags := tagsAtIndex(phase1.MessageTags, i)
+					if len(tags) == 0 {
+						continue
+					}
+					hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content)
 					if err := svc.session.PatchTags(context.Background(), req.SessionID, hash, tags); err != nil {
 						slog.Warn("session tag patch failed",
 							"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
