@@ -164,6 +164,10 @@ func rrfMerge(ftsResults, vecResults []domain.Memory) map[string]float64 {
 }
 
 func (s *MemoryService) paginate(results []domain.Memory, offset, limit int) ([]domain.Memory, int) {
+	return paginateResults(results, offset, limit)
+}
+
+func paginateResults(results []domain.Memory, offset, limit int) ([]domain.Memory, int) {
 	total := len(results)
 	if offset >= total {
 		return []domain.Memory{}, total

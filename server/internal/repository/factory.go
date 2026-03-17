@@ -60,7 +60,13 @@ func NewMemoryRepo(backend string, db *sql.DB, autoModel string, ftsEnabled bool
 	}
 }
 
-// NewSessionRepo creates a SessionRepo. Only supported on tidb backend.
+// NewSessionRepo creates a SessionRepo. Only supported on the tidb backend.
+// Panics for unsupported backends to surface misconfiguration at startup.
 func NewSessionRepo(backend string, db *sql.DB, autoModel string, ftsEnabled bool, clusterID string) SessionRepo {
-	return tidb.NewSessionRepo(db, autoModel, ftsEnabled, clusterID)
+	switch backend {
+	case "tidb", "":
+		return tidb.NewSessionRepo(db, autoModel, ftsEnabled, clusterID)
+	default:
+		panic("NewSessionRepo: unsupported backend " + backend + " (sessions table is TiDB-only)")
+	}
 }

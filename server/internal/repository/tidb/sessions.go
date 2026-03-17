@@ -2,9 +2,7 @@ package tidb
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/google/uuid"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	internaltenant "github.com/qiffang/mnemos/server/internal/tenant"
 )
@@ -67,7 +64,7 @@ func (r *SessionRepo) BulkCreate(ctx context.Context, sessions []*domain.Session
 	defer stmt.Close()
 
 	for _, s := range sessions {
-		tagsJSON := marshalSessionTags(s.Tags)
+		tagsJSON := marshalTags(s.Tags)
 		var execErr error
 		if r.autoModel != "" {
 			_, execErr = stmt.ExecContext(ctx,
@@ -249,7 +246,7 @@ func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.
 func scanSessionRows(rows *sql.Rows) ([]domain.Memory, error) {
 	var result []domain.Memory
 	for rows.Next() {
-		m, err := scanSessionRow(rows, false)
+		m, err := scanSessionRowNoScore(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -261,7 +258,7 @@ func scanSessionRows(rows *sql.Rows) ([]domain.Memory, error) {
 func scanSessionRowsWithDistance(rows *sql.Rows) ([]domain.Memory, error) {
 	var result []domain.Memory
 	for rows.Next() {
-		m, err := scanSessionRow(rows, true)
+		m, err := scanSessionRowWithDistance(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -273,7 +270,7 @@ func scanSessionRowsWithDistance(rows *sql.Rows) ([]domain.Memory, error) {
 func scanSessionRowsWithFTSScore(rows *sql.Rows) ([]domain.Memory, error) {
 	var result []domain.Memory
 	for rows.Next() {
-		m, err := scanSessionRow(rows, true)
+		m, err := scanSessionRowWithFTSScore(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -282,7 +279,7 @@ func scanSessionRowsWithFTSScore(rows *sql.Rows) ([]domain.Memory, error) {
 	return result, rows.Err()
 }
 
-func scanSessionRow(rows *sql.Rows, hasScore bool) (*domain.Memory, error) {
+func scanSessionRowNoScore(rows *sql.Rows) (*domain.Memory, error) {
 	var (
 		sessionID, agentID, source, role, contentType sql.NullString
 		tagsJSON                                      []byte
@@ -291,31 +288,65 @@ func scanSessionRow(rows *sql.Rows, hasScore bool) (*domain.Memory, error) {
 		createdAt                                     time.Time
 		m                                             domain.Memory
 	)
-
-	if hasScore {
-		var score float64
-		err := rows.Scan(
-			&m.ID, &sessionID, &agentID, &source,
-			&seq, &role, &m.Content, &contentType,
-			&tagsJSON, &state, &createdAt,
-			&score,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("scan session row with score: %w", err)
-		}
-		sc := 1 - score
-		m.Score = &sc
-	} else {
-		err := rows.Scan(
-			&m.ID, &sessionID, &agentID, &source,
-			&seq, &role, &m.Content, &contentType,
-			&tagsJSON, &state, &createdAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("scan session row: %w", err)
-		}
+	if err := rows.Scan(
+		&m.ID, &sessionID, &agentID, &source,
+		&seq, &role, &m.Content, &contentType,
+		&tagsJSON, &state, &createdAt,
+	); err != nil {
+		return nil, fmt.Errorf("scan session row: %w", err)
 	}
+	return fillSessionMemory(&m, sessionID, agentID, source, role, contentType, seq, tagsJSON, state, createdAt), nil
+}
 
+func scanSessionRowWithDistance(rows *sql.Rows) (*domain.Memory, error) {
+	var (
+		sessionID, agentID, source, role, contentType sql.NullString
+		tagsJSON                                      []byte
+		state                                         sql.NullString
+		seq                                           int
+		createdAt                                     time.Time
+		distance                                      float64
+		m                                             domain.Memory
+	)
+	if err := rows.Scan(
+		&m.ID, &sessionID, &agentID, &source,
+		&seq, &role, &m.Content, &contentType,
+		&tagsJSON, &state, &createdAt,
+		&distance,
+	); err != nil {
+		return nil, fmt.Errorf("scan session row with distance: %w", err)
+	}
+	m = *fillSessionMemory(&m, sessionID, agentID, source, role, contentType, seq, tagsJSON, state, createdAt)
+	sc := 1 - distance
+	m.Score = &sc
+	return &m, nil
+}
+
+func scanSessionRowWithFTSScore(rows *sql.Rows) (*domain.Memory, error) {
+	var (
+		sessionID, agentID, source, role, contentType sql.NullString
+		tagsJSON                                      []byte
+		state                                         sql.NullString
+		seq                                           int
+		createdAt                                     time.Time
+		ftsScore                                      float64
+		m                                             domain.Memory
+	)
+	if err := rows.Scan(
+		&m.ID, &sessionID, &agentID, &source,
+		&seq, &role, &m.Content, &contentType,
+		&tagsJSON, &state, &createdAt,
+		&ftsScore,
+	); err != nil {
+		return nil, fmt.Errorf("scan session row with fts score: %w", err)
+	}
+	m = *fillSessionMemory(&m, sessionID, agentID, source, role, contentType, seq, tagsJSON, state, createdAt)
+	m.Score = &ftsScore
+	return &m, nil
+}
+
+func fillSessionMemory(m *domain.Memory, sessionID, agentID, source, role, contentType sql.NullString,
+	seq int, tagsJSON []byte, state sql.NullString, createdAt time.Time) *domain.Memory {
 	m.MemoryType = domain.TypeSession
 	m.SessionID = sessionID.String
 	m.AgentID = agentID.String
@@ -326,60 +357,12 @@ func scanSessionRow(rows *sql.Rows, hasScore bool) (*domain.Memory, error) {
 	}
 	m.Tags = unmarshalTags(tagsJSON)
 	m.CreatedAt = createdAt
-	m.UpdatedAt = createdAt
-
+	m.UpdatedAt = createdAt // sessions are immutable; updated_at always equals created_at
 	metaBytes, _ := json.Marshal(map[string]any{
 		"role":         role.String,
 		"seq":          seq,
 		"content_type": contentType.String,
 	})
 	m.Metadata = metaBytes
-
-	return &m, nil
-}
-
-// SessionContentHash returns SHA-256(sessionID+role+content) as a hex string.
-// Two sends of the same message content within the same session produce the same
-// hash, so INSERT IGNORE deduplicates them. This is intentional: the plugin sends
-// cumulative overlapping slices on every agent turn; verbatim logging would store
-// each message N times. Identical messages in different sessions or roles are always
-// distinct (session_id and role are part of the input).
-func SessionContentHash(sessionID, role, content string) string {
-	h := sha256.Sum256([]byte(sessionID + role + content))
-	return hex.EncodeToString(h[:])
-}
-
-func NewSessionFromIngestMessage(sessionID, agentID, source string, seq int, role, content string) *domain.Session {
-	return &domain.Session{
-		ID:          uuid.New().String(),
-		SessionID:   sessionID,
-		AgentID:     agentID,
-		Source:      source,
-		Seq:         seq,
-		Role:        role,
-		Content:     content,
-		ContentType: detectContentType(content),
-		ContentHash: SessionContentHash(sessionID, role, content),
-		Tags:        []string{},
-		State:       domain.StateActive,
-	}
-}
-
-func marshalSessionTags(tags []string) []byte {
-	if len(tags) == 0 {
-		return []byte("[]")
-	}
-	b, err := json.Marshal(tags)
-	if err != nil {
-		return []byte("[]")
-	}
-	return b
-}
-
-func detectContentType(content string) string {
-	trimmed := strings.TrimSpace(content)
-	if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') && json.Valid([]byte(trimmed)) {
-		return "json"
-	}
-	return "text"
+	return m
 }

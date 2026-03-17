@@ -90,6 +90,9 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 			session: service.NewSessionService(sessRepo, s.embedder, s.autoModel),
 		}
 		s.svcCache.Store(key, svc)
+		// EnsureSessionsTable fires once per tenant per cold start (svcCache is never evicted).
+		// Non-1146 failures (e.g. transient network) leave the tenant without sessions table
+		// until the next server restart — known limitation, acceptable for non-critical feature.
 		go func() {
 			if err := s.tenant.EnsureSessionsTable(context.Background(), auth.TenantDB); err != nil {
 				s.logger.Warn("sessions table migration failed",
@@ -111,6 +114,9 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		session: service.NewSessionService(sessRepo, s.embedder, s.autoModel),
 	}
 	s.svcCache.Store(key, svc)
+	// EnsureSessionsTable fires once per tenant per cold start (svcCache is never evicted).
+	// Non-1146 failures (e.g. transient network) leave the tenant without sessions table
+	// until the next server restart — known limitation, acceptable for non-critical feature.
 	go func() {
 		if err := s.tenant.EnsureSessionsTable(context.Background(), auth.TenantDB); err != nil {
 			s.logger.Warn("sessions table migration failed",

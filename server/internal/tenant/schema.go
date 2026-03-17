@@ -133,11 +133,11 @@ const TenantSessionsSchemaBase = `CREATE TABLE IF NOT EXISTS sessions (
     state        VARCHAR(20)     NOT NULL DEFAULT 'active',
     created_at   TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
     updated_at   TIMESTAMP       DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX        idx_sess_session (session_id),
-    INDEX        idx_sess_agent   (agent_id),
-    INDEX        idx_sess_state   (state),
-    INDEX        idx_sess_created (created_at),
-    UNIQUE INDEX idx_sess_dedup   (session_id, content_hash)
+    INDEX        idx_sessions_session (session_id),
+    INDEX        idx_sessions_agent   (agent_id),
+    INDEX        idx_sessions_state   (state),
+    INDEX        idx_sessions_created (created_at),
+    UNIQUE INDEX idx_sessions_dedup   (session_id, content_hash)
 )`
 
 // BuildSessionsSchema builds the TiDB sessions schema with optional auto-embedding.

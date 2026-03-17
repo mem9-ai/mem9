@@ -2,13 +2,17 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
+	"github.com/google/uuid"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/repository"
-	tidb "github.com/qiffang/mnemos/server/internal/repository/tidb"
 )
 
 const defaultSessionFetchMultiplier = 3
@@ -30,7 +34,7 @@ func NewSessionService(sessions repository.SessionRepo, embedder *embed.Embedder
 func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req IngestRequest) error {
 	sessions := make([]*domain.Session, 0, len(req.Messages))
 	for i, msg := range req.Messages {
-		sess := tidb.NewSessionFromIngestMessage(
+		sess := newSessionFromIngestMessage(
 			req.SessionID, req.AgentID, agentName,
 			i, msg.Role, msg.Content,
 		)
@@ -81,8 +85,8 @@ func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFi
 	scores := rrfMerge(kwResults, vecResults)
 	mems := collectMems(kwResults, vecResults)
 	merged := sortByScore(mems, scores)
-	page, _ := paginateSlice(merged, f.Offset, limit)
-	return setScores(page, scores), nil
+	page, _ := paginateResults(merged, f.Offset, limit)
+	return populateRelativeAge(setScores(page, scores)), nil
 }
 
 func (s *SessionService) hybridSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
@@ -107,8 +111,8 @@ func (s *SessionService) hybridSearch(ctx context.Context, f domain.MemoryFilter
 	scores := rrfMerge(kwResults, vecResults)
 	mems := collectMems(kwResults, vecResults)
 	merged := sortByScore(mems, scores)
-	page, _ := paginateSlice(merged, f.Offset, limit)
-	return setScores(page, scores), nil
+	page, _ := paginateResults(merged, f.Offset, limit)
+	return populateRelativeAge(setScores(page, scores)), nil
 }
 
 func (s *SessionService) ftsSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
@@ -116,8 +120,8 @@ func (s *SessionService) ftsSearch(ctx context.Context, f domain.MemoryFilter, l
 	if err != nil {
 		return nil, fmt.Errorf("session fts search: %w", err)
 	}
-	page, _ := paginateSlice(results, f.Offset, limit)
-	return page, nil
+	page, _ := paginateResults(results, f.Offset, limit)
+	return populateRelativeAge(page), nil
 }
 
 func (s *SessionService) keywordSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
@@ -125,8 +129,8 @@ func (s *SessionService) keywordSearch(ctx context.Context, f domain.MemoryFilte
 	if err != nil {
 		return nil, fmt.Errorf("session keyword search: %w", err)
 	}
-	page, _ := paginateSlice(results, f.Offset, limit)
-	return page, nil
+	page, _ := paginateResults(results, f.Offset, limit)
+	return populateRelativeAge(page), nil
 }
 
 func (s *SessionService) ftsOrKeyword(ctx context.Context, f domain.MemoryFilter, fetchLimit int) ([]domain.Memory, error) {
@@ -160,14 +164,37 @@ func applyMinScore(results []domain.Memory, minScore float64) []domain.Memory {
 	return filtered
 }
 
-func paginateSlice(results []domain.Memory, offset, limit int) ([]domain.Memory, int) {
-	total := len(results)
-	if offset >= total {
-		return []domain.Memory{}, total
+// sessionContentHash returns SHA-256(sessionID+role+content) as a hex string.
+// Two sends of the same message content within the same session produce the same
+// hash, so INSERT IGNORE deduplicates them. This is intentional: the plugin sends
+// cumulative overlapping slices on every agent turn; verbatim logging would store
+// each message N times. Identical messages in different sessions or roles are always
+// distinct (session_id and role are part of the input).
+func sessionContentHash(sessionID, role, content string) string {
+	h := sha256.Sum256([]byte(sessionID + role + content))
+	return hex.EncodeToString(h[:])
+}
+
+func newSessionFromIngestMessage(sessionID, agentID, source string, seq int, role, content string) *domain.Session {
+	return &domain.Session{
+		ID:          uuid.New().String(),
+		SessionID:   sessionID,
+		AgentID:     agentID,
+		Source:      source,
+		Seq:         seq,
+		Role:        role,
+		Content:     content,
+		ContentType: detectSessionContentType(content),
+		ContentHash: sessionContentHash(sessionID, role, content),
+		Tags:        []string{},
+		State:       domain.StateActive,
 	}
-	end := offset + limit
-	if end > total {
-		end = total
+}
+
+func detectSessionContentType(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') && json.Valid([]byte(trimmed)) {
+		return "json"
 	}
-	return results[offset:end], total
+	return "text"
 }
