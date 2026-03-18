@@ -8,7 +8,7 @@ This directory contains live end-to-end tests for server and CRDT behavior. Thes
 
 ## Smoke tests — quick reference
 
-Both `api-smoke-test.sh` and `api-smoke-test-round2.sh` support v1alpha1 and v1alpha2
+`api-smoke-test.sh` and `api-smoke-test-round2.sh` support v1alpha1 and v1alpha2
 via `MNEMO_API_VERSION`. Default is `v1alpha1`.
 
 ```bash
@@ -22,15 +22,20 @@ MNEMO_BASE=$DEV POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-round2.sh
 MNEMO_BASE=$DEV bash e2e/api-smoke-test-v1alpha2.sh
 MNEMO_BASE=$DEV POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-round2-v1alpha2.sh
 
+# Session storage tests (both API versions)
+MNEMO_BASE=$DEV POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-sessions.sh
+MNEMO_BASE=$DEV MNEMO_API_VERSION=v1alpha2 POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-sessions.sh
+
 # Existing-tenant backward-compat check (requires a pre-existing tenant ID)
 MNEMO_BASE=$DEV MNEMO_EXISTING_TENANT_ID=<id> POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-existing-tenant.sh
 
-# All five — full smoke suite
+# Full smoke suite
 for script in \
   "e2e/api-smoke-test.sh" \
   "e2e/api-smoke-test-v1alpha2.sh" \
   "POLL_TIMEOUT_S=60 e2e/api-smoke-test-round2.sh" \
-  "POLL_TIMEOUT_S=60 e2e/api-smoke-test-round2-v1alpha2.sh"; do
+  "POLL_TIMEOUT_S=60 e2e/api-smoke-test-round2-v1alpha2.sh" \
+  "POLL_TIMEOUT_S=60 e2e/api-smoke-test-sessions.sh"; do
   eval "MNEMO_BASE=$DEV bash $script"
 done
 MNEMO_BASE=$DEV MNEMO_EXISTING_TENANT_ID=<id> POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-existing-tenant.sh
@@ -77,6 +82,29 @@ concurrent async ingest bumps.
 | 8 | Get after delete | `GET /memories/{id}` returns 404 |
 | 9 | Idempotent re-delete | Second `DELETE` on already-deleted ID returns 204 (no-op, not 404) |
 
+### Session storage (`api-smoke-test-sessions.sh`)
+
+Regression tests for raw session storage (PR #103). Provisions a fresh tenant,
+ingests messages, and verifies all session-specific behaviors: unified search,
+`memory_type` filtering, metadata projection, no-query exclusion, and deduplication.
+Supports both v1alpha1 and v1alpha2 via `MNEMO_API_VERSION`.
+
+| # | Case | What is verified |
+|---|------|-----------------|
+| 1 | Provision tenant | `POST /v1alpha1/mem9s` returns 201 |
+| 2 | Session write via messages | `POST /memories {messages}` returns 202 `accepted` |
+| 3 | Poll until sessions appear | `GET /memories?memory_type=session&q=` polled until results appear |
+| 4 | Unified search includes sessions | `GET /memories?q=` returns rows with `memory_type=session` |
+| 5 | `memory_type=session` filter | All results have `memory_type=session`; no other types |
+| 6 | `memory_type=insight` excludes sessions | No `memory_type=session` rows when insight filter applied |
+| 7 | Session metadata projection | First session result has `role`, `seq`, `content_type` in `metadata` |
+| 8 | No-query list excludes sessions | `GET /memories` (no `?q=`) returns no `memory_type=session` rows |
+| 9 | `session_id` scoped filter | All results belong to the expected `session_id` |
+| 10 | Deduplication | Re-sending identical messages does not increase row count |
+| 11 | Existing tenant: session write | `POST /memories {messages}` on pre-existing tenant returns 202 (requires `MNEMO_EXISTING_TENANT_ID`) |
+| 12 | Existing tenant: lazy migration | Poll + retry writes until sessions appear — proves `EnsureSessionsTable` creates table in flight |
+| 13 | Existing tenant: filter after migration | `memory_type=session` filter works correctly after lazy migration |
+
 ### Existing-tenant compat (`api-smoke-test-existing-tenant.sh`)
 
 Backward-compatibility check: exercises a **pre-existing tenant** (created before the
@@ -102,9 +130,12 @@ memories. Covers both v1alpha1 and v1alpha2 auth in every operation.
 ## Commands
 
 ```bash
-# Original tenant API smoke tests
+# CRUD smoke tests
 bash e2e/api-smoke-test.sh
 bash e2e/api-smoke-test-round2.sh
+
+# Session storage regression tests
+bash e2e/api-smoke-test-sessions.sh
 
 # Existing-tenant backward-compat check
 MNEMO_EXISTING_TENANT_ID=<id> bash e2e/api-smoke-test-existing-tenant.sh
@@ -128,6 +159,7 @@ python3 e2e/concurrent-real-doc-test.py
 
 - `api-smoke-test.sh` / `api-smoke-test-v1alpha2.sh` — CRUD smoke, ingest, search, tag filter (tests 1–11)
 - `api-smoke-test-round2.sh` / `api-smoke-test-round2-v1alpha2.sh` — per-ID ops: GET, PUT, If-Match LWW, DELETE, idempotent re-delete (tests 1–9)
+- `api-smoke-test-sessions.sh` — session storage: write, dedup, unified search, type filter, metadata, no-query exclusion, lazy migration (tests 1–13; tests 11–13 require `MNEMO_EXISTING_TENANT_ID`)
 - `api-smoke-test-existing-tenant.sh` — backward-compat: pre-existing tenant read/write/search across v1alpha1 and v1alpha2 (tests 1–12)
 - `crdt-*` and `plugin-crdt-*` use the CRDT branch `/api/users`, `/api/spaces/provision`, `/api/memories` surface.
 - Check the server branch/API shape before mixing the two sets.
@@ -137,9 +169,9 @@ python3 e2e/concurrent-real-doc-test.py
 | Variable | Default | Used by |
 |----------|---------|---------|
 | `MNEMO_BASE` | `https://api.mem9.ai` | all smoke scripts |
-| `MNEMO_API_VERSION` | `v1alpha1` | `api-smoke-test*.sh`, `api-smoke-test-round2.sh` |
-| `POLL_TIMEOUT_S` | `20` | `api-smoke-test-round2*.sh`, `api-smoke-test-existing-tenant.sh` |
-| `MNEMO_EXISTING_TENANT_ID` | — | `api-smoke-test-existing-tenant.sh` |
+| `MNEMO_API_VERSION` | `v1alpha1` | `api-smoke-test.sh`, `api-smoke-test-round2.sh`, `api-smoke-test-sessions.sh` |
+| `POLL_TIMEOUT_S` | `20` (round2), `30` (sessions) | `api-smoke-test-round2*.sh`, `api-smoke-test-sessions.sh`, `api-smoke-test-existing-tenant.sh` |
+| `MNEMO_EXISTING_TENANT_ID` | — | `api-smoke-test-existing-tenant.sh`, `api-smoke-test-sessions.sh` (tests 11–13) |
 | `MNEMO_TEST_BASE` | `http://127.0.0.1:18081` | CRDT scripts |
 | `MNEMO_TEST_USER_TOKEN` | — | CRDT scripts |
 
@@ -151,6 +183,7 @@ python3 e2e/concurrent-real-doc-test.py
 | `api-smoke-test-v1alpha2.sh` | v1alpha2 | One-liner wrapper — sets `MNEMO_API_VERSION=v1alpha2` |
 | `api-smoke-test-round2.sh` | v1alpha1 (default) or v1alpha2 | Per-ID ops: GET, PUT, If-Match LWW, DELETE, idempotent re-delete |
 | `api-smoke-test-round2-v1alpha2.sh` | v1alpha2 | One-liner wrapper — sets `MNEMO_API_VERSION=v1alpha2` |
+| `api-smoke-test-sessions.sh` | v1alpha1 (default) or v1alpha2 | Session storage: write, dedup, unified search, type filter, metadata |
 | `api-smoke-test-existing-tenant.sh` | v1alpha1 + v1alpha2 | Backward-compat: pre-existing tenant full lifecycle, both auth modes |
 | `crdt-e2e-tests.sh` | CRDT branch | Core CRDT server behavior |
 | `plugin-crdt-e2e.py` | CRDT branch | Plugin clock propagation |
@@ -162,6 +195,7 @@ python3 e2e/concurrent-real-doc-test.py
 - Each script provisions its own tenant / keys; runs are repeatable and isolated.
 - These scripts validate live behavior, so failures may be env/data issues rather than local code regressions.
 - `crdt-server-merge-e2e.py` is the primary regression signal for section merge logic.
+- `api-smoke-test-sessions.sh` is the primary regression signal for raw session storage.
 - `MNEMO_TEST_USER_TOKEN` is a one-time setup input for the CRDT scripts; those scripts provision spaces afterward.
 - Version checks in round2 use `>` (version advanced), not exact equality — the async ingest pipeline may bump versions concurrently.
 
