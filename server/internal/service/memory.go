@@ -129,7 +129,11 @@ func (s *MemoryService) Get(ctx context.Context, id string) (*domain.Memory, err
 
 func (s *MemoryService) Search(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
 	if filter.Query == "" {
-		return s.memories.List(ctx, filter)
+		mems, total, err := s.memories.List(ctx, filter)
+		if err != nil {
+			return nil, 0, err
+		}
+		return populateRelativeAge(mems), total, nil
 	}
 	searchFilter := filter
 	searchFilter.SessionID = ""
