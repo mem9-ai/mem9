@@ -79,6 +79,9 @@ type tenantSvcKey string
 func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	if auth.TenantID == "" {
 		key := tenantSvcKey(fmt.Sprintf("db-%p", auth.TenantDB))
+		if cached, ok := s.svcCache.Load(key); ok {
+			return cached.(resolvedSvc)
+		}
 		memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		svc := resolvedSvc{
@@ -92,13 +95,16 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 				if err := s.tenant.EnsureSessionsTable(context.Background(), auth.TenantDB); err != nil {
 					s.logger.Warn("sessions table migration failed",
 						"cluster_id", auth.ClusterID,
-						"err", err)
+						"err", err) // no tenant field: TenantID is empty in this branch
 				}
 			}()
 		}
 		return actual.(resolvedSvc)
 	}
 	key := tenantSvcKey(fmt.Sprintf("%s-%p", auth.TenantID, auth.TenantDB))
+	if cached, ok := s.svcCache.Load(key); ok {
+		return cached.(resolvedSvc)
+	}
 	memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	svc := resolvedSvc{

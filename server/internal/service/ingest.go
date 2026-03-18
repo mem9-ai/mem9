@@ -224,7 +224,7 @@ func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID
 		// Wrap as a single user message for fact extraction.
 		conversation := "User: " + formatted
 
-		facts, _, err := s.extractFactsAndTags(ctx, conversation, 1)
+		facts, err := s.extractFacts(ctx, conversation)
 		if err != nil {
 			slog.Error("reconcile content: fact extraction failed", "err", err)
 			totalWarnings++
@@ -322,7 +322,7 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agentID, sessionID, conversation string) ([]string, int, error) {
 	const maxFacts = 50 // Cap extracted facts to bound reconciliation prompt size
 
-	// Phase 1a: Extract facts only — no message_tags needed here (ReconcileContent path).
+	// Phase 1a: Extract facts only — no message_tags needed here (smart-ingest / raw-ingest path).
 	// Use extractFacts instead of extractFactsAndTags to avoid wasting tokens on tag generation.
 	facts, err := s.extractFacts(ctx, conversation)
 	if err != nil {
@@ -959,7 +959,11 @@ func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, s
 	return newID, nil
 }
 
-// stripInjectedContext removes <relevant-memories>...</relevant-memories> tags from messages.
+// StripInjectedContext removes <relevant-memories>...</relevant-memories> tags from messages.
+func StripInjectedContext(messages []IngestMessage) []IngestMessage {
+	return stripInjectedContext(messages)
+}
+
 func stripInjectedContext(messages []IngestMessage) []IngestMessage {
 	result := make([]IngestMessage, 0, len(messages))
 	for _, msg := range messages {
