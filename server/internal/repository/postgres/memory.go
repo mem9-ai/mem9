@@ -190,6 +190,7 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 	var total int
 	countQuery := "SELECT COUNT(*) FROM memories WHERE " + where
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		slog.Error("list memories: count failed", "cluster_id", r.clusterID, "err", err)
 		return nil, 0, fmt.Errorf("count memories: %w", err)
 	}
 
@@ -212,6 +213,7 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 
 	rows, err := r.db.QueryContext(ctx, dataQuery, dataArgs...)
 	if err != nil {
+		slog.Error("list memories: query failed", "cluster_id", r.clusterID, "err", err)
 		return nil, 0, fmt.Errorf("list memories: %w", err)
 	}
 	defer rows.Close()
@@ -233,6 +235,7 @@ func (r *MemoryRepo) Count(ctx context.Context) (int, error) {
 		`SELECT COUNT(*) FROM memories WHERE state = 'active'`,
 	).Scan(&count)
 	if err != nil {
+		slog.Error("count memories failed", "cluster_id", r.clusterID, "err", err)
 		return 0, fmt.Errorf("count memories: %w", err)
 	}
 	return count, nil
@@ -247,6 +250,7 @@ func (r *MemoryRepo) ListBootstrap(ctx context.Context, limit int) ([]domain.Mem
 		limit,
 	)
 	if err != nil {
+		slog.Error("list bootstrap failed", "cluster_id", r.clusterID, "err", err)
 		return nil, fmt.Errorf("list bootstrap: %w", err)
 	}
 	defer rows.Close()
@@ -319,6 +323,7 @@ func (r *MemoryRepo) VectorSearch(ctx context.Context, queryVec []float32, f dom
 
 	rows, err := r.db.QueryContext(ctx, query, fullArgs...)
 	if err != nil {
+		slog.Error("vector search failed", "cluster_id", r.clusterID, "err", err)
 		return nil, fmt.Errorf("vector search: %w", err)
 	}
 	defer rows.Close()
@@ -356,6 +361,7 @@ func (r *MemoryRepo) KeywordSearch(ctx context.Context, query string, f domain.M
 
 	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
+		slog.Error("keyword search failed", "cluster_id", r.clusterID, "err", err)
 		return nil, fmt.Errorf("keyword search: %w", err)
 	}
 	defer rows.Close()
@@ -390,6 +396,7 @@ func (r *MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Memor
 
 	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
 	if err != nil {
+		slog.Error("fts search failed", "cluster_id", r.clusterID, "err", err)
 		return nil, fmt.Errorf("fts search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	defer rows.Close()

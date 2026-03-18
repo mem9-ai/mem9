@@ -215,6 +215,7 @@ func (r *DB9MemoryRepo) AutoVectorSearch(ctx context.Context, queryText string, 
 
 	rows, err := r.db.QueryContext(ctx, query, fullArgs...)
 	if err != nil {
+		slog.Error("auto vector search failed", "cluster_id", r.clusterID, "err", err)
 		return nil, fmt.Errorf("db9 auto vector search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	defer rows.Close()
@@ -271,6 +272,7 @@ func (r *DB9MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Me
 			r.jiebaDisabled.Store(true)
 			return r.MemoryRepo.FTSSearch(ctx, query, f, limit)
 		}
+		slog.Error("fts search failed", "cluster_id", r.clusterID, "err", err)
 		return nil, fmt.Errorf("db9 fts search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	defer rows.Close()
