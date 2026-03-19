@@ -146,7 +146,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	offset, _ := strconv.Atoi(q.Get("offset"))
 	if limit <= 0 || limit > 200 {
-		limit = 50
+		limit = service.DefaultSessionLimit
 	}
 	if offset < 0 {
 		offset = 0
@@ -190,7 +190,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		// resets these fields to broaden memory recall; the asymmetry is by design.
 		sessionMems, sessErr := svc.session.Search(r.Context(), filter)
 		if sessErr != nil {
-			slog.Warn("session search failed", "err", sessErr)
+			slog.Warn("session search failed", "cluster_id", auth.ClusterID, "err", sessErr)
 		} else {
 			memories = append(memories, sessionMems...)
 			total += len(sessionMems)
