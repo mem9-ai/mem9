@@ -188,6 +188,8 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		// SessionService.Search preserves SessionID/Source filters from the caller — intentional:
 		// session-scoped filtering is meaningful for the sessions table. MemoryService.Search
 		// resets these fields to broaden memory recall; the asymmetry is by design.
+		// session.Search is all-or-nothing: returns (results, nil) or (nil, err), never partial results + err.
+		// total is only incremented on success, so the response total stays consistent with the slice length.
 		sessionMems, sessErr := svc.session.Search(r.Context(), filter)
 		if sessErr != nil {
 			slog.Warn("session search failed", "cluster_id", auth.ClusterID, "err", sessErr)

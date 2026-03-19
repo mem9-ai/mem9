@@ -82,6 +82,8 @@ func (s *SessionService) Search(ctx context.Context, f domain.MemoryFilter) ([]d
 	if err != nil {
 		return nil, err
 	}
+	// All search paths return results sorted by score descending; dedupByContent
+	// therefore retains the highest-scored occurrence for each unique content string.
 	return dedupByContent(results), nil
 }
 
@@ -201,7 +203,7 @@ func dedupByContent(mems []domain.Memory) []domain.Memory {
 // each message N times. Identical messages in different sessions or roles are always
 // distinct (session_id and role are part of the input).
 //
-// TODO: migrate to SHA-256(role+content) — dropping sessionID from the hash keeps
+// TODO(content-hash-migration): migrate to SHA-256(role+content) — dropping sessionID from the hash keeps
 // the same write-time dedup guarantee (the unique index is (session_id, content_hash),
 // so cross-session collisions are still impossible) while making content_hash
 // comparable across sessions. That would let the search path dedup by content_hash
