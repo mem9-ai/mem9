@@ -188,17 +188,31 @@ async function ingestTurnMessages(
   return { ingested: true };
 }
 
+// Resolve the runtime compaction bridge lazily and cache it for reuse. We do
+// not use a direct static import from `openclaw/plugin-sdk` here because mem9
+// is also typechecked/published as a standalone package, where that import is
+// not always locally resolvable. If bridge resolution fails, clear the cache so
+// a later /compact can retry after the host runtime is fixed/reloaded.
 let delegateCompactionPromise: Promise<CompactDelegate> | null = null;
-const importRuntimeModule = new Function(
-  "specifier",
-  'return import(specifier);',
-) as (specifier: string) => Promise<unknown>;
+declare const require: ((specifier: string) => unknown) | undefined;
+
+function resolveRuntimeModule(): { delegateCompactionToRuntime?: unknown } {
+  // In OpenClaw source-plugin mode, the plugin runs behind a Jiti/VM boundary
+  // that injects a CommonJS-style require with plugin-sdk alias support. We use
+  // that bridge instead of dynamic import because VM-backed plugin execution
+  // does not provide the import callback needed by bare `import()`.
+  if (typeof require !== "function") {
+    throw new Error("mem9 context-engine requires OpenClaw's plugin loader require bridge");
+  }
+  return require("openclaw/plugin-sdk/core") as { delegateCompactionToRuntime?: unknown };
+}
 
 async function resolveCompactionDelegate(): Promise<CompactDelegate> {
   if (!delegateCompactionPromise) {
-    delegateCompactionPromise = importRuntimeModule("openclaw/plugin-sdk/core")
-      .then((mod) => {
-        const delegate = (mod as { delegateCompactionToRuntime?: unknown }).delegateCompactionToRuntime;
+    delegateCompactionPromise = Promise.resolve()
+      .then(() => {
+        const mod = resolveRuntimeModule();
+        const delegate = mod.delegateCompactionToRuntime;
         if (typeof delegate !== "function") {
           throw new Error("openclaw/plugin-sdk/core does not export delegateCompactionToRuntime");
         }
@@ -261,7 +275,8 @@ export function createMem9ContextEngine(
     async compact(params): Promise<CompactResult> {
       try {
         const delegateCompactionToRuntime = await resolveCompactionDelegate();
-        return delegateCompactionToRuntime(params);
+        const result = await delegateCompactionToRuntime(params);
+        return result;
       } catch (err) {
         logger.error(
           `[mem9] Failed to delegate compaction to OpenClaw runtime: ${err instanceof Error ? err.message : String(err)}`,
