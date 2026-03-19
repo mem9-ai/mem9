@@ -396,6 +396,32 @@ func TestSearchEmptyQueryReturnsList(t *testing.T) {
 	}
 }
 
+func TestSearchEmptyQueryPopulatesRelativeAge(t *testing.T) {
+	t.Parallel()
+
+	past := time.Now().Add(-5 * time.Minute)
+	memRepo := &memoryRepoMock{
+		listResults: []domain.Memory{
+			{ID: "m1", Content: "hello", UpdatedAt: past, MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+
+	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
+		Query: "",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+	if total != 1 || len(results) != 1 {
+		t.Fatalf("expected 1 result, got total=%d results=%d", total, len(results))
+	}
+	if results[0].RelativeAge == "" {
+		t.Fatal("expected RelativeAge to be populated, got empty string")
+	}
+}
+
 func TestSearchIgnoresSessionAndSourceFilters(t *testing.T) {
 	t.Parallel()
 

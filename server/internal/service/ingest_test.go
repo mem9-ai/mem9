@@ -26,6 +26,7 @@ type memoryRepoMock struct {
 	setStateErr          error           // configurable return value for SetState
 	vectorResults        []domain.Memory // configurable results for AutoVectorSearch
 	vectorErr            error           // configurable error for AutoVectorSearch / VectorSearch
+	listResults          []domain.Memory // configurable results for List
 	ftsResults           []domain.Memory // configurable results for FTSSearch
 	ftsErr               error           // configurable error for FTSSearch
 	kwResults            []domain.Memory // configurable results for KeywordSearch
@@ -86,6 +87,9 @@ func (m *memoryRepoMock) SetState(ctx context.Context, id string, state domain.M
 }
 
 func (m *memoryRepoMock) List(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, int, error) {
+	if m.listResults != nil {
+		return m.listResults, len(m.listResults), nil
+	}
 	return nil, 0, nil
 }
 
