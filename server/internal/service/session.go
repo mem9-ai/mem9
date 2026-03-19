@@ -15,7 +15,10 @@ import (
 	"github.com/qiffang/mnemos/server/internal/repository"
 )
 
-const defaultSessionFetchMultiplier = 3
+const (
+	defaultSessionFetchMultiplier = 3
+	DefaultSessionLimit           = 10
+)
 
 type SessionService struct {
 	sessions  repository.SessionRepo
@@ -57,23 +60,29 @@ func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req I
 func (s *SessionService) Search(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, error) {
 	limit := f.Limit
 	if limit <= 0 || limit > 200 {
-		limit = 10
+		limit = DefaultSessionLimit
 	}
 	fetchLimit := limit * defaultSessionFetchMultiplier
 
 	sf := f
 	sf.Offset = 0
 
+	var results []domain.Memory
+	var err error
+
 	if s.autoModel != "" {
-		return s.autoHybridSearch(ctx, sf, limit, fetchLimit)
+		results, err = s.autoHybridSearch(ctx, sf, limit, fetchLimit)
+	} else if s.embedder != nil {
+		results, err = s.hybridSearch(ctx, sf, limit, fetchLimit)
+	} else if s.sessions.FTSAvailable() {
+		results, err = s.ftsSearch(ctx, sf, limit, fetchLimit)
+	} else {
+		results, err = s.keywordSearch(ctx, sf, limit, fetchLimit)
 	}
-	if s.embedder != nil {
-		return s.hybridSearch(ctx, sf, limit, fetchLimit)
+	if err != nil {
+		return nil, err
 	}
-	if s.sessions.FTSAvailable() {
-		return s.ftsSearch(ctx, sf, limit, fetchLimit)
-	}
-	return s.keywordSearch(ctx, sf, limit, fetchLimit)
+	return dedupByContent(results), nil
 }
 
 func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
@@ -172,12 +181,31 @@ func applyMinScore(results []domain.Memory, minScore float64) []domain.Memory {
 	return filtered
 }
 
+func dedupByContent(mems []domain.Memory) []domain.Memory {
+	seen := make(map[string]struct{}, len(mems))
+	out := make([]domain.Memory, 0, len(mems))
+	for _, m := range mems {
+		if _, ok := seen[m.Content]; ok {
+			continue
+		}
+		seen[m.Content] = struct{}{}
+		out = append(out, m)
+	}
+	return out
+}
+
 // sessionContentHash returns SHA-256(sessionID+role+content) as a hex string.
 // Two sends of the same message content within the same session produce the same
 // hash, so INSERT IGNORE deduplicates them. This is intentional: the plugin sends
 // cumulative overlapping slices on every agent turn; verbatim logging would store
 // each message N times. Identical messages in different sessions or roles are always
 // distinct (session_id and role are part of the input).
+//
+// TODO: migrate to SHA-256(role+content) — dropping sessionID from the hash keeps
+// the same write-time dedup guarantee (the unique index is (session_id, content_hash),
+// so cross-session collisions are still impossible) while making content_hash
+// comparable across sessions. That would let the search path dedup by content_hash
+// instead of by the raw content string.
 func sessionContentHash(sessionID, role, content string) string {
 	h := sha256.Sum256([]byte(sessionID + role + content))
 	return hex.EncodeToString(h[:])
