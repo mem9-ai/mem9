@@ -223,6 +223,8 @@ export function createMem9ContextEngine(
       id: "mem9",
       name: "Mem9 Context Engine",
       version: "0.1.0",
+      // mem9 does not own the compaction algorithm; it delegates /compact and
+      // overflow recovery back to OpenClaw's built-in runtime bridge.
       ownsCompaction: false,
     },
 
@@ -247,6 +249,9 @@ export function createMem9ContextEngine(
     },
 
     async assemble(params): Promise<AssembleResult> {
+      // Pass-through only: OpenClaw's existing runtime pipeline still owns
+      // context shaping and token estimation, so we keep the legacy-compatible
+      // sentinel value here instead of guessing from message count.
       return {
         messages: params.messages,
         estimatedTokens: 0,
