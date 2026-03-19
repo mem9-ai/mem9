@@ -14,6 +14,7 @@ type ContextEngineInfo = {
   id: string;
   name: string;
   version?: string;
+  ownsCompaction?: boolean;
 };
 
 type AssembleResult = {
@@ -27,6 +28,12 @@ type IngestResult = {
   duplicate?: boolean;
 };
 
+type IngestBatchResult = {
+  ingestedCount: number;
+};
+
+type ContextEngineRuntimeContext = Record<string, unknown>;
+
 type CompactResult = {
   ok: boolean;
   compacted: boolean;
@@ -36,26 +43,59 @@ type CompactResult = {
 
 type ContextEngine = {
   info: ContextEngineInfo;
-  ingest: (params: { sessionId: string; message: AgentMessage; isHeartbeat?: boolean }) => Promise<IngestResult>;
-  ingestBatch?: (params: { sessionId: string; messages: AgentMessage[]; isHeartbeat?: boolean }) => Promise<IngestResult>;
+  ingest: (params: {
+    sessionId: string;
+    sessionKey?: string;
+    message: AgentMessage;
+    isHeartbeat?: boolean;
+  }) => Promise<IngestResult>;
+  ingestBatch?: (params: {
+    sessionId: string;
+    sessionKey?: string;
+    messages: AgentMessage[];
+    isHeartbeat?: boolean;
+  }) => Promise<IngestBatchResult>;
   afterTurn?: (params: {
     sessionId: string;
+    sessionKey?: string;
+    sessionFile: string;
     messages: AgentMessage[];
     prePromptMessageCount?: number;
+    autoCompactionSummary?: string;
     isHeartbeat?: boolean;
+    tokenBudget?: number;
+    runtimeContext?: ContextEngineRuntimeContext;
   }) => Promise<void>;
-  assemble: (params: { sessionId: string; messages: AgentMessage[]; tokenBudget?: number }) => Promise<AssembleResult>;
+  assemble: (params: {
+    sessionId: string;
+    sessionKey?: string;
+    messages: AgentMessage[];
+    tokenBudget?: number;
+  }) => Promise<AssembleResult>;
   compact: (params: {
     sessionId: string;
+    sessionKey?: string;
     sessionFile: string;
     tokenBudget?: number;
     force?: boolean;
     currentTokenCount?: number;
     compactionTarget?: "budget" | "threshold";
     customInstructions?: string;
-    legacyParams?: Record<string, unknown>;
+    runtimeContext?: ContextEngineRuntimeContext;
   }) => Promise<CompactResult>;
 };
+
+type CompactDelegate = (params: {
+  sessionId: string;
+  sessionKey?: string;
+  sessionFile: string;
+  tokenBudget?: number;
+  force?: boolean;
+  currentTokenCount?: number;
+  compactionTarget?: "budget" | "threshold";
+  customInstructions?: string;
+  runtimeContext?: ContextEngineRuntimeContext;
+}) => Promise<CompactResult>;
 
 type Logger = {
   info: (msg: string) => void;
@@ -148,32 +188,43 @@ async function ingestTurnMessages(
   return { ingested: true };
 }
 
-async function tryLegacyCompact(params: {
-  sessionId: string;
-  sessionFile: string;
-  tokenBudget?: number;
-  force?: boolean;
-  currentTokenCount?: number;
-  compactionTarget?: "budget" | "threshold";
-  customInstructions?: string;
-  legacyParams?: Record<string, unknown>;
-}): Promise<CompactResult | null> {
-  const candidates = [
-    "openclaw/context-engine/legacy",
-    "openclaw/dist/context-engine/legacy.js",
-  ];
+// Resolve the runtime compaction bridge lazily and cache it for reuse. We do
+// not use a direct static import from `openclaw/plugin-sdk` here because mem9
+// is also typechecked/published as a standalone package, where that import is
+// not always locally resolvable. If bridge resolution fails, clear the cache so
+// a later /compact can retry after the host runtime is fixed/reloaded.
+let delegateCompactionPromise: Promise<CompactDelegate> | null = null;
+declare const require: ((specifier: string) => unknown) | undefined;
 
-  for (const path of candidates) {
-    try {
-      const mod = (await import(path)) as { LegacyContextEngine?: new () => { compact: (arg: typeof params) => Promise<CompactResult> } };
-      if (!mod?.LegacyContextEngine) continue;
-      const legacy = new mod.LegacyContextEngine();
-      return legacy.compact(params);
-    } catch {
-    }
+function resolveRuntimeModule(): { delegateCompactionToRuntime?: unknown } {
+  // In OpenClaw source-plugin mode, the plugin runs behind a Jiti/VM boundary
+  // that injects a CommonJS-style require with plugin-sdk alias support. We use
+  // that bridge instead of dynamic import because VM-backed plugin execution
+  // does not provide the import callback needed by bare `import()`.
+  if (typeof require !== "function") {
+    throw new Error("mem9 context-engine requires OpenClaw's plugin loader require bridge");
+  }
+  return require("openclaw/plugin-sdk/core") as { delegateCompactionToRuntime?: unknown };
+}
+
+async function resolveCompactionDelegate(): Promise<CompactDelegate> {
+  if (!delegateCompactionPromise) {
+    delegateCompactionPromise = Promise.resolve()
+      .then(() => {
+        const mod = resolveRuntimeModule();
+        const delegate = mod.delegateCompactionToRuntime;
+        if (typeof delegate !== "function") {
+          throw new Error("openclaw/plugin-sdk/core does not export delegateCompactionToRuntime");
+        }
+        return delegate as CompactDelegate;
+      })
+      .catch((err: unknown) => {
+        delegateCompactionPromise = null;
+        throw err;
+      });
   }
 
-  return null;
+  return delegateCompactionPromise;
 }
 
 export function createMem9ContextEngine(
@@ -186,14 +237,20 @@ export function createMem9ContextEngine(
       id: "mem9",
       name: "Mem9 Context Engine",
       version: "0.1.0",
+      // mem9 does not own the compaction algorithm; it delegates /compact and
+      // overflow recovery back to OpenClaw's built-in runtime bridge.
+      ownsCompaction: false,
     },
 
     async ingest(params): Promise<IngestResult> {
       return ingestTurnMessages(backend, resolveAgentId, params.sessionId, [params.message]);
     },
 
-    async ingestBatch(params): Promise<IngestResult> {
-      return ingestTurnMessages(backend, resolveAgentId, params.sessionId, params.messages);
+    async ingestBatch(params): Promise<IngestBatchResult> {
+      const result = await ingestTurnMessages(backend, resolveAgentId, params.sessionId, params.messages);
+      return {
+        ingestedCount: result.ingested ? toIngestMessages(params.messages).length : 0,
+      };
     },
 
     async afterTurn(params): Promise<void> {
@@ -206,27 +263,26 @@ export function createMem9ContextEngine(
     },
 
     async assemble(params): Promise<AssembleResult> {
+      // Pass-through only: OpenClaw's existing runtime pipeline still owns
+      // context shaping and token estimation, so we keep the legacy-compatible
+      // sentinel value here instead of guessing from message count.
       return {
         messages: params.messages,
-        estimatedTokens: Math.max(1, params.messages.length * 80),
+        estimatedTokens: 0,
       };
     },
 
     async compact(params): Promise<CompactResult> {
-      const delegated = await tryLegacyCompact(params);
-      if (delegated) return delegated;
-
-      if (typeof logger.warn === "function") {
-        logger.warn("[mem9] Legacy compaction delegation unavailable; skipping compact");
-      } else {
-        logger.info("[mem9] Legacy compaction delegation unavailable; skipping compact");
+      try {
+        const delegateCompactionToRuntime = await resolveCompactionDelegate();
+        const result = await delegateCompactionToRuntime(params);
+        return result;
+      } catch (err) {
+        logger.error(
+          `[mem9] Failed to delegate compaction to OpenClaw runtime: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        throw err;
       }
-
-      return {
-        ok: true,
-        compacted: false,
-        reason: "legacy_compact_unavailable",
-      };
     },
   };
 }

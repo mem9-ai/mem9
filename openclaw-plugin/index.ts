@@ -26,6 +26,7 @@ interface OpenClawPluginApi {
   };
   pluginConfig?: unknown;
   logger: {
+    debug?: (...args: unknown[]) => void;
     info: (...args: unknown[]) => void;
     warn?: (...args: unknown[]) => void;
     error: (...args: unknown[]) => void;
@@ -269,8 +270,8 @@ const mnemoPlugin = {
     const contextEngineActive = supportsBeta1Hooks && contextEngineSlot === mnemoPlugin.id;
     const allowPromptInjection =
       api.config?.plugins?.entries?.[mnemoPlugin.id]?.hooks?.allowPromptInjection === true;
-    if (!cfg.apiUrl) {
-      api.logger.info(`[mem9] apiUrl not configured, using default ${DEFAULT_API_URL}`);
+    if (cfg.apiUrl) {
+      api.logger.debug?.(`[mem9] apiUrl configured, using ${cfg.apiUrl}`);
     }
     if (supportsBeta1Hooks && !allowPromptInjection) {
       warnOrInfo(

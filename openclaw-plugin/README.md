@@ -54,10 +54,12 @@ Plugin replaces built-in memory slot → framework manages lifecycle
      ↓
 5 tools registered: store / search / get / update / delete
      ↓
-4 lifecycle hooks: auto-recall, auto-capture, compact/reset awareness
+Hook mode: 4 lifecycle hooks for recall/capture/reset awareness
+     ↓
+Optional ContextEngine mode: hook recall + `afterTurn()` ingest + runtime-delegated compact
 ```
 
-This is a `kind: "memory"` plugin — OpenClaw's framework manages when to load/save memories. The plugin provides 5 tools **plus** 4 lifecycle hooks for automatic memory management:
+This is a `kind: "memory"` plugin — OpenClaw's framework manages when to load/save memories. By default the plugin uses 5 tools **plus** 4 lifecycle hooks for automatic memory management. When `plugins.slots.contextEngine` points to `mem9`, the plugin keeps hook-based recall, moves turn ingestion to `ContextEngine.afterTurn()`, and delegates `compact()` back to OpenClaw's built-in runtime compaction path.
 
 ### Lifecycle Hooks (Automatic)
 
@@ -66,7 +68,7 @@ This is a `kind: "memory"` plugin — OpenClaw's framework manages when to load/
 | `before_prompt_build` | Every LLM call | Searches memories by current prompt, injects relevant ones as context (3-min TTL cache) |
 | `after_compaction` | After `/compact` | Invalidates cache so the next prompt gets fresh memories from the database |
 | `before_reset` | Before `/reset` | Saves a session summary (last 3 user messages) as memory before context is wiped |
-| `agent_end` | Agent finishes | Auto-captures the last assistant response as memory (if substantial) |
+| `agent_end` | Agent finishes in hook mode | Auto-captures the last assistant response as memory (if substantial); disabled when the `mem9` context-engine slot is active |
 
 ### Tools (Agent-Invoked)
 
@@ -84,6 +86,8 @@ This is a `kind: "memory"` plugin — OpenClaw's framework manages when to load/
 
 - [OpenClaw](https://github.com/openclaw) installed (`>=2026.1.26`)
 - A running [mnemo-server](../server/) instance
+
+> `contextEngine` delegating mode currently requires an OpenClaw build that exports the public `delegateCompactionToRuntime` bridge. The npm peer range stays at `>=2026.1.26` for now because that bridge has not landed in an official release yet.
 
 ## Installation
 
