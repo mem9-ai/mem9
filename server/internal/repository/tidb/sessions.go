@@ -438,6 +438,7 @@ func scanSessionDomainRow(rows *sql.Rows) (*domain.Session, error) {
 }
 func fillSessionMemory(m *domain.Memory, sessionID, agentID, source, role, contentType sql.NullString,
 	seq int, tagsJSON []byte, state sql.NullString, createdAt time.Time) *domain.Memory {
+	m.MemoryType = domain.TypeSession
 	m.SessionID = sessionID.String
 	m.AgentID = agentID.String
 	m.Source = source.String
