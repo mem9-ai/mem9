@@ -37,6 +37,9 @@
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run typecheck"
   },
+  "x-peerDependencyNotes": {
+    "openclaw": "Keep >=2026.1.26 for now. Raise this floor after the first official OpenClaw release that ships the public delegateCompactionToRuntime bridge used by ContextEngine delegating mode."
+  },
   "peerDependencies": {
     "openclaw": ">=2026.1.26"
   },

@@ -81,29 +81,50 @@ OpenClaw beta.1 exports a `ContextEngine` interface with these methods:
 ```ts
 interface ContextEngine {
   readonly info: ContextEngineInfo;
-  bootstrap?(params: { sessionId: string; sessionFile: string }): Promise<BootstrapResult>;
-  ingest(params: { sessionId: string; message: AgentMessage; isHeartbeat?: boolean }): Promise<IngestResult>;
-  ingestBatch?(params: { sessionId: string; messages: AgentMessage[]; isHeartbeat?: boolean }): Promise<IngestBatchResult>;
+  bootstrap?(params: {
+    sessionId: string;
+    sessionKey?: string;
+    sessionFile: string;
+  }): Promise<BootstrapResult>;
+  ingest(params: {
+    sessionId: string;
+    sessionKey?: string;
+    message: AgentMessage;
+    isHeartbeat?: boolean;
+  }): Promise<IngestResult>;
+  ingestBatch?(params: {
+    sessionId: string;
+    sessionKey?: string;
+    messages: AgentMessage[];
+    isHeartbeat?: boolean;
+  }): Promise<IngestBatchResult>;
   afterTurn?(params: {
     sessionId: string;
+    sessionKey?: string;
     sessionFile: string;
     messages: AgentMessage[];
     prePromptMessageCount: number;
     autoCompactionSummary?: string;
     isHeartbeat?: boolean;
     tokenBudget?: number;
-    legacyCompactionParams?: Record<string, unknown>;
+    runtimeContext?: Record<string, unknown>;
   }): Promise<void>;
-  assemble(params: { sessionId: string; messages: AgentMessage[]; tokenBudget?: number }): Promise<AssembleResult>;
+  assemble(params: {
+    sessionId: string;
+    sessionKey?: string;
+    messages: AgentMessage[];
+    tokenBudget?: number;
+  }): Promise<AssembleResult>;
   compact(params: {
     sessionId: string;
+    sessionKey?: string;
     sessionFile: string;
     tokenBudget?: number;
     force?: boolean;
     currentTokenCount?: number;
     compactionTarget?: "budget" | "threshold";
     customInstructions?: string;
-    legacyParams?: Record<string, unknown>;
+    runtimeContext?: Record<string, unknown>;
   }): Promise<CompactResult>;
   prepareSubagentSpawn?(params: {
     parentSessionKey: string;
@@ -300,26 +321,24 @@ That future proposal can reuse the verified upstream contract documented above, 
 separate design, not implied by this MVP.
 
 For experimentation only, if we want to observe OpenClaw's `ContextEngine` lifecycle before
-building a real compactor, the preferred minimal `compact()` stub is:
+building a real compactor, the preferred minimal `compact()` implementation is delegating mode:
 
 ```ts
-async compact(): Promise<CompactResult> {
-  return {
-    ok: false,
-    compacted: false,
-    reason: "mem9 MVP: compact not implemented",
-  };
+import { delegateCompactionToRuntime } from "openclaw/plugin-sdk/core";
+
+async compact(params): Promise<CompactResult> {
+  return delegateCompactionToRuntime(params);
 }
 ```
 
-Why this stub is preferred:
+Why this is preferred:
 
-- it is explicit that compaction is unsupported
-- it does not pretend long-session compaction succeeded
-- it lets us test how OpenClaw behaves when `mem9` is selected as the active `ContextEngine`
-  without silently masking the missing feature
+- it preserves `/compact` and overflow recovery behavior
+- it avoids private runtime imports and host-layout guessing
+- it keeps mem9 in delegating mode until mnemos is ready to own a compaction algorithm
 
-This is an **experimental diagnostic path only**, not part of the MVP shipping scope.
+This is still an **experimental diagnostic path only** until the bridge ships in an official
+OpenClaw release, but it is the correct shape for the eventual shipped implementation.
 
 ---
 
