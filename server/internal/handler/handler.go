@@ -167,6 +167,8 @@ func (s *Server) Router(
 		r.Get("/imports", s.listTasks)
 		r.Get("/imports/{id}", s.getTask)
 
+		// Session messages (raw captured turns).
+		r.Get("/session-messages", s.handleListSessionMessages)
 	})
 
 	r.Route("/v1alpha2/mem9s", func(r chi.Router) {
@@ -181,6 +183,9 @@ func (s *Server) Router(
 		r.Post("/imports", s.createTask)
 		r.Get("/imports", s.listTasks)
 		r.Get("/imports/{id}", s.getTask)
+
+		// Session messages (raw captured turns).
+		r.Get("/session-messages", s.handleListSessionMessages)
 	})
 
 	return r
@@ -215,6 +220,8 @@ func (s *Server) handleError(w http.ResponseWriter, err error) {
 		respondError(w, http.StatusConflict, "duplicate key: "+err.Error())
 	case errors.Is(err, domain.ErrValidation):
 		respondError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, domain.ErrNotSupported):
+		respondError(w, http.StatusNotImplemented, err.Error())
 	default:
 		s.logger.Error("internal error", "err", err)
 		respondError(w, http.StatusInternalServerError, "internal server error")

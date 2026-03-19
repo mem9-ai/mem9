@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -323,4 +324,100 @@ func tagsAtIndex(tags [][]string, i int) []string {
 		return tags[i]
 	}
 	return []string{}
+}
+
+const (
+	maxLimitPerSession = 500
+	maxSessionIDs      = 100
+)
+
+type sessionMessageResponse struct {
+	ID          string             `json:"id"`
+	SessionID   string             `json:"session_id,omitempty"`
+	AgentID     string             `json:"agent_id,omitempty"`
+	Source      string             `json:"source,omitempty"`
+	Seq         int                `json:"seq"`
+	Role        string             `json:"role"`
+	Content     string             `json:"content"`
+	ContentType string             `json:"content_type"`
+	Tags        []string           `json:"tags"`
+	State       domain.MemoryState `json:"state"`
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
+}
+
+func (s *Server) handleListSessionMessages(w http.ResponseWriter, r *http.Request) {
+	auth := authInfo(r)
+	svc := s.resolveServices(auth)
+
+	rawIDs := r.URL.Query()["session_id"]
+	if len(rawIDs) == 0 {
+		s.handleError(w, &domain.ValidationError{
+			Field: "session_id", Message: "at least one session_id required",
+		})
+		return
+	}
+	sessionIDs := dedupStrings(rawIDs)
+	if len(sessionIDs) > maxSessionIDs {
+		s.handleError(w, &domain.ValidationError{
+			Field: "session_id", Message: "too many session_ids: maximum is 100",
+		})
+		return
+	}
+
+	limitPerSession := maxLimitPerSession
+	if raw := r.URL.Query().Get("limit_per_session"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			s.handleError(w, &domain.ValidationError{
+				Field: "limit_per_session", Message: "must be a positive integer",
+			})
+			return
+		}
+		if n < limitPerSession {
+			limitPerSession = n
+		}
+	}
+
+	sessions, err := svc.session.ListBySessionIDs(r.Context(), sessionIDs, limitPerSession)
+	if err != nil {
+		s.handleError(w, err)
+		return
+	}
+	if sessions == nil {
+		sessions = []*domain.Session{}
+	}
+	messages := make([]sessionMessageResponse, len(sessions))
+	for i, sess := range sessions {
+		messages[i] = sessionMessageResponse{
+			ID:          sess.ID,
+			SessionID:   sess.SessionID,
+			AgentID:     sess.AgentID,
+			Source:      sess.Source,
+			Seq:         sess.Seq,
+			Role:        sess.Role,
+			Content:     sess.Content,
+			ContentType: sess.ContentType,
+			Tags:        sess.Tags,
+			State:       sess.State,
+			CreatedAt:   sess.CreatedAt,
+			UpdatedAt:   sess.UpdatedAt,
+		}
+	}
+	respond(w, http.StatusOK, map[string]any{
+		"messages":          messages,
+		"limit_per_session": limitPerSession,
+	})
+}
+
+func dedupStrings(ss []string) []string {
+	seen := make(map[string]struct{}, len(ss))
+	out := make([]string, 0, len(ss))
+	for _, s := range ss {
+		if _, ok := seen[s]; !ok {
+			seen[s] = struct{}{}
+			out = append(out, s)
+		}
+	}
+	return out
 }

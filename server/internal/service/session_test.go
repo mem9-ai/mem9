@@ -62,6 +62,10 @@ func (s *stubSessionRepo) KeywordSearch(_ context.Context, _ string, _ domain.Me
 
 func (s *stubSessionRepo) FTSAvailable() bool { return s.ftsAvail }
 
+func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, _ []string, _ int) ([]*domain.Session, error) {
+	return nil, nil
+}
+
 func newTestSessionService(repo *stubSessionRepo) *SessionService {
 	return NewSessionService(repo, nil, "")
 }
@@ -293,3 +297,7 @@ func (c *capturingSessionRepo) KeywordSearch(ctx context.Context, q string, f do
 	return c.stub.KeywordSearch(ctx, q, f, limit)
 }
 func (c *capturingSessionRepo) FTSAvailable() bool { return c.stub.FTSAvailable() }
+
+func (c *capturingSessionRepo) ListBySessionIDs(ctx context.Context, ids []string, limit int) ([]*domain.Session, error) {
+	return c.stub.ListBySessionIDs(ctx, ids, limit)
+}

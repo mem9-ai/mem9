@@ -8,6 +8,7 @@ var (
 	ErrDuplicateKey  = errors.New("duplicate key")
 	ErrValidation    = errors.New("validation error")
 	ErrWriteConflict = errors.New("write conflict, retry")
+	ErrNotSupported  = errors.New("not supported")
 )
 
 // ValidationError wraps ErrValidation with a field-level message.

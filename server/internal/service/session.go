@@ -31,6 +31,10 @@ func NewSessionService(sessions repository.SessionRepo, embedder *embed.Embedder
 	}
 }
 
+func (s *SessionService) ListBySessionIDs(ctx context.Context, sessionIDs []string, limitPerSession int) ([]*domain.Session, error) {
+	return s.sessions.ListBySessionIDs(ctx, sessionIDs, limitPerSession)
+}
+
 func (s *SessionService) PatchTags(ctx context.Context, sessionID, contentHash string, tags []string) error {
 	return s.sessions.PatchTags(ctx, sessionID, contentHash, tags)
 }

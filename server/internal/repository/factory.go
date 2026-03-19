@@ -1,9 +1,11 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
+	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/repository/db9"
 	"github.com/qiffang/mnemos/server/internal/repository/postgres"
 	"github.com/qiffang/mnemos/server/internal/repository/tidb"
@@ -60,13 +62,41 @@ func NewMemoryRepo(backend string, db *sql.DB, autoModel string, ftsEnabled bool
 	}
 }
 
-// NewSessionRepo creates a SessionRepo. Only supported on the tidb backend.
-// Panics for unsupported backends to surface misconfiguration at startup.
+// NewSessionRepo creates a SessionRepo for the specified backend.
+// Only TiDB has a sessions table; all other backends return a stub that
+// silently no-ops writes/searches and returns ErrNotSupported for reads.
 func NewSessionRepo(backend string, db *sql.DB, autoModel string, ftsEnabled bool, clusterID string) SessionRepo {
 	switch backend {
 	case "tidb", "":
 		return tidb.NewSessionRepo(db, autoModel, ftsEnabled, clusterID)
 	default:
-		panic("NewSessionRepo: unsupported backend " + backend + " (sessions table is TiDB-only)")
+		return stubSessionRepo{}
 	}
+}
+
+// stubSessionRepo satisfies SessionRepo for non-TiDB backends.
+// Write and search methods are silently skipped (consistent with the
+// IsTableNotFoundError no-op pattern). ListBySessionIDs returns ErrNotSupported
+// so the handler returns HTTP 501 instead of a misleading empty result.
+type stubSessionRepo struct{}
+
+func (stubSessionRepo) BulkCreate(_ context.Context, _ []*domain.Session) error { return nil }
+func (stubSessionRepo) PatchTags(_ context.Context, _, _ string, _ []string) error {
+	return nil
+}
+func (stubSessionRepo) AutoVectorSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+	return nil, nil
+}
+func (stubSessionRepo) VectorSearch(_ context.Context, _ []float32, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+	return nil, nil
+}
+func (stubSessionRepo) FTSSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+	return nil, nil
+}
+func (stubSessionRepo) KeywordSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+	return nil, nil
+}
+func (stubSessionRepo) FTSAvailable() bool { return false }
+func (stubSessionRepo) ListBySessionIDs(_ context.Context, _ []string, _ int) ([]*domain.Session, error) {
+	return nil, fmt.Errorf("session messages: %w", domain.ErrNotSupported)
 }
