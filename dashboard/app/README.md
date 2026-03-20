@@ -18,6 +18,8 @@ Use `.env.local` for local overrides. Keep the shared `.env` unchanged.
 | `VITE_USE_MOCK` | `"true"` | active | shared `.env` currently sets `"false"`; `.env.local` should override it for UI-first work |
 | `VITE_API_BASE` | `/your-memory/api` | active | use the same relative path in dev and production |
 | `VITE_ANALYSIS_API_BASE` | `/your-memory/analysis-api` | active | same-origin proxy for `napi.mem9.ai` in dev and production |
+| `VITE_API_PROXY_TARGET` | `https://dev-api.example.com` | active | Vite dev proxy target for `/your-memory/api`; keep frontend path relative |
+| `VITE_ANALYSIS_PROXY_TARGET` | `https://dev-analysis.example.com` | active | Vite dev proxy target for `/your-memory/analysis-api` |
 | `VITE_GA4_MEASUREMENT_ID` | `G-XXXXXXXXXX` | active | optional; when set, GA4 initializes on app load and tracks route page views before login |
 | `VITE_MIXPANEL_TOKEN` | `xxxxxxxxxxxxxxxx` | active | optional; when set, Mixpanel initializes once after login succeeds |
 | `VITE_ENABLE_MANUAL_ADD` | `"true"` | planned | add in `src/config/features.ts` before wiring gated UI |
@@ -35,8 +37,10 @@ pnpm dev
 # Real API through the Vite proxy
 VITE_USE_MOCK=false pnpm dev
 
-# Real API via custom backend
-VITE_USE_MOCK=false VITE_API_BASE=http://localhost:8080/v1alpha2/mem9s pnpm dev
+# Real API via custom dev proxy target
+VITE_USE_MOCK=false \
+VITE_API_PROXY_TARGET=http://localhost:8080 \
+pnpm dev
 ```
 
 See `../docs/ui-first-mock-plan.md` and `../docs/ui-first-mock-plan.zh-CN.md` for the planned feature-flag matrix and provider split.
@@ -47,8 +51,8 @@ The frontend never makes cross-origin requests. All API calls go through a same-
 
 | Environment | Proxy | Frontend Path | Backend Target |
 |-------------|-------|---------------|----------------|
-| Dev | Vite dev server | `/your-memory/api/...` | `https://api.mem9.ai/v1alpha2/mem9s/...` |
-| Dev | Vite dev server | `/your-memory/analysis-api/...` | `https://napi.mem9.ai/...` |
+| Dev | Vite dev server | `/your-memory/api/...` | `${VITE_API_PROXY_TARGET:-https://api.mem9.ai}/v1alpha2/mem9s/...` |
+| Dev | Vite dev server | `/your-memory/analysis-api/...` | `${VITE_ANALYSIS_PROXY_TARGET:-https://napi.mem9.ai}/...` |
 | Prod | Netlify rewrite | `/your-memory/api/...` | `https://api.mem9.ai/v1alpha2/mem9s/...` |
 | Prod | Netlify rewrite | `/your-memory/analysis-api/...` | `https://napi.mem9.ai/...` |
 
