@@ -4,6 +4,11 @@ import type { PulseCompositionSegment } from "@/lib/memory-pulse";
 import { cn } from "@/lib/utils";
 import type { MemoryType } from "@/types/memory";
 
+const compactFormatter = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
 interface RingSegment extends PulseCompositionSegment {
   startAngle: number;
   endAngle: number;
@@ -188,16 +193,16 @@ export function MemoryCompositionChart({
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-soft-foreground">
                   {t(hovered.labelKey)}
                 </div>
-                <div className="mt-1 text-4xl font-semibold tracking-[-0.06em] text-foreground">
-                  {hovered.value}
+                <div className="mt-1 text-3xl font-semibold tracking-[-0.06em] text-foreground">
+                  {compactFormatter.format(hovered.value)}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {`${Math.round(hovered.ratio * 100)}%`}
                 </div>
               </>
             ) : (
-              <div className="text-4xl font-semibold tracking-[-0.06em] text-foreground">
-                {total}
+              <div className="text-3xl font-semibold tracking-[-0.06em] text-foreground">
+                {compactFormatter.format(total)}
               </div>
             )}
           </div>
@@ -233,7 +238,7 @@ export function MemoryCompositionChart({
                     {t(segment.labelKey)}
                   </span>
                   <span className="font-mono text-xs text-soft-foreground">
-                    {segment.value}
+                    {compactFormatter.format(segment.value)}
                   </span>
                 </div>
               </button>
