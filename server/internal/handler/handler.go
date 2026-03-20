@@ -71,6 +71,7 @@ type resolvedSvc struct {
 	memory  *service.MemoryService
 	ingest  *service.IngestService
 	session *service.SessionService
+	recall  *service.RecallService
 }
 
 type tenantSvcKey string
@@ -84,10 +85,12 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		}
 		memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
+		recallRepo := repository.NewRecallEventRepo(s.dbBackend, auth.TenantDB, auth.ClusterID)
 		svc := resolvedSvc{
 			memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 			ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 			session: service.NewSessionService(sessRepo, s.embedder, s.autoModel),
+			recall:  service.NewRecallService(recallRepo, s.llmClient),
 		}
 		actual, loaded := s.svcCache.LoadOrStore(key, svc)
 		if !loaded {
@@ -95,7 +98,31 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 				if err := s.tenant.EnsureSessionsTable(context.Background(), auth.TenantDB); err != nil {
 					s.logger.Warn("sessions table migration failed",
 						"cluster_id", auth.ClusterID,
-						"err", err) // no tenant field: TenantID is empty in this branch
+						"err", err)
+				}
+				const (
+					recallEnsureMaxAttempts = 5
+					recallEnsureBaseDelay   = 2 * time.Second
+					recallEnsureMaxDelay    = 60 * time.Second
+				)
+				delay := recallEnsureBaseDelay
+				for attempt := 1; attempt <= recallEnsureMaxAttempts; attempt++ {
+					ensureCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					err := s.tenant.EnsureRecallEventsTable(ensureCtx, auth.TenantDB)
+					cancel()
+					if err == nil {
+						break
+					}
+					s.logger.Warn("EnsureRecallEventsTable failed — will retry",
+						"cluster_id", auth.ClusterID,
+						"attempt", attempt, "err", err)
+					if attempt == recallEnsureMaxAttempts {
+						s.logger.Error("EnsureRecallEventsTable exhausted retries — recall analytics disabled for this process lifetime",
+							"cluster_id", auth.ClusterID, "err", err)
+						break
+					}
+					time.Sleep(delay)
+					delay = min(delay*2, recallEnsureMaxDelay)
 				}
 			}()
 		}
@@ -107,10 +134,12 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	}
 	memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
+	recallRepo := repository.NewRecallEventRepo(s.dbBackend, auth.TenantDB, auth.ClusterID)
 	svc := resolvedSvc{
 		memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 		ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 		session: service.NewSessionService(sessRepo, s.embedder, s.autoModel),
+		recall:  service.NewRecallService(recallRepo, s.llmClient),
 	}
 	actual, loaded := s.svcCache.LoadOrStore(key, svc)
 	if !loaded {
@@ -120,6 +149,32 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 					"cluster_id", auth.ClusterID,
 					"tenant", auth.TenantID,
 					"err", err)
+			}
+			const (
+				recallEnsureMaxAttempts = 5
+				recallEnsureBaseDelay   = 2 * time.Second
+				recallEnsureMaxDelay    = 60 * time.Second
+			)
+			delay := recallEnsureBaseDelay
+			for attempt := 1; attempt <= recallEnsureMaxAttempts; attempt++ {
+				ensureCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				err := s.tenant.EnsureRecallEventsTable(ensureCtx, auth.TenantDB)
+				cancel()
+				if err == nil {
+					break
+				}
+				s.logger.Warn("EnsureRecallEventsTable failed — will retry",
+					"cluster_id", auth.ClusterID,
+					"tenant", auth.TenantID,
+					"attempt", attempt, "err", err)
+				if attempt == recallEnsureMaxAttempts {
+					s.logger.Error("EnsureRecallEventsTable exhausted retries — recall analytics disabled for this process lifetime",
+						"cluster_id", auth.ClusterID,
+						"tenant", auth.TenantID, "err", err)
+					break
+				}
+				time.Sleep(delay)
+				delay = min(delay*2, recallEnsureMaxDelay)
 			}
 		}()
 	}
@@ -158,6 +213,7 @@ func (s *Server) Router(
 		// Memory CRUD.
 		r.Post("/memories", s.createMemory)
 		r.Get("/memories", s.listMemories)
+		r.Get("/memories/interests", s.getInterests)
 		r.Get("/memories/{id}", s.getMemory)
 		r.Put("/memories/{id}", s.updateMemory)
 		r.Delete("/memories/{id}", s.deleteMemory)
@@ -176,6 +232,7 @@ func (s *Server) Router(
 
 		r.Post("/memories", s.createMemory)
 		r.Get("/memories", s.listMemories)
+		r.Get("/memories/interests", s.getInterests)
 		r.Get("/memories/{id}", s.getMemory)
 		r.Put("/memories/{id}", s.updateMemory)
 		r.Delete("/memories/{id}", s.deleteMemory)
