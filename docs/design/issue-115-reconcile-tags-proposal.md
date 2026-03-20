@@ -363,20 +363,38 @@ factsJSON, _ := json.Marshal(texts)
 newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text, event.Tags)
 ```
 
-**UPDATE — pinned fallback** (ingest.go:690) — uses call #2 tags:
+**UPDATE — pinned fallback** (ingest.go:690) — uses `effectiveTags`:
 
 ```go
-newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text, event.Tags)
+newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text, effectiveTags)
 ```
 
-**UPDATE — normal path** (ingest.go:699) — uses call #2 tags:
+**UPDATE — normal path** (ingest.go:699) — uses `effectiveTags`:
 
 ```go
-newID, updateErr := s.updateInsight(ctx, agentName, agentID, sessionID, realID, event.Text, event.Tags)
+newID, updateErr := s.updateInsight(ctx, agentName, agentID, sessionID, realID, event.Text, effectiveTags)
 ```
 
-All three cases use `event.Tags` from call #2. No `tagsFor` map needed. If the model
-omits `tags` on any event, `event.Tags` is `nil` and the write proceeds tag-less.
+**Tag preservation on omission** — for UPDATE and pinned fallback, `effectiveTags` is
+computed before the call sites to preserve existing tags when the reconcile LLM omits
+the `tags` field:
+
+```go
+effectiveTags := event.Tags
+if effectiveTags == nil {
+    effectiveTags = existingMemories[intID].Tags
+}
+```
+
+This means: if the reconcile LLM emits `tags`, those tags are written. If it omits
+`tags`, the existing memory's tags are carried forward to the new version. This is
+better UX than silently erasing prior tags on every UPDATE.
+
+For ADD, `event.Tags` is used directly (no fallback — there is no prior memory to
+inherit from).
+
+All three cases use `event.Tags` / `effectiveTags` from call #2. No `tagsFor` map
+needed.
 
 ---
 

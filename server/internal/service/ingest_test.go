@@ -1839,3 +1839,78 @@ func TestExtractPhase1FencedLegacyStringArrayFallback(t *testing.T) {
 		t.Fatalf("expected message_tags intact, got %v", result.MessageTags)
 	}
 }
+
+func TestExtractFactsAlternativeKeyReturnsZero(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts": [{"content": "Uses Go 1.22"}]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22")
+	if err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+	if len(facts) != 0 {
+		t.Fatalf("expected 0 facts for alternative-key schema, got %d: %v", len(facts), facts)
+	}
+}
+
+func TestReconcileTagsClampedViaReconcilePath(t *testing.T) {
+	t.Parallel()
+
+	manyTags := make([]string, 25)
+	for i := range manyTags {
+		manyTags[i] = fmt.Sprintf("tag%d", i)
+	}
+	manyTagsJSON, _ := json.Marshal(manyTags)
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var resp string
+		if callCount == 1 {
+			resp = `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}]}`
+		} else {
+			resp = fmt.Sprintf(`{"memory": [{"id": "new", "text": "Uses Go 1.22", "event": "ADD", "tags": %s}]}`, string(manyTagsJSON))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": resp}}},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "existing-1", Content: "Works remotely", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-clamp-reconcile",
+		AgentID:   "agent-1",
+		Messages:  []IngestMessage{{Role: "user", Content: "I use Go 1.22"}},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 create call, got %d", len(memRepo.createCalls))
+	}
+	if len(memRepo.createCalls[0].Tags) != maxTags {
+		t.Fatalf("expected event.Tags clamped to %d via reconcile ADD path, got %d", maxTags, len(memRepo.createCalls[0].Tags))
+	}
+}

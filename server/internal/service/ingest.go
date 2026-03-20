@@ -222,9 +222,11 @@ func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID
 			continue
 		}
 
+		// Cap content size to avoid blowing LLM token limits.
 		const maxContentRunes = 32000
 		formatted := truncateRunes(content, maxContentRunes)
 
+		// Wrap as a single user message for fact extraction.
 		conversation := "User: " + formatted
 
 		facts, err := s.extractFacts(ctx, conversation)
@@ -353,6 +355,10 @@ func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
 			out = append(out, f)
 		}
 	}
+	if len(parsed) > 0 && len(out) == 0 {
+		slog.Warn("normalizeParsedFacts: all parsed facts had empty text, trying legacy fallback",
+			"parsed_count", len(parsed))
+	}
 	if len(out) > 0 {
 		return out
 	}
@@ -367,6 +373,10 @@ func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
 			if t != "" {
 				out = append(out, ExtractedFact{Text: t})
 			}
+		}
+		if len(legacy.Facts) > 0 && len(out) == 0 {
+			slog.Warn("normalizeParsedFacts: legacy facts array had entries but all were empty after trim",
+				"legacy_count", len(legacy.Facts))
 		}
 	}
 	return out
@@ -523,7 +533,9 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 					MessageTags [][]string `json:"message_tags"`
 				}
 				var leg legacyFull
-				_ = json.Unmarshal([]byte(llm.StripMarkdownFences(raw2)), &leg)
+				if legErr := json.Unmarshal([]byte(llm.StripMarkdownFences(raw2)), &leg); legErr != nil {
+					slog.Debug("extractFactsAndTags: legacy message_tags decode failed, returning empty", "err", legErr)
+				}
 				messageTags := make([][]string, messageCount)
 				for i := range messageTags {
 					if i < len(leg.MessageTags) && leg.MessageTags[i] != nil {
@@ -542,6 +554,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 
 	facts := normalizeParsedFacts(lastRaw, parsed.Facts)
 
+	// Normalise message_tags to exactly messageCount entries.
 	messageTags := make([][]string, messageCount)
 	for i := range messageTags {
 		if i < len(parsed.MessageTags) && parsed.MessageTags[i] != nil {
@@ -565,6 +578,7 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 		texts[i] = f.Text
 	}
 
+	// Step 1: For each fact, search for relevant existing memories and collect them.
 	existingMemories, gatherErr := s.gatherExistingMemories(ctx, agentID, texts)
 	if gatherErr != nil {
 		return nil, 0, fmt.Errorf("gather existing memories: %w", gatherErr)
@@ -597,6 +611,7 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 	refsJSON, _ := json.Marshal(refs)
 	factsJSON, _ := json.Marshal(texts)
 
+	// Step 3: Single LLM call with all facts + all existing memories.
 	systemPrompt := `You are a memory management engine. You manage a knowledge base by comparing newly extracted facts against existing memories and deciding the correct action for each fact.
 
 ## Actions
@@ -950,6 +965,7 @@ func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, ses
 	return ids, warnings, nil
 }
 
+// addInsight creates a new insight memory with the given content and tags.
 func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sessionID, content string, tags []string) (string, error) {
 	if len(tags) > maxTags {
 		tags = tags[:maxTags]
@@ -987,6 +1003,7 @@ func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sess
 	return m.ID, nil
 }
 
+// updateInsight archives the old memory and creates a new one atomically (append-new + archive-old model).
 func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, sessionID, oldID, newContent string, tags []string) (string, error) {
 	if len(tags) > maxTags {
 		tags = tags[:maxTags]
