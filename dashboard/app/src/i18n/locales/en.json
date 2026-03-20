@@ -20,14 +20,14 @@
     "disconnect": "Disconnect",
     "stats": {
       "total": "memories",
-      "pinned": "Saved",
-      "insight": "Learned"
+      "pinned": "Manually Saved",
+      "insight": "Auto Learned"
     }
   },
   "tabs": {
     "all": "All",
-    "pinned": "Saved by you",
-    "insight": "Learned from chats"
+    "pinned": "Manually Saved",
+    "insight": "Auto Learned"
   },
   "search": {
     "placeholder": "Search your memories — try natural language…",
@@ -42,8 +42,8 @@
   },
   "detail": {
     "type": {
-      "pinned": "Saved by you",
-      "insight": "Learned from chats"
+      "pinned": "Manually Saved",
+      "insight": "Auto Learned"
     },
     "source": "Source",
     "agent": "Agent",
@@ -74,7 +74,7 @@
     "tags_placeholder": "e.g. preference, project",
     "cancel": "Cancel",
     "save": "Save",
-    "footer": "This memory will be marked as \"Saved by you\"",
+    "footer": "This memory will be marked as \"Manually Saved\"",
     "success": "Memory saved"
   },
   "edit": {
@@ -99,13 +99,13 @@
     "cta": "Save your first memory"
   },
   "legend": {
-    "pinned": "things you asked to remember",
-    "insight": "auto-extracted from chats"
+    "pinned": "things you manually saved",
+    "insight": "auto-learned from chats"
   },
   "info": {
     "toggle": "About memory types",
-    "pinned": "\"Saved by you\" are things you explicitly asked your agent to remember",
-    "insight": "\"Learned from chats\" are memories AI automatically extracted from conversations",
+    "pinned": "\"Manually Saved\" are things you explicitly asked your agent to remember",
+    "insight": "\"Auto Learned\" are memories AI automatically extracted from conversations",
     "note": "What you see here are saved memories, not the reasoning behind each response"
   },
   "error": {
@@ -130,7 +130,7 @@
     "title": "Export memories",
     "description": "Download all active memories to your device. The file is in JSON format.",
     "count": "{{count}} memories will be exported",
-    "breakdown": "{{pinned}} saved by you · {{insight}} learned from chats",
+    "breakdown": "{{pinned}} manually saved · {{insight}} auto learned",
     "note": "The export includes all active memories regardless of filters. Original timestamps are preserved.",
     "cancel": "Cancel",
     "button": "Download",
