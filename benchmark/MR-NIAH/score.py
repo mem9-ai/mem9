@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -196,6 +197,142 @@ def summarize_group(rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         "mean_score": (total_score / total) if total else 0.0,
     }
 
+ANSI_RE = re.compile(r"\x1B\[[0-9;]*[A-Za-z]")
+JSON_DECODER = json.JSONDecoder()
+
+
+def _strip_ansi(text: str) -> str:
+    return ANSI_RE.sub("", text)
+
+
+def _parse_json_from_mixed_stdout(stdout: str) -> Optional[Any]:
+    """Best-effort: parse JSON even when stdout contains logs + ANSI colors.
+
+    OpenClaw normally prints a single JSON object with `--json`, but plugins may
+    emit extra lines before it. This function searches for the first decodable
+    JSON object/array in the output.
+    """
+    cleaned = _strip_ansi(stdout or "").strip()
+    if not cleaned:
+        return None
+
+    def try_decode(text: str) -> Optional[Any]:
+        if not text:
+            return None
+        try:
+            obj, _ = JSON_DECODER.raw_decode(text)
+            return obj
+        except json.JSONDecodeError:
+            return None
+
+    # Fast path: output is pure JSON.
+    obj = try_decode(cleaned)
+    if obj is not None:
+        return obj
+
+    # Fallback: scan for a JSON object/array start.
+    i = 0
+    while i < len(cleaned):
+        brace_idx = cleaned.find("{", i)
+        bracket_idx = cleaned.find("[", i)
+        if brace_idx == -1 and bracket_idx == -1:
+            break
+        if brace_idx == -1:
+            start = bracket_idx
+        elif bracket_idx == -1:
+            start = brace_idx
+        else:
+            start = brace_idx if brace_idx < bracket_idx else bracket_idx
+
+        snippet = cleaned[start:].lstrip()
+        obj = try_decode(snippet)
+        if obj is not None:
+            return obj
+        i = start + 1
+
+    return None
+
+
+def _safe_read_json(path: Path) -> Optional[Any]:
+    try:
+        raw = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return None
+    if not raw.strip():
+        return None
+    # Try strict JSON first for speed (common case).
+    try:
+        return json.loads(raw)
+    except Exception:
+        return _parse_json_from_mixed_stdout(raw)
+
+
+def _extract_openclaw_meta(stdout_obj: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(stdout_obj, dict):
+        return None
+    result = stdout_obj.get("result")
+    if isinstance(result, dict) and isinstance(result.get("meta"), dict):
+        return result["meta"]
+    meta = stdout_obj.get("meta")
+    if isinstance(meta, dict):
+        return meta
+    return None
+
+
+def _classify_failure(rec: Dict[str, Any]) -> Tuple[Optional[str], Dict[str, Any]]:
+    """Return (failureKind, details). failureKind None means "not failed"."""
+    details: Dict[str, Any] = {}
+    ok = _coerce_bool(rec.get("ok"))
+    err = rec.get("error")
+    error_stage = rec.get("errorStage")
+
+    if ok is False or (isinstance(err, str) and err.strip()):
+        if isinstance(error_stage, str) and error_stage.strip():
+            details["errorStage"] = error_stage
+        if isinstance(err, str) and err.strip():
+            details["error"] = err.strip()
+        kind = (
+            f"{error_stage}"
+            if isinstance(error_stage, str) and error_stage.strip()
+            else "failed"
+        )
+        return kind, details
+
+    stdout_path_raw = rec.get("stdoutPath")
+    if isinstance(stdout_path_raw, str) and stdout_path_raw.strip():
+        stdout_path = Path(stdout_path_raw).expanduser()
+        stdout_obj = _safe_read_json(stdout_path)
+        meta = _extract_openclaw_meta(stdout_obj)
+        if isinstance(meta, dict):
+            aborted = meta.get("aborted")
+            if aborted is True:
+                details["aborted"] = True
+                duration = _coerce_int(meta.get("durationMs"))
+                if duration is not None:
+                    details["durationMs"] = duration
+                stop_reason = meta.get("stopReason")
+                if isinstance(stop_reason, str) and stop_reason.strip():
+                    details["stopReason"] = stop_reason
+                # Heuristic: typical agent timeout is 600s; treat near-600s aborts as timeout.
+                if duration is not None and 590_000 <= duration <= 610_000:
+                    return "openclaw_timeout", details
+                return "openclaw_aborted", details
+
+            error_obj = meta.get("error")
+            if isinstance(error_obj, dict):
+                kind_raw = error_obj.get("kind")
+                msg_raw = error_obj.get("message")
+                if isinstance(kind_raw, str) and kind_raw.strip():
+                    details["openclawErrorKind"] = kind_raw
+                    if isinstance(msg_raw, str) and msg_raw.strip():
+                        details["openclawError"] = msg_raw.strip()
+                    return f"openclaw_{kind_raw}", details
+                # Unknown error shape but still an error payload.
+                details["openclawError"] = error_obj
+                return "openclaw_error", details
+
+    return None, details
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Score MR-NIAH predictions (MiniMax metric)")
@@ -216,6 +353,11 @@ def main() -> int:
         action="store_true",
         help="Also print accuracy/mean score split by compactionTriggered (if present).",
     )
+    parser.add_argument(
+        "--include-failures",
+        action="store_true",
+        help="Include failed/aborted runs in accuracy and compaction split (default excludes them).",
+    )
     args = parser.parse_args()
 
     path = Path(args.predictions).expanduser()
@@ -228,12 +370,46 @@ def main() -> int:
         print(f"No records found in {path}", file=sys.stderr)
         return 2
 
+    total = len(rows)
+    failures: Dict[str, List[Dict[str, Any]]] = {}
+    passed: List[Dict[str, Any]] = []
+    for rec in rows:
+        failure_kind, failure_details = _classify_failure(rec)
+        if failure_kind:
+            tagged = dict(rec)
+            tagged["_failureKind"] = failure_kind
+            if failure_details:
+                tagged["_failureDetails"] = failure_details
+            failures.setdefault(failure_kind, []).append(tagged)
+        else:
+            passed.append(rec)
+
+    scored_rows = rows if args.include_failures else passed
+    scored_total = len(scored_rows)
+    scored_summary = summarize_group(scored_rows)
+
+    print(f"Total samples : {total}")
+    if not args.include_failures:
+        print(f"Scored samples: {scored_total}")
+    if failures:
+        failed_total = sum(len(v) for v in failures.values())
+        print(f"Failed cases  : {failed_total}")
+        # Print stable breakdown by kind with id previews.
+        for kind in sorted(failures.keys()):
+            ids = [rec.get("id") for rec in failures[kind]]
+            preview = ids[:30]
+            print(f"- {kind}: {len(ids)} ids={preview}{'...' if len(ids) > len(preview) else ''}")
+
+    print(f"Exact matches : {scored_summary['perfect']}")
+    print(f"Accuracy      : {scored_summary['accuracy']:.4f}")
+    print(f"Mean score    : {scored_summary['mean_score']:.4f}")
+
     # Optional split by compaction flag (when available).
     compaction_source_counts: Dict[str, int] = {}
     compacted_rows: List[Dict[str, Any]] = []
     uncompressed_rows: List[Dict[str, Any]] = []
     unknown_rows: List[Dict[str, Any]] = []
-    for rec in rows:
+    for rec in scored_rows:
         tag, source = resolve_compaction_tag(rec)
         compaction_source_counts[source] = compaction_source_counts.get(source, 0) + 1
         if tag is True:
@@ -243,51 +419,8 @@ def main() -> int:
         else:
             unknown_rows.append(rec)
 
-    total = len(rows)
-    failed_rows: List[Dict[str, Any]] = []
-    for rec in rows:
-        ok = _coerce_bool(rec.get("ok"))
-        err = rec.get("error")
-        if ok is False or (isinstance(err, str) and err.strip()):
-            failed_rows.append(rec)
-    total_score = 0.0
-    perfect = 0
-    mismatches: List[Dict[str, object]] = []
-
-    for rec in rows:
-        prediction = rec.get("prediction", "") or ""
-        answer = rec.get("answer", "") or ""
-        language = detect_language(answer)
-        score = score_response(prediction, answer, language)
-        total_score += score
-        if score >= 0.999999:
-            perfect += 1
-        elif args.max_errors and len(mismatches) < args.max_errors:
-            mismatches.append(
-                {
-                    "id": rec.get("id"),
-                    "session": rec.get("session"),
-                    "score": score,
-                    "answer": answer,
-                    "prediction": prediction,
-                }
-            )
-
-    mean_score = total_score / total if total else 0.0
-    accuracy = perfect / total if total else 0.0
-
-    print(f"Total samples : {total}")
-    if failed_rows:
-        failed_ids = [rec.get("id") for rec in failed_rows]
-        preview = failed_ids[:30]
-        print(f"Failed cases  : {len(failed_rows)}")
-        print(f"Failed ids    : {preview}{'...' if len(failed_ids) > len(preview) else ''}")
-    print(f"Exact matches : {perfect}")
-    print(f"Accuracy      : {accuracy:.4f}")
-    print(f"Mean score    : {mean_score:.4f}")
-
     should_split = bool(args.by_compaction) or (
-        compaction_source_counts.get("missing", 0) < len(rows)
+        compaction_source_counts.get("missing", 0) < len(scored_rows)
     )
     if should_split:
         print("\n--- Split by compaction ---")
@@ -297,7 +430,7 @@ def main() -> int:
         )
         if unknown_rows:
             print(
-                f"Warning: {len(unknown_rows)}/{len(rows)} rows missing compaction fields; "
+                f"Warning: {len(unknown_rows)}/{len(scored_rows)} rows missing compaction fields; "
                 "they are excluded from the compact/no-compact split."
             )
         compacted_summary = summarize_group(compacted_rows)
@@ -314,6 +447,26 @@ def main() -> int:
             f"accuracy={uncompressed_summary['accuracy']:.4f} "
             f"mean_score={uncompressed_summary['mean_score']:.4f}"
         )
+
+    mismatches: List[Dict[str, object]] = []
+    if args.max_errors:
+        for rec in scored_rows:
+            prediction = rec.get("prediction", "") or ""
+            answer = rec.get("answer", "") or ""
+            language = detect_language(answer)
+            score = score_response(prediction, answer, language)
+            if score < 0.999999:
+                mismatches.append(
+                    {
+                        "id": rec.get("id"),
+                        "session": rec.get("session"),
+                        "score": score,
+                        "answer": answer,
+                        "prediction": prediction,
+                    }
+                )
+                if len(mismatches) >= int(args.max_errors):
+                    break
 
     if mismatches:
         print("\nFirst mismatches (score < 1.0):")
