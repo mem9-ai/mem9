@@ -340,8 +340,38 @@ func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agen
 	return s.reconcile(ctx, agentName, agentID, sessionID, facts)
 }
 
-// extractFacts calls the LLM to extract atomic facts and per-fact tags from
-// the conversation. Used by extractAndReconcile and ReconcileContent.
+// normalizeParsedFacts converts []ExtractedFact from a successful parse into a
+// clean slice, and falls back to legacy string-array format when the primary
+// parse succeeded structurally but produced no facts (which happens when the
+// model returns the old {"facts":["text"]} schema — json.Unmarshal silently
+// produces Facts:nil on a type mismatch inside a slice element).
+func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
+	var out []ExtractedFact
+	for _, f := range parsed {
+		f.Text = strings.TrimSpace(f.Text)
+		if f.Text != "" {
+			out = append(out, f)
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	type legacyResponse struct {
+		Facts []string `json:"facts"`
+	}
+	var legacy legacyResponse
+	cleaned := strings.TrimSpace(raw)
+	if err := json.Unmarshal([]byte(cleaned), &legacy); err == nil {
+		for _, t := range legacy.Facts {
+			t = strings.TrimSpace(t)
+			if t != "" {
+				out = append(out, ExtractedFact{Text: t})
+			}
+		}
+	}
+	return out
+}
+
 func (s *IngestService) extractFacts(ctx context.Context, conversation string) ([]ExtractedFact, error) {
 	if s.llm == nil || conversation == "" {
 		return nil, nil
@@ -386,6 +416,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 	}
 
 	parsed, err := llm.ParseJSON[extractResponse](raw)
+	lastRaw := raw
 	if err != nil {
 		raw2, retryErr := s.llm.CompleteJSON(ctx, systemPrompt,
 			"Your previous response was not valid JSON. Return ONLY the JSON object.\n\n"+userPrompt)
@@ -394,19 +425,16 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
-			slog.Error("json parse llm resp failed", "len", len(raw2), "err", err)
+			if fallback := normalizeParsedFacts(raw2, nil); len(fallback) > 0 {
+				slog.Info("facts extracted", "facts", len(fallback))
+				return fallback, nil
+			}
 			return nil, fmt.Errorf("extraction parse after retry: %w", err)
 		}
+		lastRaw = raw2
 	}
 
-	var facts []ExtractedFact
-	for _, f := range parsed.Facts {
-		f.Text = strings.TrimSpace(f.Text)
-		if f.Text != "" {
-			facts = append(facts, f)
-		}
-	}
-
+	facts := normalizeParsedFacts(lastRaw, parsed.Facts)
 	slog.Info("facts extracted", "facts", len(facts))
 	return facts, nil
 }
@@ -481,6 +509,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 	}
 
 	parsed, err := llm.ParseJSON[extractResponse](raw)
+	lastRaw := raw
 	if err != nil {
 		raw2, retryErr := s.llm.CompleteJSON(ctx, systemPrompt,
 			"Your previous response was not valid JSON. Return ONLY the JSON object.\n\n"+userPrompt)
@@ -489,18 +518,29 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
-			slog.Error("json parse llm resp failed", "len", len(raw2), "err", err)
+			if fallback := normalizeParsedFacts(raw2, nil); len(fallback) > 0 {
+				type legacyFull struct {
+					MessageTags [][]string `json:"message_tags"`
+				}
+				var leg legacyFull
+				_ = json.Unmarshal([]byte(strings.TrimSpace(raw2)), &leg)
+				messageTags := make([][]string, messageCount)
+				for i := range messageTags {
+					if i < len(leg.MessageTags) && leg.MessageTags[i] != nil {
+						messageTags[i] = leg.MessageTags[i]
+					} else {
+						messageTags[i] = []string{}
+					}
+				}
+				slog.Info("facts and tags extracted", "facts", len(fallback), "tagged_messages", messageCount)
+				return fallback, messageTags, nil
+			}
 			return nil, nil, fmt.Errorf("extraction parse after retry: %w", err)
 		}
+		lastRaw = raw2
 	}
 
-	var facts []ExtractedFact
-	for _, f := range parsed.Facts {
-		f.Text = strings.TrimSpace(f.Text)
-		if f.Text != "" {
-			facts = append(facts, f)
-		}
-	}
+	facts := normalizeParsedFacts(lastRaw, parsed.Facts)
 
 	messageTags := make([][]string, messageCount)
 	for i := range messageTags {
@@ -702,9 +742,13 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				slog.Warn("skipping UPDATE with invalid ID or empty text", "id", event.ID)
 				continue
 			}
+			effectiveTags := event.Tags
+			if effectiveTags == nil {
+				effectiveTags = existingMemories[intID].Tags
+			}
 			if existingMemories[intID].MemoryType == domain.TypePinned {
 				slog.Warn("skipping UPDATE for pinned memory — treating as ADD", "id", realID)
-				newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text, event.Tags)
+				newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text, effectiveTags)
 				if addErr != nil {
 					slog.Warn("failed to add insight (pinned fallback)", "err", addErr)
 					warnings++
@@ -713,7 +757,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				resultIDs = append(resultIDs, newID)
 				continue
 			}
-			newID, updateErr := s.updateInsight(ctx, agentName, agentID, sessionID, realID, event.Text, event.Tags)
+			newID, updateErr := s.updateInsight(ctx, agentName, agentID, sessionID, realID, event.Text, effectiveTags)
 			if updateErr != nil {
 				slog.Warn("failed to update insight", "err", updateErr, "id", event.ID)
 				warnings++
