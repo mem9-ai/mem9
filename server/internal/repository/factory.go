@@ -74,6 +74,15 @@ func NewSessionRepo(backend string, db *sql.DB, autoModel string, ftsEnabled boo
 	}
 }
 
+func NewRecallEventRepo(backend string, db *sql.DB, clusterID string) RecallEventRepo {
+	switch backend {
+	case "tidb", "":
+		return tidb.NewRecallEventRepo(db, clusterID)
+	default:
+		return stubRecallEventRepo{}
+	}
+}
+
 // stubSessionRepo satisfies SessionRepo for non-TiDB backends.
 // Write and search methods are silently skipped (consistent with the
 // IsTableNotFoundError no-op pattern). ListBySessionIDs returns ErrNotSupported
@@ -99,4 +108,13 @@ func (stubSessionRepo) KeywordSearch(_ context.Context, _ string, _ domain.Memor
 func (stubSessionRepo) FTSAvailable() bool { return false }
 func (stubSessionRepo) ListBySessionIDs(_ context.Context, _ []string, _ int) ([]*domain.Session, error) {
 	return nil, fmt.Errorf("session messages: %w", domain.ErrNotSupported)
+}
+
+type stubRecallEventRepo struct{}
+
+func (stubRecallEventRepo) BulkRecord(_ context.Context, _ []*domain.RecallEvent) error {
+	return nil
+}
+func (stubRecallEventRepo) Aggregate(_ context.Context, _ domain.InterestFilter) (*domain.InterestProfile, error) {
+	return nil, fmt.Errorf("recall analytics: %w", domain.ErrNotSupported)
 }
