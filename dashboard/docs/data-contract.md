@@ -148,7 +148,7 @@ When the page has a selected time range, all three requests should include the s
 
 Default list:
 
-`GET /memories?limit=50&offset=0`
+`GET /memories?memory_type=pinned,insight&limit=50&offset=0`
 
 Type tabs:
 
@@ -159,7 +159,7 @@ GET /memories?memory_type=insight&limit=50&offset=0
 
 Search:
 
-`GET /memories?q={query}&limit=50&offset=0`
+`GET /memories?q={query}&memory_type=pinned,insight&limit=50&offset=0`
 
 Search can be combined with type:
 
@@ -171,6 +171,8 @@ With time range, the request shape becomes:
 
 Current service behavior to remember:
 
+- dashboard list and search requests should always send `memory_type`
+- the `All` view should use `memory_type=pinned,insight`
 - when `q` is present, `source` and `session_id` filters are ignored
 - the dashboard does not expose those filters anyway, so this does not block launch
 
