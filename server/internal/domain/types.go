@@ -149,8 +149,6 @@ type TenantInfo struct {
 }
 
 // Session represents a single raw message persisted from a conversation.
-// Messages are stored per-ingest-call with content-hash deduplication so
-// re-sent overlapping slices (cumulative agent_end hook) produce one row.
 type Session struct {
 	ID          string      `json:"id"`
 	SessionID   string      `json:"session_id,omitempty"`
@@ -166,4 +164,53 @@ type Session struct {
 	State       MemoryState `json:"state"`
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
+}
+
+type RecallEvent struct {
+	ID         string    `json:"id"`
+	SearchID   string    `json:"search_id"`
+	Query      string    `json:"query"`
+	QueryHash  string    `json:"query_hash"`
+	AgentID    string    `json:"agent_id,omitempty"`
+	SessionID  string    `json:"session_id,omitempty"`
+	MemoryID   string    `json:"memory_id"`
+	MemoryType string    `json:"memory_type"`
+	Tags       []string  `json:"tags"`
+	Score      *float64  `json:"score,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type PeriodRange struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+}
+
+type InterestFilter struct {
+	From           time.Time
+	To             time.Time
+	AgentID        string
+	Top            int
+	IncludeQueries bool
+	IncludeSummary bool
+}
+
+type TagStat struct {
+	Tag           string         `json:"tag"`
+	RecallCount   int            `json:"recall_count"`
+	UniqueQueries int            `json:"unique_queries"`
+	MemoryTypes   map[string]int `json:"memory_types"`
+}
+
+type QueryStat struct {
+	QueryHash   string `json:"query_hash"`
+	SampleQuery string `json:"sample_query"`
+	Count       int    `json:"count"`
+}
+
+type InterestProfile struct {
+	Period       PeriodRange `json:"period"`
+	AgentID      string      `json:"agent_id,omitempty"`
+	TagProfile   []TagStat   `json:"tag_profile"`
+	TopQueries   []QueryStat `json:"top_queries,omitempty"`
+	TopicSummary string      `json:"topic_summary,omitempty"`
 }

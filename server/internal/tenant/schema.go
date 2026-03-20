@@ -140,6 +140,29 @@ const TenantSessionsSchemaBase = `CREATE TABLE IF NOT EXISTS sessions (
     UNIQUE INDEX idx_sessions_dedup   (session_id, content_hash)
 )`
 
+const TenantRecallEventsSchema = `CREATE TABLE IF NOT EXISTS recall_events (
+    id           VARCHAR(36)   PRIMARY KEY,
+    search_id    VARCHAR(36)   NOT NULL,
+    query        TEXT          NOT NULL,
+    query_hash   VARCHAR(64)   NOT NULL,
+    agent_id     VARCHAR(100)  NULL,
+    session_id   VARCHAR(100)  NULL,
+    memory_id    VARCHAR(36)   NOT NULL,
+    memory_type  VARCHAR(20)   NOT NULL,
+    tags         JSON          NOT NULL,
+    score        DOUBLE        NULL,
+    created_at   TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_re_agent    (agent_id),
+    INDEX idx_re_created  (created_at),
+    INDEX idx_re_query    (query_hash),
+    INDEX idx_re_memory   (memory_id),
+    INDEX idx_re_search   (search_id)
+)`
+
+func BuildRecallEventsSchema() string {
+	return TenantRecallEventsSchema
+}
+
 // BuildSessionsSchema builds the TiDB sessions schema with optional auto-embedding.
 func BuildSessionsSchema(autoModel string, autoDims int) string {
 	var embeddingCol string
