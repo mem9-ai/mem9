@@ -1769,3 +1769,73 @@ func TestExtractPhase1LegacyStringArrayFallback(t *testing.T) {
 		t.Fatalf("expected message_tags intact, got %v", result.MessageTags)
 	}
 }
+
+func TestExtractFactsFencedLegacyStringArrayFallback(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fenced := "```json\n{\"facts\": [\"Uses Go 1.22\"]}\n```"
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": fenced}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22")
+	if err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("expected 1 fact from fenced legacy format, got %d", len(facts))
+	}
+	if facts[0].Text != "Uses Go 1.22" {
+		t.Fatalf("expected fact text %q, got %q", "Uses Go 1.22", facts[0].Text)
+	}
+	if facts[0].Tags != nil {
+		t.Fatalf("expected nil tags from legacy format, got %v", facts[0].Tags)
+	}
+}
+
+func TestExtractPhase1FencedLegacyStringArrayFallback(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fenced := "```json\n{\"facts\": [\"Uses Go 1.22\"], \"message_tags\": [[\"tech\"], [\"answer\"]]}\n```"
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": fenced}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	result, err := svc.ExtractPhase1(context.Background(), []IngestMessage{
+		{Role: "user", Content: "I use Go 1.22"},
+		{Role: "assistant", Content: "Got it."},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+	if len(result.Facts) != 1 {
+		t.Fatalf("expected 1 fact from fenced legacy format, got %d", len(result.Facts))
+	}
+	if result.Facts[0].Text != "Uses Go 1.22" {
+		t.Fatalf("expected fact text %q, got %q", "Uses Go 1.22", result.Facts[0].Text)
+	}
+	if result.Facts[0].Tags != nil {
+		t.Fatalf("expected nil tags from legacy format, got %v", result.Facts[0].Tags)
+	}
+	if len(result.MessageTags) != 2 || result.MessageTags[0][0] != "tech" {
+		t.Fatalf("expected message_tags intact, got %v", result.MessageTags)
+	}
+}

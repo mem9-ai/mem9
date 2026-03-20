@@ -360,7 +360,7 @@ func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
 		Facts []string `json:"facts"`
 	}
 	var legacy legacyResponse
-	cleaned := strings.TrimSpace(raw)
+	cleaned := llm.StripMarkdownFences(raw)
 	if err := json.Unmarshal([]byte(cleaned), &legacy); err == nil {
 		for _, t := range legacy.Facts {
 			t = strings.TrimSpace(t)
@@ -523,7 +523,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 					MessageTags [][]string `json:"message_tags"`
 				}
 				var leg legacyFull
-				_ = json.Unmarshal([]byte(strings.TrimSpace(raw2)), &leg)
+				_ = json.Unmarshal([]byte(llm.StripMarkdownFences(raw2)), &leg)
 				messageTags := make([][]string, messageCount)
 				for i := range messageTags {
 					if i < len(leg.MessageTags) && leg.MessageTags[i] != nil {
