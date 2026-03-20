@@ -14,6 +14,23 @@ const mocks = vi.hoisted(() => ({
   useSessionPreviewMessages: vi.fn(),
 }));
 
+Object.defineProperty(window, "scrollTo", {
+  value: vi.fn(),
+  writable: true,
+});
+
+function getAnalysisCategoryButton(category: string): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>(
+    `[data-mp-event="Dashboard/Analysis/CategoryClicked"][data-mp-category="${category}"]`,
+  );
+
+  if (!button) {
+    throw new Error(`Missing analysis category button for ${category}`);
+  }
+
+  return button;
+}
+
 function createMemory(
   id: string,
   content: string,
@@ -286,7 +303,7 @@ describe("SpacePage", () => {
   it("filters memories by clicked analysis category without auto-opening detail", async () => {
     render(<RouterProvider router={router} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Activity/ }));
+    fireEvent.click(getAnalysisCategoryButton("activity"));
 
     await waitFor(() => {
       expect(screen.queryByText("Prefer Neovim for edits")).not.toBeInTheDocument();
@@ -302,7 +319,7 @@ describe("SpacePage", () => {
   it("keeps the detail panel closed after the user closes it in analysis mode", async () => {
     render(<RouterProvider router={router} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Activity/ }));
+    fireEvent.click(getAnalysisCategoryButton("activity"));
 
     await waitFor(() => {
       expect(screen.queryByText("Prefer Neovim for edits")).not.toBeInTheDocument();
@@ -342,7 +359,7 @@ describe("SpacePage", () => {
       screen.getByRole("button", { name: "Delete this memory" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Activity/ }));
+    fireEvent.click(getAnalysisCategoryButton("activity"));
 
     await waitFor(() => {
       expect(
@@ -363,7 +380,7 @@ describe("SpacePage", () => {
       screen.getByRole("button", { name: "Analysis" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /Activity/ }),
+      document.querySelector('[data-mp-event="Dashboard/Analysis/CategoryClicked"]'),
     ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Analysis" }));

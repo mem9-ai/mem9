@@ -160,7 +160,11 @@ export function AnalysisPanel({
   taxonomyUnavailable,
   cards,
   activeCategory,
+  activeTag,
+  activeTopic,
   onSelectCategory,
+  onSelectTag,
+  onSelectTopic,
   onRetry,
   t,
 }: {
@@ -171,7 +175,11 @@ export function AnalysisPanel({
   taxonomyUnavailable: boolean;
   cards: AnalysisCategoryCard[];
   activeCategory?: AnalysisCategory;
+  activeTag?: string;
+  activeTopic?: string;
   onSelectCategory: (category: AnalysisCategory | undefined) => void;
+  onSelectTag: (tag: string | undefined) => void;
+  onSelectTopic: (topic: string | undefined) => void;
   onRetry: () => void;
   t: TFunction;
 }) {
@@ -196,7 +204,11 @@ export function AnalysisPanel({
             taxonomyUnavailable={taxonomyUnavailable}
             cards={cards}
             activeCategory={activeCategory}
+            activeTag={activeTag}
+            activeTopic={activeTopic}
             onSelectCategory={onSelectCategory}
+            onSelectTag={onSelectTag}
+            onSelectTopic={onSelectTopic}
             onRetry={onRetry}
             t={t}
           />
@@ -214,7 +226,11 @@ export function AnalysisPanelBody({
   taxonomyUnavailable,
   cards,
   activeCategory,
+  activeTag,
+  activeTopic,
   onSelectCategory,
+  onSelectTag,
+  onSelectTopic,
   onRetry,
   t,
 }: {
@@ -225,7 +241,11 @@ export function AnalysisPanelBody({
   taxonomyUnavailable: boolean;
   cards: AnalysisCategoryCard[];
   activeCategory?: AnalysisCategory;
+  activeTag?: string;
+  activeTopic?: string;
   onSelectCategory: (category: AnalysisCategory | undefined) => void;
+  onSelectTag: (tag: string | undefined) => void;
+  onSelectTopic: (topic: string | undefined) => void;
   onRetry: () => void;
   t: TFunction;
 }) {
@@ -328,11 +348,12 @@ export function AnalysisPanelBody({
               <button
                 key={card.category}
                 type="button"
-                onClick={() =>
+                onClick={(e) => {
+                  e.stopPropagation();
                   onSelectCategory(
                     activeCategory === card.category ? undefined : card.category,
-                  )
-                }
+                  );
+                }}
                 data-mp-event="Dashboard/Analysis/CategoryClicked"
                 data-mp-page-name="space"
                 data-mp-category={card.category}
@@ -368,6 +389,8 @@ export function AnalysisPanelBody({
               kind="topics"
               title={t("analysis.top_topics")}
               stats={topTopicStats}
+              activeValue={activeTopic}
+              onSelect={onSelectTopic}
               t={t}
             />
           )}
@@ -376,6 +399,8 @@ export function AnalysisPanelBody({
               kind="tags"
               title={t("analysis.top_tags")}
               stats={topTagStats}
+              activeValue={activeTag}
+              onSelect={onSelectTag}
               t={t}
             />
           )}
@@ -466,11 +491,15 @@ function FacetSection({
   kind,
   title,
   stats,
+  activeValue,
+  onSelect,
   t,
 }: {
   kind: "topics" | "tags";
   title: string;
   stats: AnalysisFacetStat[];
+  activeValue?: string;
+  onSelect: (value: string | undefined) => void;
   t: TFunction;
 }) {
   const items = useMemo(() => stats.slice(0, 50), [stats]);
@@ -491,12 +520,17 @@ function FacetSection({
         className="mt-2 flex flex-wrap gap-2"
       >
         {displayedItems.map((stat) => (
-          <span
+          <button
             key={stat.value}
-            className="rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground"
+            onClick={() => onSelect(activeValue === stat.value ? undefined : stat.value)}
+            className={`rounded-full px-2.5 py-1 text-xs transition-colors ${
+              activeValue === stat.value
+                ? "bg-primary/20 text-primary hover:bg-primary/30"
+                : "bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
+            }`}
           >
-            {stat.value}({stat.count})
-          </span>
+            {stat.value} ({stat.count})
+          </button>
         ))}
       </div>
       {isOverflowing && (

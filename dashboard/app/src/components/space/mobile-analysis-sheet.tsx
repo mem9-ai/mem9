@@ -18,7 +18,11 @@ export function MobileAnalysisSheet({
   taxonomyUnavailable,
   cards,
   activeCategory,
+  activeTag,
+  activeTopic,
   onSelectCategory,
+  onSelectTag,
+  onSelectTopic,
   onRetry,
   t,
 }: {
@@ -31,7 +35,11 @@ export function MobileAnalysisSheet({
   taxonomyUnavailable: boolean;
   cards: AnalysisCategoryCard[];
   activeCategory?: AnalysisCategory;
+  activeTag?: string;
+  activeTopic?: string;
   onSelectCategory: (category: AnalysisCategory | undefined) => void;
+  onSelectTag: (tag: string | undefined) => void;
+  onSelectTopic: (topic: string | undefined) => void;
   onRetry: () => void;
   t: TFunction;
 }) {
@@ -52,7 +60,11 @@ export function MobileAnalysisSheet({
         taxonomyUnavailable={taxonomyUnavailable}
         cards={cards}
         activeCategory={activeCategory}
+        activeTag={activeTag}
+        activeTopic={activeTopic}
         onSelectCategory={onSelectCategory}
+        onSelectTag={onSelectTag}
+        onSelectTopic={onSelectTopic}
         onRetry={onRetry}
         t={t}
       />

@@ -98,6 +98,8 @@ function createSnapshot(
   };
 }
 
+const noop = () => {};
+
 function createState(
   overrides: Partial<SpaceAnalysisState> = {},
 ): SpaceAnalysisState {
@@ -137,7 +139,9 @@ describe("AnalysisPanel", () => {
         taxonomyUnavailable={false}
         cards={createSnapshot().aggregateCards}
         onSelectCategory={onSelectCategory}
-        onRetry={() => {}}
+        onSelectTag={noop}
+        onSelectTopic={noop}
+        onRetry={noop}
         t={t}
       />,
     );
@@ -146,8 +150,8 @@ describe("AnalysisPanel", () => {
     expect(screen.getByText("analysis.phase.uploading")).toBeInTheDocument();
     expect(screen.getByText("analysis.cards")).toBeInTheDocument();
     expect(screen.getByText("analysis.top_topics")).toBeInTheDocument();
-    expect(screen.getByText("agents(2)")).toBeInTheDocument();
-    expect(screen.getByText("priority(3)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "agents (2)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "priority (3)" })).toBeInTheDocument();
     expect(
       screen.getByText("analysis.batch_summary.syncing:2/2"),
     ).toBeInTheDocument();
@@ -182,8 +186,10 @@ describe("AnalysisPanel", () => {
         taxonomy={null}
         taxonomyUnavailable={false}
         cards={createSnapshot().aggregateCards}
-        onSelectCategory={() => {}}
-        onRetry={() => {}}
+        onSelectCategory={noop}
+        onSelectTag={noop}
+        onSelectTopic={noop}
+        onRetry={noop}
         t={t}
       />,
     );
@@ -209,8 +215,10 @@ describe("AnalysisPanel", () => {
         taxonomy={{ version: "v2", updatedAt: "", categories: [], rules: [] }}
         taxonomyUnavailable={false}
         cards={createSnapshot().aggregateCards}
-        onSelectCategory={() => {}}
-        onRetry={() => {}}
+        onSelectCategory={noop}
+        onSelectTag={noop}
+        onSelectTopic={noop}
+        onRetry={noop}
         t={t}
       />,
     );
@@ -253,8 +261,10 @@ describe("AnalysisPanel", () => {
         taxonomy={null}
         taxonomyUnavailable={true}
         cards={[]}
-        onSelectCategory={() => {}}
-        onRetry={() => {}}
+        onSelectCategory={noop}
+        onSelectTag={noop}
+        onSelectTopic={noop}
+        onRetry={noop}
         t={t}
       />,
     );
@@ -280,8 +290,10 @@ describe("AnalysisPanel", () => {
         taxonomy={null}
         taxonomyUnavailable={false}
         cards={[]}
-        onSelectCategory={() => {}}
-        onRetry={() => {}}
+        onSelectCategory={noop}
+        onSelectTag={noop}
+        onSelectTopic={noop}
+        onRetry={noop}
         t={t}
       />,
     );
@@ -332,8 +344,10 @@ describe("AnalysisPanel", () => {
         taxonomy={null}
         taxonomyUnavailable={false}
         cards={createSnapshot().aggregateCards}
-        onSelectCategory={() => {}}
-        onRetry={() => {}}
+        onSelectCategory={noop}
+        onSelectTag={noop}
+        onSelectTopic={noop}
+        onRetry={noop}
         t={t}
       />,
     );
@@ -344,22 +358,22 @@ describe("AnalysisPanel", () => {
     });
 
     expect(expandButton).toBeInTheDocument();
-    expect(screen.getByText("topic-8(2)")).toBeInTheDocument();
-    expect(screen.queryByText("topic-9(1)")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "topic-8 (2)" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "topic-9 (1)" })).not.toBeInTheDocument();
     expect(container.children).toHaveLength(8);
 
     fireEvent.click(expandButton);
     expect(
       screen.getByRole("button", { name: "analysis.less" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("topic-9(1)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "topic-9 (1)" })).toBeInTheDocument();
     expect(container.children).toHaveLength(9);
 
     fireEvent.click(screen.getByRole("button", { name: "analysis.less" }));
     expect(
       screen.getByRole("button", { name: "analysis.more" }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("topic-9(1)")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "topic-9 (1)" })).not.toBeInTheDocument();
     expect(container.children).toHaveLength(8);
   });
 
@@ -405,8 +419,10 @@ describe("AnalysisPanel", () => {
         taxonomy={null}
         taxonomyUnavailable={false}
         cards={createSnapshot().aggregateCards}
-        onSelectCategory={() => {}}
-        onRetry={() => {}}
+        onSelectCategory={noop}
+        onSelectTag={noop}
+        onSelectTopic={noop}
+        onRetry={noop}
         t={t}
       />,
     );

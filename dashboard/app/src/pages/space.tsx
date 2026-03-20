@@ -128,7 +128,7 @@ export function SpacePage() {
   // Queries
   const { data: stats } = useStats(spaceId, range);
   const { data: totalStats } = useStats(spaceId);
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isFetching } =
     useMemories(spaceId, {
       q: search.q,
       tag,
@@ -191,7 +191,7 @@ export function SpacePage() {
     : hasNextPage;
   const isMemoryLoading = usingLocalAnalysisList
     ? analysis.sourceLoading
-    : isLoading;
+    : isLoading || (isFetching && !isFetchingNextPage);
   const isFetchingMore = usingLocalAnalysisList ? false : isFetchingNextPage;
   const displayedFirstPageSize = usingLocalAnalysisList
     ? Math.min(displayedMemories.length, LOCAL_PAGE_SIZE)
@@ -556,8 +556,28 @@ export function SpacePage() {
               loading={!stats || isLoading || analysis.sourceLoading}
               activeType={search.type}
               activeTag={tag}
-              onTypeSelect={handleTypeClick}
-              onTagSelect={handleTagChange}
+              onTypeSelect={(t) => {
+                handleTypeClick(t);
+                setTimeout(() => {
+                  const el = document.getElementById('memory-list');
+                  if (el) {
+                    const headerOffset = window.innerWidth >= 1280 ? 120 : 180;
+                    const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
+                    window.scrollTo({ top: y, behavior: 'smooth' });
+                  }
+                }, 200);
+              }}
+              onTagSelect={(t) => {
+                handleTagChange(t);
+                setTimeout(() => {
+                  const el = document.getElementById('memory-list');
+                  if (el) {
+                    const headerOffset = window.innerWidth >= 1280 ? 120 : 180;
+                    const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
+                    window.scrollTo({ top: y, behavior: 'smooth' });
+                  }
+                }, 200);
+              }}
             />
 
             {/* Search (full-width, prominent) */}
@@ -766,7 +786,7 @@ export function SpacePage() {
             </div>
 
             {/* Memory list */}
-            <div className="mt-4">
+            <div id="memory-list" className="mt-4 scroll-mt-20">
               {isEmpty ? (
                 <EmptyState t={t} onAdd={() => setAddOpen(true)} />
               ) : displayedMemories.length === 0 && !isMemoryLoading ? (
@@ -841,7 +861,45 @@ export function SpacePage() {
                 taxonomyUnavailable={analysis.taxonomyUnavailable}
                 cards={analysis.cards}
                 activeCategory={analysisCategory}
-                onSelectCategory={handleAnalysisCategoryChange}
+                activeTag={tag}
+                activeTopic={search.q}
+                onSelectCategory={(c) => {
+                  handleAnalysisCategoryChange(c);
+                  setTimeout(() => {
+                    const el = document.getElementById('memory-list');
+                    if (el) {
+                      const headerOffset = window.innerWidth >= 1280 ? 120 : 180;
+                      const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
+                      window.scrollTo({ top: y, behavior: 'smooth' });
+                    }
+                  }, 200);
+                }}
+                onSelectTag={(t) => {
+                  handleTagChange(t);
+                  setTimeout(() => {
+                    const el = document.getElementById('memory-list');
+                    if (el) {
+                      const headerOffset = window.innerWidth >= 1280 ? 120 : 180;
+                      const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
+                      window.scrollTo({ top: y, behavior: 'smooth' });
+                    }
+                  }, 200);
+                }}
+                onSelectTopic={(t) => {
+                  setSearchInput(t ?? "");
+                  navigate({
+                    to: "/space",
+                    search: { ...search, q: t || undefined },
+                  });
+                  setTimeout(() => {
+                    const el = document.getElementById('memory-list');
+                    if (el) {
+                      const headerOffset = window.innerWidth >= 1280 ? 120 : 180;
+                      const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
+                      window.scrollTo({ top: y, behavior: 'smooth' });
+                    }
+                  }, 200);
+                }}
                 onRetry={analysis.retry}
                 t={t}
               />
@@ -879,7 +937,47 @@ export function SpacePage() {
           taxonomyUnavailable={analysis.taxonomyUnavailable}
           cards={analysis.cards}
           activeCategory={analysisCategory}
-          onSelectCategory={handleMobileAnalysisCategoryChange}
+          activeTag={tag}
+          activeTopic={search.q}
+          onSelectCategory={(c) => {
+            handleMobileAnalysisCategoryChange(c);
+            setTimeout(() => {
+              const el = document.getElementById('memory-list');
+              if (el) {
+                const headerOffset = window.innerWidth >= 1280 ? 120 : 180;
+                const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
+                window.scrollTo({ top: y, behavior: 'smooth' });
+              }
+            }, 200);
+          }}
+          onSelectTag={(t) => {
+            handleTagChange(t);
+            setMobileAnalysisOpen(false);
+            setTimeout(() => {
+              const el = document.getElementById('memory-list');
+              if (el) {
+                const headerOffset = window.innerWidth >= 1280 ? 120 : 180;
+                const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
+                window.scrollTo({ top: y, behavior: 'smooth' });
+              }
+            }, 200);
+          }}
+          onSelectTopic={(t) => {
+            setSearchInput(t ?? "");
+            navigate({
+              to: "/space",
+              search: { ...search, q: t || undefined },
+            });
+            setMobileAnalysisOpen(false);
+            setTimeout(() => {
+              const el = document.getElementById('memory-list');
+              if (el) {
+                const headerOffset = window.innerWidth >= 1280 ? 120 : 180;
+                const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
+                window.scrollTo({ top: y, behavior: 'smooth' });
+              }
+            }, 200);
+          }}
           onRetry={analysis.retry}
           t={t}
         />
