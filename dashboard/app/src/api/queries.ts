@@ -7,15 +7,39 @@ import {
 } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
-  MemoryType,
+  Memory,
+  MemoryTypeFilter,
   MemoryFacet,
   MemoryCreateInput,
   MemoryUpdateInput,
+  SessionMessage,
 } from "@/types/memory";
 import type { TimeRangePreset } from "@/types/time-range";
 import { presetToParams } from "@/types/time-range";
 
 const PAGE_SIZE = 50;
+const SESSION_PREVIEW_LIMIT = 6;
+
+export function getSessionPreviewLookupKey(memory: Memory): string {
+  if (memory.memory_type !== "insight") return "";
+
+  const sessionID = memory.session_id.trim();
+  if (sessionID) return sessionID;
+
+  return "";
+}
+
+function getSessionPreviewRequestIDs(memories: Memory[]): string[] {
+  const requestIDs = new Set<string>();
+
+  for (const memory of memories) {
+    const requestID = getSessionPreviewLookupKey(memory);
+    if (!requestID) continue;
+    requestIDs.add(requestID);
+  }
+
+  return [...requestIDs].sort((left, right) => left.localeCompare(right, "en"));
+}
 
 export function useStats(spaceId: string, range?: TimeRangePreset) {
   const timeParams = range ? presetToParams(range) : undefined;
@@ -32,7 +56,7 @@ export function useMemories(
   params: {
     q?: string;
     tag?: string;
-    memory_type?: MemoryType;
+    memory_type?: MemoryTypeFilter;
     range?: TimeRangePreset;
     facet?: MemoryFacet;
   },
@@ -57,6 +81,45 @@ export function useMemories(
     },
     enabled: !!spaceId,
     placeholderData: keepPreviousData,
+  });
+}
+
+export function groupSessionMessagesBySessionID(
+  messages: SessionMessage[],
+): Record<string, SessionMessage[]> {
+  return messages.reduce<Record<string, SessionMessage[]>>((grouped, message) => {
+    const sessionMessages = grouped[message.session_id] ?? [];
+    sessionMessages.push(message);
+    grouped[message.session_id] = sessionMessages;
+    return grouped;
+  }, {});
+}
+
+export function useSessionPreviewMessages(
+  spaceId: string,
+  memories: Memory[],
+  limitPerSession = SESSION_PREVIEW_LIMIT,
+) {
+  const sessionPreviewRequestIDs = getSessionPreviewRequestIDs(memories);
+
+  return useQuery({
+    queryKey: [
+      "space",
+      spaceId,
+      "sessionPreview",
+      sessionPreviewRequestIDs,
+      limitPerSession,
+    ],
+    queryFn: async () => {
+      const response = await api.listSessionMessages(spaceId, {
+        session_ids: sessionPreviewRequestIDs,
+        limit_per_session: limitPerSession,
+      });
+      return groupSessionMessagesBySessionID(response.messages);
+    },
+    enabled: !!spaceId && sessionPreviewRequestIDs.length > 0,
+    placeholderData: keepPreviousData,
+    retry: false,
   });
 }
 

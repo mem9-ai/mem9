@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   clearSpace: vi.fn(),
   retry: vi.fn(),
   useMemories: vi.fn(),
+  useSessionPreviewMessages: vi.fn(),
 }));
 
 function createMemory(
@@ -19,6 +20,7 @@ function createMemory(
   updatedAt: string,
   memoryType: Memory["memory_type"] = "insight",
   tags: string[] = [],
+  sessionId = "",
 ): Memory {
   return {
     id,
@@ -28,7 +30,7 @@ function createMemory(
     tags,
     metadata: null,
     agent_id: "agent",
-    session_id: "",
+    session_id: sessionId,
     state: "active",
     version: 1,
     updated_by: "agent",
@@ -43,6 +45,7 @@ const activityNewest = createMemory(
   "2026-03-03T00:00:00Z",
   "insight",
   ["launch", "release"],
+  "sess-activity-1",
 );
 const preferenceMemory = createMemory(
   "mem-preference-1",
@@ -122,6 +125,8 @@ vi.mock("@/lib/session", () => ({
 }));
 
 vi.mock("@/api/queries", () => ({
+  getSessionPreviewLookupKey: (memory: Memory) =>
+    memory.memory_type === "insight" ? memory.session_id : "",
   useStats: () => ({
     data: {
       total: 3,
@@ -152,6 +157,45 @@ vi.mock("@/api/queries", () => ({
       hasNextPage: false,
       isFetchingNextPage: false,
       isLoading: false,
+    };
+  },
+  useSessionPreviewMessages: (_spaceId: string, memories: Memory[]) => {
+    mocks.useSessionPreviewMessages(memories);
+    return {
+      data: {
+        "sess-activity-1": [
+          {
+            id: "msg-1",
+            session_id: "sess-activity-1",
+            agent_id: "agent",
+            source: "agent",
+            seq: 1,
+            role: "user",
+            content: "We should keep the launch demo focused and avoid expanding scope.",
+            content_type: "text/plain",
+            tags: [],
+            state: "active",
+            created_at: "2026-03-03T00:00:00Z",
+            updated_at: "2026-03-03T00:00:00Z",
+          },
+          {
+            id: "msg-2",
+            session_id: "sess-activity-1",
+            agent_id: "agent",
+            source: "agent",
+            seq: 2,
+            role: "assistant",
+            content: "Agreed. I will keep the dashboard release notes compact and demo-oriented.",
+            content_type: "text/plain",
+            tags: [],
+            state: "active",
+            created_at: "2026-03-03T00:01:00Z",
+            updated_at: "2026-03-03T00:01:00Z",
+          },
+        ],
+      },
+      isLoading: false,
+      isFetching: false,
     };
   },
   useCreateMemory: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -271,9 +315,7 @@ describe("SpacePage", () => {
     expect(activityCard).not.toBeNull();
     fireEvent.click(activityCard!);
 
-    expect(screen.getByTestId("detail-scroll-area")).toHaveClass(
-      "max-h-[60vh]",
-    );
+    expect(screen.getByTestId("detail-scroll-area")).toHaveClass("flex-1");
     expect(
       screen.getByRole("button", { name: "Delete this memory" }),
     ).toBeInTheDocument();
@@ -378,5 +420,29 @@ describe("SpacePage", () => {
 
     expect(screen.getByRole("button", { name: /^#launch$/ })).toBeInTheDocument();
     expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
+  });
+
+  it("renders session preview content for insight memories with matched session data", async () => {
+    render(<RouterProvider router={router} />);
+
+    expect(
+      screen.getByText("We should keep the launch demo focused and avoid expanding scope."),
+    ).toBeInTheDocument();
+
+    const activityCard = screen
+      .getByText("Deploy dashboard status update")
+      .closest('[role="button"]');
+
+    expect(activityCard).not.toBeNull();
+    fireEvent.click(activityCard!);
+
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).getByText("Original Conversation"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).getByText(
+        "Agreed. I will keep the dashboard release notes compact and demo-oriented.",
+      ),
+    ).toBeInTheDocument();
   });
 });

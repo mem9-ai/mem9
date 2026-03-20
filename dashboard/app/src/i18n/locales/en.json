@@ -56,6 +56,16 @@
     "edit": "Edit",
     "close": "Close"
   },
+  "session_preview": {
+    "title": "Original Conversation",
+    "loading": "Loading conversation...",
+    "role": {
+      "user": "User",
+      "assistant": "Assistant",
+      "system": "System",
+      "tool": "Tool"
+    }
+  },
   "add": {
     "button": "Add memory",
     "title": "Add a memory",

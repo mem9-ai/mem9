@@ -1,20 +1,25 @@
 import type { TFunction } from "i18next";
 import { toast } from "sonner";
-import { Bookmark, Sparkles, Copy, X, Trash2, Pencil } from "lucide-react";
+import { Bookmark, Copy, X, Trash2, Pencil, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Memory, MemoryFacet } from "@/types/memory";
+import type { Memory, MemoryFacet, SessionMessage } from "@/types/memory";
 import { FacetBadge } from "./topic-strip";
+import { DetailSessionPreview } from "./session-preview";
 import { features } from "@/config/features";
 
 export function DetailPanel({
   memory: m,
+  sessionPreview,
+  sessionPreviewLoading,
   onClose,
   onDelete,
   onEdit,
   t,
 }: {
   memory: Memory;
+  sessionPreview: SessionMessage[];
+  sessionPreviewLoading: boolean;
   onClose: () => void;
   onDelete: () => void;
   onEdit?: () => void;
@@ -23,17 +28,19 @@ export function DetailPanel({
   return (
     <div
       className="w-full shrink-0 py-8 xl:order-3 xl:w-[390px]"
-      style={{ animation: "slide-in-right 0.2s cubic-bezier(0.16,1,0.3,1)" }}
+      style={{ animation: "slide-in-right 0.3s cubic-bezier(0.16,1,0.3,1)" }}
     >
-      <div className="surface-card sticky top-[calc(3.5rem+2rem)] overflow-hidden">
+      <div className="sticky top-[calc(3.5rem+2rem)] overflow-hidden rounded-2xl border border-border/30 bg-card shadow-lg ring-1 ring-border/5">
         <DetailPanelContent
           memory={m}
+          sessionPreview={sessionPreview}
+          sessionPreviewLoading={sessionPreviewLoading}
           onClose={onClose}
           onDelete={onDelete}
           onEdit={onEdit}
           t={t}
-          className="flex min-h-0 flex-col"
-          scrollAreaClassName="max-h-[60vh] overflow-y-auto px-5 py-4"
+          className="flex max-h-[calc(100vh-10rem)] min-h-[400px] flex-col"
+          scrollAreaClassName="flex-1 overflow-y-auto px-7 py-6"
         />
       </div>
     </div>
@@ -42,6 +49,8 @@ export function DetailPanel({
 
 export function DetailPanelContent({
   memory: m,
+  sessionPreview,
+  sessionPreviewLoading,
   onClose,
   onDelete,
   onEdit,
@@ -50,6 +59,8 @@ export function DetailPanelContent({
   t,
 }: {
   memory: Memory;
+  sessionPreview: SessionMessage[];
+  sessionPreviewLoading: boolean;
   onClose: () => void;
   onDelete: () => void;
   onEdit?: () => void;
@@ -71,12 +82,8 @@ export function DetailPanelContent({
   }
 
   return (
-    <div className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
-      <div
-        className={`h-1 ${isPinned ? "bg-type-pinned" : "bg-type-insight"}`}
-      />
-
-      <div className="flex items-center justify-between border-b px-5 py-3">
+    <div className={cn("flex h-full min-h-0 flex-col bg-background/50 backdrop-blur-sm", className)}>
+      <div className="flex items-center justify-between border-b border-border/40 bg-secondary/30 px-6 py-4">
         <div className="flex items-center gap-2">
           <div
             className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ${
@@ -139,43 +146,62 @@ export function DetailPanelContent({
 
       <div
         data-testid="detail-scroll-area"
-        className={cn("px-5 py-4", scrollAreaClassName)}
+        className={cn("flex-1 overflow-y-auto px-7 py-6", scrollAreaClassName)}
       >
-        <p className="whitespace-pre-wrap text-sm leading-[1.8] text-foreground">
-          {m.content}
-        </p>
-
-        <div className="mt-5 space-y-3">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-            <MetaCell
-              label={t("detail.updated")}
-              value={new Date(m.updated_at).toLocaleDateString()}
-            />
-            <MetaCell
-              label={t("detail.created")}
-              value={new Date(m.created_at).toLocaleDateString()}
-            />
-            {m.source && (
-              <MetaCell label={t("detail.source")} value={m.source} />
-            )}
+        <div className="space-y-6">
+          {/* Memory Insight */}
+          <div>
+            <div className="flex items-center gap-2 mb-3 text-[11px] font-semibold uppercase tracking-wider text-type-insight">
+              <Sparkles className="size-3.5" />
+              {t("detail.metadata", { defaultValue: "Extracted Memory" })}
+            </div>
+            <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground/90 font-medium">
+              {m.content}
+            </p>
           </div>
 
+          <div className="space-y-4">
           {tags.length > 0 && (
-            <div>
-              <p className="text-xs text-soft-foreground">
-                {t("detail.tags")}
-              </p>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
+            <div className="flex flex-wrap gap-1.5">
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-md bg-secondary/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors"
+                >
+                  #{tag}
+                </span>
+              ))}
             </div>
+          )}
+
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border border-border/40 bg-secondary/20 p-4">
+              <MetaCell
+                label={t("detail.updated")}
+                value={new Date(m.updated_at).toLocaleDateString()}
+              />
+              <MetaCell
+                label={t("detail.created")}
+                value={new Date(m.created_at).toLocaleDateString()}
+              />
+              {m.source && (
+                <MetaCell label={t("detail.source")} value={m.source} />
+              )}
+            </div>
+          </div>
+
+          {(sessionPreviewLoading || sessionPreview.length > 0) && (
+            <>
+              <div className="w-full h-px bg-border/40" />
+
+              {/* Session Context */}
+              <div className="pt-2">
+                <DetailSessionPreview
+                  messages={sessionPreview}
+                  loading={sessionPreviewLoading}
+                  t={t}
+                />
+              </div>
+            </>
           )}
         </div>
       </div>

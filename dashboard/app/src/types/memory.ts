@@ -16,6 +16,7 @@ export interface Memory {
 }
 
 export type MemoryType = "pinned" | "insight";
+export type MemoryTypeFilter = MemoryType | "pinned,insight";
 export type MemoryState = "active" | "paused" | "archived" | "deleted";
 
 export interface MemoryListResponse {
@@ -61,7 +62,7 @@ export interface ApiError {
 export interface MemoryListParams {
   q?: string;
   tags?: string[];
-  memory_type?: MemoryType;
+  memory_type?: MemoryTypeFilter;
   limit?: number;
   offset?: number;
   updated_from?: string;
@@ -111,4 +112,30 @@ export interface TopicCount {
 export interface TopicSummary {
   topics: TopicCount[];
   total: number;
+}
+
+export type SessionMessageRole = "assistant" | "system" | "tool" | "user";
+
+export interface SessionMessage {
+  id: string;
+  session_id: string;
+  agent_id: string;
+  source: string;
+  seq: number;
+  role: SessionMessageRole | string;
+  content: string;
+  content_type: string;
+  tags: string[];
+  state: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionMessageListParams {
+  session_ids: string[];
+  limit_per_session?: number;
+}
+
+export interface SessionMessageListResponse {
+  messages: SessionMessage[];
 }

@@ -8,6 +8,9 @@ import type {
   MemoryUpdateInput,
   MemoryStats,
   MemoryExportFile,
+  SessionMessage,
+  SessionMessageListParams,
+  SessionMessageListResponse,
   SpaceInfo,
   TopicSummary,
 } from "@/types/memory";
@@ -28,6 +31,20 @@ const EMPTY_TIMESTAMP = new Date(0).toISOString();
 function normalizeTags(tags: unknown): string[] {
   if (!Array.isArray(tags)) return [];
   return tags.filter((tag): tag is string => typeof tag === "string");
+}
+
+function buildHeaders(
+  spaceId: string,
+  initHeaders?: HeadersInit,
+  includeContentType = true,
+): Headers {
+  const headers = new Headers(initHeaders);
+  if (includeContentType) {
+    headers.set("Content-Type", "application/json");
+  }
+  headers.set("X-API-Key", spaceId.trim());
+  headers.set("X-Mnemo-Agent-Id", AGENT_ID);
+  return headers;
 }
 
 function normalizeMemory(memory: Partial<Memory>): Memory {
@@ -62,20 +79,44 @@ function normalizeMemoryListResponse(
   };
 }
 
+function normalizeSessionMessage(
+  message: Partial<SessionMessage>,
+): SessionMessage {
+  return {
+    id: message.id ?? "",
+    session_id: message.session_id ?? "",
+    agent_id: message.agent_id ?? "",
+    source: message.source ?? "",
+    seq: message.seq ?? 0,
+    role: message.role ?? "assistant",
+    content: message.content ?? "",
+    content_type: message.content_type ?? "text/plain",
+    tags: normalizeTags(message.tags),
+    state: message.state ?? "active",
+    created_at: message.created_at ?? EMPTY_TIMESTAMP,
+    updated_at: message.updated_at ?? message.created_at ?? EMPTY_TIMESTAMP,
+  };
+}
+
+function normalizeSessionMessageListResponse(
+  response: Partial<SessionMessageListResponse>,
+): SessionMessageListResponse {
+  return {
+    messages: Array.isArray(response.messages)
+      ? response.messages.map(normalizeSessionMessage)
+      : [],
+  };
+}
+
 async function request<T>(
   spaceId: string,
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const headers = new Headers(init?.headers);
-  headers.set("Content-Type", "application/json");
-  headers.set("X-API-Key", spaceId.trim());
-  headers.set("X-Mnemo-Agent-Id", AGENT_ID);
-
   const url = `${API_BASE}${path}`;
   const res = await fetch(url, {
     ...init,
-    headers,
+    headers: buildHeaders(spaceId, init?.headers),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -90,14 +131,10 @@ async function requestRaw(
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
-  const headers = new Headers(init?.headers);
-  headers.set("X-API-Key", spaceId.trim());
-  headers.set("X-Mnemo-Agent-Id", AGENT_ID);
-
   const url = `${API_BASE}${path}`;
   const res = await fetch(url, {
     ...init,
-    headers,
+    headers: buildHeaders(spaceId, init?.headers, false),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -139,6 +176,47 @@ export const httpProvider: DashboardProvider = {
     const normalized = normalizeMemoryListResponse(response);
     void upsertCachedMemories(spaceId, normalized.memories);
     return normalized;
+  },
+
+  async listSessionMessages(
+    spaceId: string,
+    params: SessionMessageListParams,
+  ): Promise<SessionMessageListResponse> {
+    const sessionIDs = Array.from(
+      new Set(
+        params.session_ids
+          .map((sessionID) => sessionID.trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (sessionIDs.length === 0) {
+      return { messages: [] };
+    }
+
+    const qs = new URLSearchParams();
+    for (const sessionID of sessionIDs) {
+      qs.append("session_id", sessionID);
+    }
+    if (params.limit_per_session !== undefined) {
+      qs.set("limit_per_session", String(params.limit_per_session));
+    }
+
+    const url = `${API_BASE}/session-messages?${qs}`;
+    const res = await fetch(url, {
+      headers: buildHeaders(spaceId),
+    });
+
+    if (res.status === 404 || res.status === 405 || res.status === 501) {
+      return { messages: [] };
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error || `API error ${res.status}`);
+    }
+
+    const response = await res.json();
+    return normalizeSessionMessageListResponse(response);
   },
 
   async getStats(

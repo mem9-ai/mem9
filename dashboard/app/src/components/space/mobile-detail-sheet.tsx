@@ -1,10 +1,12 @@
 import type { TFunction } from "i18next";
 import { DetailPanelContent } from "@/components/space/detail-panel";
 import { MobilePanelShell } from "@/components/space/mobile-panel-shell";
-import type { Memory } from "@/types/memory";
+import type { Memory, SessionMessage } from "@/types/memory";
 
 export function MobileDetailSheet({
   memory,
+  sessionPreview,
+  sessionPreviewLoading,
   open,
   onOpenChange,
   onDelete,
@@ -12,6 +14,8 @@ export function MobileDetailSheet({
   t,
 }: {
   memory: Memory | null;
+  sessionPreview: SessionMessage[];
+  sessionPreviewLoading: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDelete: () => void;
@@ -32,6 +36,8 @@ export function MobileDetailSheet({
     >
       <DetailPanelContent
         memory={memory}
+        sessionPreview={sessionPreview}
+        sessionPreviewLoading={sessionPreviewLoading}
         onClose={() => onOpenChange(false)}
         onDelete={onDelete}
         onEdit={onEdit}

@@ -76,4 +76,71 @@ describe("httpProvider", () => {
     expect(headers.has("Content-Type")).toBe(false);
     expect(init?.body).toBeInstanceOf(FormData);
   });
+
+  it("requests session preview messages with repeatable session_id params", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          messages: [
+            {
+              id: "msg-1",
+              session_id: "sess-1",
+              agent_id: "agent",
+              source: "agent",
+              seq: 1,
+              role: "user",
+              content: "hello",
+              content_type: "text/plain",
+              tags: [],
+              state: "active",
+              created_at: "2026-03-16T00:00:00Z",
+              updated_at: "2026-03-16T00:00:00Z",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    const result = await httpProvider.listSessionMessages("space-1", {
+      session_ids: ["sess-1", "sess-2"],
+      limit_per_session: 4,
+    });
+
+    expect(result.messages).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    const headers = init?.headers as Headers;
+    expect(url).toBe(
+      "/your-memory/api/session-messages?session_id=sess-1&session_id=sess-2&limit_per_session=4",
+    );
+    expect(headers.get("X-API-Key")).toBe("space-1");
+    expect(headers.get("X-Mnemo-Agent-Id")).toBe("dashboard");
+    expect(headers.get("Content-Type")).toBe("application/json");
+  });
+
+  it("returns an empty session preview result when the endpoint is unavailable", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: "not found",
+        }),
+        {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    const result = await httpProvider.listSessionMessages("space-1", {
+      session_ids: ["sess-1"],
+      limit_per_session: 2,
+    });
+
+    expect(result).toEqual({ messages: [] });
+  });
 });

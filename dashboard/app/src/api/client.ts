@@ -6,6 +6,9 @@ import { httpProvider } from "./provider-http";
 function createHybridProvider(): DashboardProvider {
   return {
     ...httpProvider,
+    listSessionMessages: features.enableMockSessionPreview
+      ? mockProvider.listSessionMessages
+      : httpProvider.listSessionMessages,
     getTopicSummary: features.enableTopicSummary
       ? mockProvider.getTopicSummary
       : httpProvider.getTopicSummary,

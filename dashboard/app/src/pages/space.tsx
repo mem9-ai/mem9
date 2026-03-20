@@ -17,8 +17,10 @@ import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LangToggle } from "@/components/lang-toggle";
 import {
+  getSessionPreviewLookupKey,
   useStats,
   useMemories,
+  useSessionPreviewMessages,
   useCreateMemory,
   useDeleteMemory,
   useUpdateMemory,
@@ -47,7 +49,12 @@ import { ExportDialog } from "@/components/space/export-dialog";
 import { ImportDialog } from "@/components/space/import-dialog";
 import { ImportStatusDialog } from "@/components/space/import-status";
 import { features } from "@/config/features";
-import type { Memory, MemoryType, MemoryFacet } from "@/types/memory";
+import type {
+  Memory,
+  MemoryFacet,
+  MemoryType,
+  MemoryTypeFilter,
+} from "@/types/memory";
 import type { AnalysisCategory } from "@/types/analysis";
 import type { TimeRangePreset } from "@/types/time-range";
 
@@ -98,6 +105,7 @@ export function SpacePage() {
   const facet: MemoryFacet | undefined = search.facet;
   const analysisCategory: AnalysisCategory | undefined = search.analysisCategory;
   const tag = search.tag;
+  const memoryTypeFilter: MemoryTypeFilter = search.type ?? "pinned,insight";
 
   useEffect(() => {
     if (!spaceId) navigate({ to: "/", replace: true });
@@ -124,7 +132,7 @@ export function SpacePage() {
     useMemories(spaceId, {
       q: search.q,
       tag,
-      memory_type: search.type,
+      memory_type: memoryTypeFilter,
       range,
       facet,
     });
@@ -176,6 +184,8 @@ export function SpacePage() {
   const displayedMemories = usingLocalAnalysisList
     ? tagFilteredAnalysisMemories.slice(0, localVisibleCount)
     : memories;
+  const sessionPreviewQuery = useSessionPreviewMessages(spaceId, displayedMemories);
+  const sessionPreviewBySessionID = sessionPreviewQuery.data ?? {};
   const hasMoreMemories = usingLocalAnalysisList
     ? tagFilteredAnalysisMemories.length > localVisibleCount
     : hasNextPage;
@@ -213,6 +223,15 @@ export function SpacePage() {
 
     return memories;
   }, [analysis.sourceMemories, memories]);
+  const selectedSessionID = selected
+    ? getSessionPreviewLookupKey(selected)
+    : "";
+  const selectedSessionPreview = selectedSessionID
+    ? (sessionPreviewBySessionID[selectedSessionID] ?? [])
+    : [];
+  const selectedSessionPreviewLoading = !!selectedSessionID &&
+    selectedSessionPreview.length === 0 &&
+    (sessionPreviewQuery.isLoading || sessionPreviewQuery.isFetching);
 
   useEffect(() => {
     if (isMemoryLoading || !selected) return;
@@ -772,6 +791,9 @@ export function SpacePage() {
                     <MemoryCard
                       key={m.id}
                       memory={m}
+                      sessionPreview={
+                        sessionPreviewBySessionID[getSessionPreviewLookupKey(m)] ?? []
+                      }
                       isSelected={selected?.id === m.id}
                       onClick={() => setSelected(m)}
                       onDelete={() => setDeleteTarget(m)}
@@ -831,6 +853,8 @@ export function SpacePage() {
             <DetailPanel
               key={selected.id}
               memory={selected}
+              sessionPreview={selectedSessionPreview}
+              sessionPreviewLoading={selectedSessionPreviewLoading}
               onClose={() => setSelected(null)}
               onDelete={() => setDeleteTarget(selected)}
               onEdit={
@@ -864,6 +888,8 @@ export function SpacePage() {
       {!isDesktopViewport && (
         <MobileDetailSheet
           memory={selected}
+          sessionPreview={selectedSessionPreview}
+          sessionPreviewLoading={selectedSessionPreviewLoading}
           open={!!selected}
           onOpenChange={(open) => !open && setSelected(null)}
           onDelete={() => {

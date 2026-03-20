@@ -7,6 +7,8 @@ import type {
   MemoryUpdateInput,
   MemoryStats,
   MemoryExportFile,
+  SessionMessageListParams,
+  SessionMessageListResponse,
   SpaceInfo,
   TopicSummary,
   MemoryFacet,
@@ -18,7 +20,11 @@ import type {
   ImportTaskListStatus,
   ImportTaskStatus,
 } from "@/types/import";
-import { mockMemories, mockSpaceInfo } from "./mock-data";
+import {
+  mockMemories,
+  mockSessionPreviewTemplate,
+  mockSpaceInfo,
+} from "./mock-data";
 
 const AGENT_ID = "dashboard";
 
@@ -123,7 +129,11 @@ function mockList(params: MemoryListParams): MemoryListResponse {
   }
 
   if (params.memory_type) {
-    result = result.filter((m) => m.memory_type === params.memory_type);
+    const allowedTypes = params.memory_type
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    result = result.filter((m) => allowedTypes.includes(m.memory_type));
   }
 
   if (params.facet) {
@@ -145,6 +155,31 @@ function mockList(params: MemoryListParams): MemoryListResponse {
   const page = result.slice(offset, offset + limit);
 
   return { memories: page, total, limit, offset };
+}
+
+function mockListSessionMessages(
+  params: SessionMessageListParams,
+): SessionMessageListResponse {
+  const limitPerSession = params.limit_per_session ?? 6;
+  const requestedSessionIDs = Array.from(
+    new Set(
+      params.session_ids
+        .map((sessionID) => sessionID.trim())
+        .filter(Boolean),
+    ),
+  );
+
+  const messages = requestedSessionIDs.flatMap((sessionID) => {
+    return mockSessionPreviewTemplate
+      .slice(0, limitPerSession)
+      .map((message) => ({
+        ...message,
+        id: `${sessionID}-${message.id}`,
+        session_id: sessionID,
+      }));
+  });
+
+  return { messages };
 }
 
 function mockStats(params?: TimeRangeParams): MemoryStats {
@@ -192,6 +227,14 @@ export const mockProvider: DashboardProvider = {
   ): Promise<MemoryListResponse> {
     await delay(300);
     return mockList(params);
+  },
+
+  async listSessionMessages(
+    _spaceId: string,
+    params: SessionMessageListParams,
+  ): Promise<SessionMessageListResponse> {
+    await delay(180);
+    return mockListSessionMessages(params);
   },
 
   async getStats(

@@ -56,6 +56,16 @@
     "edit": "编辑",
     "close": "关闭"
   },
+  "session_preview": {
+    "title": "对话原文",
+    "loading": "正在加载对话…",
+    "role": {
+      "user": "用户",
+      "assistant": "助手",
+      "system": "系统",
+      "tool": "工具"
+    }
+  },
   "add": {
     "button": "添加记忆",
     "title": "添加一条记忆",

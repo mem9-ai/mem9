@@ -1,13 +1,15 @@
 import type { TFunction } from "i18next";
 import { toast } from "sonner";
-import { Bookmark, Sparkles, Copy, Trash2 } from "lucide-react";
+import { Bookmark, Copy, Trash2, Sparkles } from "lucide-react";
 import { formatRelativeTime } from "@/lib/time";
-import type { Memory, MemoryFacet } from "@/types/memory";
+import type { Memory, MemoryFacet, SessionMessage } from "@/types/memory";
 import { FacetBadge } from "./topic-strip";
+import { CardSessionPreview } from "./session-preview";
 import { features } from "@/config/features";
 
 export function MemoryCard({
   memory: m,
+  sessionPreview,
   isSelected,
   onClick,
   onDelete,
@@ -15,6 +17,7 @@ export function MemoryCard({
   delay,
 }: {
   memory: Memory;
+  sessionPreview: SessionMessage[];
   isSelected: boolean;
   onClick: () => void;
   onDelete: () => void;
@@ -47,27 +50,21 @@ export function MemoryCard({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={handleKeyDown}
-      className={`surface-card group relative w-full overflow-hidden text-left transition-all duration-150 ${
+      className={`group relative w-full text-left transition-all duration-300 cursor-pointer rounded-2xl border bg-card p-0 ${
         isSelected
-          ? "surface-card-selected"
-          : "hover:shadow-md"
+          ? "border-primary/20 shadow-sm ring-1 ring-primary/10 bg-primary/[0.02]"
+          : "border-border/30 shadow-sm hover:border-border/60 hover:shadow-md hover:-translate-y-[1px]"
       }`}
       style={{
         animation: `slide-up 0.3s cubic-bezier(0.16,1,0.3,1) ${delay}ms both`,
       }}
     >
-      <div
-        className={`absolute inset-y-0 left-0 w-1 ${
-          isPinned ? "bg-type-pinned" : "bg-type-insight"
-        }`}
-      />
-
-      <div className="flex items-start gap-3.5 p-4 pl-5">
+      <div className="flex items-start gap-4 p-5">
         <div
-          className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${
+          className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl ${
             isPinned
-              ? "bg-type-pinned/10 text-type-pinned"
-              : "bg-type-insight/10 text-type-insight"
+              ? "bg-type-pinned/10 text-type-pinned ring-1 ring-type-pinned/20"
+              : "bg-type-insight/10 text-type-insight ring-1 ring-type-insight/20"
           }`}
         >
           {isPinned ? (
@@ -78,25 +75,29 @@ export function MemoryCard({
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="line-clamp-3 text-sm leading-relaxed text-foreground">
+          <p className="line-clamp-3 text-sm leading-relaxed text-foreground/90 font-medium">
             {m.content}
           </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-soft-foreground">
+          <CardSessionPreview messages={sessionPreview} t={t} />
+          <div className="mt-3 flex flex-wrap items-center gap-2.5 text-xs text-soft-foreground">
             <span>{formatRelativeTime(t, m.updated_at)}</span>
             {m.source && (
-              <span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+              <span className="rounded-md bg-secondary/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground group-hover:bg-secondary/70">
                 {m.source}
               </span>
             )}
             {facet && <FacetBadge facet={facet} t={t} />}
             {tags.length > 0 &&
               tags.slice(0, 3).map((tag) => (
-                <span key={tag} className="text-soft-foreground">
+                <span
+                  key={tag}
+                  className="rounded-md bg-secondary/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors group-hover:bg-secondary/80 group-hover:text-foreground"
+                >
                   #{tag}
                 </span>
               ))}
             {tags.length > 3 && (
-              <span className="text-soft-foreground/60">
+              <span className="rounded-md bg-secondary/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground group-hover:bg-secondary/60">
                 +{tags.length - 3}
               </span>
             )}

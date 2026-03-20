@@ -6,6 +6,8 @@ import type {
   MemoryUpdateInput,
   MemoryStats,
   MemoryExportFile,
+  SessionMessageListParams,
+  SessionMessageListResponse,
   SpaceInfo,
   TopicSummary,
 } from "@/types/memory";
@@ -18,6 +20,10 @@ export interface DashboardProvider {
     spaceId: string,
     params: MemoryListParams,
   ): Promise<MemoryListResponse>;
+  listSessionMessages(
+    spaceId: string,
+    params: SessionMessageListParams,
+  ): Promise<SessionMessageListResponse>;
   getStats(spaceId: string, params?: TimeRangeParams): Promise<MemoryStats>;
   getMemory(spaceId: string, memoryId: string): Promise<Memory>;
   createMemory(spaceId: string, input: MemoryCreateInput): Promise<Memory>;

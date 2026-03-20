@@ -1,4 +1,4 @@
-import type { Memory, SpaceInfo } from "@/types/memory";
+import type { Memory, SessionMessage, SpaceInfo } from "@/types/memory";
 
 export const MOCK_SPACE_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
 
@@ -402,5 +402,38 @@ export const mockMemories: Memory[] = [
     updated_by: "claude",
     created_at: daysAgo(40),
     updated_at: daysAgo(40),
+  },
+];
+
+export const mockSessionPreviewTemplate: SessionMessage[] = [
+  {
+    id: "msg-template-1",
+    session_id: "template",
+    agent_id: "agent",
+    source: "dashboard-demo",
+    seq: 1,
+    role: "user",
+    content:
+      "Keep this memory visible in the dashboard preview so the user can quickly understand the surrounding conversation without opening a full transcript.",
+    content_type: "text/plain",
+    tags: ["demo", "preview"],
+    state: "active",
+    created_at: hoursAgo(6),
+    updated_at: hoursAgo(6),
+  },
+  {
+    id: "msg-template-2",
+    session_id: "template",
+    agent_id: "agent",
+    source: "dashboard-demo",
+    seq: 2,
+    role: "assistant",
+    content:
+      "Understood. I will keep the preview compact, role-labeled, and clearly secondary to the memory summary in both the card and detail panel.",
+    content_type: "text/plain",
+    tags: ["demo", "preview"],
+    state: "active",
+    created_at: hoursAgo(6),
+    updated_at: hoursAgo(6),
   },
 ];
