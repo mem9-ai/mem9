@@ -509,6 +509,9 @@ func (s *MemoryService) Delete(ctx context.Context, id, agentName string) error 
 	return s.memories.SoftDelete(ctx, id, agentName)
 }
 
+// Deprecated: Bootstrap is only called by handler.bootstrapMemories which is
+// not registered in the router. Remove together with bootstrapMemories and
+// MemoryRepo.ListBootstrap in a follow-up cleanup PR.
 func (s *MemoryService) Bootstrap(ctx context.Context, limit int) ([]domain.Memory, error) {
 	if limit <= 0 {
 		limit = 20
