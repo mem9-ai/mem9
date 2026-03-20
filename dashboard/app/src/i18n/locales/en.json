@@ -230,15 +230,15 @@
     "batch_memories": "{{count}} memories",
     "confidence": "Share {{value}}",
     "batch_summary": {
-      "syncing": "Synchronizing {{current}}/{{total}} batches...",
+      "syncing": "Preparing {{current}}/{{total}} batches for analysis...",
       "processing": "Analyzing {{current}}/{{total}} batches...",
-      "completed": "Synchronized {{current}}/{{total}} batches"
+      "completed": "Completed {{current}}/{{total}} batches"
     },
     "phase": {
       "idle": "Idle",
-      "creating": "Creating",
-      "uploading": "Uploading",
-      "processing": "Processing",
+      "creating": "Preparing analysis",
+      "uploading": "Preparing analysis",
+      "processing": "Analyzing",
       "completed": "Completed",
       "degraded": "Degraded",
       "failed": "Failed"
@@ -246,15 +246,15 @@
     "metrics": {
       "memories": "Total memories",
       "processed": "Processed",
-      "uploaded": "Uploaded batches",
+      "uploaded": "Prepared batches",
       "failed": "Failed batches"
     },
     "batch_status": {
-      "EXPECTED": "Expected",
-      "UPLOADED": "Uploaded",
+      "EXPECTED": "Pending",
+      "UPLOADED": "Prepared",
       "QUEUED": "Queued",
-      "RUNNING": "Running",
-      "SUCCEEDED": "Succeeded",
+      "RUNNING": "Analyzing",
+      "SUCCEEDED": "Completed",
       "FAILED": "Failed",
       "RETRYING": "Retrying",
       "DLQ": "Dead-lettered"

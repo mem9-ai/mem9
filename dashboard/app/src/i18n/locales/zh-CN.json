@@ -230,14 +230,14 @@
     "batch_memories": "{{count}} 条记忆",
     "confidence": "占比 {{value}}",
     "batch_summary": {
-      "syncing": "Synchronizing {{current}}/{{total}} batches...",
-      "processing": "Analyzing {{current}}/{{total}} batches...",
-      "completed": "Synchronized {{current}}/{{total}} batches"
+      "syncing": "正在准备第 {{current}}/{{total}} 批分析数据…",
+      "processing": "正在分析第 {{current}}/{{total}} 批…",
+      "completed": "已完成 {{current}}/{{total}} 批"
     },
     "phase": {
       "idle": "未开始",
-      "creating": "创建中",
-      "uploading": "上传中",
+      "creating": "准备分析中",
+      "uploading": "准备分析中",
       "processing": "分析中",
       "completed": "已完成",
       "degraded": "已降级",
@@ -246,14 +246,14 @@
     "metrics": {
       "memories": "总记忆数",
       "processed": "已处理",
-      "uploaded": "已上传批次",
+      "uploaded": "已准备批次",
       "failed": "失败批次"
     },
     "batch_status": {
-      "EXPECTED": "待上传",
-      "UPLOADED": "已上传",
+      "EXPECTED": "待处理",
+      "UPLOADED": "已准备",
       "QUEUED": "排队中",
-      "RUNNING": "处理中",
+      "RUNNING": "分析中",
       "SUCCEEDED": "已完成",
       "FAILED": "失败",
       "RETRYING": "重试中",
