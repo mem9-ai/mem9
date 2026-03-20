@@ -485,7 +485,7 @@ func TestCreateRunsReconcilePipeline(t *testing.T) {
 	callCount := 0
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		resp := `{"facts": ["Uses Go 1.22"]}`
+		resp := `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}]}`
 		if callCount == 2 {
 			resp = `{"memory": [{"id": "new", "text": "Uses Go 1.22", "event": "ADD"}]}`
 		}

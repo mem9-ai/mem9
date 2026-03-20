@@ -65,6 +65,420 @@ func (m *memoryRepoMock) GetByID(ctx context.Context, id string) (*domain.Memory
 	return nil, domain.ErrNotFound
 }
 
+func TestExtractFactsReturnsTags(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22")
+	if err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("expected 1 fact, got %d", len(facts))
+	}
+	if facts[0].Text != "Uses Go 1.22" {
+		t.Fatalf("expected text %q, got %q", "Uses Go 1.22", facts[0].Text)
+	}
+	if len(facts[0].Tags) != 1 || facts[0].Tags[0] != "tech" {
+		t.Fatalf("expected tags [tech], got %v", facts[0].Tags)
+	}
+}
+
+func TestExtractFactsTagsOmitted(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts": [{"text": "Uses Go 1.22"}]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22")
+	if err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("expected 1 fact, got %d", len(facts))
+	}
+	if facts[0].Tags != nil {
+		t.Fatalf("expected nil tags, got %v", facts[0].Tags)
+	}
+}
+
+func TestExtractPhase1FactTagsPopulated(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp := `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}], "message_tags": [["tech"], ["answer"]]}`
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	result, err := svc.ExtractPhase1(context.Background(), []IngestMessage{
+		{Role: "user", Content: "I use Go 1.22"},
+		{Role: "assistant", Content: "Got it."},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+	if len(result.Facts) != 1 {
+		t.Fatalf("expected 1 fact, got %d", len(result.Facts))
+	}
+	if len(result.Facts[0].Tags) != 1 || result.Facts[0].Tags[0] != "tech" {
+		t.Fatalf("expected fact tags [tech], got %v", result.Facts[0].Tags)
+	}
+	if len(result.MessageTags) != 2 {
+		t.Fatalf("expected 2 message tag entries, got %d", len(result.MessageTags))
+	}
+	if len(result.MessageTags[0]) != 1 || result.MessageTags[0][0] != "tech" {
+		t.Fatalf("expected message_tags[0] = [tech], got %v", result.MessageTags[0])
+	}
+}
+
+func TestColdStartAddAllFactsSetsTags(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		resp := `{"facts": [{"text": "Works at company Y", "tags": ["work"]}]}`
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-cold",
+		AgentID:   "agent-1",
+		Messages:  []IngestMessage{{Role: "user", Content: "I work at company Y"}},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 create call, got %d", len(memRepo.createCalls))
+	}
+	got := memRepo.createCalls[0].Tags
+	if len(got) != 1 || got[0] != "work" {
+		t.Fatalf("expected tags [work], got %v", got)
+	}
+}
+
+func TestReconcileAddSetsTagsOnMemory(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var resp string
+		if callCount == 1 {
+			resp = `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}]}`
+		} else {
+			resp = `{"memory": [{"id": "new", "text": "Uses Go 1.22", "event": "ADD", "tags": ["tech", "work"]}]}`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": resp}}},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "existing-1", Content: "Works remotely", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-add",
+		AgentID:   "agent-1",
+		Messages:  []IngestMessage{{Role: "user", Content: "I use Go 1.22"}},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 create call, got %d", len(memRepo.createCalls))
+	}
+	got := memRepo.createCalls[0].Tags
+	if len(got) != 2 || got[0] != "tech" || got[1] != "work" {
+		t.Fatalf("expected tags [tech work], got %v", got)
+	}
+}
+
+func TestReconcileUpdateSetsTagsOnMemory(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var resp string
+		if callCount == 1 {
+			resp = `{"facts": [{"text": "Works at company Y", "tags": ["work"]}]}`
+		} else {
+			resp = `{"memory": [{"id": "0", "text": "Works at company Y", "event": "UPDATE", "old_memory": "Works at startup X", "tags": ["work"]}]}`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": resp}}},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "mem-startup", Content: "Works at startup X", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-update",
+		AgentID:   "agent-1",
+		Messages:  []IngestMessage{{Role: "user", Content: "I now work at company Y"}},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 create call (via ArchiveAndCreate), got %d", len(memRepo.createCalls))
+	}
+	got := memRepo.createCalls[0].Tags
+	if len(got) != 1 || got[0] != "work" {
+		t.Fatalf("expected tags [work], got %v", got)
+	}
+}
+
+func TestReconcileUpdateTagsOmitted(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var resp string
+		if callCount == 1 {
+			resp = `{"facts": [{"text": "Works at company Y", "tags": ["work"]}]}`
+		} else {
+			resp = `{"memory": [{"id": "0", "text": "Works at company Y", "event": "UPDATE", "old_memory": "Works at startup X"}]}`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": resp}}},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "mem-startup", Content: "Works at startup X", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	res, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-update-notags",
+		AgentID:   "agent-1",
+		Messages:  []IngestMessage{{Role: "user", Content: "I now work at company Y"}},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if res.Warnings != 0 {
+		t.Fatalf("expected 0 warnings, got %d", res.Warnings)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 create call, got %d", len(memRepo.createCalls))
+	}
+	if memRepo.createCalls[0].Tags != nil {
+		t.Fatalf("expected nil tags, got %v", memRepo.createCalls[0].Tags)
+	}
+}
+
+func TestReconcileTagsOmittedGracefully(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var resp string
+		if callCount == 1 {
+			resp = `{"facts": [{"text": "Uses Go 1.22"}]}`
+		} else {
+			resp = `{"memory": [{"id": "new", "text": "Uses Go 1.22", "event": "ADD"}]}`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": resp}}},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "existing-1", Content: "Works remotely", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	res, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-notags",
+		AgentID:   "agent-1",
+		Messages:  []IngestMessage{{Role: "user", Content: "I use Go 1.22"}},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if res.Warnings != 0 {
+		t.Fatalf("expected 0 warnings, got %d", res.Warnings)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 create call, got %d", len(memRepo.createCalls))
+	}
+	if memRepo.createCalls[0].Tags != nil {
+		t.Fatalf("expected nil tags, got %v", memRepo.createCalls[0].Tags)
+	}
+}
+
+func TestReconcileTagsClamped(t *testing.T) {
+	t.Parallel()
+
+	manyTags := make([]string, 25)
+	for i := range manyTags {
+		manyTags[i] = fmt.Sprintf("tag%d", i)
+	}
+	manyTagsJSON, _ := json.Marshal(manyTags)
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var resp string
+		if callCount == 1 {
+			resp = fmt.Sprintf(`{"facts": [{"text": "Uses Go 1.22", "tags": %s}]}`, string(manyTagsJSON))
+		} else {
+			resp = fmt.Sprintf(`{"memory": [{"id": "new", "text": "Uses Go 1.22", "event": "ADD", "tags": %s}]}`, string(manyTagsJSON))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": resp}}},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "existing-1", Content: "Works remotely", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-clamp",
+		AgentID:   "agent-1",
+		Messages:  []IngestMessage{{Role: "user", Content: "I use Go 1.22"}},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 create call, got %d", len(memRepo.createCalls))
+	}
+	if len(memRepo.createCalls[0].Tags) != maxTags {
+		t.Fatalf("expected tags clamped to %d, got %d", maxTags, len(memRepo.createCalls[0].Tags))
+	}
+}
+
+func TestReconcilePinnedFallbackCarriesTags(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var resp string
+		if callCount == 1 {
+			resp = `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}]}`
+		} else {
+			resp = `{"memory": [{"id": "0", "text": "Uses Go 1.22", "event": "UPDATE", "old_memory": "Uses Python", "tags": ["tech"]}]}`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": resp}}},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "pinned-1", Content: "Uses Python", MemoryType: domain.TypePinned, State: domain.StateActive},
+		},
+	}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-pinned",
+		AgentID:   "agent-1",
+		Messages:  []IngestMessage{{Role: "user", Content: "I use Go 1.22"}},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 create call (pinned fallback ADD), got %d", len(memRepo.createCalls))
+	}
+	got := memRepo.createCalls[0].Tags
+	if len(got) != 1 || got[0] != "tech" {
+		t.Fatalf("expected tags [tech], got %v", got)
+	}
+}
+
 func (m *memoryRepoMock) UpdateOptimistic(ctx context.Context, mem *domain.Memory, expectedVersion int) error {
 	return m.updateOptimisticErr
 }
@@ -495,7 +909,7 @@ func TestIngestStripsInjectedContextAcrossModes(t *testing.T) {
 					currentCall := callCount
 					mu.Unlock()
 
-					resp := `{"facts": ["keep this"]}`
+					resp := `{"facts": [{"text": "keep this"}]}`
 					if currentCall == 2 {
 						resp = `{"memory": [{"id": "new", "text": "keep this", "event": "ADD"}]}`
 					}
@@ -561,7 +975,7 @@ func TestReconcileDeleteErrNotFoundIsNotWarning(t *testing.T) {
 		var resp string
 		if callCount == 1 {
 			// extractFacts response.
-			resp = `{"facts": ["user prefers dark mode"]}`
+			resp = `{"facts": [{"text": "user prefers dark mode", "tags": ["preference"]}]}`
 		} else {
 			// reconcile response — DELETE the existing memory.
 			resp = `{"memory": [{"id": "0", "text": "user prefers dark mode", "event": "DELETE"}]}`
@@ -635,7 +1049,7 @@ func TestReconcileDeleteRealErrorCountsAsWarning(t *testing.T) {
 		callCount++
 		var resp string
 		if callCount == 1 {
-			resp = `{"facts": ["user prefers dark mode"]}`
+			resp = `{"facts": [{"text": "user prefers dark mode", "tags": ["preference"]}]}`
 		} else {
 			resp = `{"memory": [{"id": "0", "text": "user prefers dark mode", "event": "DELETE"}]}`
 		}
@@ -751,7 +1165,7 @@ func TestReconcileFallbackWritesNothing(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
 				"choices": []map[string]any{
-					{"message": map[string]string{"content": `{"facts": ["user prefers dark mode"]}`}},
+					{"message": map[string]string{"content": `{"facts": [{"text": "user prefers dark mode", "tags": ["preference"]}]}`}},
 				},
 			})
 			return
@@ -1045,7 +1459,7 @@ func TestReconcileIncludesMemoryAge(t *testing.T) {
 			mu.Unlock()
 			resp = `{"memory": [{"id": "0", "text": "Lives in Shanghai", "event": "UPDATE", "old_memory": "Lives in Beijing"}]}`
 		} else {
-			resp = `{"facts": ["Lives in Shanghai"]}`
+			resp = `{"facts": [{"text": "Lives in Shanghai", "tags": ["location"]}]}`
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
@@ -1124,7 +1538,7 @@ func TestReconcileOmitsAgeForZeroTimestamp(t *testing.T) {
 			mu.Unlock()
 			resp = `{"memory": [{"id": "0", "text": "Prefers dark mode", "event": "NOOP"}]}`
 		} else {
-			resp = `{"facts": ["Prefers dark mode"]}`
+			resp = `{"facts": [{"text": "Prefers dark mode", "tags": ["preference"]}]}`
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
