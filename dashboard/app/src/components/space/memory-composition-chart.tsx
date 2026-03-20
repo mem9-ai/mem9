@@ -223,21 +223,21 @@ export function MemoryCompositionChart({
                 onMouseEnter={() => setActiveKey(segment.key)}
                 onMouseLeave={() => setActiveKey(null)}
                 className={cn(
-                  "rounded-xl border px-3 py-2 text-left transition-colors",
+                  "rounded-xl border px-3 py-2 text-left transition-colors min-w-0 overflow-hidden",
                   isActive
                     ? "border-foreground/12 bg-foreground/[0.04]"
                     : "border-transparent bg-secondary/45 hover:border-foreground/8 hover:bg-secondary/70",
                 )}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="inline-flex items-center gap-2 text-sm text-foreground">
+                <div className="flex items-center justify-between gap-2 min-w-0">
+                  <span className="inline-flex min-w-0 items-center gap-2 text-xs text-foreground">
                     <span
-                      className="size-2 rounded-full"
+                      className="size-2 shrink-0 rounded-full"
                       style={{ backgroundColor: `var(${segment.colorToken})` }}
                     />
-                    {t(segment.labelKey)}
+                    <span className="truncate">{t(segment.labelKey)}</span>
                   </span>
-                  <span className="font-mono text-xs text-soft-foreground">
+                  <span className="shrink-0 font-mono text-xs text-soft-foreground">
                     {compactFormatter.format(segment.value)}
                   </span>
                 </div>
