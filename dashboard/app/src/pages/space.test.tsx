@@ -202,7 +202,13 @@ vi.mock("@/api/queries", () => ({
             source: "agent",
             seq: 2,
             role: "assistant",
-            content: "Agreed. I will keep the dashboard release notes compact and demo-oriented.",
+            content: [
+              "Agreed. I will keep the dashboard release notes compact and demo-oriented.",
+              "",
+              "```json",
+              '{"status":"ok"}',
+              "```",
+            ].join("\n"),
             content_type: "text/plain",
             tags: [],
             state: "active",
@@ -461,5 +467,11 @@ describe("SpacePage", () => {
         "Agreed. I will keep the dashboard release notes compact and demo-oriented.",
       ),
     ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).getByText('{"status":"ok"}'),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).queryByText("```json"),
+    ).not.toBeInTheDocument();
   });
 });

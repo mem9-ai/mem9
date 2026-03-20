@@ -1,11 +1,109 @@
 import type { TFunction } from "i18next";
 import { Loader2, User, MessageCircle, MessageSquare, Bot } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
 import { cn } from "@/lib/utils";
 import type { SessionMessage } from "@/types/memory";
 import { formatRelativeTime } from "@/lib/time";
 
 function getRoleLabel(t: TFunction, role: SessionMessage["role"]): string {
   return t(`session_preview.role.${role}`, { defaultValue: role });
+}
+
+function SessionMarkdownContent({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkBreaks]}
+      allowedElements={[
+        "a",
+        "blockquote",
+        "br",
+        "code",
+        "em",
+        "li",
+        "ol",
+        "p",
+        "pre",
+        "strong",
+        "ul",
+      ]}
+      components={{
+        a: ({ node: _node, className, href, ...props }) => (
+          <a
+            {...props}
+            href={href}
+            target="_blank"
+            rel="noreferrer noopener"
+            className={cn(
+              "text-primary underline underline-offset-4 break-all hover:text-primary/80",
+              className,
+            )}
+          />
+        ),
+        blockquote: ({ node: _node, className, ...props }) => (
+          <blockquote
+            {...props}
+            className={cn(
+              "my-3 border-l-2 border-border/60 pl-3 italic text-foreground/75",
+              className,
+            )}
+          />
+        ),
+        code: ({ node: _node, className, children, ...props }) => {
+          const isInline = !className?.includes("language-");
+
+          if (isInline) {
+            return (
+              <code
+                {...props}
+                className={cn(
+                  "rounded bg-secondary/80 px-1.5 py-0.5 font-mono text-[12px]",
+                  className,
+                )}
+              >
+                {children}
+              </code>
+            );
+          }
+
+          return (
+            <code
+              {...props}
+              className={cn("font-mono text-[12px] leading-6", className)}
+            >
+              {children}
+            </code>
+          );
+        },
+        li: ({ node: _node, className, ...props }) => (
+          <li {...props} className={cn("ml-4", className)} />
+        ),
+        ol: ({ node: _node, className, ...props }) => (
+          <ol {...props} className={cn("my-3 list-decimal space-y-1", className)} />
+        ),
+        p: ({ node: _node, className, ...props }) => (
+          <p {...props} className={cn("my-0 leading-relaxed", className)} />
+        ),
+        pre: ({ node: _node, className, ...props }) => (
+          <pre
+            {...props}
+            className={cn(
+              "my-3 overflow-x-auto rounded-xl border border-border/50 bg-secondary/70 px-4 py-3",
+              className,
+            )}
+          />
+        ),
+        strong: ({ node: _node, className, ...props }) => (
+          <strong {...props} className={cn("font-semibold text-foreground", className)} />
+        ),
+        ul: ({ node: _node, className, ...props }) => (
+          <ul {...props} className={cn("my-3 list-disc space-y-1", className)} />
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
 }
 
 export function CardSessionPreview({
@@ -99,7 +197,9 @@ export function DetailSessionPreview({
                       ? "bg-secondary/60 text-foreground/90 rounded-tl-sm" 
                       : "bg-primary/[0.03] text-foreground/90 rounded-tl-sm border border-primary/10"
                   )}>
-                    <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                    <div className="break-words">
+                      <SessionMarkdownContent content={message.content} />
+                    </div>
                   </div>
                 </div>
               </div>
