@@ -154,8 +154,8 @@ export function MemoryRhythmChart({
 
   return (
     <section className="min-w-0">
-      <div className="flex items-end justify-between gap-4">
-        <div className="min-w-0 flex-1">
+      <div className="grid grid-cols-[minmax(0,1fr)_8.5rem] items-start gap-4">
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <p className="truncate text-[11px] font-semibold uppercase tracking-[0.22em] text-ring">
               {t("memory_pulse.rhythm.title")}
@@ -173,11 +173,11 @@ export function MemoryRhythmChart({
               : t("memory_pulse.rhythm.helper")}
           </p>
         </div>
-        <div className="shrink-0 text-right">
-          <div className="text-2xl font-semibold tracking-[-0.05em] text-foreground">
+        <div className="w-[8.5rem] text-right">
+          <div className="text-2xl font-semibold tracking-[-0.05em] text-foreground tabular-nums">
             {displayedBucket?.count ?? 0}
           </div>
-          <div className="text-[11px] text-soft-foreground">
+          <div className="whitespace-nowrap text-[11px] text-soft-foreground tabular-nums">
             {displayedBucket
               ? formatBucketLabel(locale, displayedBucket.start, displayedBucket.end)
               : ""}

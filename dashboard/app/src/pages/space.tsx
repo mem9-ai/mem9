@@ -597,12 +597,15 @@ export function SpacePage() {
     (tag ? 1 : 0) +
     (analysisCategory ? 1 : 0) +
     (timelineSelection ? 1 : 0);
+  const pageShellClass = features.enableAnalysis || selected
+    ? "max-w-[1560px]"
+    : "max-w-3xl";
 
   return (
     <div className="min-h-screen">
       {/* Header */}
       <header className="sticky top-0 z-20 border-b bg-nav-bg backdrop-blur-sm">
-        <div className="mx-auto flex h-14 max-w-[1180px] items-center justify-between px-6">
+        <div className={`mx-auto flex h-14 items-center justify-between px-6 ${pageShellClass}`}>
           <div className="flex items-center gap-3">
             <img
               src="/your-memory/mem9-logo.svg"
@@ -635,13 +638,7 @@ export function SpacePage() {
       </header>
 
       {/* Content */}
-      <div
-        className={`mx-auto px-6 ${
-          features.enableAnalysis || selected
-            ? "max-w-[1560px]"
-            : "max-w-3xl"
-        }`}
-      >
+      <div className={`mx-auto px-6 ${pageShellClass}`}>
         <div className="flex flex-col gap-8 xl:flex-row">
           <div className="min-w-0 flex-1 py-8 xl:order-2">
             {/* Stats cards (clickable for type filtering) */}
@@ -746,6 +743,7 @@ export function SpacePage() {
               snapshot={analysis.state.snapshot}
               range={range}
               loading={sourceLoading || analysis.sourceLoading}
+              compact={selected !== null && isDesktopViewport}
               activeType={search.type}
               activeTag={tag}
               selectedTimeline={timelineSelection}

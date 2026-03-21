@@ -60,6 +60,7 @@ export function MemoryPulseOverview({
   onTagSelect,
   onTimelineSelect,
   onTimelineClear,
+  compact = false,
 }: {
   stats: MemoryStats | undefined;
   memories: Memory[];
@@ -74,6 +75,7 @@ export function MemoryPulseOverview({
   onTagSelect: (tag: string | undefined) => void;
   onTimelineSelect: (selection: TimelineSelection) => void;
   onTimelineClear?: () => void;
+  compact?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const pulse = useMemo(() => {
@@ -134,7 +136,14 @@ export function MemoryPulseOverview({
           </div>
         </div>
 
-        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.95fr)_minmax(0,1fr)] xl:gap-6">
+        <div
+          className={cn(
+            "mt-5 grid gap-5 xl:gap-6",
+            compact
+              ? "xl:grid-cols-[minmax(0,1.35fr)_minmax(240px,0.95fr)]"
+              : "xl:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.95fr)_minmax(0,1fr)]",
+          )}
+        >
           <div className={cn("xl:border-r xl:border-foreground/6 xl:pr-6")}>
             <MemoryRhythmChart
               buckets={pulse.trend.buckets}
@@ -146,7 +155,12 @@ export function MemoryPulseOverview({
             />
           </div>
 
-          <div className={cn("border-t border-foreground/6 pt-5 xl:border-t-0 xl:border-r xl:border-foreground/6 xl:pt-0 xl:pr-6")}>
+          <div
+            className={cn(
+              "border-t border-foreground/6 pt-5 xl:border-t-0 xl:pt-0",
+              compact ? "" : "xl:border-r xl:border-foreground/6 xl:pr-6",
+            )}
+          >
             <MemoryCompositionChart
               total={pulse.composition.total}
               outer={pulse.composition.outer}
@@ -157,13 +171,15 @@ export function MemoryPulseOverview({
             />
           </div>
 
-          <div className="border-t border-foreground/6 pt-5 xl:border-t-0 xl:pt-0">
-            <MemorySignalStack
-              items={pulse.signals.items}
-              activeTag={activeTag}
-              onTagSelect={onTagSelect}
-            />
-          </div>
+          {!compact ? (
+            <div className="border-t border-foreground/6 pt-5 xl:border-t-0 xl:pt-0">
+              <MemorySignalStack
+                items={pulse.signals.items}
+                activeTag={activeTag}
+                onTagSelect={onTagSelect}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     </section>
