@@ -323,9 +323,12 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 	}, nil
 }
 
+// extractAndReconcile runs Phase 1a (extraction) + Phase 2 (reconciliation).
 func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agentID, sessionID, conversation string) ([]string, int, error) {
-	const maxFacts = 50
+	const maxFacts = 50 // Cap extracted facts to bound reconciliation prompt size
 
+	// Phase 1a: Extract facts only — no message_tags needed here (smart-ingest / raw-ingest path).
+	// Use extractFacts instead of extractFactsAndTags to avoid wasting tokens on tag generation.
 	facts, err := s.extractFacts(ctx, conversation)
 	if err != nil {
 		return nil, 0, fmt.Errorf("extract facts: %w", err)
@@ -334,11 +337,13 @@ func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agen
 		return nil, 0, nil
 	}
 
+	// Cap facts to prevent LLM context overflow.
 	if len(facts) > maxFacts {
 		slog.Warn("extractAndReconcile: truncating extracted facts", "count", len(facts), "max", maxFacts)
 		facts = facts[:maxFacts]
 	}
 
+	// Phase 2: Reconcile each fact against existing memories.
 	return s.reconcile(ctx, agentName, agentID, sessionID, facts)
 }
 
@@ -382,6 +387,8 @@ func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
 	return out
 }
 
+// extractFacts calls the LLM to extract atomic facts only, without per-message tag generation.
+// Used by extractAndReconcile (ReconcileContent path) where message_tags are not needed.
 func (s *IngestService) extractFacts(ctx context.Context, conversation string) ([]ExtractedFact, error) {
 	if s.llm == nil || conversation == "" {
 		return nil, nil
@@ -1021,6 +1028,7 @@ func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, s
 	}
 
 	now := time.Now()
+	// Create new memory object.
 	m := &domain.Memory{
 		ID:         newID,
 		Content:    newContent,
