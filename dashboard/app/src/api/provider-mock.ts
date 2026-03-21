@@ -21,6 +21,10 @@ import type {
   ImportTaskStatus,
 } from "@/types/import";
 import {
+  removeCachedMemory,
+  upsertCachedMemories,
+} from "./local-cache";
+import {
   mockMemories,
   mockSessionPreviewTemplate,
   mockSpaceInfo,
@@ -273,6 +277,7 @@ export const mockProvider: DashboardProvider = {
       updated_at: new Date().toISOString(),
     };
     mockStore.unshift(mem);
+    await upsertCachedMemories(_spaceId, [mem]);
     return mem;
   },
 
@@ -298,12 +303,14 @@ export const mockProvider: DashboardProvider = {
     };
     const idx = mockStore.indexOf(existing);
     mockStore[idx] = updated;
+    await upsertCachedMemories(_spaceId, [updated]);
     return { ...updated };
   },
 
   async deleteMemory(_spaceId: string, memoryId: string): Promise<void> {
     await delay(300);
     mockStore = mockStore.filter((m) => m.id !== memoryId);
+    await removeCachedMemory(_spaceId, memoryId);
   },
 
   async exportMemories(_spaceId: string): Promise<MemoryExportFile> {

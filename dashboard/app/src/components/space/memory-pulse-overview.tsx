@@ -7,7 +7,7 @@ import { buildMemoryPulseData } from "@/lib/memory-pulse";
 import { cn } from "@/lib/utils";
 import type { AnalysisCategoryCard, AnalysisJobSnapshotResponse } from "@/types/analysis";
 import type { Memory, MemoryStats, MemoryType } from "@/types/memory";
-import type { TimeRangePreset } from "@/types/time-range";
+import type { TimeRangePreset, TimelineSelection } from "@/types/time-range";
 
 function PulseOverviewSkeleton() {
   return (
@@ -55,8 +55,11 @@ export function MemoryPulseOverview({
   loading,
   activeType,
   activeTag,
+  selectedTimeline,
   onTypeSelect,
   onTagSelect,
+  onTimelineSelect,
+  onTimelineClear,
 }: {
   stats: MemoryStats | undefined;
   memories: Memory[];
@@ -66,8 +69,11 @@ export function MemoryPulseOverview({
   loading: boolean;
   activeType?: MemoryType;
   activeTag?: string;
+  selectedTimeline?: TimelineSelection;
   onTypeSelect: (type: MemoryType) => void;
   onTagSelect: (tag: string | undefined) => void;
+  onTimelineSelect: (selection: TimelineSelection) => void;
+  onTimelineClear?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const pulse = useMemo(() => {
@@ -134,6 +140,9 @@ export function MemoryPulseOverview({
               buckets={pulse.trend.buckets}
               maxCount={pulse.trend.maxCount}
               locale={i18n.language}
+              selectedTimeline={selectedTimeline}
+              onBucketSelect={onTimelineSelect}
+              onBucketClear={onTimelineClear}
             />
           </div>
 

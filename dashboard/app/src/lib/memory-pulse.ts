@@ -90,7 +90,7 @@ function getWindow(range: TimeRangePreset, memories: Memory[]): {
   end: number;
 } | null {
   const timestamps = memories
-    .map((memory) => parseTimestamp(memory.updated_at))
+    .map((memory) => parseTimestamp(memory.created_at))
     .filter((value): value is number => value !== null)
     .sort((left, right) => left - right);
 
@@ -130,7 +130,7 @@ export function buildPulseTrend(
   const counts = Array.from({ length: bucketCount }, () => 0);
 
   for (const memory of memories) {
-    const timestamp = parseTimestamp(memory.updated_at);
+    const timestamp = parseTimestamp(memory.created_at);
     if (timestamp === null || timestamp < window.start || timestamp > window.end) {
       continue;
     }

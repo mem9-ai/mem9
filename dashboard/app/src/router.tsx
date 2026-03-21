@@ -64,8 +64,15 @@ export interface SpaceSearch {
   tag?: string;
   type?: MemoryType;
   range?: TimeRangePreset;
+  timelineFrom?: string;
+  timelineTo?: string;
   facet?: MemoryFacet;
   analysisCategory?: AnalysisCategory;
+}
+
+function validateTimelineBound(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  return Number.isFinite(Date.parse(value)) ? value : undefined;
 }
 
 const spaceRoute = createRoute({
@@ -81,6 +88,8 @@ const spaceRoute = createRoute({
     range: VALID_RANGES.includes(search.range as string)
       ? (search.range as TimeRangePreset)
       : undefined,
+    timelineFrom: validateTimelineBound(search.timelineFrom),
+    timelineTo: validateTimelineBound(search.timelineTo),
     facet: VALID_FACETS.includes(search.facet as string)
       ? (search.facet as MemoryFacet)
       : undefined,

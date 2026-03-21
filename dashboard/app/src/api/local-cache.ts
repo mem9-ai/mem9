@@ -236,7 +236,7 @@ export async function readCachedMemories(spaceId: string): Promise<Memory[]> {
       .filter((record) => record.spaceId === spaceId)
       .map((record) => record.memory)
       .sort((left, right) =>
-        right.updated_at.localeCompare(left.updated_at),
+        right.created_at.localeCompare(left.created_at),
       );
   }
 
@@ -247,7 +247,7 @@ export async function readCachedMemories(spaceId: string): Promise<Memory[]> {
   );
   return records
     .map((record) => record.memory)
-    .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+    .sort((left, right) => right.created_at.localeCompare(left.created_at));
 }
 
 export async function upsertCachedMemories(

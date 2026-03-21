@@ -5,6 +5,11 @@ export interface TimeRangeParams {
   updated_to?: string;
 }
 
+export interface TimelineSelection {
+  from: string;
+  to: string;
+}
+
 const DAY_MS = 86_400_000;
 
 export function presetToParams(preset: TimeRangePreset): TimeRangeParams {
@@ -13,4 +18,14 @@ export function presetToParams(preset: TimeRangePreset): TimeRangeParams {
   return {
     updated_from: new Date(Date.now() - days * DAY_MS).toISOString(),
   };
+}
+
+export function isValidTimelineSelection(
+  selection: TimelineSelection | null | undefined,
+): selection is TimelineSelection {
+  if (!selection) return false;
+
+  const from = Date.parse(selection.from);
+  const to = Date.parse(selection.to);
+  return Number.isFinite(from) && Number.isFinite(to) && from <= to;
 }

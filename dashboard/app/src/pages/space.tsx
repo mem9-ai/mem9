@@ -18,8 +18,6 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { LangToggle } from "@/components/lang-toggle";
 import {
   getSessionPreviewLookupKey,
-  useStats,
-  useMemories,
   useSessionPreviewMessages,
   useCreateMemory,
   useDeleteMemory,
@@ -27,8 +25,8 @@ import {
   useExportMemories,
   useImportMemories,
   useImportTasks,
-  useTopicSummary,
 } from "@/api/queries";
+import { useSourceMemories } from "@/api/source-memories";
 import { useSpaceAnalysis } from "@/api/analysis-queries";
 import { filterMemoriesForView } from "@/lib/memory-filters";
 import { getActiveSpaceId, clearSpace, maskSpaceId } from "@/lib/session";
@@ -53,10 +51,15 @@ import type {
   Memory,
   MemoryFacet,
   MemoryType,
-  MemoryTypeFilter,
+  MemoryStats,
+  TopicSummary,
 } from "@/types/memory";
 import type { AnalysisCategory } from "@/types/analysis";
-import type { TimeRangePreset } from "@/types/time-range";
+import type {
+  TimeRangePreset,
+  TimelineSelection,
+} from "@/types/time-range";
+import { isValidTimelineSelection } from "@/types/time-range";
 
 const route = getRouteApi("/space");
 const LOCAL_PAGE_SIZE = 50;
@@ -82,8 +85,91 @@ function useIsDesktopViewport(): boolean {
   return isDesktop;
 }
 
+const FACETS: MemoryFacet[] = [
+  "about_you",
+  "preferences",
+  "important_people",
+  "experiences",
+  "plans",
+  "routines",
+  "constraints",
+  "other",
+];
+
+function buildStats(memories: Memory[]): MemoryStats {
+  return {
+    total: memories.length,
+    pinned: memories.filter((memory) => memory.memory_type === "pinned").length,
+    insight: memories.filter((memory) => memory.memory_type === "insight").length,
+  };
+}
+
+function buildTopicSummary(memories: Memory[]): TopicSummary {
+  const counts = new Map<MemoryFacet, number>();
+
+  for (const memory of memories) {
+    const facet = memory.metadata?.facet;
+    if (typeof facet !== "string" || !FACETS.includes(facet as MemoryFacet)) {
+      continue;
+    }
+    counts.set(facet as MemoryFacet, (counts.get(facet as MemoryFacet) ?? 0) + 1);
+  }
+
+  return {
+    topics: [...counts.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .map(([facet, count]) => ({ facet, count })),
+    total: memories.length,
+  };
+}
+
+function scrollToMemoryList(): void {
+  const el = document.getElementById("memory-list");
+  if (!el) return;
+
+  const headerOffset = window.innerWidth >= 1280 ? 120 : 180;
+  const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
+  window.scrollTo({ top: y, behavior: "smooth" });
+}
+
+function formatTimelineLabel(
+  selection: TimelineSelection,
+  locale: string,
+): string {
+  const fromDate = new Date(selection.from);
+  const toDate = new Date(selection.to);
+  const duration = toDate.getTime() - fromDate.getTime();
+  const dateFormatter = new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "numeric",
+  });
+
+  if (duration < 86_400_000) {
+    const dateTimeFormatter = new Intl.DateTimeFormat(locale, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    const timeFormatter = new Intl.DateTimeFormat(locale, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    const fromDay = dateFormatter.format(fromDate);
+    const toDay = dateFormatter.format(toDate);
+
+    return fromDay === toDay
+      ? `${fromDay}, ${timeFormatter.format(fromDate)} - ${timeFormatter.format(toDate)}`
+      : `${dateTimeFormatter.format(fromDate)} - ${dateTimeFormatter.format(toDate)}`;
+  }
+
+  const from = dateFormatter.format(fromDate);
+  const to = dateFormatter.format(toDate);
+  return from === to ? from : `${from} - ${to}`;
+}
+
 export function SpacePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const search = route.useSearch();
   const spaceId = getActiveSpaceId() ?? "";
@@ -105,7 +191,23 @@ export function SpacePage() {
   const facet: MemoryFacet | undefined = search.facet;
   const analysisCategory: AnalysisCategory | undefined = search.analysisCategory;
   const tag = search.tag;
-  const memoryTypeFilter: MemoryTypeFilter = search.type ?? "pinned,insight";
+  const timelineSelection = useMemo(() => {
+    const selection = search.timelineFrom && search.timelineTo
+      ? {
+          from: search.timelineFrom,
+          to: search.timelineTo,
+        }
+      : null;
+
+    return isValidTimelineSelection(selection) ? selection : undefined;
+  }, [search.timelineFrom, search.timelineTo]);
+  const timelineLabel = useMemo(
+    () =>
+      timelineSelection
+        ? formatTimelineLabel(timelineSelection, i18n.language)
+        : "",
+    [i18n.language, timelineSelection],
+  );
 
   useEffect(() => {
     if (!spaceId) navigate({ to: "/", replace: true });
@@ -117,7 +219,16 @@ export function SpacePage() {
 
   useEffect(() => {
     setLocalVisibleCount(LOCAL_PAGE_SIZE);
-  }, [analysisCategory, range, search.q, search.type, spaceId]);
+  }, [
+    analysisCategory,
+    facet,
+    range,
+    search.q,
+    search.type,
+    spaceId,
+    tag,
+    timelineSelection,
+  ]);
 
   useEffect(() => {
     if (isDesktopViewport) {
@@ -126,31 +237,56 @@ export function SpacePage() {
   }, [isDesktopViewport]);
 
   // Queries
-  const { data: stats } = useStats(spaceId, range);
-  const { data: totalStats } = useStats(spaceId);
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isFetching } =
-    useMemories(spaceId, {
-      q: search.q,
-      tag,
-      memory_type: memoryTypeFilter,
-      range,
-      facet,
-    });
+  const sourceQuery = useSourceMemories(spaceId);
   const createMutation = useCreateMemory(spaceId);
   const deleteMutation = useDeleteMemory(spaceId);
   const updateMutation = useUpdateMemory(spaceId);
   const exportMutation = useExportMemories(spaceId);
   const importMutation = useImportMemories(spaceId);
   const analysis = useSpaceAnalysis(spaceId, range);
-  const { data: topicData } = useTopicSummary(
-    spaceId,
-    range,
-    features.enableTopicSummary && !features.enableAnalysis,
-  );
   const { data: importTaskData } = useImportTasks(spaceId, importStatusOpen);
 
-  const memories = data?.pages.flatMap((p) => p.memories) ?? [];
-  const firstPageSize = data?.pages[0]?.memories.length ?? 0;
+  const allMemories = sourceQuery.data ?? [];
+  const totalStats = useMemo(() => buildStats(allMemories), [allMemories]);
+  const rangeScopedMemories = useMemo(
+    () =>
+      filterMemoriesForView(allMemories, {
+        range,
+      }),
+    [allMemories, range],
+  );
+  const rangeStats = useMemo(
+    () => buildStats(rangeScopedMemories),
+    [rangeScopedMemories],
+  );
+  const timelineScopedMemories = useMemo(
+    () =>
+      filterMemoriesForView(rangeScopedMemories, {
+        timeline: timelineSelection,
+      }),
+    [rangeScopedMemories, timelineSelection],
+  );
+  const stats = useMemo(
+    () => buildStats(timelineScopedMemories),
+    [timelineScopedMemories],
+  );
+  const topicData = useMemo(
+    () =>
+      features.enableTopicSummary && !features.enableAnalysis
+        ? buildTopicSummary(timelineScopedMemories)
+        : undefined,
+    [timelineScopedMemories],
+  );
+  const filteredMemories = useMemo(
+    () =>
+      filterMemoriesForView(timelineScopedMemories, {
+        q: search.q,
+        tag,
+        memoryType: search.type,
+        facet,
+      }),
+    [facet, search.q, search.type, tag, timelineScopedMemories],
+  );
   const analysisFilteredMemories = useMemo(() => {
     if (!analysisCategory) return [];
 
@@ -160,44 +296,37 @@ export function SpacePage() {
       ),
       {
         q: search.q,
+        tag,
         memoryType: search.type,
-        range,
+        facet,
+        timeline: timelineSelection,
       },
     );
   }, [
     analysis.matchMap,
     analysis.sourceMemories,
     analysisCategory,
-    range,
+    facet,
     search.q,
     search.type,
+    tag,
+    timelineSelection,
   ]);
-  const tagFilteredAnalysisMemories = useMemo(
-    () =>
-      filterMemoriesForView(analysisFilteredMemories, {
-        tag,
-      }),
-    [analysisFilteredMemories, tag],
-  );
 
   const usingLocalAnalysisList = !!analysisCategory;
   const displayedMemories = usingLocalAnalysisList
-    ? tagFilteredAnalysisMemories.slice(0, localVisibleCount)
-    : memories;
+    ? analysisFilteredMemories.slice(0, localVisibleCount)
+    : filteredMemories.slice(0, localVisibleCount);
   const sessionPreviewQuery = useSessionPreviewMessages(spaceId, displayedMemories);
   const sessionPreviewBySessionID = sessionPreviewQuery.data ?? {};
   const hasMoreMemories = usingLocalAnalysisList
-    ? tagFilteredAnalysisMemories.length > localVisibleCount
-    : hasNextPage;
-  const isMemoryLoading = usingLocalAnalysisList
-    ? analysis.sourceLoading
-    : isLoading || (isFetching && !isFetchingNextPage);
-  const isFetchingMore = usingLocalAnalysisList ? false : isFetchingNextPage;
-  const displayedFirstPageSize = usingLocalAnalysisList
-    ? Math.min(displayedMemories.length, LOCAL_PAGE_SIZE)
-    : firstPageSize;
+    ? analysisFilteredMemories.length > localVisibleCount
+    : filteredMemories.length > localVisibleCount;
+  const sourceLoading = sourceQuery.isLoading || sourceQuery.isFetching;
+  const isMemoryLoading = usingLocalAnalysisList ? analysis.sourceLoading : sourceLoading;
+  const displayedFirstPageSize = Math.min(displayedMemories.length, LOCAL_PAGE_SIZE);
   const tagOptions = useMemo<TagSummary[]>(() => {
-    const source = usingLocalAnalysisList ? analysisFilteredMemories : displayedMemories;
+    const source = usingLocalAnalysisList ? analysisFilteredMemories : filteredMemories;
     const counts = new Map<string, number>();
 
     for (const memory of source) {
@@ -215,14 +344,8 @@ export function SpacePage() {
         tag: value,
         count,
       }));
-  }, [analysisFilteredMemories, displayedMemories, usingLocalAnalysisList]);
-  const pulseMemories = useMemo(() => {
-    if (analysis.sourceMemories.length > 0) {
-      return analysis.sourceMemories;
-    }
-
-    return memories;
-  }, [analysis.sourceMemories, memories]);
+  }, [analysisFilteredMemories, filteredMemories, usingLocalAnalysisList]);
+  const pulseMemories = rangeScopedMemories;
   const selectedSessionID = selected
     ? getSessionPreviewLookupKey(selected)
     : "";
@@ -271,7 +394,38 @@ export function SpacePage() {
   function handleRangeChange(preset: TimeRangePreset) {
     navigate({
       to: "/space",
-      search: { ...search, range: preset === "all" ? undefined : preset },
+      search: {
+        ...search,
+        range: preset === "all" ? undefined : preset,
+        timelineFrom: undefined,
+        timelineTo: undefined,
+      },
+    });
+  }
+
+  function handleTimelineSelect(selection: TimelineSelection) {
+    const isSameSelection =
+      timelineSelection?.from === selection.from &&
+      timelineSelection?.to === selection.to;
+
+    navigate({
+      to: "/space",
+      search: {
+        ...search,
+        timelineFrom: isSameSelection ? undefined : selection.from,
+        timelineTo: isSameSelection ? undefined : selection.to,
+      },
+    });
+  }
+
+  function handleTimelineClear() {
+    navigate({
+      to: "/space",
+      search: {
+        ...search,
+        timelineFrom: undefined,
+        timelineTo: undefined,
+      },
     });
   }
 
@@ -393,18 +547,20 @@ export function SpacePage() {
 
   const isEmpty =
     !isMemoryLoading &&
-    displayedMemories.length === 0 &&
+    allMemories.length === 0 &&
     !search.q &&
     !tag &&
     !search.type &&
     !facet &&
-    !analysisCategory;
+    !analysisCategory &&
+    !timelineSelection;
   const activeFilterCount =
     (search.type ? 1 : 0) +
     (facet ? 1 : 0) +
     (search.q ? 1 : 0) +
     (tag ? 1 : 0) +
-    (analysisCategory ? 1 : 0);
+    (analysisCategory ? 1 : 0) +
+    (timelineSelection ? 1 : 0);
 
   return (
     <div className="min-h-screen">
@@ -453,7 +609,7 @@ export function SpacePage() {
         <div className="flex flex-col gap-8 xl:flex-row">
           <div className="min-w-0 flex-1 py-8 xl:order-2">
             {/* Stats cards (clickable for type filtering) */}
-            {stats && (
+            {sourceQuery.data && (
               <div
                 style={{
                   animation: "slide-up 0.4s cubic-bezier(0.16,1,0.3,1)",
@@ -548,35 +704,35 @@ export function SpacePage() {
             )}
 
             <MemoryPulseOverview
-              stats={stats}
+              stats={rangeStats}
               memories={pulseMemories}
               cards={analysis.cards}
               snapshot={analysis.state.snapshot}
               range={range}
-              loading={!stats || isLoading || analysis.sourceLoading}
+              loading={sourceLoading || analysis.sourceLoading}
               activeType={search.type}
               activeTag={tag}
+              selectedTimeline={timelineSelection}
               onTypeSelect={(t) => {
                 handleTypeClick(t);
                 setTimeout(() => {
-                  const el = document.getElementById('memory-list');
-                  if (el) {
-                    const headerOffset = window.innerWidth >= 1280 ? 120 : 180;
-                    const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
-                    window.scrollTo({ top: y, behavior: 'smooth' });
-                  }
+                  scrollToMemoryList();
                 }, 200);
               }}
               onTagSelect={(t) => {
                 handleTagChange(t);
                 setTimeout(() => {
-                  const el = document.getElementById('memory-list');
-                  if (el) {
-                    const headerOffset = window.innerWidth >= 1280 ? 120 : 180;
-                    const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
-                    window.scrollTo({ top: y, behavior: 'smooth' });
-                  }
+                  scrollToMemoryList();
                 }, 200);
+              }}
+              onTimelineSelect={(selection) => {
+                handleTimelineSelect(selection);
+                setTimeout(() => {
+                  scrollToMemoryList();
+                }, 200);
+              }}
+              onTimelineClear={() => {
+                handleTimelineClear();
               }}
             />
 
@@ -609,7 +765,7 @@ export function SpacePage() {
             </div>
 
             {/* Active filters indicator (right below search) */}
-            {(search.type || facet || search.q || tag || analysisCategory) && (
+            {(search.type || facet || search.q || tag || analysisCategory || timelineSelection) && (
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span>{t("filter.active")}</span>
                 {search.q && (
@@ -673,6 +829,26 @@ export function SpacePage() {
                     className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-foreground hover:bg-secondary/80"
                   >
                     #{tag}
+                    <X className="size-3" />
+                  </button>
+                )}
+                {timelineSelection && (
+                  <button
+                    onClick={() =>
+                      navigate({
+                        to: "/space",
+                        search: {
+                          ...search,
+                          timelineFrom: undefined,
+                          timelineTo: undefined,
+                        },
+                      })
+                    }
+                    data-mp-event="Dashboard/Space/TimelineFilterClearClicked"
+                    data-mp-page-name="space"
+                    className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-foreground hover:bg-secondary/80"
+                  >
+                    {timelineLabel}
                     <X className="size-3" />
                   </button>
                 )}
@@ -827,20 +1003,12 @@ export function SpacePage() {
                         variant="ghost"
                         size="sm"
                         onClick={() => {
-                          if (usingLocalAnalysisList) {
-                            setLocalVisibleCount((current) => current + LOCAL_PAGE_SIZE);
-                            return;
-                          }
-                          fetchNextPage();
+                          setLocalVisibleCount((current) => current + LOCAL_PAGE_SIZE);
                         }}
-                        disabled={isFetchingMore}
                         data-mp-event="Dashboard/Space/LoadMoreClicked"
                         data-mp-page-name="space"
                         className="text-sm text-soft-foreground"
                       >
-                        {isFetchingMore && (
-                          <Loader2 className="size-4 animate-spin" />
-                        )}
                         {t("list.load_more")}
                       </Button>
                     </div>

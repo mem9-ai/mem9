@@ -1,7 +1,7 @@
 import "@/i18n";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { RouterProvider } from "@tanstack/react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { router } from "@/router";
 import i18n from "@/i18n";
 import type { Memory } from "@/types/memory";
@@ -10,9 +10,11 @@ import type { SpaceAnalysisState } from "@/types/analysis";
 const mocks = vi.hoisted(() => ({
   clearSpace: vi.fn(),
   retry: vi.fn(),
-  useMemories: vi.fn(),
+  useSourceMemories: vi.fn(),
   useSessionPreviewMessages: vi.fn(),
 }));
+
+const FIXED_NOW = new Date("2026-03-21T12:00:00Z");
 
 Object.defineProperty(window, "scrollTo", {
   value: vi.fn(),
@@ -31,13 +33,24 @@ function getAnalysisCategoryButton(category: string): HTMLButtonElement {
   return button;
 }
 
+function getTimelineBucket(index: number): Element {
+  const bucket = document.querySelector(`[data-timeline-bucket-index="${index}"]`);
+
+  if (!bucket) {
+    throw new Error(`Missing timeline bucket at index ${index}`);
+  }
+
+  return bucket;
+}
+
 function createMemory(
   id: string,
   content: string,
-  updatedAt: string,
+  createdAt: string,
   memoryType: Memory["memory_type"] = "insight",
   tags: string[] = [],
   sessionId = "",
+  updatedAt = createdAt,
 ): Memory {
   return {
     id,
@@ -51,7 +64,7 @@ function createMemory(
     state: "active",
     version: 1,
     updated_by: "agent",
-    created_at: updatedAt,
+    created_at: createdAt,
     updated_at: updatedAt,
   };
 }
@@ -74,9 +87,20 @@ const preferenceMemory = createMemory(
 const activityOlder = createMemory(
   "mem-activity-2",
   "Weekly activity planning notes",
-  "2026-03-01T00:00:00Z",
+  "2026-03-17T00:00:00Z",
   "insight",
   ["launch"],
+  "",
+  "2026-03-20T00:00:00Z",
+);
+const archivedMemory = createMemory(
+  "mem-archived-1",
+  "Archived launch notes from February",
+  "2026-02-10T00:00:00Z",
+  "insight",
+  ["launch"],
+  "",
+  "2026-03-21T00:00:00Z",
 );
 
 const analysisState: SpaceAnalysisState = {
@@ -141,41 +165,21 @@ vi.mock("@/lib/session", () => ({
   maskSpaceId: (id: string) => id,
 }));
 
+vi.mock("@/config/features", () => ({
+  features: {
+    useMock: false,
+    enableMockSessionPreview: false,
+    enableManualAdd: false,
+    enableTimeRange: true,
+    enableFacet: false,
+    enableTopicSummary: false,
+    enableAnalysis: true,
+  },
+}));
+
 vi.mock("@/api/queries", () => ({
   getSessionPreviewLookupKey: (memory: Memory) =>
     memory.memory_type === "insight" ? memory.session_id : "",
-  useStats: () => ({
-    data: {
-      total: 3,
-      pinned: 0,
-      insight: 3,
-    },
-  }),
-  useMemories: (_spaceId: string, params: { tag?: string }) => {
-    mocks.useMemories(params);
-    const memories = [activityNewest, preferenceMemory, activityOlder].filter(
-      (memory) =>
-        !params.tag ||
-        memory.tags.some((tag) => tag.toLowerCase() === params.tag?.toLowerCase()),
-    );
-
-    return {
-      data: {
-        pages: [
-          {
-            memories,
-            total: memories.length,
-            limit: 50,
-            offset: 0,
-          },
-        ],
-      },
-      fetchNextPage: vi.fn(),
-      hasNextPage: false,
-      isFetchingNextPage: false,
-      isLoading: false,
-    };
-  },
   useSessionPreviewMessages: (_spaceId: string, memories: Memory[]) => {
     mocks.useSessionPreviewMessages(memories);
     return {
@@ -227,7 +231,17 @@ vi.mock("@/api/queries", () => ({
   useExportMemories: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useImportMemories: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useImportTasks: () => ({ data: { tasks: [] } }),
-  useTopicSummary: () => ({ data: undefined }),
+}));
+
+vi.mock("@/api/source-memories", () => ({
+  useSourceMemories: (_spaceId: string) => {
+    mocks.useSourceMemories(_spaceId);
+    return {
+      data: [activityNewest, preferenceMemory, activityOlder, archivedMemory],
+      isLoading: false,
+      isFetching: false,
+    };
+  },
 }));
 
 vi.mock("@/api/analysis-queries", () => ({
@@ -296,14 +310,19 @@ vi.mock("@/api/analysis-queries", () => ({
 
 describe("SpacePage", () => {
   beforeEach(async () => {
+    vi.spyOn(Date, "now").mockReturnValue(FIXED_NOW.getTime());
     window.innerWidth = 1440;
     window.dispatchEvent(new Event("resize"));
-    mocks.useMemories.mockClear();
+    mocks.useSourceMemories.mockClear();
     await i18n.changeLanguage("en");
     window.history.pushState({}, "", "/your-memory/space");
     await act(async () => {
       await router.navigate({ to: "/space", search: {} });
     });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("filters memories by clicked analysis category without auto-opening detail", async () => {
@@ -436,13 +455,124 @@ describe("SpacePage", () => {
     );
 
     await waitFor(() => {
-      expect(mocks.useMemories).toHaveBeenLastCalledWith(
-        expect.objectContaining({ tag: "launch" }),
-      );
+      expect(router.state.location.search.tag).toBe("launch");
     });
 
     expect(screen.getByRole("button", { name: /^#launch$/ })).toBeInTheDocument();
     expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
+  });
+
+  it("filters memories by clicked rhythm bucket using created_at", async () => {
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "7 days" }));
+    await waitFor(() => {
+      expect(router.state.location.search.range).toBe("7d");
+    });
+
+    fireEvent.click(getTimelineBucket(2));
+
+    await waitFor(() => {
+      expect(router.state.location.search.timelineFrom).toBeDefined();
+    });
+
+    expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
+    expect(screen.queryByText("Deploy dashboard status update")).not.toBeInTheDocument();
+    expect(screen.queryByText("Prefer Neovim for edits")).not.toBeInTheDocument();
+    expect(screen.queryByText("Archived launch notes from February")).not.toBeInTheDocument();
+  });
+
+  it("toggles off the timeline filter when the same bucket is clicked twice", async () => {
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "7 days" }));
+    await waitFor(() => {
+      expect(router.state.location.search.range).toBe("7d");
+    });
+
+    fireEvent.click(getTimelineBucket(2));
+    await waitFor(() => {
+      expect(router.state.location.search.timelineFrom).toBeDefined();
+    });
+
+    fireEvent.click(getTimelineBucket(2));
+    await waitFor(() => {
+      expect(router.state.location.search.timelineFrom).toBeUndefined();
+      expect(router.state.location.search.timelineTo).toBeUndefined();
+    });
+
+    expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
+  });
+
+  it("clears the selected timeline bucket when the range changes", async () => {
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "7 days" }));
+    await waitFor(() => {
+      expect(router.state.location.search.range).toBe("7d");
+    });
+
+    fireEvent.click(getTimelineBucket(2));
+
+    await waitFor(() => {
+      expect(router.state.location.search.timelineFrom).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "30 days" }));
+
+    await waitFor(() => {
+      expect(router.state.location.search.range).toBe("30d");
+      expect(router.state.location.search.timelineFrom).toBeUndefined();
+      expect(router.state.location.search.timelineTo).toBeUndefined();
+    });
+  });
+
+  it("shows no results when a zero-count timeline bucket is selected", async () => {
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "7 days" }));
+    await waitFor(() => {
+      expect(router.state.location.search.range).toBe("7d");
+    });
+
+    fireEvent.click(getTimelineBucket(0));
+
+    await waitFor(() => {
+      expect(router.state.location.search.timelineFrom).toBeDefined();
+    });
+
+    expect(screen.getByText("Memory Pulse")).toBeInTheDocument();
+    expect(screen.getByText("No matching memories found")).toBeInTheDocument();
+    expect(screen.queryByText("Weekly activity planning notes")).not.toBeInTheDocument();
+    expect(screen.queryByText("Deploy dashboard status update")).not.toBeInTheDocument();
+  });
+
+  it("closes the detail panel when a timeline filter removes the selected memory", async () => {
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "7 days" }));
+    await waitFor(() => {
+      expect(router.state.location.search.range).toBe("7d");
+    });
+
+    const olderCard = screen
+      .getByText("Weekly activity planning notes")
+      .closest('[role="button"]');
+
+    expect(olderCard).not.toBeNull();
+    fireEvent.click(olderCard!);
+
+    expect(
+      screen.getByRole("button", { name: "Delete this memory" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /0 memories$/i })[0]!);
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Delete this memory" }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   it("renders session preview content for insight memories with matched session data", async () => {

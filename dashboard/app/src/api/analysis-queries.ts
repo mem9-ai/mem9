@@ -1,6 +1,5 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "./client";
 import { clearAnalysisCache, readAnalysisCache, writeAnalysisCache } from "./analysis-cache";
 import { analysisApi, AnalysisApiError } from "./analysis-client";
 import {
@@ -25,15 +24,12 @@ import {
 } from "./analysis-matcher";
 import {
   clearCachedAnalysisMatches,
-  patchSyncState,
   readCachedAnalysisMatches,
-  readCachedMemories,
-  readSyncState,
-  upsertCachedMemories,
   writeCachedAnalysisMatches,
 } from "./local-cache";
+import { useSourceMemories } from "./source-memories";
 import { features } from "@/config/features";
-import { filterMemoriesForView, sortMemoriesByUpdatedAtDesc } from "@/lib/memory-filters";
+import { filterMemoriesForView } from "@/lib/memory-filters";
 import type {
   AnalysisCategoryCard,
   AnalysisJobSnapshotResponse,
@@ -43,10 +39,8 @@ import type {
 } from "@/types/analysis";
 import type { Memory } from "@/types/memory";
 import type { TimeRangePreset } from "@/types/time-range";
-import { presetToParams } from "@/types/time-range";
-
-const PAGE_SIZE = 200;
 const TERMINAL_BATCH_STATUSES = new Set(["SUCCEEDED", "FAILED", "DLQ"]);
+export const ANALYSIS_AUTO_REFRESH_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 
 const INITIAL_STATE: SpaceAnalysisState = {
   phase: "idle",
@@ -81,41 +75,17 @@ export function shouldStopPollingSnapshot(
   );
 }
 
-async function syncAllMemories(spaceId: string): Promise<Memory[]> {
-  const all: Memory[] = [];
-  let offset = 0;
-  let total = Number.POSITIVE_INFINITY;
+export function isAnalysisCacheFresh(
+  updatedAt: string,
+  now = Date.now(),
+): boolean {
+  const updatedTime = Date.parse(updatedAt);
 
-  while (offset < total) {
-    const page = await api.listMemories(spaceId, {
-      limit: PAGE_SIZE,
-      offset,
-    });
-    all.push(...page.memories);
-    total = page.total;
-    offset += page.limit;
+  if (!Number.isFinite(updatedTime)) {
+    return false;
   }
 
-  await upsertCachedMemories(spaceId, all);
-  await patchSyncState(spaceId, {
-    hasFullCache: true,
-    lastSyncedAt: new Date().toISOString(),
-  });
-
-  return sortMemoriesByUpdatedAtDesc(all);
-}
-
-async function loadSourceMemories(spaceId: string): Promise<Memory[]> {
-  const [cached, syncState] = await Promise.all([
-    readCachedMemories(spaceId),
-    readSyncState(spaceId),
-  ]);
-
-  if (syncState?.hasFullCache) {
-    return sortMemoriesByUpdatedAtDesc(cached);
-  }
-
-  return syncAllMemories(spaceId);
+  return now - updatedTime < ANALYSIS_AUTO_REFRESH_WINDOW_MS;
 }
 
 function trimEvents<T>(items: T[], limit: number): T[] {
@@ -164,18 +134,7 @@ export function useSpaceAnalysis(
   const [matchesLoading, setMatchesLoading] = useState(false);
   const runRef = useRef(0);
   const enabled = features.enableAnalysis && !!spaceId;
-  const timeParams = useMemo(
-    () => (range ? presetToParams(range) : undefined),
-    [range],
-  );
-
-  const sourceQuery = useQuery({
-    queryKey: ["analysis", "source-memories", spaceId, attempt],
-    queryFn: () => loadSourceMemories(spaceId),
-    enabled,
-    staleTime: 30_000,
-    retry: 1,
-  });
+  const sourceQuery = useSourceMemories(spaceId, attempt);
 
   const sourceMemories = useMemo(
     () =>
@@ -235,6 +194,20 @@ export function useSpaceAnalysis(
       }
 
       try {
+        const cachedAnalysis = await readAnalysisCache(spaceId, range);
+        const shouldUseCachedMatches =
+          !!cachedAnalysis?.snapshot &&
+          isAnalysisCacheFresh(cachedAnalysis.updatedAt);
+
+        if (shouldUseCachedMatches) {
+          const cachedMatches = await readCachedAnalysisMatches(spaceId, range);
+          if (cancelled) return;
+
+          setMatches(cachedMatches);
+          setCards([]);
+          return;
+        }
+
         if (taxonomyQuery.data) {
           const computedMatches = matchMemoriesToTaxonomy(
             sourceMemories,
@@ -399,10 +372,36 @@ export function useSpaceAnalysis(
         return;
       }
 
+      const cached = await readAnalysisCache(spaceId, range);
+      if (
+        cached?.snapshot &&
+        isAnalysisCacheFresh(cached.updatedAt)
+      ) {
+        const cachedSnapshot = cached.snapshot;
+        const shouldStop = shouldStopPollingSnapshot(cachedSnapshot);
+        updateState((current) => ({
+          ...current,
+          phase: shouldStop ? "completed" : "processing",
+          snapshot: cachedSnapshot,
+          events: current.events,
+          cursor: current.cursor,
+          error: null,
+          warning: taxonomyUnavailable ? "taxonomy_unavailable" : null,
+          jobId: cached.jobId,
+          fingerprint: cached.fingerprint,
+          pollAfterMs: current.pollAfterMs,
+          isRetrying: false,
+        }));
+
+        if (!shouldStop) {
+          await poll(cached.jobId, cached.fingerprint, 0, getDefaultPollMs());
+        }
+        return;
+      }
+
       const fingerprint = await createMemoryFingerprint(memories);
       if (cancelled || runRef.current !== currentRun) return;
 
-      const cached = await readAnalysisCache(spaceId, range);
       if (
         cached &&
         cached.fingerprint === fingerprint &&
@@ -440,7 +439,7 @@ export function useSpaceAnalysis(
       }
 
       const batchSize = getAnalysisBatchSize();
-      const createInput = buildCreateJobRequest(memories, batchSize, timeParams);
+      const createInput = buildCreateJobRequest(memories, batchSize);
 
       updateState((current) => ({
         ...current,
@@ -572,7 +571,6 @@ export function useSpaceAnalysis(
     sourceMemories,
     sourceQuery.data,
     spaceId,
-    timeParams,
     taxonomyUnavailable,
   ]);
 
@@ -584,7 +582,7 @@ export function useSpaceAnalysis(
     matches,
     matchMap,
     sourceMemories,
-    sourceCount: sourceMemories.length,
+    sourceCount: state.snapshot?.expectedTotalMemories ?? sourceMemories.length,
     sourceLoading: sourceQuery.isLoading || sourceQuery.isFetching || matchesLoading,
     retry: () => {
       void Promise.all([

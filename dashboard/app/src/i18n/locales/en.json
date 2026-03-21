@@ -275,7 +275,13 @@
     "rhythm": {
       "title": "Rhythm",
       "caption": "Recent memory activity across the current range",
-      "empty": "Not enough activity to draw a pulse yet."
+      "timeline_badge": "Timeline",
+      "helper": "Click a bar to filter memories by when they were created.",
+      "selected_hint": "Timeline filter is active. Click the same bar again or clear it here.",
+      "selected_range": "Filtering to {{range}}",
+      "clear": "Clear timeline filter",
+      "empty": "Not enough activity to draw a pulse yet.",
+      "bucket_label": "{{range}}, {{count}} memories"
     },
     "composition": {
       "title": "Composition",

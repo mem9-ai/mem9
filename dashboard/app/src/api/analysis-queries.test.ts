@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { shouldStopPollingSnapshot } from "./analysis-queries";
+import {
+  ANALYSIS_AUTO_REFRESH_WINDOW_MS,
+  isAnalysisCacheFresh,
+  shouldStopPollingSnapshot,
+} from "./analysis-queries";
 import type { AnalysisJobSnapshotResponse, BatchStatus } from "@/types/analysis";
 
 function createSnapshot(
@@ -138,4 +142,20 @@ describe("shouldStopPollingSnapshot", () => {
       ).toBe(false);
     },
   );
+});
+
+describe("isAnalysisCacheFresh", () => {
+  it("treats caches newer than three days as fresh", () => {
+    const now = Date.parse("2026-03-21T12:00:00Z");
+    const updatedAt = new Date(now - ANALYSIS_AUTO_REFRESH_WINDOW_MS + 60_000).toISOString();
+
+    expect(isAnalysisCacheFresh(updatedAt, now)).toBe(true);
+  });
+
+  it("treats caches older than three days as stale", () => {
+    const now = Date.parse("2026-03-21T12:00:00Z");
+    const updatedAt = new Date(now - ANALYSIS_AUTO_REFRESH_WINDOW_MS - 60_000).toISOString();
+
+    expect(isAnalysisCacheFresh(updatedAt, now)).toBe(false);
+  });
 });

@@ -21,6 +21,7 @@ describe("MemoryPulseOverview", () => {
         loading={false}
         onTypeSelect={() => {}}
         onTagSelect={() => {}}
+        onTimelineSelect={() => {}}
       />,
     );
 
@@ -54,6 +55,7 @@ describe("MemoryPulseOverview", () => {
         loading={false}
         onTypeSelect={() => {}}
         onTagSelect={() => {}}
+        onTimelineSelect={() => {}}
       />,
     );
 
@@ -71,6 +73,7 @@ describe("MemoryPulseOverview", () => {
         loading
         onTypeSelect={() => {}}
         onTagSelect={() => {}}
+        onTimelineSelect={() => {}}
       />,
     );
 

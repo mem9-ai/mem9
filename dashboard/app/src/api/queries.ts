@@ -6,6 +6,7 @@ import {
   keepPreviousData,
 } from "@tanstack/react-query";
 import { api } from "./client";
+import { getSourceMemoriesQueryKey } from "./source-memories";
 import type {
   Memory,
   MemoryTypeFilter,
@@ -185,7 +186,7 @@ export function useCreateMemory(spaceId: string) {
       qc.invalidateQueries({ queryKey: ["space", spaceId, "memories"] });
       qc.invalidateQueries({ queryKey: ["space", spaceId, "stats"] });
       qc.invalidateQueries({ queryKey: ["space", spaceId, "topics"] });
-      qc.invalidateQueries({ queryKey: ["analysis", "source-memories", spaceId] });
+      qc.invalidateQueries({ queryKey: getSourceMemoriesQueryKey(spaceId) });
     },
   });
 }
@@ -198,7 +199,7 @@ export function useDeleteMemory(spaceId: string) {
       qc.invalidateQueries({ queryKey: ["space", spaceId, "memories"] });
       qc.invalidateQueries({ queryKey: ["space", spaceId, "stats"] });
       qc.invalidateQueries({ queryKey: ["space", spaceId, "topics"] });
-      qc.invalidateQueries({ queryKey: ["analysis", "source-memories", spaceId] });
+      qc.invalidateQueries({ queryKey: getSourceMemoriesQueryKey(spaceId) });
     },
   });
 }
@@ -220,7 +221,7 @@ export function useUpdateMemory(spaceId: string) {
         queryKey: ["space", spaceId, "memory", variables.memoryId],
       });
       qc.invalidateQueries({ queryKey: ["space", spaceId, "memories"] });
-      qc.invalidateQueries({ queryKey: ["analysis", "source-memories", spaceId] });
+      qc.invalidateQueries({ queryKey: getSourceMemoriesQueryKey(spaceId) });
     },
   });
 }
