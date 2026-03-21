@@ -41,6 +41,25 @@ import type { Memory } from "@/types/memory";
 import type { TimeRangePreset } from "@/types/time-range";
 const TERMINAL_BATCH_STATUSES = new Set(["SUCCEEDED", "FAILED", "DLQ"]);
 export const ANALYSIS_AUTO_REFRESH_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+export const MAX_STALLED_POLL_ATTEMPTS = 4;
+
+interface PollProgressState {
+  nextCursor: number;
+  resultVersion: number;
+  uploadedBatches: number;
+  completedBatches: number;
+  failedBatches: number;
+  terminalBatchSignature: string;
+  stagnantPolls: number;
+}
+
+interface AnalysisStartupResult {
+  jobId: string;
+  pollAfterMs: number;
+  snapshot: AnalysisJobSnapshotResponse;
+}
+
+const activeStartupRuns = new Map<string, Promise<AnalysisStartupResult>>();
 
 const INITIAL_STATE: SpaceAnalysisState = {
   phase: "idle",
@@ -110,6 +129,191 @@ async function persistAnalysisSnapshot(
   } catch {
     // Ignore cache write failures so the main analysis flow can continue.
   }
+}
+
+function createAnalysisRunKey(
+  spaceId: string,
+  range: TimeRangePreset,
+  fingerprint: string,
+): string {
+  return `${spaceId}:${range}:${fingerprint}`;
+}
+
+function getSnapshotPhase(
+  snapshot: AnalysisJobSnapshotResponse,
+): SpaceAnalysisState["phase"] {
+  if (shouldStopPollingSnapshot(snapshot)) {
+    return "completed";
+  }
+
+  return shouldRestartIncompleteCachedSnapshot(snapshot)
+    ? "uploading"
+    : "processing";
+}
+
+export function shouldRestartIncompleteCachedSnapshot(
+  snapshot: AnalysisJobSnapshotResponse,
+): boolean {
+  return (
+    !shouldStopPollingSnapshot(snapshot) &&
+    snapshot.progress.uploadedBatches < snapshot.expectedTotalBatches
+  );
+}
+
+function createTerminalBatchSignature(
+  snapshot: AnalysisJobSnapshotResponse,
+): string {
+  return snapshot.batchSummaries
+    .filter((batch) => TERMINAL_BATCH_STATUSES.has(batch.status))
+    .map((batch) => `${batch.batchIndex}:${batch.status}`)
+    .join("|");
+}
+
+export function createPollProgressState(
+  nextCursor: number,
+  snapshot: AnalysisJobSnapshotResponse,
+): PollProgressState {
+  return {
+    nextCursor,
+    resultVersion: snapshot.progress.resultVersion,
+    uploadedBatches: snapshot.progress.uploadedBatches,
+    completedBatches: snapshot.progress.completedBatches,
+    failedBatches: snapshot.progress.failedBatches,
+    terminalBatchSignature: createTerminalBatchSignature(snapshot),
+    stagnantPolls: 0,
+  };
+}
+
+function hasPollingProgress(
+  previous: PollProgressState,
+  next: PollProgressState,
+): boolean {
+  return (
+    previous.nextCursor !== next.nextCursor ||
+    previous.resultVersion !== next.resultVersion ||
+    previous.uploadedBatches !== next.uploadedBatches ||
+    previous.completedBatches !== next.completedBatches ||
+    previous.failedBatches !== next.failedBatches ||
+    previous.terminalBatchSignature !== next.terminalBatchSignature
+  );
+}
+
+export function getNextPollProgressState(
+  previous: PollProgressState | null,
+  nextCursor: number,
+  snapshot: AnalysisJobSnapshotResponse,
+): PollProgressState {
+  const nextState = createPollProgressState(nextCursor, snapshot);
+
+  if (!previous) {
+    return nextState;
+  }
+
+  return {
+    ...nextState,
+    stagnantPolls: hasPollingProgress(previous, nextState)
+      ? 0
+      : previous.stagnantPolls + 1,
+  };
+}
+
+export function shouldTreatPollAsStalled(
+  progress: PollProgressState,
+): boolean {
+  return progress.stagnantPolls >= MAX_STALLED_POLL_ATTEMPTS;
+}
+
+async function startAnalysisStartup(
+  spaceId: string,
+  range: TimeRangePreset,
+  memories: Memory[],
+  fingerprint: string,
+  onSnapshot?: (
+    snapshot: AnalysisJobSnapshotResponse,
+    jobId: string,
+    pollAfterMs: number,
+  ) => void,
+): Promise<AnalysisStartupResult> {
+  const runKey = createAnalysisRunKey(spaceId, range, fingerprint);
+  const activeRun = activeStartupRuns.get(runKey);
+
+  if (activeRun) {
+    return activeRun;
+  }
+
+  const startupRun = (async () => {
+    const batchSize = getAnalysisBatchSize();
+    const createInput = buildCreateJobRequest(memories, batchSize);
+    const createResponse = await analysisApi.createJob(spaceId, createInput);
+    const emitSnapshot = (snapshot: AnalysisJobSnapshotResponse) => {
+      if (!onSnapshot) return;
+      try {
+        onSnapshot(snapshot, createResponse.jobId, createResponse.pollAfterMs);
+      } catch {
+        // Ignore UI callback failures so the startup run can finish.
+      }
+    };
+
+    let workingSnapshot = createPendingSnapshot(
+      createResponse,
+      createInput,
+      memories,
+    );
+    await persistAnalysisSnapshot(
+      spaceId,
+      range,
+      createResponse.jobId,
+      fingerprint,
+      workingSnapshot,
+    );
+    emitSnapshot(workingSnapshot);
+
+    const chunks = chunkAnalysisMemories(
+      memories.map(toAnalysisMemoryInput),
+      batchSize,
+    );
+
+    for (const [offset, batch] of chunks.entries()) {
+      const batchIndex = offset + 1;
+      const batchHash = await createBatchHash(batch);
+      await analysisApi.uploadBatch(spaceId, createResponse.jobId, batchIndex, {
+        batchHash,
+        memoryCount: batch.length,
+        memories: batch,
+      });
+      workingSnapshot = applyUploadedBatch(workingSnapshot, batchIndex);
+      await persistAnalysisSnapshot(
+        spaceId,
+        range,
+        createResponse.jobId,
+        fingerprint,
+        workingSnapshot,
+      );
+      emitSnapshot(workingSnapshot);
+    }
+
+    await analysisApi.finalizeJob(spaceId, createResponse.jobId);
+    const snapshot = await analysisApi.getSnapshot(spaceId, createResponse.jobId);
+    await persistAnalysisSnapshot(
+      spaceId,
+      range,
+      createResponse.jobId,
+      fingerprint,
+      snapshot,
+    );
+    emitSnapshot(snapshot);
+
+    return {
+      jobId: createResponse.jobId,
+      pollAfterMs: createResponse.pollAfterMs,
+      snapshot,
+    };
+  })().finally(() => {
+    activeStartupRuns.delete(runKey);
+  });
+
+  activeStartupRuns.set(runKey, startupRun);
+  return startupRun;
 }
 
 export function useSpaceAnalysis(
@@ -195,9 +399,12 @@ export function useSpaceAnalysis(
 
       try {
         const cachedAnalysis = await readAnalysisCache(spaceId, range);
+        const fingerprint = await createMemoryFingerprint(sourceMemories);
         const shouldUseCachedMatches =
           !!cachedAnalysis?.snapshot &&
-          isAnalysisCacheFresh(cachedAnalysis.updatedAt);
+          isAnalysisCacheFresh(cachedAnalysis.updatedAt) &&
+          cachedAnalysis.taxonomyVersion === DEFAULT_TAXONOMY_VERSION &&
+          cachedAnalysis.fingerprint === fingerprint;
 
         if (shouldUseCachedMatches) {
           const cachedMatches = await readCachedAnalysisMatches(spaceId, range);
@@ -266,6 +473,7 @@ export function useSpaceAnalysis(
     runRef.current = currentRun;
     let cancelled = false;
     let timer: number | undefined;
+    let pollProgressState: PollProgressState | null = null;
 
     const updateState = (
       updater: (current: SpaceAnalysisState) => SpaceAnalysisState,
@@ -280,14 +488,41 @@ export function useSpaceAnalysis(
       error: string,
       fingerprint: string | null,
       jobId: string | null,
+      snapshot?: AnalysisJobSnapshotResponse | null,
+      cursor?: number,
     ) => {
       updateState((current) => ({
         ...current,
         phase,
+        snapshot: snapshot ?? current.snapshot,
+        cursor: cursor ?? current.cursor,
         error,
         warning: null,
         fingerprint,
         jobId,
+        isRetrying: false,
+      }));
+    };
+
+    const canUpdateCurrentRun = (): boolean =>
+      !cancelled && runRef.current === currentRun;
+
+    const syncStartupSnapshot = (
+      snapshot: AnalysisJobSnapshotResponse,
+      jobId: string,
+      fingerprint: string,
+      pollAfterMs: number,
+    ) => {
+      if (!canUpdateCurrentRun()) return;
+      updateState((current) => ({
+        ...current,
+        phase: getSnapshotPhase(snapshot),
+        snapshot,
+        error: null,
+        warning: taxonomyUnavailable ? "taxonomy_unavailable" : null,
+        jobId,
+        fingerprint,
+        pollAfterMs,
         isRetrying: false,
       }));
     };
@@ -298,17 +533,22 @@ export function useSpaceAnalysis(
       nextCursor: number,
       delayMs: number,
     ): Promise<void> => {
-      if (cancelled || runRef.current !== currentRun) return;
+      if (!canUpdateCurrentRun()) return;
       try {
         const [updates, snapshot] = await Promise.all([
           analysisApi.getUpdates(spaceId, jobId, nextCursor),
           analysisApi.getSnapshot(spaceId, jobId),
         ]);
 
-        if (cancelled || runRef.current !== currentRun) return;
+        if (!canUpdateCurrentRun()) return;
 
         const mergedSnapshot = mergeSnapshotWithUpdates(snapshot, updates);
         const shouldStop = shouldStopPollingSnapshot(mergedSnapshot);
+        const nextPollProgressState = getNextPollProgressState(
+          pollProgressState,
+          updates.nextCursor,
+          mergedSnapshot,
+        );
         await persistAnalysisSnapshot(
           spaceId,
           range,
@@ -317,6 +557,21 @@ export function useSpaceAnalysis(
           mergedSnapshot,
         );
 
+        if (!shouldStop && shouldTreatPollAsStalled(nextPollProgressState)) {
+          pollProgressState = nextPollProgressState;
+          await clearAnalysisCache(spaceId, range);
+          finishWithError(
+            "failed",
+            "analysis_stalled",
+            fingerprint,
+            jobId,
+            mergedSnapshot,
+            updates.nextCursor,
+          );
+          return;
+        }
+
+        pollProgressState = shouldStop ? null : nextPollProgressState;
         updateState((current) => ({
           ...current,
           phase: shouldStop ? "completed" : "processing",
@@ -337,7 +592,7 @@ export function useSpaceAnalysis(
           void poll(jobId, fingerprint, updates.nextCursor, delayMs);
         }, delayMs);
       } catch (error) {
-        if (cancelled || runRef.current !== currentRun) return;
+        if (!canUpdateCurrentRun()) return;
         const nextDelay = Math.min(delayMs * 2, 15_000);
         updateState((current) => ({
           ...current,
@@ -372,74 +627,103 @@ export function useSpaceAnalysis(
         return;
       }
 
-      const cached = await readAnalysisCache(spaceId, range);
-      if (
-        cached?.snapshot &&
-        isAnalysisCacheFresh(cached.updatedAt)
-      ) {
-        const cachedSnapshot = cached.snapshot;
-        const shouldStop = shouldStopPollingSnapshot(cachedSnapshot);
-        updateState((current) => ({
-          ...current,
-          phase: shouldStop ? "completed" : "processing",
-          snapshot: cachedSnapshot,
-          events: current.events,
-          cursor: current.cursor,
-          error: null,
-          warning: taxonomyUnavailable ? "taxonomy_unavailable" : null,
-          jobId: cached.jobId,
-          fingerprint: cached.fingerprint,
-          pollAfterMs: current.pollAfterMs,
-          isRetrying: false,
-        }));
-
-        if (!shouldStop) {
-          await poll(cached.jobId, cached.fingerprint, 0, getDefaultPollMs());
-        }
-        return;
-      }
-
       const fingerprint = await createMemoryFingerprint(memories);
-      if (cancelled || runRef.current !== currentRun) return;
+      if (!canUpdateCurrentRun()) return;
+      const runKey = createAnalysisRunKey(spaceId, range, fingerprint);
 
-      if (
-        cached &&
-        cached.fingerprint === fingerprint &&
+      const cached = await readAnalysisCache(spaceId, range);
+      if (!canUpdateCurrentRun()) return;
+      const activeStartup = activeStartupRuns.get(runKey);
+      const isMatchingCachedJob =
+        cached?.fingerprint === fingerprint &&
         cached.taxonomyVersion === DEFAULT_TAXONOMY_VERSION &&
-        cached.snapshot
-      ) {
-        const cachedSnapshot = cached.snapshot;
-        const shouldStop = shouldStopPollingSnapshot(cachedSnapshot);
-        updateState((current) => ({
-          ...current,
-          phase: shouldStop ? "completed" : "processing",
-          snapshot: cachedSnapshot,
-          events: current.events,
-          cursor: current.cursor,
-          error: null,
-          warning: taxonomyUnavailable ? "taxonomy_unavailable" : null,
-          jobId: cached.jobId,
-          fingerprint,
-          pollAfterMs: current.pollAfterMs,
-          isRetrying: false,
-        }));
-
-        if (!shouldStop) {
-          await poll(cached.jobId, fingerprint, 0, getDefaultPollMs());
-        }
-        return;
-      }
+        cached.snapshot !== null;
 
       if (
         cached &&
-        (cached.fingerprint !== fingerprint ||
-          cached.taxonomyVersion !== DEFAULT_TAXONOMY_VERSION)
+        (!isMatchingCachedJob ||
+          !cached.snapshot ||
+          !isAnalysisCacheFresh(cached.updatedAt))
       ) {
         await clearAnalysisCache(spaceId, range);
       }
 
-      const batchSize = getAnalysisBatchSize();
-      const createInput = buildCreateJobRequest(memories, batchSize);
+      if (isMatchingCachedJob && cached?.snapshot) {
+        const cachedSnapshot = cached.snapshot;
+
+        if (shouldRestartIncompleteCachedSnapshot(cachedSnapshot)) {
+          if (!activeStartup) {
+            await clearAnalysisCache(spaceId, range);
+          } else {
+            syncStartupSnapshot(
+              cachedSnapshot,
+              cached.jobId,
+              fingerprint,
+              getDefaultPollMs(),
+            );
+            try {
+              const startup = await activeStartup;
+              if (!canUpdateCurrentRun()) return;
+              const shouldStop = shouldStopPollingSnapshot(startup.snapshot);
+              pollProgressState = shouldStop
+                ? null
+                : createPollProgressState(0, startup.snapshot);
+              updateState((current) => ({
+                ...current,
+                phase: shouldStop ? "completed" : "processing",
+                snapshot: startup.snapshot,
+                error: null,
+                warning: taxonomyUnavailable ? "taxonomy_unavailable" : null,
+                jobId: startup.jobId,
+                fingerprint,
+                pollAfterMs: startup.pollAfterMs,
+                isRetrying: false,
+              }));
+
+              if (!shouldStop) {
+                await poll(startup.jobId, fingerprint, 0, startup.pollAfterMs);
+              }
+              return;
+            } catch (error) {
+              await clearAnalysisCache(spaceId, range);
+              if (isDegradedAnalysisError(error)) {
+                finishWithError(
+                  "degraded",
+                  "analysis_unavailable",
+                  fingerprint,
+                  null,
+                );
+                return;
+              }
+              finishWithError("failed", "analysis_failed", fingerprint, null);
+              return;
+            }
+          }
+        } else if (isAnalysisCacheFresh(cached.updatedAt)) {
+          const shouldStop = shouldStopPollingSnapshot(cachedSnapshot);
+          pollProgressState = shouldStop
+            ? null
+            : createPollProgressState(0, cachedSnapshot);
+          updateState((current) => ({
+            ...current,
+            phase: shouldStop ? "completed" : "processing",
+            snapshot: cachedSnapshot,
+            events: current.events,
+            cursor: current.cursor,
+            error: null,
+            warning: taxonomyUnavailable ? "taxonomy_unavailable" : null,
+            jobId: cached.jobId,
+            fingerprint,
+            pollAfterMs: current.pollAfterMs,
+            isRetrying: false,
+          }));
+
+          if (!shouldStop) {
+            await poll(cached.jobId, fingerprint, 0, getDefaultPollMs());
+          }
+          return;
+        }
+      }
 
       updateState((current) => ({
         ...current,
@@ -456,96 +740,35 @@ export function useSpaceAnalysis(
       }));
 
       try {
-        const createResponse = await analysisApi.createJob(spaceId, createInput);
-        if (cancelled || runRef.current !== currentRun) return;
-
-        const initialSnapshot = createPendingSnapshot(
-          createResponse,
-          createInput,
+        const startup = await startAnalysisStartup(
+          spaceId,
+          range,
           memories,
-        );
-        await persistAnalysisSnapshot(
-          spaceId,
-          range,
-          createResponse.jobId,
           fingerprint,
-          initialSnapshot,
+          (snapshot, jobId, pollAfterMs) => {
+            syncStartupSnapshot(snapshot, jobId, fingerprint, pollAfterMs);
+          },
         );
+        if (!canUpdateCurrentRun()) return;
 
+        const shouldStop = shouldStopPollingSnapshot(startup.snapshot);
+        pollProgressState = shouldStop
+          ? null
+          : createPollProgressState(0, startup.snapshot);
         updateState((current) => ({
           ...current,
-          phase: "uploading",
-          snapshot: initialSnapshot,
-          jobId: createResponse.jobId,
-          fingerprint,
-          pollAfterMs: createResponse.pollAfterMs,
-        }));
-
-        const chunks = chunkAnalysisMemories(
-          memories.map(toAnalysisMemoryInput),
-          batchSize,
-        );
-
-        let workingSnapshot = initialSnapshot;
-        for (const [offset, batch] of chunks.entries()) {
-          const batchIndex = offset + 1;
-          const batchHash = await createBatchHash(batch);
-          await analysisApi.uploadBatch(spaceId, createResponse.jobId, batchIndex, {
-            batchHash,
-            memoryCount: batch.length,
-            memories: batch,
-          });
-          if (cancelled || runRef.current !== currentRun) return;
-          workingSnapshot = applyUploadedBatch(workingSnapshot, batchIndex);
-          await persistAnalysisSnapshot(
-            spaceId,
-            range,
-            createResponse.jobId,
-            fingerprint,
-            workingSnapshot,
-          );
-          updateState((current) => ({
-            ...current,
-            phase: "uploading",
-            snapshot: workingSnapshot,
-            jobId: createResponse.jobId,
-            fingerprint,
-          }));
-        }
-
-        await analysisApi.finalizeJob(spaceId, createResponse.jobId);
-        const snapshot = await analysisApi.getSnapshot(
-          spaceId,
-          createResponse.jobId,
-        );
-        if (cancelled || runRef.current !== currentRun) return;
-
-        await persistAnalysisSnapshot(
-          spaceId,
-          range,
-          createResponse.jobId,
-          fingerprint,
-          snapshot,
-        );
-
-        updateState((current) => ({
-          ...current,
-          phase: shouldStopPollingSnapshot(snapshot) ? "completed" : "processing",
-          snapshot,
+          phase: shouldStop ? "completed" : "processing",
+          snapshot: startup.snapshot,
           error: null,
           warning: taxonomyUnavailable ? "taxonomy_unavailable" : null,
-          jobId: createResponse.jobId,
+          jobId: startup.jobId,
           fingerprint,
-          pollAfterMs: createResponse.pollAfterMs,
+          pollAfterMs: startup.pollAfterMs,
+          isRetrying: false,
         }));
 
-        if (!shouldStopPollingSnapshot(snapshot)) {
-          await poll(
-            createResponse.jobId,
-            fingerprint,
-            0,
-            createResponse.pollAfterMs,
-          );
+        if (!shouldStop) {
+          await poll(startup.jobId, fingerprint, 0, startup.pollAfterMs);
         }
       } catch (error) {
         await clearAnalysisCache(spaceId, range);
@@ -585,6 +808,10 @@ export function useSpaceAnalysis(
     sourceCount: state.snapshot?.expectedTotalMemories ?? sourceMemories.length,
     sourceLoading: sourceQuery.isLoading || sourceQuery.isFetching || matchesLoading,
     retry: () => {
+      const fingerprint = state.fingerprint;
+      if (fingerprint) {
+        activeStartupRuns.delete(createAnalysisRunKey(spaceId, range, fingerprint));
+      }
       void Promise.all([
         clearAnalysisCache(spaceId, range),
         clearCachedAnalysisMatches(spaceId, range),

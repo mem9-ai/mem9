@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   ANALYSIS_AUTO_REFRESH_WINDOW_MS,
+  createPollProgressState,
+  getNextPollProgressState,
   isAnalysisCacheFresh,
+  shouldRestartIncompleteCachedSnapshot,
   shouldStopPollingSnapshot,
+  shouldTreatPollAsStalled,
 } from "./analysis-queries";
 import type { AnalysisJobSnapshotResponse, BatchStatus } from "@/types/analysis";
 
@@ -16,7 +20,7 @@ function createSnapshot(
     expectedTotalBatches: 2,
     batchSize: 2,
     pipelineVersion: "v1",
-    taxonomyVersion: "v2",
+    taxonomyVersion: "v3",
     llmEnabled: true,
     createdAt: "2026-03-03T00:00:00Z",
     startedAt: "2026-03-03T00:00:01Z",
@@ -142,6 +146,155 @@ describe("shouldStopPollingSnapshot", () => {
       ).toBe(false);
     },
   );
+});
+
+describe("shouldRestartIncompleteCachedSnapshot", () => {
+  it("restarts partial cached jobs when upload never finished", () => {
+    expect(
+      shouldRestartIncompleteCachedSnapshot(
+        createSnapshot({
+          status: "PARTIAL",
+          expectedTotalBatches: 30,
+          progress: {
+            expectedTotalBatches: 30,
+            uploadedBatches: 3,
+            completedBatches: 3,
+            failedBatches: 0,
+            processedMemories: 263,
+            resultVersion: 3,
+          },
+          batchSummaries: [
+            {
+              batchIndex: 1,
+              status: "SUCCEEDED",
+              memoryCount: 100,
+              processedMemories: 100,
+              topCategories: [],
+              topTags: [],
+            },
+            {
+              batchIndex: 2,
+              status: "SUCCEEDED",
+              memoryCount: 100,
+              processedMemories: 100,
+              topCategories: [],
+              topTags: [],
+            },
+            {
+              batchIndex: 3,
+              status: "SUCCEEDED",
+              memoryCount: 63,
+              processedMemories: 63,
+              topCategories: [],
+              topTags: [],
+            },
+          ],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not restart jobs once all batches were uploaded", () => {
+    expect(
+      shouldRestartIncompleteCachedSnapshot(
+        createSnapshot({
+          progress: {
+            expectedTotalBatches: 2,
+            uploadedBatches: 2,
+            completedBatches: 1,
+            failedBatches: 0,
+            processedMemories: 2,
+            resultVersion: 2,
+          },
+          batchSummaries: createBatchSummaries("RUNNING"),
+        }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("poll stall detection", () => {
+  it("marks polling as stalled after repeated non-advancing responses", () => {
+    const snapshot = createSnapshot({
+      status: "PARTIAL",
+      expectedTotalBatches: 30,
+      progress: {
+        expectedTotalBatches: 30,
+        uploadedBatches: 3,
+        completedBatches: 3,
+        failedBatches: 0,
+        processedMemories: 263,
+        resultVersion: 3,
+      },
+      batchSummaries: [
+        {
+          batchIndex: 1,
+          status: "SUCCEEDED",
+          memoryCount: 100,
+          processedMemories: 100,
+          topCategories: [],
+          topTags: [],
+        },
+        {
+          batchIndex: 2,
+          status: "SUCCEEDED",
+          memoryCount: 100,
+          processedMemories: 100,
+          topCategories: [],
+          topTags: [],
+        },
+        {
+          batchIndex: 3,
+          status: "SUCCEEDED",
+          memoryCount: 63,
+          processedMemories: 63,
+          topCategories: [],
+          topTags: [],
+        },
+      ],
+    });
+
+    let progress = createPollProgressState(3, snapshot);
+    expect(shouldTreatPollAsStalled(progress)).toBe(false);
+
+    for (let index = 0; index < 4; index += 1) {
+      progress = getNextPollProgressState(progress, 3, snapshot);
+    }
+
+    expect(shouldTreatPollAsStalled(progress)).toBe(true);
+  });
+
+  it("resets the stalled counter when polling advances", () => {
+    const snapshot = createSnapshot({
+      progress: {
+        expectedTotalBatches: 2,
+        uploadedBatches: 2,
+        completedBatches: 1,
+        failedBatches: 0,
+        processedMemories: 2,
+        resultVersion: 2,
+      },
+      batchSummaries: createBatchSummaries("RUNNING"),
+    });
+    const advancedSnapshot = createSnapshot({
+      progress: {
+        expectedTotalBatches: 2,
+        uploadedBatches: 2,
+        completedBatches: 2,
+        failedBatches: 0,
+        processedMemories: 4,
+        resultVersion: 3,
+      },
+      batchSummaries: createBatchSummaries("SUCCEEDED"),
+    });
+
+    let progress = createPollProgressState(1, snapshot);
+    progress = getNextPollProgressState(progress, 1, snapshot);
+    progress = getNextPollProgressState(progress, 2, advancedSnapshot);
+
+    expect(shouldTreatPollAsStalled(progress)).toBe(false);
+    expect(progress.stagnantPolls).toBe(0);
+  });
 });
 
 describe("isAnalysisCacheFresh", () => {

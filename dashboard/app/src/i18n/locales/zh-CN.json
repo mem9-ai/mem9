@@ -204,6 +204,7 @@
     "taxonomy_version": "分类版本 {{version}}",
     "taxonomy_fallback": "使用默认分类标签",
     "taxonomy_warning": "分类定义暂不可用，当前展示为本地兜底标签。",
+    "processed_hint": "已处理数量按去重后的唯一记忆统计，因此可能小于总记忆数。",
     "loading_source": "正在整理当前时间范围内的记忆…",
     "empty": "当前时间范围内没有可分析的记忆。",
     "status": "状态",
@@ -226,6 +227,7 @@
     "degraded_title": "分析服务暂不可用",
     "degraded_body": "线上分析服务当前返回了服务端错误。记忆列表仍可正常使用，你可以稍后重试。",
     "failed_title": "分析失败",
+    "stalled_body": "这次分析在轮询更新时长时间没有进展。请重试以重新发起一次完整分析。",
     "failed_body": "这次分析流程没有完成，可以稍后重新发起。",
     "batch_label": "批次 {{index}}",
     "batch_memories": "{{count}} 条记忆",
@@ -246,7 +248,7 @@
     },
     "metrics": {
       "memories": "总记忆数",
-      "processed": "已处理",
+      "processed": "去重后已处理",
       "uploaded": "已准备批次",
       "failed": "失败批次"
     },

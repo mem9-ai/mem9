@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { TFunction } from "i18next";
 import {
@@ -28,10 +28,21 @@ const TERMINAL_SNAPSHOT_STATUSES = new Set([
   "CANCELLED",
   "EXPIRED",
 ]);
+const COLLAPSED_CARD_LIMIT = 5;
 const COLLAPSED_FACET_LIMIT = 8;
 
+function humanizeCategory(category: AnalysisCategory): string {
+  return category
+    .split("_")
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
 function formatCategoryLabel(t: TFunction, category: AnalysisCategory): string {
-  return t(`analysis.category.${category}`);
+  const key = `analysis.category.${category}`;
+  const translated = t(key);
+  return translated === key ? humanizeCategory(category) : translated;
 }
 
 function formatPhaseLabel(t: TFunction, phase: SpaceAnalysisState["phase"]): string {
@@ -258,12 +269,26 @@ export function AnalysisPanelBody({
     () => tagStats ?? getTagStatsFromState(state),
     [state, tagStats],
   );
+  const visibleCards = useMemo(
+    () => cards.filter((card) => card.count > 0),
+    [cards],
+  );
+  const [isCardsExpanded, setIsCardsExpanded] = useState(false);
+  const isCardOverflowing = visibleCards.length > COLLAPSED_CARD_LIMIT;
+  const displayedCards =
+    isCardsExpanded || !isCardOverflowing
+      ? visibleCards
+      : visibleCards.slice(0, COLLAPSED_CARD_LIMIT);
   const showCompactProgress =
     snapshot !== null &&
     (state.phase === "creating" ||
       state.phase === "uploading" ||
       state.phase === "processing");
   const showRunDetails = snapshot !== null;
+
+  useEffect(() => {
+    setIsCardsExpanded(false);
+  }, [cards]);
 
   return (
     <>
@@ -293,6 +318,8 @@ export function AnalysisPanelBody({
               <p className="mt-1 text-sm text-muted-foreground">
                 {state.error === "analysis_unavailable"
                   ? t("analysis.degraded_body")
+                  : state.error === "analysis_stalled"
+                    ? t("analysis.stalled_body")
                   : t("analysis.failed_body")}
               </p>
               <Button
@@ -335,13 +362,13 @@ export function AnalysisPanelBody({
         </section>
       )}
 
-      {cards.length > 0 && (
+      {visibleCards.length > 0 && (
         <section>
           <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-ring">
             {t("analysis.cards")}
           </h3>
-          <div className="mt-2 space-y-2">
-            {cards.map((card) => (
+          <div data-testid="analysis-cards" className="mt-2 space-y-2">
+            {displayedCards.map((card) => (
               <button
                 key={card.category}
                 type="button"
@@ -376,6 +403,22 @@ export function AnalysisPanelBody({
               </button>
             ))}
           </div>
+          {isCardOverflowing && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setIsCardsExpanded((current) => !current);
+              }}
+              aria-expanded={isCardsExpanded}
+              data-testid="analysis-cards-toggle"
+              data-mp-event="Dashboard/Analysis/CardToggleClicked"
+              data-mp-page-name="space"
+              className="-ml-2 mt-1 h-auto px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              {isCardsExpanded ? t("analysis.less") : t("analysis.more")}
+            </Button>
+          )}
         </section>
       )}
 
@@ -429,6 +472,9 @@ export function AnalysisPanelBody({
                 value={String(snapshot!.progress.failedBatches)}
               />
             </div>
+            <p className="text-xs text-soft-foreground">
+              {t("analysis.processed_hint")}
+            </p>
 
             {taxonomyUnavailable && (
               <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">

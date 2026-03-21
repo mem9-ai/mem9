@@ -41,7 +41,7 @@ function createSnapshot(
     expectedTotalBatches: 2,
     batchSize: 2,
     pipelineVersion: "v1",
-    taxonomyVersion: "v2",
+    taxonomyVersion: "v3",
     llmEnabled: true,
     createdAt: "2026-03-03T00:00:00Z",
     startedAt: null,
@@ -157,7 +157,7 @@ describe("AnalysisPanel", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: /analysis\.category\.preference/,
+        name: /Preference/,
       }),
     );
     expect(onSelectCategory).toHaveBeenCalledWith("preference");
@@ -212,7 +212,7 @@ describe("AnalysisPanel", () => {
         })}
         sourceCount={4}
         sourceLoading={false}
-        taxonomy={{ version: "v2", updatedAt: "", categories: [], rules: [] }}
+        taxonomy={{ version: "v3", updatedAt: "", categories: [], rules: [] }}
         taxonomyUnavailable={false}
         cards={createSnapshot().aggregateCards}
         onSelectCategory={noop}
@@ -242,6 +242,91 @@ describe("AnalysisPanel", () => {
     expect(
       screen.getByRole("button", { name: "analysis.reanalyze" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows only the top 5 non-zero aggregate cards by default and expands the rest", () => {
+    const cards = [
+      { category: "activity", count: 12, confidence: 0.6 },
+      { category: "preference", count: 9, confidence: 0.45 },
+      { category: "identity", count: 8, confidence: 0.4 },
+      { category: "emotion", count: 7, confidence: 0.35 },
+      { category: "experience", count: 6, confidence: 0.3 },
+      { category: "project", count: 5, confidence: 0.25 },
+      { category: "decision", count: 0, confidence: 0 },
+    ];
+
+    render(
+      <AnalysisPanel
+        state={createState({
+          phase: "completed",
+          snapshot: createSnapshot({ status: "COMPLETED" }),
+        })}
+        sourceCount={4}
+        sourceLoading={false}
+        taxonomy={{ version: "v3", updatedAt: "", categories: [], rules: [] }}
+        taxonomyUnavailable={false}
+        cards={cards}
+        onSelectCategory={noop}
+        onSelectTag={noop}
+        onRetry={noop}
+        t={t}
+      />,
+    );
+
+    const cardsContainer = screen.getByTestId("analysis-cards");
+    const toggle = screen.getByTestId("analysis-cards-toggle");
+
+    expect(cardsContainer.children).toHaveLength(5);
+    expect(
+      screen.queryByRole("button", { name: /analysis\.category\.decision/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /analysis\.category\.project/i }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(cardsContainer.children).toHaveLength(6);
+    expect(
+      screen.getByRole("button", { name: /Project/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(cardsContainer.children).toHaveLength(5);
+    expect(
+      screen.queryByRole("button", { name: /analysis\.category\.project/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the aggregate card toggle when there are 5 or fewer non-zero cards", () => {
+    const cards = [
+      { category: "activity", count: 5, confidence: 0.5 },
+      { category: "preference", count: 4, confidence: 0.4 },
+      { category: "identity", count: 3, confidence: 0.3 },
+      { category: "emotion", count: 2, confidence: 0.2 },
+      { category: "experience", count: 1, confidence: 0.1 },
+      { category: "decision", count: 0, confidence: 0 },
+    ];
+
+    render(
+      <AnalysisPanel
+        state={createState({
+          phase: "completed",
+          snapshot: createSnapshot({ status: "COMPLETED" }),
+        })}
+        sourceCount={4}
+        sourceLoading={false}
+        taxonomy={{ version: "v3", updatedAt: "", categories: [], rules: [] }}
+        taxonomyUnavailable={false}
+        cards={cards}
+        onSelectCategory={noop}
+        onSelectTag={noop}
+        onRetry={noop}
+        t={t}
+      />,
+    );
+
+    expect(screen.getByTestId("analysis-cards").children).toHaveLength(5);
+    expect(screen.queryByTestId("analysis-cards-toggle")).not.toBeInTheDocument();
   });
 
   it("renders degraded state with retry action", () => {

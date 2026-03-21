@@ -204,6 +204,7 @@
     "taxonomy_version": "Taxonomy {{version}}",
     "taxonomy_fallback": "Using fallback labels",
     "taxonomy_warning": "Taxonomy is unavailable right now. Showing local fallback labels.",
+    "processed_hint": "Processed counts are based on unique memories after duplicate collapse, so they may be lower than total memories.",
     "loading_source": "Preparing memories in the current range…",
     "empty": "No memories to analyze in the current time range.",
     "status": "Status",
@@ -226,6 +227,7 @@
     "degraded_title": "Analysis unavailable",
     "degraded_body": "The live analysis service is currently returning server errors. Your memory list still works normally, and you can retry later.",
     "failed_title": "Analysis failed",
+    "stalled_body": "This analysis run stopped making progress while polling for updates. Retry to start a fresh run.",
     "failed_body": "This analysis run did not complete. You can start it again later.",
     "batch_label": "Batch {{index}}",
     "batch_memories": "{{count}} memories",
@@ -246,7 +248,7 @@
     },
     "metrics": {
       "memories": "Total memories",
-      "processed": "Processed",
+      "processed": "Unique processed",
       "uploaded": "Prepared batches",
       "failed": "Failed batches"
     },
