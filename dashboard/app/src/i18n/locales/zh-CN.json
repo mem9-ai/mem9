@@ -212,6 +212,7 @@
     "cards": "聚合卡片",
     "summary": "摘要",
     "top_topics": "高频主题",
+    "top_topics_hint": "主题计数来自聚合分析信号，当前不支持直接点击筛选。",
     "top_tags": "高频标签",
     "more": "更多",
     "less": "收起",

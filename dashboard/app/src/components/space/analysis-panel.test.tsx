@@ -130,6 +130,7 @@ function createState(
 describe("AnalysisPanel", () => {
   it("renders processing state with aggregate data", () => {
     const onSelectCategory = vi.fn();
+    const onSelectTag = vi.fn();
     render(
       <AnalysisPanel
         state={createState({ phase: "uploading" })}
@@ -139,8 +140,7 @@ describe("AnalysisPanel", () => {
         taxonomyUnavailable={false}
         cards={createSnapshot().aggregateCards}
         onSelectCategory={onSelectCategory}
-        onSelectTag={noop}
-        onSelectTopic={noop}
+        onSelectTag={onSelectTag}
         onRetry={noop}
         t={t}
       />,
@@ -149,8 +149,6 @@ describe("AnalysisPanel", () => {
     expect(screen.getByText("analysis.title")).toBeInTheDocument();
     expect(screen.getByText("analysis.phase.uploading")).toBeInTheDocument();
     expect(screen.getByText("analysis.cards")).toBeInTheDocument();
-    expect(screen.getByText("analysis.top_topics")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "agents (2)" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "priority (3)" })).toBeInTheDocument();
     expect(
       screen.getByText("analysis.batch_summary.syncing:2/2"),
@@ -163,6 +161,9 @@ describe("AnalysisPanel", () => {
       }),
     );
     expect(onSelectCategory).toHaveBeenCalledWith("preference");
+
+    fireEvent.click(screen.getByRole("button", { name: "priority (3)" }));
+    expect(onSelectTag).toHaveBeenCalledWith("priority");
   });
 
   it("uses uploaded batches for uploading progress", () => {
@@ -188,7 +189,6 @@ describe("AnalysisPanel", () => {
         cards={createSnapshot().aggregateCards}
         onSelectCategory={noop}
         onSelectTag={noop}
-        onSelectTopic={noop}
         onRetry={noop}
         t={t}
       />,
@@ -217,7 +217,6 @@ describe("AnalysisPanel", () => {
         cards={createSnapshot().aggregateCards}
         onSelectCategory={noop}
         onSelectTag={noop}
-        onSelectTopic={noop}
         onRetry={noop}
         t={t}
       />,
@@ -263,7 +262,6 @@ describe("AnalysisPanel", () => {
         cards={[]}
         onSelectCategory={noop}
         onSelectTag={noop}
-        onSelectTopic={noop}
         onRetry={noop}
         t={t}
       />,
@@ -292,7 +290,6 @@ describe("AnalysisPanel", () => {
         cards={[]}
         onSelectCategory={noop}
         onSelectTag={noop}
-        onSelectTopic={noop}
         onRetry={noop}
         t={t}
       />,
@@ -302,16 +299,16 @@ describe("AnalysisPanel", () => {
   });
 
   it("shows 8 facet items by default and expands to the full list", async () => {
-    const topicStats = createFacetStats([
-      ["topic-1", 9],
-      ["topic-2", 8],
-      ["topic-3", 7],
-      ["topic-4", 6],
-      ["topic-5", 5],
-      ["topic-6", 4],
-      ["topic-7", 3],
-      ["topic-8", 2],
-      ["topic-9", 1],
+    const tagStats = createFacetStats([
+      ["tag-1", 9],
+      ["tag-2", 8],
+      ["tag-3", 7],
+      ["tag-4", 6],
+      ["tag-5", 5],
+      ["tag-6", 4],
+      ["tag-7", 3],
+      ["tag-8", 2],
+      ["tag-9", 1],
     ]);
 
     render(
@@ -326,17 +323,17 @@ describe("AnalysisPanel", () => {
                 experience: 0,
                 activity: 0,
               },
-              tagCounts: {},
-              topicCounts: Object.fromEntries(
-                topicStats.map((stat) => [stat.value, stat.count]),
+              tagCounts: Object.fromEntries(
+                tagStats.map((stat) => [stat.value, stat.count]),
               ),
+              topicCounts: {},
               summarySnapshot: ["identity:1", "preference:1"],
               resultVersion: 1,
             },
-            topTagStats: [],
-            topTopicStats: topicStats,
-            topTags: [],
-            topTopics: topicStats.map((stat) => stat.value),
+            topTagStats: tagStats,
+            topTopicStats: [],
+            topTags: tagStats.map((stat) => stat.value),
+            topTopics: [],
           }),
         })}
         sourceCount={4}
@@ -346,47 +343,46 @@ describe("AnalysisPanel", () => {
         cards={createSnapshot().aggregateCards}
         onSelectCategory={noop}
         onSelectTag={noop}
-        onSelectTopic={noop}
         onRetry={noop}
         t={t}
       />,
     );
 
-    const container = screen.getByTestId("analysis-facets-topics");
+    const container = screen.getByTestId("analysis-facets-tags");
     const expandButton = await screen.findByRole("button", {
       name: "analysis.more",
     });
 
     expect(expandButton).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "topic-8 (2)" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "topic-9 (1)" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "tag-8 (2)" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "tag-9 (1)" })).not.toBeInTheDocument();
     expect(container.children).toHaveLength(8);
 
     fireEvent.click(expandButton);
     expect(
       screen.getByRole("button", { name: "analysis.less" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "topic-9 (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "tag-9 (1)" })).toBeInTheDocument();
     expect(container.children).toHaveLength(9);
 
     fireEvent.click(screen.getByRole("button", { name: "analysis.less" }));
     expect(
       screen.getByRole("button", { name: "analysis.more" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "topic-9 (1)" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "tag-9 (1)" })).not.toBeInTheDocument();
     expect(container.children).toHaveLength(8);
   });
 
   it("does not show more when facet count is 8 or fewer", () => {
-    const topicStats = createFacetStats([
-      ["topic-1", 9],
-      ["topic-2", 8],
-      ["topic-3", 7],
-      ["topic-4", 6],
-      ["topic-5", 5],
-      ["topic-6", 4],
-      ["topic-7", 3],
-      ["topic-8", 2],
+    const tagStats = createFacetStats([
+      ["tag-1", 9],
+      ["tag-2", 8],
+      ["tag-3", 7],
+      ["tag-4", 6],
+      ["tag-5", 5],
+      ["tag-6", 4],
+      ["tag-7", 3],
+      ["tag-8", 2],
     ]);
 
     render(
@@ -401,17 +397,17 @@ describe("AnalysisPanel", () => {
                 experience: 0,
                 activity: 0,
               },
-              tagCounts: {},
-              topicCounts: Object.fromEntries(
-                topicStats.map((stat) => [stat.value, stat.count]),
+              tagCounts: Object.fromEntries(
+                tagStats.map((stat) => [stat.value, stat.count]),
               ),
+              topicCounts: {},
               summarySnapshot: ["identity:1", "preference:1"],
               resultVersion: 1,
             },
-            topTagStats: [],
-            topTopicStats: topicStats,
-            topTags: [],
-            topTopics: topicStats.map((stat) => stat.value),
+            topTagStats: tagStats,
+            topTopicStats: [],
+            topTags: tagStats.map((stat) => stat.value),
+            topTopics: [],
           }),
         })}
         sourceCount={4}
@@ -421,7 +417,6 @@ describe("AnalysisPanel", () => {
         cards={createSnapshot().aggregateCards}
         onSelectCategory={noop}
         onSelectTag={noop}
-        onSelectTopic={noop}
         onRetry={noop}
         t={t}
       />,

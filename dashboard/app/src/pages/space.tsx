@@ -28,6 +28,7 @@ import {
 } from "@/api/queries";
 import { useSourceMemories } from "@/api/source-memories";
 import { useSpaceAnalysis } from "@/api/analysis-queries";
+import { buildFacetStats } from "@/api/analysis-helpers";
 import { filterMemoriesForView } from "@/lib/memory-filters";
 import { getActiveSpaceId, clearSpace, maskSpaceId } from "@/lib/session";
 import { MemoryCard } from "@/components/space/memory-card";
@@ -54,7 +55,7 @@ import type {
   MemoryStats,
   TopicSummary,
 } from "@/types/memory";
-import type { AnalysisCategory } from "@/types/analysis";
+import type { AnalysisCategory, AnalysisFacetStat } from "@/types/analysis";
 import type {
   TimeRangePreset,
   TimelineSelection,
@@ -121,6 +122,20 @@ function buildTopicSummary(memories: Memory[]): TopicSummary {
       .map(([facet, count]) => ({ facet, count })),
     total: memories.length,
   };
+}
+
+function buildAnalysisTagStats(memories: Memory[]): AnalysisFacetStat[] {
+  const counts: Record<string, number> = {};
+
+  for (const memory of memories) {
+    for (const tag of memory.tags) {
+      const normalized = tag.trim();
+      if (!normalized) continue;
+      counts[normalized] = (counts[normalized] ?? 0) + 1;
+    }
+  }
+
+  return buildFacetStats(counts);
 }
 
 function scrollToMemoryList(): void {
@@ -276,6 +291,10 @@ export function SpacePage() {
         ? buildTopicSummary(timelineScopedMemories)
         : undefined,
     [timelineScopedMemories],
+  );
+  const analysisTagStats = useMemo(
+    () => buildAnalysisTagStats(rangeScopedMemories),
+    [rangeScopedMemories],
   );
   const filteredMemories = useMemo(
     () =>
@@ -1030,7 +1049,7 @@ export function SpacePage() {
                 cards={analysis.cards}
                 activeCategory={analysisCategory}
                 activeTag={tag}
-                activeTopic={search.q}
+                tagStats={analysisTagStats}
                 onSelectCategory={(c) => {
                   handleAnalysisCategoryChange(c);
                   setTimeout(() => {
@@ -1044,21 +1063,6 @@ export function SpacePage() {
                 }}
                 onSelectTag={(t) => {
                   handleTagChange(t);
-                  setTimeout(() => {
-                    const el = document.getElementById('memory-list');
-                    if (el) {
-                      const headerOffset = window.innerWidth >= 1280 ? 120 : 180;
-                      const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
-                      window.scrollTo({ top: y, behavior: 'smooth' });
-                    }
-                  }, 200);
-                }}
-                onSelectTopic={(t) => {
-                  setSearchInput(t ?? "");
-                  navigate({
-                    to: "/space",
-                    search: { ...search, q: t || undefined },
-                  });
                   setTimeout(() => {
                     const el = document.getElementById('memory-list');
                     if (el) {
@@ -1106,7 +1110,7 @@ export function SpacePage() {
           cards={analysis.cards}
           activeCategory={analysisCategory}
           activeTag={tag}
-          activeTopic={search.q}
+          tagStats={analysisTagStats}
           onSelectCategory={(c) => {
             handleMobileAnalysisCategoryChange(c);
             setTimeout(() => {
@@ -1120,22 +1124,6 @@ export function SpacePage() {
           }}
           onSelectTag={(t) => {
             handleTagChange(t);
-            setMobileAnalysisOpen(false);
-            setTimeout(() => {
-              const el = document.getElementById('memory-list');
-              if (el) {
-                const headerOffset = window.innerWidth >= 1280 ? 120 : 180;
-                const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
-                window.scrollTo({ top: y, behavior: 'smooth' });
-              }
-            }, 200);
-          }}
-          onSelectTopic={(t) => {
-            setSearchInput(t ?? "");
-            navigate({
-              to: "/space",
-              search: { ...search, q: t || undefined },
-            });
             setMobileAnalysisOpen(false);
             setTimeout(() => {
               const el = document.getElementById('memory-list');

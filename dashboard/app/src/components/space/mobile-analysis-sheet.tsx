@@ -4,6 +4,7 @@ import { MobilePanelShell } from "@/components/space/mobile-panel-shell";
 import type {
   AnalysisCategory,
   AnalysisCategoryCard,
+  AnalysisFacetStat,
   SpaceAnalysisState,
   TaxonomyResponse,
 } from "@/types/analysis";
@@ -19,10 +20,9 @@ export function MobileAnalysisSheet({
   cards,
   activeCategory,
   activeTag,
-  activeTopic,
+  tagStats,
   onSelectCategory,
   onSelectTag,
-  onSelectTopic,
   onRetry,
   t,
 }: {
@@ -36,10 +36,9 @@ export function MobileAnalysisSheet({
   cards: AnalysisCategoryCard[];
   activeCategory?: AnalysisCategory;
   activeTag?: string;
-  activeTopic?: string;
+  tagStats?: AnalysisFacetStat[];
   onSelectCategory: (category: AnalysisCategory | undefined) => void;
   onSelectTag: (tag: string | undefined) => void;
-  onSelectTopic: (topic: string | undefined) => void;
   onRetry: () => void;
   t: TFunction;
 }) {
@@ -61,10 +60,9 @@ export function MobileAnalysisSheet({
         cards={cards}
         activeCategory={activeCategory}
         activeTag={activeTag}
-        activeTopic={activeTopic}
+        tagStats={tagStats}
         onSelectCategory={onSelectCategory}
         onSelectTag={onSelectTag}
-        onSelectTopic={onSelectTopic}
         onRetry={onRetry}
         t={t}
       />

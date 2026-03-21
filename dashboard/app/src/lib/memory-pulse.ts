@@ -310,19 +310,19 @@ export function buildPulseSignals(
   memories: Memory[],
   limit = 5,
 ): MemoryPulseData["signals"] {
-  const fromSnapshot = buildSignalItemsFromStats(getSnapshotTagStats(snapshot), limit);
-  if (fromSnapshot.length > 0) {
-    return {
-      items: fromSnapshot,
-      source: "analysis",
-    };
-  }
-
   const fromMemories = buildSignalItemsFromMemories(memories, limit);
   if (fromMemories.length > 0) {
     return {
       items: fromMemories,
       source: "memory",
+    };
+  }
+
+  const fromSnapshot = buildSignalItemsFromStats(getSnapshotTagStats(snapshot), limit);
+  if (fromSnapshot.length > 0) {
+    return {
+      items: fromSnapshot,
+      source: "analysis",
     };
   }
 

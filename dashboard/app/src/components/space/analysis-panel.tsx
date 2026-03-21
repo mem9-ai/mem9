@@ -75,6 +75,12 @@ function getFacetStats(
   return buildFacetStats(snapshot.aggregate.topicCounts);
 }
 
+function getTagStatsFromState(
+  state: SpaceAnalysisState,
+): AnalysisFacetStat[] {
+  return state.snapshot ? getFacetStats(state.snapshot, "tags") : [];
+}
+
 function getDisplayedBatchProgress(
   phase: SpaceAnalysisState["phase"],
   snapshot: AnalysisJobSnapshotResponse,
@@ -161,10 +167,9 @@ export function AnalysisPanel({
   cards,
   activeCategory,
   activeTag,
-  activeTopic,
+  tagStats,
   onSelectCategory,
   onSelectTag,
-  onSelectTopic,
   onRetry,
   t,
 }: {
@@ -176,10 +181,9 @@ export function AnalysisPanel({
   cards: AnalysisCategoryCard[];
   activeCategory?: AnalysisCategory;
   activeTag?: string;
-  activeTopic?: string;
+  tagStats?: AnalysisFacetStat[];
   onSelectCategory: (category: AnalysisCategory | undefined) => void;
   onSelectTag: (tag: string | undefined) => void;
-  onSelectTopic: (topic: string | undefined) => void;
   onRetry: () => void;
   t: TFunction;
 }) {
@@ -205,10 +209,9 @@ export function AnalysisPanel({
             cards={cards}
             activeCategory={activeCategory}
             activeTag={activeTag}
-            activeTopic={activeTopic}
+            tagStats={tagStats}
             onSelectCategory={onSelectCategory}
             onSelectTag={onSelectTag}
-            onSelectTopic={onSelectTopic}
             onRetry={onRetry}
             t={t}
           />
@@ -227,10 +230,9 @@ export function AnalysisPanelBody({
   cards,
   activeCategory,
   activeTag,
-  activeTopic,
+  tagStats,
   onSelectCategory,
   onSelectTag,
-  onSelectTopic,
   onRetry,
   t,
 }: {
@@ -242,10 +244,9 @@ export function AnalysisPanelBody({
   cards: AnalysisCategoryCard[];
   activeCategory?: AnalysisCategory;
   activeTag?: string;
-  activeTopic?: string;
+  tagStats?: AnalysisFacetStat[];
   onSelectCategory: (category: AnalysisCategory | undefined) => void;
   onSelectTag: (tag: string | undefined) => void;
-  onSelectTopic: (topic: string | undefined) => void;
   onRetry: () => void;
   t: TFunction;
 }) {
@@ -253,13 +254,9 @@ export function AnalysisPanelBody({
   const progress = snapshot
     ? getDisplayedBatchProgress(state.phase, snapshot)
     : null;
-  const topTopicStats = useMemo(
-    () => (snapshot ? getFacetStats(snapshot, "topics") : []),
-    [snapshot],
-  );
   const topTagStats = useMemo(
-    () => (snapshot ? getFacetStats(snapshot, "tags") : []),
-    [snapshot],
+    () => tagStats ?? getTagStatsFromState(state),
+    [state, tagStats],
   );
   const showCompactProgress =
     snapshot !== null &&
@@ -382,28 +379,16 @@ export function AnalysisPanelBody({
         </section>
       )}
 
-      {(topTagStats.length > 0 || topTopicStats.length > 0) && (
+      {topTagStats.length > 0 && (
         <section className="space-y-3">
-          {topTopicStats.length > 0 && (
-            <FacetSection
-              kind="topics"
-              title={t("analysis.top_topics")}
-              stats={topTopicStats}
-              activeValue={activeTopic}
-              onSelect={onSelectTopic}
-              t={t}
-            />
-          )}
-          {topTagStats.length > 0 && (
-            <FacetSection
-              kind="tags"
-              title={t("analysis.top_tags")}
-              stats={topTagStats}
-              activeValue={activeTag}
-              onSelect={onSelectTag}
-              t={t}
-            />
-          )}
+          <FacetSection
+            kind="tags"
+            title={t("analysis.top_tags")}
+            stats={topTagStats}
+            activeValue={activeTag}
+            onSelect={onSelectTag}
+            t={t}
+          />
         </section>
       )}
 
@@ -509,7 +494,6 @@ function FacetSection({
     isExpanded || !isOverflowing
       ? items
       : items.slice(0, COLLAPSED_FACET_LIMIT);
-
   return (
     <div>
       <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-ring">
@@ -522,7 +506,10 @@ function FacetSection({
         {displayedItems.map((stat) => (
           <button
             key={stat.value}
-            onClick={() => onSelect(activeValue === stat.value ? undefined : stat.value)}
+            type="button"
+            onClick={() => {
+              onSelect(activeValue === stat.value ? undefined : stat.value);
+            }}
             className={`rounded-full px-2.5 py-1 text-xs transition-colors ${
               activeValue === stat.value
                 ? "bg-primary/20 text-primary hover:bg-primary/30"

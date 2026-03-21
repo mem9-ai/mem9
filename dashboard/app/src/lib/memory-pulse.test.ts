@@ -92,7 +92,7 @@ afterEach(() => {
 });
 
 describe("memory pulse helpers", () => {
-  it("builds composition and tag signals from analysis data", () => {
+  it("prefers local memory tags for clickable signal stack filters", () => {
     const data = buildMemoryPulseData({
       stats: createStats(),
       memories: [
@@ -112,6 +112,28 @@ describe("memory pulse helpers", () => {
     expect(data.composition.outer).toHaveLength(2);
     expect(data.composition.outer[0]?.key).toBe("pinned");
     expect(data.composition.innerKind).toBe("analysis");
+    expect(data.signals.source).toBe("memory");
+    expect(data.signals.items[0]).toEqual({
+      value: "project",
+      count: 3,
+      ratio: 1,
+    });
+  });
+
+  it("falls back to analysis tag stats when memories have no local tags", () => {
+    const data = buildMemoryPulseData({
+      stats: createStats(),
+      memories: [
+        createMemory({ id: "mem-1", tags: [] }),
+        createMemory({ id: "mem-2", tags: [] }),
+      ],
+      cards: [
+        { category: "identity", count: 2, confidence: 0.5 },
+      ],
+      snapshot: createSnapshot(),
+      range: "30d",
+    });
+
     expect(data.signals.source).toBe("analysis");
     expect(data.signals.items[0]).toEqual({
       value: "project",

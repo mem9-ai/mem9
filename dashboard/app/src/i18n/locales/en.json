@@ -212,6 +212,7 @@
     "cards": "Aggregate cards",
     "summary": "Summary",
     "top_topics": "Top topics",
+    "top_topics_hint": "Topic counts are aggregate analysis signals and are not clickable filters.",
     "top_tags": "Top tags",
     "more": "More",
     "less": "Less",
