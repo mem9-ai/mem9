@@ -344,7 +344,7 @@ export async function readCachedAnalysisResult(
       fingerprint: record.fingerprint,
       jobId: record.jobId,
       updatedAt: record.updatedAt,
-      taxonomyVersion: record.taxonomyVersion ?? record.snapshot?.taxonomyVersion ?? "v1",
+      taxonomyVersion: record.taxonomyVersion ?? record.snapshot?.taxonomyVersion ?? "v3",
       snapshot: record.snapshot,
     };
   }
@@ -358,7 +358,7 @@ export async function readCachedAnalysisResult(
     fingerprint: record.fingerprint,
     jobId: record.jobId,
     updatedAt: record.updatedAt,
-    taxonomyVersion: record.taxonomyVersion ?? record.snapshot?.taxonomyVersion ?? "v1",
+    taxonomyVersion: record.taxonomyVersion ?? record.snapshot?.taxonomyVersion ?? "v3",
     snapshot: record.snapshot,
   };
 }

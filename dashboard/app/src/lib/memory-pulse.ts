@@ -41,6 +41,7 @@ const CATEGORY_COLOR_TOKENS: Record<AnalysisCategory, string> = {
   experience: "--facet-experiences",
   activity: "--facet-routines",
 };
+const DEFAULT_CATEGORY_COLOR_TOKEN = "--facet-other";
 
 export interface PulseTrendBucket {
   count: number;
@@ -220,7 +221,8 @@ function buildAnalysisSegments(
         key: card.category,
         labelKey: `analysis.category.${card.category}`,
         value: card.count,
-        colorToken: CATEGORY_COLOR_TOKENS[card.category],
+        colorToken:
+          CATEGORY_COLOR_TOKENS[card.category] ?? DEFAULT_CATEGORY_COLOR_TOKEN,
       })),
   );
 }

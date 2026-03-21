@@ -1,12 +1,4 @@
-export const ANALYSIS_CATEGORIES = [
-  "identity",
-  "emotion",
-  "preference",
-  "experience",
-  "activity",
-] as const;
-
-export type AnalysisCategory = (typeof ANALYSIS_CATEGORIES)[number];
+export type AnalysisCategory = string;
 
 export const JOB_STATUSES = [
   "CREATED",

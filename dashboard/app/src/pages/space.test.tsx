@@ -112,7 +112,7 @@ const analysisState: SpaceAnalysisState = {
     expectedTotalBatches: 1,
     batchSize: 3,
     pipelineVersion: "v1",
-    taxonomyVersion: "v2",
+    taxonomyVersion: "v3",
     llmEnabled: true,
     createdAt: "2026-03-03T00:00:00Z",
     startedAt: "2026-03-03T00:00:00Z",
@@ -248,7 +248,7 @@ vi.mock("@/api/analysis-queries", () => ({
   useSpaceAnalysis: () => ({
     state: analysisState,
     taxonomy: {
-      version: "v2",
+      version: "v3",
       updatedAt: "2026-03-10T00:00:00Z",
       categories: ["identity", "emotion", "preference", "experience", "activity"],
       rules: [],

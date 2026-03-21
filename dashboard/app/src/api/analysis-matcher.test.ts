@@ -30,13 +30,13 @@ function createMemory(
 }
 
 const taxonomy: TaxonomyResponse = {
-  version: "v2",
+  version: "v3",
   updatedAt: "2026-03-10T00:00:00Z",
   categories: ["identity", "emotion", "preference", "experience", "activity"],
   rules: [
     {
       id: "r1",
-      version: "v2",
+      version: "v3",
       category: "activity",
       label: "Build",
       lang: "en",
@@ -47,7 +47,7 @@ const taxonomy: TaxonomyResponse = {
     },
     {
       id: "r2",
-      version: "v2",
+      version: "v3",
       category: "preference",
       label: "Editor",
       lang: "en",
@@ -58,7 +58,7 @@ const taxonomy: TaxonomyResponse = {
     },
     {
       id: "r3",
-      version: "v2",
+      version: "v3",
       category: "identity",
       label: "Founder",
       lang: "en",

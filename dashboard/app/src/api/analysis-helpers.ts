@@ -21,17 +21,11 @@ export const TERMINAL_JOB_STATUSES: JobStatus[] = [
   "EXPIRED",
 ];
 
-export const DEFAULT_TAXONOMY_VERSION = "v2";
+export const DEFAULT_TAXONOMY_VERSION = "v3";
 export const MAX_ANALYSIS_FACETS = 50;
 
 const EMPTY_AGGREGATE: AggregateSnapshot = {
-  categoryCounts: {
-    identity: 0,
-    emotion: 0,
-    preference: 0,
-    experience: 0,
-    activity: 0,
-  },
+  categoryCounts: {},
   tagCounts: {},
   topicCounts: {},
   summarySnapshot: [],

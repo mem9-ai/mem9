@@ -44,7 +44,7 @@ function createSnapshot(): AnalysisJobSnapshotResponse {
     expectedTotalBatches: 2,
     batchSize: 1,
     pipelineVersion: "v1",
-    taxonomyVersion: "v2",
+    taxonomyVersion: "v3",
     llmEnabled: true,
     createdAt: "2026-03-03T00:00:00Z",
     startedAt: null,

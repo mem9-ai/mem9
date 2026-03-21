@@ -9,7 +9,7 @@ import { useEffect } from "react";
 import { Toaster } from "sonner";
 import { trackGa4PageView } from "@/lib/ga4";
 import type { MemoryType, MemoryFacet } from "@/types/memory";
-import { ANALYSIS_CATEGORIES, type AnalysisCategory } from "@/types/analysis";
+import type { AnalysisCategory } from "@/types/analysis";
 import type { TimeRangePreset } from "@/types/time-range";
 import { trackMixpanelPageView } from "@/lib/mixpanel";
 import { ConnectPage } from "@/pages/connect";
@@ -75,6 +75,10 @@ function validateTimelineBound(value: unknown): string | undefined {
   return Number.isFinite(Date.parse(value)) ? value : undefined;
 }
 
+function validateAnalysisCategory(value: unknown): AnalysisCategory | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
 const spaceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/space",
@@ -93,9 +97,7 @@ const spaceRoute = createRoute({
     facet: VALID_FACETS.includes(search.facet as string)
       ? (search.facet as MemoryFacet)
       : undefined,
-    analysisCategory: ANALYSIS_CATEGORIES.includes(search.analysisCategory as AnalysisCategory)
-      ? (search.analysisCategory as AnalysisCategory)
-      : undefined,
+    analysisCategory: validateAnalysisCategory(search.analysisCategory),
   }),
 });
 
