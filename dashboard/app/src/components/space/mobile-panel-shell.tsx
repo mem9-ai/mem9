@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -27,10 +27,27 @@ export function MobilePanelShell({
   contentClassName?: string;
   bodyClassName?: string;
 }) {
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const updatePortalContainer = () => {
+      setPortalContainer(
+        document.fullscreenElement instanceof HTMLElement
+          ? document.fullscreenElement
+          : null,
+      );
+    };
+
+    updatePortalContainer();
+    document.addEventListener("fullscreenchange", updatePortalContainer);
+    return () => document.removeEventListener("fullscreenchange", updatePortalContainer);
+  }, []);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
+        portalContainer={portalContainer}
         className={cn(
           "inset-y-0 right-0 left-auto top-0 h-dvh w-full max-w-full translate-x-0 translate-y-0 gap-0 rounded-none border-0 bg-background p-0 shadow-none sm:w-[26rem] sm:max-w-[26rem] sm:border-y-0 sm:border-r-0 sm:border-l md:w-[30rem] md:max-w-[30rem]",
           contentClassName,

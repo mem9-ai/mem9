@@ -61,6 +61,7 @@ export function MemoryPulseOverview({
   onTimelineSelect,
   onTimelineClear,
   compact = false,
+  className,
 }: {
   stats: MemoryStats | undefined;
   memories: Memory[];
@@ -76,6 +77,7 @@ export function MemoryPulseOverview({
   onTimelineSelect: (selection: TimelineSelection) => void;
   onTimelineClear?: () => void;
   compact?: boolean;
+  className?: string;
 }) {
   const { t, i18n } = useTranslation();
   const pulse = useMemo(() => {
@@ -108,6 +110,7 @@ export function MemoryPulseOverview({
     <section
       className={cn(
         "surface-card relative mt-5 overflow-hidden px-4 py-5 sm:px-6",
+        className,
       )}
       style={{
         animation: "slide-up 0.45s cubic-bezier(0.16,1,0.3,1)",

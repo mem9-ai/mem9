@@ -6,6 +6,7 @@ import { router } from "@/router";
 import { initGa4 } from "@/lib/ga4";
 import { enableMixpanelAutoClickTracking } from "@/lib/mixpanel-auto-click";
 import { initTheme } from "@/lib/theme";
+import "@xyflow/react/dist/style.css";
 import "@/i18n";
 import "@/index.css";
 

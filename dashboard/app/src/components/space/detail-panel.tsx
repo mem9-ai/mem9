@@ -39,6 +39,7 @@ export function DetailPanel({
           onDelete={onDelete}
           onEdit={onEdit}
           t={t}
+          compactSessionPreview={false}
           className="flex max-h-[calc(100vh-10rem)] min-h-[400px] flex-col"
           scrollAreaClassName="flex-1 overflow-y-auto px-7 py-6"
         />
@@ -54,6 +55,7 @@ export function DetailPanelContent({
   onClose,
   onDelete,
   onEdit,
+  compactSessionPreview = false,
   className,
   scrollAreaClassName,
   t,
@@ -64,6 +66,7 @@ export function DetailPanelContent({
   onClose: () => void;
   onDelete: () => void;
   onEdit?: () => void;
+  compactSessionPreview?: boolean;
   className?: string;
   scrollAreaClassName?: string;
   t: TFunction;
@@ -198,6 +201,7 @@ export function DetailPanelContent({
                 <DetailSessionPreview
                   messages={sessionPreview}
                   loading={sessionPreviewLoading}
+                  compactMetadata={compactSessionPreview}
                   t={t}
                 />
               </div>

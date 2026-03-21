@@ -541,7 +541,7 @@ describe("SpacePage", () => {
       expect(router.state.location.search.timelineFrom).toBeDefined();
     });
 
-    expect(screen.getByText("Memory Pulse")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Memory Pulse" })).toBeInTheDocument();
     expect(screen.getByText("No matching memories found")).toBeInTheDocument();
     expect(screen.queryByText("Weekly activity planning notes")).not.toBeInTheDocument();
     expect(screen.queryByText("Deploy dashboard status update")).not.toBeInTheDocument();

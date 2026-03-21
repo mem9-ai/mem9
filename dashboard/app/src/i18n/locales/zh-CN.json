@@ -59,6 +59,9 @@
   "session_preview": {
     "title": "对话原文",
     "loading": "正在加载对话…",
+    "show_metadata": "展开",
+    "hide_metadata": "收起",
+    "metadata_summary_empty": "点击查看元数据",
     "role": {
       "user": "用户",
       "assistant": "助手",
@@ -198,6 +201,12 @@
     "clear_all": "清除全部",
     "results": "{{count}} 条结果"
   },
+  "memory_overview": {
+    "tabs": {
+      "pulse": "Memory Pulse",
+      "insight": "Memory Insight"
+    }
+  },
   "analysis": {
     "title": "记忆分析",
     "open": "分析",
@@ -298,6 +307,37 @@
       "caption": "当前范围内反复出现的标签信号",
       "empty": "还没有形成稳定的标签信号。",
       "count": "出现 {{count}} 次"
+    }
+  },
+  "memory_insight": {
+    "eyebrow": "关系拓扑",
+    "title": "Memory Insight",
+    "subtitle": "用关系拓扑探索当前范围内的分类、标签、实体和记忆之间如何连接。",
+    "helper": "拖拽气泡和标签来整理关系图。点击任意气泡，它会游向画布右侧展开，但始终停留在同一个大画布里继续查看标签、实体和记忆。",
+    "canvas_hint": "单一共享画布，必要时可上下左右滚动。",
+    "pan_hint": "按住空格并拖动画布背景可平移",
+    "fit_view": "适应视图",
+    "enter_fullscreen": "全屏展开",
+    "exit_fullscreen": "还原",
+    "reset_layout": "重置布局",
+    "card_subtitle": "聚合卡片",
+    "tag_subtitle": "标签分支",
+    "memory_meta_empty": "没有附加标签",
+    "empty_entities": "这个标签下暂时没有提取出实体节点。",
+    "entity_filter_chip": "实体：{{label}}",
+    "more_tags": "再看 {{count}} 个标签",
+    "more_entities": "再看 {{count}} 个实体",
+    "more_memories": "再看 {{count}} 条记忆",
+    "summary_root": "{{count}} 张卡片",
+    "summary_open": "已展开 {{count}} 张",
+    "summary_card": "卡片 {{card}}",
+    "summary_tag": "标签 {{tag}}",
+    "summary_entity": "实体 {{entity}}",
+    "entity_kind": {
+      "named_term": "命名术语",
+      "metric": "指标",
+      "person_like": "人物线索",
+      "fallback": "其他"
     }
   }
 }

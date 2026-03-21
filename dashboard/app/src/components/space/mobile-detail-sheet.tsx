@@ -42,6 +42,7 @@ export function MobileDetailSheet({
         onDelete={onDelete}
         onEdit={onEdit}
         t={t}
+        compactSessionPreview
         scrollAreaClassName="min-h-0 flex-1 overflow-y-auto px-5 py-4"
       />
     </MobilePanelShell>

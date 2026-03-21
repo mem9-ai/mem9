@@ -1,0 +1,690 @@
+import type { AnalysisCategoryCard, MemoryAnalysisMatch } from "@/types/analysis";
+import type { Memory } from "@/types/memory";
+
+export type MemoryInsightTab = "pulse" | "insight";
+export type MemoryInsightNodeKind = "card" | "tag" | "entity" | "memory";
+export type MemoryInsightEntityKind =
+  | "named_term"
+  | "metric"
+  | "person_like"
+  | "fallback";
+
+export const MEMORY_INSIGHT_UNTAGGED_TAG = "__untagged__";
+
+export type MemoryInsightSelection =
+  | {
+      kind: "card";
+      cardCategory: string;
+    }
+  | {
+      kind: "tag";
+      cardCategory: string;
+      tagValue: string;
+    }
+  | {
+      kind: "entity";
+      cardCategory: string;
+      tagValue: string;
+      entityKind: MemoryInsightEntityKind;
+      entityValue: string;
+    }
+  | {
+      kind: "memory";
+      memoryId: string;
+    };
+
+export interface MemoryInsightEntityFilter {
+  id: string;
+  label: string;
+  normalizedLabel: string;
+  kind: MemoryInsightEntityKind;
+}
+
+export interface MemoryInsightCardNode {
+  id: string;
+  kind: "card";
+  category: string;
+  label: string;
+  count: number;
+  confidence: number;
+  size: number;
+  branchKey: string;
+  parentId: null;
+  depth: 0;
+}
+
+export interface MemoryInsightTagNode {
+  id: string;
+  kind: "tag";
+  category: string;
+  tagValue: string;
+  label: string;
+  count: number;
+  size: number;
+  branchKey: string;
+  parentId: string;
+  depth: 1;
+  synthetic: boolean;
+}
+
+export interface MemoryInsightEntityNode {
+  id: string;
+  kind: "entity";
+  category: string;
+  tagValue: string;
+  entityKind: MemoryInsightEntityKind;
+  entityValue: string;
+  label: string;
+  count: number;
+  size: number;
+  branchKey: string;
+  parentId: string;
+  depth: 2;
+}
+
+export interface MemoryInsightMemoryNode {
+  id: string;
+  kind: "memory";
+  category: string;
+  tagValue: string;
+  entityKind: MemoryInsightEntityKind;
+  entityValue: string;
+  memoryId: string;
+  label: string;
+  preview: string;
+  count: 1;
+  size: number;
+  branchKey: string;
+  parentId: string;
+  depth: 3;
+  createdAt: string;
+  updatedAt: string;
+  tags: string[];
+}
+
+export type MemoryInsightNode =
+  | MemoryInsightCardNode
+  | MemoryInsightTagNode
+  | MemoryInsightEntityNode
+  | MemoryInsightMemoryNode;
+
+export interface MemoryInsightEdge {
+  id: string;
+  kind: "contains";
+  source: string;
+  target: string;
+  branchKey: string;
+}
+
+export interface MemoryInsightGraph {
+  nodes: MemoryInsightNode[];
+  edges: MemoryInsightEdge[];
+  cards: MemoryInsightCardNode[];
+  tags: MemoryInsightTagNode[];
+  entities: MemoryInsightEntityNode[];
+  memories: MemoryInsightMemoryNode[];
+}
+
+export interface BuildMemoryInsightGraphInput {
+  cards: AnalysisCategoryCard[];
+  memories: Memory[];
+  matches?: MemoryAnalysisMatch[] | null;
+  matchMap?: Map<string, MemoryAnalysisMatch> | null;
+}
+
+interface EntityHit {
+  kind: MemoryInsightEntityKind;
+  label: string;
+  normalizedLabel: string;
+  index: number;
+}
+
+interface TagBucket {
+  tagValue: string;
+  synthetic: boolean;
+  memories: Memory[];
+}
+
+interface EntityBucket {
+  entityKind: MemoryInsightEntityKind;
+  entityValue: string;
+  normalizedLabel: string;
+  memories: Memory[];
+}
+
+const ENTITY_KIND_ORDER: Record<MemoryInsightEntityKind, number> = {
+  named_term: 0,
+  metric: 1,
+  person_like: 2,
+  fallback: 3,
+};
+
+const CATEGORY_PREFIXES = [
+  "analysis.category.",
+  "analysis.categroy.",
+  "analysis.category:",
+] as const;
+
+const CATEGORY_PREFIX_PATTERN = /^analysis\.category\./i;
+
+function createMatchLookup(
+  matches?: MemoryAnalysisMatch[] | null,
+  matchMap?: Map<string, MemoryAnalysisMatch> | null,
+): Map<string, MemoryAnalysisMatch> {
+  if (matchMap) {
+    return matchMap;
+  }
+
+  return new Map((matches ?? []).map((match) => [match.memoryId, match]));
+}
+
+function slugify(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized.length > 0 ? normalized : "item";
+}
+
+function capitalizeToken(value: string): string {
+  if (!value) {
+    return value;
+  }
+
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
+
+export function stripInsightCategoryPrefix(value: string): string {
+  const trimmed = value.trim();
+
+  for (const prefix of CATEGORY_PREFIXES) {
+    if (trimmed.startsWith(prefix)) {
+      return trimmed.slice(prefix.length);
+    }
+  }
+
+  return trimmed;
+}
+
+export function humanizeInsightCategoryLabel(value: string): string {
+  const stripped = stripInsightCategoryPrefix(value);
+  const parts = stripped
+    .split(/[._-]+/g)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return value.trim();
+  }
+
+  return parts.map(capitalizeToken).join(" ");
+}
+
+function normalizeLabel(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export function normalizeInsightCategoryKey(value: string): string {
+  return stripInsightCategoryPrefix(value);
+}
+
+export function humanizeInsightLabel(value: string): string {
+  return humanizeInsightCategoryLabel(value);
+}
+
+export function formatInsightCategoryLabel(
+  value: string,
+  translate: (key: string) => string,
+): string {
+  const categoryKey = normalizeInsightCategoryKey(value);
+  const translationKey = `analysis.category.${categoryKey}`;
+  const translated = translate(translationKey);
+
+  if (
+    translated &&
+    translated !== translationKey &&
+    translated !== value &&
+    !CATEGORY_PREFIX_PATTERN.test(translated)
+  ) {
+    return translated;
+  }
+
+  return humanizeInsightLabel(categoryKey);
+}
+
+function truncatePreview(value: string, limit: number): string {
+  const trimmed = value.trim().replace(/\s+/g, " ");
+  if (trimmed.length <= limit) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, limit - 1)}…`;
+}
+
+function buildSize(base: number, count: number, scale: number): number {
+  return Math.round(base + Math.sqrt(Math.max(count, 1)) * scale);
+}
+
+function normalizeTags(tags: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const tag of tags) {
+    const trimmed = tag.trim();
+    if (!trimmed) continue;
+
+    const key = normalizeLabel(trimmed);
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    normalized.push(trimmed);
+  }
+
+  return normalized;
+}
+
+function addEntityHit(
+  target: Map<string, EntityHit>,
+  label: string,
+  kind: MemoryInsightEntityKind,
+  index: number,
+): void {
+  const trimmed = label.trim();
+  if (!trimmed) {
+    return;
+  }
+
+  const normalizedLabel = normalizeLabel(trimmed);
+  if (!normalizedLabel) {
+    return;
+  }
+
+  const key = `${kind}:${normalizedLabel}`;
+  if (!target.has(key)) {
+    target.set(key, {
+      kind,
+      label: trimmed,
+      normalizedLabel,
+      index,
+    });
+  }
+}
+
+export function extractMemoryInsightEntities(memory: Memory): EntityHit[] {
+  const hits = new Map<string, EntityHit>();
+  const source = memory.content;
+
+  for (const match of source.matchAll(/`([^`]+)`/g)) {
+    addEntityHit(hits, match[1] ?? "", "named_term", match.index ?? 0);
+  }
+
+  for (const match of source.matchAll(/"([^"]{2,120})"/g)) {
+    const value = match[1] ?? "";
+    if (value.split(/\s+/).length >= 2) {
+      addEntityHit(hits, value, "named_term", match.index ?? 0);
+    }
+  }
+
+  for (const match of source.matchAll(
+    /\b(?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s`"'<>]*)?/gi,
+  )) {
+    addEntityHit(hits, match[0] ?? "", "named_term", match.index ?? 0);
+  }
+
+  for (const match of source.matchAll(
+    /\b(?:@[a-z0-9-]+\/)?[a-z0-9]+(?:[-_/][a-z0-9]+)+\b/gi,
+  )) {
+    addEntityHit(hits, match[0] ?? "", "named_term", match.index ?? 0);
+  }
+
+  for (const match of source.matchAll(/\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+\b/g)) {
+    addEntityHit(hits, match[0] ?? "", "named_term", match.index ?? 0);
+  }
+
+  for (const match of source.matchAll(
+    /\b\d+(?:\.\d+)?(?:%|ms|s|m|h|d|w|mo|y|kb|mb|gb|tb|x)(?!\w)/gi,
+  )) {
+    addEntityHit(hits, match[0] ?? "", "metric", match.index ?? 0);
+  }
+
+  for (const match of source.matchAll(/\bv?\d+\.\d+(?:\.\d+)?\b/gi)) {
+    addEntityHit(hits, match[0] ?? "", "metric", match.index ?? 0);
+  }
+
+  for (const match of source.matchAll(/\b\d{4}-\d{2}-\d{2}\b/g)) {
+    addEntityHit(hits, match[0] ?? "", "metric", match.index ?? 0);
+  }
+
+  for (const match of source.matchAll(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g)) {
+    addEntityHit(hits, match[0] ?? "", "metric", match.index ?? 0);
+  }
+
+  for (const match of source.matchAll(/@[a-z0-9._-]{2,}/gi)) {
+    addEntityHit(hits, match[0] ?? "", "person_like", match.index ?? 0);
+  }
+
+  for (const match of source.matchAll(/\b[A-Z][a-z]+ [A-Z][a-z]+\b/g)) {
+    addEntityHit(hits, match[0] ?? "", "person_like", match.index ?? 0);
+  }
+
+  return [...hits.values()].sort(
+    (left, right) =>
+      left.index - right.index ||
+      ENTITY_KIND_ORDER[left.kind] - ENTITY_KIND_ORDER[right.kind] ||
+      left.label.localeCompare(right.label, "en"),
+  );
+}
+
+export function memoryMatchesInsightEntity(
+  memory: Memory,
+  entity?: MemoryInsightEntityFilter,
+): boolean {
+  if (!entity) {
+    return true;
+  }
+
+  if (entity.kind === "fallback") {
+    return extractMemoryInsightEntities(memory).length === 0;
+  }
+
+  return extractMemoryInsightEntities(memory).some(
+    (candidate) =>
+      candidate.kind === entity.kind &&
+      candidate.normalizedLabel === entity.normalizedLabel,
+  );
+}
+
+function buildTagBuckets(memories: Memory[]): TagBucket[] {
+  const buckets = new Map<string, TagBucket>();
+
+  for (const memory of memories) {
+    const tags = normalizeTags(memory.tags);
+    const values = tags.length > 0 ? tags : [MEMORY_INSIGHT_UNTAGGED_TAG];
+
+    for (const value of values) {
+      const key =
+        value === MEMORY_INSIGHT_UNTAGGED_TAG
+          ? MEMORY_INSIGHT_UNTAGGED_TAG
+          : normalizeLabel(value);
+      const bucket = buckets.get(key) ?? {
+        tagValue: value,
+        synthetic: value === MEMORY_INSIGHT_UNTAGGED_TAG,
+        memories: [],
+      };
+
+      bucket.memories.push(memory);
+      buckets.set(key, bucket);
+    }
+  }
+
+  return [...buckets.values()].sort(
+    (left, right) =>
+      right.memories.length - left.memories.length ||
+      left.tagValue.localeCompare(right.tagValue, "en"),
+  );
+}
+
+function buildEntityBuckets(memories: Memory[]): EntityBucket[] {
+  const buckets = new Map<string, EntityBucket>();
+
+  for (const memory of memories) {
+    const hits = extractMemoryInsightEntities(memory);
+    const uniqueHits = hits.length > 0 ? hits : [
+      {
+        kind: "fallback" as const,
+        label: "Other",
+        normalizedLabel: "other",
+        index: 0,
+      },
+    ];
+
+    for (const hit of uniqueHits) {
+      const key = `${hit.kind}:${hit.normalizedLabel}`;
+      const bucket = buckets.get(key) ?? {
+        entityKind: hit.kind,
+        entityValue: hit.label,
+        normalizedLabel: hit.normalizedLabel,
+        memories: [],
+      };
+
+      bucket.memories.push(memory);
+      buckets.set(key, bucket);
+    }
+  }
+
+  return [...buckets.values()].sort(
+    (left, right) =>
+      right.memories.length - left.memories.length ||
+      ENTITY_KIND_ORDER[left.entityKind] - ENTITY_KIND_ORDER[right.entityKind] ||
+      left.entityValue.localeCompare(right.entityValue, "en"),
+  );
+}
+
+function getCardMemories(
+  category: string,
+  memories: Memory[],
+  matchLookup: Map<string, MemoryAnalysisMatch>,
+): Memory[] {
+  return memories.filter((memory) =>
+    matchLookup.get(memory.id)?.categories.includes(category),
+  );
+}
+
+function createCardNode(
+  category: string,
+  count: number,
+  confidence: number,
+): MemoryInsightCardNode {
+  const id = `card:${slugify(category)}`;
+
+  return {
+    id,
+    kind: "card",
+    category,
+    label: category,
+    count,
+    confidence,
+    size: buildSize(88, count, 12),
+    branchKey: category,
+    parentId: null,
+    depth: 0,
+  };
+}
+
+function createTagNode(
+  category: string,
+  tagValue: string,
+  count: number,
+  synthetic: boolean,
+): MemoryInsightTagNode {
+  const tagSlug =
+    tagValue === MEMORY_INSIGHT_UNTAGGED_TAG
+      ? MEMORY_INSIGHT_UNTAGGED_TAG
+      : slugify(tagValue);
+  const id = `tag:${slugify(category)}:${tagSlug}`;
+
+  return {
+    id,
+    kind: "tag",
+    category,
+    tagValue,
+    label: synthetic ? "#untagged" : `#${tagValue}`,
+    count,
+    size: buildSize(64, count, 10),
+    branchKey: `${category}>${tagValue}`,
+    parentId: `card:${slugify(category)}`,
+    depth: 1,
+    synthetic,
+  };
+}
+
+function createEntityNode(
+  category: string,
+  tagValue: string,
+  entityKind: MemoryInsightEntityKind,
+  entityValue: string,
+  count: number,
+): MemoryInsightEntityNode {
+  const tagSlug =
+    tagValue === MEMORY_INSIGHT_UNTAGGED_TAG
+      ? MEMORY_INSIGHT_UNTAGGED_TAG
+      : slugify(tagValue);
+  const entitySlug = slugify(entityValue);
+  const id = `entity:${slugify(category)}:${tagSlug}:${entityKind}:${entitySlug}`;
+
+  return {
+    id,
+    kind: "entity",
+    category,
+    tagValue,
+    entityKind,
+    entityValue,
+    label: entityValue,
+    count,
+    size: buildSize(52, count, 8),
+    branchKey: `${category}>${tagValue}>${entityKind}:${entityValue}`,
+    parentId: `tag:${slugify(category)}:${tagSlug}`,
+    depth: 2,
+  };
+}
+
+function createMemoryNode(
+  category: string,
+  tagValue: string,
+  entityKind: MemoryInsightEntityKind,
+  entityValue: string,
+  memory: Memory,
+): MemoryInsightMemoryNode {
+  const tagSlug =
+    tagValue === MEMORY_INSIGHT_UNTAGGED_TAG
+      ? MEMORY_INSIGHT_UNTAGGED_TAG
+      : slugify(tagValue);
+  const entitySlug = slugify(entityValue);
+  const id = `memory:${slugify(category)}:${tagSlug}:${entityKind}:${entitySlug}:${memory.id}`;
+
+  return {
+    id,
+    kind: "memory",
+    category,
+    tagValue,
+    entityKind,
+    entityValue,
+    memoryId: memory.id,
+    label: truncatePreview(memory.content, 48),
+    preview: truncatePreview(memory.content, 120),
+    count: 1,
+    size: 40,
+    branchKey: `${category}>${tagValue}>${entityKind}:${entityValue}>${memory.id}`,
+    parentId: `entity:${slugify(category)}:${tagSlug}:${entityKind}:${entitySlug}`,
+    depth: 3,
+    createdAt: memory.created_at,
+    updatedAt: memory.updated_at,
+    tags: memory.tags.slice(),
+  };
+}
+
+export function buildMemoryInsightGraph(
+  input: BuildMemoryInsightGraphInput,
+): MemoryInsightGraph {
+  const matchLookup = createMatchLookup(input.matches, input.matchMap);
+  const cards = input.cards
+    .filter((card) => card.count > 0)
+    .slice()
+    .sort(
+      (left, right) =>
+        right.count - left.count || left.category.localeCompare(right.category, "en"),
+    );
+
+  const cardNodes: MemoryInsightCardNode[] = [];
+  const tagNodes: MemoryInsightTagNode[] = [];
+  const entityNodes: MemoryInsightEntityNode[] = [];
+  const memoryNodes: MemoryInsightMemoryNode[] = [];
+  const nodes: MemoryInsightNode[] = [];
+  const edges: MemoryInsightEdge[] = [];
+
+  for (const card of cards) {
+    const cardMemories = getCardMemories(card.category, input.memories, matchLookup);
+    const cardNode = createCardNode(
+      card.category,
+      Math.max(card.count, cardMemories.length),
+      card.confidence,
+    );
+    cardNodes.push(cardNode);
+    nodes.push(cardNode);
+
+    const tagBuckets = buildTagBuckets(cardMemories);
+    for (const tagBucket of tagBuckets) {
+      const tagNode = createTagNode(
+        card.category,
+        tagBucket.tagValue,
+        tagBucket.memories.length,
+        tagBucket.synthetic,
+      );
+      tagNodes.push(tagNode);
+      nodes.push(tagNode);
+      edges.push({
+        id: `${cardNode.id}=>${tagNode.id}`,
+        kind: "contains",
+        source: cardNode.id,
+        target: tagNode.id,
+        branchKey: tagNode.branchKey,
+      });
+
+      const entityBuckets = buildEntityBuckets(tagBucket.memories);
+      for (const entityBucket of entityBuckets) {
+        const entityNode = createEntityNode(
+          card.category,
+          tagBucket.tagValue,
+          entityBucket.entityKind,
+          entityBucket.entityValue,
+          entityBucket.memories.length,
+        );
+        entityNodes.push(entityNode);
+        nodes.push(entityNode);
+        edges.push({
+          id: `${tagNode.id}=>${entityNode.id}`,
+          kind: "contains",
+          source: tagNode.id,
+          target: entityNode.id,
+          branchKey: entityNode.branchKey,
+        });
+
+        const seenMemoryIds = new Set<string>();
+        for (const memory of entityBucket.memories) {
+          if (seenMemoryIds.has(memory.id)) {
+            continue;
+          }
+
+          seenMemoryIds.add(memory.id);
+          const memoryNode = createMemoryNode(
+            card.category,
+            tagBucket.tagValue,
+            entityBucket.entityKind,
+            entityBucket.entityValue,
+            memory,
+          );
+          memoryNodes.push(memoryNode);
+          nodes.push(memoryNode);
+          edges.push({
+            id: `${entityNode.id}=>${memoryNode.id}`,
+            kind: "contains",
+            source: entityNode.id,
+            target: memoryNode.id,
+            branchKey: memoryNode.branchKey,
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    nodes,
+    edges,
+    cards: cardNodes,
+    tags: tagNodes,
+    entities: entityNodes,
+    memories: memoryNodes,
+  };
+}

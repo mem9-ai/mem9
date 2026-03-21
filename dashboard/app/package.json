@@ -11,8 +11,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^2.0.4",
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-router": "^1.166.7",
+    "@xyflow/react": "^12.10.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "i18next": "^25.8.18",

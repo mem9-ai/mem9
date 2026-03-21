@@ -128,6 +128,7 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  scrollbar-gutter: stable both-edges;
 }
 
 h1, h2, h3, h4 {
@@ -188,6 +189,137 @@ h1, h2, h3, h4 {
 .dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
 .dark ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
+.memory-insight-bubble {
+  overflow: visible;
+  touch-action: none;
+  box-shadow: none;
+}
+
+.memory-insight-bubble-core {
+  position: relative;
+  display: block;
+  flex: none;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  transform-origin: center;
+  will-change: transform, box-shadow, filter;
+}
+
+.memory-insight-bubble-core::before,
+.memory-insight-bubble-core::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  transition:
+    opacity 260ms ease,
+    transform 260ms ease,
+    box-shadow 260ms ease,
+    background 260ms ease;
+}
+
+.memory-insight-bubble-core::before {
+  inset: -10px;
+  z-index: 0;
+  opacity: 0;
+  transform: scale(0.96);
+  background: radial-gradient(circle, color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 22%, transparent) 0%, transparent 70%);
+  filter: blur(12px);
+}
+
+.memory-insight-bubble-core::after {
+  inset: 0;
+  z-index: 1;
+  opacity: 0;
+  box-shadow: none;
+}
+
+.memory-insight-bubble-shell {
+  z-index: 1;
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 16%, var(--background));
+}
+
+.memory-insight-bubble-visual {
+  z-index: 2;
+  animation: insight-bubble-drift var(--insight-drift-duration, 22s) ease-in-out infinite alternate;
+  animation-delay: var(--insight-drift-delay, 0s);
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 18%, var(--background));
+  box-shadow: none;
+  transform-origin: center;
+  will-change: transform, box-shadow, filter;
+  transition:
+    transform 260ms ease,
+    box-shadow 260ms ease,
+    filter 260ms ease,
+    background 260ms ease;
+}
+
+.memory-insight-bubble:active .memory-insight-bubble-visual,
+.memory-insight-bubble-visual-paused {
+  animation-play-state: paused;
+}
+
+.memory-insight-bubble-label {
+  pointer-events: none;
+}
+
+.memory-insight-bubble:hover .memory-insight-bubble-core::before,
+.memory-insight-bubble[data-active="true"] .memory-insight-bubble-core::before {
+  opacity: 1;
+  transform: scale(1.03);
+}
+
+.memory-insight-bubble:hover .memory-insight-bubble-core {
+  box-shadow: 0 0 24px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 16%, transparent);
+}
+
+.memory-insight-bubble:hover .memory-insight-bubble-visual {
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 24%, var(--background));
+  filter: saturate(1.08);
+  box-shadow: none;
+}
+
+.memory-insight-bubble[data-active="true"] .memory-insight-bubble-core {
+  box-shadow: 0 0 20px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 14%, transparent);
+}
+
+.memory-insight-bubble[data-active="true"] .memory-insight-bubble-shell {
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 20%, var(--background));
+}
+
+.memory-insight-bubble[data-bubble-size="small"] .memory-insight-bubble-core {
+  box-shadow: none;
+}
+
+.memory-insight-bubble[data-bubble-size="small"] .memory-insight-bubble-shell {
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 18%, var(--background));
+}
+
+.memory-insight-bubble[data-bubble-size="small"] .memory-insight-bubble-visual {
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 20%, var(--background));
+  box-shadow: none;
+}
+
+.memory-insight-bubble[data-dragging="true"] .memory-insight-bubble-core::before {
+  opacity: 0;
+}
+
+.memory-insight-bubble[data-dragging="true"] .memory-insight-bubble-visual {
+  animation: none;
+  transform: none;
+  filter: none;
+}
+
+[data-testid^="insight-node-"].memory-insight-bubble > span.relative {
+  z-index: 3;
+}
+
+[data-testid^="insight-node-tag:"] {
+  touch-action: none;
+}
+
 @keyframes enter {
   from { opacity: 0; transform: translateY(4px); }
 }
@@ -205,4 +337,21 @@ h1, h2, h3, h4 {
 @keyframes slide-in-right {
   from { opacity: 0; transform: translateX(12px); }
   to { opacity: 1; transform: translateX(0); }
+}
+@keyframes insight-bubble-drift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% {
+    transform: translate3d(
+      var(--insight-drift-x, 6px),
+      var(--insight-drift-y, -5px),
+      0
+    ) scale(1.012);
+  }
+  100% {
+    transform: translate3d(
+      calc(var(--insight-drift-x, 6px) * -0.62),
+      calc(var(--insight-drift-y, -5px) * -0.52),
+      0
+    ) scale(0.996);
+  }
 }

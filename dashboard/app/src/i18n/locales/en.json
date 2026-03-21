@@ -59,6 +59,9 @@
   "session_preview": {
     "title": "Original Conversation",
     "loading": "Loading conversation...",
+    "show_metadata": "Expand",
+    "hide_metadata": "Collapse",
+    "metadata_summary_empty": "Tap to view metadata",
     "role": {
       "user": "User",
       "assistant": "Assistant",
@@ -198,6 +201,12 @@
     "clear_all": "Clear all",
     "results": "{{count}} results"
   },
+  "memory_overview": {
+    "tabs": {
+      "pulse": "Memory Pulse",
+      "insight": "Memory Insight"
+    }
+  },
   "analysis": {
     "title": "Memory Analysis",
     "open": "Analysis",
@@ -298,6 +307,37 @@
       "caption": "Recurring tags that keep surfacing in this range",
       "empty": "No recurring tags yet.",
       "count": "{{count}} mentions"
+    }
+  },
+  "memory_insight": {
+    "eyebrow": "Topology",
+    "title": "Memory Insight",
+    "subtitle": "Explore how categories, tags, entities, and memories connect inside this range.",
+    "helper": "Drag bubbles and tags to arrange the map. Click any bubble to send it to the right side of the canvas, then walk its tags, entities, and memories without leaving this single view.",
+    "canvas_hint": "One shared canvas. Scroll both directions if needed.",
+    "pan_hint": "Hold Space and drag the background to pan",
+    "fit_view": "Fit view",
+    "enter_fullscreen": "Fullscreen",
+    "exit_fullscreen": "Restore",
+    "reset_layout": "Reset layout",
+    "card_subtitle": "Aggregate card",
+    "tag_subtitle": "Tag branch",
+    "memory_meta_empty": "No tags attached",
+    "empty_entities": "No entity heuristics surfaced under this tag yet.",
+    "entity_filter_chip": "Entity: {{label}}",
+    "more_tags": "+{{count}} more tags",
+    "more_entities": "+{{count}} more entities",
+    "more_memories": "+{{count}} more memories",
+    "summary_root": "{{count}} cards",
+    "summary_open": "{{count}} open",
+    "summary_card": "Card {{card}}",
+    "summary_tag": "Tag {{tag}}",
+    "summary_entity": "Entity {{entity}}",
+    "entity_kind": {
+      "named_term": "Named term",
+      "metric": "Metric",
+      "person_like": "Person-like",
+      "fallback": "Other"
     }
   }
 }
