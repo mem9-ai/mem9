@@ -64,6 +64,7 @@ describe("MobileDetailSheet", () => {
     render(
       <MobileDetailSheet
         memory={createMemory()}
+        derivedTags={[]}
         sessionPreview={[createSessionMessage()]}
         sessionPreviewLoading={false}
         open
@@ -105,6 +106,7 @@ describe("MobileDetailSheet", () => {
     render(
       <MobileDetailSheet
         memory={createMemory()}
+        derivedTags={[]}
         sessionPreview={[createSessionMessage()]}
         sessionPreviewLoading={false}
         open
@@ -121,5 +123,23 @@ describe("MobileDetailSheet", () => {
       value: null,
     });
     fullscreenHost.remove();
+  });
+
+  it("shows derived tags separately when the active filter came from a local signal", () => {
+    render(
+      <MobileDetailSheet
+        memory={createMemory()}
+        derivedTags={["OpenClaw"]}
+        sessionPreview={[createSessionMessage()]}
+        sessionPreviewLoading={false}
+        open
+        onOpenChange={vi.fn()}
+        onDelete={vi.fn()}
+        t={i18n.t}
+      />,
+    );
+
+    expect(screen.getByText("Derived tags")).toBeInTheDocument();
+    expect(screen.getByText("#OpenClaw")).toBeInTheDocument();
   });
 });

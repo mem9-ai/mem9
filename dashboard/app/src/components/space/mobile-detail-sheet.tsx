@@ -5,6 +5,7 @@ import type { Memory, SessionMessage } from "@/types/memory";
 
 export function MobileDetailSheet({
   memory,
+  derivedTags = [],
   sessionPreview,
   sessionPreviewLoading,
   open,
@@ -14,6 +15,7 @@ export function MobileDetailSheet({
   t,
 }: {
   memory: Memory | null;
+  derivedTags?: string[];
   sessionPreview: SessionMessage[];
   sessionPreviewLoading: boolean;
   open: boolean;
@@ -36,6 +38,7 @@ export function MobileDetailSheet({
     >
       <DetailPanelContent
         memory={memory}
+        derivedTags={derivedTags}
         sessionPreview={sessionPreview}
         sessionPreviewLoading={sessionPreviewLoading}
         onClose={() => onOpenChange(false)}

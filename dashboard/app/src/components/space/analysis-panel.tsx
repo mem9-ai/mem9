@@ -556,13 +556,24 @@ function FacetSection({
             onClick={() => {
               onSelect(activeValue === stat.value ? undefined : stat.value);
             }}
+            aria-label={
+              kind === "tags" && stat.origin === "derived"
+                ? `${stat.value} ${t("analysis.derived_badge")} (${stat.count})`
+                : `${stat.value} (${stat.count})`
+            }
             className={`rounded-full px-2.5 py-1 text-xs transition-colors ${
               activeValue === stat.value
                 ? "bg-primary/20 text-primary hover:bg-primary/30"
                 : "bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
             }`}
           >
-            {stat.value} ({stat.count})
+            <span>{stat.value}</span>
+            {kind === "tags" && stat.origin === "derived" && (
+              <span className="ml-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-primary">
+                {t("analysis.derived_badge")}
+              </span>
+            )}
+            <span className="ml-1">({stat.count})</span>
           </button>
         ))}
       </div>

@@ -180,6 +180,56 @@ describe("memory-insight", () => {
     ).toHaveLength(2);
   });
 
+  it("filters low-signal tags out of browse aggregation", () => {
+    const graph = buildMemoryInsightGraph({
+      cards: [createCard("project", 2)],
+      memories: [
+        createMemory("mem-1", {
+          content: "Deploy `mem9-ui` with Alice Johnson",
+          tags: ["clawd", "import", "project-alpha"],
+        }),
+        createMemory("mem-2", {
+          content: "Only generic tags on this memory",
+          tags: ["clawd", "md", "json"],
+        }),
+      ],
+      matchMap: new Map<string, MemoryAnalysisMatch>([
+        ["mem-1", createMatch("mem-1", ["project"])],
+        ["mem-2", createMatch("mem-2", ["project"])],
+      ]),
+    });
+
+    expect(graph.tags.map((tag) => tag.tagValue)).toContain("project-alpha");
+    expect(graph.tags.map((tag) => tag.tagValue)).not.toContain("clawd");
+    expect(graph.tags.map((tag) => tag.tagValue)).not.toContain("import");
+    expect(graph.tags.some((tag) => tag.synthetic && tag.tagValue === "__untagged__")).toBe(true);
+  });
+
+  it("uses derived tags to reduce untagged branches when a stable local signal exists", () => {
+    const graph = buildMemoryInsightGraph({
+      cards: [createCard("project", 2)],
+      memories: [
+        createMemory("mem-1", {
+          content: "继续推进 `OpenClaw` 部署到 /srv/openclaw/config",
+          tags: ["clawd", "md"],
+        }),
+        createMemory("mem-2", {
+          content: "再次推进 `OpenClaw` 部署到 /srv/openclaw/config",
+          tags: ["import", "json"],
+        }),
+      ],
+      matchMap: new Map<string, MemoryAnalysisMatch>([
+        ["mem-1", createMatch("mem-1", ["project"])],
+        ["mem-2", createMatch("mem-2", ["project"])],
+      ]),
+    });
+
+    expect(graph.tags.map((tag) => tag.tagValue)).toContain("OpenClaw");
+    expect(graph.tags.map((tag) => tag.tagValue)).toContain("/openclaw/config");
+    expect(graph.tags.some((tag) => tag.origin === "derived")).toBe(true);
+    expect(graph.tags.some((tag) => tag.synthetic)).toBe(false);
+  });
+
   it("matches memories against an entity filter", () => {
     const memory = createMemory("mem-3", {
       content: "Follow up with @alice on `mem9-ui` after 2h",

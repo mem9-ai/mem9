@@ -1,8 +1,10 @@
 import type { TFunction } from "i18next";
+import type { DerivedTagOrigin } from "@/lib/memory-derived-signals";
 
 export interface TagSummary {
   tag: string;
   count: number;
+  origin?: DerivedTagOrigin;
 }
 
 export function TagStrip({
@@ -24,7 +26,7 @@ export function TagStrip({
         {t("tag_strip.label")}
       </div>
       <div className="flex flex-wrap gap-2">
-        {tags.map(({ tag, count }) => {
+        {tags.map(({ tag, count, origin }) => {
           const isActive = activeTag === tag;
           return (
             <button
@@ -42,6 +44,11 @@ export function TagStrip({
               }`}
             >
               <span className="font-medium">#{tag}</span>
+              {origin === "derived" && (
+                <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-primary">
+                  {t("tag_strip.derived_badge")}
+                </span>
+              )}
               <span className="text-xs text-soft-foreground">{count}</span>
             </button>
           );

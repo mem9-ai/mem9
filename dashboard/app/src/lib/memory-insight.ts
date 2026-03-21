@@ -1,13 +1,21 @@
 import type { AnalysisCategoryCard, MemoryAnalysisMatch } from "@/types/analysis";
 import type { Memory } from "@/types/memory";
+import {
+  buildLocalDerivedSignalIndex,
+  getCombinedTagsForMemory,
+  type LocalDerivedSignalIndex,
+  type DerivedTagOrigin,
+} from "@/lib/memory-derived-signals";
+import {
+  extractMemoryInsightEntities,
+  type MemoryInsightEntityKind,
+} from "@/lib/memory-insight-entities";
 
 export type MemoryInsightTab = "pulse" | "insight";
+export type MemoryInsightViewMode = "browse" | "relations";
 export type MemoryInsightNodeKind = "card" | "tag" | "entity" | "memory";
-export type MemoryInsightEntityKind =
-  | "named_term"
-  | "metric"
-  | "person_like"
-  | "fallback";
+export type { MemoryInsightEntityKind } from "@/lib/memory-insight-entities";
+export { extractMemoryInsightEntities } from "@/lib/memory-insight-entities";
 
 export const MEMORY_INSIGHT_UNTAGGED_TAG = "__untagged__";
 
@@ -65,6 +73,7 @@ export interface MemoryInsightTagNode {
   parentId: string;
   depth: 1;
   synthetic: boolean;
+  origin: DerivedTagOrigin;
 }
 
 export interface MemoryInsightEntityNode {
@@ -130,18 +139,13 @@ export interface BuildMemoryInsightGraphInput {
   memories: Memory[];
   matches?: MemoryAnalysisMatch[] | null;
   matchMap?: Map<string, MemoryAnalysisMatch> | null;
-}
-
-interface EntityHit {
-  kind: MemoryInsightEntityKind;
-  label: string;
-  normalizedLabel: string;
-  index: number;
+  signalIndex?: LocalDerivedSignalIndex | null;
 }
 
 interface TagBucket {
   tagValue: string;
   synthetic: boolean;
+  origin: DerivedTagOrigin;
   memories: Memory[];
 }
 
@@ -182,7 +186,7 @@ function slugify(value: string): string {
   const normalized = value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[^\p{Letter}\p{Number}]+/gu, "-")
     .replace(/^-+|-+$/g, "");
 
   return normalized.length > 0 ? normalized : "item";
@@ -267,116 +271,6 @@ function buildSize(base: number, count: number, scale: number): number {
   return Math.round(base + Math.sqrt(Math.max(count, 1)) * scale);
 }
 
-function normalizeTags(tags: string[]): string[] {
-  const seen = new Set<string>();
-  const normalized: string[] = [];
-
-  for (const tag of tags) {
-    const trimmed = tag.trim();
-    if (!trimmed) continue;
-
-    const key = normalizeLabel(trimmed);
-    if (seen.has(key)) continue;
-
-    seen.add(key);
-    normalized.push(trimmed);
-  }
-
-  return normalized;
-}
-
-function addEntityHit(
-  target: Map<string, EntityHit>,
-  label: string,
-  kind: MemoryInsightEntityKind,
-  index: number,
-): void {
-  const trimmed = label.trim();
-  if (!trimmed) {
-    return;
-  }
-
-  const normalizedLabel = normalizeLabel(trimmed);
-  if (!normalizedLabel) {
-    return;
-  }
-
-  const key = `${kind}:${normalizedLabel}`;
-  if (!target.has(key)) {
-    target.set(key, {
-      kind,
-      label: trimmed,
-      normalizedLabel,
-      index,
-    });
-  }
-}
-
-export function extractMemoryInsightEntities(memory: Memory): EntityHit[] {
-  const hits = new Map<string, EntityHit>();
-  const source = memory.content;
-
-  for (const match of source.matchAll(/`([^`]+)`/g)) {
-    addEntityHit(hits, match[1] ?? "", "named_term", match.index ?? 0);
-  }
-
-  for (const match of source.matchAll(/"([^"]{2,120})"/g)) {
-    const value = match[1] ?? "";
-    if (value.split(/\s+/).length >= 2) {
-      addEntityHit(hits, value, "named_term", match.index ?? 0);
-    }
-  }
-
-  for (const match of source.matchAll(
-    /\b(?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s`"'<>]*)?/gi,
-  )) {
-    addEntityHit(hits, match[0] ?? "", "named_term", match.index ?? 0);
-  }
-
-  for (const match of source.matchAll(
-    /\b(?:@[a-z0-9-]+\/)?[a-z0-9]+(?:[-_/][a-z0-9]+)+\b/gi,
-  )) {
-    addEntityHit(hits, match[0] ?? "", "named_term", match.index ?? 0);
-  }
-
-  for (const match of source.matchAll(/\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+\b/g)) {
-    addEntityHit(hits, match[0] ?? "", "named_term", match.index ?? 0);
-  }
-
-  for (const match of source.matchAll(
-    /\b\d+(?:\.\d+)?(?:%|ms|s|m|h|d|w|mo|y|kb|mb|gb|tb|x)(?!\w)/gi,
-  )) {
-    addEntityHit(hits, match[0] ?? "", "metric", match.index ?? 0);
-  }
-
-  for (const match of source.matchAll(/\bv?\d+\.\d+(?:\.\d+)?\b/gi)) {
-    addEntityHit(hits, match[0] ?? "", "metric", match.index ?? 0);
-  }
-
-  for (const match of source.matchAll(/\b\d{4}-\d{2}-\d{2}\b/g)) {
-    addEntityHit(hits, match[0] ?? "", "metric", match.index ?? 0);
-  }
-
-  for (const match of source.matchAll(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g)) {
-    addEntityHit(hits, match[0] ?? "", "metric", match.index ?? 0);
-  }
-
-  for (const match of source.matchAll(/@[a-z0-9._-]{2,}/gi)) {
-    addEntityHit(hits, match[0] ?? "", "person_like", match.index ?? 0);
-  }
-
-  for (const match of source.matchAll(/\b[A-Z][a-z]+ [A-Z][a-z]+\b/g)) {
-    addEntityHit(hits, match[0] ?? "", "person_like", match.index ?? 0);
-  }
-
-  return [...hits.values()].sort(
-    (left, right) =>
-      left.index - right.index ||
-      ENTITY_KIND_ORDER[left.kind] - ENTITY_KIND_ORDER[right.kind] ||
-      left.label.localeCompare(right.label, "en"),
-  );
-}
-
 export function memoryMatchesInsightEntity(
   memory: Memory,
   entity?: MemoryInsightEntityFilter,
@@ -396,11 +290,19 @@ export function memoryMatchesInsightEntity(
   );
 }
 
-function buildTagBuckets(memories: Memory[]): TagBucket[] {
+function buildTagBuckets(
+  memories: Memory[],
+  matchLookup: Map<string, MemoryAnalysisMatch>,
+  providedSignalIndex?: LocalDerivedSignalIndex | null,
+): TagBucket[] {
+  const signalIndex = providedSignalIndex ?? buildLocalDerivedSignalIndex({
+    memories,
+    matchMap: matchLookup,
+  });
   const buckets = new Map<string, TagBucket>();
 
   for (const memory of memories) {
-    const tags = normalizeTags(memory.tags);
+    const tags = getCombinedTagsForMemory(memory, signalIndex);
     const values = tags.length > 0 ? tags : [MEMORY_INSIGHT_UNTAGGED_TAG];
 
     for (const value of values) {
@@ -408,9 +310,13 @@ function buildTagBuckets(memories: Memory[]): TagBucket[] {
         value === MEMORY_INSIGHT_UNTAGGED_TAG
           ? MEMORY_INSIGHT_UNTAGGED_TAG
           : normalizeLabel(value);
+      const origin = value === MEMORY_INSIGHT_UNTAGGED_TAG
+        ? "raw"
+        : (signalIndex.tagSourceByValue.get(key) ?? "raw");
       const bucket = buckets.get(key) ?? {
         tagValue: value,
         synthetic: value === MEMORY_INSIGHT_UNTAGGED_TAG,
+        origin,
         memories: [],
       };
 
@@ -498,6 +404,7 @@ function createTagNode(
   tagValue: string,
   count: number,
   synthetic: boolean,
+  origin: DerivedTagOrigin,
 ): MemoryInsightTagNode {
   const tagSlug =
     tagValue === MEMORY_INSIGHT_UNTAGGED_TAG
@@ -517,6 +424,7 @@ function createTagNode(
     parentId: `card:${slugify(category)}`,
     depth: 1,
     synthetic,
+    origin,
   };
 }
 
@@ -614,13 +522,14 @@ export function buildMemoryInsightGraph(
     cardNodes.push(cardNode);
     nodes.push(cardNode);
 
-    const tagBuckets = buildTagBuckets(cardMemories);
+    const tagBuckets = buildTagBuckets(cardMemories, matchLookup, input.signalIndex);
     for (const tagBucket of tagBuckets) {
       const tagNode = createTagNode(
         card.category,
         tagBucket.tagValue,
         tagBucket.memories.length,
         tagBucket.synthetic,
+        tagBucket.origin,
       );
       tagNodes.push(tagNode);
       nodes.push(tagNode);

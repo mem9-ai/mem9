@@ -21,13 +21,13 @@ import {
   type InsightRectItem,
 } from "@/components/space/memory-insight-layout";
 import {
-  buildMemoryInsightGraph,
   formatInsightCategoryLabel,
   type MemoryInsightEntityNode,
   type MemoryInsightMemoryNode,
   type MemoryInsightNodeKind,
   type MemoryInsightTagNode,
 } from "@/lib/memory-insight";
+import { useBackgroundMemoryInsightGraph } from "@/lib/memory-insight-background";
 import type { AnalysisCategoryCard, MemoryAnalysisMatch } from "@/types/analysis";
 import type { Memory } from "@/types/memory";
 
@@ -447,10 +447,11 @@ function MemoryInsightCanvas({
   onMemorySelect: (memory: Memory) => void;
 }) {
   const { t } = useTranslation();
-  const graph = useMemo(
-    () => buildMemoryInsightGraph({ cards, memories, matchMap }),
-    [cards, matchMap, memories],
-  );
+  const { data: graph } = useBackgroundMemoryInsightGraph({
+    cards,
+    memories,
+    matchMap,
+  });
   const memoriesById = useMemo(
     () => new Map(memories.map((memory) => [memory.id, memory])),
     [memories],
@@ -822,7 +823,9 @@ function MemoryInsightCanvas({
           id: tag.id,
           kind: "tag",
           label: tag.label,
-          subtitle: t("memory_insight.tag_subtitle"),
+          subtitle: tag.origin === "derived"
+            ? t("memory_insight.derived_tag_subtitle")
+            : t("memory_insight.tag_subtitle"),
           count: tag.count,
           width: dimensions.width,
           height: dimensions.height,

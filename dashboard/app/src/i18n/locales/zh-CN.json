@@ -51,6 +51,8 @@
     "created": "创建时间",
     "updated": "更新时间",
     "tags": "标签",
+    "derived_badge": "派生",
+    "derived_tags": "派生标签",
     "metadata": "元数据",
     "delete": "删除这条记忆",
     "edit": "编辑",
@@ -174,7 +176,8 @@
   },
   "tag_strip": {
     "label": "按标签浏览",
-    "filter_label": "按标签 {{tag}} 筛选（{{count}}）"
+    "filter_label": "按标签 {{tag}} 筛选（{{count}}）",
+    "derived_badge": "派生"
   },
   "facet": {
     "about_you": "关于你",
@@ -224,6 +227,7 @@
     "top_topics": "高频主题",
     "top_topics_hint": "主题计数来自聚合分析信号，当前不支持直接点击筛选。",
     "top_tags": "高频标签",
+    "derived_badge": "派生",
     "more": "更多",
     "less": "收起",
     "expand_section": "展开",
@@ -310,6 +314,12 @@
     }
   },
   "memory_insight": {
+    "layer_eyebrow": "双层视图",
+    "layer_helper": "保留浏览层做 drill-down，同时切换到实体关系层查看更强的结构信号。",
+    "view_mode": {
+      "browse": "Browse",
+      "relations": "Relations"
+    },
     "eyebrow": "关系拓扑",
     "title": "Memory Insight",
     "subtitle": "用关系拓扑探索当前范围内的分类、标签、实体和记忆之间如何连接。",
@@ -322,6 +332,7 @@
     "reset_layout": "重置布局",
     "card_subtitle": "聚合卡片",
     "tag_subtitle": "标签分支",
+    "derived_tag_subtitle": "派生标签",
     "memory_meta_empty": "没有附加标签",
     "empty_entities": "这个标签下暂时没有提取出实体节点。",
     "entity_filter_chip": "实体：{{label}}",
@@ -338,6 +349,66 @@
       "metric": "指标",
       "person_like": "人物线索",
       "fallback": "其他"
+    },
+    "relations": {
+      "eyebrow": "实体网络",
+      "title": "关系层",
+      "subtitle": "查看哪些高频实体会一起出现、连接多个主题，并在时间上变强。",
+      "helper": "这张图完全基于当前范围内的本地共现、标签、分类和时间分布计算，不依赖额外后端接口。",
+      "filter_relation": "关系类型",
+      "canvas_global": "全局实体网络。可以拖拽节点、过滤边，并聚焦最强关系。",
+      "canvas_focus": "局部邻域视图。需要更多上下文时可以展开到 2-hop。",
+      "expand_2hop": "展开 2-hop",
+      "collapse_2hop": "收起 2-hop",
+      "empty_title": "暂时还没有稳定的实体关系",
+      "empty_body": "可以尝试扩大时间范围，或去掉页面上的分类 / 标签过滤来看到更多共现结构。",
+      "detail_global": "全局洞察",
+      "detail_entity": "实体详情",
+      "detail_edge": "关系详情",
+      "overview_title": "桥梁、聚类与上升信号",
+      "overview_helper": "可以先从榜单进入，也可以直接点图中的节点或边查看局部证据。",
+      "bridge_title": "Bridge",
+      "bridge_meta": "{{categories}} 个分类 · {{tags}} 个标签",
+      "cluster_title": "Clusters",
+      "cluster_meta": "{{entities}} 个实体 · {{edges}} 条边",
+      "rising_title": "Rising",
+      "rising_meta": "最近 {{recent}} · 之前 {{previous}}",
+      "metrics_title": "指标",
+      "metric": {
+        "co_occurrence": "共现次数",
+        "conditional_strength": "条件强度",
+        "lift": "提升度",
+        "recency_boost": "时间提升",
+        "distinct_categories": "覆盖分类数",
+        "distinct_tags": "覆盖标签数",
+        "degree": "连接度",
+        "rising_score": "增长倍数"
+      },
+      "related_entities": "关联实体",
+      "shared_context": "共享上下文",
+      "shared_memories": "共同支撑 {{count}} 条记忆",
+      "evidence_title": "证据记忆",
+      "timeline_title": "时间线",
+      "entity_count": "出现 {{count}} 次",
+      "entity_total": "视图内实体",
+      "edge_total": "视图内边",
+      "memory_total": "证据记忆",
+      "entity_total_summary": "{{count}} 个实体",
+      "edge_total_summary": "{{count}} 条边",
+      "strength": {
+        "all": "全部强度",
+        "medium": "2+ 次共现",
+        "strong": "3+ 次共现"
+      },
+      "type": {
+        "all": "全部关系类型",
+        "co_occurrence": "共现",
+        "depends_on": "依赖",
+        "used_with": "配合使用",
+        "deployed_to": "部署到",
+        "scheduled_with": "调度相关",
+        "points_to": "指向"
+      }
     }
   }
 }

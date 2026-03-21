@@ -1,11 +1,16 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MemoryInsightOverview } from "@/components/space/memory-insight-overview";
+import { MemoryInsightWorkspace } from "@/components/space/memory-insight-workspace";
 import { MemoryPulseOverview } from "@/components/space/memory-pulse-overview";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { MemoryInsightTab } from "@/lib/memory-insight";
-import type { AnalysisCategoryCard, AnalysisJobSnapshotResponse, MemoryAnalysisMatch } from "@/types/analysis";
+import type {
+  AnalysisCategory,
+  AnalysisCategoryCard,
+  AnalysisJobSnapshotResponse,
+  MemoryAnalysisMatch,
+} from "@/types/analysis";
 import type { Memory, MemoryStats, MemoryType } from "@/types/memory";
 import type { TimeRangePreset, TimelineSelection } from "@/types/time-range";
 
@@ -21,6 +26,7 @@ export function MemoryOverviewTabs({
   loading,
   compact,
   activeType,
+  activeCategory,
   activeTag,
   selectedTimeline,
   matchMap,
@@ -39,6 +45,7 @@ export function MemoryOverviewTabs({
   loading: boolean;
   compact: boolean;
   activeType?: MemoryType;
+  activeCategory?: AnalysisCategory;
   activeTag?: string;
   selectedTimeline?: TimelineSelection;
   matchMap: Map<string, MemoryAnalysisMatch>;
@@ -112,12 +119,14 @@ export function MemoryOverviewTabs({
       </TabsContent>
 
       <TabsContent value="insight" className="-mt-px mt-0">
-        <MemoryInsightOverview
+        <MemoryInsightWorkspace
           cards={cards}
           memories={insightMemories}
           matchMap={matchMap}
           compact={compact}
           resetToken={insightResetToken}
+          activeCategory={activeCategory}
+          activeTag={activeTag}
           onMemorySelect={(memory) => onMemorySelect(memory, "insight")}
         />
       </TabsContent>

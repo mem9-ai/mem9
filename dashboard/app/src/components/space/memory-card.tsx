@@ -9,6 +9,7 @@ import { features } from "@/config/features";
 
 export function MemoryCard({
   memory: m,
+  derivedTags = [],
   sessionPreview,
   isSelected,
   onClick,
@@ -17,6 +18,7 @@ export function MemoryCard({
   delay,
 }: {
   memory: Memory;
+  derivedTags?: string[];
   sessionPreview: SessionMessage[];
   isSelected: boolean;
   onClick: () => void;
@@ -102,6 +104,21 @@ export function MemoryCard({
               </span>
             )}
           </div>
+          {derivedTags.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]">
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 font-semibold uppercase tracking-[0.08em] text-primary">
+                {t("detail.derived_badge")}
+              </span>
+              {derivedTags.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-md bg-primary/8 px-2 py-0.5 font-medium text-primary/80"
+                >
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">

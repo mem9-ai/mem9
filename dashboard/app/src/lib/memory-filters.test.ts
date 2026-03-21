@@ -4,6 +4,7 @@ import {
   memoryMatchesRange,
   sortMemoriesByCreatedAtDesc,
 } from "./memory-filters";
+import { buildLocalDerivedSignalIndex, getCombinedTagsForMemory } from "./memory-derived-signals";
 import type { Memory } from "@/types/memory";
 
 const FIXED_NOW = new Date("2026-03-21T12:00:00Z");
@@ -114,5 +115,46 @@ describe("memory filters", () => {
     );
 
     expect(result.map((memory) => memory.id)).toEqual(["mem-newest", "mem-middle"]);
+  });
+
+  it("matches derived tags through the optional tag resolver", () => {
+    const derivedMemory = createMemory({
+      id: "mem-derived",
+      content: "继续推进 `OpenClaw` 部署到 /srv/openclaw/config",
+      tags: ["clawd", "md"],
+      created_at: "2026-03-19T12:00:00Z",
+      updated_at: "2026-03-19T12:00:00Z",
+    });
+    const secondDerivedMemory = createMemory({
+      id: "mem-derived-2",
+      content: "再次推进 `OpenClaw` 部署到 /srv/openclaw/config",
+      tags: ["import", "json"],
+      created_at: "2026-03-18T12:00:00Z",
+      updated_at: "2026-03-18T12:00:00Z",
+    });
+    const unrelated = createMemory({
+      id: "mem-other",
+      content: "Ignore this archive note",
+      tags: ["archive"],
+      created_at: "2026-03-17T12:00:00Z",
+      updated_at: "2026-03-17T12:00:00Z",
+    });
+    const signalIndex = buildLocalDerivedSignalIndex({
+      memories: [derivedMemory, secondDerivedMemory, unrelated],
+    });
+
+    const result = filterMemoriesForView(
+      [unrelated, secondDerivedMemory, derivedMemory],
+      {
+        q: "openclaw",
+        tag: "OpenClaw",
+        tagResolver: (memory) => getCombinedTagsForMemory(memory, signalIndex),
+      },
+    );
+
+    expect(result.map((memory) => memory.id)).toEqual([
+      "mem-derived",
+      "mem-derived-2",
+    ]);
   });
 });

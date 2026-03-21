@@ -10,6 +10,7 @@ import { features } from "@/config/features";
 
 export function DetailPanel({
   memory: m,
+  derivedTags = [],
   sessionPreview,
   sessionPreviewLoading,
   onClose,
@@ -18,6 +19,7 @@ export function DetailPanel({
   t,
 }: {
   memory: Memory;
+  derivedTags?: string[];
   sessionPreview: SessionMessage[];
   sessionPreviewLoading: boolean;
   onClose: () => void;
@@ -33,6 +35,7 @@ export function DetailPanel({
       <div className="sticky top-[calc(3.5rem+2rem)] overflow-hidden rounded-2xl border border-border/30 bg-card shadow-lg ring-1 ring-border/5">
         <DetailPanelContent
           memory={m}
+          derivedTags={derivedTags}
           sessionPreview={sessionPreview}
           sessionPreviewLoading={sessionPreviewLoading}
           onClose={onClose}
@@ -50,6 +53,7 @@ export function DetailPanel({
 
 export function DetailPanelContent({
   memory: m,
+  derivedTags = [],
   sessionPreview,
   sessionPreviewLoading,
   onClose,
@@ -61,6 +65,7 @@ export function DetailPanelContent({
   t,
 }: {
   memory: Memory;
+  derivedTags?: string[];
   sessionPreview: SessionMessage[];
   sessionPreviewLoading: boolean;
   onClose: () => void;
@@ -174,6 +179,23 @@ export function DetailPanelContent({
                   #{tag}
                 </span>
               ))}
+            </div>
+          )}
+          {derivedTags.length > 0 && (
+            <div>
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
+                {t("detail.derived_tags")}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {derivedTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-md bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary"
+                  >
+                    #{tag}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
 

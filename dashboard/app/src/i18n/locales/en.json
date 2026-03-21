@@ -51,6 +51,8 @@
     "created": "Created",
     "updated": "Updated",
     "tags": "Tags",
+    "derived_badge": "Derived",
+    "derived_tags": "Derived tags",
     "metadata": "Metadata",
     "delete": "Delete this memory",
     "edit": "Edit",
@@ -174,7 +176,8 @@
   },
   "tag_strip": {
     "label": "Browse by tag",
-    "filter_label": "Filter by tag {{tag}} ({{count}})"
+    "filter_label": "Filter by tag {{tag}} ({{count}})",
+    "derived_badge": "Derived"
   },
   "facet": {
     "about_you": "About You",
@@ -224,6 +227,7 @@
     "top_topics": "Top topics",
     "top_topics_hint": "Topic counts are aggregate analysis signals and are not clickable filters.",
     "top_tags": "Top tags",
+    "derived_badge": "Derived",
     "more": "More",
     "less": "Less",
     "expand_section": "Expand",
@@ -310,6 +314,12 @@
     }
   },
   "memory_insight": {
+    "layer_eyebrow": "Insight Layers",
+    "layer_helper": "Keep the browse map for drill-down, or switch to the entity network for relationship signals.",
+    "view_mode": {
+      "browse": "Browse",
+      "relations": "Relations"
+    },
     "eyebrow": "Topology",
     "title": "Memory Insight",
     "subtitle": "Explore how categories, tags, entities, and memories connect inside this range.",
@@ -322,6 +332,7 @@
     "reset_layout": "Reset layout",
     "card_subtitle": "Aggregate card",
     "tag_subtitle": "Tag branch",
+    "derived_tag_subtitle": "Derived tag",
     "memory_meta_empty": "No tags attached",
     "empty_entities": "No entity heuristics surfaced under this tag yet.",
     "entity_filter_chip": "Entity: {{label}}",
@@ -338,6 +349,66 @@
       "metric": "Metric",
       "person_like": "Person-like",
       "fallback": "Other"
+    },
+    "relations": {
+      "eyebrow": "Entity Network",
+      "title": "Relationship Layer",
+      "subtitle": "See which high-frequency entities cluster together, bridge topics, and grow over time.",
+      "helper": "The graph is built locally from co-occurrence, tags, categories, and recency inside the current range.",
+      "filter_relation": "Relation type",
+      "canvas_global": "Global entity network. Drag nodes, filter edges, and focus on the strongest links.",
+      "canvas_focus": "Focused neighborhood. Expand to 2-hop when you want more context.",
+      "expand_2hop": "Expand 2-hop",
+      "collapse_2hop": "Collapse 2-hop",
+      "empty_title": "No stable entity relations yet",
+      "empty_body": "Try a broader range or remove page-level category/tag filters to surface more shared entities.",
+      "detail_global": "Global Signals",
+      "detail_entity": "Entity Detail",
+      "detail_edge": "Relationship Detail",
+      "overview_title": "Bridge, cluster, and rising signals",
+      "overview_helper": "Pick a node or edge for local evidence, or start from the ranked summaries below.",
+      "bridge_title": "Bridge",
+      "bridge_meta": "{{categories}} categories · {{tags}} tags",
+      "cluster_title": "Clusters",
+      "cluster_meta": "{{entities}} entities · {{edges}} edges",
+      "rising_title": "Rising",
+      "rising_meta": "Recent {{recent}} · previous {{previous}}",
+      "metrics_title": "Metrics",
+      "metric": {
+        "co_occurrence": "Co-occurrence",
+        "conditional_strength": "Conditional strength",
+        "lift": "Lift",
+        "recency_boost": "Recency boost",
+        "distinct_categories": "Distinct categories",
+        "distinct_tags": "Distinct tags",
+        "degree": "Degree",
+        "rising_score": "Rising score"
+      },
+      "related_entities": "Related entities",
+      "shared_context": "Shared context",
+      "shared_memories": "{{count}} shared memories",
+      "evidence_title": "Evidence memories",
+      "timeline_title": "Timeline",
+      "entity_count": "{{count}} mentions",
+      "entity_total": "Entities in view",
+      "edge_total": "Edges in view",
+      "memory_total": "Evidence memories",
+      "entity_total_summary": "{{count}} entities",
+      "edge_total_summary": "{{count}} edges",
+      "strength": {
+        "all": "All strengths",
+        "medium": "2+ mentions",
+        "strong": "3+ mentions"
+      },
+      "type": {
+        "all": "All relation types",
+        "co_occurrence": "Co-occurrence",
+        "depends_on": "Depends on",
+        "used_with": "Used with",
+        "deployed_to": "Deployed to",
+        "scheduled_with": "Scheduled with",
+        "points_to": "Points to"
+      }
     }
   }
 }

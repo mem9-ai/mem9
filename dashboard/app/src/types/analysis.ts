@@ -99,6 +99,7 @@ export interface AnalysisCategoryCard {
 export interface AnalysisFacetStat {
   value: string;
   count: number;
+  origin?: "raw" | "derived" | "mixed";
 }
 
 export interface MemoryAnalysisMatch {

@@ -166,6 +166,34 @@ describe("AnalysisPanel", () => {
     expect(onSelectTag).toHaveBeenCalledWith("priority");
   });
 
+  it("marks derived-only tags in the analysis facet list", () => {
+    render(
+      <AnalysisPanel
+        state={createState({
+          snapshot: createSnapshot({
+            topTagStats: [
+              { value: "OpenClaw", count: 3, origin: "derived" },
+            ],
+            topTags: ["OpenClaw"],
+          }),
+        })}
+        sourceCount={4}
+        sourceLoading={false}
+        taxonomy={null}
+        taxonomyUnavailable={false}
+        cards={createSnapshot().aggregateCards}
+        onSelectCategory={noop}
+        onSelectTag={noop}
+        onRetry={noop}
+        t={t}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "OpenClaw analysis.derived_badge (3)" }),
+    ).toBeInTheDocument();
+  });
+
   it("uses uploaded batches for uploading progress", () => {
     const { container } = render(
       <AnalysisPanel

@@ -8,6 +8,8 @@ import type {
   TimelineSelection,
 } from "@/types/time-range";
 
+export type MemoryTagResolver = (memory: Memory) => string[];
+
 function parseTimestamp(value: string): number | null {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -49,23 +51,42 @@ export function memoryMatchesTimeline(
   return createdAt >= from && createdAt < to;
 }
 
-export function memoryMatchesQuery(memory: Memory, query?: string): boolean {
+function resolveMemoryTags(
+  memory: Memory,
+  tagResolver?: MemoryTagResolver,
+): string[] {
+  return tagResolver?.(memory) ?? memory.tags;
+}
+
+export function memoryMatchesQuery(
+  memory: Memory,
+  query?: string,
+  tagResolver?: MemoryTagResolver,
+): boolean {
   if (!query) return true;
   const normalized = query.trim().toLowerCase();
   if (!normalized) return true;
 
   return (
     memory.content.toLowerCase().includes(normalized) ||
-    memory.tags.some((tag) => tag.toLowerCase().includes(normalized))
+    resolveMemoryTags(memory, tagResolver).some((tag) =>
+      tag.toLowerCase().includes(normalized)
+    )
   );
 }
 
-export function memoryMatchesTag(memory: Memory, tag?: string): boolean {
+export function memoryMatchesTag(
+  memory: Memory,
+  tag?: string,
+  tagResolver?: MemoryTagResolver,
+): boolean {
   if (!tag) return true;
   const normalized = tag.trim().toLowerCase();
   if (!normalized) return true;
 
-  return memory.tags.some((memoryTag) => memoryTag.toLowerCase() === normalized);
+  return resolveMemoryTags(memory, tagResolver).some(
+    (memoryTag) => memoryTag.toLowerCase() === normalized,
+  );
 }
 
 export function memoryMatchesType(
@@ -93,13 +114,14 @@ export function filterMemoriesForView(
     facet?: MemoryFacet;
     range?: TimeRangePreset;
     timeline?: TimelineSelection;
+    tagResolver?: MemoryTagResolver;
   },
 ): Memory[] {
   return sortMemoriesByCreatedAtDesc(
     memories.filter(
       (memory) =>
-        memoryMatchesQuery(memory, params.q) &&
-        memoryMatchesTag(memory, params.tag) &&
+        memoryMatchesQuery(memory, params.q, params.tagResolver) &&
+        memoryMatchesTag(memory, params.tag, params.tagResolver) &&
         memoryMatchesType(memory, params.memoryType) &&
         memoryMatchesFacet(memory, params.facet) &&
         memoryMatchesTimeline(memory, params.timeline) &&
