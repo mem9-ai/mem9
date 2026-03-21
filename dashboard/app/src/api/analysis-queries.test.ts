@@ -7,6 +7,7 @@ import {
   shouldRestartIncompleteCachedSnapshot,
   shouldStopPollingSnapshot,
   shouldTreatPollAsStalled,
+  shouldUseCachedAnalysisMatches,
 } from "./analysis-queries";
 import type { AnalysisJobSnapshotResponse, BatchStatus } from "@/types/analysis";
 
@@ -294,6 +295,30 @@ describe("poll stall detection", () => {
 
     expect(shouldTreatPollAsStalled(progress)).toBe(false);
     expect(progress.stagnantPolls).toBe(0);
+  });
+});
+
+describe("shouldUseCachedAnalysisMatches", () => {
+  it("does not use cached matches when taxonomy data is available", () => {
+    expect(
+      shouldUseCachedAnalysisMatches({
+        hasFreshSnapshot: true,
+        fingerprintMatches: true,
+        taxonomyVersionMatches: true,
+        taxonomyAvailable: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("uses cached matches only when the snapshot is fresh and taxonomy is unavailable", () => {
+    expect(
+      shouldUseCachedAnalysisMatches({
+        hasFreshSnapshot: true,
+        fingerprintMatches: true,
+        taxonomyVersionMatches: true,
+        taxonomyAvailable: false,
+      }),
+    ).toBe(true);
   });
 });
 

@@ -223,6 +223,25 @@ export function shouldTreatPollAsStalled(
   return progress.stagnantPolls >= MAX_STALLED_POLL_ATTEMPTS;
 }
 
+export function shouldUseCachedAnalysisMatches({
+  hasFreshSnapshot,
+  fingerprintMatches,
+  taxonomyVersionMatches,
+  taxonomyAvailable,
+}: {
+  hasFreshSnapshot: boolean;
+  fingerprintMatches: boolean;
+  taxonomyVersionMatches: boolean;
+  taxonomyAvailable: boolean;
+}): boolean {
+  return (
+    hasFreshSnapshot &&
+    fingerprintMatches &&
+    taxonomyVersionMatches &&
+    !taxonomyAvailable
+  );
+}
+
 async function startAnalysisStartup(
   spaceId: string,
   range: TimeRangePreset,
@@ -400,20 +419,15 @@ export function useSpaceAnalysis(
       try {
         const cachedAnalysis = await readAnalysisCache(spaceId, range);
         const fingerprint = await createMemoryFingerprint(sourceMemories);
-        const shouldUseCachedMatches =
-          !!cachedAnalysis?.snapshot &&
-          isAnalysisCacheFresh(cachedAnalysis.updatedAt) &&
-          cachedAnalysis.taxonomyVersion === DEFAULT_TAXONOMY_VERSION &&
-          cachedAnalysis.fingerprint === fingerprint;
-
-        if (shouldUseCachedMatches) {
-          const cachedMatches = await readCachedAnalysisMatches(spaceId, range);
-          if (cancelled) return;
-
-          setMatches(cachedMatches);
-          setCards([]);
-          return;
-        }
+        const shouldUseCachedMatches = shouldUseCachedAnalysisMatches({
+          hasFreshSnapshot:
+            !!cachedAnalysis?.snapshot &&
+            isAnalysisCacheFresh(cachedAnalysis.updatedAt),
+          fingerprintMatches: cachedAnalysis?.fingerprint === fingerprint,
+          taxonomyVersionMatches:
+            cachedAnalysis?.taxonomyVersion === DEFAULT_TAXONOMY_VERSION,
+          taxonomyAvailable: !!taxonomyQuery.data,
+        });
 
         if (taxonomyQuery.data) {
           const computedMatches = matchMemoriesToTaxonomy(
@@ -431,6 +445,15 @@ export function useSpaceAnalysis(
               sourceMemories.length,
             ),
           );
+          return;
+        }
+
+        if (shouldUseCachedMatches) {
+          const cachedMatches = await readCachedAnalysisMatches(spaceId, range);
+          if (cancelled) return;
+
+          setMatches(cachedMatches);
+          setCards([]);
           return;
         }
 

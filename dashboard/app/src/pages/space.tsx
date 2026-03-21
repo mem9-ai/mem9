@@ -97,6 +97,23 @@ const FACETS: MemoryFacet[] = [
   "other",
 ];
 
+function humanizeAnalysisCategory(category: AnalysisCategory): string {
+  return category
+    .split("_")
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
+function formatAnalysisCategoryLabel(
+  t: ReturnType<typeof useTranslation>["t"],
+  category: AnalysisCategory,
+): string {
+  const key = `analysis.category.${category}`;
+  const translated = t(key);
+  return translated === key ? humanizeAnalysisCategory(category) : translated;
+}
+
 function buildStats(memories: Memory[]): MemoryStats {
   return {
     total: memories.length,
@@ -879,7 +896,7 @@ export function SpacePage() {
                     data-mp-category={analysisCategory}
                     className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-foreground hover:bg-secondary/80"
                   >
-                    {t(`analysis.category.${analysisCategory}`)}
+                    {formatAnalysisCategoryLabel(t, analysisCategory)}
                     <X className="size-3" />
                   </button>
                 )}
