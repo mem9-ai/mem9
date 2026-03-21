@@ -423,5 +423,5 @@ latency is O(1) with covering indexes in all cases.
 | `MemoriesBySession` implemented and tested | `MemorySessionLinkRepo.MemoriesBySession` (with limit, ordered) + unit tests covering ordering, empty result, pre-migration skip |
 | `SessionsByMemory` implemented and tested | `MemorySessionLinkRepo.SessionsByMemory` (with limit, ordered) + unit tests covering same cases |
 | No breaking change when `sessionID` is empty | `Link` is skipped when `sessionID == ""`; failures are non-fatal |
-| Non-TiDB backends unaffected | `stubMemorySessionLinkRepo` no-ops all methods |
+| Non-TiDB backends — link writes no-op | `stubMemorySessionLinkRepo` no-ops all link writes; `EnsureMemorySessionLinksTable` will warn and no-op on non-TiDB backends (same pre-existing behavior as `EnsureSessionsTable`); backend-aware guards deferred until db9/postgres DDL is verified |
 | Migration failure is recoverable | Ensure goroutine fires once per tenant per server process; recovery is via pod restart (same model as `sessions` table); repair query available for gap fill; test seam validates ensure + link round-trip |

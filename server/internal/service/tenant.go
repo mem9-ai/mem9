@@ -204,6 +204,11 @@ func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) err
 	return nil
 }
 
+// EnsureMemorySessionLinksTable creates the memory_session_links join table if absent.
+// Currently TiDB/MySQL DDL only. runTenantMigrations calls this for all backends
+// (same behavior as EnsureSessionsTable), so it will log a Warn and no-op on
+// postgres/db9 until the DDL is confirmed compatible with those dialects.
+// TODO: guard with backend check once db9 and postgres DDL is verified.
 func (s *TenantService) EnsureMemorySessionLinksTable(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, tenant.TenantMemorySessionLinksSchema); err != nil {
 		return fmt.Errorf("ensure memory_session_links table: %w", err)
