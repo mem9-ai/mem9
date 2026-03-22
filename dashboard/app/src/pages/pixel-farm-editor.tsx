@@ -1376,6 +1376,11 @@ export function PixelFarmEditorPage() {
     setNewLayerName("");
   }
 
+  function handleSelectLayer(layerId: string): void {
+    setSelectedLayerId(layerId);
+    setEditorMode(layerId === OBJECT_LAYER_ID ? "objects" : "terrain");
+  }
+
   function handleDeleteLayer(): void {
     if (selectedLayer.id === OBJECT_LAYER_ID || terrainLayers.length <= 1) {
       return;
@@ -1498,7 +1503,7 @@ export function PixelFarmEditorPage() {
                   type="button"
                   size="sm"
                   variant={selectedLayer.id === layer.id ? "default" : "outline"}
-                  onClick={() => setSelectedLayerId(layer.id)}
+                  onClick={() => handleSelectLayer(layer.id)}
                 >
                   {layer.label}
                 </Button>
