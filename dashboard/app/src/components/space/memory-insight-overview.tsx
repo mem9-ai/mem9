@@ -96,11 +96,12 @@ type RootBubbleRelationEdge = {
 };
 
 const DRIFT_SEEDS = [
-  { x: 8, y: -5, duration: 18, delay: -3 },
-  { x: -6, y: 7, duration: 20, delay: -9 },
-  { x: 5, y: 9, duration: 22, delay: -12 },
-  { x: -8, y: -4, duration: 17, delay: -6 },
-  { x: 7, y: 4, duration: 21, delay: -15 },
+  { x: 3, y: -10, duration: 12.5, delay: -2.2, rotate: -1.4, scale: 0.018 },
+  { x: -4, y: -12, duration: 14.2, delay: -6.8, rotate: 1.1, scale: 0.016 },
+  { x: 2, y: -8, duration: 11.6, delay: -4.4, rotate: -0.8, scale: 0.014 },
+  { x: -3, y: -11, duration: 13.4, delay: -8.6, rotate: 1.5, scale: 0.019 },
+  { x: 4, y: -9, duration: 15.1, delay: -10.3, rotate: -1.2, scale: 0.017 },
+  { x: -2, y: -13, duration: 12.9, delay: -12.1, rotate: 0.9, scale: 0.015 },
 ];
 
 const BUBBLE_COLOR_PALETTE = [
@@ -115,8 +116,13 @@ const BUBBLE_COLOR_PALETTE = [
 ] as const;
 
 const ROOT_BUBBLE_RANGE = {
-  compact: { min: 18, max: 40 },
-  desktop: { min: 20, max: 46 },
+  compact: { min: 10, max: 64 },
+  desktop: { min: 12, max: 84 },
+} as const;
+
+const ROOT_BUBBLE_EXPONENT = {
+  compact: 0.94,
+  desktop: 0.9,
 } as const;
 
 const BRANCH_LIMITS = {
@@ -159,9 +165,11 @@ function hashString(value: string): number {
 
 function bubbleDiameter(count: number, maxCount: number, compact: boolean): number {
   const range = compact ? ROOT_BUBBLE_RANGE.compact : ROOT_BUBBLE_RANGE.desktop;
+  const exponent = compact ? ROOT_BUBBLE_EXPONENT.compact : ROOT_BUBBLE_EXPONENT.desktop;
   const safeMax = Math.max(maxCount, 1);
   const ratio = Math.max(0, Math.min(1, count / safeMax));
-  return Math.round(range.min + ratio * (range.max - range.min));
+  const emphasizedRatio = Math.pow(ratio, exponent);
+  return Math.round(range.min + emphasizedRatio * (range.max - range.min));
 }
 
 function nodeDimensions(
@@ -211,6 +219,8 @@ function createBubbleDriftStyle(id: string, index: number): CSSProperties {
   return {
     "--insight-drift-x": `${seed.x}px`,
     "--insight-drift-y": `${seed.y}px`,
+    "--insight-drift-rotate": `${seed.rotate}deg`,
+    "--insight-drift-scale": `${seed.scale}`,
     "--insight-drift-duration": `${seed.duration}s`,
     "--insight-drift-delay": `${seed.delay}s`,
   } as CSSProperties;
@@ -456,10 +466,10 @@ function InsightNodeButton({
           ? "absolute isolate text-left transition-[left,top,box-shadow,filter] duration-75"
           : "absolute isolate text-left transition-[left,top,transform,box-shadow,filter] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
         bubble
-          ? "memory-insight-bubble flex flex-col items-center justify-start bg-transparent p-0 text-center shadow-none ring-0"
+          ? "memory-insight-bubble z-[3] flex flex-col items-center justify-start bg-transparent p-0 text-center shadow-none ring-0"
           : kind === "more"
-            ? "flex items-center justify-center rounded-full border px-3 py-2 text-center"
-            : "flex flex-col rounded-[1.35rem] p-3",
+            ? "z-[2] flex items-center justify-center rounded-full border px-3 py-2 text-center"
+            : "z-[2] flex flex-col rounded-[1.35rem] p-3",
         draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
         kindStyles[kind],
         muted ? "opacity-45 saturate-50" : "",
@@ -1363,12 +1373,14 @@ function MemoryInsightCanvas({
         if (!sourceCard || !targetCard) {
           return null;
         }
+        const sourceBubbleSize = nodeDimensions("card", sourceCard.count, compact, maxCardCount);
+        const targetBubbleSize = nodeDimensions("card", targetCard.count, compact, maxCardCount);
         const sourceDiameter = bubbleDiameter(sourceCard.count, maxCardCount, compact);
         const targetDiameter = bubbleDiameter(targetCard.count, maxCardCount, compact);
         const intensity = Math.min(edge.strength / Math.max(maxStrength, 1), 1);
-        const sourceX = rootRegionOffsetX + sourcePosition.x + sourceDiameter / 2;
+        const sourceX = rootRegionOffsetX + sourcePosition.x + sourceBubbleSize.width / 2;
         const sourceY = sourcePosition.y + sourceDiameter / 2;
-        const targetX = rootRegionOffsetX + targetPosition.x + targetDiameter / 2;
+        const targetX = rootRegionOffsetX + targetPosition.x + targetBubbleSize.width / 2;
         const targetY = targetPosition.y + targetDiameter / 2;
 
         return {
@@ -1517,7 +1529,7 @@ function MemoryInsightCanvas({
               {rootRelationEdges.length > 0 ? (
                 <svg
                   aria-hidden
-                  className="pointer-events-none absolute inset-0 z-[1]"
+                  className="pointer-events-none absolute inset-0 z-0"
                   width={canvasBounds.width}
                   height={canvasBounds.height}
                   viewBox={`0 0 ${canvasBounds.width} ${canvasBounds.height}`}

@@ -133,8 +133,12 @@ describe("MemoryInsightOverview", () => {
     const lefts = ["project", "profile", "plan", "policy"]
       .map((id) => screen.getByTestId(`insight-node-card:${id}`).style.left)
       .map((value) => Number.parseFloat(value));
+    const tops = ["project", "profile", "plan", "policy"]
+      .map((id) => screen.getByTestId(`insight-node-card:${id}`).style.top)
+      .map((value) => Number.parseFloat(value));
 
     expect(Math.max(...lefts) - Math.min(...lefts)).toBeGreaterThan(160);
+    expect(Math.max(...tops) - Math.min(...tops)).toBeGreaterThan(60);
   });
 
   it("renders the top-right controls on one row in Fullscreen / Reset layout / Fit view order", () => {
@@ -159,6 +163,36 @@ describe("MemoryInsightOverview", () => {
         .getAllByRole("button")
         .map((button) => button.textContent?.trim()),
     ).toEqual(["Fullscreen", "Reset layout", "Fit view"]);
+  });
+
+  it("makes low-memory bubbles much smaller than dominant categories", () => {
+    const memories = [
+      createMemory("artifact-1", "Artifact memory", ["artifact"]),
+      createMemory("experience-1", "Experience memory", ["experience"]),
+    ];
+    const matchMap = new Map<string, MemoryAnalysisMatch>([
+      ["artifact-1", { memoryId: "artifact-1", categories: ["artifact"], categoryScores: { artifact: 1 } }],
+      ["experience-1", { memoryId: "experience-1", categories: ["experience"], categoryScores: { experience: 1 } }],
+    ]);
+
+    renderInsight({
+      cards: [
+        { category: "artifact", count: 1221, confidence: 1 },
+        { category: "experience", count: 155, confidence: 1 },
+      ],
+      memories,
+      matchMap,
+    });
+
+    const artifactDiameter = Number.parseFloat(
+      screen.getByTestId("insight-node-card:artifact").dataset.bubbleDiameter ?? "0",
+    );
+    const experienceDiameter = Number.parseFloat(
+      screen.getByTestId("insight-node-card:experience").dataset.bubbleDiameter ?? "0",
+    );
+
+    expect(artifactDiameter / experienceDiameter).toBeGreaterThan(3);
+    expect((artifactDiameter * artifactDiameter) / (experienceDiameter * experienceDiameter)).toBeGreaterThan(9);
   });
 
   it("walks a lane from card to tag to entity to memory and only memory opens detail", async () => {
