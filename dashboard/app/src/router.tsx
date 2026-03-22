@@ -125,7 +125,7 @@ const spaceRoute = createRoute({
 
 const pixelFarmRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/labs/pixel-farm",
+  path: "/labs/memory-farm",
   component: PixelFarmRoutePage,
 });
 
