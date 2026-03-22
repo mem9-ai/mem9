@@ -20,6 +20,7 @@ import {
   tileOverrideAt,
   tileOverrideKey,
   type PixelFarmLayer,
+  type PixelFarmTileOverride,
   type PixelFarmTileOverrideMap,
 } from "@/lib/pixel-farm/island-mask";
 import {
@@ -45,7 +46,7 @@ interface DragState {
   tool: "paint" | "erase" | "rectangle" | "stamp" | "clearStamp";
   layerId: string;
   filled: boolean;
-  tile: PixelFarmAssetTileSelection | null;
+  tile: PixelFarmTileOverride | null;
   startRow: number;
   startColumn: number;
   endRow: number;
@@ -60,12 +61,19 @@ interface EditorState {
   cellSize: number;
 }
 
+interface HoveredCell {
+  row: number;
+  column: number;
+}
+
 const CELL_SIZE_MIN = 12;
 const CELL_SIZE_MAX = 32;
 const CELL_SIZE_STEP = 2;
 const INITIAL_CELL_SIZE = 18;
 const PALETTE_CELL_SIZE = 28;
 const MAX_HISTORY = 100;
+const GRID_GAP = 1;
+const GRID_PADDING = 1;
 const DRAFT_STORAGE_KEY = "pixel-farm-mask-editor-draft-v6";
 const EXPORT_ENDPOINT = "/your-memory/__pixel-farm/export-generated-mask-data";
 const DEFAULT_SELECTED_TILE: PixelFarmAssetTileSelection = {
@@ -84,9 +92,9 @@ const COPY = {
   exportHint: "Writes the generated layer data file.",
   undo: "Undo",
   redo: "Redo",
-  save: "Save draft",
+  save: "Save to localStorage",
   saved: "Saved",
-  export: "Export file",
+  export: "Write to file",
   exporting: "Exporting",
   exported: "Exported",
   exportFailed: "Export failed",
@@ -158,7 +166,7 @@ function setTileOverride(
   overrides: PixelFarmTileOverrideMap,
   row: number,
   column: number,
-  tile: PixelFarmAssetTileSelection | null,
+  tile: PixelFarmTileOverride | null,
 ): PixelFarmTileOverrideMap {
   const key = tileOverrideKey(row, column);
   const current = overrides[key];
@@ -172,7 +180,11 @@ function setTileOverride(
     return rest;
   }
 
-  if (current?.sourceId === tile.sourceId && current.frame === tile.frame) {
+  if (
+    current?.sourceId === tile.sourceId &&
+    current.frame === tile.frame &&
+    current.stamped === tile.stamped
+  ) {
     return overrides;
   }
 
@@ -265,7 +277,7 @@ function collectMaskRect(
 }
 
 function sameTileSelection(
-  left: PixelFarmAssetTileSelection,
+  left: PixelFarmTileOverride,
   right: PixelFarmAssetTileSelection,
 ): boolean {
   return left.sourceId === right.sourceId && left.frame === right.frame;
@@ -273,8 +285,8 @@ function sameTileSelection(
 
 function normalizeOverrideTile(
   layer: LayerState,
-  tile: PixelFarmAssetTileSelection | null,
-): PixelFarmAssetTileSelection | null {
+  tile: PixelFarmTileOverride | null,
+): PixelFarmTileOverride | null {
   if (!tile || sameTileSelection(tile, layer.baseTile)) {
     return null;
   }
@@ -286,7 +298,7 @@ function mutateLayerCells(
   layer: LayerState,
   cells: readonly (readonly [number, number])[],
   filled: boolean | null,
-  tile: PixelFarmAssetTileSelection | null | undefined,
+  tile: PixelFarmTileOverride | null | undefined,
 ): LayerState {
   let nextMask = layer.mask;
   let nextOverrides = layer.overrides;
@@ -347,6 +359,20 @@ function sanitizeAssetTileSelection(input: unknown): PixelFarmAssetTileSelection
   };
 }
 
+function sanitizeTileOverride(input: unknown): PixelFarmTileOverride | null {
+  const tile = sanitizeAssetTileSelection(input);
+  if (!tile) {
+    return null;
+  }
+
+  const stamped =
+    input && typeof input === "object" && !Array.isArray(input) && typeof (input as { stamped?: unknown }).stamped === "boolean"
+      ? (input as { stamped: boolean }).stamped
+      : undefined;
+
+  return stamped === undefined ? tile : { ...tile, stamped };
+}
+
 function pruneOverrideMap(
   mask: readonly string[],
   overrides: PixelFarmTileOverrideMap,
@@ -364,13 +390,13 @@ function pruneOverrideMap(
       continue;
     }
 
-    const tile = sanitizeAssetTileSelection(value);
-    if (!tile) {
+    const override = sanitizeTileOverride(value);
+    if (!override) {
       changed = true;
       continue;
     }
 
-    next[key] = tile;
+    next[key] = override;
   }
 
   return changed ? next : overrides;
@@ -476,19 +502,14 @@ function previewTile(layer: LayerState, row: number, column: number): PixelFarmA
   return tileOverrideAt(layer.overrides, row, column) ?? layer.baseTile;
 }
 
-function compositePreviewTile(
+function previewTilesForLayers(
   layers: readonly LayerState[],
   row: number,
   column: number,
-): PixelFarmAssetTileSelection | null {
-  for (let index = layers.length - 1; index >= 0; index -= 1) {
-    const tile = previewTile(layers[index]!, row, column);
-    if (tile) {
-      return tile;
-    }
-  }
-
-  return null;
+): PixelFarmAssetTileSelection[] {
+  return layers
+    .map((layer) => previewTile(layer, row, column))
+    .filter((tile): tile is PixelFarmAssetTileSelection => tile !== null);
 }
 
 function backgroundColor(layers: readonly LayerState[], row: number, column: number): string {
@@ -589,6 +610,7 @@ export function PixelFarmEditorPage() {
   const [saved, setSaved] = useState(false);
   const [exportState, setExportState] = useState<"idle" | "exporting" | "done" | "error">("idle");
   const [previewRect, setPreviewRect] = useState<DragState | null>(null);
+  const [hoveredCell, setHoveredCell] = useState<HoveredCell | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [newLayerName, setNewLayerName] = useState("");
@@ -604,6 +626,9 @@ export function PixelFarmEditorPage() {
   const selectedLayerIndex = Math.max(0, layerIndexById(layers, selectedLayer.id));
   const rows = PIXEL_FARM_MASK_ROWS;
   const columns = PIXEL_FARM_MASK_COLUMNS;
+  const showBrushPreview =
+    hoveredCell !== null &&
+    (tool === "paint" || tool === "fill" || tool === "rectangle" || tool === "stamp");
 
   useEffect(() => {
     if (!layers.some((layer) => layer.id === selectedLayerId)) {
@@ -768,7 +793,7 @@ export function PixelFarmEditorPage() {
     layerId: string,
     cells: readonly (readonly [number, number])[],
     filled: boolean | null,
-    tile: PixelFarmAssetTileSelection | null | undefined,
+    tile: PixelFarmTileOverride | null | undefined,
     useGestureHistory: boolean,
   ): void {
     applyLayerMutation(
@@ -782,7 +807,7 @@ export function PixelFarmEditorPage() {
     layerId: string,
     row: number,
     column: number,
-    tile: PixelFarmAssetTileSelection | null,
+    tile: PixelFarmTileOverride | null,
     useGestureHistory: boolean,
   ): void {
     applyLayerMutation(
@@ -845,6 +870,8 @@ export function PixelFarmEditorPage() {
   }
 
   function handlePointerDown(row: number, column: number): void {
+    setHoveredCell({ row, column });
+
     if (tool === "fill") {
       applyCellsMutation(
         selectedLayer.id,
@@ -873,7 +900,7 @@ export function PixelFarmEditorPage() {
 
     if (tool === "stamp" || tool === "clearStamp") {
       startGesture();
-      const tile = tool === "stamp" ? selectedTile : null;
+      const tile = tool === "stamp" ? { ...selectedTile, stamped: true } : null;
       dragStateRef.current = {
         tool,
         layerId: selectedLayer.id,
@@ -910,6 +937,8 @@ export function PixelFarmEditorPage() {
   }
 
   function handlePointerEnter(row: number, column: number): void {
+    setHoveredCell({ row, column });
+
     const dragState = dragStateRef.current;
     if (!dragState) {
       return;
@@ -1089,7 +1118,7 @@ export function PixelFarmEditorPage() {
             <Button type="button" size="sm" variant="outline" onClick={handleSaveDraft}>
               {saved ? COPY.saved : COPY.save}
             </Button>
-            <Button type="button" size="sm" onClick={handleExport}>
+            <Button type="button" size="sm" variant="outline" onClick={handleExport}>
               {exportState === "exporting"
                 ? COPY.exporting
                 : exportState === "done"
@@ -1196,14 +1225,14 @@ export function PixelFarmEditorPage() {
 
           <div className="overflow-auto rounded-[22px] border border-[#92714c] bg-[#9bd4c3] p-4">
             <div
-              className="grid w-max gap-px rounded-md bg-[#7ab6ab] p-px"
+              className="relative grid w-max gap-px rounded-md bg-[#7ab6ab] p-px"
               style={{
                 gridTemplateColumns: `repeat(${columns}, ${cellSize}px)`,
               }}
+              onPointerLeave={() => setHoveredCell(null)}
             >
               {Array.from({ length: rows }, (_, rowIndex) =>
                 Array.from({ length: columns }, (_, columnIndex) => {
-                  const isActive = selectedLayer.mask[rowIndex]?.[columnIndex] === "#";
                   const override = tileOverrideAt(selectedLayer.overrides, rowIndex, columnIndex);
                   const isPreviewed =
                     previewRect?.layerId === selectedLayer.id &&
@@ -1211,16 +1240,15 @@ export function PixelFarmEditorPage() {
                     rowIndex <= Math.max(previewRect.startRow, previewRect.endRow) &&
                     columnIndex >= Math.min(previewRect.startColumn, previewRect.endColumn) &&
                     columnIndex <= Math.max(previewRect.startColumn, previewRect.endColumn);
-                  const tile = showFinalPreview
-                    ? compositePreviewTile(layers, rowIndex, columnIndex)
-                    : previewTile(selectedLayer, rowIndex, columnIndex);
+                  const tiles = showFinalPreview
+                    ? previewTilesForLayers(layers, rowIndex, columnIndex)
+                    : (() => {
+                        const tile = previewTile(selectedLayer, rowIndex, columnIndex);
+                        return tile ? [tile] : [];
+                      })();
                   const shadows: string[] = [];
 
-                  if (isActive) {
-                    shadows.push("inset 0 0 0 2px rgba(34,31,24,0.65)");
-                  }
-
-                  if (override !== null) {
+                  if (override?.stamped === true) {
                     shadows.push("0 0 0 2px rgba(255,196,108,0.92)");
                   }
 
@@ -1232,19 +1260,43 @@ export function PixelFarmEditorPage() {
                     <button
                       key={`${rowIndex}-${columnIndex}`}
                       type="button"
-                      className={cn("cursor-crosshair border-0 p-0 transition-transform hover:scale-[1.08]")}
+                      className={cn(
+                        "relative overflow-hidden border-0 p-0",
+                        showBrushPreview ? "cursor-none" : "cursor-crosshair transition-transform hover:scale-[1.08]",
+                      )}
                       style={{
                         width: cellSize,
                         height: cellSize,
-                        backgroundColor: backgroundColor(layers, rowIndex, columnIndex),
+                        backgroundColor:
+                          tiles.length === 0 ? backgroundColor(layers, rowIndex, columnIndex) : undefined,
                         boxShadow: shadows.join(", ") || undefined,
-                        ...(tile === null ? {} : frameStyle(tile.sourceId, tile.frame, cellSize)),
                       }}
                       onPointerDown={() => handlePointerDown(rowIndex, columnIndex)}
                       onPointerEnter={() => handlePointerEnter(rowIndex, columnIndex)}
-                    />
+                    >
+                      {tiles.map((tile, tileIndex) => (
+                        <span
+                          key={`${tile.sourceId}-${tile.frame}-${tileIndex}`}
+                          className="pointer-events-none absolute inset-0"
+                          style={frameStyle(tile.sourceId, tile.frame, cellSize)}
+                        />
+                      ))}
+                    </button>
                   );
                 }),
+              )}
+
+              {showBrushPreview && (
+                <span
+                  className="pointer-events-none absolute z-20 opacity-90"
+                  style={{
+                    left: GRID_PADDING + hoveredCell.column * (cellSize + GRID_GAP),
+                    top: GRID_PADDING + hoveredCell.row * (cellSize + GRID_GAP),
+                    width: cellSize,
+                    height: cellSize,
+                    ...frameStyle(selectedTile.sourceId, selectedTile.frame, cellSize),
+                  }}
+                />
               )}
             </div>
           </div>

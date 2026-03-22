@@ -1,7 +1,9 @@
 import { PIXEL_FARM_GENERATED_LAYERS } from "@/lib/pixel-farm/generated-mask-data";
 import type { PixelFarmAssetTileSelection } from "@/lib/pixel-farm/tileset-config";
 
-export type PixelFarmTileOverride = PixelFarmAssetTileSelection;
+export interface PixelFarmTileOverride extends PixelFarmAssetTileSelection {
+  stamped?: boolean;
+}
 export type PixelFarmTileOverrideMap = Record<string, PixelFarmTileOverride>;
 
 export interface PixelFarmLayer {
@@ -132,7 +134,8 @@ export function tileOverrideAt(
     !tile ||
     typeof tile !== "object" ||
     typeof tile.sourceId !== "string" ||
-    typeof tile.frame !== "number"
+    typeof tile.frame !== "number" ||
+    (tile.stamped !== undefined && typeof tile.stamped !== "boolean")
   ) {
     return null;
   }

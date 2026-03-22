@@ -1,11 +1,15 @@
 import type { PixelFarmAssetTileSelection } from "@/lib/pixel-farm/tileset-config";
 
+export interface PixelFarmGeneratedTileOverride extends PixelFarmAssetTileSelection {
+  stamped?: boolean;
+}
+
 export interface PixelFarmGeneratedLayerPayload {
   id: string;
   label: string;
   baseTile: PixelFarmAssetTileSelection;
   mask: string[];
-  overrides: Record<string, PixelFarmAssetTileSelection>;
+  overrides: Record<string, PixelFarmGeneratedTileOverride>;
 }
 
 export interface PixelFarmGeneratedMaskPayload {
@@ -16,11 +20,15 @@ function quote(value: string): string {
   return JSON.stringify(value);
 }
 
-function buildTile(tile: PixelFarmAssetTileSelection): string {
+function buildTile(tile: PixelFarmGeneratedTileOverride): string {
+  if (tile.stamped) {
+    return `{ sourceId: ${quote(tile.sourceId)}, frame: ${tile.frame}, stamped: true }`;
+  }
+
   return `{ sourceId: ${quote(tile.sourceId)}, frame: ${tile.frame} }`;
 }
 
-function buildOverrides(overrides: Record<string, PixelFarmAssetTileSelection>): string[] {
+function buildOverrides(overrides: Record<string, PixelFarmGeneratedTileOverride>): string[] {
   const entries = Object.entries(overrides).sort(([left], [right]) => left.localeCompare(right));
   if (entries.length === 0) {
     return ["    overrides: {},"]; 
