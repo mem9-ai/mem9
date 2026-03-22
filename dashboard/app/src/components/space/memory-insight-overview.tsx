@@ -22,6 +22,7 @@ import {
 } from "@/components/space/memory-insight-layout";
 import {
   formatInsightCategoryLabel,
+  normalizeInsightCategoryKey,
   type MemoryInsightEntityNode,
   type MemoryInsightMemoryNode,
   type MemoryInsightNodeKind,
@@ -83,6 +84,15 @@ type PanState = {
 type PositionedNode = LaneRenderableItem & {
   position: InsightPoint;
   muted?: boolean;
+};
+
+type RootBubbleRelationEdge = {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  sharedMemoryCount: number;
+  sharedTagCount: number;
+  strength: number;
 };
 
 const DRIFT_SEEDS = [
@@ -252,6 +262,105 @@ function sortMemoryNodes(memoryNodes: MemoryInsightMemoryNode[]): MemoryInsightM
   );
 }
 
+function buildRootBubbleRelationEdges(input: {
+  cards: AnalysisCategoryCard[];
+  memories: Memory[];
+  matchMap: Map<string, MemoryAnalysisMatch>;
+}): RootBubbleRelationEdge[] {
+  const { cards, memories, matchMap } = input;
+  if (cards.length < 2 || memories.length === 0) {
+    return [];
+  }
+
+  const cardByCategory = new Map<string, string>();
+  cards.forEach((card) => {
+    cardByCategory.set(normalizeInsightCategoryKey(card.category), `card:${card.category}`);
+  });
+  const cardIDs = new Set(cardByCategory.values());
+
+  const tagSetsByCardID = new Map<string, Set<string>>();
+  const aggregateByPair = new Map<string, Omit<RootBubbleRelationEdge, "id" | "strength">>();
+  const pairKey = (left: string, right: string) => {
+    return left < right ? `${left}=>${right}` : `${right}=>${left}`;
+  };
+
+  memories.forEach((memory) => {
+    const match = matchMap.get(memory.id);
+    if (!match || match.categories.length === 0) {
+      return;
+    }
+
+    const cardIDsForMemory = Array.from(new Set(
+      match.categories
+        .map((category) => cardByCategory.get(normalizeInsightCategoryKey(category)))
+        .filter((value): value is string => typeof value === "string"),
+    ));
+
+    if (cardIDsForMemory.length < 2) {
+      return;
+    }
+
+    const normalizedTags = new Set(
+      memory.tags
+        .map((tag) => tag.trim().toLowerCase())
+        .filter((tag) => tag.length > 0),
+    );
+
+    cardIDsForMemory.forEach((cardID) => {
+      if (!cardIDs.has(cardID)) {
+        return;
+      }
+      let tagSet = tagSetsByCardID.get(cardID);
+      if (!tagSet) {
+        tagSet = new Set<string>();
+        tagSetsByCardID.set(cardID, tagSet);
+      }
+      normalizedTags.forEach((tag) => tagSet.add(tag));
+    });
+
+    for (let index = 0; index < cardIDsForMemory.length; index += 1) {
+      for (let compareIndex = index + 1; compareIndex < cardIDsForMemory.length; compareIndex += 1) {
+        const sourceId = cardIDsForMemory[index]!;
+        const targetId = cardIDsForMemory[compareIndex]!;
+        const key = pairKey(sourceId, targetId);
+        const previous = aggregateByPair.get(key);
+        aggregateByPair.set(key, {
+          sourceId: sourceId < targetId ? sourceId : targetId,
+          targetId: sourceId < targetId ? targetId : sourceId,
+          sharedMemoryCount: (previous?.sharedMemoryCount ?? 0) + 1,
+          sharedTagCount: previous?.sharedTagCount ?? 0,
+        });
+      }
+    }
+  });
+
+  aggregateByPair.forEach((aggregate, key) => {
+    const sourceTags = tagSetsByCardID.get(aggregate.sourceId) ?? new Set<string>();
+    const targetTags = tagSetsByCardID.get(aggregate.targetId) ?? new Set<string>();
+    let sharedTagCount = 0;
+    sourceTags.forEach((tag) => {
+      if (targetTags.has(tag)) {
+        sharedTagCount += 1;
+      }
+    });
+    aggregateByPair.set(key, {
+      ...aggregate,
+      sharedTagCount,
+    });
+  });
+
+  const edges = Array.from(aggregateByPair.values())
+    .map((edge) => ({
+      ...edge,
+      strength: edge.sharedMemoryCount + Math.min(edge.sharedTagCount, 10) * 0.4,
+      id: `${edge.sourceId}=>${edge.targetId}`,
+    }))
+    .filter((edge) => edge.sharedMemoryCount > 0 || edge.sharedTagCount >= 2)
+    .sort((left, right) => right.strength - left.strength || right.sharedMemoryCount - left.sharedMemoryCount);
+
+  return edges;
+}
+
 function omitKeys<T extends Record<string, unknown>>(record: T, keys: string[]): T {
   if (keys.length === 0) {
     return record;
@@ -373,19 +482,20 @@ function InsightNodeButton({
       {bubble ? (
         <>
           <span
-            className="memory-insight-bubble-core"
+            className={cn(
+              "memory-insight-bubble-core",
+              active ? "memory-insight-bubble-core-paused" : "",
+            )}
             style={{
               width: diameter,
               height: diameter,
+              ...(active ? undefined : driftStyle),
             }}
           >
+            <span className="memory-insight-bubble-halo absolute inset-[-16px] rounded-full" />
             <span className="memory-insight-bubble-shell absolute inset-0 rounded-full" />
             <span
-              className={cn(
-                "memory-insight-bubble-visual absolute inset-[3px] rounded-full",
-                active ? "memory-insight-bubble-visual-paused" : "",
-              )}
-              style={active ? undefined : driftStyle}
+              className="memory-insight-bubble-visual absolute inset-[3px] rounded-full"
             />
           </span>
           <span className="memory-insight-bubble-label mt-2 block w-full px-1">
@@ -1230,6 +1340,51 @@ function MemoryInsightCanvas({
     [canvasNodes, laneAnchors.positions, laneHeights, laneWidth, poolLayout.height, rootRegionOffsetX, rootRegionWidth, safeViewportWidth, viewportMinHeight],
   );
 
+  const rootRelationEdges = useMemo(() => {
+    const edges = buildRootBubbleRelationEdges({
+      cards: poolCards,
+      memories,
+      matchMap,
+    });
+    if (edges.length === 0) {
+      return [];
+    }
+
+    const maxStrength = edges[0]?.strength ?? 1;
+    return edges
+      .map((edge) => {
+        const sourcePosition = poolLayout.positions[edge.sourceId];
+        const targetPosition = poolLayout.positions[edge.targetId];
+        if (!sourcePosition || !targetPosition) {
+          return null;
+        }
+        const sourceCard = poolCards.find((card) => `card:${card.category}` === edge.sourceId);
+        const targetCard = poolCards.find((card) => `card:${card.category}` === edge.targetId);
+        if (!sourceCard || !targetCard) {
+          return null;
+        }
+        const sourceDiameter = bubbleDiameter(sourceCard.count, maxCardCount, compact);
+        const targetDiameter = bubbleDiameter(targetCard.count, maxCardCount, compact);
+        const intensity = Math.min(edge.strength / Math.max(maxStrength, 1), 1);
+        const sourceX = rootRegionOffsetX + sourcePosition.x + sourceDiameter / 2;
+        const sourceY = sourcePosition.y + sourceDiameter / 2;
+        const targetX = rootRegionOffsetX + targetPosition.x + targetDiameter / 2;
+        const targetY = targetPosition.y + targetDiameter / 2;
+
+        return {
+          ...edge,
+          sourceX,
+          sourceY,
+          targetX,
+          targetY,
+          intensity,
+          strokeWidth: 1 + intensity * 3.8,
+          opacity: 0.12 + intensity * 0.5,
+        };
+      })
+      .filter((edge): edge is NonNullable<typeof edge> => edge !== null);
+  }, [compact, matchMap, maxCardCount, memories, poolCards, poolLayout.positions, rootRegionOffsetX]);
+
   const summaryParts = useMemo(() => {
     const parts = [t("memory_insight.summary_root", { count: graph.cards.length })];
     if (expandedCards.length > 0) {
@@ -1358,6 +1513,31 @@ function MemoryInsightCanvas({
               >
                 {t("memory_insight.canvas_hint")}
               </div>
+
+              {rootRelationEdges.length > 0 ? (
+                <svg
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 z-[1]"
+                  width={canvasBounds.width}
+                  height={canvasBounds.height}
+                  viewBox={`0 0 ${canvasBounds.width} ${canvasBounds.height}`}
+                  preserveAspectRatio="none"
+                >
+                  {rootRelationEdges.map((edge) => (
+                    <line
+                      key={edge.id}
+                      x1={edge.sourceX}
+                      y1={edge.sourceY}
+                      x2={edge.targetX}
+                      y2={edge.targetY}
+                      stroke="color-mix(in srgb, var(--type-insight) 76%, transparent)"
+                      strokeWidth={edge.strokeWidth}
+                      strokeLinecap="round"
+                      opacity={edge.opacity}
+                    />
+                  ))}
+                </svg>
+              ) : null}
 
               {canvasNodes.map((node, index) => {
                 const isRootBubble = node.kind === "card" && !expandedCardSet.has(node.id);
