@@ -85,6 +85,17 @@ type PositionedNode = LaneRenderableItem & {
   muted?: boolean;
 };
 
+type RootRelationEdge = {
+  id: string;
+  sourceCardId: string;
+  targetCardId: string;
+  score: number;
+  strength: number;
+  sharedTags: number;
+  sharedEntities: number;
+  sharedMemories: number;
+};
+
 const DRIFT_SEEDS = [
   { x: 8, y: -5, duration: 18, delay: -3 },
   { x: -6, y: 7, duration: 20, delay: -9 },
@@ -239,6 +250,110 @@ function rootSpreadWidth(viewportWidth: number, compact: boolean, canvasGap: num
     : clamp(desired, 560, 1800);
 }
 
+function buildRootRelationEdges(
+  cards: { id: string }[],
+  tags: MemoryInsightTagNode[],
+  entities: MemoryInsightEntityNode[],
+  memoryNodes: MemoryInsightMemoryNode[],
+): RootRelationEdge[] {
+  const tagSetByCard = new Map<string, Set<string>>();
+  const entitySetByCard = new Map<string, Set<string>>();
+  const memorySetByCard = new Map<string, Set<string>>();
+  const cardByTagId = new Map(tags.map((tag) => [tag.id, tag.parentId]));
+  const cardByEntityId = new Map<string, string>();
+
+  for (const entity of entities) {
+    const cardId = cardByTagId.get(entity.parentId);
+    if (!cardId) {
+      continue;
+    }
+    cardByEntityId.set(entity.id, cardId);
+    const entitySet = entitySetByCard.get(cardId) ?? new Set<string>();
+    entitySet.add(entity.label.trim().toLowerCase());
+    entitySetByCard.set(cardId, entitySet);
+  }
+
+  for (const tag of tags) {
+    const tagSet = tagSetByCard.get(tag.parentId) ?? new Set<string>();
+    tagSet.add(tag.label.trim().toLowerCase());
+    tagSetByCard.set(tag.parentId, tagSet);
+  }
+
+  for (const memoryNode of memoryNodes) {
+    const cardId = cardByEntityId.get(memoryNode.parentId);
+    if (!cardId) {
+      continue;
+    }
+    const memorySet = memorySetByCard.get(cardId) ?? new Set<string>();
+    memorySet.add(memoryNode.memoryId);
+    memorySetByCard.set(cardId, memorySet);
+  }
+
+  const sharedCount = (left: Set<string>, right: Set<string>): number => {
+    if (left.size === 0 || right.size === 0) {
+      return 0;
+    }
+
+    let matches = 0;
+    for (const token of left) {
+      if (right.has(token)) {
+        matches += 1;
+      }
+    }
+    return matches;
+  };
+
+  const edges: RootRelationEdge[] = [];
+  for (let index = 0; index < cards.length; index += 1) {
+    const source = cards[index];
+    if (!source) {
+      continue;
+    }
+
+    for (let nextIndex = index + 1; nextIndex < cards.length; nextIndex += 1) {
+      const target = cards[nextIndex];
+      if (!target) {
+        continue;
+      }
+
+      const sourceTags = tagSetByCard.get(source.id) ?? new Set<string>();
+      const targetTags = tagSetByCard.get(target.id) ?? new Set<string>();
+      const sourceEntities = entitySetByCard.get(source.id) ?? new Set<string>();
+      const targetEntities = entitySetByCard.get(target.id) ?? new Set<string>();
+      const sourceMemories = memorySetByCard.get(source.id) ?? new Set<string>();
+      const targetMemories = memorySetByCard.get(target.id) ?? new Set<string>();
+
+      const sharedTags = sharedCount(sourceTags, targetTags);
+      const sharedEntities = sharedCount(sourceEntities, targetEntities);
+      const sharedMemories = sharedCount(sourceMemories, targetMemories);
+      const score = sharedTags * 1.25 + sharedEntities * 1.8 + sharedMemories * 2.6;
+
+      if (score <= 0) {
+        continue;
+      }
+
+      edges.push({
+        id: `${source.id}->${target.id}`,
+        sourceCardId: source.id,
+        targetCardId: target.id,
+        score,
+        strength: 0,
+        sharedTags,
+        sharedEntities,
+        sharedMemories,
+      });
+    }
+  }
+
+  const maxScore = Math.max(...edges.map((edge) => edge.score), 1);
+  return edges
+    .map((edge) => ({
+      ...edge,
+      strength: edge.score / maxScore,
+    }))
+    .filter((edge) => edge.strength >= 0.18);
+}
+
 function getBranchLimit(kind: keyof typeof BRANCH_LIMITS, compact: boolean): number {
   return compact ? BRANCH_LIMITS[kind].compact : BRANCH_LIMITS[kind].desktop;
 }
@@ -305,6 +420,7 @@ function InsightNodeButton({
   draggable,
   dragging,
   onPointerDown,
+  onHoverChange,
   onClick,
 }: {
   kind: InsightRenderableKind;
@@ -323,6 +439,7 @@ function InsightNodeButton({
   draggable?: boolean;
   dragging?: boolean;
   onPointerDown?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onHoverChange?: (hovered: boolean) => void;
   onClick: () => void;
 }) {
   const kindStyles: Record<InsightRenderableKind, string> = {
@@ -341,6 +458,8 @@ function InsightNodeButton({
     <button
       type="button"
       onPointerDown={onPointerDown}
+      onPointerEnter={() => onHoverChange?.(true)}
+      onPointerLeave={() => onHoverChange?.(false)}
       onClick={onClick}
       className={cn(
         dragging
@@ -502,6 +621,7 @@ function MemoryInsightCanvas({
   const [panMode, setPanMode] = useState(false);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
 
   const dragStateRef = useRef<DragState | null>(null);
   const panStateRef = useRef<PanState | null>(null);
@@ -1230,6 +1350,59 @@ function MemoryInsightCanvas({
     [canvasNodes, laneAnchors.positions, laneHeights, laneWidth, poolLayout.height, rootRegionOffsetX, rootRegionWidth, safeViewportWidth, viewportMinHeight],
   );
 
+  const relationEdges = useMemo(
+    () => buildRootRelationEdges(graph.cards, graph.tags, graph.entities, graph.memories),
+    [graph.cards, graph.entities, graph.memories, graph.tags],
+  );
+
+  const nodePositionById = useMemo(
+    () => new Map(canvasNodes.map((node) => [node.id, node])),
+    [canvasNodes],
+  );
+
+  const visibleRelationEdges = useMemo(() => {
+    const expandedSet = new Set(expandedCardIds);
+    return relationEdges.filter((edge) =>
+      !expandedSet.has(edge.sourceCardId) &&
+      !expandedSet.has(edge.targetCardId),
+    );
+  }, [expandedCardIds, relationEdges]);
+
+  const topRelatedCards = useMemo(() => {
+    const openSet = new Set(expandedCardIds);
+    if (openSet.size === 0) {
+      return [];
+    }
+
+    const ranked = relationEdges
+      .filter((edge) => openSet.has(edge.sourceCardId) || openSet.has(edge.targetCardId))
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 4)
+      .map((edge) => {
+        const counterpartId = openSet.has(edge.sourceCardId)
+          ? edge.targetCardId
+          : edge.sourceCardId;
+        const card = cardsById.get(counterpartId);
+        return card
+          ? {
+              cardId: counterpartId,
+              label: formatInsightCategoryLabel(card.category, t),
+              strength: edge.strength,
+            }
+          : null;
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+
+    const deduped = new Map<string, (typeof ranked)[number]>();
+    ranked.forEach((item) => {
+      if (!deduped.has(item.cardId)) {
+        deduped.set(item.cardId, item);
+      }
+    });
+
+    return Array.from(deduped.values()).slice(0, 3);
+  }, [cardsById, expandedCardIds, relationEdges, t]);
+
   const summaryParts = useMemo(() => {
     const parts = [t("memory_insight.summary_root", { count: graph.cards.length })];
     if (expandedCards.length > 0) {
@@ -1358,6 +1531,61 @@ function MemoryInsightCanvas({
               >
                 {t("memory_insight.canvas_hint")}
               </div>
+              {topRelatedCards.length > 0 ? (
+                <div className="absolute right-6 top-6 z-[3] w-56 rounded-2xl border border-foreground/10 bg-background/78 p-3 text-xs backdrop-blur-sm">
+                  <p className="font-semibold text-foreground/88">Related categories</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {topRelatedCards.map((item) => (
+                      <button
+                        key={item.cardId}
+                        type="button"
+                        onClick={() => toggleCard(item.cardId)}
+                        className="inline-flex items-center rounded-full border border-foreground/10 bg-background/90 px-2.5 py-1 text-[11px] text-foreground/82 transition hover:border-foreground/28 hover:text-foreground"
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <svg className="pointer-events-none absolute inset-0 z-[1] h-full w-full">
+                {visibleRelationEdges.map((edge) => {
+                  const source = nodePositionById.get(edge.sourceCardId);
+                  const target = nodePositionById.get(edge.targetCardId);
+                  if (!source || !target) {
+                    return null;
+                  }
+
+                  const sourceX = source.position.x + source.width / 2;
+                  const sourceY = source.position.y + (source.diameter ?? source.height) / 2;
+                  const targetX = target.position.x + target.width / 2;
+                  const targetY = target.position.y + (target.diameter ?? target.height) / 2;
+                  const midX = (sourceX + targetX) / 2;
+                  const curvature = Math.min(58, Math.abs(targetX - sourceX) * 0.08);
+                  const isHovered = hoveredCardId
+                    ? edge.sourceCardId === hoveredCardId || edge.targetCardId === hoveredCardId
+                    : false;
+                  const strokeOpacity = isHovered
+                    ? 0.82
+                    : 0.2 + edge.strength * 0.42;
+                  const strokeWidth = isHovered
+                    ? 1.6 + edge.strength * 3.4
+                    : 0.8 + edge.strength * 2.1;
+
+                  return (
+                    <path
+                      key={edge.id}
+                      d={`M ${sourceX} ${sourceY} Q ${midX} ${Math.min(sourceY, targetY) - curvature} ${targetX} ${targetY}`}
+                      stroke="color-mix(in srgb, var(--type-insight) 76%, transparent)"
+                      strokeWidth={strokeWidth}
+                      strokeLinecap="round"
+                      fill="none"
+                      opacity={strokeOpacity}
+                    />
+                  );
+                })}
+              </svg>
 
               {canvasNodes.map((node, index) => {
                 const isRootBubble = node.kind === "card" && !expandedCardSet.has(node.id);
@@ -1533,6 +1761,12 @@ function MemoryInsightCanvas({
                           }
                         }
                       : undefined}
+                    onHoverChange={node.kind === "card" ? (hovered) => {
+                      if (!isRootBubble) {
+                        return;
+                      }
+                      setHoveredCardId(hovered ? node.id : (current) => (current === node.id ? null : current));
+                    } : undefined}
                   />
                 );
               })}

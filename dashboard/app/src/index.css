@@ -205,6 +205,12 @@ h1, h2, h3, h4 {
   box-shadow: none;
   transform-origin: center;
   will-change: transform, box-shadow, filter;
+  animation: insight-bubble-drift var(--insight-drift-duration, 22s) ease-in-out infinite alternate;
+  animation-delay: var(--insight-drift-delay, 0s);
+  transition:
+    transform 280ms ease,
+    box-shadow 280ms ease,
+    filter 280ms ease;
 }
 
 .memory-insight-bubble-core::before,
@@ -223,30 +229,34 @@ h1, h2, h3, h4 {
 .memory-insight-bubble-core::before {
   inset: -10px;
   z-index: 0;
-  opacity: 0;
-  transform: scale(0.96);
+  opacity: 0.42;
+  transform: scale(0.98);
   background: radial-gradient(circle, color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 22%, transparent) 0%, transparent 70%);
   filter: blur(12px);
+  animation: insight-bubble-halo 3.8s ease-in-out infinite;
 }
 
 .memory-insight-bubble-core::after {
-  inset: 0;
+  inset: -4px;
   z-index: 1;
-  opacity: 0;
-  box-shadow: none;
+  opacity: 0.46;
+  border: 1px solid color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 28%, transparent);
+  box-shadow:
+    0 0 0 0 color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 20%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 12%, transparent);
+  animation: insight-bubble-ring 4.2s ease-out infinite;
 }
 
 .memory-insight-bubble-shell {
   z-index: 1;
   background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 16%, var(--background));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 16%, transparent);
 }
 
 .memory-insight-bubble-visual {
   z-index: 2;
-  animation: insight-bubble-drift var(--insight-drift-duration, 22s) ease-in-out infinite alternate;
-  animation-delay: var(--insight-drift-delay, 0s);
   background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 18%, var(--background));
-  box-shadow: none;
+  box-shadow: inset 0 -6px 12px color-mix(in srgb, black 8%, transparent);
   transform-origin: center;
   will-change: transform, box-shadow, filter;
   transition:
@@ -267,12 +277,13 @@ h1, h2, h3, h4 {
 
 .memory-insight-bubble:hover .memory-insight-bubble-core::before,
 .memory-insight-bubble[data-active="true"] .memory-insight-bubble-core::before {
-  opacity: 1;
-  transform: scale(1.03);
+  opacity: 0.88;
+  transform: scale(1.08);
 }
 
 .memory-insight-bubble:hover .memory-insight-bubble-core {
-  box-shadow: 0 0 24px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 16%, transparent);
+  transform: scale(1.08);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 28%, transparent);
 }
 
 .memory-insight-bubble:hover .memory-insight-bubble-visual {
@@ -282,7 +293,8 @@ h1, h2, h3, h4 {
 }
 
 .memory-insight-bubble[data-active="true"] .memory-insight-bubble-core {
-  box-shadow: 0 0 20px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 14%, transparent);
+  transform: scale(1.04);
+  box-shadow: 0 0 26px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 24%, transparent);
 }
 
 .memory-insight-bubble[data-active="true"] .memory-insight-bubble-shell {
@@ -303,7 +315,12 @@ h1, h2, h3, h4 {
 }
 
 .memory-insight-bubble[data-dragging="true"] .memory-insight-bubble-core::before {
-  opacity: 0;
+  opacity: 0.2;
+}
+
+.memory-insight-bubble[data-dragging="true"] .memory-insight-bubble-core {
+  animation: none;
+  transform: none;
 }
 
 .memory-insight-bubble[data-dragging="true"] .memory-insight-bubble-visual {
@@ -353,5 +370,37 @@ h1, h2, h3, h4 {
       calc(var(--insight-drift-y, -5px) * -0.52),
       0
     ) scale(0.996);
+  }
+}
+
+@keyframes insight-bubble-halo {
+  0%, 100% {
+    opacity: 0.34;
+    filter: blur(11px);
+  }
+  50% {
+    opacity: 0.62;
+    filter: blur(14px);
+  }
+}
+
+@keyframes insight-bubble-ring {
+  0% {
+    opacity: 0.35;
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 24%, transparent),
+      inset 0 0 0 1px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 12%, transparent);
+  }
+  65% {
+    opacity: 0.12;
+    box-shadow:
+      0 0 0 10px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 0%, transparent),
+      inset 0 0 0 1px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 18%, transparent);
+  }
+  100% {
+    opacity: 0.3;
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 0%, transparent),
+      inset 0 0 0 1px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 16%, transparent);
   }
 }
