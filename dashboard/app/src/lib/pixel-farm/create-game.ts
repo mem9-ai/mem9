@@ -1,18 +1,24 @@
 import Phaser from "phaser";
-import soilGroundTilesUrl from "@/assets/Soil_Ground_Tiles.png";
 import water1Url from "@/assets/Water_1.png";
 import water2Url from "@/assets/Water_2.png";
 import water3Url from "@/assets/Water_3.png";
 import water4Url from "@/assets/Water_4.png";
 import {
   maskHasTile,
-  SOIL_MASK,
+  PIXEL_FARM_MASK_LAYER_IDS,
+  PIXEL_FARM_MASKS,
+  PIXEL_FARM_TILE_OVERRIDES,
   SOIL_MASK_BOUNDS,
   SOIL_MASK_COLUMNS,
   SOIL_MASK_ROWS,
+  tileOverrideFrame,
 } from "@/lib/pixel-farm/island-mask";
+import {
+  PIXEL_FARM_TILESET_CONFIG,
+  PIXEL_FARM_TILE_SIZE,
+} from "@/lib/pixel-farm/tileset-config";
+import { pixelFarmAutoTileFrame } from "@/lib/pixel-farm/autotile";
 
-const WATER_TILE_SIZE = 16;
 const WATER_FRAME_DELAY = 180;
 const BACKGROUND_COLOR = 0x0d141b;
 const WORLD_COLUMNS = 128;
@@ -22,37 +28,24 @@ const ISLAND_ROWS = SOIL_MASK_ROWS;
 const CAMERA_MAX_ZOOM = 3;
 const CAMERA_TARGET_FILL = 0.8;
 const CAMERA_ZOOM_STEP = 0.12;
-const WORLD_PIXEL_WIDTH = WORLD_COLUMNS * WATER_TILE_SIZE;
-const WORLD_PIXEL_HEIGHT = WORLD_ROWS * WATER_TILE_SIZE;
-const ISLAND_PIXEL_WIDTH = SOIL_MASK_BOUNDS.width * WATER_TILE_SIZE;
-const ISLAND_PIXEL_HEIGHT = SOIL_MASK_BOUNDS.height * WATER_TILE_SIZE;
+const WORLD_PIXEL_WIDTH = WORLD_COLUMNS * PIXEL_FARM_TILE_SIZE;
+const WORLD_PIXEL_HEIGHT = WORLD_ROWS * PIXEL_FARM_TILE_SIZE;
+const ISLAND_PIXEL_WIDTH = SOIL_MASK_BOUNDS.width * PIXEL_FARM_TILE_SIZE;
+const ISLAND_PIXEL_HEIGHT = SOIL_MASK_BOUNDS.height * PIXEL_FARM_TILE_SIZE;
 const ISLAND_START_COLUMN = Math.floor((WORLD_COLUMNS - ISLAND_COLUMNS) / 2);
 const ISLAND_START_ROW = Math.floor((WORLD_ROWS - ISLAND_ROWS) / 2);
 const ISLAND_CENTER_X =
-  ISLAND_START_COLUMN * WATER_TILE_SIZE +
-  (SOIL_MASK_BOUNDS.minColumn + SOIL_MASK_BOUNDS.maxColumn + 1) * WATER_TILE_SIZE * 0.5;
+  ISLAND_START_COLUMN * PIXEL_FARM_TILE_SIZE +
+  (SOIL_MASK_BOUNDS.minColumn + SOIL_MASK_BOUNDS.maxColumn + 1) * PIXEL_FARM_TILE_SIZE * 0.5;
 const ISLAND_CENTER_Y =
-  ISLAND_START_ROW * WATER_TILE_SIZE +
-  (SOIL_MASK_BOUNDS.minRow + SOIL_MASK_BOUNDS.maxRow + 1) * WATER_TILE_SIZE * 0.5;
+  ISLAND_START_ROW * PIXEL_FARM_TILE_SIZE +
+  (SOIL_MASK_BOUNDS.minRow + SOIL_MASK_BOUNDS.maxRow + 1) * PIXEL_FARM_TILE_SIZE * 0.5;
 const WATER_TEXTURE_KEYS = [
   "pixel-farm-water-1",
   "pixel-farm-water-2",
   "pixel-farm-water-3",
   "pixel-farm-water-4",
 ] as const;
-const SOIL_TILESET_KEY = "pixel-farm-soil-ground";
-const SOIL_TILESET_COLUMNS = 11;
-const SOIL_FRAME = {
-  topLeft: 0,
-  top: 1,
-  topRight: 2,
-  left: SOIL_TILESET_COLUMNS,
-  center: SOIL_TILESET_COLUMNS + 1,
-  right: SOIL_TILESET_COLUMNS + 2,
-  bottomLeft: SOIL_TILESET_COLUMNS * 2,
-  bottom: SOIL_TILESET_COLUMNS * 2 + 1,
-  bottomRight: SOIL_TILESET_COLUMNS * 2 + 2,
-} as const;
 
 interface WaterTile {
   sprite: Phaser.GameObjects.Image;
@@ -68,47 +61,6 @@ interface DragState {
 
 function waterTextureKey(index: number): (typeof WATER_TEXTURE_KEYS)[number] {
   return WATER_TEXTURE_KEYS[index % WATER_TEXTURE_KEYS.length]!;
-}
-
-function soilFrameForTile(
-  hasUp: boolean,
-  hasRight: boolean,
-  hasDown: boolean,
-  hasLeft: boolean,
-): number {
-  if (!hasUp && !hasLeft) {
-    return SOIL_FRAME.topLeft;
-  }
-
-  if (!hasUp && !hasRight) {
-    return SOIL_FRAME.topRight;
-  }
-
-  if (!hasDown && !hasLeft) {
-    return SOIL_FRAME.bottomLeft;
-  }
-
-  if (!hasDown && !hasRight) {
-    return SOIL_FRAME.bottomRight;
-  }
-
-  if (!hasUp) {
-    return SOIL_FRAME.top;
-  }
-
-  if (!hasDown) {
-    return SOIL_FRAME.bottom;
-  }
-
-  if (!hasLeft) {
-    return SOIL_FRAME.left;
-  }
-
-  if (!hasRight) {
-    return SOIL_FRAME.right;
-  }
-
-  return SOIL_FRAME.center;
 }
 
 class PixelFarmSandboxScene extends Phaser.Scene {
@@ -132,10 +84,13 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.spritesheet(SOIL_TILESET_KEY, soilGroundTilesUrl, {
-      frameWidth: WATER_TILE_SIZE,
-      frameHeight: WATER_TILE_SIZE,
-    });
+    for (const layerId of PIXEL_FARM_MASK_LAYER_IDS) {
+      const tileset = PIXEL_FARM_TILESET_CONFIG[layerId];
+      this.load.spritesheet(tileset.textureKey, tileset.imageUrl, {
+        frameWidth: PIXEL_FARM_TILE_SIZE,
+        frameHeight: PIXEL_FARM_TILE_SIZE,
+      });
+    }
     this.load.image(WATER_TEXTURE_KEYS[0], water1Url);
     this.load.image(WATER_TEXTURE_KEYS[1], water2Url);
     this.load.image(WATER_TEXTURE_KEYS[2], water3Url);
@@ -216,8 +171,8 @@ class PixelFarmSandboxScene extends Phaser.Scene {
         const phase = (row + column) % WATER_TEXTURE_KEYS.length < 2 ? 0 : 2;
         const frameIndex = (this.waterFrame + phase) % WATER_TEXTURE_KEYS.length;
         const sprite = this.add.image(
-          column * WATER_TILE_SIZE,
-          row * WATER_TILE_SIZE,
+          column * PIXEL_FARM_TILE_SIZE,
+          row * PIXEL_FARM_TILE_SIZE,
           waterTextureKey(frameIndex),
         );
 
@@ -244,25 +199,29 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
     this.terrainLayer.removeAll(true);
 
-    for (let row = 0; row < ISLAND_ROWS; row += 1) {
-      for (let column = 0; column < ISLAND_COLUMNS; column += 1) {
-        if (!maskHasTile(SOIL_MASK, row, column)) {
-          continue;
+    for (const layerId of PIXEL_FARM_MASK_LAYER_IDS) {
+      const mask = PIXEL_FARM_MASKS[layerId];
+      const overrides = PIXEL_FARM_TILE_OVERRIDES[layerId];
+      const tileset = PIXEL_FARM_TILESET_CONFIG[layerId];
+
+      for (let row = 0; row < ISLAND_ROWS; row += 1) {
+        for (let column = 0; column < ISLAND_COLUMNS; column += 1) {
+          if (!maskHasTile(mask, row, column)) {
+            continue;
+          }
+
+          const frame =
+            tileOverrideFrame(overrides, row, column) ?? pixelFarmAutoTileFrame(mask, row, column);
+          const sprite = this.add.image(
+            (ISLAND_START_COLUMN + column) * PIXEL_FARM_TILE_SIZE,
+            (ISLAND_START_ROW + row) * PIXEL_FARM_TILE_SIZE,
+            tileset.textureKey,
+            frame,
+          );
+
+          sprite.setOrigin(0, 0);
+          this.terrainLayer.add(sprite);
         }
-
-        const hasUp = maskHasTile(SOIL_MASK, row - 1, column);
-        const hasRight = maskHasTile(SOIL_MASK, row, column + 1);
-        const hasDown = maskHasTile(SOIL_MASK, row + 1, column);
-        const hasLeft = maskHasTile(SOIL_MASK, row, column - 1);
-        const sprite = this.add.image(
-          (ISLAND_START_COLUMN + column) * WATER_TILE_SIZE,
-          (ISLAND_START_ROW + row) * WATER_TILE_SIZE,
-          SOIL_TILESET_KEY,
-          soilFrameForTile(hasUp, hasRight, hasDown, hasLeft),
-        );
-
-        sprite.setOrigin(0, 0);
-        this.terrainLayer.add(sprite);
       }
     }
   }

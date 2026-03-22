@@ -128,8 +128,44 @@ const pixelFarmRoute = createRoute({
   path: "/labs/memory-farm",
   component: PixelFarmRoutePage,
 });
+const baseRoutes: Parameters<typeof rootRoute.addChildren>[0] = [
+  connectRoute,
+  spaceRoute,
+  pixelFarmRoute,
+];
 
-const routeTree = rootRoute.addChildren([connectRoute, spaceRoute, pixelFarmRoute]);
+let devRoutes: Parameters<typeof rootRoute.addChildren>[0] = [];
+
+if (import.meta.env.DEV) {
+  const PixelFarmEditorPage = lazy(async () => {
+    const module = await import("@/pages/pixel-farm-editor");
+    return { default: module.PixelFarmEditorPage };
+  });
+
+  function PixelFarmEditorRoutePage() {
+    return (
+      <Suspense
+        fallback={
+          <main className="flex min-h-screen items-center justify-center bg-[#efe3b4] text-sm uppercase tracking-[0.2em] text-[#5e6641]">
+            Loading mask editor
+          </main>
+        }
+      >
+        <PixelFarmEditorPage />
+      </Suspense>
+    );
+  }
+
+  devRoutes = [
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/labs/memory-farm-editor",
+      component: PixelFarmEditorRoutePage,
+    }),
+  ];
+}
+
+const routeTree = rootRoute.addChildren([...baseRoutes, ...devRoutes]);
 
 export const router = createRouter({
   routeTree,
