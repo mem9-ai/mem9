@@ -1,4 +1,6 @@
 import {
+  BUSH_MASK,
+  BUSH_TILE_OVERRIDES,
   GRASS_DARK_MASK,
   GRASS_DARK_TILE_OVERRIDES,
   GRASS_LIGHT_MASK,
@@ -7,7 +9,7 @@ import {
   SOIL_TILE_OVERRIDES,
 } from "@/lib/pixel-farm/generated-mask-data";
 
-export const PIXEL_FARM_MASK_LAYER_IDS = ["soil", "grassDark", "grassLight"] as const;
+export const PIXEL_FARM_MASK_LAYER_IDS = ["soil", "grassDark", "grassLight", "bush"] as const;
 
 export type PixelFarmMaskLayerId = (typeof PIXEL_FARM_MASK_LAYER_IDS)[number];
 export type PixelFarmTileOverrideMap = Record<string, number>;
@@ -16,12 +18,14 @@ export const PIXEL_FARM_MASKS: Record<PixelFarmMaskLayerId, readonly string[]> =
   soil: SOIL_MASK,
   grassDark: GRASS_DARK_MASK,
   grassLight: GRASS_LIGHT_MASK,
+  bush: BUSH_MASK,
 };
 
 export const PIXEL_FARM_TILE_OVERRIDES: Record<PixelFarmMaskLayerId, PixelFarmTileOverrideMap> = {
   soil: SOIL_TILE_OVERRIDES as PixelFarmTileOverrideMap,
   grassDark: GRASS_DARK_TILE_OVERRIDES as PixelFarmTileOverrideMap,
   grassLight: GRASS_LIGHT_TILE_OVERRIDES as PixelFarmTileOverrideMap,
+  bush: BUSH_TILE_OVERRIDES as PixelFarmTileOverrideMap,
 };
 
 export interface PixelFarmMaskBounds {

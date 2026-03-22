@@ -17,7 +17,6 @@ import {
 import {
   PIXEL_FARM_AUTO_TILE_FRAMES,
   PIXEL_FARM_TILESET_CONFIG,
-  PIXEL_FARM_TILESET_FRAME_COUNT,
 } from "@/lib/pixel-farm/tileset-config";
 
 type MaskState = Record<PixelFarmMaskLayerId, string[]>;
@@ -67,6 +66,7 @@ const DEFAULT_SELECTED_FRAMES: SelectedFrameState = {
   soil: PIXEL_FARM_AUTO_TILE_FRAMES.center,
   grassDark: PIXEL_FARM_AUTO_TILE_FRAMES.center,
   grassLight: PIXEL_FARM_AUTO_TILE_FRAMES.center,
+  bush: PIXEL_FARM_AUTO_TILE_FRAMES.center,
 };
 const COPY = {
   eyebrow: "DEV TOOL",
@@ -99,9 +99,10 @@ const COPY = {
     clearStamp: "Clear stamp",
   },
   layers: {
-    soil: "Soil",
-    grassDark: "Dark grass",
-    grassLight: "Light grass",
+    soil: "0 Soil",
+    grassDark: "1 Dark grass",
+    grassLight: "2 Light grass",
+    bush: "3 Bush",
   } satisfies Record<PixelFarmMaskLayerId, string>,
 } as const;
 
@@ -110,6 +111,7 @@ function cloneMasks(): MaskState {
     soil: [...PIXEL_FARM_MASKS.soil],
     grassDark: [...PIXEL_FARM_MASKS.grassDark],
     grassLight: [...PIXEL_FARM_MASKS.grassLight],
+    bush: [...PIXEL_FARM_MASKS.bush],
   };
 }
 
@@ -118,6 +120,7 @@ function cloneOverrides(): OverrideState {
     soil: { ...PIXEL_FARM_TILE_OVERRIDES.soil },
     grassDark: { ...PIXEL_FARM_TILE_OVERRIDES.grassDark },
     grassLight: { ...PIXEL_FARM_TILE_OVERRIDES.grassLight },
+    bush: { ...PIXEL_FARM_TILE_OVERRIDES.bush },
   };
 }
 
@@ -133,9 +136,11 @@ function sameContent(left: ContentState, right: ContentState): boolean {
     left.masks.soil === right.masks.soil &&
     left.masks.grassDark === right.masks.grassDark &&
     left.masks.grassLight === right.masks.grassLight &&
+    left.masks.bush === right.masks.bush &&
     left.overrides.soil === right.overrides.soil &&
     left.overrides.grassDark === right.overrides.grassDark &&
-    left.overrides.grassLight === right.overrides.grassLight
+    left.overrides.grassLight === right.overrides.grassLight &&
+    left.overrides.bush === right.overrides.bush
   );
 }
 
@@ -258,9 +263,14 @@ function fillMaskRect(
   return nextMask;
 }
 
-function pruneOverrideMap(mask: readonly string[], overrides: PixelFarmTileOverrideMap): PixelFarmTileOverrideMap {
+function pruneOverrideMap(
+  layerId: PixelFarmMaskLayerId,
+  mask: readonly string[],
+  overrides: PixelFarmTileOverrideMap,
+): PixelFarmTileOverrideMap {
   let changed = false;
   const next: PixelFarmTileOverrideMap = {};
+  const frameCount = PIXEL_FARM_TILESET_CONFIG[layerId].frameCount;
 
   for (const [key, frame] of Object.entries(overrides)) {
     const [rowText, columnText] = key.split(":");
@@ -273,7 +283,7 @@ function pruneOverrideMap(mask: readonly string[], overrides: PixelFarmTileOverr
       !maskHasTile(mask, row, column) ||
       !Number.isInteger(frame) ||
       frame < 0 ||
-      frame >= PIXEL_FARM_TILESET_FRAME_COUNT
+      frame >= frameCount
     ) {
       changed = true;
       continue;
@@ -287,15 +297,17 @@ function pruneOverrideMap(mask: readonly string[], overrides: PixelFarmTileOverr
 
 function pruneOverrides(masks: MaskState, overrides: OverrideState): OverrideState {
   const next = {
-    soil: pruneOverrideMap(masks.soil, overrides.soil),
-    grassDark: pruneOverrideMap(masks.grassDark, overrides.grassDark),
-    grassLight: pruneOverrideMap(masks.grassLight, overrides.grassLight),
+    soil: pruneOverrideMap("soil", masks.soil, overrides.soil),
+    grassDark: pruneOverrideMap("grassDark", masks.grassDark, overrides.grassDark),
+    grassLight: pruneOverrideMap("grassLight", masks.grassLight, overrides.grassLight),
+    bush: pruneOverrideMap("bush", masks.bush, overrides.bush),
   };
 
   if (
     next.soil === overrides.soil &&
     next.grassDark === overrides.grassDark &&
-    next.grassLight === overrides.grassLight
+    next.grassLight === overrides.grassLight &&
+    next.bush === overrides.bush
   ) {
     return overrides;
   }
@@ -306,6 +318,10 @@ function pruneOverrides(masks: MaskState, overrides: OverrideState): OverrideSta
 function layerColor(masks: MaskState, row: number, column: number): string {
   if (masks.grassLight[row]?.[column] === "#") {
     return "#bedc7f";
+  }
+
+  if (masks.bush[row]?.[column] === "#") {
+    return "#4a7a36";
   }
 
   if (masks.grassDark[row]?.[column] === "#") {
@@ -334,6 +350,7 @@ function sanitizeMaskRows(input: unknown, fallback: readonly string[]): string[]
 }
 
 function sanitizeOverrideMap(
+  layerId: PixelFarmMaskLayerId,
   input: unknown,
   mask: readonly string[],
 ): PixelFarmTileOverrideMap {
@@ -342,6 +359,7 @@ function sanitizeOverrideMap(
   }
 
   const next: PixelFarmTileOverrideMap = {};
+  const frameCount = PIXEL_FARM_TILESET_CONFIG[layerId].frameCount;
 
   for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
     const [rowText, columnText] = key.split(":");
@@ -355,7 +373,7 @@ function sanitizeOverrideMap(
       typeof value !== "number" ||
       !Number.isInteger(value) ||
       value < 0 ||
-      value >= PIXEL_FARM_TILESET_FRAME_COUNT
+      value >= frameCount
     ) {
       continue;
     }
@@ -380,7 +398,7 @@ function sanitizeSelectedFrames(input: unknown): SelectedFrameState {
       typeof frame === "number" &&
       Number.isInteger(frame) &&
       frame >= 0 &&
-      frame < PIXEL_FARM_TILESET_FRAME_COUNT
+      frame < PIXEL_FARM_TILESET_CONFIG[layerId].frameCount
     ) {
       next[layerId] = frame;
     }
@@ -466,11 +484,13 @@ function loadDraftState(): EditorState {
       soil: sanitizeMaskRows(parsed.masks?.soil, PIXEL_FARM_MASKS.soil),
       grassDark: sanitizeMaskRows(parsed.masks?.grassDark, PIXEL_FARM_MASKS.grassDark),
       grassLight: sanitizeMaskRows(parsed.masks?.grassLight, PIXEL_FARM_MASKS.grassLight),
+      bush: sanitizeMaskRows(parsed.masks?.bush, PIXEL_FARM_MASKS.bush),
     };
     const overrides: OverrideState = {
-      soil: sanitizeOverrideMap(parsed.overrides?.soil, masks.soil),
-      grassDark: sanitizeOverrideMap(parsed.overrides?.grassDark, masks.grassDark),
-      grassLight: sanitizeOverrideMap(parsed.overrides?.grassLight, masks.grassLight),
+      soil: sanitizeOverrideMap("soil", parsed.overrides?.soil, masks.soil),
+      grassDark: sanitizeOverrideMap("grassDark", parsed.overrides?.grassDark, masks.grassDark),
+      grassLight: sanitizeOverrideMap("grassLight", parsed.overrides?.grassLight, masks.grassLight),
+      bush: sanitizeOverrideMap("bush", parsed.overrides?.bush, masks.bush),
     };
 
     return {
