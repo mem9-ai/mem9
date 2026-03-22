@@ -1,19 +1,49 @@
-import bushTilesUrl from "@/assets/Bush_Tiles.png";
-import grassDarkTilesUrl from "@/assets/Grass_Tile.png";
-import grassLightTilesUrl from "@/assets/Grass_Tile_Lighter.png";
-import soilTilesUrl from "@/assets/Soil_Ground_Tiles.png";
+import barnStructuresUrl from "@/assets/barn-structures.png";
+import boatsUrl from "@/assets/boats.png";
+import bushTilesUrl from "@/assets/bush-tiles.png";
+import chickenHousesUrl from "@/assets/chicken-houses.png";
+import farmingPlantsUrl from "@/assets/farming-plants.png";
+import fencesUrl from "@/assets/fences.png";
+import grassHillTilesSlopesUrl from "@/assets/grass-hill-tiles-slopes-v2.png";
+import grassHillTilesUrl from "@/assets/grass-hill-tiles-v2.png";
+import grassDarkTilesUrl from "@/assets/grass-tile.png";
+import grassLightTilesUrl from "@/assets/grass-tile-lighter.png";
+import mushroomsFlowersStonesUrl from "@/assets/mushrooms-flowers-stones.png";
+import signsUrl from "@/assets/signs.png";
+import signsSidesUrl from "@/assets/signs-sides.png";
+import soilTilesUrl from "@/assets/soil-ground-tiles.png";
+import stonePathUrl from "@/assets/stone-path.png";
+import waterObjectsUrl from "@/assets/water-objects.png";
+import waterTrayUrl from "@/assets/water-tray.png";
+import waterWellUrl from "@/assets/water-well.png";
+import woodenBridgeUrl from "@/assets/wooden-bridge-v2.png";
+import workStationUrl from "@/assets/work-station.png";
 
 export const PIXEL_FARM_TILE_SIZE = 16;
-export const PIXEL_FARM_TILESET_COLUMNS = 11;
-export const PIXEL_FARM_BASE_TILESET_ROWS = 7;
-export const PIXEL_FARM_BASE_TILESET_FRAME_COUNT =
-  PIXEL_FARM_TILESET_COLUMNS * PIXEL_FARM_BASE_TILESET_ROWS;
-export const PIXEL_FARM_BUSH_TILESET_ROWS = 11;
-export const PIXEL_FARM_BUSH_TILESET_FRAME_COUNT =
-  PIXEL_FARM_TILESET_COLUMNS * PIXEL_FARM_BUSH_TILESET_ROWS;
-export const PIXEL_FARM_BASE_DEFAULT_FRAME = PIXEL_FARM_TILESET_COLUMNS + 1;
-export const PIXEL_FARM_BUSH_DEFAULT_FRAME = 0;
-export const PIXEL_FARM_ASSET_SOURCE_IDS = ["soil", "grassDark", "grassLight", "bush"] as const;
+export const PIXEL_FARM_BASE_DEFAULT_FRAME = 12;
+
+export const PIXEL_FARM_ASSET_SOURCE_IDS = [
+  "soil",
+  "grassDark",
+  "grassLight",
+  "grassHill",
+  "grassHillSlopes",
+  "bush",
+  "stonePath",
+  "fences",
+  "woodenBridge",
+  "barnStructures",
+  "chickenHouses",
+  "farmingPlants",
+  "mushroomsFlowersStones",
+  "boats",
+  "waterTray",
+  "waterObjects",
+  "waterWell",
+  "signs",
+  "signsSides",
+  "workStation",
+] as const;
 
 export type PixelFarmAssetSourceId = (typeof PIXEL_FARM_ASSET_SOURCE_IDS)[number];
 
@@ -31,42 +61,69 @@ export interface PixelFarmAssetSourceConfig {
   defaultFrame: number;
 }
 
+function defineAssetSource(
+  textureKey: string,
+  imageUrl: string,
+  columns: number,
+  rows: number,
+  defaultFrame = 0,
+): PixelFarmAssetSourceConfig {
+  return {
+    textureKey,
+    imageUrl,
+    columns,
+    rows,
+    frameCount: columns * rows,
+    defaultFrame,
+  };
+}
+
 export const PIXEL_FARM_ASSET_SOURCE_CONFIG: Record<
   PixelFarmAssetSourceId,
   PixelFarmAssetSourceConfig
 > = {
-  soil: {
-    textureKey: "pixel-farm-soil-ground",
-    imageUrl: soilTilesUrl,
-    columns: PIXEL_FARM_TILESET_COLUMNS,
-    rows: PIXEL_FARM_BASE_TILESET_ROWS,
-    frameCount: PIXEL_FARM_BASE_TILESET_FRAME_COUNT,
-    defaultFrame: PIXEL_FARM_BASE_DEFAULT_FRAME,
-  },
-  grassDark: {
-    textureKey: "pixel-farm-grass-dark",
-    imageUrl: grassDarkTilesUrl,
-    columns: PIXEL_FARM_TILESET_COLUMNS,
-    rows: PIXEL_FARM_BASE_TILESET_ROWS,
-    frameCount: PIXEL_FARM_BASE_TILESET_FRAME_COUNT,
-    defaultFrame: PIXEL_FARM_BASE_DEFAULT_FRAME,
-  },
-  grassLight: {
-    textureKey: "pixel-farm-grass-light",
-    imageUrl: grassLightTilesUrl,
-    columns: PIXEL_FARM_TILESET_COLUMNS,
-    rows: PIXEL_FARM_BASE_TILESET_ROWS,
-    frameCount: PIXEL_FARM_BASE_TILESET_FRAME_COUNT,
-    defaultFrame: PIXEL_FARM_BASE_DEFAULT_FRAME,
-  },
-  bush: {
-    textureKey: "pixel-farm-bush",
-    imageUrl: bushTilesUrl,
-    columns: PIXEL_FARM_TILESET_COLUMNS,
-    rows: PIXEL_FARM_BUSH_TILESET_ROWS,
-    frameCount: PIXEL_FARM_BUSH_TILESET_FRAME_COUNT,
-    defaultFrame: PIXEL_FARM_BUSH_DEFAULT_FRAME,
-  },
+  soil: defineAssetSource("pixel-farm-soil-ground", soilTilesUrl, 11, 7, PIXEL_FARM_BASE_DEFAULT_FRAME),
+  grassDark: defineAssetSource(
+    "pixel-farm-grass-dark",
+    grassDarkTilesUrl,
+    11,
+    7,
+    PIXEL_FARM_BASE_DEFAULT_FRAME,
+  ),
+  grassLight: defineAssetSource(
+    "pixel-farm-grass-light",
+    grassLightTilesUrl,
+    11,
+    7,
+    PIXEL_FARM_BASE_DEFAULT_FRAME,
+  ),
+  grassHill: defineAssetSource("pixel-farm-grass-hill", grassHillTilesUrl, 11, 7, PIXEL_FARM_BASE_DEFAULT_FRAME),
+  grassHillSlopes: defineAssetSource(
+    "pixel-farm-grass-hill-slopes",
+    grassHillTilesSlopesUrl,
+    6,
+    3,
+  ),
+  bush: defineAssetSource("pixel-farm-bush", bushTilesUrl, 11, 11),
+  stonePath: defineAssetSource("pixel-farm-stone-path", stonePathUrl, 4, 4),
+  fences: defineAssetSource("pixel-farm-fences", fencesUrl, 8, 4),
+  woodenBridge: defineAssetSource("pixel-farm-wooden-bridge", woodenBridgeUrl, 4, 3),
+  barnStructures: defineAssetSource("pixel-farm-barn-structures", barnStructuresUrl, 3, 4),
+  chickenHouses: defineAssetSource("pixel-farm-chicken-houses", chickenHousesUrl, 24, 11),
+  farmingPlants: defineAssetSource("pixel-farm-farming-plants", farmingPlantsUrl, 5, 15),
+  mushroomsFlowersStones: defineAssetSource(
+    "pixel-farm-mushrooms-flowers-stones",
+    mushroomsFlowersStonesUrl,
+    12,
+    5,
+  ),
+  boats: defineAssetSource("pixel-farm-boats", boatsUrl, 9, 6),
+  waterTray: defineAssetSource("pixel-farm-water-tray", waterTrayUrl, 6, 1),
+  waterObjects: defineAssetSource("pixel-farm-water-objects", waterObjectsUrl, 12, 2),
+  waterWell: defineAssetSource("pixel-farm-water-well", waterWellUrl, 2, 2),
+  signs: defineAssetSource("pixel-farm-signs", signsUrl, 6, 4),
+  signsSides: defineAssetSource("pixel-farm-signs-sides", signsSidesUrl, 8, 2),
+  workStation: defineAssetSource("pixel-farm-work-station", workStationUrl, 2, 2),
 };
 
 export type PixelFarmTilesetConfig = PixelFarmAssetSourceConfig;

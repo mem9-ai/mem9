@@ -1,8 +1,8 @@
 import Phaser from "phaser";
-import water1Url from "@/assets/Water_1.png";
-import water2Url from "@/assets/Water_2.png";
-import water3Url from "@/assets/Water_3.png";
-import water4Url from "@/assets/Water_4.png";
+import water1Url from "@/assets/water-frame-1.png";
+import water2Url from "@/assets/water-frame-2.png";
+import water3Url from "@/assets/water-frame-3.png";
+import water4Url from "@/assets/water-frame-4.png";
 import {
   maskHasTile,
   PIXEL_FARM_LAYERS,
