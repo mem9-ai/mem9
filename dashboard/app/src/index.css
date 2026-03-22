@@ -205,6 +205,12 @@ h1, h2, h3, h4 {
   box-shadow: none;
   transform-origin: center;
   will-change: transform, box-shadow, filter;
+  animation: insight-bubble-drift var(--insight-drift-duration, 22s) ease-in-out infinite alternate;
+  animation-delay: var(--insight-drift-delay, 0s);
+  transition:
+    transform 280ms ease,
+    box-shadow 280ms ease,
+    filter 280ms ease;
 }
 
 .memory-insight-bubble-core::before,
@@ -229,6 +235,21 @@ h1, h2, h3, h4 {
   filter: blur(12px);
 }
 
+.memory-insight-bubble-halo {
+  z-index: 0;
+  opacity: 0.42;
+  background:
+    radial-gradient(circle at 42% 38%, color-mix(in srgb, white 78%, transparent) 0%, transparent 36%),
+    radial-gradient(circle, color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 24%, transparent) 0%, transparent 74%);
+  filter: blur(11px);
+  transform: scale(0.9);
+  transition:
+    opacity 300ms ease,
+    transform 300ms ease,
+    filter 300ms ease;
+  animation: insight-bubble-halo-pulse 5.8s ease-in-out infinite;
+}
+
 .memory-insight-bubble-core::after {
   inset: 0;
   z-index: 1;
@@ -243,21 +264,19 @@ h1, h2, h3, h4 {
 
 .memory-insight-bubble-visual {
   z-index: 2;
-  animation: insight-bubble-drift var(--insight-drift-duration, 22s) ease-in-out infinite alternate;
-  animation-delay: var(--insight-drift-delay, 0s);
   background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 18%, var(--background));
   box-shadow: none;
   transform-origin: center;
-  will-change: transform, box-shadow, filter;
+  will-change: box-shadow, filter;
   transition:
-    transform 260ms ease,
     box-shadow 260ms ease,
     filter 260ms ease,
     background 260ms ease;
+  animation: insight-bubble-sheen 8s ease-in-out infinite alternate;
 }
 
-.memory-insight-bubble:active .memory-insight-bubble-visual,
-.memory-insight-bubble-visual-paused {
+.memory-insight-bubble:active .memory-insight-bubble-core,
+.memory-insight-bubble-core-paused {
   animation-play-state: paused;
 }
 
@@ -272,16 +291,26 @@ h1, h2, h3, h4 {
 }
 
 .memory-insight-bubble:hover .memory-insight-bubble-core {
-  box-shadow: 0 0 24px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 16%, transparent);
+  transform: scale(1.05);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 24%, transparent);
+  filter: saturate(1.1);
 }
 
 .memory-insight-bubble:hover .memory-insight-bubble-visual {
-  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 24%, var(--background));
-  filter: saturate(1.08);
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 30%, var(--background));
+  filter: saturate(1.16);
   box-shadow: none;
 }
 
+.memory-insight-bubble:hover .memory-insight-bubble-halo,
+.memory-insight-bubble[data-active="true"] .memory-insight-bubble-halo {
+  opacity: 0.75;
+  transform: scale(1.05);
+  filter: blur(12px);
+}
+
 .memory-insight-bubble[data-active="true"] .memory-insight-bubble-core {
+  transform: scale(1.03);
   box-shadow: 0 0 20px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 14%, transparent);
 }
 
@@ -308,8 +337,12 @@ h1, h2, h3, h4 {
 
 .memory-insight-bubble[data-dragging="true"] .memory-insight-bubble-visual {
   animation: none;
-  transform: none;
   filter: none;
+}
+
+.memory-insight-bubble[data-dragging="true"] .memory-insight-bubble-core {
+  animation: none;
+  transform: none;
 }
 
 [data-testid^="insight-node-"].memory-insight-bubble > span.relative {
@@ -354,4 +387,15 @@ h1, h2, h3, h4 {
       0
     ) scale(0.996);
   }
+}
+
+@keyframes insight-bubble-halo-pulse {
+  0%,
+  100% { opacity: 0.38; transform: scale(0.88); }
+  50% { opacity: 0.64; transform: scale(1.04); }
+}
+
+@keyframes insight-bubble-sheen {
+  0% { filter: brightness(0.98) saturate(0.96); }
+  100% { filter: brightness(1.08) saturate(1.08); }
 }
