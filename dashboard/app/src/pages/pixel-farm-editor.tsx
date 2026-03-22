@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { pixelFarmAutoTileFrame } from "@/lib/pixel-farm/autotile";
 import {
@@ -70,6 +71,7 @@ const DEFAULT_SELECTED_FRAMES: SelectedFrameState = {
 const COPY = {
   eyebrow: "DEV TOOL",
   title: "Mask Editor",
+  finalPreview: "Final preview",
   saveHint: "Saves the current draft to localStorage.",
   paletteTitle: "Tileset Palette",
   paletteHint: "Pick a frame, then use Stamp or Clear stamp on the grid.",
@@ -416,6 +418,23 @@ function previewFrame(
   return tileOverrideFrame(overrides[layerId], row, column) ?? pixelFarmAutoTileFrame(mask, row, column);
 }
 
+function compositePreviewCell(
+  masks: MaskState,
+  overrides: OverrideState,
+  row: number,
+  column: number,
+): { layerId: PixelFarmMaskLayerId; frame: number } | null {
+  for (let index = PIXEL_FARM_MASK_LAYER_IDS.length - 1; index >= 0; index -= 1) {
+    const layerId = PIXEL_FARM_MASK_LAYER_IDS[index]!;
+    const frame = previewFrame(layerId, masks, overrides, row, column);
+    if (frame !== null) {
+      return { layerId, frame };
+    }
+  }
+
+  return null;
+}
+
 function loadDraftState(): EditorState {
   const defaults: EditorState = {
     content: cloneContent(),
@@ -492,6 +511,7 @@ export function PixelFarmEditorPage() {
   const [selectedLayer, setSelectedLayer] = useState<PixelFarmMaskLayerId>(initialState.selectedLayer);
   const [tool, setTool] = useState<EditorTool>(initialState.tool);
   const [cellSize, setCellSize] = useState(initialState.cellSize);
+  const [showFinalPreview, setShowFinalPreview] = useState(false);
   const [saved, setSaved] = useState(false);
   const [exportState, setExportState] = useState<"idle" | "exporting" | "done" | "error">("idle");
   const [previewRect, setPreviewRect] = useState<DragState | null>(null);
@@ -892,6 +912,10 @@ export function PixelFarmEditorPage() {
                   {COPY.layers[layerId]}
                 </Button>
               ))}
+              <label className="ml-1 inline-flex items-center gap-2 rounded-full border border-[#92714c] bg-[#f5e9c3] px-3 py-1.5 text-sm text-[#5a452b]">
+                <Switch checked={showFinalPreview} onCheckedChange={setShowFinalPreview} />
+                <span>{COPY.finalPreview}</span>
+              </label>
             </div>
           </div>
 
@@ -1008,7 +1032,15 @@ export function PixelFarmEditorPage() {
                     columnIndex >= Math.min(previewRect.startColumn, previewRect.endColumn) &&
                     columnIndex <= Math.max(previewRect.startColumn, previewRect.endColumn);
                   const override = tileOverrideFrame(overrides[selectedLayer], rowIndex, columnIndex);
-                  const frame = previewFrame(selectedLayer, masks, overrides, rowIndex, columnIndex);
+                  const compositeCell = showFinalPreview
+                    ? compositePreviewCell(masks, overrides, rowIndex, columnIndex)
+                    : null;
+                  const frame = showFinalPreview
+                    ? compositeCell?.frame ?? null
+                    : previewFrame(selectedLayer, masks, overrides, rowIndex, columnIndex);
+                  const frameLayer = showFinalPreview
+                    ? compositeCell?.layerId ?? selectedLayer
+                    : selectedLayer;
                   const shadows: string[] = [];
 
                   if (isActive) {
@@ -1033,7 +1065,7 @@ export function PixelFarmEditorPage() {
                         height: cellSize,
                         backgroundColor: layerColor(masks, rowIndex, columnIndex),
                         boxShadow: shadows.join(", ") || undefined,
-                        ...(frame === null ? {} : frameStyle(selectedLayer, frame, cellSize)),
+                        ...(frame === null ? {} : frameStyle(frameLayer, frame, cellSize)),
                       }}
                       onPointerDown={() => handlePointerDown(rowIndex, columnIndex)}
                       onPointerEnter={() => handlePointerEnter(rowIndex, columnIndex)}
