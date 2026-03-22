@@ -1,6 +1,15 @@
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
@@ -67,6 +76,7 @@ const COPY = {
   eyebrow: "DEV TOOL",
   title: "Layer Editor",
   addLayer: "Add layer",
+  deleteLayer: "Delete layer",
   finalPreview: "Final preview",
   paletteTitle: "Tileset Palette",
   paletteHint: "Pick any tile from any spritesheet, then stamp it into the selected layer.",
@@ -85,6 +95,15 @@ const COPY = {
   reset: "Reset source",
   selectedTile: "Selected tile",
   generatedFile: "Generated file",
+  cancel: "Cancel",
+  create: "Create",
+  delete: "Delete",
+  addDialogTitle: "Create layer",
+  addDialogDescription: "Enter a name for the new layer.",
+  addDialogField: "Layer name",
+  deleteDialogTitle: "Delete layer",
+  deleteDialogDescription: "Delete the selected layer and its tiles?",
+  deleteDialogHint: "This action cannot be undone with export history.",
   tools: {
     paint: "Paint",
     erase: "Erase",
@@ -570,6 +589,9 @@ export function PixelFarmEditorPage() {
   const [saved, setSaved] = useState(false);
   const [exportState, setExportState] = useState<"idle" | "exporting" | "done" | "error">("idle");
   const [previewRect, setPreviewRect] = useState<DragState | null>(null);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [newLayerName, setNewLayerName] = useState("");
   const dragStateRef = useRef<DragState | null>(null);
   const historyRef = useRef(history);
   const gestureSnapshotRef = useRef<ContentState | null>(null);
@@ -579,6 +601,7 @@ export function PixelFarmEditorPage() {
 
   const { layers } = history.present;
   const selectedLayer = layers.find((layer) => layer.id === selectedLayerId) ?? layers[0]!;
+  const selectedLayerIndex = Math.max(0, layerIndexById(layers, selectedLayer.id));
   const rows = PIXEL_FARM_MASK_ROWS;
   const columns = PIXEL_FARM_MASK_COLUMNS;
 
@@ -918,9 +941,14 @@ export function PixelFarmEditorPage() {
     );
   }
 
-  function handleAddLayer(): void {
+  function handleOpenAddLayerDialog(): void {
+    setNewLayerName(nextLayerLabel(layers));
+    setIsAddDialogOpen(true);
+  }
+
+  function handleCreateLayer(): void {
+    const label = newLayerName.trim() || nextLayerLabel(layers);
     const id = nextLayerID(layers);
-    const label = nextLayerLabel(layers);
     const nextLayer: LayerState = {
       id,
       label,
@@ -936,6 +964,29 @@ export function PixelFarmEditorPage() {
       false,
     );
     setSelectedLayerId(id);
+    setIsAddDialogOpen(false);
+    setNewLayerName("");
+  }
+
+  function handleDeleteLayer(): void {
+    if (layers.length <= 1) {
+      return;
+    }
+
+    const nextSelectedLayer =
+      layers[selectedLayerIndex - 1] ??
+      layers[selectedLayerIndex + 1] ??
+      layers.find((layer) => layer.id !== selectedLayer.id) ??
+      null;
+
+    applyContentMutation(
+      (current) => ({
+        layers: current.layers.filter((layer) => layer.id !== selectedLayer.id),
+      }),
+      false,
+    );
+    setSelectedLayerId(nextSelectedLayer?.id ?? "");
+    setIsDeleteDialogOpen(false);
   }
 
   async function handleExport(): Promise<void> {
@@ -1015,8 +1066,17 @@ export function PixelFarmEditorPage() {
                   {layer.label}
                 </Button>
               ))}
-              <Button type="button" size="sm" variant="outline" onClick={handleAddLayer}>
+              <Button type="button" size="sm" variant="outline" onClick={handleOpenAddLayerDialog}>
                 {COPY.addLayer}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={layers.length <= 1}
+                onClick={() => setIsDeleteDialogOpen(true)}
+              >
+                {COPY.deleteLayer}
               </Button>
               <label className="ml-1 inline-flex items-center gap-2 rounded-full border border-[#92714c] bg-[#f5e9c3] px-3 py-1.5 text-sm text-[#5a452b]">
                 <Switch checked={showFinalPreview} onCheckedChange={setShowFinalPreview} />
@@ -1195,7 +1255,7 @@ export function PixelFarmEditorPage() {
             <h2 className="text-lg font-semibold">{COPY.paletteTitle}</h2>
             <p className="mt-1 text-sm leading-6 text-[#695238]">{COPY.paletteHint}</p>
             <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[#8d6b43]">
-              {`${PIXEL_FARM_LAYERS.find((layer) => layer.id === selectedLayer.id)?.label ?? selectedLayer.label} · ${COPY.selectedTile} ${selectedTile.sourceId}:${selectedTile.frame}`}
+              {`${selectedLayer.label} · ${COPY.selectedTile} ${selectedTile.sourceId}:${selectedTile.frame}`}
             </p>
           </div>
 
@@ -1245,6 +1305,69 @@ export function PixelFarmEditorPage() {
           </div>
         </aside>
       </div>
+
+      <Dialog
+        open={isAddDialogOpen}
+        onOpenChange={(open) => {
+          setIsAddDialogOpen(open);
+          if (!open) {
+            setNewLayerName("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{COPY.addDialogTitle}</DialogTitle>
+            <DialogDescription>{COPY.addDialogDescription}</DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleCreateLayer();
+            }}
+          >
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[#5a452b]" htmlFor="pixel-farm-layer-name">
+                {COPY.addDialogField}
+              </label>
+              <Input
+                id="pixel-farm-layer-name"
+                value={newLayerName}
+                onChange={(event) => setNewLayerName(event.target.value)}
+                placeholder={nextLayerLabel(layers)}
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                {COPY.cancel}
+              </Button>
+              <Button type="submit">{COPY.create}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{COPY.deleteDialogTitle}</DialogTitle>
+            <DialogDescription>
+              {`${COPY.deleteDialogDescription} "${selectedLayer.label}"`}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-[#695238]">{COPY.deleteDialogHint}</p>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              {COPY.cancel}
+            </Button>
+            <Button type="button" variant="destructive" onClick={handleDeleteLayer}>
+              {COPY.delete}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
