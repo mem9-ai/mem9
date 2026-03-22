@@ -12,18 +12,8 @@ export const PIXEL_FARM_BASE_TILESET_FRAME_COUNT =
 export const PIXEL_FARM_BUSH_TILESET_ROWS = 11;
 export const PIXEL_FARM_BUSH_TILESET_FRAME_COUNT =
   PIXEL_FARM_TILESET_COLUMNS * PIXEL_FARM_BUSH_TILESET_ROWS;
-
-export const PIXEL_FARM_AUTO_TILE_FRAMES = {
-  topLeft: 0,
-  top: 1,
-  topRight: 2,
-  left: PIXEL_FARM_TILESET_COLUMNS,
-  center: PIXEL_FARM_TILESET_COLUMNS + 1,
-  right: PIXEL_FARM_TILESET_COLUMNS + 2,
-  bottomLeft: PIXEL_FARM_TILESET_COLUMNS * 2,
-  bottom: PIXEL_FARM_TILESET_COLUMNS * 2 + 1,
-  bottomRight: PIXEL_FARM_TILESET_COLUMNS * 2 + 2,
-} as const;
+export const PIXEL_FARM_BASE_DEFAULT_FRAME = PIXEL_FARM_TILESET_COLUMNS + 1;
+export const PIXEL_FARM_BUSH_DEFAULT_FRAME = 0;
 
 export interface PixelFarmTilesetConfig {
   textureKey: string;
@@ -31,6 +21,7 @@ export interface PixelFarmTilesetConfig {
   columns: number;
   rows: number;
   frameCount: number;
+  defaultFrame: number;
 }
 
 export const PIXEL_FARM_TILESET_CONFIG: Record<PixelFarmMaskLayerId, PixelFarmTilesetConfig> = {
@@ -40,6 +31,7 @@ export const PIXEL_FARM_TILESET_CONFIG: Record<PixelFarmMaskLayerId, PixelFarmTi
     columns: PIXEL_FARM_TILESET_COLUMNS,
     rows: PIXEL_FARM_BASE_TILESET_ROWS,
     frameCount: PIXEL_FARM_BASE_TILESET_FRAME_COUNT,
+    defaultFrame: PIXEL_FARM_BASE_DEFAULT_FRAME,
   },
   grassDark: {
     textureKey: "pixel-farm-grass-dark",
@@ -47,6 +39,7 @@ export const PIXEL_FARM_TILESET_CONFIG: Record<PixelFarmMaskLayerId, PixelFarmTi
     columns: PIXEL_FARM_TILESET_COLUMNS,
     rows: PIXEL_FARM_BASE_TILESET_ROWS,
     frameCount: PIXEL_FARM_BASE_TILESET_FRAME_COUNT,
+    defaultFrame: PIXEL_FARM_BASE_DEFAULT_FRAME,
   },
   grassLight: {
     textureKey: "pixel-farm-grass-light",
@@ -54,6 +47,7 @@ export const PIXEL_FARM_TILESET_CONFIG: Record<PixelFarmMaskLayerId, PixelFarmTi
     columns: PIXEL_FARM_TILESET_COLUMNS,
     rows: PIXEL_FARM_BASE_TILESET_ROWS,
     frameCount: PIXEL_FARM_BASE_TILESET_FRAME_COUNT,
+    defaultFrame: PIXEL_FARM_BASE_DEFAULT_FRAME,
   },
   bush: {
     textureKey: "pixel-farm-bush",
@@ -61,5 +55,6 @@ export const PIXEL_FARM_TILESET_CONFIG: Record<PixelFarmMaskLayerId, PixelFarmTi
     columns: PIXEL_FARM_TILESET_COLUMNS,
     rows: PIXEL_FARM_BUSH_TILESET_ROWS,
     frameCount: PIXEL_FARM_BUSH_TILESET_FRAME_COUNT,
+    defaultFrame: PIXEL_FARM_BUSH_DEFAULT_FRAME,
   },
 };

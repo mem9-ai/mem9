@@ -17,7 +17,6 @@ import {
   PIXEL_FARM_TILESET_CONFIG,
   PIXEL_FARM_TILE_SIZE,
 } from "@/lib/pixel-farm/tileset-config";
-import { pixelFarmAutoTileFrame } from "@/lib/pixel-farm/autotile";
 
 const WATER_FRAME_DELAY = 180;
 const BACKGROUND_COLOR = 0x0d141b;
@@ -210,8 +209,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
             continue;
           }
 
-          const frame =
-            tileOverrideFrame(overrides, row, column) ?? pixelFarmAutoTileFrame(mask, row, column);
+          const frame = tileOverrideFrame(overrides, row, column) ?? tileset.defaultFrame;
           const sprite = this.add.image(
             (ISLAND_START_COLUMN + column) * PIXEL_FARM_TILE_SIZE,
             (ISLAND_START_ROW + row) * PIXEL_FARM_TILE_SIZE,
