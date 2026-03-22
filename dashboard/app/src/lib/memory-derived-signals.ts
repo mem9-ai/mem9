@@ -538,6 +538,23 @@ function buildTagStats(
   };
 }
 
+function mergeRawAndDerivedTags(rawTags: string[], derivedTags: string[]): string[] {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+
+  for (const tag of [...rawTags, ...derivedTags]) {
+    const normalized = normalizeDerivedTagValue(tag);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    merged.push(tag);
+  }
+
+  return merged;
+}
+
 export function buildLocalDerivedSignalIndex(
   input: BuildLocalDerivedSignalIndexInput,
 ): LocalDerivedSignalIndex {
@@ -578,13 +595,6 @@ export function buildLocalDerivedSignalIndex(
 
   for (const memory of input.memories) {
     const rawTags = rawTagsByMemoryId.get(memory.id) ?? [];
-
-    if (rawTags.length > 0) {
-      derivedTagsByMemoryId.set(memory.id, []);
-      combinedTagsByMemoryId.set(memory.id, rawTags);
-      continue;
-    }
-
     const candidates = memoryCandidates.get(memory.id) ?? [];
     const selectedDerivedTags = candidates
       .filter((candidate) => {
@@ -623,7 +633,10 @@ export function buildLocalDerivedSignalIndex(
       });
 
     derivedTagsByMemoryId.set(memory.id, selectedDerivedTags);
-    combinedTagsByMemoryId.set(memory.id, selectedDerivedTags);
+    combinedTagsByMemoryId.set(
+      memory.id,
+      mergeRawAndDerivedTags(rawTags, selectedDerivedTags),
+    );
   }
 
   const { tagStats, tagSourceByValue } = buildTagStats(

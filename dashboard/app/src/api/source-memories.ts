@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./client";
 import {
+  clearCachedMemoriesForSpace,
   patchSyncState,
   readCachedMemories,
   readSyncState,
@@ -10,33 +11,53 @@ import { sortMemoriesByCreatedAtDesc } from "@/lib/memory-filters";
 import type { Memory } from "@/types/memory";
 
 const PAGE_SIZE = 200;
+const activeSyncs = new Map<string, Promise<Memory[]>>();
 
 export function getSourceMemoriesQueryKey(spaceId: string): string[] {
   return ["space", spaceId, "sourceMemories"];
 }
 
 export async function syncAllMemories(spaceId: string): Promise<Memory[]> {
-  const all: Memory[] = [];
-  let offset = 0;
-  let total = Number.POSITIVE_INFINITY;
-
-  while (offset < total) {
-    const page = await api.listMemories(spaceId, {
-      limit: PAGE_SIZE,
-      offset,
-    });
-    all.push(...page.memories);
-    total = page.total;
-    offset += page.limit;
+  const existing = activeSyncs.get(spaceId);
+  if (existing) {
+    return existing;
   }
 
-  await upsertCachedMemories(spaceId, all);
-  await patchSyncState(spaceId, {
-    hasFullCache: true,
-    lastSyncedAt: new Date().toISOString(),
-  });
+  const syncRun = (async () => {
+    const all: Memory[] = [];
+    let offset = 0;
+    let total = Number.POSITIVE_INFINITY;
 
-  return sortMemoriesByCreatedAtDesc(all);
+    while (offset < total) {
+      const page = await api.listMemories(spaceId, {
+        limit: PAGE_SIZE,
+        offset,
+      });
+      all.push(...page.memories);
+      total = page.total;
+      offset += page.limit;
+    }
+
+    await clearCachedMemoriesForSpace(spaceId);
+    await upsertCachedMemories(spaceId, all);
+    await patchSyncState(spaceId, {
+      hasFullCache: true,
+      lastSyncedAt: new Date().toISOString(),
+      incrementalCursor: null,
+    });
+
+    return sortMemoriesByCreatedAtDesc(all);
+  })();
+
+  activeSyncs.set(spaceId, syncRun);
+
+  try {
+    return await syncRun;
+  } finally {
+    if (activeSyncs.get(spaceId) === syncRun) {
+      activeSyncs.delete(spaceId);
+    }
+  }
 }
 
 export async function loadSourceMemories(spaceId: string): Promise<Memory[]> {

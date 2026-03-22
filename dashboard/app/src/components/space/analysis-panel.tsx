@@ -181,6 +181,8 @@ export function AnalysisPanel({
   tagStats,
   onSelectCategory,
   onSelectTag,
+  onRefreshMemories = () => {},
+  refreshingMemories = false,
   onRetry,
   t,
 }: {
@@ -195,6 +197,8 @@ export function AnalysisPanel({
   tagStats?: AnalysisFacetStat[];
   onSelectCategory: (category: AnalysisCategory | undefined) => void;
   onSelectTag: (tag: string | undefined) => void;
+  onRefreshMemories?: () => void;
+  refreshingMemories?: boolean;
   onRetry: () => void;
   t: TFunction;
 }) {
@@ -223,6 +227,8 @@ export function AnalysisPanel({
             tagStats={tagStats}
             onSelectCategory={onSelectCategory}
             onSelectTag={onSelectTag}
+            onRefreshMemories={onRefreshMemories}
+            refreshingMemories={refreshingMemories}
             onRetry={onRetry}
             t={t}
           />
@@ -244,6 +250,8 @@ export function AnalysisPanelBody({
   tagStats,
   onSelectCategory,
   onSelectTag,
+  onRefreshMemories = () => {},
+  refreshingMemories = false,
   onRetry,
   t,
 }: {
@@ -258,6 +266,8 @@ export function AnalysisPanelBody({
   tagStats?: AnalysisFacetStat[];
   onSelectCategory: (category: AnalysisCategory | undefined) => void;
   onSelectTag: (tag: string | undefined) => void;
+  onRefreshMemories?: () => void;
+  refreshingMemories?: boolean;
   onRetry: () => void;
   t: TFunction;
 }) {
@@ -488,18 +498,32 @@ export function AnalysisPanelBody({
               </div>
             )}
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onRetry}
-              disabled={sourceLoading || sourceCount === 0}
-              data-mp-event="Dashboard/Analysis/ReanalyzeClicked"
-              data-mp-page-name="space"
-              className="w-full gap-1.5"
-            >
-              <RefreshCcw className="size-3.5" />
-              {t("analysis.reanalyze")}
-            </Button>
+            <div className="ml-auto flex flex-nowrap items-center justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onRefreshMemories}
+                disabled={sourceLoading || refreshingMemories}
+                data-mp-event="Dashboard/Analysis/RefreshMemoryClicked"
+                data-mp-page-name="space"
+                className="h-8 shrink-0 gap-1.5 px-3 text-[11px] whitespace-nowrap"
+              >
+                <RefreshCcw className={`size-3.5 ${refreshingMemories ? "animate-spin" : ""}`} />
+                {t("analysis.refresh_memory")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onRetry}
+                disabled={sourceLoading || sourceCount === 0 || refreshingMemories}
+                data-mp-event="Dashboard/Analysis/ReanalyzeClicked"
+                data-mp-page-name="space"
+                className="h-8 shrink-0 gap-1.5 px-3 text-[11px] whitespace-nowrap"
+              >
+                <RefreshCcw className="size-3.5" />
+                {t("analysis.reanalyze")}
+              </Button>
+            </div>
           </>
         </InlineCollapsibleSection>
       )}
@@ -550,31 +574,45 @@ function FacetSection({
         className="mt-2 flex flex-wrap gap-2"
       >
         {displayedItems.map((stat) => (
-          <button
-            key={stat.value}
-            type="button"
-            onClick={() => {
-              onSelect(activeValue === stat.value ? undefined : stat.value);
-            }}
-            aria-label={
-              kind === "tags" && stat.origin === "derived"
-                ? `${stat.value} ${t("analysis.derived_badge")} (${stat.count})`
-                : `${stat.value} (${stat.count})`
-            }
-            className={`rounded-full px-2.5 py-1 text-xs transition-colors ${
-              activeValue === stat.value
-                ? "bg-primary/20 text-primary hover:bg-primary/30"
-                : "bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
-            }`}
-          >
-            <span>{stat.value}</span>
-            {kind === "tags" && stat.origin === "derived" && (
-              <span className="ml-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-primary">
-                {t("analysis.derived_badge")}
-              </span>
-            )}
-            <span className="ml-1">({stat.count})</span>
-          </button>
+          (() => {
+            const badgeLabel = kind === "tags"
+              ? stat.origin === "mixed"
+                ? t("analysis.mixed_badge")
+                : null
+              : null;
+
+            return (
+              <button
+                key={stat.value}
+                type="button"
+                onClick={() => {
+                  onSelect(activeValue === stat.value ? undefined : stat.value);
+                }}
+                aria-label={
+                  badgeLabel
+                    ? `${stat.value} ${badgeLabel} (${stat.count})`
+                    : `${stat.value} (${stat.count})`
+                }
+                className={`rounded-full px-2.5 py-1 text-xs transition-colors ${
+                  activeValue === stat.value
+                    ? "bg-primary/20 text-primary hover:bg-primary/30"
+                    : "bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
+                }`}
+              >
+                <span>{stat.value}</span>
+                {badgeLabel && (
+                  <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] ${
+                    stat.origin === "mixed"
+                      ? "bg-amber-500/12 text-amber-300"
+                      : "bg-primary/10 text-primary"
+                  }`}>
+                    {badgeLabel}
+                  </span>
+                )}
+                <span className="ml-1">({stat.count})</span>
+              </button>
+            );
+          })()
         ))}
       </div>
       {isOverflowing && (

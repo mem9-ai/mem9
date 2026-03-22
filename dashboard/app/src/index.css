@@ -131,6 +131,12 @@ body {
   scrollbar-gutter: stable both-edges;
 }
 
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]):not([data-disabled]),
+[role="tab"]:not([aria-disabled="true"]):not([data-disabled]) {
+  cursor: pointer;
+}
+
 h1, h2, h3, h4 {
   font-weight: 700;
   line-height: 1.2;
@@ -247,7 +253,7 @@ h1, h2, h3, h4 {
     opacity 300ms ease,
     transform 300ms ease,
     filter 300ms ease;
-  animation: insight-bubble-halo-pulse 5.8s ease-in-out infinite;
+  animation: insight-bubble-halo-pulse 4.6s ease-in-out infinite;
 }
 
 .memory-insight-bubble-core::after {
@@ -272,7 +278,7 @@ h1, h2, h3, h4 {
     box-shadow 260ms ease,
     filter 260ms ease,
     background 260ms ease;
-  animation: insight-bubble-sheen 8s ease-in-out infinite alternate;
+  animation: insight-bubble-sheen 5.6s ease-in-out infinite;
 }
 
 .memory-insight-bubble:active .memory-insight-bubble-core,
@@ -469,11 +475,30 @@ h1, h2, h3, h4 {
 
 @keyframes insight-bubble-halo-pulse {
   0%,
-  100% { opacity: 0.38; transform: scale(0.88); }
-  50% { opacity: 0.64; transform: scale(1.04); }
+  100% {
+    opacity: 0.34;
+    transform: scale(0.86);
+    filter: blur(10px) saturate(0.96);
+  }
+  50% {
+    opacity: 0.72;
+    transform: scale(1.08);
+    filter: blur(14px) saturate(1.12);
+  }
 }
 
 @keyframes insight-bubble-sheen {
-  0% { filter: brightness(0.98) saturate(0.96); }
-  100% { filter: brightness(1.08) saturate(1.08); }
+  0%,
+  100% {
+    filter: brightness(0.94) saturate(0.92);
+  }
+  22% {
+    filter: brightness(1.02) saturate(1);
+  }
+  50% {
+    filter: brightness(1.16) saturate(1.14);
+  }
+  78% {
+    filter: brightness(1.04) saturate(1.02);
+  }
 }

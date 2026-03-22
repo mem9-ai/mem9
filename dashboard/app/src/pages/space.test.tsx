@@ -1,5 +1,6 @@
 import "@/i18n";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { router } from "@/router";
@@ -67,6 +68,26 @@ function createMemory(
     created_at: createdAt,
     updated_at: updatedAt,
   };
+}
+
+function renderSpacePage() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        gcTime: Infinity,
+        retry: false,
+      },
+      mutations: {
+        gcTime: Infinity,
+      },
+    },
+  });
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
 }
 
 const activityNewest = createMemory(
@@ -326,7 +347,7 @@ describe("SpacePage", () => {
   });
 
   it("filters memories by clicked analysis category without auto-opening detail", async () => {
-    render(<RouterProvider router={router} />);
+    renderSpacePage();
 
     fireEvent.click(getAnalysisCategoryButton("activity"));
 
@@ -342,7 +363,7 @@ describe("SpacePage", () => {
   });
 
   it("keeps the detail panel closed after the user closes it in analysis mode", async () => {
-    render(<RouterProvider router={router} />);
+    renderSpacePage();
 
     fireEvent.click(getAnalysisCategoryButton("activity"));
 
@@ -371,7 +392,7 @@ describe("SpacePage", () => {
   });
 
   it("closes the detail panel when the selected memory is filtered out", async () => {
-    render(<RouterProvider router={router} />);
+    renderSpacePage();
 
     const preferenceCard = screen
       .getByText("Prefer Neovim for edits")
@@ -399,7 +420,7 @@ describe("SpacePage", () => {
     window.innerWidth = 390;
     window.dispatchEvent(new Event("resize"));
 
-    render(<RouterProvider router={router} />);
+    renderSpacePage();
 
     expect(
       screen.getByRole("button", { name: "Analysis" }),
@@ -447,7 +468,7 @@ describe("SpacePage", () => {
   });
 
   it("shows tag chips and filters the list by tag", async () => {
-    render(<RouterProvider router={router} />);
+    renderSpacePage();
 
     expect(screen.getByText("Browse by tag")).toBeInTheDocument();
     fireEvent.click(
@@ -463,7 +484,7 @@ describe("SpacePage", () => {
   });
 
   it("filters memories by clicked rhythm bucket using created_at", async () => {
-    render(<RouterProvider router={router} />);
+    renderSpacePage();
 
     fireEvent.click(screen.getByRole("button", { name: "7 days" }));
     await waitFor(() => {
@@ -483,7 +504,7 @@ describe("SpacePage", () => {
   });
 
   it("toggles off the timeline filter when the same bucket is clicked twice", async () => {
-    render(<RouterProvider router={router} />);
+    renderSpacePage();
 
     fireEvent.click(screen.getByRole("button", { name: "7 days" }));
     await waitFor(() => {
@@ -505,7 +526,7 @@ describe("SpacePage", () => {
   });
 
   it("clears the selected timeline bucket when the range changes", async () => {
-    render(<RouterProvider router={router} />);
+    renderSpacePage();
 
     fireEvent.click(screen.getByRole("button", { name: "7 days" }));
     await waitFor(() => {
@@ -528,7 +549,7 @@ describe("SpacePage", () => {
   });
 
   it("shows no results when a zero-count timeline bucket is selected", async () => {
-    render(<RouterProvider router={router} />);
+    renderSpacePage();
 
     fireEvent.click(screen.getByRole("button", { name: "7 days" }));
     await waitFor(() => {
@@ -548,7 +569,7 @@ describe("SpacePage", () => {
   });
 
   it("closes the detail panel when a timeline filter removes the selected memory", async () => {
-    render(<RouterProvider router={router} />);
+    renderSpacePage();
 
     fireEvent.click(screen.getByRole("button", { name: "7 days" }));
     await waitFor(() => {
@@ -576,7 +597,7 @@ describe("SpacePage", () => {
   });
 
   it("renders session preview content for insight memories with matched session data", async () => {
-    render(<RouterProvider router={router} />);
+    renderSpacePage();
 
     expect(
       screen.getByText("We should keep the launch demo focused and avoid expanding scope."),

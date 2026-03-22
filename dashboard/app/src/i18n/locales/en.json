@@ -52,6 +52,7 @@
     "updated": "Updated",
     "tags": "Tags",
     "derived_badge": "Derived",
+    "mixed_badge": "Mixed",
     "derived_tags": "Derived tags",
     "metadata": "Metadata",
     "delete": "Delete this memory",
@@ -177,7 +178,8 @@
   "tag_strip": {
     "label": "Browse by tag",
     "filter_label": "Filter by tag {{tag}} ({{count}})",
-    "derived_badge": "Derived"
+    "derived_badge": "Derived",
+    "mixed_badge": "Mixed"
   },
   "facet": {
     "about_you": "About You",
@@ -228,6 +230,7 @@
     "top_topics_hint": "Topic counts are aggregate analysis signals and are not clickable filters.",
     "top_tags": "Top tags",
     "derived_badge": "Derived",
+    "mixed_badge": "Mixed",
     "more": "More",
     "less": "Less",
     "expand_section": "Expand",
@@ -236,6 +239,9 @@
     "recent_updates": "Recent updates",
     "retry": "Retry analysis",
     "reanalyze": "Reanalyze",
+    "refresh_memory": "Refresh Memory",
+    "refresh_memory_success": "Memory cache refreshed.",
+    "refresh_memory_failed": "Failed to refresh memories.",
     "retrying_updates": "Update polling failed. Retrying with backoff…",
     "degraded_title": "Analysis unavailable",
     "degraded_body": "The live analysis service is currently returning server errors. Your memory list still works normally, and you can retry later.",

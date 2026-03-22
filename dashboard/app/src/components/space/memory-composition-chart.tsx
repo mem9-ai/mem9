@@ -16,6 +16,43 @@ interface RingSegment extends PulseCompositionSegment {
   strokeWidth: number;
 }
 
+function humanizeLabelToken(value: string): string {
+  if (!value) {
+    return value;
+  }
+
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
+
+function buildCompositionLabels(
+  labelKey: string,
+  translate: (key: string) => string,
+): { shortLabel: string; fullLabel: string } {
+  const translated = translate(labelKey);
+  if (translated && translated !== labelKey) {
+    return {
+      shortLabel: translated,
+      fullLabel: translated,
+    };
+  }
+
+  const shortToken = labelKey
+    .split(".")
+    .filter(Boolean)
+    .slice(-1)[0] ?? labelKey;
+  const shortLabel = shortToken
+    .split(/[_-]+/g)
+    .map((part: string) => part.trim())
+    .filter(Boolean)
+    .map(humanizeLabelToken)
+    .join(" ");
+
+  return {
+    shortLabel: shortLabel || labelKey,
+    fullLabel: labelKey,
+  };
+}
+
 function polarToCartesian(
   centerX: number,
   centerY: number,
@@ -130,6 +167,7 @@ export function MemoryCompositionChart({
       : innerKind === "facet"
         ? t("memory_pulse.composition.by_facets")
         : "";
+  const resolveLabels = (labelKey: string) => buildCompositionLabels(labelKey, t);
 
   return (
     <section className="min-w-0">
@@ -148,58 +186,83 @@ export function MemoryCompositionChart({
         <div className="relative flex h-[220px] w-[220px] items-center justify-center">
           <svg viewBox="0 0 220 220" className="h-full w-full overflow-visible">
             {outerRing.map((segment) => (
-              <path
-                key={segment.key}
-                d={describeArc(110, 110, segment.radius, segment.startAngle, segment.endAngle)}
-                fill="none"
-                stroke={`var(${segment.colorToken})`}
-                strokeWidth={segment.strokeWidth}
-                strokeLinecap="round"
-                opacity={activeKey === null || activeKey === segment.key ? 0.95 : 0.28}
-                className="cursor-pointer transition-opacity duration-200"
-                onMouseEnter={() => setActiveKey(segment.key)}
-                onMouseLeave={() => setActiveKey(null)}
-                onFocus={() => setActiveKey(segment.key)}
-                onBlur={() => setActiveKey(null)}
-                onClick={() => {
-                  if (segment.memoryType) {
-                    onTypeSelect(segment.memoryType);
-                  }
-                }}
-              />
+              (() => {
+                const labels = resolveLabels(segment.labelKey);
+
+                return (
+                  <path
+                    key={segment.key}
+                    d={describeArc(110, 110, segment.radius, segment.startAngle, segment.endAngle)}
+                    fill="none"
+                    stroke={`var(${segment.colorToken})`}
+                    strokeWidth={segment.strokeWidth}
+                    strokeLinecap="round"
+                    opacity={activeKey === null || activeKey === segment.key ? 0.95 : 0.28}
+                    className="cursor-pointer transition-opacity duration-200"
+                    onMouseEnter={() => setActiveKey(segment.key)}
+                    onMouseLeave={() => setActiveKey(null)}
+                    onFocus={() => setActiveKey(segment.key)}
+                    onBlur={() => setActiveKey(null)}
+                    onClick={() => {
+                      if (segment.memoryType) {
+                        onTypeSelect(segment.memoryType);
+                      }
+                    }}
+                  >
+                    <title>{labels.fullLabel}</title>
+                  </path>
+                );
+              })()
             ))}
 
             {innerRing.map((segment) => (
-              <path
-                key={segment.key}
-                d={describeArc(110, 110, segment.radius, segment.startAngle, segment.endAngle)}
-                fill="none"
-                stroke={`var(${segment.colorToken})`}
-                strokeWidth={segment.strokeWidth}
-                strokeLinecap="round"
-                opacity={activeKey === null || activeKey === segment.key ? 0.82 : 0.2}
-                className="transition-opacity duration-200"
-                onMouseEnter={() => setActiveKey(segment.key)}
-                onMouseLeave={() => setActiveKey(null)}
-                onFocus={() => setActiveKey(segment.key)}
-                onBlur={() => setActiveKey(null)}
-              />
+              (() => {
+                const labels = resolveLabels(segment.labelKey);
+
+                return (
+                  <path
+                    key={segment.key}
+                    d={describeArc(110, 110, segment.radius, segment.startAngle, segment.endAngle)}
+                    fill="none"
+                    stroke={`var(${segment.colorToken})`}
+                    strokeWidth={segment.strokeWidth}
+                    strokeLinecap="round"
+                    opacity={activeKey === null || activeKey === segment.key ? 0.82 : 0.2}
+                    className="transition-opacity duration-200"
+                    onMouseEnter={() => setActiveKey(segment.key)}
+                    onMouseLeave={() => setActiveKey(null)}
+                    onFocus={() => setActiveKey(segment.key)}
+                    onBlur={() => setActiveKey(null)}
+                  >
+                    <title>{labels.fullLabel}</title>
+                  </path>
+                );
+              })()
             ))}
           </svg>
 
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
             {hovered ? (
-              <>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-soft-foreground">
-                  {t(hovered.labelKey)}
-                </div>
-                <div className="mt-1 text-3xl font-semibold tracking-[-0.06em] text-foreground">
-                  {compactFormatter.format(hovered.value)}
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {`${Math.round(hovered.ratio * 100)}%`}
-                </div>
-              </>
+              (() => {
+                const labels = resolveLabels(hovered.labelKey);
+
+                return (
+                  <>
+                    <div
+                      className="text-[11px] font-semibold uppercase tracking-[0.18em] text-soft-foreground"
+                      title={labels.fullLabel}
+                    >
+                      {labels.shortLabel}
+                    </div>
+                    <div className="mt-1 text-3xl font-semibold tracking-[-0.06em] text-foreground">
+                      {compactFormatter.format(hovered.value)}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {`${Math.round(hovered.ratio * 100)}%`}
+                    </div>
+                  </>
+                );
+              })()
             ) : (
               <div className="text-3xl font-semibold tracking-[-0.06em] text-foreground">
                 {compactFormatter.format(total)}
@@ -211,10 +274,12 @@ export function MemoryCompositionChart({
         <div className="mt-5 grid w-full gap-2 sm:grid-cols-2">
           {inner.map((segment) => {
             const isActive = activeType === segment.memoryType;
+            const labels = resolveLabels(segment.labelKey);
             return (
               <button
                 key={segment.key}
                 type="button"
+                title={labels.fullLabel}
                 onClick={() => {
                   if (segment.memoryType) {
                     onTypeSelect(segment.memoryType);
@@ -235,7 +300,7 @@ export function MemoryCompositionChart({
                       className="size-2 shrink-0 rounded-full"
                       style={{ backgroundColor: `var(${segment.colorToken})` }}
                     />
-                    <span className="truncate">{t(segment.labelKey)}</span>
+                    <span className="truncate">{labels.shortLabel}</span>
                   </span>
                   <span className="shrink-0 font-mono text-xs text-soft-foreground">
                     {compactFormatter.format(segment.value)}

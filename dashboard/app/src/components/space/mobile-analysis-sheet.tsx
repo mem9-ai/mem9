@@ -23,6 +23,8 @@ export function MobileAnalysisSheet({
   tagStats,
   onSelectCategory,
   onSelectTag,
+  onRefreshMemories = () => {},
+  refreshingMemories = false,
   onRetry,
   t,
 }: {
@@ -39,6 +41,8 @@ export function MobileAnalysisSheet({
   tagStats?: AnalysisFacetStat[];
   onSelectCategory: (category: AnalysisCategory | undefined) => void;
   onSelectTag: (tag: string | undefined) => void;
+  onRefreshMemories?: () => void;
+  refreshingMemories?: boolean;
   onRetry: () => void;
   t: TFunction;
 }) {
@@ -63,6 +67,8 @@ export function MobileAnalysisSheet({
         tagStats={tagStats}
         onSelectCategory={onSelectCategory}
         onSelectTag={onSelectTag}
+        onRefreshMemories={onRefreshMemories}
+        refreshingMemories={refreshingMemories}
         onRetry={onRetry}
         t={t}
       />

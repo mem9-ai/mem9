@@ -166,7 +166,7 @@ describe("AnalysisPanel", () => {
     expect(onSelectTag).toHaveBeenCalledWith("priority");
   });
 
-  it("marks derived-only tags in the analysis facet list", () => {
+  it("does not render a derived badge for derived-only tags in the analysis facet list", () => {
     render(
       <AnalysisPanel
         state={createState({
@@ -189,9 +189,68 @@ describe("AnalysisPanel", () => {
       />,
     );
 
+    expect(screen.getByRole("button", { name: "OpenClaw (3)" })).toBeInTheDocument();
+    expect(screen.queryByText("analysis.derived_badge")).not.toBeInTheDocument();
+  });
+
+  it("marks mixed-origin tags in the analysis facet list", () => {
+    render(
+      <AnalysisPanel
+        state={createState({
+          snapshot: createSnapshot({
+            topTagStats: [
+              { value: "gateway", count: 5, origin: "mixed" },
+            ],
+            topTags: ["gateway"],
+          }),
+        })}
+        sourceCount={4}
+        sourceLoading={false}
+        taxonomy={null}
+        taxonomyUnavailable={false}
+        cards={createSnapshot().aggregateCards}
+        onSelectCategory={noop}
+        onSelectTag={noop}
+        onRetry={noop}
+        t={t}
+      />,
+    );
+
     expect(
-      screen.getByRole("button", { name: "OpenClaw analysis.derived_badge (3)" }),
+      screen.getByRole("button", { name: "gateway analysis.mixed_badge (5)" }),
     ).toBeInTheDocument();
+  });
+
+  it("renders Refresh Memory next to Reanalyze and triggers the refresh callback", () => {
+    const onRefreshMemories = vi.fn();
+
+    render(
+      <AnalysisPanel
+        state={createState({
+          phase: "completed",
+          snapshot: createSnapshot({
+            status: "COMPLETED",
+          }),
+        })}
+        sourceCount={4}
+        sourceLoading={false}
+        taxonomy={null}
+        taxonomyUnavailable={false}
+        cards={createSnapshot().aggregateCards}
+        onSelectCategory={noop}
+        onSelectTag={noop}
+        onRefreshMemories={onRefreshMemories}
+        onRetry={noop}
+        t={t}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "analysis.expand_section" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "analysis.refresh_memory" }));
+    expect(onRefreshMemories).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "analysis.reanalyze" })).toBeInTheDocument();
   });
 
   it("uses uploaded batches for uploading progress", () => {

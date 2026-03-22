@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildLocalDerivedSignalIndex,
   getCombinedTagsForMemory,
+  getDerivedTagOrigin,
   getDerivedTagsForMemory,
 } from "./memory-derived-signals";
 import type { MemoryAnalysisMatch } from "@/types/analysis";
@@ -76,18 +77,60 @@ describe("memory-derived-signals", () => {
     expect(signalIndex.tagStats.some((stat) => stat.value === "OpenClaw")).toBe(true);
   });
 
-  it("keeps meaningful raw tags untouched and does not append derived tags", () => {
-    const memory = createMemory("mem-raw", {
-      content: "Use `OpenClaw` in the dashboard.",
-      tags: ["customer-sync"],
-    });
+  it("keeps meaningful raw tags and appends stable derived tags", () => {
+    const memories = [
+      createMemory("mem-raw", {
+        content: "Use `OpenClaw` in the dashboard.",
+        tags: ["customer-sync"],
+      }),
+      createMemory("mem-peer", {
+        content: "Track `OpenClaw` rollout readiness.",
+        tags: ["release-train"],
+      }),
+    ];
 
     const signalIndex = buildLocalDerivedSignalIndex({
-      memories: [memory],
+      memories,
+      matchMap: new Map([
+        ["mem-raw", createMatch("mem-raw", ["project"])],
+        ["mem-peer", createMatch("mem-peer", ["project"])],
+      ]),
     });
 
-    expect(getDerivedTagsForMemory(memory, signalIndex)).toEqual([]);
-    expect(getCombinedTagsForMemory(memory, signalIndex)).toEqual(["customer-sync"]);
+    expect(getDerivedTagsForMemory(memories[0]!, signalIndex)).toContain("OpenClaw");
+    expect(getCombinedTagsForMemory(memories[0]!, signalIndex)).toEqual(
+      expect.arrayContaining(["customer-sync", "OpenClaw"]),
+    );
+    expect(signalIndex.tagSourceByValue.get("customer-sync")).toBe("raw");
+    expect(signalIndex.tagSourceByValue.get("openclaw")).toBe("derived");
+  });
+
+  it("deduplicates overlapping raw and derived tags and marks them mixed", () => {
+    const memories = [
+      createMemory("mem-mixed-1", {
+        content: "Use `OpenClaw` in the dashboard.",
+        tags: ["OpenClaw"],
+      }),
+      createMemory("mem-mixed-2", {
+        content: "Track `OpenClaw` rollout readiness.",
+        tags: ["release-train"],
+      }),
+    ];
+
+    const signalIndex = buildLocalDerivedSignalIndex({
+      memories,
+      matchMap: new Map([
+        ["mem-mixed-1", createMatch("mem-mixed-1", ["project"])],
+        ["mem-mixed-2", createMatch("mem-mixed-2", ["project"])],
+      ]),
+    });
+
+    expect(getDerivedTagsForMemory(memories[0]!, signalIndex)).toContain("OpenClaw");
+    expect(getCombinedTagsForMemory(memories[0]!, signalIndex)).toEqual(["OpenClaw"]);
+    expect(getDerivedTagOrigin("OpenClaw", signalIndex)).toBe("mixed");
+    expect(
+      signalIndex.tagStats.find((stat) => stat.normalizedValue === "openclaw")?.origin,
+    ).toBe("mixed");
   });
 
   it("rejects person-like and low-signal candidates when nothing stable is available", () => {

@@ -28,6 +28,9 @@ export function TagStrip({
       <div className="flex flex-wrap gap-2">
         {tags.map(({ tag, count, origin }) => {
           const isActive = activeTag === tag;
+          const badgeLabel = origin === "mixed"
+            ? t("tag_strip.mixed_badge")
+            : null;
           return (
             <button
               key={tag}
@@ -44,9 +47,13 @@ export function TagStrip({
               }`}
             >
               <span className="font-medium">#{tag}</span>
-              {origin === "derived" && (
-                <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-primary">
-                  {t("tag_strip.derived_badge")}
+              {badgeLabel && (
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] ${
+                  origin === "mixed"
+                    ? "bg-amber-500/12 text-amber-300"
+                    : "bg-primary/10 text-primary"
+                }`}>
+                  {badgeLabel}
                 </span>
               )}
               <span className="text-xs text-soft-foreground">{count}</span>

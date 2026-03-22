@@ -273,6 +273,27 @@ export async function upsertCachedMemories(
   await putRecords(MEMORIES_STORE, records);
 }
 
+export async function clearCachedMemoriesForSpace(
+  spaceId: string,
+): Promise<void> {
+  if (!supportsIndexedDb()) {
+    for (const [key, record] of memoryFallback.entries()) {
+      if (record.spaceId === spaceId) {
+        memoryFallback.delete(key);
+      }
+    }
+    return;
+  }
+
+  const records = await getAllByIndex<CachedMemoryRecord>(
+    MEMORIES_STORE,
+    "bySpace",
+    spaceId,
+  );
+  const keys = records.map((record) => record.key);
+  await deleteRecords(MEMORIES_STORE, keys);
+}
+
 export async function removeCachedMemory(
   spaceId: string,
   memoryId: string,

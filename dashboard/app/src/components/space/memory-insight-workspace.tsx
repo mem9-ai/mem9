@@ -49,7 +49,7 @@ export function MemoryInsightWorkspace({
         </div>
         <TabsList
           variant="line"
-          className="inline-flex h-auto gap-1 rounded-full border border-foreground/8 bg-background/70 p-1"
+          className="inline-flex h-auto gap-1 rounded-full bg-background/70 p-1"
         >
           <TabsTrigger
             value="browse"

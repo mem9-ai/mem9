@@ -52,6 +52,7 @@
     "updated": "更新时间",
     "tags": "标签",
     "derived_badge": "派生",
+    "mixed_badge": "混合",
     "derived_tags": "派生标签",
     "metadata": "元数据",
     "delete": "删除这条记忆",
@@ -177,7 +178,8 @@
   "tag_strip": {
     "label": "按标签浏览",
     "filter_label": "按标签 {{tag}} 筛选（{{count}}）",
-    "derived_badge": "派生"
+    "derived_badge": "派生",
+    "mixed_badge": "混合"
   },
   "facet": {
     "about_you": "关于你",
@@ -228,6 +230,7 @@
     "top_topics_hint": "主题计数来自聚合分析信号，当前不支持直接点击筛选。",
     "top_tags": "高频标签",
     "derived_badge": "派生",
+    "mixed_badge": "混合",
     "more": "更多",
     "less": "收起",
     "expand_section": "展开",
@@ -236,6 +239,9 @@
     "recent_updates": "最近更新",
     "retry": "重试分析",
     "reanalyze": "重新分析",
+    "refresh_memory": "刷新记忆",
+    "refresh_memory_success": "记忆缓存已刷新。",
+    "refresh_memory_failed": "刷新记忆失败。",
     "retrying_updates": "更新轮询失败，正在退避重试…",
     "degraded_title": "分析服务暂不可用",
     "degraded_body": "线上分析服务当前返回了服务端错误。记忆列表仍可正常使用，你可以稍后重试。",

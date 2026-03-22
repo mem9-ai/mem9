@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, getRouteApi } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -26,8 +27,9 @@ import {
   useImportMemories,
   useImportTasks,
 } from "@/api/queries";
-import { useSourceMemories } from "@/api/source-memories";
+import { getSourceMemoriesQueryKey, useSourceMemories } from "@/api/source-memories";
 import { useSpaceAnalysis } from "@/api/analysis-queries";
+import { patchSyncState } from "@/api/local-cache";
 import {
   filterMemoriesForView,
   type MemoryTagResolver,
@@ -231,6 +233,7 @@ function formatTimelineLabel(
 export function SpacePage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const search = route.useSearch();
   const spaceId = getActiveSpaceId() ?? "";
   const isDesktopViewport = useIsDesktopViewport();
@@ -247,6 +250,7 @@ export function SpacePage() {
   const [importStatusOpen, setImportStatusOpen] = useState(false);
   const [mobileAnalysisOpen, setMobileAnalysisOpen] = useState(false);
   const [localVisibleCount, setLocalVisibleCount] = useState(LOCAL_PAGE_SIZE);
+  const [refreshingMemories, setRefreshingMemories] = useState(false);
 
   const range: TimeRangePreset = search.range ?? "all";
   const facet: MemoryFacet | undefined = search.facet;
@@ -322,6 +326,34 @@ export function SpacePage() {
   const importMutation = useImportMemories(spaceId);
   const analysis = useSpaceAnalysis(spaceId, range);
   const { data: importTaskData } = useImportTasks(spaceId, importStatusOpen);
+
+  const handleRefreshMemories = async (): Promise<void> => {
+    if (!spaceId || refreshingMemories) {
+      return;
+    }
+
+    setRefreshingMemories(true);
+
+    try {
+      await patchSyncState(spaceId, {
+        hasFullCache: false,
+        lastSyncedAt: null,
+        incrementalCursor: null,
+      });
+      await queryClient.invalidateQueries({
+        queryKey: getSourceMemoriesQueryKey(spaceId),
+      });
+      toast.success(t("analysis.refresh_memory_success"));
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t("analysis.refresh_memory_failed"),
+      );
+    } finally {
+      setRefreshingMemories(false);
+    }
+  };
 
   const allMemories = sourceQuery.data ?? [];
   const totalStats = useMemo(() => buildStats(allMemories), [allMemories]);
@@ -1209,6 +1241,8 @@ export function SpacePage() {
                     }
                   }, 200);
                 }}
+                onRefreshMemories={handleRefreshMemories}
+                refreshingMemories={refreshingMemories}
                 onRetry={analysis.retry}
                 t={t}
               />
@@ -1272,6 +1306,8 @@ export function SpacePage() {
               }
             }, 200);
           }}
+          onRefreshMemories={handleRefreshMemories}
+          refreshingMemories={refreshingMemories}
           onRetry={analysis.retry}
           t={t}
         />

@@ -221,7 +221,7 @@ function createBubbleDriftStyle(id: string, index: number): CSSProperties {
     "--insight-drift-y": `${seed.y}px`,
     "--insight-drift-rotate": `${seed.rotate}deg`,
     "--insight-drift-scale": `${seed.scale}`,
-    "--insight-drift-duration": `${seed.duration}s`,
+    "--insight-drift-duration": `${(seed.duration * 0.7).toFixed(2)}s`,
     "--insight-drift-delay": `${seed.delay}s`,
   } as CSSProperties;
 }
@@ -943,9 +943,7 @@ function MemoryInsightCanvas({
           id: tag.id,
           kind: "tag",
           label: tag.label,
-          subtitle: tag.origin === "derived"
-            ? t("memory_insight.derived_tag_subtitle")
-            : t("memory_insight.tag_subtitle"),
+          subtitle: t("memory_insight.tag_subtitle"),
           count: tag.count,
           width: dimensions.width,
           height: dimensions.height,
