@@ -67,9 +67,9 @@ interface HoveredCell {
 }
 
 const CELL_SIZE_MIN = 12;
-const CELL_SIZE_MAX = 32;
+const CELL_SIZE_MAX = 64;
 const CELL_SIZE_STEP = 2;
-const INITIAL_CELL_SIZE = 18;
+const INITIAL_CELL_SIZE = 32;
 const PALETTE_CELL_SIZE = 28;
 const MAX_HISTORY = 100;
 const GRID_GAP = 1;
