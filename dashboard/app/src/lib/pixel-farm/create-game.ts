@@ -26,7 +26,6 @@ const ISLAND_COLUMNS = PIXEL_FARM_MASK_COLUMNS;
 const ISLAND_ROWS = PIXEL_FARM_MASK_ROWS;
 const CAMERA_MAX_ZOOM = 3;
 const CAMERA_TARGET_FILL = 0.8;
-const CAMERA_ZOOM_STEP = 0.12;
 const WORLD_PIXEL_WIDTH = WORLD_COLUMNS * PIXEL_FARM_TILE_SIZE;
 const WORLD_PIXEL_HEIGHT = WORLD_ROWS * PIXEL_FARM_TILE_SIZE;
 const ISLAND_PIXEL_WIDTH = PIXEL_FARM_MASK_BOUNDS.width * PIXEL_FARM_TILE_SIZE;
@@ -242,7 +241,6 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.input.on("pointermove", this.handlePointerMove, this);
     this.input.on("pointerup", this.handlePointerUp, this);
     this.input.on("pointerupoutside", this.handlePointerUp, this);
-    this.input.on("wheel", this.handleWheel, this);
   }
 
   private unbindCameraControls(): void {
@@ -250,7 +248,6 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.input.off("pointermove", this.handlePointerMove, this);
     this.input.off("pointerup", this.handlePointerUp, this);
     this.input.off("pointerupoutside", this.handlePointerUp, this);
-    this.input.off("wheel", this.handleWheel, this);
   }
 
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
@@ -287,24 +284,6 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
     this.dragState.active = false;
     this.dragState.pointerId = null;
-  }
-
-  private handleWheel(
-    _pointer: Phaser.Input.Pointer,
-    _currentlyOver: Phaser.GameObjects.GameObject[],
-    _deltaX: number,
-    deltaY: number,
-  ): void {
-    const camera = this.cameras.main;
-    const centerX = camera.scrollX + camera.width / (2 * camera.zoom);
-    const centerY = camera.scrollY + camera.height / (2 * camera.zoom);
-    const zoomFactor = deltaY > 0 ? 1 - CAMERA_ZOOM_STEP : 1 + CAMERA_ZOOM_STEP;
-    const nextZoom = this.clampZoom(camera.zoom * zoomFactor);
-
-    camera.setZoom(nextZoom);
-    camera.centerOn(centerX, centerY);
-    this.clampCamera(camera);
-    this.hasCameraInteraction = true;
   }
 
   private fitCameraToIsland(): void {
