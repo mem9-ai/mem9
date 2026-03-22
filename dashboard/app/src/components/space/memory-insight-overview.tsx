@@ -85,6 +85,15 @@ type PositionedNode = LaneRenderableItem & {
   muted?: boolean;
 };
 
+type BubbleRelationEdge = {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  score: number;
+  sharedTagCount: number;
+  sharedMemoryCount: number;
+};
+
 const DRIFT_SEEDS = [
   { x: 8, y: -5, duration: 18, delay: -3 },
   { x: -6, y: 7, duration: 20, delay: -9 },
@@ -232,6 +241,28 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function normalizedLabelKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function overlapCount(left: Set<string>, right: Set<string>): number {
+  if (left.size === 0 || right.size === 0) {
+    return 0;
+  }
+
+  const [smaller, larger] = left.size <= right.size
+    ? [left, right]
+    : [right, left];
+
+  let count = 0;
+  for (const value of smaller) {
+    if (larger.has(value)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 function rootSpreadWidth(viewportWidth: number, compact: boolean, canvasGap: number): number {
   const desired = viewportWidth - canvasGap * 2;
   return compact
@@ -305,6 +336,8 @@ function InsightNodeButton({
   draggable,
   dragging,
   onPointerDown,
+  onPointerEnter,
+  onPointerLeave,
   onClick,
 }: {
   kind: InsightRenderableKind;
@@ -324,6 +357,8 @@ function InsightNodeButton({
   dragging?: boolean;
   onPointerDown?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onClick: () => void;
+  onPointerEnter?: () => void;
+  onPointerLeave?: () => void;
 }) {
   const kindStyles: Record<InsightRenderableKind, string> = {
     card: "border-type-insight/24 text-foreground",
@@ -341,6 +376,8 @@ function InsightNodeButton({
     <button
       type="button"
       onPointerDown={onPointerDown}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
       onClick={onClick}
       className={cn(
         dragging
@@ -373,20 +410,19 @@ function InsightNodeButton({
       {bubble ? (
         <>
           <span
-            className="memory-insight-bubble-core"
+            className={cn(
+              "memory-insight-bubble-core",
+              active ? "memory-insight-bubble-core-paused" : "memory-insight-bubble-core-drift",
+            )}
             style={{
+              ...driftStyle,
               width: diameter,
               height: diameter,
             }}
           >
+            <span className="memory-insight-bubble-halo absolute inset-[-12px] rounded-full" />
             <span className="memory-insight-bubble-shell absolute inset-0 rounded-full" />
-            <span
-              className={cn(
-                "memory-insight-bubble-visual absolute inset-[3px] rounded-full",
-                active ? "memory-insight-bubble-visual-paused" : "",
-              )}
-              style={active ? undefined : driftStyle}
-            />
+            <span className="memory-insight-bubble-visual absolute inset-[3px] rounded-full" />
           </span>
           <span className="memory-insight-bubble-label mt-2 block w-full px-1">
             <span className="line-clamp-2 block text-[12px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
@@ -502,6 +538,7 @@ function MemoryInsightCanvas({
   const [panMode, setPanMode] = useState(false);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
   const dragStateRef = useRef<DragState | null>(null);
   const panStateRef = useRef<PanState | null>(null);
@@ -1210,6 +1247,108 @@ function MemoryInsightCanvas({
     tagColumnWidth,
   ]);
 
+  const rootBubblePositions = useMemo(() => {
+    const map = new Map<string, { x: number; y: number; radius: number }>();
+    for (const node of canvasNodes) {
+      if (node.kind !== "card" || expandedCardSet.has(node.id)) {
+        continue;
+      }
+      const diameter = node.diameter ?? node.width;
+      map.set(node.id, {
+        x: node.position.x + node.width / 2,
+        y: node.position.y + diameter / 2,
+        radius: diameter / 2,
+      });
+    }
+    return map;
+  }, [canvasNodes, expandedCardSet]);
+
+  const rootRelationEdges = useMemo(() => {
+    if (poolCards.length < 2) {
+      return [] as BubbleRelationEdge[];
+    }
+
+    const cardIds = new Set(graph.cards.map((card) => card.id));
+    const memoryIdsByCardId = new Map<string, Set<string>>();
+    for (const memory of memories) {
+      const categories = matchMap.get(memory.id)?.categories ?? [];
+      for (const category of categories) {
+        const cardId = `card:${category}`;
+        if (!cardIds.has(cardId)) {
+          continue;
+        }
+        const bucket = memoryIdsByCardId.get(cardId) ?? new Set<string>();
+        bucket.add(memory.id);
+        memoryIdsByCardId.set(cardId, bucket);
+      }
+    }
+
+    const tagsByNormalizedLabel = new Map<string, Set<string>>();
+    for (const tag of graph.tags) {
+      const normalizedTag = normalizedLabelKey(tag.label);
+      const bucket = tagsByNormalizedLabel.get(normalizedTag) ?? new Set<string>();
+      bucket.add(tag.parentId);
+      tagsByNormalizedLabel.set(normalizedTag, bucket);
+    }
+
+    const sharedTagCounts = new Map<string, number>();
+    for (const parentIds of tagsByNormalizedLabel.values()) {
+      const ids = [...parentIds];
+      for (let index = 0; index < ids.length; index += 1) {
+        for (let nested = index + 1; nested < ids.length; nested += 1) {
+          const left = ids[index]!;
+          const right = ids[nested]!;
+          const key = left < right ? `${left}=>${right}` : `${right}=>${left}`;
+          sharedTagCounts.set(key, (sharedTagCounts.get(key) ?? 0) + 1);
+        }
+      }
+    }
+
+    const edges: BubbleRelationEdge[] = [];
+    for (let index = 0; index < poolCards.length; index += 1) {
+      for (let nested = index + 1; nested < poolCards.length; nested += 1) {
+        const source = poolCards[index]!;
+        const target = poolCards[nested]!;
+        const key = source.id < target.id
+          ? `${source.id}=>${target.id}`
+          : `${target.id}=>${source.id}`;
+        const sharedTagCount = sharedTagCounts.get(key) ?? 0;
+        const leftMemories = memoryIdsByCardId.get(source.id) ?? new Set<string>();
+        const rightMemories = memoryIdsByCardId.get(target.id) ?? new Set<string>();
+        const sharedMemoryCount = overlapCount(leftMemories, rightMemories);
+        const tagDenominator = Math.max(
+          Math.min(
+            tagsByCardId.get(source.id)?.length ?? 0,
+            tagsByCardId.get(target.id)?.length ?? 0,
+          ),
+          1,
+        );
+        const memoryDenominator = Math.max(
+          Math.min(leftMemories.size, rightMemories.size),
+          1,
+        );
+        const tagScore = sharedTagCount / tagDenominator;
+        const memoryScore = sharedMemoryCount / memoryDenominator;
+        const score = memoryScore * 0.62 + tagScore * 0.38;
+        if (score < 0.16 && sharedTagCount < 2 && sharedMemoryCount < 2) {
+          continue;
+        }
+        edges.push({
+          id: key,
+          sourceId: source.id,
+          targetId: target.id,
+          score,
+          sharedTagCount,
+          sharedMemoryCount,
+        });
+      }
+    }
+
+    return edges
+      .sort((left, right) => right.score - left.score)
+      .slice(0, Math.max(24, poolCards.length * 3));
+  }, [graph.cards, graph.tags, matchMap, memories, poolCards, tagsByCardId]);
+
   const canvasBounds = useMemo(
     () =>
       computeCanvasBounds({
@@ -1358,6 +1497,51 @@ function MemoryInsightCanvas({
               >
                 {t("memory_insight.canvas_hint")}
               </div>
+              {rootRelationEdges.length > 0 ? (
+                <svg
+                  className="pointer-events-none absolute inset-0"
+                  aria-hidden="true"
+                >
+                  {rootRelationEdges.map((edge) => {
+                    const source = rootBubblePositions.get(edge.sourceId);
+                    const target = rootBubblePositions.get(edge.targetId);
+                    if (!source || !target) {
+                      return null;
+                    }
+                    const connectedToHovered = hoveredNodeId
+                      ? edge.sourceId === hoveredNodeId || edge.targetId === hoveredNodeId
+                      : false;
+                    const score = clamp(edge.score, 0, 1);
+                    const opacity = connectedToHovered
+                      ? 0.78
+                      : 0.18 + score * 0.44;
+                    const strokeWidth = connectedToHovered
+                      ? 2.2 + score * 4.4
+                      : 0.9 + score * 3.2;
+
+                    return (
+                      <line
+                        key={edge.id}
+                        x1={source.x}
+                        y1={source.y}
+                        x2={target.x}
+                        y2={target.y}
+                        stroke="color-mix(in srgb, var(--type-insight) 68%, transparent)"
+                        strokeOpacity={opacity}
+                        strokeWidth={strokeWidth}
+                        strokeLinecap="round"
+                      >
+                        <title>
+                          {t("memory_insight.relation_line_meta", {
+                            tags: edge.sharedTagCount,
+                            memories: edge.sharedMemoryCount,
+                          })}
+                        </title>
+                      </line>
+                    );
+                  })}
+                </svg>
+              ) : null}
 
               {canvasNodes.map((node, index) => {
                 const isRootBubble = node.kind === "card" && !expandedCardSet.has(node.id);
@@ -1389,6 +1573,8 @@ function MemoryInsightCanvas({
                       height: node.height,
                     }}
                     onClick={() => guardedClick(node.id, node.onClick)}
+                    onPointerEnter={() => setHoveredNodeId(node.id)}
+                    onPointerLeave={() => setHoveredNodeId((current) => current === node.id ? null : current)}
                     onPointerDown={node.draggable
                       ? (event) => {
                           if (node.kind === "card" && !expandedCardSet.has(node.id)) {

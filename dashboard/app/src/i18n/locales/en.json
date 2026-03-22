@@ -325,6 +325,7 @@
     "subtitle": "Explore how categories, tags, entities, and memories connect inside this range.",
     "helper": "Drag bubbles and tags to arrange the map. Click any bubble to send it to the right side of the canvas, then walk its tags, entities, and memories without leaving this single view.",
     "canvas_hint": "One shared canvas. Scroll both directions if needed.",
+    "relation_line_meta": "{{tags}} shared tags · {{memories}} shared memories",
     "pan_hint": "Hold Space and drag the background to pan",
     "fit_view": "Fit view",
     "enter_fullscreen": "Fullscreen",
