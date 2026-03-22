@@ -13,6 +13,8 @@ import signsUrl from "@/assets/signs.png";
 import signsSidesUrl from "@/assets/signs-sides.png";
 import soilTilesUrl from "@/assets/soil-ground-tiles.png";
 import stonePathUrl from "@/assets/stone-path.png";
+import tiledDirtUrl from "@/assets/tiled-dirt.png";
+import tilledDirtWideUrl from "@/assets/tilled-dirt-wide.png";
 import waterObjectsUrl from "@/assets/water-objects.png";
 import waterTrayUrl from "@/assets/water-tray.png";
 import waterWellUrl from "@/assets/water-well.png";
@@ -24,6 +26,8 @@ export const PIXEL_FARM_BASE_DEFAULT_FRAME = 12;
 
 export const PIXEL_FARM_ASSET_SOURCE_IDS = [
   "soil",
+  "tiledDirt",
+  "tilledDirtWide",
   "grassDark",
   "grassLight",
   "grassHill",
@@ -83,6 +87,14 @@ export const PIXEL_FARM_ASSET_SOURCE_CONFIG: Record<
   PixelFarmAssetSourceConfig
 > = {
   soil: defineAssetSource("pixel-farm-soil-ground", soilTilesUrl, 11, 7, PIXEL_FARM_BASE_DEFAULT_FRAME),
+  tiledDirt: defineAssetSource("pixel-farm-tiled-dirt", tiledDirtUrl, 11, 7, PIXEL_FARM_BASE_DEFAULT_FRAME),
+  tilledDirtWide: defineAssetSource(
+    "pixel-farm-tilled-dirt-wide",
+    tilledDirtWideUrl,
+    11,
+    7,
+    PIXEL_FARM_BASE_DEFAULT_FRAME,
+  ),
   grassDark: defineAssetSource(
     "pixel-farm-grass-dark",
     grassDarkTilesUrl,
