@@ -92,6 +92,11 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		actual, loaded := s.svcCache.LoadOrStore(key, svc)
 		if !loaded {
 			go func() {
+				if err := s.tenant.EnsureMemoriesAutoEmbedding(context.Background(), auth.TenantDB); err != nil {
+					s.logger.Warn("memories auto-embedding migration failed",
+						"cluster_id", auth.ClusterID,
+						"err", err)
+				}
 				if err := s.tenant.EnsureSessionsTable(context.Background(), auth.TenantDB); err != nil {
 					s.logger.Warn("sessions table migration failed",
 						"cluster_id", auth.ClusterID,
@@ -115,6 +120,12 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	actual, loaded := s.svcCache.LoadOrStore(key, svc)
 	if !loaded {
 		go func() {
+			if err := s.tenant.EnsureMemoriesAutoEmbedding(context.Background(), auth.TenantDB); err != nil {
+				s.logger.Warn("memories auto-embedding migration failed",
+					"cluster_id", auth.ClusterID,
+					"tenant", auth.TenantID,
+					"err", err)
+			}
 			if err := s.tenant.EnsureSessionsTable(context.Background(), auth.TenantDB); err != nil {
 				s.logger.Warn("sessions table migration failed",
 					"cluster_id", auth.ClusterID,
