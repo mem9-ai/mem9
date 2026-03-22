@@ -1381,6 +1381,17 @@ export function PixelFarmEditorPage() {
     setEditorMode(layerId === OBJECT_LAYER_ID ? "objects" : "terrain");
   }
 
+  function handleSelectTile(sourceId: PixelFarmAssetSourceId, frame: number): void {
+    setSelectedTile({
+      sourceId,
+      frame,
+    });
+
+    if (editorMode === "terrain" && terrainTool === "erase") {
+      setTerrainTool("paint");
+    }
+  }
+
   function handleDeleteLayer(): void {
     if (selectedLayer.id === OBJECT_LAYER_ID || terrainLayers.length <= 1) {
       return;
@@ -1825,12 +1836,7 @@ export function PixelFarmEditorPage() {
                             height: PALETTE_CELL_SIZE,
                             ...frameStyle(sourceId, frame, PALETTE_CELL_SIZE),
                           }}
-                          onClick={() =>
-                            setSelectedTile({
-                              sourceId,
-                              frame,
-                            })
-                          }
+                          onClick={() => handleSelectTile(sourceId, frame)}
                         />
                       ))}
                     </div>
