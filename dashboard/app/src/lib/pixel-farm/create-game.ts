@@ -9,6 +9,7 @@ import {
   PIXEL_FARM_MASK_BOUNDS,
   PIXEL_FARM_MASK_COLUMNS,
   PIXEL_FARM_MASK_ROWS,
+  PIXEL_FARM_OBJECTS,
   tileOverrideAt,
 } from "@/lib/pixel-farm/island-mask";
 import {
@@ -193,6 +194,12 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     }
 
     this.worldLayer.removeAll(true);
+    const objectsByLayer = new Map(
+      PIXEL_FARM_LAYERS.map((layer) => [
+        layer.id,
+        PIXEL_FARM_OBJECTS.filter((object) => object.layerId === layer.id),
+      ]),
+    );
 
     for (const layer of PIXEL_FARM_LAYERS) {
       for (let row = 0; row < ISLAND_ROWS; row += 1) {
@@ -213,6 +220,19 @@ class PixelFarmSandboxScene extends Phaser.Scene {
           sprite.setOrigin(0, 0);
           this.worldLayer.add(sprite);
         }
+      }
+
+      for (const object of objectsByLayer.get(layer.id) ?? []) {
+        const source = PIXEL_FARM_ASSET_SOURCE_CONFIG[object.sourceId];
+        const sprite = this.add.image(
+          (ISLAND_START_COLUMN + object.column) * PIXEL_FARM_TILE_SIZE,
+          (ISLAND_START_ROW + object.row) * PIXEL_FARM_TILE_SIZE,
+          source.textureKey,
+          object.frame,
+        );
+
+        sprite.setOrigin(0, 0);
+        this.worldLayer.add(sprite);
       }
     }
   }

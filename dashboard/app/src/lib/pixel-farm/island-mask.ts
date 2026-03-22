@@ -1,5 +1,11 @@
-import { PIXEL_FARM_GENERATED_LAYERS } from "@/lib/pixel-farm/generated-mask-data";
-import type { PixelFarmAssetTileSelection } from "@/lib/pixel-farm/tileset-config";
+import {
+  PIXEL_FARM_GENERATED_LAYERS,
+  PIXEL_FARM_GENERATED_OBJECTS,
+} from "@/lib/pixel-farm/generated-mask-data";
+import type {
+  PixelFarmAssetSourceId,
+  PixelFarmAssetTileSelection,
+} from "@/lib/pixel-farm/tileset-config";
 
 export interface PixelFarmTileOverride extends PixelFarmAssetTileSelection {
   stamped?: boolean;
@@ -12,6 +18,22 @@ export interface PixelFarmLayer {
   baseTile: PixelFarmAssetTileSelection;
   mask: readonly string[];
   overrides: PixelFarmTileOverrideMap;
+}
+
+export interface PixelFarmObjectFootprint {
+  rows: number;
+  columns: number;
+}
+
+export interface PixelFarmObjectPlacement {
+  id: string;
+  layerId: string;
+  sourceId: PixelFarmAssetSourceId;
+  frame: number;
+  row: number;
+  column: number;
+  footprint: PixelFarmObjectFootprint;
+  walkable: boolean;
 }
 
 export interface PixelFarmMaskBounds {
@@ -108,6 +130,50 @@ function measureMask(mask: readonly string[]): PixelFarmMaskBounds {
   };
 }
 
+function normalizeObjects(layerIDs: readonly string[]): PixelFarmObjectPlacement[] {
+  return Array.from(PIXEL_FARM_GENERATED_OBJECTS as readonly unknown[]).map((value, index) => {
+    const object = value as {
+      id: string;
+      layerId: string;
+      sourceId: PixelFarmAssetSourceId;
+      frame: number;
+      row: number;
+      column: number;
+      footprint: PixelFarmObjectFootprint;
+      walkable: boolean;
+    };
+    if (!object.id) {
+      throw new Error(`Pixel farm object at index ${index} is missing an id.`);
+    }
+
+    if (!layerIDs.includes(object.layerId)) {
+      throw new Error(`Pixel farm object "${object.id}" references unknown layer "${object.layerId}".`);
+    }
+
+    if (object.row < 0 || object.column < 0) {
+      throw new Error(`Pixel farm object "${object.id}" must use non-negative coordinates.`);
+    }
+
+    if (object.footprint.rows < 1 || object.footprint.columns < 1) {
+      throw new Error(`Pixel farm object "${object.id}" must use a positive footprint.`);
+    }
+
+    return {
+      id: object.id,
+      layerId: object.layerId,
+      sourceId: object.sourceId,
+      frame: object.frame,
+      row: object.row,
+      column: object.column,
+      footprint: {
+        rows: object.footprint.rows,
+        columns: object.footprint.columns,
+      },
+      walkable: object.walkable,
+    };
+  });
+}
+
 export const PIXEL_FARM_LAYERS = normalizeLayers();
 export type PixelFarmLayerId = string;
 export const PIXEL_FARM_LAYER_IDS = PIXEL_FARM_LAYERS.map((layer) => layer.id);
@@ -115,6 +181,7 @@ export const PIXEL_FARM_ROOT_LAYER = PIXEL_FARM_LAYERS[0]!;
 export const PIXEL_FARM_MASK_COLUMNS = PIXEL_FARM_ROOT_LAYER.mask[0]?.length ?? 0;
 export const PIXEL_FARM_MASK_ROWS = PIXEL_FARM_ROOT_LAYER.mask.length;
 export const PIXEL_FARM_MASK_BOUNDS = measureMask(PIXEL_FARM_ROOT_LAYER.mask);
+export const PIXEL_FARM_OBJECTS = normalizeObjects(PIXEL_FARM_LAYER_IDS);
 
 export function maskHasTile(mask: readonly string[], row: number, column: number): boolean {
   return mask[row]?.[column] === "#";
@@ -141,4 +208,17 @@ export function tileOverrideAt(
   }
 
   return tile;
+}
+
+export function objectOccupiesCell(
+  object: PixelFarmObjectPlacement,
+  row: number,
+  column: number,
+): boolean {
+  return (
+    row >= object.row &&
+    row < object.row + object.footprint.rows &&
+    column >= object.column &&
+    column < object.column + object.footprint.columns
+  );
 }

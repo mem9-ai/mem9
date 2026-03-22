@@ -1,4 +1,7 @@
-import type { PixelFarmAssetTileSelection } from "@/lib/pixel-farm/tileset-config";
+import type {
+  PixelFarmAssetSourceId,
+  PixelFarmAssetTileSelection,
+} from "@/lib/pixel-farm/tileset-config";
 
 export interface PixelFarmGeneratedTileOverride extends PixelFarmAssetTileSelection {
   stamped?: boolean;
@@ -14,6 +17,23 @@ export interface PixelFarmGeneratedLayerPayload {
 
 export interface PixelFarmGeneratedMaskPayload {
   layers: PixelFarmGeneratedLayerPayload[];
+  objects: PixelFarmGeneratedObjectPlacement[];
+}
+
+export interface PixelFarmObjectFootprint {
+  rows: number;
+  columns: number;
+}
+
+export interface PixelFarmGeneratedObjectPlacement {
+  id: string;
+  layerId: string;
+  sourceId: PixelFarmAssetSourceId;
+  frame: number;
+  row: number;
+  column: number;
+  footprint: PixelFarmObjectFootprint;
+  walkable: boolean;
 }
 
 function quote(value: string): string {
@@ -57,12 +77,31 @@ function buildLayer(layer: PixelFarmGeneratedLayerPayload): string {
   return lines.join("\n");
 }
 
+function buildObject(object: PixelFarmGeneratedObjectPlacement): string {
+  return [
+    "  {",
+    `    id: ${quote(object.id)},`,
+    `    layerId: ${quote(object.layerId)},`,
+    `    sourceId: ${quote(object.sourceId)},`,
+    `    frame: ${object.frame},`,
+    `    row: ${object.row},`,
+    `    column: ${object.column},`,
+    `    footprint: { rows: ${object.footprint.rows}, columns: ${object.footprint.columns} },`,
+    `    walkable: ${object.walkable ? "true" : "false"},`,
+    "  },",
+  ].join("\n");
+}
+
 export function buildPixelFarmGeneratedMaskSource(
   payload: PixelFarmGeneratedMaskPayload,
 ): string {
   return [
     "export const PIXEL_FARM_GENERATED_LAYERS = [",
     ...payload.layers.map(buildLayer),
+    "] as const;",
+    "",
+    "export const PIXEL_FARM_GENERATED_OBJECTS = [",
+    ...payload.objects.map(buildObject),
     "] as const;",
   ].join("\n");
 }
