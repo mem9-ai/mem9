@@ -50,6 +50,7 @@ Vite + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui + TanStack Query + Tan
 | English translations | `src/i18n/locales/en.json` |
 | `cn()` utility for shadcn | `src/lib/utils.ts` |
 | Pixel Farm Phaser bootstrap | `src/lib/pixel-farm/` |
+| Pixel Farm island masks | `src/lib/pixel-farm/island-mask.ts` |
 | Relative time formatting | `src/lib/time.ts` |
 | Space ID session management | `src/lib/session.ts` |
 | Theme management (light/dark/system) | `src/lib/theme.ts` |

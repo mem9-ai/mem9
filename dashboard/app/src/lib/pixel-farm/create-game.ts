@@ -4,10 +4,36 @@ import water1Url from "@/assets/Water_1.png";
 import water2Url from "@/assets/Water_2.png";
 import water3Url from "@/assets/Water_3.png";
 import water4Url from "@/assets/Water_4.png";
+import {
+  maskHasTile,
+  SOIL_MASK,
+  SOIL_MASK_BOUNDS,
+  SOIL_MASK_COLUMNS,
+  SOIL_MASK_ROWS,
+} from "@/lib/pixel-farm/island-mask";
 
 const WATER_TILE_SIZE = 16;
 const WATER_FRAME_DELAY = 180;
 const BACKGROUND_COLOR = 0x0d141b;
+const WORLD_COLUMNS = 128;
+const WORLD_ROWS = 96;
+const ISLAND_COLUMNS = SOIL_MASK_COLUMNS;
+const ISLAND_ROWS = SOIL_MASK_ROWS;
+const CAMERA_MAX_ZOOM = 3;
+const CAMERA_TARGET_FILL = 0.8;
+const CAMERA_ZOOM_STEP = 0.12;
+const WORLD_PIXEL_WIDTH = WORLD_COLUMNS * WATER_TILE_SIZE;
+const WORLD_PIXEL_HEIGHT = WORLD_ROWS * WATER_TILE_SIZE;
+const ISLAND_PIXEL_WIDTH = SOIL_MASK_BOUNDS.width * WATER_TILE_SIZE;
+const ISLAND_PIXEL_HEIGHT = SOIL_MASK_BOUNDS.height * WATER_TILE_SIZE;
+const ISLAND_START_COLUMN = Math.floor((WORLD_COLUMNS - ISLAND_COLUMNS) / 2);
+const ISLAND_START_ROW = Math.floor((WORLD_ROWS - ISLAND_ROWS) / 2);
+const ISLAND_CENTER_X =
+  ISLAND_START_COLUMN * WATER_TILE_SIZE +
+  (SOIL_MASK_BOUNDS.minColumn + SOIL_MASK_BOUNDS.maxColumn + 1) * WATER_TILE_SIZE * 0.5;
+const ISLAND_CENTER_Y =
+  ISLAND_START_ROW * WATER_TILE_SIZE +
+  (SOIL_MASK_BOUNDS.minRow + SOIL_MASK_BOUNDS.maxRow + 1) * WATER_TILE_SIZE * 0.5;
 const WATER_TEXTURE_KEYS = [
   "pixel-farm-water-1",
   "pixel-farm-water-2",
@@ -31,6 +57,13 @@ const SOIL_FRAME = {
 interface WaterTile {
   sprite: Phaser.GameObjects.Image;
   phase: number;
+}
+
+interface DragState {
+  active: boolean;
+  pointerId: number | null;
+  lastX: number;
+  lastY: number;
 }
 
 function waterTextureKey(index: number): (typeof WATER_TEXTURE_KEYS)[number] {
@@ -86,6 +119,13 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   private waterTiles: WaterTile[] = [];
   private waterFrame = 0;
   private waterTimer?: Phaser.Time.TimerEvent;
+  private dragState: DragState = {
+    active: false,
+    pointerId: null,
+    lastX: 0,
+    lastY: 0,
+  };
+  private hasCameraInteraction = false;
 
   constructor() {
     super("pixel-farm-sandbox");
@@ -110,8 +150,12 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.layoutLayers();
 
     this.cameras.main.setBackgroundColor(BACKGROUND_COLOR);
+    this.cameras.main.setBounds(0, 0, WORLD_PIXEL_WIDTH, WORLD_PIXEL_HEIGHT);
+    this.cameras.main.setRoundPixels(true);
 
-    this.redraw();
+    this.buildWorld();
+    this.fitCameraToIsland();
+    this.bindCameraControls();
 
     this.waterTimer = this.time.addEvent({
       delay: WATER_FRAME_DELAY,
@@ -125,24 +169,31 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   }
 
   private handleResize(): void {
-    this.redraw();
+    const camera = this.cameras.main;
+
+    camera.setSize(this.scale.width, this.scale.height);
+
+    if (this.hasCameraInteraction) {
+      this.clampCamera(camera);
+      return;
+    }
+
+    this.fitCameraToIsland();
   }
 
   private handleShutdown(): void {
     this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.waterTimer?.destroy();
+    this.unbindCameraControls();
   }
 
-  private redraw(): void {
+  private buildWorld(): void {
     if (!this.oceanLayer || !this.terrainLayer) {
       return;
     }
 
-    const width = this.scale.width;
-    const height = this.scale.height;
-
-    this.rebuildOcean(width, height);
-    this.rebuildIsland(width, height);
+    this.rebuildOcean();
+    this.rebuildIsland();
   }
 
   private layoutLayers(): void {
@@ -152,7 +203,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.effectsLayer?.setDepth(30);
   }
 
-  private rebuildOcean(width: number, height: number): void {
+  private rebuildOcean(): void {
     if (!this.oceanLayer) {
       return;
     }
@@ -160,11 +211,8 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.oceanLayer.removeAll(true);
     this.waterTiles = [];
 
-    const columns = Math.ceil(width / WATER_TILE_SIZE) + 1;
-    const rows = Math.ceil(height / WATER_TILE_SIZE) + 1;
-
-    for (let row = 0; row < rows; row += 1) {
-      for (let column = 0; column < columns; column += 1) {
+    for (let row = 0; row < WORLD_ROWS; row += 1) {
+      for (let column = 0; column < WORLD_COLUMNS; column += 1) {
         const phase = (row + column) % WATER_TEXTURE_KEYS.length < 2 ? 0 : 2;
         const frameIndex = (this.waterFrame + phase) % WATER_TEXTURE_KEYS.length;
         const sprite = this.add.image(
@@ -189,35 +237,26 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     }
   }
 
-  private rebuildIsland(width: number, height: number): void {
+  private rebuildIsland(): void {
     if (!this.terrainLayer) {
       return;
     }
 
     this.terrainLayer.removeAll(true);
 
-    const tile = WATER_TILE_SIZE;
-    const viewportColumns = Math.ceil(width / tile);
-    const viewportRows = Math.ceil(height / tile);
-    const islandColumns = Math.max(Math.floor(viewportColumns * 0.54), 18);
-    const islandRows = Math.max(Math.floor(viewportRows * 0.38), 12);
-    const startColumn = Math.floor((viewportColumns - islandColumns) / 2);
-    const startRow = Math.floor((viewportRows - islandRows) / 2);
-    const mask = this.buildIslandMask(islandColumns, islandRows);
-
-    for (let row = 0; row < islandRows; row += 1) {
-      for (let column = 0; column < islandColumns; column += 1) {
-        if (!mask[row]?.[column]) {
+    for (let row = 0; row < ISLAND_ROWS; row += 1) {
+      for (let column = 0; column < ISLAND_COLUMNS; column += 1) {
+        if (!maskHasTile(SOIL_MASK, row, column)) {
           continue;
         }
 
-        const hasUp = Boolean(mask[row - 1]?.[column]);
-        const hasRight = Boolean(mask[row]?.[column + 1]);
-        const hasDown = Boolean(mask[row + 1]?.[column]);
-        const hasLeft = Boolean(mask[row]?.[column - 1]);
+        const hasUp = maskHasTile(SOIL_MASK, row - 1, column);
+        const hasRight = maskHasTile(SOIL_MASK, row, column + 1);
+        const hasDown = maskHasTile(SOIL_MASK, row + 1, column);
+        const hasLeft = maskHasTile(SOIL_MASK, row, column - 1);
         const sprite = this.add.image(
-          (startColumn + column) * tile,
-          (startRow + row) * tile,
+          (ISLAND_START_COLUMN + column) * WATER_TILE_SIZE,
+          (ISLAND_START_ROW + row) * WATER_TILE_SIZE,
           SOIL_TILESET_KEY,
           soilFrameForTile(hasUp, hasRight, hasDown, hasLeft),
         );
@@ -228,34 +267,113 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     }
   }
 
-  private buildIslandMask(columns: number, rows: number): boolean[][] {
-    const mask = Array.from({ length: rows }, () => Array.from({ length: columns }, () => false));
-    const cornerCut = Math.max(Math.floor(Math.min(columns, rows) * 0.22), 4);
+  private bindCameraControls(): void {
+    this.input.on("pointerdown", this.handlePointerDown, this);
+    this.input.on("pointermove", this.handlePointerMove, this);
+    this.input.on("pointerup", this.handlePointerUp, this);
+    this.input.on("pointerupoutside", this.handlePointerUp, this);
+    this.input.on("wheel", this.handleWheel, this);
+  }
 
-    for (let row = 0; row < rows; row += 1) {
-      for (let column = 0; column < columns; column += 1) {
-        const top = row;
-        const left = column;
-        const right = columns - 1 - column;
-        const bottom = rows - 1 - row;
+  private unbindCameraControls(): void {
+    this.input.off("pointerdown", this.handlePointerDown, this);
+    this.input.off("pointermove", this.handlePointerMove, this);
+    this.input.off("pointerup", this.handlePointerUp, this);
+    this.input.off("pointerupoutside", this.handlePointerUp, this);
+    this.input.off("wheel", this.handleWheel, this);
+  }
 
-        let visible = true;
+  private handlePointerDown(pointer: Phaser.Input.Pointer): void {
+    this.dragState.active = true;
+    this.dragState.pointerId = pointer.id;
+    this.dragState.lastX = pointer.x;
+    this.dragState.lastY = pointer.y;
+  }
 
-        if (top < cornerCut && left < cornerCut) {
-          visible = top + left >= cornerCut - 2;
-        } else if (top < cornerCut && right < cornerCut) {
-          visible = top + right >= cornerCut - 2;
-        } else if (bottom < cornerCut && left < cornerCut) {
-          visible = bottom + left >= cornerCut - 2;
-        } else if (bottom < cornerCut && right < cornerCut) {
-          visible = bottom + right >= cornerCut - 2;
-        }
-
-        mask[row]![column] = visible;
-      }
+  private handlePointerMove(pointer: Phaser.Input.Pointer): void {
+    if (!this.dragState.active || this.dragState.pointerId !== pointer.id) {
+      return;
     }
 
-    return mask;
+    const camera = this.cameras.main;
+    const deltaX = pointer.x - this.dragState.lastX;
+    const deltaY = pointer.y - this.dragState.lastY;
+
+    camera.setScroll(
+      camera.scrollX - deltaX / camera.zoom,
+      camera.scrollY - deltaY / camera.zoom,
+    );
+    this.clampCamera(camera);
+
+    this.dragState.lastX = pointer.x;
+    this.dragState.lastY = pointer.y;
+    this.hasCameraInteraction = true;
+  }
+
+  private handlePointerUp(pointer: Phaser.Input.Pointer): void {
+    if (this.dragState.pointerId !== pointer.id) {
+      return;
+    }
+
+    this.dragState.active = false;
+    this.dragState.pointerId = null;
+  }
+
+  private handleWheel(
+    _pointer: Phaser.Input.Pointer,
+    _currentlyOver: Phaser.GameObjects.GameObject[],
+    _deltaX: number,
+    deltaY: number,
+  ): void {
+    const camera = this.cameras.main;
+    const centerX = camera.scrollX + camera.width / (2 * camera.zoom);
+    const centerY = camera.scrollY + camera.height / (2 * camera.zoom);
+    const zoomFactor = deltaY > 0 ? 1 - CAMERA_ZOOM_STEP : 1 + CAMERA_ZOOM_STEP;
+    const nextZoom = this.clampZoom(camera.zoom * zoomFactor);
+
+    camera.setZoom(nextZoom);
+    camera.centerOn(centerX, centerY);
+    this.clampCamera(camera);
+    this.hasCameraInteraction = true;
+  }
+
+  private fitCameraToIsland(): void {
+    const camera = this.cameras.main;
+    const zoomX = (camera.width * CAMERA_TARGET_FILL) / ISLAND_PIXEL_WIDTH;
+    const zoomY = (camera.height * CAMERA_TARGET_FILL) / ISLAND_PIXEL_HEIGHT;
+    const zoom = this.clampZoom(Math.min(zoomX, zoomY));
+
+    camera.setZoom(zoom);
+    camera.centerOn(ISLAND_CENTER_X, ISLAND_CENTER_Y);
+    this.clampCamera(camera);
+  }
+
+  private clampZoom(zoom: number): number {
+    return Phaser.Math.Clamp(zoom, this.minZoom(), CAMERA_MAX_ZOOM);
+  }
+
+  private minZoom(): number {
+    return Math.max(
+      this.cameras.main.width / WORLD_PIXEL_WIDTH,
+      this.cameras.main.height / WORLD_PIXEL_HEIGHT,
+    );
+  }
+
+  private clampCamera(camera: Phaser.Cameras.Scene2D.Camera): void {
+    const viewWidth = camera.width / camera.zoom;
+    const viewHeight = camera.height / camera.zoom;
+    const maxScrollX = WORLD_PIXEL_WIDTH - viewWidth;
+    const maxScrollY = WORLD_PIXEL_HEIGHT - viewHeight;
+    const scrollX =
+      maxScrollX <= 0
+        ? (WORLD_PIXEL_WIDTH - viewWidth) / 2
+        : Phaser.Math.Clamp(camera.scrollX, 0, maxScrollX);
+    const scrollY =
+      maxScrollY <= 0
+        ? (WORLD_PIXEL_HEIGHT - viewHeight) / 2
+        : Phaser.Math.Clamp(camera.scrollY, 0, maxScrollY);
+
+    camera.setScroll(scrollX, scrollY);
   }
 }
 
