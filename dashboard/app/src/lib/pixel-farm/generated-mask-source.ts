@@ -1,46 +1,60 @@
+import type { PixelFarmAssetTileSelection } from "@/lib/pixel-farm/tileset-config";
+
+export interface PixelFarmGeneratedLayerPayload {
+  id: string;
+  label: string;
+  baseTile: PixelFarmAssetTileSelection;
+  mask: string[];
+  overrides: Record<string, PixelFarmAssetTileSelection>;
+}
+
 export interface PixelFarmGeneratedMaskPayload {
-  masks: {
-    soil: string[];
-    grassDark: string[];
-    grassLight: string[];
-    bush: string[];
-  };
-  overrides: {
-    soil: Record<string, number>;
-    grassDark: Record<string, number>;
-    grassLight: Record<string, number>;
-    bush: Record<string, number>;
-  };
+  layers: PixelFarmGeneratedLayerPayload[];
 }
 
-function buildMaskSection(name: string, rows: string[]): string {
-  const body = rows.map((row) => `  "${row}",`).join("\n");
-  return `export const ${name} = [\n${body}\n] as const;`;
+function quote(value: string): string {
+  return JSON.stringify(value);
 }
 
-function buildOverrideSection(name: string, overrides: Record<string, number>): string {
+function buildTile(tile: PixelFarmAssetTileSelection): string {
+  return `{ sourceId: ${quote(tile.sourceId)}, frame: ${tile.frame} }`;
+}
+
+function buildOverrides(overrides: Record<string, PixelFarmAssetTileSelection>): string[] {
   const entries = Object.entries(overrides).sort(([left], [right]) => left.localeCompare(right));
   if (entries.length === 0) {
-    return `export const ${name} = {};`;
+    return ["    overrides: {},"]; 
   }
 
-  const body = entries
-    .map(([key, frame]) => `  "${key}": ${frame},`)
-    .join("\n");
-  return `export const ${name} = {\n${body}\n};`;
+  return [
+    "    overrides: {",
+    ...entries.map(([key, tile]) => `      ${quote(key)}: ${buildTile(tile)},`),
+    "    },",
+  ];
+}
+
+function buildLayer(layer: PixelFarmGeneratedLayerPayload): string {
+  const lines = [
+    "  {",
+    `    id: ${quote(layer.id)},`,
+    `    label: ${quote(layer.label)},`,
+    `    baseTile: ${buildTile(layer.baseTile)},`,
+    "    mask: [",
+    ...layer.mask.map((row) => `      ${quote(row)},`),
+    "    ],",
+    ...buildOverrides(layer.overrides),
+    "  },",
+  ];
+
+  return lines.join("\n");
 }
 
 export function buildPixelFarmGeneratedMaskSource(
   payload: PixelFarmGeneratedMaskPayload,
 ): string {
   return [
-    buildMaskSection("SOIL_MASK", payload.masks.soil),
-    buildMaskSection("GRASS_DARK_MASK", payload.masks.grassDark),
-    buildMaskSection("GRASS_LIGHT_MASK", payload.masks.grassLight),
-    buildMaskSection("BUSH_MASK", payload.masks.bush),
-    buildOverrideSection("SOIL_TILE_OVERRIDES", payload.overrides.soil),
-    buildOverrideSection("GRASS_DARK_TILE_OVERRIDES", payload.overrides.grassDark),
-    buildOverrideSection("GRASS_LIGHT_TILE_OVERRIDES", payload.overrides.grassLight),
-    buildOverrideSection("BUSH_TILE_OVERRIDES", payload.overrides.bush),
-  ].join("\n\n");
+    "export const PIXEL_FARM_GENERATED_LAYERS = [",
+    ...payload.layers.map(buildLayer),
+    "] as const;",
+  ].join("\n");
 }

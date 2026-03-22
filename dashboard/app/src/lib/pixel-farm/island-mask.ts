@@ -1,32 +1,16 @@
-import {
-  BUSH_MASK,
-  BUSH_TILE_OVERRIDES,
-  GRASS_DARK_MASK,
-  GRASS_DARK_TILE_OVERRIDES,
-  GRASS_LIGHT_MASK,
-  GRASS_LIGHT_TILE_OVERRIDES,
-  SOIL_MASK,
-  SOIL_TILE_OVERRIDES,
-} from "@/lib/pixel-farm/generated-mask-data";
+import { PIXEL_FARM_GENERATED_LAYERS } from "@/lib/pixel-farm/generated-mask-data";
+import type { PixelFarmAssetTileSelection } from "@/lib/pixel-farm/tileset-config";
 
-export const PIXEL_FARM_MASK_LAYER_IDS = ["soil", "grassDark", "grassLight", "bush"] as const;
+export type PixelFarmTileOverride = PixelFarmAssetTileSelection;
+export type PixelFarmTileOverrideMap = Record<string, PixelFarmTileOverride>;
 
-export type PixelFarmMaskLayerId = (typeof PIXEL_FARM_MASK_LAYER_IDS)[number];
-export type PixelFarmTileOverrideMap = Record<string, number>;
-
-export const PIXEL_FARM_MASKS: Record<PixelFarmMaskLayerId, readonly string[]> = {
-  soil: SOIL_MASK,
-  grassDark: GRASS_DARK_MASK,
-  grassLight: GRASS_LIGHT_MASK,
-  bush: BUSH_MASK,
-};
-
-export const PIXEL_FARM_TILE_OVERRIDES: Record<PixelFarmMaskLayerId, PixelFarmTileOverrideMap> = {
-  soil: SOIL_TILE_OVERRIDES as PixelFarmTileOverrideMap,
-  grassDark: GRASS_DARK_TILE_OVERRIDES as PixelFarmTileOverrideMap,
-  grassLight: GRASS_LIGHT_TILE_OVERRIDES as PixelFarmTileOverrideMap,
-  bush: BUSH_TILE_OVERRIDES as PixelFarmTileOverrideMap,
-};
+export interface PixelFarmLayer {
+  id: string;
+  label: string;
+  baseTile: PixelFarmAssetTileSelection;
+  mask: readonly string[];
+  overrides: PixelFarmTileOverrideMap;
+}
 
 export interface PixelFarmMaskBounds {
   minColumn: number;
@@ -37,8 +21,15 @@ export interface PixelFarmMaskBounds {
   height: number;
 }
 
-function validateMask(mask: readonly string[]): number {
+function validateMask(mask: readonly string[], expectedColumns?: number, expectedRows?: number): number {
   const columns = mask[0]?.length ?? 0;
+  if (expectedRows !== undefined && mask.length !== expectedRows) {
+    throw new Error("Pixel farm layer masks must share the same height.");
+  }
+
+  if (expectedColumns !== undefined && columns !== expectedColumns) {
+    throw new Error("Pixel farm layer masks must share the same width.");
+  }
 
   for (const row of mask) {
     if (row.length !== columns) {
@@ -47,6 +38,39 @@ function validateMask(mask: readonly string[]): number {
   }
 
   return columns;
+}
+
+function normalizeLayers(): PixelFarmLayer[] {
+  const generatedLayers = [...PIXEL_FARM_GENERATED_LAYERS];
+  if (generatedLayers.length < 1) {
+    throw new Error("Pixel farm must define at least one layer.");
+  }
+
+  const root = generatedLayers[0]!;
+  const expectedColumns = validateMask(root.mask);
+  const expectedRows = root.mask.length;
+  const seen = new Set<string>();
+
+  return generatedLayers.map((layer, index) => {
+    if (!layer.id) {
+      throw new Error(`Pixel farm layer at index ${index} is missing an id.`);
+    }
+
+    if (seen.has(layer.id)) {
+      throw new Error(`Pixel farm layer id "${layer.id}" must be unique.`);
+    }
+
+    seen.add(layer.id);
+    validateMask(layer.mask, expectedColumns, expectedRows);
+
+    return {
+      id: layer.id,
+      label: layer.label,
+      baseTile: layer.baseTile,
+      mask: layer.mask,
+      overrides: layer.overrides as PixelFarmTileOverrideMap,
+    };
+  });
 }
 
 function measureMask(mask: readonly string[]): PixelFarmMaskBounds {
@@ -69,7 +93,7 @@ function measureMask(mask: readonly string[]): PixelFarmMaskBounds {
   }
 
   if (!Number.isFinite(minColumn)) {
-    throw new Error("Pixel farm mask must contain at least one filled cell.");
+    throw new Error("Pixel farm root layer must contain at least one filled cell.");
   }
 
   return {
@@ -82,9 +106,13 @@ function measureMask(mask: readonly string[]): PixelFarmMaskBounds {
   };
 }
 
-export const SOIL_MASK_COLUMNS = validateMask(SOIL_MASK);
-export const SOIL_MASK_ROWS = SOIL_MASK.length;
-export const SOIL_MASK_BOUNDS = measureMask(SOIL_MASK);
+export const PIXEL_FARM_LAYERS = normalizeLayers();
+export type PixelFarmLayerId = string;
+export const PIXEL_FARM_LAYER_IDS = PIXEL_FARM_LAYERS.map((layer) => layer.id);
+export const PIXEL_FARM_ROOT_LAYER = PIXEL_FARM_LAYERS[0]!;
+export const PIXEL_FARM_MASK_COLUMNS = PIXEL_FARM_ROOT_LAYER.mask[0]?.length ?? 0;
+export const PIXEL_FARM_MASK_ROWS = PIXEL_FARM_ROOT_LAYER.mask.length;
+export const PIXEL_FARM_MASK_BOUNDS = measureMask(PIXEL_FARM_ROOT_LAYER.mask);
 
 export function maskHasTile(mask: readonly string[], row: number, column: number): boolean {
   return mask[row]?.[column] === "#";
@@ -94,11 +122,20 @@ export function tileOverrideKey(row: number, column: number): string {
   return `${row}:${column}`;
 }
 
-export function tileOverrideFrame(
+export function tileOverrideAt(
   overrides: Readonly<PixelFarmTileOverrideMap>,
   row: number,
   column: number,
-): number | null {
-  const frame = overrides[tileOverrideKey(row, column)];
-  return typeof frame === "number" && Number.isInteger(frame) && frame >= 0 ? frame : null;
+): PixelFarmTileOverride | null {
+  const tile = overrides[tileOverrideKey(row, column)];
+  if (
+    !tile ||
+    typeof tile !== "object" ||
+    typeof tile.sourceId !== "string" ||
+    typeof tile.frame !== "number"
+  ) {
+    return null;
+  }
+
+  return tile;
 }

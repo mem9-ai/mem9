@@ -2,7 +2,6 @@ import bushTilesUrl from "@/assets/Bush_Tiles.png";
 import grassDarkTilesUrl from "@/assets/Grass_Tile.png";
 import grassLightTilesUrl from "@/assets/Grass_Tile_Lighter.png";
 import soilTilesUrl from "@/assets/Soil_Ground_Tiles.png";
-import type { PixelFarmMaskLayerId } from "@/lib/pixel-farm/island-mask";
 
 export const PIXEL_FARM_TILE_SIZE = 16;
 export const PIXEL_FARM_TILESET_COLUMNS = 11;
@@ -14,8 +13,16 @@ export const PIXEL_FARM_BUSH_TILESET_FRAME_COUNT =
   PIXEL_FARM_TILESET_COLUMNS * PIXEL_FARM_BUSH_TILESET_ROWS;
 export const PIXEL_FARM_BASE_DEFAULT_FRAME = PIXEL_FARM_TILESET_COLUMNS + 1;
 export const PIXEL_FARM_BUSH_DEFAULT_FRAME = 0;
+export const PIXEL_FARM_ASSET_SOURCE_IDS = ["soil", "grassDark", "grassLight", "bush"] as const;
 
-export interface PixelFarmTilesetConfig {
+export type PixelFarmAssetSourceId = (typeof PIXEL_FARM_ASSET_SOURCE_IDS)[number];
+
+export interface PixelFarmAssetTileSelection {
+  sourceId: PixelFarmAssetSourceId;
+  frame: number;
+}
+
+export interface PixelFarmAssetSourceConfig {
   textureKey: string;
   imageUrl: string;
   columns: number;
@@ -24,7 +31,10 @@ export interface PixelFarmTilesetConfig {
   defaultFrame: number;
 }
 
-export const PIXEL_FARM_TILESET_CONFIG: Record<PixelFarmMaskLayerId, PixelFarmTilesetConfig> = {
+export const PIXEL_FARM_ASSET_SOURCE_CONFIG: Record<
+  PixelFarmAssetSourceId,
+  PixelFarmAssetSourceConfig
+> = {
   soil: {
     textureKey: "pixel-farm-soil-ground",
     imageUrl: soilTilesUrl,
@@ -58,3 +68,6 @@ export const PIXEL_FARM_TILESET_CONFIG: Record<PixelFarmMaskLayerId, PixelFarmTi
     defaultFrame: PIXEL_FARM_BUSH_DEFAULT_FRAME,
   },
 };
+
+export type PixelFarmTilesetConfig = PixelFarmAssetSourceConfig;
+export const PIXEL_FARM_TILESET_CONFIG = PIXEL_FARM_ASSET_SOURCE_CONFIG;

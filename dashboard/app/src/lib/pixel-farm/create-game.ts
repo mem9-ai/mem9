@@ -5,16 +5,15 @@ import water3Url from "@/assets/Water_3.png";
 import water4Url from "@/assets/Water_4.png";
 import {
   maskHasTile,
-  PIXEL_FARM_MASK_LAYER_IDS,
-  PIXEL_FARM_MASKS,
-  PIXEL_FARM_TILE_OVERRIDES,
-  SOIL_MASK_BOUNDS,
-  SOIL_MASK_COLUMNS,
-  SOIL_MASK_ROWS,
-  tileOverrideFrame,
+  PIXEL_FARM_LAYERS,
+  PIXEL_FARM_MASK_BOUNDS,
+  PIXEL_FARM_MASK_COLUMNS,
+  PIXEL_FARM_MASK_ROWS,
+  tileOverrideAt,
 } from "@/lib/pixel-farm/island-mask";
 import {
-  PIXEL_FARM_TILESET_CONFIG,
+  PIXEL_FARM_ASSET_SOURCE_CONFIG,
+  PIXEL_FARM_ASSET_SOURCE_IDS,
   PIXEL_FARM_TILE_SIZE,
 } from "@/lib/pixel-farm/tileset-config";
 
@@ -22,23 +21,27 @@ const WATER_FRAME_DELAY = 180;
 const BACKGROUND_COLOR = 0x0d141b;
 const WORLD_COLUMNS = 128;
 const WORLD_ROWS = 96;
-const ISLAND_COLUMNS = SOIL_MASK_COLUMNS;
-const ISLAND_ROWS = SOIL_MASK_ROWS;
+const ISLAND_COLUMNS = PIXEL_FARM_MASK_COLUMNS;
+const ISLAND_ROWS = PIXEL_FARM_MASK_ROWS;
 const CAMERA_MAX_ZOOM = 3;
 const CAMERA_TARGET_FILL = 0.8;
 const CAMERA_ZOOM_STEP = 0.12;
 const WORLD_PIXEL_WIDTH = WORLD_COLUMNS * PIXEL_FARM_TILE_SIZE;
 const WORLD_PIXEL_HEIGHT = WORLD_ROWS * PIXEL_FARM_TILE_SIZE;
-const ISLAND_PIXEL_WIDTH = SOIL_MASK_BOUNDS.width * PIXEL_FARM_TILE_SIZE;
-const ISLAND_PIXEL_HEIGHT = SOIL_MASK_BOUNDS.height * PIXEL_FARM_TILE_SIZE;
+const ISLAND_PIXEL_WIDTH = PIXEL_FARM_MASK_BOUNDS.width * PIXEL_FARM_TILE_SIZE;
+const ISLAND_PIXEL_HEIGHT = PIXEL_FARM_MASK_BOUNDS.height * PIXEL_FARM_TILE_SIZE;
 const ISLAND_START_COLUMN = Math.floor((WORLD_COLUMNS - ISLAND_COLUMNS) / 2);
 const ISLAND_START_ROW = Math.floor((WORLD_ROWS - ISLAND_ROWS) / 2);
 const ISLAND_CENTER_X =
   ISLAND_START_COLUMN * PIXEL_FARM_TILE_SIZE +
-  (SOIL_MASK_BOUNDS.minColumn + SOIL_MASK_BOUNDS.maxColumn + 1) * PIXEL_FARM_TILE_SIZE * 0.5;
+  (PIXEL_FARM_MASK_BOUNDS.minColumn + PIXEL_FARM_MASK_BOUNDS.maxColumn + 1) *
+    PIXEL_FARM_TILE_SIZE *
+    0.5;
 const ISLAND_CENTER_Y =
   ISLAND_START_ROW * PIXEL_FARM_TILE_SIZE +
-  (SOIL_MASK_BOUNDS.minRow + SOIL_MASK_BOUNDS.maxRow + 1) * PIXEL_FARM_TILE_SIZE * 0.5;
+  (PIXEL_FARM_MASK_BOUNDS.minRow + PIXEL_FARM_MASK_BOUNDS.maxRow + 1) *
+    PIXEL_FARM_TILE_SIZE *
+    0.5;
 const WATER_TEXTURE_KEYS = [
   "pixel-farm-water-1",
   "pixel-farm-water-2",
@@ -64,8 +67,7 @@ function waterTextureKey(index: number): (typeof WATER_TEXTURE_KEYS)[number] {
 
 class PixelFarmSandboxScene extends Phaser.Scene {
   private oceanLayer?: Phaser.GameObjects.Container;
-  private terrainLayer?: Phaser.GameObjects.Container;
-  private structureLayer?: Phaser.GameObjects.Container;
+  private worldLayer?: Phaser.GameObjects.Container;
   private effectsLayer?: Phaser.GameObjects.Container;
   private waterTiles: WaterTile[] = [];
   private waterFrame = 0;
@@ -83,13 +85,14 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   }
 
   preload(): void {
-    for (const layerId of PIXEL_FARM_MASK_LAYER_IDS) {
-      const tileset = PIXEL_FARM_TILESET_CONFIG[layerId];
-      this.load.spritesheet(tileset.textureKey, tileset.imageUrl, {
+    for (const sourceId of PIXEL_FARM_ASSET_SOURCE_IDS) {
+      const source = PIXEL_FARM_ASSET_SOURCE_CONFIG[sourceId];
+      this.load.spritesheet(source.textureKey, source.imageUrl, {
         frameWidth: PIXEL_FARM_TILE_SIZE,
         frameHeight: PIXEL_FARM_TILE_SIZE,
       });
     }
+
     this.load.image(WATER_TEXTURE_KEYS[0], water1Url);
     this.load.image(WATER_TEXTURE_KEYS[1], water2Url);
     this.load.image(WATER_TEXTURE_KEYS[2], water3Url);
@@ -98,8 +101,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
   create(): void {
     this.oceanLayer = this.add.container(0, 0);
-    this.terrainLayer = this.add.container(0, 0);
-    this.structureLayer = this.add.container(0, 0);
+    this.worldLayer = this.add.container(0, 0);
     this.effectsLayer = this.add.container(0, 0);
     this.layoutLayers();
 
@@ -107,7 +109,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, WORLD_PIXEL_WIDTH, WORLD_PIXEL_HEIGHT);
     this.cameras.main.setRoundPixels(true);
 
-    this.buildWorld();
+    this.rebuildWorld();
     this.fitCameraToIsland();
     this.bindCameraControls();
 
@@ -122,9 +124,14 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
   }
 
+  private layoutLayers(): void {
+    this.oceanLayer?.setDepth(0);
+    this.worldLayer?.setDepth(10);
+    this.effectsLayer?.setDepth(20);
+  }
+
   private handleResize(): void {
     const camera = this.cameras.main;
-
     camera.setSize(this.scale.width, this.scale.height);
 
     if (this.hasCameraInteraction) {
@@ -141,20 +148,9 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.unbindCameraControls();
   }
 
-  private buildWorld(): void {
-    if (!this.oceanLayer || !this.terrainLayer) {
-      return;
-    }
-
+  private rebuildWorld(): void {
     this.rebuildOcean();
     this.rebuildIsland();
-  }
-
-  private layoutLayers(): void {
-    this.oceanLayer?.setDepth(0);
-    this.terrainLayer?.setDepth(10);
-    this.structureLayer?.setDepth(20);
-    this.effectsLayer?.setDepth(30);
   }
 
   private rebuildOcean(): void {
@@ -192,33 +188,30 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   }
 
   private rebuildIsland(): void {
-    if (!this.terrainLayer) {
+    if (!this.worldLayer) {
       return;
     }
 
-    this.terrainLayer.removeAll(true);
+    this.worldLayer.removeAll(true);
 
-    for (const layerId of PIXEL_FARM_MASK_LAYER_IDS) {
-      const mask = PIXEL_FARM_MASKS[layerId];
-      const overrides = PIXEL_FARM_TILE_OVERRIDES[layerId];
-      const tileset = PIXEL_FARM_TILESET_CONFIG[layerId];
-
+    for (const layer of PIXEL_FARM_LAYERS) {
       for (let row = 0; row < ISLAND_ROWS; row += 1) {
         for (let column = 0; column < ISLAND_COLUMNS; column += 1) {
-          if (!maskHasTile(mask, row, column)) {
+          if (!maskHasTile(layer.mask, row, column)) {
             continue;
           }
 
-          const frame = tileOverrideFrame(overrides, row, column) ?? tileset.defaultFrame;
+          const tile = tileOverrideAt(layer.overrides, row, column) ?? layer.baseTile;
+          const source = PIXEL_FARM_ASSET_SOURCE_CONFIG[tile.sourceId];
           const sprite = this.add.image(
             (ISLAND_START_COLUMN + column) * PIXEL_FARM_TILE_SIZE,
             (ISLAND_START_ROW + row) * PIXEL_FARM_TILE_SIZE,
-            tileset.textureKey,
-            frame,
+            source.textureKey,
+            tile.frame,
           );
 
           sprite.setOrigin(0, 0);
-          this.terrainLayer.add(sprite);
+          this.worldLayer.add(sprite);
         }
       }
     }
