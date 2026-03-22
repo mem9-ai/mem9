@@ -61,6 +61,7 @@ const INITIAL_CELL_SIZE = 18;
 const PALETTE_CELL_SIZE = 28;
 const MAX_HISTORY = 100;
 const DRAFT_STORAGE_KEY = "pixel-farm-mask-editor-draft-v3";
+const EXPORT_ENDPOINT = "/your-memory/__pixel-farm/export-generated-mask-data";
 const DEFAULT_SELECTED_FRAMES: SelectedFrameState = {
   soil: PIXEL_FARM_AUTO_TILE_FRAMES.center,
   grassDark: PIXEL_FARM_AUTO_TILE_FRAMES.center,
@@ -72,18 +73,21 @@ const COPY = {
   saveHint: "Saves the current draft to localStorage.",
   paletteTitle: "Tileset Palette",
   paletteHint: "Pick a frame, then use Stamp or Clear stamp on the grid.",
-  exportTitle: "Export Code",
-  exportHint: "Copy masks and tile overrides back into island-mask.ts.",
+  exportTitle: "Export File",
+  exportHint: "Writes the generated file for island masks and tile overrides.",
   undo: "Undo",
   redo: "Redo",
   save: "Save draft",
   saved: "Saved",
-  copy: "Copy code",
-  copied: "Copied",
+  export: "Export file",
+  exporting: "Exporting",
+  exported: "Exported",
+  exportFailed: "Export failed",
   zoomIn: "Larger cells",
   zoomOut: "Smaller cells",
   reset: "Reset source",
   selectedFrame: "Selected frame",
+  generatedFile: "Generated file",
   tools: {
     paint: "Paint",
     erase: "Erase",
@@ -297,42 +301,6 @@ function pruneOverrides(masks: MaskState, overrides: OverrideState): OverrideSta
   return next;
 }
 
-function exportMasksSource(masks: MaskState, overrides: OverrideState): string {
-  const maskSections = [
-    ["SOIL_MASK", masks.soil],
-    ["GRASS_DARK_MASK", masks.grassDark],
-    ["GRASS_LIGHT_MASK", masks.grassLight],
-  ] as const;
-  const overrideSections = [
-    ["SOIL_TILE_OVERRIDES", overrides.soil],
-    ["GRASS_DARK_TILE_OVERRIDES", overrides.grassDark],
-    ["GRASS_LIGHT_TILE_OVERRIDES", overrides.grassLight],
-  ] as const;
-
-  const maskSource = maskSections
-    .map(([name, rows]) => {
-      const body = rows.map((row) => `  "${row}",`).join("\n");
-      return `export const ${name} = [\n${body}\n] as const;`;
-    })
-    .join("\n\n");
-
-  const overrideSource = overrideSections
-    .map(([name, map]) => {
-      const entries = Object.entries(map).sort(([left], [right]) => left.localeCompare(right));
-      if (entries.length === 0) {
-        return `export const ${name} = {} satisfies PixelFarmTileOverrideMap;`;
-      }
-
-      const body = entries
-        .map(([key, frame]) => `  "${key}": ${frame},`)
-        .join("\n");
-      return `export const ${name} = {\n${body}\n} satisfies PixelFarmTileOverrideMap;`;
-    })
-    .join("\n\n");
-
-  return `${maskSource}\n\n${overrideSource}`;
-}
-
 function layerColor(masks: MaskState, row: number, column: number): string {
   if (masks.grassLight[row]?.[column] === "#") {
     return "#bedc7f";
@@ -524,8 +492,8 @@ export function PixelFarmEditorPage() {
   const [selectedLayer, setSelectedLayer] = useState<PixelFarmMaskLayerId>(initialState.selectedLayer);
   const [tool, setTool] = useState<EditorTool>(initialState.tool);
   const [cellSize, setCellSize] = useState(initialState.cellSize);
-  const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [exportState, setExportState] = useState<"idle" | "exporting" | "done" | "error">("idle");
   const [previewRect, setPreviewRect] = useState<DragState | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
   const historyRef = useRef(history);
@@ -535,22 +503,13 @@ export function PixelFarmEditorPage() {
   historyRef.current = history;
 
   const { masks, overrides } = history.present;
-  const exportSource = useMemo(() => exportMasksSource(masks, overrides), [masks, overrides]);
   const rows = masks.soil.length;
   const columns = masks.soil[0]?.length ?? 0;
   const selectedTileset = PIXEL_FARM_TILESET_CONFIG[selectedLayer];
 
   useEffect(() => {
-    if (!copied) {
-      return undefined;
-    }
-
-    const timer = window.setTimeout(() => setCopied(false), 1200);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
-
-  useEffect(() => {
     setSaved(false);
+    setExportState("idle");
   }, [cellSize, masks, overrides, selectedFrames, selectedLayer, tool]);
 
   useEffect(() => {
@@ -854,9 +813,29 @@ export function PixelFarmEditorPage() {
     );
   }
 
-  async function handleCopy() {
-    await navigator.clipboard.writeText(exportSource);
-    setCopied(true);
+  async function handleExport() {
+    setExportState("exporting");
+
+    try {
+      const response = await fetch(EXPORT_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          masks,
+          overrides,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Export failed with status ${response.status}`);
+      }
+
+      setExportState("done");
+    } catch {
+      setExportState("error");
+    }
   }
 
   function handleSaveDraft() {
@@ -1108,7 +1087,7 @@ export function PixelFarmEditorPage() {
             <h2 className="text-lg font-semibold">{COPY.exportTitle}</h2>
             <p className="mt-1 text-sm leading-6 text-[#695238]">{COPY.exportHint}</p>
             <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[#8d6b43]">
-              {COPY.saveHint}
+              {COPY.generatedFile}: `src/lib/pixel-farm/generated-mask-data.ts`
             </p>
           </div>
 
@@ -1116,16 +1095,16 @@ export function PixelFarmEditorPage() {
             <Button type="button" size="sm" variant="outline" onClick={handleSaveDraft}>
               {saved ? COPY.saved : COPY.save}
             </Button>
-            <Button type="button" size="sm" onClick={handleCopy}>
-              {copied ? COPY.copied : COPY.copy}
+            <Button type="button" size="sm" onClick={handleExport}>
+              {exportState === "exporting"
+                ? COPY.exporting
+                : exportState === "done"
+                  ? COPY.exported
+                  : exportState === "error"
+                    ? COPY.exportFailed
+                    : COPY.export}
             </Button>
           </div>
-
-          <textarea
-            readOnly
-            value={exportSource}
-            className="min-h-[320px] flex-1 resize-none rounded-[20px] border border-[#92714c] bg-[#fff9df] p-4 font-mono text-xs leading-6 text-[#3f3322] outline-none"
-          />
         </aside>
       </div>
     </main>

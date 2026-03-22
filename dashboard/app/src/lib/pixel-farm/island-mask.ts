@@ -1,38 +1,12 @@
-export const SOIL_MASK = [
-  ".......#####################............",
-  ".......########################.........",
-  ".......#########################........",
-  ".......##########################.......",
-  "......############################......",
-  ".....##############################.....",
-  ".....###############################....",
-  "....################################....",
-  "....################################....",
-  "....################################....",
-  "...#################################....",
-  "...#################################....",
-  "...###############################......",
-  "...###############################......",
-  "...#################################....",
-  "...#################################....",
-  "....################################....",
-  "....###############################.....",
-  ".....##############################.....",
-  ".....#############################......",
-  "......############################......",
-  "......##########################........",
-  ".......########################.........",
-  "........######################..........",
-  "..........##################............",
-  "............################............",
-] as const;
+import {
+  GRASS_DARK_MASK,
+  GRASS_DARK_TILE_OVERRIDES,
+  GRASS_LIGHT_MASK,
+  GRASS_LIGHT_TILE_OVERRIDES,
+  SOIL_MASK,
+  SOIL_TILE_OVERRIDES,
+} from "@/lib/pixel-farm/generated-mask-data";
 
-function createEmptyMask(mask: readonly string[]): string[] {
-  return mask.map((row) => ".".repeat(row.length));
-}
-
-export const GRASS_DARK_MASK = createEmptyMask(SOIL_MASK);
-export const GRASS_LIGHT_MASK = createEmptyMask(SOIL_MASK);
 export const PIXEL_FARM_MASK_LAYER_IDS = ["soil", "grassDark", "grassLight"] as const;
 
 export type PixelFarmMaskLayerId = (typeof PIXEL_FARM_MASK_LAYER_IDS)[number];
@@ -44,14 +18,10 @@ export const PIXEL_FARM_MASKS: Record<PixelFarmMaskLayerId, readonly string[]> =
   grassLight: GRASS_LIGHT_MASK,
 };
 
-export const SOIL_TILE_OVERRIDES: PixelFarmTileOverrideMap = {};
-export const GRASS_DARK_TILE_OVERRIDES: PixelFarmTileOverrideMap = {};
-export const GRASS_LIGHT_TILE_OVERRIDES: PixelFarmTileOverrideMap = {};
-
 export const PIXEL_FARM_TILE_OVERRIDES: Record<PixelFarmMaskLayerId, PixelFarmTileOverrideMap> = {
-  soil: SOIL_TILE_OVERRIDES,
-  grassDark: GRASS_DARK_TILE_OVERRIDES,
-  grassLight: GRASS_LIGHT_TILE_OVERRIDES,
+  soil: SOIL_TILE_OVERRIDES as PixelFarmTileOverrideMap,
+  grassDark: GRASS_DARK_TILE_OVERRIDES as PixelFarmTileOverrideMap,
+  grassLight: GRASS_LIGHT_TILE_OVERRIDES as PixelFarmTileOverrideMap,
 };
 
 export interface PixelFarmMaskBounds {
