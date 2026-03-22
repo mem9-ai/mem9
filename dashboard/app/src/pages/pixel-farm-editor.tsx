@@ -85,8 +85,8 @@ const COPY = {
   exporting: "Exporting",
   exported: "Exported",
   exportFailed: "Export failed",
-  zoomIn: "Larger cells",
-  zoomOut: "Smaller cells",
+  zoomIn: "Zoom In",
+  zoomOut: "Zoom Out",
   reset: "Reset source",
   selectedFrame: "Selected frame",
   generatedFile: "Generated file",
@@ -1096,9 +1096,12 @@ export function PixelFarmEditorPage() {
               <button
                 key={frame}
                 type="button"
+                aria-pressed={selectedFrames[selectedLayer] === frame}
                 className={cn(
                   "border border-transparent transition-transform hover:scale-[1.08]",
-                  selectedFrames[selectedLayer] === frame ? "border-[#7b4e20]" : "",
+                  selectedFrames[selectedLayer] === frame
+                    ? "scale-[1.08] border-[#7b4e20] ring-2 ring-[#f3d46f] shadow-[0_0_0_2px_rgba(123,78,32,0.28)]"
+                    : "",
                 )}
                 style={{
                   width: PALETTE_CELL_SIZE,
