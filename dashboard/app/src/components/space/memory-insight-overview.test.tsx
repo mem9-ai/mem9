@@ -141,6 +141,72 @@ describe("MemoryInsightOverview", () => {
     expect(Math.max(...tops) - Math.min(...tops)).toBeGreaterThan(60);
   });
 
+  it("keeps root bubble motion variables stable across card reorder and twinkle independent per bubble", () => {
+    const memories = [
+      createMemory("project-1", "Project memory", ["project"]),
+      createMemory("profile-1", "Profile memory", ["profile"]),
+    ];
+    const matchMap = new Map<string, MemoryAnalysisMatch>([
+      ["project-1", { memoryId: "project-1", categories: ["project"], categoryScores: { project: 1 } }],
+      ["profile-1", { memoryId: "profile-1", categories: ["profile"], categoryScores: { profile: 1 } }],
+    ]);
+
+    const view = renderInsight({
+      cards: [
+        { category: "project", count: 1, confidence: 1 },
+        { category: "profile", count: 1, confidence: 1 },
+      ],
+      memories,
+      matchMap,
+    });
+
+    const projectMotionBefore = screen
+      .getByTestId("insight-node-card:project")
+      .querySelector<HTMLElement>(".memory-insight-bubble-motion");
+    const profileMotionBefore = screen
+      .getByTestId("insight-node-card:profile")
+      .querySelector<HTMLElement>(".memory-insight-bubble-motion");
+
+    expect(projectMotionBefore).not.toBeNull();
+    expect(profileMotionBefore).not.toBeNull();
+
+    const projectDurationBefore = projectMotionBefore!.style.getPropertyValue("--insight-drift-duration");
+    const projectDelayBefore = projectMotionBefore!.style.getPropertyValue("--insight-drift-delay");
+    const projectTwinkleBefore = projectMotionBefore!.style.getPropertyValue("--insight-twinkle-duration");
+    const profileTwinkleBefore = profileMotionBefore!.style.getPropertyValue("--insight-twinkle-duration");
+
+    expect(projectTwinkleBefore).not.toBe(profileTwinkleBefore);
+
+    view.rerender(
+      <MemoryInsightOverview
+        cards={[
+          { category: "profile", count: 1, confidence: 1 },
+          { category: "project", count: 1, confidence: 1 },
+        ]}
+        memories={memories}
+        matchMap={matchMap}
+        compact={false}
+        resetToken={0}
+        onMemorySelect={() => {}}
+      />,
+    );
+
+    const projectMotionAfter = screen
+      .getByTestId("insight-node-card:project")
+      .querySelector<HTMLElement>(".memory-insight-bubble-motion");
+
+    expect(projectMotionAfter).not.toBeNull();
+    expect(
+      projectMotionAfter!.style.getPropertyValue("--insight-drift-duration"),
+    ).toBe(projectDurationBefore);
+    expect(
+      projectMotionAfter!.style.getPropertyValue("--insight-drift-delay"),
+    ).toBe(projectDelayBefore);
+    expect(
+      projectMotionAfter!.style.getPropertyValue("--insight-twinkle-duration"),
+    ).toBe(projectTwinkleBefore);
+  });
+
   it("renders the top-right controls on one row in Fullscreen / Reset layout / Fit view order", () => {
     renderInsight({
       cards: [{ category: "project", count: 1, confidence: 1 }],

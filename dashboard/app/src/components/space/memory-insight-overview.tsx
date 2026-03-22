@@ -105,14 +105,14 @@ const DRIFT_SEEDS = [
 ];
 
 const BUBBLE_COLOR_PALETTE = [
-  "#6d8fa5",
-  "#b08d57",
-  "#7c6f9b",
-  "#5a9a6b",
-  "#c46a6a",
-  "#8a7a5a",
-  "#a0685a",
-  "#7a8a7a",
+  "#3ea8ff",
+  "#35e6ff",
+  "#9d6cff",
+  "#ff62c7",
+  "#2fe58a",
+  "#ffb347",
+  "#ff6b63",
+  "#74f4d8",
 ] as const;
 
 const ROOT_BUBBLE_RANGE = {
@@ -161,6 +161,18 @@ function hashString(value: string): number {
     hash |= 0;
   }
   return Math.abs(hash);
+}
+
+function seededUnitInterval(value: string): number {
+  return (hashString(value) % 10_000) / 9_999;
+}
+
+function seededRange(value: string, min: number, max: number): number {
+  return min + seededUnitInterval(value) * (max - min);
+}
+
+function roundSeed(value: number, digits = 2): number {
+  return Number(value.toFixed(digits));
 }
 
 function bubbleDiameter(count: number, maxCount: number, compact: boolean): number {
@@ -214,8 +226,8 @@ function nodeDimensions(
   };
 }
 
-function createBubbleDriftStyle(id: string, index: number): CSSProperties {
-  const seed = DRIFT_SEEDS[(hashString(id) + index) % DRIFT_SEEDS.length]!;
+function createBubbleMotionStyle(id: string): CSSProperties {
+  const seed = DRIFT_SEEDS[hashString(id) % DRIFT_SEEDS.length]!;
   return {
     "--insight-drift-x": `${seed.x}px`,
     "--insight-drift-y": `${seed.y}px`,
@@ -223,6 +235,18 @@ function createBubbleDriftStyle(id: string, index: number): CSSProperties {
     "--insight-drift-scale": `${seed.scale}`,
     "--insight-drift-duration": `${(seed.duration * 0.7).toFixed(2)}s`,
     "--insight-drift-delay": `${seed.delay}s`,
+    "--insight-twinkle-duration": `${roundSeed(seededRange(`${id}:twinkle-duration`, 3.6, 6.8))}s`,
+    "--insight-twinkle-delay": `${roundSeed(-seededRange(`${id}:twinkle-delay`, 0.2, 7.8))}s`,
+    "--insight-twinkle-min-brightness": `${roundSeed(seededRange(`${id}:twinkle-min-brightness`, 0.9, 0.98))}`,
+    "--insight-twinkle-max-brightness": `${roundSeed(seededRange(`${id}:twinkle-max-brightness`, 1.12, 1.26))}`,
+    "--insight-twinkle-min-saturate": `${roundSeed(seededRange(`${id}:twinkle-min-saturate`, 1.04, 1.12))}`,
+    "--insight-twinkle-max-saturate": `${roundSeed(seededRange(`${id}:twinkle-max-saturate`, 1.22, 1.44))}`,
+    "--insight-halo-min-opacity": `${roundSeed(seededRange(`${id}:halo-min-opacity`, 0.24, 0.4))}`,
+    "--insight-halo-max-opacity": `${roundSeed(seededRange(`${id}:halo-max-opacity`, 0.62, 0.88))}`,
+    "--insight-halo-min-scale": `${roundSeed(seededRange(`${id}:halo-min-scale`, 0.82, 0.92))}`,
+    "--insight-halo-max-scale": `${roundSeed(seededRange(`${id}:halo-max-scale`, 1.04, 1.16))}`,
+    "--insight-halo-min-blur": `${roundSeed(seededRange(`${id}:halo-min-blur`, 9.5, 11.8), 1)}px`,
+    "--insight-halo-max-blur": `${roundSeed(seededRange(`${id}:halo-max-blur`, 13.2, 16.8), 1)}px`,
   } as CSSProperties;
 }
 
@@ -493,20 +517,22 @@ function InsightNodeButton({
         <>
           <span
             className={cn(
-              "memory-insight-bubble-core",
-              active ? "memory-insight-bubble-core-paused" : "",
+              "memory-insight-bubble-motion",
+              active ? "memory-insight-bubble-motion-paused" : "",
             )}
             style={{
               width: diameter,
               height: diameter,
-              ...(active ? undefined : driftStyle),
+              ...(driftStyle ?? {}),
             }}
           >
-            <span className="memory-insight-bubble-halo absolute inset-[-16px] rounded-full" />
-            <span className="memory-insight-bubble-shell absolute inset-0 rounded-full" />
-            <span
-              className="memory-insight-bubble-visual absolute inset-[3px] rounded-full"
-            />
+            <span className="memory-insight-bubble-core">
+              <span className="memory-insight-bubble-halo absolute inset-[-16px] rounded-full" />
+              <span className="memory-insight-bubble-shell absolute inset-0 rounded-full" />
+              <span
+                className="memory-insight-bubble-visual absolute inset-[3px] rounded-full"
+              />
+            </span>
           </span>
           <span className="memory-insight-bubble-label mt-2 block w-full px-1">
             <span className="line-clamp-2 block text-[12px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
@@ -1196,7 +1222,7 @@ function MemoryInsightCanvas({
   const canvasNodes = useMemo(() => {
     const positionedNodes: PositionedNode[] = [];
 
-    poolCards.forEach((card, index) => {
+    poolCards.forEach((card) => {
       const bubbleSize = nodeDimensions("card", card.count, compact, maxCardCount);
       const diameter = bubbleDiameter(card.count, maxCardCount, compact);
       const localPosition = poolLayout.positions[card.id] ?? { x: 0, y: 0 };
@@ -1212,7 +1238,7 @@ function MemoryInsightCanvas({
         diameter,
         bubbleColor: bubbleToneColor(card.category),
         draggable: true,
-        driftStyle: draggingNodeId === card.id ? undefined : createBubbleDriftStyle(card.id, index),
+        driftStyle: draggingNodeId === card.id ? undefined : createBubbleMotionStyle(card.id),
         position: {
           x: rootRegionOffsetX + localPosition.x,
           y: localPosition.y,
@@ -1549,7 +1575,7 @@ function MemoryInsightCanvas({
                 </svg>
               ) : null}
 
-              {canvasNodes.map((node, index) => {
+              {canvasNodes.map((node) => {
                 const isRootBubble = node.kind === "card" && !expandedCardSet.has(node.id);
                 const diameter = node.diameter ?? node.width;
 
@@ -1566,7 +1592,7 @@ function MemoryInsightCanvas({
                     diameter={node.diameter}
                     bubbleColor={node.bubbleColor}
                     driftStyle={isRootBubble && draggingNodeId !== node.id
-                      ? node.driftStyle ?? createBubbleDriftStyle(node.id, index)
+                      ? node.driftStyle ?? createBubbleMotionStyle(node.id)
                       : undefined}
                     muted={node.muted}
                     draggable={node.draggable}

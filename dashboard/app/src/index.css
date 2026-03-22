@@ -201,9 +201,25 @@ h1, h2, h3, h4 {
   box-shadow: none;
 }
 
+.memory-insight-bubble-motion {
+  position: relative;
+  display: block;
+  flex: none;
+  transform-origin: center;
+  will-change: transform;
+  animation: insight-bubble-drift var(--insight-drift-duration, 9.1s) ease-in-out infinite;
+  animation-delay: var(--insight-drift-delay, 0s);
+}
+
+.memory-insight-bubble-motion-paused {
+  animation-play-state: paused;
+}
+
 .memory-insight-bubble-core {
   position: relative;
   display: block;
+  width: 100%;
+  height: 100%;
   flex: none;
   border-radius: 999px;
   border: 0;
@@ -211,8 +227,6 @@ h1, h2, h3, h4 {
   box-shadow: none;
   transform-origin: center;
   will-change: transform, box-shadow, filter;
-  animation: insight-bubble-drift var(--insight-drift-duration, 13s) ease-in-out infinite;
-  animation-delay: var(--insight-drift-delay, 0s);
   transition:
     transform 280ms ease,
     box-shadow 280ms ease,
@@ -253,7 +267,8 @@ h1, h2, h3, h4 {
     opacity 300ms ease,
     transform 300ms ease,
     filter 300ms ease;
-  animation: insight-bubble-halo-pulse 4.6s ease-in-out infinite;
+  animation: insight-bubble-halo-pulse var(--insight-twinkle-duration, 5.1s) ease-in-out infinite;
+  animation-delay: var(--insight-twinkle-delay, 0s);
 }
 
 .memory-insight-bubble-core::after {
@@ -265,12 +280,12 @@ h1, h2, h3, h4 {
 
 .memory-insight-bubble-shell {
   z-index: 1;
-  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 16%, var(--background));
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 28%, var(--background));
 }
 
 .memory-insight-bubble-visual {
   z-index: 2;
-  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 18%, var(--background));
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 34%, var(--background));
   box-shadow: none;
   transform-origin: center;
   will-change: box-shadow, filter;
@@ -278,12 +293,8 @@ h1, h2, h3, h4 {
     box-shadow 260ms ease,
     filter 260ms ease,
     background 260ms ease;
-  animation: insight-bubble-sheen 5.6s ease-in-out infinite;
-}
-
-.memory-insight-bubble:active .memory-insight-bubble-core,
-.memory-insight-bubble-core-paused {
-  animation-play-state: paused;
+  animation: insight-bubble-sheen var(--insight-twinkle-duration, 5.1s) ease-in-out infinite;
+  animation-delay: var(--insight-twinkle-delay, 0s);
 }
 
 .memory-insight-bubble-label {
@@ -321,7 +332,7 @@ h1, h2, h3, h4 {
 }
 
 .memory-insight-bubble[data-active="true"] .memory-insight-bubble-shell {
-  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 20%, var(--background));
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 32%, var(--background));
 }
 
 .memory-insight-bubble[data-bubble-size="small"] .memory-insight-bubble-core {
@@ -329,18 +340,18 @@ h1, h2, h3, h4 {
 }
 
 .memory-insight-bubble[data-bubble-size="small"] .memory-insight-bubble-shell {
-  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 18%, var(--background));
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 30%, var(--background));
 }
 
 .memory-insight-bubble[data-bubble-size="small"] .memory-insight-bubble-visual {
-  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 20%, var(--background));
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 38%, var(--background));
   box-shadow: none;
 }
 
 .dark .memory-insight-bubble-core::before {
   background: radial-gradient(
     circle,
-    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 42%, white 10%, transparent) 0%,
+    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 52%, white 12%, transparent) 0%,
     transparent 72%
   );
   filter: blur(14px);
@@ -350,47 +361,47 @@ h1, h2, h3, h4 {
   opacity: 0.58;
   background:
     radial-gradient(circle at 38% 32%, color-mix(in srgb, white 92%, transparent) 0%, transparent 34%),
-    radial-gradient(circle, color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 42%, transparent) 0%, transparent 76%);
+    radial-gradient(circle, color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 60%, transparent) 0%, transparent 76%);
   filter: blur(12px) saturate(1.14);
 }
 
 .dark .memory-insight-bubble-shell {
   background:
     linear-gradient(180deg, color-mix(in srgb, white 12%, transparent), transparent 42%),
-    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 30%, var(--background));
+    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 42%, var(--background));
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 42%, rgba(255,255,255,0.08)),
+    inset 0 0 0 1px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 58%, rgba(255,255,255,0.08)),
     0 0 0 1px rgba(255,255,255,0.04);
 }
 
 .dark .memory-insight-bubble-visual {
   background:
     radial-gradient(circle at 34% 28%, color-mix(in srgb, white 28%, transparent) 0%, transparent 38%),
-    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 42%, var(--background));
+    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 62%, var(--background));
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.12),
-    0 0 24px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 16%, transparent);
-  filter: saturate(1.12) brightness(1.08);
+    0 0 28px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 24%, transparent);
+  filter: saturate(1.24) brightness(1.03);
 }
 
 .dark .memory-insight-bubble[data-bubble-size="small"] .memory-insight-bubble-shell {
   background:
     linear-gradient(180deg, color-mix(in srgb, white 10%, transparent), transparent 40%),
-    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 34%, var(--background));
+    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 48%, var(--background));
 }
 
 .dark .memory-insight-bubble[data-bubble-size="small"] .memory-insight-bubble-visual {
   background:
     radial-gradient(circle at 34% 28%, color-mix(in srgb, white 24%, transparent) 0%, transparent 38%),
-    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 46%, var(--background));
-  filter: saturate(1.1) brightness(1.12);
+    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 68%, var(--background));
+  filter: saturate(1.22) brightness(1.06);
 }
 
 .dark .memory-insight-bubble:hover .memory-insight-bubble-visual {
   background:
     radial-gradient(circle at 34% 28%, color-mix(in srgb, white 34%, transparent) 0%, transparent 38%),
-    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 54%, var(--background));
-  filter: saturate(1.2) brightness(1.14);
+    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 76%, var(--background));
+  filter: saturate(1.34) brightness(1.08);
 }
 
 .dark .memory-insight-bubble:hover .memory-insight-bubble-halo,
@@ -414,7 +425,7 @@ h1, h2, h3, h4 {
   filter: none;
 }
 
-.memory-insight-bubble[data-dragging="true"] .memory-insight-bubble-core {
+.memory-insight-bubble[data-dragging="true"] .memory-insight-bubble-motion {
   animation: none;
   transform: none;
 }
@@ -452,10 +463,10 @@ h1, h2, h3, h4 {
   }
   25% {
     transform: translate3d(
-      calc(var(--insight-drift-x, 3px) * 0.55),
+      calc(var(--insight-drift-x, 3px) * 0.42),
       calc(var(--insight-drift-y, -10px) * 0.42),
       0
-    ) rotate(calc(var(--insight-drift-rotate, 1deg) * 0.45)) scale(calc(1 + var(--insight-drift-scale, 0.016) * 0.42));
+    ) rotate(calc(var(--insight-drift-rotate, 1deg) * 0.42)) scale(calc(1 + var(--insight-drift-scale, 0.016) * 0.42));
   }
   50% {
     transform: translate3d(
@@ -466,39 +477,55 @@ h1, h2, h3, h4 {
   }
   75% {
     transform: translate3d(
-      calc(var(--insight-drift-x, 3px) * -0.48),
-      calc(var(--insight-drift-y, -10px) * 0.58),
+      calc(var(--insight-drift-x, 3px) * 0.42),
+      calc(var(--insight-drift-y, -10px) * 0.42),
       0
-    ) rotate(calc(var(--insight-drift-rotate, 1deg) * -0.55)) scale(calc(1 - var(--insight-drift-scale, 0.016) * 0.35));
+    ) rotate(calc(var(--insight-drift-rotate, 1deg) * 0.42)) scale(calc(1 + var(--insight-drift-scale, 0.016) * 0.42));
   }
 }
 
 @keyframes insight-bubble-halo-pulse {
   0%,
   100% {
-    opacity: 0.34;
-    transform: scale(0.86);
-    filter: blur(10px) saturate(0.96);
+    opacity: var(--insight-halo-min-opacity, 0.3);
+    transform: scale(var(--insight-halo-min-scale, 0.88));
+    filter: blur(var(--insight-halo-min-blur, 10px)) saturate(var(--insight-twinkle-min-saturate, 1.04));
+  }
+  35% {
+    opacity: calc((var(--insight-halo-min-opacity, 0.3) + var(--insight-halo-max-opacity, 0.72)) / 2);
+    transform: scale(calc((var(--insight-halo-min-scale, 0.88) + var(--insight-halo-max-scale, 1.08)) / 2));
   }
   50% {
-    opacity: 0.72;
-    transform: scale(1.08);
-    filter: blur(14px) saturate(1.12);
+    opacity: var(--insight-halo-max-opacity, 0.72);
+    transform: scale(var(--insight-halo-max-scale, 1.08));
+    filter: blur(var(--insight-halo-max-blur, 14px)) saturate(var(--insight-twinkle-max-saturate, 1.28));
+  }
+  65% {
+    opacity: calc((var(--insight-halo-min-opacity, 0.3) + var(--insight-halo-max-opacity, 0.72)) / 2);
+    transform: scale(calc((var(--insight-halo-min-scale, 0.88) + var(--insight-halo-max-scale, 1.08)) / 2));
   }
 }
 
 @keyframes insight-bubble-sheen {
   0%,
   100% {
-    filter: brightness(0.94) saturate(0.92);
+    filter:
+      brightness(var(--insight-twinkle-min-brightness, 0.94))
+      saturate(var(--insight-twinkle-min-saturate, 1.04));
   }
   22% {
-    filter: brightness(1.02) saturate(1);
+    filter:
+      brightness(calc((var(--insight-twinkle-min-brightness, 0.94) + var(--insight-twinkle-max-brightness, 1.18)) / 2))
+      saturate(calc((var(--insight-twinkle-min-saturate, 1.04) + var(--insight-twinkle-max-saturate, 1.28)) / 2));
   }
   50% {
-    filter: brightness(1.16) saturate(1.14);
+    filter:
+      brightness(var(--insight-twinkle-max-brightness, 1.18))
+      saturate(var(--insight-twinkle-max-saturate, 1.28));
   }
   78% {
-    filter: brightness(1.04) saturate(1.02);
+    filter:
+      brightness(calc((var(--insight-twinkle-min-brightness, 0.94) + var(--insight-twinkle-max-brightness, 1.18)) / 2))
+      saturate(calc((var(--insight-twinkle-min-saturate, 1.04) + var(--insight-twinkle-max-saturate, 1.28)) / 2));
   }
 }
