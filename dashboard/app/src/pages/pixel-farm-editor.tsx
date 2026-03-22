@@ -24,6 +24,17 @@ type OverrideState = Record<PixelFarmMaskLayerId, PixelFarmTileOverrideMap>;
 type SelectedFrameState = Record<PixelFarmMaskLayerId, number>;
 type EditorTool = "paint" | "erase" | "fill" | "rectangle" | "stamp" | "clearStamp";
 
+interface ContentState {
+  masks: MaskState;
+  overrides: OverrideState;
+}
+
+interface HistoryState {
+  past: ContentState[];
+  present: ContentState;
+  future: ContentState[];
+}
+
 interface DragState {
   tool: "paint" | "erase" | "rectangle" | "stamp" | "clearStamp";
   layer: PixelFarmMaskLayerId;
@@ -36,8 +47,7 @@ interface DragState {
 }
 
 interface EditorState {
-  masks: MaskState;
-  overrides: OverrideState;
+  content: ContentState;
   selectedFrames: SelectedFrameState;
   selectedLayer: PixelFarmMaskLayerId;
   tool: EditorTool;
@@ -49,7 +59,8 @@ const CELL_SIZE_MAX = 32;
 const CELL_SIZE_STEP = 2;
 const INITIAL_CELL_SIZE = 18;
 const PALETTE_CELL_SIZE = 28;
-const DRAFT_STORAGE_KEY = "pixel-farm-mask-editor-draft-v2";
+const MAX_HISTORY = 100;
+const DRAFT_STORAGE_KEY = "pixel-farm-mask-editor-draft-v3";
 const DEFAULT_SELECTED_FRAMES: SelectedFrameState = {
   soil: PIXEL_FARM_AUTO_TILE_FRAMES.center,
   grassDark: PIXEL_FARM_AUTO_TILE_FRAMES.center,
@@ -58,11 +69,15 @@ const DEFAULT_SELECTED_FRAMES: SelectedFrameState = {
 const COPY = {
   eyebrow: "DEV TOOL",
   title: "Mask Editor",
-  autosave: "Autosaves to localStorage",
+  saveHint: "Saves the current draft to localStorage.",
   paletteTitle: "Tileset Palette",
   paletteHint: "Pick a frame, then use Stamp or Clear stamp on the grid.",
   exportTitle: "Export Code",
   exportHint: "Copy masks and tile overrides back into island-mask.ts.",
+  undo: "Undo",
+  redo: "Redo",
+  save: "Save draft",
+  saved: "Saved",
   copy: "Copy code",
   copied: "Copied",
   zoomIn: "Larger cells",
@@ -98,6 +113,32 @@ function cloneOverrides(): OverrideState {
     grassDark: { ...PIXEL_FARM_TILE_OVERRIDES.grassDark },
     grassLight: { ...PIXEL_FARM_TILE_OVERRIDES.grassLight },
   };
+}
+
+function cloneContent(): ContentState {
+  return {
+    masks: cloneMasks(),
+    overrides: cloneOverrides(),
+  };
+}
+
+function sameContent(left: ContentState, right: ContentState): boolean {
+  return (
+    left.masks.soil === right.masks.soil &&
+    left.masks.grassDark === right.masks.grassDark &&
+    left.masks.grassLight === right.masks.grassLight &&
+    left.overrides.soil === right.overrides.soil &&
+    left.overrides.grassDark === right.overrides.grassDark &&
+    left.overrides.grassLight === right.overrides.grassLight
+  );
+}
+
+function appendPast(past: ContentState[], snapshot: ContentState): ContentState[] {
+  if (past.length >= MAX_HISTORY) {
+    return [...past.slice(1), snapshot];
+  }
+
+  return [...past, snapshot];
 }
 
 function setTileOverride(
@@ -409,8 +450,7 @@ function previewFrame(
 
 function loadDraftState(): EditorState {
   const defaults: EditorState = {
-    masks: cloneMasks(),
-    overrides: cloneOverrides(),
+    content: cloneContent(),
     selectedFrames: { ...DEFAULT_SELECTED_FRAMES },
     selectedLayer: "soil",
     tool: "paint",
@@ -435,19 +475,19 @@ function loadDraftState(): EditorState {
       tool?: unknown;
       cellSize?: unknown;
     };
-    const masks = {
+    const masks: MaskState = {
       soil: sanitizeMaskRows(parsed.masks?.soil, PIXEL_FARM_MASKS.soil),
       grassDark: sanitizeMaskRows(parsed.masks?.grassDark, PIXEL_FARM_MASKS.grassDark),
       grassLight: sanitizeMaskRows(parsed.masks?.grassLight, PIXEL_FARM_MASKS.grassLight),
     };
+    const overrides: OverrideState = {
+      soil: sanitizeOverrideMap(parsed.overrides?.soil, masks.soil),
+      grassDark: sanitizeOverrideMap(parsed.overrides?.grassDark, masks.grassDark),
+      grassLight: sanitizeOverrideMap(parsed.overrides?.grassLight, masks.grassLight),
+    };
 
     return {
-      masks,
-      overrides: {
-        soil: sanitizeOverrideMap(parsed.overrides?.soil, masks.soil),
-        grassDark: sanitizeOverrideMap(parsed.overrides?.grassDark, masks.grassDark),
-        grassLight: sanitizeOverrideMap(parsed.overrides?.grassLight, masks.grassLight),
-      },
+      content: { masks, overrides },
       selectedFrames: sanitizeSelectedFrames(parsed.selectedFrames),
       selectedLayer:
         typeof parsed.selectedLayer === "string" &&
@@ -475,16 +515,26 @@ function loadDraftState(): EditorState {
 
 export function PixelFarmEditorPage() {
   const initialState = useMemo(loadDraftState, []);
-  const [masks, setMasks] = useState<MaskState>(initialState.masks);
-  const [overrides, setOverrides] = useState<OverrideState>(initialState.overrides);
+  const [history, setHistory] = useState<HistoryState>({
+    past: [],
+    present: initialState.content,
+    future: [],
+  });
   const [selectedFrames, setSelectedFrames] = useState<SelectedFrameState>(initialState.selectedFrames);
   const [selectedLayer, setSelectedLayer] = useState<PixelFarmMaskLayerId>(initialState.selectedLayer);
   const [tool, setTool] = useState<EditorTool>(initialState.tool);
   const [cellSize, setCellSize] = useState(initialState.cellSize);
   const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [previewRect, setPreviewRect] = useState<DragState | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
+  const historyRef = useRef(history);
+  const gestureSnapshotRef = useRef<ContentState | null>(null);
+  const gestureCommittedRef = useRef(false);
 
+  historyRef.current = history;
+
+  const { masks, overrides } = history.present;
   const exportSource = useMemo(() => exportMasksSource(masks, overrides), [masks, overrides]);
   const rows = masks.soil.length;
   const columns = masks.soil[0]?.length ?? 0;
@@ -500,17 +550,7 @@ export function PixelFarmEditorPage() {
   }, [copied]);
 
   useEffect(() => {
-    window.localStorage.setItem(
-      DRAFT_STORAGE_KEY,
-      JSON.stringify({
-        masks,
-        overrides,
-        selectedFrames,
-        selectedLayer,
-        tool,
-        cellSize,
-      }),
-    );
+    setSaved(false);
   }, [cellSize, masks, overrides, selectedFrames, selectedLayer, tool]);
 
   useEffect(() => {
@@ -521,19 +561,23 @@ export function PixelFarmEditorPage() {
       }
 
       if (dragState.tool === "rectangle") {
-        applyMaskMutation((currentMasks) => ({
-          ...currentMasks,
-          [dragState.layer]: fillMaskRect(
-            currentMasks[dragState.layer],
-            dragState.startRow,
-            dragState.startColumn,
-            dragState.endRow,
-            dragState.endColumn,
-            dragState.filled,
-          ),
-        }));
+        applyMaskMutation(
+          (currentMasks) => ({
+            ...currentMasks,
+            [dragState.layer]: fillMaskRect(
+              currentMasks[dragState.layer],
+              dragState.startRow,
+              dragState.startColumn,
+              dragState.endRow,
+              dragState.endColumn,
+              dragState.filled,
+            ),
+          }),
+          false,
+        );
       }
 
+      endGesture();
       dragStateRef.current = null;
       setPreviewRect(null);
     };
@@ -542,19 +586,126 @@ export function PixelFarmEditorPage() {
     return () => window.removeEventListener("pointerup", stopDrag);
   }, []);
 
-  function applyMaskMutation(updater: (current: MaskState) => MaskState) {
-    setMasks((currentMasks) => {
-      const nextMasks = updater(currentMasks);
-      setOverrides((currentOverrides) => pruneOverrides(nextMasks, currentOverrides));
-      return nextMasks;
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey)) {
+        return;
+      }
+
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === "z" && event.shiftKey) {
+        event.preventDefault();
+        redo();
+        return;
+      }
+
+      if (key === "z") {
+        event.preventDefault();
+        undo();
+        return;
+      }
+
+      if (key === "y") {
+        event.preventDefault();
+        redo();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  function startGesture() {
+    if (gestureSnapshotRef.current) {
+      return;
+    }
+
+    gestureSnapshotRef.current = historyRef.current.present;
+    gestureCommittedRef.current = false;
+  }
+
+  function endGesture() {
+    gestureSnapshotRef.current = null;
+    gestureCommittedRef.current = false;
+  }
+
+  function applyContentMutation(
+    updater: (current: ContentState) => ContentState,
+    useGestureHistory: boolean,
+  ) {
+    const gestureSnapshot = useGestureHistory
+      ? (gestureSnapshotRef.current ?? historyRef.current.present)
+      : null;
+    const gestureCommitted = useGestureHistory ? gestureCommittedRef.current : false;
+
+    setHistory((currentHistory) => {
+      const nextPresent = updater(currentHistory.present);
+      if (sameContent(nextPresent, currentHistory.present)) {
+        return currentHistory;
+      }
+
+      if (useGestureHistory) {
+        if (gestureCommitted) {
+          return {
+            ...currentHistory,
+            present: nextPresent,
+          };
+        }
+
+        gestureCommittedRef.current = true;
+        return {
+          past: appendPast(currentHistory.past, gestureSnapshot ?? currentHistory.present),
+          present: nextPresent,
+          future: [],
+        };
+      }
+
+      return {
+        past: appendPast(currentHistory.past, currentHistory.present),
+        present: nextPresent,
+        future: [],
+      };
     });
   }
 
-  function applyMaskUpdate(layer: PixelFarmMaskLayerId, updater: (mask: string[]) => string[]) {
-    applyMaskMutation((current) => ({
-      ...current,
-      [layer]: updater(current[layer]),
-    }));
+  function applyMaskMutation(
+    updater: (current: MaskState) => MaskState,
+    useGestureHistory: boolean,
+  ) {
+    applyContentMutation((current) => {
+      const nextMasks = updater(current.masks);
+      if (nextMasks === current.masks) {
+        return current;
+      }
+
+      return {
+        masks: nextMasks,
+        overrides: pruneOverrides(nextMasks, current.overrides),
+      };
+    }, useGestureHistory);
+  }
+
+  function applyMaskUpdate(
+    layer: PixelFarmMaskLayerId,
+    updater: (mask: string[]) => string[],
+    useGestureHistory: boolean,
+  ) {
+    applyMaskMutation(
+      (current) => ({
+        ...current,
+        [layer]: updater(current[layer]),
+      }),
+      useGestureHistory,
+    );
   }
 
   function applyOverrideUpdate(
@@ -562,32 +713,72 @@ export function PixelFarmEditorPage() {
     row: number,
     column: number,
     frame: number | null,
+    useGestureHistory: boolean,
   ) {
-    if (!maskHasTile(masks[layer], row, column)) {
+    if (!maskHasTile(historyRef.current.present.masks[layer], row, column)) {
       return;
     }
 
-    setOverrides((current) => {
-      const nextLayer = setTileOverride(current[layer], row, column, frame);
-      if (nextLayer === current[layer]) {
+    applyContentMutation((current) => {
+      const nextLayer = setTileOverride(current.overrides[layer], row, column, frame);
+      if (nextLayer === current.overrides[layer]) {
         return current;
       }
 
       return {
-        ...current,
-        [layer]: nextLayer,
+        masks: current.masks,
+        overrides: {
+          ...current.overrides,
+          [layer]: nextLayer,
+        },
+      };
+    }, useGestureHistory);
+  }
+
+  function undo() {
+    endGesture();
+    setPreviewRect(null);
+    dragStateRef.current = null;
+    setHistory((current) => {
+      const previous = current.past[current.past.length - 1];
+      if (!previous) {
+        return current;
+      }
+
+      return {
+        past: current.past.slice(0, -1),
+        present: previous,
+        future: [current.present, ...current.future],
+      };
+    });
+  }
+
+  function redo() {
+    endGesture();
+    setPreviewRect(null);
+    dragStateRef.current = null;
+    setHistory((current) => {
+      const next = current.future[0];
+      if (!next) {
+        return current;
+      }
+
+      return {
+        past: appendPast(current.past, current.present),
+        present: next,
+        future: current.future.slice(1),
       };
     });
   }
 
   function handlePointerDown(row: number, column: number) {
     if (tool === "fill") {
-      applyMaskUpdate(selectedLayer, (mask) => fillMaskArea(mask, row, column, true));
+      applyMaskUpdate(selectedLayer, (mask) => fillMaskArea(mask, row, column, true), false);
       return;
     }
 
     if (tool === "rectangle") {
-      const dragState: DragState = {
+      dragStateRef.current = {
         tool,
         layer: selectedLayer,
         filled: true,
@@ -597,13 +788,12 @@ export function PixelFarmEditorPage() {
         endRow: row,
         endColumn: column,
       };
-
-      dragStateRef.current = dragState;
-      setPreviewRect(dragState);
+      setPreviewRect(dragStateRef.current);
       return;
     }
 
     if (tool === "stamp" || tool === "clearStamp") {
+      startGesture();
       const overrideFrame = tool === "stamp" ? selectedFrames[selectedLayer] : null;
       dragStateRef.current = {
         tool,
@@ -615,10 +805,11 @@ export function PixelFarmEditorPage() {
         endRow: row,
         endColumn: column,
       };
-      applyOverrideUpdate(selectedLayer, row, column, overrideFrame);
+      applyOverrideUpdate(selectedLayer, row, column, overrideFrame, true);
       return;
     }
 
+    startGesture();
     const filled = tool === "paint";
     dragStateRef.current = {
       tool,
@@ -630,7 +821,7 @@ export function PixelFarmEditorPage() {
       endRow: row,
       endColumn: column,
     };
-    applyMaskUpdate(selectedLayer, (mask) => updateMaskCell(mask, row, column, filled));
+    applyMaskUpdate(selectedLayer, (mask) => updateMaskCell(mask, row, column, filled), true);
   }
 
   function handlePointerEnter(row: number, column: number) {
@@ -652,11 +843,15 @@ export function PixelFarmEditorPage() {
     }
 
     if (dragState.tool === "stamp" || dragState.tool === "clearStamp") {
-      applyOverrideUpdate(dragState.layer, row, column, dragState.overrideFrame);
+      applyOverrideUpdate(dragState.layer, row, column, dragState.overrideFrame, true);
       return;
     }
 
-    applyMaskUpdate(dragState.layer, (mask) => updateMaskCell(mask, row, column, dragState.filled));
+    applyMaskUpdate(
+      dragState.layer,
+      (mask) => updateMaskCell(mask, row, column, dragState.filled),
+      true,
+    );
   }
 
   async function handleCopy() {
@@ -664,9 +859,28 @@ export function PixelFarmEditorPage() {
     setCopied(true);
   }
 
+  function handleSaveDraft() {
+    window.localStorage.setItem(
+      DRAFT_STORAGE_KEY,
+      JSON.stringify({
+        masks,
+        overrides,
+        selectedFrames,
+        selectedLayer,
+        tool,
+        cellSize,
+      }),
+    );
+    setSaved(true);
+  }
+
   function handleReset() {
-    setMasks(cloneMasks());
-    setOverrides(cloneOverrides());
+    endGesture();
+    setHistory({
+      past: [],
+      present: cloneContent(),
+      future: [],
+    });
     setSelectedFrames({ ...DEFAULT_SELECTED_FRAMES });
     setSelectedLayer("soil");
     setTool("paint");
@@ -750,6 +964,24 @@ export function PixelFarmEditorPage() {
               onClick={() => setTool("clearStamp")}
             >
               {COPY.tools.clearStamp}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={history.past.length === 0}
+              onClick={undo}
+            >
+              {COPY.undo}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={history.future.length === 0}
+              onClick={redo}
+            >
+              {COPY.redo}
             </Button>
             <Button
               type="button"
@@ -876,11 +1108,14 @@ export function PixelFarmEditorPage() {
             <h2 className="text-lg font-semibold">{COPY.exportTitle}</h2>
             <p className="mt-1 text-sm leading-6 text-[#695238]">{COPY.exportHint}</p>
             <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[#8d6b43]">
-              {COPY.autosave}
+              {COPY.saveHint}
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={handleSaveDraft}>
+              {saved ? COPY.saved : COPY.save}
+            </Button>
             <Button type="button" size="sm" onClick={handleCopy}>
               {copied ? COPY.copied : COPY.copy}
             </Button>
