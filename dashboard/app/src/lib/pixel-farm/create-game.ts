@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import soilGroundTilesUrl from "@/assets/Soil_Ground_Tiles.png";
 import water1Url from "@/assets/Water_1.png";
 import water2Url from "@/assets/Water_2.png";
 import water3Url from "@/assets/Water_3.png";
@@ -13,9 +14,19 @@ const WATER_TEXTURE_KEYS = [
   "pixel-farm-water-3",
   "pixel-farm-water-4",
 ] as const;
-const ISLAND_SAND_COLOR = 0xe0cb86;
-const ISLAND_GRASS_COLOR = 0x6fb85d;
-const ISLAND_SHADOW_COLOR = 0x4f8a4a;
+const SOIL_TILESET_KEY = "pixel-farm-soil-ground";
+const SOIL_TILESET_COLUMNS = 11;
+const SOIL_FRAME = {
+  topLeft: 0,
+  top: 1,
+  topRight: 2,
+  left: SOIL_TILESET_COLUMNS,
+  center: SOIL_TILESET_COLUMNS + 1,
+  right: SOIL_TILESET_COLUMNS + 2,
+  bottomLeft: SOIL_TILESET_COLUMNS * 2,
+  bottom: SOIL_TILESET_COLUMNS * 2 + 1,
+  bottomRight: SOIL_TILESET_COLUMNS * 2 + 2,
+} as const;
 
 interface WaterTile {
   sprite: Phaser.GameObjects.Image;
@@ -24,6 +35,47 @@ interface WaterTile {
 
 function waterTextureKey(index: number): (typeof WATER_TEXTURE_KEYS)[number] {
   return WATER_TEXTURE_KEYS[index % WATER_TEXTURE_KEYS.length]!;
+}
+
+function soilFrameForTile(
+  hasUp: boolean,
+  hasRight: boolean,
+  hasDown: boolean,
+  hasLeft: boolean,
+): number {
+  if (!hasUp && !hasLeft) {
+    return SOIL_FRAME.topLeft;
+  }
+
+  if (!hasUp && !hasRight) {
+    return SOIL_FRAME.topRight;
+  }
+
+  if (!hasDown && !hasLeft) {
+    return SOIL_FRAME.bottomLeft;
+  }
+
+  if (!hasDown && !hasRight) {
+    return SOIL_FRAME.bottomRight;
+  }
+
+  if (!hasUp) {
+    return SOIL_FRAME.top;
+  }
+
+  if (!hasDown) {
+    return SOIL_FRAME.bottom;
+  }
+
+  if (!hasLeft) {
+    return SOIL_FRAME.left;
+  }
+
+  if (!hasRight) {
+    return SOIL_FRAME.right;
+  }
+
+  return SOIL_FRAME.center;
 }
 
 class PixelFarmSandboxScene extends Phaser.Scene {
@@ -40,6 +92,10 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   }
 
   preload(): void {
+    this.load.spritesheet(SOIL_TILESET_KEY, soilGroundTilesUrl, {
+      frameWidth: WATER_TILE_SIZE,
+      frameHeight: WATER_TILE_SIZE,
+    });
     this.load.image(WATER_TEXTURE_KEYS[0], water1Url);
     this.load.image(WATER_TEXTURE_KEYS[1], water2Url);
     this.load.image(WATER_TEXTURE_KEYS[2], water3Url);
@@ -141,45 +197,65 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.terrainLayer.removeAll(true);
 
     const tile = WATER_TILE_SIZE;
-    const centerX = Math.floor(width / 2 / tile) * tile;
-    const centerY = Math.floor(height / 2 / tile) * tile;
-    const sandRadiusX = Math.max(Math.floor(width / tile / 5), 10);
-    const sandRadiusY = Math.max(Math.floor(height / tile / 6), 7);
-    const grassRadiusX = Math.max(sandRadiusX - 2, 6);
-    const grassRadiusY = Math.max(sandRadiusY - 2, 4);
+    const viewportColumns = Math.ceil(width / tile);
+    const viewportRows = Math.ceil(height / tile);
+    const islandColumns = Math.max(Math.floor(viewportColumns * 0.54), 18);
+    const islandRows = Math.max(Math.floor(viewportRows * 0.38), 12);
+    const startColumn = Math.floor((viewportColumns - islandColumns) / 2);
+    const startRow = Math.floor((viewportRows - islandRows) / 2);
+    const mask = this.buildIslandMask(islandColumns, islandRows);
 
-    const shadow = this.add.graphics();
-    shadow.fillStyle(ISLAND_SHADOW_COLOR, 0.35);
-    shadow.fillEllipse(centerX, centerY + tile * 2.5, sandRadiusX * tile * 1.8, sandRadiusY * tile);
-    this.terrainLayer.add(shadow);
-
-    const sand = this.add.graphics();
-    const grass = this.add.graphics();
-
-    for (let row = -sandRadiusY; row <= sandRadiusY; row += 1) {
-      for (let column = -sandRadiusX; column <= sandRadiusX; column += 1) {
-        const sandDistance =
-          (column * column) / (sandRadiusX * sandRadiusX) +
-          (row * row) / (sandRadiusY * sandRadiusY);
-        const grassDistance =
-          (column * column) / (grassRadiusX * grassRadiusX) +
-          (row * row) / (grassRadiusY * grassRadiusY);
-        const x = centerX + column * tile;
-        const y = centerY + row * tile;
-
-        if (sandDistance <= 1) {
-          sand.fillStyle(ISLAND_SAND_COLOR, 1);
-          sand.fillRect(x, y, tile, tile);
+    for (let row = 0; row < islandRows; row += 1) {
+      for (let column = 0; column < islandColumns; column += 1) {
+        if (!mask[row]?.[column]) {
+          continue;
         }
 
-        if (grassDistance <= 1) {
-          grass.fillStyle(ISLAND_GRASS_COLOR, 1);
-          grass.fillRect(x, y, tile, tile);
+        const hasUp = Boolean(mask[row - 1]?.[column]);
+        const hasRight = Boolean(mask[row]?.[column + 1]);
+        const hasDown = Boolean(mask[row + 1]?.[column]);
+        const hasLeft = Boolean(mask[row]?.[column - 1]);
+        const sprite = this.add.image(
+          (startColumn + column) * tile,
+          (startRow + row) * tile,
+          SOIL_TILESET_KEY,
+          soilFrameForTile(hasUp, hasRight, hasDown, hasLeft),
+        );
+
+        sprite.setOrigin(0, 0);
+        this.terrainLayer.add(sprite);
+      }
+    }
+  }
+
+  private buildIslandMask(columns: number, rows: number): boolean[][] {
+    const mask = Array.from({ length: rows }, () => Array.from({ length: columns }, () => false));
+    const cornerCut = Math.max(Math.floor(Math.min(columns, rows) * 0.22), 4);
+
+    for (let row = 0; row < rows; row += 1) {
+      for (let column = 0; column < columns; column += 1) {
+        const top = row;
+        const left = column;
+        const right = columns - 1 - column;
+        const bottom = rows - 1 - row;
+
+        let visible = true;
+
+        if (top < cornerCut && left < cornerCut) {
+          visible = top + left >= cornerCut - 2;
+        } else if (top < cornerCut && right < cornerCut) {
+          visible = top + right >= cornerCut - 2;
+        } else if (bottom < cornerCut && left < cornerCut) {
+          visible = bottom + left >= cornerCut - 2;
+        } else if (bottom < cornerCut && right < cornerCut) {
+          visible = bottom + right >= cornerCut - 2;
         }
+
+        mask[row]![column] = visible;
       }
     }
 
-    this.terrainLayer.add([sand, grass]);
+    return mask;
   }
 }
 
