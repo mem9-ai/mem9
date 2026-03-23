@@ -1,14 +1,12 @@
 import Phaser from "phaser";
 import {
   PixelFarmBabyCow,
-  PIXEL_FARM_BABY_COW_COLORS,
   type PixelFarmBabyCowColor,
   type PixelFarmBabyCowState,
   registerPixelFarmBabyCowAnimations,
 } from "@/lib/pixel-farm/baby-cow";
 import {
   PixelFarmChicken,
-  PIXEL_FARM_CHICKEN_COLORS,
   type PixelFarmChickenColor,
   type PixelFarmChickenState,
   registerPixelFarmChickenAnimations,
@@ -23,7 +21,6 @@ import {
 } from "@/lib/pixel-farm/character";
 import {
   PixelFarmCow,
-  PIXEL_FARM_COW_COLORS,
   type PixelFarmCowColor,
   type PixelFarmCowState,
   registerPixelFarmCowAnimations,
@@ -57,9 +54,12 @@ const ISLAND_ROWS = PIXEL_FARM_MASK_ROWS;
 const CAMERA_MAX_ZOOM = 3;
 const CAMERA_TARGET_FILL = 0.8;
 const ACTOR_LAYER_DEPTH = 15;
-const COW_COUNT = PIXEL_FARM_COW_COLORS.length;
-const BABY_COW_COUNT = PIXEL_FARM_BABY_COW_COLORS.length;
-const CHICKEN_COUNT = PIXEL_FARM_CHICKEN_COLORS.length;
+const SCENE_COW_COLORS: readonly PixelFarmCowColor[] = ["brown", "light"];
+const SCENE_BABY_COW_COLORS: readonly PixelFarmBabyCowColor[] = ["brown", "light"];
+const SCENE_CHICKEN_COLORS: readonly PixelFarmChickenColor[] = ["default", "default"];
+const COW_COUNT = SCENE_COW_COLORS.length;
+const BABY_COW_COUNT = SCENE_BABY_COW_COLORS.length;
+const CHICKEN_COUNT = SCENE_CHICKEN_COLORS.length;
 const WATER_FRAME_COUNT = PIXEL_FARM_WATER_TEXTURE_KEYS.length;
 const ARCADE_DEBUG_ENABLED = false//import.meta.env.DEV;
 const WORLD_PIXEL_WIDTH = WORLD_COLUMNS * PIXEL_FARM_TILE_SIZE;
@@ -587,7 +587,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
     const spawnCells = this.findAnimalSpawnCells(COW_COUNT, [characterSpawnCell]);
 
-    PIXEL_FARM_COW_COLORS.forEach((color, index) => {
+    SCENE_COW_COLORS.forEach((color, index) => {
       const spawnCell = spawnCells[index];
       if (!spawnCell) {
         return;
@@ -629,7 +629,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       3,
     );
 
-    PIXEL_FARM_BABY_COW_COLORS.forEach((color, index) => {
+    SCENE_BABY_COW_COLORS.forEach((color, index) => {
       const spawnCell = spawnCells[index];
       if (!spawnCell) {
         return;
@@ -668,7 +668,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       2,
     );
 
-    PIXEL_FARM_CHICKEN_COLORS.forEach((color, index) => {
+    SCENE_CHICKEN_COLORS.forEach((color, index) => {
       const spawnCell = spawnCells[index];
       if (!spawnCell) {
         return;
