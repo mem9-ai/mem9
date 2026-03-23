@@ -42,5 +42,7 @@ jobs:
           tags: |
             ${{ env.SWR_IMG }}:${{ env.SHORT_SHA }}
             ${{ env.SWR_IMG }}:latest
+          provenance: false
+          sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
