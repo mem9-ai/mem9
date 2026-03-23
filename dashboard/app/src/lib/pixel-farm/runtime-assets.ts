@@ -1,4 +1,9 @@
 import Phaser from "phaser";
+import babyCowBrownUrl from "@/assets/game-objects/animals/cow-baby/cow-baby-brown-spritesheet.png";
+import babyCowGreenUrl from "@/assets/game-objects/animals/cow-baby/cow-baby-green-spritesheet.png";
+import babyCowLightUrl from "@/assets/game-objects/animals/cow-baby/cow-baby-light-spritesheet.png";
+import babyCowPinkUrl from "@/assets/game-objects/animals/cow-baby/cow-baby-pink-spritesheet.png";
+import babyCowPurpleUrl from "@/assets/game-objects/animals/cow-baby/cow-baby-purple-spritesheet.png";
 import cowBrownUrl from "@/assets/game-objects/animals/cow/cow-brown-spritesheet.png";
 import cowGreenUrl from "@/assets/game-objects/animals/cow/cow-green-spritesheet.png";
 import cowLightUrl from "@/assets/game-objects/animals/cow/cow-light-spritesheet.png";
@@ -20,6 +25,8 @@ export const PIXEL_FARM_CHARACTER_FRAME_WIDTH = 48;
 export const PIXEL_FARM_CHARACTER_FRAME_HEIGHT = 48;
 export const PIXEL_FARM_COW_FRAME_WIDTH = 32;
 export const PIXEL_FARM_COW_FRAME_HEIGHT = 32;
+export const PIXEL_FARM_BABY_COW_FRAME_WIDTH = 32;
+export const PIXEL_FARM_BABY_COW_FRAME_HEIGHT = 32;
 
 export const PIXEL_FARM_COW_TEXTURE_KEYS = {
   brown: "pixel-farm-cow-brown",
@@ -27,6 +34,14 @@ export const PIXEL_FARM_COW_TEXTURE_KEYS = {
   light: "pixel-farm-cow-light",
   pink: "pixel-farm-cow-pink",
   purple: "pixel-farm-cow-purple",
+} as const;
+
+export const PIXEL_FARM_BABY_COW_TEXTURE_KEYS = {
+  brown: "pixel-farm-baby-cow-brown",
+  green: "pixel-farm-baby-cow-green",
+  light: "pixel-farm-baby-cow-light",
+  pink: "pixel-farm-baby-cow-pink",
+  purple: "pixel-farm-baby-cow-purple",
 } as const;
 
 export const PIXEL_FARM_WATER_TEXTURE_KEYS = [
@@ -49,6 +64,17 @@ const PIXEL_FARM_COW_TEXTURE_URLS: Record<keyof typeof PIXEL_FARM_COW_TEXTURE_KE
   light: cowLightUrl,
   pink: cowPinkUrl,
   purple: cowPurpleUrl,
+};
+
+const PIXEL_FARM_BABY_COW_TEXTURE_URLS: Record<
+  keyof typeof PIXEL_FARM_BABY_COW_TEXTURE_KEYS,
+  string
+> = {
+  brown: babyCowBrownUrl,
+  green: babyCowGreenUrl,
+  light: babyCowLightUrl,
+  pink: babyCowPinkUrl,
+  purple: babyCowPurpleUrl,
 };
 
 export function preloadPixelFarmRuntimeAssets(scene: Phaser.Scene): void {
@@ -75,6 +101,15 @@ export function preloadPixelFarmRuntimeAssets(scene: Phaser.Scene): void {
     scene.load.spritesheet(textureKey, PIXEL_FARM_COW_TEXTURE_URLS[color], {
       frameWidth: PIXEL_FARM_COW_FRAME_WIDTH,
       frameHeight: PIXEL_FARM_COW_FRAME_HEIGHT,
+    });
+  }
+
+  for (const [color, textureKey] of Object.entries(PIXEL_FARM_BABY_COW_TEXTURE_KEYS) as Array<
+    [keyof typeof PIXEL_FARM_BABY_COW_TEXTURE_KEYS, string]
+  >) {
+    scene.load.spritesheet(textureKey, PIXEL_FARM_BABY_COW_TEXTURE_URLS[color], {
+      frameWidth: PIXEL_FARM_BABY_COW_FRAME_WIDTH,
+      frameHeight: PIXEL_FARM_BABY_COW_FRAME_HEIGHT,
     });
   }
 }
