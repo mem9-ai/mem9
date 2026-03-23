@@ -41,6 +41,7 @@ const CAMERA_TARGET_FILL = 0.8;
 const ACTOR_LAYER_DEPTH = 15;
 const COW_COUNT = PIXEL_FARM_COW_COLORS.length;
 const WATER_FRAME_COUNT = PIXEL_FARM_WATER_TEXTURE_KEYS.length;
+const ARCADE_DEBUG_ENABLED = import.meta.env.DEV;
 const WORLD_PIXEL_WIDTH = WORLD_COLUMNS * PIXEL_FARM_TILE_SIZE;
 const WORLD_PIXEL_HEIGHT = WORLD_ROWS * PIXEL_FARM_TILE_SIZE;
 const ISLAND_PIXEL_WIDTH = PIXEL_FARM_MASK_BOUNDS.width * PIXEL_FARM_TILE_SIZE;
@@ -692,6 +693,9 @@ export function createPixelFarmGame(parent: HTMLElement): Phaser.Game {
       default: "arcade",
       arcade: {
         gravity: { x: 0, y: 0 },
+        debug: ARCADE_DEBUG_ENABLED,
+        debugShowBody: ARCADE_DEBUG_ENABLED,
+        debugShowVelocity: false,
       },
     },
     scene: [PixelFarmSandboxScene],
