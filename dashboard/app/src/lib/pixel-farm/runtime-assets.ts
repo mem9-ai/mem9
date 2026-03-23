@@ -1,4 +1,9 @@
 import Phaser from "phaser";
+import cowBrownUrl from "@/assets/game-objects/animals/cow/cow-brown-spritesheet.png";
+import cowGreenUrl from "@/assets/game-objects/animals/cow/cow-green-spritesheet.png";
+import cowLightUrl from "@/assets/game-objects/animals/cow/cow-light-spritesheet.png";
+import cowPinkUrl from "@/assets/game-objects/animals/cow/cow-pink-spritesheet.png";
+import cowPurpleUrl from "@/assets/game-objects/animals/cow/cow-purple-spritesheet.png";
 import premiumCharacterUrl from "@/assets/game-objects/characters/premium-charakter-spritesheet.png";
 import water1Url from "@/assets/water-frame-1.png";
 import water2Url from "@/assets/water-frame-2.png";
@@ -13,6 +18,16 @@ import {
 export const PIXEL_FARM_CHARACTER_TEXTURE_KEY = "pixel-farm-character-premium";
 export const PIXEL_FARM_CHARACTER_FRAME_WIDTH = 48;
 export const PIXEL_FARM_CHARACTER_FRAME_HEIGHT = 48;
+export const PIXEL_FARM_COW_FRAME_WIDTH = 32;
+export const PIXEL_FARM_COW_FRAME_HEIGHT = 32;
+
+export const PIXEL_FARM_COW_TEXTURE_KEYS = {
+  brown: "pixel-farm-cow-brown",
+  green: "pixel-farm-cow-green",
+  light: "pixel-farm-cow-light",
+  pink: "pixel-farm-cow-pink",
+  purple: "pixel-farm-cow-purple",
+} as const;
 
 export const PIXEL_FARM_WATER_TEXTURE_KEYS = [
   "pixel-farm-water-1",
@@ -27,6 +42,14 @@ const PIXEL_FARM_WATER_TEXTURE_URLS = [
   water3Url,
   water4Url,
 ] as const;
+
+const PIXEL_FARM_COW_TEXTURE_URLS: Record<keyof typeof PIXEL_FARM_COW_TEXTURE_KEYS, string> = {
+  brown: cowBrownUrl,
+  green: cowGreenUrl,
+  light: cowLightUrl,
+  pink: cowPinkUrl,
+  purple: cowPurpleUrl,
+};
 
 export function preloadPixelFarmRuntimeAssets(scene: Phaser.Scene): void {
   for (const sourceId of PIXEL_FARM_ASSET_SOURCE_IDS) {
@@ -45,6 +68,15 @@ export function preloadPixelFarmRuntimeAssets(scene: Phaser.Scene): void {
     frameWidth: PIXEL_FARM_CHARACTER_FRAME_WIDTH,
     frameHeight: PIXEL_FARM_CHARACTER_FRAME_HEIGHT,
   });
+
+  for (const [color, textureKey] of Object.entries(PIXEL_FARM_COW_TEXTURE_KEYS) as Array<
+    [keyof typeof PIXEL_FARM_COW_TEXTURE_KEYS, string]
+  >) {
+    scene.load.spritesheet(textureKey, PIXEL_FARM_COW_TEXTURE_URLS[color], {
+      frameWidth: PIXEL_FARM_COW_FRAME_WIDTH,
+      frameHeight: PIXEL_FARM_COW_FRAME_HEIGHT,
+    });
+  }
 }
 
 export function pixelFarmWaterTextureKey(

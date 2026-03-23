@@ -6,6 +6,11 @@ import {
   registerPixelFarmCharacterAnimations,
 } from "@/lib/pixel-farm/character";
 import {
+  PixelFarmCow,
+  PIXEL_FARM_COW_COLORS,
+  registerPixelFarmCowAnimations,
+} from "@/lib/pixel-farm/cow";
+import {
   maskHasTile,
   PIXEL_FARM_LAYERS,
   PIXEL_FARM_MASK_BOUNDS,
@@ -34,6 +39,7 @@ const ISLAND_ROWS = PIXEL_FARM_MASK_ROWS;
 const CAMERA_MAX_ZOOM = 3;
 const CAMERA_TARGET_FILL = 0.8;
 const ACTOR_LAYER_DEPTH = 15;
+const COW_COUNT = PIXEL_FARM_COW_COLORS.length;
 const WATER_FRAME_COUNT = PIXEL_FARM_WATER_TEXTURE_KEYS.length;
 const WORLD_PIXEL_WIDTH = WORLD_COLUMNS * PIXEL_FARM_TILE_SIZE;
 const WORLD_PIXEL_HEIGHT = WORLD_ROWS * PIXEL_FARM_TILE_SIZE;
@@ -79,6 +85,11 @@ interface CharacterKeyboardControls {
   water: Phaser.Input.Keyboard.Key;
 }
 
+interface PixelFarmCell {
+  row: number;
+  column: number;
+}
+
 function localCellKey(row: number, column: number): string {
   return `${row}:${column}`;
 }
@@ -86,12 +97,13 @@ function localCellKey(row: number, column: number): string {
 class PixelFarmSandboxScene extends Phaser.Scene {
   private oceanLayer?: Phaser.GameObjects.Container;
   private worldLayer?: Phaser.GameObjects.Container;
-  private actorLayer?: Phaser.GameObjects.Container;
   private effectsLayer?: Phaser.GameObjects.Container;
   private waterTiles: WaterTile[] = [];
   private waterFrame = 0;
   private waterTimer?: Phaser.Time.TimerEvent;
   private character?: PixelFarmCharacter;
+  private cows: PixelFarmCow[] = [];
+  private cowGroup?: Phaser.Physics.Arcade.Group;
   private characterControls?: CharacterKeyboardControls;
   private readonly blockedCells = new Set<string>();
   private dragState: DragState = {
@@ -113,17 +125,21 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   create(): void {
     this.oceanLayer = this.add.container(0, 0);
     this.worldLayer = this.add.container(0, 0);
-    this.actorLayer = this.add.container(0, 0);
     this.effectsLayer = this.add.container(0, 0);
     this.layoutLayers();
 
     this.cameras.main.setBackgroundColor(BACKGROUND_COLOR);
     this.cameras.main.setBounds(0, 0, WORLD_PIXEL_WIDTH, WORLD_PIXEL_HEIGHT);
     this.cameras.main.setRoundPixels(true);
+    this.physics.world.setBounds(0, 0, WORLD_PIXEL_WIDTH, WORLD_PIXEL_HEIGHT);
 
     this.rebuildWorld();
     registerPixelFarmCharacterAnimations(this);
-    this.createCharacter();
+    registerPixelFarmCowAnimations(this);
+    const characterSpawnCell = this.findCharacterSpawnCell();
+    this.createCharacter(characterSpawnCell);
+    this.createCows(characterSpawnCell);
+    this.bindActorPhysics();
     this.bindCharacterControls();
     this.fitCameraToIsland();
     this.bindCameraControls();
@@ -142,7 +158,6 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   private layoutLayers(): void {
     this.oceanLayer?.setDepth(0);
     this.worldLayer?.setDepth(10);
-    this.actorLayer?.setDepth(ACTOR_LAYER_DEPTH);
     this.effectsLayer?.setDepth(20);
   }
 
@@ -163,6 +178,12 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.waterTimer?.destroy();
     this.character?.destroy();
     this.character = undefined;
+    for (const cow of this.cows) {
+      cow.destroy();
+    }
+    this.cows = [];
+    this.cowGroup?.clear(true, false);
+    this.cowGroup = undefined;
     this.unbindCameraControls();
   }
 
@@ -257,6 +278,9 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.character?.update(delta, this.readCharacterInput());
+    for (const cow of this.cows) {
+      cow.update(delta);
+    }
   }
 
   private bindCharacterControls(): void {
@@ -323,25 +347,83 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     return null;
   }
 
-  private createCharacter(): void {
+  private bindActorPhysics(): void {
+    if (!this.character || !this.cowGroup) {
+      return;
+    }
+
+    this.physics.add.collider(
+      this.character,
+      this.cowGroup,
+      this.handleCharacterCowCollision,
+      undefined,
+      this,
+    );
+    this.physics.add.collider(this.cowGroup, this.cowGroup);
+  }
+
+  private handleCharacterCowCollision: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (
+    characterObject,
+    cowObject,
+  ): void => {
+    if (!(characterObject instanceof PixelFarmCharacter) || !(cowObject instanceof PixelFarmCow)) {
+      return;
+    }
+
+    cowObject.triggerLove(characterObject.x);
+  };
+
+  private createCharacter(spawnCell: PixelFarmCell): void {
     this.character?.destroy();
 
-    const spawnCell = this.findCharacterSpawnCell();
+    const { x, y } = this.cellToWorldPosition(spawnCell);
     this.character = new PixelFarmCharacter({
       scene: this,
-      layer: this.actorLayer,
-      startX: (ISLAND_START_COLUMN + spawnCell.column + 0.5) * PIXEL_FARM_TILE_SIZE,
-      startY: (ISLAND_START_ROW + spawnCell.row + 1) * PIXEL_FARM_TILE_SIZE,
-      canOccupy: this.canCharacterOccupy,
+      depth: ACTOR_LAYER_DEPTH,
+      startX: x,
+      startY: y,
+      canOccupy: this.canActorOccupy,
     });
   }
 
-  private findCharacterSpawnCell(): { row: number; column: number } {
+  private createCows(characterSpawnCell: PixelFarmCell): void {
+    this.cowGroup?.clear(true, false);
+    for (const cow of this.cows) {
+      cow.destroy();
+    }
+
+    this.cows = [];
+    this.cowGroup = this.physics.add.group();
+
+    const spawnCells = this.findCowSpawnCells(COW_COUNT, [characterSpawnCell]);
+
+    PIXEL_FARM_COW_COLORS.forEach((color, index) => {
+      const spawnCell = spawnCells[index];
+      if (!spawnCell) {
+        return;
+      }
+
+      const { x, y } = this.cellToWorldPosition(spawnCell);
+      const cow = new PixelFarmCow({
+        scene: this,
+        color,
+        depth: ACTOR_LAYER_DEPTH,
+        startX: x,
+        startY: y,
+        canOccupy: this.canActorOccupy,
+      });
+
+      this.cows.push(cow);
+      this.cowGroup?.add(cow);
+    });
+  }
+
+  private findCharacterSpawnCell(): PixelFarmCell {
     const centerRow = Math.round((PIXEL_FARM_MASK_BOUNDS.minRow + PIXEL_FARM_MASK_BOUNDS.maxRow) * 0.5);
     const centerColumn = Math.round(
       (PIXEL_FARM_MASK_BOUNDS.minColumn + PIXEL_FARM_MASK_BOUNDS.maxColumn) * 0.5,
     );
-    let bestCell: { row: number; column: number } | null = null;
+    let bestCell: PixelFarmCell | null = null;
     let bestDistance = Number.POSITIVE_INFINITY;
 
     for (let row = 0; row < ISLAND_ROWS; row += 1) {
@@ -367,6 +449,73 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     return bestCell;
   }
 
+  private findCowSpawnCells(count: number, reservedCells: PixelFarmCell[]): PixelFarmCell[] {
+    const walkableCells = Phaser.Utils.Array.Shuffle(this.listWalkableCells());
+    const selectedCells: PixelFarmCell[] = [];
+
+    for (const cell of walkableCells) {
+      if (
+        !this.isFarEnoughFromCells(cell, reservedCells, 6) ||
+        !this.isFarEnoughFromCells(cell, selectedCells, 5)
+      ) {
+        continue;
+      }
+
+      selectedCells.push(cell);
+      if (selectedCells.length === count) {
+        return selectedCells;
+      }
+    }
+
+    for (const cell of walkableCells) {
+      if (selectedCells.some((selectedCell) => this.isSameCell(selectedCell, cell))) {
+        continue;
+      }
+
+      selectedCells.push(cell);
+      if (selectedCells.length === count) {
+        return selectedCells;
+      }
+    }
+
+    return selectedCells;
+  }
+
+  private listWalkableCells(): PixelFarmCell[] {
+    const cells: PixelFarmCell[] = [];
+
+    for (let row = 0; row < ISLAND_ROWS; row += 1) {
+      for (let column = 0; column < ISLAND_COLUMNS; column += 1) {
+        if (!this.isWalkableLocalCell(row, column)) {
+          continue;
+        }
+
+        cells.push({ row, column });
+      }
+    }
+
+    return cells;
+  }
+
+  private isFarEnoughFromCells(cell: PixelFarmCell, otherCells: PixelFarmCell[], minDistance: number): boolean {
+    return otherCells.every((otherCell) => this.cellDistance(cell, otherCell) >= minDistance);
+  }
+
+  private cellDistance(a: PixelFarmCell, b: PixelFarmCell): number {
+    return Math.abs(a.row - b.row) + Math.abs(a.column - b.column);
+  }
+
+  private isSameCell(a: PixelFarmCell, b: PixelFarmCell): boolean {
+    return a.row === b.row && a.column === b.column;
+  }
+
+  private cellToWorldPosition(cell: PixelFarmCell): { x: number; y: number } {
+    return {
+      x: (ISLAND_START_COLUMN + cell.column + 0.5) * PIXEL_FARM_TILE_SIZE,
+      y: (ISLAND_START_ROW + cell.row + 1) * PIXEL_FARM_TILE_SIZE,
+    };
+  }
+
   private rebuildCollisionMap(): void {
     this.blockedCells.clear();
 
@@ -390,7 +539,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     );
   }
 
-  private canCharacterOccupy = (
+  private canActorOccupy = (
     left: number,
     top: number,
     right: number,
@@ -511,6 +660,12 @@ export function createPixelFarmGame(parent: HTMLElement): Phaser.Game {
     parent,
     backgroundColor: "#0d141b",
     pixelArt: true,
+    physics: {
+      default: "arcade",
+      arcade: {
+        gravity: { x: 0, y: 0 },
+      },
+    },
     scene: [PixelFarmSandboxScene],
     scale: {
       mode: Phaser.Scale.RESIZE,
