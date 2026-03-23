@@ -4,6 +4,11 @@ import babyCowGreenUrl from "@/assets/game-objects/animals/cow-baby/cow-baby-gre
 import babyCowLightUrl from "@/assets/game-objects/animals/cow-baby/cow-baby-light-spritesheet.png";
 import babyCowPinkUrl from "@/assets/game-objects/animals/cow-baby/cow-baby-pink-spritesheet.png";
 import babyCowPurpleUrl from "@/assets/game-objects/animals/cow-baby/cow-baby-purple-spritesheet.png";
+import chickenBlueUrl from "@/assets/game-objects/animals/chicken/chicken-blue-spritesheet.png";
+import chickenBrownUrl from "@/assets/game-objects/animals/chicken/chicken-brown-spritesheet.png";
+import chickenDefaultUrl from "@/assets/game-objects/animals/chicken/chicken-default-spritesheet.png";
+import chickenGreenUrl from "@/assets/game-objects/animals/chicken/chicken-green-spritesheet.png";
+import chickenRedUrl from "@/assets/game-objects/animals/chicken/chicken-red-spritesheet.png";
 import cowBrownUrl from "@/assets/game-objects/animals/cow/cow-brown-spritesheet.png";
 import cowGreenUrl from "@/assets/game-objects/animals/cow/cow-green-spritesheet.png";
 import cowLightUrl from "@/assets/game-objects/animals/cow/cow-light-spritesheet.png";
@@ -44,6 +49,14 @@ export const PIXEL_FARM_BABY_COW_TEXTURE_KEYS = {
   purple: "pixel-farm-baby-cow-purple",
 } as const;
 
+export const PIXEL_FARM_CHICKEN_TEXTURE_KEYS = {
+  blue: "pixel-farm-chicken-blue",
+  brown: "pixel-farm-chicken-brown",
+  default: "pixel-farm-chicken-default",
+  green: "pixel-farm-chicken-green",
+  red: "pixel-farm-chicken-red",
+} as const;
+
 export const PIXEL_FARM_WATER_TEXTURE_KEYS = [
   "pixel-farm-water-1",
   "pixel-farm-water-2",
@@ -75,6 +88,17 @@ const PIXEL_FARM_BABY_COW_TEXTURE_URLS: Record<
   light: babyCowLightUrl,
   pink: babyCowPinkUrl,
   purple: babyCowPurpleUrl,
+};
+
+const PIXEL_FARM_CHICKEN_TEXTURE_URLS: Record<
+  keyof typeof PIXEL_FARM_CHICKEN_TEXTURE_KEYS,
+  string
+> = {
+  blue: chickenBlueUrl,
+  brown: chickenBrownUrl,
+  default: chickenDefaultUrl,
+  green: chickenGreenUrl,
+  red: chickenRedUrl,
 };
 
 export function preloadPixelFarmRuntimeAssets(scene: Phaser.Scene): void {
@@ -111,6 +135,12 @@ export function preloadPixelFarmRuntimeAssets(scene: Phaser.Scene): void {
       frameWidth: PIXEL_FARM_BABY_COW_FRAME_WIDTH,
       frameHeight: PIXEL_FARM_BABY_COW_FRAME_HEIGHT,
     });
+  }
+
+  for (const [color, textureKey] of Object.entries(PIXEL_FARM_CHICKEN_TEXTURE_KEYS) as Array<
+    [keyof typeof PIXEL_FARM_CHICKEN_TEXTURE_KEYS, string]
+  >) {
+    scene.load.image(textureKey, PIXEL_FARM_CHICKEN_TEXTURE_URLS[color]);
   }
 }
 

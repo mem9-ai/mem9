@@ -1,0 +1,447 @@
+import Phaser from "phaser";
+import { PIXEL_FARM_CHICKEN_TEXTURE_KEYS } from "@/lib/pixel-farm/runtime-assets";
+import { PIXEL_FARM_TILE_SIZE } from "@/lib/pixel-farm/tileset-config";
+
+const CHICKEN_SPRITE_ORIGIN_X = 0.5;
+const CHICKEN_SPRITE_ORIGIN_Y = 1;
+const CHICKEN_BODY_WIDTH = 8;
+const CHICKEN_BODY_HEIGHT = 5;
+const CHICKEN_WALK_SPEED = 36;
+const CHICKEN_LOVE_COOLDOWN_MS = 2200;
+const CHICKEN_FRAME_WIDTH = 16;
+const CHICKEN_TOP_FRAME_HEIGHT = 16;
+const CHICKEN_BOTTOM_FRAME_HEIGHT = 32;
+const CHICKEN_FRAMES_PER_ROW = 8;
+const CHICKEN_TOP_ROW_COUNT = 13;
+const CHICKEN_TOP_FRAME_COUNT = CHICKEN_TOP_ROW_COUNT * CHICKEN_FRAMES_PER_ROW;
+const CHICKEN_BOTTOM_FRAME_START_Y = CHICKEN_TOP_ROW_COUNT * CHICKEN_TOP_FRAME_HEIGHT;
+const CHICKEN_BODY_BOTTOM_MARGIN = 1;
+
+export const PIXEL_FARM_CHICKEN_COLORS = [
+  "blue",
+  "brown",
+  "default",
+  "green",
+  "red",
+] as const;
+
+type ChickenAnimationConfig = {
+  frames: readonly number[];
+  fps: number;
+  repeat: number;
+};
+
+function topRowFrames(row: number, count: number): number[] {
+  return Array.from({ length: count }, (_, index) => row * CHICKEN_FRAMES_PER_ROW + index);
+}
+
+function bottomRowFrames(row: number, columns: readonly number[]): number[] {
+  const start = CHICKEN_TOP_FRAME_COUNT + row * CHICKEN_FRAMES_PER_ROW;
+  return columns.map((column) => start + column);
+}
+
+function chickenFrameName(index: number): string {
+  return `frame-${index}`;
+}
+
+function chickenFrameHeight(index: number): number {
+  return index < CHICKEN_TOP_FRAME_COUNT ? CHICKEN_TOP_FRAME_HEIGHT : CHICKEN_BOTTOM_FRAME_HEIGHT;
+}
+
+const CHICKEN_STATES = {
+  idle: { frames: topRowFrames(0, 4), fps: 5, repeat: -1 },
+  walk: { frames: topRowFrames(1, 7), fps: 9, repeat: -1 },
+  strut: { frames: topRowFrames(2, 8), fps: 9, repeat: -1 },
+  peck: { frames: topRowFrames(3, 7), fps: 8, repeat: -1 },
+  look: { frames: topRowFrames(4, 7), fps: 7, repeat: -1 },
+  preen: { frames: topRowFrames(5, 7), fps: 7, repeat: -1 },
+  shake: { frames: topRowFrames(6, 7), fps: 7, repeat: -1 },
+  sitDown: { frames: topRowFrames(7, 5), fps: 7, repeat: 0 },
+  sitIdle: { frames: topRowFrames(8, 4), fps: 4, repeat: -1 },
+  sitLook: { frames: topRowFrames(9, 5), fps: 5, repeat: -1 },
+  standUp: { frames: topRowFrames(10, 4), fps: 8, repeat: 0 },
+  groundFlutter: { frames: topRowFrames(11, 6), fps: 10, repeat: -1 },
+  blink: { frames: topRowFrames(12, 2), fps: 6, repeat: -1 },
+  hover: { frames: [...bottomRowFrames(0, [1, 3, 5, 7]), ...bottomRowFrames(1, [1, 3])], fps: 10, repeat: 0 },
+  fly: { frames: [...bottomRowFrames(2, [1, 3, 4, 5, 6, 7]), ...bottomRowFrames(3, [1])], fps: 10, repeat: -1 },
+  hop: { frames: bottomRowFrames(4, [1, 3, 5, 7]), fps: 10, repeat: 0 },
+  love: { frames: bottomRowFrames(6, [0, 1, 2, 3, 4, 5, 6]), fps: 8, repeat: 0 },
+} as const satisfies Record<string, ChickenAnimationConfig>;
+
+export type PixelFarmChickenColor = (typeof PIXEL_FARM_CHICKEN_COLORS)[number];
+export type PixelFarmChickenState = keyof typeof CHICKEN_STATES;
+
+export interface PixelFarmChickenConfig {
+  scene: Phaser.Scene;
+  color: PixelFarmChickenColor;
+  depth: number;
+  startX: number;
+  startY: number;
+  canOccupy: (
+    left: number,
+    top: number,
+    right: number,
+    bottom: number,
+    moveX?: number,
+    moveY?: number,
+  ) => boolean;
+}
+
+function actorDepth(baseDepth: number, y: number): number {
+  return baseDepth + y / 10_000;
+}
+
+function animationKey(color: PixelFarmChickenColor, state: PixelFarmChickenState): string {
+  return `pixel-farm-chicken-${color}-${state}`;
+}
+
+function chickenTextureKey(color: PixelFarmChickenColor): string {
+  return PIXEL_FARM_CHICKEN_TEXTURE_KEYS[color];
+}
+
+function randomRange(min: number, max: number): number {
+  return Phaser.Math.Between(min, max);
+}
+
+function registerChickenFramesForColor(scene: Phaser.Scene, color: PixelFarmChickenColor): void {
+  const texture = scene.textures.get(chickenTextureKey(color));
+  if (!texture || texture.has(chickenFrameName(0))) {
+    return;
+  }
+
+  for (let row = 0; row < CHICKEN_TOP_ROW_COUNT; row += 1) {
+    for (let column = 0; column < CHICKEN_FRAMES_PER_ROW; column += 1) {
+      const index = row * CHICKEN_FRAMES_PER_ROW + column;
+      texture.add(
+        chickenFrameName(index),
+        0,
+        column * CHICKEN_FRAME_WIDTH,
+        row * CHICKEN_TOP_FRAME_HEIGHT,
+        CHICKEN_FRAME_WIDTH,
+        CHICKEN_TOP_FRAME_HEIGHT,
+      );
+    }
+  }
+
+  for (let row = 0; row < 7; row += 1) {
+    for (let column = 0; column < CHICKEN_FRAMES_PER_ROW; column += 1) {
+      const index = CHICKEN_TOP_FRAME_COUNT + row * CHICKEN_FRAMES_PER_ROW + column;
+      texture.add(
+        chickenFrameName(index),
+        0,
+        column * CHICKEN_FRAME_WIDTH,
+        CHICKEN_BOTTOM_FRAME_START_Y + row * CHICKEN_BOTTOM_FRAME_HEIGHT,
+        CHICKEN_FRAME_WIDTH,
+        CHICKEN_BOTTOM_FRAME_HEIGHT,
+      );
+    }
+  }
+}
+
+export function registerPixelFarmChickenAnimations(scene: Phaser.Scene): void {
+  for (const color of PIXEL_FARM_CHICKEN_COLORS) {
+    registerChickenFramesForColor(scene, color);
+
+    for (const [state, config] of Object.entries(CHICKEN_STATES) as Array<
+      [PixelFarmChickenState, (typeof CHICKEN_STATES)[PixelFarmChickenState]]
+    >) {
+      const key = animationKey(color, state);
+      if (scene.anims.exists(key)) {
+        continue;
+      }
+
+      scene.anims.create({
+        key,
+        frames: config.frames.map((frame) => ({
+          key: chickenTextureKey(color),
+          frame: chickenFrameName(frame),
+        })),
+        frameRate: config.fps,
+        repeat: config.repeat,
+      });
+    }
+  }
+}
+
+export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
+  private readonly canOccupy: PixelFarmChickenConfig["canOccupy"];
+  private readonly color: PixelFarmChickenColor;
+  private readonly depthBase: number;
+  private chickenState: PixelFarmChickenState = "idle";
+  private stateTimerMs = 0;
+  private loveCooldownMs = 0;
+  private target: Phaser.Math.Vector2 | null = null;
+
+  constructor(config: PixelFarmChickenConfig) {
+    super(
+      config.scene,
+      config.startX,
+      config.startY,
+      chickenTextureKey(config.color),
+      chickenFrameName(CHICKEN_STATES.idle.frames[0]!),
+    );
+
+    this.canOccupy = config.canOccupy;
+    this.color = config.color;
+    this.depthBase = config.depth;
+
+    config.scene.add.existing(this);
+    config.scene.physics.add.existing(this);
+
+    this.setOrigin(CHICKEN_SPRITE_ORIGIN_X, CHICKEN_SPRITE_ORIGIN_Y);
+    this.setDepth(actorDepth(this.depthBase, this.y));
+    const body = this.body as Phaser.Physics.Arcade.Body;
+
+    body.setSize(CHICKEN_BODY_WIDTH, CHICKEN_BODY_HEIGHT);
+    body.setAllowGravity(false);
+    body.setCollideWorldBounds(false);
+    this.setDrag(900, 900);
+
+    this.on(Phaser.Animations.Events.ANIMATION_COMPLETE, this.handleAnimationComplete, this);
+    this.enterTimedState("idle", randomRange(1000, 2000));
+  }
+
+  override destroy(fromScene?: boolean): void {
+    this.off(Phaser.Animations.Events.ANIMATION_COMPLETE, this.handleAnimationComplete, this);
+    super.destroy(fromScene);
+  }
+
+  update(deltaMs: number): void {
+    this.syncBody();
+    this.loveCooldownMs = Math.max(0, this.loveCooldownMs - deltaMs);
+
+    if (this.chickenState === "walk") {
+      this.updateWalk(deltaMs);
+      this.setDepth(actorDepth(this.depthBase, this.y));
+      return;
+    }
+
+    this.setVelocity(0, 0);
+
+    if (
+      this.chickenState === "sitDown" ||
+      this.chickenState === "standUp" ||
+      this.chickenState === "hover" ||
+      this.chickenState === "hop" ||
+      this.chickenState === "love"
+    ) {
+      this.setDepth(actorDepth(this.depthBase, this.y));
+      return;
+    }
+
+    this.stateTimerMs -= deltaMs;
+    if (this.stateTimerMs <= 0) {
+      this.chooseNextState();
+    }
+
+    this.setDepth(actorDepth(this.depthBase, this.y));
+  }
+
+  triggerLove(sourceX: number): void {
+    if (this.loveCooldownMs > 0 || this.chickenState === "love") {
+      return;
+    }
+
+    this.setFlipX(sourceX < this.x);
+    this.loveCooldownMs = CHICKEN_LOVE_COOLDOWN_MS;
+    this.target = null;
+    this.stateTimerMs = 0;
+    this.chickenState = "love";
+    this.setVelocity(0, 0);
+    this.playState("love", false);
+  }
+
+  private updateWalk(deltaMs: number): void {
+    if (!this.target) {
+      this.enterTimedState("idle", randomRange(900, 1600));
+      return;
+    }
+
+    const deltaSeconds = deltaMs / 1000;
+    const deltaX = this.target.x - this.x;
+    const deltaY = this.target.y - this.y;
+    const distance = Math.hypot(deltaX, deltaY);
+
+    if (distance <= 3) {
+      this.enterTimedState("idle", randomRange(900, 1600));
+      return;
+    }
+
+    const normalizedX = deltaX / distance;
+    const normalizedY = deltaY / distance;
+    let velocityX = normalizedX * CHICKEN_WALK_SPEED;
+    let velocityY = normalizedY * CHICKEN_WALK_SPEED;
+
+    if (!this.canOccupyAt(this.x + velocityX * deltaSeconds, this.y, velocityX, 0)) {
+      velocityX = 0;
+    }
+
+    if (!this.canOccupyAt(
+      this.x + velocityX * deltaSeconds,
+      this.y + velocityY * deltaSeconds,
+      velocityX,
+      velocityY,
+    )) {
+      velocityY = 0;
+    }
+
+    if (velocityX === 0 && velocityY === 0) {
+      this.enterTimedState("idle", randomRange(900, 1600));
+      return;
+    }
+
+    if (Math.abs(velocityX) > 0.5) {
+      this.setFlipX(velocityX < 0);
+    }
+
+    this.setVelocity(velocityX, velocityY);
+    this.stateTimerMs -= deltaMs;
+    if (this.stateTimerMs <= 0) {
+      this.enterTimedState("idle", randomRange(900, 1600));
+    }
+  }
+
+  private chooseNextState(): void {
+    const roll = Math.random();
+
+    if (roll < 0.3 && this.startWalk()) {
+      return;
+    }
+
+    if (roll < 0.56) {
+      this.enterTimedState("peck", randomRange(1200, 2200));
+      return;
+    }
+
+    if (roll < 0.74) {
+      const calmStates: Array<Extract<
+        PixelFarmChickenState,
+        "look" | "preen" | "shake" | "blink"
+      >> = ["look", "preen", "shake", "blink"];
+      this.enterTimedState(
+        Phaser.Utils.Array.GetRandom(calmStates),
+        randomRange(1200, 2200),
+      );
+      return;
+    }
+
+    if (roll < 0.88) {
+      this.chickenState = "sitDown";
+      this.target = null;
+      this.playState("sitDown", false);
+      return;
+    }
+
+    if (roll < 0.97) {
+      this.chickenState = "hover";
+      this.target = null;
+      this.playState("hover", false);
+      return;
+    }
+
+    this.enterTimedState("idle", randomRange(1000, 2000));
+  }
+
+  private startWalk(): boolean {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const offsetColumn = randomRange(-4, 4);
+      const offsetRow = randomRange(-4, 4);
+
+      if (offsetColumn === 0 && offsetRow === 0) {
+        continue;
+      }
+
+      const targetX = this.x + offsetColumn * PIXEL_FARM_TILE_SIZE;
+      const targetY = this.y + offsetRow * PIXEL_FARM_TILE_SIZE;
+      if (!this.canOccupyAt(targetX, targetY)) {
+        continue;
+      }
+
+      this.target = new Phaser.Math.Vector2(targetX, targetY);
+      this.chickenState = "walk";
+      this.stateTimerMs = randomRange(1200, 2600);
+      this.playState("walk");
+      return true;
+    }
+
+    return false;
+  }
+
+  private handleAnimationComplete(): void {
+    if (this.chickenState === "sitDown") {
+      this.enterTimedState(Math.random() < 0.5 ? "sitIdle" : "sitLook", randomRange(1400, 2400));
+      return;
+    }
+
+    if (this.chickenState === "standUp") {
+      this.enterTimedState("idle", randomRange(900, 1600));
+      return;
+    }
+
+    if (this.chickenState === "hover") {
+      this.chickenState = "hop";
+      this.playState("hop", false);
+      return;
+    }
+
+    if (this.chickenState === "hop" || this.chickenState === "love") {
+      this.enterTimedState("idle", randomRange(900, 1600));
+    }
+  }
+
+  private enterTimedState(
+    state: Extract<
+      PixelFarmChickenState,
+      "idle" | "peck" | "look" | "preen" | "shake" | "blink" | "sitIdle" | "sitLook"
+    >,
+    durationMs: number,
+  ): void {
+    this.chickenState = state;
+    this.stateTimerMs = durationMs;
+    this.target = null;
+    this.setVelocity(0, 0);
+    this.playState(state, false);
+  }
+
+  private canOccupyAt(x: number, y: number, moveX = 0, moveY = 0): boolean {
+    const frameWidth = CHICKEN_FRAME_WIDTH;
+    const frameHeight = chickenFrameHeight(this.currentFrameIndex());
+    const bodyOffsetX = Math.round((frameWidth - CHICKEN_BODY_WIDTH) * 0.5);
+    const bodyOffsetY = frameHeight - CHICKEN_BODY_HEIGHT - CHICKEN_BODY_BOTTOM_MARGIN;
+    const left = x - frameWidth * CHICKEN_SPRITE_ORIGIN_X + bodyOffsetX;
+    const top = y - frameHeight * CHICKEN_SPRITE_ORIGIN_Y + bodyOffsetY;
+
+    return this.canOccupy(
+      left,
+      top,
+      left + CHICKEN_BODY_WIDTH,
+      top + CHICKEN_BODY_HEIGHT,
+      moveX,
+      moveY,
+    );
+  }
+
+  private currentFrameIndex(): number {
+    const frameName = this.frame.name;
+    return Number.parseInt(String(frameName).replace("frame-", ""), 10);
+  }
+
+  private syncBody(): void {
+    const body = this.body as Phaser.Physics.Arcade.Body | undefined;
+    if (!body) {
+      return;
+    }
+
+    const frameWidth = this.frame.realWidth;
+    const frameHeight = this.frame.realHeight;
+    const bodyOffsetX = Math.round((frameWidth - CHICKEN_BODY_WIDTH) * 0.5);
+    const bodyOffsetY = frameHeight - CHICKEN_BODY_HEIGHT - CHICKEN_BODY_BOTTOM_MARGIN;
+
+    body.setSize(CHICKEN_BODY_WIDTH, CHICKEN_BODY_HEIGHT);
+    body.setOffset(bodyOffsetX, bodyOffsetY);
+  }
+
+  private playState(state: PixelFarmChickenState, ignoreIfPlaying = true): void {
+    this.anims.play(animationKey(this.color, state), ignoreIfPlaying);
+  }
+}
