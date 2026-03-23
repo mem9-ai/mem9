@@ -1,13 +1,5 @@
 import Phaser from "phaser";
-import premiumCharacterUrl from "@/assets/game-objects/characters/Premium Charakter Spritesheet.png";
-import water1Url from "@/assets/water-frame-1.png";
-import water2Url from "@/assets/water-frame-2.png";
-import water3Url from "@/assets/water-frame-3.png";
-import water4Url from "@/assets/water-frame-4.png";
 import {
-  PIXEL_FARM_CHARACTER_FRAME_HEIGHT,
-  PIXEL_FARM_CHARACTER_FRAME_WIDTH,
-  PIXEL_FARM_CHARACTER_TEXTURE_KEY,
   PixelFarmCharacter,
   type PixelFarmCharacterInput,
   type PixelFarmCharacterToolAction,
@@ -24,8 +16,12 @@ import {
   tileOverrideAt,
 } from "@/lib/pixel-farm/island-mask";
 import {
+  pixelFarmWaterTextureKey,
+  preloadPixelFarmRuntimeAssets,
+  PIXEL_FARM_WATER_TEXTURE_KEYS,
+} from "@/lib/pixel-farm/runtime-assets";
+import {
   PIXEL_FARM_ASSET_SOURCE_CONFIG,
-  PIXEL_FARM_ASSET_SOURCE_IDS,
   PIXEL_FARM_TILE_SIZE,
 } from "@/lib/pixel-farm/tileset-config";
 
@@ -38,6 +34,7 @@ const ISLAND_ROWS = PIXEL_FARM_MASK_ROWS;
 const CAMERA_MAX_ZOOM = 3;
 const CAMERA_TARGET_FILL = 0.8;
 const ACTOR_LAYER_DEPTH = 15;
+const WATER_FRAME_COUNT = PIXEL_FARM_WATER_TEXTURE_KEYS.length;
 const WORLD_PIXEL_WIDTH = WORLD_COLUMNS * PIXEL_FARM_TILE_SIZE;
 const WORLD_PIXEL_HEIGHT = WORLD_ROWS * PIXEL_FARM_TILE_SIZE;
 const ISLAND_PIXEL_WIDTH = PIXEL_FARM_MASK_BOUNDS.width * PIXEL_FARM_TILE_SIZE;
@@ -54,12 +51,6 @@ const ISLAND_CENTER_Y =
   (PIXEL_FARM_MASK_BOUNDS.minRow + PIXEL_FARM_MASK_BOUNDS.maxRow + 1) *
     PIXEL_FARM_TILE_SIZE *
     0.5;
-const WATER_TEXTURE_KEYS = [
-  "pixel-farm-water-1",
-  "pixel-farm-water-2",
-  "pixel-farm-water-3",
-  "pixel-farm-water-4",
-] as const;
 
 interface WaterTile {
   sprite: Phaser.GameObjects.Image;
@@ -86,10 +77,6 @@ interface CharacterKeyboardControls {
   hoe: Phaser.Input.Keyboard.Key;
   axe: Phaser.Input.Keyboard.Key;
   water: Phaser.Input.Keyboard.Key;
-}
-
-function waterTextureKey(index: number): (typeof WATER_TEXTURE_KEYS)[number] {
-  return WATER_TEXTURE_KEYS[index % WATER_TEXTURE_KEYS.length]!;
 }
 
 function localCellKey(row: number, column: number): string {
@@ -120,22 +107,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   }
 
   preload(): void {
-    for (const sourceId of PIXEL_FARM_ASSET_SOURCE_IDS) {
-      const source = PIXEL_FARM_ASSET_SOURCE_CONFIG[sourceId];
-      this.load.spritesheet(source.textureKey, source.imageUrl, {
-        frameWidth: PIXEL_FARM_TILE_SIZE,
-        frameHeight: PIXEL_FARM_TILE_SIZE,
-      });
-    }
-
-    this.load.image(WATER_TEXTURE_KEYS[0], water1Url);
-    this.load.image(WATER_TEXTURE_KEYS[1], water2Url);
-    this.load.image(WATER_TEXTURE_KEYS[2], water3Url);
-    this.load.image(WATER_TEXTURE_KEYS[3], water4Url);
-    this.load.spritesheet(PIXEL_FARM_CHARACTER_TEXTURE_KEY, premiumCharacterUrl, {
-      frameWidth: PIXEL_FARM_CHARACTER_FRAME_WIDTH,
-      frameHeight: PIXEL_FARM_CHARACTER_FRAME_HEIGHT,
-    });
+    preloadPixelFarmRuntimeAssets(this);
   }
 
   create(): void {
@@ -210,12 +182,12 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
     for (let row = 0; row < WORLD_ROWS; row += 1) {
       for (let column = 0; column < WORLD_COLUMNS; column += 1) {
-        const phase = (row + column) % WATER_TEXTURE_KEYS.length < 2 ? 0 : 2;
-        const frameIndex = (this.waterFrame + phase) % WATER_TEXTURE_KEYS.length;
+        const phase = (row + column) % WATER_FRAME_COUNT < 2 ? 0 : 2;
+        const frameIndex = (this.waterFrame + phase) % WATER_FRAME_COUNT;
         const sprite = this.add.image(
           column * PIXEL_FARM_TILE_SIZE,
           row * PIXEL_FARM_TILE_SIZE,
-          waterTextureKey(frameIndex),
+          pixelFarmWaterTextureKey(frameIndex),
         );
 
         sprite.setOrigin(0, 0);
@@ -226,11 +198,11 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   }
 
   private advanceWaterFrame(): void {
-    this.waterFrame = (this.waterFrame + 1) % WATER_TEXTURE_KEYS.length;
+    this.waterFrame = (this.waterFrame + 1) % WATER_FRAME_COUNT;
 
     for (const tile of this.waterTiles) {
-      const frameIndex = (this.waterFrame + tile.phase) % WATER_TEXTURE_KEYS.length;
-      tile.sprite.setTexture(waterTextureKey(frameIndex));
+      const frameIndex = (this.waterFrame + tile.phase) % WATER_FRAME_COUNT;
+      tile.sprite.setTexture(pixelFarmWaterTextureKey(frameIndex));
     }
   }
 

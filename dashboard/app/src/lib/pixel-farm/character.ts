@@ -1,8 +1,5 @@
 import Phaser from "phaser";
-
-export const PIXEL_FARM_CHARACTER_TEXTURE_KEY = "pixel-farm-character-premium";
-export const PIXEL_FARM_CHARACTER_FRAME_WIDTH = 48;
-export const PIXEL_FARM_CHARACTER_FRAME_HEIGHT = 48;
+import { PIXEL_FARM_CHARACTER_TEXTURE_KEY } from "@/lib/pixel-farm/runtime-assets";
 
 const CHARACTER_SPRITE_ORIGIN_X = 0.5;
 const CHARACTER_SPRITE_ORIGIN_Y = 0.9;
