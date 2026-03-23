@@ -7,6 +7,8 @@ import {
 import {
   PixelFarmChicken,
   PIXEL_FARM_CHICKEN_COLORS,
+  type PixelFarmChickenColor,
+  type PixelFarmChickenState,
   registerPixelFarmChickenAnimations,
 } from "@/lib/pixel-farm/chicken";
 import {
@@ -103,6 +105,30 @@ interface PixelFarmCell {
   column: number;
 }
 
+export interface PixelFarmChickenDebugState {
+  color: PixelFarmChickenColor;
+  flipX: boolean;
+  playing: boolean;
+  replayNonce: number;
+  state: PixelFarmChickenState;
+  visible: boolean;
+}
+
+export interface PixelFarmGameOptions {
+  getChickenDebugState?: () => PixelFarmChickenDebugState | null;
+}
+
+export function createDefaultPixelFarmChickenDebugState(): PixelFarmChickenDebugState {
+  return {
+    color: "default",
+    flipX: false,
+    playing: true,
+    replayNonce: 0,
+    state: "idle",
+    visible: true,
+  };
+}
+
 function localCellKey(row: number, column: number): string {
   return `${row}:${column}`;
 }
@@ -121,6 +147,9 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   private chickenGroup?: Phaser.Physics.Arcade.Group;
   private cows: PixelFarmCow[] = [];
   private cowGroup?: Phaser.Physics.Arcade.Group;
+  private debugChicken?: PixelFarmChicken;
+  private debugChickenColor?: PixelFarmChickenColor;
+  private lastChickenDebugSignature?: string;
   private characterControls?: CharacterKeyboardControls;
   private readonly blockedCells = new Set<string>();
   private dragState: DragState = {
@@ -131,7 +160,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   };
   private hasCameraInteraction = false;
 
-  constructor() {
+  constructor(private readonly options: PixelFarmGameOptions = {}) {
     super("pixel-farm-sandbox");
   }
 
@@ -211,6 +240,10 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.chickens = [];
     this.chickenGroup?.clear(true, false);
     this.chickenGroup = undefined;
+    this.debugChicken?.destroy();
+    this.debugChicken = undefined;
+    this.debugChickenColor = undefined;
+    this.lastChickenDebugSignature = undefined;
     for (const cow of this.cows) {
       cow.destroy();
     }
@@ -320,6 +353,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     for (const cow of this.cows) {
       cow.update(delta);
     }
+    this.applyChickenDebugState();
   }
 
   private bindCharacterControls(): void {
@@ -585,6 +619,45 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       this.chickens.push(chicken);
       this.chickenGroup?.add(chicken);
     });
+  }
+
+  private applyChickenDebugState(): void {
+    const debugState = this.options.getChickenDebugState?.() ?? null;
+    if (!debugState) {
+      if (this.debugChicken) {
+        this.debugChicken.setVisible(false);
+      }
+      this.lastChickenDebugSignature = undefined;
+      return;
+    }
+
+    if (!this.debugChicken || this.debugChickenColor !== debugState.color) {
+      this.debugChicken?.destroy();
+      this.debugChicken = new PixelFarmChicken({
+        scene: this,
+        color: debugState.color,
+        depth: ACTOR_LAYER_DEPTH + 1,
+        startX: ISLAND_CENTER_X,
+        startY: ISLAND_CENTER_Y + PIXEL_FARM_TILE_SIZE,
+        canOccupy: this.canActorOccupy,
+      });
+      this.debugChickenColor = debugState.color;
+      this.lastChickenDebugSignature = undefined;
+    }
+
+    this.debugChicken.setVisible(debugState.visible);
+    if (!debugState.visible) {
+      this.lastChickenDebugSignature = undefined;
+      return;
+    }
+
+    const signature = JSON.stringify(debugState);
+    if (signature === this.lastChickenDebugSignature) {
+      return;
+    }
+
+    this.debugChicken.applyDebugPose(debugState.state, debugState.flipX, debugState.playing);
+    this.lastChickenDebugSignature = signature;
   }
 
   private findCharacterSpawnCell(): PixelFarmCell {
@@ -856,7 +929,10 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   }
 }
 
-export function createPixelFarmGame(parent: HTMLElement): Phaser.Game {
+export function createPixelFarmGame(
+  parent: HTMLElement,
+  options: PixelFarmGameOptions = {},
+): Phaser.Game {
   return new Phaser.Game({
     type: Phaser.AUTO,
     parent,
@@ -871,7 +947,7 @@ export function createPixelFarmGame(parent: HTMLElement): Phaser.Game {
         debugShowVelocity: false,
       },
     },
-    scene: [PixelFarmSandboxScene],
+    scene: [new PixelFarmSandboxScene(options)],
     scale: {
       mode: Phaser.Scale.RESIZE,
       autoCenter: Phaser.Scale.CENTER_BOTH,

@@ -2,20 +2,30 @@ import Phaser from "phaser";
 import { PIXEL_FARM_CHICKEN_TEXTURE_KEYS } from "@/lib/pixel-farm/runtime-assets";
 import { PIXEL_FARM_TILE_SIZE } from "@/lib/pixel-farm/tileset-config";
 
-const CHICKEN_SPRITE_ORIGIN_X = 0.5;
-const CHICKEN_SPRITE_ORIGIN_Y = 1;
 const CHICKEN_BODY_WIDTH = 8;
 const CHICKEN_BODY_HEIGHT = 5;
 const CHICKEN_WALK_SPEED = 36;
 const CHICKEN_LOVE_COOLDOWN_MS = 2200;
-const CHICKEN_FRAME_WIDTH = 16;
+const CHICKEN_TOP_FRAME_WIDTH = 16;
 const CHICKEN_TOP_FRAME_HEIGHT = 16;
+const CHICKEN_BOTTOM_FRAME_WIDTH = 32;
 const CHICKEN_BOTTOM_FRAME_HEIGHT = 32;
-const CHICKEN_FRAMES_PER_ROW = 8;
+const CHICKEN_BOTTOM_LOVE_FRAME_WIDTH = 16;
+const CHICKEN_TOP_FRAMES_PER_ROW = 8;
 const CHICKEN_TOP_ROW_COUNT = 13;
-const CHICKEN_TOP_FRAME_COUNT = CHICKEN_TOP_ROW_COUNT * CHICKEN_FRAMES_PER_ROW;
+const CHICKEN_TOP_FRAME_COUNT = CHICKEN_TOP_ROW_COUNT * CHICKEN_TOP_FRAMES_PER_ROW;
 const CHICKEN_BOTTOM_FRAME_START_Y = CHICKEN_TOP_ROW_COUNT * CHICKEN_TOP_FRAME_HEIGHT;
 const CHICKEN_BODY_BOTTOM_MARGIN = 1;
+const CHICKEN_HOVER_FRAME_COUNT = 6;
+const CHICKEN_FLY_FRAME_COUNT = 5;
+const CHICKEN_HOP_FRAME_COUNT = 4;
+const CHICKEN_LOVE_FRAME_COUNT = 7;
+const CHICKEN_HOVER_FRAME_START = CHICKEN_TOP_FRAME_COUNT;
+const CHICKEN_FLY_FRAME_START = CHICKEN_HOVER_FRAME_START + CHICKEN_HOVER_FRAME_COUNT;
+const CHICKEN_HOP_FRAME_START = CHICKEN_FLY_FRAME_START + CHICKEN_FLY_FRAME_COUNT;
+const CHICKEN_LOVE_FRAME_START = CHICKEN_HOP_FRAME_START + CHICKEN_HOP_FRAME_COUNT;
+const CHICKEN_STANDARD_ANCHOR_X = CHICKEN_TOP_FRAME_WIDTH * 0.5;
+const CHICKEN_WIDE_FRAME_ANCHOR_X = CHICKEN_BOTTOM_FRAME_WIDTH - CHICKEN_STANDARD_ANCHOR_X;
 
 export const PIXEL_FARM_CHICKEN_COLORS = [
   "blue",
@@ -32,20 +42,21 @@ type ChickenAnimationConfig = {
 };
 
 function topRowFrames(row: number, count: number): number[] {
-  return Array.from({ length: count }, (_, index) => row * CHICKEN_FRAMES_PER_ROW + index);
+  return Array.from({ length: count }, (_, index) => row * CHICKEN_TOP_FRAMES_PER_ROW + index);
 }
 
-function bottomRowFrames(row: number, columns: readonly number[]): number[] {
-  const start = CHICKEN_TOP_FRAME_COUNT + row * CHICKEN_FRAMES_PER_ROW;
-  return columns.map((column) => start + column);
+function rangeFrames(start: number, count: number): number[] {
+  return Array.from({ length: count }, (_, index) => start + index);
 }
 
 function chickenFrameName(index: number): string {
   return `frame-${index}`;
 }
 
-function chickenFrameHeight(index: number): number {
-  return index < CHICKEN_TOP_FRAME_COUNT ? CHICKEN_TOP_FRAME_HEIGHT : CHICKEN_BOTTOM_FRAME_HEIGHT;
+function chickenAnchorX(frameWidth: number): number {
+  return frameWidth === CHICKEN_BOTTOM_FRAME_WIDTH
+    ? CHICKEN_WIDE_FRAME_ANCHOR_X
+    : CHICKEN_STANDARD_ANCHOR_X;
 }
 
 const CHICKEN_STATES = {
@@ -62,14 +73,17 @@ const CHICKEN_STATES = {
   standUp: { frames: topRowFrames(10, 4), fps: 8, repeat: 0 },
   groundFlutter: { frames: topRowFrames(11, 6), fps: 10, repeat: -1 },
   blink: { frames: topRowFrames(12, 2), fps: 6, repeat: -1 },
-  hover: { frames: [...bottomRowFrames(0, [1, 3, 5, 7]), ...bottomRowFrames(1, [1, 3])], fps: 10, repeat: 0 },
-  fly: { frames: [...bottomRowFrames(2, [1, 3, 4, 5, 6, 7]), ...bottomRowFrames(3, [1])], fps: 10, repeat: -1 },
-  hop: { frames: bottomRowFrames(4, [1, 3, 5, 7]), fps: 10, repeat: 0 },
-  love: { frames: bottomRowFrames(6, [0, 1, 2, 3, 4, 5, 6]), fps: 8, repeat: 0 },
+  hover: { frames: rangeFrames(CHICKEN_HOVER_FRAME_START, CHICKEN_HOVER_FRAME_COUNT), fps: 10, repeat: 0 },
+  fly: { frames: rangeFrames(CHICKEN_FLY_FRAME_START, CHICKEN_FLY_FRAME_COUNT), fps: 10, repeat: -1 },
+  hop: { frames: rangeFrames(CHICKEN_HOP_FRAME_START, CHICKEN_HOP_FRAME_COUNT), fps: 10, repeat: 0 },
+  love: { frames: rangeFrames(CHICKEN_LOVE_FRAME_START, CHICKEN_LOVE_FRAME_COUNT), fps: 8, repeat: 0 },
 } as const satisfies Record<string, ChickenAnimationConfig>;
 
 export type PixelFarmChickenColor = (typeof PIXEL_FARM_CHICKEN_COLORS)[number];
 export type PixelFarmChickenState = keyof typeof CHICKEN_STATES;
+export const PIXEL_FARM_CHICKEN_STATE_OPTIONS = Object.keys(
+  CHICKEN_STATES,
+) as PixelFarmChickenState[];
 
 export interface PixelFarmChickenConfig {
   scene: Phaser.Scene;
@@ -103,6 +117,17 @@ function randomRange(min: number, max: number): number {
   return Phaser.Math.Between(min, max);
 }
 
+function addChickenFrame(
+  texture: Phaser.Textures.Texture,
+  index: number,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): void {
+  texture.add(chickenFrameName(index), 0, x, y, width, height);
+}
+
 function registerChickenFramesForColor(scene: Phaser.Scene, color: PixelFarmChickenColor): void {
   const texture = scene.textures.get(chickenTextureKey(color));
   if (!texture || texture.has(chickenFrameName(0))) {
@@ -110,31 +135,51 @@ function registerChickenFramesForColor(scene: Phaser.Scene, color: PixelFarmChic
   }
 
   for (let row = 0; row < CHICKEN_TOP_ROW_COUNT; row += 1) {
-    for (let column = 0; column < CHICKEN_FRAMES_PER_ROW; column += 1) {
-      const index = row * CHICKEN_FRAMES_PER_ROW + column;
-      texture.add(
-        chickenFrameName(index),
-        0,
-        column * CHICKEN_FRAME_WIDTH,
+    for (let column = 0; column < CHICKEN_TOP_FRAMES_PER_ROW; column += 1) {
+      const index = row * CHICKEN_TOP_FRAMES_PER_ROW + column;
+      addChickenFrame(
+        texture,
+        index,
+        column * CHICKEN_TOP_FRAME_WIDTH,
         row * CHICKEN_TOP_FRAME_HEIGHT,
-        CHICKEN_FRAME_WIDTH,
+        CHICKEN_TOP_FRAME_WIDTH,
         CHICKEN_TOP_FRAME_HEIGHT,
       );
     }
   }
 
-  for (let row = 0; row < 7; row += 1) {
-    for (let column = 0; column < CHICKEN_FRAMES_PER_ROW; column += 1) {
-      const index = CHICKEN_TOP_FRAME_COUNT + row * CHICKEN_FRAMES_PER_ROW + column;
-      texture.add(
-        chickenFrameName(index),
-        0,
-        column * CHICKEN_FRAME_WIDTH,
+  let bottomFrameIndex = CHICKEN_HOVER_FRAME_START;
+  const bottomAnimationRows = [
+    { row: 0, count: 4 },
+    { row: 1, count: 2 },
+    { row: 2, count: 4 },
+    { row: 3, count: 1 },
+    { row: 4, count: 4 },
+  ] as const;
+
+  for (const { row, count } of bottomAnimationRows) {
+    for (let column = 0; column < count; column += 1) {
+      addChickenFrame(
+        texture,
+        bottomFrameIndex,
+        column * CHICKEN_BOTTOM_FRAME_WIDTH,
         CHICKEN_BOTTOM_FRAME_START_Y + row * CHICKEN_BOTTOM_FRAME_HEIGHT,
-        CHICKEN_FRAME_WIDTH,
+        CHICKEN_BOTTOM_FRAME_WIDTH,
         CHICKEN_BOTTOM_FRAME_HEIGHT,
       );
+      bottomFrameIndex += 1;
     }
+  }
+
+  for (let column = 0; column < CHICKEN_LOVE_FRAME_COUNT; column += 1) {
+    addChickenFrame(
+      texture,
+      CHICKEN_LOVE_FRAME_START + column,
+      column * CHICKEN_BOTTOM_LOVE_FRAME_WIDTH,
+      CHICKEN_BOTTOM_FRAME_START_Y + 6 * CHICKEN_BOTTOM_FRAME_HEIGHT,
+      CHICKEN_BOTTOM_LOVE_FRAME_WIDTH,
+      CHICKEN_BOTTOM_FRAME_HEIGHT,
+    );
   }
 }
 
@@ -168,6 +213,7 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
   private readonly color: PixelFarmChickenColor;
   private readonly depthBase: number;
   private chickenState: PixelFarmChickenState = "idle";
+  private debugPoseLocked = false;
   private stateTimerMs = 0;
   private loveCooldownMs = 0;
   private target: Phaser.Math.Vector2 | null = null;
@@ -188,7 +234,7 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
     config.scene.add.existing(this);
     config.scene.physics.add.existing(this);
 
-    this.setOrigin(CHICKEN_SPRITE_ORIGIN_X, CHICKEN_SPRITE_ORIGIN_Y);
+    this.setOrigin(0, 1);
     this.setDepth(actorDepth(this.depthBase, this.y));
     const body = this.body as Phaser.Physics.Arcade.Body;
 
@@ -196,6 +242,7 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
     body.setAllowGravity(false);
     body.setCollideWorldBounds(false);
     this.setDrag(900, 900);
+    this.syncBody();
 
     this.on(Phaser.Animations.Events.ANIMATION_COMPLETE, this.handleAnimationComplete, this);
     this.enterTimedState("idle", randomRange(1000, 2000));
@@ -208,6 +255,13 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
 
   update(deltaMs: number): void {
     this.syncBody();
+
+    if (this.debugPoseLocked) {
+      this.setVelocity(0, 0);
+      this.setDepth(actorDepth(this.depthBase, this.y));
+      return;
+    }
+
     this.loveCooldownMs = Math.max(0, this.loveCooldownMs - deltaMs);
 
     if (this.chickenState === "walk") {
@@ -249,6 +303,24 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
     this.chickenState = "love";
     this.setVelocity(0, 0);
     this.playState("love", false);
+  }
+
+  applyDebugPose(state: PixelFarmChickenState, flipX: boolean, playing: boolean): void {
+    this.debugPoseLocked = true;
+    this.chickenState = state;
+    this.target = null;
+    this.stateTimerMs = 0;
+    this.setVelocity(0, 0);
+    this.setFlipX(flipX);
+    this.playState(state, false);
+
+    if (playing) {
+      this.anims.resume();
+    } else {
+      this.anims.pause();
+    }
+
+    this.syncBody();
   }
 
   private updateWalk(deltaMs: number): void {
@@ -368,6 +440,10 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
   }
 
   private handleAnimationComplete(): void {
+    if (this.debugPoseLocked) {
+      return;
+    }
+
     if (this.chickenState === "sitDown") {
       this.enterTimedState(Math.random() < 0.5 ? "sitIdle" : "sitLook", randomRange(1400, 2400));
       return;
@@ -404,12 +480,13 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
   }
 
   private canOccupyAt(x: number, y: number, moveX = 0, moveY = 0): boolean {
-    const frameWidth = CHICKEN_FRAME_WIDTH;
-    const frameHeight = chickenFrameHeight(this.currentFrameIndex());
-    const bodyOffsetX = Math.round((frameWidth - CHICKEN_BODY_WIDTH) * 0.5);
+    const frameWidth = this.frame.realWidth;
+    const frameHeight = this.frame.realHeight;
+    const anchorX = chickenAnchorX(frameWidth);
+    const bodyOffsetX = Math.round(anchorX - CHICKEN_BODY_WIDTH * 0.5);
     const bodyOffsetY = frameHeight - CHICKEN_BODY_HEIGHT - CHICKEN_BODY_BOTTOM_MARGIN;
-    const left = x - frameWidth * CHICKEN_SPRITE_ORIGIN_X + bodyOffsetX;
-    const top = y - frameHeight * CHICKEN_SPRITE_ORIGIN_Y + bodyOffsetY;
+    const left = x - anchorX + bodyOffsetX;
+    const top = y - frameHeight + bodyOffsetY;
 
     return this.canOccupy(
       left,
@@ -421,11 +498,6 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
     );
   }
 
-  private currentFrameIndex(): number {
-    const frameName = this.frame.name;
-    return Number.parseInt(String(frameName).replace("frame-", ""), 10);
-  }
-
   private syncBody(): void {
     const body = this.body as Phaser.Physics.Arcade.Body | undefined;
     if (!body) {
@@ -434,9 +506,11 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
 
     const frameWidth = this.frame.realWidth;
     const frameHeight = this.frame.realHeight;
-    const bodyOffsetX = Math.round((frameWidth - CHICKEN_BODY_WIDTH) * 0.5);
+    const anchorX = chickenAnchorX(frameWidth);
+    const bodyOffsetX = Math.round(anchorX - CHICKEN_BODY_WIDTH * 0.5);
     const bodyOffsetY = frameHeight - CHICKEN_BODY_HEIGHT - CHICKEN_BODY_BOTTOM_MARGIN;
 
+    this.setDisplayOrigin(anchorX, frameHeight);
     body.setSize(CHICKEN_BODY_WIDTH, CHICKEN_BODY_HEIGHT);
     body.setOffset(bodyOffsetX, bodyOffsetY);
   }
