@@ -2,6 +2,8 @@ import Phaser from "phaser";
 import {
   PixelFarmBabyCow,
   PIXEL_FARM_BABY_COW_COLORS,
+  type PixelFarmBabyCowColor,
+  type PixelFarmBabyCowState,
   registerPixelFarmBabyCowAnimations,
 } from "@/lib/pixel-farm/baby-cow";
 import {
@@ -13,6 +15,8 @@ import {
 } from "@/lib/pixel-farm/chicken";
 import {
   PixelFarmCharacter,
+  type PixelFarmCharacterAction,
+  type PixelFarmCharacterDirection,
   type PixelFarmCharacterInput,
   type PixelFarmCharacterToolAction,
   registerPixelFarmCharacterAnimations,
@@ -20,6 +24,8 @@ import {
 import {
   PixelFarmCow,
   PIXEL_FARM_COW_COLORS,
+  type PixelFarmCowColor,
+  type PixelFarmCowState,
   registerPixelFarmCowAnimations,
 } from "@/lib/pixel-farm/cow";
 import {
@@ -105,33 +111,95 @@ interface PixelFarmCell {
   column: number;
 }
 
-export interface PixelFarmChickenDebugState {
-  color: PixelFarmChickenColor;
-  flipX: boolean;
+export const PIXEL_FARM_DEBUG_ACTOR_TYPES = [
+  "character",
+  "cow",
+  "baby-cow",
+  "chicken",
+] as const;
+
+export type PixelFarmDebugActorType = (typeof PIXEL_FARM_DEBUG_ACTOR_TYPES)[number];
+export type PixelFarmDebugActorVariant =
+  | "default"
+  | PixelFarmCowColor
+  | PixelFarmBabyCowColor
+  | PixelFarmChickenColor;
+export type PixelFarmDebugActorState =
+  | PixelFarmCharacterAction
+  | PixelFarmCowState
+  | PixelFarmBabyCowState
+  | PixelFarmChickenState;
+
+export interface PixelFarmDebugState {
+  direction: PixelFarmCharacterDirection;
   playing: boolean;
   replayNonce: number;
-  state: PixelFarmChickenState;
+  state: PixelFarmDebugActorState;
+  type: PixelFarmDebugActorType;
+  variant: PixelFarmDebugActorVariant;
   visible: boolean;
 }
 
 export interface PixelFarmGameOptions {
-  getChickenDebugState?: () => PixelFarmChickenDebugState | null;
+  getDebugActorState?: () => PixelFarmDebugState | null;
 }
 
-export function createDefaultPixelFarmChickenDebugState(): PixelFarmChickenDebugState {
-  return {
-    color: "default",
-    flipX: false,
-    playing: true,
-    replayNonce: 0,
-    state: "idle",
-    visible: true,
-  };
+export function createDefaultPixelFarmDebugState(
+  type: PixelFarmDebugActorType = "chicken",
+): PixelFarmDebugState {
+  switch (type) {
+    case "character":
+      return {
+        direction: "down",
+        playing: true,
+        replayNonce: 0,
+        state: "idle",
+        type,
+        variant: "default",
+        visible: true,
+      };
+    case "cow":
+      return {
+        direction: "right",
+        playing: true,
+        replayNonce: 0,
+        state: "idle",
+        type,
+        variant: "brown",
+        visible: true,
+      };
+    case "baby-cow":
+      return {
+        direction: "right",
+        playing: true,
+        replayNonce: 0,
+        state: "idle",
+        type,
+        variant: "brown",
+        visible: true,
+      };
+    case "chicken":
+      return {
+        direction: "right",
+        playing: true,
+        replayNonce: 0,
+        state: "idle",
+        type,
+        variant: "default",
+        visible: true,
+      };
+  }
 }
 
 function localCellKey(row: number, column: number): string {
   return `${row}:${column}`;
 }
+
+type PixelFarmPreviewActor =
+  | PixelFarmCharacter
+  | PixelFarmCow
+  | PixelFarmBabyCow
+  | PixelFarmChicken;
 
 class PixelFarmSandboxScene extends Phaser.Scene {
   private oceanLayer?: Phaser.GameObjects.Container;
@@ -147,9 +215,9 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   private chickenGroup?: Phaser.Physics.Arcade.Group;
   private cows: PixelFarmCow[] = [];
   private cowGroup?: Phaser.Physics.Arcade.Group;
-  private debugChicken?: PixelFarmChicken;
-  private debugChickenColor?: PixelFarmChickenColor;
-  private lastChickenDebugSignature?: string;
+  private debugActor?: PixelFarmPreviewActor;
+  private debugActorKey?: string;
+  private lastDebugActorSignature?: string;
   private characterControls?: CharacterKeyboardControls;
   private readonly blockedCells = new Set<string>();
   private dragState: DragState = {
@@ -240,10 +308,10 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.chickens = [];
     this.chickenGroup?.clear(true, false);
     this.chickenGroup = undefined;
-    this.debugChicken?.destroy();
-    this.debugChicken = undefined;
-    this.debugChickenColor = undefined;
-    this.lastChickenDebugSignature = undefined;
+    this.debugActor?.destroy();
+    this.debugActor = undefined;
+    this.debugActorKey = undefined;
+    this.lastDebugActorSignature = undefined;
     for (const cow of this.cows) {
       cow.destroy();
     }
@@ -353,7 +421,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     for (const cow of this.cows) {
       cow.update(delta);
     }
-    this.applyChickenDebugState();
+    this.applyDebugActorState();
   }
 
   private bindCharacterControls(): void {
@@ -621,43 +689,111 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     });
   }
 
-  private applyChickenDebugState(): void {
-    const debugState = this.options.getChickenDebugState?.() ?? null;
+  private applyDebugActorState(): void {
+    const debugState = this.options.getDebugActorState?.() ?? null;
     if (!debugState) {
-      if (this.debugChicken) {
-        this.debugChicken.setVisible(false);
+      if (this.debugActor) {
+        this.debugActor.setVisible(false);
       }
-      this.lastChickenDebugSignature = undefined;
+      this.lastDebugActorSignature = undefined;
       return;
     }
 
-    if (!this.debugChicken || this.debugChickenColor !== debugState.color) {
-      this.debugChicken?.destroy();
-      this.debugChicken = new PixelFarmChicken({
-        scene: this,
-        color: debugState.color,
-        depth: ACTOR_LAYER_DEPTH + 1,
-        startX: ISLAND_CENTER_X,
-        startY: ISLAND_CENTER_Y + PIXEL_FARM_TILE_SIZE,
-        canOccupy: this.canActorOccupy,
-      });
-      this.debugChickenColor = debugState.color;
-      this.lastChickenDebugSignature = undefined;
+    const actorKey = `${debugState.type}:${debugState.variant}`;
+    if (!this.debugActor || this.debugActorKey !== actorKey) {
+      this.debugActor?.destroy();
+      this.debugActor = this.createDebugActor(debugState);
+      this.debugActorKey = actorKey;
+      this.lastDebugActorSignature = undefined;
     }
 
-    this.debugChicken.setVisible(debugState.visible);
+    this.debugActor.setVisible(debugState.visible);
     if (!debugState.visible) {
-      this.lastChickenDebugSignature = undefined;
+      this.lastDebugActorSignature = undefined;
       return;
     }
 
     const signature = JSON.stringify(debugState);
-    if (signature === this.lastChickenDebugSignature) {
+    if (signature === this.lastDebugActorSignature) {
       return;
     }
 
-    this.debugChicken.applyDebugPose(debugState.state, debugState.flipX, debugState.playing);
-    this.lastChickenDebugSignature = signature;
+    this.applyDebugPoseToActor(this.debugActor, debugState);
+    this.lastDebugActorSignature = signature;
+  }
+
+  private createDebugActor(debugState: PixelFarmDebugState): PixelFarmPreviewActor {
+    const debugActorConfig = {
+      scene: this,
+      depth: ACTOR_LAYER_DEPTH + 1,
+      startX: ISLAND_CENTER_X,
+      startY: ISLAND_CENTER_Y + PIXEL_FARM_TILE_SIZE,
+      canOccupy: this.canActorOccupy,
+    };
+
+    switch (debugState.type) {
+      case "character":
+        return new PixelFarmCharacter(debugActorConfig);
+      case "cow":
+        return new PixelFarmCow({
+          ...debugActorConfig,
+          color: debugState.variant as PixelFarmCowColor,
+        });
+      case "baby-cow":
+        return new PixelFarmBabyCow({
+          ...debugActorConfig,
+          color: debugState.variant as PixelFarmBabyCowColor,
+        });
+      case "chicken":
+        return new PixelFarmChicken({
+          ...debugActorConfig,
+          color: debugState.variant as PixelFarmChickenColor,
+        });
+    }
+  }
+
+  private applyDebugPoseToActor(
+    actor: PixelFarmPreviewActor,
+    debugState: PixelFarmDebugState,
+  ): void {
+    switch (debugState.type) {
+      case "character":
+        if (actor instanceof PixelFarmCharacter) {
+          actor.applyDebugPose(
+            debugState.state as PixelFarmCharacterAction,
+            debugState.direction,
+            debugState.playing,
+          );
+        }
+        return;
+      case "cow":
+        if (actor instanceof PixelFarmCow) {
+          actor.applyDebugPose(
+            debugState.state as PixelFarmCowState,
+            debugState.direction === "left",
+            debugState.playing,
+          );
+        }
+        return;
+      case "baby-cow":
+        if (actor instanceof PixelFarmBabyCow) {
+          actor.applyDebugPose(
+            debugState.state as PixelFarmBabyCowState,
+            debugState.direction === "left",
+            debugState.playing,
+          );
+        }
+        return;
+      case "chicken":
+        if (actor instanceof PixelFarmChicken) {
+          actor.applyDebugPose(
+            debugState.state as PixelFarmChickenState,
+            debugState.direction === "left",
+            debugState.playing,
+          );
+        }
+        return;
+    }
   }
 
   private findCharacterSpawnCell(): PixelFarmCell {

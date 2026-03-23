@@ -33,16 +33,19 @@ const CHARACTER_ANIMATION_FPS = {
   water: 10,
 } as const;
 
-const CHARACTER_DIRECTIONS = ["down", "up", "right", "left"] as const;
+export const PIXEL_FARM_CHARACTER_DIRECTIONS = ["down", "up", "right", "left"] as const;
 const CHARACTER_TOOL_ACTIONS = ["hoe", "axe", "water"] as const;
 
-export type PixelFarmCharacterDirection = (typeof CHARACTER_DIRECTIONS)[number];
+export type PixelFarmCharacterDirection = (typeof PIXEL_FARM_CHARACTER_DIRECTIONS)[number];
 export type PixelFarmCharacterToolAction = (typeof CHARACTER_TOOL_ACTIONS)[number];
 export type PixelFarmCharacterAction =
   | "idle"
   | "walk"
   | "run"
   | PixelFarmCharacterToolAction;
+export const PIXEL_FARM_CHARACTER_ACTION_OPTIONS = Object.keys(
+  CHARACTER_ACTION_ROWS,
+) as PixelFarmCharacterAction[];
 
 export interface PixelFarmCharacterInput {
   moveX: number;
@@ -97,7 +100,7 @@ export function registerPixelFarmCharacterAnimations(scene: Phaser.Scene): void 
   for (const [action, baseRow] of Object.entries(CHARACTER_ACTION_ROWS) as Array<
     [PixelFarmCharacterAction, number]
   >) {
-    for (const [directionIndex, direction] of CHARACTER_DIRECTIONS.entries()) {
+    for (const [directionIndex, direction] of PIXEL_FARM_CHARACTER_DIRECTIONS.entries()) {
       const key = animationKey(action, direction);
       if (scene.anims.exists(key)) {
         continue;
@@ -122,6 +125,7 @@ export function registerPixelFarmCharacterAnimations(scene: Phaser.Scene): void 
 export class PixelFarmCharacter extends Phaser.Physics.Arcade.Sprite {
   private readonly canOccupy: PixelFarmCharacterConfig["canOccupy"];
   private readonly depthBase: number;
+  private debugPoseLocked = false;
   private facing: PixelFarmCharacterDirection = "down";
   private locomotionAction: "idle" | "walk" | "run" = "idle";
   private lockedAction: PixelFarmCharacterToolAction | null = null;
@@ -154,6 +158,12 @@ export class PixelFarmCharacter extends Phaser.Physics.Arcade.Sprite {
   }
 
   update(deltaMs: number, input: PixelFarmCharacterInput): void {
+    if (this.debugPoseLocked) {
+      this.setVelocity(0, 0);
+      this.setDepth(actorDepth(this.depthBase, this.y));
+      return;
+    }
+
     if (input.action && !this.lockedAction) {
       this.startToolAction(input.action);
       this.setDepth(actorDepth(this.depthBase, this.y));
@@ -171,6 +181,10 @@ export class PixelFarmCharacter extends Phaser.Physics.Arcade.Sprite {
   }
 
   private handleAnimationComplete(): void {
+    if (this.debugPoseLocked) {
+      return;
+    }
+
     if (!this.lockedAction) {
       return;
     }
@@ -178,6 +192,26 @@ export class PixelFarmCharacter extends Phaser.Physics.Arcade.Sprite {
     this.lockedAction = null;
     this.locomotionAction = "idle";
     this.playAnimation("idle", false);
+  }
+
+  applyDebugPose(
+    action: PixelFarmCharacterAction,
+    direction: PixelFarmCharacterDirection,
+    playing: boolean,
+  ): void {
+    this.debugPoseLocked = true;
+    this.facing = direction;
+    this.lockedAction = null;
+    this.locomotionAction =
+      action === "idle" || action === "walk" || action === "run" ? action : "idle";
+    this.setVelocity(0, 0);
+    this.playAnimation(action, false);
+
+    if (playing) {
+      this.anims.resume();
+    } else {
+      this.anims.pause();
+    }
   }
 
   private updateLocomotion(deltaMs: number, input: PixelFarmCharacterInput): void {

@@ -2,22 +2,22 @@ import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
 import {
   createPixelFarmGame,
-  type PixelFarmChickenDebugState,
+  type PixelFarmDebugState,
 } from "@/lib/pixel-farm/create-game";
 
 interface PhaserStageProps {
-  chickenDebugState?: PixelFarmChickenDebugState | null;
+  debugActorState?: PixelFarmDebugState | null;
 }
 
-export function PhaserStage({ chickenDebugState = null }: PhaserStageProps) {
+export function PhaserStage({ debugActorState = null }: PhaserStageProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
-  const chickenDebugStateRef = useRef<PixelFarmChickenDebugState | null>(chickenDebugState);
+  const debugActorStateRef = useRef<PixelFarmDebugState | null>(debugActorState);
   const [bootError, setBootError] = useState<string | null>(null);
 
   useEffect(() => {
-    chickenDebugStateRef.current = chickenDebugState;
-  }, [chickenDebugState]);
+    debugActorStateRef.current = debugActorState;
+  }, [debugActorState]);
 
   useEffect(() => {
     if (!hostRef.current || gameRef.current) {
@@ -26,7 +26,7 @@ export function PhaserStage({ chickenDebugState = null }: PhaserStageProps) {
 
     try {
       gameRef.current = createPixelFarmGame(hostRef.current, {
-        getChickenDebugState: () => chickenDebugStateRef.current,
+        getDebugActorState: () => debugActorStateRef.current,
       });
       setBootError(null);
     } catch (error) {

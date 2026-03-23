@@ -37,6 +37,9 @@ const BABY_COW_STATES = {
 
 export type PixelFarmBabyCowColor = (typeof PIXEL_FARM_BABY_COW_COLORS)[number];
 export type PixelFarmBabyCowState = keyof typeof BABY_COW_STATES;
+export const PIXEL_FARM_BABY_COW_STATE_OPTIONS = Object.keys(
+  BABY_COW_STATES,
+) as PixelFarmBabyCowState[];
 
 export interface PixelFarmBabyCowConfig {
   scene: Phaser.Scene;
@@ -99,6 +102,7 @@ export class PixelFarmBabyCow extends Phaser.Physics.Arcade.Sprite {
   private readonly color: PixelFarmBabyCowColor;
   private readonly depthBase: number;
   private babyCowState: PixelFarmBabyCowState = "idle";
+  private debugPoseLocked = false;
   private stateTimerMs = 0;
   private loveCooldownMs = 0;
   private target: Phaser.Math.Vector2 | null = null;
@@ -133,6 +137,12 @@ export class PixelFarmBabyCow extends Phaser.Physics.Arcade.Sprite {
   }
 
   update(deltaMs: number): void {
+    if (this.debugPoseLocked) {
+      this.setVelocity(0, 0);
+      this.setDepth(actorDepth(this.depthBase, this.y));
+      return;
+    }
+
     this.loveCooldownMs = Math.max(0, this.loveCooldownMs - deltaMs);
 
     if (this.babyCowState === "run") {
@@ -173,6 +183,22 @@ export class PixelFarmBabyCow extends Phaser.Physics.Arcade.Sprite {
     this.babyCowState = "love";
     this.setVelocity(0, 0);
     this.playState("love", false);
+  }
+
+  applyDebugPose(state: PixelFarmBabyCowState, flipX: boolean, playing: boolean): void {
+    this.debugPoseLocked = true;
+    this.babyCowState = state;
+    this.target = null;
+    this.stateTimerMs = 0;
+    this.setVelocity(0, 0);
+    this.setFlipX(flipX);
+    this.playState(state, false);
+
+    if (playing) {
+      this.anims.resume();
+    } else {
+      this.anims.pause();
+    }
   }
 
   private updateRun(deltaMs: number): void {
@@ -281,6 +307,10 @@ export class PixelFarmBabyCow extends Phaser.Physics.Arcade.Sprite {
   }
 
   private handleAnimationComplete(): void {
+    if (this.debugPoseLocked) {
+      return;
+    }
+
     if (this.babyCowState === "hop") {
       this.enterTimedState("idle", randomRange(1000, 1800));
       return;

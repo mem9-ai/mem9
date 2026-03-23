@@ -36,6 +36,7 @@ const COW_STATES = {
 
 export type PixelFarmCowColor = (typeof PIXEL_FARM_COW_COLORS)[number];
 export type PixelFarmCowState = keyof typeof COW_STATES;
+export const PIXEL_FARM_COW_STATE_OPTIONS = Object.keys(COW_STATES) as PixelFarmCowState[];
 
 export interface PixelFarmCowConfig {
   scene: Phaser.Scene;
@@ -98,6 +99,7 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
   private readonly color: PixelFarmCowColor;
   private readonly depthBase: number;
   private cowState: PixelFarmCowState = "idle";
+  private debugPoseLocked = false;
   private stateTimerMs = 0;
   private loveCooldownMs = 0;
   private target: Phaser.Math.Vector2 | null = null;
@@ -132,6 +134,12 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
   }
 
   update(deltaMs: number): void {
+    if (this.debugPoseLocked) {
+      this.setVelocity(0, 0);
+      this.setDepth(actorDepth(this.depthBase, this.y));
+      return;
+    }
+
     this.loveCooldownMs = Math.max(0, this.loveCooldownMs - deltaMs);
 
     if (this.cowState === "walk") {
@@ -167,6 +175,22 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
     this.cowState = "love";
     this.setVelocity(0, 0);
     this.playState("love", false);
+  }
+
+  applyDebugPose(state: PixelFarmCowState, flipX: boolean, playing: boolean): void {
+    this.debugPoseLocked = true;
+    this.cowState = state;
+    this.target = null;
+    this.stateTimerMs = 0;
+    this.setVelocity(0, 0);
+    this.setFlipX(flipX);
+    this.playState(state, false);
+
+    if (playing) {
+      this.anims.resume();
+    } else {
+      this.anims.pause();
+    }
   }
 
   private updateWalk(deltaMs: number): void {
@@ -269,6 +293,10 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
   }
 
   private handleAnimationComplete(): void {
+    if (this.debugPoseLocked) {
+      return;
+    }
+
     if (this.cowState === "sitTransition") {
       this.enterTimedState(Math.random() < 0.5 ? "sitTail" : "sitHead", randomRange(1600, 2800));
       return;
