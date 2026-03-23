@@ -392,6 +392,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
+			slog.Error("json parse llm resp failed", "raw2", raw2, "err", err)
 			return nil, fmt.Errorf("extraction parse after retry: %w", err)
 		}
 	}
@@ -483,6 +484,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
+			slog.Error("json parse llm resp failed", "raw2", raw2, "err", err)
 			return nil, nil, fmt.Errorf("extraction parse after retry: %w", err)
 		}
 	}
