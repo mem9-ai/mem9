@@ -417,5 +417,7 @@
       }
     }
   },
-  "pixel_farm": {}
+  "pixel_farm": {
+    "stage_loading": "正在加载像素农场"
+  }
 }
