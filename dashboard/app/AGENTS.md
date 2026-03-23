@@ -4,7 +4,7 @@ title: dashboard/app — mem9 Dashboard SPA
 
 ## Overview
 
-React SPA for the mem9 dashboard. Deployed at `mem9.ai/your-memory`. Three pages: Connect (Space ID entry), Your Memory (memory list, search, detail, light management), and Pixel Farm (full-screen Phaser sandbox at `/labs/pixel-farm`). Bilingual (zh-CN / en). Dark mode support (light / dark / system).
+React SPA for the mem9 dashboard. Deployed at `mem9.ai/your-memory`. Three pages: Connect (Space ID entry), Your Memory (memory list, search, detail, light management), and Pixel Farm (full-screen Phaser sandbox at `/labs/memory-farm`). Bilingual (zh-CN / en). Dark mode support (light / dark / system).
 
 ## Commands
 
@@ -24,12 +24,13 @@ Vite + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui + TanStack Query + Tan
 | Task | File |
 |------|------|
 | Vite config (base path, alias, plugins, API proxy) | `vite.config.ts` |
-| Router (3 routes, search params) | `src/router.tsx` |
+| Router (3 routes in prod, 4 in dev, search params) | `src/router.tsx` |
 | Entry point (QueryClient, RouterProvider, i18n, theme) | `src/main.tsx` |
 | Global styles + CSS variables (light/dark) | `src/index.css` |
 | Connect page | `src/pages/connect.tsx` |
 | Your Memory page | `src/pages/space.tsx` |
 | Pixel Farm page | `src/pages/pixel-farm.tsx` |
+| Pixel Farm editor page (dev only) | `src/pages/pixel-farm-editor.tsx` |
 | Pixel Farm Phaser host | `src/components/pixel-farm/phaser-stage.tsx` |
 | Feature flags (mock mode, gated features) | `src/config/features.ts` |
 | API types (Memory, SpaceInfo, etc.) | `src/types/memory.ts` |
@@ -50,7 +51,10 @@ Vite + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui + TanStack Query + Tan
 | English translations | `src/i18n/locales/en.json` |
 | `cn()` utility for shadcn | `src/lib/utils.ts` |
 | Pixel Farm Phaser bootstrap | `src/lib/pixel-farm/` |
-| Pixel Farm island masks | `src/lib/pixel-farm/island-mask.ts` |
+| Pixel Farm tileset config | `src/lib/pixel-farm/tileset-config.ts` |
+| Pixel Farm layer data + tile overrides | `src/lib/pixel-farm/island-mask.ts` |
+| Pixel Farm generated terrain + object data (auto-written) | `src/lib/pixel-farm/generated-mask-data.ts` |
+| Pixel Farm generated data serializer | `src/lib/pixel-farm/generated-mask-source.ts` |
 | Relative time formatting | `src/lib/time.ts` |
 | Space ID session management | `src/lib/session.ts` |
 | Theme management (light/dark/system) | `src/lib/theme.ts` |
@@ -80,7 +84,7 @@ Vite + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui + TanStack Query + Tan
 - Feature flags live in `src/config/features.ts`. Currently: `useMock`, `enableManualAdd`, `enableTimeRange`, `enableFacet`, `enableTopicSummary`, `enableAnalysis`. UI components check these flags before rendering gated features.
 - API proxy: frontend calls `/your-memory/api/...` and `/your-memory/analysis-api/...` (relative paths). Vite dev server proxies them to `api.mem9.ai` and `napi.mem9.ai`; Netlify rewrites do the same in production. No CORS needed.
 - When dashboard is shipped under the main `mem9.ai` site, the production Netlify rewrites live in `site/netlify.toml`. `public/_redirects` remains the standalone-dashboard fallback.
-- i18n keys are nested JSON (`connect.title` → `{ "connect": { "title": "..." } }`). Translations live in `src/i18n/locales/`. All user-facing text must go through `t()`, never hardcoded.
+- i18n keys are nested JSON (`connect.title` → `{ "connect": { "title": "..." } }`). Translations live in `src/i18n/locales/`. Production-facing UI text goes through `t()`. The dev-only Pixel Farm mask editor may keep inline copy to reduce i18n churn and merge conflicts.
 - API types in `src/types/memory.ts` mirror the backend data contract (`../docs/data-contract.md`). Keep them in sync.
 - TanStack Query hooks in `src/api/queries.ts` handle caching and mutation invalidation. Components should use these hooks, not call `api` directly.
 - TanStack Router manages `q`, `type`, `range`, and `facet` search params for the Space page. Use `route.useSearch()` and `navigate({ search })` to read/write URL state.
@@ -88,7 +92,15 @@ Vite + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui + TanStack Query + Tan
 - shadcn/ui components go in `src/components/ui/`. Pull new components with `pnpx shadcn@latest add <name>`.
 - Tailwind CSS 4 with `@tailwindcss/vite` plugin. Import via `@import "tailwindcss"` in `src/index.css`. CSS variables define light/dark themes.
 - SPA deployed at `/your-memory/`. Vite `base` and Router `basepath` are both set.
-- The experimental Pixel Farm route lives at `/your-memory/labs/pixel-farm` and is lazy-loaded to avoid pulling Phaser into the default dashboard path.
+- The experimental Pixel Farm route lives at `/your-memory/labs/memory-farm` and is lazy-loaded to avoid pulling Phaser into the default dashboard path.
+- The Pixel Farm mask editor route lives at `/your-memory/labs/memory-farm-editor` and is mounted only in development.
+- The Pixel Farm editor export button writes `src/lib/pixel-farm/generated-mask-data.ts` through a dev-only Vite middleware endpoint. Treat that file as generated data only.
+- Pixel Farm asset filenames in `src/assets/` use lowercase kebab-case. Register any new editor-visible spritesheet in `src/lib/pixel-farm/tileset-config.ts`.
+- Pixel Farm rendering is layer-based. Terrain uses `mask + baseTile + override` per layer; object placements reference a `layerId` so they render in the same draw order. No autotile logic remains.
+- The Pixel Farm editor palette shows all registered asset sources at once. Keep `layer` for draw order only; do not couple layers 1:1 to image files.
+- The Pixel Farm editor has `Terrain` and `Objects` modes. `Objects` mode places single-tile object instances with `walkable` and footprint presets, all exported through the same generated data file.
+- Pixel Farm keeps a dedicated top-level `objects` layer. `Objects` mode auto-switches to it, and newly added terrain layers should be inserted before it.
+- The Pixel Farm editor can add and delete layers directly. New layers inherit the currently selected tile as their base tile; deleting a layer also removes object placements assigned to it.
 - `src/api/client.ts` re-exports the active provider. Mock and real logic are split into `provider-mock.ts` and `provider-http.ts` respectively, both implementing the `DashboardProvider` interface from `provider.ts`.
 - The current dependency set is enough for UI-first work. Prefer browser APIs (`Blob`, `URL.createObjectURL`, `FormData`, `File`) before adding new packages.
 
@@ -102,7 +114,7 @@ Vite + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui + TanStack Query + Tan
 
 ## Anti-patterns
 
-- Do NOT hardcode user-facing text. All UI strings go through `t()`.
+- Do NOT hardcode production-facing text. Ship pages go through `t()`. The dev-only Pixel Farm mask editor is the exception.
 - Do NOT call `api.*` directly in components. Use the TanStack Query hooks from `src/api/queries.ts`.
 - Do NOT store Space ID in `localStorage` or URL. Use `sessionStorage` only.
 - Do NOT add SSR or server-side logic. This is a pure client-side SPA.
