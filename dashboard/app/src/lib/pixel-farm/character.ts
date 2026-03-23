@@ -56,7 +56,14 @@ export interface PixelFarmCharacterConfig {
   depth: number;
   startX: number;
   startY: number;
-  canOccupy: (left: number, top: number, right: number, bottom: number) => boolean;
+  canOccupy: (
+    left: number,
+    top: number,
+    right: number,
+    bottom: number,
+    moveX?: number,
+    moveY?: number,
+  ) => boolean;
 }
 
 function animationKey(
@@ -191,11 +198,16 @@ export class PixelFarmCharacter extends Phaser.Physics.Arcade.Sprite {
     let velocityX = normalizedX * speed;
     let velocityY = normalizedY * speed;
 
-    if (!this.canOccupyAt(this.x + velocityX * deltaSeconds, this.y)) {
+    if (!this.canOccupyAt(this.x + velocityX * deltaSeconds, this.y, velocityX, 0)) {
       velocityX = 0;
     }
 
-    if (!this.canOccupyAt(this.x + velocityX * deltaSeconds, this.y + velocityY * deltaSeconds)) {
+    if (!this.canOccupyAt(
+      this.x + velocityX * deltaSeconds,
+      this.y + velocityY * deltaSeconds,
+      velocityX,
+      velocityY,
+    )) {
       velocityY = 0;
     }
 
@@ -203,7 +215,7 @@ export class PixelFarmCharacter extends Phaser.Physics.Arcade.Sprite {
     this.setLocomotionAction(input.running ? "run" : "walk");
   }
 
-  private canOccupyAt(x: number, y: number): boolean {
+  private canOccupyAt(x: number, y: number, moveX = 0, moveY = 0): boolean {
     const left = x - PIXEL_FARM_CHARACTER_FRAME_WIDTH * CHARACTER_SPRITE_ORIGIN_X + CHARACTER_BODY_OFFSET_X;
     const top = y - PIXEL_FARM_CHARACTER_FRAME_HEIGHT * CHARACTER_SPRITE_ORIGIN_Y + CHARACTER_BODY_OFFSET_Y;
 
@@ -212,6 +224,8 @@ export class PixelFarmCharacter extends Phaser.Physics.Arcade.Sprite {
       top,
       left + CHARACTER_BODY_WIDTH,
       top + CHARACTER_BODY_HEIGHT,
+      moveX,
+      moveY,
     );
   }
 

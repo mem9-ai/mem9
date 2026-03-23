@@ -428,7 +428,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
     for (let row = 0; row < ISLAND_ROWS; row += 1) {
       for (let column = 0; column < ISLAND_COLUMNS; column += 1) {
-        if (!this.isWalkableLocalCell(row, column)) {
+        if (!this.isSpawnableLocalCell(row, column)) {
           continue;
         }
 
@@ -450,7 +450,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   }
 
   private findCowSpawnCells(count: number, reservedCells: PixelFarmCell[]): PixelFarmCell[] {
-    const walkableCells = Phaser.Utils.Array.Shuffle(this.listWalkableCells());
+    const walkableCells = Phaser.Utils.Array.Shuffle(this.listSpawnableCells());
     const selectedCells: PixelFarmCell[] = [];
 
     for (const cell of walkableCells) {
@@ -481,12 +481,12 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     return selectedCells;
   }
 
-  private listWalkableCells(): PixelFarmCell[] {
+  private listSpawnableCells(): PixelFarmCell[] {
     const cells: PixelFarmCell[] = [];
 
     for (let row = 0; row < ISLAND_ROWS; row += 1) {
       for (let column = 0; column < ISLAND_COLUMNS; column += 1) {
-        if (!this.isWalkableLocalCell(row, column)) {
+        if (!this.isSpawnableLocalCell(row, column)) {
           continue;
         }
 
@@ -539,11 +539,23 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     );
   }
 
+  private isSpawnableLocalCell(row: number, column: number): boolean {
+    return (
+      this.isWalkableLocalCell(row, column) &&
+      maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, row - 1, column) &&
+      maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, row + 1, column) &&
+      maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, row, column - 1) &&
+      maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, row, column + 1)
+    );
+  }
+
   private canActorOccupy = (
     left: number,
     top: number,
     right: number,
     bottom: number,
+    moveX = 0,
+    moveY = 0,
   ): boolean => {
     const maxColumn = Math.floor((right - 0.001) / PIXEL_FARM_TILE_SIZE);
     const maxRow = Math.floor((bottom - 0.001) / PIXEL_FARM_TILE_SIZE);
@@ -556,6 +568,22 @@ class PixelFarmSandboxScene extends Phaser.Scene {
         const localColumn = worldColumn - ISLAND_START_COLUMN;
 
         if (!this.isWalkableLocalCell(localRow, localColumn)) {
+          return false;
+        }
+
+        if (moveY < 0 && !maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, localRow - 1, localColumn)) {
+          return false;
+        }
+
+        if (moveY > 0 && !maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, localRow + 1, localColumn)) {
+          return false;
+        }
+
+        if (moveX < 0 && !maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, localRow, localColumn - 1)) {
+          return false;
+        }
+
+        if (moveX > 0 && !maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, localRow, localColumn + 1)) {
           return false;
         }
       }

@@ -43,7 +43,14 @@ export interface PixelFarmCowConfig {
   depth: number;
   startX: number;
   startY: number;
-  canOccupy: (left: number, top: number, right: number, bottom: number) => boolean;
+  canOccupy: (
+    left: number,
+    top: number,
+    right: number,
+    bottom: number,
+    moveX?: number,
+    moveY?: number,
+  ) => boolean;
 }
 
 function actorDepth(baseDepth: number, y: number): number {
@@ -183,11 +190,16 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
     let velocityX = normalizedX * COW_WALK_SPEED;
     let velocityY = normalizedY * COW_WALK_SPEED;
 
-    if (!this.canOccupyAt(this.x + velocityX * deltaSeconds, this.y)) {
+    if (!this.canOccupyAt(this.x + velocityX * deltaSeconds, this.y, velocityX, 0)) {
       velocityX = 0;
     }
 
-    if (!this.canOccupyAt(this.x + velocityX * deltaSeconds, this.y + velocityY * deltaSeconds)) {
+    if (!this.canOccupyAt(
+      this.x + velocityX * deltaSeconds,
+      this.y + velocityY * deltaSeconds,
+      velocityX,
+      velocityY,
+    )) {
       velocityY = 0;
     }
 
@@ -280,11 +292,11 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
     this.playState(state, false);
   }
 
-  private canOccupyAt(x: number, y: number): boolean {
+  private canOccupyAt(x: number, y: number, moveX = 0, moveY = 0): boolean {
     const left = x - PIXEL_FARM_COW_FRAME_WIDTH * COW_SPRITE_ORIGIN_X + COW_BODY_OFFSET_X;
     const top = y - PIXEL_FARM_COW_FRAME_HEIGHT * COW_SPRITE_ORIGIN_Y + COW_BODY_OFFSET_Y;
 
-    return this.canOccupy(left, top, left + COW_BODY_WIDTH, top + COW_BODY_HEIGHT);
+    return this.canOccupy(left, top, left + COW_BODY_WIDTH, top + COW_BODY_HEIGHT, moveX, moveY);
   }
 
   private playState(state: PixelFarmCowState, ignoreIfPlaying = true): void {
