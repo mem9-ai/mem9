@@ -1,7 +1,7 @@
 MAKEFILE_DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 IMG ?= $(REGISTRY)/mnemo-server:$(COMMIT)
 
-.PHONY: build vet clean run test test-integration docker
+.PHONY: build vet clean run test test-integration docker docker-push
 
 build:
 	mkdir -p $(MAKEFILE_DIR)/server/bin
@@ -26,6 +26,9 @@ clean:
 run: build
 	cd server && MNEMO_DSN="$(MNEMO_DSN)" ./bin/mnemo-server
 
-docker: build-linux
-	docker build --platform=linux/amd64 -q -f ./server/Dockerfile -t $(IMG) .
+docker:
+	docker buildx build --platform=linux/amd64 --load -f ./server/Dockerfile -t $(IMG) .
+
+docker-push:
+	docker buildx build --platform=linux/amd64,linux/arm64 --push -f ./server/Dockerfile -t $(IMG) .
 

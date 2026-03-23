@@ -59,7 +59,7 @@ cd server && MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" go run ./cmd
 - `INSERT ... ON DUPLICATE KEY UPDATE` is the expected upsert pattern.
 - Atomic version bump happens in SQL: `SET version = version + 1`.
 - `X-Mnemo-Agent-Id` is the per-agent identity header for memory requests.
-- Always use `make` targets for building and Docker image operations — never construct raw `go build` or `docker build` commands from scratch. Use `make build-linux` for the server binary and `REGISTRY=<ecr> COMMIT=<tag> make docker` for images.
+- Always use `make` targets for building and Docker image operations — never construct raw `go build` or `docker build` commands from scratch. Use `make build-linux` for the server binary, `REGISTRY=<ecr> COMMIT=<tag> make docker` for local single-arch images, and `make docker-push` for multi-arch (amd64+arm64) build & push.
 
 ## Go style
 
