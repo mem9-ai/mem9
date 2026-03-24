@@ -198,9 +198,35 @@ vi.mock("@/config/features", () => ({
   },
 }));
 
+vi.mock("@/api/local-cache", () => ({
+  patchSyncState: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("@/api/queries", () => ({
   getSessionPreviewLookupKey: (memory: Memory) =>
     memory.memory_type === "insight" ? memory.session_id : "",
+  useStats: () => ({
+    data: { total: 4, pinned: 0, insight: 4 },
+    isLoading: false,
+    isFetching: false,
+  }),
+  useMemories: () => ({
+    data: {
+      pages: [
+        {
+          memories: [activityNewest, preferenceMemory, activityOlder, archivedMemory],
+          total: 4,
+          limit: 50,
+          offset: 0,
+        },
+      ],
+    },
+    fetchNextPage: vi.fn(),
+    hasNextPage: false,
+    isFetchingNextPage: false,
+    isLoading: false,
+    isFetching: false,
+  }),
   useSessionPreviewMessages: (_spaceId: string, memories: Memory[]) => {
     mocks.useSessionPreviewMessages(memories);
     return {
@@ -252,9 +278,11 @@ vi.mock("@/api/queries", () => ({
   useExportMemories: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useImportMemories: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useImportTasks: () => ({ data: { tasks: [] } }),
+  useTopicSummary: () => ({ data: undefined }),
 }));
 
 vi.mock("@/api/source-memories", () => ({
+  getSourceMemoriesQueryKey: (spaceId: string) => ["space", spaceId, "sourceMemories"],
   useSourceMemories: (_spaceId: string) => {
     mocks.useSourceMemories(_spaceId);
     return {
