@@ -49,7 +49,10 @@ import {
   PIXEL_FARM_ASSET_SOURCE_CONFIG,
   PIXEL_FARM_TILE_SIZE,
 } from "@/lib/pixel-farm/tileset-config";
-import { PixelFarmWorldRenderer } from "@/lib/pixel-farm/world-render";
+import {
+  type PixelFarmInteractableTarget,
+  PixelFarmWorldRenderer,
+} from "@/lib/pixel-farm/world-render";
 
 const WATER_FRAME_DELAY = 180;
 const BACKGROUND_COLOR = 0x0d141b;
@@ -63,6 +66,10 @@ const CAMERA_FOLLOW_LERP = 0.12;
 const CAMERA_DEADZONE_TILES_X = 5;
 const CAMERA_DEADZONE_TILES_Y = 3;
 const ACTOR_LAYER_DEPTH = 15;
+const INTERACTION_BUBBLE_OFFSET_Y = PIXEL_FARM_TILE_SIZE * 0.8;
+const INTERACTION_FOCUS_FALLBACK_MS = 180;
+const INTERACTION_ORIGIN_MARKER_RADIUS = 4;
+const INTERACTION_ANCHOR_MARKER_RADIUS = 3;
 const SCENE_COW_COLORS: readonly PixelFarmCowColor[] = ["brown", "light"];
 const SCENE_BABY_COW_COLORS: readonly PixelFarmBabyCowColor[] = ["brown", "light"];
 const SCENE_CHICKEN_COLORS: readonly PixelFarmChickenColor[] = ["default", "default"];
@@ -110,6 +117,7 @@ interface CharacterKeyboardControls {
   altLeft: Phaser.Input.Keyboard.Key;
   altRight: Phaser.Input.Keyboard.Key;
   run: Phaser.Input.Keyboard.Key;
+  interact: Phaser.Input.Keyboard.Key;
   hoe: Phaser.Input.Keyboard.Key;
   axe: Phaser.Input.Keyboard.Key;
   water: Phaser.Input.Keyboard.Key;
@@ -151,6 +159,8 @@ export interface PixelFarmDebugState {
 
 export interface PixelFarmGameOptions {
   getDebugActorState?: () => PixelFarmDebugState | null;
+  onInteractionDebugChange?: (info: PixelFarmInteractionDebugInfo) => void;
+  getShowInteractionDebug?: () => boolean;
   getShowSpatialDebug?: () => boolean;
   getWorldState?: () => PixelFarmWorldState | null;
   onPointerDebugChange?: (info: PixelFarmPointerDebugInfo) => void;
@@ -164,6 +174,25 @@ export interface PixelFarmPointerTile {
 export interface PixelFarmPointerDebugInfo {
   islandTile: PixelFarmPointerTile | null;
   worldTile: PixelFarmPointerTile | null;
+}
+
+export interface PixelFarmInteractionTargetDebugInfo {
+  id: string;
+  kind: "animal" | "crop";
+  memoryCount: number;
+  memoryIds: string[];
+  occupiedCells?: PixelFarmPointerTile[];
+  screenX: number;
+  screenY: number;
+  tagLabel: string;
+}
+
+export interface PixelFarmInteractionDebugInfo {
+  currentTile?: PixelFarmPointerTile | null;
+  frontTile?: PixelFarmPointerTile | null;
+  interactionNonce: number;
+  lastInteractedTargetId: string | null;
+  target: PixelFarmInteractionTargetDebugInfo | null;
 }
 
 export function createDefaultPixelFarmDebugState(
@@ -232,6 +261,30 @@ function localCellFromKey(key: string): PixelFarmCell | null {
   return { row, column };
 }
 
+interface PixelFarmInteractionCandidate {
+  target: PixelFarmInteractableTarget;
+  worldAnchor: { x: number; y: number };
+}
+
+interface PixelFarmRecentInteractionFocus {
+  candidate: PixelFarmInteractionCandidate;
+  capturedAt: number;
+}
+
+function normalizeFacingVector(
+  facing: { x: number; y: number },
+): { x: number; y: number } {
+  const length = Math.hypot(facing.x, facing.y);
+  if (length < 0.001) {
+    return { x: 0, y: 1 };
+  }
+
+  return {
+    x: facing.x / length,
+    y: facing.y / length,
+  };
+}
+
 type PixelFarmPreviewActor =
   | PixelFarmCharacter
   | PixelFarmCow
@@ -258,8 +311,12 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   private debugActor?: PixelFarmPreviewActor;
   private debugActorKey?: string;
   private lastDebugActorSignature?: string;
+  private interactionNonce = 0;
+  private lastInteractedTargetId: string | null = null;
+  private lastInteractionDebugSignature?: string;
   private lastPointerDebugSignature?: string;
   private lastWorldState?: PixelFarmWorldState | null;
+  private recentInteractionFocus: PixelFarmRecentInteractionFocus | null = null;
   private characterControls?: CharacterKeyboardControls;
   private readonly blockedCells = new Set<string>();
   private dragState: DragState = {
@@ -366,7 +423,16 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.worldRenderer?.destroy();
     this.worldRenderer = undefined;
     this.lastWorldState = undefined;
+    this.lastInteractionDebugSignature = undefined;
+    this.interactionNonce = 0;
+    this.lastInteractedTargetId = null;
+    this.recentInteractionFocus = null;
     this.lastPointerDebugSignature = undefined;
+    this.options.onInteractionDebugChange?.({
+      interactionNonce: 0,
+      lastInteractedTargetId: null,
+      target: null,
+    });
     this.options.onPointerDebugChange?.({
       islandTile: null,
       worldTile: null,
@@ -487,7 +553,8 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.worldRenderer?.update(delta);
     this.applyDebugActorState();
     this.applyWorldState();
-    this.updateSpatialDebug();
+    this.updateInteractionDebug();
+    this.updateWorldDebugOverlay();
     this.updatePointerDebug();
   }
 
@@ -496,6 +563,8 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     if (!keyboard) {
       return;
     }
+
+    keyboard.addCapture(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
     this.characterControls = {
       up: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
@@ -507,6 +576,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       altLeft: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT),
       altRight: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT),
       run: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
+      interact: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
       hoe: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.J),
       axe: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.K),
       water: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.L),
@@ -836,7 +906,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.worldRenderer.render(worldState);
   }
 
-  private updateSpatialDebug(): void {
+  private updateWorldDebugOverlay(): void {
     const graphics = this.worldDebugGraphics;
     if (!graphics) {
       return;
@@ -844,10 +914,16 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
     graphics.clear();
 
-    if (!this.options.getShowSpatialDebug?.()) {
-      return;
+    if (this.options.getShowSpatialDebug?.()) {
+      this.drawSpatialDebugOverlay();
     }
 
+    if (this.options.getShowInteractionDebug?.()) {
+      this.drawInteractionDebugOverlay();
+    }
+  }
+
+  private drawSpatialDebugOverlay(): void {
     this.drawPhysicsDebugSprite(this.character, 0xffc857, 0xfff3bf);
     this.drawPhysicsDebugSprite(this.debugActor, 0x8bd3ff, 0xd4f0ff);
 
@@ -874,6 +950,109 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     }
   }
 
+  private drawInteractionDebugOverlay(): void {
+    const basis = this.readInteractionDebugBasis();
+    if (!basis) {
+      return;
+    }
+
+    const { facingVector, frontTile, origin } = basis;
+    const interactionState = this.readInteractionSelectionState();
+    const candidates = interactionState?.candidates ?? [];
+    const debugTiles = this.collectRenderedInteractionDebugTiles();
+
+    for (const tile of debugTiles) {
+      const color = tile.kind === "animal" ? 0xff4d6d : 0x6dff8f;
+      this.drawInteractionTileOutline(tile.cell, color, 1, 0.95);
+    }
+
+    this.drawInteractionFrontTile(frontTile, 0x5cc8ff, 0.22);
+    this.drawInteractionTileOutline(frontTile, 0x5cc8ff, 1, 1);
+    this.drawInteractionOrigin(origin.x, origin.y, 0xfff3bf);
+    this.drawFacingRay(origin, facingVector, 0xffd166);
+
+    for (const candidate of candidates) {
+      this.drawInteractionCandidate(candidate.worldAnchor, 0xbec6d1, false);
+    }
+  }
+
+  private collectRenderedInteractionDebugTiles(): Array<{
+    cell: PixelFarmCell;
+    kind: "animal" | "crop";
+  }> {
+    const tiles = new Map<string, { cell: PixelFarmCell; kind: "animal" | "crop" }>();
+
+    for (const animal of this.worldRenderer?.getAnimals() ?? []) {
+      const body = animal.body as Phaser.Physics.Arcade.Body | undefined;
+      const sampleX = body ? body.x + body.width * 0.5 : animal.x;
+      const sampleY = body ? body.y + body.height - 1 : animal.y - 1;
+      const cell = this.worldPointToLocalCell({ x: sampleX, y: sampleY });
+      if (!cell) {
+        continue;
+      }
+
+      tiles.set(localCellKey(cell.row, cell.column), { cell, kind: "animal" });
+    }
+
+    for (const crop of this.worldRenderer?.getCropObjects() ?? []) {
+      const cell = this.worldPointToLocalCell({ x: crop.x, y: crop.y - 1 });
+      if (!cell) {
+        continue;
+      }
+
+      const key = localCellKey(cell.row, cell.column);
+      if (tiles.has(key)) {
+        continue;
+      }
+
+      tiles.set(key, { cell, kind: "crop" });
+    }
+
+    return [...tiles.values()];
+  }
+
+  private updateInteractionDebug(): void {
+    const emitInteractionDebug = this.options.onInteractionDebugChange;
+    if (!emitInteractionDebug) {
+      return;
+    }
+
+    const info = this.readInteractionDebugInfo();
+    const target = info.target;
+    const signature = target
+      ? [
+          info.currentTile?.column ?? "",
+          info.currentTile?.row ?? "",
+          info.frontTile?.column ?? "",
+          info.frontTile?.row ?? "",
+          info.interactionNonce,
+          info.lastInteractedTargetId ?? "",
+          target.id,
+          target.kind,
+          target.memoryCount,
+          target.screenX.toFixed(0),
+          target.screenY.toFixed(0),
+          target.tagLabel,
+          target.occupiedCells?.map((cell) => `${cell.column}:${cell.row}`).join(",") ?? "",
+        ].join("|")
+      : [
+          info.currentTile?.column ?? "",
+          info.currentTile?.row ?? "",
+          info.frontTile?.column ?? "",
+          info.frontTile?.row ?? "",
+          info.interactionNonce,
+          info.lastInteractedTargetId ?? "",
+          "no-target",
+        ].join("|");
+
+    if (signature === this.lastInteractionDebugSignature) {
+      return;
+    }
+
+    this.lastInteractionDebugSignature = signature;
+    emitInteractionDebug(info);
+  }
+
   private updatePointerDebug(): void {
     const emitPointerDebug = this.options.onPointerDebugChange;
     if (!emitPointerDebug) {
@@ -888,6 +1067,231 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
     this.lastPointerDebugSignature = signature;
     emitPointerDebug(info);
+  }
+
+  private readInteractionDebugInfo(): PixelFarmInteractionDebugInfo {
+    const selectionState = this.readInteractionSelectionState();
+    const currentFocusedTarget = selectionState?.focusedTarget ?? null;
+    const focusedTarget = this.resolveFocusedTargetForInteraction(currentFocusedTarget);
+    const actionableTarget = focusedTarget && focusedTarget.target.memoryIds.length > 0
+      ? focusedTarget
+      : null;
+    const controls = this.characterControls;
+    const interactJustDown =
+      controls ? Phaser.Input.Keyboard.JustDown(controls.interact) : false;
+
+    if (actionableTarget && interactJustDown) {
+      this.interactionNonce += 1;
+      this.lastInteractedTargetId = actionableTarget.target.id;
+    }
+
+    if (!focusedTarget) {
+      return {
+        currentTile: selectionState?.currentTile ?? null,
+        frontTile: selectionState?.frontTile ?? null,
+        interactionNonce: this.interactionNonce,
+        lastInteractedTargetId: this.lastInteractedTargetId,
+        target: null,
+      };
+    }
+
+    const screenAnchor = this.worldToScreenPoint(
+      focusedTarget.worldAnchor.x,
+      focusedTarget.worldAnchor.y - INTERACTION_BUBBLE_OFFSET_Y,
+    );
+
+    return {
+      currentTile: selectionState?.currentTile ?? null,
+      frontTile: selectionState?.frontTile ?? null,
+      interactionNonce: this.interactionNonce,
+      lastInteractedTargetId: this.lastInteractedTargetId,
+      target: {
+        id: focusedTarget.target.id,
+        kind: focusedTarget.target.kind,
+        memoryCount: focusedTarget.target.memoryIds.length,
+        memoryIds: [...focusedTarget.target.memoryIds],
+        occupiedCells: focusedTarget.target.getOccupiedCells().map((cell) => ({
+          column: cell.column,
+          row: cell.row,
+        })),
+        screenX: screenAnchor.x,
+        screenY: screenAnchor.y,
+        tagLabel: focusedTarget.target.tagLabel,
+      },
+    };
+  }
+
+  private readInteractionDebugBasis(): {
+    currentTile: PixelFarmCell;
+    frontTile: PixelFarmCell;
+    origin: { x: number; y: number };
+    facingVector: { x: number; y: number };
+  } | null {
+    const character = this.character;
+    if (!character) {
+      return null;
+    }
+
+    const origin = this.interactionOriginForCharacter(character);
+    if (!origin) {
+      return null;
+    }
+
+    const facingVector = normalizeFacingVector(
+      this.facingVector(character.getFacingDirection()),
+    );
+    const currentTile = this.worldPointToLocalCell(origin);
+    if (!currentTile) {
+      return null;
+    }
+
+    const frontTile = {
+      row: currentTile.row + Math.round(facingVector.y),
+      column: currentTile.column + Math.round(facingVector.x),
+    };
+
+    return {
+      currentTile,
+      frontTile,
+      origin,
+      facingVector,
+    };
+  }
+
+  private readInteractionSelectionState(): {
+    currentTile: PixelFarmCell;
+    frontTile: PixelFarmCell;
+    origin: { x: number; y: number };
+    facingVector: { x: number; y: number };
+    candidates: PixelFarmInteractionCandidate[];
+    focusedTarget: PixelFarmInteractionCandidate | null;
+  } | null {
+    const basis = this.readInteractionDebugBasis();
+    if (!basis) {
+      this.recentInteractionFocus = null;
+      return null;
+    }
+
+    const targets = this.worldRenderer?.getInteractableTargets() ?? [];
+    const candidates = this.collectInteractionCandidates(basis.frontTile, targets);
+    const focusedTarget = candidates[0] ?? null;
+
+    if (focusedTarget) {
+      this.recentInteractionFocus = {
+        candidate: focusedTarget,
+        capturedAt: this.time.now,
+      };
+    }
+
+    return {
+      currentTile: basis.currentTile,
+      frontTile: basis.frontTile,
+      origin: basis.origin,
+      facingVector: basis.facingVector,
+      candidates,
+      focusedTarget,
+    };
+  }
+
+  private resolveFocusedTargetForInteraction(
+    currentFocusedTarget: PixelFarmInteractionCandidate | null,
+  ): PixelFarmInteractionCandidate | null {
+    if (currentFocusedTarget) {
+      return currentFocusedTarget;
+    }
+
+    const recentFocus = this.recentInteractionFocus;
+    if (!recentFocus) {
+      return null;
+    }
+
+    if (this.time.now - recentFocus.capturedAt > INTERACTION_FOCUS_FALLBACK_MS) {
+      this.recentInteractionFocus = null;
+      return null;
+    }
+
+    return recentFocus.candidate;
+  }
+
+  private interactionOriginForCharacter(
+    character: PixelFarmCharacter,
+  ): { x: number; y: number } | null {
+    const body = character.body as Phaser.Physics.Arcade.Body | undefined;
+    if (!body) {
+      return null;
+    }
+
+    return {
+      x: body.x + body.width * 0.5,
+      y: body.y + body.height - 1,
+    };
+  }
+
+  private collectInteractionCandidates(
+    frontTile: PixelFarmCell,
+    targets: readonly PixelFarmInteractableTarget[],
+  ): PixelFarmInteractionCandidate[] {
+    const candidates: PixelFarmInteractionCandidate[] = [];
+
+    for (const target of targets) {
+      const occupiedCells = target.getOccupiedCells();
+      const targetCell = occupiedCells.find(
+        (cell) => cell.row === frontTile.row && cell.column === frontTile.column,
+      );
+      if (!targetCell) {
+        continue;
+      }
+
+      const worldAnchor = this.cellToWorldPosition(targetCell);
+      candidates.push({
+        target,
+        worldAnchor,
+      });
+    }
+
+    return candidates.sort((left, right) => {
+      if (left.target.kind !== right.target.kind) {
+        return left.target.kind === "crop" ? -1 : 1;
+      }
+
+      return left.target.id.localeCompare(right.target.id);
+    });
+  }
+
+  private worldPointToLocalCell(worldPoint: { x: number; y: number }): PixelFarmCell | null {
+    const worldColumn = Math.floor(worldPoint.x / PIXEL_FARM_TILE_SIZE);
+    const worldRow = Math.floor(worldPoint.y / PIXEL_FARM_TILE_SIZE);
+    const column = worldColumn - ISLAND_START_COLUMN;
+    const row = worldRow - ISLAND_START_ROW;
+
+    if (!maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, row, column)) {
+      return null;
+    }
+
+    return { row, column };
+  }
+
+  private facingVector(direction: PixelFarmCharacterDirection): { x: number; y: number } {
+    switch (direction) {
+      case "up":
+        return { x: 0, y: -1 };
+      case "left":
+        return { x: -1, y: 0 };
+      case "right":
+        return { x: 1, y: 0 };
+      case "down":
+      default:
+        return { x: 0, y: 1 };
+    }
+  }
+
+  private worldToScreenPoint(worldX: number, worldY: number): { x: number; y: number } {
+    const camera = this.cameras.main;
+
+    return {
+      x: (worldX - camera.worldView.x) * camera.zoom,
+      y: (worldY - camera.worldView.y) * camera.zoom,
+    };
   }
 
   private readPointerDebugInfo(): PixelFarmPointerDebugInfo {
@@ -997,6 +1401,87 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
       graphics.strokeRect(body.x, body.y, body.width, body.height);
     }
+  }
+
+  private drawInteractionOrigin(x: number, y: number, color: number): void {
+    const graphics = this.worldDebugGraphics;
+    if (!graphics) {
+      return;
+    }
+
+    graphics.lineStyle(2, color, 1);
+    graphics.strokeCircle(x, y, INTERACTION_ORIGIN_MARKER_RADIUS);
+    graphics.lineBetween(x - 6, y, x + 6, y);
+    graphics.lineBetween(x, y - 6, x, y + 6);
+  }
+
+  private drawFacingRay(
+    origin: { x: number; y: number },
+    facingVector: { x: number; y: number },
+    color: number,
+  ): void {
+    const graphics = this.worldDebugGraphics;
+    if (!graphics) {
+      return;
+    }
+
+    const rayLength = PIXEL_FARM_TILE_SIZE * 2.5;
+    graphics.lineStyle(2, color, 0.95);
+    graphics.lineBetween(
+      origin.x,
+      origin.y,
+      origin.x + facingVector.x * rayLength,
+      origin.y + facingVector.y * rayLength,
+    );
+  }
+
+  private drawInteractionFrontTile(
+    cell: PixelFarmCell,
+    color: number,
+    alpha: number,
+  ): void {
+    const graphics = this.worldDebugGraphics;
+    if (!graphics) {
+      return;
+    }
+
+    const origin = this.cellToWorldOrigin(cell);
+    graphics.lineStyle(1, color, 0.8);
+    graphics.fillStyle(color, alpha);
+    graphics.strokeRect(origin.x, origin.y, PIXEL_FARM_TILE_SIZE, PIXEL_FARM_TILE_SIZE);
+    graphics.fillRect(origin.x, origin.y, PIXEL_FARM_TILE_SIZE, PIXEL_FARM_TILE_SIZE);
+  }
+
+  private drawInteractionTileOutline(
+    cell: PixelFarmCell,
+    color: number,
+    lineWidth: number,
+    alpha: number,
+  ): void {
+    const graphics = this.worldDebugGraphics;
+    if (!graphics) {
+      return;
+    }
+
+    const origin = this.cellToWorldOrigin(cell);
+    graphics.lineStyle(lineWidth, color, alpha);
+    graphics.strokeRect(origin.x, origin.y, PIXEL_FARM_TILE_SIZE, PIXEL_FARM_TILE_SIZE);
+  }
+
+  private drawInteractionCandidate(
+    worldAnchor: { x: number; y: number },
+    color: number,
+    focused: boolean,
+  ): void {
+    const graphics = this.worldDebugGraphics;
+    if (!graphics) {
+      return;
+    }
+
+    graphics.lineStyle(focused ? 2 : 1, color, focused ? 1 : 0.85);
+    graphics.strokeCircle(worldAnchor.x, worldAnchor.y, INTERACTION_ANCHOR_MARKER_RADIUS + (focused ? 2 : 0));
+    graphics.lineBetween(worldAnchor.x - 4, worldAnchor.y, worldAnchor.x + 4, worldAnchor.y);
+    graphics.lineBetween(worldAnchor.x, worldAnchor.y - 4, worldAnchor.x, worldAnchor.y + 4);
   }
 
   private createDebugActor(debugState: PixelFarmDebugState): PixelFarmPreviewActor {

@@ -177,6 +177,10 @@ export class PixelFarmCharacter extends Phaser.Physics.Arcade.Sprite {
     this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
   }
 
+  getFacingDirection(): PixelFarmCharacterDirection {
+    return this.facing;
+  }
+
   private handleAnimationComplete(): void {
     if (this.debugPoseLocked) {
       return;

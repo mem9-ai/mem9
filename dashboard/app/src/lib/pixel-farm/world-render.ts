@@ -1,4 +1,4 @@
-import type Phaser from "phaser";
+import Phaser from "phaser";
 import {
   PixelFarmBabyCow,
   type PixelFarmBabyCowColor,
@@ -107,6 +107,15 @@ interface PixelFarmWorldRendererConfig {
 }
 
 type PixelFarmRenderedAnimal = PixelFarmBabyCow | PixelFarmChicken | PixelFarmCow;
+
+export interface PixelFarmInteractableTarget {
+  id: string;
+  kind: "animal" | "crop";
+  memoryIds: readonly string[];
+  tagLabel: string;
+  getOccupiedCells: () => ReadonlyArray<PixelFarmGridCell>;
+  getWorldAnchors: () => ReadonlyArray<{ x: number; y: number }>;
+}
 
 function gridCellKey(row: number, column: number): string {
   return `${row}:${column}`;
@@ -410,6 +419,7 @@ export class PixelFarmWorldRenderer {
   private readonly gridOrigin: { x: number; y: number };
   private cropObjects: Phaser.GameObjects.Image[] = [];
   private animals: PixelFarmRenderedAnimal[] = [];
+  private interactableTargets: PixelFarmInteractableTarget[] = [];
   private readonly animalGroup: Phaser.Physics.Arcade.Group;
 
   constructor(config: PixelFarmWorldRendererConfig) {
@@ -443,6 +453,10 @@ export class PixelFarmWorldRenderer {
     return this.cropObjects;
   }
 
+  getInteractableTargets(): readonly PixelFarmInteractableTarget[] {
+    return this.interactableTargets;
+  }
+
   render(worldState: PixelFarmWorldState | null): void {
     this.clear();
 
@@ -468,6 +482,7 @@ export class PixelFarmWorldRenderer {
       animal.destroy();
     }
     this.animals = [];
+    this.interactableTargets = [];
     this.animalGroup.clear(false, false);
   }
 
@@ -553,6 +568,8 @@ export class PixelFarmWorldRenderer {
         anchor,
         cropBucket.instances.length,
       );
+      const instanceAnchors: Array<{ x: number; y: number }> = [];
+      const occupiedCells: PixelFarmGridCell[] = [];
 
       for (const [instanceIndex, instance] of cropBucket.instances.entries()) {
         const cell = cropCells[instanceIndex];
@@ -565,7 +582,20 @@ export class PixelFarmWorldRenderer {
           continue;
         }
 
-        this.addCropTile(cell, tile);
+        const sprite = this.addCropTile(cell, tile);
+        instanceAnchors.push({ x: sprite.x, y: sprite.y });
+        occupiedCells.push({ row: cell.row, column: cell.column });
+      }
+
+      if (instanceAnchors.length > 0) {
+        this.interactableTargets.push({
+          id: cropBucket.id,
+          kind: "crop",
+          memoryIds: [...cropBucket.memoryIds],
+          tagLabel: cropBucket.tagLabel,
+          getOccupiedCells: () => occupiedCells.map((cell) => ({ ...cell })),
+          getWorldAnchors: () => [...instanceAnchors],
+        });
       }
     }
   }
@@ -581,6 +611,8 @@ export class PixelFarmWorldRenderer {
     let placementIndex = 0;
 
     for (const animalBucket of animalBuckets) {
+      const renderedAnimals: PixelFarmRenderedAnimal[] = [];
+
       for (let instanceIndex = 0; instanceIndex < animalBucket.instanceCount; instanceIndex += 1) {
         const cell = layout.animalCells[placementIndex % layout.animalCells.length]!;
         const renderedAnimal = this.createAnimal(layout, cell, animalBucket, placementIndex);
@@ -590,6 +622,28 @@ export class PixelFarmWorldRenderer {
         }
 
         this.animals.push(renderedAnimal);
+        renderedAnimals.push(renderedAnimal);
+      }
+
+      if (renderedAnimals.length > 0) {
+        this.interactableTargets.push({
+          id: animalBucket.id,
+          kind: "animal",
+          memoryIds: [...animalBucket.memoryIds],
+          tagLabel: animalBucket.tagLabel,
+          getOccupiedCells: () =>
+            renderedAnimals.map((animal) => {
+              const body = animal.body as Phaser.Physics.Arcade.Body | undefined;
+              const sampleX = body ? body.x + body.width * 0.5 : animal.x;
+              const sampleY = body ? body.y + body.height - 1 : animal.y - 1;
+              return this.worldPointToGridCell(sampleX, sampleY);
+            }),
+          getWorldAnchors: () =>
+            renderedAnimals.map((animal) => ({
+              x: animal.x,
+              y: animal.y,
+            })),
+        });
       }
     }
   }
@@ -602,7 +656,10 @@ export class PixelFarmWorldRenderer {
     return null;
   }
 
-  private addCropTile(cell: PixelFarmGridCell, tile: PixelFarmAssetTileSelection): void {
+  private addCropTile(
+    cell: PixelFarmGridCell,
+    tile: PixelFarmAssetTileSelection,
+  ): Phaser.GameObjects.Image {
     const source = PIXEL_FARM_ASSET_SOURCE_CONFIG[tile.sourceId];
     const { x, y } = this.cellToWorldPosition(cell);
     const sprite = this.scene.add.image(x, y, source.textureKey, tile.frame);
@@ -610,6 +667,7 @@ export class PixelFarmWorldRenderer {
     sprite.setOrigin(0.5, 1);
     sprite.setDepth(pixelFarmDepthForY(DATA_ENTITY_DEPTH, y));
     this.cropObjects.push(sprite);
+    return sprite;
   }
 
   private takeNearestCells(

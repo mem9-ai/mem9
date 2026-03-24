@@ -1,22 +1,92 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
+import { PixelFarmInteractionBubble } from "@/components/pixel-farm/interaction-bubble";
 import {
   createPixelFarmGame,
   type PixelFarmDebugState,
+  type PixelFarmInteractionDebugInfo,
   type PixelFarmPointerDebugInfo,
 } from "@/lib/pixel-farm/create-game";
 import type { PixelFarmWorldState } from "@/lib/pixel-farm/data/types";
+import type { Memory } from "@/types/memory";
 
 interface PhaserStageProps {
   debugActorState?: PixelFarmDebugState | null;
+  memoryById?: Record<string, Memory>;
+  onInteractionDebugChange?: ((info: PixelFarmInteractionDebugInfo) => void) | null;
   onPointerDebugChange?: ((info: PixelFarmPointerDebugInfo) => void) | null;
+  showInteractionDebug?: boolean;
   showSpatialDebug?: boolean;
   worldState?: PixelFarmWorldState | null;
 }
 
+interface PixelFarmOpenBubbleState {
+  lastInteractionNonce: number;
+  memoryIds: string[];
+  memoryIndex: number;
+  screenX: number;
+  screenY: number;
+  tagLabel: string;
+  targetId: string;
+}
+
+function resolveAvailableMemoryIds(
+  memoryIds: readonly string[],
+  memoryById: Record<string, Memory>,
+): string[] {
+  return memoryIds.filter((memoryId) => memoryById[memoryId]);
+}
+
+function openBubbleStateFromInteraction(
+  info: PixelFarmInteractionDebugInfo,
+  memoryById: Record<string, Memory>,
+  current: PixelFarmOpenBubbleState | null,
+): PixelFarmOpenBubbleState | null {
+  const target = info.target;
+  if (!target) {
+    return null;
+  }
+
+  const memoryIds = resolveAvailableMemoryIds(target.memoryIds, memoryById);
+  if (memoryIds.length < 1) {
+    return null;
+  }
+
+  if (current && current.targetId === target.id && info.interactionNonce === current.lastInteractionNonce) {
+    return current;
+  }
+
+  if (!current || current.targetId !== target.id) {
+    return {
+      lastInteractionNonce: info.interactionNonce,
+      memoryIds,
+      memoryIndex: 0,
+      screenX: target.screenX,
+      screenY: target.screenY,
+      tagLabel: target.tagLabel,
+      targetId: target.id,
+    };
+  }
+
+  return {
+    ...current,
+    lastInteractionNonce: info.interactionNonce,
+    memoryIds,
+    memoryIndex: info.interactionNonce > current.lastInteractionNonce
+      ? (current.memoryIndex + 1) % memoryIds.length
+      : current.memoryIndex,
+    screenX: target.screenX,
+    screenY: target.screenY,
+    tagLabel: target.tagLabel,
+  };
+}
+
 export function PhaserStage({
   debugActorState = null,
+  memoryById = {},
+  onInteractionDebugChange = null,
   onPointerDebugChange = null,
+  showInteractionDebug = false,
   showSpatialDebug = false,
   worldState = null,
 }: PhaserStageProps) {
@@ -26,8 +96,15 @@ export function PhaserStage({
   const onPointerDebugChangeRef = useRef<((info: PixelFarmPointerDebugInfo) => void) | null>(
     onPointerDebugChange,
   );
+  const onInteractionDebugChangeRef = useRef<
+    ((info: PixelFarmInteractionDebugInfo) => void) | null
+  >(onInteractionDebugChange);
+  const showInteractionDebugRef = useRef(showInteractionDebug);
   const showSpatialDebugRef = useRef(showSpatialDebug);
   const worldStateRef = useRef<PixelFarmWorldState | null>(worldState);
+  const memoryByIdRef = useRef(memoryById);
+  const handledInteractionNonceRef = useRef(0);
+  const [openBubbleState, setOpenBubbleState] = useState<PixelFarmOpenBubbleState | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -39,12 +116,24 @@ export function PhaserStage({
   }, [onPointerDebugChange]);
 
   useEffect(() => {
+    onInteractionDebugChangeRef.current = onInteractionDebugChange;
+  }, [onInteractionDebugChange]);
+
+  useEffect(() => {
+    showInteractionDebugRef.current = showInteractionDebug;
+  }, [showInteractionDebug]);
+
+  useEffect(() => {
     showSpatialDebugRef.current = showSpatialDebug;
   }, [showSpatialDebug]);
 
   useEffect(() => {
     worldStateRef.current = worldState;
   }, [worldState]);
+
+  useEffect(() => {
+    memoryByIdRef.current = memoryById;
+  }, [memoryById]);
 
   useEffect(() => {
     if (!hostRef.current || gameRef.current) {
@@ -54,7 +143,25 @@ export function PhaserStage({
     try {
       gameRef.current = createPixelFarmGame(hostRef.current, {
         getDebugActorState: () => debugActorStateRef.current,
+        onInteractionDebugChange: (info) => {
+          onInteractionDebugChangeRef.current?.(info);
+          setOpenBubbleState((current) =>
+            openBubbleStateFromInteraction(info, memoryByIdRef.current, current),
+          );
+
+          if (
+            info.interactionNonce === handledInteractionNonceRef.current ||
+            info.interactionNonce < 1 ||
+            !info.target ||
+            info.lastInteractedTargetId !== info.target.id
+          ) {
+            return;
+          }
+
+          handledInteractionNonceRef.current = info.interactionNonce;
+        },
         onPointerDebugChange: (info) => onPointerDebugChangeRef.current?.(info),
+        getShowInteractionDebug: () => showInteractionDebugRef.current,
         getShowSpatialDebug: () => showSpatialDebugRef.current,
         getWorldState: () => worldStateRef.current,
       });
@@ -64,14 +171,35 @@ export function PhaserStage({
     }
 
     return () => {
+      handledInteractionNonceRef.current = 0;
       gameRef.current?.destroy(true);
       gameRef.current = null;
     };
   }, []);
 
+  const visibleMemoryIds = openBubbleState
+    ? resolveAvailableMemoryIds(openBubbleState.memoryIds, memoryById)
+    : [];
+  const currentIndex = openBubbleState
+    ? openBubbleState.memoryIndex % visibleMemoryIds.length
+    : 0;
+  const currentMemory = openBubbleState && visibleMemoryIds[currentIndex]
+    ? memoryById[visibleMemoryIds[currentIndex]!]
+    : null;
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#0d141b]">
       <div ref={hostRef} className="h-full w-full touch-none" />
+      {openBubbleState && currentMemory ? (
+        <PixelFarmInteractionBubble
+          content={currentMemory.content}
+          currentIndex={currentIndex}
+          screenX={openBubbleState.screenX}
+          screenY={openBubbleState.screenY}
+          tagLabel={openBubbleState.tagLabel}
+          totalCount={visibleMemoryIds.length}
+        />
+      ) : null}
       {bootError ? (
         <div className="absolute inset-0 flex items-center justify-center bg-[#0d141b] px-6 text-center text-sm uppercase tracking-[0.2em] text-[#f6dca6]">
           {bootError}
