@@ -14,7 +14,7 @@ import cowGreenUrl from "@/assets/game-objects/animals/cow/cow-green-spritesheet
 import cowLightUrl from "@/assets/game-objects/animals/cow/cow-light-spritesheet.png";
 import cowPinkUrl from "@/assets/game-objects/animals/cow/cow-pink-spritesheet.png";
 import cowPurpleUrl from "@/assets/game-objects/animals/cow/cow-purple-spritesheet.png";
-import premiumCharacterUrl from "@/assets/game-objects/characters/premium-charakter-spritesheet.png";
+import premiumCharacterUrl from "@/assets/game-objects/characters/premium-character-spritesheet.png";
 import water1Url from "@/assets/water-frame-1.png";
 import water2Url from "@/assets/water-frame-2.png";
 import water3Url from "@/assets/water-frame-3.png";
