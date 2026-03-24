@@ -292,12 +292,16 @@ export function SpacePage() {
   };
 
   // Queries
+  // Don't pass tag to the API when an analysis category is active.
+  // Analysis tags (including derived tags) should only filter the local
+  // analysis list and must not be sent to /memories as a server-side filter.
+  const memoryApiTag = analysisCategory ? undefined : tag;
   const { data: stats } = useStats(spaceId, range);
   const { data: totalStats } = useStats(spaceId);
   const { data: memData, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isFetching } =
     useMemories(spaceId, {
       q: search.q,
-      tag,
+      tag: memoryApiTag,
       memory_type: memoryTypeFilter,
       range,
       facet,
@@ -622,6 +626,9 @@ export function SpacePage() {
         ...search,
         analysisCategory: nextCategory,
         q: nextCategory ? undefined : search.q,
+        // Clear tag when leaving analysis mode to prevent analysis-only
+        // (e.g. derived) tags from leaking into the normal /memories API query.
+        tag: nextCategory ? search.tag : undefined,
       },
     });
   }

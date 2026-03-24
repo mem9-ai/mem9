@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   retry: vi.fn(),
   useSourceMemories: vi.fn(),
   useSessionPreviewMessages: vi.fn(),
+  useMemories: vi.fn(),
 }));
 
 const FIXED_NOW = new Date("2026-03-21T12:00:00Z");
@@ -210,23 +211,26 @@ vi.mock("@/api/queries", () => ({
     isLoading: false,
     isFetching: false,
   }),
-  useMemories: () => ({
-    data: {
-      pages: [
-        {
-          memories: [activityNewest, preferenceMemory, activityOlder, archivedMemory],
-          total: 4,
-          limit: 50,
-          offset: 0,
-        },
-      ],
-    },
-    fetchNextPage: vi.fn(),
-    hasNextPage: false,
-    isFetchingNextPage: false,
-    isLoading: false,
-    isFetching: false,
-  }),
+  useMemories: (_spaceId: string, params: Record<string, unknown>) => {
+    mocks.useMemories(_spaceId, params);
+    return {
+      data: {
+        pages: [
+          {
+            memories: [activityNewest, preferenceMemory, activityOlder, archivedMemory],
+            total: 4,
+            limit: 50,
+            offset: 0,
+          },
+        ],
+      },
+      fetchNextPage: vi.fn(),
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      isLoading: false,
+      isFetching: false,
+    };
+  },
   useSessionPreviewMessages: (_spaceId: string, memories: Memory[]) => {
     mocks.useSessionPreviewMessages(memories);
     return {
@@ -363,6 +367,7 @@ describe("SpacePage", () => {
     window.innerWidth = 1440;
     window.dispatchEvent(new Event("resize"));
     mocks.useSourceMemories.mockClear();
+    mocks.useMemories.mockClear();
     await i18n.changeLanguage("en");
     window.history.pushState({}, "", "/your-memory/space");
     await act(async () => {
@@ -652,5 +657,64 @@ describe("SpacePage", () => {
     expect(
       within(screen.getByTestId("detail-scroll-area")).queryByText("```json"),
     ).not.toBeInTheDocument();
+  });
+
+  it("does not pass analysis tags to the useMemories API query", async () => {
+    renderSpacePage();
+
+    // Enter analysis mode
+    fireEvent.click(getAnalysisCategoryButton("activity"));
+
+    await waitFor(() => {
+      expect(router.state.location.search.analysisCategory).toBe("activity");
+    });
+
+    // Select a tag via the tag strip
+    const tagButton = screen.queryByRole("button", { name: /filter by tag launch/i });
+    if (tagButton) {
+      fireEvent.click(tagButton);
+    }
+
+    await waitFor(() => {
+      expect(router.state.location.search.tag).toBe("launch");
+    });
+
+    // The useMemories mock should have been called with tag: undefined
+    // because analysis-mode tags must not be sent to the /memories API.
+    const calls = mocks.useMemories.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    expect(lastCall).toBeDefined();
+    expect(lastCall![1]).toHaveProperty("tag", undefined);
+  });
+
+  it("clears the tag from the URL when exiting analysis mode", async () => {
+    renderSpacePage();
+
+    // Enter analysis mode
+    fireEvent.click(getAnalysisCategoryButton("activity"));
+
+    await waitFor(() => {
+      expect(router.state.location.search.analysisCategory).toBe("activity");
+    });
+
+    // Select a tag
+    const tagButton = screen.queryByRole("button", { name: /filter by tag launch/i });
+    if (tagButton) {
+      fireEvent.click(tagButton);
+    }
+
+    await waitFor(() => {
+      expect(router.state.location.search.tag).toBe("launch");
+    });
+
+    // Exit analysis mode by clicking the same category again
+    fireEvent.click(getAnalysisCategoryButton("activity"));
+
+    await waitFor(() => {
+      expect(router.state.location.search.analysisCategory).toBeUndefined();
+    });
+
+    // The tag should have been cleared when leaving analysis mode
+    expect(router.state.location.search.tag).toBeUndefined();
   });
 });
