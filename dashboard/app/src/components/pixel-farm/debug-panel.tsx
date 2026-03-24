@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   PIXEL_FARM_BABY_COW_COLORS,
@@ -90,9 +91,25 @@ function directionOptionsForType(type: PixelFarmDebugActorType): readonly string
 }
 
 export function PixelFarmDebugPanel({ value, onChange }: PixelFarmDebugPanelProps) {
+  const [collapsed, setCollapsed] = useState(true);
   const variantOptions = variantOptionsForType(value.type);
   const stateOptions = stateOptionsForType(value.type);
   const directionOptions = directionOptionsForType(value.type);
+
+  if (collapsed) {
+    return (
+      <aside className="absolute top-4 right-4 z-20">
+        <Button
+          size="sm"
+          variant="outline"
+          className="rounded-full border-[#f6dca6]/25 bg-[#141109]/92 px-4 text-[#f6dca6] shadow-xl backdrop-blur hover:bg-[#221a0d]"
+          onClick={() => setCollapsed(false)}
+        >
+          Open Dev Panel
+        </Button>
+      </aside>
+    );
+  }
 
   return (
     <aside className="absolute top-4 right-4 z-20 w-[28rem] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border border-[#f6dca6]/25 bg-[#141109]/92 p-4 text-[#f6dca6] shadow-2xl backdrop-blur">
@@ -102,6 +119,14 @@ export function PixelFarmDebugPanel({ value, onChange }: PixelFarmDebugPanelProp
           <h2 className="mt-1 text-sm font-semibold tracking-[0.08em]">Actor Preview</h2>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            size="xs"
+            variant="outline"
+            className="border-[#f6dca6]/25 bg-transparent text-[#f6dca6] hover:bg-[#f6dca6]/10"
+            onClick={() => setCollapsed(true)}
+          >
+            Collapse
+          </Button>
           <Button
             size="xs"
             variant="outline"
