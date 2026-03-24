@@ -7,6 +7,7 @@ const FARMING_PLANTS_COLUMNS = 5;
 const MUSHROOMS_FLOWERS_STONES_COLUMNS = 12;
 
 export const PIXEL_FARM_MAIN_FIELD_COUNT = 5;
+export const PIXEL_FARM_TOP_CROP_TAG_COUNT = 13;
 
 export type PixelFarmCropStage = "seed" | "sprout" | "growing" | "mature";
 export type PixelFarmBucketAnimalTier = "chicken" | "baby-cow" | "cow";
@@ -49,11 +50,11 @@ function singleTileCropPalette(row: number, family: string): PixelFarmCropFamily
   return {
     family,
     stages: {
-      // Use the largest mature frame and keep four clear visual steps.
+      // Normal crop rows use four populated columns; the last column is blank.
       seed: farmingPlant(row, 0),
       sprout: farmingPlant(row, 1),
       growing: farmingPlant(row, 2),
-      mature: farmingPlant(row, 4),
+      mature: farmingPlant(row, 3),
     },
   };
 }
@@ -64,12 +65,20 @@ function singleTileCropPalette(row: number, family: string): PixelFarmCropFamily
 
 // Avoid the first farmingPlants row for now. The user flagged the corn row as
 // visually tall, so keep it out of the base bucket maturity chain.
-export const PIXEL_FARM_MAIN_FIELD_CROP_PALETTES: readonly PixelFarmCropFamilyPalette[] = [
-  singleTileCropPalette(1, "turnip"),
-  singleTileCropPalette(2, "cauliflower"),
-  singleTileCropPalette(3, "eggplant"),
-  singleTileCropPalette(9, "pink-cabbage"),
-  singleTileCropPalette(10, "blueberry"),
+export const PIXEL_FARM_CROP_BUCKET_PALETTES: readonly PixelFarmCropFamilyPalette[] = [
+  singleTileCropPalette(2, "crop-01"),
+  singleTileCropPalette(3, "crop-02"),
+  singleTileCropPalette(4, "crop-03"),
+  singleTileCropPalette(5, "crop-04"),
+  singleTileCropPalette(6, "crop-05"),
+  singleTileCropPalette(7, "crop-06"),
+  singleTileCropPalette(8, "crop-07"),
+  singleTileCropPalette(9, "crop-08"),
+  singleTileCropPalette(10, "crop-09"),
+  singleTileCropPalette(11, "crop-10"),
+  singleTileCropPalette(12, "crop-11"),
+  singleTileCropPalette(13, "crop-12"),
+  singleTileCropPalette(14, "crop-13"),
 ] as const;
 
 export const PIXEL_FARM_SPECIAL_TALL_CROP_CANDIDATE: PixelFarmCropFamilyPalette = {

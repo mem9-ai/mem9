@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPixelFarmMemoryStore } from "@/lib/pixel-farm/data/memory-store";
 import { buildPixelFarmWorldState } from "@/lib/pixel-farm/data/memory-to-world";
-import { loadInitialSnapshot } from "@/lib/pixel-farm/data/source-mock";
+import { loadInitialSnapshot } from "@/lib/pixel-farm/data/source";
 import type { PixelFarmWorldQueryState } from "@/lib/pixel-farm/data/types";
 
 export function usePixelFarmWorld(spaceId: string): PixelFarmWorldQueryState {
@@ -34,6 +34,8 @@ export function usePixelFarmWorld(spaceId: string): PixelFarmWorldQueryState {
           memories: storeSnapshot.memories,
           recentEvents: storeSnapshot.recentEvents,
           spaceId,
+          seedTags: snapshot.seedTags,
+          totalMemories: snapshot.totalMemories,
         });
 
         setState({

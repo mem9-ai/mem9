@@ -4,9 +4,17 @@ import type {
   PixelFarmCropStage,
 } from "@/lib/pixel-farm/palette";
 
+export interface PixelFarmSeedTag {
+  key: string;
+  label: string;
+  count: number;
+}
+
 export interface PixelFarmInitialSnapshot {
   fetchedAt: string;
   memories: Memory[];
+  seedTags?: PixelFarmSeedTag[];
+  totalMemories?: number;
 }
 
 export interface PixelFarmDeltaEvent {
@@ -39,6 +47,30 @@ export interface PixelFarmAnimalState {
   tier: PixelFarmBucketAnimalTier;
 }
 
+export interface PixelFarmAnimalBucketState {
+  id: string;
+  instanceCount: number;
+  memoryIds: string[];
+  rank: number;
+  tagKey: string;
+  tagLabel: string;
+  tier: PixelFarmBucketAnimalTier;
+  totalCount: number;
+  zone: "chicken-pen" | "cow-pen";
+}
+
+export interface PixelFarmCropBucketState {
+  id: string;
+  cropFamily: string;
+  memoryIds: string[];
+  plotIndex: number;
+  rank: number;
+  tagKey: string;
+  tagLabel: string;
+  totalCount: number;
+  instances: PixelFarmBucketState[];
+}
+
 export interface PixelFarmRoleState {
   id: string;
   action: "idle" | "sow" | "water" | "harvest" | "clear";
@@ -65,6 +97,8 @@ export interface PixelFarmWorldState {
   fetchedAt: string;
   activeSpaceId: string;
   totalMemories: number;
+  animalBuckets: PixelFarmAnimalBucketState[];
+  cropBuckets: PixelFarmCropBucketState[];
   categories: PixelFarmCategoryState[];
   roles: PixelFarmRoleState[];
   recentEvents: PixelFarmDeltaEvent[];
@@ -75,4 +109,3 @@ export interface PixelFarmWorldQueryState {
   status: "idle" | "loading" | "ready" | "error";
   worldState: PixelFarmWorldState | null;
 }
-

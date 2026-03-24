@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import type { PixelFarmAnimalState, PixelFarmWorldQueryState } from "@/lib/pixel-farm/data/types";
+import type { PixelFarmWorldQueryState } from "@/lib/pixel-farm/data/types";
 
 interface PixelFarmWorldStatePanelProps {
   spaceId: string;
@@ -9,14 +9,6 @@ interface PixelFarmWorldStatePanelProps {
 
 function formatBuckets(count: number): string {
   return count === 1 ? "1 bucket" : `${count} buckets`;
-}
-
-function formatAnimals(animals: PixelFarmAnimalState[]): string {
-  if (animals.length === 0) {
-    return "none";
-  }
-
-  return animals.map((animal) => animal.tier).join(", ");
 }
 
 export function PixelFarmWorldStatePanel({
@@ -78,22 +70,42 @@ export function PixelFarmWorldStatePanel({
 
       {worldQuery.worldState ? (
         <div className="mt-3 space-y-2 text-xs text-[#f6dca6]/82">
-          {worldQuery.worldState.categories.map((category) => (
+          {worldQuery.worldState.animalBuckets.map((animalBucket) => (
             <div
-              key={category.key}
-              className="rounded-xl border border-[#f6dca6]/12 bg-[#0d141b]/55 px-3 py-2"
+              key={animalBucket.id}
+              className="rounded-xl border border-[#d89b6b]/18 bg-[#1a1410]/55 px-3 py-2"
             >
               <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-[#f6dca6]">{category.label}</span>
+                <span className="font-medium text-[#f6dca6]">
+                  #{animalBucket.rank} {animalBucket.tagLabel}
+                </span>
                 <span className="uppercase tracking-[0.18em] text-[#f6dca6]/50">
-                  {category.kind}
+                  {animalBucket.zone}
                 </span>
               </div>
               <div className="mt-1">
-                {category.totalCount} memories, {formatBuckets(category.buckets.length)}
+                {animalBucket.totalCount} memories, {animalBucket.tier}
+              </div>
+            </div>
+          ))}
+          {worldQuery.worldState.cropBuckets.map((cropBucket) => (
+            <div
+              key={cropBucket.id}
+              className="rounded-xl border border-[#f6dca6]/12 bg-[#0d141b]/55 px-3 py-2"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-medium text-[#f6dca6]">
+                  #{cropBucket.rank} {cropBucket.tagLabel}
+                </span>
+                <span className="uppercase tracking-[0.18em] text-[#f6dca6]/50">
+                  plot {cropBucket.plotIndex + 1}
+                </span>
               </div>
               <div className="mt-1">
-                Crop: {category.cropFamily ?? "mixed"}, animals: {formatAnimals(category.animals)}
+                {cropBucket.totalCount} memories, {formatBuckets(cropBucket.instances.length)}
+              </div>
+              <div className="mt-1">
+                Crop: {cropBucket.cropFamily}
               </div>
             </div>
           ))}

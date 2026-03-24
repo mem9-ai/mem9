@@ -1,37 +1,37 @@
 import {
-  PIXEL_FARM_BUCKET_ANIMAL_PALETTES,
+  PIXEL_FARM_CROP_BUCKET_PALETTES,
   PIXEL_FARM_MAIN_FIELD_COUNT,
-  PIXEL_FARM_MAIN_FIELD_CROP_PALETTES,
   PIXEL_FARM_OTHER_ZONE_DECORATIONS,
-  type PixelFarmBucketAnimalTier,
+  PIXEL_FARM_TOP_CROP_TAG_COUNT,
   type PixelFarmCropStage,
 } from "@/lib/pixel-farm/palette";
 import { filterLowSignalAggregationTags, normalizeTagSignal } from "@/lib/tag-signals";
 import type { Memory } from "@/types/memory";
 import type {
+  PixelFarmAnimalBucketState,
+  PixelFarmCropBucketState,
   PixelFarmCategoryState,
-  PixelFarmRoleState,
   PixelFarmWorldState,
   PixelFarmDeltaEvent,
+  PixelFarmRoleState,
+  PixelFarmSeedTag,
 } from "@/lib/pixel-farm/data/types";
 
 const CATEGORY_OTHER_KEY = "other";
 const BUCKET_CAPACITY = 4;
 const MAX_BUCKET_COUNT = 6;
-const ANIMAL_THRESHOLDS: Array<{
-  minimumCount: number;
-  tier: PixelFarmBucketAnimalTier;
-}> = [
-  { minimumCount: 5, tier: "chicken" },
-  { minimumCount: 9, tier: "baby-cow" },
-  { minimumCount: 13, tier: "cow" },
-];
+const MAX_CROP_INSTANCE_COUNT = 6;
+const CROP_BUCKETS_PER_PLOT = [4, 3, 3, 2, 1] as const;
+const MAX_ANIMAL_BUCKET_COUNT = 3;
+const CROP_TAG_LIMIT = 13;
 
 interface BuildPixelFarmWorldStateInput {
   fetchedAt: string;
   memories: Memory[];
   recentEvents: PixelFarmDeltaEvent[];
   spaceId: string;
+  seedTags?: PixelFarmSeedTag[];
+  totalMemories?: number;
 }
 
 interface CategoryAccumulator {
@@ -40,6 +40,7 @@ interface CategoryAccumulator {
   label: string;
   memories: Memory[];
   plotIndex: number;
+  seedCount: number | null;
 }
 
 interface TagStat {
@@ -103,8 +104,51 @@ function collectCandidateTags(memories: Memory[]): TagStat[] {
     });
 }
 
-function selectTopCategoryTags(memories: Memory[]): TagStat[] {
-  return collectCandidateTags(memories).slice(0, PIXEL_FARM_MAIN_FIELD_COUNT);
+function createTagStatFromSeedTag(seedTag: PixelFarmSeedTag): TagStat | null {
+  const normalized = normalizeTagSignal(seedTag.key);
+  const label = seedTag.label.trim();
+  if (!normalized || !label) {
+    return null;
+  }
+
+  return {
+    normalized,
+    label,
+    count: seedTag.count,
+  };
+}
+
+function selectTopRankedTags(
+  memories: Memory[],
+  seedTags: PixelFarmSeedTag[] = [],
+  limit = PIXEL_FARM_TOP_CROP_TAG_COUNT,
+): TagStat[] {
+  const selected = new Map<string, TagStat>();
+
+  for (const seedTag of seedTags) {
+    const tag = createTagStatFromSeedTag(seedTag);
+    if (!tag || selected.has(tag.normalized)) {
+      continue;
+    }
+
+    selected.set(tag.normalized, tag);
+    if (selected.size >= limit) {
+      return [...selected.values()];
+    }
+  }
+
+  for (const tag of collectCandidateTags(memories)) {
+    if (selected.has(tag.normalized)) {
+      continue;
+    }
+
+    selected.set(tag.normalized, tag);
+    if (selected.size >= limit) {
+      break;
+    }
+  }
+
+  return [...selected.values()];
 }
 
 function pickPrimaryCategoryKey(
@@ -121,16 +165,22 @@ function pickPrimaryCategoryKey(
   return CATEGORY_OTHER_KEY;
 }
 
-function buildBuckets(totalCount: number) {
+function buildBuckets(totalCount: number, fixedBucketCount?: number) {
   if (totalCount <= 0) {
     return [];
   }
 
-  const cappedCount = Math.min(totalCount, BUCKET_CAPACITY * MAX_BUCKET_COUNT);
-  const bucketCount = Math.min(
-    MAX_BUCKET_COUNT,
-    Math.max(1, Math.ceil(cappedCount / BUCKET_CAPACITY)),
+  const cappedCount = Math.min(
+    totalCount,
+    BUCKET_CAPACITY * (fixedBucketCount ?? MAX_BUCKET_COUNT),
   );
+  const bucketCount =
+    fixedBucketCount !== undefined
+      ? Math.max(1, fixedBucketCount)
+      : Math.min(
+          MAX_BUCKET_COUNT,
+          Math.max(1, Math.ceil(cappedCount / BUCKET_CAPACITY)),
+        );
   const baseCount = Math.floor(cappedCount / bucketCount);
   const remainder = cappedCount % bucketCount;
 
@@ -148,21 +198,21 @@ function buildBuckets(totalCount: number) {
   });
 }
 
-function buildAnimals(categoryKey: string, totalCount: number) {
-  return ANIMAL_THRESHOLDS.filter((threshold) => totalCount >= threshold.minimumCount)
-    .map((threshold) => {
-      const palette = PIXEL_FARM_BUCKET_ANIMAL_PALETTES.find(
-        (candidate) => candidate.tier === threshold.tier,
-      );
+function resolveOtherCategoryCount(
+  sampleCount: number,
+  totalMemories: number | undefined,
+  mainCategorySeedTotal: number,
+  hasSeedTags: boolean,
+): number {
+  if (!hasSeedTags || totalMemories === undefined) {
+    return sampleCount;
+  }
 
-      return {
-        id: `${categoryKey}-${threshold.tier}`,
-        active: true,
-        tier: threshold.tier,
-        color: palette?.color ?? "brown",
-        type: palette?.type ?? threshold.tier,
-      };
-    });
+  if (mainCategorySeedTotal > totalMemories) {
+    return sampleCount;
+  }
+
+  return Math.max(sampleCount, totalMemories - mainCategorySeedTotal);
 }
 
 function dominantAgentId(memories: Memory[]): string | null {
@@ -188,6 +238,91 @@ function dominantAgentId(memories: Memory[]): string | null {
   return ranked[0]?.[0] ?? null;
 }
 
+function resolveCropInstanceCount(totalCount: number, maxTagCount: number): number {
+  if (totalCount <= 0) {
+    return 0;
+  }
+
+  if (maxTagCount <= 0) {
+    return 1;
+  }
+
+  return Math.max(
+    1,
+    Math.min(MAX_CROP_INSTANCE_COUNT, Math.ceil((totalCount / maxTagCount) * MAX_CROP_INSTANCE_COUNT)),
+  );
+}
+
+function plotIndexForCropRank(rank: number): number {
+  let remaining = rank;
+
+  for (const [plotIndex, capacity] of CROP_BUCKETS_PER_PLOT.entries()) {
+    if (remaining < capacity) {
+      return plotIndex;
+    }
+
+    remaining -= capacity;
+  }
+
+  return CROP_BUCKETS_PER_PLOT.length - 1;
+}
+
+function buildCropBuckets(
+  cropTags: TagStat[],
+  memoriesByTag: Map<string, Memory[]>,
+): PixelFarmCropBucketState[] {
+  const maxTagCount = cropTags[0]?.count ?? 0;
+
+  return cropTags.map((tag, index) => {
+    const tagMemories = memoriesByTag.get(tag.normalized) ?? [];
+    const totalCount = tag.count;
+    const cropFamily =
+      PIXEL_FARM_CROP_BUCKET_PALETTES[index]?.family ??
+      PIXEL_FARM_CROP_BUCKET_PALETTES[PIXEL_FARM_CROP_BUCKET_PALETTES.length - 1]!.family;
+
+    return {
+      id: `crop-bucket-${tag.normalized}`,
+      cropFamily,
+      instances: buildBuckets(
+        totalCount,
+        resolveCropInstanceCount(totalCount, maxTagCount),
+      ).map((instance, instanceIndex) => ({
+        ...instance,
+        id: `crop-bucket-${tag.normalized}-instance-${instanceIndex}`,
+      })),
+      memoryIds: tagMemories.map((memory) => memory.id),
+      plotIndex: plotIndexForCropRank(index),
+      rank: index + 1,
+      tagKey: tag.normalized,
+      tagLabel: tag.label,
+      totalCount,
+    };
+  });
+}
+
+function buildAnimalBuckets(
+  animalTags: TagStat[],
+  memoriesByTag: Map<string, Memory[]>,
+): PixelFarmAnimalBucketState[] {
+  return animalTags.slice(0, MAX_ANIMAL_BUCKET_COUNT).map((tag, index) => {
+    const tagMemories = memoriesByTag.get(tag.normalized) ?? [];
+    const rank = CROP_TAG_LIMIT + index + 1;
+    const tier = index === 0 ? "cow" : index === 1 ? "baby-cow" : "chicken";
+
+    return {
+      id: `animal-bucket-${tag.normalized}`,
+      instanceCount: 1,
+      memoryIds: tagMemories.map((memory) => memory.id),
+      rank,
+      tagKey: tag.normalized,
+      tagLabel: tag.label,
+      tier,
+      totalCount: tag.count,
+      zone: tier === "chicken" ? "chicken-pen" : "cow-pen",
+    };
+  });
+}
+
 function buildRoles(
   categories: PixelFarmCategoryState[],
   fetchedAt: string,
@@ -208,18 +343,34 @@ export function buildPixelFarmWorldState({
   memories,
   recentEvents,
   spaceId,
+  seedTags = [],
+  totalMemories,
 }: BuildPixelFarmWorldStateInput): PixelFarmWorldState {
-  const topTags = selectTopCategoryTags(memories);
-  const topTagKeys = new Set(topTags.map((tag) => tag.normalized));
+  const rankedTags = selectTopRankedTags(
+    memories,
+    seedTags,
+    PIXEL_FARM_TOP_CROP_TAG_COUNT + MAX_ANIMAL_BUCKET_COUNT,
+  );
+  const cropTags = rankedTags.slice(0, CROP_TAG_LIMIT);
+  const animalTags = rankedTags.slice(CROP_TAG_LIMIT, CROP_TAG_LIMIT + MAX_ANIMAL_BUCKET_COUNT);
+  const cropTagKeys = new Set(cropTags.map((tag) => tag.normalized));
+  const assignedTagKeys = new Set(rankedTags.map((tag) => tag.normalized));
   const accumulators = new Map<string, CategoryAccumulator>();
+  const memoriesByTag = new Map<string, Memory[]>();
+  const hasSeedTags = seedTags.length > 0;
 
-  for (const [index, tag] of topTags.entries()) {
+  for (const tag of rankedTags) {
+    memoriesByTag.set(tag.normalized, []);
+  }
+
+  for (const [index, tag] of cropTags.entries()) {
     accumulators.set(tag.normalized, {
       key: tag.normalized,
       kind: "main",
       label: tag.label,
       memories: [],
       plotIndex: index,
+      seedCount: tag.count,
     });
   }
 
@@ -229,19 +380,44 @@ export function buildPixelFarmWorldState({
     label: "Other",
     memories: [],
     plotIndex: PIXEL_FARM_MAIN_FIELD_COUNT,
+    seedCount: null,
   });
 
   for (const memory of memories) {
-    const categoryKey = pickPrimaryCategoryKey(memory, topTagKeys);
-    const category = accumulators.get(categoryKey) ?? accumulators.get(CATEGORY_OTHER_KEY);
-    category?.memories.push(memory);
+    const tagKey = pickPrimaryCategoryKey(memory, assignedTagKeys);
+
+    if (tagKey !== CATEGORY_OTHER_KEY) {
+      memoriesByTag.get(tagKey)?.push(memory);
+    }
+
+    if (cropTagKeys.has(tagKey)) {
+      accumulators.get(tagKey)?.memories.push(memory);
+      continue;
+    }
+
+    if (tagKey === CATEGORY_OTHER_KEY) {
+      accumulators.get(CATEGORY_OTHER_KEY)?.memories.push(memory);
+    }
   }
 
+  const assignedTagSeedTotal = rankedTags.reduce((sum, tag) => sum + tag.count, 0);
+  const resolvedTotalMemories = totalMemories ?? memories.length;
+  const cropBuckets = buildCropBuckets(cropTags, memoriesByTag);
+  const animalBuckets = buildAnimalBuckets(animalTags, memoriesByTag);
   const categories = [...accumulators.values()]
     .map<PixelFarmCategoryState>((category) => {
+      const resolvedCategoryCount =
+        category.kind === "other"
+          ? resolveOtherCategoryCount(
+              category.memories.length,
+              totalMemories,
+              assignedTagSeedTotal,
+              hasSeedTags,
+            )
+          : category.seedCount ?? category.memories.length;
       const cropFamily =
         category.kind === "main"
-          ? PIXEL_FARM_MAIN_FIELD_CROP_PALETTES[category.plotIndex]?.family ?? null
+          ? PIXEL_FARM_CROP_BUCKET_PALETTES[category.plotIndex]?.family ?? null
           : null;
       const decorationFamilies =
         category.kind === "other"
@@ -257,13 +433,13 @@ export function buildPixelFarmWorldState({
         label: category.label,
         kind: category.kind,
         plotIndex: category.plotIndex,
-        totalCount: category.memories.length,
+        totalCount: resolvedCategoryCount,
         memoryIds: category.memories.map((memory) => memory.id),
         cropFamily,
         decorationFamilies,
         dominantAgentId: dominantAgentId(category.memories),
-        buckets: buildBuckets(category.memories.length),
-        animals: buildAnimals(category.key, category.memories.length),
+        buckets: buildBuckets(resolvedCategoryCount),
+        animals: [],
       };
     })
     .sort((left, right) => left.plotIndex - right.plotIndex);
@@ -271,7 +447,9 @@ export function buildPixelFarmWorldState({
   return {
     fetchedAt,
     activeSpaceId: spaceId,
-    totalMemories: memories.length,
+    animalBuckets,
+    totalMemories: resolvedTotalMemories,
+    cropBuckets,
     categories,
     roles: buildRoles(categories, fetchedAt),
     recentEvents: [...recentEvents],
