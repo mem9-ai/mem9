@@ -1,4 +1,8 @@
 import {
+  buildLocalDerivedSignalIndex,
+  getCombinedTagsForMemory,
+} from "@/lib/memory-derived-signals";
+import {
   PIXEL_FARM_CROP_BUCKET_PALETTES,
   PIXEL_FARM_MAIN_FIELD_COUNT,
   PIXEL_FARM_OTHER_ZONE_DECORATIONS,
@@ -154,10 +158,10 @@ function selectTopRankedTags(
 }
 
 function pickPrimaryCategoryKey(
-  memory: Memory,
+  tags: readonly string[],
   topCategoryKeys: Set<string>,
 ): string {
-  for (const tag of filterLowSignalAggregationTags(memory.tags)) {
+  for (const tag of filterLowSignalAggregationTags([...tags])) {
     const normalized = normalizeTagSignal(tag);
     if (topCategoryKeys.has(normalized)) {
       return normalized;
@@ -398,6 +402,7 @@ export function buildPixelFarmWorldState({
   seedTags = [],
   totalMemories,
 }: BuildPixelFarmWorldStateInput): PixelFarmWorldState {
+  const signalIndex = buildLocalDerivedSignalIndex({ memories });
   const rankedTags = selectTopRankedTags(
     memories,
     seedTags,
@@ -436,10 +441,14 @@ export function buildPixelFarmWorldState({
   });
 
   for (const memory of memories) {
-    const tagKey = pickPrimaryCategoryKey(memory, assignedTagKeys);
+    const combinedTags = getCombinedTagsForMemory(memory, signalIndex);
+    const normalizedCombinedTags = new Set(
+      combinedTags.map((tag) => normalizeTagSignal(tag)).filter(Boolean),
+    );
+    const tagKey = pickPrimaryCategoryKey(combinedTags, assignedTagKeys);
 
-    if (tagKey !== CATEGORY_OTHER_KEY) {
-      memoriesByTag.get(tagKey)?.push(memory);
+    for (const normalizedTag of normalizedCombinedTags) {
+      memoriesByTag.get(normalizedTag)?.push(memory);
     }
 
     if (cropTagKeys.has(tagKey)) {
