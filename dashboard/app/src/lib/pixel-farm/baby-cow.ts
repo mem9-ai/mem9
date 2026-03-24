@@ -280,8 +280,8 @@ export class PixelFarmBabyCow extends Phaser.Physics.Arcade.Sprite {
 
   private startRun(): boolean {
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      const offsetColumn = randomRange(-5, 5);
-      const offsetRow = randomRange(-5, 5);
+      const offsetColumn = randomRange(-7, 7);
+      const offsetRow = randomRange(-7, 7);
 
       if (offsetColumn === 0 && offsetRow === 0) {
         continue;

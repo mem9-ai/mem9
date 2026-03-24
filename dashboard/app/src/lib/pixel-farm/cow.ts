@@ -266,8 +266,8 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
 
   private startWalk(): boolean {
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      const offsetColumn = randomRange(-4, 4);
-      const offsetRow = randomRange(-4, 4);
+      const offsetColumn = randomRange(-8, 8);
+      const offsetRow = randomRange(-8, 8);
 
       if (offsetColumn === 0 && offsetRow === 0) {
         continue;

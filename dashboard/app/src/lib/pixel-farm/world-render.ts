@@ -326,6 +326,10 @@ function createMainPlotLayouts(): PixelFarmPlotLayout[] {
 const TILLED_CELL_KEYS = new Set(
   collectTilledCells().map((cell) => gridCellKey(cell.row, cell.column)),
 );
+const HILL_WALKABLE_CELLS = collectPixelFarmHillWalkableCells();
+const HILL_WALKABLE_CELL_KEYS = new Set(
+  HILL_WALKABLE_CELLS.map((cell) => gridCellKey(cell.row, cell.column)),
+);
 
 function createOtherPlotLayout(): PixelFarmPlotLayout {
   const cells = collectWalkableCells(OTHER_ZONE_BOUNDS).filter(
@@ -574,14 +578,19 @@ export class PixelFarmWorldRenderer {
       return;
     }
 
-    for (const [index, animalBucket] of animalBuckets.entries()) {
-      const cell = layout.animalCells[index % layout.animalCells.length]!;
-      const renderedAnimal = this.createAnimal(layout, cell, animalBucket, index);
-      if (!renderedAnimal) {
-        continue;
-      }
+    let placementIndex = 0;
 
-      this.animals.push(renderedAnimal);
+    for (const animalBucket of animalBuckets) {
+      for (let instanceIndex = 0; instanceIndex < animalBucket.instanceCount; instanceIndex += 1) {
+        const cell = layout.animalCells[placementIndex % layout.animalCells.length]!;
+        const renderedAnimal = this.createAnimal(layout, cell, animalBucket, placementIndex);
+        placementIndex += 1;
+        if (!renderedAnimal) {
+          continue;
+        }
+
+        this.animals.push(renderedAnimal);
+      }
     }
   }
 
@@ -711,7 +720,7 @@ export class PixelFarmWorldRenderer {
           scene: this.scene,
           color,
           depth: DATA_ENTITY_DEPTH,
-          startX: x - PIXEL_FARM_TILE_SIZE * 0.5,
+          startX: x,
           startY: y,
           canOccupy,
         });
@@ -756,37 +765,45 @@ export class PixelFarmWorldRenderer {
   }
 }
 
-function createAnimalPenLayout(bounds: PixelFarmCellBounds): PixelFarmAnimalPenLayout {
-  const cells = collectWalkableCells(bounds);
-
-  return {
-    animalCells: pickDistributedCells(cells, Math.min(16, cells.length)),
-    allowedCellKeys: new Set(cells.map((cell) => gridCellKey(cell.row, cell.column))),
-    bounds,
-  };
-}
-
 function createAnimalPenLayoutFromCells(
-  cells: readonly PixelFarmGridCell[],
+  spawnCells: readonly PixelFarmGridCell[],
   fallbackBounds: PixelFarmCellBounds,
+  roamCells: readonly PixelFarmGridCell[] = spawnCells,
 ): PixelFarmAnimalPenLayout {
-  const walkableCells = cells.filter(
+  const walkableSpawnCells = spawnCells.filter(
+    (cell) => !blockedByObject(cell.row, cell.column) && !isPixelFarmTerrainBlockedCell(cell.row, cell.column),
+  );
+  const walkableRoamCells = roamCells.filter(
     (cell) => !blockedByObject(cell.row, cell.column) && !isPixelFarmTerrainBlockedCell(cell.row, cell.column),
   );
   const bounds =
-    walkableCells.length > 0 ? measureCellBounds(walkableCells) : fallbackBounds;
+    walkableRoamCells.length > 0 ? measureCellBounds(walkableRoamCells) : fallbackBounds;
 
   return {
-    animalCells: pickDistributedCells(walkableCells, Math.min(16, walkableCells.length)),
+    animalCells: pickDistributedCells(
+      walkableSpawnCells,
+      Math.min(16, walkableSpawnCells.length),
+    ),
     allowedCellKeys: new Set(
-      walkableCells.map((cell) => gridCellKey(cell.row, cell.column)),
+      walkableRoamCells.map((cell) => gridCellKey(cell.row, cell.column)),
     ),
     bounds,
   };
 }
 
-const COW_PEN_LAYOUT = createAnimalPenLayout(COW_PEN_BOUNDS);
+const ISLAND_WALKABLE_CELLS = collectWalkableCells({
+  minRow: 0,
+  maxRow: PIXEL_FARM_ROOT_LAYER.mask.length - 1,
+  minColumn: 0,
+  maxColumn: PIXEL_FARM_ROOT_LAYER.mask[0]!.length - 1,
+}).filter((cell) => !HILL_WALKABLE_CELL_KEYS.has(gridCellKey(cell.row, cell.column)));
+
+const COW_PEN_LAYOUT = createAnimalPenLayoutFromCells(
+  collectWalkableCells(COW_PEN_BOUNDS),
+  COW_PEN_BOUNDS,
+  ISLAND_WALKABLE_CELLS,
+);
 const CHICKEN_PEN_LAYOUT = createAnimalPenLayoutFromCells(
-  collectPixelFarmHillWalkableCells(),
+  HILL_WALKABLE_CELLS,
   CHICKEN_PEN_BOUNDS,
 );

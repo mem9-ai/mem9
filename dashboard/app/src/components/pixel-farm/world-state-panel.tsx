@@ -84,7 +84,7 @@ export function PixelFarmWorldStatePanel({
                 </span>
               </div>
               <div className="mt-1">
-                {animalBucket.totalCount} memories, {animalBucket.tier}
+                {animalBucket.totalCount} memories, {animalBucket.instanceCount} animals, {animalBucket.tier}
               </div>
             </div>
           ))}

@@ -24,6 +24,8 @@ const MAX_CROP_INSTANCE_COUNT = 6;
 const CROP_BUCKETS_PER_PLOT = [4, 3, 3, 2, 1] as const;
 const MAX_ANIMAL_BUCKET_COUNT = 3;
 const CROP_TAG_LIMIT = 13;
+const MIN_ANIMAL_INSTANCE_COUNT = 4;
+const MAX_ANIMAL_INSTANCE_COUNT = 8;
 
 interface BuildPixelFarmWorldStateInput {
   fetchedAt: string;
@@ -304,14 +306,29 @@ function buildAnimalBuckets(
   animalTags: TagStat[],
   memoriesByTag: Map<string, Memory[]>,
 ): PixelFarmAnimalBucketState[] {
+  const cowTags = animalTags.slice(0, 2);
+  const cowZoneCount = resolveAnimalInstanceCount(
+    cowTags.reduce((sum, tag) => sum + tag.count, 0),
+  );
+  const cowInstanceCounts =
+    cowTags.length === 2
+      ? splitCowZoneInstanceCount(cowTags[0]!.count, cowTags[1]!.count, cowZoneCount)
+      : cowTags.length === 1
+        ? [cowZoneCount]
+        : [];
+
   return animalTags.slice(0, MAX_ANIMAL_BUCKET_COUNT).map((tag, index) => {
     const tagMemories = memoriesByTag.get(tag.normalized) ?? [];
     const rank = CROP_TAG_LIMIT + index + 1;
     const tier = index === 0 ? "cow" : index === 1 ? "baby-cow" : "chicken";
+    const instanceCount =
+      tier === "chicken"
+        ? resolveAnimalInstanceCount(tag.count)
+        : cowInstanceCounts[index] ?? 0;
 
     return {
       id: `animal-bucket-${tag.normalized}`,
-      instanceCount: 1,
+      instanceCount,
       memoryIds: tagMemories.map((memory) => memory.id),
       rank,
       tagKey: tag.normalized,
@@ -321,6 +338,41 @@ function buildAnimalBuckets(
       zone: tier === "chicken" ? "chicken-pen" : "cow-pen",
     };
   });
+}
+
+function resolveAnimalInstanceCount(totalCount: number): number {
+  if (totalCount <= 0) {
+    return 0;
+  }
+
+  return Math.max(
+    MIN_ANIMAL_INSTANCE_COUNT,
+    Math.min(MAX_ANIMAL_INSTANCE_COUNT, totalCount),
+  );
+}
+
+function splitCowZoneInstanceCount(
+  cowCount: number,
+  babyCowCount: number,
+  totalInstances: number,
+): [number, number] {
+  if (totalInstances <= 1) {
+    return [totalInstances, 0];
+  }
+
+  const totalCount = cowCount + babyCowCount;
+  if (totalCount <= 0) {
+    const cowInstances = Math.ceil(totalInstances * 0.5);
+    return [cowInstances, totalInstances - cowInstances];
+  }
+
+  const weightedCowInstances = Math.round((cowCount / totalCount) * totalInstances);
+  const cowInstances = Math.max(
+    1,
+    Math.min(totalInstances - 1, weightedCowInstances),
+  );
+
+  return [cowInstances, totalInstances - cowInstances];
 }
 
 function buildRoles(
