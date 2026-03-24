@@ -292,8 +292,8 @@ export function SpacePage() {
   };
 
   // Queries
-  const { data: statsData } = useStats(spaceId, range);
-  const { data: totalStatsData } = useStats(spaceId);
+  const { data: stats } = useStats(spaceId, range);
+  const { data: totalStats } = useStats(spaceId);
   const { data: memData, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isFetching } =
     useMemories(spaceId, {
       q: search.q,
@@ -349,7 +349,6 @@ export function SpacePage() {
 
   // Source memories for analysis pipeline (full local cache)
   const allMemories = sourceQuery.data ?? [];
-  const totalStats = totalStatsData;
   const rangeScopedMemories = useMemo(
     () =>
       filterMemoriesForView(allMemories, {
@@ -368,7 +367,6 @@ export function SpacePage() {
       }),
     [rangeScopedMemories, timelineSelection],
   );
-  const stats = statsData;
   const listFilterScopeMemories = useMemo(
     () =>
       filterMemoriesForView(timelineScopedMemories, {
