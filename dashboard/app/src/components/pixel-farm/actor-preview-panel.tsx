@@ -25,7 +25,7 @@ import {
   PIXEL_FARM_COW_STATE_OPTIONS,
 } from "@/lib/pixel-farm/cow";
 
-interface PixelFarmDebugPanelProps {
+interface PixelFarmActorPreviewPanelProps {
   value: PixelFarmDebugState;
   onChange: (next: PixelFarmDebugState) => void;
 }
@@ -90,7 +90,10 @@ function directionOptionsForType(type: PixelFarmDebugActorType): readonly string
   return type === "character" ? PIXEL_FARM_CHARACTER_DIRECTIONS : DIRECTION_OPTIONS;
 }
 
-export function PixelFarmDebugPanel({ value, onChange }: PixelFarmDebugPanelProps) {
+export function PixelFarmActorPreviewPanel({
+  value,
+  onChange,
+}: PixelFarmActorPreviewPanelProps) {
   const [collapsed, setCollapsed] = useState(true);
   const variantOptions = variantOptionsForType(value.type);
   const stateOptions = stateOptionsForType(value.type);
@@ -98,25 +101,29 @@ export function PixelFarmDebugPanel({ value, onChange }: PixelFarmDebugPanelProp
 
   if (collapsed) {
     return (
-      <aside className="absolute top-4 right-4 z-20">
+      <aside>
         <Button
           size="sm"
           variant="outline"
           className="rounded-full border-[#f6dca6]/25 bg-[#141109]/92 px-4 text-[#f6dca6] shadow-xl backdrop-blur hover:bg-[#221a0d]"
           onClick={() => setCollapsed(false)}
         >
-          Open Dev Panel
+          Open Actor Preview
         </Button>
       </aside>
     );
   }
 
   return (
-    <aside className="absolute top-4 right-4 z-20 w-[28rem] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border border-[#f6dca6]/25 bg-[#141109]/92 p-4 text-[#f6dca6] shadow-2xl backdrop-blur">
+    <aside className="w-[28rem] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border border-[#f6dca6]/25 bg-[#141109]/92 p-4 text-[#f6dca6] shadow-2xl backdrop-blur">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xs uppercase tracking-[0.24em] text-[#f6dca6]/55">Dev Panel</div>
-          <h2 className="mt-1 text-sm font-semibold tracking-[0.08em]">Actor Preview</h2>
+          <div className="text-xs uppercase tracking-[0.24em] text-[#f6dca6]/55">
+            Actor Preview
+          </div>
+          <h2 className="mt-1 text-sm font-semibold tracking-[0.08em]">
+            Preview Controls
+          </h2>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -155,7 +162,7 @@ export function PixelFarmDebugPanel({ value, onChange }: PixelFarmDebugPanelProp
       <div className="mt-4 space-y-4">
         <RadioChipGroup
           label="Object"
-          name="debug-object"
+          name="actor-preview-object"
           onChange={(nextType) =>
             onChange(defaultStateForType(nextType as PixelFarmDebugActorType, value))
           }
@@ -165,7 +172,7 @@ export function PixelFarmDebugPanel({ value, onChange }: PixelFarmDebugPanelProp
         {variantOptions.length > 1 ? (
           <RadioChipGroup
             label="Variant"
-            name="debug-variant"
+            name="actor-preview-variant"
             onChange={(variant) =>
               onChange({
                 ...value,
@@ -179,14 +186,16 @@ export function PixelFarmDebugPanel({ value, onChange }: PixelFarmDebugPanelProp
         ) : null}
         <RadioChipGroup
           label={value.type === "character" ? "Direction" : "Facing"}
-          name="debug-direction"
-          onChange={(direction) => onChange({ ...value, direction: direction as typeof value.direction })}
+          name="actor-preview-direction"
+          onChange={(direction) =>
+            onChange({ ...value, direction: direction as typeof value.direction })
+          }
           options={radioOptions(directionOptions)}
           value={value.direction}
         />
         <RadioChipGroup
           label="State"
-          name="debug-state"
+          name="actor-preview-state"
           onChange={(state) =>
             onChange({
               ...value,
@@ -199,7 +208,7 @@ export function PixelFarmDebugPanel({ value, onChange }: PixelFarmDebugPanelProp
         />
         <RadioChipGroup
           label="Animation"
-          name="debug-animation"
+          name="actor-preview-animation"
           onChange={(mode) => onChange({ ...value, playing: mode === "play" })}
           options={[
             { label: "Play", value: "play" },
@@ -209,7 +218,7 @@ export function PixelFarmDebugPanel({ value, onChange }: PixelFarmDebugPanelProp
         />
         <RadioChipGroup
           label="Visibility"
-          name="debug-visibility"
+          name="actor-preview-visibility"
           onChange={(mode) => onChange({ ...value, visible: mode === "show" })}
           options={[
             { label: "Show", value: "show" },
@@ -233,7 +242,9 @@ interface RadioChipGroupProps {
 function RadioChipGroup({ label, name, onChange, options, value }: RadioChipGroupProps) {
   return (
     <fieldset className="space-y-2">
-      <legend className="text-[11px] uppercase tracking-[0.18em] text-[#f6dca6]/55">{label}</legend>
+      <legend className="text-[11px] uppercase tracking-[0.18em] text-[#f6dca6]/55">
+        {label}
+      </legend>
       <div className="flex flex-wrap gap-2">
         {options.map((option) => {
           const checked = option.value === value;
