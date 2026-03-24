@@ -4,6 +4,7 @@ import {
   PIXEL_FARM_CHARACTER_FRAME_WIDTH,
   PIXEL_FARM_CHARACTER_TEXTURE_KEY,
 } from "@/lib/pixel-farm/runtime-assets";
+import { pixelFarmDepthForSpriteBody } from "@/lib/pixel-farm/depth";
 
 const CHARACTER_SPRITE_ORIGIN_X = 0.5;
 const CHARACTER_SPRITE_ORIGIN_Y = 0.9;
@@ -92,10 +93,6 @@ function directionForVector(
   return moveY > 0 ? "down" : "up";
 }
 
-function actorDepth(baseDepth: number, y: number): number {
-  return baseDepth + y / 10_000;
-}
-
 export function registerPixelFarmCharacterAnimations(scene: Phaser.Scene): void {
   for (const [action, baseRow] of Object.entries(CHARACTER_ACTION_ROWS) as Array<
     [PixelFarmCharacterAction, number]
@@ -140,13 +137,13 @@ export class PixelFarmCharacter extends Phaser.Physics.Arcade.Sprite {
     config.scene.physics.add.existing(this);
 
     this.setOrigin(CHARACTER_SPRITE_ORIGIN_X, CHARACTER_SPRITE_ORIGIN_Y);
-    this.setDepth(actorDepth(this.depthBase, this.y));
     const body = this.body as Phaser.Physics.Arcade.Body;
 
     body.setSize(CHARACTER_BODY_WIDTH, CHARACTER_BODY_HEIGHT);
     body.setOffset(CHARACTER_BODY_OFFSET_X, CHARACTER_BODY_OFFSET_Y);
     body.setAllowGravity(false);
     body.setCollideWorldBounds(false);
+    this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
 
     this.on(Phaser.Animations.Events.ANIMATION_COMPLETE, this.handleAnimationComplete, this);
     this.playAnimation("idle");
@@ -160,24 +157,24 @@ export class PixelFarmCharacter extends Phaser.Physics.Arcade.Sprite {
   update(deltaMs: number, input: PixelFarmCharacterInput): void {
     if (this.debugPoseLocked) {
       this.setVelocity(0, 0);
-      this.setDepth(actorDepth(this.depthBase, this.y));
+      this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
       return;
     }
 
     if (input.action && !this.lockedAction) {
       this.startToolAction(input.action);
-      this.setDepth(actorDepth(this.depthBase, this.y));
+      this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
       return;
     }
 
     if (this.lockedAction) {
       this.setVelocity(0, 0);
-      this.setDepth(actorDepth(this.depthBase, this.y));
+      this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
       return;
     }
 
     this.updateLocomotion(deltaMs, input);
-    this.setDepth(actorDepth(this.depthBase, this.y));
+    this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
   }
 
   private handleAnimationComplete(): void {

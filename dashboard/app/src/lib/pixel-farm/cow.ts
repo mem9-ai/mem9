@@ -4,6 +4,7 @@ import {
   PIXEL_FARM_COW_FRAME_WIDTH,
   PIXEL_FARM_COW_TEXTURE_KEYS,
 } from "@/lib/pixel-farm/runtime-assets";
+import { pixelFarmDepthForSpriteBody } from "@/lib/pixel-farm/depth";
 import { PIXEL_FARM_TILE_SIZE } from "@/lib/pixel-farm/tileset-config";
 
 const COW_SPRITE_ORIGIN_X = 0.5;
@@ -52,10 +53,6 @@ export interface PixelFarmCowConfig {
     moveX?: number,
     moveY?: number,
   ) => boolean;
-}
-
-function actorDepth(baseDepth: number, y: number): number {
-  return baseDepth + y / 10_000;
 }
 
 function animationKey(color: PixelFarmCowColor, state: PixelFarmCowState): string {
@@ -115,7 +112,6 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
     config.scene.physics.add.existing(this);
 
     this.setOrigin(COW_SPRITE_ORIGIN_X, COW_SPRITE_ORIGIN_Y);
-    this.setDepth(actorDepth(this.depthBase, this.y));
     const body = this.body as Phaser.Physics.Arcade.Body;
 
     body.setSize(COW_BODY_WIDTH, COW_BODY_HEIGHT);
@@ -123,6 +119,7 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
     body.setAllowGravity(false);
     body.setCollideWorldBounds(false);
     this.setDrag(800, 800);
+    this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
 
     this.on(Phaser.Animations.Events.ANIMATION_COMPLETE, this.handleAnimationComplete, this);
     this.enterTimedState("idle", randomRange(1400, 2600));
@@ -136,7 +133,7 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
   update(deltaMs: number): void {
     if (this.debugPoseLocked) {
       this.setVelocity(0, 0);
-      this.setDepth(actorDepth(this.depthBase, this.y));
+      this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
       return;
     }
 
@@ -144,14 +141,14 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
 
     if (this.cowState === "walk") {
       this.updateWalk(deltaMs);
-      this.setDepth(actorDepth(this.depthBase, this.y));
+      this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
       return;
     }
 
     this.setVelocity(0, 0);
 
     if (this.cowState === "sitTransition" || this.cowState === "grazeDown" || this.cowState === "love") {
-      this.setDepth(actorDepth(this.depthBase, this.y));
+      this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
       return;
     }
 
@@ -160,7 +157,7 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
       this.chooseNextState();
     }
 
-    this.setDepth(actorDepth(this.depthBase, this.y));
+    this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
   }
 
   triggerLove(sourceX: number): void {

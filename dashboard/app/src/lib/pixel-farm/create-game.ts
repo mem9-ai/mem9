@@ -36,14 +36,20 @@ import {
   tileOverrideAt,
 } from "@/lib/pixel-farm/island-mask";
 import {
+  collectPixelFarmTerrainBlockedCells,
+  isPixelFarmTerrainBlockedCell,
+} from "@/lib/pixel-farm/terrain-collision";
+import {
   pixelFarmWaterTextureKey,
   preloadPixelFarmRuntimeAssets,
   PIXEL_FARM_WATER_TEXTURE_KEYS,
 } from "@/lib/pixel-farm/runtime-assets";
+import type { PixelFarmWorldState } from "@/lib/pixel-farm/data/types";
 import {
   PIXEL_FARM_ASSET_SOURCE_CONFIG,
   PIXEL_FARM_TILE_SIZE,
 } from "@/lib/pixel-farm/tileset-config";
+import { PixelFarmWorldRenderer } from "@/lib/pixel-farm/world-render";
 
 const WATER_FRAME_DELAY = 180;
 const BACKGROUND_COLOR = 0x0d141b;
@@ -142,6 +148,19 @@ export interface PixelFarmDebugState {
 
 export interface PixelFarmGameOptions {
   getDebugActorState?: () => PixelFarmDebugState | null;
+  getShowSpatialDebug?: () => boolean;
+  getWorldState?: () => PixelFarmWorldState | null;
+  onPointerDebugChange?: (info: PixelFarmPointerDebugInfo) => void;
+}
+
+export interface PixelFarmPointerTile {
+  column: number;
+  row: number;
+}
+
+export interface PixelFarmPointerDebugInfo {
+  islandTile: PixelFarmPointerTile | null;
+  worldTile: PixelFarmPointerTile | null;
 }
 
 export function createDefaultPixelFarmDebugState(
@@ -156,7 +175,7 @@ export function createDefaultPixelFarmDebugState(
         state: "idle",
         type,
         variant: "default",
-        visible: true,
+        visible: false,
       };
     case "cow":
       return {
@@ -166,7 +185,7 @@ export function createDefaultPixelFarmDebugState(
         state: "idle",
         type,
         variant: "brown",
-        visible: true,
+        visible: false,
       };
     case "baby-cow":
       return {
@@ -176,7 +195,7 @@ export function createDefaultPixelFarmDebugState(
         state: "idle",
         type,
         variant: "brown",
-        visible: true,
+        visible: false,
       };
     case "chicken":
       return {
@@ -186,13 +205,28 @@ export function createDefaultPixelFarmDebugState(
         state: "idle",
         type,
         variant: "default",
-        visible: true,
+        visible: false,
       };
   }
 }
 
 function localCellKey(row: number, column: number): string {
   return `${row}:${column}`;
+}
+
+function localCellFromKey(key: string): PixelFarmCell | null {
+  const [rowValue, columnValue] = key.split(":");
+  if (rowValue === undefined || columnValue === undefined) {
+    return null;
+  }
+
+  const row = Number(rowValue);
+  const column = Number(columnValue);
+  if (!Number.isFinite(row) || !Number.isFinite(column)) {
+    return null;
+  }
+
+  return { row, column };
 }
 
 type PixelFarmPreviewActor =
@@ -205,6 +239,8 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   private oceanLayer?: Phaser.GameObjects.Container;
   private worldLayer?: Phaser.GameObjects.Container;
   private effectsLayer?: Phaser.GameObjects.Container;
+  private worldDebugGraphics?: Phaser.GameObjects.Graphics;
+  private worldRenderer?: PixelFarmWorldRenderer;
   private waterTiles: WaterTile[] = [];
   private waterFrame = 0;
   private waterTimer?: Phaser.Time.TimerEvent;
@@ -215,9 +251,12 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   private chickenGroup?: Phaser.Physics.Arcade.Group;
   private cows: PixelFarmCow[] = [];
   private cowGroup?: Phaser.Physics.Arcade.Group;
+  private terrainBlockerGroup?: Phaser.Physics.Arcade.StaticGroup;
   private debugActor?: PixelFarmPreviewActor;
   private debugActorKey?: string;
   private lastDebugActorSignature?: string;
+  private lastPointerDebugSignature?: string;
+  private lastWorldState?: PixelFarmWorldState | null;
   private characterControls?: CharacterKeyboardControls;
   private readonly blockedCells = new Set<string>();
   private dragState: DragState = {
@@ -240,6 +279,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.oceanLayer = this.add.container(0, 0);
     this.worldLayer = this.add.container(0, 0);
     this.effectsLayer = this.add.container(0, 0);
+    this.worldDebugGraphics = this.add.graphics();
     this.layoutLayers();
 
     this.cameras.main.setBackgroundColor(BACKGROUND_COLOR);
@@ -252,11 +292,21 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     registerPixelFarmChickenAnimations(this);
     registerPixelFarmCharacterAnimations(this);
     registerPixelFarmCowAnimations(this);
+    this.worldRenderer = new PixelFarmWorldRenderer({
+      scene: this,
+      cellToWorldOrigin: (cell) => this.cellToWorldOrigin(cell),
+      cellToWorldPosition: (cell) => this.cellToWorldPosition(cell),
+    });
+    this.applyWorldState();
     const characterSpawnCell = this.findCharacterSpawnCell();
     this.createCharacter(characterSpawnCell);
-    const cowSpawnCells = this.createCows(characterSpawnCell);
-    const babyCowSpawnCells = this.createBabyCows(characterSpawnCell, cowSpawnCells);
-    this.createChickens(characterSpawnCell, [...cowSpawnCells, ...babyCowSpawnCells]);
+
+    if (!this.options.getWorldState) {
+      const cowSpawnCells = this.createCows(characterSpawnCell);
+      const babyCowSpawnCells = this.createBabyCows(characterSpawnCell, cowSpawnCells);
+      this.createChickens(characterSpawnCell, [...cowSpawnCells, ...babyCowSpawnCells]);
+    }
+
     this.bindActorPhysics();
     this.bindCharacterControls();
     this.fitCameraToIsland();
@@ -277,6 +327,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.oceanLayer?.setDepth(0);
     this.worldLayer?.setDepth(10);
     this.effectsLayer?.setDepth(20);
+    this.worldDebugGraphics?.setDepth(1000);
   }
 
   private handleResize(): void {
@@ -312,6 +363,19 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.debugActor = undefined;
     this.debugActorKey = undefined;
     this.lastDebugActorSignature = undefined;
+    this.worldDebugGraphics?.destroy();
+    this.worldDebugGraphics = undefined;
+    this.worldRenderer?.destroy();
+    this.worldRenderer = undefined;
+    this.lastWorldState = undefined;
+    this.lastPointerDebugSignature = undefined;
+    this.options.onPointerDebugChange?.({
+      islandTile: null,
+      worldTile: null,
+    });
+    this.terrainBlockerGroup?.clear(true, true);
+    this.terrainBlockerGroup?.destroy(true);
+    this.terrainBlockerGroup = undefined;
     for (const cow of this.cows) {
       cow.destroy();
     }
@@ -325,6 +389,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.rebuildOcean();
     this.rebuildIsland();
     this.rebuildCollisionMap();
+    this.rebuildTerrainBlockers();
   }
 
   private rebuildOcean(): void {
@@ -421,7 +486,11 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     for (const cow of this.cows) {
       cow.update(delta);
     }
+    this.worldRenderer?.update(delta);
     this.applyDebugActorState();
+    this.applyWorldState();
+    this.updateSpatialDebug();
+    this.updatePointerDebug();
   }
 
   private bindCharacterControls(): void {
@@ -519,6 +588,17 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       );
     }
 
+    const renderedAnimalGroup = this.worldRenderer?.getAnimalGroup();
+    if (this.character && renderedAnimalGroup) {
+      this.physics.add.collider(
+        this.character,
+        renderedAnimalGroup,
+        this.handleCharacterAnimalCollision,
+        undefined,
+        this,
+      );
+    }
+
     if (this.cowGroup) {
       this.physics.add.collider(this.cowGroup, this.cowGroup);
     }
@@ -529,6 +609,28 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
     if (this.chickenGroup) {
       this.physics.add.collider(this.chickenGroup, this.chickenGroup);
+    }
+
+    if (renderedAnimalGroup) {
+      this.physics.add.collider(renderedAnimalGroup, renderedAnimalGroup);
+    }
+
+    if (this.terrainBlockerGroup) {
+      if (this.character) {
+        this.physics.add.collider(this.character, this.terrainBlockerGroup);
+      }
+      if (this.cowGroup) {
+        this.physics.add.collider(this.cowGroup, this.terrainBlockerGroup);
+      }
+      if (this.babyCowGroup) {
+        this.physics.add.collider(this.babyCowGroup, this.terrainBlockerGroup);
+      }
+      if (this.chickenGroup) {
+        this.physics.add.collider(this.chickenGroup, this.terrainBlockerGroup);
+      }
+      if (renderedAnimalGroup) {
+        this.physics.add.collider(renderedAnimalGroup, this.terrainBlockerGroup);
+      }
     }
 
     if (this.cowGroup && this.babyCowGroup) {
@@ -722,6 +824,183 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.lastDebugActorSignature = signature;
   }
 
+  private applyWorldState(): void {
+    if (!this.worldRenderer) {
+      return;
+    }
+
+    const worldState = this.options.getWorldState?.() ?? null;
+    if (worldState === this.lastWorldState) {
+      return;
+    }
+
+    this.lastWorldState = worldState;
+    this.worldRenderer.render(worldState);
+  }
+
+  private updateSpatialDebug(): void {
+    const graphics = this.worldDebugGraphics;
+    if (!graphics) {
+      return;
+    }
+
+    graphics.clear();
+
+    if (!this.options.getShowSpatialDebug?.()) {
+      return;
+    }
+
+    this.drawPhysicsDebugSprite(this.character, 0xffc857, 0xfff3bf);
+    this.drawPhysicsDebugSprite(this.debugActor, 0x8bd3ff, 0xd4f0ff);
+
+    for (const cow of this.cows) {
+      this.drawPhysicsDebugSprite(cow, 0xff8f6b, 0xffd8c2);
+    }
+
+    for (const babyCow of this.babyCows) {
+      this.drawPhysicsDebugSprite(babyCow, 0x98e08b, 0xdaf5d2);
+    }
+
+    for (const chicken of this.chickens) {
+      this.drawPhysicsDebugSprite(chicken, 0xf58fd2, 0xffd7f0);
+    }
+
+    for (const animal of this.worldRenderer?.getAnimals() ?? []) {
+      this.drawPhysicsDebugSprite(animal, 0xff6b6b, 0xffc2c2);
+    }
+
+    this.drawTerrainBlockerDebug(0xff4d6d);
+
+    for (const crop of this.worldRenderer?.getCropObjects() ?? []) {
+      this.drawSortMarker(crop.x, crop.y, 0x6fe3ff);
+    }
+  }
+
+  private updatePointerDebug(): void {
+    const emitPointerDebug = this.options.onPointerDebugChange;
+    if (!emitPointerDebug) {
+      return;
+    }
+
+    const info = this.readPointerDebugInfo();
+    const signature = JSON.stringify(info);
+    if (signature === this.lastPointerDebugSignature) {
+      return;
+    }
+
+    this.lastPointerDebugSignature = signature;
+    emitPointerDebug(info);
+  }
+
+  private readPointerDebugInfo(): PixelFarmPointerDebugInfo {
+    const pointer = this.input.activePointer;
+    if (
+      !pointer ||
+      pointer.x < 0 ||
+      pointer.y < 0 ||
+      pointer.x > this.scale.width ||
+      pointer.y > this.scale.height
+    ) {
+      return {
+        islandTile: null,
+        worldTile: null,
+      };
+    }
+
+    const worldPoint = pointer.positionToCamera(this.cameras.main) as Phaser.Math.Vector2;
+    const worldColumn = Math.floor(worldPoint.x / PIXEL_FARM_TILE_SIZE);
+    const worldRow = Math.floor(worldPoint.y / PIXEL_FARM_TILE_SIZE);
+    const worldTile =
+      worldColumn < 0 ||
+      worldRow < 0 ||
+      worldColumn >= WORLD_COLUMNS ||
+      worldRow >= WORLD_ROWS
+        ? null
+        : {
+            column: worldColumn,
+            row: worldRow,
+          };
+
+    if (!worldTile) {
+      return {
+        islandTile: null,
+        worldTile: null,
+      };
+    }
+
+    const islandColumn = worldTile.column - ISLAND_START_COLUMN;
+    const islandRow = worldTile.row - ISLAND_START_ROW;
+    const islandTile = maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, islandRow, islandColumn)
+      ? {
+          column: islandColumn,
+          row: islandRow,
+        }
+      : null;
+
+    return {
+      islandTile,
+      worldTile,
+    };
+  }
+
+  private drawPhysicsDebugSprite(
+    sprite:
+      | PixelFarmPreviewActor
+      | PixelFarmCharacter
+      | PixelFarmBabyCow
+      | PixelFarmChicken
+      | PixelFarmCow
+      | undefined,
+    bodyColor: number,
+    sortColor: number,
+  ): void {
+    const graphics = this.worldDebugGraphics;
+    if (!graphics || !sprite?.active) {
+      return;
+    }
+
+    const body = sprite.body as Phaser.Physics.Arcade.Body | undefined;
+    if (!body) {
+      return;
+    }
+
+    graphics.lineStyle(1, bodyColor, 0.95);
+    graphics.strokeRect(body.x, body.y, body.width, body.height);
+    this.drawSortMarker(body.x + body.width * 0.5, body.y + body.height, sortColor);
+  }
+
+  private drawSortMarker(x: number, y: number, color: number): void {
+    const graphics = this.worldDebugGraphics;
+    if (!graphics) {
+      return;
+    }
+
+    graphics.lineStyle(1, color, 1);
+    graphics.strokeCircle(x, y, 2);
+    graphics.lineBetween(x - 3, y, x + 3, y);
+    graphics.lineBetween(x, y - 3, x, y + 3);
+  }
+
+  private drawTerrainBlockerDebug(color: number): void {
+    const graphics = this.worldDebugGraphics;
+    if (!graphics || !this.terrainBlockerGroup) {
+      return;
+    }
+
+    graphics.lineStyle(1, color, 0.85);
+
+    for (const child of this.terrainBlockerGroup.getChildren()) {
+      const body = (child as Phaser.GameObjects.GameObject & {
+        body?: Phaser.Physics.Arcade.StaticBody;
+      }).body;
+      if (!body) {
+        continue;
+      }
+
+      graphics.strokeRect(body.x, body.y, body.width, body.height);
+    }
+  }
+
   private createDebugActor(debugState: PixelFarmDebugState): PixelFarmPreviewActor {
     const debugActorConfig = {
       scene: this,
@@ -899,8 +1178,25 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     };
   }
 
+  private cellToWorldOrigin(cell: PixelFarmCell): { x: number; y: number } {
+    return {
+      x: (ISLAND_START_COLUMN + cell.column) * PIXEL_FARM_TILE_SIZE,
+      y: (ISLAND_START_ROW + cell.row) * PIXEL_FARM_TILE_SIZE,
+    };
+  }
+
   private rebuildCollisionMap(): void {
     this.blockedCells.clear();
+
+    for (let row = 0; row < PIXEL_FARM_MASK_ROWS; row += 1) {
+      for (let column = 0; column < PIXEL_FARM_MASK_COLUMNS; column += 1) {
+        if (!isPixelFarmTerrainBlockedCell(row, column)) {
+          continue;
+        }
+
+        this.blockedCells.add(localCellKey(row, column));
+      }
+    }
 
     for (const object of PIXEL_FARM_OBJECTS) {
       if (object.walkable) {
@@ -913,6 +1209,75 @@ class PixelFarmSandboxScene extends Phaser.Scene {
         }
       }
     }
+  }
+
+  private rebuildTerrainBlockers(): void {
+    const blockerGroup =
+      this.terrainBlockerGroup ?? this.physics.add.staticGroup();
+    this.terrainBlockerGroup = blockerGroup;
+    blockerGroup.clear(true, true);
+
+    for (const cell of this.collectTerrainBlockerCells()) {
+      const { x, y } = this.cellToWorldOrigin(cell);
+      const blocker = this.physics.add.staticImage(
+        x + PIXEL_FARM_TILE_SIZE * 0.5,
+        y + PIXEL_FARM_TILE_SIZE * 0.5,
+        "__WHITE",
+      );
+
+      blocker.setDisplaySize(PIXEL_FARM_TILE_SIZE, PIXEL_FARM_TILE_SIZE);
+      blocker.setVisible(false);
+      blocker.refreshBody();
+      blockerGroup.add(blocker);
+    }
+  }
+
+  private collectTerrainBlockerCells(): PixelFarmCell[] {
+    const cells = new Map<string, PixelFarmCell>();
+
+    for (const cell of collectPixelFarmTerrainBlockedCells()) {
+      cells.set(localCellKey(cell.row, cell.column), cell);
+    }
+
+    for (const key of this.blockedCells) {
+      const cell = localCellFromKey(key);
+      if (!cell) {
+        continue;
+      }
+
+      cells.set(key, cell);
+    }
+
+    const directions = [
+      { row: -1, column: 0 },
+      { row: 1, column: 0 },
+      { row: 0, column: -1 },
+      { row: 0, column: 1 },
+    ] as const;
+
+    for (let row = 0; row < PIXEL_FARM_MASK_ROWS; row += 1) {
+      for (let column = 0; column < PIXEL_FARM_MASK_COLUMNS; column += 1) {
+        if (maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, row, column)) {
+          continue;
+        }
+
+        if (
+          !directions.some((direction) =>
+            maskHasTile(
+              PIXEL_FARM_ROOT_LAYER.mask,
+              row + direction.row,
+              column + direction.column,
+            ),
+          )
+        ) {
+          continue;
+        }
+
+        cells.set(localCellKey(row, column), { row, column });
+      }
+    }
+
+    return [...cells.values()];
   }
 
   private isWalkableLocalCell(row: number, column: number): boolean {
@@ -937,8 +1302,8 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     top: number,
     right: number,
     bottom: number,
-    moveX = 0,
-    moveY = 0,
+    _moveX = 0,
+    _moveY = 0,
   ): boolean => {
     const maxColumn = Math.floor((right - 0.001) / PIXEL_FARM_TILE_SIZE);
     const maxRow = Math.floor((bottom - 0.001) / PIXEL_FARM_TILE_SIZE);
@@ -950,23 +1315,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
         const localRow = worldRow - ISLAND_START_ROW;
         const localColumn = worldColumn - ISLAND_START_COLUMN;
 
-        if (!this.isWalkableLocalCell(localRow, localColumn)) {
-          return false;
-        }
-
-        if (moveY < 0 && !maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, localRow - 1, localColumn)) {
-          return false;
-        }
-
-        if (moveY > 0 && !maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, localRow + 1, localColumn)) {
-          return false;
-        }
-
-        if (moveX < 0 && !maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, localRow, localColumn - 1)) {
-          return false;
-        }
-
-        if (moveX > 0 && !maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, localRow, localColumn + 1)) {
+        if (!maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, localRow, localColumn)) {
           return false;
         }
       }

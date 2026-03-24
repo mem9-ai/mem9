@@ -26,6 +26,8 @@ import {
 } from "@/lib/pixel-farm/cow";
 
 interface PixelFarmActorPreviewPanelProps {
+  showSpatialDebug: boolean;
+  onToggleSpatialDebug: () => void;
   value: PixelFarmDebugState;
   onChange: (next: PixelFarmDebugState) => void;
 }
@@ -91,6 +93,8 @@ function directionOptionsForType(type: PixelFarmDebugActorType): readonly string
 }
 
 export function PixelFarmActorPreviewPanel({
+  showSpatialDebug,
+  onToggleSpatialDebug,
   value,
   onChange,
 }: PixelFarmActorPreviewPanelProps) {
@@ -147,6 +151,14 @@ export function PixelFarmActorPreviewPanel({
             }
           >
             Replay
+          </Button>
+          <Button
+            size="xs"
+            variant="outline"
+            className="border-[#f6dca6]/25 bg-transparent text-[#f6dca6] hover:bg-[#f6dca6]/10"
+            onClick={onToggleSpatialDebug}
+          >
+            {showSpatialDebug ? "Hide Bodies" : "Show Bodies"}
           </Button>
           <Button
             size="xs"

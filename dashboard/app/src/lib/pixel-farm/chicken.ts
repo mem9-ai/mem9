@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { PIXEL_FARM_CHICKEN_TEXTURE_KEYS } from "@/lib/pixel-farm/runtime-assets";
+import { pixelFarmDepthForSpriteBody } from "@/lib/pixel-farm/depth";
 import { PIXEL_FARM_TILE_SIZE } from "@/lib/pixel-farm/tileset-config";
 
 const CHICKEN_BODY_WIDTH = 8;
@@ -99,10 +100,6 @@ export interface PixelFarmChickenConfig {
     moveX?: number,
     moveY?: number,
   ) => boolean;
-}
-
-function actorDepth(baseDepth: number, y: number): number {
-  return baseDepth + y / 10_000;
 }
 
 function animationKey(color: PixelFarmChickenColor, state: PixelFarmChickenState): string {
@@ -235,7 +232,6 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
     config.scene.physics.add.existing(this);
 
     this.setOrigin(0, 1);
-    this.setDepth(actorDepth(this.depthBase, this.y));
     const body = this.body as Phaser.Physics.Arcade.Body;
 
     body.setSize(CHICKEN_BODY_WIDTH, CHICKEN_BODY_HEIGHT);
@@ -243,6 +239,7 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
     body.setCollideWorldBounds(false);
     this.setDrag(900, 900);
     this.syncBody();
+    this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
 
     this.on(Phaser.Animations.Events.ANIMATION_COMPLETE, this.handleAnimationComplete, this);
     this.enterTimedState("idle", randomRange(1000, 2000));
@@ -258,7 +255,7 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
 
     if (this.debugPoseLocked) {
       this.setVelocity(0, 0);
-      this.setDepth(actorDepth(this.depthBase, this.y));
+      this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
       return;
     }
 
@@ -266,7 +263,7 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
 
     if (this.chickenState === "walk") {
       this.updateWalk(deltaMs);
-      this.setDepth(actorDepth(this.depthBase, this.y));
+      this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
       return;
     }
 
@@ -279,7 +276,7 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
       this.chickenState === "hop" ||
       this.chickenState === "love"
     ) {
-      this.setDepth(actorDepth(this.depthBase, this.y));
+      this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
       return;
     }
 
@@ -288,7 +285,7 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
       this.chooseNextState();
     }
 
-    this.setDepth(actorDepth(this.depthBase, this.y));
+    this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
   }
 
   triggerLove(sourceX: number): void {
