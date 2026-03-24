@@ -15,6 +15,7 @@ import soilTilesUrl from "@/assets/soil-ground-tiles.png";
 import stonePathUrl from "@/assets/stone-path.png";
 import tiledDirtUrl from "@/assets/tiled-dirt.png";
 import tilledDirtWideUrl from "@/assets/tilled-dirt-wide.png";
+import treesStumpsBushesUrl from "@/assets/trees-stumps-bushes.png";
 import waterObjectsUrl from "@/assets/water-objects.png";
 import waterTrayUrl from "@/assets/water-tray.png";
 import waterWellUrl from "@/assets/water-well.png";
@@ -40,6 +41,7 @@ export const PIXEL_FARM_ASSET_SOURCE_IDS = [
   "chickenHouses",
   "farmingPlants",
   "mushroomsFlowersStones",
+  "treesStumpsBushes",
   "boats",
   "waterTray",
   "waterObjects",
@@ -128,6 +130,12 @@ export const PIXEL_FARM_ASSET_SOURCE_CONFIG: Record<
     mushroomsFlowersStonesUrl,
     12,
     5,
+  ),
+  treesStumpsBushes: defineAssetSource(
+    "pixel-farm-trees-stumps-bushes",
+    treesStumpsBushesUrl,
+    12,
+    7,
   ),
   boats: defineAssetSource("pixel-farm-boats", boatsUrl, 9, 6),
   waterTray: defineAssetSource("pixel-farm-water-tray", waterTrayUrl, 6, 1),
