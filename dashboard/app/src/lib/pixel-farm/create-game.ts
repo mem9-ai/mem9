@@ -58,7 +58,10 @@ const WORLD_ROWS = 96;
 const ISLAND_COLUMNS = PIXEL_FARM_MASK_COLUMNS;
 const ISLAND_ROWS = PIXEL_FARM_MASK_ROWS;
 const CAMERA_MAX_ZOOM = 3;
-const CAMERA_TARGET_FILL = 0.8;
+const CAMERA_TARGET_FILL = 0.92;
+const CAMERA_FOLLOW_LERP = 0.12;
+const CAMERA_DEADZONE_TILES_X = 5;
+const CAMERA_DEADZONE_TILES_Y = 3;
 const ACTOR_LAYER_DEPTH = 15;
 const SCENE_COW_COLORS: readonly PixelFarmCowColor[] = ["brown", "light"];
 const SCENE_BABY_COW_COLORS: readonly PixelFarmBabyCowColor[] = ["brown", "light"];
@@ -265,7 +268,6 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     lastX: 0,
     lastY: 0,
   };
-  private hasCameraInteraction = false;
 
   constructor(private readonly options: PixelFarmGameOptions = {}) {
     super("pixel-farm-sandbox");
@@ -310,6 +312,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.bindActorPhysics();
     this.bindCharacterControls();
     this.fitCameraToIsland();
+    this.startCameraFollow();
     this.bindCameraControls();
 
     this.waterTimer = this.time.addEvent({
@@ -333,13 +336,8 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   private handleResize(): void {
     const camera = this.cameras.main;
     camera.setSize(this.scale.width, this.scale.height);
-
-    if (this.hasCameraInteraction) {
-      this.clampCamera(camera);
-      return;
-    }
-
     this.fitCameraToIsland();
+    this.startCameraFollow();
   }
 
   private handleShutdown(): void {
@@ -1350,19 +1348,8 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       return;
     }
 
-    const camera = this.cameras.main;
-    const deltaX = pointer.x - this.dragState.lastX;
-    const deltaY = pointer.y - this.dragState.lastY;
-
-    camera.setScroll(
-      camera.scrollX - deltaX / camera.zoom,
-      camera.scrollY - deltaY / camera.zoom,
-    );
-    this.clampCamera(camera);
-
     this.dragState.lastX = pointer.x;
     this.dragState.lastY = pointer.y;
-    this.hasCameraInteraction = true;
   }
 
   private handlePointerUp(pointer: Phaser.Input.Pointer): void {
@@ -1382,6 +1369,26 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
     camera.setZoom(zoom);
     camera.centerOn(ISLAND_CENTER_X, ISLAND_CENTER_Y);
+    this.clampCamera(camera);
+  }
+
+  private startCameraFollow(): void {
+    const camera = this.cameras.main;
+    if (!this.character) {
+      camera.stopFollow();
+      return;
+    }
+
+    camera.setDeadzone(
+      PIXEL_FARM_TILE_SIZE * CAMERA_DEADZONE_TILES_X,
+      PIXEL_FARM_TILE_SIZE * CAMERA_DEADZONE_TILES_Y,
+    );
+    camera.startFollow(
+      this.character,
+      false,
+      CAMERA_FOLLOW_LERP,
+      CAMERA_FOLLOW_LERP,
+    );
     this.clampCamera(camera);
   }
 
