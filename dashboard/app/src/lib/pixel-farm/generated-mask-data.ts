@@ -3239,26 +3239,6 @@ export const PIXEL_FARM_GENERATED_COLLISIONS = [
     halfTileColumn: 61,
   },
   {
-    id: "collision-300",
-    halfTileRow: 36,
-    halfTileColumn: 73,
-  },
-  {
-    id: "collision-301",
-    halfTileRow: 36,
-    halfTileColumn: 74,
-  },
-  {
-    id: "collision-302",
-    halfTileRow: 37,
-    halfTileColumn: 73,
-  },
-  {
-    id: "collision-303",
-    halfTileRow: 37,
-    halfTileColumn: 74,
-  },
-  {
     id: "collision-304",
     halfTileRow: 16,
     halfTileColumn: 74,
@@ -3317,5 +3297,105 @@ export const PIXEL_FARM_GENERATED_COLLISIONS = [
     id: "collision-315",
     halfTileRow: 15,
     halfTileColumn: 73,
+  },
+  {
+    id: "collision-316",
+    halfTileRow: 36,
+    halfTileColumn: 72,
+  },
+  {
+    id: "collision-317",
+    halfTileRow: 36,
+    halfTileColumn: 73,
+  },
+  {
+    id: "collision-318",
+    halfTileRow: 37,
+    halfTileColumn: 72,
+  },
+  {
+    id: "collision-319",
+    halfTileRow: 37,
+    halfTileColumn: 73,
+  },
+  {
+    id: "collision-320",
+    halfTileRow: 12,
+    halfTileColumn: 73,
+  },
+  {
+    id: "collision-321",
+    halfTileRow: 12,
+    halfTileColumn: 74,
+  },
+  {
+    id: "collision-322",
+    halfTileRow: 13,
+    halfTileColumn: 73,
+  },
+  {
+    id: "collision-323",
+    halfTileRow: 13,
+    halfTileColumn: 74,
+  },
+  {
+    id: "collision-324",
+    halfTileRow: 12,
+    halfTileColumn: 75,
+  },
+  {
+    id: "collision-325",
+    halfTileRow: 12,
+    halfTileColumn: 76,
+  },
+  {
+    id: "collision-326",
+    halfTileRow: 13,
+    halfTileColumn: 75,
+  },
+  {
+    id: "collision-327",
+    halfTileRow: 13,
+    halfTileColumn: 76,
+  },
+  {
+    id: "collision-328",
+    halfTileRow: 20,
+    halfTileColumn: 56,
+  },
+  {
+    id: "collision-329",
+    halfTileRow: 20,
+    halfTileColumn: 57,
+  },
+  {
+    id: "collision-330",
+    halfTileRow: 20,
+    halfTileColumn: 58,
+  },
+  {
+    id: "collision-331",
+    halfTileRow: 20,
+    halfTileColumn: 59,
+  },
+  {
+    id: "collision-332",
+    halfTileRow: 17,
+    halfTileColumn: 56,
+  },
+  {
+    id: "collision-333",
+    halfTileRow: 17,
+    halfTileColumn: 57,
+  },
+  {
+    id: "collision-334",
+    halfTileRow: 17,
+    halfTileColumn: 58,
+  },
+  {
+    id: "collision-335",
+    halfTileRow: 17,
+    halfTileColumn: 59,
   },
 ] as const;

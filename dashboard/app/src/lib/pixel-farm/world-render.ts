@@ -61,17 +61,17 @@ const OTHER_ZONE_BOUNDS: PixelFarmCellBounds = {
 };
 
 const COW_PEN_BOUNDS: PixelFarmCellBounds = {
-  minRow: 17,
-  maxRow: 23,
-  minColumn: 7,
-  maxColumn: 16,
+  minRow: 22,
+  maxRow: 25,
+  minColumn: 14,
+  maxColumn: 18,
 };
 
 const CHICKEN_PEN_BOUNDS: PixelFarmCellBounds = {
-  minRow: 2,
-  maxRow: 7,
-  minColumn: 25,
-  maxColumn: 33,
+  minRow: 8,
+  maxRow: 11,
+  minColumn: 32,
+  maxColumn: 39,
 };
 
 interface PixelFarmGridCell {
