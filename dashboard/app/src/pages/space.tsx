@@ -292,16 +292,13 @@ export function SpacePage() {
   };
 
   // Queries
-  // Don't pass tag to the API when an analysis category is active.
-  // Analysis tags (including derived tags) should only filter the local
-  // analysis list and must not be sent to /memories as a server-side filter.
-  const memoryApiTag = analysisCategory ? undefined : tag;
+  // Tags shown in the dashboard are local analysis/derived signals.
+  // Keep tag state in the URL for the view, but never send it to /memories.
   const { data: stats } = useStats(spaceId, range);
   const { data: totalStats } = useStats(spaceId);
   const { data: memData, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isFetching } =
     useMemories(spaceId, {
       q: search.q,
-      tag: memoryApiTag,
       memory_type: memoryTypeFilter,
       range,
       facet,
@@ -447,18 +444,38 @@ export function SpacePage() {
     search.q,
     tag,
   ]);
+  const tagFilteredMemories = useMemo(() => {
+    if (analysisCategory || !tag) {
+      return [];
+    }
 
-  const usingLocalAnalysisList = !!analysisCategory;
-  const baseDisplayedMemories = usingLocalAnalysisList
+    return filterMemoriesForView(listFilterScopeMemories, {
+      q: search.q,
+      tag,
+      tagResolver: listTagResolver,
+    });
+  }, [
+    analysisCategory,
+    listFilterScopeMemories,
+    listTagResolver,
+    search.q,
+    tag,
+  ]);
+
+  const usingLocalTagList = !analysisCategory && !!tag;
+  const usingLocalFilteredList = !!analysisCategory || usingLocalTagList;
+  const baseDisplayedMemories = analysisCategory
     ? analysisFilteredMemories
+    : usingLocalTagList
+    ? tagFilteredMemories
     : memories;
-  const currentSignalScopeMemories = usingLocalAnalysisList
+  const currentSignalScopeMemories = analysisCategory
     ? analysisCategoryScopeMemories
     : listFilterScopeMemories;
-  const currentSignalIndex = usingLocalAnalysisList
+  const currentSignalIndex = analysisCategory
     ? analysisCategorySignalIndex
     : listSignalIndex;
-  const currentTagResolver = usingLocalAnalysisList
+  const currentTagResolver = analysisCategory
     ? analysisCategoryTagResolver
     : listTagResolver;
   const tagOptionMemories = useMemo(
@@ -469,8 +486,8 @@ export function SpacePage() {
       }),
     [currentSignalScopeMemories, currentTagResolver, search.q],
   );
-  const displayedMemories = usingLocalAnalysisList
-    ? analysisFilteredMemories.slice(0, localVisibleCount)
+  const displayedMemories = usingLocalFilteredList
+    ? baseDisplayedMemories.slice(0, localVisibleCount)
     : memories;
   const sessionPreviewMemories = useMemo(() => {
     if (!selected) return displayedMemories;
@@ -481,14 +498,14 @@ export function SpacePage() {
   }, [displayedMemories, selected]);
   const sessionPreviewQuery = useSessionPreviewMessages(spaceId, sessionPreviewMemories);
   const sessionPreviewBySessionID = sessionPreviewQuery.data ?? {};
-  const hasMoreMemories = usingLocalAnalysisList
-    ? analysisFilteredMemories.length > localVisibleCount
+  const hasMoreMemories = usingLocalFilteredList
+    ? baseDisplayedMemories.length > localVisibleCount
     : hasNextPage;
-  const isMemoryLoading = usingLocalAnalysisList
+  const isMemoryLoading = usingLocalFilteredList
     ? analysis.sourceLoading
     : isLoading || (isFetching && !isFetchingNextPage);
-  const isFetchingMore = usingLocalAnalysisList ? false : isFetchingNextPage;
-  const displayedFirstPageSize = usingLocalAnalysisList
+  const isFetchingMore = usingLocalFilteredList ? false : isFetchingNextPage;
+  const displayedFirstPageSize = usingLocalFilteredList
     ? Math.min(displayedMemories.length, LOCAL_PAGE_SIZE)
     : firstPageSize;
   const tagOptions = useMemo<TagSummary[]>(() => {
@@ -626,9 +643,6 @@ export function SpacePage() {
         ...search,
         analysisCategory: nextCategory,
         q: nextCategory ? undefined : search.q,
-        // Clear tag when leaving analysis mode to prevent analysis-only
-        // (e.g. derived) tags from leaking into the normal /memories API query.
-        tag: nextCategory ? search.tag : undefined,
       },
     });
   }
@@ -1176,7 +1190,7 @@ export function SpacePage() {
                         variant="ghost"
                         size="sm"
                         onClick={() => {
-                          if (usingLocalAnalysisList) {
+                          if (usingLocalFilteredList) {
                             setLocalVisibleCount((current) => current + LOCAL_PAGE_SIZE);
                             return;
                           }
