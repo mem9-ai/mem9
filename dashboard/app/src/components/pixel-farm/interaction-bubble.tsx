@@ -46,14 +46,14 @@ export function PixelFarmInteractionBubble({
             boxShadow: "6px 6px 12px rgba(0,0,0,0.1)",
           }}
         />
-        <div className="relative z-10 flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.18em] text-[#f6dca6]/72">
+        <div className="relative z-10 flex items-center justify-between gap-3 text-[16px] uppercase tracking-[0.18em] text-[#f6dca6]/72">
           <span className="truncate">{tagLabel}</span>
           <span className="shrink-0">
             {currentIndex + 1} / {totalCount}
           </span>
         </div>
         <p
-          className="relative z-10 mt-2 text-sm leading-5 text-[#f8ecd2]"
+          className="relative z-10 mt-2 text-[16px] leading-5 text-[#f8ecd2]"
           style={{
             display: "-webkit-box",
             overflow: "hidden",
