@@ -82,10 +82,10 @@ func (r *MemoryRepo) UpdateOptimistic(ctx context.Context, m *domain.Memory, exp
 	return nil
 }
 
-func (r *MemoryRepo) SoftDelete(ctx context.Context, id, agentName string) error {
+func (r *MemoryRepo) SoftDelete(ctx context.Context, id, agentName string) (bool, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("soft delete begin tx: %w", err)
+		return false, fmt.Errorf("soft delete begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
@@ -95,24 +95,24 @@ func (r *MemoryRepo) SoftDelete(ctx context.Context, id, agentName string) error
 		id,
 	).Scan(&state)
 	if err == sql.ErrNoRows {
-		return domain.ErrNotFound
+		return false, domain.ErrNotFound
 	}
 	if err != nil {
-		return fmt.Errorf("soft delete lock row: %w", err)
+		return false, fmt.Errorf("soft delete lock row: %w", err)
 	}
 
 	if state.String == string(domain.StateDeleted) {
-		return nil
+		return false, nil
 	}
 	_, err = tx.ExecContext(ctx,
 		`UPDATE memories SET state = 'deleted', updated_at = NOW() WHERE id = $1`,
 		id,
 	)
 	if err != nil {
-		return fmt.Errorf("soft delete update: %w", err)
+		return false, fmt.Errorf("soft delete update: %w", err)
 	}
 
-	return tx.Commit()
+	return true, tx.Commit()
 }
 
 func (r *MemoryRepo) ArchiveMemory(ctx context.Context, id, supersededBy string) error {

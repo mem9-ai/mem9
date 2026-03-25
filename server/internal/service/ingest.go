@@ -49,7 +49,6 @@ type IngestResult struct {
 	Error           string   `json:"error,omitempty"`
 }
 
-// IngestService orchestrates the two-phase smart memory pipeline.
 type IngestService struct {
 	memories  repository.MemoryRepo
 	llm       *llm.Client
@@ -58,13 +57,13 @@ type IngestService struct {
 	mode      IngestMode
 }
 
-// NewIngestService creates a new IngestService.
 func NewIngestService(
 	memories repository.MemoryRepo,
 	llmClient *llm.Client,
 	embedder *embed.Embedder,
 	autoModel string,
 	defaultMode IngestMode,
+	_ *WebhookService,
 ) *IngestService {
 	if defaultMode == "" {
 		defaultMode = ModeSmart

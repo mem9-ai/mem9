@@ -23,7 +23,6 @@ import (
 	"github.com/qiffang/mnemos/server/internal/service"
 )
 
-// Server holds the HTTP handlers and their dependencies.
 type Server struct {
 	tenant      *service.TenantService
 	uploadTasks repository.UploadTaskRepo
@@ -34,11 +33,11 @@ type Server struct {
 	ftsEnabled  bool
 	ingestMode  service.IngestMode
 	dbBackend   string
+	webhookSvc  *service.WebhookService
 	logger      *slog.Logger
 	svcCache    sync.Map
 }
 
-// NewServer creates a new HTTP handler server.
 func NewServer(
 	tenantSvc *service.TenantService,
 	uploadTasks repository.UploadTaskRepo,
@@ -49,6 +48,7 @@ func NewServer(
 	ftsEnabled bool,
 	ingestMode service.IngestMode,
 	dbBackend string,
+	webhookSvc *service.WebhookService,
 	logger *slog.Logger,
 ) *Server {
 	return &Server{
@@ -61,6 +61,7 @@ func NewServer(
 		ftsEnabled:  ftsEnabled,
 		ingestMode:  ingestMode,
 		dbBackend:   dbBackend,
+		webhookSvc:  webhookSvc,
 		logger:      logger,
 	}
 }
@@ -85,8 +86,8 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		svc := resolvedSvc{
-			memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
-			ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
+			memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode, s.webhookSvc),
+			ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode, nil),
 			session: service.NewSessionService(sessRepo, s.embedder, s.autoModel),
 		}
 		actual, loaded := s.svcCache.LoadOrStore(key, svc)
@@ -108,8 +109,8 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	svc := resolvedSvc{
-		memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
-		ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
+		memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode, s.webhookSvc),
+		ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode, nil),
 		session: service.NewSessionService(sessRepo, s.embedder, s.autoModel),
 	}
 	actual, loaded := s.svcCache.LoadOrStore(key, svc)
@@ -184,8 +185,11 @@ func (s *Server) Router(
 		r.Get("/imports", s.listTasks)
 		r.Get("/imports/{id}", s.getTask)
 
-		// Session messages (raw captured turns).
 		r.Get("/session-messages", s.handleListSessionMessages)
+
+		r.Post("/webhooks", s.createWebhook)
+		r.Get("/webhooks", s.listWebhooks)
+		r.Delete("/webhooks/{webhookId}", s.deleteWebhook)
 	})
 
 	return r

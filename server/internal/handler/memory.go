@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
@@ -56,21 +57,18 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			Mode:      req.Mode,
 		}
 
-		go func(agentName string, req service.IngestRequest) {
-			// Step 1: store raw sessions immediately — preserved even if LLM fails.
+		go func(agentName, tenantID string, req service.IngestRequest) {
 			if err := svc.session.BulkCreate(context.Background(), agentName, req); err != nil {
 				slog.Error("async session raw save failed",
 					"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
 			}
 
-			// Step 2: Phase 1 — extract facts + per-message tags in one LLM call.
 			phase1, err := svc.ingest.ExtractPhase1(context.Background(), req.Messages)
 			if err != nil {
 				slog.Error("phase1 extraction failed", "session", req.SessionID, "err", err)
 				return
 			}
 
-			// Step 3: fan out — patch session tags and reconcile memories in parallel.
 			go func() {
 				for i, msg := range req.Messages {
 					tags := tagsAtIndex(phase1.MessageTags, i)
@@ -96,8 +94,12 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				slog.Info("async memories reconcile complete",
 					"session", req.SessionID, "status", result.Status,
 					"memories_changed", result.MemoriesChanged)
+				if result.MemoriesChanged >= 1 && s.webhookSvc != nil {
+					eventID := uuid.New().String()
+					s.webhookSvc.Deliver(tenantID, service.BuildIngestEvent(eventID, tenantID, req.AgentID, req.SessionID, result))
+				}
 			}()
-		}(auth.AgentName, ingestReq)
+		}(auth.AgentName, auth.TenantID, ingestReq)
 
 		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 		return
@@ -115,19 +117,25 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	tags := append([]string(nil), req.Tags...)
 	metadata := append(json.RawMessage(nil), req.Metadata...)
 	content := req.Content
+	tenantID := auth.TenantID
+	agentNameCopy := auth.AgentName
 
-	go func(agentName, actorAgentID, content string, tags []string, metadata json.RawMessage) {
-		mem, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
+	go func(agentName, actorAgentID, tenantID, content string, tags []string, metadata json.RawMessage) {
+		mem, result, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
 		if err != nil {
 			slog.Error("async memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
 			return
 		}
 		if mem != nil {
 			slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", mem.ID)
+			if result != nil && result.MemoriesChanged >= 1 && s.webhookSvc != nil {
+				eventID := uuid.New().String()
+				s.webhookSvc.Deliver(tenantID, service.BuildIngestEvent(eventID, tenantID, actorAgentID, "", result))
+			}
 			return
 		}
 		slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", "")
-	}(auth.AgentName, agentID, content, tags, metadata)
+	}(agentNameCopy, agentID, tenantID, content, tags, metadata)
 
 	respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 }
@@ -181,6 +189,10 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			s.handleError(w, err)
 			return
+		}
+		if filter.Query != "" && auth.AgentName != "dashboard" && len(memories) > 0 && s.webhookSvc != nil {
+			eventID := uuid.New().String()
+			s.webhookSvc.Deliver(auth.TenantID, service.BuildRecallEvent(eventID, auth.TenantID, auth.AgentName, filter.Query, memories))
 		}
 	}
 
@@ -248,7 +260,7 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 		ifMatch, _ = strconv.Atoi(h)
 	}
 
-	mem, err := svc.memory.Update(r.Context(), auth.AgentName, id, req.Content, req.Tags, req.Metadata, ifMatch)
+	mem, err := svc.memory.Update(r.Context(), auth.TenantID, auth.AgentName, id, req.Content, req.Tags, req.Metadata, ifMatch)
 	if err != nil {
 		s.handleError(w, err)
 		return
@@ -263,7 +275,7 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 	svc := s.resolveServices(auth)
 	id := chi.URLParam(r, "id")
 
-	if err := svc.memory.Delete(r.Context(), id, auth.AgentName); err != nil {
+	if err := svc.memory.Delete(r.Context(), auth.TenantID, id, auth.AgentName); err != nil {
 		s.handleError(w, err)
 		return
 	}

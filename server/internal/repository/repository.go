@@ -12,7 +12,7 @@ type MemoryRepo interface {
 	Create(ctx context.Context, m *domain.Memory) error
 	GetByID(ctx context.Context, id string) (*domain.Memory, error)
 	UpdateOptimistic(ctx context.Context, m *domain.Memory, expectedVersion int) error
-	SoftDelete(ctx context.Context, id, agentName string) error
+	SoftDelete(ctx context.Context, id, agentName string) (bool, error)
 	ArchiveMemory(ctx context.Context, id, supersededBy string) error
 	ArchiveAndCreate(ctx context.Context, archiveID, supersededBy string, newMem *domain.Memory) error
 	SetState(ctx context.Context, id string, state domain.MemoryState) error
@@ -59,7 +59,14 @@ type UploadTaskRepo interface {
 	ResetProcessing(ctx context.Context, staleTimeout time.Duration) (int64, error)
 }
 
-// SessionRepo handles raw session message storage and search.
+// WebhookRepo manages webhook registrations in the control plane DB.
+type WebhookRepo interface {
+	Create(ctx context.Context, w *domain.Webhook) error
+	ListByTenant(ctx context.Context, tenantID string) ([]*domain.Webhook, error)
+	GetByID(ctx context.Context, id string) (*domain.Webhook, error)
+	Delete(ctx context.Context, id, tenantID string) error
+}
+
 // Search methods accept domain.MemoryFilter for consistency with MemoryRepo.
 // All search methods return []domain.Memory (projected as TypeSession rows).
 // BulkCreate silently skips MySQL 1146 (table not yet migrated) at DEBUG level.

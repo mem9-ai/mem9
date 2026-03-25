@@ -184,7 +184,7 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 	}
 
 	memRepo := repository.NewMemoryRepo(w.pool.Backend(), db, w.autoModel, w.ftsEnabled, tenantInfo.ClusterID)
-	ingestSvc := NewIngestService(memRepo, w.llmClient, w.embedder, w.autoModel, w.mode)
+	ingestSvc := NewIngestService(memRepo, w.llmClient, w.embedder, w.autoModel, w.mode, nil)
 
 	data, err := os.ReadFile(task.FilePath)
 	if err != nil {
