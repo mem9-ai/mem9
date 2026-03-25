@@ -7,6 +7,10 @@ import {
   type PixelFarmInteractionDebugInfo,
   type PixelFarmPointerDebugInfo,
 } from "@/lib/pixel-farm/create-game";
+import {
+  PIXEL_FARM_BUBBLE_APPEAR_SOUND_DURATION_MS,
+  PIXEL_FARM_BUBBLE_APPEAR_SOUND_KEY,
+} from "@/lib/pixel-farm/runtime-assets";
 import type { PixelFarmWorldState } from "@/lib/pixel-farm/data/types";
 import type { Memory } from "@/types/memory";
 
@@ -88,6 +92,38 @@ function createOpenBubbleState(
   };
 }
 
+function playBubbleAppearSound(
+  game: Phaser.Game | null,
+  soundRef: { current: Phaser.Sound.BaseSound | null },
+  stopTimerRef: { current: number | null },
+): void {
+  const scene = game?.scene.getScene("pixel-farm-sandbox") as Phaser.Scene | undefined;
+  if (!scene?.cache.audio.exists(PIXEL_FARM_BUBBLE_APPEAR_SOUND_KEY)) {
+    return;
+  }
+
+  const clearStopTimer = () => {
+    if (stopTimerRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(stopTimerRef.current);
+    stopTimerRef.current = null;
+  };
+
+  if (!soundRef.current) {
+    soundRef.current = scene.sound.add(PIXEL_FARM_BUBBLE_APPEAR_SOUND_KEY);
+  }
+
+  clearStopTimer();
+  soundRef.current.stop();
+  soundRef.current.play();
+  stopTimerRef.current = window.setTimeout(() => {
+    soundRef.current?.stop();
+    stopTimerRef.current = null;
+  }, PIXEL_FARM_BUBBLE_APPEAR_SOUND_DURATION_MS);
+}
+
 export function PhaserStage({
   debugActorState = null,
   memoryById = {},
@@ -116,6 +152,8 @@ export function PhaserStage({
   );
   const handledInteractionNonceRef = useRef(0);
   const interactionRequestIdRef = useRef(0);
+  const bubbleAppearSoundRef = useRef<Phaser.Sound.BaseSound | null>(null);
+  const bubbleAppearSoundStopTimerRef = useRef<number | null>(null);
   const [openBubbleState, setOpenBubbleState] = useState<PixelFarmOpenBubbleState | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
 
@@ -175,9 +213,22 @@ export function PhaserStage({
                 return;
               }
 
-              setOpenBubbleState((current) =>
-                createOpenBubbleState(info, memories, current),
-              );
+              setOpenBubbleState((current) => {
+                const next = createOpenBubbleState(info, memories, current);
+                if (
+                  next &&
+                  (!current ||
+                    current.targetId !== next.targetId ||
+                    current.interactionNonce !== next.interactionNonce)
+                ) {
+                  playBubbleAppearSound(
+                    gameRef.current,
+                    bubbleAppearSoundRef,
+                    bubbleAppearSoundStopTimerRef,
+                  );
+                }
+                return next;
+              });
             });
           }
 
@@ -205,6 +256,12 @@ export function PhaserStage({
     return () => {
       handledInteractionNonceRef.current = 0;
       interactionRequestIdRef.current += 1;
+      if (bubbleAppearSoundStopTimerRef.current !== null) {
+        window.clearTimeout(bubbleAppearSoundStopTimerRef.current);
+        bubbleAppearSoundStopTimerRef.current = null;
+      }
+      bubbleAppearSoundRef.current?.destroy();
+      bubbleAppearSoundRef.current = null;
       gameRef.current?.destroy(true);
       gameRef.current = null;
     };

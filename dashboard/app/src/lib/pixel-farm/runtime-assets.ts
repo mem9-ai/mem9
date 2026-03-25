@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import bubbleAppearSoundUrl from "@/assets/audio/blup_1.wav";
 import babyCowBrownUrl from "@/assets/game-objects/animals/cow-baby/cow-baby-brown-spritesheet.png";
 import babyCowGreenUrl from "@/assets/game-objects/animals/cow-baby/cow-baby-green-spritesheet.png";
 import babyCowLightUrl from "@/assets/game-objects/animals/cow-baby/cow-baby-light-spritesheet.png";
@@ -24,6 +25,9 @@ import {
   PIXEL_FARM_ASSET_SOURCE_IDS,
   PIXEL_FARM_TILE_SIZE,
 } from "@/lib/pixel-farm/tileset-config";
+
+export const PIXEL_FARM_BUBBLE_APPEAR_SOUND_KEY = "pixel-farm-bubble-appear";
+export const PIXEL_FARM_BUBBLE_APPEAR_SOUND_DURATION_MS = 500;
 
 export const PIXEL_FARM_CHARACTER_TEXTURE_KEY = "pixel-farm-character-premium";
 export const PIXEL_FARM_CHARACTER_FRAME_WIDTH = 48;
@@ -113,6 +117,8 @@ export function preloadPixelFarmRuntimeAssets(scene: Phaser.Scene): void {
   for (const [index, textureKey] of PIXEL_FARM_WATER_TEXTURE_KEYS.entries()) {
     scene.load.image(textureKey, PIXEL_FARM_WATER_TEXTURE_URLS[index]!);
   }
+
+  scene.load.audio(PIXEL_FARM_BUBBLE_APPEAR_SOUND_KEY, bubbleAppearSoundUrl);
 
   scene.load.spritesheet(PIXEL_FARM_CHARACTER_TEXTURE_KEY, premiumCharacterUrl, {
     frameWidth: PIXEL_FARM_CHARACTER_FRAME_WIDTH,
