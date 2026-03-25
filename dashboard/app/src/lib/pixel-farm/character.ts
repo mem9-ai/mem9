@@ -70,6 +70,13 @@ export interface PixelFarmCharacterConfig {
   ) => boolean;
 }
 
+export interface PixelFarmBodyRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 function animationKey(
   action: PixelFarmCharacterAction,
   direction: PixelFarmCharacterDirection,
@@ -117,6 +124,18 @@ export function registerPixelFarmCharacterAnimations(scene: Phaser.Scene): void 
       });
     }
   }
+}
+
+export function measurePixelFarmCharacterBodyAt(x: number, y: number): PixelFarmBodyRect {
+  const left = x - PIXEL_FARM_CHARACTER_FRAME_WIDTH * CHARACTER_SPRITE_ORIGIN_X + CHARACTER_BODY_OFFSET_X;
+  const top = y - PIXEL_FARM_CHARACTER_FRAME_HEIGHT * CHARACTER_SPRITE_ORIGIN_Y + CHARACTER_BODY_OFFSET_Y;
+
+  return {
+    left,
+    top,
+    right: left + CHARACTER_BODY_WIDTH,
+    bottom: top + CHARACTER_BODY_HEIGHT,
+  };
 }
 
 export class PixelFarmCharacter extends Phaser.Physics.Arcade.Sprite {
@@ -251,14 +270,13 @@ export class PixelFarmCharacter extends Phaser.Physics.Arcade.Sprite {
   }
 
   private canOccupyAt(x: number, y: number, moveX = 0, moveY = 0): boolean {
-    const left = x - PIXEL_FARM_CHARACTER_FRAME_WIDTH * CHARACTER_SPRITE_ORIGIN_X + CHARACTER_BODY_OFFSET_X;
-    const top = y - PIXEL_FARM_CHARACTER_FRAME_HEIGHT * CHARACTER_SPRITE_ORIGIN_Y + CHARACTER_BODY_OFFSET_Y;
+    const rect = measurePixelFarmCharacterBodyAt(x, y);
 
     return this.canOccupy(
-      left,
-      top,
-      left + CHARACTER_BODY_WIDTH,
-      top + CHARACTER_BODY_HEIGHT,
+      rect.left,
+      rect.top,
+      rect.right,
+      rect.bottom,
       moveX,
       moveY,
     );

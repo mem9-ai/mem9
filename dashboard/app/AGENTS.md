@@ -98,7 +98,8 @@ Vite + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui + TanStack Query + Tan
 - Pixel Farm asset filenames in `src/assets/` use lowercase kebab-case. Register any new editor-visible spritesheet in `src/lib/pixel-farm/tileset-config.ts`.
 - Pixel Farm rendering is layer-based. Terrain uses `mask + baseTile + override` per layer; object placements reference a `layerId` so they render in the same draw order. No autotile logic remains.
 - The Pixel Farm editor palette shows all registered asset sources at once. Keep `layer` for draw order only; do not couple layers 1:1 to image files.
-- The Pixel Farm editor has `Terrain` and `Objects` modes. `Objects` mode places single-tile object instances with `walkable` and footprint presets, all exported through the same generated data file.
+- The Pixel Farm editor has `Terrain`, `Objects`, and `Collision` modes. `Objects` mode is visual-only single-tile placement; static blocking lives only in the dedicated collision layer, exported through the same generated data file.
+- Pixel Farm collision data is half-tile-cell based: each collision record blocks one `0.5 x 0.5 tile` cell. The editor paints/erases `2 x 2` sub-cells per tile directly, and runtime collision queries consume the same half-tile grid data.
 - Pixel Farm keeps a dedicated top-level `objects` layer. `Objects` mode auto-switches to it, and newly added terrain layers should be inserted before it.
 - The Pixel Farm editor can add and delete layers directly. New layers inherit the currently selected tile as their base tile; deleting a layer also removes object placements assigned to it.
 - `src/api/client.ts` re-exports the active provider. Mock and real logic are split into `provider-mock.ts` and `provider-http.ts` respectively, both implementing the `DashboardProvider` interface from `provider.ts`.

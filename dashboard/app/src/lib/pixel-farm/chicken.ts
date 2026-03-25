@@ -200,6 +200,24 @@ export function registerPixelFarmChickenAnimations(scene: Phaser.Scene): void {
   }
 }
 
+export function measurePixelFarmChickenBodyAt(
+  x: number,
+  y: number,
+): { left: number; top: number; right: number; bottom: number } {
+  const anchorX = chickenAnchorX("idle");
+  const bodyOffsetX = Math.round(anchorX - CHICKEN_BODY_WIDTH * 0.5);
+  const bodyOffsetY = CHICKEN_TOP_FRAME_HEIGHT - CHICKEN_BODY_HEIGHT - CHICKEN_BODY_BOTTOM_MARGIN;
+  const left = x - anchorX + bodyOffsetX;
+  const top = y - CHICKEN_TOP_FRAME_HEIGHT + bodyOffsetY;
+
+  return {
+    left,
+    top,
+    right: left + CHICKEN_BODY_WIDTH,
+    bottom: top + CHICKEN_BODY_HEIGHT,
+  };
+}
+
 export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
   private readonly canOccupy: PixelFarmChickenConfig["canOccupy"];
   private readonly color: PixelFarmChickenColor;

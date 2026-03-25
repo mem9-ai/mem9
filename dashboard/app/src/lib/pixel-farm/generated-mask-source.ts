@@ -18,11 +18,7 @@ export interface PixelFarmGeneratedLayerPayload {
 export interface PixelFarmGeneratedMaskPayload {
   layers: PixelFarmGeneratedLayerPayload[];
   objects: PixelFarmGeneratedObjectPlacement[];
-}
-
-export interface PixelFarmObjectFootprint {
-  rows: number;
-  columns: number;
+  collisions: PixelFarmGeneratedCollisionCell[];
 }
 
 export interface PixelFarmGeneratedObjectPlacement {
@@ -32,8 +28,12 @@ export interface PixelFarmGeneratedObjectPlacement {
   frame: number;
   row: number;
   column: number;
-  footprint: PixelFarmObjectFootprint;
-  walkable: boolean;
+}
+
+export interface PixelFarmGeneratedCollisionCell {
+  id: string;
+  halfTileRow: number;
+  halfTileColumn: number;
 }
 
 function quote(value: string): string {
@@ -86,8 +86,16 @@ function buildObject(object: PixelFarmGeneratedObjectPlacement): string {
     `    frame: ${object.frame},`,
     `    row: ${object.row},`,
     `    column: ${object.column},`,
-    `    footprint: { rows: ${object.footprint.rows}, columns: ${object.footprint.columns} },`,
-    `    walkable: ${object.walkable ? "true" : "false"},`,
+    "  },",
+  ].join("\n");
+}
+
+function buildCollision(cell: PixelFarmGeneratedCollisionCell): string {
+  return [
+    "  {",
+    `    id: ${quote(cell.id)},`,
+    `    halfTileRow: ${cell.halfTileRow},`,
+    `    halfTileColumn: ${cell.halfTileColumn},`,
     "  },",
   ].join("\n");
 }
@@ -102,6 +110,10 @@ export function buildPixelFarmGeneratedMaskSource(
     "",
     "export const PIXEL_FARM_GENERATED_OBJECTS = [",
     ...payload.objects.map(buildObject),
+    "] as const;",
+    "",
+    "export const PIXEL_FARM_GENERATED_COLLISIONS = [",
+    ...payload.collisions.map(buildCollision),
     "] as const;",
   ].join("\n");
 }

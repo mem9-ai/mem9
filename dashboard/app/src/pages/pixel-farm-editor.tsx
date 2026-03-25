@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,15 +14,15 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   maskHasTile,
+  PIXEL_FARM_COLLISIONS,
   PIXEL_FARM_LAYERS,
   PIXEL_FARM_MASK_COLUMNS,
   PIXEL_FARM_MASK_ROWS,
   PIXEL_FARM_OBJECTS,
-  objectOccupiesCell,
   tileOverrideAt,
   tileOverrideKey,
+  type PixelFarmCollisionCell,
   type PixelFarmLayer,
-  type PixelFarmObjectFootprint,
   type PixelFarmObjectPlacement,
   type PixelFarmTileOverride,
   type PixelFarmTileOverrideMap,
@@ -36,13 +36,17 @@ import {
 
 type LayerState = Omit<PixelFarmLayer, "mask"> & { mask: string[] };
 type ObjectState = PixelFarmObjectPlacement;
+type CollisionState = PixelFarmCollisionCell;
 type TerrainTool = "paint" | "erase" | "fill" | "rectangle" | "stamp" | "clearStamp";
 type ObjectTool = "place" | "erase";
-type EditorMode = "terrain" | "objects";
+type CollisionTool = "paint" | "erase";
+type CollisionBrushSize = 1 | 2;
+type EditorMode = "terrain" | "objects" | "collision";
 
 interface ContentState {
   layers: LayerState[];
   objects: ObjectState[];
+  collisions: CollisionState[];
 }
 
 interface HistoryState {
@@ -52,7 +56,16 @@ interface HistoryState {
 }
 
 interface DragState {
-  tool: "paint" | "erase" | "rectangle" | "stamp" | "clearStamp" | "objectPlace" | "objectErase";
+  tool:
+    | "paint"
+    | "erase"
+    | "rectangle"
+    | "stamp"
+    | "clearStamp"
+    | "objectPlace"
+    | "objectErase"
+    | "collisionPlace"
+    | "collisionErase";
   layerId: string;
   filled: boolean;
   tile: PixelFarmTileOverride | null;
@@ -69,8 +82,8 @@ interface EditorState {
   editorMode: EditorMode;
   terrainTool: TerrainTool;
   objectTool: ObjectTool;
-  objectWalkable: boolean;
-  objectFootprint: PixelFarmObjectFootprint;
+  collisionTool: CollisionTool;
+  collisionBrushSize: CollisionBrushSize;
   cellSize: number;
 }
 
@@ -79,34 +92,20 @@ interface HoveredCell {
   column: number;
 }
 
+interface HoveredCollision {
+  halfTileRow: number;
+  halfTileColumn: number;
+}
+
 const CELL_SIZE_MIN = 12;
 const CELL_SIZE_MAX = 64;
 const CELL_SIZE_STEP = 2;
 const INITIAL_CELL_SIZE = 32;
 const PALETTE_CELL_SIZE = 28;
 const MAX_HISTORY = 100;
-const GRID_GAP = 1;
-const GRID_PADDING = 1;
-const DRAFT_STORAGE_KEY = "pixel-farm-mask-editor-draft-v8";
+const DRAFT_STORAGE_KEY = "pixel-farm-mask-editor-draft-v10";
 const EXPORT_ENDPOINT = "/your-memory/__pixel-farm/export-generated-mask-data";
 const OBJECT_LAYER_ID = "objects";
-const OBJECT_FOOTPRINT_PRESETS = [
-  { id: "1x1", label: "1x1", rows: 1, columns: 1 },
-  { id: "1x2", label: "1x2", rows: 1, columns: 2 },
-  { id: "2x1", label: "2x1", rows: 2, columns: 1 },
-  { id: "2x2", label: "2x2", rows: 2, columns: 2 },
-  { id: "3x2", label: "3x2", rows: 3, columns: 2 },
-  { id: "4x2", label: "4x2", rows: 4, columns: 2 },
- ] as const satisfies Array<{
-  id: string;
-  label: string;
-  rows: number;
-  columns: number;
-}>;
-const DEFAULT_OBJECT_FOOTPRINT = {
-  rows: OBJECT_FOOTPRINT_PRESETS[0].rows,
-  columns: OBJECT_FOOTPRINT_PRESETS[0].columns,
-} satisfies PixelFarmObjectFootprint;
 const DEFAULT_SELECTED_TILE: PixelFarmAssetTileSelection = {
   sourceId: PIXEL_FARM_LAYERS[0]?.baseTile.sourceId ?? "soil",
   frame: PIXEL_FARM_LAYERS[0]?.baseTile.frame ?? 0,
@@ -119,13 +118,17 @@ const COPY = {
   modes: {
     terrain: "Terrain",
     objects: "Objects",
+    collision: "Collision",
   },
   objectTools: {
     place: "Place",
     erase: "Erase object",
   },
-  walkable: "Walkable",
-  footprint: "Footprint",
+  collisionTools: {
+    paint: "Paint",
+    erase: "Erase",
+  },
+  collisionBrush: "Brush",
   finalPreview: "Final preview",
   paletteTitle: "Tileset Palette",
   paletteHint: "Pick any tile from any spritesheet, then stamp it into the selected layer.",
@@ -176,16 +179,18 @@ function cloneLayers(): LayerState[] {
 }
 
 function cloneObjects(): ObjectState[] {
-  return PIXEL_FARM_OBJECTS.map((object) => ({
-    ...object,
-    footprint: { ...object.footprint },
-  }));
+  return PIXEL_FARM_OBJECTS.map((object) => ({ ...object }));
+}
+
+function cloneCollisions(): CollisionState[] {
+  return PIXEL_FARM_COLLISIONS.map((segment) => ({ ...segment }));
 }
 
 function cloneContent(): ContentState {
   return {
     layers: cloneLayers(),
     objects: cloneObjects(),
+    collisions: cloneCollisions(),
   };
 }
 
@@ -193,14 +198,20 @@ function sameContent(left: ContentState, right: ContentState): boolean {
   if (
     left.layers === right.layers ||
     left.layers.length !== right.layers.length ||
-    left.objects.length !== right.objects.length
+    left.objects.length !== right.objects.length ||
+    left.collisions.length !== right.collisions.length
   ) {
-    return left.layers === right.layers && left.objects === right.objects;
+    return (
+      left.layers === right.layers &&
+      left.objects === right.objects &&
+      left.collisions === right.collisions
+    );
   }
 
   return (
     left.layers.every((layer, index) => layer === right.layers[index]) &&
-    left.objects.every((object, index) => object === right.objects[index])
+    left.objects.every((object, index) => object === right.objects[index]) &&
+    left.collisions.every((collision, index) => collision === right.collisions[index])
   );
 }
 
@@ -251,7 +262,7 @@ function findObjectAtCell(
 ): ObjectState | null {
   for (let index = objects.length - 1; index >= 0; index -= 1) {
     const object = objects[index]!;
-    if (object.layerId === layerId && objectOccupiesCell(object, row, column)) {
+    if (object.layerId === layerId && object.row === row && object.column === column) {
       return object;
     }
   }
@@ -270,6 +281,70 @@ function nextObjectID(objects: readonly ObjectState[]): string {
 
   return id;
 }
+
+function nextCollisionID(collisions: readonly CollisionState[]): string {
+  let index = collisions.length + 1;
+  let id = `collision-${index}`;
+
+  while (collisions.some((collision) => collision.id === id)) {
+    index += 1;
+    id = `collision-${index}`;
+  }
+
+  return id;
+}
+
+function collisionPlacementKey(halfTileRow: number, halfTileColumn: number): string {
+  return `${halfTileRow}:${halfTileColumn}`;
+}
+
+function collisionCellKey(segment: Pick<CollisionState, "halfTileRow" | "halfTileColumn">): string {
+  return `${Math.floor(segment.halfTileRow / 2)}:${Math.floor(segment.halfTileColumn / 2)}`;
+}
+
+function findCollisionIndex(
+  collisions: readonly CollisionState[],
+  halfTileRow: number,
+  halfTileColumn: number,
+): number {
+  return collisions.findIndex(
+    (collision) => collision.halfTileRow === halfTileRow && collision.halfTileColumn === halfTileColumn,
+  );
+}
+
+function collisionStyle(
+  segment: Pick<CollisionState, "halfTileRow" | "halfTileColumn">,
+  preview = false,
+): CSSProperties {
+  const fill = preview ? "rgba(255, 99, 71, 0.38)" : "rgba(185, 28, 28, 0.48)";
+
+  return {
+    left: `${(segment.halfTileColumn % 2) * 50}%`,
+    top: `${(segment.halfTileRow % 2) * 50}%`,
+    width: "50%",
+    height: "50%",
+    backgroundColor: fill,
+  };
+}
+
+function collectCollisionBrushCells(
+  target: HoveredCollision,
+  brushSize: CollisionBrushSize,
+): HoveredCollision[] {
+  const cells: HoveredCollision[] = [];
+
+  for (let rowOffset = 0; rowOffset < brushSize; rowOffset += 1) {
+    for (let columnOffset = 0; columnOffset < brushSize; columnOffset += 1) {
+      cells.push({
+        halfTileRow: target.halfTileRow + rowOffset,
+        halfTileColumn: target.halfTileColumn + columnOffset,
+      });
+    }
+  }
+
+  return cells;
+}
+
 
 function layerIndexById(layers: readonly LayerState[], layerId: string): number {
   return layers.findIndex((layer) => layer.id === layerId);
@@ -486,27 +561,6 @@ function sanitizeTileOverride(input: unknown): PixelFarmTileOverride | null {
   return stamped === undefined ? tile : { ...tile, stamped };
 }
 
-function sanitizeFootprint(input: unknown): PixelFarmObjectFootprint | null {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return null;
-  }
-
-  const rows = (input as { rows?: unknown }).rows;
-  const columns = (input as { columns?: unknown }).columns;
-  if (
-    typeof rows !== "number" ||
-    !Number.isInteger(rows) ||
-    rows < 1 ||
-    typeof columns !== "number" ||
-    !Number.isInteger(columns) ||
-    columns < 1
-  ) {
-    return null;
-  }
-
-  return { rows, columns };
-}
-
 function pruneOverrideMap(
   mask: readonly string[],
   overrides: PixelFarmTileOverrideMap,
@@ -618,10 +672,7 @@ function sanitizeObjectList(input: unknown, layers: readonly LayerState[]): Obje
     const rawLayerID = (value as { layerId?: unknown }).layerId;
     const rawRow = (value as { row?: unknown }).row;
     const rawColumn = (value as { column?: unknown }).column;
-    const rawWalkable = (value as { walkable?: unknown }).walkable;
-    const rawFootprint = (value as { footprint?: unknown }).footprint;
     const tile = sanitizeAssetTileSelection(value);
-    const footprint = sanitizeFootprint(rawFootprint);
 
     if (
       typeof rawID !== "string" ||
@@ -635,9 +686,7 @@ function sanitizeObjectList(input: unknown, layers: readonly LayerState[]): Obje
       typeof rawColumn !== "number" ||
       !Number.isInteger(rawColumn) ||
       rawColumn < 0 ||
-      typeof rawWalkable !== "boolean" ||
-      !tile ||
-      !footprint
+      !tile
     ) {
       continue;
     }
@@ -650,12 +699,111 @@ function sanitizeObjectList(input: unknown, layers: readonly LayerState[]): Obje
       frame: tile.frame,
       row: rawRow,
       column: rawColumn,
-      footprint,
-      walkable: rawWalkable,
     });
   }
 
   return objects;
+}
+
+function sanitizeCollisionList(input: unknown): CollisionState[] {
+  if (!Array.isArray(input)) {
+    return cloneCollisions();
+  }
+
+  const collisions: CollisionState[] = [];
+  const usedIDs = new Set<string>();
+  const usedPlacements = new Set<string>();
+
+  for (let index = 0; index < input.length; index += 1) {
+    const value = input[index];
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      continue;
+    }
+
+    const rawID = (value as { id?: unknown }).id;
+    const rawQuarterRow = (value as { halfTileRow?: unknown }).halfTileRow;
+    const rawQuarterColumn = (value as { halfTileColumn?: unknown }).halfTileColumn;
+
+    if (
+      typeof rawID === "string" &&
+      rawID.trim() &&
+      !usedIDs.has(rawID) &&
+      typeof rawQuarterRow === "number" &&
+      Number.isInteger(rawQuarterRow) &&
+      rawQuarterRow >= 0 &&
+      typeof rawQuarterColumn === "number" &&
+      Number.isInteger(rawQuarterColumn) &&
+      rawQuarterColumn >= 0
+    ) {
+      const placementKey = collisionPlacementKey(rawQuarterRow, rawQuarterColumn);
+      if (usedPlacements.has(placementKey)) {
+        continue;
+      }
+
+      usedIDs.add(rawID);
+      usedPlacements.add(placementKey);
+      collisions.push({
+        id: rawID,
+        halfTileRow: rawQuarterRow,
+        halfTileColumn: rawQuarterColumn,
+      });
+      continue;
+    }
+
+    const rawOrientation = (value as { orientation?: unknown }).orientation;
+    const rawHalfRow = (value as { halfRow?: unknown }).halfRow;
+    const rawHalfColumn = (value as { halfColumn?: unknown }).halfColumn;
+
+    if (
+      typeof rawID !== "string" ||
+      !rawID.trim() ||
+      usedIDs.has(rawID) ||
+      (rawOrientation !== "horizontal" && rawOrientation !== "vertical") ||
+      typeof rawHalfRow !== "number" ||
+      !Number.isInteger(rawHalfRow) ||
+      rawHalfRow < 0 ||
+      typeof rawHalfColumn !== "number" ||
+      !Number.isInteger(rawHalfColumn) ||
+      rawHalfColumn < 0
+    ) {
+      continue;
+    }
+
+    const halfTileRowBase = rawHalfRow;
+    const halfTileColumnBase = rawHalfColumn;
+    const quarterCells: Array<[number, number]> =
+      rawOrientation === "horizontal"
+        ? [
+            [halfTileRowBase, halfTileColumnBase],
+            [halfTileRowBase, halfTileColumnBase + 1],
+          ]
+        : [
+            [halfTileRowBase, halfTileColumnBase],
+            [halfTileRowBase + 1, halfTileColumnBase],
+          ];
+
+    let migrated = false;
+    for (const [halfTileRow, halfTileColumn] of quarterCells) {
+      const placementKey = collisionPlacementKey(halfTileRow, halfTileColumn);
+      if (usedPlacements.has(placementKey)) {
+        continue;
+      }
+
+      usedPlacements.add(placementKey);
+      collisions.push({
+        id: migrated ? nextCollisionID(collisions) : rawID,
+        halfTileRow,
+        halfTileColumn,
+      });
+      migrated = true;
+    }
+
+    if (migrated) {
+      usedIDs.add(rawID);
+    }
+  }
+
+  return collisions;
 }
 
 function frameStyle(sourceId: PixelFarmAssetSourceId, frame: number, size: number): CSSProperties {
@@ -741,8 +889,8 @@ function loadDraftState(): EditorState {
     editorMode: "terrain",
     terrainTool: "paint",
     objectTool: "place",
-    objectWalkable: false,
-    objectFootprint: { ...DEFAULT_OBJECT_FOOTPRINT },
+    collisionTool: "paint",
+    collisionBrushSize: 1,
     cellSize: INITIAL_CELL_SIZE,
   };
 
@@ -759,17 +907,19 @@ function loadDraftState(): EditorState {
     const parsed = JSON.parse(raw) as {
       layers?: unknown;
       objects?: unknown;
+      collisions?: unknown;
       selectedLayerId?: unknown;
       selectedTile?: unknown;
       editorMode?: unknown;
       terrainTool?: unknown;
       objectTool?: unknown;
-      objectWalkable?: unknown;
-      objectFootprint?: unknown;
+      collisionTool?: unknown;
+      collisionBrushSize?: unknown;
       cellSize?: unknown;
     };
     const layers = sanitizeLayerList(parsed.layers, defaults.content.layers);
     const objects = sanitizeObjectList(parsed.objects, layers);
+    const collisions = sanitizeCollisionList(parsed.collisions);
     const selectedLayerId =
       typeof parsed.selectedLayerId === "string" &&
       layers.some((layer) => layer.id === parsed.selectedLayerId)
@@ -777,10 +927,13 @@ function loadDraftState(): EditorState {
         : layers[0]!.id;
 
     return {
-      content: { layers, objects },
+      content: { layers, objects, collisions },
       selectedLayerId,
       selectedTile: sanitizeAssetTileSelection(parsed.selectedTile) ?? { ...DEFAULT_SELECTED_TILE },
-      editorMode: parsed.editorMode === "objects" ? "objects" : defaults.editorMode,
+      editorMode:
+        parsed.editorMode === "objects" || parsed.editorMode === "collision"
+          ? parsed.editorMode
+          : defaults.editorMode,
       terrainTool:
         parsed.terrainTool === "paint" ||
         parsed.terrainTool === "erase" ||
@@ -794,11 +947,14 @@ function loadDraftState(): EditorState {
         parsed.objectTool === "erase" || parsed.objectTool === "place"
           ? parsed.objectTool
           : defaults.objectTool,
-      objectWalkable:
-        typeof parsed.objectWalkable === "boolean"
-          ? parsed.objectWalkable
-          : defaults.objectWalkable,
-      objectFootprint: sanitizeFootprint(parsed.objectFootprint) ?? defaults.objectFootprint,
+      collisionTool:
+        parsed.collisionTool === "erase" || parsed.collisionTool === "paint"
+          ? parsed.collisionTool
+          : defaults.collisionTool,
+      collisionBrushSize:
+        parsed.collisionBrushSize === 1 || parsed.collisionBrushSize === 2
+          ? parsed.collisionBrushSize
+          : defaults.collisionBrushSize,
       cellSize:
         typeof parsed.cellSize === "number"
           ? Math.min(CELL_SIZE_MAX, Math.max(CELL_SIZE_MIN, parsed.cellSize))
@@ -837,16 +993,15 @@ export function PixelFarmEditorPage() {
   const [editorMode, setEditorMode] = useState<EditorMode>(initialState.editorMode);
   const [terrainTool, setTerrainTool] = useState<TerrainTool>(initialState.terrainTool);
   const [objectTool, setObjectTool] = useState<ObjectTool>(initialState.objectTool);
-  const [objectWalkable, setObjectWalkable] = useState(initialState.objectWalkable);
-  const [objectFootprint, setObjectFootprint] = useState<PixelFarmObjectFootprint>(
-    initialState.objectFootprint,
-  );
+  const [collisionTool, setCollisionTool] = useState<CollisionTool>(initialState.collisionTool);
+  const [collisionBrushSize, setCollisionBrushSize] = useState<CollisionBrushSize>(initialState.collisionBrushSize);
   const [cellSize, setCellSize] = useState(initialState.cellSize);
   const [showFinalPreview, setShowFinalPreview] = useState(false);
   const [saved, setSaved] = useState(false);
   const [exportState, setExportState] = useState<"idle" | "exporting" | "done" | "error">("idle");
   const [previewRect, setPreviewRect] = useState<DragState | null>(null);
   const [hoveredCell, setHoveredCell] = useState<HoveredCell | null>(null);
+  const [hoveredCollision, setHoveredCollision] = useState<HoveredCollision | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [newLayerName, setNewLayerName] = useState("");
@@ -857,7 +1012,7 @@ export function PixelFarmEditorPage() {
 
   historyRef.current = history;
 
-  const { layers, objects } = history.present;
+  const { layers, objects, collisions } = history.present;
   const terrainLayers = layers.filter((layer) => layer.id !== OBJECT_LAYER_ID);
   const objectLayer = layers.find((layer) => layer.id === OBJECT_LAYER_ID) ?? layers[layers.length - 1]!;
   const selectedLayer = layers.find((layer) => layer.id === selectedLayerId) ?? layers[0]!;
@@ -865,14 +1020,32 @@ export function PixelFarmEditorPage() {
   const topTerrainLayer = terrainLayers[terrainLayers.length - 1] ?? layers[0]!;
   const rows = PIXEL_FARM_MASK_ROWS;
   const columns = PIXEL_FARM_MASK_COLUMNS;
+  const collisionsByCell = useMemo(() => {
+    const next = new Map<string, CollisionState[]>();
+
+    for (const collision of collisions) {
+      const key = collisionCellKey(collision);
+      const bucket = next.get(key);
+      if (bucket) {
+        bucket.push(collision);
+      } else {
+        next.set(key, [collision]);
+      }
+    }
+
+    return next;
+  }, [collisions]);
   const showBrushPreview =
-    hoveredCell !== null &&
-    ((editorMode === "terrain" &&
-      (terrainTool === "paint" ||
-        terrainTool === "fill" ||
-        terrainTool === "rectangle" ||
-        terrainTool === "stamp")) ||
-      (editorMode === "objects" && objectTool === "place"));
+    (hoveredCell !== null &&
+      ((editorMode === "terrain" &&
+        (terrainTool === "paint" ||
+          terrainTool === "fill" ||
+          terrainTool === "rectangle" ||
+          terrainTool === "stamp")) ||
+        (editorMode === "objects" && objectTool === "place"))) ||
+    (editorMode === "collision" && hoveredCollision !== null && collisionTool === "paint");
+  const collisionPreview =
+    editorMode === "collision" && collisionTool === "paint" ? hoveredCollision : null;
 
   useEffect(() => {
     if (!layers.some((layer) => layer.id === selectedLayerId)) {
@@ -893,18 +1066,25 @@ export function PixelFarmEditorPage() {
   }, [editorMode, selectedLayerId, topTerrainLayer.id]);
 
   useEffect(() => {
+    if (editorMode !== "collision") {
+      setHoveredCollision(null);
+    }
+  }, [editorMode]);
+
+  useEffect(() => {
     setSaved(false);
     setExportState("idle");
   }, [
     layers,
     objects,
+    collisions,
     selectedLayerId,
     selectedTile,
     editorMode,
     terrainTool,
     objectTool,
-    objectWalkable,
-    objectFootprint,
+    collisionTool,
+    collisionBrushSize,
     cellSize,
   ]);
 
@@ -1118,6 +1298,23 @@ export function PixelFarmEditorPage() {
     }, useGestureHistory);
   }
 
+  function applyCollisionsMutation(
+    updater: (collisions: readonly CollisionState[]) => CollisionState[],
+    useGestureHistory: boolean,
+  ): void {
+    applyContentMutation((current) => {
+      const nextCollisions = updater(current.collisions);
+      if (nextCollisions === current.collisions) {
+        return current;
+      }
+
+      return {
+        ...current,
+        collisions: nextCollisions,
+      };
+    }, useGestureHistory);
+  }
+
   function upsertObjectAtCell(row: number, column: number, useGestureHistory: boolean): void {
     applyObjectsMutation((currentObjects) => {
       const nextObject: ObjectState = {
@@ -1127,8 +1324,6 @@ export function PixelFarmEditorPage() {
         frame: selectedTile.frame,
         row,
         column,
-        footprint: { ...objectFootprint },
-        walkable: objectWalkable,
       };
       const existingIndex = currentObjects.findIndex(
         (object) =>
@@ -1141,10 +1336,7 @@ export function PixelFarmEditorPage() {
       const existingObject = currentObjects[existingIndex]!;
       if (
         existingObject.sourceId === nextObject.sourceId &&
-        existingObject.frame === nextObject.frame &&
-        existingObject.walkable === nextObject.walkable &&
-        existingObject.footprint.rows === nextObject.footprint.rows &&
-        existingObject.footprint.columns === nextObject.footprint.columns
+        existingObject.frame === nextObject.frame
       ) {
         return currentObjects as ObjectState[];
       }
@@ -1169,10 +1361,55 @@ export function PixelFarmEditorPage() {
     }, useGestureHistory);
   }
 
+  function mutateCollisionsAtBrush(
+    target: HoveredCollision,
+    mode: CollisionTool,
+    useGestureHistory: boolean,
+  ): void {
+    const brushTargets = collectCollisionBrushCells(target, collisionBrushSize);
+
+    applyCollisionsMutation((currentCollisions) => {
+      if (mode === "paint") {
+        let nextCollisions = currentCollisions as CollisionState[];
+
+        for (const brushTarget of brushTargets) {
+          if (findCollisionIndex(nextCollisions, brushTarget.halfTileRow, brushTarget.halfTileColumn) >= 0) {
+            continue;
+          }
+
+          nextCollisions = [
+            ...nextCollisions,
+            {
+              id: nextCollisionID(nextCollisions),
+              halfTileRow: brushTarget.halfTileRow,
+              halfTileColumn: brushTarget.halfTileColumn,
+            },
+          ];
+        }
+
+        return nextCollisions;
+      }
+
+      const targetKeys = new Set(
+        brushTargets.map((brushTarget) =>
+          collisionPlacementKey(brushTarget.halfTileRow, brushTarget.halfTileColumn),
+        ),
+      );
+      const nextCollisions = currentCollisions.filter(
+        (collision) => !targetKeys.has(collisionPlacementKey(collision.halfTileRow, collision.halfTileColumn)),
+      );
+
+      return nextCollisions.length === currentCollisions.length
+        ? (currentCollisions as CollisionState[])
+        : nextCollisions;
+    }, useGestureHistory);
+  }
+
   function undo(): void {
     endGesture();
     dragStateRef.current = null;
     setPreviewRect(null);
+    setHoveredCollision(null);
 
     setHistory((current) => {
       const previous = current.past[current.past.length - 1];
@@ -1192,6 +1429,7 @@ export function PixelFarmEditorPage() {
     endGesture();
     dragStateRef.current = null;
     setPreviewRect(null);
+    setHoveredCollision(null);
 
     setHistory((current) => {
       const next = current.future[0];
@@ -1207,8 +1445,46 @@ export function PixelFarmEditorPage() {
     });
   }
 
-  function handlePointerDown(row: number, column: number): void {
+  function resolveCollisionTarget(
+    row: number,
+    column: number,
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ): HoveredCollision {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const offsetX = Math.min(Math.max(event.clientX - rect.left, 0), rect.width - 0.001);
+    const offsetY = Math.min(Math.max(event.clientY - rect.top, 0), rect.height - 0.001);
+
+    return {
+      halfTileRow: row * 2 + Math.floor((offsetY / rect.height) * 2),
+      halfTileColumn: column * 2 + Math.floor((offsetX / rect.width) * 2),
+    };
+  }
+
+  function handlePointerDown(
+    row: number,
+    column: number,
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ): void {
     setHoveredCell({ row, column });
+
+    if (editorMode === "collision") {
+      const target = resolveCollisionTarget(row, column, event);
+      setHoveredCollision(target);
+      startGesture();
+      dragStateRef.current = {
+        tool: collisionTool === "paint" ? "collisionPlace" : "collisionErase",
+        layerId: selectedLayer.id,
+        filled: false,
+        tile: null,
+        startRow: row,
+        startColumn: column,
+        endRow: row,
+        endColumn: column,
+      };
+
+      mutateCollisionsAtBrush(target, collisionTool, true);
+      return;
+    }
 
     if (editorMode === "objects") {
       startGesture();
@@ -1296,8 +1572,30 @@ export function PixelFarmEditorPage() {
     );
   }
 
-  function handlePointerEnter(row: number, column: number): void {
+  function handlePointerEnter(
+    row: number,
+    column: number,
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ): void {
     setHoveredCell({ row, column });
+
+    if (editorMode === "collision") {
+      const target = resolveCollisionTarget(row, column, event);
+      setHoveredCollision(target);
+
+      const dragState = dragStateRef.current;
+      if (!dragState) {
+        return;
+      }
+
+      if (dragState.tool === "collisionPlace") {
+        mutateCollisionsAtBrush(target, "paint", true);
+      } else if (dragState.tool === "collisionErase") {
+        mutateCollisionsAtBrush(target, "erase", true);
+      }
+
+      return;
+    }
 
     const dragState = dragStateRef.current;
     if (!dragState) {
@@ -1378,7 +1676,9 @@ export function PixelFarmEditorPage() {
 
   function handleSelectLayer(layerId: string): void {
     setSelectedLayerId(layerId);
-    setEditorMode(layerId === OBJECT_LAYER_ID ? "objects" : "terrain");
+    if (editorMode !== "collision") {
+      setEditorMode(layerId === OBJECT_LAYER_ID ? "objects" : "terrain");
+    }
   }
 
   function handleSelectTile(sourceId: PixelFarmAssetSourceId, frame: number): void {
@@ -1407,6 +1707,7 @@ export function PixelFarmEditorPage() {
       (current) => ({
         layers: current.layers.filter((layer) => layer.id !== selectedLayer.id),
         objects: current.objects.filter((object) => object.layerId !== selectedLayer.id),
+        collisions: current.collisions,
       }),
       false,
     );
@@ -1426,6 +1727,7 @@ export function PixelFarmEditorPage() {
         body: JSON.stringify({
           layers,
           objects,
+          collisions,
         }),
       });
 
@@ -1445,13 +1747,14 @@ export function PixelFarmEditorPage() {
       JSON.stringify({
         layers,
         objects,
+        collisions,
         selectedLayerId,
         selectedTile,
         editorMode,
         terrainTool,
         objectTool,
-        objectWalkable,
-        objectFootprint,
+        collisionTool,
+        collisionBrushSize,
         cellSize,
       }),
     );
@@ -1470,11 +1773,13 @@ export function PixelFarmEditorPage() {
     setEditorMode("terrain");
     setTerrainTool("paint");
     setObjectTool("place");
-    setObjectWalkable(false);
-    setObjectFootprint({ ...DEFAULT_OBJECT_FOOTPRINT });
+    setCollisionTool("paint");
+    setCollisionBrushSize(1);
     setCellSize(INITIAL_CELL_SIZE);
     dragStateRef.current = null;
     setPreviewRect(null);
+    setHoveredCell(null);
+    setHoveredCollision(null);
     window.localStorage.removeItem(DRAFT_STORAGE_KEY);
   }
 
@@ -1506,6 +1811,14 @@ export function PixelFarmEditorPage() {
                   onClick={() => setEditorMode("objects")}
                 >
                   {COPY.modes.objects}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={editorMode === "collision" ? "default" : "ghost"}
+                  onClick={() => setEditorMode("collision")}
+                >
+                  {COPY.modes.collision}
                 </Button>
               </div>
               {layers.map((layer) => (
@@ -1608,7 +1921,7 @@ export function PixelFarmEditorPage() {
                   {COPY.tools.clearStamp}
                 </Button>
               </>
-            ) : (
+            ) : editorMode === "objects" ? (
               <>
                 <Button
                   type="button"
@@ -1626,32 +1939,37 @@ export function PixelFarmEditorPage() {
                 >
                   {COPY.objectTools.erase}
                 </Button>
-                <label className="inline-flex items-center gap-2 rounded-full border border-[#92714c] bg-[#f5e9c3] px-3 py-1.5 text-sm text-[#5a452b]">
-                  <Switch checked={objectWalkable} onCheckedChange={setObjectWalkable} />
-                  <span>{COPY.walkable}</span>
-                </label>
+              </>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={collisionTool === "paint" ? "default" : "outline"}
+                  onClick={() => setCollisionTool("paint")}
+                >
+                  {COPY.collisionTools.paint}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={collisionTool === "erase" ? "default" : "outline"}
+                  onClick={() => setCollisionTool("erase")}
+                >
+                  {COPY.collisionTools.erase}
+                </Button>
                 <div className="inline-flex items-center gap-2 rounded-full border border-[#92714c] bg-[#f5e9c3] px-3 py-1.5 text-sm text-[#5a452b]">
-                  <span>{COPY.footprint}</span>
+                  <span>{COPY.collisionBrush}</span>
                   <div className="flex gap-1">
-                    {OBJECT_FOOTPRINT_PRESETS.map((preset) => (
+                    {[1, 2].map((size) => (
                       <Button
-                        key={preset.id}
+                        key={size}
                         type="button"
                         size="sm"
-                        variant={
-                          objectFootprint.rows === preset.rows &&
-                          objectFootprint.columns === preset.columns
-                            ? "default"
-                            : "ghost"
-                        }
-                        onClick={() =>
-                          setObjectFootprint({
-                            rows: preset.rows,
-                            columns: preset.columns,
-                          })
-                        }
+                        variant={collisionBrushSize === size ? "default" : "ghost"}
+                        onClick={() => setCollisionBrushSize(size as CollisionBrushSize)}
                       >
-                        {preset.label}
+                        {`${size}x${size}`}
                       </Button>
                     ))}
                   </div>
@@ -1706,7 +2024,10 @@ export function PixelFarmEditorPage() {
               style={{
                 gridTemplateColumns: `repeat(${columns}, ${cellSize}px)`,
               }}
-              onPointerLeave={() => setHoveredCell(null)}
+              onPointerLeave={() => {
+                setHoveredCell(null);
+                setHoveredCollision(null);
+              }}
             >
               {Array.from({ length: rows }, (_, rowIndex) =>
                 Array.from({ length: columns }, (_, columnIndex) => {
@@ -1718,12 +2039,13 @@ export function PixelFarmEditorPage() {
                     columnIndex >= Math.min(previewRect.startColumn, previewRect.endColumn) &&
                     columnIndex <= Math.max(previewRect.startColumn, previewRect.endColumn);
                   const tiles =
-                    showFinalPreview || editorMode === "objects"
+                    showFinalPreview || editorMode === "objects" || editorMode === "collision"
                       ? previewTilesForLayers(layers, objects, rowIndex, columnIndex)
                       : (() => {
                           const tile = previewTile(selectedLayer, rowIndex, columnIndex);
                           return tile ? [tile] : [];
                         })();
+                  const cellCollisions = collisionsByCell.get(`${rowIndex}:${columnIndex}`) ?? [];
                   const shadows: string[] = [];
 
                   if (override?.stamped === true) {
@@ -1749,8 +2071,8 @@ export function PixelFarmEditorPage() {
                           tiles.length === 0 ? backgroundColor(layers, rowIndex, columnIndex) : undefined,
                         boxShadow: shadows.join(", ") || undefined,
                       }}
-                      onPointerDown={() => handlePointerDown(rowIndex, columnIndex)}
-                      onPointerEnter={() => handlePointerEnter(rowIndex, columnIndex)}
+                      onPointerDown={(event) => handlePointerDown(rowIndex, columnIndex, event)}
+                      onPointerEnter={(event) => handlePointerEnter(rowIndex, columnIndex, event)}
                     >
                       {tiles.map((tile, tileIndex) => (
                         <span
@@ -1759,37 +2081,60 @@ export function PixelFarmEditorPage() {
                           style={frameStyle(tile.sourceId, tile.frame, cellSize)}
                         />
                       ))}
+                      {editorMode === "collision" && (
+                        <>
+                          {Array.from({ length: 1 }, (_, index) => (
+                            <span
+                              key={`collision-v-${index}`}
+                              className="pointer-events-none absolute top-0 h-full w-px bg-[rgba(128,42,42,0.18)]"
+                              style={{ left: `${(index + 1) * 50}%` }}
+                            />
+                          ))}
+                          {Array.from({ length: 1 }, (_, index) => (
+                            <span
+                              key={`collision-h-${index}`}
+                              className="pointer-events-none absolute left-0 h-px w-full bg-[rgba(128,42,42,0.18)]"
+                              style={{ top: `${(index + 1) * 50}%` }}
+                            />
+                          ))}
+                        </>
+                      )}
+                      {cellCollisions.map((collision) => (
+                        <span
+                          key={collision.id}
+                          className="pointer-events-none absolute"
+                          style={collisionStyle(collision)}
+                        />
+                      ))}
+                      {collisionPreview
+                        ? collectCollisionBrushCells(collisionPreview, collisionBrushSize)
+                            .filter(
+                              (previewCollision) =>
+                                Math.floor(previewCollision.halfTileRow / 2) === rowIndex &&
+                                Math.floor(previewCollision.halfTileColumn / 2) === columnIndex,
+                            )
+                            .map((previewCollision, previewIndex) => (
+                              <span
+                                key={`preview-${previewCollision.halfTileRow}-${previewCollision.halfTileColumn}-${previewIndex}`}
+                                className="pointer-events-none absolute"
+                                style={collisionStyle(previewCollision, true)}
+                              />
+                            ))
+                        : null}
                     </button>
                   );
                 }),
               )}
 
-              {showBrushPreview && (
+              {editorMode !== "collision" && showBrushPreview && hoveredCell !== null && (
                 <span
                   className="pointer-events-none absolute z-20 opacity-90"
                   style={{
-                    left: GRID_PADDING + hoveredCell.column * (cellSize + GRID_GAP),
-                    top: GRID_PADDING + hoveredCell.row * (cellSize + GRID_GAP),
+                    left: 1 + hoveredCell.column * (cellSize + 1),
+                    top: 1 + hoveredCell.row * (cellSize + 1),
                     width: cellSize,
                     height: cellSize,
                     ...frameStyle(selectedTile.sourceId, selectedTile.frame, cellSize),
-                  }}
-                />
-              )}
-
-              {editorMode === "objects" && objectTool === "place" && hoveredCell !== null && (
-                <span
-                  className="pointer-events-none absolute z-10 border-2"
-                  style={{
-                    left: GRID_PADDING + hoveredCell.column * (cellSize + GRID_GAP),
-                    top: GRID_PADDING + hoveredCell.row * (cellSize + GRID_GAP),
-                    width:
-                      objectFootprint.columns * cellSize + (objectFootprint.columns - 1) * GRID_GAP,
-                    height: objectFootprint.rows * cellSize + (objectFootprint.rows - 1) * GRID_GAP,
-                    borderColor: objectWalkable ? "rgba(88, 160, 84, 0.8)" : "rgba(171, 82, 56, 0.88)",
-                    backgroundColor: objectWalkable
-                      ? "rgba(142, 212, 132, 0.15)"
-                      : "rgba(203, 116, 87, 0.16)",
                   }}
                 />
               )}

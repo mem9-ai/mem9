@@ -100,6 +100,23 @@ export function registerPixelFarmBabyCowAnimations(scene: Phaser.Scene): void {
   }
 }
 
+export function measurePixelFarmBabyCowBodyAt(
+  x: number,
+  y: number,
+): { left: number; top: number; right: number; bottom: number } {
+  const left =
+    x - PIXEL_FARM_BABY_COW_FRAME_WIDTH * BABY_COW_SPRITE_ORIGIN_X + BABY_COW_BODY_OFFSET_X;
+  const top =
+    y - PIXEL_FARM_BABY_COW_FRAME_HEIGHT * BABY_COW_SPRITE_ORIGIN_Y + BABY_COW_BODY_OFFSET_Y;
+
+  return {
+    left,
+    top,
+    right: left + BABY_COW_BODY_WIDTH,
+    bottom: top + BABY_COW_BODY_HEIGHT,
+  };
+}
+
 export class PixelFarmBabyCow extends Phaser.Physics.Arcade.Sprite {
   private readonly canOccupy: PixelFarmBabyCowConfig["canOccupy"];
   private readonly color: PixelFarmBabyCowColor;
@@ -463,16 +480,13 @@ export class PixelFarmBabyCow extends Phaser.Physics.Arcade.Sprite {
   }
 
   private canOccupyAt(x: number, y: number, moveX = 0, moveY = 0): boolean {
-    const left =
-      x - PIXEL_FARM_BABY_COW_FRAME_WIDTH * BABY_COW_SPRITE_ORIGIN_X + BABY_COW_BODY_OFFSET_X;
-    const top =
-      y - PIXEL_FARM_BABY_COW_FRAME_HEIGHT * BABY_COW_SPRITE_ORIGIN_Y + BABY_COW_BODY_OFFSET_Y;
+    const rect = measurePixelFarmBabyCowBodyAt(x, y);
 
     return this.canOccupy(
-      left,
-      top,
-      left + BABY_COW_BODY_WIDTH,
-      top + BABY_COW_BODY_HEIGHT,
+      rect.left,
+      rect.top,
+      rect.right,
+      rect.bottom,
       moveX,
       moveY,
     );

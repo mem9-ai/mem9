@@ -1,4 +1,5 @@
 import {
+  PIXEL_FARM_GENERATED_COLLISIONS,
   PIXEL_FARM_GENERATED_LAYERS,
   PIXEL_FARM_GENERATED_OBJECTS,
 } from "@/lib/pixel-farm/generated-mask-data";
@@ -20,11 +21,6 @@ export interface PixelFarmLayer {
   overrides: PixelFarmTileOverrideMap;
 }
 
-export interface PixelFarmObjectFootprint {
-  rows: number;
-  columns: number;
-}
-
 export interface PixelFarmObjectPlacement {
   id: string;
   layerId: string;
@@ -32,8 +28,12 @@ export interface PixelFarmObjectPlacement {
   frame: number;
   row: number;
   column: number;
-  footprint: PixelFarmObjectFootprint;
-  walkable: boolean;
+}
+
+export interface PixelFarmCollisionCell {
+  id: string;
+  halfTileRow: number;
+  halfTileColumn: number;
 }
 
 export interface PixelFarmMaskBounds {
@@ -139,8 +139,6 @@ function normalizeObjects(layerIDs: readonly string[]): PixelFarmObjectPlacement
       frame: number;
       row: number;
       column: number;
-      footprint: PixelFarmObjectFootprint;
-      walkable: boolean;
     };
     if (!object.id) {
       throw new Error(`Pixel farm object at index ${index} is missing an id.`);
@@ -154,10 +152,6 @@ function normalizeObjects(layerIDs: readonly string[]): PixelFarmObjectPlacement
       throw new Error(`Pixel farm object "${object.id}" must use non-negative coordinates.`);
     }
 
-    if (object.footprint.rows < 1 || object.footprint.columns < 1) {
-      throw new Error(`Pixel farm object "${object.id}" must use a positive footprint.`);
-    }
-
     return {
       id: object.id,
       layerId: object.layerId,
@@ -165,11 +159,37 @@ function normalizeObjects(layerIDs: readonly string[]): PixelFarmObjectPlacement
       frame: object.frame,
       row: object.row,
       column: object.column,
-      footprint: {
-        rows: object.footprint.rows,
-        columns: object.footprint.columns,
-      },
-      walkable: object.walkable,
+    };
+  });
+}
+
+function normalizeCollisions(): PixelFarmCollisionCell[] {
+  const seen = new Set<string>();
+
+  return Array.from(PIXEL_FARM_GENERATED_COLLISIONS as readonly unknown[]).map((value, index) => {
+    const cell = value as PixelFarmCollisionCell;
+    if (!cell.id) {
+      throw new Error(`Pixel farm collision at index ${index} is missing an id.`);
+    }
+
+    if (seen.has(cell.id)) {
+      throw new Error(`Pixel farm collision id "${cell.id}" must be unique.`);
+    }
+
+    if (
+      !Number.isInteger(cell.halfTileRow) ||
+      cell.halfTileRow < 0 ||
+      !Number.isInteger(cell.halfTileColumn) ||
+      cell.halfTileColumn < 0
+    ) {
+      throw new Error(`Pixel farm collision "${cell.id}" must use non-negative quarter-grid coordinates.`);
+    }
+
+    seen.add(cell.id);
+    return {
+      id: cell.id,
+      halfTileRow: cell.halfTileRow,
+      halfTileColumn: cell.halfTileColumn,
     };
   });
 }
@@ -182,6 +202,7 @@ export const PIXEL_FARM_MASK_COLUMNS = PIXEL_FARM_ROOT_LAYER.mask[0]?.length ?? 
 export const PIXEL_FARM_MASK_ROWS = PIXEL_FARM_ROOT_LAYER.mask.length;
 export const PIXEL_FARM_MASK_BOUNDS = measureMask(PIXEL_FARM_ROOT_LAYER.mask);
 export const PIXEL_FARM_OBJECTS = normalizeObjects(PIXEL_FARM_LAYER_IDS);
+export const PIXEL_FARM_COLLISIONS = normalizeCollisions();
 
 export function maskHasTile(mask: readonly string[], row: number, column: number): boolean {
   return mask[row]?.[column] === "#";
@@ -208,17 +229,4 @@ export function tileOverrideAt(
   }
 
   return tile;
-}
-
-export function objectOccupiesCell(
-  object: PixelFarmObjectPlacement,
-  row: number,
-  column: number,
-): boolean {
-  return (
-    row >= object.row &&
-    row < object.row + object.footprint.rows &&
-    column >= object.column &&
-    column < object.column + object.footprint.columns
-  );
 }

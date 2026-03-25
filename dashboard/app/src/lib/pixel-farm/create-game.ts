@@ -17,6 +17,7 @@ import {
   type PixelFarmCharacterDirection,
   type PixelFarmCharacterInput,
   type PixelFarmCharacterToolAction,
+  measurePixelFarmCharacterBodyAt,
   registerPixelFarmCharacterAnimations,
 } from "@/lib/pixel-farm/character";
 import {
@@ -26,6 +27,7 @@ import {
   registerPixelFarmCowAnimations,
 } from "@/lib/pixel-farm/cow";
 import {
+  PIXEL_FARM_COLLISIONS,
   maskHasTile,
   PIXEL_FARM_LAYERS,
   PIXEL_FARM_MASK_BOUNDS,
@@ -36,9 +38,11 @@ import {
   tileOverrideAt,
 } from "@/lib/pixel-farm/island-mask";
 import {
-  collectPixelFarmTerrainBlockedCells,
-  isPixelFarmTerrainBlockedCell,
-} from "@/lib/pixel-farm/terrain-collision";
+  buildPixelFarmCollisionIndex,
+  createPixelFarmStaticCollisionBodies,
+  intersectsPixelFarmCollision,
+  type PixelFarmCollisionRect,
+} from "@/lib/pixel-farm/collision-layer";
 import {
   pixelFarmWaterTextureKey,
   preloadPixelFarmRuntimeAssets,
@@ -72,6 +76,7 @@ const INTERACTION_ORIGIN_MARKER_RADIUS = 4;
 const INTERACTION_ANCHOR_MARKER_RADIUS = 3;
 const WATER_FRAME_COUNT = PIXEL_FARM_WATER_TEXTURE_KEYS.length;
 const ARCADE_DEBUG_ENABLED = false//import.meta.env.DEV;
+const PIXEL_FARM_COLLISION_INDEX = buildPixelFarmCollisionIndex(PIXEL_FARM_COLLISIONS);
 const WORLD_PIXEL_WIDTH = WORLD_COLUMNS * PIXEL_FARM_TILE_SIZE;
 const WORLD_PIXEL_HEIGHT = WORLD_ROWS * PIXEL_FARM_TILE_SIZE;
 const ISLAND_PIXEL_WIDTH = PIXEL_FARM_MASK_BOUNDS.width * PIXEL_FARM_TILE_SIZE;
@@ -241,21 +246,6 @@ function localCellKey(row: number, column: number): string {
   return `${row}:${column}`;
 }
 
-function localCellFromKey(key: string): PixelFarmCell | null {
-  const [rowValue, columnValue] = key.split(":");
-  if (rowValue === undefined || columnValue === undefined) {
-    return null;
-  }
-
-  const row = Number(rowValue);
-  const column = Number(columnValue);
-  if (!Number.isFinite(row) || !Number.isFinite(column)) {
-    return null;
-  }
-
-  return { row, column };
-}
-
 interface PixelFarmInteractionCandidate {
   target: PixelFarmInteractableTarget;
   worldAnchor: { x: number; y: number };
@@ -296,7 +286,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   private waterFrame = 0;
   private waterTimer?: Phaser.Time.TimerEvent;
   private character?: PixelFarmCharacter;
-  private terrainBlockerGroup?: Phaser.Physics.Arcade.StaticGroup;
+  private collisionBlockerGroup?: Phaser.Physics.Arcade.StaticGroup;
   private debugActor?: PixelFarmPreviewActor;
   private debugActorKey?: string;
   private lastDebugActorSignature?: string;
@@ -307,7 +297,6 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   private lastWorldState?: PixelFarmWorldState | null;
   private recentInteractionFocus: PixelFarmRecentInteractionFocus | null = null;
   private characterControls?: CharacterKeyboardControls;
-  private readonly blockedCells = new Set<string>();
   private dragState: DragState = {
     active: false,
     pointerId: null,
@@ -408,17 +397,16 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       islandTile: null,
       worldTile: null,
     });
-    this.terrainBlockerGroup?.clear(true, true);
-    this.terrainBlockerGroup?.destroy(true);
-    this.terrainBlockerGroup = undefined;
+    this.collisionBlockerGroup?.clear(true, true);
+    this.collisionBlockerGroup?.destroy(true);
+    this.collisionBlockerGroup = undefined;
     this.unbindCameraControls();
   }
 
   private rebuildWorld(): void {
     this.rebuildOcean();
     this.rebuildIsland();
-    this.rebuildCollisionMap();
-    this.rebuildTerrainBlockers();
+    this.rebuildCollisionBodies();
   }
 
   private rebuildOcean(): void {
@@ -603,12 +591,12 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       );
     }
 
-    if (this.terrainBlockerGroup) {
+    if (this.collisionBlockerGroup) {
       if (this.character) {
-        this.physics.add.collider(this.character, this.terrainBlockerGroup);
+        this.physics.add.collider(this.character, this.collisionBlockerGroup);
       }
       if (renderedAnimalGroup) {
-        this.physics.add.collider(renderedAnimalGroup, this.terrainBlockerGroup);
+        this.physics.add.collider(renderedAnimalGroup, this.collisionBlockerGroup);
       }
     }
   }
@@ -745,7 +733,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       this.drawPhysicsDebugSprite(animal, 0xff6b6b, 0xffc2c2);
     }
 
-    this.drawTerrainBlockerDebug(0xff4d6d);
+    this.drawCollisionBlockerDebug(0xff4d6d);
 
     for (const crop of this.worldRenderer?.getCropObjects() ?? []) {
       this.drawSortMarker(crop.x, crop.y, 0x6fe3ff);
@@ -1184,15 +1172,15 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     graphics.lineBetween(x, y - 3, x, y + 3);
   }
 
-  private drawTerrainBlockerDebug(color: number): void {
+  private drawCollisionBlockerDebug(color: number): void {
     const graphics = this.worldDebugGraphics;
-    if (!graphics || !this.terrainBlockerGroup) {
+    if (!graphics || !this.collisionBlockerGroup) {
       return;
     }
 
     graphics.lineStyle(1, color, 0.85);
 
-    for (const child of this.terrainBlockerGroup.getChildren()) {
+    for (const child of this.collisionBlockerGroup.getChildren()) {
       const body = (child as Phaser.GameObjects.GameObject & {
         body?: Phaser.Physics.Arcade.StaticBody;
       }).body;
@@ -1404,110 +1392,42 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     };
   }
 
-  private rebuildCollisionMap(): void {
-    this.blockedCells.clear();
-
-    for (let row = 0; row < PIXEL_FARM_MASK_ROWS; row += 1) {
-      for (let column = 0; column < PIXEL_FARM_MASK_COLUMNS; column += 1) {
-        if (!isPixelFarmTerrainBlockedCell(row, column)) {
-          continue;
-        }
-
-        this.blockedCells.add(localCellKey(row, column));
-      }
-    }
-
-    for (const object of PIXEL_FARM_OBJECTS) {
-      if (object.walkable) {
-        continue;
-      }
-
-      for (let row = object.row; row < object.row + object.footprint.rows; row += 1) {
-        for (let column = object.column; column < object.column + object.footprint.columns; column += 1) {
-          this.blockedCells.add(localCellKey(row, column));
-        }
-      }
-    }
+  private rebuildCollisionBodies(): void {
+    this.collisionBlockerGroup = createPixelFarmStaticCollisionBodies({
+      scene: this,
+      segments: PIXEL_FARM_COLLISIONS,
+      offsetX: ISLAND_START_COLUMN * PIXEL_FARM_TILE_SIZE,
+      offsetY: ISLAND_START_ROW * PIXEL_FARM_TILE_SIZE,
+      group: this.collisionBlockerGroup,
+    });
   }
 
-  private rebuildTerrainBlockers(): void {
-    const blockerGroup =
-      this.terrainBlockerGroup ?? this.physics.add.staticGroup();
-    this.terrainBlockerGroup = blockerGroup;
-    blockerGroup.clear(true, true);
-
-    for (const cell of this.collectTerrainBlockerCells()) {
-      const { x, y } = this.cellToWorldOrigin(cell);
-      const blocker = this.physics.add.staticImage(
-        x + PIXEL_FARM_TILE_SIZE * 0.5,
-        y + PIXEL_FARM_TILE_SIZE * 0.5,
-        "__WHITE",
-      );
-
-      blocker.setDisplaySize(PIXEL_FARM_TILE_SIZE, PIXEL_FARM_TILE_SIZE);
-      blocker.setVisible(false);
-      blocker.refreshBody();
-      blockerGroup.add(blocker);
-    }
+  private worldRectToLocalRect(
+    left: number,
+    top: number,
+    right: number,
+    bottom: number,
+  ): PixelFarmCollisionRect {
+    return {
+      left: left / PIXEL_FARM_TILE_SIZE - ISLAND_START_COLUMN,
+      top: top / PIXEL_FARM_TILE_SIZE - ISLAND_START_ROW,
+      right: right / PIXEL_FARM_TILE_SIZE - ISLAND_START_COLUMN,
+      bottom: bottom / PIXEL_FARM_TILE_SIZE - ISLAND_START_ROW,
+    };
   }
 
-  private collectTerrainBlockerCells(): PixelFarmCell[] {
-    const cells = new Map<string, PixelFarmCell>();
-
-    for (const cell of collectPixelFarmTerrainBlockedCells()) {
-      cells.set(localCellKey(cell.row, cell.column), cell);
+  private canCharacterStandAtCell(row: number, column: number): boolean {
+    if (!maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, row, column)) {
+      return false;
     }
 
-    for (const key of this.blockedCells) {
-      const cell = localCellFromKey(key);
-      if (!cell) {
-        continue;
-      }
-
-      cells.set(key, cell);
-    }
-
-    const directions = [
-      { row: -1, column: 0 },
-      { row: 1, column: 0 },
-      { row: 0, column: -1 },
-      { row: 0, column: 1 },
-    ] as const;
-
-    for (let row = 0; row < PIXEL_FARM_MASK_ROWS; row += 1) {
-      for (let column = 0; column < PIXEL_FARM_MASK_COLUMNS; column += 1) {
-        if (maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, row, column)) {
-          continue;
-        }
-
-        if (
-          !directions.some((direction) =>
-            maskHasTile(
-              PIXEL_FARM_ROOT_LAYER.mask,
-              row + direction.row,
-              column + direction.column,
-            ),
-          )
-        ) {
-          continue;
-        }
-
-        cells.set(localCellKey(row, column), { row, column });
-      }
-    }
-
-    return [...cells.values()];
-  }
-
-  private isWalkableLocalCell(row: number, column: number): boolean {
-    return (
-      maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, row, column) &&
-      !this.blockedCells.has(localCellKey(row, column))
-    );
+    const worldPosition = this.cellToWorldPosition({ row, column });
+    const rect = measurePixelFarmCharacterBodyAt(worldPosition.x, worldPosition.y);
+    return this.canActorOccupy(rect.left, rect.top, rect.right, rect.bottom);
   }
 
   private isSpawnableLocalCell(row: number, column: number): boolean {
-    if (!this.isWalkableLocalCell(row, column)) {
+    if (!this.canCharacterStandAtCell(row, column)) {
       return false;
     }
 
@@ -1519,7 +1439,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     ] as const;
 
     return directions.some((direction) =>
-      this.isWalkableLocalCell(row + direction.row, column + direction.column),
+      this.canCharacterStandAtCell(row + direction.row, column + direction.column),
     );
   }
 
@@ -1547,7 +1467,10 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       }
     }
 
-    return true;
+    return !intersectsPixelFarmCollision(
+      PIXEL_FARM_COLLISION_INDEX,
+      this.worldRectToLocalRect(left, top, right, bottom),
+    );
   };
 
   private bindCameraControls(): void {

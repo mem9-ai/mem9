@@ -21,11 +21,15 @@ import type {
 } from "@/lib/pixel-farm/data/types";
 import {
   maskHasTile,
-  objectOccupiesCell,
+  PIXEL_FARM_COLLISIONS,
   PIXEL_FARM_LAYERS,
-  PIXEL_FARM_OBJECTS,
   PIXEL_FARM_ROOT_LAYER,
 } from "@/lib/pixel-farm/island-mask";
+import {
+  buildPixelFarmCollisionIndex,
+  intersectsPixelFarmCollision,
+  type PixelFarmCollisionRect,
+} from "@/lib/pixel-farm/collision-layer";
 import {
   PIXEL_FARM_BUCKET_ANIMAL_PALETTES,
   PIXEL_FARM_CROP_BUCKET_PALETTES,
@@ -38,22 +42,16 @@ import {
   PIXEL_FARM_TILE_SIZE,
   type PixelFarmAssetTileSelection,
 } from "@/lib/pixel-farm/tileset-config";
-import {
-  collectPixelFarmHillAccessCells,
-  collectPixelFarmHillWalkableCells,
-  isPixelFarmTerrainBlockedCell,
-} from "@/lib/pixel-farm/terrain-collision";
-
 const DATA_ENTITY_DEPTH = 15;
 const MAX_BUCKET_RENDER_COUNT = 6;
 const TILLED_LAYER_ID = "layer-6";
 const TILLED_SOURCE_IDS = new Set(["tilledDirtWide", "tiledDirt"]);
 const CHICKEN_ROAM_TARGET_MIN_DISTANCE = 4;
 const CHICKEN_ROAM_TARGET_MAX_ATTEMPTS = 10;
-const CHICKEN_EXIT_TARGET_MAX_ATTEMPTS = 12;
 
 const CHICKEN_RENDER_COLORS = ["default", "brown"] as const satisfies readonly PixelFarmChickenColor[];
 const COW_RENDER_COLORS = ["brown", "light"] as const satisfies readonly PixelFarmCowColor[];
+const PIXEL_FARM_COLLISION_INDEX = buildPixelFarmCollisionIndex(PIXEL_FARM_COLLISIONS);
 
 const OTHER_ZONE_BOUNDS: PixelFarmCellBounds = {
   minRow: 0,
@@ -298,27 +296,32 @@ function collectConnectedComponents(
   return components;
 }
 
-function blockedByObject(row: number, column: number): boolean {
-  return PIXEL_FARM_OBJECTS.some(
-    (object) => !object.walkable && objectOccupiesCell(object, row, column),
-  );
+function collisionRectForCell(cell: PixelFarmGridCell): PixelFarmCollisionRect {
+  return {
+    left: cell.column,
+    top: cell.row,
+    right: cell.column + 1,
+    bottom: cell.row + 1,
+  };
 }
 
 function collectWalkableCells(bounds: PixelFarmCellBounds): PixelFarmGridCell[] {
   const cells: PixelFarmGridCell[] = [];
 
-    for (let row = bounds.minRow; row <= bounds.maxRow; row += 1) {
-      for (let column = bounds.minColumn; column <= bounds.maxColumn; column += 1) {
-        if (!maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, row, column)) {
-          continue;
-        }
-        if (blockedByObject(row, column) || isPixelFarmTerrainBlockedCell(row, column)) {
-          continue;
-        }
-
-        cells.push({ row, column });
+  for (let row = bounds.minRow; row <= bounds.maxRow; row += 1) {
+    for (let column = bounds.minColumn; column <= bounds.maxColumn; column += 1) {
+      if (!maskHasTile(PIXEL_FARM_ROOT_LAYER.mask, row, column)) {
+        continue;
       }
+
+      const cell = { row, column };
+      if (intersectsPixelFarmCollision(PIXEL_FARM_COLLISION_INDEX, collisionRectForCell(cell))) {
+        continue;
+      }
+
+      cells.push(cell);
     }
+  }
 
   return cells;
 }
@@ -362,11 +365,6 @@ function createMainPlotLayouts(): PixelFarmPlotLayout[] {
 
 const TILLED_CELL_KEYS = new Set(
   collectTilledCells().map((cell) => gridCellKey(cell.row, cell.column)),
-);
-const HILL_WALKABLE_CELLS = collectPixelFarmHillWalkableCells();
-const HILL_ACCESS_CELLS = collectPixelFarmHillAccessCells();
-const HILL_ACCESS_CELL_KEYS = new Set(
-  HILL_ACCESS_CELLS.map((cell) => gridCellKey(cell.row, cell.column)),
 );
 
 function createOtherPlotLayout(): PixelFarmPlotLayout {
@@ -440,6 +438,22 @@ function findOtherDecorationTile(
 
 const MAIN_PLOT_LAYOUTS = createMainPlotLayouts();
 const OTHER_PLOT_LAYOUT = createOtherPlotLayout();
+const ISLAND_WALKABLE_CELLS = collectWalkableCells({
+  minRow: 0,
+  maxRow: PIXEL_FARM_ROOT_LAYER.mask.length - 1,
+  minColumn: 0,
+  maxColumn: PIXEL_FARM_ROOT_LAYER.mask[0]!.length - 1,
+});
+const COW_PEN_LAYOUT = createAnimalPenLayoutFromCells(
+  collectWalkableCells(COW_PEN_BOUNDS),
+  COW_PEN_BOUNDS,
+  ISLAND_WALKABLE_CELLS,
+);
+const CHICKEN_PEN_LAYOUT = createAnimalPenLayoutFromCells(
+  collectWalkableCells(CHICKEN_PEN_BOUNDS),
+  CHICKEN_PEN_BOUNDS,
+  ISLAND_WALKABLE_CELLS,
+);
 
 export class PixelFarmWorldRenderer {
   private readonly scene: Phaser.Scene;
@@ -799,30 +813,21 @@ export class PixelFarmWorldRenderer {
             ? [centerX, rightX]
             : [leftX, centerX];
 
-      return sampleXs.every((sampleX) => {
-        const cell = this.worldPointToGridCell(sampleX, sampleY);
-        return allowedCellKeys.has(gridCellKey(cell.row, cell.column));
-      });
+      return (
+        sampleXs.every((sampleX) => {
+          const cell = this.worldPointToGridCell(sampleX, sampleY);
+          return allowedCellKeys.has(gridCellKey(cell.row, cell.column));
+        }) &&
+        !intersectsPixelFarmCollision(
+          PIXEL_FARM_COLLISION_INDEX,
+          this.worldRectToLocalRect(left, top, right, bottom),
+        )
+      );
     };
   }
 
   private pickChickenWalkTarget(currentX: number, currentY: number): Phaser.Math.Vector2 | null {
     const currentCell = this.worldPointToGridCell(currentX, currentY);
-    const currentCellKey = gridCellKey(currentCell.row, currentCell.column);
-    const isOnHill = HILL_ACCESS_CELL_KEYS.has(currentCellKey);
-
-    if (isOnHill) {
-      for (let attempt = 0; attempt < CHICKEN_EXIT_TARGET_MAX_ATTEMPTS; attempt += 1) {
-        const targetIndex = Phaser.Math.Between(0, HILL_ACCESS_CELLS.length - 1);
-        const targetCell = HILL_ACCESS_CELLS[targetIndex];
-        if (!targetCell || !this.isChickenExitCell(targetCell) || cellDistance(currentCell, targetCell) < 2) {
-          continue;
-        }
-
-        const { x, y } = this.cellToWorldPosition(targetCell);
-        return new Phaser.Math.Vector2(x, y);
-      }
-    }
 
     for (let attempt = 0; attempt < CHICKEN_ROAM_TARGET_MAX_ATTEMPTS; attempt += 1) {
       const targetIndex = Phaser.Math.Between(0, CHICKEN_PEN_LAYOUT.roamCells.length - 1);
@@ -838,16 +843,18 @@ export class PixelFarmWorldRenderer {
     return null;
   }
 
-  private isChickenExitCell(cell: PixelFarmGridCell): boolean {
-    return [
-      { row: -1, column: 0 },
-      { row: 1, column: 0 },
-      { row: 0, column: -1 },
-      { row: 0, column: 1 },
-    ].some((direction) => {
-      const nextKey = gridCellKey(cell.row + direction.row, cell.column + direction.column);
-      return !HILL_ACCESS_CELL_KEYS.has(nextKey) && CHICKEN_PEN_LAYOUT.allowedCellKeys.has(nextKey);
-    });
+  private worldRectToLocalRect(
+    left: number,
+    top: number,
+    right: number,
+    bottom: number,
+  ): PixelFarmCollisionRect {
+    return {
+      left: (left - this.gridOrigin.x) / PIXEL_FARM_TILE_SIZE,
+      top: (top - this.gridOrigin.y) / PIXEL_FARM_TILE_SIZE,
+      right: (right - this.gridOrigin.x) / PIXEL_FARM_TILE_SIZE,
+      bottom: (bottom - this.gridOrigin.y) / PIXEL_FARM_TILE_SIZE,
+    };
   }
 
   private createAnimal(
@@ -925,12 +932,8 @@ function createAnimalPenLayoutFromCells(
   fallbackBounds: PixelFarmCellBounds,
   roamCells: readonly PixelFarmGridCell[] = spawnCells,
 ): PixelFarmAnimalPenLayout {
-  const walkableSpawnCells = spawnCells.filter(
-    (cell) => !blockedByObject(cell.row, cell.column) && !isPixelFarmTerrainBlockedCell(cell.row, cell.column),
-  );
-  const walkableRoamCells = roamCells.filter(
-    (cell) => !blockedByObject(cell.row, cell.column) && !isPixelFarmTerrainBlockedCell(cell.row, cell.column),
-  );
+  const walkableSpawnCells = [...spawnCells];
+  const walkableRoamCells = [...roamCells];
   const spawnValidationCellKeys = new Set(
     [...walkableSpawnCells, ...walkableRoamCells].map((cell) => gridCellKey(cell.row, cell.column)),
   );
@@ -952,21 +955,3 @@ function createAnimalPenLayoutFromCells(
     roamCells: walkableRoamCells,
   };
 }
-
-const ISLAND_WALKABLE_CELLS = collectWalkableCells({
-  minRow: 0,
-  maxRow: PIXEL_FARM_ROOT_LAYER.mask.length - 1,
-  minColumn: 0,
-  maxColumn: PIXEL_FARM_ROOT_LAYER.mask[0]!.length - 1,
-});
-
-const COW_PEN_LAYOUT = createAnimalPenLayoutFromCells(
-  collectWalkableCells(COW_PEN_BOUNDS),
-  COW_PEN_BOUNDS,
-  ISLAND_WALKABLE_CELLS,
-);
-const CHICKEN_PEN_LAYOUT = createAnimalPenLayoutFromCells(
-  HILL_WALKABLE_CELLS,
-  CHICKEN_PEN_BOUNDS,
-  [...HILL_ACCESS_CELLS, ...ISLAND_WALKABLE_CELLS],
-);
