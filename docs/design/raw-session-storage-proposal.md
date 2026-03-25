@@ -1,6 +1,16 @@
 ---
 title: proposal — raw session storage
+status: implemented
+created: 2026-03-10
+last_updated: 2026-03-25
 ---
+
+> **STATUS: IMPLEMENTED** (PR #103)
+> `sessions` table, `SessionRepo`, `SessionService`, content-hash deduplication
+> (`INSERT IGNORE`), parallel goroutine raw-save in `handler/memory.go`,
+> and unified search append are all in place.
+> Phase 2 (LLM-generated tags via `ExtractPhase1`/`PatchTags`) is also
+> implemented — `service/ingest.go` exposes `ExtractPhase1`/`ReconcilePhase2`.
 
 ## Problem
 

@@ -1,3 +1,17 @@
+---
+title: "Migrate from TiDB Zero to TiDB Cloud Starter Pool API"
+status: implemented
+created: 2026-03-11
+last_updated: 2026-03-25
+---
+
+> **STATUS: IMPLEMENTED** (PR #70)
+> `TiDBCloudProvisioner` (`tenant/starter.go`) with HTTP Digest Auth is
+> implemented alongside `ZeroProvisioner` (`tenant/zero.go`). Mode selection
+> in `main.go` follows the documented priority: explicit Zero toggle >
+> TiDB Cloud auto-detection. `MNEMO_TIDBCLOUD_API_KEY`/`_API_SECRET`/`_POOL_ID`
+> env vars are in use in the deployed dev and prod environments.
+
 # Design: Migrate from TiDB Zero to TiDB Cloud Starter Pool API
 
 ## Summary
