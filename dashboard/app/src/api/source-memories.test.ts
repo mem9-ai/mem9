@@ -51,10 +51,9 @@ describe("loadSourceMemories", () => {
     vi.restoreAllMocks();
   });
 
-  it("fetches from the API on first call even when hasFullCache is true", async () => {
+  it("uses IndexedDB cache when hasFullCache is true", async () => {
     const { sourceMemories, api, localCache } = await importModules();
-    const staleMemory = createMemory("stale-1");
-    const freshMemory = createMemory("fresh-1");
+    const cachedMemory = createMemory("cached-1");
 
     vi.mocked(localCache.readSyncState).mockResolvedValue({
       spaceId: "space-1",
@@ -63,51 +62,15 @@ describe("loadSourceMemories", () => {
       incrementalCursor: null,
       incrementalTodo: "",
     });
-    vi.mocked(localCache.readCachedMemories).mockResolvedValue([staleMemory]);
-    vi.mocked(api.listMemories).mockResolvedValue({
-      memories: [freshMemory],
-      total: 1,
-      limit: 200,
-      offset: 0,
-    });
+    vi.mocked(localCache.readCachedMemories).mockResolvedValue([cachedMemory]);
 
-    const result = await sourceMemories.loadSourceMemories("space-1");
-
-    expect(api.listMemories).toHaveBeenCalled();
-    expect(result).toEqual([freshMemory]);
-  });
-
-  it("uses IndexedDB cache on second call within the same session", async () => {
-    const { sourceMemories, api, localCache } = await importModules();
-    const freshMemory = createMemory("fresh-1");
-
-    vi.mocked(localCache.readSyncState).mockResolvedValue({
-      spaceId: "space-1",
-      hasFullCache: true,
-      lastSyncedAt: "2026-03-18T00:00:00Z",
-      incrementalCursor: null,
-      incrementalTodo: "",
-    });
-    vi.mocked(localCache.readCachedMemories).mockResolvedValue([freshMemory]);
-    vi.mocked(api.listMemories).mockResolvedValue({
-      memories: [freshMemory],
-      total: 1,
-      limit: 200,
-      offset: 0,
-    });
-
-    // First call: forces sync from API
-    await sourceMemories.loadSourceMemories("space-1");
-    vi.mocked(api.listMemories).mockClear();
-
-    // Second call: should use cache
     const result = await sourceMemories.loadSourceMemories("space-1");
 
     expect(api.listMemories).not.toHaveBeenCalled();
-    expect(result).toEqual([freshMemory]);
+    expect(result).toEqual([cachedMemory]);
   });
 
-  it("fetches from API on first call after module reload (simulating page refresh)", async () => {
+  it("still uses IndexedDB cache after module reload when hasFullCache is true", async () => {
     // First "session"
     const first = await importModules();
     const memory1 = createMemory("m1");
@@ -120,14 +83,11 @@ describe("loadSourceMemories", () => {
       incrementalTodo: "",
     });
     vi.mocked(first.localCache.readCachedMemories).mockResolvedValue([memory1]);
-    vi.mocked(first.api.listMemories).mockResolvedValue({
-      memories: [memory1],
-      total: 1,
-      limit: 200,
-      offset: 0,
-    });
 
-    await first.sourceMemories.loadSourceMemories("space-1");
+    const firstResult = await first.sourceMemories.loadSourceMemories("space-1");
+
+    expect(first.api.listMemories).not.toHaveBeenCalled();
+    expect(firstResult).toEqual([memory1]);
 
     // Simulate page refresh: reset modules and re-import
     const second = await importModules();
@@ -140,17 +100,11 @@ describe("loadSourceMemories", () => {
       incrementalCursor: null,
       incrementalTodo: "",
     });
-    vi.mocked(second.localCache.readCachedMemories).mockResolvedValue([memory1]);
-    vi.mocked(second.api.listMemories).mockResolvedValue({
-      memories: [memory2],
-      total: 1,
-      limit: 200,
-      offset: 0,
-    });
+    vi.mocked(second.localCache.readCachedMemories).mockResolvedValue([memory2]);
 
     const result = await second.sourceMemories.loadSourceMemories("space-1");
 
-    expect(second.api.listMemories).toHaveBeenCalled();
+    expect(second.api.listMemories).not.toHaveBeenCalled();
     expect(result).toEqual([memory2]);
   });
 

@@ -12,12 +12,6 @@ import type { Memory } from "@/types/memory";
 
 const PAGE_SIZE = 200;
 const activeSyncs = new Map<string, Promise<Memory[]>>();
-/**
- * Tracks which spaces have been synced from the API in the current page session.
- * On page refresh the module reloads and this set is empty, forcing a fresh
- * API sync instead of serving potentially stale IndexedDB data.
- */
-const sessionSyncedSpaces = new Set<string>();
 
 export function getSourceMemoriesQueryKey(spaceId: string): string[] {
   return ["space", spaceId, "sourceMemories"];
@@ -72,13 +66,11 @@ export async function loadSourceMemories(spaceId: string): Promise<Memory[]> {
     readSyncState(spaceId),
   ]);
 
-  if (syncState?.hasFullCache && sessionSyncedSpaces.has(spaceId)) {
+  if (syncState?.hasFullCache) {
     return sortMemoriesByCreatedAtDesc(cached);
   }
 
-  const memories = await syncAllMemories(spaceId);
-  sessionSyncedSpaces.add(spaceId);
-  return memories;
+  return syncAllMemories(spaceId);
 }
 
 export function useSourceMemories(
