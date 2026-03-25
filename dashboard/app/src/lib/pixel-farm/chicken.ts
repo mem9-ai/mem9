@@ -8,7 +8,6 @@ const CHICKEN_BODY_HEIGHT = 5;
 const CHICKEN_WALK_SPEED = 36;
 const CHICKEN_LOVE_COOLDOWN_MS = 2200;
 const CHICKEN_AI_THINK_INTERVAL_MS = 160;
-const CHICKEN_OBSTACLE_AVOID_MS = 380;
 const CHICKEN_TOP_FRAME_WIDTH = 16;
 const CHICKEN_TOP_FRAME_HEIGHT = 16;
 const CHICKEN_BOTTOM_FRAME_WIDTH = 32;
@@ -24,6 +23,7 @@ const CHICKEN_ROAMING_COLLISION_COOLDOWN_MS = 400;
 const CHICKEN_ROAMING_COLLISION_IDLE_MS = 400;
 const CHICKEN_ROAMING_COLLISION_RETREAT_MS = 220;
 const CHICKEN_ROAMING_COLLISION_FACE_THRESHOLD = 2;
+const CHICKEN_BLOCKED_IDLE_MS = 280;
 const CHICKEN_LOVE_FRAME_START = CHICKEN_TOP_FRAME_COUNT;
 const CHICKEN_STANDARD_ANCHOR_X = CHICKEN_TOP_FRAME_WIDTH * 0.5;
 
@@ -388,12 +388,8 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
 
     const normalizedX = deltaX / distance;
     const normalizedY = deltaY / distance;
-    let velocityX = normalizedX * CHICKEN_WALK_SPEED;
-    let velocityY = normalizedY * CHICKEN_WALK_SPEED;
-
-    if (!this.canOccupyAt(this.x + velocityX * deltaSeconds, this.y, velocityX, 0)) {
-      velocityX = 0;
-    }
+    const velocityX = normalizedX * CHICKEN_WALK_SPEED;
+    const velocityY = normalizedY * CHICKEN_WALK_SPEED;
 
     if (!this.canOccupyAt(
       this.x + velocityX * deltaSeconds,
@@ -401,14 +397,7 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
       velocityX,
       velocityY,
     )) {
-      velocityY = 0;
-    }
-
-    if (velocityX === 0 && velocityY === 0) {
-      if (this.startObstacleAvoidance()) {
-        return;
-      }
-      this.enterTimedState("idle", randomRange(900, 1600));
+      this.handleBlockedWalk();
       return;
     }
 
@@ -421,6 +410,12 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
     if (this.stateTimerMs <= 0) {
       this.enterTimedState("idle", randomRange(900, 1600));
     }
+  }
+
+  private handleBlockedWalk(): void {
+    this.target = null;
+    this.aiThinkCooldownMs = CHICKEN_AI_THINK_INTERVAL_MS;
+    this.enterTimedState("idle", CHICKEN_BLOCKED_IDLE_MS);
   }
 
   private chooseNextState(): void {
@@ -484,39 +479,6 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
       this.target = new Phaser.Math.Vector2(targetX, targetY);
       this.chickenState = "walk";
       this.stateTimerMs = randomRange(1200, 2600);
-      this.playState("walk");
-      return true;
-    }
-
-    return false;
-  }
-
-  private startObstacleAvoidance(): boolean {
-    const currentColumn = Math.round(this.x / PIXEL_FARM_TILE_SIZE);
-    const currentRow = Math.round(this.y / PIXEL_FARM_TILE_SIZE);
-    const preferredRow = this.retreatBiasY;
-    const candidateOffsets = [
-      { column: 0, row: preferredRow },
-      { column: 0, row: -preferredRow },
-      { column: preferredRow, row: 0 },
-      { column: -preferredRow, row: 0 },
-      { column: preferredRow, row: preferredRow },
-      { column: preferredRow, row: -preferredRow },
-      { column: -preferredRow, row: preferredRow },
-      { column: -preferredRow, row: -preferredRow },
-    ];
-
-    for (const offset of candidateOffsets) {
-      const targetX = (currentColumn + offset.column) * PIXEL_FARM_TILE_SIZE;
-      const targetY = (currentRow + offset.row) * PIXEL_FARM_TILE_SIZE;
-      if (!this.canOccupyAt(targetX, targetY)) {
-        continue;
-      }
-
-      this.target = new Phaser.Math.Vector2(targetX, targetY);
-      this.chickenState = "walk";
-      this.stateTimerMs = CHICKEN_OBSTACLE_AVOID_MS;
-      this.aiThinkCooldownMs = CHICKEN_AI_THINK_INTERVAL_MS;
       this.playState("walk");
       return true;
     }
