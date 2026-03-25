@@ -7,6 +7,8 @@ const CHICKEN_BODY_WIDTH = 8;
 const CHICKEN_BODY_HEIGHT = 5;
 const CHICKEN_WALK_SPEED = 36;
 const CHICKEN_LOVE_COOLDOWN_MS = 2200;
+const CHICKEN_AI_THINK_INTERVAL_MS = 160;
+const CHICKEN_OBSTACLE_AVOID_MS = 380;
 const CHICKEN_TOP_FRAME_WIDTH = 16;
 const CHICKEN_TOP_FRAME_HEIGHT = 16;
 const CHICKEN_BOTTOM_FRAME_WIDTH = 32;
@@ -17,16 +19,13 @@ const CHICKEN_TOP_ROW_COUNT = 13;
 const CHICKEN_TOP_FRAME_COUNT = CHICKEN_TOP_ROW_COUNT * CHICKEN_TOP_FRAMES_PER_ROW;
 const CHICKEN_BOTTOM_FRAME_START_Y = CHICKEN_TOP_ROW_COUNT * CHICKEN_TOP_FRAME_HEIGHT;
 const CHICKEN_BODY_BOTTOM_MARGIN = 1;
-const CHICKEN_HOVER_FRAME_COUNT = 6;
-const CHICKEN_FLY_FRAME_COUNT = 5;
-const CHICKEN_HOP_FRAME_COUNT = 4;
 const CHICKEN_LOVE_FRAME_COUNT = 7;
-const CHICKEN_HOVER_FRAME_START = CHICKEN_TOP_FRAME_COUNT;
-const CHICKEN_FLY_FRAME_START = CHICKEN_HOVER_FRAME_START + CHICKEN_HOVER_FRAME_COUNT;
-const CHICKEN_HOP_FRAME_START = CHICKEN_FLY_FRAME_START + CHICKEN_FLY_FRAME_COUNT;
-const CHICKEN_LOVE_FRAME_START = CHICKEN_HOP_FRAME_START + CHICKEN_HOP_FRAME_COUNT;
+const CHICKEN_ROAMING_COLLISION_COOLDOWN_MS = 400;
+const CHICKEN_ROAMING_COLLISION_IDLE_MS = 400;
+const CHICKEN_ROAMING_COLLISION_RETREAT_MS = 220;
+const CHICKEN_ROAMING_COLLISION_FACE_THRESHOLD = 2;
+const CHICKEN_LOVE_FRAME_START = CHICKEN_TOP_FRAME_COUNT;
 const CHICKEN_STANDARD_ANCHOR_X = CHICKEN_TOP_FRAME_WIDTH * 0.5;
-const CHICKEN_WIDE_FRAME_ANCHOR_X = CHICKEN_BOTTOM_FRAME_WIDTH - CHICKEN_STANDARD_ANCHOR_X;
 
 export const PIXEL_FARM_CHICKEN_COLORS = [
   "blue",
@@ -54,10 +53,8 @@ function chickenFrameName(index: number): string {
   return `frame-${index}`;
 }
 
-function chickenAnchorX(frameWidth: number): number {
-  return frameWidth === CHICKEN_BOTTOM_FRAME_WIDTH
-    ? CHICKEN_WIDE_FRAME_ANCHOR_X
-    : CHICKEN_STANDARD_ANCHOR_X;
+function chickenAnchorX(_state: PixelFarmChickenState): number {
+  return CHICKEN_STANDARD_ANCHOR_X;
 }
 
 const CHICKEN_STATES = {
@@ -74,9 +71,6 @@ const CHICKEN_STATES = {
   standUp: { frames: topRowFrames(10, 4), fps: 8, repeat: 0 },
   groundFlutter: { frames: topRowFrames(11, 6), fps: 10, repeat: -1 },
   blink: { frames: topRowFrames(12, 2), fps: 6, repeat: -1 },
-  hover: { frames: rangeFrames(CHICKEN_HOVER_FRAME_START, CHICKEN_HOVER_FRAME_COUNT), fps: 10, repeat: 0 },
-  fly: { frames: rangeFrames(CHICKEN_FLY_FRAME_START, CHICKEN_FLY_FRAME_COUNT), fps: 10, repeat: -1 },
-  hop: { frames: rangeFrames(CHICKEN_HOP_FRAME_START, CHICKEN_HOP_FRAME_COUNT), fps: 10, repeat: 0 },
   love: { frames: rangeFrames(CHICKEN_LOVE_FRAME_START, CHICKEN_LOVE_FRAME_COUNT), fps: 8, repeat: 0 },
 } as const satisfies Record<string, ChickenAnimationConfig>;
 
@@ -100,6 +94,7 @@ export interface PixelFarmChickenConfig {
     moveX?: number,
     moveY?: number,
   ) => boolean;
+  pickWalkTarget?: (currentX: number, currentY: number) => Phaser.Math.Vector2 | null;
 }
 
 function animationKey(color: PixelFarmChickenColor, state: PixelFarmChickenState): string {
@@ -145,7 +140,7 @@ function registerChickenFramesForColor(scene: Phaser.Scene, color: PixelFarmChic
     }
   }
 
-  let bottomFrameIndex = CHICKEN_HOVER_FRAME_START;
+  let bottomFrameIndex = CHICKEN_LOVE_FRAME_START;
   const bottomAnimationRows = [
     { row: 0, count: 4 },
     { row: 1, count: 2 },
@@ -209,10 +204,14 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
   private readonly canOccupy: PixelFarmChickenConfig["canOccupy"];
   private readonly color: PixelFarmChickenColor;
   private readonly depthBase: number;
+  private readonly pickWalkTarget?: PixelFarmChickenConfig["pickWalkTarget"];
   private chickenState: PixelFarmChickenState = "idle";
   private debugPoseLocked = false;
   private stateTimerMs = 0;
+  private aiThinkCooldownMs = 0;
   private loveCooldownMs = 0;
+  private roamingCollisionCooldownMs = 0;
+  private readonly retreatBiasY = Math.random() < 0.5 ? -1 : 1;
   private target: Phaser.Math.Vector2 | null = null;
 
   constructor(config: PixelFarmChickenConfig) {
@@ -227,6 +226,7 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
     this.canOccupy = config.canOccupy;
     this.color = config.color;
     this.depthBase = config.depth;
+    this.pickWalkTarget = config.pickWalkTarget;
 
     config.scene.add.existing(this);
     config.scene.physics.add.existing(this);
@@ -260,6 +260,8 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
     }
 
     this.loveCooldownMs = Math.max(0, this.loveCooldownMs - deltaMs);
+    this.roamingCollisionCooldownMs = Math.max(0, this.roamingCollisionCooldownMs - deltaMs);
+    this.aiThinkCooldownMs = Math.max(0, this.aiThinkCooldownMs - deltaMs);
 
     if (this.chickenState === "walk") {
       this.updateWalk(deltaMs);
@@ -272,8 +274,6 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
     if (
       this.chickenState === "sitDown" ||
       this.chickenState === "standUp" ||
-      this.chickenState === "hover" ||
-      this.chickenState === "hop" ||
       this.chickenState === "love"
     ) {
       this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
@@ -281,7 +281,8 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
     }
 
     this.stateTimerMs -= deltaMs;
-    if (this.stateTimerMs <= 0) {
+    if (this.stateTimerMs <= 0 && this.aiThinkCooldownMs <= 0) {
+      this.aiThinkCooldownMs = CHICKEN_AI_THINK_INTERVAL_MS;
       this.chooseNextState();
     }
 
@@ -320,6 +321,37 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
     this.syncBody();
   }
 
+  handleRoamingCollision(otherX: number, _otherY: number): void {
+    if (this.debugPoseLocked) {
+      return;
+    }
+
+    if (
+      this.chickenState === "love" ||
+      this.chickenState === "sitDown" ||
+      this.chickenState === "standUp" ||
+      this.roamingCollisionCooldownMs > 0
+    ) {
+      return;
+    }
+
+    this.roamingCollisionCooldownMs = CHICKEN_ROAMING_COLLISION_COOLDOWN_MS;
+    this.target = null;
+    this.stateTimerMs = 0;
+    this.setVelocity(0, 0);
+
+    const deltaX = this.x - otherX;
+    if (Math.abs(deltaX) >= CHICKEN_ROAMING_COLLISION_FACE_THRESHOLD) {
+      this.setFlipX(deltaX < 0);
+    }
+
+    if (this.startCollisionRetreat(otherX)) {
+      return;
+    }
+
+    this.enterTimedState("idle", CHICKEN_ROAMING_COLLISION_IDLE_MS);
+  }
+
   private updateWalk(deltaMs: number): void {
     if (!this.target) {
       this.enterTimedState("idle", randomRange(900, 1600));
@@ -355,6 +387,9 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
     }
 
     if (velocityX === 0 && velocityY === 0) {
+      if (this.startObstacleAvoidance()) {
+        return;
+      }
       this.enterTimedState("idle", randomRange(900, 1600));
       return;
     }
@@ -401,17 +436,19 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
       return;
     }
 
-    if (roll < 0.97) {
-      this.chickenState = "hover";
-      this.target = null;
-      this.playState("hover", false);
-      return;
-    }
-
     this.enterTimedState("idle", randomRange(1000, 2000));
   }
 
   private startWalk(): boolean {
+    const pickedTarget = this.pickWalkTarget?.(this.x, this.y) ?? null;
+    if (pickedTarget) {
+      this.target = pickedTarget;
+      this.chickenState = "walk";
+      this.stateTimerMs = randomRange(1200, 2600);
+      this.playState("walk");
+      return true;
+    }
+
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const offsetColumn = randomRange(-5, 5);
       const offsetRow = randomRange(-5, 5);
@@ -436,6 +473,74 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
     return false;
   }
 
+  private startObstacleAvoidance(): boolean {
+    const currentColumn = Math.round(this.x / PIXEL_FARM_TILE_SIZE);
+    const currentRow = Math.round(this.y / PIXEL_FARM_TILE_SIZE);
+    const preferredRow = this.retreatBiasY;
+    const candidateOffsets = [
+      { column: 0, row: preferredRow },
+      { column: 0, row: -preferredRow },
+      { column: preferredRow, row: 0 },
+      { column: -preferredRow, row: 0 },
+      { column: preferredRow, row: preferredRow },
+      { column: preferredRow, row: -preferredRow },
+      { column: -preferredRow, row: preferredRow },
+      { column: -preferredRow, row: -preferredRow },
+    ];
+
+    for (const offset of candidateOffsets) {
+      const targetX = (currentColumn + offset.column) * PIXEL_FARM_TILE_SIZE;
+      const targetY = (currentRow + offset.row) * PIXEL_FARM_TILE_SIZE;
+      if (!this.canOccupyAt(targetX, targetY)) {
+        continue;
+      }
+
+      this.target = new Phaser.Math.Vector2(targetX, targetY);
+      this.chickenState = "walk";
+      this.stateTimerMs = CHICKEN_OBSTACLE_AVOID_MS;
+      this.aiThinkCooldownMs = CHICKEN_AI_THINK_INTERVAL_MS;
+      this.playState("walk");
+      return true;
+    }
+
+    return false;
+  }
+
+  private startCollisionRetreat(otherX: number): boolean {
+    const currentColumn = Math.round(this.x / PIXEL_FARM_TILE_SIZE);
+    const currentRow = Math.round(this.y / PIXEL_FARM_TILE_SIZE);
+    const horizontalDirection = this.x >= otherX ? 1 : -1;
+    const awayColumn = horizontalDirection;
+    const preferredRow = this.retreatBiasY;
+    const candidateOffsets = [
+      { column: awayColumn, row: 0 },
+      { column: 0, row: preferredRow },
+      { column: 0, row: -preferredRow },
+      { column: awayColumn, row: preferredRow },
+      { column: awayColumn, row: -preferredRow },
+      { column: -awayColumn, row: 0 },
+      { column: -awayColumn, row: preferredRow },
+      { column: -awayColumn, row: -preferredRow },
+    ];
+
+    for (const offset of candidateOffsets) {
+      const targetX = (currentColumn + offset.column) * PIXEL_FARM_TILE_SIZE;
+      const targetY = (currentRow + offset.row) * PIXEL_FARM_TILE_SIZE;
+      if (!this.canOccupyAt(targetX, targetY)) {
+        continue;
+      }
+
+      this.target = new Phaser.Math.Vector2(targetX, targetY);
+      this.chickenState = "walk";
+      this.stateTimerMs = CHICKEN_ROAMING_COLLISION_RETREAT_MS;
+      this.aiThinkCooldownMs = CHICKEN_AI_THINK_INTERVAL_MS;
+      this.playState("walk");
+      return true;
+    }
+
+    return false;
+  }
+
   private handleAnimationComplete(): void {
     if (this.debugPoseLocked) {
       return;
@@ -451,13 +556,7 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
       return;
     }
 
-    if (this.chickenState === "hover") {
-      this.chickenState = "hop";
-      this.playState("hop", false);
-      return;
-    }
-
-    if (this.chickenState === "hop" || this.chickenState === "love") {
+    if (this.chickenState === "love") {
       this.enterTimedState("idle", randomRange(900, 1600));
     }
   }
@@ -477,9 +576,8 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
   }
 
   private canOccupyAt(x: number, y: number, moveX = 0, moveY = 0): boolean {
-    const frameWidth = this.frame.realWidth;
     const frameHeight = this.frame.realHeight;
-    const anchorX = chickenAnchorX(frameWidth);
+    const anchorX = chickenAnchorX(this.chickenState);
     const bodyOffsetX = Math.round(anchorX - CHICKEN_BODY_WIDTH * 0.5);
     const bodyOffsetY = frameHeight - CHICKEN_BODY_HEIGHT - CHICKEN_BODY_BOTTOM_MARGIN;
     const left = x - anchorX + bodyOffsetX;
@@ -501,18 +599,20 @@ export class PixelFarmChicken extends Phaser.Physics.Arcade.Sprite {
       return;
     }
 
-    const frameWidth = this.frame.realWidth;
+    const previousBodyLeft = body.x;
     const frameHeight = this.frame.realHeight;
-    const anchorX = chickenAnchorX(frameWidth);
+    const anchorX = chickenAnchorX(this.chickenState);
     const bodyOffsetX = Math.round(anchorX - CHICKEN_BODY_WIDTH * 0.5);
     const bodyOffsetY = frameHeight - CHICKEN_BODY_HEIGHT - CHICKEN_BODY_BOTTOM_MARGIN;
 
     this.setDisplayOrigin(anchorX, frameHeight);
     body.setSize(CHICKEN_BODY_WIDTH, CHICKEN_BODY_HEIGHT);
     body.setOffset(bodyOffsetX, bodyOffsetY);
+    this.x = previousBodyLeft + anchorX - bodyOffsetX;
   }
 
   private playState(state: PixelFarmChickenState, ignoreIfPlaying = true): void {
     this.anims.play(animationKey(this.color, state), ignoreIfPlaying);
+    this.syncBody();
   }
 }

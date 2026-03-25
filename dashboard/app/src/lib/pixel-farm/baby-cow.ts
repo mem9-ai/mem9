@@ -15,6 +15,12 @@ const BABY_COW_BODY_OFFSET_X = 9;
 const BABY_COW_BODY_OFFSET_Y = 20;
 const BABY_COW_RUN_SPEED = 40;
 const BABY_COW_LOVE_COOLDOWN_MS = 2600;
+const BABY_COW_AI_THINK_INTERVAL_MS = 180;
+const BABY_COW_OBSTACLE_AVOID_MS = 440;
+const BABY_COW_ROAMING_COLLISION_COOLDOWN_MS = 350;
+const BABY_COW_ROAMING_COLLISION_IDLE_MS = 350;
+const BABY_COW_ROAMING_COLLISION_RETREAT_MS = 550;
+const BABY_COW_ROAMING_COLLISION_FACE_THRESHOLD = 2;
 
 export const PIXEL_FARM_BABY_COW_COLORS = [
   "brown",
@@ -101,7 +107,10 @@ export class PixelFarmBabyCow extends Phaser.Physics.Arcade.Sprite {
   private babyCowState: PixelFarmBabyCowState = "idle";
   private debugPoseLocked = false;
   private stateTimerMs = 0;
+  private aiThinkCooldownMs = 0;
   private loveCooldownMs = 0;
+  private roamingCollisionCooldownMs = 0;
+  private readonly retreatBiasY = Math.random() < 0.5 ? -1 : 1;
   private target: Phaser.Math.Vector2 | null = null;
 
   constructor(config: PixelFarmBabyCowConfig) {
@@ -141,6 +150,8 @@ export class PixelFarmBabyCow extends Phaser.Physics.Arcade.Sprite {
     }
 
     this.loveCooldownMs = Math.max(0, this.loveCooldownMs - deltaMs);
+    this.roamingCollisionCooldownMs = Math.max(0, this.roamingCollisionCooldownMs - deltaMs);
+    this.aiThinkCooldownMs = Math.max(0, this.aiThinkCooldownMs - deltaMs);
 
     if (this.babyCowState === "run") {
       this.updateRun(deltaMs);
@@ -161,7 +172,8 @@ export class PixelFarmBabyCow extends Phaser.Physics.Arcade.Sprite {
     }
 
     this.stateTimerMs -= deltaMs;
-    if (this.stateTimerMs <= 0) {
+    if (this.stateTimerMs <= 0 && this.aiThinkCooldownMs <= 0) {
+      this.aiThinkCooldownMs = BABY_COW_AI_THINK_INTERVAL_MS;
       this.chooseNextState();
     }
 
@@ -196,6 +208,38 @@ export class PixelFarmBabyCow extends Phaser.Physics.Arcade.Sprite {
     } else {
       this.anims.pause();
     }
+  }
+
+  handleRoamingCollision(otherX: number, _otherY: number): void {
+    if (this.debugPoseLocked) {
+      return;
+    }
+
+    if (
+      this.babyCowState === "love" ||
+      this.babyCowState === "hop" ||
+      this.babyCowState === "sit" ||
+      this.babyCowState === "grazeDown" ||
+      this.roamingCollisionCooldownMs > 0
+    ) {
+      return;
+    }
+
+    this.roamingCollisionCooldownMs = BABY_COW_ROAMING_COLLISION_COOLDOWN_MS;
+    this.target = null;
+    this.stateTimerMs = 0;
+    this.setVelocity(0, 0);
+
+    const deltaX = this.x - otherX;
+    if (Math.abs(deltaX) >= BABY_COW_ROAMING_COLLISION_FACE_THRESHOLD) {
+      this.setFlipX(deltaX < 0);
+    }
+
+    if (this.startCollisionRetreat(otherX)) {
+      return;
+    }
+
+    this.enterTimedState("idle", BABY_COW_ROAMING_COLLISION_IDLE_MS);
   }
 
   private updateRun(deltaMs: number): void {
@@ -233,6 +277,9 @@ export class PixelFarmBabyCow extends Phaser.Physics.Arcade.Sprite {
     }
 
     if (velocityX === 0 && velocityY === 0) {
+      if (this.startObstacleAvoidance()) {
+        return;
+      }
       this.enterTimedState("idle", randomRange(800, 1400));
       return;
     }
@@ -296,6 +343,74 @@ export class PixelFarmBabyCow extends Phaser.Physics.Arcade.Sprite {
       this.target = new Phaser.Math.Vector2(targetX, targetY);
       this.babyCowState = "run";
       this.stateTimerMs = randomRange(1200, 2400);
+      this.playState("run");
+      return true;
+    }
+
+    return false;
+  }
+
+  private startObstacleAvoidance(): boolean {
+    const currentColumn = Math.round(this.x / PIXEL_FARM_TILE_SIZE);
+    const currentRow = Math.round(this.y / PIXEL_FARM_TILE_SIZE);
+    const preferredRow = this.retreatBiasY;
+    const candidateOffsets = [
+      { column: 0, row: preferredRow },
+      { column: 0, row: -preferredRow },
+      { column: preferredRow, row: 0 },
+      { column: -preferredRow, row: 0 },
+      { column: preferredRow, row: preferredRow },
+      { column: preferredRow, row: -preferredRow },
+      { column: -preferredRow, row: preferredRow },
+      { column: -preferredRow, row: -preferredRow },
+    ];
+
+    for (const offset of candidateOffsets) {
+      const targetX = (currentColumn + offset.column) * PIXEL_FARM_TILE_SIZE;
+      const targetY = (currentRow + offset.row) * PIXEL_FARM_TILE_SIZE;
+      if (!this.canOccupyAt(targetX, targetY)) {
+        continue;
+      }
+
+      this.target = new Phaser.Math.Vector2(targetX, targetY);
+      this.babyCowState = "run";
+      this.stateTimerMs = BABY_COW_OBSTACLE_AVOID_MS;
+      this.aiThinkCooldownMs = BABY_COW_AI_THINK_INTERVAL_MS;
+      this.playState("run");
+      return true;
+    }
+
+    return false;
+  }
+
+  private startCollisionRetreat(otherX: number): boolean {
+    const currentColumn = Math.round(this.x / PIXEL_FARM_TILE_SIZE);
+    const currentRow = Math.round(this.y / PIXEL_FARM_TILE_SIZE);
+    const horizontalDirection = this.x >= otherX ? 1 : -1;
+    const awayColumn = horizontalDirection;
+    const preferredRow = this.retreatBiasY;
+    const candidateOffsets = [
+      { column: awayColumn, row: 0 },
+      { column: 0, row: preferredRow },
+      { column: 0, row: -preferredRow },
+      { column: awayColumn, row: preferredRow },
+      { column: awayColumn, row: -preferredRow },
+      { column: -awayColumn, row: 0 },
+      { column: -awayColumn, row: preferredRow },
+      { column: -awayColumn, row: -preferredRow },
+    ];
+
+    for (const offset of candidateOffsets) {
+      const targetX = (currentColumn + offset.column) * PIXEL_FARM_TILE_SIZE;
+      const targetY = (currentRow + offset.row) * PIXEL_FARM_TILE_SIZE;
+      if (!this.canOccupyAt(targetX, targetY)) {
+        continue;
+      }
+
+      this.target = new Phaser.Math.Vector2(targetX, targetY);
+      this.babyCowState = "run";
+      this.stateTimerMs = BABY_COW_ROAMING_COLLISION_RETREAT_MS;
+      this.aiThinkCooldownMs = BABY_COW_AI_THINK_INTERVAL_MS;
       this.playState("run");
       return true;
     }

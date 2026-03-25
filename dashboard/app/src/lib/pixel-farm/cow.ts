@@ -15,6 +15,12 @@ const COW_BODY_OFFSET_X = 7;
 const COW_BODY_OFFSET_Y = 18;
 const COW_WALK_SPEED = 28;
 const COW_LOVE_COOLDOWN_MS = 2600;
+const COW_AI_THINK_INTERVAL_MS = 180;
+const COW_OBSTACLE_AVOID_MS = 520;
+const COW_ROAMING_COLLISION_COOLDOWN_MS = 500;
+const COW_ROAMING_COLLISION_IDLE_MS = 500;
+const COW_ROAMING_COLLISION_RETREAT_MS = 700;
+const COW_ROAMING_COLLISION_FACE_THRESHOLD = 2;
 
 export const PIXEL_FARM_COW_COLORS = [
   "brown",
@@ -98,7 +104,10 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
   private cowState: PixelFarmCowState = "idle";
   private debugPoseLocked = false;
   private stateTimerMs = 0;
+  private aiThinkCooldownMs = 0;
   private loveCooldownMs = 0;
+  private roamingCollisionCooldownMs = 0;
+  private readonly retreatBiasY = Math.random() < 0.5 ? -1 : 1;
   private target: Phaser.Math.Vector2 | null = null;
 
   constructor(config: PixelFarmCowConfig) {
@@ -138,6 +147,8 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
     }
 
     this.loveCooldownMs = Math.max(0, this.loveCooldownMs - deltaMs);
+    this.roamingCollisionCooldownMs = Math.max(0, this.roamingCollisionCooldownMs - deltaMs);
+    this.aiThinkCooldownMs = Math.max(0, this.aiThinkCooldownMs - deltaMs);
 
     if (this.cowState === "walk") {
       this.updateWalk(deltaMs);
@@ -153,7 +164,8 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
     }
 
     this.stateTimerMs -= deltaMs;
-    if (this.stateTimerMs <= 0) {
+    if (this.stateTimerMs <= 0 && this.aiThinkCooldownMs <= 0) {
+      this.aiThinkCooldownMs = COW_AI_THINK_INTERVAL_MS;
       this.chooseNextState();
     }
 
@@ -188,6 +200,37 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
     } else {
       this.anims.pause();
     }
+  }
+
+  handleRoamingCollision(otherX: number, _otherY: number): void {
+    if (this.debugPoseLocked) {
+      return;
+    }
+
+    if (
+      this.cowState === "love" ||
+      this.cowState === "sitTransition" ||
+      this.cowState === "grazeDown" ||
+      this.roamingCollisionCooldownMs > 0
+    ) {
+      return;
+    }
+
+    this.roamingCollisionCooldownMs = COW_ROAMING_COLLISION_COOLDOWN_MS;
+    this.target = null;
+    this.stateTimerMs = 0;
+    this.setVelocity(0, 0);
+
+    const deltaX = this.x - otherX;
+    if (Math.abs(deltaX) >= COW_ROAMING_COLLISION_FACE_THRESHOLD) {
+      this.setFlipX(deltaX < 0);
+    }
+
+    if (this.startCollisionRetreat(otherX)) {
+      return;
+    }
+
+    this.enterTimedState("idle", COW_ROAMING_COLLISION_IDLE_MS);
   }
 
   private updateWalk(deltaMs: number): void {
@@ -225,6 +268,9 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
     }
 
     if (velocityX === 0 && velocityY === 0) {
+      if (this.startObstacleAvoidance()) {
+        return;
+      }
       this.enterTimedState("idle", randomRange(1000, 1800));
       return;
     }
@@ -282,6 +328,74 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
       this.target = new Phaser.Math.Vector2(targetX, targetY);
       this.cowState = "walk";
       this.stateTimerMs = randomRange(1800, 4200);
+      this.playState("walk");
+      return true;
+    }
+
+    return false;
+  }
+
+  private startObstacleAvoidance(): boolean {
+    const currentColumn = Math.round(this.x / PIXEL_FARM_TILE_SIZE);
+    const currentRow = Math.round(this.y / PIXEL_FARM_TILE_SIZE);
+    const preferredRow = this.retreatBiasY;
+    const candidateOffsets = [
+      { column: 0, row: preferredRow },
+      { column: 0, row: -preferredRow },
+      { column: preferredRow, row: 0 },
+      { column: -preferredRow, row: 0 },
+      { column: preferredRow, row: preferredRow },
+      { column: preferredRow, row: -preferredRow },
+      { column: -preferredRow, row: preferredRow },
+      { column: -preferredRow, row: -preferredRow },
+    ];
+
+    for (const offset of candidateOffsets) {
+      const targetX = (currentColumn + offset.column) * PIXEL_FARM_TILE_SIZE;
+      const targetY = (currentRow + offset.row) * PIXEL_FARM_TILE_SIZE;
+      if (!this.canOccupyAt(targetX, targetY)) {
+        continue;
+      }
+
+      this.target = new Phaser.Math.Vector2(targetX, targetY);
+      this.cowState = "walk";
+      this.stateTimerMs = COW_OBSTACLE_AVOID_MS;
+      this.aiThinkCooldownMs = COW_AI_THINK_INTERVAL_MS;
+      this.playState("walk");
+      return true;
+    }
+
+    return false;
+  }
+
+  private startCollisionRetreat(otherX: number): boolean {
+    const currentColumn = Math.round(this.x / PIXEL_FARM_TILE_SIZE);
+    const currentRow = Math.round(this.y / PIXEL_FARM_TILE_SIZE);
+    const horizontalDirection = this.x >= otherX ? 1 : -1;
+    const awayColumn = horizontalDirection;
+    const preferredRow = this.retreatBiasY;
+    const candidateOffsets = [
+      { column: awayColumn, row: 0 },
+      { column: 0, row: preferredRow },
+      { column: 0, row: -preferredRow },
+      { column: awayColumn, row: preferredRow },
+      { column: awayColumn, row: -preferredRow },
+      { column: -awayColumn, row: 0 },
+      { column: -awayColumn, row: preferredRow },
+      { column: -awayColumn, row: -preferredRow },
+    ];
+
+    for (const offset of candidateOffsets) {
+      const targetX = (currentColumn + offset.column) * PIXEL_FARM_TILE_SIZE;
+      const targetY = (currentRow + offset.row) * PIXEL_FARM_TILE_SIZE;
+      if (!this.canOccupyAt(targetX, targetY)) {
+        continue;
+      }
+
+      this.target = new Phaser.Math.Vector2(targetX, targetY);
+      this.cowState = "walk";
+      this.stateTimerMs = COW_ROAMING_COLLISION_RETREAT_MS;
+      this.aiThinkCooldownMs = COW_AI_THINK_INTERVAL_MS;
       this.playState("walk");
       return true;
     }

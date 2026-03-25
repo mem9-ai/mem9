@@ -117,3 +117,9 @@ export function collectPixelFarmHillWalkableCells(): PixelFarmTerrainCell[] {
     (cell) => !terrainBlockedKeys.has(cellKey(cell.row, cell.column)),
   );
 }
+
+export function collectPixelFarmHillAccessCells(): PixelFarmTerrainCell[] {
+  return hillAccessCells.filter(
+    (cell) => !terrainBlockedKeys.has(cellKey(cell.row, cell.column)),
+  );
+}
