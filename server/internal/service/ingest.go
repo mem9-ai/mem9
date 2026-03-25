@@ -446,6 +446,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 				slog.Info("facts extracted", "facts", len(fallback))
 				return fallback, nil
 			}
+			slog.Error("json parse llm resp failed", "len", len(raw2), "err", err)
 			return nil, fmt.Errorf("extraction parse after retry: %w", err)
 		}
 		lastRaw = raw2
@@ -554,6 +555,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 				slog.Info("facts and tags extracted", "facts", len(fallback), "tagged_messages", messageCount)
 				return fallback, messageTags, nil
 			}
+			slog.Error("json parse llm resp failed", "len", len(raw2), "err", err)
 			return nil, nil, fmt.Errorf("extraction parse after retry: %w", err)
 		}
 		lastRaw = raw2
