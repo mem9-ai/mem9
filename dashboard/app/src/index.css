@@ -2,13 +2,6 @@
 
 @font-face {
   font-family: "Ark Pixel Mono";
-  src: url("./assets/ark-pixel-font-10px-monospaced-otf-v2026.02.27/ark-pixel-10px-monospaced-latin.otf") format("opentype");
-  font-style: normal;
-  font-weight: 400;
-}
-
-@font-face {
-  font-family: "Ark Pixel Mono";
   src: url("./assets/ark-pixel-font-10px-monospaced-otf-v2026.02.27/ark-pixel-10px-monospaced-zh_cn.otf") format("opentype");
   font-style: normal;
   font-weight: 400;
@@ -50,7 +43,7 @@
   --color-facet-other: var(--facet-other);
 
   --font-sans: "DM Sans", sans-serif;
-  --font-mono: "Ark Pixel Mono", "JetBrains Mono", monospace;
+  --font-mono: "JetBrains Mono", monospace;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -143,6 +136,11 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   scrollbar-gutter: stable both-edges;
+}
+
+.pixel-farm-font {
+  font-family: "Ark Pixel Mono", monospace;
+  font-synthesis: none;
 }
 
 button:not(:disabled),

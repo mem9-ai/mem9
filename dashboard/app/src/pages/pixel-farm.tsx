@@ -29,7 +29,7 @@ export function PixelFarmPage() {
   const worldQuery = usePixelFarmWorld(spaceId);
 
   return (
-    <main className="fixed inset-0 overflow-hidden bg-[#0d141b] text-[#f6dca6]">
+    <main className="pixel-farm-font fixed inset-0 overflow-hidden bg-[#0d141b] text-[#f6dca6]">
       <PhaserStage
         debugActorState={showDebugPanel ? debugActorState : null}
         memoryById={worldQuery.memoryById}

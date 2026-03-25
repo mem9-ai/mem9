@@ -18,7 +18,7 @@ export function PixelFarmPointerCoordinatesPanel({
   pointerDebugInfo,
 }: PixelFarmPointerCoordinatesPanelProps) {
   return (
-    <aside className="rounded-2xl border border-[#f6dca6]/20 bg-[#141109]/88 px-4 py-3 text-[#f6dca6] shadow-2xl backdrop-blur">
+    <aside className="pixel-farm-font rounded-2xl border border-[#f6dca6]/20 bg-[#141109]/88 px-4 py-3 text-[#f6dca6] shadow-2xl backdrop-blur">
       <div className="text-[11px] uppercase tracking-[0.24em] text-[#f6dca6]/55">
         Pointer Coordinates
       </div>

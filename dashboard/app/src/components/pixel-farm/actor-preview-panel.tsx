@@ -123,7 +123,7 @@ export function PixelFarmActorPreviewPanel({
   }
 
   return (
-    <aside className="w-[28rem] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border border-[#f6dca6]/25 bg-[#141109]/92 p-4 text-[#f6dca6] shadow-2xl backdrop-blur">
+    <aside className="pixel-farm-font w-[28rem] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border border-[#f6dca6]/25 bg-[#141109]/92 p-4 text-[#f6dca6] shadow-2xl backdrop-blur">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-[0.24em] text-[#f6dca6]/55">

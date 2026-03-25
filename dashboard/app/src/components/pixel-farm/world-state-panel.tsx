@@ -33,7 +33,7 @@ export function PixelFarmWorldStatePanel({
   }
 
   return (
-    <aside className="w-[26rem] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border border-[#f6dca6]/20 bg-[#141109]/88 p-4 text-[#f6dca6] shadow-2xl backdrop-blur">
+    <aside className="pixel-farm-font w-[26rem] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border border-[#f6dca6]/20 bg-[#141109]/88 p-4 text-[#f6dca6] shadow-2xl backdrop-blur">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[11px] uppercase tracking-[0.24em] text-[#f6dca6]/55">

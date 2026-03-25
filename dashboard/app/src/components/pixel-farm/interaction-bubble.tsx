@@ -39,11 +39,11 @@ export function PixelFarmInteractionBubble({
           "opacity 140ms ease-out, transform 240ms cubic-bezier(0.2, 1.4, 0.28, 1)",
       }}
     >
-      <div className="relative w-[min(22rem,calc(100vw-2rem))] rounded-[22px] border border-[#f6dca6]/20 bg-[#101920]/94 px-4 py-3 text-left text-[#f6dca6] shadow-[0_18px_40px_rgba(0,0,0,0.32)] backdrop-blur-sm">
+      <div className="pixel-farm-font relative w-[min(22rem,calc(100vw-2rem))] rounded-[22px] border border-[#f6dca6]/20 bg-[#101920]/94 px-4 py-3 text-left text-[#f6dca6] shadow-[0_18px_40px_rgba(0,0,0,0.32)] backdrop-blur-sm">
         <div
-          className="absolute left-1/2 top-full h-4 w-4 -translate-x-1/2 -translate-y-[7px] rotate-45 border-r border-b border-[#f6dca6]/20 bg-[#101920]/94"
+          className="absolute left-1/2 top-full h-3 w-3 -translate-x-1/2 -translate-y-[5px] rotate-45 border-r border-b border-[#f6dca6]/20 bg-[#101920]/94"
           style={{
-            boxShadow: "8px 8px 16px rgba(0,0,0,0.12)",
+            boxShadow: "6px 6px 12px rgba(0,0,0,0.1)",
           }}
         />
         <div className="relative z-10 flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.18em] text-[#f6dca6]/72">
