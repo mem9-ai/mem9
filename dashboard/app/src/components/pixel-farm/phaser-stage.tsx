@@ -15,14 +15,16 @@ interface PhaserStageProps {
   memoryById?: Record<string, Memory>;
   onInteractionDebugChange?: ((info: PixelFarmInteractionDebugInfo) => void) | null;
   onPointerDebugChange?: ((info: PixelFarmPointerDebugInfo) => void) | null;
+  resolveInteractionMemories?: ((tagKey: string) => Promise<Memory[]>) | null;
   showInteractionDebug?: boolean;
   showSpatialDebug?: boolean;
   worldState?: PixelFarmWorldState | null;
 }
 
 interface PixelFarmOpenBubbleState {
-  lastInteractionNonce: number;
+  interactionNonce: number;
   memoryIds: string[];
+  memories: Memory[];
   memoryIndex: number;
   screenX: number;
   screenY: number;
@@ -37,28 +39,32 @@ function resolveAvailableMemoryIds(
   return memoryIds.filter((memoryId) => memoryById[memoryId]);
 }
 
-function openBubbleStateFromInteraction(
+function createOpenBubbleState(
   info: PixelFarmInteractionDebugInfo,
-  memoryById: Record<string, Memory>,
+  memories: readonly Memory[],
   current: PixelFarmOpenBubbleState | null,
 ): PixelFarmOpenBubbleState | null {
   const target = info.target;
-  if (!target) {
+  if (!target || memories.length < 1) {
     return null;
   }
 
-  const memoryIds = resolveAvailableMemoryIds(target.memoryIds, memoryById);
-  if (memoryIds.length < 1) {
-    return null;
-  }
-
-  if (current && current.targetId === target.id && info.interactionNonce === current.lastInteractionNonce) {
-    return current;
+  const memoryIds = memories.map((memory) => memory.id);
+  if (current && current.targetId === target.id && info.interactionNonce === current.interactionNonce) {
+    return {
+      ...current,
+      memories: [...memories],
+      memoryIds,
+      screenX: target.screenX,
+      screenY: target.screenY,
+      tagLabel: target.tagLabel,
+    };
   }
 
   if (!current || current.targetId !== target.id) {
     return {
-      lastInteractionNonce: info.interactionNonce,
+      interactionNonce: info.interactionNonce,
+      memories: [...memories],
       memoryIds,
       memoryIndex: 0,
       screenX: target.screenX,
@@ -70,9 +76,10 @@ function openBubbleStateFromInteraction(
 
   return {
     ...current,
-    lastInteractionNonce: info.interactionNonce,
+    interactionNonce: info.interactionNonce,
+    memories: [...memories],
     memoryIds,
-    memoryIndex: info.interactionNonce > current.lastInteractionNonce
+    memoryIndex: info.interactionNonce > current.interactionNonce
       ? (current.memoryIndex + 1) % memoryIds.length
       : current.memoryIndex,
     screenX: target.screenX,
@@ -86,6 +93,7 @@ export function PhaserStage({
   memoryById = {},
   onInteractionDebugChange = null,
   onPointerDebugChange = null,
+  resolveInteractionMemories = null,
   showInteractionDebug = false,
   showSpatialDebug = false,
   worldState = null,
@@ -103,7 +111,11 @@ export function PhaserStage({
   const showSpatialDebugRef = useRef(showSpatialDebug);
   const worldStateRef = useRef<PixelFarmWorldState | null>(worldState);
   const memoryByIdRef = useRef(memoryById);
+  const resolveInteractionMemoriesRef = useRef<((tagKey: string) => Promise<Memory[]>) | null>(
+    resolveInteractionMemories,
+  );
   const handledInteractionNonceRef = useRef(0);
+  const interactionRequestIdRef = useRef(0);
   const [openBubbleState, setOpenBubbleState] = useState<PixelFarmOpenBubbleState | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
 
@@ -136,6 +148,10 @@ export function PhaserStage({
   }, [memoryById]);
 
   useEffect(() => {
+    resolveInteractionMemoriesRef.current = resolveInteractionMemories;
+  }, [resolveInteractionMemories]);
+
+  useEffect(() => {
     if (!hostRef.current || gameRef.current) {
       return undefined;
     }
@@ -145,9 +161,25 @@ export function PhaserStage({
         getDebugActorState: () => debugActorStateRef.current,
         onInteractionDebugChange: (info) => {
           onInteractionDebugChangeRef.current?.(info);
-          setOpenBubbleState((current) =>
-            openBubbleStateFromInteraction(info, memoryByIdRef.current, current),
-          );
+
+          const requestId = interactionRequestIdRef.current + 1;
+          interactionRequestIdRef.current = requestId;
+          const resolver = resolveInteractionMemoriesRef.current;
+          const target = info.target;
+
+          if (!target || !resolver) {
+            setOpenBubbleState(null);
+          } else {
+            void resolver(target.tagKey).then((memories) => {
+              if (interactionRequestIdRef.current !== requestId) {
+                return;
+              }
+
+              setOpenBubbleState((current) =>
+                createOpenBubbleState(info, memories, current),
+              );
+            });
+          }
 
           if (
             info.interactionNonce === handledInteractionNonceRef.current ||
@@ -172,20 +204,24 @@ export function PhaserStage({
 
     return () => {
       handledInteractionNonceRef.current = 0;
+      interactionRequestIdRef.current += 1;
       gameRef.current?.destroy(true);
       gameRef.current = null;
     };
   }, []);
 
-  const visibleMemoryIds = openBubbleState
+  const fallbackVisibleMemoryIds = openBubbleState
     ? resolveAvailableMemoryIds(openBubbleState.memoryIds, memoryById)
     : [];
-  const currentIndex = openBubbleState
-    ? openBubbleState.memoryIndex % visibleMemoryIds.length
+  const visibleMemories = openBubbleState
+    ? openBubbleState.memories.length > 0
+      ? openBubbleState.memories
+      : fallbackVisibleMemoryIds.map((memoryId) => memoryById[memoryId]!).filter(Boolean)
+    : [];
+  const currentIndex = openBubbleState && visibleMemories.length > 0
+    ? openBubbleState.memoryIndex % visibleMemories.length
     : 0;
-  const currentMemory = openBubbleState && visibleMemoryIds[currentIndex]
-    ? memoryById[visibleMemoryIds[currentIndex]!]
-    : null;
+  const currentMemory = visibleMemories[currentIndex] ?? null;
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#0d141b]">
@@ -197,7 +233,7 @@ export function PhaserStage({
           screenX={openBubbleState.screenX}
           screenY={openBubbleState.screenY}
           tagLabel={openBubbleState.tagLabel}
-          totalCount={visibleMemoryIds.length}
+          totalCount={visibleMemories.length}
         />
       ) : null}
       {bootError ? (

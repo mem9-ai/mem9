@@ -35,6 +35,7 @@ export function PixelFarmPage() {
         memoryById={worldQuery.memoryById}
         onInteractionDebugChange={showDebugPanel ? setInteractionDebugInfo : null}
         onPointerDebugChange={showDebugPanel ? setPointerDebugInfo : null}
+        resolveInteractionMemories={worldQuery.resolveInteractionMemories}
         showInteractionDebug={showDebugPanel ? showInteractionDebug : false}
         showSpatialDebug={showDebugPanel ? showSpatialDebug : false}
         worldState={worldQuery.worldState}

@@ -107,6 +107,7 @@ export interface PixelFarmWorldState {
 export interface PixelFarmWorldQueryState {
   error: string | null;
   memoryById: Record<string, Memory>;
+  resolveInteractionMemories: (tagKey: string) => Promise<Memory[]>;
   status: "idle" | "loading" | "ready" | "error";
   worldState: PixelFarmWorldState | null;
 }
