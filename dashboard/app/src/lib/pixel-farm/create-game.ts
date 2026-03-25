@@ -184,6 +184,7 @@ export interface PixelFarmInteractionTargetDebugInfo {
   occupiedCells?: PixelFarmPointerTile[];
   screenX: number;
   screenY: number;
+  tagKey: string;
   tagLabel: string;
 }
 
@@ -1073,9 +1074,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     const selectionState = this.readInteractionSelectionState();
     const currentFocusedTarget = selectionState?.focusedTarget ?? null;
     const focusedTarget = this.resolveFocusedTargetForInteraction(currentFocusedTarget);
-    const actionableTarget = focusedTarget && focusedTarget.target.memoryIds.length > 0
-      ? focusedTarget
-      : null;
+    const actionableTarget = focusedTarget;
     const controls = this.characterControls;
     const interactJustDown =
       controls ? Phaser.Input.Keyboard.JustDown(controls.interact) : false;
@@ -1108,7 +1107,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       target: {
         id: focusedTarget.target.id,
         kind: focusedTarget.target.kind,
-        memoryCount: focusedTarget.target.memoryIds.length,
+        memoryCount: focusedTarget.target.totalMemoryCount,
         memoryIds: [...focusedTarget.target.memoryIds],
         occupiedCells: focusedTarget.target.getOccupiedCells().map((cell) => ({
           column: cell.column,
@@ -1116,6 +1115,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
         })),
         screenX: screenAnchor.x,
         screenY: screenAnchor.y,
+        tagKey: focusedTarget.target.tagKey,
         tagLabel: focusedTarget.target.tagLabel,
       },
     };

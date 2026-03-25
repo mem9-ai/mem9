@@ -112,7 +112,9 @@ export interface PixelFarmInteractableTarget {
   id: string;
   kind: "animal" | "crop";
   memoryIds: readonly string[];
+  tagKey: string;
   tagLabel: string;
+  totalMemoryCount: number;
   getOccupiedCells: () => ReadonlyArray<PixelFarmGridCell>;
   getWorldAnchors: () => ReadonlyArray<{ x: number; y: number }>;
 }
@@ -592,7 +594,9 @@ export class PixelFarmWorldRenderer {
           id: cropBucket.id,
           kind: "crop",
           memoryIds: [...cropBucket.memoryIds],
+          tagKey: cropBucket.tagKey,
           tagLabel: cropBucket.tagLabel,
+          totalMemoryCount: cropBucket.totalCount,
           getOccupiedCells: () => occupiedCells.map((cell) => ({ ...cell })),
           getWorldAnchors: () => [...instanceAnchors],
         });
@@ -630,7 +634,9 @@ export class PixelFarmWorldRenderer {
           id: animalBucket.id,
           kind: "animal",
           memoryIds: [...animalBucket.memoryIds],
+          tagKey: animalBucket.tagKey,
           tagLabel: animalBucket.tagLabel,
+          totalMemoryCount: animalBucket.totalCount,
           getOccupiedCells: () =>
             renderedAnimals.map((animal) => {
               const body = animal.body as Phaser.Physics.Arcade.Body | undefined;
