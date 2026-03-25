@@ -266,6 +266,15 @@ interface PixelFarmInteractionCandidate {
   worldAnchor: { x: number; y: number };
 }
 
+interface PixelFarmInteractionSelectionState {
+  currentTile: PixelFarmCell;
+  frontTile: PixelFarmCell;
+  origin: { x: number; y: number };
+  facingVector: { x: number; y: number };
+  candidates: PixelFarmInteractionCandidate[];
+  focusedTarget: PixelFarmInteractionCandidate | null;
+}
+
 interface PixelFarmRecentInteractionFocus {
   candidate: PixelFarmInteractionCandidate;
   capturedAt: number;
@@ -359,7 +368,11 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   private lastInteractionDebugSignature?: string;
   private lastPointerDebugSignature?: string;
   private lastWorldState?: PixelFarmWorldState | null;
+  private lastInteractableStructureVersion?: number;
   private recentInteractionFocus: PixelFarmRecentInteractionFocus | null = null;
+  private interactionSelectionFrame = 0;
+  private cachedInteractionSelectionFrame?: number;
+  private cachedInteractionSelectionState: PixelFarmInteractionSelectionState | null = null;
   private characterControls?: CharacterKeyboardControls;
   private dragState: DragState = {
     active: false,
@@ -450,7 +463,11 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.lastInteractionDebugSignature = undefined;
     this.interactionNonce = 0;
     this.lastInteractedTargetId = null;
+    this.lastInteractableStructureVersion = undefined;
     this.recentInteractionFocus = null;
+    this.interactionSelectionFrame = 0;
+    this.cachedInteractionSelectionFrame = undefined;
+    this.cachedInteractionSelectionState = null;
     this.lastPointerDebugSignature = undefined;
     this.options.onInteractionDebugChange?.({
       interactionNonce: 0,
@@ -558,6 +575,9 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
+    this.interactionSelectionFrame += 1;
+    this.cachedInteractionSelectionFrame = undefined;
+    this.cachedInteractionSelectionState = null;
     this.character?.update(delta, this.readCharacterInput());
     this.worldRenderer?.update(delta);
     this.applyDebugActorState();
@@ -771,6 +791,20 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
     this.lastWorldState = worldState;
     this.worldRenderer.render(worldState);
+
+    if (!worldState) {
+      this.clearInteractionSelectionCache();
+      this.lastInteractableStructureVersion = this.worldRenderer.getInteractableStructureVersion();
+      this.recentInteractionFocus = null;
+      return;
+    }
+
+    const interactableStructureVersion = this.worldRenderer.getInteractableStructureVersion();
+    if (interactableStructureVersion !== this.lastInteractableStructureVersion) {
+      this.clearInteractionSelectionCache();
+      this.lastInteractableStructureVersion = interactableStructureVersion;
+      this.recentInteractionFocus = null;
+    }
   }
 
   private updateWorldDebugOverlay(): void {
@@ -811,7 +845,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       return;
     }
 
-    const { facingVector, frontTile, origin } = basis;
+    const { currentTile, facingVector, frontTile, origin } = basis;
     const interactionState = this.readInteractionSelectionState();
     const candidates = interactionState?.candidates ?? [];
     const debugTiles = this.collectRenderedInteractionDebugTiles();
@@ -821,6 +855,8 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       this.drawInteractionTileOutline(tile.cell, color, 1, 0.95);
     }
 
+    this.drawInteractionFrontTile(currentTile, 0xfff3bf, 0.14);
+    this.drawInteractionTileOutline(currentTile, 0xfff3bf, 1, 0.9);
     this.drawInteractionFrontTile(frontTile, 0x5cc8ff, 0.22);
     this.drawInteractionTileOutline(frontTile, 0x5cc8ff, 1, 1);
     this.drawInteractionOrigin(origin.x, origin.y, 0xfff3bf);
@@ -1012,14 +1048,18 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     };
   }
 
-  private readInteractionSelectionState(): {
-    currentTile: PixelFarmCell;
-    frontTile: PixelFarmCell;
-    origin: { x: number; y: number };
-    facingVector: { x: number; y: number };
-    candidates: PixelFarmInteractionCandidate[];
-    focusedTarget: PixelFarmInteractionCandidate | null;
-  } | null {
+  private readInteractionSelectionState(): PixelFarmInteractionSelectionState | null {
+    if (this.cachedInteractionSelectionFrame === this.interactionSelectionFrame) {
+      return this.cachedInteractionSelectionState;
+    }
+
+    const nextState = this.computeInteractionSelectionState();
+    this.cachedInteractionSelectionFrame = this.interactionSelectionFrame;
+    this.cachedInteractionSelectionState = nextState;
+    return nextState;
+  }
+
+  private computeInteractionSelectionState(): PixelFarmInteractionSelectionState | null {
     const basis = this.readInteractionDebugBasis();
     if (!basis) {
       this.recentInteractionFocus = null;
@@ -1027,7 +1067,11 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     }
 
     const targets = this.worldRenderer?.getInteractableTargets() ?? [];
-    const candidates = this.collectInteractionCandidates(basis.frontTile, targets);
+    const candidates = this.collectInteractionCandidates(
+      basis.currentTile,
+      basis.frontTile,
+      targets,
+    );
     const focusedTarget = candidates[0] ?? null;
 
     if (focusedTarget) {
@@ -1082,34 +1126,51 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   }
 
   private collectInteractionCandidates(
+    currentTile: PixelFarmCell,
     frontTile: PixelFarmCell,
     targets: readonly PixelFarmInteractableTarget[],
   ): PixelFarmInteractionCandidate[] {
-    const candidates: PixelFarmInteractionCandidate[] = [];
+    const candidates: Array<PixelFarmInteractionCandidate & { tilePriority: number }> = [];
 
     for (const target of targets) {
       const occupiedCells = target.getOccupiedCells();
-      const targetCell = occupiedCells.find(
-        (cell) => cell.row === frontTile.row && cell.column === frontTile.column,
-      );
-      if (!targetCell) {
+      const matchedCell =
+        occupiedCells.find((cell) => cell.row === frontTile.row && cell.column === frontTile.column) ??
+        occupiedCells.find(
+          (cell) => cell.row === currentTile.row && cell.column === currentTile.column,
+        );
+      if (!matchedCell) {
         continue;
       }
 
-      const worldAnchor = this.cellToWorldPosition(targetCell);
+      const tilePriority =
+        matchedCell.row === frontTile.row && matchedCell.column === frontTile.column ? 0 : 1;
+      const worldAnchor = this.cellToWorldPosition(matchedCell);
       candidates.push({
         target,
         worldAnchor,
+        tilePriority,
       });
     }
 
-    return candidates.sort((left, right) => {
-      if (left.target.kind !== right.target.kind) {
-        return left.target.kind === "crop" ? -1 : 1;
-      }
+    return candidates
+      .sort((left, right) => {
+        if (left.tilePriority !== right.tilePriority) {
+          return left.tilePriority - right.tilePriority;
+        }
 
-      return left.target.id.localeCompare(right.target.id);
-    });
+        if (left.target.kind !== right.target.kind) {
+          return left.target.kind === "crop" ? -1 : 1;
+        }
+
+        return left.target.id.localeCompare(right.target.id);
+      })
+      .map(({ target, worldAnchor }) => ({ target, worldAnchor }));
+  }
+
+  private clearInteractionSelectionCache(): void {
+    this.cachedInteractionSelectionFrame = undefined;
+    this.cachedInteractionSelectionState = null;
   }
 
   private worldPointToLocalCell(worldPoint: { x: number; y: number }): PixelFarmCell | null {

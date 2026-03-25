@@ -380,6 +380,8 @@ export class PixelFarmWorldRenderer {
   private cropObjects: Phaser.GameObjects.Image[] = [];
   private animals: PixelFarmRenderedAnimal[] = [];
   private interactableTargets: PixelFarmInteractableTarget[] = [];
+  private interactableStructureVersion = 0;
+  private lastInteractableStructureSignature = "";
   private readonly animalGroup: Phaser.Physics.Arcade.Group;
 
   constructor(config: PixelFarmWorldRendererConfig) {
@@ -417,15 +419,21 @@ export class PixelFarmWorldRenderer {
     return this.interactableTargets;
   }
 
+  getInteractableStructureVersion(): number {
+    return this.interactableStructureVersion;
+  }
+
   render(worldState: PixelFarmWorldState | null): void {
     this.clear();
 
     if (!worldState) {
+      this.updateInteractableStructureVersion();
       return;
     }
 
     this.renderCropBuckets(worldState.cropBuckets);
     this.renderAnimalBuckets(worldState.animalBuckets);
+    this.updateInteractableStructureVersion();
   }
 
   private clear(): void {
@@ -440,6 +448,20 @@ export class PixelFarmWorldRenderer {
     this.animals = [];
     this.interactableTargets = [];
     this.animalGroup.clear(false, false);
+  }
+
+  private updateInteractableStructureVersion(): void {
+    const signature = this.interactableTargets
+      .map((target) => `${target.kind}:${target.id}`)
+      .sort()
+      .join("|");
+
+    if (signature === this.lastInteractableStructureSignature) {
+      return;
+    }
+
+    this.lastInteractableStructureSignature = signature;
+    this.interactableStructureVersion += 1;
   }
 
   private renderCropBuckets(cropBuckets: readonly PixelFarmCropBucketState[]): void {
