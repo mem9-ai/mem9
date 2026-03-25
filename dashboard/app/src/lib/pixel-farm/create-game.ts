@@ -27,6 +27,9 @@ import {
   registerPixelFarmCowAnimations,
 } from "@/lib/pixel-farm/cow";
 import {
+  pixelFarmDepthForY,
+} from "@/lib/pixel-farm/depth";
+import {
   PIXEL_FARM_COLLISIONS,
   maskHasTile,
   PIXEL_FARM_LAYERS,
@@ -70,6 +73,13 @@ const CAMERA_FOLLOW_LERP = 0.12;
 const CAMERA_DEADZONE_TILES_X = 5;
 const CAMERA_DEADZONE_TILES_Y = 3;
 const ACTOR_LAYER_DEPTH = 15;
+const STATIC_OBJECT_LAYER_DEPTH = 15;
+const Y_SORT_GROUP_SOURCE_IDS = new Set([
+  "barnStructures",
+  "chickenHouses",
+  "treesStumpsBushes",
+  "workStation",
+]);
 const INTERACTION_BUBBLE_OFFSET_Y = PIXEL_FARM_TILE_SIZE * 0.8;
 const INTERACTION_FOCUS_FALLBACK_MS = 180;
 const INTERACTION_ORIGIN_MARKER_RADIUS = 4;
@@ -125,6 +135,11 @@ interface CharacterKeyboardControls {
 interface PixelFarmCell {
   row: number;
   column: number;
+}
+
+interface PixelFarmObjectRenderGroup {
+  objects: Array<(typeof PIXEL_FARM_OBJECTS)[number]>;
+  sortRow: number;
 }
 
 export const PIXEL_FARM_DEBUG_ACTOR_TYPES = [
@@ -268,6 +283,55 @@ function normalizeFacingVector(
     x: facing.x / length,
     y: facing.y / length,
   };
+}
+
+function groupPixelFarmObjectsForDepth(): PixelFarmObjectRenderGroup[] {
+  const groupedObjects = new Set<string>();
+  const groups: PixelFarmObjectRenderGroup[] = [];
+
+  for (const object of PIXEL_FARM_OBJECTS) {
+    if (groupedObjects.has(object.id)) {
+      continue;
+    }
+
+    if (!Y_SORT_GROUP_SOURCE_IDS.has(object.sourceId)) {
+      groupedObjects.add(object.id);
+      groups.push({ objects: [object], sortRow: object.row });
+      continue;
+    }
+
+    const stack = [object];
+    const group = [] as (typeof PIXEL_FARM_OBJECTS)[number][];
+    let sortRow = object.row;
+
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (!current || groupedObjects.has(current.id)) {
+        continue;
+      }
+
+      groupedObjects.add(current.id);
+      group.push(current);
+      sortRow = Math.max(sortRow, current.row);
+
+      for (const candidate of PIXEL_FARM_OBJECTS) {
+        if (
+          groupedObjects.has(candidate.id) ||
+          candidate.sourceId !== current.sourceId ||
+          Math.abs(candidate.row - current.row) > 1 ||
+          Math.abs(candidate.column - current.column) > 1
+        ) {
+          continue;
+        }
+
+        stack.push(candidate);
+      }
+    }
+
+    groups.push({ objects: group, sortRow });
+  }
+
+  return groups;
 }
 
 type PixelFarmPreviewActor =
@@ -449,12 +513,6 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     }
 
     this.worldLayer.removeAll(true);
-    const objectsByLayer = new Map(
-      PIXEL_FARM_LAYERS.map((layer) => [
-        layer.id,
-        PIXEL_FARM_OBJECTS.filter((object) => object.layerId === layer.id),
-      ]),
-    );
 
     for (const layer of PIXEL_FARM_LAYERS) {
       for (let row = 0; row < ISLAND_ROWS; row += 1) {
@@ -476,8 +534,15 @@ class PixelFarmSandboxScene extends Phaser.Scene {
           this.worldLayer.add(sprite);
         }
       }
+    }
 
-      for (const object of objectsByLayer.get(layer.id) ?? []) {
+    for (const group of groupPixelFarmObjectsForDepth()) {
+      const depth = pixelFarmDepthForY(
+        STATIC_OBJECT_LAYER_DEPTH,
+        (ISLAND_START_ROW + group.sortRow + 1) * PIXEL_FARM_TILE_SIZE,
+      );
+
+      for (const object of group.objects) {
         const source = PIXEL_FARM_ASSET_SOURCE_CONFIG[object.sourceId];
         const sprite = this.add.image(
           (ISLAND_START_COLUMN + object.column) * PIXEL_FARM_TILE_SIZE,
@@ -487,7 +552,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
         );
 
         sprite.setOrigin(0, 0);
-        this.worldLayer.add(sprite);
+        sprite.setDepth(depth);
       }
     }
   }
