@@ -224,6 +224,76 @@ function pickDistributedCells(
   return picked.sort(compareGridCells);
 }
 
+function randomizeDistributedCells(
+  cells: readonly PixelFarmGridCell[],
+  count: number,
+): PixelFarmGridCell[] {
+  if (count <= 0 || cells.length < 1) {
+    return [];
+  }
+
+  if (cells.length <= count) {
+    return [...cells].sort(compareGridCells);
+  }
+
+  const shuffled = [...cells];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Phaser.Math.Between(0, index);
+    const current = shuffled[index]!;
+    shuffled[index] = shuffled[swapIndex]!;
+    shuffled[swapIndex] = current;
+  }
+
+  const picked: PixelFarmGridCell[] = [shuffled.shift()!];
+
+  while (picked.length < count && shuffled.length > 0) {
+    let bestIndex = 0;
+    let bestDistance = -1;
+
+    for (const [candidateIndex, candidate] of shuffled.entries()) {
+      const nearestPickedDistance = picked.reduce((distance, pickedCell) => {
+        const nextDistance = cellDistance(candidate, pickedCell);
+        return Math.min(distance, nextDistance);
+      }, Number.POSITIVE_INFINITY);
+
+      if (nearestPickedDistance > bestDistance) {
+        bestDistance = nearestPickedDistance;
+        bestIndex = candidateIndex;
+      }
+    }
+
+    picked.push(shuffled.splice(bestIndex, 1)[0]!);
+  }
+
+  return picked.sort(compareGridCells);
+}
+
+function pickCentralCells(
+  cells: readonly PixelFarmGridCell[],
+  count: number,
+): PixelFarmGridCell[] {
+  if (count <= 0 || cells.length < 1) {
+    return [];
+  }
+
+  if (cells.length <= count) {
+    return [...cells].sort(compareGridCells);
+  }
+
+  const bounds = measureCellBounds(cells);
+  const centerRow = (bounds.minRow + bounds.maxRow) * 0.5 + (bounds.maxRow - bounds.minRow + 1) * 0.2;
+  const centerColumn = (bounds.minColumn + bounds.maxColumn) * 0.5;
+  const rowRadius = (bounds.maxRow - bounds.minRow + 1) * 0.25;
+  const columnRadius = (bounds.maxColumn - bounds.minColumn + 1) * 0.25;
+  const centralPool = cells.filter(
+    (cell) =>
+      Math.abs(cell.row - centerRow) <= rowRadius &&
+      Math.abs(cell.column - centerColumn) <= columnRadius,
+  );
+
+  return randomizeDistributedCells(centralPool.length >= count ? centralPool : cells, count);
+}
+
 function collectConnectedComponents(
   cells: readonly PixelFarmGridCell[],
 ): PixelFarmGridCell[][] {
@@ -361,13 +431,14 @@ const ISLAND_WALKABLE_CELLS = collectWalkableCells({
   minColumn: 0,
   maxColumn: PIXEL_FARM_ROOT_LAYER.mask[0]!.length - 1,
 });
+const CENTRAL_ISLAND_WALKABLE_CELLS = pickCentralCells(ISLAND_WALKABLE_CELLS, 16);
 const COW_PEN_LAYOUT = createAnimalPenLayoutFromCells(
-  collectWalkableCells(COW_PEN_BOUNDS),
+  CENTRAL_ISLAND_WALKABLE_CELLS,
   COW_PEN_BOUNDS,
   ISLAND_WALKABLE_CELLS,
 );
 const CHICKEN_PEN_LAYOUT = createAnimalPenLayoutFromCells(
-  collectWalkableCells(CHICKEN_PEN_BOUNDS),
+  CENTRAL_ISLAND_WALKABLE_CELLS,
   CHICKEN_PEN_BOUNDS,
   ISLAND_WALKABLE_CELLS,
 );
