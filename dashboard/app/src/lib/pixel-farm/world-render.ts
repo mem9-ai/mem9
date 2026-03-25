@@ -15,7 +15,6 @@ import { pixelFarmDepthForY } from "@/lib/pixel-farm/depth";
 import type {
   PixelFarmAnimalBucketState,
   PixelFarmBucketState,
-  PixelFarmCategoryState,
   PixelFarmCropBucketState,
   PixelFarmWorldState,
 } from "@/lib/pixel-farm/data/types";
@@ -34,8 +33,6 @@ import {
   PIXEL_FARM_BUCKET_ANIMAL_PALETTES,
   PIXEL_FARM_CROP_BUCKET_PALETTES,
   PIXEL_FARM_MAIN_FIELD_COUNT,
-  PIXEL_FARM_OTHER_ZONE_DECORATIONS,
-  type PixelFarmDecorationPalette,
 } from "@/lib/pixel-farm/palette";
 import {
   PIXEL_FARM_ASSET_SOURCE_CONFIG,
@@ -44,7 +41,6 @@ import {
 } from "@/lib/pixel-farm/tileset-config";
 const DATA_ENTITY_DEPTH = 15;
 const MAX_BUCKET_RENDER_COUNT = 6;
-const TILLED_LAYER_ID = "layer-6";
 const TILLED_SOURCE_IDS = new Set(["tilledDirtWide", "tiledDirt"]);
 const CHICKEN_ROAM_TARGET_MIN_DISTANCE = 4;
 const CHICKEN_ROAM_TARGET_MAX_ATTEMPTS = 10;
@@ -52,13 +48,6 @@ const CHICKEN_ROAM_TARGET_MAX_ATTEMPTS = 10;
 const CHICKEN_RENDER_COLORS = ["default", "brown"] as const satisfies readonly PixelFarmChickenColor[];
 const COW_RENDER_COLORS = ["brown", "light"] as const satisfies readonly PixelFarmCowColor[];
 const PIXEL_FARM_COLLISION_INDEX = buildPixelFarmCollisionIndex(PIXEL_FARM_COLLISIONS);
-
-const OTHER_ZONE_BOUNDS: PixelFarmCellBounds = {
-  minRow: 0,
-  maxRow: 4,
-  minColumn: 11,
-  maxColumn: 18,
-};
 
 const COW_PEN_BOUNDS: PixelFarmCellBounds = {
   minRow: 22,
@@ -127,21 +116,6 @@ export interface PixelFarmInteractableTarget {
 
 function gridCellKey(row: number, column: number): string {
   return `${row}:${column}`;
-}
-
-function gridCellFromKey(key: string): PixelFarmGridCell | null {
-  const [rowValue, columnValue] = key.split(":");
-  if (rowValue === undefined || columnValue === undefined) {
-    return null;
-  }
-
-  const row = Number(rowValue);
-  const column = Number(columnValue);
-  if (!Number.isFinite(row) || !Number.isFinite(column)) {
-    return null;
-  }
-
-  return { row, column };
 }
 
 function compareGridCells(left: PixelFarmGridCell, right: PixelFarmGridCell): number {
@@ -327,15 +301,18 @@ function collectWalkableCells(bounds: PixelFarmCellBounds): PixelFarmGridCell[] 
 }
 
 function collectTilledCells(): PixelFarmGridCell[] {
-  const tilledLayer = PIXEL_FARM_LAYERS.find((layer) => layer.id === TILLED_LAYER_ID);
-  if (!tilledLayer) {
-    return [];
-  }
-
-  return Object.entries(tilledLayer.overrides)
-    .filter(([, tile]) => TILLED_SOURCE_IDS.has(tile.sourceId))
-    .map(([key]) => gridCellFromKey(key))
-    .filter((cell): cell is PixelFarmGridCell => cell !== null);
+  return PIXEL_FARM_LAYERS.flatMap((layer) =>
+    Object.entries(layer.overrides)
+      .filter(([, tile]) => TILLED_SOURCE_IDS.has(tile.sourceId))
+      .map(([key]) => {
+        const [rowValue, columnValue] = key.split(":");
+        return {
+          row: Number(rowValue),
+          column: Number(columnValue),
+        };
+      })
+      .filter((cell) => Number.isFinite(cell.row) && Number.isFinite(cell.column)),
+  );
 }
 
 function createMainPlotLayouts(): PixelFarmPlotLayout[] {
@@ -363,47 +340,6 @@ function createMainPlotLayouts(): PixelFarmPlotLayout[] {
     }));
 }
 
-const TILLED_CELL_KEYS = new Set(
-  collectTilledCells().map((cell) => gridCellKey(cell.row, cell.column)),
-);
-
-function createOtherPlotLayout(): PixelFarmPlotLayout {
-  const cells = collectWalkableCells(OTHER_ZONE_BOUNDS).filter(
-    (cell) => !TILLED_CELL_KEYS.has(gridCellKey(cell.row, cell.column)),
-  );
-
-  return {
-    capacity: cells.length,
-    bucketCells: pickDistributedCells(cells, MAX_BUCKET_RENDER_COUNT),
-    cells,
-  };
-}
-
-function pickDecorationPalette(family: string): PixelFarmDecorationPalette | null {
-  switch (family) {
-    case PIXEL_FARM_OTHER_ZONE_DECORATIONS.grass.family:
-      return PIXEL_FARM_OTHER_ZONE_DECORATIONS.grass;
-    case PIXEL_FARM_OTHER_ZONE_DECORATIONS.redMushroom.family:
-      return PIXEL_FARM_OTHER_ZONE_DECORATIONS.redMushroom;
-    case PIXEL_FARM_OTHER_ZONE_DECORATIONS.stone.family:
-      return PIXEL_FARM_OTHER_ZONE_DECORATIONS.stone;
-    default:
-      return null;
-  }
-}
-
-function pickDecorationFrame(
-  palette: PixelFarmDecorationPalette,
-  fillRatio: number,
-): PixelFarmAssetTileSelection {
-  const frameIndex = Math.min(
-    palette.frames.length - 1,
-    Math.max(0, Math.round(fillRatio * (palette.frames.length - 1))),
-  );
-
-  return palette.frames[frameIndex]!;
-}
-
 function findCropTile(
   cropBucket: PixelFarmCropBucketState,
   bucket: PixelFarmBucketState,
@@ -418,26 +354,7 @@ function findCropTile(
   return cropPalette.stages[bucket.stage];
 }
 
-function findOtherDecorationTile(
-  category: PixelFarmCategoryState,
-  bucket: PixelFarmBucketState,
-  index: number,
-): PixelFarmAssetTileSelection | null {
-  if (category.decorationFamilies.length < 1) {
-    return null;
-  }
-
-  const family = category.decorationFamilies[index % category.decorationFamilies.length]!;
-  const palette = pickDecorationPalette(family);
-  if (!palette) {
-    return null;
-  }
-
-  return pickDecorationFrame(palette, bucket.fillRatio);
-}
-
 const MAIN_PLOT_LAYOUTS = createMainPlotLayouts();
-const OTHER_PLOT_LAYOUT = createOtherPlotLayout();
 const ISLAND_WALKABLE_CELLS = collectWalkableCells({
   minRow: 0,
   maxRow: PIXEL_FARM_ROOT_LAYER.mask.length - 1,
@@ -509,10 +426,6 @@ export class PixelFarmWorldRenderer {
 
     this.renderCropBuckets(worldState.cropBuckets);
     this.renderAnimalBuckets(worldState.animalBuckets);
-
-    for (const category of worldState.categories) {
-      this.renderCategory(category);
-    }
   }
 
   private clear(): void {
@@ -527,32 +440,6 @@ export class PixelFarmWorldRenderer {
     this.animals = [];
     this.interactableTargets = [];
     this.animalGroup.clear(false, false);
-  }
-
-  private renderCategory(category: PixelFarmCategoryState): void {
-    if (category.kind !== "other") {
-      return;
-    }
-
-    const layout = this.layoutForCategory(category);
-    if (!layout) {
-      return;
-    }
-
-    for (const [index, bucket] of category.buckets.entries()) {
-      const cell = layout.bucketCells[index];
-      if (!cell || !bucket.active) {
-        continue;
-      }
-
-      const tile =
-        findOtherDecorationTile(category, bucket, index);
-      if (!tile) {
-        continue;
-      }
-
-      this.addCropTile(cell, tile);
-    }
   }
 
   private renderCropBuckets(cropBuckets: readonly PixelFarmCropBucketState[]): void {
@@ -702,14 +589,6 @@ export class PixelFarmWorldRenderer {
         });
       }
     }
-  }
-
-  private layoutForCategory(category: PixelFarmCategoryState): PixelFarmPlotLayout | null {
-    if (category.kind === "other") {
-      return OTHER_PLOT_LAYOUT;
-    }
-
-    return null;
   }
 
   private addCropTile(

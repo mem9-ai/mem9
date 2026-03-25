@@ -5,7 +5,6 @@ import {
 import {
   PIXEL_FARM_CROP_BUCKET_PALETTES,
   PIXEL_FARM_MAIN_FIELD_COUNT,
-  PIXEL_FARM_OTHER_ZONE_DECORATIONS,
   PIXEL_FARM_TOP_CROP_TAG_COUNT,
   type PixelFarmCropStage,
 } from "@/lib/pixel-farm/palette";
@@ -25,7 +24,7 @@ const CATEGORY_OTHER_KEY = "other";
 const BUCKET_CAPACITY = 4;
 const MAX_BUCKET_COUNT = 6;
 const MAX_CROP_INSTANCE_COUNT = 6;
-const CROP_BUCKETS_PER_PLOT = [4, 3, 3, 2, 1] as const;
+const CROP_BUCKETS_PER_PLOT = [1, 1, 1, 1, 1] as const;
 const MAX_ANIMAL_BUCKET_COUNT = 3;
 const CROP_TAG_LIMIT = 13;
 const MIN_ANIMAL_INSTANCE_COUNT = 4;
@@ -480,14 +479,7 @@ export function buildPixelFarmWorldState({
         category.kind === "main"
           ? PIXEL_FARM_CROP_BUCKET_PALETTES[category.plotIndex]?.family ?? null
           : null;
-      const decorationFamilies =
-        category.kind === "other"
-          ? [
-              PIXEL_FARM_OTHER_ZONE_DECORATIONS.grass.family,
-              PIXEL_FARM_OTHER_ZONE_DECORATIONS.redMushroom.family,
-              PIXEL_FARM_OTHER_ZONE_DECORATIONS.stone.family,
-            ]
-          : [];
+      const decorationFamilies: string[] = [];
 
       return {
         key: category.key,
