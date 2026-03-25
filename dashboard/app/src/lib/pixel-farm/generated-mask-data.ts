@@ -2674,16 +2674,6 @@ export const PIXEL_FARM_GENERATED_COLLISIONS = [
     halfTileColumn: 73,
   },
   {
-    id: "collision-130",
-    halfTileRow: 29,
-    halfTileColumn: 74,
-  },
-  {
-    id: "collision-131",
-    halfTileRow: 29,
-    halfTileColumn: 77,
-  },
-  {
     id: "collision-137",
     halfTileRow: 43,
     halfTileColumn: 39,
