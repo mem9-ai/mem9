@@ -65,9 +65,17 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				s.handleError(w, err)
 				return
 			}
-			respond(w, http.StatusOK, result)
+			if result != nil && result.Status == "failed" {
+				respondError(w, http.StatusInternalServerError, "ingest reconciliation failed")
+				return
+			}
+			respond(w, http.StatusOK, map[string]string{"status": "ok"})
 		} else {
-			go s.ingestMessages(context.Background(), auth, svc, ingestReq)
+			go func() {
+				if _, err := s.ingestMessages(context.Background(), auth, svc, ingestReq); err != nil {
+					slog.Error("async ingest failed", "session", ingestReq.SessionID, "err", err)
+				}
+			}()
 			respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 		}
 		return
@@ -87,17 +95,13 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	content := req.Content
 
 	if req.Sync {
-		mem, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
+		_, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
 		if err != nil {
 			slog.Error("sync memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
 			s.handleError(w, err)
 			return
 		}
-		if mem != nil {
-			respond(w, http.StatusOK, mem)
-		} else {
-			respond(w, http.StatusOK, map[string]string{"status": "completed"})
-		}
+		respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	} else {
 		go func(agentName, actorAgentID, content string, tags []string, metadata json.RawMessage) {
 			mem, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
@@ -117,6 +121,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 }
 
 // ingestMessages runs the full ingest pipeline: BulkCreate → ExtractPhase1 → PatchTags + ReconcilePhase2.
+// TODO: wrap all database writes (BulkCreate, PatchTags, ReconcilePhase2) in a single transaction to guarantee atomicity.
 func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, req service.IngestRequest) (*service.IngestResult, error) {
 	if err := svc.session.BulkCreate(ctx, auth.AgentName, req); err != nil {
 		slog.Error("session raw save failed",
