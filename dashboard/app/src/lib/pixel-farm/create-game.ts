@@ -36,6 +36,7 @@ import {
   PIXEL_FARM_MASK_BOUNDS,
   PIXEL_FARM_MASK_COLUMNS,
   PIXEL_FARM_MASK_ROWS,
+  PIXEL_FARM_OBJECT_GROUPS,
   PIXEL_FARM_OBJECTS,
   PIXEL_FARM_ROOT_LAYER,
   tileOverrideAt,
@@ -74,12 +75,6 @@ const CAMERA_DEADZONE_TILES_X = 5;
 const CAMERA_DEADZONE_TILES_Y = 3;
 const ACTOR_LAYER_DEPTH = 15;
 const STATIC_OBJECT_LAYER_DEPTH = 15;
-const Y_SORT_GROUP_SOURCE_IDS = new Set([
-  "barnStructures",
-  "chickenHouses",
-  "treesStumpsBushes",
-  "workStation",
-]);
 const INTERACTION_BUBBLE_OFFSET_Y = PIXEL_FARM_TILE_SIZE * 0.8;
 const INTERACTION_FOCUS_FALLBACK_MS = 180;
 const INTERACTION_ORIGIN_MARKER_RADIUS = 4;
@@ -139,6 +134,7 @@ interface PixelFarmCell {
 
 interface PixelFarmObjectRenderGroup {
   objects: Array<(typeof PIXEL_FARM_OBJECTS)[number]>;
+  sortColumn: number;
   sortRow: number;
 }
 
@@ -295,52 +291,37 @@ function normalizeFacingVector(
 }
 
 function groupPixelFarmObjectsForDepth(): PixelFarmObjectRenderGroup[] {
-  const groupedObjects = new Set<string>();
+  const groupMetadata = new Map(
+    PIXEL_FARM_OBJECT_GROUPS.map((group) => [group.id, group] as const),
+  );
   const groups: PixelFarmObjectRenderGroup[] = [];
+  const objectBuckets = new Map<string, Array<(typeof PIXEL_FARM_OBJECTS)[number]>>();
 
   for (const object of PIXEL_FARM_OBJECTS) {
-    if (groupedObjects.has(object.id)) {
-      continue;
+    const key = object.groupId ?? object.id;
+    const bucket = objectBuckets.get(key);
+    if (bucket) {
+      bucket.push(object);
+    } else {
+      objectBuckets.set(key, [object]);
     }
-
-    if (!Y_SORT_GROUP_SOURCE_IDS.has(object.sourceId)) {
-      groupedObjects.add(object.id);
-      groups.push({ objects: [object], sortRow: object.row });
-      continue;
-    }
-
-    const stack = [object];
-    const group = [] as (typeof PIXEL_FARM_OBJECTS)[number][];
-    let sortRow = object.row;
-
-    while (stack.length > 0) {
-      const current = stack.pop();
-      if (!current || groupedObjects.has(current.id)) {
-        continue;
-      }
-
-      groupedObjects.add(current.id);
-      group.push(current);
-      sortRow = Math.max(sortRow, current.row);
-
-      for (const candidate of PIXEL_FARM_OBJECTS) {
-        if (
-          groupedObjects.has(candidate.id) ||
-          candidate.sourceId !== current.sourceId ||
-          Math.abs(candidate.row - current.row) > 1 ||
-          Math.abs(candidate.column - current.column) > 1
-        ) {
-          continue;
-        }
-
-        stack.push(candidate);
-      }
-    }
-
-    groups.push({ objects: group, sortRow });
   }
 
-  return groups;
+  for (const [key, objects] of objectBuckets) {
+    const metadata = groupMetadata.get(key);
+    groups.push({
+      objects,
+      sortColumn: metadata?.sortColumn ?? objects[0]!.column,
+      sortRow: metadata?.sortRow ?? Math.max(...objects.map((object) => object.row)),
+    });
+  }
+
+  return groups.sort(
+    (left, right) =>
+      left.sortRow - right.sortRow ||
+      left.sortColumn - right.sortColumn ||
+      left.objects[0]!.id.localeCompare(right.objects[0]!.id),
+  );
 }
 
 type PixelFarmPreviewActor =
