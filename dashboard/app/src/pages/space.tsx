@@ -230,6 +230,14 @@ function formatTimelineLabel(
   return from === to ? from : `${from} - ${to}`;
 }
 
+export function shouldCompactMemoryOverview(
+  selected: Memory | null,
+  isDesktopViewport: boolean,
+  selectedDetailMode: "panel" | "sheet",
+): boolean {
+  return selected !== null && isDesktopViewport && selectedDetailMode === "panel";
+}
+
 export function SpacePage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -272,6 +280,11 @@ export function SpacePage() {
         ? formatTimelineLabel(timelineSelection, i18n.language)
         : "",
     [i18n.language, timelineSelection],
+  );
+  const compactOverview = shouldCompactMemoryOverview(
+    selected,
+    isDesktopViewport,
+    selectedDetailMode,
   );
 
   useEffect(() => {
@@ -893,7 +906,7 @@ export function SpacePage() {
               snapshot={analysis.state.snapshot}
               range={range}
               loading={sourceLoading || analysis.sourceLoading}
-              compact={selected !== null && isDesktopViewport}
+              compact={compactOverview}
               activeType={search.type}
               activeCategory={analysisCategory}
               activeTag={tag}

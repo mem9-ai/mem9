@@ -43,6 +43,7 @@ type LaneRenderableItem = {
   id: string;
   kind: InsightRenderableKind;
   label: string;
+  tooltip?: string;
   subtitle?: string;
   meta?: string;
   count?: number;
@@ -149,9 +150,14 @@ const LANE_GAP = {
 } as const;
 
 function previewMemoryContent(memory: Memory): string {
-  return memory.content.length > 120
-    ? `${memory.content.slice(0, 117).trimEnd()}...`
-    : memory.content;
+  const normalizedContent = normalizeInlineText(memory.content);
+  return normalizedContent.length > 120
+    ? `${normalizedContent.slice(0, 117).trimEnd()}...`
+    : normalizedContent;
+}
+
+function normalizeInlineText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function hashString(value: string): number {
@@ -434,6 +440,7 @@ function useElementWidth<T extends HTMLElement>(): [React.RefObject<T | null>, n
 function InsightNodeButton({
   kind,
   label,
+  tooltip,
   subtitle,
   meta,
   count,
@@ -452,6 +459,7 @@ function InsightNodeButton({
 }: {
   kind: InsightRenderableKind;
   label: string;
+  tooltip?: string;
   subtitle?: string;
   meta?: string;
   count?: number;
@@ -468,6 +476,14 @@ function InsightNodeButton({
   onPointerDown?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onClick: () => void;
 }) {
+  const displayLabel = normalizeInlineText(label);
+  const displayTooltip = normalizeInlineText(tooltip ?? label);
+  const displaySubtitle = subtitle ? normalizeInlineText(subtitle) : undefined;
+  const displayMeta = meta ? normalizeInlineText(meta) : undefined;
+  const tooltipText = bubble
+    ? displayTooltip
+    : [displayTooltip, displaySubtitle, displayMeta].filter(Boolean).join("\n");
+
   const kindStyles: Record<InsightRenderableKind, string> = {
     card: "border-type-insight/24 text-foreground",
     tag:
@@ -508,12 +524,13 @@ function InsightNodeButton({
           : style
       }
       data-testid={dataTestId}
+      title={tooltipText || undefined}
       data-bubble-diameter={diameter}
       data-bubble-size={bubbleSizeTier(diameter)}
       data-active={active ? "true" : "false"}
       data-dragging={dragging ? "true" : "false"}
     >
-      {bubble ? (
+          {bubble ? (
         <>
           <span
             className={cn(
@@ -536,7 +553,7 @@ function InsightNodeButton({
           </span>
           <span className="memory-insight-bubble-label mt-2 block w-full px-1">
             <span className="line-clamp-2 block text-[12px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
-              {label}
+              {displayLabel}
             </span>
             {typeof count === "number" ? (
               <span className="mt-1 block text-[11px] font-medium tabular-nums text-foreground/62">
@@ -550,25 +567,25 @@ function InsightNodeButton({
       ) : (
         <>
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold tracking-[-0.02em]">
-                {label}
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <div className="block overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold tracking-[-0.02em]">
+                {displayLabel}
               </div>
-              {subtitle ? (
+              {displaySubtitle ? (
                 <div className="mt-1 text-[11px] text-muted-foreground">
-                  {subtitle}
+                  {displaySubtitle}
                 </div>
               ) : null}
             </div>
             {typeof count === "number" ? (
-              <div className="rounded-full bg-background/80 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-foreground/80">
+              <div className="shrink-0 rounded-full bg-background/80 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-foreground/80">
                 {count}
               </div>
             ) : null}
           </div>
-          {meta ? (
+          {displayMeta ? (
             <div className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-              {meta}
+              {displayMeta}
             </div>
           ) : null}
         </>
@@ -828,12 +845,83 @@ function MemoryInsightCanvas({
     onClick();
   };
 
+  const clearEntityBranchState = (entityId?: string) => {
+    if (!entityId) {
+      return;
+    }
+
+    const memoryNodeIds = (memoriesByEntityId.get(entityId) ?? []).map((memoryNode) => memoryNode.id);
+    setMemoryRevealCounts((current) => omitKeys(current, [entityId]));
+    setManualLanePositions((current) => omitKeys(current, [entityId, ...memoryNodeIds]));
+  };
+
+  const clearTagBranchState = (tagId?: string, entityId?: string) => {
+    if (!tagId) {
+      clearEntityBranchState(entityId);
+      return;
+    }
+
+    const entityNodeIds = (entitiesByTagId.get(tagId) ?? []).map((entity) => entity.id);
+    const memoryNodeIds = entityNodeIds.flatMap((candidateEntityId) =>
+      (memoriesByEntityId.get(candidateEntityId) ?? []).map((memoryNode) => memoryNode.id),
+    );
+
+    setEntityRevealCounts((current) => omitKeys(current, [tagId]));
+    setMemoryRevealCounts((current) => omitKeys(current, entityNodeIds));
+    setManualLanePositions((current) =>
+      omitKeys(current, [tagId, ...entityNodeIds, ...memoryNodeIds]),
+    );
+  };
+
   const clearCardState = (cardId: string) => {
-    const path = activePathByCardId[cardId];
+    const tagIds = (tagsByCardId.get(cardId) ?? []).map((tag) => tag.id);
+    const entityIds = tagIds.flatMap((tagId) =>
+      (entitiesByTagId.get(tagId) ?? []).map((entity) => entity.id),
+    );
+    const memoryIds = entityIds.flatMap((entityId) =>
+      (memoriesByEntityId.get(entityId) ?? []).map((memoryNode) => memoryNode.id),
+    );
     setActivePathByCardId((current) => omitKeys(current, [cardId]));
     setTagRevealCounts((current) => omitKeys(current, [cardId]));
-    setEntityRevealCounts((current) => omitKeys(current, path?.tagId ? [path.tagId] : []));
-    setMemoryRevealCounts((current) => omitKeys(current, path?.entityId ? [path.entityId] : []));
+    setEntityRevealCounts((current) => omitKeys(current, tagIds));
+    setMemoryRevealCounts((current) => omitKeys(current, entityIds));
+    setManualLanePositions((current) =>
+      omitKeys(current, [cardId, ...tagIds, ...entityIds, ...memoryIds]),
+    );
+  };
+
+  const selectTag = (cardId: string, tagId: string) => {
+    setActivePathByCardId((current) => {
+      const currentPath = current[cardId] ?? {};
+      const nextTagId = currentPath.tagId === tagId ? undefined : tagId;
+      return {
+        ...current,
+        [cardId]: {
+          tagId: nextTagId,
+          entityId: undefined,
+        },
+      };
+    });
+
+    const currentPath = activePathByCardId[cardId] ?? {};
+    clearTagBranchState(currentPath.tagId, currentPath.entityId);
+  };
+
+  const selectEntity = (cardId: string, entityId: string) => {
+    setActivePathByCardId((current) => {
+      const currentPath = current[cardId] ?? {};
+      const nextEntityId = currentPath.entityId === entityId ? undefined : entityId;
+      return {
+        ...current,
+        [cardId]: {
+          tagId: currentPath.tagId,
+          entityId: nextEntityId,
+        },
+      };
+    });
+
+    const currentPath = activePathByCardId[cardId] ?? {};
+    clearEntityBranchState(currentPath.entityId);
   };
 
   const toggleCard = (cardId: string) => {
@@ -975,19 +1063,7 @@ function MemoryInsightCanvas({
           height: dimensions.height,
           active: path.tagId === tag.id,
           draggable: true,
-          onClick: () => {
-            setActivePathByCardId((current) => {
-              const currentPath = current[card.id] ?? {};
-              const nextTagId = currentPath.tagId === tag.id ? undefined : tag.id;
-              return {
-                ...current,
-                [card.id]: {
-                  tagId: nextTagId,
-                  entityId: undefined,
-                },
-              };
-            });
-          },
+          onClick: () => selectTag(card.id, tag.id),
         };
       });
 
@@ -1019,19 +1095,7 @@ function MemoryInsightCanvas({
           width: dimensions.width,
           height: dimensions.height,
           active: path.entityId === entity.id,
-          onClick: () => {
-            setActivePathByCardId((current) => {
-              const currentPath = current[card.id] ?? {};
-              const nextEntityId = currentPath.entityId === entity.id ? undefined : entity.id;
-              return {
-                ...current,
-                [card.id]: {
-                  tagId: currentPath.tagId,
-                  entityId: nextEntityId,
-                },
-              };
-            });
-          },
+          onClick: () => selectEntity(card.id, entity.id),
         };
       });
 
@@ -1064,6 +1128,7 @@ function MemoryInsightCanvas({
             id: memoryNode.id,
             kind: "memory" as const,
             label: previewMemoryContent(memory),
+            tooltip: normalizeInlineText(memory.content),
             subtitle: memory.memory_type === "pinned"
               ? t("space.stats.pinned")
               : t("space.stats.insight"),
@@ -1100,6 +1165,8 @@ function MemoryInsightCanvas({
         tagItems,
         entityItems,
         memoryItems,
+        selectedTagId: selectedTag?.id,
+        selectedEntityId: selectedEntity?.id,
         selectedTag,
         focusBubbleWidth,
       };
@@ -1116,10 +1183,13 @@ function MemoryInsightCanvas({
     memoriesById,
     memoryRevealCounts,
     onMemorySelect,
+    selectEntity,
+    selectTag,
     t,
     tagRevealCounts,
     tagsByCardId,
   ]);
+  const laneDraftSignature = useMemo(() => draftLaneKey(laneDrafts), [laneDrafts]);
 
   const laneHeights = useMemo(() => {
     return laneDrafts.map((draft) => {
@@ -1168,7 +1238,7 @@ function MemoryInsightCanvas({
         compact ? 180 : 220,
       );
     });
-  }, [compact, draftLaneKey(laneDrafts), entityColumnWidth, manualLanePositions, memoryColumnWidth, tagColumnWidth]);
+  }, [compact, entityColumnWidth, laneDraftSignature, manualLanePositions, memoryColumnWidth, tagColumnWidth]);
 
   const laneAnchors = useMemo(
     () =>
@@ -1339,9 +1409,9 @@ function MemoryInsightCanvas({
   }, [
     compact,
     draggingNodeId,
-    draftLaneKey(laneDrafts),
     entityColumnWidth,
     laneAnchors.positions,
+    laneDraftSignature,
     laneGap,
     laneStartX,
     manualLanePositions,
@@ -1584,6 +1654,7 @@ function MemoryInsightCanvas({
                     key={node.id}
                     kind={node.kind}
                     label={node.label}
+                    tooltip={node.tooltip}
                     subtitle={node.subtitle}
                     meta={node.meta}
                     count={node.count}
@@ -1763,20 +1834,24 @@ function MemoryInsightCanvas({
 function draftLaneKey(
   drafts: Array<{
     card: { id: string };
-    bubbleItems: Array<{ id: string }>;
-    tagItems: Array<{ id: string }>;
-    entityItems: Array<{ id: string }>;
-    memoryItems: Array<{ id: string }>;
+    selectedTagId?: string;
+    selectedEntityId?: string;
+    bubbleItems: Array<{ id: string; active?: boolean }>;
+    tagItems: Array<{ id: string; active?: boolean }>;
+    entityItems: Array<{ id: string; active?: boolean }>;
+    memoryItems: Array<{ id: string; active?: boolean }>;
   }>,
 ): string {
   return drafts
     .map((draft) =>
       [
         draft.card.id,
-        draft.bubbleItems.map((item) => item.id).join(","),
-        draft.tagItems.map((item) => item.id).join(","),
-        draft.entityItems.map((item) => item.id).join(","),
-        draft.memoryItems.map((item) => item.id).join(","),
+        draft.selectedTagId ?? "",
+        draft.selectedEntityId ?? "",
+        draft.bubbleItems.map((item) => `${item.id}:${item.active ? "1" : "0"}`).join(","),
+        draft.tagItems.map((item) => `${item.id}:${item.active ? "1" : "0"}`).join(","),
+        draft.entityItems.map((item) => `${item.id}:${item.active ? "1" : "0"}`).join(","),
+        draft.memoryItems.map((item) => `${item.id}:${item.active ? "1" : "0"}`).join(","),
       ].join("|"))
     .join("::");
 }

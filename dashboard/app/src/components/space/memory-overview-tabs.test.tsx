@@ -2,6 +2,11 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { MemoryOverviewTabs } from "./memory-overview-tabs";
+import {
+  buildInsightEntityNodeId,
+  buildInsightMemoryNodeId,
+  buildInsightTagNodeId,
+} from "@/lib/memory-insight";
 import type { MemoryAnalysisMatch } from "@/types/analysis";
 import type { Memory } from "@/types/memory";
 
@@ -82,8 +87,12 @@ describe("MemoryOverviewTabs", () => {
 
     fireEvent.click(screen.getByTestId("insight-node-card:activity"));
     fireEvent.click(screen.getByTestId("insight-node-card:project"));
-    expect(await screen.findByTestId("insight-node-tag:activity:graph")).toBeInTheDocument();
-    expect(await screen.findByTestId("insight-node-tag:project:graph")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId(`insight-node-${buildInsightTagNodeId("activity", "graph")}`),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByTestId(`insight-node-${buildInsightTagNodeId("project", "graph")}`),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("memory-insight-canvas-viewport")).toBeInTheDocument();
 
     const pulseTab = screen.getByRole("tab", { name: "Memory Pulse" });
@@ -93,8 +102,12 @@ describe("MemoryOverviewTabs", () => {
     insightTab.focus();
     fireEvent.keyDown(insightTab, { key: "Enter" });
 
-    expect(screen.queryByTestId("insight-node-tag:activity:graph")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("insight-node-tag:project:graph")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId(`insight-node-${buildInsightTagNodeId("activity", "graph")}`),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId(`insight-node-${buildInsightTagNodeId("project", "graph")}`),
+    ).not.toBeInTheDocument();
   });
 
   it("forwards insight leaf clicks as insight-sourced memory selections", async () => {
@@ -138,15 +151,28 @@ describe("MemoryOverviewTabs", () => {
     fireEvent.keyDown(insightTab, { key: "Enter" });
 
     fireEvent.click(await screen.findByTestId("insight-node-card:project"));
-    fireEvent.click(await screen.findByTestId("insight-node-tag:project:graph"));
+    fireEvent.click(
+      await screen.findByTestId(`insight-node-${buildInsightTagNodeId("project", "graph")}`),
+    );
     fireEvent.click(
       await screen.findByTestId(
-        "insight-node-entity:project:graph:named_term:mem9-ui",
+        `insight-node-${buildInsightEntityNodeId(
+          "project",
+          "graph",
+          "named_term",
+          "mem9-ui",
+        )}`,
       ),
     );
     fireEvent.click(
       await screen.findByTestId(
-        "insight-node-memory:project:graph:named_term:mem9-ui:mem-insight-1",
+        `insight-node-${buildInsightMemoryNodeId(
+          "project",
+          "graph",
+          "named_term",
+          "mem9-ui",
+          "mem-insight-1",
+        )}`,
       ),
     );
 

@@ -7,6 +7,7 @@ import { router } from "@/router";
 import i18n from "@/i18n";
 import type { Memory } from "@/types/memory";
 import type { SpaceAnalysisState } from "@/types/analysis";
+import { shouldCompactMemoryOverview } from "./space";
 
 const mocks = vi.hoisted(() => ({
   clearSpace: vi.fn(),
@@ -344,6 +345,18 @@ describe("SpacePage", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("does not compact the overview when an insight memory opens in a sheet", () => {
+    const selected = createMemory(
+      "mem-1",
+      "Insight memory",
+      "2026-03-10T00:00:00Z",
+    );
+
+    expect(shouldCompactMemoryOverview(selected, true, "sheet")).toBe(false);
+    expect(shouldCompactMemoryOverview(selected, true, "panel")).toBe(true);
+    expect(shouldCompactMemoryOverview(selected, false, "sheet")).toBe(false);
   });
 
   it("filters memories by clicked analysis category without auto-opening detail", async () => {
