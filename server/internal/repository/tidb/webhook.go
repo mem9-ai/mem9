@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,22 +17,6 @@ type WebhookRepoImpl struct {
 
 func NewWebhookRepo(db *sql.DB) *WebhookRepoImpl {
 	return &WebhookRepoImpl{db: db}
-}
-
-func (r *WebhookRepoImpl) Create(ctx context.Context, w *domain.Webhook) error {
-	typesJSON, err := json.Marshal(w.EventTypes)
-	if err != nil {
-		return fmt.Errorf("webhook create marshal event_types: %w", err)
-	}
-	_, err = r.db.ExecContext(ctx,
-		`INSERT INTO webhooks (id, tenant_id, url, secret, event_types, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-		w.ID, w.TenantID, w.URL, w.Secret, typesJSON,
-	)
-	if err != nil {
-		return fmt.Errorf("webhook create: %w", err)
-	}
-	return nil
 }
 
 func (r *WebhookRepoImpl) ListByTenant(ctx context.Context, tenantID string) ([]*domain.Webhook, error) {
@@ -56,6 +41,51 @@ func (r *WebhookRepoImpl) ListByTenant(ctx context.Context, tenantID string) ([]
 	return out, rows.Err()
 }
 
+func (r *WebhookRepoImpl) CreateIfBelowLimit(ctx context.Context, w *domain.Webhook, limit int) (bool, error) {
+	typesJSON, err := json.Marshal(w.EventTypes)
+	if err != nil {
+		return false, fmt.Errorf("webhook create marshal event_types: %w", err)
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("webhook create begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var count int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM webhooks WHERE tenant_id = ? FOR UPDATE`,
+		w.TenantID,
+	).Scan(&count); err != nil {
+		return false, fmt.Errorf("webhook create count: %w", err)
+	}
+	if count >= limit {
+		return false, nil
+	}
+
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO webhooks (id, tenant_id, url, secret, event_types, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		w.ID, w.TenantID, w.URL, w.Secret, typesJSON, w.CreatedAt, w.UpdatedAt,
+	)
+	if err != nil {
+		return false, fmt.Errorf("webhook create: %w", err)
+	}
+	return true, tx.Commit()
+}
+
+func (r *WebhookRepoImpl) CountByTenant(ctx context.Context, tenantID string) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM webhooks WHERE tenant_id = ?`, tenantID,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("webhook count: %w", err)
+	}
+	return count, nil
+}
+
 func (r *WebhookRepoImpl) GetByID(ctx context.Context, id string) (*domain.Webhook, error) {
 	row := r.db.QueryRowContext(ctx,
 		`SELECT id, tenant_id, url, secret, event_types, created_at, updated_at
@@ -63,7 +93,7 @@ func (r *WebhookRepoImpl) GetByID(ctx context.Context, id string) (*domain.Webho
 		id,
 	)
 	w, err := scanWebhook(row)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, domain.ErrNotFound
 	}
 	return w, err

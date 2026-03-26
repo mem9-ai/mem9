@@ -513,17 +513,20 @@ begins. Current resolution status is noted for each.
 
 ## Test Scope
 
-| Area | What to test |
-|------|-------------|
-| `service/webhook_test.go` | Create (encrypts secret), List, Delete, URL validation, eventTypes validation |
-| `service/webhook_test.go` | HMAC signature correctness — verify with known secret + known body |
-| `service/webhook_test.go` | `Deliver` is non-blocking — call returns before HTTP send completes |
-| `handler/webhook_test.go` | POST/GET/DELETE HTTP status codes; secret excluded from responses |
-| `repository/tidb/webhook_test.go` | CRUD against real TiDB schema — Create, ListByTenant, GetByID, Delete |
-| `repository/db9/webhook_test.go` + `repository/postgres/webhook_test.go` | CRUD against real schema — same test cases as TiDB repo |
-| `service/ingest_test.go` | `Deliver` called when `MemoriesChanged >= 1`; not called when 0 |
-| `service/memory_test.go` | Delete emits `lifecycle.changed` only on real transition; repeated delete of already-deleted row does NOT emit; content-mode Create (no-LLM) emits `ingest.completed`; content-mode Create (LLM/ReconcileContent) emits `ingest.completed` when `MemoriesChanged >= 1` |
-| `handler/memory_test.go` | Recall fires with `q=foo` + memory hits + non-dashboard agent; not fired when `q` empty; not fired when `AgentName="dashboard"`; not fired when zero memory hits (session-only results) |
+| Area | File | Status |
+|------|------|--------|
+| `WebhookService` CRUD, URL/secret/eventType validation | `service/webhook_test.go` | ✅ implemented |
+| HMAC signature correctness (known secret + body) | `service/webhook_test.go` | ✅ implemented |
+| `Deliver` is non-blocking | `service/webhook_test.go` | ✅ implemented |
+| `BuildIngestEvent` primaryId contract (single vs multi IDs) | `service/webhook_test.go` | ✅ implemented |
+| `MemoryService.Delete` emits `lifecycle.changed` | `service/webhook_test.go` | ✅ implemented |
+| `MemoryService.Update` emits `lifecycle.changed` | `service/webhook_test.go` | ✅ implemented |
+| POST/GET/DELETE HTTP status codes; secret never returned | `handler/webhook_test.go` | ✅ implemented |
+| TiDB repo CRUD: CreateIfBelowLimit, List, GetByID, Delete, Count, timestamps, limit enforcement | `repository/tidb/webhook_integration_test.go` (`-tags=integration`) | ✅ implemented |
+| Postgres repo CRUD: same coverage as TiDB | `repository/postgres/webhook_integration_test.go` (`-tags=integration`, requires `MNEMO_PG_TEST_DSN`) | ✅ implemented |
+| db9 repo construction and embedding delegation | `repository/db9/webhook_test.go` | ✅ implemented (unit only; db9 embeds postgres, full CRUD covered by postgres tests) |
+| `IngestService` emission after smart/raw ingest | — | ⚠️ not tested — ingest delivery fires in the handler goroutine after `ReconcilePhase2`; covered by architecture but no dedicated unit test |
+| Recall hook: fires on `q + non-dashboard`; suppressed on empty `q` or `AgentName=dashboard` | — | ⚠️ not tested — recall hook fires inside `listMemories` handler which requires full service stack; covered by architecture but no dedicated integration test |
 
 ---
 

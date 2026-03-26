@@ -63,7 +63,6 @@ func NewIngestService(
 	embedder *embed.Embedder,
 	autoModel string,
 	defaultMode IngestMode,
-	_ *WebhookService,
 ) *IngestService {
 	if defaultMode == "" {
 		defaultMode = ModeSmart

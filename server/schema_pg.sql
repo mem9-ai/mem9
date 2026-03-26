@@ -84,3 +84,17 @@ CREATE TRIGGER trg_memories_updated BEFORE UPDATE ON memories FOR EACH ROW EXECU
 
 DROP TRIGGER IF EXISTS trg_upload_tasks_updated ON upload_tasks;
 CREATE TRIGGER trg_upload_tasks_updated BEFORE UPDATE ON upload_tasks FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TABLE IF NOT EXISTS webhooks (
+    id           VARCHAR(36)    NOT NULL PRIMARY KEY,
+    tenant_id    VARCHAR(36)    NOT NULL,
+    url          VARCHAR(2048)  NOT NULL,
+    secret       TEXT           NOT NULL,
+    event_types  JSONB          NOT NULL,
+    created_at   TIMESTAMPTZ    DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ    DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_webhooks_tenant ON webhooks(tenant_id);
+
+DROP TRIGGER IF EXISTS trg_webhooks_updated ON webhooks;
+CREATE TRIGGER trg_webhooks_updated BEFORE UPDATE ON webhooks FOR EACH ROW EXECUTE FUNCTION update_updated_at();

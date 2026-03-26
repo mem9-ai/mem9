@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -18,6 +19,8 @@ import (
 	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/repository"
 )
+
+const maxWebhooksPerTenant = 20
 
 type WebhookService struct {
 	repo       repository.WebhookRepo
@@ -31,6 +34,9 @@ func NewWebhookService(
 	encryptor encrypt.Encryptor,
 	logger *slog.Logger,
 ) *WebhookService {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &WebhookService{
 		repo:       repo,
 		encryptor:  encryptor,
@@ -40,6 +46,9 @@ func NewWebhookService(
 }
 
 func (s *WebhookService) Create(ctx context.Context, tenantID, rawURL, secret string, eventTypes []domain.EventType) (*domain.Webhook, error) {
+	if secret == "" {
+		return nil, &domain.ValidationError{Field: "secret", Message: "required"}
+	}
 	if err := validateWebhookURL(rawURL); err != nil {
 		return nil, err
 	}
@@ -55,15 +64,22 @@ func (s *WebhookService) Create(ctx context.Context, tenantID, rawURL, secret st
 		return nil, fmt.Errorf("webhook create encrypt secret: %w", err)
 	}
 
+	now := time.Now().UTC()
 	w := &domain.Webhook{
 		ID:         uuid.New().String(),
 		TenantID:   tenantID,
 		URL:        rawURL,
 		Secret:     encrypted,
 		EventTypes: eventTypes,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
-	if err := s.repo.Create(ctx, w); err != nil {
+	inserted, err := s.repo.CreateIfBelowLimit(ctx, w, maxWebhooksPerTenant)
+	if err != nil {
 		return nil, err
+	}
+	if !inserted {
+		return nil, &domain.ValidationError{Field: "webhooks", Message: fmt.Sprintf("limit of %d webhooks per tenant reached", maxWebhooksPerTenant)}
 	}
 	w.Secret = ""
 	return w, nil
@@ -98,11 +114,13 @@ func (s *WebhookService) Deliver(tenantID string, event *domain.WebhookEvent) {
 				continue
 			}
 			hook := h
-			go func() {
-				if err := s.deliver(ctx, hook, event); err != nil {
-					s.logger.Warn("webhook deliver: send failed", "webhook_id", hook.ID, "err", err)
+			go func(h *domain.Webhook) {
+				dctx, dcancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer dcancel()
+				if err := s.deliver(dctx, h, event); err != nil {
+					s.logger.Warn("webhook deliver: send failed", "webhook_id", h.ID, "err", err)
 				}
-			}()
+			}(hook)
 		}
 	}()
 }
@@ -133,7 +151,10 @@ func (s *WebhookService) deliver(ctx context.Context, hook *domain.Webhook, even
 	if err != nil {
 		return fmt.Errorf("http post: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("non-2xx response: %d", resp.StatusCode)
@@ -152,6 +173,9 @@ func validateWebhookURL(raw string) error {
 	if raw == "" {
 		return &domain.ValidationError{Field: "url", Message: "required"}
 	}
+	if len(raw) > 2048 {
+		return &domain.ValidationError{Field: "url", Message: "too long (max 2048)"}
+	}
 	u, err := url.ParseRequestURI(raw)
 	if err != nil {
 		return &domain.ValidationError{Field: "url", Message: "invalid URL"}
@@ -163,15 +187,12 @@ func validateWebhookURL(raw string) error {
 }
 
 func validateEventTypes(types []domain.EventType) error {
+	valid := make(map[domain.EventType]struct{}, len(domain.AllEventTypes))
+	for _, t := range domain.AllEventTypes {
+		valid[t] = struct{}{}
+	}
 	for _, t := range types {
-		found := false
-		for _, valid := range domain.AllEventTypes {
-			if t == valid {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if _, ok := valid[t]; !ok {
 			return &domain.ValidationError{Field: "event_types", Message: fmt.Sprintf("unknown event type %q", t)}
 		}
 	}
@@ -281,4 +302,3 @@ func queryHash(q string) string {
 	h := sha256.Sum256([]byte(q))
 	return hex.EncodeToString(h[:])
 }
-

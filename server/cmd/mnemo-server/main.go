@@ -164,6 +164,7 @@ func main() {
 		logger,
 		cfg.WorkerConcurrency,
 		encryptor,
+		webhookSvc,
 	)
 	go func() {
 		if err := uploadWorker.Run(workerCtx); err != nil {

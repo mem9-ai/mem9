@@ -61,8 +61,9 @@ type UploadTaskRepo interface {
 
 // WebhookRepo manages webhook registrations in the control plane DB.
 type WebhookRepo interface {
-	Create(ctx context.Context, w *domain.Webhook) error
 	ListByTenant(ctx context.Context, tenantID string) ([]*domain.Webhook, error)
+	CountByTenant(ctx context.Context, tenantID string) (int, error)
+	CreateIfBelowLimit(ctx context.Context, w *domain.Webhook, limit int) (bool, error)
 	GetByID(ctx context.Context, id string) (*domain.Webhook, error)
 	Delete(ctx context.Context, id, tenantID string) error
 }

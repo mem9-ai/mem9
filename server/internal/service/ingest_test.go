@@ -343,7 +343,7 @@ func TestParseIntID(t *testing.T) {
 func TestIngestEmptyMessages(t *testing.T) {
 	t.Parallel()
 
-	svc := NewIngestService(&memoryRepoMock{}, nil, nil, "", ModeSmart, nil)
+	svc := NewIngestService(&memoryRepoMock{}, nil, nil, "", ModeSmart)
 	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{})
 	if err == nil {
 		t.Fatalf("expected validation error")
@@ -361,7 +361,7 @@ func TestIngestModeRawStoresInsight(t *testing.T) {
 	t.Parallel()
 
 	memRepo := &memoryRepoMock{}
-	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart, nil)
+	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart)
 
 	req := IngestRequest{
 		Mode:      ModeRaw,
@@ -401,7 +401,7 @@ func TestIngestNilLLMFallsBackToRaw(t *testing.T) {
 	t.Parallel()
 
 	memRepo := &memoryRepoMock{}
-	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart, nil)
+	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart)
 
 	req := IngestRequest{
 		Mode:      ModeSmart,
@@ -432,7 +432,7 @@ func TestIngestRawStripsInjectedContextWithoutLLM(t *testing.T) {
 	t.Parallel()
 
 	memRepo := &memoryRepoMock{}
-	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart, nil)
+	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart)
 
 	res, err := svc.Ingest(context.Background(), "agent-3", IngestRequest{
 		Mode:    ModeSmart,
@@ -509,7 +509,7 @@ func TestIngestStripsInjectedContextAcrossModes(t *testing.T) {
 				llmClient = llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
 			}
 
-			svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart, nil)
+			svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
 			res, err := svc.Ingest(context.Background(), "agent-strip", IngestRequest{
 				Mode:    tt.mode,
 				AgentID: "agent-strip",
@@ -590,7 +590,7 @@ func TestReconcileDeleteErrNotFoundIsNotWarning(t *testing.T) {
 		},
 	}
 
-	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart, nil)
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
 
 	res, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
 		Mode:      ModeSmart,
@@ -661,7 +661,7 @@ func TestReconcileDeleteRealErrorCountsAsWarning(t *testing.T) {
 		},
 	}
 
-	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart, nil)
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
 
 	res, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
 		Mode:      ModeSmart,
@@ -688,7 +688,7 @@ func TestReconcileDeleteRealErrorCountsAsWarning(t *testing.T) {
 func TestIngestInvalidModeReturnsValidationError(t *testing.T) {
 	t.Parallel()
 
-	svc := NewIngestService(&memoryRepoMock{}, nil, nil, "", ModeSmart, nil)
+	svc := NewIngestService(&memoryRepoMock{}, nil, nil, "", ModeSmart)
 	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
 		Mode:     IngestMode("unknown"),
 		Messages: []IngestMessage{{Role: "user", Content: "hello"}},
@@ -775,7 +775,7 @@ func TestReconcileFallbackWritesNothing(t *testing.T) {
 		},
 	}
 
-	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart, nil)
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
 
 	res, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
 		Mode:      ModeSmart,
@@ -828,7 +828,7 @@ func TestGatherExistingMemoriesFiltersLowScoreVectorResults(t *testing.T) {
 		},
 	}
 
-	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart, nil)
+	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
 
 	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"test fact"})
 	if err != nil {
@@ -859,7 +859,7 @@ func TestGatherExistingMemoriesFTSOnlyMode(t *testing.T) {
 	}
 
 	// No embedder, no autoModel — FTS-only deployment.
-	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart, nil)
+	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart)
 
 	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"Go programming", "TiDB database"})
 	if err != nil {
@@ -898,7 +898,7 @@ func TestGatherExistingMemoriesHybridDedup(t *testing.T) {
 		},
 	}
 
-	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart, nil)
+	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
 
 	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"dark mode preference"})
 	if err != nil {
@@ -931,7 +931,7 @@ func TestGatherExistingMemoriesTotalOutageReturnsError(t *testing.T) {
 		kwErr:     errors.New("connection refused"),
 	}
 
-	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart, nil)
+	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
 
 	_, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"test fact"})
 	if err == nil {
@@ -957,7 +957,7 @@ func TestGatherExistingMemoriesPartialLegFailureContinues(t *testing.T) {
 		kwErr: errors.New("FTS temporarily unavailable"),
 	}
 
-	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart, nil)
+	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
 
 	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"test fact"})
 	if err != nil {
@@ -983,7 +983,7 @@ func TestGatherExistingMemoriesFTSOnlyTotalOutage(t *testing.T) {
 	}
 
 	// No embedder, no autoModel — FTS-only deployment.
-	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart, nil)
+	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart)
 
 	_, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"test fact"})
 	if err == nil {
@@ -994,7 +994,7 @@ func TestGatherExistingMemoriesFTSOnlyTotalOutage(t *testing.T) {
 func TestReconcileContentRequiresLLM(t *testing.T) {
 	t.Parallel()
 
-	svc := NewIngestService(&memoryRepoMock{}, nil, nil, "", ModeSmart, nil)
+	svc := NewIngestService(&memoryRepoMock{}, nil, nil, "", ModeSmart)
 	_, err := svc.ReconcileContent(context.Background(), "agent", "agent", "", []string{"prefers dark mode"})
 	if err == nil {
 		t.Fatal("expected error when llm is nil")
@@ -1011,7 +1011,7 @@ func TestReconcileContentRequiresLLM(t *testing.T) {
 func TestReconcileContentValidatesInput(t *testing.T) {
 	t.Parallel()
 
-	svc := NewIngestService(&memoryRepoMock{}, nil, nil, "", ModeSmart, nil)
+	svc := NewIngestService(&memoryRepoMock{}, nil, nil, "", ModeSmart)
 	_, err := svc.ReconcileContent(context.Background(), "agent", "agent", "", nil)
 	if err == nil {
 		t.Fatal("expected validation error for empty contents")
@@ -1069,7 +1069,7 @@ func TestReconcileIncludesMemoryAge(t *testing.T) {
 		},
 	}
 
-	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart, nil)
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
 
 	res, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
 		Mode:      ModeSmart,
@@ -1148,7 +1148,7 @@ func TestReconcileOmitsAgeForZeroTimestamp(t *testing.T) {
 		},
 	}
 
-	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart, nil)
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
 
 	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
 		Mode:      ModeSmart,

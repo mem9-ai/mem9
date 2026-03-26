@@ -103,13 +103,13 @@ CREATE TABLE IF NOT EXISTS memories (
 
 -- Webhook registrations (control plane).
 CREATE TABLE IF NOT EXISTS webhooks (
-  id           VARCHAR(36)   NOT NULL PRIMARY KEY,
-  tenant_id    VARCHAR(36)   NOT NULL,
-  url          TEXT          NOT NULL,
-  secret       TEXT          NOT NULL,
-  event_types  JSON          NOT NULL,
-  created_at   TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
-  updated_at   TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  id           VARCHAR(36)    NOT NULL PRIMARY KEY,
+  tenant_id    VARCHAR(36)    NOT NULL,
+  url          VARCHAR(2048)  NOT NULL,
+  secret       TEXT           NOT NULL,
+  event_types  JSON           NOT NULL,
+  created_at   TIMESTAMP      DEFAULT CURRENT_TIMESTAMP,
+  updated_at   TIMESTAMP      DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_webhooks_tenant (tenant_id)
 );
 

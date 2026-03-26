@@ -37,7 +37,7 @@ func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, emb
 		memories:   memories,
 		embedder:   embedder,
 		autoModel:  autoModel,
-		ingest:     NewIngestService(memories, llmClient, embedder, autoModel, ingestMode, nil),
+		ingest:     NewIngestService(memories, llmClient, embedder, autoModel, ingestMode),
 		webhookSvc: webhookSvc,
 	}
 }
@@ -499,10 +499,6 @@ func (s *MemoryService) Update(ctx context.Context, tenantID, agentName, id, con
 	updated, err := s.memories.GetByID(ctx, id)
 	if err != nil {
 		current.Version++
-		if s.webhookSvc != nil {
-			eventID := uuid.New().String()
-			s.webhookSvc.Deliver(tenantID, BuildLifecycleEvent(eventID, tenantID, agentName, "update", current.ID, nil, nil))
-		}
 		return current, nil
 	}
 	if s.webhookSvc != nil {
