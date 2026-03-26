@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -266,8 +267,36 @@ func TestCreateMemory_SyncMessages_Phase1Error_Returns500(t *testing.T) {
 }
 
 func TestCreateMemory_SyncMessages_StripsInjectedContext(t *testing.T) {
+	// Mock LLM that captures request bodies to verify no injected context reaches the LLM.
+	var llmBodies []string
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyBytes, _ := io.ReadAll(r.Body)
+		llmBodies = append(llmBodies, string(bodyBytes))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":["hello world"],"message_tags":[["greeting"],["reply"]]}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
 	sessRepo := &testSessionRepo{}
-	srv := newTestServer(&testMemoryRepo{}, sessRepo)
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(&testMemoryRepo{}, nil, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(&testMemoryRepo{}, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(sessRepo, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
 
 	body := map[string]any{
 		"messages": []map[string]string{
@@ -293,6 +322,19 @@ func TestCreateMemory_SyncMessages_StripsInjectedContext(t *testing.T) {
 		}
 		if strings.Contains(sess.Content, "injected memory content") {
 			t.Errorf("session content still contains injected memory: %s", sess.Content)
+		}
+	}
+
+	// Verify LLM prompts (ExtractPhase1) don't contain injected context.
+	if len(llmBodies) == 0 {
+		t.Fatal("expected at least one LLM request, got none")
+	}
+	for i, llmBody := range llmBodies {
+		if strings.Contains(llmBody, "<relevant-memories>") {
+			t.Errorf("LLM request %d still contains injected context tag", i)
+		}
+		if strings.Contains(llmBody, "injected memory content") {
+			t.Errorf("LLM request %d still contains injected memory content", i)
 		}
 	}
 }
