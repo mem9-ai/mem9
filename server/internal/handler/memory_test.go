@@ -93,7 +93,7 @@ func (s *testSessionRepo) ListBySessionIDs(context.Context, []string, int) ([]*d
 }
 
 // newTestServer creates a Server with pre-populated svcCache for testing.
-func newTestServer() *Server {
+func newTestServer() (*Server, *testMemoryRepo, *testSessionRepo) {
 	memRepo := &testMemoryRepo{}
 	sessRepo := &testSessionRepo{}
 	srv := NewServer(nil, nil, "", nil, nil, "", false, service.ModeSmart, "", slog.Default())
@@ -106,7 +106,7 @@ func newTestServer() *Server {
 	// Key format matches resolveServices: fmt.Sprintf("db-%p", auth.TenantDB)
 	// When TenantDB is nil, %p formats as "0x0".
 	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
-	return srv
+	return srv, memRepo, sessRepo
 }
 
 // makeRequest creates an HTTP request with auth context injected.
@@ -127,7 +127,7 @@ func makeRequest(t *testing.T, method, path string, body any) *http.Request {
 }
 
 func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
-	srv := newTestServer()
+	srv, _, _ := newTestServer()
 
 	body := map[string]any{
 		"content": "test memory content",
@@ -144,7 +144,7 @@ func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
 }
 
 func TestCreateMemory_AsyncContent_Returns202(t *testing.T) {
-	srv := newTestServer()
+	srv, _, _ := newTestServer()
 
 	body := map[string]any{
 		"content": "test memory content",
@@ -168,7 +168,7 @@ func TestCreateMemory_AsyncContent_Returns202(t *testing.T) {
 }
 
 func TestCreateMemory_SyncMessages_Returns200(t *testing.T) {
-	srv := newTestServer()
+	srv, _, _ := newTestServer()
 
 	body := map[string]any{
 		"messages": []map[string]string{
@@ -189,7 +189,7 @@ func TestCreateMemory_SyncMessages_Returns200(t *testing.T) {
 }
 
 func TestCreateMemory_AsyncMessages_Returns202(t *testing.T) {
-	srv := newTestServer()
+	srv, _, _ := newTestServer()
 
 	body := map[string]any{
 		"messages": []map[string]string{
