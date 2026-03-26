@@ -1865,6 +1865,100 @@ func TestExtractFactsAlternativeKeyReturnsZero(t *testing.T) {
 	}
 }
 
+func makeFlattenedFactServer(raw string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": raw}},
+			},
+		})
+	}))
+}
+
+func TestExtractFactsFlattenedFactNoTextNoTags(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"facts":":[{",": ":", "}`
+	srv := makeFlattenedFactServer(raw)
+	defer srv.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: srv.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	_, err := svc.extractFacts(context.Background(), "User: hello")
+	if err == nil {
+		t.Fatal("expected error for unrecoverable junk response, got nil")
+	}
+}
+
+func TestExtractFactsFlattenedFactTagsOnly(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"facts":":[{","tags":["mnemos","api","testing"]}`
+	srv := makeFlattenedFactServer(raw)
+	defer srv.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: srv.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	_, err := svc.extractFacts(context.Background(), "User: hello")
+	if err == nil {
+		t.Fatal("expected error when flattened-fact has tags but no text, got nil")
+	}
+}
+
+func TestExtractFactsFlattenedFactWithText(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"facts":":[{","text":"mnemos API smoke test round-2 uses a poll loop to wait for async memory creation","tags":["mnemos","api","testing"]}`
+	srv := makeFlattenedFactServer(raw)
+	defer srv.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: srv.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	facts, err := svc.extractFacts(context.Background(), "User: hello")
+	if err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("expected 1 recovered fact, got %d", len(facts))
+	}
+	want := "mnemos API smoke test round-2 uses a poll loop to wait for async memory creation"
+	if facts[0].Text != want {
+		t.Fatalf("expected text %q, got %q", want, facts[0].Text)
+	}
+	if len(facts[0].Tags) != 3 || facts[0].Tags[0] != "mnemos" {
+		t.Fatalf("expected tags [mnemos api testing], got %v", facts[0].Tags)
+	}
+}
+
+func TestExtractPhase1FlattenedFactWithText(t *testing.T) {
+	t.Parallel()
+
+	raw := `{"facts":":[{","text":"mnemos API smoke test round-2 uses a poll loop to wait for async memory creation","tags":["mnemos","api","testing"]}`
+	srv := makeFlattenedFactServer(raw)
+	defer srv.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: srv.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	result, err := svc.ExtractPhase1(context.Background(), []IngestMessage{
+		{Role: "user", Content: "User: hello"},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+	if len(result.Facts) != 1 {
+		t.Fatalf("expected 1 recovered fact, got %d", len(result.Facts))
+	}
+	want := "mnemos API smoke test round-2 uses a poll loop to wait for async memory creation"
+	if result.Facts[0].Text != want {
+		t.Fatalf("expected text %q, got %q", want, result.Facts[0].Text)
+	}
+}
+
 func TestReconcileTagsClampedViaReconcilePath(t *testing.T) {
 	t.Parallel()
 

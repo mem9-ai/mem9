@@ -348,10 +348,14 @@ func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agen
 }
 
 // normalizeParsedFacts converts []ExtractedFact from a successful parse into a
-// clean slice, and falls back to legacy string-array format when the primary
-// parse succeeded structurally but produced no facts (which happens when the
-// model returns the old {"facts":["text"]} schema — json.Unmarshal silently
-// produces Facts:nil on a type mismatch inside a slice element).
+// clean slice, and falls back to progressively looser formats when the primary
+// parse succeeded structurally but produced no facts:
+//
+//  1. Legacy string-array: {"facts":["text"]} — json.Unmarshal silently
+//     produces Facts:nil on a type mismatch inside a slice element.
+//  2. Flattened-fact: {"facts":":[{","text":"...","tags":[...]} — a recurring
+//     model glitch where the array opening bleeds into the key's string value
+//     and the intended fact fields are emitted as top-level keys instead.
 func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
 	var out []ExtractedFact
 	for _, f := range parsed {
@@ -367,11 +371,14 @@ func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
 	if len(out) > 0 {
 		return out
 	}
+
+	cleaned := llm.StripMarkdownFences(raw)
+
+	// Fallback 1: legacy string-array {"facts":["text1","text2"]}.
 	type legacyResponse struct {
 		Facts []string `json:"facts"`
 	}
 	var legacy legacyResponse
-	cleaned := llm.StripMarkdownFences(raw)
 	if err := json.Unmarshal([]byte(cleaned), &legacy); err == nil {
 		for _, t := range legacy.Facts {
 			t = strings.TrimSpace(t)
@@ -382,6 +389,26 @@ func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
 		if len(legacy.Facts) > 0 && len(out) == 0 {
 			slog.Warn("normalizeParsedFacts: legacy facts array had entries but all were empty after trim",
 				"legacy_count", len(legacy.Facts))
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+
+	// Fallback 2: flattened-fact corruption pattern.
+	// The model emits {"facts":":[{","text":"...","tags":[...]} — "facts" is a
+	// garbage string, but the actual fact fields are top-level keys.  Recover
+	// the fact when a top-level "text" field is present.
+	type flattenedFact struct {
+		Facts interface{} `json:"facts"`
+		Text  string      `json:"text"`
+		Tags  []string    `json:"tags"`
+	}
+	var flat flattenedFact
+	if err := json.Unmarshal([]byte(cleaned), &flat); err == nil {
+		if t := strings.TrimSpace(flat.Text); t != "" {
+			slog.Warn("normalizeParsedFacts: recovered fact from flattened-fact corruption", "text", t)
+			out = append(out, ExtractedFact{Text: t, Tags: flat.Tags})
 		}
 	}
 	return out
@@ -436,7 +463,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 	lastRaw := raw
 	if err != nil {
 		raw2, retryErr := s.llm.CompleteJSON(ctx, systemPrompt,
-			"Your previous response was not valid JSON. Return ONLY the JSON object.\n\n"+userPrompt)
+			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt)
 		if retryErr != nil {
 			return nil, fmt.Errorf("extraction retry: %w", retryErr)
 		}
@@ -534,7 +561,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 	lastRaw := raw
 	if err != nil {
 		raw2, retryErr := s.llm.CompleteJSON(ctx, systemPrompt,
-			"Your previous response was not valid JSON. Return ONLY the JSON object.\n\n"+userPrompt)
+			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt)
 		if retryErr != nil {
 			return nil, nil, fmt.Errorf("extraction retry: %w", retryErr)
 		}
