@@ -19,6 +19,7 @@ type Client struct {
 	baseURL     string
 	model       string
 	temperature float64
+	debugLLM    bool
 	http        *http.Client
 }
 
@@ -27,6 +28,7 @@ type Config struct {
 	BaseURL     string
 	Model       string
 	Temperature float64
+	DebugLLM    bool
 }
 
 func New(cfg Config) *Client {
@@ -47,6 +49,7 @@ func New(cfg Config) *Client {
 		baseURL:     strings.TrimRight(cfg.BaseURL, "/"),
 		model:       cfg.Model,
 		temperature: cfg.Temperature,
+		debugLLM:    cfg.DebugLLM,
 		http: &http.Client{
 			Timeout: 120 * time.Second,
 		},
@@ -164,7 +167,15 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 		return "", fmt.Errorf("llm returned no choices")
 	}
 
-	return chatResp.Choices[0].Message.Content, nil
+	content := chatResp.Choices[0].Message.Content
+	if c.debugLLM {
+		slog.Debug("llm raw response", "model", c.model, "len", len(content), "raw", content)
+	}
+	return content, nil
+}
+
+func (c *Client) DebugLLM() bool {
+	return c.debugLLM
 }
 
 func StripMarkdownFences(s string) string {
