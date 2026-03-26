@@ -478,9 +478,15 @@ export class PixelFarmWorldRenderer {
   }
 
   update(deltaMs: number): void {
-    void this.pausedAnimalInstanceId;
+    const pausedAnimalInstanceId = this.pausedAnimalInstanceId;
 
-    for (const animal of this.animals) {
+    for (const [animalInstanceId, animal] of this.animalInstanceById.entries()) {
+      const interactionHeld = animalInstanceId === pausedAnimalInstanceId;
+      animal.setInteractionHeld(interactionHeld);
+      if (interactionHeld) {
+        continue;
+      }
+
       animal.update(deltaMs);
     }
   }

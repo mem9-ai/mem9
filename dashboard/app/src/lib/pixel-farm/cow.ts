@@ -118,6 +118,7 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
   private readonly depthBase: number;
   private cowState: PixelFarmCowState = "idle";
   private debugPoseLocked = false;
+  private interactionHeld = false;
   private stateTimerMs = 0;
   private aiThinkCooldownMs = 0;
   private loveCooldownMs = 0;
@@ -161,6 +162,12 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
       return;
     }
 
+    if (this.interactionHeld) {
+      this.setVelocity(0, 0);
+      this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
+      return;
+    }
+
     this.loveCooldownMs = Math.max(0, this.loveCooldownMs - deltaMs);
     this.roamingCollisionCooldownMs = Math.max(0, this.roamingCollisionCooldownMs - deltaMs);
     this.aiThinkCooldownMs = Math.max(0, this.aiThinkCooldownMs - deltaMs);
@@ -185,6 +192,19 @@ export class PixelFarmCow extends Phaser.Physics.Arcade.Sprite {
     }
 
     this.setDepth(pixelFarmDepthForSpriteBody(this, this.depthBase));
+  }
+
+  setInteractionHeld(held: boolean): void {
+    if (this.interactionHeld === held) {
+      return;
+    }
+
+    this.interactionHeld = held;
+    if (!held || this.debugPoseLocked) {
+      return;
+    }
+
+    this.enterTimedState("idle", randomRange(1200, 2200));
   }
 
   triggerLove(sourceX: number): void {
