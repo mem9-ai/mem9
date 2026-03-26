@@ -2884,6 +2884,8 @@ export const PIXEL_FARM_GENERATED_OBJECTS = [
   },
 ] as const;
 
+export const PIXEL_FARM_GENERATED_OBJECT_GROUPS = [] as const;
+
 export const PIXEL_FARM_GENERATED_COLLISIONS = [
   {
     id: "collision-1",

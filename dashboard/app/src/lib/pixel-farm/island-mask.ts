@@ -1,6 +1,7 @@
 import {
   PIXEL_FARM_GENERATED_COLLISIONS,
   PIXEL_FARM_GENERATED_LAYERS,
+  PIXEL_FARM_GENERATED_OBJECT_GROUPS,
   PIXEL_FARM_GENERATED_OBJECTS,
 } from "@/lib/pixel-farm/generated-mask-data";
 import type {
@@ -28,6 +29,13 @@ export interface PixelFarmObjectPlacement {
   frame: number;
   row: number;
   column: number;
+  groupId?: string;
+}
+
+export interface PixelFarmObjectGroup {
+  id: string;
+  sortRow: number;
+  sortColumn: number;
 }
 
 export interface PixelFarmCollisionCell {
@@ -130,7 +138,43 @@ function measureMask(mask: readonly string[]): PixelFarmMaskBounds {
   };
 }
 
-function normalizeObjects(layerIDs: readonly string[]): PixelFarmObjectPlacement[] {
+function normalizeObjectGroups(): PixelFarmObjectGroup[] {
+  const seen = new Set<string>();
+
+  return Array.from(PIXEL_FARM_GENERATED_OBJECT_GROUPS as readonly unknown[]).map((value, index) => {
+    const group = value as PixelFarmObjectGroup;
+    if (!group.id) {
+      throw new Error(`Pixel farm object group at index ${index} is missing an id.`);
+    }
+
+    if (seen.has(group.id)) {
+      throw new Error(`Pixel farm object group id "${group.id}" must be unique.`);
+    }
+
+    if (
+      !Number.isInteger(group.sortRow) ||
+      group.sortRow < 0 ||
+      !Number.isInteger(group.sortColumn) ||
+      group.sortColumn < 0
+    ) {
+      throw new Error(`Pixel farm object group "${group.id}" must use non-negative integer sort coordinates.`);
+    }
+
+    seen.add(group.id);
+    return {
+      id: group.id,
+      sortRow: group.sortRow,
+      sortColumn: group.sortColumn,
+    };
+  });
+}
+
+function normalizeObjects(
+  layerIDs: readonly string[],
+  objectGroups: readonly PixelFarmObjectGroup[],
+): PixelFarmObjectPlacement[] {
+  const groupIDs = new Set(objectGroups.map((group) => group.id));
+
   return Array.from(PIXEL_FARM_GENERATED_OBJECTS as readonly unknown[]).map((value, index) => {
     const object = value as {
       id: string;
@@ -139,6 +183,7 @@ function normalizeObjects(layerIDs: readonly string[]): PixelFarmObjectPlacement
       frame: number;
       row: number;
       column: number;
+      groupId?: string;
     };
     if (!object.id) {
       throw new Error(`Pixel farm object at index ${index} is missing an id.`);
@@ -152,6 +197,10 @@ function normalizeObjects(layerIDs: readonly string[]): PixelFarmObjectPlacement
       throw new Error(`Pixel farm object "${object.id}" must use non-negative coordinates.`);
     }
 
+    if (object.groupId !== undefined && !groupIDs.has(object.groupId)) {
+      throw new Error(`Pixel farm object "${object.id}" references unknown group "${object.groupId}".`);
+    }
+
     return {
       id: object.id,
       layerId: object.layerId,
@@ -159,6 +208,7 @@ function normalizeObjects(layerIDs: readonly string[]): PixelFarmObjectPlacement
       frame: object.frame,
       row: object.row,
       column: object.column,
+      groupId: object.groupId,
     };
   });
 }
@@ -201,7 +251,8 @@ export const PIXEL_FARM_ROOT_LAYER = PIXEL_FARM_LAYERS[0]!;
 export const PIXEL_FARM_MASK_COLUMNS = PIXEL_FARM_ROOT_LAYER.mask[0]?.length ?? 0;
 export const PIXEL_FARM_MASK_ROWS = PIXEL_FARM_ROOT_LAYER.mask.length;
 export const PIXEL_FARM_MASK_BOUNDS = measureMask(PIXEL_FARM_ROOT_LAYER.mask);
-export const PIXEL_FARM_OBJECTS = normalizeObjects(PIXEL_FARM_LAYER_IDS);
+export const PIXEL_FARM_OBJECT_GROUPS = normalizeObjectGroups();
+export const PIXEL_FARM_OBJECTS = normalizeObjects(PIXEL_FARM_LAYER_IDS, PIXEL_FARM_OBJECT_GROUPS);
 export const PIXEL_FARM_COLLISIONS = normalizeCollisions();
 
 export function maskHasTile(mask: readonly string[], row: number, column: number): boolean {

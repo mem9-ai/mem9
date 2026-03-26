@@ -18,6 +18,7 @@ export interface PixelFarmGeneratedLayerPayload {
 export interface PixelFarmGeneratedMaskPayload {
   layers: PixelFarmGeneratedLayerPayload[];
   objects: PixelFarmGeneratedObjectPlacement[];
+  objectGroups: PixelFarmGeneratedObjectGroup[];
   collisions: PixelFarmGeneratedCollisionCell[];
 }
 
@@ -28,6 +29,13 @@ export interface PixelFarmGeneratedObjectPlacement {
   frame: number;
   row: number;
   column: number;
+  groupId?: string;
+}
+
+export interface PixelFarmGeneratedObjectGroup {
+  id: string;
+  sortRow: number;
+  sortColumn: number;
 }
 
 export interface PixelFarmGeneratedCollisionCell {
@@ -78,7 +86,7 @@ function buildLayer(layer: PixelFarmGeneratedLayerPayload): string {
 }
 
 function buildObject(object: PixelFarmGeneratedObjectPlacement): string {
-  return [
+  const lines = [
     "  {",
     `    id: ${quote(object.id)},`,
     `    layerId: ${quote(object.layerId)},`,
@@ -86,6 +94,22 @@ function buildObject(object: PixelFarmGeneratedObjectPlacement): string {
     `    frame: ${object.frame},`,
     `    row: ${object.row},`,
     `    column: ${object.column},`,
+  ];
+
+  if (object.groupId) {
+    lines.push(`    groupId: ${quote(object.groupId)},`);
+  }
+
+  lines.push("  },");
+  return lines.join("\n");
+}
+
+function buildObjectGroup(group: PixelFarmGeneratedObjectGroup): string {
+  return [
+    "  {",
+    `    id: ${quote(group.id)},`,
+    `    sortRow: ${group.sortRow},`,
+    `    sortColumn: ${group.sortColumn},`,
     "  },",
   ].join("\n");
 }
@@ -110,6 +134,10 @@ export function buildPixelFarmGeneratedMaskSource(
     "",
     "export const PIXEL_FARM_GENERATED_OBJECTS = [",
     ...payload.objects.map(buildObject),
+    "] as const;",
+    "",
+    "export const PIXEL_FARM_GENERATED_OBJECT_GROUPS = [",
+    ...payload.objectGroups.map(buildObjectGroup),
     "] as const;",
     "",
     "export const PIXEL_FARM_GENERATED_COLLISIONS = [",
