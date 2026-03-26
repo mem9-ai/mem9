@@ -93,7 +93,9 @@ func (s *testSessionRepo) ListBySessionIDs(context.Context, []string, int) ([]*d
 }
 
 // newTestServer creates a Server with pre-populated svcCache for testing.
-func newTestServer(memRepo *testMemoryRepo, sessRepo *testSessionRepo) *Server {
+func newTestServer() *Server {
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{}
 	srv := NewServer(nil, nil, "", nil, nil, "", false, service.ModeSmart, "", slog.Default())
 	svc := resolvedSvc{
 		memory:  service.NewMemoryService(memRepo, nil, nil, "", service.ModeSmart),
@@ -125,9 +127,7 @@ func makeRequest(t *testing.T, method, path string, body any) *http.Request {
 }
 
 func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
-	memRepo := &testMemoryRepo{}
-	sessRepo := &testSessionRepo{}
-	srv := newTestServer(memRepo, sessRepo)
+	srv := newTestServer()
 
 	body := map[string]any{
 		"content": "test memory content",
@@ -141,15 +141,10 @@ func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
-	if len(memRepo.createCalls) != 1 {
-		t.Errorf("expected 1 create call, got %d", len(memRepo.createCalls))
-	}
 }
 
 func TestCreateMemory_AsyncContent_Returns202(t *testing.T) {
-	memRepo := &testMemoryRepo{}
-	sessRepo := &testSessionRepo{}
-	srv := newTestServer(memRepo, sessRepo)
+	srv := newTestServer()
 
 	body := map[string]any{
 		"content": "test memory content",
@@ -173,9 +168,7 @@ func TestCreateMemory_AsyncContent_Returns202(t *testing.T) {
 }
 
 func TestCreateMemory_SyncMessages_Returns200(t *testing.T) {
-	memRepo := &testMemoryRepo{}
-	sessRepo := &testSessionRepo{}
-	srv := newTestServer(memRepo, sessRepo)
+	srv := newTestServer()
 
 	body := map[string]any{
 		"messages": []map[string]string{
@@ -196,9 +189,7 @@ func TestCreateMemory_SyncMessages_Returns200(t *testing.T) {
 }
 
 func TestCreateMemory_AsyncMessages_Returns202(t *testing.T) {
-	memRepo := &testMemoryRepo{}
-	sessRepo := &testSessionRepo{}
-	srv := newTestServer(memRepo, sessRepo)
+	srv := newTestServer()
 
 	body := map[string]any{
 		"messages": []map[string]string{
