@@ -93,9 +93,7 @@ func (s *testSessionRepo) ListBySessionIDs(context.Context, []string, int) ([]*d
 }
 
 // newTestServer creates a Server with pre-populated svcCache for testing.
-func newTestServer() (*Server, *testMemoryRepo, *testSessionRepo) {
-	memRepo := &testMemoryRepo{}
-	sessRepo := &testSessionRepo{}
+func newTestServer(memRepo *testMemoryRepo, sessRepo *testSessionRepo) *Server {
 	srv := NewServer(nil, nil, "", nil, nil, "", false, service.ModeSmart, "", slog.Default())
 	svc := resolvedSvc{
 		memory:  service.NewMemoryService(memRepo, nil, nil, "", service.ModeSmart),
@@ -106,7 +104,7 @@ func newTestServer() (*Server, *testMemoryRepo, *testSessionRepo) {
 	// Key format matches resolveServices: fmt.Sprintf("db-%p", auth.TenantDB)
 	// When TenantDB is nil, %p formats as "0x0".
 	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
-	return srv, memRepo, sessRepo
+	return srv
 }
 
 // makeRequest creates an HTTP request with auth context injected.
@@ -127,7 +125,7 @@ func makeRequest(t *testing.T, method, path string, body any) *http.Request {
 }
 
 func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
-	srv, _, _ := newTestServer()
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
 
 	body := map[string]any{
 		"content": "test memory content",
@@ -144,7 +142,7 @@ func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
 }
 
 func TestCreateMemory_AsyncContent_Returns202(t *testing.T) {
-	srv, _, _ := newTestServer()
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
 
 	body := map[string]any{
 		"content": "test memory content",
@@ -168,7 +166,7 @@ func TestCreateMemory_AsyncContent_Returns202(t *testing.T) {
 }
 
 func TestCreateMemory_SyncMessages_Returns200(t *testing.T) {
-	srv, _, _ := newTestServer()
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
 
 	body := map[string]any{
 		"messages": []map[string]string{
@@ -189,7 +187,7 @@ func TestCreateMemory_SyncMessages_Returns200(t *testing.T) {
 }
 
 func TestCreateMemory_AsyncMessages_Returns202(t *testing.T) {
-	srv, _, _ := newTestServer()
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
 
 	body := map[string]any{
 		"messages": []map[string]string{
