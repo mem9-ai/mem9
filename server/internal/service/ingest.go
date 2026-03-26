@@ -392,6 +392,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
+			slog.Error("json parse llm resp failed", "len", len(raw2), "err", err)
 			return nil, fmt.Errorf("extraction parse after retry: %w", err)
 		}
 	}
@@ -483,6 +484,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
+			slog.Error("json parse llm resp failed", "len", len(raw2), "err", err)
 			return nil, nil, fmt.Errorf("extraction parse after retry: %w", err)
 		}
 	}
@@ -855,7 +857,7 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 
 		// If neither leg succeeded for this fact, log it clearly.
 		if !vecLegOK && kwErr != nil {
-			slog.Error("gatherExistingMemories: both search legs failed for fact", "fact_len", len(fact))
+			slog.Error("gatherExistingMemories: both search legs failed for fact", "fact_len", len(fact), "err", kwErr)
 		}
 	}
 

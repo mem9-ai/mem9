@@ -1,6 +1,15 @@
 ---
 title: "Proposal: GET /session-messages Batch Read API (Issue #110)"
+status: implemented
+created: 2026-03-19
+last_updated: 2026-03-25
 ---
+
+> **STATUS: IMPLEMENTED** (PR #114)
+> `handleListSessionMessages`, `sessionMessageResponse` DTO, `dedupStrings`,
+> `ListBySessionIDs` on `SessionRepo`/`SessionService`, `stubSessionRepo`,
+> and `ErrNotSupported` → HTTP 501 mapping are all in place.
+> Routes registered on both `v1alpha1` and `v1alpha2`.
 
 ## Problem
 

@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/embed"
+	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/llm"
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/tenant"
@@ -59,6 +60,7 @@ type UploadWorker struct {
 	logger       *slog.Logger
 	pollInterval time.Duration
 	concurrency  int
+	encryptor    encrypt.Encryptor
 }
 
 // NewUploadWorker creates a new UploadWorker.
@@ -73,6 +75,7 @@ func NewUploadWorker(
 	mode IngestMode,
 	logger *slog.Logger,
 	concurrency int,
+	encryptor encrypt.Encryptor,
 ) *UploadWorker {
 	if logger == nil {
 		logger = slog.Default()
@@ -92,6 +95,7 @@ func NewUploadWorker(
 		logger:       logger,
 		pollInterval: 5 * time.Second,
 		concurrency:  concurrency,
+		encryptor:    encryptor,
 	}
 }
 
@@ -160,6 +164,19 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 		// Use parent ctx for failTask so status update succeeds even after timeout
 		return w.failTask(ctx, task, fmt.Errorf("resolve tenant: %w", err), logger)
 	}
+
+	// Decrypt password before using
+	decryptedPassword, err := w.encryptor.Decrypt(taskCtx, tenantInfo.DBPassword)
+	if err != nil {
+		// Decrypt failure may be due to encryption type change - don't delete file
+		// so operator can fix config and retry
+		if updateErr := w.tasks.UpdateStatus(ctx, task.TaskID, domain.TaskFailed, fmt.Sprintf("decrypt tenant password: %v", err)); updateErr != nil {
+			logger.Error("failed to update upload task status", "task_id", task.TaskID, "err", updateErr)
+		}
+		logger.Error("upload task failed: decrypt error (file retained for retry)", "task_id", task.TaskID, "err", err)
+		return fmt.Errorf("decrypt tenant password: %w", err)
+	}
+	tenantInfo.DBPassword = decryptedPassword
 
 	db, err := w.pool.Get(taskCtx, tenantInfo.ID, tenantInfo.DSNForBackend(w.pool.Backend()))
 	if err != nil {

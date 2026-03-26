@@ -11,7 +11,7 @@ Research teams have produced numerous memory benchmarks for chatbots, but their 
 - **Dataset mirroring (`fetch_data.py`)** – keeps a local `origin/` mirror of MiniMax’s MR-NIAH dumps.
 - **Transcript bridge (`mr-niah-transcript.py`)** – rewrites raw turns into OpenClaw `session` JSON plus an `index`.
 - **Batch execution (`run_batch.py`)** – rehydrates sessions into a profile, calls `openclaw agent`, and stores `results/`.
-- **Comparison runner (`run_mem_compare.sh`)** – clones the baseline profile, installs the mem9 plugin, provisions a fresh mem9 space on the hosted mem9 API (or another configured mem9 endpoint), runs both profiles, and prints accuracy deltas.
+- **Comparison runner (`run_mem_compare.sh`)** – clones the baseline profile, installs the mem9 plugin, provisions a fresh mem9 space on the hosted mem9 API (or another configured mem9 endpoint), runs both profiles, prints accuracy deltas, and (on successful full comparisons) writes a tar.gz archive containing results + logs. Supports `--model` / `--compact`, plus managed profiles (template + `.env`) to avoid baseline/mem drift; defaults to `benchmark/MR-NIAH/config/openclaw/`.
 - **Scoring (`score.py`)** – invokes the MR-NIAH exact-match rubric so downstream results remain comparable to prior papers.
 
 Directory layout, helper scripts, and agent responsibilities are summarized below:

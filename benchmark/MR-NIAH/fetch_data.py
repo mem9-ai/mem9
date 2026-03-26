@@ -20,7 +20,9 @@ import argparse
 import fnmatch
 import hashlib
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Iterable, List, Sequence
 from urllib.error import HTTPError, URLError
@@ -170,10 +172,10 @@ def sha256_for_file(path: Path) -> str:
     return hasher.hexdigest()
 
 
-def download_file(url: str, dest: Path, force: bool, label: str) -> None:
+def download_file(url: str, dest: Path, force: bool, label: str) -> bool:
     if dest.exists() and not force:
         print(f"  - Skipping {label} (already exists)")
-        return
+        return False
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     print(f"  - Downloading {url} → {label}")
@@ -190,11 +192,59 @@ def download_file(url: str, dest: Path, force: bool, label: str) -> None:
     except URLError as exc:
         dest.unlink(missing_ok=True)
         raise RuntimeError(f"Network error for {url}: {exc.reason}") from exc
+    return True
 
 
 def list_manifest() -> None:
     data = {lang: paths for lang, paths in MANIFEST.items()}
     print(json.dumps(data, indent=2))
+
+
+def invalid_jsonl_lines(path: Path) -> List[int]:
+    invalid: List[int] = []
+    with path.open("rb") as fh:
+        for line_number, raw_line in enumerate(fh, start=1):
+            try:
+                line = raw_line.decode("utf-8")
+            except UnicodeDecodeError:
+                invalid.append(line_number)
+                continue
+
+            try:
+                json.loads(line)
+            except Exception:
+                invalid.append(line_number)
+    return invalid
+
+
+def sanitize_jsonl_file(path: Path) -> List[int]:
+    invalid_lines = invalid_jsonl_lines(path)
+    if not invalid_lines:
+        return []
+
+    invalid_lookup = set(invalid_lines)
+    tmp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "wb",
+            delete=False,
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+
+        with path.open("rb") as src, tmp_path.open("wb") as dst:
+            for line_number, raw_line in enumerate(src, start=1):
+                if line_number in invalid_lookup:
+                    continue
+                dst.write(raw_line)
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+
+    return invalid_lines
 
 
 def parse_args() -> argparse.Namespace:
@@ -219,6 +269,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true", help="Print actions without downloading")
     parser.add_argument("--list", action="store_true", help="Print the built-in manifest and exit")
     parser.add_argument("--checksum", action="store_true", help="After download, print SHA-256 digests")
+    parser.add_argument(
+        "--sanitize-jsonl",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="After download, remove invalid JSON lines from .jsonl files (default: on)",
+    )
+    parser.add_argument(
+        "--sanitize-existing",
+        action="store_true",
+        help="Sanitize even when a file is skipped because it already exists",
+    )
     return parser.parse_args()
 
 
@@ -264,10 +325,20 @@ def main() -> int:
         target = dest_root / relative_dest(path)
         label = display_path(dest_root, target)
         try:
-            download_file(url, target, args.force, label)
+            downloaded = download_file(url, target, args.force, label)
         except RuntimeError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
+
+        if (
+            args.sanitize_jsonl
+            and target.suffix == ".jsonl"
+            and target.exists()
+            and (downloaded or args.sanitize_existing)
+        ):
+            invalid_lines = sanitize_jsonl_file(target)
+            for line_number in invalid_lines:
+                print(f"    removed invalid json: {label}:{line_number}")
         if args.checksum:
             digest = sha256_for_file(target)
             print(f"    sha256({label}) = {digest}")

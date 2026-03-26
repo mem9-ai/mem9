@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/tenant"
@@ -21,6 +22,7 @@ type TenantService struct {
 	autoModel   string
 	autoDims    int
 	ftsEnabled  bool
+	encryptor   encrypt.Encryptor
 }
 
 func NewTenantService(
@@ -31,6 +33,7 @@ func NewTenantService(
 	autoModel string,
 	autoDims int,
 	ftsEnabled bool,
+	encryptor encrypt.Encryptor,
 ) *TenantService {
 	return &TenantService{
 		tenants:     tenants,
@@ -40,6 +43,7 @@ func NewTenantService(
 		autoModel:   autoModel,
 		autoDims:    autoDims,
 		ftsEnabled:  ftsEnabled,
+		encryptor:   encryptor,
 	}
 }
 
@@ -74,6 +78,13 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 		return nil, fmt.Errorf("provision cluster: %w", err)
 	}
 
+	// Encrypt password before storing
+	encryptedPassword, err := s.encryptor.Encrypt(ctx, info.Password)
+	if err != nil {
+		metrics.ProvisionTotal.WithLabelValues("error").Inc()
+		return nil, fmt.Errorf("encrypt tenant password: %w", err)
+	}
+
 	// Build tenant record
 	t := &domain.Tenant{
 		ID:             info.ID,
@@ -81,7 +92,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 		DBHost:         info.Host,
 		DBPort:         info.Port,
 		DBUser:         info.Username,
-		DBPassword:     info.Password,
+		DBPassword:     encryptedPassword,
 		DBName:         info.DBName,
 		DBTLS:          true,
 		Provider:       providerType,
@@ -107,7 +118,10 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	metrics.ProvisionStepDuration.WithLabelValues("create_tenant_record").Observe(elapsed.Seconds())
 
 	// Get DB connection for schema initialization
-	db, err := s.pool.Get(ctx, info.ID, t.DSNForBackend(s.pool.Backend()))
+	// Use plaintext password for DSN (DBPassword in t is encrypted for storage)
+	plainTenant := *t
+	plainTenant.DBPassword = info.Password
+	db, err := s.pool.Get(ctx, info.ID, plainTenant.DSNForBackend(s.pool.Backend()))
 	if err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		return nil, fmt.Errorf("get tenant db: %w", err)
@@ -159,6 +173,13 @@ func (s *TenantService) GetInfo(ctx context.Context, tenantID string) (*domain.T
 	if err != nil {
 		return nil, err
 	}
+
+	// Decrypt password before using
+	decryptedPassword, err := s.encryptor.Decrypt(ctx, t.DBPassword)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt tenant password for %s: %w", tenantID, err)
+	}
+	t.DBPassword = decryptedPassword
 
 	if s.pool == nil {
 		return nil, fmt.Errorf("tenant pool not configured")

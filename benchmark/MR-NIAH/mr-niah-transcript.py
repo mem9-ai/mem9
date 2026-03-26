@@ -51,7 +51,8 @@ INDEX_PATH = OUTPUT / "index.jsonl"
 DEFAULT_PROVIDER = "import"
 DEFAULT_API = "import"
 DEFAULT_MODEL = "import"
-DEFAULT_STOP_REASON = "import"
+# Match pi-ai StopReason semantics; "import" is not a stop reason.
+DEFAULT_STOP_REASON = "stop"
 
 LANG_CHOICES = ("chinese", "english")
 TOKEN_BUCKETS = [
@@ -194,8 +195,18 @@ def gather_inputs(positionals: Sequence[str], extras: Sequence[str], lang_choice
 
 
 def _build_token_counter():
-    if tiktoken is None:  # module unavailable -> always zero
-        return lambda text: 0
+    def _heuristic(text: str) -> int:
+        # pi-coding-agent uses a conservative chars/4 heuristic for compaction.
+        # Use it as a fallback when tiktoken isn't available.
+        return (len(text) + 3) // 4
+
+    if tiktoken is None:
+        print(
+            "WARNING: tiktoken not available; falling back to chars/4 token estimates. "
+            "Install tiktoken for more accurate counts.",
+            file=sys.stderr,
+        )
+        return _heuristic
 
     encoding = None
     try:
@@ -207,13 +218,17 @@ def _build_token_counter():
             encoding = None
 
     if encoding is None:
-        return lambda text: 0
+        print(
+            "WARNING: failed to initialize tiktoken; falling back to chars/4 token estimates.",
+            file=sys.stderr,
+        )
+        return _heuristic
 
     def _count(text: str) -> int:
         try:
             return len(encoding.encode(text))
         except Exception:
-            return 0
+            return _heuristic(text)
 
     return _count
 
@@ -221,22 +236,19 @@ def _build_token_counter():
 count_tokens = _build_token_counter()
 
 
-def make_usage(role: str, token_count: int) -> Dict[str, Any]:
-    # Attribute tokens to either input (user) or output (assistant) to mimic LLM APIs.
-    input_tokens = token_count if role == "user" else 0
-    output_tokens = token_count if role == "assistant" else 0
+def make_usage_snapshot(*, input_tokens: int, output_tokens: int) -> Dict[str, Any]:
     usage = {
-        "input": input_tokens,
-        "output": output_tokens,
+        "input": int(max(0, input_tokens)),
+        "output": int(max(0, output_tokens)),
         "cacheRead": 0,
         "cacheWrite": 0,
-        "totalTokens": token_count,
+        "totalTokens": int(max(0, input_tokens) + max(0, output_tokens)),
         "cost": {
-            "input": 0.0,
-            "output": 0.0,
-            "cacheRead": 0.0,
-            "cacheWrite": 0.0,
-            "total": 0.0,
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0,
         },
     }
     return usage
@@ -260,25 +272,61 @@ def make_session_header(session_id: str, ts: str) -> Dict[str, Any]:
     return {"type": "session", "version": 3, "id": session_id, "timestamp": ts, "cwd": "/"}
 
 
-def make_message_entry(entry_id: str, parent_id: Optional[str], ts: str, role: str, text: str) -> Dict[str, Any]:
+def make_message_entry(
+    entry_id: str,
+    parent_id: Optional[str],
+    ts_iso: str,
+    ts_ms: int,
+    role: str,
+    text: str,
+    *,
+    usage_mode: str,
+    prompt_tokens: int,
+) -> Dict[str, Any]:
     token_count = count_tokens(text)
 
-    return {
+    base: Dict[str, Any] = {
         "type": "message",
         "id": entry_id,
         "parentId": parent_id,
-        "timestamp": ts,
-        "message": {
-            "role": role,
+        "timestamp": ts_iso,
+    }
+
+    if role == "user":
+        # pi-ai user messages support either a plain string or a [{type:"text"}] list.
+        # Keep the block form for better compatibility with transcript consumers.
+        base["message"] = {
+            "role": "user",
+            "content": [{"type": "text", "text": text}],
+            "timestamp": int(ts_ms),
+        }
+        # Real OpenClaw transcripts generally only have usage snapshots on assistant messages
+        # (LLM calls), so per-call mode leaves user entries without usage.
+        if usage_mode == "per-message":
+            base["usage"] = make_usage_snapshot(input_tokens=token_count, output_tokens=0)
+        return base
+
+    if role == "assistant":
+        if usage_mode == "per-call":
+            usage = make_usage_snapshot(input_tokens=prompt_tokens, output_tokens=token_count)
+        elif usage_mode == "per-message":
+            usage = make_usage_snapshot(input_tokens=0, output_tokens=token_count)
+        else:
+            raise ValueError(f"unsupported usage_mode: {usage_mode}")
+
+        base["message"] = {
+            "role": "assistant",
             "content": [{"type": "text", "text": text}],
             "api": DEFAULT_API,
             "provider": DEFAULT_PROVIDER,
             "model": DEFAULT_MODEL,
-            "usage": make_usage(role, token_count),
+            "usage": usage,
             "stopReason": DEFAULT_STOP_REASON,
-            "timestamp": ts,
-        },
-    }
+            "timestamp": int(ts_ms),
+        }
+        return base
+
+    raise ValueError(f"unsupported role: {role}")
 
 
 def read_transcript(path: Path) -> List[Dict[str, Any]]:
@@ -441,36 +489,69 @@ def validate_transcript(lines: List[Dict[str, Any]]) -> None:
         msg = entry.get("message")
         if not isinstance(msg, dict):
             raise ValueError(f"missing message at line {i}")
-        if msg.get("role") not in ("user", "assistant"):
-            raise ValueError(f"bad role at line {i}: {msg.get('role')}")
+        role = msg.get("role")
+        if role not in ("user", "assistant"):
+            raise ValueError(f"bad role at line {i}: {role!r}")
 
+        ts_ms = msg.get("timestamp")
+        if not isinstance(ts_ms, int):
+            raise ValueError(f"message.timestamp must be int(ms) at line {i}")
+
+        if role == "user":
+            # pi-ai user message: { role, content: string, timestamp:number }
+            content = msg.get("content")
+            if isinstance(content, str):
+                if not content:
+                    raise ValueError(f"user content missing/invalid at line {i}")
+            elif isinstance(content, list):
+                if not content:
+                    raise ValueError(f"user content missing/invalid at line {i}")
+                for chunk in content:
+                    if not isinstance(chunk, dict):
+                        raise ValueError(f"user content chunk invalid at line {i}")
+                    if chunk.get("type") != "text" or not isinstance(chunk.get("text"), str):
+                        raise ValueError(f"user content chunk missing text at line {i}")
+            else:
+                raise ValueError(f"user content missing/invalid at line {i}")
+
+            # Optional token snapshot may be stored on the entry (not on the user message).
+            usage = entry.get("usage")
+            if usage is not None:
+                if not isinstance(usage, dict):
+                    raise ValueError(f"entry.usage invalid at line {i}")
+                if "totalTokens" not in usage or not isinstance(usage["totalTokens"], int):
+                    raise ValueError(f"entry.usage.totalTokens missing/invalid at line {i}")
+            prev = eid
+            continue
+
+        # assistant
         if not isinstance(msg.get("content"), list) or not msg["content"]:
-            raise ValueError(f"content missing/invalid at line {i}")
+            raise ValueError(f"assistant content missing/invalid at line {i}")
         for chunk in msg["content"]:
             if not isinstance(chunk, dict):
-                raise ValueError(f"content chunk invalid at line {i}")
+                raise ValueError(f"assistant content chunk invalid at line {i}")
             if chunk.get("type") != "text" or not isinstance(chunk.get("text"), str):
-                raise ValueError(f"content chunk missing text at line {i}")
+                raise ValueError(f"assistant content chunk missing text at line {i}")
 
-        for key in ("api", "provider", "model", "stopReason", "timestamp"):
+        for key in ("api", "provider", "model", "stopReason"):
             if not isinstance(msg.get(key), str):
-                raise ValueError(f"missing {key} at line {i}")
+                raise ValueError(f"missing assistant {key} at line {i}")
 
         usage = msg.get("usage")
         if not isinstance(usage, dict):
-            raise ValueError(f"missing usage at line {i}")
+            raise ValueError(f"assistant usage missing/invalid at line {i}")
         for field in ("input", "output", "cacheRead", "cacheWrite"):
             if field not in usage:
-                raise ValueError(f"usage missing {field} at line {i}")
+                raise ValueError(f"assistant usage missing {field} at line {i}")
         if "totalTokens" not in usage or not isinstance(usage["totalTokens"], int):
-            raise ValueError(f"usage.totalTokens missing/invalid at line {i}")
+            raise ValueError(f"assistant usage.totalTokens missing/invalid at line {i}")
 
         cost = usage.get("cost")
         if not isinstance(cost, dict):
-            raise ValueError(f"usage.cost missing at line {i}")
+            raise ValueError(f"assistant usage.cost missing/invalid at line {i}")
         for field in ("input", "output", "cacheRead", "cacheWrite", "total"):
             if field not in cost:
-                raise ValueError(f"usage.cost missing {field} at line {i}")
+                raise ValueError(f"assistant usage.cost missing {field} at line {i}")
 
         prev = eid
 
@@ -503,7 +584,41 @@ def main() -> int:
         help="Token buckets to load (e.g. 10240 20480 or 'all').",
     )
     ap.add_argument("--limit", type=int, default=0, help="Stop after N samples (0 = all)")
+    ap.add_argument(
+        "--output-dir",
+        default="",
+        help="Write outputs under this directory (expects <dir>/sessions/ and <dir>/index.jsonl). Default: benchmark/MR-NIAH/output/",
+    )
+    ap.add_argument(
+        "--usage-mode",
+        choices=["per-call", "per-message"],
+        default="per-call",
+        help="Usage snapshot style: per-call mimics real OpenClaw (assistant usage grows with context); per-message is legacy/import style.",
+    )
+    ap.add_argument(
+        "--base-prompt-tokens",
+        type=int,
+        default=0,
+        help="Fixed prompt token baseline added to every assistant call usage.input (approx system prompt + tooling).",
+    )
+    ap.add_argument(
+        "--message-overhead-tokens",
+        type=int,
+        default=0,
+        help="Extra tokens to add per message when estimating call prompt size (approx chat serialization overhead).",
+    )
     args = ap.parse_args()
+
+    output_dir = (args.output_dir or "").strip()
+    if output_dir:
+        p = Path(output_dir).expanduser()
+        if not p.is_absolute():
+            p = (HERE / p)
+        out_path = p.resolve()
+        global OUTPUT, SESS_DIR, INDEX_PATH
+        OUTPUT = out_path
+        SESS_DIR = OUTPUT / "sessions"
+        INDEX_PATH = OUTPUT / "index.jsonl"
 
     inputs = gather_inputs(args.inputs, args.extra_inputs, args.lang, args.tokens)
 
@@ -539,12 +654,31 @@ def main() -> int:
 
                 parent = None
                 current_dt = base_dt
+                # Best-effort: approximate prompt growth by summing tokenized message text.
+                # This yields monotonically increasing assistant usage.totalTokens until compaction.
+                base_prompt_tokens = max(0, int(args.base_prompt_tokens))
+                overhead_tokens = max(0, int(args.message_overhead_tokens))
+                context_tokens = 0
                 for idx, (role, text_value) in enumerate(history, start=1):
                     current_dt = current_dt + _dt.timedelta(seconds=1)
                     eid = short_hex(idx, salt)
-                    ts = isoformat_utc(current_dt)
-                    entries.append(make_message_entry(eid, parent, ts, role, text_value))
+                    ts_iso = isoformat_utc(current_dt)
+                    ts_ms = int(current_dt.timestamp() * 1000)
+                    prompt_tokens = base_prompt_tokens + context_tokens
+                    entries.append(
+                        make_message_entry(
+                            eid,
+                            parent,
+                            ts_iso,
+                            ts_ms,
+                            role,
+                            text_value,
+                            usage_mode=str(args.usage_mode),
+                            prompt_tokens=prompt_tokens,
+                        )
+                    )
                     parent = eid
+                    context_tokens += count_tokens(text_value) + overhead_tokens
 
                 validate_transcript(entries)
 

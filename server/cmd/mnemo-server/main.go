@@ -11,6 +11,7 @@ import (
 
 	"github.com/qiffang/mnemos/server/internal/config"
 	"github.com/qiffang/mnemos/server/internal/embed"
+	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/handler"
 	"github.com/qiffang/mnemos/server/internal/llm"
 	"github.com/qiffang/mnemos/server/internal/middleware"
@@ -38,6 +39,12 @@ func main() {
 	}
 	defer db.Close()
 	logger.Info("database connected", "backend", cfg.DBBackend)
+
+	// Warn if encryption type is non-default — changing this later breaks existing tenants.
+	if cfg.EncryptType != "" && cfg.EncryptType != "plain" {
+		logger.Warn("MNEMO_ENCRYPT_TYPE is non-plain; ensure this matches your deployment's initial configuration. Changing encryption type on existing tenants will cause failures.",
+			"encrypt_type", cfg.EncryptType)
+	}
 
 	// Embedder (nil if not configured → keyword-only search).
 	embedder := embed.New(embed.Config{
@@ -71,6 +78,17 @@ func main() {
 	} else {
 		logger.Info("no LLM configured, ingest will use raw mode")
 	}
+
+	// Encryption for sensitive data.
+	encryptor, err := encrypt.New(encrypt.Config{
+		Type: encrypt.Type(cfg.EncryptType),
+		Key:  cfg.EncryptKey,
+	})
+	if err != nil {
+		logger.Error("failed to create encryptor", "err", err)
+		os.Exit(1)
+	}
+	logger.Info("encryption configured", "type", cfg.EncryptType)
 
 	// Repositories.
 	tenantRepo := repository.NewTenantRepo(cfg.DBBackend, db)
@@ -108,11 +126,11 @@ func main() {
 		logger.Info("no provisioner configured (pre-existing tenants mode)")
 	}
 
-	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled)
+	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled, encryptor)
 
 	// Middleware.
-	tenantMW := middleware.ResolveTenant(tenantRepo, tenantPool)
-	apiKeyMW := middleware.ResolveApiKey(tenantRepo, tenantPool)
+	tenantMW := middleware.ResolveTenant(tenantRepo, tenantPool, encryptor)
+	apiKeyMW := middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor)
 	rl := middleware.NewRateLimiter(cfg.RateLimit, cfg.RateBurst)
 	defer rl.Stop()
 	rateMW := rl.Middleware()
@@ -143,6 +161,7 @@ func main() {
 		service.IngestMode(cfg.IngestMode),
 		logger,
 		cfg.WorkerConcurrency,
+		encryptor,
 	)
 	go func() {
 		if err := uploadWorker.Run(workerCtx); err != nil {

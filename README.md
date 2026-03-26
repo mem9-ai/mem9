@@ -131,6 +131,8 @@ Agent identity: `X-Mnemo-Agent-Id` header.
 | `MNEMO_EMBED_BASE_URL` | No | OpenAI | Custom embedding endpoint |
 | `MNEMO_EMBED_MODEL` | No | `text-embedding-3-small` | Model name |
 | `MNEMO_EMBED_DIMS` | No | `1536` | Vector dimensions |
+| `MNEMO_ENCRYPT_TYPE` | No | `plain` | Encryption type for tenant DB passwords: `plain`, `md5`, or `kms`. ⚠️ **One-time deployment decision — cannot be changed without re-provisioning all tenants.** |
+| `MNEMO_ENCRYPT_KEY` | No | — | Encryption key (for `md5`) or KMS key ID (for `kms`). Required when `MNEMO_ENCRYPT_TYPE` is not `plain`. |
 
 ### Build & Run
 

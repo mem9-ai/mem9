@@ -13,7 +13,10 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/tenant"
 )
 
@@ -83,7 +86,8 @@ func TestResolveApiKey_MissingHeader(t *testing.T) {
 	pool := tenant.NewPool(tenant.PoolConfig{Backend: "tidb"})
 	defer pool.Close()
 
-	mw := ResolveApiKey(stubTenantRepo{}, pool)
+	enc := encrypt.NewPlainEncryptor()
+	mw := ResolveApiKey(stubTenantRepo{}, pool, enc)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")
 	}))
@@ -104,7 +108,8 @@ func TestResolveApiKey_InvalidKey(t *testing.T) {
 	pool := tenant.NewPool(tenant.PoolConfig{Backend: "tidb"})
 	defer pool.Close()
 
-	mw := ResolveApiKey(stubTenantRepo{}, pool)
+	enc := encrypt.NewPlainEncryptor()
+	mw := ResolveApiKey(stubTenantRepo{}, pool, enc)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")
 	}))
@@ -135,7 +140,8 @@ func TestResolveApiKey_InactiveTenant(t *testing.T) {
 		},
 	}
 
-	mw := ResolveApiKey(repo, pool)
+	enc := encrypt.NewPlainEncryptor()
+	mw := ResolveApiKey(repo, pool, enc)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")
 	}))
@@ -175,7 +181,8 @@ func TestResolveApiKey_PopulatesAuthInfo(t *testing.T) {
 		},
 	}
 
-	mw := ResolveApiKey(repo, pool)
+	enc := encrypt.NewPlainEncryptor()
+	mw := ResolveApiKey(repo, pool, enc)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		info := AuthFromContext(r.Context())
 		if info == nil {
@@ -201,6 +208,204 @@ func TestResolveApiKey_PopulatesAuthInfo(t *testing.T) {
 
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNoContent)
+	}
+}
+
+func TestResolveApiKey_MD5Encryptor_DecryptsPassword(t *testing.T) {
+	pool := tenant.NewPool(tenant.PoolConfig{Backend: "tidb"})
+	defer pool.Close()
+
+	db := sql.OpenDB(pingOKConnector{})
+	defer db.Close()
+	cacheTenantDB(t, pool, "tenant-1", db)
+
+	enc := encrypt.NewMD5Encryptor("test-key")
+	password := "db-secret-password"
+	encryptedPassword, err := enc.Encrypt(context.Background(), password)
+	if err != nil {
+		t.Fatalf("failed to encrypt password: %v", err)
+	}
+
+	repo := stubTenantRepo{
+		tenants: map[string]*domain.Tenant{
+			"tenant-1": {
+				ID:         "tenant-1",
+				Status:     domain.TenantActive,
+				DBHost:     "127.0.0.1",
+				DBPort:     4000,
+				DBUser:     "user",
+				DBPassword: encryptedPassword,
+				DBName:     "db",
+				Provider:   "tidb",
+			},
+		},
+	}
+
+	mw := ResolveApiKey(repo, pool, enc)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		info := AuthFromContext(r.Context())
+		if info == nil {
+			t.Fatal("auth info missing from context")
+		}
+		if info.TenantID != "tenant-1" {
+			t.Fatalf("tenant ID = %q, want %q", info.TenantID, "tenant-1")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1alpha2/mem9s/memories", nil)
+	req.Header.Set(APIKeyHeader, "tenant-1")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNoContent)
+	}
+}
+
+func TestResolveTenant_Success(t *testing.T) {
+	pool := tenant.NewPool(tenant.PoolConfig{Backend: "tidb"})
+	defer pool.Close()
+
+	db := sql.OpenDB(pingOKConnector{})
+	defer db.Close()
+	cacheTenantDB(t, pool, "tenant-1", db)
+
+	enc := encrypt.NewMD5Encryptor("test-key")
+	password := "db-secret-password"
+	encryptedPassword, err := enc.Encrypt(context.Background(), password)
+	if err != nil {
+		t.Fatalf("failed to encrypt password: %v", err)
+	}
+
+	repo := stubTenantRepo{
+		tenants: map[string]*domain.Tenant{
+			"tenant-1": {
+				ID:         "tenant-1",
+				Status:     domain.TenantActive,
+				DBHost:     "127.0.0.1",
+				DBPort:     4000,
+				DBUser:     "user",
+				DBPassword: encryptedPassword,
+				DBName:     "db",
+				Provider:   "tidb",
+			},
+		},
+	}
+
+	// Build handler that asserts auth info is populated
+	baseHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		info := AuthFromContext(r.Context())
+		if info == nil {
+			t.Fatal("auth info missing from context")
+		}
+		if info.TenantID != "tenant-1" {
+			t.Fatalf("tenant ID = %q, want %q", info.TenantID, "tenant-1")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	// Apply middleware directly using chi's URL param injection
+	mw := ResolveTenant(repo, pool, enc)
+	handler := mw(baseHandler)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	// Inject tenantID into chi context
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, &chi.Context{
+		URLParams: chi.RouteParams{
+			Keys:   []string{"tenantID"},
+			Values: []string{"tenant-1"},
+		},
+	}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNoContent)
+	}
+}
+
+func TestResolveTenant_DecryptFailure_Returns500(t *testing.T) {
+	pool := tenant.NewPool(tenant.PoolConfig{Backend: "tidb"})
+	defer pool.Close()
+
+	enc := encrypt.NewMD5Encryptor("test-key")
+
+	repo := stubTenantRepo{
+		tenants: map[string]*domain.Tenant{
+			"tenant-1": {
+				ID:         "tenant-1",
+				Status:     domain.TenantActive,
+				DBHost:     "127.0.0.1",
+				DBPort:     4000,
+				DBUser:     "user",
+				DBPassword: "not-valid-base64!!!",
+				DBName:     "db",
+				Provider:   "tidb",
+			},
+		},
+	}
+
+	mw := ResolveTenant(repo, pool, enc)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	// Inject tenantID into chi context
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, &chi.Context{
+		URLParams: chi.RouteParams{
+			Keys:   []string{"tenantID"},
+			Values: []string{"tenant-1"},
+		},
+	}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
+	}
+	if got := rr.Body.String(); !strings.Contains(got, "decrypt tenant credentials") {
+		t.Fatalf("body = %q, want decrypt tenant credentials error", got)
+	}
+}
+
+func TestResolveApiKey_MD5DecryptFailure_Returns500(t *testing.T) {
+	pool := tenant.NewPool(tenant.PoolConfig{Backend: "tidb"})
+	defer pool.Close()
+
+	enc := encrypt.NewMD5Encryptor("test-key")
+
+	repo := stubTenantRepo{
+		tenants: map[string]*domain.Tenant{
+			"tenant-1": {
+				ID:         "tenant-1",
+				Status:     domain.TenantActive,
+				DBHost:     "127.0.0.1",
+				DBPort:     4000,
+				DBUser:     "user",
+				DBPassword: "not-valid-base64!!!",
+				DBName:     "db",
+				Provider:   "tidb",
+			},
+		},
+	}
+
+	mw := ResolveApiKey(repo, pool, enc)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1alpha2/mem9s/memories", nil)
+	req.Header.Set(APIKeyHeader, "tenant-1")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusInternalServerError)
+	}
+	if got := rr.Body.String(); !strings.Contains(got, "decrypt tenant credentials") {
+		t.Fatalf("body = %q, want decrypt tenant credentials error", got)
 	}
 }
 
