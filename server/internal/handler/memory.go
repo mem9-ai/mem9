@@ -123,6 +123,10 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 // ingestMessages runs the full ingest pipeline: BulkCreate → ExtractPhase1 → PatchTags + ReconcilePhase2.
 // TODO: wrap all database writes (BulkCreate, PatchTags, ReconcilePhase2) in a single transaction to guarantee atomicity.
 func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, req service.IngestRequest) (*service.IngestResult, error) {
+	// Strip plugin-injected context (e.g. <relevant-memories>) before any storage or LLM path.
+	// This is the single sanitization point for the handler-driven pipeline (BulkCreate, ExtractPhase1, etc.).
+	req.Messages = service.StripInjectedContext(req.Messages)
+
 	if err := svc.session.BulkCreate(ctx, auth.AgentName, req); err != nil {
 		slog.Error("session raw save failed",
 			"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
