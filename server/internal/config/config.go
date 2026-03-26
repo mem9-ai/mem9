@@ -43,8 +43,8 @@ type Config struct {
 	TenantPoolTotalLimit  int
 
 	// TiDB Cloud Pool configuration
-	TiDBCloudAPIURL    string
-	TiDBCloudPoolID    string
+	TiDBCloudAPIURL string
+	TiDBCloudPoolID string
 
 	// FTSEnabled controls whether full-text search is attempted.
 	// Set MNEMO_FTS_ENABLED=true only when the TiDB cluster supports
@@ -55,6 +55,11 @@ type Config struct {
 	// WorkerConcurrency controls how many upload tasks are processed in parallel.
 	// Defaults to 5.
 	WorkerConcurrency int
+
+	// DebugLLM enables logging of raw LLM response content, which may contain
+	// user data. Disabled by default. Enable only in dev/test environments via
+	// MNEMO_DEBUG_LLM=true.
+	DebugLLM bool
 
 	// Upload directory for file storage.
 	// Files are stored at {UploadDir}/{tenantID}/{agentID}/{filename}.
@@ -116,6 +121,7 @@ func Load() (*Config, error) {
 		WorkerConcurrency:     envInt("MNEMO_WORKER_CONCURRENCY", 5),
 		EncryptType:           envOr("MNEMO_ENCRYPT_TYPE", "plain"),
 		EncryptKey:            os.Getenv("MNEMO_ENCRYPT_KEY"),
+		DebugLLM:              envBool("MNEMO_DEBUG_LLM", false),
 	}
 	// Validate ingest mode.
 	switch cfg.IngestMode {

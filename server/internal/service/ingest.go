@@ -446,7 +446,11 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 				slog.Info("facts extracted", "facts", len(fallback))
 				return fallback, nil
 			}
-			slog.Error("json parse llm resp failed", "len", len(raw2), "err", err)
+			if s.llm.DebugLLM() {
+				slog.Error("json parse llm resp failed", "len", len(raw2), "raw", raw2, "err", err)
+			} else {
+				slog.Error("json parse llm resp failed", "len", len(raw2), "err", err)
+			}
 			return nil, fmt.Errorf("extraction parse after retry: %w", err)
 		}
 		lastRaw = raw2
@@ -555,7 +559,11 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 				slog.Info("facts and tags extracted", "facts", len(fallback), "tagged_messages", messageCount)
 				return fallback, messageTags, nil
 			}
-			slog.Error("json parse llm resp failed", "len", len(raw2), "err", err)
+			if s.llm.DebugLLM() {
+				slog.Error("json parse llm resp failed", "len", len(raw2), "raw", raw2, "err", err)
+			} else {
+				slog.Error("json parse llm resp failed", "len", len(raw2), "err", err)
+			}
 			return nil, nil, fmt.Errorf("extraction parse after retry: %w", err)
 		}
 		lastRaw = raw2
@@ -732,7 +740,11 @@ Analyze the new facts and determine whether each should be added, updated, or de
 		}
 		parsed, err = llm.ParseJSON[reconcileResponse](raw2)
 		if err != nil {
-			slog.Warn("reconciliation JSON parse failed after retry, skipping to avoid duplicates", "err", err)
+			if s.llm.DebugLLM() {
+				slog.Warn("reconciliation JSON parse failed after retry, skipping to avoid duplicates", "raw", raw2, "err", err)
+			} else {
+				slog.Warn("reconciliation JSON parse failed after retry, skipping to avoid duplicates", "err", err)
+			}
 			return nil, 1, nil // warnings=1 signals that facts were extracted but reconciliation was skipped
 		}
 	}

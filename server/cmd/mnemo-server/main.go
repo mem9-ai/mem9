@@ -72,6 +72,7 @@ func main() {
 		BaseURL:     cfg.LLMBaseURL,
 		Model:       cfg.LLMModel,
 		Temperature: cfg.LLMTemperature,
+		DebugLLM:    cfg.DebugLLM,
 	})
 	if llmClient != nil {
 		logger.Info("LLM configured for smart ingest", "model", cfg.LLMModel)

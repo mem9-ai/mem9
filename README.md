@@ -133,6 +133,7 @@ Agent identity: `X-Mnemo-Agent-Id` header.
 | `MNEMO_EMBED_DIMS` | No | `1536` | Vector dimensions |
 | `MNEMO_ENCRYPT_TYPE` | No | `plain` | Encryption type for tenant DB passwords: `plain`, `md5`, or `kms`. ⚠️ **One-time deployment decision — cannot be changed without re-provisioning all tenants.** |
 | `MNEMO_ENCRYPT_KEY` | No | — | Encryption key (for `md5`) or KMS key ID (for `kms`). Required when `MNEMO_ENCRYPT_TYPE` is not `plain`. |
+| `MNEMO_DEBUG_LLM` | No | `false` | Log raw LLM responses for debugging parse errors. ⚠️ **Dev/test only — responses may contain user data.** |
 
 ### Build & Run
 
