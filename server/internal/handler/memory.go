@@ -65,11 +65,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				s.handleError(w, err)
 				return
 			}
-			if result != nil {
-				respond(w, http.StatusOK, result)
-			} else {
-				respond(w, http.StatusOK, map[string]string{"status": "completed"})
-			}
+			respond(w, http.StatusOK, result)
 		} else {
 			go s.ingestMessages(context.Background(), auth, svc, ingestReq)
 			respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
