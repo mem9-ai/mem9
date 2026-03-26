@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -66,10 +67,12 @@ func (m *testMemoryRepo) ListBootstrap(context.Context, int) ([]domain.Memory, e
 type testSessionRepo struct {
 	bulkCreateCalled bool
 	patchTagsCalled  bool
+	sessions         []*domain.Session // captured from BulkCreate
 }
 
-func (s *testSessionRepo) BulkCreate(context.Context, []*domain.Session) error {
+func (s *testSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Session) error {
 	s.bulkCreateCalled = true
+	s.sessions = sessions
 	return nil
 }
 func (s *testSessionRepo) PatchTags(context.Context, string, string, []string) error {
@@ -259,6 +262,38 @@ func TestCreateMemory_SyncMessages_Phase1Error_Returns500(t *testing.T) {
 
 	if rr.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCreateMemory_SyncMessages_StripsInjectedContext(t *testing.T) {
+	sessRepo := &testSessionRepo{}
+	srv := newTestServer(&testMemoryRepo{}, sessRepo)
+
+	body := map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "hello <relevant-memories>\ninjected memory content\n</relevant-memories> world"},
+			{"role": "assistant", "content": "hi there"},
+		},
+		"session_id": "test-session",
+		"sync":       true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Verify sessions stored via BulkCreate have injected context stripped.
+	for _, sess := range sessRepo.sessions {
+		if strings.Contains(sess.Content, "<relevant-memories>") {
+			t.Errorf("session content still contains injected context: %s", sess.Content)
+		}
+		if strings.Contains(sess.Content, "injected memory content") {
+			t.Errorf("session content still contains injected memory: %s", sess.Content)
+		}
 	}
 }
 
