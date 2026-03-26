@@ -1,13 +1,10 @@
 import type {
   PixelFarmInteractionDebugInfo,
-  PixelFarmPointerTile,
 } from "@/lib/pixel-farm/create-game";
 
 interface PixelFarmFrontTargetPanelProps {
   interactionDebugInfo: PixelFarmInteractionDebugInfo | null;
 }
-
-type OccupiedCells = PixelFarmPointerTile[] | undefined;
 
 function formatTile(
   tile: PixelFarmInteractionDebugInfo["frontTile"],
@@ -17,18 +14,6 @@ function formatTile(
   }
 
   return `(${tile.column}, ${tile.row})`;
-}
-
-function formatOccupiedCells(
-  occupiedCells: OccupiedCells,
-): string {
-  if (!occupiedCells || !Array.isArray(occupiedCells) || occupiedCells.length < 1) {
-    return "--";
-  }
-
-  return occupiedCells
-    .map((cell) => `(${cell.column}, ${cell.row})`)
-    .join(", ");
 }
 
 export function PixelFarmFrontTargetPanel({
@@ -48,7 +33,6 @@ export function PixelFarmFrontTargetPanel({
         <div>Kind: {target?.kind ?? "--"}</div>
         <div>Tag: {target?.tagLabel ?? "--"}</div>
         <div>Memories: {target ? target.memoryCount : "--"}</div>
-        <div>Occupied: {formatOccupiedCells(target?.occupiedCells)}</div>
       </div>
     </aside>
   );
