@@ -103,6 +103,12 @@ interface PixelFarmWorldRendererConfig {
 
 type PixelFarmRenderedAnimal = PixelFarmBabyCow | PixelFarmChicken | PixelFarmCow;
 
+export interface PixelFarmInteractablePoint {
+  animalInstanceId?: string;
+  occupiedCell: PixelFarmGridCell;
+  worldAnchor: { x: number; y: number };
+}
+
 export interface PixelFarmInteractableTarget {
   id: string;
   kind: "animal" | "crop";
@@ -110,6 +116,7 @@ export interface PixelFarmInteractableTarget {
   tagKey: string;
   tagLabel: string;
   totalMemoryCount: number;
+  getInteractionPoints: () => ReadonlyArray<PixelFarmInteractablePoint>;
   getOccupiedCells: () => ReadonlyArray<PixelFarmGridCell>;
   getWorldAnchors: () => ReadonlyArray<{ x: number; y: number }>;
 }
@@ -450,9 +457,11 @@ export class PixelFarmWorldRenderer {
   private readonly gridOrigin: { x: number; y: number };
   private cropObjects: Phaser.GameObjects.Image[] = [];
   private animals: PixelFarmRenderedAnimal[] = [];
+  private animalInstanceById = new Map<string, PixelFarmRenderedAnimal>();
   private interactableTargets: PixelFarmInteractableTarget[] = [];
   private interactableStructureVersion = 0;
   private lastInteractableStructureSignature = "";
+  private pausedAnimalInstanceId: string | null = null;
   private readonly animalGroup: Phaser.Physics.Arcade.Group;
 
   constructor(config: PixelFarmWorldRendererConfig) {
@@ -469,9 +478,15 @@ export class PixelFarmWorldRenderer {
   }
 
   update(deltaMs: number): void {
+    void this.pausedAnimalInstanceId;
+
     for (const animal of this.animals) {
       animal.update(deltaMs);
     }
+  }
+
+  setPausedAnimalInstanceId(animalInstanceId: string | null): void {
+    this.pausedAnimalInstanceId = animalInstanceId;
   }
 
   getAnimalGroup(): Phaser.Physics.Arcade.Group {
@@ -508,6 +523,8 @@ export class PixelFarmWorldRenderer {
   }
 
   private clear(): void {
+    this.animalInstanceById.clear();
+
     for (const object of this.cropObjects) {
       object.destroy();
     }
@@ -618,6 +635,11 @@ export class PixelFarmWorldRenderer {
           tagKey: cropBucket.tagKey,
           tagLabel: cropBucket.tagLabel,
           totalMemoryCount: cropBucket.totalCount,
+          getInteractionPoints: () =>
+            occupiedCells.map((cell, index) => ({
+              occupiedCell: { ...cell },
+              worldAnchor: { ...instanceAnchors[index]! },
+            })),
           getOccupiedCells: () => occupiedCells.map((cell) => ({ ...cell })),
           getWorldAnchors: () => [...instanceAnchors],
         });
@@ -638,10 +660,14 @@ export class PixelFarmWorldRenderer {
     const cowColorOffset = Phaser.Math.Between(0, COW_RENDER_COLORS.length - 1);
 
     for (const animalBucket of animalBuckets) {
-      const renderedAnimals: PixelFarmRenderedAnimal[] = [];
+      const renderedAnimals: Array<{
+        animal: PixelFarmRenderedAnimal;
+        instanceId: string;
+      }> = [];
 
       for (let instanceIndex = 0; instanceIndex < animalBucket.instanceCount; instanceIndex += 1) {
         const cell = layout.animalCells[placementIndex % layout.animalCells.length]!;
+        const animalInstanceId = `${animalBucket.id}:${instanceIndex}`;
         const renderedAnimal = this.createAnimal(
           layout,
           cell,
@@ -656,7 +682,11 @@ export class PixelFarmWorldRenderer {
         }
 
         this.animals.push(renderedAnimal);
-        renderedAnimals.push(renderedAnimal);
+        this.animalInstanceById.set(animalInstanceId, renderedAnimal);
+        renderedAnimals.push({
+          animal: renderedAnimal,
+          instanceId: animalInstanceId,
+        });
       }
 
       if (renderedAnimals.length > 0) {
@@ -667,15 +697,29 @@ export class PixelFarmWorldRenderer {
           tagKey: animalBucket.tagKey,
           tagLabel: animalBucket.tagLabel,
           totalMemoryCount: animalBucket.totalCount,
+          getInteractionPoints: () =>
+            renderedAnimals.map(({ animal, instanceId }) => {
+              const body = animal.body as Phaser.Physics.Arcade.Body | undefined;
+              const sampleX = body ? body.x + body.width * 0.5 : animal.x;
+              const sampleY = body ? body.y + body.height - 1 : animal.y - 1;
+              return {
+                animalInstanceId: instanceId,
+                occupiedCell: this.worldPointToGridCell(sampleX, sampleY),
+                worldAnchor: {
+                  x: animal.x,
+                  y: animal.y,
+                },
+              };
+            }),
           getOccupiedCells: () =>
-            renderedAnimals.map((animal) => {
+            renderedAnimals.map(({ animal }) => {
               const body = animal.body as Phaser.Physics.Arcade.Body | undefined;
               const sampleX = body ? body.x + body.width * 0.5 : animal.x;
               const sampleY = body ? body.y + body.height - 1 : animal.y - 1;
               return this.worldPointToGridCell(sampleX, sampleY);
             }),
           getWorldAnchors: () =>
-            renderedAnimals.map((animal) => ({
+            renderedAnimals.map(({ animal }) => ({
               x: animal.x,
               y: animal.y,
             })),

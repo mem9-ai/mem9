@@ -26,6 +26,7 @@ interface PhaserStageProps {
 }
 
 interface PixelFarmOpenBubbleState {
+  animalInstanceId: string | null;
   interactionNonce: number;
   memoryIds: string[];
   memories: Memory[];
@@ -57,6 +58,7 @@ function createOpenBubbleState(
   if (current && current.targetId === target.id && info.interactionNonce === current.interactionNonce) {
     return {
       ...current,
+      animalInstanceId: target.animalInstanceId ?? null,
       memories: [...memories],
       memoryIds,
       screenX: target.screenX,
@@ -67,6 +69,7 @@ function createOpenBubbleState(
 
   if (!current || current.targetId !== target.id) {
     return {
+      animalInstanceId: target.animalInstanceId ?? null,
       interactionNonce: info.interactionNonce,
       memories: [...memories],
       memoryIds,
@@ -80,6 +83,7 @@ function createOpenBubbleState(
 
   return {
     ...current,
+    animalInstanceId: target.animalInstanceId ?? null,
     interactionNonce: info.interactionNonce,
     memories: [...memories],
     memoryIds,
@@ -150,6 +154,7 @@ export function PhaserStage({
   const resolveInteractionMemoriesRef = useRef<((tagKey: string) => Promise<Memory[]>) | null>(
     resolveInteractionMemories,
   );
+  const pausedAnimalInstanceIdRef = useRef<string | null>(null);
   const handledInteractionNonceRef = useRef(0);
   const interactionRequestIdRef = useRef(0);
   const bubbleAppearSoundRef = useRef<Phaser.Sound.BaseSound | null>(null);
@@ -189,6 +194,25 @@ export function PhaserStage({
     resolveInteractionMemoriesRef.current = resolveInteractionMemories;
   }, [resolveInteractionMemories]);
 
+  const fallbackVisibleMemoryIds = openBubbleState
+    ? resolveAvailableMemoryIds(openBubbleState.memoryIds, memoryById)
+    : [];
+  const visibleMemories = openBubbleState
+    ? openBubbleState.memories.length > 0
+      ? openBubbleState.memories
+      : fallbackVisibleMemoryIds.map((memoryId) => memoryById[memoryId]!).filter(Boolean)
+    : [];
+  const currentIndex = openBubbleState && visibleMemories.length > 0
+    ? openBubbleState.memoryIndex % visibleMemories.length
+    : 0;
+  const currentMemory = visibleMemories[currentIndex] ?? null;
+  const pausedAnimalInstanceId =
+    openBubbleState && currentMemory ? openBubbleState.animalInstanceId : null;
+
+  useEffect(() => {
+    pausedAnimalInstanceIdRef.current = pausedAnimalInstanceId;
+  }, [pausedAnimalInstanceId]);
+
   useEffect(() => {
     if (!hostRef.current || gameRef.current) {
       return undefined;
@@ -197,6 +221,7 @@ export function PhaserStage({
     try {
       gameRef.current = createPixelFarmGame(hostRef.current, {
         getDebugActorState: () => debugActorStateRef.current,
+        getPausedAnimalInstanceId: () => pausedAnimalInstanceIdRef.current,
         onInteractionDebugChange: (info) => {
           onInteractionDebugChangeRef.current?.(info);
 
@@ -256,6 +281,7 @@ export function PhaserStage({
     return () => {
       handledInteractionNonceRef.current = 0;
       interactionRequestIdRef.current += 1;
+      pausedAnimalInstanceIdRef.current = null;
       if (bubbleAppearSoundStopTimerRef.current !== null) {
         window.clearTimeout(bubbleAppearSoundStopTimerRef.current);
         bubbleAppearSoundStopTimerRef.current = null;
@@ -266,19 +292,6 @@ export function PhaserStage({
       gameRef.current = null;
     };
   }, []);
-
-  const fallbackVisibleMemoryIds = openBubbleState
-    ? resolveAvailableMemoryIds(openBubbleState.memoryIds, memoryById)
-    : [];
-  const visibleMemories = openBubbleState
-    ? openBubbleState.memories.length > 0
-      ? openBubbleState.memories
-      : fallbackVisibleMemoryIds.map((memoryId) => memoryById[memoryId]!).filter(Boolean)
-    : [];
-  const currentIndex = openBubbleState && visibleMemories.length > 0
-    ? openBubbleState.memoryIndex % visibleMemories.length
-    : 0;
-  const currentMemory = visibleMemories[currentIndex] ?? null;
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#0d141b]">

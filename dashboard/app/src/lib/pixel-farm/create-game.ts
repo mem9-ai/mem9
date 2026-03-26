@@ -169,6 +169,7 @@ export interface PixelFarmDebugState {
 
 export interface PixelFarmGameOptions {
   getDebugActorState?: () => PixelFarmDebugState | null;
+  getPausedAnimalInstanceId?: () => string | null;
   onInteractionDebugChange?: (info: PixelFarmInteractionDebugInfo) => void;
   getShowInteractionDebug?: () => boolean;
   getShowSpatialDebug?: () => boolean;
@@ -187,6 +188,7 @@ export interface PixelFarmPointerDebugInfo {
 }
 
 export interface PixelFarmInteractionTargetDebugInfo {
+  animalInstanceId?: string | null;
   id: string;
   kind: "animal" | "crop";
   memoryCount: number;
@@ -258,6 +260,7 @@ function localCellKey(row: number, column: number): string {
 }
 
 interface PixelFarmInteractionCandidate {
+  animalInstanceId: string | null;
   target: PixelFarmInteractableTarget;
   worldAnchor: { x: number; y: number };
 }
@@ -560,6 +563,9 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.cachedInteractionSelectionFrame = undefined;
     this.cachedInteractionSelectionState = null;
     this.character?.update(delta, this.readCharacterInput());
+    this.worldRenderer?.setPausedAnimalInstanceId(
+      this.options.getPausedAnimalInstanceId?.() ?? null,
+    );
     this.worldRenderer?.update(delta);
     this.applyDebugActorState();
     this.applyWorldState();
@@ -976,6 +982,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       interactionNonce: this.interactionNonce,
       lastInteractedTargetId: this.lastInteractedTargetId,
       target: {
+        animalInstanceId: focusedTarget.animalInstanceId,
         id: focusedTarget.target.id,
         kind: focusedTarget.target.kind,
         memoryCount: focusedTarget.target.totalMemoryCount,
@@ -1114,22 +1121,31 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     const candidates: Array<PixelFarmInteractionCandidate & { tilePriority: number }> = [];
 
     for (const target of targets) {
-      const occupiedCells = target.getOccupiedCells();
-      const matchedCell =
-        occupiedCells.find((cell) => cell.row === frontTile.row && cell.column === frontTile.column) ??
-        occupiedCells.find(
-          (cell) => cell.row === currentTile.row && cell.column === currentTile.column,
+      const interactionPoints = target.getInteractionPoints();
+      const matchedPoint =
+        interactionPoints.find(
+          (point) =>
+            point.occupiedCell.row === frontTile.row &&
+            point.occupiedCell.column === frontTile.column,
+        ) ??
+        interactionPoints.find(
+          (point) =>
+            point.occupiedCell.row === currentTile.row &&
+            point.occupiedCell.column === currentTile.column,
         );
-      if (!matchedCell) {
+      if (!matchedPoint) {
         continue;
       }
 
       const tilePriority =
-        matchedCell.row === frontTile.row && matchedCell.column === frontTile.column ? 0 : 1;
-      const worldAnchor = this.cellToWorldPosition(matchedCell);
+        matchedPoint.occupiedCell.row === frontTile.row &&
+        matchedPoint.occupiedCell.column === frontTile.column
+          ? 0
+          : 1;
       candidates.push({
+        animalInstanceId: matchedPoint.animalInstanceId ?? null,
         target,
-        worldAnchor,
+        worldAnchor: matchedPoint.worldAnchor,
         tilePriority,
       });
     }
@@ -1146,7 +1162,11 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
         return left.target.id.localeCompare(right.target.id);
       })
-      .map(({ target, worldAnchor }) => ({ target, worldAnchor }));
+      .map(({ animalInstanceId, target, worldAnchor }) => ({
+        animalInstanceId,
+        target,
+        worldAnchor,
+      }));
   }
 
   private clearInteractionSelectionCache(): void {
