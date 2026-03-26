@@ -51,7 +51,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if hasMessages {
-		messages := service.StripInjectedContext(append([]service.IngestMessage(nil), req.Messages...))
+		messages := append([]service.IngestMessage(nil), req.Messages...)
 		ingestReq := service.IngestRequest{
 			Messages:  messages,
 			SessionID: req.SessionID,

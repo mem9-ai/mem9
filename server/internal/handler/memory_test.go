@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/llm"
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
@@ -211,7 +212,99 @@ func TestCreateMemory_AsyncMessages_Returns202(t *testing.T) {
 	if resp["status"] != "accepted" {
 		t.Errorf("expected status=accepted, got %q", resp["status"])
 	}
+}
 
-	// Give the async goroutine time to complete.
-	time.Sleep(50 * time.Millisecond)
+// failSearchMemoryRepo embeds testMemoryRepo but makes KeywordSearch fail,
+// triggering gatherExistingMemories → reconcile → ReconcilePhase2 Status:"failed".
+type failSearchMemoryRepo struct {
+	testMemoryRepo
+}
+
+func (m *failSearchMemoryRepo) KeywordSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
+	return nil, errors.New("simulated search failure")
+}
+
+func TestCreateMemory_SyncMessages_Phase1Error_Returns500(t *testing.T) {
+	// Mock LLM that always returns 500.
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(&testMemoryRepo{}, nil, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(&testMemoryRepo{}, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(&testSessionRepo{}, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
+
+	body := map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "hello"},
+		},
+		"session_id": "test-session",
+		"sync":       true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCreateMemory_SyncMessages_ReconcileFailure_Returns500(t *testing.T) {
+	// Mock LLM that returns valid facts for ExtractPhase1.
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":["test fact"],"message_tags":[["tag1"],["tag2"]]}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &failSearchMemoryRepo{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(&memRepo.testMemoryRepo, nil, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(&testSessionRepo{}, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
+
+	body := map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "hello"},
+			{"role": "assistant", "content": "hi there"},
+		},
+		"session_id": "test-session",
+		"sync":       true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d: %s", rr.Code, rr.Body.String())
+	}
 }
