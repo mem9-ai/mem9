@@ -61,6 +61,9 @@ import { MobileDetailSheet } from "@/components/space/mobile-detail-sheet";
 import { ExportDialog } from "@/components/space/export-dialog";
 import { ImportDialog } from "@/components/space/import-dialog";
 import { ImportStatusDialog } from "@/components/space/import-status";
+import { useMemoryFarmEntryState } from "@/components/space/use-memory-farm-entry-state";
+import { MemoryFarmPromoCard } from "@/components/space/memory-farm-promo-card";
+import { MemoryFarmPreparationDialog } from "@/components/space/memory-farm-preparation-dialog";
 import { features } from "@/config/features";
 import { formatInsightCategoryLabel } from "@/lib/memory-insight";
 import { normalizeTagSignal } from "@/lib/tag-signals";
@@ -232,6 +235,7 @@ export function SpacePage() {
   const [mobileAnalysisOpen, setMobileAnalysisOpen] = useState(false);
   const [localVisibleCount, setLocalVisibleCount] = useState(LOCAL_PAGE_SIZE);
   const [refreshingMemories, setRefreshingMemories] = useState(false);
+  const [farmPrepOpen, setFarmPrepOpen] = useState(false);
 
   const range: TimeRangePreset = search.range ?? "all";
   const facet: MemoryFacet | undefined = search.facet;
@@ -317,6 +321,28 @@ export function SpacePage() {
   const exportMutation = useExportMemories(spaceId);
   const importMutation = useImportMemories(spaceId);
   const analysis = useSpaceAnalysis(spaceId, range);
+  const farmEntryStatus = useMemoryFarmEntryState(
+    spaceId,
+    sourceQuery.isLoading || sourceQuery.isFetching,
+    analysis.state,
+    range
+  );
+
+  useEffect(() => {
+    if (farmPrepOpen && farmEntryStatus === "ready") {
+      setFarmPrepOpen(false);
+      navigate({ to: "/labs/memory-farm" });
+    }
+  }, [farmPrepOpen, farmEntryStatus, navigate]);
+
+  function handleFarmAction() {
+    if (farmEntryStatus === "ready") {
+      navigate({ to: "/labs/memory-farm" });
+    } else {
+      setFarmPrepOpen(true);
+    }
+  }
+
   const { data: topicData } = useTopicSummary(
     spaceId,
     range,
@@ -468,13 +494,34 @@ export function SpacePage() {
     search.q,
     tag,
   ]);
+  const timelineFilteredMemories = useMemo(() => {
+    if (analysisCategory || tag || !timelineSelection) {
+      return [];
+    }
+
+    return filterMemoriesForView(listFilterScopeMemories, {
+      q: search.q,
+      tagResolver: listTagResolver,
+    });
+  }, [
+    analysisCategory,
+    listFilterScopeMemories,
+    listTagResolver,
+    search.q,
+    tag,
+    timelineSelection,
+  ]);
 
   const usingLocalTagList = !analysisCategory && !!tag;
-  const usingLocalFilteredList = !!analysisCategory || usingLocalTagList;
+  const usingLocalTimelineList = !analysisCategory && !tag && !!timelineSelection;
+  const usingLocalFilteredList =
+    !!analysisCategory || usingLocalTagList || usingLocalTimelineList;
   const baseDisplayedMemories = analysisCategory
     ? analysisFilteredMemories
     : usingLocalTagList
     ? tagFilteredMemories
+    : usingLocalTimelineList
+    ? timelineFilteredMemories
     : memories;
   const currentSignalScopeMemories = analysisCategory
     ? analysisCategoryScopeMemories
@@ -1222,7 +1269,11 @@ export function SpacePage() {
           </div>
 
           {features.enableAnalysis && isDesktopViewport && (
-            <div className="py-8 xl:order-1 xl:py-8">
+            <div className="w-full shrink-0 py-8 xl:order-1 xl:py-8 xl:w-[312px] 2xl:w-[320px]">
+              <MemoryFarmPromoCard 
+                status={farmEntryStatus}
+                onAction={handleFarmAction}
+              />
               <AnalysisPanel
                 state={analysis.state}
                 sourceCount={analysis.sourceCount}
@@ -1403,6 +1454,14 @@ export function SpacePage() {
         onOpenChange={setImportStatusOpen}
         tasks={importTaskData?.tasks ?? []}
         t={t}
+      />
+      <MemoryFarmPreparationDialog
+        open={farmPrepOpen}
+        onOpenChange={setFarmPrepOpen}
+        status={farmEntryStatus}
+        analysisState={analysis.state}
+        currentRange={range}
+        onRetry={analysis.retry}
       />
     </div>
   );

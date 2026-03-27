@@ -5,7 +5,8 @@ import {
   Outlet,
   useLocation,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Toaster } from "sonner";
 import { trackGa4PageView } from "@/lib/ga4";
 import type { MemoryType, MemoryFacet } from "@/types/memory";
@@ -14,6 +15,27 @@ import type { TimeRangePreset } from "@/types/time-range";
 import { trackMixpanelPageView } from "@/lib/mixpanel";
 import { ConnectPage } from "@/pages/connect";
 import { SpacePage } from "@/pages/space";
+
+const PixelFarmPage = lazy(async () => {
+  const module = await import("@/pages/pixel-farm");
+  return { default: module.PixelFarmPage };
+});
+
+function PixelFarmRoutePage() {
+  const { t } = useTranslation();
+
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-[#efe3b4] text-sm uppercase tracking-[0.2em] text-[#5e6641]">
+          {t("pixel_farm.stage_loading")}
+        </main>
+      }
+    >
+      <PixelFarmPage />
+    </Suspense>
+  );
+}
 
 function RootLayout() {
   const location = useLocation({
@@ -101,7 +123,49 @@ const spaceRoute = createRoute({
   }),
 });
 
-const routeTree = rootRoute.addChildren([connectRoute, spaceRoute]);
+const pixelFarmRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/labs/memory-farm",
+  component: PixelFarmRoutePage,
+});
+const baseRoutes: Parameters<typeof rootRoute.addChildren>[0] = [
+  connectRoute,
+  spaceRoute,
+  pixelFarmRoute,
+];
+
+let devRoutes: Parameters<typeof rootRoute.addChildren>[0] = [];
+
+if (import.meta.env.DEV) {
+  const PixelFarmEditorPage = lazy(async () => {
+    const module = await import("@/pages/pixel-farm-editor");
+    return { default: module.PixelFarmEditorPage };
+  });
+
+  function PixelFarmEditorRoutePage() {
+    return (
+      <Suspense
+        fallback={
+          <main className="flex min-h-screen items-center justify-center bg-[#efe3b4] text-sm uppercase tracking-[0.2em] text-[#5e6641]">
+            Loading mask editor
+          </main>
+        }
+      >
+        <PixelFarmEditorPage />
+      </Suspense>
+    );
+  }
+
+  devRoutes = [
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path: "/labs/memory-farm-editor",
+      component: PixelFarmEditorRoutePage,
+    }),
+  ];
+}
+
+const routeTree = rootRoute.addChildren([...baseRoutes, ...devRoutes]);
 
 export const router = createRouter({
   routeTree,

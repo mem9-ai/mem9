@@ -769,7 +769,7 @@ describe("SpacePage", () => {
     renderSpacePage();
 
     const tagButton = within(screen.getByTestId("analysis-facets-tags"))
-      .getByRole("button", { name: /launch \(2\)/i });
+      .getByRole("button", { name: /launch/i });
     fireEvent.click(tagButton);
 
     await waitFor(() => {
@@ -779,7 +779,7 @@ describe("SpacePage", () => {
     const calls = mocks.useMemories.mock.calls;
     const lastCall = calls[calls.length - 1];
     expect(lastCall).toBeDefined();
-    expect(lastCall![1]).toHaveProperty("tag", undefined);
+    expect(lastCall![1]).not.toHaveProperty("tag");
   });
 
   it("keeps tag state when leaving analysis mode", async () => {
@@ -792,7 +792,7 @@ describe("SpacePage", () => {
     });
 
     const tagButton = within(screen.getByTestId("analysis-facets-tags"))
-      .getByRole("button", { name: /launch \(2\)/i });
+      .getByRole("button", { name: /launch/i });
     fireEvent.click(tagButton);
 
     await waitFor(() => {
@@ -812,7 +812,7 @@ describe("SpacePage", () => {
     renderSpacePage();
 
     const tagButton = within(screen.getByTestId("analysis-facets-tags"))
-      .getByRole("button", { name: /launch \(2\)/i });
+      .getByRole("button", { name: /launch/i });
     fireEvent.click(tagButton);
 
     await waitFor(() => {

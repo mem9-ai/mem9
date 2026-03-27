@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "lib": ["ES2020"],
+    "types": ["node"],
+    "jsx": "preserve"
+  },
+  "include": ["vite.config.ts", "src/vite-env.d.ts"],
+  "exclude": []
+}

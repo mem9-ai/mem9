@@ -416,5 +416,53 @@
         "points_to": "Points to"
       }
     }
+  },
+  "pixel_farm": {
+    "stage_loading": "Loading pixel farm",
+    "controls": {
+      "title": "Controls",
+      "move": "Move",
+      "interact": "Interact",
+      "music": "Music",
+      "on": "On",
+      "off": "Off"
+    },
+    "feedback": {
+      "button": "Feedback",
+      "title": "Send Feedback",
+      "type_label": "Type",
+      "type_bug": "Bug",
+      "type_suggestion": "Suggestion",
+      "type_other": "Other",
+      "content_label": "Details",
+      "content_placeholder": "Describe what you found...",
+      "submit": "Submit",
+      "cancel": "Cancel",
+      "success": "Thanks for your feedback!"
+    }
+  },
+  "memory_farm_preview": {
+    "title": "Memory Farm",
+    "description": "Walk through a farm grown from your memories.",
+    "sub_description": "Crops, animals, and conversations generated from your synced memory snapshot.",
+    "status": {
+      "ready": "Ready to explore",
+      "preparing": "Preparing analysis data",
+      "unavailable": "Preview data not ready"
+    },
+    "cta": {
+      "ready": "Enter Farm",
+      "preparing": "Preparing",
+      "unavailable": "View Status"
+    },
+    "dialog": {
+      "preparing_title": "Preparing Memory Farm Preview",
+      "preparing_desc": "Synced memories and analysis data are being prepared for the preview.",
+      "syncing": "Syncing memories for the preview...",
+      "unavailable_title": "Memory Farm Preview Unavailable",
+      "unavailable_desc": "Preview data is not currently ready because analysis failed or degraded.",
+      "retry": "Retry analysis",
+      "close": "Close"
+    }
   }
 }

@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Ark Pixel Mono";
+  src: url("./assets/ark-pixel-font-10px-monospaced-otf-v2026.02.27/ark-pixel-10px-monospaced-zh_cn.otf") format("opentype");
+  font-style: normal;
+  font-weight: 400;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -131,29 +138,40 @@ body {
   scrollbar-gutter: stable both-edges;
 }
 
+.pixel-farm-font {
+  font-family: "Ark Pixel Mono", monospace;
+  font-synthesis: none;
+  font-size: 16px;
+  image-rendering: pixelated;
+}
+
 button:not(:disabled),
 [role="button"]:not([aria-disabled="true"]):not([data-disabled]),
 [role="tab"]:not([aria-disabled="true"]):not([data-disabled]) {
   cursor: pointer;
 }
 
-h1, h2, h3, h4 {
+h1,
+h2,
+h3,
+h4 {
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: -0.04em;
 }
 
 .surface-card {
-  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(250,250,250,0.98));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(250, 250, 250, 0.98));
   border: 1px solid rgba(17, 17, 17, 0.08);
   border-radius: 1rem;
-  --tw-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 10px 24px rgba(0,0,0,0.04);
+  --tw-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 10px 24px rgba(0, 0, 0, 0.04);
   box-shadow: var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000), var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
+
 .dark .surface-card {
-  background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.018));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018));
   border-color: rgba(255, 255, 255, 0.1);
-  --tw-shadow: inset 0 1px 0 rgba(255,255,255,0.03), 0 10px 28px rgba(0,0,0,0.22);
+  --tw-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 10px 28px rgba(0, 0, 0, 0.22);
   box-shadow: var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000), var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
@@ -161,6 +179,7 @@ h1, h2, h3, h4 {
   border-color: oklch(from oklch(var(--color-primary)) l c h / 0.35);
   background: linear-gradient(180deg, oklch(from oklch(var(--color-primary)) l c h / 0.04), oklch(from oklch(var(--color-primary)) l c h / 0.02));
 }
+
 .dark .surface-card-selected {
   border-color: oklch(from oklch(var(--color-primary)) l c h / 0.3);
   background: linear-gradient(180deg, oklch(from oklch(var(--color-primary)) l c h / 0.08), oklch(from oklch(var(--color-primary)) l c h / 0.03));
@@ -188,12 +207,30 @@ h1, h2, h3, h4 {
   width: 6px;
 }
 
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(17,17,17,0.1); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(17,17,17,0.18); }
-.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
-.dark ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(17, 17, 17, 0.1);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(17, 17, 17, 0.18);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
 
 .memory-insight-bubble {
   overflow: visible;
@@ -353,11 +390,9 @@ h1, h2, h3, h4 {
 }
 
 .dark .memory-insight-bubble-core::before {
-  background: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 52%, white 12%, transparent) 0%,
-    transparent 72%
-  );
+  background: radial-gradient(circle,
+      color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 52%, white 12%, transparent) 0%,
+      transparent 72%);
   filter: blur(14px);
 }
 
@@ -374,8 +409,8 @@ h1, h2, h3, h4 {
     linear-gradient(180deg, color-mix(in srgb, white 14%, transparent), transparent 42%),
     color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 58%, var(--background));
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 68%, rgba(255,255,255,0.1)),
-    0 0 0 1px rgba(255,255,255,0.05);
+    inset 0 0 0 1px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 58%, rgba(255, 255, 255, 0.08)),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
 .dark .memory-insight-bubble-visual {
@@ -383,9 +418,9 @@ h1, h2, h3, h4 {
     radial-gradient(circle at 34% 28%, color-mix(in srgb, white 32%, transparent) 0%, transparent 38%),
     color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 78%, var(--background));
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.16),
-    0 0 36px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 34%, transparent);
-  filter: saturate(1.36) brightness(1.06);
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 28px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 24%, transparent);
+  filter: saturate(1.24) brightness(1.03);
 }
 
 .dark .memory-insight-bubble[data-bubble-size="small"] .memory-insight-bubble-shell {
@@ -437,7 +472,7 @@ h1, h2, h3, h4 {
   transform: none;
 }
 
-[data-testid^="insight-node-"].memory-insight-bubble > span.relative {
+[data-testid^="insight-node-"].memory-insight-bubble>span.relative {
   z-index: 3;
 }
 
@@ -446,67 +481,99 @@ h1, h2, h3, h4 {
 }
 
 @keyframes enter {
-  from { opacity: 0; transform: translateY(4px); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
+
 @keyframes exit {
-  to { opacity: 0; transform: translateY(4px); }
+  to {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
+
 @keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
+
 @keyframes slide-up {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
+
 @keyframes slide-in-right {
-  from { opacity: 0; transform: translateX(12px); }
-  to { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
+
 @keyframes insight-bubble-drift {
+
   0%,
   100% {
     transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
   }
+
   25% {
-    transform: translate3d(
-      calc(var(--insight-drift-x, 3px) * 0.42),
-      calc(var(--insight-drift-y, -10px) * 0.42),
-      0
-    ) rotate(calc(var(--insight-drift-rotate, 1deg) * 0.42)) scale(calc(1 + var(--insight-drift-scale, 0.016) * 0.42));
+    transform: translate3d(calc(var(--insight-drift-x, 3px) * 0.42),
+        calc(var(--insight-drift-y, -10px) * 0.42),
+        0) rotate(calc(var(--insight-drift-rotate, 1deg) * 0.42)) scale(calc(1 + var(--insight-drift-scale, 0.016) * 0.42));
   }
+
   50% {
-    transform: translate3d(
-      var(--insight-drift-x, 3px),
-      var(--insight-drift-y, -10px),
-      0
-    ) rotate(var(--insight-drift-rotate, 1deg)) scale(calc(1 + var(--insight-drift-scale, 0.016)));
+    transform: translate3d(var(--insight-drift-x, 3px),
+        var(--insight-drift-y, -10px),
+        0) rotate(var(--insight-drift-rotate, 1deg)) scale(calc(1 + var(--insight-drift-scale, 0.016)));
   }
+
   75% {
-    transform: translate3d(
-      calc(var(--insight-drift-x, 3px) * 0.42),
-      calc(var(--insight-drift-y, -10px) * 0.42),
-      0
-    ) rotate(calc(var(--insight-drift-rotate, 1deg) * 0.42)) scale(calc(1 + var(--insight-drift-scale, 0.016) * 0.42));
+    transform: translate3d(calc(var(--insight-drift-x, 3px) * 0.42),
+        calc(var(--insight-drift-y, -10px) * 0.42),
+        0) rotate(calc(var(--insight-drift-rotate, 1deg) * 0.42)) scale(calc(1 + var(--insight-drift-scale, 0.016) * 0.42));
   }
 }
 
 @keyframes insight-bubble-halo-pulse {
+
   0%,
   100% {
     opacity: var(--insight-halo-min-opacity, 0.3);
     transform: scale(var(--insight-halo-min-scale, 0.88));
     filter: blur(var(--insight-halo-min-blur, 10px)) saturate(var(--insight-twinkle-min-saturate, 1.04));
   }
+
   35% {
     opacity: calc((var(--insight-halo-min-opacity, 0.3) + var(--insight-halo-max-opacity, 0.72)) / 2);
     transform: scale(calc((var(--insight-halo-min-scale, 0.88) + var(--insight-halo-max-scale, 1.08)) / 2));
   }
+
   50% {
     opacity: var(--insight-halo-max-opacity, 0.72);
     transform: scale(var(--insight-halo-max-scale, 1.08));
     filter: blur(var(--insight-halo-max-blur, 14px)) saturate(var(--insight-twinkle-max-saturate, 1.28));
   }
+
   65% {
     opacity: calc((var(--insight-halo-min-opacity, 0.3) + var(--insight-halo-max-opacity, 0.72)) / 2);
     transform: scale(calc((var(--insight-halo-min-scale, 0.88) + var(--insight-halo-max-scale, 1.08)) / 2));
@@ -514,26 +581,26 @@ h1, h2, h3, h4 {
 }
 
 @keyframes insight-bubble-sheen {
+
   0%,
   100% {
     filter:
-      brightness(var(--insight-twinkle-min-brightness, 0.94))
-      saturate(var(--insight-twinkle-min-saturate, 1.04));
+      brightness(var(--insight-twinkle-min-brightness, 0.94)) saturate(var(--insight-twinkle-min-saturate, 1.04));
   }
+
   22% {
     filter:
-      brightness(calc((var(--insight-twinkle-min-brightness, 0.94) + var(--insight-twinkle-max-brightness, 1.18)) / 2))
-      saturate(calc((var(--insight-twinkle-min-saturate, 1.04) + var(--insight-twinkle-max-saturate, 1.28)) / 2));
+      brightness(calc((var(--insight-twinkle-min-brightness, 0.94) + var(--insight-twinkle-max-brightness, 1.18)) / 2)) saturate(calc((var(--insight-twinkle-min-saturate, 1.04) + var(--insight-twinkle-max-saturate, 1.28)) / 2));
   }
+
   50% {
     filter:
-      brightness(var(--insight-twinkle-max-brightness, 1.18))
-      saturate(var(--insight-twinkle-max-saturate, 1.28));
+      brightness(var(--insight-twinkle-max-brightness, 1.18)) saturate(var(--insight-twinkle-max-saturate, 1.28));
   }
+
   78% {
     filter:
-      brightness(calc((var(--insight-twinkle-min-brightness, 0.94) + var(--insight-twinkle-max-brightness, 1.18)) / 2))
-      saturate(calc((var(--insight-twinkle-min-saturate, 1.04) + var(--insight-twinkle-max-saturate, 1.28)) / 2));
+      brightness(calc((var(--insight-twinkle-min-brightness, 0.94) + var(--insight-twinkle-max-brightness, 1.18)) / 2)) saturate(calc((var(--insight-twinkle-min-saturate, 1.04) + var(--insight-twinkle-max-saturate, 1.28)) / 2));
   }
 }
 
