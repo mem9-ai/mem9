@@ -426,6 +426,19 @@
       "music": "Music",
       "on": "On",
       "off": "Off"
+    },
+    "feedback": {
+      "button": "Feedback",
+      "title": "Send Feedback",
+      "type_label": "Type",
+      "type_bug": "Bug",
+      "type_suggestion": "Suggestion",
+      "type_other": "Other",
+      "content_label": "Details",
+      "content_placeholder": "Describe what you found...",
+      "submit": "Submit",
+      "cancel": "Cancel",
+      "success": "Thanks for your feedback!"
     }
   },
   "memory_farm_preview": {

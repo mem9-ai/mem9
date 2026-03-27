@@ -426,6 +426,19 @@
       "music": "音乐",
       "on": "开",
       "off": "关"
+    },
+    "feedback": {
+      "button": "反馈",
+      "title": "提交反馈",
+      "type_label": "类型",
+      "type_bug": "Bug",
+      "type_suggestion": "建议",
+      "type_other": "其他",
+      "content_label": "详情",
+      "content_placeholder": "请描述你遇到的问题或建议...",
+      "submit": "提交",
+      "cancel": "取消",
+      "success": "感谢你的反馈！"
     }
   },
   "memory_farm_preview": {
