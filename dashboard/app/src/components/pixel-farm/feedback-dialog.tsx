@@ -54,6 +54,8 @@ export function PixelFarmFeedbackDialog() {
       <button
         type="button"
         onClick={handleOpen}
+        data-mp-event="Dashboard/MemoryFarm/FeedbackOpenClicked"
+        data-mp-page-name="memory-farm"
         className="absolute bottom-4 left-4 z-20 flex cursor-pointer items-center gap-2 rounded-md border-[2px] border-[#3f3322] bg-[#f6dca6] px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-[#3f3322] shadow-[2px_2px_0px_0px_#3f3322] transition-all hover:bg-[#ffe8b6] active:translate-y-[2px] active:shadow-none"
       >
         <MessageSquareWarning className="h-3.5 w-3.5" />

@@ -63,6 +63,10 @@ export function MemoryFarmPromoCard({
           </p>
           <button 
             onClick={onAction}
+            data-mp-event="Dashboard/MemoryFarm/EnterClicked"
+            data-mp-page-name="space"
+            data-mp-entry-point="promo-card"
+            data-mp-status={status}
             className={`flex shrink-0 items-center gap-1.5 border-2 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all active:translate-y-[2px] active:shadow-none ${
               status === "ready" 
                 ? "border-[#294c34] bg-[#5fa861] text-[#fff0c6] shadow-[2px_2px_0px_0px_#294c34] hover:bg-[#6cba6e]" 
