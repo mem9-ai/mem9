@@ -186,10 +186,6 @@ function useBackgroundComputation<T extends WorkerResult>({
 
   useEffect(() => {
     if (!workerEnabled) {
-      startTransition(() => {
-        setData(computeSync());
-        setIsComputing(false);
-      });
       return;
     }
 
@@ -231,6 +227,10 @@ function useBackgroundComputation<T extends WorkerResult>({
       cancelled = true;
     };
   }, deps);
+
+  if (!workerEnabled) {
+    return { data: syncValue, isComputing: false };
+  }
 
   return { data, isComputing };
 }
