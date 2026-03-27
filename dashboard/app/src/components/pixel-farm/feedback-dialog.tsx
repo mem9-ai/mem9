@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { MessageSquareWarning } from "lucide-react";
+import { MessageSquareWarning, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
 import { trackMixpanelEvent } from "@/lib/mixpanel";
 
 type FeedbackType = "bug" | "suggestion" | "other";
@@ -13,6 +12,26 @@ export function PixelFarmFeedbackDialog() {
   const [content, setContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [isSuccess, setIsSuccess] = useState(false);
+
+  const resetForm = () => {
+    setContent("");
+    setType("suggestion");
+    setIsSubmitting(false);
+    setIsSuccess(false);
+  };
+
+  const handleOpen = () => {
+    resetForm();
+    setIsOpen(true);
+  };
+
+  const handleClose = () => {
+    setIsOpen(false);
+    // Optional: delay reset slightly to avoid seeing the form clear while animating out
+    setTimeout(resetForm, 150);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim() || isSubmitting) return;
@@ -23,18 +42,17 @@ export function PixelFarmFeedbackDialog() {
       content: content.trim(),
     });
 
-    toast.success(t("pixel_farm.feedback.success"));
-    setContent("");
-    setType("suggestion");
-    setIsOpen(false);
-    setIsSubmitting(false);
+    setIsSuccess(true);
+    setTimeout(() => {
+      handleClose();
+    }, 1500);
   };
 
   return (
     <>
       <button
         type="button"
-        onClick={() => setIsOpen(true)}
+        onClick={handleOpen}
         className="absolute bottom-4 left-4 z-20 flex cursor-pointer items-center gap-2 rounded-md border-[2px] border-[#3f3322] bg-[#f6dca6] px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-[#3f3322] shadow-[2px_2px_0px_0px_#3f3322] transition-all hover:bg-[#ffe8b6] active:translate-y-[2px] active:shadow-none"
       >
         <MessageSquareWarning className="h-3.5 w-3.5" />
@@ -42,13 +60,28 @@ export function PixelFarmFeedbackDialog() {
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#000000]/40 p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#000000]/40 p-4"
+          onKeyDown={(e) => e.stopPropagation()}
+          onKeyUp={(e) => e.stopPropagation()}
+        >
           <div className="w-full max-w-md rounded-lg border-[4px] border-[#3f3322] bg-[#f6dca6] p-6 shadow-[4px_4px_0_0_#3f3322]">
-            <h2 className="mb-5 text-[14px] font-bold uppercase tracking-wider text-[#3f3322]">
-              {t("pixel_farm.feedback.title")}
-            </h2>
+            {isSuccess ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center animate-in fade-in zoom-in duration-300">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border-[3px] border-[#294c34] bg-[#5fa861] shadow-[2px_2px_0_0_#294c34]">
+                  <Check className="h-6 w-6 text-[#fff0c6]" strokeWidth={3} />
+                </div>
+                <p className="text-[14px] font-bold uppercase tracking-wider text-[#3f3322]">
+                  {t("pixel_farm.feedback.success")}
+                </p>
+              </div>
+            ) : (
+              <>
+                <h2 className="mb-5 text-[14px] font-bold uppercase tracking-wider text-[#3f3322]">
+                  {t("pixel_farm.feedback.title")}
+                </h2>
 
-            <form onSubmit={handleSubmit} className="space-y-5">
+                <form onSubmit={handleSubmit} className="space-y-5">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-[#8d6b43]">
                   {t("pixel_farm.feedback.type_label")}
@@ -87,7 +120,7 @@ export function PixelFarmFeedbackDialog() {
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsOpen(false)}
+                  onClick={handleClose}
                   className="cursor-pointer rounded-md px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-[#8d6b43] hover:text-[#5a452b]"
                 >
                   {t("pixel_farm.feedback.cancel")}
@@ -101,6 +134,8 @@ export function PixelFarmFeedbackDialog() {
                 </button>
               </div>
             </form>
+            </>
+            )}
           </div>
         </div>
       )}
