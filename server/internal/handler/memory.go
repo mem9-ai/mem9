@@ -127,6 +127,9 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	// This is the single sanitization point for the handler-driven pipeline (BulkCreate, ExtractPhase1, etc.).
 	req.Messages = service.StripInjectedContext(req.Messages)
 
+	// Session persistence is best-effort for both sync and async paths.
+	// sync=true guarantees only that reconcile (memory extraction) completed —
+	// raw session rows in /session-messages may be absent if BulkCreate fails.
 	if err := svc.session.BulkCreate(ctx, auth.AgentName, req); err != nil {
 		slog.Error("session raw save failed",
 			"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
