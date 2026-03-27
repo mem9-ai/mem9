@@ -646,7 +646,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   private bindActorPhysics(): void {
     const renderedAnimalGroup = this.worldRenderer?.getAnimalGroup();
     if (this.character && renderedAnimalGroup) {
-      this.physics.add.collider(
+      this.physics.add.overlap(
         this.character,
         renderedAnimalGroup,
         this.handleCharacterAnimalCollision,
