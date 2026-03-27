@@ -101,6 +101,18 @@ CREATE TABLE IF NOT EXISTS memories (
 -- ALTER TABLE memories DROP COLUMN tombstone;
 -- DROP INDEX idx_tombstone ON memories;
 
+-- Webhook registrations (control plane).
+CREATE TABLE IF NOT EXISTS webhooks (
+  id           VARCHAR(36)    NOT NULL PRIMARY KEY,
+  tenant_id    VARCHAR(36)    NOT NULL,
+  url          VARCHAR(2048)  NOT NULL,
+  secret       TEXT           NOT NULL,
+  event_types  JSON           NOT NULL,
+  created_at   TIMESTAMP      DEFAULT CURRENT_TIMESTAMP,
+  updated_at   TIMESTAMP      DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_webhooks_tenant (tenant_id)
+);
+
 -- Upload task tracking (control plane).
 CREATE TABLE IF NOT EXISTS upload_tasks (
   task_id       VARCHAR(36)   PRIMARY KEY,

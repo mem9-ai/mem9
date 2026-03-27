@@ -94,6 +94,7 @@ func main() {
 	// Repositories.
 	tenantRepo := repository.NewTenantRepo(cfg.DBBackend, db)
 	uploadTaskRepo := repository.NewUploadTaskRepo(cfg.DBBackend, db)
+	webhookRepo := repository.NewWebhookRepo(cfg.DBBackend, db)
 	tenantPool := tenant.NewPool(tenant.PoolConfig{
 		MaxIdle:     cfg.TenantPoolMaxIdle,
 		MaxOpen:     cfg.TenantPoolMaxOpen,
@@ -128,6 +129,7 @@ func main() {
 	}
 
 	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled, encryptor)
+	webhookSvc := service.NewWebhookService(webhookRepo, encryptor, logger)
 
 	// Middleware.
 	tenantMW := middleware.ResolveTenant(tenantRepo, tenantPool, encryptor)
@@ -137,7 +139,7 @@ func main() {
 	rateMW := rl.Middleware()
 
 	// Handler.
-	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger)
+	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, webhookSvc, logger)
 	router := srv.Router(tenantMW, rateMW, apiKeyMW)
 
 	httpSrv := &http.Server{
@@ -163,6 +165,7 @@ func main() {
 		logger,
 		cfg.WorkerConcurrency,
 		encryptor,
+		webhookSvc,
 	)
 	go func() {
 		if err := uploadWorker.Run(workerCtx); err != nil {

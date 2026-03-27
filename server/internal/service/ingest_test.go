@@ -483,8 +483,8 @@ func (m *memoryRepoMock) UpdateOptimistic(ctx context.Context, mem *domain.Memor
 	return m.updateOptimisticErr
 }
 
-func (m *memoryRepoMock) SoftDelete(ctx context.Context, id, agentName string) error {
-	return nil
+func (m *memoryRepoMock) SoftDelete(ctx context.Context, id, agentName string) (bool, error) {
+	return true, nil
 }
 
 func (m *memoryRepoMock) ArchiveMemory(ctx context.Context, id, supersededBy string) error {

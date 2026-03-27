@@ -47,7 +47,6 @@ type MemoryFileEntry struct {
 	MemoryType string         `json:"memory_type,omitempty"`
 }
 
-// UploadWorker processes queued upload tasks.
 type UploadWorker struct {
 	tasks        repository.UploadTaskRepo
 	tenants      repository.TenantRepo
@@ -57,13 +56,13 @@ type UploadWorker struct {
 	autoModel    string
 	ftsEnabled   bool
 	mode         IngestMode
+	webhookSvc   *WebhookService
 	logger       *slog.Logger
 	pollInterval time.Duration
 	concurrency  int
 	encryptor    encrypt.Encryptor
 }
 
-// NewUploadWorker creates a new UploadWorker.
 func NewUploadWorker(
 	tasks repository.UploadTaskRepo,
 	tenants repository.TenantRepo,
@@ -76,6 +75,7 @@ func NewUploadWorker(
 	logger *slog.Logger,
 	concurrency int,
 	encryptor encrypt.Encryptor,
+	webhookSvc *WebhookService,
 ) *UploadWorker {
 	if logger == nil {
 		logger = slog.Default()
@@ -92,6 +92,7 @@ func NewUploadWorker(
 		autoModel:    autoModel,
 		ftsEnabled:   ftsEnabled,
 		mode:         mode,
+		webhookSvc:   webhookSvc,
 		logger:       logger,
 		pollInterval: 5 * time.Second,
 		concurrency:  concurrency,
@@ -244,7 +245,7 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 			if err := w.tasks.UpdateProgress(taskCtx, task.TaskID, i+1); err != nil {
 				return w.failTask(ctx, task, fmt.Errorf("checkpoint progress: %w", err), logger)
 			}
-			_, err := ingestSvc.Ingest(taskCtx, agentName, IngestRequest{
+			result, err := ingestSvc.Ingest(taskCtx, agentName, IngestRequest{
 				AgentID:   file.AgentID,
 				SessionID: file.SessionID,
 				Messages:  chunk,
@@ -252,6 +253,10 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 			})
 			if err != nil {
 				return w.failTask(ctx, task, fmt.Errorf("ingest session chunk: %w", err), logger)
+			}
+			if result != nil && result.MemoriesChanged >= 1 && w.webhookSvc != nil {
+				eventID := uuid.New().String()
+				w.webhookSvc.Deliver(task.TenantID, BuildIngestEvent(eventID, task.TenantID, file.AgentID, file.SessionID, result))
 			}
 			doneChunks = i + 1
 		}
@@ -318,6 +323,19 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 			}
 			if err := memRepo.BulkCreate(taskCtx, memories); err != nil {
 				return w.failTask(ctx, task, fmt.Errorf("bulk create memories: %w", err), logger)
+			}
+			if w.webhookSvc != nil {
+				ids := make([]string, 0, len(memories))
+				for _, m := range memories {
+					ids = append(ids, m.ID)
+				}
+				result := &IngestResult{
+					Status:          "complete",
+					MemoriesChanged: len(memories),
+					InsightIDs:      ids,
+				}
+				eventID := uuid.New().String()
+				w.webhookSvc.Deliver(task.TenantID, BuildIngestEvent(eventID, task.TenantID, file.AgentID, task.SessionID, result))
 			}
 			batchIdx++
 			doneChunks = batchIdx

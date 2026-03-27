@@ -62,7 +62,18 @@ func NewMemoryRepo(backend string, db *sql.DB, autoModel string, ftsEnabled bool
 	}
 }
 
-// NewSessionRepo creates a SessionRepo for the specified backend.
+// NewWebhookRepo creates a WebhookRepo for the specified backend.
+func NewWebhookRepo(backend string, db *sql.DB) WebhookRepo {
+	switch backend {
+	case "db9":
+		return db9.NewWebhookRepo(db)
+	case "postgres":
+		return postgres.NewWebhookRepo(db)
+	default:
+		return tidb.NewWebhookRepo(db)
+	}
+}
+
 // Only TiDB has a sessions table; all other backends return a stub that
 // silently no-ops writes/searches and returns ErrNotSupported for reads.
 func NewSessionRepo(backend string, db *sql.DB, autoModel string, ftsEnabled bool, clusterID string) SessionRepo {

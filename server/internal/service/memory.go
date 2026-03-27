@@ -25,39 +25,38 @@ const (
 )
 
 type MemoryService struct {
-	memories  repository.MemoryRepo
-	embedder  *embed.Embedder
-	autoModel string
-	ingest    *IngestService
+	memories   repository.MemoryRepo
+	embedder   *embed.Embedder
+	autoModel  string
+	ingest     *IngestService
+	webhookSvc *WebhookService
 }
 
-func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, embedder *embed.Embedder, autoModel string, ingestMode IngestMode) *MemoryService {
+func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, embedder *embed.Embedder, autoModel string, ingestMode IngestMode, webhookSvc *WebhookService) *MemoryService {
 	return &MemoryService{
-		memories:  memories,
-		embedder:  embedder,
-		autoModel: autoModel,
-		ingest:    NewIngestService(memories, llmClient, embedder, autoModel, ingestMode),
+		memories:   memories,
+		embedder:   embedder,
+		autoModel:  autoModel,
+		ingest:     NewIngestService(memories, llmClient, embedder, autoModel, ingestMode),
+		webhookSvc: webhookSvc,
 	}
 }
 
-func (s *MemoryService) Create(ctx context.Context, agentID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, error) {
+func (s *MemoryService) Create(ctx context.Context, agentID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, *IngestResult, error) {
 	if err := validateMemoryInput(content, tags); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if s.ingest == nil {
-		return nil, fmt.Errorf("ingest service not configured")
+		return nil, nil, fmt.Errorf("ingest service not configured")
 	}
 
 	if !s.ingest.HasLLM() {
-		// Keep no-LLM create as a single write so API semantics remain predictable.
-		// This branch intentionally avoids a "create then patch tags/metadata" flow,
-		// which could otherwise return an error after content is already persisted.
 		var embedding []float32
 		if s.autoModel == "" && s.embedder != nil {
 			embeddingResult, embedErr := s.embedder.Embed(ctx, content)
 			if embedErr != nil {
-				return nil, fmt.Errorf("embed raw content: %w", embedErr)
+				return nil, nil, fmt.Errorf("embed raw content: %w", embedErr)
 			}
 			embedding = embeddingResult
 		}
@@ -79,21 +78,22 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 			UpdatedAt:  now,
 		}
 		if err := s.memories.Create(ctx, mem); err != nil {
-			return nil, fmt.Errorf("create raw memory: %w", err)
+			return nil, nil, fmt.Errorf("create raw memory: %w", err)
 		}
-		return mem, nil
+		result := &IngestResult{Status: "complete", MemoriesChanged: 1, InsightIDs: []string{mem.ID}}
+		return mem, result, nil
 	}
 
 	result, err := s.ingest.ReconcileContent(ctx, agentID, agentID, "", []string{content})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if result.Status == "failed" {
-		return nil, fmt.Errorf("content reconciliation failed")
+		return nil, nil, fmt.Errorf("content reconciliation failed")
 	}
 	if len(result.InsightIDs) == 0 {
-		return nil, nil
+		return nil, result, nil
 	}
 
 	// Apply user-provided tags/metadata to all created insights.
@@ -116,9 +116,9 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 	latestID := result.InsightIDs[len(result.InsightIDs)-1]
 	mem, getErr := s.memories.GetByID(ctx, latestID)
 	if getErr != nil {
-		return nil, fmt.Errorf("fetch reconciled memory %s: %w", latestID, getErr)
+		return nil, nil, fmt.Errorf("fetch reconciled memory %s: %w", latestID, getErr)
 	}
-	return mem, nil
+	return mem, result, nil
 
 }
 
@@ -450,8 +450,7 @@ func populateRelativeAge(memories []domain.Memory) []domain.Memory {
 	return memories
 }
 
-// Update modifies an existing memory with LWW conflict resolution.
-func (s *MemoryService) Update(ctx context.Context, agentName, id, content string, tags []string, metadata json.RawMessage, ifMatch int) (*domain.Memory, error) {
+func (s *MemoryService) Update(ctx context.Context, tenantID, agentName, id, content string, tags []string, metadata json.RawMessage, ifMatch int) (*domain.Memory, error) {
 	current, err := s.memories.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -502,11 +501,23 @@ func (s *MemoryService) Update(ctx context.Context, agentName, id, content strin
 		current.Version++
 		return current, nil
 	}
+	if s.webhookSvc != nil {
+		eventID := uuid.New().String()
+		s.webhookSvc.Deliver(tenantID, BuildLifecycleEvent(eventID, tenantID, agentName, "update", updated.ID, nil, nil))
+	}
 	return updated, nil
 }
 
-func (s *MemoryService) Delete(ctx context.Context, id, agentName string) error {
-	return s.memories.SoftDelete(ctx, id, agentName)
+func (s *MemoryService) Delete(ctx context.Context, tenantID, id, agentName string) error {
+	changed, err := s.memories.SoftDelete(ctx, id, agentName)
+	if err != nil {
+		return err
+	}
+	if changed && s.webhookSvc != nil {
+		eventID := uuid.New().String()
+		s.webhookSvc.Deliver(tenantID, BuildLifecycleEvent(eventID, tenantID, agentName, "delete", id, nil, nil))
+	}
+	return nil
 }
 
 func (s *MemoryService) Bootstrap(ctx context.Context, limit int) ([]domain.Memory, error) {

@@ -137,6 +137,10 @@ func AuthFromContext(ctx context.Context) *domain.AuthInfo {
 	return info
 }
 
+func StoreAuthInContext(ctx context.Context, info *domain.AuthInfo) context.Context {
+	return context.WithValue(ctx, authInfoKey, info)
+}
+
 func writeError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

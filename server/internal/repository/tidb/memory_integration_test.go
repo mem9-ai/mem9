@@ -94,7 +94,7 @@ func TestGetByIDDeletedState(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	// Soft delete.
-	if err := repo.SoftDelete(ctx, m.ID, "test-agent"); err != nil {
+	if _, err := repo.SoftDelete(ctx, m.ID, "test-agent"); err != nil {
 		t.Fatalf("SoftDelete: %v", err)
 	}
 	// GetByID filters state='active', so deleted should return ErrNotFound.
@@ -150,7 +150,7 @@ func TestSoftDelete(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if err := repo.SoftDelete(ctx, m.ID, "deleter"); err != nil {
+	if _, err := repo.SoftDelete(ctx, m.ID, "deleter"); err != nil {
 		t.Fatalf("SoftDelete: %v", err)
 	}
 
@@ -164,13 +164,12 @@ func TestSoftDelete(t *testing.T) {
 		t.Fatalf("state mismatch: got %q want deleted", state)
 	}
 
-	// Idempotent — deleting again should not error.
-	if err := repo.SoftDelete(ctx, m.ID, "deleter"); err != nil {
+	if _, err := repo.SoftDelete(ctx, m.ID, "deleter"); err != nil {
 		t.Fatalf("idempotent SoftDelete: %v", err)
 	}
 
 	// Non-existent.
-	err = repo.SoftDelete(ctx, "nonexistent-id", "agent")
+	_, err = repo.SoftDelete(ctx, "nonexistent-id", "agent")
 	if !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound for nonexistent delete, got %v", err)
 	}
@@ -436,7 +435,7 @@ func TestCount(t *testing.T) {
 			t.Fatalf("Create: %v", err)
 		}
 		if i == 0 {
-			if err := repo.SoftDelete(ctx, m.ID, "agent"); err != nil {
+			if _, err := repo.SoftDelete(ctx, m.ID, "agent"); err != nil {
 				t.Fatalf("SoftDelete: %v", err)
 			}
 		}
