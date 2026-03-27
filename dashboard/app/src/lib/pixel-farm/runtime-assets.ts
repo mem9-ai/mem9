@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import bgmFullLoopUrl from "@/assets/audio/bgm10-full-loop.opus";
 import bubbleAppearSoundUrl from "@/assets/audio/blup_1.wav";
 import babyCowBrownUrl from "@/assets/game-objects/animals/cow-baby/cow-baby-brown-spritesheet.png";
 import babyCowGreenUrl from "@/assets/game-objects/animals/cow-baby/cow-baby-green-spritesheet.png";
@@ -30,6 +31,7 @@ import {
 
 export const PIXEL_FARM_BUBBLE_APPEAR_SOUND_KEY = "pixel-farm-bubble-appear";
 export const PIXEL_FARM_BUBBLE_APPEAR_SOUND_DURATION_MS = 500;
+export const PIXEL_FARM_BGM_TEXTURE_KEY = "pixel-farm-bgm";
 export const PIXEL_FARM_DIALOG_TEXTURE_KEY = "pixel-farm-dialog-box";
 export const PIXEL_FARM_MOUSE_CURSOR_TEXTURE_KEY = "pixel-farm-mouse-cursor";
 
@@ -124,6 +126,7 @@ export function preloadPixelFarmRuntimeAssets(scene: Phaser.Scene): void {
 
   scene.load.image(PIXEL_FARM_DIALOG_TEXTURE_KEY, dialogBoxUrl);
   scene.load.audio(PIXEL_FARM_BUBBLE_APPEAR_SOUND_KEY, bubbleAppearSoundUrl);
+  scene.load.audio(PIXEL_FARM_BGM_TEXTURE_KEY, bgmFullLoopUrl);
 
   scene.load.spritesheet(PIXEL_FARM_CHARACTER_TEXTURE_KEY, premiumCharacterUrl, {
     frameWidth: PIXEL_FARM_CHARACTER_FRAME_WIDTH,

@@ -48,6 +48,7 @@ import {
   type PixelFarmCollisionRect,
 } from "@/lib/pixel-farm/collision-layer";
 import {
+  PIXEL_FARM_BGM_TEXTURE_KEY,
   pixelFarmWaterTextureKey,
   preloadPixelFarmRuntimeAssets,
   PIXEL_FARM_WATER_TEXTURE_KEYS,
@@ -78,6 +79,11 @@ const ACTOR_LAYER_DEPTH = 15;
 const STATIC_OBJECT_LAYER_DEPTH = 15;
 const INTERACTION_BUBBLE_OFFSET_Y = PIXEL_FARM_TILE_SIZE * 0.8;
 const INTERACTION_FOCUS_FALLBACK_MS = 180;
+const PIXEL_FARM_BGM_START_DELAY_MS = 3000;
+const PIXEL_FARM_BGM_FADE_IN_MS = 5000;
+const PIXEL_FARM_BGM_MAX_VOLUME = 0.2;
+const PIXEL_FARM_BGM_RESTART_DELAY_MIN_MS = 30_000;
+const PIXEL_FARM_BGM_RESTART_DELAY_MAX_MS = 60_000;
 const INTERACTION_ORIGIN_MARKER_RADIUS = 4;
 const INTERACTION_ANCHOR_MARKER_RADIUS = 3;
 const WATER_FRAME_COUNT = PIXEL_FARM_WATER_TEXTURE_KEYS.length;
@@ -170,6 +176,7 @@ export interface PixelFarmDebugState {
 
 export interface PixelFarmGameOptions {
   getDebugActorState?: () => PixelFarmDebugState | null;
+  getMusicEnabled?: () => boolean;
   getPausedAnimalInstanceId?: () => string | null;
   onInteractionDebugChange?: (info: PixelFarmInteractionDebugInfo) => void;
   getShowInteractionDebug?: () => boolean;
@@ -258,6 +265,10 @@ export function createDefaultPixelFarmDebugState(
 
 function localCellKey(row: number, column: number): string {
   return `${row}:${column}`;
+}
+
+function asVolumeSound(sound: Phaser.Sound.BaseSound): Phaser.Sound.BaseSound & { volume: number } {
+  return sound as Phaser.Sound.BaseSound & { volume: number };
 }
 
 interface PixelFarmInteractionCandidate {
@@ -365,6 +376,11 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     lastX: 0,
     lastY: 0,
   };
+  private bgmSound: Phaser.Sound.BaseSound | null = null;
+  private bgmStartTimer: Phaser.Time.TimerEvent | null = null;
+  private bgmRestartTimer: Phaser.Time.TimerEvent | null = null;
+  private bgmFadeTween: Phaser.Tweens.Tween | null = null;
+  private hasMovementStarted = false;
 
   constructor(private readonly options: PixelFarmGameOptions = {}) {
     super("pixel-farm-sandbox");
@@ -468,6 +484,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.collisionBlockerGroup?.destroy(true);
     this.collisionBlockerGroup = undefined;
     this.unbindCameraControls();
+    this.stopBgmCycle();
   }
 
   private rebuildWorld(): void {
@@ -562,7 +579,9 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.interactionSelectionFrame += 1;
-    this.character?.update(delta, this.readCharacterInput());
+    const characterInput = this.readCharacterInput();
+    this.character?.update(delta, characterInput);
+    this.updateBgmState(characterInput);
     this.worldRenderer?.setPausedAnimalInstanceId(
       this.options.getPausedAnimalInstanceId?.() ?? null,
     );
@@ -572,6 +591,107 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.updateInteractionDebug();
     this.updateWorldDebugOverlay();
     this.updatePointerDebug();
+  }
+
+  private updateBgmState(input: PixelFarmCharacterInput): void {
+    const musicEnabled = this.options.getMusicEnabled?.() ?? true;
+    const isMoving = input.moveX !== 0 || input.moveY !== 0;
+
+    if (isMoving) {
+      this.hasMovementStarted = true;
+    }
+
+    if (!musicEnabled) {
+      this.stopBgmCycle();
+      return;
+    }
+
+    if (!this.hasMovementStarted) {
+      return;
+    }
+
+    const isPlaying = this.bgmSound?.isPlaying ?? false;
+    if (isPlaying || this.bgmStartTimer || this.bgmRestartTimer) {
+      return;
+    }
+
+    this.bgmStartTimer = this.time.delayedCall(PIXEL_FARM_BGM_START_DELAY_MS, () => {
+      this.bgmStartTimer = null;
+      if ((this.options.getMusicEnabled?.() ?? true) && this.hasMovementStarted) {
+        this.startBgmPlayback();
+      }
+    });
+  }
+
+  private startBgmPlayback(): void {
+    this.bgmStartTimer?.destroy();
+    this.bgmStartTimer = null;
+    this.bgmRestartTimer?.destroy();
+    this.bgmRestartTimer = null;
+    this.bgmFadeTween?.destroy();
+    this.bgmFadeTween = null;
+
+    if (!this.sound.get(PIXEL_FARM_BGM_TEXTURE_KEY)) {
+      this.bgmSound = this.sound.add(PIXEL_FARM_BGM_TEXTURE_KEY, {
+        loop: false,
+        volume: 0,
+      });
+    } else {
+      this.bgmSound = this.sound.get(PIXEL_FARM_BGM_TEXTURE_KEY) ?? null;
+      if (this.bgmSound) {
+        asVolumeSound(this.bgmSound).volume = 0;
+      }
+    }
+
+    if (!this.bgmSound) {
+      return;
+    }
+
+    this.bgmSound.once(Phaser.Sound.Events.COMPLETE, this.handleBgmComplete, this);
+    this.bgmSound.play();
+    this.bgmFadeTween = this.tweens.add({
+      targets: asVolumeSound(this.bgmSound),
+      volume: PIXEL_FARM_BGM_MAX_VOLUME,
+      duration: PIXEL_FARM_BGM_FADE_IN_MS,
+      ease: "Linear",
+      onComplete: () => {
+        this.bgmFadeTween = null;
+      },
+    });
+  }
+
+  private handleBgmComplete(): void {
+    this.bgmFadeTween?.destroy();
+    this.bgmFadeTween = null;
+    this.bgmSound = null;
+
+    if (!(this.options.getMusicEnabled?.() ?? true) || !this.hasMovementStarted) {
+      return;
+    }
+
+    const delay = Phaser.Math.Between(
+      PIXEL_FARM_BGM_RESTART_DELAY_MIN_MS,
+      PIXEL_FARM_BGM_RESTART_DELAY_MAX_MS,
+    );
+    this.bgmRestartTimer = this.time.delayedCall(delay, () => {
+      this.bgmRestartTimer = null;
+      if ((this.options.getMusicEnabled?.() ?? true) && this.hasMovementStarted) {
+        this.startBgmPlayback();
+      }
+    });
+  }
+
+  private stopBgmCycle(): void {
+    this.bgmStartTimer?.destroy();
+    this.bgmStartTimer = null;
+    this.bgmRestartTimer?.destroy();
+    this.bgmRestartTimer = null;
+    this.bgmFadeTween?.destroy();
+    this.bgmFadeTween = null;
+    this.bgmSound?.off(Phaser.Sound.Events.COMPLETE, this.handleBgmComplete, this);
+    this.bgmSound?.stop();
+    this.bgmSound?.destroy();
+    this.bgmSound = null;
   }
 
   private bindCharacterControls(): void {

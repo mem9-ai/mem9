@@ -422,7 +422,10 @@
     "controls": {
       "title": "操作提示",
       "move": "移动",
-      "interact": "交互"
+      "interact": "交互",
+      "music": "音乐",
+      "on": "开",
+      "off": "关"
     }
   }
 }

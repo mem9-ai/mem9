@@ -422,7 +422,10 @@
     "controls": {
       "title": "Controls",
       "move": "Move",
-      "interact": "Interact"
+      "interact": "Interact",
+      "music": "Music",
+      "on": "On",
+      "off": "Off"
     }
   }
 }

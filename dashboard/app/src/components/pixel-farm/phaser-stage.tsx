@@ -17,6 +17,7 @@ import type { Memory } from "@/types/memory";
 interface PhaserStageProps {
   debugActorState?: PixelFarmDebugState | null;
   memoryById?: Record<string, Memory>;
+  musicEnabled?: boolean;
   onInteractionDebugChange?: ((info: PixelFarmInteractionDebugInfo) => void) | null;
   onPointerDebugChange?: ((info: PixelFarmPointerDebugInfo) => void) | null;
   resolveInteractionMemories?: ((tagKey: string) => Promise<Memory[]>) | null;
@@ -175,6 +176,7 @@ function playBubbleAppearSound(
 export function PhaserStage({
   debugActorState = null,
   memoryById = {},
+  musicEnabled = true,
   onInteractionDebugChange = null,
   onPointerDebugChange = null,
   showInteractionDebug = false,
@@ -191,6 +193,7 @@ export function PhaserStage({
     ((info: PixelFarmInteractionDebugInfo) => void) | null
   >(onInteractionDebugChange);
   const showInteractionDebugRef = useRef(showInteractionDebug);
+  const musicEnabledRef = useRef(musicEnabled);
   const showSpatialDebugRef = useRef(showSpatialDebug);
   const worldStateRef = useRef<PixelFarmWorldState | null>(worldState);
   const memoryByIdRef = useRef(memoryById);
@@ -217,6 +220,10 @@ export function PhaserStage({
   useEffect(() => {
     showInteractionDebugRef.current = showInteractionDebug;
   }, [showInteractionDebug]);
+
+  useEffect(() => {
+    musicEnabledRef.current = musicEnabled;
+  }, [musicEnabled]);
 
   useEffect(() => {
     showSpatialDebugRef.current = showSpatialDebug;
@@ -283,6 +290,7 @@ export function PhaserStage({
     try {
       gameRef.current = createPixelFarmGame(hostRef.current, {
         getDebugActorState: () => debugActorStateRef.current,
+        getMusicEnabled: () => musicEnabledRef.current,
         getPausedAnimalInstanceId: () => pausedAnimalInstanceIdRef.current,
         onInteractionDebugChange: (info) => {
           onInteractionDebugChangeRef.current?.(info);

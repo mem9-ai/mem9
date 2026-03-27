@@ -19,6 +19,7 @@ export function PixelFarmPage() {
   const [debugActorState, setDebugActorState] = useState<PixelFarmDebugState>(
     createDefaultPixelFarmDebugState,
   );
+  const [musicEnabled, setMusicEnabled] = useState(true);
   const [pointerDebugInfo, setPointerDebugInfo] = useState<PixelFarmPointerDebugInfo | null>(
     null,
   );
@@ -35,6 +36,7 @@ export function PixelFarmPage() {
       <PhaserStage
         debugActorState={showDebugPanel ? debugActorState : null}
         memoryById={worldQuery.memoryById}
+        musicEnabled={musicEnabled}
         onInteractionDebugChange={showDebugPanel ? setInteractionDebugInfo : null}
         onPointerDebugChange={showDebugPanel ? setPointerDebugInfo : null}
         resolveInteractionMemories={worldQuery.resolveInteractionMemories}
@@ -42,7 +44,7 @@ export function PixelFarmPage() {
         showSpatialDebug={showDebugPanel ? showSpatialDebug : false}
         worldState={worldQuery.worldState}
       />
-      <aside className="pointer-events-none absolute right-4 bottom-4 z-20 max-w-[18rem] rounded-2xl border border-[#f6dca6]/20 bg-[#141109]/88 px-4 py-3 text-[#f6dca6] shadow-2xl backdrop-blur">
+      <aside className="absolute right-4 bottom-4 z-20 max-w-[18rem] rounded-2xl border border-[#f6dca6]/20 bg-[#141109]/88 px-4 py-3 text-[#f6dca6] shadow-2xl backdrop-blur">
         <p className="text-[11px] uppercase tracking-[0.18em] text-[#f6dca6]/72">
           {t("pixel_farm.controls.title")}
         </p>
@@ -58,6 +60,16 @@ export function PixelFarmPage() {
             <span className="ml-2 text-[#f6dca6]/72">{t("pixel_farm.controls.interact")}</span>
           </p>
         </div>
+        <button
+          type="button"
+          className="mt-3 inline-flex cursor-pointer items-center rounded-full border border-[#f6dca6]/25 px-3 py-1.5 text-[11px] uppercase tracking-[0.14em] text-[#fff0c6] transition hover:border-[#f6dca6]/45 hover:bg-[#f6dca6]/10"
+          onClick={() => setMusicEnabled((current) => !current)}
+        >
+          {t("pixel_farm.controls.music")}
+          <span className="ml-2 text-[#f6dca6]/72">
+            {musicEnabled ? t("pixel_farm.controls.on") : t("pixel_farm.controls.off")}
+          </span>
+        </button>
       </aside>
       {showDebugPanel ? (
         <>
