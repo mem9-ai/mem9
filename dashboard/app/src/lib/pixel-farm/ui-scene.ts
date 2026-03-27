@@ -32,6 +32,12 @@ export class PixelFarmUIScene extends Phaser.Scene {
       .setDepth(2000);
     this.game.canvas.addEventListener("mouseenter", this.handleCanvasMouseEnter);
     this.game.canvas.addEventListener("mouseleave", this.handleCanvasMouseLeave);
+    this.syncCanvasHoverState();
+    window.requestAnimationFrame(() => {
+      if (this.sys.isActive()) {
+        this.syncCanvasHoverState();
+      }
+    });
     this.scene.bringToTop();
     this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
@@ -100,15 +106,25 @@ export class PixelFarmUIScene extends Phaser.Scene {
     }
   }
 
+  private syncCanvasHoverState(): void {
+    this.updateCanvasHoverState(this.game.canvas.matches(":hover"));
+  }
+
+  private updateCanvasHoverState(isPointerOverCanvas: boolean): void {
+    this.pointerOverCanvas = isPointerOverCanvas;
+    this.game.canvas.style.cursor = isPointerOverCanvas ? "none" : "";
+
+    if (!isPointerOverCanvas) {
+      this.cursorSprite?.setVisible(false);
+    }
+  }
+
   private readonly handleCanvasMouseEnter = (): void => {
-    this.pointerOverCanvas = true;
-    this.game.canvas.style.cursor = "none";
+    this.updateCanvasHoverState(true);
   };
 
   private readonly handleCanvasMouseLeave = (): void => {
-    this.pointerOverCanvas = false;
-    this.game.canvas.style.cursor = "";
-    this.cursorSprite?.setVisible(false);
+    this.updateCanvasHoverState(false);
   };
 
   private handleShutdown(): void {
