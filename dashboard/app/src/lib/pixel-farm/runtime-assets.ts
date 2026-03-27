@@ -16,6 +16,7 @@ import cowLightUrl from "@/assets/game-objects/animals/cow/cow-light-spritesheet
 import cowPinkUrl from "@/assets/game-objects/animals/cow/cow-pink-spritesheet.png";
 import cowPurpleUrl from "@/assets/game-objects/animals/cow/cow-purple-spritesheet.png";
 import dialogBoxUrl from "@/assets/ui/dialog-box.png";
+import mouseCursorUrl from "@/assets/ui/mouse.png";
 import premiumCharacterUrl from "@/assets/game-objects/characters/premium-character-spritesheet.png";
 import water1Url from "@/assets/water-frame-1.png";
 import water2Url from "@/assets/water-frame-2.png";
@@ -30,6 +31,7 @@ import {
 export const PIXEL_FARM_BUBBLE_APPEAR_SOUND_KEY = "pixel-farm-bubble-appear";
 export const PIXEL_FARM_BUBBLE_APPEAR_SOUND_DURATION_MS = 500;
 export const PIXEL_FARM_DIALOG_TEXTURE_KEY = "pixel-farm-dialog-box";
+export const PIXEL_FARM_MOUSE_CURSOR_TEXTURE_KEY = "pixel-farm-mouse-cursor";
 
 export const PIXEL_FARM_CHARACTER_TEXTURE_KEY = "pixel-farm-character-premium";
 export const PIXEL_FARM_CHARACTER_FRAME_WIDTH = 48;
@@ -155,6 +157,7 @@ export function preloadPixelFarmRuntimeAssets(scene: Phaser.Scene): void {
 
 export function preloadPixelFarmDialogAsset(scene: Phaser.Scene): void {
   scene.load.image(PIXEL_FARM_DIALOG_TEXTURE_KEY, dialogBoxUrl);
+  scene.load.image(PIXEL_FARM_MOUSE_CURSOR_TEXTURE_KEY, mouseCursorUrl);
 }
 
 export function pixelFarmWaterTextureKey(
