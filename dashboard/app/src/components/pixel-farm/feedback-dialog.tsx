@@ -37,7 +37,8 @@ export function PixelFarmFeedbackDialog() {
     if (!content.trim() || isSubmitting) return;
 
     setIsSubmitting(true);
-    trackMixpanelEvent("Memory Farm Feedback Submitted", {
+    trackMixpanelEvent("Dashboard/MemoryFarm/FeedbackSubmitted", {
+      pageName: "memory-farm",
       feedbackType: type,
       content: content.trim(),
     });
