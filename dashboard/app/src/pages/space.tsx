@@ -468,13 +468,34 @@ export function SpacePage() {
     search.q,
     tag,
   ]);
+  const timelineFilteredMemories = useMemo(() => {
+    if (analysisCategory || tag || !timelineSelection) {
+      return [];
+    }
+
+    return filterMemoriesForView(listFilterScopeMemories, {
+      q: search.q,
+      tagResolver: listTagResolver,
+    });
+  }, [
+    analysisCategory,
+    listFilterScopeMemories,
+    listTagResolver,
+    search.q,
+    tag,
+    timelineSelection,
+  ]);
 
   const usingLocalTagList = !analysisCategory && !!tag;
-  const usingLocalFilteredList = !!analysisCategory || usingLocalTagList;
+  const usingLocalTimelineList = !analysisCategory && !tag && !!timelineSelection;
+  const usingLocalFilteredList =
+    !!analysisCategory || usingLocalTagList || usingLocalTimelineList;
   const baseDisplayedMemories = analysisCategory
     ? analysisFilteredMemories
     : usingLocalTagList
     ? tagFilteredMemories
+    : usingLocalTimelineList
+    ? timelineFilteredMemories
     : memories;
   const currentSignalScopeMemories = analysisCategory
     ? analysisCategoryScopeMemories
