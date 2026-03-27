@@ -55,7 +55,7 @@ function createOpenBubbleState(
   }
 
   const memoryIds = memories.map((memory) => memory.id);
-  if (current && current.targetId === target.id) {
+  if (current && current.targetId === target.id && info.interactionNonce === current.interactionNonce) {
     return {
       ...current,
       animalInstanceId: target.animalInstanceId ?? null,
@@ -81,7 +81,23 @@ function createOpenBubbleState(
     };
   }
 
-  return null;
+  if (!current || current.targetId !== target.id) {
+    return null;
+  }
+
+  return {
+    ...current,
+    animalInstanceId: target.animalInstanceId ?? null,
+    interactionNonce: info.interactionNonce,
+    memories: [...memories],
+    memoryIds,
+    memoryIndex: info.interactionNonce > current.interactionNonce
+      ? (current.memoryIndex + 1) % memoryIds.length
+      : Math.min(current.memoryIndex, memoryIds.length - 1),
+    screenX: target.screenX,
+    screenY: target.screenY,
+    tagLabel: target.tagLabel,
+  };
 }
 
 function playBubbleAppearSound(

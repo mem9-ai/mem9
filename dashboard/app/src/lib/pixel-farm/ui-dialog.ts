@@ -229,10 +229,10 @@ export class PixelFarmUIDialog {
     );
 
     this.leftButton.on("pointerup", () => {
-      this.goPrevious();
+      this.goPreviousMemory();
     });
     this.rightButton.on("pointerup", () => {
-      this.goNext();
+      this.goNextMemory();
     });
     this.bodyHitArea.on("pointerup", () => {
       this.advancePrimary();
@@ -422,6 +422,40 @@ export class PixelFarmUIDialog {
     this.setMemoryIndex(this.state.payload.memoryIndex + 1, 0);
   }
 
+  private goPreviousMemory(): void {
+    if (!this.state.payload) {
+      return;
+    }
+
+    if (this.isTyping()) {
+      this.finishTyping();
+      return;
+    }
+
+    if (this.state.payload.memoryIndex <= 0) {
+      return;
+    }
+
+    this.setMemoryIndex(this.state.payload.memoryIndex - 1, 0);
+  }
+
+  private goNextMemory(): void {
+    if (!this.state.payload) {
+      return;
+    }
+
+    if (this.isTyping()) {
+      this.finishTyping();
+      return;
+    }
+
+    if (this.state.payload.memoryIndex >= this.state.payload.memories.length - 1) {
+      return;
+    }
+
+    this.setMemoryIndex(this.state.payload.memoryIndex + 1, 0);
+  }
+
   private setMemoryIndex(nextIndex: number, nextPageIndex: number | "last"): void {
     if (!this.state.payload) {
       return;
@@ -536,11 +570,10 @@ export class PixelFarmUIDialog {
     this.layoutBody(DIALOG_WIDTH, dialogHeight);
     this.root.setPosition(placement.x, placement.y);
     this.rightButton.setVisible(
-      hasMorePages(this.state.pageIndex, this.state.pages) ||
-        (this.state.payload?.memoryIndex ?? 0) < (this.state.payload?.memories.length ?? 0) - 1,
+      (this.state.payload?.memoryIndex ?? 0) < (this.state.payload?.memories.length ?? 0) - 1,
     );
     this.leftButton.setVisible(
-      this.state.pageIndex > 0 || (this.state.payload?.memoryIndex ?? 0) > 0,
+      (this.state.payload?.memoryIndex ?? 0) > 0,
     );
     this.root.setVisible(true);
   }
