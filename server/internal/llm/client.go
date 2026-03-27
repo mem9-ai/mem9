@@ -125,10 +125,9 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 		{Role: "user", Content: user},
 	}
 
-	start := time.Now()
 	reasoningEffort, enableThinking := thinkingOptions(c.model)
 
-	body, err := json.Marshal(chatRequest{
+	result, err := c.doRequest(ctx, chatRequest{
 		Model:           c.model,
 		Messages:        messages,
 		Temperature:     c.temperature,
@@ -136,6 +135,27 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 		ReasoningEffort: reasoningEffort,
 		EnableThinking:  enableThinking,
 	})
+	if err != nil {
+		// If 400 and thinking parameters were sent, retry without them (provider may not support them).
+		var httpErr *HTTPStatusError
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (reasoningEffort != nil || enableThinking != nil) {
+			slog.Warn("LLM rejected thinking parameters (HTTP 400), retrying without them", "model", c.model)
+			return c.doRequest(ctx, chatRequest{
+				Model:          c.model,
+				Messages:       messages,
+				Temperature:    c.temperature,
+				ResponseFormat: respFmt,
+			})
+		}
+	}
+	return result, err
+}
+
+// doRequest sends a single chat completion request and handles metrics/response parsing.
+func (c *Client) doRequest(ctx context.Context, cr chatRequest) (string, error) {
+	start := time.Now()
+
+	body, err := json.Marshal(cr)
 	if err != nil {
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
