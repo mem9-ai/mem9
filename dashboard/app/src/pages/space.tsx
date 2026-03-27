@@ -255,12 +255,6 @@ export function SpacePage() {
         : "",
     [i18n.language, timelineSelection],
   );
-  const compactOverview = shouldCompactMemoryOverview(
-    selected,
-    isDesktopViewport,
-    selectedDetailMode,
-  );
-
   useEffect(() => {
     if (!spaceId) navigate({ to: "/", replace: true });
   }, [spaceId, navigate]);
