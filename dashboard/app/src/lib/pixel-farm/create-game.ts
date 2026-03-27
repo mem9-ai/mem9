@@ -380,7 +380,8 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   private bgmStartTimer: Phaser.Time.TimerEvent | null = null;
   private bgmRestartTimer: Phaser.Time.TimerEvent | null = null;
   private bgmFadeTween: Phaser.Tweens.Tween | null = null;
-  private hasMovementStarted = false;
+  // Browsers often require a user gesture before allowing audio playback.
+  private hasUserInteracted = false;
 
   constructor(private readonly options: PixelFarmGameOptions = {}) {
     super("pixel-farm-sandbox");
@@ -597,10 +598,15 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
   private updateBgmState(input: PixelFarmCharacterInput): void {
     const musicEnabled = this.options.getMusicEnabled?.() ?? true;
-    const isMoving = input.moveX !== 0 || input.moveY !== 0;
+    const controls = this.characterControls;
+    const hasKeyboardInteraction =
+      input.moveX !== 0 ||
+      input.moveY !== 0 ||
+      input.action !== null ||
+      (controls?.interact.isDown ?? false);
 
-    if (isMoving) {
-      this.hasMovementStarted = true;
+    if (hasKeyboardInteraction) {
+      this.hasUserInteracted = true;
     }
 
     if (!musicEnabled) {
@@ -608,7 +614,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       return;
     }
 
-    if (!this.hasMovementStarted) {
+    if (!this.hasUserInteracted) {
       return;
     }
 
@@ -619,7 +625,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
     this.bgmStartTimer = this.time.delayedCall(PIXEL_FARM_BGM_START_DELAY_MS, () => {
       this.bgmStartTimer = null;
-      if ((this.options.getMusicEnabled?.() ?? true) && this.hasMovementStarted) {
+      if ((this.options.getMusicEnabled?.() ?? true) && this.hasUserInteracted) {
         this.startBgmPlayback();
       }
     });
@@ -667,7 +673,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     this.bgmFadeTween = null;
     this.bgmSound = null;
 
-    if (!(this.options.getMusicEnabled?.() ?? true) || !this.hasMovementStarted) {
+    if (!(this.options.getMusicEnabled?.() ?? true) || !this.hasUserInteracted) {
       return;
     }
 
@@ -677,7 +683,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     );
     this.bgmRestartTimer = this.time.delayedCall(delay, () => {
       this.bgmRestartTimer = null;
-      if ((this.options.getMusicEnabled?.() ?? true) && this.hasMovementStarted) {
+      if ((this.options.getMusicEnabled?.() ?? true) && this.hasUserInteracted) {
         this.startBgmPlayback();
       }
     });
@@ -1737,6 +1743,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   }
 
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
+    this.hasUserInteracted = true;
     this.dragState.active = true;
     this.dragState.pointerId = pointer.id;
     this.dragState.lastX = pointer.x;
