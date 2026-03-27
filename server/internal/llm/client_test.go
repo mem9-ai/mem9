@@ -141,6 +141,12 @@ func TestComplete(t *testing.T) {
 			if req.Temperature != 0.1 {
 				t.Fatalf("temperature = %v, want %v", req.Temperature, 0.1)
 			}
+			if req.ReasoningEffort == nil || *req.ReasoningEffort != "none" {
+				t.Fatalf("reasoning_effort = %v, want %q", req.ReasoningEffort, "none")
+			}
+			if req.EnableThinking != nil {
+				t.Fatalf("enable_thinking = %v, want nil", *req.EnableThinking)
+			}
 
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}]}`))
@@ -201,6 +207,38 @@ func TestComplete(t *testing.T) {
 		_, err := client.Complete(context.Background(), "sys", "user")
 		if err == nil || !strings.Contains(err.Error(), "boom") {
 			t.Fatalf("expected request error, got %v", err)
+		}
+	})
+
+	t.Run("qwen model disables thinking with enable_thinking", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req chatRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if req.ReasoningEffort != nil {
+				t.Fatalf("reasoning_effort = %v, want nil", *req.ReasoningEffort)
+			}
+			if req.EnableThinking == nil || *req.EnableThinking {
+				t.Fatalf("enable_thinking = %v, want %v", req.EnableThinking, false)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "qwen-plus"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		got, err := client.Complete(context.Background(), "sys", "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "hello" {
+			t.Fatalf("content = %q, want %q", got, "hello")
 		}
 	})
 }

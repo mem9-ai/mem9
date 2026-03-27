@@ -58,6 +58,17 @@ var (
 		},
 		[]string{"result"}, // "success" | "error"
 	)
+
+	// LLMRequestDuration observes LLM API call latency by model and status.
+	LLMRequestDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "mnemo",
+			Name:      "llm_request_duration_seconds",
+			Help:      "LLM API request duration in seconds.",
+			Buckets:   []float64{0.5, 1, 2, 5, 10, 20, 30, 45, 60, 90, 120},
+		},
+		[]string{"model", "status"}, // status: "success" | "error"
+	)
 )
 
 // Middleware records HTTP request count and duration for each request.
