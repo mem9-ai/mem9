@@ -141,9 +141,6 @@ func TestComplete(t *testing.T) {
 			if req.Temperature != 0.1 {
 				t.Fatalf("temperature = %v, want %v", req.Temperature, 0.1)
 			}
-			if req.ReasoningEffort != nil {
-				t.Fatalf("reasoning_effort = %v, want nil", *req.ReasoningEffort)
-			}
 			if req.EnableThinking != nil {
 				t.Fatalf("enable_thinking = %v, want nil", *req.EnableThinking)
 			}
@@ -215,9 +212,6 @@ func TestComplete(t *testing.T) {
 			var req chatRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				t.Fatalf("decode request: %v", err)
-			}
-			if req.ReasoningEffort != nil {
-				t.Fatalf("reasoning_effort = %v, want nil", *req.ReasoningEffort)
 			}
 			if req.EnableThinking == nil || *req.EnableThinking {
 				t.Fatalf("enable_thinking = %v, want %v", req.EnableThinking, false)

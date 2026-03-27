@@ -68,12 +68,11 @@ type responseFormat struct {
 }
 
 type chatRequest struct {
-	Model           string          `json:"model"`
-	Messages        []Message       `json:"messages"`
-	Temperature     float64         `json:"temperature"`
-	ResponseFormat  *responseFormat `json:"response_format,omitempty"`
-	ReasoningEffort *string         `json:"reasoning_effort,omitempty"`
-	EnableThinking  *bool           `json:"enable_thinking,omitempty"`
+	Model          string          `json:"model"`
+	Messages       []Message       `json:"messages"`
+	Temperature    float64         `json:"temperature"`
+	ResponseFormat *responseFormat `json:"response_format,omitempty"`
+	EnableThinking *bool           `json:"enable_thinking,omitempty"`
 }
 
 type chatResponse struct {
@@ -125,20 +124,19 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 		{Role: "user", Content: user},
 	}
 
-	reasoningEffort, enableThinking := disableThinkingOptions(c.model)
+	enableThinking := disableThinkingOptions(c.model)
 
 	result, err := c.doRequest(ctx, chatRequest{
-		Model:           c.model,
-		Messages:        messages,
-		Temperature:     c.temperature,
-		ResponseFormat:  respFmt,
-		ReasoningEffort: reasoningEffort,
-		EnableThinking:  enableThinking,
+		Model:          c.model,
+		Messages:       messages,
+		Temperature:    c.temperature,
+		ResponseFormat: respFmt,
+		EnableThinking: enableThinking,
 	})
 	if err != nil {
 		// If 400 and thinking parameters were sent, retry without them (provider may not support them).
 		var httpErr *HTTPStatusError
-		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (reasoningEffort != nil || enableThinking != nil) {
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && enableThinking != nil {
 			slog.Warn("LLM rejected thinking parameters (HTTP 400), retrying without them", "model", c.model)
 			return c.doRequest(ctx, chatRequest{
 				Model:          c.model,
@@ -216,12 +214,12 @@ func (c *Client) DebugLLM() bool {
 	return c.debugLLM
 }
 
-func disableThinkingOptions(model string) (*string, *bool) {
+func disableThinkingOptions(model string) *bool {
 	if strings.Contains(strings.ToLower(model), "qwen") {
 		enableThinking := false
-		return nil, &enableThinking
+		return &enableThinking
 	}
-	return nil, nil
+	return nil
 }
 
 func StripMarkdownFences(s string) string {
