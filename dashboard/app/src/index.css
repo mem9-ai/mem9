@@ -317,13 +317,15 @@ h4 {
 
 .memory-insight-bubble-shell {
   z-index: 1;
-  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 28%, var(--background));
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 42%, var(--background));
 }
 
 .memory-insight-bubble-visual {
   z-index: 2;
-  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 34%, var(--background));
-  box-shadow: none;
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 48%, var(--background));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.18),
+    0 0 18px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 18%, transparent);
   transform-origin: center;
   will-change: box-shadow, filter;
   transition:
@@ -351,9 +353,11 @@ h4 {
 }
 
 .memory-insight-bubble:hover .memory-insight-bubble-visual {
-  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 30%, var(--background));
-  filter: saturate(1.16);
-  box-shadow: none;
+  background: color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 44%, var(--background));
+  filter: saturate(1.24);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.22),
+    0 0 28px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 28%, transparent);
 }
 
 .memory-insight-bubble:hover .memory-insight-bubble-halo,
@@ -393,17 +397,17 @@ h4 {
 }
 
 .dark .memory-insight-bubble-halo {
-  opacity: 0.58;
+  opacity: 0.68;
   background:
     radial-gradient(circle at 38% 32%, color-mix(in srgb, white 92%, transparent) 0%, transparent 34%),
-    radial-gradient(circle, color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 60%, transparent) 0%, transparent 76%);
-  filter: blur(12px) saturate(1.14);
+    radial-gradient(circle, color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 72%, transparent) 0%, transparent 76%);
+  filter: blur(13px) saturate(1.22);
 }
 
 .dark .memory-insight-bubble-shell {
   background:
-    linear-gradient(180deg, color-mix(in srgb, white 12%, transparent), transparent 42%),
-    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 42%, var(--background));
+    linear-gradient(180deg, color-mix(in srgb, white 14%, transparent), transparent 42%),
+    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 58%, var(--background));
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 58%, rgba(255, 255, 255, 0.08)),
     0 0 0 1px rgba(255, 255, 255, 0.04);
@@ -411,8 +415,8 @@ h4 {
 
 .dark .memory-insight-bubble-visual {
   background:
-    radial-gradient(circle at 34% 28%, color-mix(in srgb, white 28%, transparent) 0%, transparent 38%),
-    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 62%, var(--background));
+    radial-gradient(circle at 34% 28%, color-mix(in srgb, white 32%, transparent) 0%, transparent 38%),
+    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 78%, var(--background));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
     0 0 28px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 24%, transparent);
@@ -434,9 +438,12 @@ h4 {
 
 .dark .memory-insight-bubble:hover .memory-insight-bubble-visual {
   background:
-    radial-gradient(circle at 34% 28%, color-mix(in srgb, white 34%, transparent) 0%, transparent 38%),
-    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 76%, var(--background));
-  filter: saturate(1.34) brightness(1.08);
+    radial-gradient(circle at 34% 28%, color-mix(in srgb, white 38%, transparent) 0%, transparent 38%),
+    color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 86%, var(--background));
+  filter: saturate(1.46) brightness(1.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.2),
+    0 0 42px color-mix(in srgb, var(--insight-bubble-color, var(--type-insight)) 42%, transparent);
 }
 
 .dark .memory-insight-bubble:hover .memory-insight-bubble-halo,
@@ -595,4 +602,17 @@ h4 {
     filter:
       brightness(calc((var(--insight-twinkle-min-brightness, 0.94) + var(--insight-twinkle-max-brightness, 1.18)) / 2)) saturate(calc((var(--insight-twinkle-min-saturate, 1.04) + var(--insight-twinkle-max-saturate, 1.28)) / 2));
   }
+}
+
+@keyframes insight-synapse-flow {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: calc(var(--synapse-dash-total, 200) * -1px);
+  }
+}
+
+.insight-synapse-flow {
+  animation: insight-synapse-flow var(--synapse-flow-duration, 4s) linear infinite;
 }

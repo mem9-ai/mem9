@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="3200" height="2000" viewBox="0 0 3200 2000" role="img" aria-labelledby="title desc">
+  <title id="title">mem9 basic principle flowchart</title>
+  <desc id="desc">A beginner-friendly flowchart showing how mem9 recalls shared memory before the next LLM answer, then learns from the finished conversation by extracting facts and refreshing memory for the next turn.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FBF6EF"/>
+      <stop offset="100%" stop-color="#F2EADF"/>
+    </linearGradient>
+    <linearGradient id="laneTop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFF8EE"/>
+      <stop offset="100%" stop-color="#F8F1E8"/>
+    </linearGradient>
+    <linearGradient id="laneBottom" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFF7F0"/>
+      <stop offset="100%" stop-color="#F7EFE6"/>
+    </linearGradient>
+    <linearGradient id="memoryCard" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#D7F1EC"/>
+      <stop offset="100%" stop-color="#B9E6DD"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="20" stdDeviation="18" flood-color="#A58E74" flood-opacity="0.16"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#907962" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrowSlate" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="16" refX="13" refY="8" orient="auto">
+      <path d="M0,0 L16,8 L0,16 z" fill="#6A5E54"/>
+    </marker>
+    <marker id="arrowMint" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="16" refX="13" refY="8" orient="auto">
+      <path d="M0,0 L16,8 L0,16 z" fill="#2E8B79"/>
+    </marker>
+    <style>
+      .title { font: 700 96px "Avenir Next", "Segoe UI", sans-serif; fill: #1D1B18; }
+      .subtitle { font: 400 40px "Avenir Next", "Segoe UI", sans-serif; fill: #544C45; }
+      .laneTitle { font: 700 46px "Avenir Next", "Segoe UI", sans-serif; fill: #3A332D; }
+      .laneNote { font: 500 31px "Avenir Next", "Segoe UI", sans-serif; fill: #6A6159; }
+      .smallCaps { font: 700 22px "Avenir Next", "Segoe UI", sans-serif; letter-spacing: 3px; text-transform: uppercase; fill: #8B7E73; }
+      .cardNum { font: 800 28px "Avenir Next", "Segoe UI", sans-serif; fill: #FFFFFF; }
+      .cardTitle { font: 700 31px "Avenir Next", "Segoe UI", sans-serif; fill: #1F1A16; }
+      .cardBody { font: 500 24px "Avenir Next", "Segoe UI", sans-serif; fill: #4C453E; }
+      .memoryTitle { font: 800 48px "Avenir Next", "Segoe UI", sans-serif; fill: #134D42; }
+      .memoryBody { font: 500 31px "Avenir Next", "Segoe UI", sans-serif; fill: #245A50; }
+      .step13 { font: 700 42px "Avenir Next", "Segoe UI", sans-serif; fill: #2E8B79; }
+      .footer { font: 500 28px "Avenir Next", "Segoe UI", sans-serif; fill: #6D645C; }
+    </style>
+  </defs>
+
+  <rect width="3200" height="2000" fill="url(#bg)"/>
+
+  <circle cx="2860" cy="180" r="120" fill="#E6D6C0" opacity="0.55"/>
+  <circle cx="2980" cy="300" r="44" fill="#C5E4DD" opacity="0.8"/>
+  <circle cx="220" cy="1660" r="110" fill="#EBD7C6" opacity="0.45"/>
+  <circle cx="310" cy="1520" r="40" fill="#D8EEE7" opacity="0.9"/>
+
+  <text x="150" y="122" class="smallCaps">mem9 • beginner-friendly principle flow</text>
+  <text x="150" y="225" class="title">How mem9 Helps an AI Agent Remember, Answer, and Learn</text>
+  <text x="150" y="290" class="subtitle">Source-based server-mode flow: memory recall improves the next answer, and finished conversations improve memory for later answers.</text>
+
+  <rect x="100" y="360" width="3000" height="610" rx="42" fill="url(#laneTop)" stroke="#E4D7C8" stroke-width="3"/>
+  <rect x="100" y="1090" width="3000" height="690" rx="42" fill="url(#laneBottom)" stroke="#E4D7C8" stroke-width="3"/>
+
+  <text x="150" y="432" class="laneTitle">Recall for the next answer</text>
+  <text x="150" y="482" class="laneNote">mem9 looks up useful memory before the next model call so the answer starts with better context.</text>
+  <text x="150" y="1162" class="laneTitle">Learn from the finished conversation</text>
+  <text x="150" y="1212" class="laneNote">After the conversation settles, mem9 turns reusable user facts into cleaner shared memory for the next round.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="1180" y="840" width="840" height="260" rx="42" fill="url(#memoryCard)" stroke="#76B8AB" stroke-width="4"/>
+    <rect x="1232" y="892" width="122" height="122" rx="28" fill="#2E8B79"/>
+    <path d="M1272 935 h42 M1272 968 h76 M1272 1001 h62" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round"/>
+    <text x="1405" y="960" class="memoryTitle">Shared Memory</text>
+    <text x="1405" y="1010" class="memoryBody">Past preferences, useful facts, and lessons</text>
+    <text x="1405" y="1054" class="memoryBody">that can help future prompts across sessions.</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <g>
+      <rect x="170" y="560" width="520" height="260" rx="34" fill="#F8D7BF"/>
+      <circle cx="240" cy="640" r="30" fill="#D97845"/>
+      <text x="240" y="650" text-anchor="middle" class="cardNum">1</text>
+      <text x="295" y="642" class="cardTitle">New user question</text>
+      <text x="205" y="716" class="cardBody">A fresh request starts the cycle.</text>
+    </g>
+
+    <g>
+      <rect x="760" y="560" width="520" height="260" rx="34" fill="#F9E6B6"/>
+      <circle cx="830" cy="640" r="30" fill="#C78A1B"/>
+      <text x="830" y="650" text-anchor="middle" class="cardNum">2</text>
+      <text x="885" y="642" class="cardTitle">Prompt goes to mem9</text>
+      <text x="795" y="716" class="cardBody">The agent asks mem9 for context.</text>
+    </g>
+
+    <g>
+      <rect x="1350" y="560" width="520" height="260" rx="34" fill="#CFEDE7"/>
+      <circle cx="1420" cy="640" r="30" fill="#2E8B79"/>
+      <text x="1420" y="650" text-anchor="middle" class="cardNum">3</text>
+      <text x="1475" y="642" class="cardTitle">mem9 finds past memory</text>
+      <text x="1385" y="716" class="cardBody">It looks for related facts and preferences.</text>
+    </g>
+
+    <g>
+      <rect x="1940" y="560" width="520" height="260" rx="34" fill="#DFF2CB"/>
+      <circle cx="2010" cy="640" r="30" fill="#5F9F3C"/>
+      <text x="2010" y="650" text-anchor="middle" class="cardNum">4</text>
+      <text x="2065" y="642" class="cardTitle">Memory enters context</text>
+      <text x="1975" y="716" class="cardBody">The prompt now carries useful background.</text>
+    </g>
+
+    <g>
+      <rect x="2530" y="560" width="500" height="260" rx="34" fill="#D4E6FF"/>
+      <circle cx="2600" cy="640" r="30" fill="#4477C7"/>
+      <text x="2600" y="650" text-anchor="middle" class="cardNum">5</text>
+      <text x="2655" y="642" class="cardTitle">LLM answers better</text>
+      <text x="2565" y="716" class="cardBody">The answer uses better context right away.</text>
+    </g>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <g>
+      <rect x="130" y="1285" width="390" height="290" rx="34" fill="#F8D7BF"/>
+      <circle cx="200" cy="1362" r="30" fill="#D97845"/>
+      <text x="200" y="1372" text-anchor="middle" class="cardNum">6</text>
+      <text x="255" y="1364" class="cardTitle">Conversation settles</text>
+      <text x="165" y="1438" class="cardBody">mem9 waits for enough finished context.</text>
+    </g>
+
+    <g>
+      <rect x="560" y="1285" width="390" height="290" rx="34" fill="#F9E6B6"/>
+      <circle cx="630" cy="1362" r="30" fill="#C78A1B"/>
+      <text x="630" y="1372" text-anchor="middle" class="cardNum">7</text>
+      <text x="685" y="1364" class="cardTitle">Recent chat goes to mem9</text>
+      <text x="595" y="1438" class="cardBody">mem9 receives the latest conversation slice.</text>
+    </g>
+
+    <g>
+      <rect x="990" y="1285" width="390" height="290" rx="34" fill="#CFEDE7"/>
+      <circle cx="1060" cy="1362" r="30" fill="#2E8B79"/>
+      <text x="1060" y="1372" text-anchor="middle" class="cardNum">8</text>
+      <text x="1115" y="1364" class="cardTitle">Recalled memory is removed</text>
+      <text x="1025" y="1438" class="cardBody">This stops the same memory being learned twice.</text>
+    </g>
+
+    <g>
+      <rect x="1420" y="1285" width="390" height="290" rx="34" fill="#D4E6FF"/>
+      <circle cx="1490" cy="1362" r="30" fill="#4477C7"/>
+      <text x="1490" y="1372" text-anchor="middle" class="cardNum">9</text>
+      <text x="1545" y="1364" class="cardTitle">LLM extracts facts</text>
+      <text x="1455" y="1438" class="cardBody">It keeps durable facts, not one-off noise.</text>
+    </g>
+
+    <g>
+      <rect x="1850" y="1285" width="390" height="290" rx="34" fill="#CFEDE7"/>
+      <circle cx="1920" cy="1362" r="30" fill="#2E8B79"/>
+      <text x="1920" y="1372" text-anchor="middle" class="cardNum">10</text>
+      <text x="1975" y="1364" class="cardTitle">Facts are checked</text>
+      <text x="1885" y="1438" class="cardBody">New facts are compared with existing memory.</text>
+    </g>
+
+    <g>
+      <rect x="2280" y="1285" width="390" height="290" rx="34" fill="#DFF2CB"/>
+      <circle cx="2350" cy="1362" r="30" fill="#5F9F3C"/>
+      <text x="2350" y="1372" text-anchor="middle" class="cardNum">11</text>
+      <text x="2405" y="1364" class="cardTitle">Memory is reconciled</text>
+      <text x="2315" y="1438" class="cardBody">Add, update, ignore, or replace as needed.</text>
+    </g>
+
+    <g>
+      <rect x="2710" y="1285" width="360" height="290" rx="34" fill="#CFEDE7"/>
+      <circle cx="2780" cy="1362" r="30" fill="#2E8B79"/>
+      <text x="2780" y="1372" text-anchor="middle" class="cardNum">12</text>
+      <text x="2835" y="1364" class="cardTitle">Memory refreshes</text>
+      <text x="2745" y="1438" class="cardBody">The next prompt now starts from better memory.</text>
+    </g>
+  </g>
+
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M690 690 H760" stroke="#6A5E54" stroke-width="12" marker-end="url(#arrowSlate)"/>
+    <path d="M1280 690 H1350" stroke="#6A5E54" stroke-width="12" marker-end="url(#arrowSlate)"/>
+    <path d="M1870 690 H1940" stroke="#6A5E54" stroke-width="12" marker-end="url(#arrowSlate)"/>
+    <path d="M2460 690 H2530" stroke="#6A5E54" stroke-width="12" marker-end="url(#arrowSlate)"/>
+
+    <path d="M1600 820 V840" stroke="#2E8B79" stroke-width="12" marker-end="url(#arrowMint)"/>
+    <path d="M1600 1100 V1215 H1640" stroke="#2E8B79" stroke-width="12" marker-end="url(#arrowMint)"/>
+
+    <path d="M520 1428 H560" stroke="#6A5E54" stroke-width="12" marker-end="url(#arrowSlate)"/>
+    <path d="M950 1428 H990" stroke="#6A5E54" stroke-width="12" marker-end="url(#arrowSlate)"/>
+    <path d="M1380 1428 H1420" stroke="#6A5E54" stroke-width="12" marker-end="url(#arrowSlate)"/>
+    <path d="M1810 1428 H1850" stroke="#6A5E54" stroke-width="12" marker-end="url(#arrowSlate)"/>
+    <path d="M2240 1428 H2280" stroke="#6A5E54" stroke-width="12" marker-end="url(#arrowSlate)"/>
+    <path d="M2670 1428 H2710" stroke="#6A5E54" stroke-width="12" marker-end="url(#arrowSlate)"/>
+
+    <path d="M2045 1285 V1120 H1830 V1100" stroke="#2E8B79" stroke-width="12" marker-end="url(#arrowMint)"/>
+    <path d="M2890 1285 V1130" stroke="#2E8B79" stroke-width="12" marker-end="url(#arrowMint)"/>
+
+    <path d="M2890 1575
+             C2890 1715, 2580 1830, 2120 1830
+             H1320
+             C920 1830, 760 1710, 760 1560
+             V980
+             C760 890, 940 820, 1130 820
+             H1180"
+          stroke="#2E8B79"
+          stroke-width="8"
+          stroke-dasharray="18 18"
+          marker-end="url(#arrowMint)"/>
+  </g>
+
+  <text x="1600" y="1650" text-anchor="middle" class="step13">13. Next prompt starts with better memory support</text>
+
+  <rect x="123" y="1860" width="2954" height="92" rx="24" fill="#F7F0E7" stroke="#E1D3C4" stroke-width="2"/>
+  <text x="1600" y="1918" text-anchor="middle" class="footer">Based on mem9 source flow: recall -&gt; answer -&gt; ingest -&gt; extract facts -&gt; reconcile -&gt; recall again</text>
+</svg>

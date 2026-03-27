@@ -70,7 +70,9 @@ type PanState = {
 type DisplayNode = {
   entity: MemoryInsightRelationEntity;
   position: InsightPoint;
-  size: number;
+  diameter: number;
+  width: number;
+  height: number;
 };
 
 type StrengthPreset = "all" | "medium" | "strong";
@@ -86,14 +88,24 @@ const RELATION_COLORS: Record<MemoryInsightRelationType, string> = {
   scheduled_with: "#b08d57",
   points_to: "#7c6f9b",
 };
-const CATEGORY_COLOR_PALETTE = [
-  "#6d8fa5",
-  "#b08d57",
-  "#7c6f9b",
-  "#5a9a6b",
-  "#c46a6a",
-  "#8a7a5a",
+const BUBBLE_COLOR_PALETTE = [
+  "#1a8aff",
+  "#00e5ff",
+  "#a855f7",
+  "#ff3eb5",
+  "#00e676",
+  "#ff9100",
+  "#ff4444",
+  "#00ffd5",
 ] as const;
+const DRIFT_SEEDS = [
+  { x: 5, y: -16, duration: 10.6, delay: -2.2, rotate: -2.0, scale: 0.028 },
+  { x: -6, y: -18, duration: 12.0, delay: -6.8, rotate: 1.6, scale: 0.025 },
+  { x: 4, y: -13, duration: 9.8, delay: -4.4, rotate: -1.2, scale: 0.022 },
+  { x: -5, y: -17, duration: 11.4, delay: -8.6, rotate: 2.1, scale: 0.030 },
+  { x: 6, y: -14, duration: 12.8, delay: -10.3, rotate: -1.8, scale: 0.026 },
+  { x: -4, y: -20, duration: 10.9, delay: -12.1, rotate: 1.3, scale: 0.024 },
+];
 const DESKTOP_MEDIA_QUERY = "(min-width: 1200px)";
 
 function clamp(value: number, min: number, max: number): number {
@@ -153,23 +165,61 @@ function useIsDesktopViewport(): boolean {
   return matches;
 }
 
-function categoryTone(category?: string | null): string {
-  if (!category) {
-    return "#7a8a7a";
-  }
-
-  return CATEGORY_COLOR_PALETTE[
-    hashString(category) % CATEGORY_COLOR_PALETTE.length
-  ]!;
+function seededUnitInterval(value: string): number {
+  return (hashString(value) % 10_000) / 9_999;
 }
 
-function entitySize(count: number, maxCount: number): number {
+function seededRange(value: string, min: number, max: number): number {
+  return min + seededUnitInterval(value) * (max - min);
+}
+
+function roundSeed(value: number, digits = 2): number {
+  return Number(value.toFixed(digits));
+}
+
+function bubbleToneColor(label: string): string {
+  return BUBBLE_COLOR_PALETTE[hashString(label) % BUBBLE_COLOR_PALETTE.length]!;
+}
+
+function entityDiameter(count: number, maxCount: number): number {
   const ratio = maxCount > 0 ? count / maxCount : 0;
-  return Math.round(54 + ratio * 34);
+  return Math.round(42 + ratio * 38);
 }
 
-function relationStrokeWidth(edge: MemoryInsightRelationEdge): number {
-  return 1.5 + Math.min(edge.coOccurrenceCount, 6) * 0.85;
+function entityNodeDimensions(count: number, maxCount: number): { diameter: number; width: number; height: number } {
+  const diameter = entityDiameter(count, maxCount);
+  const width = Math.max(diameter, 76);
+  return { diameter, width, height: diameter + 38 };
+}
+
+function createBubbleMotionStyle(id: string): CSSProperties {
+  const seed = DRIFT_SEEDS[hashString(id) % DRIFT_SEEDS.length]!;
+  return {
+    "--insight-drift-x": `${seed.x}px`,
+    "--insight-drift-y": `${seed.y}px`,
+    "--insight-drift-rotate": `${seed.rotate}deg`,
+    "--insight-drift-scale": `${seed.scale}`,
+    "--insight-drift-duration": `${(seed.duration * 0.65).toFixed(2)}s`,
+    "--insight-drift-delay": `${seed.delay}s`,
+    "--insight-twinkle-duration": `${roundSeed(seededRange(`${id}:twinkle-duration`, 3.0, 5.8))}s`,
+    "--insight-twinkle-delay": `${roundSeed(-seededRange(`${id}:twinkle-delay`, 0.2, 7.8))}s`,
+    "--insight-twinkle-min-brightness": `${roundSeed(seededRange(`${id}:twinkle-min-brightness`, 0.88, 0.96))}`,
+    "--insight-twinkle-max-brightness": `${roundSeed(seededRange(`${id}:twinkle-max-brightness`, 1.18, 1.38))}`,
+    "--insight-twinkle-min-saturate": `${roundSeed(seededRange(`${id}:twinkle-min-saturate`, 1.06, 1.16))}`,
+    "--insight-twinkle-max-saturate": `${roundSeed(seededRange(`${id}:twinkle-max-saturate`, 1.32, 1.6))}`,
+    "--insight-halo-min-opacity": `${roundSeed(seededRange(`${id}:halo-min-opacity`, 0.32, 0.48))}`,
+    "--insight-halo-max-opacity": `${roundSeed(seededRange(`${id}:halo-max-opacity`, 0.72, 0.96))}`,
+    "--insight-halo-min-scale": `${roundSeed(seededRange(`${id}:halo-min-scale`, 0.80, 0.90))}`,
+    "--insight-halo-max-scale": `${roundSeed(seededRange(`${id}:halo-max-scale`, 1.08, 1.22))}`,
+    "--insight-halo-min-blur": `${roundSeed(seededRange(`${id}:halo-min-blur`, 10, 13), 1)}px`,
+    "--insight-halo-max-blur": `${roundSeed(seededRange(`${id}:halo-max-blur`, 15, 20), 1)}px`,
+  } as CSSProperties;
+}
+
+function bubbleSizeTier(diameter: number): "small" | "medium" | "large" {
+  if (diameter <= 52) return "small";
+  if (diameter <= 68) return "medium";
+  return "large";
 }
 
 function previewMemoryContent(memory: Memory): string {
@@ -218,13 +268,13 @@ function computeGlobalLayout(
     const radius = Math.min(canvasWidth, canvasHeight) * RING_RADII[ringIndex]!;
     ringEntities.forEach((entity, index) => {
       const angle = (-Math.PI / 2) + (Math.PI * 2 * index) / ringEntities.length;
-      const size = entitySize(entity.count, maxCount);
+      const dims = entityNodeDimensions(entity.count, maxCount);
       layout[entity.id] = {
         entity,
-        size,
+        ...dims,
         position: {
-          x: centerX + Math.cos(angle) * radius - size / 2,
-          y: centerY + Math.sin(angle) * radius - size / 2,
+          x: centerX + Math.cos(angle) * radius - dims.width / 2,
+          y: centerY + Math.sin(angle) * radius - dims.height / 2,
         },
       };
     });
@@ -276,13 +326,18 @@ function computeFocusedLayout(
       ).slice(0, 18)
     : [];
 
-  const selectedSize = entitySize(selected.count, maxCount) + 16;
+  const selectedDims = entityNodeDimensions(selected.count, maxCount);
+  const selectedWidth = selectedDims.width + 16;
+  const selectedHeight = selectedDims.height + 16;
+  const selectedDiameter = selectedDims.diameter + 16;
   layout[selected.id] = {
     entity: selected,
-    size: selectedSize,
+    diameter: selectedDiameter,
+    width: selectedWidth,
+    height: selectedHeight,
     position: {
-      x: centerX - selectedSize / 2,
-      y: centerY - selectedSize / 2,
+      x: centerX - selectedWidth / 2,
+      y: centerY - selectedHeight / 2,
     },
   };
 
@@ -292,14 +347,14 @@ function computeFocusedLayout(
       if (!entity) {
         return;
       }
-      const size = entitySize(entity.count, maxCount);
+      const dims = entityNodeDimensions(entity.count, maxCount);
       const angle = (-Math.PI / 2) + (Math.PI * 2 * index) / Math.max(entityIds.length, 1);
       layout[entity.id] = {
         entity,
-        size,
+        ...dims,
         position: {
-          x: centerX + Math.cos(angle) * radius - size / 2,
-          y: centerY + Math.sin(angle) * radius - size / 2,
+          x: centerX + Math.cos(angle) * radius - dims.width / 2,
+          y: centerY + Math.sin(angle) * radius - dims.height / 2,
         },
       };
     });
@@ -1031,7 +1086,8 @@ export function MemoryInsightRelations({
     event: ReactPointerEvent<HTMLButtonElement>,
     nodeId: string,
     origin: InsightPoint,
-    size: number,
+    nodeWidth: number,
+    nodeHeight: number,
   ) => {
     if (panMode) {
       return;
@@ -1047,8 +1103,8 @@ export function MemoryInsightRelations({
       startClientY: event.clientY,
       origin,
       lastPosition: origin,
-      maxX: Math.max(canvasWidth - size - 16, origin.x),
-      maxY: Math.max(canvasHeight - size - 16, origin.y),
+      maxX: Math.max(canvasWidth - nodeWidth - 16, origin.x),
+      maxY: Math.max(canvasHeight - nodeHeight - 16, origin.y),
       moved: false,
     };
     setDraggingNodeId(nodeId);
@@ -1285,10 +1341,59 @@ export function MemoryInsightRelations({
                     </div>
 
                     <svg
-                      className="absolute inset-0"
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0 z-0"
                       width={canvasWidth}
                       height={canvasHeight}
+                      viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+                      preserveAspectRatio="none"
                     >
+                      <defs>
+                        <filter id="relation-glow" x="-50%" y="-50%" width="200%" height="200%">
+                          <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+                          <feColorMatrix in="blur" type="saturate" values="2.4" result="saturated" />
+                          <feMerge>
+                            <feMergeNode in="saturated" />
+                            <feMergeNode in="SourceGraphic" />
+                          </feMerge>
+                        </filter>
+                        <filter id="relation-glow-strong" x="-50%" y="-50%" width="200%" height="200%">
+                          <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+                          <feColorMatrix in="blur" type="saturate" values="3" result="saturated" />
+                          <feMerge>
+                            <feMergeNode in="saturated" />
+                            <feMergeNode in="SourceGraphic" />
+                          </feMerge>
+                        </filter>
+                        {displayGraph.edges.map((edge) => {
+                          const source = autoLayout[edge.sourceId];
+                          const target = autoLayout[edge.targetId];
+                          if (!source || !target) {
+                            return null;
+                          }
+                          const sc = bubbleToneColor(source.entity.label);
+                          const tc = bubbleToneColor(target.entity.label);
+                          const sx = source.position.x + source.width / 2;
+                          const sy = source.position.y + source.diameter / 2;
+                          const tx = target.position.x + target.width / 2;
+                          const ty = target.position.y + target.diameter / 2;
+                          return (
+                            <linearGradient
+                              key={`grad-${edge.id}`}
+                              id={`rel-grad-${edge.id.replace(/[^a-zA-Z0-9]/g, "_")}`}
+                              x1={sx}
+                              y1={sy}
+                              x2={tx}
+                              y2={ty}
+                              gradientUnits="userSpaceOnUse"
+                            >
+                              <stop offset="0%" stopColor={sc} stopOpacity={0.9} />
+                              <stop offset="50%" stopColor={`color-mix(in srgb, ${sc} 50%, ${tc})`} stopOpacity={0.6} />
+                              <stop offset="100%" stopColor={tc} stopOpacity={0.9} />
+                            </linearGradient>
+                          );
+                        })}
+                      </defs>
                       {displayGraph.edges.map((edge) => {
                         const source = autoLayout[edge.sourceId];
                         const target = autoLayout[edge.targetId];
@@ -1296,30 +1401,72 @@ export function MemoryInsightRelations({
                           return null;
                         }
 
-                        const x1 = source.position.x + source.size / 2;
-                        const y1 = source.position.y + source.size / 2;
-                        const x2 = target.position.x + target.size / 2;
-                        const y2 = target.position.y + target.size / 2;
-                        const midX = (x1 + x2) / 2;
-                        const midY = (y1 + y2) / 2;
+                        const x1 = source.position.x + source.width / 2;
+                        const y1 = source.position.y + source.diameter / 2;
+                        const x2 = target.position.x + target.width / 2;
+                        const y2 = target.position.y + target.diameter / 2;
+                        const dx = x2 - x1;
+                        const dy = y2 - y1;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        const perpX = -dy / (dist || 1);
+                        const perpY = dx / (dist || 1);
+                        const curveOffset = Math.min(dist * 0.15, 40) * (hashString(edge.id) % 2 === 0 ? 1 : -1);
+                        const mx = (x1 + x2) / 2 + perpX * curveOffset;
+                        const my = (y1 + y2) / 2 + perpY * curveOffset;
+                        const pathD = `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`;
+                        const gradId = `rel-grad-${edge.id.replace(/[^a-zA-Z0-9]/g, "_")}`;
                         const active = selectedEdgeId === edge.id;
+                        const intensity = Math.min(edge.coOccurrenceCount / 6, 1);
+                        const strokeWidth = 1 + intensity * 3.8;
+                        const opacity = active ? 0.85 : 0.12 + intensity * 0.5;
+                        const dashLen = Math.max(dist * 0.3, 20);
+                        const isStrong = intensity > 0.5;
 
                         return (
                           <g key={edge.id}>
-                            <line
-                              x1={x1}
-                              y1={y1}
-                              x2={x2}
-                              y2={y2}
-                              stroke={RELATION_COLORS[edge.relationType]}
-                              strokeOpacity={active ? 0.95 : 0.45}
-                              strokeWidth={relationStrokeWidth(edge)}
+                            <path
+                              d={pathD}
+                              fill="none"
+                              stroke={`url(#${gradId})`}
+                              strokeWidth={strokeWidth + 4}
+                              strokeLinecap="round"
+                              opacity={opacity * 0.35}
+                              filter={isStrong ? "url(#relation-glow-strong)" : "url(#relation-glow)"}
                             />
-                            <line
-                              x1={x1}
-                              y1={y1}
-                              x2={x2}
-                              y2={y2}
+                            <path
+                              d={pathD}
+                              fill="none"
+                              stroke={`url(#${gradId})`}
+                              strokeWidth={strokeWidth}
+                              strokeLinecap="round"
+                              opacity={opacity}
+                            />
+                            <path
+                              d={pathD}
+                              fill="none"
+                              stroke="white"
+                              strokeWidth={Math.max(strokeWidth * 0.6, 1)}
+                              strokeLinecap="round"
+                              strokeDasharray={`${dashLen} ${dist - dashLen}`}
+                              opacity={opacity * 0.4}
+                              className="insight-synapse-flow"
+                              style={{
+                                "--synapse-dash-total": `${dist}`,
+                                "--synapse-flow-duration": `${(3 + (1 - intensity) * 4).toFixed(1)}s`,
+                              } as CSSProperties}
+                            />
+                            {isStrong ? (
+                              <circle r="2.5" fill="white" opacity={0.7}>
+                                <animateMotion
+                                  dur={`${(2.5 + (1 - intensity) * 3).toFixed(1)}s`}
+                                  repeatCount="indefinite"
+                                  path={pathD}
+                                />
+                              </circle>
+                            ) : null}
+                            <path
+                              d={pathD}
+                              fill="none"
                               stroke="transparent"
                               strokeWidth={16}
                               onClick={() => {
@@ -1327,12 +1474,12 @@ export function MemoryInsightRelations({
                                 setSelectedEntityId(null);
                               }}
                               data-testid={`relation-edge:${edge.id}`}
-                              style={{ cursor: "pointer" }}
+                              style={{ cursor: "pointer", pointerEvents: "auto" }}
                             />
                             {active ? (
                               <text
-                                x={midX}
-                                y={midY - 8}
+                                x={(x1 + x2) / 2}
+                                y={(y1 + y2) / 2 - 8}
                                 textAnchor="middle"
                                 fontSize="11"
                                 fill={RELATION_COLORS[edge.relationType]}
@@ -1351,39 +1498,63 @@ export function MemoryInsightRelations({
                         return null;
                       }
 
-                      const tone = categoryTone(entity.dominantCategory);
+                      const color = bubbleToneColor(entity.label);
                       const active = selectedEntityId === entity.id;
+                      const tier = bubbleSizeTier(node.diameter);
+                      const driftStyle = draggingNodeId === entity.id ? undefined : createBubbleMotionStyle(entity.id);
 
                       return (
                         <button
                           key={entity.id}
                           type="button"
                           className={cn(
-                            "absolute flex flex-col items-center justify-center rounded-full border border-foreground/10 px-2 text-center shadow-sm transition-transform hover:scale-[1.02]",
-                            active ? "ring-2 ring-ring/40" : "",
+                            "memory-insight-bubble absolute isolate z-[3] flex flex-col items-center justify-start bg-transparent p-0 text-center shadow-none cursor-pointer",
+                            "text-left transition-[left,top,transform,box-shadow,filter] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+                            active ? "ring-2 ring-foreground/18" : "ring-1 ring-transparent",
                           )}
                           style={{
                             left: node.position.x,
                             top: node.position.y,
-                            width: node.size,
-                            height: node.size,
-                            backgroundColor: `color-mix(in srgb, ${tone} 16%, var(--background))`,
-                            color: tone,
-                            transform: draggingNodeId === entity.id ? "scale(1.03)" : undefined,
+                            width: node.width,
+                            height: node.height,
+                            "--insight-bubble-color": color,
                           } as CSSProperties}
-                          onPointerDown={(event) => startDrag(event, entity.id, node.position, node.size)}
+                          onPointerDown={(event) => startDrag(event, entity.id, node.position, node.width, node.height)}
                           onClick={() => {
                             setSelectedEntityId(entity.id);
                             setSelectedEdgeId(null);
                             setExpandDepth(1);
                           }}
                           data-testid={`relation-node-entity:${entity.id}`}
+                          data-bubble-diameter={node.diameter}
+                          data-bubble-size={tier}
+                          data-active={active ? "true" : "false"}
+                          data-dragging={draggingNodeId === entity.id ? "true" : "false"}
                         >
-                          <span className="line-clamp-2 px-2 text-[11px] font-semibold leading-tight">
-                            {entity.label}
+                          <span
+                            className={cn(
+                              "memory-insight-bubble-motion",
+                              active ? "memory-insight-bubble-motion-paused" : "",
+                            )}
+                            style={{
+                              width: node.diameter,
+                              height: node.diameter,
+                              ...(driftStyle ?? {}),
+                            }}
+                          >
+                            <span className="memory-insight-bubble-core">
+                              <span className="memory-insight-bubble-halo absolute inset-[-16px] rounded-full" />
+                              <span className="memory-insight-bubble-shell absolute inset-0 rounded-full" />
+                              <span className="memory-insight-bubble-visual absolute inset-[3px] rounded-full" />
+                            </span>
                           </span>
-                          <span className="mt-1 text-[10px] opacity-70">
-                            {entity.count}
+                          <span className="memory-insight-bubble-label mt-2 block w-full px-1">
+                            <span className="line-clamp-2 block text-[12px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
+                              {entity.label}
+                            </span>
+                            <span className="mt-1 block text-[11px] font-medium tabular-nums text-foreground/62">
+                              {entity.count}
+                            </span>
                           </span>
                         </button>
                       );
