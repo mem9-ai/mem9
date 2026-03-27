@@ -51,7 +51,7 @@ const PIXEL_FARM_COLLISION_INDEX = buildPixelFarmCollisionIndex(PIXEL_FARM_COLLI
 
 const COW_SPAWN_BOUNDS: PixelFarmCellBounds = {
   minRow: 22,
-  maxRow: 24,
+  maxRow: 25,
   minColumn: 15,
   maxColumn: 22,
 };
@@ -229,6 +229,19 @@ function pickDistributedCells(
   }
 
   return picked.sort(compareGridCells);
+}
+
+function pickRandomCells(
+  cells: readonly PixelFarmGridCell[],
+  count: number,
+): PixelFarmGridCell[] {
+  if (count <= 0 || cells.length < 1) {
+    return [];
+  }
+
+  return Phaser.Utils.Array.Shuffle([...cells])
+    .slice(0, Math.min(count, cells.length))
+    .sort(compareGridCells);
 }
 
 function collectConnectedComponents(
@@ -897,7 +910,7 @@ function createAnimalPenLayoutFromCells(
     walkableRoamCells.length > 0 ? measureCellBounds(walkableRoamCells) : fallbackBounds;
 
   return {
-    animalCells: pickDistributedCells(
+    animalCells: pickRandomCells(
       validSpawnCells,
       Math.min(16, validSpawnCells.length),
     ),
