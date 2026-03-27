@@ -562,8 +562,6 @@ class PixelFarmSandboxScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.interactionSelectionFrame += 1;
-    this.cachedInteractionSelectionFrame = undefined;
-    this.cachedInteractionSelectionState = null;
     this.character?.update(delta, this.readCharacterInput());
     this.worldRenderer?.setPausedAnimalInstanceId(
       this.options.getPausedAnimalInstanceId?.() ?? null,
