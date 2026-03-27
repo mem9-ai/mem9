@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
-import { PixelFarmInteractionBubble } from "@/components/pixel-farm/interaction-bubble";
 import {
   createPixelFarmGame,
   type PixelFarmDebugState,
   type PixelFarmInteractionDebugInfo,
   type PixelFarmPointerDebugInfo,
 } from "@/lib/pixel-farm/create-game";
+import { PixelFarmUIScene } from "@/lib/pixel-farm/ui-scene";
 import {
   PIXEL_FARM_BUBBLE_APPEAR_SOUND_DURATION_MS,
   PIXEL_FARM_BUBBLE_APPEAR_SOUND_KEY,
@@ -55,7 +55,7 @@ function createOpenBubbleState(
   }
 
   const memoryIds = memories.map((memory) => memory.id);
-  if (current && current.targetId === target.id && info.interactionNonce === current.interactionNonce) {
+  if (current && current.targetId === target.id) {
     return {
       ...current,
       animalInstanceId: target.animalInstanceId ?? null,
@@ -81,19 +81,7 @@ function createOpenBubbleState(
     };
   }
 
-  return {
-    ...current,
-    animalInstanceId: target.animalInstanceId ?? null,
-    interactionNonce: info.interactionNonce,
-    memories: [...memories],
-    memoryIds,
-    memoryIndex: info.interactionNonce > current.interactionNonce
-      ? (current.memoryIndex + 1) % memoryIds.length
-      : current.memoryIndex,
-    screenX: target.screenX,
-    screenY: target.screenY,
-    tagLabel: target.tagLabel,
-  };
+  return null;
 }
 
 function playBubbleAppearSound(
@@ -194,24 +182,46 @@ export function PhaserStage({
     resolveInteractionMemoriesRef.current = resolveInteractionMemories;
   }, [resolveInteractionMemories]);
 
-  const fallbackVisibleMemoryIds = openBubbleState
-    ? resolveAvailableMemoryIds(openBubbleState.memoryIds, memoryById)
-    : [];
-  const visibleMemories = openBubbleState
-    ? openBubbleState.memories.length > 0
-      ? openBubbleState.memories
-      : fallbackVisibleMemoryIds.map((memoryId) => memoryById[memoryId]!).filter(Boolean)
-    : [];
-  const currentIndex = openBubbleState && visibleMemories.length > 0
-    ? openBubbleState.memoryIndex % visibleMemories.length
-    : 0;
-  const currentMemory = visibleMemories[currentIndex] ?? null;
-  const pausedAnimalInstanceId =
-    openBubbleState && currentMemory ? openBubbleState.animalInstanceId : null;
+  const pausedAnimalInstanceId = openBubbleState?.animalInstanceId ?? null;
 
   useEffect(() => {
     pausedAnimalInstanceIdRef.current = pausedAnimalInstanceId;
   }, [pausedAnimalInstanceId]);
+
+  useEffect(() => {
+    const uiScene = gameRef.current?.scene.getScene("pixel-farm-ui") as PixelFarmUIScene | undefined;
+    if (!uiScene) {
+      return;
+    }
+
+    if (!openBubbleState) {
+      uiScene.closeDialog();
+      return;
+    }
+
+    const visibleMemories = openBubbleState.memories.length > 0
+      ? openBubbleState.memories
+      : resolveAvailableMemoryIds(openBubbleState.memoryIds, memoryById)
+          .map((memoryId) => memoryById[memoryId]!)
+          .filter(Boolean);
+
+    if (visibleMemories.length === 0) {
+      uiScene.closeDialog();
+      return;
+    }
+
+    uiScene.openDialog({
+      targetId: openBubbleState.targetId,
+      interactionNonce: openBubbleState.interactionNonce,
+      tagLabel: openBubbleState.tagLabel,
+      memories: visibleMemories,
+      memoryIndex: openBubbleState.memoryIndex % visibleMemories.length,
+      anchorWorldX: openBubbleState.screenX,
+      anchorWorldY: openBubbleState.screenY,
+      anchorScreenX: openBubbleState.screenX,
+      anchorScreenY: openBubbleState.screenY,
+    });
+  }, [memoryById, openBubbleState]);
 
   useEffect(() => {
     if (!hostRef.current || gameRef.current) {
@@ -296,16 +306,6 @@ export function PhaserStage({
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#0d141b]">
       <div ref={hostRef} className="h-full w-full touch-none" />
-      {openBubbleState && currentMemory ? (
-        <PixelFarmInteractionBubble
-          content={currentMemory.content}
-          currentIndex={currentIndex}
-          screenX={openBubbleState.screenX}
-          screenY={openBubbleState.screenY}
-          tagLabel={openBubbleState.tagLabel}
-          totalCount={visibleMemories.length}
-        />
-      ) : null}
       {bootError ? (
         <div className="absolute inset-0 flex items-center justify-center bg-[#0d141b] px-6 text-center text-sm uppercase tracking-[0.2em] text-[#f6dca6]">
           {bootError}
