@@ -391,6 +391,8 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Keep farm audio running when the browser window loses focus.
+    this.sound.pauseOnBlur = false;
     this.scene.launch("pixel-farm-ui");
     this.oceanLayer = this.add.container(0, 0);
     this.worldLayer = this.add.container(0, 0);
