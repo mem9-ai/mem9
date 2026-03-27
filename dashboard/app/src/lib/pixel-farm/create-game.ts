@@ -53,6 +53,7 @@ import {
   PIXEL_FARM_WATER_TEXTURE_KEYS,
 } from "@/lib/pixel-farm/runtime-assets";
 import type { PixelFarmWorldState } from "@/lib/pixel-farm/data/types";
+import { PixelFarmUIScene } from "@/lib/pixel-farm/ui-scene";
 import {
   PIXEL_FARM_ASSET_SOURCE_CONFIG,
   PIXEL_FARM_TILE_SIZE,
@@ -374,6 +375,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.scene.launch("pixel-farm-ui");
     this.oceanLayer = this.add.container(0, 0);
     this.worldLayer = this.add.container(0, 0);
     this.effectsLayer = this.add.container(0, 0);
@@ -1717,7 +1719,7 @@ export function createPixelFarmGame(
         debugShowVelocity: false,
       },
     },
-    scene: [new PixelFarmSandboxScene(options)],
+    scene: [new PixelFarmSandboxScene(options), new PixelFarmUIScene()],
     scale: {
       mode: Phaser.Scale.RESIZE,
       autoCenter: Phaser.Scale.CENTER_BOTH,
