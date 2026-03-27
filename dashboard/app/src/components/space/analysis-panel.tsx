@@ -45,7 +45,7 @@ function formatCategoryLabel(t: TFunction, category: AnalysisCategory): string {
   return translated === key ? humanizeCategory(category) : translated;
 }
 
-function formatPhaseLabel(t: TFunction, phase: SpaceAnalysisState["phase"]): string {
+export function formatPhaseLabel(t: TFunction, phase: SpaceAnalysisState["phase"]): string {
   return t(`analysis.phase.${phase}`);
 }
 
@@ -92,7 +92,7 @@ function getTagStatsFromState(
   return state.snapshot ? getFacetStats(state.snapshot, "tags") : [];
 }
 
-function getDisplayedBatchProgress(
+export function getDisplayedBatchProgress(
   phase: SpaceAnalysisState["phase"],
   snapshot: AnalysisJobSnapshotResponse,
 ): { current: number; total: number; ratio: number } {
@@ -142,7 +142,7 @@ function getDisplayedBatchProgress(
   };
 }
 
-function formatBatchSummary(
+export function formatBatchSummary(
   t: TFunction,
   phase: SpaceAnalysisState["phase"],
   snapshot: AnalysisJobSnapshotResponse,
