@@ -141,8 +141,8 @@ func TestComplete(t *testing.T) {
 			if req.Temperature != 0.1 {
 				t.Fatalf("temperature = %v, want %v", req.Temperature, 0.1)
 			}
-			if req.ReasoningEffort == nil || *req.ReasoningEffort != "none" {
-				t.Fatalf("reasoning_effort = %v, want %q", req.ReasoningEffort, "none")
+			if req.ReasoningEffort != nil {
+				t.Fatalf("reasoning_effort = %v, want nil", *req.ReasoningEffort)
 			}
 			if req.EnableThinking != nil {
 				t.Fatalf("enable_thinking = %v, want nil", *req.EnableThinking)

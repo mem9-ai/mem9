@@ -125,7 +125,7 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 		{Role: "user", Content: user},
 	}
 
-	reasoningEffort, enableThinking := thinkingOptions(c.model)
+	reasoningEffort, enableThinking := disableThinkingOptions(c.model)
 
 	result, err := c.doRequest(ctx, chatRequest{
 		Model:           c.model,
@@ -216,14 +216,12 @@ func (c *Client) DebugLLM() bool {
 	return c.debugLLM
 }
 
-func thinkingOptions(model string) (*string, *bool) {
+func disableThinkingOptions(model string) (*string, *bool) {
 	if strings.Contains(strings.ToLower(model), "qwen") {
 		enableThinking := false
 		return nil, &enableThinking
 	}
-
-	reasoningEffort := "none"
-	return &reasoningEffort, nil
+	return nil, nil
 }
 
 func StripMarkdownFences(s string) string {
