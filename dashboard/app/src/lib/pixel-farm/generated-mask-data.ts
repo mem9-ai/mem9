@@ -1823,38 +1823,6 @@ export const PIXEL_FARM_GENERATED_OBJECTS = [
     column: 13,
   },
   {
-    id: "object-180",
-    layerId: "objects",
-    sourceId: "fences",
-    frame: 25,
-    row: 16,
-    column: 25,
-  },
-  {
-    id: "object-239",
-    layerId: "objects",
-    sourceId: "fences",
-    frame: 26,
-    row: 16,
-    column: 26,
-  },
-  {
-    id: "object-240",
-    layerId: "objects",
-    sourceId: "fences",
-    frame: 20,
-    row: 16,
-    column: 27,
-  },
-  {
-    id: "object-241",
-    layerId: "objects",
-    sourceId: "fences",
-    frame: 27,
-    row: 16,
-    column: 28,
-  },
-  {
     id: "object-242",
     layerId: "objects",
     sourceId: "fences",
@@ -4740,46 +4708,6 @@ export const PIXEL_FARM_GENERATED_COLLISIONS = [
     halfTileColumn: 61,
   },
   {
-    id: "collision-549",
-    halfTileRow: 33,
-    halfTileColumn: 50,
-  },
-  {
-    id: "collision-550",
-    halfTileRow: 33,
-    halfTileColumn: 51,
-  },
-  {
-    id: "collision-551",
-    halfTileRow: 33,
-    halfTileColumn: 52,
-  },
-  {
-    id: "collision-552",
-    halfTileRow: 33,
-    halfTileColumn: 53,
-  },
-  {
-    id: "collision-553",
-    halfTileRow: 33,
-    halfTileColumn: 55,
-  },
-  {
-    id: "collision-554",
-    halfTileRow: 33,
-    halfTileColumn: 54,
-  },
-  {
-    id: "collision-555",
-    halfTileRow: 33,
-    halfTileColumn: 56,
-  },
-  {
-    id: "collision-556",
-    halfTileRow: 33,
-    halfTileColumn: 57,
-  },
-  {
     id: "collision-557",
     halfTileRow: 29,
     halfTileColumn: 34,
@@ -5013,26 +4941,6 @@ export const PIXEL_FARM_GENERATED_COLLISIONS = [
     id: "collision-601",
     halfTileRow: 54,
     halfTileColumn: 72,
-  },
-  {
-    id: "collision-583",
-    halfTileRow: 32,
-    halfTileColumn: 48,
-  },
-  {
-    id: "collision-584",
-    halfTileRow: 32,
-    halfTileColumn: 49,
-  },
-  {
-    id: "collision-602",
-    halfTileRow: 33,
-    halfTileColumn: 48,
-  },
-  {
-    id: "collision-603",
-    halfTileRow: 33,
-    halfTileColumn: 49,
   },
   {
     id: "collision-604",
