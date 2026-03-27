@@ -418,6 +418,11 @@
     }
   },
   "pixel_farm": {
-    "stage_loading": "正在加载像素农场"
+    "stage_loading": "正在加载像素农场",
+    "controls": {
+      "title": "操作提示",
+      "move": "移动",
+      "interact": "交互"
+    }
   }
 }
