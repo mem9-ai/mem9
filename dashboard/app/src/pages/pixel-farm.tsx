@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PixelFarmActorPreviewPanel } from "@/components/pixel-farm/actor-preview-panel";
+import { PixelFarmFeedbackDialog } from "@/components/pixel-farm/feedback-dialog";
 import { PixelFarmFrontTargetPanel } from "@/components/pixel-farm/front-target-panel";
 import { PhaserStage } from "@/components/pixel-farm/phaser-stage";
 import { PixelFarmPointerCoordinatesPanel } from "@/components/pixel-farm/pointer-coordinates-panel";
@@ -44,33 +45,34 @@ export function PixelFarmPage() {
         showSpatialDebug={showDebugPanel ? showSpatialDebug : false}
         worldState={worldQuery.worldState}
       />
-      <aside className="absolute right-4 bottom-4 z-20 max-w-[18rem] rounded-2xl border border-[#f6dca6]/20 bg-[#141109]/88 px-4 py-3 text-[#f6dca6] shadow-2xl backdrop-blur">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[#f6dca6]/72">
+      <aside className="absolute right-4 bottom-4 z-20 max-w-[16rem] rounded-lg border-[2px] border-[#3f3322] bg-[#f6dca6]/90 px-3 py-2 text-[#3f3322] shadow-[2px_2px_0_0_#3f3322] backdrop-blur-sm transition-opacity hover:bg-[#f6dca6]">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[#8d6b43]">
           {t("pixel_farm.controls.title")}
         </p>
-        <div className="mt-2 space-y-1.5 text-[13px] leading-5">
+        <div className="mt-1.5 space-y-1 text-[11px] font-medium leading-relaxed">
           <p>
-            <span className="font-medium text-[#fff0c6]">WASD</span>
-            <span className="mx-1.5 text-[#f6dca6]/45">/</span>
-            <span className="font-medium text-[#fff0c6]">↑↓←→</span>
-            <span className="ml-2 text-[#f6dca6]/72">{t("pixel_farm.controls.move")}</span>
+            <span className="font-bold text-[#3f3322]">WASD</span>
+            <span className="mx-1 text-[#8d6b43]/50">/</span>
+            <span className="font-bold text-[#3f3322]">↑↓←→</span>
+            <span className="ml-1.5 text-[#5a452b]">{t("pixel_farm.controls.move")}</span>
           </p>
           <p>
-            <span className="font-medium text-[#fff0c6]">Space</span>
-            <span className="ml-2 text-[#f6dca6]/72">{t("pixel_farm.controls.interact")}</span>
+            <span className="font-bold text-[#3f3322]">Space</span>
+            <span className="ml-1.5 text-[#5a452b]">{t("pixel_farm.controls.interact")}</span>
           </p>
         </div>
         <button
           type="button"
-          className="mt-3 inline-flex cursor-pointer items-center rounded-full border border-[#f6dca6]/25 px-3 py-1.5 text-[11px] uppercase tracking-[0.14em] text-[#fff0c6] transition hover:border-[#f6dca6]/45 hover:bg-[#f6dca6]/10"
+          className="mt-2 inline-flex cursor-pointer items-center rounded-md border-[2px] border-[#8d6b43] bg-[#d2b881] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[#5a452b] shadow-[2px_2px_0_0_#8d6b43] transition-all hover:bg-[#dfc48c] active:translate-y-[2px] active:shadow-none"
           onClick={() => setMusicEnabled((current) => !current)}
         >
           {t("pixel_farm.controls.music")}
-          <span className="ml-2 text-[#f6dca6]/72">
+          <span className="ml-1.5 text-[#8d6b43]">
             {musicEnabled ? t("pixel_farm.controls.on") : t("pixel_farm.controls.off")}
           </span>
         </button>
       </aside>
+      <PixelFarmFeedbackDialog />
       {showDebugPanel ? (
         <>
           <div className="absolute top-4 left-4 z-20 flex flex-col gap-3">
