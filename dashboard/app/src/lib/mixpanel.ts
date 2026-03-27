@@ -5,10 +5,14 @@ const MIXPANEL_TOKEN = import.meta.env.VITE_MIXPANEL_TOKEN?.trim() ?? "";
 let hasInitializedMixpanel = false;
 let lastTrackedPageName: string | null = null;
 
+const PAGE_NAME_BY_PATH: Record<string, string> = {
+  "/": "connect",
+  "/space": "space",
+  "/labs/memory-farm": "memory-farm",
+};
+
 function resolvePageName(pathname: string): string {
-  if (pathname === "/") return "connect";
-  if (pathname === "/space") return "space";
-  return pathname;
+  return PAGE_NAME_BY_PATH[pathname] ?? pathname;
 }
 
 export function initMixpanelOnLogin(): void {
