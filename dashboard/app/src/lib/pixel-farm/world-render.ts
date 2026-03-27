@@ -49,18 +49,18 @@ const CHICKEN_RENDER_COLORS = ["default", "brown"] as const satisfies readonly P
 const COW_RENDER_COLORS = ["brown", "light"] as const satisfies readonly PixelFarmCowColor[];
 const PIXEL_FARM_COLLISION_INDEX = buildPixelFarmCollisionIndex(PIXEL_FARM_COLLISIONS);
 
-const COW_PEN_BOUNDS: PixelFarmCellBounds = {
+const COW_SPAWN_BOUNDS: PixelFarmCellBounds = {
   minRow: 22,
-  maxRow: 25,
-  minColumn: 14,
-  maxColumn: 18,
+  maxRow: 24,
+  minColumn: 15,
+  maxColumn: 22,
 };
 
-const CHICKEN_PEN_BOUNDS: PixelFarmCellBounds = {
-  minRow: 8,
-  maxRow: 11,
-  minColumn: 32,
-  maxColumn: 39,
+const CHICKEN_SPAWN_BOUNDS: PixelFarmCellBounds = {
+  minRow: 9,
+  maxRow: 12,
+  minColumn: 33,
+  maxColumn: 38,
 };
 
 interface PixelFarmGridCell {
@@ -231,76 +231,6 @@ function pickDistributedCells(
   return picked.sort(compareGridCells);
 }
 
-function randomizeDistributedCells(
-  cells: readonly PixelFarmGridCell[],
-  count: number,
-): PixelFarmGridCell[] {
-  if (count <= 0 || cells.length < 1) {
-    return [];
-  }
-
-  if (cells.length <= count) {
-    return [...cells].sort(compareGridCells);
-  }
-
-  const shuffled = [...cells];
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const swapIndex = Phaser.Math.Between(0, index);
-    const current = shuffled[index]!;
-    shuffled[index] = shuffled[swapIndex]!;
-    shuffled[swapIndex] = current;
-  }
-
-  const picked: PixelFarmGridCell[] = [shuffled.shift()!];
-
-  while (picked.length < count && shuffled.length > 0) {
-    let bestIndex = 0;
-    let bestDistance = -1;
-
-    for (const [candidateIndex, candidate] of shuffled.entries()) {
-      const nearestPickedDistance = picked.reduce((distance, pickedCell) => {
-        const nextDistance = cellDistance(candidate, pickedCell);
-        return Math.min(distance, nextDistance);
-      }, Number.POSITIVE_INFINITY);
-
-      if (nearestPickedDistance > bestDistance) {
-        bestDistance = nearestPickedDistance;
-        bestIndex = candidateIndex;
-      }
-    }
-
-    picked.push(shuffled.splice(bestIndex, 1)[0]!);
-  }
-
-  return picked.sort(compareGridCells);
-}
-
-function pickCentralCells(
-  cells: readonly PixelFarmGridCell[],
-  count: number,
-): PixelFarmGridCell[] {
-  if (count <= 0 || cells.length < 1) {
-    return [];
-  }
-
-  if (cells.length <= count) {
-    return [...cells].sort(compareGridCells);
-  }
-
-  const bounds = measureCellBounds(cells);
-  const centerRow = (bounds.minRow + bounds.maxRow) * 0.5 + (bounds.maxRow - bounds.minRow + 1) * 0.2;
-  const centerColumn = (bounds.minColumn + bounds.maxColumn) * 0.5;
-  const rowRadius = (bounds.maxRow - bounds.minRow + 1) * 0.25;
-  const columnRadius = (bounds.maxColumn - bounds.minColumn + 1) * 0.25;
-  const centralPool = cells.filter(
-    (cell) =>
-      Math.abs(cell.row - centerRow) <= rowRadius &&
-      Math.abs(cell.column - centerColumn) <= columnRadius,
-  );
-
-  return randomizeDistributedCells(centralPool.length >= count ? centralPool : cells, count);
-}
-
 function collectConnectedComponents(
   cells: readonly PixelFarmGridCell[],
 ): PixelFarmGridCell[][] {
@@ -438,15 +368,16 @@ const ISLAND_WALKABLE_CELLS = collectWalkableCells({
   minColumn: 0,
   maxColumn: PIXEL_FARM_ROOT_LAYER.mask[0]!.length - 1,
 });
-const CENTRAL_ISLAND_WALKABLE_CELLS = pickCentralCells(ISLAND_WALKABLE_CELLS, 16);
+const COW_SPAWN_CELLS = collectWalkableCells(COW_SPAWN_BOUNDS);
+const CHICKEN_SPAWN_CELLS = collectWalkableCells(CHICKEN_SPAWN_BOUNDS);
 const COW_PEN_LAYOUT = createAnimalPenLayoutFromCells(
-  CENTRAL_ISLAND_WALKABLE_CELLS,
-  COW_PEN_BOUNDS,
+  COW_SPAWN_CELLS,
+  COW_SPAWN_BOUNDS,
   ISLAND_WALKABLE_CELLS,
 );
 const CHICKEN_PEN_LAYOUT = createAnimalPenLayoutFromCells(
-  CENTRAL_ISLAND_WALKABLE_CELLS,
-  CHICKEN_PEN_BOUNDS,
+  CHICKEN_SPAWN_CELLS,
+  CHICKEN_SPAWN_BOUNDS,
   ISLAND_WALKABLE_CELLS,
 );
 
