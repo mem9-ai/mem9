@@ -1,7 +1,33 @@
+---
+title: "Smart Memory Pipeline — Fact Extraction, Session Digest & Recall Optimization"
+status: partially-implemented
+created: 2026-03-06
+last_updated: 2026-03-25
+---
+
+> **STATUS: PARTIALLY IMPLEMENTED**
+>
+> **Implemented:**
+> - `memory_type` column (`pinned`, `insight`) and `MemoryType`/`MemoryState`
+>   domain types (`active`, `paused`, `archived`, `deleted`)
+> - `state` column replacing `tombstone` (soft-delete via `SoftDelete`)
+> - `agent_id`, `session_id`, `superseded_by` columns
+> - Two-phase ingest pipeline: `ExtractPhase1` (fact extraction) +
+>   `ReconcilePhase2` (vector search + LLM reconcile + archive model)
+> - `POST /memories` with `messages` payload; ingest modes (`smart`, `raw`, etc.)
+> - Memory-type weighted scoring after RRF (`applyTypeWeights`)
+> - `RelativeAge` field on search results
+>
+> **Not implemented:**
+> - `TypeDigest` (`"digest"`) — the domain only has `TypePinned` and `TypeInsight`;
+>   session digests were folded into the raw session storage proposal instead
+> - Digest auto-archival background job (Phase 4)
+> - `paused`/`archived` state transitions via `PUT /memories/:id`
+
 # Proposal: Smart Memory Pipeline — Fact Extraction, Session Digest & Recall Optimization
 
-**Date**: 2026-03-06 (revised 2026-03-06 post-review)  
-**Purpose**: Design the intelligent auto-capture pipeline for mnemos — extracting atomic facts, generating session digests, and optimizing recall accuracy through a two-phase LLM pipeline.  
+**Date**: 2026-03-06 (revised 2026-03-06 post-review)
+**Purpose**: Design the intelligent auto-capture pipeline for mnemos — extracting atomic facts, generating session digests, and optimizing recall accuracy through a two-phase LLM pipeline.
 **Review status**: Addressing 4 blockers + 4 concerns from cross-validated review.
 
 ---

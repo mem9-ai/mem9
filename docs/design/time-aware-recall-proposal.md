@@ -1,8 +1,19 @@
+---
+title: "Proposal: Time-Aware Memory Recall"
+status: implemented
+created: 2026-03-14
+last_updated: 2026-03-25
+---
+
+> **STATUS: IMPLEMENTED** (PR #83, fix #108)
+> `relativeAge()` and `populateRelativeAge()` are in `service/memory.go`.
+> `RelativeAge` field is populated on both search and list (no-query) paths.
+> `Memory.RelativeAge` is in `domain/types.go`.
+
 # Proposal: Time-Aware Memory Recall
 
-**Date:** 2026-03-14  
-**Author:** Cleo 🐾  
-**Status:** Draft  
+**Date:** 2026-03-14
+**Author:** Cleo
 **Based on:** Shenjun's suggestion
 
 ---

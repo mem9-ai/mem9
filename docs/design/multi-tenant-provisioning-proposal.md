@@ -1,6 +1,19 @@
+---
+title: Multi-Tenant Provisioning — Token Auth & Dedicated TiDB Clusters
+status: implemented
+created: 2026-03-06
+last_updated: 2026-03-25
+---
+
+> **STATUS: IMPLEMENTED**
+> `Provisioner` interface, `ZeroProvisioner`, `TiDBCloudProvisioner`,
+> `TenantPool`, `TenantService`, and the `tenants`/`tenant_tokens` control-plane
+> schema are all implemented. Auth middleware resolves tenant tokens.
+> Connection pool with lazy init and idle eviction is in `internal/tenant/`.
+
 # Proposal: Multi-Tenant Provisioning — Token Auth & Dedicated TiDB Clusters
 
-**Date**: 2026-03-06  
+**Date**: 2026-03-06
 **Purpose**: Design the tenant isolation layer for mnemos-server — each OpenClaw instance gets a dedicated TiDB Serverless cluster, with token-based authentication and automatic provisioning.
 
 **Companion doc**: `smart-memory-pipeline-proposal.md` (defines the pipeline that runs _inside_ each tenant's cluster)

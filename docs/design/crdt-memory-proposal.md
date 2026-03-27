@@ -1,14 +1,19 @@
 ---
 title: CRDT Memory with Vector Clocks
-status: draft
+status: rejected
 created: 2026-03-02
-last_updated: 2026-03-02
+last_updated: 2026-03-25
 open_questions: 0
 blocked_by: ""
 ---
 
-> **STATUS: DRAFT — UNDER REVISION**
-> Revised after reviewer feedback. Open questions listed at bottom.
+> **STATUS: REJECTED — NOT IMPLEMENTED**
+> This proposal was superseded by the smart-memory-pipeline-proposal, which
+> replaced tombstones with a `state` column and uses vector-search + LLM
+> reconciliation instead of vector-clock CRDT. No CRDT columns (`vector_clock`,
+> `origin_agent`, `last_write_id`, `last_write_snapshot`, `last_write_status`)
+> were ever added to the schema. The roadmap note in README.md confirms:
+> "Vector Clock CRDT was deferred and removed from the roadmap."
 
 ## Summary
 

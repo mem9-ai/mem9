@@ -2,6 +2,11 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { MemoryInsightOverview } from "./memory-insight-overview";
+import {
+  buildInsightEntityNodeId,
+  buildInsightMemoryNodeId,
+  buildInsightTagNodeId,
+} from "@/lib/memory-insight";
 import type { AnalysisCategoryCard, MemoryAnalysisMatch } from "@/types/analysis";
 import type { Memory } from "@/types/memory";
 
@@ -96,8 +101,12 @@ describe("MemoryInsightOverview", () => {
     fireEvent.click(screen.getByTestId("insight-node-card:project"));
     fireEvent.click(screen.getByTestId("insight-node-card:activity"));
 
-    expect(await screen.findByTestId("insight-node-tag:project:netlify")).toBeInTheDocument();
-    expect(screen.getByTestId("insight-node-tag:activity:notes")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId(`insight-node-${buildInsightTagNodeId("project", "netlify")}`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId(`insight-node-${buildInsightTagNodeId("activity", "notes")}`),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("memory-insight-canvas-viewport")).toBeInTheDocument();
     expect(screen.getByTestId("memory-insight-canvas-badge")).toHaveTextContent(
       "One shared canvas",
@@ -296,24 +305,97 @@ describe("MemoryInsightOverview", () => {
 
     fireEvent.click(screen.getByTestId("insight-node-card:analysis-category-life-log"));
     fireEvent.click(
-      await screen.findByTestId("insight-node-tag:analysis-category-life-log:netlify"),
-    );
-    expect(onMemorySelect).not.toHaveBeenCalled();
-
-    fireEvent.click(
       await screen.findByTestId(
-        "insight-node-entity:analysis-category-life-log:netlify:person_like:alice-johnson",
+        `insight-node-${buildInsightTagNodeId("analysis.category.life_log", "netlify")}`,
       ),
     );
     expect(onMemorySelect).not.toHaveBeenCalled();
 
     fireEvent.click(
       await screen.findByTestId(
-        "insight-node-memory:analysis-category-life-log:netlify:person_like:alice-johnson:mem-1",
+        `insight-node-${buildInsightEntityNodeId(
+          "analysis.category.life_log",
+          "netlify",
+          "person_like",
+          "Alice Johnson",
+        )}`,
+      ),
+    );
+    expect(onMemorySelect).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      await screen.findByTestId(
+        `insight-node-${buildInsightMemoryNodeId(
+          "analysis.category.life_log",
+          "netlify",
+          "person_like",
+          "Alice Johnson",
+          "mem-1",
+        )}`,
       ),
     );
     expect(onMemorySelect).toHaveBeenCalledWith(
       expect.objectContaining({ id: "mem-1" }),
+    );
+  });
+
+  it("truncates long lane labels to one line and exposes the full text on hover", async () => {
+    const longContent = [
+      "Requested to go to ~/git/PingComp and investigate the deployment drift before the next release window.",
+      "Coordinate with Alice Johnson on the follow-up notes and capture every environment diff in the report.",
+    ].join("\n");
+    const memories = [createMemory("mem-1", longContent, ["pingcomp"])];
+    const matchMap = new Map<string, MemoryAnalysisMatch>([
+      [
+        "mem-1",
+        {
+          memoryId: "mem-1",
+          categories: ["project"],
+          categoryScores: { project: 1 },
+        },
+      ],
+    ]);
+
+    renderInsight({
+      cards: [{ category: "project", count: 1, confidence: 1 }],
+      memories,
+      matchMap,
+    });
+
+    fireEvent.click(screen.getByTestId("insight-node-card:project"));
+    fireEvent.click(
+      await screen.findByTestId(`insight-node-${buildInsightTagNodeId("project", "pingcomp")}`),
+    );
+    fireEvent.click(
+      await screen.findByTestId(
+        `insight-node-${buildInsightEntityNodeId(
+          "project",
+          "pingcomp",
+          "person_like",
+          "Alice Johnson",
+        )}`,
+      ),
+    );
+
+    const memoryNode = await screen.findByTestId(
+      `insight-node-${buildInsightMemoryNodeId(
+        "project",
+        "pingcomp",
+        "person_like",
+        "Alice Johnson",
+        "mem-1",
+      )}`,
+    );
+    const label = memoryNode.querySelector(".whitespace-nowrap");
+
+    expect(label).not.toBeNull();
+    expect(label).toHaveTextContent(/\.\.\.$/);
+    expect(label?.textContent).not.toContain("\n");
+    expect(memoryNode).toHaveAttribute(
+      "title",
+      expect.stringContaining(
+        "Requested to go to ~/git/PingComp and investigate the deployment drift before the next release window. Coordinate with Alice Johnson on the follow-up notes and capture every environment diff in the report.",
+      ),
     );
   });
 
@@ -340,13 +422,257 @@ describe("MemoryInsightOverview", () => {
 
     fireEvent.click(screen.getByTestId("insight-node-card:project"));
 
-    expect(await screen.findByTestId("insight-node-tag:project:tag-a")).toBeInTheDocument();
-    expect(screen.getByTestId("insight-node-tag:project:tag-f")).toBeInTheDocument();
-    expect(screen.queryByTestId("insight-node-tag:project:tag-g")).not.toBeInTheDocument();
+    expect(
+      await screen.findByTestId(`insight-node-${buildInsightTagNodeId("project", "tag-a")}`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId(`insight-node-${buildInsightTagNodeId("project", "tag-f")}`),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId(`insight-node-${buildInsightTagNodeId("project", "tag-g")}`),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("insight-node-more:card:project:tags"));
 
-    expect(await screen.findByTestId("insight-node-tag:project:tag-g")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId(`insight-node-${buildInsightTagNodeId("project", "tag-g")}`),
+    ).toBeInTheDocument();
+  });
+
+  it("removes the previous entity column when switching tags inside one lane", async () => {
+    const memories = [
+      createMemory(
+        "artifact-1",
+        "Delivered PingComp lead-management enhancements on the `main` branch.",
+        ["PingComp"],
+      ),
+      createMemory(
+        "artifact-2",
+        "Verified `SKILL.md` in `/home/ec2-user` after the release.",
+        ["SKILL.md"],
+      ),
+    ];
+    const matchMap = new Map<string, MemoryAnalysisMatch>([
+      ["artifact-1", { memoryId: "artifact-1", categories: ["artifact"], categoryScores: { artifact: 1 } }],
+      ["artifact-2", { memoryId: "artifact-2", categories: ["artifact"], categoryScores: { artifact: 1 } }],
+    ]);
+
+    renderInsight({
+      cards: [{ category: "artifact", count: 2, confidence: 1 }],
+      memories,
+      matchMap,
+    });
+
+    fireEvent.click(screen.getByTestId("insight-node-card:artifact"));
+    fireEvent.click(
+      await screen.findByTestId(`insight-node-${buildInsightTagNodeId("artifact", "PingComp")}`),
+    );
+
+    const pingCompEntityId = buildInsightEntityNodeId(
+      "artifact",
+      "PingComp",
+      "named_term",
+      "PingComp",
+    );
+    const skillEntityId = buildInsightEntityNodeId(
+      "artifact",
+      "SKILL.md",
+      "named_term",
+      "SKILL.md",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId(`insight-node-${pingCompEntityId}`)).toBeInTheDocument();
+    });
+
+    fireEvent.click(
+      screen.getByTestId(`insight-node-${buildInsightTagNodeId("artifact", "SKILL.md")}`),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId(`insight-node-${pingCompEntityId}`)).not.toBeInTheDocument();
+      expect(screen.getByTestId(`insight-node-${skillEntityId}`)).toBeInTheDocument();
+    });
+  });
+
+  it("removes the previous memory column when switching entities under the same tag", async () => {
+    const memories = [
+      createMemory(
+        "artifact-1",
+        "Delivered PingComp lead-management enhancements for PingComp.",
+        ["PingComp"],
+      ),
+      createMemory(
+        "artifact-2",
+        "Reviewed the `git/PingComp` repository metadata for the release.",
+        ["PingComp"],
+      ),
+    ];
+    const matchMap = new Map<string, MemoryAnalysisMatch>([
+      ["artifact-1", { memoryId: "artifact-1", categories: ["artifact"], categoryScores: { artifact: 1 } }],
+      ["artifact-2", { memoryId: "artifact-2", categories: ["artifact"], categoryScores: { artifact: 1 } }],
+    ]);
+
+    renderInsight({
+      cards: [{ category: "artifact", count: 2, confidence: 1 }],
+      memories,
+      matchMap,
+    });
+
+    fireEvent.click(screen.getByTestId("insight-node-card:artifact"));
+    fireEvent.click(
+      await screen.findByTestId(`insight-node-${buildInsightTagNodeId("artifact", "PingComp")}`),
+    );
+
+    fireEvent.click(
+      await screen.findByTestId(
+        `insight-node-${buildInsightEntityNodeId(
+          "artifact",
+          "PingComp",
+          "named_term",
+          "PingComp",
+        )}`,
+      ),
+    );
+
+    expect(
+      await screen.findByTestId(
+        `insight-node-${buildInsightMemoryNodeId(
+          "artifact",
+          "PingComp",
+          "named_term",
+          "PingComp",
+          "artifact-1",
+        )}`,
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByTestId(
+        `insight-node-${buildInsightEntityNodeId(
+          "artifact",
+          "PingComp",
+          "named_term",
+          "git/PingComp",
+        )}`,
+      ),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId(
+          `insight-node-${buildInsightMemoryNodeId(
+            "artifact",
+            "PingComp",
+            "named_term",
+            "PingComp",
+            "artifact-1",
+          )}`,
+        ),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByTestId(
+          `insight-node-${buildInsightMemoryNodeId(
+            "artifact",
+            "PingComp",
+            "named_term",
+            "git/PingComp",
+            "artifact-2",
+          )}`,
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("does not keep both memory branches when switching between same-label entity kinds", async () => {
+    const memories = [
+      createMemory(
+        "artifact-1",
+        "Delivered PingComp lead-management enhancements on 2026-03-05.",
+        ["PingComp"],
+      ),
+      createMemory(
+        "artifact-2",
+        "The PingComp service was restarted on 2026-03-05 after deploy.",
+        ["PingComp"],
+      ),
+    ];
+    const matchMap = new Map<string, MemoryAnalysisMatch>([
+      ["artifact-1", { memoryId: "artifact-1", categories: ["artifact"], categoryScores: { artifact: 1 } }],
+      ["artifact-2", { memoryId: "artifact-2", categories: ["artifact"], categoryScores: { artifact: 1 } }],
+    ]);
+
+    renderInsight({
+      cards: [{ category: "artifact", count: 2, confidence: 1 }],
+      memories,
+      matchMap,
+    });
+
+    fireEvent.click(screen.getByTestId("insight-node-card:artifact"));
+    fireEvent.click(
+      await screen.findByTestId(`insight-node-${buildInsightTagNodeId("artifact", "PingComp")}`),
+    );
+
+    fireEvent.click(
+      await screen.findByTestId(
+        `insight-node-${buildInsightEntityNodeId(
+          "artifact",
+          "PingComp",
+          "named_term",
+          "2026-03-05",
+        )}`,
+      ),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId(
+          `insight-node-${buildInsightMemoryNodeId(
+            "artifact",
+            "PingComp",
+            "named_term",
+            "2026-03-05",
+            "artifact-1",
+          )}`,
+        ),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(
+      screen.getByTestId(
+        `insight-node-${buildInsightEntityNodeId(
+          "artifact",
+          "PingComp",
+          "metric",
+          "2026-03-05",
+        )}`,
+      ),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId(
+          `insight-node-${buildInsightMemoryNodeId(
+            "artifact",
+            "PingComp",
+            "named_term",
+            "2026-03-05",
+            "artifact-1",
+          )}`,
+        ),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByTestId(
+          `insight-node-${buildInsightMemoryNodeId(
+            "artifact",
+            "PingComp",
+            "metric",
+            "2026-03-05",
+            "artifact-1",
+          )}`,
+        ),
+      ).toBeInTheDocument();
+    });
   });
 
   it("toggles browser fullscreen state from the top-right control", async () => {

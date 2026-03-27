@@ -3,3 +3,4 @@
 
 # Override root .env exclusion — this .env only has non-secret defaults
 !.env
+package-lock.json

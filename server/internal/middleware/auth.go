@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/tenant"
 )
@@ -25,6 +26,7 @@ const APIKeyHeader = "X-API-Key"
 func ResolveTenant(
 	tenantRepo repository.TenantRepo,
 	pool *tenant.TenantPool,
+	enc encrypt.Encryptor,
 ) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +47,14 @@ func ResolveTenant(
 				writeError(w, http.StatusForbidden, "tenant is not active")
 				return
 			}
+
+			// Decrypt password before using
+			decryptedPassword, err := enc.Decrypt(r.Context(), t.DBPassword)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to decrypt tenant credentials")
+				return
+			}
+			t.DBPassword = decryptedPassword
 
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			if err != nil {
@@ -73,6 +83,7 @@ func ResolveTenant(
 func ResolveApiKey(
 	tenantRepo repository.TenantRepo,
 	pool *tenant.TenantPool,
+	enc encrypt.Encryptor,
 ) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -91,6 +102,14 @@ func ResolveApiKey(
 				writeError(w, http.StatusBadRequest, "invalid API key")
 				return
 			}
+
+			// Decrypt password before using
+			decryptedPassword, err := enc.Decrypt(r.Context(), t.DBPassword)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to decrypt tenant credentials")
+				return
+			}
+			t.DBPassword = decryptedPassword
 
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			if err != nil {

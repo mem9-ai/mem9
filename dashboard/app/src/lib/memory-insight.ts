@@ -230,6 +230,29 @@ function normalizeLabel(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+function stableInsightIdSuffix(value: string): string {
+  const normalized = normalizeLabel(value);
+  let hash = 0;
+
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = (hash << 5) - hash + normalized.charCodeAt(index);
+    hash |= 0;
+  }
+
+  return Math.abs(hash).toString(36).slice(0, 6);
+}
+
+function buildStableInsightSegment(value: string): string {
+  const normalized = normalizeLabel(value);
+  return `${slugify(normalized)}-${stableInsightIdSuffix(normalized)}`;
+}
+
+function buildInsightTagSegment(tagValue: string): string {
+  return tagValue === MEMORY_INSIGHT_UNTAGGED_TAG
+    ? MEMORY_INSIGHT_UNTAGGED_TAG
+    : buildStableInsightSegment(tagValue);
+}
+
 export function normalizeInsightCategoryKey(value: string): string {
   return stripInsightCategoryPrefix(value);
 }
@@ -406,11 +429,7 @@ function createTagNode(
   synthetic: boolean,
   origin: DerivedTagOrigin,
 ): MemoryInsightTagNode {
-  const tagSlug =
-    tagValue === MEMORY_INSIGHT_UNTAGGED_TAG
-      ? MEMORY_INSIGHT_UNTAGGED_TAG
-      : slugify(tagValue);
-  const id = `tag:${slugify(category)}:${tagSlug}`;
+  const id = buildInsightTagNodeId(category, tagValue);
 
   return {
     id,
@@ -428,6 +447,20 @@ function createTagNode(
   };
 }
 
+export function buildInsightTagNodeId(category: string, tagValue: string): string {
+  return `tag:${slugify(category)}:${buildInsightTagSegment(tagValue)}`;
+}
+
+export function buildInsightEntityNodeId(
+  category: string,
+  tagValue: string,
+  entityKind: MemoryInsightEntityKind,
+  entityValue: string,
+): string {
+  const entitySegment = buildStableInsightSegment(entityValue);
+  return `entity:${slugify(category)}:${buildInsightTagSegment(tagValue)}:${entityKind}:${entitySegment}`;
+}
+
 function createEntityNode(
   category: string,
   tagValue: string,
@@ -435,12 +468,7 @@ function createEntityNode(
   entityValue: string,
   count: number,
 ): MemoryInsightEntityNode {
-  const tagSlug =
-    tagValue === MEMORY_INSIGHT_UNTAGGED_TAG
-      ? MEMORY_INSIGHT_UNTAGGED_TAG
-      : slugify(tagValue);
-  const entitySlug = slugify(entityValue);
-  const id = `entity:${slugify(category)}:${tagSlug}:${entityKind}:${entitySlug}`;
+  const id = buildInsightEntityNodeId(category, tagValue, entityKind, entityValue);
 
   return {
     id,
@@ -453,9 +481,20 @@ function createEntityNode(
     count,
     size: buildSize(52, count, 8),
     branchKey: `${category}>${tagValue}>${entityKind}:${entityValue}`,
-    parentId: `tag:${slugify(category)}:${tagSlug}`,
+    parentId: buildInsightTagNodeId(category, tagValue),
     depth: 2,
   };
+}
+
+export function buildInsightMemoryNodeId(
+  category: string,
+  tagValue: string,
+  entityKind: MemoryInsightEntityKind,
+  entityValue: string,
+  memoryId: string,
+): string {
+  const entitySegment = buildStableInsightSegment(entityValue);
+  return `memory:${slugify(category)}:${buildInsightTagSegment(tagValue)}:${entityKind}:${entitySegment}:${memoryId}`;
 }
 
 function createMemoryNode(
@@ -465,12 +504,13 @@ function createMemoryNode(
   entityValue: string,
   memory: Memory,
 ): MemoryInsightMemoryNode {
-  const tagSlug =
-    tagValue === MEMORY_INSIGHT_UNTAGGED_TAG
-      ? MEMORY_INSIGHT_UNTAGGED_TAG
-      : slugify(tagValue);
-  const entitySlug = slugify(entityValue);
-  const id = `memory:${slugify(category)}:${tagSlug}:${entityKind}:${entitySlug}:${memory.id}`;
+  const id = buildInsightMemoryNodeId(
+    category,
+    tagValue,
+    entityKind,
+    entityValue,
+    memory.id,
+  );
 
   return {
     id,
@@ -485,7 +525,12 @@ function createMemoryNode(
     count: 1,
     size: 40,
     branchKey: `${category}>${tagValue}>${entityKind}:${entityValue}>${memory.id}`,
-    parentId: `entity:${slugify(category)}:${tagSlug}:${entityKind}:${entitySlug}`,
+    parentId: buildInsightEntityNodeId(
+      category,
+      tagValue,
+      entityKind,
+      entityValue,
+    ),
     depth: 3,
     createdAt: memory.created_at,
     updatedAt: memory.updated_at,

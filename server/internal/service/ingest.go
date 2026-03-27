@@ -138,8 +138,14 @@ func (s *IngestService) HasLLM() bool {
 
 // Phase1Result holds the output of ExtractPhase1.
 type Phase1Result struct {
-	Facts       []string   // atomic facts extracted from user messages
-	MessageTags [][]string // per-message tags parallel to input messages; missing entries = []
+	Facts       []ExtractedFact // atomic facts extracted from user messages, each with LLM-assigned tags
+	MessageTags [][]string      // per-message tags parallel to input messages; missing entries = []
+}
+
+// ExtractedFact holds a single atomic fact and the tags the LLM assigned to it.
+type ExtractedFact struct {
+	Text string   `json:"text"`
+	Tags []string `json:"tags,omitempty"`
 }
 
 // ExtractPhase1 runs fact extraction and per-message tagging in a single LLM call.
@@ -165,7 +171,7 @@ func (s *IngestService) ExtractPhase1(ctx context.Context, messages []IngestMess
 
 // ReconcilePhase2 runs reconciliation of extracted facts against existing memories.
 // Equivalent to the existing reconcile() pipeline, now exported for use by the handler.
-func (s *IngestService) ReconcilePhase2(ctx context.Context, agentName, agentID, sessionID string, facts []string) (*IngestResult, error) {
+func (s *IngestService) ReconcilePhase2(ctx context.Context, agentName, agentID, sessionID string, facts []ExtractedFact) (*IngestResult, error) {
 	if len(facts) == 0 {
 		return &IngestResult{Status: "complete"}, nil
 	}
@@ -206,8 +212,7 @@ func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID
 		return nil, &domain.ValidationError{Field: "llm", Message: "LLM is required for reconciliation"}
 	}
 
-	// Extract facts first, then run one batched reconciliation over all facts.
-	var allFacts []string
+	var allFacts []ExtractedFact
 	var totalWarnings int
 	var failures int
 
@@ -342,9 +347,76 @@ func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agen
 	return s.reconcile(ctx, agentName, agentID, sessionID, facts)
 }
 
+// normalizeParsedFacts converts []ExtractedFact from a successful parse into a
+// clean slice, and falls back to progressively looser formats when the primary
+// parse succeeded structurally but produced no facts:
+//
+//  1. Legacy string-array: {"facts":["text"]} — json.Unmarshal silently
+//     produces Facts:nil on a type mismatch inside a slice element.
+//  2. Flattened-fact: {"facts":":[{","text":"...","tags":[...]} — a recurring
+//     model glitch where the array opening bleeds into the key's string value
+//     and the intended fact fields are emitted as top-level keys instead.
+func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
+	var out []ExtractedFact
+	for _, f := range parsed {
+		f.Text = strings.TrimSpace(f.Text)
+		if f.Text != "" {
+			out = append(out, f)
+		}
+	}
+	if len(parsed) > 0 && len(out) == 0 {
+		slog.Warn("normalizeParsedFacts: all parsed facts had empty text, trying legacy fallback",
+			"parsed_count", len(parsed))
+	}
+	if len(out) > 0 {
+		return out
+	}
+
+	cleaned := llm.StripMarkdownFences(raw)
+
+	// Fallback 1: legacy string-array {"facts":["text1","text2"]}.
+	type legacyResponse struct {
+		Facts []string `json:"facts"`
+	}
+	var legacy legacyResponse
+	if err := json.Unmarshal([]byte(cleaned), &legacy); err == nil {
+		for _, t := range legacy.Facts {
+			t = strings.TrimSpace(t)
+			if t != "" {
+				out = append(out, ExtractedFact{Text: t})
+			}
+		}
+		if len(legacy.Facts) > 0 && len(out) == 0 {
+			slog.Warn("normalizeParsedFacts: legacy facts array had entries but all were empty after trim",
+				"legacy_count", len(legacy.Facts))
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+
+	// Fallback 2: flattened-fact corruption pattern.
+	// The model emits {"facts":":[{","text":"...","tags":[...]} — "facts" is a
+	// garbage string, but the actual fact fields are top-level keys.  Recover
+	// the fact when a top-level "text" field is present.
+	type flattenedFact struct {
+		Facts interface{} `json:"facts"`
+		Text  string      `json:"text"`
+		Tags  []string    `json:"tags"`
+	}
+	var flat flattenedFact
+	if err := json.Unmarshal([]byte(cleaned), &flat); err == nil {
+		if t := strings.TrimSpace(flat.Text); t != "" {
+			slog.Warn("normalizeParsedFacts: recovered fact from flattened-fact corruption", "text", t)
+			out = append(out, ExtractedFact{Text: t, Tags: flat.Tags})
+		}
+	}
+	return out
+}
+
 // extractFacts calls the LLM to extract atomic facts only, without per-message tag generation.
 // Used by extractAndReconcile (ReconcileContent path) where message_tags are not needed.
-func (s *IngestService) extractFacts(ctx context.Context, conversation string) ([]string, error) {
+func (s *IngestService) extractFacts(ctx context.Context, conversation string) ([]ExtractedFact, error) {
 	if s.llm == nil || conversation == "" {
 		return nil, nil
 	}
@@ -365,17 +437,21 @@ atomic facts from a conversation.
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
 6. Omit information that is only relevant to the current task and has no future reuse value.
 7. If no meaningful facts exist in the conversation, return an empty facts array.
+8. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
+   category. Examples: "tech", "personal", "preference", "work", "location", "habit".
+   Use hyphens for multi-word tags: "programming-language", "work-tool".
+   If no meaningful tags apply, omit the "tags" field for that fact.
 
 ## Output Format
 
 Return ONLY valid JSON. No markdown fences, no explanation.
 
-{"facts": ["fact one", "fact two", ...]}`
+{"facts": [{"text": "fact one", "tags": ["tag1", "tag2"]}, {"text": "fact two", "tags": ["tag3"]}, ...]}`
 
 	userPrompt := fmt.Sprintf("Extract facts. Today's date is %s.\n\n%s", currentDate, conversation)
 
 	type extractResponse struct {
-		Facts []string `json:"facts"`
+		Facts []ExtractedFact `json:"facts"`
 	}
 
 	raw, err := s.llm.CompleteJSON(ctx, systemPrompt, userPrompt)
@@ -384,33 +460,37 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 	}
 
 	parsed, err := llm.ParseJSON[extractResponse](raw)
+	lastRaw := raw
 	if err != nil {
 		raw2, retryErr := s.llm.CompleteJSON(ctx, systemPrompt,
-			"Your previous response was not valid JSON. Return ONLY the JSON object.\n\n"+userPrompt)
+			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt)
 		if retryErr != nil {
 			return nil, fmt.Errorf("extraction retry: %w", retryErr)
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
+			if fallback := normalizeParsedFacts(raw2, nil); len(fallback) > 0 {
+				slog.Info("facts extracted", "facts", len(fallback))
+				return fallback, nil
+			}
+			if s.llm.DebugLLM() {
+				slog.Error("json parse llm resp failed", "len", len(raw2), "raw", raw2, "err", err)
+			} else {
+				slog.Error("json parse llm resp failed", "len", len(raw2), "err", err)
+			}
 			return nil, fmt.Errorf("extraction parse after retry: %w", err)
 		}
+		lastRaw = raw2
 	}
 
-	var facts []string
-	for _, f := range parsed.Facts {
-		f = strings.TrimSpace(f)
-		if f != "" {
-			facts = append(facts, f)
-		}
-	}
-
+	facts := normalizeParsedFacts(lastRaw, parsed.Facts)
 	slog.Info("facts extracted", "facts", len(facts))
 	return facts, nil
 }
 
 // extractFactsAndTags calls the LLM to extract atomic facts and per-message tags
 // from the conversation in a single call.
-func (s *IngestService) extractFactsAndTags(ctx context.Context, conversation string, messageCount int) ([]string, [][]string, error) {
+func (s *IngestService) extractFactsAndTags(ctx context.Context, conversation string, messageCount int) ([]ExtractedFact, [][]string, error) {
 	currentDate := time.Now().Format("2006-01-02")
 
 	systemPrompt := `You are an information extraction engine. Your task is to identify distinct,
@@ -427,6 +507,9 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
 6. Omit information that is only relevant to the current task and has no future reuse value.
 7. If no meaningful facts exist in the conversation, return an empty facts array.
+8. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
+   category. Examples: "tech", "personal", "preference", "work", "location", "habit".
+   Use hyphens for multi-word tags. If no meaningful tags apply, omit the "tags" field.
 
 ## Rules — message_tags
 
@@ -448,25 +531,25 @@ Output: {"facts": [], "message_tags": [[], []]}
 Input:
 User: My name is Ming Zhang, I am a backend engineer, mainly using Go and Python.
 Assistant: Hi Ming Zhang!
-Output: {"facts": ["Name is Ming Zhang", "Is a backend engineer", "Mainly uses Go and Python"], "message_tags": [["personal", "work", "tech"], ["answer"]]}
+Output: {"facts": [{"text": "Name is Ming Zhang", "tags": ["personal"]}, {"text": "Is a backend engineer", "tags": ["work"]}, {"text": "Mainly uses Go and Python", "tags": ["tech"]}], "message_tags": [["personal", "work", "tech"], ["answer"]]}
 
 Input:
 User: I'm debugging a memory leak in our Go service.
 Assistant: Let's look at the heap profile. Can you share the pprof output?
 User: Here it is: [pprof data...]
-Output: {"facts": ["Debugging a memory leak in a Go service"], "message_tags": [["tech", "debug", "go"], ["tech", "question", "debug"], ["tech", "tool-result", "code"]]}
+Output: {"facts": [{"text": "Debugging a memory leak in a Go service", "tags": ["tech", "debug"]}], "message_tags": [["tech", "debug", "go"], ["tech", "question", "debug"], ["tech", "tool-result", "code"]]}
 
 ## Output Format
 
 Return ONLY valid JSON. No markdown fences, no explanation.
 
-{"facts": ["fact one", "fact two", ...], "message_tags": [["tag1", "tag2"], ["tag3"], [], ...]}`
+{"facts": [{"text": "fact one", "tags": ["tag1", "tag2"]}, {"text": "fact two", "tags": ["tag3"]}], "message_tags": [["tag1", "tag2"], ["tag3"], [], ...]}`
 
 	userPrompt := fmt.Sprintf("Extract facts and assign message tags. Today's date is %s.\n\n%s", currentDate, conversation)
 
 	type extractResponse struct {
-		Facts       []string   `json:"facts"`
-		MessageTags [][]string `json:"message_tags"`
+		Facts       []ExtractedFact `json:"facts"`
+		MessageTags [][]string      `json:"message_tags"`
 	}
 
 	raw, err := s.llm.CompleteJSON(ctx, systemPrompt, userPrompt)
@@ -475,25 +558,45 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 	}
 
 	parsed, err := llm.ParseJSON[extractResponse](raw)
+	lastRaw := raw
 	if err != nil {
 		raw2, retryErr := s.llm.CompleteJSON(ctx, systemPrompt,
-			"Your previous response was not valid JSON. Return ONLY the JSON object.\n\n"+userPrompt)
+			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt)
 		if retryErr != nil {
 			return nil, nil, fmt.Errorf("extraction retry: %w", retryErr)
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
+			if fallback := normalizeParsedFacts(raw2, nil); len(fallback) > 0 {
+				type legacyFull struct {
+					MessageTags [][]string `json:"message_tags"`
+				}
+				var leg legacyFull
+				if legErr := json.Unmarshal([]byte(llm.StripMarkdownFences(raw2)), &leg); legErr != nil {
+					slog.Debug("extractFactsAndTags: legacy message_tags decode failed, returning empty", "err", legErr)
+				}
+				messageTags := make([][]string, messageCount)
+				for i := range messageTags {
+					if i < len(leg.MessageTags) && leg.MessageTags[i] != nil {
+						messageTags[i] = leg.MessageTags[i]
+					} else {
+						messageTags[i] = []string{}
+					}
+				}
+				slog.Info("facts and tags extracted", "facts", len(fallback), "tagged_messages", messageCount)
+				return fallback, messageTags, nil
+			}
+			if s.llm.DebugLLM() {
+				slog.Error("json parse llm resp failed", "len", len(raw2), "raw", raw2, "err", err)
+			} else {
+				slog.Error("json parse llm resp failed", "len", len(raw2), "err", err)
+			}
 			return nil, nil, fmt.Errorf("extraction parse after retry: %w", err)
 		}
+		lastRaw = raw2
 	}
 
-	var facts []string
-	for _, f := range parsed.Facts {
-		f = strings.TrimSpace(f)
-		if f != "" {
-			facts = append(facts, f)
-		}
-	}
+	facts := normalizeParsedFacts(lastRaw, parsed.Facts)
 
 	// Normalise message_tags to exactly messageCount entries.
 	messageTags := make([][]string, messageCount)
@@ -513,9 +616,14 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 // all facts and all retrieved memories to the LLM in a single call for batch
 // decision-making. This gives the LLM a complete view of both the new facts and
 // the existing knowledge base, enabling better ADD/UPDATE/DELETE/NOOP decisions.
-func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessionID string, facts []string) ([]string, int, error) {
+func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessionID string, facts []ExtractedFact) ([]string, int, error) {
+	texts := make([]string, len(facts))
+	for i, f := range facts {
+		texts[i] = f.Text
+	}
+
 	// Step 1: For each fact, search for relevant existing memories and collect them.
-	existingMemories, gatherErr := s.gatherExistingMemories(ctx, agentID, facts)
+	existingMemories, gatherErr := s.gatherExistingMemories(ctx, agentID, texts)
 	if gatherErr != nil {
 		return nil, 0, fmt.Errorf("gather existing memories: %w", gatherErr)
 	}
@@ -545,7 +653,7 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 	}
 
 	refsJSON, _ := json.Marshal(refs)
-	factsJSON, _ := json.Marshal(facts)
+	factsJSON, _ := json.Marshal(texts)
 
 	// Step 3: Single LLM call with all facts + all existing memories.
 	systemPrompt := `You are a memory management engine. You manage a knowledge base by comparing newly extracted facts against existing memories and deciding the correct action for each fact.
@@ -568,22 +676,30 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 7. Preserve the language of the original facts. Do not translate.
 8. Each existing memory has an "age" field showing when it was last updated. Use age as a tiebreaker: when a new fact conflicts with an existing memory on the same topic and there is no other signal, older memories are more likely outdated. Age alone is NOT sufficient reason to UPDATE or DELETE — the content must also conflict or supersede the existing memory.
 
+## Tags
+
+Assign 1-3 short lowercase tags to each ADD or UPDATE entry.
+Tags describe the topic or category of the memory.
+Examples: "tech", "personal", "preference", "work", "location", "habit"
+Use hyphens for multi-word tags: "programming-language", "work-tool".
+Omit the "tags" field entirely for NOOP and DELETE entries.
+
 ## Examples
 
 Example 1 — ADD new information:
   Existing memories: [{"id": 0, "text": "Is a software engineer", "age": "2 months ago"}]
   New facts: ["Name is John"]
-  Result: {"memory": [{"id": "0", "text": "Is a software engineer", "event": "NOOP"}, {"id": "new", "text": "Name is John", "event": "ADD"}]}
+  Result: {"memory": [{"id": "0", "text": "Is a software engineer", "event": "NOOP"}, {"id": "new", "text": "Name is John", "event": "ADD", "tags": ["personal"]}]}
 
 Example 2 — UPDATE with more detail:
   Existing memories: [{"id": 0, "text": "Likes to play cricket", "age": "3 weeks ago"}, {"id": 1, "text": "Is a software engineer", "age": "2 months ago"}]
   New facts: ["Loves to play cricket with friends on weekends"]
-  Result: {"memory": [{"id": "0", "text": "Loves to play cricket with friends on weekends", "event": "UPDATE", "old_memory": "Likes to play cricket"}, {"id": "1", "text": "Is a software engineer", "event": "NOOP"}]}
+  Result: {"memory": [{"id": "0", "text": "Loves to play cricket with friends on weekends", "event": "UPDATE", "old_memory": "Likes to play cricket", "tags": ["personal", "habit"]}, {"id": "1", "text": "Is a software engineer", "event": "NOOP"}]}
 
 Example 3 — DELETE contradicted information:
   Existing memories: [{"id": 0, "text": "Name is John", "age": "5 months ago"}, {"id": 1, "text": "Loves cheese pizza", "age": "3 months ago"}]
   New facts: ["Dislikes cheese pizza"]
-  Result: {"memory": [{"id": "0", "text": "Name is John", "event": "NOOP"}, {"id": "1", "text": "Loves cheese pizza", "event": "DELETE"}, {"id": "new", "text": "Dislikes cheese pizza", "event": "ADD"}]}
+  Result: {"memory": [{"id": "0", "text": "Name is John", "event": "NOOP"}, {"id": "1", "text": "Loves cheese pizza", "event": "DELETE"}, {"id": "new", "text": "Dislikes cheese pizza", "event": "ADD", "tags": ["personal", "preference"]}]}
 
 Example 4 — NOOP for equivalent information:
   Existing memories: [{"id": 0, "text": "Name is John", "age": "5 months ago"}, {"id": 1, "text": "Loves cheese pizza", "age": "3 months ago"}]
@@ -593,7 +709,7 @@ Example 4 — NOOP for equivalent information:
 Example 5 — Age as tiebreaker for ambiguous conflicts:
   Existing memories: [{"id": 0, "text": "Prefers vim", "age": "1 year ago"}, {"id": 1, "text": "Works at startup X", "age": "8 months ago"}]
   New facts: ["Prefers VS Code", "Works at company Y"]
-  Result: {"memory": [{"id": "0", "text": "Prefers VS Code", "event": "UPDATE", "old_memory": "Prefers vim"}, {"id": "1", "text": "Works at company Y", "event": "UPDATE", "old_memory": "Works at startup X"}]}
+  Result: {"memory": [{"id": "0", "text": "Prefers VS Code", "event": "UPDATE", "old_memory": "Prefers vim", "tags": ["tech", "preference"]}, {"id": "1", "text": "Works at company Y", "event": "UPDATE", "old_memory": "Works at startup X", "tags": ["work"]}]}
 
 Example 6 — Age does NOT trigger UPDATE without content conflict:
   Existing memories: [{"id": 0, "text": "Likes coffee", "age": "2 years ago"}]
@@ -606,10 +722,10 @@ Return ONLY valid JSON. No markdown fences.
 
 {
   "memory": [
-    {"id": "0", "text": "...", "event": "NOOP"},
-    {"id": "1", "text": "updated text", "event": "UPDATE", "old_memory": "original text"},
-    {"id": "2", "text": "...", "event": "DELETE"},
-    {"id": "new", "text": "brand new fact", "event": "ADD"}
+    {"id": "0",   "text": "...",            "event": "NOOP"},
+    {"id": "1",   "text": "updated text",   "event": "UPDATE", "old_memory": "original text", "tags": ["work"]},
+    {"id": "2",   "text": "...",            "event": "DELETE"},
+    {"id": "new", "text": "brand new fact", "event": "ADD",    "tags": ["tech"]}
   ]
 }`
 
@@ -630,10 +746,11 @@ Analyze the new facts and determine whether each should be added, updated, or de
 	}
 
 	type reconcileEvent struct {
-		ID        string `json:"id"`
-		Text      string `json:"text"`
-		Event     string `json:"event"`
-		OldMemory string `json:"old_memory,omitempty"`
+		ID        string   `json:"id"`
+		Text      string   `json:"text"`
+		Event     string   `json:"event"`
+		OldMemory string   `json:"old_memory,omitempty"`
+		Tags      []string `json:"tags,omitempty"`
 	}
 	type reconcileResponse struct {
 		Memory []reconcileEvent `json:"memory"`
@@ -650,7 +767,11 @@ Analyze the new facts and determine whether each should be added, updated, or de
 		}
 		parsed, err = llm.ParseJSON[reconcileResponse](raw2)
 		if err != nil {
-			slog.Warn("reconciliation JSON parse failed after retry, skipping to avoid duplicates", "err", err)
+			if s.llm.DebugLLM() {
+				slog.Warn("reconciliation JSON parse failed after retry, skipping to avoid duplicates", "raw", raw2, "err", err)
+			} else {
+				slog.Warn("reconciliation JSON parse failed after retry, skipping to avoid duplicates", "err", err)
+			}
 			return nil, 1, nil // warnings=1 signals that facts were extracted but reconciliation was skipped
 		}
 	}
@@ -665,7 +786,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 			if event.Text == "" {
 				continue
 			}
-			newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text)
+			newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text, event.Tags)
 			if addErr != nil {
 				slog.Warn("failed to add insight", "err", addErr)
 				warnings++
@@ -684,10 +805,13 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				slog.Warn("skipping UPDATE with invalid ID or empty text", "id", event.ID)
 				continue
 			}
-			// Guard: never auto-update pinned memories — treat as ADD instead.
+			effectiveTags := event.Tags
+			if effectiveTags == nil {
+				effectiveTags = existingMemories[intID].Tags
+			}
 			if existingMemories[intID].MemoryType == domain.TypePinned {
 				slog.Warn("skipping UPDATE for pinned memory — treating as ADD", "id", realID)
-				newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text)
+				newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text, effectiveTags)
 				if addErr != nil {
 					slog.Warn("failed to add insight (pinned fallback)", "err", addErr)
 					warnings++
@@ -696,7 +820,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				resultIDs = append(resultIDs, newID)
 				continue
 			}
-			newID, updateErr := s.updateInsight(ctx, agentName, agentID, sessionID, realID, event.Text)
+			newID, updateErr := s.updateInsight(ctx, agentName, agentID, sessionID, realID, event.Text, effectiveTags)
 			if updateErr != nil {
 				slog.Warn("failed to update insight", "err", updateErr, "id", event.ID)
 				warnings++
@@ -855,7 +979,7 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 
 		// If neither leg succeeded for this fact, log it clearly.
 		if !vecLegOK && kwErr != nil {
-			slog.Error("gatherExistingMemories: both search legs failed for fact", "fact_len", len(fact))
+			slog.Error("gatherExistingMemories: both search legs failed for fact", "fact_len", len(fact), "err", kwErr)
 		}
 	}
 
@@ -874,13 +998,13 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 
 // addAllFacts adds all facts as new insights when no existing memories are
 // found (i.e., all facts are guaranteed new). Called only when gatherExistingMemories returns empty.
-func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, sessionID string, facts []string) ([]string, int, error) {
+func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, sessionID string, facts []ExtractedFact) ([]string, int, error) {
 	var ids []string
 	var warnings int
 	for _, fact := range facts {
-		id, err := s.addInsight(ctx, agentName, agentID, sessionID, fact)
+		id, err := s.addInsight(ctx, agentName, agentID, sessionID, fact.Text, fact.Tags)
 		if err != nil {
-			slog.Warn("failed to add fact", "err", err, "fact_len", len(fact))
+			slog.Warn("failed to add fact", "err", err, "fact_len", len(fact.Text))
 			warnings++
 			continue
 		}
@@ -889,8 +1013,12 @@ func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, ses
 	return ids, warnings, nil
 }
 
-// addInsight creates a new insight memory.
-func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sessionID, content string) (string, error) {
+// addInsight creates a new insight memory with the given content and tags.
+func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sessionID, content string, tags []string) (string, error) {
+	if len(tags) > maxTags {
+		tags = tags[:maxTags]
+	}
+
 	var embedding []float32
 	if s.autoModel == "" && s.embedder != nil {
 		var err error
@@ -909,6 +1037,7 @@ func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sess
 		AgentID:    agentID,
 		SessionID:  sessionID,
 		Embedding:  embedding,
+		Tags:       tags,
 		State:      domain.StateActive,
 		Version:    1,
 		UpdatedBy:  agentName,
@@ -923,10 +1052,13 @@ func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sess
 }
 
 // updateInsight archives the old memory and creates a new one atomically (append-new + archive-old model).
-func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, sessionID, oldID, newContent string) (string, error) {
+func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, sessionID, oldID, newContent string, tags []string) (string, error) {
+	if len(tags) > maxTags {
+		tags = tags[:maxTags]
+	}
+
 	newID := uuid.New().String()
 
-	// Create new memory object.
 	var embedding []float32
 	if s.autoModel == "" && s.embedder != nil {
 		var err error
@@ -937,6 +1069,7 @@ func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, s
 	}
 
 	now := time.Now()
+	// Create new memory object.
 	m := &domain.Memory{
 		ID:         newID,
 		Content:    newContent,
@@ -945,6 +1078,7 @@ func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, s
 		AgentID:    agentID,
 		SessionID:  sessionID,
 		Embedding:  embedding,
+		Tags:       tags,
 		State:      domain.StateActive,
 		Version:    1,
 		UpdatedBy:  agentName,

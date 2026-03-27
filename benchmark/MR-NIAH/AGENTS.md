@@ -8,14 +8,14 @@ MR-NIAH is a bridge from the MiniMax benchmark corpus to OpenClaw sessions and m
 
 ## Files and workflow
 
-| File | Role |
-|------|------|
-| `fetch_data.py` | Mirror/update upstream dataset into `origin/` |
-| `mr-niah-transcript.py` | Convert raw turns into OpenClaw session JSON |
-| `run_batch.py` | Replay generated sessions through an OpenClaw profile |
-| `run_mem_compare.sh` | Compare baseline vs mem9-enabled profile |
-| `score.py` | Apply MR-NIAH scoring rubric to predictions |
-| `USAGE.md` | Full prerequisites and end-to-end usage |
+| File                    | Role                                                  |
+| ----------------------- | ----------------------------------------------------- |
+| `fetch_data.py`         | Mirror/update upstream dataset into `origin/`         |
+| `mr-niah-transcript.py` | Convert raw turns into OpenClaw session JSON          |
+| `run_batch.py`          | Replay generated sessions through an OpenClaw profile |
+| `run_mem_compare.sh`    | Compare baseline vs mem9-enabled profile              |
+| `score.py`              | Apply MR-NIAH scoring rubric to predictions           |
+| `USAGE.md`              | Full prerequisites and end-to-end usage               |
 
 ## Where to look
 
@@ -30,8 +30,8 @@ MR-NIAH is a bridge from the MiniMax benchmark corpus to OpenClaw sessions and m
 ```bash
 cd benchmark/MR-NIAH && python3 fetch_data.py
 cd benchmark/MR-NIAH && python3 mr-niah-transcript.py
-cd benchmark/MR-NIAH && python3 run_batch.py --profile mrniah_local --agent main --local --limit 30
-cd benchmark/MR-NIAH && MRNIAH_LIMIT=30 bash run_mem_compare.sh
+cd benchmark/MR-NIAH && python3 run_batch.py --profile mrniah_local --agent main --limit 30
+cd benchmark/MR-NIAH && SAMPLE_LIMIT=30 bash run_mem_compare.sh
 cd benchmark/MR-NIAH && python3 score.py results/predictions.jsonl
 ```
 

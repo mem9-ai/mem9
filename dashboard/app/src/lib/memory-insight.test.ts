@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildMemoryInsightGraph,
+  buildInsightEntityNodeId,
+  buildInsightMemoryNodeId,
+  buildInsightTagNodeId,
   extractMemoryInsightEntities,
   formatInsightCategoryLabel,
   memoryMatchesInsightEntity,
@@ -178,6 +181,121 @@ describe("memory-insight", () => {
           node.entityValue === "React Flow",
       ),
     ).toHaveLength(2);
+  });
+
+  it("keeps distinct entity and memory node ids when labels collapse to the same slug", () => {
+    const graph = buildMemoryInsightGraph({
+      cards: [createCard("artifact", 2)],
+      memories: [
+        createMemory("mem-1", {
+          content: "Requested to go to `~/git/PingComp` and inspect the checkout.",
+          tags: ["PingComp"],
+        }),
+        createMemory("mem-2", {
+          content: "Requested to go to `git/PingComp` and inspect the checkout.",
+          tags: ["PingComp"],
+        }),
+      ],
+      matchMap: new Map<string, MemoryAnalysisMatch>([
+        ["mem-1", createMatch("mem-1", ["artifact"])],
+        ["mem-2", createMatch("mem-2", ["artifact"])],
+      ]),
+    });
+
+    const tildeEntityId = buildInsightEntityNodeId(
+      "artifact",
+      "PingComp",
+      "named_term",
+      "~/git/PingComp",
+    );
+    const plainEntityId = buildInsightEntityNodeId(
+      "artifact",
+      "PingComp",
+      "named_term",
+      "git/PingComp",
+    );
+
+    expect(tildeEntityId).not.toBe(plainEntityId);
+    expect(graph.entities.some((entity) => entity.id === tildeEntityId)).toBe(true);
+    expect(graph.entities.some((entity) => entity.id === plainEntityId)).toBe(true);
+
+    const tildeMemoryId = buildInsightMemoryNodeId(
+      "artifact",
+      "PingComp",
+      "named_term",
+      "~/git/PingComp",
+      "mem-1",
+    );
+    const plainMemoryId = buildInsightMemoryNodeId(
+      "artifact",
+      "PingComp",
+      "named_term",
+      "git/PingComp",
+      "mem-2",
+    );
+
+    expect(tildeMemoryId).not.toBe(plainMemoryId);
+    expect(graph.memories.some((memoryNode) => memoryNode.id === tildeMemoryId)).toBe(true);
+    expect(graph.memories.some((memoryNode) => memoryNode.id === plainMemoryId)).toBe(true);
+  });
+
+  it("keeps distinct branch ids when multiple raw tags collapse to the same slug", () => {
+    const graph = buildMemoryInsightGraph({
+      cards: [createCard("artifact", 1)],
+      memories: [
+        createMemory("mem-1", {
+          content: "Verified `SKILL.md` after the release.",
+          tags: ["README.md", "/README.md"],
+        }),
+      ],
+      matchMap: new Map<string, MemoryAnalysisMatch>([
+        ["mem-1", createMatch("mem-1", ["artifact"])],
+      ]),
+    });
+
+    const plainTagId = buildInsightTagNodeId("artifact", "README.md");
+    const slashTagId = buildInsightTagNodeId("artifact", "/README.md");
+
+    expect(plainTagId).not.toBe(slashTagId);
+    expect(graph.tags.some((tag) => tag.id === plainTagId)).toBe(true);
+    expect(graph.tags.some((tag) => tag.id === slashTagId)).toBe(true);
+    expect(graph.nodes).toHaveLength(new Set(graph.nodes.map((node) => node.id)).size);
+
+    const plainEntityId = buildInsightEntityNodeId(
+      "artifact",
+      "README.md",
+      "named_term",
+      "SKILL.md",
+    );
+    const slashEntityId = buildInsightEntityNodeId(
+      "artifact",
+      "/README.md",
+      "named_term",
+      "SKILL.md",
+    );
+
+    expect(plainEntityId).not.toBe(slashEntityId);
+    expect(graph.entities.some((entity) => entity.id === plainEntityId)).toBe(true);
+    expect(graph.entities.some((entity) => entity.id === slashEntityId)).toBe(true);
+
+    const plainMemoryId = buildInsightMemoryNodeId(
+      "artifact",
+      "README.md",
+      "named_term",
+      "SKILL.md",
+      "mem-1",
+    );
+    const slashMemoryId = buildInsightMemoryNodeId(
+      "artifact",
+      "/README.md",
+      "named_term",
+      "SKILL.md",
+      "mem-1",
+    );
+
+    expect(plainMemoryId).not.toBe(slashMemoryId);
+    expect(graph.memories.some((memoryNode) => memoryNode.id === plainMemoryId)).toBe(true);
+    expect(graph.memories.some((memoryNode) => memoryNode.id === slashMemoryId)).toBe(true);
   });
 
   it("filters low-signal tags out of browse aggregation", () => {

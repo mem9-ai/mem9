@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -42,8 +43,8 @@ type Config struct {
 	TenantPoolTotalLimit  int
 
 	// TiDB Cloud Pool configuration
-	TiDBCloudAPIURL    string
-	TiDBCloudPoolID    string
+	TiDBCloudAPIURL string
+	TiDBCloudPoolID string
 
 	// FTSEnabled controls whether full-text search is attempted.
 	// Set MNEMO_FTS_ENABLED=true only when the TiDB cluster supports
@@ -55,9 +56,33 @@ type Config struct {
 	// Defaults to 5.
 	WorkerConcurrency int
 
+	// DebugLLM enables logging of raw LLM response content, which may contain
+	// user data. Disabled by default. Enable only in dev/test environments via
+	// MNEMO_DEBUG_LLM=true.
+	DebugLLM bool
+
 	// Upload directory for file storage.
 	// Files are stored at {UploadDir}/{tenantID}/{agentID}/{filename}.
 	UploadDir string
+
+	// Encryption configuration for sensitive data like database passwords.
+	//
+	// ⚠️ IMPORTANT: This is a one-time deployment decision. Once set and tenants
+	// are created, MNEMO_ENCRYPT_TYPE must NOT be changed. Switching from "plain"
+	// to "md5"/"kms" (or vice versa) on an existing deployment will cause all
+	// tenant requests to fail with HTTP 500, as existing passwords won't decrypt
+	// with the new scheme. To change encryption, re-deploy with a fresh database
+	// or migrate all tenant passwords manually.
+	//
+	// Supported types:
+	//   - "plain": No encryption (default, backward compatible)
+	//   - "md5": AES-GCM encryption with MD5-derived key
+	//   - "kms": AWS KMS encryption
+	EncryptType string
+	// EncryptKey is the encryption key or KMS key ID.
+	// For "md5": the key string used to derive the AES key.
+	// For "kms": the KMS key ID, ARN, alias name, or alias ARN.
+	EncryptKey string `json:"-"` // Never serialize to JSON
 }
 
 func Load() (*Config, error) {
@@ -94,6 +119,9 @@ func Load() (*Config, error) {
 		UploadDir:             envOr("MNEMO_UPLOAD_DIR", "./uploads"),
 		FTSEnabled:            envBool("MNEMO_FTS_ENABLED", false),
 		WorkerConcurrency:     envInt("MNEMO_WORKER_CONCURRENCY", 5),
+		EncryptType:           envOr("MNEMO_ENCRYPT_TYPE", "plain"),
+		EncryptKey:            os.Getenv("MNEMO_ENCRYPT_KEY"),
+		DebugLLM:              envBool("MNEMO_DEBUG_LLM", false),
 	}
 	// Validate ingest mode.
 	switch cfg.IngestMode {
@@ -155,4 +183,16 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 		}
 	}
 	return fallback
+}
+
+// LogValue returns a slog.Value with sensitive fields masked.
+// Use this when logging the config to avoid leaking secrets.
+func (c *Config) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("Port", c.Port),
+		slog.String("DBBackend", c.DBBackend),
+		slog.String("EncryptType", c.EncryptType),
+		slog.Bool("EncryptKeyConfigured", c.EncryptKey != ""),
+		// Add other non-sensitive fields as needed
+	)
 }

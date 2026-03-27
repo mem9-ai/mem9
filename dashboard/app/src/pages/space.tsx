@@ -19,6 +19,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { LangToggle } from "@/components/lang-toggle";
 import {
   getSessionPreviewLookupKey,
+  useStats,
+  useMemories,
   useSessionPreviewMessages,
   useCreateMemory,
   useDeleteMemory,
@@ -26,6 +28,7 @@ import {
   useExportMemories,
   useImportMemories,
   useImportTasks,
+  useTopicSummary,
 } from "@/api/queries";
 import { getSourceMemoriesQueryKey, useSourceMemories } from "@/api/source-memories";
 import { useSpaceAnalysis } from "@/api/analysis-queries";
@@ -65,8 +68,8 @@ import type {
   Memory,
   MemoryFacet,
   MemoryType,
+  MemoryTypeFilter,
   MemoryStats,
-  TopicSummary,
 } from "@/types/memory";
 import type { AnalysisCategory } from "@/types/analysis";
 import type {
@@ -100,17 +103,6 @@ function useIsDesktopViewport(): boolean {
   return isDesktop;
 }
 
-const FACETS: MemoryFacet[] = [
-  "about_you",
-  "preferences",
-  "important_people",
-  "experiences",
-  "plans",
-  "routines",
-  "constraints",
-  "other",
-];
-
 function formatAnalysisCategoryLabel(
   t: ReturnType<typeof useTranslation>["t"],
   category: AnalysisCategory,
@@ -123,25 +115,6 @@ function buildStats(memories: Memory[]): MemoryStats {
     total: memories.length,
     pinned: memories.filter((memory) => memory.memory_type === "pinned").length,
     insight: memories.filter((memory) => memory.memory_type === "insight").length,
-  };
-}
-
-function buildTopicSummary(memories: Memory[]): TopicSummary {
-  const counts = new Map<MemoryFacet, number>();
-
-  for (const memory of memories) {
-    const facet = memory.metadata?.facet;
-    if (typeof facet !== "string" || !FACETS.includes(facet as MemoryFacet)) {
-      continue;
-    }
-    counts.set(facet as MemoryFacet, (counts.get(facet as MemoryFacet) ?? 0) + 1);
-  }
-
-  return {
-    topics: [...counts.entries()]
-      .sort((left, right) => right[1] - left[1])
-      .map(([facet, count]) => ({ facet, count })),
-    total: memories.length,
   };
 }
 
@@ -230,6 +203,14 @@ function formatTimelineLabel(
   return from === to ? from : `${from} - ${to}`;
 }
 
+export function shouldCompactMemoryOverview(
+  selected: Memory | null,
+  isDesktopViewport: boolean,
+  selectedDetailMode: "panel" | "sheet",
+): boolean {
+  return selected !== null && isDesktopViewport && selectedDetailMode === "panel";
+}
+
 export function SpacePage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -256,6 +237,7 @@ export function SpacePage() {
   const facet: MemoryFacet | undefined = search.facet;
   const analysisCategory: AnalysisCategory | undefined = search.analysisCategory;
   const tag = search.tag;
+  const memoryTypeFilter: MemoryTypeFilter = search.type ?? "pinned,insight";
   const timelineSelection = useMemo(() => {
     const selection = search.timelineFrom && search.timelineTo
       ? {
@@ -272,6 +254,11 @@ export function SpacePage() {
         ? formatTimelineLabel(timelineSelection, i18n.language)
         : "",
     [i18n.language, timelineSelection],
+  );
+  const compactOverview = shouldCompactMemoryOverview(
+    selected,
+    isDesktopViewport,
+    selectedDetailMode,
   );
 
   useEffect(() => {
@@ -318,6 +305,17 @@ export function SpacePage() {
   };
 
   // Queries
+  // Tags shown in the dashboard are local analysis/derived signals.
+  // Keep tag state in the URL for the view, but never send it to /memories.
+  const { data: stats } = useStats(spaceId, range);
+  const { data: totalStats } = useStats(spaceId);
+  const { data: memData, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isFetching } =
+    useMemories(spaceId, {
+      q: search.q,
+      memory_type: memoryTypeFilter,
+      range,
+      facet,
+    });
   const sourceQuery = useSourceMemories(spaceId);
   const createMutation = useCreateMemory(spaceId);
   const deleteMutation = useDeleteMemory(spaceId);
@@ -325,6 +323,11 @@ export function SpacePage() {
   const exportMutation = useExportMemories(spaceId);
   const importMutation = useImportMemories(spaceId);
   const analysis = useSpaceAnalysis(spaceId, range);
+  const { data: topicData } = useTopicSummary(
+    spaceId,
+    range,
+    features.enableTopicSummary && !features.enableAnalysis,
+  );
   const { data: importTaskData } = useImportTasks(spaceId, importStatusOpen);
 
   const handleRefreshMemories = async (): Promise<void> => {
@@ -355,8 +358,11 @@ export function SpacePage() {
     }
   };
 
+  const memories = memData?.pages.flatMap((p) => p.memories) ?? [];
+  const firstPageSize = memData?.pages[0]?.memories.length ?? 0;
+
+  // Source memories for analysis pipeline (full local cache)
   const allMemories = sourceQuery.data ?? [];
-  const totalStats = useMemo(() => buildStats(allMemories), [allMemories]);
   const rangeScopedMemories = useMemo(
     () =>
       filterMemoriesForView(allMemories, {
@@ -375,10 +381,6 @@ export function SpacePage() {
       }),
     [rangeScopedMemories, timelineSelection],
   );
-  const stats = useMemo(
-    () => buildStats(timelineScopedMemories),
-    [timelineScopedMemories],
-  );
   const listFilterScopeMemories = useMemo(
     () =>
       filterMemoriesForView(timelineScopedMemories, {
@@ -394,13 +396,6 @@ export function SpacePage() {
   const listTagResolver = useMemo<MemoryTagResolver>(
     () => createTagResolver(listSignalIndex),
     [listSignalIndex],
-  );
-  const topicData = useMemo(
-    () =>
-      features.enableTopicSummary && !features.enableAnalysis
-        ? buildTopicSummary(timelineScopedMemories)
-        : undefined,
-    [timelineScopedMemories],
   );
   const { data: analysisRangeSignalIndex } = useBackgroundDerivedSignals({
     memories: rangeScopedMemories,
@@ -444,15 +439,6 @@ export function SpacePage() {
     () => createTagResolver(analysisCategorySignalIndex),
     [analysisCategorySignalIndex],
   );
-  const filteredMemories = useMemo(
-    () =>
-      filterMemoriesForView(listFilterScopeMemories, {
-        q: search.q,
-        tag,
-        tagResolver: listTagResolver,
-      }),
-    [listFilterScopeMemories, listTagResolver, search.q, tag],
-  );
   const analysisFilteredMemories = useMemo(() => {
     if (!analysisCategory) return [];
 
@@ -471,18 +457,38 @@ export function SpacePage() {
     search.q,
     tag,
   ]);
+  const tagFilteredMemories = useMemo(() => {
+    if (analysisCategory || !tag) {
+      return [];
+    }
 
-  const usingLocalAnalysisList = !!analysisCategory;
-  const baseDisplayedMemories = usingLocalAnalysisList
+    return filterMemoriesForView(listFilterScopeMemories, {
+      q: search.q,
+      tag,
+      tagResolver: listTagResolver,
+    });
+  }, [
+    analysisCategory,
+    listFilterScopeMemories,
+    listTagResolver,
+    search.q,
+    tag,
+  ]);
+
+  const usingLocalTagList = !analysisCategory && !!tag;
+  const usingLocalFilteredList = !!analysisCategory || usingLocalTagList;
+  const baseDisplayedMemories = analysisCategory
     ? analysisFilteredMemories
-    : filteredMemories;
-  const currentSignalScopeMemories = usingLocalAnalysisList
+    : usingLocalTagList
+    ? tagFilteredMemories
+    : memories;
+  const currentSignalScopeMemories = analysisCategory
     ? analysisCategoryScopeMemories
     : listFilterScopeMemories;
-  const currentSignalIndex = usingLocalAnalysisList
+  const currentSignalIndex = analysisCategory
     ? analysisCategorySignalIndex
     : listSignalIndex;
-  const currentTagResolver = usingLocalAnalysisList
+  const currentTagResolver = analysisCategory
     ? analysisCategoryTagResolver
     : listTagResolver;
   const tagOptionMemories = useMemo(
@@ -493,7 +499,9 @@ export function SpacePage() {
       }),
     [currentSignalScopeMemories, currentTagResolver, search.q],
   );
-  const displayedMemories = baseDisplayedMemories.slice(0, localVisibleCount);
+  const displayedMemories = usingLocalFilteredList
+    ? baseDisplayedMemories.slice(0, localVisibleCount)
+    : memories;
   const sessionPreviewMemories = useMemo(() => {
     if (!selected) return displayedMemories;
 
@@ -503,12 +511,16 @@ export function SpacePage() {
   }, [displayedMemories, selected]);
   const sessionPreviewQuery = useSessionPreviewMessages(spaceId, sessionPreviewMemories);
   const sessionPreviewBySessionID = sessionPreviewQuery.data ?? {};
-  const hasMoreMemories = usingLocalAnalysisList
+  const hasMoreMemories = usingLocalFilteredList
     ? baseDisplayedMemories.length > localVisibleCount
-    : baseDisplayedMemories.length > localVisibleCount;
-  const sourceLoading = sourceQuery.isLoading || sourceQuery.isFetching;
-  const isMemoryLoading = usingLocalAnalysisList ? analysis.sourceLoading : sourceLoading;
-  const displayedFirstPageSize = Math.min(displayedMemories.length, LOCAL_PAGE_SIZE);
+    : hasNextPage;
+  const isMemoryLoading = usingLocalFilteredList
+    ? analysis.sourceLoading
+    : isLoading || (isFetching && !isFetchingNextPage);
+  const isFetchingMore = usingLocalFilteredList ? false : isFetchingNextPage;
+  const displayedFirstPageSize = usingLocalFilteredList
+    ? Math.min(displayedMemories.length, LOCAL_PAGE_SIZE)
+    : firstPageSize;
   const tagOptions = useMemo<TagSummary[]>(() => {
     return buildTagOptions(tagOptionMemories, currentSignalIndex);
   }, [currentSignalIndex, tagOptionMemories]);
@@ -732,7 +744,7 @@ export function SpacePage() {
 
   const isEmpty =
     !isMemoryLoading &&
-    allMemories.length === 0 &&
+    displayedMemories.length === 0 &&
     !search.q &&
     !tag &&
     !search.type &&
@@ -791,7 +803,7 @@ export function SpacePage() {
         <div className="flex flex-col gap-8 xl:flex-row">
           <div className="min-w-0 flex-1 py-8 xl:order-2">
             {/* Stats cards (clickable for type filtering) */}
-            {sourceQuery.data && (
+            {stats && (
               <div
                 style={{
                   animation: "slide-up 0.4s cubic-bezier(0.16,1,0.3,1)",
@@ -892,7 +904,7 @@ export function SpacePage() {
               cards={analysis.cards}
               snapshot={analysis.state.snapshot}
               range={range}
-              loading={sourceLoading || analysis.sourceLoading}
+              loading={!stats || isLoading || analysis.sourceLoading}
               compact={selected !== null && isDesktopViewport}
               activeType={search.type}
               activeCategory={analysisCategory}
@@ -1191,12 +1203,20 @@ export function SpacePage() {
                         variant="ghost"
                         size="sm"
                         onClick={() => {
-                          setLocalVisibleCount((current) => current + LOCAL_PAGE_SIZE);
+                          if (usingLocalFilteredList) {
+                            setLocalVisibleCount((current) => current + LOCAL_PAGE_SIZE);
+                            return;
+                          }
+                          fetchNextPage();
                         }}
+                        disabled={isFetchingMore}
                         data-mp-event="Dashboard/Space/LoadMoreClicked"
                         data-mp-page-name="space"
                         className="text-sm text-soft-foreground"
                       >
+                        {isFetchingMore && (
+                          <Loader2 className="size-4 animate-spin" />
+                        )}
                         {t("list.load_more")}
                       </Button>
                     </div>

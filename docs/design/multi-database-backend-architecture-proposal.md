@@ -1,11 +1,22 @@
 ---
 title: Multi-Database Backend Architecture (MySQL/PostgreSQL-Compatible)
-status: draft
+status: partially-implemented
 created: 2026-03-11
-last_updated: 2026-03-11
+last_updated: 2026-03-25
 open_questions: 7
 blocked_by: ""
 ---
+
+> **STATUS: PARTIALLY IMPLEMENTED**
+> Concrete adapter packages `repository/tidb/`, `repository/postgres/`, and
+> `repository/db9/` exist with per-backend SQL. `repository/factory.go`
+> selects the adapter at startup. The `ftsAvailable` capability flag is
+> present inside each concrete repo struct.
+>
+> Not yet implemented: the formal `Capabilities` registry from the proposal
+> (no exported capability constants or struct), the shared conformance test
+> suite (Phase C), and the standardised startup diagnostics (Phase D).
+> Open questions from the proposal remain unresolved.
 
 ## Summary
 

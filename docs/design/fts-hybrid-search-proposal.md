@@ -1,11 +1,18 @@
 ---
 title: TiDB Native Full-Text Search for Hybrid Search
-status: draft
+status: implemented
 created: 2026-03-03
-last_updated: 2026-03-03
+last_updated: 2026-03-25
 open_questions: 0
 blocked_by: ""
 ---
+
+> **STATUS: IMPLEMENTED**
+> `FTSSearch`, RRF merge (`rrfMerge`, `rrfK=60`), FTS capability check, and
+> the FTS/keyword fallback dispatch are all present in
+> `server/internal/service/memory.go` and
+> `server/internal/repository/tidb/memory.go`.
+> All three agent plugins benefit automatically via the server.
 
 ## Summary
 

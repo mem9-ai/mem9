@@ -7,12 +7,14 @@ import { router } from "@/router";
 import i18n from "@/i18n";
 import type { Memory } from "@/types/memory";
 import type { SpaceAnalysisState } from "@/types/analysis";
+import { shouldCompactMemoryOverview } from "./space";
 
 const mocks = vi.hoisted(() => ({
   clearSpace: vi.fn(),
   retry: vi.fn(),
   useSourceMemories: vi.fn(),
   useSessionPreviewMessages: vi.fn(),
+  useMemories: vi.fn(),
 }));
 
 const FIXED_NOW = new Date("2026-03-21T12:00:00Z");
@@ -198,9 +200,38 @@ vi.mock("@/config/features", () => ({
   },
 }));
 
+vi.mock("@/api/local-cache", () => ({
+  patchSyncState: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("@/api/queries", () => ({
   getSessionPreviewLookupKey: (memory: Memory) =>
     memory.memory_type === "insight" ? memory.session_id : "",
+  useStats: () => ({
+    data: { total: 4, pinned: 0, insight: 4 },
+    isLoading: false,
+    isFetching: false,
+  }),
+  useMemories: (_spaceId: string, params: Record<string, unknown>) => {
+    mocks.useMemories(_spaceId, params);
+    return {
+      data: {
+        pages: [
+          {
+            memories: [activityNewest, preferenceMemory, activityOlder, archivedMemory],
+            total: 4,
+            limit: 50,
+            offset: 0,
+          },
+        ],
+      },
+      fetchNextPage: vi.fn(),
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      isLoading: false,
+      isFetching: false,
+    };
+  },
   useSessionPreviewMessages: (_spaceId: string, memories: Memory[]) => {
     mocks.useSessionPreviewMessages(memories);
     return {
@@ -252,9 +283,11 @@ vi.mock("@/api/queries", () => ({
   useExportMemories: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useImportMemories: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useImportTasks: () => ({ data: { tasks: [] } }),
+  useTopicSummary: () => ({ data: undefined }),
 }));
 
 vi.mock("@/api/source-memories", () => ({
+  getSourceMemoriesQueryKey: (spaceId: string) => ["space", spaceId, "sourceMemories"],
   useSourceMemories: (_spaceId: string) => {
     mocks.useSourceMemories(_spaceId);
     return {
@@ -335,6 +368,7 @@ describe("SpacePage", () => {
     window.innerWidth = 1440;
     window.dispatchEvent(new Event("resize"));
     mocks.useSourceMemories.mockClear();
+    mocks.useMemories.mockClear();
     await i18n.changeLanguage("en");
     window.history.pushState({}, "", "/your-memory/space");
     await act(async () => {
@@ -344,6 +378,18 @@ describe("SpacePage", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("does not compact the overview when an insight memory opens in a sheet", () => {
+    const selected = createMemory(
+      "mem-1",
+      "Insight memory",
+      "2026-03-10T00:00:00Z",
+    );
+
+    expect(shouldCompactMemoryOverview(selected, true, "sheet")).toBe(false);
+    expect(shouldCompactMemoryOverview(selected, true, "panel")).toBe(true);
+    expect(shouldCompactMemoryOverview(selected, false, "sheet")).toBe(false);
   });
 
   it("filters memories by clicked analysis category without auto-opening detail", async () => {
@@ -480,7 +526,9 @@ describe("SpacePage", () => {
     });
 
     expect(screen.getByRole("button", { name: /^#launch$/ })).toBeInTheDocument();
+    expect(screen.getByText("Deploy dashboard status update")).toBeInTheDocument();
     expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
+    expect(screen.queryByText("Prefer Neovim for edits")).not.toBeInTheDocument();
   });
 
   it("filters memories by clicked rhythm bucket using created_at", async () => {
@@ -624,5 +672,64 @@ describe("SpacePage", () => {
     expect(
       within(screen.getByTestId("detail-scroll-area")).queryByText("```json"),
     ).not.toBeInTheDocument();
+  });
+
+  it("does not pass tag state to the useMemories API query", async () => {
+    renderSpacePage();
+
+    const tagButton = within(screen.getByTestId("analysis-facets-tags"))
+      .getByRole("button", { name: /launch \(2\)/i });
+    fireEvent.click(tagButton);
+
+    await waitFor(() => {
+      expect(router.state.location.search.tag).toBe("launch");
+    });
+
+    const calls = mocks.useMemories.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    expect(lastCall).toBeDefined();
+    expect(lastCall![1]).toHaveProperty("tag", undefined);
+  });
+
+  it("keeps tag state when leaving analysis mode", async () => {
+    renderSpacePage();
+
+    fireEvent.click(getAnalysisCategoryButton("activity"));
+
+    await waitFor(() => {
+      expect(router.state.location.search.analysisCategory).toBe("activity");
+    });
+
+    const tagButton = within(screen.getByTestId("analysis-facets-tags"))
+      .getByRole("button", { name: /launch \(2\)/i });
+    fireEvent.click(tagButton);
+
+    await waitFor(() => {
+      expect(router.state.location.search.tag).toBe("launch");
+    });
+
+    fireEvent.click(getAnalysisCategoryButton("activity"));
+
+    await waitFor(() => {
+      expect(router.state.location.search.analysisCategory).toBeUndefined();
+    });
+
+    expect(router.state.location.search.tag).toBe("launch");
+  });
+
+  it("filters the list locally when clicking a left analysis tag", async () => {
+    renderSpacePage();
+
+    const tagButton = within(screen.getByTestId("analysis-facets-tags"))
+      .getByRole("button", { name: /launch \(2\)/i });
+    fireEvent.click(tagButton);
+
+    await waitFor(() => {
+      expect(router.state.location.search.tag).toBe("launch");
+    });
+
+    expect(screen.getByText("Deploy dashboard status update")).toBeInTheDocument();
+    expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
+    expect(screen.queryByText("Prefer Neovim for edits")).not.toBeInTheDocument();
   });
 });
