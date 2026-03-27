@@ -1,3 +1,5 @@
+/// <reference types="vitest/config" />
+
 import { writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolve, dirname } from "node:path";
