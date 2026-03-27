@@ -34,22 +34,22 @@ export function MemoryFarmPreparationDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Memory Farm Preview Unavailable</DialogTitle>
+            <DialogTitle>{t("memory_farm_preview.dialog.unavailable_title")}</DialogTitle>
           </DialogHeader>
           <div className="py-4">
             <p className="text-sm text-muted-foreground">
-              Preview data is not currently ready because analysis failed or degraded.
+              {t("memory_farm_preview.dialog.unavailable_desc")}
             </p>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Close
+              {t("memory_farm_preview.dialog.close")}
             </Button>
             <Button onClick={() => {
               onRetry();
               onOpenChange(false);
             }}>
-              Retry analysis
+              {t("memory_farm_preview.dialog.retry")}
             </Button>
           </div>
         </DialogContent>
@@ -65,11 +65,11 @@ export function MemoryFarmPreparationDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Preparing Memory Farm Preview</DialogTitle>
+          <DialogTitle>{t("memory_farm_preview.dialog.preparing_title")}</DialogTitle>
         </DialogHeader>
         <div className="py-4 space-y-4">
           <p className="text-sm text-muted-foreground">
-            Synced memories and analysis data are being prepared for the preview.
+            {t("memory_farm_preview.dialog.preparing_desc")}
           </p>
           
           {showDetailedProgress ? (
@@ -98,14 +98,14 @@ export function MemoryFarmPreparationDialog({
             <div className="flex items-center gap-3 rounded-xl border bg-secondary/20 px-4 py-4">
               <Loader2 className="size-5 animate-spin text-primary" />
               <p className="text-sm font-medium text-foreground">
-                Syncing memories for the preview...
+                {t("memory_farm_preview.dialog.syncing")}
               </p>
             </div>
           )}
         </div>
         <div className="flex justify-end">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Close
+            {t("memory_farm_preview.dialog.close")}
           </Button>
         </div>
       </DialogContent>

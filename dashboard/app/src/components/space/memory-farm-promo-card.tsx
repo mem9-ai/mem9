@@ -1,5 +1,6 @@
 import type { MemoryFarmEntryStatus } from "./use-memory-farm-entry-state";
 import { Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 export function MemoryFarmPromoCard({
   status,
@@ -8,18 +9,19 @@ export function MemoryFarmPromoCard({
   status: MemoryFarmEntryStatus;
   onAction: () => void;
 }) {
+  const { t } = useTranslation();
   let statusText = "";
   let ctaLabel = "";
 
   if (status === "ready") {
-    statusText = "Ready to explore";
-    ctaLabel = "Enter Farm";
+    statusText = t("memory_farm_preview.status.ready");
+    ctaLabel = t("memory_farm_preview.cta.ready");
   } else if (status === "preparing") {
-    statusText = "Preparing analysis data";
-    ctaLabel = "Preparing";
+    statusText = t("memory_farm_preview.status.preparing");
+    ctaLabel = t("memory_farm_preview.cta.preparing");
   } else {
-    statusText = "Preview data not ready";
-    ctaLabel = "View Status";
+    statusText = t("memory_farm_preview.status.unavailable");
+    ctaLabel = t("memory_farm_preview.cta.unavailable");
   }
 
   // Use a fallback if the image doesn't exist, though spec says to use a committed static image
@@ -33,7 +35,7 @@ export function MemoryFarmPromoCard({
       <div className="relative aspect-video w-full overflow-hidden bg-[#8d6b43] border-b-[4px] border-[#3f3322]">
         <img
           src={promoImageUrl}
-          alt="Memory Farm Preview"
+          alt={t("memory_farm_preview.title")}
           className="absolute inset-0 h-full w-full object-cover"
           style={{ imageRendering: "pixelated" }}
           onError={(e) => {
@@ -47,12 +49,12 @@ export function MemoryFarmPromoCard({
         </div>
       </div>
       <div className="p-4">
-        <h3 className="text-base font-bold text-[#3f3322] tracking-wide">Memory Farm</h3>
+        <h3 className="text-base font-bold text-[#3f3322] tracking-wide">{t("memory_farm_preview.title")}</h3>
         <p className="mt-1 text-xs font-medium leading-relaxed text-[#5a452b]">
-          Walk through a farm grown from your memories.
+          {t("memory_farm_preview.description")}
         </p>
         <p className="mt-1.5 text-[10px] leading-relaxed text-[#8d6b43]">
-          Crops, animals, and conversations generated from your synced memory snapshot.
+          {t("memory_farm_preview.sub_description")}
         </p>
         
         <div className="mt-4 flex items-center justify-between gap-3">
