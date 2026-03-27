@@ -97,23 +97,23 @@ type RootBubbleRelationEdge = {
 };
 
 const DRIFT_SEEDS = [
-  { x: 3, y: -10, duration: 12.5, delay: -2.2, rotate: -1.4, scale: 0.018 },
-  { x: -4, y: -12, duration: 14.2, delay: -6.8, rotate: 1.1, scale: 0.016 },
-  { x: 2, y: -8, duration: 11.6, delay: -4.4, rotate: -0.8, scale: 0.014 },
-  { x: -3, y: -11, duration: 13.4, delay: -8.6, rotate: 1.5, scale: 0.019 },
-  { x: 4, y: -9, duration: 15.1, delay: -10.3, rotate: -1.2, scale: 0.017 },
-  { x: -2, y: -13, duration: 12.9, delay: -12.1, rotate: 0.9, scale: 0.015 },
+  { x: 5, y: -16, duration: 10.6, delay: -2.2, rotate: -2.0, scale: 0.028 },
+  { x: -6, y: -18, duration: 12.0, delay: -6.8, rotate: 1.6, scale: 0.025 },
+  { x: 4, y: -13, duration: 9.8, delay: -4.4, rotate: -1.2, scale: 0.022 },
+  { x: -5, y: -17, duration: 11.4, delay: -8.6, rotate: 2.1, scale: 0.030 },
+  { x: 6, y: -14, duration: 12.8, delay: -10.3, rotate: -1.8, scale: 0.026 },
+  { x: -4, y: -20, duration: 10.9, delay: -12.1, rotate: 1.3, scale: 0.024 },
 ];
 
 const BUBBLE_COLOR_PALETTE = [
-  "#3ea8ff",
-  "#35e6ff",
-  "#9d6cff",
-  "#ff62c7",
-  "#2fe58a",
-  "#ffb347",
-  "#ff6b63",
-  "#74f4d8",
+  "#1a8aff",
+  "#00e5ff",
+  "#a855f7",
+  "#ff3eb5",
+  "#00e676",
+  "#ff9100",
+  "#ff4444",
+  "#00ffd5",
 ] as const;
 
 const ROOT_BUBBLE_RANGE = {
@@ -239,20 +239,20 @@ function createBubbleMotionStyle(id: string): CSSProperties {
     "--insight-drift-y": `${seed.y}px`,
     "--insight-drift-rotate": `${seed.rotate}deg`,
     "--insight-drift-scale": `${seed.scale}`,
-    "--insight-drift-duration": `${(seed.duration * 0.7).toFixed(2)}s`,
+    "--insight-drift-duration": `${(seed.duration * 0.65).toFixed(2)}s`,
     "--insight-drift-delay": `${seed.delay}s`,
-    "--insight-twinkle-duration": `${roundSeed(seededRange(`${id}:twinkle-duration`, 3.6, 6.8))}s`,
+    "--insight-twinkle-duration": `${roundSeed(seededRange(`${id}:twinkle-duration`, 3.0, 5.8))}s`,
     "--insight-twinkle-delay": `${roundSeed(-seededRange(`${id}:twinkle-delay`, 0.2, 7.8))}s`,
-    "--insight-twinkle-min-brightness": `${roundSeed(seededRange(`${id}:twinkle-min-brightness`, 0.9, 0.98))}`,
-    "--insight-twinkle-max-brightness": `${roundSeed(seededRange(`${id}:twinkle-max-brightness`, 1.12, 1.26))}`,
-    "--insight-twinkle-min-saturate": `${roundSeed(seededRange(`${id}:twinkle-min-saturate`, 1.04, 1.12))}`,
-    "--insight-twinkle-max-saturate": `${roundSeed(seededRange(`${id}:twinkle-max-saturate`, 1.22, 1.44))}`,
-    "--insight-halo-min-opacity": `${roundSeed(seededRange(`${id}:halo-min-opacity`, 0.24, 0.4))}`,
-    "--insight-halo-max-opacity": `${roundSeed(seededRange(`${id}:halo-max-opacity`, 0.62, 0.88))}`,
-    "--insight-halo-min-scale": `${roundSeed(seededRange(`${id}:halo-min-scale`, 0.82, 0.92))}`,
-    "--insight-halo-max-scale": `${roundSeed(seededRange(`${id}:halo-max-scale`, 1.04, 1.16))}`,
-    "--insight-halo-min-blur": `${roundSeed(seededRange(`${id}:halo-min-blur`, 9.5, 11.8), 1)}px`,
-    "--insight-halo-max-blur": `${roundSeed(seededRange(`${id}:halo-max-blur`, 13.2, 16.8), 1)}px`,
+    "--insight-twinkle-min-brightness": `${roundSeed(seededRange(`${id}:twinkle-min-brightness`, 0.88, 0.96))}`,
+    "--insight-twinkle-max-brightness": `${roundSeed(seededRange(`${id}:twinkle-max-brightness`, 1.18, 1.38))}`,
+    "--insight-twinkle-min-saturate": `${roundSeed(seededRange(`${id}:twinkle-min-saturate`, 1.06, 1.16))}`,
+    "--insight-twinkle-max-saturate": `${roundSeed(seededRange(`${id}:twinkle-max-saturate`, 1.32, 1.6))}`,
+    "--insight-halo-min-opacity": `${roundSeed(seededRange(`${id}:halo-min-opacity`, 0.32, 0.48))}`,
+    "--insight-halo-max-opacity": `${roundSeed(seededRange(`${id}:halo-max-opacity`, 0.72, 0.96))}`,
+    "--insight-halo-min-scale": `${roundSeed(seededRange(`${id}:halo-min-scale`, 0.80, 0.90))}`,
+    "--insight-halo-max-scale": `${roundSeed(seededRange(`${id}:halo-max-scale`, 1.08, 1.22))}`,
+    "--insight-halo-min-blur": `${roundSeed(seededRange(`${id}:halo-min-blur`, 10, 13), 1)}px`,
+    "--insight-halo-max-blur": `${roundSeed(seededRange(`${id}:halo-max-blur`, 15, 20), 1)}px`,
   } as CSSProperties;
 }
 
@@ -1629,19 +1629,104 @@ function MemoryInsightCanvas({
                   viewBox={`0 0 ${canvasBounds.width} ${canvasBounds.height}`}
                   preserveAspectRatio="none"
                 >
-                  {rootRelationEdges.map((edge) => (
-                    <line
-                      key={edge.id}
-                      x1={edge.sourceX}
-                      y1={edge.sourceY}
-                      x2={edge.targetX}
-                      y2={edge.targetY}
-                      stroke="color-mix(in srgb, var(--type-insight) 76%, transparent)"
-                      strokeWidth={edge.strokeWidth}
-                      strokeLinecap="round"
-                      opacity={edge.opacity}
-                    />
-                  ))}
+                  <defs>
+                    <filter id="synapse-glow" x="-50%" y="-50%" width="200%" height="200%">
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+                      <feColorMatrix in="blur" type="saturate" values="2.4" result="saturated" />
+                      <feMerge>
+                        <feMergeNode in="saturated" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                    <filter id="synapse-glow-strong" x="-50%" y="-50%" width="200%" height="200%">
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+                      <feColorMatrix in="blur" type="saturate" values="3" result="saturated" />
+                      <feMerge>
+                        <feMergeNode in="saturated" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                    {rootRelationEdges.map((edge) => {
+                      const sourceColor = poolCards.find((c) => `card:${c.category}` === edge.sourceId);
+                      const targetColor = poolCards.find((c) => `card:${c.category}` === edge.targetId);
+                      const sc = sourceColor ? bubbleToneColor(sourceColor.category) : "#6d8fa5";
+                      const tc = targetColor ? bubbleToneColor(targetColor.category) : "#6d8fa5";
+                      return (
+                        <linearGradient
+                          key={`grad-${edge.id}`}
+                          id={`synapse-grad-${edge.id.replace(/[^a-zA-Z0-9]/g, "_")}`}
+                          x1={edge.sourceX}
+                          y1={edge.sourceY}
+                          x2={edge.targetX}
+                          y2={edge.targetY}
+                          gradientUnits="userSpaceOnUse"
+                        >
+                          <stop offset="0%" stopColor={sc} stopOpacity={0.9} />
+                          <stop offset="50%" stopColor={`color-mix(in srgb, ${sc} 50%, ${tc})`} stopOpacity={0.6} />
+                          <stop offset="100%" stopColor={tc} stopOpacity={0.9} />
+                        </linearGradient>
+                      );
+                    })}
+                  </defs>
+                  {rootRelationEdges.map((edge) => {
+                    const dx = edge.targetX - edge.sourceX;
+                    const dy = edge.targetY - edge.sourceY;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const perpX = -dy / (dist || 1);
+                    const perpY = dx / (dist || 1);
+                    const curveOffset = Math.min(dist * 0.15, 40) * (hashString(edge.id) % 2 === 0 ? 1 : -1);
+                    const mx = (edge.sourceX + edge.targetX) / 2 + perpX * curveOffset;
+                    const my = (edge.sourceY + edge.targetY) / 2 + perpY * curveOffset;
+                    const pathD = `M ${edge.sourceX} ${edge.sourceY} Q ${mx} ${my} ${edge.targetX} ${edge.targetY}`;
+                    const gradId = `synapse-grad-${edge.id.replace(/[^a-zA-Z0-9]/g, "_")}`;
+                    const dashLen = Math.max(dist * 0.3, 20);
+                    const isStrong = edge.intensity > 0.5;
+
+                    return (
+                      <g key={edge.id}>
+                        <path
+                          d={pathD}
+                          fill="none"
+                          stroke={`url(#${gradId})`}
+                          strokeWidth={edge.strokeWidth + 4}
+                          strokeLinecap="round"
+                          opacity={edge.opacity * 0.35}
+                          filter={isStrong ? "url(#synapse-glow-strong)" : "url(#synapse-glow)"}
+                        />
+                        <path
+                          d={pathD}
+                          fill="none"
+                          stroke={`url(#${gradId})`}
+                          strokeWidth={edge.strokeWidth}
+                          strokeLinecap="round"
+                          opacity={edge.opacity}
+                        />
+                        <path
+                          d={pathD}
+                          fill="none"
+                          stroke="white"
+                          strokeWidth={Math.max(edge.strokeWidth * 0.6, 1)}
+                          strokeLinecap="round"
+                          strokeDasharray={`${dashLen} ${dist - dashLen}`}
+                          opacity={edge.opacity * 0.4}
+                          className="insight-synapse-flow"
+                          style={{
+                            "--synapse-dash-total": `${dist}`,
+                            "--synapse-flow-duration": `${(3 + (1 - edge.intensity) * 4).toFixed(1)}s`,
+                          } as CSSProperties}
+                        />
+                        {isStrong ? (
+                          <circle r="2.5" fill="white" opacity={0.7}>
+                            <animateMotion
+                              dur={`${(2.5 + (1 - edge.intensity) * 3).toFixed(1)}s`}
+                              repeatCount="indefinite"
+                              path={pathD}
+                            />
+                          </circle>
+                        ) : null}
+                      </g>
+                    );
+                  })}
                 </svg>
               ) : null}
 
