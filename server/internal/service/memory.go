@@ -235,7 +235,7 @@ func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFi
 	if offset < 0 {
 		offset = 0
 	}
-	fetchLimit := limit * 5
+	fetchLimit := limit * 3
 
 	queryVec, err := s.embedder.Embed(ctx, filter.Query)
 	if err != nil {
@@ -296,7 +296,7 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 	if offset < 0 {
 		offset = 0
 	}
-	fetchLimit := limit * 5
+	fetchLimit := limit * 3
 
 	vecResults, vecErr := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
 	if vecErr != nil {
