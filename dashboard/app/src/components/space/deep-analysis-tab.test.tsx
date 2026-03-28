@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { DeepAnalysisTab } from "./deep-analysis-tab";
@@ -317,6 +317,7 @@ describe("DeepAnalysisTab", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Delete report" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
       expect(mocks.deleteDeepAnalysisReport).toHaveBeenCalledWith("space-1", "dar_completed");

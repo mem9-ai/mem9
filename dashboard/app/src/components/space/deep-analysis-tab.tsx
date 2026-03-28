@@ -751,7 +751,7 @@ export function DeepAnalysisTab({
       )}
 
       {reports.length > 0 && (
-        <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
           <div className="space-y-3">
             {reports.map((report) => {
               const selected = report.id === selectedReportId;

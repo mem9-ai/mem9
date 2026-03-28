@@ -295,6 +295,10 @@ vi.mock("@/api/local-cache", () => ({
   patchSyncState: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@/components/space/use-memory-farm-entry-state", () => ({
+  useMemoryFarmEntryState: () => "ready",
+}));
+
 vi.mock("@/api/queries", () => ({
   getSessionPreviewLookupKey: (memory: Memory) =>
     memory.memory_type === "insight" ? memory.session_id : "",
@@ -560,13 +564,13 @@ describe("SpacePage", () => {
     renderSpacePage();
 
     expect(
-      screen.getByRole("button", { name: "Analysis" }),
+      screen.getByRole("button", { name: "Summary" }),
     ).toBeInTheDocument();
     expect(
       document.querySelector('[data-mp-event="Dashboard/Analysis/CategoryClicked"]'),
     ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Analysis" }));
+    fireEvent.click(screen.getByRole("button", { name: "Summary" }));
 
     const analysisDialog = screen.getByRole("dialog");
     expect(analysisDialog).toBeInTheDocument();
