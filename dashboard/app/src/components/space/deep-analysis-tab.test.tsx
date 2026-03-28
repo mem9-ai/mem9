@@ -136,8 +136,8 @@ describe("DeepAnalysisTab", () => {
 
     expect(screen.queryByText("Current report is synthesizing product and persona signals.")).not.toBeInTheDocument();
     expect(screen.queryByText("Previous report summary.")).not.toBeInTheDocument();
-    expect(screen.getByText("Chunk analysis")).toBeInTheDocument();
-    expect(screen.getByText("The report is still running. This view refreshes automatically.")).toBeInTheDocument();
+    expect(screen.getByText("Loading report history…")).toBeInTheDocument();
+    expect(screen.queryByText("Completed")).not.toBeInTheDocument();
   });
 
   it("renders the richer persona fields, downloads cleanup csv, and deletes duplicate memories", async () => {

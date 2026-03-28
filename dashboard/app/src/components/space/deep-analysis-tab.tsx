@@ -27,7 +27,6 @@ import type {
   DeepAnalysisEvidenceHighlight,
   DeepAnalysisRelationship,
   DeepAnalysisReportDetail,
-  DeepAnalysisReportListItem,
 } from "@/types/analysis";
 
 const TERMINAL_REPORT_STATUSES = new Set(["COMPLETED", "FAILED"]);
@@ -39,13 +38,6 @@ function formatDateTime(value: string, locale: string): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
-}
-
-function statusVariant(status: DeepAnalysisReportListItem["status"]): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "COMPLETED") return "default";
-  if (status === "FAILED") return "destructive";
-  if (status === "QUEUED") return "outline";
-  return "secondary";
 }
 
 function countDuplicateMemories(
@@ -739,16 +731,13 @@ export function DeepAnalysisTab({
                     selected ? "ring-1 ring-primary/35" : ""
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-foreground">
-                        {formatDateTime(report.requestedAt, i18n.language)}
-                      </div>
-                      <div className="mt-1 text-xs text-soft-foreground">
-                        {report.memoryCount} {t("deep_analysis.memories_suffix")}
-                      </div>
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">
+                      {formatDateTime(report.requestedAt, i18n.language)}
                     </div>
-                    <Badge variant={statusVariant(report.status)}>{t(`deep_analysis.status.${report.status}`)}</Badge>
+                    <div className="mt-1 text-xs text-soft-foreground">
+                      {report.memoryCount} {t("deep_analysis.memories_suffix")}
+                    </div>
                   </div>
 
                   {!report.completedAt && (
@@ -777,29 +766,16 @@ export function DeepAnalysisTab({
                 />
               ) : (
                 <div className="surface-card px-4 py-8 text-center sm:px-6">
-                  <div className="flex items-center justify-center gap-2">
-                    <Badge variant={statusVariant(selectedReport.status)}>
-                      {t(`deep_analysis.status.${selectedReport.status}`)}
-                    </Badge>
-                    <Badge variant="outline">
-                      {t(`deep_analysis.stage.${selectedReport.stage}`)}
-                    </Badge>
-                  </div>
-                  {selectedReport.status !== "COMPLETED" && (
+                  {selectedReport.status !== "FAILED" && (
                     <div className="mx-auto mt-4 max-w-xl">
                       <Progress value={selectedReport.progressPercent} />
                     </div>
                   )}
-                  <p className="text-sm text-soft-foreground">
+                  <p className="mt-4 text-sm text-soft-foreground">
                     {selectedReport.status === "FAILED"
                       ? t("deep_analysis.failed_body")
-                      : t("deep_analysis.pending")}
+                      : t("deep_analysis.loading")}
                   </p>
-                  {selectedReport.status !== "COMPLETED" && (
-                    <p className="mt-2 text-xs text-soft-foreground">
-                      {t("deep_analysis.processing")}
-                    </p>
-                  )}
                   {selectedReport.errorMessage && (
                     <div className="mx-auto mt-4 max-w-2xl rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-3 text-sm text-foreground/85">
                       {selectedReport.errorMessage}
