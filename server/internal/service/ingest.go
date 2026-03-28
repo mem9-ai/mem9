@@ -437,7 +437,9 @@ atomic facts from a conversation.
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
 6. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
-7. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+7. Bind temporal expressions with their events in the same fact. Preserve time exactly as stated.
+   - Good: "John moved to Tokyo last summer"
+   - Bad: "John moved to Tokyo" (time lost)
 8. Extract relationships between people explicitly.
 9. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
 10. If no meaningful facts exist in the conversation, return an empty facts array.
@@ -512,7 +514,9 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
 6. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
-7. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+7. Bind temporal expressions with their events in the same fact. Preserve time exactly as stated.
+   - Good: "John moved to Tokyo last summer"
+   - Bad: "John moved to Tokyo" (time lost)
 8. Extract relationships between people explicitly.
 9. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
 10. If no meaningful facts exist in the conversation, return an empty facts array.
