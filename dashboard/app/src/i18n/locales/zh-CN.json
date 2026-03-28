@@ -209,12 +209,13 @@
   "memory_overview": {
     "tabs": {
       "pulse": "Memory Pulse",
-      "insight": "Memory Insight"
+      "insight": "Memory Insight",
+      "analysis": "Memory Analysis"
     }
   },
   "analysis": {
-    "title": "记忆分析",
-    "open": "分析",
+    "title": "分析摘要",
+    "open": "摘要",
     "taxonomy_version": "分类版本 {{version}}",
     "taxonomy_fallback": "使用默认分类标签",
     "taxonomy_warning": "分类定义暂不可用，当前展示为本地兜底标签。",
@@ -287,6 +288,66 @@
       "preference": "偏好",
       "experience": "经历",
       "activity": "活动"
+    }
+  },
+  "deep_analysis": {
+    "title": "Memory Analysis",
+    "subtitle": "对全量记忆生成一份可回看、可追踪历史的深度报告。",
+    "create": "深度分析",
+    "loading": "正在加载分析报告历史…",
+    "empty_title": "还没有分析报告",
+    "empty_body": "运行一次深度分析后，这里会生成关于用户画像、主题分布、关系信号、记忆质量和优化建议的结构化报告。",
+    "detail_title": "最新报告",
+    "generated_at": "请求时间 {{value}}",
+    "processing": "报告仍在生成中，页面会自动刷新状态。",
+    "pending": "报告仍在生成中。",
+    "failed_body": "这份报告没有成功完成。",
+    "memories_suffix": "条记忆",
+    "sections": {
+      "overview": "总览",
+      "persona": "用户画像",
+      "themes": "主题分布",
+      "entities": "实体",
+      "relationships": "关系",
+      "quality": "质量信号",
+      "recommendations": "建议"
+    },
+    "metrics": {
+      "memories": "总记忆数",
+      "deduplicated": "去重后数量",
+      "start": "最早记忆",
+      "end": "最新记忆"
+    },
+    "persona": {
+      "preferences": "偏好",
+      "habits": "习惯"
+    },
+    "entities": {
+      "people": "人物",
+      "teams": "团队",
+      "projects": "项目",
+      "tools": "工具",
+      "places": "地点"
+    },
+    "quality": {
+      "duplicate_ratio": "重复占比",
+      "noisy_memories": "低质量记忆数"
+    },
+    "status": {
+      "QUEUED": "排队中",
+      "PREPARING": "准备中",
+      "ANALYZING": "分析中",
+      "SYNTHESIZING": "汇总中",
+      "COMPLETED": "已完成",
+      "FAILED": "失败"
+    },
+    "stage": {
+      "FETCH_SOURCE": "拉取数据",
+      "PREPROCESS": "预处理",
+      "CHUNK_ANALYSIS": "分块分析",
+      "GLOBAL_SYNTHESIS": "全局汇总",
+      "VALIDATE": "校验",
+      "COMPLETE": "完成"
     }
   },
   "memory_pulse": {

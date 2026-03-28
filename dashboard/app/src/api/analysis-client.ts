@@ -2,8 +2,12 @@ import type {
   AnalysisApiErrorPayload,
   AnalysisJobSnapshotResponse,
   AnalysisJobUpdatesResponse,
+  CreateDeepAnalysisReportRequest,
+  CreateDeepAnalysisReportResponse,
   CreateAnalysisJobRequest,
   CreateAnalysisJobResponse,
+  DeepAnalysisReportDetail,
+  DeepAnalysisReportListResponse,
   FinalizeAnalysisJobResponse,
   TaxonomyResponse,
   UploadBatchRequest,
@@ -131,5 +135,34 @@ export const analysisApi = {
     if (version) params.set("version", version);
     const suffix = params.size > 0 ? `?${params}` : "";
     return request(spaceId, `/v1/taxonomy${suffix}`);
+  },
+
+  createDeepAnalysisReport(
+    spaceId: string,
+    input: CreateDeepAnalysisReportRequest,
+  ): Promise<CreateDeepAnalysisReportResponse> {
+    return request(spaceId, "/v1/deep-analysis/reports", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  listDeepAnalysisReports(
+    spaceId: string,
+    limit = 20,
+    offset = 0,
+  ): Promise<DeepAnalysisReportListResponse> {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    return request(spaceId, `/v1/deep-analysis/reports?${params.toString()}`);
+  },
+
+  getDeepAnalysisReport(
+    spaceId: string,
+    reportId: string,
+  ): Promise<DeepAnalysisReportDetail> {
+    return request(spaceId, `/v1/deep-analysis/reports/${reportId}`);
   },
 };

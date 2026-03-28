@@ -10,6 +10,16 @@ import {
 import type { MemoryAnalysisMatch } from "@/types/analysis";
 import type { Memory } from "@/types/memory";
 
+vi.mock("@/components/space/deep-analysis-tab", () => ({
+  DeepAnalysisTab: ({
+    spaceId,
+    active,
+  }: {
+    spaceId: string;
+    active: boolean;
+  }) => <div data-testid="deep-analysis-tab">{`${spaceId}:${String(active)}`}</div>,
+}));
+
 function createMemory(id: string): Memory {
   return {
     id,
@@ -53,6 +63,7 @@ describe("MemoryOverviewTabs", () => {
 
     render(
       <MemoryOverviewTabs
+        spaceId="space-1"
         stats={{ total: 2, pinned: 0, insight: 2 }}
         pulseMemories={[memory, secondMemory]}
         insightMemories={[memory, secondMemory]}
@@ -130,6 +141,7 @@ describe("MemoryOverviewTabs", () => {
 
     render(
       <MemoryOverviewTabs
+        spaceId="space-1"
         stats={{ total: 1, pinned: 0, insight: 1 }}
         pulseMemories={[memory]}
         insightMemories={[memory]}
@@ -180,5 +192,32 @@ describe("MemoryOverviewTabs", () => {
       expect.objectContaining({ id: "mem-insight-1" }),
       "insight",
     );
+  });
+
+  it("exposes the Memory Analysis tab and mounts the analysis content on selection", () => {
+    render(
+      <MemoryOverviewTabs
+        spaceId="space-1"
+        stats={{ total: 0, pinned: 0, insight: 0 }}
+        pulseMemories={[]}
+        insightMemories={[]}
+        cards={[]}
+        snapshot={null}
+        range="all"
+        loading={false}
+        compact={false}
+        matchMap={new Map()}
+        onTypeSelect={() => {}}
+        onTagSelect={() => {}}
+        onMemorySelect={() => {}}
+        onTimelineSelect={() => {}}
+      />,
+    );
+
+    const analysisTab = screen.getByRole("tab", { name: "Memory Analysis" });
+    analysisTab.focus();
+    fireEvent.keyDown(analysisTab, { key: "Enter" });
+
+    expect(screen.getByTestId("deep-analysis-tab")).toHaveTextContent("space-1:true");
   });
 });

@@ -209,12 +209,13 @@
   "memory_overview": {
     "tabs": {
       "pulse": "Memory Pulse",
-      "insight": "Memory Insight"
+      "insight": "Memory Insight",
+      "analysis": "Memory Analysis"
     }
   },
   "analysis": {
-    "title": "Memory Analysis",
-    "open": "Analysis",
+    "title": "Analysis Summary",
+    "open": "Summary",
     "taxonomy_version": "Taxonomy {{version}}",
     "taxonomy_fallback": "Using fallback labels",
     "taxonomy_warning": "Taxonomy is unavailable right now. Showing local fallback labels.",
@@ -287,6 +288,66 @@
       "preference": "Preference",
       "experience": "Experience",
       "activity": "Activity"
+    }
+  },
+  "deep_analysis": {
+    "title": "Memory Analysis",
+    "subtitle": "Generate a durable, report-style analysis of your full memory corpus with preserved history.",
+    "create": "Deep Analysis",
+    "loading": "Loading report history…",
+    "empty_title": "No analysis reports yet",
+    "empty_body": "Run a deep analysis to generate a structured report about persona, themes, relationships, memory quality, and follow-up recommendations.",
+    "detail_title": "Latest Report",
+    "generated_at": "Requested {{value}}",
+    "processing": "The report is still running. This view refreshes automatically.",
+    "pending": "The report is still being generated.",
+    "failed_body": "This report did not complete successfully.",
+    "memories_suffix": "memories",
+    "sections": {
+      "overview": "Overview",
+      "persona": "Persona",
+      "themes": "Theme Landscape",
+      "entities": "Entities",
+      "relationships": "Relationships",
+      "quality": "Quality Signals",
+      "recommendations": "Recommendations"
+    },
+    "metrics": {
+      "memories": "Total memories",
+      "deduplicated": "Deduplicated",
+      "start": "First memory",
+      "end": "Latest memory"
+    },
+    "persona": {
+      "preferences": "Preferences",
+      "habits": "Habits"
+    },
+    "entities": {
+      "people": "People",
+      "teams": "Teams",
+      "projects": "Projects",
+      "tools": "Tools",
+      "places": "Places"
+    },
+    "quality": {
+      "duplicate_ratio": "Duplicate ratio",
+      "noisy_memories": "Low-quality memories"
+    },
+    "status": {
+      "QUEUED": "Queued",
+      "PREPARING": "Preparing",
+      "ANALYZING": "Analyzing",
+      "SYNTHESIZING": "Synthesizing",
+      "COMPLETED": "Completed",
+      "FAILED": "Failed"
+    },
+    "stage": {
+      "FETCH_SOURCE": "Fetching source",
+      "PREPROCESS": "Preprocess",
+      "CHUNK_ANALYSIS": "Chunk analysis",
+      "GLOBAL_SYNTHESIS": "Global synthesis",
+      "VALIDATE": "Validate",
+      "COMPLETE": "Complete"
     }
   },
   "memory_pulse": {

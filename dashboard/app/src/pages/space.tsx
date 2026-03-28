@@ -939,6 +939,7 @@ export function SpacePage() {
             )}
 
             <MemoryOverviewTabs
+              spaceId={spaceId}
               stats={rangeStats}
               pulseMemories={pulseMemories}
               insightMemories={analysis.sourceMemories}

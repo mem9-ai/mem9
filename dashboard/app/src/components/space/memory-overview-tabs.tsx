@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { DeepAnalysisTab } from "@/components/space/deep-analysis-tab";
 import { MemoryInsightWorkspace } from "@/components/space/memory-insight-workspace";
 import { MemoryPulseOverview } from "@/components/space/memory-pulse-overview";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,6 +18,7 @@ import type { TimeRangePreset, TimelineSelection } from "@/types/time-range";
 export type OverviewMemorySelectionSource = "list" | "insight";
 
 export function MemoryOverviewTabs({
+  spaceId,
   stats,
   pulseMemories,
   insightMemories,
@@ -36,6 +38,7 @@ export function MemoryOverviewTabs({
   onTimelineSelect,
   onTimelineClear,
 }: {
+  spaceId: string;
   stats: MemoryStats | undefined;
   pulseMemories: Memory[];
   insightMemories: Memory[];
@@ -95,6 +98,15 @@ export function MemoryOverviewTabs({
           >
             {t("memory_overview.tabs.insight")}
           </TabsTrigger>
+          <TabsTrigger
+            value="analysis"
+            className={cn(
+              "relative -mb-px rounded-t-[1rem] border border-transparent border-b-0 bg-transparent px-4 py-2.5 text-sm tracking-[-0.02em] text-foreground/52 transition-colors",
+              "data-[state=active]:border-foreground/10 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-none",
+            )}
+          >
+            {t("memory_overview.tabs.analysis")}
+          </TabsTrigger>
         </TabsList>
       </div>
 
@@ -129,6 +141,10 @@ export function MemoryOverviewTabs({
           activeTag={activeTag}
           onMemorySelect={(memory) => onMemorySelect(memory, "insight")}
         />
+      </TabsContent>
+
+      <TabsContent value="analysis" className="-mt-px mt-0">
+        <DeepAnalysisTab spaceId={spaceId} active={tab === "analysis"} />
       </TabsContent>
     </Tabs>
   );

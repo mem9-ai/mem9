@@ -71,4 +71,57 @@ describe("analysisApi", () => {
     const headers = init?.headers as Headers;
     expect(headers.get("Content-Type")).toBe("application/json");
   });
+
+  it("calls the deep-analysis create endpoint with the same auth header contract", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          reportId: "dar_1",
+          status: "QUEUED",
+          stage: "FETCH_SOURCE",
+          progressPercent: 0,
+          requestedAt: "2026-03-28T00:00:00Z",
+          memoryCount: 1001,
+        }),
+        {
+          status: 202,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await analysisApi.createDeepAnalysisReport("space-1", {
+      lang: "zh-CN",
+      timezone: "Asia/Shanghai",
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    const headers = init?.headers as Headers;
+    expect(String(url)).toContain("/v1/deep-analysis/reports");
+    expect(init?.method).toBe("POST");
+    expect(headers.get("x-mem9-api-key")).toBe("space-1");
+    expect(headers.get("Content-Type")).toBe("application/json");
+  });
+
+  it("builds the deep-analysis list query string correctly", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          reports: [],
+          total: 0,
+          limit: 10,
+          offset: 20,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await analysisApi.listDeepAnalysisReports("space-1", 10, 20);
+
+    const [url] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toContain("/v1/deep-analysis/reports?limit=10&offset=20");
+  });
 });

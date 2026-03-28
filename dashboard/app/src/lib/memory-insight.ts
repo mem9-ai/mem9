@@ -11,7 +11,7 @@ import {
   type MemoryInsightEntityKind,
 } from "@/lib/memory-insight-entities";
 
-export type MemoryInsightTab = "pulse" | "insight";
+export type MemoryInsightTab = "pulse" | "insight" | "analysis";
 export type MemoryInsightViewMode = "browse" | "relations";
 export type MemoryInsightNodeKind = "card" | "tag" | "entity" | "memory";
 export type { MemoryInsightEntityKind } from "@/lib/memory-insight-entities";
