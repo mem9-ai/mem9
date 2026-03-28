@@ -13,6 +13,9 @@ const mocks = vi.hoisted(() => ({
     deletedMemoryIds: ["mem_2", "mem_3"],
     failedMemoryIds: [],
   })),
+  deleteDeepAnalysisReport: vi.fn(async () => ({
+    reportId: "dar_completed",
+  })),
 }));
 
 vi.mock("@/api/deep-analysis-queries", () => ({
@@ -29,6 +32,7 @@ vi.mock("@/api/analysis-client", () => ({
   analysisApi: {
     downloadDeepAnalysisDuplicatesCsv: mocks.downloadDeepAnalysisDuplicatesCsv,
     deleteDeepAnalysisDuplicates: mocks.deleteDeepAnalysisDuplicates,
+    deleteDeepAnalysisReport: mocks.deleteDeepAnalysisReport,
   },
   AnalysisApiError: class AnalysisApiError extends Error {},
 }));
@@ -141,6 +145,7 @@ describe("DeepAnalysisTab", () => {
   });
 
   it("renders the richer persona fields, downloads cleanup csv, and deletes duplicate memories", async () => {
+    vi.stubGlobal("confirm", vi.fn(() => true));
     const createObjectUrl = vi.fn(() => "blob:report");
     const revokeObjectUrl = vi.fn();
     const click = vi.fn();
@@ -309,6 +314,12 @@ describe("DeepAnalysisTab", () => {
     await waitFor(() => {
       expect(mocks.deleteDeepAnalysisDuplicates).toHaveBeenCalledWith("space-1", "dar_completed");
       expect(screen.getByText("Deleted 2 duplicate memories.")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete report" }));
+
+    await waitFor(() => {
+      expect(mocks.deleteDeepAnalysisReport).toHaveBeenCalledWith("space-1", "dar_completed");
     });
   });
 });

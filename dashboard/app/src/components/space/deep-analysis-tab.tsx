@@ -553,6 +553,7 @@ export function DeepAnalysisTab({
   const { t, i18n } = useTranslation();
   const [downloadingReportId, setDownloadingReportId] = useState<string | null>(null);
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
+  const [deletingWholeReportId, setDeletingWholeReportId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteFeedback, setDeleteFeedback] = useState<string | null>(null);
@@ -647,6 +648,37 @@ export function DeepAnalysisTab({
     }
   };
 
+  const handleDeleteReport = async (reportId: string) => {
+    const confirmed = window.confirm(t("deep_analysis.report_actions.delete_confirm"));
+    if (!confirmed) {
+      return;
+    }
+
+    setDeleteError(null);
+    setDeleteFeedback(null);
+    setDownloadError(null);
+    setDeletingWholeReportId(reportId);
+    try {
+      await analysisApi.deleteDeepAnalysisReport(spaceId, reportId);
+      const nextReportId = reports.find((report) => report.id !== reportId)?.id ?? null;
+      if (selectedReportId === reportId) {
+        setSelectedReportId(nextReportId);
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["space", spaceId, "deepAnalysis", "reports"] }),
+        queryClient.invalidateQueries({ queryKey: ["space", spaceId, "deepAnalysis", "report", reportId] }),
+      ]);
+    } catch (error) {
+      setDeleteError(
+        error instanceof AnalysisApiError
+          ? error.message
+          : t("deep_analysis.report_actions.delete_failed"),
+      );
+    } finally {
+      setDeletingWholeReportId(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <DeepAnalysisOverlay active={hasActiveReport} />
@@ -717,27 +749,51 @@ export function DeepAnalysisTab({
           <div className="space-y-3">
             {reports.map((report) => {
               const selected = report.id === selectedReportId;
+              const allowDelete = TERMINAL_REPORT_STATUSES.has(report.status);
               return (
-                <button
+                <div
                   key={report.id}
-                  type="button"
-                  onClick={() => {
-                    setDownloadError(null);
-                    setDeleteError(null);
-                    setDeleteFeedback(null);
-                    setSelectedReportId(report.id);
-                  }}
                   className={`surface-card w-full px-4 py-4 text-left transition-colors sm:px-5 ${
                     selected ? "ring-1 ring-primary/35" : ""
                   }`}
                 >
-                  <div>
-                    <div className="text-sm font-semibold text-foreground">
-                      {formatDateTime(report.requestedAt, i18n.language)}
-                    </div>
-                    <div className="mt-1 text-xs text-soft-foreground">
-                      {report.memoryCount} {t("deep_analysis.memories_suffix")}
-                    </div>
+                  <div className="flex items-start gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDownloadError(null);
+                        setDeleteError(null);
+                        setDeleteFeedback(null);
+                        setSelectedReportId(report.id);
+                      }}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div className="text-sm font-semibold text-foreground">
+                        {formatDateTime(report.requestedAt, i18n.language)}
+                      </div>
+                      <div className="mt-1 text-xs text-soft-foreground">
+                        {report.memoryCount} {t("deep_analysis.memories_suffix")}
+                      </div>
+                    </button>
+                    {allowDelete && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          void handleDeleteReport(report.id);
+                        }}
+                        disabled={deletingWholeReportId === report.id}
+                        aria-label={t("deep_analysis.report_actions.delete")}
+                        className="size-8 shrink-0 text-soft-foreground hover:text-destructive"
+                      >
+                        {deletingWholeReportId === report.id ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="size-4" />
+                        )}
+                      </Button>
+                    )}
                   </div>
 
                   {!report.completedAt && (
@@ -745,7 +801,7 @@ export function DeepAnalysisTab({
                       <Progress value={report.progressPercent} />
                     </div>
                   )}
-                </button>
+                </div>
               );
             })}
           </div>

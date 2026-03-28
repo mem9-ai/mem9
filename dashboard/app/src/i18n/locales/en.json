@@ -348,6 +348,11 @@
       "download_hint": "The exported CSV only contains duplicate memories to delete. Canonical memories are not included.",
       "download_failed": "Failed to download duplicate cleanup CSV."
     },
+    "report_actions": {
+      "delete": "Delete report",
+      "delete_confirm": "Delete this Memory Analysis report? This only removes the saved report and its generated artifacts.",
+      "delete_failed": "Failed to delete the analysis report."
+    },
     "status": {
       "QUEUED": "Queued",
       "PREPARING": "Preparing",

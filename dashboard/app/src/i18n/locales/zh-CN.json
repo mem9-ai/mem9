@@ -348,6 +348,11 @@
       "download_hint": "导出的 CSV 只包含建议删除的 duplicate memories，不包含 canonical memory。",
       "download_failed": "下载重复清理 CSV 失败。"
     },
+    "report_actions": {
+      "delete": "删除报告",
+      "delete_confirm": "删除这份 Memory Analysis 报告？这只会移除保存的报告及其生成产物。",
+      "delete_failed": "删除分析报告失败。"
+    },
     "status": {
       "QUEUED": "排队中",
       "PREPARING": "准备中",

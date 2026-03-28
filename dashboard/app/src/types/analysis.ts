@@ -388,6 +388,10 @@ export interface DeleteDeepAnalysisDuplicatesResponse {
   failedMemoryIds: string[];
 }
 
+export interface DeleteDeepAnalysisReportResponse {
+  reportId: string;
+}
+
 export interface DeepAnalysisReportListItem {
   id: string;
   status: DeepAnalysisReportStatus;
