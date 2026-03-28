@@ -8,9 +8,7 @@ import (
 	"log/slog"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
-	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -185,33 +183,6 @@ func paginateResults(results []domain.Memory, offset, limit int) ([]domain.Memor
 	return results[offset:end], total
 }
 
-var ftsStopWords = map[string]struct{}{
-	"the": {}, "a": {}, "an": {}, "of": {}, "is": {}, "are": {},
-	"do": {}, "does": {}, "did": {}, "was": {}, "were": {},
-	"in": {}, "on": {}, "at": {}, "to": {}, "for": {}, "and": {},
-	"or": {}, "it": {}, "its": {}, "be": {}, "been": {}, "being": {},
-	"has": {}, "have": {}, "had": {}, "that": {}, "this": {},
-}
-
-func normalizeQueryForFTS(raw string) string {
-	raw = strings.ToLower(raw)
-	raw = strings.ReplaceAll(raw, "'s", "")
-	raw = strings.ReplaceAll(raw, "\u2019s", "")
-	var tokens []string
-	for _, word := range strings.FieldsFunc(raw, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	}) {
-		if _, stop := ftsStopWords[word]; stop {
-			continue
-		}
-		tokens = append(tokens, word)
-	}
-	if len(tokens) == 0 {
-		return raw
-	}
-	return strings.Join(tokens, " ")
-}
-
 func (s *MemoryService) ftsOnlySearch(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
 	limit := filter.Limit
 	if limit <= 0 || limit > 200 {
@@ -223,8 +194,7 @@ func (s *MemoryService) ftsOnlySearch(ctx context.Context, filter domain.MemoryF
 	}
 	fetchLimit := limit * 3
 
-	ftsQuery := normalizeQueryForFTS(filter.Query)
-	ftsResults, err := s.memories.FTSSearch(ctx, ftsQuery, filter, fetchLimit)
+	ftsResults, err := s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("FTS search: %w", err)
 	}
@@ -291,17 +261,16 @@ func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFi
 		vecResults = filtered
 	}
 
-	ftsQuery := normalizeQueryForFTS(filter.Query)
 	var kwResults []domain.Memory
 	if s.memories.FTSAvailable() {
 		var kwErr error
-		kwResults, kwErr = s.memories.FTSSearch(ctx, ftsQuery, filter, fetchLimit)
+		kwResults, kwErr = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
 		if kwErr != nil {
 			return nil, 0, fmt.Errorf("FTS search: %w", kwErr)
 		}
 	} else {
 		var kwErr error
-		kwResults, kwErr = s.memories.KeywordSearch(ctx, ftsQuery, filter, fetchLimit)
+		kwResults, kwErr = s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
 		if kwErr != nil {
 			return nil, 0, fmt.Errorf("keyword search: %w", kwErr)
 		}
@@ -348,17 +317,16 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 		vecResults = filtered
 	}
 
-	ftsQuery := normalizeQueryForFTS(filter.Query)
 	var kwResults []domain.Memory
 	if s.memories.FTSAvailable() {
 		var kwErr error
-		kwResults, kwErr = s.memories.FTSSearch(ctx, ftsQuery, filter, fetchLimit)
+		kwResults, kwErr = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
 		if kwErr != nil {
 			return nil, 0, fmt.Errorf("FTS search: %w", kwErr)
 		}
 	} else {
 		var kwErr error
-		kwResults, kwErr = s.memories.KeywordSearch(ctx, ftsQuery, filter, fetchLimit)
+		kwResults, kwErr = s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
 		if kwErr != nil {
 			return nil, 0, fmt.Errorf("keyword search: %w", kwErr)
 		}
