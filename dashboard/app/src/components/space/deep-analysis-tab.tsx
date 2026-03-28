@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
   Brain,
-  CheckCircle2,
   Clock3,
   Database,
   Download,
@@ -764,49 +763,6 @@ export function DeepAnalysisTab({
 
           {selectedReport && (
             <div className="space-y-4">
-              <div className="surface-card px-4 py-5 sm:px-6">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-xl font-semibold text-foreground">
-                        {t("deep_analysis.detail_title")}
-                      </h3>
-                      {selectedReport.status === "COMPLETED" && (
-                        <CheckCircle2 className="size-4 text-emerald-500" />
-                      )}
-                    </div>
-                    <p className="mt-2 text-sm text-soft-foreground">
-                      {t("deep_analysis.generated_at", {
-                        value: formatDateTime(selectedReport.requestedAt, i18n.language),
-                      })}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={statusVariant(selectedReport.status)}>
-                      {t(`deep_analysis.status.${selectedReport.status}`)}
-                    </Badge>
-                    <Badge variant="outline">
-                      {t(`deep_analysis.stage.${selectedReport.stage}`)}
-                    </Badge>
-                  </div>
-                </div>
-
-                {selectedReport.status !== "COMPLETED" && (
-                  <div className="mt-4">
-                    <Progress value={selectedReport.progressPercent} />
-                    <p className="mt-2 text-xs text-soft-foreground">
-                      {t("deep_analysis.processing")}
-                    </p>
-                  </div>
-                )}
-
-                {selectedReport.errorMessage && (
-                  <div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-3 text-sm text-foreground/85">
-                    {selectedReport.errorMessage}
-                  </div>
-                )}
-              </div>
-
               {selectedReport.report ? (
                 <ReportDetail
                   report={selectedReport}
@@ -821,11 +777,34 @@ export function DeepAnalysisTab({
                 />
               ) : (
                 <div className="surface-card px-4 py-8 text-center sm:px-6">
+                  <div className="flex items-center justify-center gap-2">
+                    <Badge variant={statusVariant(selectedReport.status)}>
+                      {t(`deep_analysis.status.${selectedReport.status}`)}
+                    </Badge>
+                    <Badge variant="outline">
+                      {t(`deep_analysis.stage.${selectedReport.stage}`)}
+                    </Badge>
+                  </div>
+                  {selectedReport.status !== "COMPLETED" && (
+                    <div className="mx-auto mt-4 max-w-xl">
+                      <Progress value={selectedReport.progressPercent} />
+                    </div>
+                  )}
                   <p className="text-sm text-soft-foreground">
                     {selectedReport.status === "FAILED"
                       ? t("deep_analysis.failed_body")
                       : t("deep_analysis.pending")}
                   </p>
+                  {selectedReport.status !== "COMPLETED" && (
+                    <p className="mt-2 text-xs text-soft-foreground">
+                      {t("deep_analysis.processing")}
+                    </p>
+                  )}
+                  {selectedReport.errorMessage && (
+                    <div className="mx-auto mt-4 max-w-2xl rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-3 text-sm text-foreground/85">
+                      {selectedReport.errorMessage}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
