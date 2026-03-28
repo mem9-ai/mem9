@@ -233,6 +233,16 @@ describe("DeepAnalysisTab", () => {
             places: [],
           },
           relationships: [],
+          discoveries: [
+            {
+              id: "focus:dashboard-roadmap",
+              kind: "focus_area",
+              title: "Focus area: dashboard roadmap",
+              summary: "Project memories around the dashboard roadmap form one of the strongest recurring workstreams.",
+              confidence: 0.82,
+              evidenceMemoryIds: ["mem_1"],
+            },
+          ],
           quality: {
             duplicateRatio: 0.12,
             duplicateMemoryCount: 18,
@@ -266,6 +276,8 @@ describe("DeepAnalysisTab", () => {
     render(<DeepAnalysisTab spaceId="space-1" active />);
 
     expect(screen.getByText("Working Style")).toBeInTheDocument();
+    expect(screen.getByText("Key Discoveries")).toBeInTheDocument();
+    expect(screen.getByText("Focus area: dashboard roadmap")).toBeInTheDocument();
     expect(screen.getByText("Decision Signals")).toBeInTheDocument();
     expect(screen.getByText("Representative Evidence")).toBeInTheDocument();
 

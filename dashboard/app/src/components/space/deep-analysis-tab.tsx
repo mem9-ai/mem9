@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import type {
+  DeepAnalysisDiscoveryCard,
   DeepAnalysisEntityGroup,
   DeepAnalysisEvidenceHighlight,
   DeepAnalysisRelationship,
@@ -184,6 +185,30 @@ function EvidenceList({
   );
 }
 
+function DiscoveryCardList({
+  items,
+}: {
+  items: DeepAnalysisDiscoveryCard[];
+}) {
+  if (items.length === 0) {
+    return <p className="text-sm text-soft-foreground">No high-confidence discovery cards yet.</p>;
+  }
+
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {items.map((item) => (
+        <div key={item.id} className="rounded-xl border border-border/70 bg-popover/70 px-4 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-sm font-semibold text-foreground">{item.title}</div>
+            <Badge variant="outline">{Math.round(item.confidence * 100)}%</Badge>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-foreground/85">{item.summary}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ReportDetail({
   report,
   onDownloadDuplicates,
@@ -281,6 +306,10 @@ function ReportDetail({
             items={report.report?.persona.evidenceHighlights ?? []}
           />
         </div>
+      </ReportSection>
+
+      <ReportSection title={t("deep_analysis.sections.discoveries")}>
+        <DiscoveryCardList items={report.report?.discoveries ?? []} />
       </ReportSection>
 
       <ReportSection title={t("deep_analysis.sections.themes")}>

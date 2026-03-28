@@ -298,6 +298,15 @@ export interface DeepAnalysisRelationship {
   evidenceExcerpts: string[];
 }
 
+export interface DeepAnalysisDiscoveryCard {
+  id: string;
+  kind: "focus_area" | "collaborator" | "routine" | "decision" | "hygiene" | "opportunity";
+  title: string;
+  summary: string;
+  confidence: number;
+  evidenceMemoryIds: string[];
+}
+
 export interface DeepAnalysisReportDocument {
   overview: {
     memoryCount: number;
@@ -332,6 +341,7 @@ export interface DeepAnalysisReportDocument {
     places: DeepAnalysisEntityGroup[];
   };
   relationships: DeepAnalysisRelationship[];
+  discoveries?: DeepAnalysisDiscoveryCard[];
   quality: {
     duplicateRatio: number;
     duplicateMemoryCount?: number;
