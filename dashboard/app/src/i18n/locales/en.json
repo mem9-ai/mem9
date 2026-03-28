@@ -319,8 +319,14 @@
       "end": "Latest memory"
     },
     "persona": {
+      "working_style": "Working Style",
+      "goals": "Goals",
       "preferences": "Preferences",
-      "habits": "Habits"
+      "constraints": "Constraints",
+      "decision_signals": "Decision Signals",
+      "notable_routines": "Notable Routines",
+      "contradictions": "Contradictions & Tensions",
+      "evidence": "Representative Evidence"
     },
     "entities": {
       "people": "People",
@@ -331,7 +337,11 @@
     },
     "quality": {
       "duplicate_ratio": "Duplicate ratio",
-      "noisy_memories": "Low-quality memories"
+      "duplicate_count": "Duplicate memories",
+      "noisy_memories": "Low-quality memories",
+      "download_cleanup": "Download duplicate cleanup CSV",
+      "download_hint": "The exported CSV only contains duplicate memories to delete. Canonical memories are not included.",
+      "download_failed": "Failed to download duplicate cleanup CSV."
     },
     "status": {
       "QUEUED": "Queued",

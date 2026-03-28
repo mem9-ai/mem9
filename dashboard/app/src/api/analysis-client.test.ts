@@ -124,4 +124,21 @@ describe("analysisApi", () => {
     const [url] = fetchMock.mock.calls[0] ?? [];
     expect(String(url)).toContain("/v1/deep-analysis/reports?limit=10&offset=20");
   });
+
+  it("downloads the duplicate cleanup csv with the same auth header contract", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("duplicateMemoryId,clusterIndex\nmem_2,1\n", {
+        status: 200,
+        headers: { "Content-Type": "text/csv" },
+      }),
+    );
+
+    const blob = await analysisApi.downloadDeepAnalysisDuplicatesCsv("space-1", "dar_1");
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    const headers = init?.headers as Headers;
+    expect(String(url)).toContain("/v1/deep-analysis/reports/dar_1/duplicates.csv");
+    expect(headers.get("x-mem9-api-key")).toBe("space-1");
+    expect(blob).toBeTruthy();
+  });
 });

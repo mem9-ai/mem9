@@ -283,6 +283,12 @@ export interface DeepAnalysisEntityGroup {
   evidenceMemoryIds: string[];
 }
 
+export interface DeepAnalysisEvidenceHighlight {
+  title: string;
+  detail: string;
+  memoryIds: string[];
+}
+
 export interface DeepAnalysisRelationship {
   source: string;
   relation: string;
@@ -305,10 +311,15 @@ export interface DeepAnalysisReportDocument {
   };
   persona: {
     summary: string;
-    preferences: string[];
-    habits: string[];
-    goals: string[];
-    constraints: string[];
+    workingStyle?: string[];
+    goals?: string[];
+    preferences?: string[];
+    constraints?: string[];
+    decisionSignals?: string[];
+    notableRoutines?: string[];
+    contradictionsOrTensions?: string[];
+    evidenceHighlights?: DeepAnalysisEvidenceHighlight[];
+    habits?: string[];
   };
   themeLandscape: {
     highlights: DeepAnalysisThemeItem[];
@@ -323,6 +334,7 @@ export interface DeepAnalysisReportDocument {
   relationships: DeepAnalysisRelationship[];
   quality: {
     duplicateRatio: number;
+    duplicateMemoryCount?: number;
     noisyMemoryCount: number;
     duplicateClusters: Array<{
       canonicalMemoryId: string;
@@ -349,6 +361,14 @@ export interface DeepAnalysisReportDocument {
     }>;
     searchSeeds: string[];
   };
+}
+
+export interface DeepAnalysisDuplicateExportRow {
+  duplicateMemoryId: string;
+  clusterIndex: number;
+  canonicalPreview: string;
+  duplicatePreview: string;
+  reason: string;
 }
 
 export interface DeepAnalysisReportListItem {

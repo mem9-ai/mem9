@@ -1,14 +1,22 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { DeepAnalysisTab } from "./deep-analysis-tab";
 
 const mocks = vi.hoisted(() => ({
   useDeepAnalysisReports: vi.fn(),
+  downloadDeepAnalysisDuplicatesCsv: vi.fn(async () => new Blob(["duplicateMemoryId\nmem_2\n"], { type: "text/csv" })),
 }));
 
 vi.mock("@/api/deep-analysis-queries", () => ({
   useDeepAnalysisReports: mocks.useDeepAnalysisReports,
+}));
+
+vi.mock("@/api/analysis-client", () => ({
+  analysisApi: {
+    downloadDeepAnalysisDuplicatesCsv: mocks.downloadDeepAnalysisDuplicatesCsv,
+  },
+  AnalysisApiError: class AnalysisApiError extends Error {},
 }));
 
 describe("DeepAnalysisTab", () => {
@@ -116,5 +124,158 @@ describe("DeepAnalysisTab", () => {
     expect(screen.getByText("Previous report summary.")).toBeInTheDocument();
     expect(screen.getByText("Chunk analysis")).toBeInTheDocument();
     expect(screen.getByText("The report is still running. This view refreshes automatically.")).toBeInTheDocument();
+  });
+
+  it("renders the richer persona fields and downloads duplicate cleanup csv", async () => {
+    const createObjectUrl = vi.fn(() => "blob:report");
+    const revokeObjectUrl = vi.fn();
+    const click = vi.fn();
+    const originalCreateElement = document.createElement.bind(document);
+    vi.stubGlobal("URL", {
+      createObjectURL: createObjectUrl,
+      revokeObjectURL: revokeObjectUrl,
+    });
+    vi.spyOn(document, "createElement").mockImplementation(((tagName: string) => {
+      if (tagName === "a") {
+        return {
+          click,
+          href: "",
+          download: "",
+        } as unknown as HTMLAnchorElement;
+      }
+      return originalCreateElement(tagName);
+    }) as typeof document.createElement);
+
+    mocks.useDeepAnalysisReports.mockReturnValue({
+      reports: [
+        {
+          id: "dar_completed",
+          status: "COMPLETED",
+          stage: "COMPLETE",
+          progressPercent: 100,
+          lang: "zh-CN",
+          timezone: "Asia/Shanghai",
+          memoryCount: 1400,
+          requestedAt: "2026-03-28T00:00:00Z",
+          startedAt: "2026-03-28T00:01:00Z",
+          completedAt: "2026-03-28T00:05:00Z",
+          errorCode: null,
+          errorMessage: null,
+          preview: {
+            generatedAt: "2026-03-28T00:05:00Z",
+            summary: "A deeper operational persona summary.",
+            topThemes: ["dashboard roadmap"],
+            keyRecommendations: ["Deduplicate repeated notes"],
+          },
+        },
+      ],
+      selectedReport: {
+        id: "dar_completed",
+        status: "COMPLETED",
+        stage: "COMPLETE",
+        progressPercent: 100,
+        lang: "zh-CN",
+        timezone: "Asia/Shanghai",
+        memoryCount: 1400,
+        requestedAt: "2026-03-28T00:00:00Z",
+        startedAt: "2026-03-28T00:01:00Z",
+        completedAt: "2026-03-28T00:05:00Z",
+        errorCode: null,
+        errorMessage: null,
+        preview: {
+          generatedAt: "2026-03-28T00:05:00Z",
+          summary: "A deeper operational persona summary.",
+          topThemes: ["dashboard roadmap"],
+          keyRecommendations: ["Deduplicate repeated notes"],
+        },
+        report: {
+          overview: {
+            memoryCount: 1400,
+            deduplicatedMemoryCount: 1200,
+            generatedAt: "2026-03-28T00:05:00Z",
+            lang: "zh-CN",
+            timeSpan: {
+              start: "2026-03-01T00:00:00Z",
+              end: "2026-03-28T00:00:00Z",
+            },
+          },
+          persona: {
+            summary: "The corpus highlights repeated operational decisions and structured engineering habits.",
+            workingStyle: ["Prefers structured reviews and staged rollouts."],
+            goals: ["Wants durable memory insight workflows."],
+            preferences: ["Prefers concise but information-dense summaries."],
+            constraints: ["Avoids deleting canonical memories during cleanup."],
+            decisionSignals: ["Tradeoffs frequently balance speed and correctness."],
+            notableRoutines: ["Reviews traffic dashboards every morning."],
+            contradictionsOrTensions: ["The user wants concise output without losing important implementation detail."],
+            evidenceHighlights: [
+              {
+                title: "Evidence 1",
+                detail: "Reviews traffic dashboards every morning.",
+                memoryIds: ["mem_3"],
+              },
+            ],
+          },
+          themeLandscape: {
+            highlights: [
+              {
+                name: "dashboard roadmap",
+                count: 12,
+                description: "Recurring phrase found in 12 memories.",
+              },
+            ],
+          },
+          entities: {
+            people: [{ label: "Alice Johnson", count: 7, evidenceMemoryIds: ["mem_1"] }],
+            teams: [{ label: "Platform Team", count: 4, evidenceMemoryIds: ["mem_2"] }],
+            projects: [],
+            tools: [],
+            places: [],
+          },
+          relationships: [],
+          quality: {
+            duplicateRatio: 0.12,
+            duplicateMemoryCount: 18,
+            noisyMemoryCount: 4,
+            duplicateClusters: [
+              {
+                canonicalMemoryId: "mem_1",
+                duplicateMemoryIds: ["mem_2", "mem_3"],
+              },
+            ],
+            lowQualityExamples: [],
+            coverageGaps: [],
+          },
+          recommendations: ["Collapse duplicate drift regularly."],
+          productSignals: {
+            candidateNodes: [],
+            candidateEdges: [],
+            searchSeeds: [],
+          },
+        },
+      },
+      selectedReportId: "dar_completed",
+      setSelectedReportId: vi.fn(),
+      inlineError: null,
+      clearInlineError: vi.fn(),
+      isLoading: false,
+      isCreating: false,
+      createReport: vi.fn(async () => undefined),
+    });
+
+    render(<DeepAnalysisTab spaceId="space-1" active />);
+
+    expect(screen.getByText("Working Style")).toBeInTheDocument();
+    expect(screen.getByText("Decision Signals")).toBeInTheDocument();
+    expect(screen.getByText("Representative Evidence")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Download duplicate cleanup CSV" }));
+
+    await waitFor(() => {
+      expect(mocks.downloadDeepAnalysisDuplicatesCsv).toHaveBeenCalledWith("space-1", "dar_completed");
+      expect(createObjectUrl).toHaveBeenCalledTimes(1);
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(revokeObjectUrl).toHaveBeenCalledWith("blob:report");
+    });
   });
 });

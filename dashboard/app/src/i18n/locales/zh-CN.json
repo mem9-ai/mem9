@@ -319,8 +319,14 @@
       "end": "最新记忆"
     },
     "persona": {
+      "working_style": "工作方式",
+      "goals": "目标",
       "preferences": "偏好",
-      "habits": "习惯"
+      "constraints": "约束",
+      "decision_signals": "决策信号",
+      "notable_routines": "稳定习惯",
+      "contradictions": "矛盾与张力",
+      "evidence": "代表证据"
     },
     "entities": {
       "people": "人物",
@@ -331,7 +337,11 @@
     },
     "quality": {
       "duplicate_ratio": "重复占比",
-      "noisy_memories": "低质量记忆数"
+      "duplicate_count": "重复记忆数",
+      "noisy_memories": "低质量记忆数",
+      "download_cleanup": "下载重复清理 CSV",
+      "download_hint": "导出的 CSV 只包含建议删除的 duplicate memories，不包含 canonical memory。",
+      "download_failed": "下载重复清理 CSV 失败。"
     },
     "status": {
       "QUEUED": "排队中",

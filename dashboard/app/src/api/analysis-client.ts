@@ -51,6 +51,22 @@ async function request<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  const response = await requestResponse(spaceId, path, init);
+  const body = await readJson<T>(response);
+  if (body === null) {
+    throw new AnalysisApiError(
+      "Analysis API returned an empty or invalid JSON response",
+      response.status,
+    );
+  }
+  return body as T;
+}
+
+async function requestResponse(
+  spaceId: string,
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
   const headers = new Headers(init?.headers);
   headers.set("x-mem9-api-key", spaceId.trim());
 
@@ -72,14 +88,7 @@ async function request<T>(
     );
   }
 
-  const body = await readJson<T>(response);
-  if (body === null) {
-    throw new AnalysisApiError(
-      "Analysis API returned an empty or invalid JSON response",
-      response.status,
-    );
-  }
-  return body as T;
+  return response;
 }
 
 export const analysisApi = {
@@ -164,5 +173,16 @@ export const analysisApi = {
     reportId: string,
   ): Promise<DeepAnalysisReportDetail> {
     return request(spaceId, `/v1/deep-analysis/reports/${reportId}`);
+  },
+
+  async downloadDeepAnalysisDuplicatesCsv(
+    spaceId: string,
+    reportId: string,
+  ): Promise<Blob> {
+    const response = await requestResponse(
+      spaceId,
+      `/v1/deep-analysis/reports/${reportId}/duplicates.csv`,
+    );
+    return response.blob();
   },
 };

@@ -1,12 +1,22 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Brain, CheckCircle2, Clock3, Loader2, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  Brain,
+  CheckCircle2,
+  Clock3,
+  Download,
+  Loader2,
+  Sparkles,
+} from "lucide-react";
+import { analysisApi, AnalysisApiError } from "@/api/analysis-client";
 import { useDeepAnalysisReports } from "@/api/deep-analysis-queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import type {
   DeepAnalysisEntityGroup,
+  DeepAnalysisEvidenceHighlight,
   DeepAnalysisRelationship,
   DeepAnalysisReportDetail,
   DeepAnalysisReportListItem,
@@ -26,6 +36,25 @@ function statusVariant(status: DeepAnalysisReportListItem["status"]): "default" 
   if (status === "FAILED") return "destructive";
   if (status === "QUEUED") return "outline";
   return "secondary";
+}
+
+function countDuplicateMemories(report: DeepAnalysisReportDetail): number {
+  if (typeof report.report?.quality.duplicateMemoryCount === "number") {
+    return report.report.quality.duplicateMemoryCount;
+  }
+  return (report.report?.quality.duplicateClusters ?? []).reduce(
+    (sum, cluster) => sum + cluster.duplicateMemoryIds.length,
+    0,
+  );
+}
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 function ReportSection({
@@ -106,12 +135,68 @@ function RelationshipList({
   );
 }
 
+function PersonaList({
+  title,
+  items,
+}: {
+  title: string;
+  items: string[];
+}) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div>
+      <div className="mb-2 text-xs font-semibold text-foreground/80">{title}</div>
+      <div className="space-y-2 text-sm text-foreground/85">
+        {items.map((item) => (
+          <p key={item}>{item}</p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceList({
+  title,
+  items,
+}: {
+  title: string;
+  items: DeepAnalysisEvidenceHighlight[];
+}) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div>
+      <div className="mb-2 text-xs font-semibold text-foreground/80">{title}</div>
+      <div className="space-y-3">
+        {items.map((item) => (
+          <div key={`${item.title}-${item.detail}`} className="rounded-xl border border-border/70 bg-popover/70 px-3 py-3">
+            <div className="text-sm font-medium text-foreground">{item.title}</div>
+            <p className="mt-2 text-sm leading-6 text-foreground/85">{item.detail}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ReportDetail({
   report,
+  onDownloadDuplicates,
+  isDownloadingDuplicates,
+  downloadError,
 }: {
   report: DeepAnalysisReportDetail;
+  onDownloadDuplicates: () => Promise<void>;
+  isDownloadingDuplicates: boolean;
+  downloadError: string | null;
 }) {
   const { t, i18n } = useTranslation();
+  const duplicateCount = countDuplicateMemories(report);
 
   return (
     <div className="space-y-4">
@@ -161,26 +246,40 @@ function ReportDetail({
           {report.report?.persona.summary ?? report.preview?.summary ?? t("deep_analysis.pending")}
         </p>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <div>
-            <div className="mb-2 text-xs font-semibold text-foreground/80">
-              {t("deep_analysis.persona.preferences")}
-            </div>
-            <div className="space-y-2 text-sm text-foreground/85">
-              {(report.report?.persona.preferences ?? []).slice(0, 5).map((item) => (
-                <p key={item}>{item}</p>
-              ))}
-            </div>
-          </div>
-          <div>
-            <div className="mb-2 text-xs font-semibold text-foreground/80">
-              {t("deep_analysis.persona.habits")}
-            </div>
-            <div className="space-y-2 text-sm text-foreground/85">
-              {(report.report?.persona.habits ?? []).slice(0, 5).map((item) => (
-                <p key={item}>{item}</p>
-              ))}
-            </div>
-          </div>
+          <PersonaList
+            title={t("deep_analysis.persona.working_style")}
+            items={report.report?.persona.workingStyle ?? []}
+          />
+          <PersonaList
+            title={t("deep_analysis.persona.preferences")}
+            items={report.report?.persona.preferences ?? []}
+          />
+          <PersonaList
+            title={t("deep_analysis.persona.goals")}
+            items={report.report?.persona.goals ?? []}
+          />
+          <PersonaList
+            title={t("deep_analysis.persona.constraints")}
+            items={report.report?.persona.constraints ?? []}
+          />
+          <PersonaList
+            title={t("deep_analysis.persona.decision_signals")}
+            items={report.report?.persona.decisionSignals ?? []}
+          />
+          <PersonaList
+            title={t("deep_analysis.persona.notable_routines")}
+            items={report.report?.persona.notableRoutines ?? report.report?.persona.habits ?? []}
+          />
+          <PersonaList
+            title={t("deep_analysis.persona.contradictions")}
+            items={report.report?.persona.contradictionsOrTensions ?? []}
+          />
+        </div>
+        <div className="mt-4">
+          <EvidenceList
+            title={t("deep_analysis.persona.evidence")}
+            items={report.report?.persona.evidenceHighlights ?? []}
+          />
         </div>
       </ReportSection>
 
@@ -220,12 +319,40 @@ function ReportDetail({
               {Math.round((report.report?.quality.duplicateRatio ?? 0) * 100)}%
             </p>
             <p>
+              {t("deep_analysis.quality.duplicate_count")}: {duplicateCount}
+            </p>
+            <p>
               {t("deep_analysis.quality.noisy_memories")}:{" "}
               {report.report?.quality.noisyMemoryCount ?? 0}
             </p>
             {(report.report?.quality.coverageGaps ?? []).map((item) => (
               <p key={item} className="text-soft-foreground">{item}</p>
             ))}
+            {duplicateCount > 0 && (
+              <div className="pt-1">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    void onDownloadDuplicates();
+                  }}
+                  disabled={isDownloadingDuplicates}
+                  className="gap-2"
+                >
+                  {isDownloadingDuplicates ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Download className="size-4" />
+                  )}
+                  {t("deep_analysis.quality.download_cleanup")}
+                </Button>
+                <p className="mt-2 text-xs leading-5 text-soft-foreground">
+                  {t("deep_analysis.quality.download_hint")}
+                </p>
+                {downloadError && (
+                  <p className="mt-2 text-xs text-destructive">{downloadError}</p>
+                )}
+              </div>
+            )}
           </div>
         </ReportSection>
 
@@ -249,6 +376,8 @@ export function DeepAnalysisTab({
   active: boolean;
 }) {
   const { t, i18n } = useTranslation();
+  const [downloadingReportId, setDownloadingReportId] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const {
     reports,
     selectedReport,
@@ -267,6 +396,27 @@ export function DeepAnalysisTab({
       lang: i18n.language || "zh-CN",
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     });
+  };
+
+  const handleDownloadDuplicates = async () => {
+    if (!selectedReport) {
+      return;
+    }
+
+    setDownloadError(null);
+    setDownloadingReportId(selectedReport.id);
+    try {
+      const blob = await analysisApi.downloadDeepAnalysisDuplicatesCsv(spaceId, selectedReport.id);
+      triggerBlobDownload(blob, `deep-analysis-${selectedReport.id}-duplicate-cleanup.csv`);
+    } catch (error) {
+      setDownloadError(
+        error instanceof AnalysisApiError
+          ? error.message
+          : t("deep_analysis.quality.download_failed"),
+      );
+    } finally {
+      setDownloadingReportId(null);
+    }
   };
 
   return (
@@ -342,7 +492,10 @@ export function DeepAnalysisTab({
                 <button
                   key={report.id}
                   type="button"
-                  onClick={() => setSelectedReportId(report.id)}
+                  onClick={() => {
+                    setDownloadError(null);
+                    setSelectedReportId(report.id);
+                  }}
                   className={`surface-card w-full px-4 py-4 text-left transition-colors sm:px-5 ${
                     selected ? "ring-1 ring-primary/35" : ""
                   }`}
@@ -421,7 +574,12 @@ export function DeepAnalysisTab({
               </div>
 
               {selectedReport.report ? (
-                <ReportDetail report={selectedReport} />
+                <ReportDetail
+                  report={selectedReport}
+                  onDownloadDuplicates={handleDownloadDuplicates}
+                  isDownloadingDuplicates={downloadingReportId === selectedReport.id}
+                  downloadError={downloadError}
+                />
               ) : (
                 <div className="surface-card px-4 py-8 text-center sm:px-6">
                   <p className="text-sm text-soft-foreground">
