@@ -28,11 +28,11 @@ export function MemoryFarmPromoCard({
   const promoImageUrl = new URL("../../assets/promo/memory-farm-preview-card.png", import.meta.url).href;
 
   return (
-    <div 
-      className="mb-4 overflow-hidden rounded-md border-[4px] border-[#3f3322] bg-[#f6dca6] shadow-[4px_4px_0px_0px_rgba(0,0,0,0.15)]"
+    <div
+      className="mb-4 overflow-hidden rounded-md border-[4px] border-border bg-card shadow-[4px_4px_0px_0px_rgba(0,0,0,0.1)] dark:shadow-[4px_4px_0px_0px_rgba(0,0,0,0.4)]"
       style={{ fontFamily: '"Ark Pixel Mono", monospace' }}
     >
-      <div className="relative aspect-video w-full overflow-hidden bg-[#8d6b43] border-b-[4px] border-[#3f3322]">
+      <div className="relative aspect-video w-full overflow-hidden bg-muted border-b-[4px] border-border">
         <img
           src={promoImageUrl}
           alt={t("memory_farm_preview.title")}
@@ -43,34 +43,34 @@ export function MemoryFarmPromoCard({
             e.currentTarget.style.display = 'none';
           }}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#3f3322]/40 to-transparent" />
-        <div className="absolute left-3 top-3 border-2 border-[#3f3322] bg-[#d95763] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-[2px_2px_0px_0px_#3f3322]">
+        <div className="absolute inset-0 bg-gradient-to-t from-foreground/30 to-transparent" />
+        <div className="absolute left-3 top-3 border-2 border-border bg-destructive px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,0.2)]">
           Preview
         </div>
       </div>
       <div className="p-4">
-        <h3 className="text-base font-bold text-[#3f3322] tracking-wide">{t("memory_farm_preview.title")}</h3>
-        <p className="mt-1 text-xs font-medium leading-relaxed text-[#5a452b]">
+        <h3 className="text-base font-bold text-foreground tracking-wide">{t("memory_farm_preview.title")}</h3>
+        <p className="mt-1 text-xs font-medium leading-relaxed text-foreground/80">
           {t("memory_farm_preview.description")}
         </p>
-        <p className="mt-1.5 text-[10px] leading-relaxed text-[#8d6b43]">
+        <p className="mt-1.5 text-[10px] leading-relaxed text-soft-foreground">
           {t("memory_farm_preview.sub_description")}
         </p>
-        
+
         <div className="mt-4 flex items-center justify-between gap-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-[#8d6b43] flex-1">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-soft-foreground flex-1">
             {statusText}
           </p>
-          <button 
+          <button
             onClick={onAction}
             data-mp-event="Dashboard/MemoryFarm/EnterClicked"
             data-mp-page-name="space"
             data-mp-entry-point="promo-card"
             data-mp-status={status}
             className={`flex shrink-0 items-center gap-1.5 border-2 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all active:translate-y-[2px] active:shadow-none ${
-              status === "ready" 
-                ? "border-[#294c34] bg-[#5fa861] text-[#fff0c6] shadow-[2px_2px_0px_0px_#294c34] hover:bg-[#6cba6e]" 
-                : "border-[#8d6b43] bg-[#d2b881] text-[#5a452b] shadow-[2px_2px_0px_0px_#8d6b43] hover:bg-[#dfc48c]"
+              status === "ready"
+                ? "border-primary bg-primary text-primary-foreground shadow-[2px_2px_0px_0px_rgba(0,0,0,0.2)] hover:opacity-90"
+                : "border-border bg-muted text-foreground shadow-[2px_2px_0px_0px_rgba(0,0,0,0.1)] hover:bg-accent"
             }`}
           >
             {status === "preparing" && <Loader2 className="size-3 animate-spin" />}

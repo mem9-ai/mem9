@@ -331,13 +331,13 @@ export function SpacePage() {
   useEffect(() => {
     if (farmPrepOpen && farmEntryStatus === "ready") {
       setFarmPrepOpen(false);
-      navigate({ to: "/labs/memory-farm" });
+      window.open("/labs/memory-farm", "_blank", "noopener");
     }
-  }, [farmPrepOpen, farmEntryStatus, navigate]);
+  }, [farmPrepOpen, farmEntryStatus]);
 
   function handleFarmAction() {
     if (farmEntryStatus === "ready") {
-      navigate({ to: "/labs/memory-farm" });
+      window.open("/labs/memory-farm", "_blank", "noopener");
     } else {
       setFarmPrepOpen(true);
     }

@@ -14,12 +14,21 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { analysisApi, AnalysisApiError } from "@/api/analysis-client";
 import { useDeepAnalysisReports } from "@/api/deep-analysis-queries";
 import { getSourceMemoriesQueryKey } from "@/api/source-memories";
 import { DeepAnalysisOverlay } from "@/components/space/deep-analysis-overlay";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import type {
   DeepAnalysisDiscoveryCard,
@@ -554,6 +563,7 @@ export function DeepAnalysisTab({
   const [downloadingReportId, setDownloadingReportId] = useState<string | null>(null);
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
   const [deletingWholeReportId, setDeletingWholeReportId] = useState<string | null>(null);
+  const [deleteReportTarget, setDeleteReportTarget] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteFeedback, setDeleteFeedback] = useState<string | null>(null);
@@ -648,12 +658,8 @@ export function DeepAnalysisTab({
     }
   };
 
-  const handleDeleteReport = async (reportId: string) => {
-    const confirmed = window.confirm(t("deep_analysis.report_actions.delete_confirm"));
-    if (!confirmed) {
-      return;
-    }
-
+  const confirmDeleteReport = async (reportId: string) => {
+    setDeleteReportTarget(null);
     setDeleteError(null);
     setDeleteFeedback(null);
     setDownloadError(null);
@@ -669,7 +675,7 @@ export function DeepAnalysisTab({
         queryClient.invalidateQueries({ queryKey: ["space", spaceId, "deepAnalysis", "report", reportId] }),
       ]);
     } catch (error) {
-      setDeleteError(
+      toast.error(
         error instanceof AnalysisApiError
           ? error.message
           : t("deep_analysis.report_actions.delete_failed"),
@@ -781,7 +787,7 @@ export function DeepAnalysisTab({
                         variant="ghost"
                         size="icon"
                         onClick={() => {
-                          void handleDeleteReport(report.id);
+                          setDeleteReportTarget(report.id);
                         }}
                         disabled={deletingWholeReportId === report.id}
                         aria-label={t("deep_analysis.report_actions.delete")}
@@ -843,6 +849,37 @@ export function DeepAnalysisTab({
           )}
         </div>
       )}
+
+      <Dialog open={deleteReportTarget !== null} onOpenChange={(open) => { if (!open) setDeleteReportTarget(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("deep_analysis.report_actions.delete")}</DialogTitle>
+            <DialogDescription>
+              {t("deep_analysis.report_actions.delete_confirm")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteReportTarget(null)}
+            >
+              {t("delete.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                if (deleteReportTarget) {
+                  void confirmDeleteReport(deleteReportTarget);
+                }
+              }}
+            >
+              {t("delete.confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
