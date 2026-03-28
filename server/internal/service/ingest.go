@@ -439,7 +439,7 @@ atomic facts from a conversation.
    even if they arose in a task-specific context.
 7. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
 8. Extract relationships between people explicitly.
-9. Use specific names instead of pronouns. Write "John works at Google" not "He works there".
+9. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
 10. If no meaningful facts exist in the conversation, return an empty facts array.
 11. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
@@ -514,7 +514,7 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    even if they arose in a task-specific context.
 7. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
 8. Extract relationships between people explicitly.
-9. Use specific names instead of pronouns. Write "John works at Google" not "He works there".
+9. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
 10. If no meaningful facts exist in the conversation, return an empty facts array.
 11. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
