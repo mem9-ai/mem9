@@ -341,6 +341,10 @@
       "duplicate_count": "Duplicate memories",
       "noisy_memories": "Low-quality memories",
       "download_cleanup": "Download duplicate cleanup CSV",
+      "delete_duplicates": "Delete duplicate memories",
+      "delete_success": "Deleted {{count}} duplicate memories.",
+      "delete_partial": "Deleted {{deleted}} duplicate memories. {{failed}} could not be deleted.",
+      "delete_failed": "Failed to delete duplicate memories.",
       "download_hint": "The exported CSV only contains duplicate memories to delete. Canonical memories are not included.",
       "download_failed": "Failed to download duplicate cleanup CSV."
     },

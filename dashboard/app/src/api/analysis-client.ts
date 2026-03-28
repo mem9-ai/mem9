@@ -4,6 +4,7 @@ import type {
   AnalysisJobUpdatesResponse,
   CreateDeepAnalysisReportRequest,
   CreateDeepAnalysisReportResponse,
+  DeleteDeepAnalysisDuplicatesResponse,
   CreateAnalysisJobRequest,
   CreateAnalysisJobResponse,
   DeepAnalysisReportDetail,
@@ -184,5 +185,14 @@ export const analysisApi = {
       `/v1/deep-analysis/reports/${reportId}/duplicates.csv`,
     );
     return response.blob();
+  },
+
+  deleteDeepAnalysisDuplicates(
+    spaceId: string,
+    reportId: string,
+  ): Promise<DeleteDeepAnalysisDuplicatesResponse> {
+    return request(spaceId, `/v1/deep-analysis/reports/${reportId}/delete-duplicates`, {
+      method: "POST",
+    });
   },
 };

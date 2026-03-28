@@ -5,16 +5,30 @@ import { DeepAnalysisTab } from "./deep-analysis-tab";
 
 const mocks = vi.hoisted(() => ({
   useDeepAnalysisReports: vi.fn(),
+  invalidateQueries: vi.fn(async () => undefined),
   downloadDeepAnalysisDuplicatesCsv: vi.fn(async () => new Blob(["duplicateMemoryId\nmem_2\n"], { type: "text/csv" })),
+  deleteDeepAnalysisDuplicates: vi.fn(async () => ({
+    reportId: "dar_completed",
+    deletedCount: 2,
+    deletedMemoryIds: ["mem_2", "mem_3"],
+    failedMemoryIds: [],
+  })),
 }));
 
 vi.mock("@/api/deep-analysis-queries", () => ({
   useDeepAnalysisReports: mocks.useDeepAnalysisReports,
 }));
 
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({
+    invalidateQueries: mocks.invalidateQueries,
+  }),
+}));
+
 vi.mock("@/api/analysis-client", () => ({
   analysisApi: {
     downloadDeepAnalysisDuplicatesCsv: mocks.downloadDeepAnalysisDuplicatesCsv,
+    deleteDeepAnalysisDuplicates: mocks.deleteDeepAnalysisDuplicates,
   },
   AnalysisApiError: class AnalysisApiError extends Error {},
 }));
@@ -44,7 +58,7 @@ describe("DeepAnalysisTab", () => {
     });
   });
 
-  it("renders history cards and the selected in-progress report", () => {
+  it("renders compact history cards and the selected in-progress report", () => {
     mocks.useDeepAnalysisReports.mockReturnValue({
       reports: [
         {
@@ -120,13 +134,13 @@ describe("DeepAnalysisTab", () => {
 
     render(<DeepAnalysisTab spaceId="space-1" active />);
 
-    expect(screen.getByText("Current report is synthesizing product and persona signals.")).toBeInTheDocument();
-    expect(screen.getByText("Previous report summary.")).toBeInTheDocument();
+    expect(screen.queryByText("Current report is synthesizing product and persona signals.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Previous report summary.")).not.toBeInTheDocument();
     expect(screen.getByText("Chunk analysis")).toBeInTheDocument();
     expect(screen.getByText("The report is still running. This view refreshes automatically.")).toBeInTheDocument();
   });
 
-  it("renders the richer persona fields and downloads duplicate cleanup csv", async () => {
+  it("renders the richer persona fields, downloads cleanup csv, and deletes duplicate memories", async () => {
     const createObjectUrl = vi.fn(() => "blob:report");
     const revokeObjectUrl = vi.fn();
     const click = vi.fn();
@@ -288,6 +302,13 @@ describe("DeepAnalysisTab", () => {
       expect(createObjectUrl).toHaveBeenCalledTimes(1);
       expect(click).toHaveBeenCalledTimes(1);
       expect(revokeObjectUrl).toHaveBeenCalledWith("blob:report");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete duplicate memories" }));
+
+    await waitFor(() => {
+      expect(mocks.deleteDeepAnalysisDuplicates).toHaveBeenCalledWith("space-1", "dar_completed");
+      expect(screen.getByText("Deleted 2 duplicate memories.")).toBeInTheDocument();
     });
   });
 });

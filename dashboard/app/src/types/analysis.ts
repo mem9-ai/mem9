@@ -381,6 +381,13 @@ export interface DeepAnalysisDuplicateExportRow {
   reason: string;
 }
 
+export interface DeleteDeepAnalysisDuplicatesResponse {
+  reportId: string;
+  deletedCount: number;
+  deletedMemoryIds: string[];
+  failedMemoryIds: string[];
+}
+
 export interface DeepAnalysisReportListItem {
   id: string;
   status: DeepAnalysisReportStatus;
