@@ -691,10 +691,10 @@ Example 1 — ADD new information:
   New facts: ["Name is John"]
   Result: {"memory": [{"id": "0", "text": "Is a software engineer", "event": "NOOP"}, {"id": "new", "text": "Name is John", "event": "ADD", "tags": ["personal"]}]}
 
-Example 2 — UPDATE with more detail:
-  Existing memories: [{"id": 0, "text": "Likes to play cricket", "age": "3 weeks ago"}, {"id": 1, "text": "Is a software engineer", "age": "2 months ago"}]
-  New facts: ["Loves to play cricket with friends on weekends"]
-  Result: {"memory": [{"id": "0", "text": "Loves to play cricket with friends on weekends", "event": "UPDATE", "old_memory": "Likes to play cricket", "tags": ["personal", "habit"]}, {"id": "1", "text": "Is a software engineer", "event": "NOOP"}]}
+Example 2 — ADD different attribute of same entity (not UPDATE):
+  Existing memories: [{"id": 0, "text": "Sarah is my sister", "age": "3 weeks ago"}, {"id": 1, "text": "Is a software engineer", "age": "2 months ago"}]
+  New facts: ["Sarah lives in Osaka"]
+  Result: {"memory": [{"id": "0", "text": "Sarah is my sister", "event": "NOOP"}, {"id": "1", "text": "Is a software engineer", "event": "NOOP"}, {"id": "new", "text": "Sarah lives in Osaka", "event": "ADD", "tags": ["personal", "location"]}]}
 
 Example 3 — DELETE contradicted information:
   Existing memories: [{"id": 0, "text": "Name is John", "age": "5 months ago"}, {"id": 1, "text": "Loves cheese pizza", "age": "3 months ago"}]
