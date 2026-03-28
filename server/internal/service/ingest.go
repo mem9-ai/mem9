@@ -660,17 +660,17 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 
 ## Actions
 
-- **ADD**: The fact is new information not present in any existing memory.
-- **UPDATE**: The fact refines, corrects, or adds detail to an existing memory. Keep the same ID. If the existing memory and the new fact convey the same meaning, keep the one with more information. Do NOT update if they mean the same thing (e.g., "Likes pizza" vs "Loves pizza").
-- **DELETE**: The fact directly contradicts an existing memory, making it obsolete.
-- **NOOP**: The fact is already captured by an existing memory. No action needed.
+- **ADD**: New info not in any existing memory. Also use ADD for a different attribute of the same entity.
+- **UPDATE**: Replaces the same attribute/slot of the same entity only. Keep the same ID.
+- **DELETE**: Explicitly contradicts an existing memory. Do NOT delete just because the new fact is less specific or incomplete.
+- **NOOP**: Already captured by an existing memory. No action needed.
 
 ## Rules
 
 1. Reference existing memories by their integer ID ONLY (0, 1, 2...). Never invent IDs.
 2. For UPDATE, always include the original text in "old_memory".
 3. For ADD, the "id" field is ignored by the system — set it to "new" or omit it.
-4. When the fact adds detail or corrects an existing memory on the same topic, prefer UPDATE.
+4. UPDATE only when the fact targets the same entity AND the same attribute slot. A new attribute of the same entity → ADD, not UPDATE.
 5. When the fact covers a topic not in any existing memory, use ADD.
 6. When the fact means the same thing as an existing memory (even if worded differently), use NOOP.
 7. Preserve the language of the original facts. Do not translate.
