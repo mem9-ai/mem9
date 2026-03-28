@@ -99,45 +99,108 @@ function ReportSection({
   );
 }
 
-function EntityGroupList({
-  label,
-  items,
+const WORD_CLOUD_COLORS = [
+  "#f472b6", // pink
+  "#60a5fa", // blue
+  "#34d399", // emerald
+  "#fbbf24", // amber
+  "#a78bfa", // violet
+  "#fb923c", // orange
+  "#2dd4bf", // teal
+  "#f87171", // red
+  "#818cf8", // indigo
+  "#4ade80", // green
+  "#e879f9", // fuchsia
+  "#38bdf8", // sky
+  "#facc15", // yellow
+  "#c084fc", // purple
+  "#fb7185", // rose
+];
+
+function seededRandom(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (state * 1664525 + 1013904223) & 0xffffffff;
+    return (state >>> 0) / 0xffffffff;
+  };
+}
+
+function EntityWordCloud({
+  groups,
+  onEntityClick,
 }: {
-  label: string;
-  items: DeepAnalysisEntityGroup[];
+  groups: { label: string; items: DeepAnalysisEntityGroup[] }[];
+  onEntityClick?: (label: string) => void;
 }) {
-  if (items.length === 0) {
+  const allItems = groups.flatMap((group) => group.items);
+  if (allItems.length === 0) {
     return null;
   }
 
-  const entityColors = [
-    "var(--facet-people)",
-    "var(--facet-about-you)",
-    "var(--facet-experiences)",
-    "var(--facet-plans)",
-    "var(--facet-preferences)",
-    "var(--facet-routines)",
-    "var(--facet-constraints)",
-    "var(--facet-other)",
-  ];
+  const maxCount = Math.max(...allItems.map((item) => item.count));
+  const minCount = Math.min(...allItems.map((item) => item.count));
+  const range = maxCount - minCount || 1;
+
+  const rand = seededRandom(42);
+
+  // Sort: largest in the center, smaller towards edges (alternating left/right insertion)
+  const sorted = [...allItems].sort((a, b) => b.count - a.count);
+  const arranged: typeof allItems = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const item = sorted[i];
+    if (!item) {
+      continue;
+    }
+    if (i % 2 === 0) {
+      arranged.push(item);
+    } else {
+      arranged.unshift(item);
+    }
+  }
 
   return (
-    <div>
-      <div className="mb-2 text-xs font-semibold text-foreground/80">{label}</div>
-      <div className="flex flex-wrap gap-2">
-        {items.map((item, idx) => (
-          <div
-            key={`${label}-${item.label}`}
-            className="rounded-xl border border-border/70 bg-popover/70 px-3 py-2"
-            style={{ borderBottomWidth: 2, borderBottomColor: entityColors[idx % entityColors.length] }}
+    <div className="flex flex-wrap items-center justify-center py-6 px-2">
+      {arranged.map((item, idx) => {
+        const ratio = (item.count - minCount) / range;
+        const fontSize = 0.65 + ratio * 1.6;
+        const color = WORD_CLOUD_COLORS[idx % WORD_CLOUD_COLORS.length];
+        const opacity = 0.55 + ratio * 0.45;
+        const shouldRotate = rand() > 0.8;
+        const rotation = shouldRotate ? (rand() > 0.5 ? 90 : -90) : 0;
+
+        // Organic spacing: vary horizontal and vertical margins pseudo-randomly
+        const hGap = Math.round(4 + rand() * 12);
+        const vGap = Math.round(2 + rand() * 8);
+        const vShift = Math.round((rand() - 0.5) * 14);
+        const verticalPad = shouldRotate ? `${Math.round(fontSize * 8)}px` : `${vGap}px`;
+
+        return (
+          <button
+            type="button"
+            key={item.label}
+            onClick={() => onEntityClick?.(item.label)}
+            className="inline-block cursor-pointer select-none whitespace-nowrap transition-transform hover:scale-110 hover:brightness-125"
+            style={{
+              fontSize: `${fontSize}rem`,
+              color,
+              opacity,
+              fontWeight: ratio > 0.5 ? 700 : ratio > 0.2 ? 500 : 400,
+              transform: `rotate(${rotation}deg) translateY(${vShift}px)`,
+              marginLeft: `${hGap}px`,
+              marginRight: `${hGap}px`,
+              marginTop: verticalPad,
+              marginBottom: verticalPad,
+              background: "none",
+              border: "none",
+              padding: 0,
+              lineHeight: 1.1,
+            }}
+            title={`${item.label}: ${item.count} memories`}
           >
-            <div className="text-sm font-medium text-foreground">{item.label}</div>
-            <div className="mt-1 text-[11px] text-soft-foreground">
-              {item.count} memories
-            </div>
-          </div>
-        ))}
-      </div>
+            {item.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -301,6 +364,7 @@ function ReportDetail({
   downloadError,
   deleteError,
   deleteFeedback,
+  onEntitySearch,
 }: {
   report: DeepAnalysisReportDetail;
   removedDuplicateIds: string[];
@@ -311,6 +375,7 @@ function ReportDetail({
   downloadError: string | null;
   deleteError: string | null;
   deleteFeedback: string | null;
+  onEntitySearch?: (query: string) => void;
 }) {
   const { t, i18n } = useTranslation();
   const duplicateCount = countDuplicateMemories(report, removedDuplicateIds);
@@ -453,82 +518,80 @@ function ReportDetail({
       </ReportSection>
 
       <ReportSection title={t("deep_analysis.sections.entities")}>
-        <div className="space-y-4">
-          <EntityGroupList label={t("deep_analysis.entities.people")} items={report.report?.entities.people ?? []} />
-          <EntityGroupList label={t("deep_analysis.entities.teams")} items={report.report?.entities.teams ?? []} />
-          <EntityGroupList label={t("deep_analysis.entities.projects")} items={report.report?.entities.projects ?? []} />
-          <EntityGroupList label={t("deep_analysis.entities.tools")} items={report.report?.entities.tools ?? []} />
-          <EntityGroupList label={t("deep_analysis.entities.places")} items={report.report?.entities.places ?? []} />
-        </div>
+        <EntityWordCloud
+          groups={[
+            { label: t("deep_analysis.entities.people"), items: report.report?.entities.people ?? [] },
+            { label: t("deep_analysis.entities.teams"), items: report.report?.entities.teams ?? [] },
+            { label: t("deep_analysis.entities.projects"), items: report.report?.entities.projects ?? [] },
+            { label: t("deep_analysis.entities.tools"), items: report.report?.entities.tools ?? [] },
+            { label: t("deep_analysis.entities.places"), items: report.report?.entities.places ?? [] },
+          ]}
+          onEntityClick={onEntitySearch}
+        />
       </ReportSection>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <ReportSection title={t("deep_analysis.sections.quality")} icon={<ShieldCheck className="size-3.5 text-primary/50" />}>
-          <div className="space-y-3 text-sm text-foreground/85">
-            <p>
-              {t("deep_analysis.quality.duplicate_ratio")}:{" "}
-              {Math.round((report.report?.quality.duplicateRatio ?? 0) * 100)}%
-            </p>
-            <p>
-              {t("deep_analysis.quality.duplicate_count")}: {duplicateCount}
-            </p>
-            <p>
-              {t("deep_analysis.quality.noisy_memories")}:{" "}
-              {report.report?.quality.noisyMemoryCount ?? 0}
-            </p>
-            {(report.report?.quality.coverageGaps ?? []).map((item) => (
-              <p key={item} className="text-soft-foreground">{item}</p>
-            ))}
-            {(duplicateCount > 0 || deleteFeedback || deleteError) && (
-              <div className="space-y-3 pt-1">
-                {duplicateCount > 0 && (
-                  <>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          void onDownloadDuplicates();
-                        }}
-                        disabled={isDownloadingDuplicates || isDeletingDuplicates}
-                        className="gap-2"
-                      >
-                        {isDownloadingDuplicates ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <Download className="size-4" />
-                        )}
-                        {t("deep_analysis.quality.download_cleanup")}
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        onClick={() => {
-                          void onDeleteDuplicates();
-                        }}
-                        disabled={isDeletingDuplicates || isDownloadingDuplicates}
-                        className="gap-2"
-                      >
-                        {isDeletingDuplicates ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="size-4" />
-                        )}
-                        {t("deep_analysis.quality.delete_duplicates")}
-                      </Button>
-                    </div>
-                    <p className="mt-2 text-xs leading-5 text-soft-foreground">
-                      {t("deep_analysis.quality.download_hint")}
-                    </p>
-                  </>
-                )}
-                {downloadError && (
-                  <p className="mt-2 text-xs text-destructive">{downloadError}</p>
-                )}
-                {deleteError && (
-                  <p className="text-xs text-destructive">{deleteError}</p>
-                )}
-                {deleteFeedback && !deleteError && (
-                  <p className="text-xs text-emerald-500">{deleteFeedback}</p>
-                )}
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1.5 text-sm text-foreground/85">
+              <p>
+                {t("deep_analysis.quality.duplicate_ratio")}:{" "}
+                {Math.round((report.report?.quality.duplicateRatio ?? 0) * 100)}%
+              </p>
+              <p>
+                {t("deep_analysis.quality.duplicate_count")}: {duplicateCount}
+              </p>
+              <p>
+                {t("deep_analysis.quality.noisy_memories")}:{" "}
+                {report.report?.quality.noisyMemoryCount ?? 0}
+              </p>
+              {(report.report?.quality.coverageGaps ?? []).map((item) => (
+                <p key={item} className="text-soft-foreground">{item}</p>
+              ))}
+              {downloadError && (
+                <p className="text-xs text-destructive">{downloadError}</p>
+              )}
+              {deleteError && (
+                <p className="text-xs text-destructive">{deleteError}</p>
+              )}
+              {deleteFeedback && !deleteError && (
+                <p className="text-xs text-emerald-500">{deleteFeedback}</p>
+              )}
+            </div>
+            {duplicateCount > 0 && (
+              <div className="flex shrink-0 flex-col gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void onDownloadDuplicates();
+                  }}
+                  disabled={isDownloadingDuplicates || isDeletingDuplicates}
+                  className="h-8 gap-1.5 text-xs"
+                >
+                  {isDownloadingDuplicates ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Download className="size-3.5" />
+                  )}
+                  {t("deep_analysis.quality.download_short")}
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    void onDeleteDuplicates();
+                  }}
+                  disabled={isDeletingDuplicates || isDownloadingDuplicates}
+                  className="h-8 gap-1.5 text-xs"
+                >
+                  {isDeletingDuplicates ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-3.5" />
+                  )}
+                  {t("deep_analysis.quality.delete_short")}
+                </Button>
               </div>
             )}
           </div>
@@ -554,9 +617,11 @@ function ReportDetail({
 export function DeepAnalysisTab({
   spaceId,
   active,
+  onEntitySearch,
 }: {
   spaceId: string;
   active: boolean;
+  onEntitySearch?: (query: string) => void;
 }) {
   const queryClient = useQueryClient();
   const { t, i18n } = useTranslation();
@@ -751,61 +816,60 @@ export function DeepAnalysisTab({
       )}
 
       {reports.length > 0 && (
-        <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
-          <div className="space-y-3">
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
             {reports.map((report) => {
               const selected = report.id === selectedReportId;
               const allowDelete = TERMINAL_REPORT_STATUSES.has(report.status);
               return (
                 <div
                   key={report.id}
-                  className={`surface-card w-full px-4 py-4 text-left transition-colors sm:px-5 ${
-                    selected ? "ring-1 ring-primary/35" : ""
+                  className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2.5 transition-colors ${
+                    selected
+                      ? "surface-card-selected border-primary/30"
+                      : "border-border/50 bg-card/60 hover:bg-secondary/60 cursor-pointer"
                   }`}
                 >
-                  <div className="flex items-start gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDownloadError(null);
-                        setDeleteError(null);
-                        setDeleteFeedback(null);
-                        setSelectedReportId(report.id);
-                      }}
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <div className="text-sm font-semibold text-foreground">
-                        {formatDateTime(report.requestedAt, i18n.language)}
-                      </div>
-                      <div className="mt-1 text-xs text-soft-foreground">
-                        {report.memoryCount} {t("deep_analysis.memories_suffix")}
-                      </div>
-                    </button>
-                    {allowDelete && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setDeleteReportTarget(report.id);
-                        }}
-                        disabled={deletingWholeReportId === report.id}
-                        aria-label={t("deep_analysis.report_actions.delete")}
-                        className="size-8 shrink-0 text-soft-foreground hover:text-destructive"
-                      >
-                        {deletingWholeReportId === report.id ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="size-4" />
-                        )}
-                      </Button>
-                    )}
-                  </div>
-
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDownloadError(null);
+                      setDeleteError(null);
+                      setDeleteFeedback(null);
+                      setSelectedReportId(report.id);
+                    }}
+                    className="text-left"
+                  >
+                    <div className="text-sm font-semibold text-foreground whitespace-nowrap">
+                      {formatDateTime(report.requestedAt, i18n.language)}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-soft-foreground whitespace-nowrap">
+                      {report.memoryCount} {t("deep_analysis.memories_suffix")}
+                    </div>
+                  </button>
                   {!report.completedAt && (
-                    <div className="mt-3">
+                    <div className="w-16">
                       <Progress value={report.progressPercent} />
                     </div>
+                  )}
+                  {allowDelete && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setDeleteReportTarget(report.id);
+                      }}
+                      disabled={deletingWholeReportId === report.id}
+                      aria-label={t("deep_analysis.report_actions.delete")}
+                      className="size-7 shrink-0 text-soft-foreground hover:text-destructive"
+                    >
+                      {deletingWholeReportId === report.id ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="size-3.5" />
+                      )}
+                    </Button>
                   )}
                 </div>
               );
@@ -825,6 +889,7 @@ export function DeepAnalysisTab({
                   downloadError={downloadError}
                   deleteError={deleteError}
                   deleteFeedback={deleteFeedback}
+                  onEntitySearch={onEntitySearch}
                 />
               ) : (
                 <div className="surface-card px-4 py-8 text-center sm:px-6">

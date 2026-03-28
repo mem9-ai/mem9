@@ -279,6 +279,9 @@ export function SpacePageLayout({
                 navigateAndScrollToMemoryList(() => routeState.handleTimelineSelect(selection))
               }
               onTimelineClear={routeState.handleTimelineClear}
+              onEntitySearch={(query) =>
+                navigateAndScrollToMemoryList(() => routeState.handleEntitySearch(query))
+              }
             />
 
             <div className="relative mt-5">

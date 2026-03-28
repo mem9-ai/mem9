@@ -300,7 +300,7 @@ describe("DeepAnalysisTab", () => {
     expect(screen.getByText("Decision Signals")).toBeInTheDocument();
     expect(screen.getByText("Representative Evidence")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Download duplicate cleanup CSV" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
 
     await waitFor(() => {
       expect(mocks.downloadDeepAnalysisDuplicatesCsv).toHaveBeenCalledWith("space-1", "dar_completed");
@@ -309,7 +309,7 @@ describe("DeepAnalysisTab", () => {
       expect(revokeObjectUrl).toHaveBeenCalledWith("blob:report");
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete duplicate memories" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete dupes" }));
 
     await waitFor(() => {
       expect(mocks.deleteDeepAnalysisDuplicates).toHaveBeenCalledWith("space-1", "dar_completed");

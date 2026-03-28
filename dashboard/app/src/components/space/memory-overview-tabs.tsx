@@ -37,6 +37,7 @@ export function MemoryOverviewTabs({
   onMemorySelect,
   onTimelineSelect,
   onTimelineClear,
+  onEntitySearch,
 }: {
   spaceId: string;
   stats: MemoryStats | undefined;
@@ -57,6 +58,7 @@ export function MemoryOverviewTabs({
   onMemorySelect: (memory: Memory, source?: OverviewMemorySelectionSource) => void;
   onTimelineSelect: (selection: TimelineSelection) => void;
   onTimelineClear?: () => void;
+  onEntitySearch?: (query: string) => void;
 }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<MemoryInsightTab>("pulse");
@@ -134,7 +136,7 @@ export function MemoryOverviewTabs({
         className="-mt-px mt-0 data-[state=inactive]:hidden"
         forceMount
       >
-        <DeepAnalysisTab spaceId={spaceId} active={tab === "analysis"} />
+        <DeepAnalysisTab spaceId={spaceId} active={tab === "analysis"} onEntitySearch={onEntitySearch} />
       </TabsContent>
     </Tabs>
   );

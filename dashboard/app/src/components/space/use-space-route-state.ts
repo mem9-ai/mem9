@@ -66,6 +66,7 @@ export interface SpaceRouteState {
   handleMobileAnalysisCategoryChange: (
     category: AnalysisCategory | undefined,
   ) => void;
+  handleEntitySearch: (query: string) => void;
 }
 
 export function useSpaceRouteState(spaceId: string): SpaceRouteState {
@@ -266,6 +267,14 @@ export function useSpaceRouteState(spaceId: string): SpaceRouteState {
     setMobileAnalysisOpen(false);
   };
 
+  const handleEntitySearch = (query: string) => {
+    setSearchInput(query);
+    navigate({
+      to: "/space",
+      search: { ...search, q: query },
+    });
+  };
+
   return {
     search,
     isDesktopViewport,
@@ -300,5 +309,6 @@ export function useSpaceRouteState(spaceId: string): SpaceRouteState {
     handleTagChange,
     handleAnalysisCategoryChange,
     handleMobileAnalysisCategoryChange,
+    handleEntitySearch,
   };
 }
