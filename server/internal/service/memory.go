@@ -21,7 +21,7 @@ const (
 	maxContentLen   = 50000
 	maxTags         = 20
 	maxBulkSize     = 100
-	defaultMinScore = 0.3
+	defaultMinScore = 0.2
 )
 
 type MemoryService struct {
