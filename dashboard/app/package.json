@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:sourcemaps": "tsc -b && vite build --sourcemap",
+    "build:with-sourcemaps": "pnpm build:sourcemaps && pnpm sentry:sourcemaps",
     "preview": "vite preview",
+    "sentry:sourcemaps": "node scripts/sentry-sourcemaps.mjs",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "verify": "pnpm typecheck && pnpm test && pnpm build"
@@ -34,10 +37,12 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@sentry/cli",
       "esbuild"
     ]
   },
   "devDependencies": {
+    "@sentry/cli": "^3.3.4",
     "@tailwindcss/vite": "^4.2.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",

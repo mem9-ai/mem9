@@ -6,6 +6,15 @@ title: dashboard/app — mem9 Dashboard SPA
 
 React SPA for the mem9 dashboard. Deployed at `mem9.ai/your-memory`. Three pages: Connect (Space ID entry), Your Memory (memory list, search, detail, light management), and Pixel Farm (full-screen Phaser sandbox at `/labs/memory-farm`). Bilingual (zh-CN / en). Dark mode support (light / dark / system).
 
+## Cross-repo backend ownership
+
+- `dashboard/app` is frontend-only. The main dashboard backend repo is the sibling worktree `../mem9-node`.
+- In practice, when someone says "mem9-node" for dashboard work, they mean `mem9-node/apps/api` and `mem9-node/apps/worker`.
+- `src/api/analysis-client.ts` talks to `mem9-node` endpoints such as `/v1/analysis-jobs`, `/v1/deep-analysis/reports`, and `/v1/taxonomy`.
+- `mem9-node/apps/api/src/mem9-source.service.ts` fetches and deletes memories through this repo's Go API (`/v1alpha2/mem9s/...`), so dashboard analysis spans both repos.
+- `src/api/provider-http.ts` still calls this repo's Go API directly for the standard `/your-memory/api/...` data surface. Do not look for those handlers inside the SPA.
+- When a dashboard task requires backend changes, first decide whether the change belongs in `../mem9-node/apps/api`, `../mem9-node/apps/worker`, or this repo's `server/`.
+
 ## Commands
 
 ```bash

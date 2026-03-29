@@ -8,12 +8,22 @@ mnemos is shared, cloud-persistent memory for coding agents. The core system is 
 REST server backed by TiDB/MySQL, plus three agent integrations, a standalone CLI,
 and a small Astro site.
 
+## Cross-repo relationship: `mem9` and `mem9-node`
+
+- `mem9-node` is a sibling repository at `../mem9-node`. It is not a directory inside this repo.
+- `dashboard/app` in this repo is the frontend half of the dashboard product. In day-to-day discussion, "the dashboard backend" usually refers to code in `mem9-node`, especially `apps/api` and `apps/worker`.
+- `dashboard/app/src/api/analysis-client.ts` calls `mem9-node` endpoints for `v1/analysis-jobs`, `v1/deep-analysis/*`, and taxonomy/deep-analysis workflows.
+- `mem9-node/apps/api/src/mem9-source.service.ts` depends on this repo's Go API as the mem9 source of truth. Its `MEM9_SOURCE_API_BASE_URL` defaults to `http://127.0.0.1:8080/v1alpha2/mem9s`.
+- `dashboard/app/src/api/provider-http.ts` still sends the dashboard's standard `/your-memory/api/...` data requests to this repo's Go server (`/v1alpha2/mem9s/...`) using `X-API-Key` and `X-Mnemo-Agent-Id`.
+- When a task touches dashboard UI and backend behavior together, inspect both repos before assuming the implementation belongs only under `server/` in this repo.
+
 ## High-level modules
 
 | Path                 | Role                                                         |
 | -------------------- | ------------------------------------------------------------ |
 | `server/`            | Go API server, business logic, TiDB SQL, tenant provisioning |
 | `cli/`               | Standalone Go CLI for exercising mnemo-server endpoints      |
+| `dashboard/app/`     | React dashboard SPA; frontend half of the dashboard product  |
 | `openclaw-plugin/`   | OpenClaw memory plugin (`kind: "memory"`)                    |
 | `opencode-plugin/`   | OpenCode plugin (`@mem9/opencode`)                           |
 | `claude-plugin/`     | Claude Code plugin (hooks + skills)                          |
@@ -108,6 +118,9 @@ cd server && MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" go run ./cmd
 | TiDB SQL             | `server/internal/repository/tidb/memory.go` |
 | Tenant provisioning  | `server/internal/service/tenant.go`         |
 | CLI command wiring   | `cli/main.go`                               |
+| Dashboard frontend   | `dashboard/app/`                            |
+| Dashboard backend (sibling repo) | `../mem9-node/apps/api/`        |
+| Dashboard worker (sibling repo) | `../mem9-node/apps/worker/`      |
 | Claude hooks         | `claude-plugin/hooks/`                      |
 | Architecture notes   | `docs/design/`                              |
 | OpenCode wiring      | `opencode-plugin/src/index.ts`              |
@@ -148,6 +161,7 @@ Use the local file when you work in these areas:
 - `opencode-plugin/AGENTS.md`
 - `claude-plugin/AGENTS.md`
 - `site/AGENTS.md`
+- `dashboard/app/AGENTS.md`
 - `e2e/AGENTS.md`
 - `k8s/AGENTS.md`
 - `benchmark/MR-NIAH/AGENTS.md`
