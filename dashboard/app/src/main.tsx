@@ -9,6 +9,16 @@ import { initTheme } from "@/lib/theme";
 import "@xyflow/react/dist/style.css";
 import "@/i18n";
 import "@/index.css";
+import * as Sentry from "@sentry/react";
+
+const sentryDSN = import.meta.env.VITE_SENTRY_DSN;
+
+if (sentryDSN) {
+  Sentry.init({
+    dsn: sentryDSN,
+    sendDefaultPii: true,
+  });
+}
 
 initTheme();
 initGa4();
