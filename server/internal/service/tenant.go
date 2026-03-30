@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -204,12 +205,87 @@ func (s *TenantService) GetInfo(ctx context.Context, tenantID string) (*domain.T
 	}, nil
 }
 
+// EnsureMemoriesAutoEmbedding migrates the memories.embedding column to
+// GENERATED ALWAYS AS (EMBED_TEXT(...)) STORED when MNEMO_EMBED_AUTO_MODEL is set
+// but the column is still a plain VECTOR NULL column (e.g. created from schema.sql).
+// This is a no-op when autoModel is not configured or the column is already GENERATED.
+func (s *TenantService) EnsureMemoriesAutoEmbedding(ctx context.Context, db *sql.DB) error {
+	if s.autoModel == "" || s.autoDims == 0 {
+		return nil
+	}
+
+	var extra string
+	err := db.QueryRowContext(ctx,
+		`SELECT EXTRA FROM INFORMATION_SCHEMA.COLUMNS
+		 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'memories' AND COLUMN_NAME = 'embedding'`,
+	).Scan(&extra)
+	if err == sql.ErrNoRows {
+		slog.Warn("memories.embedding column not found; skipping auto-embedding migration")
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check embedding column: %w", err)
+	}
+
+	// Already a generated column — nothing to do.
+	if strings.Contains(strings.ToUpper(extra), "GENERATED") {
+		return nil
+	}
+
+	slog.Warn("memories.embedding is a plain VECTOR column; migrating to EMBED_TEXT-generated column",
+		"model", s.autoModel, "dims", s.autoDims)
+
+	// First try the simple in-place ALTER path.
+	_, _ = db.ExecContext(ctx, `ALTER TABLE memories DROP INDEX idx_cosine`)
+
+	sanitizedModel := strings.ReplaceAll(s.autoModel, "'", "''")
+	alterSQL := fmt.Sprintf(
+		`ALTER TABLE memories MODIFY COLUMN embedding VECTOR(%d) GENERATED ALWAYS AS (EMBED_TEXT('%s', content, '{"dimensions": %d}')) STORED`,
+		s.autoDims, sanitizedModel, s.autoDims,
+	)
+	if _, err := db.ExecContext(ctx, alterSQL); err != nil {
+		// Some TiDB versions reject changing a plain column into a generated column in-place.
+		// Rebuild the table into the correct shape and swap it in.
+		if strings.Contains(err.Error(), "newCol IsGenerated true, oldCol IsGenerated false") {
+			if rebuildErr := s.rebuildMemoriesTableWithAutoEmbedding(ctx, db); rebuildErr != nil {
+				return fmt.Errorf("migrate embedding column via rebuild: %w (original alter error: %v)", rebuildErr, err)
+			}
+		} else {
+			return fmt.Errorf(
+				"migrate embedding column: run manually: ALTER TABLE memories MODIFY COLUMN embedding VECTOR(%d) GENERATED ALWAYS AS (EMBED_TEXT('%s', content, '{\"dimensions\": %d}')) STORED: %w",
+				s.autoDims, s.autoModel, s.autoDims, err,
+			)
+		}
+	}
+
+	_, err = db.ExecContext(ctx,
+		`ALTER TABLE memories ADD VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
+	if err != nil && !tenant.IsIndexExistsError(err) {
+		slog.Warn("failed to add vector index after embedding migration (non-fatal)", "err", err)
+	}
+
+	slog.Info("memories.embedding column migrated to EMBED_TEXT-generated", "model", s.autoModel, "dims", s.autoDims)
+	return nil
+}
+
 func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, tenant.BuildSessionsSchema(s.autoModel, s.autoDims)); err != nil {
 		return fmt.Errorf("ensure sessions table: create: %w", err)
 	}
 	if s.autoModel != "" {
-		_, err := db.ExecContext(ctx,
+		var extra string
+		err := db.QueryRowContext(ctx,
+			`SELECT EXTRA FROM INFORMATION_SCHEMA.COLUMNS
+			 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sessions' AND COLUMN_NAME = 'embedding'`,
+		).Scan(&extra)
+		if err == nil && !strings.Contains(strings.ToUpper(extra), "GENERATED") {
+			slog.Warn("sessions.embedding is a plain VECTOR column; rebuilding table to EMBED_TEXT-generated",
+				"model", s.autoModel, "dims", s.autoDims)
+			if rebuildErr := s.rebuildSessionsTableWithAutoEmbedding(ctx, db); rebuildErr != nil {
+				return fmt.Errorf("ensure sessions table: rebuild: %w", rebuildErr)
+			}
+		}
+		_, err = db.ExecContext(ctx,
 			`ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
 		if err != nil && !tenant.IsIndexExistsError(err) {
 			return fmt.Errorf("ensure sessions table: vector index: %w", err)
@@ -221,6 +297,48 @@ func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) err
 		if err != nil && !tenant.IsIndexExistsError(err) {
 			return fmt.Errorf("ensure sessions table: fts index: %w", err)
 		}
+	}
+	return nil
+}
+
+func (s *TenantService) rebuildMemoriesTableWithAutoEmbedding(ctx context.Context, db *sql.DB) error {
+	tmp := "memories_auto_tmp"
+	backup := fmt.Sprintf("memories_backup_%d", time.Now().Unix())
+	createSQL := strings.Replace(tenant.BuildMemorySchema(s.autoModel, s.autoDims), "CREATE TABLE IF NOT EXISTS memories", "CREATE TABLE "+tmp, 1)
+	if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS `+tmp); err != nil {
+		return fmt.Errorf("drop temp memories table: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, createSQL); err != nil {
+		return fmt.Errorf("create temp memories table: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO `+tmp+` (id, content, source, tags, metadata, memory_type, agent_id, session_id, state, version, updated_by, superseded_by, created_at, updated_at)
+		SELECT id, content, source, tags, metadata, memory_type, agent_id, session_id, state, version, updated_by, superseded_by, created_at, updated_at FROM memories`); err != nil {
+		return fmt.Errorf("copy memories data: %w", err)
+	}
+	renameSQL := fmt.Sprintf("RENAME TABLE memories TO %s, %s TO memories", backup, tmp)
+	if _, err := db.ExecContext(ctx, renameSQL); err != nil {
+		return fmt.Errorf("swap memories tables: %w", err)
+	}
+	return nil
+}
+
+func (s *TenantService) rebuildSessionsTableWithAutoEmbedding(ctx context.Context, db *sql.DB) error {
+	tmp := "sessions_auto_tmp"
+	backup := fmt.Sprintf("sessions_backup_%d", time.Now().Unix())
+	createSQL := strings.Replace(tenant.BuildSessionsSchema(s.autoModel, s.autoDims), "CREATE TABLE IF NOT EXISTS sessions", "CREATE TABLE "+tmp, 1)
+	if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS `+tmp); err != nil {
+		return fmt.Errorf("drop temp sessions table: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, createSQL); err != nil {
+		return fmt.Errorf("create temp sessions table: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO `+tmp+` (id, session_id, agent_id, source, seq, role, content, content_type, content_hash, tags, state, created_at, updated_at)
+		SELECT id, session_id, agent_id, source, seq, role, content, content_type, content_hash, tags, state, created_at, updated_at FROM sessions`); err != nil {
+		return fmt.Errorf("copy sessions data: %w", err)
+	}
+	renameSQL := fmt.Sprintf("RENAME TABLE sessions TO %s, %s TO sessions", backup, tmp)
+	if _, err := db.ExecContext(ctx, renameSQL); err != nil {
+		return fmt.Errorf("swap sessions tables: %w", err)
 	}
 	return nil
 }

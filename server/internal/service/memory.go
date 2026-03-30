@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -300,7 +301,17 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 
 	vecResults, vecErr := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
 	if vecErr != nil {
-		return nil, 0, fmt.Errorf("auto vector search: %w", vecErr)
+		// When the embedding column is not yet GENERATED ALWAYS AS (EMBED_TEXT(...)) STORED,
+		// TiDB rejects the query. Degrade gracefully to keyword/FTS search so that reads
+		// still succeed while the background schema migration (EnsureMemoriesAutoEmbedding)
+		// runs. The error is logged so operators can track when this happens.
+		if isEmbedColumnSchemaError(vecErr) {
+			slog.Warn("auto vector search unavailable: embedding column not EMBED_TEXT-generated; degrading to keyword search",
+				"err", vecErr)
+			vecResults = nil
+		} else {
+			return nil, 0, fmt.Errorf("auto vector search: %w", vecErr)
+		}
 	}
 
 	minScore := filter.MinScore
@@ -580,6 +591,14 @@ type BulkMemoryInput struct {
 	Content  string          `json:"content"`
 	Tags     []string        `json:"tags,omitempty"`
 	Metadata json.RawMessage `json:"metadata,omitempty"`
+}
+
+// isEmbedColumnSchemaError returns true when TiDB rejects a VEC_EMBED_COSINE_DISTANCE
+// call because the embedding column is not GENERATED ALWAYS AS (EMBED_TEXT(...)) STORED.
+// This happens when the schema was created from schema.sql (plain VECTOR NULL column)
+// rather than from BuildMemorySchema with autoModel set.
+func isEmbedColumnSchemaError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "EMBED_TEXT")
 }
 
 func validateMemoryInput(content string, tags []string) error {

@@ -69,16 +69,22 @@ CREATE TABLE IF NOT EXISTS memories (
 -- ALTER TABLE memories ADD VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding)));
 
 -- Auto-embedding variant (TiDB Cloud Serverless only):
--- Replace the embedding column above with a generated column:
+-- Replace the embedding column above with a generated column.
+-- Note: use single-quotes for the model name and include the dimensions JSON option.
+-- The server auto-migrates this column on first use when MNEMO_EMBED_AUTO_MODEL is set,
+-- but you can also run the migration manually:
 --
---   embedding VECTOR(1024) GENERATED ALWAYS AS (
---     EMBED_TEXT("tidbcloud_free/amazon/titan-embed-text-v2", content)
---   ) STORED,
+--   ALTER TABLE memories MODIFY COLUMN embedding
+--     VECTOR(1024) GENERATED ALWAYS AS (
+--       EMBED_TEXT('tidbcloud_free/amazon/titan-embed-text-v2', content, '{"dimensions": 1024}')
+--     ) STORED;
 --
 -- Then add vector index:
---   VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding)))
+--   ALTER TABLE memories ADD VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding)))
+--     ADD_COLUMNAR_REPLICA_ON_DEMAND;
 --
--- Set MNEMO_EMBED_AUTO_MODEL=tidbcloud_free/amazon/titan-embed-text-v2 to enable.
+-- Set MNEMO_EMBED_AUTO_MODEL=tidbcloud_free/amazon/titan-embed-text-v2
+-- and MNEMO_EMBED_AUTO_DIMS=1024 to enable.
 
 
 -- Migration: tombstone -> state (4-step plan).
