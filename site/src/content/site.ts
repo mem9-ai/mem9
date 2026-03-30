@@ -12,6 +12,7 @@ export interface SiteNavCopy {
   features: string;
   platforms: string;
   yourMemory: string;
+  billing: string;
   security: string;
 }
 
@@ -103,6 +104,26 @@ export interface SiteSecurityPageCopy {
   learnMoreBody: string;
 }
 
+export interface SiteBillingTier {
+  name: string;
+  price: string;
+  period: string;
+  features: string[];
+  ctaLabel: string;
+  ctaAction: 'alert' | 'mailto';
+  highlighted?: boolean;
+}
+
+export interface SiteBillingPageCopy {
+  meta: SiteMeta;
+  kicker: string;
+  title: string;
+  description: string;
+  tiers: SiteBillingTier[];
+  alertMessage: string;
+  contactEmail: string;
+}
+
 export interface SiteFooterCopy {
   github: string;
   license: string;
@@ -141,6 +162,7 @@ export interface SiteDictionary {
   platforms: SitePlatformsCopy;
   faq: SiteFaqCopy;
   securityPage: SiteSecurityPageCopy;
+  billing: SiteBillingPageCopy;
   footer: SiteFooterCopy;
   aria: SiteAriaCopy;
   themeOptions: SiteThemeOptionsCopy;
@@ -176,6 +198,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       features: 'Features',
       platforms: 'Platforms',
       yourMemory: 'Your Memory',
+      billing: 'Billing',
       security: 'Security',
     },
     hero: {
@@ -331,6 +354,68 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       learnMoreTitle: 'Learn more',
       learnMoreBody: 'Read the security overview and white paper for additional detail.',
     },
+    billing: {
+      meta: {
+        title: 'Pricing | mem9',
+        description: 'mem9 pricing plans. Start free, scale as you grow.',
+      },
+      kicker: 'Pricing',
+      title: 'Simple, transparent pricing',
+      description: 'Start free. Scale when you need to.',
+      tiers: [
+        {
+          name: 'Free',
+          price: '$0',
+          period: '',
+          features: [
+            '10,000 memories',
+            '1,000 retrieval API calls / month',
+            'Community support',
+          ],
+          ctaLabel: 'Get Started',
+          ctaAction: 'alert',
+        },
+        {
+          name: 'Starter',
+          price: '$9',
+          period: ' / mo',
+          features: [
+            '50,000 memories',
+            '5,000 retrieval API calls / month',
+            'Email support',
+          ],
+          ctaLabel: 'Buy Now',
+          ctaAction: 'alert',
+        },
+        {
+          name: 'Pro',
+          price: '$120',
+          period: ' / mo',
+          features: [
+            'Unlimited memories',
+            '50,000 retrieval API calls / month',
+            'Priority support',
+          ],
+          ctaLabel: 'Buy Now',
+          ctaAction: 'alert',
+          highlighted: true,
+        },
+        {
+          name: 'Enterprise',
+          price: 'Custom',
+          period: '',
+          features: [
+            'Unlimited memories',
+            'Unlimited API calls',
+            'Dedicated support & Custom SLA',
+          ],
+          ctaLabel: 'Contact Us',
+          ctaAction: 'mailto',
+        },
+      ],
+      alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
+      contactEmail: 'shengbo.ma@pingcap.com',
+    },
     footer: {
       github: 'GitHub',
       license: 'Apache-2.0',
@@ -369,6 +454,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       features: '能力',
       platforms: '平台',
       yourMemory: '你的记忆',
+      billing: '定价',
       security: '安全',
     },
     hero: {
@@ -516,6 +602,68 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       learnMoreTitle: '了解更多',
       learnMoreBody: '更多细节可查看安全概览和白皮书。',
     },
+    billing: {
+      meta: {
+        title: '定价 | mem9',
+        description: 'mem9 定价方案。免费起步，按需扩展。',
+      },
+      kicker: '定价',
+      title: '简单透明的定价',
+      description: '免费起步，按需扩展。',
+      tiers: [
+        {
+          name: 'Free',
+          price: '$0',
+          period: '',
+          features: [
+            '10,000 条记忆',
+            '1,000 次检索 API 调用 / 月',
+            '社区支持',
+          ],
+          ctaLabel: '开始使用',
+          ctaAction: 'alert',
+        },
+        {
+          name: 'Starter',
+          price: '$9',
+          period: ' / 月',
+          features: [
+            '50,000 条记忆',
+            '5,000 次检索 API 调用 / 月',
+            '邮件支持',
+          ],
+          ctaLabel: '立即购买',
+          ctaAction: 'alert',
+        },
+        {
+          name: 'Pro',
+          price: '$120',
+          period: ' / 月',
+          features: [
+            '无限记忆',
+            '50,000 次检索 API 调用 / 月',
+            '优先支持',
+          ],
+          ctaLabel: '立即购买',
+          ctaAction: 'alert',
+          highlighted: true,
+        },
+        {
+          name: 'Enterprise',
+          price: '自定义',
+          period: '',
+          features: [
+            '无限记忆',
+            '无限 API 调用',
+            '专属支持 & 自定义 SLA',
+          ],
+          ctaLabel: '联系我们',
+          ctaAction: 'mailto',
+        },
+      ],
+      alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
+      contactEmail: 'shengbo.ma@pingcap.com',
+    },
     footer: {
       github: 'GitHub',
       license: 'Apache-2.0',
@@ -554,6 +702,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       features: '能力',
       platforms: '平台',
       yourMemory: '你的記憶',
+      billing: '定價',
       security: '安全',
     },
     hero: {
@@ -701,6 +850,68 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       learnMoreTitle: '了解更多',
       learnMoreBody: '更多細節可查看安全概覽與白皮書。',
     },
+    billing: {
+      meta: {
+        title: '定價 | mem9',
+        description: 'mem9 定價方案。免費起步，按需擴展。',
+      },
+      kicker: '定價',
+      title: '簡單透明的定價',
+      description: '免費起步，按需擴展。',
+      tiers: [
+        {
+          name: 'Free',
+          price: '$0',
+          period: '',
+          features: [
+            '10,000 條記憶',
+            '1,000 次檢索 API 呼叫 / 月',
+            '社群支援',
+          ],
+          ctaLabel: '開始使用',
+          ctaAction: 'alert',
+        },
+        {
+          name: 'Starter',
+          price: '$9',
+          period: ' / 月',
+          features: [
+            '50,000 條記憶',
+            '5,000 次檢索 API 呼叫 / 月',
+            '電郵支援',
+          ],
+          ctaLabel: '立即購買',
+          ctaAction: 'alert',
+        },
+        {
+          name: 'Pro',
+          price: '$120',
+          period: ' / 月',
+          features: [
+            '無限記憶',
+            '50,000 次檢索 API 呼叫 / 月',
+            '優先支援',
+          ],
+          ctaLabel: '立即購買',
+          ctaAction: 'alert',
+          highlighted: true,
+        },
+        {
+          name: 'Enterprise',
+          price: '自訂',
+          period: '',
+          features: [
+            '無限記憶',
+            '無限 API 呼叫',
+            '專屬支援 & 自訂 SLA',
+          ],
+          ctaLabel: '聯絡我們',
+          ctaAction: 'mailto',
+        },
+      ],
+      alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
+      contactEmail: 'shengbo.ma@pingcap.com',
+    },
     footer: {
       github: 'GitHub',
       license: 'Apache-2.0',
@@ -739,6 +950,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       features: '機能',
       platforms: '対応環境',
       yourMemory: 'あなたの記憶',
+      billing: '料金',
       security: 'セキュリティ',
     },
     hero: {
@@ -889,6 +1101,68 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       learnMoreTitle: 'さらに詳しく',
       learnMoreBody: '詳しい内容はセキュリティ概要とホワイトペーパーをご覧ください。',
     },
+    billing: {
+      meta: {
+        title: '料金 | mem9',
+        description: 'mem9 の料金プラン。無料で始めて、必要に応じてスケール。',
+      },
+      kicker: '料金',
+      title: 'シンプルで透明な料金体系',
+      description: '無料で始めて、必要に応じてスケール。',
+      tiers: [
+        {
+          name: 'Free',
+          price: '$0',
+          period: '',
+          features: [
+            '10,000 メモリ',
+            '1,000 検索 API コール / 月',
+            'コミュニティサポート',
+          ],
+          ctaLabel: '始める',
+          ctaAction: 'alert',
+        },
+        {
+          name: 'Starter',
+          price: '$9',
+          period: ' / 月',
+          features: [
+            '50,000 メモリ',
+            '5,000 検索 API コール / 月',
+            'メールサポート',
+          ],
+          ctaLabel: '購入する',
+          ctaAction: 'alert',
+        },
+        {
+          name: 'Pro',
+          price: '$120',
+          period: ' / 月',
+          features: [
+            '無制限メモリ',
+            '50,000 検索 API コール / 月',
+            '優先サポート',
+          ],
+          ctaLabel: '購入する',
+          ctaAction: 'alert',
+          highlighted: true,
+        },
+        {
+          name: 'Enterprise',
+          price: 'カスタム',
+          period: '',
+          features: [
+            '無制限メモリ',
+            '無制限 API コール',
+            '専任サポート & カスタム SLA',
+          ],
+          ctaLabel: 'お問い合わせ',
+          ctaAction: 'mailto',
+        },
+      ],
+      alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
+      contactEmail: 'shengbo.ma@pingcap.com',
+    },
     footer: {
       github: 'GitHub',
       license: 'Apache-2.0',
@@ -927,6 +1201,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       features: '기능',
       platforms: '플랫폼',
       yourMemory: '당신의 기억',
+      billing: '요금',
       security: '보안',
     },
     hero: {
@@ -1074,6 +1349,68 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       learnMoreTitle: '더 알아보기',
       learnMoreBody: '자세한 내용은 보안 개요와 백서를 참고하세요.',
     },
+    billing: {
+      meta: {
+        title: '요금 | mem9',
+        description: 'mem9 요금제. 무료로 시작하고, 필요할 때 확장하세요.',
+      },
+      kicker: '요금',
+      title: '간단하고 투명한 요금제',
+      description: '무료로 시작하고, 필요할 때 확장하세요.',
+      tiers: [
+        {
+          name: 'Free',
+          price: '$0',
+          period: '',
+          features: [
+            '10,000 메모리',
+            '1,000 검색 API 호출 / 월',
+            '커뮤니티 지원',
+          ],
+          ctaLabel: '시작하기',
+          ctaAction: 'alert',
+        },
+        {
+          name: 'Starter',
+          price: '$9',
+          period: ' / 월',
+          features: [
+            '50,000 메모리',
+            '5,000 검색 API 호출 / 월',
+            '이메일 지원',
+          ],
+          ctaLabel: '구매하기',
+          ctaAction: 'alert',
+        },
+        {
+          name: 'Pro',
+          price: '$120',
+          period: ' / 월',
+          features: [
+            '무제한 메모리',
+            '50,000 검색 API 호출 / 월',
+            '우선 지원',
+          ],
+          ctaLabel: '구매하기',
+          ctaAction: 'alert',
+          highlighted: true,
+        },
+        {
+          name: 'Enterprise',
+          price: '맞춤형',
+          period: '',
+          features: [
+            '무제한 메모리',
+            '무제한 API 호출',
+            '전담 지원 & 맞춤 SLA',
+          ],
+          ctaLabel: '문의하기',
+          ctaAction: 'mailto',
+        },
+      ],
+      alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
+      contactEmail: 'shengbo.ma@pingcap.com',
+    },
     footer: {
       github: 'GitHub',
       license: 'Apache-2.0',
@@ -1112,6 +1449,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       features: 'Fitur',
       platforms: 'Platform',
       yourMemory: 'Memori Anda',
+      billing: 'Harga',
       security: 'Keamanan',
     },
     hero: {
@@ -1262,6 +1600,68 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       learnMoreTitle: 'Pelajari lebih lanjut',
       learnMoreBody: 'Baca ringkasan keamanan dan white paper untuk detail tambahan.',
     },
+    billing: {
+      meta: {
+        title: 'Harga | mem9',
+        description: 'Paket harga mem9. Mulai gratis, skalakan sesuai kebutuhan.',
+      },
+      kicker: 'Harga',
+      title: 'Harga yang sederhana dan transparan',
+      description: 'Mulai gratis. Skalakan saat dibutuhkan.',
+      tiers: [
+        {
+          name: 'Free',
+          price: '$0',
+          period: '',
+          features: [
+            '10.000 memori',
+            '1.000 panggilan retrieval API / bulan',
+            'Dukungan komunitas',
+          ],
+          ctaLabel: 'Mulai',
+          ctaAction: 'alert',
+        },
+        {
+          name: 'Starter',
+          price: '$9',
+          period: ' / bln',
+          features: [
+            '50.000 memori',
+            '5.000 panggilan retrieval API / bulan',
+            'Dukungan email',
+          ],
+          ctaLabel: 'Beli Sekarang',
+          ctaAction: 'alert',
+        },
+        {
+          name: 'Pro',
+          price: '$120',
+          period: ' / bln',
+          features: [
+            'Memori tanpa batas',
+            '50.000 panggilan retrieval API / bulan',
+            'Dukungan prioritas',
+          ],
+          ctaLabel: 'Beli Sekarang',
+          ctaAction: 'alert',
+          highlighted: true,
+        },
+        {
+          name: 'Enterprise',
+          price: 'Kustom',
+          period: '',
+          features: [
+            'Memori tanpa batas',
+            'Panggilan API tanpa batas',
+            'Dukungan khusus & SLA kustom',
+          ],
+          ctaLabel: 'Hubungi Kami',
+          ctaAction: 'mailto',
+        },
+      ],
+      alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
+      contactEmail: 'shengbo.ma@pingcap.com',
+    },
     footer: {
       github: 'GitHub',
       license: 'Apache-2.0',
@@ -1300,6 +1700,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       features: 'ความสามารถ',
       platforms: 'แพลตฟอร์ม',
       yourMemory: 'ความทรงจำของคุณ',
+      billing: 'ราคา',
       security: 'ความปลอดภัย',
     },
     hero: {
@@ -1449,6 +1850,68 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'แพลตฟอร์มพื้นฐานถูกสร้างเพื่อความทนทาน ความน่าเชื่อถือ และการปฏิบัติงานที่เสถียร ขณะเดียวกัน mem9 ก็ได้ประโยชน์จากแนวปฏิบัติด้านความปลอดภัย มาตรการควบคุม และมาตรฐานการปฏิบัติงานที่เป็นผู้ใหญ่ในเบื้องหลัง',
       learnMoreTitle: 'ดูเพิ่มเติม',
       learnMoreBody: 'อ่านภาพรวมด้านความปลอดภัยและ white paper เพื่อดูรายละเอียดเพิ่มเติม',
+    },
+    billing: {
+      meta: {
+        title: 'ราคา | mem9',
+        description: 'แพ็กเกจราคา mem9 เริ่มต้นฟรี ขยายตามความต้องการ',
+      },
+      kicker: 'ราคา',
+      title: 'ราคาที่เรียบง่ายและโปร่งใส',
+      description: 'เริ่มต้นฟรี ขยายเมื่อคุณต้องการ',
+      tiers: [
+        {
+          name: 'Free',
+          price: '$0',
+          period: '',
+          features: [
+            '10,000 หน่วยความจำ',
+            '1,000 retrieval API calls / เดือน',
+            'การสนับสนุนจากชุมชน',
+          ],
+          ctaLabel: 'เริ่มใช้งาน',
+          ctaAction: 'alert',
+        },
+        {
+          name: 'Starter',
+          price: '$9',
+          period: ' / เดือน',
+          features: [
+            '50,000 หน่วยความจำ',
+            '5,000 retrieval API calls / เดือน',
+            'สนับสนุนทางอีเมล',
+          ],
+          ctaLabel: 'ซื้อเลย',
+          ctaAction: 'alert',
+        },
+        {
+          name: 'Pro',
+          price: '$120',
+          period: ' / เดือน',
+          features: [
+            'หน่วยความจำไม่จำกัด',
+            '50,000 retrieval API calls / เดือน',
+            'สนับสนุนแบบเร่งด่วน',
+          ],
+          ctaLabel: 'ซื้อเลย',
+          ctaAction: 'alert',
+          highlighted: true,
+        },
+        {
+          name: 'Enterprise',
+          price: 'กำหนดเอง',
+          period: '',
+          features: [
+            'หน่วยความจำไม่จำกัด',
+            'API calls ไม่จำกัด',
+            'สนับสนุนเฉพาะ & SLA กำหนดเอง',
+          ],
+          ctaLabel: 'ติดต่อเรา',
+          ctaAction: 'mailto',
+        },
+      ],
+      alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
+      contactEmail: 'shengbo.ma@pingcap.com',
     },
     footer: {
       github: 'GitHub',

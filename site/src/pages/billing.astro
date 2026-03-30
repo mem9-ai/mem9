@@ -1,0 +1,27 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Navbar from '../components/Navbar.astro';
+import Billing from '../components/Billing.astro';
+import Footer from '../components/Footer.astro';
+import { DEFAULT_LOCALE, siteCopy } from '../content/site';
+
+const copy = siteCopy[DEFAULT_LOCALE];
+---
+
+<Layout
+  meta={copy.billing.meta}
+  locale={DEFAULT_LOCALE}
+  metaTitleKey="billing.meta.title"
+  metaDescriptionKey="billing.meta.description"
+>
+  <Navbar
+    nav={copy.nav}
+    aria={copy.aria}
+    localeNames={copy.localeNames}
+    themeOptions={copy.themeOptions}
+  />
+  <main>
+    <Billing billing={copy.billing} />
+  </main>
+  <Footer footer={copy.footer} />
+</Layout>

@@ -1,0 +1,399 @@
+---
+import type { SiteBillingPageCopy } from '../content/site';
+
+interface Props {
+  billing: SiteBillingPageCopy;
+}
+
+const { billing } = Astro.props;
+---
+
+<section id="billing" class="billing-section">
+  <div class="container billing-stack">
+    <div class="section-head">
+      <p class="section-kicker" data-i18n="billing.kicker">{billing.kicker}</p>
+      <h2 class="section-title" data-i18n="billing.title">{billing.title}</h2>
+      <p class="section-desc" data-i18n="billing.description">
+        {billing.description}
+      </p>
+    </div>
+
+    <div class="pricing-grid">
+      {billing.tiers.map((tier, index) => (
+        <div class:list={['pricing-card', 'surface-card', tier.highlighted && 'is-highlighted']}>
+          <div class="card-header">
+            <h3 class="tier-name" data-i18n={`billing.tiers.${index}.name`}>{tier.name}</h3>
+            <div class="tier-price-row">
+              <span class="tier-price" data-i18n={`billing.tiers.${index}.price`}>{tier.price}</span>
+              {tier.period && (
+                <span class="tier-period" data-i18n={`billing.tiers.${index}.period`}>{tier.period}</span>
+              )}
+            </div>
+          </div>
+
+          <ul class="tier-features">
+            {tier.features.map((feature, fIndex) => (
+              <li class="tier-feature" data-i18n={`billing.tiers.${index}.features.${fIndex}`}>
+                {feature}
+              </li>
+            ))}
+          </ul>
+
+          <div class="card-cta">
+            {tier.ctaAction === 'mailto' ? (
+              <a
+                href={`mailto:${billing.contactEmail}`}
+                class="cta-button"
+                data-billing-track
+                data-tier={tier.name}
+                data-i18n={`billing.tiers.${index}.ctaLabel`}
+              >
+                {tier.ctaLabel}
+              </a>
+            ) : (
+              <button
+                type="button"
+                class="cta-button"
+                data-billing-alert
+                data-billing-track
+                data-tier={tier.name}
+                data-i18n={`billing.tiers.${index}.ctaLabel`}
+              >
+                {tier.ctaLabel}
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <div
+    class="modal-overlay"
+    id="billing-modal"
+    data-billing-modal
+    hidden
+  >
+    <div class="modal-card surface-card">
+      <p
+        class="modal-message"
+        data-billing-modal-text
+        data-i18n="billing.alertMessage"
+      >
+        {billing.alertMessage}
+      </p>
+      <button type="button" class="modal-close-button" data-billing-modal-close>OK</button>
+    </div>
+  </div>
+</section>
+
+<script is:inline>
+  (function () {
+    var modal = document.querySelector('[data-billing-modal]');
+    var closeBtn = document.querySelector('[data-billing-modal-close]');
+    if (!modal || !closeBtn) return;
+
+    function trackCta(tier, label) {
+      if (typeof gtag === 'function') {
+        gtag('event', 'billing_cta_click', {
+          tier_name: tier,
+          cta_label: label,
+        });
+      }
+    }
+
+    function openModal() {
+      modal.hidden = false;
+      requestAnimationFrame(function () {
+        modal.classList.add('is-visible');
+      });
+    }
+
+    function closeModal() {
+      modal.classList.remove('is-visible');
+      setTimeout(function () {
+        modal.hidden = true;
+      }, 200);
+    }
+
+    document.querySelectorAll('[data-billing-alert]').forEach(function (btn) {
+      btn.addEventListener('click', openModal);
+    });
+
+    document.querySelectorAll('[data-billing-track]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        trackCta(el.dataset.tier || '', el.textContent.trim());
+      });
+    });
+
+    closeBtn.addEventListener('click', closeModal);
+
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) closeModal();
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !modal.hidden) closeModal();
+    });
+  })();
+</script>
+
+<style>
+  .billing-section {
+    padding-top: 5rem;
+    padding-bottom: 5rem;
+  }
+
+  .billing-stack {
+    display: grid;
+    gap: 2.5rem;
+  }
+
+  .section-head {
+    width: min(100%, var(--content-rail));
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .section-head .section-desc {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.25rem;
+    width: min(100%, var(--max-w));
+    margin: 0 auto;
+  }
+
+  .pricing-card {
+    display: flex;
+    flex-direction: column;
+    padding: 1.75rem 1.5rem;
+    transition: border-color 0.2s ease, transform 0.2s ease;
+  }
+
+  .pricing-card:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-2px);
+  }
+
+  .pricing-card.is-highlighted {
+    border-color: var(--button-active-border);
+    position: relative;
+  }
+
+  .pricing-card.is-highlighted::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    border: 2px solid var(--accent);
+    pointer-events: none;
+  }
+
+  .card-header {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tier-name {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.65rem;
+  }
+
+  .tier-price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.15rem;
+  }
+
+  .tier-price {
+    font-family: var(--font-display);
+    font-size: 2.6rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    color: var(--text);
+  }
+
+  .tier-period {
+    font-size: 0.95rem;
+    color: var(--text-dim);
+  }
+
+  .tier-features {
+    list-style: none;
+    display: grid;
+    gap: 0.65rem;
+    flex: 1 1 auto;
+    margin-bottom: 1.5rem;
+  }
+
+  .tier-feature {
+    position: relative;
+    padding-left: 1.35rem;
+    font-size: 0.92rem;
+    color: var(--text-dim);
+    line-height: 1.45;
+  }
+
+  .tier-feature::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.45em;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--green-dot);
+    opacity: 0.5;
+  }
+
+  .card-cta {
+    margin-top: auto;
+  }
+
+  .cta-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 3rem;
+    padding: 0.8rem 1rem;
+    border-radius: 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+    background: linear-gradient(
+      135deg,
+      var(--text) 0%,
+      color-mix(in srgb, var(--text) 74%, var(--accent)) 100%
+    );
+    color: var(--bg-deep);
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, white 22%, transparent),
+      0 10px 24px color-mix(in srgb, var(--text) 12%, transparent);
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    text-decoration: none;
+    cursor: pointer;
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease,
+      opacity 0.2s ease,
+      border-color 0.2s ease;
+  }
+
+  .cta-button:hover {
+    transform: translateY(-1px) scale(1.01);
+    opacity: 0.97;
+    border-color: color-mix(in srgb, var(--text) 26%, transparent);
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, white 24%, transparent),
+      0 14px 32px color-mix(in srgb, var(--text) 16%, transparent);
+  }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(6px);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .modal-overlay[hidden] {
+    display: none;
+  }
+
+  .modal-overlay.is-visible {
+    opacity: 1;
+  }
+
+  .modal-card {
+    max-width: 480px;
+    width: calc(100% - 2rem);
+    padding: 2rem;
+    text-align: center;
+    transform: translateY(12px) scale(0.97);
+    transition: transform 0.2s ease;
+  }
+
+  .modal-overlay.is-visible .modal-card {
+    transform: translateY(0) scale(1);
+  }
+
+  .modal-message {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: var(--text);
+    margin-bottom: 1.5rem;
+  }
+
+  .modal-close-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 7rem;
+    min-height: 2.75rem;
+    padding: 0.6rem 1.5rem;
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+    background: linear-gradient(
+      135deg,
+      var(--text) 0%,
+      color-mix(in srgb, var(--text) 74%, var(--accent)) 100%
+    );
+    color: var(--bg-deep);
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, white 22%, transparent),
+      0 8px 20px color-mix(in srgb, var(--text) 12%, transparent);
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.15s ease,
+      opacity 0.15s ease;
+  }
+
+  .modal-close-button:hover {
+    transform: translateY(-1px);
+    opacity: 0.95;
+  }
+
+  @media (max-width: 960px) {
+    .pricing-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 640px) {
+    .billing-section {
+      padding-top: 4rem;
+      padding-bottom: 4rem;
+    }
+
+    .pricing-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .tier-price {
+      font-size: 2.2rem;
+    }
+  }
+</style>
