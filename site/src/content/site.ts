@@ -121,6 +121,10 @@ export interface SiteBillingPageCopy {
   description: string;
   tiers: SiteBillingTier[];
   alertMessage: string;
+  contactMessage: string;
+  contactCopyLabel: string;
+  contactCopiedMessage: string;
+  contactCopyFailedMessage: string;
   contactEmail: string;
 }
 
@@ -414,7 +418,12 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         },
       ],
       alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
-      contactEmail: 'shengbo.ma@pingcap.com',
+      contactMessage:
+        'Email us for enterprise pricing, security reviews, and dedicated support.',
+      contactCopyLabel: 'Copy Email',
+      contactCopiedMessage: 'Email address copied.',
+      contactCopyFailedMessage: 'Copy failed. Please use the email address below.',
+      contactEmail: 'mem9@pingcap.com',
     },
     footer: {
       github: 'GitHub',
@@ -662,7 +671,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         },
       ],
       alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
-      contactEmail: 'shengbo.ma@pingcap.com',
+      contactMessage: '如需企业定价、安全审查或专属支持，请发送邮件联系我们。',
+      contactCopyLabel: '复制邮箱',
+      contactCopiedMessage: '邮箱地址已复制。',
+      contactCopyFailedMessage: '复制失败，请使用下方邮箱地址。',
+      contactEmail: 'mem9@pingcap.com',
     },
     footer: {
       github: 'GitHub',
@@ -910,7 +923,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         },
       ],
       alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
-      contactEmail: 'shengbo.ma@pingcap.com',
+      contactMessage: '如需企業定價、安全審查或專屬支援，請發送郵件與我們聯絡。',
+      contactCopyLabel: '複製信箱',
+      contactCopiedMessage: '信箱地址已複製。',
+      contactCopyFailedMessage: '複製失敗，請使用下方信箱地址。',
+      contactEmail: 'mem9@pingcap.com',
     },
     footer: {
       github: 'GitHub',
@@ -1161,7 +1178,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         },
       ],
       alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
-      contactEmail: 'shengbo.ma@pingcap.com',
+      contactMessage:
+        'エンタープライズ向け料金、セキュリティレビュー、専任サポートのご相談はメールでご連絡ください。',
+      contactCopyLabel: 'メールアドレスをコピー',
+      contactCopiedMessage: 'メールアドレスをコピーしました。',
+      contactCopyFailedMessage:
+        'コピーに失敗しました。下記のメールアドレスをご利用ください。',
+      contactEmail: 'mem9@pingcap.com',
     },
     footer: {
       github: 'GitHub',
@@ -1409,7 +1432,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         },
       ],
       alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
-      contactEmail: 'shengbo.ma@pingcap.com',
+      contactMessage:
+        '엔터프라이즈 요금, 보안 검토, 전담 지원이 필요하면 이메일로 문의해 주세요.',
+      contactCopyLabel: '이메일 복사',
+      contactCopiedMessage: '이메일 주소를 복사했습니다.',
+      contactCopyFailedMessage:
+        '복사에 실패했습니다. 아래 이메일 주소를 사용해 주세요.',
+      contactEmail: 'mem9@pingcap.com',
     },
     footer: {
       github: 'GitHub',
@@ -1660,7 +1689,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         },
       ],
       alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
-      contactEmail: 'shengbo.ma@pingcap.com',
+      contactMessage:
+        'Untuk harga enterprise, review keamanan, dan dukungan khusus, hubungi kami lewat email.',
+      contactCopyLabel: 'Salin Email',
+      contactCopiedMessage: 'Alamat email disalin.',
+      contactCopyFailedMessage:
+        'Gagal menyalin. Gunakan alamat email di bawah ini.',
+      contactEmail: 'mem9@pingcap.com',
     },
     footer: {
       github: 'GitHub',
@@ -1911,7 +1946,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         },
       ],
       alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
-      contactEmail: 'shengbo.ma@pingcap.com',
+      contactMessage:
+        'หากต้องการสอบถามราคาแบบองค์กร การตรวจสอบความปลอดภัย หรือการสนับสนุนเฉพาะ โปรดติดต่อเราทางอีเมล',
+      contactCopyLabel: 'คัดลอกอีเมล',
+      contactCopiedMessage: 'คัดลอกที่อยู่อีเมลแล้ว',
+      contactCopyFailedMessage:
+        'คัดลอกไม่สำเร็จ โปรดใช้อีเมลด้านล่าง',
+      contactEmail: 'mem9@pingcap.com',
     },
     footer: {
       github: 'GitHub',

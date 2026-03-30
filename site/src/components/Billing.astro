@@ -41,15 +41,16 @@ const { billing } = Astro.props;
 
           <div class="card-cta">
             {tier.ctaAction === 'mailto' ? (
-              <a
-                href={`mailto:${billing.contactEmail}`}
+              <button
+                type="button"
                 class="cta-button"
+                data-billing-contact
                 data-billing-track
                 data-tier={tier.name}
                 data-i18n={`billing.tiers.${index}.ctaLabel`}
               >
                 {tier.ctaLabel}
-              </a>
+              </button>
             ) : (
               <button
                 type="button"
@@ -77,11 +78,32 @@ const { billing } = Astro.props;
     <div class="modal-card surface-card">
       <p
         class="modal-message"
-        data-billing-modal-text
+        data-billing-alert-message
         data-i18n="billing.alertMessage"
       >
         {billing.alertMessage}
       </p>
+      <div class="modal-contact-panel" data-billing-contact-panel hidden>
+        <p class="modal-message" data-i18n="billing.contactMessage">
+          {billing.contactMessage}
+        </p>
+        <p class="modal-email" data-billing-contact-email>{billing.contactEmail}</p>
+        <button
+          type="button"
+          class="modal-copy-button"
+          data-billing-copy-email
+          data-i18n="billing.contactCopyLabel"
+        >
+          {billing.contactCopyLabel}
+        </button>
+        <p class="modal-feedback" data-billing-copy-feedback aria-live="polite"></p>
+        <span data-billing-copy-success hidden data-i18n="billing.contactCopiedMessage">
+          {billing.contactCopiedMessage}
+        </span>
+        <span data-billing-copy-failure hidden data-i18n="billing.contactCopyFailedMessage">
+          {billing.contactCopyFailedMessage}
+        </span>
+      </div>
       <button type="button" class="modal-close-button" data-billing-modal-close>OK</button>
     </div>
   </div>
@@ -91,18 +113,41 @@ const { billing } = Astro.props;
   (function () {
     var modal = document.querySelector('[data-billing-modal]');
     var closeBtn = document.querySelector('[data-billing-modal-close]');
-    if (!modal || !closeBtn) return;
+    var alertMessage = document.querySelector('[data-billing-alert-message]');
+    var contactPanel = document.querySelector('[data-billing-contact-panel]');
+    var contactEmail = document.querySelector('[data-billing-contact-email]');
+    var copyButton = document.querySelector('[data-billing-copy-email]');
+    var copyFeedback = document.querySelector('[data-billing-copy-feedback]');
+    var copySuccess = document.querySelector('[data-billing-copy-success]');
+    var copyFailure = document.querySelector('[data-billing-copy-failure]');
+    if (
+      !modal ||
+      !closeBtn ||
+      !alertMessage ||
+      !contactPanel ||
+      !contactEmail ||
+      !copyButton ||
+      !copyFeedback ||
+      !copySuccess ||
+      !copyFailure
+    ) {
+      return;
+    }
 
     function trackCta(tier, label) {
-      if (typeof gtag === 'function') {
-        gtag('event', 'billing_cta_click', {
+      if (typeof window.gtag === 'function') {
+        window.gtag('event', 'billing_cta_click', {
           tier_name: tier,
           cta_label: label,
+          transport_type: 'beacon',
         });
       }
     }
 
-    function openModal() {
+    function openModal(mode) {
+      alertMessage.hidden = mode !== 'alert';
+      contactPanel.hidden = mode !== 'contact';
+      copyFeedback.textContent = '';
       modal.hidden = false;
       requestAnimationFrame(function () {
         modal.classList.add('is-visible');
@@ -116,14 +161,63 @@ const { billing } = Astro.props;
       }, 200);
     }
 
+    async function copyContactEmail() {
+      var email = contactEmail.textContent ? contactEmail.textContent.trim() : '';
+      if (!email) {
+        return false;
+      }
+
+      try {
+        await navigator.clipboard.writeText(email);
+        return true;
+      } catch (error) {
+        var textarea = document.createElement('textarea');
+        textarea.value = email;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'absolute';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+
+        var copied = false;
+        try {
+          copied = document.execCommand('copy');
+        } catch (copyError) {
+          copied = false;
+        }
+
+        document.body.removeChild(textarea);
+        return copied;
+      }
+    }
+
     document.querySelectorAll('[data-billing-alert]').forEach(function (btn) {
-      btn.addEventListener('click', openModal);
+      btn.addEventListener('click', function () {
+        openModal('alert');
+      });
+    });
+
+    document.querySelectorAll('[data-billing-contact]').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        openModal('contact');
+        var copied = await copyContactEmail();
+        copyFeedback.textContent = copied
+          ? copySuccess.textContent.trim()
+          : copyFailure.textContent.trim();
+      });
     });
 
     document.querySelectorAll('[data-billing-track]').forEach(function (el) {
       el.addEventListener('click', function () {
-        trackCta(el.dataset.tier || '', el.textContent.trim());
+        trackCta(el.dataset.tier || '', el.textContent ? el.textContent.trim() : '');
       });
+    });
+
+    copyButton.addEventListener('click', async function () {
+      var copied = await copyContactEmail();
+      copyFeedback.textContent = copied
+        ? copySuccess.textContent.trim()
+        : copyFailure.textContent.trim();
     });
 
     closeBtn.addEventListener('click', closeModal);
@@ -341,6 +435,64 @@ const { billing } = Astro.props;
     line-height: 1.7;
     color: var(--text);
     margin-bottom: 1.5rem;
+  }
+
+  .modal-contact-panel {
+    display: grid;
+    gap: 0.85rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .modal-contact-panel .modal-message {
+    margin-bottom: 0;
+  }
+
+  .modal-email {
+    margin: 0;
+    padding: 0.85rem 1rem;
+    border-radius: 0.85rem;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 92%, black 8%);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    user-select: all;
+    word-break: break-all;
+  }
+
+  .modal-copy-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.75rem;
+    padding: 0.65rem 1.2rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 88%, white 12%);
+    color: var(--text);
+    font-family: var(--font-display);
+    font-size: 0.92rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition:
+      transform 0.15s ease,
+      border-color 0.15s ease,
+      background 0.15s ease;
+  }
+
+  .modal-copy-button:hover {
+    transform: translateY(-1px);
+    border-color: var(--border-strong);
+    background: color-mix(in srgb, var(--surface) 82%, white 18%);
+  }
+
+  .modal-feedback {
+    min-height: 1.25rem;
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    line-height: 1.4;
   }
 
   .modal-close-button {
