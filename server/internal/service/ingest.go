@@ -11,6 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"regexp"
+
 	"github.com/google/uuid"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/embed"
@@ -19,6 +21,13 @@ import (
 )
 
 // IngestMode controls which pipeline stages run.
+// Regex patterns for stripping OpenClaw metadata noise from messages before LLM extraction.
+var (
+	// Matches blocks like "Conversation info (untrusted metadata):\n```json\n...\n```"
+	metadataBlockRe = regexp.MustCompile("(?s)(?:Conversation info|Inbound Context|Sender \\(untrusted metadata\\)|Group Chat Context)[^\\n]*\\n```(?:json)?\\n.*?```\\s*")
+	messageIDRe     = regexp.MustCompile(`\[message_id:\s*[^\]]+\]`)
+)
+
 type IngestMode string
 
 const (
@@ -159,14 +168,13 @@ func (s *IngestService) ExtractPhase1(ctx context.Context, messages []IngestMess
 	if formatted == "" {
 		return &Phase1Result{}, nil
 	}
-	const maxConversationRunes = 1000000
-	formatted = truncateRunes(formatted, maxConversationRunes)
+	formatted = truncateRunes(formatted, 8000)
 
-	facts, messageTags, err := s.extractFactsAndTags(ctx, formatted, len(messages))
+	facts, err := s.extractFacts(ctx, formatted)
 	if err != nil {
 		return nil, err
 	}
-	return &Phase1Result{Facts: facts, MessageTags: messageTags}, nil
+	return &Phase1Result{Facts: facts}, nil
 }
 
 // ReconcilePhase2 runs reconciliation of extracted facts against existing memories.
@@ -424,14 +432,16 @@ func (s *IngestService) extractFacts(ctx context.Context, conversation string) (
 	currentDate := time.Now().Format("2006-01-02")
 
 	systemPrompt := `You are an information extraction engine. Your task is to identify distinct,
-atomic facts from a conversation.
+atomic facts from a conversation between a user and an AI assistant.
 
 ## Rules
 
-1. Extract facts ONLY from the user's messages. Ignore assistant and system messages entirely.
+1. Extract facts from BOTH user and assistant messages. Many valuable facts appear in assistant replies
+   (e.g., software installed, configurations changed, commands run, decisions made, issues resolved).
 2. Each fact must be a single, self-contained statement (one idea per fact).
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
+   - Good: "Installed openclaw-browser-auto and chrome-devtools skills"
    - Bad: "Knows some programming languages"
 4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
@@ -443,7 +453,7 @@ atomic facts from a conversation.
 10. If no meaningful facts exist in the conversation, return an empty facts array.
 11. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
-   "relationship", "event", "timeline".
+   "relationship", "event", "timeline", "install", "config", "decision", "error-fix".
    Use hyphens for multi-word tags: "programming-language", "work-tool".
    If no meaningful tags apply, omit the "tags" field for that fact.
 
@@ -503,7 +513,8 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 
 ## Rules — facts
 
-1. Extract facts ONLY from the user's messages. Ignore assistant and system messages entirely.
+1. Extract facts from BOTH user and assistant messages. Many valuable facts appear in assistant replies
+   (e.g., software installed, configurations changed, commands run, decisions made).
 2. Each fact must be a single, self-contained statement (one idea per fact).
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
@@ -1120,8 +1131,9 @@ func stripInjectedContext(messages []IngestMessage) []IngestMessage {
 	return result
 }
 
-// stripMemoryTags removes <relevant-memories>...</relevant-memories> from text.
+// stripMemoryTags removes <relevant-memories>...</relevant-memories> and OpenClaw metadata blocks from text.
 func stripMemoryTags(s string) string {
+	// Remove <relevant-memories> blocks
 	for {
 		start := strings.Index(s, "<relevant-memories>")
 		if start == -1 {
@@ -1129,13 +1141,19 @@ func stripMemoryTags(s string) string {
 		}
 		end := strings.Index(s, "</relevant-memories>")
 		if end == -1 {
-			// Malformed tag, remove from start to end.
 			s = s[:start]
 			break
 		}
 		s = s[:start] + s[end+len("</relevant-memories>"):]
 	}
-	return s
+	// Remove OpenClaw metadata blocks (Conversation info, Sender, message_id, Inbound Context, etc.)
+	s = metadataBlockRe.ReplaceAllString(s, "")
+	// Remove [message_id: ...] lines
+	s = messageIDRe.ReplaceAllString(s, "")
+	// Remove HEARTBEAT_OK / NO_REPLY
+	s = strings.ReplaceAll(s, "HEARTBEAT_OK", "")
+	s = strings.ReplaceAll(s, "NO_REPLY", "")
+	return strings.TrimSpace(s)
 }
 
 // formatConversation formats messages into a conversation string for LLM.

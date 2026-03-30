@@ -168,6 +168,7 @@ function formatMemoriesBlock(memories: Memory[]): string {
 
 function stripInjectedContext(content: string): string {
   let s = content;
+  // Remove <relevant-memories> blocks
   for (;;) {
     const start = s.indexOf("<relevant-memories>");
     if (start === -1) break;
@@ -178,6 +179,12 @@ function stripInjectedContext(content: string): string {
     }
     s = s.slice(0, start) + s.slice(end + "</relevant-memories>".length);
   }
+  // Remove OpenClaw metadata blocks (Conversation info, Sender, Inbound Context, etc.)
+  s = s.replace(/(?:Conversation info|Inbound Context|Sender \(untrusted metadata\)|Group Chat Context)[^\n]*\n```(?:json)?\n[\s\S]*?```\s*/g, "");
+  // Remove [message_id: ...] lines
+  s = s.replace(/\[message_id:\s*[^\]]+\]/g, "");
+  // Remove HEARTBEAT_OK / NO_REPLY
+  s = s.replace(/HEARTBEAT_OK|NO_REPLY/g, "");
   return s.trim();
 }
 

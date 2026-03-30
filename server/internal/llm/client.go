@@ -114,8 +114,14 @@ func (c *Client) CompleteJSON(ctx context.Context, system, user string) (string,
 			slog.Warn("LLM rejected response_format:json_object (HTTP 400), retrying without it")
 			return c.complete(ctx, system, user, nil)
 		}
+		return "", err
 	}
-	return result, err
+	// Verify the response is valid JSON; if not, retry without response_format.
+	if !json.Valid([]byte(result)) {
+		slog.Warn("response_format:json_object returned invalid JSON, retrying without it")
+		return c.complete(ctx, system, user, nil)
+	}
+	return result, nil
 }
 
 func (c *Client) complete(ctx context.Context, system, user string, respFmt *responseFormat) (string, error) {
