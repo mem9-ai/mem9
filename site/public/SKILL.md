@@ -335,7 +335,13 @@ jq --arg api_key "$API_KEY" '
     .plugins.entries.mem9.config.apiKey = $api_key |
     .plugins.entries.mem9.enabled = true
   end |
-  .plugins.allow = ((.plugins.allow // []) + ["mem9"] | unique)
+  .plugins.allow = ((.plugins.allow // []) + ["mem9"] | unique) |
+  if .tools.alsoAllow
+  then
+    .tools.alsoAllow = ((.tools.alsoAllow // []) + ["memory_store", "memory_update", "memory_delete"] | unique)
+  else
+    .tools.alsoAllow = ["memory_store", "memory_update", "memory_delete"]
+  end
 ' openclaw.json > tmp.json && mv tmp.json openclaw.json
 ```
 
@@ -358,6 +364,9 @@ Or if no `openclaw.json` exists, create:
       }
     },
     "allow": ["mem9"]
+  },
+  "tools": {
+    "alsoAllow": ["memory_store", "memory_update", "memory_delete"]
   }
 }
 ```
