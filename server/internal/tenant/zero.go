@@ -194,34 +194,54 @@ func (p *ZeroProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("init schema: create table: %w", err)
 	}
 	if p.autoModel != "" {
-		_, err := db.ExecContext(ctx,
-			`ALTER TABLE memories ADD VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
-		if err != nil && !IsIndexExistsError(err) {
-			return fmt.Errorf("init schema: vector index: %w", err)
+		exists, err := IndexExists(ctx, db, "memories", "idx_cosine")
+		if err != nil {
+			return fmt.Errorf("init schema: check vector index: %w", err)
+		}
+		if !exists {
+			if _, err := db.ExecContext(ctx,
+				`ALTER TABLE memories ADD VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !IsIndexExistsError(err) {
+				return fmt.Errorf("init schema: vector index: %w", err)
+			}
 		}
 	}
 	if p.ftsEnabled {
-		_, err := db.ExecContext(ctx,
-			`ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
-		if err != nil && !IsIndexExistsError(err) {
-			return fmt.Errorf("init schema: fulltext index: %w", err)
+		exists, err := IndexExists(ctx, db, "memories", "idx_fts_content")
+		if err != nil {
+			return fmt.Errorf("init schema: check fulltext index: %w", err)
+		}
+		if !exists {
+			if _, err := db.ExecContext(ctx,
+				`ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !IsIndexExistsError(err) {
+				return fmt.Errorf("init schema: fulltext index: %w", err)
+			}
 		}
 	}
 	if _, err := db.ExecContext(ctx, BuildSessionsSchema(p.autoModel, p.autoDims)); err != nil {
 		return fmt.Errorf("init schema: sessions table: %w", err)
 	}
 	if p.autoModel != "" {
-		_, err := db.ExecContext(ctx,
-			`ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`)
-		if err != nil && !IsIndexExistsError(err) {
-			return fmt.Errorf("init schema: sessions vector index: %w", err)
+		exists, err := IndexExists(ctx, db, "sessions", "idx_sessions_cosine")
+		if err != nil {
+			return fmt.Errorf("init schema: check sessions vector index: %w", err)
+		}
+		if !exists {
+			if _, err := db.ExecContext(ctx,
+				`ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !IsIndexExistsError(err) {
+				return fmt.Errorf("init schema: sessions vector index: %w", err)
+			}
 		}
 	}
 	if p.ftsEnabled {
-		_, err := db.ExecContext(ctx,
-			`ALTER TABLE sessions ADD FULLTEXT INDEX idx_sessions_fts (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`)
-		if err != nil && !IsIndexExistsError(err) {
-			return fmt.Errorf("init schema: sessions fulltext index: %w", err)
+		exists, err := IndexExists(ctx, db, "sessions", "idx_sessions_fts")
+		if err != nil {
+			return fmt.Errorf("init schema: check sessions fulltext index: %w", err)
+		}
+		if !exists {
+			if _, err := db.ExecContext(ctx,
+				`ALTER TABLE sessions ADD FULLTEXT INDEX idx_sessions_fts (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !IsIndexExistsError(err) {
+				return fmt.Errorf("init schema: sessions fulltext index: %w", err)
+			}
 		}
 	}
 	return nil
