@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { getSourceMemoriesQueryKey } from "@/api/source-memories";
@@ -15,6 +16,7 @@ export { shouldCompactMemoryOverview };
 
 export function SpacePage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const spaceId = getActiveSpaceId() ?? "";
   const routeState = useSpaceRouteState(spaceId);
@@ -47,9 +49,9 @@ export function SpacePage() {
   useEffect(() => {
     if (farmPrepOpen && dataModel.farmEntryStatus === "ready") {
       setFarmPrepOpen(false);
-      window.open("/your-memory/labs/memory-farm", "_blank", "noopener");
+      void navigate({ to: "/labs/memory-farm" });
     }
-  }, [dataModel.farmEntryStatus, farmPrepOpen]);
+  }, [dataModel.farmEntryStatus, farmPrepOpen, navigate]);
 
   if (!spaceId) {
     return null;
@@ -164,7 +166,7 @@ export function SpacePage() {
 
   const handleFarmAction = () => {
     if (dataModel.farmEntryStatus === "ready") {
-      window.open("/your-memory/labs/memory-farm", "_blank", "noopener");
+      void navigate({ to: "/labs/memory-farm" });
       return;
     }
 
