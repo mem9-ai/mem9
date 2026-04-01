@@ -28,7 +28,7 @@ cd site && npx tsc --noEmit
 | Runtime locale/theme behavior | `src/scripts/site-ui.ts` |
 | Layout, fonts, early theme script | `src/layouts/Layout.astro` |
 | UI components | `src/components/` |
-| Stable/beta onboarding docs | `public/SKILL.md`, `public/beta/SKILL.md` |
+| Stable onboarding docs | `public/SKILL.md` |
 
 ## Local conventions
 
@@ -38,7 +38,7 @@ cd site && npx tsc --noEmit
 - Netlify should keep `site/` as the package directory with the base directory unset. `netlify.toml` still lives here, but its build paths resolve from the repo root so it can build both `site/` and `dashboard/app/`, then copy dashboard assets into `site/dist/your-memory/`.
 - Locale and theme state use typed string unions and storage keys defined in `src/content/site.ts`.
 - Locale switching is runtime-driven via `data-i18n` attributes plus `src/scripts/site-ui.ts`; new locales usually touch `site.ts`, `site-ui.ts`, and `Layout.astro` together.
-- `public/SKILL.md` and `public/beta/SKILL.md` are served verbatim as onboarding documents.
+- `public/SKILL.md` is served verbatim as onboarding documents.
 
 ## Anti-patterns
 

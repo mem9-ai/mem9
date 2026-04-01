@@ -29,7 +29,8 @@ const { hero, aria } = Astro.props;
       </p>
 
       <div class="cta-grid" data-onboarding-shell data-onboarding-version="stable">
-        <div class="cta-head">
+        <!-- Keep the stable/beta switcher in code; hide it until beta is re-enabled. -->
+        <div class="cta-head cta-head-hidden">
           <div
             class="cta-version-tabs"
             role="tablist"
@@ -217,6 +218,10 @@ const { hero, aria } = Astro.props;
     justify-content: space-between;
     gap: 1rem;
     margin-bottom: 0.85rem;
+  }
+
+  .cta-head-hidden {
+    display: none;
   }
 
   .cta-version-tabs {
