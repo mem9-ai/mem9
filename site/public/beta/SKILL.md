@@ -112,7 +112,6 @@ Do not use this skill for:
 - Remote path examples:
   - `https://mem9.ai/SKILL.md` -> [https://mem9.ai/SETUP.md](https://mem9.ai/SETUP.md)
   - `https://mem9.ai/beta/SKILL.md` -> [https://mem9.ai/beta/SETUP.md](https://mem9.ai/beta/SETUP.md)
-  - `https://mem9.ai/test/SKILL.md` -> [https://mem9.ai/test/SETUP.md](https://mem9.ai/test/SETUP.md)
 - Follow `SETUP.md` for install, config, restart, verify, and the required final handoff. Do not improvise extra setup flows.
 
 ## Uninstall Rule
@@ -123,7 +122,6 @@ Do not use this skill for:
 - Remote path examples:
   - `https://mem9.ai/SKILL.md` -> [https://mem9.ai/UNINSTALL.md](https://mem9.ai/UNINSTALL.md)
   - `https://mem9.ai/beta/SKILL.md` -> [https://mem9.ai/beta/UNINSTALL.md](https://mem9.ai/beta/UNINSTALL.md)
-  - `https://mem9.ai/test/SKILL.md` -> [https://mem9.ai/test/UNINSTALL.md](https://mem9.ai/test/UNINSTALL.md)
 - Follow `UNINSTALL.md` for the dry-run preview, config rollback, uninstall, one required restart, verification, and final handoff. Do not improvise partial removal flows or add session reset inside the same flow.
 
 ## Steady-State Rule
@@ -135,7 +133,6 @@ Do not use this skill for:
 - Remote path examples:
   - `https://mem9.ai/SKILL.md` -> [https://mem9.ai/TROUBLESHOOTING.md](https://mem9.ai/TROUBLESHOOTING.md)
   - `https://mem9.ai/beta/SKILL.md` -> [https://mem9.ai/beta/TROUBLESHOOTING.md](https://mem9.ai/beta/TROUBLESHOOTING.md)
-  - `https://mem9.ai/test/SKILL.md` -> [https://mem9.ai/test/TROUBLESHOOTING.md](https://mem9.ai/test/TROUBLESHOOTING.md)
 - Keep historical import manual. Direct users to the dashboard or another reviewed manual workflow instead of uploading local files from this skill.
 
 ## Definition of Done
