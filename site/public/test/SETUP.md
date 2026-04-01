@@ -24,7 +24,7 @@ When this file is read, start with this structure:
 - Do not upload local history from this setup flow.
 - Do not use direct web-request commands, raw memory API calls, or scripted shell patch commands in this public setup flow.
 - Reconnect and create-new are separate branches. Once one branch is selected, ignore the other branch unless the user explicitly changes their choice.
-- Before taking any action, show one dry-run preview that covers install, config edits, expected restarts, and verification.
+- Before taking any action, show one dry-run preview that covers install, config edits, expected restarts, and what the user must do after the restart.
 - Use one explicit approval for the entire disclosed flow. Do not ask for a second approval unless the scope materially changes.
 
 ## Terminology
@@ -48,12 +48,36 @@ When this file is read, start with this structure:
   - exact config keys that may change
   - selected branch: reconnect or create-new
   - expected restart count
-  - reconnect success criteria or create-new success criteria
+  - local history will not be uploaded by this setup flow
+  - after approval, the gateway restart may interrupt the current chat
+  - the user should wait about 1-2 minutes, come back to the same conversation, and say `hi`
+  - setup is still in progress until the final mem9 handoff is sent
 - Approval phrases:
   - reconnect after the key is already captured: `approve reconnect`
   - create-new: `approve create`
 - Do not ask the user to repeat the full API key in the approval line after it has already been captured.
 - Ask for one approval for the full disclosed flow. After that approval, proceed through install, config, restart, and verification without asking again unless the scope changes.
+
+### Required Pre-Approval Prompt
+
+Before showing `approve reconnect` or `approve create`, the dry-run preview must already make the restart and return path explicit.
+
+Required structure:
+
+```text
+If that looks good, reply exactly:
+
+approve reconnect
+
+After you approve, I will start the install/config/restart flow immediately.
+The gateway restart may pause this chat.
+Please wait about 1-2 minutes, come back to this same conversation, and say `hi`.
+Until I send the final mem9 handoff, setup is still in progress and not yet complete.
+```
+
+Create-new uses the same structure but with `approve create`.
+
+Do not rely on the post-approval notice as the only place where restart and return instructions are shown.
 
 ## Step 1 — Install Plugin
 
@@ -64,6 +88,9 @@ The dry-run preview must disclose:
 - reconnect path expects one restart after config is written and read back
 - create-new path expects one restart without `apiKey`, then a final restart after the generated key is written back
 - local history will not be uploaded by this setup flow
+- after approval, the gateway restart may interrupt the current chat
+- the user should wait about 1-2 minutes, come back to the same conversation, and say `hi`
+- setup is still in progress until the final mem9 handoff is sent
 
 Install command:
 
