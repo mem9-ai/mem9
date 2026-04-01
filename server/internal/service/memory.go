@@ -345,14 +345,11 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 
 	// Second-hop: use top-N first-hop results as seeds for expanded vector search.
 	secondHopMems := s.secondHopAutoSearch(ctx, mems, scores, filter, limit)
-	if len(secondHopMems) > 0 {
-		for rank, m := range secondHopMems {
-			scores[m.ID] += secondHopWeight / (rrfK + float64(rank+1))
-			if _, exists := mems[m.ID]; !exists {
-				mems[m.ID] = m
-			}
+	for rank, m := range secondHopMems {
+		scores[m.ID] += secondHopWeight / (rrfK + float64(rank+1))
+		if _, exists := mems[m.ID]; !exists {
+			mems[m.ID] = m
 		}
-		slog.Info("second-hop search completed", "new_results", len(secondHopMems))
 	}
 
 	applyTypeWeights(mems, scores)
@@ -387,17 +384,25 @@ func (s *MemoryService) secondHopAutoSearch(
 		seedIDs[m.ID] = struct{}{}
 	}
 
-	// Launch concurrent second-hop searches.
+	// Launch concurrent second-hop searches using first-hop embeddings
+	// to avoid redundant embedding API calls.
 	type hopResult struct {
 		results []domain.Memory
 		err     error
 	}
 	ch := make(chan hopResult, topN)
 	for _, seed := range seeds {
-		go func(content string) {
-			results, err := s.memories.AutoVectorSearch(ctx, content, filter, limit)
-			ch <- hopResult{results: results, err: err}
-		}(seed.Content)
+		if len(seed.Embedding) > 0 {
+			go func(vec []float32) {
+				results, err := s.memories.VectorSearch(ctx, vec, filter, limit)
+				ch <- hopResult{results: results, err: err}
+			}(seed.Embedding)
+		} else {
+			go func(content string) {
+				results, err := s.memories.AutoVectorSearch(ctx, content, filter, limit)
+				ch <- hopResult{results: results, err: err}
+			}(seed.Content)
+		}
 	}
 
 	// Collect results: deduplicate, exclude seeds, keep best score per ID.
