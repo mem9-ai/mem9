@@ -95,7 +95,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	content := req.Content
 
 	if req.Sync {
-		_, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
+		_, err := svc.memory.Create(r.Context(), agentID, req.SessionID, content, tags, metadata)
 		if err != nil {
 			slog.Error("sync memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
 			s.handleError(w, err)
@@ -103,8 +103,8 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		}
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	} else {
-		go func(agentName, actorAgentID, content string, tags []string, metadata json.RawMessage) {
-			mem, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
+		go func(agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage) {
+			mem, err := svc.memory.Create(context.Background(), actorAgentID, sessionID, content, tags, metadata)
 			if err != nil {
 				slog.Error("async memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
 				return
@@ -114,7 +114,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", "")
-		}(auth.AgentName, agentID, content, tags, metadata)
+		}(auth.AgentName, agentID, req.SessionID, content, tags, metadata)
 
 		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 	}

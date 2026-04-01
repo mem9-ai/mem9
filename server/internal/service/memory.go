@@ -40,7 +40,7 @@ func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, emb
 	}
 }
 
-func (s *MemoryService) Create(ctx context.Context, agentID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, error) {
+func (s *MemoryService) Create(ctx context.Context, agentID, sessionID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, error) {
 	if err := validateMemoryInput(content, tags); err != nil {
 		return nil, err
 	}
@@ -72,6 +72,7 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 			Embedding:  embedding,
 			MemoryType: domain.TypeInsight,
 			AgentID:    agentID,
+			SessionID:  sessionID,
 			State:      domain.StateActive,
 			Version:    1,
 			UpdatedBy:  agentID,
