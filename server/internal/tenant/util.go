@@ -1,6 +1,8 @@
 package tenant
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"strings"
 
@@ -23,4 +25,20 @@ func IsTableNotFoundError(err error) bool {
 		return mysqlErr.Number == 1146
 	}
 	return strings.Contains(err.Error(), "doesn't exist")
+}
+
+// IndexExists reports whether the named index exists on the given table in the current database.
+func IndexExists(ctx context.Context, db *sql.DB, table, indexName string) (bool, error) {
+	var count int
+	err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM information_schema.STATISTICS
+		 WHERE TABLE_SCHEMA = DATABASE()
+		   AND TABLE_NAME = ?
+		   AND INDEX_NAME = ?`,
+		table, indexName,
+	).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }

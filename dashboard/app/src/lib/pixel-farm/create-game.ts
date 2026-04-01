@@ -79,11 +79,8 @@ const ACTOR_LAYER_DEPTH = 15;
 const STATIC_OBJECT_LAYER_DEPTH = 15;
 const INTERACTION_BUBBLE_OFFSET_Y = PIXEL_FARM_TILE_SIZE * 0.8;
 const INTERACTION_FOCUS_FALLBACK_MS = 180;
-const PIXEL_FARM_BGM_START_DELAY_MS = 3000;
-const PIXEL_FARM_BGM_FADE_IN_MS = 5000;
+const PIXEL_FARM_BGM_FADE_IN_MS = 500;
 const PIXEL_FARM_BGM_MAX_VOLUME = 0.2;
-const PIXEL_FARM_BGM_RESTART_DELAY_MIN_MS = 30_000;
-const PIXEL_FARM_BGM_RESTART_DELAY_MAX_MS = 60_000;
 const INTERACTION_ORIGIN_MARKER_RADIUS = 4;
 const INTERACTION_ANCHOR_MARKER_RADIUS = 3;
 const WATER_FRAME_COUNT = PIXEL_FARM_WATER_TEXTURE_KEYS.length;
@@ -377,8 +374,6 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     lastY: 0,
   };
   private bgmSound: Phaser.Sound.BaseSound | null = null;
-  private bgmStartTimer: Phaser.Time.TimerEvent | null = null;
-  private bgmRestartTimer: Phaser.Time.TimerEvent | null = null;
   private bgmFadeTween: Phaser.Tweens.Tween | null = null;
   // Browsers often require a user gesture before allowing audio playback.
   private hasUserInteracted = false;
@@ -618,45 +613,39 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       return;
     }
 
-    const isPlaying = this.bgmSound?.isPlaying ?? false;
-    if (isPlaying || this.bgmStartTimer || this.bgmRestartTimer) {
+    if (this.sound.locked) {
       return;
     }
 
-    this.bgmStartTimer = this.time.delayedCall(PIXEL_FARM_BGM_START_DELAY_MS, () => {
-      this.bgmStartTimer = null;
-      if ((this.options.getMusicEnabled?.() ?? true) && this.hasUserInteracted) {
-        this.startBgmPlayback();
-      }
-    });
+    if (this.bgmSound?.isPlaying ?? false) {
+      return;
+    }
+
+    this.startBgmPlayback();
   }
 
   private startBgmPlayback(): void {
-    this.bgmStartTimer?.destroy();
-    this.bgmStartTimer = null;
-    this.bgmRestartTimer?.destroy();
-    this.bgmRestartTimer = null;
     this.bgmFadeTween?.destroy();
     this.bgmFadeTween = null;
 
-    if (!this.sound.get(PIXEL_FARM_BGM_TEXTURE_KEY)) {
-      this.bgmSound = this.sound.add(PIXEL_FARM_BGM_TEXTURE_KEY, {
-        loop: false,
-        volume: 0,
-      });
-    } else {
-      this.bgmSound = this.sound.get(PIXEL_FARM_BGM_TEXTURE_KEY) ?? null;
-      if (this.bgmSound) {
-        asVolumeSound(this.bgmSound).volume = 0;
-      }
+    if (!this.bgmSound) {
+      this.bgmSound =
+        this.sound.get(PIXEL_FARM_BGM_TEXTURE_KEY) ??
+        this.sound.add(PIXEL_FARM_BGM_TEXTURE_KEY, {
+          loop: true,
+          volume: 0,
+        });
     }
 
     if (!this.bgmSound) {
       return;
     }
 
-    this.bgmSound.once(Phaser.Sound.Events.COMPLETE, this.handleBgmComplete, this);
-    this.bgmSound.play();
+    asVolumeSound(this.bgmSound).volume = 0;
+    if (!this.bgmSound.play()) {
+      return;
+    }
+
     this.bgmFadeTween = this.tweens.add({
       targets: asVolumeSound(this.bgmSound),
       volume: PIXEL_FARM_BGM_MAX_VOLUME,
@@ -668,35 +657,9 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     });
   }
 
-  private handleBgmComplete(): void {
-    this.bgmFadeTween?.destroy();
-    this.bgmFadeTween = null;
-    this.bgmSound = null;
-
-    if (!(this.options.getMusicEnabled?.() ?? true) || !this.hasUserInteracted) {
-      return;
-    }
-
-    const delay = Phaser.Math.Between(
-      PIXEL_FARM_BGM_RESTART_DELAY_MIN_MS,
-      PIXEL_FARM_BGM_RESTART_DELAY_MAX_MS,
-    );
-    this.bgmRestartTimer = this.time.delayedCall(delay, () => {
-      this.bgmRestartTimer = null;
-      if ((this.options.getMusicEnabled?.() ?? true) && this.hasUserInteracted) {
-        this.startBgmPlayback();
-      }
-    });
-  }
-
   private stopBgmCycle(): void {
-    this.bgmStartTimer?.destroy();
-    this.bgmStartTimer = null;
-    this.bgmRestartTimer?.destroy();
-    this.bgmRestartTimer = null;
     this.bgmFadeTween?.destroy();
     this.bgmFadeTween = null;
-    this.bgmSound?.off(Phaser.Sound.Events.COMPLETE, this.handleBgmComplete, this);
     this.bgmSound?.stop();
     this.bgmSound?.destroy();
     this.bgmSound = null;

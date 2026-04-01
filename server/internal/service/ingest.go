@@ -435,10 +435,15 @@ atomic facts from a conversation.
    - Bad: "Knows some programming languages"
 4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
-6. Omit information that is only relevant to the current task and has no future reuse value.
-7. If no meaningful facts exist in the conversation, return an empty facts array.
-8. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
-   category. Examples: "tech", "personal", "preference", "work", "location", "habit".
+6. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
+   even if they arose in a task-specific context.
+7. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+8. Extract relationships between people explicitly.
+9. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
+10. If no meaningful facts exist in the conversation, return an empty facts array.
+11. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
+   category. Examples: "tech", "personal", "preference", "work", "location", "habit",
+   "relationship", "event", "timeline".
    Use hyphens for multi-word tags: "programming-language", "work-tool".
    If no meaningful tags apply, omit the "tags" field for that fact.
 
@@ -505,10 +510,15 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    - Bad: "Knows some programming languages"
 4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
-6. Omit information that is only relevant to the current task and has no future reuse value.
-7. If no meaningful facts exist in the conversation, return an empty facts array.
-8. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
-   category. Examples: "tech", "personal", "preference", "work", "location", "habit".
+6. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
+   even if they arose in a task-specific context.
+7. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+8. Extract relationships between people explicitly.
+9. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
+10. If no meaningful facts exist in the conversation, return an empty facts array.
+11. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
+   category. Examples: "tech", "personal", "preference", "work", "location", "habit",
+   "relationship", "event", "timeline".
    Use hyphens for multi-word tags. If no meaningful tags apply, omit the "tags" field.
 
 ## Rules — message_tags
@@ -660,17 +670,17 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 
 ## Actions
 
-- **ADD**: The fact is new information not present in any existing memory.
-- **UPDATE**: The fact refines, corrects, or adds detail to an existing memory. Keep the same ID. If the existing memory and the new fact convey the same meaning, keep the one with more information. Do NOT update if they mean the same thing (e.g., "Likes pizza" vs "Loves pizza").
-- **DELETE**: The fact directly contradicts an existing memory, making it obsolete.
-- **NOOP**: The fact is already captured by an existing memory. No action needed.
+- **ADD**: New info not in any existing memory. Also use ADD for a different attribute of the same entity.
+- **UPDATE**: Replaces the same attribute/slot of the same entity only. Keep the same ID.
+- **DELETE**: Explicitly contradicts an existing memory. Do NOT delete just because the new fact is less specific or incomplete.
+- **NOOP**: Already captured by an existing memory. No action needed.
 
 ## Rules
 
 1. Reference existing memories by their integer ID ONLY (0, 1, 2...). Never invent IDs.
 2. For UPDATE, always include the original text in "old_memory".
 3. For ADD, the "id" field is ignored by the system — set it to "new" or omit it.
-4. When the fact adds detail or corrects an existing memory on the same topic, prefer UPDATE.
+4. UPDATE only when the fact targets the same entity AND the same attribute slot. A new attribute of the same entity → ADD, not UPDATE.
 5. When the fact covers a topic not in any existing memory, use ADD.
 6. When the fact means the same thing as an existing memory (even if worded differently), use NOOP.
 7. Preserve the language of the original facts. Do not translate.
@@ -691,10 +701,10 @@ Example 1 — ADD new information:
   New facts: ["Name is John"]
   Result: {"memory": [{"id": "0", "text": "Is a software engineer", "event": "NOOP"}, {"id": "new", "text": "Name is John", "event": "ADD", "tags": ["personal"]}]}
 
-Example 2 — UPDATE with more detail:
-  Existing memories: [{"id": 0, "text": "Likes to play cricket", "age": "3 weeks ago"}, {"id": 1, "text": "Is a software engineer", "age": "2 months ago"}]
-  New facts: ["Loves to play cricket with friends on weekends"]
-  Result: {"memory": [{"id": "0", "text": "Loves to play cricket with friends on weekends", "event": "UPDATE", "old_memory": "Likes to play cricket", "tags": ["personal", "habit"]}, {"id": "1", "text": "Is a software engineer", "event": "NOOP"}]}
+Example 2 — ADD different attribute of same entity (not UPDATE):
+  Existing memories: [{"id": 0, "text": "Sarah is my sister", "age": "3 weeks ago"}, {"id": 1, "text": "Is a software engineer", "age": "2 months ago"}]
+  New facts: ["Sarah lives in Osaka"]
+  Result: {"memory": [{"id": "0", "text": "Sarah is my sister", "event": "NOOP"}, {"id": "1", "text": "Is a software engineer", "event": "NOOP"}, {"id": "new", "text": "Sarah lives in Osaka", "event": "ADD", "tags": ["personal", "location"]}]}
 
 Example 3 — DELETE contradicted information:
   Existing memories: [{"id": 0, "text": "Name is John", "age": "5 months ago"}, {"id": 1, "text": "Loves cheese pizza", "age": "3 months ago"}]

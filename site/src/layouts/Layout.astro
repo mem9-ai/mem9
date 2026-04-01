@@ -47,11 +47,13 @@ const ga4MeasurementID = import.meta.env.PUBLIC_GA4_MEASUREMENT_ID?.trim() ?? ''
         <script async src={`https://www.googletagmanager.com/gtag/js?id=${ga4MeasurementID}`}></script>
         <script is:inline define:vars={{ ga4MeasurementID }}>
           window.dataLayer = window.dataLayer || [];
-          function gtag() {
+          window.gtag =
+            window.gtag ||
+            function gtag() {
             window.dataLayer.push(arguments);
-          }
-          gtag('js', new Date());
-          gtag('config', ga4MeasurementID);
+            };
+          window.gtag('js', new Date());
+          window.gtag('config', ga4MeasurementID);
         </script>
       </>
     )}

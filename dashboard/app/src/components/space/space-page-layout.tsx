@@ -50,6 +50,7 @@ interface SpacePageLayoutProps {
   routeState: SpaceRouteState;
   dataModel: SpaceDataModel;
   t: TFunction;
+  canOpenFarmInNewTab: boolean;
   addOpen: boolean;
   setAddOpen: Dispatch<SetStateAction<boolean>>;
   editTarget: Memory | null;
@@ -79,6 +80,7 @@ export function SpacePageLayout({
   routeState,
   dataModel,
   t,
+  canOpenFarmInNewTab,
   addOpen,
   setAddOpen,
   editTarget,
@@ -549,6 +551,8 @@ export function SpacePageLayout({
             <div className="w-full shrink-0 py-8 xl:order-1 xl:py-8 xl:w-[312px] 2xl:w-[320px]">
               <MemoryFarmPromoCard
                 status={dataModel.farmEntryStatus}
+                canOpenInNewTab={canOpenFarmInNewTab}
+                href="/your-memory/labs/memory-farm"
                 onAction={onHandleFarmAction}
               />
               <AnalysisPanel

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { getSourceMemoriesQueryKey } from "@/api/source-memories";
@@ -7,7 +8,7 @@ import { patchSyncState } from "@/api/local-cache";
 import { SpacePageLayout } from "@/components/space/space-page-layout";
 import { useSpaceDataModel } from "@/components/space/use-space-data-model";
 import { useSpaceRouteState } from "@/components/space/use-space-route-state";
-import { getActiveSpaceId } from "@/lib/session";
+import { getActiveSpaceId, isRememberedSpace } from "@/lib/session";
 import type { Memory } from "@/types/memory";
 import { shouldCompactMemoryOverview } from "@/components/space/space-selectors";
 
@@ -15,8 +16,10 @@ export { shouldCompactMemoryOverview };
 
 export function SpacePage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const spaceId = getActiveSpaceId() ?? "";
+  const canOpenFarmInNewTab = isRememberedSpace(spaceId);
   const routeState = useSpaceRouteState(spaceId);
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Memory | null>(null);
@@ -47,9 +50,9 @@ export function SpacePage() {
   useEffect(() => {
     if (farmPrepOpen && dataModel.farmEntryStatus === "ready") {
       setFarmPrepOpen(false);
-      window.open("/your-memory/labs/memory-farm", "_blank", "noopener");
+      void navigate({ to: "/labs/memory-farm" });
     }
-  }, [dataModel.farmEntryStatus, farmPrepOpen]);
+  }, [dataModel.farmEntryStatus, farmPrepOpen, navigate]);
 
   if (!spaceId) {
     return null;
@@ -164,7 +167,7 @@ export function SpacePage() {
 
   const handleFarmAction = () => {
     if (dataModel.farmEntryStatus === "ready") {
-      window.open("/your-memory/labs/memory-farm", "_blank", "noopener");
+      void navigate({ to: "/labs/memory-farm" });
       return;
     }
 
@@ -177,6 +180,7 @@ export function SpacePage() {
       routeState={routeState}
       dataModel={dataModel}
       t={t}
+      canOpenFarmInNewTab={canOpenFarmInNewTab}
       addOpen={addOpen}
       setAddOpen={setAddOpen}
       editTarget={editTarget}

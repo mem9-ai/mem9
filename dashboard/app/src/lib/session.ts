@@ -87,6 +87,14 @@ export function getActiveSpaceId(): string | null {
   return getSpaceId() ?? restoreRememberedSpace();
 }
 
+export function isRememberedSpace(spaceId: string): boolean {
+  if (!spaceId) {
+    return false;
+  }
+
+  return readRememberedSpace()?.spaceId === spaceId;
+}
+
 export function maskSpaceId(id: string): string {
   if (id.length <= 8) return id;
   return `${id.slice(0, 4)}…${id.slice(-4)}`;

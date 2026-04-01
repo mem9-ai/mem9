@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -375,9 +376,10 @@ func (r *MemoryRepo) VectorSearch(ctx context.Context, queryVec []float32, f dom
 	fullArgs = append(fullArgs, args...)
 	fullArgs = append(fullArgs, vecStr, limit)
 
+	start := time.Now()
 	rows, err := r.db.QueryContext(ctx, query, fullArgs...)
 	if err != nil {
-		slog.Error("vector search failed", "cluster_id", r.clusterID, "err", err)
+		slog.Error("vector search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 		return nil, fmt.Errorf("vector search: %w", err)
 	}
 	defer rows.Close()
@@ -390,7 +392,11 @@ func (r *MemoryRepo) VectorSearch(ctx context.Context, queryVec []float32, f dom
 		}
 		memories = append(memories, *m)
 	}
-	return memories, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	slog.Debug("vector search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	return memories, nil
 }
 
 func (r *MemoryRepo) AutoVectorSearch(ctx context.Context, queryText string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
@@ -410,9 +416,10 @@ func (r *MemoryRepo) AutoVectorSearch(ctx context.Context, queryText string, f d
 	fullArgs = append(fullArgs, args...)
 	fullArgs = append(fullArgs, queryText, limit)
 
+	start := time.Now()
 	rows, err := r.db.QueryContext(ctx, query, fullArgs...)
 	if err != nil {
-		slog.Error("auto vector search failed", "cluster_id", r.clusterID, "err", err)
+		slog.Error("auto vector search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 		return nil, fmt.Errorf("auto vector search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	defer rows.Close()
@@ -425,7 +432,11 @@ func (r *MemoryRepo) AutoVectorSearch(ctx context.Context, queryText string, f d
 		}
 		memories = append(memories, *m)
 	}
-	return memories, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	slog.Debug("auto vector search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	return memories, nil
 }
 
 // KeywordSearch performs substring search on content.
@@ -440,9 +451,10 @@ func (r *MemoryRepo) KeywordSearch(ctx context.Context, query string, f domain.M
 	sqlQuery := `SELECT ` + allColumns + ` FROM memories WHERE ` + where + ` ORDER BY updated_at DESC LIMIT ?`
 	args = append(args, limit)
 
+	start := time.Now()
 	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
-		slog.Error("keyword search failed", "cluster_id", r.clusterID, "err", err)
+		slog.Error("keyword search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 		return nil, fmt.Errorf("keyword search: %w", err)
 	}
 	defer rows.Close()
@@ -455,7 +467,11 @@ func (r *MemoryRepo) KeywordSearch(ctx context.Context, query string, f domain.M
 		}
 		memories = append(memories, *m)
 	}
-	return memories, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	slog.Debug("keyword search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	return memories, nil
 }
 
 // ftsSafeLiteral escapes a query string for safe inline use inside a SQL
@@ -490,9 +506,10 @@ func (r *MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Memor
 	fullArgs = append(fullArgs, args...)
 	fullArgs = append(fullArgs, limit)
 
+	start := time.Now()
 	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
 	if err != nil {
-		slog.Error("fts search failed", "cluster_id", r.clusterID, "err", err)
+		slog.Error("fts search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 		return nil, fmt.Errorf("fts search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	defer rows.Close()
@@ -505,7 +522,11 @@ func (r *MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Memor
 		}
 		memories = append(memories, *m)
 	}
-	return memories, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	slog.Debug("fts search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	return memories, nil
 }
 
 func (r *MemoryRepo) buildWhere(f domain.MemoryFilter) (string, []any) {

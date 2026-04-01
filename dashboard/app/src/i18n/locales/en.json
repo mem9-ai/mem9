@@ -539,7 +539,10 @@
     "cta": {
       "ready": "Enter Farm",
       "preparing": "Preparing",
-      "unavailable": "View Status"
+      "unavailable": "View Status",
+      "new_tab": "new tab",
+      "enter_in_new_tab": "Enter Farm in new tab",
+      "more_actions": "More options"
     },
     "dialog": {
       "preparing_title": "Preparing Memory Farm Preview",

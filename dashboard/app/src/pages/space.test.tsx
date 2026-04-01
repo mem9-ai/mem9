@@ -11,6 +11,7 @@ import { shouldCompactMemoryOverview } from "./space";
 
 const mocks = vi.hoisted(() => ({
   clearSpace: vi.fn(),
+  isRememberedSpace: vi.fn(() => false),
   retry: vi.fn(),
   useStats: vi.fn(),
   useSourceMemories: vi.fn(),
@@ -67,6 +68,22 @@ function getTimelineBucket(index: number): Element {
   }
 
   return bucket;
+}
+
+function getFarmCta(): HTMLElement {
+  const cta = document.querySelector<HTMLElement>(
+    '[data-mp-event="Dashboard/MemoryFarm/EnterClicked"]',
+  );
+
+  if (!cta) {
+    throw new Error("Missing Memory Farm CTA");
+  }
+
+  return cta;
+}
+
+function getFarmMoreActionsTrigger(): HTMLButtonElement {
+  return screen.getByRole("button", { name: "More options" });
 }
 
 function createMemory(
@@ -276,6 +293,7 @@ vi.mock("@/lib/memory-insight-background", async () => {
 vi.mock("@/lib/session", () => ({
   getActiveSpaceId: () => "space-1",
   getSpaceId: () => "space-1",
+  isRememberedSpace: mocks.isRememberedSpace,
   setSpaceId: vi.fn(),
   clearSpace: mocks.clearSpace,
   maskSpaceId: (id: string) => id,
@@ -485,6 +503,8 @@ describe("SpacePage", () => {
     vi.spyOn(Date, "now").mockReturnValue(FIXED_NOW.getTime());
     window.innerWidth = 1440;
     window.dispatchEvent(new Event("resize"));
+    mocks.isRememberedSpace.mockReset();
+    mocks.isRememberedSpace.mockReturnValue(false);
     mocks.useStats.mockClear();
     mocks.useSourceMemories.mockClear();
     mocks.useMemories.mockClear();
@@ -560,6 +580,61 @@ describe("SpacePage", () => {
     await waitFor(() => {
       expect(mocks.useStats).toHaveBeenCalledWith("space-1", undefined, true);
     });
+  });
+
+  it("navigates to memory farm in the current tab when remember is off", async () => {
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+
+    renderSpacePage();
+
+    expect(screen.queryByRole("button", { name: "More options" })).not.toBeInTheDocument();
+
+    fireEvent.click(getFarmCta());
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/labs/memory-farm");
+    });
+
+    expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it("shows a remembered-only new-tab menu for memory farm", async () => {
+    mocks.isRememberedSpace.mockReturnValue(true);
+
+    renderSpacePage();
+
+    expect(screen.queryByText("New tab:")).not.toBeInTheDocument();
+    expect(getFarmMoreActionsTrigger()).toBeInTheDocument();
+
+    const menuTrigger = getFarmMoreActionsTrigger();
+    menuTrigger.focus();
+    fireEvent.keyDown(menuTrigger, { key: "Enter" });
+
+    const menuItem = await screen.findByRole("menuitem", { name: "Enter Farm in new tab" });
+
+    expect(menuItem).toHaveAttribute("href", "/your-memory/labs/memory-farm");
+    expect(menuItem).toHaveAttribute("target", "_blank");
+    expect(menuItem).toHaveTextContent("Enter Farm");
+    expect(menuItem).toHaveTextContent("(new tab)");
+  });
+
+  it("keeps current-tab enter as the primary CTA when remember is on", async () => {
+    mocks.isRememberedSpace.mockReturnValue(true);
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+
+    renderSpacePage();
+
+    const cta = getFarmCta();
+
+    expect(cta.tagName).toBe("BUTTON");
+
+    fireEvent.click(cta);
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/labs/memory-farm");
+    });
+
+    expect(openSpy).not.toHaveBeenCalled();
   });
 
   it("keeps the detail panel closed after the user closes it in analysis mode", async () => {

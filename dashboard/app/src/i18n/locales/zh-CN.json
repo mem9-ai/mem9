@@ -539,7 +539,10 @@
     "cta": {
       "ready": "进入农场",
       "preparing": "准备中",
-      "unavailable": "查看状态"
+      "unavailable": "查看状态",
+      "new_tab": "新标签页",
+      "enter_in_new_tab": "在新标签页进入农场",
+      "more_actions": "更多选项"
     },
     "dialog": {
       "preparing_title": "正在准备 Memory Farm 预览",
