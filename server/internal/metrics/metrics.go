@@ -93,29 +93,32 @@ var (
 		},
 		[]string{"model", "type"},
 	)
-	// ActiveMemoryTotal is the current total number of active memories across all tenants.
-	ActiveMemoryTotal = promauto.NewGauge(prometheus.GaugeOpts{
+	// ActiveMemoryTotal is the current total number of active memories per cluster.
+	// Use sum(mnemo_active_memory_total) for the global aggregate.
+	ActiveMemoryTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "mnemo",
 		Name:      "active_memory_total",
-		Help:      "Current total number of active memories across all tenants.",
-	})
+		Help:      "Total active memories for a cluster, refreshed on memory write or delete.",
+	}, []string{"cluster_id"})
 
 	// ActiveMemory7dTotal is the current total number of active memories created in the
-	// last 7 days across all tenants.
-	ActiveMemory7dTotal = promauto.NewGauge(prometheus.GaugeOpts{
+	// last 7 days per cluster. Use sum(mnemo_active_memory_7d_total) for the global aggregate.
+	// Value reflects the state at the last write or delete event; it is not updated between events.
+	ActiveMemory7dTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "mnemo",
 		Name:      "active_memory_7d_total",
-		Help:      "Current total number of active memories created in the last 7 days across all tenants.",
-	})
+		Help:      "Active memories created in the last 7 days for a cluster, refreshed on memory write or delete.",
+	}, []string{"cluster_id"})
 
-	// MemoryWritesTotal counts the number of memory rows successfully written to the
-	// database, including all rows produced by LLM reconcile. This reflects actual
-	// DB writes, not HTTP request count.
-	MemoryWritesTotal = promauto.NewCounter(prometheus.CounterOpts{
+	// MemoryChangesTotal counts the number of memory-level changes (ADD, UPDATE, and
+	// post-reconcile tag/metadata patches) per cluster. One UPDATE counts as one change
+	// even though it produces two DB rows (archive + create). DELETE actions are not
+	// counted here; use active_memory_total to observe deletions.
+	MemoryChangesTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "mnemo",
-		Name:      "memory_writes_total",
-		Help:      "Total number of memory rows successfully written to the database.",
-	})
+		Name:      "memory_changes_total",
+		Help:      "Memory-level ADD and UPDATE changes per cluster, as reported by the reconcile pipeline.",
+	}, []string{"cluster_id"})
 
 	// MemoryWriteDuration observes the latency of memory write operations by op type.
 	// op labels: create, bulk_create, archive_and_create
@@ -123,7 +126,7 @@ var (
 		prometheus.HistogramOpts{
 			Namespace: "mnemo",
 			Name:      "memory_write_duration_seconds",
-			Help:      "Latency of memory write operations against the database.",
+			Help:      "Latency of create, bulk_create, and archive_and_create memory write operations.",
 			Buckets:   []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5},
 		},
 		[]string{"op", "status"},

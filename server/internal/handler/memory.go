@@ -74,7 +74,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			if result != nil {
 				written = int64(result.MemoriesChanged)
 			}
-			go s.refreshWriteMetrics(svc, written)
+			go s.refreshWriteMetrics(auth, svc, written)
 			respond(w, http.StatusOK, map[string]string{"status": "ok"})
 		} else {
 			go func() {
@@ -87,7 +87,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				if result != nil {
 					written = int64(result.MemoriesChanged)
 				}
-				s.refreshWriteMetrics(svc, written)
+				s.refreshWriteMetrics(auth, svc, written)
 			}()
 			respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 		}
@@ -108,34 +108,29 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	content := req.Content
 
 	if req.Sync {
-		mem, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
+		mem, written, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
 		if err != nil {
 			slog.Error("sync memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
 			s.handleError(r.Context(), w, err)
 			return
 		}
-		var written int64
-		if mem != nil {
-			written = 1
-		}
-		go s.refreshWriteMetrics(svc, written)
+		_ = mem
+		go s.refreshWriteMetrics(auth, svc, int64(written))
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	} else {
-		go func(agentName, actorAgentID, content string, tags []string, metadata json.RawMessage) {
-			mem, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
+		go func(auth *domain.AuthInfo, agentName, actorAgentID, content string, tags []string, metadata json.RawMessage) {
+			mem, written, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
 			if err != nil {
 				slog.Error("async memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
 				return
 			}
-			var written int64
 			if mem != nil {
-				written = 1
 				slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", mem.ID)
 			} else {
 				slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", "")
 			}
-			s.refreshWriteMetrics(svc, written)
-		}(auth.AgentName, agentID, content, tags, metadata)
+			s.refreshWriteMetrics(auth, svc, int64(written))
+		}(auth, auth.AgentName, agentID, content, tags, metadata)
 
 		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 	}
@@ -334,6 +329,7 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	go s.refreshWriteMetrics(auth, svc, 0)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -490,18 +486,23 @@ func dedupStrings(ss []string) []string {
 	return out
 }
 
-func (s *Server) refreshWriteMetrics(svc resolvedSvc, written int64) {
+func (s *Server) refreshWriteMetrics(auth *domain.AuthInfo, svc resolvedSvc, written int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	clusterID := auth.ClusterID
+	if clusterID == "" {
+		clusterID = "default"
+	}
 
 	total, last7d, err := svc.memory.CountStats(ctx)
 	if err != nil {
 		slog.Warn("refreshWriteMetrics: count stats failed", "err", err)
 		return
 	}
-	metrics.ActiveMemoryTotal.Set(float64(total))
-	metrics.ActiveMemory7dTotal.Set(float64(last7d))
+	metrics.ActiveMemoryTotal.WithLabelValues(clusterID).Set(float64(total))
+	metrics.ActiveMemory7dTotal.WithLabelValues(clusterID).Set(float64(last7d))
 	if written > 0 {
-		metrics.MemoryWritesTotal.Add(float64(written))
+		metrics.MemoryChangesTotal.WithLabelValues(clusterID).Add(float64(written))
 	}
 }
