@@ -5,7 +5,7 @@ homepage: "https://github.com/mem9-ai/mem9"
 description: "Entry skill for mem9 onboarding and reconnect. After ClawHub install, users can say: setup mem9, install mem9, reconnect mem9, or review mem9 config changes."
 keywords: ["mem9", "memory plugin", "persistent memory", "agent memory", "install mem9", "setup mem9", "reconnect mem9", "openclaw memory"]
 user-invocable: true
-metadata: {"openclaw":{"emoji":"🧠","homepage":"https://github.com/mem9-ai/mem9","primaryEnv":"MEM9_API_KEY"}}
+metadata: {"openclaw":{"emoji":"🧠","homepage":"https://mem9.ai","primaryEnv":"MEM9_API_KEY"}}
 ---
 
 # mem9
