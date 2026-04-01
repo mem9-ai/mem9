@@ -1,8 +1,8 @@
 ---
 name: mem9
-version: 1.0.11
+version: 1.0.12
 homepage: "https://github.com/mem9-ai/mem9"
-description: "Explicit opt-in setup guide for the mem9 OpenClaw memory plugin. Use when users say: install mem9, setup memory, reconnect mem9, review mem9 config changes, or import memories after setup."
+description: "Explicit opt-in setup guide for the mem9 OpenClaw memory plugin. Use when users say: install mem9, setup memory, reconnect mem9, or review mem9 config changes."
 keywords: ["mem9", "memory plugin", "persistent memory", "agent memory", "install memory", "setup memory", "openclaw memory", "cloud memory"]
 disable-model-invocation: true
 user-invocable: true
@@ -37,7 +37,8 @@ The plugin connects to one cloud memory space, identified by an API key.
 - Config scope: this onboarding only reads or updates the active `openclaw.json` entries needed for the mem9 plugin. It should not read or modify unrelated files.
 - Install impact: setup installs the mem9 plugin, writes plugin config, and restarts OpenClaw so the plugin can load.
 - Invocation scope: this is an explicit setup guide only. It should not be auto-used for routine memory store/recall once mem9 is already installed.
-- Consent scope: do not install the plugin, edit `openclaw.json`, restart OpenClaw, or upload local history until the user explicitly confirms each step.
+- Consent scope: do not install the plugin, edit `openclaw.json`, or restart OpenClaw until the user explicitly confirms each step.
+- History import scope: this public onboarding skill does not scan or upload local memory/session files. Use the dashboard or another reviewed manual workflow if the user later wants to import history.
 
 ## Exact Config Changes
 
@@ -98,7 +99,7 @@ Do not use this skill for:
 - Temporary conversation context that only matters in the current session
 - One-off tasks that do not require long-term memory
 - Day-to-day memory store/recall after mem9 is already installed
-- Importing or uploading local history unless the user explicitly asks for import after setup
+- Importing or uploading local history directly from the agent; use the dashboard or another reviewed manual workflow instead
 - Troubleshooting unrelated to mem9 setup, import, or reconnection
 
 ---
@@ -133,14 +134,14 @@ If mem9 is not installed yet, only use this onboarding skill when the user expli
 
 This task is NOT complete until all of the following are true:
 
-1. mem9 API key is created or verified reachable
+1. mem9 API key is created or provided by the user
 2. plugin is installed
 3. openclaw.json is configured correctly
 4. OpenClaw is restarted
 5. setup is verified
 6. the user has been sent the full Step 7 handoff message, including:
 
-- next step: optional import decision
+- next step: dashboard/manual import guidance
 - MEM9_API_KEY warning
 - dashboard URL + same API key login note
 - recovery steps
@@ -215,37 +216,20 @@ If the user asks "What is the relationship between tenantID and key?" answer pla
 >
 > Heads-up: OpenClaw will restart later in this setup. When that happens, please wait a few minutes, then send "Hi" here to reconnect and continue.
 >
-> This setup is explicit opt-in. I will not install the plugin, edit `openclaw.json`, restart OpenClaw, or upload any local history until you confirm each step.
+> This setup is explicit opt-in. I will not install the plugin, edit `openclaw.json`, or restart OpenClaw until you confirm each step.
 
 Branching:
 
-- If the user chooses reconnect and provides an API key, verify it first.
-  - If reachable, continue to Step 2.
-  - If unreachable, ask the user to re-check it or choose Step 1 to create a new API key.
+- If the user chooses reconnect and provides an API key, use that value for setup.
+  - Continue to Step 2.
+  - Validate the configured API key during Step 6 after install/config/restart.
 - If the user chooses create, continue to Step 1.
 
 ```text
 MEM9_API_KEY="<paste-from-user>"
 ```
 
-When the user provides an existing API key, verify it is reachable before continuing:
-
-```bash
-curl -sf \
-  -H "X-API-Key: $MEM9_API_KEY" \
-  "https://api.mem9.ai/v1alpha2/mem9s/memories?limit=1" \
-  && echo "OK" || echo "UNREACHABLE"
-```
-
-If the check returns `OK`, say:
-
-> Great, your existing mem9 API key is reachable. I will keep going and connect this setup to that same memory.
-
-If the check fails, say:
-
-> I could not reach that API key. Please double-check it, or create a new mem9 API key instead.
-
-**If no** — proceed to Step 1 to provision a new API key.
+Do not probe the API key with extra standalone API calls at this stage. Use Step 6 to verify that the plugin loads and the configured API key works end to end.
 
 ---
 
@@ -256,7 +240,7 @@ If the check fails, say:
 `[AGENT]`
 
 ```bash
-curl -sX POST https://api.mem9.ai/v1alpha1/mem9s | jq .
+curl -sX POST https://api.mem9.ai/v1alpha1/mem9s
 ```
 
 Response:
@@ -277,33 +261,24 @@ When explaining it to the user, say:
 
 ### Step 2 — Install plugin
 
-`[AGENT]` Detect npm registry reachability first. On mainland China / Alibaba Cloud networks, the default npm registry is often slow or unstable. Prefer a one-shot registry override instead of changing the user's global npm config.
+`[AGENT]` Use the standard OpenClaw install command for the official package:
 
 Before running the install command:
 
 - Show the package name: `@mem9/mem9`
 - Show that only the paths listed in `Exact Config Changes` may be edited later
 - Warn that OpenClaw will need a restart after config is written
-- Warn that no local history will be uploaded unless the user explicitly asks for import after setup
+- Explain that this public setup skill does not upload local history; use the dashboard or another reviewed manual workflow later if needed
 - Do not run the install command until the user confirms
 
 ```bash
-NPMJS_TIME="$(curl -o /dev/null -sS --connect-timeout 2 --max-time 6 -w '%{time_total}' https://registry.npmjs.org/@mem9%2fmem9 || echo timeout)"
-MIRROR_TIME="$(curl -o /dev/null -sS --connect-timeout 2 --max-time 6 -w '%{time_total}' https://registry.npmmirror.com/@mem9%2fmem9 || echo timeout)"
-
-if [ "$MIRROR_TIME" != "timeout" ] && { [ "$NPMJS_TIME" = "timeout" ] || awk "BEGIN { exit !($NPMJS_TIME > 2 && $MIRROR_TIME < $NPMJS_TIME) }"; }; then
-  echo "Using China npm mirror: https://registry.npmmirror.com"
-  NPM_CONFIG_REGISTRY=https://registry.npmmirror.com openclaw plugins install @mem9/mem9
-else
-  openclaw plugins install @mem9/mem9
-fi
+openclaw plugins install @mem9/mem9
 ```
 
 Decision rule:
 
-- If the official npm registry times out, but `npmmirror` is reachable, treat this as a China-optimized network path and use `https://registry.npmmirror.com`.
-- If both are reachable, but the official registry is materially slower, prefer `npmmirror`.
-- Do not run `npm config set registry ...` globally unless the user explicitly asks for a permanent npm mirror change.
+- Use the standard package install path first.
+- If the user's network later has registry problems, handle that as troubleshooting rather than embedding registry-switching logic into this public onboarding skill.
 
 **Immediately after install completes**, tell the user (before restarting anything):
 
@@ -338,30 +313,19 @@ Before writing `openclaw.json`:
 - Show the exact keys that will change and ask the user to confirm
 - Only change the paths listed in `Exact Config Changes`
 - Do not write the file until the user explicitly approves
+- Apply the change with normal file editing after approval; do not use scripted shell patch commands in this public onboarding skill
 
 #### OpenClaw ≥2.2.0
 
-`[AGENT]` Patch existing config (merge-safe, preserves other keys):
+`[AGENT]` Apply only the following effective changes:
 
-```bash
-jq --arg api_key "$MEM9_API_KEY" '
-  .plugins.slots.memory = "mem9" |
-  if (.plugins.entries.mem9.config // {}) == {}
-  then
-    .plugins.entries.mem9 = {
-      enabled: true,
-      config: { apiUrl: "https://api.mem9.ai", apiKey: $api_key }
-    }
-  else
-    .plugins.entries.mem9.config.apiKey = $api_key |
-    .plugins.entries.mem9.enabled = true
-  end |
-  .plugins.allow = ((.plugins.allow // []) + ["mem9"] | unique)
-' openclaw.json > tmp.json && mv tmp.json openclaw.json
-```
+- Set `plugins.slots.memory` to `"mem9"`
+- Ensure `plugins.entries.mem9.enabled` is `true`
+- Set `plugins.entries.mem9.config.apiUrl` to `https://api.mem9.ai` unless the user explicitly chose another `apiUrl`
+- Set `plugins.entries.mem9.config.apiKey` to the current `MEM9_API_KEY`
+- Ensure `plugins.allow` includes `"mem9"` while preserving other existing entries
 
-**Note:** The `allow` array is additive—existing entries are preserved, `mem9` is appended (deduplicated).
-If `mem9` config already exists, only `apiKey` is written; all other existing fields (such as `apiUrl`, `agentName`) are preserved.
+Preserve unrelated config keys and existing mem9 fields that are not listed above.
 
 Or if no `openclaw.json` exists, create:
 
@@ -385,25 +349,14 @@ Or if no `openclaw.json` exists, create:
 
 #### OpenClaw <2.2.0
 
-`[AGENT]` No `allow` array needed:
+`[AGENT]` Apply only the following effective changes:
 
-```bash
-jq --arg api_key "$MEM9_API_KEY" '
-  .plugins.slots.memory = "mem9" |
-  if (.plugins.entries.mem9.config // {}) == {}
-  then
-    .plugins.entries.mem9 = {
-      enabled: true,
-      config: { apiUrl: "https://api.mem9.ai", apiKey: $api_key }
-    }
-  else
-    .plugins.entries.mem9.config.apiKey = $api_key |
-    .plugins.entries.mem9.enabled = true
-  end
-' openclaw.json > tmp.json && mv tmp.json openclaw.json
-```
+- Set `plugins.slots.memory` to `"mem9"`
+- Ensure `plugins.entries.mem9.enabled` is `true`
+- Set `plugins.entries.mem9.config.apiUrl` to `https://api.mem9.ai` unless the user explicitly chose another `apiUrl`
+- Set `plugins.entries.mem9.config.apiKey` to the current `MEM9_API_KEY`
 
-If `mem9` config already exists, only `apiKey` is written; all other existing fields are preserved.
+Preserve unrelated config keys and existing mem9 fields that are not listed above.
 
 Or if no `openclaw.json` exists, create:
 
@@ -429,8 +382,6 @@ Compatibility rule:
 - Existing configs that already use `tenantID` continue to work as a legacy alias for `apiKey`
 - Do not use `apiToken` or `userToken`
 
-If result returns stored memory → setup successful.
-
 ### Step 5 — Restart OpenClaw
 
 Restart OpenClaw so the new mem9 plugin config is loaded.
@@ -444,11 +395,12 @@ Before restarting:
 
 A setup is successful if all of the following are true:
 
-- the mem9 API is reachable
+- the plugin can reach the mem9 API
 - OpenClaw loads the mem9 plugin without config or plugin errors
-- the configured API key can be read successfully
+- the configured API key works through the plugin after restart
 - an empty result is acceptable for a newly created API key
-  Note:
+  Notes:
+  If the user supplied an existing API key in Step 0, this is where that key is validated end to end.
   A newly created mem9 API key may contain zero memories. Empty is still a valid success state.
 
 ### Step 7 — What's Next
@@ -461,15 +413,11 @@ Translate the content into the user's language before sending, while keeping the
 ✅ Your mem9 API key is ready.
 🧭 WHAT YOU CAN DO NEXT
 
-If you want to bring in your existing local history later, you can do that as a separate explicit step.
-
-Say: "import memories to mem9"
-I can scan local memory notes and session files, then transform/import them into mem9.
-Common local files include: memory/*.md, MEMORY.md, sessions/*.jsonl.
-No local history will be uploaded unless you explicitly ask me to do that.
 You can also go to https://mem9.ai/your-memory/ to visually manage, analyze, import, and export your memories.
 Sign in there with the same mem9 API key from this setup.
 If the dashboard still shows "Space ID", enter the same mem9 API key.
+Use the dashboard or another reviewed manual workflow if you want to import older history later.
+This setup did not upload any local files.
 
 
 💾 YOUR MEM9 API KEY
@@ -488,7 +436,7 @@ Your memory will reconnect instantly.
 
 📦 BACKUP PLAN
 
-Keep your original local memory/session files as backup.
+Keep your original local memory/session files as backup if you plan to import them later.
 Also store the MEM9_API_KEY in a password manager or secure vault.
 ```
 
@@ -496,84 +444,10 @@ Do not default to offering a synthetic write/read demo as the next step.
 
 Preferred next-step order:
 
-1. Ask whether the user wants to import historical memories now or keep setup-only for now
+1. Point the user to the dashboard if they want to manage or manually import history later
 2. Explain the recovery path for a new machine or accidental local loss
 3. Explain local backup plus offsite backup
 4. Only offer a live write/read verification if the user explicitly asks for a test or if import/recovery is already clear
-
----
-
-## API Reference
-
-Base: `https://api.mem9.ai`  
-Preferred routes: `/v1alpha2/mem9s/...` with `X-API-Key: <api-key>`  
-Legacy routes: `/v1alpha1/mem9s/{tenantID}/...`  
-Header: `X-Mnemo-Agent-Id: <name>` (optional)
-
-| Method | Path                            | Description                                     |
-| ------ | ------------------------------- | ----------------------------------------------- |
-| POST   | `/v1alpha1/mem9s`               | Provision tenant                                |
-| GET    | `/healthz`                      | Health check                                    |
-| POST   | `/v1alpha2/mem9s/memories`      | Create memory (`X-API-Key`)                     |
-| GET    | `/v1alpha2/mem9s/memories`      | Search (`?q=`, `?tags=`, `?source=`, `?limit=`) |
-| GET    | `/v1alpha2/mem9s/memories/{id}` | Get by ID                                       |
-| PUT    | `/v1alpha2/mem9s/memories/{id}` | Update                                          |
-| DELETE | `/v1alpha2/mem9s/memories/{id}` | Delete                                          |
-| POST   | `/v1alpha2/mem9s/imports`       | Upload file (multipart)                         |
-| GET    | `/v1alpha2/mem9s/imports`       | List import tasks                               |
-| GET    | `/v1alpha2/mem9s/imports/{id}`  | Task status                                     |
-
----
-
-## Examples
-
-```bash
-export MEM9_API_KEY="your-api-key"
-export API="https://api.mem9.ai/v1alpha2/mem9s"
-```
-
-**Store:**
-
-```bash
-curl -sX POST "$API/memories" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $MEM9_API_KEY" \
-  -d '{"content":"Project uses PostgreSQL 15","tags":["tech"],"source":"agent-1"}'
-```
-
-**Search:**
-
-```bash
-curl -s -H "X-API-Key: $MEM9_API_KEY" "$API/memories?q=postgres&limit=5"
-curl -s -H "X-API-Key: $MEM9_API_KEY" "$API/memories?tags=tech&source=agent-1"
-```
-
-**Get/Update/Delete:**
-
-```bash
-curl -s -H "X-API-Key: $MEM9_API_KEY" "$API/memories/{id}"
-curl -sX PUT "$API/memories/{id}" -H "Content-Type: application/json" -H "X-API-Key: $MEM9_API_KEY" -d '{"content":"updated"}'
-curl -sX DELETE "$API/memories/{id}" -H "X-API-Key: $MEM9_API_KEY"
-```
-
-**Import files:**
-
-```bash
-# Read agent id from openclaw.json — same field the plugin uses at runtime (agents.list[].id).
-# Falls back to plugins.entries.mem9.config.agentName if agents.list is absent.
-AGENT_ID="$(jq -r '(.agents.list[0].id) // (.plugins.entries.mem9.config.agentName) // empty' openclaw.json 2>/dev/null)"
-AGENT_FIELD=""
-[ -n "$AGENT_ID" ] && AGENT_FIELD="-F agent_id=$AGENT_ID"
-
-# Memory file
-curl -sX POST "$API/imports" -H "X-API-Key: $MEM9_API_KEY" $AGENT_FIELD -F "file=@memory.json" -F "file_type=memory"
-
-# Session file
-curl -sX POST "$API/imports" -H "X-API-Key: $MEM9_API_KEY" $AGENT_FIELD -F "file=@session.json" -F "file_type=session" -F "session_id=ses-001"
-
-# Check status
-curl -s -H "X-API-Key: $MEM9_API_KEY" "$API/imports"
-```
 
 ---
 
@@ -584,7 +458,7 @@ When presenting onboarding or recovery instructions:
 - Use plain product language, not backend vocabulary
 - Prefer "API key" or "mem9 API key"
 - Explain concretely that the same API key reconnects the same cloud memory on another trusted machine
-- If the user sounds worried about recovery, lead with backup/import/reconnect steps instead of API demos
+- If the user sounds worried about recovery, lead with backup/dashboard/reconnect steps instead of API demos
 
 Suggested English wording:
 
@@ -596,48 +470,13 @@ Never share it with anyone.
 If someone else gets it, they can access your memory.
 Save it somewhere safe because you will use the same value later if you want to reconnect on another machine.
 
-If you want to bring in your existing history later, I can scan local files such as memory.json, memories/*.json, and sessions/*.json and import them into mem9.
-Do not upload anything until the user explicitly asks for import.
+If you want to import older history later, use the mem9 dashboard or another reviewed manual workflow.
+This setup does not upload local files by default.
 
 Recovery plan:
-1. Local backup: keep the original memory/session files even after import
+1. Local backup: keep the original memory/session files if you may want to import them later
 2. Offsite recovery: save the MEM9_API_KEY in a password manager, team vault, or another secure offsite location
 3. New machine recovery: reinstall the plugin and configure the same MEM9_API_KEY as `apiKey` in openclaw.json to reconnect to the same cloud memory
-```
-
----
-
-## Optional Import Behavior
-
-Only use this section after setup is complete and the user explicitly says "import memories to mem9".
-Do not upload local history by default.
-
-When the user explicitly asks to import memories to mem9 without specifying files:
-
-1. Scan agent workspace for memory/session files
-2. Upload **15 most recent** (by mtime)
-3. **Upload in parallel** for speed
-
-Before uploading, read the agent id from the active openclaw.json config — using the same resolution order the plugin uses at runtime:
-
-```bash
-# agents.list[0].id is what the plugin receives as ctx.agentId at runtime.
-# Falls back to plugins.entries.mem9.config.agentName (explicit plugin override).
-AGENT_ID="$(jq -r '(.agents.list[0].id) // (.plugins.entries.mem9.config.agentName) // empty' openclaw.json 2>/dev/null)"
-AGENT_FIELD=""
-[ -n "$AGENT_ID" ] && AGENT_FIELD="-F agent_id=$AGENT_ID"
-```
-
-Include `-F "agent_id=$AGENT_ID"` in each upload only when a value is found; omit it entirely otherwise.
-
-**Paths to scan:**
-
-```
-./memory.json         → file_type=memory
-./memories.json       → file_type=memory
-./memories/*.json     → file_type=memory
-./sessions/*.json     → file_type=session (session_id = filename)
-./session/*.json      → file_type=session (session_id = filename)
 ```
 
 ---
@@ -647,9 +486,9 @@ Include `-F "agent_id=$AGENT_ID"` in each upload only when a value is found; omi
 | Symptom                                                                 | Fix                                                                                                                                                                |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Plugin not loading                                                      | Check `slots.memory = "mem9"` and `entries.mem9.enabled = true`                                                                                                    |
-| Plugin install hangs or fails on Alibaba Cloud / mainland China network | Re-run **Step 2** and let it switch to `NPM_CONFIG_REGISTRY=https://registry.npmmirror.com`; verify `curl -I https://registry.npmmirror.com/@mem9%2fmem9` succeeds |
-| `404` on API call                                                       | Verify the saved API key was written into the plugin config; run `curl https://api.mem9.ai/healthz`                                                                |
-| Existing API key unreachable                                            | Re-check the value for typos; confirm network access to `api.mem9.ai`; if the key is lost, provision a new one via Step 1                                          |
+| Plugin install hangs or fails on Alibaba Cloud / mainland China network | Retry the install with a temporary npm mirror such as `https://registry.npmmirror.com`, but avoid changing the user's global npm config unless they explicitly ask |
+| `404` on API call                                                       | Verify the saved API key was written into the plugin config and confirm network access to `api.mem9.ai`                                                            |
+| Existing API key fails after setup                                      | Re-check the value for typos; if the key is lost, provision a new one via Step 1                                                                                   |
 
 ---
 
@@ -657,11 +496,10 @@ Include `-F "agent_id=$AGENT_ID"` in each upload only when a value is found; omi
 
 After first read, guide the user in this order:
 
-1. **Keep import opt-in** — Do not scan or upload memory/session files unless the user explicitly asks for import after setup.
+1. **Dashboard/manual import** — Point the user to the dashboard for visual management and any later manual import.
 2. **Explain recovery** — Tell the user that reusing the same `MEM9_API_KEY` reconnects the same cloud memory on a new machine.
 3. **Explain backup** — Recommend keeping original local files and saving the API key in a secure offsite location.
-4. **Explore** — `curl -s -H "X-API-Key: $MEM9_API_KEY" "https://api.mem9.ai/v1alpha2/mem9s/memories?limit=10" | jq .`
-5. **Verify only if useful** — Offer a live `memory_store` / `memory_search` test only after import and recovery guidance are clear, or if the user explicitly asks for validation.
+4. **Verify only if useful** — Offer a live memory test only if the user explicitly asks for validation.
 
 ---
 
