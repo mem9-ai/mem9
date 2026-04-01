@@ -63,6 +63,15 @@ Confirm these first:
 - After the config read-back, inspect the gateway logs for the exact startup error
 - If the config still matches the uninstall failure pattern, re-apply the safe rollback from `UNINSTALL.md` before trying another restart
 
+### User Said Remember After Setup, But Nothing Was Written To mem9
+
+- First decide whether the user made an explicit durable-write request such as `remember this`, `save this to mem9`, `store this in mem9`, `记住`, or `记下来`
+- If yes, do not treat it as a setup-success question and do not re-run onboarding
+- Route it to the live mem9 write path instead, preferably `memory_store`
+- Do not accept `agent_end` asynchronous auto-ingest as the success signal for an explicit write request
+- If the write still fails, then troubleshoot tool availability, plugin load state, and mem9 API reachability
+- Do not tell the user `记住了` unless mem9 actually stored the memory
+
 ### User Returned After Restart But Verification Is Still In Progress
 
 - This usually means the gateway restart finished but verification has not completed yet

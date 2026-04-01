@@ -309,6 +309,7 @@ Sign in there with the same mem9 API key from this setup.
 If the dashboard still shows "Space ID", enter the same mem9 API key.
 Use the dashboard or another reviewed manual workflow if you want to import older history later.
 This setup did not upload any local files.
+If you later say “remember this” or “记住…”, I should write it to mem9 and tell you whether the write succeeded.
 
 
 💾 YOUR RECONNECTED MEM9 API KEY
@@ -345,6 +346,7 @@ Sign in there with the same mem9 API key from this setup.
 If the dashboard still shows "Space ID", enter the same mem9 API key.
 Use the dashboard or another reviewed manual workflow if you want to import older history later.
 This setup did not upload any local files.
+If you later say “remember this” or “记住…”, I should write it to mem9 and tell you whether the write succeeded.
 
 
 💾 YOUR NEW MEM9 API KEY
@@ -368,3 +370,15 @@ Also store the AUTO_PROVISIONED_MEM9_API_KEY in a password manager or secure vau
 ```
 
 Do not replace these handoffs with a demo or a synthetic write/read test unless the user explicitly asks for a test.
+
+## Post-Setup Continuation Rule
+
+- After setup succeeds, do not route explicit durable-write requests back into setup, reconnect, or uninstall.
+- If the user then says `remember this`, `save this to mem9`, `store this in mem9`, `记住`, `记下来`, `存一下`, or `保存到mem9`, treat it as a live mem9 write request.
+- Prefer the mem9 live tool path for this, especially `memory_store`.
+- Do not wait for `agent_end` asynchronous auto-ingest to satisfy an explicit write request.
+- For explicit write requests, the reply must be one of these two shapes:
+  - `已写入 mem9 ...`
+  - `还没写入 mem9，原因是 ...`
+- Do not use conversational acknowledgments like `记住了` unless the write has actually succeeded.
+- If the user asks whether something was recorded in mem9, do not infer from an earlier reply. Confirm using actual mem9 write state before answering.

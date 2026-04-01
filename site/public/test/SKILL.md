@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.21
+version: 1.0.22
 homepage: "https://mem9.ai"
 description: "Entry skill for mem9 onboarding, reconnect, and uninstall. After ClawHub install, users can say: setup mem9, install mem9, reconnect mem9, review mem9 config changes, or uninstall mem9."
 keywords: ["mem9", "memory plugin", "persistent memory", "agent memory", "install mem9", "setup mem9", "reconnect mem9", "uninstall mem9", "remove mem9", "openclaw memory"]
@@ -66,8 +66,8 @@ Use this skill when the user explicitly wants one of these:
 
 Do not use this skill for:
 
-- Day-to-day memory store/recall after mem9 is already configured
-- Generic requests like `remember this` or `what did I say last time`
+- Re-running setup for day-to-day memory behavior after mem9 is already configured
+- Re-running setup for generic recall requests like `what did I say last time`
 - Agent-side local history import or upload
 - Unrelated OpenClaw troubleshooting
 - Requests to delete remote mem9 cloud data or revoke an API key without uninstalling the local plugin
@@ -75,8 +75,25 @@ Do not use this skill for:
 ## Setup Intent Detection
 
 - If mem9 is already configured and the user asks for routine memory behavior, do not re-run onboarding.
+- If mem9 is already configured and the user explicitly says `remember this`, `save this to mem9`, `store this in mem9`, `记住`, `记下来`, `存一下`, or `保存到mem9`, treat that as a live mem9 write request instead of setup.
 - Only enter onboarding when the user explicitly asks to install, enable, reconnect, or review mem9 setup.
 - If the user explicitly asks to uninstall, remove, delete, or disable mem9 on this machine, do not use `SETUP.md`. Read `UNINSTALL.md` instead.
+
+## Explicit Memory Rule
+
+- If mem9 is already connected and the user makes an explicit durable-write request, use live mem9 write semantics instead of setup or reconnect.
+- Explicit durable-write examples:
+  - `remember this`
+  - `save this to mem9`
+  - `store this in mem9`
+  - `记住`
+  - `记下来`
+  - `存一下`
+  - `保存到mem9`
+- Prefer the mem9 live tool path for this, especially `memory_store`.
+- Do not rely on asynchronous `agent_end` auto-ingest as the primary path for an explicit write request.
+- Do not reply `记住了` or `remembered` unless the write has actually succeeded.
+- If the write fails or the live tool path is unavailable, say explicitly that it has not been written to mem9 yet and explain why.
 
 ## First-Run Rule
 
@@ -115,6 +132,7 @@ Do not use this skill for:
 - If first-run onboarding happened, `SETUP.md` was read and completed, including the required final handoff.
 - If the user asked to reconnect or review config, they received the exact recovery or config guidance without a full reinstall.
 - If the user asked to uninstall mem9, `UNINSTALL.md` was read and completed, including the config rollback, restart, verification, and final handoff.
+- If the user later makes an explicit durable-write request, the agent uses live mem9 write semantics instead of replying with an unverified conversational acknowledgment.
 
 ## Quick Start After ClawHub Install
 
