@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.12
+version: 1.0.13
 homepage: "https://github.com/mem9-ai/mem9"
 description: "Explicit opt-in setup guide for the mem9 OpenClaw memory plugin. Use when users say: install mem9, setup memory, reconnect mem9, or review mem9 config changes."
 keywords: ["mem9", "memory plugin", "persistent memory", "agent memory", "install memory", "setup memory", "openclaw memory", "cloud memory"]
@@ -134,7 +134,7 @@ If mem9 is not installed yet, only use this onboarding skill when the user expli
 
 This task is NOT complete until all of the following are true:
 
-1. mem9 API key is created or provided by the user
+1. mem9 API key is provided by the user or auto-provisioned during setup and then saved
 2. plugin is installed
 3. openclaw.json is configured correctly
 4. OpenClaw is restarted
@@ -209,7 +209,7 @@ If the user asks "What is the relationship between tenantID and key?" answer pla
 
 > Which setup do you want?
 >
-> 1. Create a new mem9 API key
+> 1. Create a new mem9 API key during setup
 > 2. Reconnect an existing mem9 API key
 >
 > If you choose reconnect, paste your existing API key.
@@ -233,29 +233,30 @@ Do not probe the API key with extra standalone API calls at this stage. Use Step
 
 ---
 
-### Step 1 — Create a new mem9 API key
+### Step 1 — Create a new mem9 API key during setup
 
 > Skip this step if the user provided an existing API key in Step 0.
 
-`[AGENT]`
+`[AGENT]` Do not use `curl` or other direct web-request commands in this public onboarding skill to create the API key.
 
-```bash
-curl -sX POST https://api.mem9.ai/v1alpha1/mem9s
+Instead:
+
+- Continue with install and initial config even if no API key exists yet
+- Leave `plugins.entries.mem9.config.apiKey` unset for the first restart
+- Let the mem9 plugin auto-provision a new API key on first plugin use
+- Watch for the exact OpenClaw log line:
+
+```text
+[mem9] *** Auto-provisioned apiKey=<id> *** Save this to your config as apiKey
 ```
 
-Response:
-
-```json
-{
-  "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-}
-```
-
-Save `id` as `MEM9_API_KEY`.
+- Save `<id>` as `MEM9_API_KEY`
+- After that, write the new `MEM9_API_KEY` back into `openclaw.json` as `plugins.entries.mem9.config.apiKey`
+- Restart OpenClaw one more time so future restarts reconnect to the same mem9 space
 
 When explaining it to the user, say:
 
-> Your new mem9 API key is ready. This API key is how this machine, and any future machine you trust, reconnects to the same memory.
+> Your new mem9 API key will be created during setup. Once the plugin auto-provisions it, save that API key immediately because it is how this machine, and any future machine you trust, reconnects to the same memory.
 >
 > Important: this API key is also your secret. Never share it with anyone. If someone else gets it, they can access your memory.
 
@@ -268,6 +269,7 @@ Before running the install command:
 - Show the package name: `@mem9/mem9`
 - Show that only the paths listed in `Exact Config Changes` may be edited later
 - Warn that OpenClaw will need a restart after config is written
+- Explain that if the user chose "create a new API key", the first restart may auto-provision the key and a second restart may be needed after saving it into config
 - Explain that this public setup skill does not upload local history; use the dashboard or another reviewed manual workflow later if needed
 - Do not run the install command until the user confirms
 
@@ -322,7 +324,8 @@ Before writing `openclaw.json`:
 - Set `plugins.slots.memory` to `"mem9"`
 - Ensure `plugins.entries.mem9.enabled` is `true`
 - Set `plugins.entries.mem9.config.apiUrl` to `https://api.mem9.ai` unless the user explicitly chose another `apiUrl`
-- Set `plugins.entries.mem9.config.apiKey` to the current `MEM9_API_KEY`
+- If the user provided an existing API key, set `plugins.entries.mem9.config.apiKey` to the current `MEM9_API_KEY`
+- If the user chose "create a new API key during setup", leave `plugins.entries.mem9.config.apiKey` absent for the first restart so the plugin can auto-provision it
 - Ensure `plugins.allow` includes `"mem9"` while preserving other existing entries
 
 Preserve unrelated config keys and existing mem9 fields that are not listed above.
@@ -354,7 +357,8 @@ Or if no `openclaw.json` exists, create:
 - Set `plugins.slots.memory` to `"mem9"`
 - Ensure `plugins.entries.mem9.enabled` is `true`
 - Set `plugins.entries.mem9.config.apiUrl` to `https://api.mem9.ai` unless the user explicitly chose another `apiUrl`
-- Set `plugins.entries.mem9.config.apiKey` to the current `MEM9_API_KEY`
+- If the user provided an existing API key, set `plugins.entries.mem9.config.apiKey` to the current `MEM9_API_KEY`
+- If the user chose "create a new API key during setup", leave `plugins.entries.mem9.config.apiKey` absent for the first restart so the plugin can auto-provision it
 
 Preserve unrelated config keys and existing mem9 fields that are not listed above.
 
@@ -390,6 +394,7 @@ Before restarting:
 
 - Show the exact restart command or action you plan to use
 - Do not restart until the user explicitly approves
+- If the user chose "create a new API key during setup", explain that there may be an initial restart for auto-provisioning and a final restart after saving the generated API key into config
 
 ### Step 6 — Verify setup
 
@@ -397,7 +402,8 @@ A setup is successful if all of the following are true:
 
 - the plugin can reach the mem9 API
 - OpenClaw loads the mem9 plugin without config or plugin errors
-- the configured API key works through the plugin after restart
+- if the user supplied an existing API key, that configured API key works through the plugin after restart
+- if the user chose "create a new API key during setup", the plugin auto-provisions a new API key, that key is captured from the log message, written into `openclaw.json`, and then works through the plugin after the final restart
 - an empty result is acceptable for a newly created API key
   Notes:
   If the user supplied an existing API key in Step 0, this is where that key is validated end to end.
