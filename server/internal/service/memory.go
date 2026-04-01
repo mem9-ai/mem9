@@ -619,7 +619,10 @@ func (s *MemoryService) Update(ctx context.Context, agentName, id, content strin
 		current.Embedding = embedding
 	}
 
-	if err := s.memories.UpdateOptimistic(ctx, current, 0); err != nil {
+	writeStart := time.Now()
+	err = s.memories.UpdateOptimistic(ctx, current, 0)
+	metrics.MemoryWriteDuration.WithLabelValues("update", metricStatus(err)).Observe(time.Since(writeStart).Seconds())
+	if err != nil {
 		return nil, err
 	}
 

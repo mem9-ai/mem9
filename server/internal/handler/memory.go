@@ -315,6 +315,7 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	go s.refreshWriteMetrics(auth, svc, 1)
 	w.Header().Set("ETag", strconv.Itoa(mem.Version))
 	respond(w, http.StatusOK, mem)
 }
@@ -495,6 +496,17 @@ func (s *Server) refreshWriteMetrics(auth *domain.AuthInfo, svc resolvedSvc, wri
 		clusterID = "default"
 	}
 
+	if written > 0 {
+		metrics.MemoryChangesTotal.WithLabelValues(clusterID).Add(float64(written))
+	}
+
+	const gaugeTTL = 30 * time.Second
+	now := time.Now()
+	if last, ok := s.gaugeDebounce.Load(clusterID); ok && now.Sub(last.(time.Time)) < gaugeTTL {
+		return
+	}
+	s.gaugeDebounce.Store(clusterID, now)
+
 	total, last7d, err := svc.memory.CountStats(ctx)
 	if err != nil {
 		slog.Warn("refreshWriteMetrics: count stats failed", "err", err)
@@ -502,7 +514,4 @@ func (s *Server) refreshWriteMetrics(auth *domain.AuthInfo, svc resolvedSvc, wri
 	}
 	metrics.ActiveMemoryTotal.WithLabelValues(clusterID).Set(float64(total))
 	metrics.ActiveMemory7dTotal.WithLabelValues(clusterID).Set(float64(last7d))
-	if written > 0 {
-		metrics.MemoryChangesTotal.WithLabelValues(clusterID).Add(float64(written))
-	}
 }

@@ -121,12 +121,12 @@ var (
 	}, []string{"cluster_id"})
 
 	// MemoryWriteDuration observes the latency of memory write operations by op type.
-	// op labels: create, bulk_create, archive_and_create
+	// op labels: create, bulk_create, archive_and_create, update
 	MemoryWriteDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: "mnemo",
 			Name:      "memory_write_duration_seconds",
-			Help:      "Latency of create, bulk_create, and archive_and_create memory write operations.",
+			Help:      "Latency of create, bulk_create, archive_and_create, and update memory write operations.",
 			Buckets:   []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5},
 		},
 		[]string{"op", "status"},
