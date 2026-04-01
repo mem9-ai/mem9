@@ -11,6 +11,7 @@ export interface SiteNavCopy {
   home: string;
   features: string;
   platforms: string;
+  openclaw: string;
   yourMemory: string;
   security: string;
 }
@@ -175,6 +176,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'Home',
       features: 'Features',
       platforms: 'Platforms',
+      openclaw: 'OpenClaw',
       yourMemory: 'Your Memory',
       security: 'Security',
     },
@@ -368,6 +370,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: '首页',
       features: '能力',
       platforms: '平台',
+      openclaw: 'OpenClaw',
       yourMemory: '你的记忆',
       security: '安全',
     },
@@ -553,6 +556,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: '首頁',
       features: '能力',
       platforms: '平台',
+      openclaw: 'OpenClaw',
       yourMemory: '你的記憶',
       security: '安全',
     },
@@ -738,6 +742,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'ホーム',
       features: '機能',
       platforms: '対応環境',
+      openclaw: 'OpenClaw',
       yourMemory: 'あなたの記憶',
       security: 'セキュリティ',
     },
@@ -926,6 +931,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: '홈',
       features: '기능',
       platforms: '플랫폼',
+      openclaw: 'OpenClaw',
       yourMemory: '당신의 기억',
       security: '보안',
     },
@@ -1111,6 +1117,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'Beranda',
       features: 'Fitur',
       platforms: 'Platform',
+      openclaw: 'OpenClaw',
       yourMemory: 'Memori Anda',
       security: 'Keamanan',
     },
@@ -1299,6 +1306,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'หน้าแรก',
       features: 'ความสามารถ',
       platforms: 'แพลตฟอร์ม',
+      openclaw: 'OpenClaw',
       yourMemory: 'ความทรงจำของคุณ',
       security: 'ความปลอดภัย',
     },
