@@ -1,14 +1,14 @@
 ---
 name: mem9
-version: 1.0.22
+version: 1.0.22-test
 homepage: "https://mem9.ai"
-description: "Entry skill for mem9 onboarding, reconnect, and uninstall. After ClawHub install, users can say: setup mem9, install mem9, reconnect mem9, review mem9 config changes, or uninstall mem9."
-keywords: ["mem9", "memory plugin", "persistent memory", "agent memory", "install mem9", "setup mem9", "reconnect mem9", "uninstall mem9", "remove mem9", "openclaw memory"]
+description: "Test entry skill for mem9 onboarding, reconnect, and uninstall. After loading this test skill, users can say: setup mem9, install mem9, reconnect mem9, review mem9 config changes, or uninstall mem9."
+keywords: ["mem9", "memory plugin", "persistent memory", "agent memory", "install mem9", "setup mem9", "reconnect mem9", "uninstall mem9", "remove mem9", "openclaw memory", "test"]
 user-invocable: true
 metadata: {"openclaw":{"emoji":"🧠","homepage":"https://mem9.ai","primaryEnv":"MEM9_API_KEY"}}
 ---
 
-# mem9
+# mem9 Test
 
 mem9 gives OpenClaw persistent cloud memory across resets, restarts, and new machines.
 

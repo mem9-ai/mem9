@@ -24,7 +24,7 @@ When this file is read, start with this structure:
 - Do not upload local history from this setup flow.
 - Do not use direct web-request commands, raw memory API calls, or scripted shell patch commands in this public setup flow.
 - Reconnect and create-new are separate branches. Once one branch is selected, ignore the other branch unless the user explicitly changes their choice.
-- Before taking any action, show one dry-run preview that covers install, config edits, expected restarts, and verification.
+- Before taking any action, show one dry-run preview that covers install, config edits, expected restarts, and what the user must do after the restart.
 - Use one explicit approval for the entire disclosed flow. Do not ask for a second approval unless the scope materially changes.
 
 ## Terminology
@@ -48,12 +48,31 @@ When this file is read, start with this structure:
   - exact config keys that may change
   - selected branch: reconnect or create-new
   - expected restart count
-  - reconnect success criteria or create-new success criteria
+  - local history will not be uploaded by this setup flow
+  - `The gateway will restart automatically; please return to this chat in a few minutes and say hi.`
 - Approval phrases:
   - reconnect after the space ID is already captured: `approve reconnect`
   - create-new: `approve create`
 - Do not ask the user to repeat the full space ID in the approval line after it has already been captured.
 - Ask for one approval for the full disclosed flow. After that approval, proceed through install, config, restart, and verification without asking again unless the scope changes.
+
+### Required Pre-Approval Prompt
+
+Before showing `approve reconnect` or `approve create`, the dry-run preview must already make the restart and return path explicit.
+
+Required structure:
+
+```text
+If that looks good, reply exactly:
+
+approve reconnect
+
+The gateway will restart automatically; please return to this chat in a few minutes and say hi.
+```
+
+Create-new uses the same structure but with `approve create`.
+
+Do not rely on the post-approval notice as the only place where restart and return instructions are shown.
 
 ## Step 1 — Install Plugin
 
@@ -64,6 +83,7 @@ The dry-run preview must disclose:
 - reconnect path expects one restart after config is written and read back
 - create-new path expects one restart without `tenantID`, then a final restart after the generated identifier is written back
 - local history will not be uploaded by this setup flow
+- `The gateway will restart automatically; please return to this chat in a few minutes and say hi.`
 
 Install command:
 
@@ -80,11 +100,7 @@ Reconnect notice:
 ```text
 Approved. I’m starting mem9 beta reconnect now.
 
-I’m about to install the plugin if needed, write the mem9 beta config, and restart the OpenClaw gateway once.
-This will temporarily interrupt the current chat.
-Please wait about 1-2 minutes, then come back to this same conversation and say `hi`.
-When you return, I will continue verification automatically.
-Until I send the final mem9 handoff, reconnect is still in progress and not yet complete.
+The gateway will restart automatically; please return to this chat in a few minutes and say hi.
 ```
 
 Create-new notice:
@@ -92,12 +108,7 @@ Create-new notice:
 ```text
 Approved. I’m starting mem9 beta setup now.
 
-I’m about to install the plugin, write the mem9 beta config, and restart the OpenClaw gateway.
-This flow may need a second restart after the new mem9 space ID is generated and saved.
-This will temporarily interrupt the current chat.
-Please wait about 1-2 minutes, then come back to this same conversation and say `hi`.
-When you return, I will continue verification automatically.
-Until I send the final mem9 handoff, setup is still in progress and not yet complete.
+The gateway will restart automatically; please return to this chat in a few minutes and say hi.
 ```
 
 ## Step 2 — Detect OpenClaw Version
@@ -244,14 +255,18 @@ If the auto-provision log never appears, stop and use `TROUBLESHOOTING.md`.
 
 - When the user returns after a restart and sends `hi` or another short message, resume verification automatically.
 - Do not ask `Want me to continue?`
-- The first resume reply must clearly say that verification is resuming after the gateway restart.
-- The first resume reply must say what is being checked now:
-  - plugin loaded successfully
-  - configured space ID is still the active credential
-  - final success has not been declared yet
-- The first resume reply must also say whether the user needs to do anything right now. Default: no further action is needed while verification continues.
+- The first resume reply must be short and user-facing, for example: `Resuming mem9 verification after the gateway restart now. You do not need to do anything right now.`
+- Do not enumerate internal checklists, log lines, temporary status flips, or diagnostic reasoning in the resume reply.
+- Do not stream intermediate verification details to the user unless the flow is blocked or has failed.
+- If the first post-restart host status briefly reports memory as unavailable, do one silent re-check before telling the user anything else.
+- That silent re-check must use the current config plus mem9-specific logs or activity to confirm whether the plugin is actually healthy.
+- If the silent re-check shows mem9 loaded successfully, reached the API, or resumed injecting memories, continue directly to the final handoff and do not mention the transient unavailable state.
+- Only surface a user-facing problem after the re-check still fails or the user must take action.
 - Do not use vague wording like `mid-flight` or `system event` by itself.
-- If there was a real abnormal interruption beyond the normal restart, say exactly which stage is still incomplete and what the agent is resuming now.
+- If there was a real abnormal interruption beyond the normal restart, say only the minimum needed:
+  - setup is still verifying after the restart
+  - one issue remains
+  - the user does not need to do anything yet unless asked
 
 ## Step 5 — Verify
 
@@ -264,6 +279,7 @@ Reconnect is successful only if all of the following are true:
 - OpenClaw loads the mem9 beta plugin without config or plugin errors
 - The first valid startup did not auto-provision a new identifier
 - The final active mem9 credential is still `USER_PROVIDED_MEM9_SPACE_ID`
+- A transient immediately-after-restart host status of `enabled (plugin mem9) · unavailable` is not failure by itself if the silent re-check succeeds without user action
 - Empty memory results are acceptable
 
 ### Create-New Success Criteria
@@ -279,6 +295,9 @@ Create-new is successful only if all of the following are true:
 
 ## Step 6 — Required Final Handoff
 
+- Once success criteria are met, send the final handoff directly.
+- Do not append extra diagnostic commentary, transient restart notes, log summaries, or internal verification reasoning after the final handoff.
+
 ### Reconnect Final Handoff
 
 Use this only when reconnect succeeded. Do not replace it with any auto-provisioned identifier:
@@ -292,6 +311,7 @@ Sign in there with the same mem9 space ID from this setup.
 If the dashboard still shows "Space ID", enter the same mem9 space ID.
 Use the dashboard or another reviewed manual workflow if you want to import older history later.
 This setup did not upload any local files.
+If you later say “remember this” or “记住…”, I should write it to mem9 and tell you whether the write succeeded.
 
 
 💾 YOUR RECONNECTED MEM9 SPACE ID
@@ -328,6 +348,7 @@ Sign in there with the same mem9 space ID from this setup.
 If the dashboard still shows "Space ID", enter the same mem9 space ID.
 Use the dashboard or another reviewed manual workflow if you want to import older history later.
 This setup did not upload any local files.
+If you later say “remember this” or “记住…”, I should write it to mem9 and tell you whether the write succeeded.
 
 
 💾 YOUR NEW MEM9 SPACE ID
@@ -351,3 +372,15 @@ Also store the AUTO_PROVISIONED_MEM9_SPACE_ID in a password manager or secure va
 ```
 
 Do not replace these handoffs with a demo or a synthetic write/read test unless the user explicitly asks for a test.
+
+## Post-Setup Continuation Rule
+
+- After setup succeeds, do not route explicit durable-write requests back into setup, reconnect, or uninstall.
+- If the user then says `remember this`, `save this to mem9`, `store this in mem9`, `记住`, `记下来`, `存一下`, or `保存到mem9`, treat it as a live mem9 write request.
+- Prefer the mem9 live tool path for this, especially `memory_store`.
+- Do not wait for `agent_end` asynchronous auto-ingest to satisfy an explicit write request.
+- For explicit write requests, the reply must be one of these two shapes:
+  - `已写入 mem9 ...`
+  - `还没写入 mem9，原因是 ...`
+- Do not use conversational acknowledgments like `记住了` unless the write has actually succeeded.
+- If the user asks whether something was recorded in mem9, do not infer from an earlier reply. Confirm using actual mem9 write state before answering.

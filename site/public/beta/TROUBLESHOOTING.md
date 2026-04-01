@@ -1,6 +1,6 @@
 # mem9 Beta Troubleshooting
 
-Use this file for reconnect, setup failures, and dashboard/login confusion after the main mem9 beta setup flow.
+Use this file for reconnect, setup failures, uninstall failures, and dashboard/login confusion after the main mem9 beta flow.
 
 ## Quick Checks
 
@@ -52,6 +52,28 @@ Confirm these first:
 - Rewrite the original user-provided space ID to the correct field
 - Restart and verify again
 - If a new identifier is still auto-provisioned after that, stop the reconnect flow and keep troubleshooting instead of silently switching mem9 spaces
+
+### Removed mem9 But Gateway Will Not Start
+
+- Treat this as uninstall failure, not success
+- First re-check the current config read-back
+- The most common cause is `plugins.slots.memory` still pointing to `mem9`
+- In beta, also re-check whether `plugins.slots.contextEngine` still points to `mem9`
+- Also re-check whether `plugins.entries.memory-core.enabled = true` after restoring the default memory slot
+- Re-check that `plugins.entries.mem9` was removed
+- Re-check that `plugins.installs.mem9` was removed if it existed before
+- Re-check that `"mem9"` is no longer present in `plugins.allow`
+- After the config read-back, inspect the gateway logs for the exact startup error
+- If the config still matches the uninstall failure pattern, re-apply the safe rollback from `UNINSTALL.md` before trying another restart
+
+### User Said Remember After Setup, But Nothing Was Written To mem9
+
+- First decide whether the user made an explicit durable-write request such as `remember this`, `save this to mem9`, `store this in mem9`, `记住`, or `记下来`
+- If yes, do not treat it as a setup-success question and do not re-run onboarding
+- Route it to the live mem9 write path instead, preferably `memory_store`
+- Do not accept `agent_end` asynchronous auto-ingest as the success signal for an explicit write request
+- If the write still fails, then troubleshoot tool availability, plugin load state, and mem9 API reachability
+- Do not tell the user `记住了` unless mem9 actually stored the memory
 
 ### User Returned After Restart But Verification Is Still In Progress
 
