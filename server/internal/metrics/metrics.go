@@ -69,6 +69,18 @@ var (
 		},
 		[]string{"model", "status"}, // status: "success" | "error"
 	)
+
+	// NearDupCosineScore observes the cosine similarity of the nearest existing
+	// memory to each extracted fact. Shadow mode only — facts always pass through
+	// to reconcile unchanged. Used to calibrate the near-dup suppression threshold.
+	NearDupCosineScore = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "mnemo",
+			Name:      "near_dup_cosine_score",
+			Help:      "Cosine similarity of nearest memory to each extracted fact (shadow mode).",
+			Buckets:   []float64{0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.92, 0.95, 0.97, 0.99},
+		},
+	)
 )
 
 // Middleware records HTTP request count and duration for each request.

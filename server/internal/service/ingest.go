@@ -15,6 +15,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/llm"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/repository"
 )
 
@@ -144,8 +145,26 @@ type Phase1Result struct {
 
 // ExtractedFact holds a single atomic fact and the tags the LLM assigned to it.
 type ExtractedFact struct {
-	Text string   `json:"text"`
-	Tags []string `json:"tags,omitempty"`
+	Text     string   `json:"text"`
+	Tags     []string `json:"tags,omitempty"`
+	FactType string   `json:"fact_type,omitempty"` // "fact" | "query_intent"; omitted = "fact"
+}
+
+// dropQueryIntentFacts removes facts classified as query_intent by the extraction
+// LLM. These are search queries or lookup questions ("who is X", "how do I Y")
+// that reflect what the user asked, not what the user stated about themselves.
+// Facts with an omitted fact_type are kept — safe default on LLM non-compliance.
+// Dropped facts are logged at Info level (length only, no raw text) for observability.
+func dropQueryIntentFacts(facts []ExtractedFact) []ExtractedFact {
+	out := facts[:0]
+	for _, f := range facts {
+		if strings.EqualFold(f.FactType, "query_intent") {
+			slog.Info("dropping query_intent fact", "len", len(f.Text))
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 // ExtractPhase1 runs fact extraction and per-message tagging in a single LLM call.
@@ -435,13 +454,25 @@ atomic facts from a conversation.
    - Bad: "Knows some programming languages"
 4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
-6. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
+6. Do NOT extract search queries or lookup questions as facts.
+   If the user is asking the assistant to find, explain, or look something up
+   ("who is X", "how do I Y", "what does Z mean"), classify it as query_intent.
+   Only store what the user STATED about themselves, their work, or their world.
+   Heuristic: if the fact can only be known because the user asked, it is query_intent.
+   If it reveals something stable about the user independently, it is a fact.
+   Examples to skip (query_intent):
+     - "User asked about the history of the Ming dynasty"
+     - "User searched for how to configure nginx"
+   Examples to keep (fact):
+     - "Uses nginx as the production reverse proxy"
+     - "Working on a project that requires SQL window functions"
+7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
-7. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
-8. Extract relationships between people explicitly.
-9. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
-10. If no meaningful facts exist in the conversation, return an empty facts array.
-11. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
+8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+9. Extract relationships between people explicitly.
+10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
+11. If no meaningful facts exist in the conversation, return an empty facts array.
+12. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
    "relationship", "event", "timeline".
    Use hyphens for multi-word tags: "programming-language", "work-tool".
@@ -451,7 +482,7 @@ atomic facts from a conversation.
 
 Return ONLY valid JSON. No markdown fences, no explanation.
 
-{"facts": [{"text": "fact one", "tags": ["tag1", "tag2"]}, {"text": "fact two", "tags": ["tag3"]}, ...]}`
+{"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}, ...]}`
 
 	userPrompt := fmt.Sprintf("Extract facts. Today's date is %s.\n\n%s", currentDate, conversation)
 
@@ -488,7 +519,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		lastRaw = raw2
 	}
 
-	facts := normalizeParsedFacts(lastRaw, parsed.Facts)
+	facts := dropQueryIntentFacts(normalizeParsedFacts(lastRaw, parsed.Facts))
 	slog.Info("facts extracted", "facts", len(facts))
 	return facts, nil
 }
@@ -510,13 +541,25 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    - Bad: "Knows some programming languages"
 4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
-6. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
+6. Do NOT extract search queries or lookup questions as facts.
+   If the user is asking the assistant to find, explain, or look something up
+   ("who is X", "how do I Y", "what does Z mean"), classify it as query_intent.
+   Only store what the user STATED about themselves, their work, or their world.
+   Heuristic: if the fact can only be known because the user asked, it is query_intent.
+   If it reveals something stable about the user independently, it is a fact.
+   Examples to skip (query_intent):
+     - "User asked about the history of the Ming dynasty"
+     - "User searched for how to configure nginx"
+   Examples to keep (fact):
+     - "Uses nginx as the production reverse proxy"
+     - "Working on a project that requires SQL window functions"
+7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
-7. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
-8. Extract relationships between people explicitly.
-9. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
-10. If no meaningful facts exist in the conversation, return an empty facts array.
-11. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
+8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+9. Extract relationships between people explicitly.
+10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
+11. If no meaningful facts exist in the conversation, return an empty facts array.
+12. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
    "relationship", "event", "timeline".
    Use hyphens for multi-word tags. If no meaningful tags apply, omit the "tags" field.
@@ -553,7 +596,7 @@ Output: {"facts": [{"text": "Debugging a memory leak in a Go service", "tags": [
 
 Return ONLY valid JSON. No markdown fences, no explanation.
 
-{"facts": [{"text": "fact one", "tags": ["tag1", "tag2"]}, {"text": "fact two", "tags": ["tag3"]}], "message_tags": [["tag1", "tag2"], ["tag3"], [], ...]}`
+{"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}], "message_tags": [["tag1", "tag2"], ["tag3"], [], ...]}`
 
 	userPrompt := fmt.Sprintf("Extract facts and assign message tags. Today's date is %s.\n\n%s", currentDate, conversation)
 
@@ -577,7 +620,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
-			if fallback := normalizeParsedFacts(raw2, nil); len(fallback) > 0 {
+			if fallback := dropQueryIntentFacts(normalizeParsedFacts(raw2, nil)); len(fallback) > 0 {
 				type legacyFull struct {
 					MessageTags [][]string `json:"message_tags"`
 				}
@@ -606,7 +649,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		lastRaw = raw2
 	}
 
-	facts := normalizeParsedFacts(lastRaw, parsed.Facts)
+	facts := dropQueryIntentFacts(normalizeParsedFacts(lastRaw, parsed.Facts))
 
 	// Normalise message_tags to exactly messageCount entries.
 	messageTags := make([][]string, messageCount)
@@ -627,6 +670,16 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 // decision-making. This gives the LLM a complete view of both the new facts and
 // the existing knowledge base, enabling better ADD/UPDATE/DELETE/NOOP decisions.
 func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessionID string, facts []ExtractedFact) ([]string, int, error) {
+	// Shadow mode: record cosine similarity of the nearest existing memory to each
+	// extracted fact. Facts always pass through unchanged — suppression is deferred
+	// until the score distribution is analyzed from prod metrics.
+	// Once a threshold is validated, add: if score >= threshold { drop or annotate }
+	for i := range facts {
+		if id, score, err := s.memories.NearDupSearch(ctx, facts[i].Text); err == nil && id != "" {
+			metrics.NearDupCosineScore.Observe(score)
+		}
+	}
+
 	texts := make([]string, len(facts))
 	for i, f := range facts {
 		texts[i] = f.Text

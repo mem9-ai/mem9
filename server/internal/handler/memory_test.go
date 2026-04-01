@@ -37,8 +37,8 @@ func (m *testMemoryRepo) GetByID(_ context.Context, id string) (*domain.Memory, 
 	return nil, domain.ErrNotFound
 }
 func (m *testMemoryRepo) UpdateOptimistic(context.Context, *domain.Memory, int) error { return nil }
-func (m *testMemoryRepo) SoftDelete(context.Context, string, string) error             { return nil }
-func (m *testMemoryRepo) ArchiveMemory(context.Context, string, string) error          { return nil }
+func (m *testMemoryRepo) SoftDelete(context.Context, string, string) error            { return nil }
+func (m *testMemoryRepo) ArchiveMemory(context.Context, string, string) error         { return nil }
 func (m *testMemoryRepo) ArchiveAndCreate(_ context.Context, _, _ string, mem *domain.Memory) error {
 	m.createCalls = append(m.createCalls, mem)
 	return nil
@@ -47,8 +47,8 @@ func (m *testMemoryRepo) SetState(context.Context, string, domain.MemoryState) e
 func (m *testMemoryRepo) List(context.Context, domain.MemoryFilter) ([]domain.Memory, int, error) {
 	return nil, 0, nil
 }
-func (m *testMemoryRepo) Count(context.Context) (int, error)                     { return 0, nil }
-func (m *testMemoryRepo) BulkCreate(context.Context, []*domain.Memory) error     { return nil }
+func (m *testMemoryRepo) Count(context.Context) (int, error)                 { return 0, nil }
+func (m *testMemoryRepo) BulkCreate(context.Context, []*domain.Memory) error { return nil }
 func (m *testMemoryRepo) VectorSearch(context.Context, []float32, domain.MemoryFilter, int) ([]domain.Memory, error) {
 	return nil, nil
 }
@@ -61,8 +61,13 @@ func (m *testMemoryRepo) KeywordSearch(context.Context, string, domain.MemoryFil
 func (m *testMemoryRepo) FTSSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
 	return nil, nil
 }
-func (m *testMemoryRepo) FTSAvailable() bool                                                  { return false }
-func (m *testMemoryRepo) ListBootstrap(context.Context, int) ([]domain.Memory, error)         { return nil, nil }
+func (m *testMemoryRepo) FTSAvailable() bool { return false }
+func (m *testMemoryRepo) ListBootstrap(context.Context, int) ([]domain.Memory, error) {
+	return nil, nil
+}
+func (m *testMemoryRepo) NearDupSearch(context.Context, string) (string, float64, error) {
+	return "", 0, nil
+}
 
 // testSessionRepo is a minimal SessionRepo mock for handler tests.
 type testSessionRepo struct {
