@@ -1,10 +1,12 @@
 ---
 name: mem9
-version: 1.0.10
+version: 1.0.11
 homepage: "https://github.com/mem9-ai/mem9"
-description: "Persistent cloud memory for OpenClaw agents. Use when users say: install mem9, setup memory, add memory plugin, openclaw memory, mem9 onboarding, memory not working, import memories, upload sessions."
+description: "Explicit opt-in setup guide for the mem9 OpenClaw memory plugin. Use when users say: install mem9, setup memory, reconnect mem9, review mem9 config changes, or import memories after setup."
 keywords: ["mem9", "memory plugin", "persistent memory", "agent memory", "install memory", "setup memory", "openclaw memory", "cloud memory"]
-metadata: {"openclaw":{"always":true,"emoji":"🧠","homepage":"https://github.com/mem9-ai/mem9","primaryEnv":"MEM9_API_KEY","requires":{"env":["MEM9_API_KEY"],"config":["plugins.slots.memory","plugins.entries.mem9.enabled","plugins.entries.mem9.config.apiUrl","plugins.entries.mem9.config.apiKey","plugins.allow"]}}}
+disable-model-invocation: true
+user-invocable: true
+metadata: {"openclaw":{"emoji":"🧠","homepage":"https://github.com/mem9-ai/mem9","primaryEnv":"MEM9_API_KEY"}}
 ---
 
 ```
@@ -34,6 +36,20 @@ The plugin connects to one cloud memory space, identified by an API key.
 - Default network scope: this onboarding talks to `https://api.mem9.ai` unless the user explicitly chooses a different `apiUrl`.
 - Config scope: this onboarding only reads or updates the active `openclaw.json` entries needed for the mem9 plugin. It should not read or modify unrelated files.
 - Install impact: setup installs the mem9 plugin, writes plugin config, and restarts OpenClaw so the plugin can load.
+- Invocation scope: this is an explicit setup guide only. It should not be auto-used for routine memory store/recall once mem9 is already installed.
+- Consent scope: do not install the plugin, edit `openclaw.json`, restart OpenClaw, or upload local history until the user explicitly confirms each step.
+
+## Exact Config Changes
+
+Only these `openclaw.json` paths may be changed during setup:
+
+- `plugins.slots.memory`
+- `plugins.entries.mem9.enabled`
+- `plugins.entries.mem9.config.apiUrl`
+- `plugins.entries.mem9.config.apiKey`
+- `plugins.allow`
+
+Do not change any other config keys unless the user explicitly asks.
 
 When talking to end users:
 
@@ -48,31 +64,30 @@ When talking to end users:
 
 ## Trigger phrases
 
-Use this skill when the user expresses intent to store, recall, or manage long-term memory.
+Use this skill only when the user explicitly wants to install, reconnect, or review mem9 setup.
 
 Common triggers include:
 
-- "remember this"
-- "save this for later"
-- "don't forget that..."
-- "what did I say last time?"
-- "recall my preferences"
-- "forget that"
+- "install mem9"
+- "setup mem9"
+- "enable mem9 memory"
+- "reconnect my mem9 API key"
+- "review mem9 config changes"
+- "configure mem9 in openclaw.json"
 
 ---
 
 ## When to use this skill
 
-Use this skill when the user wants OpenClaw to persist or manage long-term memory across sessions, devices, or restarts.
+Use this skill when the user explicitly wants help with mem9 onboarding, reconnection, or config review.
 
 Typical situations include:
 
-- The user asks OpenClaw to remember something for future sessions
-- The user wants to recall or reconnect to existing long-term memory
-- The user wants persistent memory instead of local/session-only memory
-- The user wants to import existing OpenClaw memory files into mem9
-- The user is moving to a new machine and wants to keep the same memory
-- The user wants multiple agents or workflows to share the same memory space
+- The user wants to install the mem9 plugin for the first time
+- The user wants to reconnect an existing mem9 API key on this machine
+- The user wants to review the exact `openclaw.json` changes before setup
+- The user wants to confirm which package, endpoint, and restart step the setup will use
+- The user wants to verify recovery steps for reinstalling mem9 on another machine
 
 ---
 
@@ -82,6 +97,8 @@ Do not use this skill for:
 
 - Temporary conversation context that only matters in the current session
 - One-off tasks that do not require long-term memory
+- Day-to-day memory store/recall after mem9 is already installed
+- Importing or uploading local history unless the user explicitly asks for import after setup
 - Troubleshooting unrelated to mem9 setup, import, or reconnection
 
 ---
@@ -104,11 +121,11 @@ Avoid storing:
 
 ---
 
-## Memory intent detection
+## Setup intent detection
 
-If the user explicitly asks to remember something (for example: "remember this", "save this", "don't forget"), the agent should store the information using mem9 if mem9 is installed.
+If the user asks to remember something and mem9 is already installed, do not use this onboarding skill. Use the installed memory plugin instead.
 
-If mem9 is not installed yet, suggest installing mem9 to enable persistent memory.
+If mem9 is not installed yet, only use this onboarding skill when the user explicitly asks to install, enable, reconnect, or review persistent memory setup.
 
 ---
 
@@ -123,7 +140,7 @@ This task is NOT complete until all of the following are true:
 5. setup is verified
 6. the user has been sent the full Step 7 handoff message, including:
 
-- next step: import memories
+- next step: optional import decision
 - MEM9_API_KEY warning
 - dashboard URL + same API key login note
 - recovery steps
@@ -197,6 +214,8 @@ If the user asks "What is the relationship between tenantID and key?" answer pla
 > If you choose reconnect, paste your existing API key.
 >
 > Heads-up: OpenClaw will restart later in this setup. When that happens, please wait a few minutes, then send "Hi" here to reconnect and continue.
+>
+> This setup is explicit opt-in. I will not install the plugin, edit `openclaw.json`, restart OpenClaw, or upload any local history until you confirm each step.
 
 Branching:
 
@@ -260,6 +279,14 @@ When explaining it to the user, say:
 
 `[AGENT]` Detect npm registry reachability first. On mainland China / Alibaba Cloud networks, the default npm registry is often slow or unstable. Prefer a one-shot registry override instead of changing the user's global npm config.
 
+Before running the install command:
+
+- Show the package name: `@mem9/mem9`
+- Show that only the paths listed in `Exact Config Changes` may be edited later
+- Warn that OpenClaw will need a restart after config is written
+- Warn that no local history will be uploaded unless the user explicitly asks for import after setup
+- Do not run the install command until the user confirms
+
 ```bash
 NPMJS_TIME="$(curl -o /dev/null -sS --connect-timeout 2 --max-time 6 -w '%{time_total}' https://registry.npmjs.org/@mem9%2fmem9 || echo timeout)"
 MIRROR_TIME="$(curl -o /dev/null -sS --connect-timeout 2 --max-time 6 -w '%{time_total}' https://registry.npmmirror.com/@mem9%2fmem9 || echo timeout)"
@@ -305,6 +332,12 @@ Routing rule:
 - If the version command is unavailable or unclear, tell the user you could not determine the OpenClaw version and ask them which version they are using before editing `openclaw.json`.
 
 ### Step 4 — Configure openclaw.json
+
+Before writing `openclaw.json`:
+
+- Show the exact keys that will change and ask the user to confirm
+- Only change the paths listed in `Exact Config Changes`
+- Do not write the file until the user explicitly approves
 
 #### OpenClaw ≥2.2.0
 
@@ -402,6 +435,11 @@ If result returns stored memory → setup successful.
 
 Restart OpenClaw so the new mem9 plugin config is loaded.
 
+Before restarting:
+
+- Show the exact restart command or action you plan to use
+- Do not restart until the user explicitly approves
+
 ### Step 6 — Verify setup
 
 A setup is successful if all of the following are true:
@@ -423,11 +461,12 @@ Translate the content into the user's language before sending, while keeping the
 ✅ Your mem9 API key is ready.
 🧭 WHAT YOU CAN DO NEXT
 
-Import your existing local memory so mem9 starts with your real history.
+If you want to bring in your existing local history later, you can do that as a separate explicit step.
 
 Say: "import memories to mem9"
 I can scan local memory notes and session files, then transform/import them into mem9.
 Common local files include: memory/*.md, MEMORY.md, sessions/*.jsonl.
+No local history will be uploaded unless you explicitly ask me to do that.
 You can also go to https://mem9.ai/your-memory/ to visually manage, analyze, import, and export your memories.
 Sign in there with the same mem9 API key from this setup.
 If the dashboard still shows "Space ID", enter the same mem9 API key.
@@ -457,7 +496,7 @@ Do not default to offering a synthetic write/read demo as the next step.
 
 Preferred next-step order:
 
-1. Guide the user to import historical memories
+1. Ask whether the user wants to import historical memories now or keep setup-only for now
 2. Explain the recovery path for a new machine or accidental local loss
 3. Explain local backup plus offsite backup
 4. Only offer a live write/read verification if the user explicitly asks for a test or if import/recovery is already clear
@@ -557,8 +596,8 @@ Never share it with anyone.
 If someone else gets it, they can access your memory.
 Save it somewhere safe because you will use the same value later if you want to reconnect on another machine.
 
-The best next step is to bring in your existing history instead of running a demo first.
-I can scan local files such as memory.json, memories/*.json, and sessions/*.json and import them into mem9.
+If you want to bring in your existing history later, I can scan local files such as memory.json, memories/*.json, and sessions/*.json and import them into mem9.
+Do not upload anything until the user explicitly asks for import.
 
 Recovery plan:
 1. Local backup: keep the original memory/session files even after import
@@ -568,9 +607,12 @@ Recovery plan:
 
 ---
 
-## Default Import Behavior
+## Optional Import Behavior
 
-When user says "import memories to mem9" without specifying files:
+Only use this section after setup is complete and the user explicitly says "import memories to mem9".
+Do not upload local history by default.
+
+When the user explicitly asks to import memories to mem9 without specifying files:
 
 1. Scan agent workspace for memory/session files
 2. Upload **15 most recent** (by mtime)
@@ -613,9 +655,9 @@ Include `-F "agent_id=$AGENT_ID"` in each upload only when a value is found; omi
 
 ## Next Steps
 
-After first read, do this immediately:
+After first read, guide the user in this order:
 
-1. **Import history first** — Offer to scan and upload existing memory/session files before any demo.
+1. **Keep import opt-in** — Do not scan or upload memory/session files unless the user explicitly asks for import after setup.
 2. **Explain recovery** — Tell the user that reusing the same `MEM9_API_KEY` reconnects the same cloud memory on a new machine.
 3. **Explain backup** — Recommend keeping original local files and saving the API key in a secure offsite location.
 4. **Explore** — `curl -s -H "X-API-Key: $MEM9_API_KEY" "https://api.mem9.ai/v1alpha2/mem9s/memories?limit=10" | jq .`
