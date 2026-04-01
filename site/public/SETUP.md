@@ -309,7 +309,7 @@ Sign in there with the same mem9 API key from this setup.
 If the dashboard still shows "Space ID", enter the same mem9 API key.
 Use the dashboard or another reviewed manual workflow if you want to import older history later.
 This setup did not upload any local files.
-If you later say “remember this” or “记住…”, I should write it to mem9 and tell you whether the write succeeded.
+If you later ask me to remember something, I should write it to mem9 and tell you whether the write succeeded.
 
 
 💾 YOUR RECONNECTED MEM9 API KEY
@@ -346,7 +346,7 @@ Sign in there with the same mem9 API key from this setup.
 If the dashboard still shows "Space ID", enter the same mem9 API key.
 Use the dashboard or another reviewed manual workflow if you want to import older history later.
 This setup did not upload any local files.
-If you later say “remember this” or “记住…”, I should write it to mem9 and tell you whether the write succeeded.
+If you later ask me to remember something, I should write it to mem9 and tell you whether the write succeeded.
 
 
 💾 YOUR NEW MEM9 API KEY
@@ -374,11 +374,13 @@ Do not replace these handoffs with a demo or a synthetic write/read test unless 
 ## Post-Setup Continuation Rule
 
 - After setup succeeds, do not route explicit durable-write requests back into setup, reconnect, or uninstall.
-- If the user then says `remember this`, `save this to mem9`, `store this in mem9`, `记住`, `记下来`, `存一下`, or `保存到mem9`, treat it as a live mem9 write request.
-- Prefer the mem9 live tool path for this, especially `memory_store`.
-- Do not wait for `agent_end` asynchronous auto-ingest to satisfy an explicit write request.
-- For explicit write requests, the reply must be one of these two shapes:
-  - `已写入 mem9 ...`
-  - `还没写入 mem9，原因是 ...`
-- Do not use conversational acknowledgments like `记住了` unless the write has actually succeeded.
+- If the user then makes an explicit durable-write request, treat it as a direct mem9 write request.
+- First attempt the actual synchronous mem9 write path before replying.
+- Do not treat background or delayed capture as the success path for an explicit write request.
+- Interpret equivalent durable-write intent in any language.
+- For explicit write requests, send either:
+  - a short success confirmation in the user's language
+  - or a short failure reason in the user's language
+- Do not use an unverified conversational acknowledgment unless the write has actually succeeded.
+- Do not mention internal tool names, write-interface availability, background ingest behavior, or routing details in the user-facing reply.
 - If the user asks whether something was recorded in mem9, do not infer from an earlier reply. Confirm using actual mem9 write state before answering.

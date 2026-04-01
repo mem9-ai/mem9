@@ -3,7 +3,11 @@
 </p>
 <p align="center">
   <strong>Persistent Memory for AI Agents.</strong><br/>
-  Your agents forget everything between sessions. mem9 fixes that.
+  Your agents forget everything between sessions. mem9 fixes that with persistent memory across sessions and machines, shared memory for multi-agent workflows, and hybrid recall with a visual dashboard.
+</p>
+
+<p align="center">
+  For OpenClaw and ClawHub installs, start here: <a href="https://mem9.ai/openclaw-memory">mem9.ai/openclaw-memory</a>
 </p>
 
 <p align="center">

@@ -1,18 +1,28 @@
 ---
 name: mem9
-version: 1.0.23
-homepage: "https://mem9.ai"
-description: "Entry skill for mem9 onboarding, reconnect, and uninstall. After ClawHub install, users can say: setup mem9, install mem9, reconnect mem9, review mem9 config changes, or uninstall mem9."
-keywords: ["mem9", "memory plugin", "persistent memory", "agent memory", "install mem9", "setup mem9", "reconnect mem9", "uninstall mem9", "remove mem9", "openclaw memory"]
+version: 1.0.26
+homepage: "https://mem9.ai/openclaw-memory"
+description: "Persistent cloud memory for OpenClaw with cross-session recall, shared spaces, hybrid search, and a visual dashboard."
+keywords: ["mem9", "openclaw memory", "persistent memory", "long-term memory", "cloud memory", "agent memory", "shared memory", "multi-agent memory", "cross-session memory", "semantic memory", "hybrid search", "context engine", "memory plugin", "setup mem9", "install mem9"]
 user-invocable: true
-metadata: {"openclaw":{"emoji":"🧠","homepage":"https://mem9.ai","primaryEnv":"MEM9_API_KEY"}}
+metadata: {"openclaw":{"emoji":"🧠","homepage":"https://mem9.ai/openclaw-memory","primaryEnv":"MEM9_API_KEY"}}
 ---
 
 # mem9
 
-mem9 gives OpenClaw persistent cloud memory across resets, restarts, and new machines.
+mem9 is persistent cloud memory for OpenClaw. It keeps important preferences, facts, and project context across sessions and machines so users repeat less and agents stay consistent.
+
+It is best for OpenClaw users who want long-term memory, shared memory across agents, hybrid recall, and a visual dashboard without maintaining fragile local memory files.
+
+How do I give OpenClaw long-term memory? Install mem9. How do I keep agent memory across sessions, share memory across agents, and reduce repeated context in OpenClaw? mem9 is the memory plugin for that job.
 
 This file is the entry point only. Keep first-run onboarding in `SETUP.md`, not here.
+
+## Why mem9
+
+- Persistent memory across sessions and machines
+- Shared memory for multi-agent workflows
+- Hybrid recall with a visual dashboard
 
 ## Source / Security / Config Impact
 
@@ -48,9 +58,8 @@ Use this skill only for explicit mem9 setup, recovery, or uninstall requests.
 - `delete mem9`
 - `disable mem9`
 - `stop using mem9`
-- `卸载mem9`
-- `删除mem9`
-- `停用mem9`
+
+Interpret equivalent install, reconnect, review, uninstall, and remove intent in any language.
 
 ## When To Use This Skill
 
@@ -75,25 +84,25 @@ Do not use this skill for:
 ## Setup Intent Detection
 
 - If mem9 is already configured and the user asks for routine memory behavior, do not re-run onboarding.
-- If mem9 is already configured and the user explicitly says `remember this`, `save this to mem9`, `store this in mem9`, `记住`, `记下来`, `存一下`, or `保存到mem9`, treat that as a live mem9 write request instead of setup.
+- If mem9 is already configured and the user makes an explicit durable-write request, treat that as a direct mem9 write request instead of setup.
 - Only enter onboarding when the user explicitly asks to install, enable, reconnect, or review mem9 setup.
 - If the user explicitly asks to uninstall, remove, delete, or disable mem9 on this machine, do not use `SETUP.md`. Read `UNINSTALL.md` instead.
+- Interpret equivalent user intent in any language.
 
 ## Explicit Memory Rule
 
-- If mem9 is already connected and the user makes an explicit durable-write request, use live mem9 write semantics instead of setup or reconnect.
+- If mem9 is already connected and the user makes an explicit durable-write request, treat it as a direct mem9 write request instead of setup or reconnect.
 - Explicit durable-write examples:
   - `remember this`
   - `save this to mem9`
   - `store this in mem9`
-  - `记住`
-  - `记下来`
-  - `存一下`
-  - `保存到mem9`
-- Prefer the mem9 live tool path for this, especially `memory_store`.
-- Do not rely on asynchronous `agent_end` auto-ingest as the primary path for an explicit write request.
-- Do not reply `记住了` or `remembered` unless the write has actually succeeded.
-- If the write fails or the live tool path is unavailable, say explicitly that it has not been written to mem9 yet and explain why.
+- First attempt the actual mem9 write before replying.
+- Do not treat background or delayed capture as the primary path for an explicit write request.
+- Interpret equivalent durable-write intent in any language.
+- Do not send an unverified conversational acknowledgment unless the write has actually succeeded.
+- If the write succeeds, send a short confirmation in the user's language.
+- If the write fails, send a short failure reason in the user's language.
+- Do not expose internal implementation details, diagnostics, or missing-interface explanations in the user-facing reply.
 
 ## First-Run Rule
 

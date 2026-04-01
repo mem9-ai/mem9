@@ -79,12 +79,23 @@ Confirm these first:
 
 ### User Said Remember After Setup, But Nothing Was Written To mem9
 
-- First decide whether the user made an explicit durable-write request such as `remember this`, `save this to mem9`, `store this in mem9`, `记住`, or `记下来`
+- First decide whether the user made an explicit durable-write request
 - If yes, do not treat it as a setup-success question and do not re-run onboarding
-- Route it to the live mem9 write path instead, preferably `memory_store`
-- Do not accept `agent_end` asynchronous auto-ingest as the success signal for an explicit write request
-- If the write still fails, then troubleshoot tool availability, plugin load state, and mem9 API reachability
-- Do not tell the user `记住了` unless mem9 actually stored the memory
+- Route it to the direct mem9 write path instead
+- Do not accept background or delayed auto-capture as the success signal for an explicit write request
+- If the write still fails, then troubleshoot write-path availability, plugin load state, and mem9 API reachability
+- Interpret equivalent durable-write intent in any language
+- Do not send an unverified conversational acknowledgment unless mem9 actually stored the memory
+- Do not tell the user about internal tool names, interface exposure, or background-ingest mechanics
+
+### Assistant Said It Could Not Write Because No Direct mem9 Interface Was Available
+
+- Treat that as a documentation failure, not an acceptable final user-facing reply
+- The correct user-facing outcome is still short and operational:
+  - a short success confirmation in the user's language
+  - or a short failure reason in the user's language
+- Keep internal diagnosis internal
+- If needed, troubleshoot the write path, plugin load state, and mem9 API reachability without narrating those implementation details back to the user
 
 ### User Returned After Restart But Verification Is Still In Progress
 
