@@ -421,13 +421,17 @@ func (r *DB9MemoryRepo) NearDupSearch(ctx context.Context, queryText string) (st
 	var id string
 	var dist float64
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, VEC_EMBED_COSINE_DISTANCE(embedding, $1) AS dist
-		 FROM memories
-		 WHERE state = 'active'
-		   AND memory_type IN ('insight', 'pinned')
-		   AND embedding IS NOT NULL
-		 ORDER BY dist ASC
-		 LIMIT 1`,
+		`WITH scored AS (
+			SELECT id, VEC_EMBED_COSINE_DISTANCE(embedding, $1) AS dist
+			FROM memories
+			WHERE state = 'active'
+			  AND memory_type IN ('insight', 'pinned')
+			  AND embedding IS NOT NULL
+		)
+		SELECT id, dist
+		FROM scored
+		ORDER BY dist
+		LIMIT 1`,
 		queryText,
 	).Scan(&id, &dist)
 	if err == sql.ErrNoRows {

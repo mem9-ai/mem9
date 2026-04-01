@@ -797,9 +797,9 @@ func (r *MemoryRepo) NearDupSearch(ctx context.Context, queryText string) (strin
 		 WHERE state = 'active'
 		   AND memory_type IN ('insight', 'pinned')
 		   AND embedding IS NOT NULL
-		 ORDER BY dist ASC
+		 ORDER BY VEC_EMBED_COSINE_DISTANCE(embedding, ?)
 		 LIMIT 1`,
-		queryText,
+		queryText, queryText,
 	).Scan(&id, &dist)
 	if err == sql.ErrNoRows {
 		return "", 0, nil

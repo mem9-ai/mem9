@@ -162,6 +162,84 @@ func TestExtractPhase1FactTagsPopulated(t *testing.T) {
 	}
 }
 
+func TestExtractFactsRetryFallbackDropsFlattenedQueryIntent(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+
+		resp := `{"facts":[`
+		if callCount == 2 {
+			resp = `{"facts":":[{","text":"User searched for how to configure nginx","tags":["tech"],"fact_type":"query_intent"}`
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	facts, err := svc.extractFacts(context.Background(), "User: how do I configure nginx?")
+	if err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", callCount)
+	}
+	if len(facts) != 0 {
+		t.Fatalf("expected query_intent fallback fact to be dropped, got %v", facts)
+	}
+}
+
+func TestExtractFactsAndTagsRetryFallbackDropsFlattenedQueryIntent(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+
+		resp := `{"facts":[`
+		if callCount == 2 {
+			resp = `{"facts":":[{","text":"User searched for how to configure nginx","tags":["tech"],"fact_type":"query_intent","message_tags":[["question"]]}`
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	facts, messageTags, err := svc.extractFactsAndTags(context.Background(), "User: how do I configure nginx?", 1)
+	if err != nil {
+		t.Fatalf("extractFactsAndTags() error = %v", err)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", callCount)
+	}
+	if len(facts) != 0 {
+		t.Fatalf("expected query_intent fallback fact to be dropped, got %v", facts)
+	}
+	if len(messageTags) != 1 {
+		t.Fatalf("expected 1 message_tags entry, got %d", len(messageTags))
+	}
+	if len(messageTags[0]) != 1 || messageTags[0][0] != "question" {
+		t.Fatalf("expected message_tags[0] = [question], got %v", messageTags[0])
+	}
+}
+
 func TestColdStartAddAllFactsSetsTags(t *testing.T) {
 	t.Parallel()
 

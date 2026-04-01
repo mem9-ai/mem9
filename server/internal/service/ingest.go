@@ -419,15 +419,16 @@ func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
 	// garbage string, but the actual fact fields are top-level keys.  Recover
 	// the fact when a top-level "text" field is present.
 	type flattenedFact struct {
-		Facts interface{} `json:"facts"`
-		Text  string      `json:"text"`
-		Tags  []string    `json:"tags"`
+		Facts    interface{} `json:"facts"`
+		Text     string      `json:"text"`
+		Tags     []string    `json:"tags"`
+		FactType string      `json:"fact_type,omitempty"`
 	}
 	var flat flattenedFact
 	if err := json.Unmarshal([]byte(cleaned), &flat); err == nil {
 		if t := strings.TrimSpace(flat.Text); t != "" {
 			slog.Warn("normalizeParsedFacts: recovered fact from flattened-fact corruption", "text", t)
-			out = append(out, ExtractedFact{Text: t, Tags: flat.Tags})
+			out = append(out, ExtractedFact{Text: t, Tags: flat.Tags, FactType: flat.FactType})
 		}
 	}
 	return out
@@ -505,9 +506,10 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
-			if fallback := normalizeParsedFacts(raw2, nil); len(fallback) > 0 {
-				slog.Info("facts extracted", "facts", len(fallback))
-				return fallback, nil
+			if recovered := normalizeParsedFacts(raw2, nil); len(recovered) > 0 {
+				facts := dropQueryIntentFacts(recovered)
+				slog.Info("facts extracted", "facts", len(facts))
+				return facts, nil
 			}
 			if s.llm.DebugLLM() {
 				slog.Error("json parse llm resp failed", "len", len(raw2), "raw", raw2, "err", err)
@@ -620,7 +622,8 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
-			if fallback := dropQueryIntentFacts(normalizeParsedFacts(raw2, nil)); len(fallback) > 0 {
+			if recovered := normalizeParsedFacts(raw2, nil); len(recovered) > 0 {
+				facts := dropQueryIntentFacts(recovered)
 				type legacyFull struct {
 					MessageTags [][]string `json:"message_tags"`
 				}
@@ -636,8 +639,8 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 						messageTags[i] = []string{}
 					}
 				}
-				slog.Info("facts and tags extracted", "facts", len(fallback), "tagged_messages", messageCount)
-				return fallback, messageTags, nil
+				slog.Info("facts and tags extracted", "facts", len(facts), "tagged_messages", messageCount)
+				return facts, messageTags, nil
 			}
 			if s.llm.DebugLLM() {
 				slog.Error("json parse llm resp failed", "len", len(raw2), "raw", raw2, "err", err)
