@@ -15,6 +15,8 @@ When this file is read, start with this structure:
 > If you choose reconnect, paste your existing API key.
 >
 > After you choose a path, I will show one dry-run preview and ask for a single approval for the full setup flow.
+> If you already pasted an existing API key, the approval phrase should be `approve reconnect`.
+> If you want a brand-new mem9 API key, the approval phrase should be `approve create`.
 
 ## Safety Rules
 
@@ -47,6 +49,10 @@ When this file is read, start with this structure:
   - selected branch: reconnect or create-new
   - expected restart count
   - reconnect success criteria or create-new success criteria
+- Approval phrases:
+  - reconnect after the key is already captured: `approve reconnect`
+  - create-new: `approve create`
+- Do not ask the user to repeat the full API key in the approval line after it has already been captured.
 - Ask for one approval for the full disclosed flow. After that approval, proceed through install, config, restart, and verification without asking again unless the scope changes.
 
 ## Step 1 — Install Plugin
@@ -63,6 +69,35 @@ Install command:
 
 ```bash
 openclaw plugins install @mem9/mem9
+```
+
+### Required Post-Approval Notice
+
+Immediately after the single approval, and before running install, config edits, or restart, send a clear notice.
+
+Reconnect notice:
+
+```text
+Approved. I’m starting mem9 reconnect now.
+
+I’m about to install the plugin if needed, write the mem9 config, and restart the OpenClaw gateway once.
+This will temporarily interrupt the current chat.
+Please wait about 1-2 minutes, then come back to this same conversation and say `hi`.
+When you return, I will continue verification automatically.
+Until I send the final mem9 handoff, reconnect is still in progress and not yet complete.
+```
+
+Create-new notice:
+
+```text
+Approved. I’m starting mem9 setup now.
+
+I’m about to install the plugin, write the mem9 config, and restart the OpenClaw gateway.
+This flow may need a second restart after the new mem9 API key is generated and saved.
+This will temporarily interrupt the current chat.
+Please wait about 1-2 minutes, then come back to this same conversation and say `hi`.
+When you return, I will continue verification automatically.
+Until I send the final mem9 handoff, setup is still in progress and not yet complete.
 ```
 
 ## Step 2 — Detect OpenClaw Version
@@ -202,6 +237,19 @@ Before every restart:
 5. Restart OpenClaw one more time so future restarts reconnect to the same mem9 space
 
 If the auto-provision log never appears, stop and use `TROUBLESHOOTING.md`.
+
+### Post-Restart Resume Contract
+
+- When the user returns after a restart and sends `hi` or another short message, resume verification automatically.
+- Do not ask `Want me to continue?`
+- The first resume reply must clearly say that verification is resuming after the gateway restart.
+- The first resume reply must say what is being checked now:
+  - plugin loaded successfully
+  - configured key is still the active key
+  - final success has not been declared yet
+- The first resume reply must also say whether the user needs to do anything right now. Default: no further action is needed while verification continues.
+- Do not use vague wording like `mid-flight` or `system event` by itself.
+- If there was a real abnormal interruption beyond the normal restart, say exactly which stage is still incomplete and what the agent is resuming now.
 
 ## Step 5 — Verify
 

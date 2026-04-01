@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.1.11-beta
+version: 1.1.12-beta
 homepage: "https://github.com/mem9-ai/mem9"
 description: "Entry skill for mem9 beta onboarding and reconnect. After ClawHub install, users can say: setup mem9, install mem9, reconnect mem9, or review mem9 config changes."
 keywords: ["mem9", "memory plugin", "persistent memory", "agent memory", "install mem9", "setup mem9", "reconnect mem9", "openclaw memory"]

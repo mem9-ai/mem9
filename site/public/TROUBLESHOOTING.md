@@ -51,6 +51,16 @@ Confirm these first:
 - Restart and verify again
 - If a new key is still auto-provisioned after that, stop the reconnect flow and keep troubleshooting instead of silently switching mem9 spaces
 
+### User Returned After Restart But Verification Is Still In Progress
+
+- This usually means the gateway restart finished but verification has not completed yet
+- Resume verification automatically; do not ask whether the user wants to continue
+- First check gateway status, recent mem9-related logs, and the current config read-back
+- Tell the user clearly that verification is resuming after the restart and that final success has not been declared yet
+- Default to "no action needed right now" unless the verification step truly needs new user input
+- Do not send the final success handoff until verification is actually complete
+- If there was a real interruption beyond the normal restart, say exactly which step was incomplete and what you are resuming now instead of using vague phrases like `mid-flight` or `system event`
+
 ### Dashboard Still Shows "Space ID"
 
 - In the current dashboard, `Space ID` may still refer to the same mem9 credential

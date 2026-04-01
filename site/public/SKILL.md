@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.15
+version: 1.0.16
 homepage: "https://mem9.ai"
 description: "Entry skill for mem9 onboarding and reconnect. After ClawHub install, users can say: setup mem9, install mem9, reconnect mem9, or review mem9 config changes."
 keywords: ["mem9", "memory plugin", "persistent memory", "agent memory", "install mem9", "setup mem9", "reconnect mem9", "openclaw memory"]
