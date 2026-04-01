@@ -8,7 +8,7 @@ When this file is read, start with this structure:
 
 > I can help you uninstall mem9 from this machine and restore OpenClaw's local memory config.
 >
-> This removes the local mem9 plugin wiring only.
+> This removes the local mem9 plugin wiring and local mem9 install residue from this machine.
 > It does not delete remote mem9 cloud data.
 > It does not revoke your mem9 API key.
 > It does not reset the current chat session as part of this uninstall flow.
@@ -18,6 +18,7 @@ When this file is read, start with this structure:
 ## Safety Rules
 
 - Only remove or restore the local OpenClaw keys needed to stop using mem9 on this machine.
+- Treat the local mem9 extension directory under `~/.openclaw/extensions/mem9` as part of uninstall scope.
 - Do not promise remote mem9 data deletion from this uninstall flow.
 - Do not revoke or rotate the user's mem9 API key from this uninstall flow.
 - Do not leave OpenClaw in an intermediate state where `plugins.slots.memory` still points to `mem9` after the plugin is gone.
@@ -32,11 +33,12 @@ When this file is read, start with this structure:
 - The preview must include:
   - plugin id: `mem9`
   - package family being removed: `@mem9/mem9`
+  - local mem9 install residue may be removed from `~/.openclaw/extensions/mem9`
   - exact config keys that may change
   - expected restart count: `1`
   - that this flow does not delete remote mem9 data
   - that this flow does not reset the current chat session automatically
-  - `The gateway will restart automatically; please return to this chat in a few minutes and say hi.`
+  - a short restart-and-return instruction in the user's language that says the gateway will restart automatically, the user should return to this chat in a few minutes, and the user should say `hi`
 - Approval phrase:
   - `approve uninstall`
 
@@ -46,6 +48,7 @@ Required prompt structure:
 Dry-run preview:
 Plugin to remove: mem9
 Package family: @mem9/mem9
+Local install residue that may be removed: ~/.openclaw/extensions/mem9
 Exact config keys that may change only:
 plugins.slots.memory
 plugins.entries.memory-core.enabled
@@ -60,7 +63,7 @@ If that looks good, reply exactly:
 
 approve uninstall
 
-The gateway will restart automatically; please return to this chat in a few minutes and say hi.
+[Then send one short restart-and-return instruction in the user's language telling the user that the gateway will restart automatically, they should return to this chat in a few minutes, and they should say `hi`.]
 ```
 
 ## Step 1 — Prepare Config Rollback
@@ -97,6 +100,8 @@ Hard rules:
 - Use the approval already obtained in Step 0.
 - If the uninstall command leaves any mem9 config residue behind, fix the config before restart.
 - The plugin directory or install record may be removed by the uninstall command; do not rely on mem9 still being loadable after this step.
+- The uninstall is not complete unless the local mem9 extension directory is absent after cleanup.
+- If config rollback succeeds but the local mem9 extension directory under `~/.openclaw/extensions/mem9` still exists, treat that as uninstall failure, not success.
 - If the rollback config already caused OpenClaw to schedule a deferred restart, treat that deferred restart as the only restart for this uninstall flow.
 
 ## Step 3 — Restart Flow
@@ -106,8 +111,14 @@ Before restart, send this notice:
 ```text
 Approved. I’m starting mem9 uninstall now.
 
-The gateway will restart automatically; please return to this chat in a few minutes and say hi.
+[Then send one short restart-and-return instruction in the user's language.]
 ```
+
+The restart-and-return instruction must stay short and must tell the user all three points:
+
+- the gateway will restart automatically
+- the user should return to this same chat in a few minutes
+- the user should say `hi`
 
 - Use one restart only.
 - If the rollback config or uninstall step already triggered a deferred gateway restart, do not issue another explicit restart command.
@@ -115,6 +126,7 @@ The gateway will restart automatically; please return to this chat in a few minu
 - When the user returns and sends `hi` or another short message, resume verification automatically.
 - Do not ask `Want me to continue?`
 - The first resume reply must stay short and user-facing, for example:
+- Keep user-facing restart and resume notices in the user's language instead of replaying fixed English strings verbatim.
 
 ```text
 Resuming mem9 uninstall verification after the gateway restart now. You do not need to do anything right now.
@@ -130,6 +142,7 @@ Success criteria:
 - `plugins.entries.mem9` is gone.
 - `plugins.installs.mem9` is gone if that install record existed before.
 - `"mem9"` is no longer present in `plugins.allow` if that allowlist exists.
+- The local mem9 extension directory under `~/.openclaw/extensions/mem9` is absent.
 - If the memory slot was restored to `memory-core`, `plugins.entries.memory-core.enabled = true`.
 - No extra uninstall-time `reset session` or second explicit restart was attempted after the first required restart was already in flight.
 
@@ -137,6 +150,7 @@ Failure rules:
 
 - If the gateway does not come back up cleanly, do not declare success.
 - If `plugins.slots.memory` still points to `mem9`, treat the uninstall as failed and fix config first.
+- If the local mem9 extension directory is still present after uninstall, treat the uninstall as failed and keep cleaning local residue before declaring success.
 - If verification fails, use `TROUBLESHOOTING.md` from the same directory.
 
 ## Step 5 — Required Final Handoff
@@ -149,6 +163,7 @@ mem9 has been removed from this machine.
 What changed locally:
 - OpenClaw is no longer using the mem9 plugin for the memory slot
 - mem9 config and install references were removed
+- local mem9 install residue was removed from this machine
 - the gateway restarted successfully
 
 Important:

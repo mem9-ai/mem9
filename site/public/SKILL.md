@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.26
+version: 1.0.28
 homepage: "https://mem9.ai/openclaw-memory"
 description: "Persistent cloud memory for OpenClaw with cross-session recall, shared spaces, hybrid search, and a visual dashboard."
 keywords: ["mem9", "openclaw memory", "persistent memory", "long-term memory", "cloud memory", "agent memory", "shared memory", "multi-agent memory", "cross-session memory", "semantic memory", "hybrid search", "context engine", "memory plugin", "setup mem9", "install mem9"]
@@ -69,7 +69,7 @@ Use this skill when the user explicitly wants one of these:
 - Reconnect an existing mem9 API key on this machine
 - Review the exact config changes needed for mem9
 - Confirm recovery steps for a new machine or broken setup
-- Uninstall mem9 from this machine and restore OpenClaw's local memory config
+- Uninstall mem9 from this machine, remove local mem9 install residue, and restore OpenClaw's local memory config
 
 ## When NOT To Use This Skill
 

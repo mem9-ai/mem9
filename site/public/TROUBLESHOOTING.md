@@ -63,6 +63,20 @@ Confirm these first:
 - After the config read-back, inspect the gateway logs for the exact startup error
 - If the config still matches the uninstall failure pattern, re-apply the safe rollback from `UNINSTALL.md` before trying another restart
 
+### Reinstall Fails Because The mem9 Plugin Already Exists Locally
+
+- Treat this as local uninstall residue, not an API-key problem and not a mem9 cloud problem
+- The common pattern is:
+  - uninstall appeared to finish
+  - config rollback succeeded
+  - `plugins.installs.mem9` may already be gone
+  - later reinstall fails with `plugin already exists`
+  - a stale local extension directory still exists at `~/.openclaw/extensions/mem9`
+- Re-check whether the local extension directory is still present
+- If it is, remove that stale local mem9 extension directory
+- Then rerun the mem9 install flow
+- Do not continue into config write or restart until the stale local extension directory issue is resolved
+
 ### Gateway Became Unhealthy After mem9 Uninstall
 
 - Treat this as uninstall orchestration failure, not a mem9 remote API problem

@@ -49,7 +49,7 @@ When this file is read, start with this structure:
   - selected branch: reconnect or create-new
   - expected restart count
   - local history will not be uploaded by this setup flow
-  - `The gateway will restart automatically; please return to this chat in a few minutes and say hi.`
+  - a short restart-and-return instruction in the user's language that says the gateway will restart automatically, the user should return to this chat in a few minutes, and the user should say `hi`
 - Approval phrases:
   - reconnect after the key is already captured: `approve reconnect`
   - create-new: `approve create`
@@ -67,7 +67,7 @@ If that looks good, reply exactly:
 
 approve reconnect
 
-The gateway will restart automatically; please return to this chat in a few minutes and say hi.
+[Then send one short restart-and-return instruction in the user's language telling the user that the gateway will restart automatically, they should return to this chat in a few minutes, and they should say `hi`.]
 ```
 
 Create-new uses the same structure but with `approve create`.
@@ -83,13 +83,21 @@ The dry-run preview must disclose:
 - reconnect path expects one restart after config is written and read back
 - create-new path expects one restart without `apiKey`, then a final restart after the generated key is written back
 - local history will not be uploaded by this setup flow
-- `The gateway will restart automatically; please return to this chat in a few minutes and say hi.`
+- one short restart-and-return instruction in the user's language
 
 Install command:
 
 ```bash
 openclaw plugins install @mem9/mem9
 ```
+
+Preflight failure rule:
+
+- If install fails because the plugin already exists locally, classify that as a stale local mem9 install residue issue.
+- Treat a leftover local extension directory such as `~/.openclaw/extensions/mem9` as local uninstall residue, not as a reconnect or API-key problem.
+- In that case, stop before config edits or restart and use `TROUBLESHOOTING.md` from the same directory.
+- Do not improvise a new install branch after the dry-run.
+- A second approval is only acceptable if the original disclosed scope did not already cover local mem9 cleanup.
 
 ### Required Post-Approval Notice
 
@@ -100,7 +108,7 @@ Reconnect notice:
 ```text
 Approved. I’m starting mem9 reconnect now.
 
-The gateway will restart automatically; please return to this chat in a few minutes and say hi.
+[Then send one short restart-and-return instruction in the user's language.]
 ```
 
 Create-new notice:
@@ -108,8 +116,14 @@ Create-new notice:
 ```text
 Approved. I’m starting mem9 setup now.
 
-The gateway will restart automatically; please return to this chat in a few minutes and say hi.
+[Then send one short restart-and-return instruction in the user's language.]
 ```
+
+The restart-and-return instruction must stay short and must tell the user all three points:
+
+- the gateway will restart automatically
+- the user should return to this same chat in a few minutes
+- the user should say `hi`
 
 ## Step 2 — Detect OpenClaw Version
 
@@ -254,6 +268,7 @@ If the auto-provision log never appears, stop and use `TROUBLESHOOTING.md`.
 - When the user returns after a restart and sends `hi` or another short message, resume verification automatically.
 - Do not ask `Want me to continue?`
 - The first resume reply must be short and user-facing, for example: `Resuming mem9 verification after the gateway restart now. You do not need to do anything right now.`
+- Keep user-facing restart and resume notices in the user's language instead of replaying fixed English strings verbatim.
 - Do not enumerate internal checklists, log lines, temporary status flips, or diagnostic reasoning in the resume reply.
 - Do not stream intermediate verification details to the user unless the flow is blocked or has failed.
 - If the first post-restart host status briefly reports memory as unavailable, do one silent re-check before telling the user anything else.
@@ -279,6 +294,7 @@ Reconnect is successful only if all of the following are true:
 - The final active mem9 credential is still `USER_PROVIDED_MEM9_API_KEY`
 - A transient immediately-after-restart host status of `enabled (plugin mem9) · unavailable` is not failure by itself if the silent re-check succeeds without user action
 - Empty memory results are acceptable
+- If install never completed because a stale local mem9 directory blocked `openclaw plugins install @mem9/mem9`, reconnect has not started yet. Treat that as a local cleanup failure and use `TROUBLESHOOTING.md` instead of continuing to config write or restart.
 
 ### Create-New Success Criteria
 
