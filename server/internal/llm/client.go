@@ -81,6 +81,11 @@ type chatResponse struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage,omitempty"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
@@ -207,6 +212,10 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest) (string, error) 
 	}
 
 	metrics.LLMRequestDuration.WithLabelValues(c.model, "success").Observe(duration)
+	if chatResp.Usage != nil {
+		metrics.LLMTokensTotal.WithLabelValues(c.model, "prompt").Add(float64(chatResp.Usage.PromptTokens))
+		metrics.LLMTokensTotal.WithLabelValues(c.model, "completion").Add(float64(chatResp.Usage.CompletionTokens))
+	}
 	return content, nil
 }
 
