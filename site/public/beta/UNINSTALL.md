@@ -11,6 +11,7 @@ When this file is read, start with this structure:
 > This removes the local mem9 beta plugin wiring only.
 > It does not delete remote mem9 cloud data.
 > It does not revoke your mem9 space ID.
+> It does not reset the current chat session as part of this uninstall flow.
 >
 > I will show one dry-run preview and ask for a single approval for the full uninstall flow.
 
@@ -20,6 +21,8 @@ When this file is read, start with this structure:
 - Do not promise remote mem9 data deletion from this uninstall flow.
 - Do not revoke or rotate the user's mem9 beta credential from this uninstall flow.
 - Do not leave OpenClaw in an intermediate state where `plugins.slots.memory` or `plugins.slots.contextEngine` still points to `mem9` after the plugin is gone.
+- Do not perform `reset session` or any equivalent current-session reset inside this uninstall flow.
+- Do not trigger a second explicit gateway restart after the config rollback has already scheduled or completed the required restart.
 - Preserve unrelated config keys.
 - Use one explicit approval for the entire disclosed flow. Do not ask for a second approval unless the scope materially changes.
 
@@ -32,6 +35,7 @@ When this file is read, start with this structure:
   - exact config keys that may change
   - expected restart count: `1`
   - that this flow does not delete remote mem9 data
+  - that this flow does not reset the current chat session automatically
   - `The gateway will restart automatically; please return to this chat in a few minutes and say hi.`
 - Approval phrase:
   - `approve uninstall`
@@ -51,6 +55,7 @@ plugins.installs.mem9
 plugins.allow
 Expected restarts: 1
 Remote mem9 data deletion: will not happen in this uninstall flow
+Current session reset: will not happen automatically in this uninstall flow
 
 If that looks good, reply exactly:
 
@@ -66,6 +71,7 @@ Before uninstalling the plugin:
 - Show the exact keys that will change.
 - Prepare the final safe local config state first.
 - Apply the rollback in one config edit so the gateway never restarts with mem9 beta slot references after mem9 beta is gone.
+- If the user asked to `reset session`, acknowledge that as a follow-up suggestion after uninstall verification completes. Do not include it in the actual uninstall execution steps.
 
 Rollback rules:
 
@@ -94,6 +100,7 @@ Hard rules:
 - Use the approval already obtained in Step 0.
 - If the uninstall command leaves any mem9 beta config residue behind, fix the config before restart.
 - The plugin directory or install record may be removed by the uninstall command; do not rely on mem9 beta still being loadable after this step.
+- If the rollback config already caused OpenClaw to schedule a deferred restart, treat that deferred restart as the only restart for this uninstall flow.
 
 ## Step 3 — Restart Flow
 
@@ -105,7 +112,9 @@ Approved. I’m starting mem9 beta uninstall now.
 The gateway will restart automatically; please return to this chat in a few minutes and say hi.
 ```
 
-- Restart OpenClaw once after the rollback config and uninstall step are complete.
+- Use one restart only.
+- If the rollback config or uninstall step already triggered a deferred gateway restart, do not issue another explicit restart command.
+- Do not reset the current session before or after the restart.
 - When the user returns and sends `hi` or another short message, resume verification automatically.
 - Do not ask `Want me to continue?`
 - The first resume reply must stay short and user-facing, for example:
@@ -126,6 +135,7 @@ Success criteria:
 - `"mem9"` is no longer present in `plugins.allow` if that allowlist exists.
 - If the memory slot was restored to `memory-core`, `plugins.entries.memory-core.enabled = true`.
 - If `plugins.slots.contextEngine` previously pointed to `mem9`, it no longer does.
+- No extra uninstall-time `reset session` or second explicit restart was attempted after the first required restart was already in flight.
 
 Failure rules:
 
@@ -149,10 +159,15 @@ What changed locally:
 Important:
 - This uninstall did not delete any remote mem9 cloud data
 - This uninstall did not revoke your mem9 space ID
+- This uninstall did not reset the current chat session automatically
 
 If you want to reconnect later:
 - reinstall mem9 beta
 - use the same MEM9_SPACE_ID in the plugin config
+
+If you want a clean chat after uninstall:
+- start a new session after the gateway is healthy again
+- or reset the session manually as a separate follow-up step
 
 If you want to delete cloud data or manage memories directly:
 - go to https://mem9.ai/your-memory/

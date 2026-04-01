@@ -63,6 +63,20 @@ Confirm these first:
 - After the config read-back, inspect the gateway logs for the exact startup error
 - If the config still matches the uninstall failure pattern, re-apply the safe rollback from `UNINSTALL.md` before trying another restart
 
+### Gateway Became Unhealthy After mem9 Uninstall
+
+- Treat this as uninstall orchestration failure, not a mem9 remote API problem
+- The most common cause is that uninstall rollback already triggered one deferred restart, and the flow then added another explicit restart or a current-session reset on top
+- First inspect gateway reload logs for:
+  - `config change requires gateway restart`
+  - `deferring until ... complete`
+- Then check whether a second `SIGTERM` happened after the gateway had already come back once
+- Then check whether runtime is `inactive` while the gateway port is still in use
+- If that pattern is present, do not keep re-running uninstall steps blindly
+- Re-check the current config read-back
+- Let the gateway return to a healthy steady state with the rollback config in place before suggesting a new session or manual session reset
+- Do not attribute this pattern to remote mem9 cloud availability
+
 ### User Said Remember After Setup, But Nothing Was Written To mem9
 
 - First decide whether the user made an explicit durable-write request such as `remember this`, `save this to mem9`, `store this in mem9`, `记住`, or `记下来`

@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.22
+version: 1.0.23
 homepage: "https://mem9.ai"
 description: "Entry skill for mem9 onboarding, reconnect, and uninstall. After ClawHub install, users can say: setup mem9, install mem9, reconnect mem9, review mem9 config changes, or uninstall mem9."
 keywords: ["mem9", "memory plugin", "persistent memory", "agent memory", "install mem9", "setup mem9", "reconnect mem9", "uninstall mem9", "remove mem9", "openclaw memory"]
@@ -108,12 +108,13 @@ Do not use this skill for:
 ## Uninstall Rule
 
 - If the user explicitly wants to uninstall, remove, delete, or disable mem9 on this machine, read `UNINSTALL.md` from the same skill directory.
+- If the uninstall request also mentions `reset session`, treat that as a post-uninstall follow-up suggestion instead of part of the same destructive flow.
 - If this skill was loaded remotely instead of from a local skill directory, read `UNINSTALL.md` from the same URL directory as the current `SKILL.md`.
 - Remote path examples:
   - `https://mem9.ai/SKILL.md` -> [https://mem9.ai/UNINSTALL.md](https://mem9.ai/UNINSTALL.md)
   - `https://mem9.ai/beta/SKILL.md` -> [https://mem9.ai/beta/UNINSTALL.md](https://mem9.ai/beta/UNINSTALL.md)
   - `https://mem9.ai/test/SKILL.md` -> [https://mem9.ai/test/UNINSTALL.md](https://mem9.ai/test/UNINSTALL.md)
-- Follow `UNINSTALL.md` for the dry-run preview, config rollback, uninstall, restart, verification, and final handoff. Do not improvise partial removal flows.
+- Follow `UNINSTALL.md` for the dry-run preview, config rollback, uninstall, one required restart, verification, and final handoff. Do not improvise partial removal flows or add session reset inside the same flow.
 
 ## Steady-State Rule
 
