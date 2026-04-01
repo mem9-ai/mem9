@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.9
+version: 1.0.10
 homepage: "https://github.com/mem9-ai/mem9"
 description: "Persistent cloud memory for OpenClaw agents. Use when users say: install mem9, setup memory, add memory plugin, openclaw memory, mem9 onboarding, memory not working, import memories, upload sessions."
 keywords: ["mem9", "memory plugin", "persistent memory", "agent memory", "install memory", "setup memory", "openclaw memory", "cloud memory"]
