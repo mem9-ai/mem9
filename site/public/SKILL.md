@@ -1,31 +1,10 @@
 ---
 name: mem9
-version: 1.0.7
-description: |
-  Persistent cloud memory for OpenClaw agents.
-
-  Use when users say:
-  - "install mem9"
-  - "setup memory"
-  - "add memory plugin"
-  - "openclaw memory"
-  - "mem9 onboarding"
-  - "memory not working"
-  - "import memories"
-  - "upload sessions"
-
-keywords:
-  - mem9
-  - memory plugin
-  - persistent memory
-  - agent memory
-  - install memory
-  - setup memory
-  - openclaw memory
-  - cloud memory
-metadata:
-  openclaw:
-    emoji: "🧠"
+version: 1.0.9
+homepage: "https://github.com/mem9-ai/mem9"
+description: "Persistent cloud memory for OpenClaw agents. Use when users say: install mem9, setup memory, add memory plugin, openclaw memory, mem9 onboarding, memory not working, import memories, upload sessions."
+keywords: ["mem9", "memory plugin", "persistent memory", "agent memory", "install memory", "setup memory", "openclaw memory", "cloud memory"]
+metadata: {"openclaw":{"always":true,"emoji":"🧠","homepage":"https://github.com/mem9-ai/mem9","primaryEnv":"MEM9_API_KEY","requires":{"env":["MEM9_API_KEY"],"config":["plugins.slots.memory","plugins.entries.mem9.enabled","plugins.entries.mem9.config.apiUrl","plugins.entries.mem9.config.apiKey","plugins.allow"]}}}
 ---
 
 ```
@@ -48,6 +27,13 @@ metadata:
 mem9 gives OpenClaw persistent memory across resets, restarts, and new machines.
 
 The plugin connects to one cloud memory space, identified by an API key.
+
+## Source / Security / Config Impact
+
+- Official source: [mem9-ai/mem9](https://github.com/mem9-ai/mem9) and [mem9.ai](https://mem9.ai/).
+- Default network scope: this onboarding talks to `https://api.mem9.ai` unless the user explicitly chooses a different `apiUrl`.
+- Config scope: this onboarding only reads or updates the active `openclaw.json` entries needed for the mem9 plugin. It should not read or modify unrelated files.
+- Install impact: setup installs the mem9 plugin, writes plugin config, and restarts OpenClaw so the plugin can load.
 
 When talking to end users:
 
@@ -138,7 +124,8 @@ This task is NOT complete until all of the following are true:
 6. the user has been sent the full Step 7 handoff message, including:
 
 - next step: import memories
-- API key warning
+- MEM9_API_KEY warning
+- dashboard URL + same API key login note
 - recovery steps
 - backup plan
 
@@ -181,11 +168,12 @@ Use this distinction consistently:
 | ----------------- | ---------------------------------------------------------------------------------------- |
 | `apiKey`          | Preferred OpenClaw config field; sends the same mem9 API key in `X-API-Key` for v1alpha2 |
 | `tenantID`        | Legacy OpenClaw config field; only mention for compatibility or old raw configs          |
-| `API_KEY` env var | A local variable holding the user's mem9 API key                                         |
+| `MEM9_API_KEY` env var | A local variable holding the user's mem9 API key                                    |
 | `secret`          | Treat as the same value as the mem9 API key unless the user clearly means something else |
 | "recovery key"    | Avoid this term; say "API key" instead                                                   |
 
 Short rule: `API key`, `apiKey`, and `secret` may refer to the same mem9 identifier. Prefer saying `API key` to users, use `apiKey` in new config examples, and mention `tenantID` only as the legacy fallback alias.
+If a shell example needs an environment variable name, use `MEM9_API_KEY`.
 Security note:
 Treat the API key like a secret. Anyone who has it can access that mem9 space.
 
@@ -218,14 +206,14 @@ Branching:
 - If the user chooses create, continue to Step 1.
 
 ```text
-API_KEY="<paste-from-user>"
+MEM9_API_KEY="<paste-from-user>"
 ```
 
 When the user provides an existing API key, verify it is reachable before continuing:
 
 ```bash
 curl -sf \
-  -H "X-API-Key: $API_KEY" \
+  -H "X-API-Key: $MEM9_API_KEY" \
   "https://api.mem9.ai/v1alpha2/mem9s/memories?limit=1" \
   && echo "OK" || echo "UNREACHABLE"
 ```
@@ -260,7 +248,7 @@ Response:
 }
 ```
 
-Save `id` as `API_KEY`.
+Save `id` as `MEM9_API_KEY`.
 
 When explaining it to the user, say:
 
@@ -323,7 +311,7 @@ Routing rule:
 `[AGENT]` Patch existing config (merge-safe, preserves other keys):
 
 ```bash
-jq --arg api_key "$API_KEY" '
+jq --arg api_key "$MEM9_API_KEY" '
   .plugins.slots.memory = "mem9" |
   if (.plugins.entries.mem9.config // {}) == {}
   then
@@ -367,7 +355,7 @@ Or if no `openclaw.json` exists, create:
 `[AGENT]` No `allow` array needed:
 
 ```bash
-jq --arg api_key "$API_KEY" '
+jq --arg api_key "$MEM9_API_KEY" '
   .plugins.slots.memory = "mem9" |
   if (.plugins.entries.mem9.config // {}) == {}
   then
@@ -440,11 +428,14 @@ Import your existing local memory so mem9 starts with your real history.
 Say: "import memories to mem9"
 I can scan local memory notes and session files, then transform/import them into mem9.
 Common local files include: memory/*.md, MEMORY.md, sessions/*.jsonl.
+You can also go to https://mem9.ai/your-memory/ to visually manage, analyze, import, and export your memories.
+Sign in there with the same mem9 API key from this setup.
+If the dashboard still shows "Space ID", enter the same mem9 API key.
 
 
 💾 YOUR MEM9 API KEY
 
-API_KEY: <your-api-key>
+MEM9_API_KEY: <your-api-key>
 
 This API key is your access key to mem9.
 Keep it private and store it somewhere safe.
@@ -452,14 +443,14 @@ Keep it private and store it somewhere safe.
 
 ♻️ RECOVERY
 
-Reinstall mem9 and use the same API_KEY in Step 4.
+Reinstall mem9 and use the same MEM9_API_KEY in Step 4.
 Your memory will reconnect instantly.
 
 
 📦 BACKUP PLAN
 
 Keep your original local memory/session files as backup.
-Also store the API_KEY in a password manager or secure vault.
+Also store the MEM9_API_KEY in a password manager or secure vault.
 ```
 
 Do not default to offering a synthetic write/read demo as the next step.
@@ -498,7 +489,7 @@ Header: `X-Mnemo-Agent-Id: <name>` (optional)
 ## Examples
 
 ```bash
-export API_KEY="your-api-key"
+export MEM9_API_KEY="your-api-key"
 export API="https://api.mem9.ai/v1alpha2/mem9s"
 ```
 
@@ -507,23 +498,23 @@ export API="https://api.mem9.ai/v1alpha2/mem9s"
 ```bash
 curl -sX POST "$API/memories" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $API_KEY" \
+  -H "X-API-Key: $MEM9_API_KEY" \
   -d '{"content":"Project uses PostgreSQL 15","tags":["tech"],"source":"agent-1"}'
 ```
 
 **Search:**
 
 ```bash
-curl -s -H "X-API-Key: $API_KEY" "$API/memories?q=postgres&limit=5"
-curl -s -H "X-API-Key: $API_KEY" "$API/memories?tags=tech&source=agent-1"
+curl -s -H "X-API-Key: $MEM9_API_KEY" "$API/memories?q=postgres&limit=5"
+curl -s -H "X-API-Key: $MEM9_API_KEY" "$API/memories?tags=tech&source=agent-1"
 ```
 
 **Get/Update/Delete:**
 
 ```bash
-curl -s -H "X-API-Key: $API_KEY" "$API/memories/{id}"
-curl -sX PUT "$API/memories/{id}" -H "Content-Type: application/json" -H "X-API-Key: $API_KEY" -d '{"content":"updated"}'
-curl -sX DELETE "$API/memories/{id}" -H "X-API-Key: $API_KEY"
+curl -s -H "X-API-Key: $MEM9_API_KEY" "$API/memories/{id}"
+curl -sX PUT "$API/memories/{id}" -H "Content-Type: application/json" -H "X-API-Key: $MEM9_API_KEY" -d '{"content":"updated"}'
+curl -sX DELETE "$API/memories/{id}" -H "X-API-Key: $MEM9_API_KEY"
 ```
 
 **Import files:**
@@ -536,13 +527,13 @@ AGENT_FIELD=""
 [ -n "$AGENT_ID" ] && AGENT_FIELD="-F agent_id=$AGENT_ID"
 
 # Memory file
-curl -sX POST "$API/imports" -H "X-API-Key: $API_KEY" $AGENT_FIELD -F "file=@memory.json" -F "file_type=memory"
+curl -sX POST "$API/imports" -H "X-API-Key: $MEM9_API_KEY" $AGENT_FIELD -F "file=@memory.json" -F "file_type=memory"
 
 # Session file
-curl -sX POST "$API/imports" -H "X-API-Key: $API_KEY" $AGENT_FIELD -F "file=@session.json" -F "file_type=session" -F "session_id=ses-001"
+curl -sX POST "$API/imports" -H "X-API-Key: $MEM9_API_KEY" $AGENT_FIELD -F "file=@session.json" -F "file_type=session" -F "session_id=ses-001"
 
 # Check status
-curl -s -H "X-API-Key: $API_KEY" "$API/imports"
+curl -s -H "X-API-Key: $MEM9_API_KEY" "$API/imports"
 ```
 
 ---
@@ -559,7 +550,7 @@ When presenting onboarding or recovery instructions:
 Suggested English wording:
 
 ```text
-This API_KEY is not a nickname.
+This MEM9_API_KEY is not a nickname.
 It is the key that reconnects you to your mem9 space.
 It is also effectively your secret.
 Never share it with anyone.
@@ -571,8 +562,8 @@ I can scan local files such as memory.json, memories/*.json, and sessions/*.json
 
 Recovery plan:
 1. Local backup: keep the original memory/session files even after import
-2. Offsite recovery: save the API_KEY in a password manager, team vault, or another secure offsite location
-3. New machine recovery: reinstall the plugin and configure the same API_KEY as `apiKey` in openclaw.json to reconnect to the same cloud memory
+2. Offsite recovery: save the MEM9_API_KEY in a password manager, team vault, or another secure offsite location
+3. New machine recovery: reinstall the plugin and configure the same MEM9_API_KEY as `apiKey` in openclaw.json to reconnect to the same cloud memory
 ```
 
 ---
@@ -625,9 +616,9 @@ Include `-F "agent_id=$AGENT_ID"` in each upload only when a value is found; omi
 After first read, do this immediately:
 
 1. **Import history first** — Offer to scan and upload existing memory/session files before any demo.
-2. **Explain recovery** — Tell the user that reusing the same `API_KEY` reconnects the same cloud memory on a new machine.
+2. **Explain recovery** — Tell the user that reusing the same `MEM9_API_KEY` reconnects the same cloud memory on a new machine.
 3. **Explain backup** — Recommend keeping original local files and saving the API key in a secure offsite location.
-4. **Explore** — `curl -s -H "X-API-Key: $API_KEY" "https://api.mem9.ai/v1alpha2/mem9s/memories?limit=10" | jq .`
+4. **Explore** — `curl -s -H "X-API-Key: $MEM9_API_KEY" "https://api.mem9.ai/v1alpha2/mem9s/memories?limit=10" | jq .`
 5. **Verify only if useful** — Offer a live `memory_store` / `memory_search` test only after import and recovery guidance are clear, or if the user explicitly asks for validation.
 
 ---

@@ -1,32 +1,10 @@
 ---
 name: mem9
-version: 1.1.6-beta
-description: |
-  Persistent cloud memory for OpenClaw agents.
-
-  Use when users say:
-  - "install mem9"
-  - "setup memory"
-  - "add memory plugin"
-  - "openclaw memory"
-  - "mem9 onboarding"
-  - "memory not working"
-  - "import memories"
-  - "upload sessions"
-
-
-keywords:
-  - mem9
-  - memory plugin
-  - persistent memory
-  - agent memory
-  - install memory
-  - setup memory
-  - openclaw memory
-  - cloud memory
-metadata:
-  openclaw:
-    emoji: "🧠"
+version: 1.1.8-beta
+homepage: "https://github.com/mem9-ai/mem9"
+description: "Persistent cloud memory for OpenClaw agents. Use when users say: install mem9, setup memory, add memory plugin, openclaw memory, mem9 onboarding, memory not working, import memories, upload sessions."
+keywords: ["mem9", "memory plugin", "persistent memory", "agent memory", "install memory", "setup memory", "openclaw memory", "cloud memory"]
+metadata: {"openclaw":{"always":true,"emoji":"🧠","homepage":"https://github.com/mem9-ai/mem9","primaryEnv":"MEM9_SPACE_ID","requires":{"env":["MEM9_SPACE_ID"],"config":["plugins.slots.memory","plugins.slots.contextEngine","plugins.entries.mem9.enabled","plugins.entries.mem9.config.apiUrl","plugins.entries.mem9.config.tenantID","plugins.allow"]}}}
 ---
 
 ```
@@ -49,6 +27,13 @@ metadata:
 mem9 gives OpenClaw persistent memory across resets, restarts, and new machines.
 
 The plugin connects to one cloud memory space, identified by a space ID.
+
+## Source / Security / Config Impact
+
+- Official source: [mem9-ai/mem9](https://github.com/mem9-ai/mem9) and [mem9.ai](https://mem9.ai/).
+- Default network scope: this onboarding talks to `https://api.mem9.ai` unless the user explicitly chooses a different `apiUrl`.
+- Config scope: this onboarding only reads or updates the active `openclaw.json` entries needed for the mem9 plugin. It should not read or modify unrelated files.
+- Install impact: setup installs the mem9 plugin, writes plugin config, and restarts OpenClaw so the plugin can load.
 
 When talking to end users:
 - Say "space ID", "memory space", or "cloud memory space"
@@ -133,7 +118,8 @@ This task is NOT complete until all of the following are true:
 5. setup is verified
 6. the user has been sent the full Step 7 handoff message, including:
 - next step: import memories
-- space ID warning
+- MEM9_SPACE_ID / legacy SPACE_ID warning
+- dashboard URL + same space ID login note
 - recovery steps
 - backup plan
 
@@ -175,11 +161,12 @@ Use this distinction consistently:
 | Internal term | User-facing explanation |
 |---------------|-------------------------|
 | `tenantID` | Internal plugin config field; do not surface this to users unless editing config |
-| `SPACE_ID` env var | A local variable holding the user's mem9 space ID |
+| `MEM9_SPACE_ID` env var | A local variable holding the user's mem9 space ID |
 | `secret` | Treat as the same value as the mem9 space ID unless the user clearly means something else |
 | "recovery key" | Avoid this term; say "space ID" instead |
 
 Short rule: `space ID`, `tenantID`, and `secret` may refer to the same mem9 identifier. Prefer saying `space ID` to users, and use `tenantID` only in config examples.
+If a shell example needs an environment variable name, use `MEM9_SPACE_ID`; treat `SPACE_ID` as a legacy shorthand only.
 Security note:
 Treat the space ID like a secret. Anyone who has it can access that mem9 space.
 
@@ -210,13 +197,13 @@ Branching:
 - If the user chooses create, continue to Step 1.
 
 ```
-SPACE_ID="<paste-from-user>"
+MEM9_SPACE_ID="<paste-from-user>"
 ```
 
 When the user provides an existing ID, verify it is reachable before continuing:
 
 ```bash
-curl -sf "https://api.mem9.ai/v1alpha1/mem9s/$SPACE_ID/memories?limit=1" \
+curl -sf "https://api.mem9.ai/v1alpha1/mem9s/$MEM9_SPACE_ID/memories?limit=1" \
   && echo "OK" || echo "UNREACHABLE"
 ```
 
@@ -226,7 +213,7 @@ If the check returns `OK`, say:
 
 If the check fails, say:
 
-> I could not reach that SPACE_ID. Please double-check it, or create a new mem9 space instead.
+> I could not reach that mem9 space ID. Please double-check it, or create a new mem9 space instead.
 
 **If no** — proceed to Step 1 to provision a new space.
 
@@ -249,13 +236,13 @@ Response:
 }
 ```
 
-Save `id` as `SPACE_ID`.
+Save `id` as `MEM9_SPACE_ID`.
 
 When explaining it to the user, say:
 
-> Your new mem9 space is ready. This SPACE_ID is how this machine, and any future machine you trust, reconnects to the same memory.
+> Your new mem9 space is ready. This space ID is how this machine, and any future machine you trust, reconnects to the same memory.
 >
-> Important: this SPACE_ID is also your secret. Never share it with anyone. If someone else gets it, they can access your memory.
+> Important: this space ID is also your secret. Never share it with anyone. If someone else gets it, they can access your memory.
 
 ### Step 2 — Install plugin
 
@@ -312,7 +299,7 @@ Routing rule:
 `[AGENT]` Patch existing config (merge-safe, preserves other keys):
 
 ```bash
-jq --arg sid "$SPACE_ID" '
+jq --arg sid "$MEM9_SPACE_ID" '
   .plugins.slots.memory = "mem9" |
   .plugins.entries.mem9 = {
     enabled: true,
@@ -349,7 +336,7 @@ Or if no `openclaw.json` exists, create:
 `[AGENT]` No `allow` array needed:
 
 ```bash
-jq --arg sid "$SPACE_ID" '
+jq --arg sid "$MEM9_SPACE_ID" '
   .plugins.slots.memory = "mem9" |
   .plugins.entries.mem9 = {
     enabled: true,
@@ -410,25 +397,28 @@ Say: "import memories to mem9"
 I can scan local memory notes and session files, then transform/import them into mem9.
 Common local files include: memory/*.md, MEMORY.md, sessions/*.jsonl.
 You can also go to https://mem9.ai/your-memory/ to visually manage, analyze, import, and export your memories.
+Sign in there with the same mem9 space ID from this setup.
+If the dashboard still shows "Space ID", enter the same mem9 space ID.
 
 💾 YOUR MEM9 SPACE ID
 
-SPACE_ID: <your-space-id>
+MEM9_SPACE_ID: <your-space-id>
 
-This ID is your access key to mem9.  
+This space ID is your access key to mem9.
+If an older mem9 screen or config says `SPACE_ID`, use this same value.  
 Keep it private and store it somewhere safe.
 
 
 ♻️ RECOVERY
 
-Reinstall mem9 and use the same SPACE_ID in Step 4.  
+Reinstall mem9 and use the same MEM9_SPACE_ID in Step 4.  
 Your memory will reconnect instantly.
 
 
 📦 BACKUP PLAN
 
 Keep your original local memory/session files as backup.  
-Also store the SPACE_ID in a password manager or secure vault.
+Also store the MEM9_SPACE_ID in a password manager or secure vault.
 ```
 
 Do not default to offering a synthetic write/read demo as the next step.
@@ -465,8 +455,8 @@ Header: `X-Mnemo-Agent-Id: <name>` (optional)
 ## Examples
 
 ```bash
-export SPACE_ID="your-space-id"
-export API="https://api.mem9.ai/v1alpha1/mem9s/$SPACE_ID"
+export MEM9_SPACE_ID="your-space-id"
+export API="https://api.mem9.ai/v1alpha1/mem9s/$MEM9_SPACE_ID"
 ```
 
 **Store:**
@@ -513,7 +503,7 @@ When presenting onboarding or recovery instructions:
 Suggested English wording:
 
 ```text
-This SPACE_ID is not a nickname.
+This MEM9_SPACE_ID is not a nickname.
 It is the key that reconnects you to your mem9 space.
 It is also effectively your secret.
 Never share it with anyone.
@@ -525,8 +515,8 @@ I can scan local files such as memory.json, memories/*.json, and sessions/*.json
 
 Recovery plan:
 1. Local backup: keep the original memory/session files even after import
-2. Offsite recovery: save the SPACE_ID in a password manager, team vault, or another secure offsite location
-3. New machine recovery: reinstall the plugin and configure the same SPACE_ID in openclaw.json to reconnect to the same cloud memory
+2. Offsite recovery: save the MEM9_SPACE_ID in a password manager, team vault, or another secure offsite location
+3. New machine recovery: reinstall the plugin and configure the same MEM9_SPACE_ID in openclaw.json to reconnect to the same cloud memory
 ```
 
 ---
@@ -564,9 +554,9 @@ When user says "import memories to mem9" without specifying files:
 After first read, do this immediately:
 
 1. **Import history first** — Offer to scan and upload existing memory/session files before any demo.
-2. **Explain recovery** — Tell the user that reusing the same `SPACE_ID` reconnects the same cloud memory on a new machine.
+2. **Explain recovery** — Tell the user that reusing the same `MEM9_SPACE_ID` reconnects the same cloud memory on a new machine.
 3. **Explain backup** — Recommend keeping original local files and saving the ID in a secure offsite location.
-4. **Explore** — `curl -s "https://api.mem9.ai/v1alpha1/mem9s/$SPACE_ID/memories?limit=10" | jq .`
+4. **Explore** — `curl -s "https://api.mem9.ai/v1alpha1/mem9s/$MEM9_SPACE_ID/memories?limit=10" | jq .`
 5. **Verify only if useful** — Offer a live `memory_store` / `memory_search` test only after import and recovery guidance are clear, or if the user explicitly asks for validation.
 
 ---
