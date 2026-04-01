@@ -83,6 +83,8 @@ var (
 	)
 
 	// LLMTokensTotal counts LLM token consumption by model and type (prompt/completion).
+	// LLMTokensTotal counts LLM token consumption by model and type.
+	// type: "input" | "output" | "total" | "cache_read" | "cache_creation"
 	LLMTokensTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: "mnemo",
