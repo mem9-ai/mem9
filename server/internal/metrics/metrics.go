@@ -93,6 +93,41 @@ var (
 		},
 		[]string{"model", "type"},
 	)
+	// ActiveMemoryTotal is the current total number of active memories across all tenants.
+	ActiveMemoryTotal = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "mnemo",
+		Name:      "active_memory_total",
+		Help:      "Current total number of active memories across all tenants.",
+	})
+
+	// ActiveMemory7dTotal is the current total number of active memories created in the
+	// last 7 days across all tenants.
+	ActiveMemory7dTotal = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "mnemo",
+		Name:      "active_memory_7d_total",
+		Help:      "Current total number of active memories created in the last 7 days across all tenants.",
+	})
+
+	// MemoryWritesTotal counts the number of memory rows successfully written to the
+	// database, including all rows produced by LLM reconcile. This reflects actual
+	// DB writes, not HTTP request count.
+	MemoryWritesTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "mnemo",
+		Name:      "memory_writes_total",
+		Help:      "Total number of memory rows successfully written to the database.",
+	})
+
+	// MemoryWriteDuration observes the latency of memory write operations by op type.
+	// op labels: create, bulk_create, archive_and_create
+	MemoryWriteDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "mnemo",
+			Name:      "memory_write_duration_seconds",
+			Help:      "Latency of memory write operations against the database.",
+			Buckets:   []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5},
+		},
+		[]string{"op", "status"},
+	)
 )
 
 // Middleware records HTTP request count and duration for each request.

@@ -36,13 +36,14 @@ type MemoryRepo interface {
 	FTSAvailable() bool
 
 	ListBootstrap(ctx context.Context, limit int) ([]domain.Memory, error)
-
 	// NearDupSearch finds the nearest active memory to queryText across the tenant.
 	// Returns ("", 0, nil) when no vector index is available (e.g. autoModel not
 	// configured, or backend does not support auto-embedding).
 	// Postgres returns ("", 0, nil) — auto-embedding is not supported.
 	// DB9 implements real search when autoModel is configured; returns ("", 0, nil) otherwise.
 	NearDupSearch(ctx context.Context, queryText string) (id string, score float64, err error)
+	// CountStats returns the total active memory count and the count created in the last 7 days.
+	CountStats(ctx context.Context) (total int64, last7d int64, err error)
 }
 
 // TenantRepo manages tenant records in the control plane DB.

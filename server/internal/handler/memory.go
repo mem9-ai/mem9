@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
 
@@ -69,12 +70,24 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				respondError(w, http.StatusInternalServerError, "ingest reconciliation failed")
 				return
 			}
+			var written int64
+			if result != nil {
+				written = int64(result.MemoriesChanged)
+			}
+			go s.refreshWriteMetrics(svc, written)
 			respond(w, http.StatusOK, map[string]string{"status": "ok"})
 		} else {
 			go func() {
-				if _, err := s.ingestMessages(context.Background(), auth, svc, ingestReq); err != nil {
+				result, err := s.ingestMessages(context.Background(), auth, svc, ingestReq)
+				if err != nil {
 					slog.Error("async ingest failed", "session", ingestReq.SessionID, "err", err)
+					return
 				}
+				var written int64
+				if result != nil {
+					written = int64(result.MemoriesChanged)
+				}
+				s.refreshWriteMetrics(svc, written)
 			}()
 			respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 		}
@@ -95,12 +108,17 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	content := req.Content
 
 	if req.Sync {
-		_, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
+		mem, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
 		if err != nil {
 			slog.Error("sync memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
 			s.handleError(r.Context(), w, err)
 			return
 		}
+		var written int64
+		if mem != nil {
+			written = 1
+		}
+		go s.refreshWriteMetrics(svc, written)
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	} else {
 		go func(agentName, actorAgentID, content string, tags []string, metadata json.RawMessage) {
@@ -109,11 +127,14 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				slog.Error("async memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
 				return
 			}
+			var written int64
 			if mem != nil {
+				written = 1
 				slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", mem.ID)
-				return
+			} else {
+				slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", "")
 			}
-			slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", "")
+			s.refreshWriteMetrics(svc, written)
 		}(auth.AgentName, agentID, content, tags, metadata)
 
 		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
@@ -467,4 +488,20 @@ func dedupStrings(ss []string) []string {
 		}
 	}
 	return out
+}
+
+func (s *Server) refreshWriteMetrics(svc resolvedSvc, written int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	total, last7d, err := svc.memory.CountStats(ctx)
+	if err != nil {
+		slog.Warn("refreshWriteMetrics: count stats failed", "err", err)
+		return
+	}
+	metrics.ActiveMemoryTotal.Set(float64(total))
+	metrics.ActiveMemory7dTotal.Set(float64(last7d))
+	if written > 0 {
+		metrics.MemoryWritesTotal.Add(float64(written))
+	}
 }

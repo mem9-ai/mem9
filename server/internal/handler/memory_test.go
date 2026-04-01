@@ -27,6 +27,7 @@ func (m *testMemoryRepo) Create(_ context.Context, mem *domain.Memory) error {
 	m.createCalls = append(m.createCalls, mem)
 	return nil
 }
+
 func (m *testMemoryRepo) GetByID(_ context.Context, id string) (*domain.Memory, error) {
 	for _, mem := range m.createCalls {
 		if mem.ID == id {
@@ -52,12 +53,15 @@ func (m *testMemoryRepo) BulkCreate(context.Context, []*domain.Memory) error { r
 func (m *testMemoryRepo) VectorSearch(context.Context, []float32, domain.MemoryFilter, int) ([]domain.Memory, error) {
 	return nil, nil
 }
+
 func (m *testMemoryRepo) AutoVectorSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
 	return nil, nil
 }
+
 func (m *testMemoryRepo) KeywordSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
 	return nil, nil
 }
+
 func (m *testMemoryRepo) FTSSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
 	return nil, nil
 }
@@ -65,9 +69,12 @@ func (m *testMemoryRepo) FTSAvailable() bool { return false }
 func (m *testMemoryRepo) ListBootstrap(context.Context, int) ([]domain.Memory, error) {
 	return nil, nil
 }
+
 func (m *testMemoryRepo) NearDupSearch(context.Context, string) (string, float64, error) {
 	return "", 0, nil
 }
+
+func (m *testMemoryRepo) CountStats(context.Context) (int64, int64, error) { return 0, 0, nil }
 
 // testSessionRepo is a minimal SessionRepo mock for handler tests.
 type testSessionRepo struct {
@@ -81,19 +88,24 @@ func (s *testSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Sessi
 	s.sessions = sessions
 	return nil
 }
+
 func (s *testSessionRepo) PatchTags(context.Context, string, string, []string) error {
 	s.patchTagsCalled = true
 	return nil
 }
+
 func (s *testSessionRepo) AutoVectorSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
 	return nil, nil
 }
+
 func (s *testSessionRepo) VectorSearch(context.Context, []float32, domain.MemoryFilter, int) ([]domain.Memory, error) {
 	return nil, nil
 }
+
 func (s *testSessionRepo) FTSSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
 	return nil, nil
 }
+
 func (s *testSessionRepo) KeywordSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
 	return nil, nil
 }

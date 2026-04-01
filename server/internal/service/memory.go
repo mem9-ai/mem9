@@ -14,6 +14,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/llm"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/repository"
 )
 
@@ -89,7 +90,10 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
-		if err := s.memories.Create(ctx, mem); err != nil {
+		writeStart := time.Now()
+		err := s.memories.Create(ctx, mem)
+		metrics.MemoryWriteDuration.WithLabelValues("create", metricStatus(err)).Observe(time.Since(writeStart).Seconds())
+		if err != nil {
 			return nil, fmt.Errorf("create raw memory: %w", err)
 		}
 		return mem, nil
@@ -683,7 +687,10 @@ func (s *MemoryService) BulkCreate(ctx context.Context, agentName string, items 
 		})
 	}
 
-	if err := s.memories.BulkCreate(ctx, memories); err != nil {
+	writeStart := time.Now()
+	err := s.memories.BulkCreate(ctx, memories)
+	metrics.MemoryWriteDuration.WithLabelValues("bulk_create", metricStatus(err)).Observe(time.Since(writeStart).Seconds())
+	if err != nil {
 		return nil, err
 	}
 
@@ -712,4 +719,8 @@ func validateMemoryInput(content string, tags []string) error {
 		return &domain.ValidationError{Field: "tags", Message: "too many (max 20)"}
 	}
 	return nil
+}
+
+func (s *MemoryService) CountStats(ctx context.Context) (total int64, last7d int64, err error) {
+	return s.memories.CountStats(ctx)
 }

@@ -332,7 +332,10 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 		UpdatedAt:  now,
 	}
 
-	if err := s.memories.Create(ctx, m); err != nil {
+	writeStart := time.Now()
+	err := s.memories.Create(ctx, m)
+	metrics.MemoryWriteDuration.WithLabelValues("create", metricStatus(err)).Observe(time.Since(writeStart).Seconds())
+	if err != nil {
 		return nil, fmt.Errorf("create raw memory: %w", err)
 	}
 	return &IngestResult{
@@ -1141,7 +1144,10 @@ func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sess
 		UpdatedAt:  now,
 	}
 
-	if err := s.memories.Create(ctx, m); err != nil {
+	writeStart := time.Now()
+	err := s.memories.Create(ctx, m)
+	metrics.MemoryWriteDuration.WithLabelValues("create", metricStatus(err)).Observe(time.Since(writeStart).Seconds())
+	if err != nil {
 		return "", fmt.Errorf("create insight: %w", err)
 	}
 	return m.ID, nil
@@ -1182,8 +1188,10 @@ func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, s
 		UpdatedAt:  now,
 	}
 
-	// Archive old + create new in a single transaction.
-	if err := s.memories.ArchiveAndCreate(ctx, oldID, newID, m); err != nil {
+	writeStart := time.Now()
+	err := s.memories.ArchiveAndCreate(ctx, oldID, newID, m)
+	metrics.MemoryWriteDuration.WithLabelValues("archive_and_create", metricStatus(err)).Observe(time.Since(writeStart).Seconds())
+	if err != nil {
 		return "", fmt.Errorf("archive and create for %s: %w", oldID, err)
 	}
 	return newID, nil
@@ -1257,4 +1265,11 @@ func truncateRunes(s string, maxRunes int) string {
 		return s
 	}
 	return string(runes[:maxRunes]) + "..."
+}
+
+func metricStatus(err error) string {
+	if err != nil {
+		return "error"
+	}
+	return "ok"
 }
