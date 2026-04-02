@@ -28,6 +28,11 @@ const (
 	secondHopWeight = 0.3
 	// secondHopTopN is the number of top first-hop results used as seeds for second-hop search.
 	secondHopTopN = 3
+	// secondHopGateScore is the minimum first-hop cosine similarity required to
+	// trigger second-hop search. When the best vector result scores below this
+	// threshold the query likely has no strong match (e.g. adversarial), so
+	// second-hop is skipped to avoid injecting noise.
+	secondHopGateScore = 0.5
 )
 
 type MemoryService struct {
@@ -343,12 +348,22 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 	scores := rrfMerge(kwResults, vecResults)
 	mems := collectMems(kwResults, vecResults)
 
-	// Second-hop: use top-N first-hop results as seeds for expanded vector search.
-	secondHopMems := s.secondHopAutoSearch(ctx, mems, scores, filter, limit)
-	for rank, m := range secondHopMems {
-		scores[m.ID] += secondHopWeight / (rrfK + float64(rank+1))
-		if _, exists := mems[m.ID]; !exists {
-			mems[m.ID] = m
+	// Second-hop: skip when the best first-hop vector score is below the gate
+	// threshold — a low score suggests the query has no strong match (e.g.
+	// adversarial), so expanding search would mainly inject noise.
+	maxVecScore := 0.0
+	for _, m := range vecResults {
+		if m.Score != nil && *m.Score > maxVecScore {
+			maxVecScore = *m.Score
+		}
+	}
+	if maxVecScore >= secondHopGateScore {
+		secondHopMems := s.secondHopAutoSearch(ctx, mems, scores, filter, limit)
+		for rank, m := range secondHopMems {
+			scores[m.ID] += secondHopWeight / (rrfK + float64(rank+1))
+			if _, exists := mems[m.ID]; !exists {
+				mems[m.ID] = m
+			}
 		}
 	}
 
