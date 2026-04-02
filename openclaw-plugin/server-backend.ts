@@ -67,6 +67,7 @@ export class ServerBackend implements MemoryBackend {
     if (input.source) params.set("source", input.source);
     if (input.limit != null) params.set("limit", String(input.limit));
     if (input.offset != null) params.set("offset", String(input.offset));
+    if (input.memory_type) params.set("memory_type", input.memory_type);
 
     const qs = params.toString();
     const raw = await this.request<{

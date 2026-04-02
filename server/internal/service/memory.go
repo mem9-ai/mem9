@@ -22,6 +22,17 @@ const (
 	maxTags         = 20
 	maxBulkSize     = 100
 	defaultMinScore = 0.3
+
+	// secondHopWeight is the RRF weight applied to second-hop vector search results.
+	// Lower than 1.0 to prevent indirect matches from outranking direct hits.
+	secondHopWeight = 0.3
+	// secondHopTopN is the number of top first-hop results used as seeds for second-hop search.
+	secondHopTopN = 3
+	// secondHopGateScore is the minimum first-hop cosine similarity required to
+	// trigger second-hop search. When the best vector result scores below this
+	// threshold the query likely has no strong match (e.g. adversarial), so
+	// second-hop is skipped to avoid injecting noise.
+	secondHopGateScore = 0.5
 )
 
 type MemoryService struct {
@@ -336,11 +347,119 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 
 	scores := rrfMerge(kwResults, vecResults)
 	mems := collectMems(kwResults, vecResults)
+
+	// Second-hop: skip when the best first-hop vector score is below the gate
+	// threshold — a low score suggests the query has no strong match (e.g.
+	// adversarial), so expanding search would mainly inject noise.
+	maxVecScore := 0.0
+	for _, m := range vecResults {
+		if m.Score != nil && *m.Score > maxVecScore {
+			maxVecScore = *m.Score
+		}
+	}
+	if maxVecScore >= secondHopGateScore {
+		secondHopMems := s.secondHopAutoSearch(ctx, mems, scores, filter, limit)
+		for rank, m := range secondHopMems {
+			scores[m.ID] += secondHopWeight / (rrfK + float64(rank+1))
+			if _, exists := mems[m.ID]; !exists {
+				mems[m.ID] = m
+			}
+		}
+	}
+
 	applyTypeWeights(mems, scores)
 	merged := sortByScore(mems, scores)
 
 	page, total := s.paginate(merged, offset, limit)
 	return populateRelativeAge(setScores(page, scores)), total, nil
+}
+
+// secondHopAutoSearch runs concurrent AutoVectorSearch calls using the top-N
+// first-hop results as seed queries. Returns a merged, deduplicated, ranked list
+// of second-hop results (excluding seed memories).
+func (s *MemoryService) secondHopAutoSearch(
+	ctx context.Context,
+	firstHopMems map[string]domain.Memory,
+	firstHopScores map[string]float64,
+	filter domain.MemoryFilter,
+	limit int,
+) []domain.Memory {
+	sorted := sortByScore(firstHopMems, firstHopScores)
+	topN := secondHopTopN
+	if topN > len(sorted) {
+		topN = len(sorted)
+	}
+	if topN == 0 {
+		return nil
+	}
+
+	seeds := sorted[:topN]
+	seedIDs := make(map[string]struct{}, topN)
+	for _, m := range seeds {
+		seedIDs[m.ID] = struct{}{}
+	}
+
+	// Launch concurrent second-hop searches using first-hop embeddings
+	// to avoid redundant embedding API calls.
+	type hopResult struct {
+		results []domain.Memory
+		err     error
+	}
+	ch := make(chan hopResult, topN)
+	for _, seed := range seeds {
+		if len(seed.Embedding) > 0 {
+			go func(vec []float32) {
+				results, err := s.memories.VectorSearch(ctx, vec, filter, limit)
+				ch <- hopResult{results: results, err: err}
+			}(seed.Embedding)
+		} else {
+			go func(content string) {
+				results, err := s.memories.AutoVectorSearch(ctx, content, filter, limit)
+				ch <- hopResult{results: results, err: err}
+			}(seed.Content)
+		}
+	}
+
+	// Collect results: deduplicate, exclude seeds, keep best score per ID.
+	bestByID := make(map[string]domain.Memory)
+	bestScore := make(map[string]float64)
+	for i := 0; i < topN; i++ {
+		hr := <-ch
+		if hr.err != nil {
+			slog.Warn("second-hop search failed", "err", hr.err)
+			continue
+		}
+		for _, m := range hr.results {
+			if _, isSeed := seedIDs[m.ID]; isSeed {
+				continue
+			}
+			if defaultMinScore > 0 && m.Score != nil && *m.Score < defaultMinScore {
+				continue
+			}
+			sc := 0.0
+			if m.Score != nil {
+				sc = *m.Score
+			}
+			if prev, exists := bestScore[m.ID]; !exists || sc > prev {
+				bestByID[m.ID] = m
+				bestScore[m.ID] = sc
+			}
+		}
+	}
+
+	if len(bestByID) == 0 {
+		return nil
+	}
+
+	// Sort by cosine similarity to produce a single ranked list for RRF.
+	result := make([]domain.Memory, 0, len(bestByID))
+	for _, m := range bestByID {
+		result = append(result, m)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return bestScore[result[i].ID] > bestScore[result[j].ID]
+	})
+	return result
 }
 
 func collectMems(kwResults, vecResults []domain.Memory) map[string]domain.Memory {

@@ -56,6 +56,7 @@ export interface SearchInput {
   source?: string;
   limit?: number;
   offset?: number;
+  memory_type?: string;
 }
 
 export type StoreResult = Memory;

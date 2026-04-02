@@ -676,3 +676,7 @@ func isDuplicateKey(err error) bool {
 	}
 	return strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "duplicate key")
 }
+
+func (r *MemoryRepo) NearDupSearch(_ context.Context, _ string) (string, float64, error) {
+	return "", 0, nil
+}

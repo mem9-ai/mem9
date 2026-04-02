@@ -15,6 +15,7 @@ export interface SiteNavCopy {
   yourMemory: string;
   billing: string;
   security: string;
+  docs: string;
 }
 
 export interface SiteHeroHighlight {
@@ -206,6 +207,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       yourMemory: 'Your Memory',
       billing: 'Billing',
       security: 'Security',
+      docs: 'Docs',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -468,6 +470,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       yourMemory: '你的记忆',
       billing: '定价',
       security: '安全',
+      docs: '文档',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -721,6 +724,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       yourMemory: '你的記憶',
       billing: '定價',
       security: '安全',
+      docs: '文檔',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -974,6 +978,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       yourMemory: 'あなたの記憶',
       billing: '料金',
       security: 'セキュリティ',
+      docs: 'ドキュメント',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -1232,6 +1237,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       yourMemory: '당신의 기억',
       billing: '요금',
       security: '보안',
+      docs: '문서',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -1487,6 +1493,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       yourMemory: 'Memori Anda',
       billing: 'Harga',
       security: 'Keamanan',
+      docs: 'Dokumentasi',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -1745,6 +1752,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       yourMemory: 'ความทรงจำของคุณ',
       billing: 'ราคา',
       security: 'ความปลอดภัย',
+      docs: 'เอกสาร',
     },
     hero: {
       eyebrow: 'MEM9.AI',

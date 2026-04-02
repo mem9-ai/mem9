@@ -413,3 +413,32 @@ func isDuplicateKey(err error) bool {
 	}
 	return strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "duplicate key")
 }
+
+func (r *DB9MemoryRepo) NearDupSearch(ctx context.Context, queryText string) (string, float64, error) {
+	if r.autoModel == "" {
+		return "", 0, nil
+	}
+	var id string
+	var dist float64
+	err := r.db.QueryRowContext(ctx,
+		`WITH scored AS (
+			SELECT id, VEC_EMBED_COSINE_DISTANCE(embedding, $1) AS dist
+			FROM memories
+			WHERE state = 'active'
+			  AND memory_type IN ('insight', 'pinned')
+			  AND embedding IS NOT NULL
+		)
+		SELECT id, dist
+		FROM scored
+		ORDER BY dist
+		LIMIT 1`,
+		queryText,
+	).Scan(&id, &dist)
+	if err == sql.ErrNoRows {
+		return "", 0, nil
+	}
+	if err != nil {
+		return "", 0, fmt.Errorf("near dup search: %w", err)
+	}
+	return id, 1 - dist, nil
+}

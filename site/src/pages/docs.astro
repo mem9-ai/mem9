@@ -1,0 +1,25 @@
+---
+import DocsPage from '../components/DocsPage.astro';
+import Footer from '../components/Footer.astro';
+import Navbar from '../components/Navbar.astro';
+import { docsCopy } from '../content/docs';
+import { siteCopy } from '../content/site';
+import Layout from '../layouts/Layout.astro';
+
+const copy = siteCopy.zh;
+const docs = docsCopy.zh;
+---
+
+<Layout meta={docs.meta} locale="zh">
+  <Navbar
+    nav={copy.nav}
+    aria={copy.aria}
+    localeNames={copy.localeNames}
+    themeOptions={copy.themeOptions}
+    currentPath="/docs"
+  />
+  <main>
+    <DocsPage />
+  </main>
+  <Footer footer={copy.footer} />
+</Layout>

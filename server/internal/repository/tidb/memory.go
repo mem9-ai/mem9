@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -685,6 +686,7 @@ func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 	m.SupersededBy = supersededBy.String
 	m.Tags = unmarshalTags(tagsJSON)
 	m.Metadata = unmarshalRawJSON(metadataJSON)
+	m.Embedding = parseVecString(embeddingStr)
 	score := 1 - distance
 	m.Score = &score
 	return &m, nil
@@ -769,6 +771,28 @@ func nullJSON(data json.RawMessage) any {
 
 // vecToString converts a float32 slice to the TiDB VECTOR string format: "[0.1,0.2,...]".
 // Returns nil for empty/nil slices.
+// parseVecString parses a TiDB vector string (e.g. "[0.1,0.2,0.3]") back into []float32.
+func parseVecString(b []byte) []float32 {
+	s := strings.TrimSpace(string(b))
+	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
+		return nil
+	}
+	s = s[1 : len(s)-1]
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	vec := make([]float32, 0, len(parts))
+	for _, p := range parts {
+		v, err := strconv.ParseFloat(strings.TrimSpace(p), 32)
+		if err != nil {
+			return nil
+		}
+		vec = append(vec, float32(v))
+	}
+	return vec
+}
+
 func vecToString(embedding []float32) any {
 	if len(embedding) == 0 {
 		return nil
@@ -783,4 +807,29 @@ func vecToString(embedding []float32) any {
 	}
 	sb.WriteByte(']')
 	return sb.String()
+}
+
+func (r *MemoryRepo) NearDupSearch(ctx context.Context, queryText string) (string, float64, error) {
+	if r.autoModel == "" {
+		return "", 0, nil
+	}
+	var id string
+	var dist float64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, VEC_EMBED_COSINE_DISTANCE(embedding, ?) AS dist
+		 FROM memories
+		 WHERE state = 'active'
+		   AND memory_type IN ('insight', 'pinned')
+		   AND embedding IS NOT NULL
+		 ORDER BY VEC_EMBED_COSINE_DISTANCE(embedding, ?)
+		 LIMIT 1`,
+		queryText, queryText,
+	).Scan(&id, &dist)
+	if err == sql.ErrNoRows {
+		return "", 0, nil
+	}
+	if err != nil {
+		return "", 0, fmt.Errorf("near dup search: %w", err)
+	}
+	return id, 1 - dist, nil
 }

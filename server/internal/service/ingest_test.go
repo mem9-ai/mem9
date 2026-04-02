@@ -162,6 +162,84 @@ func TestExtractPhase1FactTagsPopulated(t *testing.T) {
 	}
 }
 
+func TestExtractFactsRetryFallbackDropsFlattenedQueryIntent(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+
+		resp := `{"facts":[`
+		if callCount == 2 {
+			resp = `{"facts":":[{","text":"User searched for how to configure nginx","tags":["tech"],"fact_type":"query_intent"}`
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	facts, err := svc.extractFacts(context.Background(), "User: how do I configure nginx?")
+	if err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", callCount)
+	}
+	if len(facts) != 0 {
+		t.Fatalf("expected query_intent fallback fact to be dropped, got %v", facts)
+	}
+}
+
+func TestExtractFactsAndTagsRetryFallbackDropsFlattenedQueryIntent(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+
+		resp := `{"facts":[`
+		if callCount == 2 {
+			resp = `{"facts":":[{","text":"User searched for how to configure nginx","tags":["tech"],"fact_type":"query_intent","message_tags":[["question"]]}`
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	facts, messageTags, err := svc.extractFactsAndTags(context.Background(), "User: how do I configure nginx?", 1)
+	if err != nil {
+		t.Fatalf("extractFactsAndTags() error = %v", err)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected 2 LLM calls, got %d", callCount)
+	}
+	if len(facts) != 0 {
+		t.Fatalf("expected query_intent fallback fact to be dropped, got %v", facts)
+	}
+	if len(messageTags) != 1 {
+		t.Fatalf("expected 1 message_tags entry, got %d", len(messageTags))
+	}
+	if len(messageTags[0]) != 1 || messageTags[0][0] != "question" {
+		t.Fatalf("expected message_tags[0] = [question], got %v", messageTags[0])
+	}
+}
+
 func TestColdStartAddAllFactsSetsTags(t *testing.T) {
 	t.Parallel()
 
@@ -557,6 +635,94 @@ func (m *memoryRepoMock) FTSAvailable() bool { return m.ftsAvail }
 
 func (m *memoryRepoMock) ListBootstrap(ctx context.Context, limit int) ([]domain.Memory, error) {
 	return nil, nil
+}
+
+func (m *memoryRepoMock) NearDupSearch(_ context.Context, _ string) (string, float64, error) {
+	return "", 0, nil
+}
+
+func TestDropQueryIntentFacts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input []ExtractedFact
+		want  []ExtractedFact
+	}{
+		{
+			name:  "empty input",
+			input: []ExtractedFact{},
+			want:  []ExtractedFact{},
+		},
+		{
+			name: "all facts kept when no query_intent",
+			input: []ExtractedFact{
+				{Text: "Uses Go for backend", Tags: []string{"tech"}},
+				{Text: "Works at Acme Corp", Tags: []string{"work"}},
+			},
+			want: []ExtractedFact{
+				{Text: "Uses Go for backend", Tags: []string{"tech"}},
+				{Text: "Works at Acme Corp", Tags: []string{"work"}},
+			},
+		},
+		{
+			name: "query_intent facts dropped",
+			input: []ExtractedFact{
+				{Text: "Uses nginx as reverse proxy", Tags: []string{"tech"}, FactType: "fact"},
+				{Text: "User asked about the Ming dynasty", FactType: "query_intent"},
+				{Text: "User searched for nginx config", FactType: "query_intent"},
+			},
+			want: []ExtractedFact{
+				{Text: "Uses nginx as reverse proxy", Tags: []string{"tech"}, FactType: "fact"},
+			},
+		},
+		{
+			name: "omitted fact_type kept (safe default)",
+			input: []ExtractedFact{
+				{Text: "Lives in Shanghai"},
+			},
+			want: []ExtractedFact{
+				{Text: "Lives in Shanghai"},
+			},
+		},
+		{
+			name: "case-insensitive query_intent match",
+			input: []ExtractedFact{
+				{Text: "keep me", FactType: "fact"},
+				{Text: "drop me", FactType: "QUERY_INTENT"},
+				{Text: "also drop", FactType: "Query_Intent"},
+			},
+			want: []ExtractedFact{
+				{Text: "keep me", FactType: "fact"},
+			},
+		},
+		{
+			name: "all query_intent returns empty",
+			input: []ExtractedFact{
+				{Text: "User asked about X", FactType: "query_intent"},
+				{Text: "User searched for Y", FactType: "query_intent"},
+			},
+			want: []ExtractedFact{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := dropQueryIntentFacts(tc.input)
+			if got == nil {
+				got = []ExtractedFact{}
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("len=%d want=%d", len(got), len(tc.want))
+			}
+			for i := range got {
+				if got[i].Text != tc.want[i].Text {
+					t.Errorf("[%d] text=%q want=%q", i, got[i].Text, tc.want[i].Text)
+				}
+			}
+		})
+	}
 }
 
 func TestStripInjectedContext(t *testing.T) {
