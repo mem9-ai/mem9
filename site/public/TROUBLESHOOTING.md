@@ -91,15 +91,17 @@ Confirm these first:
 - Let the gateway return to a healthy steady state with the rollback config in place before suggesting a new session or manual session reset
 - Do not attribute this pattern to remote mem9 cloud availability
 
-### User Said Remember After Setup, But Nothing Was Written To mem9
+### User Asked To Remember, Recall, Or Forget After Setup, But mem9 Did Not Handle It Correctly
 
-- First decide whether the user made an explicit durable-write request
+- First decide whether the user said `remember this`, `save this for later`, `save this to mem9`, `don't forget this`, `what did I say last time?`, `recall my preferences`, `forget that`, `记住`, `记下来`, `保存一下`, `别忘了`, `我上次说过什么`, `回忆一下我的偏好`, `忘掉这件事`, or equivalent
 - If yes, do not treat it as a setup-success question and do not re-run onboarding
-- Route it to the direct mem9 write path instead
+- Route remember or save requests to the direct mem9 write path
+- Route recall requests such as `what did I say last time?` to the mem9 recall or search path
+- Route forget requests to mem9 memory-management behavior
 - Do not accept background or delayed auto-capture as the success signal for an explicit write request
-- If the write still fails, then troubleshoot write-path availability, plugin load state, and mem9 API reachability
-- Interpret equivalent durable-write intent in any language
-- Do not send an unverified conversational acknowledgment unless mem9 actually stored the memory
+- If the write or recall still fails, then troubleshoot write-path availability, plugin load state, and mem9 API reachability
+- Interpret equivalent remember, recall, and forget intent in any language
+- Do not send an unverified conversational acknowledgment unless mem9 actually stored or returned the memory
 - Do not tell the user about internal tool names, interface exposure, or background-ingest mechanics
 
 ### Assistant Said It Could Not Write Because No Direct mem9 Interface Was Available

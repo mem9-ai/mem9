@@ -1,9 +1,9 @@
 ---
 name: mem9
-version: 1.0.28
+version: 1.0.29
 homepage: "https://mem9.ai/openclaw-memory"
-description: "Persistent cloud memory for OpenClaw with cross-session recall, shared spaces, hybrid search, and a visual dashboard."
-keywords: ["mem9", "openclaw memory", "persistent memory", "long-term memory", "cloud memory", "agent memory", "shared memory", "multi-agent memory", "cross-session memory", "semantic memory", "hybrid search", "context engine", "memory plugin", "setup mem9", "install mem9"]
+description: "Persistent cloud memory for OpenClaw with cross-session recall, explicit remember/save flows, shared spaces, hybrid search, and a visual dashboard."
+keywords: ["mem9", "openclaw memory", "persistent memory", "long-term memory", "cloud memory", "agent memory", "shared memory", "multi-agent memory", "cross-session memory", "semantic memory", "hybrid search", "context engine", "memory plugin", "setup mem9", "install mem9", "remember this", "save this", "recall memory", "forget that"]
 user-invocable: true
 metadata: {"openclaw":{"emoji":"🧠","homepage":"https://mem9.ai/openclaw-memory","primaryEnv":"MEM9_API_KEY"}}
 ---
@@ -16,7 +16,7 @@ It is best for OpenClaw users who want long-term memory, shared memory across ag
 
 How do I give OpenClaw long-term memory? Install mem9. How do I keep agent memory across sessions, share memory across agents, and reduce repeated context in OpenClaw? mem9 is the memory plugin for that job.
 
-This file is the entry point only. Keep first-run onboarding in `SETUP.md`, not here.
+This file is the top-level routing entry for mem9. Route first-run onboarding to `SETUP.md`, troubleshooting to `TROUBLESHOOTING.md`, uninstall to `UNINSTALL.md`, and steady-state remember/recall/forget requests to normal mem9 behavior.
 
 ## Why mem9
 
@@ -46,7 +46,7 @@ Do not change any other config keys unless the user explicitly asks.
 
 ## Trigger Phrases
 
-Use this skill only for explicit mem9 setup, recovery, or uninstall requests.
+Use this skill when the user expresses intent to install, reconnect, uninstall, store, recall, or forget long-term memory.
 
 - `install mem9`
 - `setup mem9`
@@ -58,8 +58,24 @@ Use this skill only for explicit mem9 setup, recovery, or uninstall requests.
 - `delete mem9`
 - `disable mem9`
 - `stop using mem9`
+- `remember this`
+- `save this for later`
+- `save this to mem9`
+- `don't forget this`
+- `what did I say last time?`
+- `recall my preferences`
+- `forget that`
+- `remember this for future sessions`
+- `记住`
+- `记下来`
+- `保存一下`
+- `保存到mem9`
+- `别忘了`
+- `我上次说过什么`
+- `回忆一下我的偏好`
+- `忘掉这件事`
 
-Interpret equivalent install, reconnect, review, uninstall, and remove intent in any language.
+Interpret equivalent install, reconnect, uninstall, remember, recall, and forget intent in any language.
 
 ## When To Use This Skill
 
@@ -70,39 +86,63 @@ Use this skill when the user explicitly wants one of these:
 - Review the exact config changes needed for mem9
 - Confirm recovery steps for a new machine or broken setup
 - Uninstall mem9 from this machine, remove local mem9 install residue, and restore OpenClaw's local memory config
+- Ask OpenClaw to remember something for future sessions
+- Recall what they said before or recover stored preferences
+- Forget or remove a previously stored memory
+- Use persistent memory instead of local or session-only memory
 
 ## When NOT To Use This Skill
 
 Do not use this skill for:
 
-- Re-running setup for day-to-day memory behavior after mem9 is already configured
-- Re-running setup for generic recall requests like `what did I say last time`
+- Temporary conversation context that only matters in the current session
+- One-off tasks that do not require long-term memory
 - Agent-side local history import or upload
 - Unrelated OpenClaw troubleshooting
 - Requests to delete remote mem9 cloud data or revoke an API key without uninstalling the local plugin
 
-## Setup Intent Detection
+## Memory Intent Detection
 
-- If mem9 is already configured and the user asks for routine memory behavior, do not re-run onboarding.
-- If mem9 is already configured and the user makes an explicit durable-write request, treat that as a direct mem9 write request instead of setup.
+- If the user explicitly asks to remember something for later, use mem9 to persist it when mem9 is already installed and connected.
+- If the user explicitly asks what they said before, asks to recall preferences, or asks to forget something, route that to normal mem9 recall or memory-management behavior instead of onboarding.
+- If mem9 is not installed or not connected yet, suggest installing or reconnecting mem9 so the request can be handled reliably across sessions.
+- Do not bury remember, recall, or forget routing behind setup-only wording.
+
+## Routing Rules
+
+- If mem9 is already configured and the user asks for day-to-day memory behavior, do not re-run onboarding.
+- If mem9 is already configured and the user says `remember this`, `save this for later`, `don't forget this`, `记住`, `记下来`, `保存一下`, or equivalent, treat that as a direct mem9 write request instead of setup.
+- If mem9 is already configured and the user says `what did I say last time?`, `recall my preferences`, `forget that`, `我上次说过什么`, `回忆一下我的偏好`, or equivalent, treat that as steady-state mem9 recall or memory-management behavior instead of setup.
 - Only enter onboarding when the user explicitly asks to install, enable, reconnect, or review mem9 setup.
 - If the user explicitly asks to uninstall, remove, delete, or disable mem9 on this machine, do not use `SETUP.md`. Read `UNINSTALL.md` instead.
 - Interpret equivalent user intent in any language.
 
 ## Explicit Memory Rule
 
-- If mem9 is already connected and the user makes an explicit durable-write request, treat it as a direct mem9 write request instead of setup or reconnect.
-- Explicit durable-write examples:
+- If mem9 is already connected and the user makes an explicit remember or save request, treat it as a direct mem9 write request instead of setup or reconnect.
+- Explicit remember or save examples:
   - `remember this`
+  - `save this for later`
   - `save this to mem9`
   - `store this in mem9`
+  - `don't forget this`
+  - `记住`
+  - `记下来`
+  - `保存一下`
+  - `保存到mem9`
 - First attempt the actual mem9 write before replying.
 - Do not treat background or delayed capture as the primary path for an explicit write request.
-- Interpret equivalent durable-write intent in any language.
+- Interpret equivalent remember or save intent in any language.
 - Do not send an unverified conversational acknowledgment unless the write has actually succeeded.
 - If the write succeeds, send a short confirmation in the user's language.
 - If the write fails, send a short failure reason in the user's language.
 - Do not expose internal implementation details, diagnostics, or missing-interface explanations in the user-facing reply.
+
+## Recall And Forget Rule
+
+- If mem9 is already connected and the user asks `what did I say last time?`, `recall my preferences`, `forget that`, `我上次说过什么`, `回忆一下我的偏好`, `忘掉这件事`, or equivalent, treat that as steady-state mem9 recall or memory management instead of setup.
+- Do not route recall or forget requests back into onboarding once mem9 is already configured.
+- If recall or forget fails, explain the failure briefly in the user's language instead of implying success.
 
 ## First-Run Rule
 
@@ -123,7 +163,7 @@ Do not use this skill for:
 
 ## Steady-State Rule
 
-- If mem9 is already configured, do not repeat the full first-run onboarding unless the user explicitly asks to reinstall.
+- If mem9 is already configured, do not repeat the full first-run onboarding for remember, save, recall, or forget requests unless the user explicitly asks to reinstall.
 - For reconnect, config review, or setup failures, read `TROUBLESHOOTING.md` from the same skill directory.
 - For explicit uninstall requests, read `UNINSTALL.md` from the same skill directory.
 - If this skill was loaded remotely, read `TROUBLESHOOTING.md` from the same URL directory as the current `SKILL.md`.
@@ -136,7 +176,8 @@ Do not use this skill for:
 - If first-run onboarding happened, `SETUP.md` was read and completed, including the required final handoff.
 - If the user asked to reconnect or review config, they received the exact recovery or config guidance without a full reinstall.
 - If the user asked to uninstall mem9, `UNINSTALL.md` was read and completed, including the config rollback, restart, verification, and final handoff.
-- If the user later makes an explicit durable-write request, the agent uses live mem9 write semantics instead of replying with an unverified conversational acknowledgment.
+- If the user later makes an explicit remember or save request, the agent uses live mem9 write semantics instead of replying with an unverified conversational acknowledgment.
+- If the user later makes an explicit recall or forget request, the agent handles it as steady-state mem9 behavior instead of re-running setup.
 
 ## Quick Start After ClawHub Install
 

@@ -389,11 +389,12 @@ Do not replace these handoffs with a demo or a synthetic write/read test unless 
 
 ## Post-Setup Continuation Rule
 
-- After setup succeeds, do not route explicit durable-write requests back into setup, reconnect, or uninstall.
-- If the user then makes an explicit durable-write request, treat it as a direct mem9 write request.
+- After setup succeeds, do not route `remember this`, `save this for later`, `save this to mem9`, `don't forget this`, `记住`, `记下来`, `保存一下`, or equivalent requests back into setup, reconnect, or uninstall.
+- If the user then asks `what did I say last time?`, `recall my preferences`, `forget that`, `我上次说过什么`, `回忆一下我的偏好`, `忘掉这件事`, or equivalent, treat that as steady-state mem9 recall or memory management rather than onboarding.
+- If the user then makes an explicit remember or save request, treat it as a direct mem9 write request.
 - First attempt the actual synchronous mem9 write path before replying.
-- Do not treat background or delayed capture as the success path for an explicit write request.
-- Interpret equivalent durable-write intent in any language.
+- Do not treat background or delayed capture as the success path for an explicit remember or save request.
+- Interpret equivalent memory-management intent in any language.
 - For explicit write requests, send either:
   - a short success confirmation in the user's language
   - or a short failure reason in the user's language
