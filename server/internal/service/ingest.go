@@ -459,6 +459,10 @@ atomic facts from a conversation.
    - Bad: "Joel went to rehearsal" + "Joel has a bar performance on Sunday"
    - Good: "小强今天去彩排，因为他周日要去酒吧表演"
    - Bad: "小强今天去彩排" + "小强周日要去酒吧表演"
+   - Good: "Alice used to live in NYC but moved to Tokyo last year"
+   - Bad: "Alice used to live in NYC" + "Alice moved to Tokyo last year"
+   - Good: "虽然小强不喜欢跑步，但他每周跑三次"
+   - Bad: "小强不喜欢跑步" + "小强每周跑三次"
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
@@ -562,6 +566,10 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    - Bad: "Joel went to rehearsal" + "Joel has a bar performance on Sunday"
    - Good: "小强今天去彩排，因为他周日要去酒吧表演"
    - Bad: "小强今天去彩排" + "小强周日要去酒吧表演"
+   - Good: "Alice used to live in NYC but moved to Tokyo last year"
+   - Bad: "Alice used to live in NYC" + "Alice moved to Tokyo last year"
+   - Good: "虽然小强不喜欢跑步，但他每周跑三次"
+   - Bad: "小强不喜欢跑步" + "小强每周跑三次"
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
