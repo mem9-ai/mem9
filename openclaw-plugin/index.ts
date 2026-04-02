@@ -1,6 +1,7 @@
 import type { MemoryBackend } from "./backend.js";
 import { ServerBackend } from "./server-backend.js";
 import { registerHooks } from "./hooks.js";
+import { createMem9ContextEngine } from "./context-engine.js";
 import type {
   PluginConfig,
   CreateMemoryInput,
@@ -13,25 +14,23 @@ import type {
 const DEFAULT_API_URL = "https://api.mem9.ai";
 
 function jsonResult(data: unknown) {
-  // Older OpenClaw versions may assume tool results have a normalized
-  // assistant-content shape and can crash on plain objects that omit `content`.
-  // Returning a JSON string keeps results readable while remaining compatible
-  // with both old and new hosts.
-  // https://github.com/openclaw/openclaw/blob/936607ca221a2f0c37ad976ddefcd39596f54793/CHANGELOG.md?plain=1#L1144
-  if (typeof data === "string") return data;
-  try {
-    return JSON.stringify(data, null, 2);
-  } catch {
-    return String(data);
-  }
+  return data;
 }
 
 interface OpenClawPluginApi {
+  config?: {
+    plugins?: {
+      slots?: { contextEngine?: string };
+      entries?: Record<string, { hooks?: { allowPromptInjection?: boolean } }>;
+    };
+  };
   pluginConfig?: unknown;
   logger: {
     info: (...args: unknown[]) => void;
+    warn?: (...args: unknown[]) => void;
     error: (...args: unknown[]) => void;
   };
+  registerContextEngine?: unknown;
   registerTool: (
     factory: ToolFactory | (() => AnyAgentTool[]),
     opts: { names: string[] }
@@ -118,6 +117,18 @@ function buildTools(backend: MemoryBackend): AnyAgentTool[] {
             description: "Comma-separated tags to filter by (AND)",
           },
           source: { type: "string", description: "Filter by source agent" },
+          memory_type: {
+            type: "string",
+            description: "Filter by memory type (for example pinned or insight)",
+          },
+          agent_id: {
+            type: "string",
+            description: "Filter by the agent that owns the memory",
+          },
+          session_id: {
+            type: "string",
+            description: "Filter by the session that produced the memory",
+          },
           limit: {
             type: "number",
             description: "Max results (default 20, max 200)",
@@ -232,19 +243,42 @@ function buildTools(backend: MemoryBackend): AnyAgentTool[] {
   ];
 }
 
+function warnOrInfo(
+  logger: { info: (...args: unknown[]) => void; warn?: (...args: unknown[]) => void },
+  message: string,
+) {
+  if (typeof logger.warn === "function") {
+    logger.warn(message);
+    return;
+  }
+  logger.info(message);
+}
+
 const mnemoPlugin = {
   id: "mem9",
   name: "Mnemo Memory",
   description:
     "AI agent memory — server mode (mnemo-server) with hybrid vector + keyword search.",
 
-  async register(api: OpenClawPluginApi) {
+  register(api: OpenClawPluginApi) {
     const cfg = (api.pluginConfig ?? {}) as PluginConfig;
     const effectiveApiUrl = cfg.apiUrl ?? DEFAULT_API_URL;
+    // beta.1 introduced registerContextEngine and the new hook payloads we rely on here.
+    const supportsBeta1Hooks = typeof api.registerContextEngine === "function";
+    const contextEngineSlot = api.config?.plugins?.slots?.contextEngine;
+    const contextEngineActive = supportsBeta1Hooks && contextEngineSlot === mnemoPlugin.id;
+    const allowPromptInjection =
+      api.config?.plugins?.entries?.[mnemoPlugin.id]?.hooks?.allowPromptInjection === true;
     if (!cfg.apiUrl) {
       api.logger.info(`[mem9] apiUrl not configured, using default ${DEFAULT_API_URL}`);
     }
-
+    if (supportsBeta1Hooks && !allowPromptInjection) {
+      warnOrInfo(
+        api.logger,
+        "[mem9] Hook mode active. On OpenClaw beta.1+, hook-based memory injection requires " +
+          "plugins.entries.mem9.hooks.allowPromptInjection = true."
+      );
+    }
     const configuredApiKey = cfg.apiKey ?? cfg.tenantID;
     if (cfg.apiKey && cfg.tenantID) {
       api.logger.info("[mem9] both apiKey and tenantID set; using apiKey");
@@ -284,6 +318,10 @@ const mnemoPlugin = {
 
     api.registerTool(factory, { names: toolNames });
 
+    const sessionAgentIds = new Map<string, string>();
+    const resolveContextEngineAgentId = (sessionId: string): string =>
+      sessionAgentIds.get(sessionId) ?? cfg.agentName ?? "agent";
+
     // Register hooks with a lazy backend for lifecycle memory management.
     // Uses the default workspace/agent context for hook-triggered operations.
     const hookBackend = new LazyServerBackend(
@@ -291,10 +329,29 @@ const mnemoPlugin = {
       () => resolveAPIKey(hookAgentId),
       hookAgentId,
     );
+
+    if (supportsBeta1Hooks) {
+      const registerContextEngine = api.registerContextEngine as ((id: string, factory: () => unknown) => void);
+      registerContextEngine(
+        mnemoPlugin.id,
+        () => createMem9ContextEngine(hookBackend, api.logger, resolveContextEngineAgentId),
+      );
+      api.logger.info("[mem9] Registered context engine implementation");
+    }
+
     registerHooks(api, hookBackend, api.logger, {
       maxIngestBytes: cfg.maxIngestBytes,
+      enableToolResultPersist: supportsBeta1Hooks,
+      supportsPrependSystemContext: supportsBeta1Hooks,
       fallbackAgentId: hookAgentId,
+      enableBeforePromptBuild: true,
+      enableAgentEndIngest: !contextEngineActive,
+      sessionAgentIds,
     });
+
+    if (contextEngineActive) {
+      api.logger.info("[mem9] contextEngine slot points to mem9; hook recall enabled and hook agent_end ingest disabled");
+    }
   },
 };
 
