@@ -1,13 +1,13 @@
 #!/bin/bash
 # api-smoke-test-sessions.sh
 # Session storage smoke test: verifies raw session write, deduplication,
-# unified search, memory_type filtering, and metadata projection.
+# memory_type filtering, and metadata projection.
 #
 # Tests covered:
 #   1. Provision tenant
 #   2. Session write via messages — expect 202
-#   3. Poll until sessions appear in unified search
-#   4. Unified search returns memory_type=session rows
+#   3. Poll until sessions appear via memory_type=session filter
+#   4. Unified search (no memory_type) excludes session rows
 #   5. memory_type=session filter returns only sessions
 #   6. memory_type=insight filter excludes sessions
 #   7. Session metadata projection (role, seq, content_type in metadata field)
@@ -157,9 +157,9 @@ check "POST /memories (messages) returns 202" "$code" "202"
 check_contains "response has status=accepted" "$bdy" '"accepted"'
 
 # ============================================================================
-# TEST 3 — Poll until sessions appear in unified search
+# TEST 3 — Poll until sessions appear via memory_type=session filter
 # ============================================================================
-step "3" "Poll until sessions appear in unified search (timeout=${POLL_TIMEOUT_S}s)"
+step "3" "Poll until sessions appear via memory_type=session filter (timeout=${POLL_TIMEOUT_S}s)"
 SESSION_APPEARED=false
 ELAPSED=0
 while [ "$ELAPSED" -lt "$POLL_TIMEOUT_S" ]; do
@@ -203,9 +203,9 @@ if [ "$SESSION_APPEARED" = "false" ]; then
 fi
 
 # ============================================================================
-# TEST 4 — Unified search returns memory_type=session rows
+# TEST 4 — Unified search (no memory_type) excludes session rows
 # ============================================================================
-step "4" "Unified search: GET /memories?q= returns session rows"
+step "4" "Unified search (no memory_type): GET /memories?q= must exclude session rows"
 resp=$(curl_mem_json "$MEM_BASE?q=${UNIQUE_MARKER}&limit=20")
 code=$(http_code "$resp")
 bdy=$(body "$resp")
@@ -216,7 +216,7 @@ import sys, json
 mems = json.load(sys.stdin).get('memories', [])
 print('yes' if any(m.get('memory_type') == 'session' for m in mems) else 'no')
 " 2>/dev/null || true)
-check "unified search includes memory_type=session rows" "$HAS_SESSION" "yes"
+check "unified search excludes memory_type=session rows" "$HAS_SESSION" "no"
 
 # ============================================================================
 # TEST 5 — memory_type=session filter returns ONLY sessions

@@ -85,8 +85,8 @@ concurrent async ingest bumps.
 ### Session storage (`api-smoke-test-sessions.sh`)
 
 Regression tests for raw session storage (PR #103). Provisions a fresh tenant,
-ingests messages, and verifies all session-specific behaviors: unified search,
-`memory_type` filtering, metadata projection, no-query exclusion, and deduplication.
+ingests messages, and verifies all session-specific behaviors: session exclusion from
+unified recall, `memory_type` filtering, metadata projection, no-query exclusion, and deduplication.
 Supports both v1alpha1 and v1alpha2 via `MNEMO_API_VERSION`.
 
 | # | Case | What is verified |
@@ -94,7 +94,7 @@ Supports both v1alpha1 and v1alpha2 via `MNEMO_API_VERSION`.
 | 1 | Provision tenant | `POST /v1alpha1/mem9s` returns 201 |
 | 2 | Session write via messages | `POST /memories {messages}` returns 202 `accepted` |
 | 3 | Poll until sessions appear | `GET /memories?memory_type=session&q=` polled until results appear |
-| 4 | Unified search includes sessions | `GET /memories?q=` returns rows with `memory_type=session` |
+| 4 | Unified search excludes sessions | `GET /memories?q=` returns no `memory_type=session` rows (recall omits sessions by design) |
 | 5 | `memory_type=session` filter | All results have `memory_type=session`; no other types |
 | 6 | `memory_type=insight` excludes sessions | No `memory_type=session` rows when insight filter applied |
 | 7 | Session metadata projection | First session result has `role`, `seq`, `content_type` in `metadata` |
