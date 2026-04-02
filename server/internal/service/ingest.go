@@ -482,10 +482,12 @@ atomic facts from a conversation.
    When the user uses relative time expressions (today, yesterday, last Friday, next Sunday,
    two hours ago, etc.), resolve them to absolute dates using the provided current date,
    but keep the original expression as well for natural readability.
-   - Good: "小强上周五（2026-03-28）去了彩排"
-   - Good: "Joel went to rehearsal last Friday (2026-03-28)"
+   Only resolve when the time anchor is unambiguous; if the reference is vague, keep the
+   original expression without guessing a date.
+   - Good: "小强上周五（2026-03-27）去了彩排"
+   - Good: "Joel went to rehearsal last Friday (2026-03-27)"
    - Bad: "小强去了彩排" (temporal context dropped)
-   - Bad: "2026-03-28 去了彩排" (original expression lost)
+   - Bad: "2026-03-27 去了彩排" (original expression lost)
 9. Extract relationships between people explicitly.
 10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
 11. If no meaningful facts exist in the conversation, return an empty facts array.
@@ -586,10 +588,12 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    When the user uses relative time expressions (today, yesterday, last Friday, next Sunday,
    two hours ago, etc.), resolve them to absolute dates using the provided current date,
    but keep the original expression as well for natural readability.
-   - Good: "小强上周五（2026-03-28）去了彩排"
-   - Good: "Joel went to rehearsal last Friday (2026-03-28)"
+   Only resolve when the time anchor is unambiguous; if the reference is vague, keep the
+   original expression without guessing a date.
+   - Good: "小强上周五（2026-03-27）去了彩排"
+   - Good: "Joel went to rehearsal last Friday (2026-03-27)"
    - Bad: "小强去了彩排" (temporal context dropped)
-   - Bad: "2026-03-28 去了彩排" (original expression lost)
+   - Bad: "2026-03-27 去了彩排" (original expression lost)
 9. Extract relationships between people explicitly.
 10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
 11. If no meaningful facts exist in the conversation, return an empty facts array.
