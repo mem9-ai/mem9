@@ -130,6 +130,11 @@ Do not use this skill for:
   - `记下来`
   - `保存一下`
   - `保存到mem9`
+- When writing to mem9, the stored content must be:
+  - In the user's original language (see Content Language Rule below)
+  - Concise but complete — include specific values, names, versions, decisions
+  - Self-contained — readable without the original conversation context
+  - A factual statement, not a conversation fragment or question
 - First attempt the actual mem9 write before replying.
 - Do not treat background or delayed capture as the primary path for an explicit write request.
 - Interpret equivalent remember or save intent in any language.
@@ -137,6 +142,31 @@ Do not use this skill for:
 - If the write succeeds, send a short confirmation in the user's language.
 - If the write fails, send a short failure reason in the user's language.
 - Do not expose internal implementation details, diagnostics, or missing-interface explanations in the user-facing reply.
+
+## Content Language Rule
+
+- When storing memory content via mem9, preserve the user's original language exactly.
+- If the user writes in Chinese, store the memory content in Chinese. If in English, store in English. Apply the same rule for any other language.
+- Do not translate, paraphrase into another language, or summarize in a different language than the user used.
+- This applies to both explicit write requests (remember/save) and any agent-initiated memory writes.
+- The only exception is tags, which should always be lowercase English for cross-language searchability.
+
+## What Should Be Remembered
+
+Good candidates for memory storage:
+
+- User preferences and habits
+- Profile facts about the user
+- Project context or ongoing work decisions
+- Important decisions made during conversations
+- Long-term instructions, conventions, or constraints
+
+Avoid storing:
+
+- Temporary debugging context
+- Large data dumps or raw file contents
+- Secrets, passwords, or API keys
+- Ephemeral status updates that will be outdated quickly
 
 ## Recall And Forget Rule
 
