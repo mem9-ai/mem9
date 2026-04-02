@@ -481,6 +481,12 @@ atomic facts from a conversation.
 8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
 9. Extract relationships between people explicitly.
 10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
+   Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
+   fact is self-contained and retrievable without needing context from other facts.
+   - Good: "Alice moved to Tokyo last year"
+   - Bad: "She moved to Tokyo last year"
+   - Good: "小强今天去彩排了"
+   - Bad: "他今天去彩排了"
 11. If no meaningful facts exist in the conversation, return an empty facts array.
 12. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
@@ -578,6 +584,12 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
 9. Extract relationships between people explicitly.
 10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
+   Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
+   fact is self-contained and retrievable without needing context from other facts.
+   - Good: "Alice moved to Tokyo last year"
+   - Bad: "She moved to Tokyo last year"
+   - Good: "小强今天去彩排了"
+   - Bad: "他今天去彩排了"
 11. If no meaningful facts exist in the conversation, return an empty facts array.
 12. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
