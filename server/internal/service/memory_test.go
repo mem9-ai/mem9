@@ -461,7 +461,7 @@ func TestCreateFallsBackToRawWhenLLMUnavailable(t *testing.T) {
 	repo := &memoryRepoMock{}
 	svc := NewMemoryService(repo, nil, nil, "", ModeSmart)
 
-	mem, err := svc.Create(context.Background(), "agent-1", "user prefers dark mode", []string{"prefs"}, json.RawMessage(`{"source":"manual"}`))
+	mem, err := svc.Create(context.Background(), "agent-1", "session-123", "user prefers dark mode", []string{"prefs"}, json.RawMessage(`{"source":"manual"}`))
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -476,6 +476,9 @@ func TestCreateFallsBackToRawWhenLLMUnavailable(t *testing.T) {
 	}
 	if mem.MemoryType != domain.TypeInsight {
 		t.Fatalf("expected insight memory type, got %s", mem.MemoryType)
+	}
+	if mem.SessionID != "session-123" {
+		t.Fatalf("expected session ID propagated, got %q", mem.SessionID)
 	}
 }
 
@@ -500,7 +503,7 @@ func TestCreateRunsReconcilePipeline(t *testing.T) {
 	repo := &memoryRepoMock{}
 	svc := NewMemoryService(repo, llmClient, nil, "auto-model", ModeSmart)
 
-	mem, err := svc.Create(context.Background(), "agent-1", "I use Go 1.22", nil, nil)
+	mem, err := svc.Create(context.Background(), "agent-1", "session-123", "I use Go 1.22", nil, nil)
 	if err != nil {
 		t.Fatalf("Create() error: %v", err)
 	}
