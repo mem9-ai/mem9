@@ -11,9 +11,11 @@ interface Props {
   aria: SiteAriaCopy;
   localeNames: SiteDictionary['localeNames'];
   themeOptions: SiteThemeOptionsCopy;
+  currentPath?: string;
 }
 
-const { nav, aria, localeNames, themeOptions } = Astro.props;
+const { nav, aria, localeNames, themeOptions, currentPath = '/' } = Astro.props;
+const isDocsPage = currentPath === '/docs';
 ---
 
 <nav class="nav">
@@ -34,6 +36,14 @@ const { nav, aria, localeNames, themeOptions } = Astro.props;
         </a>
         <a href="/billing" class="nav-section-link" data-i18n="nav.billing">{nav.billing}</a>
         <a href="/#security" class="nav-section-link" data-i18n="nav.security">{nav.security}</a>
+        <a
+          href="/docs"
+          class:list={['nav-section-link', 'nav-docs-link', isDocsPage && 'is-active']}
+          data-i18n="nav.docs"
+          aria-current={isDocsPage ? 'page' : undefined}
+        >
+          {nav.docs}
+        </a>
       </div>
 
       <div class="nav-actions">
@@ -263,6 +273,10 @@ const { nav, aria, localeNames, themeOptions } = Astro.props;
     color: inherit;
   }
 
+  .nav-links .is-active {
+    color: var(--text);
+  }
+
   .nav-product-link {
     display: inline-flex;
     align-items: center;
@@ -389,13 +403,19 @@ const { nav, aria, localeNames, themeOptions } = Astro.props;
       gap: 0.7rem;
     }
 
-    .nav-links .nav-section-link {
+    .nav-links .nav-section-link:not(.nav-docs-link) {
       display: none;
     }
 
     .nav-links .nav-product-link {
       font-size: 0.82rem;
       gap: 0.32rem;
+    }
+
+    .nav-links .nav-docs-link {
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.84rem;
     }
 
     .nav-badge {

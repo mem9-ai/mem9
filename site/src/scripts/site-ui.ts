@@ -1,3 +1,4 @@
+import { docsCopy, resolveDocsLocale } from '../content/docs';
 import {
   DEFAULT_LOCALE,
   DEFAULT_THEME_PREFERENCE,
@@ -191,19 +192,14 @@ function applyTheme(
   });
 }
 
-function updateMeta(locale: SiteLocale, dictionary: SiteDictionary): void {
+function setDocumentLang(locale: SiteLocale): void {
   document.documentElement.lang = localeToLang(locale);
+}
 
-  const titleElement = document.querySelector<HTMLTitleElement>('title');
+function updateMetaElements(title: string, descriptionText: string): void {
   const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
   const ogTitle = document.querySelector<HTMLMetaElement>('meta[property="og:title"]');
   const ogDescription = document.querySelector<HTMLMetaElement>('meta[property="og:description"]');
-  const title = textFor(dictionary, titleElement?.dataset.metaTitleKey ?? 'meta.title')
-    || dictionary.meta.title;
-  const descriptionText = textFor(
-    dictionary,
-    description?.dataset.metaDescriptionKey ?? 'meta.description',
-  ) || dictionary.meta.description;
 
   document.title = title;
 
@@ -218,6 +214,20 @@ function updateMeta(locale: SiteLocale, dictionary: SiteDictionary): void {
   if (ogDescription) {
     ogDescription.content = descriptionText;
   }
+}
+
+function updateMeta(locale: SiteLocale, dictionary: SiteDictionary): void {
+  setDocumentLang(locale);
+  const titleElement = document.querySelector<HTMLTitleElement>('title');
+  const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+  const title = textFor(dictionary, titleElement?.dataset.metaTitleKey ?? 'meta.title')
+    || dictionary.meta.title;
+  const descriptionText = textFor(
+    dictionary,
+    description?.dataset.metaDescriptionKey ?? 'meta.description',
+  ) || dictionary.meta.description;
+
+  updateMetaElements(title, descriptionText);
 }
 
 function updateTranslations(dictionary: SiteDictionary): void {
@@ -322,11 +332,55 @@ function setOpenMenu(nextOpenMenu: MenuName | null): void {
   });
 }
 
+function isDocsPage(): boolean {
+  return document.querySelector('[data-docs-root]') !== null;
+}
+
+function updateDocsPage(locale: SiteLocale): void {
+  const docsLocale = resolveDocsLocale(locale);
+  const root = document.querySelector<HTMLElement>('[data-docs-root]');
+  const copy = docsCopy[docsLocale];
+
+  if (!root) {
+    return;
+  }
+
+  root.dataset.docsLocale = docsLocale;
+  setDocumentLang(locale);
+  updateMetaElements(copy.meta.title, copy.meta.description);
+
+  document.querySelectorAll<HTMLElement>('[data-docs-copy]').forEach((sectionCopy) => {
+    const isActive = sectionCopy.dataset.docsCopy === docsLocale;
+    sectionCopy.hidden = !isActive;
+
+    sectionCopy.querySelectorAll<HTMLElement>('[data-docs-anchor]').forEach((anchor) => {
+      const sectionID = anchor.dataset.docsAnchor;
+      if (!sectionID) {
+        return;
+      }
+
+      if (isActive) {
+        anchor.id = sectionID;
+        return;
+      }
+
+      anchor.removeAttribute('id');
+    });
+  });
+}
+
 function applyLocale(locale: SiteLocale): void {
   const dictionary = siteCopy[locale];
   document.documentElement.dataset.locale = locale;
-  updateMeta(locale, dictionary);
-  updateTranslations(dictionary);
+
+  if (isDocsPage()) {
+    updateTranslations(dictionary);
+    updateDocsPage(locale);
+  } else {
+    updateMeta(locale, dictionary);
+    updateTranslations(dictionary);
+  }
+
   const command = document.querySelector<HTMLElement>('[data-onboarding-command]');
   if (command) {
     command.dataset.commandStable = dictionary.hero.onboardingCommandStable;
