@@ -123,6 +123,10 @@ function buildTools(backend: MemoryBackend): AnyAgentTool[] {
             description: "Max results (default 20, max 200)",
           },
           offset: { type: "number", description: "Pagination offset" },
+          memory_type: {
+            type: "string",
+            description: "Comma-separated memory types to filter by (e.g. insight,pinned)",
+          },
         },
         required: [],
       },

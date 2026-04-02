@@ -75,6 +75,10 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
           .min(0)
           .optional()
           .describe("Pagination offset"),
+        memory_type: tool.schema
+          .string()
+          .optional()
+          .describe("Comma-separated memory types to filter by (e.g. insight,pinned)"),
       },
       async execute(args) {
         try {
@@ -84,6 +88,7 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
             source: args.source,
             limit: args.limit,
             offset: args.offset,
+            memory_type: args.memory_type,
           };
           const result = await backend.search(input);
           return JSON.stringify({ ok: true, ...result });

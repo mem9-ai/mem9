@@ -784,3 +784,28 @@ func vecToString(embedding []float32) any {
 	sb.WriteByte(']')
 	return sb.String()
 }
+
+func (r *MemoryRepo) NearDupSearch(ctx context.Context, queryText string) (string, float64, error) {
+	if r.autoModel == "" {
+		return "", 0, nil
+	}
+	var id string
+	var dist float64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, VEC_EMBED_COSINE_DISTANCE(embedding, ?) AS dist
+		 FROM memories
+		 WHERE state = 'active'
+		   AND memory_type IN ('insight', 'pinned')
+		   AND embedding IS NOT NULL
+		 ORDER BY VEC_EMBED_COSINE_DISTANCE(embedding, ?)
+		 LIMIT 1`,
+		queryText, queryText,
+	).Scan(&id, &dist)
+	if err == sql.ErrNoRows {
+		return "", 0, nil
+	}
+	if err != nil {
+		return "", 0, fmt.Errorf("near dup search: %w", err)
+	}
+	return id, 1 - dist, nil
+}
