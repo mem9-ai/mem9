@@ -2,15 +2,15 @@
 import DocsPage from '../components/DocsPage.astro';
 import Footer from '../components/Footer.astro';
 import Navbar from '../components/Navbar.astro';
-import { docsCopy } from '../content/docs';
-import { siteCopy } from '../content/site';
+import { docsCopy, resolveDocsLocale } from '../content/docs';
+import { DEFAULT_LOCALE, siteCopy } from '../content/site';
 import Layout from '../layouts/Layout.astro';
 
-const copy = siteCopy.zh;
-const docs = docsCopy.zh;
+const copy = siteCopy[DEFAULT_LOCALE];
+const docs = docsCopy[resolveDocsLocale(DEFAULT_LOCALE)];
 ---
 
-<Layout meta={docs.meta} locale="zh">
+<Layout meta={docs.meta} locale={DEFAULT_LOCALE}>
   <Navbar
     nav={copy.nav}
     aria={copy.aria}
