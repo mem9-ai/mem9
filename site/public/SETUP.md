@@ -4,7 +4,7 @@ Use this file only for first-run mem9 onboarding.
 
 ## First Reply
 
-When this file is read, start with this structure:
+When this file is read, send ONLY the choice prompt below. Do not include environment details, OpenClaw version, config file paths, config keys, restart counts, dry-run information, or approval phrases in this first message. The dry-run preview is a separate step that comes after the user selects a path.
 
 > I can help you set up mem9.
 >
@@ -13,10 +13,6 @@ When this file is read, start with this structure:
 > 2. Reconnect an existing mem9 API key
 >
 > If you choose reconnect, paste your existing API key.
->
-> After you choose a path, I will show one dry-run preview and ask for a single approval for the full setup flow.
-> If you already pasted an existing API key, the approval phrase should be `approve reconnect`.
-> If you want a brand-new mem9 API key, the approval phrase should be `approve create`.
 
 ## Safety Rules
 

@@ -135,6 +135,7 @@ Do not use this skill for:
   - Concise but complete — include specific values, names, versions, decisions
   - Self-contained — readable without the original conversation context
   - A factual statement, not a conversation fragment or question
+  - Preserve causal, temporal, and conditional relationships in a single memory entry (e.g., "X because Y", "X so that Y") — do not split related facts into separate writes
 - First attempt the actual mem9 write before replying.
 - Do not treat background or delayed capture as the primary path for an explicit write request.
 - Interpret equivalent remember or save intent in any language.
@@ -168,23 +169,15 @@ Avoid storing:
 - Secrets, passwords, or API keys
 - Ephemeral status updates that will be outdated quickly
 
-## Recall And Forget Rule
+## Memory Content Format
 
-- If mem9 is already connected and the user asks `what did I say last time?`, `recall my preferences`, `forget that`, `我上次说过什么`, `回忆一下我的偏好`, `忘掉这件事`, or equivalent, treat that as steady-state mem9 recall or memory management instead of setup.
-- Do not route recall or forget requests back into onboarding once mem9 is already configured.
-- If recall or forget fails, explain the failure briefly in the user's language instead of implying success.
+When storing a memory that contains multiple related facts (cause and effect, event and reason, condition and outcome), store them as a single memory entry preserving the full relationship. Do not split into separate writes.
 
-## First-Run Rule
 
-- If mem9 is not fully set up on this machine, read `SETUP.md` from the same skill directory before continuing.
-- If this skill was loaded remotely instead of from a local skill directory, read `SETUP.md` from the same URL directory as the current `SKILL.md`.
-- Remote path examples:
-  - `https://mem9.ai/SKILL.md` -> [https://mem9.ai/SETUP.md](https://mem9.ai/SETUP.md)
-- Follow `SETUP.md` for install, config, restart, verify, and the required final handoff. Do not improvise extra setup flows.
+Example — user says: “Remember: Joel went to rehearsal today because he has a performance at a bar on Sunday night.”
+Good: store as `Joel went to rehearsal today (2026-04-02) because he has a performance at a bar on Sunday night`
+Bad: store as two separate memories: `Joel went to rehearsal today` and `Joel has a performance at a bar on Sunday night`
 
-## Uninstall Rule
-
-- If the user explicitly wants to uninstall, remove, delete, or disable mem9 on this machine, read `UNINSTALL.md` from the same skill directory.
 - If the uninstall request also mentions `reset session`, treat that as a post-uninstall follow-up suggestion instead of part of the same destructive flow.
 - If this skill was loaded remotely instead of from a local skill directory, read `UNINSTALL.md` from the same URL directory as the current `SKILL.md`.
 - Remote path examples:
