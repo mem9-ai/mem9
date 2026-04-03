@@ -1,7 +1,7 @@
-import type { BenchmarkOutput, LoCoMoSample, QAResult } from './types.js'
+import type { LoCoMoSample, QAResult } from './types.js'
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { env, exit } from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -23,7 +23,6 @@ interface Args {
   ingestConcurrency: number
   ingestMode: IngestMode
   judgeModel: string
-  outFile: string
   sampleConcurrency: number
   sampleIds: null | string[]
   skipIngest: boolean
@@ -38,7 +37,6 @@ const parseCliArgs = (): Args => {
       'ingest-concurrency': { default: '10', type: 'string' },
       'ingest-mode': { default: 'raw', type: 'string' },
       'judge-model': { type: 'string' },
-      'out-file': { short: 'o', type: 'string' },
       'sample-concurrency': { short: 'p', default: '0', type: 'string' },
       'sample-ids': { short: 's', type: 'string' },
       'skip-ingest': { default: false, type: 'boolean' },
@@ -62,7 +60,6 @@ const parseCliArgs = (): Args => {
     ingestConcurrency: Number.isFinite(ingestConcurrency) && ingestConcurrency > 0 ? ingestConcurrency : 10,
     ingestMode,
     judgeModel: values['judge-model'] ?? '',
-    outFile: values['out-file'] ?? resolve(__dirname, `../results/${new Date().toISOString().replace(/[:.]/g, '-')}.json`),
     sampleConcurrency: Number.isFinite(sampleConcurrency) && sampleConcurrency >= 0 ? sampleConcurrency : 0,
     sampleIds: sampleIdStr.length > 0 ? sampleIdStr.split(',').map(s => s.trim()) : null,
     skipIngest: values['skip-ingest'],
@@ -149,7 +146,6 @@ const main = async () => {
 
   console.log('LoCoMo Benchmark for mem9')
   console.log(`  data:       ${args.dataFile}`)
-  console.log(`  out:        ${args.outFile}`)
   console.log(`  model:      ${model}`)
   console.log(`  judgeModel: ${judgeModel.length > 0 ? judgeModel : `(same as model: ${model})`}`)
   console.log(`  ingestMode: ${args.ingestMode}`)
@@ -198,20 +194,6 @@ const main = async () => {
 
   const stats = computeStats(results)
   printStats(stats)
-  const output: BenchmarkOutput = {
-    meta: {
-      base_url: getBaseUrl(),
-      data_file: args.dataFile,
-      model,
-      tenant_ids: tenantIds,
-      timestamp: new Date().toISOString(),
-    },
-    results,
-    stats,
-  }
-  await mkdir(dirname(args.outFile), { recursive: true })
-  await writeFile(args.outFile, JSON.stringify(output, null, 2))
-  console.log(`Results written to: ${args.outFile}`)
 }
 
 main().catch((err) => {

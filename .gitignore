@@ -32,7 +32,8 @@ dist/
 *.tgz
 .netlify/
 
-# Benchmark results
+# Benchmark dataset & results
+benchmark/locomo/data
 benchmark/results/*
 !benchmark/results/.gitkeep
 
