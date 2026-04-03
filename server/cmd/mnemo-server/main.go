@@ -25,6 +25,7 @@ func main() {
 		Level:     slog.LevelInfo,
 		AddSource: true,
 	}))
+	slog.SetDefault(logger)
 
 	cfg, err := config.Load()
 	if err != nil {
