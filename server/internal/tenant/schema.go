@@ -88,6 +88,25 @@ DROP TRIGGER IF EXISTS trg_memories_updated ON memories;
 CREATE TRIGGER trg_memories_updated BEFORE UPDATE ON memories FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 `
 
+// TenantMemorySchemaDatabend is the Databend schema for per-tenant memories.
+const TenantMemorySchemaDatabend = `CREATE TABLE IF NOT EXISTS memories (
+    id              VARCHAR       NOT NULL,
+    content         VARCHAR       NOT NULL,
+    source          VARCHAR       NULL,
+    tags            VARIANT       NULL,
+    metadata        VARIANT       NULL,
+    embedding       VECTOR(1536)  NULL,
+    memory_type     VARCHAR       NOT NULL DEFAULT 'pinned',
+    agent_id        VARCHAR       NULL,
+    session_id      VARCHAR       NULL,
+    state           VARCHAR       NOT NULL DEFAULT 'active',
+    version         INT           DEFAULT 1,
+    updated_by      VARCHAR       NULL,
+    superseded_by   VARCHAR       NULL,
+    created_at      TIMESTAMP     DEFAULT NOW(),
+    updated_at      TIMESTAMP     DEFAULT NOW()
+)`
+
 // BuildMemorySchema builds the TiDB memory schema with optional auto-embedding.
 func BuildMemorySchema(autoModel string, autoDims int) string {
 	var embeddingCol string

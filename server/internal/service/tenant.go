@@ -205,6 +205,15 @@ func (s *TenantService) GetInfo(ctx context.Context, tenantID string) (*domain.T
 }
 
 func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) error {
+	backend := ""
+	if s.pool != nil {
+		backend = s.pool.Backend()
+	}
+
+	if backend == "databend" {
+		return nil
+	}
+
 	if _, err := db.ExecContext(ctx, tenant.BuildSessionsSchema(s.autoModel, s.autoDims)); err != nil {
 		return fmt.Errorf("ensure sessions table: create: %w", err)
 	}
