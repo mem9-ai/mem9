@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -58,6 +59,7 @@ func ResolveTenant(
 
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			if err != nil {
+				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "err", err)
 				writeError(w, http.StatusServiceUnavailable, "cannot connect to tenant database")
 				return
 			}
@@ -113,6 +115,7 @@ func ResolveApiKey(
 
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			if err != nil {
+				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "err", err)
 				writeError(w, http.StatusServiceUnavailable, "cannot connect to tenant database")
 				return
 			}
