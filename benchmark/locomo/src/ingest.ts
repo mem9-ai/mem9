@@ -2,38 +2,42 @@ import type { DialogTurn, LoCoMoSample } from './types.js'
 
 import { readFile, writeFile } from 'node:fs/promises'
 
-import { Spinner } from 'picospinner'
+import { runWithConcurrency } from './concurrency.js'
+import { createMemory, deleteMemory, getAgentId, ingestMessages, searchMemories, shouldClearSessionFirst } from './mem9.js'
+import type { IngestMessage } from './mem9.js'
 
-import { createMemory, deleteMemory, getAgentId, searchMemories, shouldClearSessionFirst } from './mem9.js'
+export type IngestMode = 'raw' | 'messages'
 
 interface OrderedSession { dateLabel: string | null, turns: DialogTurn[], sessionNo: number }
 
 const getOrderedSessions = (sample: LoCoMoSample): OrderedSession[] => {
-  const sessions: OrderedSession[] = []
-  for (let sn = 1; sn <= 100; sn++) {
-    const turns = sample.conversation[`session_${sn}`]
-    if (!Array.isArray(turns)) break
+  const sessionNos: number[] = []
+  for (const key of Object.keys(sample.conversation)) {
+    const match = key.match(/^session_(\d+)$/)
+    if (match && Array.isArray(sample.conversation[key])) {
+      sessionNos.push(Number(match[1]))
+    }
+  }
+  sessionNos.sort((a, b) => a - b)
+  return sessionNos.map(sn => {
+    const turns = sample.conversation[`session_${sn}`] as DialogTurn[]
     const dateLabelRaw = sample.conversation[`session_${sn}_date_time`]
-    sessions.push({
+    return {
       dateLabel: typeof dateLabelRaw === 'string' ? dateLabelRaw : null,
       turns,
       sessionNo: sn,
-    })
-  }
-  return sessions
+    }
+  })
 }
 
-const clearExistingSessionMemories = async (sessionId: string): Promise<void> => {
+const clearExistingSessionMemories = async (tenantId: string, sessionId: string): Promise<void> => {
   const limit = 200
-  let offset = 0
   while (true) {
-    const memories = await searchMemories({ session_id: sessionId, agent_id: getAgentId(), limit, offset })
+    const memories = await searchMemories(tenantId, { session_id: sessionId, agent_id: getAgentId(), limit, offset: 0 })
     if (memories.length === 0) break
     for (const memory of memories) {
-      if (memory.id) await deleteMemory(memory.id)
+      if (memory.id) await deleteMemory(tenantId, memory.id)
     }
-    if (memories.length < limit) break
-    offset += limit
   }
 }
 
@@ -49,22 +53,45 @@ const formatContent = (sampleId: string, sessionNo: number, turnIndex: number, d
   return `${prefix} ${turn.text}`.trim()
 }
 
-const sleep = async (ms: number): Promise<void> => await new Promise(resolve => setTimeout(resolve, ms))
-
-const waitForSessionMemories = async (sessionId: string, expectedCount: number): Promise<void> => {
-  const deadline = Date.now() + 60_000
-  while (Date.now() < deadline) {
-    const memories = await searchMemories({ session_id: sessionId, agent_id: getAgentId(), limit: expectedCount })
-    if (memories.length >= expectedCount) return
-    await sleep(1000)
-  }
-  throw new Error(`Timed out waiting for mem9 writes for session ${sessionId}`)
+const speakerToRole = (speaker: string): 'user' | 'assistant' => {
+  const lower = speaker.toLowerCase()
+  if (lower.includes('1') || lower === 'user') return 'user'
+  return 'assistant'
 }
 
-const ingestSample = async (sample: LoCoMoSample): Promise<string> => {
+const ingestSampleMessages = async (tenantId: string, sample: LoCoMoSample): Promise<string> => {
   const sessionId = sample.sample_id
   if (shouldClearSessionFirst()) {
-    await clearExistingSessionMemories(sessionId)
+    await clearExistingSessionMemories(tenantId, sessionId)
+  }
+
+  const sessions = getOrderedSessions(sample)
+  console.log(`[${sample.sample_id}] Ingesting via messages pipeline...`)
+
+  for (const session of sessions) {
+    const messages: IngestMessage[] = []
+    for (const turn of session.turns) {
+      if (turn.text.trim().length === 0) continue
+      const datePrefix = session.dateLabel ? `[${session.dateLabel}] ` : ''
+      messages.push({
+        role: speakerToRole(turn.speaker),
+        content: `${datePrefix}${turn.text}`,
+      })
+    }
+    if (messages.length > 0) {
+      await ingestMessages(tenantId, messages, sessionId)
+      console.log(`[${sample.sample_id}] Sent session ${session.sessionNo} (${messages.length} messages)`)
+    }
+  }
+
+  console.log(`[${sample.sample_id}] Ingestion complete`)
+  return sessionId
+}
+
+const ingestSampleRaw = async (tenantId: string, sample: LoCoMoSample, ingestConcurrency: number): Promise<string> => {
+  const sessionId = sample.sample_id
+  if (shouldClearSessionFirst()) {
+    await clearExistingSessionMemories(tenantId, sessionId)
   }
 
   const sessions = getOrderedSessions(sample)
@@ -73,46 +100,59 @@ const ingestSample = async (sample: LoCoMoSample): Promise<string> => {
   let done = 0
   let lastPct = -1
 
-  const spinner = new Spinner(`Ingesting sample ${sample.sample_id}`)
-  spinner.start()
+  console.log(`[${sample.sample_id}] Ingesting ${total} turns (raw) with concurrency=${ingestConcurrency}...`)
 
+  let failed = 0
+  const tasks: Array<() => Promise<void>> = []
   for (const session of sessions) {
     for (let i = 0; i < session.turns.length; i++) {
       const turn = session.turns[i]
       if (turn == null || turn.text.trim().length === 0) continue
-      await createMemory({
-        content: formatContent(sample.sample_id, session.sessionNo, i, session.dateLabel, turn),
-        agent_id: getAgentId(),
-        session_id: sessionId,
-        tags: ['benchmark', 'locomo'],
-        metadata: {
-          sample_id: sample.sample_id,
-          session_no: session.sessionNo,
-          turn_index: i,
-          date_time: session.dateLabel,
-          dia_id: turn.dia_id,
-          speaker: turn.speaker,
-        },
+      tasks.push(async () => {
+        try {
+          await createMemory(tenantId, {
+            content: formatContent(sample.sample_id, session.sessionNo, i, session.dateLabel, turn),
+            agent_id: getAgentId(),
+            session_id: sessionId,
+            tags: ['benchmark', 'locomo'],
+            metadata: {
+              sample_id: sample.sample_id,
+              session_no: session.sessionNo,
+              turn_index: i,
+              date_time: session.dateLabel,
+              dia_id: turn.dia_id,
+              speaker: turn.speaker,
+            },
+          })
+        } catch (err) {
+          failed += 1
+          console.error(`[${sample.sample_id}] Failed to ingest session ${session.sessionNo} turn ${i}: ${err instanceof Error ? err.message : err}`)
+        }
+        done += 1
+        const pct = Math.floor((done / Math.max(total, 1)) * 100)
+        if (pct >= lastPct + 20) {
+          console.log(`[${sample.sample_id}] Ingesting ${pct}%`)
+          lastPct = pct
+        }
       })
-      done += 1
-      const pct = Math.floor((done / Math.max(total, 1)) * 100)
-      if (pct >= lastPct + 20) {
-        spinner.setText(`Ingesting sample ${sample.sample_id} ${pct}%`)
-        lastPct = pct
-      }
     }
   }
 
-  spinner.setText(`Waiting for mem9 writes for sample ${sample.sample_id}`)
-  await waitForSessionMemories(sessionId, total)
-  spinner.succeed(`Ingested sample ${sample.sample_id}`)
+  await runWithConcurrency(tasks, ingestConcurrency)
+
+  if (failed > 0) {
+    console.warn(`[${sample.sample_id}] Ingestion complete with ${failed}/${total} failed turns`)
+  } else {
+    console.log(`[${sample.sample_id}] Ingestion complete`)
+  }
   return sessionId
 }
 
-export const ingestAll = async (samples: LoCoMoSample[]): Promise<Record<string, string>> => {
-  const ids: Record<string, string> = {}
-  for (const sample of samples) ids[sample.sample_id] = await ingestSample(sample)
-  return ids
+export const ingestSample = async (tenantId: string, sample: LoCoMoSample, mode: IngestMode = 'raw', ingestConcurrency = 1): Promise<string> => {
+  if (mode === 'messages') {
+    return await ingestSampleMessages(tenantId, sample)
+  }
+  return await ingestSampleRaw(tenantId, sample, ingestConcurrency)
 }
 
 export const loadConversationIds = async (path: string): Promise<Record<string, string>> => {
