@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/repository/databend"
 	"github.com/qiffang/mnemos/server/internal/repository/db9"
 	"github.com/qiffang/mnemos/server/internal/repository/postgres"
 	"github.com/qiffang/mnemos/server/internal/repository/tidb"
@@ -14,6 +15,8 @@ import (
 // NewDB creates a database connection pool for the specified backend.
 func NewDB(backend, dsn string) (*sql.DB, error) {
 	switch backend {
+	case "databend":
+		return databend.NewDB(dsn)
 	case "db9":
 		return db9.NewDB(dsn)
 	case "postgres":
@@ -28,6 +31,8 @@ func NewDB(backend, dsn string) (*sql.DB, error) {
 // NewTenantRepo creates a TenantRepo for the specified backend.
 func NewTenantRepo(backend string, db *sql.DB) TenantRepo {
 	switch backend {
+	case "databend":
+		return databend.NewTenantRepo(db)
 	case "db9":
 		return db9.NewTenantRepo(db)
 	case "postgres":
@@ -40,6 +45,8 @@ func NewTenantRepo(backend string, db *sql.DB) TenantRepo {
 // NewUploadTaskRepo creates an UploadTaskRepo for the specified backend.
 func NewUploadTaskRepo(backend string, db *sql.DB) UploadTaskRepo {
 	switch backend {
+	case "databend":
+		return databend.NewUploadTaskRepo(db)
 	case "db9":
 		return db9.NewUploadTaskRepo(db)
 	case "postgres":
@@ -53,6 +60,8 @@ func NewUploadTaskRepo(backend string, db *sql.DB) UploadTaskRepo {
 // autoModel is used by tidb and db9 backends for auto-embedding features.
 func NewMemoryRepo(backend string, db *sql.DB, autoModel string, ftsEnabled bool, clusterID string) MemoryRepo {
 	switch backend {
+	case "databend":
+		return databend.NewMemoryRepo(db, ftsEnabled, clusterID)
 	case "db9":
 		return db9.NewMemoryRepo(db, autoModel, ftsEnabled, clusterID)
 	case "postgres":

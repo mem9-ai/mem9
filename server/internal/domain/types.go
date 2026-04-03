@@ -114,10 +114,10 @@ type Tenant struct {
 }
 
 // DSNForBackend builds a connection string for the specified backend.
-// backend must be "postgres", "db9", or "tidb" (MySQL-compatible); empty string panics.
+// backend must be "postgres", "db9", "databend", or "tidb" (MySQL-compatible); empty string panics.
 func (t *Tenant) DSNForBackend(backend string) string {
 	if backend == "" {
-		panic("DSNForBackend: backend must be specified explicitly (\"postgres\", \"db9\", or \"tidb\")")
+		panic("DSNForBackend: backend must be specified explicitly (\"postgres\", \"db9\", \"databend\", or \"tidb\")")
 	}
 	switch backend {
 	case "postgres", "db9":
@@ -127,6 +127,17 @@ func (t *Tenant) DSNForBackend(backend string) string {
 		}
 		return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
 			t.DBUser, t.DBPassword, t.DBHost, t.DBPort, t.DBName, sslmode)
+	case "databend":
+		sslmode := "disable"
+		if t.DBTLS {
+			sslmode = "enable"
+		}
+		warehouse := "default"
+		if t.ClusterID != "" {
+			warehouse = t.ClusterID
+		}
+		return fmt.Sprintf("databend://%s:%s@%s:%d/%s?sslmode=%s&warehouse=%s",
+			t.DBUser, t.DBPassword, t.DBHost, t.DBPort, t.DBName, sslmode, warehouse)
 	default:
 		// MySQL/TiDB format
 		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true",
