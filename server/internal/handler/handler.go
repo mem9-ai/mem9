@@ -138,6 +138,7 @@ func (s *Server) Router(
 	// Global middleware.
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RequestID)
+	r.Use(reqid.NewContextMiddleware)
 	r.Use(requestLogger(s.logger))
 	r.Use(rateLimitMW)
 	r.Use(metrics.Middleware)
@@ -253,7 +254,6 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			r = r.WithContext(reqid.NewContext(r.Context(), chimw.GetReqID(r.Context())))
 			ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
 			next.ServeHTTP(ww, r)
 			// Use route pattern to avoid exposing sensitive path params (e.g. tenantID).

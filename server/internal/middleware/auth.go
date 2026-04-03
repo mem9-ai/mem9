@@ -59,7 +59,7 @@ func ResolveTenant(
 
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			if err != nil {
-				slog.Error("cannot connect to tenant database", "cluster_id", t.ClusterID, "err", err)
+				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "err", err)
 				writeError(w, http.StatusServiceUnavailable, "cannot connect to tenant database")
 				return
 			}
@@ -115,7 +115,7 @@ func ResolveApiKey(
 
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			if err != nil {
-				slog.Error("cannot connect to tenant database", "cluster_id", t.ClusterID, "err", err)
+				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "err", err)
 				writeError(w, http.StatusServiceUnavailable, "cannot connect to tenant database")
 				return
 			}
