@@ -127,6 +127,7 @@ export interface SiteBillingPageCopy {
   contactCopiedMessage: string;
   contactCopyFailedMessage: string;
   contactEmail: string;
+  modalOkLabel: string;
 }
 
 export interface SiteFooterCopy {
@@ -419,13 +420,14 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           ctaAction: 'mailto',
         },
       ],
-      alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
+      alertMessage: 'Stay tuned! It is completely free for now. If you reach a paid tier, we will give you enough credits. Feel free to use it!',
       contactMessage:
         'Email us for enterprise pricing, security reviews, and dedicated support.',
       contactCopyLabel: 'Copy Email',
       contactCopiedMessage: 'Email address copied.',
       contactCopyFailedMessage: 'Copy failed. Please use the email address below.',
       contactEmail: 'mem9@pingcap.com',
+      modalOkLabel: 'OK',
     },
     footer: {
       github: 'GitHub',
@@ -679,6 +681,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       contactCopiedMessage: '邮箱地址已复制。',
       contactCopyFailedMessage: '复制失败，请使用下方邮箱地址。',
       contactEmail: 'mem9@pingcap.com',
+      modalOkLabel: '确定',
     },
     footer: {
       github: 'GitHub',
@@ -926,12 +929,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           ctaAction: 'mailto',
         },
       ],
-      alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
+      alertMessage: '敬請期待，現在完全免費，如果您已經到了收費的方案，我們也會給您足夠的 Credits，請放心使用！',
       contactMessage: '如需企業定價、安全審查或專屬支援，請發送郵件與我們聯絡。',
       contactCopyLabel: '複製信箱',
       contactCopiedMessage: '信箱地址已複製。',
       contactCopyFailedMessage: '複製失敗，請使用下方信箱地址。',
       contactEmail: 'mem9@pingcap.com',
+      modalOkLabel: '確定',
     },
     footer: {
       github: 'GitHub',
@@ -1182,7 +1186,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           ctaAction: 'mailto',
         },
       ],
-      alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
+      alertMessage: 'もうすぐ公開です！現在は完全無料です。有料プランに達した場合も、十分なクレジットを提供しますので、安心してご利用ください！',
       contactMessage:
         'エンタープライズ向け料金、セキュリティレビュー、専任サポートのご相談はメールでご連絡ください。',
       contactCopyLabel: 'メールアドレスをコピー',
@@ -1190,6 +1194,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       contactCopyFailedMessage:
         'コピーに失敗しました。下記のメールアドレスをご利用ください。',
       contactEmail: 'mem9@pingcap.com',
+      modalOkLabel: 'OK',
     },
     footer: {
       github: 'GitHub',
@@ -1437,7 +1442,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           ctaAction: 'mailto',
         },
       ],
-      alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
+      alertMessage: '곧 출시됩니다! 현재 완전 무료입니다. 유료 요금제에 도달하더라도 충분한 크레딧을 드리니 안심하고 사용하세요!',
       contactMessage:
         '엔터프라이즈 요금, 보안 검토, 전담 지원이 필요하면 이메일로 문의해 주세요.',
       contactCopyLabel: '이메일 복사',
@@ -1445,6 +1450,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       contactCopyFailedMessage:
         '복사에 실패했습니다. 아래 이메일 주소를 사용해 주세요.',
       contactEmail: 'mem9@pingcap.com',
+      modalOkLabel: '확인',
     },
     footer: {
       github: 'GitHub',
@@ -1695,7 +1701,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           ctaAction: 'mailto',
         },
       ],
-      alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
+      alertMessage: 'Nantikan! Saat ini sepenuhnya gratis. Jika Anda mencapai tier berbayar, kami akan memberikan kredit yang cukup. Silakan gunakan dengan tenang!',
       contactMessage:
         'Untuk harga enterprise, review keamanan, dan dukungan khusus, hubungi kami lewat email.',
       contactCopyLabel: 'Salin Email',
@@ -1703,6 +1709,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       contactCopyFailedMessage:
         'Gagal menyalin. Gunakan alamat email di bawah ini.',
       contactEmail: 'mem9@pingcap.com',
+      modalOkLabel: 'OK',
     },
     footer: {
       github: 'GitHub',
@@ -1953,7 +1960,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           ctaAction: 'mailto',
         },
       ],
-      alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
+      alertMessage: 'โปรดรอติดตาม! ขณะนี้ใช้งานได้ฟรีทั้งหมด หากคุณถึงแพ็กเกจที่ต้องชำระเงิน เราจะให้เครดิตที่เพียงพอ ใช้งานได้อย่างสบายใจ!',
       contactMessage:
         'หากต้องการสอบถามราคาแบบองค์กร การตรวจสอบความปลอดภัย หรือการสนับสนุนเฉพาะ โปรดติดต่อเราทางอีเมล',
       contactCopyLabel: 'คัดลอกอีเมล',
@@ -1961,6 +1968,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       contactCopyFailedMessage:
         'คัดลอกไม่สำเร็จ โปรดใช้อีเมลด้านล่าง',
       contactEmail: 'mem9@pingcap.com',
+      modalOkLabel: 'ตกลง',
     },
     footer: {
       github: 'GitHub',
