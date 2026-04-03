@@ -30,7 +30,7 @@ type createMemoryRequest struct {
 func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	var req createMemoryRequest
 	if err := decode(r, &req); err != nil {
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 
@@ -46,7 +46,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	hasContent := strings.TrimSpace(req.Content) != ""
 
 	if hasMessages && hasContent {
-		s.handleError(w, &domain.ValidationError{Field: "body", Message: "provide either content or messages, not both"})
+		s.handleError(r.Context(), w, &domain.ValidationError{Field: "body", Message: "provide either content or messages, not both"})
 		return
 	}
 
@@ -62,7 +62,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		if req.Sync {
 			result, err := s.ingestMessages(r.Context(), auth, svc, ingestReq)
 			if err != nil {
-				s.handleError(w, err)
+				s.handleError(r.Context(), w, err)
 				return
 			}
 			if result != nil && result.Status == "failed" {
@@ -82,11 +82,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !hasContent {
-		s.handleError(w, &domain.ValidationError{Field: "content", Message: "content or messages required"})
+		s.handleError(r.Context(), w, &domain.ValidationError{Field: "content", Message: "content or messages required"})
 		return
 	}
 	if req.Mode != "" {
-		s.handleError(w, &domain.ValidationError{Field: "body", Message: "content mode does not accept mode"})
+		s.handleError(r.Context(), w, &domain.ValidationError{Field: "body", Message: "content mode does not accept mode"})
 		return
 	}
 
@@ -98,7 +98,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		_, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
 		if err != nil {
 			slog.Error("sync memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
-			s.handleError(w, err)
+			s.handleError(r.Context(), w, err)
 			return
 		}
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -224,7 +224,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	if !onlySession {
 		memories, total, err = svc.memory.Search(r.Context(), filter)
 		if err != nil {
-			s.handleError(w, err)
+			s.handleError(r.Context(), w, err)
 			return
 		}
 	}
@@ -263,7 +263,7 @@ func (s *Server) getMemory(w http.ResponseWriter, r *http.Request) {
 
 	mem, err := svc.memory.Get(r.Context(), id)
 	if err != nil {
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 
@@ -280,7 +280,7 @@ type updateMemoryRequest struct {
 func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 	var req updateMemoryRequest
 	if err := decode(r, &req); err != nil {
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 
@@ -295,7 +295,7 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 
 	mem, err := svc.memory.Update(r.Context(), auth.AgentName, id, req.Content, req.Tags, req.Metadata, ifMatch)
 	if err != nil {
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 
@@ -309,7 +309,7 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	if err := svc.memory.Delete(r.Context(), id, auth.AgentName); err != nil {
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 
@@ -323,7 +323,7 @@ type bulkCreateRequest struct {
 func (s *Server) bulkCreateMemories(w http.ResponseWriter, r *http.Request) {
 	var req bulkCreateRequest
 	if err := decode(r, &req); err != nil {
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 
@@ -331,7 +331,7 @@ func (s *Server) bulkCreateMemories(w http.ResponseWriter, r *http.Request) {
 	svc := s.resolveServices(auth)
 	memories, err := svc.memory.BulkCreate(r.Context(), auth.AgentName, req.Memories)
 	if err != nil {
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 
@@ -352,7 +352,7 @@ func (s *Server) bootstrapMemories(w http.ResponseWriter, r *http.Request) {
 
 	memories, err := svc.memory.Bootstrap(r.Context(), limit)
 	if err != nil {
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 
@@ -399,14 +399,14 @@ func (s *Server) handleListSessionMessages(w http.ResponseWriter, r *http.Reques
 
 	rawIDs := r.URL.Query()["session_id"]
 	if len(rawIDs) == 0 {
-		s.handleError(w, &domain.ValidationError{
+		s.handleError(r.Context(), w, &domain.ValidationError{
 			Field: "session_id", Message: "at least one session_id required",
 		})
 		return
 	}
 	sessionIDs := dedupStrings(rawIDs)
 	if len(sessionIDs) > maxSessionIDs {
-		s.handleError(w, &domain.ValidationError{
+		s.handleError(r.Context(), w, &domain.ValidationError{
 			Field: "session_id", Message: "too many session_ids: maximum is 100",
 		})
 		return
@@ -416,7 +416,7 @@ func (s *Server) handleListSessionMessages(w http.ResponseWriter, r *http.Reques
 	if raw := r.URL.Query().Get("limit_per_session"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 {
-			s.handleError(w, &domain.ValidationError{
+			s.handleError(r.Context(), w, &domain.ValidationError{
 				Field: "limit_per_session", Message: "must be a positive integer",
 			})
 			return
@@ -428,7 +428,7 @@ func (s *Server) handleListSessionMessages(w http.ResponseWriter, r *http.Reques
 
 	sessions, err := svc.session.ListBySessionIDs(r.Context(), sessionIDs, limitPerSession)
 	if err != nil {
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 	if sessions == nil {

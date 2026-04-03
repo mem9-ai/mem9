@@ -20,6 +20,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/repository"
+	"github.com/qiffang/mnemos/server/internal/reqid"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
 
@@ -208,7 +209,7 @@ func respondError(w http.ResponseWriter, status int, msg string) {
 }
 
 // handleError maps domain errors to HTTP status codes.
-func (s *Server) handleError(w http.ResponseWriter, err error) {
+func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		respondError(w, http.StatusNotFound, err.Error())
@@ -223,7 +224,7 @@ func (s *Server) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, domain.ErrNotSupported):
 		respondError(w, http.StatusNotImplemented, err.Error())
 	default:
-		s.logger.Error("internal error", "err", err)
+		s.logger.Error("internal error", "err", err, "request_id", reqid.FromContext(ctx))
 		respondError(w, http.StatusInternalServerError, "internal server error")
 	}
 }
@@ -252,6 +253,7 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
+			r = r.WithContext(reqid.NewContext(r.Context(), chimw.GetReqID(r.Context())))
 			ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
 			next.ServeHTTP(ww, r)
 			// Use route pattern to avoid exposing sensitive path params (e.g. tenantID).

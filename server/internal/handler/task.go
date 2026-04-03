@@ -53,13 +53,13 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
-		s.handleError(w, &domain.ValidationError{Message: "invalid multipart form or file too large: " + err.Error()})
+		s.handleError(r.Context(), w, &domain.ValidationError{Message: "invalid multipart form or file too large: " + err.Error()})
 		return
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		s.handleError(w, &domain.ValidationError{Field: "file", Message: "file required"})
+		s.handleError(r.Context(), w, &domain.ValidationError{Field: "file", Message: "file required"})
 		return
 	}
 	defer file.Close()
@@ -73,7 +73,7 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 	if agentID != "" {
 		// Reject path traversal characters to prevent arbitrary file write/delete.
 		if strings.ContainsAny(agentID, "/\\") || strings.Contains(agentID, "..") {
-			s.handleError(w, &domain.ValidationError{Field: "agent_id", Message: "invalid characters in agent_id"})
+			s.handleError(r.Context(), w, &domain.ValidationError{Field: "agent_id", Message: "invalid characters in agent_id"})
 			return
 		}
 		if len(agentID) > maxAgentIDLength {
@@ -83,7 +83,7 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.FormValue("session_id")
 	fileType := r.FormValue("file_type")
 	if fileType != string(domain.FileTypeSession) && fileType != string(domain.FileTypeMemory) {
-		s.handleError(w, &domain.ValidationError{Field: "file_type", Message: "must be session or memory"})
+		s.handleError(r.Context(), w, &domain.ValidationError{Field: "file_type", Message: "must be session or memory"})
 		return
 	}
 
@@ -92,13 +92,13 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 	// Directory: {uploadDir}/{tenantID}/{agentID}/
 	dir := filepath.Join(s.uploadDir, auth.TenantID, agentID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 
 	fileName, err := sanitizeFilename(filepath.Base(header.Filename))
 	if err != nil {
-		s.handleError(w, &domain.ValidationError{Field: "file", Message: err.Error()})
+		s.handleError(r.Context(), w, &domain.ValidationError{Field: "file", Message: err.Error()})
 		return
 	}
 
@@ -121,13 +121,13 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if !errors.Is(err, os.ErrExist) {
-			s.handleError(w, err)
+			s.handleError(r.Context(), w, err)
 			return
 		}
 		// File exists, retry with new suffix
 	}
 	if dst == nil {
-		s.handleError(w, &domain.ValidationError{Field: "file", Message: "failed to create unique filename after retries"})
+		s.handleError(r.Context(), w, &domain.ValidationError{Field: "file", Message: "failed to create unique filename after retries"})
 		return
 	}
 
@@ -139,7 +139,7 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		if removeErr := os.Remove(filePath); removeErr != nil {
 			s.logger.Error("failed to remove file after copy failure", "path", filePath, "err", removeErr)
 		}
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 	if written > maxUploadSize {
@@ -147,14 +147,14 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		if removeErr := os.Remove(filePath); removeErr != nil {
 			s.logger.Error("failed to remove oversized file", "path", filePath, "err", removeErr)
 		}
-		s.handleError(w, &domain.ValidationError{Field: "file", Message: fmt.Sprintf("file exceeds maximum size of %d bytes", maxUploadSize)})
+		s.handleError(r.Context(), w, &domain.ValidationError{Field: "file", Message: fmt.Sprintf("file exceeds maximum size of %d bytes", maxUploadSize)})
 		return
 	}
 	if err := dst.Close(); err != nil {
 		if removeErr := os.Remove(filePath); removeErr != nil {
 			s.logger.Error("failed to remove file after close failure", "path", filePath, "err", removeErr)
 		}
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 
@@ -172,7 +172,7 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		if removeErr := os.Remove(filePath); removeErr != nil {
 			s.logger.Error("leaked upload file after task create failure", "path", filePath, "err", removeErr)
 		}
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 
@@ -185,7 +185,7 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 	auth := authInfo(r)
 	tasks, err := s.uploadTasks.ListByTenant(r.Context(), auth.TenantID)
 	if err != nil {
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 
@@ -226,20 +226,20 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		s.handleError(w, &domain.ValidationError{Field: "id", Message: "task id required"})
+		s.handleError(r.Context(), w, &domain.ValidationError{Field: "id", Message: "task id required"})
 		return
 	}
 
 	task, err := s.uploadTasks.GetByID(r.Context(), id)
 	if err != nil {
-		s.handleError(w, err)
+		s.handleError(r.Context(), w, err)
 		return
 	}
 
 	// Verify tenant ownership.
 	auth := authInfo(r)
 	if task.TenantID != auth.TenantID {
-		s.handleError(w, domain.ErrNotFound)
+		s.handleError(r.Context(), w, domain.ErrNotFound)
 		return
 	}
 
