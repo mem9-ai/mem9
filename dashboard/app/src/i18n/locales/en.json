@@ -525,6 +525,27 @@
         "latest-first": "Each bucket shows the newest memories first."
       }
     },
+    "npc_dialog": {
+      "title": "Farm Talk",
+      "tips": {
+        "move": "Cluck, use arrow keys or WASD to wander the field.",
+        "run": "Moo, hold Shift if you want to scamper faster.",
+        "interact": "Tap Space and one of us will chirp back.",
+        "bucket-to-crops": "Moo, each crop family is tending one whole bucket of memories.",
+        "bucket-slices": "Cluck, one bucket can sprout across several crops.",
+        "latest-first": "Around here, the freshest memories poke up first."
+      },
+      "deep": {
+        "persona_summary": "Moo, your thoughts keep grazing around {{summary}} lately.",
+        "theme_highlight": "Cluck, {{theme}} keeps rustling through this whole memory field.",
+        "recommendation": "The barn breeze says {{recommendation}} would help next."
+      },
+      "light": {
+        "summary_snapshot": "Moo, the field feels full of {{summary}} these days.",
+        "top_tag": "Cluck, {{tag}} keeps popping up like fresh sprouts.",
+        "top_topic": "This little coop can't stop talking about {{topic}}."
+      }
+    },
     "feedback": {
       "button": "Feedback",
       "title": "Send Feedback",

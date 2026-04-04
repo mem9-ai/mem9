@@ -15,6 +15,7 @@ import {
   type PixelFarmPointerDebugInfo,
 } from "@/lib/pixel-farm/create-game";
 import { usePixelFarmWorld } from "@/lib/pixel-farm/data/use-pixel-farm-world";
+import { usePixelFarmNpcDialogContent } from "@/lib/pixel-farm/use-pixel-farm-npc-dialog-content";
 import { getActiveSpaceId } from "@/lib/session";
 
 export function PixelFarmPage() {
@@ -34,6 +35,7 @@ export function PixelFarmPage() {
   const showDebugPanel = import.meta.env.DEV;
   const spaceId = getActiveSpaceId() ?? "pixel-farm-demo";
   const worldQuery = usePixelFarmWorld(spaceId);
+  const npcDialogContent = usePixelFarmNpcDialogContent(spaceId);
 
   return (
     <main className="pixel-farm-font fixed inset-0 overflow-hidden bg-[#0d141b] text-[#f6dca6]">
@@ -41,6 +43,7 @@ export function PixelFarmPage() {
         debugActorState={showDebugPanel ? debugActorState : null}
         memoryById={worldQuery.memoryById}
         musicEnabled={musicEnabled}
+        npcDialogContent={npcDialogContent}
         onInteractionDebugChange={showDebugPanel ? setInteractionDebugInfo : null}
         onPointerDebugChange={showDebugPanel ? setPointerDebugInfo : null}
         resolveInteractionMemories={worldQuery.resolveInteractionMemories}

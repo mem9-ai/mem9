@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
+import i18n from "@/i18n";
 import {
   createPixelFarmGame,
   type PixelFarmDebugState,
@@ -17,23 +18,37 @@ import {
 } from "@/lib/pixel-farm/dialog-state";
 import type { PixelFarmWorldState } from "@/lib/pixel-farm/data/types";
 import {
-  buildPixelFarmNpcDialogEntry,
-  getPixelFarmNpcDialogTitle,
-  pickRandomPixelFarmNpcTipId,
-  type PixelFarmNpcTipId,
-} from "@/lib/pixel-farm/npc-tips";
+  buildPixelFarmNpcDialogCatalog,
+  pickNextPixelFarmNpcDialogEntry,
+  type PixelFarmNpcDialogRotationState,
+} from "@/lib/pixel-farm/npc-dialog-content";
+import { getPixelFarmNpcDialogTitle } from "@/lib/pixel-farm/npc-tips";
+import type { PixelFarmNpcDialogContentState } from "@/lib/pixel-farm/use-pixel-farm-npc-dialog-content";
 import type { Memory } from "@/types/memory";
 
 interface PhaserStageProps {
   debugActorState?: PixelFarmDebugState | null;
   memoryById?: Record<string, Memory>;
   musicEnabled?: boolean;
+  npcDialogContent?: PixelFarmNpcDialogContentState | null;
   onInteractionDebugChange?: ((info: PixelFarmInteractionDebugInfo) => void) | null;
   onPointerDebugChange?: ((info: PixelFarmPointerDebugInfo) => void) | null;
   resolveInteractionMemories?: ((tagKey: string) => Promise<Memory[]>) | null;
   showInteractionDebug?: boolean;
   showSpatialDebug?: boolean;
   worldState?: PixelFarmWorldState | null;
+}
+
+function createFallbackNpcDialogContent(): PixelFarmNpcDialogContentState {
+  return {
+    catalog: buildPixelFarmNpcDialogCatalog({
+      deepReport: null,
+      lightSnapshot: null,
+      t: (key, vars) => i18n.t(key, vars),
+    }),
+    deepReport: null,
+    lightSnapshot: null,
+  };
 }
 
 function playBubbleAppearSound(
@@ -72,6 +87,7 @@ export function PhaserStage({
   debugActorState = null,
   memoryById = {},
   musicEnabled = true,
+  npcDialogContent = null,
   onInteractionDebugChange = null,
   onPointerDebugChange = null,
   showInteractionDebug = false,
@@ -92,9 +108,10 @@ export function PhaserStage({
   const showSpatialDebugRef = useRef(showSpatialDebug);
   const worldStateRef = useRef<PixelFarmWorldState | null>(worldState);
   const memoryByIdRef = useRef(memoryById);
+  const npcDialogContentRef = useRef<PixelFarmNpcDialogContentState | null>(npcDialogContent);
   const openBubbleStateRef = useRef<PixelFarmOpenBubbleState | null>(null);
   const pausedAnimalInstanceIdRef = useRef<string | null>(null);
-  const lastNpcTipIdRef = useRef<PixelFarmNpcTipId | null>(null);
+  const npcDialogRotationRef = useRef<PixelFarmNpcDialogRotationState | null>(null);
   const handledInteractionNonceRef = useRef(0);
   const bubbleAppearSoundRef = useRef<Phaser.Sound.BaseSound | null>(null);
   const bubbleAppearSoundStopTimerRef = useRef<number | null>(null);
@@ -132,6 +149,10 @@ export function PhaserStage({
   useEffect(() => {
     memoryByIdRef.current = memoryById;
   }, [memoryById]);
+
+  useEffect(() => {
+    npcDialogContentRef.current = npcDialogContent;
+  }, [npcDialogContent]);
 
   useEffect(() => {
     openBubbleStateRef.current = openBubbleState;
@@ -212,14 +233,6 @@ export function PhaserStage({
           }
 
           setOpenBubbleState((current) => {
-            const npcTipId =
-              target.kind === "npc"
-                ? pickRandomPixelFarmNpcTipId(lastNpcTipIdRef.current)
-                : null;
-            if (npcTipId) {
-              lastNpcTipIdRef.current = npcTipId;
-            }
-
             const entries =
               target.kind === "plant"
                 ? target.memoryIds
@@ -229,7 +242,15 @@ export function PhaserStage({
                       id: memory.id,
                       content: memory.content,
                     }))
-                : [buildPixelFarmNpcDialogEntry(npcTipId!)];
+                : (() => {
+                    const nextDialog = pickNextPixelFarmNpcDialogEntry({
+                      catalog:
+                        npcDialogContentRef.current?.catalog ?? createFallbackNpcDialogContent().catalog,
+                      rotationState: npcDialogRotationRef.current,
+                    });
+                    npcDialogRotationRef.current = nextDialog.rotationState;
+                    return [{ id: nextDialog.entry.id, content: nextDialog.entry.text }];
+                  })();
 
             if (entries.length < 1) {
               return null;

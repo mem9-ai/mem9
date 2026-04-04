@@ -25,12 +25,16 @@ export function pickRandomPixelFarmNpcTipId(
 }
 
 export function getPixelFarmNpcDialogTitle(): string {
-  return i18n.t("pixel_farm.npc_tips.title");
+  return i18n.t("pixel_farm.npc_dialog.title");
 }
 
-export function buildPixelFarmNpcDialogEntry(tipId: PixelFarmNpcTipId): PixelFarmDialogEntry {
+export function buildPixelFarmNpcDialogEntry(
+  tipId: PixelFarmNpcTipId,
+  translate: (key: string, vars?: Record<string, string | number>) => string = (key, vars) =>
+    i18n.t(key, vars),
+): PixelFarmDialogEntry {
   return {
     id: `npc-tip-${tipId}`,
-    content: i18n.t(`pixel_farm.npc_tips.items.${tipId}`),
+    content: translate(`pixel_farm.npc_dialog.tips.${tipId}`),
   };
 }

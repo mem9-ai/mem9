@@ -525,6 +525,27 @@
         "latest-first": "每个 bucket 都按最新记忆排在最前。"
       }
     },
+    "npc_dialog": {
+      "title": "农场闲话",
+      "tips": {
+        "move": "咯咯，方向键或 WASD 就能在田里溜达啦。",
+        "run": "哞，按住 Shift 就能跑得更快一点。",
+        "interact": "轻轻按一下空格，我们就会回你一句。",
+        "bucket-to-crops": "哞，每一种作物都照看着一整桶记忆呢。",
+        "bucket-slices": "咯咯，同一桶记忆会分散长成好几株作物。",
+        "latest-first": "农场里最新的记忆，总是先冒出头。"
+      },
+      "deep": {
+        "persona_summary": "哞，我看你这阵子的心思总在 {{summary}} 附近打转呢。",
+        "theme_highlight": "咯咯，{{theme}} 最近一直在这片记忆田里冒头。",
+        "recommendation": "农场的风都在提醒你，{{recommendation}} 也许正合适。"
+      },
+      "light": {
+        "summary_snapshot": "哞，这阵子的田地味道里全是 {{summary}}。",
+        "top_tag": "咯咯，{{tag}} 最近像小苗一样一茬一茬地冒出来。",
+        "top_topic": "连鸡窝边上都在悄悄念叨 {{topic}} 呢。"
+      }
+    },
     "feedback": {
       "button": "反馈",
       "title": "提交反馈",
