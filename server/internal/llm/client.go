@@ -81,6 +81,17 @@ type chatResponse struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
+	Usage *struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+		PromptTokensDetails *struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details,omitempty"`
+		// Anthropic-style cache fields (used by some OpenAI-compatible proxies).
+		CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+		CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
+	} `json:"usage,omitempty"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
@@ -207,6 +218,24 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest) (string, error) 
 	}
 
 	metrics.LLMRequestDuration.WithLabelValues(c.model, "success").Observe(duration)
+	if chatResp.Usage != nil {
+		u := chatResp.Usage
+		metrics.LLMTokensTotal.WithLabelValues(c.model, "input").Add(float64(u.PromptTokens))
+		metrics.LLMTokensTotal.WithLabelValues(c.model, "output").Add(float64(u.CompletionTokens))
+		metrics.LLMTokensTotal.WithLabelValues(c.model, "total").Add(float64(u.TotalTokens))
+
+		// Cache tokens: try OpenAI-style (prompt_tokens_details.cached_tokens), then Anthropic-style.
+		cacheRead := u.CacheReadInputTokens
+		if cacheRead == 0 && u.PromptTokensDetails != nil {
+			cacheRead = u.PromptTokensDetails.CachedTokens
+		}
+		if cacheRead > 0 {
+			metrics.LLMTokensTotal.WithLabelValues(c.model, "cache_read").Add(float64(cacheRead))
+		}
+		if u.CacheCreationInputTokens > 0 {
+			metrics.LLMTokensTotal.WithLabelValues(c.model, "cache_creation").Add(float64(u.CacheCreationInputTokens))
+		}
+	}
 	return content, nil
 }
 

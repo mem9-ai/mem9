@@ -560,6 +560,191 @@ function initOnboardingVersionControls(): void {
   applyOnboardingVersion('stable');
 }
 
+function initDocsScrollSpy(): void {
+  const root = document.querySelector<HTMLElement>('[data-docs-root]');
+  if (!root) {
+    return;
+  }
+
+  let observer: IntersectionObserver | null = null;
+
+  function setup(): void {
+    if (observer) {
+      observer.disconnect();
+    }
+
+    const activeCopy = root!.querySelector<HTMLElement>('[data-docs-copy]:not([hidden])');
+    if (!activeCopy) {
+      return;
+    }
+
+    const sections = Array.from(
+      activeCopy.querySelectorAll<HTMLElement>('[data-docs-anchor]'),
+    );
+
+    if (sections.length === 0) {
+      return;
+    }
+
+    const visibleSections = new Map<string, IntersectionObserverEntry>();
+
+    observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = (entry.target as HTMLElement).dataset.docsAnchor;
+          if (!id) {
+            continue;
+          }
+
+          if (entry.isIntersecting) {
+            visibleSections.set(id, entry);
+          } else {
+            visibleSections.delete(id);
+          }
+        }
+
+        let activeId: string | null = null;
+        let minTop = Infinity;
+
+        for (const [id, entry] of visibleSections) {
+          if (entry.boundingClientRect.top < minTop) {
+            minTop = entry.boundingClientRect.top;
+            activeId = id;
+          }
+        }
+
+        activeCopy!.querySelectorAll<HTMLAnchorElement>('.docs-toc-link').forEach((link) => {
+          const isActive = link.getAttribute('href') === `#${activeId}`;
+          link.classList.toggle('is-active', isActive);
+        });
+      },
+      {
+        rootMargin: '-80px 0px -35% 0px',
+        threshold: 0,
+      },
+    );
+
+    for (const section of sections) {
+      observer.observe(section);
+    }
+  }
+
+  setup();
+
+  const mutation = new MutationObserver(() => {
+    setup();
+  });
+
+  mutation.observe(root, {
+    attributes: true,
+    attributeFilter: ['data-docs-locale'],
+  });
+}
+
+function initDocsProgressBar(): void {
+  const bar = document.querySelector<HTMLElement>('[data-docs-progress]');
+  if (!bar) {
+    return;
+  }
+
+  let ticking = false;
+
+  function update(): void {
+    const scrollTop = window.scrollY;
+    const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    const progress = docHeight > 0 ? Math.min((scrollTop / docHeight) * 100, 100) : 0;
+    bar!.style.width = `${progress}%`;
+    ticking = false;
+  }
+
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (!ticking) {
+        ticking = true;
+        window.requestAnimationFrame(update);
+      }
+    },
+    { passive: true },
+  );
+}
+
+function initDocsBackToTop(): void {
+  const button = document.querySelector<HTMLButtonElement>('[data-docs-back-to-top]');
+  if (!button) {
+    return;
+  }
+
+  let ticking = false;
+  let hideTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function update(): void {
+    const shouldShow = window.scrollY > 400;
+
+    if (shouldShow) {
+      if (hideTimeout !== null) {
+        clearTimeout(hideTimeout);
+        hideTimeout = null;
+      }
+
+      button!.hidden = false;
+      window.requestAnimationFrame(() => {
+        button!.classList.add('is-visible');
+      });
+    } else {
+      button!.classList.remove('is-visible');
+      hideTimeout = setTimeout(() => {
+        button!.hidden = true;
+        hideTimeout = null;
+      }, 250);
+    }
+
+    ticking = false;
+  }
+
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (!ticking) {
+        ticking = true;
+        window.requestAnimationFrame(update);
+      }
+    },
+    { passive: true },
+  );
+
+  button.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+
+function initDocsMobileToc(): void {
+  const toggleButtons = document.querySelectorAll<HTMLButtonElement>('[data-docs-toc-toggle]');
+  if (toggleButtons.length === 0) {
+    return;
+  }
+
+  toggleButtons.forEach((toggle) => {
+    toggle.addEventListener('click', () => {
+      const sidebar = toggle.closest<HTMLElement>('.docs-sidebar');
+      if (!sidebar) {
+        return;
+      }
+
+      sidebar.classList.toggle('is-toc-open');
+    });
+  });
+
+  document.querySelectorAll<HTMLAnchorElement>('.docs-toc-link').forEach((link) => {
+    link.addEventListener('click', () => {
+      const sidebar = link.closest<HTMLElement>('.docs-sidebar');
+      if (sidebar) {
+        sidebar.classList.remove('is-toc-open');
+      }
+    });
+  });
+}
+
 export function initSiteUI(): void {
   const locale = isSiteLocale(document.documentElement.dataset.locale)
     ? document.documentElement.dataset.locale
@@ -580,4 +765,11 @@ export function initSiteUI(): void {
   initCopyButton();
   initOnboardingVersionControls();
   setOpenMenu(null);
+
+  if (isDocsPage()) {
+    initDocsScrollSpy();
+    initDocsProgressBar();
+    initDocsBackToTop();
+    initDocsMobileToc();
+  }
 }

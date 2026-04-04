@@ -81,6 +81,18 @@ var (
 			Buckets:   []float64{0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.92, 0.95, 0.97, 0.99},
 		},
 	)
+
+	// LLMTokensTotal counts LLM token consumption by model and type (prompt/completion).
+	// LLMTokensTotal counts LLM token consumption by model and type.
+	// type: "input" | "output" | "total" | "cache_read" | "cache_creation"
+	LLMTokensTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "llm_tokens_total",
+			Help:      "Total number of LLM tokens consumed.",
+		},
+		[]string{"model", "type"},
+	)
 )
 
 // Middleware records HTTP request count and duration for each request.

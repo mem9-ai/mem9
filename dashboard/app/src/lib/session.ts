@@ -9,6 +9,11 @@ interface RememberedSpace {
   expiresAt: number;
 }
 
+function writeSessionState(storage: Storage, id: string): void {
+  storage.setItem(SPACE_ID_KEY, id);
+  storage.setItem(LAST_ACTIVE_KEY, String(Date.now()));
+}
+
 export function getSpaceId(): string | null {
   return sessionStorage.getItem(SPACE_ID_KEY);
 }
@@ -43,8 +48,7 @@ function readRememberedSpace(): RememberedSpace | null {
 }
 
 export function setSpaceId(id: string, remember = false): void {
-  sessionStorage.setItem(SPACE_ID_KEY, id);
-  touchActivity();
+  writeSessionState(sessionStorage, id);
 
   if (remember) {
     const remembered: RememberedSpace = {
@@ -78,8 +82,7 @@ export function restoreRememberedSpace(): string | null {
   const remembered = readRememberedSpace();
   if (!remembered) return null;
 
-  sessionStorage.setItem(SPACE_ID_KEY, remembered.spaceId);
-  touchActivity();
+  writeSessionState(sessionStorage, remembered.spaceId);
   return remembered.spaceId;
 }
 

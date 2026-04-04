@@ -75,7 +75,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         title: 'Why mem9',
-        sectionIDs: ['problems-mem9-solves', 'core-capabilities'],
+        sectionIDs: ['problems-mem9-solves', 'openclaw-native-vs-mem9', 'core-capabilities'],
       },
       {
         title: 'Setup & Daily Use',
@@ -162,8 +162,45 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       {
-        id: 'core-capabilities',
+        id: 'openclaw-native-vs-mem9',
         label: '05',
+        title: 'OpenClaw Native Memory vs mem9',
+        intro:
+          'The clearest difference is not that one is “good” and the other is “bad”. They solve different memory problems.',
+        paragraphs: [
+          'OpenClaw native memory is not useless. It is fundamentally about helping the agent write important information into local Markdown and then retrieve those files through indexing.',
+          'mem9 addresses a different class of need: memory that persists across sessions, resets, agents, devices, and ongoing operational workflows.',
+        ],
+        subsections: [
+          {
+            title: 'When OpenClaw native memory is usually enough',
+            bullets: [
+              'A single OpenClaw agent.',
+              'A single machine.',
+              'You mainly rely on `MEMORY.md` and daily notes.',
+              'You are fine with recall returning original snippets or chunks.',
+            ],
+          },
+          {
+            title: 'When mem9 becomes the right product shape',
+            bullets: [
+              'Memory needs to survive across sessions, resets, and machines.',
+              'You do not want memory quality to depend on whether the agent wrote Markdown correctly.',
+              'You want long conversations to be distilled into more stable facts or insights.',
+              'You need multiple agents to share one memory pool.',
+              'You need different memory layers such as insight, pinned, and session.',
+              'You need APIs, a dashboard, analysis, and memory governance.',
+            ],
+          },
+        ],
+        bullets: [
+          'OpenClaw native memory is closer to a local knowledge notebook.',
+          'mem9 is closer to an external agent memory system.',
+        ],
+      },
+      {
+        id: 'core-capabilities',
+        label: '06',
         title: 'Core Capabilities',
         intro: 'These are the product behaviors users will feel most directly.',
         subsections: [
@@ -213,7 +250,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'official-install-flow',
-        label: '06',
+        label: '07',
         title: 'Official Install Flow',
         paragraphs: [
           'The simplest official install path is still the SKILL.md entry point. If users remember one thing, it should be that URL.',
@@ -238,7 +275,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'what-you-get-after-setup',
-        label: '07',
+        label: '08',
         title: 'What You Get After Setup',
         bullets: [
           'A cloud-backed long-term memory space connected to mem9.ai.',
@@ -252,7 +289,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'your-memory-dashboard',
-        label: '08',
+        label: '09',
         title: 'Your Memory Dashboard',
         intro: 'Your Memory is the main visual application in the mem9 product.',
         bullets: [
@@ -271,7 +308,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'daily-usage-expectations',
-        label: '09',
+        label: '10',
         title: 'Daily Usage Expectations',
         paragraphs: [
           'The most immediate day-to-day change is that users stop repeating the same project background, preferences, and working agreements every session.',
@@ -297,7 +334,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '10',
+        label: '11',
         title: 'Reconnect, New Machine, and API Key Care',
         subsections: [
           {
@@ -325,7 +362,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '11',
+        label: '12',
         title: 'Uninstall Behavior',
         intro: 'Uninstalling mem9 affects the local machine setup, not the remote cloud data.',
         subsections: [
@@ -352,7 +389,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '12',
+        label: '13',
         title: 'Security and Trust',
         paragraphs: [
           'mem9 positions itself as a production-ready memory layer, not an opaque black box. The product story emphasizes clear data handling boundaries and production-grade cloud infrastructure.',
@@ -379,7 +416,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '13',
+        label: '14',
         title: 'Product Expectations and Limits',
         subsections: [
           {
@@ -401,7 +438,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '14',
+        label: '15',
         title: 'Recommended Path and Official Links',
         intro: 'For a new user, the cleanest sequence looks like this.',
         bullets: [
@@ -461,7 +498,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         title: '为什么用 mem9',
-        sectionIDs: ['problems-mem9-solves', 'core-capabilities'],
+        sectionIDs: ['problems-mem9-solves', 'openclaw-native-vs-mem9', 'core-capabilities'],
       },
       {
         title: '安装与日常使用',
@@ -548,8 +585,50 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       {
-        id: 'core-capabilities',
+        id: 'openclaw-native-vs-mem9',
         label: '05',
+        title: 'OpenClaw 原生记忆和 mem9 的区别',
+        intro: '最清楚的区分方式，不是说谁“更好”，而是看你到底在解决哪一类记忆问题。',
+        paragraphs: [
+          'OpenClaw 原生记忆并不是“没用”，但它解决的问题本质上是“让 Agent 把重要内容写进本地 Markdown，并为这些文件建立检索索引”。',
+          'mem9 解决的是另一类问题：把记忆从“本地笔记文件 + chunk 检索”升级成“面向多 session、多 Agent、多设备、可共享、可运营的记忆基础设施”。',
+        ],
+        subsections: [
+          {
+            title: '如果你的需求是',
+            bullets: [
+              '单个 OpenClaw agent',
+              '单台机器',
+              '主要靠 `MEMORY.md` 和每天的 notes 记事',
+              '可以接受 recall 回来的是原文 snippet / chunk',
+            ],
+            paragraphs: [
+              '那么 OpenClaw 原生记忆通常够用。',
+            ],
+          },
+          {
+            title: '如果你的需求升级为',
+            bullets: [
+              '记忆要跨 session、跨 reset、跨机器稳定存在',
+              '不想依赖 agent 有没有把信息正确写进 Markdown',
+              '希望把长对话自动提炼成更稳定的 facts / insights',
+              '需要 multi-agent 共享一个 memory pool',
+              '需要区分 insight、pinned、session 等不同记忆层',
+              '需要 API、dashboard、分析、治理能力',
+            ],
+            paragraphs: [
+              '那么 OpenClaw native memory 很快就会碰到结构性上限，mem9 才是对应的产品形态。',
+            ],
+          },
+        ],
+        bullets: [
+          'OpenClaw native memory 更像本地知识笔记本。',
+          'mem9 更像外置的 agent memory system。',
+        ],
+      },
+      {
+        id: 'core-capabilities',
+        label: '06',
         title: '核心能力',
         intro: '下面这些能力，是用户最直接会感受到的产品变化。',
         subsections: [
@@ -599,7 +678,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'official-install-flow',
-        label: '06',
+        label: '07',
         title: '官方安装路径',
         paragraphs: [
           '最简单的官方安装路径仍然是 SKILL.md。如果用户只记一个入口，就应该记住这个地址。',
@@ -624,7 +703,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'what-you-get-after-setup',
-        label: '07',
+        label: '08',
         title: 'setup 成功后，你会得到什么',
         bullets: [
           '一套已经连到 mem9.ai 的云端长期记忆。',
@@ -638,7 +717,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'your-memory-dashboard',
-        label: '08',
+        label: '09',
         title: 'Your Memory 是什么',
         intro: 'Your Memory 是 mem9 的主要可视化应用。',
         bullets: [
@@ -657,7 +736,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'daily-usage-expectations',
-        label: '09',
+        label: '10',
         title: '日常使用时，mem9 会怎样改变体验',
         paragraphs: [
           '最直接的变化通常是：你不需要每次重新解释项目背景，长期知识不会只留在某次聊天里，而且你还能明确要求“把这件事记下来”。',
@@ -683,7 +762,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '10',
+        label: '11',
         title: '恢复、重连和 API key 保管',
         subsections: [
           {
@@ -711,7 +790,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '11',
+        label: '12',
         title: '卸载时，会发生什么，不会发生什么',
         intro: '卸载影响的是本地配置，不会直接删除远端云数据。',
         subsections: [
@@ -738,7 +817,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '12',
+        label: '13',
         title: '安全和信任基础',
         paragraphs: [
           'mem9 对自己的定位是面向生产场景的长期记忆层，而不是一个不可控黑盒。官方叙述强调的是清晰的数据处理边界，以及生产级云基础设施。',
@@ -765,7 +844,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '13',
+        label: '14',
         title: '真实使用时，应该有什么预期',
         subsections: [
           {
@@ -787,7 +866,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '14',
+        label: '15',
         title: '给新用户的推荐顺序和官方入口',
         intro: '如果你第一次使用 mem9，推荐路径可以很简单。',
         bullets: [
@@ -847,7 +926,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         title: 'なぜ mem9 か',
-        sectionIDs: ['problems-mem9-solves', 'core-capabilities'],
+        sectionIDs: ['problems-mem9-solves', 'openclaw-native-vs-mem9', 'core-capabilities'],
       },
       {
         title: 'セットアップと日常利用',
@@ -934,8 +1013,44 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       {
-        id: 'core-capabilities',
+        id: 'openclaw-native-vs-mem9',
         label: '05',
+        title: 'OpenClaw 標準メモリと mem9 の違い',
+        intro: 'いちばんわかりやすい違いは、どちらが優れているかではなく、解いている記憶の問題が違うという点です。',
+        paragraphs: [
+          'OpenClaw の標準 memory は役に立たないわけではありません。本質的には、重要な情報をローカル Markdown に書き出し、そのファイルに検索インデックスを作る仕組みです。',
+          'mem9 が解くのは別の問題です。記憶を「ローカルノート + chunk 検索」から、「複数 session・複数 Agent・複数デバイスで共有でき、継続運用できる記憶基盤」へ引き上げます。',
+        ],
+        subsections: [
+          {
+            title: '次の条件なら OpenClaw 標準メモリで十分なことが多い',
+            bullets: [
+              'OpenClaw Agent が 1 つだけ。',
+              '使うマシンが 1 台だけ。',
+              '主に `MEMORY.md` と daily notes に依存している。',
+              '想起結果が元の snippet / chunk でも問題ない。',
+            ],
+          },
+          {
+            title: '次の条件なら mem9 が適した形になる',
+            bullets: [
+              '記憶を session、reset、マシン変更をまたいで安定して残したい。',
+              'Agent が Markdown を正しく書けたかどうかに依存したくない。',
+              '長い会話から、より安定した facts / insights を抽出したい。',
+              '複数 Agent で同じ memory pool を共有したい。',
+              'insight、pinned、session など異なる記憶レイヤーを使い分けたい。',
+              'API、dashboard、分析、運用管理が必要。',
+            ],
+          },
+        ],
+        bullets: [
+          'OpenClaw native memory はローカル知識ノートに近い。',
+          'mem9 は外部の agent memory system に近い。',
+        ],
+      },
+      {
+        id: 'core-capabilities',
+        label: '06',
         title: 'コア機能',
         intro: '以下はユーザーがもっとも直接感じる変化です。',
         subsections: [
@@ -985,7 +1100,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'official-install-flow',
-        label: '06',
+        label: '07',
         title: '公式インストールフロー',
         paragraphs: [
           'もっともシンプルな公式インストール経路は SKILL.md です。ひとつだけ覚えるならこの URL を覚えてください。',
@@ -1010,7 +1125,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'what-you-get-after-setup',
-        label: '07',
+        label: '08',
         title: 'setup 完了後に得られるもの',
         bullets: [
           'mem9.ai に接続されたクラウド長期記憶。',
@@ -1024,7 +1139,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'your-memory-dashboard',
-        label: '08',
+        label: '09',
         title: 'Your Memory とは',
         intro: 'Your Memory は mem9 の主要な可視化アプリです。',
         bullets: [
@@ -1043,7 +1158,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'daily-usage-expectations',
-        label: '09',
+        label: '10',
         title: '日常利用で mem9 が変えること',
         paragraphs: [
           'もっとも直接的な変化は、毎回同じプロジェクト背景や作業ルールを説明し直さなくてよくなることです。',
@@ -1069,7 +1184,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '10',
+        label: '11',
         title: 'reconnect・復元・API key の管理',
         subsections: [
           {
@@ -1097,7 +1212,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '11',
+        label: '12',
         title: 'uninstall で起きること / 起きないこと',
         intro: 'uninstall はローカル設定に影響しますが、クラウド上のデータは直接削除しません。',
         subsections: [
@@ -1124,7 +1239,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '12',
+        label: '13',
         title: 'セキュリティと信頼の基盤',
         paragraphs: [
           'mem9 は、制御不能なブラックボックスではなく、本番運用を前提とした長期記憶レイヤーとして位置づけられています。説明の中心は、明確なデータ処理境界と本番級クラウド基盤です。',
@@ -1151,7 +1266,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '13',
+        label: '14',
         title: '実運用での期待値',
         subsections: [
           {
@@ -1173,7 +1288,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '14',
+        label: '15',
         title: '新規ユーザー向けおすすめ順序と公式入口',
         intro: '初めて mem9 を使うなら、次の流れがもっともシンプルです。',
         bullets: [
@@ -1233,7 +1348,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         title: '왜 mem9인가',
-        sectionIDs: ['problems-mem9-solves', 'core-capabilities'],
+        sectionIDs: ['problems-mem9-solves', 'openclaw-native-vs-mem9', 'core-capabilities'],
       },
       {
         title: '설치와 일상 사용',
@@ -1320,8 +1435,44 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       {
-        id: 'core-capabilities',
+        id: 'openclaw-native-vs-mem9',
         label: '05',
+        title: 'OpenClaw 기본 메모리와 mem9의 차이',
+        intro: '가장 명확한 차이는 어느 쪽이 더 “좋다”가 아니라, 서로 다른 메모리 문제를 해결한다는 점입니다.',
+        paragraphs: [
+          'OpenClaw의 기본 메모리가 쓸모없는 것은 아닙니다. 본질적으로는 중요한 정보를 로컬 Markdown에 기록하게 하고, 그 파일들 위에 검색 인덱스를 만드는 방식입니다.',
+          'mem9는 다른 종류의 문제를 해결합니다. 메모리를 “로컬 노트 파일 + chunk 검색”에서 “여러 session, 여러 Agent, 여러 기기에서 공유하고 운영할 수 있는 메모리 인프라”로 끌어올립니다.',
+        ],
+        subsections: [
+          {
+            title: '다음 조건이면 OpenClaw 기본 메모리로도 충분한 경우가 많습니다',
+            bullets: [
+              'OpenClaw Agent가 하나뿐이다.',
+              '기기가 한 대뿐이다.',
+              '주로 `MEMORY.md`와 일일 notes에 의존한다.',
+              '리콜 결과가 원문 snippet / chunk여도 괜찮다.',
+            ],
+          },
+          {
+            title: '다음 조건이면 mem9가 더 맞는 제품 형태입니다',
+            bullets: [
+              '메모리가 session, reset, 기기 변경을 넘어 안정적으로 유지되어야 한다.',
+              'Agent가 Markdown을 제대로 썼는지에 메모리 품질이 좌우되길 원하지 않는다.',
+              '긴 대화를 더 안정적인 facts / insights로 정리하고 싶다.',
+              '여러 Agent가 하나의 memory pool을 공유해야 한다.',
+              'insight, pinned, session 같은 서로 다른 메모리 레이어가 필요하다.',
+              'API, dashboard, 분석, 운영 관리 기능이 필요하다.',
+            ],
+          },
+        ],
+        bullets: [
+          'OpenClaw native memory는 로컬 지식 노트에 더 가깝다.',
+          'mem9는 외부 agent memory system에 더 가깝다.',
+        ],
+      },
+      {
+        id: 'core-capabilities',
+        label: '06',
         title: '핵심 기능',
         intro: '아래 항목은 사용자가 가장 직접적으로 체감하는 변화입니다.',
         subsections: [
@@ -1371,7 +1522,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'official-install-flow',
-        label: '06',
+        label: '07',
         title: '공식 설치 경로',
         paragraphs: [
           '가장 간단한 공식 설치 경로는 여전히 SKILL.md입니다. 하나만 기억해야 한다면 그 URL을 기억하면 됩니다.',
@@ -1396,7 +1547,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'what-you-get-after-setup',
-        label: '07',
+        label: '08',
         title: 'setup 이후 얻게 되는 것',
         bullets: [
           'mem9.ai에 연결된 클라우드 장기 메모리.',
@@ -1410,7 +1561,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'your-memory-dashboard',
-        label: '08',
+        label: '09',
         title: 'Your Memory란 무엇인가',
         intro: 'Your Memory는 mem9의 주요 시각화 앱입니다.',
         bullets: [
@@ -1429,7 +1580,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'daily-usage-expectations',
-        label: '09',
+        label: '10',
         title: '일상 사용에서 어떻게 달라지는가',
         paragraphs: [
           '가장 즉각적인 변화는 프로젝트 배경, 선호, 작업 규칙을 매번 다시 설명하지 않아도 된다는 점입니다.',
@@ -1455,7 +1606,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '10',
+        label: '11',
         title: '복구, reconnect, API key 관리',
         subsections: [
           {
@@ -1483,7 +1634,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '11',
+        label: '12',
         title: '제거 시 일어나는 일과 일어나지 않는 일',
         intro: 'uninstall은 로컬 설정에 영향을 주지만 원격 클라우드 데이터는 직접 삭제하지 않습니다.',
         subsections: [
@@ -1510,7 +1661,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '12',
+        label: '13',
         title: '보안과 신뢰의 기반',
         paragraphs: [
           'mem9는 통제 불가능한 블랙박스가 아니라, 프로덕션 장기 메모리 레이어로 자리매김합니다. 공식 설명의 중심은 명확한 데이터 처리 경계와 프로덕션급 클라우드 인프라입니다.',
@@ -1537,7 +1688,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '13',
+        label: '14',
         title: '실사용에서의 기대치와 한계',
         subsections: [
           {
@@ -1559,7 +1710,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '14',
+        label: '15',
         title: '신규 사용자를 위한 추천 순서와 공식 링크',
         intro: '처음 mem9를 사용하는 사용자에게는 다음 순서가 가장 단순합니다.',
         bullets: [
@@ -1619,7 +1770,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         title: 'Mengapa mem9',
-        sectionIDs: ['problems-mem9-solves', 'core-capabilities'],
+        sectionIDs: ['problems-mem9-solves', 'openclaw-native-vs-mem9', 'core-capabilities'],
       },
       {
         title: 'Setup dan penggunaan harian',
@@ -1706,8 +1857,50 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       {
-        id: 'core-capabilities',
+        id: 'openclaw-native-vs-mem9',
         label: '05',
+        title: 'Perbedaan memori native OpenClaw dan mem9',
+        intro: 'Perbedaan paling jelas bukan soal mana yang “lebih bagus”, tetapi soal jenis masalah memori yang diselesaikan.',
+        paragraphs: [
+          'Memori native OpenClaw bukan berarti tidak berguna. Pada dasarnya ia membantu Agent menulis informasi penting ke file Markdown lokal lalu membangun indeks pencarian di atas file-file itu.',
+          'mem9 menyelesaikan masalah yang berbeda. Ia menaikkan memori dari “file catatan lokal + pencarian chunk” menjadi infrastruktur memori yang bisa bertahan, dibagikan, dan dioperasikan lintas session, Agent, dan perangkat.',
+        ],
+        subsections: [
+          {
+            title: 'Jika kebutuhan Anda seperti ini',
+            bullets: [
+              'Satu OpenClaw agent.',
+              'Satu mesin.',
+              'Terutama mengandalkan `MEMORY.md` dan notes harian.',
+              'Tidak masalah jika recall mengembalikan snippet atau chunk asli.',
+            ],
+            paragraphs: [
+              'Maka memori native OpenClaw biasanya sudah cukup.',
+            ],
+          },
+          {
+            title: 'Jika kebutuhan Anda naik menjadi seperti ini',
+            bullets: [
+              'Memori harus stabil lintas session, reset, dan perpindahan mesin.',
+              'Anda tidak ingin kualitas memori bergantung pada apakah Agent menulis Markdown dengan benar.',
+              'Anda ingin percakapan panjang diringkas menjadi facts / insights yang lebih stabil.',
+              'Anda membutuhkan banyak Agent berbagi satu memory pool.',
+              'Anda membutuhkan lapisan memori berbeda seperti insight, pinned, dan session.',
+              'Anda membutuhkan API, dashboard, analisis, dan tata kelola memori.',
+            ],
+            paragraphs: [
+              'Maka OpenClaw native memory akan cepat mencapai batas strukturalnya, dan mem9 menjadi bentuk produk yang lebih tepat.',
+            ],
+          },
+        ],
+        bullets: [
+          'OpenClaw native memory lebih mirip notebook pengetahuan lokal.',
+          'mem9 lebih mirip agent memory system eksternal.',
+        ],
+      },
+      {
+        id: 'core-capabilities',
+        label: '06',
         title: 'Kemampuan inti',
         intro: 'Inilah perubahan produk yang paling langsung dirasakan pengguna.',
         subsections: [
@@ -1757,7 +1950,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'official-install-flow',
-        label: '06',
+        label: '07',
         title: 'Alur instalasi resmi',
         paragraphs: [
           'Jalur instalasi resmi yang paling sederhana tetap SKILL.md. Jika pengguna hanya mengingat satu pintu masuk, itulah URL yang perlu diingat.',
@@ -1782,7 +1975,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'what-you-get-after-setup',
-        label: '07',
+        label: '08',
         title: 'Apa yang Anda dapat setelah setup',
         bullets: [
           'Memori jangka panjang di cloud yang sudah terhubung ke mem9.ai.',
@@ -1796,7 +1989,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'your-memory-dashboard',
-        label: '08',
+        label: '09',
         title: 'Apa itu Your Memory',
         intro: 'Your Memory adalah aplikasi visual utama dalam produk mem9.',
         bullets: [
@@ -1815,7 +2008,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'daily-usage-expectations',
-        label: '09',
+        label: '10',
         title: 'Bagaimana mem9 mengubah pengalaman harian',
         paragraphs: [
           'Perubahan paling langsung biasanya adalah Anda tidak perlu lagi menjelaskan ulang latar belakang proyek, preferensi, dan aturan kerja di setiap sesi.',
@@ -1841,7 +2034,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '10',
+        label: '11',
         title: 'Reconnect, pemulihan, dan penyimpanan API key',
         subsections: [
           {
@@ -1869,7 +2062,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '11',
+        label: '12',
         title: 'Apa yang terjadi dan tidak terjadi saat uninstall',
         intro: 'Uninstall memengaruhi konfigurasi lokal, bukan menghapus data cloud dari jarak jauh.',
         subsections: [
@@ -1896,7 +2089,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '12',
+        label: '13',
         title: 'Fondasi keamanan dan kepercayaan',
         paragraphs: [
           'mem9 memosisikan diri sebagai lapisan memori jangka panjang untuk penggunaan produksi, bukan kotak hitam yang tidak terkontrol. Narasi resminya menekankan batas penanganan data yang jelas dan infrastruktur cloud kelas produksi.',
@@ -1923,7 +2116,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '13',
+        label: '14',
         title: 'Ekspektasi nyata dan batasan produk',
         subsections: [
           {
@@ -1945,7 +2138,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '14',
+        label: '15',
         title: 'Urutan yang direkomendasikan dan tautan resmi',
         intro: 'Untuk pengguna baru, urutan paling sederhana biasanya seperti ini.',
         bullets: [
@@ -2005,7 +2198,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         title: 'ทำไมต้อง mem9',
-        sectionIDs: ['problems-mem9-solves', 'core-capabilities'],
+        sectionIDs: ['problems-mem9-solves', 'openclaw-native-vs-mem9', 'core-capabilities'],
       },
       {
         title: 'การติดตั้งและการใช้งานประจำวัน',
@@ -2092,8 +2285,50 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       {
-        id: 'core-capabilities',
+        id: 'openclaw-native-vs-mem9',
         label: '05',
+        title: 'ความต่างระหว่าง OpenClaw native memory และ mem9',
+        intro: 'ความต่างที่ชัดที่สุดไม่ใช่ว่าอันไหน “ดีกว่า” แต่อยู่ที่ว่ามันแก้ปัญหาความจำคนละแบบกัน',
+        paragraphs: [
+          'OpenClaw native memory ไม่ได้ “ใช้ไม่ได้” แต่มันเน้นช่วยให้ Agent เขียนข้อมูลสำคัญลงในไฟล์ Markdown แบบโลคัล แล้วสร้างดัชนีค้นคืนบนไฟล์เหล่านั้น',
+          'mem9 แก้ปัญหาอีกคลาสหนึ่ง โดยยกระดับความจำจาก “ไฟล์โน้ตโลคัล + การค้นแบบ chunk” ไปเป็นโครงสร้างพื้นฐานด้านความจำที่ใช้ข้าม session, Agent, อุปกรณ์ และการปฏิบัติการได้จริง',
+        ],
+        subsections: [
+          {
+            title: 'ถ้าความต้องการของคุณเป็นแบบนี้',
+            bullets: [
+              'มี OpenClaw agent ตัวเดียว',
+              'ใช้เพียงเครื่องเดียว',
+              'อาศัย `MEMORY.md` และ notes รายวันเป็นหลัก',
+              'ยอมรับได้ถ้า recall คืนเป็น snippet / chunk แบบต้นฉบับ',
+            ],
+            paragraphs: [
+              'โดยทั่วไป OpenClaw native memory ก็มักเพียงพอแล้ว',
+            ],
+          },
+          {
+            title: 'แต่ถ้าความต้องการของคุณขยับมาเป็นแบบนี้',
+            bullets: [
+              'ความจำต้องคงอยู่ข้าม session, reset และการเปลี่ยนเครื่องอย่างเสถียร',
+              'ไม่อยากให้คุณภาพของ memory ขึ้นกับว่า Agent เขียน Markdown ถูกต้องหรือไม่',
+              'อยากให้บทสนทนายาว ๆ ถูกสกัดเป็น facts / insights ที่เสถียรกว่า',
+              'ต้องการให้หลาย Agent แชร์ memory pool เดียวกัน',
+              'ต้องการแยกเลเยอร์อย่าง insight, pinned และ session',
+              'ต้องการ API, dashboard, การวิเคราะห์ และการกำกับดูแล memory',
+            ],
+            paragraphs: [
+              'เมื่อนั้น OpenClaw native memory จะเริ่มชนข้อจำกัดเชิงโครงสร้างอย่างรวดเร็ว และ mem9 จะเป็นรูปแบบผลิตภัณฑ์ที่เหมาะกว่า',
+            ],
+          },
+        ],
+        bullets: [
+          'OpenClaw native memory ใกล้เคียงกับสมุดบันทึกความรู้แบบโลคัลมากกว่า',
+          'mem9 ใกล้เคียงกับ agent memory system ภายนอกมากกว่า',
+        ],
+      },
+      {
+        id: 'core-capabilities',
+        label: '06',
         title: 'ความสามารถหลัก',
         intro: 'สิ่งต่อไปนี้คือความเปลี่ยนแปลงที่ผู้ใช้จะสัมผัสได้โดยตรงมากที่สุด',
         subsections: [
@@ -2143,7 +2378,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'official-install-flow',
-        label: '06',
+        label: '07',
         title: 'เส้นทางติดตั้งอย่างเป็นทางการ',
         paragraphs: [
           'เส้นทางติดตั้งอย่างเป็นทางการที่ง่ายที่สุดยังคงเป็น SKILL.md หากผู้ใช้จำได้เพียงหนึ่งทางเข้า ก็ควรจำ URL นี้',
@@ -2168,7 +2403,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'what-you-get-after-setup',
-        label: '07',
+        label: '08',
         title: 'คุณจะได้อะไรหลัง setup',
         bullets: [
           'หน่วยความจำระยะยาวบนคลาวด์ที่เชื่อมต่อกับ mem9.ai แล้ว',
@@ -2182,7 +2417,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'your-memory-dashboard',
-        label: '08',
+        label: '09',
         title: 'Your Memory คืออะไร',
         intro: 'Your Memory คือแอปแบบภาพหลักของ mem9',
         bullets: [
@@ -2201,7 +2436,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'daily-usage-expectations',
-        label: '09',
+        label: '10',
         title: 'mem9 เปลี่ยนประสบการณ์การใช้งานประจำวันอย่างไร',
         paragraphs: [
           'ความเปลี่ยนแปลงที่ชัดที่สุดคือคุณไม่ต้องอธิบายพื้นหลังโปรเจกต์ ความชอบ และกติกาการทำงานซ้ำในทุก session',
@@ -2227,7 +2462,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '10',
+        label: '11',
         title: 'Reconnect การกู้คืน และการเก็บ API key',
         subsections: [
           {
@@ -2255,7 +2490,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '11',
+        label: '12',
         title: 'สิ่งที่จะเกิดขึ้นและไม่เกิดขึ้นเมื่อ uninstall',
         intro: 'การ uninstall มีผลกับการตั้งค่าในเครื่อง แต่ไม่ได้ลบข้อมูลคลาวด์จากระยะไกลโดยตรง',
         subsections: [
@@ -2282,7 +2517,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '12',
+        label: '13',
         title: 'พื้นฐานด้านความปลอดภัยและความน่าเชื่อถือ',
         paragraphs: [
           'mem9 วางตำแหน่งตัวเองเป็นเลเยอร์หน่วยความจำระยะยาวสำหรับงาน production ไม่ใช่กล่องดำที่ควบคุมไม่ได้ เรื่องราวทางการจึงเน้นขอบเขตการจัดการข้อมูลที่ชัดเจนและโครงสร้างพื้นฐานคลาวด์ระดับ production',
@@ -2309,7 +2544,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '13',
+        label: '14',
         title: 'ความคาดหวังจริงและขอบเขตของผลิตภัณฑ์',
         subsections: [
           {
@@ -2331,7 +2566,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '14',
+        label: '15',
         title: 'ลำดับที่แนะนำและลิงก์ทางการ',
         intro: 'สำหรับผู้ใช้ใหม่ ลำดับที่เรียบง่ายที่สุดมักเป็นดังนี้',
         bullets: [

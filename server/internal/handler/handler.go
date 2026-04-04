@@ -20,6 +20,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/repository"
+	"github.com/qiffang/mnemos/server/internal/reqid"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
 
@@ -137,6 +138,7 @@ func (s *Server) Router(
 	// Global middleware.
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RequestID)
+	r.Use(reqid.NewContextMiddleware)
 	r.Use(requestLogger(s.logger))
 	r.Use(rateLimitMW)
 	r.Use(metrics.Middleware)
@@ -208,7 +210,7 @@ func respondError(w http.ResponseWriter, status int, msg string) {
 }
 
 // handleError maps domain errors to HTTP status codes.
-func (s *Server) handleError(w http.ResponseWriter, err error) {
+func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		respondError(w, http.StatusNotFound, err.Error())
@@ -223,7 +225,7 @@ func (s *Server) handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, domain.ErrNotSupported):
 		respondError(w, http.StatusNotImplemented, err.Error())
 	default:
-		s.logger.Error("internal error", "err", err)
+		s.logger.Error("internal error", "err", err, "request_id", reqid.FromContext(ctx))
 		respondError(w, http.StatusInternalServerError, "internal server error")
 	}
 }

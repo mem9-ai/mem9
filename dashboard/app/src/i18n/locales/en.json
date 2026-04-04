@@ -506,6 +506,7 @@
   "pixel_farm": {
     "stage_loading": "Loading pixel farm",
     "controls": {
+      "back": "Back to Space",
       "title": "Controls",
       "move": "Move",
       "interact": "Interact",

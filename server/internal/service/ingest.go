@@ -450,6 +450,15 @@ atomic facts from a conversation.
 
 1. Extract facts ONLY from the user's messages. Ignore assistant and system messages entirely.
 2. Each fact must be a single, self-contained statement (one idea per fact).
+   Exception: when facts are semantically dependent (cause-effect, event-reason,
+   condition-outcome, temporal dependency), keep them as ONE fact preserving the
+   full relationship. Do not split dependent facts into separate entries.
+   Dependency markers: because, since, so that, in order to, unless, if…then,
+   因为, 所以, 为了, 由于, 导致, 如果, 虽然, 先…再…
+   - Good: "Joel went to rehearsal today because he has a bar performance on Sunday"
+   - Bad: "Joel went to rehearsal" + "Joel has a bar performance on Sunday"
+   - Good: "小强今天去彩排，因为他周日要去酒吧表演"
+   - Bad: "小强今天去彩排" + "小强周日要去酒吧表演"
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
@@ -472,6 +481,12 @@ atomic facts from a conversation.
 8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
 9. Extract relationships between people explicitly.
 10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
+   Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
+   fact is self-contained and retrievable without needing context from other facts.
+   - Good: "Alice moved to Tokyo last year"
+   - Bad: "She moved to Tokyo last year"
+   - Good: "小强今天去彩排了"
+   - Bad: "他今天去彩排了"
 11. If no meaningful facts exist in the conversation, return an empty facts array.
 12. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
@@ -538,6 +553,15 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 
 1. Extract facts ONLY from the user's messages. Ignore assistant and system messages entirely.
 2. Each fact must be a single, self-contained statement (one idea per fact).
+   Exception: when facts are semantically dependent (cause-effect, event-reason,
+   condition-outcome, temporal dependency), keep them as ONE fact preserving the
+   full relationship. Do not split dependent facts into separate entries.
+   Dependency markers: because, since, so that, in order to, unless, if…then,
+   因为, 所以, 为了, 由于, 导致, 如果, 虽然, 先…再…
+   - Good: "Joel went to rehearsal today because he has a bar performance on Sunday"
+   - Bad: "Joel went to rehearsal" + "Joel has a bar performance on Sunday"
+   - Good: "小强今天去彩排，因为他周日要去酒吧表演"
+   - Bad: "小强今天去彩排" + "小强周日要去酒吧表演"
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
@@ -560,6 +584,12 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
 9. Extract relationships between people explicitly.
 10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
+   Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
+   fact is self-contained and retrievable without needing context from other facts.
+   - Good: "Alice moved to Tokyo last year"
+   - Bad: "She moved to Tokyo last year"
+   - Good: "小强今天去彩排了"
+   - Bad: "他今天去彩排了"
 11. If no meaningful facts exist in the conversation, return an empty facts array.
 12. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
