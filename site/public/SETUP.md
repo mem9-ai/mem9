@@ -77,7 +77,7 @@ The dry-run preview must disclose:
 - package name: `@mem9/mem9`
 - only mem9 plugin config keys will be changed
 - reconnect path expects one restart after config is written and read back
-- create-new path expects one restart without `apiKey`, then a final restart after the generated key is written back
+- create-new path expects one restart without `apiKey`; after the generated key is captured and written back to config, no second restart is needed
 - local history will not be uploaded by this setup flow
 - one short restart-and-return instruction in the user's language
 
@@ -255,7 +255,9 @@ Before every restart:
 
 3. Save `<id>` as `AUTO_PROVISIONED_MEM9_API_KEY`
 4. Write that value back into `plugins.entries.mem9.config.apiKey`
-5. Restart OpenClaw one more time so future restarts reconnect to the same mem9 space
+5. Read back the config and confirm the persisted value exactly matches `AUTO_PROVISIONED_MEM9_API_KEY`
+6. Do not restart again — the plugin is already running with the auto-provisioned key in memory, and the config read-back confirms the key will persist through future restarts
+7. Proceed directly to verification
 
 If the auto-provision log never appears, stop and use `TROUBLESHOOTING.md`.
 
@@ -277,6 +279,17 @@ If the auto-provision log never appears, stop and use `TROUBLESHOOTING.md`.
   - one issue remains
   - the user does not need to do anything yet unless asked
 
+### Positive Health Signals
+
+Any one of the following in recent gateway logs means the plugin is healthy, regardless of what `openclaw status` reports:
+
+- `[mem9] Injecting N memories into prompt context` (where N is any number including 0)
+- `[mem9] Ingest accepted for async processing`
+- `[mem9] Ingested session: memories_changed=...`
+- `[mem9] Server mode (v1alpha2)` with no subsequent plugin startup error
+
+If any positive health signal is present, treat the plugin as operational and proceed to the final handoff. Do not treat `openclaw status` showing `enabled (plugin mem9) · unavailable` as failure when logs show positive activity. That transient status is a known OpenClaw probe timing issue immediately after restart.
+
 ## Step 5 — Verify
 
 ### Reconnect Success Criteria
@@ -292,6 +305,8 @@ Reconnect is successful only if all of the following are true:
 - Empty memory results are acceptable
 - If install never completed because a stale local mem9 directory blocked `openclaw plugins install @mem9/mem9`, reconnect has not started yet. Treat that as a local cleanup failure and use `TROUBLESHOOTING.md` instead of continuing to config write or restart.
 
+**Verification priority**: Log-based health signals take precedence over `openclaw status`. If `openclaw status` shows `enabled (plugin mem9) · unavailable` but recent logs contain any positive health signal listed in the Positive Health Signals section above, the plugin is healthy and verification passes. This transient unavailable state is a known OpenClaw probe timing issue and must not block the final handoff.
+
 ### Create-New Success Criteria
 
 Create-new is successful only if all of the following are true:
@@ -299,9 +314,11 @@ Create-new is successful only if all of the following are true:
 - The plugin can reach the mem9 API
 - OpenClaw loads the mem9 plugin without config or plugin errors
 - The create-new flow produced an auto-provisioned key
-- `AUTO_PROVISIONED_MEM9_API_KEY` was written back into config
-- The final restart works with that persisted key
+- `AUTO_PROVISIONED_MEM9_API_KEY` was written back into config and the read-back value matches
+- The plugin is running with the auto-provisioned key (confirmed by positive health signals or absence of startup errors)
 - Empty memory results are acceptable for a new mem9 space
+
+**Verification priority**: Log-based health signals take precedence over `openclaw status`. If `openclaw status` shows `enabled (plugin mem9) · unavailable` but recent logs contain any positive health signal listed in the Positive Health Signals section above, the plugin is healthy and verification passes. This transient unavailable state is a known OpenClaw probe timing issue and must not block the final handoff.
 
 ## Step 6 — Required Final Handoff
 

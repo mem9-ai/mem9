@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.29
+version: 1.0.30
 homepage: "https://mem9.ai/openclaw-memory"
 description: "Persistent cloud memory for OpenClaw with cross-session recall, explicit remember/save flows, shared spaces, hybrid search, and a visual dashboard."
 keywords: ["mem9", "openclaw memory", "persistent memory", "long-term memory", "cloud memory", "agent memory", "shared memory", "multi-agent memory", "cross-session memory", "semantic memory", "hybrid search", "context engine", "memory plugin", "setup mem9", "install mem9", "remember this", "save this", "recall memory", "forget that"]
