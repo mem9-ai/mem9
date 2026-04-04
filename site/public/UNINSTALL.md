@@ -73,6 +73,8 @@ Before uninstalling the plugin:
 - Show the exact keys that will change.
 - Prepare the final safe local config state first.
 - Apply the rollback in one config edit so the gateway never restarts with `plugins.slots.memory = "mem9"` after mem9 is gone.
+- Immediately read back the edited config before uninstalling the plugin.
+- If the read-back still shows `plugins.slots.memory = "mem9"`, missing `plugins.entries.memory-core.enabled = true` when restoring `memory-core`, remaining `plugins.entries.mem9`, remaining `plugins.installs.mem9`, or `"mem9"` still present in `plugins.allow`, stop and fix the rollback before continuing.
 - If the user asked to `reset session`, acknowledge that as a follow-up suggestion after uninstall verification completes. Do not include it in the actual uninstall execution steps.
 
 Rollback rules:
@@ -98,6 +100,7 @@ openclaw plugins uninstall mem9 --force
 Hard rules:
 
 - Use the approval already obtained in Step 0.
+- Only continue if the rollback read-back already matches the safe non-mem9 state.
 - If the uninstall command leaves any mem9 config residue behind, fix the config before restart.
 - The plugin directory or install record may be removed by the uninstall command; do not rely on mem9 still being loadable after this step.
 - The uninstall is not complete unless the local mem9 extension directory is absent after cleanup.
@@ -122,6 +125,7 @@ The restart-and-return instruction must stay short and must tell the user all th
 
 - Use one restart only.
 - If the rollback config or uninstall step already triggered a deferred gateway restart, do not issue another explicit restart command.
+- If the logs already show `config change requires gateway restart` and `deferring until ... complete`, wait for that queued restart instead of starting another restart path.
 - Do not reset the current session before or after the restart.
 - When the user returns and sends `hi` or another short message, resume verification automatically.
 - Do not ask `Want me to continue?`
@@ -139,6 +143,7 @@ Success criteria:
 - The gateway is running normally.
 - The gateway no longer reports `plugins.slots.memory: plugin not found: mem9`.
 - The active memory slot is not `mem9`.
+- The current config read-back matches the rollback target before success is declared.
 - `plugins.entries.mem9` is gone.
 - `plugins.installs.mem9` is gone if that install record existed before.
 - `"mem9"` is no longer present in `plugins.allow` if that allowlist exists.
@@ -150,6 +155,7 @@ Failure rules:
 
 - If the gateway does not come back up cleanly, do not declare success.
 - If `plugins.slots.memory` still points to `mem9`, treat the uninstall as failed and fix config first.
+- If the config read-back still matches the uninstall-failure pattern even once after restart, treat the uninstall as failed and re-apply the safe rollback before any further uninstall or restart action.
 - If the local mem9 extension directory is still present after uninstall, treat the uninstall as failed and keep cleaning local residue before declaring success.
 - If verification fails, use `TROUBLESHOOTING.md` from the same directory.
 

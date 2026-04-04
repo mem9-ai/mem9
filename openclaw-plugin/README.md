@@ -1,4 +1,4 @@
-# OpenClaw Plugin for mnemos
+# OpenClaw Plugin for mem9
 
 Memory plugin for [OpenClaw](https://github.com/openclaw) — replaces the built-in memory slot with cloud-persistent shared memory. Runs in server mode only, connecting to `mnemo-server` via `apiUrl` + `apiKey` (preferred) or legacy `tenantID`.
 
@@ -20,14 +20,14 @@ curl -s -X POST http://localhost:8080/v1alpha1/mem9s \
 # {"id": "uuid"}
 ```
 
-Add mnemo to your project's `openclaw.json`:
+Add mem9 to your project's `openclaw.json`:
 
 ```json
 {
   "plugins": {
-    "slots": { "memory": "openclaw" },
+    "slots": { "memory": "mem9" },
     "entries": {
-      "openclaw": {
+      "mem9": {
         "enabled": true,
         "config": {
           "apiUrl": "http://localhost:8080",
@@ -90,7 +90,7 @@ This is a `kind: "memory"` plugin — OpenClaw's framework manages when to load/
 ### Method A: npm install (Recommended)
 
 ```bash
-openclaw plugins install @mem9/openclaw
+openclaw plugins install @mem9/mem9
 ```
 
 ### Method B: From source
@@ -103,7 +103,7 @@ npm install
 
 ### Configure OpenClaw
 
-Add mnemo to your project's `openclaw.json`:
+Add mem9 to your project's `openclaw.json`:
 
 OpenClaw is often deployed across teams with multiple agents. Server mode gives you:
 
@@ -138,10 +138,10 @@ Each agent uses the same `apiKey` for the shared memory pool. The plugin sends t
 {
   "plugins": {
     "slots": {
-      "memory": "openclaw"
+      "memory": "mem9"
     },
     "entries": {
-      "openclaw": {
+      "mem9": {
         "enabled": true,
         "config": {
           "apiUrl": "http://your-server:8080",
@@ -159,8 +159,8 @@ That's it. The server handles scoping and conflict resolution. Conceptually, the
 
 Start OpenClaw. You should see:
 
-```
-[mem9] Server mode
+```text
+[mem9] Server mode (v1alpha2)
 ```
 
 If you see `[mem9] No mode configured...`, check your `openclaw.json` config.
@@ -183,7 +183,7 @@ Defined in `openclaw.plugin.json`:
 openclaw-plugin/
 ├── README.md              # This file
 ├── openclaw.plugin.json   # Plugin metadata + config schema
-├── package.json           # npm package (@mem9/openclaw)
+├── package.json           # npm package (@mem9/mem9)
 ├── index.ts               # Plugin entry point + tool registration
 ├── backend.ts             # MemoryBackend interface
 ├── server-backend.ts      # Server mode: fetch → mnemo API
@@ -197,4 +197,4 @@ openclaw-plugin/
 |---|---|---|
 | `No mode configured` | Missing config | Add `apiUrl` and `apiKey` (or legacy `tenantID`) to plugin config |
 | `Server mode requires...` | Missing key | Add `apiKey` (or legacy `tenantID`) to config |
-| Plugin not loading | Not in memory slot | Set `"slots": {"memory": "openclaw"}` in openclaw.json |
+| Plugin not loading | Not in memory slot | Set `"slots": {"memory": "mem9"}` in openclaw.json |

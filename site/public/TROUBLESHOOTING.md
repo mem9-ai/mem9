@@ -68,6 +68,7 @@ Confirm these first:
 - Treat this as uninstall failure, not success
 - First re-check the current config read-back
 - The most common cause is `plugins.slots.memory` still pointing to `mem9`
+- If logs show `config reload skipped (invalid config): plugins.slots.memory: plugin not found: mem9` or `Invalid config ... plugin not found: mem9`, treat that as local rollback failure, not a mem9 cloud problem
 - Also re-check whether `plugins.entries.memory-core.enabled = true` after restoring the default memory slot
 - Re-check that `plugins.entries.mem9` was removed
 - Re-check that `plugins.installs.mem9` was removed if it existed before
@@ -93,13 +94,16 @@ Confirm these first:
 
 - Treat this as uninstall orchestration failure, not a mem9 remote API problem
 - The most common cause is that uninstall rollback already triggered one deferred restart, and the flow then added another explicit restart or a current-session reset on top
+- Another common cause is that plugin removal happened before the config rollback had finished, leaving `plugins.slots.memory` pointing at a plugin that no longer exists
 - First inspect gateway reload logs for:
   - `config change requires gateway restart`
   - `deferring until ... complete`
+  - `config reload skipped (invalid config): plugins.slots.memory: plugin not found: mem9`
 - Then check whether a second `SIGTERM` happened after the gateway had already come back once
 - Then check whether runtime is `inactive` while the gateway port is still in use
 - If that pattern is present, do not keep re-running uninstall steps blindly
 - Re-check the current config read-back
+- If the config still shows the uninstall-failure shape, re-apply the safe rollback from `UNINSTALL.md` before trying anything else
 - Let the gateway return to a healthy steady state with the rollback config in place before suggesting a new session or manual session reset
 - Do not attribute this pattern to remote mem9 cloud availability
 

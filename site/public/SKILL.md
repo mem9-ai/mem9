@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.30
+version: 1.0.32
 homepage: "https://mem9.ai/openclaw-memory"
 description: "Persistent cloud memory for OpenClaw with cross-session recall, explicit remember/save flows, shared spaces, hybrid search, and a visual dashboard."
 keywords: ["mem9", "openclaw memory", "persistent memory", "long-term memory", "cloud memory", "agent memory", "shared memory", "multi-agent memory", "cross-session memory", "semantic memory", "hybrid search", "context engine", "memory plugin", "setup mem9", "install mem9", "remember this", "save this", "recall memory", "forget that"]
@@ -29,7 +29,8 @@ This file is the top-level routing entry for mem9. Route first-run onboarding to
 - Official source: [mem9-ai/mem9](https://github.com/mem9-ai/mem9) and [mem9.ai](https://mem9.ai/).
 - Default network scope: setup uses `https://api.mem9.ai` unless the user explicitly chooses another `apiUrl`.
 - Config scope: only the active `openclaw.json` entries needed for the mem9 plugin may be changed.
-- Install impact: setup installs the mem9 plugin, writes plugin config, and restarts OpenClaw.
+- OpenClaw identifiers: plugin id `mem9`, package `@mem9/mem9`.
+- Install impact: setup installs `@mem9/mem9`, writes plugin config, and restarts OpenClaw.
 - History import scope: this public skill does not scan or upload local memory/session files. Historical import stays manual through the dashboard or another reviewed workflow.
 
 ## Exact Config Changes
@@ -115,6 +116,7 @@ Do not use this skill for:
 - If mem9 is already configured and the user says `what did I say last time?`, `recall my preferences`, `forget that`, `我上次说过什么`, `回忆一下我的偏好`, or equivalent, treat that as steady-state mem9 recall or memory-management behavior instead of setup.
 - Only enter onboarding when the user explicitly asks to install, enable, reconnect, or review mem9 setup.
 - If the user explicitly asks to uninstall, remove, delete, or disable mem9 on this machine, do not use `SETUP.md`. Read `UNINSTALL.md` instead.
+- If an uninstall request also mentions `reset session`, `restart gateway`, `重启网关`, or equivalent, still route to `UNINSTALL.md` first and keep reset or new-session behavior as a follow-up only after uninstall verification.
 - Interpret equivalent user intent in any language.
 
 ## Explicit Memory Rule
@@ -178,11 +180,11 @@ Example — user says: “Remember: Joel went to rehearsal today because he has 
 Good: store as `Joel went to rehearsal today (2026-04-02) because he has a performance at a bar on Sunday night`
 Bad: store as two separate memories: `Joel went to rehearsal today` and `Joel has a performance at a bar on Sunday night`
 
-- If the uninstall request also mentions `reset session`, treat that as a post-uninstall follow-up suggestion instead of part of the same destructive flow.
+- If the uninstall request also mentions `reset session`, `restart gateway`, or equivalent, treat that as post-uninstall follow-up guidance instead of part of the same destructive flow.
 - If this skill was loaded remotely instead of from a local skill directory, read `UNINSTALL.md` from the same URL directory as the current `SKILL.md`.
 - Remote path examples:
   - `https://mem9.ai/SKILL.md` -> [https://mem9.ai/UNINSTALL.md](https://mem9.ai/UNINSTALL.md)
-- Follow `UNINSTALL.md` for the dry-run preview, config rollback, uninstall, one required restart, verification, and final handoff. Do not improvise partial removal flows or add session reset inside the same flow.
+- Follow `UNINSTALL.md` for the dry-run preview, atomic config rollback, uninstall, one required restart, verification, and final handoff. Do not improvise partial removal flows, do not leave `plugins.slots.memory` pointing at `mem9` after plugin removal, and do not add session reset inside the same flow.
 
 ## Steady-State Rule
 
