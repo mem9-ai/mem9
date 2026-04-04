@@ -8,7 +8,7 @@ import { patchSyncState } from "@/api/local-cache";
 import { SpacePageLayout } from "@/components/space/space-page-layout";
 import { useSpaceDataModel } from "@/components/space/use-space-data-model";
 import { useSpaceRouteState } from "@/components/space/use-space-route-state";
-import { getActiveSpaceId, isRememberedSpace } from "@/lib/session";
+import { getActiveSpaceId } from "@/lib/session";
 import type { Memory } from "@/types/memory";
 import { shouldCompactMemoryOverview } from "@/components/space/space-selectors";
 
@@ -19,7 +19,6 @@ export function SpacePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const spaceId = getActiveSpaceId() ?? "";
-  const canOpenFarmInNewTab = isRememberedSpace(spaceId);
   const routeState = useSpaceRouteState(spaceId);
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Memory | null>(null);
@@ -180,7 +179,6 @@ export function SpacePage() {
       routeState={routeState}
       dataModel={dataModel}
       t={t}
-      canOpenFarmInNewTab={canOpenFarmInNewTab}
       addOpen={addOpen}
       setAddOpen={setAddOpen}
       editTarget={editTarget}
