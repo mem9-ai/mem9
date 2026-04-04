@@ -24,7 +24,12 @@ function cloneMemory(memory: Memory): Memory {
 }
 
 function sortMemoriesByUpdatedAtDesc(memories: readonly Memory[]): Memory[] {
-  return [...memories].sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+  return [...memories].sort((left, right) => {
+    const leftTime = left.updated_at || left.created_at;
+    const rightTime = right.updated_at || right.created_at;
+
+    return rightTime.localeCompare(leftTime) || left.id.localeCompare(right.id);
+  });
 }
 
 function filterInteractionMemoriesByTag(

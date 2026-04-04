@@ -1,8 +1,11 @@
 import type { Memory } from "@/types/memory";
 import type {
-  PixelFarmBucketAnimalTier,
   PixelFarmCropStage,
 } from "@/lib/pixel-farm/palette";
+import type {
+  PixelFarmFieldCell,
+  PixelFarmFieldLayout,
+} from "@/lib/pixel-farm/field-layout";
 
 export interface PixelFarmSeedTag {
   key: string;
@@ -33,75 +36,46 @@ export interface PixelFarmDeltaBatch {
   events: PixelFarmDeltaEvent[];
 }
 
-export interface PixelFarmBucketState {
+export interface PixelFarmPlantState {
   id: string;
-  active: boolean;
-  count: number;
+  cropStage: PixelFarmCropStage;
+  endIndexExclusive: number;
   fillRatio: number;
-  stage: PixelFarmCropStage;
-}
-
-export interface PixelFarmAnimalState {
-  id: string;
-  active: boolean;
-  tier: PixelFarmBucketAnimalTier;
-}
-
-export interface PixelFarmAnimalBucketState {
-  id: string;
-  instanceCount: number;
+  memoryCount: number;
   memoryIds: string[];
-  rank: number;
-  tagKey: string;
-  tagLabel: string;
-  tier: PixelFarmBucketAnimalTier;
-  totalCount: number;
-  zone: "chicken-pen" | "cow-pen";
+  startIndexInclusive: number;
 }
 
-export interface PixelFarmCropBucketState {
+export interface PixelFarmMemoryBucketState {
   id: string;
   cropFamily: string;
-  memoryIds: string[];
-  plotIndex: number;
+  plantCapacity: number;
+  plantCount: number;
+  plants: PixelFarmPlantState[];
   rank: number;
+  sortedMemoryIds: string[];
   tagKey: string;
   tagLabel: string;
-  totalCount: number;
-  instances: PixelFarmBucketState[];
+  totalMemoryCount: number;
 }
 
-export interface PixelFarmRoleState {
+export interface PixelFarmNpcState {
   id: string;
-  action: "idle" | "sow" | "water" | "harvest" | "clear";
-  agentId: string;
-  categoryKey: string;
-  updatedAt: string;
-}
-
-export interface PixelFarmCategoryState {
-  key: string;
-  label: string;
-  kind: "main" | "other";
-  plotIndex: number;
-  totalCount: number;
-  memoryIds: string[];
-  cropFamily: string | null;
-  decorationFamilies: string[];
-  dominantAgentId: string | null;
-  buckets: PixelFarmBucketState[];
-  animals: PixelFarmAnimalState[];
+  kind: "baby-cow" | "chicken" | "cow";
+  position: PixelFarmFieldCell | null;
 }
 
 export interface PixelFarmWorldState {
-  fetchedAt: string;
   activeSpaceId: string;
-  totalMemories: number;
-  animalBuckets: PixelFarmAnimalBucketState[];
-  cropBuckets: PixelFarmCropBucketState[];
-  categories: PixelFarmCategoryState[];
-  roles: PixelFarmRoleState[];
+  fetchedAt: string;
+  fields: {
+    eventField: PixelFarmFieldLayout | null;
+    mainField: PixelFarmFieldLayout;
+  };
+  memoryBuckets: PixelFarmMemoryBucketState[];
+  npcs: PixelFarmNpcState[];
   recentEvents: PixelFarmDeltaEvent[];
+  totalMemories: number;
 }
 
 export interface PixelFarmWorldQueryState {
