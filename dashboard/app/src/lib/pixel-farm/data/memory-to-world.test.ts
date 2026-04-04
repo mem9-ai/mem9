@@ -84,6 +84,9 @@ describe("buildPixelFarmWorldState", () => {
       plantCount: 2,
     });
     expect(world.fields.mainField.cells.length).toBeGreaterThan(0);
-    expect(world.npcs).toHaveLength(4);
+    expect(world.npcs).toHaveLength(8);
+    expect(world.npcs.filter((npc) => npc.kind === "cow")).toHaveLength(2);
+    expect(world.npcs.filter((npc) => npc.kind === "baby-cow")).toHaveLength(2);
+    expect(world.npcs.filter((npc) => npc.kind === "chicken")).toHaveLength(4);
   });
 });

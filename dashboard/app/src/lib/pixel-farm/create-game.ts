@@ -1045,8 +1045,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     const selectionState = this.readInteractionSelectionState();
     const currentFocusedTarget = selectionState?.focusedTarget ?? null;
     const focusedTarget = this.resolveFocusedTargetForInteraction(currentFocusedTarget);
-    const actionableTarget =
-      focusedTarget?.target.kind === "plant" ? focusedTarget : null;
+    const actionableTarget = focusedTarget ?? null;
     const controls = this.characterControls;
     const interactJustDown =
       controls ? Phaser.Input.Keyboard.JustDown(controls.interact) : false;

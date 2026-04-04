@@ -514,6 +514,17 @@
       "on": "开",
       "off": "关"
     },
+    "npc_tips": {
+      "title": "提示",
+      "items": {
+        "move": "方向键或 WASD 可以移动。",
+        "run": "按住 Shift 可以奔跑。",
+        "interact": "按空格可以交互。",
+        "bucket-to-crops": "每种作物对应一个记忆 bucket。",
+        "bucket-slices": "同一个 bucket 会分散到多株作物上。",
+        "latest-first": "每个 bucket 都按最新记忆排在最前。"
+      }
+    },
     "feedback": {
       "button": "反馈",
       "title": "提交反馈",

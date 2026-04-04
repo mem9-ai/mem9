@@ -1,11 +1,16 @@
-import type { Memory } from "@/types/memory";
+export interface PixelFarmDialogEntry {
+  id: string;
+  content: string;
+}
 
 export interface PixelFarmDialogTargetSnapshot {
+  animalInstanceId?: string | null;
   bucketTotalMemoryCount: number;
   id: string;
   memoryIds: string[];
   screenX: number;
   screenY: number;
+  showCounter: boolean;
   startIndexInclusive: number;
   tagLabel: string;
 }
@@ -16,13 +21,14 @@ export interface PixelFarmDialogInteractionInput {
 }
 
 export interface PixelFarmOpenBubbleState {
+  animalInstanceId: string | null;
   bucketTotalMemoryCount: number;
+  entries: PixelFarmDialogEntry[];
   interactionNonce: number;
-  memories: Memory[];
-  memoryIds: string[];
   memoryIndex: number;
   screenX: number;
   screenY: number;
+  showCounter: boolean;
   startIndexInclusive: number;
   tagLabel: string;
   targetId: string;
@@ -30,24 +36,24 @@ export interface PixelFarmOpenBubbleState {
 
 export function createPixelFarmOpenBubbleState(
   info: PixelFarmDialogInteractionInput,
-  memories: readonly Memory[],
+  entries: readonly PixelFarmDialogEntry[],
   current: PixelFarmOpenBubbleState | null,
 ): PixelFarmOpenBubbleState | null {
   const target = info.target;
-  if (!target || memories.length < 1) {
+  if (!target || entries.length < 1) {
     return null;
   }
 
-  const memoryIds = memories.map((memory) => memory.id);
   if (current && current.targetId === target.id && info.interactionNonce === current.interactionNonce) {
     return {
       ...current,
+      animalInstanceId: target.animalInstanceId ?? null,
       bucketTotalMemoryCount: target.bucketTotalMemoryCount,
-      memories: [...memories],
-      memoryIds,
-      memoryIndex: Math.min(current.memoryIndex, memoryIds.length - 1),
+      entries: [...entries],
+      memoryIndex: Math.min(current.memoryIndex, entries.length - 1),
       screenX: target.screenX,
       screenY: target.screenY,
+      showCounter: target.showCounter,
       startIndexInclusive: target.startIndexInclusive,
       tagLabel: target.tagLabel,
     };
@@ -55,13 +61,14 @@ export function createPixelFarmOpenBubbleState(
 
   if (!current || current.targetId !== target.id) {
     return {
+      animalInstanceId: target.animalInstanceId ?? null,
       bucketTotalMemoryCount: target.bucketTotalMemoryCount,
+      entries: [...entries],
       interactionNonce: info.interactionNonce,
-      memories: [...memories],
-      memoryIds,
       memoryIndex: 0,
       screenX: target.screenX,
       screenY: target.screenY,
+      showCounter: target.showCounter,
       startIndexInclusive: target.startIndexInclusive,
       tagLabel: target.tagLabel,
       targetId: target.id,
@@ -70,16 +77,17 @@ export function createPixelFarmOpenBubbleState(
 
   return {
     ...current,
+    animalInstanceId: target.animalInstanceId ?? null,
     bucketTotalMemoryCount: target.bucketTotalMemoryCount,
+    entries: [...entries],
     interactionNonce: info.interactionNonce,
-    memories: [...memories],
-    memoryIds,
     memoryIndex:
       info.interactionNonce > current.interactionNonce
-        ? (current.memoryIndex + 1) % memoryIds.length
-        : Math.min(current.memoryIndex, memoryIds.length - 1),
+        ? (current.memoryIndex + 1) % entries.length
+        : Math.min(current.memoryIndex, entries.length - 1),
     screenX: target.screenX,
     screenY: target.screenY,
+    showCounter: target.showCounter,
     startIndexInclusive: target.startIndexInclusive,
     tagLabel: target.tagLabel,
   };

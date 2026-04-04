@@ -514,6 +514,17 @@
       "on": "On",
       "off": "Off"
     },
+    "npc_tips": {
+      "title": "Tip",
+      "items": {
+        "move": "Use arrow keys or WASD to move.",
+        "run": "Hold Shift to run.",
+        "interact": "Press Space to interact.",
+        "bucket-to-crops": "Each crop family maps to one memory bucket.",
+        "bucket-slices": "One bucket can spread across multiple crops.",
+        "latest-first": "Each bucket shows the newest memories first."
+      }
+    },
     "feedback": {
       "button": "Feedback",
       "title": "Send Feedback",

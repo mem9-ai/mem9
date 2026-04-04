@@ -437,6 +437,7 @@ export class PixelFarmWorldRenderer {
 
       this.animals.push(renderedAnimal);
       this.animalInstanceById.set(npc.id, renderedAnimal);
+      this.interactableTargets.push(this.createNpcInteractableTarget(npc, renderedAnimal));
     }
   }
 
@@ -623,6 +624,39 @@ export class PixelFarmWorldRenderer {
       default:
         return null;
     }
+  }
+
+  private createNpcInteractableTarget(
+    npc: PixelFarmNpcState,
+    animal: PixelFarmRenderedAnimal,
+  ): PixelFarmInteractableTarget {
+    const currentAnchor = () => ({
+      x: animal.x,
+      y: animal.y,
+    });
+    const currentCell = () => this.worldPointToGridCell(animal.x, animal.y);
+
+    return {
+      id: npc.id,
+      bucketId: null,
+      bucketTotalMemoryCount: null,
+      endIndexExclusive: null,
+      kind: "npc",
+      memoryIds: [],
+      plantId: null,
+      startIndexInclusive: null,
+      tagKey: null,
+      tagLabel: npc.kind,
+      getInteractionPoints: () => [
+        {
+          animalInstanceId: npc.id,
+          occupiedCell: currentCell(),
+          worldAnchor: currentAnchor(),
+        },
+      ],
+      getOccupiedCells: () => [currentCell()],
+      getWorldAnchors: () => [currentAnchor()],
+    };
   }
 }
 

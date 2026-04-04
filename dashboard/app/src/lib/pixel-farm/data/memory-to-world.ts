@@ -238,7 +238,17 @@ function buildDefaultNpcs(): PixelFarmNpcState[] {
       position: null,
     },
     {
+      id: "npc-cow-2",
+      kind: "cow",
+      position: null,
+    },
+    {
       id: "npc-baby-cow-1",
+      kind: "baby-cow",
+      position: null,
+    },
+    {
+      id: "npc-baby-cow-2",
       kind: "baby-cow",
       position: null,
     },
@@ -249,6 +259,16 @@ function buildDefaultNpcs(): PixelFarmNpcState[] {
     },
     {
       id: "npc-chicken-2",
+      kind: "chicken",
+      position: null,
+    },
+    {
+      id: "npc-chicken-3",
+      kind: "chicken",
+      position: null,
+    },
+    {
+      id: "npc-chicken-4",
       kind: "chicken",
       position: null,
     },

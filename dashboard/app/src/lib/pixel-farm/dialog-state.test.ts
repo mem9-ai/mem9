@@ -1,25 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { Memory } from "@/types/memory";
 import {
   createPixelFarmOpenBubbleState,
   formatPixelFarmDialogCounter,
 } from "./dialog-state";
 
-function createMemory(id: string): Memory {
+function createEntry(id: string) {
   return {
     id,
     content: id,
-    memory_type: "insight",
-    source: "test",
-    tags: ["Work"],
-    metadata: null,
-    agent_id: "agent-1",
-    session_id: "session-1",
-    state: "active",
-    version: 1,
-    updated_by: "test",
-    created_at: "2026-04-01T00:00:00.000Z",
-    updated_at: "2026-04-01T00:00:00.000Z",
   };
 }
 
@@ -34,18 +22,21 @@ describe("dialog-state", () => {
           memoryIds: ["work-50", "work-51"],
           screenX: 120,
           screenY: 180,
+          showCounter: true,
           startIndexInclusive: 50,
           tagLabel: "Work",
         },
       },
-      [createMemory("work-50"), createMemory("work-51")],
+      [createEntry("work-50"), createEntry("work-51")],
       null,
     );
 
     expect(state).toMatchObject({
+      animalInstanceId: null,
+      entries: [createEntry("work-50"), createEntry("work-51")],
       targetId: "bucket-work-plant-5",
-      memoryIds: ["work-50", "work-51"],
       memoryIndex: 0,
+      showCounter: true,
       startIndexInclusive: 50,
       bucketTotalMemoryCount: 52,
     });
@@ -70,6 +61,7 @@ describe("dialog-state", () => {
           memoryIds: [],
           screenX: 120,
           screenY: 180,
+          showCounter: true,
           startIndexInclusive: 50,
           tagLabel: "Work",
         },

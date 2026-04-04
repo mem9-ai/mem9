@@ -16,6 +16,12 @@ import {
   type PixelFarmOpenBubbleState,
 } from "@/lib/pixel-farm/dialog-state";
 import type { PixelFarmWorldState } from "@/lib/pixel-farm/data/types";
+import {
+  buildPixelFarmNpcDialogEntry,
+  getPixelFarmNpcDialogTitle,
+  pickRandomPixelFarmNpcTipId,
+  type PixelFarmNpcTipId,
+} from "@/lib/pixel-farm/npc-tips";
 import type { Memory } from "@/types/memory";
 
 interface PhaserStageProps {
@@ -28,13 +34,6 @@ interface PhaserStageProps {
   showInteractionDebug?: boolean;
   showSpatialDebug?: boolean;
   worldState?: PixelFarmWorldState | null;
-}
-
-function resolveAvailableMemoryIds(
-  memoryIds: readonly string[],
-  memoryById: Record<string, Memory>,
-): string[] {
-  return memoryIds.filter((memoryId) => memoryById[memoryId]);
 }
 
 function playBubbleAppearSound(
@@ -95,6 +94,7 @@ export function PhaserStage({
   const memoryByIdRef = useRef(memoryById);
   const openBubbleStateRef = useRef<PixelFarmOpenBubbleState | null>(null);
   const pausedAnimalInstanceIdRef = useRef<string | null>(null);
+  const lastNpcTipIdRef = useRef<PixelFarmNpcTipId | null>(null);
   const handledInteractionNonceRef = useRef(0);
   const bubbleAppearSoundRef = useRef<Phaser.Sound.BaseSound | null>(null);
   const bubbleAppearSoundStopTimerRef = useRef<number | null>(null);
@@ -138,7 +138,7 @@ export function PhaserStage({
   }, [openBubbleState]);
 
   useEffect(() => {
-    pausedAnimalInstanceIdRef.current = null;
+    pausedAnimalInstanceIdRef.current = openBubbleState?.animalInstanceId ?? null;
   }, [openBubbleState]);
 
   useEffect(() => {
@@ -152,13 +152,7 @@ export function PhaserStage({
       return;
     }
 
-    const visibleMemories = openBubbleState.memories.length > 0
-      ? openBubbleState.memories
-      : resolveAvailableMemoryIds(openBubbleState.memoryIds, memoryById)
-          .map((memoryId) => memoryById[memoryId]!)
-          .filter(Boolean);
-
-    if (visibleMemories.length === 0) {
+    if (openBubbleState.entries.length === 0) {
       uiScene.closeDialog();
       return;
     }
@@ -166,17 +160,18 @@ export function PhaserStage({
     uiScene.openDialog({
       targetId: openBubbleState.targetId,
       bucketTotalMemoryCount: openBubbleState.bucketTotalMemoryCount,
+      entries: openBubbleState.entries,
       interactionNonce: openBubbleState.interactionNonce,
       tagLabel: openBubbleState.tagLabel,
-      memories: visibleMemories,
-      memoryIndex: openBubbleState.memoryIndex % visibleMemories.length,
+      memoryIndex: openBubbleState.memoryIndex % openBubbleState.entries.length,
+      showCounter: openBubbleState.showCounter,
       startIndexInclusive: openBubbleState.startIndexInclusive,
       anchorWorldX: openBubbleState.screenX,
       anchorWorldY: openBubbleState.screenY,
       anchorScreenX: openBubbleState.screenX,
       anchorScreenY: openBubbleState.screenY,
     });
-  }, [memoryById, openBubbleState]);
+  }, [openBubbleState]);
 
   useEffect(() => {
     if (!hostRef.current || gameRef.current) {
@@ -194,7 +189,7 @@ export function PhaserStage({
           const currentBubble = openBubbleStateRef.current;
           const uiScene = gameRef.current?.scene.getScene("pixel-farm-ui") as PixelFarmUIScene | undefined;
 
-          if (!target || target.kind !== "plant") {
+          if (!target) {
             setOpenBubbleState(null);
             return;
           }
@@ -216,31 +211,53 @@ export function PhaserStage({
             return;
           }
 
-          const resolvedMemories = target.memoryIds
-            .map((memoryId) => memoryByIdRef.current[memoryId])
-            .filter((memory): memory is Memory => Boolean(memory));
-          if (resolvedMemories.length < 1) {
-            setOpenBubbleState(null);
-            handledInteractionNonceRef.current = info.interactionNonce;
-            return;
-          }
-
           setOpenBubbleState((current) => {
+            const npcTipId =
+              target.kind === "npc"
+                ? pickRandomPixelFarmNpcTipId(lastNpcTipIdRef.current)
+                : null;
+            if (npcTipId) {
+              lastNpcTipIdRef.current = npcTipId;
+            }
+
+            const entries =
+              target.kind === "plant"
+                ? target.memoryIds
+                    .map((memoryId) => memoryByIdRef.current[memoryId])
+                    .filter((memory): memory is Memory => Boolean(memory))
+                    .map((memory) => ({
+                      id: memory.id,
+                      content: memory.content,
+                    }))
+                : [buildPixelFarmNpcDialogEntry(npcTipId!)];
+
+            if (entries.length < 1) {
+              return null;
+            }
+
             const next = createPixelFarmOpenBubbleState(
               {
                 interactionNonce: info.interactionNonce,
                 target: {
+                  animalInstanceId: target.animalInstanceId ?? null,
                   bucketTotalMemoryCount:
-                    target.bucketTotalMemoryCount ?? resolvedMemories.length,
+                    target.kind === "plant"
+                      ? (target.bucketTotalMemoryCount ?? entries.length)
+                      : 1,
                   id: target.id,
                   memoryIds: [...target.memoryIds],
                   screenX: target.screenX,
                   screenY: target.screenY,
-                  startIndexInclusive: target.startIndexInclusive ?? 0,
-                  tagLabel: target.tagLabel,
+                  showCounter: target.kind === "plant",
+                  startIndexInclusive:
+                    target.kind === "plant" ? (target.startIndexInclusive ?? 0) : 0,
+                  tagLabel:
+                    target.kind === "plant"
+                      ? target.tagLabel
+                      : getPixelFarmNpcDialogTitle(),
                 },
               },
-              resolvedMemories,
+              entries,
               current,
             );
             if (
@@ -273,7 +290,7 @@ export function PhaserStage({
     return () => {
       handledInteractionNonceRef.current = 0;
       openBubbleStateRef.current = null;
-          pausedAnimalInstanceIdRef.current = null;
+      pausedAnimalInstanceIdRef.current = null;
       if (bubbleAppearSoundStopTimerRef.current !== null) {
         window.clearTimeout(bubbleAppearSoundStopTimerRef.current);
         bubbleAppearSoundStopTimerRef.current = null;
