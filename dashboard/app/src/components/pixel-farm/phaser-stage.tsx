@@ -11,6 +11,10 @@ import {
   PIXEL_FARM_BUBBLE_APPEAR_SOUND_DURATION_MS,
   PIXEL_FARM_BUBBLE_APPEAR_SOUND_KEY,
 } from "@/lib/pixel-farm/runtime-assets";
+import {
+  createPixelFarmOpenBubbleState,
+  type PixelFarmOpenBubbleState,
+} from "@/lib/pixel-farm/dialog-state";
 import type { PixelFarmWorldState } from "@/lib/pixel-farm/data/types";
 import type { Memory } from "@/types/memory";
 
@@ -26,119 +30,11 @@ interface PhaserStageProps {
   worldState?: PixelFarmWorldState | null;
 }
 
-interface PixelFarmOpenBubbleState {
-  animalInstanceId: string | null;
-  interactionNonce: number;
-  memoryIds: string[];
-  memories: Memory[];
-  memoryIndex: number;
-  screenX: number;
-  screenY: number;
-  tagLabel: string;
-  targetId: string;
-}
-
-const PIXEL_FARM_EMPTY_MEMORY_MESSAGES = [
-  "No memories have formed here.",
-  "Nothing has taken shape here.",
-  "This place holds no memory.",
-  "No traces remain.",
-  "This place is quiet.",
-  "Nothing stirs here.",
-  "No signs of life.",
-  "It feels untouched.",
-  "Nothing is here.",
-  "There's nothing here yet.",
-  "This place is empty.",
-  "Nothing has appeared here yet.",
-  "Nothing has settled here yet.",
-  "No one has come by.",
-  "This spot is still waiting.",
-] as const;
-
 function resolveAvailableMemoryIds(
   memoryIds: readonly string[],
   memoryById: Record<string, Memory>,
 ): string[] {
   return memoryIds.filter((memoryId) => memoryById[memoryId]);
-}
-
-function createOpenBubbleState(
-  info: PixelFarmInteractionDebugInfo,
-  memories: readonly Memory[],
-  current: PixelFarmOpenBubbleState | null,
-): PixelFarmOpenBubbleState | null {
-  const target = info.target;
-  if (!target || memories.length < 1) {
-    return null;
-  }
-
-  const memoryIds = memories.map((memory) => memory.id);
-  if (current && current.targetId === target.id && info.interactionNonce === current.interactionNonce) {
-    return {
-      ...current,
-      animalInstanceId: target.animalInstanceId ?? null,
-      memories: [...memories],
-      memoryIds,
-      screenX: target.screenX,
-      screenY: target.screenY,
-      tagLabel: target.tagLabel,
-    };
-  }
-
-  if (!current || current.targetId !== target.id) {
-    return {
-      animalInstanceId: target.animalInstanceId ?? null,
-      interactionNonce: info.interactionNonce,
-      memories: [...memories],
-      memoryIds,
-      memoryIndex: 0,
-      screenX: target.screenX,
-      screenY: target.screenY,
-      tagLabel: target.tagLabel,
-      targetId: target.id,
-    };
-  }
-
-  return {
-    ...current,
-    animalInstanceId: target.animalInstanceId ?? null,
-    interactionNonce: info.interactionNonce,
-    memories: [...memories],
-    memoryIds,
-    memoryIndex: info.interactionNonce > current.interactionNonce
-      ? (current.memoryIndex + 1) % memoryIds.length
-      : Math.min(current.memoryIndex, memoryIds.length - 1),
-    screenX: target.screenX,
-    screenY: target.screenY,
-    tagLabel: target.tagLabel,
-  };
-}
-
-function createFallbackMemory(targetId: string, tagLabel: string): Memory {
-  const now = new Date().toISOString();
-  const content = PIXEL_FARM_EMPTY_MEMORY_MESSAGES[
-    Math.floor(Math.random() * PIXEL_FARM_EMPTY_MEMORY_MESSAGES.length)
-  ] ?? "This place is empty.";
-
-  return {
-    id: `pixel-farm-empty:${targetId}`,
-    content,
-    memory_type: "insight",
-    source: "pixel-farm",
-    tags: tagLabel ? [tagLabel] : [],
-    metadata: {
-      pixelFarmFallback: true,
-      targetId,
-    },
-    agent_id: "pixel-farm",
-    session_id: "pixel-farm",
-    state: "active",
-    version: 1,
-    updated_by: "pixel-farm",
-    created_at: now,
-    updated_at: now,
-  };
 }
 
 function playBubbleAppearSound(
@@ -241,11 +137,9 @@ export function PhaserStage({
     openBubbleStateRef.current = openBubbleState;
   }, [openBubbleState]);
 
-  const pausedAnimalInstanceId = openBubbleState?.animalInstanceId ?? null;
-
   useEffect(() => {
-    pausedAnimalInstanceIdRef.current = pausedAnimalInstanceId;
-  }, [pausedAnimalInstanceId]);
+    pausedAnimalInstanceIdRef.current = null;
+  }, [openBubbleState]);
 
   useEffect(() => {
     const uiScene = gameRef.current?.scene.getScene("pixel-farm-ui") as PixelFarmUIScene | undefined;
@@ -271,10 +165,12 @@ export function PhaserStage({
 
     uiScene.openDialog({
       targetId: openBubbleState.targetId,
+      bucketTotalMemoryCount: openBubbleState.bucketTotalMemoryCount,
       interactionNonce: openBubbleState.interactionNonce,
       tagLabel: openBubbleState.tagLabel,
       memories: visibleMemories,
       memoryIndex: openBubbleState.memoryIndex % visibleMemories.length,
+      startIndexInclusive: openBubbleState.startIndexInclusive,
       anchorWorldX: openBubbleState.screenX,
       anchorWorldY: openBubbleState.screenY,
       anchorScreenX: openBubbleState.screenX,
@@ -298,7 +194,7 @@ export function PhaserStage({
           const currentBubble = openBubbleStateRef.current;
           const uiScene = gameRef.current?.scene.getScene("pixel-farm-ui") as PixelFarmUIScene | undefined;
 
-          if (!target) {
+          if (!target || target.kind !== "plant") {
             setOpenBubbleState(null);
             return;
           }
@@ -323,12 +219,30 @@ export function PhaserStage({
           const resolvedMemories = target.memoryIds
             .map((memoryId) => memoryByIdRef.current[memoryId])
             .filter((memory): memory is Memory => Boolean(memory));
-          const dialogMemories = resolvedMemories.length > 0
-            ? resolvedMemories
-            : [createFallbackMemory(target.id, target.tagLabel)];
+          if (resolvedMemories.length < 1) {
+            setOpenBubbleState(null);
+            handledInteractionNonceRef.current = info.interactionNonce;
+            return;
+          }
 
           setOpenBubbleState((current) => {
-            const next = createOpenBubbleState(info, dialogMemories, current);
+            const next = createPixelFarmOpenBubbleState(
+              {
+                interactionNonce: info.interactionNonce,
+                target: {
+                  bucketTotalMemoryCount:
+                    target.bucketTotalMemoryCount ?? resolvedMemories.length,
+                  id: target.id,
+                  memoryIds: [...target.memoryIds],
+                  screenX: target.screenX,
+                  screenY: target.screenY,
+                  startIndexInclusive: target.startIndexInclusive ?? 0,
+                  tagLabel: target.tagLabel,
+                },
+              },
+              resolvedMemories,
+              current,
+            );
             if (
               next &&
               (!current ||
@@ -359,7 +273,7 @@ export function PhaserStage({
     return () => {
       handledInteractionNonceRef.current = 0;
       openBubbleStateRef.current = null;
-      pausedAnimalInstanceIdRef.current = null;
+          pausedAnimalInstanceIdRef.current = null;
       if (bubbleAppearSoundStopTimerRef.current !== null) {
         window.clearTimeout(bubbleAppearSoundStopTimerRef.current);
         bubbleAppearSoundStopTimerRef.current = null;

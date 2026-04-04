@@ -7,6 +7,7 @@ import {
 import {
   paginatePixelFarmDialogText,
 } from "@/lib/pixel-farm/ui-dialog-pagination";
+import { formatPixelFarmDialogCounter } from "@/lib/pixel-farm/dialog-state";
 import type { Memory } from "@/types/memory";
 
 const DIALOG_TILE_SIZE = 16;
@@ -27,15 +28,17 @@ const DIALOG_LINE_HEIGHT = 18;
 const TYPING_DELAY_MS = 14;
 
 export interface PixelFarmDialogPayload {
-  targetId: string;
-  interactionNonce: number;
-  tagLabel: string;
-  memories: Memory[];
-  memoryIndex: number;
   anchorWorldX: number;
   anchorWorldY: number;
   anchorScreenX: number;
   anchorScreenY: number;
+  bucketTotalMemoryCount: number;
+  interactionNonce: number;
+  memories: Memory[];
+  memoryIndex: number;
+  startIndexInclusive: number;
+  tagLabel: string;
+  targetId: string;
 }
 
 interface PixelFarmDialogRuntimeState {
@@ -581,15 +584,19 @@ export class PixelFarmUIDialog {
   private renderPage(): void {
     const text = this.state.pages[this.state.pageIndex] ?? "";
     const currentMemory = this.state.payload?.memories[this.state.payload.memoryIndex] ?? null;
-    const pageCounter = this.state.pages.length > 1
-      ? ` • ${this.state.pageIndex + 1} / ${this.state.pages.length}`
-      : "";
-    const memoryCounter = this.state.payload
-      ? `${this.state.payload.memoryIndex + 1} / ${this.state.payload.memories.length}`
-      : "";
 
     this.headerText.setText(this.state.payload?.tagLabel ?? "");
-    this.counterText.setText(currentMemory ? `${memoryCounter}${pageCounter}` : "");
+    this.counterText.setText(
+      currentMemory && this.state.payload
+        ? formatPixelFarmDialogCounter({
+            bucketTotalMemoryCount: this.state.payload.bucketTotalMemoryCount,
+            memoryIndex: this.state.payload.memoryIndex,
+            pageCount: this.state.pages.length,
+            pageIndex: this.state.pageIndex,
+            startIndexInclusive: this.state.payload.startIndexInclusive,
+          })
+        : "",
+    );
     this.contentText.setText(text);
     this.contentText.setWordWrapWidth(DIALOG_TEXT_WIDTH);
     this.contentText.setPosition(DIALOG_PADDING_X, DIALOG_PADDING_TOP + DIALOG_HEADER_HEIGHT + 6);
