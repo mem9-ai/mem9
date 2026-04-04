@@ -51,6 +51,18 @@ Confirm these first:
 - Restart and verify again
 - If a new key is still auto-provisioned after that, stop the reconnect flow and keep troubleshooting instead of silently switching mem9 spaces
 
+### Memory Shows Unavailable In Status But Plugin Is Working
+
+- `openclaw status` may briefly show `enabled (plugin mem9) · unavailable` after a restart
+- This is a known transient state caused by OpenClaw's status probe timing out before the plugin finishes its first API call
+- Check recent gateway logs for positive health signals:
+  - `[mem9] Injecting N memories into prompt context`
+  - `[mem9] Ingest accepted for async processing`
+  - `[mem9] Server mode (v1alpha2)` with no subsequent startup error
+- If any positive signal is present, the plugin is healthy — ignore the `unavailable` status
+- If no positive signal appears after 2+ minutes and the logs show repeated timeouts, check network connectivity to the configured `apiUrl`
+- Do not re-run setup or treat this as a setup failure when logs confirm the plugin is operational
+
 ### Removed mem9 But Gateway Will Not Start
 
 - Treat this as uninstall failure, not success
