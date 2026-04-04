@@ -9,6 +9,7 @@ import {
 } from "@/lib/pixel-farm/ui-dialog-pagination";
 import {
   formatPixelFarmDialogCounter,
+  isPixelFarmMemoryDialogEntry,
   type PixelFarmDialogEntry,
 } from "@/lib/pixel-farm/dialog-state";
 
@@ -397,11 +398,12 @@ export class PixelFarmUIDialog {
       return;
     }
 
-    if (this.state.payload.memoryIndex <= 0) {
+    const previousEntryIndex = this.findPreviousEntryIndex(this.state.payload.memoryIndex);
+    if (previousEntryIndex === null) {
       return;
     }
 
-    this.setMemoryIndex(this.state.payload.memoryIndex - 1, "last");
+    this.setMemoryIndex(previousEntryIndex, "last");
   }
 
   goNext(): void {
@@ -421,11 +423,12 @@ export class PixelFarmUIDialog {
       return;
     }
 
-    if (this.state.payload.memoryIndex >= this.state.payload.entries.length - 1) {
+    const nextEntryIndex = this.findNextEntryIndex(this.state.payload.memoryIndex);
+    if (nextEntryIndex === null) {
       return;
     }
 
-    this.setMemoryIndex(this.state.payload.memoryIndex + 1, 0);
+    this.setMemoryIndex(nextEntryIndex, 0);
   }
 
   private goPreviousMemory(): void {
@@ -438,11 +441,12 @@ export class PixelFarmUIDialog {
       return;
     }
 
-    if (this.state.payload.memoryIndex <= 0) {
+    const previousEntryIndex = this.findPreviousEntryIndex(this.state.payload.memoryIndex);
+    if (previousEntryIndex === null) {
       return;
     }
 
-    this.setMemoryIndex(this.state.payload.memoryIndex - 1, 0);
+    this.setMemoryIndex(previousEntryIndex, 0);
   }
 
   private goNextMemory(): void {
@@ -455,11 +459,12 @@ export class PixelFarmUIDialog {
       return;
     }
 
-    if (this.state.payload.memoryIndex >= this.state.payload.entries.length - 1) {
+    const nextEntryIndex = this.findNextEntryIndex(this.state.payload.memoryIndex);
+    if (nextEntryIndex === null) {
       return;
     }
 
-    this.setMemoryIndex(this.state.payload.memoryIndex + 1, 0);
+    this.setMemoryIndex(nextEntryIndex, 0);
   }
 
   private setMemoryIndex(nextIndex: number, nextPageIndex: number | "last"): void {
@@ -500,6 +505,26 @@ export class PixelFarmUIDialog {
     );
 
     return pages.length > 0 ? pages : [""];
+  }
+
+  private getCurrentEntry(): PixelFarmDialogEntry | null {
+    return this.state.payload?.entries[this.state.payload.memoryIndex] ?? null;
+  }
+
+  private findPreviousEntryIndex(fromIndex: number): number | null {
+    if (!this.state.payload) {
+      return null;
+    }
+
+    return fromIndex > 0 ? fromIndex - 1 : null;
+  }
+
+  private findNextEntryIndex(fromIndex: number): number | null {
+    if (!this.state.payload) {
+      return null;
+    }
+
+    return fromIndex < this.state.payload.entries.length - 1 ? fromIndex + 1 : null;
   }
 
   private computePlacement(payload: PixelFarmDialogPayload): PixelFarmDialogPlacement {
@@ -573,29 +598,30 @@ export class PixelFarmUIDialog {
     }
 
     const dialogHeight = this.measureDialogHeight(this.state.pages[this.state.pageIndex] ?? "");
+    const currentIndex = this.state.payload?.memoryIndex ?? 0;
+    const previousEntryIndex = this.findPreviousEntryIndex(currentIndex);
+    const nextEntryIndex = this.findNextEntryIndex(currentIndex);
     this.layoutBody(DIALOG_WIDTH, dialogHeight);
     this.root.setPosition(placement.x, placement.y);
     this.rightButton.setVisible(
-      Boolean(this.state.payload?.showCounter) &&
-        (this.state.payload?.memoryIndex ?? 0) < (this.state.payload?.entries.length ?? 0) - 1,
+      Boolean(this.state.payload?.showCounter) && nextEntryIndex !== null,
     );
     this.leftButton.setVisible(
-      Boolean(this.state.payload?.showCounter) &&
-        (this.state.payload?.memoryIndex ?? 0) > 0,
+      Boolean(this.state.payload?.showCounter) && previousEntryIndex !== null,
     );
     this.root.setVisible(true);
   }
 
   private renderPage(): void {
     const text = this.state.pages[this.state.pageIndex] ?? "";
-    const currentEntry = this.state.payload?.entries[this.state.payload.memoryIndex] ?? null;
+    const currentEntry = this.getCurrentEntry();
 
     this.headerText.setText(this.state.payload?.tagLabel ?? "");
     this.counterText.setText(
-      currentEntry && this.state.payload?.showCounter
+      isPixelFarmMemoryDialogEntry(currentEntry) && this.state.payload?.showCounter
         ? formatPixelFarmDialogCounter({
             bucketTotalMemoryCount: this.state.payload.bucketTotalMemoryCount,
-            memoryIndex: this.state.payload.memoryIndex,
+            memoryOffset: currentEntry.memoryOffset,
             pageCount: this.state.pages.length,
             pageIndex: this.state.pageIndex,
             startIndexInclusive: this.state.payload.startIndexInclusive,
@@ -677,7 +703,8 @@ export class PixelFarmUIDialog {
     this.state.characterIndex = 0;
     this.contentText.setText("");
 
-    if (!this.state.pages[this.state.pageIndex]) {
+    const pageText = this.state.pages[this.state.pageIndex] ?? "";
+    if (!pageText) {
       return;
     }
 

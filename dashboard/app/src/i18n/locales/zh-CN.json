@@ -546,6 +546,9 @@
         "top_topic": "连鸡窝边上都在悄悄念叨 {{topic}} 呢。"
       }
     },
+    "plant_dialog": {
+      "intro": "这株小苗长在 #{{tag}} 这片地里。这里一共收着 {{count}} 条记忆。你现在看到的是其中一小段。"
+    },
     "feedback": {
       "button": "反馈",
       "title": "提交反馈",

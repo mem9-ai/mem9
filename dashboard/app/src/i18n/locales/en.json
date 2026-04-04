@@ -546,6 +546,9 @@
         "top_topic": "This little coop can't stop talking about {{topic}}."
       }
     },
+    "plant_dialog": {
+      "intro": "This little sprout grows in the #{{tag}} patch. There are {{count}} memories tucked into this group. This plant is only showing one slice of them."
+    },
     "feedback": {
       "button": "Feedback",
       "title": "Send Feedback",

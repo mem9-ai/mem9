@@ -1,6 +1,31 @@
-export interface PixelFarmDialogEntry {
+export interface PixelFarmDialogIntroEntry {
   id: string;
+  kind: "intro";
   content: string;
+}
+
+export interface PixelFarmDialogMemoryEntry {
+  id: string;
+  kind: "memory";
+  content: string;
+  memoryOffset: number;
+}
+
+export interface PixelFarmDialogNpcEntry {
+  id: string;
+  kind: "npc";
+  content: string;
+}
+
+export type PixelFarmDialogEntry =
+  | PixelFarmDialogIntroEntry
+  | PixelFarmDialogMemoryEntry
+  | PixelFarmDialogNpcEntry;
+
+export function isPixelFarmMemoryDialogEntry(
+  entry: PixelFarmDialogEntry | null | undefined,
+): entry is PixelFarmDialogMemoryEntry {
+  return entry?.kind === "memory";
 }
 
 export interface PixelFarmDialogTargetSnapshot {
@@ -83,7 +108,7 @@ export function createPixelFarmOpenBubbleState(
     interactionNonce: info.interactionNonce,
     memoryIndex:
       info.interactionNonce > current.interactionNonce
-        ? (current.memoryIndex + 1) % entries.length
+        ? 0
         : Math.min(current.memoryIndex, entries.length - 1),
     screenX: target.screenX,
     screenY: target.screenY,
@@ -95,12 +120,13 @@ export function createPixelFarmOpenBubbleState(
 
 export function formatPixelFarmDialogCounter(input: {
   bucketTotalMemoryCount: number;
-  memoryIndex: number;
+  memoryOffset: number;
   pageCount: number;
   pageIndex: number;
   startIndexInclusive: number;
 }): string {
-  const memoryCounter = `${input.startIndexInclusive + input.memoryIndex + 1} / ${input.bucketTotalMemoryCount}`;
+  const memoryCounter =
+    `${input.startIndexInclusive + input.memoryOffset + 1} / ${input.bucketTotalMemoryCount}`;
   if (input.pageCount <= 1) {
     return memoryCounter;
   }

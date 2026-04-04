@@ -17,12 +17,11 @@ import {
   type PixelFarmOpenBubbleState,
 } from "@/lib/pixel-farm/dialog-state";
 import type { PixelFarmWorldState } from "@/lib/pixel-farm/data/types";
+import { buildPixelFarmPlantDialogEntries } from "@/lib/pixel-farm/plant-dialog-content";
 import {
   buildPixelFarmNpcDialogCatalog,
   pickNextPixelFarmNpcDialogEntry,
-  type PixelFarmNpcDialogCandidate,
   type PixelFarmNpcDialogRotationState,
-  type PixelFarmNpcDialogSelectionDebugSnapshot,
 } from "@/lib/pixel-farm/npc-dialog-content";
 import { getPixelFarmNpcDialogTitle } from "@/lib/pixel-farm/npc-tips";
 import type { PixelFarmNpcDialogContentState } from "@/lib/pixel-farm/use-pixel-farm-npc-dialog-content";
@@ -83,42 +82,6 @@ function playBubbleAppearSound(
     soundRef.current?.stop();
     stopTimerRef.current = null;
   }, PIXEL_FARM_BUBBLE_APPEAR_SOUND_DURATION_MS);
-}
-
-function formatNpcDialogCandidates(
-  candidates: readonly PixelFarmNpcDialogCandidate[],
-): Array<{
-  index: number;
-  id: string;
-  source: string;
-  templateKey: string;
-  text: string;
-}> {
-  return candidates.map((candidate, index) => ({
-    index: index + 1,
-    id: candidate.id,
-    source: candidate.source,
-    templateKey: candidate.templateKey,
-    text: candidate.text,
-  }));
-}
-
-function logNpcDialogSelection(debug: PixelFarmNpcDialogSelectionDebugSnapshot): void {
-  if (!import.meta.env.DEV) {
-    return;
-  }
-
-  console.debug("[pixel-farm:npc-dialog]", {
-    deepInsights: formatNpcDialogCandidates(debug.deepInsights),
-    lightInsights: formatNpcDialogCandidates(debug.lightInsights),
-    tips: formatNpcDialogCandidates(debug.tips),
-    activePool: formatNpcDialogCandidates(debug.activePool),
-    activeSources: debug.activeSources,
-    poolSignature: debug.poolSignature,
-    previousRotationState: debug.previousRotationState,
-    queue: debug.queue,
-    selectedEntry: debug.selectedEntry,
-  });
 }
 
 export function PhaserStage({
@@ -273,13 +236,14 @@ export function PhaserStage({
           setOpenBubbleState((current) => {
             const entries =
               target.kind === "plant"
-                ? target.memoryIds
-                    .map((memoryId) => memoryByIdRef.current[memoryId])
-                    .filter((memory): memory is Memory => Boolean(memory))
-                    .map((memory) => ({
-                      id: memory.id,
-                      content: memory.content,
-                    }))
+                ? buildPixelFarmPlantDialogEntries({
+                    bucketTotalMemoryCount: target.bucketTotalMemoryCount ?? target.memoryIds.length,
+                    memories: target.memoryIds
+                      .map((memoryId) => memoryByIdRef.current[memoryId])
+                      .filter((memory): memory is Memory => Boolean(memory)),
+                    tagLabel: target.tagLabel,
+                    t: (key, vars) => i18n.t(key, vars),
+                  })
                 : (() => {
                     const nextDialog = pickNextPixelFarmNpcDialogEntry({
                       catalog:
@@ -287,8 +251,7 @@ export function PhaserStage({
                       rotationState: npcDialogRotationRef.current,
                     });
                     npcDialogRotationRef.current = nextDialog.rotationState;
-                    logNpcDialogSelection(nextDialog.debug);
-                    return [{ id: nextDialog.entry.id, content: nextDialog.entry.text }];
+                    return [{ id: nextDialog.entry.id, kind: "npc" as const, content: nextDialog.entry.text }];
                   })();
 
             if (entries.length < 1) {

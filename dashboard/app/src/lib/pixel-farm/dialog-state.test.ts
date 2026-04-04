@@ -4,15 +4,28 @@ import {
   formatPixelFarmDialogCounter,
 } from "./dialog-state";
 
-function createEntry(id: string) {
+function createEntry(id: string, memoryOffset: number) {
   return {
     id,
+    kind: "memory" as const,
     content: id,
+    memoryOffset,
+  };
+}
+
+function createIntroEntry() {
+  return {
+    id: "intro",
+    kind: "intro" as const,
+    content: "intro",
   };
 }
 
 describe("dialog-state", () => {
   it("keeps the dialog scoped to one plant slice and formats bucket-global counters", () => {
+    const introEntry = createIntroEntry();
+    const firstMemory = createEntry("work-50", 0);
+    const secondMemory = createEntry("work-51", 1);
     const state = createPixelFarmOpenBubbleState(
       {
         interactionNonce: 3,
@@ -27,13 +40,13 @@ describe("dialog-state", () => {
           tagLabel: "Work",
         },
       },
-      [createEntry("work-50"), createEntry("work-51")],
+      [introEntry, firstMemory, secondMemory],
       null,
     );
 
     expect(state).toMatchObject({
       animalInstanceId: null,
-      entries: [createEntry("work-50"), createEntry("work-51")],
+      entries: [introEntry, firstMemory, secondMemory],
       targetId: "bucket-work-plant-5",
       memoryIndex: 0,
       showCounter: true,
@@ -43,7 +56,7 @@ describe("dialog-state", () => {
     expect(
       formatPixelFarmDialogCounter({
         bucketTotalMemoryCount: 52,
-        memoryIndex: 1,
+        memoryOffset: 1,
         pageCount: 1,
         pageIndex: 0,
         startIndexInclusive: 50,
@@ -71,5 +84,57 @@ describe("dialog-state", () => {
     );
 
     expect(state).toBeNull();
+  });
+
+  it("resets the same plant dialog back to intro on a new interaction", () => {
+    const state = createPixelFarmOpenBubbleState(
+      {
+        interactionNonce: 3,
+        target: {
+          bucketTotalMemoryCount: 52,
+          id: "bucket-work-plant-5",
+          memoryIds: ["work-50", "work-51"],
+          screenX: 120,
+          screenY: 180,
+          showCounter: true,
+          startIndexInclusive: 50,
+          tagLabel: "Work",
+        },
+      },
+      [createIntroEntry(), createEntry("work-50", 0), createEntry("work-51", 1)],
+      {
+        animalInstanceId: null,
+        bucketTotalMemoryCount: 52,
+        entries: [createIntroEntry(), createEntry("work-50", 0), createEntry("work-51", 1)],
+        interactionNonce: 3,
+        memoryIndex: 2,
+        screenX: 120,
+        screenY: 180,
+        showCounter: true,
+        startIndexInclusive: 50,
+        tagLabel: "Work",
+        targetId: "bucket-work-plant-5",
+      },
+    );
+
+    const reopened = createPixelFarmOpenBubbleState(
+      {
+        interactionNonce: 4,
+        target: {
+          bucketTotalMemoryCount: 52,
+          id: "bucket-work-plant-5",
+          memoryIds: ["work-50", "work-51"],
+          screenX: 120,
+          screenY: 180,
+          showCounter: true,
+          startIndexInclusive: 50,
+          tagLabel: "Work",
+        },
+      },
+      [createIntroEntry(), createEntry("work-50", 0), createEntry("work-51", 1)],
+      state,
+    );
+
+    expect(reopened?.memoryIndex).toBe(0);
   });
 });

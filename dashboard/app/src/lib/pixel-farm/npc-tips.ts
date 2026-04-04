@@ -35,6 +35,7 @@ export function buildPixelFarmNpcDialogEntry(
 ): PixelFarmDialogEntry {
   return {
     id: `npc-tip-${tipId}`,
+    kind: "npc",
     content: translate(`pixel_farm.npc_dialog.tips.${tipId}`),
   };
 }
