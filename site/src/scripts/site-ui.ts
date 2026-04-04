@@ -16,6 +16,13 @@ import {
 
 type MenuName = 'language' | 'theme';
 type OnboardingVersion = 'stable' | 'beta';
+type OnboardingCommandParts = {
+  prefix: string;
+  url: string | null;
+  suffix: string;
+};
+
+const ONBOARDING_COMMAND_URL_PATTERN = /https:\/\/\S+/u;
 
 function getValue(dictionary: SiteDictionary, path: string): unknown {
   return path.split('.').reduce<unknown>((current, segment) => {
@@ -159,6 +166,47 @@ function currentOnboardingVersion(): OnboardingVersion {
     : 'stable';
 }
 
+function splitOnboardingCommand(text: string): OnboardingCommandParts {
+  const match = text.match(ONBOARDING_COMMAND_URL_PATTERN);
+
+  if (!match || match.index === undefined) {
+    return {
+      prefix: text,
+      url: null,
+      suffix: '',
+    };
+  }
+
+  const url = match[0];
+  const prefix = text.slice(0, match.index);
+  const suffix = text.slice(match.index + url.length);
+
+  return { prefix, url, suffix };
+}
+
+function renderOnboardingCommand(element: HTMLElement, text: string): void {
+  const { prefix, url, suffix } = splitOnboardingCommand(text);
+  element.replaceChildren();
+
+  if (prefix) {
+    element.append(prefix);
+  }
+
+  if (url) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.className = 'onboarding-command-link';
+    link.textContent = url;
+    element.append(link);
+  }
+
+  if (suffix) {
+    element.append(suffix);
+  }
+}
+
 function syncControlLabels(locale: SiteLocale, preference: SiteThemePreference): void {
   const dictionary = siteCopy[locale];
   const languageToggle = document.querySelector<HTMLButtonElement>('[data-language-toggle]');
@@ -288,7 +336,7 @@ function applyOnboardingVersion(version: OnboardingVersion): void {
   const betaText = command.dataset.commandBeta ?? '';
   const nextText = version === 'beta' ? betaText : stableText;
 
-  command.textContent = nextText;
+  renderOnboardingCommand(command, nextText);
   copyButton.dataset.copyText = nextText;
 
   if (version === 'beta') {
