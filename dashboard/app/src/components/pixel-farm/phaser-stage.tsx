@@ -16,6 +16,7 @@ import {
   createPixelFarmOpenBubbleState,
   type PixelFarmOpenBubbleState,
 } from "@/lib/pixel-farm/dialog-state";
+import { shouldIgnoreRepeatedDialogInteraction } from "@/lib/pixel-farm/dialog-interaction";
 import type { PixelFarmWorldState } from "@/lib/pixel-farm/data/types";
 import { buildPixelFarmPlantDialogEntries } from "@/lib/pixel-farm/plant-dialog-content";
 import {
@@ -222,6 +223,17 @@ export function PhaserStage({
             currentBubble.interactionNonce === info.interactionNonce
           ) {
             uiScene?.refreshDialogAnchor(target.screenX, target.screenY);
+          }
+
+          if (shouldIgnoreRepeatedDialogInteraction({
+            currentBubble,
+            interactionNonce: info.interactionNonce,
+            targetKind: target.kind,
+            targetId: target.id,
+          })) {
+            uiScene?.refreshDialogAnchor(target.screenX, target.screenY);
+            handledInteractionNonceRef.current = info.interactionNonce;
+            return;
           }
 
           if (

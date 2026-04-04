@@ -726,6 +726,7 @@ export class PixelFarmUIDialog {
 
   private finishTyping(): void {
     this.stopTyping();
+    this.state.characterIndex = (this.state.pages[this.state.pageIndex] ?? "").length;
     this.contentText.setText(this.state.pages[this.state.pageIndex] ?? "");
   }
 
