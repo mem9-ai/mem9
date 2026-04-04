@@ -32,6 +32,18 @@ export interface PixelFarmNpcDialogRotationState {
   remainingIds: string[];
 }
 
+export interface PixelFarmNpcDialogSelectionDebugSnapshot {
+  deepInsights: PixelFarmNpcDialogCandidate[];
+  lightInsights: PixelFarmNpcDialogCandidate[];
+  tips: PixelFarmNpcDialogCandidate[];
+  activePool: PixelFarmNpcDialogCandidate[];
+  activeSources: PixelFarmNpcDialogSource[];
+  poolSignature: string;
+  previousRotationState: PixelFarmNpcDialogRotationState | null;
+  queue: string[];
+  selectedEntry: PixelFarmNpcDialogCandidate;
+}
+
 type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
 function buildDeepCandidates(
@@ -158,15 +170,11 @@ export function buildPixelFarmNpcDialogCatalog(input: {
 function resolveActivePool(
   catalog: PixelFarmNpcDialogCatalog,
 ): PixelFarmNpcDialogCandidate[] {
-  if (catalog.deepInsights.length > 0) {
-    return catalog.deepInsights;
-  }
-
-  if (catalog.lightInsights.length > 0) {
-    return catalog.lightInsights;
-  }
-
-  return catalog.tips;
+  return [
+    ...catalog.deepInsights,
+    ...catalog.lightInsights,
+    ...catalog.tips,
+  ];
 }
 
 function buildPoolSignature(pool: readonly PixelFarmNpcDialogCandidate[]): string {
@@ -249,6 +257,7 @@ export function pickNextPixelFarmNpcDialogEntry(input: {
 }): {
   entry: PixelFarmNpcDialogCandidate;
   rotationState: PixelFarmNpcDialogRotationState;
+  debug: PixelFarmNpcDialogSelectionDebugSnapshot;
 } {
   const random = input.random ?? Math.random;
   const pool = resolveActivePool(input.catalog);
@@ -280,6 +289,17 @@ export function pickNextPixelFarmNpcDialogEntry(input: {
       lastEntryId: entry.id,
       lastTemplateKey: entry.templateKey,
       remainingIds: queue.filter((candidateId) => candidateId !== entry.id),
+    },
+    debug: {
+      deepInsights: [...input.catalog.deepInsights],
+      lightInsights: [...input.catalog.lightInsights],
+      tips: [...input.catalog.tips],
+      activePool: [...pool],
+      activeSources: [...new Set(pool.map((candidate) => candidate.source))],
+      poolSignature,
+      previousRotationState: currentState ?? null,
+      queue: [...queue],
+      selectedEntry: entry,
     },
   };
 }
