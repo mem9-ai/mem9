@@ -72,10 +72,6 @@ export function touchActivity(): void {
   sessionStorage.setItem(LAST_ACTIVE_KEY, String(Date.now()));
 }
 
-export function setSpaceIdForWindow(targetWindow: Window, id: string): void {
-  writeSessionState(targetWindow.sessionStorage, id);
-}
-
 export function isSessionExpired(): boolean {
   const last = sessionStorage.getItem(LAST_ACTIVE_KEY);
   if (!last) return true;

@@ -11,7 +11,6 @@ import { shouldCompactMemoryOverview } from "./space";
 
 const mocks = vi.hoisted(() => ({
   clearSpace: vi.fn(),
-  setSpaceIdForWindow: vi.fn(),
   retry: vi.fn(),
   useStats: vi.fn(),
   useSourceMemories: vi.fn(),
@@ -289,7 +288,6 @@ vi.mock("@/lib/memory-insight-background", async () => {
 vi.mock("@/lib/session", () => ({
   getActiveSpaceId: () => "space-1",
   getSpaceId: () => "space-1",
-  setSpaceIdForWindow: mocks.setSpaceIdForWindow,
   setSpaceId: vi.fn(),
   clearSpace: mocks.clearSpace,
   maskSpaceId: (id: string) => id,
@@ -499,7 +497,6 @@ describe("SpacePage", () => {
     vi.spyOn(Date, "now").mockReturnValue(FIXED_NOW.getTime());
     window.innerWidth = 1440;
     window.dispatchEvent(new Event("resize"));
-    mocks.setSpaceIdForWindow.mockReset();
     mocks.useStats.mockClear();
     mocks.useSourceMemories.mockClear();
     mocks.useMemories.mockClear();
@@ -577,26 +574,7 @@ describe("SpacePage", () => {
     });
   });
 
-  it("opens memory farm in a new tab and copies the active space session", () => {
-    const assign = vi.fn();
-    const popupWindow = {
-      close: vi.fn(),
-      location: { assign },
-      sessionStorage: window.sessionStorage,
-    } as unknown as Window;
-    const openSpy = vi.spyOn(window, "open").mockReturnValue(popupWindow);
-
-    renderSpacePage();
-
-    fireEvent.click(getFarmCta());
-
-    expect(openSpy).toHaveBeenCalledWith("", "_blank");
-    expect(mocks.setSpaceIdForWindow).toHaveBeenCalledWith(popupWindow, "space-1");
-    expect(assign).toHaveBeenCalledWith("/your-memory/labs/memory-farm");
-    expect(router.state.location.pathname).toBe("/space");
-  });
-
-  it("falls back to current-tab navigation when the new tab cannot be opened", async () => {
+  it("navigates to memory farm in the current tab from the single CTA", async () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 
     renderSpacePage();
@@ -607,8 +585,7 @@ describe("SpacePage", () => {
       expect(router.state.location.pathname).toBe("/labs/memory-farm");
     });
 
-    expect(openSpy).toHaveBeenCalledWith("", "_blank");
-    expect(mocks.setSpaceIdForWindow).not.toHaveBeenCalled();
+    expect(openSpy).not.toHaveBeenCalled();
   });
 
   it("keeps the detail panel closed after the user closes it in analysis mode", async () => {

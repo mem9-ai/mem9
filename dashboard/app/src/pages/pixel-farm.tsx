@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PixelFarmActorPreviewPanel } from "@/components/pixel-farm/actor-preview-panel";
 import { PixelFarmFeedbackDialog } from "@/components/pixel-farm/feedback-dialog";
@@ -17,6 +19,7 @@ import { getActiveSpaceId } from "@/lib/session";
 
 export function PixelFarmPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [debugActorState, setDebugActorState] = useState<PixelFarmDebugState>(
     createDefaultPixelFarmDebugState,
   );
@@ -45,6 +48,28 @@ export function PixelFarmPage() {
         showSpatialDebug={showDebugPanel ? showSpatialDebug : false}
         worldState={worldQuery.worldState}
       />
+      <div className="absolute top-4 left-4 z-20 flex flex-col gap-3">
+        <button
+          type="button"
+          className="inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-md border-[2px] border-[#3f3322] bg-[#f6dca6]/90 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[#3f3322] shadow-[2px_2px_0_0_#3f3322] backdrop-blur-sm transition-all hover:bg-[#f6dca6] active:translate-y-[2px] active:shadow-none"
+          onClick={() => {
+            if (window.history.length > 1) {
+              window.history.back();
+              return;
+            }
+            void navigate({ to: "/space" });
+          }}
+        >
+          <ArrowLeft className="size-3.5" />
+          {t("pixel_farm.controls.back")}
+        </button>
+        {showDebugPanel ? (
+          <>
+            <PixelFarmPointerCoordinatesPanel pointerDebugInfo={pointerDebugInfo} />
+            <PixelFarmFrontTargetPanel interactionDebugInfo={interactionDebugInfo} />
+          </>
+        ) : null}
+      </div>
       <aside className="absolute right-4 bottom-4 z-20 max-w-[16rem] rounded-lg border-[2px] border-[#3f3322] bg-[#f6dca6]/90 px-3 py-2 text-[#3f3322] shadow-[2px_2px_0_0_#3f3322] backdrop-blur-sm transition-opacity hover:bg-[#f6dca6]">
         <p className="text-[10px] font-bold uppercase tracking-wider text-[#8d6b43]">
           {t("pixel_farm.controls.title")}
@@ -75,10 +100,6 @@ export function PixelFarmPage() {
       <PixelFarmFeedbackDialog />
       {showDebugPanel ? (
         <>
-          <div className="absolute top-4 left-4 z-20 flex flex-col gap-3">
-            <PixelFarmPointerCoordinatesPanel pointerDebugInfo={pointerDebugInfo} />
-            <PixelFarmFrontTargetPanel interactionDebugInfo={interactionDebugInfo} />
-          </div>
           <div className="absolute top-4 right-4 z-20 flex max-h-[calc(100vh-2rem)] flex-col items-end gap-3">
             <PixelFarmActorPreviewPanel
               onChange={setDebugActorState}

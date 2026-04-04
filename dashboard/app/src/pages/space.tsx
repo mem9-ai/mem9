@@ -8,7 +8,7 @@ import { patchSyncState } from "@/api/local-cache";
 import { SpacePageLayout } from "@/components/space/space-page-layout";
 import { useSpaceDataModel } from "@/components/space/use-space-data-model";
 import { useSpaceRouteState } from "@/components/space/use-space-route-state";
-import { getActiveSpaceId, getSpaceId, setSpaceIdForWindow } from "@/lib/session";
+import { getActiveSpaceId } from "@/lib/session";
 import type { Memory } from "@/types/memory";
 import { shouldCompactMemoryOverview } from "@/components/space/space-selectors";
 
@@ -166,20 +166,6 @@ export function SpacePage() {
 
   const handleFarmAction = () => {
     if (dataModel.farmEntryStatus === "ready") {
-      const farmWindow = window.open("", "_blank");
-      if (farmWindow) {
-        try {
-          const activeSpaceId = getSpaceId() ?? spaceId;
-          if (activeSpaceId) {
-            setSpaceIdForWindow(farmWindow, activeSpaceId);
-          }
-          farmWindow.location.assign("/your-memory/labs/memory-farm");
-          return;
-        } catch {
-          farmWindow.close();
-        }
-      }
-
       void navigate({ to: "/labs/memory-farm" });
       return;
     }
