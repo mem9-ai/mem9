@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
@@ -254,6 +256,15 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		Limit:    limit,
 		Offset:   offset,
 	})
+
+	if filter.Query != "" {
+		searchID := uuid.NewString()
+		requestID := chimw.GetReqID(r.Context())
+		recallMems := append([]domain.Memory(nil), memories...)
+		// auth.AgentName is always the caller identity (X-Mnemo-Agent-Id header).
+		// filter.AgentID is the search target, not the requester — do not use it here.
+		go svc.recall.Record(auth.AgentName, filter.SessionID, searchID, requestID, filter.Query, recallMems)
+	}
 }
 
 func (s *Server) getMemory(w http.ResponseWriter, r *http.Request) {
@@ -341,6 +352,9 @@ func (s *Server) bulkCreateMemories(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Deprecated: bootstrapMemories is not registered in the router and has no
+// active callers. Remove together with MemoryService.Bootstrap and
+// MemoryRepo.ListBootstrap in a follow-up cleanup PR.
 func (s *Server) bootstrapMemories(w http.ResponseWriter, r *http.Request) {
 	auth := authInfo(r)
 	svc := s.resolveServices(auth)
@@ -467,4 +481,73 @@ func dedupStrings(ss []string) []string {
 		}
 	}
 	return out
+}
+
+func (s *Server) getInterests(w http.ResponseWriter, r *http.Request) {
+	auth := authInfo(r)
+	svc := s.resolveServices(auth)
+	q := r.URL.Query()
+
+	now := time.Now().UTC()
+	from := now.AddDate(0, 0, -7)
+	to := now
+
+	if v := q.Get("from"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			s.handleError(w, &domain.ValidationError{Field: "from", Message: "invalid RFC 3339 timestamp"})
+			return
+		}
+		from = t
+	}
+	if v := q.Get("to"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			s.handleError(w, &domain.ValidationError{Field: "to", Message: "invalid RFC 3339 timestamp"})
+			return
+		}
+		to = t
+	}
+	if from.After(to) {
+		s.handleError(w, &domain.ValidationError{Field: "from", Message: "must be before to"})
+		return
+	}
+
+	top := 20
+	if v := q.Get("top"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			s.handleError(w, &domain.ValidationError{Field: "top", Message: "must be an integer"})
+			return
+		}
+		if n < 1 {
+			n = 1
+		}
+		if n > 100 {
+			n = 100
+		}
+		top = n
+	}
+
+	agentID := auth.AgentName
+	if agentIDVals, ok := q["agent_id"]; ok {
+		agentID = agentIDVals[0]
+	}
+
+	f := domain.InterestFilter{
+		From:           from,
+		To:             to,
+		AgentID:        agentID,
+		Top:            top,
+		IncludeQueries: q.Get("include_queries") == "true",
+		IncludeSummary: q.Get("include_summary") == "true",
+	}
+
+	profile, err := svc.recall.Interests(r.Context(), f)
+	if err != nil {
+		s.handleError(w, err)
+		return
+	}
+
+	respond(w, http.StatusOK, profile)
 }

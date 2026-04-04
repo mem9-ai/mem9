@@ -234,3 +234,10 @@ func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) err
 	}
 	return nil
 }
+
+func (s *TenantService) EnsureRecallEventsTable(ctx context.Context, db *sql.DB) error {
+	if _, err := db.ExecContext(ctx, tenant.BuildRecallEventsSchema()); err != nil {
+		return fmt.Errorf("ensure recall_events table: %w", err)
+	}
+	return nil
+}

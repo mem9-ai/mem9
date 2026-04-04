@@ -35,6 +35,9 @@ type MemoryRepo interface {
 	// FTSAvailable reports whether full-text search is usable on this database.
 	FTSAvailable() bool
 
+	// Deprecated: ListBootstrap is only called by MemoryService.Bootstrap which
+	// has no active callers. Remove together with Bootstrap and
+	// handler.bootstrapMemories in a follow-up cleanup PR.
 	ListBootstrap(ctx context.Context, limit int) ([]domain.Memory, error)
 
 	// NearDupSearch finds the nearest active memory to queryText across the tenant.
@@ -82,4 +85,14 @@ type SessionRepo interface {
 	// session_id ASC, created_at ASC, seq ASC, id ASC. At most limitPerSession rows are
 	// returned per session_id. Returns ErrNotSupported on non-TiDB backends.
 	ListBySessionIDs(ctx context.Context, sessionIDs []string, limitPerSession int) ([]*domain.Session, error)
+}
+
+// RecallEventRepo records and aggregates recall events.
+// BulkRecord is best-effort: callers must not propagate errors to clients.
+// BulkRecord silently skips MySQL 1146 (table not yet migrated), same pattern
+// as SessionRepo.BulkCreate.
+// Aggregate returns ErrNotSupported on non-TiDB backends.
+type RecallEventRepo interface {
+	BulkRecord(ctx context.Context, events []*domain.RecallEvent) error
+	Aggregate(ctx context.Context, f domain.InterestFilter) (*domain.InterestProfile, error)
 }
