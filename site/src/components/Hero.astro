@@ -7,6 +7,7 @@ interface Props {
 }
 
 const { hero, aria } = Astro.props;
+const showOnboardingVersionTabs = false;
 ---
 
 <section class="hero">
@@ -29,35 +30,37 @@ const { hero, aria } = Astro.props;
       </p>
 
       <div class="cta-grid" data-onboarding-shell data-onboarding-version="stable">
-        <div class="cta-head">
-          <div
-            class="cta-version-tabs"
-            role="tablist"
-            aria-label={hero.onboardingLabel}
-            data-i18n-attr="aria-label:hero.onboardingLabel"
-          >
-            <button
-              type="button"
-              class="cta-version-tab is-active"
-              role="tab"
-              aria-selected="true"
-              data-onboarding-version-tab="stable"
-              data-i18n="hero.onboardingStableLabel"
+        {showOnboardingVersionTabs && (
+          <div class="cta-head">
+            <div
+              class="cta-version-tabs"
+              role="tablist"
+              aria-label={hero.onboardingLabel}
+              data-i18n-attr="aria-label:hero.onboardingLabel"
             >
-              {hero.onboardingStableLabel}
-            </button>
-            <button
-              type="button"
-              class="cta-version-tab"
-              role="tab"
-              aria-selected="false"
-              data-onboarding-version-tab="beta"
-              data-i18n="hero.onboardingBetaLabel"
-            >
-              {hero.onboardingBetaLabel}
-            </button>
+              <button
+                type="button"
+                class="cta-version-tab is-active"
+                role="tab"
+                aria-selected="true"
+                data-onboarding-version-tab="stable"
+                data-i18n="hero.onboardingStableLabel"
+              >
+                {hero.onboardingStableLabel}
+              </button>
+              <button
+                type="button"
+                class="cta-version-tab"
+                role="tab"
+                aria-selected="false"
+                data-onboarding-version-tab="beta"
+                data-i18n="hero.onboardingBetaLabel"
+              >
+                {hero.onboardingBetaLabel}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
         <div class="cta-card surface-card">
           <p class="cta-label" data-i18n="hero.onboardingLabel">{hero.onboardingLabel}</p>
           <div class="cta-command">

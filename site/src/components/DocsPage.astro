@@ -1,7 +1,9 @@
 ---
-import { docsCopy, type DocsLink, type DocsLocale } from '../content/docs';
+import { docsCopy, resolveDocsLocale, type DocsLink, type DocsLocale } from '../content/docs';
+import { DEFAULT_LOCALE } from '../content/site';
 
 const localeOrder: DocsLocale[] = ['zh', 'en', 'ja', 'ko', 'id', 'th'];
+const initialDocsLocale = resolveDocsLocale(DEFAULT_LOCALE);
 
 function linkTarget(link: DocsLink): string | undefined {
   return link.external ? '_blank' : undefined;
@@ -21,7 +23,7 @@ function linkRel(link: DocsLink): string | undefined {
       <div
         class="docs-copy"
         data-docs-copy={locale}
-        hidden={locale !== 'zh'}
+        hidden={locale !== initialDocsLocale}
       >
         <div class="container docs-shell">
           <div class="docs-layout">
@@ -66,7 +68,7 @@ function linkRel(link: DocsLink): string | undefined {
               {copy.sections.map((section) => (
                 <article
                   class="docs-section"
-                  id={locale === 'zh' ? section.id : undefined}
+                  id={locale === initialDocsLocale ? section.id : undefined}
                   data-docs-anchor={section.id}
                 >
                   <div class="docs-section-head">

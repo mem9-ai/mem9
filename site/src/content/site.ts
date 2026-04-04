@@ -11,6 +11,7 @@ export interface SiteNavCopy {
   home: string;
   features: string;
   platforms: string;
+  openclaw: string;
   yourMemory: string;
   billing: string;
   security: string;
@@ -203,6 +204,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'Home',
       features: 'Features',
       platforms: 'Platforms',
+      openclaw: 'OpenClaw',
       yourMemory: 'Your Memory',
       billing: 'Billing',
       security: 'Security',
@@ -466,6 +468,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: '首页',
       features: '能力',
       platforms: '平台',
+      openclaw: 'OpenClaw',
       yourMemory: '你的记忆',
       billing: '定价',
       security: '安全',
@@ -720,6 +723,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: '首頁',
       features: '能力',
       platforms: '平台',
+      openclaw: 'OpenClaw',
       yourMemory: '你的記憶',
       billing: '定價',
       security: '安全',
@@ -974,6 +978,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'ホーム',
       features: '機能',
       platforms: '対応環境',
+      openclaw: 'OpenClaw',
       yourMemory: 'あなたの記憶',
       billing: '料金',
       security: 'セキュリティ',
@@ -1233,6 +1238,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: '홈',
       features: '기능',
       platforms: '플랫폼',
+      openclaw: 'OpenClaw',
       yourMemory: '당신의 기억',
       billing: '요금',
       security: '보안',
@@ -1489,6 +1495,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'Beranda',
       features: 'Fitur',
       platforms: 'Platform',
+      openclaw: 'OpenClaw',
       yourMemory: 'Memori Anda',
       billing: 'Harga',
       security: 'Keamanan',
@@ -1748,6 +1755,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'หน้าแรก',
       features: 'ความสามารถ',
       platforms: 'แพลตฟอร์ม',
+      openclaw: 'OpenClaw',
       yourMemory: 'ความทรงจำของคุณ',
       billing: 'ราคา',
       security: 'ความปลอดภัย',

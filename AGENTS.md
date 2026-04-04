@@ -127,7 +127,6 @@ cd server && MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" go run ./cmd
 | OpenClaw wiring      | `openclaw-plugin/index.ts`                  |
 | Site copy/content    | `site/src/content/site.ts`                  |
 | Production SKILL.md  | `site/public/SKILL.md`                      |
-| Beta SKILL.md        | `site/public/beta/SKILL.md`                 |
 
 ## site/ — Netlify deployment
 
@@ -137,12 +136,10 @@ It is hosted on Netlify and **automatically deployed from the `main` branch**.
 | File | Purpose |
 |---|---|
 | `site/public/SKILL.md` | **Production** SKILL.md — served at `https://mem9.ai/SKILL.md` |
-| `site/public/beta/SKILL.md` | **Beta** SKILL.md — served at `https://mem9.ai/beta/SKILL.md` |
 
 When updating the SKILL.md that agents fetch, edit **only** these two files:
 
 - `site/public/SKILL.md` — production, changes go live within seconds after merging to `main`
-- `site/public/beta/SKILL.md` — beta, same deployment pipeline
 
 Do **not** edit any other copy (e.g. `clawhub-skill/mem9/SKILL.md` has been removed).
 Do **not** manually sync to clawhub — Netlify handles publishing automatically.

@@ -1,0 +1,378 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Navbar from "../components/Navbar.astro";
+import Footer from "../components/Footer.astro";
+import { DEFAULT_LOCALE, siteCopy } from "../content/site";
+
+const copy = siteCopy[DEFAULT_LOCALE];
+const meta = {
+  title: "OpenClaw Memory Plugin | mem9",
+  description:
+    "Persistent cloud memory for OpenClaw with long-term recall across sessions and machines, shared memory for multi-agent workflows, hybrid search, and a visual dashboard.",
+};
+---
+
+<Layout meta={meta} locale={DEFAULT_LOCALE}>
+  <Navbar
+    nav={copy.nav}
+    aria={copy.aria}
+    localeNames={copy.localeNames}
+    themeOptions={copy.themeOptions}
+  />
+
+  <main class="landing">
+    <section class="hero">
+      <div class="container hero-shell">
+        <div class="hero-copy">
+          <p class="eyebrow">OpenClaw Memory Plugin</p>
+          <h1>Persistent cloud memory for OpenClaw</h1>
+          <p class="subtitle">
+            mem9 gives OpenClaw long-term memory across sessions and machines, shared memory
+            across agents, hybrid recall, and a visual dashboard for review, import, and export.
+          </p>
+          <p class="question-strip">
+            How do I give OpenClaw long-term memory? How do I keep agent memory across sessions?
+            How do I share memory across agents and reduce repeated context? mem9 is the plugin
+            for that job.
+          </p>
+
+          <div class="cta-row">
+            <a class="button primary" href="/SKILL.md" target="_blank">Open SKILL.md</a>
+          </div>
+
+          <div class="link-row">
+            <a href="https://mem9.ai/your-memory">Dashboard</a>
+            <a href="/#security">Security</a>
+            <a href="https://github.com/mem9-ai/mem9" target="_blank" rel="noopener">Source</a>
+          </div>
+        </div>
+
+        <aside class="surface-card install-card">
+          <p class="card-kicker">Install entry</p>
+          <h2>Use ClawHub, then say one sentence</h2>
+          <ol>
+            <li>Install mem9 from ClawHub.</li>
+            <li>Start a new OpenClaw chat.</li>
+            <li>Say <code>setup mem9</code> or <code>reconnect mem9</code>.</li>
+          </ol>
+          <p class="card-note">
+            mem9 handles onboarding, reconnect, uninstall, and explicit “remember this” requests
+            after setup.
+          </p>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-kicker">Why mem9</p>
+          <h2 class="section-title">Three reasons teams pick it over local memory files</h2>
+        </div>
+        <div class="grid three-up">
+          <article class="surface-card panel">
+            <h3>Persistent memory across sessions and machines</h3>
+            <p>
+              Restart the gateway, switch devices, or reopen a project later. Your agent memory
+              stays available instead of living in fragile local files.
+            </p>
+          </article>
+          <article class="surface-card panel">
+            <h3>Shared memory for multi-agent workflows</h3>
+            <p>
+              Keep one memory layer across OpenClaw sessions and agents so teammates and automation
+              do not have to relearn the same context.
+            </p>
+          </article>
+          <article class="surface-card panel">
+            <h3>Hybrid recall with a visual dashboard</h3>
+            <p>
+              Combine durable cloud memory with a dashboard for analysis, cleanup, import, export,
+              and trust-building around what the agent remembers.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section comparison">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-kicker">Best for</p>
+          <h2 class="section-title">When mem9 is a better fit than default memory</h2>
+        </div>
+        <div class="grid two-up">
+          <article class="surface-card panel">
+            <h3>Default or local memory</h3>
+            <ul>
+              <li>Tied to one machine or one workspace</li>
+              <li>Easy to lose during resets, reinstalls, and migrations</li>
+              <li>Hard to review or manage across sessions</li>
+            </ul>
+          </article>
+          <article class="surface-card panel accent-panel">
+            <h3>mem9 for OpenClaw</h3>
+            <ul>
+              <li>Cloud-persistent memory that follows your agent</li>
+              <li>Shared memory across sessions, machines, and multi-agent workflows</li>
+              <li>Hybrid recall plus a dashboard for visual inspection and management</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-kicker">Use cases</p>
+          <h2 class="section-title">Problem-driven questions mem9 is built to answer</h2>
+        </div>
+        <div class="grid two-up">
+          <article class="surface-card panel">
+            <h3>How do I give OpenClaw long-term memory?</h3>
+            <p>
+              Install mem9 and let it persist important facts, preferences, and project context in
+              the cloud instead of rebuilding context from scratch every session.
+            </p>
+          </article>
+          <article class="surface-card panel">
+            <h3>How do I keep agent memory across sessions?</h3>
+            <p>
+              mem9 keeps memory durable across restarts, new chats, and new machines, so users do
+              not have to repeat the same instructions over and over.
+            </p>
+          </article>
+          <article class="surface-card panel">
+            <h3>How do I share memory across agents?</h3>
+            <p>
+              Point multiple OpenClaw agents or workflows at the same mem9 space to reuse learned
+              knowledge instead of isolating it in separate local stores.
+            </p>
+          </article>
+          <article class="surface-card panel">
+            <h3>How do I reduce repeated context in OpenClaw?</h3>
+            <p>
+              mem9 stores durable facts and recalls only what matters for the current task, helping
+              reduce repeated prompts, token waste, and drift across long-running work.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section final-cta">
+      <div class="container surface-card cta-panel">
+        <p class="section-kicker">Get started</p>
+        <h2 class="section-title">Install mem9, then manage memory visually</h2>
+        <p class="cta-copy">
+          Start from ClawHub or the public SKILL.md, then use the same mem9 credential in the
+          dashboard to review, analyze, import, and export memory.
+        </p>
+        <div class="cta-row">
+          <a class="button primary" href="/SKILL.md">Stable install guide</a>
+          <a class="button secondary" href="https://mem9.ai/your-memory">Open dashboard</a>
+          <a
+            class="button ghost"
+            href="https://github.com/mem9-ai/mem9"
+            target="_blank"
+            rel="noopener"
+          >
+            Star on GitHub
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <Footer footer={copy.footer} />
+</Layout>
+
+<style>
+  .landing {
+    padding-bottom: 4rem;
+  }
+
+  .hero {
+    padding: 5rem 0 3rem;
+  }
+
+  .hero-shell {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: minmax(0, 1.7fr) minmax(300px, 0.95fr);
+    align-items: start;
+  }
+
+  .hero-copy {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .eyebrow,
+  .section-kicker,
+  .card-kicker {
+    margin: 0;
+    color: var(--accent);
+    font-size: 0.86rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  h1,
+  .section-title,
+  .install-card h2 {
+    margin: 0;
+    color: var(--text);
+    font-family: var(--font-display);
+    letter-spacing: -0.04em;
+    line-height: 1.02;
+  }
+
+  h1 {
+    font-size: clamp(2.7rem, 6vw, 4.8rem);
+    max-width: 12ch;
+  }
+
+  .subtitle,
+  .question-strip,
+  .cta-copy,
+  .panel p,
+  .install-card p,
+  .install-card li {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 1.04rem;
+    line-height: 1.7;
+  }
+
+  .question-strip {
+    max-width: 68ch;
+  }
+
+  .section {
+    padding: 1.75rem 0;
+  }
+
+  .section-heading {
+    display: grid;
+    gap: 0.55rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .grid {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .three-up {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .two-up {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .panel,
+  .install-card,
+  .cta-panel {
+    padding: 1.4rem;
+    border: 1px solid var(--border);
+  }
+
+  .panel h3,
+  .install-card h2 {
+    margin: 0 0 0.7rem;
+    color: var(--text);
+    font-size: 1.25rem;
+  }
+
+  .panel ul,
+  .install-card ol {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+
+  .accent-panel {
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--surface) 70%, transparent), var(--surface)),
+      radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 12%, transparent), transparent 55%);
+  }
+
+  .cta-row,
+  .link-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.9rem;
+    align-items: center;
+  }
+
+  .link-row a {
+    color: var(--text-dim);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+  }
+
+  .link-row a:hover {
+    color: var(--text);
+    border-bottom-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+
+  .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.85rem;
+    padding: 0 1.15rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    text-decoration: none;
+    font-weight: 700;
+    transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+  }
+
+  .button:hover {
+    transform: translateY(-1px);
+  }
+
+  .button.primary {
+    background: var(--accent);
+    color: var(--bg-terminal);
+  }
+
+  .button.secondary,
+  .button.ghost {
+    color: var(--text);
+    border-color: var(--border);
+    background: var(--surface);
+  }
+
+  .cta-panel {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .card-note {
+    margin-top: 0.9rem;
+  }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+  }
+
+  @media (max-width: 960px) {
+    .hero-shell,
+    .three-up,
+    .two-up {
+      grid-template-columns: 1fr;
+    }
+
+    .hero {
+      padding-top: 4rem;
+    }
+  }
+</style>
