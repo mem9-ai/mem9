@@ -90,15 +90,14 @@ The dry-run preview must disclose:
 - local history will not be uploaded by this setup flow
 - one short restart-and-return instruction in the user's language
 
-Before installing, detect npm registry reachability first. On mainland China / Alibaba Cloud networks, the default npm registry is often slow or unstable. Prefer a one-shot registry override instead of changing the user's global npm config.
+Before installing, prefer npm-native registry checks and install-time fallback. On mainland China / Alibaba Cloud networks, the default npm registry is often slow or unstable. Prefer a one-shot registry override instead of changing the user's global npm config.
 
-Install command sequence:
+Registry-aware install sequence:
 
 ```bash
-NPMJS_TIME="$(curl -o /dev/null -sS --connect-timeout 2 --max-time 6 -w '%{time_total}' https://registry.npmjs.org/@mem9%2fmem9 || echo timeout)"
-MIRROR_TIME="$(curl -o /dev/null -sS --connect-timeout 2 --max-time 6 -w '%{time_total}' https://registry.npmmirror.com/@mem9%2fmem9 || echo timeout)"
-
-if [ "$MIRROR_TIME" != "timeout" ] && { [ "$NPMJS_TIME" = "timeout" ] || awk "BEGIN { exit !($NPMJS_TIME > 2 && $MIRROR_TIME < $NPMJS_TIME) }"; }; then
+if npm view @mem9/mem9 version --registry=https://registry.npmjs.org --fetch-retries=0 --fetch-timeout=6000 >/dev/null 2>&1; then
+  openclaw plugins install @mem9/mem9
+elif npm view @mem9/mem9 version --registry=https://registry.npmmirror.com --fetch-retries=0 --fetch-timeout=6000 >/dev/null 2>&1; then
   echo "Using China npm mirror: https://registry.npmmirror.com"
   NPM_CONFIG_REGISTRY=https://registry.npmmirror.com openclaw plugins install @mem9/mem9
 else
@@ -108,8 +107,10 @@ fi
 
 Decision rule:
 
-- If the official npm registry times out, but `npmmirror` is reachable, treat that as a China-optimized network path and use `https://registry.npmmirror.com`.
-- If both registries are reachable, but the official registry is materially slower, prefer `npmmirror`.
+- If the official npm registry metadata is reachable, keep the normal install path.
+- If the official registry metadata is not reachable, but `npmmirror` metadata is reachable, treat that as a China-optimized network path and use `https://registry.npmmirror.com`.
+- If the initial normal install later fails with registry timeout, DNS, TLS, or connection-reset style errors, retry once with the one-shot `NPM_CONFIG_REGISTRY=https://registry.npmmirror.com` override.
+- If both registries are reachable, keep the default registry.
 - Do not run `npm config set registry ...` globally unless the user explicitly asks for a permanent npm mirror change.
 
 Preflight failure rule:

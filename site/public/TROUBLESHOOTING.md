@@ -157,7 +157,7 @@ Confirm these first:
 
 ### China Network / npm Registry Problems
 
-- Retry installation with a temporary npm mirror such as `https://registry.npmmirror.com`
+- Retry installation with a temporary npm registry override such as `NPM_CONFIG_REGISTRY=https://registry.npmmirror.com`
 - Avoid changing the user's global npm config unless they explicitly ask
 
 ## Reconnect On A New Machine
