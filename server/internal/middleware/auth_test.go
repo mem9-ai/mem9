@@ -87,7 +87,7 @@ func TestResolveApiKey_MissingHeader(t *testing.T) {
 	defer pool.Close()
 
 	enc := encrypt.NewPlainEncryptor()
-	mw := ResolveApiKey(stubTenantRepo{}, pool, enc)
+	mw := ResolveApiKey(stubTenantRepo{}, pool, enc, nil)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")
 	}))
@@ -109,7 +109,7 @@ func TestResolveApiKey_InvalidKey(t *testing.T) {
 	defer pool.Close()
 
 	enc := encrypt.NewPlainEncryptor()
-	mw := ResolveApiKey(stubTenantRepo{}, pool, enc)
+	mw := ResolveApiKey(stubTenantRepo{}, pool, enc, nil)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")
 	}))
@@ -141,7 +141,7 @@ func TestResolveApiKey_InactiveTenant(t *testing.T) {
 	}
 
 	enc := encrypt.NewPlainEncryptor()
-	mw := ResolveApiKey(repo, pool, enc)
+	mw := ResolveApiKey(repo, pool, enc, nil)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")
 	}))
@@ -182,7 +182,7 @@ func TestResolveApiKey_PopulatesAuthInfo(t *testing.T) {
 	}
 
 	enc := encrypt.NewPlainEncryptor()
-	mw := ResolveApiKey(repo, pool, enc)
+	mw := ResolveApiKey(repo, pool, enc, nil)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		info := AuthFromContext(r.Context())
 		if info == nil {
@@ -241,7 +241,7 @@ func TestResolveApiKey_MD5Encryptor_DecryptsPassword(t *testing.T) {
 		},
 	}
 
-	mw := ResolveApiKey(repo, pool, enc)
+	mw := ResolveApiKey(repo, pool, enc, nil)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		info := AuthFromContext(r.Context())
 		if info == nil {
@@ -306,7 +306,7 @@ func TestResolveTenant_Success(t *testing.T) {
 	})
 
 	// Apply middleware directly using chi's URL param injection
-	mw := ResolveTenant(repo, pool, enc)
+	mw := ResolveTenant(repo, pool, enc, nil)
 	handler := mw(baseHandler)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -346,7 +346,7 @@ func TestResolveTenant_DecryptFailure_Returns500(t *testing.T) {
 		},
 	}
 
-	mw := ResolveTenant(repo, pool, enc)
+	mw := ResolveTenant(repo, pool, enc, nil)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")
 	}))
@@ -391,7 +391,7 @@ func TestResolveApiKey_MD5DecryptFailure_Returns500(t *testing.T) {
 		},
 	}
 
-	mw := ResolveApiKey(repo, pool, enc)
+	mw := ResolveApiKey(repo, pool, enc, nil)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")
 	}))
@@ -427,4 +427,176 @@ func cacheTenantDB(t *testing.T, pool *tenant.TenantPool, tenantID string, db *s
 
 func setUnexportedField(field reflect.Value, value reflect.Value) {
 	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(value)
+}
+
+type stubPool struct {
+	db  *sql.DB
+	err error
+}
+
+func (s stubPool) Get(_ context.Context, _ string, _ string) (*sql.DB, error) {
+	return s.db, s.err
+}
+
+func (s stubPool) Backend() string { return "tidb" }
+
+var spendLimitErr = errors.New("Error 1105 (HY000): Due to the usage quota being exhausted, access to the cluster has been restricted.")
+
+func TestIsSpendLimitError(t *testing.T) {
+	cases := []struct {
+		err  error
+		want bool
+	}{
+		{spendLimitErr, true},
+		{errors.New("connection refused"), false},
+		{errors.New("tenant pool: total limit 200 reached"), false},
+		{nil, false},
+	}
+	for _, c := range cases {
+		if got := isSpendLimitError(c.err); got != c.want {
+			t.Errorf("isSpendLimitError(%v) = %v, want %v", c.err, got, c.want)
+		}
+	}
+}
+
+func TestResolveApiKey_BlacklistedCluster_SpendLimit_Returns429(t *testing.T) {
+	blacklist := map[string]struct{}{"cluster-1": {}}
+	pool := stubPool{err: spendLimitErr}
+	enc := encrypt.NewPlainEncryptor()
+
+	repo := stubTenantRepo{
+		tenants: map[string]*domain.Tenant{
+			"tenant-1": {
+				ID:        "tenant-1",
+				Status:    domain.TenantActive,
+				ClusterID: "cluster-1",
+				Provider:  "tidb",
+			},
+		},
+	}
+
+	mw := ResolveApiKey(repo, pool, enc, blacklist)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1alpha2/mem9s/memories", nil)
+	req.Header.Set(APIKeyHeader, "tenant-1")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusTooManyRequests)
+	}
+	if got := rr.Body.String(); !strings.Contains(got, "cluster quota exhausted") {
+		t.Fatalf("body = %q, want cluster quota exhausted", got)
+	}
+}
+
+func TestResolveApiKey_BlacklistedCluster_OtherError_Returns503(t *testing.T) {
+	blacklist := map[string]struct{}{"cluster-1": {}}
+	pool := stubPool{err: errors.New("connection refused")}
+	enc := encrypt.NewPlainEncryptor()
+
+	repo := stubTenantRepo{
+		tenants: map[string]*domain.Tenant{
+			"tenant-1": {
+				ID:        "tenant-1",
+				Status:    domain.TenantActive,
+				ClusterID: "cluster-1",
+				Provider:  "tidb",
+			},
+		},
+	}
+
+	mw := ResolveApiKey(repo, pool, enc, blacklist)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1alpha2/mem9s/memories", nil)
+	req.Header.Set(APIKeyHeader, "tenant-1")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestResolveApiKey_BlacklistedCluster_Success(t *testing.T) {
+	blacklist := map[string]struct{}{"cluster-1": {}}
+	db := sql.OpenDB(pingOKConnector{})
+	defer db.Close()
+	pool := stubPool{db: db}
+	enc := encrypt.NewPlainEncryptor()
+
+	repo := stubTenantRepo{
+		tenants: map[string]*domain.Tenant{
+			"tenant-1": {
+				ID:        "tenant-1",
+				Status:    domain.TenantActive,
+				ClusterID: "cluster-1",
+				Provider:  "tidb",
+			},
+		},
+	}
+
+	nextCalled := false
+	mw := ResolveApiKey(repo, pool, enc, blacklist)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1alpha2/mem9s/memories", nil)
+	req.Header.Set(APIKeyHeader, "tenant-1")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNoContent)
+	}
+	if !nextCalled {
+		t.Fatal("next handler was not called for blacklisted cluster with successful connection")
+	}
+}
+
+func TestResolveTenant_BlacklistedCluster_SpendLimit_Returns429(t *testing.T) {
+	blacklist := map[string]struct{}{"cluster-1": {}}
+	pool := stubPool{err: spendLimitErr}
+	enc := encrypt.NewPlainEncryptor()
+
+	repo := stubTenantRepo{
+		tenants: map[string]*domain.Tenant{
+			"tenant-1": {
+				ID:        "tenant-1",
+				Status:    domain.TenantActive,
+				ClusterID: "cluster-1",
+				Provider:  "tidb",
+			},
+		},
+	}
+
+	mw := ResolveTenant(repo, pool, enc, blacklist)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, &chi.Context{
+		URLParams: chi.RouteParams{
+			Keys:   []string{"tenantID"},
+			Values: []string{"tenant-1"},
+		},
+	}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusTooManyRequests)
+	}
+	if got := rr.Body.String(); !strings.Contains(got, "cluster quota exhausted") {
+		t.Fatalf("body = %q, want cluster quota exhausted", got)
+	}
 }
