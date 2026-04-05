@@ -24,6 +24,7 @@ When this file is read, start with this structure:
 - Do not leave OpenClaw in an intermediate state where `plugins.slots.memory` still points to `mem9` after the plugin is gone.
 - Do not perform `reset session` or any equivalent current-session reset inside this uninstall flow.
 - Do not trigger a second explicit gateway restart after the config rollback has already scheduled or completed the required restart.
+- If the user asks to clear local mem9 memories, interpret that as local mem9 plugin/config/install residue cleanup only. Do not add session reset to the uninstall execution steps.
 - Preserve unrelated config keys.
 - Use one explicit approval for the entire disclosed flow. Do not ask for a second approval unless the scope materially changes.
 
@@ -73,7 +74,10 @@ Before uninstalling the plugin:
 - Show the exact keys that will change.
 - Prepare the final safe local config state first.
 - Apply the rollback in one config edit so the gateway never restarts with `plugins.slots.memory = "mem9"` after mem9 is gone.
+- Immediately read back the edited config before uninstalling the plugin.
+- If the read-back still shows `plugins.slots.memory = "mem9"`, missing `plugins.entries.memory-core.enabled = true` when restoring `memory-core`, remaining `plugins.entries.mem9`, remaining `plugins.installs.mem9`, or `"mem9"` still present in `plugins.allow`, stop and fix the rollback before continuing.
 - If the user asked to `reset session`, acknowledge that as a follow-up suggestion after uninstall verification completes. Do not include it in the actual uninstall execution steps.
+- If the user later still wants a separate session reset after uninstall, first confirm this OpenClaw version has a session-only reset path before running any reset command. Do not silently substitute a broader reset scope.
 
 Rollback rules:
 
@@ -98,11 +102,16 @@ openclaw plugins uninstall mem9 --force
 Hard rules:
 
 - Use the approval already obtained in Step 0.
+- Only continue if the rollback read-back already matches the safe non-mem9 state.
+- If `plugins.installs.mem9` is already absent before uninstall but `~/.openclaw/extensions/mem9` still exists, treat that as unmanaged local install residue and skip straight to local extension cleanup instead of retrying `openclaw plugins uninstall mem9 --force`.
 - If the uninstall command leaves any mem9 config residue behind, fix the config before restart.
 - The plugin directory or install record may be removed by the uninstall command; do not rely on mem9 still being loadable after this step.
 - The uninstall is not complete unless the local mem9 extension directory is absent after cleanup.
 - If config rollback succeeds but the local mem9 extension directory under `~/.openclaw/extensions/mem9` still exists, treat that as uninstall failure, not success.
 - If the rollback config already caused OpenClaw to schedule a deferred restart, treat that deferred restart as the only restart for this uninstall flow.
+- If the uninstall command prints `Plugin "mem9" is not managed by plugins config/install records and cannot be uninstalled.`, treat that as unmanaged local install residue, not as successful uninstall.
+- In that unmanaged-local-install case, stop retrying `openclaw plugins uninstall mem9 --force`, remove `~/.openclaw/extensions/mem9` after the rollback config is already in the safe non-mem9 state, and continue verification from there.
+- If any out-of-band session-reset command errors with `Invalid --scope. Expected "config", "config+creds+sessions", or "full".`, treat that as uninstall orchestration failure. Stop adding reset or restart actions and continue only with rollback verification plus the single required gateway restart.
 
 ## Step 3 — Restart Flow
 
@@ -122,7 +131,10 @@ The restart-and-return instruction must stay short and must tell the user all th
 
 - Use one restart only.
 - If the rollback config or uninstall step already triggered a deferred gateway restart, do not issue another explicit restart command.
+- If the logs already show `config change requires gateway restart` and `deferring until ... complete`, wait for that queued restart instead of starting another restart path.
 - Do not reset the current session before or after the restart.
+- If the user asked for `reset session`, acknowledge it only as a separate follow-up option after the gateway is healthy again.
+- If that later follow-up reset is attempted, first verify a session-only reset command exists for this CLI version, for example via `openclaw reset --help`. Do not broaden the scope automatically.
 - When the user returns and sends `hi` or another short message, resume verification automatically.
 - Do not ask `Want me to continue?`
 - The first resume reply must stay short and user-facing, for example:
@@ -139,18 +151,23 @@ Success criteria:
 - The gateway is running normally.
 - The gateway no longer reports `plugins.slots.memory: plugin not found: mem9`.
 - The active memory slot is not `mem9`.
+- The current config read-back matches the rollback target before success is declared.
 - `plugins.entries.mem9` is gone.
 - `plugins.installs.mem9` is gone if that install record existed before.
 - `"mem9"` is no longer present in `plugins.allow` if that allowlist exists.
 - The local mem9 extension directory under `~/.openclaw/extensions/mem9` is absent.
 - If the memory slot was restored to `memory-core`, `plugins.entries.memory-core.enabled = true`.
 - No extra uninstall-time `reset session` or second explicit restart was attempted after the first required restart was already in flight.
+- If the uninstall command had reported `Plugin "mem9" is not managed by plugins config/install records and cannot be uninstalled.`, that unmanaged local residue path was completed and the extension directory is now absent.
 
 Failure rules:
 
 - If the gateway does not come back up cleanly, do not declare success.
 - If `plugins.slots.memory` still points to `mem9`, treat the uninstall as failed and fix config first.
+- If the config read-back still matches the uninstall-failure pattern even once after restart, treat the uninstall as failed and re-apply the safe rollback before any further uninstall or restart action.
 - If the local mem9 extension directory is still present after uninstall, treat the uninstall as failed and keep cleaning local residue before declaring success.
+- If the logs include `Plugin "mem9" is not managed by plugins config/install records and cannot be uninstalled.`, do not retry the uninstall command as the primary fix. Remove the local extension directory and re-verify the rollback config instead.
+- If the logs include `Invalid --scope. Expected "config", "config+creds+sessions", or "full".`, treat that as an out-of-band reset attempt and do not add another reset or restart during the same uninstall flow.
 - If verification fails, use `TROUBLESHOOTING.md` from the same directory.
 
 ## Step 5 — Required Final Handoff
