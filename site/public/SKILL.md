@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.36
+version: 1.0.37
 homepage: "https://mem9.ai/openclaw-memory"
 description: "Persistent cloud memory plugin for OpenClaw. This document routes setup, troubleshooting, and uninstall flows and defines config boundaries."
 keywords: ["mem9", "openclaw memory", "persistent memory", "cloud memory", "memory plugin", "setup mem9", "install mem9", "reconnect mem9", "uninstall mem9"]
@@ -16,7 +16,7 @@ This top-level `SKILL.md` is a routing and safety document. It is the entry poin
 
 ## What This Skill Does
 
-- Route first-time install, reconnect, and config review to `SETUP.md`.
+- Route first-time install, reconnect, config review, and mainland China / Alibaba Cloud npm install handling to `SETUP.md`.
 - Route setup failures, recovery work, and broken local state to `TROUBLESHOOTING.md`.
 - Route local mem9 removal on this machine to `UNINSTALL.md`.
 - Keep history import manual. Do not scan or upload local memory or session files from this skill.

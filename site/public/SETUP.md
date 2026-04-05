@@ -19,6 +19,7 @@ When this file is read, send ONLY the choice prompt below. Do not include enviro
 - Only edit the exact `openclaw.json` keys listed in `SKILL.md`.
 - Do not upload local history from this setup flow.
 - Do not use direct web-request commands, raw memory API calls, or scripted shell patch commands in this public setup flow.
+- Do not change the user's global npm registry config during setup unless the user explicitly asks for a permanent mirror change.
 - Reconnect and create-new are separate branches. Once one branch is selected, ignore the other branch unless the user explicitly changes their choice.
 - Before taking any action, show one dry-run preview that covers install, config edits, expected restarts, and what the user must do after the restart.
 - Use one explicit approval for the entire disclosed flow. Do not ask for a second approval unless the scope materially changes.
@@ -82,17 +83,34 @@ Do not rely on the post-approval notice as the only place where restart and retu
 The dry-run preview must disclose:
 
 - package name: `@mem9/mem9`
+- install may use a one-shot `NPM_CONFIG_REGISTRY=https://registry.npmmirror.com` override when the default npm registry is slow or unreachable
 - only mem9 plugin config keys will be changed
 - reconnect path expects one restart after config is written and read back
 - create-new path expects one restart without `apiKey`; after the generated key is captured and written back to config, no second restart is needed
 - local history will not be uploaded by this setup flow
 - one short restart-and-return instruction in the user's language
 
-Install command:
+Before installing, detect npm registry reachability first. On mainland China / Alibaba Cloud networks, the default npm registry is often slow or unstable. Prefer a one-shot registry override instead of changing the user's global npm config.
+
+Install command sequence:
 
 ```bash
-openclaw plugins install @mem9/mem9
+NPMJS_TIME="$(curl -o /dev/null -sS --connect-timeout 2 --max-time 6 -w '%{time_total}' https://registry.npmjs.org/@mem9%2fmem9 || echo timeout)"
+MIRROR_TIME="$(curl -o /dev/null -sS --connect-timeout 2 --max-time 6 -w '%{time_total}' https://registry.npmmirror.com/@mem9%2fmem9 || echo timeout)"
+
+if [ "$MIRROR_TIME" != "timeout" ] && { [ "$NPMJS_TIME" = "timeout" ] || awk "BEGIN { exit !($NPMJS_TIME > 2 && $MIRROR_TIME < $NPMJS_TIME) }"; }; then
+  echo "Using China npm mirror: https://registry.npmmirror.com"
+  NPM_CONFIG_REGISTRY=https://registry.npmmirror.com openclaw plugins install @mem9/mem9
+else
+  openclaw plugins install @mem9/mem9
+fi
 ```
+
+Decision rule:
+
+- If the official npm registry times out, but `npmmirror` is reachable, treat that as a China-optimized network path and use `https://registry.npmmirror.com`.
+- If both registries are reachable, but the official registry is materially slower, prefer `npmmirror`.
+- Do not run `npm config set registry ...` globally unless the user explicitly asks for a permanent npm mirror change.
 
 Preflight failure rule:
 
@@ -101,6 +119,22 @@ Preflight failure rule:
 - In that case, stop before config edits or restart and use `TROUBLESHOOTING.md` from the same directory.
 - Do not improvise a new install branch after the dry-run.
 - A second approval is only acceptable if the original disclosed scope did not already cover local mem9 cleanup.
+
+### Required Post-Install Notice
+
+Immediately after install completes, and before any restart action or restart tool call, send a clear user-visible notice.
+
+Recommended notice content:
+
+```text
+✅ mem9 plugin installed. Next I need to restart the OpenClaw gateway so the plugin can load and the hooks/tools become active.
+
+The restart will take about 1 minute. After that, send me a message to confirm mem9 is functional.
+```
+
+- If the gateway will be restarted automatically through tools or exec, send this notice before issuing the restart action.
+- Do not rely on the final assistant reply as the first place this notice appears.
+- After the restart finishes, ask the user to wait about 1 minute and send a short message such as `hi`.
 
 ### Required Post-Approval Notice
 
