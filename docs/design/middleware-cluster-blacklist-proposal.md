@@ -47,7 +47,8 @@ network errors, etc.) continue to return 503 regardless of blacklist membership.
 Normal traffic on a blacklisted cluster is fully unaffected.
 
 No dynamic self-population. No TTL. Entries take effect on the next ConfigMap update
-+ pod rollout.
+
+- pod rollout.
 
 ## Changes
 
@@ -240,16 +241,19 @@ goes into the relevant overlay configmap patch, not the base (to allow per-env
 targeting).
 
 **`k8s/overlays/prod/configmap-patch.yaml`** (add one line):
+
 ```yaml
-MNEMO_CLUSTER_BLACKLIST: "10973956071757627506"
+MNEMO_CLUSTER_BLACKLIST: "<cluster_id_a>,<cluster_id_b>"
 ```
 
 **`k8s/overlays/dev/configmap-patch.yaml`** (only if testing in dev):
+
 ```yaml
-MNEMO_CLUSTER_BLACKLIST: "10973956071757627506"
+MNEMO_CLUSTER_BLACKLIST: "<cluster_id_a>,<cluster_id_b>"
 ```
 
 Apply + rollout:
+
 ```bash
 # prod
 kubectl --context mnemos-stack apply -k k8s/overlays/prod
