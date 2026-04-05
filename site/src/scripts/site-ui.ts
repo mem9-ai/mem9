@@ -23,6 +23,12 @@ type OnboardingCommandParts = {
 };
 
 const ONBOARDING_COMMAND_URL_PATTERN = /https:\/\/\S+/u;
+const PUBLIC_SKILL_ORIGIN = 'https://mem9.ai';
+const PUBLIC_SKILL_URLS = [
+  'https://mem9.ai/SKILL.md',
+  'https://mem9.ai/beta/SKILL.md',
+];
+const TRACKED_SKILL_PATHS = new Set(['/SKILL.md', '/beta/SKILL.md']);
 
 function getValue(dictionary: SiteDictionary, path: string): unknown {
   return path.split('.').reduce<unknown>((current, segment) => {
@@ -184,6 +190,100 @@ function splitOnboardingCommand(text: string): OnboardingCommandParts {
   return { prefix, url, suffix };
 }
 
+function currentUTMParams(): URLSearchParams {
+  const params = new URLSearchParams(window.location.search);
+  const filtered = new URLSearchParams();
+
+  for (const [key, value] of params.entries()) {
+    if (!key.startsWith('utm_') || value === '') {
+      continue;
+    }
+
+    filtered.set(key, value);
+  }
+
+  return filtered;
+}
+
+function resolveTrackableSkillUrl(rawHref: string): URL | null {
+  try {
+    const url = new URL(rawHref, window.location.origin);
+    const isSupportedOrigin = url.origin === PUBLIC_SKILL_ORIGIN || url.origin === window.location.origin;
+
+    if (!isSupportedOrigin || !TRACKED_SKILL_PATHS.has(url.pathname)) {
+      return null;
+    }
+
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function isAbsoluteUrl(rawHref: string): boolean {
+  return /^[a-z][a-z\d+\-.]*:/iu.test(rawHref);
+}
+
+function rewriteSkillHref(rawHref: string): string {
+  const url = resolveTrackableSkillUrl(rawHref);
+  if (!url) {
+    return rawHref;
+  }
+
+  const utmParams = currentUTMParams();
+  url.search = utmParams.toString();
+
+  if (!isAbsoluteUrl(rawHref)) {
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  return url.toString();
+}
+
+function baseSkillHref(rawHref: string): string {
+  const url = resolveTrackableSkillUrl(rawHref);
+  if (!url) {
+    return rawHref;
+  }
+
+  url.search = '';
+
+  if (!isAbsoluteUrl(rawHref)) {
+    return `${url.pathname}${url.hash}`;
+  }
+
+  return url.toString();
+}
+
+function rewriteSkillUrlsInText(text: string): string {
+  let next = text;
+
+  for (const rawHref of PUBLIC_SKILL_URLS) {
+    next = next.replaceAll(rawHref, rewriteSkillHref(rawHref));
+  }
+
+  return next;
+}
+
+function applyTrackedSkillLinks(): void {
+  document.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((link) => {
+    const baseHref = link.dataset.skillHrefBase ?? baseSkillHref(link.getAttribute('href') ?? '');
+    if (!baseHref) {
+      return;
+    }
+
+    if (!resolveTrackableSkillUrl(baseHref)) {
+      return;
+    }
+
+    if (!link.dataset.skillHrefBase) {
+      link.dataset.skillHrefBase = baseHref;
+    }
+
+    link.setAttribute('href', rewriteSkillHref(baseHref));
+  });
+}
+
 function renderOnboardingCommand(element: HTMLElement, text: string): void {
   const { prefix, url, suffix } = splitOnboardingCommand(text);
   element.replaceChildren();
@@ -337,6 +437,7 @@ function applyOnboardingVersion(version: OnboardingVersion): void {
   const nextText = version === 'beta' ? betaText : stableText;
 
   renderOnboardingCommand(command, nextText);
+  applyTrackedSkillLinks();
   copyButton.dataset.copyText = nextText;
 
   if (version === 'beta') {
@@ -431,9 +532,11 @@ function applyLocale(locale: SiteLocale): void {
 
   const command = document.querySelector<HTMLElement>('[data-onboarding-command]');
   if (command) {
-    command.dataset.commandStable = dictionary.hero.onboardingCommandStable;
-    command.dataset.commandBeta = dictionary.hero.onboardingCommandBeta;
+    command.dataset.commandStable = rewriteSkillUrlsInText(dictionary.hero.onboardingCommandStable);
+    command.dataset.commandBeta = rewriteSkillUrlsInText(dictionary.hero.onboardingCommandBeta);
   }
+
+  applyTrackedSkillLinks();
   applyOnboardingVersion(currentOnboardingVersion());
   syncControlLabels(locale, currentThemePreference());
 

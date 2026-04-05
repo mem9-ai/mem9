@@ -126,7 +126,7 @@ Agent identity: `X-Mnemo-Agent-Id` header.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/v1alpha1/mem9s` | Provision tenant (no auth). Returns `{ "id" }`. |
+| `POST` | `/v1alpha1/mem9s` | Provision tenant (no auth). Returns `{ "id" }`. Accepts optional `utm_*` query params for attribution logging. |
 | `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy unified write endpoint. Tenant key travels in the URL path. |
 | `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy search endpoint for `tenantID`-configured clients. |
 | `GET` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy get-by-id endpoint. |

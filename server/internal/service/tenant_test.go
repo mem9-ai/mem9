@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
+	"github.com/qiffang/mnemos/server/internal/reqid"
 	"github.com/qiffang/mnemos/server/internal/tenant"
 )
 
@@ -66,7 +69,7 @@ func TestProvisionRejectsNonTiDBBackend(t *testing.T) {
 
 	enc := encrypt.NewPlainEncryptor()
 	svc := NewTenantService(nil, nil, pool, nil, "", 0, false, enc)
-	_, err := svc.Provision(context.Background())
+	_, err := svc.Provision(context.Background(), ProvisionRequest{})
 	if err == nil {
 		t.Fatal("expected validation error for non-tidb backend")
 	}
@@ -96,13 +99,13 @@ func TestProvision_WithEncryptor(t *testing.T) {
 	// Create mock provisioner that returns known password
 	mockProv := &mockProvisioner{
 		info: &tenant.ClusterInfo{
-			ID:       testTenantID,
+			ID:        testTenantID,
 			ClusterID: testTenantID,
-			Host:     "test-host",
-			Port:     4000,
-			Username: "root",
-			Password: testPassword,
-			DBName:   "test",
+			Host:      "test-host",
+			Port:      4000,
+			Username:  "root",
+			Password:  testPassword,
+			DBName:    "test",
 		},
 	}
 
@@ -118,7 +121,7 @@ func TestProvision_WithEncryptor(t *testing.T) {
 	svc := NewTenantService(mockRepo, mockProv, pool, logger, "", 0, false, enc)
 
 	// Call Provision
-	_, err := svc.Provision(context.Background())
+	_, err := svc.Provision(context.Background(), ProvisionRequest{})
 	// Expect error because pool.Get will fail (no real DB), but we can verify the flow
 	// Actually, we need to verify what was stored vs what DSN would use
 
@@ -145,9 +148,13 @@ func TestProvision_WithEncryptor(t *testing.T) {
 // mockProvisioner is a test double for tenant.Provisioner
 type mockProvisioner struct {
 	info *tenant.ClusterInfo
+	err  error
 }
 
 func (m *mockProvisioner) Provision(ctx context.Context) (*tenant.ClusterInfo, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
 	return m.info, nil
 }
 
@@ -183,6 +190,179 @@ func (m *mockTenantRepo) UpdateStatus(ctx context.Context, id string, status dom
 
 func (m *mockTenantRepo) UpdateSchemaVersion(ctx context.Context, id string, version int) error {
 	return nil
+}
+
+type mockPool struct {
+	backend string
+	db      *sql.DB
+	err     error
+}
+
+func (m *mockPool) Backend() string {
+	return m.backend
+}
+
+func (m *mockPool) Get(ctx context.Context, tenantID, dsn string) (*sql.DB, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.db, nil
+}
+
+func decodeJSONLogs(t *testing.T, buf *bytes.Buffer) []map[string]any {
+	t.Helper()
+
+	raw := strings.TrimSpace(buf.String())
+	if raw == "" {
+		t.Fatal("expected logs, got none")
+	}
+
+	lines := strings.Split(raw, "\n")
+	entries := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("decode log line %q: %v", line, err)
+		}
+		entries = append(entries, entry)
+	}
+
+	return entries
+}
+
+func findLogEntry(t *testing.T, entries []map[string]any, message string) map[string]any {
+	t.Helper()
+
+	for _, entry := range entries {
+		if entry["msg"] == message {
+			return entry
+		}
+	}
+
+	t.Fatalf("log entry %q not found", message)
+	return nil
+}
+
+func TestProvision_LogsUTMOnSuccess(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := slog.New(reqid.NewHandler(slog.NewJSONHandler(&buf, nil)))
+	svc := NewTenantService(
+		&mockTenantRepo{},
+		&mockProvisioner{
+			info: &tenant.ClusterInfo{
+				ID:        "tenant-utm-success",
+				ClusterID: "cluster-utm-success",
+				Host:      "test-host",
+				Port:      4000,
+				Username:  "root",
+				Password:  "plaintext-password",
+				DBName:    "mnemo",
+			},
+		},
+		&mockPool{backend: "tidb", db: &sql.DB{}},
+		logger,
+		"",
+		0,
+		false,
+		encrypt.NewPlainEncryptor(),
+	)
+
+	ctx := reqid.NewContext(context.Background(), "req-success")
+	result, err := svc.Provision(ctx, ProvisionRequest{
+		UTM: map[string]string{
+			"utm_source":   "bosn",
+			"utm_campaign": "spring",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Provision() error: %v", err)
+	}
+	if result == nil || result.ID != "tenant-utm-success" {
+		t.Fatalf("Provision() result = %#v", result)
+	}
+
+	entries := decodeJSONLogs(t, &buf)
+	start := findLogEntry(t, entries, "tenant provision start")
+	if start["request_id"] != "req-success" {
+		t.Fatalf("start request_id = %v, want req-success", start["request_id"])
+	}
+	startUTM, ok := start["utm"].(map[string]any)
+	if !ok {
+		t.Fatalf("start utm = %#v, want object", start["utm"])
+	}
+	if startUTM["utm_source"] != "bosn" || startUTM["utm_campaign"] != "spring" {
+		t.Fatalf("start utm = %#v", startUTM)
+	}
+
+	complete := findLogEntry(t, entries, "tenant provision complete")
+	if complete["request_id"] != "req-success" {
+		t.Fatalf("complete request_id = %v, want req-success", complete["request_id"])
+	}
+	if complete["tenant_id"] != "tenant-utm-success" {
+		t.Fatalf("complete tenant_id = %v, want tenant-utm-success", complete["tenant_id"])
+	}
+	completeUTM, ok := complete["utm"].(map[string]any)
+	if !ok {
+		t.Fatalf("complete utm = %#v, want object", complete["utm"])
+	}
+	if completeUTM["utm_source"] != "bosn" || completeUTM["utm_campaign"] != "spring" {
+		t.Fatalf("complete utm = %#v", completeUTM)
+	}
+}
+
+func TestProvision_LogsUTMOnFailure(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := slog.New(reqid.NewHandler(slog.NewJSONHandler(&buf, nil)))
+	svc := NewTenantService(
+		&mockTenantRepo{},
+		&mockProvisioner{
+			info: &tenant.ClusterInfo{
+				ID:        "tenant-utm-failure",
+				ClusterID: "cluster-utm-failure",
+				Host:      "test-host",
+				Port:      4000,
+				Username:  "root",
+				Password:  "plaintext-password",
+				DBName:    "mnemo",
+			},
+		},
+		&mockPool{backend: "tidb", err: errors.New("db unavailable")},
+		logger,
+		"",
+		0,
+		false,
+		encrypt.NewPlainEncryptor(),
+	)
+
+	ctx := reqid.NewContext(context.Background(), "req-failure")
+	_, err := svc.Provision(ctx, ProvisionRequest{
+		UTM: map[string]string{
+			"utm_source": "bosn",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected Provision() to fail")
+	}
+
+	entries := decodeJSONLogs(t, &buf)
+	failure := findLogEntry(t, entries, "tenant provision failed")
+	if failure["request_id"] != "req-failure" {
+		t.Fatalf("failure request_id = %v, want req-failure", failure["request_id"])
+	}
+	if failure["tenant_id"] != "tenant-utm-failure" {
+		t.Fatalf("failure tenant_id = %v, want tenant-utm-failure", failure["tenant_id"])
+	}
+	failureUTM, ok := failure["utm"].(map[string]any)
+	if !ok {
+		t.Fatalf("failure utm = %#v, want object", failure["utm"])
+	}
+	if failureUTM["utm_source"] != "bosn" {
+		t.Fatalf("failure utm = %#v", failureUTM)
+	}
 }
 
 func TestBuildDB9MemorySchema(t *testing.T) {

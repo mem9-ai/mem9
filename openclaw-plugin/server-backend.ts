@@ -18,19 +18,32 @@ export class ServerBackend implements MemoryBackend {
   private baseUrl: string;
   private apiKey: string;
   private agentName: string;
+  private provisionQueryParams: Record<string, string>;
 
   constructor(
     apiUrl: string,
     apiKey: string,
     agentName: string,
+    provisionQueryParams: Record<string, string> = {},
   ) {
     this.baseUrl = apiUrl.replace(/\/+$/, "");
     this.apiKey = apiKey;
     this.agentName = agentName;
+    this.provisionQueryParams = provisionQueryParams;
   }
 
   async register(): Promise<ProvisionMem9sResponse> {
-    const resp = await fetch(this.baseUrl + "/v1alpha1/mem9s", {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(this.provisionQueryParams)) {
+      if (!key.startsWith("utm_") || typeof value !== "string" || value === "") {
+        continue;
+      }
+
+      query.set(key, value);
+    }
+
+    const qs = query.toString();
+    const resp = await fetch(this.baseUrl + "/v1alpha1/mem9s" + (qs ? `?${qs}` : ""), {
       method: "POST",
       signal: AbortSignal.timeout(8_000),
     });

@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.32
+version: 1.0.33
 homepage: "https://mem9.ai/openclaw-memory"
 description: "Persistent cloud memory for OpenClaw with cross-session recall, explicit remember/save flows, shared spaces, hybrid search, and a visual dashboard."
 keywords: ["mem9", "openclaw memory", "persistent memory", "long-term memory", "cloud memory", "agent memory", "shared memory", "multi-agent memory", "cross-session memory", "semantic memory", "hybrid search", "context engine", "memory plugin", "setup mem9", "install mem9", "remember this", "save this", "recall memory", "forget that"]
@@ -28,7 +28,10 @@ This file is the top-level routing entry for mem9. Route first-run onboarding to
 
 - Official source: [mem9-ai/mem9](https://github.com/mem9-ai/mem9) and [mem9.ai](https://mem9.ai/).
 - Default network scope: setup uses `https://api.mem9.ai` unless the user explicitly chooses another `apiUrl`.
+- Runtime responsibility: installed mem9 plugins contain the actual server integration, default base URL handling, and request logic. This top-level `SKILL.md` is a routing and safety document, not the canonical backend API reference.
+- Manual or self-hosted reference: for exact request behavior, config fields, and endpoint details, use the plugin README or local source that matches the active client. For OpenClaw, see `openclaw-plugin/README.md`.
 - Config scope: only the active `openclaw.json` entries needed for the mem9 plugin may be changed.
+- Attribution scope: if this skill is loaded remotely from a `SKILL.md` URL that includes `utm_*` query params and the user chooses create-new, setup may temporarily copy those same filtered `utm_*` pairs into `plugins.entries.mem9.config.provisionQueryParams` for the first auto-provision request only.
 - OpenClaw identifiers: plugin id `mem9`, package `@mem9/mem9`.
 - Install impact: setup installs `@mem9/mem9`, writes plugin config, and restarts OpenClaw.
 - History import scope: this public skill does not scan or upload local memory/session files. Historical import stays manual through the dashboard or another reviewed workflow.
@@ -41,6 +44,7 @@ Only these `openclaw.json` paths may be changed during setup:
 - `plugins.entries.mem9.enabled`
 - `plugins.entries.mem9.config.apiUrl`
 - `plugins.entries.mem9.config.apiKey`
+- `plugins.entries.mem9.config.provisionQueryParams` (create-new only, and only when the remote `SKILL.md` URL contains `utm_*`)
 - `plugins.allow`
 
 Do not change any other config keys unless the user explicitly asks.

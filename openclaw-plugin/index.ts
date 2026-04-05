@@ -256,7 +256,12 @@ const mnemoPlugin = {
       api.logger.info("[mem9] tenantID is deprecated; treating it as apiKey for v1alpha2");
     }
     const registerTenant = async (agentName: string): Promise<string> => {
-      const backend = new ServerBackend(effectiveApiUrl, "", agentName);
+      const backend = new ServerBackend(
+        effectiveApiUrl,
+        "",
+        agentName,
+        cfg.provisionQueryParams ?? {},
+      );
       const result = await backend.register();
       api.logger.info(
         `[mem9] *** Auto-provisioned apiKey=${result.id} *** Save this to your config as apiKey`

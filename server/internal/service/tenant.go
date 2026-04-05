@@ -11,13 +11,19 @@ import (
 	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/repository"
+	"github.com/qiffang/mnemos/server/internal/reqid"
 	"github.com/qiffang/mnemos/server/internal/tenant"
 )
+
+type tenantDBPool interface {
+	Backend() string
+	Get(ctx context.Context, tenantID, dsn string) (*sql.DB, error)
+}
 
 type TenantService struct {
 	tenants     repository.TenantRepo
 	provisioner tenant.Provisioner
-	pool        *tenant.TenantPool
+	pool        tenantDBPool
 	logger      *slog.Logger
 	autoModel   string
 	autoDims    int
@@ -28,7 +34,7 @@ type TenantService struct {
 func NewTenantService(
 	tenants repository.TenantRepo,
 	provisioner tenant.Provisioner,
-	pool *tenant.TenantPool,
+	pool tenantDBPool,
 	logger *slog.Logger,
 	autoModel string,
 	autoDims int,
@@ -52,19 +58,72 @@ type ProvisionResult struct {
 	ID string `json:"id"`
 }
 
+type ProvisionRequest struct {
+	UTM map[string]string `json:"utm,omitempty"`
+}
+
+func (s *TenantService) logProvisionStart(ctx context.Context, req ProvisionRequest) {
+	if s.logger == nil {
+		return
+	}
+
+	s.logger.Info("tenant provision start",
+		"request_id", reqid.FromContext(ctx),
+		"utm", req.UTM,
+	)
+}
+
+func (s *TenantService) logProvisionComplete(ctx context.Context, tenantID string, req ProvisionRequest) {
+	if s.logger == nil {
+		return
+	}
+
+	s.logger.Info("tenant provision complete",
+		"request_id", reqid.FromContext(ctx),
+		"tenant_id", tenantID,
+		"utm", req.UTM,
+	)
+}
+
+func (s *TenantService) logProvisionFailure(ctx context.Context, tenantID string, req ProvisionRequest, err error) {
+	if s.logger == nil {
+		return
+	}
+
+	attrs := []any{
+		"request_id", reqid.FromContext(ctx),
+		"utm", req.UTM,
+		"err", err,
+	}
+	if tenantID != "" {
+		attrs = append(attrs, "tenant_id", tenantID)
+	}
+
+	s.logger.Error("tenant provision failed", attrs...)
+}
+
 // Provision creates a new cluster and registers it as a tenant.
-func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error) {
+func (s *TenantService) Provision(ctx context.Context, req ProvisionRequest) (*ProvisionResult, error) {
+	s.logProvisionStart(ctx, req)
+
 	if s.pool == nil {
-		return nil, fmt.Errorf("tenant pool not configured")
+		err := fmt.Errorf("tenant pool not configured")
+		s.logProvisionFailure(ctx, "", req, err)
+		return nil, err
 	}
 	if s.pool.Backend() != "tidb" {
-		return nil, &domain.ValidationError{Message: fmt.Sprintf("auto-provisioning requires tidb backend; got %q", s.pool.Backend())}
+		err := &domain.ValidationError{Message: fmt.Sprintf("auto-provisioning requires tidb backend; got %q", s.pool.Backend())}
+		s.logProvisionFailure(ctx, "", req, err)
+		return nil, err
 	}
 	if s.provisioner == nil {
-		return nil, &domain.ValidationError{Message: "provisioning not configured"}
+		err := &domain.ValidationError{Message: "provisioning not configured"}
+		s.logProvisionFailure(ctx, "", req, err)
+		return nil, err
 	}
 
 	total := time.Now()
+	tenantID := ""
 
 	// Step 1: Acquire cluster from provisioner
 	t0 := time.Now()
@@ -75,13 +134,16 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	metrics.ProvisionStepDuration.WithLabelValues("cluster_acquire_" + providerType).Observe(elapsed.Seconds())
 	if err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
+		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("provision cluster: %w", err)
 	}
+	tenantID = info.ID
 
 	// Encrypt password before storing
 	encryptedPassword, err := s.encryptor.Encrypt(ctx, info.Password)
 	if err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
+		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("encrypt tenant password: %w", err)
 	}
 
@@ -111,6 +173,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 			"cluster_id", info.ClusterID,
 			"provider", providerType,
 			"err", err)
+		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("create tenant record: %w", err)
 	}
 	elapsed = time.Since(t0)
@@ -124,6 +187,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	db, err := s.pool.Get(ctx, info.ID, plainTenant.DSNForBackend(s.pool.Backend()))
 	if err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
+		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("get tenant db: %w", err)
 	}
 
@@ -133,6 +197,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 			s.logger.Error("tenant schema init failed", "tenant_id", info.ID, "err", err)
 		}
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
+		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("init tenant schema: %w", err)
 	}
 	elapsed = time.Since(t0)
@@ -142,6 +207,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	t0 = time.Now()
 	if err := s.tenants.UpdateSchemaVersion(ctx, info.ID, 1); err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
+		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("update schema version: %w", err)
 	}
 	elapsed = time.Since(t0)
@@ -151,6 +217,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	t0 = time.Now()
 	if err := s.tenants.UpdateStatus(ctx, info.ID, domain.TenantActive); err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
+		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("activate tenant: %w", err)
 	}
 	elapsed = time.Since(t0)
@@ -161,6 +228,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	s.logger.Info("provision step", "step", "total", "duration_ms", totalElapsed.Milliseconds(), "tenant_id", info.ID)
 	metrics.ProvisionStepDuration.WithLabelValues("total").Observe(totalElapsed.Seconds())
 	metrics.ProvisionTotal.WithLabelValues("success").Inc()
+	s.logProvisionComplete(ctx, info.ID, req)
 
 	return &ProvisionResult{
 		ID: info.ID,

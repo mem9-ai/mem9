@@ -1,6 +1,6 @@
 # OpenClaw Plugin for mem9
 
-Memory plugin for [OpenClaw](https://github.com/openclaw) — replaces the built-in memory slot with cloud-persistent shared memory. Runs in server mode only, connecting to `mnemo-server` via `apiUrl` + `apiKey` (preferred) or legacy `tenantID`.
+Memory plugin for [OpenClaw](https://github.com/openclaw) — replaces the built-in memory slot with cloud-persistent shared memory. Runs in server mode only, connecting to `mnemo-server` via `apiUrl` + `apiKey` (preferred) or legacy `tenantID`. Optional `provisionQueryParams` can forward `utm_*` attribution only during first-time auto-provisioning.
 
 ## 🚀 Quick Start (Server Mode)
 
@@ -173,9 +173,10 @@ Defined in `openclaw.plugin.json`:
 |---|---|---|
 | `apiUrl` | string | mnemo-server URL |
 | `apiKey` | string | Preferred key. Uses `/v1alpha2/mem9s/...` with `X-API-Key` header |
+| `provisionQueryParams` | object | Optional `utm_*` map forwarded only to the initial `POST /v1alpha1/mem9s` auto-provision request when `apiKey` is absent |
 | `tenantID` | string | Legacy alias for `apiKey`. The plugin still uses `/v1alpha2/mem9s/...` with `X-API-Key`. |
 
-> **Note**: `apiKey` takes precedence when both fields are set. If only `tenantID` is present, the plugin treats it as a legacy alias for `apiKey`, still uses v1alpha2, and logs a deprecation warning once at startup.
+> **Note**: `apiKey` takes precedence when both fields are set. If only `tenantID` is present, the plugin treats it as a legacy alias for `apiKey`, still uses v1alpha2, and logs a deprecation warning once at startup. `provisionQueryParams` is ignored after an `apiKey` is already configured, and non-`utm_*` keys are dropped before the provision request is sent.
 
 ## File Structure
 

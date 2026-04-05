@@ -32,6 +32,13 @@ When this file is read, send ONLY the choice prompt below. Do not include enviro
 - Reconnect source of truth: `USER_PROVIDED_MEM9_API_KEY`
 - Create-new source of truth: `AUTO_PROVISIONED_MEM9_API_KEY`
 
+## Attribution Rule
+
+- If this setup flow was reached from a remotely loaded `SKILL.md` URL that contains query params whose keys start with `utm_`, and the user chooses create-new, copy those same filtered `utm_*` pairs into `plugins.entries.mem9.config.provisionQueryParams` before the first restart.
+- Copy only `utm_*` keys. Do not copy non-UTM query params.
+- Do not add or modify `provisionQueryParams` in reconnect mode.
+- If no `utm_*` params are present on the current remote `SKILL.md` URL, leave `provisionQueryParams` absent.
+
 ## Step 0 — Choose Create Or Reconnect
 
 - If the user chooses reconnect, lock the flow to reconnect, store the pasted value as `USER_PROVIDED_MEM9_API_KEY`, and continue.
@@ -142,6 +149,7 @@ Before writing `openclaw.json`:
 - Show the exact keys that will change
 - Preserve unrelated config keys
 - Use the approval already obtained in Step 0 unless the scope changed
+- If create-new started from a remote `SKILL.md` URL with `utm_*` params, include `plugins.entries.mem9.config.provisionQueryParams` in the disclosed key list
 
 ### Reconnect Existing API Key
 
@@ -191,6 +199,7 @@ Effective changes for OpenClaw `>= 2.2.0`:
 - `plugins.entries.mem9.enabled = true`
 - `plugins.entries.mem9.config.apiUrl = "https://api.mem9.ai"` unless the user chose another `apiUrl`
 - Leave `plugins.entries.mem9.config.apiKey` absent for the first restart
+- If the current remote `SKILL.md` URL has `utm_*`, set `plugins.entries.mem9.config.provisionQueryParams` to the same filtered `utm_*` map for the first restart
 - `plugins.allow` includes `"mem9"`
 
 Create-new hard rules:
@@ -213,6 +222,26 @@ Minimal shape if creating a fresh file:
       }
     },
     "allow": ["mem9"]
+  }
+}
+```
+
+If remote-skill `utm_*` params are present, add them under `config.provisionQueryParams` before the first restart, for example:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "mem9": {
+        "config": {
+          "apiUrl": "https://api.mem9.ai",
+          "provisionQueryParams": {
+            "utm_source": "bosn",
+            "utm_campaign": "spring"
+          }
+        }
+      }
+    }
   }
 }
 ```
