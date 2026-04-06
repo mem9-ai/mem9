@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +17,28 @@ import (
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/service"
+)
+
+var (
+	answerQuotedRe      = regexp.MustCompile(`"[^"]+"`)
+	answerAcronymRe     = regexp.MustCompile(`\b[A-Z]{2,}(?:[+-][A-Z0-9]+)*\b`)
+	answerNumberRe      = regexp.MustCompile(`\b\d+\b`)
+	answerYearRe        = regexp.MustCompile(`\b(?:19|20)\d{2}\b`)
+	answerTitleCaseRe   = regexp.MustCompile(`\b[A-Z][a-z]+(?:['-][A-Za-z]+)*(?:\s+[A-Z][a-z]+(?:['-][A-Za-z]+)*)*\b`)
+	answerLocationCueRe = regexp.MustCompile(`\b(?:in|at|from|to|near|around|outside|inside)\s+[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2}\b`)
+	answerCountWordRe   = regexp.MustCompile(`\b(?:one|two|three|four|five|six|seven|eight|nine|ten|couple|few|several)\b`)
+	answerVaguePlaceRe  = regexp.MustCompile(`\b(?:home country|the area|the region|somewhere|another city)\b`)
+)
+
+type groundingAnswerShape int
+
+const (
+	groundingAnswerShapeNone groundingAnswerShape = iota
+	groundingAnswerShapeCount
+	groundingAnswerShapeEntity
+	groundingAnswerShapeLocation
+	groundingAnswerShapeTime
+	groundingAnswerShapeExact
 )
 
 type createMemoryRequest struct {
@@ -267,6 +291,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("session grounding search failed", "cluster_id", auth.ClusterID, "err", sessErr)
 		} else {
 			memories = blendMemoriesWithSessionGrounding(memories, sessionMems, limit)
+			memories = rerankGroundedMemories(filter.Query, memories)
 			total = len(memories)
 		}
 	}
@@ -426,6 +451,172 @@ func blendMemoriesWithSessionGrounding(primary, supplemental []domain.Memory, li
 	}
 
 	return blended
+}
+
+func rerankGroundedMemories(query string, mems []domain.Memory) []domain.Memory {
+	shape := classifyGroundingAnswerShape(query)
+	if shape == groundingAnswerShapeNone || len(mems) < 2 {
+		return mems
+	}
+
+	window := len(mems)
+	if window > 8 {
+		window = 8
+	}
+
+	type scoredMemory struct {
+		mem   domain.Memory
+		index int
+		score float64
+	}
+
+	scored := make([]scoredMemory, 0, window)
+	for i, mem := range mems[:window] {
+		scored = append(scored, scoredMemory{
+			mem:   mem,
+			index: i,
+			score: groundedMemoryScore(shape, mem, i),
+		})
+	}
+
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].score == scored[j].score {
+			return scored[i].index < scored[j].index
+		}
+		return scored[i].score > scored[j].score
+	})
+
+	out := make([]domain.Memory, 0, len(mems))
+	for _, item := range scored {
+		out = append(out, item.mem)
+	}
+	out = append(out, mems[window:]...)
+	return out
+}
+
+func classifyGroundingAnswerShape(query string) groundingAnswerShape {
+	lower := strings.ToLower(strings.TrimSpace(query))
+	switch {
+	case strings.HasPrefix(lower, "how many"), strings.HasPrefix(lower, "how much"):
+		return groundingAnswerShapeCount
+	case strings.HasPrefix(lower, "who "), strings.HasPrefix(lower, "which "):
+		return groundingAnswerShapeEntity
+	case strings.HasPrefix(lower, "where "):
+		return groundingAnswerShapeLocation
+	case strings.HasPrefix(lower, "when "):
+		return groundingAnswerShapeTime
+	case strings.HasPrefix(lower, "what "):
+		return groundingAnswerShapeExact
+	default:
+		return groundingAnswerShapeNone
+	}
+}
+
+func groundedMemoryScore(shape groundingAnswerShape, mem domain.Memory, index int) float64 {
+	score := -float64(index) * 0.08
+	if mem.Score != nil {
+		score += *mem.Score * 0.02
+	}
+	if mem.MemoryType == domain.TypeInsight {
+		score += 0.03
+	}
+	score += groundedAnswerSignalBonus(shape, mem.Content)
+	return score
+}
+
+func groundedAnswerSignalBonus(shape groundingAnswerShape, content string) float64 {
+	lower := strings.ToLower(content)
+	wordCount := len(strings.Fields(content))
+	entitySignals := answerEntitySignalCount(content)
+
+	bonus := 0.0
+	if wordCount > 0 && wordCount <= 18 {
+		bonus += 0.05
+	}
+
+	switch shape {
+	case groundingAnswerShapeCount:
+		if answerNumberRe.MatchString(content) {
+			bonus += 0.45
+		}
+		if answerCountWordRe.MatchString(lower) {
+			bonus += 0.20
+		}
+		if strings.Contains(content, ",") || strings.Contains(lower, " and ") {
+			bonus += 0.10
+		}
+	case groundingAnswerShapeEntity:
+		if entitySignals > 1 {
+			bonus += 0.30
+		}
+		if answerQuotedRe.MatchString(content) || answerAcronymRe.MatchString(content) {
+			bonus += 0.15
+		}
+	case groundingAnswerShapeLocation:
+		if answerLocationCueRe.MatchString(content) {
+			bonus += 0.25
+		}
+		if entitySignals > 1 {
+			bonus += 0.20
+		}
+		if answerVaguePlaceRe.MatchString(lower) {
+			bonus -= 0.20
+		}
+	case groundingAnswerShapeTime:
+		if answerYearRe.MatchString(content) {
+			bonus += 0.25
+		}
+		if containsMonthName(lower) {
+			bonus += 0.20
+		}
+		if answerNumberRe.MatchString(content) {
+			bonus += 0.10
+		}
+	case groundingAnswerShapeExact:
+		if entitySignals > 1 {
+			bonus += 0.25
+		}
+		if answerQuotedRe.MatchString(content) {
+			bonus += 0.20
+		}
+		if answerAcronymRe.MatchString(content) {
+			bonus += 0.15
+		}
+		if wordCount > 0 && wordCount <= 12 {
+			bonus += 0.12
+		}
+	}
+
+	return bonus
+}
+
+func answerEntitySignalCount(content string) int {
+	signals := make(map[string]struct{})
+	for _, match := range answerTitleCaseRe.FindAllString(content, -1) {
+		signals[match] = struct{}{}
+	}
+	for _, match := range answerQuotedRe.FindAllString(content, -1) {
+		signals[match] = struct{}{}
+	}
+	for _, match := range answerAcronymRe.FindAllString(content, -1) {
+		signals[match] = struct{}{}
+	}
+	return len(signals)
+}
+
+func containsMonthName(lower string) bool {
+	switch {
+	case strings.Contains(lower, "january"), strings.Contains(lower, "february"), strings.Contains(lower, "march"):
+		return true
+	case strings.Contains(lower, "april"), strings.Contains(lower, "may "), strings.Contains(lower, "june"), strings.Contains(lower, "july"):
+		return true
+	case strings.Contains(lower, "august"), strings.Contains(lower, "september"), strings.Contains(lower, "october"):
+		return true
+	case strings.Contains(lower, "november"), strings.Contains(lower, "december"):
+		return true
+	default:
+		return false
+	}
 }
 
 func trimUniqueMemories(mems []domain.Memory, limit int) []domain.Memory {

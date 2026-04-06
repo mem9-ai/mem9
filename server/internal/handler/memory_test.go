@@ -478,3 +478,47 @@ func TestListMemories_QueryWithSessionID_BlendsSessionGrounding(t *testing.T) {
 		t.Fatalf("expected session grounding in final slot, got %q", resp.Memories[2].ID)
 	}
 }
+
+func TestRerankGroundedMemories_LeavesGeneralQueriesUntouched(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "m1", Content: "John enjoys hiking with friends.", MemoryType: domain.TypeInsight},
+		{ID: "m2", Content: "John likes outdoor activities.", MemoryType: domain.TypeInsight},
+		{ID: "s1", Content: "[dia:D1:3] John bought Under Armour boots last week.", MemoryType: domain.TypeSession},
+	}
+
+	got := rerankGroundedMemories("tell me about john", mems)
+	if len(got) != len(mems) {
+		t.Fatalf("expected %d memories, got %d", len(mems), len(got))
+	}
+	for i := range got {
+		if got[i].ID != mems[i].ID {
+			t.Fatalf("expected order to stay unchanged, got %q at slot %d", got[i].ID, i)
+		}
+	}
+}
+
+func TestRerankGroundedMemories_PrefersCanonicalEntityForExactQuery(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "m1", Content: "John likes a renowned outdoor gear company.", MemoryType: domain.TypeInsight},
+		{ID: "m2", Content: "John bought Under Armour boots last week.", MemoryType: domain.TypeSession},
+		{ID: "m3", Content: "John likes outdoor gear in general.", MemoryType: domain.TypeInsight},
+	}
+
+	got := rerankGroundedMemories("what company does john like", mems)
+	if got[0].ID != "m2" {
+		t.Fatalf("expected canonical named answer to move first, got %q", got[0].ID)
+	}
+}
+
+func TestRerankGroundedMemories_PrefersQuantifiedEvidenceForCountQuery(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "m1", Content: "Melanie often goes to the beach.", MemoryType: domain.TypeInsight},
+		{ID: "m2", Content: "Melanie went to the beach 3 times in 2023.", MemoryType: domain.TypeSession},
+		{ID: "m3", Content: "Melanie enjoys beach trips with friends.", MemoryType: domain.TypeInsight},
+	}
+
+	got := rerankGroundedMemories("how many times has melanie gone to the beach in 2023", mems)
+	if got[0].ID != "m2" {
+		t.Fatalf("expected quantified evidence to move first, got %q", got[0].ID)
+	}
+}
