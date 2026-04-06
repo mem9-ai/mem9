@@ -20,7 +20,8 @@ import (
 
 // testMemoryRepo is a minimal MemoryRepo mock for handler tests.
 type testMemoryRepo struct {
-	createCalls []*domain.Memory
+	createCalls          []*domain.Memory
+	keywordSearchResults []domain.Memory
 }
 
 func (m *testMemoryRepo) Create(_ context.Context, mem *domain.Memory) error {
@@ -59,7 +60,7 @@ func (m *testMemoryRepo) AutoVectorSearch(context.Context, string, domain.Memory
 }
 
 func (m *testMemoryRepo) KeywordSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
-	return nil, nil
+	return append([]domain.Memory(nil), m.keywordSearchResults...), nil
 }
 
 func (m *testMemoryRepo) FTSSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
@@ -78,9 +79,10 @@ func (m *testMemoryRepo) CountStats(context.Context) (int64, int64, error) { ret
 
 // testSessionRepo is a minimal SessionRepo mock for handler tests.
 type testSessionRepo struct {
-	bulkCreateCalled bool
-	patchTagsCalled  bool
-	sessions         []*domain.Session // captured from BulkCreate
+	bulkCreateCalled     bool
+	patchTagsCalled      bool
+	sessions             []*domain.Session // captured from BulkCreate
+	keywordSearchResults []domain.Memory
 }
 
 func (s *testSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Session) error {
@@ -107,7 +109,7 @@ func (s *testSessionRepo) FTSSearch(context.Context, string, domain.MemoryFilter
 }
 
 func (s *testSessionRepo) KeywordSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
-	return nil, nil
+	return append([]domain.Memory(nil), s.keywordSearchResults...), nil
 }
 func (s *testSessionRepo) FTSAvailable() bool { return false }
 func (s *testSessionRepo) ListBySessionIDs(context.Context, []string, int) ([]*domain.Session, error) {
@@ -160,6 +162,44 @@ func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCreateMemory_SyncContent_WithSessionID_PersistsRawSession(t *testing.T) {
+	sessRepo := &testSessionRepo{}
+	srv := newTestServer(&testMemoryRepo{}, sessRepo)
+
+	body := map[string]any{
+		"content":    "[speaker:Speaker 2] hello there",
+		"session_id": "session-123",
+		"metadata": map[string]any{
+			"speaker":    "Speaker 2",
+			"turn_index": 7,
+		},
+		"sync": true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !sessRepo.bulkCreateCalled {
+		t.Fatal("expected session bulk create to be called")
+	}
+	if len(sessRepo.sessions) != 1 {
+		t.Fatalf("expected 1 session row, got %d", len(sessRepo.sessions))
+	}
+	if sessRepo.sessions[0].SessionID != "session-123" {
+		t.Fatalf("expected session_id=session-123, got %q", sessRepo.sessions[0].SessionID)
+	}
+	if sessRepo.sessions[0].Role != "assistant" {
+		t.Fatalf("expected assistant role, got %q", sessRepo.sessions[0].Role)
+	}
+	if sessRepo.sessions[0].Seq != 7 {
+		t.Fatalf("expected seq=7, got %d", sessRepo.sessions[0].Seq)
 	}
 }
 
@@ -400,5 +440,41 @@ func TestCreateMemory_SyncMessages_ReconcileFailure_Returns500(t *testing.T) {
 
 	if rr.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestListMemories_QueryWithSessionID_BlendsSessionGrounding(t *testing.T) {
+	memRepo := &testMemoryRepo{
+		keywordSearchResults: []domain.Memory{
+			{ID: "m1", Content: "insight one"},
+			{ID: "m2", Content: "insight two"},
+			{ID: "m3", Content: "insight three"},
+		},
+	}
+	sessRepo := &testSessionRepo{
+		keywordSearchResults: []domain.Memory{
+			{ID: "s1", Content: "[dia:D1:3] raw turn one", MemoryType: domain.TypeSession},
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q=who&session_id=session-123&limit=3", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) != 3 {
+		t.Fatalf("expected 3 memories, got %d", len(resp.Memories))
+	}
+	if resp.Memories[2].ID != "s1" {
+		t.Fatalf("expected session grounding in final slot, got %q", resp.Memories[2].ID)
 	}
 }

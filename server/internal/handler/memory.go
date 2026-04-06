@@ -108,6 +108,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	content := req.Content
 
 	if req.Sync {
+		s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
 		mem, written, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
 		if err != nil {
 			slog.Error("sync memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
@@ -118,7 +119,8 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		go s.refreshWriteMetrics(auth, svc, int64(written))
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	} else {
-		go func(auth *domain.AuthInfo, agentName, actorAgentID, content string, tags []string, metadata json.RawMessage) {
+		go func(auth *domain.AuthInfo, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage) {
+			s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
 			mem, written, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
 			if err != nil {
 				slog.Error("async memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
@@ -130,7 +132,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", "")
 			}
 			s.refreshWriteMetrics(auth, svc, int64(written))
-		}(auth, auth.AgentName, agentID, content, tags, metadata)
+		}(auth, auth.AgentName, agentID, req.SessionID, content, tags, metadata)
 
 		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 	}
@@ -260,6 +262,15 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if shouldBlendSessionGrounding(filter) {
+		if sessionMems, sessErr := s.sessionGroundingSearch(r.Context(), auth, svc, filter); sessErr != nil {
+			slog.Warn("session grounding search failed", "cluster_id", auth.ClusterID, "err", sessErr)
+		} else {
+			memories = blendMemoriesWithSessionGrounding(memories, sessionMems, limit)
+			total = len(memories)
+		}
+	}
+
 	if memories == nil {
 		memories = []domain.Memory{}
 	}
@@ -270,6 +281,175 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		Limit:    limit,
 		Offset:   offset,
 	})
+}
+
+type contentSessionMeta struct {
+	Speaker   string `json:"speaker"`
+	TurnIndex int    `json:"turn_index"`
+}
+
+func (s *Server) persistContentSession(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, sessionID, agentID, content string, metadata json.RawMessage) {
+	if sessionID == "" || svc.session == nil {
+		return
+	}
+
+	seq, role := contentSessionFields(content, metadata)
+	if err := svc.session.CreateRawTurn(ctx, sessionID, agentID, auth.AgentName, seq, role, content); err != nil {
+		slog.Error("content session raw save failed", "cluster_id", auth.ClusterID, "session", sessionID, "err", err)
+	}
+}
+
+func contentSessionFields(content string, metadata json.RawMessage) (int, string) {
+	meta := contentSessionMeta{TurnIndex: -1}
+	if len(metadata) > 0 {
+		_ = json.Unmarshal(metadata, &meta)
+	}
+
+	role := roleFromSpeaker(meta.Speaker)
+	if role == "" {
+		role = roleFromSpeaker(content)
+	}
+	if role == "" {
+		role = "user"
+	}
+
+	if meta.TurnIndex >= 0 {
+		return meta.TurnIndex, role
+	}
+	return 0, role
+}
+
+func roleFromSpeaker(raw string) string {
+	lower := strings.ToLower(raw)
+	switch {
+	case strings.Contains(lower, "speaker 1"), lower == "user":
+		return "user"
+	case strings.Contains(lower, "speaker 2"), lower == "assistant", strings.Contains(lower, "assistant"):
+		return "assistant"
+	default:
+		return ""
+	}
+}
+
+func shouldBlendSessionGrounding(filter domain.MemoryFilter) bool {
+	return filter.Query != "" && filter.SessionID != "" && filter.MemoryType == ""
+}
+
+func (s *Server) sessionGroundingSearch(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, error) {
+	if svc.session == nil {
+		return nil, nil
+	}
+
+	sessionFilter := filter
+	sessionFilter.Offset = 0
+	sessionFilter.Limit = supplementalSessionLimit(filter.Limit)
+	if sessionFilter.Limit == 0 {
+		return nil, nil
+	}
+
+	sessionMems, err := svc.session.Search(ctx, sessionFilter)
+	if err != nil {
+		return nil, err
+	}
+	slog.Info("session grounding search", "cluster_id", auth.ClusterID, "query_len", len(filter.Query), "results", len(sessionMems))
+	return sessionMems, nil
+}
+
+func supplementalSessionLimit(limit int) int {
+	switch {
+	case limit <= 1:
+		return 0
+	case limit <= 5:
+		return 1
+	case limit <= 10:
+		return 2
+	default:
+		return 3
+	}
+}
+
+func blendMemoriesWithSessionGrounding(primary, supplemental []domain.Memory, limit int) []domain.Memory {
+	if limit <= 0 {
+		return []domain.Memory{}
+	}
+	if len(primary) == 0 {
+		return trimUniqueMemories(supplemental, limit)
+	}
+	if len(supplemental) == 0 {
+		return trimUniqueMemories(primary, limit)
+	}
+
+	sessionSlots := supplementalSessionLimit(limit)
+	if sessionSlots == 0 {
+		return trimUniqueMemories(primary, limit)
+	}
+	if sessionSlots > len(supplemental) {
+		sessionSlots = len(supplemental)
+	}
+	primaryBudget := limit - sessionSlots
+	if primaryBudget < 0 {
+		primaryBudget = 0
+	}
+
+	blended := make([]domain.Memory, 0, limit)
+	seen := make(map[string]struct{}, limit)
+
+	appendUnique := func(mem domain.Memory) {
+		key := mem.Content
+		if key == "" {
+			key = mem.ID
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		blended = append(blended, mem)
+	}
+
+	for _, mem := range primary {
+		if len(blended) >= primaryBudget {
+			break
+		}
+		appendUnique(mem)
+	}
+	for _, mem := range supplemental {
+		if len(blended) >= limit {
+			break
+		}
+		appendUnique(mem)
+	}
+	for _, mem := range primary {
+		if len(blended) >= limit {
+			break
+		}
+		appendUnique(mem)
+	}
+
+	return blended
+}
+
+func trimUniqueMemories(mems []domain.Memory, limit int) []domain.Memory {
+	if limit <= 0 {
+		return []domain.Memory{}
+	}
+
+	out := make([]domain.Memory, 0, limit)
+	seen := make(map[string]struct{}, limit)
+	for _, mem := range mems {
+		if len(out) >= limit {
+			break
+		}
+		key := mem.Content
+		if key == "" {
+			key = mem.ID
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, mem)
+	}
+	return out
 }
 
 func (s *Server) getMemory(w http.ResponseWriter, r *http.Request) {
