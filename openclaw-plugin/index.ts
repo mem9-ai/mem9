@@ -3,6 +3,7 @@ import { ServerBackend } from "./server-backend.js";
 import { registerHooks } from "./hooks.js";
 import type {
   PluginConfig,
+  Memory,
   CreateMemoryInput,
   UpdateMemoryInput,
   SearchInput,
@@ -26,6 +27,13 @@ function jsonResult(data: unknown) {
   }
 }
 
+interface MemoryCapability {
+  search: (query: string, opts?: { limit?: number }) => Promise<{ data: Memory[]; total: number }>;
+  store: (content: string, opts?: { tags?: string[]; source?: string }) => Promise<unknown>;
+  get: (id: string) => Promise<Memory | null>;
+  remove: (id: string) => Promise<boolean>;
+}
+
 interface OpenClawPluginApi {
   pluginConfig?: unknown;
   logger: {
@@ -36,6 +44,7 @@ interface OpenClawPluginApi {
     factory: ToolFactory | (() => AnyAgentTool[]),
     opts: { names: string[] }
   ) => void;
+  registerCapability?: (slot: string, capability: MemoryCapability) => void;
   on: (hookName: string, handler: (...args: unknown[]) => unknown, opts?: { priority?: number }) => void;
 }
 
@@ -242,7 +251,7 @@ const mnemoPlugin = {
   description:
     "AI agent memory — server mode (mnemo-server) with hybrid vector + keyword search.",
 
-  async register(api: OpenClawPluginApi) {
+  register(api: OpenClawPluginApi) {
     const cfg = (api.pluginConfig ?? {}) as PluginConfig;
     const effectiveApiUrl = cfg.apiUrl ?? DEFAULT_API_URL;
     if (!cfg.apiUrl) {
@@ -288,13 +297,32 @@ const mnemoPlugin = {
 
     api.registerTool(factory, { names: toolNames });
 
-    // Register hooks with a lazy backend for lifecycle memory management.
-    // Uses the default workspace/agent context for hook-triggered operations.
+    // Shared lazy backend for hooks and capability registration.
     const hookBackend = new LazyServerBackend(
       effectiveApiUrl,
       () => resolveAPIKey(hookAgentId),
       hookAgentId,
     );
+
+    // Register memory capability so OpenClaw 2026.4.2+ binds this plugin to
+    // the memory slot. Without this, the plugin is treated as a legacy
+    // hook-only plugin and automatic context injection won't work.
+    // Guard with typeof check for backward compatibility with older hosts.
+    if (typeof api.registerCapability === "function") {
+      api.registerCapability("memory", {
+        search: async (query, opts) => {
+          const result = await hookBackend.search({ q: query, limit: opts?.limit });
+          return { data: result.data, total: result.total };
+        },
+        store: async (content, opts) => {
+          return hookBackend.store({ content, tags: opts?.tags, source: opts?.source });
+        },
+        get: (id) => hookBackend.get(id),
+        remove: (id) => hookBackend.remove(id),
+      });
+    }
+
+    // Register hooks with lazy backend for lifecycle memory management.
     registerHooks(api, hookBackend, api.logger, {
       maxIngestBytes: cfg.maxIngestBytes,
       fallbackAgentId: hookAgentId,
