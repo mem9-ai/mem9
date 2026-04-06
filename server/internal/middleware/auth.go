@@ -2,9 +2,11 @@ package middleware
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -22,13 +24,30 @@ const authInfoKey contextKey = "authInfo"
 const AgentIDHeader = "X-Mnemo-Agent-Id"
 const APIKeyHeader = "X-API-Key"
 
+type tenantDBGetter interface {
+	Get(ctx context.Context, tenantID string, dsn string) (*sql.DB, error)
+	Backend() string
+}
+
+func isSpendLimitError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "usage quota being exhausted")
+}
+
+func classifyConnError(blacklist map[string]struct{}, clusterID string, err error) string {
+	if _, blocked := blacklist[clusterID]; blocked && isSpendLimitError(err) {
+		return "cluster_quota_exhausted"
+	}
+	return "connection_error"
+}
+
 // ResolveTenant is middleware that extracts {tenantID} from the URL path,
 // validates the tenant exists and is active, obtains a DB connection from the
 // pool, and stores an AuthInfo in the request context.
 func ResolveTenant(
 	tenantRepo repository.TenantRepo,
-	pool *tenant.TenantPool,
+	pool tenantDBGetter,
 	enc encrypt.Encryptor,
+	clusterBlacklist map[string]struct{},
 ) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -61,7 +80,11 @@ func ResolveTenant(
 			poolStart := time.Now()
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			if err != nil {
-				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", time.Since(poolStart).Milliseconds(), "err", err)
+				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", time.Since(poolStart).Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", err)
+				if _, blocked := clusterBlacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
+					writeError(w, http.StatusTooManyRequests, "cluster quota exhausted")
+					return
+				}
 				writeError(w, http.StatusServiceUnavailable, "cannot connect to tenant database")
 				return
 			}
@@ -86,8 +109,9 @@ func ResolveTenant(
 // pool, and stores an AuthInfo in the request context.
 func ResolveApiKey(
 	tenantRepo repository.TenantRepo,
-	pool *tenant.TenantPool,
+	pool tenantDBGetter,
 	enc encrypt.Encryptor,
+	clusterBlacklist map[string]struct{},
 ) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -118,7 +142,11 @@ func ResolveApiKey(
 			poolStart := time.Now()
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			if err != nil {
-				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", time.Since(poolStart).Milliseconds(), "err", err)
+				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", time.Since(poolStart).Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", err)
+				if _, blocked := clusterBlacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
+					writeError(w, http.StatusTooManyRequests, "cluster quota exhausted")
+					return
+				}
 				writeError(w, http.StatusServiceUnavailable, "cannot connect to tenant database")
 				return
 			}

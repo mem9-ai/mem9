@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -83,6 +84,11 @@ type Config struct {
 	// For "md5": the key string used to derive the AES key.
 	// For "kms": the KMS key ID, ARN, alias name, or alias ARN.
 	EncryptKey string `json:"-"` // Never serialize to JSON
+
+	// ClusterBlacklist is the set of TiDB cluster IDs whose spend-limit errors
+	// should be returned as 429 instead of 503. Populated from
+	// MNEMO_CLUSTER_BLACKLIST (comma-separated). Empty by default.
+	ClusterBlacklist map[string]struct{}
 }
 
 func Load() (*Config, error) {
@@ -122,6 +128,7 @@ func Load() (*Config, error) {
 		EncryptType:           envOr("MNEMO_ENCRYPT_TYPE", "plain"),
 		EncryptKey:            os.Getenv("MNEMO_ENCRYPT_KEY"),
 		DebugLLM:              envBool("MNEMO_DEBUG_LLM", false),
+		ClusterBlacklist:      parseClusterBlacklist(os.Getenv("MNEMO_CLUSTER_BLACKLIST")),
 	}
 	// Validate ingest mode.
 	switch cfg.IngestMode {
@@ -183,6 +190,16 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 		}
 	}
 	return fallback
+}
+
+func parseClusterBlacklist(raw string) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, id := range strings.Split(raw, ",") {
+		if id := strings.TrimSpace(id); id != "" {
+			out[id] = struct{}{}
+		}
+	}
+	return out
 }
 
 // LogValue returns a slog.Value with sensitive fields masked.

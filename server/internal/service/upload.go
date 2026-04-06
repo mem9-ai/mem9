@@ -17,6 +17,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/llm"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/tenant"
 )
@@ -316,8 +317,20 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 					UpdatedBy:  agentName,
 				})
 			}
-			if err := memRepo.BulkCreate(taskCtx, memories); err != nil {
-				return w.failTask(ctx, task, fmt.Errorf("bulk create memories: %w", err), logger)
+			writeStart := time.Now()
+			bulkErr := memRepo.BulkCreate(taskCtx, memories)
+			metrics.MemoryWriteDuration.WithLabelValues("bulk_create", metricStatus(bulkErr)).Observe(time.Since(writeStart).Seconds())
+			if bulkErr != nil {
+				return w.failTask(ctx, task, fmt.Errorf("bulk create memories: %w", bulkErr), logger)
+			}
+			clusterID := tenantInfo.ClusterID
+			if clusterID == "" {
+				clusterID = "default"
+			}
+			metrics.MemoryChangesTotal.WithLabelValues(clusterID).Add(float64(len(memories)))
+			if total, last7d, err := memRepo.CountStats(taskCtx); err == nil {
+				metrics.ActiveMemoryTotal.WithLabelValues(clusterID).Set(float64(total))
+				metrics.ActiveMemory7dTotal.WithLabelValues(clusterID).Set(float64(last7d))
 			}
 			batchIdx++
 			doneChunks = batchIdx

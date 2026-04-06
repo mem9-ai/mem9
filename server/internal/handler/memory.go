@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
 
@@ -69,12 +70,24 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				respondError(w, http.StatusInternalServerError, "ingest reconciliation failed")
 				return
 			}
+			var written int64
+			if result != nil {
+				written = int64(result.MemoriesChanged)
+			}
+			go s.refreshWriteMetrics(auth, svc, written)
 			respond(w, http.StatusOK, map[string]string{"status": "ok"})
 		} else {
 			go func() {
-				if _, err := s.ingestMessages(context.Background(), auth, svc, ingestReq); err != nil {
+				result, err := s.ingestMessages(context.Background(), auth, svc, ingestReq)
+				if err != nil {
 					slog.Error("async ingest failed", "session", ingestReq.SessionID, "err", err)
+					return
 				}
+				var written int64
+				if result != nil {
+					written = int64(result.MemoriesChanged)
+				}
+				s.refreshWriteMetrics(auth, svc, written)
 			}()
 			respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 		}
@@ -95,26 +108,29 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	content := req.Content
 
 	if req.Sync {
-		_, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
+		mem, written, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
 		if err != nil {
 			slog.Error("sync memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
 			s.handleError(r.Context(), w, err)
 			return
 		}
+		_ = mem
+		go s.refreshWriteMetrics(auth, svc, int64(written))
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	} else {
-		go func(agentName, actorAgentID, content string, tags []string, metadata json.RawMessage) {
-			mem, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
+		go func(auth *domain.AuthInfo, agentName, actorAgentID, content string, tags []string, metadata json.RawMessage) {
+			mem, written, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
 			if err != nil {
 				slog.Error("async memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
 				return
 			}
 			if mem != nil {
 				slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", mem.ID)
-				return
+			} else {
+				slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", "")
 			}
-			slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", "")
-		}(auth.AgentName, agentID, content, tags, metadata)
+			s.refreshWriteMetrics(auth, svc, int64(written))
+		}(auth, auth.AgentName, agentID, content, tags, metadata)
 
 		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 	}
@@ -299,6 +315,7 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	go s.refreshWriteMetrics(auth, svc, 1)
 	w.Header().Set("ETag", strconv.Itoa(mem.Version))
 	respond(w, http.StatusOK, mem)
 }
@@ -313,6 +330,7 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	go s.refreshWriteMetrics(auth, svc, 0)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -467,4 +485,33 @@ func dedupStrings(ss []string) []string {
 		}
 	}
 	return out
+}
+
+func (s *Server) refreshWriteMetrics(auth *domain.AuthInfo, svc resolvedSvc, written int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	clusterID := auth.ClusterID
+	if clusterID == "" {
+		clusterID = "default"
+	}
+
+	if written > 0 {
+		metrics.MemoryChangesTotal.WithLabelValues(clusterID).Add(float64(written))
+	}
+
+	const gaugeTTL = 30 * time.Second
+	now := time.Now()
+	if last, ok := s.gaugeDebounce.Load(clusterID); ok && now.Sub(last.(time.Time)) < gaugeTTL {
+		return
+	}
+	s.gaugeDebounce.Store(clusterID, now)
+
+	total, last7d, err := svc.memory.CountStats(ctx)
+	if err != nil {
+		slog.Warn("refreshWriteMetrics: count stats failed", "err", err)
+		return
+	}
+	metrics.ActiveMemoryTotal.WithLabelValues(clusterID).Set(float64(total))
+	metrics.ActiveMemory7dTotal.WithLabelValues(clusterID).Set(float64(last7d))
 }

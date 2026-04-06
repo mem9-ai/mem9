@@ -14,6 +14,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/llm"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/repository"
 )
 
@@ -51,13 +52,13 @@ func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, emb
 	}
 }
 
-func (s *MemoryService) Create(ctx context.Context, agentID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, error) {
+func (s *MemoryService) Create(ctx context.Context, agentID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, int, error) {
 	if err := validateMemoryInput(content, tags); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	if s.ingest == nil {
-		return nil, fmt.Errorf("ingest service not configured")
+		return nil, 0, fmt.Errorf("ingest service not configured")
 	}
 
 	if !s.ingest.HasLLM() {
@@ -68,7 +69,7 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 		if s.autoModel == "" && s.embedder != nil {
 			embeddingResult, embedErr := s.embedder.Embed(ctx, content)
 			if embedErr != nil {
-				return nil, fmt.Errorf("embed raw content: %w", embedErr)
+				return nil, 0, fmt.Errorf("embed raw content: %w", embedErr)
 			}
 			embedding = embeddingResult
 		}
@@ -89,25 +90,29 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
-		if err := s.memories.Create(ctx, mem); err != nil {
-			return nil, fmt.Errorf("create raw memory: %w", err)
+		writeStart := time.Now()
+		err := s.memories.Create(ctx, mem)
+		metrics.MemoryWriteDuration.WithLabelValues("create", metricStatus(err)).Observe(time.Since(writeStart).Seconds())
+		if err != nil {
+			return nil, 0, fmt.Errorf("create raw memory: %w", err)
 		}
-		return mem, nil
+		return mem, 1, nil
 	}
 
 	result, err := s.ingest.ReconcileContent(ctx, agentID, agentID, "", []string{content})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	if result.Status == "failed" {
-		return nil, fmt.Errorf("content reconciliation failed")
+		return nil, 0, fmt.Errorf("content reconciliation failed")
 	}
 	if len(result.InsightIDs) == 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 
 	// Apply user-provided tags/metadata to all created insights.
+	patchWrites := 0
 	for _, id := range result.InsightIDs {
 		mem, err := s.memories.GetByID(ctx, id)
 		if err != nil {
@@ -120,16 +125,18 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 			mem.Metadata = metadata
 		}
 		if len(tags) > 0 || len(metadata) > 0 {
-			_ = s.memories.UpdateOptimistic(ctx, mem, 0)
+			if err := s.memories.UpdateOptimistic(ctx, mem, 0); err == nil {
+				patchWrites++
+			}
 		}
 	}
 
 	latestID := result.InsightIDs[len(result.InsightIDs)-1]
 	mem, getErr := s.memories.GetByID(ctx, latestID)
 	if getErr != nil {
-		return nil, fmt.Errorf("fetch reconciled memory %s: %w", latestID, getErr)
+		return nil, 0, fmt.Errorf("fetch reconciled memory %s: %w", latestID, getErr)
 	}
-	return mem, nil
+	return mem, result.MemoriesChanged + patchWrites, nil
 
 }
 
@@ -612,7 +619,10 @@ func (s *MemoryService) Update(ctx context.Context, agentName, id, content strin
 		current.Embedding = embedding
 	}
 
-	if err := s.memories.UpdateOptimistic(ctx, current, 0); err != nil {
+	writeStart := time.Now()
+	err = s.memories.UpdateOptimistic(ctx, current, 0)
+	metrics.MemoryWriteDuration.WithLabelValues("update", metricStatus(err)).Observe(time.Since(writeStart).Seconds())
+	if err != nil {
 		return nil, err
 	}
 
@@ -683,7 +693,10 @@ func (s *MemoryService) BulkCreate(ctx context.Context, agentName string, items 
 		})
 	}
 
-	if err := s.memories.BulkCreate(ctx, memories); err != nil {
+	writeStart := time.Now()
+	err := s.memories.BulkCreate(ctx, memories)
+	metrics.MemoryWriteDuration.WithLabelValues("bulk_create", metricStatus(err)).Observe(time.Since(writeStart).Seconds())
+	if err != nil {
 		return nil, err
 	}
 
@@ -712,4 +725,8 @@ func validateMemoryInput(content string, tags []string) error {
 		return &domain.ValidationError{Field: "tags", Message: "too many (max 20)"}
 	}
 	return nil
+}
+
+func (s *MemoryService) CountStats(ctx context.Context) (total int64, last7d int64, err error) {
+	return s.memories.CountStats(ctx)
 }

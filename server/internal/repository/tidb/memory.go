@@ -834,3 +834,14 @@ func (r *MemoryRepo) NearDupSearch(ctx context.Context, queryText string) (strin
 	}
 	return id, 1 - dist, nil
 }
+
+func (r *MemoryRepo) CountStats(ctx context.Context) (total int64, last7d int64, err error) {
+	row := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*), COUNT(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 1 END)
+		 FROM memories WHERE state = 'active'`,
+	)
+	if err = row.Scan(&total, &last7d); err != nil {
+		return 0, 0, fmt.Errorf("count stats: %w", err)
+	}
+	return total, last7d, nil
+}

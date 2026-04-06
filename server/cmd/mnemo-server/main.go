@@ -132,8 +132,8 @@ func main() {
 	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled, encryptor)
 
 	// Middleware.
-	tenantMW := middleware.ResolveTenant(tenantRepo, tenantPool, encryptor)
-	apiKeyMW := middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor)
+	tenantMW := middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
+	apiKeyMW := middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
 	rl := middleware.NewRateLimiter(cfg.RateLimit, cfg.RateBurst)
 	defer rl.Stop()
 	rateMW := rl.Middleware()

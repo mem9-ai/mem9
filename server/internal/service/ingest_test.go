@@ -568,6 +568,7 @@ func (m *memoryRepoMock) SoftDelete(ctx context.Context, id, agentName string) e
 func (m *memoryRepoMock) ArchiveMemory(ctx context.Context, id, supersededBy string) error {
 	return nil
 }
+
 func (m *memoryRepoMock) ArchiveAndCreate(ctx context.Context, archiveID, supersededBy string, newMem *domain.Memory) error {
 	m.createCalls = append(m.createCalls, newMem)
 	return nil
@@ -724,6 +725,8 @@ func TestDropQueryIntentFacts(t *testing.T) {
 		})
 	}
 }
+
+func (m *memoryRepoMock) CountStats(ctx context.Context) (int64, int64, error) { return 0, 0, nil }
 
 func TestStripInjectedContext(t *testing.T) {
 	t.Parallel()
