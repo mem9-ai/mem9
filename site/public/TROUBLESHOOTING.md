@@ -69,10 +69,13 @@ Confirm these first:
 - First re-check the current config read-back
 - The most common cause is `plugins.slots.memory` still pointing to `mem9`
 - If logs show `config reload skipped (invalid config): plugins.slots.memory: plugin not found: mem9` or `Invalid config ... plugin not found: mem9`, treat that as local rollback failure, not a mem9 cloud problem
+- If logs show `Plugin "mem9" is not managed by plugins config/install records and cannot be uninstalled.`, treat that as unmanaged local install residue, not as successful uninstall
+- If logs show `plugins.entries.memory-core: plugin disabled (disabled in config) but config is present`, treat that as rollback failure. The default memory plugin was not restored cleanly yet.
 - Also re-check whether `plugins.entries.memory-core.enabled = true` after restoring the default memory slot
 - Re-check that `plugins.entries.mem9` was removed
 - Re-check that `plugins.installs.mem9` was removed if it existed before
 - Re-check that `"mem9"` is no longer present in `plugins.allow`
+- Re-check whether `~/.openclaw/extensions/mem9` still exists locally and remove it if the uninstall command did not
 - After the config read-back, inspect the gateway logs for the exact startup error
 - If the config still matches the uninstall failure pattern, re-apply the safe rollback from `UNINSTALL.md` before trying another restart
 
@@ -95,14 +98,22 @@ Confirm these first:
 - Treat this as uninstall orchestration failure, not a mem9 remote API problem
 - The most common cause is that uninstall rollback already triggered one deferred restart, and the flow then added another explicit restart or a current-session reset on top
 - Another common cause is that plugin removal happened before the config rollback had finished, leaving `plugins.slots.memory` pointing at a plugin that no longer exists
+- Another common cause is that `openclaw plugins uninstall mem9 --force` failed with `Plugin "mem9" is not managed by plugins config/install records and cannot be uninstalled.`, leaving `~/.openclaw/extensions/mem9` behind as unmanaged local residue
+- Another common cause is that the rollback switched the slot away from mem9 but left `memory-core` disabled, which shows up as `plugins.entries.memory-core: plugin disabled (disabled in config) but config is present`
 - First inspect gateway reload logs for:
   - `config change requires gateway restart`
   - `deferring until ... complete`
   - `config reload skipped (invalid config): plugins.slots.memory: plugin not found: mem9`
+- Then check for:
+  - `Plugin "mem9" is not managed by plugins config/install records and cannot be uninstalled.`
+  - `plugins.entries.memory-core: plugin disabled (disabled in config) but config is present`
+  - `Invalid --scope. Expected "config", "config+creds+sessions", or "full".`
 - Then check whether a second `SIGTERM` happened after the gateway had already come back once
 - Then check whether runtime is `inactive` while the gateway port is still in use
 - If that pattern is present, do not keep re-running uninstall steps blindly
 - Re-check the current config read-back
+- If the uninstall command reported `Plugin "mem9" is not managed by plugins config/install records and cannot be uninstalled.`, stop retrying that uninstall command and remove `~/.openclaw/extensions/mem9` after the rollback config is safe
+- If `Invalid --scope. Expected "config", "config+creds+sessions", or "full".` appears right after uninstall actions, treat that as an out-of-band session-reset attempt and stop adding reset or restart actions
 - If the config still shows the uninstall-failure shape, re-apply the safe rollback from `UNINSTALL.md` before trying anything else
 - Let the gateway return to a healthy steady state with the rollback config in place before suggesting a new session or manual session reset
 - Do not attribute this pattern to remote mem9 cloud availability
