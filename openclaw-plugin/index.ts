@@ -69,23 +69,23 @@ function buildPromptSection(params: {
   let toolGuidance: string;
   if (hasMemorySearch && hasMemoryGet) {
     toolGuidance =
-      "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run `memory_search` with `query` (or legacy `q`), then use the returned `id` with `memory_get`. Hosts that prefer path-based recall may also pass `path=mem9/<id>` to `memory_get`. If low confidence after search, say you checked.";
+      "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run `memory_search` first, then use `memory_get` to pull only the needed memory. If low confidence after search, say you checked.";
   } else if (hasMemorySearch) {
     toolGuidance =
-      "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run `memory_search` with `query` (or legacy `q`) and answer from the matching results. If low confidence after search, say you checked.";
+      "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run `memory_search` first and answer from the matching results. If low confidence after search, say you checked.";
   } else {
     toolGuidance =
-      "Before answering anything about prior work, decisions, dates, people, preferences, or todos that already point to a specific memory id: run `memory_get` with the memory `id`, or `path=mem9/<id>` on path-based hosts. If low confidence after reading it, say you checked.";
+      "Before answering anything about prior work, decisions, dates, people, preferences, or todos that already point to a specific memory: run `memory_get` to pull only the needed memory. If low confidence after reading it, say you checked.";
   }
 
   const lines = ["## Memory Recall", toolGuidance];
   if (params.citationsMode === "off") {
     lines.push(
-      "Citations are disabled: do not mention mem9 ids or synthetic mem9 paths unless the user explicitly asks.",
+      "Citations are disabled: do not mention memory identifiers unless the user explicitly asks.",
     );
   } else {
     lines.push(
-      "Citations: mention `mem9/<id>` when it helps the user verify a recalled memory.",
+      "Citations: include the memory identifier only when it helps the user verify recalled memory.",
     );
   }
   lines.push("");
