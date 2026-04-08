@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import type { TFunction } from "i18next";
 import { toast } from "sonner";
 import {
+  ArrowDownToLine,
+  ArrowUpToLine,
   Bookmark,
   Copy,
   X,
@@ -97,6 +99,32 @@ export function DetailPanelContent({
   function handleCopy() {
     navigator.clipboard.writeText(m.content);
     toast.success(t("list.copied"));
+  }
+
+  function scrollSessionTo(top: number, behavior: ScrollBehavior = "smooth") {
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea) {
+      return;
+    }
+
+    if (typeof scrollArea.scrollTo === "function") {
+      scrollArea.scrollTo({ top, behavior });
+    } else {
+      scrollArea.scrollTop = top;
+    }
+  }
+
+  function handleJumpToTop() {
+    scrollSessionTo(0);
+  }
+
+  function handleJumpToLatest() {
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea) {
+      return;
+    }
+
+    scrollSessionTo(scrollArea.scrollHeight);
   }
 
   useEffect(() => {
@@ -268,11 +296,39 @@ export function DetailPanelContent({
         </div>
       </div>
 
-      <div className="flex items-center justify-end border-t px-5 py-2.5">
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-2 border-t px-5 py-2.5",
+          sessionMessages.length > 0 ? "justify-between" : "justify-end",
+        )}
+      >
+        {sessionMessages.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={handleJumpToTop}
+              className="gap-1.5"
+            >
+              <ArrowUpToLine className="size-3" />
+              {t("session_preview.jump_to_start")}
+            </Button>
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={handleJumpToLatest}
+              className="gap-1.5"
+            >
+              <ArrowDownToLine className="size-3" />
+              {t("session_preview.jump_to_latest")}
+            </Button>
+          </div>
+        ) : null}
         <Button
           variant="ghost"
           size="xs"
           onClick={onDelete}
+          aria-label={t("detail.delete_button_label")}
           data-mp-event="Dashboard/Detail/DeleteClicked"
           data-mp-page-name="space"
           data-mp-memory-id={m.id}

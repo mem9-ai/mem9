@@ -547,8 +547,8 @@ describe("SpacePage", () => {
     expect(screen.getByText("Deploy dashboard status update")).toBeInTheDocument();
     expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Delete memory" }),
-    ).not.toBeInTheDocument();
+      document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+    ).toBeNull();
   });
 
   it("does not prefetch deep-analysis reports before the analysis tab is opened", async () => {
@@ -617,14 +617,14 @@ describe("SpacePage", () => {
 
     expect(screen.getByTestId("detail-scroll-area")).toHaveClass("flex-1");
     expect(
-      screen.getByRole("button", { name: "Delete memory" }),
-    ).toBeInTheDocument();
+      document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+    ).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     expect(
-      screen.queryByRole("button", { name: "Delete memory" }),
-    ).not.toBeInTheDocument();
+      document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+    ).toBeNull();
     expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
   });
 
@@ -639,15 +639,15 @@ describe("SpacePage", () => {
     fireEvent.click(preferenceCard!);
 
     expect(
-      screen.getByRole("button", { name: "Delete memory" }),
-    ).toBeInTheDocument();
+      document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+    ).not.toBeNull();
 
     fireEvent.click(getAnalysisCategoryButton("activity"));
 
     await waitFor(() => {
       expect(
-        screen.queryByRole("button", { name: "Delete memory" }),
-      ).not.toBeInTheDocument();
+        document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+      ).toBeNull();
     });
 
     expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
@@ -694,8 +694,8 @@ describe("SpacePage", () => {
       within(detailDialog).getByTestId("detail-scroll-area"),
     ).not.toHaveClass("max-h-[60vh]");
     expect(
-      screen.getByRole("button", { name: "Delete memory" }),
-    ).toBeInTheDocument();
+      document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+    ).not.toBeNull();
 
     fireEvent.click(within(detailDialog).getByRole("button", { name: "Close" }));
 
@@ -823,15 +823,15 @@ describe("SpacePage", () => {
     fireEvent.click(olderCard!);
 
     expect(
-      screen.getByRole("button", { name: "Delete memory" }),
-    ).toBeInTheDocument();
+      document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+    ).not.toBeNull();
 
     fireEvent.click(screen.getAllByRole("button", { name: /0 memories$/i })[0]!);
 
     await waitFor(() => {
       expect(
-        screen.queryByRole("button", { name: "Delete memory" }),
-      ).not.toBeInTheDocument();
+        document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+      ).toBeNull();
     });
   });
 

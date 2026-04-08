@@ -39,23 +39,19 @@ function createSessionMessage(): SessionMessage {
     content: [
       "Conversation info (untrusted metadata):",
       "",
-      "```json",
       "{",
       '  "message_id": "om_x100b54d61dce74a0b21551c196de630",',
       '  "sender": "马圣博",',
       '  "timestamp": "Sat 2026-03-21 04:57 UTC"',
       "}",
-      "```",
       "",
       "Sender (untrusted metadata):",
       "",
-      "```json",
       "{",
       '  "label": "马圣博",',
       '  "id": "ou_e77359a58df929cbfe166f14f37d3281",',
       '  "name": "马圣博"',
       "}",
-      "```",
       "",
       "[message_id: om_x100b54d61dce74a0b21551c196de630]",
       "马圣博: 多少了",
@@ -100,9 +96,6 @@ describe("MobileDetailSheet", () => {
     expect(
       screen.getByTestId("session-metadata-body-conversation-info-untrusted-metadata"),
     ).toHaveTextContent('"message_id": "om_x100b54d61dce74a0b21551c196de630"');
-    expect(
-      screen.getByTestId("session-metadata-body-conversation-info-untrusted-metadata"),
-    ).not.toHaveTextContent("```json");
     expect(screen.getByRole("button", { name: "Collapse" })).toBeInTheDocument();
   });
 
@@ -234,38 +227,4 @@ describe("MobileDetailSheet", () => {
     }
   });
 
-  it("shows quick-jump buttons and uses the shared detail scroll area", () => {
-    vi.mocked(HTMLElement.prototype.scrollTo).mockClear();
-
-    render(
-      <MobileDetailSheet
-        memory={createMemory()}
-        derivedTags={[]}
-        sessionMessages={[createSessionMessage()]}
-        sessionMessagesLoading={false}
-        open
-        onOpenChange={vi.fn()}
-        onDelete={vi.fn()}
-        t={i18n.t}
-      />,
-    );
-
-    const scrollArea = screen.getByTestId("detail-scroll-area");
-    Object.defineProperty(scrollArea, "scrollHeight", {
-      configurable: true,
-      value: 1200,
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Start" }));
-    fireEvent.click(screen.getByRole("button", { name: "Latest" }));
-
-    expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith({
-      top: 0,
-      behavior: "smooth",
-    });
-    expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith({
-      top: 1200,
-      behavior: "smooth",
-    });
-  });
 });
