@@ -417,20 +417,17 @@ const SessionMarkdownContent = ({ content }: { content: string }) => {
 const ToolResultMessageContent = ({
   message,
   compactMetadata,
+  expanded,
   t,
 }: {
   message: SessionMessage;
   compactMetadata: boolean;
+  expanded: boolean;
   t: TFunction;
 }) => {
-  const [expanded, setExpanded] = useState(false);
   const preview = getToolResultPreview(message.content);
-  const toggleLabel = expanded
-    ? t("session_preview.hide_tool_result")
-    : t("session_preview.show_tool_result");
-
   return (
-    <div className="w-full space-y-2">
+    <div className="w-full">
       {!expanded ? (
         <p
           className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] leading-5 text-muted-foreground"
@@ -439,19 +436,6 @@ const ToolResultMessageContent = ({
           {preview || t("session_preview.tool_result_empty")}
         </p>
       ) : null}
-
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => setExpanded((current) => !current)}
-          className="shrink-0 rounded-full border border-border/50 px-2.5 py-1 text-[11px] font-medium text-foreground/70 transition-colors hover:border-border/80 hover:text-foreground"
-          aria-expanded={expanded}
-          aria-label={toggleLabel}
-          data-testid={`tool-result-toggle-${message.id}`}
-        >
-          {toggleLabel}
-        </button>
-      </div>
 
       {expanded ? (
         <div data-testid={`tool-result-body-${message.id}`}>
@@ -462,6 +446,59 @@ const ToolResultMessageContent = ({
           />
         </div>
       ) : null}
+    </div>
+  );
+};
+
+const ToolResultMessageRow = ({
+  message,
+  compactMetadata,
+  t,
+}: {
+  message: SessionMessage;
+  compactMetadata: boolean;
+  t: TFunction;
+}) => {
+  const [expanded, setExpanded] = useState(false);
+  const toggleLabel = expanded
+    ? t("session_preview.hide_tool_result")
+    : t("session_preview.show_tool_result");
+
+  return (
+    <div className="relative flex gap-4">
+      <div className="relative z-10 flex size-6 shrink-0 items-center justify-center rounded-full border-[3px] border-background bg-primary/10 text-primary">
+        <Bot className="size-3" />
+      </div>
+      <div className="min-w-0 flex-1 pt-0.5 pb-1">
+        <div className="mb-1.5 flex items-center gap-2">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-foreground/70">
+            {getRoleLabel(t, message.role)}
+          </span>
+          <span className="text-[10px] text-muted-foreground/60">
+            {formatRelativeTime(t, message.created_at)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setExpanded((current) => !current)}
+            className="ml-auto shrink-0 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground hover:underline underline-offset-4"
+            aria-expanded={expanded}
+            aria-label={toggleLabel}
+            data-testid={`tool-result-toggle-${message.id}`}
+          >
+            {toggleLabel}
+          </button>
+        </div>
+        <div className="w-full break-words rounded-2xl rounded-tl-sm border border-primary/10 bg-primary/[0.03] px-4 py-2.5 text-[13px] leading-relaxed text-foreground/90">
+          <div className="break-words">
+            <ToolResultMessageContent
+              message={message}
+              compactMetadata={compactMetadata}
+              expanded={expanded}
+              t={t}
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -496,6 +533,18 @@ export const DetailSessionPreview = ({
           {messages.map((message) => {
             const isUser = message.role === "user";
             const isToolResult = message.role === "toolResult";
+
+            if (isToolResult) {
+              return (
+                <ToolResultMessageRow
+                  key={message.id}
+                  message={message}
+                  compactMetadata={compactMetadata}
+                  t={t}
+                />
+              );
+            }
+
             return (
               <div key={message.id} className="relative flex gap-4">
                 <div
@@ -520,26 +569,18 @@ export const DetailSessionPreview = ({
                   <div
                     className={cn(
                       "break-words rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed",
-                      isToolResult ? "w-full" : "inline-block max-w-full",
+                      "inline-block max-w-full",
                       isUser
                         ? "rounded-tl-sm bg-secondary/60 text-foreground/90"
                         : "rounded-tl-sm border border-primary/10 bg-primary/[0.03] text-foreground/90",
                     )}
                   >
                     <div className="break-words">
-                      {isToolResult ? (
-                        <ToolResultMessageContent
-                          message={message}
-                          compactMetadata={compactMetadata}
-                          t={t}
-                        />
-                      ) : (
-                        <SessionMessageContent
-                          content={message.content}
-                          compactMetadata={compactMetadata}
-                          t={t}
-                        />
-                      )}
+                      <SessionMessageContent
+                        content={message.content}
+                        compactMetadata={compactMetadata}
+                        t={t}
+                      />
                     </div>
                   </div>
                 </div>
