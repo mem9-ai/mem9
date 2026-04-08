@@ -312,7 +312,10 @@ const getToolResultPreview = (content: string): string => {
   return content
     .split("\n")
     .map((line) => line.trim())
-    .find((line) => line !== "" && !line.startsWith("```")) ?? "";
+    .filter((line) => line !== "" && !line.startsWith("```"))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
 };
 
 const SessionMarkdownContent = ({ content }: { content: string }) => {
@@ -427,14 +430,17 @@ const ToolResultMessageContent = ({
     : t("session_preview.show_tool_result");
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-start justify-between gap-3">
+    <div className="w-full space-y-2">
+      {!expanded ? (
         <p
-          className="min-w-0 flex-1 break-words text-[12px] leading-5 text-muted-foreground"
+          className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] leading-5 text-muted-foreground"
           data-testid={`tool-result-preview-${message.id}`}
         >
           {preview || t("session_preview.tool_result_empty")}
         </p>
+      ) : null}
+
+      <div className="flex justify-end">
         <button
           type="button"
           onClick={() => setExpanded((current) => !current)}
@@ -513,7 +519,8 @@ export const DetailSessionPreview = ({
                   </div>
                   <div
                     className={cn(
-                      "inline-block max-w-full break-words rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed",
+                      "break-words rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed",
+                      isToolResult ? "w-full" : "inline-block max-w-full",
                       isUser
                         ? "rounded-tl-sm bg-secondary/60 text-foreground/90"
                         : "rounded-tl-sm border border-primary/10 bg-primary/[0.03] text-foreground/90",
