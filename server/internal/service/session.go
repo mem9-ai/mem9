@@ -57,6 +57,14 @@ func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req I
 	return nil
 }
 
+func (s *SessionService) CreateRawTurn(ctx context.Context, sessionID, agentID, source string, seq int, role, content string) error {
+	sess := newSessionFromIngestMessage(sessionID, agentID, source, seq, role, content)
+	if err := s.sessions.BulkCreate(ctx, []*domain.Session{sess}); err != nil {
+		return fmt.Errorf("session raw create: %w", err)
+	}
+	return nil
+}
+
 func (s *SessionService) Search(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, error) {
 	limit := f.Limit
 	if limit <= 0 || limit > 200 {

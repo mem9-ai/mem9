@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"sync"
 	"time"
 
@@ -36,6 +37,7 @@ type Server struct {
 	ingestMode    service.IngestMode
 	dbBackend     string
 	logger        *slog.Logger
+	startedAt     time.Time
 	svcCache      sync.Map
 	gaugeDebounce sync.Map // cluster_id -> time.Time of last Gauge refresh
 }
@@ -64,6 +66,7 @@ func NewServer(
 		ingestMode:  ingestMode,
 		dbBackend:   dbBackend,
 		logger:      logger,
+		startedAt:   time.Now().UTC(),
 	}
 }
 
@@ -147,6 +150,12 @@ func (s *Server) Router(
 	// Health check.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	r.Get("/versionz", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, http.StatusOK, map[string]string{
+			"go_version": runtime.Version(),
+			"started_at": s.startedAt.Format(time.RFC3339Nano),
+		})
 	})
 
 	r.Get("/metrics", promhttp.Handler().ServeHTTP)
