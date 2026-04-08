@@ -1,9 +1,14 @@
 import "@/i18n";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n";
 import { MobileDetailSheet } from "./mobile-detail-sheet";
 import type { Memory, SessionMessage } from "@/types/memory";
+
+Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+  value: vi.fn(),
+  writable: true,
+});
 
 function createMemory(): Memory {
   return {
@@ -34,19 +39,23 @@ function createSessionMessage(): SessionMessage {
     content: [
       "Conversation info (untrusted metadata):",
       "",
+      "```json",
       "{",
       '  "message_id": "om_x100b54d61dce74a0b21551c196de630",',
       '  "sender": "马圣博",',
       '  "timestamp": "Sat 2026-03-21 04:57 UTC"',
       "}",
+      "```",
       "",
       "Sender (untrusted metadata):",
       "",
+      "```json",
       "{",
       '  "label": "马圣博",',
       '  "id": "ou_e77359a58df929cbfe166f14f37d3281",',
       '  "name": "马圣博"',
       "}",
+      "```",
       "",
       "[message_id: om_x100b54d61dce74a0b21551c196de630]",
       "马圣博: 多少了",
@@ -65,8 +74,8 @@ describe("MobileDetailSheet", () => {
       <MobileDetailSheet
         memory={createMemory()}
         derivedTags={[]}
-        sessionPreview={[createSessionMessage()]}
-        sessionPreviewLoading={false}
+        sessionMessages={[createSessionMessage()]}
+        sessionMessagesLoading={false}
         open
         onOpenChange={vi.fn()}
         onDelete={vi.fn()}
@@ -91,6 +100,9 @@ describe("MobileDetailSheet", () => {
     expect(
       screen.getByTestId("session-metadata-body-conversation-info-untrusted-metadata"),
     ).toHaveTextContent('"message_id": "om_x100b54d61dce74a0b21551c196de630"');
+    expect(
+      screen.getByTestId("session-metadata-body-conversation-info-untrusted-metadata"),
+    ).not.toHaveTextContent("```json");
     expect(screen.getByRole("button", { name: "Collapse" })).toBeInTheDocument();
   });
 
@@ -107,8 +119,8 @@ describe("MobileDetailSheet", () => {
       <MobileDetailSheet
         memory={createMemory()}
         derivedTags={[]}
-        sessionPreview={[createSessionMessage()]}
-        sessionPreviewLoading={false}
+        sessionMessages={[createSessionMessage()]}
+        sessionMessagesLoading={false}
         open
         onOpenChange={vi.fn()}
         onDelete={vi.fn()}
@@ -130,8 +142,8 @@ describe("MobileDetailSheet", () => {
       <MobileDetailSheet
         memory={createMemory()}
         derivedTags={["OpenClaw"]}
-        sessionPreview={[createSessionMessage()]}
-        sessionPreviewLoading={false}
+        sessionMessages={[createSessionMessage()]}
+        sessionMessagesLoading={false}
         open
         onOpenChange={vi.fn()}
         onDelete={vi.fn()}
@@ -141,5 +153,119 @@ describe("MobileDetailSheet", () => {
 
     expect(screen.getByText("Derived tags")).toBeInTheDocument();
     expect(screen.getByText("#OpenClaw")).toBeInTheDocument();
+  });
+
+  it("hides the raw session section when no session messages are available", () => {
+    render(
+      <MobileDetailSheet
+        memory={createMemory()}
+        derivedTags={[]}
+        sessionMessages={[]}
+        sessionMessagesLoading={false}
+        open
+        onOpenChange={vi.fn()}
+        onDelete={vi.fn()}
+        t={i18n.t}
+      />,
+    );
+
+    expect(screen.queryByText("Original Conversation")).not.toBeInTheDocument();
+  });
+
+  it("shows a lightweight loading state while raw session detail is loading", () => {
+    render(
+      <MobileDetailSheet
+        memory={createMemory()}
+        derivedTags={[]}
+        sessionMessages={[]}
+        sessionMessagesLoading
+        open
+        onOpenChange={vi.fn()}
+        onDelete={vi.fn()}
+        t={i18n.t}
+      />,
+    );
+
+    expect(screen.getByText("Original Conversation")).toBeInTheDocument();
+    expect(screen.getByText("Loading conversation...")).toBeInTheDocument();
+  });
+
+  it("scrolls the existing detail scroll area to the newest message once raw session content is ready", async () => {
+    const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollHeight",
+    );
+
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() {
+        return 480;
+      },
+    });
+
+    try {
+      vi.mocked(HTMLElement.prototype.scrollTo).mockClear();
+      render(
+        <MobileDetailSheet
+          memory={createMemory()}
+          derivedTags={[]}
+          sessionMessages={[createSessionMessage()]}
+          sessionMessagesLoading={false}
+          open
+          onOpenChange={vi.fn()}
+          onDelete={vi.fn()}
+          t={i18n.t}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith({
+          top: 480,
+        });
+      });
+    } finally {
+      if (scrollHeightDescriptor) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "scrollHeight",
+          scrollHeightDescriptor,
+        );
+      }
+    }
+  });
+
+  it("shows quick-jump buttons and uses the shared detail scroll area", () => {
+    vi.mocked(HTMLElement.prototype.scrollTo).mockClear();
+
+    render(
+      <MobileDetailSheet
+        memory={createMemory()}
+        derivedTags={[]}
+        sessionMessages={[createSessionMessage()]}
+        sessionMessagesLoading={false}
+        open
+        onOpenChange={vi.fn()}
+        onDelete={vi.fn()}
+        t={i18n.t}
+      />,
+    );
+
+    const scrollArea = screen.getByTestId("detail-scroll-area");
+    Object.defineProperty(scrollArea, "scrollHeight", {
+      configurable: true,
+      value: 1200,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    fireEvent.click(screen.getByRole("button", { name: "Latest" }));
+
+    expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith({
+      top: 0,
+      behavior: "smooth",
+    });
+    expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith({
+      top: 1200,
+      behavior: "smooth",
+    });
   });
 });

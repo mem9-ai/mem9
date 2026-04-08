@@ -378,43 +378,6 @@ function SessionMarkdownContent({ content }: { content: string }) {
   );
 }
 
-export function CardSessionPreview({
-  messages,
-  t,
-}: {
-  messages: SessionMessage[];
-  t: TFunction;
-}) {
-  const previewMessages = messages.slice(0, 2);
-
-  if (previewMessages.length === 0) return null;
-
-  return (
-    <div className="mt-3.5 relative pl-3.5 border-l-[2px] border-border/40 transition-colors group-hover:border-border/60">
-      <div className="flex items-center gap-1.5 mb-2">
-        <MessageCircle className="size-3 text-muted-foreground/70" />
-        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/80">
-          {t("session_preview.title")}
-        </span>
-      </div>
-      <div className="space-y-1.5">
-        {previewMessages.map((message) => {
-          return (
-            <div key={message.id} className="flex gap-2 items-start text-xs text-foreground/70 leading-relaxed">
-              <span className="font-semibold text-foreground/40 shrink-0 mt-[1px]">
-                {getRoleLabel(t, message.role)}
-              </span>
-              <span className="line-clamp-1 break-all">
-                {message.content}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 export function DetailSessionPreview({
   messages,
   loading,
@@ -486,5 +449,42 @@ export function DetailSessionPreview({
         </div>
       )}
     </section>
+  );
+}
+
+export function CardSessionPreview({
+  messages,
+  t,
+}: {
+  messages: SessionMessage[];
+  t: TFunction;
+}) {
+  const previewMessages = messages.slice(0, 2);
+
+  if (previewMessages.length === 0) return null;
+
+  return (
+    <div className="mt-3.5 relative pl-3.5 border-l-[2px] border-border/40 transition-colors group-hover:border-border/60">
+      <div className="flex items-center gap-1.5 mb-2">
+        <MessageCircle className="size-3 text-muted-foreground/70" />
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/80">
+          {t("session_preview.title")}
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {previewMessages.map((message) => {
+          return (
+            <div key={message.id} className="flex gap-2 items-start text-xs text-foreground/70 leading-relaxed">
+              <span className="font-semibold text-foreground/40 shrink-0 mt-[1px]">
+                {getRoleLabel(t, message.role)}
+              </span>
+              <span className="line-clamp-1 break-all">
+                {message.content}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
