@@ -68,12 +68,16 @@
     "jump_to_latest": "Latest",
     "show_metadata": "Expand",
     "hide_metadata": "Collapse",
+    "show_tool_result": "Show result",
+    "hide_tool_result": "Hide result",
+    "tool_result_empty": "Tool result",
     "metadata_summary_empty": "Tap to view metadata",
     "role": {
       "user": "User",
       "assistant": "Assistant",
       "system": "System",
-      "tool": "Tool"
+      "tool": "Tool",
+      "toolResult": "Tool result"
     }
   },
   "add": {

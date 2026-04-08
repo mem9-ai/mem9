@@ -64,6 +64,27 @@ function createSessionMessage(): SessionMessage {
   };
 }
 
+function createToolResultMessage(): SessionMessage {
+  return {
+    id: "msg-tool-1",
+    session_id: "session-1",
+    agent_id: "agent",
+    source: "agent",
+    seq: 2,
+    role: "toolResult",
+    content: [
+      "Fetched deployment logs",
+      "",
+      "line-2: timeout stack trace",
+    ].join("\n"),
+    content_type: "text/plain",
+    tags: [],
+    state: "active",
+    created_at: "2026-03-21T04:58:00Z",
+    updated_at: "2026-03-21T04:58:00Z",
+  };
+}
+
 describe("MobileDetailSheet", () => {
   it("renders untrusted metadata as a summary first and expands inline on demand", async () => {
     render(
@@ -225,6 +246,39 @@ describe("MobileDetailSheet", () => {
         );
       }
     }
+  });
+
+  it("keeps tool-result messages collapsed until the user expands them", () => {
+    render(
+      <MobileDetailSheet
+        memory={createMemory()}
+        derivedTags={[]}
+        sessionMessages={[createSessionMessage(), createToolResultMessage()]}
+        sessionMessagesLoading={false}
+        open
+        onOpenChange={vi.fn()}
+        onDelete={vi.fn()}
+        t={i18n.t}
+      />,
+    );
+
+    expect(screen.getByText("Tool result")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("tool-result-preview-msg-tool-1"),
+    ).toHaveTextContent("Fetched deployment logs");
+    expect(
+      screen.getByRole("button", { name: "Show result" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("line-2: timeout stack trace"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("tool-result-toggle-msg-tool-1"));
+
+    expect(
+      screen.getByRole("button", { name: "Hide result" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("line-2: timeout stack trace")).toBeInTheDocument();
   });
 
 });

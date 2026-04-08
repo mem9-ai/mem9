@@ -393,6 +393,24 @@ vi.mock("@/api/queries", () => ({
               created_at: "2026-03-03T00:01:00Z",
               updated_at: "2026-03-03T00:01:00Z",
             },
+            {
+              id: "msg-3",
+              session_id: "sess-activity-1",
+              agent_id: "agent",
+              source: "agent",
+              seq: 3,
+              role: "toolResult",
+              content: [
+                "Fetched release checklist",
+                "",
+                "hidden diagnostic line",
+              ].join("\n"),
+              content_type: "text/plain",
+              tags: [],
+              state: "active",
+              created_at: "2026-03-03T00:02:00Z",
+              updated_at: "2026-03-03T00:02:00Z",
+            },
           ]
         : [],
       isLoading: false,
@@ -894,8 +912,38 @@ describe("SpacePage", () => {
       within(screen.getByTestId("detail-scroll-area")).getByText('{"status":"ok"}'),
     ).toBeInTheDocument();
     expect(
+      within(screen.getByTestId("detail-scroll-area")).getByText("Tool result"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).getByRole("button", {
+        name: "Show result",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).queryByText(
+        "hidden diagnostic line",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
       within(screen.getByTestId("detail-scroll-area")).queryByText("```json"),
     ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      within(screen.getByTestId("detail-scroll-area")).getByTestId(
+        "tool-result-toggle-msg-3",
+      ),
+    );
+
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).getByRole("button", {
+        name: "Hide result",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).getByText(
+        "hidden diagnostic line",
+      ),
+    ).toBeInTheDocument();
     await waitFor(() => {
       expect(HTMLElement.prototype.scrollTo).toHaveBeenCalled();
     });

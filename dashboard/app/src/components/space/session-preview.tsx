@@ -308,6 +308,13 @@ const getRoleLabel = (
   return t(`session_preview.role.${role}`, { defaultValue: role });
 };
 
+const getToolResultPreview = (content: string): string => {
+  return content
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line !== "" && !line.startsWith("```")) ?? "";
+};
+
 const SessionMarkdownContent = ({ content }: { content: string }) => {
   return (
     <ReactMarkdown
@@ -404,6 +411,55 @@ const SessionMarkdownContent = ({ content }: { content: string }) => {
   );
 };
 
+const ToolResultMessageContent = ({
+  message,
+  compactMetadata,
+  t,
+}: {
+  message: SessionMessage;
+  compactMetadata: boolean;
+  t: TFunction;
+}) => {
+  const [expanded, setExpanded] = useState(false);
+  const preview = getToolResultPreview(message.content);
+  const toggleLabel = expanded
+    ? t("session_preview.hide_tool_result")
+    : t("session_preview.show_tool_result");
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <p
+          className="min-w-0 flex-1 break-words text-[12px] leading-5 text-muted-foreground"
+          data-testid={`tool-result-preview-${message.id}`}
+        >
+          {preview || t("session_preview.tool_result_empty")}
+        </p>
+        <button
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+          className="shrink-0 rounded-full border border-border/50 px-2.5 py-1 text-[11px] font-medium text-foreground/70 transition-colors hover:border-border/80 hover:text-foreground"
+          aria-expanded={expanded}
+          aria-label={toggleLabel}
+          data-testid={`tool-result-toggle-${message.id}`}
+        >
+          {toggleLabel}
+        </button>
+      </div>
+
+      {expanded ? (
+        <div data-testid={`tool-result-body-${message.id}`}>
+          <SessionMessageContent
+            content={message.content}
+            compactMetadata={compactMetadata}
+            t={t}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 export const DetailSessionPreview = ({
   messages,
   loading,
@@ -433,6 +489,7 @@ export const DetailSessionPreview = ({
         <div className="relative space-y-5 before:absolute before:inset-y-2 before:left-[11px] before:w-px before:bg-border/40">
           {messages.map((message) => {
             const isUser = message.role === "user";
+            const isToolResult = message.role === "toolResult";
             return (
               <div key={message.id} className="relative flex gap-4">
                 <div
@@ -454,18 +511,28 @@ export const DetailSessionPreview = ({
                       {formatRelativeTime(t, message.created_at)}
                     </span>
                   </div>
-                  <div className={cn(
-                    "rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed inline-block max-w-full break-words",
-                    isUser 
-                      ? "bg-secondary/60 text-foreground/90 rounded-tl-sm" 
-                      : "bg-primary/[0.03] text-foreground/90 rounded-tl-sm border border-primary/10"
-                  )}>
+                  <div
+                    className={cn(
+                      "inline-block max-w-full break-words rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed",
+                      isUser
+                        ? "rounded-tl-sm bg-secondary/60 text-foreground/90"
+                        : "rounded-tl-sm border border-primary/10 bg-primary/[0.03] text-foreground/90",
+                    )}
+                  >
                     <div className="break-words">
-                      <SessionMessageContent
-                        content={message.content}
-                        compactMetadata={compactMetadata}
-                        t={t}
-                      />
+                      {isToolResult ? (
+                        <ToolResultMessageContent
+                          message={message}
+                          compactMetadata={compactMetadata}
+                          t={t}
+                        />
+                      ) : (
+                        <SessionMessageContent
+                          content={message.content}
+                          compactMetadata={compactMetadata}
+                          t={t}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
