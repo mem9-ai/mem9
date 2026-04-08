@@ -132,7 +132,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	content := req.Content
 
 	if req.Sync {
-		s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
+		// s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
 		mem, written, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
 		if err != nil {
 			slog.Error("sync memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
@@ -144,7 +144,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	} else {
 		go func(auth *domain.AuthInfo, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage) {
-			s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
+			// s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
 			mem, written, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
 			if err != nil {
 				slog.Error("async memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
@@ -274,18 +274,8 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		// SessionService.Search preserves SessionID/Source filters from the caller — intentional:
 		// session-scoped filtering is meaningful for the sessions table. MemoryService.Search
 		// resets these fields to broaden memory recall; the asymmetry is by design.
-		// session.Search is all-or-nothing: returns (results, nil) or (nil, err), never partial results + err.
-		// total is only incremented on success, so the response total stays consistent with the slice length.
-		sessionMems, sessErr := svc.session.Search(r.Context(), filter)
-		if sessErr != nil {
-			slog.Warn("session search failed", "cluster_id", auth.ClusterID, "err", sessErr)
-		} else {
-			memories = append(memories, sessionMems...)
-			total += len(sessionMems)
-		}
-	}
-
-	if shouldBlendSessionGrounding(filter) {
+		// session grounding uses supplementalSessionLimit regardless of SessionID — session memories
+		// are always treated as supplemental context, blended and reranked against primary results.
 		if sessionMems, sessErr := s.sessionGroundingSearch(r.Context(), auth, svc, filter); sessErr != nil {
 			slog.Warn("session grounding search failed", "cluster_id", auth.ClusterID, "err", sessErr)
 		} else {
@@ -312,52 +302,48 @@ type contentSessionMeta struct {
 	TurnIndex int    `json:"turn_index"`
 }
 
-func (s *Server) persistContentSession(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, sessionID, agentID, content string, metadata json.RawMessage) {
-	if sessionID == "" || svc.session == nil {
-		return
-	}
+// func (s *Server) persistContentSession(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, sessionID, agentID, content string, metadata json.RawMessage) {
+// 	if sessionID == "" || svc.session == nil {
+// 		return
+// 	}
+//
+// 	seq, role := contentSessionFields(content, metadata)
+// 	if err := svc.session.CreateRawTurn(ctx, sessionID, agentID, auth.AgentName, seq, role, content); err != nil {
+// 		slog.Error("content session raw save failed", "cluster_id", auth.ClusterID, "session", sessionID, "err", err)
+// 	}
+// }
 
-	seq, role := contentSessionFields(content, metadata)
-	if err := svc.session.CreateRawTurn(ctx, sessionID, agentID, auth.AgentName, seq, role, content); err != nil {
-		slog.Error("content session raw save failed", "cluster_id", auth.ClusterID, "session", sessionID, "err", err)
-	}
-}
+// func contentSessionFields(content string, metadata json.RawMessage) (int, string) {
+// 	meta := contentSessionMeta{TurnIndex: -1}
+// 	if len(metadata) > 0 {
+// 		_ = json.Unmarshal(metadata, &meta)
+// 	}
+//
+// 	role := roleFromSpeaker(meta.Speaker)
+// 	if role == "" {
+// 		role = roleFromSpeaker(content)
+// 	}
+// 	if role == "" {
+// 		role = "user"
+// 	}
+//
+// 	if meta.TurnIndex >= 0 {
+// 		return meta.TurnIndex, role
+// 	}
+// 	return 0, role
+// }
 
-func contentSessionFields(content string, metadata json.RawMessage) (int, string) {
-	meta := contentSessionMeta{TurnIndex: -1}
-	if len(metadata) > 0 {
-		_ = json.Unmarshal(metadata, &meta)
-	}
-
-	role := roleFromSpeaker(meta.Speaker)
-	if role == "" {
-		role = roleFromSpeaker(content)
-	}
-	if role == "" {
-		role = "user"
-	}
-
-	if meta.TurnIndex >= 0 {
-		return meta.TurnIndex, role
-	}
-	return 0, role
-}
-
-func roleFromSpeaker(raw string) string {
-	lower := strings.ToLower(raw)
-	switch {
-	case strings.Contains(lower, "speaker 1"), lower == "user":
-		return "user"
-	case strings.Contains(lower, "speaker 2"), lower == "assistant", strings.Contains(lower, "assistant"):
-		return "assistant"
-	default:
-		return ""
-	}
-}
-
-func shouldBlendSessionGrounding(filter domain.MemoryFilter) bool {
-	return filter.Query != "" && filter.SessionID != "" && filter.MemoryType == ""
-}
+// func roleFromSpeaker(raw string) string {
+// 	lower := strings.ToLower(raw)
+// 	switch {
+// 	case strings.Contains(lower, "speaker 1"), lower == "user":
+// 		return "user"
+// 	case strings.Contains(lower, "speaker 2"), lower == "assistant", strings.Contains(lower, "assistant"):
+// 		return "assistant"
+// 	default:
+// 		return ""
+// 	}
+// }
 
 func (s *Server) sessionGroundingSearch(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, error) {
 	if svc.session == nil {
