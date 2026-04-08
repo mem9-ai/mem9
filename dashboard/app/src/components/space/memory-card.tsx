@@ -6,7 +6,7 @@ import type { Memory, MemoryFacet } from "@/types/memory";
 import { FacetBadge } from "./topic-strip";
 import { features } from "@/config/features";
 
-export function MemoryCard({
+export const MemoryCard = ({
   memory: m,
   derivedTags = [],
   hasLinkedSession,
@@ -24,7 +24,7 @@ export function MemoryCard({
   onDelete: () => void;
   t: TFunction;
   delay: number;
-}) {
+}) => {
   const isPinned = m.memory_type === "pinned";
   const tags = m.tags ?? [];
   const facet = features.enableFacet
@@ -33,17 +33,17 @@ export function MemoryCard({
         | undefined)
     : undefined;
 
-  function handleCopy(e: React.MouseEvent) {
+  const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
     navigator.clipboard.writeText(m.content);
     toast.success(t("list.copied"));
-  }
+  };
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== "Enter" && e.key !== " ") return;
     e.preventDefault();
     onClick();
-  }
+  };
 
   return (
     <div
@@ -155,4 +155,4 @@ export function MemoryCard({
       </div>
     </div>
   );
-}
+};

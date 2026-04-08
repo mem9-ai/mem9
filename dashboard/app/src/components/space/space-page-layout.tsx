@@ -73,7 +73,7 @@ interface SpacePageLayoutProps {
   onHandleFarmAction: () => void;
 }
 
-export function SpacePageLayout({
+export const SpacePageLayout = ({
   spaceId,
   routeState,
   dataModel,
@@ -100,7 +100,7 @@ export function SpacePageLayout({
   onHandleImport,
   onRefreshMemories,
   onHandleFarmAction,
-}: SpacePageLayoutProps) {
+}: SpacePageLayoutProps) => {
   const isEmpty =
     !dataModel.isMemoryLoading &&
     dataModel.displayedMemories.length === 0 &&
@@ -712,4 +712,4 @@ export function SpacePageLayout({
       />
     </div>
   );
-}
+};

@@ -18,7 +18,7 @@ import { FacetBadge } from "./topic-strip";
 import { DetailSessionPreview } from "./session-preview";
 import { features } from "@/config/features";
 
-export function DetailPanel({
+export const DetailPanel = ({
   memory: m,
   derivedTags = [],
   sessionMessages,
@@ -36,7 +36,7 @@ export function DetailPanel({
   onDelete: () => void;
   onEdit?: () => void;
   t: TFunction;
-}) {
+}) => {
   return (
     <div
       className="w-full shrink-0 py-8 xl:order-3 xl:w-[390px]"
@@ -59,9 +59,9 @@ export function DetailPanel({
       </div>
     </div>
   );
-}
+};
 
-export function DetailPanelContent({
+export const DetailPanelContent = ({
   memory: m,
   derivedTags = [],
   sessionMessages,
@@ -85,7 +85,7 @@ export function DetailPanelContent({
   className?: string;
   scrollAreaClassName?: string;
   t: TFunction;
-}) {
+}) => {
   const isPinned = m.memory_type === "pinned";
   const tags = m.tags ?? [];
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
@@ -96,12 +96,15 @@ export function DetailPanelContent({
         | undefined)
     : undefined;
 
-  function handleCopy() {
+  const handleCopy = () => {
     navigator.clipboard.writeText(m.content);
     toast.success(t("list.copied"));
-  }
+  };
 
-  function scrollSessionTo(top: number, behavior: ScrollBehavior = "smooth") {
+  const scrollSessionTo = (
+    top: number,
+    behavior: ScrollBehavior = "smooth",
+  ) => {
     const scrollArea = scrollAreaRef.current;
     if (!scrollArea) {
       return;
@@ -112,20 +115,20 @@ export function DetailPanelContent({
     } else {
       scrollArea.scrollTop = top;
     }
-  }
+  };
 
-  function handleJumpToTop() {
+  const handleJumpToTop = () => {
     scrollSessionTo(0);
-  }
+  };
 
-  function handleJumpToLatest() {
+  const handleJumpToLatest = () => {
     const scrollArea = scrollAreaRef.current;
     if (!scrollArea) {
       return;
     }
 
     scrollSessionTo(scrollArea.scrollHeight);
-  }
+  };
 
   useEffect(() => {
     autoScrolledMemoryIDRef.current = null;
@@ -340,13 +343,13 @@ export function DetailPanelContent({
       </div>
     </div>
   );
-}
+};
 
-function MetaCell({ label, value }: { label: string; value: string }) {
+const MetaCell = ({ label, value }: { label: string; value: string }) => {
   return (
     <div>
       <dt className="text-xs text-soft-foreground">{label}</dt>
       <dd className="mt-0.5 text-sm text-foreground/80">{value}</dd>
     </div>
   );
-}
+};

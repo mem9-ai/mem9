@@ -3,7 +3,7 @@ import { DetailPanelContent } from "@/components/space/detail-panel";
 import { MobilePanelShell } from "@/components/space/mobile-panel-shell";
 import type { Memory, SessionMessage } from "@/types/memory";
 
-export function MobileDetailSheet({
+export const MobileDetailSheet = ({
   memory,
   derivedTags = [],
   sessionMessages,
@@ -23,7 +23,7 @@ export function MobileDetailSheet({
   onDelete: () => void;
   onEdit?: () => void;
   t: TFunction;
-}) {
+}) => {
   if (!memory) return null;
 
   return (
@@ -50,4 +50,4 @@ export function MobileDetailSheet({
       />
     </MobilePanelShell>
   );
-}
+};
