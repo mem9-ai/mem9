@@ -244,8 +244,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-
-	if filter.Query != "" && onlySession {
+	if filter.Query != "" && (onlySession || filter.MemoryType == "") {
 		// SessionService.Search preserves SessionID/Source filters from the caller — intentional:
 		// session-scoped filtering is meaningful for the sessions table. MemoryService.Search
 		// resets these fields to broaden memory recall; the asymmetry is by design.
