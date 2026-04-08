@@ -1,6 +1,14 @@
+import { useEffect, useRef } from "react";
 import type { TFunction } from "i18next";
 import { toast } from "sonner";
-import { Bookmark, Copy, X, Trash2, Pencil, Sparkles } from "lucide-react";
+import {
+  Bookmark,
+  Copy,
+  X,
+  Trash2,
+  Pencil,
+  Sparkles,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Memory, MemoryFacet, SessionMessage } from "@/types/memory";
@@ -11,8 +19,8 @@ import { features } from "@/config/features";
 export function DetailPanel({
   memory: m,
   derivedTags = [],
-  sessionPreview,
-  sessionPreviewLoading,
+  sessionMessages,
+  sessionMessagesLoading,
   onClose,
   onDelete,
   onEdit,
@@ -20,8 +28,8 @@ export function DetailPanel({
 }: {
   memory: Memory;
   derivedTags?: string[];
-  sessionPreview: SessionMessage[];
-  sessionPreviewLoading: boolean;
+  sessionMessages: SessionMessage[];
+  sessionMessagesLoading: boolean;
   onClose: () => void;
   onDelete: () => void;
   onEdit?: () => void;
@@ -36,8 +44,8 @@ export function DetailPanel({
         <DetailPanelContent
           memory={m}
           derivedTags={derivedTags}
-          sessionPreview={sessionPreview}
-          sessionPreviewLoading={sessionPreviewLoading}
+          sessionMessages={sessionMessages}
+          sessionMessagesLoading={sessionMessagesLoading}
           onClose={onClose}
           onDelete={onDelete}
           onEdit={onEdit}
@@ -54,8 +62,8 @@ export function DetailPanel({
 export function DetailPanelContent({
   memory: m,
   derivedTags = [],
-  sessionPreview,
-  sessionPreviewLoading,
+  sessionMessages,
+  sessionMessagesLoading,
   onClose,
   onDelete,
   onEdit,
@@ -66,8 +74,8 @@ export function DetailPanelContent({
 }: {
   memory: Memory;
   derivedTags?: string[];
-  sessionPreview: SessionMessage[];
-  sessionPreviewLoading: boolean;
+  sessionMessages: SessionMessage[];
+  sessionMessagesLoading: boolean;
   onClose: () => void;
   onDelete: () => void;
   onEdit?: () => void;
@@ -78,6 +86,8 @@ export function DetailPanelContent({
 }) {
   const isPinned = m.memory_type === "pinned";
   const tags = m.tags ?? [];
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const autoScrolledMemoryIDRef = useRef<string | null>(null);
   const facet = features.enableFacet
     ? ((m.metadata as Record<string, unknown> | null)?.facet as
         | MemoryFacet
@@ -89,8 +99,33 @@ export function DetailPanelContent({
     toast.success(t("list.copied"));
   }
 
+  useEffect(() => {
+    autoScrolledMemoryIDRef.current = null;
+  }, [m.id]);
+
+  useEffect(() => {
+    if (sessionMessagesLoading || sessionMessages.length === 0) {
+      return;
+    }
+    if (autoScrolledMemoryIDRef.current === m.id) {
+      return;
+    }
+
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea) {
+      return;
+    }
+
+    if (typeof scrollArea.scrollTo === "function") {
+      scrollArea.scrollTo({ top: scrollArea.scrollHeight });
+    } else {
+      scrollArea.scrollTop = scrollArea.scrollHeight;
+    }
+    autoScrolledMemoryIDRef.current = m.id;
+  }, [m.id, sessionMessages, sessionMessagesLoading]);
+
   return (
-    <div className={cn("flex h-full min-h-0 flex-col bg-background/50 backdrop-blur-sm", className)}>
+    <div className={cn("relative flex h-full min-h-0 flex-col bg-background/50 backdrop-blur-sm", className)}>
       <div className="flex items-center justify-between border-b border-border/40 bg-secondary/30 px-6 py-4">
         <div className="flex items-center gap-2">
           <div
@@ -153,6 +188,7 @@ export function DetailPanelContent({
       </div>
 
       <div
+        ref={scrollAreaRef}
         data-testid="detail-scroll-area"
         className={cn("flex-1 overflow-y-auto px-7 py-6", scrollAreaClassName)}
       >
@@ -214,15 +250,15 @@ export function DetailPanelContent({
             </div>
           </div>
 
-          {(sessionPreviewLoading || sessionPreview.length > 0) && (
+          {(sessionMessagesLoading || sessionMessages.length > 0) && (
             <>
               <div className="w-full h-px bg-border/40" />
 
               {/* Session Context */}
-              <div className="pt-2">
+              <div data-testid="detail-session-section" className="pt-2">
                 <DetailSessionPreview
-                  messages={sessionPreview}
-                  loading={sessionPreviewLoading}
+                  messages={sessionMessages}
+                  loading={sessionMessagesLoading}
                   compactMetadata={compactSessionPreview}
                   t={t}
                 />

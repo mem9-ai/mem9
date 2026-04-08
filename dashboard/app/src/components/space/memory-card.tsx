@@ -1,16 +1,15 @@
 import type { TFunction } from "i18next";
 import { toast } from "sonner";
-import { Bookmark, Copy, Trash2, Sparkles } from "lucide-react";
+import { Bookmark, Copy, MessageSquareQuote, Trash2, Sparkles } from "lucide-react";
 import { formatRelativeTime } from "@/lib/time";
-import type { Memory, MemoryFacet, SessionMessage } from "@/types/memory";
+import type { Memory, MemoryFacet } from "@/types/memory";
 import { FacetBadge } from "./topic-strip";
-import { CardSessionPreview } from "./session-preview";
 import { features } from "@/config/features";
 
 export function MemoryCard({
   memory: m,
   derivedTags = [],
-  sessionPreview,
+  hasLinkedSession,
   isSelected,
   onClick,
   onDelete,
@@ -19,7 +18,7 @@ export function MemoryCard({
 }: {
   memory: Memory;
   derivedTags?: string[];
-  sessionPreview: SessionMessage[];
+  hasLinkedSession: boolean;
   isSelected: boolean;
   onClick: () => void;
   onDelete: () => void;
@@ -80,7 +79,14 @@ export function MemoryCard({
           <p className="line-clamp-3 text-sm leading-relaxed text-foreground/90 font-medium">
             {m.content}
           </p>
-          <CardSessionPreview messages={sessionPreview} t={t} />
+          {hasLinkedSession && (
+            <div className="mt-3">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/15 bg-primary/[0.07] px-2.5 py-1 text-[11px] font-medium text-primary/90">
+                <MessageSquareQuote className="size-3.5" />
+                {t("list.linked_session")}
+              </span>
+            </div>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-2.5 text-xs text-soft-foreground">
             <span>{formatRelativeTime(t, m.updated_at)}</span>
             {m.source && (

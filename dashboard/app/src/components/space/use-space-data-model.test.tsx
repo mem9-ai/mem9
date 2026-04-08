@@ -7,7 +7,7 @@ import type { Memory } from "@/types/memory";
 const mocks = vi.hoisted(() => ({
   useStats: vi.fn(),
   useMemories: vi.fn(),
-  useSessionPreviewMessages: vi.fn(),
+  useSelectedSessionMessages: vi.fn(),
   useCreateMemory: vi.fn(),
   useDeleteMemory: vi.fn(),
   useUpdateMemory: vi.fn(),
@@ -48,11 +48,11 @@ const EMPTY_SIGNAL_INDEX: LocalDerivedSignalIndex = {
 };
 
 vi.mock("@/api/queries", () => ({
-  getSessionPreviewLookupKey: (memory: Memory) =>
-    memory.memory_type === "insight" ? memory.session_id : "",
+  getLinkedSessionID: (memory: Pick<Memory, "session_id"> | null | undefined) =>
+    memory?.session_id.trim() ?? "",
   useStats: (...args: unknown[]) => mocks.useStats(...args),
   useMemories: (...args: unknown[]) => mocks.useMemories(...args),
-  useSessionPreviewMessages: (...args: unknown[]) => mocks.useSessionPreviewMessages(...args),
+  useSelectedSessionMessages: (...args: unknown[]) => mocks.useSelectedSessionMessages(...args),
   useCreateMemory: () => mocks.useCreateMemory(),
   useDeleteMemory: () => mocks.useDeleteMemory(),
   useUpdateMemory: () => mocks.useUpdateMemory(),
@@ -103,8 +103,8 @@ function primeMocks(): void {
     isLoading: false,
     isFetching: false,
   });
-  mocks.useSessionPreviewMessages.mockReturnValue({
-    data: {},
+  mocks.useSelectedSessionMessages.mockReturnValue({
+    data: [],
     isLoading: false,
     isFetching: false,
   });
@@ -258,5 +258,82 @@ describe("useSpaceDataModel", () => {
       3,
       expect.objectContaining({ enabled: true }),
     );
+  });
+
+  it("loads raw session data only for the selected memory", () => {
+    const selected = SOURCE_MEMORIES[0]!;
+    mocks.useSelectedSessionMessages.mockReturnValue({
+      data: [
+        {
+          id: "msg-1",
+          session_id: "sess-1",
+          agent_id: "agent",
+          source: "agent",
+          seq: 1,
+          role: "user",
+          content: "hello",
+          content_type: "text/plain",
+          tags: [],
+          state: "active",
+          created_at: "2026-03-28T00:00:00Z",
+          updated_at: "2026-03-28T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isFetching: false,
+    });
+
+    const { result } = renderHook(() =>
+      useSpaceDataModel({
+        spaceId: "space-1",
+        q: undefined,
+        range: "all",
+        facet: undefined,
+        analysisCategory: undefined,
+        tag: undefined,
+        memoryTypeFilter: "pinned,insight",
+        timelineSelection: undefined,
+        importStatusOpen: false,
+        exportOpen: false,
+        isDesktopViewport: true,
+        mobileAnalysisOpen: false,
+        selected,
+        localVisibleCount: 50,
+        onSelectedMissing: vi.fn(),
+      }),
+    );
+
+    expect(mocks.useSelectedSessionMessages).toHaveBeenCalledWith("space-1", selected);
+    expect(result.current.selectedSessionMessages).toHaveLength(1);
+    expect(result.current.selectedSessionMessagesLoading).toBe(false);
+  });
+
+  it("does not report selected-session loading when there is no linked session", () => {
+    const { result } = renderHook(() =>
+      useSpaceDataModel({
+        spaceId: "space-1",
+        q: undefined,
+        range: "all",
+        facet: undefined,
+        analysisCategory: undefined,
+        tag: undefined,
+        memoryTypeFilter: "pinned,insight",
+        timelineSelection: undefined,
+        importStatusOpen: false,
+        exportOpen: false,
+        isDesktopViewport: true,
+        mobileAnalysisOpen: false,
+        selected: SOURCE_MEMORIES[1]!,
+        localVisibleCount: 50,
+        onSelectedMissing: vi.fn(),
+      }),
+    );
+
+    expect(mocks.useSelectedSessionMessages).toHaveBeenCalledWith(
+      "space-1",
+      SOURCE_MEMORIES[1]!,
+    );
+    expect(result.current.selectedSessionMessages).toEqual([]);
+    expect(result.current.selectedSessionMessagesLoading).toBe(false);
   });
 });

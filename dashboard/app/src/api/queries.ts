@@ -19,27 +19,32 @@ import type { TimeRangePreset } from "@/types/time-range";
 import { presetToParams } from "@/types/time-range";
 
 const PAGE_SIZE = 50;
-const SESSION_PREVIEW_LIMIT = 6;
 
-export function getSessionPreviewLookupKey(memory: Memory): string {
-  if (memory.memory_type !== "insight") return "";
-
-  const sessionID = memory.session_id.trim();
-  if (sessionID) return sessionID;
-
-  return "";
+export function getLinkedSessionID(
+  memory: Pick<Memory, "session_id"> | null | undefined,
+): string {
+  return memory?.session_id.trim() ?? "";
 }
 
-function getSessionPreviewRequestIDs(memories: Memory[]): string[] {
-  const requestIDs = new Set<string>();
-
-  for (const memory of memories) {
-    const requestID = getSessionPreviewLookupKey(memory);
-    if (!requestID) continue;
-    requestIDs.add(requestID);
+function compareSessionMessages(
+  left: SessionMessage,
+  right: SessionMessage,
+): number {
+  const leftTimestamp = Date.parse(left.created_at);
+  const rightTimestamp = Date.parse(right.created_at);
+  const createdAtDiff =
+    (Number.isNaN(leftTimestamp) ? 0 : leftTimestamp) -
+    (Number.isNaN(rightTimestamp) ? 0 : rightTimestamp);
+  if (createdAtDiff !== 0) {
+    return createdAtDiff;
   }
 
-  return [...requestIDs].sort((left, right) => left.localeCompare(right, "en"));
+  const seqDiff = left.seq - right.seq;
+  if (seqDiff !== 0) {
+    return seqDiff;
+  }
+
+  return left.id.localeCompare(right.id, "en");
 }
 
 export function useStats(
@@ -89,42 +94,30 @@ export function useMemories(
   });
 }
 
-export function groupSessionMessagesBySessionID(
+export function sortSessionMessages(
   messages: SessionMessage[],
-): Record<string, SessionMessage[]> {
-  return messages.reduce<Record<string, SessionMessage[]>>((grouped, message) => {
-    const sessionMessages = grouped[message.session_id] ?? [];
-    sessionMessages.push(message);
-    grouped[message.session_id] = sessionMessages;
-    return grouped;
-  }, {});
+): SessionMessage[] {
+  return [...messages].sort(compareSessionMessages);
 }
 
-export function useSessionPreviewMessages(
+export function useSelectedSessionMessages(
   spaceId: string,
-  memories: Memory[],
-  limitPerSession = SESSION_PREVIEW_LIMIT,
+  memory: Memory | null,
 ) {
-  const sessionPreviewRequestIDs = getSessionPreviewRequestIDs(memories);
+  const sessionID = getLinkedSessionID(memory);
 
   return useQuery({
-    queryKey: [
-      "space",
-      spaceId,
-      "sessionPreview",
-      sessionPreviewRequestIDs,
-      limitPerSession,
-    ],
+    queryKey: ["space", spaceId, "sessionMessages", sessionID],
     queryFn: async () => {
       const response = await api.listSessionMessages(spaceId, {
-        session_ids: sessionPreviewRequestIDs,
-        limit_per_session: limitPerSession,
+        session_ids: [sessionID],
       });
-      return groupSessionMessagesBySessionID(response.messages);
+      return sortSessionMessages(
+        response.messages.filter((message) => message.session_id === sessionID),
+      );
     },
-    enabled: !!spaceId && sessionPreviewRequestIDs.length > 0,
-    placeholderData: keepPreviousData,
-    retry: false,
+    enabled: !!spaceId && !!sessionID,
+    retry: 1,
   });
 }
 

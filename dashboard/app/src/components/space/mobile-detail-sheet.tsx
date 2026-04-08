@@ -6,8 +6,8 @@ import type { Memory, SessionMessage } from "@/types/memory";
 export function MobileDetailSheet({
   memory,
   derivedTags = [],
-  sessionPreview,
-  sessionPreviewLoading,
+  sessionMessages,
+  sessionMessagesLoading,
   open,
   onOpenChange,
   onDelete,
@@ -16,8 +16,8 @@ export function MobileDetailSheet({
 }: {
   memory: Memory | null;
   derivedTags?: string[];
-  sessionPreview: SessionMessage[];
-  sessionPreviewLoading: boolean;
+  sessionMessages: SessionMessage[];
+  sessionMessagesLoading: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDelete: () => void;
@@ -39,8 +39,8 @@ export function MobileDetailSheet({
       <DetailPanelContent
         memory={memory}
         derivedTags={derivedTags}
-        sessionPreview={sessionPreview}
-        sessionPreviewLoading={sessionPreviewLoading}
+        sessionMessages={sessionMessages}
+        sessionMessagesLoading={sessionMessagesLoading}
         onClose={() => onOpenChange(false)}
         onDelete={onDelete}
         onEdit={onEdit}

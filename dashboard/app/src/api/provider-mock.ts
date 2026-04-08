@@ -164,7 +164,7 @@ function mockList(params: MemoryListParams): MemoryListResponse {
 function mockListSessionMessages(
   params: SessionMessageListParams,
 ): SessionMessageListResponse {
-  const limitPerSession = params.limit_per_session ?? 6;
+  const limitPerSession = params.limit_per_session ?? mockSessionPreviewTemplate.length;
   const requestedSessionIDs = Array.from(
     new Set(
       params.session_ids
