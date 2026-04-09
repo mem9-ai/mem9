@@ -25,15 +25,19 @@ const (
 	defaultMinScore = 0.3
 
 	// secondHopWeight is the RRF weight applied to second-hop vector search results.
-	// Lower than 1.0 to prevent indirect matches from outranking direct hits.
-	secondHopWeight = 0.3
+	// Raised from 0.3 to 0.6 so second-hop results can surface above first-hop noise
+	// when they carry the bridging evidence for multi-hop questions.
+	secondHopWeight = 0.6
 	// secondHopTopN is the number of top first-hop results used as seeds for second-hop search.
 	secondHopTopN = 3
 	// secondHopGateScore is the minimum first-hop cosine similarity required to
 	// trigger second-hop search. When the best vector result scores below this
 	// threshold the query likely has no strong match (e.g. adversarial), so
 	// second-hop is skipped to avoid injecting noise.
-	secondHopGateScore = 0.5
+	// Lowered from 0.5 to 0.3 (= defaultMinScore) because conversational corpora
+	// produce lower raw cosine scores than distilled facts; the old gate blocked
+	// second-hop almost entirely on dialogue-turn corpora.
+	secondHopGateScore = 0.3
 )
 
 type MemoryService struct {
@@ -393,7 +397,7 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 	if offset < 0 {
 		offset = 0
 	}
-	fetchLimit := limit * 3
+	fetchLimit := limit * 5
 
 	vecResults, vecErr := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
 	if vecErr != nil {
@@ -546,17 +550,11 @@ func (s *MemoryService) secondHopAutoSearch(
 	}
 	ch := make(chan hopResult, topN)
 	for _, seed := range seeds {
-		if len(seed.Embedding) > 0 {
-			go func(vec []float32) {
-				results, err := s.memories.VectorSearch(ctx, vec, filter, limit)
-				ch <- hopResult{results: results, err: err}
-			}(seed.Embedding)
-		} else {
-			go func(content string) {
-				results, err := s.memories.AutoVectorSearch(ctx, content, filter, limit)
-				ch <- hopResult{results: results, err: err}
-			}(seed.Content)
-		}
+		go func(query, content string) {
+			enriched := query + " " + content
+			results, err := s.memories.AutoVectorSearch(ctx, enriched, filter, limit)
+			ch <- hopResult{results: results, err: err}
+		}(filter.Query, seed.Content)
 	}
 
 	// Collect results: deduplicate, exclude seeds, keep best score per ID.
