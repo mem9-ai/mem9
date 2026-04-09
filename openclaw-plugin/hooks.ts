@@ -57,6 +57,8 @@ interface HookContext {
   sessionId?: string;
   /** Legacy alias for sessionId used by older OpenClaw versions. */
   sessionKey?: string;
+  /** What initiated this agent run: "user", "heartbeat", "cron", or "memory". */
+  trigger?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +293,13 @@ export function registerHooks(
       };
       const hookCtx = (context ?? {}) as HookContext;
       if (!evt?.success || !evt.messages || evt.messages.length === 0) return;
+
+      // Skip cron-triggered runs — they produce repetitive low-value messages
+      // (e.g. "[cron:UUID task-name] Reply to the user with exactly: Hi")
+      if (hookCtx.trigger === "cron") {
+        logger.info("[mem9] Skipping auto-ingest for cron-triggered run");
+        return;
+      }
 
       // Format raw messages into IngestMessage format
       const formatted: IngestMessage[] = [];
