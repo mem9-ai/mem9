@@ -95,6 +95,35 @@ func (s *SessionService) Search(ctx context.Context, f domain.MemoryFilter) ([]d
 	return dedupByContent(results), nil
 }
 
+func (s *SessionService) SearchCandidates(
+	ctx context.Context,
+	f domain.MemoryFilter,
+	sourcePool RecallSourcePool,
+) ([]RecallCandidate, error) {
+	limit := normalizeRecallLimit(f.Limit, DefaultSessionLimit)
+	fetchLimit := limit * defaultSessionFetchMultiplier
+
+	sf := f
+	sf.Offset = 0
+
+	var candidates []RecallCandidate
+	var err error
+
+	if s.autoModel != "" {
+		candidates, err = s.autoHybridCandidates(ctx, sf, sourcePool, limit, fetchLimit)
+	} else if s.embedder != nil {
+		candidates, err = s.hybridCandidates(ctx, sf, sourcePool, limit, fetchLimit)
+	} else if s.sessions.FTSAvailable() {
+		candidates, err = s.ftsCandidates(ctx, sf, sourcePool, fetchLimit)
+	} else {
+		candidates, err = s.keywordCandidates(ctx, sf, sourcePool, fetchLimit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return dedupRecallCandidatesByContent(candidates), nil
+}
+
 func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
 	vecResults, err := s.sessions.AutoVectorSearch(ctx, f.Query, f, fetchLimit)
 	if err != nil {
@@ -114,6 +143,27 @@ func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFi
 	merged := sortByScore(mems, scores)
 	page, _ := paginateResults(merged, f.Offset, limit)
 	return populateRelativeAge(setScores(page, scores)), nil
+}
+
+func (s *SessionService) autoHybridCandidates(
+	ctx context.Context,
+	f domain.MemoryFilter,
+	sourcePool RecallSourcePool,
+	_,
+	fetchLimit int,
+) ([]RecallCandidate, error) {
+	vecResults, err := s.sessions.AutoVectorSearch(ctx, f.Query, f, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("session auto vector search: %w", err)
+	}
+	vecResults = applyMinScore(vecResults, f.MinScore)
+
+	kwResults, err := s.ftsOrKeyword(ctx, f, fetchLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	return mergeRecallCandidates(sourcePool, kwResults, vecResults, nil), nil
 }
 
 func (s *SessionService) hybridSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
@@ -142,6 +192,32 @@ func (s *SessionService) hybridSearch(ctx context.Context, f domain.MemoryFilter
 	return populateRelativeAge(setScores(page, scores)), nil
 }
 
+func (s *SessionService) hybridCandidates(
+	ctx context.Context,
+	f domain.MemoryFilter,
+	sourcePool RecallSourcePool,
+	_,
+	fetchLimit int,
+) ([]RecallCandidate, error) {
+	queryVec, err := s.embedder.Embed(ctx, f.Query)
+	if err != nil {
+		return nil, fmt.Errorf("session embed query: %w", err)
+	}
+
+	vecResults, err := s.sessions.VectorSearch(ctx, queryVec, f, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("session vector search: %w", err)
+	}
+	vecResults = applyMinScore(vecResults, f.MinScore)
+
+	kwResults, err := s.ftsOrKeyword(ctx, f, fetchLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	return mergeRecallCandidates(sourcePool, kwResults, vecResults, nil), nil
+}
+
 func (s *SessionService) ftsSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
 	results, err := s.sessions.FTSSearch(ctx, f.Query, f, fetchLimit)
 	if err != nil {
@@ -151,6 +227,14 @@ func (s *SessionService) ftsSearch(ctx context.Context, f domain.MemoryFilter, l
 	return populateRelativeAge(page), nil
 }
 
+func (s *SessionService) ftsCandidates(ctx context.Context, f domain.MemoryFilter, sourcePool RecallSourcePool, fetchLimit int) ([]RecallCandidate, error) {
+	results, err := s.sessions.FTSSearch(ctx, f.Query, f, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("session fts search: %w", err)
+	}
+	return mergeRecallCandidates(sourcePool, results, nil, nil), nil
+}
+
 func (s *SessionService) keywordSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
 	results, err := s.sessions.KeywordSearch(ctx, f.Query, f, fetchLimit)
 	if err != nil {
@@ -158,6 +242,14 @@ func (s *SessionService) keywordSearch(ctx context.Context, f domain.MemoryFilte
 	}
 	page, _ := paginateResults(results, f.Offset, limit)
 	return populateRelativeAge(page), nil
+}
+
+func (s *SessionService) keywordCandidates(ctx context.Context, f domain.MemoryFilter, sourcePool RecallSourcePool, fetchLimit int) ([]RecallCandidate, error) {
+	results, err := s.sessions.KeywordSearch(ctx, f.Query, f, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("session keyword search: %w", err)
+	}
+	return mergeRecallCandidates(sourcePool, results, nil, nil), nil
 }
 
 func (s *SessionService) ftsOrKeyword(ctx context.Context, f domain.MemoryFilter, fetchLimit int) ([]domain.Memory, error) {

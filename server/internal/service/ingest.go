@@ -153,8 +153,9 @@ type ExtractedFact struct {
 }
 
 // dropQueryIntentFacts removes facts classified as query_intent by the extraction
-// LLM. These are search queries or lookup questions ("who is X", "how do I Y")
-// that reflect what the user asked, not what the user stated about themselves.
+// LLM. These are search queries or lookup questions ("who is X", "how do I Y",
+// "what does Z mean", "X是谁", "如何做Y", "Z是什么意思") that reflect what the
+// user asked, not what the user stated about themselves.
 // Facts with an omitted fact_type are kept — safe default on LLM non-compliance.
 // Dropped facts are logged at Info level (length only, no raw text) for observability.
 func dropQueryIntentFacts(facts []ExtractedFact) []ExtractedFact {
@@ -471,16 +472,20 @@ atomic facts from a conversation.
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
 6. Do NOT extract search queries or lookup questions as facts.
    If the user is asking the assistant to find, explain, or look something up
-   ("who is X", "how do I Y", "what does Z mean"), classify it as query_intent.
+   ("who is X", "how do I Y", "what does Z mean", "X是谁", "如何做Y", "Z是什么意思"), classify it as query_intent.
    Only store what the user STATED about themselves, their work, or their world.
    Heuristic: if the fact can only be known because the user asked, it is query_intent.
    If it reveals something stable about the user independently, it is a fact.
    Examples to skip (query_intent):
      - "User asked about the history of the Ming dynasty"
      - "User searched for how to configure nginx"
+     - "用户在问明朝历史"
+     - "用户询问如何配置 nginx"
    Examples to keep (fact):
      - "Uses nginx as the production reverse proxy"
      - "Working on a project that requires SQL window functions"
+     - "使用 nginx 作为生产反向代理"
+     - "正在做一个需要 SQL 窗口函数的项目"
 7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
 8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
@@ -574,16 +579,20 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
 6. Do NOT extract search queries or lookup questions as facts.
    If the user is asking the assistant to find, explain, or look something up
-   ("who is X", "how do I Y", "what does Z mean"), classify it as query_intent.
+   ("who is X", "how do I Y", "what does Z mean", "X是谁", "如何做Y", "Z是什么意思"), classify it as query_intent.
    Only store what the user STATED about themselves, their work, or their world.
    Heuristic: if the fact can only be known because the user asked, it is query_intent.
    If it reveals something stable about the user independently, it is a fact.
    Examples to skip (query_intent):
      - "User asked about the history of the Ming dynasty"
      - "User searched for how to configure nginx"
+     - "用户在问明朝历史"
+     - "用户询问如何配置 nginx"
    Examples to keep (fact):
      - "Uses nginx as the production reverse proxy"
      - "Working on a project that requires SQL window functions"
+     - "使用 nginx 作为生产反向代理"
+     - "正在做一个需要 SQL 窗口函数的项目"
 7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
 8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.

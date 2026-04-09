@@ -48,6 +48,8 @@ type Memory struct {
 
 	Score *float64 `json:"score,omitempty"`
 
+	Confidence *int `json:"confidence,omitempty"`
+
 	// RelativeAge is a human-readable recency string (e.g. "3 days ago").
 	// Populated server-side at query time for search results only; never stored.
 	RelativeAge string `json:"relative_age,omitempty"`
