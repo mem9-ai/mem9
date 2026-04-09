@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -706,6 +707,30 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 // decision-making. This gives the LLM a complete view of both the new facts and
 // the existing knowledge base, enabling better ADD/UPDATE/DELETE/NOOP decisions.
 func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessionID string, facts []ExtractedFact) ([]string, int, error) {
+	start := time.Now()
+	var (
+		applyActionsDuration   time.Duration
+		existingMemoriesCount  int
+		gatherExistingDuration time.Duration
+		reconcileLLMDuration   time.Duration
+		status                 = "ok"
+		warnings               int
+	)
+	defer func() {
+		slog.Info("reconcile timings",
+			"agent_id", agentID,
+			"session_id", sessionID,
+			"facts", len(facts),
+			"existing", existingMemoriesCount,
+			"status", status,
+			"warnings", warnings,
+			"gather_existing_ms", gatherExistingDuration.Milliseconds(),
+			"reconcile_llm_ms", reconcileLLMDuration.Milliseconds(),
+			"apply_actions_ms", applyActionsDuration.Milliseconds(),
+			"total_ms", time.Since(start).Milliseconds(),
+		)
+	}()
+
 	// Shadow mode: record cosine similarity of the nearest existing memory to each
 	// extracted fact. Facts always pass through unchanged — suppression is deferred
 	// until the score distribution is analyzed from prod metrics.
@@ -722,14 +747,27 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 	}
 
 	// Step 1: For each fact, search for relevant existing memories and collect them.
+	gatherExistingStart := time.Now()
 	existingMemories, gatherErr := s.gatherExistingMemories(ctx, agentID, texts)
+	gatherExistingDuration = time.Since(gatherExistingStart)
 	if gatherErr != nil {
+		status = "gather_error"
 		return nil, 0, fmt.Errorf("gather existing memories: %w", gatherErr)
 	}
+	existingMemoriesCount = len(existingMemories)
 	slog.Info("gathered existing memories for reconciliation", "facts", len(facts), "existing", len(existingMemories))
 
 	if len(existingMemories) == 0 {
-		return s.addAllFacts(ctx, agentName, agentID, sessionID, facts)
+		applyActionsStart := time.Now()
+		resultIDs, warningCount, err := s.addAllFacts(ctx, agentName, agentID, sessionID, facts)
+		applyActionsDuration = time.Since(applyActionsStart)
+		warnings = warningCount
+		if err != nil {
+			status = "add_all_error"
+			return nil, warningCount, err
+		}
+		status = "add_all"
+		return resultIDs, warningCount, nil
 	}
 
 	// Step 2: Map real UUIDs to integer IDs to prevent LLM hallucination.
@@ -838,8 +876,12 @@ New facts extracted from recent conversation:
 
 Analyze the new facts and determine whether each should be added, updated, or deleted in memory. Return the full memory state after reconciliation.`, string(refsJSON), string(factsJSON))
 
+	reconcileLLMStart := time.Now()
 	raw, err := s.llm.CompleteJSON(ctx, systemPrompt, userPrompt)
+	reconcileLLMDuration += time.Since(reconcileLLMStart)
 	if err != nil {
+		status = "reconcile_llm_warning"
+		warnings = 1
 		slog.Warn("reconciliation LLM call failed, skipping to avoid duplicates", "err", err)
 		return nil, 1, nil // warnings=1 signals that facts were extracted but reconciliation was skipped
 	}
@@ -858,14 +900,20 @@ Analyze the new facts and determine whether each should be added, updated, or de
 	parsed, err := llm.ParseJSON[reconcileResponse](raw)
 	if err != nil {
 		// Retry once.
+		reconcileRetryStart := time.Now()
 		raw2, retryErr := s.llm.CompleteJSON(ctx, systemPrompt,
 			"Your previous response was not valid JSON. Return ONLY the JSON object.\n\n"+userPrompt)
+		reconcileLLMDuration += time.Since(reconcileRetryStart)
 		if retryErr != nil {
+			status = "reconcile_llm_retry_warning"
+			warnings = 1
 			slog.Warn("reconciliation retry failed, skipping to avoid duplicates", "err", retryErr)
 			return nil, 1, nil // warnings=1 signals that facts were extracted but reconciliation was skipped
 		}
 		parsed, err = llm.ParseJSON[reconcileResponse](raw2)
 		if err != nil {
+			status = "reconcile_parse_warning"
+			warnings = 1
 			if s.llm.DebugLLM() {
 				slog.Warn("reconciliation JSON parse failed after retry, skipping to avoid duplicates", "raw", raw2, "err", err)
 			} else {
@@ -876,8 +924,8 @@ Analyze the new facts and determine whether each should be added, updated, or de
 	}
 
 	// Step 4: Execute each action.
+	applyActionsStart := time.Now()
 	var resultIDs []string
-	var warnings int
 
 	for _, event := range parsed.Memory {
 		switch strings.ToUpper(event.Event) {
@@ -958,8 +1006,22 @@ Analyze the new facts and determine whether each should be added, updated, or de
 			slog.Warn("unknown reconciliation event", "event", event.Event, "id", event.ID)
 		}
 	}
+	applyActionsDuration = time.Since(applyActionsStart)
 
 	return resultIDs, warnings, nil
+}
+
+const gatherExistingMemoriesConcurrency = 4
+
+type existingMemoryCandidate struct {
+	applyThreshold bool
+	memory         domain.Memory
+}
+
+type factSearchResult struct {
+	attempts   int
+	candidates []existingMemoryCandidate
+	successes  int
 }
 
 // gatherExistingMemories searches relevant memories for each fact, deduplicates
@@ -973,23 +1035,24 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 	const maxExistingMemories = 60
 	const minSimilarityScore = 0.3 // Skip vector results with score below this threshold
 
-	var searchAttempts, searchSuccesses int
 	filter := domain.MemoryFilter{
 		State:      "active",
 		MemoryType: "insight,pinned",
 		AgentID:    agentID,
 	}
+	ftsAvailable := s.memories.FTSAvailable()
 
 	seen := make(map[string]struct{})
 	var result []domain.Memory
 
-	addUnseen := func(matches []domain.Memory, applyThreshold bool) {
-		for _, m := range matches {
+	addUnseen := func(candidates []existingMemoryCandidate) {
+		for _, candidate := range candidates {
+			m := candidate.memory
 			if _, ok := seen[m.ID]; ok {
 				continue
 			}
 			// Skip low-similarity vector results to avoid polluting LLM context.
-			if applyThreshold && m.Score != nil && *m.Score < minSimilarityScore {
+			if candidate.applyThreshold && m.Score != nil && *m.Score < minSimilarityScore {
 				continue
 			}
 			seen[m.ID] = struct{}{}
@@ -998,88 +1061,37 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 		}
 	}
 
-	// No vector search available.
-	if s.embedder == nil && s.autoModel == "" {
-		// Use FTS if available, otherwise fall back to keyword (LIKE) search.
-		// During cold start, FTS may not yet be available (probe still running).
-		for _, fact := range facts {
-			var kwMatches []domain.Memory
-			var kwErr error
-			if s.memories.FTSAvailable() {
-				kwMatches, kwErr = s.memories.FTSSearch(ctx, fact, filter, perFactLimit)
-			} else {
-				kwMatches, kwErr = s.memories.KeywordSearch(ctx, fact, filter, perFactLimit)
-			}
-			searchAttempts++
-			if kwErr != nil {
-				slog.Warn("gatherExistingMemories: keyword/FTS search failed for fact, skipping", "fact_len", len(fact), "err", kwErr)
-				continue
-			}
-			searchSuccesses++
-			addUnseen(kwMatches, false)
-		}
-		// If every search attempt failed, return an error to prevent silent duplicate writes.
-		if searchAttempts > 0 && searchSuccesses == 0 {
-			return nil, fmt.Errorf("all %d search attempts failed: search backends may be unavailable", searchAttempts)
-		}
-		if len(result) > maxExistingMemories {
-			result = result[:maxExistingMemories]
-		}
-		return result, nil
+	searchResults := make([]factSearchResult, len(facts))
+	workerCount := gatherExistingMemoriesConcurrency
+	if workerCount > len(facts) {
+		workerCount = len(facts)
+	}
+	if workerCount < 1 {
+		workerCount = 1
 	}
 
-	for _, fact := range facts {
-		// Leg 1: Vector search.
-		var vecMatches []domain.Memory
-		var vecLegOK bool
-		if s.autoModel != "" {
-			searchAttempts++
-			var vecErr error
-			vecMatches, vecErr = s.memories.AutoVectorSearch(ctx, fact, filter, perFactLimit)
-			if vecErr != nil {
-				slog.Warn("gatherExistingMemories: auto vector search failed for fact, continuing with keyword leg", "fact_len", len(fact), "err", vecErr)
-			} else {
-				searchSuccesses++
-				vecLegOK = true
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for idx := range jobs {
+				searchResults[idx] = s.searchExistingMemoriesForFact(ctx, facts[idx], filter, ftsAvailable, perFactLimit)
 			}
-		} else {
-			searchAttempts++
-			vec, embedErr := s.embedder.Embed(ctx, fact)
-			if embedErr != nil {
-				slog.Warn("gatherExistingMemories: embed failed for fact, continuing with keyword leg", "fact_len", len(fact), "err", embedErr)
-			} else {
-				var vecErr error
-				vecMatches, vecErr = s.memories.VectorSearch(ctx, vec, filter, perFactLimit)
-				if vecErr != nil {
-					slog.Warn("gatherExistingMemories: vector search failed for fact, continuing with keyword leg", "fact_len", len(fact), "err", vecErr)
-				} else {
-					searchSuccesses++
-					vecLegOK = true
-				}
-			}
-		}
-		addUnseen(vecMatches, true) // Apply similarity threshold to vector results
+		}()
+	}
+	for idx := range facts {
+		jobs <- idx
+	}
+	close(jobs)
+	wg.Wait()
 
-		// Leg 2: FTS / keyword search — catches exact terms that vector search may miss.
-		var kwMatches []domain.Memory
-		var kwErr error
-		if s.memories.FTSAvailable() {
-			kwMatches, kwErr = s.memories.FTSSearch(ctx, fact, filter, perFactLimit)
-		} else {
-			kwMatches, kwErr = s.memories.KeywordSearch(ctx, fact, filter, perFactLimit)
-		}
-		searchAttempts++
-		if kwErr != nil {
-			slog.Warn("gatherExistingMemories: keyword/FTS search failed for fact, skipping", "fact_len", len(fact), "err", kwErr)
-		} else {
-			searchSuccesses++
-			addUnseen(kwMatches, false) // No threshold for keyword/FTS results
-		}
-
-		// If neither leg succeeded for this fact, log it clearly.
-		if !vecLegOK && kwErr != nil {
-			slog.Error("gatherExistingMemories: both search legs failed for fact", "fact_len", len(fact), "err", kwErr)
-		}
+	var searchAttempts, searchSuccesses int
+	for _, searchResult := range searchResults {
+		searchAttempts += searchResult.attempts
+		searchSuccesses += searchResult.successes
+		addUnseen(searchResult.candidates)
 	}
 
 	// If every single search attempt failed, we have a total outage.
@@ -1093,6 +1105,104 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 		result = result[:maxExistingMemories]
 	}
 	return result, nil
+}
+
+func (s *IngestService) searchExistingMemoriesForFact(
+	ctx context.Context,
+	fact string,
+	filter domain.MemoryFilter,
+	ftsAvailable bool,
+	perFactLimit int,
+) factSearchResult {
+	addMatches := func(result *factSearchResult, matches []domain.Memory, applyThreshold bool) {
+		for _, match := range matches {
+			result.candidates = append(result.candidates, existingMemoryCandidate{
+				applyThreshold: applyThreshold,
+				memory:         match,
+			})
+		}
+	}
+
+	if s.embedder == nil && s.autoModel == "" {
+		var (
+			kwErr     error
+			kwMatches []domain.Memory
+			result    factSearchResult
+		)
+		result.attempts++
+		if ftsAvailable {
+			kwMatches, kwErr = s.memories.FTSSearch(ctx, fact, filter, perFactLimit)
+		} else {
+			kwMatches, kwErr = s.memories.KeywordSearch(ctx, fact, filter, perFactLimit)
+		}
+		if kwErr != nil {
+			slog.Warn("gatherExistingMemories: keyword/FTS search failed for fact, skipping", "fact_len", len(fact), "err", kwErr)
+			return result
+		}
+		result.successes++
+		addMatches(&result, kwMatches, false)
+		return result
+	}
+
+	result := factSearchResult{}
+
+	// Leg 1: Vector search.
+	var (
+		vecLegOK   bool
+		vecMatches []domain.Memory
+	)
+	if s.autoModel != "" {
+		result.attempts++
+		var vecErr error
+		vecMatches, vecErr = s.memories.AutoVectorSearch(ctx, fact, filter, perFactLimit)
+		if vecErr != nil {
+			slog.Warn("gatherExistingMemories: auto vector search failed for fact, continuing with keyword leg", "fact_len", len(fact), "err", vecErr)
+		} else {
+			result.successes++
+			vecLegOK = true
+		}
+	} else {
+		result.attempts++
+		vec, embedErr := s.embedder.Embed(ctx, fact)
+		if embedErr != nil {
+			slog.Warn("gatherExistingMemories: embed failed for fact, continuing with keyword leg", "fact_len", len(fact), "err", embedErr)
+		} else {
+			var vecErr error
+			vecMatches, vecErr = s.memories.VectorSearch(ctx, vec, filter, perFactLimit)
+			if vecErr != nil {
+				slog.Warn("gatherExistingMemories: vector search failed for fact, continuing with keyword leg", "fact_len", len(fact), "err", vecErr)
+			} else {
+				result.successes++
+				vecLegOK = true
+			}
+		}
+	}
+	addMatches(&result, vecMatches, true)
+
+	// Leg 2: FTS / keyword search — catches exact terms that vector search may miss.
+	result.attempts++
+	var (
+		kwErr     error
+		kwMatches []domain.Memory
+	)
+	if ftsAvailable {
+		kwMatches, kwErr = s.memories.FTSSearch(ctx, fact, filter, perFactLimit)
+	} else {
+		kwMatches, kwErr = s.memories.KeywordSearch(ctx, fact, filter, perFactLimit)
+	}
+	if kwErr != nil {
+		slog.Warn("gatherExistingMemories: keyword/FTS search failed for fact, skipping", "fact_len", len(fact), "err", kwErr)
+	} else {
+		result.successes++
+		addMatches(&result, kwMatches, false)
+	}
+
+	// If neither leg succeeded for this fact, log it clearly.
+	if !vecLegOK && kwErr != nil {
+		slog.Error("gatherExistingMemories: both search legs failed for fact", "fact_len", len(fact), "err", kwErr)
+	}
+
+	return result
 }
 
 // addAllFacts adds all facts as new insights when no existing memories are

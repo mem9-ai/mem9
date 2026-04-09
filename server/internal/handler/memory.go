@@ -181,6 +181,29 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 // ingestMessages runs the full ingest pipeline: BulkCreate → ExtractPhase1 → PatchTags + ReconcilePhase2.
 // TODO: wrap all database writes (BulkCreate, PatchTags, ReconcilePhase2) in a single transaction to guarantee atomicity.
 func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, req service.IngestRequest) (*service.IngestResult, error) {
+	start := time.Now()
+	var (
+		bulkCreateDuration    time.Duration
+		extractPhase1Duration time.Duration
+		patchTagsDuration     time.Duration
+		reconcileDuration     time.Duration
+		factsCount            int
+		status                = "ok"
+	)
+	defer func() {
+		s.logger.Info("messages ingest timings",
+			"session", req.SessionID,
+			"messages", len(req.Messages),
+			"facts", factsCount,
+			"status", status,
+			"bulk_create_ms", bulkCreateDuration.Milliseconds(),
+			"extract_phase1_ms", extractPhase1Duration.Milliseconds(),
+			"patch_tags_ms", patchTagsDuration.Milliseconds(),
+			"reconcile_phase2_ms", reconcileDuration.Milliseconds(),
+			"total_ms", time.Since(start).Milliseconds(),
+		)
+	}()
+
 	// Strip plugin-injected context (e.g. <relevant-memories>) before any storage or LLM path.
 	// This is the single sanitization point for the handler-driven pipeline (BulkCreate, ExtractPhase1, etc.).
 	req.Messages = service.StripInjectedContext(req.Messages)
@@ -188,16 +211,22 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	// Session persistence is best-effort for both sync and async paths.
 	// sync=true guarantees only that reconcile (memory extraction) completed —
 	// raw session rows in /session-messages may be absent if BulkCreate fails.
+	bulkCreateStart := time.Now()
 	if err := svc.session.BulkCreate(ctx, auth.AgentName, req); err != nil {
 		slog.Error("session raw save failed",
 			"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
 	}
+	bulkCreateDuration = time.Since(bulkCreateStart)
 
+	extractPhase1Start := time.Now()
 	phase1, err := svc.ingest.ExtractPhase1(ctx, req.Messages)
+	extractPhase1Duration = time.Since(extractPhase1Start)
 	if err != nil {
+		status = "phase1_error"
 		slog.Error("phase1 extraction failed", "session", req.SessionID, "err", err)
 		return nil, fmt.Errorf("phase1 extraction: %w", err)
 	}
+	factsCount = len(phase1.Facts)
 
 	var wg sync.WaitGroup
 	var reconcileResult *service.IngestResult
@@ -206,6 +235,10 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		patchTagsStart := time.Now()
+		defer func() {
+			patchTagsDuration = time.Since(patchTagsStart)
+		}()
 		for i, msg := range req.Messages {
 			tags := tagsAtIndex(phase1.MessageTags, i)
 			if len(tags) == 0 {
@@ -221,6 +254,10 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 
 	go func() {
 		defer wg.Done()
+		reconcileStart := time.Now()
+		defer func() {
+			reconcileDuration = time.Since(reconcileStart)
+		}()
 		reconcileResult, reconcileErr = svc.ingest.ReconcilePhase2(
 			ctx, auth.AgentName, req.AgentID, req.SessionID, phase1.Facts)
 	}()
@@ -228,8 +265,12 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	wg.Wait()
 
 	if reconcileErr != nil {
+		status = "reconcile_error"
 		slog.Error("memories reconcile failed", "session", req.SessionID, "err", reconcileErr)
 		return nil, fmt.Errorf("reconcile: %w", reconcileErr)
+	}
+	if reconcileResult != nil {
+		status = reconcileResult.Status
 	}
 
 	return reconcileResult, nil

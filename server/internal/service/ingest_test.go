@@ -18,6 +18,7 @@ import (
 )
 
 type memoryRepoMock struct {
+	mu                   sync.Mutex
 	createCalls          []*domain.Memory
 	getByID              map[string]*domain.Memory
 	getByIDErr           error
@@ -36,6 +37,9 @@ type memoryRepoMock struct {
 	lastAutoVectorFilter domain.MemoryFilter
 	lastKeywordFilter    domain.MemoryFilter
 	lastFTSFilter        domain.MemoryFilter
+	autoVectorSearchHook func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
+	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
+	ftsSearchHook        func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 }
 
 type setStateCall struct {
@@ -44,11 +48,15 @@ type setStateCall struct {
 }
 
 func (m *memoryRepoMock) Create(ctx context.Context, mem *domain.Memory) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.createCalls = append(m.createCalls, mem)
 	return nil
 }
 
 func (m *memoryRepoMock) GetByID(ctx context.Context, id string) (*domain.Memory, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.getByIDErr != nil {
 		return nil, m.getByIDErr
 	}
@@ -595,44 +603,82 @@ func (m *memoryRepoMock) BulkCreate(ctx context.Context, memories []*domain.Memo
 }
 
 func (m *memoryRepoMock) VectorSearch(ctx context.Context, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	m.mu.Lock()
 	m.lastVectorFilter = f
+	vectorErr := m.vectorErr
+	vectorResults := m.vectorResults
+	m.mu.Unlock()
+	if vectorErr != nil {
+		return nil, vectorErr
+	}
+	if vectorResults != nil {
+		return vectorResults, nil
+	}
 	return nil, nil
 }
 
 func (m *memoryRepoMock) AutoVectorSearch(ctx context.Context, queryText string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	m.mu.Lock()
 	m.lastAutoVectorFilter = f
-	if m.vectorErr != nil {
-		return nil, m.vectorErr
+	hook := m.autoVectorSearchHook
+	vectorErr := m.vectorErr
+	vectorResults := m.vectorResults
+	m.mu.Unlock()
+	if hook != nil {
+		return hook(ctx, queryText, f, limit)
 	}
-	if m.vectorResults != nil {
-		return m.vectorResults, nil
+	if vectorErr != nil {
+		return nil, vectorErr
+	}
+	if vectorResults != nil {
+		return vectorResults, nil
 	}
 	return nil, nil
 }
 
 func (m *memoryRepoMock) KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	m.mu.Lock()
 	m.lastKeywordFilter = f
-	if m.kwErr != nil {
-		return nil, m.kwErr
+	hook := m.keywordSearchHook
+	kwErr := m.kwErr
+	kwResults := m.kwResults
+	m.mu.Unlock()
+	if hook != nil {
+		return hook(ctx, query, f, limit)
 	}
-	if m.kwResults != nil {
-		return m.kwResults, nil
+	if kwErr != nil {
+		return nil, kwErr
+	}
+	if kwResults != nil {
+		return kwResults, nil
 	}
 	return nil, nil
 }
 
 func (m *memoryRepoMock) FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	m.mu.Lock()
 	m.lastFTSFilter = f
-	if m.ftsErr != nil {
-		return nil, m.ftsErr
+	hook := m.ftsSearchHook
+	ftsErr := m.ftsErr
+	ftsResults := m.ftsResults
+	m.mu.Unlock()
+	if hook != nil {
+		return hook(ctx, query, f, limit)
 	}
-	if m.ftsResults != nil {
-		return m.ftsResults, nil
+	if ftsErr != nil {
+		return nil, ftsErr
+	}
+	if ftsResults != nil {
+		return ftsResults, nil
 	}
 	return nil, nil
 }
 
-func (m *memoryRepoMock) FTSAvailable() bool { return m.ftsAvail }
+func (m *memoryRepoMock) FTSAvailable() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.ftsAvail
+}
 
 func (m *memoryRepoMock) ListBootstrap(ctx context.Context, limit int) ([]domain.Memory, error) {
 	return nil, nil
@@ -1498,6 +1544,98 @@ func TestGatherExistingMemoriesHybridDedup(t *testing.T) {
 	}
 	if !ids["shared-1"] || !ids["vec-only"] || !ids["fts-only"] {
 		t.Fatalf("expected shared-1, vec-only, fts-only; got %v", ids)
+	}
+}
+
+func TestGatherExistingMemoriesParallelMergeKeepsFactOrder(t *testing.T) {
+	t.Parallel()
+
+	highScore := 0.8
+	memRepo := &memoryRepoMock{
+		ftsAvail: true,
+		autoVectorSearchHook: func(_ context.Context, query string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			if query == "fact-1" {
+				time.Sleep(25 * time.Millisecond)
+				return []domain.Memory{{ID: "vec-1", Content: "vector one", MemoryType: domain.TypeInsight, State: domain.StateActive, Score: &highScore}}, nil
+			}
+			return []domain.Memory{{ID: "vec-2", Content: "vector two", MemoryType: domain.TypeInsight, State: domain.StateActive, Score: &highScore}}, nil
+		},
+		ftsSearchHook: func(_ context.Context, query string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			if query == "fact-1" {
+				time.Sleep(25 * time.Millisecond)
+				return []domain.Memory{{ID: "fts-1", Content: "fts one", MemoryType: domain.TypeInsight, State: domain.StateActive}}, nil
+			}
+			return []domain.Memory{{ID: "fts-2", Content: "fts two", MemoryType: domain.TypeInsight, State: domain.StateActive}}, nil
+		},
+	}
+
+	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"fact-1", "fact-2"})
+	if err != nil {
+		t.Fatalf("gatherExistingMemories() error = %v", err)
+	}
+
+	if len(result) != 4 {
+		t.Fatalf("expected 4 memories, got %d", len(result))
+	}
+	gotIDs := []string{result[0].ID, result[1].ID, result[2].ID, result[3].ID}
+	wantIDs := []string{"vec-1", "fts-1", "vec-2", "fts-2"}
+	if strings.Join(gotIDs, ",") != strings.Join(wantIDs, ",") {
+		t.Fatalf("expected stable merge order %v, got %v", wantIDs, gotIDs)
+	}
+}
+
+func TestGatherExistingMemoriesSearchesFactsInParallel(t *testing.T) {
+	t.Parallel()
+
+	highScore := 0.8
+	var (
+		maxConcurrent int
+		current       int
+		mu            sync.Mutex
+	)
+
+	memRepo := &memoryRepoMock{
+		autoVectorSearchHook: func(_ context.Context, query string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			mu.Lock()
+			current++
+			if current > maxConcurrent {
+				maxConcurrent = current
+			}
+			mu.Unlock()
+
+			time.Sleep(20 * time.Millisecond)
+
+			mu.Lock()
+			current--
+			mu.Unlock()
+
+			return []domain.Memory{{
+				ID:         "vec-" + query,
+				Content:    "vector result for " + query,
+				MemoryType: domain.TypeInsight,
+				State:      domain.StateActive,
+				Score:      &highScore,
+			}}, nil
+		},
+	}
+
+	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	_, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{
+		"fact-1",
+		"fact-2",
+		"fact-3",
+		"fact-4",
+		"fact-5",
+		"fact-6",
+	})
+	if err != nil {
+		t.Fatalf("gatherExistingMemories() error = %v", err)
+	}
+	if maxConcurrent <= 1 {
+		t.Fatalf("expected parallel fact searches, max concurrent calls = %d", maxConcurrent)
 	}
 }
 
