@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -28,6 +29,9 @@ var (
 	answerLocationCueRe = regexp.MustCompile(`\b(?:in|at|from|to|near|around|outside|inside)\s+[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2}\b`)
 	answerCountWordRe   = regexp.MustCompile(`\b(?:one|two|three|four|five|six|seven|eight|nine|ten|couple|few|several)\b`)
 	answerVaguePlaceRe  = regexp.MustCompile(`\b(?:home country|the area|the region|somewhere|another city)\b`)
+	// Keep the application timeout below the benchmark client's 10m request timeout
+	// so slow sync ingest returns a structured JSON 504 instead of a socket-level abort.
+	syncIngestTimeout = 9 * time.Minute
 )
 
 type groundingAnswerShape int
@@ -50,6 +54,10 @@ type createMemoryRequest struct {
 	SessionID string                  `json:"session_id,omitempty"`
 	Mode      service.IngestMode      `json:"mode,omitempty"`
 	Sync      bool                    `json:"sync,omitempty"`
+}
+
+func isSyncIngestTimeout(ctx context.Context, err error) bool {
+	return err != nil && errors.Is(err, context.DeadlineExceeded) && errors.Is(ctx.Err(), context.DeadlineExceeded)
 }
 
 func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
@@ -85,9 +93,17 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if req.Sync {
-			result, err := s.ingestMessages(r.Context(), auth, svc, ingestReq)
+			syncCtx, cancel := context.WithTimeout(r.Context(), syncIngestTimeout)
+			defer cancel()
+
+			result, err := s.ingestMessages(syncCtx, auth, svc, ingestReq)
 			if err != nil {
-				s.handleError(r.Context(), w, err)
+				if isSyncIngestTimeout(syncCtx, err) {
+					s.logger.Warn("sync ingest timed out", "session", ingestReq.SessionID, "timeout", syncIngestTimeout)
+					respondError(w, http.StatusGatewayTimeout, fmt.Sprintf("sync ingest timed out after %s", syncIngestTimeout))
+					return
+				}
+				s.handleError(syncCtx, w, err)
 				return
 			}
 			if result != nil && result.Status == "failed" {
