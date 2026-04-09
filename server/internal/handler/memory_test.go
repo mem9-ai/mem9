@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -329,7 +328,7 @@ func (m *failSearchMemoryRepo) KeywordSearch(context.Context, string, domain.Mem
 	return nil, errors.New("simulated search failure")
 }
 
-func TestCreateMemory_SyncMessages_Phase1Error_Returns500(t *testing.T) {
+func TestCreateMemory_SyncMessages_Phase1Error_FallsBackToSuccess(t *testing.T) {
 	// Mock LLM that always returns 500.
 	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -353,6 +352,7 @@ func TestCreateMemory_SyncMessages_Phase1Error_Returns500(t *testing.T) {
 	body := map[string]any{
 		"messages": []map[string]string{
 			{"role": "user", "content": "hello"},
+			{"role": "assistant", "content": "noted"},
 		},
 		"session_id": "test-session",
 		"sync":       true,
@@ -362,8 +362,8 @@ func TestCreateMemory_SyncMessages_Phase1Error_Returns500(t *testing.T) {
 
 	srv.createMemory(rr, req)
 
-	if rr.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d: %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -487,7 +487,7 @@ func TestCreateMemory_SyncMessages_ReconcileFailure_Returns500(t *testing.T) {
 	}
 }
 
-func TestCreateMemory_SyncMessages_Timeout_Returns504(t *testing.T) {
+func TestCreateMemory_SyncMessages_Timeout_FallsBackToSuccess(t *testing.T) {
 	oldTimeout := syncIngestTimeout
 	syncIngestTimeout = 10 * time.Millisecond
 	defer func() { syncIngestTimeout = oldTimeout }()
@@ -514,6 +514,7 @@ func TestCreateMemory_SyncMessages_Timeout_Returns504(t *testing.T) {
 	body := map[string]any{
 		"messages": []map[string]string{
 			{"role": "user", "content": "hello"},
+			{"role": "assistant", "content": "noted"},
 		},
 		"session_id": "test-session",
 		"sync":       true,
@@ -523,17 +524,8 @@ func TestCreateMemory_SyncMessages_Timeout_Returns504(t *testing.T) {
 
 	srv.createMemory(rr, req)
 
-	if rr.Code != http.StatusGatewayTimeout {
-		t.Fatalf("expected 504, got %d: %s", rr.Code, rr.Body.String())
-	}
-
-	var resp map[string]string
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatal(err)
-	}
-	want := fmt.Sprintf("sync ingest timed out after %s", syncIngestTimeout)
-	if resp["error"] != want {
-		t.Fatalf("expected error %q, got %q", want, resp["error"])
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

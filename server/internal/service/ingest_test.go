@@ -90,7 +90,7 @@ func TestExtractFactsReturnsTags(t *testing.T) {
 	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
 	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
 
-	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22")
+	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22\n\nAssistant: Got it.")
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
@@ -121,7 +121,7 @@ func TestExtractFactsTagsOmitted(t *testing.T) {
 	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
 	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
 
-	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22")
+	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22\n\nAssistant: Got it.")
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
@@ -171,6 +171,102 @@ func TestExtractPhase1FactTagsPopulated(t *testing.T) {
 	}
 }
 
+func TestExtractFactsSingleMessageShortCircuitsToRawFallback(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22")
+	if err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+	if callCount != 0 {
+		t.Fatalf("expected 0 LLM calls for single-message short circuit, got %d", callCount)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("expected 1 raw fallback fact, got %d", len(facts))
+	}
+	if facts[0].FactType != factTypeRawFallback || facts[0].Text != "I use Go 1.22" {
+		t.Fatalf("expected raw fallback fact preserving original text, got %+v", facts[0])
+	}
+	if len(facts[0].Tags) != 1 || facts[0].Tags[0] != rawFallbackTag {
+		t.Fatalf("expected raw fallback tag, got %v", facts[0].Tags)
+	}
+}
+
+func TestExtractPhase1SingleMessageShortCircuitsToRawFallback(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}], "message_tags": [["tech"]]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	result, err := svc.ExtractPhase1(context.Background(), []IngestMessage{
+		{Role: "user", Content: "I use Go 1.22"},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+	if callCount != 0 {
+		t.Fatalf("expected 0 LLM calls for single-message short circuit, got %d", callCount)
+	}
+	if len(result.Facts) != 1 || result.Facts[0].FactType != factTypeRawFallback {
+		t.Fatalf("expected 1 raw fallback fact, got %v", result.Facts)
+	}
+	if len(result.MessageTags) != 1 || len(result.MessageTags[0]) != 1 || result.MessageTags[0][0] != rawFallbackTag {
+		t.Fatalf("expected message_tags[0] = [%s], got %v", rawFallbackTag, result.MessageTags)
+	}
+}
+
+func TestExtractFactsEmptyResultFallsBackToRawFact(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts": []}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22\n\nAssistant: Noted.")
+	if err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+	if len(facts) != 1 || facts[0].FactType != factTypeRawFallback || facts[0].Text != "I use Go 1.22" {
+		t.Fatalf("expected raw fallback fact after empty extraction, got %v", facts)
+	}
+}
+
 func TestExtractFactsRetryFallbackDropsFlattenedQueryIntent(t *testing.T) {
 	t.Parallel()
 
@@ -195,15 +291,21 @@ func TestExtractFactsRetryFallbackDropsFlattenedQueryIntent(t *testing.T) {
 	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
 	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
 
-	facts, err := svc.extractFacts(context.Background(), "User: how do I configure nginx?")
+	facts, err := svc.extractFacts(context.Background(), "User: how do I configure nginx?\n\nAssistant: Let me check.")
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
 	if callCount != 2 {
 		t.Fatalf("expected 2 LLM calls, got %d", callCount)
 	}
-	if len(facts) != 0 {
-		t.Fatalf("expected query_intent fallback fact to be dropped, got %v", facts)
+	if len(facts) != 1 {
+		t.Fatalf("expected 1 raw fallback fact, got %v", facts)
+	}
+	if facts[0].FactType != factTypeRawFallback {
+		t.Fatalf("expected fact_type %q, got %q", factTypeRawFallback, facts[0].FactType)
+	}
+	if facts[0].Text != "how do I configure nginx?" {
+		t.Fatalf("expected fallback text to preserve user content, got %q", facts[0].Text)
 	}
 }
 
@@ -217,7 +319,7 @@ func TestExtractFactsAndTagsRetryFallbackDropsFlattenedQueryIntent(t *testing.T)
 
 		resp := `{"facts":[`
 		if callCount == 2 {
-			resp = `{"facts":":[{","text":"User searched for how to configure nginx","tags":["tech"],"fact_type":"query_intent","message_tags":[["question"]]}`
+			resp = `{"facts":":[{","text":"User searched for how to configure nginx","tags":["tech"],"fact_type":"query_intent","message_tags":[["question"],["answer"]]}`
 		}
 
 		json.NewEncoder(w).Encode(map[string]any{
@@ -231,21 +333,24 @@ func TestExtractFactsAndTagsRetryFallbackDropsFlattenedQueryIntent(t *testing.T)
 	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
 	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
 
-	facts, messageTags, err := svc.extractFactsAndTags(context.Background(), "User: how do I configure nginx?", 1)
+	facts, messageTags, err := svc.extractFactsAndTags(context.Background(), "User: how do I configure nginx?\n\nAssistant: Let me check.", 2)
 	if err != nil {
 		t.Fatalf("extractFactsAndTags() error = %v", err)
 	}
 	if callCount != 2 {
 		t.Fatalf("expected 2 LLM calls, got %d", callCount)
 	}
-	if len(facts) != 0 {
-		t.Fatalf("expected query_intent fallback fact to be dropped, got %v", facts)
+	if len(facts) != 1 || facts[0].FactType != factTypeRawFallback {
+		t.Fatalf("expected 1 raw fallback fact, got %v", facts)
 	}
-	if len(messageTags) != 1 {
-		t.Fatalf("expected 1 message_tags entry, got %d", len(messageTags))
+	if len(messageTags) != 2 {
+		t.Fatalf("expected 2 message_tags entries, got %d", len(messageTags))
 	}
 	if len(messageTags[0]) != 1 || messageTags[0][0] != "question" {
 		t.Fatalf("expected message_tags[0] = [question], got %v", messageTags[0])
+	}
+	if len(messageTags[1]) != 1 || messageTags[1][0] != "answer" {
+		t.Fatalf("expected message_tags[1] = [answer], got %v", messageTags[1])
 	}
 }
 
@@ -273,7 +378,10 @@ func TestColdStartAddAllFactsSetsTags(t *testing.T) {
 		Mode:      ModeSmart,
 		SessionID: "sess-cold",
 		AgentID:   "agent-1",
-		Messages:  []IngestMessage{{Role: "user", Content: "I work at company Y"}},
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I work at company Y"},
+			{Role: "assistant", Content: "Noted."},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)
@@ -318,7 +426,10 @@ func TestReconcileAddSetsTagsOnMemory(t *testing.T) {
 		Mode:      ModeSmart,
 		SessionID: "sess-add",
 		AgentID:   "agent-1",
-		Messages:  []IngestMessage{{Role: "user", Content: "I use Go 1.22"}},
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I use Go 1.22"},
+			{Role: "assistant", Content: "Noted."},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)
@@ -363,7 +474,10 @@ func TestReconcileUpdateSetsTagsOnMemory(t *testing.T) {
 		Mode:      ModeSmart,
 		SessionID: "sess-update",
 		AgentID:   "agent-1",
-		Messages:  []IngestMessage{{Role: "user", Content: "I now work at company Y"}},
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I now work at company Y"},
+			{Role: "assistant", Content: "Noted."},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)
@@ -408,7 +522,10 @@ func TestReconcileUpdateTagsOmitted(t *testing.T) {
 		Mode:      ModeSmart,
 		SessionID: "sess-update-notags",
 		AgentID:   "agent-1",
-		Messages:  []IngestMessage{{Role: "user", Content: "I now work at company Y"}},
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I now work at company Y"},
+			{Role: "assistant", Content: "Noted."},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)
@@ -455,7 +572,10 @@ func TestReconcileTagsOmittedGracefully(t *testing.T) {
 		Mode:      ModeSmart,
 		SessionID: "sess-notags",
 		AgentID:   "agent-1",
-		Messages:  []IngestMessage{{Role: "user", Content: "I use Go 1.22"}},
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I use Go 1.22"},
+			{Role: "assistant", Content: "Noted."},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)
@@ -508,7 +628,10 @@ func TestReconcileTagsClamped(t *testing.T) {
 		Mode:      ModeSmart,
 		SessionID: "sess-clamp",
 		AgentID:   "agent-1",
-		Messages:  []IngestMessage{{Role: "user", Content: "I use Go 1.22"}},
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I use Go 1.22"},
+			{Role: "assistant", Content: "Noted."},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)
@@ -552,7 +675,10 @@ func TestReconcilePinnedFallbackCarriesTags(t *testing.T) {
 		Mode:      ModeSmart,
 		SessionID: "sess-pinned",
 		AgentID:   "agent-1",
-		Messages:  []IngestMessage{{Role: "user", Content: "I use Go 1.22"}},
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I use Go 1.22"},
+			{Role: "assistant", Content: "Noted."},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)
@@ -563,6 +689,50 @@ func TestReconcilePinnedFallbackCarriesTags(t *testing.T) {
 	got := memRepo.createCalls[0].Tags
 	if len(got) != 1 || got[0] != "tech" {
 		t.Fatalf("expected tags [tech], got %v", got)
+	}
+}
+
+func TestReconcileAddPreservesRawFallbackTag(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"memory": [{"id": "new", "text": "I use Go 1.22", "event": "ADD", "tags": ["tech"]}]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "existing-1", Content: "Works remotely", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-raw-fallback-tag",
+		AgentID:   "agent-1",
+		Messages:  []IngestMessage{{Role: "user", Content: "I use Go 1.22"}},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected 1 LLM call (reconcile only), got %d", callCount)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 create call, got %d", len(memRepo.createCalls))
+	}
+	got := memRepo.createCalls[0].Tags
+	if len(got) != 2 || got[0] != "tech" || got[1] != rawFallbackTag {
+		t.Fatalf("expected reconcile ADD tags [tech %s], got %v", rawFallbackTag, got)
 	}
 }
 
@@ -1108,7 +1278,7 @@ func TestIngestStripsInjectedContextAcrossModes(t *testing.T) {
 		{name: "raw mode without llm", mode: ModeRaw, withLLM: false, wantCreatedContent: "User: keep this", wantLLMCalls: 0},
 		{name: "smart mode without llm", mode: ModeSmart, withLLM: false, wantCreatedContent: "User: keep this", wantLLMCalls: 0},
 		{name: "raw mode with llm", mode: ModeRaw, withLLM: true, wantCreatedContent: "User: keep this", wantLLMCalls: 0},
-		{name: "smart mode with llm", mode: ModeSmart, withLLM: true, wantCreatedContent: "keep this", wantLLMCalls: 2},
+		{name: "smart mode with llm", mode: ModeSmart, withLLM: true, wantCreatedContent: "keep this", wantLLMCalls: 1},
 	}
 
 	for _, tt := range tests {
@@ -1135,7 +1305,7 @@ func TestIngestStripsInjectedContextAcrossModes(t *testing.T) {
 					mu.Unlock()
 
 					resp := `{"facts": [{"text": "keep this"}]}`
-					if currentCall == 2 {
+					if currentCall == tt.wantLLMCalls {
 						resp = `{"memory": [{"id": "new", "text": "keep this", "event": "ADD"}]}`
 					}
 					w.Header().Set("Content-Type", "application/json")
@@ -1950,7 +2120,10 @@ func TestReconcileUpdatePreservesExistingTagsWhenLLMOmits(t *testing.T) {
 		Mode:      ModeSmart,
 		SessionID: "sess-preserve-tags",
 		AgentID:   "agent-1",
-		Messages:  []IngestMessage{{Role: "user", Content: "I now work at company Y"}},
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I now work at company Y"},
+			{Role: "assistant", Content: "Noted."},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)
@@ -2001,7 +2174,10 @@ func TestReconcilePinnedFallbackPreservesExistingTagsWhenLLMOmits(t *testing.T) 
 		Mode:      ModeSmart,
 		SessionID: "sess-pinned-preserve",
 		AgentID:   "agent-1",
-		Messages:  []IngestMessage{{Role: "user", Content: "I use Go 1.22"}},
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I use Go 1.22"},
+			{Role: "assistant", Content: "Noted."},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)
@@ -2031,7 +2207,7 @@ func TestExtractFactsLegacyStringArrayFallback(t *testing.T) {
 	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
 	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
 
-	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22 and work remotely")
+	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22 and work remotely\n\nAssistant: Got it.")
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
@@ -2104,7 +2280,7 @@ func TestExtractFactsFencedLegacyStringArrayFallback(t *testing.T) {
 	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
 	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
 
-	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22")
+	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22\n\nAssistant: Got it.")
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
@@ -2157,7 +2333,7 @@ func TestExtractPhase1FencedLegacyStringArrayFallback(t *testing.T) {
 	}
 }
 
-func TestExtractFactsAlternativeKeyReturnsZero(t *testing.T) {
+func TestExtractFactsAlternativeKeyFallsBackToRawFact(t *testing.T) {
 	t.Parallel()
 
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2173,12 +2349,15 @@ func TestExtractFactsAlternativeKeyReturnsZero(t *testing.T) {
 	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
 	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
 
-	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22")
+	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22\n\nAssistant: Got it.")
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
-	if len(facts) != 0 {
-		t.Fatalf("expected 0 facts for alternative-key schema, got %d: %v", len(facts), facts)
+	if len(facts) != 1 {
+		t.Fatalf("expected 1 raw fallback fact for alternative-key schema, got %d: %v", len(facts), facts)
+	}
+	if facts[0].FactType != factTypeRawFallback || facts[0].Text != "I use Go 1.22" {
+		t.Fatalf("expected raw fallback fact preserving user text, got %+v", facts[0])
 	}
 }
 
@@ -2203,9 +2382,12 @@ func TestExtractFactsFlattenedFactNoTextNoTags(t *testing.T) {
 	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: srv.URL, Model: "test-model"})
 	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
 
-	_, err := svc.extractFacts(context.Background(), "User: hello")
-	if err == nil {
-		t.Fatal("expected error for unrecoverable junk response, got nil")
+	facts, err := svc.extractFacts(context.Background(), "User: hello\n\nAssistant: ok")
+	if err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+	if len(facts) != 1 || facts[0].FactType != factTypeRawFallback || facts[0].Text != "hello" {
+		t.Fatalf("expected raw fallback fact for unrecoverable junk response, got %v", facts)
 	}
 }
 
@@ -2219,9 +2401,12 @@ func TestExtractFactsFlattenedFactTagsOnly(t *testing.T) {
 	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: srv.URL, Model: "test-model"})
 	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
 
-	_, err := svc.extractFacts(context.Background(), "User: hello")
-	if err == nil {
-		t.Fatal("expected error when flattened-fact has tags but no text, got nil")
+	facts, err := svc.extractFacts(context.Background(), "User: hello\n\nAssistant: ok")
+	if err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+	if len(facts) != 1 || facts[0].FactType != factTypeRawFallback || facts[0].Text != "hello" {
+		t.Fatalf("expected raw fallback fact when flattened-fact has tags but no text, got %v", facts)
 	}
 }
 
@@ -2235,7 +2420,7 @@ func TestExtractFactsFlattenedFactWithText(t *testing.T) {
 	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: srv.URL, Model: "test-model"})
 	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
 
-	facts, err := svc.extractFacts(context.Background(), "User: hello")
+	facts, err := svc.extractFacts(context.Background(), "User: hello\n\nAssistant: ok")
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
@@ -2263,6 +2448,7 @@ func TestExtractPhase1FlattenedFactWithText(t *testing.T) {
 
 	result, err := svc.ExtractPhase1(context.Background(), []IngestMessage{
 		{Role: "user", Content: "User: hello"},
+		{Role: "assistant", Content: "ok"},
 	})
 	if err != nil {
 		t.Fatalf("ExtractPhase1() error = %v", err)
@@ -2313,7 +2499,10 @@ func TestReconcileTagsClampedViaReconcilePath(t *testing.T) {
 		Mode:      ModeSmart,
 		SessionID: "sess-clamp-reconcile",
 		AgentID:   "agent-1",
-		Messages:  []IngestMessage{{Role: "user", Content: "I use Go 1.22"}},
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I use Go 1.22"},
+			{Role: "assistant", Content: "Noted."},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)

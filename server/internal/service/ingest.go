@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,6 +28,15 @@ const (
 	ModeSmart IngestMode = "smart" // Extract + Reconcile
 	ModeRaw   IngestMode = "raw"   // Store as-is (no LLM)
 )
+
+const (
+	maxExtractionConversationRunes = 1000000
+	factTypeQueryIntent            = "query_intent"
+	factTypeRawFallback            = "raw_fallback"
+	rawFallbackTag                 = "raw-fallback"
+)
+
+var formattedConversationMessageRE = regexp.MustCompile(`(?:^|\n\n)([A-Za-z][A-Za-z0-9_-]*): `)
 
 // IngestRequest is the input for the ingest pipeline.
 type IngestRequest struct {
@@ -112,8 +122,7 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 	}
 
 	// Cap conversation size to avoid blowing LLM token limits.
-	const maxConversationRunes = 1000000
-	formatted = truncateRunes(formatted, maxConversationRunes)
+	formatted = truncateRunes(formatted, maxExtractionConversationRunes)
 
 	insightIDs, warnings, err := s.extractAndReconcile(ctx, agentName, req.AgentID, req.SessionID, formatted)
 	if err != nil {
@@ -149,7 +158,7 @@ type Phase1Result struct {
 type ExtractedFact struct {
 	Text     string   `json:"text"`
 	Tags     []string `json:"tags,omitempty"`
-	FactType string   `json:"fact_type,omitempty"` // "fact" | "query_intent"; omitted = "fact"
+	FactType string   `json:"fact_type,omitempty"` // "fact" | "query_intent" | "raw_fallback"; omitted = "fact"
 }
 
 // dropQueryIntentFacts removes facts classified as query_intent by the extraction
@@ -161,13 +170,194 @@ type ExtractedFact struct {
 func dropQueryIntentFacts(facts []ExtractedFact) []ExtractedFact {
 	out := facts[:0]
 	for _, f := range facts {
-		if strings.EqualFold(f.FactType, "query_intent") {
+		if strings.EqualFold(f.FactType, factTypeQueryIntent) {
 			slog.Info("dropping query_intent fact", "len", len(f.Text))
 			continue
 		}
 		out = append(out, f)
 	}
 	return out
+}
+
+type preparedExtractionInput struct {
+	messages                   []IngestMessage
+	originalIndices            []int
+	formatted                  string
+	fallbackText               string
+	singleMessageOriginalIndex int
+}
+
+func prepareExtractionInput(messages []IngestMessage, maxConversationRunes int) preparedExtractionInput {
+	input := preparedExtractionInput{singleMessageOriginalIndex: -1}
+	for idx, msg := range messages {
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			continue
+		}
+		input.messages = append(input.messages, IngestMessage{
+			Role:    strings.TrimSpace(msg.Role),
+			Content: content,
+			Seq:     msg.Seq,
+		})
+		input.originalIndices = append(input.originalIndices, idx)
+	}
+	if len(input.messages) == 0 {
+		return input
+	}
+	input.formatted = truncateRunes(formatConversation(input.messages), maxConversationRunes)
+	input.fallbackText = truncateRunes(buildRawFallbackSourceText(input.messages), maxConversationRunes)
+	if len(input.messages) == 1 {
+		input.singleMessageOriginalIndex = input.originalIndices[0]
+	}
+	return input
+}
+
+func prepareExtractionInputFromConversation(conversation string, maxConversationRunes int) preparedExtractionInput {
+	return prepareExtractionInput(parseConversationMessages(conversation), maxConversationRunes)
+}
+
+func parseConversationMessages(conversation string) []IngestMessage {
+	conversation = strings.TrimSpace(conversation)
+	if conversation == "" {
+		return nil
+	}
+	matches := formattedConversationMessageRE.FindAllStringSubmatchIndex(conversation, -1)
+	if len(matches) == 0 {
+		return []IngestMessage{{Role: "user", Content: conversation}}
+	}
+	messages := make([]IngestMessage, 0, len(matches))
+	for i, match := range matches {
+		roleStart, roleEnd := match[2], match[3]
+		contentStart := match[1]
+		contentEnd := len(conversation)
+		if i+1 < len(matches) {
+			contentEnd = matches[i+1][0]
+		}
+		content := strings.TrimSpace(conversation[contentStart:contentEnd])
+		if content == "" {
+			continue
+		}
+		messages = append(messages, IngestMessage{
+			Role:    strings.ToLower(conversation[roleStart:roleEnd]),
+			Content: content,
+		})
+	}
+	if len(messages) == 0 {
+		return []IngestMessage{{Role: "user", Content: conversation}}
+	}
+	return messages
+}
+
+func buildRawFallbackSourceText(messages []IngestMessage) string {
+	var userParts []string
+	var allParts []string
+	for _, msg := range messages {
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			continue
+		}
+		allParts = append(allParts, content)
+		if strings.EqualFold(msg.Role, "user") {
+			userParts = append(userParts, content)
+		}
+	}
+	if len(userParts) > 0 {
+		return strings.Join(userParts, "\n\n")
+	}
+	return strings.Join(allParts, "\n\n")
+}
+
+func buildRawFallbackFact(text string) ExtractedFact {
+	return ExtractedFact{
+		Text:     text,
+		Tags:     []string{rawFallbackTag},
+		FactType: factTypeRawFallback,
+	}
+}
+
+func buildRawFallbackFacts(input preparedExtractionInput, reason string) []ExtractedFact {
+	text := strings.TrimSpace(input.fallbackText)
+	if text == "" {
+		slog.Warn("raw fallback unavailable", "reason", reason)
+		return nil
+	}
+	slog.Warn("using raw fallback fact", "reason", reason, "len", len(text))
+	return []ExtractedFact{buildRawFallbackFact(text)}
+}
+
+func finalizeExtractedFacts(input preparedExtractionInput, parsed []ExtractedFact, emptyReason string) []ExtractedFact {
+	facts := dropQueryIntentFacts(parsed)
+	if len(facts) > 0 {
+		return facts
+	}
+	reason := emptyReason
+	if len(parsed) > 0 {
+		reason = "query_intent_only"
+	}
+	return buildRawFallbackFacts(input, reason)
+}
+
+func normalizeMessageTags(tags [][]string, messageCount int) [][]string {
+	out := make([][]string, messageCount)
+	for i := range out {
+		if i < len(tags) && tags[i] != nil {
+			out[i] = tags[i]
+		} else {
+			out[i] = []string{}
+		}
+	}
+	return out
+}
+
+func expandMessageTags(cleanedTags [][]string, input preparedExtractionInput, originalCount int) [][]string {
+	out := make([][]string, originalCount)
+	for i := range out {
+		out[i] = []string{}
+	}
+	for cleanedIdx, originalIdx := range input.originalIndices {
+		if originalIdx < 0 || originalIdx >= originalCount {
+			continue
+		}
+		if cleanedIdx < len(cleanedTags) && cleanedTags[cleanedIdx] != nil {
+			out[originalIdx] = cleanedTags[cleanedIdx]
+		}
+	}
+	return out
+}
+
+func buildSingleMessageShortCircuitTags(input preparedExtractionInput, originalCount int) [][]string {
+	out := make([][]string, originalCount)
+	for i := range out {
+		out[i] = []string{}
+	}
+	if input.singleMessageOriginalIndex >= 0 && input.singleMessageOriginalIndex < originalCount {
+		out[input.singleMessageOriginalIndex] = []string{rawFallbackTag}
+	}
+	return out
+}
+
+func hasTag(tags []string, target string) bool {
+	for _, tag := range tags {
+		if strings.EqualFold(tag, target) {
+			return true
+		}
+	}
+	return false
+}
+
+func ensureRawFallbackTag(tags []string, facts []ExtractedFact) []string {
+	if len(facts) != 1 {
+		return tags
+	}
+	fact := facts[0]
+	if !strings.EqualFold(fact.FactType, factTypeRawFallback) && !hasTag(fact.Tags, rawFallbackTag) {
+		return tags
+	}
+	if hasTag(tags, rawFallbackTag) {
+		return tags
+	}
+	out := append([]string{}, tags...)
+	return append(out, rawFallbackTag)
 }
 
 // ExtractPhase1 runs fact extraction and per-message tagging in a single LLM call.
@@ -177,18 +367,25 @@ func (s *IngestService) ExtractPhase1(ctx context.Context, messages []IngestMess
 		return &Phase1Result{}, nil
 	}
 
-	formatted := formatConversation(messages)
-	if formatted == "" {
+	input := prepareExtractionInput(messages, maxExtractionConversationRunes)
+	if input.formatted == "" {
 		return &Phase1Result{}, nil
 	}
-	const maxConversationRunes = 1000000
-	formatted = truncateRunes(formatted, maxConversationRunes)
+	if input.singleMessageOriginalIndex >= 0 {
+		return &Phase1Result{
+			Facts:       buildRawFallbackFacts(input, "single_message_short_circuit"),
+			MessageTags: buildSingleMessageShortCircuitTags(input, len(messages)),
+		}, nil
+	}
 
-	facts, messageTags, err := s.extractFactsAndTags(ctx, formatted, len(messages))
+	facts, messageTags, err := s.extractFactsAndTags(ctx, input.formatted, len(input.messages))
 	if err != nil {
 		return nil, err
 	}
-	return &Phase1Result{Facts: facts, MessageTags: messageTags}, nil
+	return &Phase1Result{
+		Facts:       facts,
+		MessageTags: expandMessageTags(messageTags, input, len(messages)),
+	}, nil
 }
 
 // ReconcilePhase2 runs reconciliation of extracted facts against existing memories.
@@ -446,6 +643,13 @@ func (s *IngestService) extractFacts(ctx context.Context, conversation string) (
 	if s.llm == nil || conversation == "" {
 		return nil, nil
 	}
+	input := prepareExtractionInputFromConversation(conversation, maxExtractionConversationRunes)
+	if input.formatted == "" {
+		return nil, nil
+	}
+	if input.singleMessageOriginalIndex >= 0 {
+		return buildRawFallbackFacts(input, "single_message_short_circuit"), nil
+	}
 
 	currentDate := time.Now().Format("2006-01-02")
 
@@ -469,7 +673,7 @@ atomic facts from a conversation.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
 4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
-5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
+5. Omit pure greetings, filler, and debugging chatter with no lasting value.
 6. Do NOT extract search queries or lookup questions as facts.
    If the user is asking the assistant to find, explain, or look something up
    ("who is X", "how do I Y", "what does Z mean", "X是谁", "如何做Y", "Z是什么意思"), classify it as query_intent.
@@ -497,12 +701,23 @@ atomic facts from a conversation.
    - Bad: "She moved to Tokyo last year"
    - Good: "小强今天去彩排了"
    - Bad: "他今天去彩排了"
-11. If no meaningful facts exist in the conversation, return an empty facts array.
-12. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
+11. Prefer returning a faithful, minimally rewritten fact over returning an empty array.
+12. Short, specific statements are still facts. A single sentence about a preference, event,
+   plan, job, location, relationship, or current status should usually become one fact.
+13. Return an empty facts array only when the user's messages contain no retrievable
+   information at all, such as pure greetings, acknowledgements, or filler.
+14. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
    "relationship", "event", "timeline".
    Use hyphens for multi-word tags: "programming-language", "work-tool".
    If no meaningful tags apply, omit the "tags" field for that fact.
+
+## Examples to keep
+
+- "Prefers oat milk in coffee"
+- "Has a dentist appointment tomorrow afternoon"
+- "Planning to visit parents next weekend"
+- "Working remotely this week"
 
 ## Output Format
 
@@ -510,7 +725,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 
 {"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}, ...]}`
 
-	userPrompt := fmt.Sprintf("Extract facts. Today's date is %s.\n\n%s", currentDate, conversation)
+	userPrompt := fmt.Sprintf("Extract facts. Today's date is %s.\n\n%s", currentDate, input.formatted)
 
 	type extractResponse struct {
 		Facts []ExtractedFact `json:"facts"`
@@ -518,7 +733,8 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 
 	raw, err := s.llm.CompleteJSON(ctx, systemPrompt, userPrompt)
 	if err != nil {
-		return nil, fmt.Errorf("extraction LLM call: %w", err)
+		slog.Warn("extraction LLM call failed, using raw fallback", "err", err)
+		return buildRawFallbackFacts(input, "llm_error_fallback"), nil
 	}
 
 	parsed, err := llm.ParseJSON[extractResponse](raw)
@@ -527,26 +743,29 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		raw2, retryErr := s.llm.CompleteJSON(ctx, systemPrompt,
 			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt)
 		if retryErr != nil {
-			return nil, fmt.Errorf("extraction retry: %w", retryErr)
+			slog.Warn("extraction retry failed, using raw fallback", "err", retryErr)
+			return buildRawFallbackFacts(input, "llm_error_fallback"), nil
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
 			if recovered := normalizeParsedFacts(raw2, nil); len(recovered) > 0 {
-				facts := dropQueryIntentFacts(recovered)
+				facts := finalizeExtractedFacts(input, recovered, "empty_after_extraction")
 				slog.Info("facts extracted", "facts", len(facts))
 				return facts, nil
 			}
 			if s.llm.DebugLLM() {
-				slog.Error("json parse llm resp failed", "len", len(raw2), "raw", raw2, "err", err)
+				slog.Warn("json parse llm resp failed, using raw fallback", "len", len(raw2), "raw", raw2, "err", err)
 			} else {
-				slog.Error("json parse llm resp failed", "len", len(raw2), "err", err)
+				slog.Warn("json parse llm resp failed, using raw fallback", "len", len(raw2), "err", err)
 			}
-			return nil, fmt.Errorf("extraction parse after retry: %w", err)
+			facts := buildRawFallbackFacts(input, "parse_error_fallback")
+			slog.Info("facts extracted", "facts", len(facts))
+			return facts, nil
 		}
 		lastRaw = raw2
 	}
 
-	facts := dropQueryIntentFacts(normalizeParsedFacts(lastRaw, parsed.Facts))
+	facts := finalizeExtractedFacts(input, normalizeParsedFacts(lastRaw, parsed.Facts), "empty_after_extraction")
 	slog.Info("facts extracted", "facts", len(facts))
 	return facts, nil
 }
@@ -554,6 +773,14 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 // extractFactsAndTags calls the LLM to extract atomic facts and per-message tags
 // from the conversation in a single call.
 func (s *IngestService) extractFactsAndTags(ctx context.Context, conversation string, messageCount int) ([]ExtractedFact, [][]string, error) {
+	input := prepareExtractionInputFromConversation(conversation, maxExtractionConversationRunes)
+	if input.formatted == "" {
+		return nil, normalizeMessageTags(nil, messageCount), nil
+	}
+	if input.singleMessageOriginalIndex >= 0 {
+		return buildRawFallbackFacts(input, "single_message_short_circuit"), normalizeMessageTags([][]string{{rawFallbackTag}}, messageCount), nil
+	}
+
 	currentDate := time.Now().Format("2006-01-02")
 
 	systemPrompt := `You are an information extraction engine. Your task is to identify distinct,
@@ -576,7 +803,7 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
 4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
-5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
+5. Omit pure greetings, filler, and debugging chatter with no lasting value.
 6. Do NOT extract search queries or lookup questions as facts.
    If the user is asking the assistant to find, explain, or look something up
    ("who is X", "how do I Y", "what does Z mean", "X是谁", "如何做Y", "Z是什么意思"), classify it as query_intent.
@@ -604,8 +831,12 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    - Bad: "She moved to Tokyo last year"
    - Good: "小强今天去彩排了"
    - Bad: "他今天去彩排了"
-11. If no meaningful facts exist in the conversation, return an empty facts array.
-12. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
+11. Prefer returning a faithful, minimally rewritten fact over returning an empty array.
+12. Short, specific statements are still facts. A single sentence about a preference, event,
+   plan, job, location, relationship, or current status should usually become one fact.
+13. Return an empty facts array only when the user's messages contain no retrievable
+   information at all, such as pure greetings, acknowledgements, or filler.
+14. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
    "relationship", "event", "timeline".
    Use hyphens for multi-word tags. If no meaningful tags apply, omit the "tags" field.
@@ -638,13 +869,18 @@ Assistant: Let's look at the heap profile. Can you share the pprof output?
 User: Here it is: [pprof data...]
 Output: {"facts": [{"text": "Debugging a memory leak in a Go service", "tags": ["tech", "debug"]}], "message_tags": [["tech", "debug", "go"], ["tech", "question", "debug"], ["tech", "tool-result", "code"]]}
 
+Input:
+User: I'm working remotely this week.
+Assistant: Noted.
+Output: {"facts": [{"text": "Working remotely this week", "tags": ["work", "timeline"]}], "message_tags": [["work", "timeline"], ["answer"]]}
+
 ## Output Format
 
 Return ONLY valid JSON. No markdown fences, no explanation.
 
 {"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}], "message_tags": [["tag1", "tag2"], ["tag3"], [], ...]}`
 
-	userPrompt := fmt.Sprintf("Extract facts and assign message tags. Today's date is %s.\n\n%s", currentDate, conversation)
+	userPrompt := fmt.Sprintf("Extract facts and assign message tags. Today's date is %s.\n\n%s", currentDate, input.formatted)
 
 	type extractResponse struct {
 		Facts       []ExtractedFact `json:"facts"`
@@ -653,7 +889,8 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 
 	raw, err := s.llm.CompleteJSON(ctx, systemPrompt, userPrompt)
 	if err != nil {
-		return nil, nil, fmt.Errorf("extraction LLM call: %w", err)
+		slog.Warn("extraction LLM call failed, using raw fallback", "err", err)
+		return buildRawFallbackFacts(input, "llm_error_fallback"), normalizeMessageTags(nil, messageCount), nil
 	}
 
 	parsed, err := llm.ParseJSON[extractResponse](raw)
@@ -662,51 +899,40 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		raw2, retryErr := s.llm.CompleteJSON(ctx, systemPrompt,
 			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt)
 		if retryErr != nil {
-			return nil, nil, fmt.Errorf("extraction retry: %w", retryErr)
+			slog.Warn("extraction retry failed, using raw fallback", "err", retryErr)
+			return buildRawFallbackFacts(input, "llm_error_fallback"), normalizeMessageTags(nil, messageCount), nil
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
+			type legacyFull struct {
+				MessageTags [][]string `json:"message_tags"`
+			}
+			var leg legacyFull
+			if legErr := json.Unmarshal([]byte(llm.StripMarkdownFences(raw2)), &leg); legErr != nil {
+				slog.Debug("extractFactsAndTags: legacy message_tags decode failed, returning empty", "err", legErr)
+			}
+			messageTags := normalizeMessageTags(leg.MessageTags, messageCount)
 			if recovered := normalizeParsedFacts(raw2, nil); len(recovered) > 0 {
-				facts := dropQueryIntentFacts(recovered)
-				type legacyFull struct {
-					MessageTags [][]string `json:"message_tags"`
-				}
-				var leg legacyFull
-				if legErr := json.Unmarshal([]byte(llm.StripMarkdownFences(raw2)), &leg); legErr != nil {
-					slog.Debug("extractFactsAndTags: legacy message_tags decode failed, returning empty", "err", legErr)
-				}
-				messageTags := make([][]string, messageCount)
-				for i := range messageTags {
-					if i < len(leg.MessageTags) && leg.MessageTags[i] != nil {
-						messageTags[i] = leg.MessageTags[i]
-					} else {
-						messageTags[i] = []string{}
-					}
-				}
+				facts := finalizeExtractedFacts(input, recovered, "empty_after_extraction")
 				slog.Info("facts and tags extracted", "facts", len(facts), "tagged_messages", messageCount)
 				return facts, messageTags, nil
 			}
 			if s.llm.DebugLLM() {
-				slog.Error("json parse llm resp failed", "len", len(raw2), "raw", raw2, "err", err)
+				slog.Warn("json parse llm resp failed, using raw fallback", "len", len(raw2), "raw", raw2, "err", err)
 			} else {
-				slog.Error("json parse llm resp failed", "len", len(raw2), "err", err)
+				slog.Warn("json parse llm resp failed, using raw fallback", "len", len(raw2), "err", err)
 			}
-			return nil, nil, fmt.Errorf("extraction parse after retry: %w", err)
+			facts := buildRawFallbackFacts(input, "parse_error_fallback")
+			slog.Info("facts and tags extracted", "facts", len(facts), "tagged_messages", messageCount)
+			return facts, messageTags, nil
 		}
 		lastRaw = raw2
 	}
 
-	facts := dropQueryIntentFacts(normalizeParsedFacts(lastRaw, parsed.Facts))
+	facts := finalizeExtractedFacts(input, normalizeParsedFacts(lastRaw, parsed.Facts), "empty_after_extraction")
 
 	// Normalise message_tags to exactly messageCount entries.
-	messageTags := make([][]string, messageCount)
-	for i := range messageTags {
-		if i < len(parsed.MessageTags) && parsed.MessageTags[i] != nil {
-			messageTags[i] = parsed.MessageTags[i]
-		} else {
-			messageTags[i] = []string{}
-		}
-	}
+	messageTags := normalizeMessageTags(parsed.MessageTags, messageCount)
 
 	slog.Info("facts and tags extracted", "facts", len(facts), "tagged_messages", messageCount)
 	return facts, messageTags, nil
@@ -829,6 +1055,8 @@ Assign 1-3 short lowercase tags to each ADD or UPDATE entry.
 Tags describe the topic or category of the memory.
 Examples: "tech", "personal", "preference", "work", "location", "habit"
 Use hyphens for multi-word tags: "programming-language", "work-tool".
+If a new fact includes the tag "raw-fallback", every ADD or UPDATE derived from it
+must also include the tag "raw-fallback" to preserve provenance.
 Omit the "tags" field entirely for NOOP and DELETE entries.
 
 ## Examples
@@ -943,7 +1171,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 			if event.Text == "" {
 				continue
 			}
-			newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text, event.Tags)
+			newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text, ensureRawFallbackTag(event.Tags, facts))
 			if addErr != nil {
 				slog.Warn("failed to add insight", "err", addErr)
 				warnings++
@@ -966,6 +1194,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 			if effectiveTags == nil {
 				effectiveTags = existingMemories[intID].Tags
 			}
+			effectiveTags = ensureRawFallbackTag(effectiveTags, facts)
 			if existingMemories[intID].MemoryType == domain.TypePinned {
 				slog.Warn("skipping UPDATE for pinned memory — treating as ADD", "id", realID)
 				newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text, effectiveTags)
