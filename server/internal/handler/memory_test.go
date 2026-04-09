@@ -83,6 +83,9 @@ func (m *testMemoryRepo) CountStats(context.Context) (int64, int64, error) { ret
 type testSessionRepo struct {
 	bulkCreateCalled     bool
 	patchTagsCalled      bool
+	patchedHash          string
+	patchedSessionID     string
+	patchedTags          []string
 	sessions             []*domain.Session // captured from BulkCreate
 	keywordSearchResults []domain.Memory
 }
@@ -93,8 +96,11 @@ func (s *testSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Sessi
 	return nil
 }
 
-func (s *testSessionRepo) PatchTags(context.Context, string, string, []string) error {
+func (s *testSessionRepo) PatchTags(_ context.Context, sessionID, hash string, tags []string) error {
 	s.patchTagsCalled = true
+	s.patchedSessionID = sessionID
+	s.patchedHash = hash
+	s.patchedTags = append([]string(nil), tags...)
 	return nil
 }
 
@@ -116,6 +122,10 @@ func (s *testSessionRepo) KeywordSearch(context.Context, string, domain.MemoryFi
 func (s *testSessionRepo) FTSAvailable() bool { return false }
 func (s *testSessionRepo) ListBySessionIDs(context.Context, []string, int) ([]*domain.Session, error) {
 	return nil, nil
+}
+
+func intPtr(v int) *int {
+	return &v
 }
 
 // newTestServer creates a Server with pre-populated svcCache for testing.
@@ -247,6 +257,37 @@ func TestCreateMemory_SyncMessages_Returns200(t *testing.T) {
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCreateMemory_SyncMessages_WithExplicitSeq_PersistsSessionSeq(t *testing.T) {
+	sessRepo := &testSessionRepo{}
+	srv := newTestServer(&testMemoryRepo{}, sessRepo)
+
+	body := map[string]any{
+		"messages": []map[string]any{
+			{"role": "user", "content": "hello", "seq": 7},
+			{"role": "assistant", "content": "hi there", "seq": 9},
+		},
+		"session_id": "test-session",
+		"sync":       true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if len(sessRepo.sessions) != 2 {
+		t.Fatalf("expected 2 persisted sessions, got %d", len(sessRepo.sessions))
+	}
+	if sessRepo.sessions[0].Seq != 7 {
+		t.Fatalf("session[0].Seq = %d, want 7", sessRepo.sessions[0].Seq)
+	}
+	if sessRepo.sessions[1].Seq != 9 {
+		t.Fatalf("session[1].Seq = %d, want 9", sessRepo.sessions[1].Seq)
 	}
 }
 
@@ -492,6 +533,66 @@ func TestCreateMemory_SyncMessages_Timeout_Returns504(t *testing.T) {
 	want := fmt.Sprintf("sync ingest timed out after %s", syncIngestTimeout)
 	if resp["error"] != want {
 		t.Fatalf("expected error %q, got %q", want, resp["error"])
+	}
+}
+
+func TestCreateMemory_SyncMessages_ExplicitSeqUsesSeqAwarePatchHash(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":[{"text":"test fact"}],"message_tags":[["tag1"],[]]}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(memRepo, llmClient, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(sessRepo, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
+
+	body := map[string]any{
+		"messages": []map[string]any{
+			{"role": "assistant", "content": "Take care, bye!", "seq": 36},
+			{"role": "assistant", "content": "See you soon", "seq": 37},
+		},
+		"session_id": "test-session",
+		"sync":       true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !sessRepo.patchTagsCalled {
+		t.Fatal("expected PatchTags to be called")
+	}
+	wantHash := service.SessionContentHash("test-session", "assistant", "Take care, bye!", intPtr(36))
+	if sessRepo.patchedHash != wantHash {
+		t.Fatalf("patched hash = %q, want %q", sessRepo.patchedHash, wantHash)
+	}
+	if sessRepo.patchedSessionID != "test-session" {
+		t.Fatalf("patched session_id = %q, want test-session", sessRepo.patchedSessionID)
+	}
+	if len(sessRepo.patchedTags) != 1 || sessRepo.patchedTags[0] != "tag1" {
+		t.Fatalf("patched tags = %v, want [tag1]", sessRepo.patchedTags)
 	}
 }
 

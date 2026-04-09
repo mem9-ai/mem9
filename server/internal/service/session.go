@@ -47,7 +47,7 @@ func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req I
 	for i, msg := range req.Messages {
 		sess := newSessionFromIngestMessage(
 			req.SessionID, req.AgentID, agentName,
-			i, msg.Role, msg.Content,
+			i, msg,
 		)
 		sessions = append(sessions, sess)
 	}
@@ -58,7 +58,7 @@ func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req I
 }
 
 func (s *SessionService) CreateRawTurn(ctx context.Context, sessionID, agentID, source string, seq int, role, content string) error {
-	sess := newSessionFromIngestMessage(sessionID, agentID, source, seq, role, content)
+	sess := newSession(sessionID, agentID, source, seq, role, content, &seq)
 	if err := s.sessions.BulkCreate(ctx, []*domain.Session{sess}); err != nil {
 		return fmt.Errorf("session raw create: %w", err)
 	}
@@ -204,29 +204,44 @@ func dedupByContent(mems []domain.Memory) []domain.Memory {
 	return out
 }
 
-// sessionContentHash returns SHA-256(sessionID+role+content) as a hex string.
-// Two sends of the same message content within the same session produce the same
-// hash, so INSERT IGNORE deduplicates them. This is intentional: the plugin sends
-// cumulative overlapping slices on every agent turn; verbatim logging would store
-// each message N times. Identical messages in different sessions or roles are always
-// distinct (session_id and role are part of the input).
+// sessionContentHash returns a stable dedup hash as a hex string.
+// Without an explicit seq, it preserves the legacy SHA-256(sessionID+role+content)
+// behavior so cumulative overlapping plugin slices still deduplicate.
+// When seq is provided, it is folded into the hash to preserve distinct turn-level
+// provenance for otherwise identical message bodies within the same session.
 //
 // TODO(content-hash-migration): migrate to SHA-256(role+content) — dropping sessionID from the hash keeps
 // the same write-time dedup guarantee (the unique index is (session_id, content_hash),
 // so cross-session collisions are still impossible) while making content_hash
 // comparable across sessions. That would let the search path dedup by content_hash
 // instead of by the raw content string.
-func sessionContentHash(sessionID, role, content string) string {
-	h := sha256.Sum256([]byte(sessionID + role + content))
+func sessionContentHash(sessionID, role, content string, seq *int) string {
+	input := sessionID + role + content
+	if seq != nil {
+		input = fmt.Sprintf("%s\x00%s\x00%d\x00%s", sessionID, role, *seq, content)
+	}
+	h := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(h[:])
 }
 
 // SessionContentHash is the exported version for use by the handler fan-out goroutine.
-func SessionContentHash(sessionID, role, content string) string {
-	return sessionContentHash(sessionID, role, content)
+func SessionContentHash(sessionID, role, content string, seq *int) string {
+	return sessionContentHash(sessionID, role, content, seq)
 }
 
-func newSessionFromIngestMessage(sessionID, agentID, source string, seq int, role, content string) *domain.Session {
+func effectiveMessageSeq(msg IngestMessage, fallback int) int {
+	if msg.Seq != nil {
+		return *msg.Seq
+	}
+	return fallback
+}
+
+func newSessionFromIngestMessage(sessionID, agentID, source string, fallbackSeq int, msg IngestMessage) *domain.Session {
+	seq := effectiveMessageSeq(msg, fallbackSeq)
+	return newSession(sessionID, agentID, source, seq, msg.Role, msg.Content, msg.Seq)
+}
+
+func newSession(sessionID, agentID, source string, seq int, role, content string, explicitSeq *int) *domain.Session {
 	return &domain.Session{
 		ID:          uuid.New().String(),
 		SessionID:   sessionID,
@@ -236,7 +251,7 @@ func newSessionFromIngestMessage(sessionID, agentID, source string, seq int, rol
 		Role:        role,
 		Content:     content,
 		ContentType: detectSessionContentType(content),
-		ContentHash: sessionContentHash(sessionID, role, content),
+		ContentHash: sessionContentHash(sessionID, role, content, explicitSeq),
 		Tags:        []string{},
 		State:       domain.StateActive,
 	}

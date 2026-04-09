@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -822,6 +823,15 @@ func TestStripInjectedContext(t *testing.T) {
 			}},
 			expected: []IngestMessage{{Role: "user", Content: "abc"}},
 		},
+		{
+			name: "preserves explicit seq",
+			input: []IngestMessage{{
+				Role:    "user",
+				Content: "keep <relevant-memories>drop</relevant-memories> text",
+				Seq:     intPtr(9),
+			}},
+			expected: []IngestMessage{{Role: "user", Content: "keep  text", Seq: intPtr(9)}},
+		},
 	}
 
 	for _, tt := range tests {
@@ -833,7 +843,7 @@ func TestStripInjectedContext(t *testing.T) {
 				t.Fatalf("stripInjectedContext() len = %d, expected %d; got %#v", len(got), len(tt.expected), got)
 			}
 			for i := range got {
-				if got[i] != tt.expected[i] {
+				if !reflect.DeepEqual(got[i], tt.expected[i]) {
 					t.Fatalf("stripInjectedContext()[%d] = %#v, expected %#v", i, got[i], tt.expected[i])
 				}
 			}

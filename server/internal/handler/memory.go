@@ -244,7 +244,7 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 			if len(tags) == 0 {
 				continue
 			}
-			hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content)
+			hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content, msg.Seq)
 			if err := svc.session.PatchTags(ctx, req.SessionID, hash, tags); err != nil {
 				slog.Warn("session tag patch failed",
 					"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
