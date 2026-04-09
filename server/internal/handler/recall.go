@@ -16,7 +16,7 @@ import (
 const (
 	defaultPinnedCandidateLimit  = 5
 	defaultInsightCandidateLimit = 10
-	defaultSessionCandidateLimit = 10
+	defaultSessionCandidateLimit = 5
 	defaultPinnedKeepMax         = 2
 	defaultPinnedMinConfidence   = 70
 	defaultMixedMinConfidence    = 65
@@ -29,6 +29,8 @@ var (
 	answerNumberRe            = regexp.MustCompile(`\b\d+\b`)
 	answerYearRe              = regexp.MustCompile(`\b(?:19|20)\d{2}\b`)
 	answerMonthNameRe         = regexp.MustCompile(`\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\b`)
+	answerWeekdayNameRe       = regexp.MustCompile(`\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b`)
+	answerSeasonNameRe        = regexp.MustCompile(`\b(?:spring|summer|fall|autumn|winter)\b`)
 	answerTitleCaseRe         = regexp.MustCompile(`\b[A-Z][a-z]+(?:['-][A-Za-z]+)*(?:\s+[A-Z][a-z]+(?:['-][A-Za-z]+)*)*\b`)
 	answerLocationCueRe       = regexp.MustCompile(`\b(?:in|at|from|to|near|around|outside|inside)\s+[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2}\b`)
 	answerCountWordRe         = regexp.MustCompile(`\b(?:one|two|three|four|five|six|seven|eight|nine|ten|couple|few|several)\b`)
@@ -41,7 +43,30 @@ var (
 	answerCNCountWordRe       = regexp.MustCompile(`(?:一次|两次|三次|四次|五次|几次|多少次|多个|几个|若干)`)
 	answerCNListCueRe         = regexp.MustCompile(`[\p{Han}\dA-Za-z](?:和|及|以及)[\p{Han}\dA-Za-z]`)
 	answerStandaloneCJKNameRe = regexp.MustCompile(`^[\p{Han}·]{2,12}$`)
+	answerRelativeTimeRe      = regexp.MustCompile(`(?i)\b(?:yesterday|today|tomorrow|last\s+(?:night|week|weekend|month|year|summer|winter|spring|fall|autumn|friday|saturday|sunday|monday|tuesday|wednesday|thursday)|next\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn|friday|saturday|sunday|monday|tuesday|wednesday|thursday)|this\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn)|\d+\s+(?:day|days|week|weeks|month|months|year|years)\s+ago|in\s+\d+\s+(?:day|days|week|weeks|month|months|year|years)|the\s+(?:past\s+)?(?:week|weekend))\b`)
+	answerCNRelativeTimeRe    = regexp.MustCompile(`(?:昨天|今天|明天|前天|后天|上周|下周|本周|这周|上个月|下个月|这个月|本月|去年|今年|明年|上周[一二三四五六日天]|下周[一二三四五六日天]|周末|上个周末|下个周末|春天|夏天|秋天|冬天)`)
+	answerAnchoredPeriodRe    = regexp.MustCompile(`(?i)\b(?:the\s+)?(?:week|weekend|month|year|summer|winter|spring|fall|autumn)\s+(?:before|after)\b`)
+	answerFutureCueRe         = regexp.MustCompile(`(?i)\b(?:will|planning|plan|plans|planned|thinking about|going to|gonna|scheduled|upcoming|next\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn))\b|(?:计划|打算|准备|将要|将会|下周|下个月|明年)`)
+	answerPastCueRe           = regexp.MustCompile(`(?i)\b(?:went|had|did|got|was|were|happened|previously|earlier|ago|last\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn|friday|saturday|sunday|monday|tuesday|wednesday|thursday))\b|(?:之前|以前|当时|去了|发生了|上周|上个月|去年|昨天|前天)`)
+	answerNegationRe          = regexp.MustCompile(`(?i)\b(?:did not|didn't|never|no longer|not\b)\b|(?:没有|没|未)`)
+	recallLeadingBracketRunRe = regexp.MustCompile(`^(?:\[[^\]\n]{0,160}\]\s*)+`)
+	recallTemporalTokenRe     = regexp.MustCompile(`\b(?:19|20)\d{2}\b|\b(?:january|february|march|april|may|june|july|august|september|october|november|december|monday|tuesday|wednesday|thursday|friday|saturday|sunday|spring|summer|fall|autumn|winter)\b|(?:\d{4}年|\d{1,2}月|昨天|今天|明天|上周|下周|去年|今年|明年|春天|夏天|秋天|冬天)`)
 )
+
+type recallTemporalIntent int
+
+const (
+	recallTemporalIntentAny recallTemporalIntent = iota
+	recallTemporalIntentPast
+	recallTemporalIntentFuture
+)
+
+type recallQueryProfile struct {
+	shape          recallQueryShape
+	lower          string
+	temporalIntent recallTemporalIntent
+	temporalTokens []string
+}
 
 type recallQueryShape int
 
@@ -89,19 +114,19 @@ func (s *Server) defaultConfidenceRecallSearch(
 		return nil, 0, err
 	}
 
-	shape := classifyRecallQueryShape(filter.Query)
-	pinnedCandidates = applyRecallConfidence(shape, pinnedCandidates)
-	insightCandidates = applyRecallConfidence(shape, insightCandidates)
-	sessionCandidates = applyRecallConfidence(shape, sessionCandidates)
+	profile := buildRecallQueryProfile(filter.Query)
+	pinnedCandidates = applyRecallConfidence(profile, pinnedCandidates)
+	insightCandidates = applyRecallConfidence(profile, insightCandidates)
+	sessionCandidates = applyRecallConfidence(profile, sessionCandidates)
 
-	pinned, seen := selectPinnedRecallCandidates(shape, budget, pinnedCandidates)
-	mixed, cutoffReason := selectMixedRecallCandidates(shape, budget-len(pinned), append(insightCandidates, sessionCandidates...), seen)
+	pinned, seen := selectPinnedRecallCandidates(profile.shape, budget, pinnedCandidates)
+	mixed, cutoffReason := selectMixedRecallCandidates(profile.shape, budget-len(pinned), append(insightCandidates, sessionCandidates...), seen)
 
 	memories := append(pinned, mixed...)
 	slog.Info("confidence recall search",
 		"cluster_id", auth.ClusterID,
 		"query_len", len(filter.Query),
-		"shape", recallQueryShapeLabel(shape),
+		"shape", recallQueryShapeLabel(profile.shape),
 		"pinned_candidates", len(pinnedCandidates),
 		"insight_candidates", len(insightCandidates),
 		"session_candidates", len(sessionCandidates),
@@ -144,13 +169,13 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 		return nil, 0, err
 	}
 
-	shape := classifyRecallQueryShape(filter.Query)
-	candidates = applyRecallConfidence(shape, candidates)
-	memories, cutoffReason := selectTopRecallCandidates(shape, filter.Limit, minConfidence, applyGapCutoff, candidates, nil)
+	profile := buildRecallQueryProfile(filter.Query)
+	candidates = applyRecallConfidence(profile, candidates)
+	memories, cutoffReason := selectTopRecallCandidates(profile.shape, filter.Limit, minConfidence, applyGapCutoff, candidates, nil)
 	slog.Info("single-pool confidence recall",
 		"cluster_id", auth.ClusterID,
 		"query_len", len(filter.Query),
-		"shape", recallQueryShapeLabel(shape),
+		"shape", recallQueryShapeLabel(profile.shape),
 		"memory_type", filter.MemoryType,
 		"candidates", len(candidates),
 		"returned", len(memories),
@@ -159,17 +184,17 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 	return memories, len(memories), nil
 }
 
-func applyRecallConfidence(shape recallQueryShape, candidates []service.RecallCandidate) []service.RecallCandidate {
+func applyRecallConfidence(profile recallQueryProfile, candidates []service.RecallCandidate) []service.RecallCandidate {
 	out := make([]service.RecallCandidate, 0, len(candidates))
 	for _, candidate := range candidates {
-		confidence := buildRecallConfidence(shape, candidate)
+		confidence := buildRecallConfidence(profile, candidate)
 		candidate.Memory.Confidence = &confidence
 		out = append(out, candidate)
 	}
 	return out
 }
 
-func buildRecallConfidence(shape recallQueryShape, candidate service.RecallCandidate) int {
+func buildRecallConfidence(profile recallQueryProfile, candidate service.RecallCandidate) int {
 	rrfNorm := clampFloat64(candidate.RRFScore/recallRRFMaxScore, 0, 1)
 	vecNorm := 0.0
 	if candidate.InVector {
@@ -185,8 +210,8 @@ func buildRecallConfidence(shape recallQueryShape, candidate service.RecallCandi
 		0.20*vecNorm +
 		agreementBonus +
 		recencyBonus(candidate.Memory.UpdatedAt) +
-		answerEvidenceBonus(shape, candidate.Memory.Content) +
-		sourcePrior(shape, candidate.SourcePool)
+		answerEvidenceBonus(profile, candidate.Memory.Content) +
+		sourcePrior(profile.shape, candidate.SourcePool)
 
 	return int(clampFloat64(confidenceRaw, 0, 1)*100 + 0.5)
 }
@@ -346,7 +371,8 @@ func sourcePrior(shape recallQueryShape, pool service.RecallSourcePool) float64 
 	return 0
 }
 
-func answerEvidenceBonus(shape recallQueryShape, content string) float64 {
+func answerEvidenceBonus(profile recallQueryProfile, content string) float64 {
+	shape := profile.shape
 	lower := strings.ToLower(content)
 	unitCount := recallAnswerUnitCount(content)
 	entitySignals := recallEntitySignalCount(content)
@@ -382,9 +408,7 @@ func answerEvidenceBonus(shape recallQueryShape, content string) float64 {
 			bonus += 0.12
 		}
 	case recallQueryShapeTime:
-		if answerYearRe.MatchString(content) || containsMonthName(lower) || answerCNTimeRe.MatchString(content) {
-			bonus += 0.20
-		}
+		bonus += timeAnswerEvidenceBonus(profile, content)
 	case recallQueryShapeLocation:
 		if containsRecallLocationCue(content) {
 			bonus += 0.20
@@ -398,6 +422,128 @@ func answerEvidenceBonus(shape recallQueryShape, content string) float64 {
 	}
 
 	return bonus
+}
+
+func buildRecallQueryProfile(query string) recallQueryProfile {
+	lower := strings.ToLower(strings.TrimSpace(query))
+	profile := recallQueryProfile{
+		shape: classifyRecallQueryShape(query),
+		lower: lower,
+	}
+	if profile.shape == recallQueryShapeTime {
+		profile.temporalIntent = classifyRecallTemporalIntent(lower)
+		profile.temporalTokens = extractRecallTemporalTokens(lower)
+	}
+	return profile
+}
+
+func classifyRecallTemporalIntent(lower string) recallTemporalIntent {
+	switch {
+	case strings.HasPrefix(lower, "when did "), strings.Contains(lower, " happen"), strings.Contains(lower, " happened"), strings.Contains(lower, " last "), strings.Contains(lower, " ago "):
+		return recallTemporalIntentPast
+	case strings.HasPrefix(lower, "when will "), strings.Contains(lower, " plan"), strings.Contains(lower, "planning"), strings.Contains(lower, " going to "), strings.Contains(lower, " scheduled"), strings.Contains(lower, " upcoming"):
+		return recallTemporalIntentFuture
+	case strings.Contains(lower, "什么时候会"), strings.Contains(lower, "什么时候准备"), strings.Contains(lower, "什么时候计划"), strings.Contains(lower, "什么时候去"):
+		return recallTemporalIntentFuture
+	case strings.Contains(lower, "什么时候"), strings.Contains(lower, "何时"), strings.Contains(lower, "几号"), strings.Contains(lower, "哪天"):
+		return recallTemporalIntentPast
+	default:
+		return recallTemporalIntentAny
+	}
+}
+
+func extractRecallTemporalTokens(lower string) []string {
+	matches := recallTemporalTokenRe.FindAllString(lower, -1)
+	seen := make(map[string]struct{}, len(matches))
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if _, ok := seen[match]; ok {
+			continue
+		}
+		seen[match] = struct{}{}
+		out = append(out, match)
+	}
+	return out
+}
+
+func timeAnswerEvidenceBonus(profile recallQueryProfile, content string) float64 {
+	fullLower := strings.ToLower(content)
+	body, hasHeaderAnchor := stripRecallTemporalHeader(content)
+	bodyLower := strings.ToLower(body)
+
+	bonus := 0.0
+	bodyHasExplicitDate := answerYearRe.MatchString(body) || containsMonthName(bodyLower) || answerCNTimeRe.MatchString(body)
+	bodyHasRelativeDate := answerRelativeTimeRe.MatchString(body) || answerCNRelativeTimeRe.MatchString(body)
+	bodyHasAnchoredPeriod := answerAnchoredPeriodRe.MatchString(bodyLower)
+
+	switch {
+	case bodyHasExplicitDate:
+		bonus += 0.20
+	case bodyHasRelativeDate:
+		bonus += 0.16
+	}
+	if bodyHasAnchoredPeriod {
+		bonus += 0.08
+	}
+	if hasHeaderAnchor && (bodyHasRelativeDate || bodyHasAnchoredPeriod) {
+		bonus += 0.08
+	} else if hasHeaderAnchor && !bodyHasExplicitDate && !bodyHasRelativeDate && !bodyHasAnchoredPeriod {
+		bonus += 0.03
+	}
+	if len(profile.temporalTokens) > 0 {
+		bonus += temporalConstraintMatchBonus(profile.temporalTokens, fullLower)
+	}
+	switch profile.temporalIntent {
+	case recallTemporalIntentFuture:
+		if answerFutureCueRe.MatchString(body) {
+			bonus += 0.12
+		}
+		if answerPastCueRe.MatchString(body) {
+			bonus -= 0.10
+		}
+	case recallTemporalIntentPast:
+		if answerPastCueRe.MatchString(body) {
+			bonus += 0.06
+		}
+		if answerFutureCueRe.MatchString(body) {
+			bonus -= 0.08
+		}
+	}
+	if answerNegationRe.MatchString(body) {
+		bonus -= 0.08
+	}
+	return bonus
+}
+
+func stripRecallTemporalHeader(content string) (string, bool) {
+	header := recallLeadingBracketRunRe.FindString(content)
+	if header == "" {
+		return content, false
+	}
+	body := strings.TrimSpace(strings.TrimPrefix(content, header))
+	headerLower := strings.ToLower(header)
+	hasAnchor := answerYearRe.MatchString(header) || containsMonthName(headerLower) || answerCNTimeRe.MatchString(header) || strings.Contains(headerLower, " on ")
+	return body, hasAnchor
+}
+
+func temporalConstraintMatchBonus(tokens []string, lowerContent string) float64 {
+	if len(tokens) == 0 {
+		return 0
+	}
+	matches := 0
+	for _, token := range tokens {
+		if strings.Contains(lowerContent, token) {
+			matches++
+		}
+	}
+	switch {
+	case matches >= 2:
+		return 0.18
+	case matches == 1:
+		return 0.10
+	default:
+		return 0
+	}
 }
 
 func recallEntitySignalCount(content string) int {

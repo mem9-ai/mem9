@@ -288,7 +288,7 @@ func buildRawFallbackFacts(input preparedExtractionInput, reason string) []Extra
 func finalizeExtractedFacts(input preparedExtractionInput, parsed []ExtractedFact, emptyReason string) []ExtractedFact {
 	facts := dropQueryIntentFacts(parsed)
 	if len(facts) > 0 {
-		return facts
+		return normalizeTemporalFacts(input, facts)
 	}
 	reason := emptyReason
 	if len(parsed) > 0 {
@@ -693,6 +693,13 @@ atomic facts from a conversation.
 7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
 8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+   If a message includes an explicit date or timestamp and the fact uses a relative
+   time expression ("next month", "last year", "last week", "yesterday"), resolve
+   it to the most concrete anchored date or period you can without inventing detail.
+   - Good: "[1:14 pm on 25 May, 2023] We're thinking about going camping next month"
+     -> "Planning to go camping in June 2023"
+   - Good: "[10:37 am on 27 June, 2023] I took my family camping last week"
+     -> "Went camping the week before 27 June 2023"
 9. Extract relationships between people explicitly.
 10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
@@ -823,6 +830,13 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
 8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+   If a message includes an explicit date or timestamp and the fact uses a relative
+   time expression ("next month", "last year", "last week", "yesterday"), resolve
+   it to the most concrete anchored date or period you can without inventing detail.
+   - Good: "[1:14 pm on 25 May, 2023] We're thinking about going camping next month"
+     -> "Planning to go camping in June 2023"
+   - Good: "[10:37 am on 27 June, 2023] I took my family camping last week"
+     -> "Went camping the week before 27 June 2023"
 9. Extract relationships between people explicitly.
 10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each

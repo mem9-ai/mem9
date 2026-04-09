@@ -105,6 +105,72 @@ func TestExtractFactsReturnsTags(t *testing.T) {
 	}
 }
 
+func TestNormalizeTemporalFacts_ResolvesNextMonthAgainstTimestamp(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "[1:14 pm on 25 May, 2023] My kids are so excited about summer break! We're thinking about going camping next month."},
+		{Role: "assistant", Content: "That sounds fun."},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFacts(input, []ExtractedFact{
+		{Text: "Melanie is planning to go camping next month", Tags: []string{"event", "timeline"}},
+	})
+	if len(got) != 1 {
+		t.Fatalf("expected 1 fact, got %d", len(got))
+	}
+	if got[0].Text != "Melanie is planning to go camping in June 2023" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "Melanie is planning to go camping in June 2023")
+	}
+}
+
+func TestNormalizeTemporalFacts_ResolvesLastYearAgainstTimestamp(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "[1:56 pm on 8 May, 2023] I painted a sunrise last year."},
+		{Role: "assistant", Content: "Nice work."},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFacts(input, []ExtractedFact{
+		{Text: "Melanie painted a sunrise last year", Tags: []string{"event", "timeline"}},
+	})
+	if got[0].Text != "Melanie painted a sunrise in 2022" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "Melanie painted a sunrise in 2022")
+	}
+}
+
+func TestNormalizeTemporalFacts_ResolvesLastWeekToAnchoredPeriod(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "[10:37 am on 27 June, 2023] I took my family camping in the mountains last week - it was a really nice time together!"},
+		{Role: "assistant", Content: "Sounds relaxing."},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFacts(input, []ExtractedFact{
+		{Text: "Melanie went camping in the mountains last week", Tags: []string{"event", "timeline"}},
+	})
+	if got[0].Text != "Melanie went camping in the mountains the week before 27 June 2023" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "Melanie went camping in the mountains the week before 27 June 2023")
+	}
+}
+
+func TestNormalizeTemporalFacts_LeavesRawFallbackUntouched(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "[1:14 pm on 25 May, 2023] We're thinking about going camping next month."},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFacts(input, []ExtractedFact{
+		{Text: "We're thinking about going camping next month.", FactType: factTypeRawFallback, Tags: []string{rawFallbackTag}},
+	})
+	if got[0].Text != "We're thinking about going camping next month." {
+		t.Fatalf("raw fallback fact should remain unchanged, got %q", got[0].Text)
+	}
+}
+
 func TestExtractFactsTagsOmitted(t *testing.T) {
 	t.Parallel()
 
