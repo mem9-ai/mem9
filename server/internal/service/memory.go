@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,18 +42,22 @@ const (
 )
 
 type MemoryService struct {
-	memories  repository.MemoryRepo
-	embedder  *embed.Embedder
-	autoModel string
-	ingest    *IngestService
+	memories             repository.MemoryRepo
+	embedder             *embed.Embedder
+	autoModel            string
+	ingest               *IngestService
+	llm                  *llm.Client
+	searchKeywordExtract bool
 }
 
-func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, embedder *embed.Embedder, autoModel string, ingestMode IngestMode) *MemoryService {
+func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, embedder *embed.Embedder, autoModel string, ingestMode IngestMode, searchKeywordExtract bool) *MemoryService {
 	return &MemoryService{
-		memories:  memories,
-		embedder:  embedder,
-		autoModel: autoModel,
-		ingest:    NewIngestService(memories, llmClient, embedder, autoModel, ingestMode),
+		memories:             memories,
+		embedder:             embedder,
+		autoModel:            autoModel,
+		ingest:               NewIngestService(memories, llmClient, embedder, autoModel, ingestMode),
+		llm:                  llmClient,
+		searchKeywordExtract: searchKeywordExtract,
 	}
 }
 
@@ -176,6 +181,48 @@ func (s *MemoryService) Search(ctx context.Context, filter domain.MemoryFilter) 
 	return s.keywordOnlySearch(ctx, searchFilter)
 }
 
+const keywordExtractionSystemPrompt = `Extract the most important search keywords from this question about past conversations. Return only a JSON object, no explanation.
+
+{"keywords": ["word1", "word2", "word3"]}
+
+Rules:
+- 3 to 6 keywords
+- Nouns, proper nouns, and key verbs only
+- No stopwords (who/what/when/where/why/how/did/was/the/a/an/is/are)
+- Preserve original casing of named entities and acronyms (e.g. "Caroline", "LGBTQ")
+- For CJK text, output individual meaningful words or named entities
+
+Examples:
+  "When did Caroline go to the LGBTQ support group?"
+  -> {"keywords": ["Caroline", "LGBTQ", "support group"]}
+
+  "What is Alice's job at the startup?"
+  -> {"keywords": ["Alice", "job", "startup"]}
+
+  "小红书最近被封号的风险"
+  -> {"keywords": ["小红书", "封号", "风险"]}`
+
+type keywordResult struct {
+	Keywords []string `json:"keywords"`
+}
+
+func (s *MemoryService) extractSearchKeywords(ctx context.Context, query string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	raw, err := s.llm.CompleteJSON(ctx, keywordExtractionSystemPrompt, query)
+	if err != nil {
+		return nil, err
+	}
+	result, err := llm.ParseJSON[keywordResult](raw)
+	if err != nil {
+		return nil, err
+	}
+	if len(result.Keywords) == 0 {
+		return nil, fmt.Errorf("no keywords extracted")
+	}
+	return result.Keywords, nil
+}
+
 const rrfK = 60.0
 
 func rrfMerge(ftsResults, vecResults []domain.Memory) map[string]float64 {
@@ -216,7 +263,16 @@ func (s *MemoryService) ftsOnlySearch(ctx context.Context, filter domain.MemoryF
 	}
 	fetchLimit := limit * 3
 
-	ftsResults, err := s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
+	ftsQuery := filter.Query
+	if s.llm != nil && s.searchKeywordExtract {
+		if kw, err := s.extractSearchKeywords(ctx, filter.Query); err == nil {
+			ftsQuery = strings.Join(kw, " ")
+		} else {
+			slog.Debug("keyword extraction failed, using raw query for FTS", "err", err)
+		}
+	}
+
+	ftsResults, err := s.memories.FTSSearch(ctx, ftsQuery, filter, fetchLimit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("FTS search: %w", err)
 	}
@@ -285,8 +341,16 @@ func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFi
 
 	var kwResults []domain.Memory
 	if s.memories.FTSAvailable() {
+		ftsQuery := filter.Query
+		if s.llm != nil && s.searchKeywordExtract {
+			if kw, err := s.extractSearchKeywords(ctx, filter.Query); err == nil {
+				ftsQuery = strings.Join(kw, " ")
+			} else {
+				slog.Debug("keyword extraction failed, using raw query for FTS", "err", err)
+			}
+		}
 		var kwErr error
-		kwResults, kwErr = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
+		kwResults, kwErr = s.memories.FTSSearch(ctx, ftsQuery, filter, fetchLimit)
 		if kwErr != nil {
 			return nil, 0, fmt.Errorf("FTS search: %w", kwErr)
 		}
@@ -320,10 +384,47 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 	}
 	fetchLimit := limit * 5
 
-	vecResults, vecErr := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
-	if vecErr != nil {
-		return nil, 0, fmt.Errorf("auto vector search: %w", vecErr)
+	type vecResult struct {
+		results []domain.Memory
+		err     error
 	}
+	vecCh := make(chan vecResult, 1)
+	go func() {
+		results, err := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
+		vecCh <- vecResult{results, err}
+	}()
+
+	var keywords []string
+	ftsQuery := filter.Query
+	if s.llm != nil && s.searchKeywordExtract && s.memories.FTSAvailable() {
+		if kw, err := s.extractSearchKeywords(ctx, filter.Query); err == nil {
+			keywords = kw
+			ftsQuery = strings.Join(kw, " ")
+		} else {
+			slog.Debug("keyword extraction failed, using raw query for FTS", "err", err)
+		}
+	}
+
+	var kwResults []domain.Memory
+	if s.memories.FTSAvailable() {
+		var kwErr error
+		kwResults, kwErr = s.memories.FTSSearch(ctx, ftsQuery, filter, fetchLimit)
+		if kwErr != nil {
+			return nil, 0, fmt.Errorf("FTS search: %w", kwErr)
+		}
+	} else {
+		var kwErr error
+		kwResults, kwErr = s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
+		if kwErr != nil {
+			return nil, 0, fmt.Errorf("keyword search: %w", kwErr)
+		}
+	}
+
+	vec := <-vecCh
+	if vec.err != nil {
+		return nil, 0, fmt.Errorf("auto vector search: %w", vec.err)
+	}
+	vecResults := vec.results
 
 	minScore := filter.MinScore
 	if minScore == 0 {
@@ -339,29 +440,11 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 		vecResults = filtered
 	}
 
-	var kwResults []domain.Memory
-	if s.memories.FTSAvailable() {
-		var kwErr error
-		kwResults, kwErr = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
-		if kwErr != nil {
-			return nil, 0, fmt.Errorf("FTS search: %w", kwErr)
-		}
-	} else {
-		var kwErr error
-		kwResults, kwErr = s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
-		if kwErr != nil {
-			return nil, 0, fmt.Errorf("keyword search: %w", kwErr)
-		}
-	}
-
 	slog.Info("auto hybrid search completed", "query_len", len(filter.Query), "vec_results", len(vecResults), "kw_results", len(kwResults))
 
 	scores := rrfMerge(kwResults, vecResults)
 	mems := collectMems(kwResults, vecResults)
 
-	// Second-hop: skip when the best first-hop vector score is below the gate
-	// threshold — a low score suggests the query has no strong match (e.g.
-	// adversarial), so expanding search would mainly inject noise.
 	maxVecScore := 0.0
 	for _, m := range vecResults {
 		if m.Score != nil && *m.Score > maxVecScore {
@@ -369,7 +452,7 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 		}
 	}
 	if maxVecScore >= secondHopGateScore {
-		secondHopMems := s.secondHopAutoSearch(ctx, mems, scores, filter, limit)
+		secondHopMems := s.secondHopAutoSearch(ctx, mems, scores, filter, limit, keywords)
 		for rank, m := range secondHopMems {
 			scores[m.ID] += secondHopWeight / (rrfK + float64(rank+1))
 			if _, exists := mems[m.ID]; !exists {
@@ -394,6 +477,7 @@ func (s *MemoryService) secondHopAutoSearch(
 	firstHopScores map[string]float64,
 	filter domain.MemoryFilter,
 	limit int,
+	keywords []string,
 ) []domain.Memory {
 	sorted := sortByScore(firstHopMems, firstHopScores)
 	topN := secondHopTopN
@@ -410,19 +494,21 @@ func (s *MemoryService) secondHopAutoSearch(
 		seedIDs[m.ID] = struct{}{}
 	}
 
-	// Launch concurrent second-hop searches using first-hop embeddings
-	// to avoid redundant embedding API calls.
 	type hopResult struct {
 		results []domain.Memory
 		err     error
 	}
 	ch := make(chan hopResult, topN)
 	for _, seed := range seeds {
-		go func(query, content string) {
-			enriched := query + " " + content
+		go func(content string) {
+			queryPart := filter.Query
+			if len(keywords) > 0 {
+				queryPart = strings.Join(keywords, " ")
+			}
+			enriched := queryPart + " " + content
 			results, err := s.memories.AutoVectorSearch(ctx, enriched, filter, limit)
 			ch <- hopResult{results: results, err: err}
-		}(filter.Query, seed.Content)
+		}(seed.Content)
 	}
 
 	// Collect results: deduplicate, exclude seeds, keep best score per ID.

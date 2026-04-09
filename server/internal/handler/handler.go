@@ -25,24 +25,23 @@ import (
 	"github.com/qiffang/mnemos/server/internal/service"
 )
 
-// Server holds the HTTP handlers and their dependencies.
 type Server struct {
-	tenant        *service.TenantService
-	uploadTasks   repository.UploadTaskRepo
-	uploadDir     string
-	embedder      *embed.Embedder
-	llmClient     *llm.Client
-	autoModel     string
-	ftsEnabled    bool
-	ingestMode    service.IngestMode
-	dbBackend     string
-	logger        *slog.Logger
-	startedAt     time.Time
-	svcCache      sync.Map
-	gaugeDebounce sync.Map // cluster_id -> time.Time of last Gauge refresh
+	tenant               *service.TenantService
+	uploadTasks          repository.UploadTaskRepo
+	uploadDir            string
+	embedder             *embed.Embedder
+	llmClient            *llm.Client
+	autoModel            string
+	ftsEnabled           bool
+	searchKeywordExtract bool
+	ingestMode           service.IngestMode
+	dbBackend            string
+	logger               *slog.Logger
+	startedAt            time.Time
+	svcCache             sync.Map
+	gaugeDebounce        sync.Map
 }
 
-// NewServer creates a new HTTP handler server.
 func NewServer(
 	tenantSvc *service.TenantService,
 	uploadTasks repository.UploadTaskRepo,
@@ -51,22 +50,24 @@ func NewServer(
 	llmClient *llm.Client,
 	autoModel string,
 	ftsEnabled bool,
+	searchKeywordExtract bool,
 	ingestMode service.IngestMode,
 	dbBackend string,
 	logger *slog.Logger,
 ) *Server {
 	return &Server{
-		tenant:      tenantSvc,
-		uploadTasks: uploadTasks,
-		uploadDir:   uploadDir,
-		embedder:    embedder,
-		llmClient:   llmClient,
-		autoModel:   autoModel,
-		ftsEnabled:  ftsEnabled,
-		ingestMode:  ingestMode,
-		dbBackend:   dbBackend,
-		logger:      logger,
-		startedAt:   time.Now().UTC(),
+		tenant:               tenantSvc,
+		uploadTasks:          uploadTasks,
+		uploadDir:            uploadDir,
+		embedder:             embedder,
+		llmClient:            llmClient,
+		autoModel:            autoModel,
+		ftsEnabled:           ftsEnabled,
+		searchKeywordExtract: searchKeywordExtract,
+		ingestMode:           ingestMode,
+		dbBackend:            dbBackend,
+		logger:               logger,
+		startedAt:            time.Now().UTC(),
 	}
 }
 
@@ -90,7 +91,7 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		svc := resolvedSvc{
-			memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
+			memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode, s.searchKeywordExtract),
 			ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 			session: service.NewSessionService(sessRepo, s.embedder, s.autoModel),
 		}
@@ -100,7 +101,7 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 				if err := s.tenant.EnsureSessionsTable(context.Background(), auth.TenantDB); err != nil {
 					s.logger.Warn("sessions table migration failed",
 						"cluster_id", auth.ClusterID,
-						"err", err) // no tenant field: TenantID is empty in this branch
+						"err", err)
 				}
 			}()
 		}
@@ -113,7 +114,7 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	svc := resolvedSvc{
-		memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
+		memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode, s.searchKeywordExtract),
 		ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 		session: service.NewSessionService(sessRepo, s.embedder, s.autoModel),
 	}

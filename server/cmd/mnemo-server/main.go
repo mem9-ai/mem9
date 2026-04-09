@@ -139,15 +139,16 @@ func main() {
 	rateMW := rl.Middleware()
 
 	// Handler.
-	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger)
+	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, cfg.SearchKeywordExtract, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger)
 	router := srv.Router(tenantMW, rateMW, apiKeyMW)
 
 	httpSrv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      router,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 120 * time.Second, // extended from 30s to support sync ingest (LLM reconcile can take >30s)
-		IdleTimeout:  60 * time.Second,
+		Addr:              ":" + cfg.Port,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       120 * time.Second, // must cover full body read; ingest payloads can be large
+		WriteTimeout:      120 * time.Second, // extended from 30s to support sync ingest (LLM reconcile can take >30s)
+		IdleTimeout:       60 * time.Second,
 	}
 
 	// Upload worker (async file ingest).

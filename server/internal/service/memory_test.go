@@ -326,7 +326,7 @@ func TestSearchColdStartFallbackToKeyword(t *testing.T) {
 	}
 
 	// No embedder, no autoModel — cold start, FTS not yet available.
-	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart, false)
 
 	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
 		Query: "test query",
@@ -358,7 +358,7 @@ func TestSearchFTSOnlyWhenAvailable(t *testing.T) {
 		},
 	}
 
-	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart, false)
 
 	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
 		Query: "test query",
@@ -381,7 +381,7 @@ func TestSearchEmptyQueryReturnsList(t *testing.T) {
 	t.Parallel()
 
 	memRepo := &memoryRepoMock{}
-	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart, false)
 
 	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
 		Query: "",
@@ -405,7 +405,7 @@ func TestSearchEmptyQueryPopulatesRelativeAge(t *testing.T) {
 			{ID: "m1", Content: "hello", UpdatedAt: past, MemoryType: domain.TypeInsight, State: domain.StateActive},
 		},
 	}
-	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart, false)
 
 	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
 		Query: "",
@@ -431,7 +431,7 @@ func TestSearchIgnoresSessionAndSourceFilters(t *testing.T) {
 			{ID: "kw-1", Content: "result from keyword search", MemoryType: domain.TypeInsight, State: domain.StateActive},
 		},
 	}
-	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart, false)
 
 	_, _, err := svc.Search(context.Background(), domain.MemoryFilter{
 		Query:     "test query",
@@ -459,7 +459,7 @@ func TestCreateFallsBackToRawWhenLLMUnavailable(t *testing.T) {
 	t.Parallel()
 
 	repo := &memoryRepoMock{}
-	svc := NewMemoryService(repo, nil, nil, "", ModeSmart)
+	svc := NewMemoryService(repo, nil, nil, "", ModeSmart, false)
 
 	mem, _, err := svc.Create(context.Background(), "agent-1", "user prefers dark mode", []string{"prefs"}, json.RawMessage(`{"source":"manual"}`))
 	if err != nil {
@@ -498,7 +498,7 @@ func TestCreateRunsReconcilePipeline(t *testing.T) {
 
 	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
 	repo := &memoryRepoMock{}
-	svc := NewMemoryService(repo, llmClient, nil, "auto-model", ModeSmart)
+	svc := NewMemoryService(repo, llmClient, nil, "auto-model", ModeSmart, false)
 
 	mem, _, err := svc.Create(context.Background(), "agent-1", "I use Go 1.22", nil, nil)
 	if err != nil {
@@ -607,5 +607,264 @@ func TestRelativeAge(t *testing.T) {
 				t.Errorf("relativeAge() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func makeLLMServer(t *testing.T, responseContent string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": responseContent}},
+			},
+		})
+	}))
+}
+
+func TestExtractSearchKeywords_Success(t *testing.T) {
+	t.Parallel()
+
+	srv := makeLLMServer(t, `{"keywords": ["Caroline", "LGBTQ", "support group"]}`)
+	defer srv.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: srv.URL, Model: "test-model"})
+	svc := NewMemoryService(&memoryRepoMock{}, llmClient, nil, "", ModeSmart, true)
+
+	kw, err := svc.extractSearchKeywords(context.Background(), "When did Caroline go to the LGBTQ support group?")
+	if err != nil {
+		t.Fatalf("extractSearchKeywords() error = %v", err)
+	}
+	if len(kw) != 3 {
+		t.Fatalf("expected 3 keywords, got %d: %v", len(kw), kw)
+	}
+	if kw[0] != "Caroline" || kw[1] != "LGBTQ" || kw[2] != "support group" {
+		t.Fatalf("unexpected keywords: %v", kw)
+	}
+}
+
+func TestExtractSearchKeywords_ParseFailure(t *testing.T) {
+	t.Parallel()
+
+	srv := makeLLMServer(t, `not valid json`)
+	defer srv.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: srv.URL, Model: "test-model"})
+	svc := NewMemoryService(&memoryRepoMock{}, llmClient, nil, "", ModeSmart, true)
+
+	_, err := svc.extractSearchKeywords(context.Background(), "some query")
+	if err == nil {
+		t.Fatal("expected error on parse failure")
+	}
+}
+
+func TestExtractSearchKeywords_Timeout(t *testing.T) {
+	t.Parallel()
+
+	done := make(chan struct{})
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-done:
+		case <-time.After(10 * time.Second):
+		}
+	}))
+	defer func() {
+		close(done)
+		slow.Close()
+	}()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: slow.URL, Model: "test-model"})
+	svc := NewMemoryService(&memoryRepoMock{}, llmClient, nil, "", ModeSmart, true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	_, err := svc.extractSearchKeywords(ctx, "some query")
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+}
+
+func TestAutoHybridSearch_WithKeywords_FTSAvailable(t *testing.T) {
+	t.Parallel()
+
+	llmSrv := makeLLMServer(t, `{"keywords": ["Caroline", "LGBTQ"]}`)
+	defer llmSrv.Close()
+
+	score := 0.9
+	memRepo := &memoryRepoMock{
+		ftsAvail: true,
+		vectorResults: []domain.Memory{
+			{ID: "vec-1", Content: "vec result", Score: &score, MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+		ftsResults: []domain.Memory{
+			{ID: "fts-1", Content: "fts result", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: llmSrv.URL, Model: "test-model"})
+	svc := NewMemoryService(memRepo, llmClient, nil, "auto-model", ModeSmart, true)
+
+	_, _, err := svc.Search(context.Background(), domain.MemoryFilter{
+		Query: "When did Caroline go to the LGBTQ support group?",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if memRepo.lastFTSQuery != "Caroline LGBTQ" {
+		t.Fatalf("expected FTS query %q, got %q", "Caroline LGBTQ", memRepo.lastFTSQuery)
+	}
+}
+
+func TestAutoHybridSearch_WithKeywords_FTSUnavailable(t *testing.T) {
+	t.Parallel()
+
+	llmSrv := makeLLMServer(t, `{"keywords": ["Caroline", "LGBTQ"]}`)
+	defer llmSrv.Close()
+
+	rawQuery := "When did Caroline go to the LGBTQ support group?"
+	memRepo := &memoryRepoMock{
+		ftsAvail: false,
+		kwResults: []domain.Memory{
+			{ID: "kw-1", Content: "kw result", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: llmSrv.URL, Model: "test-model"})
+	svc := NewMemoryService(memRepo, llmClient, nil, "auto-model", ModeSmart, true)
+
+	_, _, err := svc.Search(context.Background(), domain.MemoryFilter{
+		Query: rawQuery,
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if memRepo.lastKeywordQuery != rawQuery {
+		t.Fatalf("KeywordSearch should receive raw query %q, got %q", rawQuery, memRepo.lastKeywordQuery)
+	}
+	if memRepo.lastFTSQuery != "" {
+		t.Fatal("FTS should not be called when FTS unavailable")
+	}
+}
+
+func TestAutoHybridSearch_ExtractionDisabled(t *testing.T) {
+	t.Parallel()
+
+	llmSrv := makeLLMServer(t, `{"keywords": ["Caroline", "LGBTQ"]}`)
+	defer llmSrv.Close()
+
+	rawQuery := "When did Caroline go to the LGBTQ support group?"
+	memRepo := &memoryRepoMock{
+		ftsAvail: true,
+		ftsResults: []domain.Memory{
+			{ID: "fts-1", Content: "fts result", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: llmSrv.URL, Model: "test-model"})
+	svc := NewMemoryService(memRepo, llmClient, nil, "auto-model", ModeSmart, false)
+
+	_, _, err := svc.Search(context.Background(), domain.MemoryFilter{
+		Query: rawQuery,
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if memRepo.lastFTSQuery != rawQuery {
+		t.Fatalf("expected raw query %q passed to FTS, got %q", rawQuery, memRepo.lastFTSQuery)
+	}
+}
+
+func TestFTSOnlySearch_WithKeywords(t *testing.T) {
+	t.Parallel()
+
+	llmSrv := makeLLMServer(t, `{"keywords": ["Alice", "job", "startup"]}`)
+	defer llmSrv.Close()
+
+	memRepo := &memoryRepoMock{
+		ftsAvail: true,
+		ftsResults: []domain.Memory{
+			{ID: "fts-1", Content: "fts result", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: llmSrv.URL, Model: "test-model"})
+	svc := NewMemoryService(memRepo, llmClient, nil, "", ModeSmart, true)
+
+	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
+		Query: "What is Alice's job at the startup?",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if total != 1 || len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if memRepo.lastFTSQuery != "Alice job startup" {
+		t.Fatalf("expected FTS query %q, got %q", "Alice job startup", memRepo.lastFTSQuery)
+	}
+}
+
+func TestSecondHopAutoSearch_WithKeywords(t *testing.T) {
+	t.Parallel()
+
+	score := 0.8
+	seed := domain.Memory{ID: "seed-1", Content: "seed content", Score: &score}
+	firstHopMems := map[string]domain.Memory{"seed-1": seed}
+	firstHopScores := map[string]float64{"seed-1": 0.8}
+
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "hop-1", Content: "second hop result", Score: &score},
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart, false)
+
+	keywords := []string{"Caroline", "LGBTQ"}
+	results := svc.secondHopAutoSearch(context.Background(), firstHopMems, firstHopScores, domain.MemoryFilter{
+		Query: "original question",
+		Limit: 10,
+	}, 10, keywords)
+
+	if len(results) == 0 {
+		t.Fatal("expected second-hop results")
+	}
+	wantPrefix := "Caroline LGBTQ seed content"
+	if memRepo.lastAutoVectorQuery != wantPrefix {
+		t.Fatalf("expected enriched query %q, got %q", wantPrefix, memRepo.lastAutoVectorQuery)
+	}
+}
+
+func TestSecondHopAutoSearch_WithoutKeywords(t *testing.T) {
+	t.Parallel()
+
+	score := 0.8
+	seed := domain.Memory{ID: "seed-1", Content: "seed content", Score: &score}
+	firstHopMems := map[string]domain.Memory{"seed-1": seed}
+	firstHopScores := map[string]float64{"seed-1": 0.8}
+
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "hop-1", Content: "second hop result", Score: &score},
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart, false)
+
+	results := svc.secondHopAutoSearch(context.Background(), firstHopMems, firstHopScores, domain.MemoryFilter{
+		Query: "original question",
+		Limit: 10,
+	}, 10, nil)
+
+	if len(results) == 0 {
+		t.Fatal("expected second-hop results")
+	}
+	wantQuery := "original question seed content"
+	if memRepo.lastAutoVectorQuery != wantQuery {
+		t.Fatalf("expected enriched query %q, got %q", wantQuery, memRepo.lastAutoVectorQuery)
 	}
 }

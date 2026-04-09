@@ -18,24 +18,28 @@ import (
 )
 
 type memoryRepoMock struct {
+	mu                   sync.Mutex
 	createCalls          []*domain.Memory
 	getByID              map[string]*domain.Memory
 	getByIDErr           error
 	updateOptimisticErr  error
-	setStateCalls        []setStateCall  // track SetState invocations
-	setStateErr          error           // configurable return value for SetState
-	vectorResults        []domain.Memory // configurable results for AutoVectorSearch
-	vectorErr            error           // configurable error for AutoVectorSearch / VectorSearch
-	listResults          []domain.Memory // configurable results for List
-	ftsResults           []domain.Memory // configurable results for FTSSearch
-	ftsErr               error           // configurable error for FTSSearch
-	kwResults            []domain.Memory // configurable results for KeywordSearch
-	kwErr                error           // configurable error for KeywordSearch
-	ftsAvail             bool            // configurable FTSAvailable() return
+	setStateCalls        []setStateCall
+	setStateErr          error
+	vectorResults        []domain.Memory
+	vectorErr            error
+	listResults          []domain.Memory
+	ftsResults           []domain.Memory
+	ftsErr               error
+	kwResults            []domain.Memory
+	kwErr                error
+	ftsAvail             bool
 	lastVectorFilter     domain.MemoryFilter
 	lastAutoVectorFilter domain.MemoryFilter
 	lastKeywordFilter    domain.MemoryFilter
+	lastKeywordQuery     string
 	lastFTSFilter        domain.MemoryFilter
+	lastFTSQuery         string
+	lastAutoVectorQuery  string
 }
 
 type setStateCall struct {
@@ -600,34 +604,49 @@ func (m *memoryRepoMock) VectorSearch(ctx context.Context, queryVec []float32, f
 }
 
 func (m *memoryRepoMock) AutoVectorSearch(ctx context.Context, queryText string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	m.mu.Lock()
 	m.lastAutoVectorFilter = f
-	if m.vectorErr != nil {
-		return nil, m.vectorErr
+	m.lastAutoVectorQuery = queryText
+	vectorErr := m.vectorErr
+	vectorResults := m.vectorResults
+	m.mu.Unlock()
+	if vectorErr != nil {
+		return nil, vectorErr
 	}
-	if m.vectorResults != nil {
-		return m.vectorResults, nil
+	if vectorResults != nil {
+		return vectorResults, nil
 	}
 	return nil, nil
 }
 
 func (m *memoryRepoMock) KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	m.mu.Lock()
 	m.lastKeywordFilter = f
-	if m.kwErr != nil {
-		return nil, m.kwErr
+	m.lastKeywordQuery = query
+	kwErr := m.kwErr
+	kwResults := m.kwResults
+	m.mu.Unlock()
+	if kwErr != nil {
+		return nil, kwErr
 	}
-	if m.kwResults != nil {
-		return m.kwResults, nil
+	if kwResults != nil {
+		return kwResults, nil
 	}
 	return nil, nil
 }
 
 func (m *memoryRepoMock) FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	m.mu.Lock()
 	m.lastFTSFilter = f
-	if m.ftsErr != nil {
-		return nil, m.ftsErr
+	m.lastFTSQuery = query
+	ftsErr := m.ftsErr
+	ftsResults := m.ftsResults
+	m.mu.Unlock()
+	if ftsErr != nil {
+		return nil, ftsErr
 	}
-	if m.ftsResults != nil {
-		return m.ftsResults, nil
+	if ftsResults != nil {
+		return ftsResults, nil
 	}
 	return nil, nil
 }

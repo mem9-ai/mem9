@@ -57,6 +57,11 @@ type Config struct {
 	// Defaults to 5.
 	WorkerConcurrency int
 
+	// SearchKeywordExtract enables LLM-based keyword extraction for the FTS leg
+	// of hybrid search. Default: true when LLM is configured.
+	// Disable with MNEMO_SEARCH_KEYWORD_EXTRACT=false.
+	SearchKeywordExtract bool
+
 	// DebugLLM enables logging of raw LLM response content, which may contain
 	// user data. Disabled by default. Enable only in dev/test environments via
 	// MNEMO_DEBUG_LLM=true.
@@ -124,6 +129,7 @@ func Load() (*Config, error) {
 		TenantPoolTotalLimit:  envInt("MNEMO_TENANT_POOL_TOTAL_LIMIT", 200),
 		UploadDir:             envOr("MNEMO_UPLOAD_DIR", "./uploads"),
 		FTSEnabled:            envBool("MNEMO_FTS_ENABLED", false),
+		SearchKeywordExtract:  envBool("MNEMO_SEARCH_KEYWORD_EXTRACT", true),
 		WorkerConcurrency:     envInt("MNEMO_WORKER_CONCURRENCY", 5),
 		EncryptType:           envOr("MNEMO_ENCRYPT_TYPE", "plain"),
 		EncryptKey:            os.Getenv("MNEMO_ENCRYPT_KEY"),

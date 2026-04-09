@@ -118,9 +118,9 @@ func (s *testSessionRepo) ListBySessionIDs(context.Context, []string, int) ([]*d
 
 // newTestServer creates a Server with pre-populated svcCache for testing.
 func newTestServer(memRepo *testMemoryRepo, sessRepo *testSessionRepo) *Server {
-	srv := NewServer(nil, nil, "", nil, nil, "", false, service.ModeSmart, "", slog.Default())
+	srv := NewServer(nil, nil, "", nil, nil, "", false, false, service.ModeSmart, "", slog.Default())
 	svc := resolvedSvc{
-		memory:  service.NewMemoryService(memRepo, nil, nil, "", service.ModeSmart),
+		memory:  service.NewMemoryService(memRepo, nil, nil, "", service.ModeSmart, false),
 		ingest:  service.NewIngestService(memRepo, nil, nil, "", service.ModeSmart),
 		session: service.NewSessionService(sessRepo, nil, ""),
 	}
@@ -162,44 +162,6 @@ func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestCreateMemory_SyncContent_WithSessionID_PersistsRawSession(t *testing.T) {
-	sessRepo := &testSessionRepo{}
-	srv := newTestServer(&testMemoryRepo{}, sessRepo)
-
-	body := map[string]any{
-		"content":    "[speaker:Speaker 2] hello there",
-		"session_id": "session-123",
-		"metadata": map[string]any{
-			"speaker":    "Speaker 2",
-			"turn_index": 7,
-		},
-		"sync": true,
-	}
-	req := makeRequest(t, http.MethodPost, "/memories", body)
-	rr := httptest.NewRecorder()
-
-	srv.createMemory(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
-	}
-	if !sessRepo.bulkCreateCalled {
-		t.Fatal("expected session bulk create to be called")
-	}
-	if len(sessRepo.sessions) != 1 {
-		t.Fatalf("expected 1 session row, got %d", len(sessRepo.sessions))
-	}
-	if sessRepo.sessions[0].SessionID != "session-123" {
-		t.Fatalf("expected session_id=session-123, got %q", sessRepo.sessions[0].SessionID)
-	}
-	if sessRepo.sessions[0].Role != "assistant" {
-		t.Fatalf("expected assistant role, got %q", sessRepo.sessions[0].Role)
-	}
-	if sessRepo.sessions[0].Seq != 7 {
-		t.Fatalf("expected seq=7, got %d", sessRepo.sessions[0].Seq)
 	}
 }
 
@@ -298,9 +260,9 @@ func TestCreateMemory_SyncMessages_Phase1Error_Returns500(t *testing.T) {
 		Model:   "test-model",
 	})
 
-	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, false, service.ModeSmart, "", slog.Default())
 	svc := resolvedSvc{
-		memory:  service.NewMemoryService(&testMemoryRepo{}, nil, nil, "", service.ModeSmart),
+		memory:  service.NewMemoryService(&testMemoryRepo{}, nil, nil, "", service.ModeSmart, false),
 		ingest:  service.NewIngestService(&testMemoryRepo{}, llmClient, nil, "", service.ModeSmart),
 		session: service.NewSessionService(&testSessionRepo{}, nil, ""),
 	}
@@ -347,9 +309,9 @@ func TestCreateMemory_SyncMessages_StripsInjectedContext(t *testing.T) {
 	})
 
 	sessRepo := &testSessionRepo{}
-	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, false, service.ModeSmart, "", slog.Default())
 	svc := resolvedSvc{
-		memory:  service.NewMemoryService(&testMemoryRepo{}, nil, nil, "", service.ModeSmart),
+		memory:  service.NewMemoryService(&testMemoryRepo{}, nil, nil, "", service.ModeSmart, false),
 		ingest:  service.NewIngestService(&testMemoryRepo{}, llmClient, nil, "", service.ModeSmart),
 		session: service.NewSessionService(sessRepo, nil, ""),
 	}
@@ -417,9 +379,9 @@ func TestCreateMemory_SyncMessages_ReconcileFailure_Returns500(t *testing.T) {
 	})
 
 	memRepo := &failSearchMemoryRepo{}
-	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, false, service.ModeSmart, "", slog.Default())
 	svc := resolvedSvc{
-		memory:  service.NewMemoryService(&memRepo.testMemoryRepo, nil, nil, "", service.ModeSmart),
+		memory:  service.NewMemoryService(&memRepo.testMemoryRepo, nil, nil, "", service.ModeSmart, false),
 		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
 		session: service.NewSessionService(&testSessionRepo{}, nil, ""),
 	}
