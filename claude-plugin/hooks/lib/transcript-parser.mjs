@@ -114,6 +114,29 @@ function entryContent(entry) {
   return stripInjectedMemories(parts.join("\n\n"));
 }
 
+const ASSISTANT_NOISE_PREFIXES = [
+  "<local-command-caveat>",
+  "<local-command-stdout>",
+  "<command-name>",
+  "<command-message>",
+  "<task-notification>",
+  "<system-reminder>",
+];
+
+/**
+ * @param {"user" | "assistant"} role
+ * @param {string} content
+ * @returns {boolean}
+ */
+function isSystemNoise(role, content) {
+  if (role !== "assistant") {
+    return false;
+  }
+
+  const trimmed = content.trimStart();
+  return ASSISTANT_NOISE_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
+}
+
 /**
  * @param {unknown} entry
  * @returns {IngestMessage | null}
@@ -127,6 +150,9 @@ function normalizeEntry(entry) {
   if (record.isSidechain === true || record.is_sidechain === true) {
     return null;
   }
+  if (record.isMeta === true) {
+    return null;
+  }
 
   const role = entryRole(record);
   if (!role) {
@@ -134,7 +160,7 @@ function normalizeEntry(entry) {
   }
 
   const content = entryContent(record);
-  if (!content) {
+  if (!content || isSystemNoise(role, content)) {
     return null;
   }
 

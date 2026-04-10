@@ -28,13 +28,13 @@ Claude Code integration uses bash hooks plus JavaScript helpers and three skills
 ## Local conventions
 
 - Every hook sources `hooks/common.sh`.
-- JSON shaping should go through the `.mjs` helpers under `hooks/lib/`, not inline Python.
+- JSON shaping should go through the `.mjs` helpers under `hooks/lib/`.
 - Automatic recall and ingest go through `/v1alpha2/mem9s/...` with `X-API-Key` and `X-Mnemo-Agent-Id`.
 - Runtime auth is stored in `${CLAUDE_PLUGIN_DATA}/auth.json`.
 
 ## Validation
 
-- Validate with the shell tests in `hooks/tests/` plus `node --test` for the `.mjs` helpers.
+- Validate hook scripts with `bash -n` and JavaScript helpers with `node --check`.
 - Keep curl timeouts explicit (`--max-time 8`).
 
 ## Anti-patterns
