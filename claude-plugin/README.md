@@ -2,6 +2,17 @@
 
 Persistent cloud memory for Claude Code.
 
+## Install
+
+Install from the Claude Code plugin marketplace:
+
+```text
+/plugin marketplace add mem9-ai/mem9
+/plugin install mem9@mem9
+```
+
+After installation, start a new Claude Code session. Mem9 will try to initialize automatically on `SessionStart(startup)`.
+
 ## Prerequisites
 
 - Claude Code plugin support

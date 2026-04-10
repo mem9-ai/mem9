@@ -1,5 +1,4 @@
 ---
-name: recall
 description: "Search Mem9 for relevant memories when the current conversation needs historical context."
 context: fork
 allowed-tools:

@@ -1,5 +1,4 @@
 ---
-name: store
 description: "Store an explicit user-provided fact or preference in Mem9."
 context: fork
 allowed-tools:

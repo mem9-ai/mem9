@@ -1,5 +1,4 @@
 ---
-name: setup
 description: "Check Mem9 plugin prerequisites and initialize the cached API key if needed."
 context: fork
 allowed-tools:
