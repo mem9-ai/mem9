@@ -74,6 +74,7 @@ func main() {
 		BaseURL:     cfg.LLMBaseURL,
 		Model:       cfg.LLMModel,
 		Temperature: cfg.LLMTemperature,
+		Timeout:     cfg.LLMTimeout,
 		DebugLLM:    cfg.DebugLLM,
 	})
 	if llmClient != nil {
@@ -142,12 +143,15 @@ func main() {
 	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger)
 	router := srv.Router(tenantMW, rateMW, apiKeyMW)
 
+	writeTimeout := cfg.LLMTimeout + 15*time.Second
+	writeTimeout = max(writeTimeout, 120*time.Second)
 	httpSrv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      router,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 15 * time.Minute, // keep transport timeout above sync ingest so callers can receive structured 504s
-		IdleTimeout:  60 * time.Second,
+		Addr:              ":" + cfg.Port,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       120 * time.Second, // must cover full body read; ingest payloads can be large
+		WriteTimeout:      writeTimeout,      // sync ingest holds the connection for the LLM pipeline plus response write headroom
+		IdleTimeout:       60 * time.Second,
 	}
 
 	// Upload worker (async file ingest).

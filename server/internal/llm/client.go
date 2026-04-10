@@ -30,6 +30,7 @@ type Config struct {
 	BaseURL     string
 	Model       string
 	Temperature float64
+	Timeout     time.Duration
 	DebugLLM    bool
 }
 
@@ -46,6 +47,9 @@ func New(cfg Config) *Client {
 	if cfg.Temperature <= 0 {
 		cfg.Temperature = 0.1
 	}
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = 120 * time.Second
+	}
 	return &Client{
 		apiKey:      cfg.APIKey,
 		baseURL:     strings.TrimRight(cfg.BaseURL, "/"),
@@ -53,7 +57,7 @@ func New(cfg Config) *Client {
 		temperature: cfg.Temperature,
 		debugLLM:    cfg.DebugLLM,
 		http: &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout: cfg.Timeout,
 		},
 	}
 }
@@ -82,9 +86,9 @@ type chatResponse struct {
 		} `json:"message"`
 	} `json:"choices"`
 	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
+		PromptTokens        int `json:"prompt_tokens"`
+		CompletionTokens    int `json:"completion_tokens"`
+		TotalTokens         int `json:"total_tokens"`
 		PromptTokensDetails *struct {
 			CachedTokens int `json:"cached_tokens"`
 		} `json:"prompt_tokens_details,omitempty"`
