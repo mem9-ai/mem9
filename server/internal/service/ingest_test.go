@@ -326,6 +326,60 @@ func TestReconcileContent_SkipsEventDualWriteWhenExactContentAlreadyExists(t *te
 	}
 }
 
+func TestIngest_MessagesMode_DualWritesEventFactOnNoop(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+
+		resp := `{"facts": [{"text": "Caroline attended an LGBTQ support group on May 7, 2023", "tags": ["event", "timeline"]}], "message_tags": [["event", "timeline"]]}`
+		if callCount == 2 {
+			resp = `{"memory": [{"id": "0", "text": "Caroline promotes LGBTQ rights", "event": "NOOP"}]}`
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "existing-1", Content: "Caroline promotes LGBTQ rights", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+		listResults: []domain.Memory{
+			{ID: "existing-1", Content: "Caroline promotes LGBTQ rights", MemoryType: domain.TypeInsight, SessionID: "sess-event", State: domain.StateActive},
+		},
+	}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	res, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-event",
+		AgentID:   "agent-1",
+		Messages: []IngestMessage{
+			{Role: "user", Content: "[date:1:56 pm on 8 May, 2023] I went to a LGBTQ support group yesterday and it was so powerful."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if res == nil || res.MemoriesChanged != 1 {
+		t.Fatalf("expected 1 memory changed from message-mode event dual-write, got %#v", res)
+	}
+	if len(res.EventIDs) != 1 {
+		t.Fatalf("expected 1 event id from message-mode event dual-write, got %#v", res)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 event memory create, got %d", len(memRepo.createCalls))
+	}
+}
+
 func TestExtractFactsRetryFallbackDropsFlattenedQueryIntent(t *testing.T) {
 	t.Parallel()
 

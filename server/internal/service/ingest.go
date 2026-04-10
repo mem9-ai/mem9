@@ -129,23 +129,18 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 	const maxConversationRunes = 1000000
 	formatted = truncateRunes(formatted, maxConversationRunes)
 
-	insightIDs, warnings, err := s.extractAndReconcile(ctx, agentName, req.AgentID, req.SessionID, formatted)
+	phase1, err := s.ExtractPhase1(ctx, req.Messages)
 	if err != nil {
 		slog.Error("insight extraction failed", "err", err)
-		return &IngestResult{Status: "failed", Warnings: warnings}, nil
+		return &IngestResult{Status: "failed", Warnings: 1}, nil
 	}
 
-	status := "complete"
-	if warnings > 0 && len(insightIDs) == 0 {
-		status = "partial"
+	result, err := s.ReconcilePhase2(ctx, agentName, req.AgentID, req.SessionID, phase1.Facts)
+	if err != nil {
+		slog.Error("reconcile phase2 failed", "err", err)
+		return &IngestResult{Status: "failed", Warnings: 1}, nil
 	}
-
-	return &IngestResult{
-		Status:          status,
-		MemoriesChanged: len(insightIDs),
-		InsightIDs:      insightIDs,
-		Warnings:        warnings,
-	}, nil
+	return result, nil
 }
 
 // HasLLM returns true if an LLM client is configured for smart processing.
@@ -252,14 +247,17 @@ func (s *IngestService) ReconcilePhase2(ctx context.Context, agentName, agentID,
 		slog.Error("ReconcilePhase2: reconciliation failed", "err", err)
 		return &IngestResult{Status: "failed", Warnings: warnings}, nil
 	}
+	eventIDs, eventWarnings := s.appendEventFacts(ctx, agentName, agentID, sessionID, facts, insightIDs)
+	warnings += eventWarnings
 	status := "complete"
 	if warnings > 0 && len(insightIDs) == 0 {
 		status = "partial"
 	}
 	return &IngestResult{
 		Status:          status,
-		MemoriesChanged: len(insightIDs),
+		MemoriesChanged: len(insightIDs) + len(eventIDs),
 		InsightIDs:      insightIDs,
+		EventIDs:        eventIDs,
 		Warnings:        warnings,
 	}, nil
 }
