@@ -34,6 +34,7 @@ type Config struct {
 	LLMBaseURL     string
 	LLMModel       string
 	LLMTemperature float64
+	LLMTimeout     time.Duration
 	IngestMode     string
 
 	TiDBZeroEnabled       bool
@@ -118,6 +119,7 @@ func Load() (*Config, error) {
 		LLMBaseURL:            os.Getenv("MNEMO_LLM_BASE_URL"),
 		LLMModel:              envOr("MNEMO_LLM_MODEL", "gpt-4o-mini"),
 		LLMTemperature:        envFloat("MNEMO_LLM_TEMPERATURE", 0.1),
+		LLMTimeout:            envDuration("MNEMO_LLM_TIMEOUT", 120*time.Second),
 		IngestMode:            envOr("MNEMO_INGEST_MODE", "smart"),
 		TiDBZeroEnabled:       envBool("MNEMO_TIDB_ZERO_ENABLED", true),
 		TiDBZeroAPIURL:        envOr("MNEMO_TIDB_ZERO_API_URL", "https://zero.tidbapi.com/v1alpha1"),
