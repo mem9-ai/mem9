@@ -8,10 +8,14 @@ Install from the Claude Code plugin marketplace:
 
 ```text
 /plugin marketplace add mem9-ai/mem9
-/plugin install mem9@mem9
+/plugin install mem9@mem9 --scope user
 ```
 
-After installation, start a new Claude Code session. Mem9 will try to initialize automatically on `SessionStart(startup)`.
+`user` is the default scope. Use `--scope project` if you want to share the plugin with the current repository.
+
+If you install Mem9 during an already-running session, the plugin is installed immediately, but `SessionStart` will not replay for the current session. Use `/mem9:setup` once to initialize Mem9 right away.
+
+On the next new Claude Code session, Mem9 will initialize automatically on `SessionStart(startup)`.
 
 ## Prerequisites
 
