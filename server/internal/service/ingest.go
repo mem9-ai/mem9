@@ -465,6 +465,19 @@ atomic facts from a conversation.
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
+   NEVER replace specific names, places, organizations, or entities with generic terms.
+   Proper nouns must appear verbatim in the extracted fact.
+   - Good: "Caroline moved from Sweden 4 years ago"
+   - Bad: "Caroline moved from her home country 4 years ago"
+   - Good: "User works at Google"
+   - Bad: "User works at a tech company"
+   Preserve action verbs precisely. If the user "researched", "purchased", "visited",
+   "investigated", or "called", keep the exact verb. Do not paraphrase to generic
+   verbs like "looked at", "did", "went to", or "checked".
+   - Good: "User researched adoption agencies"
+   - Bad: "User looked into adoption"
+   - Good: "User purchased a Tesla Model 3"
+   - Bad: "User bought a car"
 4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
 6. Do NOT extract search queries or lookup questions as facts.
@@ -492,7 +505,12 @@ atomic facts from a conversation.
    Examples to skip:
      - "Hmm let me think"
      - "OK sounds good"
-9. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+9. Always include temporal context when mentioned. Preserve dates, times, and
+   temporal markers EXACTLY as stated. Do not convert between formats.
+   - Good: "Ran a charity race last Saturday" (preserve relative reference)
+   - Good: "Meeting on 2023-05-20" (preserve absolute date)
+   - Bad: Converting "last Saturday" to "May 20, 2023" (loses relative context)
+   - Bad: Converting "May 20, 2023" to "recently" (loses precision)
 10. Extract relationships between people explicitly.
 11. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
@@ -507,6 +525,10 @@ atomic facts from a conversation.
    "relationship", "event", "timeline".
    Use hyphens for multi-word tags: "programming-language", "work-tool".
    If no meaningful tags apply, omit the "tags" field for that fact.
+14. When in doubt, extract more rather than less. A slightly verbose fact that
+   preserves all details is better than a concise fact that loses information.
+   The reconciliation phase will handle deduplication — your job is to capture
+   everything the user stated.
 
 ## Output Format
 
@@ -579,6 +601,19 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
+   NEVER replace specific names, places, organizations, or entities with generic terms.
+   Proper nouns must appear verbatim in the extracted fact.
+   - Good: "Caroline moved from Sweden 4 years ago"
+   - Bad: "Caroline moved from her home country 4 years ago"
+   - Good: "User works at Google"
+   - Bad: "User works at a tech company"
+   Preserve action verbs precisely. If the user "researched", "purchased", "visited",
+   "investigated", or "called", keep the exact verb. Do not paraphrase to generic
+   verbs like "looked at", "did", "went to", or "checked".
+   - Good: "User researched adoption agencies"
+   - Bad: "User looked into adoption"
+   - Good: "User purchased a Tesla Model 3"
+   - Bad: "User bought a car"
 4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
 6. Do NOT extract search queries or lookup questions as facts.
@@ -606,7 +641,12 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    Examples to skip:
      - "Hmm let me think"
      - "OK sounds good"
-9. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+9. Always include temporal context when mentioned. Preserve dates, times, and
+   temporal markers EXACTLY as stated. Do not convert between formats.
+   - Good: "Ran a charity race last Saturday" (preserve relative reference)
+   - Good: "Meeting on 2023-05-20" (preserve absolute date)
+   - Bad: Converting "last Saturday" to "May 20, 2023" (loses relative context)
+   - Bad: Converting "May 20, 2023" to "recently" (loses precision)
 10. Extract relationships between people explicitly.
 11. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
@@ -620,6 +660,10 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
    "relationship", "event", "timeline".
    Use hyphens for multi-word tags. If no meaningful tags apply, omit the "tags" field.
+14. When in doubt, extract more rather than less. A slightly verbose fact that
+   preserves all details is better than a concise fact that loses information.
+   The reconciliation phase will handle deduplication — your job is to capture
+   everything the user stated.
 
 ## Rules — message_tags
 
