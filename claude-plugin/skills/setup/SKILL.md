@@ -1,5 +1,5 @@
 ---
-description: "Check Mem9 plugin prerequisites and initialize the cached API key if needed."
+description: Use when Mem9 needs to be initialized, repaired, or checked in this Claude Code environment.
 context: fork
 allowed-tools:
   - Bash

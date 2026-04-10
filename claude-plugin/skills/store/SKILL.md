@@ -1,5 +1,5 @@
 ---
-description: "Store an explicit user-provided fact or preference in Mem9."
+description: Use when the user explicitly asks Claude to remember one fact, preference, or instruction in Mem9.
 context: fork
 allowed-tools:
   - Bash
@@ -9,14 +9,13 @@ disable-model-invocation: true
 
 # Mem9 Store
 
-Use this skill only when the user explicitly asks to remember or save something.
+Use this skill only when the user explicitly asks Claude to remember or save something to Mem9.
 
 ## Steps
 
-1. Extract the fact that should be remembered.
-2. Pick 1-3 short tags.
-3. Use `${CLAUDE_PLUGIN_DATA}/auth.json` only as request credentials. If auth is missing, tell the user to run `/mem9:setup`. Do not print the file contents or the API key.
-4. Store the memory with the single-message `content` API.
+1. Extract the one fact, preference, or instruction that should be remembered.
+2. Use `${CLAUDE_PLUGIN_DATA}/auth.json` only as request credentials. If auth is missing, tell the user to run `/mem9:setup`. Do not print the file contents or the API key.
+3. Store the memory with the single-message `content` API. Do not invent tags client-side.
 
 ```bash
 set -euo pipefail
@@ -33,7 +32,7 @@ curl -sf --max-time 8 \
   -H "Content-Type: application/json" \
   -H "X-API-Key: ${api_key}" \
   -H "X-Mnemo-Agent-Id: claude-code" \
-  -d '{"content":"REPLACE_WITH_MEMORY","tags":["tag1","tag2"]}' \
+  -d '{"content":"REPLACE_WITH_MEMORY"}' \
   "${base_url%/}/v1alpha2/mem9s/memories"
 ```
 

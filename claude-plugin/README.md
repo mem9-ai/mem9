@@ -4,7 +4,7 @@ Persistent cloud memory for Claude Code.
 
 ## Install
 
-Install from your terminal with the Claude CLI:
+Install from your terminal with the Claude Code CLI:
 
 ```text
 claude plugin marketplace add mem9-ai/mem9

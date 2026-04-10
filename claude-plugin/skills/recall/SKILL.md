@@ -1,5 +1,5 @@
 ---
-description: "Search Mem9 for relevant memories when the current conversation needs historical context."
+description: Use when the current request needs relevant memories from Mem9.
 context: fork
 allowed-tools:
   - Bash
@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 # Mem9 Recall
 
-Use this skill when the current question could benefit from historical context stored in Mem9.
+Use this skill when the current request could benefit from historical context stored in Mem9.
 
 ## Steps
 

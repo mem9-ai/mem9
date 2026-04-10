@@ -5,6 +5,7 @@
   "author": {
     "name": "mem9-ai"
   },
-  "repository": "https://github.com/mem9-ai/mem9-claude-plugin",
+  "homepage": "https://mem9.ai",
+  "repository": "https://github.com/mem9-ai/mem9",
   "license": "Apache-2.0"
 }
