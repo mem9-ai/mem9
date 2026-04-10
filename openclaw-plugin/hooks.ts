@@ -294,10 +294,9 @@ export function registerHooks(
       const hookCtx = (context ?? {}) as HookContext;
       if (!evt?.success || !evt.messages || evt.messages.length === 0) return;
 
-      // Skip cron-triggered runs — they produce repetitive low-value messages
-      // (e.g. "[cron:UUID task-name] Reply to the user with exactly: Hi")
-      if (hookCtx.trigger === "cron") {
-        logger.info("[mem9] Skipping auto-ingest for cron-triggered run");
+      // Skip cron/heartbeat-triggered runs — they produce low-value messages
+      if (hookCtx.trigger === "cron" || hookCtx.trigger === "heartbeat") {
+        logger.info(`[mem9] Skipping auto-ingest for ${hookCtx.trigger}-triggered run`);
         return;
       }
 
