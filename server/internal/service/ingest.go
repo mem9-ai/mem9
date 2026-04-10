@@ -656,8 +656,21 @@ atomic facts from a conversation.
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
-4. Preserve the user's original language.
-5. Omit pure greetings, filler, and debugging chatter with no lasting value.
+   NEVER replace specific names, places, organizations, or entities with generic terms.
+   Proper nouns must appear verbatim in the extracted fact.
+   - Good: "Caroline moved from Sweden 4 years ago"
+   - Bad: "Caroline moved from her home country 4 years ago"
+   - Good: "User works at Google"
+   - Bad: "User works at a tech company"
+   Preserve action verbs precisely. If the user "researched", "purchased", "visited",
+   "investigated", or "called", keep the exact verb. Do not paraphrase to generic
+   verbs like "looked at", "did", "went to", or "checked".
+   - Good: "User researched adoption agencies"
+   - Bad: "User looked into adoption"
+   - Good: "User purchased a Tesla Model 3"
+   - Bad: "User bought a car"
+4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
+5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
 6. Do NOT extract search queries or lookup questions as facts.
    If the user is asking the assistant to find, explain, or look something up
    ("who is X", "how do I Y", "what does Z mean", "X是谁", "如何做Y", "Z是什么意思"), classify it as query_intent.
@@ -698,6 +711,10 @@ atomic facts from a conversation.
    When a relative time expression depends on another date already present in the same
    sentence or message header, preserve that relationship naturally instead of inventing
    extra detail. Post-processing will normalize those cases later.
+   - Good: "Ran a charity race last Saturday" (preserve relative reference)
+   - Good: "Meeting on 2023-05-20" (preserve absolute date)
+   - Bad: Converting "last Saturday" to "May 20, 2023" (loses relative context)
+   - Bad: Converting "May 20, 2023" to "recently" (loses precision)
 10. Extract relationships between people explicitly.
 11. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
@@ -711,7 +728,11 @@ atomic facts from a conversation.
    plan, job, location, relationship, or current status should usually become one fact.
 14. Return an empty facts array only when the user's messages contain no retrievable
    information at all, such as pure greetings, acknowledgements, or filler.
-15. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
+15. When in doubt, extract more rather than less. A slightly verbose fact that
+   preserves all details is better than a concise fact that loses information.
+   The reconciliation phase will handle deduplication — your job is to capture
+   everything the user stated.
+16. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
    "relationship", "event", "timeline".
    Use hyphens for multi-word tags: "programming-language", "work-tool".
@@ -802,8 +823,21 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
-4. Preserve the user's original language.
-5. Omit pure greetings, filler, and debugging chatter with no lasting value.
+   NEVER replace specific names, places, organizations, or entities with generic terms.
+   Proper nouns must appear verbatim in the extracted fact.
+   - Good: "Caroline moved from Sweden 4 years ago"
+   - Bad: "Caroline moved from her home country 4 years ago"
+   - Good: "User works at Google"
+   - Bad: "User works at a tech company"
+   Preserve action verbs precisely. If the user "researched", "purchased", "visited",
+   "investigated", or "called", keep the exact verb. Do not paraphrase to generic
+   verbs like "looked at", "did", "went to", or "checked".
+   - Good: "User researched adoption agencies"
+   - Bad: "User looked into adoption"
+   - Good: "User purchased a Tesla Model 3"
+   - Bad: "User bought a car"
+4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
+5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
 6. Do NOT extract search queries or lookup questions as facts.
    If the user is asking the assistant to find, explain, or look something up
    ("who is X", "how do I Y", "what does Z mean", "X是谁", "如何做Y", "Z是什么意思"), classify it as query_intent.
@@ -844,6 +878,10 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    When a relative time expression depends on another date already present in the same
    sentence or message header, preserve that relationship naturally instead of inventing
    extra detail. Post-processing will normalize those cases later.
+   - Good: "Ran a charity race last Saturday" (preserve relative reference)
+   - Good: "Meeting on 2023-05-20" (preserve absolute date)
+   - Bad: Converting "last Saturday" to "May 20, 2023" (loses relative context)
+   - Bad: Converting "May 20, 2023" to "recently" (loses precision)
 10. Extract relationships between people explicitly.
 11. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
@@ -857,7 +895,11 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    plan, job, location, relationship, or current status should usually become one fact.
 14. Return an empty facts array only when the user's messages contain no retrievable
    information at all, such as pure greetings, acknowledgements, or filler.
-15. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
+15. When in doubt, extract more rather than less. A slightly verbose fact that
+   preserves all details is better than a concise fact that loses information.
+   The reconciliation phase will handle deduplication — your job is to capture
+   everything the user stated.
+16. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
    "relationship", "event", "timeline".
    Use hyphens for multi-word tags. If no meaningful tags apply, omit the "tags" field.
