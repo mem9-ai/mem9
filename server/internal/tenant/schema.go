@@ -152,6 +152,12 @@ const TenantSessionsSchemaBase = `CREATE TABLE IF NOT EXISTS sessions (
     UNIQUE INDEX idx_sessions_dedup   (session_id, content_hash)
 )`
 
+const TenantSessionSequencesSchema = `CREATE TABLE IF NOT EXISTS session_sequences (
+    session_id VARCHAR(100) PRIMARY KEY,
+    next_seq   INT          NOT NULL,
+    updated_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+)`
+
 // BuildSessionsSchema builds the TiDB sessions schema with optional auto-embedding.
 func BuildSessionsSchema(autoModel string, autoDims int) string {
 	var embeddingCol string

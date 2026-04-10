@@ -247,6 +247,9 @@ func (p *ZeroProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, TenantMemorySessionLinksSchema); err != nil {
 		return fmt.Errorf("init schema: memory_session_links table: %w", err)
 	}
+	if _, err := db.ExecContext(ctx, TenantSessionSequencesSchema); err != nil {
+		return fmt.Errorf("init schema: session_sequences table: %w", err)
+	}
 	return nil
 
 }

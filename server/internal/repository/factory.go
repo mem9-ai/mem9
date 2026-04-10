@@ -106,19 +106,35 @@ func (stubSessionRepo) BulkCreate(_ context.Context, _ []*domain.Session) error 
 func (stubSessionRepo) PatchTags(_ context.Context, _, _ string, _ []string) error {
 	return nil
 }
+func (stubSessionRepo) NextSeq(_ context.Context, _ string) (int, error) { return 0, nil }
 func (stubSessionRepo) AutoVectorSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
 	return nil, nil
+}
+func (stubSessionRepo) AutoVectorSearchInSessionSet(_ context.Context, _ string, _ domain.MemoryFilter, _ []string, _ int) ([]domain.Memory, error) {
+	return nil, fmt.Errorf("session routed auto vector search: %w", domain.ErrNotSupported)
 }
 func (stubSessionRepo) VectorSearch(_ context.Context, _ []float32, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
 	return nil, nil
 }
+func (stubSessionRepo) VectorSearchInSessionSet(_ context.Context, _ []float32, _ domain.MemoryFilter, _ []string, _ int) ([]domain.Memory, error) {
+	return nil, fmt.Errorf("session routed vector search: %w", domain.ErrNotSupported)
+}
 func (stubSessionRepo) FTSSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
 	return nil, nil
+}
+func (stubSessionRepo) FTSSearchInSessionSet(_ context.Context, _ string, _ domain.MemoryFilter, _ []string, _ int) ([]domain.Memory, error) {
+	return nil, fmt.Errorf("session routed fts search: %w", domain.ErrNotSupported)
 }
 func (stubSessionRepo) KeywordSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
 	return nil, nil
 }
+func (stubSessionRepo) KeywordSearchInSessionSet(_ context.Context, _ string, _ domain.MemoryFilter, _ []string, _ int) ([]domain.Memory, error) {
+	return nil, fmt.Errorf("session routed keyword search: %w", domain.ErrNotSupported)
+}
 func (stubSessionRepo) FTSAvailable() bool { return false }
 func (stubSessionRepo) ListBySessionIDs(_ context.Context, _ []string, _ int) ([]*domain.Session, error) {
 	return nil, fmt.Errorf("session messages: %w", domain.ErrNotSupported)
+}
+func (stubSessionRepo) ListNeighbors(_ context.Context, _ string, _ int, _, _ int) ([]domain.Memory, error) {
+	return nil, fmt.Errorf("session neighbors: %w", domain.ErrNotSupported)
 }

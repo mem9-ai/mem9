@@ -131,13 +131,47 @@ func createTables(db *sql.DB) error {
 		return fmt.Errorf("create memory_session_links table: %w", err)
 	}
 
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS sessions (
+		id           VARCHAR(36)     PRIMARY KEY,
+		session_id   VARCHAR(100)    NULL,
+		agent_id     VARCHAR(100)    NULL,
+		source       VARCHAR(100)    NULL,
+		seq          INT             NOT NULL,
+		role         VARCHAR(20)     NOT NULL,
+		content      MEDIUMTEXT      NOT NULL,
+		content_type VARCHAR(20)     NOT NULL DEFAULT 'text',
+		content_hash VARCHAR(64)     NOT NULL,
+		tags         JSON,
+		embedding    TEXT            NULL,
+		state        VARCHAR(20)     NOT NULL DEFAULT 'active',
+		created_at   TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
+		updated_at   TIMESTAMP       DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		INDEX        idx_sessions_session (session_id),
+		INDEX        idx_sessions_agent   (agent_id),
+		INDEX        idx_sessions_state   (state),
+		INDEX        idx_sessions_created (created_at),
+		UNIQUE INDEX idx_sessions_dedup   (session_id, content_hash)
+	)`)
+	if err != nil {
+		return fmt.Errorf("create sessions table: %w", err)
+	}
+
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS session_sequences (
+		session_id VARCHAR(100) PRIMARY KEY,
+		next_seq   INT          NOT NULL,
+		updated_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+	)`)
+	if err != nil {
+		return fmt.Errorf("create session_sequences table: %w", err)
+	}
+
 	return nil
 }
 
 func truncateAll(db *sql.DB) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	for _, table := range []string{"memory_session_links", "tenants", "memories"} {
+	for _, table := range []string{"session_sequences", "sessions", "memory_session_links", "tenants", "memories"} {
 		if _, err := db.ExecContext(ctx, "DELETE FROM "+table); err != nil {
 			return fmt.Errorf("truncate %s: %w", table, err)
 		}

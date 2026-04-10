@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 
@@ -70,6 +71,35 @@ func TestMemorySessionLinksSchema(t *testing.T) {
 	} {
 		if !strings.Contains(schema, needle) {
 			t.Fatalf("schema missing %q", needle)
+		}
+	}
+}
+
+func TestSessionSequencesSchema(t *testing.T) {
+	schema := tenant.TenantSessionSequencesSchema
+	for _, needle := range []string{
+		"CREATE TABLE IF NOT EXISTS session_sequences",
+		"session_id VARCHAR(100) PRIMARY KEY",
+		"next_seq   INT          NOT NULL",
+	} {
+		if !strings.Contains(schema, needle) {
+			t.Fatalf("schema missing %q", needle)
+		}
+	}
+}
+
+func TestBootstrapSchemaIncludesSessionSequences(t *testing.T) {
+	data, err := os.ReadFile("../../schema.sql")
+	if err != nil {
+		t.Fatalf("read server/schema.sql: %v", err)
+	}
+	for _, needle := range []string{
+		"CREATE TABLE IF NOT EXISTS session_sequences",
+		"session_id VARCHAR(100) PRIMARY KEY",
+		"next_seq   INT          NOT NULL",
+	} {
+		if !strings.Contains(string(data), needle) {
+			t.Fatalf("server/schema.sql missing %q", needle)
 		}
 	}
 }

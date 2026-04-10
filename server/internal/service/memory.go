@@ -43,6 +43,7 @@ const (
 
 type MemoryService struct {
 	memories             repository.MemoryRepo
+	links                repository.MemorySessionLinkRepo
 	embedder             *embed.Embedder
 	autoModel            string
 	ingest               *IngestService
@@ -57,6 +58,7 @@ func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, emb
 func NewMemoryServiceWithLinks(memories repository.MemoryRepo, links repository.MemorySessionLinkRepo, llmClient *llm.Client, embedder *embed.Embedder, autoModel string, ingestMode IngestMode, searchKeywordExtract bool) *MemoryService {
 	return &MemoryService{
 		memories:             memories,
+		links:                links,
 		embedder:             embedder,
 		autoModel:            autoModel,
 		ingest:               NewIngestServiceWithLinks(memories, links, llmClient, embedder, autoModel, ingestMode),
@@ -157,6 +159,45 @@ func (s *MemoryService) CreateWithSession(ctx context.Context, agentID, sessionI
 	}
 	return mem, result.MemoriesChanged + patchWrites, nil
 
+}
+
+func (s *MemoryService) RoutedSessionIDs(ctx context.Context, mems []domain.Memory, maxRoutingInsights, maxSessionsPerInsight, maxRoutedSessions int) ([]string, error) {
+	if s.links == nil || maxRoutingInsights <= 0 || maxSessionsPerInsight <= 0 || maxRoutedSessions <= 0 {
+		return nil, nil
+	}
+
+	routed := make([]string, 0, maxRoutedSessions)
+	seen := make(map[string]struct{}, maxRoutedSessions)
+	routedInsights := 0
+
+	for _, mem := range mems {
+		if mem.MemoryType != domain.TypeInsight {
+			continue
+		}
+		sessionIDs, err := s.links.SessionsByMemory(ctx, mem.ID, maxSessionsPerInsight)
+		if err != nil {
+			return nil, fmt.Errorf("memory routed session ids %s: %w", mem.ID, err)
+		}
+		routedInsights++
+		for _, sessionID := range sessionIDs {
+			if sessionID == "" {
+				continue
+			}
+			if _, ok := seen[sessionID]; ok {
+				continue
+			}
+			seen[sessionID] = struct{}{}
+			routed = append(routed, sessionID)
+			if len(routed) >= maxRoutedSessions {
+				return routed, nil
+			}
+		}
+		if routedInsights >= maxRoutingInsights {
+			break
+		}
+	}
+
+	return routed, nil
 }
 
 // Get returns a single memory by ID.
@@ -819,6 +860,13 @@ func validateMemoryInput(content string, tags []string) error {
 		return &domain.ValidationError{Field: "tags", Message: "too many (max 20)"}
 	}
 	return nil
+}
+
+// ValidateMemoryInput exposes the content/tag validation used by CreateWithSession
+// so handlers can reject invalid content-mode writes before any best-effort side
+// effects such as raw session persistence occur.
+func ValidateMemoryInput(content string, tags []string) error {
+	return validateMemoryInput(content, tags)
 }
 
 func (s *MemoryService) CountStats(ctx context.Context) (total int64, last7d int64, err error) {

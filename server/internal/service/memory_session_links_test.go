@@ -17,7 +17,9 @@ type linkCall struct {
 }
 
 type memorySessionLinkRepoMock struct {
-	calls []linkCall
+	calls            []linkCall
+	sessionsByMemory map[string][]string
+	sessionsErr      error
 }
 
 func (m *memorySessionLinkRepoMock) Link(_ context.Context, memoryID, sessionID string) error {
@@ -29,8 +31,15 @@ func (m *memorySessionLinkRepoMock) MemoriesBySession(context.Context, string, i
 	return nil, nil
 }
 
-func (m *memorySessionLinkRepoMock) SessionsByMemory(context.Context, string, int) ([]string, error) {
-	return nil, nil
+func (m *memorySessionLinkRepoMock) SessionsByMemory(_ context.Context, memoryID string, limit int) ([]string, error) {
+	if m.sessionsErr != nil {
+		return nil, m.sessionsErr
+	}
+	ids := append([]string(nil), m.sessionsByMemory[memoryID]...)
+	if limit > 0 && len(ids) > limit {
+		ids = ids[:limit]
+	}
+	return ids, nil
 }
 
 func TestIngestRawLinksSession(t *testing.T) {
@@ -133,6 +142,37 @@ func TestMemoryCreateWithSessionLinksNoLLM(t *testing.T) {
 		t.Fatalf("expected memory session_id to be preserved, got %q", mem.SessionID)
 	}
 	assertLinkCall(t, linkRepo, mem.ID, "session-content")
+}
+
+func TestMemoryService_RoutedSessionIDs_UsesTopInsightHits(t *testing.T) {
+	t.Parallel()
+
+	linkRepo := &memorySessionLinkRepoMock{
+		sessionsByMemory: map[string][]string{
+			"insight-1": {"session-a", "session-b"},
+			"insight-2": {"session-b", "session-c"},
+		},
+	}
+	svc := NewMemoryServiceWithLinks(&memoryRepoMock{}, linkRepo, nil, nil, "", ModeSmart, false)
+
+	got, err := svc.RoutedSessionIDs(context.Background(), []domain.Memory{
+		{ID: "pinned-1", MemoryType: domain.TypePinned},
+		{ID: "insight-1", MemoryType: domain.TypeInsight},
+		{ID: "insight-2", MemoryType: domain.TypeInsight},
+	}, 3, 3, 6)
+	if err != nil {
+		t.Fatalf("RoutedSessionIDs() error = %v", err)
+	}
+
+	want := []string{"session-a", "session-b", "session-c"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d routed sessions, got %d: %v", len(want), len(got), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("routedSessionIDs[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
 }
 
 func newTwoStepLLM(t *testing.T, first, second string) *llm.Client {

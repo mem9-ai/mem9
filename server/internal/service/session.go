@@ -58,6 +58,13 @@ func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req I
 }
 
 func (s *SessionService) CreateRawTurn(ctx context.Context, sessionID, agentID, source string, seq int, role, content string) error {
+	if seq < 0 {
+		nextSeq, err := s.sessions.NextSeq(ctx, sessionID)
+		if err != nil {
+			return fmt.Errorf("session next seq: %w", err)
+		}
+		seq = nextSeq
+	}
 	sess := newSessionFromIngestMessage(sessionID, agentID, source, seq, role, content)
 	if err := s.sessions.BulkCreate(ctx, []*domain.Session{sess}); err != nil {
 		return fmt.Errorf("session raw create: %w", err)
@@ -90,9 +97,52 @@ func (s *SessionService) Search(ctx context.Context, f domain.MemoryFilter) ([]d
 	if err != nil {
 		return nil, err
 	}
+	if f.SessionID != "" {
+		return dedupBySessionTurn(results), nil
+	}
 	// All search paths return results sorted by score descending; dedupByContent
 	// therefore retains the highest-scored occurrence for each unique content string.
 	return dedupByContent(results), nil
+}
+
+func (s *SessionService) SearchInSessionSet(ctx context.Context, f domain.MemoryFilter, sessionIDs []string) ([]domain.Memory, error) {
+	if len(sessionIDs) == 0 {
+		return nil, nil
+	}
+
+	limit := f.Limit
+	if limit <= 0 || limit > 200 {
+		limit = DefaultSessionLimit
+	}
+	fetchLimit := limit * defaultSessionFetchMultiplier
+
+	sf := f
+	sf.Offset = 0
+
+	var results []domain.Memory
+	var err error
+
+	if s.autoModel != "" {
+		results, err = s.autoHybridSearchInSessionSet(ctx, sf, sessionIDs, limit, fetchLimit)
+	} else if s.embedder != nil {
+		results, err = s.hybridSearchInSessionSet(ctx, sf, sessionIDs, limit, fetchLimit)
+	} else if s.sessions.FTSAvailable() {
+		results, err = s.ftsSearchInSessionSet(ctx, sf, sessionIDs, limit, fetchLimit)
+	} else {
+		results, err = s.keywordSearchInSessionSet(ctx, sf, sessionIDs, limit, fetchLimit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return dedupBySessionTurn(results), nil
+}
+
+func (s *SessionService) ListNeighbors(ctx context.Context, sessionID string, seq int, before int, after int) ([]domain.Memory, error) {
+	results, err := s.sessions.ListNeighbors(ctx, sessionID, seq, before, after)
+	if err != nil {
+		return nil, fmt.Errorf("session list neighbors: %w", err)
+	}
+	return dedupBySessionTurn(results), nil
 }
 
 func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
@@ -108,6 +158,27 @@ func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFi
 	}
 
 	slog.Info("session auto hybrid search", "query_len", len(f.Query), "vec", len(vecResults), "kw", len(kwResults))
+
+	scores := rrfMerge(kwResults, vecResults)
+	mems := collectMems(kwResults, vecResults)
+	merged := sortByScore(mems, scores)
+	page, _ := paginateResults(merged, f.Offset, limit)
+	return populateRelativeAge(setScores(page, scores)), nil
+}
+
+func (s *SessionService) autoHybridSearchInSessionSet(ctx context.Context, f domain.MemoryFilter, sessionIDs []string, limit, fetchLimit int) ([]domain.Memory, error) {
+	vecResults, err := s.sessions.AutoVectorSearchInSessionSet(ctx, f.Query, f, sessionIDs, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("session routed auto vector search: %w", err)
+	}
+	vecResults = applyMinScore(vecResults, f.MinScore)
+
+	kwResults, err := s.ftsOrKeywordInSessionSet(ctx, f, sessionIDs, fetchLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Info("session routed auto hybrid search", "query_len", len(f.Query), "sessions", len(sessionIDs), "vec", len(vecResults), "kw", len(kwResults))
 
 	scores := rrfMerge(kwResults, vecResults)
 	mems := collectMems(kwResults, vecResults)
@@ -142,6 +213,32 @@ func (s *SessionService) hybridSearch(ctx context.Context, f domain.MemoryFilter
 	return populateRelativeAge(setScores(page, scores)), nil
 }
 
+func (s *SessionService) hybridSearchInSessionSet(ctx context.Context, f domain.MemoryFilter, sessionIDs []string, limit, fetchLimit int) ([]domain.Memory, error) {
+	queryVec, err := s.embedder.Embed(ctx, f.Query)
+	if err != nil {
+		return nil, fmt.Errorf("session routed embed query: %w", err)
+	}
+
+	vecResults, err := s.sessions.VectorSearchInSessionSet(ctx, queryVec, f, sessionIDs, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("session routed vector search: %w", err)
+	}
+	vecResults = applyMinScore(vecResults, f.MinScore)
+
+	kwResults, err := s.ftsOrKeywordInSessionSet(ctx, f, sessionIDs, fetchLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Info("session routed hybrid search", "query_len", len(f.Query), "sessions", len(sessionIDs), "vec", len(vecResults), "kw", len(kwResults))
+
+	scores := rrfMerge(kwResults, vecResults)
+	mems := collectMems(kwResults, vecResults)
+	merged := sortByScore(mems, scores)
+	page, _ := paginateResults(merged, f.Offset, limit)
+	return populateRelativeAge(setScores(page, scores)), nil
+}
+
 func (s *SessionService) ftsSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
 	results, err := s.sessions.FTSSearch(ctx, f.Query, f, fetchLimit)
 	if err != nil {
@@ -151,10 +248,28 @@ func (s *SessionService) ftsSearch(ctx context.Context, f domain.MemoryFilter, l
 	return populateRelativeAge(page), nil
 }
 
+func (s *SessionService) ftsSearchInSessionSet(ctx context.Context, f domain.MemoryFilter, sessionIDs []string, limit, fetchLimit int) ([]domain.Memory, error) {
+	results, err := s.sessions.FTSSearchInSessionSet(ctx, f.Query, f, sessionIDs, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("session routed fts search: %w", err)
+	}
+	page, _ := paginateResults(results, f.Offset, limit)
+	return populateRelativeAge(page), nil
+}
+
 func (s *SessionService) keywordSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
 	results, err := s.sessions.KeywordSearch(ctx, f.Query, f, fetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("session keyword search: %w", err)
+	}
+	page, _ := paginateResults(results, f.Offset, limit)
+	return populateRelativeAge(page), nil
+}
+
+func (s *SessionService) keywordSearchInSessionSet(ctx context.Context, f domain.MemoryFilter, sessionIDs []string, limit, fetchLimit int) ([]domain.Memory, error) {
+	results, err := s.sessions.KeywordSearchInSessionSet(ctx, f.Query, f, sessionIDs, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("session routed keyword search: %w", err)
 	}
 	page, _ := paginateResults(results, f.Offset, limit)
 	return populateRelativeAge(page), nil
@@ -171,6 +286,21 @@ func (s *SessionService) ftsOrKeyword(ctx context.Context, f domain.MemoryFilter
 	r, err := s.sessions.KeywordSearch(ctx, f.Query, f, fetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("session keyword search: %w", err)
+	}
+	return r, nil
+}
+
+func (s *SessionService) ftsOrKeywordInSessionSet(ctx context.Context, f domain.MemoryFilter, sessionIDs []string, fetchLimit int) ([]domain.Memory, error) {
+	if s.sessions.FTSAvailable() {
+		r, err := s.sessions.FTSSearchInSessionSet(ctx, f.Query, f, sessionIDs, fetchLimit)
+		if err != nil {
+			return nil, fmt.Errorf("session routed fts search: %w", err)
+		}
+		return r, nil
+	}
+	r, err := s.sessions.KeywordSearchInSessionSet(ctx, f.Query, f, sessionIDs, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("session routed keyword search: %w", err)
 	}
 	return r, nil
 }
@@ -199,6 +329,26 @@ func dedupByContent(mems []domain.Memory) []domain.Memory {
 			continue
 		}
 		seen[m.Content] = struct{}{}
+		out = append(out, m)
+	}
+	return out
+}
+
+func dedupBySessionTurn(mems []domain.Memory) []domain.Memory {
+	seen := make(map[string]struct{}, len(mems))
+	out := make([]domain.Memory, 0, len(mems))
+	for _, m := range mems {
+		key := m.ID
+		if key == "" {
+			key = m.SessionID + "\x00" + string(m.Metadata)
+			if key == "\x00" {
+				key = m.Content
+			}
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
 		out = append(out, m)
 	}
 	return out

@@ -22,12 +22,24 @@ import (
 var (
 	answerQuotedRe      = regexp.MustCompile(`"[^"]+"`)
 	answerAcronymRe     = regexp.MustCompile(`\b[A-Z]{2,}(?:[+-][A-Z0-9]+)*\b`)
+	answerISODateRe     = regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}\b`)
 	answerNumberRe      = regexp.MustCompile(`\b\d+\b`)
 	answerYearRe        = regexp.MustCompile(`\b(?:19|20)\d{2}\b`)
 	answerTitleCaseRe   = regexp.MustCompile(`\b[A-Z][a-z]+(?:['-][A-Za-z]+)*(?:\s+[A-Z][a-z]+(?:['-][A-Za-z]+)*)*\b`)
 	answerLocationCueRe = regexp.MustCompile(`\b(?:in|at|from|to|near|around|outside|inside)\s+[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2}\b`)
 	answerCountWordRe   = regexp.MustCompile(`\b(?:one|two|three|four|five|six|seven|eight|nine|ten|couple|few|several)\b`)
 	answerVaguePlaceRe  = regexp.MustCompile(`\b(?:home country|the area|the region|somewhere|another city)\b`)
+)
+
+const (
+	maxRoutingInsights        = 3
+	maxSessionsPerInsight     = 3
+	maxRoutedSessions         = 6
+	maxNeighborSeedCount      = 2
+	neighborSeedMinScore      = 0.35
+	neighborBeforeWindow      = 1
+	neighborAfterWindow       = 1
+	explicitSessionPrimaryCap = 8
 )
 
 type groundingAnswerShape int
@@ -141,26 +153,30 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	tags := append([]string(nil), req.Tags...)
 	metadata := append(json.RawMessage(nil), req.Metadata...)
 	content := req.Content
+	if err := service.ValidateMemoryInput(content, tags); err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
 
 	if req.Sync {
-		s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
 		mem, written, err := svc.memory.CreateWithSession(r.Context(), agentID, req.SessionID, content, tags, metadata)
 		if err != nil {
 			slog.Error("sync memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
 			s.handleError(r.Context(), w, err)
 			return
 		}
+		s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
 		_ = mem
 		go s.refreshWriteMetrics(auth, svc, int64(written))
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	} else {
 		go func(auth *domain.AuthInfo, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage) {
-			s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
 			mem, written, err := svc.memory.CreateWithSession(context.Background(), actorAgentID, sessionID, content, tags, metadata)
 			if err != nil {
 				slog.Error("async memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
 				return
 			}
+			s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
 			if mem != nil {
 				slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", mem.ID)
 			} else {
@@ -269,19 +285,26 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	svc := s.resolveServices(auth)
 
 	onlySession := filter.MemoryType == string(domain.TypeSession)
+	explicitSessionMixed := filter.Query != "" && filter.SessionID != "" && filter.MemoryType == ""
 
 	var memories []domain.Memory
 	var total int
 	var err error
 
-	if !onlySession {
+	if explicitSessionMixed {
+		memories, total, err = s.explicitSessionSearch(r.Context(), auth, svc, filter)
+		if err != nil {
+			s.handleError(r.Context(), w, err)
+			return
+		}
+	} else if !onlySession {
 		memories, total, err = svc.memory.Search(r.Context(), filter)
 		if err != nil {
 			s.handleError(r.Context(), w, err)
 			return
 		}
 	}
-	if filter.Query != "" && (onlySession || filter.MemoryType == "") {
+	if filter.Query != "" && onlySession {
 		// SessionService.Search preserves SessionID/Source filters from the caller — intentional:
 		// session-scoped filtering is meaningful for the sessions table. MemoryService.Search
 		// resets these fields to broaden memory recall; the asymmetry is by design.
@@ -290,6 +313,39 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		if sessionMems, sessErr := s.sessionGroundingSearch(r.Context(), auth, svc, filter); sessErr != nil {
 			slog.Warn("session grounding search failed", "cluster_id", auth.ClusterID, "err", sessErr)
 		} else {
+			memories = blendMemoriesWithSessionGrounding(memories, sessionMems, limit)
+			memories = rerankGroundedMemories(filter.Query, memories)
+			total = len(memories)
+		}
+	} else if filter.Query != "" && filter.MemoryType == "" && !explicitSessionMixed {
+		var (
+			sessionMems  []domain.Memory
+			useFallback  bool
+			routedErr    error
+			sessionBlend bool
+		)
+
+		sessionMems, useFallback, routedErr = s.provenanceSessionGroundingSearch(r.Context(), auth, svc, memories, filter)
+		switch {
+		case routedErr != nil && useFallback:
+			slog.Warn("provenance routing failed; falling back to generic session grounding", "cluster_id", auth.ClusterID, "err", routedErr)
+			useFallback = true
+		case routedErr != nil:
+			slog.Warn("routed session grounding failed", "cluster_id", auth.ClusterID, "err", routedErr)
+		case len(sessionMems) > 0:
+			sessionBlend = true
+		}
+
+		if useFallback {
+			if fallbackMems, sessErr := s.sessionGroundingSearch(r.Context(), auth, svc, filter); sessErr != nil {
+				slog.Warn("session grounding search failed", "cluster_id", auth.ClusterID, "err", sessErr)
+			} else if len(fallbackMems) > 0 {
+				sessionMems = fallbackMems
+				sessionBlend = true
+			}
+		}
+
+		if sessionBlend {
 			memories = blendMemoriesWithSessionGrounding(memories, sessionMems, limit)
 			memories = rerankGroundedMemories(filter.Query, memories)
 			total = len(memories)
@@ -306,6 +362,54 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		Limit:    limit,
 		Offset:   offset,
 	})
+}
+
+func (s *Server) explicitSessionSearch(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	sessionPrimaryLimit := explicitSessionPrimaryLimit(filter.Limit)
+	if sessionPrimaryLimit == 0 {
+		return []domain.Memory{}, 0, nil
+	}
+
+	var (
+		sessionMems []domain.Memory
+		insightMems []domain.Memory
+		sessionErr  error
+		insightErr  error
+	)
+
+	if svc.session != nil {
+		sessionFilter := filter
+		sessionFilter.Offset = 0
+		sessionFilter.Limit = sessionPrimaryLimit
+		sessionMems, sessionErr = svc.session.Search(ctx, sessionFilter)
+		if sessionErr != nil {
+			slog.Warn("explicit-session search: session search failed", "cluster_id", auth.ClusterID, "err", sessionErr)
+			sessionMems = nil
+		} else {
+			sessionMems = rerankExplicitSessionMemories(filter.Query, sessionMems)
+		}
+	}
+
+	if svc.memory != nil {
+		insightMems, _, insightErr = svc.memory.Search(ctx, filter)
+		if insightErr != nil {
+			slog.Warn("explicit-session search: insight search failed", "cluster_id", auth.ClusterID, "err", insightErr)
+			insightMems = nil
+		}
+	}
+
+	if sessionErr != nil && insightErr != nil {
+		return nil, 0, fmt.Errorf("explicit-session search: session: %w; insight: %v", sessionErr, insightErr)
+	}
+	if sessionErr != nil && len(insightMems) == 0 {
+		return nil, 0, sessionErr
+	}
+	if insightErr != nil && len(sessionMems) == 0 {
+		return nil, 0, insightErr
+	}
+
+	merged := mergeExplicitSessionResults(sessionMems, insightMems, filter.Limit)
+	return merged, len(merged), nil
 }
 
 type contentSessionMeta struct {
@@ -341,15 +445,25 @@ func contentSessionFields(content string, metadata json.RawMessage) (int, string
 	if meta.TurnIndex >= 0 {
 		return meta.TurnIndex, role
 	}
-	return 0, role
+	return -1, role
 }
 
 func roleFromSpeaker(raw string) string {
-	lower := strings.ToLower(raw)
+	lower := strings.TrimSpace(strings.ToLower(raw))
 	switch {
-	case strings.Contains(lower, "speaker 1"), lower == "user":
+	case lower == "user",
+		lower == "speaker 1",
+		strings.HasPrefix(lower, "user:"),
+		strings.HasPrefix(lower, "speaker 1:"),
+		strings.HasPrefix(lower, "[speaker:speaker 1]"),
+		strings.HasPrefix(lower, "[speaker:user]"):
 		return "user"
-	case strings.Contains(lower, "speaker 2"), lower == "assistant", strings.Contains(lower, "assistant"):
+	case lower == "assistant",
+		lower == "speaker 2",
+		strings.HasPrefix(lower, "assistant:"),
+		strings.HasPrefix(lower, "speaker 2:"),
+		strings.HasPrefix(lower, "[speaker:speaker 2]"),
+		strings.HasPrefix(lower, "[speaker:assistant]"):
 		return "assistant"
 	default:
 		return ""
@@ -374,6 +488,339 @@ func (s *Server) sessionGroundingSearch(ctx context.Context, auth *domain.AuthIn
 	}
 	slog.Info("session grounding search", "cluster_id", auth.ClusterID, "query_len", len(filter.Query), "results", len(sessionMems))
 	return sessionMems, nil
+}
+
+func (s *Server) provenanceSessionGroundingSearch(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, primary []domain.Memory, filter domain.MemoryFilter) ([]domain.Memory, bool, error) {
+	if svc.memory == nil || svc.session == nil {
+		return nil, true, nil
+	}
+
+	sessionBudget := supplementalSessionLimit(filter.Limit)
+	if sessionBudget == 0 {
+		return nil, false, nil
+	}
+
+	routedSessionIDs, err := svc.memory.RoutedSessionIDs(ctx, primary, maxRoutingInsights, maxSessionsPerInsight, maxRoutedSessions)
+	if err != nil {
+		return nil, true, err
+	}
+	routedSessionIDs = intersectSessionIDs(routedSessionIDs, filter.SessionID)
+	if len(routedSessionIDs) == 0 {
+		return nil, true, nil
+	}
+
+	sessionFilter := filter
+	sessionFilter.Offset = 0
+	sessionFilter.Limit = sessionBudget
+
+	sessionMems, err := svc.session.SearchInSessionSet(ctx, sessionFilter, routedSessionIDs)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(sessionMems) == 0 {
+		return nil, false, nil
+	}
+
+	if filter.SessionID != "" || !queryNeedsNeighborExpansion(filter.Query) || sessionBudget < 2 {
+		slog.Info("routed session grounding search", "cluster_id", auth.ClusterID, "query_len", len(filter.Query), "sessions", len(routedSessionIDs), "results", len(sessionMems), "expanded", 0)
+		return sessionMems, false, nil
+	}
+
+	neighbors, err := s.expandSessionNeighbors(ctx, auth, svc, sessionMems, sessionBudget)
+	if err != nil {
+		slog.Warn("session neighbor expansion failed; keeping routed seeds only", "cluster_id", auth.ClusterID, "err", err)
+		return sessionMems, false, nil
+	}
+
+	merged := selectSessionContextResults(sessionMems, neighbors, sessionBudget)
+	slog.Info("routed session grounding search", "cluster_id", auth.ClusterID, "query_len", len(filter.Query), "sessions", len(routedSessionIDs), "results", len(sessionMems), "expanded", len(neighbors))
+	return merged, false, nil
+}
+
+type sessionMemoryMeta struct {
+	Role        string `json:"role,omitempty"`
+	Seq         int    `json:"seq"`
+	ContentType string `json:"content_type,omitempty"`
+	Neighbor    bool   `json:"neighbor,omitempty"`
+}
+
+type sessionSeed struct {
+	mem domain.Memory
+	seq int
+}
+
+func queryNeedsNeighborExpansion(query string) bool {
+	lower := strings.ToLower(strings.TrimSpace(query))
+	if lower == "" {
+		return false
+	}
+
+	temporalTerms := []string{
+		"when", "before", "after", "earlier", "later", "first", "last",
+		"next", "previous", "during", "then", "date", "day", "month", "year",
+	}
+	for _, term := range temporalTerms {
+		if strings.Contains(lower, term) {
+			return true
+		}
+	}
+
+	relationalTerms := []string{
+		"because", "with", "who told", "who invited", "what happened when",
+		"where did", "go after", "after meeting",
+	}
+	for _, term := range relationalTerms {
+		if strings.Contains(lower, term) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func intersectSessionIDs(sessionIDs []string, explicitSessionID string) []string {
+	if explicitSessionID == "" {
+		return sessionIDs
+	}
+
+	for _, sessionID := range sessionIDs {
+		if sessionID == explicitSessionID {
+			return []string{explicitSessionID}
+		}
+	}
+	return nil
+}
+
+func (s *Server) expandSessionNeighbors(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, sessionMems []domain.Memory, sessionBudget int) ([]domain.Memory, error) {
+	seeds := selectSessionSeeds(sessionMems, maxNeighborSeedCount, neighborSeedMinScore)
+	if len(seeds) == 0 || sessionBudget < 2 {
+		return nil, nil
+	}
+
+	neighbors := make([]domain.Memory, 0, len(seeds)*2)
+	seen := make(map[string]struct{}, len(sessionMems))
+	for _, mem := range sessionMems {
+		seen[mem.ID] = struct{}{}
+	}
+
+	for _, seed := range seeds {
+		rows, err := svc.session.ListNeighbors(ctx, seed.mem.SessionID, seed.seq, neighborBeforeWindow, neighborAfterWindow)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			if _, ok := seen[row.ID]; ok {
+				continue
+			}
+			seq, ok := sessionMemorySeq(row)
+			if !ok {
+				continue
+			}
+			seen[row.ID] = struct{}{}
+			neighbors = append(neighbors, annotateNeighborMemory(row, seq, seed))
+		}
+	}
+
+	slog.Info("session neighbor expansion", "cluster_id", auth.ClusterID, "seeds", len(seeds), "neighbors", len(neighbors))
+	return neighbors, nil
+}
+
+func selectSessionSeeds(sessionMems []domain.Memory, maxSeeds int, minScore float64) []sessionSeed {
+	if maxSeeds <= 0 {
+		return nil
+	}
+
+	seeds := make([]sessionSeed, 0, maxSeeds)
+	seen := make(map[string]struct{}, maxSeeds)
+
+	for _, mem := range sessionMems {
+		if mem.SessionID == "" || mem.Score == nil || *mem.Score < minScore {
+			continue
+		}
+		seq, ok := sessionMemorySeq(mem)
+		if !ok {
+			continue
+		}
+		key := mem.SessionID + ":" + strconv.Itoa(seq)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		seeds = append(seeds, sessionSeed{mem: mem, seq: seq})
+		if len(seeds) >= maxSeeds {
+			return seeds
+		}
+	}
+
+	return seeds
+}
+
+func selectSessionContextResults(seeds, neighbors []domain.Memory, budget int) []domain.Memory {
+	if budget <= 0 {
+		return nil
+	}
+	if len(neighbors) == 0 {
+		return trimUniqueMemories(seeds, budget)
+	}
+
+	seedBudget := budget - 1
+	if seedBudget < 1 {
+		seedBudget = 1
+	}
+
+	selected := make([]domain.Memory, 0, budget)
+	seen := make(map[string]struct{}, budget)
+
+	appendUnique := func(mem domain.Memory) {
+		key := responseDedupKey(mem)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		selected = append(selected, mem)
+	}
+
+	seedsUsed := 0
+	for _, mem := range seeds {
+		if seedsUsed >= seedBudget || len(selected) >= budget {
+			break
+		}
+		before := len(selected)
+		appendUnique(mem)
+		if len(selected) > before {
+			seedsUsed++
+		}
+	}
+	for _, mem := range neighbors {
+		if len(selected) >= budget {
+			break
+		}
+		appendUnique(mem)
+	}
+	for _, mem := range seeds {
+		if len(selected) >= budget {
+			break
+		}
+		appendUnique(mem)
+	}
+	for _, mem := range neighbors {
+		if len(selected) >= budget {
+			break
+		}
+		appendUnique(mem)
+	}
+
+	return selected
+}
+
+func sessionMemorySeq(mem domain.Memory) (int, bool) {
+	meta := sessionMemoryMeta{Seq: -1}
+	if len(mem.Metadata) == 0 {
+		return 0, false
+	}
+	if err := json.Unmarshal(mem.Metadata, &meta); err != nil {
+		return 0, false
+	}
+	if meta.Seq < 0 {
+		return 0, false
+	}
+	return meta.Seq, true
+}
+
+func annotateNeighborMemory(mem domain.Memory, seq int, seed sessionSeed) domain.Memory {
+	meta := sessionMemoryMeta{Seq: seq, Neighbor: true}
+	if len(mem.Metadata) > 0 {
+		_ = json.Unmarshal(mem.Metadata, &meta)
+		meta.Seq = seq
+		meta.Neighbor = true
+	}
+	if metaBytes, err := json.Marshal(meta); err == nil {
+		mem.Metadata = metaBytes
+	}
+
+	if seed.mem.Score != nil {
+		score := *seed.mem.Score - 0.05
+		if score < 0 {
+			score = 0
+		}
+		mem.Score = &score
+	}
+
+	return mem
+}
+
+func explicitSessionPrimaryLimit(limit int) int {
+	if limit <= 0 {
+		return 0
+	}
+	if limit < explicitSessionPrimaryCap {
+		return limit
+	}
+	return explicitSessionPrimaryCap
+}
+
+func mergeExplicitSessionResults(sessionPrimary, insightSupport []domain.Memory, limit int) []domain.Memory {
+	if limit <= 0 {
+		return []domain.Memory{}
+	}
+
+	sessionBudget := explicitSessionPrimaryLimit(limit)
+	insightBudget := limit - sessionBudget
+	if insightBudget < 0 {
+		insightBudget = 0
+	}
+
+	merged := make([]domain.Memory, 0, limit)
+	seen := make(map[string]struct{}, limit)
+
+	appendUnique := func(mem domain.Memory) {
+		key := responseDedupKey(mem)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, mem)
+	}
+
+	sessionUsed := 0
+	for _, mem := range sessionPrimary {
+		if sessionUsed >= sessionBudget || len(merged) >= limit {
+			break
+		}
+		before := len(merged)
+		appendUnique(mem)
+		if len(merged) > before {
+			sessionUsed++
+		}
+	}
+
+	insightUsed := 0
+	for _, mem := range insightSupport {
+		if insightUsed >= insightBudget || len(merged) >= limit {
+			break
+		}
+		before := len(merged)
+		appendUnique(mem)
+		if len(merged) > before {
+			insightUsed++
+		}
+	}
+
+	for _, mem := range insightSupport {
+		if len(merged) >= limit {
+			break
+		}
+		appendUnique(mem)
+	}
+
+	for _, mem := range sessionPrimary {
+		if len(merged) >= limit {
+			break
+		}
+		appendUnique(mem)
+	}
+
+	return merged
 }
 
 func supplementalSessionLimit(limit int) int {
@@ -416,10 +863,7 @@ func blendMemoriesWithSessionGrounding(primary, supplemental []domain.Memory, li
 	seen := make(map[string]struct{}, limit)
 
 	appendUnique := func(mem domain.Memory) {
-		key := mem.Content
-		if key == "" {
-			key = mem.ID
-		}
+		key := responseDedupKey(mem)
 		if _, ok := seen[key]; ok {
 			return
 		}
@@ -447,6 +891,77 @@ func blendMemoriesWithSessionGrounding(primary, supplemental []domain.Memory, li
 	}
 
 	return blended
+}
+
+func rerankExplicitSessionMemories(query string, mems []domain.Memory) []domain.Memory {
+	if len(mems) < 2 {
+		return mems
+	}
+
+	primaryEntity := primaryQuestionEntity(query)
+	eventTerm := primaryQuestionEventTerm(query, primaryEntity)
+	shape := classifyGroundingAnswerShape(query)
+	temporalQuery := isTemporalQuestion(query)
+	eventStyleQuery := temporalQuery || shape == groundingAnswerShapeExact || shape == groundingAnswerShapeEntity
+
+	type scoredMemory struct {
+		mem   domain.Memory
+		index int
+		score float64
+	}
+
+	scored := make([]scoredMemory, 0, len(mems))
+	for i, mem := range mems {
+		score := -float64(i) * 0.01
+		if mem.Score != nil {
+			score += *mem.Score
+		}
+
+		lower := strings.ToLower(mem.Content)
+		absoluteTime := containsAbsoluteTimeSignal(mem.Content)
+		relativeTime := containsRelativeTimeSignal(lower)
+
+		if temporalQuery {
+			switch {
+			case absoluteTime:
+				score += 0.35
+			case relativeTime:
+				score += 0.20
+			default:
+				score -= 0.15
+			}
+		}
+
+		if primaryEntity != "" && strings.Contains(lower, primaryEntity) {
+			score += 0.25
+		}
+		if eventTerm != "" && strings.Contains(lower, eventTerm) {
+			score += 0.15
+		}
+
+		if eventStyleQuery && !absoluteTime && !relativeTime && looksGenericFact(lower) {
+			score -= 0.20
+		}
+
+		scored = append(scored, scoredMemory{
+			mem:   mem,
+			index: i,
+			score: score,
+		})
+	}
+
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].score == scored[j].score {
+			return scored[i].index < scored[j].index
+		}
+		return scored[i].score > scored[j].score
+	})
+
+	out := make([]domain.Memory, 0, len(mems))
+	for _, item := range scored {
+		out = append(out, item.mem)
+	}
+	return out
 }
 
 func rerankGroundedMemories(query string, mems []domain.Memory) []domain.Memory {
@@ -488,6 +1003,99 @@ func rerankGroundedMemories(query string, mems []domain.Memory) []domain.Memory 
 	}
 	out = append(out, mems[window:]...)
 	return out
+}
+
+func isTemporalQuestion(query string) bool {
+	lower := strings.ToLower(strings.TrimSpace(query))
+	return strings.HasPrefix(lower, "when ") ||
+		strings.Contains(lower, "what date") ||
+		strings.Contains(lower, "which year") ||
+		strings.Contains(lower, "how long ago")
+}
+
+func containsAbsoluteTimeSignal(content string) bool {
+	lower := strings.ToLower(content)
+	return answerISODateRe.MatchString(content) ||
+		answerYearRe.MatchString(content) ||
+		containsMonthName(lower)
+}
+
+func containsRelativeTimeSignal(lower string) bool {
+	relativeTerms := []string{
+		"last week", "last weekend", "last month", "last year", "yesterday",
+		"today", "tomorrow", "next month", "next week", "a few weeks ago",
+		"the week before", "the month before", "prior to", "before ", "after ",
+	}
+	for _, term := range relativeTerms {
+		if strings.Contains(lower, term) {
+			return true
+		}
+	}
+	return false
+}
+
+func primaryQuestionEntity(query string) string {
+	for _, match := range answerTitleCaseRe.FindAllString(query, -1) {
+		lower := strings.ToLower(match)
+		switch lower {
+		case "when", "what", "who", "where", "which", "how":
+			continue
+		}
+		if containsMonthName(lower) {
+			continue
+		}
+		return lower
+	}
+	for _, match := range answerAcronymRe.FindAllString(query, -1) {
+		return strings.ToLower(match)
+	}
+	return ""
+}
+
+func primaryQuestionEventTerm(query string, entity string) string {
+	stopwords := map[string]struct{}{
+		"a": {}, "an": {}, "the": {}, "and": {}, "or": {}, "to": {}, "with": {}, "of": {}, "in": {}, "on": {},
+		"for": {}, "from": {}, "at": {}, "by": {}, "did": {}, "does": {}, "do": {}, "is": {}, "was": {}, "were": {},
+		"has": {}, "have": {}, "had": {}, "when": {}, "what": {}, "who": {}, "where": {}, "which": {}, "how": {},
+		"long": {}, "ago": {}, "date": {}, "year": {}, "time": {}, "session": {},
+	}
+	entityWords := make(map[string]struct{})
+	for _, word := range strings.Fields(entity) {
+		entityWords[word] = struct{}{}
+	}
+
+	var best string
+	for _, token := range strings.FieldsFunc(strings.ToLower(query), func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+	}) {
+		if len(token) < 3 {
+			continue
+		}
+		if _, ok := stopwords[token]; ok {
+			continue
+		}
+		if _, ok := entityWords[token]; ok {
+			continue
+		}
+		if len(token) > len(best) {
+			best = token
+		}
+	}
+	return best
+}
+
+func looksGenericFact(lower string) bool {
+	genericPatterns := []string{
+		" is ", " is a ", " is an ", " has ", " likes ", " loves ", " enjoys ",
+		" prefers ", " wants ", " plans ", " works ", " promotes ", " part of ",
+		" interested in ", " passionate about ",
+	}
+	for _, pattern := range genericPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 func classifyGroundingAnswerShape(query string) groundingAnswerShape {
@@ -626,10 +1234,7 @@ func trimUniqueMemories(mems []domain.Memory, limit int) []domain.Memory {
 		if len(out) >= limit {
 			break
 		}
-		key := mem.Content
-		if key == "" {
-			key = mem.ID
-		}
+		key := responseDedupKey(mem)
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -637,6 +1242,24 @@ func trimUniqueMemories(mems []domain.Memory, limit int) []domain.Memory {
 		out = append(out, mem)
 	}
 	return out
+}
+
+func responseDedupKey(mem domain.Memory) string {
+	if mem.MemoryType == domain.TypeSession {
+		if mem.ID != "" {
+			return "session:" + mem.ID
+		}
+		if seq, ok := sessionMemorySeq(mem); ok && mem.SessionID != "" {
+			return "session:" + mem.SessionID + ":" + strconv.Itoa(seq)
+		}
+		if mem.SessionID != "" && len(mem.Metadata) > 0 {
+			return "session:" + mem.SessionID + "\x00" + string(mem.Metadata)
+		}
+	}
+	if mem.Content != "" {
+		return "content:" + mem.Content
+	}
+	return "id:" + mem.ID
 }
 
 func (s *Server) getMemory(w http.ResponseWriter, r *http.Request) {

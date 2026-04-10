@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -18,16 +19,28 @@ type stubSessionRepo struct {
 	patchedSession  string
 	patchedHash     string
 	patchedTags     []string
+	nextSeq         int
+	nextSeqErr      error
 
-	keywordResults []domain.Memory
-	keywordErr     error
-	ftsResults     []domain.Memory
-	ftsErr         error
-	vecResults     []domain.Memory
-	vecErr         error
-	autoVecResults []domain.Memory
-	autoVecErr     error
-	ftsAvail       bool
+	keywordResults    []domain.Memory
+	keywordErr        error
+	ftsResults        []domain.Memory
+	ftsErr            error
+	vecResults        []domain.Memory
+	vecErr            error
+	autoVecResults    []domain.Memory
+	autoVecErr        error
+	setKeywordResults []domain.Memory
+	setKeywordErr     error
+	setFTSResults     []domain.Memory
+	setFTSErr         error
+	setVecResults     []domain.Memory
+	setVecErr         error
+	setAutoVecResults []domain.Memory
+	setAutoVecErr     error
+	neighborResults   []domain.Memory
+	neighborErr       error
+	ftsAvail          bool
 }
 
 func (s *stubSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Session) error {
@@ -44,26 +57,55 @@ func (s *stubSessionRepo) PatchTags(_ context.Context, sessionID, contentHash st
 	return s.patchTagsErr
 }
 
+func (s *stubSessionRepo) NextSeq(_ context.Context, _ string) (int, error) {
+	if s.nextSeqErr != nil {
+		return 0, s.nextSeqErr
+	}
+	next := s.nextSeq
+	s.nextSeq++
+	return next, nil
+}
+
 func (s *stubSessionRepo) AutoVectorSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
 	return s.autoVecResults, s.autoVecErr
+}
+
+func (s *stubSessionRepo) AutoVectorSearchInSessionSet(_ context.Context, _ string, _ domain.MemoryFilter, _ []string, _ int) ([]domain.Memory, error) {
+	return s.setAutoVecResults, s.setAutoVecErr
 }
 
 func (s *stubSessionRepo) VectorSearch(_ context.Context, _ []float32, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
 	return s.vecResults, s.vecErr
 }
 
+func (s *stubSessionRepo) VectorSearchInSessionSet(_ context.Context, _ []float32, _ domain.MemoryFilter, _ []string, _ int) ([]domain.Memory, error) {
+	return s.setVecResults, s.setVecErr
+}
+
 func (s *stubSessionRepo) FTSSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
 	return s.ftsResults, s.ftsErr
+}
+
+func (s *stubSessionRepo) FTSSearchInSessionSet(_ context.Context, _ string, _ domain.MemoryFilter, _ []string, _ int) ([]domain.Memory, error) {
+	return s.setFTSResults, s.setFTSErr
 }
 
 func (s *stubSessionRepo) KeywordSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
 	return s.keywordResults, s.keywordErr
 }
 
+func (s *stubSessionRepo) KeywordSearchInSessionSet(_ context.Context, _ string, _ domain.MemoryFilter, _ []string, _ int) ([]domain.Memory, error) {
+	return s.setKeywordResults, s.setKeywordErr
+}
+
 func (s *stubSessionRepo) FTSAvailable() bool { return s.ftsAvail }
 
 func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, _ []string, _ int) ([]*domain.Session, error) {
 	return nil, nil
+}
+
+func (s *stubSessionRepo) ListNeighbors(_ context.Context, _ string, _ int, _, _ int) ([]domain.Memory, error) {
+	return s.neighborResults, s.neighborErr
 }
 
 func newTestSessionService(repo *stubSessionRepo) *SessionService {
@@ -189,6 +231,21 @@ func TestSessionService_PatchTags_propagatesError(t *testing.T) {
 	}
 }
 
+func TestSessionService_CreateRawTurn_AssignsNextSeqWhenMissing(t *testing.T) {
+	repo := &stubSessionRepo{nextSeq: 5}
+	svc := newTestSessionService(repo)
+
+	if err := svc.CreateRawTurn(context.Background(), "sess-1", "agent-x", "source-agent", -1, "user", "hello"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(repo.createdSessions) != 1 {
+		t.Fatalf("expected 1 created session, got %d", len(repo.createdSessions))
+	}
+	if repo.createdSessions[0].Seq != 5 {
+		t.Fatalf("expected auto-assigned seq 5, got %d", repo.createdSessions[0].Seq)
+	}
+}
+
 func TestSessionService_Search_keywordPath_returnsSessionType(t *testing.T) {
 	mem := domain.Memory{
 		ID:         "m1",
@@ -236,6 +293,104 @@ func TestSessionService_Search_offsetZeroedBeforeRepo(t *testing.T) {
 	}
 }
 
+func TestSessionService_SearchInSessionSet_keywordPath(t *testing.T) {
+	repo := &stubSessionRepo{
+		setKeywordResults: []domain.Memory{
+			{ID: "s1", Content: "hello from routed session", MemoryType: domain.TypeSession},
+		},
+		ftsAvail: false,
+	}
+	svc := newTestSessionService(repo)
+
+	results, err := svc.SearchInSessionSet(context.Background(), domain.MemoryFilter{Query: "hello", Limit: 5}, []string{"session-1"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "s1" {
+		t.Fatalf("unexpected routed session search results: %#v", results)
+	}
+}
+
+func TestSessionService_SearchInSessionSet_PreservesRepeatedContentAcrossSessions(t *testing.T) {
+	repo := &stubSessionRepo{
+		setKeywordResults: []domain.Memory{
+			{ID: "s1", SessionID: "session-1", Content: "same text", MemoryType: domain.TypeSession},
+			{ID: "s2", SessionID: "session-2", Content: "same text", MemoryType: domain.TypeSession},
+		},
+		ftsAvail: false,
+	}
+	svc := newTestSessionService(repo)
+
+	results, err := svc.SearchInSessionSet(context.Background(), domain.MemoryFilter{Query: "same", Limit: 5}, []string{"session-1", "session-2"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected both routed turns to survive, got %d: %#v", len(results), results)
+	}
+	if results[0].ID != "s1" || results[1].ID != "s2" {
+		t.Fatalf("unexpected routed session order: %#v", results)
+	}
+}
+
+func TestSessionService_Search_WithExplicitSessionID_PreservesRepeatedContentAcrossTurns(t *testing.T) {
+	repo := &stubSessionRepo{
+		keywordResults: []domain.Memory{
+			{ID: "s1", SessionID: "session-1", Content: "same text", MemoryType: domain.TypeSession, Metadata: json.RawMessage(`{"seq":1}`)},
+			{ID: "s2", SessionID: "session-1", Content: "same text", MemoryType: domain.TypeSession, Metadata: json.RawMessage(`{"seq":2}`)},
+		},
+		ftsAvail: false,
+	}
+	svc := newTestSessionService(repo)
+
+	results, err := svc.Search(context.Background(), domain.MemoryFilter{Query: "same", SessionID: "session-1", Limit: 5})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected both explicit-session turns to survive, got %d: %#v", len(results), results)
+	}
+	if results[0].ID != "s1" || results[1].ID != "s2" {
+		t.Fatalf("unexpected explicit-session order: %#v", results)
+	}
+}
+
+func TestSessionService_ListNeighbors_delegates(t *testing.T) {
+	repo := &stubSessionRepo{
+		neighborResults: []domain.Memory{{ID: "neighbor-1", Content: "before turn", MemoryType: domain.TypeSession}},
+	}
+	svc := newTestSessionService(repo)
+
+	results, err := svc.ListNeighbors(context.Background(), "session-1", 3, 1, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "neighbor-1" {
+		t.Fatalf("unexpected neighbor results: %#v", results)
+	}
+}
+
+func TestSessionService_ListNeighbors_PreservesRepeatedContentAcrossTurns(t *testing.T) {
+	repo := &stubSessionRepo{
+		neighborResults: []domain.Memory{
+			{ID: "neighbor-1", SessionID: "session-1", Content: "same text", MemoryType: domain.TypeSession, Metadata: json.RawMessage(`{"seq":2}`)},
+			{ID: "neighbor-2", SessionID: "session-1", Content: "same text", MemoryType: domain.TypeSession, Metadata: json.RawMessage(`{"seq":3}`)},
+		},
+	}
+	svc := newTestSessionService(repo)
+
+	results, err := svc.ListNeighbors(context.Background(), "session-1", 3, 1, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected both neighbor turns to survive, got %d: %#v", len(results), results)
+	}
+	if results[0].ID != "neighbor-1" || results[1].ID != "neighbor-2" {
+		t.Fatalf("unexpected neighbor order: %#v", results)
+	}
+}
+
 func TestSessionService_Search_defaultLimit(t *testing.T) {
 	repo := &stubSessionRepo{ftsAvail: false}
 	svc := newTestSessionService(repo)
@@ -280,24 +435,47 @@ func (c *capturingSessionRepo) BulkCreate(ctx context.Context, s []*domain.Sessi
 func (c *capturingSessionRepo) PatchTags(ctx context.Context, sid, hash string, tags []string) error {
 	return c.stub.PatchTags(ctx, sid, hash, tags)
 }
+func (c *capturingSessionRepo) NextSeq(ctx context.Context, sessionID string) (int, error) {
+	return c.stub.NextSeq(ctx, sessionID)
+}
 func (c *capturingSessionRepo) AutoVectorSearch(ctx context.Context, q string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
 	*c.capturedFilter = f
 	return c.stub.AutoVectorSearch(ctx, q, f, limit)
+}
+func (c *capturingSessionRepo) AutoVectorSearchInSessionSet(ctx context.Context, q string, f domain.MemoryFilter, ids []string, limit int) ([]domain.Memory, error) {
+	*c.capturedFilter = f
+	return c.stub.AutoVectorSearchInSessionSet(ctx, q, f, ids, limit)
 }
 func (c *capturingSessionRepo) VectorSearch(ctx context.Context, v []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
 	*c.capturedFilter = f
 	return c.stub.VectorSearch(ctx, v, f, limit)
 }
+func (c *capturingSessionRepo) VectorSearchInSessionSet(ctx context.Context, v []float32, f domain.MemoryFilter, ids []string, limit int) ([]domain.Memory, error) {
+	*c.capturedFilter = f
+	return c.stub.VectorSearchInSessionSet(ctx, v, f, ids, limit)
+}
 func (c *capturingSessionRepo) FTSSearch(ctx context.Context, q string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
 	*c.capturedFilter = f
 	return c.stub.FTSSearch(ctx, q, f, limit)
+}
+func (c *capturingSessionRepo) FTSSearchInSessionSet(ctx context.Context, q string, f domain.MemoryFilter, ids []string, limit int) ([]domain.Memory, error) {
+	*c.capturedFilter = f
+	return c.stub.FTSSearchInSessionSet(ctx, q, f, ids, limit)
 }
 func (c *capturingSessionRepo) KeywordSearch(ctx context.Context, q string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
 	*c.capturedFilter = f
 	return c.stub.KeywordSearch(ctx, q, f, limit)
 }
+func (c *capturingSessionRepo) KeywordSearchInSessionSet(ctx context.Context, q string, f domain.MemoryFilter, ids []string, limit int) ([]domain.Memory, error) {
+	*c.capturedFilter = f
+	return c.stub.KeywordSearchInSessionSet(ctx, q, f, ids, limit)
+}
 func (c *capturingSessionRepo) FTSAvailable() bool { return c.stub.FTSAvailable() }
 
 func (c *capturingSessionRepo) ListBySessionIDs(ctx context.Context, ids []string, limit int) ([]*domain.Session, error) {
 	return c.stub.ListBySessionIDs(ctx, ids, limit)
+}
+
+func (c *capturingSessionRepo) ListNeighbors(ctx context.Context, sessionID string, seq int, before int, after int) ([]domain.Memory, error) {
+	return c.stub.ListNeighbors(ctx, sessionID, seq, before, after)
 }

@@ -63,6 +63,8 @@ func (r *SessionRepo) BulkCreate(ctx context.Context, sessions []*domain.Session
 	}
 	defer stmt.Close()
 
+	nextSeqBySession := make(map[string]int)
+
 	for _, s := range sessions {
 		tagsJSON := marshalTags(s.Tags)
 		var execErr error
@@ -86,8 +88,38 @@ func (r *SessionRepo) BulkCreate(ctx context.Context, sessions []*domain.Session
 			}
 			return fmt.Errorf("sessions bulk insert: %w", execErr)
 		}
+		if s.SessionID != "" {
+			nextSeq := s.Seq + 1
+			if current, ok := nextSeqBySession[s.SessionID]; !ok || nextSeq > current {
+				nextSeqBySession[s.SessionID] = nextSeq
+			}
+		}
+	}
+
+	if err := r.syncSessionSequencesTx(ctx, tx, nextSeqBySession); err != nil {
+		return err
 	}
 	return tx.Commit()
+}
+
+func (r *SessionRepo) syncSessionSequencesTx(ctx context.Context, tx *sql.Tx, nextSeqBySession map[string]int) error {
+	for sessionID, nextSeq := range nextSeqBySession {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO session_sequences (session_id, next_seq)
+			SELECT ?, GREATEST(?, COALESCE(MAX(seq), -1) + 1)
+			FROM sessions
+			WHERE session_id = ?
+			ON DUPLICATE KEY UPDATE next_seq = GREATEST(next_seq, VALUES(next_seq))`,
+			sessionID, nextSeq, sessionID,
+		); err != nil {
+			if internaltenant.IsTableNotFoundError(err) {
+				slog.Debug("session_sequences table not yet ready, skipping allocator sync", "cluster_id", r.clusterID)
+				return nil
+			}
+			return fmt.Errorf("sessions bulk sync allocator: %w", err)
+		}
+	}
+	return nil
 }
 
 func (r *SessionRepo) PatchTags(ctx context.Context, sessionID, contentHash string, tags []string) error {
@@ -102,7 +134,40 @@ func (r *SessionRepo) PatchTags(ctx context.Context, sessionID, contentHash stri
 	return err
 }
 
-func (r *SessionRepo) buildSessionFilterConds(f domain.MemoryFilter) ([]string, []any) {
+func (r *SessionRepo) NextSeq(ctx context.Context, sessionID string) (int, error) {
+	result, err := r.db.ExecContext(ctx,
+		`INSERT INTO session_sequences (session_id, next_seq)
+		SELECT ?, LAST_INSERT_ID(COALESCE(MAX(seq), -1) + 2)
+		FROM sessions
+		WHERE session_id = ?
+		ON DUPLICATE KEY UPDATE next_seq = LAST_INSERT_ID(next_seq + 1)`,
+		sessionID, sessionID,
+	)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			var next sql.NullInt64
+			fallbackErr := r.db.QueryRowContext(ctx,
+				`SELECT COALESCE(MAX(seq), -1) + 1 FROM sessions WHERE session_id = ?`,
+				sessionID,
+			).Scan(&next)
+			if fallbackErr != nil {
+				if internaltenant.IsTableNotFoundError(fallbackErr) {
+					return 0, nil
+				}
+				return 0, fmt.Errorf("sessions next seq fallback: cluster_id=%s: %w", r.clusterID, fallbackErr)
+			}
+			return int(next.Int64), nil
+		}
+		return 0, fmt.Errorf("sessions next seq: cluster_id=%s: %w", r.clusterID, err)
+	}
+	lastInsertID, err := result.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("sessions next seq last insert id: cluster_id=%s: %w", r.clusterID, err)
+	}
+	return int(lastInsertID) - 1, nil
+}
+
+func (r *SessionRepo) buildSessionFilterConds(f domain.MemoryFilter, sessionIDs []string) ([]string, []any) {
 	conds := []string{}
 	args := []any{}
 
@@ -113,6 +178,14 @@ func (r *SessionRepo) buildSessionFilterConds(f domain.MemoryFilter) ([]string, 
 		args = append(args, f.State)
 	} else {
 		conds = append(conds, "state = 'active'")
+	}
+
+	if len(sessionIDs) > 0 {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(sessionIDs)), ",")
+		conds = append(conds, "session_id IN ("+placeholders+")")
+		for _, sessionID := range sessionIDs {
+			args = append(args, sessionID)
+		}
 	}
 
 	if f.AgentID != "" {
@@ -142,7 +215,7 @@ func (r *SessionRepo) buildSessionFilterConds(f domain.MemoryFilter) ([]string, 
 }
 
 func (r *SessionRepo) AutoVectorSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
-	conds, args := r.buildSessionFilterConds(f)
+	conds, args := r.buildSessionFilterConds(f, nil)
 	conds = append(conds, "embedding IS NOT NULL")
 	where := strings.Join(conds, " AND ")
 
@@ -175,7 +248,7 @@ func (r *SessionRepo) VectorSearch(ctx context.Context, queryVec []float32, f do
 		return nil, nil
 	}
 
-	conds, args := r.buildSessionFilterConds(f)
+	conds, args := r.buildSessionFilterConds(f, nil)
 	conds = append(conds, "embedding IS NOT NULL")
 	where := strings.Join(conds, " AND ")
 
@@ -203,7 +276,7 @@ func (r *SessionRepo) VectorSearch(ctx context.Context, queryVec []float32, f do
 }
 
 func (r *SessionRepo) FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
-	conds, args := r.buildSessionFilterConds(f)
+	conds, args := r.buildSessionFilterConds(f, nil)
 	where := strings.Join(conds, " AND ")
 
 	safeQ := ftsSafeLiteral(query)
@@ -230,7 +303,7 @@ func (r *SessionRepo) FTSSearch(ctx context.Context, query string, f domain.Memo
 }
 
 func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
-	conds, args := r.buildSessionFilterConds(f)
+	conds, args := r.buildSessionFilterConds(f, nil)
 	if query != "" {
 		conds = append(conds, "content LIKE CONCAT('%', ?, '%')")
 		args = append(args, query)
@@ -250,6 +323,136 @@ func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.
 			return nil, nil
 		}
 		return nil, fmt.Errorf("sessions keyword search: %w", err)
+	}
+	defer rows.Close()
+	return scanSessionRows(rows)
+}
+
+func (r *SessionRepo) AutoVectorSearchInSessionSet(ctx context.Context, query string, f domain.MemoryFilter, sessionIDs []string, limit int) ([]domain.Memory, error) {
+	if len(sessionIDs) == 0 {
+		return nil, nil
+	}
+
+	conds, args := r.buildSessionFilterConds(f, sessionIDs)
+	conds = append(conds, "embedding IS NOT NULL")
+	where := strings.Join(conds, " AND ")
+
+	sqlQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at,
+		VEC_EMBED_COSINE_DISTANCE(embedding, ?) AS distance
+		FROM sessions
+		WHERE ` + where + `
+		ORDER BY VEC_EMBED_COSINE_DISTANCE(embedding, ?)
+		LIMIT ?`
+
+	fullArgs := make([]any, 0, len(args)+3)
+	fullArgs = append(fullArgs, query)
+	fullArgs = append(fullArgs, args...)
+	fullArgs = append(fullArgs, query, limit)
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("sessions routed auto vector search: cluster_id=%s: %w", r.clusterID, err)
+	}
+	defer rows.Close()
+	return scanSessionRowsWithDistance(rows)
+}
+
+func (r *SessionRepo) VectorSearchInSessionSet(ctx context.Context, queryVec []float32, f domain.MemoryFilter, sessionIDs []string, limit int) ([]domain.Memory, error) {
+	if len(sessionIDs) == 0 {
+		return nil, nil
+	}
+
+	vecStr := vecToString(queryVec)
+	if vecStr == nil {
+		return nil, nil
+	}
+
+	conds, args := r.buildSessionFilterConds(f, sessionIDs)
+	conds = append(conds, "embedding IS NOT NULL")
+	where := strings.Join(conds, " AND ")
+
+	sqlQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at,
+		VEC_COSINE_DISTANCE(embedding, ?) AS distance
+		FROM sessions
+		WHERE ` + where + `
+		ORDER BY VEC_COSINE_DISTANCE(embedding, ?)
+		LIMIT ?`
+
+	fullArgs := make([]any, 0, len(args)+3)
+	fullArgs = append(fullArgs, vecStr)
+	fullArgs = append(fullArgs, args...)
+	fullArgs = append(fullArgs, vecStr, limit)
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("sessions routed vector search: %w", err)
+	}
+	defer rows.Close()
+	return scanSessionRowsWithDistance(rows)
+}
+
+func (r *SessionRepo) FTSSearchInSessionSet(ctx context.Context, query string, f domain.MemoryFilter, sessionIDs []string, limit int) ([]domain.Memory, error) {
+	if len(sessionIDs) == 0 {
+		return nil, nil
+	}
+
+	conds, args := r.buildSessionFilterConds(f, sessionIDs)
+	where := strings.Join(conds, " AND ")
+
+	safeQ := ftsSafeLiteral(query)
+	sqlQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at,
+		fts_match_word('` + safeQ + `', content) AS fts_score
+		FROM sessions
+		WHERE ` + where + ` AND fts_match_word('` + safeQ + `', content)
+		ORDER BY fts_match_word('` + safeQ + `', content) DESC
+		LIMIT ?`
+
+	fullArgs := make([]any, 0, len(args)+1)
+	fullArgs = append(fullArgs, args...)
+	fullArgs = append(fullArgs, limit)
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("sessions routed fts search: cluster_id=%s: %w", r.clusterID, err)
+	}
+	defer rows.Close()
+	return scanSessionRowsWithFTSScore(rows)
+}
+
+func (r *SessionRepo) KeywordSearchInSessionSet(ctx context.Context, query string, f domain.MemoryFilter, sessionIDs []string, limit int) ([]domain.Memory, error) {
+	if len(sessionIDs) == 0 {
+		return nil, nil
+	}
+
+	conds, args := r.buildSessionFilterConds(f, sessionIDs)
+	if query != "" {
+		conds = append(conds, "content LIKE CONCAT('%', ?, '%')")
+		args = append(args, query)
+	}
+	where := strings.Join(conds, " AND ")
+
+	sqlQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at
+		FROM sessions
+		WHERE ` + where + `
+		ORDER BY created_at DESC
+		LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("sessions routed keyword search: %w", err)
 	}
 	defer rows.Close()
 	return scanSessionRows(rows)
@@ -394,6 +597,34 @@ func (r *SessionRepo) ListBySessionIDs(ctx context.Context, sessionIDs []string,
 	}
 	defer rows.Close()
 	return scanSessionDomainRows(rows)
+}
+
+func (r *SessionRepo) ListNeighbors(ctx context.Context, sessionID string, seq int, before int, after int) ([]domain.Memory, error) {
+	if sessionID == "" {
+		return nil, nil
+	}
+	if before < 0 {
+		before = 0
+	}
+	if after < 0 {
+		after = 0
+	}
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at
+		FROM sessions
+		WHERE session_id = ? AND state = 'active' AND seq BETWEEN ? AND ?
+		ORDER BY seq ASC, created_at ASC, id ASC`,
+		sessionID, seq-before, seq+after,
+	)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("sessions list neighbors: cluster_id=%s: %w", r.clusterID, err)
+	}
+	defer rows.Close()
+	return scanSessionRows(rows)
 }
 
 func scanSessionDomainRows(rows *sql.Rows) ([]*domain.Session, error) {
