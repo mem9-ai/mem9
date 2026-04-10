@@ -144,6 +144,74 @@ func TestMemoryCreateWithSessionLinksNoLLM(t *testing.T) {
 	assertLinkCall(t, linkRepo, mem.ID, "session-content")
 }
 
+func TestMemoryCreateWithSession_EventOnlyDualWriteReturnsPatchedEventMemory(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+
+		resp := `{"facts": [{"text": "Caroline attended an LGBTQ support group on May 7, 2023", "tags": ["event", "timeline"]}]}`
+		if callCount == 2 {
+			resp = `{"memory": [{"id": "0", "text": "Caroline promotes LGBTQ rights", "event": "NOOP"}]}`
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "existing-1", Content: "Caroline promotes LGBTQ rights", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+		listResults: []domain.Memory{
+			{ID: "existing-1", Content: "Caroline promotes LGBTQ rights", MemoryType: domain.TypeInsight, SessionID: "session-content", State: domain.StateActive},
+		},
+	}
+	linkRepo := &memorySessionLinkRepoMock{}
+	svc := NewMemoryServiceWithLinks(memRepo, linkRepo, llmClient, nil, "auto-model", ModeSmart, false)
+
+	meta := json.RawMessage(`{"source":"caller-meta"}`)
+	mem, written, err := svc.CreateWithSession(context.Background(), "agent-1", "session-content", "[date:1:56 pm on 8 May, 2023] I went to a LGBTQ support group yesterday and it was so powerful.", []string{"benchmark"}, meta)
+	if err != nil {
+		t.Fatalf("CreateWithSession() error = %v", err)
+	}
+	if written != 2 {
+		t.Fatalf("expected 2 writes counted (event + patch), got %d", written)
+	}
+	if mem == nil {
+		t.Fatal("expected returned memory for event-only dual-write, got nil")
+	}
+	if mem.Content != "Caroline attended an LGBTQ support group on May 7, 2023" {
+		t.Fatalf("unexpected returned memory content: %q", mem.Content)
+	}
+	if len(mem.Tags) != 1 || mem.Tags[0] != "benchmark" {
+		t.Fatalf("expected caller tags to be patched onto event memory, got %v", mem.Tags)
+	}
+	var merged map[string]any
+	if err := json.Unmarshal(mem.Metadata, &merged); err != nil {
+		t.Fatalf("unmarshal merged event metadata: %v", err)
+	}
+	if merged["kind"] != eventFactMetadataKind {
+		t.Fatalf("expected event metadata kind to be preserved, got %+v", merged)
+	}
+	if merged["source_mode"] != eventFactSourceMode {
+		t.Fatalf("expected event source_mode to be preserved, got %+v", merged)
+	}
+	if merged["source"] != "caller-meta" {
+		t.Fatalf("expected caller metadata to be merged into event metadata, got %+v", merged)
+	}
+	if len(linkRepo.calls) != 1 {
+		t.Fatalf("expected event dual-write to link once, got %d", len(linkRepo.calls))
+	}
+}
+
 func TestMemoryService_RoutedSessionIDs_UsesTopInsightHits(t *testing.T) {
 	t.Parallel()
 

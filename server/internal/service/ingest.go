@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -46,6 +47,7 @@ type IngestResult struct {
 	Status          string   `json:"status"`           // complete | partial | failed
 	MemoriesChanged int      `json:"memories_changed"` // count of ADD + UPDATE actions executed
 	InsightIDs      []string `json:"insight_ids,omitempty"`
+	EventIDs        []string `json:"event_ids,omitempty"`
 	Warnings        int      `json:"warnings,omitempty"`
 	Error           string   `json:"error,omitempty"`
 }
@@ -172,6 +174,28 @@ type ExtractedFact struct {
 	Text     string   `json:"text"`
 	Tags     []string `json:"tags,omitempty"`
 	FactType string   `json:"fact_type,omitempty"` // "fact" | "query_intent"; omitted = "fact"
+}
+
+const (
+	eventFactMetadataKind        = "event_fact"
+	eventFactSourceMode          = "content_reconcile"
+	maxEventFactsPerContentWrite = 2
+	existingSessionScanPageSize  = 200
+)
+
+var (
+	eventMonthDayYearRe = regexp.MustCompile(`\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b`)
+	eventISODateRe      = regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}\b`)
+	eventYearMonthRe    = regexp.MustCompile(`\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b`)
+	eventNameRe         = regexp.MustCompile(`\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b`)
+)
+
+type eventFactMetadata struct {
+	Kind         string   `json:"kind"`
+	SourceMode   string   `json:"source_mode"`
+	EventDate    string   `json:"event_date,omitempty"`
+	Participants []string `json:"participants,omitempty"`
+	EventType    string   `json:"event_type,omitempty"`
 }
 
 // dropQueryIntentFacts removes facts classified as query_intent by the extraction
@@ -305,6 +329,9 @@ func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID
 		}, nil
 	}
 
+	eventIDs, eventWarnings := s.appendEventFacts(ctx, agentName, agentID, sessionID, allFacts, insightIDs)
+	totalWarnings += eventWarnings
+
 	status := "complete"
 	if failures > 0 && len(insightIDs) == 0 {
 		status = "failed"
@@ -314,8 +341,9 @@ func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID
 
 	return &IngestResult{
 		Status:          status,
-		MemoriesChanged: len(insightIDs),
+		MemoriesChanged: len(insightIDs) + len(eventIDs),
 		InsightIDs:      insightIDs,
+		EventIDs:        eventIDs,
 		Warnings:        totalWarnings,
 	}, nil
 }
@@ -490,6 +518,12 @@ atomic facts from a conversation.
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
+   - When a message contains a concrete event, action, or decision, extract that
+     concrete event instead of replacing it with a broad theme or identity summary.
+   - Good: "Caroline attended an LGBTQ support group on May 7, 2023"
+   - Bad: "Caroline promotes LGBTQ rights"
+   - Good: "Melanie signed up for a pottery class on July 2, 2023"
+   - Bad: "Melanie creates pottery projects"
 4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
 6. Do NOT extract search queries or lookup questions as facts.
@@ -507,20 +541,36 @@ atomic facts from a conversation.
 7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
 8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+   When the text contains reliable metadata-like prefixes such as "[date: ...]",
+   use them to resolve relative expressions like "yesterday", "last Friday", or
+   "next month" into an absolute date when possible.
 9. Extract relationships between people explicitly.
-10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
+10. Preserve event participants, objects, locations, and outcomes together.
+   If a message says who did what, to whom, with what, where, or why, keep those
+   answer-bearing details in the same fact instead of collapsing them into a theme.
+11. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
    fact is self-contained and retrievable without needing context from other facts.
    - Good: "Alice moved to Tokyo last year"
    - Bad: "She moved to Tokyo last year"
    - Good: "小强今天去彩排了"
    - Bad: "他今天去彩排了"
-11. If no meaningful facts exist in the conversation, return an empty facts array.
-12. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
+12. If no meaningful facts exist in the conversation, return an empty facts array.
+13. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
    "relationship", "event", "timeline".
    Use hyphens for multi-word tags: "programming-language", "work-tool".
    If no meaningful tags apply, omit the "tags" field for that fact.
+
+## Examples
+
+Input:
+User: [date:1:56 pm on 8 May, 2023] I went to a LGBTQ support group yesterday and it was so powerful.
+Output: {"facts": [{"text": "Went to a LGBTQ support group on May 7, 2023", "tags": ["event", "timeline", "personal"]}]}
+
+Input:
+User: [date:1:33 pm on 3 July, 2023] I signed up for a pottery class yesterday. It felt like therapy.
+Output: {"facts": [{"text": "Signed up for a pottery class on July 2, 2023", "tags": ["event", "timeline", "personal"]}]}
 
 ## Output Format
 
@@ -593,6 +643,12 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
+   - When a message contains a concrete event, action, or decision, extract that
+     concrete event instead of replacing it with a broad theme or identity summary.
+   - Good: "Caroline attended an LGBTQ support group on May 7, 2023"
+   - Bad: "Caroline promotes LGBTQ rights"
+   - Good: "Melanie signed up for a pottery class on July 2, 2023"
+   - Bad: "Melanie creates pottery projects"
 4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
 5. Omit ephemeral information (greetings, filler, debugging chatter with no lasting value).
 6. Do NOT extract search queries or lookup questions as facts.
@@ -610,16 +666,22 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
 8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+   When the text contains reliable metadata-like prefixes such as "[date: ...]",
+   use them to resolve relative expressions like "yesterday", "last Friday", or
+   "next month" into an absolute date when possible.
 9. Extract relationships between people explicitly.
-10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
+10. Preserve event participants, objects, locations, and outcomes together.
+   If a message says who did what, to whom, with what, where, or why, keep those
+   answer-bearing details in the same fact instead of collapsing them into a theme.
+11. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
    fact is self-contained and retrievable without needing context from other facts.
    - Good: "Alice moved to Tokyo last year"
    - Bad: "She moved to Tokyo last year"
    - Good: "小强今天去彩排了"
    - Bad: "他今天去彩排了"
-11. If no meaningful facts exist in the conversation, return an empty facts array.
-12. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
+12. If no meaningful facts exist in the conversation, return an empty facts array.
+13. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
    "relationship", "event", "timeline".
    Use hyphens for multi-word tags. If no meaningful tags apply, omit the "tags" field.
@@ -651,6 +713,16 @@ User: I'm debugging a memory leak in our Go service.
 Assistant: Let's look at the heap profile. Can you share the pprof output?
 User: Here it is: [pprof data...]
 Output: {"facts": [{"text": "Debugging a memory leak in a Go service", "tags": ["tech", "debug"]}], "message_tags": [["tech", "debug", "go"], ["tech", "question", "debug"], ["tech", "tool-result", "code"]]}
+
+Input:
+User: [date:1:56 pm on 8 May, 2023] I went to a LGBTQ support group yesterday and it was so powerful.
+Assistant: Wow, that's great to hear.
+Output: {"facts": [{"text": "Went to a LGBTQ support group on May 7, 2023", "tags": ["event", "timeline", "personal"]}], "message_tags": [["event", "timeline", "personal"], ["answer"]]}
+
+Input:
+User: [date:1:33 pm on 3 July, 2023] I signed up for a pottery class yesterday. It felt like therapy.
+Assistant: Nice, that sounds relaxing.
+Output: {"facts": [{"text": "Signed up for a pottery class on July 2, 2023", "tags": ["event", "timeline", "personal"]}], "message_tags": [["event", "timeline", "personal"], ["answer"]]}
 
 ## Output Format
 
@@ -1177,6 +1249,288 @@ func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sess
 	}
 	s.linkMemory(ctx, m.ID, sessionID)
 	return m.ID, nil
+}
+
+func (s *IngestService) appendEventFacts(ctx context.Context, agentName, agentID, sessionID string, facts []ExtractedFact, insightIDs []string) ([]string, int) {
+	if sessionID == "" || len(facts) == 0 {
+		return nil, 0
+	}
+
+	existingContents, err := s.collectExactMemoryContents(ctx, sessionID, insightIDs)
+	if err != nil {
+		slog.Warn("failed to collect exact memory contents for event dual-write", "session_id", sessionID, "err", err)
+		return nil, 1
+	}
+
+	selected := selectEventFacts(facts, maxEventFactsPerContentWrite)
+	var ids []string
+	warnings := 0
+	for _, fact := range selected {
+		text := strings.TrimSpace(fact.Text)
+		if text == "" {
+			continue
+		}
+		if _, exists := existingContents[text]; exists {
+			continue
+		}
+		id, err := s.addEventFact(ctx, agentName, agentID, sessionID, fact)
+		if err != nil {
+			slog.Warn("failed to add event fact", "err", err, "fact_len", len(text))
+			warnings++
+			continue
+		}
+		existingContents[text] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids, warnings
+}
+
+func (s *IngestService) collectExactMemoryContents(ctx context.Context, sessionID string, insightIDs []string) (map[string]struct{}, error) {
+	contents := make(map[string]struct{})
+
+	offset := 0
+	for {
+		page, total, err := s.memories.List(ctx, domain.MemoryFilter{
+			SessionID: sessionID,
+			State:     "active",
+			Limit:     existingSessionScanPageSize,
+			Offset:    offset,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, mem := range page {
+			if mem.Content != "" {
+				contents[mem.Content] = struct{}{}
+			}
+		}
+		offset += len(page)
+		if len(page) == 0 || offset >= total {
+			break
+		}
+	}
+
+	for _, id := range insightIDs {
+		mem, err := s.memories.GetByID(ctx, id)
+		if err != nil || mem == nil {
+			continue
+		}
+		if mem.Content != "" {
+			contents[mem.Content] = struct{}{}
+		}
+	}
+
+	return contents, nil
+}
+
+func selectEventFacts(facts []ExtractedFact, limit int) []ExtractedFact {
+	if limit <= 0 {
+		return nil
+	}
+
+	out := make([]ExtractedFact, 0, limit)
+	seen := make(map[string]struct{}, limit)
+	for _, fact := range facts {
+		if !isEventFact(fact) {
+			continue
+		}
+		text := strings.TrimSpace(fact.Text)
+		if text == "" {
+			continue
+		}
+		if _, exists := seen[text]; exists {
+			continue
+		}
+		seen[text] = struct{}{}
+		out = append(out, fact)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func isEventFact(fact ExtractedFact) bool {
+	text := strings.TrimSpace(fact.Text)
+	if text == "" {
+		return false
+	}
+	lower := strings.ToLower(text)
+
+	hasEventTag := false
+	for _, tag := range fact.Tags {
+		switch strings.ToLower(tag) {
+		case "event", "timeline":
+			hasEventTag = true
+		}
+	}
+
+	hasDate := extractEventDate(text) != ""
+	hasVerb := detectEventType(lower) != ""
+	hasParticipant := len(extractEventParticipants(text)) > 0
+
+	if hasEventTag && (hasDate || hasVerb) {
+		return true
+	}
+	if hasDate && hasVerb {
+		return true
+	}
+	if hasDate && hasParticipant {
+		return true
+	}
+	return false
+}
+
+func (s *IngestService) addEventFact(ctx context.Context, agentName, agentID, sessionID string, fact ExtractedFact) (string, error) {
+	if len(fact.Tags) > maxTags {
+		fact.Tags = fact.Tags[:maxTags]
+	}
+
+	meta := buildEventFactMetadata(fact.Text)
+	metaBytes, err := json.Marshal(meta)
+	if err != nil {
+		return "", fmt.Errorf("marshal event fact metadata: %w", err)
+	}
+
+	var embedding []float32
+	if s.autoModel == "" && s.embedder != nil {
+		embedding, err = s.embedder.Embed(ctx, fact.Text)
+		if err != nil {
+			return "", fmt.Errorf("embed event fact: %w", err)
+		}
+	}
+
+	now := time.Now()
+	m := &domain.Memory{
+		ID:         uuid.New().String(),
+		Content:    fact.Text,
+		MemoryType: domain.TypeInsight,
+		Source:     agentName,
+		AgentID:    agentID,
+		SessionID:  sessionID,
+		Embedding:  embedding,
+		Tags:       normalizeEventTags(fact.Tags, meta),
+		Metadata:   metaBytes,
+		State:      domain.StateActive,
+		Version:    1,
+		UpdatedBy:  agentName,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+
+	writeStart := time.Now()
+	err = s.memories.Create(ctx, m)
+	metrics.MemoryWriteDuration.WithLabelValues("create", metricStatus(err)).Observe(time.Since(writeStart).Seconds())
+	if err != nil {
+		return "", fmt.Errorf("create event fact: %w", err)
+	}
+	s.linkMemory(ctx, m.ID, sessionID)
+	return m.ID, nil
+}
+
+func normalizeEventTags(tags []string, meta eventFactMetadata) []string {
+	seen := make(map[string]struct{}, len(tags)+2)
+	out := make([]string, 0, len(tags)+2)
+	appendTag := func(tag string) {
+		tag = strings.TrimSpace(strings.ToLower(tag))
+		if tag == "" {
+			return
+		}
+		if _, ok := seen[tag]; ok {
+			return
+		}
+		seen[tag] = struct{}{}
+		out = append(out, tag)
+	}
+	for _, tag := range tags {
+		appendTag(tag)
+	}
+	appendTag("event")
+	if meta.EventDate != "" {
+		appendTag("timeline")
+	}
+	return out
+}
+
+func buildEventFactMetadata(text string) eventFactMetadata {
+	return eventFactMetadata{
+		Kind:         eventFactMetadataKind,
+		SourceMode:   eventFactSourceMode,
+		EventDate:    extractEventDate(text),
+		Participants: extractEventParticipants(text),
+		EventType:    detectEventType(strings.ToLower(text)),
+	}
+}
+
+func extractEventDate(text string) string {
+	if match := eventISODateRe.FindString(text); match != "" {
+		return match
+	}
+	if match := eventMonthDayYearRe.FindString(text); match != "" {
+		if parsed, err := time.Parse("January 2, 2006", match); err == nil {
+			return parsed.Format("2006-01-02")
+		}
+	}
+	if match := eventYearMonthRe.FindString(text); match != "" {
+		if parsed, err := time.Parse("January 2006", match); err == nil {
+			return parsed.Format("2006-01")
+		}
+	}
+	return ""
+}
+
+func extractEventParticipants(text string) []string {
+	matches := eventNameRe.FindAllString(text, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(matches))
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		lower := strings.ToLower(match)
+		switch lower {
+		case "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december":
+			continue
+		}
+		if _, ok := seen[match]; ok {
+			continue
+		}
+		seen[match] = struct{}{}
+		out = append(out, match)
+		if len(out) >= 3 {
+			break
+		}
+	}
+	return out
+}
+
+func detectEventType(lower string) string {
+	eventPatterns := []struct {
+		needle string
+		kind   string
+	}{
+		{"signed up", "signup"},
+		{"attended", "attended"},
+		{"joined", "joined"},
+		{"applied", "applied"},
+		{"hosted", "hosted"},
+		{"celebrated", "celebrated"},
+		{"adopted", "adopted"},
+		{"moved", "moved"},
+		{"ran ", "ran"},
+		{"gave ", "gave"},
+		{"went ", "went"},
+		{"met ", "met"},
+		{"started", "started"},
+		{"took ", "took"},
+		{"volunteered", "volunteered"},
+	}
+	for _, pattern := range eventPatterns {
+		if strings.Contains(lower, pattern.needle) {
+			return pattern.kind
+		}
+	}
+	return ""
 }
 
 // updateInsight archives the old memory and creates a new one atomically (append-new + archive-old model).

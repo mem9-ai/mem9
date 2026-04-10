@@ -68,6 +68,32 @@ func TestApplyTypeWeights(t *testing.T) {
 	}
 }
 
+func TestApplyEventFactWeights_TemporalQueryBoostsEventFact(t *testing.T) {
+	meta, err := json.Marshal(eventFactMetadata{
+		Kind:       eventFactMetadataKind,
+		SourceMode: eventFactSourceMode,
+		EventDate:  "2023-05-07",
+		EventType:  "attended",
+	})
+	if err != nil {
+		t.Fatalf("marshal event metadata: %v", err)
+	}
+
+	mems := map[string]domain.Memory{
+		"event":   {ID: "event", MemoryType: domain.TypeInsight, Metadata: meta},
+		"generic": {ID: "generic", MemoryType: domain.TypeInsight},
+	}
+	scores := map[string]float64{
+		"event":   1.0,
+		"generic": 1.0,
+	}
+
+	applyEventFactWeights("When did Caroline attend the support group?", mems, scores)
+	if !(scores["event"] > scores["generic"]) {
+		t.Fatalf("expected event fact score to be boosted above generic insight: %+v", scores)
+	}
+}
+
 func TestRrfMerge(t *testing.T) {
 	tests := []struct {
 		name        string

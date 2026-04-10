@@ -166,6 +166,166 @@ func TestExtractPhase1FactTagsPopulated(t *testing.T) {
 	}
 }
 
+func TestExtractFactsPromptIncludesEventSpecificityGuidance(t *testing.T) {
+	t.Parallel()
+
+	var llmBody string
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyBytes, _ := io.ReadAll(r.Body)
+		llmBody = string(bodyBytes)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts": []}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	if _, err := svc.extractFacts(context.Background(), "User: [date:1:56 pm on 8 May, 2023] I went to a support group yesterday."); err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+	if !strings.Contains(llmBody, "concrete event, action, or decision") {
+		t.Fatalf("expected extractFacts prompt to mention concrete event guidance, body=%s", llmBody)
+	}
+	if !strings.Contains(llmBody, "resolve relative expressions like") {
+		t.Fatalf("expected extractFacts prompt to mention relative-date resolution, body=%s", llmBody)
+	}
+}
+
+func TestExtractFactsAndTagsPromptIncludesEventSpecificityGuidance(t *testing.T) {
+	t.Parallel()
+
+	var llmBody string
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyBytes, _ := io.ReadAll(r.Body)
+		llmBody = string(bodyBytes)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts": [], "message_tags": [[]]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	if _, err := svc.ExtractPhase1(context.Background(), []IngestMessage{
+		{Role: "user", Content: "[date:1:33 pm on 3 July, 2023] I signed up for a pottery class yesterday."},
+	}); err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+	if !strings.Contains(llmBody, "concrete event, action, or decision") {
+		t.Fatalf("expected extractFactsAndTags prompt to mention concrete event guidance, body=%s", llmBody)
+	}
+	if !strings.Contains(llmBody, "resolve relative expressions like") {
+		t.Fatalf("expected extractFactsAndTags prompt to mention relative-date resolution, body=%s", llmBody)
+	}
+}
+
+func TestReconcileContent_DualWritesEventFactOnNoop(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+
+		resp := `{"facts": [{"text": "Caroline attended an LGBTQ support group on May 7, 2023", "tags": ["event", "timeline"]}]}`
+		if callCount == 2 {
+			resp = `{"memory": [{"id": "0", "text": "Caroline promotes LGBTQ rights", "event": "NOOP"}]}`
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "existing-1", Content: "Caroline promotes LGBTQ rights", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+		listResults: []domain.Memory{
+			{ID: "existing-1", Content: "Caroline promotes LGBTQ rights", MemoryType: domain.TypeInsight, SessionID: "sess-event", State: domain.StateActive},
+		},
+	}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	res, err := svc.ReconcileContent(context.Background(), "agent-1", "agent-1", "sess-event", []string{"[date:1:56 pm on 8 May, 2023] I went to a LGBTQ support group yesterday and it was so powerful."})
+	if err != nil {
+		t.Fatalf("ReconcileContent() error = %v", err)
+	}
+	if res.MemoriesChanged != 1 {
+		t.Fatalf("expected 1 memory changed from event dual-write, got %d", res.MemoriesChanged)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 event memory create, got %d", len(memRepo.createCalls))
+	}
+	if memRepo.createCalls[0].Content != "Caroline attended an LGBTQ support group on May 7, 2023" {
+		t.Fatalf("unexpected event memory content: %q", memRepo.createCalls[0].Content)
+	}
+	var meta eventFactMetadata
+	if err := json.Unmarshal(memRepo.createCalls[0].Metadata, &meta); err != nil {
+		t.Fatalf("unmarshal event metadata: %v", err)
+	}
+	if meta.Kind != eventFactMetadataKind || meta.EventDate != "2023-05-07" {
+		t.Fatalf("unexpected event metadata: %+v", meta)
+	}
+}
+
+func TestReconcileContent_SkipsEventDualWriteWhenExactContentAlreadyExists(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+
+		resp := `{"facts": [{"text": "Caroline attended an LGBTQ support group on May 7, 2023", "tags": ["event", "timeline"]}]}`
+		if callCount == 2 {
+			resp = `{"memory": [{"id": "0", "text": "Caroline attended an LGBTQ support group on May 7, 2023", "event": "NOOP"}]}`
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "existing-1", Content: "Caroline attended an LGBTQ support group on May 7, 2023", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+		listResults: []domain.Memory{
+			{ID: "existing-1", Content: "Caroline attended an LGBTQ support group on May 7, 2023", MemoryType: domain.TypeInsight, SessionID: "sess-event", State: domain.StateActive},
+		},
+	}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	res, err := svc.ReconcileContent(context.Background(), "agent-1", "agent-1", "sess-event", []string{"[date:1:56 pm on 8 May, 2023] I went to a LGBTQ support group yesterday and it was so powerful."})
+	if err != nil {
+		t.Fatalf("ReconcileContent() error = %v", err)
+	}
+	if res.MemoriesChanged != 0 {
+		t.Fatalf("expected 0 event writes when exact content already exists, got %d", res.MemoriesChanged)
+	}
+	if len(memRepo.createCalls) != 0 {
+		t.Fatalf("expected no additional event memory create, got %d", len(memRepo.createCalls))
+	}
+}
+
 func TestExtractFactsRetryFallbackDropsFlattenedQueryIntent(t *testing.T) {
 	t.Parallel()
 
@@ -562,7 +722,22 @@ func TestReconcilePinnedFallbackCarriesTags(t *testing.T) {
 }
 
 func (m *memoryRepoMock) UpdateOptimistic(ctx context.Context, mem *domain.Memory, expectedVersion int) error {
-	return m.updateOptimisticErr
+	if m.updateOptimisticErr != nil {
+		return m.updateOptimisticErr
+	}
+	if _, ok := m.getByID[mem.ID]; ok {
+		cp := *mem
+		m.getByID[mem.ID] = &cp
+		return nil
+	}
+	for i, created := range m.createCalls {
+		if created.ID == mem.ID {
+			cp := *mem
+			m.createCalls[i] = &cp
+			return nil
+		}
+	}
+	return nil
 }
 
 func (m *memoryRepoMock) SoftDelete(ctx context.Context, id, agentName string) error {

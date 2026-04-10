@@ -128,13 +128,17 @@ func (s *MemoryService) CreateWithSession(ctx context.Context, agentID, sessionI
 	if result.Status == "failed" {
 		return nil, 0, fmt.Errorf("content reconciliation failed")
 	}
-	if len(result.InsightIDs) == 0 {
-		return nil, 0, nil
+	createdIDs := make([]string, 0, len(result.InsightIDs)+len(result.EventIDs))
+	createdIDs = append(createdIDs, result.InsightIDs...)
+	createdIDs = append(createdIDs, result.EventIDs...)
+	if len(createdIDs) == 0 {
+		return nil, result.MemoriesChanged, nil
 	}
 
-	// Apply user-provided tags/metadata to all created insights.
+	// Apply user-provided tags/metadata to all created memories from reconcile,
+	// including any event dual-writes.
 	patchWrites := 0
-	for _, id := range result.InsightIDs {
+	for _, id := range createdIDs {
 		mem, err := s.memories.GetByID(ctx, id)
 		if err != nil {
 			continue
@@ -143,7 +147,7 @@ func (s *MemoryService) CreateWithSession(ctx context.Context, agentID, sessionI
 			mem.Tags = tags
 		}
 		if len(metadata) > 0 {
-			mem.Metadata = metadata
+			mem.Metadata = mergePatchedMetadata(mem.Metadata, metadata)
 		}
 		if len(tags) > 0 || len(metadata) > 0 {
 			if err := s.memories.UpdateOptimistic(ctx, mem, 0); err == nil {
@@ -152,13 +156,48 @@ func (s *MemoryService) CreateWithSession(ctx context.Context, agentID, sessionI
 		}
 	}
 
-	latestID := result.InsightIDs[len(result.InsightIDs)-1]
+	latestID := createdIDs[len(createdIDs)-1]
+	if len(result.InsightIDs) > 0 {
+		latestID = result.InsightIDs[len(result.InsightIDs)-1]
+	}
 	mem, getErr := s.memories.GetByID(ctx, latestID)
 	if getErr != nil {
 		return nil, 0, fmt.Errorf("fetch reconciled memory %s: %w", latestID, getErr)
 	}
 	return mem, result.MemoriesChanged + patchWrites, nil
 
+}
+
+func mergePatchedMetadata(existing, patch json.RawMessage) json.RawMessage {
+	if len(patch) == 0 {
+		return existing
+	}
+	if len(existing) == 0 {
+		return patch
+	}
+
+	var existingObj map[string]any
+	if err := json.Unmarshal(existing, &existingObj); err != nil || existingObj == nil {
+		return patch
+	}
+
+	var patchObj map[string]any
+	if err := json.Unmarshal(patch, &patchObj); err != nil || patchObj == nil {
+		return existing
+	}
+
+	for key, value := range patchObj {
+		if _, exists := existingObj[key]; exists {
+			continue
+		}
+		existingObj[key] = value
+	}
+
+	merged, err := json.Marshal(existingObj)
+	if err != nil {
+		return existing
+	}
+	return merged
 }
 
 func (s *MemoryService) RoutedSessionIDs(ctx context.Context, mems []domain.Memory, maxRoutingInsights, maxSessionsPerInsight, maxRoutedSessions int) ([]string, error) {
@@ -329,6 +368,7 @@ func (s *MemoryService) ftsOnlySearch(ctx context.Context, filter domain.MemoryF
 	}
 	slog.Info("fts search completed", "query_len", len(filter.Query), "results", len(ftsResults))
 
+	ftsResults = rerankEventFactMemories(filter.Query, ftsResults)
 	page, total := s.paginate(ftsResults, offset, limit)
 	return populateRelativeAge(page), total, nil
 }
@@ -351,6 +391,7 @@ func (s *MemoryService) keywordOnlySearch(ctx context.Context, filter domain.Mem
 	}
 	slog.Info("keyword search completed (FTS unavailable)", "query_len", len(filter.Query), "results", len(kwResults))
 
+	kwResults = rerankEventFactMemories(filter.Query, kwResults)
 	page, total := s.paginate(kwResults, offset, limit)
 	return populateRelativeAge(page), total, nil
 }
@@ -418,6 +459,7 @@ func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFi
 	scores := rrfMerge(kwResults, vecResults)
 	mems := collectMems(kwResults, vecResults)
 	applyTypeWeights(mems, scores)
+	applyEventFactWeights(filter.Query, mems, scores)
 	merged := sortByScore(mems, scores)
 
 	page, total := s.paginate(merged, offset, limit)
@@ -513,6 +555,7 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 	}
 
 	applyTypeWeights(mems, scores)
+	applyEventFactWeights(filter.Query, mems, scores)
 	merged := sortByScore(mems, scores)
 
 	page, total := s.paginate(merged, offset, limit)
@@ -650,6 +693,104 @@ func applyTypeWeights(mems map[string]domain.Memory, scores map[string]float64) 
 			scores[id] *= 1.5
 		}
 	}
+}
+
+func applyEventFactWeights(query string, mems map[string]domain.Memory, scores map[string]float64) {
+	if !isEventStyleQuery(query) {
+		return
+	}
+	temporalQuery := isTemporalEventQuery(query)
+	for id, m := range mems {
+		meta := parseEventFactMetadata(m.Metadata)
+		if meta.Kind != eventFactMetadataKind {
+			continue
+		}
+		scores[id] *= 1.15
+		if temporalQuery && meta.EventDate != "" {
+			scores[id] *= 1.10
+		}
+	}
+}
+
+func rerankEventFactMemories(query string, mems []domain.Memory) []domain.Memory {
+	if !isEventStyleQuery(query) || len(mems) < 2 {
+		return mems
+	}
+	temporalQuery := isTemporalEventQuery(query)
+
+	type scoredMemory struct {
+		mem   domain.Memory
+		index int
+		score float64
+	}
+
+	scored := make([]scoredMemory, 0, len(mems))
+	for i, mem := range mems {
+		score := -float64(i) * 0.01
+		if mem.Score != nil {
+			score += *mem.Score
+		}
+		meta := parseEventFactMetadata(mem.Metadata)
+		if meta.Kind == eventFactMetadataKind {
+			score += 0.15
+			if temporalQuery && meta.EventDate != "" {
+				score += 0.10
+			}
+		}
+		scored = append(scored, scoredMemory{mem: mem, index: i, score: score})
+	}
+
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].score == scored[j].score {
+			return scored[i].index < scored[j].index
+		}
+		return scored[i].score > scored[j].score
+	})
+
+	out := make([]domain.Memory, 0, len(mems))
+	for _, item := range scored {
+		out = append(out, item.mem)
+	}
+	return out
+}
+
+func isTemporalEventQuery(query string) bool {
+	lower := strings.ToLower(strings.TrimSpace(query))
+	return strings.HasPrefix(lower, "when ") ||
+		strings.Contains(lower, "what date") ||
+		strings.Contains(lower, "which year") ||
+		strings.Contains(lower, "how long ago")
+}
+
+func isEventStyleQuery(query string) bool {
+	lower := strings.ToLower(strings.TrimSpace(query))
+	if lower == "" {
+		return false
+	}
+	if isTemporalEventQuery(query) {
+		return true
+	}
+	eventPhrases := []string{
+		"what happened", "who did", "where did", "when did", "what did",
+		"who attended", "who joined", "who signed up", "who applied", "who hosted",
+	}
+	for _, phrase := range eventPhrases {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func parseEventFactMetadata(raw json.RawMessage) eventFactMetadata {
+	if len(raw) == 0 {
+		return eventFactMetadata{}
+	}
+	var meta eventFactMetadata
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return eventFactMetadata{}
+	}
+	return meta
 }
 
 // relativeAge returns a human-readable recency string for the given timestamp.
