@@ -8,10 +8,8 @@ Install from your terminal with the Claude CLI:
 
 ```text
 claude plugin marketplace add mem9-ai/mem9
-claude plugin install mem9@mem9 --scope user
+claude plugin install mem9@mem9
 ```
-
-`user` is the default scope. Use `--scope project` if you want to share the plugin with the current repository.
 
 After installation, start a new Claude Code session. Mem9 will initialize automatically on `SessionStart(startup)`.
 
