@@ -205,6 +205,12 @@ func (s *TenantService) GetInfo(ctx context.Context, tenantID string) (*domain.T
 }
 
 func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) error {
+	if s == nil {
+		return nil
+	}
+	if !s.supportsSessionSchemaEnsure() {
+		return nil
+	}
 	if _, err := db.ExecContext(ctx, tenant.BuildSessionsSchema(s.autoModel, s.autoDims)); err != nil {
 		return fmt.Errorf("ensure sessions table: create: %w", err)
 	}
@@ -232,5 +238,16 @@ func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) err
 			}
 		}
 	}
+	if _, err := db.ExecContext(ctx, tenant.TenantMemorySessionLinksSchema); err != nil {
+		return fmt.Errorf("ensure sessions table: memory_session_links: %w", err)
+	}
 	return nil
+}
+
+func (s *TenantService) supportsSessionSchemaEnsure() bool {
+	if s == nil || s.pool == nil {
+		return true
+	}
+	backend := s.pool.Backend()
+	return backend == "" || backend == "tidb"
 }

@@ -83,53 +83,51 @@ type tenantSvcKey string
 
 // resolveServices returns the correct services for a request.
 func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
+	var key tenantSvcKey
 	if auth.TenantID == "" {
-		key := tenantSvcKey(fmt.Sprintf("db-%p", auth.TenantDB))
-		if cached, ok := s.svcCache.Load(key); ok {
-			return cached.(resolvedSvc)
-		}
-		memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
-		sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
-		svc := resolvedSvc{
-			memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode, s.searchKeywordExtract),
-			ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
-			session: service.NewSessionService(sessRepo, s.embedder, s.autoModel),
-		}
-		actual, loaded := s.svcCache.LoadOrStore(key, svc)
-		if !loaded {
-			go func() {
-				if err := s.tenant.EnsureSessionsTable(context.Background(), auth.TenantDB); err != nil {
-					s.logger.Warn("sessions table migration failed",
-						"cluster_id", auth.ClusterID,
-						"err", err)
-				}
-			}()
-		}
-		return actual.(resolvedSvc)
+		key = tenantSvcKey(fmt.Sprintf("db-%p", auth.TenantDB))
+	} else {
+		key = tenantSvcKey(fmt.Sprintf("%s-%p", auth.TenantID, auth.TenantDB))
 	}
-	key := tenantSvcKey(fmt.Sprintf("%s-%p", auth.TenantID, auth.TenantDB))
 	if cached, ok := s.svcCache.Load(key); ok {
 		return cached.(resolvedSvc)
 	}
 	memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
+	linkRepo := repository.NewMemorySessionLinkRepo(s.dbBackend, auth.TenantDB)
 	svc := resolvedSvc{
-		memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode, s.searchKeywordExtract),
-		ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
+		memory:  service.NewMemoryServiceWithLinks(memRepo, linkRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode, s.searchKeywordExtract),
+		ingest:  service.NewIngestServiceWithLinks(memRepo, linkRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 		session: service.NewSessionService(sessRepo, s.embedder, s.autoModel),
 	}
 	actual, loaded := s.svcCache.LoadOrStore(key, svc)
 	if !loaded {
-		go func() {
-			if err := s.tenant.EnsureSessionsTable(context.Background(), auth.TenantDB); err != nil {
-				s.logger.Warn("sessions table migration failed",
-					"cluster_id", auth.ClusterID,
-					"tenant", auth.TenantID,
-					"err", err)
-			}
-		}()
+		go s.runTenantMigrations(auth)
 	}
 	return actual.(resolvedSvc)
+}
+
+func (s *Server) runTenantMigrations(auth *domain.AuthInfo) {
+	if err := s.ensureSessionSchemaForWrite(context.Background(), auth); err != nil {
+		logger := s.logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Warn("sessions table migration failed",
+			"cluster_id", auth.ClusterID,
+			"tenant", auth.TenantID,
+			"err", err)
+	}
+}
+
+func (s *Server) ensureSessionSchemaForWrite(ctx context.Context, auth *domain.AuthInfo) error {
+	if s == nil || s.tenant == nil || auth == nil || auth.TenantDB == nil {
+		return nil
+	}
+	if s.dbBackend != "" && s.dbBackend != "tidb" {
+		return nil
+	}
+	return s.tenant.EnsureSessionsTable(ctx, auth.TenantDB)
 }
 
 // Router builds the chi router with all routes and middleware.

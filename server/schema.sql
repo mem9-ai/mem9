@@ -57,6 +57,16 @@ CREATE TABLE IF NOT EXISTS memories (
   INDEX idx_updated             (updated_at)
 );
 
+CREATE TABLE IF NOT EXISTS memory_session_links (
+  id         BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  memory_id  VARCHAR(36)  NOT NULL,
+  session_id VARCHAR(100) NOT NULL,
+  created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE INDEX idx_memory_session_link_dedup (memory_id, session_id),
+  INDEX        idx_memory_session_links_session (session_id, id),
+  INDEX        idx_memory_session_links_memory  (memory_id, id)
+);
+
 -- Full-text search index (TiDB Cloud Serverless with MULTILINGUAL tokenizer).
 -- ADD_COLUMNAR_REPLICA_ON_DEMAND auto-provisions TiFlash on Serverless clusters.
 -- Run after the memories table is created. Safe to re-run (fails silently if index exists).

@@ -58,6 +58,22 @@ func TestBuildMemorySchema(t *testing.T) {
 	})
 }
 
+func TestMemorySessionLinksSchema(t *testing.T) {
+	schema := tenant.TenantMemorySessionLinksSchema
+	for _, needle := range []string{
+		"CREATE TABLE IF NOT EXISTS memory_session_links",
+		"memory_id  VARCHAR(36)",
+		"session_id VARCHAR(100)",
+		"idx_memory_session_link_dedup",
+		"idx_memory_session_links_session",
+		"idx_memory_session_links_memory",
+	} {
+		if !strings.Contains(schema, needle) {
+			t.Fatalf("schema missing %q", needle)
+		}
+	}
+}
+
 func TestProvisionRejectsNonTiDBBackend(t *testing.T) {
 	t.Parallel()
 
@@ -80,6 +96,18 @@ func TestProvisionRejectsNonTiDBBackend(t *testing.T) {
 	}
 }
 
+func TestEnsureSessionsTableNoopsForNonTiDBBackend(t *testing.T) {
+	t.Parallel()
+
+	pool := tenant.NewPool(tenant.PoolConfig{Backend: "db9"})
+	defer pool.Close()
+
+	svc := NewTenantService(nil, nil, pool, nil, "", 0, false, encrypt.NewPlainEncryptor())
+	if err := svc.EnsureSessionsTable(context.Background(), nil); err != nil {
+		t.Fatalf("EnsureSessionsTable() error = %v", err)
+	}
+}
+
 // TestProvision_WithEncryptor tests that Provision encrypts password for storage
 // but uses plaintext for DSN connection.
 func TestProvision_WithEncryptor(t *testing.T) {
@@ -96,13 +124,13 @@ func TestProvision_WithEncryptor(t *testing.T) {
 	// Create mock provisioner that returns known password
 	mockProv := &mockProvisioner{
 		info: &tenant.ClusterInfo{
-			ID:       testTenantID,
+			ID:        testTenantID,
 			ClusterID: testTenantID,
-			Host:     "test-host",
-			Port:     4000,
-			Username: "root",
-			Password: testPassword,
-			DBName:   "test",
+			Host:      "test-host",
+			Port:      4000,
+			Username:  "root",
+			Password:  testPassword,
+			DBName:    "test",
 		},
 	}
 

@@ -118,13 +118,26 @@ func createTables(db *sql.DB) error {
 		return fmt.Errorf("create memories table: %w", err)
 	}
 
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS memory_session_links (
+		id         BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+		memory_id  VARCHAR(36)  NOT NULL,
+		session_id VARCHAR(100) NOT NULL,
+		created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE INDEX idx_memory_session_link_dedup (memory_id, session_id),
+		INDEX        idx_memory_session_links_session (session_id, id),
+		INDEX        idx_memory_session_links_memory  (memory_id, id)
+	)`)
+	if err != nil {
+		return fmt.Errorf("create memory_session_links table: %w", err)
+	}
+
 	return nil
 }
 
 func truncateAll(db *sql.DB) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	for _, table := range []string{"tenants", "memories"} {
+	for _, table := range []string{"memory_session_links", "tenants", "memories"} {
 		if _, err := db.ExecContext(ctx, "DELETE FROM "+table); err != nil {
 			return fmt.Errorf("truncate %s: %w", table, err)
 		}

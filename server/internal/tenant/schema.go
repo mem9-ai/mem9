@@ -103,6 +103,18 @@ func BuildMemorySchema(autoModel string, autoDims int) string {
 	return fmt.Sprintf(TenantMemorySchemaBase, embeddingCol)
 }
 
+// TenantMemorySessionLinksSchema stores direct write-time provenance between
+// memory rows and the sessions that produced them.
+const TenantMemorySessionLinksSchema = `CREATE TABLE IF NOT EXISTS memory_session_links (
+    id         BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    memory_id  VARCHAR(36)  NOT NULL,
+    session_id VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE INDEX idx_memory_session_link_dedup (memory_id, session_id),
+    INDEX        idx_memory_session_links_session (session_id, id),
+    INDEX        idx_memory_session_links_memory  (memory_id, id)
+)`
+
 // BuildDB9MemorySchema builds the db9 memory schema with optional auto-embedding.
 func BuildDB9MemorySchema(autoModel string, autoDims int) string {
 	var embeddingCol string

@@ -76,6 +76,10 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if hasMessages {
+		if err := s.ensureSessionSchemaForWrite(r.Context(), auth); err != nil {
+			s.handleError(r.Context(), w, err)
+			return
+		}
 		messages := append([]service.IngestMessage(nil), req.Messages...)
 		ingestReq := service.IngestRequest{
 			Messages:  messages,
@@ -127,13 +131,20 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.TrimSpace(req.SessionID) != "" {
+		if err := s.ensureSessionSchemaForWrite(r.Context(), auth); err != nil {
+			s.handleError(r.Context(), w, err)
+			return
+		}
+	}
+
 	tags := append([]string(nil), req.Tags...)
 	metadata := append(json.RawMessage(nil), req.Metadata...)
 	content := req.Content
 
 	if req.Sync {
-		// s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
-		mem, written, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
+		s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
+		mem, written, err := svc.memory.CreateWithSession(r.Context(), agentID, req.SessionID, content, tags, metadata)
 		if err != nil {
 			slog.Error("sync memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
 			s.handleError(r.Context(), w, err)
@@ -144,8 +155,8 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	} else {
 		go func(auth *domain.AuthInfo, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage) {
-			// s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
-			mem, written, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
+			s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
+			mem, written, err := svc.memory.CreateWithSession(context.Background(), actorAgentID, sessionID, content, tags, metadata)
 			if err != nil {
 				slog.Error("async memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
 				return
@@ -302,48 +313,48 @@ type contentSessionMeta struct {
 	TurnIndex int    `json:"turn_index"`
 }
 
-// func (s *Server) persistContentSession(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, sessionID, agentID, content string, metadata json.RawMessage) {
-// 	if sessionID == "" || svc.session == nil {
-// 		return
-// 	}
-//
-// 	seq, role := contentSessionFields(content, metadata)
-// 	if err := svc.session.CreateRawTurn(ctx, sessionID, agentID, auth.AgentName, seq, role, content); err != nil {
-// 		slog.Error("content session raw save failed", "cluster_id", auth.ClusterID, "session", sessionID, "err", err)
-// 	}
-// }
+func (s *Server) persistContentSession(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, sessionID, agentID, content string, metadata json.RawMessage) {
+	if sessionID == "" || svc.session == nil {
+		return
+	}
 
-// func contentSessionFields(content string, metadata json.RawMessage) (int, string) {
-// 	meta := contentSessionMeta{TurnIndex: -1}
-// 	if len(metadata) > 0 {
-// 		_ = json.Unmarshal(metadata, &meta)
-// 	}
-//
-// 	role := roleFromSpeaker(meta.Speaker)
-// 	if role == "" {
-// 		role = roleFromSpeaker(content)
-// 	}
-// 	if role == "" {
-// 		role = "user"
-// 	}
-//
-// 	if meta.TurnIndex >= 0 {
-// 		return meta.TurnIndex, role
-// 	}
-// 	return 0, role
-// }
+	seq, role := contentSessionFields(content, metadata)
+	if err := svc.session.CreateRawTurn(ctx, sessionID, agentID, auth.AgentName, seq, role, content); err != nil {
+		slog.Error("content session raw save failed", "cluster_id", auth.ClusterID, "session", sessionID, "err", err)
+	}
+}
 
-// func roleFromSpeaker(raw string) string {
-// 	lower := strings.ToLower(raw)
-// 	switch {
-// 	case strings.Contains(lower, "speaker 1"), lower == "user":
-// 		return "user"
-// 	case strings.Contains(lower, "speaker 2"), lower == "assistant", strings.Contains(lower, "assistant"):
-// 		return "assistant"
-// 	default:
-// 		return ""
-// 	}
-// }
+func contentSessionFields(content string, metadata json.RawMessage) (int, string) {
+	meta := contentSessionMeta{TurnIndex: -1}
+	if len(metadata) > 0 {
+		_ = json.Unmarshal(metadata, &meta)
+	}
+
+	role := roleFromSpeaker(meta.Speaker)
+	if role == "" {
+		role = roleFromSpeaker(content)
+	}
+	if role == "" {
+		role = "user"
+	}
+
+	if meta.TurnIndex >= 0 {
+		return meta.TurnIndex, role
+	}
+	return 0, role
+}
+
+func roleFromSpeaker(raw string) string {
+	lower := strings.ToLower(raw)
+	switch {
+	case strings.Contains(lower, "speaker 1"), lower == "user":
+		return "user"
+	case strings.Contains(lower, "speaker 2"), lower == "assistant", strings.Contains(lower, "assistant"):
+		return "assistant"
+	default:
+		return ""
+	}
+}
 
 func (s *Server) sessionGroundingSearch(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, error) {
 	if svc.session == nil {

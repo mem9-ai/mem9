@@ -84,3 +84,17 @@ type SessionRepo interface {
 	// returned per session_id. Returns ErrNotSupported on non-TiDB backends.
 	ListBySessionIDs(ctx context.Context, sessionIDs []string, limitPerSession int) ([]*domain.Session, error)
 }
+
+// MemorySessionLinkRepo records direct write-time provenance between memories and sessions.
+// A link means sessionID wrote that specific memory row; lineage traversal is deliberately
+// left to higher-level recall code.
+type MemorySessionLinkRepo interface {
+	// Link records that sessionID wrote memoryID. Implementations must be idempotent.
+	Link(ctx context.Context, memoryID, sessionID string) error
+	// MemoriesBySession returns directly linked memory IDs ordered by link insertion order.
+	// limit 0 means no cap.
+	MemoriesBySession(ctx context.Context, sessionID string, limit int) ([]string, error)
+	// SessionsByMemory returns directly linked session IDs ordered by link insertion order.
+	// limit 0 means no cap.
+	SessionsByMemory(ctx context.Context, memoryID string, limit int) ([]string, error)
+}

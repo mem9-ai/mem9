@@ -165,6 +165,49 @@ func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
 	}
 }
 
+func TestCreateMemory_SyncContentWithSession_PreservesProvenance(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{}
+	srv := newTestServer(memRepo, sessRepo)
+
+	body := map[string]any{
+		"content":    "Speaker 2: test memory content",
+		"session_id": "test-session",
+		"metadata": map[string]any{
+			"speaker":    "assistant",
+			"turn_index": 7,
+		},
+		"sync": true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 memory create, got %d", len(memRepo.createCalls))
+	}
+	if got := memRepo.createCalls[0].SessionID; got != "test-session" {
+		t.Fatalf("expected memory session_id test-session, got %q", got)
+	}
+	if len(sessRepo.sessions) != 1 {
+		t.Fatalf("expected 1 raw session row, got %d", len(sessRepo.sessions))
+	}
+	session := sessRepo.sessions[0]
+	if session.SessionID != "test-session" {
+		t.Fatalf("expected raw session_id test-session, got %q", session.SessionID)
+	}
+	if session.Seq != 7 {
+		t.Fatalf("expected raw session seq 7, got %d", session.Seq)
+	}
+	if session.Role != "assistant" {
+		t.Fatalf("expected raw session role assistant, got %q", session.Role)
+	}
+}
+
 func TestCreateMemory_AsyncContent_Returns202(t *testing.T) {
 	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
 

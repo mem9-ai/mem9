@@ -163,6 +163,7 @@ func main() {
 		uploadTaskRepo,
 		tenantRepo,
 		tenantPool,
+		tenantSvc,
 		embedder,
 		llmClient,
 		cfg.EmbedAutoModel,
