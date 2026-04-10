@@ -481,17 +481,28 @@ atomic facts from a conversation.
      - "Working on a project that requires SQL window functions"
 7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
-8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
-9. Extract relationships between people explicitly.
-10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
+8. Keep concerns, risks, and worries the user expresses about their work, systems,
+   platforms, or ongoing operations, even when stated as background context for a
+   direct action request. These signals have lasting value.
+   Examples to keep:
+     - "小红书最近数据不好 老可能被封号" -> "User is concerned their Xiaohongshu
+       account may be at risk of being banned due to poor recent metrics"
+     - "The API keeps returning 500s, something might be broken upstream"
+     - "I think the deployment pipeline is getting flaky"
+   Examples to skip:
+     - "Hmm let me think"
+     - "OK sounds good"
+9. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+10. Extract relationships between people explicitly.
+11. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
    fact is self-contained and retrievable without needing context from other facts.
    - Good: "Alice moved to Tokyo last year"
    - Bad: "She moved to Tokyo last year"
    - Good: "小强今天去彩排了"
    - Bad: "他今天去彩排了"
-11. If no meaningful facts exist in the conversation, return an empty facts array.
-12. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
+12. If no meaningful facts exist in the conversation, return an empty facts array.
+13. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
    "relationship", "event", "timeline".
    Use hyphens for multi-word tags: "programming-language", "work-tool".
@@ -584,17 +595,28 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
      - "Working on a project that requires SQL window functions"
 7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
-8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
-9. Extract relationships between people explicitly.
-10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
+8. Keep concerns, risks, and worries the user expresses about their work, systems,
+   platforms, or ongoing operations, even when stated as background context for a
+   direct action request. These signals have lasting value.
+   Examples to keep:
+     - "小红书最近数据不好 老可能被封号" -> "User is concerned their Xiaohongshu
+       account may be at risk of being banned due to poor recent metrics"
+     - "The API keeps returning 500s, something might be broken upstream"
+     - "I think the deployment pipeline is getting flaky"
+   Examples to skip:
+     - "Hmm let me think"
+     - "OK sounds good"
+9. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+10. Extract relationships between people explicitly.
+11. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
    fact is self-contained and retrievable without needing context from other facts.
    - Good: "Alice moved to Tokyo last year"
    - Bad: "She moved to Tokyo last year"
    - Good: "小强今天去彩排了"
    - Bad: "他今天去彩排了"
-11. If no meaningful facts exist in the conversation, return an empty facts array.
-12. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
+12. If no meaningful facts exist in the conversation, return an empty facts array.
+13. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
    "relationship", "event", "timeline".
    Use hyphens for multi-word tags. If no meaningful tags apply, omit the "tags" field.
