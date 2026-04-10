@@ -150,51 +150,49 @@ mem9_load_auth() {
   auth_file="$(mem9_auth_file)" || return 1
   [[ -f "${auth_file}" ]] || return 1
 
-  local parsed auth_api_url auth_tenant_id auth_api_key
-  if ! parsed="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const values=[data.base_url || "https://api.mem9.ai", data.tenant_id || "", data.api_key || data.tenant_id || ""]; process.stdout.write(values.join("\t"));' "${auth_file}")"; then
+  local parsed auth_api_url auth_api_key
+  if ! parsed="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const values=[data.base_url || "https://api.mem9.ai", data.api_key || ""]; process.stdout.write(values.join("\t"));' "${auth_file}")"; then
     MEM9_AUTH_SOURCE="invalid_file"
     return 2
   fi
 
-  IFS=$'\t' read -r auth_api_url auth_tenant_id auth_api_key <<< "${parsed}"
+  IFS=$'\t' read -r auth_api_url auth_api_key <<< "${parsed}"
   if [[ -z "${auth_api_key}" ]]; then
     MEM9_AUTH_SOURCE="invalid_file"
     return 2
   fi
 
   MEM9_API_URL="${auth_api_url}"
-  MEM9_TENANT_ID="${auth_tenant_id}"
   MEM9_API_KEY="${auth_api_key}"
   MEM9_AUTH_SOURCE="auth_file"
 
   [[ -n "${MEM9_API_KEY}" ]] || return 1
-  export MEM9_API_URL MEM9_AGENT_ID MEM9_WRITER_ID MEM9_TENANT_ID MEM9_API_KEY
+  export MEM9_API_URL MEM9_AGENT_ID MEM9_WRITER_ID MEM9_API_KEY
 }
 
 mem9_write_auth() {
-  local tenant_id="$1"
+  local api_key="$1"
   local auth_file
   auth_file="$(mem9_auth_file)" || return 1
 
   mkdir -p "$(dirname "${auth_file}")"
-  node -e 'const fs=require("node:fs"); const path=require("node:path"); const authPath=process.argv[1]; const baseUrl=process.argv[2]; const tenantID=process.argv[3]; const payload={base_url:baseUrl,tenant_id:tenantID,api_key:tenantID,created_at:new Date().toISOString(),source:"auto_provisioned"}; fs.mkdirSync(path.dirname(authPath), {recursive:true}); fs.writeFileSync(authPath, JSON.stringify(payload, null, 2) + "\n");' \
-    "${auth_file}" "${MEM9_API_URL}" "${tenant_id}"
+  node -e 'const fs=require("node:fs"); const path=require("node:path"); const authPath=process.argv[1]; const baseUrl=process.argv[2]; const apiKey=process.argv[3]; const payload={base_url:baseUrl,api_key:apiKey,created_at:new Date().toISOString(),source:"auto_provisioned"}; fs.mkdirSync(path.dirname(authPath), {recursive:true}); fs.writeFileSync(authPath, JSON.stringify(payload, null, 2) + "\n");' \
+    "${auth_file}" "${MEM9_API_URL}" "${api_key}"
 }
 
 mem9_write_session_env() {
-  local tenant_id="$1"
+  local api_key="$1"
   [[ -n "${CLAUDE_ENV_FILE:-}" ]] || return 0
 
   {
     printf 'export MEM9_API_URL=%q\n' "${MEM9_API_URL}"
-    printf 'export MEM9_TENANT_ID=%q\n' "${tenant_id}"
-    printf 'export MEM9_API_KEY=%q\n' "${tenant_id}"
+    printf 'export MEM9_API_KEY=%q\n' "${api_key}"
     printf 'export MEM9_AGENT_ID=%q\n' "${MEM9_AGENT_ID}"
     printf 'export MEM9_WRITER_ID=%q\n' "${MEM9_WRITER_ID}"
   } >> "${CLAUDE_ENV_FILE}"
 }
 
-mem9_provision_tenant() {
+mem9_provision_auth() {
   "${MEM9_CURL_BIN}" -sf --max-time 8 -X POST "${MEM9_API_URL%/}/v1alpha1/mem9s"
 }
 

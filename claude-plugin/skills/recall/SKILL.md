@@ -15,7 +15,7 @@ Use this skill when the current question could benefit from historical context s
 ## Steps
 
 1. Check `${CLAUDE_PLUGIN_DATA}/auth.json`. If it is missing, tell the user to run `/mem9:setup` first.
-2. Load `api_key` from `${CLAUDE_PLUGIN_DATA}/auth.json`.
+2. Use `${CLAUDE_PLUGIN_DATA}/auth.json` only as request credentials. Do not print the file contents or the API key.
 3. Search Mem9 with the current question and `agent_id=claude-code-main`.
 
 ```bash
@@ -23,7 +23,7 @@ set -euo pipefail
 
 auth_file="${CLAUDE_PLUGIN_DATA}/auth.json"
 test -f "$auth_file"
-read_api_key_and_base_url="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const values=[data.api_key || data.tenant_id || "", data.base_url || "https://api.mem9.ai"]; process.stdout.write(values.join("\t"));' "$auth_file")"
+read_api_key_and_base_url="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const values=[data.api_key || "", data.base_url || "https://api.mem9.ai"]; process.stdout.write(values.join("\t"));' "$auth_file")"
 api_key="${read_api_key_and_base_url%%	*}"
 base_url="${read_api_key_and_base_url#*	}"
 test -n "$api_key"
@@ -39,4 +39,4 @@ curl -sf --max-time 8 \
   "${base_url%/}/v1alpha2/mem9s/memories?q=${encoded_query}&agent_id=claude-code-main&limit=10"
 ```
 
-Return only the memories that help with the current question.
+Return only the memories that help with the current question. Never reveal secret values.

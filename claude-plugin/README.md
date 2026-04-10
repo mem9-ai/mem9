@@ -10,7 +10,7 @@ Persistent cloud memory for Claude Code.
 
 ## Auth Model
 
-The plugin stores runtime-generated auth in:
+The plugin stores its runtime API key cache in:
 
 ```text
 ${CLAUDE_PLUGIN_DATA}/auth.json
@@ -26,8 +26,7 @@ The stored JSON looks like this:
 ```json
 {
   "base_url": "https://api.mem9.ai",
-  "tenant_id": "tenant-id",
-  "api_key": "tenant-id",
+  "api_key": "generated-api-key",
   "created_at": "2026-04-10T00:00:00.000Z",
   "source": "auto_provisioned"
 }
@@ -90,6 +89,7 @@ The plugin exposes:
 - `/mem9:store`
 
 `/mem9:setup` is the backup path when auto-init did not complete.
+It writes `${CLAUDE_PLUGIN_DATA}/auth.json` without printing the API key back to the user.
 
 ## Troubleshooting
 

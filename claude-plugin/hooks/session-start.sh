@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# session-start.sh — Check Node, auto-provision auth if missing, and emit a short status.
+# session-start.sh — Check Node, auto-provision an API key if missing, and emit a short status.
 
 set -euo pipefail
 
@@ -43,27 +43,27 @@ if [[ "${load_auth_status}" -eq 2 ]]; then
 fi
 
 mem9_debug "SessionStart" "provision_start" "source" "${SESSION_SOURCE}"
-response="$(mem9_provision_tenant 2>/dev/null || true)"
+response="$(mem9_provision_auth 2>/dev/null || true)"
 if [[ -z "${response}" ]]; then
   mem9_debug "SessionStart" "provision_failed" "source" "${SESSION_SOURCE}"
   mem9_emit_context "SessionStart" "[mem9] Automatic setup failed. Try again later or run /mem9:setup to inspect the current state."
   exit 0
 fi
 
-tenant_id="$(printf '%s' "${response}" | node "${SCRIPT_DIR}/lib/hook-json.mjs" get-string id)"
-if [[ -z "${tenant_id}" ]]; then
-  mem9_debug "SessionStart" "provision_missing_tenant" "source" "${SESSION_SOURCE}"
-  mem9_emit_context "SessionStart" "[mem9] Automatic setup failed. The server did not return a tenant ID."
+api_key="$(printf '%s' "${response}" | node "${SCRIPT_DIR}/lib/hook-json.mjs" get-string id)"
+if [[ -z "${api_key}" ]]; then
+  mem9_debug "SessionStart" "provision_missing_api_key" "source" "${SESSION_SOURCE}"
+  mem9_emit_context "SessionStart" "[mem9] Automatic setup failed. The server did not return an API key."
   exit 0
 fi
 
-if ! mem9_write_auth "${tenant_id}"; then
+if ! mem9_write_auth "${api_key}"; then
   mem9_debug "SessionStart" "auth_write_failed" "source" "${SESSION_SOURCE}"
   mem9_emit_context "SessionStart" "[mem9] Automatic setup failed. The plugin could not write auth.json."
   exit 0
 fi
 
-mem9_write_session_env "${tenant_id}" || true
+mem9_write_session_env "${api_key}" || true
 mem9_debug "SessionStart" "initialized" \
   "source" "${SESSION_SOURCE}" \
   "auth_source" "auto_provisioned"
