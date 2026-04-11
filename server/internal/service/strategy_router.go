@@ -14,17 +14,19 @@ import (
 )
 
 const (
-	strategyRouterRRFK           = 60.0
-	strategyTopNForAggregation   = 5
-	strategyTopNForClassScore    = 2
-	strategyPrototypeFetchLimit  = 10
+	strategyVecWeight            = 0.6
+	strategyFTSWeight            = 0.4
+	strategyTopNForAggregation   = 10
+	strategyTopNForClassScore    = 3
+	strategyPrototypeFetchLimit  = 15
 	strategyLLMTimeout           = 5 * time.Second
 	strategyLLMMinTopConfidence  = 0.70
 	strategyLLMMinSecConfidence  = 0.55
 	strategyLLMMinConfidenceGap  = 0.10
 	strategyHighSupportCount     = 2
-	strategyHighScoreRatio       = 1.20
-	strategyMediumScoreRatio     = 1.08
+	strategyHighScoreRatio       = 1.30
+	strategyMediumScoreRatio     = 1.15
+	strategyMinAbsoluteScore     = 0.55
 	strategyIncompatibleGapFloor = 0.10
 )
 
@@ -73,22 +75,27 @@ func (s *RecallStrategyRouterService) Detect(ctx context.Context, input Strategy
 	if err != nil {
 		slog.Warn("strategy router step2 LLM failed, falling back",
 			"err", err, "query_len", len(input.Query))
-		decision.ResolutionSource = domain.ResolutionSourceFallback
-		decision.FallbackCause = "llm_error"
-		return decision, nil
+		fallback := defaultFallbackDecision("llm_error")
+		fallback.TopPrototypeIDs = decision.TopPrototypeIDs
+		return fallback, nil
 	}
 
 	return resolveStep2(step2, step1), nil
 }
 
 type classAggregation struct {
-	Class          string
-	ClassScore     float64
-	SupportCount   int
-	DualLegSupport bool
-	TopIDs         []int64
-	AnswerFamily   string
-	Entity         string
+	Class           string
+	ClassScore      float64
+	BestScore       float64
+	BestVecScore    float64
+	BestFTSScore    float64
+	SupportCount    int
+	VecSupportCount int
+	FTSSupportCount int
+	DualLegSupport  bool
+	TopIDs          []int64
+	AnswerFamily    string
+	Entity          string
 }
 
 type step1Result struct {
@@ -120,24 +127,49 @@ func (s *RecallStrategyRouterService) step1PrototypeSearch(ctx context.Context, 
 		return result, fmt.Errorf("both search legs failed: vec=%w, fts=%v", vecErr, ftsErr)
 	}
 
-	merged := rrfMergePrototypes(ftsMatches, vecMatches)
+	merged := weightedSimilarityMerge(vecMatches, ftsMatches)
 	result.AllMatches = merged
 	result.Aggregations = aggregateByClass(merged, vecMatches, ftsMatches)
+
+	if len(result.Aggregations) > 0 {
+		top := result.Aggregations[0]
+		slog.Debug("strategy step1 aggregation",
+			"top_class", top.Class,
+			"top_score", fmt.Sprintf("%.3f", top.ClassScore),
+			"support", top.SupportCount,
+			"dual_leg", top.DualLegSupport,
+			"num_classes", len(result.Aggregations),
+			"merged_count", len(merged),
+		)
+	}
+
 	return result, nil
 }
 
-func rrfMergePrototypes(ftsResults, vecResults []domain.RecallStrategyPrototypeMatch) []domain.RecallStrategyPrototypeMatch {
-	scores := make(map[int64]float64)
+func weightedSimilarityMerge(vecResults, ftsResults []domain.RecallStrategyPrototypeMatch) []domain.RecallStrategyPrototypeMatch {
+	vecScores := make(map[int64]float64)
+	ftsScores := make(map[int64]float64)
 	byID := make(map[int64]domain.RecallStrategyPrototypeMatch)
 
-	for rank, m := range ftsResults {
-		scores[m.ID] += 1.0 / (strategyRouterRRFK + float64(rank+1))
+	for _, m := range vecResults {
+		vecScores[m.ID] = m.Score
 		if _, ok := byID[m.ID]; !ok {
 			byID[m.ID] = m
 		}
 	}
-	for rank, m := range vecResults {
-		scores[m.ID] += 1.0 / (strategyRouterRRFK + float64(rank+1))
+
+	var ftsMax float64
+	for _, m := range ftsResults {
+		if m.Score > ftsMax {
+			ftsMax = m.Score
+		}
+	}
+	for _, m := range ftsResults {
+		norm := m.Score
+		if ftsMax > 0 {
+			norm = m.Score / ftsMax
+		}
+		ftsScores[m.ID] = norm
 		if _, ok := byID[m.ID]; !ok {
 			byID[m.ID] = m
 		}
@@ -145,9 +177,20 @@ func rrfMergePrototypes(ftsResults, vecResults []domain.RecallStrategyPrototypeM
 
 	merged := make([]domain.RecallStrategyPrototypeMatch, 0, len(byID))
 	for id, m := range byID {
-		m.Score = scores[id]
+		vs, hasVec := vecScores[id]
+		fs, hasFTS := ftsScores[id]
+
+		switch {
+		case hasVec && hasFTS:
+			m.Score = strategyVecWeight*vs + strategyFTSWeight*fs
+		case hasVec:
+			m.Score = vs
+		case hasFTS:
+			m.Score = fs
+		}
 		merged = append(merged, m)
 	}
+
 	sort.Slice(merged, func(i, j int) bool {
 		return merged[i].Score > merged[j].Score
 	})
@@ -155,13 +198,17 @@ func rrfMergePrototypes(ftsResults, vecResults []domain.RecallStrategyPrototypeM
 }
 
 func aggregateByClass(merged, vecMatches, ftsMatches []domain.RecallStrategyPrototypeMatch) []classAggregation {
-	vecClasses := make(map[string]bool)
+	vecIDs := make(map[int64]bool)
+	vecScores := make(map[int64]float64)
 	for _, m := range vecMatches {
-		vecClasses[m.StrategyClass] = true
+		vecIDs[m.ID] = true
+		vecScores[m.ID] = m.Score
 	}
-	ftsClasses := make(map[string]bool)
+	ftsIDs := make(map[int64]bool)
+	ftsScores := make(map[int64]float64)
 	for _, m := range ftsMatches {
-		ftsClasses[m.StrategyClass] = true
+		ftsIDs[m.ID] = true
+		ftsScores[m.ID] = m.Score
 	}
 
 	classMap := make(map[string]*classAggregation)
@@ -174,18 +221,41 @@ func aggregateByClass(merged, vecMatches, ftsMatches []domain.RecallStrategyProt
 		agg, ok := classMap[m.StrategyClass]
 		if !ok {
 			agg = &classAggregation{
-				Class:          m.StrategyClass,
-				DualLegSupport: vecClasses[m.StrategyClass] && ftsClasses[m.StrategyClass],
+				Class: m.StrategyClass,
 			}
 			classMap[m.StrategyClass] = agg
 		}
 		agg.SupportCount++
+		if vecIDs[m.ID] {
+			agg.VecSupportCount++
+			if agg.BestVecScore < vecScores[m.ID] {
+				agg.BestVecScore = vecScores[m.ID]
+			}
+		}
+		if ftsIDs[m.ID] {
+			agg.FTSSupportCount++
+			if agg.BestFTSScore < ftsScores[m.ID] {
+				agg.BestFTSScore = ftsScores[m.ID]
+			}
+		}
+		if vecIDs[m.ID] && ftsIDs[m.ID] {
+			agg.DualLegSupport = true
+		}
 		if len(agg.TopIDs) < strategyTopNForClassScore {
 			agg.ClassScore += m.Score
 			agg.TopIDs = append(agg.TopIDs, m.ID)
 		}
+		if agg.BestScore < m.Score {
+			agg.BestScore = m.Score
+		}
 		if agg.AnswerFamily == "" && m.AnswerFamily != "" {
 			agg.AnswerFamily = m.AnswerFamily
+		}
+	}
+
+	for _, agg := range classMap {
+		if agg.SupportCount > 0 {
+			agg.ClassScore /= float64(len(agg.TopIDs))
 		}
 	}
 
@@ -208,6 +278,22 @@ func resolveStep1(s1 step1Result) (domain.RecallRouteDecision, bool) {
 	var second classAggregation
 	if len(s1.Aggregations) > 1 {
 		second = s1.Aggregations[1]
+	}
+
+	if top.VecSupportCount == 0 {
+		d := domain.RecallRouteDecision{
+			TopPrototypeIDs: top.TopIDs,
+			FallbackCause:   "fts_only_match",
+		}
+		return d, false
+	}
+
+	if top.BestVecScore < strategyMinAbsoluteScore {
+		d := domain.RecallRouteDecision{
+			TopPrototypeIDs: top.TopIDs,
+			FallbackCause:   "weak_similarity",
+		}
+		return d, false
 	}
 
 	highConf := (top.SupportCount >= strategyHighSupportCount || top.DualLegSupport) &&

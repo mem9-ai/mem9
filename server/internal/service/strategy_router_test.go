@@ -10,8 +10,8 @@ import (
 func TestResolveStep1_HighConfidence_SingleStrategy(t *testing.T) {
 	s1 := step1Result{
 		Aggregations: []classAggregation{
-			{Class: domain.StrategyExactEventTemporal, ClassScore: 0.030, SupportCount: 3, DualLegSupport: true, TopIDs: []int64{1, 2}},
-			{Class: domain.StrategyDefaultMixed, ClassScore: 0.010, SupportCount: 1, TopIDs: []int64{5}},
+			{Class: domain.StrategyExactEventTemporal, ClassScore: 0.82, BestScore: 0.88, BestVecScore: 0.88, SupportCount: 3, VecSupportCount: 3, FTSSupportCount: 1, DualLegSupport: true, TopIDs: []int64{1, 2, 3}},
+			{Class: domain.StrategyDefaultMixed, ClassScore: 0.55, BestScore: 0.58, BestVecScore: 0.58, SupportCount: 1, VecSupportCount: 1, TopIDs: []int64{5}},
 		},
 	}
 	decision, resolved := resolveStep1(s1)
@@ -40,11 +40,41 @@ func TestResolveStep1_NoMatches_Unresolved(t *testing.T) {
 	}
 }
 
+func TestResolveStep1_WeakSimilarity_Unresolved(t *testing.T) {
+	s1 := step1Result{
+		Aggregations: []classAggregation{
+			{Class: domain.StrategyExactEventTemporal, ClassScore: 0.45, BestScore: 0.50, BestVecScore: 0.50, SupportCount: 3, VecSupportCount: 3, FTSSupportCount: 1, DualLegSupport: true, TopIDs: []int64{1, 2}},
+		},
+	}
+	decision, resolved := resolveStep1(s1)
+	if resolved {
+		t.Fatal("expected resolved=false when BestScore < strategyMinAbsoluteScore")
+	}
+	if decision.FallbackCause != "weak_similarity" {
+		t.Errorf("expected cause=weak_similarity, got %s", decision.FallbackCause)
+	}
+}
+
+func TestResolveStep1_FTSOnly_Unresolved(t *testing.T) {
+	s1 := step1Result{
+		Aggregations: []classAggregation{
+			{Class: domain.StrategyExactEventTemporal, ClassScore: 1.0, BestScore: 1.0, BestFTSScore: 4.0, SupportCount: 1, FTSSupportCount: 1, TopIDs: []int64{1}},
+		},
+	}
+	decision, resolved := resolveStep1(s1)
+	if resolved {
+		t.Fatal("expected resolved=false when top class has only FTS support")
+	}
+	if decision.FallbackCause != "fts_only_match" {
+		t.Errorf("expected cause=fts_only_match, got %s", decision.FallbackCause)
+	}
+}
+
 func TestResolveStep1_LowConfidence_Unresolved(t *testing.T) {
 	s1 := step1Result{
 		Aggregations: []classAggregation{
-			{Class: domain.StrategySetAggregation, ClassScore: 0.011, SupportCount: 1, TopIDs: []int64{1}},
-			{Class: domain.StrategyCountQuery, ClassScore: 0.011, SupportCount: 1, TopIDs: []int64{2}},
+			{Class: domain.StrategySetAggregation, ClassScore: 0.70, BestScore: 0.72, BestVecScore: 0.72, SupportCount: 1, VecSupportCount: 1, TopIDs: []int64{1}},
+			{Class: domain.StrategyCountQuery, ClassScore: 0.70, BestScore: 0.71, BestVecScore: 0.71, SupportCount: 1, VecSupportCount: 1, TopIDs: []int64{2}},
 		},
 	}
 	_, resolved := resolveStep1(s1)
@@ -56,8 +86,8 @@ func TestResolveStep1_LowConfidence_Unresolved(t *testing.T) {
 func TestResolveStep1_MediumConfidence_FanoutPair(t *testing.T) {
 	s1 := step1Result{
 		Aggregations: []classAggregation{
-			{Class: domain.StrategySetAggregation, ClassScore: 0.025, SupportCount: 1, TopIDs: []int64{1}},
-			{Class: domain.StrategyCountQuery, ClassScore: 0.020, SupportCount: 1, TopIDs: []int64{2}},
+			{Class: domain.StrategySetAggregation, ClassScore: 0.80, BestScore: 0.85, BestVecScore: 0.85, SupportCount: 2, VecSupportCount: 2, TopIDs: []int64{1, 2}},
+			{Class: domain.StrategyCountQuery, ClassScore: 0.65, BestScore: 0.68, BestVecScore: 0.68, SupportCount: 1, VecSupportCount: 1, TopIDs: []int64{3}},
 		},
 	}
 	decision, resolved := resolveStep1(s1)
@@ -81,8 +111,8 @@ func TestResolveStep1_MediumConfidence_FanoutPair(t *testing.T) {
 func TestResolveStep1_IncompatiblePair_NoFanout(t *testing.T) {
 	s1 := step1Result{
 		Aggregations: []classAggregation{
-			{Class: domain.StrategyExactEventTemporal, ClassScore: 0.025, SupportCount: 1, TopIDs: []int64{1}},
-			{Class: domain.StrategySetAggregation, ClassScore: 0.020, SupportCount: 1, TopIDs: []int64{2}},
+			{Class: domain.StrategyExactEventTemporal, ClassScore: 0.82, BestScore: 0.88, BestVecScore: 0.88, SupportCount: 2, VecSupportCount: 2, TopIDs: []int64{1, 2}},
+			{Class: domain.StrategySetAggregation, ClassScore: 0.65, BestScore: 0.68, BestVecScore: 0.68, SupportCount: 1, VecSupportCount: 1, TopIDs: []int64{3}},
 		},
 	}
 	decision, resolved := resolveStep1(s1)
@@ -238,5 +268,135 @@ func TestDetect_StrongPrototypeMatch_ResolvesInStep1(t *testing.T) {
 	}
 	if decision.ResolutionSource != domain.ResolutionSourcePrototype {
 		t.Errorf("expected source=prototype, got %s", decision.ResolutionSource)
+	}
+}
+
+func TestDetect_WeakPrototypeMatch_FallsToLLMOrDefault(t *testing.T) {
+	repo := &stubProtoRepo{
+		vecResults: []domain.RecallStrategyPrototypeMatch{
+			{ID: 1, StrategyClass: domain.StrategyExactEventTemporal, Score: 0.45},
+			{ID: 2, StrategyClass: domain.StrategySetAggregation, Score: 0.42},
+		},
+		ftsResults: nil,
+	}
+	router := NewRecallStrategyRouterService(repo, nil, "auto-model")
+	decision, err := router.Detect(context.Background(), StrategyRouterInput{Query: "What is Caroline's job?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.ResolutionSource == domain.ResolutionSourcePrototype {
+		t.Errorf("expected NOT prototype resolution for weak scores, got prototype with %v", decision.Strategies)
+	}
+}
+
+func TestDetect_FTSOnlyPrototypeMatch_DoesNotResolveInStep1(t *testing.T) {
+	repo := &stubProtoRepo{
+		ftsResults: []domain.RecallStrategyPrototypeMatch{
+			{ID: 1, StrategyClass: domain.StrategyExactEventTemporal, Score: 4.0},
+		},
+	}
+	router := NewRecallStrategyRouterService(repo, nil, "auto-model")
+	decision, err := router.Detect(context.Background(), StrategyRouterInput{Query: "When did Caroline join the group?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.ResolutionSource == domain.ResolutionSourcePrototype {
+		t.Fatalf("expected FTS-only match to avoid prototype resolution, got %v", decision.Strategies)
+	}
+	if !decision.IsDefault() {
+		t.Errorf("expected fallback/default decision without LLM configured, got %v", decision.Strategies)
+	}
+	if decision.ResolutionMode != domain.ResolutionModeFallback {
+		t.Errorf("expected fallback mode, got %s", decision.ResolutionMode)
+	}
+	if len(decision.Strategies) != 1 || decision.Strategies[0].Name != domain.StrategyDefaultMixed {
+		t.Errorf("expected default_mixed fallback strategy, got %v", decision.Strategies)
+	}
+}
+
+func TestWeightedSimilarityMerge_DualLegBoost(t *testing.T) {
+	vec := []domain.RecallStrategyPrototypeMatch{
+		{ID: 1, StrategyClass: "a", Score: 0.90},
+		{ID: 2, StrategyClass: "b", Score: 0.70},
+	}
+	fts := []domain.RecallStrategyPrototypeMatch{
+		{ID: 1, StrategyClass: "a", Score: 5.0},
+		{ID: 3, StrategyClass: "c", Score: 3.0},
+	}
+	merged := weightedSimilarityMerge(vec, fts)
+	if len(merged) != 3 {
+		t.Fatalf("expected 3 merged, got %d", len(merged))
+	}
+	if merged[0].ID != 1 {
+		t.Errorf("expected ID=1 first (dual-leg), got ID=%d", merged[0].ID)
+	}
+	expectedScore := 0.6*0.90 + 0.4*1.0
+	if diff := merged[0].Score - expectedScore; diff > 0.01 || diff < -0.01 {
+		t.Errorf("expected score ~%.2f for dual-leg item, got %.2f", expectedScore, merged[0].Score)
+	}
+}
+
+func TestWeightedSimilarityMerge_FTSOnlyNormalized(t *testing.T) {
+	fts := []domain.RecallStrategyPrototypeMatch{
+		{ID: 1, StrategyClass: "a", Score: 10.0},
+		{ID: 2, StrategyClass: "b", Score: 5.0},
+	}
+	merged := weightedSimilarityMerge(nil, fts)
+	if len(merged) != 2 {
+		t.Fatalf("expected 2, got %d", len(merged))
+	}
+	if merged[0].Score != 1.0 {
+		t.Errorf("expected FTS-max to normalize to 1.0, got %.2f", merged[0].Score)
+	}
+	if merged[1].Score != 0.5 {
+		t.Errorf("expected second FTS to normalize to 0.5, got %.2f", merged[1].Score)
+	}
+}
+
+func TestAggregateByClass_AveragesTopN(t *testing.T) {
+	merged := []domain.RecallStrategyPrototypeMatch{
+		{ID: 1, StrategyClass: "a", Score: 0.90},
+		{ID: 2, StrategyClass: "a", Score: 0.80},
+		{ID: 3, StrategyClass: "b", Score: 0.75},
+		{ID: 4, StrategyClass: "a", Score: 0.70},
+		{ID: 5, StrategyClass: "b", Score: 0.65},
+	}
+	vec := []domain.RecallStrategyPrototypeMatch{
+		{ID: 1, Score: 0.90},
+		{ID: 3, Score: 0.75},
+	}
+	fts := []domain.RecallStrategyPrototypeMatch{
+		{ID: 1, Score: 10.0},
+		{ID: 5, Score: 5.0},
+	}
+
+	aggs := aggregateByClass(merged, vec, fts)
+	if len(aggs) != 2 {
+		t.Fatalf("expected 2 classes, got %d", len(aggs))
+	}
+	if aggs[0].Class != "a" {
+		t.Errorf("expected class 'a' first, got %s", aggs[0].Class)
+	}
+	expectedAvg := (0.90 + 0.80 + 0.70) / 3.0
+	if diff := aggs[0].ClassScore - expectedAvg; diff > 0.01 || diff < -0.01 {
+		t.Errorf("expected ClassScore ~%.3f (avg of top-3), got %.3f", expectedAvg, aggs[0].ClassScore)
+	}
+	if aggs[0].BestScore != 0.90 {
+		t.Errorf("expected BestScore=0.90, got %.2f", aggs[0].BestScore)
+	}
+	if aggs[0].BestVecScore != 0.90 {
+		t.Errorf("expected BestVecScore=0.90, got %.2f", aggs[0].BestVecScore)
+	}
+	if aggs[0].BestFTSScore != 10.0 {
+		t.Errorf("expected BestFTSScore=10.0, got %.2f", aggs[0].BestFTSScore)
+	}
+	if aggs[0].VecSupportCount != 1 {
+		t.Errorf("expected VecSupportCount=1 for class 'a', got %d", aggs[0].VecSupportCount)
+	}
+	if aggs[0].FTSSupportCount != 1 {
+		t.Errorf("expected FTSSupportCount=1 for class 'a', got %d", aggs[0].FTSSupportCount)
+	}
+	if !aggs[0].DualLegSupport {
+		t.Error("expected DualLegSupport=true for class 'a' (ID=1 in both legs)")
 	}
 }

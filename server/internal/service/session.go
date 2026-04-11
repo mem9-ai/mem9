@@ -44,10 +44,41 @@ func (s *SessionService) PatchTags(ctx context.Context, sessionID, contentHash s
 
 func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req IngestRequest) error {
 	sessions := make([]*domain.Session, 0, len(req.Messages))
+	explicitSeqs := make(map[int]struct{}, len(req.Messages))
+	for _, msg := range req.Messages {
+		if msg.Seq != nil {
+			if *msg.Seq < 0 {
+				return &domain.ValidationError{Field: "messages.seq", Message: "must be non-negative"}
+			}
+			if _, exists := explicitSeqs[*msg.Seq]; exists {
+				return &domain.ValidationError{Field: "messages.seq", Message: "duplicate explicit seq in request"}
+			}
+			explicitSeqs[*msg.Seq] = struct{}{}
+		}
+	}
 	for i, msg := range req.Messages {
+		seq := i
+		if msg.Seq != nil {
+			seq = *msg.Seq
+		} else {
+			nextSeq, err := s.sessions.NextSeq(ctx, req.SessionID)
+			if err != nil {
+				return fmt.Errorf("session next seq: %w", err)
+			}
+			for {
+				if _, exists := explicitSeqs[nextSeq]; !exists {
+					break
+				}
+				nextSeq, err = s.sessions.NextSeq(ctx, req.SessionID)
+				if err != nil {
+					return fmt.Errorf("session next seq: %w", err)
+				}
+			}
+			seq = nextSeq
+		}
 		sess := newSessionFromIngestMessage(
 			req.SessionID, req.AgentID, agentName,
-			i, msg.Role, msg.Content,
+			seq, msg.Role, msg.Content,
 		)
 		sessions = append(sessions, sess)
 	}

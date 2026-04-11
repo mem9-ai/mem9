@@ -40,6 +40,7 @@ type IngestRequest struct {
 type IngestMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	Seq     *int   `json:"seq,omitempty"`
 }
 
 // IngestResult is the output of the ingest pipeline.
@@ -1587,7 +1588,7 @@ func stripInjectedContext(messages []IngestMessage) []IngestMessage {
 		cleaned := stripMemoryTags(msg.Content)
 		cleaned = strings.TrimSpace(cleaned)
 		if cleaned != "" {
-			result = append(result, IngestMessage{Role: msg.Role, Content: cleaned})
+			result = append(result, IngestMessage{Role: msg.Role, Content: cleaned, Seq: msg.Seq})
 		}
 	}
 	return result

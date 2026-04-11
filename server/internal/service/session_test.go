@@ -112,6 +112,10 @@ func newTestSessionService(repo *stubSessionRepo) *SessionService {
 	return NewSessionService(repo, nil, "")
 }
 
+func intPtr(v int) *int {
+	return &v
+}
+
 func TestSessionService_BulkCreate_buildsCorrectSessions(t *testing.T) {
 	repo := &stubSessionRepo{}
 	svc := newTestSessionService(repo)
@@ -194,6 +198,109 @@ func TestSessionService_BulkCreate_propagatesRepoError(t *testing.T) {
 	err := svc.BulkCreate(context.Background(), "src", req)
 	if !errors.Is(err, sentinel) {
 		t.Errorf("expected sentinel error, got %v", err)
+	}
+}
+
+func TestSessionService_BulkCreate_PreservesProvidedSeq(t *testing.T) {
+	repo := &stubSessionRepo{nextSeq: 10}
+	svc := newTestSessionService(repo)
+
+	req := IngestRequest{
+		SessionID: "sess-1",
+		AgentID:   "agent-x",
+		Messages: []IngestMessage{
+			{Role: "user", Content: "first", Seq: intPtr(7)},
+			{Role: "assistant", Content: "second", Seq: intPtr(8)},
+		},
+	}
+
+	if err := svc.BulkCreate(context.Background(), "source-agent", req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(repo.createdSessions) != 2 {
+		t.Fatalf("expected 2 created sessions, got %d", len(repo.createdSessions))
+	}
+	if repo.createdSessions[0].Seq != 7 || repo.createdSessions[1].Seq != 8 {
+		t.Fatalf("expected preserved seq [7 8], got [%d %d]", repo.createdSessions[0].Seq, repo.createdSessions[1].Seq)
+	}
+	if repo.nextSeq != 10 {
+		t.Fatalf("expected NextSeq to remain unused, got nextSeq=%d", repo.nextSeq)
+	}
+}
+
+func TestSessionService_BulkCreate_MissingSeqSkipsExplicitConflicts(t *testing.T) {
+	repo := &stubSessionRepo{nextSeq: 0}
+	svc := newTestSessionService(repo)
+
+	req := IngestRequest{
+		SessionID: "sess-1",
+		AgentID:   "agent-x",
+		Messages: []IngestMessage{
+			{Role: "user", Content: "first", Seq: intPtr(0)},
+			{Role: "assistant", Content: "second"},
+			{Role: "user", Content: "third"},
+		},
+	}
+
+	if err := svc.BulkCreate(context.Background(), "source-agent", req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(repo.createdSessions) != 3 {
+		t.Fatalf("expected 3 created sessions, got %d", len(repo.createdSessions))
+	}
+	if repo.createdSessions[0].Seq != 0 || repo.createdSessions[1].Seq != 1 || repo.createdSessions[2].Seq != 2 {
+		t.Fatalf("expected seq [0 1 2], got [%d %d %d]", repo.createdSessions[0].Seq, repo.createdSessions[1].Seq, repo.createdSessions[2].Seq)
+	}
+}
+
+func TestSessionService_BulkCreate_RejectsNegativeExplicitSeq(t *testing.T) {
+	repo := &stubSessionRepo{nextSeq: 10}
+	svc := newTestSessionService(repo)
+
+	req := IngestRequest{
+		SessionID: "sess-1",
+		AgentID:   "agent-x",
+		Messages: []IngestMessage{
+			{Role: "user", Content: "first", Seq: intPtr(-1)},
+		},
+	}
+
+	err := svc.BulkCreate(context.Background(), "source-agent", req)
+	var ve *domain.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected ValidationError, got %T", err)
+	}
+	if ve.Field != "messages.seq" {
+		t.Fatalf("expected field messages.seq, got %q", ve.Field)
+	}
+	if len(repo.createdSessions) != 0 {
+		t.Fatalf("expected no created sessions on validation error, got %d", len(repo.createdSessions))
+	}
+}
+
+func TestSessionService_BulkCreate_RejectsDuplicateExplicitSeq(t *testing.T) {
+	repo := &stubSessionRepo{nextSeq: 10}
+	svc := newTestSessionService(repo)
+
+	req := IngestRequest{
+		SessionID: "sess-1",
+		AgentID:   "agent-x",
+		Messages: []IngestMessage{
+			{Role: "user", Content: "first", Seq: intPtr(7)},
+			{Role: "assistant", Content: "second", Seq: intPtr(7)},
+		},
+	}
+
+	err := svc.BulkCreate(context.Background(), "source-agent", req)
+	var ve *domain.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected ValidationError, got %T", err)
+	}
+	if ve.Field != "messages.seq" {
+		t.Fatalf("expected field messages.seq, got %q", ve.Field)
+	}
+	if len(repo.createdSessions) != 0 {
+		t.Fatalf("expected no created sessions on validation error, got %d", len(repo.createdSessions))
 	}
 }
 

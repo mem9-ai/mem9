@@ -407,6 +407,34 @@ func TestCreateMemory_SyncMessages_Returns200(t *testing.T) {
 	}
 }
 
+func TestCreateMemory_SyncMessages_PreservesProvidedSeq(t *testing.T) {
+	sessRepo := &testSessionRepo{}
+	srv := newTestServer(&testMemoryRepo{}, sessRepo)
+
+	body := map[string]any{
+		"messages": []map[string]any{
+			{"role": "user", "content": "hello", "seq": 7},
+			{"role": "assistant", "content": "hi there", "seq": 8},
+		},
+		"session_id": "test-session",
+		"sync":       true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if len(sessRepo.sessions) != 2 {
+		t.Fatalf("expected 2 raw session rows, got %d", len(sessRepo.sessions))
+	}
+	if sessRepo.sessions[0].Seq != 7 || sessRepo.sessions[1].Seq != 8 {
+		t.Fatalf("expected preserved seq [7 8], got [%d %d]", sessRepo.sessions[0].Seq, sessRepo.sessions[1].Seq)
+	}
+}
+
 func TestCreateMemory_AsyncMessages_Returns202(t *testing.T) {
 	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
 
