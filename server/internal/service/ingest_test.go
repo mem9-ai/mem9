@@ -156,6 +156,65 @@ func TestNormalizeTemporalFacts_ResolvesLastWeekToAnchoredPeriod(t *testing.T) {
 	}
 }
 
+func TestNormalizeTemporalFacts_UsesCurrentDateForChineseRelativeDayWithoutTimestamp(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.April, 11, 9, 30, 0, 0, time.Local)
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "今天我很开心。"},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFactsAt(input, []ExtractedFact{
+		{Text: "今天我很开心", Tags: []string{"personal"}},
+	}, now)
+	if got[0].Text != "今天(2026-04-11|2026年4月11日)我很开心" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "今天(2026-04-11|2026年4月11日)我很开心")
+	}
+}
+
+func TestNormalizeTemporalFacts_UsesTimestampForChineseRelativeDay(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.May, 1, 8, 0, 0, 0, time.Local)
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "[8:00 am on 11 April, 2026] 今天我很开心。"},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFactsAt(input, []ExtractedFact{
+		{Text: "今天我很开心", Tags: []string{"personal"}},
+	}, now)
+	if got[0].Text != "今天(2026-04-11|2026年4月11日)我很开心" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "今天(2026-04-11|2026年4月11日)我很开心")
+	}
+}
+
+func TestNormalizeTemporalFacts_AnnotatesChineseRawFallback(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.April, 11, 9, 30, 0, 0, time.Local)
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "下个月要去旅游。"},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeRawFallbackFactsAt(input, []ExtractedFact{
+		{Text: "下个月要去旅游", FactType: factTypeRawFallback, Tags: []string{rawFallbackTag}},
+	}, now)
+	if got[0].Text != "下个月(2026-05|2026年5月)要去旅游" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "下个月(2026-05|2026年5月)要去旅游")
+	}
+}
+
+func TestNormalizeChineseRelativeTemporalText_EnglishUnchanged(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.April, 11, 9, 30, 0, 0, time.Local)
+	text := "Planning to go camping next month"
+
+	if got, ok := NormalizeChineseRelativeTemporalText(text, now); ok || got != text {
+		t.Fatalf("NormalizeChineseRelativeTemporalText(%q) = (%q, %v), want unchanged", text, got, ok)
+	}
+}
+
 func TestNormalizeTemporalFacts_LeavesRawFallbackUntouched(t *testing.T) {
 	t.Parallel()
 

@@ -278,7 +278,7 @@ func buildRawFallbackFacts(input preparedExtractionInput, reason string) []Extra
 		return nil
 	}
 	slog.Warn("using raw fallback fact", "reason", reason, "len", len(text))
-	return []ExtractedFact{buildRawFallbackFact(text)}
+	return normalizeRawFallbackFacts(input, []ExtractedFact{buildRawFallbackFact(text)})
 }
 
 func finalizeExtractedFacts(input preparedExtractionInput, parsed []ExtractedFact, emptyReason string) []ExtractedFact {
@@ -627,7 +627,9 @@ func (s *IngestService) extractFacts(ctx context.Context, conversation string) (
 		return nil, nil
 	}
 
-	currentDate := time.Now().Format("2006-01-02")
+	currentTime := time.Now()
+	currentDate := currentTime.Format("2006-01-02")
+	currentDateCN := formatChineseDate(currentTime)
 
 	systemPrompt := `You are an information extraction engine. Your task is to identify distinct,
 atomic facts from a conversation.
@@ -648,7 +650,7 @@ atomic facts from a conversation.
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
-4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
+4. Preserve the user's original language.
 5. Omit pure greetings, filler, and debugging chatter with no lasting value.
 6. Do NOT extract search queries or lookup questions as facts.
    If the user is asking the assistant to find, explain, or look something up
@@ -669,6 +671,9 @@ atomic facts from a conversation.
 7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
 8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+   Resolve relative temporal expressions into an explicit, searchable anchored form
+   without losing the original meaning.
+   Keep the phrasing natural for the original language.
    If a message includes an explicit date or timestamp and the fact uses a relative
    time expression ("next month", "last year", "last week", "yesterday"), resolve
    it to the most concrete anchored date or period you can without inventing detail.
@@ -676,6 +681,21 @@ atomic facts from a conversation.
      -> "Planning to go camping in June 2023"
    - Good: "[10:37 am on 27 June, 2023] I took my family camping last week"
      -> "Went camping the week before 27 June 2023"
+   When the original fact uses terms such as 今天, 昨天, 上周, 下周一, 下个月, 明年,
+   you MUST preserve the original term AND append a concrete inline time marker
+   immediately after it.
+   Use these exact formats:
+   - Day: 今天(2026-04-11|2026年4月11日)
+   - Week range: 上周(2026-03-30~2026-04-05|2026年3月30日~2026年4月5日)
+   - Weekday in relative week: 下周一(2026-04-13|2026年4月13日)
+   - Month: 下个月(2026-05|2026年5月)
+   - Year: 明年(2027|2027年)
+   Do NOT leave those terms unresolved.
+   - Good: "今天我很开心" -> "今天(2026-04-11|2026年4月11日)我很开心"
+   - Good: "我下个月要去旅游" -> "我下个月(2026-05|2026年5月)要去旅游"
+   - Good: "上周完成了部署" -> "上周(2026-03-30~2026-04-05|2026年3月30日~2026年4月5日)完成了部署"
+   For any language, preserve the original language and resolve relative dates when
+   you can do so safely and concretely.
 9. Extract relationships between people explicitly.
 10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
@@ -708,7 +728,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 
 {"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}, ...]}`
 
-	userPrompt := fmt.Sprintf("Extract facts. Today's date is %s.\n\n%s", currentDate, input.formatted)
+	userPrompt := fmt.Sprintf("Extract facts. Today's date is %s (%s).\n\n%s", currentDate, currentDateCN, input.formatted)
 
 	type extractResponse struct {
 		Facts []ExtractedFact `json:"facts"`
@@ -761,7 +781,9 @@ func (s *IngestService) extractFactsAndTags(ctx context.Context, conversation st
 		return nil, normalizeMessageTags(nil, messageCount), nil
 	}
 
-	currentDate := time.Now().Format("2006-01-02")
+	currentTime := time.Now()
+	currentDate := currentTime.Format("2006-01-02")
+	currentDateCN := formatChineseDate(currentTime)
 
 	systemPrompt := `You are an information extraction engine. Your task is to identify distinct,
 atomic facts from a conversation AND assign short descriptive tags to each message.
@@ -782,7 +804,7 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
-4. Preserve the user's original language. If the user writes in Chinese, extract facts in Chinese.
+4. Preserve the user's original language.
 5. Omit pure greetings, filler, and debugging chatter with no lasting value.
 6. Do NOT extract search queries or lookup questions as facts.
    If the user is asking the assistant to find, explain, or look something up
@@ -803,6 +825,9 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
 8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
+   Resolve relative temporal expressions into an explicit, searchable anchored form
+   without losing the original meaning.
+   Keep the phrasing natural for the original language.
    If a message includes an explicit date or timestamp and the fact uses a relative
    time expression ("next month", "last year", "last week", "yesterday"), resolve
    it to the most concrete anchored date or period you can without inventing detail.
@@ -810,6 +835,21 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
      -> "Planning to go camping in June 2023"
    - Good: "[10:37 am on 27 June, 2023] I took my family camping last week"
      -> "Went camping the week before 27 June 2023"
+   When the original fact uses terms such as 今天, 昨天, 上周, 下周一, 下个月, 明年,
+   you MUST preserve the original term AND append a concrete inline time marker
+   immediately after it.
+   Use these exact formats:
+   - Day: 今天(2026-04-11|2026年4月11日)
+   - Week range: 上周(2026-03-30~2026-04-05|2026年3月30日~2026年4月5日)
+   - Weekday in relative week: 下周一(2026-04-13|2026年4月13日)
+   - Month: 下个月(2026-05|2026年5月)
+   - Year: 明年(2027|2027年)
+   Do NOT leave those terms unresolved.
+   - Good: "今天我很开心" -> "今天(2026-04-11|2026年4月11日)我很开心"
+   - Good: "我下个月要去旅游" -> "我下个月(2026-05|2026年5月)要去旅游"
+   - Good: "上周完成了部署" -> "上周(2026-03-30~2026-04-05|2026年3月30日~2026年4月5日)完成了部署"
+   For any language, preserve the original language and resolve relative dates when
+   you can do so safely and concretely.
 9. Extract relationships between people explicitly.
 10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
@@ -867,7 +907,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 
 {"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}], "message_tags": [["tag1", "tag2"], ["tag3"], [], ...]}`
 
-	userPrompt := fmt.Sprintf("Extract facts and assign message tags. Today's date is %s.\n\n%s", currentDate, input.formatted)
+	userPrompt := fmt.Sprintf("Extract facts and assign message tags. Today's date is %s (%s).\n\n%s", currentDate, currentDateCN, input.formatted)
 
 	type extractResponse struct {
 		Facts       []ExtractedFact `json:"facts"`

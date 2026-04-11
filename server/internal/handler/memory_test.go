@@ -830,3 +830,99 @@ func TestListMemories_DefaultRecall_PrefersQuantifiedEvidenceForChineseCountQuer
 		t.Fatalf("expected confidence >= %d, got %+v", defaultMixedMinConfidence, resp.Memories[0].Confidence)
 	}
 }
+
+func TestNormalizeRecallQuery_ChineseRelativeDates(t *testing.T) {
+	now := time.Date(2026, time.April, 11, 9, 0, 0, 0, time.Local)
+
+	tests := []struct {
+		query string
+		want  string
+	}{
+		{
+			query: "我昨天开心吗",
+			want:  "我昨天(2026-04-10|2026年4月10日)开心吗",
+		},
+		{
+			query: "上周一部署了吗",
+			want:  "上周一(2026-03-30|2026年3月30日)部署了吗",
+		},
+		{
+			query: "下个月要不要去旅游",
+			want:  "下个月(2026-05|2026年5月)要不要去旅游",
+		},
+		{
+			query: "去年开心吗",
+			want:  "去年(2025|2025年)开心吗",
+		},
+	}
+
+	for _, tt := range tests {
+		if got := normalizeRecallQuery(tt.query, now); got != tt.want {
+			t.Fatalf("normalizeRecallQuery(%q) = %q, want %q", tt.query, got, tt.want)
+		}
+	}
+}
+
+func TestNormalizeRecallQuery_EnglishQueryUnchanged(t *testing.T) {
+	now := time.Date(2026, time.April, 11, 9, 0, 0, 0, time.Local)
+	query := "Was I happy yesterday?"
+
+	if got := normalizeRecallQuery(query, now); got != query {
+		t.Fatalf("normalizeRecallQuery(%q) = %q, want unchanged", query, got)
+	}
+}
+
+func TestListMemories_DefaultRecall_NormalizesChineseRelativeQuery(t *testing.T) {
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return nil, nil
+		},
+	}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return nil, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	rawQuery := "我昨天开心吗"
+	expected := normalizeRecallQuery(rawQuery, time.Now())
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape(rawQuery)+"&limit=10", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if memRepo.lastKeywordFilter.Query != expected {
+		t.Fatalf("memory filter query = %q, want %q", memRepo.lastKeywordFilter.Query, expected)
+	}
+	if sessRepo.lastKeywordFilter.Query != expected {
+		t.Fatalf("session filter query = %q, want %q", sessRepo.lastKeywordFilter.Query, expected)
+	}
+}
+
+func TestListMemories_SinglePoolRecall_NormalizesChineseRelativeQuery(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return nil, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	rawQuery := "下个月要不要去旅游"
+	expected := normalizeRecallQuery(rawQuery, time.Now())
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape(rawQuery)+"&memory_type=session&limit=10", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if sessRepo.lastKeywordFilter.Query != expected {
+		t.Fatalf("session filter query = %q, want %q", sessRepo.lastKeywordFilter.Query, expected)
+	}
+}

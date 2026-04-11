@@ -265,6 +265,7 @@ type listResponse struct {
 func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	auth := authInfo(r)
 	q := r.URL.Query()
+	query := normalizeRecallQuery(q.Get("q"), time.Now())
 
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	offset, _ := strconv.Atoi(q.Get("offset"))
@@ -281,7 +282,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filter := domain.MemoryFilter{
-		Query:      q.Get("q"),
+		Query:      query,
 		Tags:       tags,
 		Source:     q.Get("source"),
 		State:      q.Get("state"),
@@ -325,6 +326,13 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		Limit:    limit,
 		Offset:   offset,
 	})
+}
+
+func normalizeRecallQuery(query string, now time.Time) string {
+	if normalized, ok := service.NormalizeChineseRelativeTemporalText(query, now); ok {
+		return normalized
+	}
+	return query
 }
 
 type contentSessionMeta struct {

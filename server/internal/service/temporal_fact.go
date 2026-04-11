@@ -14,7 +14,8 @@ var (
 	temporalAnchorDateTagRe    = regexp.MustCompile(`(?i)\bdate:\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4})`)
 
 	temporalRelativeCueRe = regexp.MustCompile(`(?i)\b(?:yesterday|today|tomorrow|last\s+(?:night|week|weekend|month|year|summer|winter|spring|fall|friday|saturday|sunday|monday|tuesday|wednesday|thursday)|next\s+(?:week|weekend|month|year|summer|winter|spring|fall|friday|saturday|sunday|monday|tuesday|wednesday|thursday)|this\s+(?:week|weekend|month|year|summer|winter|spring|fall)|\d+\s+(?:day|days|week|weeks|month|months|year|years)\s+ago|in\s+\d+\s+(?:day|days|week|weeks|month|months|year|years)|the\s+(?:past\s+)?(?:week|weekend)\b)`)
-	temporalTokenRe       = regexp.MustCompile(`[A-Za-z]+(?:'[A-Za-z]+)?|\d+`)
+	temporalWordTokenRe   = regexp.MustCompile(`[A-Za-z]+(?:'[A-Za-z]+)?|\d+`)
+	temporalCNRelativeRe  = regexp.MustCompile(`上周[一二三四五六日天]|下周[一二三四五六日天]|前天|昨天|今天|明天|后天|上周|本周|这周|下周|上个月|这个月|本月|下个月|去年|今年|明年`)
 
 	temporalLastYearRe    = regexp.MustCompile(`(?i)\blast year\b`)
 	temporalThisYearRe    = regexp.MustCompile(`(?i)\bthis year\b`)
@@ -54,6 +55,9 @@ var temporalStopwords = map[string]struct{}{
 	"we": {}, "were": {}, "with": {}, "would": {}, "you": {}, "your": {},
 	"last": {}, "next": {}, "today": {}, "tomorrow": {}, "yesterday": {},
 	"week": {}, "weekend": {}, "month": {}, "year": {}, "summer": {}, "winter": {}, "spring": {}, "fall": {}, "autumn": {},
+	"今天": {}, "昨天": {}, "明天": {}, "前天": {}, "后天": {},
+	"上周": {}, "下周": {}, "本周": {}, "这周": {}, "上个月": {}, "这个月": {}, "本月": {}, "下个月": {},
+	"去年": {}, "今年": {}, "明年": {},
 }
 
 type temporalAnchorCandidate struct {
@@ -62,10 +66,11 @@ type temporalAnchorCandidate struct {
 }
 
 func normalizeTemporalFacts(input preparedExtractionInput, facts []ExtractedFact) []ExtractedFact {
+	return normalizeTemporalFactsAt(input, facts, time.Now())
+}
+
+func normalizeTemporalFactsAt(input preparedExtractionInput, facts []ExtractedFact, now time.Time) []ExtractedFact {
 	anchors := buildTemporalAnchorCandidates(input.messages)
-	if len(anchors) == 0 {
-		return facts
-	}
 
 	out := make([]ExtractedFact, 0, len(facts))
 	for _, fact := range facts {
@@ -73,8 +78,35 @@ func normalizeTemporalFacts(input preparedExtractionInput, facts []ExtractedFact
 			out = append(out, fact)
 			continue
 		}
-		if normalized, ok := normalizeTemporalFactText(fact.Text, anchors); ok {
+		if normalized, ok := normalizeTemporalFactText(fact.Text, anchors, now); ok {
 			fact.Text = normalized
+		}
+		out = append(out, fact)
+	}
+	return out
+}
+
+func normalizeRawFallbackFacts(input preparedExtractionInput, facts []ExtractedFact) []ExtractedFact {
+	return normalizeRawFallbackFactsAt(input, facts, time.Now())
+}
+
+func normalizeRawFallbackFactsAt(input preparedExtractionInput, facts []ExtractedFact, now time.Time) []ExtractedFact {
+	anchors := buildTemporalAnchorCandidates(input.messages)
+
+	out := make([]ExtractedFact, 0, len(facts))
+	for _, fact := range facts {
+		if !strings.EqualFold(fact.FactType, factTypeRawFallback) {
+			out = append(out, fact)
+			continue
+		}
+		if anchor, ok := selectTemporalAnchor(fact.Text, anchors); ok {
+			if normalized, normalizedOK := NormalizeChineseRelativeTemporalText(fact.Text, anchor); normalizedOK {
+				fact.Text = normalized
+			}
+		} else if len(anchors) == 0 {
+			if normalized, normalizedOK := NormalizeChineseRelativeTemporalText(fact.Text, now); normalizedOK {
+				fact.Text = normalized
+			}
 		}
 		out = append(out, fact)
 	}
@@ -134,17 +166,39 @@ func parseTemporalAnchorDate(value string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func normalizeTemporalFactText(text string, anchors []temporalAnchorCandidate) (string, bool) {
+func normalizeTemporalFactText(text string, anchors []temporalAnchorCandidate, now time.Time) (string, bool) {
 	trimmed := strings.TrimSpace(text)
-	if trimmed == "" || !temporalRelativeCueRe.MatchString(trimmed) {
+	if trimmed == "" {
 		return text, false
 	}
 
-	anchor, ok := selectTemporalAnchor(trimmed, anchors)
-	if !ok {
-		return text, false
+	replaced := trimmed
+	changed := false
+
+	if temporalRelativeCueRe.MatchString(replaced) {
+		if anchor, ok := selectTemporalAnchor(replaced, anchors); ok {
+			if normalized, normalizedOK := resolveRelativeTemporalText(replaced, anchor); normalizedOK {
+				replaced = normalized
+				changed = true
+			}
+		}
 	}
-	return resolveRelativeTemporalText(trimmed, anchor)
+
+	if temporalCNRelativeRe.MatchString(replaced) {
+		if anchor, ok := selectTemporalAnchor(replaced, anchors); ok {
+			if normalized, normalizedOK := NormalizeChineseRelativeTemporalText(replaced, anchor); normalizedOK {
+				replaced = normalized
+				changed = true
+			}
+		} else if len(anchors) == 0 {
+			if normalized, normalizedOK := NormalizeChineseRelativeTemporalText(replaced, now); normalizedOK {
+				replaced = normalized
+				changed = true
+			}
+		}
+	}
+
+	return replaced, changed
 }
 
 func selectTemporalAnchor(text string, anchors []temporalAnchorCandidate) (time.Time, bool) {
@@ -182,9 +236,8 @@ func selectTemporalAnchor(text string, anchors []temporalAnchorCandidate) (time.
 }
 
 func temporalMatchTokens(text string) map[string]struct{} {
-	matches := temporalTokenRe.FindAllString(strings.ToLower(text), -1)
-	out := make(map[string]struct{}, len(matches))
-	for _, match := range matches {
+	out := make(map[string]struct{})
+	for _, match := range temporalWordTokenRe.FindAllString(strings.ToLower(text), -1) {
 		if len(match) <= 2 {
 			continue
 		}
@@ -192,6 +245,12 @@ func temporalMatchTokens(text string) map[string]struct{} {
 			continue
 		}
 		out[match] = struct{}{}
+	}
+	for _, bigram := range temporalHanBigrams(text) {
+		if _, skip := temporalStopwords[bigram]; skip {
+			continue
+		}
+		out[bigram] = struct{}{}
 	}
 	return out
 }
@@ -311,4 +370,190 @@ func formatLongDate(value time.Time) string {
 
 func formatMonthYear(value time.Time) string {
 	return value.Format("January 2006")
+}
+
+func NormalizeChineseRelativeTemporalText(text string, anchor time.Time) (string, bool) {
+	if strings.TrimSpace(text) == "" || !temporalCNRelativeRe.MatchString(text) {
+		return text, false
+	}
+
+	anchor = startOfDay(anchor)
+	matches := temporalCNRelativeRe.FindAllStringIndex(text, -1)
+	if len(matches) == 0 {
+		return text, false
+	}
+
+	var b strings.Builder
+	last := 0
+	changed := false
+	for _, match := range matches {
+		start, end := match[0], match[1]
+		if start < last {
+			continue
+		}
+
+		b.WriteString(text[last:end])
+		if end >= len(text) || text[end] != '(' {
+			if annotation, ok := chineseRelativeTemporalAnnotation(text[start:end], anchor); ok {
+				b.WriteString(annotation)
+				changed = true
+			}
+		}
+		last = end
+	}
+	b.WriteString(text[last:])
+
+	if !changed {
+		return text, false
+	}
+	return b.String(), true
+}
+
+func chineseRelativeTemporalAnnotation(token string, anchor time.Time) (string, bool) {
+	switch token {
+	case "前天":
+		return formatChineseDayAnnotation(anchor.AddDate(0, 0, -2)), true
+	case "昨天":
+		return formatChineseDayAnnotation(anchor.AddDate(0, 0, -1)), true
+	case "今天":
+		return formatChineseDayAnnotation(anchor), true
+	case "明天":
+		return formatChineseDayAnnotation(anchor.AddDate(0, 0, 1)), true
+	case "后天":
+		return formatChineseDayAnnotation(anchor.AddDate(0, 0, 2)), true
+	case "上周", "本周", "这周", "下周":
+		start := startOfChineseWeek(anchor)
+		switch token {
+		case "上周":
+			start = start.AddDate(0, 0, -7)
+		case "下周":
+			start = start.AddDate(0, 0, 7)
+		}
+		return formatChineseWeekAnnotation(start, start.AddDate(0, 0, 6)), true
+	case "上个月", "这个月", "本月", "下个月":
+		month := startOfMonth(anchor)
+		switch token {
+		case "上个月":
+			month = month.AddDate(0, -1, 0)
+		case "下个月":
+			month = month.AddDate(0, 1, 0)
+		}
+		return formatChineseMonthAnnotation(month), true
+	case "去年":
+		return formatChineseYearAnnotation(anchor.Year() - 1), true
+	case "今年":
+		return formatChineseYearAnnotation(anchor.Year()), true
+	case "明年":
+		return formatChineseYearAnnotation(anchor.Year() + 1), true
+	}
+
+	if strings.HasPrefix(token, "上周") || strings.HasPrefix(token, "下周") {
+		weekday, ok := chineseWeekdayFromSuffix(token)
+		if !ok {
+			return "", false
+		}
+		start := startOfChineseWeek(anchor)
+		if strings.HasPrefix(token, "上周") {
+			start = start.AddDate(0, 0, -7)
+		} else {
+			start = start.AddDate(0, 0, 7)
+		}
+		return formatChineseDayAnnotation(start.AddDate(0, 0, weekday)), true
+	}
+
+	return "", false
+}
+
+func chineseWeekdayFromSuffix(token string) (int, bool) {
+	runes := []rune(token)
+	if len(runes) == 0 {
+		return 0, false
+	}
+
+	switch runes[len(runes)-1] {
+	case '一':
+		return 0, true
+	case '二':
+		return 1, true
+	case '三':
+		return 2, true
+	case '四':
+		return 3, true
+	case '五':
+		return 4, true
+	case '六':
+		return 5, true
+	case '日', '天':
+		return 6, true
+	default:
+		return 0, false
+	}
+}
+
+func temporalHanBigrams(text string) []string {
+	var out []string
+	var run []rune
+
+	flush := func() {
+		if len(run) < 2 {
+			run = run[:0]
+			return
+		}
+		for i := 0; i+1 < len(run); i++ {
+			out = append(out, string(run[i:i+2]))
+		}
+		run = run[:0]
+	}
+
+	for _, r := range text {
+		if r >= '\u4e00' && r <= '\u9fff' {
+			run = append(run, r)
+			continue
+		}
+		flush()
+	}
+	flush()
+	return out
+}
+
+func startOfDay(value time.Time) time.Time {
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, value.Location())
+}
+
+func startOfMonth(value time.Time) time.Time {
+	value = startOfDay(value)
+	return time.Date(value.Year(), value.Month(), 1, 0, 0, 0, 0, value.Location())
+}
+
+func startOfChineseWeek(value time.Time) time.Time {
+	value = startOfDay(value)
+	weekday := int(value.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	return value.AddDate(0, 0, 1-weekday)
+}
+
+func formatChineseDayAnnotation(value time.Time) string {
+	return fmt.Sprintf("(%s|%s)", value.Format("2006-01-02"), formatChineseDate(value))
+}
+
+func formatChineseWeekAnnotation(start, end time.Time) string {
+	return fmt.Sprintf("(%s~%s|%s~%s)", start.Format("2006-01-02"), end.Format("2006-01-02"), formatChineseDate(start), formatChineseDate(end))
+}
+
+func formatChineseMonthAnnotation(value time.Time) string {
+	return fmt.Sprintf("(%s|%s)", value.Format("2006-01"), formatChineseMonth(value))
+}
+
+func formatChineseYearAnnotation(year int) string {
+	return fmt.Sprintf("(%d|%d年)", year, year)
+}
+
+func formatChineseDate(value time.Time) string {
+	return fmt.Sprintf("%d年%d月%d日", value.Year(), value.Month(), value.Day())
+}
+
+func formatChineseMonth(value time.Time) string {
+	return fmt.Sprintf("%d年%d月", value.Year(), value.Month())
 }
