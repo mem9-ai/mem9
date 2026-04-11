@@ -180,15 +180,14 @@ func dropQueryIntentFacts(facts []ExtractedFact) []ExtractedFact {
 }
 
 type preparedExtractionInput struct {
-	messages                   []IngestMessage
-	originalIndices            []int
-	formatted                  string
-	fallbackText               string
-	singleMessageOriginalIndex int
+	messages        []IngestMessage
+	originalIndices []int
+	formatted       string
+	fallbackText    string
 }
 
 func prepareExtractionInput(messages []IngestMessage, maxConversationRunes int) preparedExtractionInput {
-	input := preparedExtractionInput{singleMessageOriginalIndex: -1}
+	input := preparedExtractionInput{}
 	for idx, msg := range messages {
 		content := strings.TrimSpace(msg.Content)
 		if content == "" {
@@ -206,9 +205,6 @@ func prepareExtractionInput(messages []IngestMessage, maxConversationRunes int) 
 	}
 	input.formatted = truncateRunes(formatConversation(input.messages), maxConversationRunes)
 	input.fallbackText = truncateRunes(buildRawFallbackSourceText(input.messages), maxConversationRunes)
-	if len(input.messages) == 1 {
-		input.singleMessageOriginalIndex = input.originalIndices[0]
-	}
 	return input
 }
 
@@ -325,17 +321,6 @@ func expandMessageTags(cleanedTags [][]string, input preparedExtractionInput, or
 	return out
 }
 
-func buildSingleMessageShortCircuitTags(input preparedExtractionInput, originalCount int) [][]string {
-	out := make([][]string, originalCount)
-	for i := range out {
-		out[i] = []string{}
-	}
-	if input.singleMessageOriginalIndex >= 0 && input.singleMessageOriginalIndex < originalCount {
-		out[input.singleMessageOriginalIndex] = []string{rawFallbackTag}
-	}
-	return out
-}
-
 func hasTag(tags []string, target string) bool {
 	for _, tag := range tags {
 		if strings.EqualFold(tag, target) {
@@ -370,12 +355,6 @@ func (s *IngestService) ExtractPhase1(ctx context.Context, messages []IngestMess
 	input := prepareExtractionInput(messages, maxExtractionConversationRunes)
 	if input.formatted == "" {
 		return &Phase1Result{}, nil
-	}
-	if input.singleMessageOriginalIndex >= 0 {
-		return &Phase1Result{
-			Facts:       buildRawFallbackFacts(input, "single_message_short_circuit"),
-			MessageTags: buildSingleMessageShortCircuitTags(input, len(messages)),
-		}, nil
 	}
 
 	facts, messageTags, err := s.extractFactsAndTags(ctx, input.formatted, len(input.messages))
@@ -647,9 +626,6 @@ func (s *IngestService) extractFacts(ctx context.Context, conversation string) (
 	if input.formatted == "" {
 		return nil, nil
 	}
-	if input.singleMessageOriginalIndex >= 0 {
-		return buildRawFallbackFacts(input, "single_message_short_circuit"), nil
-	}
 
 	currentDate := time.Now().Format("2006-01-02")
 
@@ -783,9 +759,6 @@ func (s *IngestService) extractFactsAndTags(ctx context.Context, conversation st
 	input := prepareExtractionInputFromConversation(conversation, maxExtractionConversationRunes)
 	if input.formatted == "" {
 		return nil, normalizeMessageTags(nil, messageCount), nil
-	}
-	if input.singleMessageOriginalIndex >= 0 {
-		return buildRawFallbackFacts(input, "single_message_short_circuit"), normalizeMessageTags([][]string{{rawFallbackTag}}, messageCount), nil
 	}
 
 	currentDate := time.Now().Format("2006-01-02")
