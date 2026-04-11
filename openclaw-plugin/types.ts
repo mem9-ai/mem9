@@ -25,6 +25,7 @@ export interface Memory {
   created_at: string;
   updated_at: string;
   score?: number;
+  confidence?: number;
 
   // Smart memory pipeline (server mode)
   memory_type?: string;

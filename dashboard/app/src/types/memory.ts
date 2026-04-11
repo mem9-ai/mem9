@@ -13,6 +13,7 @@ export interface Memory {
   created_at: string;
   updated_at: string;
   score?: number;
+  confidence?: number;
 }
 
 export type MemoryType = "pinned" | "insight";

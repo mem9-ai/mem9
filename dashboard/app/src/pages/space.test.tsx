@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   retry: vi.fn(),
   useStats: vi.fn(),
   useSourceMemories: vi.fn(),
-  useSessionPreviewMessages: vi.fn(),
+  useSelectedSessionMessages: vi.fn(),
   useMemories: vi.fn(),
   useDeepAnalysisReports: vi.fn(),
 }));
@@ -46,6 +46,10 @@ if (typeof Element.prototype.requestFullscreen === "undefined") {
 if (typeof document.exitFullscreen === "undefined") {
   document.exitFullscreen = vi.fn().mockResolvedValue(undefined);
 }
+Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+  value: vi.fn(),
+  writable: true,
+});
 
 function getAnalysisCategoryButton(category: string): HTMLButtonElement {
   const button = document.querySelector<HTMLButtonElement>(
@@ -314,8 +318,8 @@ vi.mock("@/components/space/use-memory-farm-entry-state", () => ({
 }));
 
 vi.mock("@/api/queries", () => ({
-  getSessionPreviewLookupKey: (memory: Memory) =>
-    memory.memory_type === "insight" ? memory.session_id : "",
+  getLinkedSessionID: (memory: Pick<Memory, "session_id"> | null | undefined) =>
+    memory?.session_id.trim() ?? "",
   useStats: (spaceId: string, range?: string, enabled = true) => {
     mocks.useStats(spaceId, range, enabled);
     return {
@@ -344,47 +348,71 @@ vi.mock("@/api/queries", () => ({
       isFetching: false,
     };
   },
-  useSessionPreviewMessages: (_spaceId: string, memories: Memory[]) => {
-    mocks.useSessionPreviewMessages(memories);
+  useSelectedSessionMessages: (_spaceId: string, memory: Memory | null) => {
+    mocks.useSelectedSessionMessages(memory);
     return {
-      data: {
-        "sess-activity-1": [
-          {
-            id: "msg-1",
-            session_id: "sess-activity-1",
-            agent_id: "agent",
-            source: "agent",
-            seq: 1,
-            role: "user",
-            content: "We should keep the launch demo focused and avoid expanding scope.",
-            content_type: "text/plain",
-            tags: [],
-            state: "active",
-            created_at: "2026-03-03T00:00:00Z",
-            updated_at: "2026-03-03T00:00:00Z",
-          },
-          {
-            id: "msg-2",
-            session_id: "sess-activity-1",
-            agent_id: "agent",
-            source: "agent",
-            seq: 2,
-            role: "assistant",
-            content: [
-              "Agreed. I will keep the dashboard release notes compact and demo-oriented.",
-              "",
-              "```json",
-              '{"status":"ok"}',
-              "```",
-            ].join("\n"),
-            content_type: "text/plain",
-            tags: [],
-            state: "active",
-            created_at: "2026-03-03T00:01:00Z",
-            updated_at: "2026-03-03T00:01:00Z",
-          },
-        ],
-      },
+      data: memory?.session_id === "sess-activity-1"
+        ? [
+            {
+              id: "msg-1",
+              session_id: "sess-activity-1",
+              agent_id: "agent",
+              source: "agent",
+              seq: 1,
+              role: "user",
+              content: "We should keep the launch demo focused and avoid expanding scope.",
+              content_type: "text/plain",
+              tags: [],
+              state: "active",
+              created_at: "2026-03-03T00:00:00Z",
+              updated_at: "2026-03-03T00:00:00Z",
+            },
+            {
+              id: "msg-2",
+              session_id: "sess-activity-1",
+              agent_id: "agent",
+              source: "agent",
+              seq: 2,
+              role: "assistant",
+              content: [
+                "Conversation info (untrusted metadata):",
+                "",
+                "```json",
+                '{"message_id":"1491334536338997298","sender":"Bosn Ma","timestamp":"Wed 2026-04-08 07:11 UTC"}',
+                "```",
+                "",
+                "Agreed. I will keep the dashboard release notes compact and demo-oriented.",
+                "",
+                "```json",
+                '{"status":"ok"}',
+                "```",
+              ].join("\n"),
+              content_type: "text/plain",
+              tags: [],
+              state: "active",
+              created_at: "2026-03-03T00:01:00Z",
+              updated_at: "2026-03-03T00:01:00Z",
+            },
+            {
+              id: "msg-3",
+              session_id: "sess-activity-1",
+              agent_id: "agent",
+              source: "agent",
+              seq: 3,
+              role: "toolResult",
+              content: [
+                "Fetched release checklist",
+                "",
+                "hidden diagnostic line",
+              ].join("\n"),
+              content_type: "text/plain",
+              tags: [],
+              state: "active",
+              created_at: "2026-03-03T00:02:00Z",
+              updated_at: "2026-03-03T00:02:00Z",
+            },
+          ]
+        : [],
       isLoading: false,
       isFetching: false,
     };
@@ -499,6 +527,7 @@ describe("SpacePage", () => {
     window.dispatchEvent(new Event("resize"));
     mocks.useStats.mockClear();
     mocks.useSourceMemories.mockClear();
+    mocks.useSelectedSessionMessages.mockClear();
     mocks.useMemories.mockClear();
     mocks.useDeepAnalysisReports.mockClear();
     await i18n.changeLanguage("en");
@@ -536,8 +565,8 @@ describe("SpacePage", () => {
     expect(screen.getByText("Deploy dashboard status update")).toBeInTheDocument();
     expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Delete this memory" }),
-    ).not.toBeInTheDocument();
+      document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+    ).toBeNull();
   });
 
   it("does not prefetch deep-analysis reports before the analysis tab is opened", async () => {
@@ -606,14 +635,14 @@ describe("SpacePage", () => {
 
     expect(screen.getByTestId("detail-scroll-area")).toHaveClass("flex-1");
     expect(
-      screen.getByRole("button", { name: "Delete this memory" }),
-    ).toBeInTheDocument();
+      document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+    ).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     expect(
-      screen.queryByRole("button", { name: "Delete this memory" }),
-    ).not.toBeInTheDocument();
+      document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+    ).toBeNull();
     expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
   });
 
@@ -628,15 +657,15 @@ describe("SpacePage", () => {
     fireEvent.click(preferenceCard!);
 
     expect(
-      screen.getByRole("button", { name: "Delete this memory" }),
-    ).toBeInTheDocument();
+      document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+    ).not.toBeNull();
 
     fireEvent.click(getAnalysisCategoryButton("activity"));
 
     await waitFor(() => {
       expect(
-        screen.queryByRole("button", { name: "Delete this memory" }),
-      ).not.toBeInTheDocument();
+        document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+      ).toBeNull();
     });
 
     expect(screen.getByText("Weekly activity planning notes")).toBeInTheDocument();
@@ -683,8 +712,8 @@ describe("SpacePage", () => {
       within(detailDialog).getByTestId("detail-scroll-area"),
     ).not.toHaveClass("max-h-[60vh]");
     expect(
-      screen.getByRole("button", { name: "Delete this memory" }),
-    ).toBeInTheDocument();
+      document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+    ).not.toBeNull();
 
     fireEvent.click(within(detailDialog).getByRole("button", { name: "Close" }));
 
@@ -812,34 +841,57 @@ describe("SpacePage", () => {
     fireEvent.click(olderCard!);
 
     expect(
-      screen.getByRole("button", { name: "Delete this memory" }),
-    ).toBeInTheDocument();
+      document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+    ).not.toBeNull();
 
     fireEvent.click(screen.getAllByRole("button", { name: /0 memories$/i })[0]!);
 
     await waitFor(() => {
       expect(
-        screen.queryByRole("button", { name: "Delete this memory" }),
-      ).not.toBeInTheDocument();
+        document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+      ).toBeNull();
     });
   });
 
-  it("renders session preview content for insight memories with matched session data", async () => {
+  it("loads selected-memory raw session content in detail without rendering list previews", async () => {
     renderSpacePage();
 
     expect(
-      screen.getByText("We should keep the launch demo focused and avoid expanding scope."),
-    ).toBeInTheDocument();
-
+      screen.queryByText("We should keep the launch demo focused and avoid expanding scope."),
+    ).not.toBeInTheDocument();
     const activityCard = screen
       .getByText("Deploy dashboard status update")
       .closest('[role="button"]');
+    const preferenceCard = screen
+      .getByText("Prefer Neovim for edits")
+      .closest('[role="button"]');
 
     expect(activityCard).not.toBeNull();
-    fireEvent.click(activityCard!);
+    expect(preferenceCard).not.toBeNull();
+    const activityCardElement = activityCard as HTMLElement;
+    const preferenceCardElement = preferenceCard as HTMLElement;
+    expect(
+      within(activityCardElement).getByText("From a conversation"),
+    ).toBeInTheDocument();
+    expect(
+      within(preferenceCardElement).queryByText("From a conversation"),
+    ).not.toBeInTheDocument();
+    fireEvent.click(activityCardElement);
+
+    expect(mocks.useSelectedSessionMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        id: activityNewest.id,
+        session_id: "sess-activity-1",
+      }),
+    );
 
     expect(
       within(screen.getByTestId("detail-scroll-area")).getByText("Original Conversation"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).getByText(
+        "We should keep the launch demo focused and avoid expanding scope.",
+      ),
     ).toBeInTheDocument();
     expect(
       within(screen.getByTestId("detail-scroll-area")).getByText(
@@ -847,10 +899,77 @@ describe("SpacePage", () => {
       ),
     ).toBeInTheDocument();
     expect(
+      within(screen.getByTestId("detail-scroll-area")).getByText(
+        "Conversation info (untrusted metadata):",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).getByText(
+        '{"message_id":"1491334536338997298","sender":"Bosn Ma","timestamp":"Wed 2026-04-08 07:11 UTC"}',
+      ),
+    ).toBeInTheDocument();
+    expect(
       within(screen.getByTestId("detail-scroll-area")).getByText('{"status":"ok"}'),
     ).toBeInTheDocument();
     expect(
+      within(screen.getByTestId("detail-scroll-area")).getByText("Tool result"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).getByRole("button", {
+        name: "Show result",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).queryByText(
+        "hidden diagnostic line",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
       within(screen.getByTestId("detail-scroll-area")).queryByText("```json"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      within(screen.getByTestId("detail-scroll-area")).getByTestId(
+        "tool-result-toggle-msg-3",
+      ),
+    );
+
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).getByRole("button", {
+        name: "Hide result",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).getByText(
+        "hidden diagnostic line",
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(HTMLElement.prototype.scrollTo).toHaveBeenCalled();
+    });
+  });
+
+  it("keeps detail focused on the memory when the selected item has no linked session", async () => {
+    renderSpacePage();
+
+    const preferenceCard = screen
+      .getByText("Prefer Neovim for edits")
+      .closest('[role="button"]');
+
+    expect(preferenceCard).not.toBeNull();
+    fireEvent.click(preferenceCard!);
+
+    expect(mocks.useSelectedSessionMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        id: preferenceMemory.id,
+        session_id: "",
+      }),
+    );
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).queryByText("Original Conversation"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("detail-scroll-area")).queryByTestId("detail-session-section"),
     ).not.toBeInTheDocument();
   });
 

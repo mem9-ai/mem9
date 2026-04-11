@@ -172,6 +172,32 @@ func (s *MemoryService) Search(ctx context.Context, filter domain.MemoryFilter) 
 	return s.keywordOnlySearch(ctx, searchFilter)
 }
 
+func (s *MemoryService) SearchCandidates(
+	ctx context.Context,
+	filter domain.MemoryFilter,
+	sourcePool RecallSourcePool,
+	enableSecondHop bool,
+) ([]RecallCandidate, error) {
+	if filter.Query == "" {
+		return nil, nil
+	}
+
+	searchFilter := filter
+	searchFilter.SessionID = ""
+	searchFilter.Source = ""
+
+	if s.autoModel != "" {
+		return s.autoHybridCandidates(ctx, searchFilter, sourcePool, enableSecondHop)
+	}
+	if s.embedder != nil {
+		return s.hybridCandidates(ctx, searchFilter, sourcePool)
+	}
+	if s.memories.FTSAvailable() {
+		return s.ftsOnlyCandidates(ctx, searchFilter, sourcePool)
+	}
+	return s.keywordOnlyCandidates(ctx, searchFilter, sourcePool)
+}
+
 const rrfK = 60.0
 
 func rrfMerge(ftsResults, vecResults []domain.Memory) map[string]float64 {
@@ -244,6 +270,28 @@ func (s *MemoryService) keywordOnlySearch(ctx context.Context, filter domain.Mem
 	return populateRelativeAge(page), total, nil
 }
 
+func (s *MemoryService) ftsOnlyCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool) ([]RecallCandidate, error) {
+	limit := normalizeRecallLimit(filter.Limit, 10)
+	fetchLimit := limit * 3
+
+	ftsResults, err := s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("FTS search: %w", err)
+	}
+	return dedupRecallCandidatesByContent(mergeRecallCandidates(sourcePool, ftsResults, nil, nil)), nil
+}
+
+func (s *MemoryService) keywordOnlyCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool) ([]RecallCandidate, error) {
+	limit := normalizeRecallLimit(filter.Limit, 10)
+	fetchLimit := limit * 3
+
+	kwResults, err := s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("keyword search: %w", err)
+	}
+	return dedupRecallCandidatesByContent(mergeRecallCandidates(sourcePool, kwResults, nil, nil)), nil
+}
+
 func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
 	limit := filter.Limit
 	if limit <= 0 || limit > 200 {
@@ -303,6 +351,37 @@ func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFi
 
 	page, total := s.paginate(merged, offset, limit)
 	return populateRelativeAge(setScores(page, scores)), total, nil
+}
+
+func (s *MemoryService) hybridCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool) ([]RecallCandidate, error) {
+	limit := normalizeRecallLimit(filter.Limit, 10)
+	fetchLimit := limit * 3
+
+	queryVec, err := s.embedder.Embed(ctx, filter.Query)
+	if err != nil {
+		return nil, fmt.Errorf("embed query for search: %w", err)
+	}
+
+	vecResults, err := s.memories.VectorSearch(ctx, queryVec, filter, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("vector search: %w", err)
+	}
+	vecResults = applyMinScore(vecResults, filter.MinScore)
+
+	var kwResults []domain.Memory
+	if s.memories.FTSAvailable() {
+		kwResults, err = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
+		if err != nil {
+			return nil, fmt.Errorf("FTS search: %w", err)
+		}
+	} else {
+		kwResults, err = s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
+		if err != nil {
+			return nil, fmt.Errorf("keyword search: %w", err)
+		}
+	}
+
+	return dedupRecallCandidatesByContent(mergeRecallCandidates(sourcePool, kwResults, vecResults, nil)), nil
 }
 
 func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
@@ -379,6 +458,52 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 
 	page, total := s.paginate(merged, offset, limit)
 	return populateRelativeAge(setScores(page, scores)), total, nil
+}
+
+func (s *MemoryService) autoHybridCandidates(
+	ctx context.Context,
+	filter domain.MemoryFilter,
+	sourcePool RecallSourcePool,
+	enableSecondHop bool,
+) ([]RecallCandidate, error) {
+	limit := normalizeRecallLimit(filter.Limit, 10)
+	fetchLimit := limit * 3
+
+	vecResults, err := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("auto vector search: %w", err)
+	}
+	vecResults = applyMinScore(vecResults, filter.MinScore)
+
+	var kwResults []domain.Memory
+	if s.memories.FTSAvailable() {
+		kwResults, err = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
+		if err != nil {
+			return nil, fmt.Errorf("FTS search: %w", err)
+		}
+	} else {
+		kwResults, err = s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
+		if err != nil {
+			return nil, fmt.Errorf("keyword search: %w", err)
+		}
+	}
+
+	var secondHopResults []domain.Memory
+	if enableSecondHop {
+		maxVecScore := 0.0
+		for _, m := range vecResults {
+			if m.Score != nil && *m.Score > maxVecScore {
+				maxVecScore = *m.Score
+			}
+		}
+		if maxVecScore >= secondHopGateScore {
+			scores := rrfMerge(kwResults, vecResults)
+			mems := collectMems(kwResults, vecResults)
+			secondHopResults = s.secondHopAutoSearch(ctx, mems, scores, filter, limit)
+		}
+	}
+
+	return dedupRecallCandidatesByContent(mergeRecallCandidates(sourcePool, kwResults, vecResults, secondHopResults)), nil
 }
 
 // secondHopAutoSearch runs concurrent AutoVectorSearch calls using the top-N

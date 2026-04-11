@@ -146,7 +146,7 @@ func main() {
 		Addr:         ":" + cfg.Port,
 		Handler:      router,
 		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 120 * time.Second, // extended from 30s to support sync ingest (LLM reconcile can take >30s)
+		WriteTimeout: 15 * time.Minute, // keep transport timeout above sync ingest so callers can receive structured 504s
 		IdleTimeout:  60 * time.Second,
 	}
 

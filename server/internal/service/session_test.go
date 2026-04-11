@@ -30,6 +30,10 @@ type stubSessionRepo struct {
 	ftsAvail       bool
 }
 
+func intPtr(v int) *int {
+	return &v
+}
+
 func (s *stubSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Session) error {
 	s.bulkCreateCalled = true
 	s.createdSessions = sessions
@@ -124,6 +128,33 @@ func TestSessionService_BulkCreate_buildsCorrectSessions(t *testing.T) {
 
 	if s0.ContentHash == s1.ContentHash {
 		t.Error("different messages must produce different content hashes")
+	}
+}
+
+func TestSessionService_BulkCreate_usesExplicitSeqWhenProvided(t *testing.T) {
+	repo := &stubSessionRepo{}
+	svc := newTestSessionService(repo)
+
+	req := IngestRequest{
+		SessionID: "sess-1",
+		AgentID:   "agent-x",
+		Messages: []IngestMessage{
+			{Role: "user", Content: "Hello world", Seq: intPtr(7)},
+			{Role: "assistant", Content: "Hi there", Seq: intPtr(11)},
+		},
+	}
+
+	if err := svc.BulkCreate(context.Background(), "source-agent", req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(repo.createdSessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(repo.createdSessions))
+	}
+	if repo.createdSessions[0].Seq != 7 {
+		t.Fatalf("session[0].Seq = %d, want 7", repo.createdSessions[0].Seq)
+	}
+	if repo.createdSessions[1].Seq != 11 {
+		t.Fatalf("session[1].Seq = %d, want 11", repo.createdSessions[1].Seq)
 	}
 }
 
@@ -253,8 +284,8 @@ func TestSessionContentHash_differentInputsProduceDifferentHashes(t *testing.T) 
 		{"sess-a role-user content-x", "sess-a role-assistant content-x"},
 	}
 	for _, c := range cases {
-		h1 := SessionContentHash("sess-a", "user", c[0])
-		h2 := SessionContentHash("sess-a", "user", c[1])
+		h1 := SessionContentHash("sess-a", "user", c[0], nil)
+		h2 := SessionContentHash("sess-a", "user", c[1], nil)
 		if h1 == h2 {
 			t.Errorf("expected different hashes for different inputs: %q vs %q", c[0], c[1])
 		}
@@ -262,10 +293,18 @@ func TestSessionContentHash_differentInputsProduceDifferentHashes(t *testing.T) 
 }
 
 func TestSessionContentHash_sameInputProducesSameHash(t *testing.T) {
-	h1 := SessionContentHash("sess-1", "user", "hello world")
-	h2 := SessionContentHash("sess-1", "user", "hello world")
+	h1 := SessionContentHash("sess-1", "user", "hello world", nil)
+	h2 := SessionContentHash("sess-1", "user", "hello world", nil)
 	if h1 != h2 {
 		t.Errorf("expected identical hashes, got %q vs %q", h1, h2)
+	}
+}
+
+func TestSessionContentHash_explicitSeqProducesDistinctHashes(t *testing.T) {
+	h1 := SessionContentHash("sess-1", "assistant", "Take care, bye!", intPtr(15))
+	h2 := SessionContentHash("sess-1", "assistant", "Take care, bye!", intPtr(36))
+	if h1 == h2 {
+		t.Fatalf("expected distinct hashes for explicit seq values, got %q", h1)
 	}
 }
 

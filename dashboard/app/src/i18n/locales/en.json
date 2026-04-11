@@ -38,7 +38,8 @@
     "load_more": "Load more",
     "loading": "Loading memories...",
     "via": "via",
-    "copied": "Copied to clipboard"
+    "copied": "Copied to clipboard",
+    "linked_session": "From a conversation"
   },
   "detail": {
     "type": {
@@ -55,21 +56,28 @@
     "mixed_badge": "Mixed",
     "derived_tags": "Derived tags",
     "metadata": "Metadata",
-    "delete": "Delete this memory",
+    "delete": "Delete",
+    "delete_button_label": "Delete memory",
     "edit": "Edit",
     "close": "Close"
   },
   "session_preview": {
     "title": "Original Conversation",
     "loading": "Loading conversation...",
+    "jump_to_start": "Start",
+    "jump_to_latest": "Latest",
     "show_metadata": "Expand",
     "hide_metadata": "Collapse",
+    "show_tool_result": "Show result",
+    "hide_tool_result": "Hide result",
+    "tool_result_empty": "Tool result",
     "metadata_summary_empty": "Tap to view metadata",
     "role": {
       "user": "User",
       "assistant": "Assistant",
       "system": "System",
-      "tool": "Tool"
+      "tool": "Tool",
+      "toolResult": "Tool result"
     }
   },
   "add": {

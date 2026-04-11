@@ -3,11 +3,10 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,25 +19,9 @@ import (
 )
 
 var (
-	answerQuotedRe      = regexp.MustCompile(`"[^"]+"`)
-	answerAcronymRe     = regexp.MustCompile(`\b[A-Z]{2,}(?:[+-][A-Z0-9]+)*\b`)
-	answerNumberRe      = regexp.MustCompile(`\b\d+\b`)
-	answerYearRe        = regexp.MustCompile(`\b(?:19|20)\d{2}\b`)
-	answerTitleCaseRe   = regexp.MustCompile(`\b[A-Z][a-z]+(?:['-][A-Za-z]+)*(?:\s+[A-Z][a-z]+(?:['-][A-Za-z]+)*)*\b`)
-	answerLocationCueRe = regexp.MustCompile(`\b(?:in|at|from|to|near|around|outside|inside)\s+[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2}\b`)
-	answerCountWordRe   = regexp.MustCompile(`\b(?:one|two|three|four|five|six|seven|eight|nine|ten|couple|few|several)\b`)
-	answerVaguePlaceRe  = regexp.MustCompile(`\b(?:home country|the area|the region|somewhere|another city)\b`)
-)
-
-type groundingAnswerShape int
-
-const (
-	groundingAnswerShapeNone groundingAnswerShape = iota
-	groundingAnswerShapeCount
-	groundingAnswerShapeEntity
-	groundingAnswerShapeLocation
-	groundingAnswerShapeTime
-	groundingAnswerShapeExact
+	// Keep the application timeout below the benchmark client's 10m request timeout
+	// so slow sync ingest returns a structured JSON 504 instead of a socket-level abort.
+	syncIngestTimeout = 9 * time.Minute
 )
 
 type createMemoryRequest struct {
@@ -50,6 +33,10 @@ type createMemoryRequest struct {
 	SessionID string                  `json:"session_id,omitempty"`
 	Mode      service.IngestMode      `json:"mode,omitempty"`
 	Sync      bool                    `json:"sync,omitempty"`
+}
+
+func isSyncIngestTimeout(ctx context.Context, err error) bool {
+	return err != nil && errors.Is(err, context.DeadlineExceeded) && errors.Is(ctx.Err(), context.DeadlineExceeded)
 }
 
 func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
@@ -85,9 +72,17 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if req.Sync {
-			result, err := s.ingestMessages(r.Context(), auth, svc, ingestReq)
+			syncCtx, cancel := context.WithTimeout(r.Context(), syncIngestTimeout)
+			defer cancel()
+
+			result, err := s.ingestMessages(syncCtx, auth, svc, ingestReq)
 			if err != nil {
-				s.handleError(r.Context(), w, err)
+				if isSyncIngestTimeout(syncCtx, err) {
+					s.logger.Warn("sync ingest timed out", "session", ingestReq.SessionID, "timeout", syncIngestTimeout)
+					respondError(w, http.StatusGatewayTimeout, fmt.Sprintf("sync ingest timed out after %s", syncIngestTimeout))
+					return
+				}
+				s.handleError(syncCtx, w, err)
 				return
 			}
 			if result != nil && result.Status == "failed" {
@@ -165,6 +160,29 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 // ingestMessages runs the full ingest pipeline: BulkCreate → ExtractPhase1 → PatchTags + ReconcilePhase2.
 // TODO: wrap all database writes (BulkCreate, PatchTags, ReconcilePhase2) in a single transaction to guarantee atomicity.
 func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, req service.IngestRequest) (*service.IngestResult, error) {
+	start := time.Now()
+	var (
+		bulkCreateDuration    time.Duration
+		extractPhase1Duration time.Duration
+		patchTagsDuration     time.Duration
+		reconcileDuration     time.Duration
+		factsCount            int
+		status                = "ok"
+	)
+	defer func() {
+		s.logger.Info("messages ingest timings",
+			"session", req.SessionID,
+			"messages", len(req.Messages),
+			"facts", factsCount,
+			"status", status,
+			"bulk_create_ms", bulkCreateDuration.Milliseconds(),
+			"extract_phase1_ms", extractPhase1Duration.Milliseconds(),
+			"patch_tags_ms", patchTagsDuration.Milliseconds(),
+			"reconcile_phase2_ms", reconcileDuration.Milliseconds(),
+			"total_ms", time.Since(start).Milliseconds(),
+		)
+	}()
+
 	// Strip plugin-injected context (e.g. <relevant-memories>) before any storage or LLM path.
 	// This is the single sanitization point for the handler-driven pipeline (BulkCreate, ExtractPhase1, etc.).
 	req.Messages = service.StripInjectedContext(req.Messages)
@@ -172,16 +190,22 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	// Session persistence is best-effort for both sync and async paths.
 	// sync=true guarantees only that reconcile (memory extraction) completed —
 	// raw session rows in /session-messages may be absent if BulkCreate fails.
+	bulkCreateStart := time.Now()
 	if err := svc.session.BulkCreate(ctx, auth.AgentName, req); err != nil {
 		slog.Error("session raw save failed",
 			"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
 	}
+	bulkCreateDuration = time.Since(bulkCreateStart)
 
+	extractPhase1Start := time.Now()
 	phase1, err := svc.ingest.ExtractPhase1(ctx, req.Messages)
+	extractPhase1Duration = time.Since(extractPhase1Start)
 	if err != nil {
+		status = "phase1_error"
 		slog.Error("phase1 extraction failed", "session", req.SessionID, "err", err)
 		return nil, fmt.Errorf("phase1 extraction: %w", err)
 	}
+	factsCount = len(phase1.Facts)
 
 	var wg sync.WaitGroup
 	var reconcileResult *service.IngestResult
@@ -190,12 +214,16 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		patchTagsStart := time.Now()
+		defer func() {
+			patchTagsDuration = time.Since(patchTagsStart)
+		}()
 		for i, msg := range req.Messages {
 			tags := tagsAtIndex(phase1.MessageTags, i)
 			if len(tags) == 0 {
 				continue
 			}
-			hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content)
+			hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content, msg.Seq)
 			if err := svc.session.PatchTags(ctx, req.SessionID, hash, tags); err != nil {
 				slog.Warn("session tag patch failed",
 					"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
@@ -205,6 +233,10 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 
 	go func() {
 		defer wg.Done()
+		reconcileStart := time.Now()
+		defer func() {
+			reconcileDuration = time.Since(reconcileStart)
+		}()
 		reconcileResult, reconcileErr = svc.ingest.ReconcilePhase2(
 			ctx, auth.AgentName, req.AgentID, req.SessionID, phase1.Facts)
 	}()
@@ -212,8 +244,12 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	wg.Wait()
 
 	if reconcileErr != nil {
+		status = "reconcile_error"
 		slog.Error("memories reconcile failed", "session", req.SessionID, "err", reconcileErr)
 		return nil, fmt.Errorf("reconcile: %w", reconcileErr)
+	}
+	if reconcileResult != nil {
+		status = reconcileResult.Status
 	}
 
 	return reconcileResult, nil
@@ -263,26 +299,20 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	var total int
 	var err error
 
-	if !onlySession {
+	switch {
+	case filter.Query != "" && filter.MemoryType == "":
+		memories, total, err = s.defaultConfidenceRecallSearch(r.Context(), auth, svc, filter)
+	case filter.Query != "" && (filter.MemoryType == string(domain.TypeSession) ||
+		filter.MemoryType == string(domain.TypePinned) ||
+		filter.MemoryType == string(domain.TypeInsight)):
+		memories, total, err = s.singlePoolConfidenceRecallSearch(r.Context(), auth, svc, filter)
+	case !onlySession:
 		memories, total, err = svc.memory.Search(r.Context(), filter)
-		if err != nil {
-			s.handleError(r.Context(), w, err)
-			return
-		}
 	}
-	if filter.Query != "" && (onlySession || filter.MemoryType == "") {
-		// SessionService.Search preserves SessionID/Source filters from the caller — intentional:
-		// session-scoped filtering is meaningful for the sessions table. MemoryService.Search
-		// resets these fields to broaden memory recall; the asymmetry is by design.
-		// session grounding uses supplementalSessionLimit regardless of SessionID — session memories
-		// are always treated as supplemental context, blended and reranked against primary results.
-		if sessionMems, sessErr := s.sessionGroundingSearch(r.Context(), auth, svc, filter); sessErr != nil {
-			slog.Warn("session grounding search failed", "cluster_id", auth.ClusterID, "err", sessErr)
-		} else {
-			memories = blendMemoriesWithSessionGrounding(memories, sessionMems, limit)
-			memories = rerankGroundedMemories(filter.Query, memories)
-			total = len(memories)
-		}
+
+	if err != nil {
+		s.handleError(r.Context(), w, err)
+		return
 	}
 
 	if memories == nil {
@@ -344,265 +374,6 @@ type contentSessionMeta struct {
 // 		return ""
 // 	}
 // }
-
-func (s *Server) sessionGroundingSearch(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, error) {
-	if svc.session == nil {
-		return nil, nil
-	}
-
-	sessionFilter := filter
-	sessionFilter.Offset = 0
-	sessionFilter.Limit = supplementalSessionLimit(filter.Limit)
-	if sessionFilter.Limit == 0 {
-		return nil, nil
-	}
-
-	sessionMems, err := svc.session.Search(ctx, sessionFilter)
-	if err != nil {
-		return nil, err
-	}
-	slog.Info("session grounding search", "cluster_id", auth.ClusterID, "query_len", len(filter.Query), "results", len(sessionMems))
-	return sessionMems, nil
-}
-
-func supplementalSessionLimit(limit int) int {
-	switch {
-	case limit <= 1:
-		return 0
-	case limit <= 5:
-		return 1
-	case limit <= 10:
-		return 2
-	default:
-		return 3
-	}
-}
-
-func blendMemoriesWithSessionGrounding(primary, supplemental []domain.Memory, limit int) []domain.Memory {
-	if limit <= 0 {
-		return []domain.Memory{}
-	}
-	if len(primary) == 0 {
-		return trimUniqueMemories(supplemental, limit)
-	}
-	if len(supplemental) == 0 {
-		return trimUniqueMemories(primary, limit)
-	}
-
-	sessionSlots := supplementalSessionLimit(limit)
-	if sessionSlots == 0 {
-		return trimUniqueMemories(primary, limit)
-	}
-	if sessionSlots > len(supplemental) {
-		sessionSlots = len(supplemental)
-	}
-	primaryBudget := limit - sessionSlots
-	if primaryBudget < 0 {
-		primaryBudget = 0
-	}
-
-	blended := make([]domain.Memory, 0, limit)
-	seen := make(map[string]struct{}, limit)
-
-	appendUnique := func(mem domain.Memory) {
-		key := mem.Content
-		if key == "" {
-			key = mem.ID
-		}
-		if _, ok := seen[key]; ok {
-			return
-		}
-		seen[key] = struct{}{}
-		blended = append(blended, mem)
-	}
-
-	for _, mem := range primary {
-		if len(blended) >= primaryBudget {
-			break
-		}
-		appendUnique(mem)
-	}
-	for _, mem := range supplemental {
-		if len(blended) >= limit {
-			break
-		}
-		appendUnique(mem)
-	}
-	for _, mem := range primary {
-		if len(blended) >= limit {
-			break
-		}
-		appendUnique(mem)
-	}
-
-	return blended
-}
-
-func rerankGroundedMemories(query string, mems []domain.Memory) []domain.Memory {
-	shape := classifyGroundingAnswerShape(query)
-	if shape == groundingAnswerShapeNone || len(mems) < 2 {
-		return mems
-	}
-
-	window := len(mems)
-	if window > 8 {
-		window = 8
-	}
-
-	type scoredMemory struct {
-		mem   domain.Memory
-		index int
-		score float64
-	}
-
-	scored := make([]scoredMemory, 0, window)
-	for i, mem := range mems[:window] {
-		scored = append(scored, scoredMemory{
-			mem:   mem,
-			index: i,
-			score: groundedMemoryScore(shape, mem, i),
-		})
-	}
-
-	sort.SliceStable(scored, func(i, j int) bool {
-		if scored[i].score == scored[j].score {
-			return scored[i].index < scored[j].index
-		}
-		return scored[i].score > scored[j].score
-	})
-
-	out := make([]domain.Memory, 0, len(mems))
-	for _, item := range scored {
-		out = append(out, item.mem)
-	}
-	out = append(out, mems[window:]...)
-	return out
-}
-
-func classifyGroundingAnswerShape(query string) groundingAnswerShape {
-	lower := strings.ToLower(strings.TrimSpace(query))
-	switch {
-	case strings.HasPrefix(lower, "how many"), strings.HasPrefix(lower, "how much"):
-		return groundingAnswerShapeCount
-	case strings.HasPrefix(lower, "who "), strings.HasPrefix(lower, "which "):
-		return groundingAnswerShapeEntity
-	case strings.HasPrefix(lower, "where "):
-		return groundingAnswerShapeLocation
-	case strings.HasPrefix(lower, "when "):
-		return groundingAnswerShapeTime
-	case strings.HasPrefix(lower, "what "):
-		return groundingAnswerShapeExact
-	default:
-		return groundingAnswerShapeNone
-	}
-}
-
-func groundedMemoryScore(shape groundingAnswerShape, mem domain.Memory, index int) float64 {
-	score := -float64(index) * 0.08
-	if mem.Score != nil {
-		score += *mem.Score * 0.02
-	}
-	if mem.MemoryType == domain.TypeInsight {
-		score += 0.03
-	}
-	score += groundedAnswerSignalBonus(shape, mem.Content)
-	return score
-}
-
-func groundedAnswerSignalBonus(shape groundingAnswerShape, content string) float64 {
-	lower := strings.ToLower(content)
-	wordCount := len(strings.Fields(content))
-	entitySignals := answerEntitySignalCount(content)
-
-	bonus := 0.0
-	if wordCount > 0 && wordCount <= 18 {
-		bonus += 0.05
-	}
-
-	switch shape {
-	case groundingAnswerShapeCount:
-		if answerNumberRe.MatchString(content) {
-			bonus += 0.45
-		}
-		if answerCountWordRe.MatchString(lower) {
-			bonus += 0.20
-		}
-		if strings.Contains(content, ",") || strings.Contains(lower, " and ") {
-			bonus += 0.10
-		}
-	case groundingAnswerShapeEntity:
-		if entitySignals > 1 {
-			bonus += 0.30
-		}
-		if answerQuotedRe.MatchString(content) || answerAcronymRe.MatchString(content) {
-			bonus += 0.15
-		}
-	case groundingAnswerShapeLocation:
-		if answerLocationCueRe.MatchString(content) {
-			bonus += 0.25
-		}
-		if entitySignals > 1 {
-			bonus += 0.20
-		}
-		if answerVaguePlaceRe.MatchString(lower) {
-			bonus -= 0.20
-		}
-	case groundingAnswerShapeTime:
-		if answerYearRe.MatchString(content) {
-			bonus += 0.25
-		}
-		if containsMonthName(lower) {
-			bonus += 0.20
-		}
-		if answerNumberRe.MatchString(content) {
-			bonus += 0.10
-		}
-	case groundingAnswerShapeExact:
-		if entitySignals > 1 {
-			bonus += 0.25
-		}
-		if answerQuotedRe.MatchString(content) {
-			bonus += 0.20
-		}
-		if answerAcronymRe.MatchString(content) {
-			bonus += 0.15
-		}
-		if wordCount > 0 && wordCount <= 12 {
-			bonus += 0.12
-		}
-	}
-
-	return bonus
-}
-
-func answerEntitySignalCount(content string) int {
-	signals := make(map[string]struct{})
-	for _, match := range answerTitleCaseRe.FindAllString(content, -1) {
-		signals[match] = struct{}{}
-	}
-	for _, match := range answerQuotedRe.FindAllString(content, -1) {
-		signals[match] = struct{}{}
-	}
-	for _, match := range answerAcronymRe.FindAllString(content, -1) {
-		signals[match] = struct{}{}
-	}
-	return len(signals)
-}
-
-func containsMonthName(lower string) bool {
-	switch {
-	case strings.Contains(lower, "january"), strings.Contains(lower, "february"), strings.Contains(lower, "march"):
-		return true
-	case strings.Contains(lower, "april"), strings.Contains(lower, "may "), strings.Contains(lower, "june"), strings.Contains(lower, "july"):
-		return true
-	case strings.Contains(lower, "august"), strings.Contains(lower, "september"), strings.Contains(lower, "october"):
-		return true
-	case strings.Contains(lower, "november"), strings.Contains(lower, "december"):
-		return true
-	default:
-		return false
-	}
-}
 
 func trimUniqueMemories(mems []domain.Memory, limit int) []domain.Memory {
 	if limit <= 0 {
