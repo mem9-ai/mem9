@@ -291,6 +291,34 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	var total int
 	var err error
 
+	if filter.Query != "" && !onlySession && s.strategyRouter != nil {
+		decision, detectErr := s.detectRecallStrategies(r.Context(), auth, filter)
+		if detectErr != nil {
+			slog.Warn("strategy detection error, proceeding with default path",
+				"cluster_id", auth.ClusterID, "err", detectErr)
+		}
+
+		if detectErr == nil && !decision.IsDefault() {
+			memories, total, err = s.executeWithFallback(r.Context(), auth, svc, filter, decision)
+			if err != nil {
+				s.handleError(r.Context(), w, err)
+				return
+			}
+
+			if memories == nil {
+				memories = []domain.Memory{}
+			}
+
+			respond(w, http.StatusOK, listResponse{
+				Memories: memories,
+				Total:    total,
+				Limit:    limit,
+				Offset:   offset,
+			})
+			return
+		}
+	}
+
 	if explicitSessionMixed {
 		memories, total, err = s.explicitSessionSearch(r.Context(), auth, svc, filter)
 		if err != nil {

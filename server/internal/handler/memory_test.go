@@ -171,7 +171,7 @@ func newTestServer(memRepo *testMemoryRepo, sessRepo *testSessionRepo) *Server {
 }
 
 func newTestServerWithLinks(memRepo *testMemoryRepo, sessRepo *testSessionRepo, linkRepo *testLinkRepo) *Server {
-	srv := NewServer(nil, nil, "", nil, nil, "", false, false, service.ModeSmart, "", slog.Default())
+	srv := NewServer(nil, nil, "", nil, nil, "", false, false, service.ModeSmart, "", slog.Default(), nil)
 	svc := resolvedSvc{
 		memory:  service.NewMemoryServiceWithLinks(memRepo, linkRepo, nil, nil, "", service.ModeSmart, false),
 		ingest:  service.NewIngestService(memRepo, nil, nil, "", service.ModeSmart),
@@ -326,7 +326,7 @@ func TestCreateMemory_SyncContentWithSession_CreateFailureDoesNotPersistRawTurn(
 
 	memRepo := &testMemoryRepo{}
 	sessRepo := &testSessionRepo{}
-	srv := NewServer(nil, nil, "", nil, llmClient, "auto-model", false, false, service.ModeSmart, "", slog.Default())
+	srv := NewServer(nil, nil, "", nil, llmClient, "auto-model", false, false, service.ModeSmart, "", slog.Default(), nil)
 	svc := resolvedSvc{
 		memory:  service.NewMemoryService(memRepo, llmClient, nil, "auto-model", service.ModeSmart, false),
 		ingest:  service.NewIngestService(memRepo, llmClient, nil, "auto-model", service.ModeSmart),
@@ -457,7 +457,7 @@ func TestCreateMemory_SyncMessages_Phase1Error_Returns500(t *testing.T) {
 		Model:   "test-model",
 	})
 
-	srv := NewServer(nil, nil, "", nil, llmClient, "", false, false, service.ModeSmart, "", slog.Default())
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, false, service.ModeSmart, "", slog.Default(), nil)
 	svc := resolvedSvc{
 		memory:  service.NewMemoryService(&testMemoryRepo{}, nil, nil, "", service.ModeSmart, false),
 		ingest:  service.NewIngestService(&testMemoryRepo{}, llmClient, nil, "", service.ModeSmart),
@@ -506,7 +506,7 @@ func TestCreateMemory_SyncMessages_StripsInjectedContext(t *testing.T) {
 	})
 
 	sessRepo := &testSessionRepo{}
-	srv := NewServer(nil, nil, "", nil, llmClient, "", false, false, service.ModeSmart, "", slog.Default())
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, false, service.ModeSmart, "", slog.Default(), nil)
 	svc := resolvedSvc{
 		memory:  service.NewMemoryService(&testMemoryRepo{}, nil, nil, "", service.ModeSmart, false),
 		ingest:  service.NewIngestService(&testMemoryRepo{}, llmClient, nil, "", service.ModeSmart),
@@ -576,7 +576,7 @@ func TestCreateMemory_SyncMessages_ReconcileFailure_Returns500(t *testing.T) {
 	})
 
 	memRepo := &failSearchMemoryRepo{}
-	srv := NewServer(nil, nil, "", nil, llmClient, "", false, false, service.ModeSmart, "", slog.Default())
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, false, service.ModeSmart, "", slog.Default(), nil)
 	svc := resolvedSvc{
 		memory:  service.NewMemoryService(&memRepo.testMemoryRepo, nil, nil, "", service.ModeSmart, false),
 		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
@@ -894,5 +894,181 @@ func TestRerankGroundedMemories_PrefersQuantifiedEvidenceForCountQuery(t *testin
 	got := rerankGroundedMemories("how many times has melanie gone to the beach in 2023", mems)
 	if got[0].ID != "m2" {
 		t.Fatalf("expected quantified evidence to move first, got %q", got[0].ID)
+	}
+}
+
+func TestMergeFanoutResults_BudgetSplit(t *testing.T) {
+	primary := []domain.Memory{
+		{ID: "p1", Content: "primary-1"},
+		{ID: "p2", Content: "primary-2"},
+		{ID: "p3", Content: "primary-3"},
+		{ID: "p4", Content: "primary-4"},
+	}
+	secondary := []domain.Memory{
+		{ID: "s1", Content: "secondary-1"},
+		{ID: "s2", Content: "secondary-2"},
+		{ID: "s3", Content: "secondary-3"},
+	}
+
+	merged := mergeFanoutResults(primary, secondary, "set_aggregation", "count_query", 5)
+	if len(merged) != 5 {
+		t.Fatalf("expected 5 merged results, got %d", len(merged))
+	}
+
+	seen := make(map[string]bool)
+	for _, m := range merged {
+		if seen[m.ID] {
+			t.Errorf("duplicate ID in merged results: %s", m.ID)
+		}
+		seen[m.ID] = true
+	}
+}
+
+func TestMergeFanoutResults_Dedup(t *testing.T) {
+	shared := domain.Memory{ID: "shared", Content: "appears in both"}
+	primary := []domain.Memory{shared, {ID: "p1", Content: "primary-only"}}
+	secondary := []domain.Memory{shared, {ID: "s1", Content: "secondary-only"}}
+
+	merged := mergeFanoutResults(primary, secondary, "set_aggregation", "count_query", 10)
+
+	count := 0
+	for _, m := range merged {
+		if m.ID == "shared" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected 'shared' to appear once, appeared %d times", count)
+	}
+}
+
+func TestPaginateFanout_OffsetAndTotal(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "m1"}, {ID: "m2"}, {ID: "m3"}, {ID: "m4"}, {ID: "m5"},
+	}
+
+	page, total, err := paginateFanout(mems, 2, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 5 {
+		t.Errorf("expected total=5, got %d", total)
+	}
+	if len(page) != 2 {
+		t.Fatalf("expected page size=2, got %d", len(page))
+	}
+	if page[0].ID != "m3" || page[1].ID != "m4" {
+		t.Errorf("expected [m3, m4], got [%s, %s]", page[0].ID, page[1].ID)
+	}
+}
+
+func TestPaginateFanout_OffsetBeyondTotal(t *testing.T) {
+	mems := []domain.Memory{{ID: "m1"}, {ID: "m2"}}
+
+	page, total, err := paginateFanout(mems, 10, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 {
+		t.Errorf("expected total=2, got %d", total)
+	}
+	if len(page) != 0 {
+		t.Errorf("expected empty page for offset beyond total, got %d", len(page))
+	}
+}
+
+func TestExecuteSetAggregation_MemoryTypeInsight_SkipsSessionSearch(t *testing.T) {
+	memRepo := &testMemoryRepo{
+		keywordSearchResults: []domain.Memory{
+			{ID: "ins1", Content: "insight about events", MemoryType: domain.TypeInsight},
+		},
+	}
+	sessRepo := &testSessionRepo{}
+	srv := newTestServer(memRepo, sessRepo)
+
+	filter := domain.MemoryFilter{
+		Query:      "What events has Caroline participated in?",
+		SessionID:  "session-123",
+		MemoryType: string(domain.TypeInsight),
+		Limit:      10,
+	}
+	auth := &domain.AuthInfo{AgentName: "test"}
+	svc := srv.resolveServices(auth)
+
+	mems, _, err := srv.executeSetAggregation(
+		context.Background(), auth, svc, filter, "caroline", "events",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, m := range mems {
+		if m.MemoryType != domain.TypeInsight {
+			t.Errorf("expected all results to be insight type, got %s for ID=%s", m.MemoryType, m.ID)
+		}
+	}
+}
+
+func TestExecuteCountQuery_MemoryTypeInsight_SkipsSessionSearch(t *testing.T) {
+	memRepo := &testMemoryRepo{
+		keywordSearchResults: []domain.Memory{
+			{ID: "ins1", Content: "count of 3 visits", MemoryType: domain.TypeInsight},
+		},
+	}
+	sessRepo := &testSessionRepo{}
+	srv := newTestServer(memRepo, sessRepo)
+
+	filter := domain.MemoryFilter{
+		Query:      "How many times has Melanie visited the beach?",
+		SessionID:  "session-456",
+		MemoryType: string(domain.TypeInsight),
+		Limit:      10,
+	}
+	auth := &domain.AuthInfo{AgentName: "test"}
+	svc := srv.resolveServices(auth)
+
+	mems, _, err := srv.executeCountQuery(
+		context.Background(), auth, svc, filter, "melanie", "counts",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, m := range mems {
+		if m.MemoryType != domain.TypeInsight {
+			t.Errorf("expected all results to be insight type, got %s for ID=%s", m.MemoryType, m.ID)
+		}
+	}
+}
+
+func TestExecuteExactEventTemporal_MemoryTypeInsight_SkipsSessionSearch(t *testing.T) {
+	memRepo := &testMemoryRepo{
+		keywordSearchResults: []domain.Memory{
+			{ID: "ins1", Content: "charity race event", MemoryType: domain.TypeInsight},
+		},
+	}
+	sessRepo := &testSessionRepo{}
+	srv := newTestServer(memRepo, sessRepo)
+
+	filter := domain.MemoryFilter{
+		Query:      "When did Melanie run a charity race?",
+		SessionID:  "session-789",
+		MemoryType: string(domain.TypeInsight),
+		Limit:      10,
+	}
+	auth := &domain.AuthInfo{AgentName: "test"}
+	svc := srv.resolveServices(auth)
+
+	mems, _, err := srv.executeExactEventTemporal(
+		context.Background(), auth, svc, filter, "melanie",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, m := range mems {
+		if m.MemoryType != domain.TypeInsight {
+			t.Errorf("expected all results to be insight type, got %s for ID=%s", m.MemoryType, m.ID)
+		}
 	}
 }

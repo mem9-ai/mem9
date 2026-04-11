@@ -16,6 +16,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/llm"
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/repository"
+	"github.com/qiffang/mnemos/server/internal/repository/tidb"
 	"github.com/qiffang/mnemos/server/internal/reqid"
 	"github.com/qiffang/mnemos/server/internal/service"
 	"github.com/qiffang/mnemos/server/internal/tenant"
@@ -140,7 +141,22 @@ func main() {
 	rateMW := rl.Middleware()
 
 	// Handler.
-	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, cfg.SearchKeywordExtract, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger)
+	var strategyRouter *service.RecallStrategyRouterService
+	if cfg.DBBackend == "tidb" && cfg.EmbedAutoModel != "" {
+		bootstrapCtx, bootstrapCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := tidb.EnsurePrototypeVectorIndex(bootstrapCtx, db); err != nil {
+			logger.Warn("prototype vector index bootstrap failed (router will use FTS-only fallback)", "err", err)
+		}
+		bootstrapCancel()
+
+		protoRepo := tidb.NewRecallStrategyPrototypeRepo(db, cfg.EmbedAutoModel)
+		strategyRouter = service.NewRecallStrategyRouterService(protoRepo, llmClient, cfg.EmbedAutoModel)
+		logger.Info("strategy router enabled", "auto_model", cfg.EmbedAutoModel, "fts", cfg.FTSEnabled)
+	} else {
+		logger.Info("strategy router disabled (requires TiDB backend with auto-embedding)")
+	}
+
+	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, cfg.SearchKeywordExtract, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger, strategyRouter)
 	router := srv.Router(tenantMW, rateMW, apiKeyMW)
 
 	writeTimeout := cfg.LLMTimeout + 60*time.Second

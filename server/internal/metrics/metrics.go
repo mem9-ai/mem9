@@ -131,6 +131,43 @@ var (
 		},
 		[]string{"op", "status"},
 	)
+
+	StrategyRouterChosenTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "mnemo",
+		Name:      "strategy_router_chosen_total",
+		Help:      "Strategy class chosen by the recall router.",
+	}, []string{"strategy"})
+
+	StrategyRouterSourceTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "mnemo",
+		Name:      "strategy_router_source_total",
+		Help:      "Resolution source used by the recall router.",
+	}, []string{"source"})
+
+	StrategyRouterModeTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "mnemo",
+		Name:      "strategy_router_mode_total",
+		Help:      "Resolution mode used by the recall router.",
+	}, []string{"mode"})
+
+	StrategyRouterFallbackTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "mnemo",
+		Name:      "strategy_router_fallback_total",
+		Help:      "Fallback causes in the recall router.",
+	}, []string{"cause"})
+
+	StrategyRouterFanoutTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "mnemo",
+		Name:      "strategy_router_fanout_total",
+		Help:      "Number of fanout executions in the recall router.",
+	})
+
+	StrategyRouterDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "mnemo",
+		Name:      "strategy_router_duration_seconds",
+		Help:      "Duration of the strategy detection phase.",
+		Buckets:   []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1},
+	})
 )
 
 // Middleware records HTTP request count and duration for each request.

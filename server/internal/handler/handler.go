@@ -40,6 +40,7 @@ type Server struct {
 	startedAt            time.Time
 	svcCache             sync.Map
 	gaugeDebounce        sync.Map
+	strategyRouter       *service.RecallStrategyRouterService
 }
 
 func NewServer(
@@ -54,6 +55,7 @@ func NewServer(
 	ingestMode service.IngestMode,
 	dbBackend string,
 	logger *slog.Logger,
+	strategyRouter *service.RecallStrategyRouterService,
 ) *Server {
 	return &Server{
 		tenant:               tenantSvc,
@@ -68,6 +70,7 @@ func NewServer(
 		dbBackend:            dbBackend,
 		logger:               logger,
 		startedAt:            time.Now().UTC(),
+		strategyRouter:       strategyRouter,
 	}
 }
 
