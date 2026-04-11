@@ -265,7 +265,8 @@ type listResponse struct {
 func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	auth := authInfo(r)
 	q := r.URL.Query()
-	query := normalizeRecallQuery(q.Get("q"), time.Now())
+	rawQuery := q.Get("q")
+	query := normalizeRecallQuery(rawQuery, time.Now())
 
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	offset, _ := strconv.Atoi(q.Get("offset"))
@@ -319,6 +320,11 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	if memories == nil {
 		memories = []domain.Memory{}
 	}
+	if rawQuery != "" && classifyRecallQueryShape(rawQuery) == recallQueryShapeTime {
+		for i := range memories {
+			memories[i].Content = service.TemporalRecallProjection(memories[i].Content, memories[i].Metadata)
+		}
+	}
 
 	respond(w, http.StatusOK, listResponse{
 		Memories: memories,
@@ -329,10 +335,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 }
 
 func normalizeRecallQuery(query string, now time.Time) string {
-	if normalized, ok := service.NormalizeChineseRelativeTemporalText(query, now); ok {
-		return normalized
-	}
-	return query
+	return service.NormalizeTemporalRecallQuery(query, now)
 }
 
 type contentSessionMeta struct {

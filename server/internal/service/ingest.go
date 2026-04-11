@@ -156,9 +156,10 @@ type Phase1Result struct {
 
 // ExtractedFact holds a single atomic fact and the tags the LLM assigned to it.
 type ExtractedFact struct {
-	Text     string   `json:"text"`
-	Tags     []string `json:"tags,omitempty"`
-	FactType string   `json:"fact_type,omitempty"` // "fact" | "query_intent" | "raw_fallback"; omitted = "fact"
+	Text     string            `json:"text"`
+	Tags     []string          `json:"tags,omitempty"`
+	FactType string            `json:"fact_type,omitempty"` // "fact" | "query_intent" | "raw_fallback"; omitted = "fact"
+	Temporal *TemporalMetadata `json:"-"`
 }
 
 // dropQueryIntentFacts removes facts classified as query_intent by the extraction
@@ -343,6 +344,15 @@ func ensureRawFallbackTag(tags []string, facts []ExtractedFact) []string {
 	}
 	out := append([]string{}, tags...)
 	return append(out, rawFallbackTag)
+}
+
+func projectReconcileFactText(fact ExtractedFact) string {
+	return ProjectTemporalFactText(fact.Text, fact.Temporal)
+}
+
+func normalizeReconciledTemporalContent(content string) (string, *TemporalMetadata) {
+	content = StripTemporalProjection(content)
+	return NormalizeStandaloneTemporalContent(content, time.Now())
 }
 
 // ExtractPhase1 runs fact extraction and per-message tagging in a single LLM call.
@@ -627,10 +637,6 @@ func (s *IngestService) extractFacts(ctx context.Context, conversation string) (
 		return nil, nil
 	}
 
-	currentTime := time.Now()
-	currentDate := currentTime.Format("2006-01-02")
-	currentDateCN := formatChineseDate(currentTime)
-
 	systemPrompt := `You are an information extraction engine. Your task is to identify distinct,
 atomic facts from a conversation.
 
@@ -670,32 +676,17 @@ atomic facts from a conversation.
      - "正在做一个需要 SQL 窗口函数的项目"
 7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
-8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
-   Resolve relative temporal expressions into an explicit, searchable anchored form
-   without losing the original meaning.
-   Keep the phrasing natural for the original language.
-   If a message includes an explicit date or timestamp and the fact uses a relative
-   time expression ("next month", "last year", "last week", "yesterday"), resolve
-   it to the most concrete anchored date or period you can without inventing detail.
-   - Good: "[1:14 pm on 25 May, 2023] We're thinking about going camping next month"
-     -> "Planning to go camping in June 2023"
-   - Good: "[10:37 am on 27 June, 2023] I took my family camping last week"
-     -> "Went camping the week before 27 June 2023"
-   When the original fact uses terms such as 今天, 昨天, 上周, 下周一, 下个月, 明年,
-   you MUST preserve the original term AND append a concrete inline time marker
-   immediately after it.
-   Use these exact formats:
-   - Day: 今天(2026-04-11|2026年4月11日)
-   - Week range: 上周(2026-03-30~2026-04-05|2026年3月30日~2026年4月5日)
-   - Weekday in relative week: 下周一(2026-04-13|2026年4月13日)
-   - Month: 下个月(2026-05|2026年5月)
-   - Year: 明年(2027|2027年)
-   Do NOT leave those terms unresolved.
-   - Good: "今天我很开心" -> "今天(2026-04-11|2026年4月11日)我很开心"
-   - Good: "我下个月要去旅游" -> "我下个月(2026-05|2026年5月)要去旅游"
-   - Good: "上周完成了部署" -> "上周(2026-03-30~2026-04-05|2026年3月30日~2026年4月5日)完成了部署"
-   For any language, preserve the original language and resolve relative dates when
-   you can do so safely and concretely.
+8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers faithfully.
+   If a fact already contains an explicit date, month, year, or anchored period
+   ("2023年4月22日", "April 2023", "the week before 6 March 2023"), keep it natural
+   and do not rewrite it.
+   If a fact uses relative time language ("today", "yesterday", "next month", "明天", "下个月"),
+   keep the original natural wording and relation. Do NOT append inline annotations,
+   bracketed markers, or parenthetical date expansions.
+   Do NOT resolve relative time expressions using today's date.
+   When a relative time expression depends on another date already present in the same
+   sentence or message header, preserve that relationship naturally instead of inventing
+   extra detail. Post-processing will normalize those cases later.
 9. Extract relationships between people explicitly.
 10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
@@ -728,7 +719,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 
 {"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}, ...]}`
 
-	userPrompt := fmt.Sprintf("Extract facts. Today's date is %s (%s).\n\n%s", currentDate, currentDateCN, input.formatted)
+	userPrompt := fmt.Sprintf("Extract facts.\n\n%s", input.formatted)
 
 	type extractResponse struct {
 		Facts []ExtractedFact `json:"facts"`
@@ -781,10 +772,6 @@ func (s *IngestService) extractFactsAndTags(ctx context.Context, conversation st
 		return nil, normalizeMessageTags(nil, messageCount), nil
 	}
 
-	currentTime := time.Now()
-	currentDate := currentTime.Format("2006-01-02")
-	currentDateCN := formatChineseDate(currentTime)
-
 	systemPrompt := `You are an information extraction engine. Your task is to identify distinct,
 atomic facts from a conversation AND assign short descriptive tags to each message.
 
@@ -824,32 +811,17 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
      - "正在做一个需要 SQL 窗口函数的项目"
 7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
    even if they arose in a task-specific context.
-8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers.
-   Resolve relative temporal expressions into an explicit, searchable anchored form
-   without losing the original meaning.
-   Keep the phrasing natural for the original language.
-   If a message includes an explicit date or timestamp and the fact uses a relative
-   time expression ("next month", "last year", "last week", "yesterday"), resolve
-   it to the most concrete anchored date or period you can without inventing detail.
-   - Good: "[1:14 pm on 25 May, 2023] We're thinking about going camping next month"
-     -> "Planning to go camping in June 2023"
-   - Good: "[10:37 am on 27 June, 2023] I took my family camping last week"
-     -> "Went camping the week before 27 June 2023"
-   When the original fact uses terms such as 今天, 昨天, 上周, 下周一, 下个月, 明年,
-   you MUST preserve the original term AND append a concrete inline time marker
-   immediately after it.
-   Use these exact formats:
-   - Day: 今天(2026-04-11|2026年4月11日)
-   - Week range: 上周(2026-03-30~2026-04-05|2026年3月30日~2026年4月5日)
-   - Weekday in relative week: 下周一(2026-04-13|2026年4月13日)
-   - Month: 下个月(2026-05|2026年5月)
-   - Year: 明年(2027|2027年)
-   Do NOT leave those terms unresolved.
-   - Good: "今天我很开心" -> "今天(2026-04-11|2026年4月11日)我很开心"
-   - Good: "我下个月要去旅游" -> "我下个月(2026-05|2026年5月)要去旅游"
-   - Good: "上周完成了部署" -> "上周(2026-03-30~2026-04-05|2026年3月30日~2026年4月5日)完成了部署"
-   For any language, preserve the original language and resolve relative dates when
-   you can do so safely and concretely.
+8. Always include temporal context when mentioned. Preserve dates, times, and temporal markers faithfully.
+   If a fact already contains an explicit date, month, year, or anchored period
+   ("2023年4月22日", "April 2023", "the week before 6 March 2023"), keep it natural
+   and do not rewrite it.
+   If a fact uses relative time language ("today", "yesterday", "next month", "明天", "下个月"),
+   keep the original natural wording and relation. Do NOT append inline annotations,
+   bracketed markers, or parenthetical date expansions.
+   Do NOT resolve relative time expressions using today's date.
+   When a relative time expression depends on another date already present in the same
+   sentence or message header, preserve that relationship naturally instead of inventing
+   extra detail. Post-processing will normalize those cases later.
 9. Extract relationships between people explicitly.
 10. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
@@ -907,7 +879,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 
 {"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}], "message_tags": [["tag1", "tag2"], ["tag3"], [], ...]}`
 
-	userPrompt := fmt.Sprintf("Extract facts and assign message tags. Today's date is %s (%s).\n\n%s", currentDate, currentDateCN, input.formatted)
+	userPrompt := fmt.Sprintf("Extract facts and assign message tags.\n\n%s", input.formatted)
 
 	type extractResponse struct {
 		Facts       []ExtractedFact `json:"facts"`
@@ -999,14 +971,14 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 	// until the score distribution is analyzed from prod metrics.
 	// Once a threshold is validated, add: if score >= threshold { drop or annotate }
 	for i := range facts {
-		if id, score, err := s.memories.NearDupSearch(ctx, facts[i].Text); err == nil && id != "" {
+		if id, score, err := s.memories.NearDupSearch(ctx, projectReconcileFactText(facts[i])); err == nil && id != "" {
 			metrics.NearDupCosineScore.Observe(score)
 		}
 	}
 
 	texts := make([]string, len(facts))
 	for i, f := range facts {
-		texts[i] = f.Text
+		texts[i] = projectReconcileFactText(f)
 	}
 
 	// Step 1: For each fact, search for relevant existing memories and collect them.
@@ -1044,7 +1016,7 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 	refs := make([]memoryRef, len(existingMemories))
 	idMap := make(map[int]string, len(existingMemories))
 	for i, m := range existingMemories {
-		ref := memoryRef{IntID: i, Text: m.Content}
+		ref := memoryRef{IntID: i, Text: TemporalRecallProjection(m.Content, m.Metadata)}
 		if !m.UpdatedAt.IsZero() {
 			ref.Age = relativeAge(m.UpdatedAt)
 		}
@@ -1075,6 +1047,7 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 6. When the fact means the same thing as an existing memory (even if worded differently), use NOOP.
 7. Preserve the language of the original facts. Do not translate.
 8. Each existing memory has an "age" field showing when it was last updated. Use age as a tiebreaker: when a new fact conflicts with an existing memory on the same topic and there is no other signal, older memories are more likely outdated. Age alone is NOT sufficient reason to UPDATE or DELETE — the content must also conflict or supersede the existing memory.
+9. Some facts or memories may include a read-only suffix like "[time: 2026-04-11]". That suffix is derived temporal context for matching only. Use it when comparing memories, but do NOT copy the suffix into ADD or UPDATE text.
 
 ## Tags
 
@@ -1195,10 +1168,19 @@ Analyze the new facts and determine whether each should be added, updated, or de
 	for _, event := range parsed.Memory {
 		switch strings.ToUpper(event.Event) {
 		case "ADD":
-			if event.Text == "" {
+			normalizedText, temporal := normalizeReconciledTemporalContent(event.Text)
+			if normalizedText == "" {
 				continue
 			}
-			newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text, ensureRawFallbackTag(event.Tags, facts))
+			newID, addErr := s.addInsight(
+				ctx,
+				agentName,
+				agentID,
+				sessionID,
+				normalizedText,
+				ensureRawFallbackTag(event.Tags, facts),
+				MergeTemporalMetadata(nil, temporal),
+			)
 			if addErr != nil {
 				slog.Warn("failed to add insight", "err", addErr)
 				warnings++
@@ -1213,7 +1195,12 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				continue
 			}
 			realID, ok := idMap[intID]
-			if !ok || event.Text == "" {
+			if !ok {
+				slog.Warn("skipping UPDATE with invalid ID or empty text", "id", event.ID)
+				continue
+			}
+			normalizedText, temporal := normalizeReconciledTemporalContent(event.Text)
+			if normalizedText == "" {
 				slog.Warn("skipping UPDATE with invalid ID or empty text", "id", event.ID)
 				continue
 			}
@@ -1222,9 +1209,10 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				effectiveTags = existingMemories[intID].Tags
 			}
 			effectiveTags = ensureRawFallbackTag(effectiveTags, facts)
+			metadata := MergeTemporalMetadata(existingMemories[intID].Metadata, temporal)
 			if existingMemories[intID].MemoryType == domain.TypePinned {
 				slog.Warn("skipping UPDATE for pinned memory — treating as ADD", "id", realID)
-				newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, event.Text, effectiveTags)
+				newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, normalizedText, effectiveTags, metadata)
 				if addErr != nil {
 					slog.Warn("failed to add insight (pinned fallback)", "err", addErr)
 					warnings++
@@ -1233,7 +1221,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				resultIDs = append(resultIDs, newID)
 				continue
 			}
-			newID, updateErr := s.updateInsight(ctx, agentName, agentID, sessionID, realID, event.Text, effectiveTags)
+			newID, updateErr := s.updateInsight(ctx, agentName, agentID, sessionID, realID, normalizedText, effectiveTags, metadata)
 			if updateErr != nil {
 				slog.Warn("failed to update insight", "err", updateErr, "id", event.ID)
 				warnings++
@@ -1477,7 +1465,7 @@ func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, ses
 	var ids []string
 	var warnings int
 	for _, fact := range facts {
-		id, err := s.addInsight(ctx, agentName, agentID, sessionID, fact.Text, fact.Tags)
+		id, err := s.addInsight(ctx, agentName, agentID, sessionID, fact.Text, fact.Tags, MergeTemporalMetadata(nil, fact.Temporal))
 		if err != nil {
 			slog.Warn("failed to add fact", "err", err, "fact_len", len(fact.Text))
 			warnings++
@@ -1489,7 +1477,7 @@ func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, ses
 }
 
 // addInsight creates a new insight memory with the given content and tags.
-func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sessionID, content string, tags []string) (string, error) {
+func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sessionID, content string, tags []string, metadata json.RawMessage) (string, error) {
 	if len(tags) > maxTags {
 		tags = tags[:maxTags]
 	}
@@ -1513,6 +1501,7 @@ func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sess
 		SessionID:  sessionID,
 		Embedding:  embedding,
 		Tags:       tags,
+		Metadata:   metadata,
 		State:      domain.StateActive,
 		Version:    1,
 		UpdatedBy:  agentName,
@@ -1530,7 +1519,7 @@ func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sess
 }
 
 // updateInsight archives the old memory and creates a new one atomically (append-new + archive-old model).
-func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, sessionID, oldID, newContent string, tags []string) (string, error) {
+func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, sessionID, oldID, newContent string, tags []string, metadata json.RawMessage) (string, error) {
 	if len(tags) > maxTags {
 		tags = tags[:maxTags]
 	}
@@ -1557,6 +1546,7 @@ func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, s
 		SessionID:  sessionID,
 		Embedding:  embedding,
 		Tags:       tags,
+		Metadata:   metadata,
 		State:      domain.StateActive,
 		Version:    1,
 		UpdatedBy:  agentName,

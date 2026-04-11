@@ -16,7 +16,7 @@ import (
 const (
 	defaultPinnedCandidateLimit  = 5
 	defaultInsightCandidateLimit = 10
-	defaultSessionCandidateLimit = 5
+	defaultSessionCandidateLimit = 10
 	defaultPinnedKeepMax         = 2
 	defaultPinnedMinConfidence   = 70
 	defaultMixedMinConfidence    = 65
@@ -210,7 +210,7 @@ func buildRecallConfidence(profile recallQueryProfile, candidate service.RecallC
 		0.20*vecNorm +
 		agreementBonus +
 		recencyBonus(candidate.Memory.UpdatedAt) +
-		answerEvidenceBonus(profile, candidate.Memory.Content) +
+		answerEvidenceBonus(profile, candidate.Memory) +
 		sourcePrior(profile.shape, candidate.SourcePool)
 
 	return int(clampFloat64(confidenceRaw, 0, 1)*100 + 0.5)
@@ -346,6 +346,16 @@ func sourcePreference(shape recallQueryShape, pool service.RecallSourcePool) int
 			return 0
 		}
 	}
+	if shape == recallQueryShapeTime {
+		switch pool {
+		case service.RecallSourceSession:
+			return 2
+		case service.RecallSourceInsight:
+			return 1
+		default:
+			return 0
+		}
+	}
 
 	switch pool {
 	case service.RecallSourceInsight:
@@ -363,6 +373,9 @@ func sourcePrior(shape recallQueryShape, pool service.RecallSourcePool) float64 
 		if isExactRecallShape(shape) {
 			return 0.15
 		}
+		if shape == recallQueryShapeTime {
+			return 0.08
+		}
 	case service.RecallSourceInsight:
 		if shape == recallQueryShapeGeneral {
 			return 0.10
@@ -371,7 +384,8 @@ func sourcePrior(shape recallQueryShape, pool service.RecallSourcePool) float64 
 	return 0
 }
 
-func answerEvidenceBonus(profile recallQueryProfile, content string) float64 {
+func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float64 {
+	content, temporalDisplay, temporalKind := recallContentForScoring(memory)
 	shape := profile.shape
 	lower := strings.ToLower(content)
 	unitCount := recallAnswerUnitCount(content)
@@ -408,7 +422,7 @@ func answerEvidenceBonus(profile recallQueryProfile, content string) float64 {
 			bonus += 0.12
 		}
 	case recallQueryShapeTime:
-		bonus += timeAnswerEvidenceBonus(profile, content)
+		bonus += timeAnswerEvidenceBonus(profile, content, temporalDisplay, temporalKind)
 	case recallQueryShapeLocation:
 		if containsRecallLocationCue(content) {
 			bonus += 0.20
@@ -422,6 +436,24 @@ func answerEvidenceBonus(profile recallQueryProfile, content string) float64 {
 	}
 
 	return bonus
+}
+
+func recallContentForScoring(memory domain.Memory) (string, string, string) {
+	content, legacyDisplay := service.CleanTemporalContent(memory.Content)
+	content = service.StripTemporalProjection(content)
+	if content == "" {
+		content = strings.TrimSpace(memory.Content)
+	}
+
+	display := legacyDisplay
+	kind := ""
+	if meta, ok := service.ParseTemporalMetadata(memory.Metadata); ok && meta != nil {
+		if meta.Display != "" {
+			display = meta.Display
+		}
+		kind = meta.Kind
+	}
+	return content, display, kind
 }
 
 func buildRecallQueryProfile(query string) recallQueryProfile {
@@ -466,7 +498,7 @@ func extractRecallTemporalTokens(lower string) []string {
 	return out
 }
 
-func timeAnswerEvidenceBonus(profile recallQueryProfile, content string) float64 {
+func timeAnswerEvidenceBonus(profile recallQueryProfile, content, temporalDisplay, temporalKind string) float64 {
 	fullLower := strings.ToLower(content)
 	body, hasHeaderAnchor := stripRecallTemporalHeader(content)
 	bodyLower := strings.ToLower(body)
@@ -490,8 +522,21 @@ func timeAnswerEvidenceBonus(profile recallQueryProfile, content string) float64
 	} else if hasHeaderAnchor && !bodyHasExplicitDate && !bodyHasRelativeDate && !bodyHasAnchoredPeriod {
 		bonus += 0.03
 	}
+	if temporalDisplay != "" {
+		switch {
+		case bodyHasExplicitDate || bodyHasRelativeDate || bodyHasAnchoredPeriod:
+			bonus += 0.02
+		case temporalKind == "deictic_relative":
+			bonus += 0.05
+		default:
+			bonus += 0.03
+		}
+	}
 	if len(profile.temporalTokens) > 0 {
 		bonus += temporalConstraintMatchBonus(profile.temporalTokens, fullLower)
+		if temporalDisplay != "" {
+			bonus += 0.5 * temporalConstraintMatchBonus(profile.temporalTokens, strings.ToLower(temporalDisplay))
+		}
 	}
 	switch profile.temporalIntent {
 	case recallTemporalIntentFuture:

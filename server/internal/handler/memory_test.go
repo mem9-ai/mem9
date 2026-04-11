@@ -840,19 +840,19 @@ func TestNormalizeRecallQuery_ChineseRelativeDates(t *testing.T) {
 	}{
 		{
 			query: "我昨天开心吗",
-			want:  "我昨天(2026-04-10|2026年4月10日)开心吗",
+			want:  "我昨天开心吗 2026-04-10 2026年4月10日 10 April 2026",
 		},
 		{
 			query: "上周一部署了吗",
-			want:  "上周一(2026-03-30|2026年3月30日)部署了吗",
+			want:  "上周一部署了吗 2026-03-30 2026年3月30日 30 March 2026",
 		},
 		{
 			query: "下个月要不要去旅游",
-			want:  "下个月(2026-05|2026年5月)要不要去旅游",
+			want:  "下个月要不要去旅游 2026-05 2026年5月 May 2026",
 		},
 		{
 			query: "去年开心吗",
-			want:  "去年(2025|2025年)开心吗",
+			want:  "去年开心吗 2025 2025年",
 		},
 	}
 
@@ -863,9 +863,18 @@ func TestNormalizeRecallQuery_ChineseRelativeDates(t *testing.T) {
 	}
 }
 
-func TestNormalizeRecallQuery_EnglishQueryUnchanged(t *testing.T) {
+func TestNormalizeRecallQuery_EnglishQueryExpanded(t *testing.T) {
 	now := time.Date(2026, time.April, 11, 9, 0, 0, 0, time.Local)
 	query := "Was I happy yesterday?"
+
+	if got := normalizeRecallQuery(query, now); got != "Was I happy yesterday? 2026-04-10 2026年4月10日 10 April 2026" {
+		t.Fatalf("normalizeRecallQuery(%q) = %q, want expanded query", query, got)
+	}
+}
+
+func TestNormalizeRecallQuery_LocalAnchorRemainsUnchanged(t *testing.T) {
+	now := time.Date(2026, time.April, 11, 9, 0, 0, 0, time.Local)
+	query := "4月23日的前一天发生了什么"
 
 	if got := normalizeRecallQuery(query, now); got != query {
 		t.Fatalf("normalizeRecallQuery(%q) = %q, want unchanged", query, got)

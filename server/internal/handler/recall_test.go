@@ -99,12 +99,41 @@ func TestAnswerEvidenceBonus_BilingualSignals(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			profile := recallQueryProfile{shape: tt.shape}
-			strong := answerEvidenceBonus(profile, tt.strong)
-			weak := answerEvidenceBonus(profile, tt.weak)
+			strong := answerEvidenceBonus(profile, domain.Memory{Content: tt.strong})
+			weak := answerEvidenceBonus(profile, domain.Memory{Content: tt.weak})
 			if strong <= weak {
 				t.Fatalf("answerEvidenceBonus(%v, %q) = %.2f, want > %.2f for %q", tt.shape, tt.strong, strong, weak, tt.weak)
 			}
 		})
+	}
+}
+
+func TestAnswerEvidenceBonus_TimePrefersNaturalDatesOverMetadataProjection(t *testing.T) {
+	profile := recallQueryProfile{shape: recallQueryShapeTime}
+
+	natural := answerEvidenceBonus(profile, domain.Memory{
+		Content: "[10:37 am on 27 June, 2023] I took my family camping in the mountains last week.",
+	})
+	synthetic := answerEvidenceBonus(profile, domain.Memory{
+		Content:  "今天我很开心",
+		Metadata: service.MergeTemporalMetadata(nil, &service.TemporalMetadata{Kind: "deictic_relative", Display: "2026-04-11"}),
+	})
+	if natural <= synthetic {
+		t.Fatalf("expected natural anchored evidence %.2f to outrank metadata-only evidence %.2f", natural, synthetic)
+	}
+}
+
+func TestAnswerEvidenceBonus_IgnoresLegacyInjectedDateWhenBodyAlreadyExplicit(t *testing.T) {
+	profile := recallQueryProfile{shape: recallQueryShapeTime}
+
+	natural := answerEvidenceBonus(profile, domain.Memory{
+		Content: "James' mother and her friend visited him on 19 October 2022.",
+	})
+	legacyPolluted := answerEvidenceBonus(profile, domain.Memory{
+		Content: "James' mother and her friend visited him on 19 October 2022(2026-04-09|2026年4月9日)",
+	})
+	if legacyPolluted != natural {
+		t.Fatalf("expected legacy polluted score %.2f to equal natural score %.2f", legacyPolluted, natural)
 	}
 }
 

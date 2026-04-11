@@ -167,8 +167,11 @@ func TestNormalizeTemporalFacts_UsesCurrentDateForChineseRelativeDayWithoutTimes
 	got := normalizeTemporalFactsAt(input, []ExtractedFact{
 		{Text: "今天我很开心", Tags: []string{"personal"}},
 	}, now)
-	if got[0].Text != "今天(2026-04-11|2026年4月11日)我很开心" {
-		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "今天(2026-04-11|2026年4月11日)我很开心")
+	if got[0].Text != "今天我很开心" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "今天我很开心")
+	}
+	if got[0].Temporal == nil || got[0].Temporal.Display != "2026-04-11" || got[0].Temporal.AnchorSource != temporalAnchorSourceNow {
+		t.Fatalf("temporal metadata = %+v, want display 2026-04-11 from now", got[0].Temporal)
 	}
 }
 
@@ -183,12 +186,15 @@ func TestNormalizeTemporalFacts_UsesTimestampForChineseRelativeDay(t *testing.T)
 	got := normalizeTemporalFactsAt(input, []ExtractedFact{
 		{Text: "今天我很开心", Tags: []string{"personal"}},
 	}, now)
-	if got[0].Text != "今天(2026-04-11|2026年4月11日)我很开心" {
-		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "今天(2026-04-11|2026年4月11日)我很开心")
+	if got[0].Text != "2026年4月11日我很开心" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "2026年4月11日我很开心")
+	}
+	if got[0].Temporal == nil || got[0].Temporal.Display != "2026-04-11" || got[0].Temporal.AnchorSource != temporalAnchorSourceHeader {
+		t.Fatalf("temporal metadata = %+v, want display 2026-04-11 from header", got[0].Temporal)
 	}
 }
 
-func TestNormalizeTemporalFacts_AnnotatesChineseRawFallback(t *testing.T) {
+func TestNormalizeTemporalFacts_StoresChineseRawFallbackInTemporalMetadata(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, time.April, 11, 9, 30, 0, 0, time.Local)
@@ -199,19 +205,11 @@ func TestNormalizeTemporalFacts_AnnotatesChineseRawFallback(t *testing.T) {
 	got := normalizeRawFallbackFactsAt(input, []ExtractedFact{
 		{Text: "下个月要去旅游", FactType: factTypeRawFallback, Tags: []string{rawFallbackTag}},
 	}, now)
-	if got[0].Text != "下个月(2026-05|2026年5月)要去旅游" {
-		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "下个月(2026-05|2026年5月)要去旅游")
+	if got[0].Text != "下个月要去旅游" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "下个月要去旅游")
 	}
-}
-
-func TestNormalizeChineseRelativeTemporalText_EnglishUnchanged(t *testing.T) {
-	t.Parallel()
-
-	now := time.Date(2026, time.April, 11, 9, 30, 0, 0, time.Local)
-	text := "Planning to go camping next month"
-
-	if got, ok := NormalizeChineseRelativeTemporalText(text, now); ok || got != text {
-		t.Fatalf("NormalizeChineseRelativeTemporalText(%q) = (%q, %v), want unchanged", text, got, ok)
+	if got[0].Temporal == nil || got[0].Temporal.Display != "2026-05" || got[0].Temporal.AnchorSource != temporalAnchorSourceNow {
+		t.Fatalf("temporal metadata = %+v, want display 2026-05 from now", got[0].Temporal)
 	}
 }
 
@@ -227,6 +225,76 @@ func TestNormalizeTemporalFacts_LeavesRawFallbackUntouched(t *testing.T) {
 	})
 	if got[0].Text != "We're thinking about going camping next month." {
 		t.Fatalf("raw fallback fact should remain unchanged, got %q", got[0].Text)
+	}
+	if got[0].Temporal == nil || got[0].Temporal.Display != "2023-06" || got[0].Temporal.AnchorSource != temporalAnchorSourceHeader {
+		t.Fatalf("temporal metadata = %+v, want display 2023-06 from header", got[0].Temporal)
+	}
+}
+
+func TestNormalizeTemporalFacts_LeavesExplicitAbsoluteDatesUntouched(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "James plans to call Samantha on 11 August 2022."},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFacts(input, []ExtractedFact{
+		{Text: "James plans to call Samantha on 11 August 2022", Tags: []string{"event", "timeline"}},
+	})
+	if got[0].Text != "James plans to call Samantha on 11 August 2022" {
+		t.Fatalf("normalized fact = %q, want unchanged", got[0].Text)
+	}
+	if got[0].Temporal != nil {
+		t.Fatalf("expected no temporal metadata, got %+v", got[0].Temporal)
+	}
+}
+
+func TestNormalizeTemporalFacts_ResolvesChineseLocalAnchorWithoutInventingYear(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "小明4月23日的前一天打了网球。"},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFacts(input, []ExtractedFact{
+		{Text: "小明4月23日的前一天打了网球", Tags: []string{"event", "timeline"}},
+	})
+	if got[0].Text != "小明4月22日打了网球" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "小明4月22日打了网球")
+	}
+	if got[0].Temporal == nil || got[0].Temporal.Display != "4月22日" || got[0].Temporal.AnchorSource != temporalAnchorSourceLocal {
+		t.Fatalf("temporal metadata = %+v, want display 4月22日 from local anchor", got[0].Temporal)
+	}
+}
+
+func TestNormalizeTemporalFacts_ResolvesChineseHeaderAnchoredMonthNaturally(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "[1:14 pm on 25 May, 2023] 我下个月要去旅游。"},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFacts(input, []ExtractedFact{
+		{Text: "我下个月要去旅游", Tags: []string{"event", "timeline"}},
+	})
+	if got[0].Text != "我2023年6月要去旅游" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "我2023年6月要去旅游")
+	}
+	if got[0].Temporal == nil || got[0].Temporal.Display != "2023-06" || got[0].Temporal.AnchorSource != temporalAnchorSourceHeader {
+		t.Fatalf("temporal metadata = %+v, want display 2023-06 from header", got[0].Temporal)
+	}
+}
+
+func TestNormalizeStandaloneTemporalContent_PureDeicticUsesMetadataOnly(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.April, 11, 9, 30, 0, 0, time.Local)
+	text, meta := NormalizeStandaloneTemporalContent("今天我很开心", now)
+	if text != "今天我很开心" {
+		t.Fatalf("normalized text = %q, want unchanged", text)
+	}
+	if meta == nil || meta.Display != "2026-04-11" || meta.AnchorSource != temporalAnchorSourceNow {
+		t.Fatalf("temporal metadata = %+v, want display 2026-04-11 from now", meta)
 	}
 }
 
