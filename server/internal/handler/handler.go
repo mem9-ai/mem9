@@ -40,6 +40,7 @@ type Server struct {
 	startedAt     time.Time
 	svcCache      sync.Map
 	gaugeDebounce sync.Map // cluster_id -> time.Time of last Gauge refresh
+	strategyRouter       *service.RecallStrategyRouterService
 }
 
 // NewServer creates a new HTTP handler server.
@@ -68,6 +69,35 @@ func NewServer(
 		logger:      logger,
 		startedAt:   time.Now().UTC(),
 	}
+}
+
+func NewServerWithStrategyRouter(
+	tenantSvc *service.TenantService,
+	uploadTasks repository.UploadTaskRepo,
+	uploadDir string,
+	embedder *embed.Embedder,
+	llmClient *llm.Client,
+	autoModel string,
+	ftsEnabled bool,
+	ingestMode service.IngestMode,
+	dbBackend string,
+	logger *slog.Logger,
+	strategyRouter *service.RecallStrategyRouterService,
+) *Server {
+	srv := NewServer(
+		tenantSvc,
+		uploadTasks,
+		uploadDir,
+		embedder,
+		llmClient,
+		autoModel,
+		ftsEnabled,
+		ingestMode,
+		dbBackend,
+		logger,
+	)
+	srv.strategyRouter = strategyRouter
+	return srv
 }
 
 // resolvedSvc holds the correct service instances for a request.
