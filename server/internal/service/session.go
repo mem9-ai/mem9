@@ -99,9 +99,10 @@ func (s *SessionService) SearchCandidates(
 	ctx context.Context,
 	f domain.MemoryFilter,
 	sourcePool RecallSourcePool,
+	opts RecallCandidateOptions,
 ) ([]RecallCandidate, error) {
 	limit := normalizeRecallLimit(f.Limit, DefaultSessionLimit)
-	fetchLimit := limit * defaultSessionFetchMultiplier
+	fetchLimit := limit * normalizeRecallFetchMultiplier(opts.FetchMultiplier, defaultSessionFetchMultiplier)
 
 	sf := f
 	sf.Offset = 0

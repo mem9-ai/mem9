@@ -19,6 +19,9 @@ func TestClassifyRecallQueryShape_Bilingual(t *testing.T) {
 		{name: "count english", query: "how many deployments happened", want: recallQueryShapeCount},
 		{name: "time english", query: "when did it ship", want: recallQueryShapeTime},
 		{name: "location english", query: "where is the office", want: recallQueryShapeLocation},
+		{name: "enumeration english activities", query: "What activities does Melanie partake in?", want: recallQueryShapeEnumeration},
+		{name: "enumeration english books", query: "What books has Melanie read?", want: recallQueryShapeEnumeration},
+		{name: "enumeration english names", query: "What are Melanie's pets' names?", want: recallQueryShapeEnumeration},
 		{name: "exact english", query: "what company does john like", want: recallQueryShapeExact},
 		{name: "entity chinese", query: "谁负责这个项目", want: recallQueryShapeEntity},
 		{name: "entity chinese 哪一个", query: "哪一个团队负责", want: recallQueryShapeEntity},
@@ -33,6 +36,7 @@ func TestClassifyRecallQueryShape_Bilingual(t *testing.T) {
 		{name: "location chinese 在哪", query: "在哪办公", want: recallQueryShapeLocation},
 		{name: "location chinese 什么地方", query: "什么地方部署", want: recallQueryShapeLocation},
 		{name: "location chinese 哪座城市", query: "哪座城市有办公室", want: recallQueryShapeLocation},
+		{name: "enumeration chinese 哪些", query: "哪些活动是她参加过的？", want: recallQueryShapeEnumeration},
 		{name: "exact chinese", query: "什么公司是客户", want: recallQueryShapeExact},
 	}
 
@@ -93,6 +97,12 @@ func TestAnswerEvidenceBonus_BilingualSignals(t *testing.T) {
 			shape:  recallQueryShapeExact,
 			strong: `“Under Armour”`,
 			weak:   "户外品牌",
+		},
+		{
+			name:   "enumeration prefers itemized evidence",
+			shape:  recallQueryShapeEnumeration,
+			strong: `Melanie enjoys pottery, camping, and painting.`,
+			weak:   "Melanie enjoys many activities.",
 		},
 	}
 

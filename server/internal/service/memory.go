@@ -176,7 +176,7 @@ func (s *MemoryService) SearchCandidates(
 	ctx context.Context,
 	filter domain.MemoryFilter,
 	sourcePool RecallSourcePool,
-	enableSecondHop bool,
+	opts RecallCandidateOptions,
 ) ([]RecallCandidate, error) {
 	if filter.Query == "" {
 		return nil, nil
@@ -187,15 +187,15 @@ func (s *MemoryService) SearchCandidates(
 	searchFilter.Source = ""
 
 	if s.autoModel != "" {
-		return s.autoHybridCandidates(ctx, searchFilter, sourcePool, enableSecondHop)
+		return s.autoHybridCandidates(ctx, searchFilter, sourcePool, opts)
 	}
 	if s.embedder != nil {
-		return s.hybridCandidates(ctx, searchFilter, sourcePool)
+		return s.hybridCandidates(ctx, searchFilter, sourcePool, opts)
 	}
 	if s.memories.FTSAvailable() {
-		return s.ftsOnlyCandidates(ctx, searchFilter, sourcePool)
+		return s.ftsOnlyCandidates(ctx, searchFilter, sourcePool, opts)
 	}
-	return s.keywordOnlyCandidates(ctx, searchFilter, sourcePool)
+	return s.keywordOnlyCandidates(ctx, searchFilter, sourcePool, opts)
 }
 
 const rrfK = 60.0
@@ -270,9 +270,9 @@ func (s *MemoryService) keywordOnlySearch(ctx context.Context, filter domain.Mem
 	return populateRelativeAge(page), total, nil
 }
 
-func (s *MemoryService) ftsOnlyCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool) ([]RecallCandidate, error) {
+func (s *MemoryService) ftsOnlyCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool, opts RecallCandidateOptions) ([]RecallCandidate, error) {
 	limit := normalizeRecallLimit(filter.Limit, 10)
-	fetchLimit := limit * 3
+	fetchLimit := limit * normalizeRecallFetchMultiplier(opts.FetchMultiplier, 3)
 
 	ftsResults, err := s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
 	if err != nil {
@@ -281,9 +281,9 @@ func (s *MemoryService) ftsOnlyCandidates(ctx context.Context, filter domain.Mem
 	return dedupRecallCandidatesByContent(mergeRecallCandidates(sourcePool, ftsResults, nil, nil)), nil
 }
 
-func (s *MemoryService) keywordOnlyCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool) ([]RecallCandidate, error) {
+func (s *MemoryService) keywordOnlyCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool, opts RecallCandidateOptions) ([]RecallCandidate, error) {
 	limit := normalizeRecallLimit(filter.Limit, 10)
-	fetchLimit := limit * 3
+	fetchLimit := limit * normalizeRecallFetchMultiplier(opts.FetchMultiplier, 3)
 
 	kwResults, err := s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
 	if err != nil {
@@ -353,9 +353,9 @@ func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFi
 	return populateRelativeAge(setScores(page, scores)), total, nil
 }
 
-func (s *MemoryService) hybridCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool) ([]RecallCandidate, error) {
+func (s *MemoryService) hybridCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool, opts RecallCandidateOptions) ([]RecallCandidate, error) {
 	limit := normalizeRecallLimit(filter.Limit, 10)
-	fetchLimit := limit * 3
+	fetchLimit := limit * normalizeRecallFetchMultiplier(opts.FetchMultiplier, 3)
 
 	queryVec, err := s.embedder.Embed(ctx, filter.Query)
 	if err != nil {
@@ -444,7 +444,7 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 		}
 	}
 	if maxVecScore >= secondHopGateScore {
-		secondHopMems := s.secondHopAutoSearch(ctx, mems, scores, filter, limit)
+		secondHopMems := s.secondHopAutoSearch(ctx, mems, scores, filter, limit, secondHopTopN)
 		for rank, m := range secondHopMems {
 			scores[m.ID] += secondHopWeight / (rrfK + float64(rank+1))
 			if _, exists := mems[m.ID]; !exists {
@@ -464,10 +464,10 @@ func (s *MemoryService) autoHybridCandidates(
 	ctx context.Context,
 	filter domain.MemoryFilter,
 	sourcePool RecallSourcePool,
-	enableSecondHop bool,
+	opts RecallCandidateOptions,
 ) ([]RecallCandidate, error) {
 	limit := normalizeRecallLimit(filter.Limit, 10)
-	fetchLimit := limit * 3
+	fetchLimit := limit * normalizeRecallFetchMultiplier(opts.FetchMultiplier, 3)
 
 	vecResults, err := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
 	if err != nil {
@@ -489,7 +489,7 @@ func (s *MemoryService) autoHybridCandidates(
 	}
 
 	var secondHopResults []domain.Memory
-	if enableSecondHop {
+	if opts.EnableSecondHop {
 		maxVecScore := 0.0
 		for _, m := range vecResults {
 			if m.Score != nil && *m.Score > maxVecScore {
@@ -499,7 +499,11 @@ func (s *MemoryService) autoHybridCandidates(
 		if maxVecScore >= secondHopGateScore {
 			scores := rrfMerge(kwResults, vecResults)
 			mems := collectMems(kwResults, vecResults)
-			secondHopResults = s.secondHopAutoSearch(ctx, mems, scores, filter, limit)
+			topN := opts.SecondHopTopN
+			if topN <= 0 {
+				topN = secondHopTopN
+			}
+			secondHopResults = s.secondHopAutoSearch(ctx, mems, scores, filter, limit, topN)
 		}
 	}
 
@@ -515,9 +519,12 @@ func (s *MemoryService) secondHopAutoSearch(
 	firstHopScores map[string]float64,
 	filter domain.MemoryFilter,
 	limit int,
+	topN int,
 ) []domain.Memory {
 	sorted := sortByScore(firstHopMems, firstHopScores)
-	topN := secondHopTopN
+	if topN <= 0 {
+		topN = secondHopTopN
+	}
 	if topN > len(sorted) {
 		topN = len(sorted)
 	}
