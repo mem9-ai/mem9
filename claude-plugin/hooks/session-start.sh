@@ -1,70 +1,70 @@
 #!/usr/bin/env bash
-# session-start.sh — Load recent memories and inject them as additionalContext.
-# Hook: SessionStart (sync, timeout: 10s)
+# session-start.sh — Check Node, auto-provision an API key if missing, and emit a short status.
+
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=/dev/null
 source "${SCRIPT_DIR}/common.sh"
 
-read_stdin
+HOOK_INPUT="$(cat)"
 
-# If env vars not set, exit silently (plugin not configured yet).
-if ! mnemo_check_env 2>/dev/null; then
+if ! mem9_require_node; then
+  if printf '%s' "${HOOK_INPUT}" | grep -Eq '"source"[[:space:]]*:[[:space:]]*"startup"'; then
+    mem9_debug "SessionStart" "node_missing" "source" "startup"
+    mem9_emit_context "SessionStart" "[mem9] Node.js 18+ is required. mem9 is disabled for this session. Install Node and restart Claude Code."
+  fi
   exit 0
 fi
 
-# Fetch the 20 most recent memories.
-response=$(mnemo_get_memories 20 2>/dev/null || echo "")
-
-if [[ -z "$response" ]]; then
+SESSION_SOURCE="$(mem9_hook_get_string "${HOOK_INPUT}" "source")"
+mem9_debug "SessionStart" "hook_started" "source" "${SESSION_SOURCE:-unknown}"
+if [[ "${SESSION_SOURCE}" != "startup" ]]; then
+  mem9_debug "SessionStart" "skipped_non_startup" "source" "${SESSION_SOURCE:-unknown}"
   exit 0
 fi
 
-# Extract memories into a readable context block.
-context=$(echo "$response" | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    memories = data.get('memories', [])
-    if not memories:
-        sys.exit(0)
-    lines = ['[mem9] Shared memories from your team:']
-    lines.append('')
-    for m in memories:
-        tags = ', '.join(m.get('tags') or [])
-        source = m.get('source', '')
-        header_parts = []
-        if source:
-            header_parts.append(f'by {source}')
-        if tags:
-            header_parts.append(f'[{tags}]')
-        header = ' | '.join(header_parts)
-        if header:
-            lines.append(f'- **{header}**')
-        content = m.get('content', '')
-        # Truncate very long content for context injection.
-        if len(content) > 500:
-            content = content[:500] + '...'
-        age = m.get('relative_age', '')
-        age_prefix = f'({age}) ' if age else ''
-        lines.append(f'  {age_prefix}{content}')
-        lines.append('')
-    print('\n'.join(lines))
-except Exception:
-    pass
-" 2>/dev/null || echo "")
+load_auth_status=0
+if mem9_load_auth 2>/dev/null; then
+  mem9_debug "SessionStart" "auth_ready" \
+    "source" "${SESSION_SOURCE}" \
+    "auth_source" "${MEM9_AUTH_SOURCE:-unknown}"
+  exit 0
+else
+  load_auth_status=$?
+fi
 
-if [[ -z "$context" ]]; then
+if [[ "${load_auth_status}" -eq 2 ]]; then
+  mem9_debug "SessionStart" "auth_invalid" \
+    "source" "${SESSION_SOURCE}" \
+    "auth_source" "${MEM9_AUTH_SOURCE:-invalid_file}"
+  mem9_emit_context "SessionStart" "[mem9] auth.json is invalid or unreadable. Automatic setup is paused. Run /mem9:setup to repair it."
   exit 0
 fi
 
-# Return additionalContext to inject into Claude's context.
-MEM9_CONTEXT="$context" python3 -c "
-import json, os
-output = {
-    'hookSpecificOutput': {
-        'hookEventName': 'SessionStart',
-        'additionalContext': os.environ['MEM9_CONTEXT']
-    }
-}
-print(json.dumps(output))
-"
+mem9_debug "SessionStart" "provision_start" "source" "${SESSION_SOURCE}"
+response="$(mem9_provision_auth 2>/dev/null || true)"
+if [[ -z "${response}" ]]; then
+  mem9_debug "SessionStart" "provision_failed" "source" "${SESSION_SOURCE}"
+  mem9_emit_context "SessionStart" "[mem9] Automatic setup failed. Try again later or run /mem9:setup to inspect the current state."
+  exit 0
+fi
+
+api_key="$(printf '%s' "${response}" | node "${SCRIPT_DIR}/lib/hook-json.mjs" get-string id)"
+if [[ -z "${api_key}" ]]; then
+  mem9_debug "SessionStart" "provision_missing_api_key" "source" "${SESSION_SOURCE}"
+  mem9_emit_context "SessionStart" "[mem9] Automatic setup failed. The server did not return an API key."
+  exit 0
+fi
+
+if ! mem9_write_auth "${api_key}"; then
+  mem9_debug "SessionStart" "auth_write_failed" "source" "${SESSION_SOURCE}"
+  mem9_emit_context "SessionStart" "[mem9] Automatic setup failed. The plugin could not write auth.json."
+  exit 0
+fi
+
+mem9_write_session_env "${api_key}" || true
+mem9_debug "SessionStart" "initialized" \
+  "source" "${SESSION_SOURCE}" \
+  "auth_source" "auto_provisioned"
+mem9_emit_context "SessionStart" "[mem9] Initialized automatically."

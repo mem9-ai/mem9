@@ -38,7 +38,8 @@
     "load_more": "加载更多",
     "loading": "正在加载记忆…",
     "via": "来自",
-    "copied": "已复制到剪贴板"
+    "copied": "已复制到剪贴板",
+    "linked_session": "有对话来源"
   },
   "detail": {
     "type": {
@@ -55,21 +56,28 @@
     "mixed_badge": "混合",
     "derived_tags": "派生标签",
     "metadata": "元数据",
-    "delete": "删除这条记忆",
+    "delete": "删除",
+    "delete_button_label": "删除记忆",
     "edit": "编辑",
     "close": "关闭"
   },
   "session_preview": {
     "title": "对话原文",
     "loading": "正在加载对话…",
+    "jump_to_start": "开头",
+    "jump_to_latest": "最新",
     "show_metadata": "展开",
     "hide_metadata": "收起",
+    "show_tool_result": "展开结果",
+    "hide_tool_result": "收起结果",
+    "tool_result_empty": "工具结果",
     "metadata_summary_empty": "点击查看元数据",
     "role": {
       "user": "用户",
       "assistant": "助手",
       "system": "系统",
-      "tool": "工具"
+      "tool": "工具",
+      "toolResult": "工具结果"
     }
   },
   "add": {

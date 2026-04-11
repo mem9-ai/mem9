@@ -77,7 +77,7 @@ describe("httpProvider", () => {
     expect(init?.body).toBeInstanceOf(FormData);
   });
 
-  it("requests session preview messages with repeatable session_id params", async () => {
+  it("requests selected-memory session messages without an explicit limit", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -106,8 +106,7 @@ describe("httpProvider", () => {
     );
 
     const result = await httpProvider.listSessionMessages("space-1", {
-      session_ids: ["sess-1", "sess-2"],
-      limit_per_session: 4,
+      session_ids: ["sess-1"],
     });
 
     expect(result.messages).toHaveLength(1);
@@ -115,15 +114,13 @@ describe("httpProvider", () => {
 
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     const headers = init?.headers as Headers;
-    expect(url).toBe(
-      "/your-memory/api/session-messages?session_id=sess-1&session_id=sess-2&limit_per_session=4",
-    );
+    expect(url).toBe("/your-memory/api/session-messages?session_id=sess-1");
     expect(headers.get("X-API-Key")).toBe("space-1");
     expect(headers.get("X-Mnemo-Agent-Id")).toBe("dashboard");
     expect(headers.get("Content-Type")).toBe("application/json");
   });
 
-  it("returns an empty session preview result when the endpoint is unavailable", async () => {
+  it("returns an empty session-message result when the endpoint is unavailable", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({

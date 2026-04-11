@@ -3,11 +3,18 @@
   "owner": {
     "name": "mem9-ai"
   },
+  "metadata": {
+    "description": "Official mem9 plugins for Claude Code"
+  },
   "plugins": [
     {
       "name": "mem9",
       "source": "./claude-plugin",
-      "description": "Persistent cloud memory for Claude Code. Auto-loads memories on session start, auto-saves on stop, with on-demand store/recall skills."
+      "description": "Persistent cloud memory for Claude Code with automatic recall, transcript ingest, and on-demand setup, recall, and store skills.",
+      "version": "0.3.0",
+      "homepage": "https://mem9.ai",
+      "repository": "https://github.com/mem9-ai/mem9",
+      "license": "Apache-2.0"
     }
   ]
 }

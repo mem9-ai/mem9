@@ -57,6 +57,8 @@ interface HookContext {
   sessionId?: string;
   /** Legacy alias for sessionId used by older OpenClaw versions. */
   sessionKey?: string;
+  /** What initiated this agent run: "user", "heartbeat", "cron", or "memory". */
+  trigger?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -292,6 +294,12 @@ export function registerHooks(
       const hookCtx = (context ?? {}) as HookContext;
       if (!evt?.success || !evt.messages || evt.messages.length === 0) return;
 
+      // Skip cron/heartbeat-triggered runs — they produce low-value messages
+      if (hookCtx.trigger === "cron" || hookCtx.trigger === "heartbeat") {
+        logger.info(`[mem9] Skipping auto-ingest for ${hookCtx.trigger}-triggered run`);
+        return;
+      }
+
       // Format raw messages into IngestMessage format
       const formatted: IngestMessage[] = [];
       for (const msg of evt.messages) {
@@ -299,6 +307,11 @@ export function registerHooks(
         const m = msg as Record<string, unknown>;
         const role = typeof m.role === "string" ? m.role : "";
         if (!role) continue;
+
+        // Skip cron tool results — structured JSON job definitions with no memory value
+        if (role === "toolResult" && typeof m.toolName === "string" && m.toolName === "cron") {
+          continue;
+        }
 
         let content = "";
         if (typeof m.content === "string") {

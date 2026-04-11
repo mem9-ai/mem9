@@ -1,10 +1,11 @@
 {
   "name": "mem9",
-  "version": "0.2.0",
-  "description": "Persistent cloud memory for Claude Code. Auto-loads memories on session start, auto-saves on stop, with on-demand store/recall skills.",
+  "version": "0.3.0",
+  "description": "Persistent cloud memory for Claude Code. Requires Node.js 18+, auto-initializes auth on startup, recalls memories on each user turn, and uploads structured conversation turns to mem9.",
   "author": {
     "name": "mem9-ai"
   },
-  "repository": "https://github.com/mem9-ai/mem9-claude-plugin",
+  "homepage": "https://mem9.ai",
+  "repository": "https://github.com/mem9-ai/mem9",
   "license": "Apache-2.0"
 }
