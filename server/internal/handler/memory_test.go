@@ -1334,8 +1334,8 @@ func TestListMemories_AttributeInference_ThreadChase_BypassesTopSeedLimit(t *tes
 		keywordSearchByQuery: map[string][]domain.Memory{
 			"What could John do after basketball career?": {
 				{ID: "seed-1", Content: "John likes training.", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.95), Metadata: metaSeed1},
+				{ID: "question", Content: "What are your thoughts on life after basketball?", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.92), Metadata: metaQuestion},
 				{ID: "seed-2", Content: "John enjoys teamwork.", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.90), Metadata: metaSeed2},
-				{ID: "question", Content: "What are your thoughts on life after basketball?", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.55), Metadata: metaQuestion},
 			},
 		},
 		neighborResultsBySeq: map[int][]domain.Memory{
@@ -1348,7 +1348,7 @@ func TestListMemories_AttributeInference_ThreadChase_BypassesTopSeedLimit(t *tes
 	srv := newTestServer(memRepo, sessRepo)
 	srv.strategyRouter = service.NewRecallStrategyRouterService(nil, llmClient, "")
 
-	req := makeRequest(t, http.MethodGet, "/memories?q=What+could+John+do+after+basketball+career%3F&session_id=session-123&limit=4", nil)
+	req := makeRequest(t, http.MethodGet, "/memories?q=What+could+John+do+after+basketball+career%3F&session_id=session-123&limit=3", nil)
 	rr := httptest.NewRecorder()
 	srv.listMemories(rr, req)
 
@@ -1360,14 +1360,13 @@ func TestListMemories_AttributeInference_ThreadChase_BypassesTopSeedLimit(t *tes
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatal(err)
 	}
-	found := false
+	foundAnswer := false
 	for _, mem := range resp.Memories {
 		if mem.ID == "answer" {
-			found = true
-			break
+			foundAnswer = true
 		}
 	}
-	if !found {
+	if !foundAnswer {
 		t.Fatalf("expected thread-chased answer row in results, got %#v", resp.Memories)
 	}
 }

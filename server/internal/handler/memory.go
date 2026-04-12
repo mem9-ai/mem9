@@ -402,6 +402,7 @@ func (s *Server) explicitSessionSearch(ctx context.Context, auth *domain.AuthInf
 
 	var (
 		sessionMems []domain.Memory
+		chasedMems  []domain.Memory
 		insightMems []domain.Memory
 		sessionErr  error
 		insightErr  error
@@ -422,7 +423,7 @@ func (s *Server) explicitSessionSearch(ctx context.Context, auth *domain.AuthInf
 				if err != nil {
 					slog.Warn("explicit-session thread chase failed", "cluster_id", auth.ClusterID, "err", err)
 				} else if len(chased) > 0 {
-					sessionMems = mergePrioritySessionResults(chased, sessionMems, sessionPrimaryLimit)
+					chasedMems = chased
 				}
 			}
 			before, after, ok := explicitSessionNeighborWindow(strategyName, answerFamily)
@@ -455,7 +456,7 @@ func (s *Server) explicitSessionSearch(ctx context.Context, auth *domain.AuthInf
 		return nil, 0, insightErr
 	}
 
-	merged := mergeExplicitSessionResults(sessionMems, insightMems, filter.Limit)
+	merged := mergeExplicitSessionResultsWithChased(chasedMems, sessionMems, insightMems, filter.Limit)
 	return merged, len(merged), nil
 }
 
@@ -753,12 +754,34 @@ func (s *Server) chaseQuestionAnswerTurns(
 	return chased, nil
 }
 
-func mergePrioritySessionResults(priority, existing []domain.Memory, budget int) []domain.Memory {
-	if budget <= 0 {
-		return nil
+func chasedAnswerSlots(limit int) int {
+	switch {
+	case limit <= 2:
+		return 1
+	case limit <= 10:
+		return 2
+	default:
+		return 3
 	}
-	merged := make([]domain.Memory, 0, budget)
-	seen := make(map[string]struct{}, budget)
+}
+
+func mergeExplicitSessionResultsWithChased(chased, sessionPrimary, insightSupport []domain.Memory, limit int) []domain.Memory {
+	if limit <= 0 {
+		return []domain.Memory{}
+	}
+
+	chasedBudget := chasedAnswerSlots(limit)
+	if chasedBudget > len(chased) {
+		chasedBudget = len(chased)
+	}
+	remaining := limit - chasedBudget
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	base := mergeExplicitSessionResults(sessionPrimary, insightSupport, remaining)
+	merged := make([]domain.Memory, 0, limit)
+	seen := make(map[string]struct{}, limit)
 
 	appendUnique := func(mem domain.Memory) {
 		key := responseDedupKey(mem)
@@ -769,14 +792,20 @@ func mergePrioritySessionResults(priority, existing []domain.Memory, budget int)
 		merged = append(merged, mem)
 	}
 
-	for _, mem := range priority {
-		if len(merged) >= budget {
+	for _, mem := range chased {
+		if len(merged) >= chasedBudget {
 			break
 		}
 		appendUnique(mem)
 	}
-	for _, mem := range existing {
-		if len(merged) >= budget {
+	for _, mem := range base {
+		if len(merged) >= limit {
+			break
+		}
+		appendUnique(mem)
+	}
+	for _, mem := range chased {
+		if len(merged) >= limit {
 			break
 		}
 		appendUnique(mem)
