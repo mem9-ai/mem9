@@ -36,6 +36,8 @@ const (
 	maxSessionsPerInsight     = 3
 	maxRoutedSessions         = 6
 	maxNeighborSeedCount      = 2
+	maxThreadChaseCandidates  = 6
+	maxThreadChaseResults     = 2
 	neighborSeedMinScore      = 0.35
 	neighborBeforeWindow      = 1
 	neighborAfterWindow       = 1
@@ -415,6 +417,14 @@ func (s *Server) explicitSessionSearch(ctx context.Context, auth *domain.AuthInf
 			sessionMems = nil
 		} else {
 			sessionMems = rerankExplicitSessionMemories(filter.Query, sessionMems)
+			if explicitSessionThreadChaseEnabled(strategyName, answerFamily) {
+				chased, err := s.chaseQuestionAnswerTurns(ctx, auth, svc, sessionMems, maxThreadChaseCandidates, maxThreadChaseResults)
+				if err != nil {
+					slog.Warn("explicit-session thread chase failed", "cluster_id", auth.ClusterID, "err", err)
+				} else if len(chased) > 0 {
+					sessionMems = mergePrioritySessionResults(chased, sessionMems, sessionPrimaryLimit)
+				}
+			}
 			before, after, ok := explicitSessionNeighborWindow(strategyName, answerFamily)
 			if ok && len(sessionMems) > 0 {
 				neighbors, err := s.expandSessionNeighbors(ctx, auth, svc, sessionMems, sessionPrimaryLimit, before, after)
@@ -676,6 +686,105 @@ func explicitSessionNeighborWindow(strategyName string, answerFamily string) (in
 	return 0, 0, false
 }
 
+func explicitSessionThreadChaseEnabled(strategyName string, answerFamily string) bool {
+	switch strategyName {
+	case domain.StrategyAttributeInference:
+		return true
+	case domain.StrategyDefaultMixed:
+		return isInferenceStyleAnswerFamily(answerFamily) || isExactAnswerFamily(answerFamily)
+	default:
+		return false
+	}
+}
+
+func (s *Server) chaseQuestionAnswerTurns(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	sessionMems []domain.Memory,
+	maxCandidates int,
+	maxResults int,
+) ([]domain.Memory, error) {
+	if svc.session == nil || maxCandidates <= 0 || maxResults <= 0 {
+		return nil, nil
+	}
+
+	chased := make([]domain.Memory, 0, maxResults)
+	seen := make(map[string]struct{}, maxResults)
+
+	candidates := sessionMems
+	if maxCandidates < len(candidates) {
+		candidates = candidates[:maxCandidates]
+	}
+
+	for _, mem := range candidates {
+		if len(chased) >= maxResults {
+			break
+		}
+		if !strings.Contains(mem.Content, "?") {
+			continue
+		}
+		seq, ok := sessionMemorySeq(mem)
+		if !ok || mem.SessionID == "" {
+			continue
+		}
+		rows, err := svc.session.ListNeighbors(ctx, mem.SessionID, seq, 0, 1)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			rowSeq, ok := sessionMemorySeq(row)
+			if !ok || rowSeq != seq+1 {
+				continue
+			}
+			key := responseDedupKey(row)
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			chased = append(chased, annotateThreadChaseMemory(row, seq+1, mem))
+			break
+		}
+	}
+
+	if len(chased) > 0 {
+		slog.Info("explicit-session thread chase", "cluster_id", auth.ClusterID, "candidates", len(candidates), "chased", len(chased))
+	}
+	return chased, nil
+}
+
+func mergePrioritySessionResults(priority, existing []domain.Memory, budget int) []domain.Memory {
+	if budget <= 0 {
+		return nil
+	}
+	merged := make([]domain.Memory, 0, budget)
+	seen := make(map[string]struct{}, budget)
+
+	appendUnique := func(mem domain.Memory) {
+		key := responseDedupKey(mem)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, mem)
+	}
+
+	for _, mem := range priority {
+		if len(merged) >= budget {
+			break
+		}
+		appendUnique(mem)
+	}
+	for _, mem := range existing {
+		if len(merged) >= budget {
+			break
+		}
+		appendUnique(mem)
+	}
+
+	return merged
+}
+
 func selectSessionSeeds(sessionMems []domain.Memory, maxSeeds int, minScore float64) []sessionSeed {
 	if maxSeeds <= 0 {
 		return nil
@@ -794,6 +903,25 @@ func annotateNeighborMemory(mem domain.Memory, seq int, seed sessionSeed) domain
 		if score < 0 {
 			score = 0
 		}
+		mem.Score = &score
+	}
+
+	return mem
+}
+
+func annotateThreadChaseMemory(mem domain.Memory, seq int, question domain.Memory) domain.Memory {
+	meta := sessionMemoryMeta{Seq: seq, Neighbor: true}
+	if len(mem.Metadata) > 0 {
+		_ = json.Unmarshal(mem.Metadata, &meta)
+		meta.Seq = seq
+		meta.Neighbor = true
+	}
+	if metaBytes, err := json.Marshal(meta); err == nil {
+		mem.Metadata = metaBytes
+	}
+
+	if question.Score != nil {
+		score := *question.Score + 0.02
 		mem.Score = &score
 	}
 

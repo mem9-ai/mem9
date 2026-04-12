@@ -327,12 +327,51 @@ func (s *Server) entityAwareSearchWindow(
 		slog.Warn("entity context search failed in default_mixed", "cluster_id", auth.ClusterID, "entity", entity, "err", err)
 		return memories, total, nil
 	}
+
+	insightMems, err := s.entityInsightSearch(ctx, auth, svc, workingFilter, entity, strategyName, answerFamily)
+	if err != nil {
+		slog.Warn("entity insight search failed", "cluster_id", auth.ClusterID, "entity", entity, "err", err)
+	}
 	if len(entityMems) == 0 {
-		return memories, total, nil
+		if len(insightMems) == 0 {
+			return memories, total, nil
+		}
+		return blendMemoriesWithEntityContext(memories, insightMems, workingFilter.Limit, strategyName, answerFamily), len(memories), nil
 	}
 
 	memories = blendMemoriesWithEntityContext(memories, entityMems, workingFilter.Limit, strategyName, answerFamily)
+	if len(insightMems) > 0 {
+		memories = blendMemoriesWithEntityContext(memories, insightMems, workingFilter.Limit, strategyName, answerFamily)
+	}
 	return memories, len(memories), nil
+}
+
+func (s *Server) entityInsightSearch(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	filter domain.MemoryFilter,
+	entity string,
+	strategyName string,
+	answerFamily string,
+) ([]domain.Memory, error) {
+	limit := entityInsightLimit(filter.Limit, strategyName, answerFamily)
+	if limit == 0 || svc.memory == nil {
+		return nil, nil
+	}
+
+	insightFilter := filter
+	insightFilter.Query = buildEntityContextQuery(entity, answerFamily)
+	insightFilter.Offset = 0
+	insightFilter.Limit = limit
+	insightFilter.MemoryType = string(domain.TypeInsight)
+
+	results, _, err := svc.memory.Search(ctx, insightFilter)
+	if err != nil {
+		return nil, err
+	}
+	slog.Info("entity insight search", "cluster_id", auth.ClusterID, "entity", entity, "results", len(results))
+	return results, nil
 }
 
 func (s *Server) executeExactEventTemporal(
@@ -706,6 +745,30 @@ func entityContextLimit(limit int, strategyName, answerFamily string) int {
 	default:
 		return 3
 	}
+}
+
+func entityInsightLimit(limit int, strategyName, answerFamily string) int {
+	if strategyName == domain.StrategyAttributeInference {
+		switch {
+		case limit <= 2:
+			return 1
+		case limit <= 10:
+			return 2
+		default:
+			return 4
+		}
+	}
+	if strategyName == domain.StrategyDefaultMixed && isInferenceStyleAnswerFamily(answerFamily) {
+		switch {
+		case limit <= 2:
+			return 1
+		case limit <= 10:
+			return 2
+		default:
+			return 3
+		}
+	}
+	return 0
 }
 
 func buildEntityContextQuery(entity, answerFamily string) string {
