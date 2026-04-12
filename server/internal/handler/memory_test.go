@@ -15,13 +15,41 @@ import (
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/llm"
 	"github.com/qiffang/mnemos/server/internal/middleware"
+	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAllSubstrings(items []string, subs ...string) bool {
+	for _, item := range items {
+		ok := true
+		for _, sub := range subs {
+			if !strings.Contains(item, sub) {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return true
+		}
+	}
+	return false
+}
 
 // testMemoryRepo is a minimal MemoryRepo mock for handler tests.
 type testMemoryRepo struct {
 	createCalls          []*domain.Memory
 	keywordSearchResults []domain.Memory
+	keywordSearchByQuery map[string][]domain.Memory
+	keywordQueries       []string
 }
 
 func (m *testMemoryRepo) Create(_ context.Context, mem *domain.Memory) error {
@@ -59,7 +87,11 @@ func (m *testMemoryRepo) AutoVectorSearch(context.Context, string, domain.Memory
 	return nil, nil
 }
 
-func (m *testMemoryRepo) KeywordSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
+func (m *testMemoryRepo) KeywordSearch(_ context.Context, query string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+	m.keywordQueries = append(m.keywordQueries, query)
+	if m.keywordSearchByQuery != nil {
+		return append([]domain.Memory(nil), m.keywordSearchByQuery[query]...), nil
+	}
 	return append([]domain.Memory(nil), m.keywordSearchResults...), nil
 }
 
@@ -103,6 +135,8 @@ type testSessionRepo struct {
 	patchTagsCalled      bool
 	sessions             []*domain.Session // captured from BulkCreate
 	keywordSearchResults []domain.Memory
+	keywordSearchByQuery map[string][]domain.Memory
+	keywordQueries       []string
 	setKeywordResults    []domain.Memory
 	neighborResults      []domain.Memory
 	routedSearchIDs      []string
@@ -150,7 +184,11 @@ func (s *testSessionRepo) FTSSearchInSessionSet(context.Context, string, domain.
 	return nil, nil
 }
 
-func (s *testSessionRepo) KeywordSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
+func (s *testSessionRepo) KeywordSearch(_ context.Context, query string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+	s.keywordQueries = append(s.keywordQueries, query)
+	if s.keywordSearchByQuery != nil {
+		return append([]domain.Memory(nil), s.keywordSearchByQuery[query]...), nil
+	}
 	return append([]domain.Memory(nil), s.keywordSearchResults...), nil
 }
 func (s *testSessionRepo) KeywordSearchInSessionSet(_ context.Context, _ string, _ domain.MemoryFilter, sessionIDs []string, _ int) ([]domain.Memory, error) {
@@ -172,9 +210,13 @@ func newTestServer(memRepo *testMemoryRepo, sessRepo *testSessionRepo) *Server {
 
 func newTestServerWithLinks(memRepo *testMemoryRepo, sessRepo *testSessionRepo, linkRepo *testLinkRepo) *Server {
 	srv := NewServer(nil, nil, "", nil, nil, "", false, false, service.ModeSmart, "", slog.Default(), nil)
+	var linkSvc repository.MemorySessionLinkRepo
+	if linkRepo != nil {
+		linkSvc = linkRepo
+	}
 	svc := resolvedSvc{
-		memory:  service.NewMemoryServiceWithLinks(memRepo, linkRepo, nil, nil, "", service.ModeSmart, false),
-		ingest:  service.NewIngestService(memRepo, nil, nil, "", service.ModeSmart),
+		memory:  service.NewMemoryServiceWithLinks(memRepo, linkSvc, nil, nil, "", service.ModeSmart, false),
+		ingest:  service.NewIngestServiceWithLinks(memRepo, linkSvc, nil, nil, "", service.ModeSmart),
 		session: service.NewSessionService(sessRepo, nil, ""),
 	}
 	// Pre-populate svcCache so resolveServices returns our test services.
@@ -925,6 +967,65 @@ func TestRerankGroundedMemories_PrefersQuantifiedEvidenceForCountQuery(t *testin
 	}
 }
 
+func TestRerankForAttributeInference_PenalizesQuestionOnlyRows(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "question", Content: "[date:3:56 pm on 6 June, 2023] [speaker:Jolene] Why did you decide that?", MemoryType: domain.TypeSession, Score: floatPtr(0.95)},
+		{ID: "evidence", Content: "Caroline advocates for LGBTQ rights and works with local groups on policy campaigns.", MemoryType: domain.TypeSession, Score: floatPtr(0.9)},
+	}
+
+	got := rerankForAttributeInference("What would Caroline's political leaning likely be?", mems, "caroline", "political_leaning")
+	if got[0].ID != "evidence" {
+		t.Fatalf("expected declarative evidence row to rank first, got %q", got[0].ID)
+	}
+}
+
+func TestEntityContextLimit_StrategyAware(t *testing.T) {
+	tests := []struct {
+		name         string
+		limit        int
+		strategy     string
+		answerFamily string
+		want         int
+	}{
+		{name: "attribute inference small", limit: 2, strategy: domain.StrategyAttributeInference, answerFamily: "education", want: 2},
+		{name: "attribute inference medium", limit: 10, strategy: domain.StrategyAttributeInference, answerFamily: "education", want: 5},
+		{name: "attribute inference large", limit: 20, strategy: domain.StrategyAttributeInference, answerFamily: "education", want: 8},
+		{name: "default mixed inference family", limit: 10, strategy: domain.StrategyDefaultMixed, answerFamily: "traits", want: 4},
+		{name: "default mixed exact family", limit: 10, strategy: domain.StrategyDefaultMixed, answerFamily: "location", want: 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := entityContextLimit(tt.limit, tt.strategy, tt.answerFamily)
+			if got != tt.want {
+				t.Fatalf("expected %d, got %d", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestBuildEntityContextQuery_UsesStructuredFamilyTerms(t *testing.T) {
+	got := buildEntityContextQuery("john", "education")
+	if !strings.Contains(got, "john") || !strings.Contains(got, "degree") {
+		t.Fatalf("expected query to include entity and education term, got %q", got)
+	}
+	if strings.Contains(got, "nickname") {
+		t.Fatalf("did not expect arbitrary keyword extraction, got %q", got)
+	}
+}
+
+func TestRerankForExactAnswerFamily_PrefersCanonicalName(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "desc", Content: "A card game with different colored cards and numbers.", MemoryType: domain.TypeSession, Score: floatPtr(1.0)},
+		{ID: "canon", Content: "James played UNO with John.", MemoryType: domain.TypeSession, Score: floatPtr(0.9)},
+	}
+
+	got := rerankForExactAnswerFamily("What is the game with different colored cards that John was talking about?", mems, "james", "game")
+	if got[0].ID != "canon" {
+		t.Fatalf("expected canonical named answer to rank first, got %q", got[0].ID)
+	}
+}
+
 func TestMergeFanoutResults_BudgetSplit(t *testing.T) {
 	primary := []domain.Memory{
 		{ID: "p1", Content: "primary-1"},
@@ -967,6 +1068,351 @@ func TestMergeFanoutResults_Dedup(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("expected 'shared' to appear once, appeared %d times", count)
+	}
+}
+
+func TestListMemories_DefaultMixedWithEntityHint_UsesEntityContextSearch(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"strategies":[{"name":"default_mixed","confidence":0.85}],"entity":"john","answer_family":"traits"}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchByQuery: map[string][]domain.Memory{
+			"What might John's degree be in?": {
+				{ID: "s1", Content: "John enjoys sports.", MemoryType: domain.TypeSession, SessionID: "session-123", Metadata: json.RawMessage(`{"seq":1}`)},
+			},
+			"john personality character traits": {
+				{ID: "s2", Content: "John ran for Boston city council and volunteers in local policy groups.", MemoryType: domain.TypeSession, SessionID: "session-123", Metadata: json.RawMessage(`{"seq":2}`)},
+			},
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+	srv.strategyRouter = service.NewRecallStrategyRouterService(nil, llmClient, "")
+
+	req := makeRequest(t, http.MethodGet, "/memories?q=What+might+John%27s+degree+be+in%3F&session_id=session-123&limit=3", nil)
+	rr := httptest.NewRecorder()
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	if !containsString(sessRepo.keywordQueries, "What might John's degree be in?") {
+		t.Fatalf("expected original query search, got %v", sessRepo.keywordQueries)
+	}
+	if !containsAllSubstrings(sessRepo.keywordQueries, "john", "personality") {
+		t.Fatalf("expected enriched entity supplement query, got %v", sessRepo.keywordQueries)
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) < 2 {
+		t.Fatalf("expected blended memories, got %d", len(resp.Memories))
+	}
+	if resp.Memories[1].ID != "s2" {
+		t.Fatalf("expected entity-rich supplemental row to be blended in, got %#v", resp.Memories)
+	}
+}
+
+func TestListMemories_AttributeInference_ReranksEvidence(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"strategies":[{"name":"attribute_inference","confidence":0.86}],"entity":"john","answer_family":"education"}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchByQuery: map[string][]domain.Memory{
+			"What might John's degree be in?": {
+				{ID: "generic", Content: "John likes sports and music.", MemoryType: domain.TypeSession, SessionID: "session-123", Metadata: json.RawMessage(`{"seq":1}`)},
+				{ID: "evidence", Content: "John ran for Boston city council and volunteers in local policy groups.", MemoryType: domain.TypeSession, SessionID: "session-123", Metadata: json.RawMessage(`{"seq":2}`)},
+			},
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+	srv.strategyRouter = service.NewRecallStrategyRouterService(nil, llmClient, "")
+
+	req := makeRequest(t, http.MethodGet, "/memories?q=What+might+John%27s+degree+be+in%3F&session_id=session-123&limit=3", nil)
+	rr := httptest.NewRecorder()
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) < 2 {
+		t.Fatalf("expected routed memories, got %d", len(resp.Memories))
+	}
+	if resp.Memories[0].ID != "evidence" {
+		t.Fatalf("expected inference evidence row to rerank first, got %q", resp.Memories[0].ID)
+	}
+}
+
+func TestListMemories_AttributeInference_SessionPath_UsesEntitySupplement(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"strategies":[{"name":"attribute_inference","confidence":0.86}],"entity":"john","answer_family":"education"}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchByQuery: map[string][]domain.Memory{
+			"What might John's degree be in?": {
+				{ID: "generic", Content: "John likes sports and music.", MemoryType: domain.TypeSession, SessionID: "session-123", Metadata: json.RawMessage(`{"seq":1}`)},
+			},
+			"john degree school study": {
+				{ID: "evidence", Content: "John ran for Boston city council and volunteers in local policy groups.", MemoryType: domain.TypeSession, SessionID: "session-123", Metadata: json.RawMessage(`{"seq":2}`)},
+			},
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+	srv.strategyRouter = service.NewRecallStrategyRouterService(nil, llmClient, "")
+
+	req := makeRequest(t, http.MethodGet, "/memories?q=What+might+John%27s+degree+be+in%3F&session_id=session-123&limit=3", nil)
+	rr := httptest.NewRecorder()
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	if !containsAllSubstrings(sessRepo.keywordQueries, "john", "degree") {
+		t.Fatalf("expected enriched entity supplement query on session path, got %v", sessRepo.keywordQueries)
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) < 2 {
+		t.Fatalf("expected blended memories, got %d", len(resp.Memories))
+	}
+	if resp.Memories[0].ID != "evidence" {
+		t.Fatalf("expected entity supplement evidence to rerank first, got %q", resp.Memories[0].ID)
+	}
+}
+
+func TestListMemories_AttributeInference_SessionPath_ExpandsNeighbors(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"strategies":[{"name":"attribute_inference","confidence":0.86}],"entity":"john","answer_family":"education"}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	metaSeed, _ := json.Marshal(map[string]any{"seq": 18, "role": "assistant", "content_type": "text"})
+	metaNeighbor, _ := json.Marshal(map[string]any{"seq": 19, "role": "user", "content_type": "text"})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchByQuery: map[string][]domain.Memory{
+			"What might John's degree be in?": {
+				{ID: "seed", Content: "John is thinking about the future.", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.8), Metadata: metaSeed},
+			},
+			"john degree school study": {
+				{ID: "seed", Content: "John is thinking about the future.", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.8), Metadata: metaSeed},
+			},
+		},
+		neighborResults: []domain.Memory{
+			{ID: "seed", Content: "John is thinking about the future.", MemoryType: domain.TypeSession, SessionID: "session-123", Metadata: metaSeed},
+			{ID: "neighbor", Content: "John ran for Boston city council and volunteers in local policy groups.", MemoryType: domain.TypeSession, SessionID: "session-123", Metadata: metaNeighbor},
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+	srv.strategyRouter = service.NewRecallStrategyRouterService(nil, llmClient, "")
+
+	req := makeRequest(t, http.MethodGet, "/memories?q=What+might+John%27s+degree+be+in%3F&session_id=session-123&limit=3", nil)
+	rr := httptest.NewRecorder()
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) < 2 {
+		t.Fatalf("expected neighbor-expanded memories, got %d", len(resp.Memories))
+	}
+	if resp.Memories[0].ID != "neighbor" {
+		t.Fatalf("expected neighbor evidence to rerank first, got %q", resp.Memories[0].ID)
+	}
+}
+
+func TestListMemories_DefaultMixedWithEntityHint_PaginatesAfterEntityBlend(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"strategies":[{"name":"default_mixed","confidence":0.85}],"entity":"john","answer_family":"traits"}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{
+		keywordSearchByQuery: map[string][]domain.Memory{
+			"what is john's job?": {
+				{ID: "p1", Content: "primary-1"},
+				{ID: "p2", Content: "primary-2"},
+				{ID: "p3", Content: "primary-3"},
+				{ID: "p4", Content: "primary-4"},
+			},
+			"john personality character traits": {
+				{ID: "e1", Content: "entity-1"},
+				{ID: "e2", Content: "entity-2"},
+			},
+		},
+	}
+	sessRepo := &testSessionRepo{}
+	srv := newTestServer(memRepo, sessRepo)
+	srv.strategyRouter = service.NewRecallStrategyRouterService(nil, llmClient, "")
+
+	req := makeRequest(t, http.MethodGet, "/memories?q=what+is+john%27s+job%3F&limit=2&offset=2", nil)
+	rr := httptest.NewRecorder()
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	if !containsAllSubstrings(memRepo.keywordQueries, "john", "personality") {
+		t.Fatalf("expected enriched default_mixed entity query, got %v", memRepo.keywordQueries)
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Total != 4 {
+		t.Fatalf("expected total=4 after expanded-window blending, got %d", resp.Total)
+	}
+	if len(resp.Memories) != 2 {
+		t.Fatalf("expected 2 paginated memories, got %d", len(resp.Memories))
+	}
+	if resp.Memories[0].ID != "e1" || resp.Memories[1].ID != "e2" {
+		t.Fatalf("expected page 2 to reflect post-blend ordering, got %#v", resp.Memories)
+	}
+}
+
+func TestListMemories_DefaultMixedExactAnswerFamily_ReranksCanonicalRow(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"strategies":[{"name":"default_mixed","confidence":0.85}],"entity":"james","answer_family":"game"}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{
+		keywordSearchByQuery: map[string][]domain.Memory{
+			"what is the game with different colored cards that john was talking about?": {
+				{ID: "desc", Content: "A card game with different colored cards and numbers.", MemoryType: domain.TypeInsight, Score: floatPtr(1.0)},
+			},
+			"james favorite called named": {
+				{ID: "canon", Content: "James played UNO with John.", MemoryType: domain.TypeInsight, Score: floatPtr(0.8)},
+			},
+		},
+	}
+	sessRepo := &testSessionRepo{}
+	srv := newTestServer(memRepo, sessRepo)
+	srv.strategyRouter = service.NewRecallStrategyRouterService(nil, llmClient, "")
+
+	req := makeRequest(t, http.MethodGet, "/memories?q=what+is+the+game+with+different+colored+cards+that+john+was+talking+about%3F&limit=3", nil)
+	rr := httptest.NewRecorder()
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) < 2 {
+		t.Fatalf("expected blended memories, got %d", len(resp.Memories))
+	}
+	if resp.Memories[0].ID != "canon" {
+		t.Fatalf("expected canonical exact-answer row to rank first, got %q", resp.Memories[0].ID)
 	}
 }
 

@@ -298,7 +298,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 				"cluster_id", auth.ClusterID, "err", detectErr)
 		}
 
-		if detectErr == nil && !decision.IsDefault() {
+		if detectErr == nil && shouldExecuteStrategyDecision(decision) {
 			memories, total, err = s.executeWithFallback(r.Context(), auth, svc, filter, decision)
 			if err != nil {
 				s.handleError(r.Context(), w, err)
@@ -320,7 +320,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if explicitSessionMixed {
-		memories, total, err = s.explicitSessionSearch(r.Context(), auth, svc, filter)
+		memories, total, err = s.explicitSessionSearch(r.Context(), auth, svc, filter, domain.StrategyDefaultMixed, "")
 		if err != nil {
 			s.handleError(r.Context(), w, err)
 			return
@@ -392,7 +392,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) explicitSessionSearch(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+func (s *Server) explicitSessionSearch(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, filter domain.MemoryFilter, strategyName string, answerFamily string) ([]domain.Memory, int, error) {
 	sessionPrimaryLimit := explicitSessionPrimaryLimit(filter.Limit)
 	if sessionPrimaryLimit == 0 {
 		return []domain.Memory{}, 0, nil
@@ -415,6 +415,15 @@ func (s *Server) explicitSessionSearch(ctx context.Context, auth *domain.AuthInf
 			sessionMems = nil
 		} else {
 			sessionMems = rerankExplicitSessionMemories(filter.Query, sessionMems)
+			before, after, ok := explicitSessionNeighborWindow(strategyName, answerFamily)
+			if ok && len(sessionMems) > 0 {
+				neighbors, err := s.expandSessionNeighbors(ctx, auth, svc, sessionMems, sessionPrimaryLimit, before, after)
+				if err != nil {
+					slog.Warn("explicit-session neighbor expansion failed", "cluster_id", auth.ClusterID, "err", err)
+				} else if len(neighbors) > 0 {
+					sessionMems = selectSessionContextResults(sessionMems, neighbors, sessionPrimaryLimit)
+				}
+			}
 		}
 	}
 
@@ -554,7 +563,7 @@ func (s *Server) provenanceSessionGroundingSearch(ctx context.Context, auth *dom
 		return sessionMems, false, nil
 	}
 
-	neighbors, err := s.expandSessionNeighbors(ctx, auth, svc, sessionMems, sessionBudget)
+	neighbors, err := s.expandSessionNeighbors(ctx, auth, svc, sessionMems, sessionBudget, neighborBeforeWindow, neighborAfterWindow)
 	if err != nil {
 		slog.Warn("session neighbor expansion failed; keeping routed seeds only", "cluster_id", auth.ClusterID, "err", err)
 		return sessionMems, false, nil
@@ -619,7 +628,7 @@ func intersectSessionIDs(sessionIDs []string, explicitSessionID string) []string
 	return nil
 }
 
-func (s *Server) expandSessionNeighbors(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, sessionMems []domain.Memory, sessionBudget int) ([]domain.Memory, error) {
+func (s *Server) expandSessionNeighbors(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, sessionMems []domain.Memory, sessionBudget int, beforeWindow int, afterWindow int) ([]domain.Memory, error) {
 	seeds := selectSessionSeeds(sessionMems, maxNeighborSeedCount, neighborSeedMinScore)
 	if len(seeds) == 0 || sessionBudget < 2 {
 		return nil, nil
@@ -632,7 +641,7 @@ func (s *Server) expandSessionNeighbors(ctx context.Context, auth *domain.AuthIn
 	}
 
 	for _, seed := range seeds {
-		rows, err := svc.session.ListNeighbors(ctx, seed.mem.SessionID, seed.seq, neighborBeforeWindow, neighborAfterWindow)
+		rows, err := svc.session.ListNeighbors(ctx, seed.mem.SessionID, seed.seq, beforeWindow, afterWindow)
 		if err != nil {
 			return nil, err
 		}
@@ -651,6 +660,20 @@ func (s *Server) expandSessionNeighbors(ctx context.Context, auth *domain.AuthIn
 
 	slog.Info("session neighbor expansion", "cluster_id", auth.ClusterID, "seeds", len(seeds), "neighbors", len(neighbors))
 	return neighbors, nil
+}
+
+func explicitSessionNeighborWindow(strategyName string, answerFamily string) (int, int, bool) {
+	switch strategyName {
+	case domain.StrategyAttributeInference:
+		return 2, 2, true
+	case domain.StrategyDefaultMixed:
+		if isInferenceStyleAnswerFamily(answerFamily) || isExactAnswerFamily(answerFamily) {
+			return 2, 2, true
+		}
+	case domain.StrategyExactEventTemporal:
+		return neighborBeforeWindow, neighborAfterWindow, true
+	}
+	return 0, 0, false
 }
 
 func selectSessionSeeds(sessionMems []domain.Memory, maxSeeds int, minScore float64) []sessionSeed {

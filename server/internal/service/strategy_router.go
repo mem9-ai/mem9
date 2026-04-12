@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -16,6 +17,7 @@ import (
 const (
 	strategyVecWeight            = 0.6
 	strategyFTSWeight            = 0.4
+	strategyFTSMinNorm           = 0.25
 	strategyTopNForAggregation   = 10
 	strategyTopNForClassScore    = 3
 	strategyPrototypeFetchLimit  = 15
@@ -169,6 +171,9 @@ func weightedSimilarityMerge(vecResults, ftsResults []domain.RecallStrategyProto
 		if ftsMax > 0 {
 			norm = m.Score / ftsMax
 		}
+		if norm < strategyFTSMinNorm {
+			norm = 0
+		}
 		ftsScores[m.ID] = norm
 		if _, ok := byID[m.ID]; !ok {
 			byID[m.ID] = m
@@ -280,6 +285,14 @@ func resolveStep1(s1 step1Result) (domain.RecallRouteDecision, bool) {
 		second = s1.Aggregations[1]
 	}
 
+	if top.Class == domain.StrategyAttributeInference {
+		d := domain.RecallRouteDecision{
+			TopPrototypeIDs: top.TopIDs,
+			FallbackCause:   "needs_llm_entity",
+		}
+		return d, false
+	}
+
 	if top.VecSupportCount == 0 {
 		d := domain.RecallRouteDecision{
 			TopPrototypeIDs: top.TopIDs,
@@ -345,6 +358,7 @@ Allowed strategy classes:
 - exact_event_temporal
 - set_aggregation
 - count_query
+- attribute_inference
 - default_mixed
 
 Rules:
@@ -353,7 +367,10 @@ Rules:
 3. If uncertain, prefer default_mixed.
 4. Extract the primary entity when obvious.
 5. Extract answer_family when obvious.
-6. Return ONLY valid JSON.`
+6. Use attribute_inference ONLY when the answer requires inference or judgment beyond any single memory.
+7. Do NOT use attribute_inference for exact location/date/state/country/item/title/name/object questions. Those should be default_mixed unless clearly temporal/count/set.
+8. For attribute_inference, prefer high-level answer_family values such as traits, career, education, preferences, boolean, religion, political_leaning, ally_status.
+9. Return ONLY valid JSON.`
 
 const strategyLLMUserTemplate = `Query: %s
 
@@ -370,6 +387,12 @@ Examples:
 {"query":"When did Melanie run a charity race?","output":{"strategies":[{"name":"exact_event_temporal","confidence":0.92}],"entity":"melanie","answer_family":""}}
 {"query":"What events has Caroline participated in?","output":{"strategies":[{"name":"set_aggregation","confidence":0.90}],"entity":"caroline","answer_family":"events"}}
 {"query":"How many times has Melanie gone to the beach in 2023?","output":{"strategies":[{"name":"count_query","confidence":0.88},{"name":"set_aggregation","confidence":0.61}],"entity":"melanie","answer_family":"counts"}}
+{"query":"What might John's degree be in?","output":{"strategies":[{"name":"attribute_inference","confidence":0.84}],"entity":"john","answer_family":"education"}}
+{"query":"What would Caroline's political leaning likely be?","output":{"strategies":[{"name":"attribute_inference","confidence":0.90}],"entity":"caroline","answer_family":"political_leaning"}}
+{"query":"What personality traits might Melanie say Caroline has?","output":{"strategies":[{"name":"attribute_inference","confidence":0.90}],"entity":"caroline","answer_family":"traits"}}
+{"query":"What state did Nate visit?","output":{"strategies":[{"name":"default_mixed","confidence":0.88}],"entity":"nate","answer_family":"location"}}
+{"query":"In what country was Jolene during summer 2022?","output":{"strategies":[{"name":"default_mixed","confidence":0.90}],"entity":"jolene","answer_family":"country"}}
+{"query":"What card game is Deborah talking about?","output":{"strategies":[{"name":"default_mixed","confidence":0.89}],"entity":"deborah","answer_family":"game"}}
 {"query":"What is Caroline's job?","output":{"strategies":[{"name":"default_mixed","confidence":0.76}],"entity":"caroline","answer_family":""}}`
 
 type llmStrategyOutput struct {
@@ -410,7 +433,53 @@ func (s *RecallStrategyRouterService) step2LLMFallback(ctx context.Context, quer
 	if len(parsed.Strategies) > 2 {
 		parsed.Strategies = parsed.Strategies[:2]
 	}
-	return parsed, nil
+	return sanitizeLLMStrategyOutput(parsed), nil
+}
+
+func sanitizeLLMStrategyOutput(parsed llmStrategyOutput) llmStrategyOutput {
+	normalizedFamily := normalizeAnswerFamily(parsed.AnswerFamily)
+	parsed.AnswerFamily = normalizedFamily
+
+	seen := make(map[string]bool, len(parsed.Strategies))
+	filtered := parsed.Strategies[:0]
+	for _, st := range parsed.Strategies {
+		if st.Name == domain.StrategyAttributeInference && shouldDowngradeAttributeInferenceFamily(normalizedFamily) {
+			st.Name = domain.StrategyDefaultMixed
+		}
+		if seen[st.Name] {
+			continue
+		}
+		seen[st.Name] = true
+		filtered = append(filtered, st)
+	}
+	parsed.Strategies = filtered
+	return parsed
+}
+
+func normalizeAnswerFamily(family string) string {
+	family = strings.TrimSpace(strings.ToLower(family))
+	family = strings.ReplaceAll(family, " ", "_")
+	family = strings.ReplaceAll(family, "-", "_")
+	return family
+}
+
+func shouldDowngradeAttributeInferenceFamily(family string) bool {
+	if family == "" {
+		return true
+	}
+	switch family {
+	case "location", "locations", "country", "state", "city", "cities",
+		"date", "dates", "time", "timestamp", "start_date", "birthday",
+		"game", "games", "card_game", "company", "companies", "composer",
+		"book", "books", "instrument", "instruments", "pet", "pets",
+		"activity", "activities", "item", "items", "service", "services",
+		"title", "titles", "name", "names", "object", "objects",
+		"event", "events", "food", "foods", "drink", "drinks", "color", "colors",
+		"number", "numbers":
+		return true
+	default:
+		return false
+	}
 }
 
 func resolveStep2(llmResult llmStrategyOutput, s1 step1Result) domain.RecallRouteDecision {

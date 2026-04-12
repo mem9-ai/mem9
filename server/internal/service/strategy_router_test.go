@@ -70,6 +70,21 @@ func TestResolveStep1_FTSOnly_Unresolved(t *testing.T) {
 	}
 }
 
+func TestResolveStep1_AttributeInference_UnresolvedForLLMEntityExtraction(t *testing.T) {
+	s1 := step1Result{
+		Aggregations: []classAggregation{
+			{Class: domain.StrategyAttributeInference, ClassScore: 0.86, BestScore: 0.88, SupportCount: 1, FTSSupportCount: 1, TopIDs: []int64{1}},
+		},
+	}
+	decision, resolved := resolveStep1(s1)
+	if resolved {
+		t.Fatal("expected attribute_inference to remain unresolved in step1")
+	}
+	if decision.FallbackCause != "needs_llm_entity" {
+		t.Errorf("expected cause=needs_llm_entity, got %s", decision.FallbackCause)
+	}
+}
+
 func TestResolveStep1_LowConfidence_Unresolved(t *testing.T) {
 	s1 := step1Result{
 		Aggregations: []classAggregation{
@@ -144,6 +159,116 @@ func TestResolveStep2_HighConfidence(t *testing.T) {
 	}
 	if len(decision.Strategies) != 1 || decision.Strategies[0].Name != domain.StrategyExactEventTemporal {
 		t.Errorf("expected exact_event_temporal from LLM, got %v", decision.Strategies)
+	}
+}
+
+func TestSanitizeLLMStrategyOutput_TableDriven(t *testing.T) {
+	tests := []struct {
+		name           string
+		in             llmStrategyOutput
+		wantStrategies []string
+		wantFamily     string
+	}{
+		{
+			name: "empty family downgrades",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "nate",
+				AnswerFamily: "",
+			},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantFamily:     "",
+		},
+		{
+			name: "location downgrades",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "nate",
+				AnswerFamily: "location",
+			},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantFamily:     "location",
+		},
+		{
+			name: "singular title downgrades",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "deb",
+				AnswerFamily: "title",
+			},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantFamily:     "title",
+		},
+		{
+			name: "plural names downgrade",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "melanie",
+				AnswerFamily: "names",
+			},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantFamily:     "names",
+		},
+		{
+			name: "singular item downgrades",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "caroline",
+				AnswerFamily: "item",
+			},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantFamily:     "item",
+		},
+		{
+			name: "event downgrades",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "caroline",
+				AnswerFamily: "event",
+			},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantFamily:     "event",
+		},
+		{
+			name: "dedupe after downgrade",
+			in: llmStrategyOutput{
+				Strategies: []domain.RoutedStrategy{
+					{Name: domain.StrategyAttributeInference, Confidence: 0.90},
+					{Name: domain.StrategyDefaultMixed, Confidence: 0.85},
+				},
+				Entity:       "nate",
+				AnswerFamily: "location",
+			},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantFamily:     "location",
+		},
+		{
+			name: "traits stay inference",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "caroline",
+				AnswerFamily: "personality traits",
+			},
+			wantStrategies: []string{domain.StrategyAttributeInference},
+			wantFamily:     "personality_traits",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeLLMStrategyOutput(tt.in)
+			if got.AnswerFamily != tt.wantFamily {
+				t.Fatalf("expected normalized answer family %q, got %q", tt.wantFamily, got.AnswerFamily)
+			}
+			if len(got.Strategies) != len(tt.wantStrategies) {
+				t.Fatalf("expected %d strategies, got %d (%v)", len(tt.wantStrategies), len(got.Strategies), got.Strategies)
+			}
+			for i, want := range tt.wantStrategies {
+				if got.Strategies[i].Name != want {
+					t.Fatalf("expected strategy[%d]=%s, got %s", i, want, got.Strategies[i].Name)
+				}
+			}
+		})
 	}
 }
 

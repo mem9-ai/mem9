@@ -77,7 +77,7 @@ func (s *Server) executeWithFallback(
 	decision domain.RecallRouteDecision,
 ) ([]domain.Memory, int, error) {
 	if decision.IsDefault() {
-		return s.executeDefaultMixed(ctx, auth, svc, filter)
+		return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, decision.Entity, decision.AnswerFamily)
 	}
 
 	if decision.IsFanout() {
@@ -100,14 +100,14 @@ func (s *Server) executeWithFallback(
 			slog.Warn("fanout both branches failed, falling back to default",
 				"cluster_id", auth.ClusterID,
 				"primary_err", primaryErr, "secondary_err", secondaryErr)
-			return s.executeDefaultMixed(ctx, auth, svc, filter)
+			return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, decision.Entity, decision.AnswerFamily)
 		}
 
 		if primaryErr != nil {
 			slog.Warn("fanout primary failed, using secondary only",
 				"cluster_id", auth.ClusterID, "primary_err", primaryErr)
 			if len(secondaryMems) == 0 {
-				return s.executeDefaultMixed(ctx, auth, svc, filter)
+				return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, decision.Entity, decision.AnswerFamily)
 			}
 			return paginateFanout(secondaryMems, filter.Offset, filter.Limit)
 		}
@@ -115,7 +115,7 @@ func (s *Server) executeWithFallback(
 			slog.Warn("fanout secondary failed, using primary only",
 				"cluster_id", auth.ClusterID, "secondary_err", secondaryErr)
 			if len(primaryMems) == 0 {
-				return s.executeDefaultMixed(ctx, auth, svc, filter)
+				return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, decision.Entity, decision.AnswerFamily)
 			}
 			return paginateFanout(primaryMems, filter.Offset, filter.Limit)
 		}
@@ -126,7 +126,7 @@ func (s *Server) executeWithFallback(
 		}
 		merged := mergeFanoutResults(primaryMems, secondaryMems, primary.Name, secondary.Name, mergeLimit)
 		if len(merged) == 0 {
-			return s.executeDefaultMixed(ctx, auth, svc, filter)
+			return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, decision.Entity, decision.AnswerFamily)
 		}
 		return paginateFanout(merged, filter.Offset, filter.Limit)
 	}
@@ -136,12 +136,12 @@ func (s *Server) executeWithFallback(
 	if err != nil {
 		slog.Warn("routed strategy failed, falling back to default",
 			"cluster_id", auth.ClusterID, "strategy", primary.Name, "err", err)
-		return s.executeDefaultMixed(ctx, auth, svc, filter)
+		return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, decision.Entity, decision.AnswerFamily)
 	}
 	if len(mems) == 0 {
 		slog.Info("routed strategy returned zero rows, falling back to default",
 			"cluster_id", auth.ClusterID, "strategy", primary.Name)
-		return s.executeDefaultMixed(ctx, auth, svc, filter)
+		return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, decision.Entity, decision.AnswerFamily)
 	}
 	return mems, total, nil
 }
@@ -162,14 +162,46 @@ func (s *Server) executeRoutedStrategy(
 		return s.executeSetAggregation(ctx, auth, svc, filter, entity, answerFamily)
 	case domain.StrategyCountQuery:
 		return s.executeCountQuery(ctx, auth, svc, filter, entity, answerFamily)
+	case domain.StrategyAttributeInference:
+		return s.executeAttributeInference(ctx, auth, svc, filter, entity, answerFamily)
 	case domain.StrategyDefaultMixed:
-		return s.executeDefaultMixed(ctx, auth, svc, filter)
+		return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, entity, answerFamily)
 	default:
 		return s.executeDefaultMixed(ctx, auth, svc, filter)
 	}
 }
 
 func (s *Server) executeDefaultMixed(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	filter domain.MemoryFilter,
+) ([]domain.Memory, int, error) {
+	return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, "", "")
+}
+
+func (s *Server) executeDefaultMixedWithHints(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	filter domain.MemoryFilter,
+	entity string,
+	answerFamily string,
+) ([]domain.Memory, int, error) {
+	memories, total, err := s.entityAwareSearchWindow(ctx, auth, svc, filter, entity, domain.StrategyDefaultMixed, answerFamily)
+	if err != nil {
+		return nil, 0, err
+	}
+	if entity == "" || filter.Query == "" || filter.MemoryType != "" {
+		return memories, total, nil
+	}
+	if isExactAnswerFamily(answerFamily) {
+		memories = rerankForExactAnswerFamily(filter.Query, memories, entity, answerFamily)
+	}
+	return paginateFanout(memories, filter.Offset, filter.Limit)
+}
+
+func (s *Server) executeDefaultMixedBase(
 	ctx context.Context,
 	auth *domain.AuthInfo,
 	svc resolvedSvc,
@@ -215,6 +247,94 @@ func (s *Server) executeDefaultMixed(
 	return memories, total, nil
 }
 
+func (s *Server) entityContextSearch(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	filter domain.MemoryFilter,
+	entity string,
+	strategyName string,
+	answerFamily string,
+) ([]domain.Memory, error) {
+	limit := entityContextLimit(filter.Limit, strategyName, answerFamily)
+	if limit == 0 {
+		return nil, nil
+	}
+
+	entityFilter := filter
+	entityFilter.Query = buildEntityContextQuery(entity, answerFamily)
+	entityFilter.Offset = 0
+	entityFilter.Limit = limit
+
+	if filter.SessionID != "" && filter.MemoryType == "" && svc.session != nil {
+		results, err := svc.session.Search(ctx, entityFilter)
+		if err != nil {
+			return nil, err
+		}
+		return results, nil
+	}
+
+	if svc.memory == nil {
+		return nil, nil
+	}
+	results, _, err := svc.memory.Search(ctx, entityFilter)
+	if err != nil {
+		return nil, err
+	}
+	slog.Info("entity context search", "cluster_id", auth.ClusterID, "entity", entity, "results", len(results))
+	return results, nil
+}
+
+func (s *Server) entityAwareSearchWindow(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	filter domain.MemoryFilter,
+	entity string,
+	strategyName string,
+	answerFamily string,
+) ([]domain.Memory, int, error) {
+	var (
+		memories []domain.Memory
+		total    int
+		err      error
+	)
+
+	workingFilter := filter
+	if entity != "" && filter.Query != "" && filter.MemoryType == "" && filter.Offset > 0 {
+		workingFilter.Offset = 0
+		workingFilter.Limit = filter.Offset + filter.Limit
+		if workingFilter.Limit < filter.Limit {
+			workingFilter.Limit = filter.Limit
+		}
+	}
+
+	if workingFilter.SessionID != "" && workingFilter.MemoryType == "" {
+		memories, total, err = s.explicitSessionSearch(ctx, auth, svc, workingFilter, strategyName, answerFamily)
+	} else {
+		memories, total, err = s.executeDefaultMixedBase(ctx, auth, svc, workingFilter)
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if entity == "" || filter.Query == "" || filter.MemoryType != "" {
+		return memories, total, nil
+	}
+
+	entityMems, err := s.entityContextSearch(ctx, auth, svc, workingFilter, entity, strategyName, answerFamily)
+	if err != nil {
+		slog.Warn("entity context search failed in default_mixed", "cluster_id", auth.ClusterID, "entity", entity, "err", err)
+		return memories, total, nil
+	}
+	if len(entityMems) == 0 {
+		return memories, total, nil
+	}
+
+	memories = blendMemoriesWithEntityContext(memories, entityMems, workingFilter.Limit, strategyName, answerFamily)
+	return memories, len(memories), nil
+}
+
 func (s *Server) executeExactEventTemporal(
 	ctx context.Context,
 	auth *domain.AuthInfo,
@@ -223,7 +343,7 @@ func (s *Server) executeExactEventTemporal(
 	entity string,
 ) ([]domain.Memory, int, error) {
 	if filter.SessionID != "" && filter.MemoryType == "" {
-		return s.explicitSessionSearch(ctx, auth, svc, filter)
+		return s.explicitSessionSearch(ctx, auth, svc, filter, domain.StrategyExactEventTemporal, "")
 	}
 	return s.executeDefaultMixed(ctx, auth, svc, filter)
 }
@@ -237,7 +357,7 @@ func (s *Server) executeSetAggregation(
 	answerFamily string,
 ) ([]domain.Memory, int, error) {
 	if filter.SessionID != "" && filter.MemoryType == "" {
-		mems, total, err := s.explicitSessionSearch(ctx, auth, svc, filter)
+		mems, total, err := s.explicitSessionSearch(ctx, auth, svc, filter, domain.StrategySetAggregation, answerFamily)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -258,7 +378,7 @@ func (s *Server) executeCountQuery(
 	answerFamily string,
 ) ([]domain.Memory, int, error) {
 	if filter.SessionID != "" && filter.MemoryType == "" {
-		mems, total, err := s.explicitSessionSearch(ctx, auth, svc, filter)
+		mems, total, err := s.explicitSessionSearch(ctx, auth, svc, filter, domain.StrategyCountQuery, answerFamily)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -268,6 +388,34 @@ func (s *Server) executeCountQuery(
 		return mems, total, nil
 	}
 	return s.executeDefaultMixed(ctx, auth, svc, filter)
+}
+
+func (s *Server) executeAttributeInference(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	filter domain.MemoryFilter,
+	entity string,
+	answerFamily string,
+) ([]domain.Memory, int, error) {
+	if entity == "" {
+		return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, entity, answerFamily)
+	}
+	mems, total, err := s.entityAwareSearchWindow(ctx, auth, svc, filter, entity, domain.StrategyAttributeInference, answerFamily)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(mems) > 0 {
+		mems = rerankForAttributeInference(filter.Query, mems, entity, answerFamily)
+	}
+	page, pagedTotal, err := paginateFanout(mems, filter.Offset, filter.Limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	if filter.Offset > 0 || len(page) != len(mems) {
+		return page, pagedTotal, nil
+	}
+	return mems, total, nil
 }
 
 func rerankForSetAggregation(query string, mems []domain.Memory, entity, answerFamily string) []domain.Memory {
@@ -386,6 +534,316 @@ func rerankForCountQuery(query string, mems []domain.Memory, entity string) []do
 	return out
 }
 
+func rerankForAttributeInference(query string, mems []domain.Memory, entity, answerFamily string) []domain.Memory {
+	if len(mems) < 2 {
+		return mems
+	}
+
+	entityLower := strings.ToLower(entity)
+	queryLower := strings.ToLower(query)
+	hasTimeBound := containsTimeBound(queryLower) || isTemporalQuestion(query)
+	familyTerms := answerFamilyKeywords(answerFamily)
+
+	type scored struct {
+		mem   domain.Memory
+		index int
+		score float64
+	}
+
+	items := make([]scored, 0, len(mems))
+	for i, mem := range mems {
+		score := -float64(i) * 0.01
+		if mem.Score != nil {
+			score += *mem.Score
+		}
+
+		lower := strings.ToLower(mem.Content)
+		wordCount := len(strings.Fields(mem.Content))
+		entitySignals := answerEntitySignalCount(mem.Content)
+
+		if entityLower != "" {
+			if strings.Contains(lower, entityLower) {
+				score += 0.35
+			} else {
+				score -= 0.15
+			}
+		}
+
+		if wordCount >= 8 && wordCount <= 28 {
+			score += 0.12
+		} else if wordCount < 8 {
+			score -= 0.08
+		}
+		if entitySignals > 1 {
+			score += 0.18
+		}
+		if hasTimeBound && (containsAbsoluteTimeSignal(mem.Content) || containsRelativeTimeSignal(lower)) {
+			score += 0.10
+		}
+		if strings.Contains(mem.Content, "?") {
+			score -= 0.15
+		}
+		if !looksGenericFact(lower) && entitySignals <= 1 {
+			score -= 0.12
+		}
+		if looksGenericFact(lower) {
+			score += 0.05
+		}
+
+		for _, term := range familyTerms {
+			if strings.Contains(lower, term) {
+				score += 0.10
+				break
+			}
+		}
+
+		items = append(items, scored{mem: mem, index: i, score: score})
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].score == items[j].score {
+			return items[i].index < items[j].index
+		}
+		return items[i].score > items[j].score
+	})
+
+	out := make([]domain.Memory, 0, len(mems))
+	for _, item := range items {
+		out = append(out, item.mem)
+	}
+	return out
+}
+
+func rerankForExactAnswerFamily(query string, mems []domain.Memory, entity, answerFamily string) []domain.Memory {
+	if len(mems) < 2 {
+		return mems
+	}
+
+	entityLower := strings.ToLower(entity)
+	shape := exactAnswerFamilyShape(answerFamily)
+
+	type scored struct {
+		mem   domain.Memory
+		index int
+		score float64
+	}
+
+	items := make([]scored, 0, len(mems))
+	for i, mem := range mems {
+		score := -float64(i) * 0.01
+		if mem.Score != nil {
+			score += *mem.Score
+		}
+
+		lower := strings.ToLower(mem.Content)
+		wordCount := len(strings.Fields(mem.Content))
+		entitySignals := answerEntitySignalCount(mem.Content)
+
+		if entityLower != "" {
+			if strings.Contains(lower, entityLower) {
+				score += 0.25
+			} else {
+				score -= 0.10
+			}
+		}
+
+		if wordCount > 0 && wordCount <= 12 {
+			score += 0.12
+		}
+		if strings.Contains(mem.Content, "?") {
+			score -= 0.15
+		}
+		if looksGenericFact(lower) && entitySignals == 0 {
+			score -= 0.10
+		}
+		score += groundedAnswerSignalBonus(shape, mem.Content)
+
+		items = append(items, scored{mem: mem, index: i, score: score})
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].score == items[j].score {
+			return items[i].index < items[j].index
+		}
+		return items[i].score > items[j].score
+	})
+
+	out := make([]domain.Memory, 0, len(mems))
+	for _, item := range items {
+		out = append(out, item.mem)
+	}
+	return out
+}
+
+func entityContextLimit(limit int, strategyName, answerFamily string) int {
+	if strategyName == domain.StrategyAttributeInference {
+		switch {
+		case limit <= 2:
+			return 2
+		case limit <= 10:
+			return 5
+		default:
+			return 8
+		}
+	}
+
+	if strategyName == domain.StrategyDefaultMixed && isInferenceStyleAnswerFamily(answerFamily) {
+		switch {
+		case limit <= 2:
+			return 1
+		case limit <= 10:
+			return 4
+		default:
+			return 6
+		}
+	}
+
+	switch {
+	case limit <= 2:
+		return 1
+	case limit <= 10:
+		return 2
+	default:
+		return 3
+	}
+}
+
+func buildEntityContextQuery(entity, answerFamily string) string {
+	parts := []string{strings.TrimSpace(entity)}
+	seen := map[string]struct{}{strings.TrimSpace(entity): {}}
+	for _, term := range entityContextQueryTerms(answerFamily) {
+		term = strings.TrimSpace(term)
+		if term == "" {
+			continue
+		}
+		if _, ok := seen[term]; ok {
+			continue
+		}
+		seen[term] = struct{}{}
+		parts = append(parts, term)
+		if len(parts) >= 4 {
+			break
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func entityContextQueryTerms(answerFamily string) []string {
+	switch strings.ToLower(strings.TrimSpace(answerFamily)) {
+	case "education":
+		return []string{"degree", "school", "study"}
+	case "career":
+		return []string{"career", "job", "work"}
+	case "traits", "personality_traits":
+		return []string{"personality", "character", "traits"}
+	case "preferences":
+		return []string{"likes", "preferences", "favorite"}
+	case "political_leaning":
+		return []string{"politics", "policy", "rights"}
+	case "religion":
+		return []string{"faith", "religion", "belief"}
+	case "ally_status":
+		return []string{"support", "ally", "community"}
+	case "country", "state", "city", "location", "locations":
+		return []string{"travel", "visited", "trip"}
+	case "game", "games", "title", "titles", "name", "names", "object", "objects":
+		return []string{"favorite", "called", "named"}
+	default:
+		return nil
+	}
+}
+
+func isExactAnswerFamily(answerFamily string) bool {
+	switch strings.ToLower(strings.TrimSpace(answerFamily)) {
+	case "location", "locations", "country", "state", "city", "cities",
+		"date", "dates", "time", "timestamp", "start_date", "birthday",
+		"game", "games", "card_game", "company", "companies", "composer",
+		"title", "titles", "name", "names", "object", "objects",
+		"book", "books", "instrument", "instruments", "pet", "pets",
+		"item", "items", "service", "services":
+		return true
+	default:
+		return false
+	}
+}
+
+func exactAnswerFamilyShape(answerFamily string) groundingAnswerShape {
+	switch strings.ToLower(strings.TrimSpace(answerFamily)) {
+	case "location", "locations", "country", "state", "city", "cities":
+		return groundingAnswerShapeLocation
+	case "date", "dates", "time", "timestamp", "start_date", "birthday":
+		return groundingAnswerShapeTime
+	default:
+		return groundingAnswerShapeExact
+	}
+}
+
+func blendMemoriesWithEntityContext(primary, supplemental []domain.Memory, limit int, strategyName, answerFamily string) []domain.Memory {
+	if limit <= 0 {
+		return []domain.Memory{}
+	}
+	if len(primary) == 0 {
+		return trimUniqueMemories(supplemental, limit)
+	}
+	if len(supplemental) == 0 {
+		return trimUniqueMemories(primary, limit)
+	}
+
+	entitySlots := entityContextLimit(limit, strategyName, answerFamily)
+	if entitySlots > len(supplemental) {
+		entitySlots = len(supplemental)
+	}
+	primaryBudget := limit - entitySlots
+	if primaryBudget < 0 {
+		primaryBudget = 0
+	}
+
+	blended := make([]domain.Memory, 0, limit)
+	seen := make(map[string]struct{}, limit)
+
+	appendUnique := func(mem domain.Memory) {
+		key := responseDedupKey(mem)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		blended = append(blended, mem)
+	}
+
+	for _, mem := range primary {
+		if len(blended) >= primaryBudget {
+			break
+		}
+		appendUnique(mem)
+	}
+	for _, mem := range supplemental {
+		if len(blended) >= limit {
+			break
+		}
+		appendUnique(mem)
+	}
+	for _, mem := range primary {
+		if len(blended) >= limit {
+			break
+		}
+		appendUnique(mem)
+	}
+
+	return blended
+}
+
+func isInferenceStyleAnswerFamily(answerFamily string) bool {
+	switch strings.ToLower(strings.TrimSpace(answerFamily)) {
+	case "traits", "personality_traits", "career", "education", "preferences",
+		"boolean", "religion", "political_leaning", "ally_status",
+		"future_plans", "career_motivation", "business_motivation",
+		"coping_mechanisms", "common_attributes", "supporters":
+		return true
+	default:
+		return false
+	}
+}
+
 func mergeFanoutResults(
 	primary []domain.Memory,
 	secondary []domain.Memory,
@@ -469,6 +927,14 @@ func answerFamilyKeywords(family string) []string {
 		return []string{"symbol", "item", "object"}
 	case "counts":
 		return []string{"times", "many", "count"}
+	case "education":
+		return []string{"degree", "college", "school", "study", "major"}
+	case "career":
+		return []string{"job", "career", "work", "profession", "counseling", "counselor"}
+	case "traits":
+		return []string{"kind", "thoughtful", "driven", "authentic", "passionate", "personality"}
+	case "boolean":
+		return []string{"yes", "no", "likely", "would", "might"}
 	default:
 		return nil
 	}
@@ -505,6 +971,13 @@ func formatStrategies(strategies []domain.RoutedStrategy) string {
 		parts = append(parts, fmt.Sprintf("%s(%.2f)", s.Name, s.Confidence))
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+func shouldExecuteStrategyDecision(decision domain.RecallRouteDecision) bool {
+	if !decision.IsDefault() {
+		return true
+	}
+	return decision.Entity != ""
 }
 
 func defaultFallback(cause string) domain.RecallRouteDecision {

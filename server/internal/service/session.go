@@ -45,6 +45,7 @@ func (s *SessionService) PatchTags(ctx context.Context, sessionID, contentHash s
 func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req IngestRequest) error {
 	sessions := make([]*domain.Session, 0, len(req.Messages))
 	explicitSeqs := make(map[int]struct{}, len(req.Messages))
+	maxExplicitSeq := -1
 	for _, msg := range req.Messages {
 		if msg.Seq != nil {
 			if *msg.Seq < 0 {
@@ -54,6 +55,9 @@ func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req I
 				return &domain.ValidationError{Field: "messages.seq", Message: "duplicate explicit seq in request"}
 			}
 			explicitSeqs[*msg.Seq] = struct{}{}
+			if *msg.Seq > maxExplicitSeq {
+				maxExplicitSeq = *msg.Seq
+			}
 		}
 	}
 	for i, msg := range req.Messages {
@@ -65,9 +69,16 @@ func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req I
 			if err != nil {
 				return fmt.Errorf("session next seq: %w", err)
 			}
-			for {
+			for attempts := 0; ; attempts++ {
 				if _, exists := explicitSeqs[nextSeq]; !exists {
 					break
+				}
+				if attempts >= 100 {
+					if maxExplicitSeq >= 0 {
+						nextSeq = maxExplicitSeq + 1
+						break
+					}
+					return fmt.Errorf("session next seq: unable to find non-conflicting seq")
 				}
 				nextSeq, err = s.sessions.NextSeq(ctx, req.SessionID)
 				if err != nil {

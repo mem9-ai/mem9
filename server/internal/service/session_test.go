@@ -304,6 +304,33 @@ func TestSessionService_BulkCreate_RejectsDuplicateExplicitSeq(t *testing.T) {
 	}
 }
 
+func TestSessionService_BulkCreate_ManyExplicitSeqsFallsBackToMaxPlusOne(t *testing.T) {
+	repo := &stubSessionRepo{nextSeq: 0}
+	svc := newTestSessionService(repo)
+
+	msgs := make([]IngestMessage, 0, 102)
+	for i := 0; i <= 100; i++ {
+		msgs = append(msgs, IngestMessage{Role: "user", Content: "explicit", Seq: intPtr(i)})
+	}
+	msgs = append(msgs, IngestMessage{Role: "assistant", Content: "implicit"})
+
+	req := IngestRequest{
+		SessionID: "sess-1",
+		AgentID:   "agent-x",
+		Messages:  msgs,
+	}
+
+	if err := svc.BulkCreate(context.Background(), "source-agent", req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(repo.createdSessions) != 102 {
+		t.Fatalf("expected 102 created sessions, got %d", len(repo.createdSessions))
+	}
+	if repo.createdSessions[101].Seq != 101 {
+		t.Fatalf("expected fallback seq 101, got %d", repo.createdSessions[101].Seq)
+	}
+}
+
 func TestSessionService_PatchTags_delegates(t *testing.T) {
 	repo := &stubSessionRepo{}
 	svc := newTestSessionService(repo)

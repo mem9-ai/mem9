@@ -106,6 +106,23 @@ FROM (
   SELECT 'How many people attended X''s event?', 'count_query', 'counts', 'en', 'benchmark_derived', 1, 1, 'Attendance count query'
   UNION ALL SELECT '有多少人参加了 X 的活动？', 'count_query', 'counts', 'zh', 'manual_translation', 1, 1, 'Attendance count query'
 
+  -- attribute_inference
+  UNION ALL
+  SELECT 'Would X be considered Y?', 'attribute_inference', 'boolean', 'en', 'manual', 1, 1, 'Attribute inference for modal queries'
+  UNION ALL SELECT 'X 会被认为是 Y 吗？', 'attribute_inference', 'boolean', 'zh', 'manual_translation', 1, 1, 'Attribute inference for modal queries'
+  UNION ALL
+  SELECT 'What might X''s degree be in?', 'attribute_inference', 'education', 'en', 'benchmark_derived', 1, 1, 'Inference over background evidence'
+  UNION ALL SELECT 'X 的学位可能是什么专业？', 'attribute_inference', 'education', 'zh', 'manual_translation', 1, 1, 'Inference over background evidence'
+  UNION ALL
+  SELECT 'What kind of person is X?', 'attribute_inference', 'traits', 'en', 'manual', 1, 1, 'Trait inference from multiple memories'
+  UNION ALL SELECT 'X 是什么样的人？', 'attribute_inference', 'traits', 'zh', 'manual_translation', 1, 1, 'Trait inference from multiple memories'
+  UNION ALL
+  SELECT 'What attributes describe X?', 'attribute_inference', 'traits', 'en', 'manual', 1, 1, 'Trait inference from multiple memories'
+  UNION ALL SELECT '哪些特质描述了 X？', 'attribute_inference', 'traits', 'zh', 'manual_translation', 1, 1, 'Trait inference from multiple memories'
+  UNION ALL
+  SELECT 'What job might X pursue in the future?', 'attribute_inference', 'career', 'en', 'benchmark_derived', 1, 1, 'Career inference from goals and interests'
+  UNION ALL SELECT 'X 未来可能从事什么工作？', 'attribute_inference', 'career', 'zh', 'manual_translation', 1, 1, 'Career inference from goals and interests'
+
   -- default_mixed
   UNION ALL
   SELECT 'What is X''s job?', 'default_mixed', NULL, 'en', 'manual', 1, 1, 'Default mixed recall'
