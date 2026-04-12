@@ -186,7 +186,7 @@ func TestSanitizeLLMStrategyOutput_TableDriven(t *testing.T) {
 				Entity:       "nate",
 				AnswerFamily: "location",
 			},
-			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantStrategies: []string{domain.StrategyExactEntityLookup},
 			wantFamily:     "location",
 		},
 		{
@@ -196,7 +196,7 @@ func TestSanitizeLLMStrategyOutput_TableDriven(t *testing.T) {
 				Entity:       "deb",
 				AnswerFamily: "title",
 			},
-			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantStrategies: []string{domain.StrategyExactEntityLookup},
 			wantFamily:     "title",
 		},
 		{
@@ -206,7 +206,7 @@ func TestSanitizeLLMStrategyOutput_TableDriven(t *testing.T) {
 				Entity:       "melanie",
 				AnswerFamily: "names",
 			},
-			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantStrategies: []string{domain.StrategyExactEntityLookup},
 			wantFamily:     "names",
 		},
 		{
@@ -216,7 +216,7 @@ func TestSanitizeLLMStrategyOutput_TableDriven(t *testing.T) {
 				Entity:       "caroline",
 				AnswerFamily: "item",
 			},
-			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantStrategies: []string{domain.StrategyExactEntityLookup},
 			wantFamily:     "item",
 		},
 		{
@@ -239,8 +239,18 @@ func TestSanitizeLLMStrategyOutput_TableDriven(t *testing.T) {
 				Entity:       "nate",
 				AnswerFamily: "location",
 			},
-			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantStrategies: []string{domain.StrategyExactEntityLookup},
 			wantFamily:     "location",
+		},
+		{
+			name: "default mixed exact family upgrades",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyDefaultMixed, Confidence: 0.88}},
+				Entity:       "jolene",
+				AnswerFamily: "country",
+			},
+			wantStrategies: []string{domain.StrategyExactEntityLookup},
+			wantFamily:     "country",
 		},
 		{
 			name: "traits stay inference",

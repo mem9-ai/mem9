@@ -1020,6 +1020,13 @@ func TestBuildEntityContextQuery_UsesStructuredFamilyTerms(t *testing.T) {
 	}
 }
 
+func TestBuildExactEntityLookupQuery_UsesFamilyActionTerms(t *testing.T) {
+	got := buildExactEntityLookupQuery("james", "game")
+	if !strings.Contains(got, "james") || !strings.Contains(got, "called") {
+		t.Fatalf("expected exact lookup query to include entity and exact-family action term, got %q", got)
+	}
+}
+
 func TestRerankForExactAnswerFamily_PrefersCanonicalName(t *testing.T) {
 	mems := []domain.Memory{
 		{ID: "desc", Content: "A card game with different colored cards and numbers.", MemoryType: domain.TypeSession, Score: floatPtr(1.0)},
@@ -1441,7 +1448,7 @@ func TestListMemories_DefaultMixedExactAnswerFamily_ReranksCanonicalRow(t *testi
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
 				{"message": map[string]string{
-					"content": `{"strategies":[{"name":"default_mixed","confidence":0.85}],"entity":"james","answer_family":"game"}`,
+					"content": `{"strategies":[{"name":"exact_entity_lookup","confidence":0.90}],"entity":"james","answer_family":"game"}`,
 				}},
 			},
 		})
@@ -1459,7 +1466,7 @@ func TestListMemories_DefaultMixedExactAnswerFamily_ReranksCanonicalRow(t *testi
 			"what is the game with different colored cards that john was talking about?": {
 				{ID: "desc", Content: "A card game with different colored cards and numbers.", MemoryType: domain.TypeInsight, Score: floatPtr(1.0)},
 			},
-			"james favorite called named": {
+			"james called named favorite played": {
 				{ID: "canon", Content: "James played UNO with John.", MemoryType: domain.TypeInsight, Score: floatPtr(0.8)},
 			},
 		},
@@ -1480,8 +1487,8 @@ func TestListMemories_DefaultMixedExactAnswerFamily_ReranksCanonicalRow(t *testi
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Memories) < 2 {
-		t.Fatalf("expected blended memories, got %d", len(resp.Memories))
+	if len(resp.Memories) < 1 {
+		t.Fatalf("expected at least one memory, got %d", len(resp.Memories))
 	}
 	if resp.Memories[0].ID != "canon" {
 		t.Fatalf("expected canonical exact-answer row to rank first, got %q", resp.Memories[0].ID)

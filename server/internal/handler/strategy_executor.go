@@ -164,6 +164,8 @@ func (s *Server) executeRoutedStrategy(
 		return s.executeCountQuery(ctx, auth, svc, filter, entity, answerFamily)
 	case domain.StrategyAttributeInference:
 		return s.executeAttributeInference(ctx, auth, svc, filter, entity, answerFamily)
+	case domain.StrategyExactEntityLookup:
+		return s.executeExactEntityLookup(ctx, auth, svc, filter, entity, answerFamily)
 	case domain.StrategyDefaultMixed:
 		return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, entity, answerFamily)
 	default:
@@ -262,7 +264,11 @@ func (s *Server) entityContextSearch(
 	}
 
 	entityFilter := filter
-	entityFilter.Query = buildEntityContextQuery(entity, answerFamily)
+	if strategyName == domain.StrategyExactEntityLookup {
+		entityFilter.Query = buildExactEntityLookupQuery(entity, answerFamily)
+	} else {
+		entityFilter.Query = buildEntityContextQuery(entity, answerFamily)
+	}
 	entityFilter.Offset = 0
 	entityFilter.Limit = limit
 
@@ -446,6 +452,34 @@ func (s *Server) executeAttributeInference(
 	}
 	if len(mems) > 0 {
 		mems = rerankForAttributeInference(filter.Query, mems, entity, answerFamily)
+	}
+	page, pagedTotal, err := paginateFanout(mems, filter.Offset, filter.Limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	if filter.Offset > 0 || len(page) != len(mems) {
+		return page, pagedTotal, nil
+	}
+	return mems, total, nil
+}
+
+func (s *Server) executeExactEntityLookup(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	filter domain.MemoryFilter,
+	entity string,
+	answerFamily string,
+) ([]domain.Memory, int, error) {
+	if entity == "" {
+		return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, entity, answerFamily)
+	}
+	mems, total, err := s.entityAwareSearchWindow(ctx, auth, svc, filter, entity, domain.StrategyExactEntityLookup, answerFamily)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(mems) > 0 {
+		mems = rerankForExactAnswerFamily(filter.Query, mems, entity, answerFamily)
 	}
 	page, pagedTotal, err := paginateFanout(mems, filter.Offset, filter.Limit)
 	if err != nil {
@@ -726,6 +760,17 @@ func entityContextLimit(limit int, strategyName, answerFamily string) int {
 		}
 	}
 
+	if strategyName == domain.StrategyExactEntityLookup {
+		switch {
+		case limit <= 2:
+			return 2
+		case limit <= 10:
+			return 4
+		default:
+			return 6
+		}
+	}
+
 	if strategyName == domain.StrategyDefaultMixed && isInferenceStyleAnswerFamily(answerFamily) {
 		switch {
 		case limit <= 2:
@@ -756,6 +801,16 @@ func entityInsightLimit(limit int, strategyName, answerFamily string) int {
 			return 2
 		default:
 			return 4
+		}
+	}
+	if strategyName == domain.StrategyExactEntityLookup {
+		switch {
+		case limit <= 2:
+			return 1
+		case limit <= 10:
+			return 2
+		default:
+			return 3
 		}
 	}
 	if strategyName == domain.StrategyDefaultMixed && isInferenceStyleAnswerFamily(answerFamily) {
@@ -791,6 +846,26 @@ func buildEntityContextQuery(entity, answerFamily string) string {
 	return strings.Join(parts, " ")
 }
 
+func buildExactEntityLookupQuery(entity, answerFamily string) string {
+	parts := []string{strings.TrimSpace(entity)}
+	seen := map[string]struct{}{strings.TrimSpace(entity): {}}
+	for _, term := range exactEntityLookupQueryTerms(answerFamily) {
+		term = strings.TrimSpace(term)
+		if term == "" {
+			continue
+		}
+		if _, ok := seen[term]; ok {
+			continue
+		}
+		seen[term] = struct{}{}
+		parts = append(parts, term)
+		if len(parts) >= 5 {
+			break
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 func entityContextQueryTerms(answerFamily string) []string {
 	switch strings.ToLower(strings.TrimSpace(answerFamily)) {
 	case "education":
@@ -813,6 +888,29 @@ func entityContextQueryTerms(answerFamily string) []string {
 		return []string{"favorite", "called", "named"}
 	default:
 		return nil
+	}
+}
+
+func exactEntityLookupQueryTerms(answerFamily string) []string {
+	switch strings.ToLower(strings.TrimSpace(answerFamily)) {
+	case "country", "state", "city", "location", "locations":
+		return []string{"visited", "trip", "travel", "from"}
+	case "game", "games", "card_game":
+		return []string{"called", "named", "favorite", "played"}
+	case "title", "titles", "name", "names", "object", "objects", "item", "items":
+		return []string{"called", "named", "favorite"}
+	case "company", "companies":
+		return []string{"works", "employer", "brand", "likes"}
+	case "book", "books":
+		return []string{"read", "reading", "book"}
+	case "instrument", "instruments":
+		return []string{"plays", "playing", "instrument"}
+	case "composer":
+		return []string{"music", "played", "theme"}
+	case "pet", "pets":
+		return []string{"pet", "dog", "cat", "named"}
+	default:
+		return entityContextQueryTerms(answerFamily)
 	}
 }
 

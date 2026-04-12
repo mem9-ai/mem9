@@ -677,6 +677,8 @@ func explicitSessionNeighborWindow(strategyName string, answerFamily string) (in
 	switch strategyName {
 	case domain.StrategyAttributeInference:
 		return 2, 2, true
+	case domain.StrategyExactEntityLookup:
+		return 1, 1, true
 	case domain.StrategyDefaultMixed:
 		if isInferenceStyleAnswerFamily(answerFamily) || isExactAnswerFamily(answerFamily) {
 			return 2, 2, true
@@ -690,6 +692,8 @@ func explicitSessionNeighborWindow(strategyName string, answerFamily string) (in
 func explicitSessionThreadChaseEnabled(strategyName string, answerFamily string) bool {
 	switch strategyName {
 	case domain.StrategyAttributeInference:
+		return true
+	case domain.StrategyExactEntityLookup:
 		return true
 	case domain.StrategyDefaultMixed:
 		return isInferenceStyleAnswerFamily(answerFamily) || isExactAnswerFamily(answerFamily)

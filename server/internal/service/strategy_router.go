@@ -359,6 +359,7 @@ Allowed strategy classes:
 - set_aggregation
 - count_query
 - attribute_inference
+- exact_entity_lookup
 - default_mixed
 
 Rules:
@@ -368,9 +369,10 @@ Rules:
 4. Extract the primary entity when obvious.
 5. Extract answer_family when obvious.
 6. Use attribute_inference ONLY when the answer requires inference or judgment beyond any single memory.
-7. Do NOT use attribute_inference for exact location/date/state/country/item/title/name/object questions. Those should be default_mixed unless clearly temporal/count/set.
-8. For attribute_inference, prefer high-level answer_family values such as traits, career, education, preferences, boolean, religion, political_leaning, ally_status.
-9. Return ONLY valid JSON.`
+7. Use exact_entity_lookup for exact canonical entity answers from indirect evidence, especially location/state/country/name/title/object/game/composer/company/book/instrument questions.
+8. Do NOT use attribute_inference for exact location/date/state/country/item/title/name/object questions. Those should be exact_entity_lookup unless clearly temporal/count/set.
+9. For attribute_inference, prefer high-level answer_family values such as traits, career, education, preferences, boolean, religion, political_leaning, ally_status.
+10. Return ONLY valid JSON.`
 
 const strategyLLMUserTemplate = `Query: %s
 
@@ -390,9 +392,9 @@ Examples:
 {"query":"What might John's degree be in?","output":{"strategies":[{"name":"attribute_inference","confidence":0.84}],"entity":"john","answer_family":"education"}}
 {"query":"What would Caroline's political leaning likely be?","output":{"strategies":[{"name":"attribute_inference","confidence":0.90}],"entity":"caroline","answer_family":"political_leaning"}}
 {"query":"What personality traits might Melanie say Caroline has?","output":{"strategies":[{"name":"attribute_inference","confidence":0.90}],"entity":"caroline","answer_family":"traits"}}
-{"query":"What state did Nate visit?","output":{"strategies":[{"name":"default_mixed","confidence":0.88}],"entity":"nate","answer_family":"location"}}
-{"query":"In what country was Jolene during summer 2022?","output":{"strategies":[{"name":"default_mixed","confidence":0.90}],"entity":"jolene","answer_family":"country"}}
-{"query":"What card game is Deborah talking about?","output":{"strategies":[{"name":"default_mixed","confidence":0.89}],"entity":"deborah","answer_family":"game"}}
+{"query":"What state did Nate visit?","output":{"strategies":[{"name":"exact_entity_lookup","confidence":0.90}],"entity":"nate","answer_family":"state"}}
+{"query":"In what country was Jolene during summer 2022?","output":{"strategies":[{"name":"exact_entity_lookup","confidence":0.91}],"entity":"jolene","answer_family":"country"}}
+{"query":"What card game is Deborah talking about?","output":{"strategies":[{"name":"exact_entity_lookup","confidence":0.89}],"entity":"deborah","answer_family":"game"}}
 {"query":"What is Caroline's job?","output":{"strategies":[{"name":"default_mixed","confidence":0.76}],"entity":"caroline","answer_family":""}}`
 
 type llmStrategyOutput struct {
@@ -443,8 +445,15 @@ func sanitizeLLMStrategyOutput(parsed llmStrategyOutput) llmStrategyOutput {
 	seen := make(map[string]bool, len(parsed.Strategies))
 	filtered := parsed.Strategies[:0]
 	for _, st := range parsed.Strategies {
-		if st.Name == domain.StrategyAttributeInference && shouldDowngradeAttributeInferenceFamily(normalizedFamily) {
-			st.Name = domain.StrategyDefaultMixed
+		if st.Name == domain.StrategyAttributeInference {
+			if shouldRouteToExactEntityLookupFamily(normalizedFamily) {
+				st.Name = domain.StrategyExactEntityLookup
+			} else if shouldDowngradeAttributeInferenceFamily(normalizedFamily) {
+				st.Name = domain.StrategyDefaultMixed
+			}
+		}
+		if st.Name == domain.StrategyDefaultMixed && shouldRouteToExactEntityLookupFamily(normalizedFamily) {
+			st.Name = domain.StrategyExactEntityLookup
 		}
 		if seen[st.Name] {
 			continue
@@ -461,6 +470,19 @@ func normalizeAnswerFamily(family string) string {
 	family = strings.ReplaceAll(family, " ", "_")
 	family = strings.ReplaceAll(family, "-", "_")
 	return family
+}
+
+func shouldRouteToExactEntityLookupFamily(family string) bool {
+	switch family {
+	case "location", "locations", "country", "state", "city", "cities",
+		"game", "games", "card_game", "company", "companies", "composer",
+		"book", "books", "instrument", "instruments", "pet", "pets",
+		"activity", "activities", "item", "items", "service", "services",
+		"title", "titles", "name", "names", "object", "objects":
+		return true
+	default:
+		return false
+	}
 }
 
 func shouldDowngradeAttributeInferenceFamily(family string) bool {

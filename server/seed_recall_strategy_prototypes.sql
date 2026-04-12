@@ -123,6 +123,23 @@ FROM (
   SELECT 'What job might X pursue in the future?', 'attribute_inference', 'career', 'en', 'benchmark_derived', 1, 1, 'Career inference from goals and interests'
   UNION ALL SELECT 'X 未来可能从事什么工作？', 'attribute_inference', 'career', 'zh', 'manual_translation', 1, 1, 'Career inference from goals and interests'
 
+  -- exact_entity_lookup
+  UNION ALL
+  SELECT 'What state did X visit?', 'exact_entity_lookup', 'state', 'en', 'benchmark_derived', 1, 1, 'Exact canonical entity lookup for state answers'
+  UNION ALL SELECT 'X 去了哪个州？', 'exact_entity_lookup', 'state', 'zh', 'manual_translation', 1, 1, 'Exact canonical entity lookup for state answers'
+  UNION ALL
+  SELECT 'In what country was X?', 'exact_entity_lookup', 'country', 'en', 'benchmark_derived', 1, 1, 'Exact canonical entity lookup for country answers'
+  UNION ALL SELECT 'X 当时在哪个国家？', 'exact_entity_lookup', 'country', 'zh', 'manual_translation', 1, 1, 'Exact canonical entity lookup for country answers'
+  UNION ALL
+  SELECT 'What card game is X talking about?', 'exact_entity_lookup', 'game', 'en', 'benchmark_derived', 1, 1, 'Exact canonical entity lookup for game names'
+  UNION ALL SELECT 'X 在说什么卡牌游戏？', 'exact_entity_lookup', 'game', 'zh', 'manual_translation', 1, 1, 'Exact canonical entity lookup for game names'
+  UNION ALL
+  SELECT 'Who is X to Y?', 'exact_entity_lookup', 'name', 'en', 'manual', 1, 1, 'Exact canonical entity lookup for relationship labels'
+  UNION ALL SELECT 'X 对 Y 来说是谁？', 'exact_entity_lookup', 'name', 'zh', 'manual_translation', 1, 1, 'Exact canonical entity lookup for relationship labels'
+  UNION ALL
+  SELECT 'Which composer does X enjoy?', 'exact_entity_lookup', 'composer', 'en', 'manual', 1, 1, 'Exact canonical entity lookup for composer names'
+  UNION ALL SELECT 'X 喜欢哪位作曲家？', 'exact_entity_lookup', 'composer', 'zh', 'manual_translation', 1, 1, 'Exact canonical entity lookup for composer names'
+
   -- default_mixed
   UNION ALL
   SELECT 'What is X''s job?', 'default_mixed', NULL, 'en', 'manual', 1, 1, 'Default mixed recall'

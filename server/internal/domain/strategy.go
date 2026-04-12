@@ -6,6 +6,7 @@ const (
 	StrategySetAggregation     = "set_aggregation"
 	StrategyCountQuery         = "count_query"
 	StrategyAttributeInference = "attribute_inference"
+	StrategyExactEntityLookup  = "exact_entity_lookup"
 	StrategyDefaultMixed       = "default_mixed"
 )
 
@@ -81,6 +82,7 @@ func ValidStrategyClasses() map[string]bool {
 		StrategySetAggregation:     true,
 		StrategyCountQuery:         true,
 		StrategyAttributeInference: true,
+		StrategyExactEntityLookup:  true,
 		StrategyDefaultMixed:       true,
 	}
 }
