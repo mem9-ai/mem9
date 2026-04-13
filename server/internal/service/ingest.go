@@ -65,6 +65,7 @@ type IngestResult struct {
 // IngestService orchestrates the two-phase smart memory pipeline.
 type IngestService struct {
 	memories  repository.MemoryRepo
+	links     repository.MemorySessionLinkRepo
 	llm       *llm.Client
 	embedder  *embed.Embedder
 	autoModel string
@@ -79,11 +80,24 @@ func NewIngestService(
 	autoModel string,
 	defaultMode IngestMode,
 ) *IngestService {
+	return NewIngestServiceWithLinks(memories, nil, llmClient, embedder, autoModel, defaultMode)
+}
+
+// NewIngestServiceWithLinks creates an IngestService that records memory-session links.
+func NewIngestServiceWithLinks(
+	memories repository.MemoryRepo,
+	links repository.MemorySessionLinkRepo,
+	llmClient *llm.Client,
+	embedder *embed.Embedder,
+	autoModel string,
+	defaultMode IngestMode,
+) *IngestService {
 	if defaultMode == "" {
 		defaultMode = ModeSmart
 	}
 	return &IngestService{
 		memories:  memories,
+		links:     links,
 		llm:       llmClient,
 		embedder:  embedder,
 		autoModel: autoModel,
@@ -146,6 +160,16 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 // HasLLM returns true if an LLM client is configured for smart processing.
 func (s *IngestService) HasLLM() bool {
 	return s.llm != nil
+}
+
+func (s *IngestService) linkMemory(ctx context.Context, memoryID, sessionID string) {
+	if s.links == nil || memoryID == "" || sessionID == "" {
+		return
+	}
+	if err := s.links.Link(ctx, memoryID, sessionID); err != nil {
+		slog.Warn("memory_session_links: failed to link memory",
+			"memory_id", memoryID, "session_id", sessionID, "err", err)
+	}
 }
 
 // Phase1Result holds the output of ExtractPhase1.
@@ -527,6 +551,7 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 	if err != nil {
 		return nil, fmt.Errorf("create raw memory: %w", err)
 	}
+	s.linkMemory(ctx, m.ID, req.SessionID)
 	return &IngestResult{
 		Status:          "complete",
 		MemoriesChanged: 1,
@@ -1533,6 +1558,7 @@ func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sess
 	if err != nil {
 		return "", fmt.Errorf("create insight: %w", err)
 	}
+	s.linkMemory(ctx, m.ID, sessionID)
 	return m.ID, nil
 }
 
@@ -1578,6 +1604,7 @@ func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, s
 	if err != nil {
 		return "", fmt.Errorf("archive and create for %s: %w", oldID, err)
 	}
+	s.linkMemory(ctx, newID, sessionID)
 	return newID, nil
 }
 

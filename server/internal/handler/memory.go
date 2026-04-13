@@ -128,7 +128,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 
 	if req.Sync {
 		// s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
-		mem, written, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
+		mem, written, err := svc.memory.CreateWithSession(r.Context(), agentID, req.SessionID, content, tags, metadata)
 		if err != nil {
 			slog.Error("sync memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
 			s.handleError(r.Context(), w, err)
@@ -140,7 +140,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	} else {
 		go func(auth *domain.AuthInfo, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage) {
 			// s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
-			mem, written, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
+			mem, written, err := svc.memory.CreateWithSession(context.Background(), actorAgentID, sessionID, content, tags, metadata)
 			if err != nil {
 				slog.Error("async memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
 				return

@@ -53,6 +53,7 @@ type UploadWorker struct {
 	tasks        repository.UploadTaskRepo
 	tenants      repository.TenantRepo
 	pool         *tenant.TenantPool
+	tenantSvc    *TenantService
 	embedder     *embed.Embedder
 	llmClient    *llm.Client
 	autoModel    string
@@ -69,6 +70,7 @@ func NewUploadWorker(
 	tasks repository.UploadTaskRepo,
 	tenants repository.TenantRepo,
 	pool *tenant.TenantPool,
+	tenantSvc *TenantService,
 	embedder *embed.Embedder,
 	llmClient *llm.Client,
 	autoModel string,
@@ -88,6 +90,7 @@ func NewUploadWorker(
 		tasks:        tasks,
 		tenants:      tenants,
 		pool:         pool,
+		tenantSvc:    tenantSvc,
 		embedder:     embedder,
 		llmClient:    llmClient,
 		autoModel:    autoModel,
@@ -184,8 +187,15 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 		return w.failTask(ctx, task, fmt.Errorf("get tenant db: %w", err), logger)
 	}
 
+	if w.tenantSvc != nil {
+		if err := w.tenantSvc.EnsureSessionsTable(taskCtx, db); err != nil {
+			return w.failTask(ctx, task, fmt.Errorf("ensure session schema: %w", err), logger)
+		}
+	}
+
 	memRepo := repository.NewMemoryRepo(w.pool.Backend(), db, w.autoModel, w.ftsEnabled, tenantInfo.ClusterID)
-	ingestSvc := NewIngestService(memRepo, w.llmClient, w.embedder, w.autoModel, w.mode)
+	linkRepo := repository.NewMemorySessionLinkRepo(w.pool.Backend(), db)
+	ingestSvc := NewIngestServiceWithLinks(memRepo, linkRepo, w.llmClient, w.embedder, w.autoModel, w.mode)
 
 	data, err := os.ReadFile(task.FilePath)
 	if err != nil {

@@ -80,6 +80,22 @@ func TestBuildMemorySchema(t *testing.T) {
 	})
 }
 
+func TestMemorySessionLinksSchema(t *testing.T) {
+	schema := tenant.TenantMemorySessionLinksSchema
+	for _, needle := range []string{
+		"CREATE TABLE IF NOT EXISTS memory_session_links",
+		"memory_id  VARCHAR(36)",
+		"session_id VARCHAR(100)",
+		"idx_memory_session_link_dedup",
+		"idx_memory_session_links_session",
+		"idx_memory_session_links_memory",
+	} {
+		if !strings.Contains(schema, needle) {
+			t.Fatalf("schema missing %q", needle)
+		}
+	}
+}
+
 func TestProvisionRejectsNonTiDBBackend(t *testing.T) {
 	t.Parallel()
 

@@ -38,21 +38,31 @@ const (
 
 type MemoryService struct {
 	memories  repository.MemoryRepo
+	links     repository.MemorySessionLinkRepo
 	embedder  *embed.Embedder
 	autoModel string
 	ingest    *IngestService
 }
 
 func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, embedder *embed.Embedder, autoModel string, ingestMode IngestMode) *MemoryService {
+	return NewMemoryServiceWithLinks(memories, nil, llmClient, embedder, autoModel, ingestMode)
+}
+
+func NewMemoryServiceWithLinks(memories repository.MemoryRepo, links repository.MemorySessionLinkRepo, llmClient *llm.Client, embedder *embed.Embedder, autoModel string, ingestMode IngestMode) *MemoryService {
 	return &MemoryService{
 		memories:  memories,
+		links:     links,
 		embedder:  embedder,
 		autoModel: autoModel,
-		ingest:    NewIngestService(memories, llmClient, embedder, autoModel, ingestMode),
+		ingest:    NewIngestServiceWithLinks(memories, links, llmClient, embedder, autoModel, ingestMode),
 	}
 }
 
 func (s *MemoryService) Create(ctx context.Context, agentID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, int, error) {
+	return s.CreateWithSession(ctx, agentID, "", content, tags, metadata)
+}
+
+func (s *MemoryService) CreateWithSession(ctx context.Context, agentID, sessionID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, int, error) {
 	if err := validateMemoryInput(content, tags); err != nil {
 		return nil, 0, err
 	}
@@ -84,6 +94,7 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 			Embedding:  embedding,
 			MemoryType: domain.TypeInsight,
 			AgentID:    agentID,
+			SessionID:  sessionID,
 			State:      domain.StateActive,
 			Version:    1,
 			UpdatedBy:  agentID,
@@ -96,10 +107,11 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 		if err != nil {
 			return nil, 0, fmt.Errorf("create raw memory: %w", err)
 		}
+		s.ingest.linkMemory(ctx, mem.ID, sessionID)
 		return mem, 1, nil
 	}
 
-	result, err := s.ingest.ReconcileContent(ctx, agentID, agentID, "", []string{content})
+	result, err := s.ingest.ReconcileContent(ctx, agentID, agentID, sessionID, []string{content})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -107,13 +119,14 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 	if result.Status == "failed" {
 		return nil, 0, fmt.Errorf("content reconciliation failed")
 	}
-	if len(result.InsightIDs) == 0 {
-		return nil, 0, nil
+	createdIDs := append([]string(nil), result.InsightIDs...)
+	if len(createdIDs) == 0 {
+		return nil, result.MemoriesChanged, nil
 	}
 
-	// Apply user-provided tags/metadata to all created insights.
+	// Apply user-provided tags/metadata to all created insights from reconcile.
 	patchWrites := 0
-	for _, id := range result.InsightIDs {
+	for _, id := range createdIDs {
 		mem, err := s.memories.GetByID(ctx, id)
 		if err != nil {
 			continue
@@ -131,7 +144,7 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 		}
 	}
 
-	latestID := result.InsightIDs[len(result.InsightIDs)-1]
+	latestID := createdIDs[len(createdIDs)-1]
 	mem, getErr := s.memories.GetByID(ctx, latestID)
 	if getErr != nil {
 		return nil, 0, fmt.Errorf("fetch reconciled memory %s: %w", latestID, getErr)
