@@ -180,14 +180,24 @@ func TestSanitizeLLMStrategyOutput_TableDriven(t *testing.T) {
 			wantFamily:     "",
 		},
 		{
-			name: "location downgrades",
+			name: "broad location downgrades to default mixed",
 			in: llmStrategyOutput{
 				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
 				Entity:       "nate",
 				AnswerFamily: "location",
 			},
-			wantStrategies: []string{domain.StrategyExactEntityLookup},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
 			wantFamily:     "location",
+		},
+		{
+			name: "country upgrades to exact entity lookup",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "jolene",
+				AnswerFamily: "country",
+			},
+			wantStrategies: []string{domain.StrategyExactEntityLookup},
+			wantFamily:     "country",
 		},
 		{
 			name: "singular title downgrades",
@@ -216,7 +226,7 @@ func TestSanitizeLLMStrategyOutput_TableDriven(t *testing.T) {
 				Entity:       "caroline",
 				AnswerFamily: "item",
 			},
-			wantStrategies: []string{domain.StrategyExactEntityLookup},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
 			wantFamily:     "item",
 		},
 		{
@@ -239,7 +249,7 @@ func TestSanitizeLLMStrategyOutput_TableDriven(t *testing.T) {
 				Entity:       "nate",
 				AnswerFamily: "location",
 			},
-			wantStrategies: []string{domain.StrategyExactEntityLookup},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
 			wantFamily:     "location",
 		},
 		{
@@ -251,6 +261,26 @@ func TestSanitizeLLMStrategyOutput_TableDriven(t *testing.T) {
 			},
 			wantStrategies: []string{domain.StrategyExactEntityLookup},
 			wantFamily:     "country",
+		},
+		{
+			name: "direct exact entity lookup broad family downgrades",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyExactEntityLookup, Confidence: 0.88}},
+				Entity:       "jolene",
+				AnswerFamily: "age",
+			},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantFamily:     "age",
+		},
+		{
+			name: "direct exact entity lookup exact family stays",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyExactEntityLookup, Confidence: 0.88}},
+				Entity:       "deb",
+				AnswerFamily: "game",
+			},
+			wantStrategies: []string{domain.StrategyExactEntityLookup},
+			wantFamily:     "game",
 		},
 		{
 			name: "traits stay inference",

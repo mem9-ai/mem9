@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -16,7 +17,7 @@ import (
 )
 
 const (
-	defaultSessionFetchMultiplier = 3
+	defaultSessionFetchMultiplier = 4
 	DefaultSessionLimit           = 10
 )
 
@@ -203,6 +204,23 @@ func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFi
 
 	scores := rrfMerge(kwResults, vecResults)
 	mems := collectMems(kwResults, vecResults)
+	if f.EnableSecondHop {
+		maxVecScore := 0.0
+		for _, m := range vecResults {
+			if m.Score != nil && *m.Score > maxVecScore {
+				maxVecScore = *m.Score
+			}
+		}
+		if maxVecScore >= secondHopGateScore {
+			secondHopMems := s.secondHopAutoSearch(ctx, mems, scores, f, limit)
+			for rank, m := range secondHopMems {
+				scores[m.ID] += secondHopWeight / (rrfK + float64(rank+1))
+				if _, exists := mems[m.ID]; !exists {
+					mems[m.ID] = m
+				}
+			}
+		}
+	}
 	merged := sortByScore(mems, scores)
 	page, _ := paginateResults(merged, f.Offset, limit)
 	return populateRelativeAge(setScores(page, scores)), nil
@@ -224,9 +242,177 @@ func (s *SessionService) autoHybridSearchInSessionSet(ctx context.Context, f dom
 
 	scores := rrfMerge(kwResults, vecResults)
 	mems := collectMems(kwResults, vecResults)
+	if f.EnableSecondHop {
+		maxVecScore := 0.0
+		for _, m := range vecResults {
+			if m.Score != nil && *m.Score > maxVecScore {
+				maxVecScore = *m.Score
+			}
+		}
+		if maxVecScore >= secondHopGateScore {
+			secondHopMems := s.secondHopAutoSearchInSessionSet(ctx, mems, scores, f, sessionIDs, limit)
+			for rank, m := range secondHopMems {
+				scores[m.ID] += secondHopWeight / (rrfK + float64(rank+1))
+				if _, exists := mems[m.ID]; !exists {
+					mems[m.ID] = m
+				}
+			}
+		}
+	}
 	merged := sortByScore(mems, scores)
 	page, _ := paginateResults(merged, f.Offset, limit)
 	return populateRelativeAge(setScores(page, scores)), nil
+}
+
+func (s *SessionService) secondHopAutoSearch(
+	ctx context.Context,
+	firstHopMems map[string]domain.Memory,
+	firstHopScores map[string]float64,
+	filter domain.MemoryFilter,
+	limit int,
+) []domain.Memory {
+	sorted := sortByScore(firstHopMems, firstHopScores)
+	topN := secondHopTopN
+	if topN > len(sorted) {
+		topN = len(sorted)
+	}
+	if topN == 0 {
+		return nil
+	}
+
+	seeds := sorted[:topN]
+	seedIDs := make(map[string]struct{}, topN)
+	for _, m := range seeds {
+		seedIDs[m.ID] = struct{}{}
+	}
+
+	type hopResult struct {
+		results []domain.Memory
+		err     error
+	}
+	ch := make(chan hopResult, topN)
+	for _, seed := range seeds {
+		go func(content string) {
+			enriched := strings.TrimSpace(filter.Query + " " + content)
+			results, err := s.sessions.AutoVectorSearch(ctx, enriched, filter, limit)
+			ch <- hopResult{results: results, err: err}
+		}(seed.Content)
+	}
+
+	bestByID := make(map[string]domain.Memory)
+	bestScore := make(map[string]float64)
+	for i := 0; i < topN; i++ {
+		hr := <-ch
+		if hr.err != nil {
+			slog.Warn("session second-hop search failed", "err", hr.err)
+			continue
+		}
+		for _, m := range hr.results {
+			if _, isSeed := seedIDs[m.ID]; isSeed {
+				continue
+			}
+			if defaultMinScore > 0 && m.Score != nil && *m.Score < defaultMinScore {
+				continue
+			}
+			sc := 0.0
+			if m.Score != nil {
+				sc = *m.Score
+			}
+			if prev, exists := bestScore[m.ID]; !exists || sc > prev {
+				bestByID[m.ID] = m
+				bestScore[m.ID] = sc
+			}
+		}
+	}
+
+	if len(bestByID) == 0 {
+		return nil
+	}
+
+	result := make([]domain.Memory, 0, len(bestByID))
+	for _, m := range bestByID {
+		result = append(result, m)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return bestScore[result[i].ID] > bestScore[result[j].ID]
+	})
+	return result
+}
+
+func (s *SessionService) secondHopAutoSearchInSessionSet(
+	ctx context.Context,
+	firstHopMems map[string]domain.Memory,
+	firstHopScores map[string]float64,
+	filter domain.MemoryFilter,
+	sessionIDs []string,
+	limit int,
+) []domain.Memory {
+	sorted := sortByScore(firstHopMems, firstHopScores)
+	topN := secondHopTopN
+	if topN > len(sorted) {
+		topN = len(sorted)
+	}
+	if topN == 0 {
+		return nil
+	}
+
+	seeds := sorted[:topN]
+	seedIDs := make(map[string]struct{}, topN)
+	for _, m := range seeds {
+		seedIDs[m.ID] = struct{}{}
+	}
+
+	type hopResult struct {
+		results []domain.Memory
+		err     error
+	}
+	ch := make(chan hopResult, topN)
+	for _, seed := range seeds {
+		go func(content string) {
+			enriched := strings.TrimSpace(filter.Query + " " + content)
+			results, err := s.sessions.AutoVectorSearchInSessionSet(ctx, enriched, filter, sessionIDs, limit)
+			ch <- hopResult{results: results, err: err}
+		}(seed.Content)
+	}
+
+	bestByID := make(map[string]domain.Memory)
+	bestScore := make(map[string]float64)
+	for i := 0; i < topN; i++ {
+		hr := <-ch
+		if hr.err != nil {
+			slog.Warn("session routed second-hop search failed", "err", hr.err)
+			continue
+		}
+		for _, m := range hr.results {
+			if _, isSeed := seedIDs[m.ID]; isSeed {
+				continue
+			}
+			if defaultMinScore > 0 && m.Score != nil && *m.Score < defaultMinScore {
+				continue
+			}
+			sc := 0.0
+			if m.Score != nil {
+				sc = *m.Score
+			}
+			if prev, exists := bestScore[m.ID]; !exists || sc > prev {
+				bestByID[m.ID] = m
+				bestScore[m.ID] = sc
+			}
+		}
+	}
+
+	if len(bestByID) == 0 {
+		return nil
+	}
+
+	result := make([]domain.Memory, 0, len(bestByID))
+	for _, m := range bestByID {
+		result = append(result, m)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return bestScore[result[i].ID] > bestScore[result[j].ID]
+	})
+	return result
 }
 
 func (s *SessionService) hybridSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {

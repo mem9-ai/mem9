@@ -77,7 +77,7 @@ func (s *Server) executeWithFallback(
 	decision domain.RecallRouteDecision,
 ) ([]domain.Memory, int, error) {
 	if decision.IsDefault() {
-		return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, decision.Entity, decision.AnswerFamily)
+		return s.executeLegacyDefaultMixed(ctx, auth, svc, filter)
 	}
 
 	if decision.IsFanout() {
@@ -100,14 +100,14 @@ func (s *Server) executeWithFallback(
 			slog.Warn("fanout both branches failed, falling back to default",
 				"cluster_id", auth.ClusterID,
 				"primary_err", primaryErr, "secondary_err", secondaryErr)
-			return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, decision.Entity, decision.AnswerFamily)
+			return s.executeLegacyDefaultMixed(ctx, auth, svc, filter)
 		}
 
 		if primaryErr != nil {
 			slog.Warn("fanout primary failed, using secondary only",
 				"cluster_id", auth.ClusterID, "primary_err", primaryErr)
 			if len(secondaryMems) == 0 {
-				return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, decision.Entity, decision.AnswerFamily)
+				return s.executeLegacyDefaultMixed(ctx, auth, svc, filter)
 			}
 			return paginateFanout(secondaryMems, filter.Offset, filter.Limit)
 		}
@@ -115,7 +115,7 @@ func (s *Server) executeWithFallback(
 			slog.Warn("fanout secondary failed, using primary only",
 				"cluster_id", auth.ClusterID, "secondary_err", secondaryErr)
 			if len(primaryMems) == 0 {
-				return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, decision.Entity, decision.AnswerFamily)
+				return s.executeLegacyDefaultMixed(ctx, auth, svc, filter)
 			}
 			return paginateFanout(primaryMems, filter.Offset, filter.Limit)
 		}
@@ -126,7 +126,7 @@ func (s *Server) executeWithFallback(
 		}
 		merged := mergeFanoutResults(primaryMems, secondaryMems, primary.Name, secondary.Name, mergeLimit)
 		if len(merged) == 0 {
-			return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, decision.Entity, decision.AnswerFamily)
+			return s.executeLegacyDefaultMixed(ctx, auth, svc, filter)
 		}
 		return paginateFanout(merged, filter.Offset, filter.Limit)
 	}
@@ -136,12 +136,12 @@ func (s *Server) executeWithFallback(
 	if err != nil {
 		slog.Warn("routed strategy failed, falling back to default",
 			"cluster_id", auth.ClusterID, "strategy", primary.Name, "err", err)
-		return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, decision.Entity, decision.AnswerFamily)
+		return s.executeLegacyDefaultMixed(ctx, auth, svc, filter)
 	}
 	if len(mems) == 0 {
 		slog.Info("routed strategy returned zero rows, falling back to default",
 			"cluster_id", auth.ClusterID, "strategy", primary.Name)
-		return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, decision.Entity, decision.AnswerFamily)
+		return s.executeLegacyDefaultMixed(ctx, auth, svc, filter)
 	}
 	return mems, total, nil
 }
@@ -155,22 +155,89 @@ func (s *Server) executeRoutedStrategy(
 	entity string,
 	answerFamily string,
 ) ([]domain.Memory, int, error) {
-	switch strategy.Name {
-	case domain.StrategyExactEventTemporal:
-		return s.executeExactEventTemporal(ctx, auth, svc, filter, entity)
-	case domain.StrategySetAggregation:
-		return s.executeSetAggregation(ctx, auth, svc, filter, entity, answerFamily)
-	case domain.StrategyCountQuery:
-		return s.executeCountQuery(ctx, auth, svc, filter, entity, answerFamily)
-	case domain.StrategyAttributeInference:
-		return s.executeAttributeInference(ctx, auth, svc, filter, entity, answerFamily)
-	case domain.StrategyExactEntityLookup:
-		return s.executeExactEntityLookup(ctx, auth, svc, filter, entity, answerFamily)
-	case domain.StrategyDefaultMixed:
-		return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, entity, answerFamily)
-	default:
-		return s.executeDefaultMixed(ctx, auth, svc, filter)
+	if strategy.Name == domain.StrategyDefaultMixed {
+		return s.executeLegacyDefaultMixed(ctx, auth, svc, filter)
 	}
+
+	return s.executeUnifiedStrategy(ctx, auth, svc, filter, strategy.Name, entity, answerFamily)
+}
+
+func (s *Server) executeUnifiedStrategy(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	filter domain.MemoryFilter,
+	strategyName string,
+	entity string,
+	answerFamily string,
+) ([]domain.Memory, int, error) {
+	mems, total, err := s.entityAwareSearchWindow(ctx, auth, svc, filter, entity, strategyName, answerFamily)
+	if err != nil {
+		return nil, 0, err
+	}
+	mems = rerankByStrategy(strategyName, filter.Query, mems, entity, answerFamily)
+	page, pagedTotal, err := paginateFanout(mems, filter.Offset, filter.Limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	if filter.Offset > 0 || len(page) != len(mems) {
+		return page, pagedTotal, nil
+	}
+	return mems, total, nil
+}
+
+func (s *Server) executeExactEventTemporal(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	filter domain.MemoryFilter,
+	entity string,
+) ([]domain.Memory, int, error) {
+	return s.executeUnifiedStrategy(ctx, auth, svc, filter, domain.StrategyExactEventTemporal, entity, "")
+}
+
+func (s *Server) executeSetAggregation(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	filter domain.MemoryFilter,
+	entity string,
+	answerFamily string,
+) ([]domain.Memory, int, error) {
+	return s.executeUnifiedStrategy(ctx, auth, svc, filter, domain.StrategySetAggregation, entity, answerFamily)
+}
+
+func (s *Server) executeCountQuery(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	filter domain.MemoryFilter,
+	entity string,
+	answerFamily string,
+) ([]domain.Memory, int, error) {
+	return s.executeUnifiedStrategy(ctx, auth, svc, filter, domain.StrategyCountQuery, entity, answerFamily)
+}
+
+func (s *Server) executeAttributeInference(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	filter domain.MemoryFilter,
+	entity string,
+	answerFamily string,
+) ([]domain.Memory, int, error) {
+	return s.executeUnifiedStrategy(ctx, auth, svc, filter, domain.StrategyAttributeInference, entity, answerFamily)
+}
+
+func (s *Server) executeExactEntityLookup(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	filter domain.MemoryFilter,
+	entity string,
+	answerFamily string,
+) ([]domain.Memory, int, error) {
+	return s.executeUnifiedStrategy(ctx, auth, svc, filter, domain.StrategyExactEntityLookup, entity, answerFamily)
 }
 
 func (s *Server) executeDefaultMixed(
@@ -180,6 +247,18 @@ func (s *Server) executeDefaultMixed(
 	filter domain.MemoryFilter,
 ) ([]domain.Memory, int, error) {
 	return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, "", "")
+}
+
+func (s *Server) executeLegacyDefaultMixed(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	svc resolvedSvc,
+	filter domain.MemoryFilter,
+) ([]domain.Memory, int, error) {
+	if filter.SessionID != "" && filter.MemoryType == "" {
+		return s.explicitSessionSearch(ctx, auth, svc, filter, domain.StrategyDefaultMixed, "")
+	}
+	return s.executeDefaultMixedBase(ctx, auth, svc, filter)
 }
 
 func (s *Server) executeDefaultMixedWithHints(
@@ -380,115 +459,96 @@ func (s *Server) entityInsightSearch(
 	return results, nil
 }
 
-func (s *Server) executeExactEventTemporal(
-	ctx context.Context,
-	auth *domain.AuthInfo,
-	svc resolvedSvc,
-	filter domain.MemoryFilter,
-	entity string,
-) ([]domain.Memory, int, error) {
-	if filter.SessionID != "" && filter.MemoryType == "" {
-		return s.explicitSessionSearch(ctx, auth, svc, filter, domain.StrategyExactEventTemporal, "")
+func rerankByStrategy(strategyName, query string, mems []domain.Memory, entity, answerFamily string) []domain.Memory {
+	switch strategyName {
+	case domain.StrategySetAggregation:
+		return rerankForSetAggregation(query, mems, entity, answerFamily)
+	case domain.StrategyCountQuery:
+		return rerankForCountQuery(query, mems, entity)
+	case domain.StrategyAttributeInference:
+		return rerankForAttributeInference(query, mems, entity, answerFamily)
+	case domain.StrategyExactEntityLookup:
+		return rerankForExactAnswerFamily(query, mems, entity, answerFamily)
+	case domain.StrategyExactEventTemporal:
+		return rerankForExactEventTemporal(query, mems, entity)
+	default:
+		return mems
 	}
-	return s.executeDefaultMixed(ctx, auth, svc, filter)
 }
 
-func (s *Server) executeSetAggregation(
-	ctx context.Context,
-	auth *domain.AuthInfo,
-	svc resolvedSvc,
-	filter domain.MemoryFilter,
-	entity string,
-	answerFamily string,
-) ([]domain.Memory, int, error) {
-	if filter.SessionID != "" && filter.MemoryType == "" {
-		mems, total, err := s.explicitSessionSearch(ctx, auth, svc, filter, domain.StrategySetAggregation, answerFamily)
-		if err != nil {
-			return nil, 0, err
-		}
-		if len(mems) > 0 {
-			mems = rerankForSetAggregation(filter.Query, mems, entity, answerFamily)
-		}
-		return mems, total, nil
+func rerankForExactEventTemporal(query string, mems []domain.Memory, entity string) []domain.Memory {
+	if len(mems) < 2 {
+		return mems
 	}
-	return s.executeDefaultMixed(ctx, auth, svc, filter)
-}
 
-func (s *Server) executeCountQuery(
-	ctx context.Context,
-	auth *domain.AuthInfo,
-	svc resolvedSvc,
-	filter domain.MemoryFilter,
-	entity string,
-	answerFamily string,
-) ([]domain.Memory, int, error) {
-	if filter.SessionID != "" && filter.MemoryType == "" {
-		mems, total, err := s.explicitSessionSearch(ctx, auth, svc, filter, domain.StrategyCountQuery, answerFamily)
-		if err != nil {
-			return nil, 0, err
-		}
-		if len(mems) > 0 {
-			mems = rerankForCountQuery(filter.Query, mems, entity)
-		}
-		return mems, total, nil
-	}
-	return s.executeDefaultMixed(ctx, auth, svc, filter)
-}
+	entityLower := strings.ToLower(entity)
+	shape := classifyGroundingAnswerShape(query)
+	temporalQuery := isTemporalQuestion(query) || shape == groundingAnswerShapeTime
+	eventTerm := primaryQuestionEventTerm(query, entityLower)
 
-func (s *Server) executeAttributeInference(
-	ctx context.Context,
-	auth *domain.AuthInfo,
-	svc resolvedSvc,
-	filter domain.MemoryFilter,
-	entity string,
-	answerFamily string,
-) ([]domain.Memory, int, error) {
-	if entity == "" {
-		return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, entity, answerFamily)
+	type scored struct {
+		mem   domain.Memory
+		index int
+		score float64
 	}
-	mems, total, err := s.entityAwareSearchWindow(ctx, auth, svc, filter, entity, domain.StrategyAttributeInference, answerFamily)
-	if err != nil {
-		return nil, 0, err
-	}
-	if len(mems) > 0 {
-		mems = rerankForAttributeInference(filter.Query, mems, entity, answerFamily)
-	}
-	page, pagedTotal, err := paginateFanout(mems, filter.Offset, filter.Limit)
-	if err != nil {
-		return nil, 0, err
-	}
-	if filter.Offset > 0 || len(page) != len(mems) {
-		return page, pagedTotal, nil
-	}
-	return mems, total, nil
-}
 
-func (s *Server) executeExactEntityLookup(
-	ctx context.Context,
-	auth *domain.AuthInfo,
-	svc resolvedSvc,
-	filter domain.MemoryFilter,
-	entity string,
-	answerFamily string,
-) ([]domain.Memory, int, error) {
-	if entity == "" {
-		return s.executeDefaultMixedWithHints(ctx, auth, svc, filter, entity, answerFamily)
+	items := make([]scored, 0, len(mems))
+	for i, mem := range mems {
+		score := -float64(i) * 0.01
+		if mem.Score != nil {
+			score += *mem.Score
+		}
+
+		lower := strings.ToLower(mem.Content)
+		absoluteTime := containsAbsoluteTimeSignal(mem.Content)
+		relativeTime := containsRelativeTimeSignal(lower)
+
+		if entityLower != "" {
+			if strings.Contains(lower, entityLower) {
+				score += 0.25
+			} else {
+				score -= 0.10
+			}
+		}
+
+		if eventTerm != "" && strings.Contains(lower, eventTerm) {
+			score += 0.18
+		}
+
+		if temporalQuery {
+			switch {
+			case absoluteTime:
+				score += 0.35
+			case relativeTime:
+				score += 0.20
+			default:
+				score -= 0.15
+			}
+		}
+
+		if strings.Contains(mem.Content, "?") {
+			score -= 0.12
+		}
+		if looksGenericFact(lower) && !absoluteTime && !relativeTime {
+			score -= 0.12
+		}
+		score += groundedAnswerSignalBonus(groundingAnswerShapeTime, mem.Content)
+
+		items = append(items, scored{mem: mem, index: i, score: score})
 	}
-	mems, total, err := s.entityAwareSearchWindow(ctx, auth, svc, filter, entity, domain.StrategyExactEntityLookup, answerFamily)
-	if err != nil {
-		return nil, 0, err
+
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].score == items[j].score {
+			return items[i].index < items[j].index
+		}
+		return items[i].score > items[j].score
+	})
+
+	out := make([]domain.Memory, 0, len(mems))
+	for _, item := range items {
+		out = append(out, item.mem)
 	}
-	if len(mems) > 0 {
-		mems = rerankForExactAnswerFamily(filter.Query, mems, entity, answerFamily)
-	}
-	page, pagedTotal, err := paginateFanout(mems, filter.Offset, filter.Limit)
-	if err != nil {
-		return nil, 0, err
-	}
-	if filter.Offset > 0 || len(page) != len(mems) {
-		return page, pagedTotal, nil
-	}
-	return mems, total, nil
+	return out
 }
 
 func rerankForSetAggregation(query string, mems []domain.Memory, entity, answerFamily string) []domain.Memory {
@@ -813,6 +873,18 @@ func entityInsightLimit(limit int, strategyName, answerFamily string) int {
 			return 3
 		}
 	}
+	if strategyName == domain.StrategyExactEventTemporal ||
+		strategyName == domain.StrategySetAggregation ||
+		strategyName == domain.StrategyCountQuery {
+		switch {
+		case limit <= 2:
+			return 1
+		case limit <= 10:
+			return 2
+		default:
+			return 3
+		}
+	}
 	if strategyName == domain.StrategyDefaultMixed && isInferenceStyleAnswerFamily(answerFamily) {
 		switch {
 		case limit <= 2:
@@ -886,6 +958,16 @@ func entityContextQueryTerms(answerFamily string) []string {
 		return []string{"travel", "visited", "trip"}
 	case "game", "games", "title", "titles", "name", "names", "object", "objects":
 		return []string{"favorite", "called", "named"}
+	case "console", "consoles":
+		return []string{"console", "gaming", "system"}
+	case "nickname", "nicknames":
+		return []string{"nickname", "called", "name"}
+	case "national_park", "national_parks":
+		return []string{"park", "national", "outdoors"}
+	case "technique", "techniques":
+		return []string{"technique", "method", "practice"}
+	case "composer", "composers":
+		return []string{"music", "composer", "theme"}
 	default:
 		return nil
 	}
@@ -893,9 +975,9 @@ func entityContextQueryTerms(answerFamily string) []string {
 
 func exactEntityLookupQueryTerms(answerFamily string) []string {
 	switch strings.ToLower(strings.TrimSpace(answerFamily)) {
-	case "country", "state", "city", "location", "locations":
+	case "country", "countries", "state", "states", "city", "cities", "location", "locations":
 		return []string{"visited", "trip", "travel", "from"}
-	case "game", "games", "card_game":
+	case "game", "games", "card_game", "card_games":
 		return []string{"called", "named", "favorite", "played"}
 	case "title", "titles", "name", "names", "object", "objects", "item", "items":
 		return []string{"called", "named", "favorite"}
@@ -905,8 +987,16 @@ func exactEntityLookupQueryTerms(answerFamily string) []string {
 		return []string{"read", "reading", "book"}
 	case "instrument", "instruments":
 		return []string{"plays", "playing", "instrument"}
-	case "composer":
-		return []string{"music", "played", "theme"}
+	case "composer", "composers":
+		return []string{"music", "composer", "theme", "played"}
+	case "console", "consoles":
+		return []string{"console", "gaming", "system", "played"}
+	case "nickname", "nicknames":
+		return []string{"nickname", "called", "calls", "named"}
+	case "national_park", "national_parks":
+		return []string{"park", "national", "visited", "outdoors"}
+	case "technique", "techniques":
+		return []string{"technique", "method", "practice", "routine"}
 	case "pet", "pets":
 		return []string{"pet", "dog", "cat", "named"}
 	default:
@@ -916,12 +1006,14 @@ func exactEntityLookupQueryTerms(answerFamily string) []string {
 
 func isExactAnswerFamily(answerFamily string) bool {
 	switch strings.ToLower(strings.TrimSpace(answerFamily)) {
-	case "location", "locations", "country", "state", "city", "cities",
+	case "location", "locations", "country", "countries", "state", "states", "city", "cities",
 		"date", "dates", "time", "timestamp", "start_date", "birthday",
-		"game", "games", "card_game", "company", "companies", "composer",
+		"game", "games", "card_game", "card_games", "company", "companies", "composer", "composers",
 		"title", "titles", "name", "names", "object", "objects",
 		"book", "books", "instrument", "instruments", "pet", "pets",
-		"item", "items", "service", "services":
+		"item", "items", "service", "services",
+		"console", "consoles", "nickname", "nicknames",
+		"national_park", "national_parks", "technique", "techniques":
 		return true
 	default:
 		return false
@@ -1135,10 +1227,7 @@ func formatStrategies(strategies []domain.RoutedStrategy) string {
 }
 
 func shouldExecuteStrategyDecision(decision domain.RecallRouteDecision) bool {
-	if !decision.IsDefault() {
-		return true
-	}
-	return decision.Entity != ""
+	return !decision.IsDefault()
 }
 
 func defaultFallback(cause string) domain.RecallRouteDecision {

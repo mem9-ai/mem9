@@ -1010,6 +1010,51 @@ func TestEntityContextLimit_StrategyAware(t *testing.T) {
 	}
 }
 
+func TestEntityInsightLimit_Phase1Defaults(t *testing.T) {
+	tests := []struct {
+		name         string
+		limit        int
+		strategy     string
+		answerFamily string
+		want         int
+	}{
+		{name: "attribute inference medium", limit: 10, strategy: domain.StrategyAttributeInference, answerFamily: "education", want: 2},
+		{name: "exact entity medium", limit: 10, strategy: domain.StrategyExactEntityLookup, answerFamily: "state", want: 2},
+		{name: "exact temporal medium", limit: 10, strategy: domain.StrategyExactEventTemporal, answerFamily: "", want: 2},
+		{name: "set aggregation medium", limit: 10, strategy: domain.StrategySetAggregation, answerFamily: "events", want: 2},
+		{name: "count query medium", limit: 10, strategy: domain.StrategyCountQuery, answerFamily: "counts", want: 2},
+		{name: "default mixed stays disabled", limit: 10, strategy: domain.StrategyDefaultMixed, answerFamily: "", want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := entityInsightLimit(tt.limit, tt.strategy, tt.answerFamily)
+			if got != tt.want {
+				t.Fatalf("expected %d, got %d", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestShouldExecuteStrategyDecision_DefaultMixedDoesNotRoute(t *testing.T) {
+	if shouldExecuteStrategyDecision(domain.RecallRouteDecision{
+		Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyDefaultMixed, Confidence: 0.85}},
+		Entity:       "john",
+		AnswerFamily: "traits",
+	}) {
+		t.Fatal("expected sole default_mixed decision not to route")
+	}
+}
+
+func TestExplicitSessionPrimaryLimit_ConservativeCap(t *testing.T) {
+	if got := explicitSessionPrimaryLimit(8); got != 8 {
+		t.Fatalf("expected limit 8 to remain 8, got %d", got)
+	}
+	if got := explicitSessionPrimaryLimit(20); got != 12 {
+		t.Fatalf("expected cap 12 for large limits, got %d", got)
+	}
+}
+
 func TestBuildEntityContextQuery_UsesStructuredFamilyTerms(t *testing.T) {
 	got := buildEntityContextQuery("john", "education")
 	if !strings.Contains(got, "john") || !strings.Contains(got, "degree") {
@@ -1020,10 +1065,59 @@ func TestBuildEntityContextQuery_UsesStructuredFamilyTerms(t *testing.T) {
 	}
 }
 
+func TestBuildEntityContextQuery_UsesNewExactFamilyTerms(t *testing.T) {
+	tests := []struct {
+		family string
+		want   string
+	}{
+		{family: "console", want: "console"},
+		{family: "nickname", want: "nickname"},
+		{family: "national_park", want: "park"},
+		{family: "technique", want: "technique"},
+		{family: "composer", want: "composer"},
+	}
+
+	for _, tt := range tests {
+		got := buildEntityContextQuery("alex", tt.family)
+		if !strings.Contains(got, tt.want) {
+			t.Fatalf("expected %q query to contain %q, got %q", tt.family, tt.want, got)
+		}
+	}
+}
+
 func TestBuildExactEntityLookupQuery_UsesFamilyActionTerms(t *testing.T) {
 	got := buildExactEntityLookupQuery("james", "game")
 	if !strings.Contains(got, "james") || !strings.Contains(got, "called") {
 		t.Fatalf("expected exact lookup query to include entity and exact-family action term, got %q", got)
+	}
+}
+
+func TestBuildExactEntityLookupQuery_UsesNewExactFamilies(t *testing.T) {
+	tests := []struct {
+		family string
+		want   string
+	}{
+		{family: "console", want: "console"},
+		{family: "nickname", want: "nickname"},
+		{family: "national_park", want: "park"},
+		{family: "technique", want: "technique"},
+		{family: "composer", want: "composer"},
+	}
+
+	for _, tt := range tests {
+		got := buildExactEntityLookupQuery("alex", tt.family)
+		if !strings.Contains(got, tt.want) {
+			t.Fatalf("expected %q query to contain %q, got %q", tt.family, tt.want, got)
+		}
+	}
+}
+
+func TestIsExactAnswerFamily_NewFamilies(t *testing.T) {
+	families := []string{"console", "nickname", "national_park", "technique", "composer"}
+	for _, family := range families {
+		if !isExactAnswerFamily(family) {
+			t.Fatalf("expected %q to be treated as an exact answer family", family)
+		}
 	}
 }
 
@@ -1084,7 +1178,7 @@ func TestMergeFanoutResults_Dedup(t *testing.T) {
 	}
 }
 
-func TestListMemories_DefaultMixedWithEntityHint_UsesEntityContextSearch(t *testing.T) {
+func TestListMemories_DefaultMixedWithEntityHint_StaysOnLegacyPath(t *testing.T) {
 	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1128,19 +1222,19 @@ func TestListMemories_DefaultMixedWithEntityHint_UsesEntityContextSearch(t *test
 	if !containsString(sessRepo.keywordQueries, "What might John's degree be in?") {
 		t.Fatalf("expected original query search, got %v", sessRepo.keywordQueries)
 	}
-	if !containsAllSubstrings(sessRepo.keywordQueries, "john", "personality") {
-		t.Fatalf("expected enriched entity supplement query, got %v", sessRepo.keywordQueries)
+	if containsAllSubstrings(sessRepo.keywordQueries, "john", "personality") {
+		t.Fatalf("did not expect routed entity supplement query, got %v", sessRepo.keywordQueries)
 	}
 
 	var resp listResponse
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Memories) < 2 {
-		t.Fatalf("expected blended memories, got %d", len(resp.Memories))
+	if len(resp.Memories) != 1 {
+		t.Fatalf("expected legacy-path memories, got %d", len(resp.Memories))
 	}
-	if resp.Memories[1].ID != "s2" {
-		t.Fatalf("expected entity-rich supplemental row to be blended in, got %#v", resp.Memories)
+	if resp.Memories[0].ID != "s1" {
+		t.Fatalf("expected original-query result to remain first, got %#v", resp.Memories)
 	}
 }
 
@@ -1252,7 +1346,7 @@ func TestListMemories_AttributeInference_SessionPath_UsesEntitySupplement(t *tes
 	}
 }
 
-func TestListMemories_AttributeInference_SessionPath_ExpandsNeighbors(t *testing.T) {
+func TestListMemories_AttributeInference_SessionPath_UsesEntitySupplementWithoutNeighbors(t *testing.T) {
 	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1281,7 +1375,7 @@ func TestListMemories_AttributeInference_SessionPath_ExpandsNeighbors(t *testing
 				{ID: "seed", Content: "John is thinking about the future.", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.8), Metadata: metaSeed},
 			},
 			"john degree school study": {
-				{ID: "seed", Content: "John is thinking about the future.", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.8), Metadata: metaSeed},
+				{ID: "neighbor", Content: "John ran for Boston city council and volunteers in local policy groups.", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.75), Metadata: metaNeighbor},
 			},
 		},
 		neighborResults: []domain.Memory{
@@ -1305,14 +1399,14 @@ func TestListMemories_AttributeInference_SessionPath_ExpandsNeighbors(t *testing
 		t.Fatal(err)
 	}
 	if len(resp.Memories) < 2 {
-		t.Fatalf("expected neighbor-expanded memories, got %d", len(resp.Memories))
+		t.Fatalf("expected entity-supplement memories, got %d", len(resp.Memories))
 	}
 	if resp.Memories[0].ID != "neighbor" {
-		t.Fatalf("expected neighbor evidence to rerank first, got %q", resp.Memories[0].ID)
+		t.Fatalf("expected entity supplement evidence to rerank first, got %q", resp.Memories[0].ID)
 	}
 }
 
-func TestListMemories_AttributeInference_ThreadChase_BypassesTopSeedLimit(t *testing.T) {
+func TestListMemories_AttributeInference_BlendsEntityInsightWithoutThreadChase(t *testing.T) {
 	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1333,23 +1427,21 @@ func TestListMemories_AttributeInference_ThreadChase_BypassesTopSeedLimit(t *tes
 
 	metaSeed1, _ := json.Marshal(map[string]any{"seq": 1, "role": "assistant", "content_type": "text"})
 	metaSeed2, _ := json.Marshal(map[string]any{"seq": 2, "role": "assistant", "content_type": "text"})
-	metaQuestion, _ := json.Marshal(map[string]any{"seq": 18, "role": "user", "content_type": "text"})
-	metaAnswer, _ := json.Marshal(map[string]any{"seq": 19, "role": "assistant", "content_type": "text"})
 
-	memRepo := &testMemoryRepo{}
+	memRepo := &testMemoryRepo{
+		keywordSearchByQuery: map[string][]domain.Memory{
+			"john career job work": {
+				{ID: "insight", Content: "John could start a foundation and do charity work.", MemoryType: domain.TypeInsight, Score: floatPtr(0.8)},
+			},
+		},
+	}
 	sessRepo := &testSessionRepo{
 		keywordSearchByQuery: map[string][]domain.Memory{
 			"What could John do after basketball career?": {
 				{ID: "seed-1", Content: "John likes training.", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.95), Metadata: metaSeed1},
-				{ID: "question", Content: "What are your thoughts on life after basketball?", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.92), Metadata: metaQuestion},
 				{ID: "seed-2", Content: "John enjoys teamwork.", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.90), Metadata: metaSeed2},
 			},
-		},
-		neighborResultsBySeq: map[int][]domain.Memory{
-			18: {
-				{ID: "question", Content: "What are your thoughts on life after basketball?", MemoryType: domain.TypeSession, SessionID: "session-123", Metadata: metaQuestion},
-				{ID: "answer", Content: "John could start a foundation and do charity work.", MemoryType: domain.TypeSession, SessionID: "session-123", Metadata: metaAnswer},
-			},
+			"john career job work": nil,
 		},
 	}
 	srv := newTestServer(memRepo, sessRepo)
@@ -1369,16 +1461,16 @@ func TestListMemories_AttributeInference_ThreadChase_BypassesTopSeedLimit(t *tes
 	}
 	foundAnswer := false
 	for _, mem := range resp.Memories {
-		if mem.ID == "answer" {
+		if mem.ID == "insight" {
 			foundAnswer = true
 		}
 	}
 	if !foundAnswer {
-		t.Fatalf("expected thread-chased answer row in results, got %#v", resp.Memories)
+		t.Fatalf("expected entity insight row in results, got %#v", resp.Memories)
 	}
 }
 
-func TestListMemories_DefaultMixedWithEntityHint_PaginatesAfterEntityBlend(t *testing.T) {
+func TestListMemories_DefaultMixedWithEntityHint_PaginatesLegacyResults(t *testing.T) {
 	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1423,8 +1515,8 @@ func TestListMemories_DefaultMixedWithEntityHint_PaginatesAfterEntityBlend(t *te
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	if !containsAllSubstrings(memRepo.keywordQueries, "john", "personality") {
-		t.Fatalf("expected enriched default_mixed entity query, got %v", memRepo.keywordQueries)
+	if containsAllSubstrings(memRepo.keywordQueries, "john", "personality") {
+		t.Fatalf("did not expect routed default_mixed entity query, got %v", memRepo.keywordQueries)
 	}
 
 	var resp listResponse
@@ -1432,12 +1524,12 @@ func TestListMemories_DefaultMixedWithEntityHint_PaginatesAfterEntityBlend(t *te
 		t.Fatal(err)
 	}
 	if resp.Total != 4 {
-		t.Fatalf("expected total=4 after expanded-window blending, got %d", resp.Total)
+		t.Fatalf("expected total=4 from legacy default results, got %d", resp.Total)
 	}
 	if len(resp.Memories) != 2 {
 		t.Fatalf("expected 2 paginated memories, got %d", len(resp.Memories))
 	}
-	if resp.Memories[0].ID != "e1" || resp.Memories[1].ID != "e2" {
+	if resp.Memories[0].ID != "p3" || resp.Memories[1].ID != "p4" {
 		t.Fatalf("expected page 2 to reflect post-blend ordering, got %#v", resp.Memories)
 	}
 }
@@ -1490,12 +1582,85 @@ func TestListMemories_DefaultMixedExactAnswerFamily_ReranksCanonicalRow(t *testi
 	if len(resp.Memories) < 1 {
 		t.Fatalf("expected at least one memory, got %d", len(resp.Memories))
 	}
+	if resp.Route == nil {
+		t.Fatal("expected route metadata in response")
+	}
+	if resp.Route.PrimaryStrategy() != domain.StrategyExactEntityLookup {
+		t.Fatalf("expected exact_entity_lookup route, got %#v", resp.Route.Strategies)
+	}
+	if resp.Route.AnswerFamily != "game" {
+		t.Fatalf("expected answer_family=game, got %q", resp.Route.AnswerFamily)
+	}
 	if resp.Memories[0].ID != "canon" {
 		t.Fatalf("expected canonical exact-answer row to rank first, got %q", resp.Memories[0].ID)
 	}
 }
 
-func TestListMemories_DefaultMixedInferenceFamily_BlendsInsightContext(t *testing.T) {
+func TestListMemories_ExactEntityLookup_UsesEntitySupplementWithoutThreadChase(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"strategies":[{"name":"exact_entity_lookup","confidence":0.90}],"entity":"joanna","answer_family":"state"}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	metaSeed1, _ := json.Marshal(map[string]any{"seq": 1, "role": "assistant", "content_type": "text"})
+	metaSeed2, _ := json.Marshal(map[string]any{"seq": 2, "role": "assistant", "content_type": "text"})
+	metaStatement, _ := json.Marshal(map[string]any{"seq": 18, "role": "assistant", "content_type": "text"})
+	metaAnswer, _ := json.Marshal(map[string]any{"seq": 19, "role": "assistant", "content_type": "text"})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchByQuery: map[string][]domain.Memory{
+			"What state did Joanna visit in summer 2021?": {
+				{ID: "seed-1", Content: "Joanna likes summer travel.", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.95), Metadata: metaSeed1},
+				{ID: "statement", Content: "Joanna talked about a recent trip.", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.92), Metadata: metaStatement},
+				{ID: "seed-2", Content: "Joanna enjoys movies.", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.90), Metadata: metaSeed2},
+			},
+			"joanna visited trip travel from": {
+				{ID: "answer", Content: "Joanna visited Indiana during summer 2021.", MemoryType: domain.TypeSession, SessionID: "session-123", Metadata: metaAnswer},
+			},
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+	srv.strategyRouter = service.NewRecallStrategyRouterService(nil, llmClient, "")
+
+	req := makeRequest(t, http.MethodGet, "/memories?q=What+state+did+Joanna+visit+in+summer+2021%3F&session_id=session-123&limit=4", nil)
+	rr := httptest.NewRecorder()
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	foundAnswer := false
+	for _, mem := range resp.Memories {
+		if mem.ID == "answer" {
+			foundAnswer = true
+			break
+		}
+	}
+	if !foundAnswer {
+		t.Fatalf("expected exact_entity_lookup supplement to include answer row, got %#v", resp.Memories)
+	}
+}
+
+func TestListMemories_DefaultMixedInferenceFamily_DoesNotBlendEntityInsight(t *testing.T) {
 	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1553,8 +1718,8 @@ func TestListMemories_DefaultMixedInferenceFamily_BlendsInsightContext(t *testin
 			break
 		}
 	}
-	if !found {
-		t.Fatalf("expected insight context to be blended in, got %#v", resp.Memories)
+	if found {
+		t.Fatalf("did not expect routed default_mixed insight context, got %#v", resp.Memories)
 	}
 }
 

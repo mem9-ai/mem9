@@ -41,7 +41,7 @@ const (
 	neighborSeedMinScore      = 0.35
 	neighborBeforeWindow      = 1
 	neighborAfterWindow       = 1
-	explicitSessionPrimaryCap = 8
+	explicitSessionPrimaryCap = 12
 )
 
 type groundingAnswerShape int
@@ -249,10 +249,11 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 }
 
 type listResponse struct {
-	Memories []domain.Memory `json:"memories"`
-	Total    int             `json:"total"`
-	Limit    int             `json:"limit"`
-	Offset   int             `json:"offset"`
+	Memories []domain.Memory             `json:"memories"`
+	Total    int                         `json:"total"`
+	Limit    int                         `json:"limit"`
+	Offset   int                         `json:"offset"`
+	Route    *domain.RecallRouteDecision `json:"route,omitempty"`
 }
 
 func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
@@ -292,12 +293,15 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	var memories []domain.Memory
 	var total int
 	var err error
+	var routeDecision *domain.RecallRouteDecision
 
 	if filter.Query != "" && !onlySession && s.strategyRouter != nil {
 		decision, detectErr := s.detectRecallStrategies(r.Context(), auth, filter)
 		if detectErr != nil {
 			slog.Warn("strategy detection error, proceeding with default path",
 				"cluster_id", auth.ClusterID, "err", detectErr)
+		} else {
+			routeDecision = &decision
 		}
 
 		if detectErr == nil && shouldExecuteStrategyDecision(decision) {
@@ -316,6 +320,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 				Total:    total,
 				Limit:    limit,
 				Offset:   offset,
+				Route:    routeDecision,
 			})
 			return
 		}
@@ -391,6 +396,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		Total:    total,
 		Limit:    limit,
 		Offset:   offset,
+		Route:    routeDecision,
 	})
 }
 
@@ -412,6 +418,7 @@ func (s *Server) explicitSessionSearch(ctx context.Context, auth *domain.AuthInf
 		sessionFilter := filter
 		sessionFilter.Offset = 0
 		sessionFilter.Limit = sessionPrimaryLimit
+		sessionFilter.EnableSecondHop = explicitSessionSecondHopEnabled(strategyName, answerFamily)
 		sessionMems, sessionErr = svc.session.Search(ctx, sessionFilter)
 		if sessionErr != nil {
 			slog.Warn("explicit-session search: session search failed", "cluster_id", auth.ClusterID, "err", sessionErr)
@@ -419,7 +426,7 @@ func (s *Server) explicitSessionSearch(ctx context.Context, auth *domain.AuthInf
 		} else {
 			sessionMems = rerankExplicitSessionMemories(filter.Query, sessionMems)
 			if explicitSessionThreadChaseEnabled(strategyName, answerFamily) {
-				chased, err := s.chaseQuestionAnswerTurns(ctx, auth, svc, sessionMems, maxThreadChaseCandidates, maxThreadChaseResults)
+				chased, err := s.chaseQuestionAnswerTurns(ctx, auth, svc, sessionMems, strategyName, maxThreadChaseCandidates, maxThreadChaseResults)
 				if err != nil {
 					slog.Warn("explicit-session thread chase failed", "cluster_id", auth.ClusterID, "err", err)
 				} else if len(chased) > 0 {
@@ -675,14 +682,6 @@ func (s *Server) expandSessionNeighbors(ctx context.Context, auth *domain.AuthIn
 
 func explicitSessionNeighborWindow(strategyName string, answerFamily string) (int, int, bool) {
 	switch strategyName {
-	case domain.StrategyAttributeInference:
-		return 2, 2, true
-	case domain.StrategyExactEntityLookup:
-		return 1, 1, true
-	case domain.StrategyDefaultMixed:
-		if isInferenceStyleAnswerFamily(answerFamily) || isExactAnswerFamily(answerFamily) {
-			return 2, 2, true
-		}
 	case domain.StrategyExactEventTemporal:
 		return neighborBeforeWindow, neighborAfterWindow, true
 	}
@@ -690,16 +689,11 @@ func explicitSessionNeighborWindow(strategyName string, answerFamily string) (in
 }
 
 func explicitSessionThreadChaseEnabled(strategyName string, answerFamily string) bool {
-	switch strategyName {
-	case domain.StrategyAttributeInference:
-		return true
-	case domain.StrategyExactEntityLookup:
-		return true
-	case domain.StrategyDefaultMixed:
-		return isInferenceStyleAnswerFamily(answerFamily) || isExactAnswerFamily(answerFamily)
-	default:
-		return false
-	}
+	return false
+}
+
+func explicitSessionSecondHopEnabled(strategyName string, answerFamily string) bool {
+	return false
 }
 
 func (s *Server) chaseQuestionAnswerTurns(
@@ -707,6 +701,7 @@ func (s *Server) chaseQuestionAnswerTurns(
 	auth *domain.AuthInfo,
 	svc resolvedSvc,
 	sessionMems []domain.Memory,
+	strategyName string,
 	maxCandidates int,
 	maxResults int,
 ) ([]domain.Memory, error) {
@@ -722,11 +717,11 @@ func (s *Server) chaseQuestionAnswerTurns(
 		candidates = candidates[:maxCandidates]
 	}
 
-	for _, mem := range candidates {
+	for i, mem := range candidates {
 		if len(chased) >= maxResults {
 			break
 		}
-		if !strings.Contains(mem.Content, "?") {
+		if !strings.Contains(mem.Content, "?") && !(strategyName == domain.StrategyExactEntityLookup && i < 3) {
 			continue
 		}
 		seq, ok := sessionMemorySeq(mem)

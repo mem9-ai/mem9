@@ -71,9 +71,12 @@ type MemoryFilter struct {
 	MemoryType string
 	AgentID    string
 	SessionID  string
-	Limit      int
-	Offset     int
-	MinScore   float64 // minimum cosine similarity for vector results; 0 = use default (0.3); -1 = disabled (return all)
+	// EnableSecondHop turns on bounded second-hop expansion for session recall.
+	// It is intended for strategy-scoped executor paths only.
+	EnableSecondHop bool
+	Limit           int
+	Offset          int
+	MinScore        float64 // minimum cosine similarity for vector results; 0 = use default (0.3); -1 = disabled (return all)
 }
 
 // TenantStatus represents the lifecycle status of a tenant.

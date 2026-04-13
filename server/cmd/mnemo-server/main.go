@@ -144,14 +144,24 @@ func main() {
 	var strategyRouter *service.RecallStrategyRouterService
 	if cfg.DBBackend == "tidb" && cfg.EmbedAutoModel != "" {
 		bootstrapCtx, bootstrapCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		if err := tidb.EnsurePrototypeVectorIndex(bootstrapCtx, db); err != nil {
-			logger.Warn("prototype vector index bootstrap failed (router will use FTS-only fallback)", "err", err)
+		protoStatus, protoErr := tidb.CheckPrototypeStoreReady(bootstrapCtx, db)
+		if protoErr != nil {
+			logger.Warn("strategy router disabled",
+				"reason", protoStatus.Reason,
+				"err", protoErr)
+		} else if !protoStatus.Ready {
+			logger.Info("strategy router disabled",
+				"reason", protoStatus.Reason,
+				"active_rows", protoStatus.ActiveRowCount)
+		} else {
+			protoRepo := tidb.NewRecallStrategyPrototypeRepo(db, cfg.EmbedAutoModel)
+			strategyRouter = service.NewRecallStrategyRouterService(protoRepo, llmClient, cfg.EmbedAutoModel)
+			logger.Info("strategy router enabled",
+				"auto_model", cfg.EmbedAutoModel,
+				"fts", cfg.FTSEnabled,
+				"active_rows", protoStatus.ActiveRowCount)
 		}
 		bootstrapCancel()
-
-		protoRepo := tidb.NewRecallStrategyPrototypeRepo(db, cfg.EmbedAutoModel)
-		strategyRouter = service.NewRecallStrategyRouterService(protoRepo, llmClient, cfg.EmbedAutoModel)
-		logger.Info("strategy router enabled", "auto_model", cfg.EmbedAutoModel, "fts", cfg.FTSEnabled)
 	} else {
 		logger.Info("strategy router disabled (requires TiDB backend with auto-embedding)")
 	}

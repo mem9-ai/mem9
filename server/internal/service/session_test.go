@@ -29,6 +29,8 @@ type stubSessionRepo struct {
 	vecResults        []domain.Memory
 	vecErr            error
 	autoVecResults    []domain.Memory
+	autoVecByQuery    map[string][]domain.Memory
+	autoVecQueries    []string
 	autoVecErr        error
 	setKeywordResults []domain.Memory
 	setKeywordErr     error
@@ -37,6 +39,8 @@ type stubSessionRepo struct {
 	setVecResults     []domain.Memory
 	setVecErr         error
 	setAutoVecResults []domain.Memory
+	setAutoVecByQuery map[string][]domain.Memory
+	setAutoVecQueries []string
 	setAutoVecErr     error
 	neighborResults   []domain.Memory
 	neighborErr       error
@@ -66,11 +70,25 @@ func (s *stubSessionRepo) NextSeq(_ context.Context, _ string) (int, error) {
 	return next, nil
 }
 
-func (s *stubSessionRepo) AutoVectorSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+func (s *stubSessionRepo) AutoVectorSearch(_ context.Context, q string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+	s.autoVecQueries = append(s.autoVecQueries, q)
+	if s.autoVecByQuery != nil {
+		if results, ok := s.autoVecByQuery[q]; ok {
+			return results, s.autoVecErr
+		}
+		return nil, s.autoVecErr
+	}
 	return s.autoVecResults, s.autoVecErr
 }
 
-func (s *stubSessionRepo) AutoVectorSearchInSessionSet(_ context.Context, _ string, _ domain.MemoryFilter, _ []string, _ int) ([]domain.Memory, error) {
+func (s *stubSessionRepo) AutoVectorSearchInSessionSet(_ context.Context, q string, _ domain.MemoryFilter, _ []string, _ int) ([]domain.Memory, error) {
+	s.setAutoVecQueries = append(s.setAutoVecQueries, q)
+	if s.setAutoVecByQuery != nil {
+		if results, ok := s.setAutoVecByQuery[q]; ok {
+			return results, s.setAutoVecErr
+		}
+		return nil, s.setAutoVecErr
+	}
 	return s.setAutoVecResults, s.setAutoVecErr
 }
 
@@ -113,6 +131,10 @@ func newTestSessionService(repo *stubSessionRepo) *SessionService {
 }
 
 func intPtr(v int) *int {
+	return &v
+}
+
+func floatPtr(v float64) *float64 {
 	return &v
 }
 
@@ -532,6 +554,83 @@ func TestSessionService_Search_defaultLimit(t *testing.T) {
 	_, err := svc.Search(context.Background(), domain.MemoryFilter{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSessionService_Search_EnableSecondHop_AutoHybrid(t *testing.T) {
+	firstHopQuery := "What Console does Nate own?"
+	seedContent := "Nate gaming setup competitive RPG"
+	secondHopQuery := firstHopQuery + " " + seedContent
+
+	repo := &stubSessionRepo{
+		autoVecByQuery: map[string][]domain.Memory{
+			firstHopQuery: {
+				{ID: "seed", Content: seedContent, MemoryType: domain.TypeSession, Score: floatPtr(0.8)},
+			},
+			secondHopQuery: {
+				{ID: "answer", Content: "Nate owns a Nintendo Switch and loves Xenoblade Chronicles.", MemoryType: domain.TypeSession, Score: floatPtr(0.7)},
+			},
+		},
+	}
+	svc := NewSessionService(repo, nil, "auto-model")
+
+	results, err := svc.Search(context.Background(), domain.MemoryFilter{
+		Query:           firstHopQuery,
+		Limit:           5,
+		EnableSecondHop: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(repo.autoVecQueries) != 2 {
+		t.Fatalf("expected 2 auto-vector calls, got %d (%v)", len(repo.autoVecQueries), repo.autoVecQueries)
+	}
+	if repo.autoVecQueries[1] != secondHopQuery {
+		t.Fatalf("expected enriched second-hop query %q, got %q", secondHopQuery, repo.autoVecQueries[1])
+	}
+	found := false
+	for _, mem := range results {
+		if mem.ID == "answer" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected second-hop answer in results, got %#v", results)
+	}
+}
+
+func TestSessionService_Search_DisablesSecondHopWhenFlagFalse(t *testing.T) {
+	firstHopQuery := "What Console does Nate own?"
+	seedContent := "Nate gaming setup competitive RPG"
+	secondHopQuery := firstHopQuery + " " + seedContent
+
+	repo := &stubSessionRepo{
+		autoVecByQuery: map[string][]domain.Memory{
+			firstHopQuery: {
+				{ID: "seed", Content: seedContent, MemoryType: domain.TypeSession, Score: floatPtr(0.8)},
+			},
+			secondHopQuery: {
+				{ID: "answer", Content: "Nate owns a Nintendo Switch and loves Xenoblade Chronicles.", MemoryType: domain.TypeSession, Score: floatPtr(0.7)},
+			},
+		},
+	}
+	svc := NewSessionService(repo, nil, "auto-model")
+
+	results, err := svc.Search(context.Background(), domain.MemoryFilter{
+		Query: firstHopQuery,
+		Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(repo.autoVecQueries) != 1 {
+		t.Fatalf("expected only first-hop auto-vector call, got %d (%v)", len(repo.autoVecQueries), repo.autoVecQueries)
+	}
+	for _, mem := range results {
+		if mem.ID == "answer" {
+			t.Fatalf("did not expect second-hop answer when flag disabled, got %#v", results)
+		}
 	}
 }
 

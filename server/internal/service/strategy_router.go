@@ -369,9 +369,10 @@ Rules:
 4. Extract the primary entity when obvious.
 5. Extract answer_family when obvious.
 6. Use attribute_inference ONLY when the answer requires inference or judgment beyond any single memory.
-7. Use exact_entity_lookup for exact canonical entity answers from indirect evidence, especially location/state/country/name/title/object/game/composer/company/book/instrument questions.
+7. Use exact_entity_lookup for exact canonical entity answers from indirect evidence, especially country/state/city/game/card_game/name/title/object/composer/company/book/instrument/console/nickname/national_park/technique questions.
 8. Do NOT use attribute_inference for exact location/date/state/country/item/title/name/object questions. Those should be exact_entity_lookup unless clearly temporal/count/set.
-9. For attribute_inference, prefer high-level answer_family values such as traits, career, education, preferences, boolean, religion, political_leaning, ally_status.
+9. Do NOT use exact_entity_lookup for broad or inferential families such as preferences, traits, career, education, boolean, age, job, health_condition, financial_status, or broad location.
+10. For attribute_inference, prefer high-level answer_family values such as traits, career, education, preferences, boolean, religion, political_leaning, ally_status.
 10. Return ONLY valid JSON.`
 
 const strategyLLMUserTemplate = `Query: %s
@@ -455,6 +456,9 @@ func sanitizeLLMStrategyOutput(parsed llmStrategyOutput) llmStrategyOutput {
 		if st.Name == domain.StrategyDefaultMixed && shouldRouteToExactEntityLookupFamily(normalizedFamily) {
 			st.Name = domain.StrategyExactEntityLookup
 		}
+		if st.Name == domain.StrategyExactEntityLookup && shouldDowngradeExactEntityLookupFamily(normalizedFamily) {
+			st.Name = domain.StrategyDefaultMixed
+		}
 		if seen[st.Name] {
 			continue
 		}
@@ -474,15 +478,23 @@ func normalizeAnswerFamily(family string) string {
 
 func shouldRouteToExactEntityLookupFamily(family string) bool {
 	switch family {
-	case "location", "locations", "country", "state", "city", "cities",
-		"game", "games", "card_game", "company", "companies", "composer",
-		"book", "books", "instrument", "instruments", "pet", "pets",
-		"activity", "activities", "item", "items", "service", "services",
-		"title", "titles", "name", "names", "object", "objects":
+	case "country", "countries", "state", "states", "city", "cities",
+		"game", "games", "card_game", "card_games", "company", "companies", "composer", "composers",
+		"book", "books", "instrument", "instruments", "title", "titles",
+		"name", "names", "object", "objects", "console", "consoles",
+		"nickname", "nicknames", "national_park", "national_parks",
+		"technique", "techniques":
 		return true
 	default:
 		return false
 	}
+}
+
+func shouldDowngradeExactEntityLookupFamily(family string) bool {
+	if family == "" {
+		return true
+	}
+	return !shouldRouteToExactEntityLookupFamily(family)
 }
 
 func shouldDowngradeAttributeInferenceFamily(family string) bool {
