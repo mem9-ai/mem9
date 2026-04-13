@@ -11,7 +11,6 @@ import type {
   PixelFarmSeedTag,
 } from "@/lib/pixel-farm/data/types";
 
-const MAX_INITIAL_MEMORY_COUNT = 200;
 const ANALYSIS_RANGE = "all" as const;
 
 function cloneMemory(memory: Memory): Memory {
@@ -22,9 +21,21 @@ function cloneMemory(memory: Memory): Memory {
   };
 }
 
-function sortByUpdatedAtDesc<T extends { updated_at: string }>(items: T[]): T[] {
+function compareMemoryRecency(
+  left: Pick<Memory, "created_at" | "id" | "updated_at">,
+  right: Pick<Memory, "created_at" | "id" | "updated_at">,
+): number {
+  const leftTime = left.updated_at || left.created_at;
+  const rightTime = right.updated_at || right.created_at;
+
+  return rightTime.localeCompare(leftTime) || left.id.localeCompare(right.id);
+}
+
+function sortByRecencyDesc<T extends Pick<Memory, "created_at" | "id" | "updated_at">>(
+  items: T[],
+): T[] {
   return [...items].sort((left, right) =>
-    right.updated_at.localeCompare(left.updated_at),
+    compareMemoryRecency(left, right),
   );
 }
 
@@ -105,9 +116,8 @@ function buildSeedTags(
 async function loadCachedSeedMemories(spaceId: string): Promise<Memory[]> {
   const cachedMemories = await readCachedMemories(spaceId);
 
-  return sortByUpdatedAtDesc(cachedMemories)
+  return sortByRecencyDesc(cachedMemories)
     .filter((memory) => memory.state === "active")
-    .slice(0, MAX_INITIAL_MEMORY_COUNT)
     .map(cloneMemory);
 }
 
@@ -130,6 +140,7 @@ export async function loadInitialSnapshot(
 
 export async function pollDelta(
   _spaceId: string,
+  _previousMemories: readonly Memory[],
   cursor: string | null,
 ): Promise<PixelFarmDeltaBatch> {
   return {

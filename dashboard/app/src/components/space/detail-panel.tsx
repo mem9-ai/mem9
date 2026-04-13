@@ -1,6 +1,16 @@
+import { useEffect, useRef } from "react";
 import type { TFunction } from "i18next";
 import { toast } from "sonner";
-import { Bookmark, Copy, X, Trash2, Pencil, Sparkles } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  Bookmark,
+  Copy,
+  X,
+  Trash2,
+  Pencil,
+  Sparkles,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Memory, MemoryFacet, SessionMessage } from "@/types/memory";
@@ -8,11 +18,11 @@ import { FacetBadge } from "./topic-strip";
 import { DetailSessionPreview } from "./session-preview";
 import { features } from "@/config/features";
 
-export function DetailPanel({
+export const DetailPanel = ({
   memory: m,
   derivedTags = [],
-  sessionPreview,
-  sessionPreviewLoading,
+  sessionMessages,
+  sessionMessagesLoading,
   onClose,
   onDelete,
   onEdit,
@@ -20,13 +30,13 @@ export function DetailPanel({
 }: {
   memory: Memory;
   derivedTags?: string[];
-  sessionPreview: SessionMessage[];
-  sessionPreviewLoading: boolean;
+  sessionMessages: SessionMessage[];
+  sessionMessagesLoading: boolean;
   onClose: () => void;
   onDelete: () => void;
   onEdit?: () => void;
   t: TFunction;
-}) {
+}) => {
   return (
     <div
       className="w-full shrink-0 py-8 xl:order-3 xl:w-[390px]"
@@ -36,8 +46,8 @@ export function DetailPanel({
         <DetailPanelContent
           memory={m}
           derivedTags={derivedTags}
-          sessionPreview={sessionPreview}
-          sessionPreviewLoading={sessionPreviewLoading}
+          sessionMessages={sessionMessages}
+          sessionMessagesLoading={sessionMessagesLoading}
           onClose={onClose}
           onDelete={onDelete}
           onEdit={onEdit}
@@ -49,13 +59,13 @@ export function DetailPanel({
       </div>
     </div>
   );
-}
+};
 
-export function DetailPanelContent({
+export const DetailPanelContent = ({
   memory: m,
   derivedTags = [],
-  sessionPreview,
-  sessionPreviewLoading,
+  sessionMessages,
+  sessionMessagesLoading,
   onClose,
   onDelete,
   onEdit,
@@ -66,8 +76,8 @@ export function DetailPanelContent({
 }: {
   memory: Memory;
   derivedTags?: string[];
-  sessionPreview: SessionMessage[];
-  sessionPreviewLoading: boolean;
+  sessionMessages: SessionMessage[];
+  sessionMessagesLoading: boolean;
   onClose: () => void;
   onDelete: () => void;
   onEdit?: () => void;
@@ -75,22 +85,78 @@ export function DetailPanelContent({
   className?: string;
   scrollAreaClassName?: string;
   t: TFunction;
-}) {
+}) => {
   const isPinned = m.memory_type === "pinned";
   const tags = m.tags ?? [];
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const autoScrolledMemoryIDRef = useRef<string | null>(null);
   const facet = features.enableFacet
     ? ((m.metadata as Record<string, unknown> | null)?.facet as
         | MemoryFacet
         | undefined)
     : undefined;
 
-  function handleCopy() {
+  const handleCopy = () => {
     navigator.clipboard.writeText(m.content);
     toast.success(t("list.copied"));
-  }
+  };
+
+  const scrollSessionTo = (
+    top: number,
+    behavior: ScrollBehavior = "smooth",
+  ) => {
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea) {
+      return;
+    }
+
+    if (typeof scrollArea.scrollTo === "function") {
+      scrollArea.scrollTo({ top, behavior });
+    } else {
+      scrollArea.scrollTop = top;
+    }
+  };
+
+  const handleJumpToTop = () => {
+    scrollSessionTo(0);
+  };
+
+  const handleJumpToLatest = () => {
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea) {
+      return;
+    }
+
+    scrollSessionTo(scrollArea.scrollHeight);
+  };
+
+  useEffect(() => {
+    autoScrolledMemoryIDRef.current = null;
+  }, [m.id]);
+
+  useEffect(() => {
+    if (sessionMessagesLoading || sessionMessages.length === 0) {
+      return;
+    }
+    if (autoScrolledMemoryIDRef.current === m.id) {
+      return;
+    }
+
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea) {
+      return;
+    }
+
+    if (typeof scrollArea.scrollTo === "function") {
+      scrollArea.scrollTo({ top: scrollArea.scrollHeight });
+    } else {
+      scrollArea.scrollTop = scrollArea.scrollHeight;
+    }
+    autoScrolledMemoryIDRef.current = m.id;
+  }, [m.id, sessionMessages, sessionMessagesLoading]);
 
   return (
-    <div className={cn("flex h-full min-h-0 flex-col bg-background/50 backdrop-blur-sm", className)}>
+    <div className={cn("relative flex h-full min-h-0 flex-col bg-background/50 backdrop-blur-sm", className)}>
       <div className="flex items-center justify-between border-b border-border/40 bg-secondary/30 px-6 py-4">
         <div className="flex items-center gap-2">
           <div
@@ -153,6 +219,7 @@ export function DetailPanelContent({
       </div>
 
       <div
+        ref={scrollAreaRef}
         data-testid="detail-scroll-area"
         className={cn("flex-1 overflow-y-auto px-7 py-6", scrollAreaClassName)}
       >
@@ -214,15 +281,15 @@ export function DetailPanelContent({
             </div>
           </div>
 
-          {(sessionPreviewLoading || sessionPreview.length > 0) && (
+          {(sessionMessagesLoading || sessionMessages.length > 0) && (
             <>
               <div className="w-full h-px bg-border/40" />
 
               {/* Session Context */}
-              <div className="pt-2">
+              <div data-testid="detail-session-section" className="pt-2">
                 <DetailSessionPreview
-                  messages={sessionPreview}
-                  loading={sessionPreviewLoading}
+                  messages={sessionMessages}
+                  loading={sessionMessagesLoading}
                   compactMetadata={compactSessionPreview}
                   t={t}
                 />
@@ -232,11 +299,39 @@ export function DetailPanelContent({
         </div>
       </div>
 
-      <div className="flex items-center justify-end border-t px-5 py-2.5">
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-2 border-t px-5 py-2.5",
+          sessionMessages.length > 0 ? "justify-between" : "justify-end",
+        )}
+      >
+        {sessionMessages.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={handleJumpToTop}
+              className="gap-1.5"
+            >
+              <ArrowUpToLine className="size-3" />
+              {t("session_preview.jump_to_start")}
+            </Button>
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={handleJumpToLatest}
+              className="gap-1.5"
+            >
+              <ArrowDownToLine className="size-3" />
+              {t("session_preview.jump_to_latest")}
+            </Button>
+          </div>
+        ) : null}
         <Button
           variant="ghost"
           size="xs"
           onClick={onDelete}
+          aria-label={t("detail.delete_button_label")}
           data-mp-event="Dashboard/Detail/DeleteClicked"
           data-mp-page-name="space"
           data-mp-memory-id={m.id}
@@ -248,13 +343,13 @@ export function DetailPanelContent({
       </div>
     </div>
   );
-}
+};
 
-function MetaCell({ label, value }: { label: string; value: string }) {
+const MetaCell = ({ label, value }: { label: string; value: string }) => {
   return (
     <div>
       <dt className="text-xs text-soft-foreground">{label}</dt>
       <dd className="mt-0.5 text-sm text-foreground/80">{value}</dd>
     </div>
   );
-}
+};

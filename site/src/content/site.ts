@@ -16,6 +16,7 @@ export interface SiteNavCopy {
   billing: string;
   security: string;
   docs: string;
+  contact: string;
 }
 
 export interface SiteHeroHighlight {
@@ -136,6 +137,7 @@ export interface SiteFooterCopy {
   license: string;
   contributing: string;
   security: string;
+  contact: string;
   copyright: string;
 }
 
@@ -209,6 +211,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       billing: 'Billing',
       security: 'Security',
       docs: 'Docs',
+      contact: 'Contact Us',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -436,6 +439,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       license: 'Apache-2.0',
       contributing: 'Contributing',
       security: 'Security',
+      contact: 'Contact Us',
       copyright: 'mem9.ai. Unlimited memory infrastructure for AI agents.',
     },
     aria: {
@@ -473,6 +477,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       billing: '定价',
       security: '安全',
       docs: '文档',
+      contact: '联系我们',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -691,6 +696,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       license: 'Apache-2.0',
       contributing: '参与贡献',
       security: '安全',
+      contact: '联系我们',
       copyright: 'mem9.ai。为 AI Agents 提供无限记忆基础设施。',
     },
     aria: {
@@ -728,6 +734,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       billing: '定價',
       security: '安全',
       docs: '文檔',
+      contact: '聯絡我們',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -946,6 +953,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       license: 'Apache-2.0',
       contributing: '參與貢獻',
       security: '安全',
+      contact: '聯絡我們',
       copyright: 'mem9.ai。為 AI Agents 提供無限記憶基礎設施。',
     },
     aria: {
@@ -983,6 +991,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       billing: '料金',
       security: 'セキュリティ',
       docs: 'ドキュメント',
+      contact: 'お問い合わせ',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -1206,6 +1215,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       license: 'Apache-2.0',
       contributing: 'コントリビュート',
       security: 'セキュリティ',
+      contact: 'お問い合わせ',
       copyright: 'mem9.ai。AI エージェント向けの無制限メモリ基盤。',
     },
     aria: {
@@ -1243,6 +1253,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       billing: '요금',
       security: '보안',
       docs: '문서',
+      contact: '문의하기',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -1463,6 +1474,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       license: 'Apache-2.0',
       contributing: '기여하기',
       security: '보안',
+      contact: '문의하기',
       copyright: 'mem9.ai. AI 에이전트를 위한 무제한 메모리 인프라.',
     },
     aria: {
@@ -1500,6 +1512,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       billing: 'Harga',
       security: 'Keamanan',
       docs: 'Dokumentasi',
+      contact: 'Hubungi Kami',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -1723,6 +1736,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       license: 'Apache-2.0',
       contributing: 'Berkontribusi',
       security: 'Keamanan',
+      contact: 'Hubungi Kami',
       copyright: 'mem9.ai. Infrastruktur memori tanpa batas untuk AI agents.',
     },
     aria: {
@@ -1760,6 +1774,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       billing: 'ราคา',
       security: 'ความปลอดภัย',
       docs: 'เอกสาร',
+      contact: 'ติดต่อเรา',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -1983,6 +1998,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       license: 'Apache-2.0',
       contributing: 'ร่วมพัฒนา',
       security: 'ความปลอดภัย',
+      contact: 'ติดต่อเรา',
       copyright: 'mem9.ai โครงสร้างพื้นฐานหน่วยความจำไม่จำกัดสำหรับ AI agents',
     },
     aria: {

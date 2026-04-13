@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { TFunction } from "i18next";
-import { Loader2, User, MessageCircle, MessageSquare, Bot } from "lucide-react";
+import { Loader2, User, MessageSquare, Bot } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import { cn } from "@/lib/utils";
@@ -20,20 +20,21 @@ type SessionContentBlock =
     };
 
 const UNTRUSTED_METADATA_PATTERN = /^(.+?\(untrusted metadata\)):\s*$/;
+const FENCED_CODE_BLOCK_PATTERN = /^```[\w-]*\s*$/;
 
-function slugifyMetadataLabel(label: string): string {
+const slugifyMetadataLabel = (label: string): string => {
   return label
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
+};
 
-function countToken(value: string, token: "{" | "}"): number {
+const countToken = (value: string, token: "{" | "}"): number => {
   return [...value].filter((char) => char === token).length;
-}
+};
 
-function compactMetadataValue(value: unknown): string {
+const compactMetadataValue = (value: unknown): string => {
   const normalized =
     typeof value === "string"
       ? value.trim()
@@ -44,10 +45,22 @@ function compactMetadataValue(value: unknown): string {
   if (!normalized) return "";
   if (normalized.length <= 30) return normalized;
   return `${normalized.slice(0, 12)}…${normalized.slice(-8)}`;
-}
+};
 
-function summarizeMetadata(raw: string): string {
+const normalizeMetadataRaw = (raw: string): string => {
   const trimmed = raw.trim();
+  if (!trimmed) return "";
+
+  const lines = trimmed.split("\n");
+  if (lines.length < 2) return trimmed;
+  if (!FENCED_CODE_BLOCK_PATTERN.test(lines[0]?.trim() ?? "")) return trimmed;
+  if ((lines[lines.length - 1] ?? "").trim() !== "```") return trimmed;
+
+  return lines.slice(1, -1).join("\n").trim();
+};
+
+const summarizeMetadata = (raw: string): string => {
+  const trimmed = normalizeMetadataRaw(raw);
   if (!trimmed) return "";
 
   try {
@@ -96,14 +109,14 @@ function summarizeMetadata(raw: string): string {
     .split("\n")
     .map((line) => line.trim())
     .find(Boolean) ?? "";
-}
+};
 
-function buildSessionContentBlocks(content: string): SessionContentBlock[] {
+const buildSessionContentBlocks = (content: string): SessionContentBlock[] => {
   const lines = content.split("\n");
   const blocks: SessionContentBlock[] = [];
   const markdownBuffer: string[] = [];
 
-  function flushMarkdownBuffer() {
+  const flushMarkdownBuffer = () => {
     const markdown = markdownBuffer.join("\n").trim();
     markdownBuffer.length = 0;
     if (!markdown) return;
@@ -111,7 +124,7 @@ function buildSessionContentBlocks(content: string): SessionContentBlock[] {
       kind: "markdown",
       content: markdown,
     });
-  }
+  };
 
   let index = 0;
   while (index < lines.length) {
@@ -134,7 +147,16 @@ function buildSessionContentBlocks(content: string): SessionContentBlock[] {
     const metadataLines: string[] = [];
     const firstLine = lines[index]?.trim() ?? "";
 
-    if (firstLine.startsWith("{")) {
+    if (firstLine.startsWith("```")) {
+      while (index < lines.length) {
+        const line = lines[index] ?? "";
+        metadataLines.push(line);
+        index += 1;
+        if (line.trim() === "```" && metadataLines.length > 1) {
+          break;
+        }
+      }
+    } else if (firstLine.startsWith("{")) {
       let depth = 0;
       while (index < lines.length) {
         const line = lines[index] ?? "";
@@ -175,9 +197,9 @@ function buildSessionContentBlocks(content: string): SessionContentBlock[] {
           content,
         },
       ];
-}
+};
 
-function MetadataContent({
+const MetadataContent = ({
   label,
   raw,
   summary,
@@ -189,16 +211,17 @@ function MetadataContent({
   summary: string;
   compact: boolean;
   t: TFunction;
-}) {
+}) => {
   const [expanded, setExpanded] = useState(false);
   const slug = slugifyMetadataLabel(label);
+  const normalizedRaw = normalizeMetadataRaw(raw);
 
   if (!compact) {
     return (
       <div className="my-3 space-y-2">
         <p className="text-[12px] font-medium text-foreground/80">{label}:</p>
         <pre className="whitespace-pre-wrap break-all rounded-xl border border-border/50 bg-secondary/50 px-3 py-3 font-mono text-[12px] leading-6 text-foreground/80">
-          {raw}
+          {normalizedRaw}
         </pre>
       </div>
     );
@@ -237,14 +260,14 @@ function MetadataContent({
           className="mt-3 whitespace-pre-wrap break-all rounded-xl border border-border/50 bg-background/70 px-3 py-3 font-mono text-[11px] leading-6 text-foreground/80"
           data-testid={`session-metadata-body-${slug}`}
         >
-          {raw}
+          {normalizedRaw}
         </pre>
       )}
     </div>
   );
-}
+};
 
-function SessionMessageContent({
+const SessionMessageContent = ({
   content,
   compactMetadata,
   t,
@@ -252,7 +275,7 @@ function SessionMessageContent({
   content: string;
   compactMetadata: boolean;
   t: TFunction;
-}) {
+}) => {
   const blocks = useMemo(() => buildSessionContentBlocks(content), [content]);
 
   return (
@@ -276,13 +299,26 @@ function SessionMessageContent({
       )}
     </div>
   );
-}
+};
 
-function getRoleLabel(t: TFunction, role: SessionMessage["role"]): string {
+const getRoleLabel = (
+  t: TFunction,
+  role: SessionMessage["role"],
+): string => {
   return t(`session_preview.role.${role}`, { defaultValue: role });
-}
+};
 
-function SessionMarkdownContent({ content }: { content: string }) {
+const getToolResultPreview = (content: string): string => {
+  return content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("```"))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const SessionMarkdownContent = ({ content }: { content: string }) => {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkBreaks]}
@@ -376,46 +412,98 @@ function SessionMarkdownContent({ content }: { content: string }) {
       {content}
     </ReactMarkdown>
   );
-}
+};
 
-export function CardSessionPreview({
-  messages,
+const ToolResultMessageContent = ({
+  message,
+  compactMetadata,
+  expanded,
   t,
 }: {
-  messages: SessionMessage[];
+  message: SessionMessage;
+  compactMetadata: boolean;
+  expanded: boolean;
   t: TFunction;
-}) {
-  const previewMessages = messages.slice(0, 2);
+}) => {
+  const preview = getToolResultPreview(message.content);
+  return (
+    <div className="w-full">
+      {!expanded ? (
+        <p
+          className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] leading-5 text-muted-foreground"
+          data-testid={`tool-result-preview-${message.id}`}
+        >
+          {preview || t("session_preview.tool_result_empty")}
+        </p>
+      ) : null}
 
-  if (previewMessages.length === 0) return null;
+      {expanded ? (
+        <div data-testid={`tool-result-body-${message.id}`}>
+          <SessionMessageContent
+            content={message.content}
+            compactMetadata={compactMetadata}
+            t={t}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+const ToolResultMessageRow = ({
+  message,
+  compactMetadata,
+  t,
+}: {
+  message: SessionMessage;
+  compactMetadata: boolean;
+  t: TFunction;
+}) => {
+  const [expanded, setExpanded] = useState(false);
+  const toggleLabel = expanded
+    ? t("session_preview.hide_tool_result")
+    : t("session_preview.show_tool_result");
 
   return (
-    <div className="mt-3.5 relative pl-3.5 border-l-[2px] border-border/40 transition-colors group-hover:border-border/60">
-      <div className="flex items-center gap-1.5 mb-2">
-        <MessageCircle className="size-3 text-muted-foreground/70" />
-        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/80">
-          {t("session_preview.title")}
-        </span>
+    <div className="relative flex gap-4">
+      <div className="relative z-10 flex size-6 shrink-0 items-center justify-center rounded-full border-[3px] border-background bg-primary/10 text-primary">
+        <Bot className="size-3" />
       </div>
-      <div className="space-y-1.5">
-        {previewMessages.map((message) => {
-          return (
-            <div key={message.id} className="flex gap-2 items-start text-xs text-foreground/70 leading-relaxed">
-              <span className="font-semibold text-foreground/40 shrink-0 mt-[1px]">
-                {getRoleLabel(t, message.role)}
-              </span>
-              <span className="line-clamp-1 break-all">
-                {message.content}
-              </span>
-            </div>
-          );
-        })}
+      <div className="min-w-0 flex-1 pt-0.5 pb-1">
+        <div className="mb-1.5 flex items-center gap-2">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-foreground/70">
+            {getRoleLabel(t, message.role)}
+          </span>
+          <span className="text-[10px] text-muted-foreground/60">
+            {formatRelativeTime(t, message.created_at)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setExpanded((current) => !current)}
+            className="ml-auto shrink-0 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground hover:underline underline-offset-4"
+            aria-expanded={expanded}
+            aria-label={toggleLabel}
+            data-testid={`tool-result-toggle-${message.id}`}
+          >
+            {toggleLabel}
+          </button>
+        </div>
+        <div className="w-full break-words rounded-2xl rounded-tl-sm border border-primary/10 bg-primary/[0.03] px-4 py-2.5 text-[13px] leading-relaxed text-foreground/90">
+          <div className="break-words">
+            <ToolResultMessageContent
+              message={message}
+              compactMetadata={compactMetadata}
+              expanded={expanded}
+              t={t}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
-}
+};
 
-export function DetailSessionPreview({
+export const DetailSessionPreview = ({
   messages,
   loading,
   compactMetadata = false,
@@ -425,7 +513,7 @@ export function DetailSessionPreview({
   loading: boolean;
   compactMetadata?: boolean;
   t: TFunction;
-}) {
+}) => {
   if (!loading && messages.length === 0) return null;
 
   return (
@@ -444,6 +532,19 @@ export function DetailSessionPreview({
         <div className="relative space-y-5 before:absolute before:inset-y-2 before:left-[11px] before:w-px before:bg-border/40">
           {messages.map((message) => {
             const isUser = message.role === "user";
+            const isToolResult = message.role === "toolResult";
+
+            if (isToolResult) {
+              return (
+                <ToolResultMessageRow
+                  key={message.id}
+                  message={message}
+                  compactMetadata={compactMetadata}
+                  t={t}
+                />
+              );
+            }
+
             return (
               <div key={message.id} className="relative flex gap-4">
                 <div
@@ -465,12 +566,15 @@ export function DetailSessionPreview({
                       {formatRelativeTime(t, message.created_at)}
                     </span>
                   </div>
-                  <div className={cn(
-                    "rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed inline-block max-w-full break-words",
-                    isUser 
-                      ? "bg-secondary/60 text-foreground/90 rounded-tl-sm" 
-                      : "bg-primary/[0.03] text-foreground/90 rounded-tl-sm border border-primary/10"
-                  )}>
+                  <div
+                    className={cn(
+                      "break-words rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed",
+                      "inline-block max-w-full",
+                      isUser
+                        ? "rounded-tl-sm bg-secondary/60 text-foreground/90"
+                        : "rounded-tl-sm border border-primary/10 bg-primary/[0.03] text-foreground/90",
+                    )}
+                  >
                     <div className="break-words">
                       <SessionMessageContent
                         content={message.content}
@@ -487,4 +591,4 @@ export function DetailSessionPreview({
       )}
     </section>
   );
-}
+};

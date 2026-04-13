@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo } from "react";
 import {
-  getSessionPreviewLookupKey,
   useStats,
   useMemories,
-  useSessionPreviewMessages,
+  getLinkedSessionID,
+  useSelectedSessionMessages,
   useCreateMemory,
   useDeleteMemory,
   useUpdateMemory,
@@ -62,9 +62,8 @@ export interface SpaceDataModel {
   isFetchingMore: boolean;
   displayedFirstPageSize: number;
   fetchNextPage: ReturnType<typeof useMemories>["fetchNextPage"];
-  sessionPreviewBySessionID: Record<string, SessionMessage[]>;
-  selectedSessionPreview: SessionMessage[];
-  selectedSessionPreviewLoading: boolean;
+  selectedSessionMessages: SessionMessage[];
+  selectedSessionMessagesLoading: boolean;
   tagOptions: TagSummary[];
   analysisTagStats: Array<{
     value: string;
@@ -310,17 +309,7 @@ export function useSpaceDataModel(input: {
       timelineFilteredMemories,
     ],
   );
-  const sessionPreviewMemories = useMemo(() => {
-    if (!input.selected) return displayedSelection.displayedMemories;
-
-    const previewMemories = new Map(
-      displayedSelection.displayedMemories.map((memory) => [memory.id, memory]),
-    );
-    previewMemories.set(input.selected.id, input.selected);
-    return [...previewMemories.values()];
-  }, [displayedSelection.displayedMemories, input.selected]);
-  const sessionPreviewQuery = useSessionPreviewMessages(spaceId, sessionPreviewMemories);
-  const sessionPreviewBySessionID = sessionPreviewQuery.data ?? {};
+  const selectedSessionQuery = useSelectedSessionMessages(spaceId, input.selected);
   const hasMoreMemories = displayedSelection.usingLocalFilteredList
     ? displayedSelection.baseDisplayedMemories.length > input.localVisibleCount
     : hasNextPage;
@@ -350,15 +339,11 @@ export function useSpaceDataModel(input: {
       (derivedTag) => normalizeTagSignal(derivedTag) === activeTagNormalized,
     );
   };
-  const selectedSessionID = input.selected
-    ? getSessionPreviewLookupKey(input.selected)
-    : "";
-  const selectedSessionPreview = selectedSessionID
-    ? (sessionPreviewBySessionID[selectedSessionID] ?? [])
-    : [];
-  const selectedSessionPreviewLoading = !!selectedSessionID &&
-    selectedSessionPreview.length === 0 &&
-    (sessionPreviewQuery.isLoading || sessionPreviewQuery.isFetching);
+  const selectedSessionID = getLinkedSessionID(input.selected);
+  const selectedSessionMessages = selectedSessionQuery.data ?? [];
+  const selectedSessionMessagesLoading = !!selectedSessionID &&
+    selectedSessionMessages.length === 0 &&
+    (selectedSessionQuery.isLoading || selectedSessionQuery.isFetching);
 
   useEffect(() => {
     if (isMemoryLoading || !input.selected) return;
@@ -403,9 +388,8 @@ export function useSpaceDataModel(input: {
     isFetchingMore,
     displayedFirstPageSize,
     fetchNextPage,
-    sessionPreviewBySessionID,
-    selectedSessionPreview,
-    selectedSessionPreviewLoading,
+    selectedSessionMessages,
+    selectedSessionMessagesLoading,
     tagOptions,
     analysisTagStats,
     activeTagNormalized,

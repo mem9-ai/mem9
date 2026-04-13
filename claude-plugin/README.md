@@ -1,266 +1,138 @@
-# Claude Plugin for Mem9
+# Mem9 Claude Code Plugin
 
-Persistent cloud memory for Claude Code — auto-loads memories on session start, auto-saves on stop, with on-demand store/recall skills.
+Persistent cloud memory for Claude Code.
 
-> **For AI agents**: If a user asks you to install this plugin, follow the Quick Start below.
+## Install
 
-## Quick Start
+Install from your terminal with the Claude Code CLI:
 
-### Option 1: CoWork Install (one command)
-
-```bash
-cowork install mem9-ai/mem9-claude-plugin --plugin
+```text
+claude plugin marketplace add mem9-ai/mem9
+claude plugin install mem9@mem9
 ```
 
-Then add your tenant ID to `~/.claude/settings.json`:
-
-```json
-{
-  "env": {
-    "MEM9_TENANT_ID": "your-tenant-uuid"
-  }
-}
-```
-
-Restart Claude Code. Done.
-
-### Option 2: Marketplace Install
-
-```
-/plugin marketplace add mem9-ai/mem9
-/plugin install mem9@mem9
-```
-
-Then add `MEM9_TENANT_ID` to `~/.claude/settings.json` as above, and restart.
-
----
-
-## How It Works
-
-```
-Session Start → Load recent memories into context
-     ↓
-User Prompt  → Hint: memory-store / memory-recall available
-     ↓
-Session Stop → Capture last response → save to database
-```
-
-Three lifecycle hooks + two skills:
-
-| Component | Trigger | What it does |
-|---|---|---|
-| `session-start.sh` | Session begins | Loads recent memories into `additionalContext` |
-| `user-prompt-submit.sh` | Each prompt | Injects system hint about available memory skills |
-| `stop.sh` | Session ends | Saves last assistant response as a new memory |
-| `memory-store` skill | On demand | User says "remember this" → saves explicitly |
-| `memory-recall` skill | On demand | User says "what do we know about X" → searches memories |
+After installation, start a new Claude Code session. Mem9 will initialize automatically on `SessionStart(startup)`.
 
 ## Prerequisites
 
-- Claude Code installed
-- A `MEM9_TENANT_ID` (provision one at `https://api.mem9.ai`)
-- [CoWork CLI](https://github.com/ZhangHanDong/cowork-skills) (for CoWork install method)
+- Claude Code plugin support
+- `Node.js 18+`
+- Network access to `https://api.mem9.ai`
 
-## Installation
+## Auth Model
 
-### Method A: CoWork Install (Recommended)
+The plugin stores its runtime API key cache in:
 
-One command installs the full plugin — hooks, skills, and registration:
-
-```bash
-cowork install mem9-ai/mem9-claude-plugin --plugin
+```text
+${CLAUDE_PLUGIN_DATA}/auth.json
 ```
 
-This will:
-1. Clone the plugin repo
-2. Copy it to `~/.claude/mem9-claude-plugin/`
-3. Register it in Claude Code's plugin system
-4. Enable it in `settings.json`
+This file is a runtime auth cache stored in the Claude Code plugin data directory.
+Claude Code may remove that directory when the plugin is removed from its last scope.
 
-Then configure your tenant ID:
+That file is auto-created on `SessionStart(startup)` when auth is missing.
 
-```json
-// ~/.claude/settings.json
-{
-  "env": {
-    "MEM9_TENANT_ID": "your-tenant-uuid"
-  }
-}
-```
-
-Restart Claude Code to activate.
-
-**Update:**
-```bash
-cowork install mem9-ai/mem9-claude-plugin --plugin --update
-```
-
-**Uninstall:**
-```bash
-cowork install --uninstall mem9-claude-plugin
-```
-
----
-
-### Method B: Marketplace Install
-
-Claude Code's built-in plugin marketplace.
-
-#### Step 1: Add the marketplace
-
-In Claude Code, run:
-
-```
-/plugin marketplace add mem9-ai/mem9
-```
-
-#### Step 2: Install the plugin
-
-```
-/plugin install mem9@mem9
-```
-
-Claude Code will prompt you to approve the hooks. Accept to enable automatic memory capture.
-
-#### Step 3: Configure tenant ID
-
-Add your tenant ID to `~/.claude/settings.json`:
+The stored JSON looks like this:
 
 ```json
 {
-  "env": {
-    "MEM9_TENANT_ID": "your-tenant-uuid"
-  }
+  "base_url": "https://api.mem9.ai",
+  "api_key": "generated-api-key",
+  "created_at": "2026-04-10T00:00:00.000Z",
+  "source": "auto_provisioned"
 }
 ```
 
-#### Step 4: Restart Claude Code
+## Hook Flow
 
-Restart to activate the plugin.
+```text
+SessionStart(startup)
+  -> check Node.js 18+
+  -> create auth.json if missing
 
-#### Updating
+UserPromptSubmit
+  -> GET /v1alpha2/mem9s/memories?q=...&agent_id=claude-code-main
+  -> inject <relevant-memories>...</relevant-memories>
 
-```
-/plugin marketplace update
-```
+Stop
+  -> parse transcript_path
+  -> upload last turn as messages[]
 
----
+PreCompact
+  -> upload a larger recent window
 
-### Method C: Manual Install (settings.json hooks)
-
-If you prefer not to use the marketplace or CoWork, you can configure hooks directly in `settings.json`.
-
-#### 1. Clone this repo
-
-```bash
-git clone https://github.com/mem9-ai/mem9.git
-cd mem9
-PLUGIN_DIR="$(pwd)/claude-plugin"
+SessionEnd
+  -> upload a small best-effort final window
 ```
 
-#### 2. Make hooks executable
+## API Contract
 
-```bash
-chmod +x "$PLUGIN_DIR"/hooks/*.sh
+Automatic recall uses:
+
+```text
+GET /v1alpha2/mem9s/memories?q=<prompt>&agent_id=claude-code-main&limit=10
+Headers:
+  X-API-Key: <api_key>
+  X-Mnemo-Agent-Id: claude-code
 ```
 
-#### 3. Copy skills to Claude
-
-```bash
-mkdir -p ~/.claude/skills
-cp -r "$PLUGIN_DIR/skills/mem9-recall" ~/.claude/skills/mem9-recall
-cp -r "$PLUGIN_DIR/skills/mem9-store" ~/.claude/skills/mem9-store
-```
-
-#### 4. Configure `~/.claude/settings.json`
-
-Add the `env` and `hooks` sections (merge with existing config):
+Automatic transcript ingest uses:
 
 ```json
+POST /v1alpha2/mem9s/memories
 {
-  "env": {
-    "MEM9_TENANT_ID": "your-tenant-uuid"
-  },
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "<PLUGIN_DIR>/hooks/session-start.sh"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "<PLUGIN_DIR>/hooks/user-prompt-submit.sh"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "<PLUGIN_DIR>/hooks/stop.sh",
-            "timeout": 120
-          }
-        ]
-      }
-    ]
-  }
+  "session_id": "claude-session-id",
+  "agent_id": "claude-code-main",
+  "mode": "smart",
+  "messages": [
+    { "role": "user", "content": "..." },
+    { "role": "assistant", "content": "..." }
+  ]
 }
 ```
 
-Replace `<PLUGIN_DIR>` with the actual absolute path (e.g. `/home/you/mem9/claude-plugin`).
+## Skills
 
-#### 5. Verify
+The plugin exposes:
 
-```bash
-claude -p "say hi"
-```
+- `/mem9:setup`
+- `/mem9:recall`
+- `/mem9:store`
 
-Should respond within 15 seconds. If it hangs, double-check that the hook paths are correct absolute paths.
-
-## Usage
-
-Once installed, memory works automatically:
-
-- **Auto-save**: Every session's last response is saved when the session ends
-- **Auto-load**: Recent memories are loaded into context when a new session starts
-- **Manual save**: Tell Claude "remember that the deploy key is on server X" → triggers `/memory-store`
-- **Manual search**: Ask Claude "what do we know about the auth flow?" → triggers `/memory-recall`
-
-## File Structure
-
-```
-claude-plugin/
-├── README.md                    # This file
-├── .claude-plugin/
-│   └── plugin.json              # Plugin manifest (name, version, hooks)
-├── hooks/
-│   ├── common.sh                # Shared helpers (HTTP requests, env check)
-│   ├── hooks.json               # Hook definitions (used by plugin system)
-│   ├── session-start.sh         # Load memories on start
-│   ├── stop.sh                  # Save memory on stop
-│   ├── session-end.sh           # Cleanup placeholder
-│   └── user-prompt-submit.sh    # Inject memory hints
-└── skills/
-    ├── mem9-recall/SKILL.md     # On-demand search skill
-    ├── mem9-store/SKILL.md      # On-demand save skill
-    └── mem9-setup/SKILL.md      # Automated installer skill
-```
+`/mem9:setup` is the backup path when auto-init did not complete.
+It writes `${CLAUDE_PLUGIN_DATA}/auth.json` without printing the API key back to the user.
 
 ## Troubleshooting
 
-| Problem | Cause | Fix |
-|---|---|---|
-| Claude hangs on startup | Hook script path wrong or not executable | Check paths in `settings.json`, run `chmod +x` on hook scripts |
-| Memories not saving | Stop hook only fires on normal session end | Use `/memory-store` for on-demand saves |
-| Plugin not loading after marketplace install | Tenant ID not configured | Add `env` block to `~/.claude/settings.json` with `MEM9_TENANT_ID` |
-| Hook approval prompt | Normal for marketplace plugins | Accept the hook permissions when prompted |
+If memory is not working:
+
+1. Check that `node --version` is `>= 18`.
+2. Check that `${CLAUDE_PLUGIN_DATA}/auth.json` exists.
+3. Run `/mem9:setup`.
+4. Restart Claude Code.
+
+If `SessionStart` says Node is missing, install Node and restart Claude Code.
+
+If recall fails, Claude continues normally. The plugin treats recall as best effort.
+
+If `Stop` / `PreCompact` / `SessionEnd` fail, Claude still exits normally. The plugin treats ingest as best effort.
+
+## Debug Logs
+
+For real Claude Code troubleshooting, enable plugin debug logs with:
+
+```bash
+export MEM9_DEBUG=1
+```
+
+When enabled, the plugin writes JSONL logs to:
+
+```text
+${CLAUDE_PLUGIN_DATA}/logs/hooks.jsonl
+```
+
+The logs are designed for debugging hook flow without leaking secrets:
+
+- They record hook name, stage, counts, auth source, and failure reason.
+- They do not record API keys.
+- They do not record full prompts or full transcript message content.

@@ -10,7 +10,6 @@ import {
   Loader2,
 } from "lucide-react";
 import type { TFunction } from "i18next";
-import { getSessionPreviewLookupKey } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -74,7 +73,7 @@ interface SpacePageLayoutProps {
   onHandleFarmAction: () => void;
 }
 
-export function SpacePageLayout({
+export const SpacePageLayout = ({
   spaceId,
   routeState,
   dataModel,
@@ -101,7 +100,7 @@ export function SpacePageLayout({
   onHandleImport,
   onRefreshMemories,
   onHandleFarmAction,
-}: SpacePageLayoutProps) {
+}: SpacePageLayoutProps) => {
   const isEmpty =
     !dataModel.isMemoryLoading &&
     dataModel.displayedMemories.length === 0 &&
@@ -504,11 +503,7 @@ export function SpacePageLayout({
                       key={memory.id}
                       memory={memory}
                       derivedTags={dataModel.getActiveDerivedTags(memory)}
-                      sessionPreview={
-                        dataModel.sessionPreviewBySessionID[
-                          getSessionPreviewLookupKey(memory)
-                        ] ?? []
-                      }
+                      hasLinkedSession={memory.session_id.trim() !== ""}
                       isSelected={routeState.selected?.id === memory.id}
                       onClick={() => routeState.openMemoryDetail(memory, "list")}
                       onDelete={() => setDeleteTarget(memory)}
@@ -584,8 +579,8 @@ export function SpacePageLayout({
                 key={routeState.selected.id}
                 memory={routeState.selected}
                 derivedTags={dataModel.getActiveDerivedTags(routeState.selected)}
-                sessionPreview={dataModel.selectedSessionPreview}
-                sessionPreviewLoading={dataModel.selectedSessionPreviewLoading}
+                sessionMessages={dataModel.selectedSessionMessages}
+                sessionMessagesLoading={dataModel.selectedSessionMessagesLoading}
                 onClose={() => routeState.setSelected(null)}
                 onDelete={() => setDeleteTarget(routeState.selected!)}
                 onEdit={
@@ -635,8 +630,8 @@ export function SpacePageLayout({
           <MobileDetailSheet
             memory={routeState.selected}
             derivedTags={dataModel.getActiveDerivedTags(routeState.selected)}
-            sessionPreview={dataModel.selectedSessionPreview}
-            sessionPreviewLoading={dataModel.selectedSessionPreviewLoading}
+            sessionMessages={dataModel.selectedSessionMessages}
+            sessionMessagesLoading={dataModel.selectedSessionMessagesLoading}
             open={!!routeState.selected}
             onOpenChange={(open) => !open && routeState.setSelected(null)}
             onDelete={() => {
@@ -717,4 +712,4 @@ export function SpacePageLayout({
       />
     </div>
   );
-}
+};

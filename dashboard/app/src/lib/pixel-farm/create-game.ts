@@ -194,14 +194,17 @@ export interface PixelFarmPointerDebugInfo {
 
 export interface PixelFarmInteractionTargetDebugInfo {
   animalInstanceId?: string | null;
+  bucketTotalMemoryCount?: number | null;
+  endIndexExclusive?: number | null;
   id: string;
-  kind: "animal" | "crop";
+  kind: "npc" | "plant";
   memoryCount: number;
   memoryIds: string[];
   occupiedCells?: PixelFarmPointerTile[];
   screenX: number;
   screenY: number;
-  tagKey: string;
+  startIndexInclusive?: number | null;
+  tagKey: string | null;
   tagLabel: string;
 }
 
@@ -1042,7 +1045,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
     const selectionState = this.readInteractionSelectionState();
     const currentFocusedTarget = selectionState?.focusedTarget ?? null;
     const focusedTarget = this.resolveFocusedTargetForInteraction(currentFocusedTarget);
-    const actionableTarget = focusedTarget;
+    const actionableTarget = focusedTarget ?? null;
     const controls = this.characterControls;
     const interactJustDown =
       controls ? Phaser.Input.Keyboard.JustDown(controls.interact) : false;
@@ -1074,9 +1077,12 @@ class PixelFarmSandboxScene extends Phaser.Scene {
       lastInteractedTargetId: this.lastInteractedTargetId,
       target: {
         animalInstanceId: focusedTarget.animalInstanceId,
+        bucketTotalMemoryCount: focusedTarget.target.bucketTotalMemoryCount,
+        endIndexExclusive: focusedTarget.target.endIndexExclusive,
         id: focusedTarget.target.id,
         kind: focusedTarget.target.kind,
-        memoryCount: focusedTarget.target.totalMemoryCount,
+        memoryCount:
+          focusedTarget.target.bucketTotalMemoryCount ?? focusedTarget.target.memoryIds.length,
         memoryIds: [...focusedTarget.target.memoryIds],
         occupiedCells: focusedTarget.target.getOccupiedCells().map((cell) => ({
           column: cell.column,
@@ -1084,6 +1090,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
         })),
         screenX: screenAnchor.x,
         screenY: screenAnchor.y,
+        startIndexInclusive: focusedTarget.target.startIndexInclusive,
         tagKey: focusedTarget.target.tagKey,
         tagLabel: focusedTarget.target.tagLabel,
       },
@@ -1248,7 +1255,7 @@ class PixelFarmSandboxScene extends Phaser.Scene {
         }
 
         if (left.target.kind !== right.target.kind) {
-          return left.target.kind === "crop" ? -1 : 1;
+          return left.target.kind === "plant" ? -1 : 1;
         }
 
         return left.target.id.localeCompare(right.target.id);

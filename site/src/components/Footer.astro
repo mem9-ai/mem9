@@ -37,6 +37,15 @@ const { footer } = Astro.props;
       <a href="/#security" data-i18n="footer.security">
         {footer.security}
       </a>
+      <span class="sep">/</span>
+      <a
+        href="mailto:mem9@pingcap.com"
+        class="footer-contact-link"
+        data-contact-modal-trigger
+        data-i18n="footer.contact"
+      >
+        {footer.contact}
+      </a>
     </div>
     <p class="copyright" data-i18n="footer.copyright">
       {footer.copyright}
@@ -81,6 +90,10 @@ const { footer } = Astro.props;
 
   .sep {
     color: var(--text-dim);
+  }
+
+  .footer-contact-link {
+    color: inherit;
   }
 
   .copyright {

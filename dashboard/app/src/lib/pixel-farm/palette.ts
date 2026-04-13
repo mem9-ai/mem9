@@ -6,7 +6,6 @@ import type { PixelFarmAssetTileSelection } from "@/lib/pixel-farm/tileset-confi
 const FARMING_PLANTS_COLUMNS = 5;
 const MUSHROOMS_FLOWERS_STONES_COLUMNS = 12;
 
-export const PIXEL_FARM_MAIN_FIELD_COUNT = 5;
 export const PIXEL_FARM_TOP_CROP_TAG_COUNT = 13;
 
 export type PixelFarmCropStage = "seed" | "sprout" | "growing" | "mature";

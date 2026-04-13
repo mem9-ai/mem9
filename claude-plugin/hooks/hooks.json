@@ -1,5 +1,5 @@
 {
-  "description": "Mem9 memory hooks — automatic capture and recall of shared memories",
+  "description": "Mem9 memory hooks — automatic bootstrap, recall, and ingest",
   "hooks": {
     "SessionStart": [
       {
@@ -28,6 +28,27 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/stop.sh",
             "timeout": 120
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact.sh",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-end.sh"
           }
         ]
       }
