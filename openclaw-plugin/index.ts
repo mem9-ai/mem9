@@ -12,6 +12,8 @@ import type {
 } from "./types.js";
 
 const DEFAULT_API_URL = "https://api.mem9.ai";
+const MEM9_MEMORY_PATH_PREFIX = "mem9/";
+const MEM9_MEMORY_PROVIDER = "mem9";
 
 function jsonResult(data: unknown) {
   // Older OpenClaw versions may assume tool results have a normalized
@@ -27,11 +29,139 @@ function jsonResult(data: unknown) {
   }
 }
 
+function buildMemoryPath(id: string): string {
+  return `${MEM9_MEMORY_PATH_PREFIX}${id}`;
+}
+
+function normalizeMemoryLookup(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.startsWith(MEM9_MEMORY_PATH_PREFIX)
+    ? trimmed.slice(MEM9_MEMORY_PATH_PREFIX.length)
+    : trimmed;
+}
+
+function normalizeSnippet(text: string, maxLength = 240): string {
+  const flattened = text.replace(/\s+/g, " ").trim();
+  if (flattened.length <= maxLength) {
+    return flattened;
+  }
+  return `${flattened.slice(0, maxLength - 3)}...`;
+}
+
+function countLines(text: string): number {
+  if (!text) {
+    return 1;
+  }
+  return text.split(/\r?\n/).length;
+}
+
+function buildPromptSection(params: {
+  availableTools: Set<string>;
+  citationsMode?: string;
+}): string[] {
+  const hasMemorySearch = params.availableTools.has("memory_search");
+  const hasMemoryGet = params.availableTools.has("memory_get");
+
+  if (!hasMemorySearch && !hasMemoryGet) {
+    return [];
+  }
+
+  let toolGuidance: string;
+  if (hasMemorySearch && hasMemoryGet) {
+    toolGuidance =
+      "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run `memory_search` first, then use `memory_get` to pull only the needed memory. If low confidence after search, say you checked.";
+  } else if (hasMemorySearch) {
+    toolGuidance =
+      "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run `memory_search` first and answer from the matching results. If low confidence after search, say you checked.";
+  } else {
+    toolGuidance =
+      "Before answering anything about prior work, decisions, dates, people, preferences, or todos that already point to a specific memory: run `memory_get` to pull only the needed memory. If low confidence after reading it, say you checked.";
+  }
+
+  const lines = ["## Memory Recall", toolGuidance];
+  if (params.citationsMode === "off") {
+    lines.push(
+      "Citations are disabled: do not mention memory identifiers unless the user explicitly asks.",
+    );
+  } else {
+    lines.push(
+      "Citations: include the memory identifier only when it helps the user verify recalled memory.",
+    );
+  }
+  lines.push("");
+  return lines;
+}
+
 interface MemoryCapability {
   search: (query: string, opts?: { limit?: number }) => Promise<{ data: Memory[]; total: number }>;
   store: (content: string, opts?: { tags?: string[]; source?: string }) => Promise<unknown>;
   get: (id: string) => Promise<Memory | null>;
   remove: (id: string) => Promise<boolean>;
+}
+
+interface MemoryPromptSectionBuilder {
+  (params: { availableTools: Set<string>; citationsMode?: string }): string[];
+}
+
+interface MemorySearchResult {
+  path: string;
+  startLine: number;
+  endLine: number;
+  score: number;
+  snippet: string;
+  source: "memory";
+  citation?: string;
+}
+
+interface MemoryProviderStatus {
+  backend: "builtin" | "qmd";
+  provider: string;
+  requestedProvider?: string;
+  custom?: Record<string, unknown>;
+}
+
+interface MemorySearchManager {
+  search: (
+    query: string,
+    opts?: { maxResults?: number; minScore?: number; sessionKey?: string },
+  ) => Promise<MemorySearchResult[]>;
+  readFile: (params: {
+    relPath: string;
+    from?: number;
+    lines?: number;
+  }) => Promise<{ text: string; path: string }>;
+  status: () => MemoryProviderStatus;
+  sync?: (params?: {
+    reason?: string;
+    force?: boolean;
+    sessionFiles?: string[];
+    progress?: (update: { completed: number; total: number; label?: string }) => void;
+  }) => Promise<void>;
+  probeEmbeddingAvailability: () => Promise<{ ok: boolean; error?: string }>;
+  probeVectorAvailability: () => Promise<boolean>;
+  close?: () => Promise<void>;
+}
+
+interface MemoryRuntime {
+  getMemorySearchManager: (params: {
+    cfg?: unknown;
+    agentId: string;
+    purpose?: "default" | "status";
+  }) => Promise<{ manager: MemorySearchManager | null; error?: string }>;
+  resolveMemoryBackendConfig: (params: { cfg?: unknown; agentId: string }) => {
+    backend: "builtin" | "qmd";
+    provider: string;
+    requestedProvider?: string;
+    custom?: Record<string, unknown>;
+  };
+  closeAllMemorySearchManagers?: () => Promise<void>;
+}
+
+interface MemorySlotCapability {
+  promptBuilder?: MemoryPromptSectionBuilder;
+  runtime?: MemoryRuntime;
+  flushPlanResolver?: unknown;
+  publicArtifacts?: unknown;
 }
 
 interface OpenClawPluginApi {
@@ -44,6 +174,9 @@ interface OpenClawPluginApi {
     factory: ToolFactory | (() => AnyAgentTool[]),
     opts: { names: string[] }
   ) => void;
+  registerMemoryCapability?: (capability: MemorySlotCapability) => void;
+  registerMemoryPromptSection?: (builder: MemoryPromptSectionBuilder) => void;
+  registerMemoryRuntime?: (runtime: MemoryRuntime) => void;
   registerCapability?: (slot: string, capability: MemoryCapability) => void;
   on: (hookName: string, handler: (...args: unknown[]) => unknown, opts?: { priority?: number }) => void;
 }
@@ -67,6 +200,146 @@ interface AnyAgentTool {
     required: string[];
   };
   execute: (_id: string, params: unknown) => Promise<unknown>;
+}
+
+class Mem9MemorySearchManager implements MemorySearchManager {
+  constructor(
+    private backend: MemoryBackend,
+    private apiUrl: string,
+  ) {}
+
+  async search(
+    query: string,
+    opts?: { maxResults?: number; minScore?: number; sessionKey?: string },
+  ): Promise<MemorySearchResult[]> {
+    void opts?.sessionKey;
+    const result = await this.backend.search({
+      q: query,
+      limit: opts?.maxResults,
+    });
+    return (result.data ?? [])
+      .map((memory, index) => {
+        const startLine = 1;
+        const endLine = countLines(memory.content);
+        const score =
+          typeof memory.score === "number"
+            ? memory.score
+            : Math.max(0, 1 - index / Math.max(result.data.length, 1));
+        return {
+          path: buildMemoryPath(memory.id),
+          startLine,
+          endLine,
+          score,
+          snippet: normalizeSnippet(memory.content),
+          source: "memory" as const,
+          citation: `${buildMemoryPath(memory.id)}#L${startLine}`,
+        };
+      })
+      .filter((entry) => opts?.minScore == null || entry.score >= opts.minScore);
+  }
+
+  async readFile(params: {
+    relPath: string;
+    from?: number;
+    lines?: number;
+  }): Promise<{ text: string; path: string }> {
+    const lookup = normalizeMemoryLookup(params.relPath);
+    const memory = await this.backend.get(lookup);
+    if (!memory) {
+      return { text: "", path: params.relPath };
+    }
+
+    const contentLines = memory.content.split(/\r?\n/);
+    const fromLine = Math.max(1, params.from ?? 1);
+    const lineCount = params.lines == null ? contentLines.length : Math.max(0, params.lines);
+    const sliced =
+      params.lines == null
+        ? contentLines.slice(fromLine - 1)
+        : contentLines.slice(fromLine - 1, fromLine - 1 + lineCount);
+
+    return {
+      text: sliced.join("\n"),
+      path: buildMemoryPath(memory.id),
+    };
+  }
+
+  status(): MemoryProviderStatus {
+    return {
+      backend: "builtin",
+      provider: MEM9_MEMORY_PROVIDER,
+      requestedProvider: MEM9_MEMORY_PROVIDER,
+      custom: {
+        mode: "remote",
+        apiUrl: this.apiUrl,
+      },
+    };
+  }
+
+  async sync(): Promise<void> {}
+
+  async probeEmbeddingAvailability(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      await this.backend.search({ q: "mem9-healthcheck", limit: 1 });
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  async probeVectorAvailability(): Promise<boolean> {
+    const probe = await this.probeEmbeddingAvailability();
+    return probe.ok;
+  }
+
+  async close(): Promise<void> {}
+}
+
+function createMemoryRuntime(params: {
+  apiUrl: string;
+  fallbackAgentId: string;
+  createBackend: (agentId: string) => MemoryBackend;
+}): MemoryRuntime {
+  const managers = new Map<string, Mem9MemorySearchManager>();
+
+  const getOrCreateManager = (agentId: string): Mem9MemorySearchManager => {
+    const resolvedAgentId = agentId.trim() || params.fallbackAgentId;
+    const existing = managers.get(resolvedAgentId);
+    if (existing) {
+      return existing;
+    }
+    const next = new Mem9MemorySearchManager(
+      params.createBackend(resolvedAgentId),
+      params.apiUrl,
+    );
+    managers.set(resolvedAgentId, next);
+    return next;
+  };
+
+  return {
+    async getMemorySearchManager({ agentId }) {
+      return { manager: getOrCreateManager(agentId) };
+    },
+    resolveMemoryBackendConfig() {
+      return {
+        backend: "builtin",
+        provider: MEM9_MEMORY_PROVIDER,
+        requestedProvider: MEM9_MEMORY_PROVIDER,
+        custom: {
+          mode: "remote",
+          apiUrl: params.apiUrl,
+        },
+      };
+    },
+    async closeAllMemorySearchManagers() {
+      for (const manager of managers.values()) {
+        await manager.close?.();
+      }
+      managers.clear();
+    },
+  };
 }
 
 function buildTools(backend: MemoryBackend): AnyAgentTool[] {
@@ -122,6 +395,10 @@ function buildTools(backend: MemoryBackend): AnyAgentTool[] {
         type: "object",
         properties: {
           q: { type: "string", description: "Search query" },
+          query: {
+            type: "string",
+            description: "Search query alias for hosts that expect `query` instead of `q`",
+          },
           tags: {
             type: "string",
             description: "Comma-separated tags to filter by (AND)",
@@ -141,9 +418,19 @@ function buildTools(backend: MemoryBackend): AnyAgentTool[] {
       },
       async execute(_id: string, params: unknown) {
         try {
-          const input = (params ?? {}) as SearchInput;
+          const input = { ...((params ?? {}) as SearchInput) };
+          if (!input.q && typeof (params as { query?: unknown } | null)?.query === "string") {
+            input.q = (params as { query: string }).query;
+          }
           const result = await backend.search(input);
-          return jsonResult({ ok: true, ...result });
+          return jsonResult({
+            ok: true,
+            ...result,
+            data: (result.data ?? []).map((memory) => ({
+              ...memory,
+              path: buildMemoryPath(memory.id),
+            })),
+          });
         } catch (err) {
           return jsonResult({
             ok: false,
@@ -161,16 +448,31 @@ function buildTools(backend: MemoryBackend): AnyAgentTool[] {
         type: "object",
         properties: {
           id: { type: "string", description: "Memory id (UUID)" },
+          path: {
+            type: "string",
+            description: "Memory lookup path alias, e.g. mem9/<id>",
+          },
         },
-        required: ["id"],
+        required: [],
       },
       async execute(_id: string, params: unknown) {
         try {
-          const { id } = params as { id: string };
+          const raw = params as { id?: string; path?: string };
+          const lookup = typeof raw.id === "string" ? raw.id : raw.path;
+          if (!lookup) {
+            return jsonResult({ ok: false, error: "memory id or path is required" });
+          }
+          const id = normalizeMemoryLookup(lookup);
           const result = await backend.get(id);
           if (!result)
             return jsonResult({ ok: false, error: "memory not found" });
-          return jsonResult({ ok: true, data: result });
+          return jsonResult({
+            ok: true,
+            data: {
+              ...result,
+              path: buildMemoryPath(result.id),
+            },
+          });
         } catch (err) {
           return jsonResult({
             ok: false,
@@ -250,6 +552,8 @@ const mnemoPlugin = {
   name: "Mnemo Memory",
   description:
     "AI agent memory — server mode (mnemo-server) with hybrid vector + keyword search.",
+  // Static hint for hosts that inspect entry metadata before runtime registration.
+  capabilities: ["memory"],
 
   register(api: OpenClawPluginApi) {
     const cfg = (api.pluginConfig ?? {}) as PluginConfig;
@@ -285,30 +589,52 @@ const mnemoPlugin = {
 
     const hookAgentId = cfg.agentName ?? "agent";
 
-    const factory: ToolFactory = (ctx: ToolContext) => {
-      const agentId = ctx.agentId ?? cfg.agentName ?? "agent";
-      const backend = new LazyServerBackend(
+    const createBackend = (agentId: string): MemoryBackend =>
+      new LazyServerBackend(
         effectiveApiUrl,
         () => resolveAPIKey(agentId),
         agentId,
       );
+
+    const factory: ToolFactory = (ctx: ToolContext) => {
+      const agentId = ctx.agentId ?? cfg.agentName ?? "agent";
+      const backend = createBackend(agentId);
       return buildTools(backend);
     };
 
     api.registerTool(factory, { names: toolNames });
 
     // Shared lazy backend for hooks and capability registration.
-    const hookBackend = new LazyServerBackend(
-      effectiveApiUrl,
-      () => resolveAPIKey(hookAgentId),
-      hookAgentId,
-    );
+    const hookBackend = createBackend(hookAgentId);
+    const memoryRuntime = createMemoryRuntime({
+      apiUrl: effectiveApiUrl,
+      fallbackAgentId: hookAgentId,
+      createBackend,
+    });
 
-    // Register memory capability so OpenClaw 2026.4.2+ binds this plugin to
-    // the memory slot. Without this, the plugin is treated as a legacy
-    // hook-only plugin and automatic context injection won't work.
-    // Guard with typeof check for backward compatibility with older hosts.
-    if (typeof api.registerCapability === "function") {
+    // OpenClaw's memory slot API has evolved across versions:
+    // - current hosts prefer registerMemoryCapability({ promptBuilder, runtime })
+    // - 2026.4.2 uses registerMemoryPromptSection/registerMemoryRuntime
+    // - older compatibility shims may still expose registerCapability("memory", ...)
+    if (typeof api.registerMemoryCapability === "function") {
+      api.registerMemoryCapability({
+        promptBuilder: buildPromptSection,
+        runtime: memoryRuntime,
+      });
+    } else {
+      if (typeof api.registerMemoryPromptSection === "function") {
+        api.registerMemoryPromptSection(buildPromptSection);
+      }
+      if (typeof api.registerMemoryRuntime === "function") {
+        api.registerMemoryRuntime(memoryRuntime);
+      }
+    }
+
+    if (
+      typeof api.registerMemoryCapability !== "function" &&
+      typeof api.registerMemoryRuntime !== "function" &&
+      typeof api.registerCapability === "function"
+    ) {
       api.registerCapability("memory", {
         search: async (query, opts) => {
           const result = await hookBackend.search({ q: query, limit: opts?.limit });
