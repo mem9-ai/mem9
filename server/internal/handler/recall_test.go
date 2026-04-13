@@ -19,6 +19,9 @@ func TestClassifyRecallQueryShape_Bilingual(t *testing.T) {
 		{name: "count english", query: "how many deployments happened", want: recallQueryShapeCount},
 		{name: "time english", query: "when did it ship", want: recallQueryShapeTime},
 		{name: "location english", query: "where is the office", want: recallQueryShapeLocation},
+		{name: "enumeration english activities", query: "What activities does Melanie partake in?", want: recallQueryShapeEnumeration},
+		{name: "enumeration english books", query: "What books has Melanie read?", want: recallQueryShapeEnumeration},
+		{name: "enumeration english names", query: "What are Melanie's pets' names?", want: recallQueryShapeEnumeration},
 		{name: "exact english", query: "what company does john like", want: recallQueryShapeExact},
 		{name: "entity chinese", query: "谁负责这个项目", want: recallQueryShapeEntity},
 		{name: "entity chinese 哪一个", query: "哪一个团队负责", want: recallQueryShapeEntity},
@@ -33,6 +36,7 @@ func TestClassifyRecallQueryShape_Bilingual(t *testing.T) {
 		{name: "location chinese 在哪", query: "在哪办公", want: recallQueryShapeLocation},
 		{name: "location chinese 什么地方", query: "什么地方部署", want: recallQueryShapeLocation},
 		{name: "location chinese 哪座城市", query: "哪座城市有办公室", want: recallQueryShapeLocation},
+		{name: "enumeration chinese 哪些", query: "哪些活动是她参加过的？", want: recallQueryShapeEnumeration},
 		{name: "exact chinese", query: "什么公司是客户", want: recallQueryShapeExact},
 	}
 
@@ -94,17 +98,52 @@ func TestAnswerEvidenceBonus_BilingualSignals(t *testing.T) {
 			strong: `“Under Armour”`,
 			weak:   "户外品牌",
 		},
+		{
+			name:   "enumeration prefers itemized evidence",
+			shape:  recallQueryShapeEnumeration,
+			strong: `Melanie enjoys pottery, camping, and painting.`,
+			weak:   "Melanie enjoys many activities.",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			profile := recallQueryProfile{shape: tt.shape}
-			strong := answerEvidenceBonus(profile, tt.strong)
-			weak := answerEvidenceBonus(profile, tt.weak)
+			strong := answerEvidenceBonus(profile, domain.Memory{Content: tt.strong})
+			weak := answerEvidenceBonus(profile, domain.Memory{Content: tt.weak})
 			if strong <= weak {
 				t.Fatalf("answerEvidenceBonus(%v, %q) = %.2f, want > %.2f for %q", tt.shape, tt.strong, strong, weak, tt.weak)
 			}
 		})
+	}
+}
+
+func TestAnswerEvidenceBonus_TimePrefersNaturalDatesOverMetadataProjection(t *testing.T) {
+	profile := recallQueryProfile{shape: recallQueryShapeTime}
+
+	natural := answerEvidenceBonus(profile, domain.Memory{
+		Content: "[10:37 am on 27 June, 2023] I took my family camping in the mountains last week.",
+	})
+	synthetic := answerEvidenceBonus(profile, domain.Memory{
+		Content:  "今天我很开心",
+		Metadata: service.MergeTemporalMetadata(nil, &service.TemporalMetadata{Kind: "deictic_relative", Display: "2026-04-11"}),
+	})
+	if natural <= synthetic {
+		t.Fatalf("expected natural anchored evidence %.2f to outrank metadata-only evidence %.2f", natural, synthetic)
+	}
+}
+
+func TestAnswerEvidenceBonus_IgnoresLegacyInjectedDateWhenBodyAlreadyExplicit(t *testing.T) {
+	profile := recallQueryProfile{shape: recallQueryShapeTime}
+
+	natural := answerEvidenceBonus(profile, domain.Memory{
+		Content: "James' mother and her friend visited him on 19 October 2022.",
+	})
+	legacyPolluted := answerEvidenceBonus(profile, domain.Memory{
+		Content: "James' mother and her friend visited him on 19 October 2022(2026-04-09|2026年4月9日)",
+	})
+	if legacyPolluted != natural {
+		t.Fatalf("expected legacy polluted score %.2f to equal natural score %.2f", legacyPolluted, natural)
 	}
 }
 

@@ -156,6 +156,63 @@ func TestNormalizeTemporalFacts_ResolvesLastWeekToAnchoredPeriod(t *testing.T) {
 	}
 }
 
+func TestNormalizeTemporalFacts_UsesCurrentDateForChineseRelativeDayWithoutTimestamp(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.April, 11, 9, 30, 0, 0, time.Local)
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "今天我很开心。"},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFactsAt(input, []ExtractedFact{
+		{Text: "今天我很开心", Tags: []string{"personal"}},
+	}, now)
+	if got[0].Text != "今天我很开心" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "今天我很开心")
+	}
+	if got[0].Temporal == nil || got[0].Temporal.Display != "2026-04-11" || got[0].Temporal.AnchorSource != temporalAnchorSourceNow {
+		t.Fatalf("temporal metadata = %+v, want display 2026-04-11 from now", got[0].Temporal)
+	}
+}
+
+func TestNormalizeTemporalFacts_UsesTimestampForChineseRelativeDay(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.May, 1, 8, 0, 0, 0, time.Local)
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "[8:00 am on 11 April, 2026] 今天我很开心。"},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFactsAt(input, []ExtractedFact{
+		{Text: "今天我很开心", Tags: []string{"personal"}},
+	}, now)
+	if got[0].Text != "2026年4月11日我很开心" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "2026年4月11日我很开心")
+	}
+	if got[0].Temporal == nil || got[0].Temporal.Display != "2026-04-11" || got[0].Temporal.AnchorSource != temporalAnchorSourceHeader {
+		t.Fatalf("temporal metadata = %+v, want display 2026-04-11 from header", got[0].Temporal)
+	}
+}
+
+func TestNormalizeTemporalFacts_StoresChineseRawFallbackInTemporalMetadata(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.April, 11, 9, 30, 0, 0, time.Local)
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "下个月要去旅游。"},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeRawFallbackFactsAt(input, []ExtractedFact{
+		{Text: "下个月要去旅游", FactType: factTypeRawFallback, Tags: []string{rawFallbackTag}},
+	}, now)
+	if got[0].Text != "下个月要去旅游" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "下个月要去旅游")
+	}
+	if got[0].Temporal == nil || got[0].Temporal.Display != "2026-05" || got[0].Temporal.AnchorSource != temporalAnchorSourceNow {
+		t.Fatalf("temporal metadata = %+v, want display 2026-05 from now", got[0].Temporal)
+	}
+}
+
 func TestNormalizeTemporalFacts_LeavesRawFallbackUntouched(t *testing.T) {
 	t.Parallel()
 
@@ -168,6 +225,76 @@ func TestNormalizeTemporalFacts_LeavesRawFallbackUntouched(t *testing.T) {
 	})
 	if got[0].Text != "We're thinking about going camping next month." {
 		t.Fatalf("raw fallback fact should remain unchanged, got %q", got[0].Text)
+	}
+	if got[0].Temporal == nil || got[0].Temporal.Display != "2023-06" || got[0].Temporal.AnchorSource != temporalAnchorSourceHeader {
+		t.Fatalf("temporal metadata = %+v, want display 2023-06 from header", got[0].Temporal)
+	}
+}
+
+func TestNormalizeTemporalFacts_LeavesExplicitAbsoluteDatesUntouched(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "James plans to call Samantha on 11 August 2022."},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFacts(input, []ExtractedFact{
+		{Text: "James plans to call Samantha on 11 August 2022", Tags: []string{"event", "timeline"}},
+	})
+	if got[0].Text != "James plans to call Samantha on 11 August 2022" {
+		t.Fatalf("normalized fact = %q, want unchanged", got[0].Text)
+	}
+	if got[0].Temporal != nil {
+		t.Fatalf("expected no temporal metadata, got %+v", got[0].Temporal)
+	}
+}
+
+func TestNormalizeTemporalFacts_ResolvesChineseLocalAnchorWithoutInventingYear(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "小明4月23日的前一天打了网球。"},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFacts(input, []ExtractedFact{
+		{Text: "小明4月23日的前一天打了网球", Tags: []string{"event", "timeline"}},
+	})
+	if got[0].Text != "小明4月22日打了网球" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "小明4月22日打了网球")
+	}
+	if got[0].Temporal == nil || got[0].Temporal.Display != "4月22日" || got[0].Temporal.AnchorSource != temporalAnchorSourceLocal {
+		t.Fatalf("temporal metadata = %+v, want display 4月22日 from local anchor", got[0].Temporal)
+	}
+}
+
+func TestNormalizeTemporalFacts_ResolvesChineseHeaderAnchoredMonthNaturally(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "[1:14 pm on 25 May, 2023] 我下个月要去旅游。"},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFacts(input, []ExtractedFact{
+		{Text: "我下个月要去旅游", Tags: []string{"event", "timeline"}},
+	})
+	if got[0].Text != "我2023年6月要去旅游" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "我2023年6月要去旅游")
+	}
+	if got[0].Temporal == nil || got[0].Temporal.Display != "2023-06" || got[0].Temporal.AnchorSource != temporalAnchorSourceHeader {
+		t.Fatalf("temporal metadata = %+v, want display 2023-06 from header", got[0].Temporal)
+	}
+}
+
+func TestNormalizeStandaloneTemporalContent_PureDeicticUsesMetadataOnly(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.April, 11, 9, 30, 0, 0, time.Local)
+	text, meta := NormalizeStandaloneTemporalContent("今天我很开心", now)
+	if text != "今天我很开心" {
+		t.Fatalf("normalized text = %q, want unchanged", text)
+	}
+	if meta == nil || meta.Display != "2026-04-11" || meta.AnchorSource != temporalAnchorSourceNow {
+		t.Fatalf("temporal metadata = %+v, want display 2026-04-11 from now", meta)
 	}
 }
 
@@ -237,7 +364,7 @@ func TestExtractPhase1FactTagsPopulated(t *testing.T) {
 	}
 }
 
-func TestExtractFactsSingleMessageShortCircuitsToRawFallback(t *testing.T) {
+func TestExtractFactsSingleMessageUsesLLMExtraction(t *testing.T) {
 	t.Parallel()
 
 	callCount := 0
@@ -259,21 +386,21 @@ func TestExtractFactsSingleMessageShortCircuitsToRawFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
-	if callCount != 0 {
-		t.Fatalf("expected 0 LLM calls for single-message short circuit, got %d", callCount)
+	if callCount != 1 {
+		t.Fatalf("expected 1 LLM call for single-message extraction, got %d", callCount)
 	}
 	if len(facts) != 1 {
-		t.Fatalf("expected 1 raw fallback fact, got %d", len(facts))
+		t.Fatalf("expected 1 extracted fact, got %d", len(facts))
 	}
-	if facts[0].FactType != factTypeRawFallback || facts[0].Text != "I use Go 1.22" {
-		t.Fatalf("expected raw fallback fact preserving original text, got %+v", facts[0])
+	if facts[0].FactType != "" || facts[0].Text != "Uses Go 1.22" {
+		t.Fatalf("expected normal extracted fact, got %+v", facts[0])
 	}
-	if len(facts[0].Tags) != 1 || facts[0].Tags[0] != rawFallbackTag {
-		t.Fatalf("expected raw fallback tag, got %v", facts[0].Tags)
+	if len(facts[0].Tags) != 1 || facts[0].Tags[0] != "tech" {
+		t.Fatalf("expected tags [tech], got %v", facts[0].Tags)
 	}
 }
 
-func TestExtractPhase1SingleMessageShortCircuitsToRawFallback(t *testing.T) {
+func TestExtractPhase1SingleMessageUsesLLMExtraction(t *testing.T) {
 	t.Parallel()
 
 	callCount := 0
@@ -297,14 +424,17 @@ func TestExtractPhase1SingleMessageShortCircuitsToRawFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractPhase1() error = %v", err)
 	}
-	if callCount != 0 {
-		t.Fatalf("expected 0 LLM calls for single-message short circuit, got %d", callCount)
+	if callCount != 1 {
+		t.Fatalf("expected 1 LLM call for single-message extraction, got %d", callCount)
 	}
-	if len(result.Facts) != 1 || result.Facts[0].FactType != factTypeRawFallback {
-		t.Fatalf("expected 1 raw fallback fact, got %v", result.Facts)
+	if len(result.Facts) != 1 {
+		t.Fatalf("expected 1 extracted fact, got %v", result.Facts)
 	}
-	if len(result.MessageTags) != 1 || len(result.MessageTags[0]) != 1 || result.MessageTags[0][0] != rawFallbackTag {
-		t.Fatalf("expected message_tags[0] = [%s], got %v", rawFallbackTag, result.MessageTags)
+	if result.Facts[0].FactType != "" || result.Facts[0].Text != "Uses Go 1.22" {
+		t.Fatalf("expected normal extracted fact, got %+v", result.Facts[0])
+	}
+	if len(result.MessageTags) != 1 || len(result.MessageTags[0]) != 1 || result.MessageTags[0][0] != "tech" {
+		t.Fatalf("expected message_tags[0] = [tech], got %v", result.MessageTags)
 	}
 }
 
@@ -330,6 +460,71 @@ func TestExtractFactsEmptyResultFallsBackToRawFact(t *testing.T) {
 	}
 	if len(facts) != 1 || facts[0].FactType != factTypeRawFallback || facts[0].Text != "I use Go 1.22" {
 		t.Fatalf("expected raw fallback fact after empty extraction, got %v", facts)
+	}
+}
+
+func TestExtractFactsSingleMessageEmptyResultFallsBackToRawFact(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts": []}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	facts, err := svc.extractFacts(context.Background(), "User: I use Go 1.22")
+	if err != nil {
+		t.Fatalf("extractFacts() error = %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected 1 LLM call for single-message extraction, got %d", callCount)
+	}
+	if len(facts) != 1 || facts[0].FactType != factTypeRawFallback || facts[0].Text != "I use Go 1.22" {
+		t.Fatalf("expected raw fallback fact after empty extraction, got %v", facts)
+	}
+}
+
+func TestExtractPhase1SingleMessageEmptyResultFallsBackToRawFact(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts": [], "message_tags": [["tech"]]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	result, err := svc.ExtractPhase1(context.Background(), []IngestMessage{
+		{Role: "user", Content: "I use Go 1.22"},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected 1 LLM call for single-message extraction, got %d", callCount)
+	}
+	if len(result.Facts) != 1 || result.Facts[0].FactType != factTypeRawFallback || result.Facts[0].Text != "I use Go 1.22" {
+		t.Fatalf("expected raw fallback fact after empty extraction, got %v", result.Facts)
+	}
+	if len(result.MessageTags) != 1 || len(result.MessageTags[0]) != 1 || result.MessageTags[0][0] != "tech" {
+		t.Fatalf("expected message_tags[0] = [tech], got %v", result.MessageTags)
 	}
 }
 
@@ -790,8 +985,8 @@ func TestReconcileAddPreservesRawFallbackTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)
 	}
-	if callCount != 1 {
-		t.Fatalf("expected 1 LLM call (reconcile only), got %d", callCount)
+	if callCount != 2 {
+		t.Fatalf("expected 2 LLM calls (extract + reconcile), got %d", callCount)
 	}
 	if len(memRepo.createCalls) != 1 {
 		t.Fatalf("expected 1 create call, got %d", len(memRepo.createCalls))
@@ -1344,7 +1539,7 @@ func TestIngestStripsInjectedContextAcrossModes(t *testing.T) {
 		{name: "raw mode without llm", mode: ModeRaw, withLLM: false, wantCreatedContent: "User: keep this", wantLLMCalls: 0},
 		{name: "smart mode without llm", mode: ModeSmart, withLLM: false, wantCreatedContent: "User: keep this", wantLLMCalls: 0},
 		{name: "raw mode with llm", mode: ModeRaw, withLLM: true, wantCreatedContent: "User: keep this", wantLLMCalls: 0},
-		{name: "smart mode with llm", mode: ModeSmart, withLLM: true, wantCreatedContent: "keep this", wantLLMCalls: 1},
+		{name: "smart mode with llm", mode: ModeSmart, withLLM: true, wantCreatedContent: "keep this", wantLLMCalls: 2},
 	}
 
 	for _, tt := range tests {

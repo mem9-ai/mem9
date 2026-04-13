@@ -733,6 +733,143 @@ func TestListMemories_DefaultRecall_UnderfillsOnConfidenceGap(t *testing.T) {
 	}
 }
 
+func TestListMemories_DefaultRecall_EnumerationCanExpandBeyondRequestedLimit(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			switch filter.MemoryType {
+			case string(domain.TypePinned):
+				return nil, nil
+			case string(domain.TypeInsight):
+				return []domain.Memory{
+					{ID: "m1", Content: "Melanie enjoys pottery, camping, and painting.", MemoryType: domain.TypeInsight, UpdatedAt: now, State: domain.StateActive},
+					{ID: "m2", Content: "Melanie regularly goes swimming.", MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-1 * time.Hour), State: domain.StateActive},
+				}, nil
+			default:
+				return nil, nil
+			}
+		},
+	}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "s1", Content: "Melanie went hiking with her family last weekend.", MemoryType: domain.TypeSession, UpdatedAt: now.Add(-2 * time.Hour), State: domain.StateActive},
+				{ID: "s2", Content: "Melanie takes pottery classes on weekends.", MemoryType: domain.TypeSession, UpdatedAt: now.Add(-3 * time.Hour), State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What activities does Melanie partake in?")+"&limit=2", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) != 4 {
+		t.Fatalf("expected enumeration recall to expand limit=2 into 4 returned memories, got %d", len(resp.Memories))
+	}
+
+	typeCounts := map[domain.MemoryType]int{}
+	for _, mem := range resp.Memories {
+		typeCounts[mem.MemoryType]++
+		if mem.Confidence == nil || *mem.Confidence < enumerationMinConfidence {
+			t.Fatalf("expected enumeration confidence >= %d for %q, got %+v", enumerationMinConfidence, mem.ID, mem.Confidence)
+		}
+	}
+	if typeCounts[domain.TypeInsight] == 0 || typeCounts[domain.TypeSession] == 0 {
+		t.Fatalf("expected mixed enumeration recall to include both insight and session memories, got %+v", typeCounts)
+	}
+}
+
+func TestListMemories_DefaultRecall_ExactStillHonorsRequestedLimit(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			switch filter.MemoryType {
+			case string(domain.TypePinned):
+				return nil, nil
+			case string(domain.TypeInsight):
+				return []domain.Memory{
+					{ID: "m1", Content: `"Under Armour"`, MemoryType: domain.TypeInsight, UpdatedAt: now, State: domain.StateActive},
+					{ID: "m2", Content: `"Patagonia"`, MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-1 * time.Hour), State: domain.StateActive},
+				}, nil
+			default:
+				return nil, nil
+			}
+		},
+	}
+	sessRepo := &testSessionRepo{}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What company does John like?")+"&limit=1", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) != 1 {
+		t.Fatalf("expected exact recall to honor limit=1, got %d", len(resp.Memories))
+	}
+}
+
+func TestListMemories_DefaultRecall_EnumerationFiltersLowConfidenceNoise(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			switch filter.MemoryType {
+			case string(domain.TypePinned):
+				return nil, nil
+			case string(domain.TypeInsight):
+				return []domain.Memory{
+					{ID: "m1", Content: "it was", MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-24 * time.Hour), State: domain.StateActive},
+				}, nil
+			default:
+				return nil, nil
+			}
+		},
+	}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "s1", Content: "they did", MemoryType: domain.TypeSession, UpdatedAt: now.Add(-48 * time.Hour), State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What activities does Melanie partake in?")+"&limit=2", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) != 0 {
+		t.Fatalf("expected low-confidence enumeration noise to be filtered out, got %d memories", len(resp.Memories))
+	}
+}
+
 func TestListMemories_DefaultRecall_PrefersSessionForChineseExactQuery(t *testing.T) {
 	now := time.Now()
 	memRepo := &testMemoryRepo{
@@ -828,5 +965,110 @@ func TestListMemories_DefaultRecall_PrefersQuantifiedEvidenceForChineseCountQuer
 	}
 	if resp.Memories[0].Confidence == nil || *resp.Memories[0].Confidence < defaultMixedMinConfidence {
 		t.Fatalf("expected confidence >= %d, got %+v", defaultMixedMinConfidence, resp.Memories[0].Confidence)
+	}
+}
+
+func TestNormalizeRecallQuery_ChineseRelativeDates(t *testing.T) {
+	now := time.Date(2026, time.April, 11, 9, 0, 0, 0, time.Local)
+
+	tests := []struct {
+		query string
+		want  string
+	}{
+		{
+			query: "我昨天开心吗",
+			want:  "我昨天开心吗 2026-04-10 2026年4月10日 10 April 2026",
+		},
+		{
+			query: "上周一部署了吗",
+			want:  "上周一部署了吗 2026-03-30 2026年3月30日 30 March 2026",
+		},
+		{
+			query: "下个月要不要去旅游",
+			want:  "下个月要不要去旅游 2026-05 2026年5月 May 2026",
+		},
+		{
+			query: "去年开心吗",
+			want:  "去年开心吗 2025 2025年",
+		},
+	}
+
+	for _, tt := range tests {
+		if got := normalizeRecallQuery(tt.query, now); got != tt.want {
+			t.Fatalf("normalizeRecallQuery(%q) = %q, want %q", tt.query, got, tt.want)
+		}
+	}
+}
+
+func TestNormalizeRecallQuery_EnglishQueryExpanded(t *testing.T) {
+	now := time.Date(2026, time.April, 11, 9, 0, 0, 0, time.Local)
+	query := "Was I happy yesterday?"
+
+	if got := normalizeRecallQuery(query, now); got != "Was I happy yesterday? 2026-04-10 2026年4月10日 10 April 2026" {
+		t.Fatalf("normalizeRecallQuery(%q) = %q, want expanded query", query, got)
+	}
+}
+
+func TestNormalizeRecallQuery_LocalAnchorRemainsUnchanged(t *testing.T) {
+	now := time.Date(2026, time.April, 11, 9, 0, 0, 0, time.Local)
+	query := "4月23日的前一天发生了什么"
+
+	if got := normalizeRecallQuery(query, now); got != query {
+		t.Fatalf("normalizeRecallQuery(%q) = %q, want unchanged", query, got)
+	}
+}
+
+func TestListMemories_DefaultRecall_NormalizesChineseRelativeQuery(t *testing.T) {
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return nil, nil
+		},
+	}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return nil, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	rawQuery := "我昨天开心吗"
+	expected := normalizeRecallQuery(rawQuery, time.Now())
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape(rawQuery)+"&limit=10", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if memRepo.lastKeywordFilter.Query != expected {
+		t.Fatalf("memory filter query = %q, want %q", memRepo.lastKeywordFilter.Query, expected)
+	}
+	if sessRepo.lastKeywordFilter.Query != expected {
+		t.Fatalf("session filter query = %q, want %q", sessRepo.lastKeywordFilter.Query, expected)
+	}
+}
+
+func TestListMemories_SinglePoolRecall_NormalizesChineseRelativeQuery(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return nil, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	rawQuery := "下个月要不要去旅游"
+	expected := normalizeRecallQuery(rawQuery, time.Now())
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape(rawQuery)+"&memory_type=session&limit=10", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if sessRepo.lastKeywordFilter.Query != expected {
+		t.Fatalf("session filter query = %q, want %q", sessRepo.lastKeywordFilter.Query, expected)
 	}
 }

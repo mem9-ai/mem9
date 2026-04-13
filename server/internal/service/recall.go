@@ -20,11 +20,24 @@ type RecallCandidate struct {
 	VectorSimilarity float64
 }
 
+type RecallCandidateOptions struct {
+	EnableSecondHop bool
+	FetchMultiplier int
+	SecondHopTopN   int
+}
+
 func normalizeRecallLimit(limit, fallback int) int {
 	if limit <= 0 || limit > 200 {
 		return fallback
 	}
 	return limit
+}
+
+func normalizeRecallFetchMultiplier(multiplier, fallback int) int {
+	if multiplier <= 0 {
+		return fallback
+	}
+	return multiplier
 }
 
 func mergeRecallCandidates(

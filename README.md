@@ -142,19 +142,76 @@ Agent identity: `X-Mnemo-Agent-Id` header.
 
 ### Environment Variables
 
+Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only applies to specific deployment modes.
+
+#### Core Server
+
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `MNEMO_DSN` | Yes | — | Database connection string |
 | `MNEMO_PORT` | No | `8080` | HTTP listen port |
+| `MNEMO_DB_BACKEND` | No | `tidb` | Database backend: `tidb`, `postgres`, or `db9` |
 | `MNEMO_RATE_LIMIT` | No | `100` | Requests/sec per IP |
 | `MNEMO_RATE_BURST` | No | `200` | Burst size |
-| `MNEMO_EMBED_API_KEY` | No | — | Embedding provider API key |
-| `MNEMO_EMBED_BASE_URL` | No | OpenAI | Custom embedding endpoint |
-| `MNEMO_EMBED_MODEL` | No | `text-embedding-3-small` | Model name |
-| `MNEMO_EMBED_DIMS` | No | `1536` | Vector dimensions |
+| `MNEMO_UPLOAD_DIR` | No | `./uploads` | Directory used for uploaded file storage |
+| `MNEMO_WORKER_CONCURRENCY` | No | `5` | Parallelism for async upload ingest workers |
+
+#### Embedding And Ingest
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `MNEMO_EMBED_AUTO_MODEL` | No | — | TiDB/db9 `EMBED_TEXT()` model name. When set, it takes precedence over client-side embeddings |
+| `MNEMO_EMBED_AUTO_DIMS` | No | `1024` | Vector dimensions for `MNEMO_EMBED_AUTO_MODEL` |
+| `MNEMO_EMBED_API_KEY` | No | — | Client-side embedding provider API key. Optional for local OpenAI-compatible endpoints when `MNEMO_EMBED_BASE_URL` is set |
+| `MNEMO_EMBED_BASE_URL` | No | `https://api.openai.com/v1` when client-side embeddings are enabled | Custom OpenAI-compatible embedding endpoint |
+| `MNEMO_EMBED_MODEL` | No | `text-embedding-3-small` | Client-side embedding model name |
+| `MNEMO_EMBED_DIMS` | No | `1536` | Client-side embedding vector dimensions |
+| `MNEMO_LLM_API_KEY` | No | — | LLM provider API key. If unset, smart ingest falls back to raw ingest behavior |
+| `MNEMO_LLM_BASE_URL` | No | `https://api.openai.com/v1` when LLM ingest is enabled | Custom OpenAI-compatible chat endpoint |
+| `MNEMO_LLM_MODEL` | No | `gpt-4o-mini` | LLM model for smart ingest |
+| `MNEMO_LLM_TEMPERATURE` | No | `0.1` | LLM temperature for smart ingest |
+| `MNEMO_INGEST_MODE` | No | `smart` | Ingest mode: `smart` or `raw` |
+| `MNEMO_FTS_ENABLED` | No | `false` | Enable TiDB full-text search path. Only set this on clusters that support TiDB FTS |
+
+#### Provisioning And Pooling
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `MNEMO_TIDB_ZERO_ENABLED` | No | `true` | Enable TiDB Zero auto-provisioning for `tidb` backend. When enabled, it takes precedence over TiDB Cloud Pool provisioning |
+| `MNEMO_TIDB_ZERO_API_URL` | No | `https://zero.tidbapi.com/v1alpha1` | TiDB Zero API base URL |
+| `MNEMO_TIDBCLOUD_API_URL` | No | `https://serverless.tidbapi.com` | TiDB Cloud Pool API base URL |
+| `MNEMO_TIDBCLOUD_POOL_ID` | No | `2` | TiDB Cloud Pool ID used for cluster takeover |
+| `MNEMO_TIDBCLOUD_API_KEY` | No | — | TiDB Cloud Pool API key. Used only when `MNEMO_TIDB_ZERO_ENABLED=false`, `MNEMO_DB_BACKEND=tidb`, and pool takeover is desired |
+| `MNEMO_TIDBCLOUD_API_SECRET` | No | — | TiDB Cloud Pool API secret for digest auth. Same conditions as `MNEMO_TIDBCLOUD_API_KEY` |
+| `MNEMO_TENANT_POOL_MAX_IDLE` | No | `5` | Max idle tenant database connections kept in the in-process tenant pool |
+| `MNEMO_TENANT_POOL_MAX_OPEN` | No | `10` | Max open connections per tenant database handle |
+| `MNEMO_TENANT_POOL_IDLE_TIMEOUT` | No | `10m` | Idle timeout for tenant database handles |
+| `MNEMO_TENANT_POOL_TOTAL_LIMIT` | No | `200` | Total tenant database handles allowed across the process |
+| `MNEMO_CLUSTER_BLACKLIST` | No | — | Comma-separated TiDB cluster IDs whose spend-limit errors should be translated to HTTP 429 instead of 503 |
+
+#### Security And Debugging
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
 | `MNEMO_ENCRYPT_TYPE` | No | `plain` | Encryption type for tenant DB passwords: `plain`, `md5`, or `kms`. ⚠️ **One-time deployment decision — cannot be changed without re-provisioning all tenants.** |
 | `MNEMO_ENCRYPT_KEY` | No | — | Encryption key (for `md5`) or KMS key ID (for `kms`). Required when `MNEMO_ENCRYPT_TYPE` is not `plain`. |
 | `MNEMO_DEBUG_LLM` | No | `false` | Log raw LLM responses for debugging parse errors. ⚠️ **Dev/test only — responses may contain user data.** |
+
+#### AWS KMS Environment
+
+These are only relevant when `MNEMO_ENCRYPT_TYPE=kms`. The server uses the AWS SDK default config chain; the common environment-based inputs referenced in code are:
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `AWS_ACCESS_KEY_ID` | No | — | AWS access key ID for KMS auth when using environment-based AWS credentials |
+| `AWS_SECRET_ACCESS_KEY` | No | — | AWS secret access key for KMS auth when using environment-based AWS credentials |
+| `AWS_REGION` | No | — | AWS region used to create the KMS client |
+
+#### Test-Only
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `MNEMO_TEST_DSN` | No | Falls back to `MNEMO_DSN` | Integration-test DSN used by server repository tests |
 
 ### Build & Run
 
