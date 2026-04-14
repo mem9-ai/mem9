@@ -115,17 +115,19 @@ type ZeroProvisioner struct {
 	backend    string
 	autoModel  string
 	autoDims   int
+	clientDims int
 	ftsEnabled bool
 }
 
 // NewZeroProvisioner creates a provisioner for TiDB Zero API.
 // backend is "tidb", "postgres", or "db9".
-func NewZeroProvisioner(baseURL, backend, autoModel string, autoDims int, ftsEnabled bool) *ZeroProvisioner {
+func NewZeroProvisioner(baseURL, backend, autoModel string, autoDims int, clientDims int, ftsEnabled bool) *ZeroProvisioner {
 	return &ZeroProvisioner{
 		client:     NewZeroClient(baseURL),
 		backend:    backend,
 		autoModel:  autoModel,
 		autoDims:   autoDims,
+		clientDims: clientDims,
 		ftsEnabled: ftsEnabled,
 	}
 }
@@ -180,7 +182,7 @@ func (p *ZeroProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
 			if _, err := db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
 				return fmt.Errorf("init schema: vector extension: %w", err)
 			}
-			if _, err := db.ExecContext(ctx, BuildDB9MemorySchema(p.autoModel, p.autoDims)); err != nil {
+			if _, err := db.ExecContext(ctx, BuildDB9MemorySchema(p.autoModel, p.autoDims, p.clientDims)); err != nil {
 				return fmt.Errorf("init schema: create table: %w", err)
 			}
 			// Add HNSW index
@@ -190,7 +192,7 @@ func (p *ZeroProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
 			}
 			return nil
 	*/
-	if _, err := db.ExecContext(ctx, BuildMemorySchema(p.autoModel, p.autoDims)); err != nil {
+	if _, err := db.ExecContext(ctx, BuildMemorySchema(p.autoModel, p.autoDims, p.clientDims)); err != nil {
 		return fmt.Errorf("init schema: create table: %w", err)
 	}
 	if p.autoModel != "" {
@@ -217,7 +219,7 @@ func (p *ZeroProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
 			}
 		}
 	}
-	if _, err := db.ExecContext(ctx, BuildSessionsSchema(p.autoModel, p.autoDims)); err != nil {
+	if _, err := db.ExecContext(ctx, BuildSessionsSchema(p.autoModel, p.autoDims, p.clientDims)); err != nil {
 		return fmt.Errorf("init schema: sessions table: %w", err)
 	}
 	if p.autoModel != "" {
