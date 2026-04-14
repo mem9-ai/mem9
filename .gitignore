@@ -31,9 +31,9 @@ node_modules/
 dist/
 *.tgz
 .netlify/
-openclaw-plugin/.publish.env
-openclaw-plugin/.npmrc
-openclaw-plugin/.npm-cache-publish/
+.publish.env
+.npmrc
+.npm-cache-publish/
 
 # Benchmark results
 benchmark/results/*

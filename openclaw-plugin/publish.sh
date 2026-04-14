@@ -36,6 +36,7 @@ target_version=""
 npm_tag=""
 token=""
 versions_json=""
+pack_files_json=""
 restore_files=0
 had_package_lock=0
 package_json_backup=""
@@ -192,10 +193,13 @@ read_package_version() {
 	node -e 'const fs = require("node:fs"); const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(pkg.version);' "$package_json"
 }
 
-fetch_registry_versions() {
+ensure_private_npm_cache() {
 	mkdir -p "$npm_cache_dir"
 	export npm_config_cache="$npm_cache_dir"
+}
 
+fetch_registry_versions() {
+	ensure_private_npm_cache
 	info "fetching npm registry versions"
 	versions_json="$(cd "$script_dir" && npm view "$package_name" versions --json)"
 	ok "fetched published version list"
@@ -222,6 +226,27 @@ EOF
 
 version_base() {
 	node -e 'process.stdout.write(process.argv[1].split("-")[0]);' "$1"
+}
+
+fetch_packaged_files() {
+	ensure_private_npm_cache
+	pack_files_json="$(cd "$script_dir" && npm pack --dry-run --json)"
+}
+
+find_packaged_tracked_changes() {
+	local tracked="$1"
+	TRACKED_FILES="$tracked" PACK_FILES_JSON="$pack_files_json" node <<'EOF'
+const tracked = (process.env.TRACKED_FILES ?? "")
+  .split("\n")
+  .map((item) => item.trim())
+  .filter(Boolean);
+const pack = JSON.parse(process.env.PACK_FILES_JSON ?? "[]");
+const packaged = new Set(
+  pack.flatMap((entry) => Array.isArray(entry.files) ? entry.files.map((file) => file.path) : []),
+);
+const intersection = tracked.filter((file) => packaged.has(file));
+process.stdout.write(intersection.join("\n"));
+EOF
 }
 
 compare_release_versions() {
@@ -328,8 +353,23 @@ preflight() {
 
 	local tracked
 	tracked="$(git -C "$script_dir" diff --name-only HEAD -- . 2>/dev/null || true)"
-	[[ -z "$tracked" ]] || die "tracked changes detected under openclaw-plugin; commit or stash them first"
-	ok "no tracked changes under openclaw-plugin"
+	if [[ -n "$tracked" ]]; then
+		fetch_packaged_files
+
+		local packaged_tracked
+		packaged_tracked="$(find_packaged_tracked_changes "$tracked")"
+		if [[ -n "$packaged_tracked" ]]; then
+			warn "tracked changes detected in files that would be published:"
+			printf '  %s\n' $packaged_tracked
+			die "commit or stash packaged file changes before publishing"
+		fi
+
+		warn "tracked changes detected, but none of them will be published:"
+		printf '  %s\n' $tracked
+		ok "continuing because packaged files are clean"
+	else
+		ok "no tracked changes under openclaw-plugin"
+	fi
 
 	local untracked
 	untracked="$(git -C "$script_dir" ls-files --others --exclude-standard -- . || true)"
