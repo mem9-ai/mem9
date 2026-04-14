@@ -3,6 +3,8 @@ export interface PluginConfig {
   apiUrl?: string;
   apiKey?: string;
   tenantID?: string;
+  defaultTimeoutMs?: number;
+  searchTimeoutMs?: number;
 
   tenantName?: string;
 

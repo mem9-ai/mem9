@@ -31,7 +31,8 @@ Add mnemo to your project's `openclaw.json`:
         "enabled": true,
         "config": {
           "apiUrl": "http://localhost:8080",
-          "apiKey": "uuid"
+          "apiKey": "uuid",
+          "searchTimeoutMs": 15000
         }
       }
     }
@@ -173,9 +174,38 @@ Defined in `openclaw.plugin.json`:
 |---|---|---|
 | `apiUrl` | string | mnemo-server URL |
 | `apiKey` | string | Preferred key. Uses `/v1alpha2/mem9s/...` with `X-API-Key` header |
+| `defaultTimeoutMs` | number | Default timeout for non-search mem9 API requests in milliseconds. Default: `8000` |
+| `searchTimeoutMs` | number | Timeout for `memory_search` and automatic recall search in milliseconds. Default: `15000` |
 | `tenantID` | string | Legacy alias for `apiKey`. The plugin still uses `/v1alpha2/mem9s/...` with `X-API-Key`. |
 
 > **Note**: `apiKey` takes precedence when both fields are set. If only `tenantID` is present, the plugin treats it as a legacy alias for `apiKey`, still uses v1alpha2, and logs a deprecation warning once at startup.
+
+## Timeout Behavior
+
+The plugin uses two timeout buckets:
+
+- `searchTimeoutMs` applies to `memory_search` and the automatic recall search in `before_prompt_build`
+- `defaultTimeoutMs` applies to all other mem9 HTTP requests, including register, store, get, update, delete, and ingest
+
+Example:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "openclaw": {
+        "enabled": true,
+        "config": {
+          "apiUrl": "http://your-server:8080",
+          "apiKey": "uuid",
+          "defaultTimeoutMs": 8000,
+          "searchTimeoutMs": 15000
+        }
+      }
+    }
+  }
+}
+```
 
 ## File Structure
 
@@ -197,4 +227,5 @@ openclaw-plugin/
 |---|---|---|
 | `No mode configured` | Missing config | Add `apiUrl` and `apiKey` (or legacy `tenantID`) to plugin config |
 | `Server mode requires...` | Missing key | Add `apiKey` (or legacy `tenantID`) to config |
+| Search requests time out | Hybrid/vector search exceeds plugin timeout | Increase `searchTimeoutMs` in plugin config |
 | Plugin not loading | Not in memory slot | Set `"slots": {"memory": "openclaw"}` in openclaw.json |

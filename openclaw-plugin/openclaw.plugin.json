@@ -14,6 +14,16 @@
         "type": "string",
         "description": "mem9 API key (secret — do not share)"
       },
+      "defaultTimeoutMs": {
+        "type": "number",
+        "minimum": 1,
+        "description": "Default timeout in milliseconds for non-search mem9 API requests (default 8000)"
+      },
+      "searchTimeoutMs": {
+        "type": "number",
+        "minimum": 1,
+        "description": "Timeout in milliseconds for memory search and automatic recall search (default 15000)"
+      },
       "tenantID": {
         "type": "string",
         "description": "Deprecated: use apiKey"
@@ -29,6 +39,14 @@
       "label": "API Key",
       "placeholder": "key...",
       "sensitive": true
+    },
+    "defaultTimeoutMs": {
+      "label": "Default Timeout (ms)",
+      "placeholder": "8000"
+    },
+    "searchTimeoutMs": {
+      "label": "Search Timeout (ms)",
+      "placeholder": "15000"
     },
     "tenantID": {
       "label": "Tenant ID (legacy)",

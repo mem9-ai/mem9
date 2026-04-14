@@ -1,5 +1,10 @@
 import type { MemoryBackend } from "./backend.js";
-import { ServerBackend } from "./server-backend.js";
+import {
+  DEFAULT_SEARCH_TIMEOUT_MS,
+  DEFAULT_TIMEOUT_MS,
+  ServerBackend,
+  type BackendTimeouts,
+} from "./server-backend.js";
 import { registerHooks } from "./hooks.js";
 import type {
   PluginConfig,
@@ -12,6 +17,49 @@ import type {
 } from "./types.js";
 
 const DEFAULT_API_URL = "https://api.mem9.ai";
+const TIMEOUT_FIELDS = ["defaultTimeoutMs", "searchTimeoutMs"] as const;
+
+function normalizeTimeoutMs(
+  value: unknown,
+  field: (typeof TIMEOUT_FIELDS)[number],
+  fallback: number,
+  logger: OpenClawPluginApi["logger"],
+): number {
+  if (value == null) return fallback;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    logger.info(`[mem9] invalid ${field}; using ${fallback}ms`);
+    return fallback;
+  }
+  return Math.floor(value);
+}
+
+function resolveTimeouts(
+  cfg: PluginConfig,
+  logger: OpenClawPluginApi["logger"],
+): Required<BackendTimeouts> {
+  const timeouts = {
+    defaultTimeoutMs: normalizeTimeoutMs(
+      cfg.defaultTimeoutMs,
+      "defaultTimeoutMs",
+      DEFAULT_TIMEOUT_MS,
+      logger,
+    ),
+    searchTimeoutMs: normalizeTimeoutMs(
+      cfg.searchTimeoutMs,
+      "searchTimeoutMs",
+      DEFAULT_SEARCH_TIMEOUT_MS,
+      logger,
+    ),
+  };
+
+  if (TIMEOUT_FIELDS.some((field) => cfg[field] != null)) {
+    logger.info(
+      `[mem9] timeout config: defaultTimeoutMs=${timeouts.defaultTimeoutMs}, searchTimeoutMs=${timeouts.searchTimeoutMs}`,
+    );
+  }
+
+  return timeouts;
+}
 
 function jsonResult(data: unknown) {
   // Older OpenClaw versions may assume tool results have a normalized
@@ -254,6 +302,7 @@ const mnemoPlugin = {
   register(api: OpenClawPluginApi) {
     const cfg = (api.pluginConfig ?? {}) as PluginConfig;
     const effectiveApiUrl = cfg.apiUrl ?? DEFAULT_API_URL;
+    const timeoutConfig = resolveTimeouts(cfg, api.logger);
     if (!cfg.apiUrl) {
       api.logger.info(`[mem9] apiUrl not configured, using default ${DEFAULT_API_URL}`);
     }
@@ -265,7 +314,7 @@ const mnemoPlugin = {
       api.logger.info("[mem9] tenantID is deprecated; treating it as apiKey for v1alpha2");
     }
     const registerTenant = async (agentName: string): Promise<string> => {
-      const backend = new ServerBackend(effectiveApiUrl, "", agentName);
+      const backend = new ServerBackend(effectiveApiUrl, "", agentName, timeoutConfig);
       const result = await backend.register();
       api.logger.info(
         `[mem9] *** Auto-provisioned apiKey=${result.id} *** Save this to your config as apiKey`
@@ -291,6 +340,7 @@ const mnemoPlugin = {
         effectiveApiUrl,
         () => resolveAPIKey(agentId),
         agentId,
+        timeoutConfig,
       );
       return buildTools(backend);
     };
@@ -302,6 +352,7 @@ const mnemoPlugin = {
       effectiveApiUrl,
       () => resolveAPIKey(hookAgentId),
       hookAgentId,
+      timeoutConfig,
     );
 
     // Register memory capability so OpenClaw 2026.4.2+ binds this plugin to
@@ -346,6 +397,7 @@ class LazyServerBackend implements MemoryBackend {
     private apiUrl: string,
     private apiKeyProvider: () => Promise<string>,
     private agentId: string,
+    private timeouts: BackendTimeouts,
   ) {}
 
   private async resolve(): Promise<ServerBackend> {
@@ -354,7 +406,7 @@ class LazyServerBackend implements MemoryBackend {
 
     this.resolving = this.apiKeyProvider().then((apiKey) =>
       Promise.resolve().then(() => {
-        this.resolved = new ServerBackend(this.apiUrl, apiKey, this.agentId);
+        this.resolved = new ServerBackend(this.apiUrl, apiKey, this.agentId, this.timeouts);
         return this.resolved;
       })
     ).catch((err) => {
