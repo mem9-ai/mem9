@@ -21,6 +21,7 @@ type TenantService struct {
 	logger      *slog.Logger
 	autoModel   string
 	autoDims    int
+	clientDims  int
 	ftsEnabled  bool
 	encryptor   encrypt.Encryptor
 }
@@ -32,6 +33,7 @@ func NewTenantService(
 	logger *slog.Logger,
 	autoModel string,
 	autoDims int,
+	clientDims int,
 	ftsEnabled bool,
 	encryptor encrypt.Encryptor,
 ) *TenantService {
@@ -42,6 +44,7 @@ func NewTenantService(
 		logger:      logger,
 		autoModel:   autoModel,
 		autoDims:    autoDims,
+		clientDims:  clientDims,
 		ftsEnabled:  ftsEnabled,
 		encryptor:   encryptor,
 	}
@@ -205,7 +208,7 @@ func (s *TenantService) GetInfo(ctx context.Context, tenantID string) (*domain.T
 }
 
 func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) error {
-	if _, err := db.ExecContext(ctx, tenant.BuildSessionsSchema(s.autoModel, s.autoDims)); err != nil {
+	if _, err := db.ExecContext(ctx, tenant.BuildSessionsSchema(s.autoModel, s.autoDims, s.clientDims)); err != nil {
 		return fmt.Errorf("ensure sessions table: create: %w", err)
 	}
 	if s.autoModel != "" {
