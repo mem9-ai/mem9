@@ -9,7 +9,6 @@
     "strict": true
   },
   "include": [
-    "hooks/lib/**/*.mjs",
-    "hooks/tests/**/*.mjs"
+    "hooks/**/*.mjs"
   ]
 }
