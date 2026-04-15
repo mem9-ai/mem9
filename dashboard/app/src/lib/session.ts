@@ -3,6 +3,8 @@ const LAST_ACTIVE_KEY = "mem9-last-active";
 const REMEMBERED_SPACE_KEY = "mem9-remembered-space";
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const REMEMBER_ME_TTL_MS = 15 * 24 * 60 * 60 * 1000;
+export const MEM9_SPACE_READY_EVENT = "mem9-space-ready";
+export const MEM9_SPACE_HANDOFF_EVENT = "mem9-space-handoff";
 
 interface RememberedSpace {
   spaceId: string;
