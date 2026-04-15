@@ -119,7 +119,7 @@ type ZeroProvisioner struct {
 }
 
 // NewZeroProvisioner creates a provisioner for TiDB Zero API.
-// backend is "tidb", "postgres", or "db9".
+// backend is "tidb", "postgres", "db9", or "databend".
 func NewZeroProvisioner(baseURL, backend, autoModel string, autoDims int, ftsEnabled bool) *ZeroProvisioner {
 	return &ZeroProvisioner{
 		client:     NewZeroClient(baseURL),

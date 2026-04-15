@@ -16,7 +16,7 @@ type TenantPool struct {
 	lifetime    time.Duration
 	idleTimeout time.Duration
 	totalLimit  int
-	backend     string // "tidb", "postgres", or "db9"
+	backend     string // "tidb", "postgres", "db9", or "databend"
 	stopCh      chan struct{}
 }
 
@@ -32,7 +32,7 @@ type PoolConfig struct {
 	Lifetime    time.Duration
 	IdleTimeout time.Duration
 	TotalLimit  int
-	Backend     string // "tidb" (default), "postgres", or "db9"
+	Backend     string // "tidb" (default), "postgres", "db9", or "databend"
 }
 
 func NewPool(cfg PoolConfig) *TenantPool {
@@ -103,8 +103,11 @@ func (p *TenantPool) Get(ctx context.Context, tenantID string, dsn string) (*sql
 	}
 
 	driver := "mysql"
-	if p.backend == "postgres" || p.backend == "db9" {
+	switch p.backend {
+	case "postgres", "db9":
 		driver = "pgx"
+	case "databend":
+		driver = "databend"
 	}
 	db, err := sql.Open(driver, dsn)
 	if err != nil {
@@ -170,7 +173,7 @@ func (p *TenantPool) Stats() map[string]time.Time {
 	return stats
 }
 
-// Backend returns the configured database backend ("tidb", "postgres", or "db9").
+// Backend returns the configured database backend ("tidb", "postgres", "db9", or "databend").
 func (p *TenantPool) Backend() string {
 	return p.backend
 }
