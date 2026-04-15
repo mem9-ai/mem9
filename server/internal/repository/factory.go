@@ -49,7 +49,22 @@ func NewUploadTaskRepo(backend string, db *sql.DB) UploadTaskRepo {
 	}
 }
 
-// NewMemoryRepo creates a MemoryRepo for the specified backend.
+// NewUTMRepo creates a UTMRepo for the specified backend.
+// Only the tidb backend has a tenant_utm table; all other backends return a no-op stub.
+func NewUTMRepo(backend string, db *sql.DB) UTMRepo {
+	switch backend {
+	case "tidb", "":
+		return tidb.NewUTMRepo(db)
+	default:
+		return stubUTMRepo{}
+	}
+}
+
+// stubUTMRepo satisfies UTMRepo for non-TiDB backends.
+type stubUTMRepo struct{}
+
+func (stubUTMRepo) Create(_ context.Context, _ *domain.TenantUTM) error { return nil }
+
 // autoModel is used by tidb and db9 backends for auto-embedding features.
 func NewMemoryRepo(backend string, db *sql.DB, autoModel string, ftsEnabled bool, clusterID string) MemoryRepo {
 	switch backend {

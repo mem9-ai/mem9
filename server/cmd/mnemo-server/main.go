@@ -95,6 +95,15 @@ func main() {
 
 	// Repositories.
 	tenantRepo := repository.NewTenantRepo(cfg.DBBackend, db)
+	var utmRepo repository.UTMRepo
+	if cfg.UTMEnabled {
+		if err := db.QueryRowContext(context.Background(), "SELECT 1 FROM tenant_utm LIMIT 0").Err(); err != nil {
+			logger.Warn("MNEMO_UTM_ENABLED=true but tenant_utm table not found; disabling UTM tracking", "err", err)
+		} else {
+			utmRepo = repository.NewUTMRepo(cfg.DBBackend, db)
+			logger.Info("UTM tracking enabled")
+		}
+	}
 	uploadTaskRepo := repository.NewUploadTaskRepo(cfg.DBBackend, db)
 	tenantPool := tenant.NewPool(tenant.PoolConfig{
 		MaxIdle:     cfg.TenantPoolMaxIdle,
@@ -130,6 +139,9 @@ func main() {
 	}
 
 	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled, encryptor)
+	if utmRepo != nil {
+		tenantSvc.WithUTMRepo(utmRepo)
+	}
 
 	// Middleware.
 	tenantMW := middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
