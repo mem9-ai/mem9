@@ -203,9 +203,11 @@ if [ "$SESSION_APPEARED" = "false" ]; then
 fi
 
 # ============================================================================
-# TEST 4 — Unified search (no memory_type) excludes session rows
+# TEST 4 — Unified search (no memory_type) includes session rows via recall
+# Since PR #202 (enable raw session recall), unified recall intentionally
+# includes session candidates alongside insights and pinned memories.
 # ============================================================================
-step "4" "Unified search (no memory_type): GET /memories?q= must exclude session rows"
+step "4" "Unified search (no memory_type): GET /memories?q= includes session rows via recall"
 resp=$(curl_mem_json "$MEM_BASE?q=${UNIQUE_MARKER}&limit=20")
 code=$(http_code "$resp")
 bdy=$(body "$resp")
@@ -216,7 +218,7 @@ import sys, json
 mems = json.load(sys.stdin).get('memories', [])
 print('yes' if any(m.get('memory_type') == 'session' for m in mems) else 'no')
 " 2>/dev/null || true)
-check "unified search excludes memory_type=session rows" "$HAS_SESSION" "no"
+check "unified recall includes memory_type=session rows (PR #202)" "$HAS_SESSION" "yes"
 
 # ============================================================================
 # TEST 5 — memory_type=session filter returns ONLY sessions

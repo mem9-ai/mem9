@@ -14,22 +14,44 @@ type ProvisionMem9sResponse = {
   id: string;
 };
 
+export const DEFAULT_TIMEOUT_MS = 8_000;
+export const DEFAULT_SEARCH_TIMEOUT_MS = 15_000;
+
+export interface BackendTimeouts {
+  defaultTimeoutMs?: number;
+  searchTimeoutMs?: number;
+}
+
+interface ServerBackendOptions {
+  timeouts?: BackendTimeouts;
+  provisionQueryParams?: Record<string, string>;
+}
+
+interface RequestOptions {
+  timeoutMs?: number;
+}
+
 export class ServerBackend implements MemoryBackend {
   private baseUrl: string;
   private apiKey: string;
   private agentName: string;
   private provisionQueryParams: Record<string, string>;
+  private timeouts: Required<BackendTimeouts>;
 
   constructor(
     apiUrl: string,
     apiKey: string,
     agentName: string,
-    provisionQueryParams: Record<string, string> = {},
+    options: ServerBackendOptions = {},
   ) {
     this.baseUrl = apiUrl.replace(/\/+$/, "");
     this.apiKey = apiKey;
     this.agentName = agentName;
-    this.provisionQueryParams = provisionQueryParams;
+    this.provisionQueryParams = options.provisionQueryParams ?? {};
+    this.timeouts = {
+      defaultTimeoutMs: options.timeouts?.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS,
+      searchTimeoutMs: options.timeouts?.searchTimeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
+    };
   }
 
   async register(): Promise<ProvisionMem9sResponse> {
@@ -45,7 +67,7 @@ export class ServerBackend implements MemoryBackend {
     const qs = query.toString();
     const resp = await fetch(this.baseUrl + "/v1alpha1/mem9s" + (qs ? `?${qs}` : ""), {
       method: "POST",
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(this.timeouts.defaultTimeoutMs),
     });
 
     if (!resp.ok) {
@@ -88,7 +110,12 @@ export class ServerBackend implements MemoryBackend {
       total: number;
       limit: number;
       offset: number;
-    }>("GET", `${this.memoryPath("/memories")}${qs ? "?" + qs : ""}`);
+    }>(
+      "GET",
+      `${this.memoryPath("/memories")}${qs ? "?" + qs : ""}`,
+      undefined,
+      { timeoutMs: this.timeouts.searchTimeoutMs },
+    );
     return {
       data: raw.memories ?? [],
       total: raw.total,
@@ -129,7 +156,8 @@ export class ServerBackend implements MemoryBackend {
   private async requestRaw(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    options?: RequestOptions,
   ): Promise<Response> {
     const url = this.baseUrl + path;
     const headers: Record<string, string> = {
@@ -141,16 +169,17 @@ export class ServerBackend implements MemoryBackend {
       method,
       headers,
       body: body != null ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(options?.timeoutMs ?? this.timeouts.defaultTimeoutMs),
     });
   }
 
   private async request<T>(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    options?: RequestOptions,
   ): Promise<T> {
-    const resp = await this.requestRaw(method, path, body);
+    const resp = await this.requestRaw(method, path, body, options);
 
     if (resp.status === 204) {
       return undefined as T;

@@ -31,7 +31,8 @@ Add mem9 to your project's `openclaw.json`:
         "enabled": true,
         "config": {
           "apiUrl": "http://localhost:8080",
-          "apiKey": "uuid"
+          "apiKey": "uuid",
+          "searchTimeoutMs": 15000
         }
       }
     }
@@ -63,8 +64,8 @@ This is a `kind: "memory"` plugin — OpenClaw's framework manages when to load/
 
 | Hook | Trigger | What it does |
 |---|---|---|
-| `before_prompt_build` | Every LLM call | Searches memories by current prompt, injects relevant ones as context (3-min TTL cache) |
-| `after_compaction` | After `/compact` | Invalidates cache so the next prompt gets fresh memories from the database |
+| `before_prompt_build` | Every LLM call | Searches memories by current prompt and injects relevant ones as context |
+| `after_compaction` | After `/compact` | Logs compaction so the next prompt re-queries memories from the server |
 | `before_reset` | Before `/reset` | Saves a session summary (last 3 user messages) as memory before context is wiped |
 | `agent_end` | Agent finishes | Auto-captures the last assistant response as memory (if substantial) |
 
@@ -72,7 +73,7 @@ This is a `kind: "memory"` plugin — OpenClaw's framework manages when to load/
 
 | Tool | Description |
 |---|---|
-| `memory_store` | Store a new memory (upsert by key) |
+| `memory_store` | Store a new memory |
 | `memory_search` | Hybrid vector + keyword search (or keyword-only) |
 | `memory_get` | Retrieve a single memory by ID |
 | `memory_update` | Update an existing memory |
@@ -174,9 +175,38 @@ Defined in `openclaw.plugin.json`:
 | `apiUrl` | string | mnemo-server URL |
 | `apiKey` | string | Preferred key. Uses `/v1alpha2/mem9s/...` with `X-API-Key` header |
 | `provisionQueryParams` | object | Optional `utm_*` map forwarded only to the initial `POST /v1alpha1/mem9s` auto-provision request when `apiKey` is absent |
+| `defaultTimeoutMs` | number | Default timeout for non-search mem9 API requests in milliseconds. Default: `8000` |
+| `searchTimeoutMs` | number | Timeout for `memory_search` and automatic recall search in milliseconds. Default: `15000` |
 | `tenantID` | string | Legacy alias for `apiKey`. The plugin still uses `/v1alpha2/mem9s/...` with `X-API-Key`. |
 
 > **Note**: `apiKey` takes precedence when both fields are set. If only `tenantID` is present, the plugin treats it as a legacy alias for `apiKey`, still uses v1alpha2, and logs a deprecation warning once at startup. `provisionQueryParams` is ignored after an `apiKey` is already configured, and non-`utm_*` keys are dropped before the provision request is sent.
+
+## Timeout Behavior
+
+The plugin uses two timeout buckets:
+
+- `searchTimeoutMs` applies to `memory_search` and the automatic recall search in `before_prompt_build`
+- `defaultTimeoutMs` applies to all other mem9 HTTP requests, including register, store, get, update, delete, and ingest
+
+Example:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "openclaw": {
+        "enabled": true,
+        "config": {
+          "apiUrl": "http://your-server:8080",
+          "apiKey": "uuid",
+          "defaultTimeoutMs": 8000,
+          "searchTimeoutMs": 15000
+        }
+      }
+    }
+  }
+}
+```
 
 ## File Structure
 
@@ -198,4 +228,5 @@ openclaw-plugin/
 |---|---|---|
 | `No mode configured` | Missing config | Add `apiUrl` and `apiKey` (or legacy `tenantID`) to plugin config |
 | `Server mode requires...` | Missing key | Add `apiKey` (or legacy `tenantID`) to config |
+| Search requests time out | Hybrid/vector search exceeds plugin timeout | Increase `searchTimeoutMs` in plugin config |
 | Plugin not loading | Not in memory slot | Set `"slots": {"memory": "mem9"}` in openclaw.json |

@@ -21,11 +21,13 @@ test("register forwards only utm_* params during auto-provision", async () => {
 
   try {
     const backend = new ServerBackend("https://api.mem9.ai", "", "agent-1", {
-      utm_source: "bosn",
-      foo: "bar",
-      utm_campaign: "spring",
-      utm_medium: "",
-    } as Record<string, string>);
+      provisionQueryParams: {
+        utm_source: "bosn",
+        foo: "bar",
+        utm_campaign: "spring",
+        utm_medium: "",
+      },
+    });
 
     const result = await backend.register();
     assert.equal(result.id, "space-1");
@@ -66,7 +68,9 @@ test("normal memory requests do not append provision query params", async () => 
 
   try {
     const backend = new ServerBackend("https://api.mem9.ai", "space-key", "agent-1", {
-      utm_source: "bosn",
+      provisionQueryParams: {
+        utm_source: "bosn",
+      },
     });
 
     await backend.store({ content: "remember this" });

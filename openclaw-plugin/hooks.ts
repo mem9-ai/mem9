@@ -3,7 +3,7 @@
  *
  * Provides automatic memory recall and capture via OpenClaw's hook system:
  * - before_prompt_build: inject relevant memories into every LLM call
- *   (grouped by type: pinned → insights)
+ *   (preserving the server/backend recall order)
  * - after_compaction: (no-op placeholder for future use)
  * - before_reset: save session context before /reset wipes it
  * - agent_end: auto-capture via smart pipeline with size-aware message selection
@@ -107,26 +107,10 @@ function escapeForPrompt(text: string): string {
 }
 
 /**
- * Format memories for injection, grouped by type for maximum comprehension:
- * 1. Pinned memories first (user-explicit preferences)
- * 2. Insights (extracted facts)
+ * Format memories for injection while preserving the backend recall order.
  */
 function formatMemoriesBlock(memories: Memory[]): string {
   if (memories.length === 0) return "";
-
-  // Group by memory_type, falling back to "pinned" for legacy memories
-  const pinned: Memory[] = [];
-  const insights: Memory[] = [];
-  const other: Memory[] = [];
-
-  for (const m of memories) {
-    const mtype = m.memory_type ?? "pinned";
-    switch (mtype) {
-      case "pinned": pinned.push(m); break;
-      case "insight": insights.push(m); break;
-      default: other.push(m); break;
-    }
-  }
 
   const lines: string[] = [];
   let idx = 1;
@@ -142,18 +126,8 @@ function formatMemoriesBlock(memories: Memory[]): string {
     return `${idx++}.${sep}${escapeForPrompt(content)}`;
   };
 
-  if (pinned.length > 0) {
-    lines.push("[Preferences]");
-    for (const m of pinned) lines.push(formatMem(m));
-  }
-  if (insights.length > 0) {
-    if (lines.length > 0) lines.push("");
-    lines.push("[Knowledge]");
-    for (const m of insights) lines.push(formatMem(m));
-  }
-  if (other.length > 0) {
-    if (lines.length > 0) lines.push("");
-    for (const m of other) lines.push(formatMem(m));
+  for (const memory of memories) {
+    lines.push(formatMem(memory));
   }
 
   return [

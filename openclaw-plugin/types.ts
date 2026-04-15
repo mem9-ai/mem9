@@ -4,6 +4,8 @@ export interface PluginConfig {
   apiKey?: string;
   provisionQueryParams?: Record<string, string>;
   tenantID?: string;
+  defaultTimeoutMs?: number;
+  searchTimeoutMs?: number;
 
   tenantName?: string;
 

@@ -57,7 +57,7 @@ any memories by the time the list runs.
 | 4 | Ingest via content | `POST /memories` with `content` field returns 202 `accepted` |
 | 5 | Validation errors | `content+messages` → 400; `content+tags` → 202; empty body → 400 |
 | 6 | List memories | `GET /memories` returns 200 with `memories` array and `total` field; `relative_age` non-empty on first memory (if any) |
-| 7 | Search by query | `GET /memories?q=TiDB` and no-match query both return 200; `relative_age` non-empty on first result (if any) |
+| 7 | Search by query | `GET /memories?q=TiDB` and no-match query both return 200; `confidence` non-empty on first result (if any) |
 | 8 | Search by tags | `GET /memories?tags=tidb` returns 200 with `memories` array |
 | 9 | Get by ID | `GET /memories/{id}` returns 200 with matching `id` field |
 | 10 | Update memory | `PUT /memories/{id}` returns 200, version bumps, tag change reflected |
@@ -94,7 +94,7 @@ Supports both v1alpha1 and v1alpha2 via `MNEMO_API_VERSION`.
 | 1 | Provision tenant | `POST /v1alpha1/mem9s` returns 201 |
 | 2 | Session write via messages | `POST /memories {messages}` returns 202 `accepted` |
 | 3 | Poll until sessions appear | `GET /memories?memory_type=session&q=` polled until results appear |
-| 4 | Unified search excludes sessions | `GET /memories?q=` returns no `memory_type=session` rows (recall omits sessions by design) |
+| 4 | Unified search includes sessions | `GET /memories?q=` returns `memory_type=session` rows via confidence recall (PR #202) |
 | 5 | `memory_type=session` filter | All results have `memory_type=session`; no other types |
 | 6 | `memory_type=insight` excludes sessions | No `memory_type=session` rows when insight filter applied |
 | 7 | Session metadata projection | First session result has `role`, `seq`, `content_type` in `metadata` |
