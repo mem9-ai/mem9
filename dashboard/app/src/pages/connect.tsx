@@ -14,9 +14,22 @@ import {
   setSpaceId,
 } from "@/lib/session";
 
+function getOpenerOrigin(): string | null {
+  if (!document.referrer) {
+    return null;
+  }
+
+  try {
+    return new URL(document.referrer).origin;
+  } catch {
+    return null;
+  }
+}
+
 export function ConnectPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const openerOrigin = getOpenerOrigin();
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -46,6 +59,10 @@ export function ConnectPage() {
         return;
       }
 
+      if (openerOrigin && event.origin !== openerOrigin) {
+        return;
+      }
+
       const data = event.data as { spaceId?: string; type?: string };
       if (
         data?.type !== MEM9_SPACE_HANDOFF_EVENT ||
@@ -67,12 +84,15 @@ export function ConnectPage() {
     }
 
     window.addEventListener("message", handleMessage);
-    window.opener.postMessage({ type: MEM9_CONNECT_READY_EVENT }, "*");
+    window.opener.postMessage(
+      { type: MEM9_CONNECT_READY_EVENT },
+      openerOrigin ?? "*",
+    );
 
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, []);
+  }, [openerOrigin]);
 
   useEffect(() => {
     if (!pendingConnect) {

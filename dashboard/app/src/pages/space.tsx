@@ -53,12 +53,6 @@ export function SpacePage() {
     }
   }, [dataModel.farmEntryStatus, farmPrepOpen, navigate]);
 
-  useEffect(() => {
-    if (!spaceId) {
-      void navigate({ to: "/", replace: true });
-    }
-  }, [navigate, spaceId]);
-
   if (!spaceId) {
     return null;
   }
