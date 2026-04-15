@@ -336,6 +336,10 @@ function isDocsPage(): boolean {
   return document.querySelector('[data-docs-root]') !== null;
 }
 
+function isApiPage(): boolean {
+  return document.querySelector('[data-api-root]') !== null;
+}
+
 function updateDocsPage(locale: SiteLocale): void {
   const docsLocale = resolveDocsLocale(locale);
   const root = document.querySelector<HTMLElement>('[data-docs-root]');
@@ -369,6 +373,36 @@ function updateDocsPage(locale: SiteLocale): void {
   });
 }
 
+function updateApiPage(locale: SiteLocale): void {
+  const root = document.querySelector<HTMLElement>('[data-api-root]');
+  const copy = siteCopy[locale].apiPage;
+
+  if (!root) {
+    return;
+  }
+
+  root.dataset.apiLocale = locale;
+  setDocumentLang(locale);
+  updateMetaElements(copy.meta.title, copy.meta.description);
+
+  document.querySelectorAll<HTMLElement>('[data-api-copy]').forEach((sectionCopy) => {
+    sectionCopy.hidden = sectionCopy.dataset.apiCopy !== locale;
+  });
+}
+
+function updateFaqSection(locale: SiteLocale): void {
+  const root = document.querySelector<HTMLElement>('[data-faq-root]');
+
+  if (!root) {
+    return;
+  }
+
+  root.dataset.faqLocale = locale;
+  document.querySelectorAll<HTMLElement>('[data-faq-copy]').forEach((sectionCopy) => {
+    sectionCopy.hidden = sectionCopy.dataset.faqCopy !== locale;
+  });
+}
+
 function applyLocale(locale: SiteLocale): void {
   const dictionary = siteCopy[locale];
   document.documentElement.dataset.locale = locale;
@@ -376,10 +410,15 @@ function applyLocale(locale: SiteLocale): void {
   if (isDocsPage()) {
     updateTranslations(dictionary);
     updateDocsPage(locale);
+  } else if (isApiPage()) {
+    updateTranslations(dictionary);
+    updateApiPage(locale);
   } else {
     updateMeta(locale, dictionary);
     updateTranslations(dictionary);
   }
+
+  updateFaqSection(locale);
 
   const command = document.querySelector<HTMLElement>('[data-onboarding-command]');
   if (command) {
