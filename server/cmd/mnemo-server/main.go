@@ -97,11 +97,12 @@ func main() {
 	tenantRepo := repository.NewTenantRepo(cfg.DBBackend, db)
 	uploadTaskRepo := repository.NewUploadTaskRepo(cfg.DBBackend, db)
 	tenantPool := tenant.NewPool(tenant.PoolConfig{
-		MaxIdle:     cfg.TenantPoolMaxIdle,
-		MaxOpen:     cfg.TenantPoolMaxOpen,
-		IdleTimeout: cfg.TenantPoolIdleTimeout,
-		TotalLimit:  cfg.TenantPoolTotalLimit,
-		Backend:     cfg.DBBackend,
+		MaxIdle:        cfg.TenantPoolMaxIdle,
+		MaxOpen:        cfg.TenantPoolMaxOpen,
+		ConnectTimeout: cfg.TenantPoolConnectTimeout,
+		IdleTimeout:    cfg.TenantPoolIdleTimeout,
+		TotalLimit:     cfg.TenantPoolTotalLimit,
+		Backend:        cfg.DBBackend,
 	})
 	defer tenantPool.Close()
 

@@ -36,12 +36,13 @@ type Config struct {
 	LLMTemperature float64
 	IngestMode     string
 
-	TiDBZeroEnabled       bool
-	TiDBZeroAPIURL        string
-	TenantPoolMaxIdle     int
-	TenantPoolMaxOpen     int
-	TenantPoolIdleTimeout time.Duration
-	TenantPoolTotalLimit  int
+	TiDBZeroEnabled          bool
+	TiDBZeroAPIURL           string
+	TenantPoolMaxIdle        int
+	TenantPoolMaxOpen        int
+	TenantPoolConnectTimeout time.Duration
+	TenantPoolIdleTimeout    time.Duration
+	TenantPoolTotalLimit     int
 
 	// TiDB Cloud Pool configuration
 	TiDBCloudAPIURL string
@@ -98,37 +99,38 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Port:                  envOr("MNEMO_PORT", "8080"),
-		DSN:                   dsn,
-		DBBackend:             envOr("MNEMO_DB_BACKEND", "tidb"),
-		RateLimit:             envFloat("MNEMO_RATE_LIMIT", 100),
-		RateBurst:             envInt("MNEMO_RATE_BURST", 200),
-		EmbedAutoModel:        os.Getenv("MNEMO_EMBED_AUTO_MODEL"),
-		EmbedAutoDims:         envInt("MNEMO_EMBED_AUTO_DIMS", 1024),
-		EmbedAPIKey:           os.Getenv("MNEMO_EMBED_API_KEY"),
-		EmbedBaseURL:          os.Getenv("MNEMO_EMBED_BASE_URL"),
-		EmbedModel:            os.Getenv("MNEMO_EMBED_MODEL"),
-		EmbedDims:             envInt("MNEMO_EMBED_DIMS", 1536),
-		LLMAPIKey:             os.Getenv("MNEMO_LLM_API_KEY"),
-		LLMBaseURL:            os.Getenv("MNEMO_LLM_BASE_URL"),
-		LLMModel:              envOr("MNEMO_LLM_MODEL", "gpt-4o-mini"),
-		LLMTemperature:        envFloat("MNEMO_LLM_TEMPERATURE", 0.1),
-		IngestMode:            envOr("MNEMO_INGEST_MODE", "smart"),
-		TiDBZeroEnabled:       envBool("MNEMO_TIDB_ZERO_ENABLED", true),
-		TiDBZeroAPIURL:        envOr("MNEMO_TIDB_ZERO_API_URL", "https://zero.tidbapi.com/v1alpha1"),
-		TiDBCloudAPIURL:       envOr("MNEMO_TIDBCLOUD_API_URL", "https://serverless.tidbapi.com"),
-		TiDBCloudPoolID:       envOr("MNEMO_TIDBCLOUD_POOL_ID", "2"),
-		TenantPoolMaxIdle:     envInt("MNEMO_TENANT_POOL_MAX_IDLE", 5),
-		TenantPoolMaxOpen:     envInt("MNEMO_TENANT_POOL_MAX_OPEN", 10),
-		TenantPoolIdleTimeout: envDuration("MNEMO_TENANT_POOL_IDLE_TIMEOUT", 10*time.Minute),
-		TenantPoolTotalLimit:  envInt("MNEMO_TENANT_POOL_TOTAL_LIMIT", 200),
-		UploadDir:             envOr("MNEMO_UPLOAD_DIR", "./uploads"),
-		FTSEnabled:            envBool("MNEMO_FTS_ENABLED", false),
-		WorkerConcurrency:     envInt("MNEMO_WORKER_CONCURRENCY", 5),
-		EncryptType:           envOr("MNEMO_ENCRYPT_TYPE", "plain"),
-		EncryptKey:            os.Getenv("MNEMO_ENCRYPT_KEY"),
-		DebugLLM:              envBool("MNEMO_DEBUG_LLM", false),
-		ClusterBlacklist:      parseClusterBlacklist(os.Getenv("MNEMO_CLUSTER_BLACKLIST")),
+		Port:                     envOr("MNEMO_PORT", "8080"),
+		DSN:                      dsn,
+		DBBackend:                envOr("MNEMO_DB_BACKEND", "tidb"),
+		RateLimit:                envFloat("MNEMO_RATE_LIMIT", 100),
+		RateBurst:                envInt("MNEMO_RATE_BURST", 200),
+		EmbedAutoModel:           os.Getenv("MNEMO_EMBED_AUTO_MODEL"),
+		EmbedAutoDims:            envInt("MNEMO_EMBED_AUTO_DIMS", 1024),
+		EmbedAPIKey:              os.Getenv("MNEMO_EMBED_API_KEY"),
+		EmbedBaseURL:             os.Getenv("MNEMO_EMBED_BASE_URL"),
+		EmbedModel:               os.Getenv("MNEMO_EMBED_MODEL"),
+		EmbedDims:                envInt("MNEMO_EMBED_DIMS", 1536),
+		LLMAPIKey:                os.Getenv("MNEMO_LLM_API_KEY"),
+		LLMBaseURL:               os.Getenv("MNEMO_LLM_BASE_URL"),
+		LLMModel:                 envOr("MNEMO_LLM_MODEL", "gpt-4o-mini"),
+		LLMTemperature:           envFloat("MNEMO_LLM_TEMPERATURE", 0.1),
+		IngestMode:               envOr("MNEMO_INGEST_MODE", "smart"),
+		TiDBZeroEnabled:          envBool("MNEMO_TIDB_ZERO_ENABLED", true),
+		TiDBZeroAPIURL:           envOr("MNEMO_TIDB_ZERO_API_URL", "https://zero.tidbapi.com/v1alpha1"),
+		TiDBCloudAPIURL:          envOr("MNEMO_TIDBCLOUD_API_URL", "https://serverless.tidbapi.com"),
+		TiDBCloudPoolID:          envOr("MNEMO_TIDBCLOUD_POOL_ID", "2"),
+		TenantPoolMaxIdle:        envInt("MNEMO_TENANT_POOL_MAX_IDLE", 5),
+		TenantPoolMaxOpen:        envInt("MNEMO_TENANT_POOL_MAX_OPEN", 10),
+		TenantPoolConnectTimeout: envDuration("MNEMO_TENANT_POOL_CONNECT_TIMEOUT", 3*time.Second),
+		TenantPoolIdleTimeout:    envDuration("MNEMO_TENANT_POOL_IDLE_TIMEOUT", 10*time.Minute),
+		TenantPoolTotalLimit:     envInt("MNEMO_TENANT_POOL_TOTAL_LIMIT", 200),
+		UploadDir:                envOr("MNEMO_UPLOAD_DIR", "./uploads"),
+		FTSEnabled:               envBool("MNEMO_FTS_ENABLED", false),
+		WorkerConcurrency:        envInt("MNEMO_WORKER_CONCURRENCY", 5),
+		EncryptType:              envOr("MNEMO_ENCRYPT_TYPE", "plain"),
+		EncryptKey:               os.Getenv("MNEMO_ENCRYPT_KEY"),
+		DebugLLM:                 envBool("MNEMO_DEBUG_LLM", false),
+		ClusterBlacklist:         parseClusterBlacklist(os.Getenv("MNEMO_CLUSTER_BLACKLIST")),
 	}
 	// Validate ingest mode.
 	switch cfg.IngestMode {

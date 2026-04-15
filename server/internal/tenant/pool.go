@@ -109,7 +109,7 @@ func (p *TenantPool) Get(ctx context.Context, tenantID string, dsn string) (*sql
 				"duration_ms", time.Since(pingStart).Milliseconds(),
 				"err", err,
 			)
-			p.Remove(tenantID)
+			p.removeIfMatch(tenantID, conn)
 		}
 	}
 
@@ -186,6 +186,8 @@ func (p *TenantPool) openTenantDB(tenantID string, dsn string) (*sql.DB, error) 
 	now := time.Now()
 	p.mu.Lock()
 	p.opening--
+	// Close/Remove/eviction can mutate this slot while the shared open is in flight.
+	// Reuse any handle already published before we reacquire the lock.
 	if existing := p.conns[tenantID]; existing != nil {
 		existing.lastUsed = now
 		p.mu.Unlock()
@@ -225,6 +227,24 @@ func (p *TenantPool) Remove(tenantID string) {
 	if ok {
 		_ = conn.db.Close()
 	}
+}
+
+func (p *TenantPool) removeIfMatch(tenantID string, expected *tenantConn) bool {
+	if expected == nil {
+		return false
+	}
+
+	p.mu.Lock()
+	current, ok := p.conns[tenantID]
+	if !ok || current != expected {
+		p.mu.Unlock()
+		return false
+	}
+	delete(p.conns, tenantID)
+	p.mu.Unlock()
+
+	_ = expected.db.Close()
+	return true
 }
 
 func (p *TenantPool) Stats() map[string]time.Time {

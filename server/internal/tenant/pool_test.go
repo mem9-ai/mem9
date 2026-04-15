@@ -182,6 +182,43 @@ func TestPool_Remove_NonExistent(t *testing.T) {
 	pool.Remove("missing-tenant")
 }
 
+func TestPool_RemoveIfMatch_DoesNotRemoveReplacement(t *testing.T) {
+	pool := NewPool(PoolConfig{})
+	defer pool.Close()
+
+	staleDB := sql.OpenDB(&testConnector{})
+	freshDB := sql.OpenDB(&testConnector{})
+
+	staleConn := &tenantConn{db: staleDB, lastUsed: time.Now(), tenantID: "tenant-1"}
+	freshConn := &tenantConn{db: freshDB, lastUsed: time.Now(), tenantID: "tenant-1"}
+
+	pool.mu.Lock()
+	pool.conns["tenant-1"] = staleConn
+	pool.mu.Unlock()
+
+	if removed := pool.removeIfMatch("tenant-1", staleConn); !removed {
+		t.Fatal("expected initial stale connection to be removed")
+	}
+
+	pool.mu.Lock()
+	pool.conns["tenant-1"] = freshConn
+	pool.mu.Unlock()
+
+	if removed := pool.removeIfMatch("tenant-1", staleConn); removed {
+		t.Fatal("expected stale retry removal to leave replacement connection intact")
+	}
+
+	pool.mu.RLock()
+	got := pool.conns["tenant-1"]
+	pool.mu.RUnlock()
+	if got != freshConn {
+		t.Fatal("expected replacement connection to remain cached")
+	}
+	if err := freshDB.PingContext(context.Background()); err != nil {
+		t.Fatalf("replacement DB should still be open: %v", err)
+	}
+}
+
 func TestPool_Stats_Empty(t *testing.T) {
 	pool := NewPool(PoolConfig{})
 	defer pool.Close()
