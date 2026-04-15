@@ -8,12 +8,7 @@ import { patchSyncState } from "@/api/local-cache";
 import { SpacePageLayout } from "@/components/space/space-page-layout";
 import { useSpaceDataModel } from "@/components/space/use-space-data-model";
 import { useSpaceRouteState } from "@/components/space/use-space-route-state";
-import {
-  getActiveSpaceId,
-  MEM9_SPACE_HANDOFF_EVENT,
-  MEM9_SPACE_READY_EVENT,
-  setSpaceId,
-} from "@/lib/session";
+import { getActiveSpaceId } from "@/lib/session";
 import type { Memory } from "@/types/memory";
 import { shouldCompactMemoryOverview } from "@/components/space/space-selectors";
 
@@ -23,8 +18,7 @@ export function SpacePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [injectedSpaceId, setInjectedSpaceId] = useState<string | null>(null);
-  const spaceId = injectedSpaceId ?? getActiveSpaceId() ?? "";
+  const spaceId = getActiveSpaceId() ?? "";
   const routeState = useSpaceRouteState(spaceId);
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Memory | null>(null);
@@ -60,48 +54,13 @@ export function SpacePage() {
   }, [dataModel.farmEntryStatus, farmPrepOpen, navigate]);
 
   useEffect(() => {
-    function handleMessage(event: MessageEvent) {
-      if (event.source !== window.opener) {
-        return;
-      }
-
-      const data = event.data as { type?: string; spaceId?: string };
-      if (data?.type !== MEM9_SPACE_HANDOFF_EVENT || typeof data.spaceId !== "string") {
-        return;
-      }
-
-      const nextSpaceId = data.spaceId.trim();
-      if (!nextSpaceId) {
-        return;
-      }
-
-      setSpaceId(nextSpaceId, false);
-      setInjectedSpaceId(nextSpaceId);
-    }
-
-    window.addEventListener("message", handleMessage);
-
-    if (window.opener) {
-      window.opener.postMessage({ type: MEM9_SPACE_READY_EVENT }, "*");
-    }
-
-    return () => {
-      window.removeEventListener("message", handleMessage);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!spaceId && !window.opener) {
+    if (!spaceId) {
       void navigate({ to: "/", replace: true });
     }
   }, [navigate, spaceId]);
 
   if (!spaceId) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-background">
-        <div className="size-7 animate-spin rounded-full border-2 border-muted border-t-foreground" />
-      </main>
-    );
+    return null;
   }
 
   const handleRefreshMemories = async (): Promise<void> => {
