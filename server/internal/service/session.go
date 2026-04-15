@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -153,16 +154,30 @@ func (s *SessionService) autoHybridCandidates(
 	_,
 	fetchLimit int,
 ) ([]RecallCandidate, error) {
+	start := time.Now()
+	vectorStart := time.Now()
 	vecResults, err := s.sessions.AutoVectorSearch(ctx, f.Query, f, fetchLimit)
+	vectorDuration := time.Since(vectorStart)
 	if err != nil {
 		return nil, fmt.Errorf("session auto vector search: %w", err)
 	}
 	vecResults = applyMinScore(vecResults, f.MinScore)
 
+	keywordStart := time.Now()
 	kwResults, err := s.ftsOrKeyword(ctx, f, fetchLimit)
+	keywordDuration := time.Since(keywordStart)
 	if err != nil {
 		return nil, err
 	}
+
+	slog.InfoContext(ctx, "session recall candidate search",
+		"query_len", len(f.Query),
+		"source_pool", string(sourcePool),
+		"fetch_limit", fetchLimit,
+		"vector_ms", vectorDuration.Milliseconds(),
+		"keyword_ms", keywordDuration.Milliseconds(),
+		"total_ms", time.Since(start).Milliseconds(),
+	)
 
 	return mergeRecallCandidates(sourcePool, kwResults, vecResults, nil), nil
 }

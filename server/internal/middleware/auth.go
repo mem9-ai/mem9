@@ -51,13 +51,16 @@ func ResolveTenant(
 ) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authStart := time.Now()
 			tenantID := chi.URLParam(r, "tenantID")
 			if tenantID == "" {
 				writeError(w, http.StatusBadRequest, "missing tenant ID in path")
 				return
 			}
 
+			lookupStart := time.Now()
 			t, err := tenantRepo.GetByID(r.Context(), tenantID)
+			lookupDuration := time.Since(lookupStart)
 			if err != nil {
 				writeError(w, http.StatusNotFound, "tenant not found")
 				return
@@ -70,7 +73,9 @@ func ResolveTenant(
 			}
 
 			// Decrypt password before using
+			decryptStart := time.Now()
 			decryptedPassword, err := enc.Decrypt(r.Context(), t.DBPassword)
+			decryptDuration := time.Since(decryptStart)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "failed to decrypt tenant credentials")
 				return
@@ -79,8 +84,9 @@ func ResolveTenant(
 
 			poolStart := time.Now()
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
+			poolDuration := time.Since(poolStart)
 			if err != nil {
-				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", time.Since(poolStart).Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", err)
+				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", poolDuration.Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", err)
 				if _, blocked := clusterBlacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
 					writeError(w, http.StatusTooManyRequests, "cluster quota exhausted")
 					return
@@ -88,6 +94,14 @@ func ResolveTenant(
 				writeError(w, http.StatusServiceUnavailable, "cannot connect to tenant database")
 				return
 			}
+			slog.InfoContext(r.Context(), "tenant auth resolved",
+				"auth_mode", "path_tenant",
+				"cluster_id", t.ClusterID,
+				"tenant_lookup_ms", lookupDuration.Milliseconds(),
+				"decrypt_ms", decryptDuration.Milliseconds(),
+				"pool_get_ms", poolDuration.Milliseconds(),
+				"total_ms", time.Since(authStart).Milliseconds(),
+			)
 
 			info := &domain.AuthInfo{
 				TenantID:  t.ID,
@@ -115,13 +129,16 @@ func ResolveApiKey(
 ) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authStart := time.Now()
 			apiKey := r.Header.Get(APIKeyHeader)
 			if apiKey == "" {
 				writeError(w, http.StatusBadRequest, "missing API key")
 				return
 			}
 
+			lookupStart := time.Now()
 			t, err := tenantRepo.GetByID(r.Context(), apiKey)
+			lookupDuration := time.Since(lookupStart)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, "invalid API key")
 				return
@@ -132,7 +149,9 @@ func ResolveApiKey(
 			}
 
 			// Decrypt password before using
+			decryptStart := time.Now()
 			decryptedPassword, err := enc.Decrypt(r.Context(), t.DBPassword)
+			decryptDuration := time.Since(decryptStart)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "failed to decrypt tenant credentials")
 				return
@@ -141,8 +160,9 @@ func ResolveApiKey(
 
 			poolStart := time.Now()
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
+			poolDuration := time.Since(poolStart)
 			if err != nil {
-				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", time.Since(poolStart).Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", err)
+				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", poolDuration.Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", err)
 				if _, blocked := clusterBlacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
 					writeError(w, http.StatusTooManyRequests, "cluster quota exhausted")
 					return
@@ -150,6 +170,14 @@ func ResolveApiKey(
 				writeError(w, http.StatusServiceUnavailable, "cannot connect to tenant database")
 				return
 			}
+			slog.InfoContext(r.Context(), "tenant auth resolved",
+				"auth_mode", "api_key",
+				"cluster_id", t.ClusterID,
+				"tenant_lookup_ms", lookupDuration.Milliseconds(),
+				"decrypt_ms", decryptDuration.Milliseconds(),
+				"pool_get_ms", poolDuration.Milliseconds(),
+				"total_ms", time.Since(authStart).Milliseconds(),
+			)
 
 			info := &domain.AuthInfo{
 				TenantID:  t.ID,

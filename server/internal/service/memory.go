@@ -466,16 +466,20 @@ func (s *MemoryService) autoHybridCandidates(
 	sourcePool RecallSourcePool,
 	opts RecallCandidateOptions,
 ) ([]RecallCandidate, error) {
+	start := time.Now()
 	limit := normalizeRecallLimit(filter.Limit, 10)
 	fetchLimit := limit * normalizeRecallFetchMultiplier(opts.FetchMultiplier, 3)
 
+	vectorStart := time.Now()
 	vecResults, err := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
+	vectorDuration := time.Since(vectorStart)
 	if err != nil {
 		return nil, fmt.Errorf("auto vector search: %w", err)
 	}
 	vecResults = applyMinScore(vecResults, filter.MinScore)
 
 	var kwResults []domain.Memory
+	keywordStart := time.Now()
 	if s.memories.FTSAvailable() {
 		kwResults, err = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
 		if err != nil {
@@ -487,8 +491,10 @@ func (s *MemoryService) autoHybridCandidates(
 			return nil, fmt.Errorf("keyword search: %w", err)
 		}
 	}
+	keywordDuration := time.Since(keywordStart)
 
 	var secondHopResults []domain.Memory
+	secondHopStart := time.Now()
 	if opts.EnableSecondHop {
 		maxVecScore := 0.0
 		for _, m := range vecResults {
@@ -506,6 +512,20 @@ func (s *MemoryService) autoHybridCandidates(
 			secondHopResults = s.secondHopAutoSearch(ctx, mems, scores, filter, limit, topN)
 		}
 	}
+	secondHopDuration := time.Since(secondHopStart)
+
+	slog.InfoContext(ctx, "memory recall candidate search",
+		"query_len", len(filter.Query),
+		"source_pool", string(sourcePool),
+		"memory_type", filter.MemoryType,
+		"fetch_limit", fetchLimit,
+		"vector_ms", vectorDuration.Milliseconds(),
+		"keyword_ms", keywordDuration.Milliseconds(),
+		"second_hop_ms", secondHopDuration.Milliseconds(),
+		"second_hop_enabled", opts.EnableSecondHop,
+		"second_hop_count", len(secondHopResults),
+		"total_ms", time.Since(start).Milliseconds(),
+	)
 
 	return dedupRecallCandidatesByContent(mergeRecallCandidates(sourcePool, kwResults, vecResults, secondHopResults)), nil
 }

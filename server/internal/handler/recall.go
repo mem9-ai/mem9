@@ -109,6 +109,7 @@ func (s *Server) defaultConfidenceRecallSearch(
 	svc resolvedSvc,
 	filter domain.MemoryFilter,
 ) ([]domain.Memory, int, error) {
+	start := time.Now()
 	profile := buildRecallQueryProfile(filter.Query)
 	budget := effectiveRecallBudget(profile.shape, filter.Limit)
 	if budget <= 0 {
@@ -126,15 +127,21 @@ func (s *Server) defaultConfidenceRecallSearch(
 	sessionFilter := filter
 	sessionFilter.Limit = recallCandidateLimit(profile.shape, service.RecallSourceSession)
 
+	pinnedStart := time.Now()
 	pinnedCandidates, err := svc.memory.SearchCandidates(ctx, pinnedFilter, service.RecallSourcePinned, recallCandidateOptions(profile.shape, false))
+	pinnedDuration := time.Since(pinnedStart)
 	if err != nil {
 		return nil, 0, err
 	}
+	insightStart := time.Now()
 	insightCandidates, err := svc.memory.SearchCandidates(ctx, insightFilter, service.RecallSourceInsight, recallCandidateOptions(profile.shape, true))
+	insightDuration := time.Since(insightStart)
 	if err != nil {
 		return nil, 0, err
 	}
+	sessionStart := time.Now()
 	sessionCandidates, err := svc.session.SearchCandidates(ctx, sessionFilter, service.RecallSourceSession, recallCandidateOptions(profile.shape, false))
+	sessionDuration := time.Since(sessionStart)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -143,11 +150,13 @@ func (s *Server) defaultConfidenceRecallSearch(
 	insightCandidates = applyRecallConfidence(profile, insightCandidates)
 	sessionCandidates = applyRecallConfidence(profile, sessionCandidates)
 
+	selectionStart := time.Now()
 	pinned, seen := selectPinnedRecallCandidates(profile.shape, budget, pinnedCandidates)
 	mixed, cutoffReason, stats := selectMixedRecallCandidates(profile, budget-len(pinned), append(insightCandidates, sessionCandidates...), seen)
+	selectionDuration := time.Since(selectionStart)
 
 	memories := append(pinned, mixed...)
-	slog.Info("confidence recall search",
+	slog.InfoContext(ctx, "confidence recall search",
 		"cluster_id", auth.ClusterID,
 		"query_len", len(filter.Query),
 		"shape", recallQueryShapeLabel(profile.shape),
@@ -165,6 +174,11 @@ func (s *Server) defaultConfidenceRecallSearch(
 		"backfill_selected", stats.backfillCount,
 		"returned", len(memories),
 		"cutoff_reason", cutoffReason,
+		"pinned_ms", pinnedDuration.Milliseconds(),
+		"insight_ms", insightDuration.Milliseconds(),
+		"session_ms", sessionDuration.Milliseconds(),
+		"selection_ms", selectionDuration.Milliseconds(),
+		"total_ms", time.Since(start).Milliseconds(),
 	)
 	return memories, len(memories), nil
 }
@@ -175,6 +189,7 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 	svc resolvedSvc,
 	filter domain.MemoryFilter,
 ) ([]domain.Memory, int, error) {
+	start := time.Now()
 	if filter.Query == "" || filter.Limit <= 0 {
 		return []domain.Memory{}, 0, nil
 	}
@@ -190,6 +205,7 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 	effectiveFilter := filter
 	effectiveFilter.Limit = effectiveRecallBudget(profile.shape, filter.Limit)
 
+	candidateStart := time.Now()
 	switch filter.MemoryType {
 	case string(domain.TypeSession):
 		candidates, err = svc.session.SearchCandidates(ctx, effectiveFilter, service.RecallSourceSession, recallCandidateOptions(profile.shape, false))
@@ -205,6 +221,7 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 	if err != nil {
 		return nil, 0, err
 	}
+	candidateDuration := time.Since(candidateStart)
 
 	candidates = applyRecallConfidence(profile, candidates)
 	var (
@@ -212,18 +229,20 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 		cutoffReason string
 		stats        recallSelectionStats
 	)
+	selectionStart := time.Now()
 	if profile.shape == recallQueryShapeEnumeration {
 		memories, cutoffReason, stats = selectEnumerationRecallCandidates(profile, effectiveFilter.Limit, candidates, nil)
 	} else {
 		memories, cutoffReason = selectTopRecallCandidates(profile.shape, effectiveFilter.Limit, minConfidence, applyGapCutoff, candidates, nil)
 		stats.mode = "top"
 	}
+	selectionDuration := time.Since(selectionStart)
 
 	pinnedSelected := 0
 	if filter.MemoryType == string(domain.TypePinned) {
 		pinnedSelected = len(memories)
 	}
-	slog.Info("single-pool confidence recall",
+	slog.InfoContext(ctx, "single-pool confidence recall",
 		"cluster_id", auth.ClusterID,
 		"query_len", len(filter.Query),
 		"shape", recallQueryShapeLabel(profile.shape),
@@ -240,6 +259,9 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 		"backfill_selected", stats.backfillCount,
 		"returned", len(memories),
 		"cutoff_reason", cutoffReason,
+		"candidate_ms", candidateDuration.Milliseconds(),
+		"selection_ms", selectionDuration.Milliseconds(),
+		"total_ms", time.Since(start).Milliseconds(),
 	)
 	return memories, len(memories), nil
 }
