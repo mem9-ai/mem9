@@ -118,13 +118,13 @@ func TestProvision_WithEncryptor(t *testing.T) {
 	// Create mock provisioner that returns known password
 	mockProv := &mockProvisioner{
 		info: &tenant.ClusterInfo{
-			ID:       testTenantID,
+			ID:        testTenantID,
 			ClusterID: testTenantID,
-			Host:     "test-host",
-			Port:     4000,
-			Username: "root",
-			Password: testPassword,
-			DBName:   "test",
+			Host:      "test-host",
+			Port:      4000,
+			Username:  "root",
+			Password:  testPassword,
+			DBName:    "test",
 		},
 	}
 
