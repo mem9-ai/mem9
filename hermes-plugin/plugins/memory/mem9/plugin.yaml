@@ -1,0 +1,25 @@
+name: mem9
+description: mem9 persistent cloud memory with hybrid vector + keyword search
+version: 0.1.0
+author: mem9-ai
+homepage: https://mem9.ai
+repository: https://github.com/mem9-ai/mem9
+
+# Provider class in __init__.py
+provider_class: Mem9MemoryProvider
+
+# Config schema for hermes memory setup
+config:
+  - key: api_url
+    description: mem9 API endpoint URL
+    default: https://api.mem9.ai
+    env_var: MEM9_API_URL
+  - key: agent_id
+    description: Agent identifier for memory tracking
+    default: hermes
+    env_var: MEM9_AGENT_ID
+
+# Auto-provisioned API key - no manual setup needed
+features:
+  - auto_provision: true
+  - api_key_file: ~/.hermes/mem9_api_key
