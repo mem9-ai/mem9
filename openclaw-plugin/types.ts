@@ -2,6 +2,7 @@ export interface PluginConfig {
   // Server mode (apiUrl present → server)
   apiUrl?: string;
   apiKey?: string;
+  provisionToken?: string;
   provisionQueryParams?: Record<string, string>;
   tenantID?: string;
   defaultTimeoutMs?: number;

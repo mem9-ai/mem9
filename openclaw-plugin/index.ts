@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import type { MemoryBackend } from "./backend.js";
+import { PendingProvisionError, isPendingProvisionError, type MemoryBackend } from "./backend.js";
 import {
   DEFAULT_SEARCH_TIMEOUT_MS,
   DEFAULT_TIMEOUT_MS,
@@ -23,9 +23,8 @@ import type {
 
 const DEFAULT_API_URL = "https://api.mem9.ai";
 const TIMEOUT_FIELDS = ["defaultTimeoutMs", "searchTimeoutMs"] as const;
-const SHARED_PROVISION_DIR = path.join(os.tmpdir(), "mem9-openclaw");
+const SHARED_PROVISION_DIR = path.join(os.homedir(), ".openclaw", "mem9", "provision");
 const SHARED_PROVISION_POLL_INTERVAL_MS = 250;
-const SHARED_PROVISION_RESULT_TTL_MS = 2 * 60 * 1000;
 const sharedProvisionPromises = new Map<string, Promise<string>>();
 
 type SharedProvisionState =
@@ -107,10 +106,6 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function shouldEagerAutoProvision(cfg: PluginConfig): boolean {
-  return cfg.apiUrl != null || cfg.provisionQueryParams != null;
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -118,6 +113,7 @@ function sleep(ms: number): Promise<void> {
 function sharedProvisionKey(
   apiUrl: string,
   provisionQueryParams: Record<string, string>,
+  provisionToken: string,
 ): string {
   const normalizedProvisionQueryParams = Object.fromEntries(
     Object.entries(provisionQueryParams).sort(([left], [right]) => left.localeCompare(right)),
@@ -127,6 +123,7 @@ function sharedProvisionKey(
     .update(
       JSON.stringify({
         apiUrl,
+        provisionToken,
         provisionQueryParams: normalizedProvisionQueryParams,
       }),
     )
@@ -233,11 +230,7 @@ async function waitForSharedProvisionResult(
     }
 
     if (state.status === "done") {
-      if (now - state.finishedAt <= SHARED_PROVISION_RESULT_TTL_MS) {
-        return state.apiKey;
-      }
-      await removeSharedProvisionState(filePath);
-      return null;
+      return state.apiKey;
     }
 
     if (state.status === "error") {
@@ -257,11 +250,12 @@ async function waitForSharedProvisionResult(
 async function resolveSharedProvisionedAPIKey(
   apiUrl: string,
   provisionQueryParams: Record<string, string>,
+  provisionToken: string,
   timeouts: Required<BackendTimeouts>,
   logger: OpenClawPluginApi["logger"],
   registerTenant: () => Promise<string>,
 ): Promise<string> {
-  const key = sharedProvisionKey(apiUrl, provisionQueryParams);
+  const key = sharedProvisionKey(apiUrl, provisionQueryParams, provisionToken);
   const existingPromise = sharedProvisionPromises.get(key);
   if (existingPromise) {
     return existingPromise;
@@ -272,25 +266,21 @@ async function resolveSharedProvisionedAPIKey(
   const sharedPromise = (async () => {
     while (true) {
       const state = await readSharedProvisionState(filePath);
-      const now = Date.now();
 
       if (state?.status === "done") {
-        if (now - state.finishedAt <= SHARED_PROVISION_RESULT_TTL_MS) {
-          logger.info("[mem9] reusing shared auto-provisioned apiKey pending config write-back");
-          return state.apiKey;
-        }
-        await removeSharedProvisionState(filePath);
-        continue;
+        logger.info("[mem9] reusing locally persisted create-new API key for this provisionToken");
+        return state.apiKey;
       }
 
       if (state?.status === "error") {
         await removeSharedProvisionState(filePath);
       } else if (state?.status === "pending") {
+        const now = Date.now();
         if (now - state.startedAt > waitTimeoutMs) {
           await removeSharedProvisionState(filePath);
           continue;
         }
-        logger.info("[mem9] auto-provision already in progress in another mem9 instance; waiting");
+        logger.info("[mem9] create-new provision already in progress in another mem9 instance; waiting");
         const sharedApiKey = await waitForSharedProvisionResult(filePath, waitTimeoutMs);
         if (sharedApiKey) {
           return sharedApiKey;
@@ -373,7 +363,9 @@ interface AnyAgentTool {
   execute: (_id: string, params: unknown) => Promise<unknown>;
 }
 
-function buildTools(backend: MemoryBackend): AnyAgentTool[] {
+function buildTools(
+  backend: MemoryBackend,
+): AnyAgentTool[] {
   return [
     {
       name: "memory_store",
@@ -558,6 +550,10 @@ const mnemoPlugin = {
   register(api: OpenClawPluginApi) {
     const cfg = (api.pluginConfig ?? {}) as PluginConfig;
     const effectiveApiUrl = cfg.apiUrl ?? DEFAULT_API_URL;
+    const configuredProvisionToken =
+      typeof cfg.provisionToken === "string" && cfg.provisionToken.trim() !== ""
+        ? cfg.provisionToken.trim()
+        : null;
     const provisionQueryParams = cfg.provisionQueryParams ?? {};
     const timeoutConfig = resolveTimeouts(cfg, api.logger);
     const hookAgentId = cfg.agentName ?? "agent";
@@ -566,6 +562,7 @@ const mnemoPlugin = {
     }
 
     const configuredApiKey = cfg.apiKey ?? cfg.tenantID;
+    const provisionWaitTimeoutMs = Math.max(timeoutConfig.defaultTimeoutMs + 5_000, 30_000);
     if (cfg.apiKey && cfg.tenantID) {
       api.logger.info("[mem9] both apiKey and tenantID set; using apiKey");
     } else if (cfg.tenantID) {
@@ -583,42 +580,92 @@ const mnemoPlugin = {
       );
       const result = await backend.register();
       api.logger.info(
-        `[mem9] *** Auto-provisioned apiKey=${result.id} *** Save this to your config as apiKey`
+        `[mem9] *** Auto-provisioned apiKey=${result.id} *** Save this for recovery or reconnect as apiKey`
       );
       return result.id;
     };
+    let runtimeProvisionedAPIKey: string | null = null;
+    let loggedPersistedProvisionedAPIKeyReuse = false;
     let registrationPromise: Promise<string> | null = null;
-    const resolveAPIKey = (agentName: string): Promise<string> => {
-      if (configuredApiKey) return Promise.resolve(configuredApiKey);
+    const provisionAPIKey = (agentName: string): Promise<string> => {
+      if (configuredApiKey) {
+        return Promise.reject(
+          new Error(
+            "mem9 create-new auto-provision is only available before apiKey is configured",
+          ),
+        );
+      }
+      if (runtimeProvisionedAPIKey) {
+        return Promise.resolve(runtimeProvisionedAPIKey);
+      }
+      if (!configuredProvisionToken) {
+        return Promise.reject(
+          new Error("mem9 create-new setup cannot provision because provisionToken is missing"),
+        );
+      }
       if (!registrationPromise) {
         registrationPromise = resolveSharedProvisionedAPIKey(
           effectiveApiUrl,
           provisionQueryParams,
+          configuredProvisionToken,
           timeoutConfig,
           api.logger,
           () => registerTenant(agentName),
-        ).catch((err) => {
-          registrationPromise = null;
-          throw err;
-        });
+        )
+          .then((apiKey) => {
+            runtimeProvisionedAPIKey = apiKey;
+            return apiKey;
+          })
+          .catch((err) => {
+            registrationPromise = null;
+            throw err;
+          });
       }
       return registrationPromise;
     };
+    const resolveAPIKey = async (): Promise<string> => {
+      if (configuredApiKey) return Promise.resolve(configuredApiKey);
+      if (runtimeProvisionedAPIKey) {
+        return runtimeProvisionedAPIKey;
+      }
+      if (configuredProvisionToken) {
+        const sharedKey = sharedProvisionKey(
+          effectiveApiUrl,
+          provisionQueryParams,
+          configuredProvisionToken,
+        );
+        const sharedApiKey = await waitForSharedProvisionResult(
+          sharedProvisionStatePath(sharedKey),
+          provisionWaitTimeoutMs,
+        );
+        if (sharedApiKey) {
+          runtimeProvisionedAPIKey = sharedApiKey;
+          if (!loggedPersistedProvisionedAPIKeyReuse) {
+            api.logger.info("[mem9] reusing locally persisted create-new API key for this provisionToken");
+            loggedPersistedProvisionedAPIKeyReuse = true;
+          }
+          return sharedApiKey;
+        }
+      }
+      throw new PendingProvisionError();
+    };
 
     api.logger.info("[mem9] Server mode (v1alpha2)");
-
-    if (!configuredApiKey && shouldEagerAutoProvision(cfg)) {
-      api.logger.info("[mem9] apiKey not configured; starting auto-provision");
-      void resolveAPIKey(hookAgentId).catch((err) => {
-        api.logger.error(`[mem9] auto-provision failed: ${errorMessage(err)}`);
-      });
+    if (!configuredApiKey) {
+      if (configuredProvisionToken) {
+        api.logger.info(
+          "[mem9] apiKey not configured; waiting for the first post-restart message to finish create-new provision",
+        );
+      } else {
+        api.logger.info("[mem9] apiKey not configured; mem9 will stay idle until apiKey is configured");
+      }
     }
 
     const factory: ToolFactory = (ctx: ToolContext) => {
       const agentId = ctx.agentId ?? cfg.agentName ?? "agent";
       const backend = new LazyServerBackend(
         effectiveApiUrl,
-        () => resolveAPIKey(agentId),
+        resolveAPIKey,
         agentId,
         timeoutConfig,
       );
@@ -630,10 +677,24 @@ const mnemoPlugin = {
     // Shared lazy backend for hooks and capability registration.
     const hookBackend = new LazyServerBackend(
       effectiveApiUrl,
-      () => resolveAPIKey(hookAgentId),
+      resolveAPIKey,
       hookAgentId,
       timeoutConfig,
     );
+
+    const withPendingProvisionFallback = async <T>(
+      action: () => Promise<T>,
+      fallback: T,
+    ): Promise<T> => {
+      try {
+        return await action();
+      } catch (err) {
+        if (isPendingProvisionError(err)) {
+          return fallback;
+        }
+        throw err;
+      }
+    };
 
     // Register memory capability so OpenClaw 2026.4.2+ binds this plugin to
     // the memory slot. Without this, the plugin is treated as a legacy
@@ -642,14 +703,24 @@ const mnemoPlugin = {
     if (typeof api.registerCapability === "function") {
       api.registerCapability("memory", {
         search: async (query, opts) => {
-          const result = await hookBackend.search({ q: query, limit: opts?.limit });
+          const result = await withPendingProvisionFallback(
+            () => hookBackend.search({ q: query, limit: opts?.limit }),
+            { data: [], total: 0, limit: opts?.limit ?? 20, offset: 0 },
+          );
           return { data: result.data, total: result.total };
         },
         store: async (content, opts) => {
-          return hookBackend.store({ content, tags: opts?.tags, source: opts?.source });
+          try {
+            return await hookBackend.store({ content, tags: opts?.tags, source: opts?.source });
+          } catch (err) {
+            if (isPendingProvisionError(err)) {
+              return null;
+            }
+            throw err;
+          }
         },
-        get: (id) => hookBackend.get(id),
-        remove: (id) => hookBackend.remove(id),
+        get: (id) => withPendingProvisionFallback(() => hookBackend.get(id), null),
+        remove: (id) => withPendingProvisionFallback(() => hookBackend.remove(id), false),
       });
     }
 
@@ -657,6 +728,9 @@ const mnemoPlugin = {
     registerHooks(api, hookBackend, api.logger, {
       maxIngestBytes: cfg.maxIngestBytes,
       fallbackAgentId: hookAgentId,
+      provisionForCreateNew: configuredApiKey || !configuredProvisionToken
+        ? undefined
+        : () => provisionAPIKey(hookAgentId),
     });
   },
 };

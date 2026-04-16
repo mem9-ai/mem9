@@ -11,7 +11,7 @@
  * Reference: OpenClaw's built-in memory-lancedb extension uses the same pattern.
  */
 
-import type { MemoryBackend } from "./backend.js";
+import { isPendingProvisionError, type MemoryBackend } from "./backend.js";
 import type { Memory, IngestMessage } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -169,7 +169,11 @@ export function registerHooks(
   api: HookApi,
   backend: MemoryBackend,
   logger: Logger,
-  options?: { maxIngestBytes?: number; fallbackAgentId?: string },
+  options?: {
+    maxIngestBytes?: number;
+    fallbackAgentId?: string;
+    provisionForCreateNew?: () => Promise<string>;
+  },
 ): void {
   const maxIngestBytes = options?.maxIngestBytes ?? DEFAULT_MAX_INGEST_BYTES;
 
@@ -182,6 +186,9 @@ export function registerHooks(
       try {
         const evt = event as { prompt?: string };
         const prompt = evt?.prompt;
+        if (options?.provisionForCreateNew) {
+          await options.provisionForCreateNew();
+        }
         if (!prompt || prompt.length < MIN_PROMPT_LEN) return;
 
         const result = await backend.search({ q: prompt, limit: MAX_INJECT });
@@ -195,6 +202,9 @@ export function registerHooks(
           prependContext: formatMemoriesBlock(memories),
         };
       } catch (err) {
+        if (isPendingProvisionError(err)) {
+          return;
+        }
         // Graceful degradation — never block the LLM call
         logger.error(`[mem9] before_prompt_build failed: ${String(err)}`);
       }
@@ -245,6 +255,9 @@ export function registerHooks(
 
       logger.info("[mem9] Session context saved before reset");
     } catch (err) {
+      if (isPendingProvisionError(err)) {
+        return;
+      }
       // Best-effort — never block /reset
       logger.error(`[mem9] before_reset save failed: ${String(err)}`);
     }
@@ -346,7 +359,10 @@ export function registerHooks(
           `[mem9] Ingested session: memories_changed=${result.memories_changed}, status=${result.status}`
         );
       }
-    } catch {
+    } catch (err) {
+      if (isPendingProvisionError(err)) {
+        return;
+      }
       // Best-effort — never fail the agent end phase
     }
   });

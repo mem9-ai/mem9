@@ -14,9 +14,13 @@
         "type": "string",
         "description": "mem9 API key (secret — do not share)"
       },
+      "provisionToken": {
+        "type": "string",
+        "description": "One-time create-new token used locally to ensure first-message API-key provisioning runs only once and can be reused on this machine before apiKey is configured explicitly"
+      },
       "provisionQueryParams": {
         "type": "object",
-        "description": "Optional utm_* params forwarded only during first-time auto-provisioning",
+        "description": "Optional utm_* params forwarded only by the first create-new provision request triggered after the initial restart",
         "additionalProperties": {
           "type": "string"
         }
@@ -46,6 +50,10 @@
       "label": "API Key",
       "placeholder": "key...",
       "sensitive": true
+    },
+    "provisionToken": {
+      "label": "Provision Token",
+      "placeholder": "create-new only"
     },
     "defaultTimeoutMs": {
       "label": "Default Timeout (ms)",
