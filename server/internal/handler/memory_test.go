@@ -44,7 +44,10 @@ func (m *testMemoryRepo) GetByID(_ context.Context, id string) (*domain.Memory, 
 }
 func (m *testMemoryRepo) UpdateOptimistic(context.Context, *domain.Memory, int) error { return nil }
 func (m *testMemoryRepo) SoftDelete(context.Context, string, string) error            { return nil }
-func (m *testMemoryRepo) ArchiveMemory(context.Context, string, string) error         { return nil }
+func (m *testMemoryRepo) BulkSoftDelete(context.Context, []string, string) (int64, error) {
+	return 0, nil
+}
+func (m *testMemoryRepo) ArchiveMemory(context.Context, string, string) error { return nil }
 func (m *testMemoryRepo) ArchiveAndCreate(_ context.Context, _, _ string, mem *domain.Memory) error {
 	m.createCalls = append(m.createCalls, mem)
 	return nil

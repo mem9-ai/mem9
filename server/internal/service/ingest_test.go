@@ -1005,6 +1005,10 @@ func (m *memoryRepoMock) SoftDelete(ctx context.Context, id, agentName string) e
 	return nil
 }
 
+func (m *memoryRepoMock) BulkSoftDelete(ctx context.Context, ids []string, agentName string) (int64, error) {
+	return 0, nil
+}
+
 func (m *memoryRepoMock) ArchiveMemory(ctx context.Context, id, supersededBy string) error {
 	return nil
 }

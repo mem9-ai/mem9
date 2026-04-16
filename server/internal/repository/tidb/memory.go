@@ -139,6 +139,30 @@ func (r *MemoryRepo) SoftDelete(ctx context.Context, id, agentName string) error
 	return tx.Commit()
 }
 
+func (r *MemoryRepo) BulkSoftDelete(ctx context.Context, ids []string, agentName string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := `UPDATE memories SET state = 'deleted', updated_at = NOW()
+		 WHERE id IN (` + strings.Join(placeholders, ",") + `) AND state != 'deleted'`
+
+	result, err := r.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, fmt.Errorf("bulk soft delete: %w", err)
+	}
+
+	n, _ := result.RowsAffected()
+	return n, nil
+}
+
 func (r *MemoryRepo) ArchiveMemory(ctx context.Context, id, supersededBy string) error {
 	result, err := r.db.ExecContext(ctx,
 		`UPDATE memories SET state = 'archived', superseded_by = ?, updated_at = NOW()

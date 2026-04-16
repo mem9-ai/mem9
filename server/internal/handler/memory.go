@@ -472,6 +472,31 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type batchDeleteRequest struct {
+	IDs []string `json:"ids"`
+}
+
+func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
+	var req batchDeleteRequest
+	if err := decode(r, &req); err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
+
+	auth := authInfo(r)
+	svc := s.resolveServices(auth)
+	deleted, err := svc.memory.BulkDelete(r.Context(), req.IDs, auth.AgentName)
+	if err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
+
+	go s.refreshWriteMetrics(auth, svc, 0)
+	respond(w, http.StatusOK, map[string]any{
+		"deleted": deleted,
+	})
+}
+
 type bulkCreateRequest struct {
 	Memories []service.BulkMemoryInput `json:"memories"`
 }
