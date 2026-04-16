@@ -3,10 +3,16 @@ package handler
 import (
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/qiffang/mnemos/server/internal/service"
 )
+
+var allowedUTMKeys = map[string]struct{}{
+	"utm_source":   {},
+	"utm_medium":   {},
+	"utm_campaign": {},
+	"utm_content":  {},
+}
 
 type provisionResponse struct {
 	ID string `json:"id"`
@@ -33,7 +39,7 @@ func normalizeUTMParams(values url.Values) map[string]string {
 
 	filtered := make(map[string]string)
 	for key, params := range values {
-		if !strings.HasPrefix(key, "utm_") {
+		if _, ok := allowedUTMKeys[key]; !ok {
 			continue
 		}
 

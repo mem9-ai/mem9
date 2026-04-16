@@ -67,6 +67,11 @@ type UploadTaskRepo interface {
 	ResetProcessing(ctx context.Context, staleTimeout time.Duration) (int64, error)
 }
 
+// UTMRepo persists marketing attribution data captured at tenant provision time.
+type UTMRepo interface {
+	Create(ctx context.Context, utm *domain.TenantUTM) error
+}
+
 // SessionRepo handles raw session message storage and search.
 // Search methods accept domain.MemoryFilter for consistency with MemoryRepo.
 // All search methods return []domain.Memory (projected as TypeSession rows).

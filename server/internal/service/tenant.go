@@ -15,6 +15,10 @@ import (
 	"github.com/qiffang/mnemos/server/internal/tenant"
 )
 
+type utmRepo interface {
+	Create(ctx context.Context, utm *domain.TenantUTM) error
+}
+
 type tenantDBPool interface {
 	Backend() string
 	Get(ctx context.Context, tenantID, dsn string) (*sql.DB, error)
@@ -22,6 +26,7 @@ type tenantDBPool interface {
 
 type TenantService struct {
 	tenants     repository.TenantRepo
+	utms        utmRepo
 	provisioner tenant.Provisioner
 	pool        tenantDBPool
 	logger      *slog.Logger
@@ -51,6 +56,11 @@ func NewTenantService(
 		ftsEnabled:  ftsEnabled,
 		encryptor:   encryptor,
 	}
+}
+
+func (s *TenantService) WithUTMRepo(r utmRepo) *TenantService {
+	s.utms = r
+	return s
 }
 
 // ProvisionResult is the output of Provision.
@@ -230,6 +240,13 @@ func (s *TenantService) Provision(ctx context.Context, req ProvisionRequest) (*P
 	metrics.ProvisionTotal.WithLabelValues("success").Inc()
 	s.logProvisionComplete(ctx, info.ID, req)
 
+	if len(req.UTM) > 0 && s.utms != nil {
+		utm := utmFromRequest(info.ID, req.UTM)
+		if err := s.utms.Create(ctx, utm); err != nil {
+			s.logger.Warn("utm save failed (non-fatal)", "tenant_id", info.ID, "err", err)
+		}
+	}
+
 	return &ProvisionResult{
 		ID: info.ID,
 	}, nil
@@ -301,4 +318,14 @@ func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) err
 		}
 	}
 	return nil
+}
+
+func utmFromRequest(tenantID string, raw map[string]string) *domain.TenantUTM {
+	return &domain.TenantUTM{
+		TenantID: tenantID,
+		Source:   raw["utm_source"],
+		Medium:   raw["utm_medium"],
+		Campaign: raw["utm_campaign"],
+		Content:  raw["utm_content"],
+	}
 }

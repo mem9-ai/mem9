@@ -89,6 +89,8 @@ type Config struct {
 	// should be returned as 429 instead of 503. Populated from
 	// MNEMO_CLUSTER_BLACKLIST (comma-separated). Empty by default.
 	ClusterBlacklist map[string]struct{}
+
+	UTMEnabled bool
 }
 
 func Load() (*Config, error) {
@@ -129,6 +131,7 @@ func Load() (*Config, error) {
 		EncryptKey:            os.Getenv("MNEMO_ENCRYPT_KEY"),
 		DebugLLM:              envBool("MNEMO_DEBUG_LLM", false),
 		ClusterBlacklist:      parseClusterBlacklist(os.Getenv("MNEMO_CLUSTER_BLACKLIST")),
+		UTMEnabled:            envBool("MNEMO_UTM_ENABLED", false),
 	}
 	// Validate ingest mode.
 	switch cfg.IngestMode {
