@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.37
+version: 1.0.38
 homepage: "https://mem9.ai/openclaw-memory"
 description: "Persistent cloud memory plugin for OpenClaw. This document routes setup, troubleshooting, and uninstall flows and defines config boundaries."
 keywords: ["mem9", "openclaw memory", "persistent memory", "cloud memory", "memory plugin", "setup mem9", "install mem9", "reconnect mem9", "uninstall mem9"]
@@ -19,6 +19,7 @@ This top-level `SKILL.md` is a routing and safety document. It is the entry poin
 - Route first-time install, reconnect, config review, and mainland China / Alibaba Cloud npm install handling to `SETUP.md`.
 - Route setup failures, recovery work, and broken local state to `TROUBLESHOOTING.md`.
 - Route local mem9 removal on this machine to `UNINSTALL.md`.
+- Preserve filtered `utm_*` params from a remote `SKILL.md` URL through the create-new setup flow and first restart.
 - Keep history import manual. Do not scan or upload local memory or session files from this skill.
 
 ## Source / Runtime Authority
@@ -37,7 +38,7 @@ Only these `openclaw.json` paths may be changed during setup:
 - `plugins.entries.mem9.enabled`
 - `plugins.entries.mem9.config.apiUrl`
 - `plugins.entries.mem9.config.apiKey`
-- `plugins.entries.mem9.config.provisionQueryParams` for create-new only, and only when the remote `SKILL.md` URL contains filtered `utm_*` parameters
+- `plugins.entries.mem9.config.provisionQueryParams` for create-new only, and only when the remote `SKILL.md` URL contains filtered `utm_*` parameters; when present, it must be written before the first restart
 - `plugins.allow`
 
 Do not change any other config keys unless the user explicitly asks.

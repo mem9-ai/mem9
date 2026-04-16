@@ -23,6 +23,7 @@ When this file is read, send ONLY the choice prompt below. Do not include enviro
 - Reconnect and create-new are separate branches. Once one branch is selected, ignore the other branch unless the user explicitly changes their choice.
 - Before taking any action, show one dry-run preview that covers install, config edits, expected restarts, and what the user must do after the restart.
 - Use one explicit approval for the entire disclosed flow. Do not ask for a second approval unless the scope materially changes.
+- In create-new mode, if the remote `SKILL.md` URL contains filtered `utm_*` params, do not proceed to the first restart until `plugins.entries.mem9.config.provisionQueryParams` has been disclosed and read back exactly.
 
 ## Terminology
 
@@ -32,13 +33,17 @@ When this file is read, send ONLY the choice prompt below. Do not include enviro
 - Local variable name when needed: `MEM9_API_KEY`
 - Reconnect source of truth: `USER_PROVIDED_MEM9_API_KEY`
 - Create-new source of truth: `AUTO_PROVISIONED_MEM9_API_KEY`
+- Create-new attribution source of truth when present: `REMOTE_SKILL_UTM_PARAMS`
 
 ## Attribution Rule
 
-- If this setup flow was reached from a remotely loaded `SKILL.md` URL that contains query params whose keys start with `utm_`, and the user chooses create-new, copy those same filtered `utm_*` pairs into `plugins.entries.mem9.config.provisionQueryParams` before the first restart.
+- If this setup flow was reached from a remotely loaded `SKILL.md` URL that contains query params whose keys start with `utm_`, capture those filtered `utm_*` pairs immediately and store the exact map as `REMOTE_SKILL_UTM_PARAMS`.
+- In create-new mode, if `REMOTE_SKILL_UTM_PARAMS` is non-empty, the dry-run preview, config write, and pre-restart config read-back must all include `plugins.entries.mem9.config.provisionQueryParams = REMOTE_SKILL_UTM_PARAMS`.
+- Reuse the exact filtered `REMOTE_SKILL_UTM_PARAMS` map through the first restart. Do not rename keys, drop keys, or rebuild the map from memory later in the flow.
 - Copy only `utm_*` keys. Do not copy non-UTM query params.
 - Do not add or modify `provisionQueryParams` in reconnect mode.
 - If no `utm_*` params are present on the current remote `SKILL.md` URL, leave `provisionQueryParams` absent.
+- If the setup was started from pasted text rather than a remotely loaded `SKILL.md` URL and the runtime cannot verify the source URL, do not invent UTM params.
 
 ## Step 0 — Choose Create Or Reconnect
 
@@ -54,6 +59,7 @@ When this file is read, send ONLY the choice prompt below. Do not include enviro
   - expected restart count
   - local history will not be uploaded by this setup flow
   - a short restart-and-return instruction in the user's language that says the gateway will restart automatically, the user should return to this chat in a few minutes, and the user should say `hi`
+- In create-new mode, if `REMOTE_SKILL_UTM_PARAMS` is non-empty, the exact config keys list must explicitly include `plugins.entries.mem9.config.provisionQueryParams`.
 - Approval phrases:
   - reconnect after the key is already captured: `approve reconnect`
   - create-new: `approve create`
@@ -87,6 +93,7 @@ The dry-run preview must disclose:
 - only mem9 plugin config keys will be changed
 - reconnect path expects one restart after config is written and read back
 - create-new path expects one restart without `apiKey`; after the generated key is captured and written back to config, no second restart is needed
+- if create-new has `REMOTE_SKILL_UTM_PARAMS`, the dry-run must explicitly say those filtered `utm_*` values will be written under `plugins.entries.mem9.config.provisionQueryParams` before the first restart
 - local history will not be uploaded by this setup flow
 - one short restart-and-return instruction in the user's language
 
@@ -184,6 +191,7 @@ Before writing `openclaw.json`:
 - Preserve unrelated config keys
 - Use the approval already obtained in Step 0 unless the scope changed
 - If create-new started from a remote `SKILL.md` URL with `utm_*` params, include `plugins.entries.mem9.config.provisionQueryParams` in the disclosed key list
+- If create-new has `REMOTE_SKILL_UTM_PARAMS`, read back `plugins.entries.mem9.config.provisionQueryParams` before the first restart and require an exact key/value match
 
 ### Reconnect Existing API Key
 
@@ -240,6 +248,10 @@ Create-new hard rules:
 
 - Only the create-new branch may leave `apiKey` absent for the first restart.
 - Only the create-new branch may accept an auto-provisioned key as the final mem9 credential.
+- If `REMOTE_SKILL_UTM_PARAMS` is non-empty, never start the first restart with `plugins.entries.mem9.config.provisionQueryParams` absent, partial, renamed, or different.
+- If `REMOTE_SKILL_UTM_PARAMS` is non-empty, immediately after writing config, read back `plugins.entries.mem9.config.provisionQueryParams`.
+- The read-back map must exactly match `REMOTE_SKILL_UTM_PARAMS` before the first restart.
+- If the read-back map is missing or different, fix config first. Do not restart yet.
 
 Minimal shape if creating a fresh file:
 
@@ -310,6 +322,7 @@ Before every restart:
 ### Create-New Path
 
 1. Restart once with `apiKey` absent
+   If `REMOTE_SKILL_UTM_PARAMS` is non-empty, that same restart must already have the exact `plugins.entries.mem9.config.provisionQueryParams` map present in config.
 2. Watch for this exact log line:
 
 ```text
@@ -323,6 +336,13 @@ Before every restart:
 7. Proceed directly to verification
 
 If the auto-provision log never appears, stop and use `TROUBLESHOOTING.md`.
+
+If multiple different auto-provisioned keys appear during one create-new run, treat that as an abnormal flow, not as success-by-default:
+
+1. stop the happy-path handoff
+2. verify whether `REMOTE_SKILL_UTM_PARAMS` was present in config before the first successful provision
+3. verify whether the persisted config now matches the intended final key
+4. if attribution or final-key correctness cannot be confirmed, stop and use `TROUBLESHOOTING.md` instead of silently keeping the latest key
 
 ### Post-Restart Resume Contract
 
@@ -378,6 +398,8 @@ Create-new is successful only if all of the following are true:
 - OpenClaw loads the mem9 plugin without config or plugin errors
 - The create-new flow produced an auto-provisioned key
 - `AUTO_PROVISIONED_MEM9_API_KEY` was written back into config and the read-back value matches
+- If `REMOTE_SKILL_UTM_PARAMS` is non-empty, `plugins.entries.mem9.config.provisionQueryParams` was read back before the first restart and exactly matched that map
+- No additional auto-provisioned key replaced `AUTO_PROVISIONED_MEM9_API_KEY` after it was written back
 - The plugin is running with the auto-provisioned key (confirmed by positive health signals or absence of startup errors)
 - Empty memory results are acceptable for a new mem9 space
 

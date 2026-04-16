@@ -96,6 +96,44 @@ test("register eagerly auto-provisions when apiKey is absent", async () => {
   }
 });
 
+test("register does not auto-provision on empty config", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  const infoLogs: string[] = [];
+  const errorLogs: string[] = [];
+
+  globalThis.fetch = async (input) => {
+    requests.push(String(input));
+
+    return new Response(JSON.stringify({ id: "space-unexpected" }), {
+      status: 201,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  };
+
+  try {
+    mnemoPlugin.register(
+      createStubApi(
+        {},
+        { infoLogs, errorLogs },
+      ),
+    );
+
+    await flushAsyncWork();
+
+    assert.deepEqual(requests, []);
+    assert.deepEqual(errorLogs, []);
+    assert.equal(
+      infoLogs.includes("[mem9] apiKey not configured; starting auto-provision"),
+      false,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("search retries auto-provision after an eager startup failure", async () => {
   const originalFetch = globalThis.fetch;
   const infoLogs: string[] = [];

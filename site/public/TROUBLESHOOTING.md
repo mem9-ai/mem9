@@ -32,6 +32,22 @@ Confirm these first:
 
 - If no such line appears, stop the first-run flow and ask the user whether to retry the restart or switch to reconnect with an existing API key
 
+### Create-New Flow Did Not Carry Expected UTM Params
+
+- If the setup started from a remote `SKILL.md` URL with `utm_*`, re-check whether `plugins.entries.mem9.config.provisionQueryParams` was disclosed in the dry-run preview
+- Re-check the config read-back from before the first restart
+- The pre-restart read-back must exactly match the filtered `utm_*` map from the remote `SKILL.md` URL
+- If `provisionQueryParams` was absent, partial, renamed, or different before the first restart, do not assume the generated key was attributed correctly
+- In that case, stop the happy-path create-new handoff and decide whether to re-run create-new cleanly or switch to reconnect
+
+### Create-New Flow Generated Multiple Auto-Provisioned Keys
+
+- Treat this as abnormal create-new behavior, not as automatic success
+- Do not silently keep the latest key without checking the earlier provision attempts
+- Re-check whether `plugins.entries.mem9.config.provisionQueryParams` was already present before the first successful auto-provision
+- Re-check whether the final persisted `plugins.entries.mem9.config.apiKey` matches the key the plugin is currently using
+- If attribution or final-key correctness cannot be confirmed, stop and troubleshoot instead of handing off the newest key
+
 ### Existing API Key Fails After Reconnect
 
 - Re-check the value for typos
