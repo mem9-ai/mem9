@@ -74,6 +74,29 @@ func NewSessionRepo(backend string, db *sql.DB, autoModel string, ftsEnabled boo
 	}
 }
 
+// NewMemorySessionLinkRepo creates a MemorySessionLinkRepo for the specified backend.
+// Only TiDB has a memory_session_links table; other backends return a silent no-op stub.
+// TODO: extend to db9 and postgres once the DDL (CREATE TABLE IF NOT EXISTS
+// memory_session_links ...) is confirmed compatible with each backend's SQL dialect.
+func NewMemorySessionLinkRepo(backend string, db *sql.DB) MemorySessionLinkRepo {
+	switch backend {
+	case "tidb", "":
+		return tidb.NewMemorySessionLinkRepo(db)
+	default:
+		return stubMemorySessionLinkRepo{}
+	}
+}
+
+type stubMemorySessionLinkRepo struct{}
+
+func (stubMemorySessionLinkRepo) Link(_ context.Context, _, _ string) error { return nil }
+func (stubMemorySessionLinkRepo) MemoriesBySession(_ context.Context, _ string, _ int) ([]string, error) {
+	return nil, nil
+}
+func (stubMemorySessionLinkRepo) SessionsByMemory(_ context.Context, _ string, _ int) ([]string, error) {
+	return nil, nil
+}
+
 // stubSessionRepo satisfies SessionRepo for non-TiDB backends.
 // Write and search methods are silently skipped (consistent with the
 // IsTableNotFoundError no-op pattern). ListBySessionIDs returns ErrNotSupported

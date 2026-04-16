@@ -84,3 +84,22 @@ type SessionRepo interface {
 	// returned per session_id. Returns ErrNotSupported on non-TiDB backends.
 	ListBySessionIDs(ctx context.Context, sessionIDs []string, limitPerSession int) ([]*domain.Session, error)
 }
+
+// MemorySessionLinkRepo records the many-to-many relationship between memory rows and
+// the sessions that produced them. Semantics are direct-row: a link (memoryID, sessionID)
+// means sessionID was the ingest session that wrote that specific memory row.
+// All methods silently skip MySQL 1146 (table not yet migrated).
+type MemorySessionLinkRepo interface {
+	// Link records that sessionID wrote memoryID. Idempotent (INSERT IGNORE).
+	Link(ctx context.Context, memoryID, sessionID string) error
+
+	// MemoriesBySession returns memory IDs directly written by sessionID,
+	// ordered by link insertion order (id ASC). Includes archived rows.
+	// limit 0 means no cap.
+	MemoriesBySession(ctx context.Context, sessionID string, limit int) ([]string, error)
+
+	// SessionsByMemory returns session IDs that directly wrote memoryID,
+	// ordered by link insertion order (id ASC).
+	// limit 0 means no cap.
+	SessionsByMemory(ctx context.Context, memoryID string, limit int) ([]string, error)
+}

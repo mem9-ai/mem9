@@ -43,12 +43,12 @@ type MemoryService struct {
 	ingest    *IngestService
 }
 
-func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, embedder *embed.Embedder, autoModel string, ingestMode IngestMode) *MemoryService {
+func NewMemoryService(memories repository.MemoryRepo, links repository.MemorySessionLinkRepo, llmClient *llm.Client, embedder *embed.Embedder, autoModel string, ingestMode IngestMode) *MemoryService {
 	return &MemoryService{
 		memories:  memories,
 		embedder:  embedder,
 		autoModel: autoModel,
-		ingest:    NewIngestService(memories, llmClient, embedder, autoModel, ingestMode),
+		ingest:    NewIngestService(memories, links, llmClient, embedder, autoModel, ingestMode),
 	}
 }
 

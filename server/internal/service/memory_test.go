@@ -326,7 +326,7 @@ func TestSearchColdStartFallbackToKeyword(t *testing.T) {
 	}
 
 	// No embedder, no autoModel — cold start, FTS not yet available.
-	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+	svc := NewMemoryService(memRepo, nil, nil, nil, "", ModeSmart)
 
 	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
 		Query: "test query",
@@ -358,7 +358,7 @@ func TestSearchFTSOnlyWhenAvailable(t *testing.T) {
 		},
 	}
 
-	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+	svc := NewMemoryService(memRepo, nil, nil, nil, "", ModeSmart)
 
 	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
 		Query: "test query",
@@ -381,7 +381,7 @@ func TestSearchEmptyQueryReturnsList(t *testing.T) {
 	t.Parallel()
 
 	memRepo := &memoryRepoMock{}
-	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+	svc := NewMemoryService(memRepo, nil, nil, nil, "", ModeSmart)
 
 	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
 		Query: "",
@@ -405,7 +405,7 @@ func TestSearchEmptyQueryPopulatesRelativeAge(t *testing.T) {
 			{ID: "m1", Content: "hello", UpdatedAt: past, MemoryType: domain.TypeInsight, State: domain.StateActive},
 		},
 	}
-	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+	svc := NewMemoryService(memRepo, nil, nil, nil, "", ModeSmart)
 
 	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
 		Query: "",
@@ -431,7 +431,7 @@ func TestSearchIgnoresSessionAndSourceFilters(t *testing.T) {
 			{ID: "kw-1", Content: "result from keyword search", MemoryType: domain.TypeInsight, State: domain.StateActive},
 		},
 	}
-	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+	svc := NewMemoryService(memRepo, nil, nil, nil, "", ModeSmart)
 
 	_, _, err := svc.Search(context.Background(), domain.MemoryFilter{
 		Query:     "test query",
@@ -459,7 +459,7 @@ func TestCreateFallsBackToRawWhenLLMUnavailable(t *testing.T) {
 	t.Parallel()
 
 	repo := &memoryRepoMock{}
-	svc := NewMemoryService(repo, nil, nil, "", ModeSmart)
+	svc := NewMemoryService(repo, nil, nil, nil, "", ModeSmart)
 
 	mem, _, err := svc.Create(context.Background(), "agent-1", "user prefers dark mode", []string{"prefs"}, json.RawMessage(`{"source":"manual"}`))
 	if err != nil {
@@ -498,7 +498,7 @@ func TestCreateRunsReconcilePipeline(t *testing.T) {
 
 	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
 	repo := &memoryRepoMock{}
-	svc := NewMemoryService(repo, llmClient, nil, "auto-model", ModeSmart)
+	svc := NewMemoryService(repo, nil, llmClient, nil, "auto-model", ModeSmart)
 
 	mem, _, err := svc.Create(context.Background(), "agent-1", "I use Go 1.22", nil, nil)
 	if err != nil {

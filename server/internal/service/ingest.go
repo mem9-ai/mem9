@@ -65,6 +65,7 @@ type IngestResult struct {
 // IngestService orchestrates the two-phase smart memory pipeline.
 type IngestService struct {
 	memories  repository.MemoryRepo
+	links     repository.MemorySessionLinkRepo
 	llm       *llm.Client
 	embedder  *embed.Embedder
 	autoModel string
@@ -74,6 +75,7 @@ type IngestService struct {
 // NewIngestService creates a new IngestService.
 func NewIngestService(
 	memories repository.MemoryRepo,
+	links repository.MemorySessionLinkRepo,
 	llmClient *llm.Client,
 	embedder *embed.Embedder,
 	autoModel string,
@@ -84,6 +86,7 @@ func NewIngestService(
 	}
 	return &IngestService{
 		memories:  memories,
+		links:     links,
 		llm:       llmClient,
 		embedder:  embedder,
 		autoModel: autoModel,
@@ -526,6 +529,12 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 	metrics.MemoryWriteDuration.WithLabelValues("create", metricStatus(err)).Observe(time.Since(writeStart).Seconds())
 	if err != nil {
 		return nil, fmt.Errorf("create raw memory: %w", err)
+	}
+	if req.SessionID != "" && s.links != nil {
+		if err := s.links.Link(ctx, m.ID, req.SessionID); err != nil {
+			slog.Warn("memory_session_links: failed to link memory",
+				"memory_id", m.ID, "session_id", req.SessionID, "err", err)
+		}
 	}
 	return &IngestResult{
 		Status:          "complete",
@@ -1533,6 +1542,12 @@ func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sess
 	if err != nil {
 		return "", fmt.Errorf("create insight: %w", err)
 	}
+	if sessionID != "" && s.links != nil {
+		if err := s.links.Link(ctx, m.ID, sessionID); err != nil {
+			slog.Warn("memory_session_links: failed to link memory",
+				"memory_id", m.ID, "session_id", sessionID, "err", err)
+		}
+	}
 	return m.ID, nil
 }
 
@@ -1577,6 +1592,12 @@ func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, s
 	metrics.MemoryWriteDuration.WithLabelValues("archive_and_create", metricStatus(err)).Observe(time.Since(writeStart).Seconds())
 	if err != nil {
 		return "", fmt.Errorf("archive and create for %s: %w", oldID, err)
+	}
+	if sessionID != "" && s.links != nil {
+		if err := s.links.Link(ctx, newID, sessionID); err != nil {
+			slog.Warn("memory_session_links: failed to link memory",
+				"memory_id", newID, "session_id", sessionID, "err", err)
+		}
 	}
 	return newID, nil
 }

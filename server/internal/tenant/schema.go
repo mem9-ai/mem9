@@ -107,6 +107,20 @@ func BuildMemorySchema(autoModel string, autoDims int, clientDims int) string {
 	return fmt.Sprintf(TenantMemorySchemaBase, embeddingCol)
 }
 
+// TenantMemorySessionLinksSchema is the DDL for the memory_session_links join table.
+// It is static (no embedding column) and safe to re-run (CREATE TABLE IF NOT EXISTS).
+// Composite indexes (session_id, id) and (memory_id, id) cover ORDER BY id ASC reads
+// without an extra sort step.
+const TenantMemorySessionLinksSchema = `CREATE TABLE IF NOT EXISTS memory_session_links (
+    id         BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    memory_id  VARCHAR(36)  NOT NULL,
+    session_id VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE INDEX uq_msl (memory_id, session_id),
+    INDEX idx_msl_session_id (session_id, id),
+    INDEX idx_msl_memory_id  (memory_id, id)
+)`
+
 // BuildDB9MemorySchema builds the db9 memory schema with optional auto-embedding.
 func BuildDB9MemorySchema(autoModel string, autoDims int, clientDims int) string {
 	var embeddingCol string
