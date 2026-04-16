@@ -68,7 +68,7 @@ hermes tools list
 Start a new Hermes session and try:
 
 ```
-Store this memory: "The project uses PostgreSQL 15 with pgvector"
+Store this memory: "The project uses TiDB"
 Tags: database, infrastructure
 ```
 

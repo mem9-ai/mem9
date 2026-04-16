@@ -32,7 +32,7 @@ Example:
     # Store a memory
     from mem9_hermes.types import CreateMemoryInput
     await backend.store(CreateMemoryInput(
-        content="The project uses PostgreSQL 15",
+        content="The project uses TiDB database",
         tags=["database", "infrastructure"],
     ))
     

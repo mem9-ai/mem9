@@ -123,7 +123,7 @@ echo "your-api-key" > ~/.hermes/mem9_api_key
 手动工具：
 
 ```
-帮我记住：项目使用 PostgreSQL 15
+帮我记住：项目使用 TiDB 数据库
 搜索记忆中关于数据库的内容
 ```
 

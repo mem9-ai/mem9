@@ -182,7 +182,7 @@ hermes tools enable mem9
 每次会话自动召回和存储记忆！
 
 # 手动工具
-帮我记住：项目使用 PostgreSQL 15
+帮我记住：项目使用 TiDB 数据库
 搜索记忆中关于数据库的内容
 ```
 

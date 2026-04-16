@@ -92,7 +92,7 @@ export MEM9_API_KEY="your-api-key"
 
 | 工具 | 说明 | 示例 |
 |------|------|------|
-| `memory_store` | 存储记忆 | `帮我记住：项目使用 PostgreSQL 15` |
+| `memory_store` | 存储记忆 | `帮我记住：项目使用 TiDB 数据库` |
 | `memory_search` | 搜索记忆 | `搜索记忆中关于数据库的内容` |
 | `memory_get` | 获取记忆 | `获取记忆 by UUID` |
 | `memory_update` | 更新记忆 | `更新某条记忆的内容` |

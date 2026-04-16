@@ -84,7 +84,7 @@ mem9 插件现在支持**首次使用自动配置 API Key**。用户无需手动
 hermes chat
 
 # 直接使用 mem9 工具
-Store this memory: "The project uses PostgreSQL 15"
+Store this memory: "The project uses TiDB database"
 Tags: database, infrastructure
 ```
 

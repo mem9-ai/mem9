@@ -47,7 +47,7 @@ hermes chat
 hermes chat
 
 # 使用工具调用
-/memory_store content="项目使用 PostgreSQL 15" tags=["数据库", "配置"]
+/memory_store content="项目使用 TiDB 数据库" tags=["数据库", "配置"]
 /memory_search q="数据库配置"
 ```
 
@@ -87,7 +87,7 @@ hermes chat
 
 ```
 # 简单存储
-记住这个项目的数据库是 PostgreSQL 15
+记住这个项目的数据库是 TiDB
 
 # 带标签
 /memory_store content="API 使用 rate limiting，限制 100 请求/分钟" tags=["API", "配置", "限流"]
@@ -143,7 +143,7 @@ hermes chat
   "ok": true,
   "memories": [
     {
-      "content": "项目使用 PostgreSQL 15",
+      "content": "项目使用 TiDB 数据库",
       "tags": ["数据库", "配置"],
       "score": 0.85,
       "created_at": "2026-04-15T10:30:00Z"
@@ -175,7 +175,7 @@ hermes chat
   "ok": true,
   "data": {
     "id": "fab8e3e9-...",
-    "content": "项目使用 PostgreSQL 15",
+    "content": "项目使用 TiDB 数据库",
     "tags": ["数据库", "配置"],
     "created_at": "2026-04-15T10:30:00Z",
     "updated_at": "2026-04-15T10:30:00Z"
@@ -198,7 +198,7 @@ hermes chat
 
 ```
 # 更新内容
-/memory_update id="fab8e3e9-..." content="项目使用 PostgreSQL 15 和 Redis"
+/memory_update id="fab8e3e9-..." content="项目使用 TiDB 数据库和 Redis"
 
 # 更新标签
 /memory_update id="fab8e3e9-..." tags=["数据库", "配置", "已更新"]
@@ -268,7 +268,7 @@ tags=["重要", "核心配置"]  # ✓ 精简
 
 ```
 # 使用关键词搜索
-/memory_search q="PostgreSQL 数据库配置"
+/memory_search q="TiDB 数据库配置"
 
 # 组合标签过滤
 /memory_search q="API" tags="配置，限流"
@@ -285,7 +285,7 @@ tags=["重要", "核心配置"]  # ✓ 精简
 ```
 # 存储多条相关记忆
 记住以下几点：
-1. 数据库：PostgreSQL 15
+1. 数据库：TiDB
 2. 缓存：Redis 7
 3. 消息队列：RabbitMQ
 
@@ -594,9 +594,9 @@ export MEM9_API_KEY="your-uuid"
 
 ## 📞 获取帮助
 
-- **文档**: `/Users/hice/pingcap/hohice/mem9/hermes-plugin/README.md`
-- **开发文档**: `/Users/hice/pingcap/hohice/mem9/hermes-plugin/DEVELOPMENT_SUMMARY.md`
-- **集成文档**: `/Users/hice/pingcap/hohice/mem9/hermes-plugin/INTEGRATION.md`
+- **文档**: `hermes-plugin/README.md`
+- **开发文档**: `hermes-plugin/DEVELOPMENT_SUMMARY.md`
+- **集成文档**: `hermes-plugin/INTEGRATION.md`
 - **mem9 官网**: https://mem9.ai
 - **Hermes 文档**: https://hermes-agent.nousresearch.com/docs/
 

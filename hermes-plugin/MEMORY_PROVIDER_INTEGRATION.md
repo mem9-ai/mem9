@@ -168,10 +168,10 @@ hooks.on_session_end(session_id, ingest=True)
 hermes chat
 
 # 对话开始自动召回记忆
-# [System: Recalled 3 memories about PostgreSQL...]
+# [System: Recalled 3 memories about TiDB...]
 
 # 存储记忆 (自动)
-用户：记住这个项目使用 PostgreSQL 15
+用户：记住这个项目使用 TiDB 数据库
 助手：好的，我已经记住了。
 # [后台：记忆已跟踪，会话结束时存储]
 

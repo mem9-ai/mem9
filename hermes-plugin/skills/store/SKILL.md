@@ -17,7 +17,7 @@ Use this skill when you want to save important information that should persist a
 ### Basic Store
 
 ```
-Store this memory: "The project uses PostgreSQL 15 with pgvector extension"
+Store this memory: "The project uses TiDB with vector search"
 ```
 
 ### With Tags
@@ -63,7 +63,7 @@ Tags: api, mem9, documentation
 ### Store Configuration
 
 ```
-Store this memory: "Database: PostgreSQL 15 with pgvector. Connection: postgres://user:pass@host:5432/mem9"
+Store this memory: "Database: TiDB. Connection: mysql://user:***@host:4000/mem9"
 Tags: database, configuration, postgres
 ```
 
