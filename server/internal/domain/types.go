@@ -67,6 +67,7 @@ type AuthInfo struct {
 // MemoryFilter encapsulates search/list query parameters.
 type MemoryFilter struct {
 	Query      string
+	RawQuery   string
 	Tags       []string
 	Source     string
 	State      string
@@ -76,6 +77,13 @@ type MemoryFilter struct {
 	Limit      int
 	Offset     int
 	MinScore   float64 // minimum cosine similarity for vector results; 0 = use default (0.3); -1 = disabled (return all)
+}
+
+func (f MemoryFilter) RerankerQuery() string {
+	if f.RawQuery != "" {
+		return f.RawQuery
+	}
+	return f.Query
 }
 
 // TenantStatus represents the lifecycle status of a tenant.

@@ -33,6 +33,7 @@ const (
 
 var (
 	answerAcronymRe              = regexp.MustCompile(`\b[A-Z]{2,}(?:[+-][A-Z0-9]+)*\b`)
+	answerISODateRe              = regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}\b`)
 	answerNumberRe               = regexp.MustCompile(`\b\d+\b`)
 	answerYearRe                 = regexp.MustCompile(`\b(?:19|20)\d{2}\b`)
 	answerMonthNameRe            = regexp.MustCompile(`\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\b`)
@@ -52,6 +53,7 @@ var (
 	answerStandaloneCJKNameRe    = regexp.MustCompile(`^[\p{Han}·]{2,12}$`)
 	answerRelativeTimeRe         = regexp.MustCompile(`(?i)\b(?:yesterday|today|tomorrow|last\s+(?:night|week|weekend|month|year|summer|winter|spring|fall|autumn|friday|saturday|sunday|monday|tuesday|wednesday|thursday)|next\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn|friday|saturday|sunday|monday|tuesday|wednesday|thursday)|this\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn)|\d+\s+(?:day|days|week|weeks|month|months|year|years)\s+ago|in\s+\d+\s+(?:day|days|week|weeks|month|months|year|years)|the\s+(?:past\s+)?(?:week|weekend))\b`)
 	answerCNRelativeTimeRe       = regexp.MustCompile(`(?:昨天|今天|明天|前天|后天|上周|下周|本周|这周|上个月|下个月|这个月|本月|去年|今年|明年|上周[一二三四五六日天]|下周[一二三四五六日天]|周末|上个周末|下个周末|春天|夏天|秋天|冬天)`)
+	answerVaguePlaceRe           = regexp.MustCompile(`\b(?:home country|the area|the region|somewhere|another city)\b`)
 	answerAnchoredPeriodRe       = regexp.MustCompile(`(?i)\b(?:the\s+)?(?:week|weekend|month|year|summer|winter|spring|fall|autumn)\s+(?:before|after)\b`)
 	answerFutureCueRe            = regexp.MustCompile(`(?i)\b(?:will|planning|plan|plans|planned|thinking about|going to|gonna|scheduled|upcoming|next\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn))\b|(?:计划|打算|准备|将要|将会|下周|下个月|明年)`)
 	answerPastCueRe              = regexp.MustCompile(`(?i)\b(?:went|had|did|got|was|were|happened|previously|earlier|ago|last\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn|friday|saturday|sunday|monday|tuesday|wednesday|thursday))\b|(?:之前|以前|当时|去了|发生了|上周|上个月|去年|昨天|前天)`)
@@ -65,6 +67,7 @@ var (
 	recallCoverageEnglishTokenRe = regexp.MustCompile(`\b[a-z][a-z0-9'-]{3,}\b`)
 	recallCoverageCJKTokenRe     = regexp.MustCompile(`[\p{Han}]{2,6}`)
 	recallCoverageSpaceRe        = regexp.MustCompile(`\s+`)
+	answerCountExplicitRe        = regexp.MustCompile(`(?i)\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|once|twice)\s+(?:times?|children|kids|dogs|pets|letters|games|tournaments|screenplays|roadtrips|trips)\b`)
 )
 
 type recallTemporalIntent int
@@ -110,7 +113,7 @@ func (s *Server) defaultConfidenceRecallSearch(
 	filter domain.MemoryFilter,
 ) ([]domain.Memory, int, error) {
 	start := time.Now()
-	profile := buildRecallQueryProfile(filter.Query)
+	profile := buildRecallQueryProfile(filter.RerankerQuery())
 	budget := effectiveRecallBudget(profile.shape, filter.Limit)
 	if budget <= 0 {
 		return []domain.Memory{}, 0, nil
@@ -156,7 +159,36 @@ func (s *Server) defaultConfidenceRecallSearch(
 	selectionDuration := time.Since(selectionStart)
 
 	memories := append(pinned, mixed...)
-	slog.InfoContext(ctx, "confidence recall search",
+	if filter.Query != "" &&
+		filter.MemoryType == "" &&
+		profile.shape != recallQueryShapeGeneral &&
+		profile.shape != recallQueryShapeEnumeration {
+		var (
+			sessionMems []domain.Memory
+			useFallback bool
+			routedErr   error
+		)
+
+		sessionMems, useFallback, routedErr = s.provenanceSessionGroundingSearch(ctx, auth, svc, memories, filter)
+		switch {
+		case routedErr != nil && useFallback:
+			useFallback = true
+		case routedErr != nil:
+			slog.Warn("routed session grounding failed in default_mixed", "cluster_id", auth.ClusterID, "err", routedErr)
+		}
+
+		if useFallback {
+			if fallbackMems, sessErr := s.sessionGroundingSearch(ctx, auth, svc, filter); sessErr == nil && len(fallbackMems) > 0 {
+				sessionMems = fallbackMems
+			}
+		}
+
+		if len(sessionMems) > 0 {
+			memories = blendMemoriesWithSessionGrounding(memories, sessionMems, budget)
+			memories = rerankGroundedMemories(filter.RerankerQuery(), memories)
+		}
+	}
+	slog.Info("confidence recall search",
 		"cluster_id", auth.ClusterID,
 		"query_len", len(filter.Query),
 		"shape", recallQueryShapeLabel(profile.shape),
@@ -201,7 +233,7 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 		applyGapCutoff = true
 	)
 
-	profile := buildRecallQueryProfile(filter.Query)
+	profile := buildRecallQueryProfile(filter.RerankerQuery())
 	effectiveFilter := filter
 	effectiveFilter.Limit = effectiveRecallBudget(profile.shape, filter.Limit)
 
@@ -869,6 +901,68 @@ func recallContentForScoring(memory domain.Memory) (string, string, string) {
 		kind = meta.Kind
 	}
 	return content, display, kind
+}
+
+func normalizeRecallResponseMemories(rawQuery string, memories []domain.Memory) {
+	if rawQuery == "" {
+		return
+	}
+
+	shape := classifyRecallQueryShape(rawQuery)
+	for i := range memories {
+		if shape == recallQueryShapeTime {
+			memories[i].Content = service.TemporalRecallProjection(memories[i].Content, memories[i].Metadata)
+		}
+		if shape == recallQueryShapeCount {
+			memories[i].Content = normalizeCountRecallContent(memories[i].Content)
+		}
+	}
+}
+
+func normalizeCountRecallContent(content string) string {
+	if content == "" || strings.Contains(content, "[answer-count:") {
+		return content
+	}
+
+	match := answerCountExplicitRe.FindStringSubmatch(content)
+	if len(match) < 2 {
+		return content
+	}
+	count := normalizeCountToken(match[1])
+	if count == "" {
+		return content
+	}
+	return strings.TrimSpace(content) + "\n[answer-count: " + count + "]"
+}
+
+func normalizeCountToken(token string) string {
+	switch strings.ToLower(strings.TrimSpace(token)) {
+	case "one", "once":
+		return "1"
+	case "two", "twice":
+		return "2"
+	case "three":
+		return "3"
+	case "four":
+		return "4"
+	case "five":
+		return "5"
+	case "six":
+		return "6"
+	case "seven":
+		return "7"
+	case "eight":
+		return "8"
+	case "nine":
+		return "9"
+	case "ten":
+		return "10"
+	default:
+		if answerNumberRe.MatchString(token) {
+			return token
+		}
+		return ""
+	}
 }
 
 func buildRecallQueryProfile(query string) recallQueryProfile {

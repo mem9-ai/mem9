@@ -296,12 +296,64 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	svc := s.resolveServices(auth)
 
 	onlySession := filter.MemoryType == string(domain.TypeSession)
+	explicitSessionMixed := filter.Query != "" && filter.SessionID != "" && filter.MemoryType == ""
 
 	var memories []domain.Memory
 	var total int
 	var err error
 
+	if filter.Query != "" && filter.MemoryType == "" && s.strategyRouter != nil {
+		decision, detectErr := s.detectRecallStrategies(r.Context(), auth, filter)
+		if detectErr != nil {
+			slog.Warn("strategy detection error, proceeding with default path",
+				"cluster_id", auth.ClusterID, "err", detectErr)
+		} else if decision.IsDefault() {
+			if explicitSessionMixed {
+				memories, total, err = s.explicitSessionSearch(r.Context(), auth, svc, filter, domain.StrategyDefaultMixed, "")
+			} else {
+				memories, total, err = s.executeDefaultMixedBase(r.Context(), auth, svc, filter)
+			}
+			if err != nil {
+				s.handleError(r.Context(), w, err)
+				return
+			}
+			if memories == nil {
+				memories = []domain.Memory{}
+			}
+			normalizeRecallResponseMemories(rawQuery, memories)
+			respond(w, http.StatusOK, listResponse{
+				Memories: memories,
+				Total:    total,
+				Limit:    limit,
+				Offset:   offset,
+			})
+			return
+		} else if (decision.IsFanout() &&
+			supportedStrategyOnMain(decision.Strategies[0].Name) &&
+			supportedStrategyOnMain(decision.Strategies[1].Name)) ||
+			(!decision.IsDefault() && supportedStrategyOnMain(decision.PrimaryStrategy())) {
+			memories, total, err = s.strategyConfidenceRecallSearch(r.Context(), auth, svc, filter, decision)
+			if err != nil {
+				s.handleError(r.Context(), w, err)
+				return
+			}
+			if memories == nil {
+				memories = []domain.Memory{}
+			}
+			normalizeRecallResponseMemories(rawQuery, memories)
+			respond(w, http.StatusOK, listResponse{
+				Memories: memories,
+				Total:    total,
+				Limit:    limit,
+				Offset:   offset,
+			})
+			return
+		}
+	}
+
 	switch {
+	case explicitSessionMixed:
+		memories, total, err = s.explicitSessionSearch(r.Context(), auth, svc, filter, domain.StrategyDefaultMixed, "")
 	case filter.Query != "" && filter.MemoryType == "":
 		memories, total, err = s.defaultConfidenceRecallSearch(r.Context(), auth, svc, filter)
 	case filter.Query != "" && (filter.MemoryType == string(domain.TypeSession) ||
@@ -320,11 +372,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	if memories == nil {
 		memories = []domain.Memory{}
 	}
-	if rawQuery != "" && classifyRecallQueryShape(rawQuery) == recallQueryShapeTime {
-		for i := range memories {
-			memories[i].Content = service.TemporalRecallProjection(memories[i].Content, memories[i].Metadata)
-		}
-	}
+	normalizeRecallResponseMemories(rawQuery, memories)
 
 	respond(w, http.StatusOK, listResponse{
 		Memories: memories,

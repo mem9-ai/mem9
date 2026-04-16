@@ -5,6 +5,8 @@ const (
 	StrategyExactEventTemporal = "exact_event_temporal"
 	StrategySetAggregation     = "set_aggregation"
 	StrategyCountQuery         = "count_query"
+	StrategyAttributeInference = "attribute_inference"
+	StrategyExactEntityLookup  = "exact_entity_lookup"
 	StrategyDefaultMixed       = "default_mixed"
 )
 
@@ -79,6 +81,8 @@ func ValidStrategyClasses() map[string]bool {
 		StrategyExactEventTemporal: true,
 		StrategySetAggregation:     true,
 		StrategyCountQuery:         true,
+		StrategyAttributeInference: true,
+		StrategyExactEntityLookup:  true,
 		StrategyDefaultMixed:       true,
 	}
 }

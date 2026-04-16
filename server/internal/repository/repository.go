@@ -78,11 +78,18 @@ type SessionRepo interface {
 	VectorSearch(ctx context.Context, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
 	FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
 	KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
+	AutoVectorSearchInSessionSet(ctx context.Context, query string, f domain.MemoryFilter, sessionIDs []string, limit int) ([]domain.Memory, error)
+	VectorSearchInSessionSet(ctx context.Context, queryVec []float32, f domain.MemoryFilter, sessionIDs []string, limit int) ([]domain.Memory, error)
+	FTSSearchInSessionSet(ctx context.Context, query string, f domain.MemoryFilter, sessionIDs []string, limit int) ([]domain.Memory, error)
+	KeywordSearchInSessionSet(ctx context.Context, query string, f domain.MemoryFilter, sessionIDs []string, limit int) ([]domain.Memory, error)
 	FTSAvailable() bool
 	// ListBySessionIDs returns raw session rows for the given session IDs, ordered by
 	// session_id ASC, created_at ASC, seq ASC, id ASC. At most limitPerSession rows are
 	// returned per session_id. Returns ErrNotSupported on non-TiDB backends.
 	ListBySessionIDs(ctx context.Context, sessionIDs []string, limitPerSession int) ([]*domain.Session, error)
+	// ListNeighbors returns a narrow local window around one session turn,
+	// projected as TypeSession memories ordered by seq ASC, created_at ASC, id ASC.
+	ListNeighbors(ctx context.Context, sessionID string, seq int, before int, after int) ([]domain.Memory, error)
 }
 
 // MemorySessionLinkRepo records direct write-time provenance between memories and sessions.

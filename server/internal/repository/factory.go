@@ -109,16 +109,31 @@ func (stubSessionRepo) PatchTags(_ context.Context, _, _ string, _ []string) err
 func (stubSessionRepo) AutoVectorSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
 	return nil, nil
 }
+func (stubSessionRepo) AutoVectorSearchInSessionSet(_ context.Context, _ string, _ domain.MemoryFilter, _ []string, _ int) ([]domain.Memory, error) {
+	return nil, nil
+}
 func (stubSessionRepo) VectorSearch(_ context.Context, _ []float32, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+	return nil, nil
+}
+func (stubSessionRepo) VectorSearchInSessionSet(_ context.Context, _ []float32, _ domain.MemoryFilter, _ []string, _ int) ([]domain.Memory, error) {
 	return nil, nil
 }
 func (stubSessionRepo) FTSSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
 	return nil, nil
 }
+func (stubSessionRepo) FTSSearchInSessionSet(_ context.Context, _ string, _ domain.MemoryFilter, _ []string, _ int) ([]domain.Memory, error) {
+	return nil, nil
+}
 func (stubSessionRepo) KeywordSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+	return nil, nil
+}
+func (stubSessionRepo) KeywordSearchInSessionSet(_ context.Context, _ string, _ domain.MemoryFilter, _ []string, _ int) ([]domain.Memory, error) {
 	return nil, nil
 }
 func (stubSessionRepo) FTSAvailable() bool { return false }
 func (stubSessionRepo) ListBySessionIDs(_ context.Context, _ []string, _ int) ([]*domain.Session, error) {
 	return nil, fmt.Errorf("session messages: %w", domain.ErrNotSupported)
+}
+func (stubSessionRepo) ListNeighbors(_ context.Context, _ string, _ int, _, _ int) ([]domain.Memory, error) {
+	return nil, fmt.Errorf("session neighbors: %w", domain.ErrNotSupported)
 }

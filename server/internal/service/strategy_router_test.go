@@ -10,11 +10,11 @@ import (
 func TestResolveStep1_HighConfidence_SingleStrategy(t *testing.T) {
 	s1 := step1Result{
 		Aggregations: []classAggregation{
-			{Class: domain.StrategyExactEventTemporal, ClassScore: 0.030, SupportCount: 3, DualLegSupport: true, TopIDs: []int64{1, 2}},
-			{Class: domain.StrategyDefaultMixed, ClassScore: 0.010, SupportCount: 1, TopIDs: []int64{5}},
+			{Class: domain.StrategyExactEventTemporal, ClassScore: 0.82, BestScore: 0.88, BestVecScore: 0.88, SupportCount: 3, VecSupportCount: 3, FTSSupportCount: 1, DualLegSupport: true, TopIDs: []int64{1, 2, 3}},
+			{Class: domain.StrategyDefaultMixed, ClassScore: 0.55, BestScore: 0.58, BestVecScore: 0.58, SupportCount: 1, VecSupportCount: 1, TopIDs: []int64{5}},
 		},
 	}
-	decision, resolved := resolveStep1(s1)
+	decision, resolved := resolveStep1("When did Melanie run a charity race?", s1)
 	if !resolved {
 		t.Fatal("expected resolved=true for high-confidence single strategy")
 	}
@@ -34,20 +34,74 @@ func TestResolveStep1_HighConfidence_SingleStrategy(t *testing.T) {
 
 func TestResolveStep1_NoMatches_Unresolved(t *testing.T) {
 	s1 := step1Result{Aggregations: nil}
-	_, resolved := resolveStep1(s1)
+	_, resolved := resolveStep1("test", s1)
 	if resolved {
 		t.Fatal("expected resolved=false when no aggregations")
+	}
+}
+
+func TestResolveStep1_WeakSimilarity_Unresolved(t *testing.T) {
+	s1 := step1Result{
+		Aggregations: []classAggregation{
+			{Class: domain.StrategyExactEventTemporal, ClassScore: 0.45, BestScore: 0.50, BestVecScore: 0.50, SupportCount: 3, VecSupportCount: 3, FTSSupportCount: 1, DualLegSupport: true, TopIDs: []int64{1, 2}},
+		},
+	}
+	decision, resolved := resolveStep1("When did Melanie run a charity race?", s1)
+	if resolved {
+		t.Fatal("expected resolved=false when BestScore < strategyMinAbsoluteScore")
+	}
+	if decision.FallbackCause != "weak_similarity" {
+		t.Errorf("expected cause=weak_similarity, got %s", decision.FallbackCause)
+	}
+}
+
+func TestResolveStep1_FTSOnly_Unresolved(t *testing.T) {
+	s1 := step1Result{
+		Aggregations: []classAggregation{
+			{Class: domain.StrategyExactEventTemporal, ClassScore: 1.0, BestScore: 1.0, BestFTSScore: 4.0, SupportCount: 1, FTSSupportCount: 1, TopIDs: []int64{1}},
+		},
+	}
+	decision, resolved := resolveStep1("When did Melanie run a charity race?", s1)
+	if resolved {
+		t.Fatal("expected resolved=false when top class has only FTS support")
+	}
+	if decision.FallbackCause != "fts_only_match" {
+		t.Fatalf("expected cause=fts_only_match, got %s", decision.FallbackCause)
+	}
+}
+
+func TestResolveStep1_AttributeInference_UnresolvedForLLMStructuredOutput(t *testing.T) {
+	s1 := step1Result{
+		Aggregations: []classAggregation{
+			{
+				Class:           domain.StrategyAttributeInference,
+				ClassScore:      0.86,
+				BestScore:       0.88,
+				SupportCount:    1,
+				FTSSupportCount: 1,
+				TopIDs:          []int64{1},
+				AnswerFamily:    "education",
+				TopPatterns:     []string{"What might X's degree be in?"},
+			},
+		},
+	}
+	decision, resolved := resolveStep1("What might John's degree be in?", s1)
+	if resolved {
+		t.Fatal("expected attribute_inference to remain unresolved in step1")
+	}
+	if decision.FallbackCause != "needs_llm_entity" {
+		t.Fatalf("expected cause=needs_llm_entity, got %s", decision.FallbackCause)
 	}
 }
 
 func TestResolveStep1_LowConfidence_Unresolved(t *testing.T) {
 	s1 := step1Result{
 		Aggregations: []classAggregation{
-			{Class: domain.StrategySetAggregation, ClassScore: 0.011, SupportCount: 1, TopIDs: []int64{1}},
-			{Class: domain.StrategyCountQuery, ClassScore: 0.011, SupportCount: 1, TopIDs: []int64{2}},
+			{Class: domain.StrategySetAggregation, ClassScore: 0.70, BestScore: 0.72, BestVecScore: 0.72, SupportCount: 1, VecSupportCount: 1, TopIDs: []int64{1}},
+			{Class: domain.StrategyCountQuery, ClassScore: 0.70, BestScore: 0.71, BestVecScore: 0.71, SupportCount: 1, VecSupportCount: 1, TopIDs: []int64{2}},
 		},
 	}
-	_, resolved := resolveStep1(s1)
+	_, resolved := resolveStep1("What events and counts apply here?", s1)
 	if resolved {
 		t.Fatal("expected resolved=false when scores are equal without high support")
 	}
@@ -56,11 +110,11 @@ func TestResolveStep1_LowConfidence_Unresolved(t *testing.T) {
 func TestResolveStep1_MediumConfidence_FanoutPair(t *testing.T) {
 	s1 := step1Result{
 		Aggregations: []classAggregation{
-			{Class: domain.StrategySetAggregation, ClassScore: 0.025, SupportCount: 1, TopIDs: []int64{1}},
-			{Class: domain.StrategyCountQuery, ClassScore: 0.020, SupportCount: 1, TopIDs: []int64{2}},
+			{Class: domain.StrategySetAggregation, ClassScore: 0.80, BestScore: 0.85, BestVecScore: 0.85, SupportCount: 2, VecSupportCount: 2, TopIDs: []int64{1, 2}},
+			{Class: domain.StrategyCountQuery, ClassScore: 0.65, BestScore: 0.68, BestVecScore: 0.68, SupportCount: 1, VecSupportCount: 1, TopIDs: []int64{3}},
 		},
 	}
-	decision, resolved := resolveStep1(s1)
+	decision, resolved := resolveStep1("How many times has Melanie gone to the beach in 2023?", s1)
 	if !resolved {
 		t.Fatal("expected resolved=true for medium-confidence compatible pair")
 	}
@@ -81,11 +135,11 @@ func TestResolveStep1_MediumConfidence_FanoutPair(t *testing.T) {
 func TestResolveStep1_IncompatiblePair_NoFanout(t *testing.T) {
 	s1 := step1Result{
 		Aggregations: []classAggregation{
-			{Class: domain.StrategyExactEventTemporal, ClassScore: 0.025, SupportCount: 1, TopIDs: []int64{1}},
-			{Class: domain.StrategySetAggregation, ClassScore: 0.020, SupportCount: 1, TopIDs: []int64{2}},
+			{Class: domain.StrategyExactEventTemporal, ClassScore: 0.82, BestScore: 0.88, BestVecScore: 0.88, SupportCount: 2, VecSupportCount: 2, TopIDs: []int64{1, 2}},
+			{Class: domain.StrategySetAggregation, ClassScore: 0.65, BestScore: 0.68, BestVecScore: 0.68, SupportCount: 1, VecSupportCount: 1, TopIDs: []int64{3}},
 		},
 	}
-	decision, resolved := resolveStep1(s1)
+	decision, resolved := resolveStep1("When did Melanie run a charity race?", s1)
 	if !resolved {
 		t.Fatal("expected resolved=true")
 	}
@@ -94,6 +148,80 @@ func TestResolveStep1_IncompatiblePair_NoFanout(t *testing.T) {
 	}
 	if decision.ResolutionMode != domain.ResolutionModeSingle {
 		t.Errorf("expected mode=single, got %s", decision.ResolutionMode)
+	}
+}
+
+func TestResolveStep1_ExactEntityLookup_UnresolvedForLLMStructuredOutput(t *testing.T) {
+	s1 := step1Result{
+		Aggregations: []classAggregation{
+			{
+				Class:           domain.StrategyExactEntityLookup,
+				ClassScore:      0.90,
+				BestScore:       0.92,
+				BestVecScore:    0.92,
+				SupportCount:    2,
+				VecSupportCount: 2,
+				TopIDs:          []int64{1, 2},
+				AnswerFamily:    "state",
+				TopPatterns:     []string{"What state did X visit?"},
+			},
+		},
+	}
+	decision, resolved := resolveStep1("What state did Nate visit?", s1)
+	if resolved {
+		t.Fatal("expected exact_entity_lookup to remain unresolved in step1")
+	}
+	if decision.FallbackCause != "needs_llm_entity" {
+		t.Fatalf("expected cause=needs_llm_entity, got %s", decision.FallbackCause)
+	}
+}
+
+func TestResolveStep1_RelationalAttributeInference_UnresolvedForLLMStructuredOutput(t *testing.T) {
+	s1 := step1Result{
+		Aggregations: []classAggregation{
+			{
+				Class:           domain.StrategyAttributeInference,
+				ClassScore:      0.88,
+				BestScore:       0.90,
+				SupportCount:    2,
+				FTSSupportCount: 2,
+				TopIDs:          []int64{1, 2},
+				AnswerFamily:    "traits",
+				TopPatterns:     []string{"What personality traits might Y say X has?"},
+			},
+		},
+	}
+	decision, resolved := resolveStep1("What personality traits might Melanie say Caroline has?", s1)
+	if resolved {
+		t.Fatal("expected relational attribute_inference to remain unresolved in step1")
+	}
+	if decision.FallbackCause != "needs_llm_entity" {
+		t.Fatalf("expected cause=needs_llm_entity, got %s", decision.FallbackCause)
+	}
+}
+
+func TestResolveStep1_ExactEntityLookup_PronounStillFallsBackToLLM(t *testing.T) {
+	s1 := step1Result{
+		Aggregations: []classAggregation{
+			{
+				Class:           domain.StrategyExactEntityLookup,
+				ClassScore:      0.90,
+				BestScore:       0.92,
+				BestVecScore:    0.92,
+				SupportCount:    2,
+				VecSupportCount: 2,
+				TopIDs:          []int64{1, 2},
+				AnswerFamily:    "state",
+				TopPatterns:     []string{"What state did X visit?"},
+			},
+		},
+	}
+	decision, resolved := resolveStep1("What state did he visit?", s1)
+	if resolved {
+		t.Fatal("expected unresolved when structured exact lookup needs LLM output")
+	}
+	if decision.FallbackCause != "needs_llm_entity" {
+		t.Fatalf("expected cause=needs_llm_entity, got %s", decision.FallbackCause)
 	}
 }
 
@@ -114,6 +242,156 @@ func TestResolveStep2_HighConfidence(t *testing.T) {
 	}
 	if len(decision.Strategies) != 1 || decision.Strategies[0].Name != domain.StrategyExactEventTemporal {
 		t.Errorf("expected exact_event_temporal from LLM, got %v", decision.Strategies)
+	}
+}
+
+func TestSanitizeLLMStrategyOutput_TableDriven(t *testing.T) {
+	tests := []struct {
+		name           string
+		in             llmStrategyOutput
+		wantStrategies []string
+		wantFamily     string
+	}{
+		{
+			name: "empty family downgrades",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "nate",
+				AnswerFamily: "",
+			},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantFamily:     "",
+		},
+		{
+			name: "broad location downgrades to default mixed",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "nate",
+				AnswerFamily: "location",
+			},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantFamily:     "location",
+		},
+		{
+			name: "country upgrades to exact entity lookup",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "jolene",
+				AnswerFamily: "country",
+			},
+			wantStrategies: []string{domain.StrategyExactEntityLookup},
+			wantFamily:     "country",
+		},
+		{
+			name: "singular title downgrades",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "deb",
+				AnswerFamily: "title",
+			},
+			wantStrategies: []string{domain.StrategyExactEntityLookup},
+			wantFamily:     "title",
+		},
+		{
+			name: "plural names downgrade",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "melanie",
+				AnswerFamily: "names",
+			},
+			wantStrategies: []string{domain.StrategyExactEntityLookup},
+			wantFamily:     "names",
+		},
+		{
+			name: "singular item downgrades",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "caroline",
+				AnswerFamily: "item",
+			},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantFamily:     "item",
+		},
+		{
+			name: "event downgrades",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "caroline",
+				AnswerFamily: "event",
+			},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantFamily:     "event",
+		},
+		{
+			name: "dedupe after downgrade",
+			in: llmStrategyOutput{
+				Strategies: []domain.RoutedStrategy{
+					{Name: domain.StrategyAttributeInference, Confidence: 0.90},
+					{Name: domain.StrategyDefaultMixed, Confidence: 0.85},
+				},
+				Entity:       "nate",
+				AnswerFamily: "location",
+			},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantFamily:     "location",
+		},
+		{
+			name: "default mixed exact family upgrades",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyDefaultMixed, Confidence: 0.88}},
+				Entity:       "jolene",
+				AnswerFamily: "country",
+			},
+			wantStrategies: []string{domain.StrategyExactEntityLookup},
+			wantFamily:     "country",
+		},
+		{
+			name: "direct exact entity lookup broad family downgrades",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyExactEntityLookup, Confidence: 0.88}},
+				Entity:       "jolene",
+				AnswerFamily: "age",
+			},
+			wantStrategies: []string{domain.StrategyDefaultMixed},
+			wantFamily:     "age",
+		},
+		{
+			name: "direct exact entity lookup exact family stays",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyExactEntityLookup, Confidence: 0.88}},
+				Entity:       "deb",
+				AnswerFamily: "game",
+			},
+			wantStrategies: []string{domain.StrategyExactEntityLookup},
+			wantFamily:     "game",
+		},
+		{
+			name: "traits stay inference",
+			in: llmStrategyOutput{
+				Strategies:   []domain.RoutedStrategy{{Name: domain.StrategyAttributeInference, Confidence: 0.90}},
+				Entity:       "caroline",
+				AnswerFamily: "personality traits",
+			},
+			wantStrategies: []string{domain.StrategyAttributeInference},
+			wantFamily:     "personality_traits",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeLLMStrategyOutput(tt.in)
+			if got.AnswerFamily != tt.wantFamily {
+				t.Fatalf("expected normalized answer family %q, got %q", tt.wantFamily, got.AnswerFamily)
+			}
+			if len(got.Strategies) != len(tt.wantStrategies) {
+				t.Fatalf("expected %d strategies, got %d (%v)", len(tt.wantStrategies), len(got.Strategies), got.Strategies)
+			}
+			for i, want := range tt.wantStrategies {
+				if got.Strategies[i].Name != want {
+					t.Fatalf("expected strategy[%d]=%s, got %s", i, want, got.Strategies[i].Name)
+				}
+			}
+		})
 	}
 }
 
@@ -187,6 +465,7 @@ type stubProtoRepo struct {
 func (s *stubProtoRepo) VectorSearch(_ context.Context, _ string, _ int) ([]domain.RecallStrategyPrototypeMatch, error) {
 	return s.vecResults, s.vecErr
 }
+
 func (s *stubProtoRepo) FTSSearch(_ context.Context, _ string, _ int) ([]domain.RecallStrategyPrototypeMatch, error) {
 	return s.ftsResults, s.ftsErr
 }
@@ -238,5 +517,65 @@ func TestDetect_StrongPrototypeMatch_ResolvesInStep1(t *testing.T) {
 	}
 	if decision.ResolutionSource != domain.ResolutionSourcePrototype {
 		t.Errorf("expected source=prototype, got %s", decision.ResolutionSource)
+	}
+}
+
+func TestDetect_VectorFailure_FTSOnlyMatchFallsBackWithoutLLM(t *testing.T) {
+	repo := &stubProtoRepo{
+		ftsResults: []domain.RecallStrategyPrototypeMatch{
+			{ID: 1, StrategyClass: domain.StrategyExactEventTemporal, Score: 5.0},
+			{ID: 2, StrategyClass: domain.StrategyExactEventTemporal, Score: 4.0},
+		},
+		vecErr: context.DeadlineExceeded,
+	}
+	router := NewRecallStrategyRouterService(repo, nil, "auto-model")
+	decision, err := router.Detect(context.Background(), StrategyRouterInput{Query: "When did Melanie run a charity race?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !decision.IsDefault() {
+		t.Fatalf("expected default fallback for FTS-only structured match, got %v", decision.Strategies)
+	}
+	if decision.FallbackCause != "llm_error" {
+		t.Fatalf("expected cause=llm_error, got %s", decision.FallbackCause)
+	}
+}
+
+func TestDetect_FTSFailure_VectorMatchStillResolvesInStep1(t *testing.T) {
+	repo := &stubProtoRepo{
+		vecResults: []domain.RecallStrategyPrototypeMatch{
+			{ID: 1, StrategyClass: domain.StrategySetAggregation, Score: 0.90},
+			{ID: 2, StrategyClass: domain.StrategySetAggregation, Score: 0.82},
+		},
+		ftsErr: context.DeadlineExceeded,
+	}
+	router := NewRecallStrategyRouterService(repo, nil, "auto-model")
+	decision, err := router.Detect(context.Background(), StrategyRouterInput{Query: "What events has Caroline participated in?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.PrimaryStrategy() != domain.StrategySetAggregation {
+		t.Fatalf("expected set_aggregation, got %s", decision.PrimaryStrategy())
+	}
+	if decision.ResolutionSource != domain.ResolutionSourcePrototype {
+		t.Fatalf("expected source=prototype, got %s", decision.ResolutionSource)
+	}
+}
+
+func TestDetect_BothLegsFail_FallsBackWithoutLLM(t *testing.T) {
+	repo := &stubProtoRepo{
+		vecErr: context.DeadlineExceeded,
+		ftsErr: context.Canceled,
+	}
+	router := NewRecallStrategyRouterService(repo, nil, "auto-model")
+	decision, err := router.Detect(context.Background(), StrategyRouterInput{Query: "What is this new query pattern?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !decision.IsDefault() {
+		t.Fatalf("expected default fallback, got %v", decision.Strategies)
+	}
+	if decision.FallbackCause != "step1_error" {
+		t.Fatalf("expected cause=step1_error, got %s", decision.FallbackCause)
 	}
 }

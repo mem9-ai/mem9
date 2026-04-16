@@ -96,6 +96,8 @@ type testSessionRepo struct {
 	keywordSearchResults []domain.Memory
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	lastKeywordFilter    domain.MemoryFilter
+	neighborResults      []domain.Memory
+	neighborResultsBySeq map[int][]domain.Memory
 }
 
 func (s *testSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Session) error {
@@ -115,12 +117,21 @@ func (s *testSessionRepo) PatchTags(_ context.Context, sessionID, hash string, t
 func (s *testSessionRepo) AutoVectorSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
 	return nil, nil
 }
+func (s *testSessionRepo) AutoVectorSearchInSessionSet(context.Context, string, domain.MemoryFilter, []string, int) ([]domain.Memory, error) {
+	return nil, nil
+}
 
 func (s *testSessionRepo) VectorSearch(context.Context, []float32, domain.MemoryFilter, int) ([]domain.Memory, error) {
 	return nil, nil
 }
+func (s *testSessionRepo) VectorSearchInSessionSet(context.Context, []float32, domain.MemoryFilter, []string, int) ([]domain.Memory, error) {
+	return nil, nil
+}
 
 func (s *testSessionRepo) FTSSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
+	return nil, nil
+}
+func (s *testSessionRepo) FTSSearchInSessionSet(context.Context, string, domain.MemoryFilter, []string, int) ([]domain.Memory, error) {
 	return nil, nil
 }
 
@@ -131,21 +142,62 @@ func (s *testSessionRepo) KeywordSearch(ctx context.Context, query string, filte
 	}
 	return append([]domain.Memory(nil), s.keywordSearchResults...), nil
 }
+func (s *testSessionRepo) KeywordSearchInSessionSet(ctx context.Context, query string, filter domain.MemoryFilter, sessionIDs []string, limit int) ([]domain.Memory, error) {
+	if filter.SessionID == "" && len(sessionIDs) > 0 {
+		filter.SessionID = sessionIDs[0]
+	}
+	return s.KeywordSearch(ctx, query, filter, limit)
+}
 func (s *testSessionRepo) FTSAvailable() bool { return false }
 func (s *testSessionRepo) ListBySessionIDs(context.Context, []string, int) ([]*domain.Session, error) {
 	return nil, nil
+}
+func (s *testSessionRepo) ListNeighbors(_ context.Context, _ string, seq int, _, _ int) ([]domain.Memory, error) {
+	if s.neighborResultsBySeq != nil {
+		if rows, ok := s.neighborResultsBySeq[seq]; ok {
+			return append([]domain.Memory(nil), rows...), nil
+		}
+	}
+	return append([]domain.Memory(nil), s.neighborResults...), nil
+}
+
+type testLinkRepo struct {
+	sessionsByMemory map[string][]string
+}
+
+func (r *testLinkRepo) Link(context.Context, string, string) error { return nil }
+func (r *testLinkRepo) MemoriesBySession(context.Context, string, int) ([]string, error) {
+	return nil, nil
+}
+func (r *testLinkRepo) SessionsByMemory(_ context.Context, memoryID string, limit int) ([]string, error) {
+	if r == nil {
+		return nil, nil
+	}
+	ids := append([]string(nil), r.sessionsByMemory[memoryID]...)
+	if limit > 0 && len(ids) > limit {
+		ids = ids[:limit]
+	}
+	return ids, nil
 }
 
 func intPtr(v int) *int {
 	return &v
 }
 
+func floatPtr(v float64) *float64 {
+	return &v
+}
+
 // newTestServer creates a Server with pre-populated svcCache for testing.
 func newTestServer(memRepo *testMemoryRepo, sessRepo *testSessionRepo) *Server {
+	return newTestServerWithLinks(memRepo, sessRepo, nil)
+}
+
+func newTestServerWithLinks(memRepo *testMemoryRepo, sessRepo *testSessionRepo, linkRepo *testLinkRepo) *Server {
 	srv := NewServer(nil, nil, "", nil, nil, "", false, service.ModeSmart, "", slog.Default())
 	svc := resolvedSvc{
-		memory:  service.NewMemoryService(memRepo, nil, nil, "", service.ModeSmart),
-		ingest:  service.NewIngestService(memRepo, nil, nil, "", service.ModeSmart),
+		memory:  service.NewMemoryServiceWithLinks(memRepo, linkRepo, nil, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestServiceWithLinks(memRepo, linkRepo, nil, nil, "", service.ModeSmart),
 		session: service.NewSessionService(sessRepo, nil, ""),
 	}
 	// Pre-populate svcCache so resolveServices returns our test services.
@@ -1070,5 +1122,439 @@ func TestListMemories_SinglePoolRecall_NormalizesChineseRelativeQuery(t *testing
 	}
 	if sessRepo.lastKeywordFilter.Query != expected {
 		t.Fatalf("session filter query = %q, want %q", sessRepo.lastKeywordFilter.Query, expected)
+	}
+}
+
+func TestListMemories_StrategyDefaultMixed_UsesBroadMixedPath(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"strategies":[{"name":"default_mixed","confidence":0.85}],"entity":"john","answer_family":"traits"}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: llmServer.URL, Model: "test-model"})
+
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			switch filter.MemoryType {
+			case string(domain.TypePinned):
+				return nil, nil
+			case string(domain.TypeInsight):
+				return []domain.Memory{
+					{ID: "m1", Content: `"Under Armour"`, MemoryType: domain.TypeInsight, UpdatedAt: now, State: domain.StateActive},
+				}, nil
+			case "":
+				return []domain.Memory{
+					{ID: "m1", Content: `"Under Armour"`, MemoryType: domain.TypeInsight, UpdatedAt: now, State: domain.StateActive},
+				}, nil
+			default:
+				return nil, nil
+			}
+		},
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{})
+	srv.strategyRouter = service.NewRecallStrategyRouterService(nil, llmClient, "")
+
+	req := makeRequest(t, http.MethodGet, "/memories?q=what%20company%20does%20john%20like&limit=10", nil)
+	rr := httptest.NewRecorder()
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) != 1 || resp.Memories[0].ID != "m1" {
+		t.Fatalf("expected broad mixed default path result, got %#v", resp.Memories)
+	}
+}
+
+func TestListMemories_RoutedExactLookup_FallsBackToDefaultMixedOnSearchError(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"strategies":[{"name":"exact_entity_lookup","confidence":0.90}],"entity":"john","answer_family":"company"}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: llmServer.URL, Model: "test-model"})
+
+	now := time.Now()
+	callCount := 0
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			callCount++
+			if callCount == 1 {
+				return nil, errors.New("routed search failed")
+			}
+			return []domain.Memory{
+				{ID: "fallback", Content: "John likes Under Armour.", MemoryType: domain.TypeInsight, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{})
+	srv.strategyRouter = service.NewRecallStrategyRouterService(nil, llmClient, "")
+
+	req := makeRequest(t, http.MethodGet, "/memories?q=what%20company%20does%20john%20like&limit=10", nil)
+	rr := httptest.NewRecorder()
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if callCount < 2 {
+		t.Fatalf("expected routed path plus fallback search, got %d calls", callCount)
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) != 1 || resp.Memories[0].ID != "fallback" {
+		t.Fatalf("expected fallback default-mixed result, got %#v", resp.Memories)
+	}
+}
+
+func TestProvenanceSessionGroundingSearch_UsesLinkedSessions(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			if filter.SessionID != "sess-1" {
+				return nil, nil
+			}
+			return []domain.Memory{
+				{
+					ID:         "session-1",
+					Content:    "John said his favorite brand is Under Armour.",
+					MemoryType: domain.TypeSession,
+					SessionID:  "sess-1",
+					UpdatedAt:  now.Add(time.Minute),
+					State:      domain.StateActive,
+					Score:      floatPtr(0.84),
+				},
+			}, nil
+		},
+	}
+	linkRepo := &testLinkRepo{
+		sessionsByMemory: map[string][]string{
+			"insight-1": {"sess-1"},
+		},
+	}
+
+	srv := newTestServerWithLinks(memRepo, sessRepo, linkRepo)
+	auth := &domain.AuthInfo{AgentName: "test-agent"}
+	svc := srv.resolveServices(auth)
+	filter := domain.MemoryFilter{
+		Query: "what brand does john like",
+		Limit: 10,
+	}
+	primary := []domain.Memory{
+		{
+			ID:         "insight-1",
+			Content:    "Under Armour",
+			MemoryType: domain.TypeInsight,
+			UpdatedAt:  now,
+			State:      domain.StateActive,
+		},
+	}
+
+	got, useFallback, err := srv.provenanceSessionGroundingSearch(context.Background(), auth, svc, primary, filter)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if useFallback {
+		t.Fatal("expected linked-session routing to avoid fallback")
+	}
+	if len(got) == 0 {
+		t.Fatal("expected linked session evidence")
+	}
+	if got[0].ID != "session-1" {
+		t.Fatalf("expected linked session evidence first, got %#v", got)
+	}
+}
+
+func TestRerankForExactAnswerFamily_PrefersCanonicalName(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "desc", Content: "A card game with different colored cards and numbers.", MemoryType: domain.TypeSession, Score: floatPtr(1.0)},
+		{ID: "canon", Content: "James played UNO with John.", MemoryType: domain.TypeSession, Score: floatPtr(0.9)},
+	}
+
+	got := rerankForExactAnswerFamily("What is the game with different colored cards that John was talking about?", mems, "james", "game")
+	if got[0].ID != "canon" {
+		t.Fatalf("expected canonical named answer to rank first, got %q", got[0].ID)
+	}
+}
+
+func TestRerankGroundedMemories_LeavesGeneralQueriesUntouched(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "m1", Content: "John enjoys hiking with friends.", MemoryType: domain.TypeInsight},
+		{ID: "m2", Content: "John likes outdoor activities.", MemoryType: domain.TypeInsight},
+		{ID: "s1", Content: "[dia:D1:3] John bought Under Armour boots last week.", MemoryType: domain.TypeSession},
+	}
+
+	got := rerankGroundedMemories("tell me about john", mems)
+	if len(got) != len(mems) {
+		t.Fatalf("expected %d memories, got %d", len(mems), len(got))
+	}
+	for i := range got {
+		if got[i].ID != mems[i].ID {
+			t.Fatalf("expected order to stay unchanged, got %q at slot %d", got[i].ID, i)
+		}
+	}
+}
+
+func TestRerankGroundedMemories_PrefersCanonicalEntityForExactQuery(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "m1", Content: "John likes a renowned outdoor gear company.", MemoryType: domain.TypeInsight},
+		{ID: "m2", Content: "John bought Under Armour boots last week.", MemoryType: domain.TypeSession},
+		{ID: "m3", Content: "John likes outdoor gear in general.", MemoryType: domain.TypeInsight},
+	}
+
+	got := rerankGroundedMemories("what company does john like", mems)
+	if got[0].ID != "m2" {
+		t.Fatalf("expected canonical named answer to move first, got %q", got[0].ID)
+	}
+}
+
+func TestRerankGroundedMemories_PrefersQuantifiedEvidenceForCountQuery(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "m1", Content: "Melanie often goes to the beach.", MemoryType: domain.TypeInsight},
+		{ID: "m2", Content: "Melanie went to the beach 3 times in 2023.", MemoryType: domain.TypeSession},
+		{ID: "m3", Content: "Melanie enjoys beach trips with friends.", MemoryType: domain.TypeInsight},
+	}
+
+	got := rerankGroundedMemories("how many times has melanie gone to the beach in 2023", mems)
+	if got[0].ID != "m2" {
+		t.Fatalf("expected quantified evidence to move first, got %q", got[0].ID)
+	}
+}
+
+func TestBuildExactEntityLookupQuery_UsesFamilyActionTerms(t *testing.T) {
+	got := buildExactEntityLookupQuery("james", "game")
+	if !strings.Contains(got, "james") || !strings.Contains(got, "played") {
+		t.Fatalf("expected exact lookup query to include entity and exact-family action term, got %q", got)
+	}
+}
+
+func TestBuildEntityContextQuery_UsesCountAndEventFamilyTerms(t *testing.T) {
+	counts := buildEntityContextQuery("melanie", "counts")
+	if !strings.Contains(counts, "melanie") || !strings.Contains(counts, "times") {
+		t.Fatalf("expected count query to include entity and count cue, got %q", counts)
+	}
+
+	events := buildEntityContextQuery("caroline", "events")
+	if !strings.Contains(events, "caroline") || !strings.Contains(events, "attended") {
+		t.Fatalf("expected event query to include entity and event cue, got %q", events)
+	}
+}
+
+func TestBuildEntityContextQuery_UsesSetAggregationGameTerms(t *testing.T) {
+	got := buildEntityContextQuery("nate", "games")
+	if !strings.Contains(got, "nate") || !strings.Contains(got, "played") {
+		t.Fatalf("expected games query to include entity and list-style game cue, got %q", got)
+	}
+	if strings.Contains(got, "named") {
+		t.Fatalf("expected games query to avoid exact-lookup style term 'named', got %q", got)
+	}
+}
+
+func TestNormalizeCountRecallContent_AppendsAnswerCount(t *testing.T) {
+	got := normalizeCountRecallContent("Andrew has two dogs named Toby and Buddy.")
+	if !strings.Contains(got, "[answer-count: 2]") {
+		t.Fatalf("expected normalized answer-count suffix, got %q", got)
+	}
+}
+
+func TestNormalizeRecallResponseMemories_CountQueryAddsAnswerCountHint(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "m1", Content: "Andrew has two dogs named Toby and Buddy.", MemoryType: domain.TypeInsight},
+	}
+
+	normalizeRecallResponseMemories("How many dogs does Andrew have?", mems)
+
+	if !strings.Contains(mems[0].Content, "[answer-count: 2]") {
+		t.Fatalf("expected count normalization in response content, got %q", mems[0].Content)
+	}
+}
+
+func TestStrategyRetrievalFilter_AugmentsSupportedStrategiesOnly(t *testing.T) {
+	base := domain.MemoryFilter{Query: "What events has Caroline participated in?"}
+
+	got := strategyRetrievalFilter(base, domain.StrategySetAggregation, "caroline")
+	if got.Query != "caroline What events has Caroline participated in?" {
+		t.Fatalf("expected augmented retrieval query, got %q", got.Query)
+	}
+	if got.RawQuery != base.Query {
+		t.Fatalf("expected raw query preserved, got %q", got.RawQuery)
+	}
+	if got.RerankerQuery() != base.Query {
+		t.Fatalf("expected reranker query to use raw query, got %q", got.RerankerQuery())
+	}
+
+	unchanged := strategyRetrievalFilter(base, domain.StrategyAttributeInference, "caroline")
+	if unchanged.Query != base.Query || unchanged.RawQuery != "" {
+		t.Fatalf("expected unsupported strategy to stay unchanged, got %+v", unchanged)
+	}
+}
+
+func TestRerankForAttributeInference_PenalizesQuestionOnlyRows(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "question", Content: "[date:3:56 pm on 6 June, 2023] [speaker:Jolene] Why did you decide that?", MemoryType: domain.TypeSession, Score: floatPtr(0.95)},
+		{ID: "evidence", Content: "Caroline advocates for LGBTQ rights and works with local groups on policy campaigns.", MemoryType: domain.TypeSession, Score: floatPtr(0.9)},
+	}
+
+	got := rerankForAttributeInference("What would Caroline's political leaning likely be?", mems, "caroline", "political_leaning")
+	if got[0].ID != "evidence" {
+		t.Fatalf("expected declarative evidence row to rank first, got %q", got[0].ID)
+	}
+}
+
+func TestRerankForExactEventTemporal_PrefersDateBearingRows(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "generic", Content: "Melanie enjoys charity work and running.", MemoryType: domain.TypeInsight, Score: floatPtr(0.96)},
+		{ID: "dated", Content: "Melanie ran a charity race on May 20, 2023.", MemoryType: domain.TypeSession, Score: floatPtr(0.88)},
+	}
+
+	got := rerankForExactEventTemporal("When did Melanie run a charity race?", mems, "melanie")
+	if got[0].ID != "dated" {
+		t.Fatalf("expected date-bearing row to rank first, got %q", got[0].ID)
+	}
+}
+
+func TestRerankForSetAggregation_PrefersConcreteItemRows(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "generic", Content: "Caroline enjoys many community activities.", MemoryType: domain.TypeInsight, Score: floatPtr(0.95)},
+		{ID: "concrete", Content: "Caroline attended a pride parade and joined a community conference.", MemoryType: domain.TypeSession, Score: floatPtr(0.82)},
+	}
+
+	got := rerankForSetAggregation("What events has Caroline participated in?", mems, "caroline", "events")
+	if got[0].ID != "concrete" {
+		t.Fatalf("expected concrete set evidence first, got %q", got[0].ID)
+	}
+}
+
+func TestRerankForSetAggregation_UsesActivitiesFamilyKeywords(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "generic", Content: "Melanie enjoys many activities with her family.", MemoryType: domain.TypeInsight, Score: floatPtr(0.95)},
+		{ID: "activity", Content: "Melanie went hiking and camping with her family.", MemoryType: domain.TypeSession, Score: floatPtr(0.82)},
+	}
+
+	got := rerankForSetAggregation("What activities does Melanie partake in?", mems, "melanie", "activities")
+	if got[0].ID != "activity" {
+		t.Fatalf("expected family-keyword activity row first, got %q", got[0].ID)
+	}
+}
+
+func TestRerankForCountQuery_PrefersQuantifiedRows(t *testing.T) {
+	mems := []domain.Memory{
+		{ID: "generic", Content: "Melanie often goes to the beach.", MemoryType: domain.TypeInsight, Score: floatPtr(0.9)},
+		{ID: "counted", Content: "Melanie went to the beach 3 times in 2023.", MemoryType: domain.TypeSession, Score: floatPtr(0.82)},
+	}
+
+	got := rerankForCountQuery("How many times has Melanie gone to the beach in 2023?", mems, "melanie")
+	if got[0].ID != "counted" {
+		t.Fatalf("expected quantified evidence first, got %q", got[0].ID)
+	}
+}
+
+func TestListMemories_AttributeInference_ThreadChase_BypassesTopSeedLimit(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"strategies":[{"name":"attribute_inference","confidence":0.86}],"entity":"john","answer_family":"career"}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	metaSeed1, _ := json.Marshal(map[string]any{"seq": 1, "role": "assistant", "content_type": "text"})
+	metaSeed2, _ := json.Marshal(map[string]any{"seq": 2, "role": "assistant", "content_type": "text"})
+	metaQuestion, _ := json.Marshal(map[string]any{"seq": 18, "role": "user", "content_type": "text"})
+	metaAnswer, _ := json.Marshal(map[string]any{"seq": 19, "role": "assistant", "content_type": "text"})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			if filter.Query == "What could John do after basketball career?" {
+				return []domain.Memory{
+					{ID: "seed-1", Content: "John likes training.", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.95), Metadata: metaSeed1},
+					{ID: "question", Content: "What are your thoughts on life after basketball?", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.92), Metadata: metaQuestion},
+					{ID: "seed-2", Content: "John enjoys teamwork.", MemoryType: domain.TypeSession, SessionID: "session-123", Score: floatPtr(0.90), Metadata: metaSeed2},
+				}, nil
+			}
+			return nil, nil
+		},
+		neighborResultsBySeq: map[int][]domain.Memory{
+			18: {
+				{ID: "question", Content: "What are your thoughts on life after basketball?", MemoryType: domain.TypeSession, SessionID: "session-123", Metadata: metaQuestion},
+				{ID: "answer", Content: "John could start a foundation and do charity work.", MemoryType: domain.TypeSession, SessionID: "session-123", Metadata: metaAnswer},
+			},
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+	srv.strategyRouter = service.NewRecallStrategyRouterService(nil, llmClient, "")
+
+	req := makeRequest(t, http.MethodGet, "/memories?q=What+could+John+do+after+basketball+career%3F&session_id=session-123&limit=3", nil)
+	rr := httptest.NewRecorder()
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	foundAnswer := false
+	for _, mem := range resp.Memories {
+		if mem.ID == "answer" {
+			foundAnswer = true
+		}
+	}
+	if !foundAnswer {
+		t.Fatalf("expected thread-chased answer row in results, got %#v", resp.Memories)
+	}
+}
+
+func TestMergeFanoutResults_Dedup(t *testing.T) {
+	shared := domain.Memory{ID: "shared", Content: "appears in both"}
+	primary := []domain.Memory{shared, {ID: "p1", Content: "primary-only"}}
+	secondary := []domain.Memory{shared, {ID: "s1", Content: "secondary-only"}}
+
+	merged := mergeFanoutResults(primary, secondary, domain.StrategySetAggregation, domain.StrategyCountQuery, 10)
+
+	count := 0
+	for _, m := range merged {
+		if m.ID == "shared" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected shared row once, got %d", count)
 	}
 }

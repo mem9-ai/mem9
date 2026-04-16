@@ -106,6 +106,70 @@ FROM (
   SELECT 'How many people attended X''s event?', 'count_query', 'counts', 'en', 'benchmark_derived', 1, 1, 'Attendance count query'
   UNION ALL SELECT '有多少人参加了 X 的活动？', 'count_query', 'counts', 'zh', 'manual_translation', 1, 1, 'Attendance count query'
 
+  -- attribute_inference
+  UNION ALL
+  SELECT 'Would X be considered Y?', 'attribute_inference', 'boolean', 'en', 'manual', 1, 1, 'Attribute inference for modal queries'
+  UNION ALL SELECT 'X 会被认为是 Y 吗？', 'attribute_inference', 'boolean', 'zh', 'manual_translation', 1, 1, 'Attribute inference for modal queries'
+  UNION ALL
+  SELECT 'What might X''s degree be in?', 'attribute_inference', 'education', 'en', 'benchmark_derived', 1, 1, 'Inference over background evidence'
+  UNION ALL SELECT 'X 的学位可能是什么专业？', 'attribute_inference', 'education', 'zh', 'manual_translation', 1, 1, 'Inference over background evidence'
+  UNION ALL
+  SELECT 'What kind of person is X?', 'attribute_inference', 'traits', 'en', 'manual', 1, 1, 'Trait inference from multiple memories'
+  UNION ALL SELECT 'X 是什么样的人？', 'attribute_inference', 'traits', 'zh', 'manual_translation', 1, 1, 'Trait inference from multiple memories'
+  UNION ALL
+  SELECT 'What attributes describe X?', 'attribute_inference', 'traits', 'en', 'manual', 1, 1, 'Trait inference from multiple memories'
+  UNION ALL SELECT '哪些特质描述了 X？', 'attribute_inference', 'traits', 'zh', 'manual_translation', 1, 1, 'Trait inference from multiple memories'
+  UNION ALL
+  SELECT 'What personality traits might Y say X has?', 'attribute_inference', 'traits', 'en', 'benchmark_derived', 1, 1, 'Relational trait inference'
+  UNION ALL SELECT 'Y 可能会说 X 有哪些性格特质？', 'attribute_inference', 'traits', 'zh', 'manual_translation', 1, 1, 'Relational trait inference'
+  UNION ALL
+  SELECT 'What job might X pursue in the future?', 'attribute_inference', 'career', 'en', 'benchmark_derived', 1, 1, 'Career inference from goals and interests'
+  UNION ALL SELECT 'X 未来可能从事什么工作？', 'attribute_inference', 'career', 'zh', 'manual_translation', 1, 1, 'Career inference from goals and interests'
+  UNION ALL
+  SELECT 'Would X be considered religious?', 'attribute_inference', 'religion', 'en', 'benchmark_derived', 1, 1, 'Religious leaning inference'
+  UNION ALL SELECT 'X 会被认为有宗教信仰吗？', 'attribute_inference', 'religion', 'zh', 'manual_translation', 1, 1, 'Religious leaning inference'
+  UNION ALL
+  SELECT 'What might X''s financial status be?', 'attribute_inference', 'financial_status', 'en', 'benchmark_derived', 1, 1, 'Financial status inference'
+  UNION ALL SELECT 'X 的经济状况可能如何？', 'attribute_inference', 'financial_status', 'zh', 'manual_translation', 1, 1, 'Financial status inference'
+  UNION ALL
+  SELECT 'What underlying condition might X have?', 'attribute_inference', 'health_condition', 'en', 'benchmark_derived', 1, 1, 'Health-condition inference'
+  UNION ALL SELECT 'X 可能有什么潜在健康状况？', 'attribute_inference', 'health_condition', 'zh', 'manual_translation', 1, 1, 'Health-condition inference'
+  UNION ALL
+  SELECT 'Would X be considered an ally to Y?', 'attribute_inference', 'ally_status', 'en', 'manual', 1, 1, 'Ally-status inference'
+  UNION ALL SELECT 'X 会被认为是 Y 的支持者吗？', 'attribute_inference', 'ally_status', 'zh', 'manual_translation', 1, 1, 'Ally-status inference'
+  UNION ALL
+  SELECT 'How might X''s experiences influence Y?', 'attribute_inference', 'traits', 'en', 'manual', 1, 1, 'Experience-driven inference'
+  UNION ALL SELECT 'X 的经历可能如何影响 Y？', 'attribute_inference', 'traits', 'zh', 'manual_translation', 1, 1, 'Experience-driven inference'
+
+  -- exact_entity_lookup
+  UNION ALL
+  SELECT 'What state did X visit?', 'exact_entity_lookup', 'state', 'en', 'benchmark_derived', 1, 1, 'Exact canonical entity lookup for state answers'
+  UNION ALL SELECT 'X 去了哪个州？', 'exact_entity_lookup', 'state', 'zh', 'manual_translation', 1, 1, 'Exact canonical entity lookup for state answers'
+  UNION ALL
+  SELECT 'In what country was X?', 'exact_entity_lookup', 'country', 'en', 'benchmark_derived', 1, 1, 'Exact canonical entity lookup for country answers'
+  UNION ALL SELECT 'X 当时在哪个国家？', 'exact_entity_lookup', 'country', 'zh', 'manual_translation', 1, 1, 'Exact canonical entity lookup for country answers'
+  UNION ALL
+  SELECT 'What card game is X talking about?', 'exact_entity_lookup', 'game', 'en', 'benchmark_derived', 1, 1, 'Exact canonical entity lookup for game names'
+  UNION ALL SELECT 'X 在说什么卡牌游戏？', 'exact_entity_lookup', 'game', 'zh', 'manual_translation', 1, 1, 'Exact canonical entity lookup for game names'
+  UNION ALL
+  SELECT 'What board game did X mention to Y?', 'exact_entity_lookup', 'game', 'en', 'benchmark_derived', 1, 1, 'Exact canonical entity lookup for board game names'
+  UNION ALL SELECT 'X 跟 Y 提到的桌游是什么？', 'exact_entity_lookup', 'game', 'zh', 'manual_translation', 1, 1, 'Exact canonical entity lookup for board game names'
+  UNION ALL
+  SELECT 'Who is X to Y?', 'exact_entity_lookup', 'name', 'en', 'manual', 1, 1, 'Exact canonical entity lookup for relationship labels'
+  UNION ALL SELECT 'X 对 Y 来说是谁？', 'exact_entity_lookup', 'name', 'zh', 'manual_translation', 1, 1, 'Exact canonical entity lookup for relationship labels'
+  UNION ALL
+  SELECT 'Which composer does X enjoy?', 'exact_entity_lookup', 'composer', 'en', 'manual', 1, 1, 'Exact canonical entity lookup for composer names'
+  UNION ALL SELECT 'X 喜欢哪位作曲家？', 'exact_entity_lookup', 'composer', 'zh', 'manual_translation', 1, 1, 'Exact canonical entity lookup for composer names'
+  UNION ALL
+  SELECT 'What console does X own?', 'exact_entity_lookup', 'console', 'en', 'benchmark_derived', 1, 1, 'Exact canonical entity lookup for console answers'
+  UNION ALL SELECT 'X 拥有什么游戏主机？', 'exact_entity_lookup', 'console', 'zh', 'manual_translation', 1, 1, 'Exact canonical entity lookup for console answers'
+  UNION ALL
+  SELECT 'What nickname does X use for Y?', 'exact_entity_lookup', 'nickname', 'en', 'benchmark_derived', 1, 1, 'Exact canonical entity lookup for nicknames'
+  UNION ALL SELECT 'X 管 Y 叫什麽昵称？', 'exact_entity_lookup', 'nickname', 'zh', 'manual_translation', 1, 1, 'Exact canonical entity lookup for nicknames'
+  UNION ALL
+  SELECT 'Which national park are X and Y referring to?', 'exact_entity_lookup', 'national_park', 'en', 'benchmark_derived', 1, 1, 'Exact canonical entity lookup for national parks'
+  UNION ALL SELECT 'X 和 Y 提到的是哪个国家公园？', 'exact_entity_lookup', 'national_park', 'zh', 'manual_translation', 1, 1, 'Exact canonical entity lookup for national parks'
+
   -- default_mixed
   UNION ALL
   SELECT 'What is X''s job?', 'default_mixed', NULL, 'en', 'manual', 1, 1, 'Default mixed recall'

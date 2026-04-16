@@ -153,6 +153,45 @@ func (s *MemoryService) CreateWithSession(ctx context.Context, agentID, sessionI
 
 }
 
+func (s *MemoryService) RoutedSessionIDs(ctx context.Context, mems []domain.Memory, maxRoutingInsights, maxSessionsPerInsight, maxRoutedSessions int) ([]string, error) {
+	if s.links == nil || maxRoutingInsights <= 0 || maxSessionsPerInsight <= 0 || maxRoutedSessions <= 0 {
+		return nil, nil
+	}
+
+	routed := make([]string, 0, maxRoutedSessions)
+	seen := make(map[string]struct{}, maxRoutedSessions)
+	routedInsights := 0
+
+	for _, mem := range mems {
+		if mem.MemoryType != domain.TypeInsight {
+			continue
+		}
+		sessionIDs, err := s.links.SessionsByMemory(ctx, mem.ID, maxSessionsPerInsight)
+		if err != nil {
+			return nil, fmt.Errorf("memory routed session ids %s: %w", mem.ID, err)
+		}
+		routedInsights++
+		for _, sessionID := range sessionIDs {
+			if sessionID == "" {
+				continue
+			}
+			if _, ok := seen[sessionID]; ok {
+				continue
+			}
+			seen[sessionID] = struct{}{}
+			routed = append(routed, sessionID)
+			if len(routed) >= maxRoutedSessions {
+				return routed, nil
+			}
+		}
+		if routedInsights >= maxRoutingInsights {
+			break
+		}
+	}
+
+	return routed, nil
+}
+
 // Get returns a single memory by ID.
 func (s *MemoryService) Get(ctx context.Context, id string) (*domain.Memory, error) {
 	return s.memories.GetByID(ctx, id)
