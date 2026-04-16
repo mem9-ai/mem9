@@ -148,6 +148,7 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
           </div>
           <p class="sr-only" data-copy-feedback aria-live="polite"></p>
         </div>
+        <p class="cta-hint" data-i18n="hero.onboardingHint">{hero.onboardingHint}</p>
       </div>
 
       <div class="beta-feature-wrap" data-beta-highlights hidden>
@@ -364,6 +365,13 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
     text-transform: uppercase;
     color: var(--text-dim);
     margin-bottom: 1rem;
+  }
+
+  .cta-hint {
+    font-size: 0.82rem;
+    color: var(--text-soft);
+    line-height: 1.55;
+    margin-top: 0.65rem;
   }
 
   .cta-card code {

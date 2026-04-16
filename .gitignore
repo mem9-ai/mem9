@@ -31,6 +31,9 @@ node_modules/
 dist/
 *.tgz
 .netlify/
+.publish.env
+.npmrc
+.npm-cache-publish/
 
 # Benchmark results
 benchmark/results/*
@@ -45,4 +48,3 @@ __pycache__/
 /benchmark/MR-NIAH/logs/
 /benchmark/MR-NIAH/results-logs/
 /benchmark/MR-NIAH/.cache/
-

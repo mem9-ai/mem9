@@ -15,7 +15,7 @@ interface Props {
 }
 
 const { nav, aria, localeNames, themeOptions, currentPath = '/' } = Astro.props;
-const isDocsPage = currentPath === '/docs';
+const isActivePath = (path: string): boolean => currentPath === path;
 ---
 
 <nav class="nav">
@@ -27,20 +27,49 @@ const isDocsPage = currentPath === '/docs';
 
     <div class="nav-right">
       <div class="nav-links">
-        <a href="/#top" class="nav-section-link" data-i18n="nav.home">{nav.home}</a>
+        <a
+          href="/#top"
+          class:list={['nav-section-link', isActivePath('/') && 'is-active']}
+          data-i18n="nav.home"
+          aria-current={isActivePath('/') ? 'page' : undefined}
+        >
+          {nav.home}
+        </a>
         <a href="https://mem9.ai/your-memory" class="nav-product-link">
           <span data-i18n="nav.yourMemory">{nav.yourMemory}</span>
           <span class="nav-badge">Beta</span>
         </a>
-        <a href="/openclaw-memory" class="nav-section-link" data-i18n="nav.openclaw">{nav.openclaw}</a>
-        <a href="/billing" class="nav-section-link" data-i18n="nav.billing">{nav.billing}</a>
+        <a
+          href="/openclaw-memory"
+          class:list={['nav-section-link', isActivePath('/openclaw-memory') && 'is-active']}
+          data-i18n="nav.openclaw"
+          aria-current={isActivePath('/openclaw-memory') ? 'page' : undefined}
+        >
+          {nav.openclaw}
+        </a>
+        <a
+          href="/billing"
+          class:list={['nav-section-link', isActivePath('/billing') && 'is-active']}
+          data-i18n="nav.billing"
+          aria-current={isActivePath('/billing') ? 'page' : undefined}
+        >
+          {nav.billing}
+        </a>
         <a
           href="/docs"
-          class:list={['nav-section-link', 'nav-docs-link', isDocsPage && 'is-active']}
+          class:list={['nav-section-link', 'nav-docs-link', isActivePath('/docs') && 'is-active']}
           data-i18n="nav.docs"
-          aria-current={isDocsPage ? 'page' : undefined}
+          aria-current={isActivePath('/docs') ? 'page' : undefined}
         >
           {nav.docs}
+        </a>
+        <a
+          href="/api"
+          class:list={['nav-section-link', 'nav-api-link', isActivePath('/api') && 'is-active']}
+          data-i18n="nav.api"
+          aria-current={isActivePath('/api') ? 'page' : undefined}
+        >
+          {nav.api}
         </a>
         <a
           href="mailto:mem9@pingcap.com"
@@ -410,7 +439,7 @@ const isDocsPage = currentPath === '/docs';
       gap: 0.7rem;
     }
 
-    .nav-links .nav-section-link:not(.nav-docs-link) {
+    .nav-links .nav-section-link:not(.nav-docs-link):not(.nav-api-link) {
       display: none;
     }
 
@@ -419,7 +448,8 @@ const isDocsPage = currentPath === '/docs';
       gap: 0.32rem;
     }
 
-    .nav-links .nav-docs-link {
+    .nav-links .nav-docs-link,
+    .nav-links .nav-api-link {
       display: inline-flex;
       align-items: center;
       font-size: 0.84rem;

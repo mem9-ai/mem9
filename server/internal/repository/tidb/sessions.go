@@ -159,15 +159,22 @@ func (r *SessionRepo) AutoVectorSearch(ctx context.Context, query string, f doma
 	fullArgs = append(fullArgs, args...)
 	fullArgs = append(fullArgs, query, limit)
 
+	start := time.Now()
 	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
 		}
+		slog.ErrorContext(ctx, "sessions auto vector search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 		return nil, fmt.Errorf("sessions auto vector search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	defer rows.Close()
-	return scanSessionRowsWithDistance(rows)
+	memories, err := scanSessionRowsWithDistance(rows)
+	if err != nil {
+		return nil, err
+	}
+	slog.DebugContext(ctx, "sessions auto vector search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	return memories, nil
 }
 
 func (r *SessionRepo) VectorSearch(ctx context.Context, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
@@ -192,15 +199,22 @@ func (r *SessionRepo) VectorSearch(ctx context.Context, queryVec []float32, f do
 	fullArgs = append(fullArgs, args...)
 	fullArgs = append(fullArgs, vecStr, limit)
 
+	start := time.Now()
 	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
 		}
+		slog.ErrorContext(ctx, "sessions vector search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 		return nil, fmt.Errorf("sessions vector search: %w", err)
 	}
 	defer rows.Close()
-	return scanSessionRowsWithDistance(rows)
+	memories, err := scanSessionRowsWithDistance(rows)
+	if err != nil {
+		return nil, err
+	}
+	slog.DebugContext(ctx, "sessions vector search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	return memories, nil
 }
 
 func (r *SessionRepo) FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
@@ -219,15 +233,22 @@ func (r *SessionRepo) FTSSearch(ctx context.Context, query string, f domain.Memo
 	fullArgs = append(fullArgs, args...)
 	fullArgs = append(fullArgs, limit)
 
+	start := time.Now()
 	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
 		}
+		slog.ErrorContext(ctx, "sessions fts search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 		return nil, fmt.Errorf("sessions fts search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	defer rows.Close()
-	return scanSessionRowsWithFTSScore(rows)
+	memories, err := scanSessionRowsWithFTSScore(rows)
+	if err != nil {
+		return nil, err
+	}
+	slog.DebugContext(ctx, "sessions fts search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	return memories, nil
 }
 
 func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
@@ -245,15 +266,22 @@ func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.
 		LIMIT ?`
 	args = append(args, limit)
 
+	start := time.Now()
 	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
 		}
+		slog.ErrorContext(ctx, "sessions keyword search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 		return nil, fmt.Errorf("sessions keyword search: %w", err)
 	}
 	defer rows.Close()
-	return scanSessionRows(rows)
+	memories, err := scanSessionRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	slog.DebugContext(ctx, "sessions keyword search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	return memories, nil
 }
 
 func scanSessionRows(rows *sql.Rows) ([]domain.Memory, error) {

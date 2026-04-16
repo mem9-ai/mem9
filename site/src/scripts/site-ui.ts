@@ -485,6 +485,10 @@ function isDocsPage(): boolean {
   return document.querySelector('[data-docs-root]') !== null;
 }
 
+function isApiPage(): boolean {
+  return document.querySelector('[data-api-root]') !== null;
+}
+
 function updateDocsPage(locale: SiteLocale): void {
   const docsLocale = resolveDocsLocale(locale);
   const root = document.querySelector<HTMLElement>('[data-docs-root]');
@@ -518,6 +522,51 @@ function updateDocsPage(locale: SiteLocale): void {
   });
 }
 
+function updateApiPage(locale: SiteLocale): void {
+  const root = document.querySelector<HTMLElement>('[data-api-root]');
+  const copy = siteCopy[locale].apiPage;
+
+  if (!root) {
+    return;
+  }
+
+  root.dataset.apiLocale = locale;
+  setDocumentLang(locale);
+  updateMetaElements(copy.meta.title, copy.meta.description);
+
+  document.querySelectorAll<HTMLElement>('[data-api-copy]').forEach((sectionCopy) => {
+    const isActive = sectionCopy.dataset.apiCopy === locale;
+    sectionCopy.hidden = !isActive;
+
+    sectionCopy.querySelectorAll<HTMLElement>('[data-api-anchor]').forEach((anchor) => {
+      const anchorId = anchor.dataset.apiAnchor;
+      if (!anchorId) {
+        return;
+      }
+
+      if (isActive) {
+        anchor.id = anchorId;
+        return;
+      }
+
+      anchor.removeAttribute('id');
+    });
+  });
+}
+
+function updateFaqSection(locale: SiteLocale): void {
+  const root = document.querySelector<HTMLElement>('[data-faq-root]');
+
+  if (!root) {
+    return;
+  }
+
+  root.dataset.faqLocale = locale;
+  document.querySelectorAll<HTMLElement>('[data-faq-copy]').forEach((sectionCopy) => {
+    sectionCopy.hidden = sectionCopy.dataset.faqCopy !== locale;
+  });
+}
+
 function applyLocale(locale: SiteLocale): void {
   const dictionary = siteCopy[locale];
   document.documentElement.dataset.locale = locale;
@@ -525,10 +574,15 @@ function applyLocale(locale: SiteLocale): void {
   if (isDocsPage()) {
     updateTranslations(dictionary);
     updateDocsPage(locale);
+  } else if (isApiPage()) {
+    updateTranslations(dictionary);
+    updateApiPage(locale);
   } else {
     updateMeta(locale, dictionary);
     updateTranslations(dictionary);
   }
+
+  updateFaqSection(locale);
 
   const command = document.querySelector<HTMLElement>('[data-onboarding-command]');
   if (command) {
@@ -896,6 +950,114 @@ function initDocsMobileToc(): void {
   });
 }
 
+function initApiScrollSpy(): void {
+  const root = document.querySelector<HTMLElement>('[data-api-root]');
+  if (!root) {
+    return;
+  }
+
+  let observer: IntersectionObserver | null = null;
+
+  function setup(): void {
+    if (observer) {
+      observer.disconnect();
+    }
+
+    const activeCopy = root!.querySelector<HTMLElement>('[data-api-copy]:not([hidden])');
+    if (!activeCopy) {
+      return;
+    }
+
+    const sections = Array.from(
+      activeCopy.querySelectorAll<HTMLElement>('[data-api-anchor]'),
+    );
+
+    if (sections.length === 0) {
+      return;
+    }
+
+    const visibleSections = new Map<string, IntersectionObserverEntry>();
+
+    observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = (entry.target as HTMLElement).dataset.apiAnchor;
+          if (!id) {
+            continue;
+          }
+
+          if (entry.isIntersecting) {
+            visibleSections.set(id, entry);
+          } else {
+            visibleSections.delete(id);
+          }
+        }
+
+        let activeId: string | null = null;
+        let minTop = Infinity;
+
+        for (const [id, entry] of visibleSections) {
+          if (entry.boundingClientRect.top < minTop) {
+            minTop = entry.boundingClientRect.top;
+            activeId = id;
+          }
+        }
+
+        activeCopy!.querySelectorAll<HTMLAnchorElement>('.api-toc-link').forEach((link) => {
+          const isActive = link.getAttribute('href') === `#${activeId}`;
+          link.classList.toggle('is-active', isActive);
+        });
+      },
+      {
+        rootMargin: '-80px 0px -35% 0px',
+        threshold: 0,
+      },
+    );
+
+    for (const section of sections) {
+      observer.observe(section);
+    }
+  }
+
+  setup();
+
+  const mutation = new MutationObserver(() => {
+    setup();
+  });
+
+  mutation.observe(root, {
+    attributes: true,
+    attributeFilter: ['data-api-locale'],
+  });
+}
+
+function initApiMobileToc(): void {
+  const toggleButtons = document.querySelectorAll<HTMLButtonElement>('[data-api-toc-toggle]');
+  if (toggleButtons.length === 0) {
+    return;
+  }
+
+  toggleButtons.forEach((toggle) => {
+    toggle.addEventListener('click', () => {
+      const sidebar = toggle.closest<HTMLElement>('.api-sidebar');
+      if (!sidebar) {
+        return;
+      }
+
+      sidebar.classList.toggle('is-toc-open');
+    });
+  });
+
+  document.querySelectorAll<HTMLAnchorElement>('.api-toc-link').forEach((link) => {
+    link.addEventListener('click', () => {
+      const sidebar = link.closest<HTMLElement>('.api-sidebar');
+      if (sidebar) {
+        sidebar.classList.remove('is-toc-open');
+      }
+    });
+  });
+}
+
 export function initSiteUI(): void {
   const locale = isSiteLocale(document.documentElement.dataset.locale)
     ? document.documentElement.dataset.locale
@@ -922,5 +1084,10 @@ export function initSiteUI(): void {
     initDocsProgressBar();
     initDocsBackToTop();
     initDocsMobileToc();
+  }
+
+  if (isApiPage()) {
+    initApiScrollSpy();
+    initApiMobileToc();
   }
 }

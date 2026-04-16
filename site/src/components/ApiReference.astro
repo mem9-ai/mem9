@@ -1,0 +1,693 @@
+---
+import {
+  DEFAULT_LOCALE,
+  siteCopy,
+  siteLocales,
+  type SiteApiFieldCopy,
+  type SiteLinkCopy,
+} from "../content/site";
+
+function linkTarget(link: SiteLinkCopy): string | undefined {
+  return link.external ? "_blank" : undefined;
+}
+
+function linkRel(link: SiteLinkCopy): string | undefined {
+  return link.external ? "noopener noreferrer" : undefined;
+}
+
+function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFieldCopy[] {
+  return Array.isArray(fields) && fields.length > 0;
+}
+---
+
+<section class="api-page" data-api-root data-api-locale={DEFAULT_LOCALE}>
+  {siteLocales.map((locale) => {
+    const copy = siteCopy[locale].apiPage;
+    return (
+      <div class="api-copy" data-api-copy={locale} hidden={locale !== DEFAULT_LOCALE}>
+        <div class="container api-shell">
+          <section class="api-hero">
+            <p class="section-kicker">{copy.kicker}</p>
+            <h1 class="api-title">{copy.title}</h1>
+            <p class="api-intro">{copy.intro}</p>
+            <p class="api-summary">{copy.summary}</p>
+          </section>
+
+          <div class="api-layout">
+            <aside class="api-sidebar">
+              <button class="api-toc-toggle" data-api-toc-toggle type="button">
+                <span>{copy.labels.sidebarTitle}</span>
+                <span class="api-toc-toggle-icon" aria-hidden="true"></span>
+              </button>
+              <nav class="api-toc surface-card">
+                <p class="api-toc-title">{copy.labels.sidebarTitle}</p>
+                <ol class="api-toc-list">
+                  <li>
+                    <a href="#api-auth" class="api-toc-link">{copy.labels.sidebarAuth}</a>
+                  </li>
+                  <li>
+                    <a href="#api-quickstart" class="api-toc-link">{copy.labels.sidebarQuickstart}</a>
+                  </li>
+                  {copy.endpointGroups.map((group) => (
+                    <li>
+                      <a href={`#api-${group.id}`} class="api-toc-link">{group.title}</a>
+                    </li>
+                  ))}
+                </ol>
+              </nav>
+            </aside>
+
+            <div class="api-content">
+              <section
+                class="api-section"
+                id={locale === DEFAULT_LOCALE ? "api-auth" : undefined}
+                data-api-anchor="api-auth"
+              >
+                <div class="api-section-head">
+                  <h2 class="api-section-title">{copy.authTitle}</h2>
+                </div>
+                <div class="api-auth-grid">
+                  {copy.authCards.map((card) => (
+                    <article class="surface-card api-auth-card">
+                      <h3>{card.title}</h3>
+                      <p>{card.body}</p>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section
+                class="api-section"
+                id={locale === DEFAULT_LOCALE ? "api-quickstart" : undefined}
+                data-api-anchor="api-quickstart"
+              >
+                <div class="api-section-head">
+                  <h2 class="api-section-title">{copy.quickstartTitle}</h2>
+                  <p class="api-section-desc">{copy.quickstartDescription}</p>
+                </div>
+                <div class="api-quickstart surface-card">
+                  <ol class="api-steps">
+                    {copy.quickstartSteps.map((step) => (
+                      <li>{step}</li>
+                    ))}
+                  </ol>
+                  <div class="api-code-grid">
+                    {copy.quickstartExamples.map((example) => (
+                      <div class="api-example">
+                        <p class="api-example-label">{example.label}</p>
+                        <pre class="api-code"><code>{example.code}</code></pre>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              {copy.endpointGroups.map((group) => (
+                <section
+                  class="api-section"
+                  id={locale === DEFAULT_LOCALE ? `api-${group.id}` : undefined}
+                  data-api-anchor={`api-${group.id}`}
+                >
+                  <div class="api-section-head">
+                    <h2 class="api-section-title">{group.title}</h2>
+                    <p class="api-section-desc">{group.description}</p>
+                  </div>
+
+                  <div class="api-endpoint-list">
+                    {group.endpoints.map((endpoint) => (
+                      <article class="surface-card api-endpoint-card">
+                        <div class="api-endpoint-head">
+                          <div class="api-endpoint-route">
+                            <span class={`api-method api-method-${endpoint.method.toLowerCase()}`}>
+                              {endpoint.method}
+                            </span>
+                            <code class="api-path">{endpoint.path}</code>
+                          </div>
+                          <p class="api-endpoint-summary">{endpoint.summary}</p>
+                          {endpoint.description && <p class="api-endpoint-description">{endpoint.description}</p>}
+                        </div>
+
+                        <div class="api-endpoint-body">
+                          {hasFields(endpoint.headers) && (
+                            <section class="api-field-block">
+                              <h3 class="api-field-title">{copy.labels.headers}</h3>
+                              <dl class="api-field-list">
+                                {endpoint.headers.map((field) => (
+                                  <div class="api-field-row">
+                                    <dt>
+                                      <code>{field.name}</code>
+                                      {field.required && <span class="api-required">{copy.labels.required}</span>}
+                                    </dt>
+                                    <dd>{field.description}</dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            </section>
+                          )}
+
+                          {hasFields(endpoint.queryParams) && (
+                            <section class="api-field-block">
+                              <h3 class="api-field-title">{copy.labels.queryParams}</h3>
+                              <dl class="api-field-list">
+                                {endpoint.queryParams.map((field) => (
+                                  <div class="api-field-row">
+                                    <dt>
+                                      <code>{field.name}</code>
+                                      {field.required && <span class="api-required">{copy.labels.required}</span>}
+                                    </dt>
+                                    <dd>{field.description}</dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            </section>
+                          )}
+
+                          {hasFields(endpoint.bodyFields) && (
+                            <section class="api-field-block">
+                              <h3 class="api-field-title">{copy.labels.body}</h3>
+                              <dl class="api-field-list">
+                                {endpoint.bodyFields.map((field) => (
+                                  <div class="api-field-row">
+                                    <dt>
+                                      <code>{field.name}</code>
+                                      {field.required && <span class="api-required">{copy.labels.required}</span>}
+                                    </dt>
+                                    <dd>{field.description}</dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            </section>
+                          )}
+
+                          {hasFields(endpoint.responseFields) && (
+                            <section class="api-field-block">
+                              <h3 class="api-field-title">{copy.labels.response}</h3>
+                              <dl class="api-field-list">
+                                {endpoint.responseFields.map((field) => (
+                                  <div class="api-field-row">
+                                    <dt>
+                                      <code>{field.name}</code>
+                                      {field.required && <span class="api-required">{copy.labels.required}</span>}
+                                    </dt>
+                                    <dd>{field.description}</dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            </section>
+                          )}
+
+                          {endpoint.examples && endpoint.examples.length > 0 && (
+                            <section class="api-field-block">
+                              <h3 class="api-field-title">{copy.labels.examples}</h3>
+                              <div class="api-code-grid">
+                                {endpoint.examples.map((example) => (
+                                  <div class="api-example">
+                                    <p class="api-example-label">{example.label}</p>
+                                    <pre class="api-code"><code>{example.code}</code></pre>
+                                  </div>
+                                ))}
+                              </div>
+                            </section>
+                          )}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ))}
+
+              <section class="api-cta surface-card">
+                <div>
+                  <p class="section-kicker">{copy.labels.next}</p>
+                  <h2 class="api-section-title">{copy.ctaTitle}</h2>
+                  <p class="api-section-desc">{copy.ctaBody}</p>
+                </div>
+                <div class="api-cta-links">
+                  {copy.ctaLinks.map((link) => (
+                    <a href={link.href} target={linkTarget(link)} rel={linkRel(link)} class="api-cta-link">
+                      {link.label}
+                    </a>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  })}
+</section>
+
+<style>
+  .api-page {
+    padding: 1.6rem 0 4.8rem;
+  }
+
+  .api-copy[hidden] {
+    display: none;
+  }
+
+  .api-shell {
+    display: grid;
+    gap: 1.8rem;
+  }
+
+  .api-hero {
+    width: min(100%, 72rem);
+    display: grid;
+    gap: 0.8rem;
+    padding: 0;
+  }
+
+  .api-title {
+    font-size: clamp(2.3rem, 5vw, 4rem);
+    letter-spacing: -0.05em;
+  }
+
+  .api-intro,
+  .api-summary,
+  .api-section-desc {
+    color: var(--text-dim);
+    max-width: 72ch;
+    line-height: 1.72;
+  }
+
+  .api-summary {
+    font-family: var(--font-mono);
+    font-size: 0.92rem;
+    color: var(--accent);
+  }
+
+  /* Two-column layout */
+  .api-layout {
+    display: grid;
+    grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr);
+    gap: 1.35rem;
+    align-items: start;
+  }
+
+  /* Sidebar */
+  .api-sidebar {
+    position: sticky;
+    top: 5.7rem;
+    max-height: calc(100dvh - 6.5rem);
+    min-height: 0;
+  }
+
+  .api-toc {
+    padding: 0.95rem;
+    max-height: inherit;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .api-toc::-webkit-scrollbar {
+    width: 0.55rem;
+  }
+
+  .api-toc::-webkit-scrollbar-thumb {
+    background: var(--button-active-border);
+    border-radius: 999px;
+  }
+
+  .api-toc::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .api-toc-title {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.9rem;
+  }
+
+  .api-toc-list {
+    list-style: none;
+    display: grid;
+    gap: 0.3rem;
+  }
+
+  .api-toc-link {
+    display: block;
+    padding: 0.42rem 0.6rem;
+    border-radius: 0.8rem;
+    border-left: 2px solid transparent;
+    color: var(--text-dim);
+    font-size: 0.88rem;
+    line-height: 1.35;
+    transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+  }
+
+  .api-toc-link:hover {
+    background: var(--button-active-bg);
+    color: var(--text);
+    opacity: 1;
+  }
+
+  .api-toc-link.is-active {
+    background: var(--button-active-bg);
+    color: var(--text);
+    border-left-color: var(--accent);
+    opacity: 1;
+  }
+
+  /* Content area */
+  .api-content {
+    display: grid;
+    gap: 1.8rem;
+  }
+
+  .api-section {
+    display: grid;
+    gap: 1rem;
+    padding: 0;
+    scroll-margin-top: 6rem;
+  }
+
+  .api-section-head {
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .api-section-title {
+    font-size: clamp(1.45rem, 3vw, 2.2rem);
+  }
+
+  .api-auth-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  .api-auth-card,
+  .api-quickstart,
+  .api-endpoint-card,
+  .api-cta {
+    padding: 1.3rem;
+    background: linear-gradient(180deg, var(--surface-elevated-start), var(--surface-elevated-end));
+  }
+
+  .api-auth-card {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .api-auth-card p,
+  .api-field-row dd {
+    color: var(--text-dim);
+    line-height: 1.65;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  .api-quickstart {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .api-steps {
+    padding-left: 1.2rem;
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .api-steps li {
+    line-height: 1.66;
+  }
+
+  .api-code-grid {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .api-example {
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .api-example-label,
+  .api-field-title {
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .api-code {
+    padding: 0.95rem 1rem;
+    border-radius: 0.95rem;
+    background: var(--bg-terminal);
+    border: 1px solid var(--border);
+    overflow-x: auto;
+    box-shadow: var(--surface-inset), var(--surface-shadow-soft);
+  }
+
+  .api-code code {
+    display: block;
+    white-space: pre;
+    font-size: 0.84rem;
+    line-height: 1.62;
+    color: var(--text);
+  }
+
+  .api-endpoint-list {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .api-endpoint-card {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .api-endpoint-head {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .api-endpoint-route {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .api-method {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 4.7rem;
+    padding: 0.38rem 0.7rem;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    border: 1px solid var(--button-active-border);
+  }
+
+  .api-method-get {
+    background: rgba(58, 123, 213, 0.12);
+  }
+
+  .api-method-post {
+    background: rgba(44, 156, 104, 0.12);
+  }
+
+  .api-method-put {
+    background: rgba(214, 142, 33, 0.12);
+  }
+
+  .api-method-delete {
+    background: rgba(198, 70, 70, 0.12);
+  }
+
+  .api-path {
+    font-size: 0.96rem;
+    color: var(--text);
+    word-break: break-word;
+  }
+
+  .api-endpoint-summary {
+    font-size: 1.08rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .api-endpoint-description {
+    color: var(--text-dim);
+    line-height: 1.68;
+  }
+
+  .api-endpoint-body {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .api-field-block {
+    display: grid;
+    gap: 0.55rem;
+    padding: 0;
+  }
+
+  .api-field-list {
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  .api-field-row {
+    display: grid;
+    gap: 0.2rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .api-field-row:first-child {
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .api-field-row dt {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    color: var(--text);
+  }
+
+  .api-required {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.12rem 0.42rem;
+    border-radius: 999px;
+    background: var(--button-active-bg);
+    border: 1px solid var(--button-active-border);
+    font-size: 0.72rem;
+    color: var(--text-dim);
+  }
+
+  .api-cta {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .api-cta-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+  }
+
+  .api-cta-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.72rem 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--button-active-border);
+    background: var(--button-bg);
+    color: var(--text);
+    box-shadow: var(--surface-inset), var(--surface-shadow-soft);
+  }
+
+  /* Mobile TOC toggle */
+  .api-toc-toggle {
+    display: none;
+  }
+
+  @media (max-width: 980px) {
+    .api-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .api-sidebar {
+      position: static;
+      max-height: none;
+    }
+
+    .api-toc-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      background: linear-gradient(180deg, var(--surface-gradient-start), var(--surface-gradient-end));
+      box-shadow: var(--surface-inset), var(--surface-shadow-soft);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    .api-toc-toggle:hover {
+      border-color: var(--border-strong);
+    }
+
+    .api-toc-toggle-icon {
+      width: 0.56rem;
+      height: 0.56rem;
+      border-right: 1.5px solid var(--text-soft);
+      border-bottom: 1.5px solid var(--text-soft);
+      transform: rotate(45deg) translateY(-1px);
+      transition: transform 0.25s ease;
+      flex-shrink: 0;
+    }
+
+    .api-sidebar.is-toc-open .api-toc-toggle-icon {
+      transform: rotate(-135deg) translateY(-1px);
+    }
+
+    .api-toc {
+      max-height: 0;
+      overflow: hidden;
+      padding: 0 0.95rem;
+      margin-top: 0.5rem;
+      transition: max-height 0.3s ease, padding 0.3s ease;
+    }
+
+    .api-sidebar.is-toc-open .api-toc {
+      max-height: 80vh;
+      overflow-y: auto;
+      padding: 0.95rem;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .api-auth-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .api-cta {
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .api-page {
+      padding-top: 1rem;
+    }
+
+    .api-auth-card,
+    .api-quickstart,
+    .api-endpoint-card,
+    .api-cta {
+      padding: 1rem;
+    }
+
+    .api-code code {
+      font-size: 0.79rem;
+    }
+  }
+</style>

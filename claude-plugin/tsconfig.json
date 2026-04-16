@@ -9,7 +9,6 @@
     "strict": true
   },
   "include": [
-    "claude-plugin/hooks/lib/**/*.mjs",
-    "claude-plugin/hooks/tests/**/*.mjs"
+    "hooks/**/*.mjs"
   ]
 }

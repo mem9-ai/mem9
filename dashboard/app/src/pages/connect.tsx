@@ -7,42 +7,150 @@ import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { api } from "@/api/client";
 import { initMixpanelOnLogin, trackMixpanelEvent } from "@/lib/mixpanel";
-import { getActiveSpaceId, setSpaceId } from "@/lib/session";
+import {
+  getActiveSpaceId,
+  MEM9_CONNECT_READY_EVENT,
+  MEM9_SPACE_HANDOFF_EVENT,
+  setSpaceId,
+} from "@/lib/session";
+
+function getOpenerOrigin(): string | null {
+  if (!document.referrer) {
+    return null;
+  }
+
+  try {
+    return new URL(document.referrer).origin;
+  } catch {
+    return null;
+  }
+}
 
 export function ConnectPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const openerOrigin = getOpenerOrigin();
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [rememberLogin, setRememberLogin] = useState(false);
+  const [pendingConnect, setPendingConnect] = useState<{
+    remember: boolean;
+    spaceId: string;
+  } | null>(null);
 
   useEffect(() => {
+    if (window.opener) {
+      return;
+    }
+
     if (getActiveSpaceId()) {
-      navigate({ to: "/space", replace: true });
+      void navigate({ to: "/space", replace: true });
     }
   }, [navigate]);
 
-  async function handleSubmit(e: React.FormEvent) {
+  useEffect(() => {
+    if (!window.opener) {
+      return;
+    }
+
+    function handleMessage(event: MessageEvent) {
+      if (event.source !== window.opener) {
+        return;
+      }
+
+      if (openerOrigin && event.origin !== openerOrigin) {
+        return;
+      }
+
+      const data = event.data as { spaceId?: string; type?: string };
+      if (
+        data?.type !== MEM9_SPACE_HANDOFF_EVENT ||
+        typeof data.spaceId !== "string"
+      ) {
+        return;
+      }
+
+      const nextSpaceId = data.spaceId.trim();
+      if (!nextSpaceId) {
+        return;
+      }
+
+      setInput(nextSpaceId);
+      setRememberLogin(false);
+      setPendingConnect((current) =>
+        current ?? { remember: false, spaceId: nextSpaceId },
+      );
+    }
+
+    window.addEventListener("message", handleMessage);
+    window.opener.postMessage(
+      { type: MEM9_CONNECT_READY_EVENT },
+      openerOrigin ?? "*",
+    );
+
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, [openerOrigin]);
+
+  useEffect(() => {
+    if (!pendingConnect) {
+      return;
+    }
+
+    const connectRequest = pendingConnect;
+    let cancelled = false;
+
+    async function connectToSpace() {
+      const normalizedInput = connectRequest.spaceId.trim();
+      if (!normalizedInput) {
+        setPendingConnect(null);
+        return;
+      }
+
+      setError("");
+      setLoading(true);
+
+      try {
+        await api.verifySpace(normalizedInput);
+        initMixpanelOnLogin();
+        trackMixpanelEvent("Dashboard/Connect/SubmitClicked", {
+          pageName: "connect",
+        });
+        setSpaceId(normalizedInput, connectRequest.remember);
+
+        if (!cancelled) {
+          await navigate({ to: "/space", replace: true });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error ? err.message : t("connect.error.invalid"),
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setPendingConnect(null);
+        }
+      }
+    }
+
+    void connectToSpace();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, pendingConnect, t]);
+
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    setLoading(true);
-    const normalizedInput = input.trim();
-    try {
-      await api.verifySpace(normalizedInput);
-      initMixpanelOnLogin();
-      trackMixpanelEvent("Dashboard/Connect/SubmitClicked", {
-        pageName: "connect",
-      });
-      setSpaceId(normalizedInput, rememberLogin);
-      navigate({ to: "/space", replace: true });
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : t("connect.error.invalid"),
-      );
-    } finally {
-      setLoading(false);
-    }
+    setPendingConnect({
+      remember: rememberLogin,
+      spaceId: input,
+    });
   }
 
   const toggleLang = () =>

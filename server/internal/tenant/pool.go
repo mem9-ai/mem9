@@ -4,20 +4,28 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
+var sqlOpen = sql.Open
+
 type TenantPool struct {
-	mu          sync.RWMutex
-	conns       map[string]*tenantConn
-	maxIdle     int
-	maxOpen     int
-	lifetime    time.Duration
-	idleTimeout time.Duration
-	totalLimit  int
-	backend     string // "tidb", "postgres", or "db9"
-	stopCh      chan struct{}
+	mu             sync.RWMutex
+	conns          map[string]*tenantConn
+	maxIdle        int
+	maxOpen        int
+	lifetime       time.Duration
+	idleTimeout    time.Duration
+	totalLimit     int
+	backend        string // "tidb", "postgres", or "db9"
+	stopCh         chan struct{}
+	connectGroup   singleflight.Group
+	opening        int
+	connectTimeout time.Duration
 }
 
 type tenantConn struct {
@@ -27,12 +35,13 @@ type tenantConn struct {
 }
 
 type PoolConfig struct {
-	MaxIdle     int
-	MaxOpen     int
-	Lifetime    time.Duration
-	IdleTimeout time.Duration
-	TotalLimit  int
-	Backend     string // "tidb" (default), "postgres", or "db9"
+	MaxIdle        int
+	MaxOpen        int
+	Lifetime       time.Duration
+	IdleTimeout    time.Duration
+	TotalLimit     int
+	Backend        string // "tidb" (default), "postgres", or "db9"
+	ConnectTimeout time.Duration
 }
 
 func NewPool(cfg PoolConfig) *TenantPool {
@@ -51,20 +60,24 @@ func NewPool(cfg PoolConfig) *TenantPool {
 	if cfg.TotalLimit == 0 {
 		cfg.TotalLimit = 200
 	}
+	if cfg.ConnectTimeout == 0 {
+		cfg.ConnectTimeout = 3 * time.Second
+	}
 	backend := cfg.Backend
 	if backend == "" {
 		backend = "tidb"
 	}
 
 	p := &TenantPool{
-		conns:       make(map[string]*tenantConn),
-		maxIdle:     cfg.MaxIdle,
-		maxOpen:     cfg.MaxOpen,
-		lifetime:    cfg.Lifetime,
-		idleTimeout: cfg.IdleTimeout,
-		totalLimit:  cfg.TotalLimit,
-		backend:     backend,
-		stopCh:      make(chan struct{}),
+		conns:          make(map[string]*tenantConn),
+		maxIdle:        cfg.MaxIdle,
+		maxOpen:        cfg.MaxOpen,
+		lifetime:       cfg.Lifetime,
+		idleTimeout:    cfg.IdleTimeout,
+		totalLimit:     cfg.TotalLimit,
+		backend:        backend,
+		stopCh:         make(chan struct{}),
+		connectTimeout: cfg.ConnectTimeout,
 	}
 
 	go p.evictLoop()
@@ -72,11 +85,16 @@ func NewPool(cfg PoolConfig) *TenantPool {
 }
 
 func (p *TenantPool) Get(ctx context.Context, tenantID string, dsn string) (*sql.DB, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	p.mu.RLock()
 	conn, ok := p.conns[tenantID]
 	p.mu.RUnlock()
 
 	if ok {
+		pingStart := time.Now()
 		if err := conn.db.PingContext(ctx); err == nil {
 			p.mu.Lock()
 			if cached, stillOk := p.conns[tenantID]; stillOk {
@@ -85,29 +103,68 @@ func (p *TenantPool) Get(ctx context.Context, tenantID string, dsn string) (*sql
 			}
 			p.mu.Unlock()
 			return conn.db, nil
+		} else {
+			slog.ErrorContext(ctx, "tenant pool cached ping failed",
+				"tenant_id", tenantID,
+				"duration_ms", time.Since(pingStart).Milliseconds(),
+				"err", err,
+			)
+			p.removeIfMatch(tenantID, conn)
 		}
-
-		p.Remove(tenantID)
 	}
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	// open tenantDB
+	resultCh := p.connectGroup.DoChan(tenantID, func() (any, error) {
+		openStart := time.Now()
+		db, err := p.openTenantDB(tenantID, dsn)
+		if err != nil {
+			slog.ErrorContext(ctx, "tenant pool open failed",
+				"tenant_id", tenantID,
+				"duration_ms", time.Since(openStart).Milliseconds(),
+				"err", err,
+			)
+		}
+		return db, err
+	})
 
+	select {
+	case res := <-resultCh:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		db, ok := res.Val.(*sql.DB)
+		if !ok {
+			return nil, fmt.Errorf("tenant pool: unexpected connection type %T", res.Val)
+		}
+		return db, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (p *TenantPool) openTenantDB(tenantID string, dsn string) (*sql.DB, error) {
+	p.mu.Lock()
 	if conn, ok := p.conns[tenantID]; ok {
 		conn.lastUsed = time.Now()
+		p.mu.Unlock()
 		return conn.db, nil
 	}
-
-	if len(p.conns) >= p.totalLimit {
+	if len(p.conns)+p.opening >= p.totalLimit {
+		p.mu.Unlock()
 		return nil, fmt.Errorf("tenant pool: total limit %d reached", p.totalLimit)
 	}
+	p.opening++
+	p.mu.Unlock()
 
 	driver := "mysql"
 	if p.backend == "postgres" || p.backend == "db9" {
 		driver = "pgx"
 	}
-	db, err := sql.Open(driver, dsn)
+	db, err := sqlOpen(driver, dsn)
 	if err != nil {
+		p.mu.Lock()
+		p.opening--
+		p.mu.Unlock()
 		return nil, err
 	}
 
@@ -115,21 +172,34 @@ func (p *TenantPool) Get(ctx context.Context, tenantID string, dsn string) (*sql
 	db.SetMaxOpenConns(p.maxOpen)
 	db.SetConnMaxLifetime(p.lifetime)
 
-	if err := db.PingContext(ctx); err != nil {
+	openCtx, cancel := context.WithTimeout(context.Background(), p.connectTimeout)
+	defer cancel()
+
+	if err := db.PingContext(openCtx); err != nil {
 		_ = db.Close()
+		p.mu.Lock()
+		p.opening--
+		p.mu.Unlock()
 		return nil, err
 	}
 
-	conn = &tenantConn{
-		db:       db,
-		lastUsed: time.Now(),
-		tenantID: tenantID,
-	}
+	now := time.Now()
+	p.mu.Lock()
+	p.opening--
+	// Close/Remove/eviction can mutate this slot while the shared open is in flight.
+	// Reuse any handle already published before we reacquire the lock.
 	if existing := p.conns[tenantID]; existing != nil {
+		existing.lastUsed = now
+		p.mu.Unlock()
 		_ = db.Close()
 		return existing.db, nil
 	}
-	p.conns[tenantID] = conn
+	p.conns[tenantID] = &tenantConn{
+		db:       db,
+		lastUsed: now,
+		tenantID: tenantID,
+	}
+	p.mu.Unlock()
 	return db, nil
 }
 
@@ -157,6 +227,24 @@ func (p *TenantPool) Remove(tenantID string) {
 	if ok {
 		_ = conn.db.Close()
 	}
+}
+
+func (p *TenantPool) removeIfMatch(tenantID string, expected *tenantConn) bool {
+	if expected == nil {
+		return false
+	}
+
+	p.mu.Lock()
+	current, ok := p.conns[tenantID]
+	if !ok || current != expected {
+		p.mu.Unlock()
+		return false
+	}
+	delete(p.conns, tenantID)
+	p.mu.Unlock()
+
+	_ = expected.db.Close()
+	return true
 }
 
 func (p *TenantPool) Stats() map[string]time.Time {

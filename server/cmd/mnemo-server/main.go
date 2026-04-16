@@ -106,11 +106,12 @@ func main() {
 	}
 	uploadTaskRepo := repository.NewUploadTaskRepo(cfg.DBBackend, db)
 	tenantPool := tenant.NewPool(tenant.PoolConfig{
-		MaxIdle:     cfg.TenantPoolMaxIdle,
-		MaxOpen:     cfg.TenantPoolMaxOpen,
-		IdleTimeout: cfg.TenantPoolIdleTimeout,
-		TotalLimit:  cfg.TenantPoolTotalLimit,
-		Backend:     cfg.DBBackend,
+		MaxIdle:        cfg.TenantPoolMaxIdle,
+		MaxOpen:        cfg.TenantPoolMaxOpen,
+		ConnectTimeout: cfg.TenantPoolConnectTimeout,
+		IdleTimeout:    cfg.TenantPoolIdleTimeout,
+		TotalLimit:     cfg.TenantPoolTotalLimit,
+		Backend:        cfg.DBBackend,
 	})
 	defer tenantPool.Close()
 
@@ -119,7 +120,7 @@ func main() {
 	var provisioner tenant.Provisioner
 	if cfg.TiDBZeroEnabled && cfg.DBBackend == "tidb" {
 		// Zero mode (explicit toggle takes precedence)
-		provisioner = tenant.NewZeroProvisioner(cfg.TiDBZeroAPIURL, cfg.DBBackend, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled)
+		provisioner = tenant.NewZeroProvisioner(cfg.TiDBZeroAPIURL, cfg.DBBackend, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled)
 		logger.Info("using TiDB Zero provisioner")
 	} else if cfg.TiDBZeroEnabled {
 		logger.Warn("TiDB Zero provisioning is only supported with tidb backend; disabling auto-provisioning", "backend", cfg.DBBackend)
@@ -138,7 +139,7 @@ func main() {
 		logger.Info("no provisioner configured (pre-existing tenants mode)")
 	}
 
-	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled, encryptor)
+	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled, encryptor)
 	if utmRepo != nil {
 		tenantSvc.WithUTMRepo(utmRepo)
 	}

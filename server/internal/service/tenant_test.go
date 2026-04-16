@@ -25,7 +25,7 @@ func TestBuildMemorySchema(t *testing.T) {
 	}
 
 	t.Run("no auto-model uses plain VECTOR(1536)", func(t *testing.T) {
-		schema := tenant.BuildMemorySchema("", 0)
+		schema := tenant.BuildMemorySchema("", 0, 0)
 		for _, needle := range commonChecks {
 			if !strings.Contains(schema, needle) {
 				t.Fatalf("schema missing %q", needle)
@@ -39,8 +39,30 @@ func TestBuildMemorySchema(t *testing.T) {
 		}
 	})
 
+	t.Run("no auto-model with clientDims=4096 uses VECTOR(4096)", func(t *testing.T) {
+		schema := tenant.BuildMemorySchema("", 0, 4096)
+		for _, needle := range commonChecks {
+			if !strings.Contains(schema, needle) {
+				t.Fatalf("schema missing %q", needle)
+			}
+		}
+		if !strings.Contains(schema, "VECTOR(4096)") {
+			t.Fatal("schema missing VECTOR(4096) for clientDims=4096")
+		}
+		if strings.Contains(schema, "GENERATED ALWAYS AS") {
+			t.Fatal("schema must not contain GENERATED ALWAYS AS for no-auto-model mode")
+		}
+	})
+
+	t.Run("no auto-model with clientDims=1024 uses VECTOR(1024)", func(t *testing.T) {
+		schema := tenant.BuildMemorySchema("", 0, 1024)
+		if !strings.Contains(schema, "VECTOR(1024)") {
+			t.Fatal("schema missing VECTOR(1024) for clientDims=1024")
+		}
+	})
+
 	t.Run("auto-model emits EMBED_TEXT generated column with correct dims", func(t *testing.T) {
-		schema := tenant.BuildMemorySchema("tidbcloud_free/amazon/titan-embed-text-v2", 1024)
+		schema := tenant.BuildMemorySchema("tidbcloud_free/amazon/titan-embed-text-v2", 1024, 0)
 		for _, needle := range commonChecks {
 			if !strings.Contains(schema, needle) {
 				t.Fatalf("schema missing %q", needle)
@@ -68,7 +90,7 @@ func TestProvisionRejectsNonTiDBBackend(t *testing.T) {
 	defer pool.Close()
 
 	enc := encrypt.NewPlainEncryptor()
-	svc := NewTenantService(nil, nil, pool, nil, "", 0, false, enc)
+	svc := NewTenantService(nil, nil, pool, nil, "", 0, 0, false, enc)
 	_, err := svc.Provision(context.Background(), ProvisionRequest{})
 	if err == nil {
 		t.Fatal("expected validation error for non-tidb backend")
@@ -118,7 +140,7 @@ func TestProvision_WithEncryptor(t *testing.T) {
 
 	// Create service with a real logger (discard output)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := NewTenantService(mockRepo, mockProv, pool, logger, "", 0, false, enc)
+	svc := NewTenantService(mockRepo, mockProv, pool, logger, "", 0, 0, false, enc)
 
 	// Call Provision
 	_, err := svc.Provision(context.Background(), ProvisionRequest{})
@@ -265,6 +287,7 @@ func TestProvision_LogsUTMOnSuccess(t *testing.T) {
 		logger,
 		"",
 		0,
+		0,
 		false,
 		encrypt.NewPlainEncryptor(),
 	)
@@ -334,6 +357,7 @@ func TestProvision_LogsUTMOnFailure(t *testing.T) {
 		logger,
 		"",
 		0,
+		0,
 		false,
 		encrypt.NewPlainEncryptor(),
 	)
@@ -374,7 +398,7 @@ func TestBuildDB9MemorySchema(t *testing.T) {
 	}
 
 	t.Run("no auto-model uses plain VECTOR(1536)", func(t *testing.T) {
-		schema := tenant.BuildDB9MemorySchema("", 0)
+		schema := tenant.BuildDB9MemorySchema("", 0, 0)
 		for _, needle := range commonChecks {
 			if !strings.Contains(schema, needle) {
 				t.Fatalf("schema missing %q", needle)
@@ -388,8 +412,18 @@ func TestBuildDB9MemorySchema(t *testing.T) {
 		}
 	})
 
+	t.Run("no auto-model with clientDims=4096 uses VECTOR(4096)", func(t *testing.T) {
+		schema := tenant.BuildDB9MemorySchema("", 0, 4096)
+		if !strings.Contains(schema, "VECTOR(4096)") {
+			t.Fatal("schema missing VECTOR(4096) for clientDims=4096")
+		}
+		if strings.Contains(schema, "GENERATED ALWAYS AS") {
+			t.Fatal("schema must not contain GENERATED ALWAYS AS for no-auto-model mode")
+		}
+	})
+
 	t.Run("auto-model emits EMBED_TEXT generated column with correct dims", func(t *testing.T) {
-		schema := tenant.BuildDB9MemorySchema("amazon.titan-embed-text-v2:0", 1024)
+		schema := tenant.BuildDB9MemorySchema("amazon.titan-embed-text-v2:0", 1024, 0)
 		for _, needle := range commonChecks {
 			if !strings.Contains(schema, needle) {
 				t.Fatalf("schema missing %q", needle)
@@ -414,7 +448,7 @@ func TestBuildDB9MemorySchema(t *testing.T) {
 	})
 
 	t.Run("auto-model with 512 dims", func(t *testing.T) {
-		schema := tenant.BuildDB9MemorySchema("some-model", 512)
+		schema := tenant.BuildDB9MemorySchema("some-model", 512, 0)
 		if !strings.Contains(schema, "VECTOR(512)") {
 			t.Fatal("schema missing VECTOR(512)")
 		}
@@ -424,7 +458,7 @@ func TestBuildDB9MemorySchema(t *testing.T) {
 	})
 
 	t.Run("single-quote in model name is escaped", func(t *testing.T) {
-		schema := tenant.BuildDB9MemorySchema("model'inject", 1024)
+		schema := tenant.BuildDB9MemorySchema("model'inject", 1024, 0)
 		// Should be escaped to double single-quotes
 		if !strings.Contains(schema, "model''inject") {
 			t.Fatal("single quote in model name not escaped")
@@ -434,14 +468,14 @@ func TestBuildDB9MemorySchema(t *testing.T) {
 
 func TestBuildMemorySchema_DimensionsArg(t *testing.T) {
 	t.Run("auto-model includes dimensions in EMBED_TEXT", func(t *testing.T) {
-		schema := tenant.BuildMemorySchema("tidbcloud_free/amazon/titan-embed-text-v2", 1024)
+		schema := tenant.BuildMemorySchema("tidbcloud_free/amazon/titan-embed-text-v2", 1024, 0)
 		if !strings.Contains(schema, `'{"dimensions": 1024}'`) {
 			t.Fatal("schema missing dimensions arg in EMBED_TEXT call")
 		}
 	})
 
 	t.Run("single-quote in model name is escaped", func(t *testing.T) {
-		schema := tenant.BuildMemorySchema("model'inject", 1024)
+		schema := tenant.BuildMemorySchema("model'inject", 1024, 0)
 		if !strings.Contains(schema, "model''inject") {
 			t.Fatal("single quote in model name not escaped")
 		}

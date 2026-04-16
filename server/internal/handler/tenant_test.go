@@ -125,6 +125,7 @@ func TestProvisionMem9s_FiltersUTMParamsAndKeepsResponseShape(t *testing.T) {
 		logger,
 		"",
 		0,
+		0,
 		false,
 		encrypt.NewPlainEncryptor(),
 	)

@@ -218,7 +218,7 @@ func TestZeroProvisioner_Provision_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewZeroProvisioner(server.URL, "tidb", "", 0, false)
+	p := NewZeroProvisioner(server.URL, "tidb", "", 0, 0, false)
 	ctx := context.Background()
 
 	info, err := p.Provision(ctx)
@@ -265,7 +265,7 @@ func TestZeroProvisioner_Provision_APIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewZeroProvisioner(server.URL, "tidb", "", 0, false)
+	p := NewZeroProvisioner(server.URL, "tidb", "", 0, 0, false)
 	ctx := context.Background()
 
 	_, err := p.Provision(ctx)
@@ -286,7 +286,7 @@ func TestZeroProvisioner_ProviderType(t *testing.T) {
 func TestZeroProvisioner_InitSchema_InvalidBackend(t *testing.T) {
 	// Current implementation only supports "tidb" backend
 	// For other backends, it will fail when trying to execute DDL
-	p := NewZeroProvisioner("http://localhost", "postgres", "", 0, false)
+	p := NewZeroProvisioner("http://localhost", "postgres", "", 0, 0, false)
 
 	// nil db should cause an error (not panic)
 	err := p.InitSchema(context.Background(), nil)
@@ -299,7 +299,7 @@ func TestZeroProvisioner_InitSchema_InvalidBackend(t *testing.T) {
 func TestZeroProvisioner_InitSchema_Success(t *testing.T) {
 	// This test would need a real or mocked database connection
 	// For now, just verify it doesn't panic with valid parameters
-	p := NewZeroProvisioner("http://localhost", "tidb", "", 0, false)
+	p := NewZeroProvisioner("http://localhost", "tidb", "", 0, 0, false)
 	_ = p // Avoid unused variable error
 }
 
