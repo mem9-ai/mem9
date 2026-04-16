@@ -1,2 +1,0 @@
-[console_scripts]
-mem9-install = mem9_hermes.install:main

@@ -1,4 +1,0 @@
-agent
-mem9_hermes
-plugins
-tools
