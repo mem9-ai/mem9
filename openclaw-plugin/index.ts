@@ -79,6 +79,10 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function shouldEagerAutoProvision(cfg: PluginConfig): boolean {
+  return cfg.apiUrl != null || cfg.provisionQueryParams != null;
+}
+
 interface MemoryCapability {
   search: (query: string, opts?: { limit?: number }) => Promise<{ data: Memory[]; total: number }>;
   store: (content: string, opts?: { tags?: string[]; source?: string }) => Promise<unknown>;
@@ -348,7 +352,7 @@ const mnemoPlugin = {
 
     api.logger.info("[mem9] Server mode (v1alpha2)");
 
-    if (!configuredApiKey) {
+    if (!configuredApiKey && shouldEagerAutoProvision(cfg)) {
       api.logger.info("[mem9] apiKey not configured; starting auto-provision");
       void resolveAPIKey(hookAgentId).catch((err) => {
         api.logger.error(`[mem9] auto-provision failed: ${errorMessage(err)}`);
