@@ -1,0 +1,9 @@
+include README.md
+include INSTALL.md
+include pyproject.toml
+include requirements.txt
+recursive-include mem9_hermes *.py *.md *.yaml
+recursive-include plugins *.py *.md *.yaml
+recursive-include agent *.py *.md *.yaml
+recursive-include tools *.py *.md *.yaml
+include install_mem9.py

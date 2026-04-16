@@ -1,16 +1,14 @@
 """
-mem9 Memory Provider Plugin for Hermes Agent
+mem9 Memory Provider for Hermes Agent
 
-This plugin provides persistent cloud memory for Hermes Agent using mem9.
+This module implements mem9 as a MemoryProvider, enabling automatic memory
+recall and storage throughout the Hermes session lifecycle.
+
 Features:
-- Auto-provisioned API key (zero configuration)
-- Hybrid vector + keyword search
-- Automatic memory recall at session start
-- Automatic memory storage at session end
-- Full CRUD tool support
-
-Usage:
-    hermes config set memory.provider mem9
+- Auto-recall relevant memories at session start
+- Auto-store conversation insights at session end
+- Prefetch memories before each turn
+- Tool integration (memory_store, memory_search, etc.)
 """
 
 import asyncio
@@ -55,7 +53,7 @@ class Mem9MemoryProvider(MemoryProvider):
         self._hooks: Optional[MemoryHooks] = None
         self._session_id: str = ""
         self._initialized: bool = False
-        self._platform: str = "cli"
+        self._api_key: str = ""
     
     def _get_api_key(self) -> str:
         """Get API key from environment or auto-provisioned file."""
@@ -131,7 +129,6 @@ class Mem9MemoryProvider(MemoryProvider):
     def initialize(self, session_id: str, **kwargs) -> None:
         """Initialize mem9 provider for a session."""
         self._session_id = session_id
-        self._platform = kwargs.get("platform", "cli")
         
         try:
             backend = self._ensure_backend()
@@ -150,7 +147,7 @@ class Mem9MemoryProvider(MemoryProvider):
                 logger.info(f"[mem9] Recalled context for session {session_id}")
             
             self._initialized = True
-            logger.info(f"[mem9] Provider initialized for session {session_id} (platform: {self._platform})")
+            logger.info(f"[mem9] Provider initialized for session {session_id}")
             
         except Exception as e:
             logger.error(f"[mem9] Initialization failed: {e}")
@@ -351,16 +348,7 @@ Memories persist across sessions and help you maintain context continuity.
         pass
 
 
-# =============================================================================
-# Plugin entry point
-# =============================================================================
-
-def register(ctx) -> None:
-    """Register the mem9 memory provider with the plugin system."""
-    ctx.register_memory_provider(Mem9MemoryProvider())
-
-
-# Factory function for plugin discovery
+# Register provider
 def get_provider() -> Mem9MemoryProvider:
     """Factory function to get mem9 provider instance."""
     return Mem9MemoryProvider()

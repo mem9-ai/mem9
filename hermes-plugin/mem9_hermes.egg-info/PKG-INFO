@@ -1,3 +1,31 @@
+Metadata-Version: 2.4
+Name: mem9-hermes
+Version: 0.2.0
+Summary: mem9 persistent memory plugin for Hermes Agent - Cloud memory with auto recall and ingestion
+Author-email: mem9-ai <support@mem9.ai>
+License: Apache-2.0
+Project-URL: Homepage, https://mem9.ai
+Project-URL: Repository, https://github.com/mem9-ai/mem9
+Project-URL: Documentation, https://mem9.ai/docs
+Keywords: hermes,agent,memory,mem9,ai,persistent
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: pydantic>=2.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+
 # mem9-hermes
 
 [![PyPI version](https://badge.fury.io/py/mem9-hermes.svg)](https://pypi.org/project/mem9-hermes/)
