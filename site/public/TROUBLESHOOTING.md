@@ -47,6 +47,15 @@ Confirm these first:
 - Re-check whether `plugins.entries.mem9.config.provisionQueryParams` was already present before the first successful auto-provision
 - Re-check whether the final persisted `plugins.entries.mem9.config.apiKey` matches the key the plugin is currently using
 - If attribution or final-key correctness cannot be confirmed, stop and troubleshoot instead of handing off the newest key
+- If the installed plugin version is older than `@mem9/mem9@0.4.4`, upgrade first; newer builds share one local auto-provision result across concurrent plugin registrations to avoid duplicate keys during host reloads
+
+### Restart Returned But The Setup Kept Waiting For Another `hi`
+
+- One short post-restart `hi` is normal because the gateway restart cuts the current execution turn
+- More than one extra `hi` without another real restart is abnormal orchestration behavior
+- Re-check the restart logs for a second config-driven restart after `plugins.entries.mem9.config.apiKey` was written
+- Re-check whether the user-facing resume message was sent before post-restart verification had actually started
+- If the flow asked for another keepalive without a new restart, stop the happy path and treat it as setup orchestration failure, not as normal mem9 onboarding behavior
 
 ### Existing API Key Fails After Reconnect
 

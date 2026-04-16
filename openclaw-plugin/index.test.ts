@@ -14,6 +14,10 @@ interface StubApi {
   on: () => void;
 }
 
+interface SearchCapability {
+  search: (query: string, opts?: { limit?: number }) => Promise<{ data: unknown[]; total: number }>;
+}
+
 function createStubApi(
   pluginConfig: unknown,
   options?: {
@@ -45,8 +49,24 @@ async function flushAsyncWork(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const startedAt = Date.now();
+
+  while (!predicate()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error("timed out waiting for condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+function uniqueApiUrl(name: string): string {
+  return `https://api.mem9.ai/${name}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 test("register eagerly auto-provisions when apiKey is absent", async () => {
   const originalFetch = globalThis.fetch;
+  const apiUrl = uniqueApiUrl("eager");
   const requests: string[] = [];
   const infoLogs: string[] = [];
   const errorLogs: string[] = [];
@@ -66,7 +86,7 @@ test("register eagerly auto-provisions when apiKey is absent", async () => {
     mnemoPlugin.register(
       createStubApi(
         {
-          apiUrl: "https://api.mem9.ai",
+          apiUrl,
           provisionQueryParams: {
             utm_source: "bosn",
           },
@@ -75,13 +95,13 @@ test("register eagerly auto-provisions when apiKey is absent", async () => {
       ),
     );
 
-    await flushAsyncWork();
+    await waitFor(() => requests.length === 1);
 
     assert.deepEqual(errorLogs, []);
     assert.equal(requests.length, 1);
     assert.equal(
       requests[0],
-      "https://api.mem9.ai/v1alpha1/mem9s?utm_source=bosn",
+      `${apiUrl}/v1alpha1/mem9s?utm_source=bosn`,
     );
     assert.equal(
       infoLogs.includes("[mem9] apiKey not configured; starting auto-provision"),
@@ -89,6 +109,218 @@ test("register eagerly auto-provisions when apiKey is absent", async () => {
     );
     assert.equal(
       infoLogs.some((msg) => msg.includes("*** Auto-provisioned apiKey=space-1 ***")),
+      true,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("register shares an in-flight auto-provision across concurrent plugin registrations", async () => {
+  const originalFetch = globalThis.fetch;
+  const apiUrl = uniqueApiUrl("shared-pending");
+  const infoLogsA: string[] = [];
+  const infoLogsB: string[] = [];
+  const errorLogs: string[] = [];
+  let capabilityA: SearchCapability | null = null;
+  let capabilityB: SearchCapability | null = null;
+  let provisionRequests = 0;
+  let searchRequests = 0;
+  const provisionControl: { release: () => void } = {
+    release: () => {},
+  };
+  const provisionGate = new Promise<void>((resolve) => {
+    provisionControl.release = resolve;
+  });
+
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+
+    if (url === `${apiUrl}/v1alpha1/mem9s`) {
+      provisionRequests += 1;
+      await provisionGate;
+      return new Response(JSON.stringify({ id: "space-shared-pending" }), {
+        status: 201,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    }
+
+    if (url.includes("/v1alpha2/mem9s/memories")) {
+      searchRequests += 1;
+      const headers = init?.headers as Record<string, string> | undefined;
+      assert.equal(headers?.["X-API-Key"], "space-shared-pending");
+
+      return new Response(
+        JSON.stringify({
+          memories: [],
+          total: 0,
+          limit: 20,
+          offset: 0,
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    }
+
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+
+  try {
+    mnemoPlugin.register(
+      createStubApi(
+        { apiUrl },
+        {
+          infoLogs: infoLogsA,
+          errorLogs,
+          onRegisterCapability: (_slot, registeredCapability) => {
+            capabilityA = registeredCapability as typeof capabilityA;
+          },
+        },
+      ),
+    );
+    mnemoPlugin.register(
+      createStubApi(
+        { apiUrl },
+        {
+          infoLogs: infoLogsB,
+          errorLogs,
+          onRegisterCapability: (_slot, registeredCapability) => {
+            capabilityB = registeredCapability as typeof capabilityB;
+          },
+        },
+      ),
+    );
+
+    await waitFor(() => provisionRequests === 1);
+
+    assert.equal(provisionRequests, 1);
+    provisionControl.release();
+
+    await waitFor(() => searchRequests === 0);
+
+    assert.deepEqual(errorLogs, []);
+    if (!capabilityA || !capabilityB) {
+      throw new Error("capability registration did not complete");
+    }
+
+    const readyCapabilityA: SearchCapability = capabilityA;
+    const readyCapabilityB: SearchCapability = capabilityB;
+
+    await readyCapabilityA.search("hello");
+    await readyCapabilityB.search("hello");
+
+    assert.equal(provisionRequests, 1);
+    assert.equal(searchRequests, 2);
+  } finally {
+    provisionControl.release();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("register reuses a shared auto-provisioned key before config write-back", async () => {
+  const originalFetch = globalThis.fetch;
+  const apiUrl = uniqueApiUrl("shared-done");
+  const infoLogsA: string[] = [];
+  const infoLogsB: string[] = [];
+  const errorLogs: string[] = [];
+  let capabilityA: SearchCapability | null = null;
+  let capabilityB: SearchCapability | null = null;
+  let provisionRequests = 0;
+  let searchRequests = 0;
+
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+
+    if (url === `${apiUrl}/v1alpha1/mem9s`) {
+      provisionRequests += 1;
+      return new Response(JSON.stringify({ id: "space-shared-done" }), {
+        status: 201,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    }
+
+    if (url.includes("/v1alpha2/mem9s/memories")) {
+      searchRequests += 1;
+      const headers = init?.headers as Record<string, string> | undefined;
+      assert.equal(headers?.["X-API-Key"], "space-shared-done");
+
+      return new Response(
+        JSON.stringify({
+          memories: [],
+          total: 0,
+          limit: 20,
+          offset: 0,
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    }
+
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+
+  try {
+    mnemoPlugin.register(
+      createStubApi(
+        { apiUrl },
+        {
+          infoLogs: infoLogsA,
+          errorLogs,
+          onRegisterCapability: (_slot, registeredCapability) => {
+            capabilityA = registeredCapability as typeof capabilityA;
+          },
+        },
+      ),
+    );
+
+    await waitFor(() =>
+      infoLogsA.some((msg) => msg.includes("*** Auto-provisioned apiKey=space-shared-done ***")),
+    );
+
+    mnemoPlugin.register(
+      createStubApi(
+        { apiUrl },
+        {
+          infoLogs: infoLogsB,
+          errorLogs,
+          onRegisterCapability: (_slot, registeredCapability) => {
+            capabilityB = registeredCapability as typeof capabilityB;
+          },
+        },
+      ),
+    );
+
+    await waitFor(() =>
+      infoLogsB.includes("[mem9] reusing shared auto-provisioned apiKey pending config write-back"),
+    );
+
+    assert.deepEqual(errorLogs, []);
+    assert.equal(provisionRequests, 1);
+    if (!capabilityA || !capabilityB) {
+      throw new Error("capability registration did not complete");
+    }
+
+    const readyCapabilityA: SearchCapability = capabilityA;
+    const readyCapabilityB: SearchCapability = capabilityB;
+
+    await readyCapabilityA.search("hello");
+    await readyCapabilityB.search("hello");
+
+    assert.equal(searchRequests, 2);
+    assert.equal(
+      infoLogsB.includes("[mem9] reusing shared auto-provisioned apiKey pending config write-back"),
       true,
     );
   } finally {
@@ -136,13 +368,12 @@ test("register does not auto-provision on empty config", async () => {
 
 test("search retries auto-provision after an eager startup failure", async () => {
   const originalFetch = globalThis.fetch;
+  const apiUrl = uniqueApiUrl("retry");
   const infoLogs: string[] = [];
   const errorLogs: string[] = [];
   let provisionAttempts = 0;
   let searchRequests = 0;
-  let capability: {
-    search: (query: string, opts?: { limit?: number }) => Promise<{ data: unknown[]; total: number }>;
-  } | null = null;
+  let capability: SearchCapability | null = null;
 
   globalThis.fetch = async (input, init) => {
     const url = String(input);
@@ -194,9 +425,7 @@ test("search retries auto-provision after an eager startup failure", async () =>
   try {
     mnemoPlugin.register(
       createStubApi(
-        {
-          apiUrl: "https://api.mem9.ai",
-        },
+        { apiUrl },
         {
           infoLogs,
           errorLogs,
@@ -207,7 +436,7 @@ test("search retries auto-provision after an eager startup failure", async () =>
       ),
     );
 
-    await flushAsyncWork();
+    await waitFor(() => provisionAttempts === 1);
 
     assert.equal(provisionAttempts, 1);
     assert.equal(

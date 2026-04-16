@@ -92,7 +92,7 @@ The dry-run preview must disclose:
 - install may use a one-shot `NPM_CONFIG_REGISTRY=https://registry.npmmirror.com` override when the default npm registry is slow or unreachable
 - only mem9 plugin config keys will be changed
 - reconnect path expects one restart after config is written and read back
-- create-new path expects one restart without `apiKey`; after the generated key is captured and written back to config, no second restart is needed
+- create-new path expects one restart without `apiKey`; after the generated key is captured and written back to config, do not schedule an extra restart yourself, but be prepared for the host to trigger one more config-driven restart when the persisted `apiKey` is written back
 - if create-new has `REMOTE_SKILL_UTM_PARAMS`, the dry-run must explicitly say those filtered `utm_*` values will be written under `plugins.entries.mem9.config.provisionQueryParams` before the first restart
 - local history will not be uploaded by this setup flow
 - one short restart-and-return instruction in the user's language
@@ -168,6 +168,7 @@ The restart-and-return instruction must stay short and must tell the user all th
 - the gateway will restart automatically
 - the user should return to this same chat in a few minutes
 - the user should say `hi`
+- do not claim post-restart verification is already running in this same notice
 
 ## Step 2 — Detect OpenClaw Version
 
@@ -332,8 +333,9 @@ Before every restart:
 3. Save `<id>` as `AUTO_PROVISIONED_MEM9_API_KEY`
 4. Write that value back into `plugins.entries.mem9.config.apiKey`
 5. Read back the config and confirm the persisted value exactly matches `AUTO_PROVISIONED_MEM9_API_KEY`
-6. Do not restart again — the plugin is already running with the auto-provisioned key in memory, and the config read-back confirms the key will persist through future restarts
-7. Proceed directly to verification
+6. Do not schedule an extra restart just for mem9 — the plugin is already running with the auto-provisioned key in memory, and the config read-back confirms the key will persist through future restarts
+7. If the host triggers a config-driven restart after the `apiKey` write-back, treat it as host behavior and resume verification after it comes back instead of re-running create-new
+8. Proceed directly to verification
 
 If the auto-provision log never appears, stop and use `TROUBLESHOOTING.md`.
 
@@ -348,10 +350,13 @@ If multiple different auto-provisioned keys appear during one create-new run, tr
 
 - When the user returns after a restart and sends `hi` or another short message, resume verification automatically.
 - Do not ask `Want me to continue?`
-- The first resume reply must be short and user-facing, for example: `Resuming mem9 verification after the gateway restart now. You do not need to do anything right now.`
+- The first resume reply must be short and user-facing, and it may only be sent after the post-restart checks have actually started in the current turn.
+- For example: `Resuming mem9 verification after the gateway restart now. You do not need to do anything right now.`
 - Keep user-facing restart and resume notices in the user's language instead of replaying fixed English strings verbatim.
 - Do not enumerate internal checklists, log lines, temporary status flips, or diagnostic reasoning in the resume reply.
 - Do not stream intermediate verification details to the user unless the flow is blocked or has failed.
+- After the first post-restart `hi`, either finish verification in that resumed turn or surface a concrete blocking problem.
+- Do not ask for repeated keepalive messages such as another `hi` unless a real additional restart occurred after the first resumed turn began.
 - If the first post-restart host status briefly reports memory as unavailable, do one silent re-check before telling the user anything else.
 - That silent re-check must use the current config plus mem9-specific logs or activity to confirm whether the plugin is actually healthy.
 - If the silent re-check shows mem9 loaded successfully, reached the API, or resumed injecting memories, continue directly to the final handoff and do not mention the transient unavailable state.
@@ -361,6 +366,7 @@ If multiple different auto-provisioned keys appear during one create-new run, tr
   - setup is still verifying after the restart
   - one issue remains
   - the user does not need to do anything yet unless asked
+- If the host cannot durably resume on its own, the pre-restart restart-and-return instruction remains the source of truth; do not improvise stronger promises about automatic continuation.
 
 ### Positive Health Signals
 

@@ -2,6 +2,8 @@
 
 Memory plugin for [OpenClaw](https://github.com/openclaw) — replaces the built-in memory slot with cloud-persistent shared memory. Runs in server mode only, connecting to `mnemo-server` via `apiUrl` + `apiKey` (preferred) or legacy `tenantID`. Optional `provisionQueryParams` can forward `utm_*` attribution only during first-time auto-provisioning.
 
+When `apiKey` is absent during create-new onboarding, the plugin coordinates auto-provision across concurrent OpenClaw plugin registrations on the same machine and briefly reuses the generated key until config write-back completes. This avoids duplicate mem9 spaces when the host reloads the plugin multiple times around a restart.
+
 ## 🚀 Quick Start (Server Mode)
 
 **You need a running `mnemo-server` instance.**
@@ -179,7 +181,7 @@ Defined in `openclaw.plugin.json`:
 | `searchTimeoutMs` | number | Timeout for `memory_search` and automatic recall search in milliseconds. Default: `15000` |
 | `tenantID` | string | Legacy alias for `apiKey`. The plugin still uses `/v1alpha2/mem9s/...` with `X-API-Key`. |
 
-> **Note**: `apiKey` takes precedence when both fields are set. If only `tenantID` is present, the plugin treats it as a legacy alias for `apiKey`, still uses v1alpha2, and logs a deprecation warning once at startup. `provisionQueryParams` is ignored after an `apiKey` is already configured, and non-`utm_*` keys are dropped before the provision request is sent.
+> **Note**: `apiKey` takes precedence when both fields are set. If only `tenantID` is present, the plugin treats it as a legacy alias for `apiKey`, still uses v1alpha2, and logs a deprecation warning once at startup. `provisionQueryParams` is ignored after an `apiKey` is already configured, and non-`utm_*` keys are dropped before the provision request is sent. During create-new onboarding, the plugin also shares one in-flight auto-provision result across concurrent local registrations so repeated plugin reloads do not create multiple keys before config write-back.
 
 ## Timeout Behavior
 
@@ -228,5 +230,6 @@ openclaw-plugin/
 |---|---|---|
 | `No mode configured` | Missing config | Add `apiUrl` and `apiKey` (or legacy `tenantID`) to plugin config |
 | `Server mode requires...` | Missing key | Add `apiKey` (or legacy `tenantID`) to config |
+| Multiple auto-provisioned keys appear during create-new | Host reloaded the plugin before config write-back | Upgrade to `@mem9/mem9@0.4.4+`; the plugin now shares one local auto-provision result across concurrent registrations |
 | Search requests time out | Hybrid/vector search exceeds plugin timeout | Increase `searchTimeoutMs` in plugin config |
 | Plugin not loading | Not in memory slot | Set `"slots": {"memory": "mem9"}` in openclaw.json |
