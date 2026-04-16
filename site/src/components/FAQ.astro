@@ -100,12 +100,17 @@ function linkRel(link: SiteLinkCopy): string | undefined {
 
   .faq-list {
     display: grid;
-    gap: 1rem;
+    gap: 0.75rem;
   }
 
   .faq-item {
     background: linear-gradient(180deg, var(--surface-elevated-start), var(--surface-elevated-end));
     overflow: hidden;
+    transition: border-color 0.2s;
+  }
+
+  .faq-item:hover {
+    border-color: var(--border-strong);
   }
 
   .faq-summary {
@@ -116,6 +121,15 @@ function linkRel(link: SiteLinkCopy): string | undefined {
     gap: 1rem;
     padding: 1.25rem 1.35rem;
     cursor: pointer;
+    transition: background-color 0.2s;
+  }
+
+  .faq-summary:hover {
+    background: var(--button-active-bg);
+  }
+
+  .faq-summary:hover .faq-icon {
+    color: var(--text);
   }
 
   .faq-summary::-webkit-details-marker {
@@ -123,7 +137,7 @@ function linkRel(link: SiteLinkCopy): string | undefined {
   }
 
   .faq-question {
-    font-size: 1.06rem;
+    font-size: 1.1rem;
     font-weight: 600;
     letter-spacing: -0.02em;
   }
@@ -161,11 +175,29 @@ function linkRel(link: SiteLinkCopy): string | undefined {
   .faq-body {
     padding: 0 1.35rem 1.35rem;
     display: grid;
-    gap: 0.95rem;
+    gap: 0.8rem;
     color: var(--text-dim);
+    animation: faq-reveal 0.25s ease;
+  }
+
+  .faq-item[open] .faq-body {
+    border-top: 1px solid var(--border);
+    padding-top: 1.1rem;
+  }
+
+  @keyframes faq-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .faq-answer {
+    font-size: 0.96rem;
     line-height: 1.68;
   }
 
@@ -198,10 +230,11 @@ function linkRel(link: SiteLinkCopy): string | undefined {
   }
 
   .faq-code {
-    padding: 0.95rem 1rem;
+    padding: 0.85rem 1rem;
     border-radius: 0.95rem;
     background: var(--bg-terminal);
     border: 1px solid var(--border);
+    border-left: 2px solid var(--accent);
     overflow-x: auto;
     box-shadow: var(--surface-inset), var(--surface-shadow-soft);
   }
@@ -228,6 +261,12 @@ function linkRel(link: SiteLinkCopy): string | undefined {
     color: var(--text);
     border-bottom: 1px solid var(--button-active-border);
     padding-bottom: 0.05rem;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .faq-link:hover {
+    border-bottom-color: var(--text);
+    opacity: 1;
   }
 
   @media (max-width: 720px) {

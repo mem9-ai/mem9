@@ -36,6 +36,7 @@ export interface SiteHeroCopy {
   titleAccent: string;
   subtitle: string;
   onboardingLabel: string;
+  onboardingHint: string;
   onboardingStableLabel: string;
   onboardingBetaLabel: string;
   onboardingCommandStable: string;
@@ -172,6 +173,7 @@ export interface SiteApiEndpointCopy {
 }
 
 export interface SiteApiEndpointGroupCopy {
+  id: string;
   title: string;
   description: string;
   endpoints: SiteApiEndpointCopy[];
@@ -191,6 +193,9 @@ export interface SiteApiPageCopy {
     examples: string;
     required: string;
     next: string;
+    sidebarTitle: string;
+    sidebarAuth: string;
+    sidebarQuickstart: string;
   };
   authTitle: string;
   authCards: {
@@ -909,6 +914,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       examples: 'Examples',
       required: 'Required',
       next: 'Next',
+      sidebarTitle: 'On this page',
+      sidebarAuth: 'Authentication',
+      sidebarQuickstart: 'Quick Start',
     },
     authTitle: 'Base URL & authentication',
     authCards: [
@@ -942,6 +950,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ],
     endpointGroups: [
       {
+        id: 'provisioning',
         title: 'Provisioning',
         description: 'Create the initial key you will reuse for hosted mem9 access.',
         endpoints: [
@@ -957,6 +966,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'memories',
         title: 'Memories',
         description: 'Create, search, read, update, and delete stored memories in your mem9 space.',
         endpoints: [
@@ -1016,6 +1026,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'imports',
         title: 'Imports',
         description: 'Upload memory or session files and poll their background task status.',
         endpoints: [
@@ -1054,6 +1065,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'session-messages',
         title: 'Session Messages',
         description: 'Inspect raw captured conversation rows that were stored during ingest.',
         endpoints: [
@@ -1071,6 +1083,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'health',
         title: 'Health & Compatibility',
         description:
           'Use `/healthz` for liveness checks. Legacy tenant-scoped routes still exist under `/v1alpha1/mem9s/{tenantID}/...`, but hosted clients should prefer `v1alpha2` plus `X-API-Key`.',
@@ -1112,6 +1125,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       examples: '示例',
       required: '必填',
       next: '下一步',
+      sidebarTitle: '本页目录',
+      sidebarAuth: '认证',
+      sidebarQuickstart: '快速开始',
     },
     authTitle: 'Base URL 与认证方式',
     authCards: [
@@ -1144,6 +1160,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ],
     endpointGroups: [
       {
+        id: 'provisioning',
         title: 'Provisioning',
         description: '创建你后续会重复使用的 hosted mem9 访问 key。',
         endpoints: [
@@ -1158,6 +1175,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'memories',
         title: 'Memories',
         description: '在你的 mem9 space 中创建、搜索、读取、更新和删除记忆。',
         endpoints: [
@@ -1214,6 +1232,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'imports',
         title: 'Imports',
         description: '上传 memory / session 文件，并轮询后台任务状态。',
         endpoints: [
@@ -1251,6 +1270,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'session-messages',
         title: 'Session Messages',
         description: '查看在 ingest 过程中被保存下来的原始对话消息。',
         endpoints: [
@@ -1267,6 +1287,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'health',
         title: 'Health 与兼容性',
         description: '用 `/healthz` 做存活检查。旧的 tenant-scoped 路由仍存在于 `/v1alpha1/mem9s/{tenantID}/...` 下，但 hosted 客户端应优先使用 `v1alpha2` + `X-API-Key`。',
         endpoints: [
@@ -1306,6 +1327,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       examples: '範例',
       required: '必填',
       next: '下一步',
+      sidebarTitle: '本頁目錄',
+      sidebarAuth: '驗證',
+      sidebarQuickstart: '快速開始',
     },
     authTitle: 'Base URL 與驗證方式',
     authCards: [
@@ -1338,6 +1362,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ],
     endpointGroups: [
       {
+        id: 'provisioning',
         title: 'Provisioning',
         description: '建立後續會重複使用的 hosted mem9 存取 key。',
         endpoints: [
@@ -1352,6 +1377,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'memories',
         title: 'Memories',
         description: '在你的 mem9 space 中建立、搜尋、讀取、更新與刪除記憶。',
         endpoints: [
@@ -1408,6 +1434,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'imports',
         title: 'Imports',
         description: '上傳 memory / session 檔案，並輪詢背景任務狀態。',
         endpoints: [
@@ -1445,6 +1472,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'session-messages',
         title: 'Session Messages',
         description: '查看在 ingest 流程中被保存下來的原始對話訊息。',
         endpoints: [
@@ -1461,6 +1489,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'health',
         title: 'Health 與相容性',
         description: '使用 `/healthz` 進行存活檢查。舊的 tenant-scoped 路由仍存在於 `/v1alpha1/mem9s/{tenantID}/...` 下，但 hosted client 應優先使用 `v1alpha2` + `X-API-Key`。',
         endpoints: [
@@ -1500,6 +1529,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       examples: 'Examples',
       required: '必須',
       next: 'Next',
+      sidebarTitle: 'このページの内容',
+      sidebarAuth: '認証',
+      sidebarQuickstart: 'クイックスタート',
     },
     authTitle: 'Base URL と認証',
     authCards: [
@@ -1532,6 +1564,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ],
     endpointGroups: [
       {
+        id: 'provisioning',
         title: 'Provisioning',
         description: 'hosted mem9 にアクセスするための初期 key を発行します。',
         endpoints: [
@@ -1546,6 +1579,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'memories',
         title: 'Memories',
         description: 'mem9 space 内の memory を作成、検索、取得、更新、削除します。',
         endpoints: [
@@ -1602,6 +1636,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'imports',
         title: 'Imports',
         description: 'memory / session ファイルをアップロードし、バックグラウンド task の状態を確認します。',
         endpoints: [
@@ -1639,6 +1674,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'session-messages',
         title: 'Session Messages',
         description: 'ingest 中に保存された raw conversation row を確認します。',
         endpoints: [
@@ -1655,6 +1691,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'health',
         title: 'Health & Compatibility',
         description: '`/healthz` は liveness check 用です。旧 tenant-scoped route は `/v1alpha1/mem9s/{tenantID}/...` に残っていますが、hosted client は `v1alpha2` + `X-API-Key` を優先してください。',
         endpoints: [
@@ -1694,6 +1731,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       examples: 'Examples',
       required: '필수',
       next: '다음',
+      sidebarTitle: '이 페이지 목차',
+      sidebarAuth: '인증',
+      sidebarQuickstart: '빠른 시작',
     },
     authTitle: 'Base URL 과 인증',
     authCards: [
@@ -1726,6 +1766,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ],
     endpointGroups: [
       {
+        id: 'provisioning',
         title: 'Provisioning',
         description: 'hosted mem9 접근에 사용할 초기 key 를 발급합니다.',
         endpoints: [
@@ -1740,6 +1781,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'memories',
         title: 'Memories',
         description: 'mem9 space 안의 memory 를 생성, 검색, 조회, 수정, 삭제합니다.',
         endpoints: [
@@ -1796,6 +1838,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'imports',
         title: 'Imports',
         description: 'memory / session 파일을 업로드하고 백그라운드 task 상태를 확인합니다.',
         endpoints: [
@@ -1833,6 +1876,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'session-messages',
         title: 'Session Messages',
         description: 'ingest 동안 저장된 raw conversation row 를 확인합니다.',
         endpoints: [
@@ -1849,6 +1893,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'health',
         title: 'Health & Compatibility',
         description: '`/healthz` 는 liveness check 용입니다. 기존 tenant-scoped route 는 `/v1alpha1/mem9s/{tenantID}/...` 아래에 남아 있지만, hosted client 는 `v1alpha2` + `X-API-Key` 를 우선해야 합니다.',
         endpoints: [
@@ -1888,6 +1933,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       examples: 'Examples',
       required: 'Wajib',
       next: 'Next',
+      sidebarTitle: 'Di halaman ini',
+      sidebarAuth: 'Autentikasi',
+      sidebarQuickstart: 'Quick Start',
     },
     authTitle: 'Base URL & autentikasi',
     authCards: [
@@ -1920,6 +1968,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ],
     endpointGroups: [
       {
+        id: 'provisioning',
         title: 'Provisioning',
         description: 'Buat key awal yang akan dipakai ulang untuk akses hosted mem9.',
         endpoints: [
@@ -1934,6 +1983,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'memories',
         title: 'Memories',
         description: 'Buat, cari, baca, ubah, dan hapus memory yang tersimpan di mem9 space Anda.',
         endpoints: [
@@ -1990,6 +2040,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'imports',
         title: 'Imports',
         description: 'Unggah file memory atau session dan polling status task latar belakangnya.',
         endpoints: [
@@ -2027,6 +2078,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'session-messages',
         title: 'Session Messages',
         description: 'Lihat row percakapan mentah yang disimpan saat ingest berjalan.',
         endpoints: [
@@ -2043,6 +2095,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'health',
         title: 'Health & Compatibility',
         description: 'Gunakan `/healthz` untuk liveness check. Rute tenant-scoped lama masih ada di `/v1alpha1/mem9s/{tenantID}/...`, tetapi client hosted sebaiknya memakai `v1alpha2` + `X-API-Key`.',
         endpoints: [
@@ -2082,6 +2135,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       examples: 'Examples',
       required: 'จำเป็น',
       next: 'ถัดไป',
+      sidebarTitle: 'ในหน้านี้',
+      sidebarAuth: 'การยืนยันตัวตน',
+      sidebarQuickstart: 'เริ่มต้นอย่างรวดเร็ว',
     },
     authTitle: 'Base URL และการยืนยันตัวตน',
     authCards: [
@@ -2114,6 +2170,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ],
     endpointGroups: [
       {
+        id: 'provisioning',
         title: 'Provisioning',
         description: 'สร้าง key เริ่มต้นที่คุณจะใช้ซ้ำสำหรับเข้าถึง hosted mem9',
         endpoints: [
@@ -2128,6 +2185,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'memories',
         title: 'Memories',
         description: 'สร้าง ค้นหา อ่าน อัปเดต และลบ memory ที่เก็บอยู่ใน mem9 space ของคุณ',
         endpoints: [
@@ -2184,6 +2242,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'imports',
         title: 'Imports',
         description: 'อัปโหลดไฟล์ memory หรือ session แล้วติดตามสถานะ task เบื้องหลัง',
         endpoints: [
@@ -2221,6 +2280,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'session-messages',
         title: 'Session Messages',
         description: 'ดู row บทสนทนาแบบดิบที่ถูกเก็บไว้ระหว่าง ingest',
         endpoints: [
@@ -2237,6 +2297,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       {
+        id: 'health',
         title: 'Health & Compatibility',
         description: 'ใช้ `/healthz` สำหรับ liveness check ส่วนเส้นทาง tenant-scoped แบบเดิมยังอยู่ที่ `/v1alpha1/mem9s/{tenantID}/...` แต่ client แบบ hosted ควรใช้ `v1alpha2` + `X-API-Key`',
         endpoints: [
@@ -2286,7 +2347,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for OpenClaw',
       subtitle:
         'Your agents forget everything between sessions. mem9 fixes that. Persistent memory infrastructure with hybrid search, shared spaces, and cross-agent recall from first write to forever.',
-      onboardingLabel: 'Agent Onboarding',
+      onboardingLabel: 'How to install',
+      onboardingHint: 'Copy the command above into OpenClaw to get started. An API key is generated automatically \u2014 no sign-up required.',
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
@@ -2548,7 +2610,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for OpenClaw',
       subtitle:
         '你的 Agent 会在每次会话结束后忘掉一切，mem9 负责修复这件事。它提供持久化记忆基础设施，支持混合搜索、共享空间和跨 Agent 召回，从第一次写入一直保留到未来。',
-      onboardingLabel: 'Agent 接入',
+      onboardingLabel: '如何安装',
+      onboardingHint: '把上面这条命令复制给 OpenClaw 即可完成安装，按提示操作会自动生成 API Key，无需注册申请。',
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
@@ -2801,7 +2864,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for OpenClaw',
       subtitle:
         '你的 Agent 會在每次會話結束後忘掉一切，mem9 負責修復這件事。它提供持久化記憶基礎設施，支援混合搜尋、共享空間和跨 Agent 召回，從第一次寫入一路保留到未來。',
-      onboardingLabel: 'Agent 接入',
+      onboardingLabel: '如何安裝',
+      onboardingHint: '把上面這條指令複製給 OpenClaw 即可完成安裝，按提示操作會自動產生 API Key，無需註冊申請。',
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
@@ -3054,7 +3118,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for OpenClaw',
       subtitle:
         'エージェントはセッションが変わるたびにすべてを忘れます。mem9 はそれを解決します。ハイブリッド検索、共有スペース、エージェント間リコールを備えた永続メモリ基盤で、最初の書き込みからずっと記憶を保ちます。',
-      onboardingLabel: 'エージェント導入',
+      onboardingLabel: 'インストール方法',
+      onboardingHint: '上のコマンドを OpenClaw にコピーしてください。案内に従えば API Key が自動生成されます \u2014 登録不要です。',
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
@@ -3312,7 +3377,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for OpenClaw',
       subtitle:
         '에이전트는 세션이 바뀔 때마다 모든 것을 잊습니다. mem9가 이를 해결합니다. 하이브리드 검색, 공유 공간, 에이전트 간 리콜을 갖춘 지속 메모리 인프라로 첫 번째 기록부터 계속 기억을 유지합니다.',
-      onboardingLabel: '에이전트 온보딩',
+      onboardingLabel: '설치 방법',
+      onboardingHint: '위 명령어를 OpenClaw 에 복사하세요. 안내에 따라 진행하면 API Key 가 자동 생성됩니다 \u2014 가입 불필요.',
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
@@ -3567,7 +3633,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for OpenClaw',
       subtitle:
         'Agent Anda melupakan semuanya di antara sesi. mem9 memperbaikinya. Infrastruktur memori persisten dengan pencarian hybrid, ruang bersama, dan recall lintas agent dari penulisan pertama hingga seterusnya.',
-      onboardingLabel: 'Onboarding Agent',
+      onboardingLabel: 'Cara install',
+      onboardingHint: 'Salin perintah di atas ke OpenClaw untuk memulai. API key akan dibuat otomatis \u2014 tanpa perlu mendaftar.',
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
@@ -3825,7 +3892,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for OpenClaw',
       subtitle:
         'เอเจนต์ของคุณลืมทุกอย่างระหว่างแต่ละเซสชัน mem9 เข้ามาแก้ปัญหานี้ด้วยโครงสร้างพื้นฐานหน่วยความจำแบบถาวรที่มีการค้นหาแบบ hybrid พื้นที่ร่วมกัน และการเรียกคืนข้ามเอเจนต์ตั้งแต่การเขียนครั้งแรกไปจนตลอดการใช้งาน',
-      onboardingLabel: 'การตั้งค่าเอเจนต์',
+      onboardingLabel: 'วิธีติดตั้ง',
+      onboardingHint: 'คัดลอกคำสั่งด้านบนไปวางใน OpenClaw เพื่อเริ่มต้น API key จะถูกสร้างให้อัตโนมัติ \u2014 ไม่ต้องสมัครสมาชิก',
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
