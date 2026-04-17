@@ -1061,17 +1061,19 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 - **DELETE**: Explicitly contradicts an existing memory. Do NOT delete just because the new fact is less specific or incomplete.
 - **NOOP**: Already captured by an existing memory. No action needed.
 
-## Rules
+	## Rules
 
 1. Reference existing memories by their integer ID ONLY (0, 1, 2...). Never invent IDs.
-2. For UPDATE, always include the original text in "old_memory".
-3. For ADD, the "id" field is ignored by the system — set it to "new" or omit it.
-4. UPDATE only when the fact targets the same entity AND the same attribute slot. A new attribute of the same entity → ADD, not UPDATE.
-5. When the fact covers a topic not in any existing memory, use ADD.
-6. When the fact means the same thing as an existing memory (even if worded differently), use NOOP.
-7. Preserve the language of the original facts. Do not translate.
-8. Each existing memory has an "age" field showing when it was last updated. Use age as a tiebreaker: when a new fact conflicts with an existing memory on the same topic and there is no other signal, older memories are more likely outdated. Age alone is NOT sufficient reason to UPDATE or DELETE — the content must also conflict or supersede the existing memory.
-9. Some facts or memories may include a read-only suffix like "[time: 2026-04-11]". That suffix is derived temporal context for matching only. Use it when comparing memories, but do NOT copy the suffix into ADD or UPDATE text.
+2. Return ONLY entries that require a state change: ADD, UPDATE, or DELETE.
+3. Omit unchanged memories from the response instead of returning NOOP entries.
+4. If every new fact is already covered by existing memory, return {"memory": []}.
+5. For UPDATE, always include the original text in "old_memory".
+6. For ADD, the "id" field is ignored by the system — set it to "new" or omit it.
+7. UPDATE only when the fact targets the same entity AND the same attribute slot. A new attribute of the same entity → ADD, not UPDATE.
+8. When the fact covers a topic not in any existing memory, use ADD.
+9. Preserve the language of the original facts. Do not translate.
+10. Each existing memory has an "age" field showing when it was last updated. Use age as a tiebreaker: when a new fact conflicts with an existing memory on the same topic and there is no other signal, older memories are more likely outdated. Age alone is NOT sufficient reason to UPDATE or DELETE — the content must also conflict or supersede the existing memory.
+11. Some facts or memories may include a read-only suffix like "[time: 2026-04-11]". That suffix is derived temporal context for matching only. Use it when comparing memories, but do NOT copy the suffix into ADD or UPDATE text.
 
 ## Tags
 
@@ -1081,29 +1083,29 @@ Examples: "tech", "personal", "preference", "work", "location", "habit"
 Use hyphens for multi-word tags: "programming-language", "work-tool".
 If a new fact includes the tag "raw-fallback", every ADD or UPDATE derived from it
 must also include the tag "raw-fallback" to preserve provenance.
-Omit the "tags" field entirely for NOOP and DELETE entries.
+Omit the "tags" field entirely for DELETE entries.
 
 ## Examples
 
 Example 1 — ADD new information:
   Existing memories: [{"id": 0, "text": "Is a software engineer", "age": "2 months ago"}]
   New facts: ["Name is John"]
-  Result: {"memory": [{"id": "0", "text": "Is a software engineer", "event": "NOOP"}, {"id": "new", "text": "Name is John", "event": "ADD", "tags": ["personal"]}]}
+  Result: {"memory": [{"id": "new", "text": "Name is John", "event": "ADD", "tags": ["personal"]}]}
 
 Example 2 — ADD different attribute of same entity (not UPDATE):
   Existing memories: [{"id": 0, "text": "Sarah is my sister", "age": "3 weeks ago"}, {"id": 1, "text": "Is a software engineer", "age": "2 months ago"}]
   New facts: ["Sarah lives in Osaka"]
-  Result: {"memory": [{"id": "0", "text": "Sarah is my sister", "event": "NOOP"}, {"id": "1", "text": "Is a software engineer", "event": "NOOP"}, {"id": "new", "text": "Sarah lives in Osaka", "event": "ADD", "tags": ["personal", "location"]}]}
+  Result: {"memory": [{"id": "new", "text": "Sarah lives in Osaka", "event": "ADD", "tags": ["personal", "location"]}]}
 
 Example 3 — DELETE contradicted information:
   Existing memories: [{"id": 0, "text": "Name is John", "age": "5 months ago"}, {"id": 1, "text": "Loves cheese pizza", "age": "3 months ago"}]
   New facts: ["Dislikes cheese pizza"]
-  Result: {"memory": [{"id": "0", "text": "Name is John", "event": "NOOP"}, {"id": "1", "text": "Loves cheese pizza", "event": "DELETE"}, {"id": "new", "text": "Dislikes cheese pizza", "event": "ADD", "tags": ["personal", "preference"]}]}
+  Result: {"memory": [{"id": "1", "text": "Loves cheese pizza", "event": "DELETE"}, {"id": "new", "text": "Dislikes cheese pizza", "event": "ADD", "tags": ["personal", "preference"]}]}
 
 Example 4 — NOOP for equivalent information:
   Existing memories: [{"id": 0, "text": "Name is John", "age": "5 months ago"}, {"id": 1, "text": "Loves cheese pizza", "age": "3 months ago"}]
   New facts: ["Name is John"]
-  Result: {"memory": [{"id": "0", "text": "Name is John", "event": "NOOP"}, {"id": "1", "text": "Loves cheese pizza", "event": "NOOP"}]}
+  Result: {"memory": []}
 
 Example 5 — Age as tiebreaker for ambiguous conflicts:
   Existing memories: [{"id": 0, "text": "Prefers vim", "age": "1 year ago"}, {"id": 1, "text": "Works at startup X", "age": "8 months ago"}]
@@ -1121,7 +1123,6 @@ Return ONLY valid JSON. No markdown fences.
 
 {
   "memory": [
-    {"id": "0",   "text": "...",            "event": "NOOP"},
     {"id": "1",   "text": "updated text",   "event": "UPDATE", "old_memory": "original text", "tags": ["work"]},
     {"id": "2",   "text": "...",            "event": "DELETE"},
     {"id": "new", "text": "brand new fact", "event": "ADD",    "tags": ["tech"]}
@@ -1136,7 +1137,7 @@ New facts extracted from recent conversation:
 
 %s
 
-Analyze the new facts and determine whether each should be added, updated, or deleted in memory. Return the full memory state after reconciliation.`, string(refsJSON), string(factsJSON))
+Analyze the new facts and determine whether each should be added, updated, or deleted in memory. Return only the changes that should be applied, and omit unchanged memories.`, string(refsJSON), string(factsJSON))
 
 	reconcileLLMStart := time.Now()
 	scope := llm.CallScope{Step: "reconciliation"}

@@ -2359,6 +2359,61 @@ func TestReconcileOmitsAgeForZeroTimestamp(t *testing.T) {
 	}
 }
 
+func TestReconcileAcceptsEmptyChangeList(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var resp string
+		if callCount == 1 {
+			resp = `{"facts": [{"text": "Prefers dark mode", "tags": ["preference"]}]}`
+		} else {
+			resp = `{"memory": []}`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": resp}}},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{
+				ID:         "mem-dark-mode",
+				Content:    "Prefers dark mode",
+				MemoryType: domain.TypeInsight,
+				State:      domain.StateActive,
+			},
+		},
+	}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	res, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-empty-changes",
+		AgentID:   "agent-1",
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I prefer dark mode"},
+			{Role: "assistant", Content: "Noted."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if len(memRepo.createCalls) != 0 {
+		t.Fatalf("expected no create calls for empty change list, got %d", len(memRepo.createCalls))
+	}
+	if len(memRepo.setStateCalls) != 0 {
+		t.Fatalf("expected no delete/state calls for empty change list, got %d", len(memRepo.setStateCalls))
+	}
+}
+
 func TestReconcileUpdatePreservesExistingTagsWhenLLMOmits(t *testing.T) {
 	t.Parallel()
 
