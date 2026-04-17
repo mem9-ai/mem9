@@ -169,6 +169,7 @@ func (s *SessionService) autoHybridCandidates(
 
 func (s *SessionService) hybridSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
 	queryVec, err := s.embedder.Embed(ctx, f.Query)
+	observeRecallEmbeddingRequest(s.embedder, err)
 	if err != nil {
 		return nil, fmt.Errorf("session embed query: %w", err)
 	}
@@ -201,6 +202,7 @@ func (s *SessionService) hybridCandidates(
 	fetchLimit int,
 ) ([]RecallCandidate, error) {
 	queryVec, err := s.embedder.Embed(ctx, f.Query)
+	observeRecallEmbeddingRequest(s.embedder, err)
 	if err != nil {
 		return nil, fmt.Errorf("session embed query: %w", err)
 	}

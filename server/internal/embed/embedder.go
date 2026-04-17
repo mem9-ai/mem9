@@ -69,6 +69,10 @@ func (e *Embedder) Dims() int {
 	return e.dims
 }
 
+func (e *Embedder) Model() string {
+	return e.model
+}
+
 // embeddingRequest is the OpenAI-compatible request body.
 type embeddingRequest struct {
 	Model          string `json:"model"`

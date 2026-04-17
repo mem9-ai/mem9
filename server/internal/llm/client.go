@@ -25,6 +25,11 @@ type Client struct {
 	http        *http.Client
 }
 
+type CallScope struct {
+	Feature string
+	Step    string
+}
+
 type Config struct {
 	APIKey      string
 	BaseURL     string
@@ -82,9 +87,9 @@ type chatResponse struct {
 		} `json:"message"`
 	} `json:"choices"`
 	Usage *struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
+		PromptTokens        int `json:"prompt_tokens"`
+		CompletionTokens    int `json:"completion_tokens"`
+		TotalTokens         int `json:"total_tokens"`
 		PromptTokensDetails *struct {
 			CachedTokens int `json:"cached_tokens"`
 		} `json:"prompt_tokens_details,omitempty"`
@@ -110,7 +115,11 @@ func (e *HTTPStatusError) Error() string {
 
 // Complete sends a chat completion request to the LLM.
 func (c *Client) Complete(ctx context.Context, system, user string) (string, error) {
-	return c.complete(ctx, system, user, nil)
+	return c.complete(ctx, system, user, nil, CallScope{})
+}
+
+func (c *Client) CompleteWithScope(ctx context.Context, system, user string, scope CallScope) (string, error) {
+	return c.complete(ctx, system, user, nil, scope)
 }
 
 // CompleteJSON sends a chat completion request with response_format: json_object.
@@ -118,18 +127,30 @@ func (c *Client) Complete(ctx context.Context, system, user string) (string, err
 // If the provider returns HTTP 400 (e.g., Ollama, some vLLM builds that don't support
 // response_format), it automatically retries without the parameter.
 func (c *Client) CompleteJSON(ctx context.Context, system, user string) (string, error) {
-	result, err := c.complete(ctx, system, user, &responseFormat{Type: "json_object"})
+	result, err := c.complete(ctx, system, user, &responseFormat{Type: "json_object"}, CallScope{})
 	if err != nil {
 		var httpErr *HTTPStatusError
 		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest {
 			slog.Warn("LLM rejected response_format:json_object (HTTP 400), retrying without it")
-			return c.complete(ctx, system, user, nil)
+			return c.complete(ctx, system, user, nil, CallScope{})
 		}
 	}
 	return result, err
 }
 
-func (c *Client) complete(ctx context.Context, system, user string, respFmt *responseFormat) (string, error) {
+func (c *Client) CompleteJSONWithScope(ctx context.Context, system, user string, scope CallScope) (string, error) {
+	result, err := c.complete(ctx, system, user, &responseFormat{Type: "json_object"}, scope)
+	if err != nil {
+		var httpErr *HTTPStatusError
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest {
+			slog.Warn("LLM rejected response_format:json_object (HTTP 400), retrying without it")
+			return c.complete(ctx, system, user, nil, scope)
+		}
+	}
+	return result, err
+}
+
+func (c *Client) complete(ctx context.Context, system, user string, respFmt *responseFormat, scope CallScope) (string, error) {
 	messages := []Message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: user},
@@ -143,7 +164,7 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 		Temperature:    c.temperature,
 		ResponseFormat: respFmt,
 		EnableThinking: enableThinking,
-	})
+	}, scope)
 	if err != nil {
 		// If 400 and thinking parameters were sent, retry without them (provider may not support them).
 		var httpErr *HTTPStatusError
@@ -154,14 +175,14 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 				Messages:       messages,
 				Temperature:    c.temperature,
 				ResponseFormat: respFmt,
-			})
+			}, scope)
 		}
 	}
 	return result, err
 }
 
 // doRequest sends a single chat completion request and handles metrics/response parsing.
-func (c *Client) doRequest(ctx context.Context, cr chatRequest) (string, error) {
+func (c *Client) doRequest(ctx context.Context, cr chatRequest, scope CallScope) (string, error) {
 	start := time.Now()
 
 	body, err := json.Marshal(cr)
@@ -179,6 +200,9 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest) (string, error) 
 	resp, err := c.http.Do(req)
 	if err != nil {
 		metrics.LLMRequestDuration.WithLabelValues(c.model, "error").Observe(time.Since(start).Seconds())
+		if scope.enabled() {
+			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "error").Inc()
+		}
 		return "", fmt.Errorf("llm request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -193,22 +217,34 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest) (string, error) 
 	// Surface HTTP errors as typed errors so callers can detect specific status codes.
 	if resp.StatusCode >= 400 {
 		metrics.LLMRequestDuration.WithLabelValues(c.model, "error").Observe(duration)
+		if scope.enabled() {
+			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "error").Inc()
+		}
 		return "", &HTTPStatusError{Code: resp.StatusCode, Body: string(respBody)}
 	}
 
 	var chatResp chatResponse
 	if err := json.Unmarshal(respBody, &chatResp); err != nil {
 		metrics.LLMRequestDuration.WithLabelValues(c.model, "error").Observe(duration)
+		if scope.enabled() {
+			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "error").Inc()
+		}
 		return "", fmt.Errorf("decode response: %w", err)
 	}
 
 	if chatResp.Error != nil {
 		metrics.LLMRequestDuration.WithLabelValues(c.model, "error").Observe(duration)
+		if scope.enabled() {
+			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "error").Inc()
+		}
 		return "", fmt.Errorf("llm error: %s", chatResp.Error.Message)
 	}
 
 	if len(chatResp.Choices) == 0 {
 		metrics.LLMRequestDuration.WithLabelValues(c.model, "error").Observe(duration)
+		if scope.enabled() {
+			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "error").Inc()
+		}
 		return "", fmt.Errorf("llm returned no choices")
 	}
 
@@ -218,11 +254,19 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest) (string, error) 
 	}
 
 	metrics.LLMRequestDuration.WithLabelValues(c.model, "success").Observe(duration)
+	if scope.enabled() {
+		metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "success").Inc()
+	}
 	if chatResp.Usage != nil {
 		u := chatResp.Usage
 		metrics.LLMTokensTotal.WithLabelValues(c.model, "input").Add(float64(u.PromptTokens))
 		metrics.LLMTokensTotal.WithLabelValues(c.model, "output").Add(float64(u.CompletionTokens))
 		metrics.LLMTokensTotal.WithLabelValues(c.model, "total").Add(float64(u.TotalTokens))
+		if scope.enabled() {
+			metrics.LLMTokensByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "input").Add(float64(u.PromptTokens))
+			metrics.LLMTokensByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "output").Add(float64(u.CompletionTokens))
+			metrics.LLMTokensByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "total").Add(float64(u.TotalTokens))
+		}
 
 		// Cache tokens: try OpenAI-style (prompt_tokens_details.cached_tokens), then Anthropic-style.
 		cacheRead := u.CacheReadInputTokens
@@ -237,6 +281,10 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest) (string, error) 
 		}
 	}
 	return content, nil
+}
+
+func (s CallScope) enabled() bool {
+	return s.Feature != "" && s.Step != ""
 }
 
 func (c *Client) DebugLLM() bool {

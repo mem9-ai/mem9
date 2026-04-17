@@ -734,7 +734,8 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		Facts []ExtractedFact `json:"facts"`
 	}
 
-	raw, err := s.llm.CompleteJSON(ctx, systemPrompt, userPrompt)
+	scope := llm.CallScope{Feature: "smart_ingest", Step: "extraction"}
+	raw, err := s.llm.CompleteJSONWithScope(ctx, systemPrompt, userPrompt, scope)
 	if err != nil {
 		slog.Warn("extraction LLM call failed, using raw fallback", "err", err)
 		return buildRawFallbackFacts(input, "llm_error_fallback"), nil
@@ -743,8 +744,10 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 	parsed, err := llm.ParseJSON[extractResponse](raw)
 	lastRaw := raw
 	if err != nil {
-		raw2, retryErr := s.llm.CompleteJSON(ctx, systemPrompt,
-			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt)
+		metrics.LLMRetryTotal.WithLabelValues("smart_ingest", "extraction", "json_parse_retry").Inc()
+		raw2, retryErr := s.llm.CompleteJSONWithScope(ctx, systemPrompt,
+			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt,
+			scope)
 		if retryErr != nil {
 			slog.Warn("extraction retry failed, using raw fallback", "err", retryErr)
 			return buildRawFallbackFacts(input, "llm_error_fallback"), nil
@@ -904,7 +907,8 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		MessageTags [][]string      `json:"message_tags"`
 	}
 
-	raw, err := s.llm.CompleteJSON(ctx, systemPrompt, userPrompt)
+	scope := llm.CallScope{Feature: "smart_ingest", Step: "extraction_and_classification"}
+	raw, err := s.llm.CompleteJSONWithScope(ctx, systemPrompt, userPrompt, scope)
 	if err != nil {
 		slog.Warn("extraction LLM call failed, using raw fallback", "err", err)
 		return buildRawFallbackFacts(input, "llm_error_fallback"), normalizeMessageTags(nil, messageCount), nil
@@ -913,8 +917,10 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 	parsed, err := llm.ParseJSON[extractResponse](raw)
 	lastRaw := raw
 	if err != nil {
-		raw2, retryErr := s.llm.CompleteJSON(ctx, systemPrompt,
-			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt)
+		metrics.LLMRetryTotal.WithLabelValues("smart_ingest", "extraction_and_classification", "json_parse_retry").Inc()
+		raw2, retryErr := s.llm.CompleteJSONWithScope(ctx, systemPrompt,
+			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt,
+			scope)
 		if retryErr != nil {
 			slog.Warn("extraction retry failed, using raw fallback", "err", retryErr)
 			return buildRawFallbackFacts(input, "llm_error_fallback"), normalizeMessageTags(nil, messageCount), nil
@@ -1133,7 +1139,8 @@ New facts extracted from recent conversation:
 Analyze the new facts and determine whether each should be added, updated, or deleted in memory. Return the full memory state after reconciliation.`, string(refsJSON), string(factsJSON))
 
 	reconcileLLMStart := time.Now()
-	raw, err := s.llm.CompleteJSON(ctx, systemPrompt, userPrompt)
+	scope := llm.CallScope{Feature: "smart_ingest", Step: "reconciliation"}
+	raw, err := s.llm.CompleteJSONWithScope(ctx, systemPrompt, userPrompt, scope)
 	reconcileLLMDuration += time.Since(reconcileLLMStart)
 	if err != nil {
 		status = "reconcile_llm_warning"
@@ -1157,8 +1164,10 @@ Analyze the new facts and determine whether each should be added, updated, or de
 	if err != nil {
 		// Retry once.
 		reconcileRetryStart := time.Now()
-		raw2, retryErr := s.llm.CompleteJSON(ctx, systemPrompt,
-			"Your previous response was not valid JSON. Return ONLY the JSON object.\n\n"+userPrompt)
+		metrics.LLMRetryTotal.WithLabelValues("smart_ingest", "reconciliation", "json_parse_retry").Inc()
+		raw2, retryErr := s.llm.CompleteJSONWithScope(ctx, systemPrompt,
+			"Your previous response was not valid JSON. Return ONLY the JSON object.\n\n"+userPrompt,
+			scope)
 		reconcileLLMDuration += time.Since(reconcileRetryStart)
 		if retryErr != nil {
 			status = "reconcile_llm_retry_warning"
