@@ -26,6 +26,8 @@ type testMemoryRepo struct {
 	keywordSearchResults []domain.Memory
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	lastKeywordFilter    domain.MemoryFilter
+	bulkSoftDeleteCalls  [][]string
+	bulkSoftDeleteResult int64
 }
 
 func (m *testMemoryRepo) Create(_ context.Context, mem *domain.Memory) error {
@@ -44,8 +46,9 @@ func (m *testMemoryRepo) GetByID(_ context.Context, id string) (*domain.Memory, 
 }
 func (m *testMemoryRepo) UpdateOptimistic(context.Context, *domain.Memory, int) error { return nil }
 func (m *testMemoryRepo) SoftDelete(context.Context, string, string) error            { return nil }
-func (m *testMemoryRepo) BulkSoftDelete(context.Context, []string, string) (int64, error) {
-	return 0, nil
+func (m *testMemoryRepo) BulkSoftDelete(_ context.Context, ids []string, _ string) (int64, error) {
+	m.bulkSoftDeleteCalls = append(m.bulkSoftDeleteCalls, append([]string(nil), ids...))
+	return m.bulkSoftDeleteResult, nil
 }
 func (m *testMemoryRepo) ArchiveMemory(context.Context, string, string) error { return nil }
 func (m *testMemoryRepo) ArchiveAndCreate(_ context.Context, _, _ string, mem *domain.Memory) error {
