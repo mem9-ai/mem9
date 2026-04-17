@@ -557,8 +557,12 @@ const mnemoPlugin = {
     const provisionQueryParams = cfg.provisionQueryParams ?? {};
     const timeoutConfig = resolveTimeouts(cfg, api.logger);
     const hookAgentId = cfg.agentName ?? "agent";
+    const debugEnabled = cfg.debug === true || cfg.debugRecall === true;
     if (!cfg.apiUrl) {
       api.logger.info(`[mem9] apiUrl not configured, using default ${DEFAULT_API_URL}`);
+    }
+    if (cfg.debugRecall === true && cfg.debug !== true) {
+      api.logger.info("[mem9] debugRecall is deprecated; use debug instead");
     }
 
     const configuredApiKey = cfg.apiKey ?? cfg.tenantID;
@@ -728,6 +732,7 @@ const mnemoPlugin = {
     registerHooks(api, hookBackend, api.logger, {
       maxIngestBytes: cfg.maxIngestBytes,
       fallbackAgentId: hookAgentId,
+      debug: debugEnabled,
       provisionForCreateNew: configuredApiKey || !configuredProvisionToken
         ? undefined
         : () => provisionAPIKey(hookAgentId),

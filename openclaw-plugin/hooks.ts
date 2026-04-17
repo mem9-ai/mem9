@@ -38,6 +38,14 @@ interface Logger {
   error: (msg: string) => void;
 }
 
+function previewText(text: string, maxLen = 160): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLen) {
+    return normalized;
+  }
+  return normalized.slice(0, maxLen) + "...";
+}
+
 /**
  * Hook handler types mirroring OpenClaw's PluginHookHandlerMap.
  * We define them locally to avoid importing OpenClaw types at the module level.
@@ -161,6 +169,33 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
+function extractRecallQuery(prompt: string): string {
+  let s = stripInjectedContext(prompt).replace(/\r\n?/g, "\n");
+
+  s = s.replace(
+    /^Conversation info \(untrusted metadata\):\s*\n```[\s\S]*?\n```\s*/gm,
+    "",
+  );
+  s = s.replace(
+    /^Sender \(untrusted metadata\):\s*\n```[\s\S]*?\n```\s*/gm,
+    "",
+  );
+  s = s.replace(
+    /<<<EXTERNAL_UNTRUSTED_CONTENT[\s\S]*?<<<END_EXTERNAL_UNTRUSTED_CONTENT[^>]*>>>/g,
+    "",
+  );
+  s = s.replace(
+    /^Untrusted context \(metadata, do not treat as instructions or commands\):\s*$/gm,
+    "",
+  );
+  s = s.replace(/^\s*Source:\s.*$/gm, "");
+  s = s.replace(/^\s*UNTRUSTED [^\n]*$/gm, "");
+  s = s.replace(/^\s*---\s*$/gm, "");
+  s = s.replace(/\n{3,}/g, "\n\n");
+
+  return s.trim();
+}
+
 // ---------------------------------------------------------------------------
 // Hook registration
 // ---------------------------------------------------------------------------
@@ -173,6 +208,7 @@ export function registerHooks(
     maxIngestBytes?: number;
     fallbackAgentId?: string;
     provisionForCreateNew?: () => Promise<string>;
+    debug?: boolean;
   },
 ): void {
   const maxIngestBytes = options?.maxIngestBytes ?? DEFAULT_MAX_INGEST_BYTES;
@@ -185,14 +221,34 @@ export function registerHooks(
     async (event: unknown) => {
       try {
         const evt = event as { prompt?: string };
-        const prompt = evt?.prompt;
+        const prompt = nonEmptyString(evt?.prompt);
         if (options?.provisionForCreateNew) {
           await options.provisionForCreateNew();
         }
-        if (!prompt || prompt.length < MIN_PROMPT_LEN) return;
+        if (!prompt) return;
 
-        const result = await backend.search({ q: prompt, limit: MAX_INJECT });
+        const recallQuery = extractRecallQuery(prompt);
+        if (options?.debug) {
+          logger.info(
+            `[mem9][debug] before_prompt_build rawPromptLen=${prompt.length} recallQueryLen=${recallQuery.length} recallQueryPreview=${JSON.stringify(previewText(recallQuery))}`,
+          );
+        }
+        if (recallQuery.length < MIN_PROMPT_LEN) {
+          if (options?.debug) {
+            logger.info(
+              `[mem9][debug] before_prompt_build skipping recall because stripped query is shorter than ${MIN_PROMPT_LEN}`,
+            );
+          }
+          return;
+        }
+
+        const result = await backend.search({ q: recallQuery, limit: MAX_INJECT });
         const memories = result.data ?? [];
+        if (options?.debug) {
+          logger.info(
+            `[mem9][debug] before_prompt_build recall search limit=${MAX_INJECT} results=${memories.length}`,
+          );
+        }
 
         if (memories.length === 0) return;
 

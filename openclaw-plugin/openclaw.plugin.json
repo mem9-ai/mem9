@@ -35,6 +35,14 @@
         "minimum": 1,
         "description": "Timeout in milliseconds for memory search and automatic recall search (default 15000)"
       },
+      "debug": {
+        "type": "boolean",
+        "description": "When true, emit mem9 debug logs. Current coverage includes before_prompt_build recall diagnostics; future mem9 debug categories reuse the same switch"
+      },
+      "debugRecall": {
+        "type": "boolean",
+        "description": "Deprecated alias for debug. When true, enables mem9 debug logs including before_prompt_build recall diagnostics"
+      },
       "tenantID": {
         "type": "string",
         "description": "Deprecated: use apiKey"
@@ -62,6 +70,12 @@
     "searchTimeoutMs": {
       "label": "Search Timeout (ms)",
       "placeholder": "15000"
+    },
+    "debug": {
+      "label": "Debug"
+    },
+    "debugRecall": {
+      "label": "Debug Recall (Deprecated)"
     },
     "tenantID": {
       "label": "Tenant ID (legacy)",

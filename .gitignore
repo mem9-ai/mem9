@@ -48,3 +48,4 @@ __pycache__/
 /benchmark/MR-NIAH/logs/
 /benchmark/MR-NIAH/results-logs/
 /benchmark/MR-NIAH/.cache/
+openclaw-plugin/dist-test/

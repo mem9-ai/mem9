@@ -7,6 +7,9 @@ export interface PluginConfig {
   tenantID?: string;
   defaultTimeoutMs?: number;
   searchTimeoutMs?: number;
+  debug?: boolean;
+  // Deprecated: use debug
+  debugRecall?: boolean;
 
   tenantName?: string;
 

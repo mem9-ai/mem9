@@ -180,9 +180,13 @@ Defined in `openclaw.plugin.json`:
 | `provisionQueryParams` | object | Optional `utm_*` map forwarded only to the initial `POST /v1alpha1/mem9s` request made during create-new when `apiKey` is absent |
 | `defaultTimeoutMs` | number | Default timeout for non-search mem9 API requests in milliseconds. Default: `8000` |
 | `searchTimeoutMs` | number | Timeout for `memory_search` and automatic recall search in milliseconds. Default: `15000` |
+| `debug` | boolean | When `true`, emit mem9 debug logs. Current coverage includes `before_prompt_build` recall diagnostics; future mem9 debug categories reuse the same switch |
+| `debugRecall` | boolean | Deprecated alias for `debug` |
 | `tenantID` | string | Legacy alias for `apiKey`. The plugin still uses `/v1alpha2/mem9s/...` with `X-API-Key`. |
 
 > **Note**: `apiKey` takes precedence when both fields are set. If only `tenantID` is present, the plugin treats it as a legacy alias for `apiKey`, still uses v1alpha2, and logs a deprecation warning once at startup. `provisionToken` and `provisionQueryParams` are ignored after an `apiKey` is already configured, and non-`utm_*` keys are dropped before the provision request is sent. During create-new onboarding, the plugin shares one in-flight provision result across concurrent local registrations and reuses the persisted result for the same `provisionToken`, so repeated reloads or repeated setup retries do not create multiple keys.
+
+For debugging, set `"debug": true` in the plugin config. The plugin will emit `[mem9][debug]` lines; current coverage shows how `before_prompt_build` stripped OpenClaw metadata wrappers before issuing the recall search. `"debugRecall": true` still works as a deprecated alias.
 
 ## Timeout Behavior
 

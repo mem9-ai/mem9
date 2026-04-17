@@ -4,6 +4,7 @@
 #
 # Usage:
 #   ./publish.sh
+#   ./publish.sh patch --channel alpha
 #   ./publish.sh prepatch --channel rc
 #   ./publish.sh prerelease --channel rc
 #   ./publish.sh patch
@@ -77,12 +78,15 @@ Defaults:
 
 Examples:
   ./publish.sh
+  ./publish.sh patch --channel alpha
   ./publish.sh prepatch --channel rc
   ./publish.sh prerelease --channel rc
   ./publish.sh patch
 
 Behavior:
   - major|minor|patch publish a stable version to the npm latest tag.
+  - major|minor|patch with --channel alpha|beta|rc automatically become
+    premajor|preminor|prepatch for that prerelease channel.
   - premajor|preminor|prepatch|prerelease publish a prerelease to the selected channel tag.
   - prerelease can stay on the same prerelease channel or move forward (alpha -> beta -> rc),
     but it cannot move backward within the same x.y.z base version.
@@ -110,6 +114,14 @@ is_prerelease_increment() {
 	case "$increment" in
 		premajor|preminor|prepatch|prerelease) return 0 ;;
 		*) return 1 ;;
+	esac
+}
+
+normalize_increment_for_channel() {
+	case "$increment" in
+		major) increment="premajor" ;;
+		minor) increment="preminor" ;;
+		patch) increment="prepatch" ;;
 	esac
 }
 
@@ -151,8 +163,23 @@ parse_args() {
 		increment="$positional"
 	fi
 
-	if ! is_prerelease_increment; then
-		[[ -z "$channel" ]] || die "--channel is only valid with premajor, preminor, prepatch, or prerelease"
+	if [[ -n "$channel" ]]; then
+		case "$channel" in
+			alpha|beta|rc) ;;
+			premajor|preminor|prepatch|prerelease)
+				die "--channel must be alpha, beta, or rc. Use '$channel' as the increment, or use 'patch --channel alpha' style syntax."
+				;;
+			*)
+				die "--channel must be one of: rc, beta, alpha"
+				;;
+		esac
+	fi
+
+	if is_prerelease_increment; then
+		:
+	elif [[ -n "$channel" ]]; then
+		normalize_increment_for_channel
+	else
 		npm_tag="latest"
 		return
 	fi
@@ -160,11 +187,6 @@ parse_args() {
 	if [[ -z "$channel" ]]; then
 		channel="$default_channel"
 	fi
-
-	case "$channel" in
-		alpha|beta|rc) ;;
-		*) die "--channel must be one of: rc, beta, alpha" ;;
-	esac
 
 	npm_tag="$channel"
 }
