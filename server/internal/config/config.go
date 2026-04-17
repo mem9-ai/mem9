@@ -58,6 +58,12 @@ type Config struct {
 	// Defaults to 5.
 	WorkerConcurrency int
 
+	// Metering writes compressed usage batches to S3.
+	MeteringEnabled       bool
+	MeteringBucket        string
+	MeteringPrefix        string
+	MeteringFlushInterval time.Duration
+
 	// DebugLLM enables logging of raw LLM response content, which may contain
 	// user data. Disabled by default. Enable only in dev/test environments via
 	// MNEMO_DEBUG_LLM=true.
@@ -129,6 +135,10 @@ func Load() (*Config, error) {
 		UploadDir:                envOr("MNEMO_UPLOAD_DIR", "./uploads"),
 		FTSEnabled:               envBool("MNEMO_FTS_ENABLED", false),
 		WorkerConcurrency:        envInt("MNEMO_WORKER_CONCURRENCY", 5),
+		MeteringEnabled:          envBool("MNEMO_METERING_ENABLED", false),
+		MeteringBucket:           os.Getenv("MNEMO_METERING_S3_BUCKET"),
+		MeteringPrefix:           os.Getenv("MNEMO_METERING_S3_PREFIX"),
+		MeteringFlushInterval:    envDuration("MNEMO_METERING_FLUSH_INTERVAL", 10*time.Second),
 		EncryptType:              envOr("MNEMO_ENCRYPT_TYPE", "plain"),
 		EncryptKey:               os.Getenv("MNEMO_ENCRYPT_KEY"),
 		DebugLLM:                 envBool("MNEMO_DEBUG_LLM", false),

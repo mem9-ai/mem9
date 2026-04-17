@@ -150,6 +150,7 @@ Use the local file when you work in these areas:
 
 - `server/AGENTS.md`
 - `server/internal/handler/AGENTS.md`
+- `server/internal/metering/AGENTS.md`
 - `server/internal/service/AGENTS.md`
 - `server/internal/repository/tidb/AGENTS.md`
 - `server/internal/tenant/AGENTS.md`
