@@ -67,6 +67,16 @@ Confirm these first:
 - Re-check whether the flow was still waiting on an internal plugin tool or another non-user-reachable interface
 - If the flow asked for another keepalive without a new restart, stop the happy path and treat it as setup orchestration failure, not as normal mem9 onboarding behavior
 
+### Gateway Aborted After Adding `plugins.entries.mem9.apiKey`
+
+- Treat this as setup orchestration failure, not as a mem9 runtime failure
+- `plugins.entries.mem9.apiKey` at the entry top level is not a supported compatibility fallback
+- OpenClaw rejects that key before the mem9 plugin can load
+- Remove only the invalid top-level `plugins.entries.mem9.apiKey`
+- Keep the real secret only at `plugins.entries.mem9.config.apiKey`
+- Read back the config again before restarting
+- Do not keep experimenting with duplicate secret fields outside the documented mem9 config scope
+
 ### Existing API Key Fails After Reconnect
 
 - Re-check the value for typos
@@ -86,6 +96,14 @@ Confirm these first:
 - Restart and verify again
 - If a new key is still auto-provisioned after that, stop the reconnect flow and keep troubleshooting instead of silently switching mem9 spaces
 
+### Reconnect Looked Broken, But Logs Already Show mem9 Activity
+
+- If recent logs already show `[mem9] Injecting N memories into prompt context`, `[mem9] Ingest accepted for async processing`, or `[mem9] Ingested session: memories_changed=...`, mem9 is already operational
+- Do not keep troubleshooting just because `openclaw status` still says `enabled (plugin mem9) · unavailable`
+- Do not add top-level compatibility keys such as `plugins.entries.mem9.apiKey` after positive health signals already appeared
+- Treat the remaining problem as host-side status reporting or session orchestration, not as a mem9 credential failure
+- Resume the normal success handoff once the active key and current config read-back are confirmed
+
 ### Memory Shows Unavailable In Status But Plugin Is Working
 
 - `openclaw status` may briefly show `enabled (plugin mem9) · unavailable` after a restart
@@ -97,6 +115,14 @@ Confirm these first:
 - If any positive signal is present, the plugin is healthy — ignore the `unavailable` status
 - If no positive signal appears after 2+ minutes and the logs show repeated timeouts, check network connectivity to the configured `apiUrl`
 - Do not re-run setup or treat this as a setup failure when logs confirm the plugin is operational
+
+### Create-New Provisioned A Key, But The Chat Or Gateway Looked Hung
+
+- If gateway logs already show `[mem9] *** Auto-provisioned apiKey=... *** Save this for recovery or reconnect as apiKey`, create-new already reached the mem9 API
+- If the same restart window also shows host/session errors such as `refresh_token_reused`, `ws-stream` `401`, or repeated auth fallback logs, treat those as host resume problems, not as create-new failure
+- Do not rerun create-new or rotate to a different key just because the final handoff reply was interrupted
+- First confirm that later mem9 logs reuse the same provisioned key or continue without mem9 startup errors
+- Then either finish the setup handoff or troubleshoot the host auth/session issue separately from mem9 onboarding
 
 ### Removed mem9 But Gateway Will Not Start
 

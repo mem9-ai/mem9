@@ -21,10 +21,12 @@ When this file is read, send ONLY the choice prompt below. Do not include enviro
 - Do not use direct web-request commands, raw memory API calls, or scripted shell patch commands in this public setup flow.
 - Do not change the user's global npm registry config during setup unless the user explicitly asks for a permanent mirror change.
 - Reconnect and create-new are separate branches. Once one branch is selected, ignore the other branch unless the user explicitly changes their choice.
+- The allowed config scope is exhaustive. Never add fallback keys outside it. In particular, never write `plugins.entries.mem9.apiKey`; only `plugins.entries.mem9.config.apiKey` is valid.
 - In create-new mode, generate `PROVISION_TOKEN` once immediately after the branch is selected, write it under `plugins.entries.mem9.config.provisionToken` before the first restart, and keep that exact value stable through the first successful post-restart provision on this machine.
 - Before taking any action, show one dry-run preview that covers install, config edits, expected restarts, and what the user must do after the restart.
 - Use one explicit approval for the entire disclosed flow. Do not ask for a second approval unless the scope materially changes.
 - In create-new mode, if the remote `SKILL.md` URL contains filtered `utm_*` params, do not proceed to the first restart until `plugins.entries.mem9.config.provisionQueryParams` has been disclosed and read back exactly.
+- If install schedules or hints at a deferred restart, the pre-restart config read-back is still a hard gate. Do not let the first restart happen with only a partial mem9 config update applied.
 
 ## Terminology
 
@@ -212,6 +214,7 @@ Before writing `openclaw.json`:
 - If create-new started from a remote `SKILL.md` URL with `utm_*` params, include `plugins.entries.mem9.config.provisionQueryParams` in the disclosed key list
 - If create-new has `REMOTE_SKILL_UTM_PARAMS`, read back `plugins.entries.mem9.config.provisionQueryParams` before the first restart and require an exact key/value match
 - Apply the mem9 config in one contiguous update after install succeeds. Do not split it into a pre-install slot switch and a later config write.
+- `plugins.entries.mem9.apiKey` at the entry top level is invalid on OpenClaw. Never duplicate or mirror the secret there as a compatibility fallback.
 
 ### Reconnect Existing API Key
 
@@ -226,6 +229,8 @@ Effective changes for OpenClaw `>= 2.2.0`:
 Reconnect hard rules:
 
 - In reconnect mode, never leave `plugins.entries.mem9.config.apiKey` absent for the first restart.
+- The only valid reconnect secret path is `plugins.entries.mem9.config.apiKey`.
+- Do not write or test `plugins.entries.mem9.apiKey` at the entry top level. OpenClaw rejects it before the plugin loads.
 - Immediately after writing config, read back `plugins.entries.mem9.config.apiKey`.
 - The read-back value must exactly match `USER_PROVIDED_MEM9_API_KEY` before the first restart.
 - If the read-back value is missing or different, fix config first. Do not restart yet.
@@ -381,6 +386,7 @@ If multiple different keys appear during one create-new run, treat that as an ab
 - After the first post-restart `hi`, either finish verification in that resumed turn or surface a concrete blocking problem.
 - Do not ask for another keepalive message while the only missing step is the plugin's first-message create-new provision; that step must be driven by the same resumed turn.
 - Do not ask for repeated keepalive messages such as another `hi` unless a real additional restart occurred after the first resumed turn began.
+- If the first resumed turn already produced the generated key and no mem9-specific startup error remains, treat that same turn as the happy-path verification turn. Do not ask for another `hi` just to confirm that create-new already ran.
 - If the first post-restart host status briefly reports memory as unavailable, do one silent re-check before telling the user anything else.
 - That silent re-check must use the current config plus mem9-specific logs or activity to confirm whether the plugin is actually healthy.
 - If the silent re-check shows mem9 loaded successfully, reached the API, or resumed injecting memories, continue directly to the final handoff and do not mention the transient unavailable state.

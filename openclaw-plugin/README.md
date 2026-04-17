@@ -184,7 +184,7 @@ Defined in `openclaw.plugin.json`:
 | `debugRecall` | boolean | Deprecated alias for `debug` |
 | `tenantID` | string | Legacy alias for `apiKey`. The plugin still uses `/v1alpha2/mem9s/...` with `X-API-Key`. |
 
-> **Note**: `apiKey` takes precedence when both fields are set. If only `tenantID` is present, the plugin treats it as a legacy alias for `apiKey`, still uses v1alpha2, and logs a deprecation warning once at startup. `provisionToken` and `provisionQueryParams` are ignored after an `apiKey` is already configured, and non-`utm_*` keys are dropped before the provision request is sent. During create-new onboarding, the plugin shares one in-flight provision result across concurrent local registrations and reuses the persisted result for the same `provisionToken`, so repeated reloads or repeated setup retries do not create multiple keys.
+> **Note**: `apiKey` takes precedence when both fields are set. If only `tenantID` is present, the plugin treats it as a legacy alias for `apiKey`, still uses v1alpha2, and logs a deprecation warning once at startup. `provisionToken` and `provisionQueryParams` are ignored after an `apiKey` is already configured, and non-`utm_*` keys are dropped before the provision request is sent. During create-new onboarding, the plugin shares one in-flight provision result across concurrent local registrations and reuses the persisted result for the same `provisionToken`, so repeated reloads or repeated setup retries do not create multiple keys. The only valid secret path is `plugins.entries.mem9.config.apiKey`; `plugins.entries.mem9.apiKey` at the entry top level is invalid on OpenClaw and prevents the gateway from loading.
 
 For debugging, set `"debug": true` in the plugin config. The plugin will emit `[mem9][debug]` lines; current coverage shows how `before_prompt_build` stripped OpenClaw metadata wrappers before issuing the recall search. `"debugRecall": true` still works as a deprecated alias.
 
@@ -235,6 +235,7 @@ openclaw-plugin/
 |---|---|---|
 | `No mode configured` | Missing config | Add `apiUrl` and `apiKey` (or legacy `tenantID`) to plugin config |
 | `Server mode requires...` | Missing key | Add `apiKey` (or legacy `tenantID`) to config |
+| `config reload skipped (invalid config): plugins.entries.mem9: Unrecognized key: "apiKey"` | Setup wrote `plugins.entries.mem9.apiKey` instead of `plugins.entries.mem9.config.apiKey` | Remove the invalid top-level key and keep the secret only under `config.apiKey` |
 | Multiple auto-provisioned keys appear during create-new | Setup retriggered create-new provisioning before the first result was reused, or an older plugin still auto-provisions on startup | Upgrade to `@mem9/mem9@0.4.7+`; newer builds provision only from the first post-restart user message and reuse one local result across duplicate setup retries |
 | Search requests time out | Hybrid/vector search exceeds plugin timeout | Increase `searchTimeoutMs` in plugin config |
 | Plugin not loading | Not in memory slot | Set `"slots": {"memory": "mem9"}` in openclaw.json |
