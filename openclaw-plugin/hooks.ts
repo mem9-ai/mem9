@@ -295,11 +295,6 @@ export function registerHooks(
         const role = typeof m.role === "string" ? m.role : "";
         if (!role) continue;
 
-        // Skip cron tool results — structured JSON job definitions with no memory value
-        if (role === "toolResult" && typeof m.toolName === "string" && m.toolName === "cron") {
-          continue;
-        }
-
         let content = "";
         if (typeof m.content === "string") {
           content = m.content;

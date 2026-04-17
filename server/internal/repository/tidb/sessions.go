@@ -103,8 +103,7 @@ func (r *SessionRepo) PatchTags(ctx context.Context, sessionID, contentHash stri
 }
 
 func (r *SessionRepo) buildSessionFilterConds(f domain.MemoryFilter) ([]string, []any) {
-	// sessions which are not used for recall purposes (e.g. tool results).
-	conds := []string{`role NOT IN ("toolResult")`}
+	conds := []string{}
 	args := []any{}
 
 	if f.State == "all" {

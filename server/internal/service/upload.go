@@ -484,11 +484,7 @@ func parseOpenClawLine(line []byte) *IngestMessage {
 	if entry.Type != "message" || entry.Message.Role == "" {
 		return nil
 	}
-	// Only keep user and assistant messages for ingest.
 	role := entry.Message.Role
-	if role != "user" && role != "assistant" {
-		return nil
-	}
 
 	content := flattenContentBlocks(entry.Message.Content)
 	if content == "" {
