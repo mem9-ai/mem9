@@ -26,8 +26,7 @@ type Client struct {
 }
 
 type CallScope struct {
-	Feature string
-	Step    string
+	Step string
 }
 
 type Config struct {
@@ -201,7 +200,7 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest, scope CallScope)
 	if err != nil {
 		metrics.LLMRequestDuration.WithLabelValues(c.model, "error").Observe(time.Since(start).Seconds())
 		if scope.enabled() {
-			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "error").Inc()
+			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Step, c.model, "error").Inc()
 		}
 		return "", fmt.Errorf("llm request: %w", err)
 	}
@@ -218,7 +217,7 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest, scope CallScope)
 	if resp.StatusCode >= 400 {
 		metrics.LLMRequestDuration.WithLabelValues(c.model, "error").Observe(duration)
 		if scope.enabled() {
-			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "error").Inc()
+			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Step, c.model, "error").Inc()
 		}
 		return "", &HTTPStatusError{Code: resp.StatusCode, Body: string(respBody)}
 	}
@@ -227,7 +226,7 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest, scope CallScope)
 	if err := json.Unmarshal(respBody, &chatResp); err != nil {
 		metrics.LLMRequestDuration.WithLabelValues(c.model, "error").Observe(duration)
 		if scope.enabled() {
-			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "error").Inc()
+			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Step, c.model, "error").Inc()
 		}
 		return "", fmt.Errorf("decode response: %w", err)
 	}
@@ -235,7 +234,7 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest, scope CallScope)
 	if chatResp.Error != nil {
 		metrics.LLMRequestDuration.WithLabelValues(c.model, "error").Observe(duration)
 		if scope.enabled() {
-			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "error").Inc()
+			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Step, c.model, "error").Inc()
 		}
 		return "", fmt.Errorf("llm error: %s", chatResp.Error.Message)
 	}
@@ -243,7 +242,7 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest, scope CallScope)
 	if len(chatResp.Choices) == 0 {
 		metrics.LLMRequestDuration.WithLabelValues(c.model, "error").Observe(duration)
 		if scope.enabled() {
-			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "error").Inc()
+			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Step, c.model, "error").Inc()
 		}
 		return "", fmt.Errorf("llm returned no choices")
 	}
@@ -255,7 +254,7 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest, scope CallScope)
 
 	metrics.LLMRequestDuration.WithLabelValues(c.model, "success").Observe(duration)
 	if scope.enabled() {
-		metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "success").Inc()
+		metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Step, c.model, "success").Inc()
 	}
 	if chatResp.Usage != nil {
 		u := chatResp.Usage
@@ -263,9 +262,8 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest, scope CallScope)
 		metrics.LLMTokensTotal.WithLabelValues(c.model, "output").Add(float64(u.CompletionTokens))
 		metrics.LLMTokensTotal.WithLabelValues(c.model, "total").Add(float64(u.TotalTokens))
 		if scope.enabled() {
-			metrics.LLMTokensByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "input").Add(float64(u.PromptTokens))
-			metrics.LLMTokensByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "output").Add(float64(u.CompletionTokens))
-			metrics.LLMTokensByStepTotal.WithLabelValues(scope.Feature, scope.Step, c.model, "total").Add(float64(u.TotalTokens))
+			metrics.LLMTokensByStepTotal.WithLabelValues(scope.Step, c.model, "input").Add(float64(u.PromptTokens))
+			metrics.LLMTokensByStepTotal.WithLabelValues(scope.Step, c.model, "output").Add(float64(u.CompletionTokens))
 		}
 
 		// Cache tokens: try OpenAI-style (prompt_tokens_details.cached_tokens), then Anthropic-style.
@@ -284,7 +282,7 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest, scope CallScope)
 }
 
 func (s CallScope) enabled() bool {
-	return s.Feature != "" && s.Step != ""
+	return s.Step != ""
 }
 
 func (c *Client) DebugLLM() bool {

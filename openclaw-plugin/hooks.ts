@@ -11,7 +11,7 @@
  * Reference: OpenClaw's built-in memory-lancedb extension uses the same pattern.
  */
 
-import type { MemoryBackend } from "./backend.js";
+import { isPendingProvisionError, type MemoryBackend } from "./backend.js";
 import type { Memory, IngestMessage } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -36,6 +36,14 @@ const MAX_INGEST_MESSAGES = 20; // absolute cap even if small messages
 interface Logger {
   info: (msg: string) => void;
   error: (msg: string) => void;
+}
+
+function previewText(text: string, maxLen = 160): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLen) {
+    return normalized;
+  }
+  return normalized.slice(0, maxLen) + "...";
 }
 
 /**
@@ -161,6 +169,33 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
+function extractRecallQuery(prompt: string): string {
+  let s = stripInjectedContext(prompt).replace(/\r\n?/g, "\n");
+
+  s = s.replace(
+    /^Conversation info \(untrusted metadata\):\s*\n```[\s\S]*?\n```\s*/gm,
+    "",
+  );
+  s = s.replace(
+    /^Sender \(untrusted metadata\):\s*\n```[\s\S]*?\n```\s*/gm,
+    "",
+  );
+  s = s.replace(
+    /<<<EXTERNAL_UNTRUSTED_CONTENT[\s\S]*?<<<END_EXTERNAL_UNTRUSTED_CONTENT[^>]*>>>/g,
+    "",
+  );
+  s = s.replace(
+    /^Untrusted context \(metadata, do not treat as instructions or commands\):\s*$/gm,
+    "",
+  );
+  s = s.replace(/^\s*Source:\s.*$/gm, "");
+  s = s.replace(/^\s*UNTRUSTED [^\n]*$/gm, "");
+  s = s.replace(/^\s*---\s*$/gm, "");
+  s = s.replace(/\n{3,}/g, "\n\n");
+
+  return s.trim();
+}
+
 // ---------------------------------------------------------------------------
 // Hook registration
 // ---------------------------------------------------------------------------
@@ -169,7 +204,12 @@ export function registerHooks(
   api: HookApi,
   backend: MemoryBackend,
   logger: Logger,
-  options?: { maxIngestBytes?: number; fallbackAgentId?: string },
+  options?: {
+    maxIngestBytes?: number;
+    fallbackAgentId?: string;
+    provisionForCreateNew?: () => Promise<string>;
+    debug?: boolean;
+  },
 ): void {
   const maxIngestBytes = options?.maxIngestBytes ?? DEFAULT_MAX_INGEST_BYTES;
 
@@ -181,11 +221,34 @@ export function registerHooks(
     async (event: unknown) => {
       try {
         const evt = event as { prompt?: string };
-        const prompt = evt?.prompt;
-        if (!prompt || prompt.length < MIN_PROMPT_LEN) return;
+        const prompt = nonEmptyString(evt?.prompt);
+        if (options?.provisionForCreateNew) {
+          await options.provisionForCreateNew();
+        }
+        if (!prompt) return;
 
-        const result = await backend.search({ q: prompt, limit: MAX_INJECT });
+        const recallQuery = extractRecallQuery(prompt);
+        if (options?.debug) {
+          logger.info(
+            `[mem9][debug] before_prompt_build rawPromptLen=${prompt.length} recallQueryLen=${recallQuery.length} recallQueryPreview=${JSON.stringify(previewText(recallQuery))}`,
+          );
+        }
+        if (recallQuery.length < MIN_PROMPT_LEN) {
+          if (options?.debug) {
+            logger.info(
+              `[mem9][debug] before_prompt_build skipping recall because stripped query is shorter than ${MIN_PROMPT_LEN}`,
+            );
+          }
+          return;
+        }
+
+        const result = await backend.search({ q: recallQuery, limit: MAX_INJECT });
         const memories = result.data ?? [];
+        if (options?.debug) {
+          logger.info(
+            `[mem9][debug] before_prompt_build recall search limit=${MAX_INJECT} results=${memories.length}`,
+          );
+        }
 
         if (memories.length === 0) return;
 
@@ -195,6 +258,9 @@ export function registerHooks(
           prependContext: formatMemoriesBlock(memories),
         };
       } catch (err) {
+        if (isPendingProvisionError(err)) {
+          return;
+        }
         // Graceful degradation — never block the LLM call
         logger.error(`[mem9] before_prompt_build failed: ${String(err)}`);
       }
@@ -245,6 +311,9 @@ export function registerHooks(
 
       logger.info("[mem9] Session context saved before reset");
     } catch (err) {
+      if (isPendingProvisionError(err)) {
+        return;
+      }
       // Best-effort — never block /reset
       logger.error(`[mem9] before_reset save failed: ${String(err)}`);
     }
@@ -281,11 +350,6 @@ export function registerHooks(
         const m = msg as Record<string, unknown>;
         const role = typeof m.role === "string" ? m.role : "";
         if (!role) continue;
-
-        // Skip cron tool results — structured JSON job definitions with no memory value
-        if (role === "toolResult" && typeof m.toolName === "string" && m.toolName === "cron") {
-          continue;
-        }
 
         let content = "";
         if (typeof m.content === "string") {
@@ -346,7 +410,10 @@ export function registerHooks(
           `[mem9] Ingested session: memories_changed=${result.memories_changed}, status=${result.status}`
         );
       }
-    } catch {
+    } catch (err) {
+      if (isPendingProvisionError(err)) {
+        return;
+      }
       // Best-effort — never fail the agent end phase
     }
   });

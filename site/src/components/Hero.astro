@@ -8,6 +8,31 @@ interface Props {
 
 const { hero, aria } = Astro.props;
 const showOnboardingVersionTabs = false;
+const onboardingCommandUrlPattern = /https:\/\/\S+/u;
+
+function splitOnboardingCommand(command: string): {
+  prefix: string;
+  url: string | null;
+  suffix: string;
+} {
+  const match = command.match(onboardingCommandUrlPattern);
+
+  if (!match || match.index === undefined) {
+    return {
+      prefix: command,
+      url: null,
+      suffix: '',
+    };
+  }
+
+  const url = match[0];
+  const prefix = command.slice(0, match.index);
+  const suffix = command.slice(match.index + url.length);
+
+  return { prefix, url, suffix };
+}
+
+const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandStable);
 ---
 
 <section class="hero">
@@ -69,7 +94,18 @@ const showOnboardingVersionTabs = false;
               data-command-stable={hero.onboardingCommandStable}
               data-command-beta={hero.onboardingCommandBeta}
             >
-              {hero.onboardingCommandStable}
+              {onboardingCommandStable.prefix}
+              {onboardingCommandStable.url && (
+                <a
+                  href={onboardingCommandStable.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="onboarding-command-link"
+                >
+                  {onboardingCommandStable.url}
+                </a>
+              )}
+              {onboardingCommandStable.suffix}
             </code>
             <button
               type="button"
@@ -112,6 +148,7 @@ const showOnboardingVersionTabs = false;
           </div>
           <p class="sr-only" data-copy-feedback aria-live="polite"></p>
         </div>
+        <p class="cta-hint" data-i18n="hero.onboardingHint">{hero.onboardingHint}</p>
       </div>
 
       <div class="beta-feature-wrap" data-beta-highlights hidden>
@@ -330,6 +367,13 @@ const showOnboardingVersionTabs = false;
     margin-bottom: 1rem;
   }
 
+  .cta-hint {
+    font-size: 0.82rem;
+    color: var(--text-soft);
+    line-height: 1.55;
+    margin-top: 0.65rem;
+  }
+
   .cta-card code {
     display: block;
     flex: 1;
@@ -337,6 +381,22 @@ const showOnboardingVersionTabs = false;
     color: var(--white-soft);
     line-height: 1.55;
     word-break: break-word;
+  }
+
+  .cta-card code :global(.onboarding-command-link) {
+    color: color-mix(in srgb, var(--white-soft) 78%, var(--text-soft));
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.14em;
+    transition: color 0.18s ease, text-decoration-color 0.18s ease;
+  }
+
+  .cta-card code :global(.onboarding-command-link:hover),
+  .cta-card code :global(.onboarding-command-link:focus-visible) {
+    opacity: 1;
+    color: var(--text);
+    text-decoration-color: currentColor;
   }
 
   .cta-command {

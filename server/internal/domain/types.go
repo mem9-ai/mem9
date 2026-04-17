@@ -140,6 +140,17 @@ func (t *Tenant) DSNForBackend(backend string) string {
 	}
 }
 
+// TenantUTM holds marketing attribution params captured at provision time.
+// Immutable after creation; one row per tenant.
+type TenantUTM struct {
+	TenantID  string    `json:"tenant_id"`
+	Source    string    `json:"utm_source,omitempty"`
+	Medium    string    `json:"utm_medium,omitempty"`
+	Campaign  string    `json:"utm_campaign,omitempty"`
+	Content   string    `json:"utm_content,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // TenantInfo describes tenant metadata.
 type TenantInfo struct {
 	TenantID    string       `json:"tenant_id"`

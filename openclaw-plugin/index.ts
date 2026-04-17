@@ -1,4 +1,9 @@
-import type { MemoryBackend } from "./backend.js";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import { PendingProvisionError, isPendingProvisionError, type MemoryBackend } from "./backend.js";
 import {
   DEFAULT_SEARCH_TIMEOUT_MS,
   DEFAULT_TIMEOUT_MS,
@@ -18,6 +23,28 @@ import type {
 
 const DEFAULT_API_URL = "https://api.mem9.ai";
 const TIMEOUT_FIELDS = ["defaultTimeoutMs", "searchTimeoutMs"] as const;
+const SHARED_PROVISION_DIR = path.join(os.homedir(), ".openclaw", "mem9", "provision");
+const SHARED_PROVISION_POLL_INTERVAL_MS = 250;
+const sharedProvisionPromises = new Map<string, Promise<string>>();
+
+type SharedProvisionState =
+  | {
+      status: "pending";
+      startedAt: number;
+      pid: number;
+    }
+  | {
+      status: "done";
+      startedAt: number;
+      finishedAt: number;
+      apiKey: string;
+    }
+  | {
+      status: "error";
+      startedAt: number;
+      finishedAt: number;
+      error: string;
+    };
 
 function normalizeTimeoutMs(
   value: unknown,
@@ -75,6 +102,225 @@ function jsonResult(data: unknown) {
   }
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function sharedProvisionKey(
+  apiUrl: string,
+  provisionQueryParams: Record<string, string>,
+  provisionToken: string,
+): string {
+  const normalizedProvisionQueryParams = Object.fromEntries(
+    Object.entries(provisionQueryParams).sort(([left], [right]) => left.localeCompare(right)),
+  );
+
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        apiUrl,
+        provisionToken,
+        provisionQueryParams: normalizedProvisionQueryParams,
+      }),
+    )
+    .digest("hex");
+}
+
+function sharedProvisionStatePath(sharedKey: string): string {
+  return path.join(SHARED_PROVISION_DIR, `${sharedKey}.json`);
+}
+
+async function readSharedProvisionState(filePath: string): Promise<SharedProvisionState | null> {
+  try {
+    const raw = await readFile(filePath, "utf8");
+    const parsed = JSON.parse(raw) as Partial<SharedProvisionState>;
+    if (parsed.status === "pending" && typeof parsed.startedAt === "number") {
+      return {
+        status: "pending",
+        startedAt: parsed.startedAt,
+        pid: typeof parsed.pid === "number" ? parsed.pid : 0,
+      };
+    }
+    if (
+      parsed.status === "done"
+      && typeof parsed.startedAt === "number"
+      && typeof parsed.finishedAt === "number"
+      && typeof parsed.apiKey === "string"
+    ) {
+      return {
+        status: "done",
+        startedAt: parsed.startedAt,
+        finishedAt: parsed.finishedAt,
+        apiKey: parsed.apiKey,
+      };
+    }
+    if (
+      parsed.status === "error"
+      && typeof parsed.startedAt === "number"
+      && typeof parsed.finishedAt === "number"
+      && typeof parsed.error === "string"
+    ) {
+      return {
+        status: "error",
+        startedAt: parsed.startedAt,
+        finishedAt: parsed.finishedAt,
+        error: parsed.error,
+      };
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+  }
+  return null;
+}
+
+async function writeSharedProvisionState(
+  filePath: string,
+  state: SharedProvisionState,
+): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, JSON.stringify(state), "utf8");
+}
+
+async function createSharedProvisionPendingState(
+  filePath: string,
+  startedAt: number,
+): Promise<boolean> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  try {
+    await writeFile(
+      filePath,
+      JSON.stringify({
+        status: "pending",
+        startedAt,
+        pid: process.pid,
+      } satisfies SharedProvisionState),
+      { encoding: "utf8", flag: "wx" },
+    );
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+      return false;
+    }
+    throw err;
+  }
+}
+
+async function removeSharedProvisionState(filePath: string): Promise<void> {
+  await rm(filePath, { force: true });
+}
+
+async function waitForSharedProvisionResult(
+  filePath: string,
+  waitTimeoutMs: number,
+): Promise<string | null> {
+  const deadline = Date.now() + waitTimeoutMs;
+
+  while (true) {
+    const state = await readSharedProvisionState(filePath);
+    const now = Date.now();
+
+    if (!state) {
+      return null;
+    }
+
+    if (state.status === "done") {
+      return state.apiKey;
+    }
+
+    if (state.status === "error") {
+      await removeSharedProvisionState(filePath);
+      throw new Error(state.error);
+    }
+
+    if (now - state.startedAt > waitTimeoutMs || now >= deadline) {
+      await removeSharedProvisionState(filePath);
+      return null;
+    }
+
+    await sleep(SHARED_PROVISION_POLL_INTERVAL_MS);
+  }
+}
+
+async function resolveSharedProvisionedAPIKey(
+  apiUrl: string,
+  provisionQueryParams: Record<string, string>,
+  provisionToken: string,
+  timeouts: Required<BackendTimeouts>,
+  logger: OpenClawPluginApi["logger"],
+  registerTenant: () => Promise<string>,
+): Promise<string> {
+  const key = sharedProvisionKey(apiUrl, provisionQueryParams, provisionToken);
+  const existingPromise = sharedProvisionPromises.get(key);
+  if (existingPromise) {
+    return existingPromise;
+  }
+
+  const waitTimeoutMs = Math.max(timeouts.defaultTimeoutMs + 5_000, 30_000);
+  const filePath = sharedProvisionStatePath(key);
+  const sharedPromise = (async () => {
+    while (true) {
+      const state = await readSharedProvisionState(filePath);
+
+      if (state?.status === "done") {
+        logger.info("[mem9] reusing locally persisted create-new API key for this provisionToken");
+        return state.apiKey;
+      }
+
+      if (state?.status === "error") {
+        await removeSharedProvisionState(filePath);
+      } else if (state?.status === "pending") {
+        const now = Date.now();
+        if (now - state.startedAt > waitTimeoutMs) {
+          await removeSharedProvisionState(filePath);
+          continue;
+        }
+        logger.info("[mem9] create-new provision already in progress in another mem9 instance; waiting");
+        const sharedApiKey = await waitForSharedProvisionResult(filePath, waitTimeoutMs);
+        if (sharedApiKey) {
+          return sharedApiKey;
+        }
+        continue;
+      }
+
+      const startedAt = Date.now();
+      const acquired = await createSharedProvisionPendingState(filePath, startedAt);
+      if (!acquired) {
+        continue;
+      }
+
+      try {
+        const apiKey = await registerTenant();
+        await writeSharedProvisionState(filePath, {
+          status: "done",
+          startedAt,
+          finishedAt: Date.now(),
+          apiKey,
+        });
+        return apiKey;
+      } catch (err) {
+        await writeSharedProvisionState(filePath, {
+          status: "error",
+          startedAt,
+          finishedAt: Date.now(),
+          error: errorMessage(err),
+        });
+        throw err;
+      }
+    }
+  })().finally(() => {
+    sharedProvisionPromises.delete(key);
+  });
+
+  sharedProvisionPromises.set(key, sharedPromise);
+  return sharedPromise;
+}
+
 interface MemoryCapability {
   search: (query: string, opts?: { limit?: number }) => Promise<{ data: Memory[]; total: number }>;
   store: (content: string, opts?: { tags?: string[]; source?: string }) => Promise<unknown>;
@@ -117,7 +363,9 @@ interface AnyAgentTool {
   execute: (_id: string, params: unknown) => Promise<unknown>;
 }
 
-function buildTools(backend: MemoryBackend): AnyAgentTool[] {
+function buildTools(
+  backend: MemoryBackend,
+): AnyAgentTool[] {
   return [
     {
       name: "memory_store",
@@ -302,43 +550,126 @@ const mnemoPlugin = {
   register(api: OpenClawPluginApi) {
     const cfg = (api.pluginConfig ?? {}) as PluginConfig;
     const effectiveApiUrl = cfg.apiUrl ?? DEFAULT_API_URL;
+    const configuredProvisionToken =
+      typeof cfg.provisionToken === "string" && cfg.provisionToken.trim() !== ""
+        ? cfg.provisionToken.trim()
+        : null;
+    const provisionQueryParams = cfg.provisionQueryParams ?? {};
     const timeoutConfig = resolveTimeouts(cfg, api.logger);
+    const hookAgentId = cfg.agentName ?? "agent";
+    const debugEnabled = cfg.debug === true || cfg.debugRecall === true;
     if (!cfg.apiUrl) {
       api.logger.info(`[mem9] apiUrl not configured, using default ${DEFAULT_API_URL}`);
     }
+    if (cfg.debugRecall === true && cfg.debug !== true) {
+      api.logger.info("[mem9] debugRecall is deprecated; use debug instead");
+    }
 
     const configuredApiKey = cfg.apiKey ?? cfg.tenantID;
+    const provisionWaitTimeoutMs = Math.max(timeoutConfig.defaultTimeoutMs + 5_000, 30_000);
     if (cfg.apiKey && cfg.tenantID) {
       api.logger.info("[mem9] both apiKey and tenantID set; using apiKey");
     } else if (cfg.tenantID) {
       api.logger.info("[mem9] tenantID is deprecated; treating it as apiKey for v1alpha2");
     }
     const registerTenant = async (agentName: string): Promise<string> => {
-      const backend = new ServerBackend(effectiveApiUrl, "", agentName, timeoutConfig);
+      const backend = new ServerBackend(
+        effectiveApiUrl,
+        "",
+        agentName,
+        {
+          timeouts: timeoutConfig,
+          provisionQueryParams,
+        },
+      );
       const result = await backend.register();
       api.logger.info(
-        `[mem9] *** Auto-provisioned apiKey=${result.id} *** Save this to your config as apiKey`
+        `[mem9] *** Auto-provisioned apiKey=${result.id} *** Save this for recovery or reconnect as apiKey`
       );
       return result.id;
     };
+    let runtimeProvisionedAPIKey: string | null = null;
+    let loggedPersistedProvisionedAPIKeyReuse = false;
     let registrationPromise: Promise<string> | null = null;
-    const resolveAPIKey = (agentName: string): Promise<string> => {
-      if (configuredApiKey) return Promise.resolve(configuredApiKey);
+    const provisionAPIKey = (agentName: string): Promise<string> => {
+      if (configuredApiKey) {
+        return Promise.reject(
+          new Error(
+            "mem9 create-new auto-provision is only available before apiKey is configured",
+          ),
+        );
+      }
+      if (runtimeProvisionedAPIKey) {
+        return Promise.resolve(runtimeProvisionedAPIKey);
+      }
+      if (!configuredProvisionToken) {
+        return Promise.reject(
+          new Error("mem9 create-new setup cannot provision because provisionToken is missing"),
+        );
+      }
       if (!registrationPromise) {
-        registrationPromise = registerTenant(agentName);
+        registrationPromise = resolveSharedProvisionedAPIKey(
+          effectiveApiUrl,
+          provisionQueryParams,
+          configuredProvisionToken,
+          timeoutConfig,
+          api.logger,
+          () => registerTenant(agentName),
+        )
+          .then((apiKey) => {
+            runtimeProvisionedAPIKey = apiKey;
+            return apiKey;
+          })
+          .catch((err) => {
+            registrationPromise = null;
+            throw err;
+          });
       }
       return registrationPromise;
     };
+    const resolveAPIKey = async (): Promise<string> => {
+      if (configuredApiKey) return Promise.resolve(configuredApiKey);
+      if (runtimeProvisionedAPIKey) {
+        return runtimeProvisionedAPIKey;
+      }
+      if (configuredProvisionToken) {
+        const sharedKey = sharedProvisionKey(
+          effectiveApiUrl,
+          provisionQueryParams,
+          configuredProvisionToken,
+        );
+        const sharedApiKey = await waitForSharedProvisionResult(
+          sharedProvisionStatePath(sharedKey),
+          provisionWaitTimeoutMs,
+        );
+        if (sharedApiKey) {
+          runtimeProvisionedAPIKey = sharedApiKey;
+          if (!loggedPersistedProvisionedAPIKeyReuse) {
+            api.logger.info("[mem9] reusing locally persisted create-new API key for this provisionToken");
+            loggedPersistedProvisionedAPIKeyReuse = true;
+          }
+          return sharedApiKey;
+        }
+      }
+      throw new PendingProvisionError();
+    };
 
     api.logger.info("[mem9] Server mode (v1alpha2)");
-
-    const hookAgentId = cfg.agentName ?? "agent";
+    if (!configuredApiKey) {
+      if (configuredProvisionToken) {
+        api.logger.info(
+          "[mem9] apiKey not configured; waiting for the first post-restart message to finish create-new provision",
+        );
+      } else {
+        api.logger.info("[mem9] apiKey not configured; mem9 will stay idle until apiKey is configured");
+      }
+    }
 
     const factory: ToolFactory = (ctx: ToolContext) => {
       const agentId = ctx.agentId ?? cfg.agentName ?? "agent";
       const backend = new LazyServerBackend(
         effectiveApiUrl,
-        () => resolveAPIKey(agentId),
+        resolveAPIKey,
         agentId,
         timeoutConfig,
       );
@@ -350,10 +681,24 @@ const mnemoPlugin = {
     // Shared lazy backend for hooks and capability registration.
     const hookBackend = new LazyServerBackend(
       effectiveApiUrl,
-      () => resolveAPIKey(hookAgentId),
+      resolveAPIKey,
       hookAgentId,
       timeoutConfig,
     );
+
+    const withPendingProvisionFallback = async <T>(
+      action: () => Promise<T>,
+      fallback: T,
+    ): Promise<T> => {
+      try {
+        return await action();
+      } catch (err) {
+        if (isPendingProvisionError(err)) {
+          return fallback;
+        }
+        throw err;
+      }
+    };
 
     // Register memory capability so OpenClaw 2026.4.2+ binds this plugin to
     // the memory slot. Without this, the plugin is treated as a legacy
@@ -362,14 +707,24 @@ const mnemoPlugin = {
     if (typeof api.registerCapability === "function") {
       api.registerCapability("memory", {
         search: async (query, opts) => {
-          const result = await hookBackend.search({ q: query, limit: opts?.limit });
+          const result = await withPendingProvisionFallback(
+            () => hookBackend.search({ q: query, limit: opts?.limit }),
+            { data: [], total: 0, limit: opts?.limit ?? 20, offset: 0 },
+          );
           return { data: result.data, total: result.total };
         },
         store: async (content, opts) => {
-          return hookBackend.store({ content, tags: opts?.tags, source: opts?.source });
+          try {
+            return await hookBackend.store({ content, tags: opts?.tags, source: opts?.source });
+          } catch (err) {
+            if (isPendingProvisionError(err)) {
+              return null;
+            }
+            throw err;
+          }
         },
-        get: (id) => hookBackend.get(id),
-        remove: (id) => hookBackend.remove(id),
+        get: (id) => withPendingProvisionFallback(() => hookBackend.get(id), null),
+        remove: (id) => withPendingProvisionFallback(() => hookBackend.remove(id), false),
       });
     }
 
@@ -377,6 +732,10 @@ const mnemoPlugin = {
     registerHooks(api, hookBackend, api.logger, {
       maxIngestBytes: cfg.maxIngestBytes,
       fallbackAgentId: hookAgentId,
+      debug: debugEnabled,
+      provisionForCreateNew: configuredApiKey || !configuredProvisionToken
+        ? undefined
+        : () => provisionAPIKey(hookAgentId),
     });
   },
 };
@@ -390,15 +749,24 @@ const toolNames = [
 ];
 
 class LazyServerBackend implements MemoryBackend {
+  private apiUrl: string;
+  private apiKeyProvider: () => Promise<string>;
+  private agentId: string;
+  private timeouts: BackendTimeouts;
   private resolved: ServerBackend | null = null;
   private resolving: Promise<ServerBackend> | null = null;
 
   constructor(
-    private apiUrl: string,
-    private apiKeyProvider: () => Promise<string>,
-    private agentId: string,
-    private timeouts: BackendTimeouts,
-  ) {}
+    apiUrl: string,
+    apiKeyProvider: () => Promise<string>,
+    agentId: string,
+    timeouts: BackendTimeouts,
+  ) {
+    this.apiUrl = apiUrl;
+    this.apiKeyProvider = apiKeyProvider;
+    this.agentId = agentId;
+    this.timeouts = timeouts;
+  }
 
   private async resolve(): Promise<ServerBackend> {
     if (this.resolved) return this.resolved;
@@ -406,7 +774,9 @@ class LazyServerBackend implements MemoryBackend {
 
     this.resolving = this.apiKeyProvider().then((apiKey) =>
       Promise.resolve().then(() => {
-        this.resolved = new ServerBackend(this.apiUrl, apiKey, this.agentId, this.timeouts);
+        this.resolved = new ServerBackend(this.apiUrl, apiKey, this.agentId, {
+          timeouts: this.timeouts,
+        });
         return this.resolved;
       })
     ).catch((err) => {

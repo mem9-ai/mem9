@@ -1,0 +1,28 @@
+---
+import ApiReference from "../components/ApiReference.astro";
+import Footer from "../components/Footer.astro";
+import Navbar from "../components/Navbar.astro";
+import Layout from "../layouts/Layout.astro";
+import { DEFAULT_LOCALE, siteCopy } from "../content/site";
+
+const copy = siteCopy[DEFAULT_LOCALE];
+---
+
+<Layout
+  meta={copy.apiPage.meta}
+  locale={DEFAULT_LOCALE}
+  metaTitleKey="apiPage.meta.title"
+  metaDescriptionKey="apiPage.meta.description"
+>
+  <Navbar
+    nav={copy.nav}
+    aria={copy.aria}
+    localeNames={copy.localeNames}
+    themeOptions={copy.themeOptions}
+    currentPath="/api"
+  />
+  <main>
+    <ApiReference />
+  </main>
+  <Footer footer={copy.footer} />
+</Layout>

@@ -126,7 +126,7 @@ Agent identity: `X-Mnemo-Agent-Id` header.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/v1alpha1/mem9s` | Provision tenant (no auth). Returns `{ "id" }`. |
+| `POST` | `/v1alpha1/mem9s` | Provision tenant (no auth). Returns `{ "id" }`. Accepts optional `utm_*` query params for attribution logging. |
 | `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy unified write endpoint. Tenant key travels in the URL path. |
 | `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy search endpoint for `tenantID`-configured clients. |
 | `GET` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy get-by-id endpoint. |
@@ -185,6 +185,7 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 | `MNEMO_TIDBCLOUD_API_SECRET` | No | — | TiDB Cloud Pool API secret for digest auth. Same conditions as `MNEMO_TIDBCLOUD_API_KEY` |
 | `MNEMO_TENANT_POOL_MAX_IDLE` | No | `5` | Max idle tenant database connections kept in the in-process tenant pool |
 | `MNEMO_TENANT_POOL_MAX_OPEN` | No | `10` | Max open connections per tenant database handle |
+| `MNEMO_TENANT_POOL_CONNECT_TIMEOUT` | No | `3s` | Timeout for tenant pool cold-connect ping/open attempts |
 | `MNEMO_TENANT_POOL_IDLE_TIMEOUT` | No | `10m` | Idle timeout for tenant database handles |
 | `MNEMO_TENANT_POOL_TOTAL_LIMIT` | No | `200` | Total tenant database handles allowed across the process |
 | `MNEMO_CLUSTER_BLACKLIST` | No | — | Comma-separated TiDB cluster IDs whose spend-limit errors should be translated to HTTP 429 instead of 503 |

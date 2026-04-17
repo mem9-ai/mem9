@@ -22,6 +22,11 @@ export interface BackendTimeouts {
   searchTimeoutMs?: number;
 }
 
+interface ServerBackendOptions {
+  timeouts?: BackendTimeouts;
+  provisionQueryParams?: Record<string, string>;
+}
+
 interface RequestOptions {
   timeoutMs?: number;
 }
@@ -30,25 +35,37 @@ export class ServerBackend implements MemoryBackend {
   private baseUrl: string;
   private apiKey: string;
   private agentName: string;
+  private provisionQueryParams: Record<string, string>;
   private timeouts: Required<BackendTimeouts>;
 
   constructor(
     apiUrl: string,
     apiKey: string,
     agentName: string,
-    timeouts: BackendTimeouts = {},
+    options: ServerBackendOptions = {},
   ) {
     this.baseUrl = apiUrl.replace(/\/+$/, "");
     this.apiKey = apiKey;
     this.agentName = agentName;
+    this.provisionQueryParams = options.provisionQueryParams ?? {};
     this.timeouts = {
-      defaultTimeoutMs: timeouts.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS,
-      searchTimeoutMs: timeouts.searchTimeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
+      defaultTimeoutMs: options.timeouts?.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS,
+      searchTimeoutMs: options.timeouts?.searchTimeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
     };
   }
 
   async register(): Promise<ProvisionMem9sResponse> {
-    const resp = await fetch(this.baseUrl + "/v1alpha1/mem9s", {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(this.provisionQueryParams)) {
+      if (!key.startsWith("utm_") || typeof value !== "string" || value === "") {
+        continue;
+      }
+
+      query.set(key, value);
+    }
+
+    const qs = query.toString();
+    const resp = await fetch(this.baseUrl + "/v1alpha1/mem9s" + (qs ? `?${qs}` : ""), {
       method: "POST",
       signal: AbortSignal.timeout(this.timeouts.defaultTimeoutMs),
     });

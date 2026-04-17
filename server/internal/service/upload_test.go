@@ -148,7 +148,7 @@ func TestParseSessionFile(t *testing.T) {
 {"type":"message","id":"msg1","parentId":"m1","timestamp":"2026-03-04T19:24:44.263Z","message":{"role":"user","content":[{"type":"text","text":"hello world"}]}}
 {"type":"message","id":"msg2","parentId":"msg1","timestamp":"2026-03-04T19:24:45.000Z","message":{"role":"assistant","content":[{"type":"text","text":"hi there"}]}}
 {"type":"message","id":"msg3","parentId":"msg2","timestamp":"2026-03-04T19:24:46.000Z","message":{"role":"toolResult","content":[{"type":"text","text":"tool output"}]}}`,
-			wantMsgs: 2, // only user + assistant, not toolResult
+			wantMsgs: 3, // user + assistant + toolResult are all ingested
 		},
 		{
 			name:     "OpenClaw JSONL with multi-block content",

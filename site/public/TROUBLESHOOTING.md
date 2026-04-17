@@ -21,16 +21,61 @@ Confirm these first:
 - Re-check that the mem9 package was installed successfully
 - Re-check that the config only edits the exact mem9 keys and does not corrupt unrelated JSON
 
-### Create-New Flow Did Not Auto-Provision
+### Install Hit `plugin not found: mem9`
+
+- Treat this as setup ordering failure, not as an API-key problem
+- Re-check whether the flow wrote `plugins.slots.memory = "mem9"` before `openclaw plugins install @mem9/mem9` succeeded
+- Re-check whether `plugins.entries.mem9` or `plugins.allow += "mem9"` were also written before install success
+- If yes, fix the ordering bug in the setup flow: install first, then apply all disclosed mem9 config in one contiguous update
+- If the machine is already stuck in that invalid state, temporarily restore only the currently valid memory slot and remove only the premature mem9 wiring, then install the plugin, then re-apply the approved mem9 config
+- Do not require a fresh extra approval for that missing-plugin recovery when it is only undoing the same mem9 wiring disclosed in the original setup scope
+
+### Create-New Flow Did Not Return A Key
 
 - Make sure the first restart happened with `plugins.entries.mem9.config.apiKey` absent
-- Look for the exact log line:
+- Make sure `plugins.entries.mem9.config.provisionToken` was present and stable before that restart
+- Make sure the first resumed user message after that restart actually reached the plugin hook path
+- Make sure that resumed turn produced exactly one generated key in logs
+- If the first resumed turn did not produce a key, stop the first-run flow and ask the user whether to retry the clean create-new flow or switch to reconnect with an existing API key
 
-```text
-[mem9] *** Auto-provisioned apiKey=<id> *** Save this to your config as apiKey
-```
+### Create-New Flow Did Not Carry Expected UTM Params
 
-- If no such line appears, stop the first-run flow and ask the user whether to retry the restart or switch to reconnect with an existing API key
+- If the setup started from a remote `SKILL.md` URL with `utm_*`, re-check whether `plugins.entries.mem9.config.provisionQueryParams` was disclosed in the dry-run preview
+- Re-check the config read-back from before the first restart
+- The pre-restart read-back must exactly match the filtered `utm_*` map from the remote `SKILL.md` URL
+- If `provisionQueryParams` was absent, partial, renamed, or different before the first restart, do not assume the generated key was attributed correctly
+- In that case, stop the happy-path create-new handoff and decide whether to re-run create-new cleanly or switch to reconnect
+
+### Create-New Flow Generated Multiple Keys
+
+- Treat this as abnormal create-new behavior, not as automatic success
+- Do not silently keep the latest key without checking the earlier provision attempts
+- Re-check whether `plugins.entries.mem9.config.provisionToken` was already present before the first successful provision and stayed unchanged for the whole create-new run
+- Re-check whether `plugins.entries.mem9.config.provisionQueryParams` was already present before the first successful provision
+- Re-check whether more than one post-restart provision attempt ran before the first key was reused locally
+- Re-check whether startup logs show an unexpected provision before the first resumed user message
+- Re-check whether later logs reused the same locally persisted key for the same `provisionToken`
+- If attribution or final-key correctness cannot be confirmed, stop and troubleshoot instead of handing off the newest key
+- If the installed plugin version is older than `@mem9/mem9@0.4.7`, upgrade first; newer builds provision only from the first post-restart user message and also reuse one local result across duplicate setup retries
+
+### Restart Returned But The Setup Kept Waiting For Another `hi`
+
+- One short post-restart `hi` is normal because the gateway restart cuts the current execution turn
+- More than one extra `hi` without another real restart is abnormal orchestration behavior
+- Re-check the restart logs for a second config-driven restart caused by splitting install/config into multiple phases
+- Re-check whether the user-facing resume message was sent before post-restart verification had actually started
+- Re-check whether the flow was still waiting on an internal plugin tool or another non-user-reachable interface
+- If the flow asked for another keepalive without a new restart, stop the happy path and treat it as setup orchestration failure, not as normal mem9 onboarding behavior
+
+### Gateway Aborted After Adding `plugins.entries.mem9.apiKey`
+
+- Treat this as setup orchestration failure, not as a mem9 runtime failure
+- `plugins.entries.mem9.apiKey` at the entry top level is not a supported compatibility fallback
+- OpenClaw rejects that key before the mem9 plugin can load
+- Remove only the invalid top-level `plugins.entries.mem9.apiKey`
+- Keep the real secret only at `plugins.entries.mem9.config.apiKey`
+- Read back the config again before restarting
+- Do not keep experimenting with duplicate secret fields outside the documented mem9 config scope
 
 ### Existing API Key Fails After Reconnect
 
@@ -51,6 +96,14 @@ Confirm these first:
 - Restart and verify again
 - If a new key is still auto-provisioned after that, stop the reconnect flow and keep troubleshooting instead of silently switching mem9 spaces
 
+### Reconnect Looked Broken, But Logs Already Show mem9 Activity
+
+- If recent logs already show `[mem9] Injecting N memories into prompt context`, `[mem9] Ingest accepted for async processing`, or `[mem9] Ingested session: memories_changed=...`, mem9 is already operational
+- Do not keep troubleshooting just because `openclaw status` still says `enabled (plugin mem9) · unavailable`
+- Do not add top-level compatibility keys such as `plugins.entries.mem9.apiKey` after positive health signals already appeared
+- Treat the remaining problem as host-side status reporting or session orchestration, not as a mem9 credential failure
+- Resume the normal success handoff once the active key and current config read-back are confirmed
+
 ### Memory Shows Unavailable In Status But Plugin Is Working
 
 - `openclaw status` may briefly show `enabled (plugin mem9) · unavailable` after a restart
@@ -62,6 +115,14 @@ Confirm these first:
 - If any positive signal is present, the plugin is healthy — ignore the `unavailable` status
 - If no positive signal appears after 2+ minutes and the logs show repeated timeouts, check network connectivity to the configured `apiUrl`
 - Do not re-run setup or treat this as a setup failure when logs confirm the plugin is operational
+
+### Create-New Provisioned A Key, But The Chat Or Gateway Looked Hung
+
+- If gateway logs already show `[mem9] *** Auto-provisioned apiKey=... *** Save this for recovery or reconnect as apiKey`, create-new already reached the mem9 API
+- If the same restart window also shows host/session errors such as `refresh_token_reused`, `ws-stream` `401`, or repeated auth fallback logs, treat those as host resume problems, not as create-new failure
+- Do not rerun create-new or rotate to a different key just because the final handoff reply was interrupted
+- First confirm that later mem9 logs reuse the same provisioned key or continue without mem9 startup errors
+- Then either finish the setup handoff or troubleshoot the host auth/session issue separately from mem9 onboarding
 
 ### Removed mem9 But Gateway Will Not Start
 

@@ -118,9 +118,9 @@ and saves new ones — all transparently.
 ```json
 {
   "plugins": {
-    "slots": { "memory": "mnemo" },
+    "slots": { "memory": "mem9" },
     "entries": {
-      "mnemo": {
+      "mem9": {
         "enabled": true,
         "config": {
           "apiUrl": "http://localhost:8080",
@@ -576,7 +576,7 @@ This is the same philosophy as the Claude Code side: Hooks (automatic) over MCP 
 
 ```json
 {
-  "mnemo": {
+  "mem9": {
     "enabled": true,
     "config": {
       "apiUrl": "http://localhost:8080",

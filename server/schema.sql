@@ -101,6 +101,17 @@ CREATE TABLE IF NOT EXISTS memories (
 -- ALTER TABLE memories DROP COLUMN tombstone;
 -- DROP INDEX idx_tombstone ON memories;
 
+-- Marketing attribution captured at provision time (control plane).
+CREATE TABLE IF NOT EXISTS tenant_utm (
+  tenant_id  VARCHAR(36)   NOT NULL PRIMARY KEY,
+  source     VARCHAR(255)  NULL,
+  medium     VARCHAR(255)  NULL,
+  campaign   VARCHAR(255)  NULL,
+  content    VARCHAR(255)  NULL,
+  created_at TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_tenant_utm FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+);
+
 -- Upload task tracking (control plane).
 CREATE TABLE IF NOT EXISTS upload_tasks (
   task_id       VARCHAR(36)   PRIMARY KEY,

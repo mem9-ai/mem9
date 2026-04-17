@@ -48,9 +48,9 @@ Add to `openclaw.json`:
 ```json
 {
   "plugins": {
-    "slots": { "memory": "mnemo" },
+    "slots": { "memory": "mem9" },
     "entries": {
-      "mnemo": {
+      "mem9": {
         "enabled": true,
         "config": {
           "apiUrl": "http://localhost:8080",

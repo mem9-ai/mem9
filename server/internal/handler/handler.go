@@ -191,6 +191,7 @@ func (s *Server) Router(
 		r.Get("/memories/{id}", s.getMemory)
 		r.Put("/memories/{id}", s.updateMemory)
 		r.Delete("/memories/{id}", s.deleteMemory)
+		r.Post("/memories/batch-delete", s.batchDeleteMemories)
 
 		r.Post("/imports", s.createTask)
 		r.Get("/imports", s.listTasks)
@@ -274,12 +275,18 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 					path = pattern
 				}
 			}
-			logger.Info("request",
+			level := slog.LevelInfo
+			if ww.Status() >= 500 {
+				level = slog.LevelError
+			}
+			logger.Log(
+				r.Context(),
+				level,
+				"handle request done",
 				"method", r.Method,
 				"path", path,
 				"status", ww.Status(),
 				"duration_ms", time.Since(start).Milliseconds(),
-				"request_id", chimw.GetReqID(r.Context()),
 			)
 		})
 	}

@@ -8,6 +8,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 )
 
 func TestNew(t *testing.T) {
@@ -235,10 +239,102 @@ func TestComplete(t *testing.T) {
 			t.Fatalf("content = %q, want %q", got, "hello")
 		}
 	})
+
+	t.Run("step metrics use step labels and omit total token series", func(t *testing.T) {
+		resetStepMetrics()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}],"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8}}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "test-model"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		got, err := client.CompleteWithScope(context.Background(), "sys", "user", CallScope{Step: "extraction"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "hello" {
+			t.Fatalf("content = %q, want %q", got, "hello")
+		}
+
+		if got := counterValue(t, metrics.LLMRequestsByStepTotal, "extraction", "test-model", "success"); got != 1 {
+			t.Fatalf("request counter = %v, want 1", got)
+		}
+		if got := counterValue(t, metrics.LLMTokensByStepTotal, "extraction", "test-model", "input"); got != 3 {
+			t.Fatalf("input token counter = %v, want 3", got)
+		}
+		if got := counterValue(t, metrics.LLMTokensByStepTotal, "extraction", "test-model", "output"); got != 5 {
+			t.Fatalf("output token counter = %v, want 5", got)
+		}
+
+		labels := collectedLabelValues(t, metrics.LLMTokensByStepTotal, "type")
+		if len(labels) != 2 {
+			t.Fatalf("token series count = %d, want 2", len(labels))
+		}
+		if _, ok := labels["input"]; !ok {
+			t.Fatalf("missing input token series")
+		}
+		if _, ok := labels["output"]; !ok {
+			t.Fatalf("missing output token series")
+		}
+		if _, ok := labels["total"]; ok {
+			t.Fatalf("unexpected total token series present")
+		}
+	})
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+func resetStepMetrics() {
+	metrics.LLMRequestsByStepTotal.Reset()
+	metrics.LLMTokensByStepTotal.Reset()
+}
+
+func counterValue(t *testing.T, counter *prometheus.CounterVec, labels ...string) float64 {
+	t.Helper()
+
+	metric, err := counter.GetMetricWithLabelValues(labels...)
+	if err != nil {
+		t.Fatalf("get metric %v: %v", labels, err)
+	}
+
+	var pb dto.Metric
+	if err := metric.Write(&pb); err != nil {
+		t.Fatalf("write metric %v: %v", labels, err)
+	}
+	if pb.Counter == nil {
+		return 0
+	}
+	return pb.Counter.GetValue()
+}
+
+func collectedLabelValues(t *testing.T, collector prometheus.Collector, labelName string) map[string]struct{} {
+	t.Helper()
+
+	ch := make(chan prometheus.Metric, 8)
+	collector.Collect(ch)
+	close(ch)
+
+	values := make(map[string]struct{})
+	for metric := range ch {
+		var pb dto.Metric
+		if err := metric.Write(&pb); err != nil {
+			t.Fatalf("write collected metric: %v", err)
+		}
+		for _, label := range pb.Label {
+			if label.GetName() == labelName {
+				values[label.GetValue()] = struct{}{}
+			}
+		}
+	}
+	return values
 }

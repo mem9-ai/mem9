@@ -45,7 +45,7 @@ func resetRecallEmbeddingMetrics() {
 func recallEmbeddingCounterValue(t *testing.T, model, status string) float64 {
 	t.Helper()
 
-	metric, err := metrics.EmbeddingRequestsTotal.GetMetricWithLabelValues("recall", "query_embedding", model, status)
+	metric, err := metrics.EmbeddingRequestsTotal.GetMetricWithLabelValues("query_embedding", model, status)
 	if err != nil {
 		t.Fatalf("get embedding metric %s %s: %v", model, status, err)
 	}

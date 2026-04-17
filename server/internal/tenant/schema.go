@@ -89,7 +89,7 @@ CREATE TRIGGER trg_memories_updated BEFORE UPDATE ON memories FOR EACH ROW EXECU
 `
 
 // BuildMemorySchema builds the TiDB memory schema with optional auto-embedding.
-func BuildMemorySchema(autoModel string, autoDims int) string {
+func BuildMemorySchema(autoModel string, autoDims int, clientDims int) string {
 	var embeddingCol string
 	if autoModel != "" {
 		sanitizedModel := strings.ReplaceAll(autoModel, "'", "''")
@@ -98,13 +98,17 @@ func BuildMemorySchema(autoModel string, autoDims int) string {
 			autoDims, sanitizedModel, autoDims,
 		)
 	} else {
-		embeddingCol = `embedding VECTOR(1536) NULL,`
+		dims := clientDims
+		if dims <= 0 {
+			dims = 1536
+		}
+		embeddingCol = fmt.Sprintf(`embedding VECTOR(%d) NULL,`, dims)
 	}
 	return fmt.Sprintf(TenantMemorySchemaBase, embeddingCol)
 }
 
 // BuildDB9MemorySchema builds the db9 memory schema with optional auto-embedding.
-func BuildDB9MemorySchema(autoModel string, autoDims int) string {
+func BuildDB9MemorySchema(autoModel string, autoDims int, clientDims int) string {
 	var embeddingCol string
 	if autoModel != "" {
 		sanitizedModel := strings.ReplaceAll(autoModel, "'", "''")
@@ -113,7 +117,11 @@ func BuildDB9MemorySchema(autoModel string, autoDims int) string {
 			autoDims, sanitizedModel, autoDims,
 		)
 	} else {
-		embeddingCol = `embedding VECTOR(1536) NULL,`
+		dims := clientDims
+		if dims <= 0 {
+			dims = 1536
+		}
+		embeddingCol = fmt.Sprintf(`embedding VECTOR(%d) NULL,`, dims)
 	}
 	return fmt.Sprintf(TenantMemorySchemaDB9Base, embeddingCol)
 }
@@ -141,7 +149,7 @@ const TenantSessionsSchemaBase = `CREATE TABLE IF NOT EXISTS sessions (
 )`
 
 // BuildSessionsSchema builds the TiDB sessions schema with optional auto-embedding.
-func BuildSessionsSchema(autoModel string, autoDims int) string {
+func BuildSessionsSchema(autoModel string, autoDims int, clientDims int) string {
 	var embeddingCol string
 	if autoModel != "" {
 		sanitizedModel := strings.ReplaceAll(autoModel, "'", "''")
@@ -150,7 +158,11 @@ func BuildSessionsSchema(autoModel string, autoDims int) string {
 			autoDims, sanitizedModel, autoDims,
 		)
 	} else {
-		embeddingCol = `embedding VECTOR(1536) NULL,`
+		dims := clientDims
+		if dims <= 0 {
+			dims = 1536
+		}
+		embeddingCol = fmt.Sprintf(`embedding VECTOR(%d) NULL,`, dims)
 	}
 	return fmt.Sprintf(TenantSessionsSchemaBase, embeddingCol)
 }

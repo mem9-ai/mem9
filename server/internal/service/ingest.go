@@ -734,7 +734,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		Facts []ExtractedFact `json:"facts"`
 	}
 
-	scope := llm.CallScope{Feature: "smart_ingest", Step: "extraction"}
+	scope := llm.CallScope{Step: "extraction"}
 	raw, err := s.llm.CompleteJSONWithScope(ctx, systemPrompt, userPrompt, scope)
 	if err != nil {
 		slog.Warn("extraction LLM call failed, using raw fallback", "err", err)
@@ -744,7 +744,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 	parsed, err := llm.ParseJSON[extractResponse](raw)
 	lastRaw := raw
 	if err != nil {
-		metrics.LLMRetryTotal.WithLabelValues("smart_ingest", "extraction", "json_parse_retry").Inc()
+		metrics.LLMRetryTotal.WithLabelValues("extraction", "json_parse_retry").Inc()
 		raw2, retryErr := s.llm.CompleteJSONWithScope(ctx, systemPrompt,
 			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt,
 			scope)
@@ -907,7 +907,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		MessageTags [][]string      `json:"message_tags"`
 	}
 
-	scope := llm.CallScope{Feature: "smart_ingest", Step: "extraction_and_classification"}
+	scope := llm.CallScope{Step: "extraction_and_classification"}
 	raw, err := s.llm.CompleteJSONWithScope(ctx, systemPrompt, userPrompt, scope)
 	if err != nil {
 		slog.Warn("extraction LLM call failed, using raw fallback", "err", err)
@@ -917,7 +917,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 	parsed, err := llm.ParseJSON[extractResponse](raw)
 	lastRaw := raw
 	if err != nil {
-		metrics.LLMRetryTotal.WithLabelValues("smart_ingest", "extraction_and_classification", "json_parse_retry").Inc()
+		metrics.LLMRetryTotal.WithLabelValues("extraction_and_classification", "json_parse_retry").Inc()
 		raw2, retryErr := s.llm.CompleteJSONWithScope(ctx, systemPrompt,
 			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt,
 			scope)
@@ -1139,7 +1139,7 @@ New facts extracted from recent conversation:
 Analyze the new facts and determine whether each should be added, updated, or deleted in memory. Return the full memory state after reconciliation.`, string(refsJSON), string(factsJSON))
 
 	reconcileLLMStart := time.Now()
-	scope := llm.CallScope{Feature: "smart_ingest", Step: "reconciliation"}
+	scope := llm.CallScope{Step: "reconciliation"}
 	raw, err := s.llm.CompleteJSONWithScope(ctx, systemPrompt, userPrompt, scope)
 	reconcileLLMDuration += time.Since(reconcileLLMStart)
 	if err != nil {
@@ -1164,7 +1164,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 	if err != nil {
 		// Retry once.
 		reconcileRetryStart := time.Now()
-		metrics.LLMRetryTotal.WithLabelValues("smart_ingest", "reconciliation", "json_parse_retry").Inc()
+		metrics.LLMRetryTotal.WithLabelValues("reconciliation", "json_parse_retry").Inc()
 		raw2, retryErr := s.llm.CompleteJSONWithScope(ctx, systemPrompt,
 			"Your previous response was not valid JSON. Return ONLY the JSON object.\n\n"+userPrompt,
 			scope)
