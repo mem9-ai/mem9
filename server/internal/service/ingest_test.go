@@ -41,6 +41,10 @@ type memoryRepoMock struct {
 	autoVectorSearchHook func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	ftsSearchHook        func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
+	nearDupSearchHook    func(context.Context, string) (string, float64, error)
+	nearDupID            string
+	nearDupScore         float64
+	nearDupErr           error
 	bulkSoftDeleteCalls  [][]string
 	bulkSoftDeleteAgent  string
 	bulkSoftDeleteResult int64
@@ -1131,8 +1135,17 @@ func (m *memoryRepoMock) ListBootstrap(ctx context.Context, limit int) ([]domain
 	return nil, nil
 }
 
-func (m *memoryRepoMock) NearDupSearch(_ context.Context, _ string) (string, float64, error) {
-	return "", 0, nil
+func (m *memoryRepoMock) NearDupSearch(ctx context.Context, query string) (string, float64, error) {
+	m.mu.Lock()
+	hook := m.nearDupSearchHook
+	id := m.nearDupID
+	score := m.nearDupScore
+	err := m.nearDupErr
+	m.mu.Unlock()
+	if hook != nil {
+		return hook(ctx, query)
+	}
+	return id, score, err
 }
 
 func TestDropQueryIntentFacts(t *testing.T) {
@@ -1893,6 +1906,92 @@ func TestReconcileFallbackWritesNothing(t *testing.T) {
 	}
 	if res.Status != "partial" {
 		t.Fatalf("expected status 'partial' for reconciliation LLM failure, got %q", res.Status)
+	}
+}
+
+func TestReconcileSkipsStrongNearDupFacts(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		nearDupID:    "mem-existing",
+		nearDupScore: 0.995,
+	}
+	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	resultIDs, warnings, err := svc.reconcile(context.Background(), "agent-1", "agent-1", "session-1", []ExtractedFact{
+		{Text: "Uses Go for backend", Tags: []string{"tech"}},
+	})
+	if err != nil {
+		t.Fatalf("reconcile() error = %v", err)
+	}
+	if warnings != 0 {
+		t.Fatalf("expected 0 warnings, got %d", warnings)
+	}
+	if len(resultIDs) != 0 {
+		t.Fatalf("expected 0 result IDs, got %v", resultIDs)
+	}
+	if got := len(memRepo.createCalls); got != 0 {
+		t.Fatalf("expected 0 writes when fact is suppressed as near-dup, got %d", got)
+	}
+}
+
+func TestReconcileDoesNotSkipRawFallbackFacts(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		nearDupID:    "mem-existing",
+		nearDupScore: 0.999,
+	}
+	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	resultIDs, warnings, err := svc.reconcile(context.Background(), "agent-1", "agent-1", "session-1", []ExtractedFact{
+		{Text: "User asked about nginx config", Tags: []string{rawFallbackTag}, FactType: factTypeRawFallback},
+	})
+	if err != nil {
+		t.Fatalf("reconcile() error = %v", err)
+	}
+	if warnings != 0 {
+		t.Fatalf("expected 0 warnings, got %d", warnings)
+	}
+	if len(resultIDs) != 1 {
+		t.Fatalf("expected 1 created insight for raw fallback fact, got %v", resultIDs)
+	}
+	if got := len(memRepo.createCalls); got != 1 {
+		t.Fatalf("expected 1 write for raw fallback fact, got %d", got)
+	}
+}
+
+func TestReconcileSuppressesOnlyNearDupSubset(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		nearDupSearchHook: func(_ context.Context, query string) (string, float64, error) {
+			if strings.Contains(query, "Uses Go for backend") {
+				return "mem-existing", 0.995, nil
+			}
+			return "", 0, nil
+		},
+	}
+	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	resultIDs, warnings, err := svc.reconcile(context.Background(), "agent-1", "agent-1", "session-1", []ExtractedFact{
+		{Text: "Uses Go for backend", Tags: []string{"tech"}},
+		{Text: "Uses PostgreSQL for storage", Tags: []string{"tech"}},
+	})
+	if err != nil {
+		t.Fatalf("reconcile() error = %v", err)
+	}
+	if warnings != 0 {
+		t.Fatalf("expected 0 warnings, got %d", warnings)
+	}
+	if len(resultIDs) != 1 {
+		t.Fatalf("expected 1 created insight for non-duplicate fact, got %v", resultIDs)
+	}
+	if got := len(memRepo.createCalls); got != 1 {
+		t.Fatalf("expected 1 write after suppressing near-dup subset, got %d", got)
+	}
+	if got := memRepo.createCalls[0].Content; got != "Uses PostgreSQL for storage" {
+		t.Fatalf("expected surviving fact to be written, got %q", got)
 	}
 }
 

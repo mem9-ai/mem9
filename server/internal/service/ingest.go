@@ -34,6 +34,7 @@ const (
 	factTypeQueryIntent            = "query_intent"
 	factTypeRawFallback            = "raw_fallback"
 	rawFallbackTag                 = "raw-fallback"
+	nearDupNoopThreshold           = 0.99
 )
 
 var formattedConversationMessageRE = regexp.MustCompile(`(?:^|\n\n)([A-Za-z][A-Za-z0-9_-]*): `)
@@ -348,6 +349,13 @@ func ensureRawFallbackTag(tags []string, facts []ExtractedFact) []string {
 
 func projectReconcileFactText(fact ExtractedFact) string {
 	return ProjectTemporalFactText(fact.Text, fact.Temporal)
+}
+
+func shouldSkipNearDupFact(fact ExtractedFact, score float64) bool {
+	if strings.EqualFold(fact.FactType, factTypeRawFallback) {
+		return false
+	}
+	return score >= nearDupNoopThreshold
 }
 
 func normalizeReconciledTemporalContent(content string) (string, *TemporalMetadata) {
@@ -990,14 +998,33 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 		)
 	}()
 
-	// Shadow mode: record cosine similarity of the nearest existing memory to each
-	// extracted fact. Facts always pass through unchanged — suppression is deferred
-	// until the score distribution is analyzed from prod metrics.
-	// Once a threshold is validated, add: if score >= threshold { drop or annotate }
+	// Near-dup suppression: if a normal fact is extremely close to an existing
+	// memory, skip reconcile entirely for that fact. raw_fallback facts are
+	// excluded from this optimization because they are already lossy.
+	filteredFacts := make([]ExtractedFact, 0, len(facts))
+	suppressedFacts := 0
 	for i := range facts {
 		if id, score, err := s.memories.NearDupSearch(ctx, projectReconcileFactText(facts[i])); err == nil && id != "" {
 			metrics.NearDupCosineScore.Observe(score)
+			if shouldSkipNearDupFact(facts[i], score) {
+				suppressedFacts++
+				continue
+			}
 		}
+		filteredFacts = append(filteredFacts, facts[i])
+	}
+	if suppressedFacts > 0 {
+		slog.Info("suppressed near-duplicate facts before reconciliation",
+			"agent_id", agentID,
+			"session_id", sessionID,
+			"suppressed", suppressedFacts,
+			"threshold", nearDupNoopThreshold,
+		)
+	}
+	facts = filteredFacts
+	if len(facts) == 0 {
+		status = "near_dup_noop"
+		return nil, 0, nil
 	}
 
 	texts := make([]string, len(facts))
