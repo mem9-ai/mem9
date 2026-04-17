@@ -414,7 +414,7 @@ func isDuplicateKey(err error) bool {
 	return strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "duplicate key")
 }
 
-func (r *DB9MemoryRepo) NearDupSearch(ctx context.Context, queryText string) (string, float64, error) {
+func (r *DB9MemoryRepo) NearDupSearch(ctx context.Context, agentID, queryText string) (string, float64, error) {
 	if r.autoModel == "" {
 		return "", 0, nil
 	}
@@ -426,13 +426,14 @@ func (r *DB9MemoryRepo) NearDupSearch(ctx context.Context, queryText string) (st
 			FROM memories
 			WHERE state = 'active'
 			  AND memory_type IN ('insight', 'pinned')
+			  AND agent_id = $2
 			  AND embedding IS NOT NULL
 		)
 		SELECT id, dist
 		FROM scored
 		ORDER BY dist
 		LIMIT 1`,
-		queryText,
+		queryText, agentID,
 	).Scan(&id, &dist)
 	if err == sql.ErrNoRows {
 		return "", 0, nil

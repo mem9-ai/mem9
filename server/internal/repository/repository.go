@@ -42,7 +42,7 @@ type MemoryRepo interface {
 	// configured, or backend does not support auto-embedding).
 	// Postgres returns ("", 0, nil) — auto-embedding is not supported.
 	// DB9 implements real search when autoModel is configured; returns ("", 0, nil) otherwise.
-	NearDupSearch(ctx context.Context, queryText string) (id string, score float64, err error)
+	NearDupSearch(ctx context.Context, agentID, queryText string) (id string, score float64, err error)
 	// CountStats returns the total active memory count and the count created in the last 7 days.
 	CountStats(ctx context.Context) (total int64, last7d int64, err error)
 }

@@ -1004,7 +1004,7 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 	filteredFacts := make([]ExtractedFact, 0, len(facts))
 	suppressedFacts := 0
 	for i := range facts {
-		if id, score, err := s.memories.NearDupSearch(ctx, projectReconcileFactText(facts[i])); err == nil && id != "" {
+		if id, score, err := s.memories.NearDupSearch(ctx, agentID, projectReconcileFactText(facts[i])); err == nil && id != "" {
 			metrics.NearDupCosineScore.Observe(score)
 			if shouldSkipNearDupFact(facts[i], score) {
 				suppressedFacts++

@@ -41,7 +41,7 @@ type memoryRepoMock struct {
 	autoVectorSearchHook func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	ftsSearchHook        func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
-	nearDupSearchHook    func(context.Context, string) (string, float64, error)
+	nearDupSearchHook    func(context.Context, string, string) (string, float64, error)
 	nearDupID            string
 	nearDupScore         float64
 	nearDupErr           error
@@ -1135,7 +1135,7 @@ func (m *memoryRepoMock) ListBootstrap(ctx context.Context, limit int) ([]domain
 	return nil, nil
 }
 
-func (m *memoryRepoMock) NearDupSearch(ctx context.Context, query string) (string, float64, error) {
+func (m *memoryRepoMock) NearDupSearch(ctx context.Context, agentID, query string) (string, float64, error) {
 	m.mu.Lock()
 	hook := m.nearDupSearchHook
 	id := m.nearDupID
@@ -1143,7 +1143,7 @@ func (m *memoryRepoMock) NearDupSearch(ctx context.Context, query string) (strin
 	err := m.nearDupErr
 	m.mu.Unlock()
 	if hook != nil {
-		return hook(ctx, query)
+		return hook(ctx, agentID, query)
 	}
 	return id, score, err
 }
@@ -1965,7 +1965,7 @@ func TestReconcileSuppressesOnlyNearDupSubset(t *testing.T) {
 	t.Parallel()
 
 	memRepo := &memoryRepoMock{
-		nearDupSearchHook: func(_ context.Context, query string) (string, float64, error) {
+		nearDupSearchHook: func(_ context.Context, _ string, query string) (string, float64, error) {
 			if strings.Contains(query, "Uses Go for backend") {
 				return "mem-existing", 0.995, nil
 			}
@@ -1992,6 +1992,39 @@ func TestReconcileSuppressesOnlyNearDupSubset(t *testing.T) {
 	}
 	if got := memRepo.createCalls[0].Content; got != "Uses PostgreSQL for storage" {
 		t.Fatalf("expected surviving fact to be written, got %q", got)
+	}
+}
+
+func TestReconcileDoesNotSuppressAcrossAgents(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		nearDupSearchHook: func(_ context.Context, agentID, query string) (string, float64, error) {
+			if agentID != "agent-1" {
+				t.Fatalf("expected agent-1 filter, got %q", agentID)
+			}
+			if strings.Contains(query, "Uses Go for backend") {
+				return "", 0, nil
+			}
+			return "", 0, nil
+		},
+	}
+	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	resultIDs, warnings, err := svc.reconcile(context.Background(), "agent-1", "agent-1", "session-1", []ExtractedFact{
+		{Text: "Uses Go for backend", Tags: []string{"tech"}},
+	})
+	if err != nil {
+		t.Fatalf("reconcile() error = %v", err)
+	}
+	if warnings != 0 {
+		t.Fatalf("expected 0 warnings, got %d", warnings)
+	}
+	if len(resultIDs) != 1 {
+		t.Fatalf("expected fact to be written for this agent, got %v", resultIDs)
+	}
+	if got := len(memRepo.createCalls); got != 1 {
+		t.Fatalf("expected 1 write when near-dup belongs to another agent, got %d", got)
 	}
 }
 

@@ -833,7 +833,7 @@ func vecToString(embedding []float32) any {
 	return sb.String()
 }
 
-func (r *MemoryRepo) NearDupSearch(ctx context.Context, queryText string) (string, float64, error) {
+func (r *MemoryRepo) NearDupSearch(ctx context.Context, agentID, queryText string) (string, float64, error) {
 	if r.autoModel == "" {
 		return "", 0, nil
 	}
@@ -844,10 +844,11 @@ func (r *MemoryRepo) NearDupSearch(ctx context.Context, queryText string) (strin
 		 FROM memories
 		 WHERE state = 'active'
 		   AND memory_type IN ('insight', 'pinned')
+		   AND agent_id = ?
 		   AND embedding IS NOT NULL
 		 ORDER BY VEC_EMBED_COSINE_DISTANCE(embedding, ?)
 		 LIMIT 1`,
-		queryText, queryText,
+		queryText, agentID, queryText,
 	).Scan(&id, &dist)
 	if err == sql.ErrNoRows {
 		return "", 0, nil

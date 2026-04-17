@@ -85,7 +85,7 @@ func (m *testMemoryRepo) ListBootstrap(context.Context, int) ([]domain.Memory, e
 	return nil, nil
 }
 
-func (m *testMemoryRepo) NearDupSearch(context.Context, string) (string, float64, error) {
+func (m *testMemoryRepo) NearDupSearch(context.Context, string, string) (string, float64, error) {
 	return "", 0, nil
 }
 
