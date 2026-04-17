@@ -253,7 +253,22 @@ func observeRecallEmbeddingRequest(embedder *embed.Embedder, err error) {
 	if embedder != nil && embedder.Model() != "" {
 		model = embedder.Model()
 	}
-	metrics.EmbeddingRequestsTotal.WithLabelValues("recall", "query_embedding", model, metricStatus(err)).Inc()
+	observeRecallEmbeddingRequestByModel(model, err)
+}
+
+func observeRecallAutoEmbeddingRequest(autoModel string, err error) {
+	observeRecallEmbeddingRequestByModel(autoModel, err)
+}
+
+func observeRecallEmbeddingRequestByModel(model string, err error) {
+	if model == "" {
+		model = "unknown"
+	}
+	status := "success"
+	if err != nil {
+		status = "error"
+	}
+	metrics.EmbeddingRequestsTotal.WithLabelValues("recall", "query_embedding", model, status).Inc()
 }
 
 // is not yet available (e.g., during cold start probe window).
@@ -406,6 +421,7 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 	fetchLimit := limit * 3
 
 	vecResults, vecErr := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
+	observeRecallAutoEmbeddingRequest(s.autoModel, vecErr)
 	if vecErr != nil {
 		return nil, 0, fmt.Errorf("auto vector search: %w", vecErr)
 	}
@@ -480,6 +496,7 @@ func (s *MemoryService) autoHybridCandidates(
 	fetchLimit := limit * normalizeRecallFetchMultiplier(opts.FetchMultiplier, 3)
 
 	vecResults, err := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
+	observeRecallAutoEmbeddingRequest(s.autoModel, err)
 	if err != nil {
 		return nil, fmt.Errorf("auto vector search: %w", err)
 	}

@@ -127,6 +127,7 @@ func (s *SessionService) SearchCandidates(
 
 func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
 	vecResults, err := s.sessions.AutoVectorSearch(ctx, f.Query, f, fetchLimit)
+	observeRecallAutoEmbeddingRequest(s.autoModel, err)
 	if err != nil {
 		return nil, fmt.Errorf("session auto vector search: %w", err)
 	}
@@ -154,6 +155,7 @@ func (s *SessionService) autoHybridCandidates(
 	fetchLimit int,
 ) ([]RecallCandidate, error) {
 	vecResults, err := s.sessions.AutoVectorSearch(ctx, f.Query, f, fetchLimit)
+	observeRecallAutoEmbeddingRequest(s.autoModel, err)
 	if err != nil {
 		return nil, fmt.Errorf("session auto vector search: %w", err)
 	}
