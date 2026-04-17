@@ -41,6 +41,10 @@ type memoryRepoMock struct {
 	autoVectorSearchHook func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	ftsSearchHook        func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
+	bulkSoftDeleteCalls  [][]string
+	bulkSoftDeleteAgent  string
+	bulkSoftDeleteResult int64
+	bulkSoftDeleteErr    error
 }
 
 type setStateCall struct {
@@ -1003,6 +1007,17 @@ func (m *memoryRepoMock) UpdateOptimistic(ctx context.Context, mem *domain.Memor
 
 func (m *memoryRepoMock) SoftDelete(ctx context.Context, id, agentName string) error {
 	return nil
+}
+
+func (m *memoryRepoMock) BulkSoftDelete(ctx context.Context, ids []string, agentName string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.bulkSoftDeleteCalls = append(m.bulkSoftDeleteCalls, append([]string(nil), ids...))
+	m.bulkSoftDeleteAgent = agentName
+	if m.bulkSoftDeleteErr != nil {
+		return 0, m.bulkSoftDeleteErr
+	}
+	return m.bulkSoftDeleteResult, nil
 }
 
 func (m *memoryRepoMock) ArchiveMemory(ctx context.Context, id, supersededBy string) error {

@@ -19,10 +19,11 @@ import (
 )
 
 const (
-	maxContentLen   = 50000
-	maxTags         = 20
-	maxBulkSize     = 100
-	defaultMinScore = 0.3
+	maxContentLen     = 50000
+	maxTags           = 20
+	maxBulkSize       = 100
+	maxBulkDeleteSize = 1000
+	defaultMinScore   = 0.3
 
 	// secondHopWeight is the RRF weight applied to second-hop vector search results.
 	// Lower than 1.0 to prevent indirect matches from outranking direct hits.
@@ -788,6 +789,34 @@ func (s *MemoryService) Update(ctx context.Context, agentName, id, content strin
 
 func (s *MemoryService) Delete(ctx context.Context, id, agentName string) error {
 	return s.memories.SoftDelete(ctx, id, agentName)
+}
+
+// BulkDelete soft-deletes multiple memories by ID. Returns the number of
+// memories actually deleted (already-deleted rows are excluded from the count).
+func (s *MemoryService) BulkDelete(ctx context.Context, ids []string, agentName string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, &domain.ValidationError{Field: "ids", Message: "required"}
+	}
+	if len(ids) > maxBulkDeleteSize {
+		return 0, &domain.ValidationError{Field: "ids", Message: "too many (max 1000)"}
+	}
+
+	seen := make(map[string]struct{}, len(ids))
+	unique := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			unique = append(unique, id)
+		}
+	}
+	if len(unique) == 0 {
+		return 0, &domain.ValidationError{Field: "ids", Message: "required"}
+	}
+
+	return s.memories.BulkSoftDelete(ctx, unique, agentName)
 }
 
 func (s *MemoryService) Bootstrap(ctx context.Context, limit int) ([]domain.Memory, error) {
