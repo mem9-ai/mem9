@@ -150,7 +150,7 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 	if err != nil {
 		// If 400 and thinking parameters were sent, retry without them (provider may not support them).
 		var httpErr *HTTPStatusError
-		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && enableThinking != nil  && reasoningSplit != nil{
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (enableThinking != nil || reasoningSplit != nil){
 			slog.Warn("LLM rejected thinking parameters (HTTP 400), retrying without them", "model", c.model)
 			return c.doRequest(ctx, chatRequest{
 				Model:          c.model,
@@ -255,7 +255,7 @@ func disableThinkingOptions(model string) *bool {
 }
 
 func supportsReasoningSplit(model string) *bool {
-	if strings.HasPrefix(strings.ToLower(model), "minimax-m2.") {
+	if strings.HasPrefix(strings.ToLower(model), "minimax-m2") {
 		reasoningSplit := true
 		return &reasoningSplit
 	}
@@ -278,3 +278,4 @@ func ParseJSON[T any](raw string) (T, error) {
 	}
 	return result, nil
 }
+
