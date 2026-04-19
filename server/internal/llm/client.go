@@ -142,6 +142,7 @@ func (c *Client) CompleteJSONWithScope(ctx context.Context, system, user string,
 	if err != nil {
 		var httpErr *HTTPStatusError
 		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest {
+			recordRetryMetric(scope, "response_format_400_fallback")
 			slog.Warn("LLM rejected response_format:json_object (HTTP 400), retrying without it")
 			return c.complete(ctx, system, user, nil, scope)
 		}
@@ -168,6 +169,7 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 		// If 400 and thinking parameters were sent, retry without them (provider may not support them).
 		var httpErr *HTTPStatusError
 		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && enableThinking != nil {
+			recordRetryMetric(scope, "thinking_param_400_fallback")
 			slog.Warn("LLM rejected thinking parameters (HTTP 400), retrying without them", "model", c.model)
 			return c.doRequest(ctx, chatRequest{
 				Model:          c.model,
@@ -178,6 +180,12 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 		}
 	}
 	return result, err
+}
+
+func recordRetryMetric(scope CallScope, reason string) {
+	if scope.enabled() {
+		metrics.LLMRetryTotal.WithLabelValues(scope.Step, reason).Inc()
+	}
 }
 
 // doRequest sends a single chat completion request and handles metrics/response parsing.

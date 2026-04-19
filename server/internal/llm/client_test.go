@@ -8,6 +8,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	dto "github.com/prometheus/client_model/go"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 )
 
 func TestNew(t *testing.T) {
@@ -236,10 +239,120 @@ func TestComplete(t *testing.T) {
 		}
 	})
 
+	t.Run("response format 400 fallback increments retry metric", func(t *testing.T) {
+		resetRetryMetrics()
+
+		requests := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests++
+
+			var req chatRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+
+			if requests == 1 {
+				if req.ResponseFormat == nil || req.ResponseFormat.Type != "json_object" {
+					t.Fatalf("first request response_format = %#v, want json_object", req.ResponseFormat)
+				}
+				http.Error(w, "response_format unsupported", http.StatusBadRequest)
+				return
+			}
+			if req.ResponseFormat != nil {
+				t.Fatalf("second request response_format = %#v, want nil", req.ResponseFormat)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "test-model"})
+		got, err := client.CompleteJSONWithScope(context.Background(), "sys", "user", CallScope{Step: "reconciliation"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "ok" {
+			t.Fatalf("content = %q, want %q", got, "ok")
+		}
+		if requests != 2 {
+			t.Fatalf("requests = %d, want 2", requests)
+		}
+		if got := retryMetricValue(t, "reconciliation", "response_format_400_fallback"); got != 1 {
+			t.Fatalf("response_format retry metric = %v, want 1", got)
+		}
+	})
+
+	t.Run("thinking 400 fallback increments retry metric", func(t *testing.T) {
+		resetRetryMetrics()
+
+		requests := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests++
+
+			var req chatRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+
+			if requests == 1 {
+				if req.EnableThinking == nil || *req.EnableThinking {
+					t.Fatalf("first request enable_thinking = %v, want false", req.EnableThinking)
+				}
+				http.Error(w, "thinking unsupported", http.StatusBadRequest)
+				return
+			}
+			if req.EnableThinking != nil {
+				t.Fatalf("second request enable_thinking = %v, want nil", req.EnableThinking)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "qwen-plus"})
+		got, err := client.CompleteWithScope(context.Background(), "sys", "user", CallScope{Step: "extraction"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "ok" {
+			t.Fatalf("content = %q, want %q", got, "ok")
+		}
+		if requests != 2 {
+			t.Fatalf("requests = %d, want 2", requests)
+		}
+		if got := retryMetricValue(t, "extraction", "thinking_param_400_fallback"); got != 1 {
+			t.Fatalf("thinking retry metric = %v, want 1", got)
+		}
+	})
+
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+func resetRetryMetrics() {
+	metrics.LLMRetryTotal.Reset()
+}
+
+func retryMetricValue(t *testing.T, step, reason string) float64 {
+	t.Helper()
+
+	metric, err := metrics.LLMRetryTotal.GetMetricWithLabelValues(step, reason)
+	if err != nil {
+		t.Fatalf("get retry metric %s %s: %v", step, reason, err)
+	}
+
+	var pb dto.Metric
+	if err := metric.Write(&pb); err != nil {
+		t.Fatalf("write retry metric %s %s: %v", step, reason, err)
+	}
+	if pb.Counter == nil {
+		return 0
+	}
+	return pb.Counter.GetValue()
 }
