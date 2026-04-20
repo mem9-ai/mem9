@@ -106,9 +106,14 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("MNEMO_DSN is required")
 	}
 
-	meteringURL, err := parseMeteringURL(os.Getenv("MNEMO_METERING_URL"))
-	if err != nil {
-		return nil, err
+	meteringEnabled := envBool("MNEMO_METERING_ENABLED", false)
+	meteringURL := ""
+	if meteringEnabled {
+		var err error
+		meteringURL, err = parseMeteringURL(os.Getenv("MNEMO_METERING_URL"))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	cfg := &Config{
@@ -140,7 +145,7 @@ func Load() (*Config, error) {
 		UploadDir:                envOr("MNEMO_UPLOAD_DIR", "./uploads"),
 		FTSEnabled:               envBool("MNEMO_FTS_ENABLED", false),
 		WorkerConcurrency:        envInt("MNEMO_WORKER_CONCURRENCY", 5),
-		MeteringEnabled:          envBool("MNEMO_METERING_ENABLED", false),
+		MeteringEnabled:          meteringEnabled,
 		MeteringURL:              meteringURL,
 		MeteringFlushInterval:    envDuration("MNEMO_METERING_FLUSH_INTERVAL", 10*time.Second),
 		EncryptType:              envOr("MNEMO_ENCRYPT_TYPE", "plain"),
@@ -234,10 +239,10 @@ func parseMeteringURL(raw string) (string, error) {
 	case "s3", "http", "https":
 		// ok
 	default:
-		return "", fmt.Errorf("invalid MNEMO_METERING_URL %q: unsupported scheme %q", raw, u.Scheme)
+		return "", fmt.Errorf("invalid MNEMO_METERING_URL: unsupported scheme %q", u.Scheme)
 	}
 	if u.Host == "" {
-		return "", fmt.Errorf("invalid MNEMO_METERING_URL %q: host is required", raw)
+		return "", fmt.Errorf("invalid MNEMO_METERING_URL: host is required")
 	}
 
 	return raw, nil
