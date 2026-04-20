@@ -159,7 +159,7 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 
 	enableThinking := disableThinkingOptions(c.model)
 	reasoningSplit := supportsReasoningSplit(c.model)
-	
+
 	result, err := c.doRequest(ctx, chatRequest{
 		Model:          c.model,
 		Messages:       messages,
@@ -167,7 +167,7 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 		ResponseFormat: respFmt,
 		EnableThinking: enableThinking,
 		ReasoningSplit: reasoningSplit,
-	})
+	}, scope)
 	if err != nil {
 		// If 400 and thinking parameters were sent, retry without them (provider may not support them).
 		var httpErr *HTTPStatusError
@@ -332,4 +332,3 @@ func ParseJSON[T any](raw string) (T, error) {
 	}
 	return result, nil
 }
-
