@@ -52,6 +52,37 @@ test("credentials file stores profiles only", () => {
   assert.equal(parsed.profiles.default.baseUrl, "https://api.mem9.ai");
 });
 
+test("parseCredentialsFile strips unknown profile fields during round-trip", () => {
+  const parsed = parseCredentialsFile(
+    JSON.stringify({
+      schemaVersion: 1,
+      profiles: {
+        default: {
+          label: "Personal",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "mk_test",
+          extraField: "ignored",
+        },
+      },
+    }),
+  );
+
+  assert.equal(
+    stringifyCredentialsFile(parsed),
+    `{
+  "schemaVersion": 1,
+  "profiles": {
+    "default": {
+      "label": "Personal",
+      "baseUrl": "https://api.mem9.ai",
+      "apiKey": "mk_test"
+    }
+  }
+}
+`,
+  );
+});
+
 test("parseCredentialsFile throws a unified error for invalid files", () => {
   assert.throws(
     () => {

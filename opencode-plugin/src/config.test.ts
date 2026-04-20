@@ -1,21 +1,25 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 
 import { mergeConfigLayers } from "./config.js";
 import { resolveMem9Paths } from "./platform-paths.js";
 
 test("resolveMem9Paths uses config and data directories separately", () => {
+  const configDir = path.join(path.sep, "home", "demo", ".config", "opencode");
+  const dataDir = path.join(path.sep, "home", "demo", ".local", "share", "opencode");
+  const projectDir = path.join(path.sep, "work", "repo");
   const paths = resolveMem9Paths({
-    configDir: "/home/demo/.config/opencode",
-    dataDir: "/home/demo/.local/share/opencode",
-    projectDir: "/work/repo",
+    configDir,
+    dataDir,
+    projectDir,
   });
 
-  assert.equal(paths.globalConfigFile, "/home/demo/.config/opencode/mem9.json");
-  assert.equal(paths.projectConfigFile, "/work/repo/.opencode/mem9.json");
+  assert.equal(paths.globalConfigFile, path.join(configDir, "mem9.json"));
+  assert.equal(paths.projectConfigFile, path.join(projectDir, ".opencode", "mem9.json"));
   assert.equal(
     paths.credentialsFile,
-    "/home/demo/.local/share/opencode/plugins/mem9/.credentials.json",
+    path.join(dataDir, "plugins", "mem9", ".credentials.json"),
   );
 });
 

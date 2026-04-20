@@ -16,6 +16,14 @@ function isMem9Profile(value: unknown): value is Mem9Profile {
   );
 }
 
+function normalizeMem9Profile(value: Mem9Profile): Mem9Profile {
+  return {
+    label: value.label,
+    baseUrl: value.baseUrl,
+    apiKey: value.apiKey,
+  };
+}
+
 export function parseCredentialsFile(raw: string): Mem9CredentialsFile {
   let parsed: unknown;
   try {
@@ -33,7 +41,7 @@ export function parseCredentialsFile(raw: string): Mem9CredentialsFile {
     if (!isMem9Profile(profile)) {
       throw new Error("invalid mem9 credentials file");
     }
-    profiles[profileID] = profile;
+    profiles[profileID] = normalizeMem9Profile(profile);
   }
 
   return {
