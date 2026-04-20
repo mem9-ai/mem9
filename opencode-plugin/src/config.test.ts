@@ -2,23 +2,54 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { mergeConfigLayers } from "./config.js";
+import { resolveMem9Paths } from "./platform-paths.js";
 
-test("project config overrides global config", () => {
+test("resolveMem9Paths uses config and data directories separately", () => {
+  const paths = resolveMem9Paths({
+    configDir: "/home/demo/.config/opencode",
+    dataDir: "/home/demo/.local/share/opencode",
+    projectDir: "/work/repo",
+  });
+
+  assert.equal(paths.globalConfigFile, "/home/demo/.config/opencode/mem9.json");
+  assert.equal(paths.projectConfigFile, "/work/repo/.opencode/mem9.json");
+  assert.equal(
+    paths.credentialsFile,
+    "/home/demo/.local/share/opencode/plugins/mem9/.credentials.json",
+  );
+});
+
+test("mergeConfigLayers applies defaults and project overrides", () => {
   const result = mergeConfigLayers(
     {
       schemaVersion: 1,
       profileId: "default",
-      debug: false,
-      defaultTimeoutMs: 8000,
-      searchTimeoutMs: 15000,
+      debug: true,
+      searchTimeoutMs: 12000,
     },
     {
       schemaVersion: 1,
       profileId: "projectA",
+      defaultTimeoutMs: 9000,
     },
   );
 
-  assert.equal(result.profileId, "projectA");
-  assert.equal(result.debug, false);
-  assert.equal(result.defaultTimeoutMs, 8000);
+  assert.deepEqual(result, {
+    schemaVersion: 1,
+    profileId: "projectA",
+    debug: true,
+    defaultTimeoutMs: 9000,
+    searchTimeoutMs: 12000,
+  });
+});
+
+test("mergeConfigLayers uses built-in defaults when config layers are missing", () => {
+  const result = mergeConfigLayers();
+
+  assert.deepEqual(result, {
+    schemaVersion: 1,
+    debug: false,
+    defaultTimeoutMs: 8000,
+    searchTimeoutMs: 15000,
+  });
 });
