@@ -45,15 +45,10 @@ const drive9Href = 'https://drive9.ai?utm_source=mem9&utm_medium=referral&utm_ca
     align-items: center;
     gap: 1.1rem;
     padding: 1rem 1.1rem;
-    border: 1px solid color-mix(in srgb, var(--border) 92%, white);
+    border: 1px solid var(--border);
     border-radius: 1.05rem;
-    background:
-      linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--surface-gradient-start) 76%, white),
-        color-mix(in srgb, var(--surface-gradient-end) 88%, white)
-      );
-    box-shadow: var(--surface-inset), 0 10px 22px rgba(0, 0, 0, 0.035);
+    background: linear-gradient(180deg, var(--surface-gradient-start), var(--surface-gradient-end));
+    box-shadow: var(--surface-inset), var(--surface-shadow-soft);
     text-decoration: none;
     transition:
       border-color 0.18s ease,
