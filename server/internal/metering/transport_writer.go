@@ -32,6 +32,7 @@ type queuedEvent struct {
 	event      Event
 	recordedAt int64
 	tsMinute   int64
+	key        batchKey
 }
 
 type transportWriter struct {
@@ -47,12 +48,14 @@ type transportWriter struct {
 
 	batches map[batchKey][]map[string]any
 	parts   map[batchKey]int
+	pending map[batchKey]int
 
 	lastFullWarn int64
 	now          func() time.Time
 
 	closeCtxMu sync.Mutex
 	closeCtx   context.Context
+	pendingMu  sync.Mutex
 
 	runtimeCtx    context.Context
 	runtimeCancel context.CancelFunc
@@ -68,6 +71,7 @@ func newTransportWriter(cfg Config, transport batchTransport, logger *slog.Logge
 		done:          make(chan struct{}),
 		batches:       make(map[batchKey][]map[string]any),
 		parts:         make(map[batchKey]int),
+		pending:       make(map[batchKey]int),
 		now:           time.Now,
 		runtimeCtx:    runtimeCtx,
 		runtimeCancel: runtimeCancel,
@@ -82,19 +86,28 @@ func (w *transportWriter) Record(evt Event) {
 		return
 	}
 	item := w.makeQueuedEvent(evt)
+	w.markPending(item.key)
 	select {
 	case w.ch <- item:
 	default:
+		w.releasePending(item.key)
 		w.maybeWarnFull()
 	}
 }
 
 func (w *transportWriter) makeQueuedEvent(evt Event) queuedEvent {
 	recordedAt := w.now().Unix()
+	key := batchKey{
+		TsMinute:  minuteAlign(recordedAt),
+		Category:  evt.Category,
+		TenantID:  evt.TenantID,
+		ClusterID: evt.ClusterID,
+	}
 	return queuedEvent{
 		event:      evt,
 		recordedAt: recordedAt,
-		tsMinute:   minuteAlign(recordedAt),
+		tsMinute:   key.TsMinute,
+		key:        key,
 	}
 }
 
@@ -186,13 +199,9 @@ func (w *transportWriter) enqueue(evt Event) {
 }
 
 func (w *transportWriter) enqueueQueued(item queuedEvent) {
+	w.releasePending(item.key)
 	evt := item.event
-	key := batchKey{
-		TsMinute:  item.tsMinute,
-		Category:  evt.Category,
-		TenantID:  evt.TenantID,
-		ClusterID: evt.ClusterID,
-	}
+	key := item.key
 
 	record := make(map[string]any, len(evt.Data)+2)
 	for k, v := range evt.Data {
@@ -237,9 +246,36 @@ func (w *transportWriter) flushAll(ctx context.Context) {
 }
 
 func (w *transportWriter) pruneStaleParts(currentMinute int64) {
+	w.pendingMu.Lock()
+	defer w.pendingMu.Unlock()
 	for key := range w.parts {
 		if key.TsMinute < currentMinute {
+			if w.pending[key] > 0 {
+				continue
+			}
 			delete(w.parts, key)
 		}
 	}
+}
+
+func (w *transportWriter) markPending(key batchKey) {
+	w.pendingMu.Lock()
+	defer w.pendingMu.Unlock()
+	if w.pending == nil {
+		w.pending = make(map[batchKey]int)
+	}
+	w.pending[key]++
+}
+
+func (w *transportWriter) releasePending(key batchKey) {
+	w.pendingMu.Lock()
+	defer w.pendingMu.Unlock()
+	if w.pending == nil {
+		return
+	}
+	if count := w.pending[key]; count <= 1 {
+		delete(w.pending, key)
+		return
+	}
+	w.pending[key]--
 }

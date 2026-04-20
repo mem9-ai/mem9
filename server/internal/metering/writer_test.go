@@ -141,11 +141,17 @@ type blockingTransport struct {
 	exited  chan struct{}
 }
 
+type noopTransport struct{}
+
 func (t *blockingTransport) Write(ctx context.Context, payload batchPayload) error {
 	close(t.entered)
 	<-ctx.Done()
 	close(t.exited)
 	return ctx.Err()
+}
+
+func (noopTransport) Write(ctx context.Context, payload batchPayload) error {
+	return nil
 }
 
 func setConfigStringField(t *testing.T, cfg *Config, field, value string) {
@@ -377,6 +383,41 @@ func TestFlush_PrunesStalePartCounters(t *testing.T) {
 	}
 	if got := w.parts[newKey]; got != 1 {
 		t.Fatalf("new part counter = %d, want 1", got)
+	}
+}
+
+func TestPruneStaleParts_PreservesPendingOldMinuteBacklog(t *testing.T) {
+	oldTime := time.Unix(1710000037, 0).UTC()
+	newTime := time.Unix(1710000097, 0).UTC()
+	oldKey := batchKey{TsMinute: 1710000000, Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636"}
+
+	w := &transportWriter{
+		transport: noopTransport{},
+		ch:        make(chan queuedEvent, 1),
+		batches:   make(map[batchKey][]map[string]any),
+		parts:     map[batchKey]int{oldKey: 1},
+		pending:   make(map[batchKey]int),
+		now: func() time.Time {
+			return oldTime
+		},
+	}
+
+	w.Record(Event{Category: oldKey.Category, TenantID: oldKey.TenantID, ClusterID: oldKey.ClusterID, Data: map[string]any{"op": "store"}})
+	if got := w.pending[oldKey]; got != 1 {
+		t.Fatalf("pending[%+v] = %d, want 1", oldKey, got)
+	}
+
+	w.now = func() time.Time { return newTime }
+	w.pruneStaleParts(minuteAlign(newTime.Unix()))
+	if _, ok := w.parts[oldKey]; !ok {
+		t.Fatal("old part counter pruned while old-minute event was still pending in the channel")
+	}
+
+	item := <-w.ch
+	w.enqueueQueued(item)
+	w.flushAll(context.Background())
+	if _, ok := w.parts[oldKey]; ok {
+		t.Fatal("old part counter was not pruned after pending old-minute backlog was drained")
 	}
 }
 
