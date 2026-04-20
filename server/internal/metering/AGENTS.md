@@ -8,7 +8,7 @@ title: server/internal/metering — Agent context
 
 ## Public API
 
-- `Config` — internal writer configuration. The supported rollout env surface is intentionally smaller: `MNEMO_METERING_ENABLED`, `MNEMO_METERING_S3_BUCKET`, `MNEMO_METERING_S3_PREFIX`, and `MNEMO_METERING_FLUSH_INTERVAL`
+- `Config` — internal writer configuration. The supported rollout env surface is intentionally smaller: `MNEMO_METERING_ENABLED`, `MNEMO_METERING_URL`, and `MNEMO_METERING_FLUSH_INTERVAL`
 - `Event` — caller-supplied usage record envelope
 - `Writer` — asynchronous interface with `Record(evt)` and `Close(ctx)`
 - `New(ctx, cfg, logger)` — constructs either the real S3 writer or a no-op writer when disabled
@@ -18,7 +18,7 @@ title: server/internal/metering — Agent context
 - S3-compatible object storage only
 - AWS credentials come from the default AWS SDK chain
 - Lossy-on-error by design: failed uploads are logged and dropped, not retried
-- Keep the documented env list small for now: enabled flag, bucket, prefix, and flush interval are the intended public knobs
+- Keep the documented env list small for now: enabled flag, metering URL, and flush interval are the intended public knobs
 - No caller hooks yet in this round: startup wiring exists, but handlers/services/LLM code do not call `Record()` yet
 
 ## How to add a Record call site

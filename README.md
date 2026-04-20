@@ -194,13 +194,12 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 
 These are the supported rollout variables for the server-side S3 metering writer. The writer is initialized at server startup, but this round does **not** wire any `Record()` call sites yet, so no usage events are emitted until caller hooks are added.
 
-The public env surface is intentionally small for now. Lower-level transport and tuning knobs may still exist in code, but they are not part of the normal mem9 deployment contract yet.
+The public env surface is intentionally small for now. Metering location is configured as a single S3 URL in the form `s3://<bucket>/<prefix>/`.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `MNEMO_METERING_ENABLED` | No | `false` | Enable the S3-backed metering writer. When `false`, the writer is a no-op |
-| `MNEMO_METERING_S3_BUCKET` | No | — | S3 bucket used for compressed metering objects. If empty, the writer stays disabled even when `MNEMO_METERING_ENABLED=true` |
-| `MNEMO_METERING_S3_PREFIX` | No | — | Optional prefix prepended to every metering object key |
+| `MNEMO_METERING_URL` | No | — | Metering destination URL in the form `s3://<bucket>/<prefix>/`. If empty, the writer stays disabled even when `MNEMO_METERING_ENABLED=true` |
 | `MNEMO_METERING_FLUSH_INTERVAL` | No | `10s` | In-memory batch flush interval for the metering writer |
 
 #### Security And Debugging
