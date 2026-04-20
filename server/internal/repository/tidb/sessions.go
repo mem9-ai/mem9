@@ -162,7 +162,7 @@ func (r *SessionRepo) AutoVectorSearch(ctx context.Context, query string, f doma
 	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
-			return nil, nil
+			return nil, domain.ErrAutoVectorSearchSkipped
 		}
 		slog.ErrorContext(ctx, "sessions auto vector search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 		return nil, fmt.Errorf("sessions auto vector search: cluster_id=%s: %w", r.clusterID, err)

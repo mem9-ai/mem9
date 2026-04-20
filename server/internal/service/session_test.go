@@ -284,7 +284,7 @@ func TestSessionService_Search_autoVectorSkipDoesNotCountSuccessEmbedding(t *tes
 
 	repo := &stubSessionRepo{
 		autoVecResults: nil,
-		autoVecErr:     nil,
+		autoVecErr:     domain.ErrAutoVectorSearchSkipped,
 		keywordResults: []domain.Memory{{
 			ID:         "kw-1",
 			Content:    "keyword fallback",
@@ -304,6 +304,37 @@ func TestSessionService_Search_autoVectorSkipDoesNotCountSuccessEmbedding(t *tes
 	}
 	if got := embeddingMetricValue(t, "query_embedding", "auto-model", "success"); got != 0 {
 		t.Fatalf("success embedding metric = %v, want 0", got)
+	}
+	if got := embeddingMetricValue(t, "query_embedding", "auto-model", "error"); got != 0 {
+		t.Fatalf("error embedding metric = %v, want 0", got)
+	}
+}
+
+func TestSessionService_Search_autoVectorZeroHitCountsSuccessEmbedding(t *testing.T) {
+	resetEmbeddingMetrics()
+
+	repo := &stubSessionRepo{
+		autoVecResults: nil,
+		autoVecErr:     nil,
+		keywordResults: []domain.Memory{{
+			ID:         "kw-1",
+			Content:    "keyword fallback",
+			MemoryType: domain.TypeSession,
+			State:      domain.StateActive,
+		}},
+		ftsAvail: false,
+	}
+	svc := NewSessionService(repo, nil, "auto-model")
+
+	results, err := svc.Search(context.Background(), domain.MemoryFilter{Query: "keyword fallback", Limit: 5})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 keyword fallback result, got %d", len(results))
+	}
+	if got := embeddingMetricValue(t, "query_embedding", "auto-model", "success"); got != 1 {
+		t.Fatalf("success embedding metric = %v, want 1", got)
 	}
 	if got := embeddingMetricValue(t, "query_embedding", "auto-model", "error"); got != 0 {
 		t.Fatalf("error embedding metric = %v, want 0", got)

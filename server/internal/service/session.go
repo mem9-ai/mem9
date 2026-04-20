@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -128,8 +129,9 @@ func (s *SessionService) SearchCandidates(
 
 func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
 	vecResults, err := s.sessions.AutoVectorSearch(ctx, f.Query, f, fetchLimit)
-	observeRecallAutoEmbeddingRequest(s.autoModel, err, err == nil && vecResults == nil)
-	if err != nil {
+	skipped := errors.Is(err, domain.ErrAutoVectorSearchSkipped)
+	observeRecallAutoEmbeddingRequest(s.autoModel, err, skipped)
+	if err != nil && !skipped {
 		return nil, fmt.Errorf("session auto vector search: %w", err)
 	}
 	vecResults = applyMinScore(vecResults, f.MinScore)
@@ -158,9 +160,10 @@ func (s *SessionService) autoHybridCandidates(
 	start := time.Now()
 	vectorStart := time.Now()
 	vecResults, err := s.sessions.AutoVectorSearch(ctx, f.Query, f, fetchLimit)
-	observeRecallAutoEmbeddingRequest(s.autoModel, err, err == nil && vecResults == nil)
+	skipped := errors.Is(err, domain.ErrAutoVectorSearchSkipped)
+	observeRecallAutoEmbeddingRequest(s.autoModel, err, skipped)
 	vectorDuration := time.Since(vectorStart)
-	if err != nil {
+	if err != nil && !skipped {
 		return nil, fmt.Errorf("session auto vector search: %w", err)
 	}
 	vecResults = applyMinScore(vecResults, f.MinScore)

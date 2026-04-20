@@ -100,7 +100,7 @@ func (stubSessionRepo) PatchTags(_ context.Context, _, _ string, _ []string) err
 	return nil
 }
 func (stubSessionRepo) AutoVectorSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
-	return nil, nil
+	return nil, domain.ErrAutoVectorSearchSkipped
 }
 func (stubSessionRepo) VectorSearch(_ context.Context, _ []float32, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
 	return nil, nil
