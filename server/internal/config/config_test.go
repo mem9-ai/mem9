@@ -23,8 +23,7 @@ func TestConfig_MeteringSurfaceReduced(t *testing.T) {
 func TestLoad_MeteringSupportedFields(t *testing.T) {
 	t.Setenv("MNEMO_DSN", "test-dsn")
 	t.Setenv("MNEMO_METERING_ENABLED", "true")
-	t.Setenv("MNEMO_METERING_S3_BUCKET", "bucket-a")
-	t.Setenv("MNEMO_METERING_S3_PREFIX", "prefix-a")
+	t.Setenv("MNEMO_METERING_URL", "s3://bucket-a/prefix-a/")
 	t.Setenv("MNEMO_METERING_FLUSH_INTERVAL", "15s")
 
 	cfg, err := Load()
@@ -42,5 +41,16 @@ func TestLoad_MeteringSupportedFields(t *testing.T) {
 	}
 	if cfg.MeteringFlushInterval != 15*time.Second {
 		t.Fatalf("MeteringFlushInterval = %v, want 15s", cfg.MeteringFlushInterval)
+	}
+}
+
+func TestLoad_MeteringURLInvalidScheme(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+	t.Setenv("MNEMO_METERING_ENABLED", "true")
+	t.Setenv("MNEMO_METERING_URL", "https://bucket-a/prefix-a/")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load error = nil, want invalid MNEMO_METERING_URL error")
 	}
 }

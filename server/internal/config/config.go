@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -106,6 +107,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("MNEMO_DSN is required")
 	}
 
+	bucket, prefix, err := parseMeteringURL(os.Getenv("MNEMO_METERING_URL"))
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
 		Port:                     envOr("MNEMO_PORT", "8080"),
 		DSN:                      dsn,
@@ -136,8 +142,8 @@ func Load() (*Config, error) {
 		FTSEnabled:               envBool("MNEMO_FTS_ENABLED", false),
 		WorkerConcurrency:        envInt("MNEMO_WORKER_CONCURRENCY", 5),
 		MeteringEnabled:          envBool("MNEMO_METERING_ENABLED", false),
-		MeteringBucket:           os.Getenv("MNEMO_METERING_S3_BUCKET"),
-		MeteringPrefix:           os.Getenv("MNEMO_METERING_S3_PREFIX"),
+		MeteringBucket:           bucket,
+		MeteringPrefix:           prefix,
 		MeteringFlushInterval:    envDuration("MNEMO_METERING_FLUSH_INTERVAL", 10*time.Second),
 		EncryptType:              envOr("MNEMO_ENCRYPT_TYPE", "plain"),
 		EncryptKey:               os.Getenv("MNEMO_ENCRYPT_KEY"),
@@ -215,6 +221,25 @@ func parseClusterBlacklist(raw string) map[string]struct{} {
 		}
 	}
 	return out
+}
+
+func parseMeteringURL(raw string) (string, string, error) {
+	if raw == "" {
+		return "", "", nil
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid MNEMO_METERING_URL: %w", err)
+	}
+	if u.Scheme != "s3" {
+		return "", "", fmt.Errorf("invalid MNEMO_METERING_URL %q: scheme must be s3", raw)
+	}
+	if u.Host == "" {
+		return "", "", fmt.Errorf("invalid MNEMO_METERING_URL %q: bucket is required", raw)
+	}
+
+	return u.Host, strings.Trim(u.Path, "/"), nil
 }
 
 // LogValue returns a slog.Value with sensitive fields masked.
