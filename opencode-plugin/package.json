@@ -34,12 +34,12 @@
     "README.md"
   ],
   "scripts": {
-    "test": "rm -rf ./dist-test && tsc -p ./tsconfig.test.json && node --test ./dist-test/*.test.js",
+    "test": "node --eval \"require('node:fs').rmSync('./dist-test', { recursive: true, force: true })\" && tsc -p ./tsconfig.test.json && node --test \"./dist-test/*.test.js\"",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run typecheck"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "1.2.15"
+    "@opencode-ai/plugin": "1.14.19"
   },
   "devDependencies": {
     "@types/node": "^25.3.3",
