@@ -406,13 +406,13 @@ func TestRecord_ChannelFull_DoesNotBlock(t *testing.T) {
 	fixed := time.Unix(1710000037, 0).UTC()
 	w := &transportWriter{
 		logger: logger,
-		ch:     make(chan Event, 1),
+		ch:     make(chan queuedEvent, 1),
 		parts:  make(map[batchKey]int),
 		now: func() time.Time {
 			return fixed
 		},
 	}
-	w.ch <- Event{Category: "mem9-api", TenantID: "tenant-a"}
+	w.ch <- w.makeQueuedEvent(Event{Category: "mem9-api", TenantID: "tenant-a"})
 
 	start := time.Now()
 	w.Record(Event{Category: "mem9-api", TenantID: "tenant-a"})
@@ -422,6 +422,65 @@ func TestRecord_ChannelFull_DoesNotBlock(t *testing.T) {
 	}
 	if count := strings.Count(buf.String(), "metering: event channel full, dropping event"); count != 1 {
 		t.Fatalf("warning count = %d, want 1; logs=%q", count, buf.String())
+	}
+}
+
+func TestClose_CancelsPeriodicTransportWrite(t *testing.T) {
+	transport := &blockingTransport{
+		entered: make(chan struct{}),
+		exited:  make(chan struct{}),
+	}
+	logger, _ := newTestLogger()
+	w := newTransportWriter(Config{Enabled: true, FlushInterval: 10 * time.Millisecond}.withDefaults(), transport, logger)
+
+	w.Record(Event{Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636", Data: map[string]any{"op": "store"}})
+
+	select {
+	case <-transport.entered:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for periodic transport write to start")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if err := w.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	select {
+	case <-transport.exited:
+	case <-time.After(time.Second):
+		t.Fatal("periodic transport write did not observe close cancellation")
+	}
+}
+
+func TestRecord_CapturesTimestampBeforeDequeue(t *testing.T) {
+	oldTime := time.Unix(1710000037, 0).UTC()
+	newTime := time.Unix(1710000097, 0).UTC()
+	w := &transportWriter{
+		ch:      make(chan queuedEvent, 1),
+		batches: make(map[batchKey][]map[string]any),
+		parts:   make(map[batchKey]int),
+		now: func() time.Time {
+			return oldTime
+		},
+	}
+
+	w.Record(Event{Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636", AgentID: "agent-a", Data: map[string]any{"op": "store"}})
+	w.now = func() time.Time { return newTime }
+	item := <-w.ch
+	w.enqueueQueued(item)
+
+	oldKey := batchKey{TsMinute: minuteAlign(oldTime.Unix()), Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636"}
+	records := w.batches[oldKey]
+	if len(records) != 1 {
+		t.Fatalf("records len = %d, want 1", len(records))
+	}
+	if got := int64(records[0]["recorded_at"].(int64)); got != oldTime.Unix() {
+		t.Fatalf("recorded_at = %d, want %d", got, oldTime.Unix())
+	}
+	if _, ok := w.batches[batchKey{TsMinute: minuteAlign(newTime.Unix()), Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636"}]; ok {
+		t.Fatal("event was bucketed using dequeue time instead of record time")
 	}
 }
 

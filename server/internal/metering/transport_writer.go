@@ -28,12 +28,18 @@ type batchPayload struct {
 	Data      []map[string]any `json:"data"`
 }
 
+type queuedEvent struct {
+	event      Event
+	recordedAt int64
+	tsMinute   int64
+}
+
 type transportWriter struct {
 	cfg       Config
 	transport batchTransport
 	logger    *slog.Logger
 
-	ch   chan Event
+	ch   chan queuedEvent
 	done chan struct{}
 	wg   sync.WaitGroup
 
@@ -47,18 +53,24 @@ type transportWriter struct {
 
 	closeCtxMu sync.Mutex
 	closeCtx   context.Context
+
+	runtimeCtx    context.Context
+	runtimeCancel context.CancelFunc
 }
 
 func newTransportWriter(cfg Config, transport batchTransport, logger *slog.Logger) *transportWriter {
+	runtimeCtx, runtimeCancel := context.WithCancel(context.Background())
 	w := &transportWriter{
-		cfg:       cfg,
-		transport: transport,
-		logger:    logger,
-		ch:        make(chan Event, cfg.ChannelSize),
-		done:      make(chan struct{}),
-		batches:   make(map[batchKey][]map[string]any),
-		parts:     make(map[batchKey]int),
-		now:       time.Now,
+		cfg:           cfg,
+		transport:     transport,
+		logger:        logger,
+		ch:            make(chan queuedEvent, cfg.ChannelSize),
+		done:          make(chan struct{}),
+		batches:       make(map[batchKey][]map[string]any),
+		parts:         make(map[batchKey]int),
+		now:           time.Now,
+		runtimeCtx:    runtimeCtx,
+		runtimeCancel: runtimeCancel,
 	}
 	w.wg.Add(1)
 	go w.run()
@@ -69,10 +81,20 @@ func (w *transportWriter) Record(evt Event) {
 	if evt.Category == "" || evt.TenantID == "" {
 		return
 	}
+	item := w.makeQueuedEvent(evt)
 	select {
-	case w.ch <- evt:
+	case w.ch <- item:
 	default:
 		w.maybeWarnFull()
+	}
+}
+
+func (w *transportWriter) makeQueuedEvent(evt Event) queuedEvent {
+	recordedAt := w.now().Unix()
+	return queuedEvent{
+		event:      evt,
+		recordedAt: recordedAt,
+		tsMinute:   minuteAlign(recordedAt),
 	}
 }
 
@@ -89,14 +111,20 @@ func (w *transportWriter) maybeWarnFull() {
 }
 
 func (w *transportWriter) Close(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	w.closeOnce.Do(func() {
-		if ctx == nil {
-			ctx = context.Background()
-		}
 		w.closeCtxMu.Lock()
 		w.closeCtx = ctx
 		w.closeCtxMu.Unlock()
-		close(w.done)
+		if w.runtimeCancel != nil {
+			w.runtimeCancel()
+		}
+		if w.done != nil {
+			close(w.done)
+		}
 	})
 
 	waitCh := make(chan struct{})
@@ -119,14 +147,12 @@ func (w *transportWriter) run() {
 	ticker := time.NewTicker(w.cfg.FlushInterval)
 	defer ticker.Stop()
 
-	ctx := context.Background()
-
 	for {
 		select {
-		case evt := <-w.ch:
-			w.enqueue(evt)
+		case item := <-w.ch:
+			w.enqueueQueued(item)
 		case <-ticker.C:
-			w.flushAll(ctx)
+			w.flushAll(w.runtimeCtx)
 		case <-w.done:
 			w.drainAndFlush(w.shutdownContext())
 			return
@@ -146,8 +172,8 @@ func (w *transportWriter) shutdownContext() context.Context {
 func (w *transportWriter) drainAndFlush(ctx context.Context) {
 	for {
 		select {
-		case evt := <-w.ch:
-			w.enqueue(evt)
+		case item := <-w.ch:
+			w.enqueueQueued(item)
 		default:
 			w.flushAll(ctx)
 			return
@@ -156,9 +182,13 @@ func (w *transportWriter) drainAndFlush(ctx context.Context) {
 }
 
 func (w *transportWriter) enqueue(evt Event) {
-	now := w.now().Unix()
+	w.enqueueQueued(w.makeQueuedEvent(evt))
+}
+
+func (w *transportWriter) enqueueQueued(item queuedEvent) {
+	evt := item.event
 	key := batchKey{
-		TsMinute:  minuteAlign(now),
+		TsMinute:  item.tsMinute,
 		Category:  evt.Category,
 		TenantID:  evt.TenantID,
 		ClusterID: evt.ClusterID,
@@ -171,7 +201,7 @@ func (w *transportWriter) enqueue(evt Event) {
 	if evt.AgentID != "" {
 		record["agent_id"] = evt.AgentID
 	}
-	record["recorded_at"] = now
+	record["recorded_at"] = item.recordedAt
 
 	w.batches[key] = append(w.batches[key], record)
 }
