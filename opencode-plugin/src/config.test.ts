@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { mergeConfigLayers } from "./config.js";
+import { mergeConfigLayers, resolveRuntimeIdentity } from "./config.js";
 import { resolveMem9Paths } from "./platform-paths.js";
 
 test("resolveMem9Paths uses config and data directories separately", () => {
@@ -56,4 +56,25 @@ test("mergeConfigLayers uses built-in defaults when config layers are missing", 
     defaultTimeoutMs: 8000,
     searchTimeoutMs: 15000,
   });
+});
+
+test("resolveRuntimeIdentity prefers MEM9_API_KEY over legacy MEM9_TENANT_ID", () => {
+  const identity = resolveRuntimeIdentity(
+    {
+      MEM9_API_KEY: "mk_new",
+      MEM9_TENANT_ID: "legacy_space",
+      MEM9_API_URL: "https://api.mem9.ai",
+    },
+    {
+      schemaVersion: 1,
+      profiles: {},
+    },
+    {
+      schemaVersion: 1,
+      profileId: "default",
+    },
+  );
+
+  assert.equal(identity?.apiKey, "mk_new");
+  assert.equal(identity?.source, "env");
 });

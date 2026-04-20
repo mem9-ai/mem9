@@ -1,35 +1,15 @@
-import type { Plugin } from "@opencode-ai/plugin";
-import { loadConfig, DEFAULT_API_URL } from "./types.js";
+import type { Hooks, Plugin } from "@opencode-ai/plugin";
+import type { MemoryBackend } from "./backend.js";
+import {
+  resolveEffectiveConfig,
+  resolvePluginIdentity,
+} from "./config.js";
 import { ServerBackend } from "./server-backend.js";
+import { buildPendingSetupHooks } from "./setup-flow.js";
 import { buildTools } from "./tools.js";
 import { buildHooks } from "./hooks.js";
 
-/**
- * mem9-opencode — AI agent memory plugin for OpenCode.
- *
- * Connects to mem9 API (default: https://api.mem9.ai).
- * Requires MEM9_TENANT_ID.
- */
-const mem9Plugin: Plugin = async (_input) => {
-  const cfg = loadConfig();
-
-  const effectiveApiUrl = cfg.apiUrl ?? DEFAULT_API_URL;
-  if (!cfg.apiUrl) {
-    console.info(
-      `[mem9] No MEM9_API_URL configured, using default ${DEFAULT_API_URL}`
-    );
-  }
-
-  if (!cfg.tenantID) {
-    console.warn(
-      "[mem9] No MEM9_TENANT_ID configured. Plugin disabled. Set MEM9_TENANT_ID to enable."
-    );
-    return {};
-  }
-
-  console.info("[mem9] Server mode (mem9 REST API)");
-  const backend = new ServerBackend(effectiveApiUrl, cfg.tenantID);
-
+function buildPluginHooksAndTools(backend: MemoryBackend): Hooks {
   const tools = buildTools(backend);
   const hooks = buildHooks(backend);
 
@@ -37,6 +17,26 @@ const mem9Plugin: Plugin = async (_input) => {
     tool: tools,
     ...hooks,
   };
+}
+
+/**
+ * mem9-opencode — AI agent memory plugin for OpenCode.
+ */
+const mem9Plugin: Plugin = async (input) => {
+  const cfg = await resolveEffectiveConfig(input);
+  const identity = await resolvePluginIdentity(input, cfg);
+
+  if (!identity) {
+    return buildPendingSetupHooks(input, cfg);
+  }
+
+  if (identity.source === "legacy_env") {
+    console.info("[mem9] Using legacy MEM9_TENANT_ID as API key for compatibility.");
+  }
+
+  console.info(`[mem9] Server mode (mem9 REST API via ${identity.source})`);
+  const backend = new ServerBackend(identity.baseUrl, identity.apiKey, "opencode");
+  return buildPluginHooksAndTools(backend);
 };
 
 export default mem9Plugin;
