@@ -3,6 +3,7 @@ package metering
 import (
 	"context"
 	"log/slog"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -99,7 +100,7 @@ func (w *transportWriter) makeQueuedEvent(evt Event) queuedEvent {
 	if evt.Data != nil {
 		copied := make(map[string]any, len(evt.Data))
 		for k, v := range evt.Data {
-			copied[k] = v
+			copied[k] = deepCopyAny(v)
 		}
 		evt.Data = copied
 	}
@@ -116,6 +117,53 @@ func (w *transportWriter) makeQueuedEvent(evt Event) queuedEvent {
 		recordedAt: recordedAt,
 		tsMinute:   key.TsMinute,
 		key:        key,
+	}
+}
+
+func deepCopyAny(v any) any {
+	if v == nil {
+		return nil
+	}
+	return deepCopyValue(reflect.ValueOf(v)).Interface()
+}
+
+func deepCopyValue(v reflect.Value) reflect.Value {
+	switch v.Kind() {
+	case reflect.Interface:
+		if v.IsNil() {
+			return reflect.Zero(v.Type())
+		}
+		copied := deepCopyValue(v.Elem())
+		out := reflect.New(v.Type()).Elem()
+		out.Set(copied)
+		return out
+	case reflect.Map:
+		if v.IsNil() {
+			return reflect.Zero(v.Type())
+		}
+		out := reflect.MakeMapWithSize(v.Type(), v.Len())
+		iter := v.MapRange()
+		for iter.Next() {
+			out.SetMapIndex(iter.Key(), deepCopyValue(iter.Value()))
+		}
+		return out
+	case reflect.Slice:
+		if v.IsNil() {
+			return reflect.Zero(v.Type())
+		}
+		out := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		for i := 0; i < v.Len(); i++ {
+			out.Index(i).Set(deepCopyValue(v.Index(i)))
+		}
+		return out
+	case reflect.Array:
+		out := reflect.New(v.Type()).Elem()
+		for i := 0; i < v.Len(); i++ {
+			out.Index(i).Set(deepCopyValue(v.Index(i)))
+		}
+		return out
+	default:
+		return v
 	}
 }
 
@@ -264,6 +312,9 @@ func (w *transportWriter) pruneStaleParts(currentMinute int64) {
 	for key := range w.parts {
 		if key.TsMinute < currentMinute {
 			if w.pending[key] > 0 {
+				continue
+			}
+			if len(w.batches[key]) > 0 {
 				continue
 			}
 			delete(w.parts, key)

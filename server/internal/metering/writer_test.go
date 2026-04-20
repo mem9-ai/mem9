@@ -615,6 +615,90 @@ func TestRecord_CopiesPayloadBeforeQueueingAsyncWrite(t *testing.T) {
 	}
 }
 
+func TestRecord_DeepCopiesNestedPayloadBeforeQueueing(t *testing.T) {
+	fixed := time.Unix(1710000037, 0).UTC()
+	w := &transportWriter{
+		ch:      make(chan queuedEvent, 1),
+		batches: make(map[batchKey][]map[string]any),
+		parts:   make(map[batchKey]int),
+		now: func() time.Time {
+			return fixed
+		},
+	}
+
+	nestedMap := map[string]any{"phase": "store"}
+	nestedSliceMap := map[string]any{"n": 1}
+	nestedSlice := []any{nestedSliceMap, "tail"}
+	data := map[string]any{
+		"meta":  nestedMap,
+		"items": nestedSlice,
+	}
+
+	w.Record(Event{Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636", Data: data})
+	nestedMap["phase"] = "mutated"
+	nestedSliceMap["n"] = 2
+	nestedSlice[1] = "changed"
+
+	item := <-w.ch
+	w.enqueueQueued(item)
+
+	key := batchKey{TsMinute: minuteAlign(fixed.Unix()), Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636"}
+	records := w.batches[key]
+	if len(records) != 1 {
+		t.Fatalf("records len = %d, want 1", len(records))
+	}
+	meta, ok := records[0]["meta"].(map[string]any)
+	if !ok {
+		t.Fatalf("meta type = %T, want map[string]any", records[0]["meta"])
+	}
+	if got := meta["phase"]; got != "store" {
+		t.Fatalf("meta.phase = %v, want store", got)
+	}
+	items, ok := records[0]["items"].([]any)
+	if !ok {
+		t.Fatalf("items type = %T, want []any", records[0]["items"])
+	}
+	if got := items[1]; got != "tail" {
+		t.Fatalf("items[1] = %v, want tail", got)
+	}
+	itemMap, ok := items[0].(map[string]any)
+	if !ok {
+		t.Fatalf("items[0] type = %T, want map[string]any", items[0])
+	}
+	if got := itemMap["n"]; got != 1 {
+		t.Fatalf("items[0].n = %v, want 1", got)
+	}
+}
+
+func TestPruneStaleParts_PreservesBufferedOldMinuteBatch(t *testing.T) {
+	oldTime := time.Unix(1710000037, 0).UTC()
+	newTime := time.Unix(1710000097, 0).UTC()
+	oldKey := batchKey{TsMinute: 1710000000, Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636"}
+
+	w := &transportWriter{
+		batches: map[batchKey][]map[string]any{
+			oldKey: {{"op": "store"}},
+		},
+		parts:   map[batchKey]int{oldKey: 1},
+		pending: make(map[batchKey]int),
+		now: func() time.Time {
+			return oldTime
+		},
+	}
+
+	w.now = func() time.Time { return newTime }
+	w.pruneStaleParts(minuteAlign(newTime.Unix()))
+	if _, ok := w.parts[oldKey]; !ok {
+		t.Fatal("old part counter pruned while stale batch was still buffered")
+	}
+
+	delete(w.batches, oldKey)
+	w.pruneStaleParts(minuteAlign(newTime.Unix()))
+	if _, ok := w.parts[oldKey]; ok {
+		t.Fatal("old part counter was not pruned after buffered batch was cleared")
+	}
+}
+
 func TestClose_FlushesPending(t *testing.T) {
 	client := &fakeS3{}
 	logger, _ := newTestLogger()
