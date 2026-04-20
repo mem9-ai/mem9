@@ -59,10 +59,9 @@ type Config struct {
 	// Defaults to 5.
 	WorkerConcurrency int
 
-	// Metering writes compressed usage batches to S3.
+	// Metering writes compressed usage batches to a destination URL.
 	MeteringEnabled       bool
-	MeteringBucket        string
-	MeteringPrefix        string
+	MeteringURL           string
 	MeteringFlushInterval time.Duration
 
 	// DebugLLM enables logging of raw LLM response content, which may contain
@@ -107,7 +106,7 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("MNEMO_DSN is required")
 	}
 
-	bucket, prefix, err := parseMeteringURL(os.Getenv("MNEMO_METERING_URL"))
+	meteringURL, err := parseMeteringURL(os.Getenv("MNEMO_METERING_URL"))
 	if err != nil {
 		return nil, err
 	}
@@ -142,8 +141,7 @@ func Load() (*Config, error) {
 		FTSEnabled:               envBool("MNEMO_FTS_ENABLED", false),
 		WorkerConcurrency:        envInt("MNEMO_WORKER_CONCURRENCY", 5),
 		MeteringEnabled:          envBool("MNEMO_METERING_ENABLED", false),
-		MeteringBucket:           bucket,
-		MeteringPrefix:           prefix,
+		MeteringURL:              meteringURL,
 		MeteringFlushInterval:    envDuration("MNEMO_METERING_FLUSH_INTERVAL", 10*time.Second),
 		EncryptType:              envOr("MNEMO_ENCRYPT_TYPE", "plain"),
 		EncryptKey:               os.Getenv("MNEMO_ENCRYPT_KEY"),
@@ -223,23 +221,26 @@ func parseClusterBlacklist(raw string) map[string]struct{} {
 	return out
 }
 
-func parseMeteringURL(raw string) (string, string, error) {
+func parseMeteringURL(raw string) (string, error) {
 	if raw == "" {
-		return "", "", nil
+		return "", nil
 	}
 
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", "", fmt.Errorf("invalid MNEMO_METERING_URL: %w", err)
+		return "", fmt.Errorf("invalid MNEMO_METERING_URL: %w", err)
 	}
-	if u.Scheme != "s3" {
-		return "", "", fmt.Errorf("invalid MNEMO_METERING_URL %q: scheme must be s3", raw)
+	switch u.Scheme {
+	case "s3", "http", "https":
+		// ok
+	default:
+		return "", fmt.Errorf("invalid MNEMO_METERING_URL %q: unsupported scheme %q", raw, u.Scheme)
 	}
 	if u.Host == "" {
-		return "", "", fmt.Errorf("invalid MNEMO_METERING_URL %q: bucket is required", raw)
+		return "", fmt.Errorf("invalid MNEMO_METERING_URL %q: host is required", raw)
 	}
 
-	return u.Host, strings.Trim(u.Path, "/"), nil
+	return raw, nil
 }
 
 // LogValue returns a slog.Value with sensitive fields masked.
