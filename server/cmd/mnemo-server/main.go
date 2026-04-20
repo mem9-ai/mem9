@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,6 +15,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/handler"
 	"github.com/qiffang/mnemos/server/internal/llm"
+	"github.com/qiffang/mnemos/server/internal/metering"
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/reqid"
@@ -115,6 +117,27 @@ func main() {
 	})
 	defer tenantPool.Close()
 
+	meteringWriter, err := metering.New(context.Background(), metering.Config{
+		Enabled:       cfg.MeteringEnabled,
+		URL:           cfg.MeteringURL,
+		FlushInterval: cfg.MeteringFlushInterval,
+	}, logger)
+	if err != nil {
+		logger.Error("failed to initialize metering writer", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := meteringWriter.Close(ctx); err != nil {
+			logger.Error("metering close error", "err", err)
+		}
+	}()
+	if cfg.MeteringEnabled && cfg.MeteringURL == "" {
+		logger.Warn("MNEMO_METERING_ENABLED=true but MNEMO_METERING_URL empty; metering disabled")
+	}
+	logger.Info("metering writer initialized", "enabled", cfg.MeteringEnabled, "destination", redactMeteringURLForLog(cfg.MeteringURL))
+
 	// Services.
 	// Select provisioner based on configuration
 	var provisioner tenant.Provisioner
@@ -207,4 +230,15 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("server stopped")
+}
+
+func redactMeteringURLForLog(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "<invalid>"
+	}
+	return u.Scheme + "://" + u.Host
 }

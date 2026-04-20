@@ -35,12 +35,14 @@ export interface SiteHeroCopy {
   titleLead: string;
   titleAccent: string;
   subtitle: string;
+  poweredByLabel?: string;
   onboardingLabel: string;
   onboardingHint: string;
   onboardingStableLabel: string;
   onboardingBetaLabel: string;
   onboardingCommandStable: string;
   onboardingCommandBeta: string;
+  substrateCtaLabel?: string;
   betaFeature: SiteHeroFeature;
   highlights: SiteHeroHighlight[];
 }
@@ -118,6 +120,8 @@ export interface SiteSecurityPageCopy {
   kicker: string;
   title: string;
   intro: string;
+  bridgeBody?: string;
+  bridgeCtaLabel?: string;
   dataTitle: string;
   dataBody: string;
   protectionsTitle: string;
@@ -2347,6 +2351,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for OpenClaw',
       subtitle:
         'Your agents forget everything between sessions. mem9 fixes that. Persistent memory infrastructure with hybrid search, shared spaces, and cross-agent recall from first write to forever.',
+      poweredByLabel: 'Powered by TiDB Cloud',
       onboardingLabel: 'How to install',
       onboardingHint: 'Copy the command above into OpenClaw to get started. An API key is generated automatically \u2014 no sign-up required.',
       onboardingStableLabel: 'Stable',
@@ -2355,6 +2360,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'Read https://mem9.ai/SKILL.md and follow the instructions to install and configure mem9 for OpenClaw',
       onboardingCommandBeta:
         'Read https://mem9.ai/beta/SKILL.md and follow the instructions to install and configure mem9 for OpenClaw',
+      substrateCtaLabel:
+        'Need the backend substrate behind memory? Explore via TiDB Cloud Zero \u2192',
       betaFeature: {
         title: 'Context Engine Support',
         description:
@@ -2453,6 +2460,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       title: 'Security & Privacy',
       intro:
         'mem9 is designed to give users the benefits of persistent cloud memory with clear operational boundaries and strong security foundations.',
+      bridgeBody:
+        'Memory is often the first state problem in an agent system. When your workflow expands into files, artifacts, and retrieval, drive9 becomes the next layer.',
+      bridgeCtaLabel: 'Explore drive9 \u2192',
       dataTitle: 'How mem9 handles data',
       dataBody:
         'mem9 stores memory data to help agents preserve useful context across sessions, devices, and workflows. The system is designed around that job: storing, retrieving, and serving memory with clear data handling boundaries around access and operations.',
@@ -2610,6 +2620,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for OpenClaw',
       subtitle:
         '你的 Agent 会在每次会话结束后忘掉一切，mem9 负责修复这件事。它提供持久化记忆基础设施，支持混合搜索、共享空间和跨 Agent 召回，从第一次写入一直保留到未来。',
+      poweredByLabel: 'Powered by TiDB Cloud',
       onboardingLabel: '如何安装',
       onboardingHint: '把上面这条命令复制给 OpenClaw 即可完成安装，按提示操作会自动生成 API Key，无需注册申请。',
       onboardingStableLabel: 'Stable',
@@ -2618,6 +2629,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         '阅读 https://mem9.ai/SKILL.md ，按照说明为 OpenClaw 安装并配置 mem9',
       onboardingCommandBeta:
         '阅读 https://mem9.ai/beta/SKILL.md ，按照说明为 OpenClaw 安装并配置 mem9',
+      substrateCtaLabel:
+        'Need the backend substrate behind memory? Explore via TiDB Cloud Zero \u2192',
       betaFeature: {
         title: 'Context Engine 支持',
         description:
@@ -2713,6 +2726,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       title: '安全与隐私',
       intro:
         'mem9 的设计目标，是在提供持久云记忆能力的同时，保持清晰的操作边界和稳固的安全基础。',
+      bridgeBody:
+        'Memory is often the first state problem in an agent system. When your workflow expands into files, artifacts, and retrieval, drive9 becomes the next layer.',
+      bridgeCtaLabel: 'Explore drive9 \u2192',
       dataTitle: 'mem9 如何处理数据',
       dataBody:
         'mem9 会存储记忆数据，帮助 Agent 在跨会话、跨设备和跨工作流时保留有用上下文。相关数据流被限定在产品的核心职责内，即存储、检索和提供记忆，并围绕访问与运维设有清晰的数据处理边界。',
@@ -2864,6 +2880,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for OpenClaw',
       subtitle:
         '你的 Agent 會在每次會話結束後忘掉一切，mem9 負責修復這件事。它提供持久化記憶基礎設施，支援混合搜尋、共享空間和跨 Agent 召回，從第一次寫入一路保留到未來。',
+      poweredByLabel: 'Powered by TiDB Cloud',
       onboardingLabel: '如何安裝',
       onboardingHint: '把上面這條指令複製給 OpenClaw 即可完成安裝，按提示操作會自動產生 API Key，無需註冊申請。',
       onboardingStableLabel: 'Stable',
@@ -2872,6 +2889,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         '閱讀 https://mem9.ai/SKILL.md，按照說明為 OpenClaw 安裝並配置 mem9',
       onboardingCommandBeta:
         '閱讀 https://mem9.ai/beta/SKILL.md，按照說明為 OpenClaw 安裝並配置 mem9',
+      substrateCtaLabel:
+        'Need the backend substrate behind memory? Explore via TiDB Cloud Zero \u2192',
       betaFeature: {
         title: 'Context Engine 支援',
         description:
@@ -2967,6 +2986,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       title: '安全與隱私',
       intro:
         'mem9 的設計目標，是在提供持久雲端記憶能力的同時，維持清楚的操作邊界與穩固的安全基礎。',
+      bridgeBody:
+        'Memory is often the first state problem in an agent system. When your workflow expands into files, artifacts, and retrieval, drive9 becomes the next layer.',
+      bridgeCtaLabel: 'Explore drive9 \u2192',
       dataTitle: 'mem9 如何處理資料',
       dataBody:
         'mem9 會儲存記憶資料，幫助 Agent 在跨會話、跨裝置與跨工作流程時保留有用上下文。相關資料流被限定在產品的核心職責內，也就是儲存、檢索與提供記憶，並圍繞存取與營運設有清楚的資料處理邊界。',
@@ -3118,6 +3140,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for OpenClaw',
       subtitle:
         'エージェントはセッションが変わるたびにすべてを忘れます。mem9 はそれを解決します。ハイブリッド検索、共有スペース、エージェント間リコールを備えた永続メモリ基盤で、最初の書き込みからずっと記憶を保ちます。',
+      poweredByLabel: 'Powered by TiDB Cloud',
       onboardingLabel: 'インストール方法',
       onboardingHint: '上のコマンドを OpenClaw にコピーしてください。案内に従えば API Key が自動生成されます \u2014 登録不要です。',
       onboardingStableLabel: 'Stable',
@@ -3126,6 +3149,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'https://mem9.ai/SKILL.md を読み、手順に沿って OpenClaw 向けに mem9 をインストールして設定してください',
       onboardingCommandBeta:
         'https://mem9.ai/beta/SKILL.md を読み、手順に沿って OpenClaw 向けに mem9 をインストールして設定してください',
+      substrateCtaLabel:
+        'Need the backend substrate behind memory? Explore via TiDB Cloud Zero \u2192',
       betaFeature: {
         title: 'Context Engine サポート',
         description:
@@ -3224,6 +3249,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       title: 'Security & Privacy',
       intro:
         'mem9 は、永続クラウドメモリの利点を提供しながら、明確な運用境界と強固なセキュリティ基盤を保つよう設計されています。',
+      bridgeBody:
+        'Memory is often the first state problem in an agent system. When your workflow expands into files, artifacts, and retrieval, drive9 becomes the next layer.',
+      bridgeCtaLabel: 'Explore drive9 \u2192',
       dataTitle: 'mem9 のデータ取り扱い',
       dataBody:
         'mem9 は、エージェントがセッション、デバイス、ワークフローをまたいで有用な文脈を保てるようにメモリデータを保存します。データフローはその役割に絞られており、保存、検索、提供という機能の周囲に明確なデータ取り扱い境界を設けています。',
@@ -3377,6 +3405,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for OpenClaw',
       subtitle:
         '에이전트는 세션이 바뀔 때마다 모든 것을 잊습니다. mem9가 이를 해결합니다. 하이브리드 검색, 공유 공간, 에이전트 간 리콜을 갖춘 지속 메모리 인프라로 첫 번째 기록부터 계속 기억을 유지합니다.',
+      poweredByLabel: 'Powered by TiDB Cloud',
       onboardingLabel: '설치 방법',
       onboardingHint: '위 명령어를 OpenClaw 에 복사하세요. 안내에 따라 진행하면 API Key 가 자동 생성됩니다 \u2014 가입 불필요.',
       onboardingStableLabel: 'Stable',
@@ -3385,6 +3414,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'https://mem9.ai/SKILL.md 를 읽고 안내에 따라 OpenClaw용 mem9를 설치하고 설정하세요',
       onboardingCommandBeta:
         'https://mem9.ai/beta/SKILL.md 를 읽고 안내에 따라 OpenClaw용 mem9를 설치하고 설정하세요',
+      substrateCtaLabel:
+        'Need the backend substrate behind memory? Explore via TiDB Cloud Zero \u2192',
       betaFeature: {
         title: 'Context Engine 지원',
         description:
@@ -3480,6 +3511,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       title: 'Security & Privacy',
       intro:
         'mem9는 지속형 클라우드 메모리의 이점을 제공하면서도 명확한 운영 경계와 강한 보안 기반을 유지하도록 설계되었습니다.',
+      bridgeBody:
+        'Memory is often the first state problem in an agent system. When your workflow expands into files, artifacts, and retrieval, drive9 becomes the next layer.',
+      bridgeCtaLabel: 'Explore drive9 \u2192',
       dataTitle: 'mem9의 데이터 처리 방식',
       dataBody:
         'mem9는 에이전트가 세션, 장치, 워크플로 전반에서 유용한 컨텍스트를 유지할 수 있도록 메모리 데이터를 저장합니다. 데이터 흐름은 이 역할에 맞춰 제한되며, 저장, 검색, 제공이라는 기능 주변에 명확한 데이터 처리 경계를 둡니다.',
@@ -3633,6 +3667,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for OpenClaw',
       subtitle:
         'Agent Anda melupakan semuanya di antara sesi. mem9 memperbaikinya. Infrastruktur memori persisten dengan pencarian hybrid, ruang bersama, dan recall lintas agent dari penulisan pertama hingga seterusnya.',
+      poweredByLabel: 'Powered by TiDB Cloud',
       onboardingLabel: 'Cara install',
       onboardingHint: 'Salin perintah di atas ke OpenClaw untuk memulai. API key akan dibuat otomatis \u2014 tanpa perlu mendaftar.',
       onboardingStableLabel: 'Stable',
@@ -3641,6 +3676,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'Baca https://mem9.ai/SKILL.md lalu ikuti petunjuk untuk menginstal dan mengonfigurasi mem9 untuk OpenClaw',
       onboardingCommandBeta:
         'Baca https://mem9.ai/beta/SKILL.md lalu ikuti petunjuk untuk menginstal dan mengonfigurasi mem9 untuk OpenClaw',
+      substrateCtaLabel:
+        'Need the backend substrate behind memory? Explore via TiDB Cloud Zero \u2192',
       betaFeature: {
         title: 'Dukungan Context Engine',
         description:
@@ -3739,6 +3776,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       title: 'Security & Privacy',
       intro:
         'mem9 dirancang untuk memberi manfaat memori cloud persisten dengan batas operasional yang jelas dan fondasi keamanan yang kuat.',
+      bridgeBody:
+        'Memory is often the first state problem in an agent system. When your workflow expands into files, artifacts, and retrieval, drive9 becomes the next layer.',
+      bridgeCtaLabel: 'Explore drive9 \u2192',
       dataTitle: 'Bagaimana mem9 menangani data',
       dataBody:
         'mem9 menyimpan data memori untuk membantu agent mempertahankan konteks yang berguna di berbagai sesi, perangkat, dan alur kerja. Aliran data dibatasi pada fungsi utamanya: menyimpan, mengambil, dan menyajikan memori dengan batas penanganan data yang jelas untuk akses dan operasi.',
@@ -3892,6 +3932,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for OpenClaw',
       subtitle:
         'เอเจนต์ของคุณลืมทุกอย่างระหว่างแต่ละเซสชัน mem9 เข้ามาแก้ปัญหานี้ด้วยโครงสร้างพื้นฐานหน่วยความจำแบบถาวรที่มีการค้นหาแบบ hybrid พื้นที่ร่วมกัน และการเรียกคืนข้ามเอเจนต์ตั้งแต่การเขียนครั้งแรกไปจนตลอดการใช้งาน',
+      poweredByLabel: 'Powered by TiDB Cloud',
       onboardingLabel: 'วิธีติดตั้ง',
       onboardingHint: 'คัดลอกคำสั่งด้านบนไปวางใน OpenClaw เพื่อเริ่มต้น API key จะถูกสร้างให้อัตโนมัติ \u2014 ไม่ต้องสมัครสมาชิก',
       onboardingStableLabel: 'Stable',
@@ -3900,6 +3941,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'อ่าน https://mem9.ai/SKILL.md แล้วทำตามขั้นตอนเพื่อติดตั้งและตั้งค่า mem9 สำหรับ OpenClaw',
       onboardingCommandBeta:
         'อ่าน https://mem9.ai/beta/SKILL.md แล้วทำตามขั้นตอนเพื่อติดตั้งและตั้งค่า mem9 สำหรับ OpenClaw',
+      substrateCtaLabel:
+        'Need the backend substrate behind memory? Explore via TiDB Cloud Zero \u2192',
       betaFeature: {
         title: 'รองรับ Context Engine',
         description:
@@ -3998,6 +4041,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       title: 'Security & Privacy',
       intro:
         'mem9 ถูกออกแบบมาเพื่อให้ได้ประโยชน์จาก cloud memory แบบถาวร พร้อมขอบเขตการปฏิบัติงานที่ชัดเจนและรากฐานด้านความปลอดภัยที่แข็งแรง',
+      bridgeBody:
+        'Memory is often the first state problem in an agent system. When your workflow expands into files, artifacts, and retrieval, drive9 becomes the next layer.',
+      bridgeCtaLabel: 'Explore drive9 \u2192',
       dataTitle: 'mem9 จัดการข้อมูลอย่างไร',
       dataBody:
         'mem9 จัดเก็บข้อมูลหน่วยความจำเพื่อช่วยให้เอเจนต์รักษาบริบทที่มีประโยชน์ไว้ได้ข้ามเซสชัน อุปกรณ์ และเวิร์กโฟลว์ การไหลของข้อมูลถูกจำกัดให้อยู่ในหน้าที่หลักของผลิตภัณฑ์ คือการจัดเก็บ ค้นคืน และให้บริการหน่วยความจำ พร้อมขอบเขตการจัดการข้อมูลที่ชัดเจนสำหรับการเข้าถึงและการปฏิบัติงาน',

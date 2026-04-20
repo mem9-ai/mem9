@@ -3,9 +3,8 @@ package service
 import (
 	"context"
 	"errors"
-	"testing"
-
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"testing"
 )
 
 type stubSessionRepo struct {

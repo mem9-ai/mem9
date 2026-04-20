@@ -235,6 +235,7 @@ func TestComplete(t *testing.T) {
 			t.Fatalf("content = %q, want %q", got, "hello")
 		}
 	})
+
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

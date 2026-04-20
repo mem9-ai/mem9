@@ -249,6 +249,32 @@ func (s *MemoryService) ftsOnlySearch(ctx context.Context, filter domain.MemoryF
 	return populateRelativeAge(page), total, nil
 }
 
+func observeRecallEmbeddingRequest(embedder *embed.Embedder, err error) {
+	model := "unknown"
+	if embedder != nil && embedder.Model() != "" {
+		model = embedder.Model()
+	}
+	observeRecallEmbeddingRequestByModel(model, err)
+}
+
+func observeRecallAutoEmbeddingRequest(autoModel string, err error, skipped bool) {
+	if skipped {
+		return
+	}
+	observeRecallEmbeddingRequestByModel(autoModel, err)
+}
+
+func observeRecallEmbeddingRequestByModel(model string, err error) {
+	if model == "" {
+		model = "unknown"
+	}
+	status := "success"
+	if err != nil {
+		status = "error"
+	}
+	metrics.EmbeddingRequestsTotal.WithLabelValues("query_embedding", model, status).Inc()
+}
+
 // is not yet available (e.g., during cold start probe window).
 func (s *MemoryService) keywordOnlySearch(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
 	limit := filter.Limit
@@ -305,6 +331,7 @@ func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFi
 	fetchLimit := limit * 3
 
 	queryVec, err := s.embedder.Embed(ctx, filter.Query)
+	observeRecallEmbeddingRequest(s.embedder, err)
 	if err != nil {
 		return nil, 0, fmt.Errorf("embed query for search: %w", err)
 	}
@@ -359,6 +386,7 @@ func (s *MemoryService) hybridCandidates(ctx context.Context, filter domain.Memo
 	fetchLimit := limit * normalizeRecallFetchMultiplier(opts.FetchMultiplier, 3)
 
 	queryVec, err := s.embedder.Embed(ctx, filter.Query)
+	observeRecallEmbeddingRequest(s.embedder, err)
 	if err != nil {
 		return nil, fmt.Errorf("embed query for search: %w", err)
 	}
@@ -397,6 +425,7 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 	fetchLimit := limit * 3
 
 	vecResults, vecErr := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
+	observeRecallAutoEmbeddingRequest(s.autoModel, vecErr, false)
 	if vecErr != nil {
 		return nil, 0, fmt.Errorf("auto vector search: %w", vecErr)
 	}
@@ -473,6 +502,7 @@ func (s *MemoryService) autoHybridCandidates(
 
 	vectorStart := time.Now()
 	vecResults, err := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
+	observeRecallAutoEmbeddingRequest(s.autoModel, err, false)
 	vectorDuration := time.Since(vectorStart)
 	if err != nil {
 		return nil, fmt.Errorf("auto vector search: %w", err)

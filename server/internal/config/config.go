@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -58,6 +59,11 @@ type Config struct {
 	// Defaults to 5.
 	WorkerConcurrency int
 
+	// Metering writes compressed usage batches to a destination URL.
+	MeteringEnabled       bool
+	MeteringURL           string
+	MeteringFlushInterval time.Duration
+
 	// DebugLLM enables logging of raw LLM response content, which may contain
 	// user data. Disabled by default. Enable only in dev/test environments via
 	// MNEMO_DEBUG_LLM=true.
@@ -100,6 +106,16 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("MNEMO_DSN is required")
 	}
 
+	meteringEnabled := envBool("MNEMO_METERING_ENABLED", false)
+	meteringURL := ""
+	if meteringEnabled {
+		var err error
+		meteringURL, err = parseMeteringURL(os.Getenv("MNEMO_METERING_URL"))
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	cfg := &Config{
 		Port:                     envOr("MNEMO_PORT", "8080"),
 		DSN:                      dsn,
@@ -129,6 +145,9 @@ func Load() (*Config, error) {
 		UploadDir:                envOr("MNEMO_UPLOAD_DIR", "./uploads"),
 		FTSEnabled:               envBool("MNEMO_FTS_ENABLED", false),
 		WorkerConcurrency:        envInt("MNEMO_WORKER_CONCURRENCY", 5),
+		MeteringEnabled:          meteringEnabled,
+		MeteringURL:              meteringURL,
+		MeteringFlushInterval:    envDuration("MNEMO_METERING_FLUSH_INTERVAL", 10*time.Second),
 		EncryptType:              envOr("MNEMO_ENCRYPT_TYPE", "plain"),
 		EncryptKey:               os.Getenv("MNEMO_ENCRYPT_KEY"),
 		DebugLLM:                 envBool("MNEMO_DEBUG_LLM", false),
@@ -205,6 +224,28 @@ func parseClusterBlacklist(raw string) map[string]struct{} {
 		}
 	}
 	return out
+}
+
+func parseMeteringURL(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid MNEMO_METERING_URL: %w", err)
+	}
+	switch u.Scheme {
+	case "s3", "http", "https":
+		// ok
+	default:
+		return "", fmt.Errorf("invalid MNEMO_METERING_URL: unsupported scheme %q", u.Scheme)
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("invalid MNEMO_METERING_URL: host is required")
+	}
+
+	return raw, nil
 }
 
 // LogValue returns a slog.Value with sensitive fields masked.

@@ -3,12 +3,13 @@ package domain
 import "errors"
 
 var (
-	ErrNotFound      = errors.New("not found")
-	ErrConflict      = errors.New("version conflict") // Phase 2: used when LLM merge replaces LWW
-	ErrDuplicateKey  = errors.New("duplicate key")
-	ErrValidation    = errors.New("validation error")
-	ErrWriteConflict = errors.New("write conflict, retry")
-	ErrNotSupported  = errors.New("not supported")
+	ErrNotFound                = errors.New("not found")
+	ErrConflict                = errors.New("version conflict") // Phase 2: used when LLM merge replaces LWW
+	ErrDuplicateKey            = errors.New("duplicate key")
+	ErrValidation              = errors.New("validation error")
+	ErrWriteConflict           = errors.New("write conflict, retry")
+	ErrNotSupported            = errors.New("not supported")
+	ErrAutoVectorSearchSkipped = errors.New("auto vector search skipped")
 )
 
 // ValidationError wraps ErrValidation with a field-level message.
