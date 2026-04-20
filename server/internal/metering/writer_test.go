@@ -8,6 +8,9 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -115,20 +118,27 @@ func waitForOps(t *testing.T, f *fakeS3, want int, timeout time.Duration) []fake
 	return nil
 }
 
-func newManualWriter(cfg Config, client s3PutObjecter, logger *slog.Logger, now time.Time) *s3Writer {
+func newManualWriter(cfg Config, client s3PutObjecter, logger *slog.Logger, now time.Time) *transportWriter {
 	cfg = cfg.withDefaults()
-	return &s3Writer{
-		cfg:     cfg,
-		s3:      client,
-		bucket:  cfg.Bucket,
-		logger:  logger,
-		batches: make(map[batchKey][]map[string]any),
-		parts:   make(map[batchKey]int),
-		gz:      newGzipPool(),
+	return &transportWriter{
+		cfg:       cfg,
+		transport: newS3Transport(cfg.Bucket, cfg.Prefix, client),
+		logger:    logger,
+		batches:   make(map[batchKey][]map[string]any),
+		parts:     make(map[batchKey]int),
 		now: func() time.Time {
 			return now
 		},
 	}
+}
+
+func setConfigStringField(t *testing.T, cfg *Config, field, value string) {
+	t.Helper()
+	v := reflect.ValueOf(cfg).Elem().FieldByName(field)
+	if !v.IsValid() {
+		t.Fatalf("Config missing %s field", field)
+	}
+	v.SetString(value)
 }
 
 func TestNew_Disabled_ReturnsNoop(t *testing.T) {
@@ -145,17 +155,67 @@ func TestNew_Disabled_ReturnsNoop(t *testing.T) {
 	}
 }
 
-func TestNew_EmptyBucket_ReturnsNoop(t *testing.T) {
+func TestNew_EmptyURL_ReturnsNoop(t *testing.T) {
 	logger, buf := newTestLogger()
-	w, err := New(context.Background(), Config{Enabled: true, Bucket: ""}, logger)
+	w, err := New(context.Background(), Config{Enabled: true, URL: ""}, logger)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	if _, ok := w.(noopWriter); !ok {
 		t.Fatalf("New returned %T, want noopWriter", w)
 	}
-	if !strings.Contains(buf.String(), "bucket_set=false") {
-		t.Fatalf("expected bucket_set=false log, got %q", buf.String())
+	if !strings.Contains(buf.String(), "url_set=false") {
+		t.Fatalf("expected url_set=false log, got %q", buf.String())
+	}
+}
+
+func TestNew_HTTPURL_PostsWebhookJSON(t *testing.T) {
+	type requestRecord struct {
+		contentType string
+		payload     payload
+	}
+	reqCh := make(chan requestRecord, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("io.ReadAll: %v", err)
+		}
+		var p payload
+		if err := json.Unmarshal(body, &p); err != nil {
+			t.Fatalf("json.Unmarshal: %v", err)
+		}
+		reqCh <- requestRecord{contentType: r.Header.Get("Content-Type"), payload: p}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	logger, _ := newTestLogger()
+	cfg := Config{Enabled: true, FlushInterval: time.Hour}
+	setConfigStringField(t, &cfg, "URL", server.URL)
+	w, err := New(context.Background(), cfg, logger)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	w.Record(Event{Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636", AgentID: "agent-a", Data: map[string]any{"op": "store"}})
+	if err := w.Close(context.Background()); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	select {
+	case got := <-reqCh:
+		if got.contentType != "application/json" {
+			t.Fatalf("Content-Type = %q, want application/json", got.contentType)
+		}
+		if got.payload.Category != "mem9-api" || got.payload.TenantID != "tenant-a" || got.payload.ClusterID != "10006636" {
+			t.Fatalf("unexpected webhook payload: %+v", got.payload)
+		}
+		if len(got.payload.Data) != 1 {
+			t.Fatalf("payload data len = %d, want 1", len(got.payload.Data))
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for webhook request")
 	}
 }
 
@@ -301,9 +361,10 @@ func TestFlush_LossyOnError_LogsAndContinues(t *testing.T) {
 func TestRecord_ChannelFull_DoesNotBlock(t *testing.T) {
 	logger, buf := newTestLogger()
 	fixed := time.Unix(1710000037, 0).UTC()
-	w := &s3Writer{
+	w := &transportWriter{
 		logger: logger,
 		ch:     make(chan Event, 1),
+		parts:  make(map[batchKey]int),
 		now: func() time.Time {
 			return fixed
 		},

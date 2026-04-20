@@ -1,9 +1,12 @@
-// Package metering writes usage events to S3 as compressed JSON batches.
+// Package metering writes usage events to a destination selected by URL
+// scheme.
 //
 // It is a slimmed-down port of the PingCAP metering_sdk
 // (https://github.com/pingcap/metering_sdk), adapted for mem9: no shared-pool
 // concept, tenant/cluster as the two-level identity, a 10-second in-memory
-// batch with lossy-on-error flush, and slog-based logging.
+// batch with lossy-on-error flush, and slog-based logging. Supported
+// destinations are S3 object storage (`s3://`) and webhook POST endpoints
+// (`http://` / `https://`).
 //
 // NOTE: the writer is fully implemented, but this round only wires startup
 // lifecycle. Caller-side Record() hooks still land in a follow-up change.
@@ -13,19 +16,17 @@ import "time"
 
 // Config carries all metering writer settings.
 //
-// When Enabled is false OR Bucket is empty, New() returns a no-op Writer and
+// When Enabled is false OR URL is empty, New() returns a no-op Writer and
 // logs at Info level. Credentials come from the default AWS SDK chain (env
 // vars, IRSA, pod identity, ~/.aws/credentials) — the same mechanism used by
 // server/internal/encrypt/kms.go.
 type Config struct {
-	Enabled        bool
-	Bucket         string
-	Region         string
-	Prefix         string        // optional, prepended to every object key
-	Endpoint       string        // S3-compatible endpoint override (MinIO, localstack, R2); empty = real AWS
-	ForcePathStyle bool          // true for MinIO / localstack
-	FlushInterval  time.Duration // default 10s
-	ChannelSize    int           // default 1024
+	Enabled       bool
+	URL           string // metering destination: s3://bucket/prefix/ or http(s)://webhook
+	Bucket        string
+	Prefix        string        // optional, prepended to every object key
+	FlushInterval time.Duration // default 10s
+	ChannelSize   int           // default 1024
 }
 
 const (
