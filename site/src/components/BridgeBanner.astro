@@ -1,0 +1,107 @@
+---
+import type { SiteSecurityPageCopy } from '../content/site';
+
+interface Props {
+  security: SiteSecurityPageCopy;
+}
+
+const { security } = Astro.props;
+const bridgeBody =
+  security.bridgeBody
+  ?? 'Memory is often the first state problem in an agent system. When your workflow expands into files, artifacts, and retrieval, drive9 becomes the next layer.';
+const bridgeCtaLabel = security.bridgeCtaLabel ?? 'Explore drive9 →';
+const drive9Href = 'https://drive9.ai';
+---
+
+<section class="bridge-banner-section" aria-label="drive9 bridge">
+  <div class="container">
+    <a
+      href={drive9Href}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="bridge-banner"
+    >
+      <p data-i18n="securityPage.bridgeBody">{bridgeBody}</p>
+      <span
+        class="bridge-banner-cta"
+        data-i18n="securityPage.bridgeCtaLabel"
+      >
+        {bridgeCtaLabel}
+      </span>
+    </a>
+  </div>
+</section>
+
+<style>
+  .bridge-banner-section {
+    padding: 0.9rem 0 2.4rem;
+  }
+
+  .bridge-banner {
+    width: min(100%, var(--section-grid));
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 1.1rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid color-mix(in srgb, var(--border) 92%, white);
+    border-radius: 1.05rem;
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-gradient-start) 76%, white),
+        color-mix(in srgb, var(--surface-gradient-end) 88%, white)
+      );
+    box-shadow: var(--surface-inset), 0 10px 22px rgba(0, 0, 0, 0.035);
+    text-decoration: none;
+    transition:
+      border-color 0.18s ease,
+      box-shadow 0.18s ease,
+      transform 0.18s ease,
+      background 0.18s ease;
+  }
+
+  .bridge-banner p {
+    min-width: 0;
+    color: var(--text-dim);
+    font-size: 0.94rem;
+    line-height: 1.58;
+  }
+
+  .bridge-banner-cta {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    color: var(--text);
+    font-size: 0.92rem;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .bridge-banner:hover,
+  .bridge-banner:focus-visible {
+    opacity: 1;
+    border-color: var(--border-strong);
+    box-shadow: var(--surface-inset), 0 14px 28px rgba(0, 0, 0, 0.05);
+    transform: translateY(-1px);
+  }
+
+  .bridge-banner:hover .bridge-banner-cta,
+  .bridge-banner:focus-visible .bridge-banner-cta {
+    color: var(--text);
+  }
+
+  @media (max-width: 720px) {
+    .bridge-banner-section {
+      padding-bottom: 2rem;
+    }
+
+    .bridge-banner {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: start;
+      gap: 0.9rem;
+      padding: 0.95rem 1rem;
+    }
+  }
+</style>

@@ -9,6 +9,12 @@ interface Props {
 const { hero, aria } = Astro.props;
 const showOnboardingVersionTabs = false;
 const onboardingCommandUrlPattern = /https:\/\/\S+/u;
+const poweredByLabel = hero.poweredByLabel ?? 'Powered by TiDB Cloud';
+const substrateCtaLabel =
+  hero.substrateCtaLabel
+  ?? 'Need the backend substrate behind memory? Explore via TiDB Cloud Zero →';
+const tidbCloudHref = 'https://www.pingcap.com';
+const tidbZeroHref = 'https://zero.tidbcloud.com';
 
 function splitOnboardingCommand(command: string): {
   prefix: string;
@@ -53,6 +59,16 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
       <p class="subtitle" data-i18n="hero.subtitle">
         {hero.subtitle}
       </p>
+
+      <a
+        href={tidbCloudHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="powered-inline"
+      >
+        <span data-i18n="hero.poweredByLabel">{poweredByLabel}</span>
+        <img src="/tidb-logo.svg" alt="TiDB Cloud" />
+      </a>
 
       <div class="cta-grid" data-onboarding-shell data-onboarding-version="stable">
         {showOnboardingVersionTabs && (
@@ -177,6 +193,17 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
           </article>
         ))}
       </div>
+
+      <p class="hero-link-inline">
+        <a
+          href={tidbZeroHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-i18n="hero.substrateCtaLabel"
+        >
+          {substrateCtaLabel}
+        </a>
+      </p>
     </div>
   </div>
 </section>
@@ -240,6 +267,39 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
     max-width: 576px;
     line-height: 1.79;
     margin-bottom: 1.5rem;
+  }
+
+  .powered-inline {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.55rem;
+    width: fit-content;
+    margin: 0 0 1.55rem;
+    color: var(--text-soft);
+    font-size: 0.94rem;
+    line-height: 1.4;
+    transition: color 0.18s ease, transform 0.18s ease;
+  }
+
+  .powered-inline:hover,
+  .powered-inline:focus-visible {
+    opacity: 1;
+    color: var(--text-dim);
+    transform: translateY(-1px);
+  }
+
+  .powered-inline img {
+    display: block;
+    width: auto;
+    height: 0.92rem;
+    transition: transform 0.18s ease, opacity 0.18s ease;
+  }
+
+  .powered-inline:hover img,
+  .powered-inline:focus-visible img {
+    opacity: 0.92;
+    transform: translateX(1px);
   }
 
   .cta-grid {
@@ -480,6 +540,24 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
     color: var(--text-dim);
   }
 
+  .hero-link-inline {
+    width: min(100%, var(--content-rail));
+    margin-top: 1rem;
+  }
+
+  .hero-link-inline a {
+    color: var(--text-dim);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    text-decoration: none;
+  }
+
+  .hero-link-inline a:hover,
+  .hero-link-inline a:focus-visible {
+    color: var(--text);
+    opacity: 1;
+  }
+
   @media (min-width: 900px) and (max-height: 980px) {
     .hero {
       min-height: calc(100dvh - 70px);
@@ -502,6 +580,10 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
       font-size: 1.0625rem;
       line-height: 1.79;
       max-width: 576px;
+      margin-bottom: 1.35rem;
+    }
+
+    .powered-inline {
       margin-bottom: 1.35rem;
     }
 
@@ -531,6 +613,10 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
       font-size: 1.125rem;
       line-height: 1.79;
       margin-bottom: 1.1rem;
+    }
+
+    .powered-inline {
+      margin-bottom: 1.2rem;
     }
 
     .cta-card code {
@@ -594,6 +680,13 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
 
     .highlight-card {
       min-height: 0;
+    }
+
+    .powered-inline {
+      width: fit-content;
+      max-width: 100%;
+      justify-content: flex-start;
+      flex-wrap: wrap;
     }
   }
 
