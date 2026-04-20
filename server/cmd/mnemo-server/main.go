@@ -118,8 +118,7 @@ func main() {
 
 	meteringWriter, err := metering.New(context.Background(), metering.Config{
 		Enabled:       cfg.MeteringEnabled,
-		Bucket:        cfg.MeteringBucket,
-		Prefix:        cfg.MeteringPrefix,
+		URL:           cfg.MeteringURL,
 		FlushInterval: cfg.MeteringFlushInterval,
 	}, logger)
 	if err != nil {
@@ -133,10 +132,10 @@ func main() {
 			logger.Error("metering close error", "err", err)
 		}
 	}()
-	if cfg.MeteringEnabled && cfg.MeteringBucket == "" {
+	if cfg.MeteringEnabled && cfg.MeteringURL == "" {
 		logger.Warn("MNEMO_METERING_ENABLED=true but MNEMO_METERING_URL empty; metering disabled")
 	}
-	logger.Info("metering writer initialized", "enabled", cfg.MeteringEnabled, "bucket", cfg.MeteringBucket)
+	logger.Info("metering writer initialized", "enabled", cfg.MeteringEnabled, "url", cfg.MeteringURL)
 
 	// Services.
 	// Select provisioner based on configuration
