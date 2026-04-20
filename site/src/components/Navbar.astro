@@ -345,8 +345,9 @@ const isActivePath = (path: string): boolean => currentPath === path;
     min-width: 10rem;
     padding-top: 0.6rem;
     opacity: 0;
+    visibility: hidden;
     pointer-events: none;
-    transition: opacity 0.15s ease;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
   }
 
   .nav-dropdown-menu-inner {
@@ -361,6 +362,7 @@ const isActivePath = (path: string): boolean => currentPath === path;
 
   .nav-dropdown:hover .nav-dropdown-menu {
     opacity: 1;
+    visibility: visible;
     pointer-events: auto;
   }
 

@@ -19,8 +19,8 @@ const { benchmark } = Astro.props;
     </div>
 
     <div class="benchmark-content">
-      <div class="model-badge" data-i18n="benchmark.modelLabel">
-        {benchmark.modelLabel}: <strong>{benchmark.model}</strong>
+      <div class="model-badge">
+        <span data-i18n="benchmark.modelLabel">{benchmark.modelLabel}</span>: <strong>{benchmark.model}</strong>
       </div>
 
       <div class="overall-scores">
