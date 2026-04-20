@@ -11,10 +11,13 @@ export interface SiteNavCopy {
   home: string;
   features: string;
   platforms: string;
+  benchmark: string;
   openclaw: string;
   yourMemory: string;
   billing: string;
   security: string;
+  faq: string;
+  github: string;
   docs: string;
   api: string;
   contact: string;
@@ -216,6 +219,30 @@ export interface SiteApiPageCopy {
   ctaLinks: SiteLinkCopy[];
 }
 
+export interface SiteBenchmarkCategoryScore {
+  name: string;
+  f1: string;
+  llm: string;
+  er: string;
+}
+
+export interface SiteBenchmarkCopy {
+  kicker: string;
+  title: string;
+  description: string;
+  model: string;
+  modelLabel: string;
+  overallF1: string;
+  overallLLM: string;
+  overallER: string;
+  f1Label: string;
+  llmLabel: string;
+  erLabel: string;
+  categoryLabel: string;
+  categories: SiteBenchmarkCategoryScore[];
+  source: string;
+}
+
 export interface SiteFooterCopy {
   github: string;
   license: string;
@@ -253,6 +280,7 @@ export interface SiteDictionary {
   trust: SiteTrustCopy;
   features: SiteFeaturesCopy;
   platforms: SitePlatformsCopy;
+  benchmark: SiteBenchmarkCopy;
   faq: SiteFaqCopy;
   apiPage: SiteApiPageCopy;
   securityPage: SiteSecurityPageCopy;
@@ -2337,10 +2365,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'Home',
       features: 'Features',
       platforms: 'Platforms',
+      benchmark: 'Benchmark',
       openclaw: 'OpenClaw',
       yourMemory: 'Your Memory',
       billing: 'Billing',
       security: 'Security',
+      faq: 'FAQ',
+      github: 'GitHub',
       docs: 'Docs',
       api: 'API',
       contact: 'Contact Us',
@@ -2447,6 +2478,28 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       ],
       ctaLabel: 'Try Your Memory',
       note: 'Also works with any client that can read or write through the mem9 API layer.',
+    },
+    benchmark: {
+      kicker: 'Benchmark',
+      title: 'LoCoMo Benchmark Results',
+      description: 'Evaluating long-conversation memory quality across multi-hop reasoning, single-hop recall, temporal reasoning, open-domain QA, and adversarial robustness.',
+      model: 'qwen3.5-plus',
+      modelLabel: 'Model',
+      overallF1: '58.84%',
+      overallLLM: '71.95%',
+      overallER: '53.76%',
+      f1Label: 'F1 Score',
+      llmLabel: 'LLM Score',
+      erLabel: 'Evidence Recall',
+      categoryLabel: 'Category',
+      categories: [
+        { name: 'Multi-hop Reasoning', f1: '22.60%', llm: '53.90%', er: '25.1%' },
+        { name: 'Single-hop Recall', f1: '58.18%', llm: '76.01%', er: '67.8%' },
+        { name: 'Temporal Reasoning', f1: '13.79%', llm: '44.79%', er: '18.6%' },
+        { name: 'Open-domain QA', f1: '56.57%', llm: '79.55%', er: '60.1%' },
+        { name: 'Adversarial', f1: '96.19%', llm: 'N/A', er: '57.1%' },
+      ],
+      source: 'LoCoMo Benchmark — Long-Conversation Memory evaluation framework',
     },
     faq: faqCopyByLocale.en,
     apiPage: apiPageByLocale.en,
@@ -2606,10 +2659,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: '首页',
       features: '能力',
       platforms: '平台',
+      benchmark: '基准测试',
       openclaw: 'OpenClaw',
       yourMemory: '你的记忆',
       billing: '定价',
       security: '安全',
+      faq: '常见问题',
+      github: 'GitHub',
       docs: '文档',
       api: 'API',
       contact: '联系我们',
@@ -2713,6 +2769,28 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       ],
       ctaLabel: '试试你的记忆',
       note: '任何能够通过 mem9 API 层读写的客户端也都可以接入。',
+    },
+    benchmark: {
+      kicker: '基准测试',
+      title: 'LoCoMo 基准测试结果',
+      description: '评估长对话记忆质量，涵盖多跳推理、单跳召回、时序推理、开放域问答及对抗鲁棒性。',
+      model: 'qwen3.5-plus',
+      modelLabel: '模型',
+      overallF1: '58.84%',
+      overallLLM: '71.95%',
+      overallER: '53.76%',
+      f1Label: 'F1 分数',
+      llmLabel: 'LLM 分数',
+      erLabel: '证据召回率',
+      categoryLabel: '类别',
+      categories: [
+        { name: '多跳推理', f1: '22.60%', llm: '53.90%', er: '25.1%' },
+        { name: '单跳召回', f1: '58.18%', llm: '76.01%', er: '67.8%' },
+        { name: '时序推理', f1: '13.79%', llm: '44.79%', er: '18.6%' },
+        { name: '开放域问答', f1: '56.57%', llm: '79.55%', er: '60.1%' },
+        { name: '对抗测试', f1: '96.19%', llm: 'N/A', er: '57.1%' },
+      ],
+      source: 'LoCoMo Benchmark — 长对话记忆评估框架',
     },
     faq: faqCopyByLocale.zh,
     apiPage: apiPageByLocale.zh,
@@ -2866,10 +2944,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: '首頁',
       features: '能力',
       platforms: '平台',
+      benchmark: '基準測試',
       openclaw: 'OpenClaw',
       yourMemory: '你的記憶',
       billing: '定價',
       security: '安全',
+      faq: '常見問題',
+      github: 'GitHub',
       docs: '文檔',
       api: 'API',
       contact: '聯絡我們',
@@ -2973,6 +3054,28 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       ],
       ctaLabel: '試試你的記憶',
       note: '任何能夠透過 mem9 API 層讀寫的客戶端也都可以接入。',
+    },
+    benchmark: {
+      kicker: '基準測試',
+      title: 'LoCoMo 基準測試結果',
+      description: '評估長對話記憶品質，涵蓋多跳推理、單跳召回、時序推理、開放域問答及對抗穩健性。',
+      model: 'qwen3.5-plus',
+      modelLabel: '模型',
+      overallF1: '58.84%',
+      overallLLM: '71.95%',
+      overallER: '53.76%',
+      f1Label: 'F1 分數',
+      llmLabel: 'LLM 分數',
+      erLabel: '證據召回率',
+      categoryLabel: '類別',
+      categories: [
+        { name: '多跳推理', f1: '22.60%', llm: '53.90%', er: '25.1%' },
+        { name: '單跳召回', f1: '58.18%', llm: '76.01%', er: '67.8%' },
+        { name: '時序推理', f1: '13.79%', llm: '44.79%', er: '18.6%' },
+        { name: '開放域問答', f1: '56.57%', llm: '79.55%', er: '60.1%' },
+        { name: '對抗測試', f1: '96.19%', llm: 'N/A', er: '57.1%' },
+      ],
+      source: 'LoCoMo Benchmark — 長對話記憶評估框架',
     },
     faq: faqCopyByLocale['zh-Hant'],
     apiPage: apiPageByLocale['zh-Hant'],
@@ -3126,10 +3229,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'ホーム',
       features: '機能',
       platforms: '対応環境',
+      benchmark: 'ベンチマーク',
       openclaw: 'OpenClaw',
       yourMemory: 'あなたの記憶',
       billing: '料金',
       security: 'セキュリティ',
+      faq: 'よくある質問',
+      github: 'GitHub',
       docs: 'ドキュメント',
       api: 'API',
       contact: 'お問い合わせ',
@@ -3236,6 +3342,28 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       ],
       ctaLabel: 'あなたの記憶を試す',
       note: 'mem9 API レイヤー経由で読み書きできるクライアントなら、そのまま利用できます。',
+    },
+    benchmark: {
+      kicker: 'ベンチマーク',
+      title: 'LoCoMo ベンチマーク結果',
+      description: 'マルチホップ推論、シングルホップ想起、時系列推論、オープンドメインQA、敵対的堅牢性にわたる長文会話メモリ品質の評価。',
+      model: 'qwen3.5-plus',
+      modelLabel: 'モデル',
+      overallF1: '58.84%',
+      overallLLM: '71.95%',
+      overallER: '53.76%',
+      f1Label: 'F1 スコア',
+      llmLabel: 'LLM スコア',
+      erLabel: '証拠再現率',
+      categoryLabel: 'カテゴリ',
+      categories: [
+        { name: 'マルチホップ推論', f1: '22.60%', llm: '53.90%', er: '25.1%' },
+        { name: 'シングルホップ想起', f1: '58.18%', llm: '76.01%', er: '67.8%' },
+        { name: '時系列推論', f1: '13.79%', llm: '44.79%', er: '18.6%' },
+        { name: 'オープンドメインQA', f1: '56.57%', llm: '79.55%', er: '60.1%' },
+        { name: '敵対的テスト', f1: '96.19%', llm: 'N/A', er: '57.1%' },
+      ],
+      source: 'LoCoMo Benchmark — 長文会話メモリ評価フレームワーク',
     },
     faq: faqCopyByLocale.ja,
     apiPage: apiPageByLocale.ja,
@@ -3391,10 +3519,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: '홈',
       features: '기능',
       platforms: '플랫폼',
+      benchmark: '벤치마크',
       openclaw: 'OpenClaw',
       yourMemory: '당신의 기억',
       billing: '요금',
       security: '보안',
+      faq: '자주 묻는 질문',
+      github: 'GitHub',
       docs: '문서',
       api: 'API',
       contact: '문의하기',
@@ -3498,6 +3629,28 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       ],
       ctaLabel: '당신의 기억 사용해보기',
       note: 'mem9 API 레이어를 통해 읽고 쓸 수 있는 모든 클라이언트와도 함께 동작합니다.',
+    },
+    benchmark: {
+      kicker: '벤치마크',
+      title: 'LoCoMo 벤치마크 결과',
+      description: '멀티홉 추론, 싱글홉 리콜, 시간적 추론, 오픈도메인 QA, 적대적 견고성에 걸쳐 장문 대화 메모리 품질을 평가합니다.',
+      model: 'qwen3.5-plus',
+      modelLabel: '모델',
+      overallF1: '58.84%',
+      overallLLM: '71.95%',
+      overallER: '53.76%',
+      f1Label: 'F1 점수',
+      llmLabel: 'LLM 점수',
+      erLabel: '증거 재현율',
+      categoryLabel: '카테고리',
+      categories: [
+        { name: '멀티홉 추론', f1: '22.60%', llm: '53.90%', er: '25.1%' },
+        { name: '싱글홉 리콜', f1: '58.18%', llm: '76.01%', er: '67.8%' },
+        { name: '시간적 추론', f1: '13.79%', llm: '44.79%', er: '18.6%' },
+        { name: '오픈도메인 QA', f1: '56.57%', llm: '79.55%', er: '60.1%' },
+        { name: '적대적 테스트', f1: '96.19%', llm: 'N/A', er: '57.1%' },
+      ],
+      source: 'LoCoMo Benchmark — 장문 대화 메모리 평가 프레임워크',
     },
     faq: faqCopyByLocale.ko,
     apiPage: apiPageByLocale.ko,
@@ -3653,10 +3806,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'Beranda',
       features: 'Fitur',
       platforms: 'Platform',
+      benchmark: 'Benchmark',
       openclaw: 'OpenClaw',
       yourMemory: 'Memori Anda',
       billing: 'Harga',
       security: 'Keamanan',
+      faq: 'FAQ',
+      github: 'GitHub',
       docs: 'Dokumentasi',
       api: 'API',
       contact: 'Hubungi Kami',
@@ -3763,6 +3919,28 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       ],
       ctaLabel: 'Coba Memori Anda',
       note: 'Juga bekerja dengan klien apa pun yang dapat membaca atau menulis melalui lapisan API mem9.',
+    },
+    benchmark: {
+      kicker: 'Benchmark',
+      title: 'Hasil Benchmark LoCoMo',
+      description: 'Mengevaluasi kualitas memori percakapan panjang meliputi penalaran multi-hop, recall single-hop, penalaran temporal, QA domain terbuka, dan ketahanan adversarial.',
+      model: 'qwen3.5-plus',
+      modelLabel: 'Model',
+      overallF1: '58.84%',
+      overallLLM: '71.95%',
+      overallER: '53.76%',
+      f1Label: 'Skor F1',
+      llmLabel: 'Skor LLM',
+      erLabel: 'Evidence Recall',
+      categoryLabel: 'Kategori',
+      categories: [
+        { name: 'Penalaran Multi-hop', f1: '22.60%', llm: '53.90%', er: '25.1%' },
+        { name: 'Recall Single-hop', f1: '58.18%', llm: '76.01%', er: '67.8%' },
+        { name: 'Penalaran Temporal', f1: '13.79%', llm: '44.79%', er: '18.6%' },
+        { name: 'QA Domain Terbuka', f1: '56.57%', llm: '79.55%', er: '60.1%' },
+        { name: 'Adversarial', f1: '96.19%', llm: 'N/A', er: '57.1%' },
+      ],
+      source: 'LoCoMo Benchmark — Kerangka evaluasi memori percakapan panjang',
     },
     faq: faqCopyByLocale.id,
     apiPage: apiPageByLocale.id,
@@ -3918,10 +4096,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       home: 'หน้าแรก',
       features: 'ความสามารถ',
       platforms: 'แพลตฟอร์ม',
+      benchmark: 'เบนช์มาร์ก',
       openclaw: 'OpenClaw',
       yourMemory: 'ความทรงจำของคุณ',
       billing: 'ราคา',
       security: 'ความปลอดภัย',
+      faq: 'คำถามที่พบบ่อย',
+      github: 'GitHub',
       docs: 'เอกสาร',
       api: 'API',
       contact: 'ติดต่อเรา',
@@ -4028,6 +4209,28 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       ],
       ctaLabel: 'ลองใช้ความทรงจำของคุณ',
       note: 'ยังทำงานได้กับไคลเอนต์ใดก็ตามที่อ่านหรือเขียนผ่านชั้น API ของ mem9 ได้',
+    },
+    benchmark: {
+      kicker: 'เบนช์มาร์ก',
+      title: 'ผลลัพธ์เบนช์มาร์ก LoCoMo',
+      description: 'ประเมินคุณภาพหน่วยความจำการสนทนายาวครอบคลุมการอนุมานหลายขั้น การเรียกคืนขั้นเดียว การอนุมานเชิงเวลา QA โดเมนเปิด และความทนทานต่อการโจมตี',
+      model: 'qwen3.5-plus',
+      modelLabel: 'โมเดล',
+      overallF1: '58.84%',
+      overallLLM: '71.95%',
+      overallER: '53.76%',
+      f1Label: 'คะแนน F1',
+      llmLabel: 'คะแนน LLM',
+      erLabel: 'Evidence Recall',
+      categoryLabel: 'หมวดหมู่',
+      categories: [
+        { name: 'การอนุมานหลายขั้น', f1: '22.60%', llm: '53.90%', er: '25.1%' },
+        { name: 'การเรียกคืนขั้นเดียว', f1: '58.18%', llm: '76.01%', er: '67.8%' },
+        { name: 'การอนุมานเชิงเวลา', f1: '13.79%', llm: '44.79%', er: '18.6%' },
+        { name: 'QA โดเมนเปิด', f1: '56.57%', llm: '79.55%', er: '60.1%' },
+        { name: 'การทดสอบเชิงรุก', f1: '96.19%', llm: 'N/A', er: '57.1%' },
+      ],
+      source: 'LoCoMo Benchmark — เฟรมเวิร์กประเมินหน่วยความจำการสนทนายาว',
     },
     faq: faqCopyByLocale.th,
     apiPage: apiPageByLocale.th,

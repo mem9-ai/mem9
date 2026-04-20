@@ -27,17 +27,26 @@ const isActivePath = (path: string): boolean => currentPath === path;
 
     <div class="nav-right">
       <div class="nav-links">
-        <a
-          href="/#top"
-          class:list={['nav-section-link', isActivePath('/') && 'is-active']}
-          data-i18n="nav.home"
-          aria-current={isActivePath('/') ? 'page' : undefined}
-        >
-          {nav.home}
-        </a>
-        <a href="https://mem9.ai/your-memory" class="nav-section-link" target="_blank" rel="noopener" data-i18n="nav.yourMemory">
-          {nav.yourMemory}
-        </a>
+        <div class="nav-dropdown">
+          <a
+            href="/#top"
+            class:list={['nav-section-link', isActivePath('/') && 'is-active']}
+            data-i18n="nav.home"
+            aria-current={isActivePath('/') ? 'page' : undefined}
+          >
+            {nav.home}
+            <svg class="nav-caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+          <div class="nav-dropdown-menu">
+            <div class="nav-dropdown-menu-inner surface-card">
+              <a href="/#features" class="dropdown-item" data-i18n="nav.features">{nav.features}</a>
+              <a href="/#benchmark" class="dropdown-item" data-i18n="nav.benchmark">{nav.benchmark}</a>
+              <a href="/#platforms" class="dropdown-item" data-i18n="nav.platforms">{nav.platforms}</a>
+              <a href="/#security" class="dropdown-item" data-i18n="nav.security">{nav.security}</a>
+              <a href="/#faq" class="dropdown-item" data-i18n="nav.faq">{nav.faq}</a>
+            </div>
+          </div>
+        </div>
         <a
           href="/billing"
           class:list={['nav-section-link', isActivePath('/billing') && 'is-active']}
@@ -62,30 +71,20 @@ const isActivePath = (path: string): boolean => currentPath === path;
         >
           {nav.api}
         </a>
+        <a href="https://mem9.ai/your-memory" class="nav-section-link nav-external-link" target="_blank" rel="noopener">
+          <span data-i18n="nav.yourMemory">{nav.yourMemory}</span><svg class="external-icon" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 3h5.5v5.5M9 3L3 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
         <a
-          href="mailto:mem9@pingcap.com"
-          class="nav-contact-link nav-section-link"
-          data-contact-modal-trigger
-          data-i18n="nav.contact"
+          href="https://github.com/mem9-ai/mem9"
+          class="nav-section-link nav-external-link nav-github-link"
+          target="_blank"
+          rel="noopener"
         >
-          {nav.contact}
+          <span data-i18n="nav.github">{nav.github}</span><svg class="external-icon" viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 3h5.5v5.5M9 3L3 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
       </div>
 
       <div class="nav-actions">
-        <a
-          href="https://github.com/mem9-ai/mem9"
-          class="icon-button github-link"
-          target="_blank"
-          rel="noopener"
-          aria-label="GitHub"
-          title="GitHub"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
-            <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.607.069-.607 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.337-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.268 2.75 1.026A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.026 2.747-1.026.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
-          </svg>
-        </a>
-
         <div class="menu-shell" data-menu-shell="language" data-open="false">
           <button
             type="button"
@@ -308,8 +307,7 @@ const isActivePath = (path: string): boolean => currentPath === path;
     color: var(--text-dim);
   }
 
-  .nav-links a,
-  .nav-contact-link {
+  .nav-links a {
     color: inherit;
   }
 
@@ -317,36 +315,94 @@ const isActivePath = (path: string): boolean => currentPath === path;
     color: var(--text);
   }
 
+  /* Home dropdown */
+  .nav-dropdown {
+    position: relative;
+  }
+
+  .nav-dropdown > a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .nav-caret {
+    width: 0.7rem;
+    height: 0.7rem;
+    transition: transform 0.2s ease;
+  }
+
+  .nav-dropdown:hover .nav-caret {
+    transform: rotate(180deg);
+  }
+
+  .nav-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    min-width: 10rem;
+    padding-top: 0.6rem;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+  }
+
+  .nav-dropdown-menu-inner {
+    padding: 0.45rem;
+    display: grid;
+    gap: 0.15rem;
+    background: var(--menu-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 0.9rem;
+    box-shadow: var(--menu-shadow);
+  }
+
+  .nav-dropdown:hover .nav-dropdown-menu {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .dropdown-item {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.7rem;
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .dropdown-item:hover {
+    background: var(--button-active-bg);
+    color: var(--text);
+  }
+
+  /* External link icon */
+  .nav-external-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+  }
+
+  .external-icon {
+    width: 0.7rem;
+    height: 0.7rem;
+    opacity: 0.5;
+    flex-shrink: 0;
+  }
+
+  .nav-external-link:hover .external-icon {
+    opacity: 0.8;
+  }
 
   .nav-actions {
     display: flex;
     align-items: center;
     gap: 0.7rem;
-  }
-
-  a.icon-button.github-link {
-    text-decoration: none;
-    color: var(--text);
-    border-color: var(--border-strong);
-    background: var(--button-active-bg);
-  }
-
-  a.icon-button.github-link:hover {
-    color: var(--text);
-    border-color: var(--text-dim);
-    background: var(--button-active-bg);
-    transform: translateY(-1px);
-  }
-
-  :global(html[data-theme='dark']) a.icon-button.github-link {
-    color: #fff;
-    border-color: rgba(255, 255, 255, 0.35);
-    background: rgba(255, 255, 255, 0.12);
-  }
-
-  :global(html[data-theme='dark']) a.icon-button.github-link:hover {
-    border-color: rgba(255, 255, 255, 0.6);
-    background: rgba(255, 255, 255, 0.22);
   }
 
   .menu-shell {
@@ -448,7 +504,8 @@ const isActivePath = (path: string): boolean => currentPath === path;
       gap: 0.7rem;
     }
 
-    .nav-links .nav-section-link:not(.nav-docs-link):not(.nav-api-link) {
+    .nav-links .nav-section-link:not(.nav-docs-link):not(.nav-api-link),
+    .nav-dropdown {
       display: none;
     }
 

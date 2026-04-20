@@ -1,12 +1,3 @@
-── Timings ─────────────────────────────────
-wall_clock_ms: 6092872
-provision_total_ms: 469708
-ingest_total_ms: 22042838
-evaluation_total_ms: 4803160
-retrieval_total_ms: 15770502
-llm_total_ms: 3351728
-──────────────────────────────────────────────
-
 ── Results ──────────────────────────────────
 Overall F1 (micro): 58.84%  (n=1986)
 Overall F1 (macro): 49.47%

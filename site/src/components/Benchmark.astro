@@ -1,0 +1,216 @@
+---
+import type { SiteBenchmarkCopy } from '../content/site';
+
+interface Props {
+  benchmark: SiteBenchmarkCopy;
+}
+
+const { benchmark } = Astro.props;
+---
+
+<section id="benchmark" class="benchmark">
+  <div class="container">
+    <div class="section-head">
+      <p class="section-kicker" data-i18n="benchmark.kicker">{benchmark.kicker}</p>
+      <h2 class="section-title" data-i18n="benchmark.title">{benchmark.title}</h2>
+      <p class="section-desc" data-i18n="benchmark.description">
+        {benchmark.description}
+      </p>
+    </div>
+
+    <div class="benchmark-content">
+      <div class="model-badge">
+        <span data-i18n="benchmark.modelLabel">{benchmark.modelLabel}</span>: <strong>{benchmark.model}</strong>
+      </div>
+
+      <div class="overall-scores">
+        <div class="score-card">
+          <span class="score-value">{benchmark.overallF1}</span>
+          <span class="score-label" data-i18n="benchmark.f1Label">{benchmark.f1Label}</span>
+        </div>
+        <div class="score-card score-card-primary">
+          <span class="score-value">{benchmark.overallLLM}</span>
+          <span class="score-label" data-i18n="benchmark.llmLabel">{benchmark.llmLabel}</span>
+        </div>
+        <div class="score-card">
+          <span class="score-value">{benchmark.overallER}</span>
+          <span class="score-label" data-i18n="benchmark.erLabel">{benchmark.erLabel}</span>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="benchmark-table">
+          <thead>
+            <tr>
+              <th data-i18n="benchmark.categoryLabel">{benchmark.categoryLabel}</th>
+              <th data-i18n="benchmark.f1Label">{benchmark.f1Label}</th>
+              <th class="llm-col" data-i18n="benchmark.llmLabel">{benchmark.llmLabel}</th>
+              <th data-i18n="benchmark.erLabel">{benchmark.erLabel}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {benchmark.categories.map((cat, index) => (
+              <tr>
+                <td class="cat-name" data-i18n={`benchmark.categories.${index}.name`}>{cat.name}</td>
+                <td class="num">{cat.f1}</td>
+                <td class="num llm-col">{cat.llm}</td>
+                <td class="num">{cat.er}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p class="benchmark-source" data-i18n="benchmark.source">{benchmark.source}</p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .benchmark {
+    padding: 4rem 0;
+  }
+
+  .section-head {
+    width: min(100%, var(--content-rail));
+    margin: 0 auto 2.4rem;
+  }
+
+  .benchmark-content {
+    width: min(100%, var(--section-grid));
+    margin: 0 auto;
+  }
+
+  .model-badge {
+    display: inline-block;
+    padding: 0.35rem 0.85rem;
+    border-radius: 6px;
+    font-size: 0.92rem;
+    color: var(--text-dim);
+    background: linear-gradient(180deg, var(--surface-elevated-start), var(--surface-elevated-end));
+    margin-bottom: 1.5rem;
+  }
+
+  .model-badge strong {
+    color: var(--text-primary, var(--heading));
+    font-family: var(--font-mono, monospace);
+  }
+
+  .overall-scores {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+    margin-bottom: 2rem;
+  }
+
+  .score-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1rem;
+    border-radius: 12px;
+    background: linear-gradient(180deg, var(--surface-gradient-start), var(--surface-gradient-end));
+  }
+
+  .score-card-primary {
+    background: linear-gradient(180deg, var(--surface-elevated-start), var(--surface-elevated-end));
+    border: 1.5px solid var(--accent);
+    padding: 1.8rem 1rem;
+  }
+
+  .score-card-primary .score-value {
+    font-size: 2.4rem;
+    color: var(--accent);
+  }
+
+  .score-value {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    color: var(--heading);
+    font-family: var(--font-mono, monospace);
+  }
+
+  .score-label {
+    font-size: 0.88rem;
+    color: var(--text-dim);
+    margin-top: 0.35rem;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    border-radius: 12px;
+    background: linear-gradient(180deg, var(--surface-gradient-start), var(--surface-gradient-end));
+  }
+
+  .benchmark-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+  }
+
+  .benchmark-table th,
+  .benchmark-table td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+  }
+
+  .benchmark-table th {
+    font-weight: 600;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.15));
+  }
+
+  .benchmark-table td {
+    border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.08));
+  }
+
+  .benchmark-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .benchmark-table .cat-name {
+    font-weight: 500;
+    color: var(--heading);
+  }
+
+  .benchmark-table .num {
+    font-family: var(--font-mono, monospace);
+    color: var(--text-dim);
+  }
+
+  .benchmark-table .llm-col {
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .benchmark-source {
+    margin-top: 1.25rem;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    opacity: 0.7;
+  }
+
+  @media (max-width: 640px) {
+    .overall-scores {
+      grid-template-columns: 1fr;
+    }
+
+    .score-value {
+      font-size: 1.6rem;
+    }
+
+    .score-card-primary .score-value {
+      font-size: 1.8rem;
+    }
+
+    .benchmark-table th,
+    .benchmark-table td {
+      padding: 0.6rem 0.7rem;
+      font-size: 0.88rem;
+    }
+  }
+</style>
