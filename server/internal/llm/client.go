@@ -77,6 +77,7 @@ type chatRequest struct {
 	Temperature    float64         `json:"temperature"`
 	ResponseFormat *responseFormat `json:"response_format,omitempty"`
 	EnableThinking *bool           `json:"enable_thinking,omitempty"`
+	ReasoningSplit *bool           `json:"reasoning_split,omitempty"`
 }
 
 type chatResponse struct {
@@ -157,6 +158,7 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 	}
 
 	enableThinking := disableThinkingOptions(c.model)
+	reasoningSplit := supportsReasoningSplit(c.model)
 
 	result, err := c.doRequest(ctx, chatRequest{
 		Model:          c.model,
@@ -164,11 +166,12 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 		Temperature:    c.temperature,
 		ResponseFormat: respFmt,
 		EnableThinking: enableThinking,
+		ReasoningSplit: reasoningSplit,
 	}, scope)
 	if err != nil {
 		// If 400 and thinking parameters were sent, retry without them (provider may not support them).
 		var httpErr *HTTPStatusError
-		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && enableThinking != nil {
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (enableThinking != nil || reasoningSplit != nil) {
 			recordRetryMetric(scope, "thinking_param_400_fallback")
 			slog.Warn("LLM rejected thinking parameters (HTTP 400), retrying without them", "model", c.model)
 			return c.doRequest(ctx, chatRequest{
@@ -301,6 +304,14 @@ func disableThinkingOptions(model string) *bool {
 	if strings.Contains(strings.ToLower(model), "qwen") {
 		enableThinking := false
 		return &enableThinking
+	}
+	return nil
+}
+
+func supportsReasoningSplit(model string) *bool {
+	if strings.HasPrefix(strings.ToLower(model), "minimax-m2") {
+		reasoningSplit := true
+		return &reasoningSplit
 	}
 	return nil
 }
