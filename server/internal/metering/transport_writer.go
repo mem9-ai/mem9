@@ -44,6 +44,9 @@ type transportWriter struct {
 
 	lastFullWarn int64
 	now          func() time.Time
+
+	closeCtxMu sync.Mutex
+	closeCtx   context.Context
 }
 
 func newTransportWriter(cfg Config, transport batchTransport, logger *slog.Logger) *transportWriter {
@@ -87,6 +90,12 @@ func (w *transportWriter) maybeWarnFull() {
 
 func (w *transportWriter) Close(ctx context.Context) error {
 	w.closeOnce.Do(func() {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		w.closeCtxMu.Lock()
+		w.closeCtx = ctx
+		w.closeCtxMu.Unlock()
 		close(w.done)
 	})
 
@@ -119,10 +128,19 @@ func (w *transportWriter) run() {
 		case <-ticker.C:
 			w.flushAll(ctx)
 		case <-w.done:
-			w.drainAndFlush(ctx)
+			w.drainAndFlush(w.shutdownContext())
 			return
 		}
 	}
+}
+
+func (w *transportWriter) shutdownContext() context.Context {
+	w.closeCtxMu.Lock()
+	defer w.closeCtxMu.Unlock()
+	if w.closeCtx == nil {
+		return context.Background()
+	}
+	return w.closeCtx
 }
 
 func (w *transportWriter) drainAndFlush(ctx context.Context) {
@@ -185,4 +203,13 @@ func (w *transportWriter) flushAll(ctx context.Context) {
 		w.parts[key] = part + 1
 	}
 	clear(w.batches)
+	w.pruneStaleParts(minuteAlign(w.now().Unix()))
+}
+
+func (w *transportWriter) pruneStaleParts(currentMinute int64) {
+	for key := range w.parts {
+		if key.TsMinute < currentMinute {
+			delete(w.parts, key)
+		}
+	}
 }

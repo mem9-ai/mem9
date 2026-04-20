@@ -118,11 +118,11 @@ func waitForOps(t *testing.T, f *fakeS3, want int, timeout time.Duration) []fake
 	return nil
 }
 
-func newManualWriter(cfg Config, client s3PutObjecter, logger *slog.Logger, now time.Time) *transportWriter {
+func newManualTransportWriter(cfg Config, transport batchTransport, logger *slog.Logger, now time.Time) *transportWriter {
 	cfg = cfg.withDefaults()
 	return &transportWriter{
 		cfg:       cfg,
-		transport: newS3Transport(cfg.Bucket, cfg.Prefix, client),
+		transport: transport,
 		logger:    logger,
 		batches:   make(map[batchKey][]map[string]any),
 		parts:     make(map[batchKey]int),
@@ -130,6 +130,22 @@ func newManualWriter(cfg Config, client s3PutObjecter, logger *slog.Logger, now 
 			return now
 		},
 	}
+}
+
+func newManualWriter(cfg Config, client s3PutObjecter, logger *slog.Logger, now time.Time) *transportWriter {
+	return newManualTransportWriter(cfg, newS3Transport(cfg.Bucket, cfg.Prefix, client), logger, now)
+}
+
+type blockingTransport struct {
+	entered chan struct{}
+	exited  chan struct{}
+}
+
+func (t *blockingTransport) Write(ctx context.Context, payload batchPayload) error {
+	close(t.entered)
+	<-ctx.Done()
+	close(t.exited)
+	return ctx.Err()
 }
 
 func setConfigStringField(t *testing.T, cfg *Config, field, value string) {
@@ -337,6 +353,33 @@ func TestFlush_IncrementsPart_WithinSameMinute(t *testing.T) {
 	}
 }
 
+func TestFlush_PrunesStalePartCounters(t *testing.T) {
+	client := &fakeS3{}
+	logger, _ := newTestLogger()
+	oldTime := time.Unix(1710000037, 0).UTC()
+	newTime := time.Unix(1710000097, 0).UTC()
+	w := newManualWriter(Config{Enabled: true, Bucket: "bucket"}, client, logger, oldTime)
+	oldKey := batchKey{TsMinute: 1710000000, Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636"}
+	newKey := batchKey{TsMinute: 1710000060, Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636"}
+
+	w.enqueue(Event{Category: oldKey.Category, TenantID: oldKey.TenantID, ClusterID: oldKey.ClusterID, Data: map[string]any{"op": "store"}})
+	w.flushAll(context.Background())
+	if got := w.parts[oldKey]; got != 1 {
+		t.Fatalf("old part counter = %d, want 1", got)
+	}
+
+	w.now = func() time.Time { return newTime }
+	w.enqueue(Event{Category: newKey.Category, TenantID: newKey.TenantID, ClusterID: newKey.ClusterID, Data: map[string]any{"op": "update"}})
+	w.flushAll(context.Background())
+
+	if _, ok := w.parts[oldKey]; ok {
+		t.Fatalf("stale part counter for %+v was not pruned: %+v", oldKey, w.parts)
+	}
+	if got := w.parts[newKey]; got != 1 {
+		t.Fatalf("new part counter = %d, want 1", got)
+	}
+}
+
 func TestFlush_LossyOnError_LogsAndContinues(t *testing.T) {
 	client := &fakeS3{err: errors.New("boom")}
 	logger, buf := newTestLogger()
@@ -419,6 +462,44 @@ func TestClose_Idempotent(t *testing.T) {
 	ops := waitForOps(t, client, 1, time.Second)
 	if len(ops) != 1 {
 		t.Fatalf("ops len = %d, want 1", len(ops))
+	}
+}
+
+func TestClose_PropagatesDeadlineToTransportWrites(t *testing.T) {
+	transport := &blockingTransport{
+		entered: make(chan struct{}),
+		exited:  make(chan struct{}),
+	}
+	logger, _ := newTestLogger()
+	w := newTransportWriter(Config{Enabled: true, FlushInterval: time.Hour}.withDefaults(), transport, logger)
+
+	w.Record(Event{Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636", Data: map[string]any{"op": "store"}})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- w.Close(ctx)
+	}()
+
+	select {
+	case <-transport.entered:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for transport write to start")
+	}
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Close error = %v, want context deadline exceeded", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for Close to return")
+	}
+
+	select {
+	case <-transport.exited:
+	case <-time.After(time.Second):
+		t.Fatal("transport write did not observe close context cancellation")
 	}
 }
 
