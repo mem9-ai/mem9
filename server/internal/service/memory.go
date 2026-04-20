@@ -257,7 +257,10 @@ func observeRecallEmbeddingRequest(embedder *embed.Embedder, err error) {
 	observeRecallEmbeddingRequestByModel(model, err)
 }
 
-func observeRecallAutoEmbeddingRequest(autoModel string, err error) {
+func observeRecallAutoEmbeddingRequest(autoModel string, err error, skipped bool) {
+	if skipped {
+		return
+	}
 	observeRecallEmbeddingRequestByModel(autoModel, err)
 }
 
@@ -422,7 +425,7 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 	fetchLimit := limit * 3
 
 	vecResults, vecErr := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
-	observeRecallAutoEmbeddingRequest(s.autoModel, vecErr)
+	observeRecallAutoEmbeddingRequest(s.autoModel, vecErr, false)
 	if vecErr != nil {
 		return nil, 0, fmt.Errorf("auto vector search: %w", vecErr)
 	}
@@ -499,7 +502,7 @@ func (s *MemoryService) autoHybridCandidates(
 
 	vectorStart := time.Now()
 	vecResults, err := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
-	observeRecallAutoEmbeddingRequest(s.autoModel, err)
+	observeRecallAutoEmbeddingRequest(s.autoModel, err, false)
 	vectorDuration := time.Since(vectorStart)
 	if err != nil {
 		return nil, fmt.Errorf("auto vector search: %w", err)

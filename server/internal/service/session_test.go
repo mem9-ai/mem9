@@ -5,7 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	dto "github.com/prometheus/client_model/go"
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 )
 
 type stubSessionRepo struct {
@@ -277,6 +279,37 @@ func TestSessionService_Search_defaultLimit(t *testing.T) {
 	}
 }
 
+func TestSessionService_Search_autoVectorSkipDoesNotCountSuccessEmbedding(t *testing.T) {
+	resetEmbeddingMetrics()
+
+	repo := &stubSessionRepo{
+		autoVecResults: nil,
+		autoVecErr:     nil,
+		keywordResults: []domain.Memory{{
+			ID:         "kw-1",
+			Content:    "keyword fallback",
+			MemoryType: domain.TypeSession,
+			State:      domain.StateActive,
+		}},
+		ftsAvail: false,
+	}
+	svc := NewSessionService(repo, nil, "auto-model")
+
+	results, err := svc.Search(context.Background(), domain.MemoryFilter{Query: "keyword fallback", Limit: 5})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 keyword fallback result, got %d", len(results))
+	}
+	if got := embeddingMetricValue(t, "query_embedding", "auto-model", "success"); got != 0 {
+		t.Fatalf("success embedding metric = %v, want 0", got)
+	}
+	if got := embeddingMetricValue(t, "query_embedding", "auto-model", "error"); got != 0 {
+		t.Fatalf("error embedding metric = %v, want 0", got)
+	}
+}
+
 func TestSessionContentHash_differentInputsProduceDifferentHashes(t *testing.T) {
 	cases := [][2]string{
 		{"sess-a role-user content-x", "sess-a role-user content-y"},
@@ -339,4 +372,26 @@ func (c *capturingSessionRepo) FTSAvailable() bool { return c.stub.FTSAvailable(
 
 func (c *capturingSessionRepo) ListBySessionIDs(ctx context.Context, ids []string, limit int) ([]*domain.Session, error) {
 	return c.stub.ListBySessionIDs(ctx, ids, limit)
+}
+
+func resetEmbeddingMetrics() {
+	metrics.EmbeddingRequestsTotal.Reset()
+}
+
+func embeddingMetricValue(t *testing.T, feature, model, status string) float64 {
+	t.Helper()
+
+	metric, err := metrics.EmbeddingRequestsTotal.GetMetricWithLabelValues(feature, model, status)
+	if err != nil {
+		t.Fatalf("get embedding metric %s %s %s: %v", feature, model, status, err)
+	}
+
+	var pb dto.Metric
+	if err := metric.Write(&pb); err != nil {
+		t.Fatalf("write embedding metric %s %s %s: %v", feature, model, status, err)
+	}
+	if pb.Counter == nil {
+		return 0
+	}
+	return pb.Counter.GetValue()
 }

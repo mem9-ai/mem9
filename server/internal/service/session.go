@@ -128,7 +128,7 @@ func (s *SessionService) SearchCandidates(
 
 func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
 	vecResults, err := s.sessions.AutoVectorSearch(ctx, f.Query, f, fetchLimit)
-	observeRecallAutoEmbeddingRequest(s.autoModel, err)
+	observeRecallAutoEmbeddingRequest(s.autoModel, err, err == nil && vecResults == nil)
 	if err != nil {
 		return nil, fmt.Errorf("session auto vector search: %w", err)
 	}
@@ -158,7 +158,7 @@ func (s *SessionService) autoHybridCandidates(
 	start := time.Now()
 	vectorStart := time.Now()
 	vecResults, err := s.sessions.AutoVectorSearch(ctx, f.Query, f, fetchLimit)
-	observeRecallAutoEmbeddingRequest(s.autoModel, err)
+	observeRecallAutoEmbeddingRequest(s.autoModel, err, err == nil && vecResults == nil)
 	vectorDuration := time.Since(vectorStart)
 	if err != nil {
 		return nil, fmt.Errorf("session auto vector search: %w", err)
