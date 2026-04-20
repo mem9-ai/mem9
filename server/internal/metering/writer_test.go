@@ -137,21 +137,49 @@ func newManualWriter(cfg Config, client s3PutObjecter, logger *slog.Logger, now 
 }
 
 type blockingTransport struct {
-	entered chan struct{}
-	exited  chan struct{}
+	entered   chan struct{}
+	exited    chan struct{}
+	enterOnce sync.Once
+	exitOnce  sync.Once
 }
 
 type noopTransport struct{}
 
+type retryAfterCancelTransport struct {
+	mu       sync.Mutex
+	attempts int
+	started  chan struct{}
+}
+
 func (t *blockingTransport) Write(ctx context.Context, payload batchPayload) error {
-	close(t.entered)
+	t.enterOnce.Do(func() { close(t.entered) })
 	<-ctx.Done()
-	close(t.exited)
+	t.exitOnce.Do(func() { close(t.exited) })
 	return ctx.Err()
 }
 
 func (noopTransport) Write(ctx context.Context, payload batchPayload) error {
 	return nil
+}
+
+func (t *retryAfterCancelTransport) Write(ctx context.Context, payload batchPayload) error {
+	t.mu.Lock()
+	t.attempts++
+	attempt := t.attempts
+	t.mu.Unlock()
+
+	if attempt == 1 {
+		close(t.started)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return nil
+}
+
+func (t *retryAfterCancelTransport) Attempts() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.attempts
 }
 
 func setConfigStringField(t *testing.T, cfg *Config, field, value string) {
@@ -484,14 +512,41 @@ func TestClose_CancelsPeriodicTransportWrite(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	if err := w.Close(ctx); err != nil {
-		t.Fatalf("Close: %v", err)
+	if err := w.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close error = %v, want context deadline exceeded", err)
 	}
 
 	select {
 	case <-transport.exited:
 	case <-time.After(time.Second):
 		t.Fatal("periodic transport write did not observe close cancellation")
+	}
+}
+
+func TestClose_RetriesCanceledPeriodicBatchWithShutdownContext(t *testing.T) {
+	transport := &retryAfterCancelTransport{started: make(chan struct{})}
+	logger, _ := newTestLogger()
+	w := newTransportWriter(Config{Enabled: true, FlushInterval: 10 * time.Millisecond}.withDefaults(), transport, logger)
+
+	w.Record(Event{Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636", Data: map[string]any{"op": "store"}})
+
+	select {
+	case <-transport.started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for periodic transport write to start")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := w.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	if got := transport.Attempts(); got != 2 {
+		t.Fatalf("transport attempts = %d, want 2", got)
+	}
+	if len(w.batches) != 0 {
+		t.Fatalf("batches not drained after shutdown retry: %+v", w.batches)
 	}
 }
 
@@ -600,6 +655,9 @@ func TestClose_PropagatesDeadlineToTransportWrites(t *testing.T) {
 	case <-transport.exited:
 	case <-time.After(time.Second):
 		t.Fatal("transport write did not observe close context cancellation")
+	}
+	if len(w.batches) == 0 {
+		t.Fatal("batches were cleared despite shutdown context cancellation")
 	}
 }
 

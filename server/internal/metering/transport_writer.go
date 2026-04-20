@@ -218,6 +218,7 @@ func (w *transportWriter) enqueueQueued(item queuedEvent) {
 func (w *transportWriter) flushAll(ctx context.Context) {
 	for key, records := range w.batches {
 		if len(records) == 0 {
+			delete(w.batches, key)
 			continue
 		}
 		part := w.parts[key]
@@ -238,10 +239,14 @@ func (w *transportWriter) flushAll(ctx context.Context) {
 				"records", len(records),
 				"err", err,
 			)
+			if ctx.Err() != nil {
+				w.pruneStaleParts(minuteAlign(w.now().Unix()))
+				return
+			}
 		}
 		w.parts[key] = part + 1
+		delete(w.batches, key)
 	}
-	clear(w.batches)
 	w.pruneStaleParts(minuteAlign(w.now().Unix()))
 }
 
