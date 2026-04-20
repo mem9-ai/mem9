@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import type { PluginInput } from "@opencode-ai/plugin";
@@ -84,6 +85,11 @@ async function captureInfo(run: () => Promise<void>): Promise<string[]> {
   } finally {
     console.info = originalInfo;
   }
+}
+
+async function writeJSON(filePath: string, value: unknown): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, JSON.stringify(value, null, 2) + "\n", "utf8");
 }
 
 test("resolveMem9Paths uses config and data directories separately", () => {
@@ -243,4 +249,73 @@ test("mem9 plugin returns the pending setup skeleton when no identity is availab
       );
     },
   );
+});
+
+test("mem9 plugin becomes usable from profile config and credentials files", async () => {
+  const fixtureRoot = path.join(
+    process.cwd(),
+    "dist-test",
+    `profile-startup-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+  const configDir = path.join(fixtureRoot, "config");
+  const dataDir = path.join(fixtureRoot, "state");
+  const projectDir = path.join(fixtureRoot, "worktree");
+  const resolvedPaths = resolveMem9Paths({
+    configDir,
+    dataDir,
+    projectDir,
+  });
+
+  try {
+    await writeJSON(resolvedPaths.projectConfigFile, {
+      schemaVersion: 1,
+      profileId: "default",
+      debug: true,
+    });
+    await writeJSON(resolvedPaths.credentialsFile, {
+      schemaVersion: 1,
+      profiles: {
+        default: {
+          label: "Workspace Default",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "mk_profile_integration",
+        },
+      },
+    });
+
+    await withEnv(
+      {
+        MEM9_API_KEY: undefined,
+        MEM9_API_URL: undefined,
+        MEM9_TENANT_ID: undefined,
+      },
+      async () => {
+        const input = createPluginInput(async () => ({
+          state: dataDir,
+          config: configDir,
+          worktree: projectDir,
+          directory: projectDir,
+        }));
+
+        const warnings = await captureWarnings(async () => {
+          const info = await captureInfo(async () => {
+            const hooks = await mem9Plugin(input);
+            assert.ok(hooks.tool?.memory_search);
+          });
+
+          assert.equal(
+            info.some((message) => message.includes("Server mode (mem9 REST API via profile)")),
+            true,
+          );
+        });
+
+        assert.equal(
+          warnings.some((message) => message.includes("Setup pending")),
+          false,
+        );
+      },
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
 });
