@@ -17,7 +17,13 @@ function isMem9Profile(value: unknown): value is Mem9Profile {
 }
 
 export function parseCredentialsFile(raw: string): Mem9CredentialsFile {
-  const parsed = JSON.parse(raw) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    throw new Error("invalid mem9 credentials file");
+  }
+
   if (!isRecord(parsed) || parsed.schemaVersion !== 1 || !isRecord(parsed.profiles)) {
     throw new Error("invalid mem9 credentials file");
   }
