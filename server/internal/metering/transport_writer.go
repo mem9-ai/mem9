@@ -96,6 +96,14 @@ func (w *transportWriter) Record(evt Event) {
 }
 
 func (w *transportWriter) makeQueuedEvent(evt Event) queuedEvent {
+	if evt.Data != nil {
+		copied := make(map[string]any, len(evt.Data))
+		for k, v := range evt.Data {
+			copied[k] = v
+		}
+		evt.Data = copied
+	}
+
 	recordedAt := w.now().Unix()
 	key := batchKey{
 		TsMinute:  minuteAlign(recordedAt),

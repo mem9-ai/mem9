@@ -580,6 +580,41 @@ func TestRecord_CapturesTimestampBeforeDequeue(t *testing.T) {
 	}
 }
 
+func TestRecord_CopiesPayloadBeforeQueueingAsyncWrite(t *testing.T) {
+	fixed := time.Unix(1710000037, 0).UTC()
+	w := &transportWriter{
+		ch:      make(chan queuedEvent, 1),
+		batches: make(map[batchKey][]map[string]any),
+		parts:   make(map[batchKey]int),
+		now: func() time.Time {
+			return fixed
+		},
+	}
+
+	data := map[string]any{"op": "store", "count": 1}
+	w.Record(Event{Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636", Data: data})
+	data["op"] = "mutated"
+	data["extra"] = "new-value"
+
+	item := <-w.ch
+	w.enqueueQueued(item)
+
+	key := batchKey{TsMinute: minuteAlign(fixed.Unix()), Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636"}
+	records := w.batches[key]
+	if len(records) != 1 {
+		t.Fatalf("records len = %d, want 1", len(records))
+	}
+	if got := records[0]["op"]; got != "store" {
+		t.Fatalf("op = %v, want store", got)
+	}
+	if got := records[0]["count"]; got != 1 {
+		t.Fatalf("count = %v, want 1", got)
+	}
+	if _, ok := records[0]["extra"]; ok {
+		t.Fatal("queued payload observed post-Record mutation")
+	}
+}
+
 func TestClose_FlushesPending(t *testing.T) {
 	client := &fakeS3{}
 	logger, _ := newTestLogger()
