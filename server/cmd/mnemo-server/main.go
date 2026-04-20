@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -135,7 +136,7 @@ func main() {
 	if cfg.MeteringEnabled && cfg.MeteringURL == "" {
 		logger.Warn("MNEMO_METERING_ENABLED=true but MNEMO_METERING_URL empty; metering disabled")
 	}
-	logger.Info("metering writer initialized", "enabled", cfg.MeteringEnabled, "url", cfg.MeteringURL)
+	logger.Info("metering writer initialized", "enabled", cfg.MeteringEnabled, "destination", redactMeteringURLForLog(cfg.MeteringURL))
 
 	// Services.
 	// Select provisioner based on configuration
@@ -229,4 +230,15 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("server stopped")
+}
+
+func redactMeteringURLForLog(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "<invalid>"
+	}
+	return u.Scheme + "://" + u.Host
 }
