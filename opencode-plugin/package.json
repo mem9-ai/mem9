@@ -34,6 +34,7 @@
     "README.md"
   ],
   "scripts": {
+    "test": "rm -rf ./dist-test && tsc -p ./tsconfig.test.json && node --test ./dist-test/*.test.js",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run typecheck"
   },
