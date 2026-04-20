@@ -4,7 +4,7 @@ title: server/internal/metering — Agent context
 
 ## What this area owns
 
-`server/internal/metering` provides mem9's write-only S3 metering writer. It batches `Event` values in memory, flushes compressed JSON objects on a timer, and intentionally drops batches on upload error after logging a warning. This package is a stripped-down port of PingCAP's `metering_sdk`: no shared-pool concept, identity is `{tenant_id}/{cluster_id}`, and the public logger is `log/slog`.
+`server/internal/metering` provides mem9's write-only metering writer. It batches `Event` values in memory, flushes them through a transport selected by destination URL scheme, and intentionally drops batches on upload error after logging a warning. Supported transports are S3 object writes (`s3://`) and webhook POST delivery (`http://` / `https://`). This package is a stripped-down port of PingCAP's `metering_sdk`: no shared-pool concept, identity is `{tenant_id}/{cluster_id}`, and the public logger is `log/slog`.
 
 ## Public API
 
@@ -15,7 +15,7 @@ title: server/internal/metering — Agent context
 
 ## Current constraints
 
-- S3-compatible object storage only
+- Destination transport is selected by URL scheme: `s3://`, `http://`, or `https://`
 - AWS credentials come from the default AWS SDK chain
 - Lossy-on-error by design: failed uploads are logged and dropped, not retried
 - Keep the documented env list small for now: enabled flag, metering URL, and flush interval are the intended public knobs

@@ -192,14 +192,17 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 
 #### Metering
 
-These are the supported rollout variables for the server-side S3 metering writer. The writer is initialized at server startup, but this round does **not** wire any `Record()` call sites yet, so no usage events are emitted until caller hooks are added.
+These are the supported rollout variables for the server-side metering writer. The writer is initialized at server startup, but this round does **not** wire any `Record()` call sites yet, so no usage events are emitted until caller hooks are added.
 
-The public env surface is intentionally small for now. Metering location is configured as a single S3 URL in the form `s3://<bucket>/<prefix>/`.
+The public env surface is intentionally small for now. Metering location is configured as a single destination URL. Supported schemes are:
+
+- `s3://<bucket>/<prefix>/` — write compressed JSON batches into S3 objects
+- `http://...` / `https://...` — POST JSON batches to a webhook endpoint
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `MNEMO_METERING_ENABLED` | No | `false` | Enable the S3-backed metering writer. When `false`, the writer is a no-op |
-| `MNEMO_METERING_URL` | No | — | Metering destination URL in the form `s3://<bucket>/<prefix>/`. If empty, the writer stays disabled even when `MNEMO_METERING_ENABLED=true` |
+| `MNEMO_METERING_ENABLED` | No | `false` | Enable the metering writer. When `false`, the writer is a no-op |
+| `MNEMO_METERING_URL` | No | — | Metering destination URL. Supported forms: `s3://<bucket>/<prefix>/`, `http://...`, or `https://...`. If empty, the writer stays disabled even when `MNEMO_METERING_ENABLED=true` |
 | `MNEMO_METERING_FLUSH_INTERVAL` | No | `10s` | In-memory batch flush interval for the metering writer |
 
 #### Security And Debugging
