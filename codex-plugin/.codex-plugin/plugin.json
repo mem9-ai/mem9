@@ -1,0 +1,12 @@
+{
+  "name": "mem9",
+  "version": "0.1.0",
+  "description": "Persistent memory for Codex. Run $mem9:setup once, then mem9 recalls before prompts and saves recent turns on stop.",
+  "author": {
+    "name": "mem9-ai"
+  },
+  "homepage": "https://mem9.ai",
+  "repository": "https://github.com/mem9-ai/mem9",
+  "license": "Apache-2.0",
+  "skills": "./skills/"
+}

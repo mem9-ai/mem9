@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__MEM9_SESSION_START_COMMAND__",
+            "timeout": 10,
+            "statusMessage": "[mem9] session start"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__MEM9_USER_PROMPT_SUBMIT_COMMAND__",
+            "timeout": 20,
+            "statusMessage": "[mem9] recall"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__MEM9_STOP_COMMAND__",
+            "timeout": 20,
+            "statusMessage": "[mem9] save"
+          }
+        ]
+      }
+    ]
+  }
+}

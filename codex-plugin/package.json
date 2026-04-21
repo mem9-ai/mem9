@@ -1,0 +1,41 @@
+{
+  "name": "@mem9/codex-plugin",
+  "version": "0.1.0",
+  "description": "Persistent memory for Codex with setup-driven hooks, prompt recall, and stop-time save.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "mem9-ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mem9-ai/mem9.git",
+    "directory": "codex-plugin"
+  },
+  "homepage": "https://github.com/mem9-ai/mem9/tree/main/codex-plugin#readme",
+  "keywords": [
+    "codex",
+    "codex-plugin",
+    "memory",
+    "agent-memory",
+    "mem9"
+  ],
+  "files": [
+    ".codex-plugin/",
+    "bootstrap-hooks/",
+    "hooks/",
+    "skills/",
+    "templates/",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test ./tests/*.test.mjs",
+    "typecheck": "tsc -p ./tsconfig.json"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "typescript": "^5.5.0"
+  }
+}
