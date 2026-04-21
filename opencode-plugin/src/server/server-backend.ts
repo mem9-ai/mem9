@@ -11,9 +11,23 @@ import type {
   UpdateMemoryInput,
   SearchInput,
 } from "../shared/types.js";
+import { DEFAULT_SCOPE_CONFIG } from "../shared/defaults.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeTimeoutMs(value: number | undefined, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(value);
+}
+
+export interface ServerBackendOptions {
+  defaultTimeoutMs?: number;
+  searchTimeoutMs?: number;
 }
 
 /**
@@ -22,20 +36,36 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  */
 export class ServerBackend implements MemoryBackend {
   private baseUrl: string;
+  private defaultTimeoutMs: number;
+  private searchTimeoutMs: number;
 
   constructor(
     apiUrl: string,
     private apiKey: string,
     private agentName: string = "opencode",
+    options: ServerBackendOptions = {},
   ) {
     this.baseUrl = apiUrl.replace(/\/+$/, "");
+    this.defaultTimeoutMs = normalizeTimeoutMs(
+      options.defaultTimeoutMs,
+      DEFAULT_SCOPE_CONFIG.defaultTimeoutMs,
+    );
+    this.searchTimeoutMs = normalizeTimeoutMs(
+      options.searchTimeoutMs,
+      DEFAULT_SCOPE_CONFIG.searchTimeoutMs,
+    );
   }
 
   private memoryPath(path: string): string {
     return `/v1alpha2/mem9s${path}`;
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    timeoutMs = this.defaultTimeoutMs,
+  ): Promise<T> {
     const url = this.baseUrl + path;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -46,7 +76,7 @@ export class ServerBackend implements MemoryBackend {
       method,
       headers,
       body: body != null ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (resp.status === 204) return undefined as T;
@@ -84,7 +114,12 @@ export class ServerBackend implements MemoryBackend {
       total: number;
       limit: number;
       offset: number;
-    }>("GET", `${this.memoryPath("/memories")}${qs ? "?" + qs : ""}`);
+    }>(
+      "GET",
+      `${this.memoryPath("/memories")}${qs ? "?" + qs : ""}`,
+      undefined,
+      this.searchTimeoutMs,
+    );
 
     return {
       memories: raw.memories ?? [],

@@ -38,7 +38,10 @@ const mem9Plugin: Plugin = async (input) => {
   }
 
   console.info(`[mem9] Server mode (mem9 REST API via ${identity.source})`);
-  const backend = new ServerBackend(identity.baseUrl, identity.apiKey, "opencode");
+  const backend = new ServerBackend(identity.baseUrl, identity.apiKey, "opencode", {
+    defaultTimeoutMs: cfg.defaultTimeoutMs,
+    searchTimeoutMs: cfg.searchTimeoutMs,
+  });
   const debugLogger = createDebugLogger({
     enabled: cfg.debug === true,
     logDir: cfg.paths?.logDir,

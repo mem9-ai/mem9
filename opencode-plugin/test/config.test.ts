@@ -88,6 +88,29 @@ async function captureInfo(run: () => Promise<void>): Promise<string[]> {
   }
 }
 
+async function withPatchedAbortSignalTimeout(
+  run: (capturedTimeouts: number[]) => Promise<void>,
+): Promise<void> {
+  const capturedTimeouts: number[] = [];
+  const originalDescriptor = Object.getOwnPropertyDescriptor(AbortSignal, "timeout");
+
+  Object.defineProperty(AbortSignal, "timeout", {
+    configurable: true,
+    value(timeoutMs: number): AbortSignal {
+      capturedTimeouts.push(timeoutMs);
+      return new AbortController().signal;
+    },
+  });
+
+  try {
+    await run(capturedTimeouts);
+  } finally {
+    if (originalDescriptor) {
+      Object.defineProperty(AbortSignal, "timeout", originalDescriptor);
+    }
+  }
+}
+
 async function writeJSON(filePath: string, value: unknown): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, JSON.stringify(value, null, 2) + "\n", "utf8");
@@ -304,26 +327,47 @@ test("mem9 plugin starts from local path inference when env identity exists", as
 });
 
 test("mem9 plugin returns the pending setup skeleton when no identity is available", async () => {
-  await withEnv(
-    {
-      MEM9_API_KEY: undefined,
-      MEM9_API_URL: undefined,
-      MEM9_TENANT_ID: undefined,
-    },
-    async () => {
-      const input = createPluginInput();
-
-      const warnings = await captureWarnings(async () => {
-        const hooks = await mem9PluginModule.server(input);
-        assert.deepEqual(hooks, {});
-      });
-
-      assert.equal(
-        warnings.some((message) => message.includes("Setup pending")),
-        true,
-      );
-    },
+  const fixtureRoot = path.join(
+    process.cwd(),
+    "dist-test",
+    `pending-setup-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
+  const configDir = path.join(fixtureRoot, "config");
+  const dataDir = path.join(fixtureRoot, "state");
+  const mem9Home = path.join(fixtureRoot, "mem9-home");
+  const projectDir = path.join(fixtureRoot, "worktree");
+
+  try {
+    await withEnv(
+      {
+        MEM9_API_KEY: undefined,
+        MEM9_API_URL: undefined,
+        MEM9_TENANT_ID: undefined,
+        MEM9_HOME: mem9Home,
+        XDG_CONFIG_HOME: configDir,
+        XDG_DATA_HOME: dataDir,
+      },
+      async () => {
+        const input: PluginInput = {
+          ...createPluginInput(),
+          directory: projectDir,
+          worktree: projectDir,
+        };
+
+        const warnings = await captureWarnings(async () => {
+          const hooks = await mem9PluginModule.server(input);
+          assert.deepEqual(hooks, {});
+        });
+
+        assert.equal(
+          warnings.some((message) => message.includes("Setup pending")),
+          true,
+        );
+      },
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
 });
 
 test("mem9 plugin becomes usable from profile config and credentials files", async () => {
@@ -395,6 +439,103 @@ test("mem9 plugin becomes usable from profile config and credentials files", asy
       },
     );
   } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("mem9 plugin forwards configured timeouts to the runtime backend", async () => {
+  const fixtureRoot = path.join(
+    process.cwd(),
+    "dist-test",
+    `profile-timeout-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+  const configDir = path.join(fixtureRoot, "config");
+  const dataDir = path.join(fixtureRoot, "state");
+  const mem9Home = path.join(fixtureRoot, "mem9-home");
+  const projectDir = path.join(fixtureRoot, "worktree");
+  const resolvedPaths = resolveMem9Paths({
+    configDir,
+    dataDir,
+    projectDir,
+    mem9Home,
+  });
+  const originalFetch = globalThis.fetch;
+
+  try {
+    await writeJSON(resolvedPaths.projectConfigFile, {
+      schemaVersion: 1,
+      profileId: "default",
+      defaultTimeoutMs: 11000,
+      searchTimeoutMs: 16000,
+    });
+    await writeJSON(resolvedPaths.credentialsFile, {
+      schemaVersion: 1,
+      profiles: {
+        default: {
+          label: "Workspace Default",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "mk_profile_integration",
+        },
+      },
+    });
+
+    globalThis.fetch = async (_input, init) => {
+      const method = init?.method ?? "GET";
+      const body =
+        method === "GET"
+          ? { memories: [], total: 0, limit: 10, offset: 0 }
+          : { id: "memory-1", content: "saved" };
+
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    await withEnv(
+      {
+        MEM9_API_KEY: undefined,
+        MEM9_API_URL: undefined,
+        MEM9_HOME: mem9Home,
+        XDG_CONFIG_HOME: configDir,
+        XDG_DATA_HOME: dataDir,
+        MEM9_TENANT_ID: undefined,
+      },
+      async () => {
+        const input: PluginInput = {
+          ...createPluginInput(),
+          directory: projectDir,
+          worktree: projectDir,
+        };
+
+        await withPatchedAbortSignalTimeout(async (capturedTimeouts) => {
+          const hooks = await mem9PluginModule.server(input);
+          const tools = hooks.tool as unknown as Record<
+            string,
+            { execute(args: Record<string, unknown>, context?: unknown): Promise<unknown> }
+          >;
+
+          const searchOutput = await tools.memory_search.execute({ q: "hello" });
+          const storeOutput = await tools.memory_store.execute({ content: "saved" });
+
+          if (typeof searchOutput !== "string") {
+            throw new Error("memory_search should return a JSON string");
+          }
+          if (typeof storeOutput !== "string") {
+            throw new Error("memory_store should return a JSON string");
+          }
+
+          const searchResult = JSON.parse(searchOutput) as { ok: boolean };
+          const storeResult = JSON.parse(storeOutput) as { ok: boolean };
+
+          assert.equal(searchResult.ok, true);
+          assert.equal(storeResult.ok, true);
+          assert.deepEqual(capturedTimeouts, [16000, 11000]);
+        });
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
     await rm(fixtureRoot, { recursive: true, force: true });
   }
 });
