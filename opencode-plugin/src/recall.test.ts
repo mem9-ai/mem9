@@ -5,7 +5,10 @@ import type { Hooks } from "@opencode-ai/plugin";
 import type { MemoryBackend } from "./backend.js";
 import { buildHooks } from "./hooks.js";
 import { formatRecallBlock } from "./recall/format.js";
-import { buildRecallQuery, MAX_RECALL_QUERY_LEN } from "./recall/query.js";
+import {
+  buildRecallQuery,
+  MAX_RECALL_QUERY_PARAM_LEN,
+} from "./recall/query.js";
 import type {
   CreateMemoryInput,
   Memory,
@@ -108,6 +111,10 @@ function createSystemTransformOutput(system: string[] = []): SystemTransformOutp
   return { system };
 }
 
+function encodedQueryParamLength(query: string): number {
+  return new URLSearchParams({ q: query }).toString().length;
+}
+
 test("buildRecallQuery removes injected memories and tool noise wrappers", () => {
   const input = `
 <relevant-memories>
@@ -155,11 +162,11 @@ Focus on the current TypeScript error.
 });
 
 test("buildRecallQuery bounds long prompts while keeping the start and end", () => {
-  const query = buildRecallQuery(
-    `Start signal ${"a".repeat(900)}\n\n${"middle ".repeat(200)}\n\n${"z".repeat(900)} End signal`,
-  );
+  const input = `Start signal ${"a".repeat(900)}\n\n${"middle ".repeat(200)}\n\n${"z".repeat(900)} End signal`;
+  const query = buildRecallQuery(input);
 
-  assert.equal(query.length <= MAX_RECALL_QUERY_LEN, true);
+  assert.equal(encodedQueryParamLength(query) <= MAX_RECALL_QUERY_PARAM_LEN, true);
+  assert.equal(query.length < input.length, true);
   assert.equal(query.startsWith("Start signal"), true);
   assert.equal(query.includes("\n...\n"), true);
   assert.equal(query.endsWith("End signal"), true);
@@ -271,7 +278,7 @@ test("buildHooks bounds very large captured prompts before search", async () => 
 
   const largePrompt = [
     "Start marker: fix the plugin recall behavior.",
-    "A".repeat(1400),
+    "A".repeat(2000),
     "End marker: preserve the final user intent for recall.",
   ].join("\n\n");
 
@@ -285,10 +292,52 @@ test("buildHooks bounds very large captured prompts before search", async () => 
     createSystemTransformOutput(),
   );
 
-  assert.equal(capturedQuery.length <= MAX_RECALL_QUERY_LEN, true);
+  assert.equal(encodedQueryParamLength(capturedQuery) <= MAX_RECALL_QUERY_PARAM_LEN, true);
+  assert.equal(capturedQuery.length < largePrompt.length, true);
   assert.equal(capturedQuery.startsWith("Start marker: fix the plugin recall behavior."), true);
   assert.equal(capturedQuery.includes("\n...\n"), true);
   assert.equal(capturedQuery.endsWith("End marker: preserve the final user intent for recall."), true);
+});
+
+test("buildHooks bounds CJK-heavy prompts by encoded size before search", async () => {
+  let capturedQuery = "";
+  const hooks = buildHooks(
+    createBackend(async (input) => {
+      capturedQuery = input.q ?? "";
+      return {
+        memories: [],
+        total: 0,
+        limit: input.limit ?? 0,
+        offset: input.offset ?? 0,
+      };
+    }),
+  );
+
+  const onChatMessage = hooks["chat.message"];
+  const onSystemTransform = hooks["experimental.chat.system.transform"];
+  assert.ok(onChatMessage);
+  assert.ok(onSystemTransform);
+
+  const cjkHeavyPrompt = [
+    "Start marker: keep the opening context.",
+    "\u4F60".repeat(1000),
+    "End marker: keep the closing intent.",
+  ].join("\n\n");
+
+  await onChatMessage(
+    createChatMessageInput("session-cjk"),
+    createChatMessageOutput([textPart(cjkHeavyPrompt)]),
+  );
+
+  await onSystemTransform(
+    createSystemTransformInput("session-cjk"),
+    createSystemTransformOutput(),
+  );
+
+  assert.equal(encodedQueryParamLength(capturedQuery) <= MAX_RECALL_QUERY_PARAM_LEN, true);
+  assert.equal(capturedQuery.startsWith("Start marker: keep the opening context."), true);
+  assert.equal(capturedQuery.includes("\n...\n"), true);
+  assert.equal(capturedQuery.endsWith("End marker: keep the closing intent."), true);
 });
 
 test("buildHooks skips recall when the cleaned query is too short", async () => {
