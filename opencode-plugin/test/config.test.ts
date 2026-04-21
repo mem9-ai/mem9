@@ -209,6 +209,29 @@ test("mergeConfigLayers uses built-in defaults when config layers are missing", 
   });
 });
 
+test("mergeConfigLayers preserves inherited timeout values when project config is partial", () => {
+  const result = mergeConfigLayers(
+    {
+      schemaVersion: 1,
+      profileId: "default",
+      defaultTimeoutMs: 21000,
+      searchTimeoutMs: 31000,
+    },
+    {
+      schemaVersion: 1,
+      profileId: "projectA",
+    },
+  );
+
+  assert.deepEqual(result, {
+    schemaVersion: 1,
+    profileId: "projectA",
+    debug: false,
+    defaultTimeoutMs: 21000,
+    searchTimeoutMs: 31000,
+  });
+});
+
 test("resolveRuntimeIdentity prefers MEM9_API_KEY over legacy MEM9_TENANT_ID", () => {
   const identity = resolveRuntimeIdentity(
     {
@@ -531,6 +554,109 @@ test("mem9 plugin forwards configured timeouts to the runtime backend", async ()
           assert.equal(searchResult.ok, true);
           assert.equal(storeResult.ok, true);
           assert.deepEqual(capturedTimeouts, [16000, 11000]);
+        });
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("mem9 plugin preserves user-scope timeouts when project config only overrides profile", async () => {
+  const fixtureRoot = path.join(
+    process.cwd(),
+    "dist-test",
+    `profile-timeout-inherit-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+  const configHome = path.join(fixtureRoot, "config-home");
+  const dataHome = path.join(fixtureRoot, "data-home");
+  const configDir = path.join(configHome, "opencode");
+  const dataDir = path.join(dataHome, "opencode");
+  const mem9Home = path.join(fixtureRoot, "mem9-home");
+  const projectDir = path.join(fixtureRoot, "worktree");
+  const resolvedPaths = resolveMem9Paths({
+    configDir,
+    dataDir,
+    projectDir,
+    mem9Home,
+  });
+  const originalFetch = globalThis.fetch;
+
+  try {
+    await writeJSON(resolvedPaths.globalConfigFile, {
+      schemaVersion: 1,
+      profileId: "default",
+      defaultTimeoutMs: 21000,
+      searchTimeoutMs: 31000,
+    });
+    await writeJSON(resolvedPaths.projectConfigFile, {
+      schemaVersion: 1,
+      profileId: "default",
+    });
+    await writeJSON(resolvedPaths.credentialsFile, {
+      schemaVersion: 1,
+      profiles: {
+        default: {
+          label: "Workspace Default",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "mk_profile_integration",
+        },
+      },
+    });
+
+    globalThis.fetch = async (_input, init) => {
+      const method = init?.method ?? "GET";
+      const body =
+        method === "GET"
+          ? { memories: [], total: 0, limit: 10, offset: 0 }
+          : { id: "memory-1", content: "saved" };
+
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    await withEnv(
+      {
+        MEM9_API_KEY: undefined,
+        MEM9_API_URL: undefined,
+        MEM9_HOME: mem9Home,
+        XDG_CONFIG_HOME: configHome,
+        XDG_DATA_HOME: dataHome,
+        MEM9_TENANT_ID: undefined,
+      },
+      async () => {
+        const input: PluginInput = {
+          ...createPluginInput(),
+          directory: projectDir,
+          worktree: projectDir,
+        };
+
+        await withPatchedAbortSignalTimeout(async (capturedTimeouts) => {
+          const hooks = await mem9PluginModule.server(input);
+          const tools = hooks.tool as unknown as Record<
+            string,
+            { execute(args: Record<string, unknown>, context?: unknown): Promise<unknown> }
+          >;
+
+          const searchOutput = await tools.memory_search.execute({ q: "hello" });
+          const storeOutput = await tools.memory_store.execute({ content: "saved" });
+
+          if (typeof searchOutput !== "string") {
+            throw new Error("memory_search should return a JSON string");
+          }
+          if (typeof storeOutput !== "string") {
+            throw new Error("memory_store should return a JSON string");
+          }
+
+          const searchResult = JSON.parse(searchOutput) as { ok: boolean };
+          const storeResult = JSON.parse(storeOutput) as { ok: boolean };
+
+          assert.equal(searchResult.ok, true);
+          assert.equal(storeResult.ok, true);
+          assert.deepEqual(capturedTimeouts, [31000, 21000]);
         });
       },
     );

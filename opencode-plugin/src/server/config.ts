@@ -123,11 +123,33 @@ export function mergeConfigLayers(
   globalConfig?: Mem9ConfigFile,
   projectConfig?: Mem9ConfigFile,
 ): Mem9ConfigFile {
-  return {
-    ...DEFAULT_SCOPE_CONFIG,
-    ...globalConfig,
-    ...projectConfig,
+  const merged: Mem9ConfigFile = {
+    schemaVersion: DEFAULT_SCOPE_CONFIG.schemaVersion,
+    debug: DEFAULT_SCOPE_CONFIG.debug,
+    defaultTimeoutMs: DEFAULT_SCOPE_CONFIG.defaultTimeoutMs,
+    searchTimeoutMs: DEFAULT_SCOPE_CONFIG.searchTimeoutMs,
   };
+
+  for (const layer of [globalConfig, projectConfig]) {
+    if (!layer) {
+      continue;
+    }
+
+    if (layer.profileId !== undefined) {
+      merged.profileId = layer.profileId;
+    }
+    if (layer.debug !== undefined) {
+      merged.debug = layer.debug;
+    }
+    if (layer.defaultTimeoutMs !== undefined) {
+      merged.defaultTimeoutMs = layer.defaultTimeoutMs;
+    }
+    if (layer.searchTimeoutMs !== undefined) {
+      merged.searchTimeoutMs = layer.searchTimeoutMs;
+    }
+  }
+
+  return merged;
 }
 
 export function resolveRuntimeIdentity(
