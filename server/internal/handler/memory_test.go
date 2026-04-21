@@ -142,10 +142,6 @@ func (s *testSessionRepo) ListBySessionIDs(context.Context, []string, int) ([]*d
 	return nil, nil
 }
 
-func intPtr(v int) *int {
-	return &v
-}
-
 // newTestServer creates a Server with pre-populated svcCache for testing.
 func newTestServer(memRepo *testMemoryRepo, sessRepo *testSessionRepo) *Server {
 	srv := NewServer(nil, nil, "", nil, nil, "", false, service.ModeSmart, "", slog.Default())
@@ -383,7 +379,7 @@ func TestCreateMemory_SyncMessages_StripsInjectedContext(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
 				{"message": map[string]string{
-					"content": `{"facts":["hello world"],"message_tags":[["greeting"],["reply"]]}`,
+					"content": `{"facts":["hello world"]}`,
 				}},
 			},
 		})
@@ -453,7 +449,7 @@ func TestCreateMemory_SyncMessages_ReconcileFailure_Returns500(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
 				{"message": map[string]string{
-					"content": `{"facts":["test fact"],"message_tags":[["tag1"],["tag2"]]}`,
+					"content": `{"facts":["test fact"]}`,
 				}},
 			},
 		})
@@ -535,13 +531,13 @@ func TestCreateMemory_SyncMessages_Timeout_FallsBackToSuccess(t *testing.T) {
 	}
 }
 
-func TestCreateMemory_SyncMessages_ExplicitSeqUsesSeqAwarePatchHash(t *testing.T) {
+func TestCreateMemory_SyncMessages_SkipsPatchTagsWhenPhase1HasNoMessageTags(t *testing.T) {
 	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
 				{"message": map[string]string{
-					"content": `{"facts":[{"text":"test fact"}],"message_tags":[["tag1"],[]]}`,
+					"content": `{"facts":[{"text":"test fact"}]}`,
 				}},
 			},
 		})
@@ -580,18 +576,8 @@ func TestCreateMemory_SyncMessages_ExplicitSeqUsesSeqAwarePatchHash(t *testing.T
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
-	if !sessRepo.patchTagsCalled {
-		t.Fatal("expected PatchTags to be called")
-	}
-	wantHash := service.SessionContentHash("test-session", "assistant", "Take care, bye!", intPtr(36))
-	if sessRepo.patchedHash != wantHash {
-		t.Fatalf("patched hash = %q, want %q", sessRepo.patchedHash, wantHash)
-	}
-	if sessRepo.patchedSessionID != "test-session" {
-		t.Fatalf("patched session_id = %q, want test-session", sessRepo.patchedSessionID)
-	}
-	if len(sessRepo.patchedTags) != 1 || sessRepo.patchedTags[0] != "tag1" {
-		t.Fatalf("patched tags = %v, want [tag1]", sessRepo.patchedTags)
+	if sessRepo.patchTagsCalled {
+		t.Fatalf("expected PatchTags to be skipped, got hash=%q tags=%v", sessRepo.patchedHash, sessRepo.patchedTags)
 	}
 }
 

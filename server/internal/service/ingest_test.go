@@ -335,7 +335,7 @@ func TestExtractPhase1FactTagsPopulated(t *testing.T) {
 
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		resp := `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}], "message_tags": [["tech"], ["answer"]]}`
+		resp := `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}]}`
 		json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
 				{"message": map[string]string{"content": resp}},
@@ -363,8 +363,8 @@ func TestExtractPhase1FactTagsPopulated(t *testing.T) {
 	if len(result.MessageTags) != 2 {
 		t.Fatalf("expected 2 message tag entries, got %d", len(result.MessageTags))
 	}
-	if len(result.MessageTags[0]) != 1 || result.MessageTags[0][0] != "tech" {
-		t.Fatalf("expected message_tags[0] = [tech], got %v", result.MessageTags[0])
+	if len(result.MessageTags[0]) != 0 || len(result.MessageTags[1]) != 0 {
+		t.Fatalf("expected empty message_tags, got %v", result.MessageTags)
 	}
 }
 
@@ -413,7 +413,7 @@ func TestExtractPhase1SingleMessageUsesLLMExtraction(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
-				{"message": map[string]string{"content": `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}], "message_tags": [["tech"]]}`}},
+				{"message": map[string]string{"content": `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}]}`}},
 			},
 		})
 	}))
@@ -437,8 +437,8 @@ func TestExtractPhase1SingleMessageUsesLLMExtraction(t *testing.T) {
 	if result.Facts[0].FactType != "" || result.Facts[0].Text != "Uses Go 1.22" {
 		t.Fatalf("expected normal extracted fact, got %+v", result.Facts[0])
 	}
-	if len(result.MessageTags) != 1 || len(result.MessageTags[0]) != 1 || result.MessageTags[0][0] != "tech" {
-		t.Fatalf("expected message_tags[0] = [tech], got %v", result.MessageTags)
+	if len(result.MessageTags) != 1 || len(result.MessageTags[0]) != 0 {
+		t.Fatalf("expected empty message_tags, got %v", result.MessageTags)
 	}
 }
 
@@ -506,7 +506,7 @@ func TestExtractPhase1SingleMessageEmptyResultFallsBackToRawFact(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
-				{"message": map[string]string{"content": `{"facts": [], "message_tags": [["tech"]]}`}},
+				{"message": map[string]string{"content": `{"facts": []}`}},
 			},
 		})
 	}))
@@ -527,8 +527,8 @@ func TestExtractPhase1SingleMessageEmptyResultFallsBackToRawFact(t *testing.T) {
 	if len(result.Facts) != 1 || result.Facts[0].FactType != factTypeRawFallback || result.Facts[0].Text != "I use Go 1.22" {
 		t.Fatalf("expected raw fallback fact after empty extraction, got %v", result.Facts)
 	}
-	if len(result.MessageTags) != 1 || len(result.MessageTags[0]) != 1 || result.MessageTags[0][0] != "tech" {
-		t.Fatalf("expected message_tags[0] = [tech], got %v", result.MessageTags)
+	if len(result.MessageTags) != 1 || len(result.MessageTags[0]) != 0 {
+		t.Fatalf("expected empty message_tags, got %v", result.MessageTags)
 	}
 }
 
@@ -2561,7 +2561,7 @@ func TestExtractPhase1LegacyStringArrayFallback(t *testing.T) {
 
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		resp := `{"facts": ["Uses Go 1.22"], "message_tags": [["tech"], ["answer"]]}`
+		resp := `{"facts": ["Uses Go 1.22"]}`
 		json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
 				{"message": map[string]string{"content": resp}},
@@ -2589,8 +2589,8 @@ func TestExtractPhase1LegacyStringArrayFallback(t *testing.T) {
 	if result.Facts[0].Tags != nil {
 		t.Fatalf("expected nil tags from legacy format, got %v", result.Facts[0].Tags)
 	}
-	if len(result.MessageTags) != 2 || result.MessageTags[0][0] != "tech" {
-		t.Fatalf("expected message_tags intact, got %v", result.MessageTags)
+	if len(result.MessageTags) != 2 || len(result.MessageTags[0]) != 0 || len(result.MessageTags[1]) != 0 {
+		t.Fatalf("expected empty message_tags, got %v", result.MessageTags)
 	}
 }
 
@@ -2631,7 +2631,7 @@ func TestExtractPhase1FencedLegacyStringArrayFallback(t *testing.T) {
 
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fenced := "```json\n{\"facts\": [\"Uses Go 1.22\"], \"message_tags\": [[\"tech\"], [\"answer\"]]}\n```"
+		fenced := "```json\n{\"facts\": [\"Uses Go 1.22\"]}\n```"
 		json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
 				{"message": map[string]string{"content": fenced}},
@@ -2659,8 +2659,8 @@ func TestExtractPhase1FencedLegacyStringArrayFallback(t *testing.T) {
 	if result.Facts[0].Tags != nil {
 		t.Fatalf("expected nil tags from legacy format, got %v", result.Facts[0].Tags)
 	}
-	if len(result.MessageTags) != 2 || result.MessageTags[0][0] != "tech" {
-		t.Fatalf("expected message_tags intact, got %v", result.MessageTags)
+	if len(result.MessageTags) != 2 || len(result.MessageTags[0]) != 0 || len(result.MessageTags[1]) != 0 {
+		t.Fatalf("expected empty message_tags, got %v", result.MessageTags)
 	}
 }
 

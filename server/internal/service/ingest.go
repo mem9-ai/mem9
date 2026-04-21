@@ -355,7 +355,7 @@ func normalizeReconciledTemporalContent(content string) (string, *TemporalMetada
 	return NormalizeStandaloneTemporalContent(content, time.Now())
 }
 
-// ExtractPhase1 runs fact extraction and per-message tagging in a single LLM call.
+// ExtractPhase1 runs fact extraction for the handler-driven ingest pipeline.
 // Returns an empty Phase1Result (no error) when LLM is nil or messages are empty.
 func (s *IngestService) ExtractPhase1(ctx context.Context, messages []IngestMessage) (*Phase1Result, error) {
 	if s.llm == nil || len(messages) == 0 {
@@ -367,13 +367,13 @@ func (s *IngestService) ExtractPhase1(ctx context.Context, messages []IngestMess
 		return &Phase1Result{}, nil
 	}
 
-	facts, messageTags, err := s.extractFactsAndTags(ctx, input.formatted, len(input.messages))
+	facts, err := s.extractFacts(ctx, input.formatted)
 	if err != nil {
 		return nil, err
 	}
 	return &Phase1Result{
 		Facts:       facts,
-		MessageTags: expandMessageTags(messageTags, input, len(messages)),
+		MessageTags: normalizeMessageTags(nil, len(messages)),
 	}, nil
 }
 
