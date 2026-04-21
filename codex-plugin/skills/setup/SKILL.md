@@ -1,5 +1,5 @@
 ---
-description: Install or repair global mem9 hooks and the default mem9 profile for Codex.
+description: Inspect and configure mem9 for Codex through the single setup entrypoint.
 context: fork
 allowed-tools:
   - Bash
@@ -13,41 +13,87 @@ Resolve `./scripts/setup.mjs` relative to this skill directory.
 
 Run this workflow:
 
-1. Inspect the saved global profiles first:
+1. Inspect the current mem9 state first:
 
 ```bash
 set -euo pipefail
-node ./scripts/setup.mjs --inspect-profiles
+node ./scripts/setup.mjs inspect
 ```
 
-2. Use the JSON summary to decide the next step with the user.
-   Share each available profile as `profileId`, `label`, `baseUrl`, and whether it already has an API key.
-3. Ask the user which path to take:
-   - use an existing profile
-   - create a new mem9 API key
-   - handle credentials manually
-4. Run setup with the matching flags:
-   - existing profile: `node ./scripts/setup.mjs --use-existing --profile <profile-id>`
-   - create new key: `node ./scripts/setup.mjs --create-new [--profile <profile-id>] [--label <profile-label>] [--base-url <mem9-api-base-url>]`
-   - manual credentials: explain the profile requirements, then stop until the profile exists
-5. When the user already names a specific profile or mode in the original request, skip the question and run the matching command directly.
+2. Use the JSON summary to decide the next action with the user.
+   Pay attention to `runtime`, `plugin`, `globalConfig`, `projectConfig`, and `profiles`.
+3. Keep the default flow global-first.
+   Apply project scope only when the user explicitly asks for a repo-local override.
+4. When the user wants mem9 to create a new API key, run:
+
+```bash
+set -euo pipefail
+node ./scripts/setup.mjs profile create \
+  --profile <profile-id> \
+  --label <profile-label> \
+  --base-url <mem9-api-base-url> \
+  --provision-api-key
+```
+
+5. When the user wants to provide the key manually, prefer a trusted shell plus `MEM9_API_KEY`, then run:
+
+```bash
+set -euo pipefail
+node ./scripts/setup.mjs profile save-key \
+  --profile <profile-id> \
+  --label <profile-label> \
+  --base-url <mem9-api-base-url> \
+  --api-key-env MEM9_API_KEY
+```
+
+6. After the profile exists with an API key, apply the global config:
+
+```bash
+set -euo pipefail
+node ./scripts/setup.mjs scope apply \
+  --scope user \
+  --profile <profile-id> \
+  --default-timeout-ms <ms> \
+  --search-timeout-ms <ms>
+```
+
+7. When the user explicitly wants a project override, run one of:
+
+```bash
+set -euo pipefail
+node ./scripts/setup.mjs scope apply \
+  --scope project \
+  --profile <profile-id> \
+  --default-timeout-ms <ms> \
+  --search-timeout-ms <ms>
+```
+
+```bash
+set -euo pipefail
+node ./scripts/setup.mjs scope clear --scope project
+```
 
 Common flags:
 
+- `inspect`
+- `profile create`
+- `profile save-key`
+- `scope apply`
+- `scope clear`
 - `--profile <profile-id>`
 - `--label <profile-label>`
 - `--base-url <mem9-api-base-url>`
-- `--create-new`
-- `--use-existing`
-- `--api-key <mem9-api-key>`
+- `--provision-api-key`
+- `--api-key-env MEM9_API_KEY`
+- `--scope user|project`
+- `--default-timeout-ms <ms>`
+- `--search-timeout-ms <ms>`
 - `--cwd <repo-root>`
 
-This command installs or repairs the global mem9 hooks for the current Codex user.
-It writes the global default config, enables `codex_hooks`, and updates global profiles in `$MEM9_HOME/.credentials.json`.
+`scope apply` and `scope clear` install or repair the managed mem9 runtime in `$CODEX_HOME`.
+They enable `codex_hooks`, repair `$CODEX_HOME/hooks.json`, install stable shims in `$CODEX_HOME/mem9/hooks/`, and write install metadata to `$CODEX_HOME/mem9/install.json`.
 
-When no usable profile exists yet, setup can create a new mem9 API key automatically.
-`--use-existing` selects an existing global profile. Manual profile creation stays outside the Codex TUI.
-
-When the current directory is inside a Git repository, setup also removes old mem9-managed project hooks from that repository.
-
+Do not ask the user to paste API keys into the Codex TUI.
+Prefer `MEM9_API_KEY` plus `profile save-key`.
+Direct edits to `$MEM9_HOME/.credentials.json` remain a fallback.
 Do not print API keys.

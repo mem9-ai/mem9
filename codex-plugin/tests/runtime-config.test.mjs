@@ -508,8 +508,8 @@ test("session start guidance for a broken project override points to project rep
   assert.equal(state.issueCode, "invalid_config");
   assert.equal(state.projectConfigMatched, true);
   assert.match(message, /\.codex\/mem9\/config\.json/);
-  assert.match(message, /\$mem9:project-config/);
   assert.match(message, /\$mem9:setup/);
+  assert.match(message, /reapply or clear project scope/);
   assert.doesNotMatch(message, /--reset/);
 });
 
@@ -533,8 +533,8 @@ test("session start guidance for broken global and project configs avoids reset 
 
   assert.equal(state.issueCode, "invalid_config");
   assert.equal(state.projectConfigMatched, true);
-  assert.match(message, /\$mem9:project-config/);
   assert.match(message, /\$mem9:setup/);
+  assert.match(message, /reapply or clear project scope/);
   assert.doesNotMatch(message, /--reset/);
 });
 

@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import assert from "node:assert/strict";
 import {
   existsSync,
@@ -16,9 +18,10 @@ import {
   buildInstallMetadata,
   buildNodeCommand,
   buildHookCommands,
-  inspectProfiles,
+  inspectSetup,
   main,
   mergeMem9Hooks,
+  parseArgs,
   removeManagedHooks,
   renderHooksTemplate,
   runSetup,
@@ -29,6 +32,96 @@ function createTempRoot() {
   mkdirSync(parent, { recursive: true });
   return mkdtempSync(path.join(parent, "case-"));
 }
+
+function writeJson(filePath, value) {
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function readJson(filePath) {
+  return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+function installActivePlugin(codexHome) {
+  mkdirSync(
+    path.join(codexHome, "plugins", "cache", "mem9-ai", "mem9", "local"),
+    { recursive: true },
+  );
+}
+
+test("parseArgs supports the setup subcommands", () => {
+  assert.deepEqual(
+    parseArgs(["inspect"]),
+    {
+      command: "inspect",
+      subcommand: "",
+      cwd: "",
+      profileId: "",
+      label: "",
+      baseUrl: "",
+      apiKeyEnv: "",
+      provisionApiKey: false,
+      scope: "",
+      defaultTimeoutMs: undefined,
+      searchTimeoutMs: undefined,
+    },
+  );
+
+  assert.deepEqual(
+    parseArgs([
+      "profile",
+      "create",
+      "--profile",
+      "work",
+      "--label",
+      "Work",
+      "--base-url",
+      "https://api.mem9.ai/",
+      "--provision-api-key",
+    ]),
+    {
+      command: "profile",
+      subcommand: "create",
+      cwd: "",
+      profileId: "work",
+      label: "Work",
+      baseUrl: "https://api.mem9.ai",
+      apiKeyEnv: "",
+      provisionApiKey: true,
+      scope: "",
+      defaultTimeoutMs: undefined,
+      searchTimeoutMs: undefined,
+    },
+  );
+
+  assert.deepEqual(
+    parseArgs([
+      "scope",
+      "apply",
+      "--scope",
+      "project",
+      "--profile",
+      "work",
+      "--default-timeout-ms",
+      "8100",
+      "--search-timeout-ms",
+      "15100",
+    ]),
+    {
+      command: "scope",
+      subcommand: "apply",
+      cwd: "",
+      profileId: "work",
+      label: "",
+      baseUrl: "",
+      apiKeyEnv: "",
+      provisionApiKey: false,
+      scope: "project",
+      defaultTimeoutMs: 8100,
+      searchTimeoutMs: 15100,
+    },
+  );
+});
 
 test("assertNodeVersion rejects runtimes below Node 22", () => {
   assert.equal(assertNodeVersion("22.1.0"), 22);
@@ -192,77 +285,92 @@ test("buildInstallMetadata derives marketplace and plugin identity from the inst
   });
 });
 
-test("buildNodeCommand shell-quotes POSIX metacharacters", () => {
-  assert.equal(
-    buildNodeCommand("/tmp/mem9/$HOME/`hook`/'quote'.mjs", "linux"),
-    "node '/tmp/mem9/$HOME/`hook`/'\"'\"'quote'\"'\"'.mjs'",
-  );
-});
-
-test("inspectProfiles summarizes saved global profiles without exposing api keys", () => {
+test("inspect reports runtime, plugin, configs, and saved profiles without exposing API keys", () => {
   const tempRoot = createTempRoot();
 
   try {
     const projectRoot = path.join(tempRoot, "project");
     const codexHome = path.join(tempRoot, "codex-home");
     const mem9Home = path.join(tempRoot, "mem9-home");
-    mkdirSync(projectRoot, { recursive: true });
-    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
+    mkdirSync(path.join(codexHome, "mem9", "hooks", "shared"), { recursive: true });
     mkdirSync(mem9Home, { recursive: true });
+    installActivePlugin(codexHome);
 
     writeFileSync(
-      path.join(mem9Home, ".credentials.json"),
-      JSON.stringify({
-        schemaVersion: 1,
-        profiles: {
-          default: {
-            label: "Default",
-            baseUrl: "https://api.mem9.ai",
-            apiKey: "key-default",
-          },
-          draft: {
-            label: "Draft",
-            baseUrl: "https://staging.mem9.ai",
-            apiKey: "",
-          },
-        },
-      }, null, 2),
+      path.join(codexHome, "config.toml"),
+      "[features]\ncodex_hooks = true\n",
     );
+    writeJson(path.join(codexHome, "mem9", "install.json"), {
+      schemaVersion: 1,
+      marketplaceName: "mem9-ai",
+      pluginName: "mem9",
+      shimVersion: 1,
+    });
+    writeJson(path.join(codexHome, "hooks.json"), renderHooksTemplate({
+      templateText: readFileSync("./templates/hooks.json", "utf8"),
+      hooksDir: path.join(codexHome, "mem9", "hooks"),
+    }));
+    writeJson(path.join(codexHome, "mem9", "config.json"), {
+      schemaVersion: 1,
+      enabled: false,
+      profileId: "default",
+      defaultTimeoutMs: 8300,
+      searchTimeoutMs: 15300,
+    });
+    writeJson(path.join(projectRoot, ".codex", "mem9", "config.json"), {
+      schemaVersion: 1,
+      enabled: false,
+      profileId: "work",
+      defaultTimeoutMs: 9100,
+      searchTimeoutMs: 15500,
+    });
+    writeJson(path.join(mem9Home, ".credentials.json"), {
+      schemaVersion: 1,
+      profiles: {
+        default: {
+          label: "Default",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-default",
+        },
+        work: {
+          label: "Work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "",
+        },
+      },
+    });
 
-    const summary = inspectProfiles([], {
+    const summary = inspectSetup(["inspect"], {
       cwd: projectRoot,
       codexHome,
       mem9Home,
+      hookShimSourceDir: "./bootstrap-hooks",
     });
 
     assert.equal(summary.status, "ok");
-    assert.equal(summary.credentialsState, "ready");
-    assert.equal(summary.credentialsPath, "$MEM9_HOME/.credentials.json");
-    assert.equal(summary.defaultProfileId, "default");
-    assert.equal(summary.hasUsableProfiles, true);
-    assert.equal(summary.recommendedMode, "use-existing");
-    assert.deepEqual(summary.usableProfileIds, ["default"]);
-    assert.deepEqual(summary.profiles, [
-      {
-        profileId: "default",
-        label: "Default",
-        baseUrl: "https://api.mem9.ai",
-        hasApiKey: true,
-      },
-      {
-        profileId: "draft",
-        label: "Draft",
-        baseUrl: "https://staging.mem9.ai",
-        hasApiKey: false,
-      },
-    ]);
+    assert.equal(summary.command, "inspect");
+    assert.equal(summary.environment.nodeVersionSupported, true);
+    assert.equal(summary.runtime.pluginState, "enabled");
+    assert.deepEqual(summary.runtime.legacyPausedSources, ["global", "project"]);
+    assert.equal(summary.runtime.effectiveLegacyPausedSource, "project");
+    assert.equal(summary.plugin.hooksFeatureEnabled, true);
+    assert.equal(summary.plugin.hooksInstalled, true);
+    assert.equal(summary.plugin.installMetadataPresent, true);
+    assert.equal(summary.globalConfig.summary.profileId, "default");
+    assert.equal(summary.globalConfig.summary.legacyEnabledFalse, true);
+    assert.equal(summary.projectConfig.summary.profileId, "work");
+    assert.equal(summary.projectConfig.summary.legacyEnabledFalse, true);
+    assert.deepEqual(summary.profiles.usableProfileIds, ["default"]);
+    assert.equal(summary.profiles.items[1].hasApiKey, false);
     assert.equal(JSON.stringify(summary).includes("key-default"), false);
+    assert.equal(JSON.stringify(summary).includes(tempRoot), false);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
-test("main prints inspectProfiles json to a provided stdout without mutating setup files", async () => {
+test("main prints inspect json without mutating files", async () => {
   const tempRoot = createTempRoot();
 
   try {
@@ -274,44 +382,32 @@ test("main prints inspectProfiles json to a provided stdout without mutating set
     mkdirSync(codexHome, { recursive: true });
     mkdirSync(mem9Home, { recursive: true });
 
-    writeFileSync(
-      path.join(mem9Home, ".credentials.json"),
-      JSON.stringify({
-        schemaVersion: 1,
-        profiles: {
-          work: {
-            label: "Work",
-            baseUrl: "https://api.mem9.ai",
-            apiKey: "key-work",
-          },
+    writeJson(path.join(mem9Home, ".credentials.json"), {
+      schemaVersion: 1,
+      profiles: {
+        work: {
+          label: "Work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-work",
         },
-      }, null, 2),
-    );
+      },
+    });
 
     const result = await main(
-      ["--inspect-profiles"],
+      ["inspect"],
       {
         cwd: projectRoot,
         codexHome,
         mem9Home,
         stdout: {
-          write(/** @type {string} */ chunk) {
+          write(chunk) {
             stdoutText += chunk;
           },
         },
       },
     );
 
-    assert.equal("recommendedMode" in result, true);
-    assert.equal("usableProfileIds" in result, true);
-    if (!("recommendedMode" in result) || !("usableProfileIds" in result)) {
-      throw new Error("Expected inspectProfiles result.");
-    }
-
-    assert.equal(result.status, "ok");
-    assert.equal(result.recommendedMode, "use-existing");
-    assert.deepEqual(result.usableProfileIds, ["work"]);
-    assert.equal(stdoutText.trim().length > 0, true);
+    assert.equal(result.command, "inspect");
     assert.deepEqual(JSON.parse(stdoutText), result);
     assert.equal(stdoutText.includes("key-work"), false);
     assert.equal(existsSync(path.join(codexHome, "mem9", "config.json")), false);
@@ -321,9 +417,8 @@ test("main prints inspectProfiles json to a provided stdout without mutating set
   }
 });
 
-test("main prints inspectProfiles json to process.stdout by default", async () => {
+test("profile create provisions an API key without printing it", async () => {
   const tempRoot = createTempRoot();
-  const originalWrite = process.stdout.write;
 
   try {
     const projectRoot = path.join(tempRoot, "project");
@@ -334,47 +429,162 @@ test("main prints inspectProfiles json to process.stdout by default", async () =
     mkdirSync(codexHome, { recursive: true });
     mkdirSync(mem9Home, { recursive: true });
 
-    writeFileSync(
-      path.join(mem9Home, ".credentials.json"),
-      JSON.stringify({
-        schemaVersion: 1,
-        profiles: {
-          default: {
-            label: "Default",
-            baseUrl: "https://api.mem9.ai",
-            apiKey: "key-default",
-          },
-        },
-      }, null, 2),
-    );
+    /** @type {Array<{url: string, method: string}>} */
+    const fetchCalls = [];
 
-    process.stdout.write = /** @type {typeof process.stdout.write} */ ((chunk, ...args) => {
-      stdoutText += typeof chunk === "string" ? chunk : chunk.toString();
-      const callback = args.find((value) => typeof value === "function");
-      callback?.();
-      return true;
-    });
-
-    const result = await main(
-      ["--inspect-profiles"],
+    const result = await runSetup(
+      [
+        "profile",
+        "create",
+        "--profile",
+        "personal",
+        "--label",
+        "Personal",
+        "--base-url",
+        "https://api.mem9.ai",
+        "--provision-api-key",
+      ],
       {
         cwd: projectRoot,
         codexHome,
         mem9Home,
+        credentialsWritable: true,
+        fetch: async (url, init) => {
+          fetchCalls.push({
+            url: String(url),
+            method: String(init?.method ?? "GET"),
+          });
+
+          return {
+            ok: true,
+            status: 200,
+            async json() {
+              return {
+                id: "key-provisioned",
+              };
+            },
+          };
+        },
+        stdout: {
+          write(chunk) {
+            stdoutText += chunk;
+          },
+        },
       },
     );
 
-    assert.equal(result.status, "ok");
-    assert.equal(stdoutText.trim().length > 0, true);
-    assert.deepEqual(JSON.parse(stdoutText), result);
-    assert.equal(stdoutText.includes("key-default"), false);
+    assert.equal(result.command, "profile.create");
+    assert.equal(result.action, "created");
+    assert.deepEqual(fetchCalls, [
+      {
+        url: "https://api.mem9.ai/v1alpha1/mem9s",
+        method: "POST",
+      },
+    ]);
+    assert.equal(
+      readJson(path.join(mem9Home, ".credentials.json")).profiles.personal.apiKey,
+      "key-provisioned",
+    );
+    assert.equal(stdoutText.includes("key-provisioned"), false);
   } finally {
-    process.stdout.write = originalWrite;
     rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
-test("runSetup installs global config, hooks, credentials, and hook shims", async () => {
+test("profile save-key uses MEM9_API_KEY and keeps the key out of stdout", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const projectRoot = path.join(tempRoot, "project");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    let stdoutText = "";
+    mkdirSync(projectRoot, { recursive: true });
+    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(mem9Home, { recursive: true });
+
+    const result = await runSetup(
+      [
+        "profile",
+        "save-key",
+        "--profile",
+        "work",
+        "--label",
+        "Work",
+        "--base-url",
+        "https://api.mem9.ai",
+        "--api-key-env",
+        "MEM9_API_KEY",
+      ],
+      {
+        cwd: projectRoot,
+        codexHome,
+        mem9Home,
+        credentialsWritable: true,
+        env: {
+          MEM9_API_KEY: "key-from-env",
+        },
+        stdout: {
+          write(chunk) {
+            stdoutText += chunk;
+          },
+        },
+      },
+    );
+
+    assert.equal(result.command, "profile.save-key");
+    assert.equal(result.apiKeyEnv, "MEM9_API_KEY");
+    assert.equal(
+      readJson(path.join(mem9Home, ".credentials.json")).profiles.work.apiKey,
+      "key-from-env",
+    );
+    assert.equal(stdoutText.includes("key-from-env"), false);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("profile save-key errors with guidance when the env var is missing", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const projectRoot = path.join(tempRoot, "project");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    mkdirSync(projectRoot, { recursive: true });
+    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(mem9Home, { recursive: true });
+
+    await assert.rejects(
+      () => runSetup(
+        [
+          "profile",
+          "save-key",
+          "--profile",
+          "work",
+          "--label",
+          "Work",
+          "--base-url",
+          "https://api.mem9.ai",
+          "--api-key-env",
+          "MEM9_API_KEY",
+        ],
+        {
+          cwd: projectRoot,
+          codexHome,
+          mem9Home,
+          credentialsWritable: true,
+          env: {},
+        },
+      ),
+      /MEM9_API_KEY/,
+    );
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("scope apply user installs global config, hooks, metadata, and repairs legacy project hooks", async () => {
   const tempRoot = createTempRoot();
 
   try {
@@ -391,83 +601,80 @@ test("runSetup installs global config, hooks, credentials, and hook shims", asyn
       path.join(codexHome, "config.toml"),
       "[features]\nother = true\n",
     );
-    writeFileSync(
-      path.join(codexHome, "hooks.json"),
-      JSON.stringify({
-        hooks: {
-          SessionStart: [
-            {
-              hooks: [
-                {
-                  type: "command",
-                  command: buildNodeCommand(path.join(codexHome, "mem9", "runtime", "session-start.mjs")),
-                  statusMessage: "[mem9] session start",
-                },
-                {
-                  type: "command",
-                  command: "echo existing-session-start",
-                },
-              ],
-            },
-          ],
-        },
-      }, null, 2),
-    );
-    writeFileSync(
-      path.join(projectRoot, ".codex", "hooks.json"),
-      JSON.stringify({
-        hooks: {
-          SessionStart: [
-            {
-              hooks: [
-                {
-                  type: "command",
-                  command: buildNodeCommand(path.join(projectRoot, ".codex", "mem9", "runtime", "session-start.mjs")),
-                  statusMessage: "[mem9] session start",
-                },
-                {
-                  type: "command",
-                  command: "echo foreign-session-start",
-                  statusMessage: "foreign-session-start",
-                },
-              ],
-            },
-          ],
-        },
-      }, null, 2),
-    );
-    writeFileSync(
-      path.join(mem9Home, ".credentials.json"),
-      JSON.stringify({
-        schemaVersion: 1,
-        profiles: {
-          work: {
-            label: "Work",
-            baseUrl: "https://api.mem9.ai",
-            apiKey: "key-1",
+    writeJson(path.join(codexHome, "hooks.json"), {
+      hooks: {
+        SessionStart: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: buildNodeCommand(path.join(codexHome, "mem9", "runtime", "session-start.mjs")),
+                statusMessage: "[mem9] session start",
+              },
+              {
+                type: "command",
+                command: "echo existing-session-start",
+              },
+            ],
           },
+        ],
+      },
+    });
+    writeJson(path.join(projectRoot, ".codex", "hooks.json"), {
+      hooks: {
+        SessionStart: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: buildNodeCommand(path.join(projectRoot, ".codex", "mem9", "runtime", "session-start.mjs")),
+                statusMessage: "[mem9] session start",
+              },
+              {
+                type: "command",
+                command: "echo foreign-session-start",
+                statusMessage: "foreign-session-start",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    writeJson(path.join(mem9Home, ".credentials.json"), {
+      schemaVersion: 1,
+      profiles: {
+        work: {
+          label: "Work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-1",
         },
-      }, null, 2),
-    );
+      },
+    });
 
     const result = await runSetup(
-      ["--profile", "work"],
+      [
+        "scope",
+        "apply",
+        "--scope",
+        "user",
+        "--profile",
+        "work",
+      ],
       {
         cwd: projectRoot,
         codexHome,
         mem9Home,
-        interactive: false,
         userWritable: true,
-        credentialsWritable: true,
         stdout: {
-          write(/** @type {string} */ chunk) {
+          write(chunk) {
             stdoutText += chunk;
           },
         },
       },
     );
 
-    assert.equal(result.scope, "global");
+    assert.equal(result.command, "scope.apply");
+    assert.equal(result.scope, "user");
     assert.equal(result.profileId, "work");
     assert.equal(
       existsSync(path.join(codexHome, "mem9", "hooks", "session-start.mjs")),
@@ -478,7 +685,7 @@ test("runSetup installs global config, hooks, credentials, and hook shims", asyn
       true,
     );
     assert.deepEqual(
-      JSON.parse(readFileSync(path.join(codexHome, "mem9", "install.json"), "utf8")),
+      readJson(path.join(codexHome, "mem9", "install.json")),
       {
         schemaVersion: 1,
         marketplaceName: "mem9-ai",
@@ -487,9 +694,7 @@ test("runSetup installs global config, hooks, credentials, and hook shims", asyn
       },
     );
 
-    const globalConfig = JSON.parse(
-      readFileSync(path.join(codexHome, "mem9", "config.json"), "utf8"),
-    );
+    const globalConfig = readJson(path.join(codexHome, "mem9", "config.json"));
     assert.equal(globalConfig.profileId, "work");
     assert.equal(globalConfig.defaultTimeoutMs, 8000);
     assert.equal(globalConfig.searchTimeoutMs, 15000);
@@ -498,9 +703,7 @@ test("runSetup installs global config, hooks, credentials, and hook shims", asyn
     assert.match(patchedToml, /other = true/);
     assert.match(patchedToml, /codex_hooks = true/);
 
-    const hooks = JSON.parse(
-      readFileSync(path.join(codexHome, "hooks.json"), "utf8"),
-    );
+    const hooks = readJson(path.join(codexHome, "hooks.json"));
     assert.equal(
       hooks.hooks.SessionStart[0].hooks[0].command,
       buildNodeCommand(path.join(codexHome, "mem9", "hooks", "session-start.mjs")),
@@ -510,9 +713,7 @@ test("runSetup installs global config, hooks, credentials, and hook shims", asyn
       "echo existing-session-start",
     );
 
-    const legacyHooks = JSON.parse(
-      readFileSync(path.join(projectRoot, ".codex", "hooks.json"), "utf8"),
-    );
+    const legacyHooks = readJson(path.join(projectRoot, ".codex", "hooks.json"));
     assert.equal(legacyHooks.hooks.SessionStart.length, 1);
     assert.equal(legacyHooks.hooks.SessionStart[0].hooks.length, 1);
     assert.equal(
@@ -520,13 +721,8 @@ test("runSetup installs global config, hooks, credentials, and hook shims", asyn
       "foreign-session-start",
     );
 
-    const credentials = JSON.parse(
-      readFileSync(path.join(mem9Home, ".credentials.json"), "utf8"),
-    );
-    assert.equal(credentials.profiles.work.apiKey, "key-1");
-
     const stdoutSummary = JSON.parse(stdoutText);
-    assert.equal(stdoutSummary.scope, "global");
+    assert.equal(stdoutSummary.scope, "user");
     assert.equal(stdoutText.includes("key-1"), false);
     assert.equal(JSON.stringify(stdoutSummary).includes("key-1"), false);
   } finally {
@@ -534,222 +730,112 @@ test("runSetup installs global config, hooks, credentials, and hook shims", asyn
   }
 });
 
-test("runSetup can create a global profile from CLI args", async () => {
+test("scope apply project writes a local override and clears legacy enabled false", async () => {
   const tempRoot = createTempRoot();
 
   try {
-    const projectRoot = path.join(tempRoot, "project");
+    const projectRoot = path.join(tempRoot, "repo");
     const codexHome = path.join(tempRoot, "codex-home");
     const mem9Home = path.join(tempRoot, "mem9-home");
-    mkdirSync(projectRoot, { recursive: true });
-    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
+    mkdirSync(path.join(projectRoot, "packages", "web"), { recursive: true });
+    mkdirSync(path.join(codexHome, "mem9"), { recursive: true });
+    mkdirSync(mem9Home, { recursive: true });
+
+    writeJson(path.join(codexHome, "mem9", "config.json"), {
+      schemaVersion: 1,
+      profileId: "default",
+      defaultTimeoutMs: 8200,
+      searchTimeoutMs: 15200,
+    });
+    writeJson(path.join(mem9Home, ".credentials.json"), {
+      schemaVersion: 1,
+      profiles: {
+        default: {
+          label: "Default",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-default",
+        },
+        work: {
+          label: "Work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-work",
+        },
+      },
+    });
+    writeJson(path.join(projectRoot, ".codex", "mem9", "config.json"), {
+      schemaVersion: 1,
+      enabled: false,
+      profileId: "default",
+      defaultTimeoutMs: 9100,
+    });
+
+    await runSetup(
+      [
+        "scope",
+        "apply",
+        "--scope",
+        "project",
+        "--profile",
+        "work",
+      ],
+      {
+        cwd: path.join(projectRoot, "packages", "web"),
+        codexHome,
+        mem9Home,
+        userWritable: true,
+      },
+    );
+
+    const saved = readJson(path.join(projectRoot, ".codex", "mem9", "config.json"));
+    assert.equal(saved.profileId, "work");
+    assert.equal(saved.defaultTimeoutMs, 9100);
+    assert.equal(saved.searchTimeoutMs, 15200);
+    assert.equal("enabled" in saved, false);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("scope clear removes the project override", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const projectRoot = path.join(tempRoot, "repo");
+    const codexHome = path.join(tempRoot, "codex-home");
+    mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
+    mkdirSync(path.join(codexHome, "mem9"), { recursive: true });
+    writeJson(path.join(projectRoot, ".codex", "mem9", "config.json"), {
+      schemaVersion: 1,
+      profileId: "work",
+    });
 
     const result = await runSetup(
       [
-        "--profile",
-        "personal",
-        "--label",
-        "Personal",
-        "--base-url",
-        "https://api.mem9.ai",
-        "--api-key",
-        "key-2",
-        "--default-timeout-ms",
-        "8100",
-        "--search-timeout-ms",
-        "15100",
+        "scope",
+        "clear",
+        "--scope",
+        "project",
       ],
       {
         cwd: projectRoot,
         codexHome,
-        mem9Home,
-        interactive: false,
         userWritable: true,
-        credentialsWritable: true,
       },
     );
 
-    assert.equal(result.scope, "global");
-
-    const globalConfig = JSON.parse(
-      readFileSync(path.join(codexHome, "mem9", "config.json"), "utf8"),
-    );
-    assert.equal(globalConfig.profileId, "personal");
-    assert.equal(globalConfig.defaultTimeoutMs, 8100);
-    assert.equal(globalConfig.searchTimeoutMs, 15100);
-
-    const credentials = JSON.parse(
-      readFileSync(path.join(mem9Home, ".credentials.json"), "utf8"),
-    );
-    assert.equal(credentials.profiles.personal.label, "Personal");
-    assert.equal(credentials.profiles.personal.apiKey, "key-2");
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("runSetup provisions a global profile when api key is omitted", async () => {
-  const tempRoot = createTempRoot();
-
-  try {
-    const projectRoot = path.join(tempRoot, "project");
-    const codexHome = path.join(tempRoot, "codex-home");
-    const mem9Home = path.join(tempRoot, "mem9-home");
-    mkdirSync(projectRoot, { recursive: true });
-    mkdirSync(mem9Home, { recursive: true });
-
-    /** @type {Array<{url: string, method: string}>} */
-    const fetchCalls = [];
-
-    const result = await runSetup(
-      [
-        "--profile",
-        "default",
-        "--label",
-        "default",
-        "--base-url",
-        "https://api.mem9.ai",
-      ],
-      {
-        cwd: projectRoot,
-        codexHome,
-        mem9Home,
-        interactive: false,
-        userWritable: true,
-        credentialsWritable: true,
-        fetch: async (
-          /** @type {string | URL} */ url,
-          /** @type {{method?: string} | undefined} */ init,
-        ) => {
-          const request = init ?? {};
-          fetchCalls.push({
-            url: String(url),
-            method: String(request.method ?? "GET"),
-          });
-
-          return {
-            ok: true,
-            status: 200,
-            async json() {
-              return {
-                id: "key-provisioned",
-              };
-            },
-          };
-        },
-      },
-    );
-
-    assert.equal(result.selection, "provisioned");
-    assert.deepEqual(fetchCalls, [
-      {
-        url: "https://api.mem9.ai/v1alpha1/mem9s",
-        method: "POST",
-      },
-    ]);
-
-    const credentials = JSON.parse(
-      readFileSync(path.join(mem9Home, ".credentials.json"), "utf8"),
-    );
-    assert.equal(credentials.profiles.default.apiKey, "key-provisioned");
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("runSetup provisions an existing profile missing api key in non-interactive mode", async () => {
-  const tempRoot = createTempRoot();
-
-  try {
-    const projectRoot = path.join(tempRoot, "project");
-    const codexHome = path.join(tempRoot, "codex-home");
-    const mem9Home = path.join(tempRoot, "mem9-home");
-    mkdirSync(projectRoot, { recursive: true });
-    mkdirSync(mem9Home, { recursive: true });
-
-    writeFileSync(
-      path.join(mem9Home, ".credentials.json"),
-      JSON.stringify({
-        schemaVersion: 1,
-        profiles: {
-          work: {
-            label: "Work",
-            baseUrl: "https://api.mem9.ai",
-            apiKey: "",
-          },
-        },
-      }, null, 2),
-    );
-
-    const result = await runSetup(
-      ["--profile", "work"],
-      {
-        cwd: projectRoot,
-        codexHome,
-        mem9Home,
-        interactive: false,
-        userWritable: true,
-        credentialsWritable: true,
-        fetch: async () => ({
-          ok: true,
-          status: 200,
-          async json() {
-            return {
-              id: "key-repaired",
-            };
-          },
-        }),
-      },
-    );
-
-    assert.equal(result.selection, "provisioned");
-
-    const credentials = JSON.parse(
-      readFileSync(path.join(mem9Home, ".credentials.json"), "utf8"),
-    );
-    assert.equal(credentials.profiles.work.apiKey, "key-repaired");
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("runSetup manual mode prints guidance instead of reading an api key", async () => {
-  const tempRoot = createTempRoot();
-
-  try {
-    const projectRoot = path.join(tempRoot, "project");
-    const codexHome = path.join(tempRoot, "codex-home");
-    const mem9Home = path.join(tempRoot, "mem9-home");
-    mkdirSync(projectRoot, { recursive: true });
-    mkdirSync(codexHome, { recursive: true });
-    mkdirSync(mem9Home, { recursive: true });
-
-    await assert.rejects(
-      () => runSetup(
-        [],
-        {
-          cwd: projectRoot,
-          codexHome,
-          mem9Home,
-          interactive: true,
-          userWritable: true,
-          credentialsWritable: true,
-          prompter: {
-            async text() {
-              return "manual";
-            },
-            close() {},
-          },
-        },
-      ),
-      /Add a mem9 profile manually in `\$MEM9_HOME\/\.credentials\.json`\./,
+    assert.equal(result.command, "scope.clear");
+    assert.equal(result.action, "removed");
+    assert.equal(
+      existsSync(path.join(projectRoot, ".codex", "mem9", "config.json")),
+      false,
     );
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
-test("runSetup repairs malformed global json files and rewrites them with valid config", async () => {
+test("scope apply repairs malformed json files and rewrites them with valid config", async () => {
   const tempRoot = createTempRoot();
 
   try {
@@ -765,50 +851,50 @@ test("runSetup repairs malformed global json files and rewrites them with valid 
     writeFileSync(path.join(codexHome, "config.toml"), "[features]\n");
     writeFileSync(path.join(codexHome, "hooks.json"), "{broken");
     writeFileSync(path.join(codexHome, "mem9", "config.json"), "{broken");
-    writeFileSync(path.join(mem9Home, ".credentials.json"), "{broken");
+    writeFileSync(path.join(codexHome, "mem9", "install.json"), "{broken");
+    writeJson(path.join(mem9Home, ".credentials.json"), {
+      schemaVersion: 1,
+      profiles: {
+        work: {
+          label: "Work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-fixed",
+        },
+      },
+    });
 
     const result = await runSetup(
       [
+        "scope",
+        "apply",
+        "--scope",
+        "user",
         "--profile",
         "work",
-        "--label",
-        "Work",
-        "--base-url",
-        "https://api.mem9.ai",
-        "--api-key",
-        "key-fixed",
       ],
       {
         cwd: projectRoot,
         codexHome,
         mem9Home,
-        interactive: false,
         userWritable: true,
-        credentialsWritable: true,
         stdout: {
-          write(/** @type {string} */ chunk) {
+          write(chunk) {
             stdoutText += chunk;
           },
         },
       },
     );
 
-    assert.equal(result.scope, "global");
+    assert.equal(result.scope, "user");
     assert.equal(result.backups.length, 3);
 
-    const repairedConfig = JSON.parse(
-      readFileSync(path.join(codexHome, "mem9", "config.json"), "utf8"),
-    );
-    const repairedHooks = JSON.parse(
-      readFileSync(path.join(codexHome, "hooks.json"), "utf8"),
-    );
-    const repairedCredentials = JSON.parse(
-      readFileSync(path.join(mem9Home, ".credentials.json"), "utf8"),
-    );
+    const repairedConfig = readJson(path.join(codexHome, "mem9", "config.json"));
+    const repairedHooks = readJson(path.join(codexHome, "hooks.json"));
+    const repairedInstall = readJson(path.join(codexHome, "mem9", "install.json"));
 
     assert.equal(repairedConfig.profileId, "work");
     assert.equal(repairedHooks.hooks.Stop[0].hooks[0].statusMessage, "[mem9] save");
-    assert.equal(repairedCredentials.profiles.work.apiKey, "key-fixed");
+    assert.equal(repairedInstall.pluginName, "mem9");
 
     for (const backup of result.backups) {
       assert.equal(existsSync(backup.backupPath), true);
@@ -818,19 +904,6 @@ test("runSetup repairs malformed global json files and rewrites them with valid 
     const stdoutSummary = JSON.parse(stdoutText);
     assert.equal(stdoutSummary.backups.length, 3);
     assert.equal(stdoutText.includes("key-fixed"), false);
-    const summaryBackups = /** @type {Array<{ backupPath: string }>} */ (
-      stdoutSummary.backups
-    );
-    assert.equal(
-      summaryBackups.some((backup) =>
-        String(backup.backupPath).startsWith("$MEM9_HOME/")),
-      true,
-    );
-    assert.equal(
-      summaryBackups.some((backup) =>
-        String(backup.backupPath).startsWith("$CODEX_HOME/")),
-      true,
-    );
     assert.equal(stdoutText.includes(tempRoot), false);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });

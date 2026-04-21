@@ -21,7 +21,7 @@ test("plugin manifest exposes mem9 setup skill and basic metadata", () => {
 
 test("plugin templates and skills exist with mem9 hook wiring", () => {
   assert.equal(existsSync("./skills/setup/SKILL.md"), true);
-  assert.equal(existsSync("./skills/project-config/SKILL.md"), true);
+  assert.equal(existsSync("./skills/project-config/SKILL.md"), false);
   assert.equal(existsSync("./skills/recall/SKILL.md"), true);
   assert.equal(existsSync("./skills/store/SKILL.md"), true);
   assert.equal(existsSync("./lib/config.mjs"), true);
@@ -35,7 +35,6 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
   assert.equal(existsSync("./hooks/shared/skill-runtime.mjs"), false);
 
   const setupSkill = readFileSync("./skills/setup/SKILL.md", "utf8");
-  const projectSkill = readFileSync("./skills/project-config/SKILL.md", "utf8");
   const recallSkill = readFileSync("./skills/recall/SKILL.md", "utf8");
   const storeSkill = readFileSync("./skills/store/SKILL.md", "utf8");
   const marketplace = JSON.parse(
@@ -46,14 +45,15 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
   );
 
   assert.match(setupSkill, /node \.\/scripts\/setup\.mjs/);
-  assert.match(setupSkill, /--inspect-profiles/);
-  assert.match(setupSkill, /Ask the user which path to take|ask the user which path to take/i);
+  assert.match(setupSkill, /setup\.mjs inspect/);
+  assert.match(setupSkill, /profile create/);
+  assert.match(setupSkill, /profile save-key/);
+  assert.match(setupSkill, /scope apply/);
+  assert.match(setupSkill, /scope clear/);
+  assert.match(setupSkill, /MEM9_API_KEY/);
   assert.doesNotMatch(setupSkill, /disable-model-invocation:\s*true/);
-  assert.doesNotMatch(setupSkill, /--scope/);
-  assert.match(projectSkill, /node \.\/scripts\/project-config\.mjs/);
   assert.match(recallSkill, /cat <<'EOF' \| node \.\/scripts\/recall\.mjs/);
   assert.match(storeSkill, /cat <<'EOF' \| node \.\/scripts\/store\.mjs/);
-  assert.match(projectSkill, /<project>\.\/?\.codex\/mem9\/config\.json|<project>\/\.codex\/mem9\/config\.json/);
   assert.equal(marketplace.name, "mem9-ai");
   assert.equal(marketplace.plugins[0].name, "mem9");
   assert.equal(marketplace.plugins[0].source.path, "./codex-plugin");
@@ -79,10 +79,8 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /persistent memory/i);
   assert.match(readme, /## Quick Start/);
   assert.match(readme, /\$mem9:setup/);
-  assert.match(readme, /\$mem9:project-config/);
   assert.match(readme, /\$mem9:recall/);
   assert.match(readme, /\$mem9:store/);
-  assert.match(readme, /inspects the saved global profiles first/i);
   assert.match(readme, /codex plugin marketplace add mem9-ai\/mem9/);
   assert.match(readme, /install `mem9` from the `mem9-ai` marketplace inside Codex/i);
   assert.match(readme, /<repo>\/\.agents\/plugins\/marketplace\.json/);
@@ -96,5 +94,4 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /MEM9_DEBUG=1/);
   assert.match(readme, /\$CODEX_HOME\/mem9\/logs\/codex-hooks\.jsonl/);
   assert.match(readme, /You do not need to enable hooks manually first/);
-  assert.doesNotMatch(readme, /--scope project/);
 });

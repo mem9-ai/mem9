@@ -25,13 +25,11 @@ let debugContext = {};
 /**
  * @param {SessionStartState} state
  * @param {string} [setupCommand]
- * @param {string} [projectConfigCommand]
  * @returns {string}
  */
 export function buildSessionStartMessage(
   state,
   setupCommand = "$mem9:setup",
-  projectConfigCommand = "$mem9:project-config",
 ) {
   const profileText = state.profileId
     ? `profile \`${state.profileId}\``
@@ -72,7 +70,7 @@ export function buildSessionStartMessage(
   }
 
   if (state.issueCode === "invalid_config" && state.projectConfigMatched) {
-    return `mem9 cannot read this project's override file \`.codex/mem9/config.json\`. Run \`${projectConfigCommand}\` to repair the local override, then run \`${setupCommand}\` if the global default in \`$CODEX_HOME/mem9/config.json\` also needs repair.`;
+    return `mem9 cannot read this project's override file \`.codex/mem9/config.json\`. Run \`${setupCommand}\` in this repository to inspect it and either reapply or clear project scope. Run \`${setupCommand}\` again if the global default in \`$CODEX_HOME/mem9/config.json\` also needs repair.`;
   }
 
   if (
@@ -87,7 +85,7 @@ export function buildSessionStartMessage(
     || state.issueCode === "invalid_credentials"
   ) {
     if (state.configSource === "project") {
-      return `mem9 cannot use the selected profile. Run \`${setupCommand}\` to repair the global profile set, or run \`${projectConfigCommand}\` to switch this project to another existing profile.`;
+      return `mem9 cannot use the selected profile. Run \`${setupCommand}\` to repair the global profile set. If this repository should use another saved profile, rerun \`${setupCommand}\` here and apply project scope with that profile.`;
     }
 
     return `mem9 cannot use the selected profile. Run \`${setupCommand}\` and select an existing profile or create a new profile.`;

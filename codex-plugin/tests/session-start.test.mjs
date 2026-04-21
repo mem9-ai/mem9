@@ -80,8 +80,8 @@ test("session start reports invalid project override with repair guidance", () =
   });
 
   assert.match(message, /\.codex\/mem9\/config\.json/);
-  assert.match(message, /\$mem9:project-config/);
   assert.match(message, /\$mem9:setup/);
+  assert.match(message, /reapply or clear project scope/);
   assert.match(message, /\$CODEX_HOME\/mem9\/config\.json/);
 });
 
@@ -92,7 +92,7 @@ test("session start explains how to repair a project missing profile", () => {
   });
 
   assert.match(message, /\$mem9:setup/);
-  assert.match(message, /\$mem9:project-config/);
+  assert.match(message, /apply project scope/);
   assert.match(message, /selected profile/);
 });
 
