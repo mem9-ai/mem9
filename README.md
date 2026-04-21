@@ -46,7 +46,7 @@ MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-se
 
 Set `MNEMO_DB_BACKEND=postgres` or `MNEMO_DB_BACKEND=db9` before startup when you are not using the default TiDB backend.
 
-If you are running `tidb` with a configured provisioner, create a tenant and use its ID as the API key:
+Fresh installs on `tidb` can use auto-provisioning. TiDB Zero is enabled by default, so this `curl` path works out of the box unless you disable it or switch to a different provisioner:
 
 ```bash
 curl -s -X POST http://localhost:8080/v1alpha1/mem9s
@@ -57,7 +57,9 @@ export MEM9_API_KEY="tenant-id"
 export MEM9_TENANT_ID="$MEM9_API_KEY" # OpenCode / legacy clients
 ```
 
-If you are running `postgres`, `db9`, or `tidb` without a provisioner, start with a pre-existing tenant and use that tenant ID as the API key for `v1alpha2` requests:
+If you want `tidb` without auto-provisioning, set `MNEMO_TIDB_ZERO_ENABLED=false`. That mode, along with `postgres`, `db9`, or any provisioner-less deployment, uses manual bootstrap and pre-existing tenants.
+
+Apply the matching schema file (`server/schema.sql`, `server/schema_pg.sql`, or `server/schema_db9.sql`), seed an active tenant row in the control-plane DB, then use that tenant ID as the API key for `v1alpha2` requests:
 
 ```bash
 export MEM9_API_URL="http://localhost:8080"
@@ -131,7 +133,7 @@ Under the hood, mem9 Cloud runs the same mem9 server model surfaced in this repo
 
 ## Self-Hosting
 
-mem9 server supports multiple storage backends. Set `MNEMO_DB_BACKEND` to `tidb`, `postgres`, or `db9`, point `MNEMO_DSN` at that backend, and the rest of the runtime contract stays the same for your agents. Auto-provisioning through `POST /v1alpha1/mem9s` is a TiDB-specific flow that requires a configured provisioner; `postgres`, `db9`, and provisioner-less deployments expect pre-existing tenants, and `X-API-Key` resolves those tenants by ID lookup.
+mem9 server supports multiple storage backends. Set `MNEMO_DB_BACKEND` to `tidb`, `postgres`, or `db9`, point `MNEMO_DSN` at that backend, and the rest of the runtime contract stays the same for your agents. Auto-provisioning through `POST /v1alpha1/mem9s` is a TiDB-specific flow with TiDB Zero enabled by default; set `MNEMO_TIDB_ZERO_ENABLED=false` when you want `tidb` to run in the same manual-bootstrap, pre-existing-tenant mode as `postgres`, `db9`, and other provisioner-less deployments. In `v1alpha2`, `X-API-Key` resolves tenants by ID lookup.
 
 ### Build & Run
 
@@ -249,7 +251,7 @@ Preferred integrations use `v1alpha2` with `X-API-Key`. Legacy integrations can 
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/v1alpha1/mem9s` | TiDB-only auto-provision endpoint when a provisioner is configured (no auth). Returns `{ "id" }`. Accepts optional `utm_*` query params for attribution logging |
+| `POST` | `/v1alpha1/mem9s` | TiDB auto-provision endpoint when a provisioner is configured. TiDB Zero enables this path by default; set `MNEMO_TIDB_ZERO_ENABLED=false` to disable it. Returns `{ "id" }`. Accepts optional `utm_*` query params for attribution logging |
 | `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy unified write endpoint. Tenant key travels in the URL path |
 | `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy search endpoint for `tenantID`-configured clients |
 | `GET` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy get-by-id endpoint |
