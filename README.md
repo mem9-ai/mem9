@@ -135,10 +135,11 @@ For PostgreSQL or db9 deployments, export `MNEMO_DB_BACKEND=postgres` or `MNEMO_
 
 ### Docker
 
+`make docker` tags the image as `${REGISTRY}/mnemo-server:${COMMIT}`. This local example builds `local/mnemo-server:dev`:
+
 ```bash
-make build
-docker build -t mnemo-server -f server/Dockerfile .
-docker run -e MNEMO_DSN="..." -e MNEMO_DB_BACKEND="tidb" -p 8080:8080 mnemo-server
+make docker REGISTRY=local COMMIT=dev
+docker run -e MNEMO_DSN="..." -e MNEMO_DB_BACKEND="tidb" -p 8080:8080 local/mnemo-server:dev
 ```
 
 ### Environment Variables
