@@ -1166,6 +1166,10 @@ function loadCredentialsForWrite(context, noteInvalidJson) {
 }
 
 function resolveWritableFlags(context, options = {}) {
+  const projectConfigPath = context.projectRoot
+    ? path.join(context.projectRoot, ".codex", "mem9", "config.json")
+    : "";
+
   return {
     globalWritable: typeof options.userWritable === "boolean"
       ? options.userWritable
@@ -1173,6 +1177,9 @@ function resolveWritableFlags(context, options = {}) {
     credentialsWritable: typeof options.credentialsWritable === "boolean"
       ? options.credentialsWritable
       : isWritablePath(context.mem9Home, context.fsOps),
+    projectWritable: typeof options.projectWritable === "boolean"
+      ? options.projectWritable
+      : (projectConfigPath ? isWritablePath(projectConfigPath, context.fsOps) : false),
   };
 }
 
@@ -1466,13 +1473,17 @@ function resolveConfigWriteFallback(scope, targetConfig, globalConfig) {
 async function runScopeApply(args, options = {}) {
   assertNodeVersion(options.nodeVersion);
   const context = resolveCommandContext(args, options);
-  const { globalWritable } = resolveWritableFlags(context, options);
+  const { globalWritable, projectWritable } = resolveWritableFlags(context, options);
   if (!globalWritable) {
     throw new Error("Global Codex home is not writable.");
   }
 
   if (args.scope === "project" && !context.projectRoot) {
     throw new Error("Current directory is not inside a Git repository. Run `$mem9:setup` from a project before applying project scope.");
+  }
+
+  if (args.scope === "project" && !projectWritable) {
+    throw new Error("Current project mem9 config path is not writable.");
   }
 
   const { credentials } = readValidatedCredentials(context);
@@ -1557,13 +1568,17 @@ async function runScopeApply(args, options = {}) {
 async function runScopeClear(args, options = {}) {
   assertNodeVersion(options.nodeVersion);
   const context = resolveCommandContext(args, options);
-  const { globalWritable } = resolveWritableFlags(context, options);
+  const { globalWritable, projectWritable } = resolveWritableFlags(context, options);
   if (!globalWritable) {
     throw new Error("Global Codex home is not writable.");
   }
 
   if (!context.projectRoot) {
     throw new Error("Current directory is not inside a Git repository. Run `$mem9:setup` from a project before clearing project scope.");
+  }
+
+  if (!projectWritable) {
+    throw new Error("Current project mem9 config path is not writable.");
   }
 
   const invalidJsonFiles = new Set();

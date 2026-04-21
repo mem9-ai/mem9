@@ -835,6 +835,101 @@ test("scope clear removes the project override", async () => {
   }
 });
 
+test("scope apply project fails before mutating global runtime files when the project path is not writable", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const projectRoot = path.join(tempRoot, "repo");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
+    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(path.join(codexHome, "mem9"), { recursive: true });
+    mkdirSync(mem9Home, { recursive: true });
+
+    writeJson(path.join(mem9Home, ".credentials.json"), {
+      schemaVersion: 1,
+      profiles: {
+        work: {
+          label: "Work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-work",
+        },
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        runSetup(
+          [
+            "scope",
+            "apply",
+            "--scope",
+            "project",
+            "--profile",
+            "work",
+          ],
+          {
+            cwd: projectRoot,
+            codexHome,
+            mem9Home,
+            userWritable: true,
+            projectWritable: false,
+          },
+        ),
+      /not writable/,
+    );
+
+    assert.equal(existsSync(path.join(codexHome, "config.toml")), false);
+    assert.equal(existsSync(path.join(codexHome, "hooks.json")), false);
+    assert.equal(existsSync(path.join(codexHome, "mem9", "install.json")), false);
+    assert.equal(existsSync(path.join(codexHome, "mem9", "hooks")), false);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("scope clear project fails before mutating global runtime files when the project path is not writable", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const projectRoot = path.join(tempRoot, "repo");
+    const codexHome = path.join(tempRoot, "codex-home");
+    mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
+    mkdirSync(path.join(codexHome, "mem9"), { recursive: true });
+    writeJson(path.join(projectRoot, ".codex", "mem9", "config.json"), {
+      schemaVersion: 1,
+      profileId: "work",
+    });
+
+    await assert.rejects(
+      () =>
+        runSetup(
+          [
+            "scope",
+            "clear",
+            "--scope",
+            "project",
+          ],
+          {
+            cwd: projectRoot,
+            codexHome,
+            userWritable: true,
+            projectWritable: false,
+          },
+        ),
+      /not writable/,
+    );
+
+    assert.equal(existsSync(path.join(codexHome, "config.toml")), false);
+    assert.equal(existsSync(path.join(codexHome, "hooks.json")), false);
+    assert.equal(existsSync(path.join(codexHome, "mem9", "install.json")), false);
+    assert.equal(existsSync(path.join(projectRoot, ".codex", "mem9", "config.json")), true);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("scope apply repairs malformed json files and rewrites them with valid config", async () => {
   const tempRoot = createTempRoot();
 
