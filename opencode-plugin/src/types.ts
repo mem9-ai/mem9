@@ -20,13 +20,6 @@ export interface Mem9CredentialsFile {
   profiles: Record<string, Mem9Profile>;
 }
 
-/** Env-based configuration for mem9 plugin. */
-export interface Mem9Config {
-  // Server mode (mem9-server REST API)
-  apiUrl?: string;
-  tenantID?: string;
-}
-
 export interface Memory {
   id: string;
   content: string;
@@ -79,11 +72,3 @@ export interface SearchInput {
 }
 
 export type StoreResult = Memory;
-
-/** Load config from env vars. */
-export function loadConfig(): Mem9Config {
-  return {
-    apiUrl: process.env.MEM9_API_URL ?? undefined,
-    tenantID: process.env.MEM9_TENANT_ID ?? undefined,
-  };
-}

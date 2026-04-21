@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 import type { PluginInput } from "@opencode-ai/plugin";
 import { parseCredentialsFile } from "./credentials-store.js";
-import { resolveMem9Paths, type Mem9ResolvedPaths } from "./platform-paths.js";
+import {
+  resolveMem9Home,
+  resolveMem9Paths,
+  type Mem9ResolvedPaths,
+} from "./platform-paths.js";
 import {
   DEFAULT_API_URL,
   type Mem9ConfigFile,
@@ -41,6 +45,15 @@ export interface RuntimeIdentity {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeOptionalString(value: string | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
@@ -131,6 +144,7 @@ async function resolvePluginPaths(input: PluginInput): Promise<Mem9ResolvedPaths
       // OpenCode exposes the writable data root as "state".
       dataDir: pathData.state,
       projectDir: pathData.worktree || pathData.directory,
+      mem9Home: resolveMem9Home(process.env),
     });
   } catch {
     console.warn("[mem9] Unable to resolve OpenCode paths. Continuing with env-only startup.");
@@ -154,34 +168,44 @@ export function resolveRuntimeIdentity(
   credentials: Mem9CredentialsFile,
   config: Mem9ConfigFile,
 ): RuntimeIdentity | null {
-  if (env.MEM9_API_KEY) {
+  const envApiKey = normalizeOptionalString(env.MEM9_API_KEY);
+  const envBaseUrl = normalizeOptionalString(env.MEM9_API_URL) ?? DEFAULT_API_URL;
+  const legacyTenantID = normalizeOptionalString(env.MEM9_TENANT_ID);
+  const profileID = normalizeOptionalString(config.profileId);
+
+  if (envApiKey) {
     return {
-      apiKey: env.MEM9_API_KEY,
-      baseUrl: env.MEM9_API_URL ?? DEFAULT_API_URL,
+      apiKey: envApiKey,
+      baseUrl: envBaseUrl,
       source: "env",
     };
   }
 
-  if (env.MEM9_TENANT_ID) {
+  if (legacyTenantID) {
     return {
-      apiKey: env.MEM9_TENANT_ID,
-      baseUrl: env.MEM9_API_URL ?? DEFAULT_API_URL,
+      apiKey: legacyTenantID,
+      baseUrl: envBaseUrl,
       source: "legacy_env",
     };
   }
 
-  if (!config.profileId) {
+  if (!profileID) {
     return null;
   }
 
-  const profile = credentials.profiles[config.profileId];
+  const profile = credentials.profiles[profileID];
   if (!profile) {
     return null;
   }
 
+  const profileApiKey = normalizeOptionalString(profile.apiKey);
+  if (!profileApiKey) {
+    return null;
+  }
+
   return {
-    apiKey: profile.apiKey,
-    baseUrl: profile.baseUrl,
+    apiKey: profileApiKey,
+    baseUrl: normalizeOptionalString(profile.baseUrl) ?? DEFAULT_API_URL,
     source: "profile",
   };
 }
@@ -206,7 +230,6 @@ export async function resolveEffectiveConfig(input: PluginInput): Promise<Effect
 }
 
 export async function resolvePluginIdentity(
-  _input: PluginInput,
   config: EffectiveConfig,
 ): Promise<RuntimeIdentity | null> {
   const envIdentity = resolveRuntimeIdentity(process.env, EMPTY_CREDENTIALS, config);

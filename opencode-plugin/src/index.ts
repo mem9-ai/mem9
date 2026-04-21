@@ -28,7 +28,7 @@ function buildPluginHooksAndTools(
  */
 const mem9Plugin: Plugin = async (input) => {
   const cfg = await resolveEffectiveConfig(input);
-  const identity = await resolvePluginIdentity(input, cfg);
+  const identity = await resolvePluginIdentity(cfg);
 
   if (!identity) {
     return buildPendingSetupHooks(input, cfg);
@@ -42,7 +42,7 @@ const mem9Plugin: Plugin = async (input) => {
   const backend = new ServerBackend(identity.baseUrl, identity.apiKey, "opencode");
   const debugLogger = createDebugLogger({
     enabled: cfg.debug === true,
-    credentialsFile: cfg.paths?.credentialsFile,
+    logDir: cfg.paths?.logDir,
   });
 
   return buildPluginHooksAndTools(backend, {

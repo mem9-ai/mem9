@@ -6,7 +6,7 @@ import type { PluginInput } from "@opencode-ai/plugin";
 
 import { mergeConfigLayers, resolveRuntimeIdentity } from "./config.js";
 import mem9Plugin from "./index.js";
-import { resolveMem9Paths } from "./platform-paths.js";
+import { resolveMem9Home, resolveMem9Paths } from "./platform-paths.js";
 
 type PathGetter = (...args: Parameters<PluginInput["client"]["path"]["get"]>) => Promise<unknown>;
 
@@ -92,22 +92,33 @@ async function writeJSON(filePath: string, value: unknown): Promise<void> {
   await writeFile(filePath, JSON.stringify(value, null, 2) + "\n", "utf8");
 }
 
-test("resolveMem9Paths uses config and data directories separately", () => {
+test("resolveMem9Home prefers MEM9_HOME and otherwise falls back to home .mem9", () => {
+  assert.equal(
+    resolveMem9Home({ MEM9_HOME: path.join(path.sep, "shared", "mem9") }),
+    path.join(path.sep, "shared", "mem9"),
+  );
+  assert.equal(
+    resolveMem9Home({}, path.join(path.sep, "home", "demo")),
+    path.join(path.sep, "home", "demo", ".mem9"),
+  );
+});
+
+test("resolveMem9Paths uses shared mem9 home for credentials and opencode data dir for logs", () => {
   const configDir = path.join(path.sep, "home", "demo", ".config", "opencode");
   const dataDir = path.join(path.sep, "home", "demo", ".local", "share", "opencode");
   const projectDir = path.join(path.sep, "work", "repo");
+  const mem9Home = path.join(path.sep, "home", "demo", ".mem9");
   const paths = resolveMem9Paths({
     configDir,
     dataDir,
     projectDir,
+    mem9Home,
   });
 
   assert.equal(paths.globalConfigFile, path.join(configDir, "mem9.json"));
   assert.equal(paths.projectConfigFile, path.join(projectDir, ".opencode", "mem9.json"));
-  assert.equal(
-    paths.credentialsFile,
-    path.join(dataDir, "plugins", "mem9", ".credentials.json"),
-  );
+  assert.equal(paths.credentialsFile, path.join(mem9Home, ".credentials.json"));
+  assert.equal(paths.logDir, path.join(dataDir, "plugins", "mem9", "log"));
 });
 
 test("mergeConfigLayers applies defaults and project overrides", () => {
@@ -190,6 +201,50 @@ test("resolveRuntimeIdentity falls back to the configured profile", () => {
   assert.equal(identity?.source, "profile");
 });
 
+test("resolveRuntimeIdentity skips blank profile credentials", () => {
+  const identity = resolveRuntimeIdentity(
+    {},
+    {
+      schemaVersion: 1,
+      profiles: {
+        default: {
+          label: "Default",
+          baseUrl: "   ",
+          apiKey: "   ",
+        },
+      },
+    },
+    {
+      schemaVersion: 1,
+      profileId: " default ",
+    },
+  );
+
+  assert.equal(identity, null);
+});
+
+test("resolveRuntimeIdentity trims env overrides before use", () => {
+  const identity = resolveRuntimeIdentity(
+    {
+      MEM9_API_KEY: "  mk_trimmed  ",
+      MEM9_API_URL: "  https://api.mem9.ai  ",
+    },
+    {
+      schemaVersion: 1,
+      profiles: {},
+    },
+    {
+      schemaVersion: 1,
+    },
+  );
+
+  assert.deepEqual(identity, {
+    apiKey: "mk_trimmed",
+    baseUrl: "https://api.mem9.ai",
+    source: "env",
+  });
+});
+
 test("mem9 plugin stays usable when path.get throws and env identity exists", async () => {
   await withEnv(
     {
@@ -259,11 +314,13 @@ test("mem9 plugin becomes usable from profile config and credentials files", asy
   );
   const configDir = path.join(fixtureRoot, "config");
   const dataDir = path.join(fixtureRoot, "state");
+  const mem9Home = path.join(fixtureRoot, "mem9-home");
   const projectDir = path.join(fixtureRoot, "worktree");
   const resolvedPaths = resolveMem9Paths({
     configDir,
     dataDir,
     projectDir,
+    mem9Home,
   });
 
   try {
@@ -287,6 +344,7 @@ test("mem9 plugin becomes usable from profile config and credentials files", asy
       {
         MEM9_API_KEY: undefined,
         MEM9_API_URL: undefined,
+        MEM9_HOME: mem9Home,
         MEM9_TENANT_ID: undefined,
       },
       async () => {

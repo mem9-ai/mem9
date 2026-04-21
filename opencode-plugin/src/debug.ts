@@ -4,13 +4,16 @@ import path from "node:path";
 const DEBUG_SECRET_KEY_RE = /(api[-_ ]?key|authorization|token)/i;
 const DEBUG_TEXT_KEY_RE = /(prompt|content|text|output)/i;
 const EMBEDDED_MEM9_SECRET_RE = /\bmk_[A-Za-z0-9_-]+\b/g;
+const EMBEDDED_OPENAI_SECRET_RE = /\b(sk(?:[_-](?:live|test|proj))?[-_])([A-Za-z0-9][A-Za-z0-9._-]{10,})\b/g;
+const EMBEDDED_SLACK_SECRET_RE = /\b(xox[baprs]-)([A-Za-z0-9-]{10,})\b/g;
+const EMBEDDED_BEARER_SECRET_RE = /\b(Bearer\s+)([A-Za-z0-9][A-Za-z0-9._-]{15,})\b/gi;
 const MAX_DEBUG_TEXT_LENGTH = 160;
 
 export type DebugLogger = (event: string, payload?: Record<string, unknown>) => Promise<void>;
 
 export interface DebugLoggerOptions {
   enabled?: boolean;
-  credentialsFile?: string;
+  logDir?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -34,7 +37,11 @@ function truncateDebugText(value: string): string {
 }
 
 function redactEmbeddedSecrets(value: string): string {
-  return value.replace(EMBEDDED_MEM9_SECRET_RE, "mk_***");
+  return value
+    .replace(EMBEDDED_MEM9_SECRET_RE, "mk_***")
+    .replace(EMBEDDED_OPENAI_SECRET_RE, (_match, prefix: string) => `${prefix}***`)
+    .replace(EMBEDDED_SLACK_SECRET_RE, (_match, prefix: string) => `${prefix}***`)
+    .replace(EMBEDDED_BEARER_SECRET_RE, (_match, prefix: string) => `${prefix}***`);
 }
 
 function sanitizeDebugValue(value: unknown, key: string): unknown {
@@ -89,11 +96,11 @@ async function writeDebugRecord(
 }
 
 export function createDebugLogger(options: DebugLoggerOptions): DebugLogger {
-  if (!options.enabled || !options.credentialsFile) {
+  if (!options.enabled || !options.logDir) {
     return async (): Promise<void> => {};
   }
 
-  const logDir = path.join(path.dirname(options.credentialsFile), "log");
+  const logDir = options.logDir;
 
   return async (event, payload = {}): Promise<void> => {
     try {
