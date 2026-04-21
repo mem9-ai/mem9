@@ -15,16 +15,52 @@ export interface Mem9ResolvedPaths {
   logDir: string;
 }
 
+export interface OpenCodeBasePaths {
+  configDir: string;
+  dataDir: string;
+}
+
+function normalizeDir(value: string | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 export function resolveMem9Home(
   env: Record<string, string | undefined>,
   homeDir = os.homedir(),
 ): string {
-  const override = env.MEM9_HOME?.trim();
+  const override = normalizeDir(env.MEM9_HOME);
   if (override) {
     return override;
   }
 
   return path.join(homeDir, ".mem9");
+}
+
+export function resolveOpenCodeBasePaths(
+  env: Record<string, string | undefined>,
+  homeDir = os.homedir(),
+  platform = process.platform,
+): OpenCodeBasePaths {
+  if (platform === "win32") {
+    const configRoot = normalizeDir(env.APPDATA) ?? path.join(homeDir, "AppData", "Roaming");
+    const dataRoot = normalizeDir(env.LOCALAPPDATA) ?? path.join(homeDir, "AppData", "Local");
+    return {
+      configDir: path.join(configRoot, "opencode"),
+      dataDir: path.join(dataRoot, "opencode"),
+    };
+  }
+
+  const configRoot = normalizeDir(env.XDG_CONFIG_HOME) ?? path.join(homeDir, ".config");
+  const dataRoot = normalizeDir(env.XDG_DATA_HOME) ?? path.join(homeDir, ".local", "share");
+  return {
+    configDir: path.join(configRoot, "opencode"),
+    dataDir: path.join(dataRoot, "opencode"),
+  };
 }
 
 export function resolveMem9Paths(input: Mem9PathInput): Mem9ResolvedPaths {

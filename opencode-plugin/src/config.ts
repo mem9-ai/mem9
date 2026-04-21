@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import type { PluginInput } from "@opencode-ai/plugin";
 import { parseCredentialsFile } from "./credentials-store.js";
 import {
+  resolveOpenCodeBasePaths,
   resolveMem9Home,
   resolveMem9Paths,
   type Mem9ResolvedPaths,
@@ -29,10 +30,6 @@ const EMPTY_CREDENTIALS: Mem9CredentialsFile = {
   profiles: {},
 };
 
-type PathLookupResult = Awaited<ReturnType<PluginInput["client"]["path"]["get"]>>;
-type PathLookupEnvelope = Extract<PathLookupResult, { data: unknown }>;
-type PluginPathData = NonNullable<PathLookupEnvelope["data"]>;
-
 export interface EffectiveConfig extends Mem9ConfigFile {
   paths?: Mem9ResolvedPaths;
 }
@@ -58,10 +55,6 @@ function normalizeOptionalString(value: string | undefined): string | undefined 
 
 function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error;
-}
-
-function isPathLookupEnvelope(value: unknown): value is PathLookupEnvelope {
-  return isRecord(value) && "data" in value;
 }
 
 function normalizeConfigFile(value: unknown): Mem9ConfigFile {
@@ -127,29 +120,14 @@ async function readCredentialsFile(filePath: string): Promise<Mem9CredentialsFil
   }
 }
 
-async function resolvePluginPaths(input: PluginInput): Promise<Mem9ResolvedPaths | undefined> {
-  try {
-    const result: PathLookupResult | PluginPathData = await input.client.path.get({
-      responseStyle: "data",
-    });
-    const pathData = isPathLookupEnvelope(result) ? result.data : result;
-
-    if (!pathData) {
-      console.warn("[mem9] OpenCode path lookup returned no path data.");
-      return undefined;
-    }
-
-    return resolveMem9Paths({
-      configDir: pathData.config,
-      // OpenCode exposes the writable data root as "state".
-      dataDir: pathData.state,
-      projectDir: pathData.worktree || pathData.directory,
-      mem9Home: resolveMem9Home(process.env),
-    });
-  } catch {
-    console.warn("[mem9] Unable to resolve OpenCode paths. Continuing with env-only startup.");
-    return undefined;
-  }
+function resolvePluginPaths(input: PluginInput): Mem9ResolvedPaths {
+  const basePaths = resolveOpenCodeBasePaths(process.env);
+  return resolveMem9Paths({
+    configDir: basePaths.configDir,
+    dataDir: basePaths.dataDir,
+    projectDir: input.worktree || input.directory,
+    mem9Home: resolveMem9Home(process.env),
+  });
 }
 
 export function mergeConfigLayers(
@@ -211,12 +189,7 @@ export function resolveRuntimeIdentity(
 }
 
 export async function resolveEffectiveConfig(input: PluginInput): Promise<EffectiveConfig> {
-  const paths = await resolvePluginPaths(input);
-  if (!paths) {
-    return {
-      ...mergeConfigLayers(),
-    };
-  }
+  const paths = resolvePluginPaths(input);
 
   const [globalConfig, projectConfig] = await Promise.all([
     readConfigFile(paths.globalConfigFile),

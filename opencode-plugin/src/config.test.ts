@@ -6,17 +6,15 @@ import type { PluginInput } from "@opencode-ai/plugin";
 
 import { mergeConfigLayers, resolveRuntimeIdentity } from "./config.js";
 import mem9Plugin from "./index.js";
-import { resolveMem9Home, resolveMem9Paths } from "./platform-paths.js";
+import {
+  resolveMem9Home,
+  resolveMem9Paths,
+  resolveOpenCodeBasePaths,
+} from "./platform-paths.js";
 
-type PathGetter = (...args: Parameters<PluginInput["client"]["path"]["get"]>) => Promise<unknown>;
-
-function createPluginInput(pathGet: PathGetter): PluginInput {
+function createPluginInput(): PluginInput {
   return {
-    client: {
-      path: {
-        get: pathGet as PluginInput["client"]["path"]["get"],
-      },
-    } as PluginInput["client"],
+    client: {} as PluginInput["client"],
     project: {} as PluginInput["project"],
     directory: path.join(path.sep, "work", "repo"),
     worktree: path.join(path.sep, "work", "repo"),
@@ -119,6 +117,35 @@ test("resolveMem9Paths uses shared mem9 home for credentials and opencode data d
   assert.equal(paths.projectConfigFile, path.join(projectDir, ".opencode", "mem9.json"));
   assert.equal(paths.credentialsFile, path.join(mem9Home, ".credentials.json"));
   assert.equal(paths.logDir, path.join(dataDir, "plugins", "mem9", "log"));
+});
+
+test("resolveOpenCodeBasePaths follows XDG directories on unix-like platforms", () => {
+  const paths = resolveOpenCodeBasePaths(
+    {
+      XDG_CONFIG_HOME: path.join(path.sep, "config-root"),
+      XDG_DATA_HOME: path.join(path.sep, "data-root"),
+    },
+    path.join(path.sep, "home", "demo"),
+    "linux",
+  );
+
+  assert.deepEqual(paths, {
+    configDir: path.join(path.sep, "config-root", "opencode"),
+    dataDir: path.join(path.sep, "data-root", "opencode"),
+  });
+});
+
+test("resolveOpenCodeBasePaths falls back to AppData on windows", () => {
+  const paths = resolveOpenCodeBasePaths(
+    {},
+    path.join("C:", "Users", "demo"),
+    "win32",
+  );
+
+  assert.deepEqual(paths, {
+    configDir: path.join("C:", "Users", "demo", "AppData", "Roaming", "opencode"),
+    dataDir: path.join("C:", "Users", "demo", "AppData", "Local", "opencode"),
+  });
 });
 
 test("mergeConfigLayers applies defaults and project overrides", () => {
@@ -245,7 +272,7 @@ test("resolveRuntimeIdentity trims env overrides before use", () => {
   });
 });
 
-test("mem9 plugin stays usable when path.get throws and env identity exists", async () => {
+test("mem9 plugin starts from local path inference when env identity exists", async () => {
   await withEnv(
     {
       MEM9_API_KEY: "mk_env",
@@ -253,9 +280,7 @@ test("mem9 plugin stays usable when path.get throws and env identity exists", as
       MEM9_TENANT_ID: undefined,
     },
     async () => {
-      const input = createPluginInput(async () => {
-        throw new Error("path lookup failed");
-      });
+      const input = createPluginInput();
 
       const warnings = await captureWarnings(async () => {
         const info = await captureInfo(async () => {
@@ -270,10 +295,7 @@ test("mem9 plugin stays usable when path.get throws and env identity exists", as
         );
       });
 
-      assert.equal(
-        warnings.some((message) => message.includes("Unable to resolve OpenCode paths")),
-        true,
-      );
+      assert.equal(warnings.length, 0);
     },
   );
 });
@@ -286,12 +308,7 @@ test("mem9 plugin returns the pending setup skeleton when no identity is availab
       MEM9_TENANT_ID: undefined,
     },
     async () => {
-      const input = createPluginInput(async () => ({
-        state: path.join(path.sep, "missing", "state"),
-        config: path.join(path.sep, "missing", "config"),
-        worktree: path.join(path.sep, "work", "repo"),
-        directory: path.join(path.sep, "work", "repo"),
-      }));
+      const input = createPluginInput();
 
       const warnings = await captureWarnings(async () => {
         const hooks = await mem9Plugin(input);
@@ -345,15 +362,16 @@ test("mem9 plugin becomes usable from profile config and credentials files", asy
         MEM9_API_KEY: undefined,
         MEM9_API_URL: undefined,
         MEM9_HOME: mem9Home,
+        XDG_CONFIG_HOME: configDir,
+        XDG_DATA_HOME: dataDir,
         MEM9_TENANT_ID: undefined,
       },
       async () => {
-        const input = createPluginInput(async () => ({
-          state: dataDir,
-          config: configDir,
-          worktree: projectDir,
+        const input: PluginInput = {
+          ...createPluginInput(),
           directory: projectDir,
-        }));
+          worktree: projectDir,
+        };
 
         const warnings = await captureWarnings(async () => {
           const info = await captureInfo(async () => {
