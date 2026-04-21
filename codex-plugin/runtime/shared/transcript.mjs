@@ -34,16 +34,87 @@ function blockText(block) {
 }
 
 /**
+ * @param {"user" | "assistant"} role
+ * @param {string} content
+ * @returns {IngestMessage | null}
+ */
+function normalizeVisibleMessage(role, content) {
+  const cleaned = stripInjectedMemories(content).trim();
+
+  if (!cleaned) {
+    return null;
+  }
+
+  return {
+    role,
+    content: cleaned,
+  };
+}
+
+/**
  * @param {unknown} lineValue
  * @returns {IngestMessage | null}
  */
-function normalizeTranscriptItem(lineValue) {
+function extractEventMessage(lineValue) {
   if (!lineValue || typeof lineValue !== "object") {
     return null;
   }
 
-  const root = /** @type {{item?: unknown}} */ (lineValue);
+  const root = /** @type {{item?: unknown, type?: unknown, payload?: unknown}} */ (lineValue);
   const candidate = root.item && typeof root.item === "object" ? root.item : lineValue;
+  if (!candidate || typeof candidate !== "object") {
+    return null;
+  }
+
+  const wrapped = /** @type {{type?: unknown, payload?: unknown}} */ (candidate);
+  if (wrapped.type !== "event_msg" || !wrapped.payload || typeof wrapped.payload !== "object") {
+    return null;
+  }
+
+  const payload = /** @type {{type?: unknown, message?: unknown}} */ (wrapped.payload);
+  if (payload.type === "user_message" && typeof payload.message === "string") {
+    return normalizeVisibleMessage("user", payload.message);
+  }
+  if (payload.type === "agent_message" && typeof payload.message === "string") {
+    return normalizeVisibleMessage("assistant", payload.message);
+  }
+
+  return null;
+}
+
+/**
+ * @param {unknown} lineValue
+ * @returns {unknown[]}
+ */
+function extractResponseCandidates(lineValue) {
+  if (!lineValue || typeof lineValue !== "object") {
+    return [];
+  }
+
+  const root = /** @type {{item?: unknown, type?: unknown, payload?: unknown}} */ (lineValue);
+  const candidate = root.item && typeof root.item === "object" ? root.item : lineValue;
+  if (!candidate || typeof candidate !== "object") {
+    return [];
+  }
+
+  const wrapped = /** @type {{type?: unknown, payload?: unknown}} */ (candidate);
+  if (wrapped.type === "response_item") {
+    if (Array.isArray(wrapped.payload)) {
+      return wrapped.payload;
+    }
+    if (wrapped.payload && typeof wrapped.payload === "object") {
+      return [wrapped.payload];
+    }
+  }
+
+  return [candidate];
+}
+
+/**
+ * @param {unknown} candidate
+ * @returns {IngestMessage | null}
+ */
+function normalizeTranscriptItem(candidate) {
   if (!candidate || typeof candidate !== "object") {
     return null;
   }
@@ -59,16 +130,7 @@ function normalizeTranscriptItem(lineValue) {
   const content = Array.isArray(item.content)
     ? item.content.map(blockText).filter(Boolean).join("\n\n")
     : "";
-  const cleaned = stripInjectedMemories(content);
-
-  if (!cleaned) {
-    return null;
-  }
-
-  return {
-    role: item.role,
-    content: cleaned,
-  };
+  return normalizeVisibleMessage(item.role, content);
 }
 
 /**
@@ -77,7 +139,9 @@ function normalizeTranscriptItem(lineValue) {
  */
 export function parseTranscriptText(raw) {
   /** @type {IngestMessage[]} */
-  const messages = [];
+  const eventMessages = [];
+  /** @type {IngestMessage[]} */
+  const responseMessages = [];
 
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
@@ -86,16 +150,28 @@ export function parseTranscriptText(raw) {
     }
 
     try {
-      const message = normalizeTranscriptItem(JSON.parse(trimmed));
-      if (message) {
-        messages.push(message);
+      const value = JSON.parse(trimmed);
+      const eventMessage = extractEventMessage(value);
+      if (eventMessage) {
+        eventMessages.push(eventMessage);
+      }
+
+      for (const candidate of extractResponseCandidates(value)) {
+        const message = normalizeTranscriptItem(candidate);
+        if (message) {
+          responseMessages.push(message);
+        }
       }
     } catch {
       // Ignore malformed lines. Hooks should degrade gracefully.
     }
   }
 
-  return messages;
+  if (eventMessages.some((message) => message.role === "user")) {
+    return eventMessages;
+  }
+
+  return responseMessages;
 }
 
 /**

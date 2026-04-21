@@ -7,7 +7,7 @@ import {
   selectStopWindow,
 } from "../runtime/shared/transcript.mjs";
 
-test("transcript parser keeps only message items with user and assistant roles", () => {
+test("transcript parser falls back to response messages when event messages are absent", () => {
   const transcript = [
     JSON.stringify({ item: { type: "response_item", type2: "ignored" } }),
     JSON.stringify({
@@ -43,6 +43,116 @@ test("transcript parser keeps only message items with user and assistant roles",
   assert.deepEqual(messages, [
     { role: "user", content: "hello" },
     { role: "assistant", content: "reply" },
+  ]);
+});
+
+test("transcript parser prefers event messages over response message context", () => {
+  const transcript = [
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: "# AGENTS.md instructions for ~/repo\n<INSTRUCTIONS>\n...\n</INSTRUCTIONS>",
+          },
+        ],
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "real user prompt" }],
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "user_message",
+        message: "real user prompt",
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "agent_message",
+        message: "visible assistant reply",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "visible assistant reply" }],
+      },
+    }),
+  ].join("\n");
+
+  const messages = parseTranscriptText(transcript);
+  assert.deepEqual(messages, [
+    { role: "user", content: "real user prompt" },
+    { role: "assistant", content: "visible assistant reply" },
+  ]);
+});
+
+test("transcript parser supports Codex response_item rollout payloads as fallback", () => {
+  const transcript = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: { session_id: "session-1" },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "developer",
+        content: [{ type: "input_text", text: "system" }],
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "hello from Codex" }],
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "reply from Codex" }],
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: [
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "follow up" }],
+        },
+        {
+          type: "function_call",
+          name: "shell",
+          arguments: "{}",
+          call_id: "call-1",
+        },
+      ],
+    }),
+  ].join("\n");
+
+  const messages = parseTranscriptText(transcript);
+  assert.deepEqual(messages, [
+    { role: "user", content: "hello from Codex" },
+    { role: "assistant", content: "reply from Codex" },
+    { role: "user", content: "follow up" },
   ]);
 });
 
