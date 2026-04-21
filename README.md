@@ -31,7 +31,7 @@ mem9 Cloud is the default path. Use the hosted API at `https://api.mem9.ai`, the
 | Claude Code | [`claude-plugin/README.md`](claude-plugin/README.md) |
 | OpenCode | [`opencode-plugin/README.md`](opencode-plugin/README.md) |
 | Codex | [`codex-plugin/README.md`](codex-plugin/README.md) |
-| Any HTTP client / custom runtime | [API Reference](#api-reference) |
+| Any HTTP client / custom runtime | Provision a space, then call `/v1alpha2/mem9s/memories` with `X-API-Key: <space-id>` and [API Reference](#api-reference) |
 
 All supported runtimes can point at the same mem9 Cloud space, so OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, and custom clients can share one memory pool.
 
@@ -136,7 +136,8 @@ For PostgreSQL or db9 deployments, export `MNEMO_DB_BACKEND=postgres` or `MNEMO_
 ### Docker
 
 ```bash
-docker build -t mnemo-server ./server
+make build
+docker build -t mnemo-server -f server/Dockerfile .
 docker run -e MNEMO_DSN="..." -e MNEMO_DB_BACKEND="tidb" -p 8080:8080 mnemo-server
 ```
 
@@ -240,14 +241,14 @@ Preferred integrations use `v1alpha2` with `X-API-Key`. Legacy integrations can 
 | `POST` | `/v1alpha1/mem9s` | Provision tenant (no auth). Returns `{ "id" }`. Accepts optional `utm_*` query params for attribution logging |
 | `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy unified write endpoint. Tenant key travels in the URL path |
 | `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy search endpoint for `tenantID`-configured clients |
-| `GET` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy get-by-id endpoint |
-| `PUT` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy update endpoint. Optional `If-Match` for version check |
-| `DELETE` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy delete endpoint |
+| `GET` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy get-by-id endpoint |
+| `PUT` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy update endpoint. Optional `If-Match` for version check |
+| `DELETE` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy delete endpoint |
 | `POST` | `/v1alpha2/mem9s/memories` | Preferred unified write endpoint. Requires `X-API-Key` header |
 | `GET` | `/v1alpha2/mem9s/memories` | Preferred search endpoint. Requires `X-API-Key` header |
-| `GET` | `/v1alpha2/mem9s/memories/:id` | Preferred get-by-id endpoint. Requires `X-API-Key` header |
-| `PUT` | `/v1alpha2/mem9s/memories/:id` | Preferred update endpoint. Requires `X-API-Key` header |
-| `DELETE` | `/v1alpha2/mem9s/memories/:id` | Preferred delete endpoint. Requires `X-API-Key` header |
+| `GET` | `/v1alpha2/mem9s/memories/{id}` | Preferred get-by-id endpoint. Requires `X-API-Key` header |
+| `PUT` | `/v1alpha2/mem9s/memories/{id}` | Preferred update endpoint. Requires `X-API-Key` header |
+| `DELETE` | `/v1alpha2/mem9s/memories/{id}` | Preferred delete endpoint. Requires `X-API-Key` header |
 
 ## Contributing
 
