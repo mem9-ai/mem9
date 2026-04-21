@@ -117,6 +117,116 @@ test("runHookShim loads the active plugin hook from install metadata", async () 
   }
 });
 
+test("runHookShim takes the repair path when install metadata is missing", async () => {
+  const tempRoot = createTempRoot();
+  const originalWrite = process.stdout.write;
+
+  try {
+    const codexHome = path.join(tempRoot, "codex-home");
+    const pluginRoot = path.join(
+      codexHome,
+      "plugins",
+      "cache",
+      "mem9-ai",
+      "mem9",
+      "local",
+    );
+    mkdirSync(path.join(pluginRoot, "hooks"), { recursive: true });
+    writeFileSync(
+      path.join(pluginRoot, "hooks", "session-start.mjs"),
+      "export async function main() { return 'should-not-run'; }\n",
+    );
+
+    let stdoutText = "";
+    process.stdout.write = /** @type {typeof process.stdout.write} */ ((chunk) => {
+      stdoutText += String(chunk);
+      return true;
+    });
+
+    const output = await runHookShim("session-start.mjs", { codexHome });
+    const parsed = JSON.parse(output);
+
+    assert.equal(parsed.hookSpecificOutput.hookEventName, "SessionStart");
+    assert.match(parsed.hookSpecificOutput.additionalContext, /hooks remain installed/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /\$mem9:cleanup/);
+    assert.equal(stdoutText, output);
+  } finally {
+    process.stdout.write = originalWrite;
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runHookShim takes the repair path when install metadata is invalid", async () => {
+  const tempRoot = createTempRoot();
+  const originalWrite = process.stdout.write;
+
+  try {
+    const codexHome = path.join(tempRoot, "codex-home");
+    const pluginRoot = path.join(
+      codexHome,
+      "plugins",
+      "cache",
+      "mem9-ai",
+      "mem9",
+      "local",
+    );
+    writeJson(path.join(codexHome, "mem9", "install.json"), {
+      schemaVersion: 1,
+      marketplaceName: "mem9-ai",
+      shimVersion: 1,
+    });
+    mkdirSync(path.join(pluginRoot, "hooks"), { recursive: true });
+    writeFileSync(
+      path.join(pluginRoot, "hooks", "stop.mjs"),
+      "export async function main() { throw new Error('should-not-run'); }\n",
+    );
+
+    let stdoutText = "";
+    process.stdout.write = /** @type {typeof process.stdout.write} */ ((chunk) => {
+      stdoutText += String(chunk);
+      return true;
+    });
+
+    const output = await runHookShim("stop.mjs", { codexHome });
+    assert.equal(output, undefined);
+    assert.equal(stdoutText, "");
+  } finally {
+    process.stdout.write = originalWrite;
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runHookShim takes the repair path when the active plugin root is missing", async () => {
+  const tempRoot = createTempRoot();
+  const originalWrite = process.stdout.write;
+
+  try {
+    const codexHome = path.join(tempRoot, "codex-home");
+    writeJson(path.join(codexHome, "mem9", "install.json"), {
+      schemaVersion: 1,
+      marketplaceName: "mem9-ai",
+      pluginName: "mem9",
+      shimVersion: 1,
+    });
+
+    let stdoutText = "";
+    process.stdout.write = /** @type {typeof process.stdout.write} */ ((chunk) => {
+      stdoutText += String(chunk);
+      return true;
+    });
+
+    const output = await runHookShim("session-start.mjs", { codexHome });
+    const parsed = JSON.parse(output);
+
+    assert.equal(parsed.hookSpecificOutput.hookEventName, "SessionStart");
+    assert.match(parsed.hookSpecificOutput.additionalContext, /active mem9 plugin files are unavailable/);
+    assert.equal(stdoutText, output);
+  } finally {
+    process.stdout.write = originalWrite;
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("bootstrap hook wrapper keeps a zero exit status when the real hook throws", () => {
   const tempRoot = createTempRoot();
 

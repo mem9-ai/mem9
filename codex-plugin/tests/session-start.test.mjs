@@ -22,21 +22,60 @@ test("session start emits ready context for a project override", async () => {
   assert.match(parsed.hookSpecificOutput.additionalContext, /recall on user prompt submit/);
 });
 
-test("session start reports project disable state with reset guidance", () => {
+test("session start mentions ready fallback when a broken project override is ignored", () => {
   const message = buildSessionStartMessage({
-    configSource: "project",
-    profileId: "work",
-    issueCode: "disabled",
+    configSource: "global",
+    profileId: "default",
+    warnings: ["invalid_project_config_ignored"],
+    issueCode: "ready",
   });
 
-  assert.match(message, /disabled for this project/);
-  assert.match(message, /\$mem9:project-config --reset/);
-  assert.match(message, /will not recall or save/);
+  assert.match(message, /global default config/);
+  assert.match(message, /fell back to the global default/);
+});
+
+test("session start reports plugin missing with cleanup and reinstall guidance", () => {
+  const message = buildSessionStartMessage({
+    configSource: "global",
+    issueCode: "plugin_missing",
+  });
+
+  assert.match(message, /hooks remain installed/);
+  assert.match(message, /\$mem9:cleanup/);
+  assert.match(message, /reinstall the mem9 plugin/);
+  assert.match(message, /\$mem9:setup/);
+});
+
+test("session start reports project legacy pause with migration guidance", () => {
+  const message = buildSessionStartMessage({
+    configSource: "project",
+    legacyPausedSources: ["global", "project"],
+    effectiveLegacyPausedSource: "project",
+    issueCode: "legacy_paused",
+  });
+
+  assert.match(message, /paused for this repository/);
+  assert.match(message, /legacy `enabled = false` override/);
+  assert.match(message, /\$mem9:setup/);
+});
+
+test("session start reports global legacy pause with migration guidance", () => {
+  const message = buildSessionStartMessage({
+    configSource: "global",
+    legacyPausedSources: ["global"],
+    effectiveLegacyPausedSource: "global",
+    issueCode: "legacy_paused",
+  });
+
+  assert.match(message, /paused globally/);
+  assert.match(message, /legacy `enabled = false` config/);
+  assert.match(message, /\$mem9:setup/);
 });
 
 test("session start reports invalid project override with project-config guidance", () => {
   const message = buildSessionStartMessage({
-    configSource: "project",
+    configSource: "global",
+    projectConfigMatched: true,
     issueCode: "invalid_config",
   });
 

@@ -5,8 +5,14 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { hookAdditionalContext } from "../../hooks/shared/format.mjs";
+
 export const DEFAULT_PLUGIN_VERSION = "local";
 export const PLUGINS_CACHE_DIR = path.join("plugins", "cache");
+export const DEFAULT_INSTALL_METADATA = {
+  marketplaceName: "mem9-ai",
+  pluginName: "mem9",
+};
 
 /**
  * @param {unknown} value
@@ -101,6 +107,55 @@ export function readInstallMetadata(input = {}) {
 }
 
 /**
+ * @param {{
+ *   codexHome?: string,
+ *   env?: Record<string, string | undefined>,
+ *   homeDir?: string,
+ * }} [input]
+ */
+function resolveInstallMetadataForShim(input = {}) {
+  const codexHome = resolveCodexHome(input.codexHome, input.env, input.homeDir);
+
+  try {
+    return {
+      ...readInstallMetadata(input),
+      repairNeeded: false,
+    };
+  } catch {
+    return {
+      codexHome,
+      installPath: path.join(codexHome, "mem9", "install.json"),
+      marketplaceName: DEFAULT_INSTALL_METADATA.marketplaceName,
+      pluginName: DEFAULT_INSTALL_METADATA.pluginName,
+      repairNeeded: true,
+    };
+  }
+}
+
+function buildPluginMissingSessionStartOutput() {
+  return hookAdditionalContext(
+    "SessionStart",
+    "mem9 hooks remain installed, but the active mem9 plugin files are unavailable. Run `$mem9:cleanup`, reinstall the mem9 plugin, then run `$mem9:setup`.",
+  );
+}
+
+/**
+ * @param {string} scriptName
+ * @returns {string | undefined}
+ */
+function handleMissingPluginHook(scriptName) {
+  if (scriptName === "session-start.mjs") {
+    const output = buildPluginMissingSessionStartOutput();
+    if (output) {
+      process.stdout.write(output);
+    }
+    return output;
+  }
+
+  return undefined;
+}
+
+/**
  * Mirrors Codex `PluginStore::active_plugin_version()`.
  *
  * @param {{
@@ -177,20 +232,21 @@ export function resolveActivePluginRoot(input) {
  * }} [input]
  */
 export async function runHookShim(scriptName, input = {}) {
-  const install = readInstallMetadata(input);
+  const install = resolveInstallMetadataForShim(input);
+
+  if (install.repairNeeded) {
+    return handleMissingPluginHook(scriptName);
+  }
+
   const { pluginVersion, pluginRoot } = resolveActivePluginRoot(install);
 
   if (!pluginVersion || !pluginRoot) {
-    throw new Error(
-      `mem9 hook shim could not find an active installed plugin version in \`$CODEX_HOME/${PLUGINS_CACHE_DIR.replaceAll(path.sep, "/")}/${install.marketplaceName}/${install.pluginName}\`.`,
-    );
+    return handleMissingPluginHook(scriptName);
   }
 
   const hookPath = path.join(pluginRoot, "hooks", scriptName);
   if (!existsSync(hookPath)) {
-    throw new Error(
-      `mem9 hook shim could not find \`${scriptName}\` in the active plugin version \`${pluginVersion}\`. Reinstall the mem9 plugin.`,
-    );
+    return handleMissingPluginHook(scriptName);
   }
 
   process.env.MEM9_CODEX_PLUGIN_VERSION = pluginVersion;

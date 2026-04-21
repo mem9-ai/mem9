@@ -15,7 +15,10 @@ let debugContext = {};
  *   configSource: "global" | "project",
  *   projectConfigMatched?: boolean,
  *   profileId?: string,
- *   issueCode: "ready" | "disabled" | "missing_config" | "invalid_config" | "missing_profile" | "invalid_credentials" | "missing_api_key",
+ *   warnings?: ("invalid_global_config_ignored" | "invalid_project_config_ignored")[],
+ *   legacyPausedSources?: ("global" | "project")[],
+ *   effectiveLegacyPausedSource?: "global" | "project" | null,
+ *   issueCode: "ready" | "plugin_disabled" | "plugin_missing" | "legacy_paused" | "missing_config" | "invalid_config" | "missing_profile" | "invalid_credentials" | "missing_api_key",
  * }} SessionStartState
  */
 
@@ -35,22 +38,40 @@ export function buildSessionStartMessage(
     : "the current profile";
 
   if (state.issueCode === "ready") {
-    if (state.configSource === "project") {
-      return `mem9 is ready. This session uses the local override in \`.codex/mem9/config.json\` with ${profileText}. It will recall on user prompt submit and save a recent conversation window on stop.`;
+    const warningMessages = [];
+
+    if (state.warnings?.includes("invalid_project_config_ignored")) {
+      warningMessages.push("The project override could not be read, so this session fell back to the global default.");
     }
 
-    return `mem9 is ready. This session uses the global default config with ${profileText}. It will recall on user prompt submit and save a recent conversation window on stop.`;
-  }
-
-  if (state.issueCode === "disabled") {
-    if (state.configSource === "project") {
-      return `mem9 is disabled for this project. This session will not recall or save. Run \`${projectConfigCommand} --reset\` to inherit the global default again.`;
+    if (state.warnings?.includes("invalid_global_config_ignored")) {
+      warningMessages.push("The global default could not be read, so this session is running from the project override only.");
     }
 
-    return `mem9 is disabled globally. This session will not recall or save. Run \`${setupCommand}\` to select a working default profile and enable mem9 again.`;
+    if (state.configSource === "project") {
+      return `mem9 is ready. This session uses the local override in \`.codex/mem9/config.json\` with ${profileText}. It will recall on user prompt submit and save a recent conversation window on stop.${warningMessages.length > 0 ? ` ${warningMessages.join(" ")}` : ""}`;
+    }
+
+    return `mem9 is ready. This session uses the global default config with ${profileText}. It will recall on user prompt submit and save a recent conversation window on stop.${warningMessages.length > 0 ? ` ${warningMessages.join(" ")}` : ""}`;
   }
 
-  if (state.issueCode === "invalid_config" && state.configSource === "project") {
+  if (state.issueCode === "plugin_missing") {
+    return `mem9 hooks remain installed, but the active mem9 plugin files are unavailable. Run \`$mem9:cleanup\`, reinstall the mem9 plugin, then run \`${setupCommand}\`.`;
+  }
+
+  if (state.issueCode === "plugin_disabled") {
+    return "mem9 is disabled in the Codex plugin settings. This session will not recall or save. Re-enable the mem9 plugin to resume immediately.";
+  }
+
+  if (state.issueCode === "legacy_paused") {
+    if (state.effectiveLegacyPausedSource === "project") {
+      return `mem9 is paused for this repository by a legacy \`enabled = false\` override. Run \`${setupCommand}\` in this repository to migrate that paused state.`;
+    }
+
+    return `mem9 is paused globally by a legacy \`enabled = false\` config. Run \`${setupCommand}\` to migrate the global paused state.`;
+  }
+
+  if (state.issueCode === "invalid_config" && state.projectConfigMatched) {
     return `mem9 cannot read this project's override file \`.codex/mem9/config.json\`. Run \`${projectConfigCommand}\` to repair it, or \`${projectConfigCommand} --reset\` to return to the global default.`;
   }
 
@@ -116,6 +137,10 @@ export async function main() {
       configSource: state.configSource,
       profileId: state.runtime.profileId,
       projectConfigMatched: state.projectConfigMatched,
+      warnings: state.warnings.join(","),
+      pluginState: state.pluginState,
+      pluginIssueDetail: state.pluginIssueDetail,
+      effectiveLegacyPausedSource: state.effectiveLegacyPausedSource,
       issueCode: state.issueCode,
     },
   });
@@ -125,6 +150,9 @@ export async function main() {
       configSource: /** @type {"global" | "project"} */ (state.configSource),
       projectConfigMatched: state.projectConfigMatched,
       profileId: state.runtime.profileId,
+      warnings: state.warnings,
+      legacyPausedSources: /** @type {("global" | "project")[]} */ (state.legacyPausedSources),
+      effectiveLegacyPausedSource: state.effectiveLegacyPausedSource,
       issueCode: state.issueCode,
     },
   });

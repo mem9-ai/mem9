@@ -1,6 +1,6 @@
 // @ts-nocheck
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -11,6 +11,13 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 8_000;
 export const DEFAULT_SEARCH_TIMEOUT_MS = 15_000;
 
 const DEFAULT_API_URL = "https://api.mem9.ai";
+const DEFAULT_PLUGIN_ID = "mem9@mem9-ai";
+const DEFAULT_PLUGIN_INSTALL_IDENTITY = {
+  marketplaceName: "mem9-ai",
+  pluginName: "mem9",
+};
+const DEFAULT_PLUGIN_VERSION = "local";
+const PLUGINS_CACHE_DIR = path.join("plugins", "cache");
 
 /**
  * @typedef {"global" | "project"} ConfigSource
@@ -21,7 +28,23 @@ const DEFAULT_API_URL = "https://api.mem9.ai";
  */
 
 /**
- * @typedef {"ready" | "disabled" | "missing_config" | "invalid_config" | "missing_profile" | "invalid_credentials" | "missing_api_key"} RuntimeIssueCode
+ * @typedef {"ready" | "plugin_disabled" | "plugin_missing" | "legacy_paused" | "missing_config" | "invalid_config" | "invalid_credentials" | "missing_profile" | "missing_api_key"} RuntimeIssueCode
+ */
+
+/**
+ * @typedef {"invalid_global_config_ignored" | "invalid_project_config_ignored"} RuntimeWarningCode
+ */
+
+/**
+ * @typedef {"global" | "project"} LegacyPausedSource
+ */
+
+/**
+ * @typedef {"enabled" | "plugin_disabled" | "plugin_missing"} PluginState
+ */
+
+/**
+ * @typedef {"missing_install_metadata" | "invalid_install_metadata" | "missing_active_plugin_root"} PluginIssueDetail
  */
 
 /**
@@ -84,6 +107,8 @@ const DEFAULT_API_URL = "https://api.mem9.ai";
  *   env?: EnvMap,
  *   exists?: (filePath: string) => boolean,
  *   readJson?: (filePath: string) => unknown,
+ *   readText?: (filePath: string) => string,
+ *   readDirNames?: (dirPath: string) => string[],
  * }} RuntimeDiskInput
  */
 
@@ -100,6 +125,8 @@ const DEFAULT_API_URL = "https://api.mem9.ai";
  *   userConfigPath: string,
  *   projectConfigPath: string,
  *   credentialsPath: string,
+ *   configTomlPath: string,
+ *   installPath: string,
  *   configPath: string,
  *   globalConfigExists: boolean,
  *   userConfigExists: boolean,
@@ -107,8 +134,28 @@ const DEFAULT_API_URL = "https://api.mem9.ai";
  *   config: ScopeConfig | null,
  *   credentials: CredentialsFile | null,
  *   runtime: RuntimeConfig,
+ *   pluginState: PluginState,
+ *   pluginIssueDetail: PluginIssueDetail | null,
+ *   warnings: RuntimeWarningCode[],
+ *   legacyPausedSources: LegacyPausedSource[],
+ *   effectiveLegacyPausedSource: LegacyPausedSource | null,
  *   issueCode: RuntimeIssueCode,
  * }} RuntimeState
+ */
+
+/**
+ * @typedef {{
+ *   status: "missing" | "valid" | "invalid",
+ *   exists: boolean,
+ *   config: ScopeConfig | null,
+ * }} ScopeConfigLoadResult
+ */
+
+/**
+ * @typedef {{
+ *   state: PluginState,
+ *   issueDetail: PluginIssueDetail | null,
+ * }} PluginStateResult
  */
 
 function isRecord(value) {
@@ -117,6 +164,16 @@ function isRecord(value) {
 
 function readJsonFile(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+function readTextFile(filePath) {
+  return readFileSync(filePath, "utf8");
+}
+
+function readDirNamesFromDisk(dirPath) {
+  return readdirSync(dirPath, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
 }
 
 function envOverride(env, key) {
@@ -144,6 +201,323 @@ function resolveHomePath(inputPath, envPath, fallbackPath) {
   return path.resolve(fallbackPath);
 }
 
+function normalizeString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeProfileId(value) {
+  return normalizeString(value);
+}
+
+function isValidPluginVersionSegment(pluginVersion) {
+  return pluginVersion.length > 0
+    && pluginVersion !== "."
+    && pluginVersion !== ".."
+    && [...pluginVersion].every((ch) =>
+      /[A-Za-z0-9._+-]/.test(ch),
+    );
+}
+
+function runtimePaths(projectRoot, codexHome, mem9Home) {
+  const globalConfigPath = path.join(codexHome, "mem9", "config.json");
+
+  return {
+    globalConfigPath,
+    userConfigPath: globalConfigPath,
+    projectConfigPath: projectRoot
+      ? path.join(projectRoot, ".codex", "mem9", "config.json")
+      : "",
+    credentialsPath: path.join(mem9Home, ".credentials.json"),
+    configTomlPath: path.join(codexHome, "config.toml"),
+    installPath: path.join(codexHome, "mem9", "install.json"),
+  };
+}
+
+function asScopeConfig(value) {
+  return isRecord(value) ? /** @type {ScopeConfig} */ (value) : {};
+}
+
+function asCredentialsFile(value) {
+  return isRecord(value) ? /** @type {CredentialsFile} */ (value) : {};
+}
+
+function resolveScopedProfileId(globalConfig, projectConfig) {
+  return normalizeProfileId(projectConfig?.profileId)
+    || normalizeProfileId(globalConfig?.profileId);
+}
+
+function resolveScopedTimeout(projectValue, globalValue, fallback) {
+  if (
+    typeof projectValue === "number"
+    && Number.isFinite(projectValue)
+    && projectValue > 0
+  ) {
+    return Math.floor(projectValue);
+  }
+
+  if (
+    typeof globalValue === "number"
+    && Number.isFinite(globalValue)
+    && globalValue > 0
+  ) {
+    return Math.floor(globalValue);
+  }
+
+  return fallback;
+}
+
+function resolveScopedEnabled(globalConfig, projectConfig) {
+  if (projectConfig != null) {
+    return projectConfig.enabled !== false;
+  }
+
+  return globalConfig?.enabled !== false;
+}
+
+function buildEffectiveScopeConfig(globalConfig, projectConfig) {
+  if (globalConfig == null && projectConfig == null) {
+    return null;
+  }
+
+  return {
+    schemaVersion: 1,
+    enabled: resolveScopedEnabled(globalConfig, projectConfig),
+    profileId: resolveScopedProfileId(globalConfig, projectConfig),
+    defaultTimeoutMs: resolveScopedTimeout(
+      projectConfig?.defaultTimeoutMs,
+      globalConfig?.defaultTimeoutMs,
+      DEFAULT_REQUEST_TIMEOUT_MS,
+    ),
+    searchTimeoutMs: resolveScopedTimeout(
+      projectConfig?.searchTimeoutMs,
+      globalConfig?.searchTimeoutMs,
+      DEFAULT_SEARCH_TIMEOUT_MS,
+    ),
+  };
+}
+
+function resolveConfigSource(globalLoad, projectLoad) {
+  if (projectLoad.status === "valid") {
+    return "project";
+  }
+
+  return "global";
+}
+
+function resolveScopeFromConfigSource(configSource) {
+  return configSource === "project" ? "project" : "user";
+}
+
+function loadScopeConfigFile(filePath, exists, readJson) {
+  if (!filePath || !exists(filePath)) {
+    return {
+      status: "missing",
+      exists: false,
+      config: null,
+    };
+  }
+
+  try {
+    return {
+      status: "valid",
+      exists: true,
+      config: asScopeConfig(readJson(filePath)),
+    };
+  } catch {
+    return {
+      status: "invalid",
+      exists: true,
+      config: null,
+    };
+  }
+}
+
+function parsePluginEnabledState(configTomlText, pluginId = DEFAULT_PLUGIN_ID) {
+  const text = String(configTomlText ?? "");
+  const lines = text.split(/\r?\n/);
+  const sectionHeaderPattern = /^\s*\[[^\]]+\]\s*$/;
+  const pluginSectionPattern = new RegExp(
+    `^\\s*\\[plugins\\.(?:"${pluginId.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")}"|'${pluginId.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")}')\\]\\s*$`,
+  );
+  let inPluginSection = false;
+
+  for (const line of lines) {
+    if (pluginSectionPattern.test(line)) {
+      inPluginSection = true;
+      continue;
+    }
+
+    if (!inPluginSection) {
+      continue;
+    }
+
+    if (sectionHeaderPattern.test(line)) {
+      break;
+    }
+
+    const match = line.match(/^\s*enabled\s*=\s*(true|false)\s*(?:#.*)?$/i);
+    if (match) {
+      return match[1].toLowerCase() !== "false";
+    }
+  }
+
+  return true;
+}
+
+function loadPluginState({
+  codexHome,
+  configTomlPath,
+  installPath,
+  exists,
+  readJson,
+  readText,
+  readDirNames,
+}) {
+  let pluginEnabled = true;
+  if (exists(configTomlPath)) {
+    try {
+      pluginEnabled = parsePluginEnabledState(readText(configTomlPath));
+    } catch {
+      pluginEnabled = true;
+    }
+  }
+
+  let installIssue = /** @type {PluginIssueDetail | null} */ (null);
+  let installIdentity = DEFAULT_PLUGIN_INSTALL_IDENTITY;
+
+  if (!exists(installPath)) {
+    installIssue = "missing_install_metadata";
+  } else {
+    try {
+      const raw = readJson(installPath);
+      const install = isRecord(raw) ? raw : {};
+      const marketplaceName = normalizeString(install.marketplaceName);
+      const pluginName = normalizeString(install.pluginName);
+
+      if (!marketplaceName || !pluginName) {
+        installIssue = "invalid_install_metadata";
+      } else {
+        installIdentity = {
+          marketplaceName,
+          pluginName,
+        };
+      }
+    } catch {
+      installIssue = "invalid_install_metadata";
+    }
+  }
+
+  let pluginVersion = "";
+  try {
+    const discoveredVersions = readDirNames(
+      path.join(
+        codexHome,
+        PLUGINS_CACHE_DIR,
+        installIdentity.marketplaceName,
+        installIdentity.pluginName,
+      ),
+    ).filter(isValidPluginVersionSegment);
+
+    discoveredVersions.sort();
+    if (discoveredVersions.includes(DEFAULT_PLUGIN_VERSION)) {
+      pluginVersion = DEFAULT_PLUGIN_VERSION;
+    } else {
+      pluginVersion = discoveredVersions.at(-1) ?? "";
+    }
+  } catch {
+    pluginVersion = "";
+  }
+
+  if (installIssue || !pluginVersion) {
+    return {
+      state: "plugin_missing",
+      issueDetail: installIssue ?? "missing_active_plugin_root",
+    };
+  }
+
+  if (!pluginEnabled) {
+    return {
+      state: "plugin_disabled",
+      issueDetail: null,
+    };
+  }
+
+  return {
+    state: "enabled",
+    issueDetail: null,
+  };
+}
+
+function resolveLegacyPausedState(globalConfig, projectConfig) {
+  const globalPaused = globalConfig?.enabled === false;
+  const projectPaused = projectConfig?.enabled === false;
+
+  if (projectPaused) {
+    return {
+      legacyPausedSources: globalPaused ? ["global", "project"] : ["project"],
+      effectiveLegacyPausedSource: /** @type {LegacyPausedSource} */ ("project"),
+    };
+  }
+
+  if (globalPaused && projectConfig == null) {
+    return {
+      legacyPausedSources: ["global"],
+      effectiveLegacyPausedSource: /** @type {LegacyPausedSource} */ ("global"),
+    };
+  }
+
+  return {
+    legacyPausedSources: [],
+    effectiveLegacyPausedSource: /** @type {LegacyPausedSource | null} */ (null),
+  };
+}
+
+function resolveConfigIssue(globalLoad, projectLoad) {
+  const globalConfig = globalLoad.status === "valid" ? globalLoad.config : null;
+  const projectConfig = projectLoad.status === "valid" ? projectLoad.config : null;
+  const projectProfileId = normalizeProfileId(projectConfig?.profileId);
+
+  if (globalLoad.status === "missing" && projectLoad.status === "missing") {
+    return "missing_config";
+  }
+
+  if (
+    globalLoad.status === "invalid"
+    && !(projectConfig && projectProfileId)
+  ) {
+    return "invalid_config";
+  }
+
+  if (projectLoad.status === "invalid" && !globalConfig) {
+    return "invalid_config";
+  }
+
+  if (!globalConfig && !projectConfig) {
+    return globalLoad.status === "missing" && projectLoad.status === "missing"
+      ? "missing_config"
+      : "invalid_config";
+  }
+
+  return null;
+}
+
+function resolveWarnings(globalLoad, projectLoad) {
+  /** @type {RuntimeWarningCode[]} */
+  const warnings = [];
+  const projectConfig = projectLoad.status === "valid" ? projectLoad.config : null;
+  const projectProfileId = normalizeProfileId(projectConfig?.profileId);
+
+  if (globalLoad.status === "invalid" && projectConfig && projectProfileId) {
+    warnings.push("invalid_global_config_ignored");
+  }
+
+  if (projectLoad.status === "invalid" && globalLoad.status === "valid") {
+    warnings.push("invalid_project_config_ignored");
+  }
+
+  return warnings;
+}
+
 export function resolveCodexHome(inputCodexHome, env, homeDir = os.homedir()) {
   return resolveHomePath(
     inputCodexHome,
@@ -160,45 +534,10 @@ export function resolveMem9Home(inputMem9Home, env, homeDir = os.homedir()) {
   );
 }
 
-function runtimePaths(projectRoot, codexHome, mem9Home) {
-  const globalConfigPath = path.join(codexHome, "mem9", "config.json");
-
-  return {
-    globalConfigPath,
-    userConfigPath: globalConfigPath,
-    projectConfigPath: projectRoot
-      ? path.join(projectRoot, ".codex", "mem9", "config.json")
-      : "",
-    credentialsPath: path.join(mem9Home, ".credentials.json"),
-  };
-}
-
-function asScopeConfig(value) {
-  return isRecord(value) ? /** @type {ScopeConfig} */ (value) : {};
-}
-
-function asCredentialsFile(value) {
-  return isRecord(value) ? /** @type {CredentialsFile} */ (value) : {};
-}
-
-function mergeScopeConfig(globalConfig, projectConfig) {
-  if (globalConfig == null && projectConfig == null) {
-    return null;
-  }
-
-  return {
-    ...(globalConfig ?? {}),
-    ...(projectConfig ?? {}),
-  };
-}
-
 export function resolveRuntimeConfig(input) {
   const config = asScopeConfig(input.config);
   const credentials = asCredentialsFile(input.credentials);
-  const profileId =
-    typeof config.profileId === "string" && config.profileId.trim()
-      ? config.profileId.trim()
-      : "";
+  const profileId = normalizeProfileId(config.profileId);
   const profiles = isRecord(credentials.profiles)
     ? /** @type {Record<string, Mem9Profile>} */ (credentials.profiles)
     : {};
@@ -242,57 +581,58 @@ export function loadRuntimeStateFromDisk(input = {}) {
   const mem9Home = resolveMem9Home(input.mem9Home, env, input.homeDir);
   const exists = input.exists ?? existsSync;
   const readJson = input.readJson ?? readJsonFile;
+  const readText = input.readText ?? readTextFile;
+  const readDirNames = input.readDirNames ?? readDirNamesFromDisk;
   const projectRoot = resolveProjectRoot({ cwd, exists });
   const {
     globalConfigPath,
     userConfigPath,
     projectConfigPath,
     credentialsPath,
+    configTomlPath,
+    installPath,
   } = runtimePaths(projectRoot, codexHome, mem9Home);
-  const globalConfigExists = exists(globalConfigPath);
-  const projectConfigMatched = projectConfigPath ? exists(projectConfigPath) : false;
+  const globalLoad = loadScopeConfigFile(globalConfigPath, exists, readJson);
+  const projectLoad = loadScopeConfigFile(projectConfigPath, exists, readJson);
+  const globalConfig = globalLoad.status === "valid" ? globalLoad.config : null;
+  const projectConfig = projectLoad.status === "valid" ? projectLoad.config : null;
+  const configSource = resolveConfigSource(globalLoad, projectLoad);
+  const scope = resolveScopeFromConfigSource(configSource);
+  const config = buildEffectiveScopeConfig(globalConfig, projectConfig);
+  const runtime = resolveRuntimeConfig({
+    scope,
+    config,
+    credentials: null,
+    env,
+  });
+  const plugin = loadPluginState({
+    codexHome,
+    configTomlPath,
+    installPath,
+    exists,
+    readJson,
+    readText,
+    readDirNames,
+  });
+  const warnings = resolveWarnings(globalLoad, projectLoad);
+  const {
+    legacyPausedSources,
+    effectiveLegacyPausedSource,
+  } = resolveLegacyPausedState(globalConfig, projectConfig);
+  const configIssue = resolveConfigIssue(globalLoad, projectLoad);
 
-  /** @type {ScopeConfig | null} */
-  let globalConfig = null;
-  /** @type {ScopeConfig | null} */
-  let projectConfig = null;
   /** @type {CredentialsFile | null} */
   let credentials = null;
-  /** @type {RuntimeIssueCode} */
-  let issueCode = "ready";
-
-  if (globalConfigExists) {
-    try {
-      globalConfig = asScopeConfig(readJson(globalConfigPath));
-    } catch {
-      issueCode = "invalid_config";
-    }
-  }
-
-  if (projectConfigMatched) {
-    try {
-      projectConfig = asScopeConfig(readJson(projectConfigPath));
-    } catch {
-      issueCode = "invalid_config";
-    }
-  }
-
-  if (!globalConfigExists && !projectConfigMatched && issueCode === "ready") {
-    issueCode = "missing_config";
-  }
+  /** @type {RuntimeIssueCode | null} */
+  let credentialsIssue = null;
 
   try {
     credentials = asCredentialsFile(readJson(credentialsPath));
   } catch {
-    if (issueCode === "ready") {
-      issueCode = "invalid_credentials";
-    }
+    credentialsIssue = "invalid_credentials";
   }
 
-  const config = mergeScopeConfig(globalConfig, projectConfig);
-  const scope = projectConfigMatched ? "project" : "user";
-  const configSource = projectConfigMatched ? "project" : "global";
-  const runtime = resolveRuntimeConfig({
+  const runtimeWithCredentials = resolveRuntimeConfig({
     scope,
     config,
     credentials,
@@ -302,23 +642,24 @@ export function loadRuntimeStateFromDisk(input = {}) {
     credentials && isRecord(credentials.profiles)
       ? /** @type {Record<string, Mem9Profile>} */ (credentials.profiles)
       : {};
+  const selectedProfileExists = isRecord(profiles[runtimeWithCredentials.profileId]);
 
-  if (issueCode === "ready" && runtime.enabled === false) {
-    issueCode = "disabled";
-  }
+  /** @type {RuntimeIssueCode} */
+  let issueCode = "ready";
 
-  if (issueCode === "ready" && !runtime.profileId) {
+  if (plugin.state === "plugin_missing") {
+    issueCode = "plugin_missing";
+  } else if (plugin.state === "plugin_disabled") {
+    issueCode = "plugin_disabled";
+  } else if (effectiveLegacyPausedSource) {
+    issueCode = "legacy_paused";
+  } else if (configIssue) {
+    issueCode = configIssue;
+  } else if (credentialsIssue) {
+    issueCode = credentialsIssue;
+  } else if (!runtimeWithCredentials.profileId || !selectedProfileExists) {
     issueCode = "missing_profile";
-  }
-
-  if (
-    issueCode === "ready"
-    && !isRecord(profiles[runtime.profileId])
-  ) {
-    issueCode = "missing_profile";
-  }
-
-  if (issueCode === "ready" && !runtime.apiKey) {
+  } else if (!runtimeWithCredentials.apiKey) {
     issueCode = "missing_api_key";
   }
 
@@ -329,18 +670,25 @@ export function loadRuntimeStateFromDisk(input = {}) {
     mem9Home,
     projectRoot,
     configSource,
-    projectConfigMatched,
+    projectConfigMatched: projectLoad.exists,
     globalConfigPath,
     userConfigPath,
     projectConfigPath,
     credentialsPath,
-    configPath: projectConfigMatched ? projectConfigPath : globalConfigPath,
-    globalConfigExists,
-    userConfigExists: globalConfigExists,
-    projectConfigExists: projectConfigMatched,
+    configTomlPath,
+    installPath,
+    configPath: configSource === "project" ? projectConfigPath : globalConfigPath,
+    globalConfigExists: globalLoad.exists,
+    userConfigExists: globalLoad.exists,
+    projectConfigExists: projectLoad.exists,
     config,
     credentials,
-    runtime,
+    runtime: runtimeWithCredentials,
+    pluginState: plugin.state,
+    pluginIssueDetail: plugin.issueDetail,
+    warnings,
+    legacyPausedSources,
+    effectiveLegacyPausedSource,
     issueCode,
   };
 }

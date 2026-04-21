@@ -148,6 +148,10 @@ export async function main() {
       configSource: state.configSource,
       profileId: state.runtime.profileId,
       projectConfigMatched: state.projectConfigMatched,
+      warnings: state.warnings.join(","),
+      pluginState: state.pluginState,
+      pluginIssueDetail: state.pluginIssueDetail,
+      effectiveLegacyPausedSource: state.effectiveLegacyPausedSource,
       issueCode: state.issueCode,
     },
   });
@@ -160,6 +164,10 @@ export async function main() {
         configSource: state.configSource,
         profileId: state.runtime.profileId,
         projectConfigMatched: state.projectConfigMatched,
+        warnings: state.warnings.join(","),
+        pluginState: state.pluginState,
+        pluginIssueDetail: state.pluginIssueDetail,
+        effectiveLegacyPausedSource: state.effectiveLegacyPausedSource,
         issueCode: state.issueCode,
       },
     });
