@@ -2,7 +2,12 @@
 
 Persistent memory for [OpenCode](https://opencode.ai).
 
-The plugin does three things:
+The package ships two plugin entrypoints:
+
+- a server plugin for recall, auto-ingest, and memory tools
+- a TUI plugin for interactive setup inside OpenCode
+
+The server plugin does three things:
 
 - recalls relevant mem9 memories before each chat turn
 - exposes mem9 memory tools inside OpenCode
@@ -27,6 +32,16 @@ Avoid loading the same plugin from multiple places at once, such as:
   "plugin": ["@mem9/opencode"]
 }
 ```
+
+To enable the interactive setup command, add the same package to your TUI plugin list:
+
+```json
+{
+  "plugin": ["@mem9/opencode"]
+}
+```
+
+That entry belongs in `~/.config/opencode/tui.json`.
 
 ## Config Model
 
@@ -104,6 +119,28 @@ Legacy compatibility remains:
 
 ## Behavior
 
+### TUI setup
+
+When the TUI plugin is active, OpenCode registers:
+
+- `/mem9-init`
+
+That command collects:
+
+- scope: `user` or `project`
+- `profileId`
+- profile label
+- mem9 API URL
+- mem9 API key
+
+It writes:
+
+- `$MEM9_HOME/.credentials.json`
+- the selected scope `mem9.json`
+- the selected scope `opencode.json` plugin entry
+
+The current OpenCode dialog prompt is plain text. The API key stays visible while you type it.
+
 ### Recall
 
 The plugin captures the latest real user prompt from `chat.message`, cleans it, bounds it, and injects a formatted recall block during `experimental.chat.system.transform`.
@@ -134,6 +171,7 @@ Debug payloads are redacted before they are written. The logger masks obvious se
 - If the selected profile exists but has no `apiKey`, update that profile in `$MEM9_HOME/.credentials.json`.
 - If recall or tools work in one project and not another, check whether the project has its own `.opencode/mem9.json` override.
 - If recall, auto-ingest, or debug logs appear to run twice, check for duplicate plugin registration across user scope, project scope, npm, or local plugin paths. Keep one active plugin entry.
+- If `/mem9-init` is missing, confirm `@mem9/opencode` is also listed in `~/.config/opencode/tui.json`.
 - If debug logging is enabled and no file appears, confirm OpenCode can write to its state directory.
 
 ## Local Verification
@@ -150,8 +188,9 @@ The npm package publishes:
 - `package.json`
 - `README.md`
 - runtime source files under `src/`
+- runtime TUI source files under `tui/`
 
-The package keeps `files: ["src", "README.md"]` in `package.json` and uses `src/.npmignore` to exclude test files such as `src/**/*.test.ts`.
+The package keeps `files: ["src", "tui", "README.md"]` in `package.json` and uses `src/.npmignore` to exclude test files such as `src/**/*.test.ts`.
 
 Check the final tarball contents before release:
 

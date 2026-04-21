@@ -9,11 +9,12 @@ Execute the setup directly. Only ask the user for the choices or secrets you can
 
 ## What This Setup Owns
 
-This setup handles three things:
+This setup handles four things:
 
 1. register `@mem9/opencode` in the chosen OpenCode scope
-2. configure the selected OpenCode scope to use a mem9 profile
-3. keep secrets in shared mem9 credentials storage
+2. register `@mem9/opencode` in OpenCode TUI when the user wants `/mem9-init`
+3. configure the selected OpenCode scope to use a mem9 profile
+4. keep secrets in shared mem9 credentials storage
 
 Use this model:
 
@@ -21,6 +22,8 @@ Use this model:
 - default `MEM9_HOME`: `$HOME/.mem9`
 - user scope config: `<OpenCode config dir>/mem9.json`
 - project scope config: `<project>/.opencode/mem9.json`
+
+If the TUI plugin is already active, prefer telling the user to run `/mem9-init`. That command writes the same files directly.
 
 Runtime compatibility remains:
 
@@ -39,7 +42,7 @@ Ask:
 Use these plugin targets:
 
 - global scope: `~/.config/opencode/opencode.json`
-- project scope: `./opencode.json`
+- project scope: `.opencode/opencode.json`
 
 Choose one plugin target only. Do not register mem9 in both global and project scope at the same time.
 
@@ -49,6 +52,8 @@ Use matching mem9 config targets:
 - project scope: `<project>/.opencode/mem9.json`
 
 When a project needs different mem9 behavior, prefer project config overrides over a second plugin entry.
+
+If the user wants `/mem9-init`, also ensure `~/.config/opencode/tui.json` contains `@mem9/opencode`.
 
 ## Step 1: Choose Identity Source
 
@@ -148,11 +153,14 @@ If mem9 is already registered in another scope, explain that the plugin should s
 
 If the user already enabled mem9 by editing `opencode.json`, or already points OpenCode at a local mem9 plugin directory, skip plugin registration work and move straight to mem9 config and credentials.
 
+If the user wants `/mem9-init`, ensure `~/.config/opencode/tui.json` also contains `@mem9/opencode`.
+
 ## Step 3: Explain File Layout
 
 After writing files, tell the user where everything landed:
 
 - plugin registration file
+- TUI plugin registration file when `/mem9-init` was enabled
 - selected scope `mem9.json`
 - shared credentials file if profile mode was used
 
@@ -169,6 +177,10 @@ Expected startup behavior:
 - profile mode: OpenCode loads mem9 from the selected `profileId`
 - env mode: OpenCode uses the environment variables from that launch
 - legacy env mode: OpenCode still starts and logs legacy compatibility
+
+Expected TUI behavior:
+
+- `/mem9-init` is available when the package is also installed in `~/.config/opencode/tui.json`
 
 Expected healthy log lines include one of these:
 
