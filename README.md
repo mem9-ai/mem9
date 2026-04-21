@@ -253,7 +253,21 @@ These are only relevant when `MNEMO_ENCRYPT_TYPE=kms`. The server uses the AWS S
 
 Set `X-Mnemo-Agent-Id` on requests when you want the server to distinguish which runtime or agent instance is writing and recalling memories inside the same mem9 space.
 
-Preferred integrations use `v1alpha2` with `X-API-Key`. Legacy integrations can still use `v1alpha1` with the tenant ID in the URL path.
+Prefer `v1alpha2` for all new integrations. It uses `X-API-Key` and is the primary API surface for current runtimes.
+
+### Preferred API (`v1alpha2`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1alpha2/mem9s/memories` | Preferred unified write endpoint. Requires `X-API-Key` header |
+| `GET` | `/v1alpha2/mem9s/memories` | Preferred search endpoint. Requires `X-API-Key` header |
+| `GET` | `/v1alpha2/mem9s/memories/{id}` | Preferred get-by-id endpoint. Requires `X-API-Key` header |
+| `PUT` | `/v1alpha2/mem9s/memories/{id}` | Preferred update endpoint. Requires `X-API-Key` header |
+| `DELETE` | `/v1alpha2/mem9s/memories/{id}` | Preferred delete endpoint. Requires `X-API-Key` header |
+
+### Provisioning And Legacy API (`v1alpha1`)
+
+Use `v1alpha1` for TiDB auto-provisioning or when you need compatibility with older tenant-ID-in-path clients.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -263,11 +277,6 @@ Preferred integrations use `v1alpha2` with `X-API-Key`. Legacy integrations can 
 | `GET` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy get-by-id endpoint |
 | `PUT` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy update endpoint. Optional `If-Match` for version check |
 | `DELETE` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy delete endpoint |
-| `POST` | `/v1alpha2/mem9s/memories` | Preferred unified write endpoint. Requires `X-API-Key` header |
-| `GET` | `/v1alpha2/mem9s/memories` | Preferred search endpoint. Requires `X-API-Key` header |
-| `GET` | `/v1alpha2/mem9s/memories/{id}` | Preferred get-by-id endpoint. Requires `X-API-Key` header |
-| `PUT` | `/v1alpha2/mem9s/memories/{id}` | Preferred update endpoint. Requires `X-API-Key` header |
-| `DELETE` | `/v1alpha2/mem9s/memories/{id}` | Preferred delete endpoint. Requires `X-API-Key` header |
 
 ## Contributing
 
