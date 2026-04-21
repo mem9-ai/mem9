@@ -25,3 +25,8 @@ execFileSync(process.execPath, ["--test", "./dist-test/tests/*.test.js"], {
   cwd: projectDir,
   stdio: "inherit",
 });
+
+execFileSync(process.execPath, ["--test", "./scripts/*.test.mjs"], {
+  cwd: projectDir,
+  stdio: "inherit",
+});

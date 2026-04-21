@@ -17,12 +17,12 @@ cd opencode-plugin && pnpm run typecheck
 | Task | File |
 |------|------|
 | Plugin wiring | `src/index.ts` |
-| Config and shared types | `src/types.ts` |
-| Backend interface | `src/backend.ts` |
-| REST API client | `src/server-backend.ts` |
-| Tool definitions | `src/tools.ts` |
-| Hook wiring | `src/hooks.ts` |
-| Setup skill | `skills/mem9-setup/SKILL.md` |
+| Config and shared types | `src/shared/types.ts` |
+| Backend interface | `src/server/backend.ts` |
+| REST API client | `src/server/server-backend.ts` |
+| Tool definitions | `src/server/tools.ts` |
+| Hook wiring | `src/server/hooks.ts` |
+| TUI setup command | `src/tui/index.ts` |
 
 ## Local conventions
 

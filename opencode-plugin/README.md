@@ -250,6 +250,29 @@ pnpm run typecheck
 pnpm run pack:check
 ```
 
+## Release
+
+Publish through the package release script:
+
+```bash
+pnpm run publish:release -- patch
+pnpm run publish:release -- prepatch --channel rc
+pnpm run publish:release -- prerelease --channel rc
+pnpm run publish:release -- prepatch --channel beta --dry-run
+```
+
+The script:
+
+- reads `NPM_ACCESSTOKEN` from `opencode-plugin/.publish.env`
+- bumps `package.json` to the target version
+- runs `pnpm test`
+- runs `pnpm run typecheck`
+- runs `pnpm run pack:check`
+- publishes with the matching npm tag
+
+Stable releases publish to `latest`.
+Prereleases publish to `alpha`, `beta`, or `rc`.
+
 ## Publish Surface
 
 The npm package publishes:
