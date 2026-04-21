@@ -20,9 +20,9 @@
 
 ## Quick Start
 
-### mem9 Cloud
+### Hosted API
 
-mem9 Cloud is the default path. Use the hosted API at `https://api.mem9.ai`, then follow the runtime guide that matches your agent:
+The hosted mem9 API is the default path. Use `https://api.mem9.ai`, then follow the runtime guide that matches your agent:
 
 | Runtime | Install / docs |
 |---|---|
@@ -33,7 +33,7 @@ mem9 Cloud is the default path. Use the hosted API at `https://api.mem9.ai`, the
 | Codex | [`codex-plugin/README.md`](codex-plugin/README.md) |
 | Any HTTP client / custom runtime | Provision a space, then call `/v1alpha2/mem9s/memories` with `X-API-Key: <space-id>` and [API Reference](#api-reference) |
 
-All supported runtimes can point at the same mem9 Cloud space, so OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, and custom clients can share one memory pool.
+All supported runtimes can point at the same mem9 space on the hosted API, so OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, and custom clients can share one memory pool.
 
 ### Self-Hosted
 
@@ -97,11 +97,11 @@ mem9 gives coding agents one shared memory layer instead of separate local noteb
 
 All supported runtimes expose the same core memory flow: store, search, get, update, and delete against the mem9 server API.
 
-## Why mem9 Cloud
+## Why the Hosted API
 
-mem9 Cloud is the fastest way to put persistent memory behind an agent fleet while keeping the option to self-host later.
+The hosted mem9 API is the fastest way to put persistent memory behind an agent fleet while keeping the option to self-host later.
 
-| mem9 Cloud capability | Why teams start here |
+| Hosted API capability | Why teams start here |
 |---|---|
 | Hosted mem9 API with instant space provisioning | You can install an agent integration first and skip standing up infrastructure on day one |
 | Shared memory across runtimes | One space can serve OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, and custom clients together |
@@ -109,7 +109,7 @@ mem9 Cloud is the fastest way to put persistent memory behind an agent fleet whi
 | Same API contract as self-hosted mem9 | Moving to your own deployment is a base-URL and credential change, not a plugin rewrite |
 | Visual dashboard and product onboarding | Teams can inspect and manage memory without building internal tooling first |
 
-Under the hood, mem9 Cloud runs the same mem9 server model surfaced in this repository, with TiDB/MySQL-compatible storage choices behind the product instead of in front of it.
+Under the hood, the hosted mem9 API runs the same mem9 server model surfaced in this repository, with TiDB/MySQL-compatible storage choices behind the product instead of in front of it.
 
 ## Related Repositories
 
