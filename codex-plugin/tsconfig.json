@@ -11,8 +11,9 @@
     "skipLibCheck": true
   },
   "include": [
+    "bootstrap-hooks/**/*.mjs",
+    "hooks/**/*.mjs",
     "skills/**/*.mjs",
-    "runtime/**/*.mjs",
     "tests/**/*.mjs"
   ],
   "exclude": [

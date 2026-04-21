@@ -124,7 +124,7 @@ function readStdinText() {
   return readFileSync(0, "utf8");
 }
 
-async function main() {
+export async function main() {
   const stdin = JSON.parse(readStdinText() || "{}");
   const cwd =
     stdin && typeof stdin === "object" && typeof stdin.cwd === "string"

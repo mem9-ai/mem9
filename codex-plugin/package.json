@@ -20,8 +20,9 @@
   ],
   "files": [
     ".codex-plugin/",
+    "bootstrap-hooks/",
+    "hooks/",
     "skills/",
-    "runtime/",
     "templates/",
     "README.md"
   ],

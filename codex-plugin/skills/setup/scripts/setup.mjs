@@ -20,14 +20,20 @@ import {
   DEFAULT_SEARCH_TIMEOUT_MS,
   resolveCodexHome,
   resolveMem9Home,
-} from "../../../runtime/shared/config.mjs";
-import { resolveProjectRoot } from "../../../runtime/shared/project-root.mjs";
+} from "../../../hooks/shared/config.mjs";
+import { resolveProjectRoot } from "../../../hooks/shared/project-root.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(SCRIPT_DIR, "../../..");
-const RUNTIME_SOURCE_DIR = path.join(PACKAGE_ROOT, "runtime");
+const HOOK_SHIM_SOURCE_DIR = path.join(PACKAGE_ROOT, "bootstrap-hooks");
 const HOOK_TEMPLATE_PATH = path.join(PACKAGE_ROOT, "templates", "hooks.json");
 const DEFAULT_BASE_URL = "https://api.mem9.ai";
+const DEFAULT_INSTALL_METADATA = {
+  schemaVersion: 1,
+  marketplaceName: "mem9-ai",
+  pluginName: "mem9",
+  shimVersion: 1,
+};
 const MEM9_EVENTS = ["SessionStart", "UserPromptSubmit", "Stop"];
 const HOOK_TEMPLATE_KEYS = {
   sessionStartCommand: "__MEM9_SESSION_START_COMMAND__",
@@ -407,10 +413,38 @@ export function resolveGlobalPaths(codexHome) {
   const mem9Dir = path.join(codexHome, "mem9");
   return {
     mem9Dir,
-    runtimeDir: path.join(mem9Dir, "runtime"),
+    hooksDir: path.join(mem9Dir, "hooks"),
+    installPath: path.join(mem9Dir, "install.json"),
     configPath: path.join(mem9Dir, "config.json"),
     hooksPath: path.join(codexHome, "hooks.json"),
     configTomlPath: path.join(codexHome, "config.toml"),
+  };
+}
+
+export function resolveInstalledPluginIdentity(codexHome, packageRoot = PACKAGE_ROOT) {
+  const cacheRoot = path.join(codexHome, "plugins", "cache");
+  const relativeRoot = path.relative(cacheRoot, path.resolve(packageRoot));
+
+  if (!relativeRoot.startsWith("..") && !path.isAbsolute(relativeRoot)) {
+    const segments = relativeRoot.split(path.sep).filter(Boolean);
+    if (segments.length >= 3) {
+      return {
+        marketplaceName: segments[0],
+        pluginName: segments[1],
+      };
+    }
+  }
+
+  return {
+    marketplaceName: DEFAULT_INSTALL_METADATA.marketplaceName,
+    pluginName: DEFAULT_INSTALL_METADATA.pluginName,
+  };
+}
+
+export function buildInstallMetadata(codexHome, packageRoot = PACKAGE_ROOT) {
+  return {
+    ...DEFAULT_INSTALL_METADATA,
+    ...resolveInstalledPluginIdentity(codexHome, packageRoot),
   };
 }
 
@@ -430,22 +464,22 @@ export function buildNodeCommand(scriptPath, platform = process.platform) {
   return `node ${shellQuote(resolved, platform)}`;
 }
 
-export function buildRuntimeCommands(runtimeDir) {
+export function buildHookCommands(hooksDir) {
   return {
     sessionStartCommand: buildNodeCommand(
-      path.join(runtimeDir, "session-start.mjs"),
+      path.join(hooksDir, "session-start.mjs"),
     ),
     userPromptSubmitCommand: buildNodeCommand(
-      path.join(runtimeDir, "user-prompt-submit.mjs"),
+      path.join(hooksDir, "user-prompt-submit.mjs"),
     ),
-    stopCommand: buildNodeCommand(path.join(runtimeDir, "stop.mjs")),
+    stopCommand: buildNodeCommand(path.join(hooksDir, "stop.mjs")),
   };
 }
 
 /**
  * @param {{
  *   templateText?: string,
- *   runtimeDir?: string,
+ *   hooksDir?: string,
  *   commands?: {
  *     sessionStartCommand: string,
  *     userPromptSubmitCommand: string,
@@ -455,10 +489,10 @@ export function buildRuntimeCommands(runtimeDir) {
  */
 export function renderHooksTemplate({
   templateText = readTextFile(HOOK_TEMPLATE_PATH),
-  runtimeDir,
+  hooksDir,
   commands,
 } = {}) {
-  const nextCommands = commands ?? buildRuntimeCommands(runtimeDir);
+  const nextCommands = commands ?? buildHookCommands(hooksDir);
   let rendered = templateText;
 
   for (const [key, placeholder] of Object.entries(HOOK_TEMPLATE_KEYS)) {
@@ -475,6 +509,13 @@ function normalizeHookCommand(command) {
   return String(command).replaceAll("\\", "/");
 }
 
+function managedHookCommandFragments(scriptName) {
+  return [
+    `mem9/hooks/${scriptName}`,
+    `mem9/runtime/${scriptName}`,
+  ];
+}
+
 function isMem9ManagedHook(eventName, hook) {
   if (!isRecord(hook) || typeof hook.command !== "string") {
     return false;
@@ -486,7 +527,8 @@ function isMem9ManagedHook(eventName, hook) {
   }
 
   return hook.statusMessage === expected.statusMessage
-    && normalizeHookCommand(hook.command).includes(`mem9/runtime/${expected.scriptName}`);
+    && managedHookCommandFragments(expected.scriptName)
+      .some((fragment) => normalizeHookCommand(hook.command).includes(fragment));
 }
 
 export function removeManagedHooks(existingHooks) {
@@ -820,7 +862,7 @@ export function buildScopeConfig(profileId, options = {}) {
   };
 }
 
-export function installRuntime(sourceDir, targetDir, fsOps = {}) {
+export function installHookShims(sourceDir, targetDir, fsOps = {}) {
   const mkdir = fsOps.mkdirSync ?? mkdirSync;
   const readDir = fsOps.readdirSync ?? readdirSync;
   const copyFile = fsOps.copyFileSync ?? copyFileSync;
@@ -832,7 +874,7 @@ export function installRuntime(sourceDir, targetDir, fsOps = {}) {
     const targetPath = path.join(targetDir, entry.name);
 
     if (entry.isDirectory()) {
-      installRuntime(sourcePath, targetPath, fsOps);
+      installHookShims(sourcePath, targetPath, fsOps);
       continue;
     }
 
@@ -958,6 +1000,10 @@ export async function runSetup(argv = process.argv.slice(2), options = {}) {
     throw new Error("Shared mem9 home is not writable.");
   }
   const globalPaths = resolveGlobalPaths(codexHome);
+  const installMetadata = buildInstallMetadata(
+    codexHome,
+    options.packageRoot ?? PACKAGE_ROOT,
+  );
   const projectRoot = resolveProjectRoot({
     cwd,
     exists: fsOps.existsSync ?? existsSync,
@@ -1048,15 +1094,16 @@ export async function runSetup(argv = process.argv.slice(2), options = {}) {
       : { hooks: {} };
     const mem9Hooks = renderHooksTemplate({
       templateText: hooksTemplateText,
-      runtimeDir: globalPaths.runtimeDir,
+      hooksDir: globalPaths.hooksDir,
     });
     const backups = backupFiles([...invalidJsonFiles], fsOps);
 
-    installRuntime(
-      options.runtimeSourceDir ?? RUNTIME_SOURCE_DIR,
-      globalPaths.runtimeDir,
+    installHookShims(
+      options.hookShimSourceDir ?? HOOK_SHIM_SOURCE_DIR,
+      globalPaths.hooksDir,
       fsOps,
     );
+    writeJsonFile(globalPaths.installPath, installMetadata, fsOps);
     writeJsonFile(credentialsPath, nextCredentials, fsOps);
     writeJsonFile(globalPaths.configPath, nextScopeConfig, fsOps);
     writeTextFile(
@@ -1086,7 +1133,8 @@ export async function runSetup(argv = process.argv.slice(2), options = {}) {
         configPath: globalPaths.configPath,
         configTomlPath: globalPaths.configTomlPath,
         hooksPath: globalPaths.hooksPath,
-        runtimeDir: globalPaths.runtimeDir,
+        hooksDir: globalPaths.hooksDir,
+        installPath: globalPaths.installPath,
         credentialsPath,
         legacyProjectHooksPath,
       },
