@@ -161,10 +161,18 @@ Focus on the current TypeScript error.
   assert.equal(buildRecallQuery(input), "Focus on the current TypeScript error.");
 });
 
+test("buildRecallQuery keeps safe ASCII prompts unchanged above the old raw threshold", () => {
+  const input = "a".repeat(1100);
+
+  assert.equal(encodedQueryParamLength(input) <= MAX_RECALL_QUERY_PARAM_LEN, true);
+  assert.equal(buildRecallQuery(input), input);
+});
+
 test("buildRecallQuery bounds long prompts while keeping the start and end", () => {
   const input = `Start signal ${"a".repeat(900)}\n\n${"middle ".repeat(200)}\n\n${"z".repeat(900)} End signal`;
   const query = buildRecallQuery(input);
 
+  assert.equal(encodedQueryParamLength(input) > MAX_RECALL_QUERY_PARAM_LEN, true);
   assert.equal(encodedQueryParamLength(query) <= MAX_RECALL_QUERY_PARAM_LEN, true);
   assert.equal(query.length < input.length, true);
   assert.equal(query.startsWith("Start signal"), true);
@@ -281,6 +289,8 @@ test("buildHooks bounds very large captured prompts before search", async () => 
     "A".repeat(2000),
     "End marker: preserve the final user intent for recall.",
   ].join("\n\n");
+
+  assert.equal(encodedQueryParamLength(largePrompt) > MAX_RECALL_QUERY_PARAM_LEN, true);
 
   await onChatMessage(
     createChatMessageInput("session-large"),

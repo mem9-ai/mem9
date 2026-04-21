@@ -7,7 +7,6 @@ const TOOL_NOISE_TAGS = [
   "system-reminder",
 ];
 
-export const MAX_RECALL_QUERY_LEN = 1000;
 export const MAX_RECALL_QUERY_PARAM_LEN = 1600;
 
 const QUERY_ELLIPSIS = "\n...\n";
@@ -34,7 +33,7 @@ function stripTaggedBlock(input: string, tagName: string): string {
 }
 
 function clampRecallQuery(input: string): string {
-  if (input.length <= MAX_RECALL_QUERY_LEN && encodedQueryParamLength(input) <= MAX_RECALL_QUERY_PARAM_LEN) {
+  if (encodedQueryParamLength(input) <= MAX_RECALL_QUERY_PARAM_LEN) {
     return input;
   }
 
