@@ -1,7 +1,7 @@
 MAKEFILE_DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 IMG ?= $(REGISTRY)/mnemo-server:$(COMMIT)
 
-.PHONY: build vet clean run test test-integration docker
+.PHONY: build vet clean run test test-cover test-integration docker
 
 build:
 	mkdir -p $(MAKEFILE_DIR)/server/bin
@@ -18,6 +18,11 @@ vet:
 test:
 	cd server && go test -race -count=1 ./...
 
+test-cover:
+	cd server && mkdir -p coverage
+	cd server && go test -race -count=1 -covermode=atomic -coverprofile=coverage/coverage.out ./...
+	cd server && go tool cover -func=coverage/coverage.out > coverage/coverage.txt
+
 test-integration:
 	cd server && go test -tags=integration -race -count=1 -v ./internal/repository/tidb/
 clean:
@@ -28,4 +33,3 @@ run: build
 
 docker: build-linux
 	docker build --platform=linux/amd64 -q -f ./server/Dockerfile -t $(IMG) .
-

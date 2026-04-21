@@ -10,6 +10,7 @@ vendor/
 
 # Binary output
 server/bin
+server/coverage/
 
 # IDE
 .idea/
