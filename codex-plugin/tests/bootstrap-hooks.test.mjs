@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
@@ -112,6 +113,54 @@ test("runHookShim loads the active plugin hook from install metadata", async () 
     } else {
       delete process.env.MEM9_CODEX_PLUGIN_VERSION;
     }
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("bootstrap hook wrapper keeps a zero exit status when the real hook throws", () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const codexHome = path.join(tempRoot, "codex-home");
+    const pluginRoot = path.join(
+      codexHome,
+      "plugins",
+      "cache",
+      "mem9-ai",
+      "mem9",
+      "local",
+    );
+    const wrapperPath = path.resolve("./bootstrap-hooks/stop.mjs");
+
+    writeJson(path.join(codexHome, "mem9", "install.json"), {
+      schemaVersion: 1,
+      marketplaceName: "mem9-ai",
+      pluginName: "mem9",
+      shimVersion: 1,
+    });
+    mkdirSync(path.join(pluginRoot, "hooks"), { recursive: true });
+    writeFileSync(
+      path.join(pluginRoot, "hooks", "stop.mjs"),
+      "export async function main() { throw new Error('boom'); }\n",
+    );
+
+    const result = spawnSync(
+      process.execPath,
+      [wrapperPath],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          CODEX_HOME: codexHome,
+        },
+        input: "{}",
+        encoding: "utf8",
+      },
+    );
+
+    assert.equal(result.status, 0);
+    assert.equal(result.stderr, "");
+  } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
 });
