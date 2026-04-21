@@ -292,3 +292,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 ## License
 
 [Apache-2.0](LICENSE)
+
+---
+
+<p align="center">
+  <a href="https://tidbcloud.com">
+    <img src="assets/tidb-logo.png" alt="TiDB Cloud Starter" height="28" />
+  </a>
+  <br/>
+  <sub>Built on <a href="https://tidbcloud.com">TiDB Cloud Starter</a> for shared memory, vector search, and managed cloud provisioning.</sub>
+</p>
