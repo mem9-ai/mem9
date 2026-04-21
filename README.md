@@ -58,7 +58,6 @@ curl -s -X POST http://localhost:8080/v1alpha1/mem9s
 
 export MEM9_API_URL="http://localhost:8080"
 export MEM9_API_KEY="tenant-id"
-export MEM9_TENANT_ID="$MEM9_API_KEY" # OpenCode / legacy clients
 ```
 
 TiDB Cloud Pool auto-provisioning uses `MNEMO_TIDB_ZERO_ENABLED=false` together with `MNEMO_TIDBCLOUD_API_KEY` and `MNEMO_TIDBCLOUD_API_SECRET`, then uses the same `curl` flow.
@@ -68,7 +67,6 @@ Manual bootstrap uses pre-existing tenants mode. Seed an active tenant row in th
 ```bash
 export MEM9_API_URL="http://localhost:8080"
 export MEM9_API_KEY="<existing-tenant-id>"
-export MEM9_TENANT_ID="$MEM9_API_KEY" # OpenCode / legacy clients
 ```
 
 `postgres` and `db9` use that same advanced manual-bootstrap path.
