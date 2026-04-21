@@ -517,29 +517,150 @@ func ftsSafeLiteral(s string) string {
 // "match against a non-constant string"), so the query term is inlined as a
 // SQL string literal after escaping via ftsSafeLiteral.
 func (r *MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	start := time.Now()
+	memories, err := r.ftsSearchWithPostFilter(ctx, query, f, limit)
+	if err != nil {
+		slog.ErrorContext(ctx, "fts search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
+		return nil, fmt.Errorf("fts search: cluster_id=%s: %w", r.clusterID, err)
+	}
+	slog.DebugContext(ctx, "fts search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	return memories, nil
+}
+
+type memoryFTSCandidate struct {
+	id    string
+	score float64
+}
+
+func (r *MemoryRepo) ftsSearchWithPostFilter(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
 	conds, args := r.buildFilterConds(f)
 	where := strings.Join(conds, " AND ")
-
 	safeQ := ftsSafeLiteral(query)
+	candidates, err := r.fetchMemoryFTSCandidates(ctx, safeQ, limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	filtered, err := r.fetchFilteredFTSMemories(ctx, candidates, where, args)
+	if err != nil {
+		return nil, err
+	}
+	if len(filtered) >= limit || len(candidates) < limit {
+		if len(filtered) > limit {
+			filtered = filtered[:limit]
+		}
+		return filtered, nil
+	}
+
+	// Bound the FTS-only candidate expansion to a single TopK pass. If selective
+	// post-filters drop too many candidates, fall back to the original filtered
+	// query shape to preserve completeness without unbounded global pagination.
+	return r.filteredFTSSearch(ctx, safeQ, where, args, limit)
+}
+
+func (r *MemoryRepo) fetchMemoryFTSCandidates(ctx context.Context, safeQ string, limit int) ([]memoryFTSCandidate, error) {
+	sqlQuery := `SELECT id, fts_match_word('` + safeQ + `', content) AS fts_score
+		FROM memories
+		WHERE fts_match_word('` + safeQ + `', content)
+		ORDER BY fts_match_word('` + safeQ + `', content) DESC, id
+		LIMIT ?`
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	candidates := make([]memoryFTSCandidate, 0, limit)
+	for rows.Next() {
+		var candidate memoryFTSCandidate
+		if err := rows.Scan(&candidate.id, &candidate.score); err != nil {
+			return nil, fmt.Errorf("scan memory fts candidate: %w", err)
+		}
+		candidates = append(candidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return candidates, nil
+}
+
+func (r *MemoryRepo) fetchFilteredFTSMemories(ctx context.Context, candidates []memoryFTSCandidate, where string, filterArgs []any) ([]domain.Memory, error) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]string, len(candidates))
+	args := make([]any, 0, len(candidates)+len(filterArgs))
+	scoreByID := make(map[string]float64, len(candidates))
+	for i, candidate := range candidates {
+		placeholders[i] = "?"
+		args = append(args, candidate.id)
+		scoreByID[candidate.id] = candidate.score
+	}
+	args = append(args, filterArgs...)
+
+	sqlQuery := `SELECT ` + allColumns + ` FROM memories
+		WHERE id IN (` + strings.Join(placeholders, ",") + `) AND ` + where
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	memoriesByID := make(map[string]domain.Memory, len(candidates))
+	for rows.Next() {
+		m, err := scanMemoryRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		score := scoreByID[m.ID]
+		m.Score = &score
+		memoriesByID[m.ID] = *m
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	ordered := make([]domain.Memory, 0, len(memoriesByID))
+	for _, candidate := range candidates {
+		m, ok := memoriesByID[candidate.id]
+		if !ok {
+			continue
+		}
+		score := candidate.score
+		m.Score = &score
+		ordered = append(ordered, m)
+	}
+	return ordered, nil
+}
+
+func (r *MemoryRepo) filteredFTSSearch(ctx context.Context, safeQ, where string, args []any, limit int) ([]domain.Memory, error) {
 	sqlQuery := `SELECT ` + allColumns + `, fts_match_word('` + safeQ + `', content) AS fts_score
-		 FROM memories
-		 WHERE ` + where + ` AND fts_match_word('` + safeQ + `', content)
-		 ORDER BY fts_match_word('` + safeQ + `', content) DESC
-		 LIMIT ?`
+		FROM memories
+		WHERE ` + where + ` AND fts_match_word('` + safeQ + `', content)
+		ORDER BY fts_match_word('` + safeQ + `', content) DESC
+		LIMIT ?`
 
 	fullArgs := make([]any, 0, len(args)+1)
 	fullArgs = append(fullArgs, args...)
 	fullArgs = append(fullArgs, limit)
 
-	start := time.Now()
 	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
 	if err != nil {
-		slog.ErrorContext(ctx, "fts search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
-		return nil, fmt.Errorf("fts search: cluster_id=%s: %w", r.clusterID, err)
+		return nil, err
 	}
 	defer rows.Close()
 
-	var memories []domain.Memory
+	memories := make([]domain.Memory, 0, limit)
 	for rows.Next() {
 		m, err := scanMemoryRowsWithFTSScore(rows)
 		if err != nil {
@@ -550,7 +671,6 @@ func (r *MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Memor
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	slog.DebugContext(ctx, "fts search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
 	return memories, nil
 }
 
