@@ -1,10 +1,10 @@
-name: PR fast gate
+name: Server and plugin checks
 
 on:
   pull_request:
     branches: [main]
     paths:
-      - ".github/workflows/pr-fast-gate.yml"
+      - ".github/workflows/server-plugin-checks.yml"
       - "Makefile"
       - "server/**"
       - "openclaw-plugin/**"
@@ -13,7 +13,7 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/pr-fast-gate.yml"
+      - ".github/workflows/server-plugin-checks.yml"
       - "Makefile"
       - "server/**"
       - "openclaw-plugin/**"
