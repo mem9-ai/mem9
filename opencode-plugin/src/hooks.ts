@@ -7,7 +7,7 @@ import { formatRecallBlock } from "./recall/format.js";
 import { buildRecallQuery } from "./recall/query.js";
 import type { SessionTranscriptLoader } from "./session-transcript.js";
 
-const MAX_RECALL_RESULTS = 8;
+const MAX_RECALL_RESULTS = 10;
 const MIN_RECALL_QUERY_LEN = 5;
 const SESSION_CACHE_MAX_ENTRIES = 100;
 const SESSION_CACHE_TTL_MS = 15 * 60 * 1000;

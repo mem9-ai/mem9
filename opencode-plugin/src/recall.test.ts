@@ -268,7 +268,7 @@ test("buildHooks captures the latest non-synthetic text parts and injects releva
   const output = createSystemTransformOutput(["Base system prompt"]);
   await onSystemTransform(createSystemTransformInput("session-1"), output);
 
-  assert.deepEqual(queries, [{ q: "Please fix the failing TypeScript recall hook.", limit: 8 }]);
+  assert.deepEqual(queries, [{ q: "Please fix the failing TypeScript recall hook.", limit: 10 }]);
   assert.deepEqual(output.system, [
     "Base system prompt",
     [
@@ -315,7 +315,7 @@ test("buildHooks preserves the latest recall prompt across compaction", async ()
     createSystemTransformOutput(),
   );
 
-  assert.deepEqual(queries, [{ q: "Carry this prompt through compaction.", limit: 8 }]);
+  assert.deepEqual(queries, [{ q: "Carry this prompt through compaction.", limit: 10 }]);
 });
 
 test("buildHooks bounds very large captured prompts before search", async () => {
@@ -411,7 +411,7 @@ test("buildHooks skips recall when the cleaned query is too short", async () => 
       return {
         memories: [],
         total: 0,
-        limit: 8,
+        limit: 10,
         offset: 0,
       };
     }),
