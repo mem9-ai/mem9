@@ -10,7 +10,7 @@ export function buildPendingSetupHooks(
     : "a mem9 profile";
 
   console.warn(
-    `[mem9] Setup pending. Configure MEM9_API_KEY or add credentials for ${target} to enable mem9.`,
+    `[mem9] Setup pending. Run /mem9-setup, configure MEM9_API_KEY, or add credentials for ${target} to enable mem9.`,
   );
 
   return {};

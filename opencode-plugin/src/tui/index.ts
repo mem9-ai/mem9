@@ -1,83 +1,25 @@
-import { resolveMem9Home, resolveMem9Paths } from "../shared/platform-paths.js";
-import { PLUGIN_ID, PLUGIN_PACKAGE_NAME } from "../shared/plugin-meta.js";
-import { resolveServerPluginSpec } from "../shared/plugin-spec.js";
+import type {
+  TuiCommand,
+  TuiPlugin,
+  TuiPluginApi,
+} from "@opencode-ai/plugin/tui";
 import {
-  loadSetupDefaults,
+  resolveMem9Home,
+  resolveMem9Paths,
+  type Mem9ResolvedPaths,
+} from "../shared/platform-paths.js";
+import { PLUGIN_ID } from "../shared/plugin-meta.js";
+import {
+  loadSetupState,
+  provisionApiKey,
+  selectSetupProfile,
   writeSetupFiles,
-  type SetupDefaults,
-  type SetupScope,
+  type SetupState,
 } from "../shared/setup-files.js";
 
-interface TuiCommand {
-  title: string;
-  value: string;
-  description?: string;
-  category?: string;
-  slash?: {
-    name: string;
-    aliases?: string[];
-  };
-  onSelect?: () => void;
-}
-
-interface TuiDialogPromptProps {
-  title: string;
-  placeholder?: string;
-  value?: string;
-  onConfirm?: (value: string) => void;
-  onCancel?: () => void;
-}
-
-interface TuiDialogSelectOption<Value> {
-  title: string;
-  value: Value;
-  description?: string;
-}
-
-interface TuiDialogSelectProps<Value> {
-  title: string;
-  options: TuiDialogSelectOption<Value>[];
-  current?: Value;
-  onSelect?: (option: TuiDialogSelectOption<Value>) => void;
-}
-
-interface TuiPluginApi {
-  command: {
-    register(cb: () => TuiCommand[]): () => void;
-  };
-  ui: {
-    DialogPrompt: (props: TuiDialogPromptProps) => unknown;
-    DialogSelect: <Value>(props: TuiDialogSelectProps<Value>) => unknown;
-    toast(input: {
-      variant?: "info" | "success" | "warning" | "error";
-      title?: string;
-      message: string;
-      duration?: number;
-    }): void;
-    dialog: {
-      replace(render: () => unknown, onClose?: () => void): void;
-      clear(): void;
-    };
-  };
-  state: {
-    path: {
-      config: string;
-      state: string;
-      worktree: string;
-      directory: string;
-    };
-  };
-  lifecycle: {
-    onDispose(fn: () => void | Promise<void>): () => void;
-  };
-}
-
-interface TuiPluginMeta {
-  spec: string;
-}
+type SetupMode = "use-existing" | "create-new" | "manual-key";
 
 interface SetupDraft {
-  scope: SetupScope;
   profileId: string;
   label: string;
   baseUrl: string;
@@ -89,63 +31,219 @@ function getProjectDir(api: TuiPluginApi): string {
   if (worktree.length > 0) {
     return worktree;
   }
+
   return api.state.path.directory;
 }
 
-function showError(api: TuiPluginApi, error: unknown): void {
-  api.ui.toast({
-    variant: "error",
-    title: "mem9 setup failed",
-    message: error instanceof Error ? error.message : String(error),
+function resolvePaths(api: TuiPluginApi): Mem9ResolvedPaths {
+  return resolveMem9Paths({
+    configDir: api.state.path.config,
+    dataDir: api.state.path.state,
+    projectDir: getProjectDir(api),
+    mem9Home: resolveMem9Home(process.env),
   });
 }
 
-function showScopeDialog(
+function createDraft(state: SetupState): SetupDraft {
+  return {
+    profileId: state.suggestedNewProfileId,
+    label: state.suggestedLabel,
+    baseUrl: state.suggestedBaseUrl,
+    apiKey: "",
+  };
+}
+
+function showError(
   api: TuiPluginApi,
-  meta: TuiPluginMeta,
-  defaultsByScope: Record<SetupScope, SetupDefaults>,
-  draft: SetupDraft,
+  error: unknown,
+  retryCommand = false,
 ): void {
-  const projectDir = getProjectDir(api);
+  const suffix = retryCommand ? " Run /mem9-setup again when you are ready to retry." : "";
+  api.ui.toast({
+    variant: "error",
+    title: "mem9 setup failed",
+    message: `${error instanceof Error ? error.message : String(error)}${suffix}`,
+  });
+}
+
+function showSelectedSuccess(api: TuiPluginApi, profileId: string): void {
+  api.ui.toast({
+    variant: "success",
+    title: "mem9 configured",
+    message: `Selected profile ${profileId} and set it as the OpenCode default. Restart OpenCode to reload mem9.`,
+  });
+}
+
+function showSavedSuccess(api: TuiPluginApi, profileId: string): void {
+  api.ui.toast({
+    variant: "success",
+    title: "mem9 configured",
+    message: `Saved profile ${profileId} and set it as the OpenCode default. Restart OpenCode to reload mem9.`,
+  });
+}
+
+async function submitExistingProfile(
+  api: TuiPluginApi,
+  paths: Mem9ResolvedPaths,
+  profileId: string,
+): Promise<void> {
+  try {
+    await selectSetupProfile({
+      paths,
+      profileId,
+    });
+    api.ui.dialog.clear();
+    showSelectedSuccess(api, profileId);
+  } catch (error) {
+    showError(api, error);
+  }
+}
+
+async function submitManualProfile(
+  api: TuiPluginApi,
+  paths: Mem9ResolvedPaths,
+  draft: SetupDraft,
+): Promise<void> {
+  try {
+    await writeSetupFiles({
+      paths,
+      profileId: draft.profileId,
+      label: draft.label,
+      baseUrl: draft.baseUrl,
+      apiKey: draft.apiKey,
+    });
+    api.ui.dialog.clear();
+    showSavedSuccess(api, draft.profileId);
+  } catch (error) {
+    showError(api, error);
+  }
+}
+
+async function submitProvisionedProfile(
+  api: TuiPluginApi,
+  paths: Mem9ResolvedPaths,
+  draft: SetupDraft,
+): Promise<void> {
+  try {
+    api.ui.toast({
+      variant: "info",
+      title: "mem9 setup",
+      message: "Requesting a new API key from mem9...",
+      duration: 3000,
+    });
+
+    const apiKey = await provisionApiKey({
+      baseUrl: draft.baseUrl,
+    });
+
+    await writeSetupFiles({
+      paths,
+      profileId: draft.profileId,
+      label: draft.label,
+      baseUrl: draft.baseUrl,
+      apiKey,
+    });
+    api.ui.dialog.clear();
+    showSavedSuccess(api, draft.profileId);
+  } catch (error) {
+    api.ui.dialog.clear();
+    showError(api, error, true);
+  }
+}
+
+function isReusableProfileID(state: SetupState, profileId: string): boolean {
+  return state.usableProfiles.some((profile) => profile.profileId === profileId);
+}
+
+function showModeDialog(
+  api: TuiPluginApi,
+  paths: Mem9ResolvedPaths,
+  state: SetupState,
+): void {
+  const options: Array<{
+    title: string;
+    value: SetupMode;
+    description: string;
+  }> = [];
+
+  if (state.usableProfiles.length > 0) {
+    options.push({
+      title: "Use existing profile",
+      value: "use-existing",
+      description: "Pick a saved mem9 profile and make it the default for OpenCode.",
+    });
+  }
+
+  options.push(
+    {
+      title: "Create profile automatically",
+      value: "create-new",
+      description: "Request a fresh API key from mem9 and save it as a new profile.",
+    },
+    {
+      title: "Create profile with API key",
+      value: "manual-key",
+      description: "Paste an existing API key and save it as a new profile.",
+    },
+  );
+
   api.ui.dialog.replace(() =>
-    api.ui.DialogSelect<SetupScope>({
-      title: "Enable mem9 in user or project scope?",
-      current: draft.scope,
-      options: [
-        {
-          title: "User scope",
-          value: "user",
-          description: "Reuse one mem9 profile across this machine.",
-        },
-        {
-          title: "Project scope",
-          value: "project",
-          description: `Only enable mem9 for ${projectDir}.`,
-        },
-      ],
+    api.ui.DialogSelect<SetupMode>({
+      title: "How should mem9 set up this OpenCode install?",
+      current: state.usableProfiles.length > 0 ? "use-existing" : "create-new",
+      options,
       onSelect: (option) => {
-        draft.scope = option.value;
-        const defaults = defaultsByScope[option.value];
-        draft.profileId = defaults.profileId;
-        draft.label = defaults.label;
-        draft.baseUrl = defaults.baseUrl;
-        showProfileDialog(api, meta, defaultsByScope, draft);
+        if (option.value === "use-existing") {
+          showExistingProfileDialog(api, paths, state);
+          return;
+        }
+
+        const draft = createDraft(state);
+        showProfileIdDialog(api, paths, state, option.value, draft);
       },
     }),
   );
 }
 
-function showProfileDialog(
+function showExistingProfileDialog(
   api: TuiPluginApi,
-  meta: TuiPluginMeta,
-  defaultsByScope: Record<SetupScope, SetupDefaults>,
+  paths: Mem9ResolvedPaths,
+  state: SetupState,
+): void {
+  const currentProfileId = state.usableProfiles.some(
+    (profile) => profile.profileId === state.suggestedProfileId,
+  )
+    ? state.suggestedProfileId
+    : state.usableProfiles[0]?.profileId;
+
+  api.ui.dialog.replace(() =>
+    api.ui.DialogSelect<string>({
+      title: "Choose a mem9 profile",
+      current: currentProfileId,
+      options: state.usableProfiles.map((profile) => ({
+        title: `${profile.label} (${profile.profileId})`,
+        value: profile.profileId,
+        description: profile.baseUrl,
+      })),
+      onSelect: (option) => {
+        void submitExistingProfile(api, paths, option.value);
+      },
+    }),
+  );
+}
+
+function showProfileIdDialog(
+  api: TuiPluginApi,
+  paths: Mem9ResolvedPaths,
+  state: SetupState,
+  mode: SetupMode,
   draft: SetupDraft,
 ): void {
   api.ui.dialog.replace(() =>
     api.ui.DialogPrompt({
       title: "Profile ID",
       value: draft.profileId,
-      placeholder: "default",
+      placeholder: state.suggestedNewProfileId,
       onConfirm: (value) => {
         const next = value.trim();
         if (next.length === 0) {
@@ -156,11 +254,22 @@ function showProfileDialog(
           return;
         }
 
+        if (isReusableProfileID(state, next)) {
+          api.ui.toast({
+            variant: "warning",
+            message: "That profile already has credentials. Choose a new profile ID or reuse the existing profile.",
+          });
+          return;
+        }
+
         draft.profileId = next;
-        showLabelDialog(api, meta, defaultsByScope, draft);
+        if (draft.label.trim().length === 0) {
+          draft.label = next === "default" ? "Personal" : next;
+        }
+        showLabelDialog(api, paths, state, mode, draft);
       },
       onCancel: () => {
-        api.ui.dialog.clear();
+        showModeDialog(api, paths, state);
       },
     }),
   );
@@ -168,15 +277,16 @@ function showProfileDialog(
 
 function showLabelDialog(
   api: TuiPluginApi,
-  meta: TuiPluginMeta,
-  defaultsByScope: Record<SetupScope, SetupDefaults>,
+  paths: Mem9ResolvedPaths,
+  state: SetupState,
+  mode: SetupMode,
   draft: SetupDraft,
 ): void {
   api.ui.dialog.replace(() =>
     api.ui.DialogPrompt({
       title: "Profile label",
       value: draft.label,
-      placeholder: "Personal",
+      placeholder: draft.profileId === "default" ? "Personal" : draft.profileId,
       onConfirm: (value) => {
         const next = value.trim();
         if (next.length === 0) {
@@ -188,10 +298,10 @@ function showLabelDialog(
         }
 
         draft.label = next;
-        showBaseUrlDialog(api, meta, defaultsByScope, draft);
+        showBaseUrlDialog(api, paths, state, mode, draft);
       },
       onCancel: () => {
-        showProfileDialog(api, meta, defaultsByScope, draft);
+        showProfileIdDialog(api, paths, state, mode, draft);
       },
     }),
   );
@@ -199,8 +309,9 @@ function showLabelDialog(
 
 function showBaseUrlDialog(
   api: TuiPluginApi,
-  meta: TuiPluginMeta,
-  defaultsByScope: Record<SetupScope, SetupDefaults>,
+  paths: Mem9ResolvedPaths,
+  state: SetupState,
+  mode: SetupMode,
   draft: SetupDraft,
 ): void {
   api.ui.dialog.replace(() =>
@@ -219,10 +330,15 @@ function showBaseUrlDialog(
         }
 
         draft.baseUrl = next;
-        showApiKeyDialog(api, meta, defaultsByScope, draft);
+        if (mode === "create-new") {
+          void submitProvisionedProfile(api, paths, draft);
+          return;
+        }
+
+        showApiKeyDialog(api, paths, state, draft);
       },
       onCancel: () => {
-        showLabelDialog(api, meta, defaultsByScope, draft);
+        showLabelDialog(api, paths, state, mode, draft);
       },
     }),
   );
@@ -230,8 +346,8 @@ function showBaseUrlDialog(
 
 function showApiKeyDialog(
   api: TuiPluginApi,
-  meta: TuiPluginMeta,
-  defaultsByScope: Record<SetupScope, SetupDefaults>,
+  paths: Mem9ResolvedPaths,
+  state: SetupState,
   draft: SetupDraft,
 ): void {
   api.ui.toast({
@@ -255,106 +371,37 @@ function showApiKeyDialog(
         }
 
         draft.apiKey = next;
-        void submitSetup(api, meta, draft);
+        void submitManualProfile(api, paths, draft);
       },
       onCancel: () => {
-        showBaseUrlDialog(api, meta, defaultsByScope, draft);
+        showBaseUrlDialog(api, paths, state, "manual-key", draft);
       },
     }),
   );
 }
 
-async function submitSetup(
-  api: TuiPluginApi,
-  meta: TuiPluginMeta,
-  draft: SetupDraft,
-): Promise<void> {
+async function startSetup(api: TuiPluginApi): Promise<void> {
   try {
-    const paths = resolveMem9Paths({
-      configDir: api.state.path.config,
-      dataDir: api.state.path.state,
-      projectDir: getProjectDir(api),
-      mem9Home: resolveMem9Home(process.env),
-    });
-
-    const result = await writeSetupFiles({
-      paths,
-      scope: draft.scope,
-      pluginSpec: resolveServerPluginSpec(meta.spec || PLUGIN_PACKAGE_NAME),
-      profileId: draft.profileId,
-      label: draft.label,
-      baseUrl: draft.baseUrl,
-      apiKey: draft.apiKey,
-    });
-
-    api.ui.dialog.clear();
-    api.ui.toast({
-      variant: "success",
-      title: "mem9 configured",
-      message: `Saved ${draft.profileId} and updated ${draft.scope} scope. Restart OpenCode to reload the server plugin.`,
-    });
-
-    if (result.duplicatePluginConfigFile) {
-      api.ui.toast({
-        variant: "warning",
-        title: "Duplicate mem9 registration",
-        message: `mem9 is still registered in another scope at ${result.duplicatePluginConfigFile}. Keep one active entry.`,
-        duration: 6000,
-      });
-    }
+    const paths = resolvePaths(api);
+    const state = await loadSetupState(paths);
+    showModeDialog(api, paths, state);
   } catch (error) {
     showError(api, error);
   }
 }
 
-async function startSetup(api: TuiPluginApi, meta: TuiPluginMeta): Promise<void> {
-  try {
-    const paths = resolveMem9Paths({
-      configDir: api.state.path.config,
-      dataDir: api.state.path.state,
-      projectDir: getProjectDir(api),
-      mem9Home: resolveMem9Home(process.env),
-    });
-
-    const [userDefaults, projectDefaults] = await Promise.all([
-      loadSetupDefaults(paths, "user"),
-      loadSetupDefaults(paths, "project"),
-    ]);
-
-    const draft: SetupDraft = {
-      scope: "user",
-      profileId: userDefaults.profileId,
-      label: userDefaults.label,
-      baseUrl: userDefaults.baseUrl,
-      apiKey: "",
-    };
-
-    showScopeDialog(
-      api,
-      meta,
-      {
-        user: userDefaults,
-        project: projectDefaults,
-      },
-      draft,
-    );
-  } catch (error) {
-    showError(api, error);
-  }
-}
-
-const tui = async (api: TuiPluginApi, _options: unknown, meta: TuiPluginMeta): Promise<void> => {
-  const dispose = api.command.register(() => [
+const tui: TuiPlugin = async (api): Promise<void> => {
+  const dispose = api.command.register((): TuiCommand[] => [
     {
-      title: "mem9: initialize setup",
-      value: "mem9-init",
+      title: "mem9: setup",
+      value: "mem9-setup",
       category: "mem9",
-      description: "Create or update mem9 credentials and scope config.",
+      description: "Reuse a mem9 profile or create a new one for OpenCode.",
       slash: {
-        name: "mem9-init",
+        name: "mem9-setup",
       },
       onSelect: () => {
-        void startSetup(api, meta);
+        void startSetup(api);
       },
     },
   ]);

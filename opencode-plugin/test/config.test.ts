@@ -118,8 +118,6 @@ test("resolveMem9Paths uses shared mem9 home for credentials and opencode data d
 
   assert.equal(paths.globalConfigFile, path.join(configDir, "mem9.json"));
   assert.equal(paths.projectConfigFile, path.join(projectDir, ".opencode", "mem9.json"));
-  assert.equal(paths.globalPluginConfigFile, path.join(configDir, "opencode.json"));
-  assert.equal(paths.projectPluginConfigFile, path.join(projectDir, ".opencode", "opencode.json"));
   assert.equal(paths.credentialsFile, path.join(mem9Home, ".credentials.json"));
   assert.equal(paths.logDir, path.join(dataDir, "plugins", "mem9", "log"));
 });
