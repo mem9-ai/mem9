@@ -1,108 +1,136 @@
 ---
 name: mem9-setup
-description: "Setup mem9 persistent memory for OpenCode. Triggers: set up mem9, install mem9, configure memory, enable memory, setup memory, mem9 onboarding, memory not working."
+description: "Enable and configure mem9 for OpenCode. Triggers: set up mem9, install mem9, configure memory, enable memory, mem9 onboarding, memory not working."
 ---
 
 # mem9 Setup for OpenCode
 
-**You are an automated installer. Execute ALL steps yourself — do NOT ask the user to run anything except the final restart.**
+Execute the setup directly. Only ask the user for the choices or secrets you cannot infer safely. The final restart reminder is fine.
 
-## Terminology
+## What This Setup Owns
 
-Use this distinction consistently when talking to users:
+This setup handles three things:
 
-| Internal term | User-facing explanation |
-|---|---|
-| `tenantID` | Internal config field; do not surface unless editing config |
-| `SPACE_ID` / `MEM9_TENANT_ID` | The user's mem9 space ID — reconnects to the same memory |
-| "space ID" | Preferred user-facing term |
+1. register `@mem9/opencode` in the chosen OpenCode scope
+2. configure the selected OpenCode scope to use a mem9 profile
+3. keep secrets in shared mem9 credentials storage
 
-Security note: Treat the space ID like a secret. Anyone who has it can access that mem9 space.
+Use this model:
 
----
+- shared credentials: `$MEM9_HOME/.credentials.json`
+- default `MEM9_HOME`: `$HOME/.mem9`
+- user scope config: `<OpenCode config dir>/mem9.json`
+- project scope config: `<project>/.opencode/mem9.json`
 
-## Step 0 — Choose plugin install scope
+Runtime compatibility remains:
 
-Ask the user before doing anything else:
+- preferred override: `MEM9_API_KEY`
+- optional override: `MEM9_API_URL`
+- legacy compatibility: `MEM9_TENANT_ID`
 
-> Where do you want to install the mem9 plugin?
-> 1. **Global** — available in every OpenCode project on this machine
-> 2. **Project** — only active in the current project directory
+## Step 0: Choose Plugin Scope
 
-**Branching:**
-- If **global** → target file is `~/.config/opencode/opencode.json` (create if absent).
-- If **project** → target file is `opencode.json` in the current project root (create if absent).
+Ask:
 
-Save the chosen target file path — it is used in Step 3.
+> Where should mem9 be enabled?
+> 1. Global: available in every OpenCode project on this machine
+> 2. Project: only active in the current project
 
----
+Use these plugin targets:
 
-## Step 1 — Choose or provide mem9 space
+- global scope: `~/.config/opencode/opencode.json`
+- project scope: `./opencode.json`
 
-Ask the user:
+Choose one plugin target only. Do not register mem9 in both global and project scope at the same time.
 
-> Which setup do you want?
-> 1. Create a new mem9 space
-> 2. Reconnect an existing mem9 space
->
-> If you choose reconnect, paste your existing space ID.
+Use matching mem9 config targets:
 
-**Branching:**
-- If reconnect with existing ID → verify it first (Step 1b), then skip to Step 3.
-- If create new → continue to Step 2.
+- global scope: `<OpenCode config dir>/mem9.json`
+- project scope: `<project>/.opencode/mem9.json`
 
-### Step 1b — Verify existing space
+When a project needs different mem9 behavior, prefer project config overrides over a second plugin entry.
 
-First check that the API is reachable, then confirm the space ID is valid:
+## Step 1: Choose Identity Source
 
-```bash
-curl -sf --max-time 8 "https://api.mem9.ai/healthz" \
-  && echo "API_OK" || echo "API_UNREACHABLE"
-```
+Ask:
 
-If `API_UNREACHABLE` → network problem; ask user to check connectivity to `api.mem9.ai`.
+> How should mem9 authenticate?
+> 1. Shared profile in `$MEM9_HOME/.credentials.json` (recommended)
+> 2. Environment variables for this OpenCode launch
 
-If `API_OK`, verify the space ID resolves:
+### If the user chooses shared profile
 
-```bash
-curl -sf --max-time 8 \
-  "https://api.mem9.ai/v1alpha1/mem9s/$SPACE_ID/memories?limit=1" \
-  && echo "SPACE_OK" || echo "SPACE_INVALID"
-```
+Ask for:
 
-If `SPACE_OK` → continue to Step 3.
-If `SPACE_INVALID` → space ID not found; ask user to re-check or create a new space.
+- `profileId`
+- `apiKey`
+- optional `label`
+- optional `baseUrl`
 
----
+Defaults:
 
-## Step 2 — Create a new mem9 space
+- `profileId`: `default`
+- `label`: same as `profileId`
+- `baseUrl`: `https://api.mem9.ai`
 
-> Skip if the user provided an existing space ID in Step 1.
+Then:
 
-```bash
-curl -sX POST https://api.mem9.ai/v1alpha1/mem9s
-```
+1. Create `$MEM9_HOME` if needed.
+2. Read `$MEM9_HOME/.credentials.json` if it exists.
+3. Create or update the selected profile under `profiles[profileId]`.
+4. Write the file back with this schema:
 
-Response:
 ```json
-{ "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "claim_url": "https://..." }
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "default": {
+      "label": "Personal",
+      "baseUrl": "https://api.mem9.ai",
+      "apiKey": "..."
+    }
+  }
+}
 ```
 
-Save the `id` as `SPACE_ID`. The `claim_url` is only relevant for self-hosted TiDB Zero setups — ignore it for the managed `api.mem9.ai` service. Tell the user:
+5. Write the chosen `profileId` into the selected scope config:
 
-> Your new mem9 space is ready. This space ID is how you reconnect to the same memory from any machine.
->
-> **Important:** This space ID is also your secret. Never share it with anyone.
+```json
+{
+  "schemaVersion": 1,
+  "profileId": "default",
+  "debug": false,
+  "defaultTimeoutMs": 8000,
+  "searchTimeoutMs": 15000
+}
+```
 
----
+If the scope config already exists, preserve existing non-sensitive fields and only update the mem9 fields that belong to this setup.
 
-## Step 3 — Install the plugin and configure
+### If the user chooses environment variables
 
-Write the plugin entry into the target `opencode.json` chosen in Step 0. Configure `MEM9_TENANT_ID` in the environment before starting OpenCode.
+Do not write secrets to disk.
 
-### Method A: npm plugin (Recommended)
+Register the plugin normally, then tell the user the OpenCode process must start with one of these:
 
-Add `"@mem9/opencode"` to the target `opencode.json`:
+```bash
+export MEM9_API_KEY="..."
+export MEM9_API_URL="https://api.mem9.ai"
+```
+
+Legacy compatibility still works:
+
+```bash
+export MEM9_TENANT_ID="..."
+```
+
+Do not edit shell rc files directly. If the user wants persistence, suggest their normal shell profile flow or a project launcher script.
+
+## Step 2: Register the Plugin
+
+Ensure the selected `opencode.json` contains `@mem9/opencode`.
+
+Desired shape:
 
 ```json
 {
@@ -110,142 +138,67 @@ Add `"@mem9/opencode"` to the target `opencode.json`:
 }
 ```
 
-OpenCode will auto-install the plugin from npm on next startup.
+If `plugin` already exists:
 
-Set `MEM9_TENANT_ID` in the shell environment before launching OpenCode:
+- keep existing entries
+- add `@mem9/opencode` once
+- preserve unrelated config
 
-```bash
-export MEM9_TENANT_ID="<space-id>"
+If mem9 is already registered in another scope, explain that the plugin should stay single-scope and ask the user which scope should remain active. Do not leave both active.
+
+If the user already enabled mem9 by editing `opencode.json`, or already points OpenCode at a local mem9 plugin directory, skip plugin registration work and move straight to mem9 config and credentials.
+
+## Step 3: Explain File Layout
+
+After writing files, tell the user where everything landed:
+
+- plugin registration file
+- selected scope `mem9.json`
+- shared credentials file if profile mode was used
+
+Also mention:
+
+- debug logs are written under the OpenCode state dir at `plugins/mem9/log/`
+
+## Step 4: Verify
+
+Ask the user to restart OpenCode.
+
+Expected startup behavior:
+
+- profile mode: OpenCode loads mem9 from the selected `profileId`
+- env mode: OpenCode uses the environment variables from that launch
+- legacy env mode: OpenCode still starts and logs legacy compatibility
+
+Expected healthy log lines include one of these:
+
+```text
+[mem9] Server mode (mem9 REST API via profile)
+[mem9] Server mode (mem9 REST API via env)
+[mem9] Server mode (mem9 REST API via legacy_env)
 ```
 
-Do not modify shell RC files directly. Tell the user that `MEM9_TENANT_ID` must be present in the environment used to launch OpenCode.
+If setup is still incomplete, OpenCode logs:
 
-If the user asks how to persist it, give guidance only. For example:
-
-```bash
-# zsh
-echo 'export MEM9_TENANT_ID="<space-id>"' >> ~/.zshrc
-
-# bash
-echo 'export MEM9_TENANT_ID="<space-id>"' >> ~/.bashrc
+```text
+[mem9] Setup pending.
 ```
 
-For project-scoped setup, suggest a tool like `direnv` or a project launch script instead of putting env vars into `opencode.json`.
+## Step 5: Troubleshooting
 
-### Method B: From source
+Use this guidance:
 
-```bash
-git clone https://github.com/mem9-ai/mem9.git
-cd mem9/opencode-plugin
-npm install
-```
+- `Setup pending`: add `MEM9_API_KEY`, or set `profileId` and create that profile in `$MEM9_HOME/.credentials.json`
+- profile exists but still does not work: confirm the selected profile has a non-empty `apiKey`
+- project behaves differently from user scope: check for `<project>/.opencode/mem9.json` overriding the user config
+- recall, ingest, or debug runs twice: check for duplicate plugin registration across global scope, project scope, npm, or local plugin paths; keep one active plugin entry
+- debug logging enabled but no file appears: confirm OpenCode can write to its state directory
 
-Then add the local plugin path to the target `opencode.json`:
+## Final Message
 
-```json
-{
-  "plugin": ["file:///absolute/path/to/mem9/opencode-plugin/dist/index.js"]
-}
-```
+After successful setup, send a short confirmation that includes:
 
-Set `MEM9_TENANT_ID` in the shell environment before launching OpenCode:
-
-```bash
-export MEM9_TENANT_ID="<space-id>"
-```
-
-Do not modify shell RC files directly. Tell the user that `MEM9_TENANT_ID` must be present in the environment used to launch OpenCode. If the user asks how to persist it, provide shell-specific examples as guidance only.
-
-If the plugin has not been built yet, build it first:
-
-```bash
-cd mem9/opencode-plugin
-npm install
-npm run build
-```
-
----
-
-## Step 4 — Verify setup
-
-Start OpenCode. You should see:
-
-```
-[mem9] Server mode (mem9 REST API)
-```
-
-If you see `[mem9] No MEM9_TENANT_ID configured`, check your env vars.
-
-**Quick verification:**
-- Ask the agent to "remember that this project uses React 18"
-- Start a new session and ask "what UI framework does this project use?"
-- The agent should recall the stored memory.
-
----
-
-## Step 5 — What's Next
-
-After successful setup, send the user:
-
-```
-Your mem9 space is ready.
-
-WHAT YOU CAN DO NEXT
-
-Your agent now has persistent cloud memory. At the start of every chat turn,
-recent memories are automatically injected into the system prompt as context.
-
-Memories are NOT saved automatically — you control what gets stored using
-the memory tools below.
-
-Available tools:
-- memory_store: Save facts, decisions, context
-- memory_search: Find memories by keywords and meaning
-- memory_get: Retrieve by ID
-- memory_update: Modify existing memory
-- memory_delete: Remove
-
-YOUR MEM9 SPACE ID
-
-SPACE_ID: <your-space-id>
-
-This ID is your access key to mem9.
-Keep it private and store it somewhere safe.
-
-RECOVERY
-
-Set the same MEM9_TENANT_ID in the environment on any machine to reconnect.
-Your memory will reconnect instantly.
-
-BACKUP PLAN
-
-Save the space ID in a password manager or secure vault.
-```
-
----
-
-## API Reference
-
-Base: `https://api.mem9.ai`
-Header: `X-Mnemo-Agent-Id: <name>` (optional)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/healthz` | Health check |
-| POST | `/v1alpha1/mem9s` | Provision tenant |
-| POST | `/v1alpha1/mem9s/{tenantID}/memories` | Create memory |
-| GET | `/v1alpha1/mem9s/{tenantID}/memories` | Search (`?q=`, `?tags=`, `?source=`, `?limit=`) |
-| GET | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Get by ID |
-| PUT | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Update |
-| DELETE | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Delete |
-
----
-
-## Troubleshooting
-
-| Symptom | Fix |
-|---------|-----|
-| `No MEM9_TENANT_ID configured` | Set `MEM9_TENANT_ID` in the shell environment before starting OpenCode |
-| Plugin not loading | Check `opencode.json` has a valid `"plugin"` entry and restart OpenCode |
-| `404` on API call | Verify space ID; run `curl https://api.mem9.ai/healthz` |
-| Existing space ID unreachable | Re-check for typos; confirm network access to `api.mem9.ai` |
+- plugin scope
+- identity mode
+- selected `profileId` if profile mode was used
+- the reminder to restart OpenCode
