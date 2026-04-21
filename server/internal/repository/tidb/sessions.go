@@ -243,45 +243,39 @@ func (r *SessionRepo) ftsSearchWithPostFilter(ctx context.Context, query string,
 	conds, args := r.buildSessionFilterConds(f)
 	where := strings.Join(conds, " AND ")
 	safeQ := ftsSafeLiteral(query)
-
-	memories := make([]domain.Memory, 0, limit)
-	offset := 0
-
-	for len(memories) < limit {
-		candidates, err := r.fetchSessionFTSCandidates(ctx, safeQ, limit, offset)
-		if err != nil {
-			return nil, err
-		}
-		if len(candidates) == 0 {
-			break
-		}
-
-		filtered, err := r.fetchFilteredFTSSessions(ctx, candidates, where, args)
-		if err != nil {
-			return nil, err
-		}
-		memories = append(memories, filtered...)
-		if len(memories) >= limit {
-			memories = memories[:limit]
-			break
-		}
-		if len(candidates) < limit {
-			break
-		}
-		offset += len(candidates)
+	candidates, err := r.fetchSessionFTSCandidates(ctx, safeQ, limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(candidates) == 0 {
+		return nil, nil
 	}
 
-	return memories, nil
+	filtered, err := r.fetchFilteredFTSSessions(ctx, candidates, where, args)
+	if err != nil {
+		return nil, err
+	}
+	if len(filtered) >= limit || len(candidates) < limit {
+		if len(filtered) > limit {
+			filtered = filtered[:limit]
+		}
+		return filtered, nil
+	}
+
+	// Bound the FTS-only candidate expansion to a single TopK pass. If selective
+	// post-filters drop too many candidates, fall back to the original filtered
+	// query shape to avoid unbounded global pagination.
+	return r.filteredFTSSearch(ctx, safeQ, where, args, limit)
 }
 
-func (r *SessionRepo) fetchSessionFTSCandidates(ctx context.Context, safeQ string, limit, offset int) ([]sessionFTSCandidate, error) {
+func (r *SessionRepo) fetchSessionFTSCandidates(ctx context.Context, safeQ string, limit int) ([]sessionFTSCandidate, error) {
 	sqlQuery := `SELECT id, fts_match_word('` + safeQ + `', content) AS fts_score
 		FROM sessions
 		WHERE fts_match_word('` + safeQ + `', content)
 		ORDER BY fts_match_word('` + safeQ + `', content) DESC, id
-		LIMIT ? OFFSET ?`
+		LIMIT ?`
 
-	rows, err := r.db.QueryContext(ctx, sqlQuery, limit, offset)
+	rows, err := r.db.QueryContext(ctx, sqlQuery, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -349,6 +343,27 @@ func (r *SessionRepo) fetchFilteredFTSSessions(ctx context.Context, candidates [
 		ordered = append(ordered, memory)
 	}
 	return ordered, nil
+}
+
+func (r *SessionRepo) filteredFTSSearch(ctx context.Context, safeQ, where string, args []any, limit int) ([]domain.Memory, error) {
+	sqlQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at,
+		fts_match_word('` + safeQ + `', content) AS fts_score
+		FROM sessions
+		WHERE ` + where + ` AND fts_match_word('` + safeQ + `', content)
+		ORDER BY fts_match_word('` + safeQ + `', content) DESC
+		LIMIT ?`
+
+	fullArgs := make([]any, 0, len(args)+1)
+	fullArgs = append(fullArgs, args...)
+	fullArgs = append(fullArgs, limit)
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanSessionRowsWithFTSScore(rows)
 }
 
 func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
