@@ -31,6 +31,13 @@ The managed hook commands stay fixed after setup. Plugin updates reuse those sam
    $mem9:project-config
    ```
 
+5. When you want an on-demand recall or an explicit store, run:
+
+   ```text
+   $mem9:recall
+   $mem9:store
+   ```
+
 `$mem9:setup` inspects the saved global profiles first, then enables `codex_hooks` and installs the managed hooks with the path you choose. You do not need to enable hooks manually first.
 
 ## Requirements
@@ -131,6 +138,28 @@ What it does not do:
 
 - it does not create profiles
 - it does not store API keys in the project
+
+### `$mem9:recall`
+
+Manual memory lookup for the current request.
+
+What it does:
+
+- uses the current effective profile
+- respects project override config when present
+- searches `/v1alpha2/mem9s/memories` with `agent_id=codex`
+- uses `searchTimeoutMs`
+
+### `$mem9:store`
+
+Manual memory store for one user-approved fact, preference, or instruction.
+
+What it does:
+
+- uses the current effective profile
+- respects project override config when present
+- stores one `content` entry with synchronous confirmation
+- uses `defaultTimeoutMs`
 
 ## Where Mem9 Stores Data
 
