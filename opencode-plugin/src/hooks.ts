@@ -29,6 +29,12 @@ export interface BuildHooksOptions {
   debugLogger?: DebugLogger;
 }
 
+function runInBackground(task: Promise<unknown>): void {
+  void task.catch(() => {
+    // Background ingest and debug work stays fail-soft.
+  });
+}
+
 function extractLatestUserPrompt(parts: ChatMessageOutput["parts"]): string | null {
   const chunks: string[] = [];
 
@@ -193,35 +199,45 @@ export function buildHooks(
         content,
       });
 
-      try {
-        await submitMessagesForIngest({
+      runInBackground(
+        submitMessagesForIngest({
           backend,
           messages: state.transcript,
           sessionID: input.sessionID,
           agentID: state.agentID,
           debugLogger: options.debugLogger,
-        });
-      } catch {
-        // Ingest failures must not block chat.
-      }
+        }),
+      );
     },
     "tool.execute.after": async (input, output) => {
-      await options.debugLogger?.("tool.execute.after", {
-        sessionID: input.sessionID,
-        tool: input.tool,
-        callID: input.callID,
-        args: input.args,
-        title: output.title,
-        output: output.output,
-        metadata: output.metadata,
-      });
+      if (!options.debugLogger) {
+        return;
+      }
+
+      runInBackground(
+        options.debugLogger("tool.execute.after", {
+          sessionID: input.sessionID,
+          tool: input.tool,
+          callID: input.callID,
+          args: input.args,
+          title: output.title,
+          output: output.output,
+          metadata: output.metadata,
+        }),
+      );
     },
     "experimental.session.compacting": async (input, output) => {
       output.context.push(COMPACTION_HINT);
-      await options.debugLogger?.("session.compacting", {
-        sessionID: input.sessionID,
-        hint: COMPACTION_HINT,
-      });
+      if (!options.debugLogger) {
+        return;
+      }
+
+      runInBackground(
+        options.debugLogger("session.compacting", {
+          sessionID: input.sessionID,
+          hint: COMPACTION_HINT,
+        }),
+      );
     },
   };
 }

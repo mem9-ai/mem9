@@ -32,6 +32,29 @@ type SessionCompactingHook = NonNullable<Hooks["experimental.session.compacting"
 type SessionCompactingInput = Parameters<SessionCompactingHook>[0];
 type SessionCompactingOutput = Parameters<SessionCompactingHook>[1];
 
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve(value: T): void;
+  reject(error?: unknown): void;
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (error?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
+
+async function waitForBackgroundTasks(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+}
+
 function createBackend(options: {
   searchImpl?: (input: SearchInput) => Promise<SearchResult>;
   ingestImpl?: (input: IngestInput) => Promise<IngestResult>;
@@ -218,6 +241,14 @@ test("redactDebugPayload masks API keys and shortens prompt-like fields", () => 
   assert.equal(messages[0]?.content, `${"c".repeat(160)}...`);
 });
 
+test("redactDebugPayload masks mem9 secrets inside free-form strings", () => {
+  const redacted = redactDebugPayload({
+    error: "mem9 request failed with mk_secret_value during retry",
+  });
+
+  assert.equal(redacted.error, "mem9 request failed with mk_*** during retry");
+});
+
 test("buildHooks auto-ingests cleaned transcript messages in smart mode", async () => {
   const ingestCalls: IngestInput[] = [];
   const hooks = buildHooks(
@@ -254,6 +285,7 @@ Remember that I prefer focused patches.
     createTextCompleteInput("session-1"),
     createTextCompleteOutput("I will keep the patch focused."),
   );
+  await waitForBackgroundTasks();
 
   assert.deepEqual(ingestCalls, [
     {
@@ -272,6 +304,51 @@ Remember that I prefer focused patches.
       ],
     },
   ]);
+});
+
+test("experimental.text.complete resolves before background ingest completes", async () => {
+  const ingestDeferred = createDeferred<IngestResult>();
+  let ingestStarted = false;
+  const hooks = buildHooks(
+    createBackend({
+      async ingestImpl() {
+        ingestStarted = true;
+        return ingestDeferred.promise;
+      },
+    }),
+  );
+
+  const onChatMessage = hooks["chat.message"];
+  const onTextComplete = hooks["experimental.text.complete"];
+  assert.ok(onChatMessage);
+  assert.ok(onTextComplete);
+
+  await onChatMessage(
+    createChatMessageInput("session-detached"),
+    createChatMessageOutput([textPart("Remember the background ingest behavior.")]),
+  );
+
+  const hookPromise = onTextComplete(
+    createTextCompleteInput("session-detached"),
+    createTextCompleteOutput("I captured the latest assistant reply."),
+  );
+
+  const raceWinner = await Promise.race([
+    hookPromise.then(() => "hook"),
+    new Promise<string>((resolve) => {
+      setTimeout(() => resolve("timer"), 0);
+    }),
+  ]);
+
+  assert.equal(raceWinner, "hook");
+  await waitForBackgroundTasks();
+  assert.equal(ingestStarted, true);
+
+  ingestDeferred.resolve({
+    status: "ok",
+    memories_changed: 1,
+  });
+  await waitForBackgroundTasks();
 });
 
 test("buildHooks appends a compaction hint and emits debug events", async () => {
@@ -293,6 +370,7 @@ test("buildHooks appends a compaction hint and emits debug events", async () => 
     createToolExecuteAfterInput("session-compact"),
     createToolExecuteAfterOutput(),
   );
+  await waitForBackgroundTasks();
 
   assert.deepEqual(compactionOutput.context, [
     "Preserve durable user preferences, project decisions, and unfinished work that should survive compaction.",
@@ -322,4 +400,60 @@ test("buildHooks appends a compaction hint and emits debug events", async () => 
       },
     },
   ]);
+});
+
+test("debug hooks resolve before background logging completes", async () => {
+  const firstLogDeferred = createDeferred<void>();
+  const secondLogDeferred = createDeferred<void>();
+  const logPromises = [firstLogDeferred.promise, secondLogDeferred.promise];
+  const logEvents: string[] = [];
+  const hooks = buildHooks(createBackend(), {
+    debugLogger: async (event) => {
+      logEvents.push(event);
+      const next = logPromises.shift();
+      if (next) {
+        await next;
+      }
+    },
+  });
+
+  const onSessionCompacting = hooks["experimental.session.compacting"];
+  const onToolExecuteAfter = hooks["tool.execute.after"];
+  assert.ok(onSessionCompacting);
+  assert.ok(onToolExecuteAfter);
+
+  const compactionOutput = createSessionCompactingOutput();
+  const compactionRaceWinner = await Promise.race([
+    onSessionCompacting(createSessionCompactingInput("session-debug"), compactionOutput).then(
+      () => "hook",
+    ),
+    new Promise<string>((resolve) => {
+      setTimeout(() => resolve("timer"), 0);
+    }),
+  ]);
+
+  assert.equal(compactionRaceWinner, "hook");
+  assert.deepEqual(compactionOutput.context, [
+    "Preserve durable user preferences, project decisions, and unfinished work that should survive compaction.",
+  ]);
+  await waitForBackgroundTasks();
+  assert.deepEqual(logEvents, ["session.compacting"]);
+
+  const toolRaceWinner = await Promise.race([
+    onToolExecuteAfter(
+      createToolExecuteAfterInput("session-debug"),
+      createToolExecuteAfterOutput(),
+    ).then(() => "hook"),
+    new Promise<string>((resolve) => {
+      setTimeout(() => resolve("timer"), 0);
+    }),
+  ]);
+
+  assert.equal(toolRaceWinner, "hook");
+  await waitForBackgroundTasks();
+  assert.deepEqual(logEvents, ["session.compacting", "tool.execute.after"]);
+
+  firstLogDeferred.resolve();
+  secondLogDeferred.resolve();
+  await waitForBackgroundTasks();
 });
