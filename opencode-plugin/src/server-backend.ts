@@ -1,4 +1,8 @@
-import type { MemoryBackend } from "./backend.js";
+import type {
+  IngestInput,
+  IngestResult,
+  MemoryBackend,
+} from "./backend.js";
 import type {
   Memory,
   StoreResult,
@@ -59,6 +63,10 @@ export class ServerBackend implements MemoryBackend {
 
   async store(input: CreateMemoryInput): Promise<StoreResult> {
     return this.request<StoreResult>("POST", this.memoryPath("/memories"), input);
+  }
+
+  async ingest(input: IngestInput): Promise<IngestResult> {
+    return this.request<IngestResult>("POST", this.memoryPath("/memories"), input);
   }
 
   async search(input: SearchInput): Promise<SearchResult> {

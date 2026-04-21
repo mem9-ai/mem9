@@ -3,6 +3,7 @@ import test from "node:test";
 import type { Hooks } from "@opencode-ai/plugin";
 
 import type { MemoryBackend } from "./backend.js";
+import type { IngestInput, IngestResult } from "./backend.js";
 import { buildHooks } from "./hooks.js";
 import { formatRecallBlock } from "./recall/format.js";
 import {
@@ -65,6 +66,9 @@ function createBackend(
     },
     async listRecent(_limit: number): Promise<Memory[]> {
       throw new Error("listRecent should not be called in recall tests");
+    },
+    async ingest(_input: IngestInput): Promise<IngestResult> {
+      throw new Error("ingest should not be called in recall tests");
     },
   };
 }

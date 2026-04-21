@@ -4,14 +4,18 @@ import {
   resolveEffectiveConfig,
   resolvePluginIdentity,
 } from "./config.js";
+import { createDebugLogger } from "./debug.js";
 import { ServerBackend } from "./server-backend.js";
 import { buildPendingSetupHooks } from "./setup-flow.js";
 import { buildTools } from "./tools.js";
 import { buildHooks } from "./hooks.js";
 
-function buildPluginHooksAndTools(backend: MemoryBackend): Hooks {
+function buildPluginHooksAndTools(
+  backend: MemoryBackend,
+  options: Parameters<typeof buildHooks>[1],
+): Hooks {
   const tools = buildTools(backend);
-  const hooks = buildHooks(backend);
+  const hooks = buildHooks(backend, options);
 
   return {
     tool: tools,
@@ -36,7 +40,15 @@ const mem9Plugin: Plugin = async (input) => {
 
   console.info(`[mem9] Server mode (mem9 REST API via ${identity.source})`);
   const backend = new ServerBackend(identity.baseUrl, identity.apiKey, "opencode");
-  return buildPluginHooksAndTools(backend);
+  const debugLogger = createDebugLogger({
+    enabled: cfg.debug === true,
+    credentialsFile: cfg.paths?.credentialsFile,
+  });
+
+  return buildPluginHooksAndTools(backend, {
+    agentID: "opencode",
+    debugLogger,
+  });
 };
 
 export default mem9Plugin;

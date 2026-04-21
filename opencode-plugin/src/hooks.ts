@@ -1,19 +1,32 @@
 import type { Hooks } from "@opencode-ai/plugin";
-import type { MemoryBackend } from "./backend.js";
+import type { IngestMessage, MemoryBackend } from "./backend.js";
+import type { DebugLogger } from "./debug.js";
+import { submitMessagesForIngest } from "./ingest/submit.js";
 import { formatRecallBlock } from "./recall/format.js";
 import { buildRecallQuery } from "./recall/query.js";
 
 const MAX_RECALL_RESULTS = 8;
 const MIN_RECALL_QUERY_LEN = 5;
-const PROMPT_CACHE_MAX_ENTRIES = 100;
-const PROMPT_CACHE_TTL_MS = 15 * 60 * 1000;
+const SESSION_CACHE_MAX_ENTRIES = 100;
+const SESSION_CACHE_TTL_MS = 15 * 60 * 1000;
+const MAX_TRANSCRIPT_MESSAGES = 24;
+const DEFAULT_AGENT_ID = "opencode";
+const COMPACTION_HINT =
+  "Preserve durable user preferences, project decisions, and unfinished work that should survive compaction.";
 
 type ChatMessageHook = NonNullable<Hooks["chat.message"]>;
 type ChatMessageOutput = Parameters<ChatMessageHook>[1];
 
-interface PromptCacheEntry {
-  prompt: string;
+interface SessionState {
+  latestPrompt: string | null;
+  transcript: IngestMessage[];
+  agentID: string;
   updatedAt: number;
+}
+
+export interface BuildHooksOptions {
+  agentID?: string;
+  debugLogger?: DebugLogger;
 }
 
 function extractLatestUserPrompt(parts: ChatMessageOutput["parts"]): string | null {
@@ -39,14 +52,14 @@ function extractLatestUserPrompt(parts: ChatMessageOutput["parts"]): string | nu
   return chunks.length > 0 ? chunks.join("\n\n") : null;
 }
 
-function prunePromptCache(cache: Map<string, PromptCacheEntry>, now: number): void {
-  for (const [sessionID, entry] of cache.entries()) {
-    if (now - entry.updatedAt > PROMPT_CACHE_TTL_MS) {
+function pruneSessionState(cache: Map<string, SessionState>, now: number): void {
+  for (const [sessionID, state] of cache.entries()) {
+    if (now - state.updatedAt > SESSION_CACHE_TTL_MS) {
       cache.delete(sessionID);
     }
   }
 
-  while (cache.size > PROMPT_CACHE_MAX_ENTRIES) {
+  while (cache.size > SESSION_CACHE_MAX_ENTRIES) {
     const oldest = cache.keys().next().value;
     if (!oldest) {
       break;
@@ -55,28 +68,87 @@ function prunePromptCache(cache: Map<string, PromptCacheEntry>, now: number): vo
   }
 }
 
-export function buildHooks(backend: MemoryBackend): Pick<
+function resolveAgentID(candidate: string | undefined, fallback: string): string {
+  if (typeof candidate !== "string") {
+    return fallback;
+  }
+
+  const trimmed = candidate.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+}
+
+function ensureSessionState(
+  cache: Map<string, SessionState>,
+  sessionID: string,
+  now: number,
+  fallbackAgentID: string,
+): SessionState {
+  const existing = cache.get(sessionID);
+  if (existing) {
+    existing.updatedAt = now;
+    cache.delete(sessionID);
+    cache.set(sessionID, existing);
+    return existing;
+  }
+
+  const state: SessionState = {
+    latestPrompt: null,
+    transcript: [],
+    agentID: fallbackAgentID,
+    updatedAt: now,
+  };
+  cache.set(sessionID, state);
+  return state;
+}
+
+function appendTranscriptMessage(state: SessionState, message: IngestMessage): void {
+  const content = message.content.trim();
+  if (!content) {
+    return;
+  }
+
+  state.transcript.push({
+    role: message.role,
+    content,
+  });
+
+  if (state.transcript.length > MAX_TRANSCRIPT_MESSAGES) {
+    state.transcript.splice(0, state.transcript.length - MAX_TRANSCRIPT_MESSAGES);
+  }
+}
+
+export function buildHooks(
+  backend: MemoryBackend,
+  options: BuildHooksOptions = {},
+): Pick<
   Hooks,
-  "chat.message" | "experimental.chat.system.transform"
+  | "chat.message"
+  | "experimental.chat.system.transform"
+  | "experimental.text.complete"
+  | "tool.execute.after"
+  | "experimental.session.compacting"
 > {
-  const latestPromptBySession = new Map<string, PromptCacheEntry>();
+  const sessionStateByID = new Map<string, SessionState>();
+  const fallbackAgentID = resolveAgentID(options.agentID, DEFAULT_AGENT_ID);
 
   return {
     "chat.message": async (input, output) => {
       const now = Date.now();
-      prunePromptCache(latestPromptBySession, now);
+      pruneSessionState(sessionStateByID, now);
+
+      const state = ensureSessionState(sessionStateByID, input.sessionID, now, fallbackAgentID);
+      state.agentID = resolveAgentID(input.agent, state.agentID);
 
       const prompt = extractLatestUserPrompt(output.parts);
-
       if (!prompt) {
-        latestPromptBySession.delete(input.sessionID);
+        state.latestPrompt = null;
         return;
       }
 
-      latestPromptBySession.delete(input.sessionID);
-      latestPromptBySession.set(input.sessionID, {
-        prompt,
-        updatedAt: now,
+      state.latestPrompt = prompt;
+      appendTranscriptMessage(state, {
+        role: "user",
+        content: prompt,
       });
     },
     "experimental.chat.system.transform": async (input, output) => {
@@ -84,14 +156,14 @@ export function buildHooks(backend: MemoryBackend): Pick<
         return;
       }
 
-      prunePromptCache(latestPromptBySession, Date.now());
+      pruneSessionState(sessionStateByID, Date.now());
 
-      const cachedPrompt = latestPromptBySession.get(input.sessionID);
-      if (!cachedPrompt) {
+      const state = sessionStateByID.get(input.sessionID);
+      if (!state || !state.latestPrompt) {
         return;
       }
 
-      const query = buildRecallQuery(cachedPrompt.prompt);
+      const query = buildRecallQuery(state.latestPrompt);
       if (query.length < MIN_RECALL_QUERY_LEN) {
         return;
       }
@@ -103,8 +175,53 @@ export function buildHooks(backend: MemoryBackend): Pick<
           output.system.push(block);
         }
       } catch {
-        // Graceful degradation: recall failures must not block chat.
+        // Recall failures must not block chat.
       }
+    },
+    "experimental.text.complete": async (input, output) => {
+      const content = output.text.trim();
+      if (!content) {
+        return;
+      }
+
+      const now = Date.now();
+      pruneSessionState(sessionStateByID, now);
+
+      const state = ensureSessionState(sessionStateByID, input.sessionID, now, fallbackAgentID);
+      appendTranscriptMessage(state, {
+        role: "assistant",
+        content,
+      });
+
+      try {
+        await submitMessagesForIngest({
+          backend,
+          messages: state.transcript,
+          sessionID: input.sessionID,
+          agentID: state.agentID,
+          debugLogger: options.debugLogger,
+        });
+      } catch {
+        // Ingest failures must not block chat.
+      }
+    },
+    "tool.execute.after": async (input, output) => {
+      await options.debugLogger?.("tool.execute.after", {
+        sessionID: input.sessionID,
+        tool: input.tool,
+        callID: input.callID,
+        args: input.args,
+        title: output.title,
+        output: output.output,
+        metadata: output.metadata,
+      });
+    },
+    "experimental.session.compacting": async (input, output) => {
+      output.context.push(COMPACTION_HINT);
+      await options.debugLogger?.("session.compacting", {
+        sessionID: input.sessionID,
+        hint: COMPACTION_HINT,
+      });
     },
   };
 }
