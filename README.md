@@ -253,6 +253,14 @@ These are only relevant when `MNEMO_ENCRYPT_TYPE=kms`. The server uses the AWS S
 
 Set `X-Mnemo-Agent-Id` on requests when you want the server to distinguish which runtime or agent instance is writing and recalling memories inside the same mem9 space.
 
+### Provisioning
+
+Use this endpoint when you want mem9 to auto-provision a new TiDB-backed space.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1alpha1/mem9s` | TiDB auto-provision endpoint when a provisioner is configured. TiDB Zero enables this path by default on `tidb`; TiDB Cloud Pool uses `MNEMO_TIDB_ZERO_ENABLED=false` with `MNEMO_TIDBCLOUD_API_KEY` and `MNEMO_TIDBCLOUD_API_SECRET`. Manual-bootstrap deployments use pre-existing tenants instead of this path. Returns `{ "id" }`. Accepts optional `utm_*` query params for attribution logging |
+
 Prefer `v1alpha2` for all new integrations. It uses `X-API-Key` and is the primary API surface for current runtimes.
 
 ### Preferred API (`v1alpha2`)
@@ -265,13 +273,12 @@ Prefer `v1alpha2` for all new integrations. It uses `X-API-Key` and is the prima
 | `PUT` | `/v1alpha2/mem9s/memories/{id}` | Preferred update endpoint. Requires `X-API-Key` header |
 | `DELETE` | `/v1alpha2/mem9s/memories/{id}` | Preferred delete endpoint. Requires `X-API-Key` header |
 
-### Provisioning And Legacy API (`v1alpha1`)
+### Legacy Tenant-Path API (`v1alpha1`)
 
-Use `v1alpha1` for TiDB auto-provisioning or when you need compatibility with older tenant-ID-in-path clients.
+Use these endpoints only when you need compatibility with older tenant-ID-in-path clients.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/v1alpha1/mem9s` | TiDB auto-provision endpoint when a provisioner is configured. TiDB Zero enables this path by default on `tidb`; TiDB Cloud Pool uses `MNEMO_TIDB_ZERO_ENABLED=false` with `MNEMO_TIDBCLOUD_API_KEY` and `MNEMO_TIDBCLOUD_API_SECRET`. Manual-bootstrap deployments use pre-existing tenants instead of this path. Returns `{ "id" }`. Accepts optional `utm_*` query params for attribution logging |
 | `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy unified write endpoint. Tenant key travels in the URL path |
 | `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy search endpoint for `tenantID`-configured clients |
 | `GET` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy get-by-id endpoint |
