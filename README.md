@@ -106,11 +106,11 @@ The hosted mem9 API is the fastest way to put persistent memory behind an agent 
 | Hosted mem9 API with instant space provisioning | You can install an agent integration first and skip standing up infrastructure on day one |
 | Shared memory across runtimes | One space can serve OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, and custom clients together |
 | Managed search and storage | Hybrid recall works out of the box without a separate vector stack or sync layer |
-| TiDB Cloud Starter foundation | The hosted path benefits from instant provisioning, native vector search, and MySQL-compatible operational semantics |
+| TiDB Cloud Starter foundation | The hosted path benefits from instant provisioning, native vector search, full-text search, server-side auto-embedding, hybrid search, and MySQL-compatible operational semantics |
 | Same API contract as self-hosted mem9 | Moving to your own deployment is a base-URL and credential change, not a plugin rewrite |
 | Visual dashboard and product onboarding | Teams can inspect and manage memory without building internal tooling first |
 
-Under the hood, the hosted mem9 API runs the same mem9 server model surfaced in this repository, with TiDB Cloud Starter providing managed provisioning, native vector search, and MySQL-compatible storage semantics.
+Under the hood, the hosted mem9 API runs the same mem9 server model surfaced in this repository, with TiDB Cloud Starter providing managed provisioning, native vector search, full-text search, server-side auto-embedding, hybrid search, and MySQL-compatible storage semantics.
 
 ## Related Repositories
 
