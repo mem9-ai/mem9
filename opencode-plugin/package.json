@@ -4,8 +4,13 @@
   "description": "OpenCode memory plugin — cloud-persistent AI agent memory with hybrid vector + keyword search via mem9",
   "type": "module",
   "main": "src/index.ts",
+  "oc-plugin": [
+    "server",
+    "tui"
+  ],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./tui": "./tui/index.ts"
   },
   "license": "Apache-2.0",
   "publishConfig": {
@@ -31,6 +36,7 @@
   ],
   "files": [
     "src",
+    "tui",
     "README.md"
   ],
   "scripts": {

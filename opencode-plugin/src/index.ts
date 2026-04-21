@@ -10,6 +10,7 @@ import { buildPendingSetupHooks } from "./setup-flow.js";
 import { buildTools } from "./tools.js";
 import { buildHooks } from "./hooks.js";
 import { createSessionTranscriptLoader } from "./session-transcript.js";
+import { PLUGIN_ID } from "./plugin-meta.js";
 
 function buildPluginHooksAndTools(
   backend: MemoryBackend,
@@ -53,4 +54,7 @@ const mem9Plugin: Plugin = async (input) => {
   });
 };
 
-export default mem9Plugin;
+export default {
+  id: PLUGIN_ID,
+  server: mem9Plugin,
+};

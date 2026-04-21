@@ -5,7 +5,7 @@ import test from "node:test";
 import type { PluginInput } from "@opencode-ai/plugin";
 
 import { mergeConfigLayers, resolveRuntimeIdentity } from "./config.js";
-import mem9Plugin from "./index.js";
+import mem9PluginModule from "./index.js";
 import {
   resolveMem9Home,
   resolveMem9Paths,
@@ -115,6 +115,8 @@ test("resolveMem9Paths uses shared mem9 home for credentials and opencode data d
 
   assert.equal(paths.globalConfigFile, path.join(configDir, "mem9.json"));
   assert.equal(paths.projectConfigFile, path.join(projectDir, ".opencode", "mem9.json"));
+  assert.equal(paths.globalPluginConfigFile, path.join(configDir, "opencode.json"));
+  assert.equal(paths.projectPluginConfigFile, path.join(projectDir, ".opencode", "opencode.json"));
   assert.equal(paths.credentialsFile, path.join(mem9Home, ".credentials.json"));
   assert.equal(paths.logDir, path.join(dataDir, "plugins", "mem9", "log"));
 });
@@ -284,7 +286,7 @@ test("mem9 plugin starts from local path inference when env identity exists", as
 
       const warnings = await captureWarnings(async () => {
         const info = await captureInfo(async () => {
-          const hooks = await mem9Plugin(input);
+          const hooks = await mem9PluginModule.server(input);
           assert.ok(hooks.tool);
           assert.ok(hooks.tool?.memory_search);
         });
@@ -311,7 +313,7 @@ test("mem9 plugin returns the pending setup skeleton when no identity is availab
       const input = createPluginInput();
 
       const warnings = await captureWarnings(async () => {
-        const hooks = await mem9Plugin(input);
+        const hooks = await mem9PluginModule.server(input);
         assert.deepEqual(hooks, {});
       });
 
@@ -375,7 +377,7 @@ test("mem9 plugin becomes usable from profile config and credentials files", asy
 
         const warnings = await captureWarnings(async () => {
           const info = await captureInfo(async () => {
-            const hooks = await mem9Plugin(input);
+            const hooks = await mem9PluginModule.server(input);
             assert.ok(hooks.tool?.memory_search);
           });
 

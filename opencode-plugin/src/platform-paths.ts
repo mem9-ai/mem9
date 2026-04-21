@@ -11,6 +11,8 @@ export interface Mem9PathInput {
 export interface Mem9ResolvedPaths {
   globalConfigFile: string;
   projectConfigFile: string;
+  globalPluginConfigFile: string;
+  projectPluginConfigFile: string;
   credentialsFile: string;
   logDir: string;
 }
@@ -67,6 +69,8 @@ export function resolveMem9Paths(input: Mem9PathInput): Mem9ResolvedPaths {
   return {
     globalConfigFile: path.join(input.configDir, "mem9.json"),
     projectConfigFile: path.join(input.projectDir, ".opencode", "mem9.json"),
+    globalPluginConfigFile: path.join(input.configDir, "opencode.json"),
+    projectPluginConfigFile: path.join(input.projectDir, ".opencode", "opencode.json"),
     credentialsFile: path.join(input.mem9Home, ".credentials.json"),
     logDir: path.join(input.dataDir, "plugins", "mem9", "log"),
   };

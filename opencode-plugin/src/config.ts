@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import type { PluginInput } from "@opencode-ai/plugin";
 import { parseCredentialsFile } from "./credentials-store.js";
+import { DEFAULT_SCOPE_CONFIG } from "./defaults.js";
 import {
   resolveOpenCodeBasePaths,
   resolveMem9Home,
@@ -12,18 +13,6 @@ import {
   type Mem9ConfigFile,
   type Mem9CredentialsFile,
 } from "./types.js";
-
-const DEFAULT_CONFIG: Required<
-  Pick<
-    Mem9ConfigFile,
-    "schemaVersion" | "debug" | "defaultTimeoutMs" | "searchTimeoutMs"
-  >
-> = {
-  schemaVersion: 1,
-  debug: false,
-  defaultTimeoutMs: 8000,
-  searchTimeoutMs: 15000,
-};
 
 const EMPTY_CREDENTIALS: Mem9CredentialsFile = {
   schemaVersion: 1,
@@ -135,7 +124,7 @@ export function mergeConfigLayers(
   projectConfig?: Mem9ConfigFile,
 ): Mem9ConfigFile {
   return {
-    ...DEFAULT_CONFIG,
+    ...DEFAULT_SCOPE_CONFIG,
     ...globalConfig,
     ...projectConfig,
   };

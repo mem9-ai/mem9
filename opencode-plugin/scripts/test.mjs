@@ -21,7 +21,7 @@ execFileSync(process.execPath, [tscEntrypoint, "-p", "./tsconfig.test.json"], {
   stdio: "inherit",
 });
 
-execFileSync(process.execPath, ["--test", "./dist-test/*.test.js"], {
+execFileSync(process.execPath, ["--test", "./dist-test/src/*.test.js"], {
   cwd: projectDir,
   stdio: "inherit",
 });
