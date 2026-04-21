@@ -37,7 +37,7 @@ All supported runtimes can point at the same mem9 Cloud space, so OpenClaw, Herm
 
 ### Self-Hosted
 
-Start the local server, provision a tenant, then point your runtime at that base URL:
+Start the local server, then choose the tenant path that matches your backend:
 
 ```bash
 cd server
@@ -46,12 +46,22 @@ MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-se
 
 Set `MNEMO_DB_BACKEND=postgres` or `MNEMO_DB_BACKEND=db9` before startup when you are not using the default TiDB backend.
 
+If you are running `tidb` with a configured provisioner, create a tenant and use its ID as the API key:
+
 ```bash
 curl -s -X POST http://localhost:8080/v1alpha1/mem9s
 # -> {"id":"tenant-id"}
 
 export MEM9_API_URL="http://localhost:8080"
 export MEM9_API_KEY="tenant-id"
+export MEM9_TENANT_ID="$MEM9_API_KEY" # OpenCode / legacy clients
+```
+
+If you are running `postgres`, `db9`, or `tidb` without a provisioner, start with a pre-existing tenant and use that tenant ID as the API key for `v1alpha2` requests:
+
+```bash
+export MEM9_API_URL="http://localhost:8080"
+export MEM9_API_KEY="<existing-tenant-id>"
 export MEM9_TENANT_ID="$MEM9_API_KEY" # OpenCode / legacy clients
 ```
 
@@ -121,7 +131,7 @@ Under the hood, mem9 Cloud runs the same mem9 server model surfaced in this repo
 
 ## Self-Hosting
 
-mem9 server supports multiple storage backends. Set `MNEMO_DB_BACKEND` to `tidb`, `postgres`, or `db9`, point `MNEMO_DSN` at that backend, and the rest of the runtime contract stays the same for your agents.
+mem9 server supports multiple storage backends. Set `MNEMO_DB_BACKEND` to `tidb`, `postgres`, or `db9`, point `MNEMO_DSN` at that backend, and the rest of the runtime contract stays the same for your agents. Auto-provisioning through `POST /v1alpha1/mem9s` is a TiDB-specific flow that requires a configured provisioner; `postgres`, `db9`, and provisioner-less deployments expect pre-existing tenants, and `X-API-Key` resolves those tenants by ID lookup.
 
 ### Build & Run
 
@@ -239,7 +249,7 @@ Preferred integrations use `v1alpha2` with `X-API-Key`. Legacy integrations can 
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/v1alpha1/mem9s` | Provision tenant (no auth). Returns `{ "id" }`. Accepts optional `utm_*` query params for attribution logging |
+| `POST` | `/v1alpha1/mem9s` | TiDB-only auto-provision endpoint when a provisioner is configured (no auth). Returns `{ "id" }`. Accepts optional `utm_*` query params for attribution logging |
 | `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy unified write endpoint. Tenant key travels in the URL path |
 | `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy search endpoint for `tenantID`-configured clients |
 | `GET` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy get-by-id endpoint |
