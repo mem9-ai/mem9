@@ -153,6 +153,7 @@ These environment variables still override disk config at runtime:
 
 - `MEM9_API_KEY`
 - `MEM9_API_URL`
+- `MEM9_DEBUG`
 - `MEM9_HOME`
 
 Legacy compatibility remains:
@@ -257,4 +258,4 @@ The npm package publishes:
 - `README.md`
 - runtime source files under `src/`
 
-The package keeps `files: ["src", "README.md"]` in `package.json`. Tests live under `test/`, so the published tarball only carries runtime code.
+The package keeps `files: ["src", "README.md"]` in `package.json`. Tests live under `tests/`, so the published tarball only carries runtime code.

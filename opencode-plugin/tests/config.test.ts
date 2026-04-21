@@ -6,6 +6,7 @@ import type { PluginInput } from "@opencode-ai/plugin";
 
 import {
   mergeConfigLayers,
+  resolveEffectiveConfig,
   resolveRuntimeIdentity,
 } from "../src/server/config.js";
 import mem9PluginModule from "../src/index.js";
@@ -249,6 +250,54 @@ test("mergeConfigLayers preserves inherited timeout values when project config i
     defaultTimeoutMs: 21000,
     searchTimeoutMs: 31000,
   });
+});
+
+test("resolveEffectiveConfig lets MEM9_DEBUG override disk config", async () => {
+  const fixtureRoot = path.join(
+    process.cwd(),
+    "dist-test",
+    `env-debug-override-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+  const configHome = path.join(fixtureRoot, "config-home");
+  const dataHome = path.join(fixtureRoot, "data-home");
+  const configDir = path.join(configHome, "opencode");
+  const dataDir = path.join(dataHome, "opencode");
+  const mem9Home = path.join(fixtureRoot, "mem9-home");
+  const projectDir = path.join(fixtureRoot, "worktree");
+  const resolvedPaths = resolveMem9Paths({
+    configDir,
+    dataDir,
+    projectDir,
+    mem9Home,
+  });
+
+  try {
+    await writeJSON(resolvedPaths.globalConfigFile, {
+      schemaVersion: 1,
+      profileId: "default",
+      debug: false,
+    });
+
+    await withEnv(
+      {
+        MEM9_DEBUG: "true",
+        MEM9_HOME: mem9Home,
+        XDG_CONFIG_HOME: configHome,
+        XDG_DATA_HOME: dataHome,
+      },
+      async () => {
+        const result = await resolveEffectiveConfig({
+          ...createPluginInput(),
+          directory: projectDir,
+          worktree: projectDir,
+        });
+
+        assert.equal(result.debug, true);
+      },
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
 });
 
 test("resolveRuntimeIdentity prefers MEM9_API_KEY over legacy MEM9_TENANT_ID", () => {

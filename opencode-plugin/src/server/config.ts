@@ -42,6 +42,23 @@ function normalizeOptionalString(value: string | undefined): string | undefined 
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function normalizeOptionalBoolean(value: string | undefined): boolean | undefined {
+  const normalized = normalizeOptionalString(value)?.toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  return undefined;
+}
+
 function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error;
 }
@@ -207,8 +224,12 @@ export async function resolveEffectiveConfig(input: PluginInput): Promise<Effect
     readConfigFile(paths.projectConfigFile),
   ]);
 
+  const merged = mergeConfigLayers(globalConfig, projectConfig);
+  const envDebug = normalizeOptionalBoolean(process.env.MEM9_DEBUG);
+
   return {
-    ...mergeConfigLayers(globalConfig, projectConfig),
+    ...merged,
+    debug: envDebug ?? merged.debug,
     paths,
   };
 }

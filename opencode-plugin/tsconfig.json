@@ -10,5 +10,5 @@
     "rootDir": ".",
     "declaration": true
   },
-  "include": ["src", "test"]
+  "include": ["src", "tests"]
 }
