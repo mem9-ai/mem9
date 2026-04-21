@@ -1,89 +1,62 @@
 ---
 name: mem9-setup
-description: "Enable and configure mem9 for OpenCode. Triggers: set up mem9, install mem9, configure memory, enable memory, mem9 onboarding, memory not working."
+description: "Set up mem9 for OpenCode. Triggers: set up mem9, configure mem9, enable mem9 memory, mem9 onboarding, setup pending."
 ---
 
 # mem9 Setup for OpenCode
 
-Execute the setup directly. Only ask the user for the choices or secrets you cannot infer safely. The final restart reminder is fine.
+Execute the setup directly. Keep it simple and keep installation separate from identity setup.
 
 ## What This Setup Owns
 
-This setup handles four things:
+This setup owns mem9 identity for OpenCode. It does two things:
 
-1. register `@mem9/opencode` in the chosen OpenCode scope
-2. register `@mem9/opencode` in OpenCode TUI when the user wants `/mem9-init`
-3. configure the selected OpenCode scope to use a mem9 profile
-4. keep secrets in shared mem9 credentials storage
+1. maintain shared credentials in `$MEM9_HOME/.credentials.json`
+2. point OpenCode user config at the chosen `profileId`
 
 Use this model:
 
 - shared credentials: `$MEM9_HOME/.credentials.json`
 - default `MEM9_HOME`: `$HOME/.mem9`
-- user scope config: `<OpenCode config dir>/mem9.json`
-- project scope config: `<project>/.opencode/mem9.json`
+- OpenCode user config: `<OpenCode config dir>/mem9.json`
+- optional project override: `<project>/.opencode/mem9.json`
 
-If the TUI plugin is already active, prefer telling the user to run `/mem9-init`. That command writes the same files directly.
+This setup does not choose plugin install scope and does not edit `opencode.json` plugin lists.
 
-Runtime compatibility remains:
+## Preferred Flow
 
-- preferred override: `MEM9_API_KEY`
-- optional override: `MEM9_API_URL`
-- legacy compatibility: `MEM9_TENANT_ID`
+If the TUI plugin is active, tell the user to run:
 
-## Step 0: Choose Plugin Scope
+```text
+/mem9-setup
+```
 
-Ask:
+That command supports three actions when usable profiles already exist:
 
-> Where should mem9 be enabled?
-> 1. Global: available in every OpenCode project on this machine
-> 2. Project: only active in the current project
+- reuse an existing profile
+- request a new API key and create a new profile
+- paste an API key and create a new profile
 
-Use these plugin targets:
+When no usable profile exists, it supports:
 
-- global scope: `~/.config/opencode/opencode.json`
-- project scope: `.opencode/opencode.json`
+- request a new API key and create a new profile
+- paste an API key and create a new profile
 
-Choose one plugin target only. Do not register mem9 in both global and project scope at the same time.
+The command writes:
 
-Use matching mem9 config targets:
+- `$MEM9_HOME/.credentials.json`
+- `<OpenCode config dir>/mem9.json`
 
-- global scope: `<OpenCode config dir>/mem9.json`
-- project scope: `<project>/.opencode/mem9.json`
+The current OpenCode prompt is plain text, so API keys stay visible while the user types them.
 
-When a project needs different mem9 behavior, prefer project config overrides over a second plugin entry.
+## Manual Fallback
 
-If the user wants `/mem9-init`, also ensure `~/.config/opencode/tui.json` contains `@mem9/opencode`.
+Use manual setup when `/mem9-setup` is unavailable or when the user wants a file-based setup.
 
-## Step 1: Choose Identity Source
+### Shared profile mode
 
-Ask:
-
-> How should mem9 authenticate?
-> 1. Shared profile in `$MEM9_HOME/.credentials.json` (recommended)
-> 2. Environment variables for this OpenCode launch
-
-### If the user chooses shared profile
-
-Ask for:
-
-- `profileId`
-- `apiKey`
-- optional `label`
-- optional `baseUrl`
-
-Defaults:
-
-- `profileId`: `default`
-- `label`: same as `profileId`
-- `baseUrl`: `https://api.mem9.ai`
-
-Then:
-
-1. Create `$MEM9_HOME` if needed.
-2. Read `$MEM9_HOME/.credentials.json` if it exists.
-3. Create or update the selected profile under `profiles[profileId]`.
-4. Write the file back with this schema:
+1. Choose a `profileId`. Use `default` when the user does not care.
+2. Create or update `$MEM9_HOME/.credentials.json`:
 
 ```json
 {
@@ -98,7 +71,7 @@ Then:
 }
 ```
 
-5. Write the chosen `profileId` into the selected scope config:
+3. Write `<OpenCode config dir>/mem9.json`:
 
 ```json
 {
@@ -110,17 +83,21 @@ Then:
 }
 ```
 
-If the scope config already exists, preserve existing non-sensitive fields and only update the mem9 fields that belong to this setup.
+4. Preserve existing non-sensitive config fields when updating the file.
 
-### If the user chooses environment variables
+### Environment variable mode
 
-Do not write secrets to disk.
-
-Register the plugin normally, then tell the user the OpenCode process must start with one of these:
+If the user prefers env vars, do not write secrets to disk. Tell them to launch OpenCode with:
 
 ```bash
 export MEM9_API_KEY="..."
 export MEM9_API_URL="https://api.mem9.ai"
+```
+
+Optional shared-home override:
+
+```bash
+export MEM9_HOME="$HOME/.mem9"
 ```
 
 Legacy compatibility still works:
@@ -129,88 +106,20 @@ Legacy compatibility still works:
 export MEM9_TENANT_ID="..."
 ```
 
-Do not edit shell rc files directly. If the user wants persistence, suggest their normal shell profile flow or a project launcher script.
-
-## Step 2: Register the Plugin
-
-Ensure the selected `opencode.json` contains `@mem9/opencode`.
-
-Desired shape:
-
-```json
-{
-  "plugin": ["@mem9/opencode"]
-}
-```
-
-If `plugin` already exists:
-
-- keep existing entries
-- add `@mem9/opencode` once
-- preserve unrelated config
-
-If mem9 is already registered in another scope, explain that the plugin should stay single-scope and ask the user which scope should remain active. Do not leave both active.
-
-If the user already enabled mem9 by editing `opencode.json`, or already points OpenCode at a local mem9 plugin directory, skip plugin registration work and move straight to mem9 config and credentials.
-
-If the user wants `/mem9-init`, ensure `~/.config/opencode/tui.json` also contains `@mem9/opencode`.
-
-## Step 3: Explain File Layout
-
-After writing files, tell the user where everything landed:
-
-- plugin registration file
-- TUI plugin registration file when `/mem9-init` was enabled
-- selected scope `mem9.json`
-- shared credentials file if profile mode was used
-
-Also mention:
-
-- debug logs are written under the OpenCode state dir at `plugins/mem9/log/`
-
-## Step 4: Verify
-
-Ask the user to restart OpenCode.
-
-Expected startup behavior:
-
-- profile mode: OpenCode loads mem9 from the selected `profileId`
-- env mode: OpenCode uses the environment variables from that launch
-- legacy env mode: OpenCode still starts and logs legacy compatibility
-
-Expected TUI behavior:
-
-- `/mem9-init` is available when the package is also installed in `~/.config/opencode/tui.json`
-
-Expected healthy log lines include one of these:
-
-```text
-[mem9] Server mode (mem9 REST API via profile)
-[mem9] Server mode (mem9 REST API via env)
-[mem9] Server mode (mem9 REST API via legacy_env)
-```
-
-If setup is still incomplete, OpenCode logs:
-
-```text
-[mem9] Setup pending.
-```
-
-## Step 5: Troubleshooting
+## Troubleshooting
 
 Use this guidance:
 
-- `Setup pending`: add `MEM9_API_KEY`, or set `profileId` and create that profile in `$MEM9_HOME/.credentials.json`
-- profile exists but still does not work: confirm the selected profile has a non-empty `apiKey`
-- project behaves differently from user scope: check for `<project>/.opencode/mem9.json` overriding the user config
-- recall, ingest, or debug runs twice: check for duplicate plugin registration across global scope, project scope, npm, or local plugin paths; keep one active plugin entry
-- debug logging enabled but no file appears: confirm OpenCode can write to its state directory
+- `Setup pending`: run `/mem9-setup`, add `MEM9_API_KEY`, or point `profileId` at a profile with a non-empty `apiKey`
+- selected profile still does not work: confirm the profile exists in `$MEM9_HOME/.credentials.json` and has a non-empty `apiKey`
+- project behaves differently: check for `<project>/.opencode/mem9.json`
+- recall, ingest, or logs appear twice: keep one active server plugin registration
+- `/mem9-setup` is missing: ensure `@mem9/opencode` is in `~/.config/opencode/tui.json`
 
 ## Final Message
 
 After successful setup, send a short confirmation that includes:
 
-- plugin scope
-- identity mode
-- selected `profileId` if profile mode was used
+- which `profileId` OpenCode will use
+- where credentials were stored if file mode was used
 - the reminder to restart OpenCode

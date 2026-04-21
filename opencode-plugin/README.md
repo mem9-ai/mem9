@@ -11,13 +11,13 @@ The server plugin does three things:
 
 - recalls relevant mem9 memories before each chat turn
 - exposes mem9 memory tools inside OpenCode
-- auto-ingests recent `user` / `assistant` turns when the session becomes idle and before compaction
+- starts best-effort background smart ingest when the session becomes idle and when compaction begins
 
 ## Enable
 
 Add `@mem9/opencode` to your OpenCode plugin list, then restart OpenCode.
 
-Register the plugin in one scope only. The recommended pattern is:
+Register the server plugin in one scope only. The recommended pattern is:
 
 - register the plugin once at user scope
 - use project-level `.opencode/mem9.json` only when a project needs a different `profileId`, `debug`, or timeout setting
@@ -85,7 +85,7 @@ That split keeps secrets shareable across tools while keeping OpenCode-specific 
 }
 ```
 
-## Scope Config
+## OpenCode Config
 
 User and project config use the same schema.
 
@@ -100,8 +100,6 @@ User and project config use the same schema.
 ```
 
 Project config overrides user config for the current repository.
-
-That override model is how you should vary mem9 behavior per project. Keep plugin registration single-scope.
 
 ## Runtime Overrides
 
@@ -119,25 +117,42 @@ Legacy compatibility remains:
 
 ## Behavior
 
+### Hook flow
+
+OpenCode integration currently uses four runtime hooks:
+
+| Hook | What mem9 does |
+| --- | --- |
+| `chat.message` | Captures the latest real user prompt and updates in-memory session state. |
+| `experimental.chat.system.transform` | Searches mem9 with the captured prompt and injects a `<relevant-memories>` block. |
+| `event` with `session.idle` | Starts a best-effort background smart-ingest pass for the recent transcript window. |
+| `experimental.session.compacting` | Pushes a compaction hint and starts another best-effort background smart-ingest pass. |
+
 ### TUI setup
 
 When the TUI plugin is active, OpenCode registers:
 
-- `/mem9-init`
+- `/mem9-setup`
 
-That command collects:
-
-- scope: `user` or `project`
-- `profileId`
-- profile label
-- mem9 API URL
-- mem9 API key
-
-It writes:
+That command only initializes mem9 identity for this OpenCode install. It writes:
 
 - `$MEM9_HOME/.credentials.json`
-- the selected scope `mem9.json`
-- the selected scope `opencode.json` plugin entry
+- `<OpenCode config dir>/mem9.json`
+
+When usable profiles already exist, the command offers:
+
+- reuse an existing profile
+- request a new API key and create a new profile
+- paste an API key and create a new profile
+
+When no usable profile exists, the command offers:
+
+- request a new API key and create a new profile
+- paste an API key and create a new profile
+
+If you enter a profile ID that already has working credentials, setup asks you to reuse that profile or pick a new ID.
+
+If automatic API key creation fails, the command stops and asks you to run `/mem9-setup` again later.
 
 The current OpenCode dialog prompt is plain text. The API key stays visible while you type it.
 
@@ -147,7 +162,19 @@ The plugin captures the latest real user prompt from `chat.message`, cleans it, 
 
 ### Auto-ingest
 
-The plugin keeps recall on chat hooks and uses the session event stream plus the compaction hook for ingest. When OpenCode emits `session.idle`, or when compaction is about to start, the plugin loads the recent session transcript, keeps real text-only `user` and `assistant` turns, and sends a smart ingest request in the background.
+The plugin ingests from two points:
+
+- `session.idle`
+- `experimental.session.compacting`
+
+Both paths fetch up to 24 recent session messages, keep real text-only `user` and `assistant` turns, strip injected memory blocks, and upload the last 12 cleaned messages in the background.
+
+Identical transcripts are deduped per in-memory session state, so a matching idle ingest and compaction ingest share one upload while that session state stays warm.
+
+Two timing details matter:
+
+- hook completion happens before the background upload finishes
+- the dedupe window is in-memory and TTL-bound to about 15 minutes, so restart or cache expiry can upload the same transcript again
 
 ### Tools
 
@@ -167,11 +194,11 @@ Debug payloads are redacted before they are written. The logger masks obvious se
 
 ## Troubleshooting
 
-- `Setup pending` means the plugin could not find a usable runtime identity. Add `MEM9_API_KEY`, or set `profileId` in scope config and create the matching profile in `$MEM9_HOME/.credentials.json`.
+- `Setup pending` means the plugin could not find a usable runtime identity. Run `/mem9-setup`, add `MEM9_API_KEY`, or point `profileId` at a profile with a non-empty `apiKey`.
 - If the selected profile exists but has no `apiKey`, update that profile in `$MEM9_HOME/.credentials.json`.
 - If recall or tools work in one project and not another, check whether the project has its own `.opencode/mem9.json` override.
 - If recall, auto-ingest, or debug logs appear to run twice, check for duplicate plugin registration across user scope, project scope, npm, or local plugin paths. Keep one active plugin entry.
-- If `/mem9-init` is missing, confirm `@mem9/opencode` is also listed in `~/.config/opencode/tui.json`.
+- If `/mem9-setup` is missing, confirm `@mem9/opencode` is also listed in `~/.config/opencode/tui.json`.
 - If debug logging is enabled and no file appears, confirm OpenCode can write to its state directory.
 
 ## Local Verification
