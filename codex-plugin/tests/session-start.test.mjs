@@ -72,7 +72,7 @@ test("session start reports global legacy pause with migration guidance", () => 
   assert.match(message, /\$mem9:setup/);
 });
 
-test("session start reports invalid project override with project-config guidance", () => {
+test("session start reports invalid project override with repair guidance", () => {
   const message = buildSessionStartMessage({
     configSource: "global",
     projectConfigMatched: true,
@@ -81,7 +81,8 @@ test("session start reports invalid project override with project-config guidanc
 
   assert.match(message, /\.codex\/mem9\/config\.json/);
   assert.match(message, /\$mem9:project-config/);
-  assert.match(message, /--reset/);
+  assert.match(message, /\$mem9:setup/);
+  assert.match(message, /\$CODEX_HOME\/mem9\/config\.json/);
 });
 
 test("session start explains how to repair a project missing profile", () => {
