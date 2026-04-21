@@ -11,7 +11,6 @@
 </p>
 
 <p align="center">
-  <a href="https://tidbcloud.com"><img src="https://img.shields.io/badge/Powered%20by-TiDB%20Cloud%20Starter-E60C0C?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj48cGF0aCBkPSJNMTEuOTk4NCAxLjk5OTAyTDMuNzE4NzUgNy40OTkwMkwzLjcxODc1IDE3TDExLjk5NjQgMjIuNUwyMC4yODE0IDE3VjcuNDk5MDJMMTEuOTk4NCAxLjk5OTAyWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=" alt="Powered by TiDB Cloud Starter"></a>
   <a href="https://goreportcard.com/report/github.com/mem9-ai/mem9/server"><img src="https://goreportcard.com/badge/github.com/mem9-ai/mem9/server" alt="Go Report Card"></a>
   <a href="https://github.com/mem9-ai/mem9/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
   <a href="https://github.com/mem9-ai/mem9"><img src="https://img.shields.io/github/stars/mem9-ai/mem9?style=social" alt="Stars"></a>
@@ -19,126 +18,127 @@
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
-**Server-based memory via mem9-server.**
+### mem9 Cloud
 
-1. **Deploy mnemo-server.**
+mem9 Cloud is the default path. Use the hosted API at `https://api.mem9.ai`, then follow the runtime guide that matches your agent:
 
-    ```bash
-    cd server && MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
-    ```
-
-2. **Install the plugin for your agent (pick one).**
-
-    | Platform | Install |
-    |----------|---------|
-    | **Claude Code** | `/plugin marketplace add mem9-ai/mem9` then `/plugin install mem9@mem9` |
-    | **OpenCode** | Add `"plugin": ["@mem9/opencode"]` to `opencode.json` |
-    | **OpenClaw** | Add `mnemo` to `openclaw.json` plugins (see [openclaw-plugin/README](openclaw-plugin/README.md)) |
-
-3. **Provision a tenant and set credentials.**
-
-    ```bash
-    curl -s -X POST localhost:8080/v1alpha1/mem9s
-    # → {"id":"..."}
-
-    export MEM9_API_URL="http://localhost:8080"
-    export MEM9_API_KEY="..."
-    ```
-
-    All agents pointing at the same tenant ID share one memory pool.
-
----
-
-## The Problem
-
-AI coding agents — Claude Code, OpenCode, OpenClaw, and others — often maintain separate local memory files. As a result:
-
-- 🧠 **Amnesia** — Agents forget everything when a session ends
-- 🏝️ **Silos** — One agent can't access what another learned yesterday
-- 📁 **Local files** — Memory is tied to a single machine, lost when you switch devices
-- 🚫 **No team sharing** — Your teammate's agent can't benefit from your agent's discoveries
-
-**mnemos** gives every agent a shared, cloud-persistent memory with hybrid vector + keyword search — powered by [TiDB Cloud Starter](https://tidbcloud.com).
-
-## Why TiDB Cloud Starter?
-
-mnemos uses [TiDB Cloud Starter](https://tidbcloud.com) (formerly TiDB Cloud Serverless) as the backing store for mnemo-server:
-
-| Feature | What it means for you |
+| Runtime | Install / docs |
 |---|---|
-| **Free tier** | 25 GiB storage, 250M Request Units/month — enough for most individual and small team use |
-| **TiDB Cloud Zero** | Instant database provisioning via API — no signup required for first 30 days |
-| **Native VECTOR type** | Hybrid search (vector + keyword) without a separate vector database |
-| **Auto-embedding (`EMBED_TEXT`)** | TiDB generates embeddings server-side — no OpenAI key needed for semantic search |
-| **Zero ops** | No servers to manage, no scaling to worry about, automatic backups |
-| **MySQL compatible** | Migrate to self-hosted TiDB or MySQL anytime |
+| OpenClaw | [OpenClaw / ClawHub install guide](https://mem9.ai/openclaw-memory) |
+| Hermes Agent | [mem9-hermes-plugin README](https://github.com/mem9-ai/mem9-hermes-plugin#readme) |
+| Claude Code | [`claude-plugin/README.md`](claude-plugin/README.md) |
+| OpenCode | [`opencode-plugin/README.md`](opencode-plugin/README.md) |
+| Codex | [`codex-plugin/README.md`](codex-plugin/README.md) |
+| Any HTTP client / custom runtime | [API Reference](#api-reference) |
 
-This architecture keeps agent plugins **stateless** — all state lives in mnemo-server, backed by TiDB.
+All supported runtimes can point at the same mem9 Cloud space, so OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, and custom clients can share one memory pool.
+
+### Self-Hosted
+
+Start the local server, provision a tenant, then point your runtime at that base URL:
+
+```bash
+cd server
+MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
+```
+
+Set `MNEMO_DB_BACKEND=postgres` or `MNEMO_DB_BACKEND=db9` before startup when you are not using the default TiDB backend.
+
+```bash
+curl -s -X POST http://localhost:8080/v1alpha1/mem9s
+# -> {"id":"tenant-id"}
+
+export MEM9_API_URL="http://localhost:8080"
+export MEM9_API_KEY="tenant-id"
+export MEM9_TENANT_ID="$MEM9_API_KEY" # OpenCode / legacy clients
+```
+
+Follow the runtime-specific docs above for the last-mile agent setup. Build steps, Docker, backend selection, and the full environment reference live in [Self-Hosting](#self-hosting).
+
+## Why mem9
+
+mem9 gives coding agents one shared memory layer instead of separate local notebooks and one-off prompt files.
+
+| What mem9 gives you | Why it matters |
+|---|---|
+| Persistent memory across sessions and machines | Your context survives restarts, laptop switches, and long-running projects |
+| Shared memory across agents | OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, and custom clients can recall the same facts |
+| Stateless integrations | Runtime plugins stay thin because storage, search, ingest, and policy live in the server |
+| Hybrid recall and a visual dashboard | Semantic search, keyword search, and inspection workflows stay in one system |
 
 ## Supported Agents
 
-mnemos provides native plugins for major AI coding agent platforms:
+| Platform | Integration shape | Install / docs |
+|---|---|---|
+| OpenClaw | `kind: "memory"` plugin for server-backed shared memory | [OpenClaw / ClawHub install guide](https://mem9.ai/openclaw-memory) |
+| Hermes Agent | Memory provider plugin with setup and activation flow | [mem9-hermes-plugin README](https://github.com/mem9-ai/mem9-hermes-plugin#readme) |
+| Claude Code | Marketplace plugin with hooks and skills | [`claude-plugin/README.md`](claude-plugin/README.md) |
+| OpenCode | Plugin SDK integration loaded from `opencode.json` | [`opencode-plugin/README.md`](opencode-plugin/README.md) |
+| Codex | Marketplace plugin with managed hooks and project overrides | [`codex-plugin/README.md`](codex-plugin/README.md) |
+| Any HTTP client / custom runtime | Direct REST API integration | [API Reference](#api-reference) |
 
-| Platform | Plugin | How It Works | Install Guide |
-|---|---|---|---|
-| **Claude Code** | Hooks + Skills | Auto-loads memories on session start, auto-saves on stop | [`claude-plugin/README.md`](claude-plugin/README.md) |
-| **OpenCode** | Plugin SDK | `system.transform` injects memories, `session.idle` auto-captures | [`opencode-plugin/README.md`](opencode-plugin/README.md) |
-| **OpenClaw** | Memory Plugin | Replaces built-in memory slot (`kind: "memory"`), framework manages lifecycle | [`openclaw-plugin/README.md`](openclaw-plugin/README.md) |
-| **Any HTTP client** | REST API | `curl` to mnemo-server | [API Reference](#api-reference) |
+All supported runtimes expose the same core memory flow: store, search, get, update, and delete against the mem9 server API.
 
-All plugins expose the same 5 tools: `memory_store`, `memory_search`, `memory_get`, `memory_update`, `memory_delete`.
+## Why mem9 Cloud
 
-> [!NOTE]
->
-> **🤖 For AI Agents**: Use the [Quick Start](#-quick-start) above to deploy mnemo-server and provision an API key, then follow the platform-specific README for configuration details.
+mem9 Cloud is the fastest way to put persistent memory behind an agent fleet while keeping the option to self-host later.
 
-## Stateless Agents, Cloud Memory
+| mem9 Cloud capability | Why teams start here |
+|---|---|
+| Hosted mem9 API with instant space provisioning | You can install an agent integration first and skip standing up infrastructure on day one |
+| Shared memory across runtimes | One space can serve OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, and custom clients together |
+| Managed search and storage | Hybrid recall works out of the box without a separate vector stack or sync layer |
+| Same API contract as self-hosted mem9 | Moving to your own deployment is a base-URL and credential change, not a plugin rewrite |
+| Visual dashboard and product onboarding | Teams can inspect and manage memory without building internal tooling first |
 
-A key design principle: **agent plugins carry zero state.** All memory lives in mnemo-server, backed by TiDB/MySQL. This means:
-
-- **Agent plugins stay stateless** — deploy any number of agent instances freely; they all share the same memory pool via mnemo-server
-- **Switch machines freely** — your agent's memory follows you, not your laptop
-- **Multi-agent collaboration** — Claude Code, OpenCode, OpenClaw, and any HTTP client share memories when pointed at the same server
-- **Centralized control** — rate limits and audit live in one place
+Under the hood, mem9 Cloud runs the same mem9 server model surfaced in this repository, with TiDB/MySQL-compatible storage choices behind the product instead of in front of it.
 
 ## Related Repositories
 
-The broader mem9 product surface is split across a few repositories and workstreams:
+| Repository | Where it lives | What it owns | When to look there |
+|---|---|---|---|
+| `mem9` | This repository | Core Go API server, agent plugins, CLI, site, dashboard frontend, benchmark harnesses, and docs | You are working on the shared memory server, plugin integrations, or the main product docs |
+| `mem9-node` | Sibling repo, commonly `../mem9-node` | Dashboard analysis backend, async jobs, and worker flows | A dashboard feature depends on backend APIs, background jobs, or analysis pipelines |
+| `mem9-hermes-plugin` | Sibling repo, commonly `../mem9-hermes-plugin` | Hermes Agent plugin packaging, setup flow, and Hermes-specific docs | You are changing Hermes installation, activation, or runtime-specific behavior |
 
-| Repo / Name | Where | What it owns |
-|---|---|---|
-| `mem9` | current repo | Core Go memory API, agent plugins, CLI, website, docs site, dashboard frontend, benchmark harnesses |
-| `mem9-node` | sibling repo, commonly `../mem9-node` | Node/Nest backend for dashboard analysis workflows, async jobs, and workers |
-| `mem9-benchmark` | benchmark-focused repo / workstream name you may hear internally | Benchmark-heavy evaluation work; the benchmark harnesses that currently ship with `mem9` live under [`benchmark/`](benchmark/) in this repo |
-| `mem9-tester` | private repo, often checked out as `../mem9-tester` | Automated OpenClaw install / verification harness for `SKILL.md` flows, smoke tests, and artifact capture |
+## Repository Map
 
-Notes:
-
-- [`dashboard/app/`](dashboard/app/) in this repo is the frontend half of the dashboard product. The backend half for async analysis lives in `mem9-node`, especially its `apps/api` and `apps/worker`.
-- `mem9-tester` is not part of the production runtime. It exists to validate installation / reconnect behavior and reduce fragile manual testing.
-- If someone says `mem9-benchmark`, they usually mean the benchmark work around mem9 evaluation. In this repo, that work currently starts in [`benchmark/`](benchmark/).
-
-## API Reference
-
-Agent identity: `X-Mnemo-Agent-Id` header.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/v1alpha1/mem9s` | Provision tenant (no auth). Returns `{ "id" }`. Accepts optional `utm_*` query params for attribution logging. |
-| `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy unified write endpoint. Tenant key travels in the URL path. |
-| `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy search endpoint for `tenantID`-configured clients. |
-| `GET` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy get-by-id endpoint. |
-| `PUT` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy update endpoint. Optional `If-Match` for version check. |
-| `DELETE` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy delete endpoint. |
-| `POST` | `/v1alpha2/mem9s/memories` | Preferred unified write endpoint. Requires `X-API-Key` header. |
-| `GET` | `/v1alpha2/mem9s/memories` | Preferred search endpoint. Requires `X-API-Key` header. |
-| `GET` | `/v1alpha2/mem9s/memories/:id` | Preferred get-by-id endpoint. Requires `X-API-Key` header. |
-| `PUT` | `/v1alpha2/mem9s/memories/:id` | Preferred update endpoint. Requires `X-API-Key` header. |
-| `DELETE` | `/v1alpha2/mem9s/memories/:id` | Preferred delete endpoint. Requires `X-API-Key` header. |
+| Path | Role |
+|---|---|
+| [`server/`](server/) | Core Go REST API and source of truth for spaces, memories, search, ingest, and tenant provisioning |
+| [`cli/`](cli/) | Standalone Go CLI for exercising mem9 API and ingest flows |
+| [`openclaw-plugin/`](openclaw-plugin/) | OpenClaw memory plugin |
+| [`opencode-plugin/`](opencode-plugin/) | OpenCode plugin |
+| [`claude-plugin/`](claude-plugin/) | Claude Code hooks and skills integration |
+| [`codex-plugin/`](codex-plugin/) | Codex marketplace plugin and managed hooks |
+| [`site/`](site/) | Public mem9.ai site and published onboarding assets |
+| [`dashboard/`](dashboard/) | Dashboard product frontend and supporting product docs |
+| [`benchmark/`](benchmark/) | Benchmark harnesses and datasets for mem9 evaluation |
+| [`e2e/`](e2e/) | Live end-to-end scripts against a running mem9 server |
+| [`docs/`](docs/) | Architecture notes, design docs, and feature specs |
 
 ## Self-Hosting
+
+mem9 server supports multiple storage backends. Set `MNEMO_DB_BACKEND` to `tidb`, `postgres`, or `db9`, point `MNEMO_DSN` at that backend, and the rest of the runtime contract stays the same for your agents.
+
+### Build & Run
+
+```bash
+make build
+cd server
+MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" ./bin/mnemo-server
+```
+
+For PostgreSQL or db9 deployments, export `MNEMO_DB_BACKEND=postgres` or `MNEMO_DB_BACKEND=db9` before launching the server.
+
+### Docker
+
+```bash
+docker build -t mnemo-server ./server
+docker run -e MNEMO_DSN="..." -e MNEMO_DB_BACKEND="tidb" -p 8080:8080 mnemo-server
+```
 
 ### Environment Variables
 
@@ -192,12 +192,12 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 
 #### Metering
 
-These are the supported rollout variables for the server-side metering writer. The writer is initialized at server startup, but this round does **not** wire any `Record()` call sites yet, so no usage events are emitted until caller hooks are added.
+These are the supported rollout variables for the server-side metering writer. The writer is initialized at server startup, but this round does not wire any `Record()` call sites yet, so no usage events are emitted until caller hooks are added.
 
 The public env surface is intentionally small for now. Metering location is configured as a single destination URL. Supported schemes are:
 
-- `s3://<bucket>/<prefix>/` — write compressed JSON batches into S3 objects
-- `http://...` / `https://...` — POST JSON batches to a webhook endpoint
+- `s3://<bucket>/<prefix>/` for compressed JSON batches in S3
+- `http://...` or `https://...` for JSON batch webhooks
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -209,9 +209,9 @@ The public env surface is intentionally small for now. Metering location is conf
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `MNEMO_ENCRYPT_TYPE` | No | `plain` | Encryption type for tenant DB passwords: `plain`, `md5`, or `kms`. ⚠️ **One-time deployment decision — cannot be changed without re-provisioning all tenants.** |
-| `MNEMO_ENCRYPT_KEY` | No | — | Encryption key (for `md5`) or KMS key ID (for `kms`). Required when `MNEMO_ENCRYPT_TYPE` is not `plain`. |
-| `MNEMO_DEBUG_LLM` | No | `false` | Log raw LLM responses for debugging parse errors. ⚠️ **Dev/test only — responses may contain user data.** |
+| `MNEMO_ENCRYPT_TYPE` | No | `plain` | Encryption type for tenant DB passwords: `plain`, `md5`, or `kms`. One-time deployment decision. |
+| `MNEMO_ENCRYPT_KEY` | No | — | Encryption key for `md5` or KMS key ID for `kms`. Required when `MNEMO_ENCRYPT_TYPE` is not `plain` |
+| `MNEMO_DEBUG_LLM` | No | `false` | Log raw LLM responses for debugging parse errors. Use only in dev/test because responses may contain user data |
 
 #### AWS KMS Environment
 
@@ -229,55 +229,25 @@ These are only relevant when `MNEMO_ENCRYPT_TYPE=kms`. The server uses the AWS S
 |----------|----------|---------|-------------|
 | `MNEMO_TEST_DSN` | No | Falls back to `MNEMO_DSN` | Integration-test DSN used by server repository tests |
 
-### Build & Run
+## API Reference
 
-```bash
-make build
-cd server
-MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" ./bin/mnemo-server
-```
+Set `X-Mnemo-Agent-Id` on requests when you want the server to distinguish which runtime or agent instance is writing and recalling memories inside the same mem9 space.
 
-### Docker
+Preferred integrations use `v1alpha2` with `X-API-Key`. Legacy integrations can still use `v1alpha1` with the tenant ID in the URL path.
 
-```bash
-docker build -t mnemo-server ./server
-docker run -e MNEMO_DSN="..." -p 8080:8080 mnemo-server
-```
-
-## Repository Map
-
-| Path | Role |
-|---|---|
-| [`server/`](server/) | Core Go REST API and source of truth for spaces, memories, search, ingest, and tenant provisioning |
-| [`cli/`](cli/) | Standalone Go CLI for exercising the mem9 API and import / ingest flows |
-| [`openclaw-plugin/`](openclaw-plugin/) | OpenClaw memory plugin |
-| [`opencode-plugin/`](opencode-plugin/) | OpenCode plugin |
-| [`claude-plugin/`](claude-plugin/) | Claude Code hooks + skills integration |
-| [`site/`](site/) | Public mem9.ai site. This includes the marketing site, docs page, and published onboarding documents like `site/public/SKILL.md` and `site/public/beta/SKILL.md` |
-| [`dashboard/`](dashboard/) | Dedicated home for dashboard work: product docs plus the frontend app |
-| [`dashboard/app/`](dashboard/app/) | `Your Memory` frontend SPA served under `/your-memory` |
-| [`dashboard/app/src/pages/connect.tsx`](dashboard/app/src/pages/connect.tsx) | Dashboard connect / onboarding page |
-| [`dashboard/app/src/pages/space.tsx`](dashboard/app/src/pages/space.tsx) | Main `Your Memory` page for browsing, filtering, importing, exporting, and analyzing memories |
-| [`dashboard/app/src/pages/pixel-farm.tsx`](dashboard/app/src/pages/pixel-farm.tsx) | `Memory Farm`, the lab-style interactive memory experience exposed at `/your-memory/labs/memory-farm` |
-| [`dashboard/app/src/pages/pixel-farm-editor.tsx`](dashboard/app/src/pages/pixel-farm-editor.tsx) | Dev-only editor for Memory Farm world / mask work |
-| [`dashboard/app/src/lib/pixel-farm/`](dashboard/app/src/lib/pixel-farm/) | Memory Farm world generation, memory-to-world transforms, rendering, tiles, and runtime logic |
-| [`dashboard/app/src/components/pixel-farm/`](dashboard/app/src/components/pixel-farm/) | Memory Farm UI components |
-| [`dashboard/docs/`](dashboard/docs/) | Dashboard product specs, information architecture, data contract, and implementation plans |
-| [`benchmark/`](benchmark/) | Benchmark harnesses and datasets for comparing OpenClaw native memory against mem9, including MR-NIAH and LoCoMo adapters |
-| [`e2e/`](e2e/) | Live end-to-end scripts against a running mem9 server |
-| [`docs/`](docs/) | Architecture notes, design docs, and feature / experiment specs |
-| [`docs/superpowers/specs/`](docs/superpowers/specs/) | Feature-level specs and experiments, including Pixel / Memory Farm design work |
-| [`skills/`](skills/) | Shared setup / onboarding skills |
-
-## Roadmap
-
-| Phase | What | Status |
-|-------|------|--------|
-| **Phase 1** | Core server + CRUD + auth + hybrid search + upsert + plugins | ✅ Done |
-| **Phase 3** | LLM-assisted conflict merge, auto-tagging | 🔜 Planned |
-| **Phase 4** | Web dashboard, bulk import/export, CLI wizard | 📋 Planned |
-
-Vector Clock CRDT was deferred and removed from the roadmap.
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1alpha1/mem9s` | Provision tenant (no auth). Returns `{ "id" }`. Accepts optional `utm_*` query params for attribution logging |
+| `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy unified write endpoint. Tenant key travels in the URL path |
+| `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy search endpoint for `tenantID`-configured clients |
+| `GET` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy get-by-id endpoint |
+| `PUT` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy update endpoint. Optional `If-Match` for version check |
+| `DELETE` | `/v1alpha1/mem9s/{tenantID}/memories/:id` | Legacy delete endpoint |
+| `POST` | `/v1alpha2/mem9s/memories` | Preferred unified write endpoint. Requires `X-API-Key` header |
+| `GET` | `/v1alpha2/mem9s/memories` | Preferred search endpoint. Requires `X-API-Key` header |
+| `GET` | `/v1alpha2/mem9s/memories/:id` | Preferred get-by-id endpoint. Requires `X-API-Key` header |
+| `PUT` | `/v1alpha2/mem9s/memories/:id` | Preferred update endpoint. Requires `X-API-Key` header |
+| `DELETE` | `/v1alpha2/mem9s/memories/:id` | Preferred delete endpoint. Requires `X-API-Key` header |
 
 ## Contributing
 
@@ -286,11 +256,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 ## License
 
 [Apache-2.0](LICENSE)
-
----
-
-<p align="center">
-  <a href="https://tidbcloud.com"><img src="assets/tidb-logo.png" alt="TiDB Starter" height="36" /></a>
-  <br/>
-  <sub>Built with <a href="https://tidbcloud.com">TiDB Starter</a> — zero-ops database with native vector search.</sub>
-</p>
