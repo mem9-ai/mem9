@@ -217,23 +217,8 @@ func (r *SessionRepo) VectorSearch(ctx context.Context, queryVec []float32, f do
 }
 
 func (r *SessionRepo) FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
-	conds, args := r.buildSessionFilterConds(f)
-	where := strings.Join(conds, " AND ")
-
-	safeQ := ftsSafeLiteral(query)
-	sqlQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at,
-		fts_match_word('` + safeQ + `', content) AS fts_score
-		FROM sessions
-		WHERE ` + where + ` AND fts_match_word('` + safeQ + `', content)
-		ORDER BY fts_match_word('` + safeQ + `', content) DESC
-		LIMIT ?`
-
-	fullArgs := make([]any, 0, len(args)+1)
-	fullArgs = append(fullArgs, args...)
-	fullArgs = append(fullArgs, limit)
-
 	start := time.Now()
-	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
+	memories, err := r.ftsSearchWithPostFilter(ctx, query, f, limit)
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
@@ -241,13 +226,129 @@ func (r *SessionRepo) FTSSearch(ctx context.Context, query string, f domain.Memo
 		slog.ErrorContext(ctx, "sessions fts search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 		return nil, fmt.Errorf("sessions fts search: cluster_id=%s: %w", r.clusterID, err)
 	}
-	defer rows.Close()
-	memories, err := scanSessionRowsWithFTSScore(rows)
+	slog.DebugContext(ctx, "sessions fts search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	return memories, nil
+}
+
+type sessionFTSCandidate struct {
+	id    string
+	score float64
+}
+
+func (r *SessionRepo) ftsSearchWithPostFilter(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	conds, args := r.buildSessionFilterConds(f)
+	where := strings.Join(conds, " AND ")
+	safeQ := ftsSafeLiteral(query)
+
+	memories := make([]domain.Memory, 0, limit)
+	offset := 0
+
+	for len(memories) < limit {
+		candidates, err := r.fetchSessionFTSCandidates(ctx, safeQ, limit, offset)
+		if err != nil {
+			return nil, err
+		}
+		if len(candidates) == 0 {
+			break
+		}
+
+		filtered, err := r.fetchFilteredFTSSessions(ctx, candidates, where, args)
+		if err != nil {
+			return nil, err
+		}
+		memories = append(memories, filtered...)
+		if len(memories) >= limit {
+			memories = memories[:limit]
+			break
+		}
+		if len(candidates) < limit {
+			break
+		}
+		offset += len(candidates)
+	}
+
+	return memories, nil
+}
+
+func (r *SessionRepo) fetchSessionFTSCandidates(ctx context.Context, safeQ string, limit, offset int) ([]sessionFTSCandidate, error) {
+	sqlQuery := `SELECT id, fts_match_word('` + safeQ + `', content) AS fts_score
+		FROM sessions
+		WHERE fts_match_word('` + safeQ + `', content)
+		ORDER BY fts_match_word('` + safeQ + `', content) DESC, id
+		LIMIT ? OFFSET ?`
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, limit, offset)
 	if err != nil {
 		return nil, err
 	}
-	slog.DebugContext(ctx, "sessions fts search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
-	return memories, nil
+	defer rows.Close()
+
+	candidates := make([]sessionFTSCandidate, 0, limit)
+	for rows.Next() {
+		var candidate sessionFTSCandidate
+		if err := rows.Scan(&candidate.id, &candidate.score); err != nil {
+			return nil, fmt.Errorf("scan session fts candidate: %w", err)
+		}
+		candidates = append(candidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return candidates, nil
+}
+
+func (r *SessionRepo) fetchFilteredFTSSessions(ctx context.Context, candidates []sessionFTSCandidate, where string, filterArgs []any) ([]domain.Memory, error) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]string, len(candidates))
+	args := make([]any, 0, len(candidates)+len(filterArgs))
+	scoreByID := make(map[string]float64, len(candidates))
+	for i, candidate := range candidates {
+		placeholders[i] = "?"
+		args = append(args, candidate.id)
+		scoreByID[candidate.id] = candidate.score
+	}
+	args = append(args, filterArgs...)
+
+	sqlQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at
+		FROM sessions
+		WHERE id IN (` + strings.Join(placeholders, ",") + `) AND ` + where
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	memories, err := scanSessionRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	memoriesByID := make(map[string]domain.Memory, len(memories))
+	for _, memory := range memories {
+		score := scoreByID[memory.ID]
+		memory.Score = &score
+		memoriesByID[memory.ID] = memory
+	}
+
+	ordered := make([]domain.Memory, 0, len(memoriesByID))
+	for _, candidate := range candidates {
+		memory, ok := memoriesByID[candidate.id]
+		if !ok {
+			continue
+		}
+		score := candidate.score
+		memory.Score = &score
+		ordered = append(ordered, memory)
+	}
+	return ordered, nil
 }
 
 func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
