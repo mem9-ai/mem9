@@ -34,9 +34,9 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node --eval \"require('node:fs').rmSync('./dist-test', { recursive: true, force: true })\" && tsc -p ./tsconfig.test.json && node --test \"./dist-test/*.test.js\"",
+    "test": "node ./scripts/test.mjs",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck"
+    "prepublishOnly": "pnpm run typecheck"
   },
   "dependencies": {
     "@opencode-ai/plugin": "1.14.19"
