@@ -7,33 +7,45 @@ The package ships two plugin entrypoints:
 - a server plugin for recall, auto-ingest, and memory tools
 - a TUI plugin for interactive setup inside OpenCode
 
-The server plugin does three things:
+## Quick Start
 
-- recalls relevant mem9 memories before each chat turn
-- exposes mem9 memory tools inside OpenCode
-- starts best-effort background smart ingest when the session becomes idle and when compaction begins
+### 1. Install the server plugin
 
-## Enable
+Install the server plugin in one scope only.
 
-Add `@mem9/opencode` to your OpenCode plugin list, then restart OpenCode.
+User scope:
 
-Register the server plugin in one scope only. The recommended pattern is:
+File: `~/.config/opencode/opencode.json`
 
-- register the plugin once at user scope
-- use project-level `.opencode/mem9.json` only when a project needs a different `profileId`, `debug`, or timeout setting
+```json
+{
+  "plugin": ["@mem9/opencode"]
+}
+```
 
-Avoid loading the same plugin from multiple places at once, such as:
+Project scope:
+
+File: `<project>/.opencode/opencode.json`
+
+```json
+{
+  "plugin": ["@mem9/opencode"]
+}
+```
+
+Recommended pattern:
+
+- install the server plugin once at user scope
+- keep project-specific behavior in `<project>/.opencode/mem9.json`
+
+Avoid duplicate plugin loading, such as:
 
 - user scope plugin plus project scope plugin
 - npm plugin plus local file plugin
 
-```json
-{
-  "plugin": ["@mem9/opencode"]
-}
-```
+### 2. Install the TUI plugin for `/mem9-setup`
 
-To enable the interactive setup command, add the same package to your TUI plugin list:
+File: `~/.config/opencode/tui.json`
 
 ```json
 {
@@ -41,36 +53,61 @@ To enable the interactive setup command, add the same package to your TUI plugin
 }
 ```
 
-That entry belongs in `~/.config/opencode/tui.json`.
+That enables the `/mem9-setup` command inside OpenCode.
 
-## Config Model
+### 3. Restart OpenCode and run `/mem9-setup`
 
-Shared credentials live here:
+`/mem9-setup` is the single entrypoint for both:
+
+- shared mem9 credentials
+- OpenCode user/project mem9 settings
+
+When no usable profile exists, it shows two actions:
+
+- `Get a mem9 API key automatically`
+- `Add an existing mem9 API key`
+
+When usable profiles already exist, it shows four actions:
+
+- `Get a mem9 API key automatically`
+- `Add an existing mem9 API key`
+- `Use an existing mem9 profile in a scope`
+- `Configure user/project settings`
+
+Profile creation ends after the profile is saved. Scope configuration is a separate action.
+
+## File Layout
+
+OpenCode config directory:
+
+- macOS/Linux: usually `~/.config/opencode`
+- Windows: usually `%APPDATA%\\opencode`
+
+OpenCode state directory:
+
+- macOS/Linux: usually `~/.local/share/opencode`
+- Windows: usually `%LOCALAPPDATA%\\opencode`
+
+mem9 uses these files:
+
+- server plugin list: `~/.config/opencode/opencode.json` or `<project>/.opencode/opencode.json`
+- TUI plugin list: `~/.config/opencode/tui.json`
+- shared credentials: `$MEM9_HOME/.credentials.json`
+- user mem9 config: `<OpenCode config dir>/mem9.json`
+- project mem9 config: `<project>/.opencode/mem9.json`
+- debug logs: `<OpenCode state dir>/plugins/mem9/log/YYYY-MM-DD.jsonl`
+
+`MEM9_HOME` defaults to `$HOME/.mem9`.
+
+## Credentials File
+
+Shared credentials live in:
 
 ```text
 $MEM9_HOME/.credentials.json
 ```
 
-`MEM9_HOME` defaults to `$HOME/.mem9`.
-
-OpenCode config stays scope-local:
-
-```text
-user config:    <OpenCode config dir>/mem9.json
-project config: <project>/.opencode/mem9.json
-```
-
-OpenCode debug logs stay in the OpenCode state directory:
-
-```text
-<OpenCode state dir>/plugins/mem9/log/YYYY-MM-DD.jsonl
-```
-
-That split keeps secrets shareable across tools while keeping OpenCode-specific config and logs in OpenCode-managed locations.
-
-## Credentials File
-
-`$MEM9_HOME/.credentials.json`
+Example:
 
 ```json
 {
@@ -85,9 +122,11 @@ That split keeps secrets shareable across tools while keeping OpenCode-specific 
 }
 ```
 
-## OpenCode Config
+`profiles` stores credentials only.
 
-User and project config use the same schema.
+## OpenCode mem9 Config
+
+User and project mem9 config use the same schema:
 
 ```json
 {
@@ -98,6 +137,13 @@ User and project config use the same schema.
   "searchTimeoutMs": 15000
 }
 ```
+
+Field meanings:
+
+- `profileId`: which shared profile this scope should use
+- `debug`: enable redacted JSONL debug logs
+- `defaultTimeoutMs`: request timeout for normal mem9 calls
+- `searchTimeoutMs`: request timeout for recall search
 
 Project config overrides user config for the current repository.
 
@@ -115,9 +161,37 @@ Legacy compatibility remains:
 
 `MEM9_TENANT_ID` is treated as the API key source for older setups.
 
-## Behavior
+## Local Development Install
 
-### Hook flow
+You can also point OpenCode at a local checkout.
+
+Server plugin example:
+
+```json
+{
+  "plugin": ["./.opencode/plugins/mem9/src/index.ts"]
+}
+```
+
+TUI plugin example:
+
+```json
+{
+  "plugin": ["./.opencode/plugins/mem9/src/tui/index.ts"]
+}
+```
+
+Keep the same one-scope rule for the server plugin even when using local paths.
+
+## What the Plugin Does
+
+The server plugin does three things:
+
+- recalls relevant mem9 memories before each chat turn
+- exposes mem9 memory tools inside OpenCode
+- starts best-effort background smart ingest when the session becomes idle and when compaction begins
+
+### Hook Flow
 
 OpenCode integration currently uses four runtime hooks:
 
@@ -127,48 +201,6 @@ OpenCode integration currently uses four runtime hooks:
 | `experimental.chat.system.transform` | Searches mem9 with the captured prompt and injects a `<relevant-memories>` block. |
 | `event` with `session.idle` | Starts a best-effort background smart-ingest pass for the recent transcript window. |
 | `experimental.session.compacting` | Pushes a compaction hint and starts another best-effort background smart-ingest pass. |
-
-### TUI setup
-
-When the TUI plugin is active, OpenCode registers:
-
-- `/mem9-setup`
-
-That command is the single setup entrypoint for both shared mem9 identity and OpenCode scope config.
-
-Profile actions use shared credentials in:
-
-- `$MEM9_HOME/.credentials.json`
-
-Scope settings use:
-
-- user config: `<OpenCode config dir>/mem9.json`
-- project config: `<project>/.opencode/mem9.json`
-
-When no usable profile exists, the command offers two actions:
-
-- `Get a mem9 API key automatically`
-- `Add an existing mem9 API key`
-
-Both actions save a shared profile and set it as the default user profile for OpenCode, then stop there.
-
-When usable profiles already exist, the command offers four actions:
-
-- `Get a mem9 API key automatically`
-- `Add an existing mem9 API key`
-- `Use an existing mem9 profile in a scope`
-- `Configure user/project settings`
-
-The scope actions are separate from API key management:
-
-- `Use an existing mem9 profile in a scope` asks for `user` or `project`, then writes the selected `profileId` into that scope while preserving the current debug and timeout settings.
-- `Configure user/project settings` asks for `user` or `project`, then lets you edit `profileId`, `debug`, `defaultTimeoutMs`, and `searchTimeoutMs`.
-
-If you enter a profile ID that already has working credentials, setup asks you to pick a new profile ID or use the existing profile from a scope action.
-
-If automatic API key creation fails, the command stops and asks you to run `/mem9-setup` again later.
-
-The current OpenCode dialog prompt is plain text. The API key stays visible while you type it.
 
 ### Recall
 
@@ -200,19 +232,13 @@ The plugin registers these tools:
 - `memory_update`
 - `memory_delete`
 
-## Debug Logging
-
-Set `debug: true` in the selected scope config when you want JSONL debug logs.
-
-Debug payloads are redacted before they are written. The logger masks obvious secret forms in structured fields and free-form strings, including mem9 keys, bearer tokens, and common provider-style API key prefixes.
-
 ## Troubleshooting
 
-- `Setup pending` means the plugin could not find a usable runtime identity. Run `/mem9-setup`, add `MEM9_API_KEY`, or point `profileId` at a profile with a non-empty `apiKey`.
-- If the selected profile exists but has no `apiKey`, update that profile in `$MEM9_HOME/.credentials.json`.
+- `Setup pending` means the plugin could not find a usable runtime identity. Run `/mem9-setup`, add `MEM9_API_KEY`, or point the active `mem9.json` scope at a profile with a non-empty `apiKey`.
+- If `/mem9-setup` is missing, confirm `@mem9/opencode` is listed in `~/.config/opencode/tui.json`.
 - If recall or tools work in one project and not another, check whether the project has its own `.opencode/mem9.json` override.
-- If recall, auto-ingest, or debug logs appear to run twice, check for duplicate plugin registration across user scope, project scope, npm, or local plugin paths. Keep one active plugin entry.
-- If `/mem9-setup` is missing, confirm `@mem9/opencode` is also listed in `~/.config/opencode/tui.json`.
+- If recall, auto-ingest, or debug logs appear to run twice, check for duplicate plugin registration across user scope, project scope, npm, or local file paths.
+- If the selected profile exists but has no `apiKey`, update that profile in `$MEM9_HOME/.credentials.json`.
 - If debug logging is enabled and no file appears, confirm OpenCode can write to its state directory.
 
 ## Local Verification
@@ -220,6 +246,7 @@ Debug payloads are redacted before they are written. The logger masks obvious se
 ```bash
 pnpm test
 pnpm run typecheck
+pnpm run pack:check
 ```
 
 ## Publish Surface
@@ -231,9 +258,3 @@ The npm package publishes:
 - runtime source files under `src/`
 
 The package keeps `files: ["src", "README.md"]` in `package.json`. Tests live under `test/`, so the published tarball only carries runtime code.
-
-Check the final tarball contents before release:
-
-```bash
-pnpm run pack:check
-```
