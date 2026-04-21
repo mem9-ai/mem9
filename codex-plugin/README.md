@@ -8,6 +8,7 @@ After setup, it does two things automatically:
 - saves a recent `user` / `assistant` window when Codex stops
 
 The plugin is user-installed. The hooks are global. Per-project differences live in a local override file.
+The managed hook commands stay fixed after setup. Plugin updates reuse those same entrypoints.
 
 ## Quick Start
 
@@ -60,7 +61,7 @@ This repository also ships a repo-local marketplace manifest at:
 For local testing:
 
 1. Clone this repository.
-2. Open Codex with the repository root as the working directory.
+2. Open Codex with the repository root as the working directory. Codex discovers the repo-local marketplace from `<repo>/.agents/plugins/marketplace.json`.
 3. Install `mem9` from the repo-local marketplace Codex discovers for this checkout.
 4. Run `$mem9:setup`.
 5. Restart Codex after plugin or marketplace changes.
@@ -90,11 +91,12 @@ What it does:
 1. checks `Node.js >= 22`
 2. creates a new mem9 API key automatically or selects an existing global profile
 3. creates or repairs global profiles in `$MEM9_HOME/.credentials.json`
-3. writes the global default config
-4. enables `codex_hooks`
-5. installs or repairs the managed hooks in `$CODEX_HOME/hooks.json`
-6. installs runtime scripts in `$CODEX_HOME/mem9/runtime/`
-7. removes old mem9-managed project hooks from the current repository, when setup runs inside a Git repository
+4. writes the global default config
+5. enables `codex_hooks`
+6. installs or repairs the managed hooks in `$CODEX_HOME/hooks.json`
+7. installs stable hook shims in `$CODEX_HOME/mem9/hooks/`
+8. writes install metadata to `$CODEX_HOME/mem9/install.json`
+9. removes old mem9-managed project hooks from the current repository, when setup runs inside a Git repository
 
 First-run setup supports two paths:
 
@@ -155,10 +157,16 @@ Shared credentials:
 $MEM9_HOME/.credentials.json
 ```
 
-Runtime scripts:
+Managed hook shims:
 
 ```text
-$CODEX_HOME/mem9/runtime/
+$CODEX_HOME/mem9/hooks/
+```
+
+Install metadata:
+
+```text
+$CODEX_HOME/mem9/install.json
 ```
 
 `MEM9_HOME` defaults to `$HOME/.mem9`.
@@ -233,3 +241,4 @@ You can override the file path with `MEM9_DEBUG_LOG_FILE`.
 - If the selected profile is missing, run `$mem9:setup` to create or repair global profiles.
 - If the selected profile is missing an API key, run `$mem9:setup` and choose `create-new`, or add the profile manually in `$MEM9_HOME/.credentials.json` and rerun setup with `--use-existing`.
 - If setup repairs malformed JSON files, it keeps sibling `.bak` copies before rewriting them.
+- If you installed an older prerelease that still points hooks at `$CODEX_HOME/mem9/runtime/`, run `$mem9:setup` once after upgrading.
