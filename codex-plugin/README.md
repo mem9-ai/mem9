@@ -31,7 +31,7 @@ The managed hook commands stay fixed after setup. Plugin updates reuse those sam
    $mem9:project-config
    ```
 
-`$mem9:setup` enables `codex_hooks` and installs the managed hooks. You do not need to enable hooks manually first.
+`$mem9:setup` inspects the saved global profiles first, then enables `codex_hooks` and installs the managed hooks with the path you choose. You do not need to enable hooks manually first.
 
 ## Requirements
 
@@ -89,18 +89,20 @@ $mem9:setup --use-existing --profile work
 What it does:
 
 1. checks `Node.js >= 22`
-2. creates a new mem9 API key automatically or selects an existing global profile
-3. creates or repairs global profiles in `$MEM9_HOME/.credentials.json`
-4. writes the global default config
-5. enables `codex_hooks`
-6. installs or repairs the managed hooks in `$CODEX_HOME/hooks.json`
-7. installs stable hook shims in `$CODEX_HOME/mem9/hooks/`
-8. writes install metadata to `$CODEX_HOME/mem9/install.json`
-9. removes old mem9-managed project hooks from the current repository, when setup runs inside a Git repository
+2. inspects the saved profiles in `$MEM9_HOME/.credentials.json`
+3. asks whether to use an existing global profile, create a new mem9 API key, or handle credentials manually
+4. creates or repairs global profiles in `$MEM9_HOME/.credentials.json`
+5. writes the global default config
+6. enables `codex_hooks`
+7. installs or repairs the managed hooks in `$CODEX_HOME/hooks.json`
+8. installs stable hook shims in `$CODEX_HOME/mem9/hooks/`
+9. writes install metadata to `$CODEX_HOME/mem9/install.json`
+10. removes old mem9-managed project hooks from the current repository, when setup runs inside a Git repository
 
 First-run setup supports two paths:
 
 - `create-new` provisions a fresh mem9 API key and writes it into the selected global profile
+- `use-existing` reuses a saved global profile and its API key
 - `manual` prints how to add a profile in `$MEM9_HOME/.credentials.json`, then you rerun setup and choose `use-existing`
 
 Inside Codex, setup does not ask for API keys through the TUI.

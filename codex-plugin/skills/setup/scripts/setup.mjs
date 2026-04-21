@@ -321,6 +321,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
     baseUrl: "",
     apiKey: "",
     createNew: false,
+    inspectProfiles: false,
     useExisting: false,
     defaultTimeoutMs: undefined,
     searchTimeoutMs: undefined,
@@ -353,6 +354,9 @@ export function parseArgs(argv = process.argv.slice(2)) {
         break;
       case "--create-new":
         args.createNew = true;
+        break;
+      case "--inspect-profiles":
+        args.inspectProfiles = true;
         break;
       case "--use-existing":
         args.useExisting = true;
@@ -664,6 +668,81 @@ function buildUsableProfiles(profiles) {
       hasApiKey(profile),
     ),
   );
+}
+
+export function summarizeProfiles(profiles) {
+  return Object.entries(isRecord(profiles) ? profiles : {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([profileId, profile]) => {
+      const current = normalizeProfileRecord(profileId, profile);
+      return {
+        profileId,
+        label: current.label,
+        baseUrl: current.baseUrl,
+        hasApiKey: hasApiKey(current),
+      };
+    });
+}
+
+export function inspectProfiles(argv = process.argv.slice(2), options = {}) {
+  const args = Array.isArray(argv) ? parseArgs(argv) : argv;
+  const env = options.env ?? process.env;
+  const cwd = path.resolve(
+    normalizeString(options.cwd)
+      || normalizeString(args.cwd)
+      || process.cwd(),
+  );
+  const codexHome = resolveCodexHome(
+    options.codexHome,
+    env,
+    options.homeDir,
+  );
+  const mem9Home = resolveMem9Home(
+    options.mem9Home,
+    env,
+    options.homeDir,
+  );
+  const fsOps = {
+    existsSync: options.existsSync,
+    readFileSync: options.readFileSync,
+  };
+  const credentialsPath = path.join(mem9Home, ".credentials.json");
+  const credentialsExists = (fsOps.existsSync ?? existsSync)(credentialsPath);
+  let credentialsState = credentialsExists ? "ready" : "missing";
+  const credentials = readJsonFileOrDefault(
+    credentialsPath,
+    {
+      schemaVersion: 1,
+      profiles: {},
+    },
+    fsOps,
+    {
+      fallbackOnParseError: true,
+      onParseError() {
+        credentialsState = "invalid";
+      },
+    },
+  );
+  const profiles = getProfiles(credentials);
+  const profileSummaries = summarizeProfiles(profiles);
+  const usableProfileIds = profileSummaries
+    .filter((profile) => profile.hasApiKey)
+    .map((profile) => profile.profileId);
+
+  return {
+    status: "ok",
+    credentialsState,
+    credentialsPath: sanitizeDisplayPath(credentialsPath, {
+      cwd,
+      codexHome,
+      mem9Home,
+    }),
+    defaultProfileId: buildDefaultProfileId(profiles),
+    hasUsableProfiles: usableProfileIds.length > 0,
+    recommendedMode: usableProfileIds.length > 0 ? "use-existing" : "create-new",
+    profiles: profileSummaries,
+    usableProfileIds,
+  };
 }
 
 function buildManualProfileGuidance(profileId, baseUrl = DEFAULT_BASE_URL) {
@@ -1166,7 +1245,16 @@ export async function runSetup(argv = process.argv.slice(2), options = {}) {
 }
 
 export async function main(argv = process.argv.slice(2), options = {}) {
-  return runSetup(argv, {
+  const args = Array.isArray(argv) ? parseArgs(argv) : argv;
+
+  if (args.inspectProfiles) {
+    const summary = inspectProfiles(args, options);
+    const stdout = options.stdout ?? process.stdout;
+    stdout?.write?.(`${JSON.stringify(summary)}\n`);
+    return summary;
+  }
+
+  return runSetup(args, {
     ...options,
     stdout: options.stdout ?? process.stdout,
     stdin: options.stdin ?? process.stdin,

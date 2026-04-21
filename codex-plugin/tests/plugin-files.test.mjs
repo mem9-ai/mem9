@@ -36,6 +36,9 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
   );
 
   assert.match(setupSkill, /node \.\/scripts\/setup\.mjs/);
+  assert.match(setupSkill, /--inspect-profiles/);
+  assert.match(setupSkill, /Ask the user which path to take|ask the user which path to take/i);
+  assert.doesNotMatch(setupSkill, /disable-model-invocation:\s*true/);
   assert.doesNotMatch(setupSkill, /--scope/);
   assert.match(projectSkill, /node \.\/scripts\/project-config\.mjs/);
   assert.match(projectSkill, /<project>\.\/?\.codex\/mem9\/config\.json|<project>\/\.codex\/mem9\/config\.json/);
@@ -65,6 +68,7 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /## Quick Start/);
   assert.match(readme, /\$mem9:setup/);
   assert.match(readme, /\$mem9:project-config/);
+  assert.match(readme, /inspects the saved global profiles first/i);
   assert.match(readme, /codex plugin marketplace add mem9-ai\/mem9/);
   assert.match(readme, /install `mem9` from the `mem9-ai` marketplace inside Codex/i);
   assert.match(readme, /<repo>\/\.agents\/plugins\/marketplace\.json/);

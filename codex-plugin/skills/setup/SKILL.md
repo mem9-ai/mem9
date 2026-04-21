@@ -5,17 +5,32 @@ allowed-tools:
   - Bash
   - Read
   - Edit
-disable-model-invocation: true
 ---
 
 # Mem9 Setup
 
-Resolve `./scripts/setup.mjs` relative to this skill directory, then run:
+Resolve `./scripts/setup.mjs` relative to this skill directory.
+
+Run this workflow:
+
+1. Inspect the saved global profiles first:
 
 ```bash
 set -euo pipefail
-node ./scripts/setup.mjs
+node ./scripts/setup.mjs --inspect-profiles
 ```
+
+2. Use the JSON summary to decide the next step with the user.
+   Share each available profile as `profileId`, `label`, `baseUrl`, and whether it already has an API key.
+3. Ask the user which path to take:
+   - use an existing profile
+   - create a new mem9 API key
+   - handle credentials manually
+4. Run setup with the matching flags:
+   - existing profile: `node ./scripts/setup.mjs --use-existing --profile <profile-id>`
+   - create new key: `node ./scripts/setup.mjs --create-new [--profile <profile-id>] [--label <profile-label>] [--base-url <mem9-api-base-url>]`
+   - manual credentials: explain the profile requirements, then stop until the profile exists
+5. When the user already names a specific profile or mode in the original request, skip the question and run the matching command directly.
 
 Common flags:
 

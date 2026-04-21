@@ -16,6 +16,8 @@ import {
   buildInstallMetadata,
   buildNodeCommand,
   buildHookCommands,
+  inspectProfiles,
+  main,
   mergeMem9Hooks,
   removeManagedHooks,
   renderHooksTemplate,
@@ -178,6 +180,181 @@ test("buildNodeCommand shell-quotes POSIX metacharacters", () => {
   );
 });
 
+test("inspectProfiles summarizes saved global profiles without exposing api keys", () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const projectRoot = path.join(tempRoot, "project");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    mkdirSync(projectRoot, { recursive: true });
+    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(mem9Home, { recursive: true });
+
+    writeFileSync(
+      path.join(mem9Home, ".credentials.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        profiles: {
+          default: {
+            label: "Default",
+            baseUrl: "https://api.mem9.ai",
+            apiKey: "key-default",
+          },
+          draft: {
+            label: "Draft",
+            baseUrl: "https://staging.mem9.ai",
+            apiKey: "",
+          },
+        },
+      }, null, 2),
+    );
+
+    const summary = inspectProfiles([], {
+      cwd: projectRoot,
+      codexHome,
+      mem9Home,
+    });
+
+    assert.equal(summary.status, "ok");
+    assert.equal(summary.credentialsState, "ready");
+    assert.equal(summary.credentialsPath, "$MEM9_HOME/.credentials.json");
+    assert.equal(summary.defaultProfileId, "default");
+    assert.equal(summary.hasUsableProfiles, true);
+    assert.equal(summary.recommendedMode, "use-existing");
+    assert.deepEqual(summary.usableProfileIds, ["default"]);
+    assert.deepEqual(summary.profiles, [
+      {
+        profileId: "default",
+        label: "Default",
+        baseUrl: "https://api.mem9.ai",
+        hasApiKey: true,
+      },
+      {
+        profileId: "draft",
+        label: "Draft",
+        baseUrl: "https://staging.mem9.ai",
+        hasApiKey: false,
+      },
+    ]);
+    assert.equal(JSON.stringify(summary).includes("key-default"), false);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("main prints inspectProfiles json to a provided stdout without mutating setup files", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const projectRoot = path.join(tempRoot, "project");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    let stdoutText = "";
+    mkdirSync(projectRoot, { recursive: true });
+    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(mem9Home, { recursive: true });
+
+    writeFileSync(
+      path.join(mem9Home, ".credentials.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        profiles: {
+          work: {
+            label: "Work",
+            baseUrl: "https://api.mem9.ai",
+            apiKey: "key-work",
+          },
+        },
+      }, null, 2),
+    );
+
+    const result = await main(
+      ["--inspect-profiles"],
+      {
+        cwd: projectRoot,
+        codexHome,
+        mem9Home,
+        stdout: {
+          write(/** @type {string} */ chunk) {
+            stdoutText += chunk;
+          },
+        },
+      },
+    );
+
+    assert.equal("recommendedMode" in result, true);
+    assert.equal("usableProfileIds" in result, true);
+    if (!("recommendedMode" in result) || !("usableProfileIds" in result)) {
+      throw new Error("Expected inspectProfiles result.");
+    }
+
+    assert.equal(result.status, "ok");
+    assert.equal(result.recommendedMode, "use-existing");
+    assert.deepEqual(result.usableProfileIds, ["work"]);
+    assert.equal(stdoutText.trim().length > 0, true);
+    assert.deepEqual(JSON.parse(stdoutText), result);
+    assert.equal(stdoutText.includes("key-work"), false);
+    assert.equal(existsSync(path.join(codexHome, "mem9", "config.json")), false);
+    assert.equal(existsSync(path.join(codexHome, "hooks.json")), false);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("main prints inspectProfiles json to process.stdout by default", async () => {
+  const tempRoot = createTempRoot();
+  const originalWrite = process.stdout.write;
+
+  try {
+    const projectRoot = path.join(tempRoot, "project");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    let stdoutText = "";
+    mkdirSync(projectRoot, { recursive: true });
+    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(mem9Home, { recursive: true });
+
+    writeFileSync(
+      path.join(mem9Home, ".credentials.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        profiles: {
+          default: {
+            label: "Default",
+            baseUrl: "https://api.mem9.ai",
+            apiKey: "key-default",
+          },
+        },
+      }, null, 2),
+    );
+
+    process.stdout.write = /** @type {typeof process.stdout.write} */ ((chunk, ...args) => {
+      stdoutText += typeof chunk === "string" ? chunk : chunk.toString();
+      const callback = args.find((value) => typeof value === "function");
+      callback?.();
+      return true;
+    });
+
+    const result = await main(
+      ["--inspect-profiles"],
+      {
+        cwd: projectRoot,
+        codexHome,
+        mem9Home,
+      },
+    );
+
+    assert.equal(result.status, "ok");
+    assert.equal(stdoutText.trim().length > 0, true);
+    assert.deepEqual(JSON.parse(stdoutText), result);
+    assert.equal(stdoutText.includes("key-default"), false);
+  } finally {
+    process.stdout.write = originalWrite;
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("runSetup installs global config, hooks, credentials, and hook shims", async () => {
   const tempRoot = createTempRoot();
 
@@ -331,6 +508,8 @@ test("runSetup installs global config, hooks, credentials, and hook shims", asyn
 
     const stdoutSummary = JSON.parse(stdoutText);
     assert.equal(stdoutSummary.scope, "global");
+    assert.equal(stdoutText.includes("key-1"), false);
+    assert.equal(JSON.stringify(stdoutSummary).includes("key-1"), false);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -619,6 +798,7 @@ test("runSetup repairs malformed global json files and rewrites them with valid 
 
     const stdoutSummary = JSON.parse(stdoutText);
     assert.equal(stdoutSummary.backups.length, 3);
+    assert.equal(stdoutText.includes("key-fixed"), false);
     const summaryBackups = /** @type {Array<{ backupPath: string }>} */ (
       stdoutSummary.backups
     );
