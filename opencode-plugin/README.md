@@ -151,7 +151,7 @@ The npm package publishes:
 - `README.md`
 - runtime source files under `src/`
 
-The package does not publish test files under `src/**/*.test.ts`.
+The package keeps `files: ["src", "README.md"]` in `package.json` and uses `src/.npmignore` to exclude test files such as `src/**/*.test.ts`.
 
 Check the final tarball contents before release:
 

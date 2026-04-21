@@ -30,23 +30,8 @@
     "ai-agent"
   ],
   "files": [
-    "README.md",
-    "src/backend.ts",
-    "src/config.ts",
-    "src/credentials-store.ts",
-    "src/debug.ts",
-    "src/hooks.ts",
-    "src/index.ts",
-    "src/ingest/select.ts",
-    "src/ingest/submit.ts",
-    "src/platform-paths.ts",
-    "src/recall/format.ts",
-    "src/recall/query.ts",
-    "src/server-backend.ts",
-    "src/session-transcript.ts",
-    "src/setup-flow.ts",
-    "src/tools.ts",
-    "src/types.ts"
+    "src",
+    "README.md"
   ],
   "scripts": {
     "test": "node ./scripts/test.mjs",
