@@ -137,4 +137,41 @@ test("runtime helper explains how to repair a missing mem9 api key", () => {
   });
 
   assert.match(message, /\$mem9:setup/);
+  assert.match(message, /\$MEM9_HOME\/\.credentials\.json/);
+  assert.match(message, /MEM9_API_KEY/);
+});
+
+test("runtime helper explains plugin reinstall recovery for manual recall", () => {
+  const message = buildRuntimeIssueMessage({
+    issueCode: "plugin_missing",
+    configSource: "global",
+  });
+
+  assert.match(message, /\$mem9:cleanup/);
+  assert.match(message, /reinstall the mem9 plugin/);
+  assert.match(message, /rerun `\$mem9:setup`/);
+});
+
+test("runtime helper explains project legacy pause migration for manual recall", () => {
+  const message = buildRuntimeIssueMessage({
+    issueCode: "legacy_paused",
+    configSource: "project",
+    effectiveLegacyPausedSource: "project",
+  });
+
+  assert.match(message, /paused for this repository/);
+  assert.match(message, /legacy `enabled = false` override/);
+  assert.match(message, /run `\$mem9:setup` in this repository/i);
+});
+
+test("runtime helper explains broken project config without project-config guidance", () => {
+  const message = buildRuntimeIssueMessage({
+    issueCode: "invalid_config",
+    configSource: "global",
+    projectConfigMatched: true,
+  });
+
+  assert.match(message, /\.codex\/mem9\/config\.json/);
+  assert.match(message, /\$mem9:setup/);
+  assert.doesNotMatch(message, /\$mem9:project-config/);
 });
