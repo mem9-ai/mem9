@@ -113,11 +113,11 @@ Under the hood, mem9 Cloud runs the same mem9 server model surfaced in this repo
 
 ## Related Repositories
 
-| Repository | Where it lives | What it owns | When to look there |
-|---|---|---|---|
-| `mem9` | This repository | Core Go API server, agent plugins, CLI, site, dashboard frontend, benchmark harnesses, and docs | You are working on the shared memory server, plugin integrations, or the main product docs |
-| `mem9-node` | Sibling repo, commonly `../mem9-node` | Dashboard analysis backend, async jobs, and worker flows | A dashboard feature depends on backend APIs, background jobs, or analysis pipelines |
-| `mem9-hermes-plugin` | Sibling repo, commonly `../mem9-hermes-plugin` | Hermes Agent plugin packaging, setup flow, and Hermes-specific docs | You are changing Hermes installation, activation, or runtime-specific behavior |
+| Repository | What it owns | When to look there |
+|---|---|---|
+| [`mem9`](.) | Core Go API server, agent plugins, CLI, site, dashboard frontend, benchmark harnesses, and docs | You are working on the shared memory server, plugin integrations, or the main product docs |
+| [`mem9-node`](https://github.com/mem9-ai/mem9-node) | Dashboard analysis backend, async jobs, and worker flows | A dashboard feature depends on backend APIs, background jobs, or analysis pipelines |
+| [`mem9-hermes-plugin`](https://github.com/mem9-ai/mem9-hermes-plugin) | Hermes Agent plugin packaging, setup flow, and Hermes-specific docs | You are changing Hermes installation, activation, or runtime-specific behavior |
 
 ## Repository Map
 
