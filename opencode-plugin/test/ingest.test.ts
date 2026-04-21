@@ -6,10 +6,10 @@ import type {
   IngestInput,
   IngestResult,
   MemoryBackend,
-} from "./backend.js";
-import { redactDebugPayload } from "./debug.js";
-import { buildHooks } from "./hooks.js";
-import { selectMessagesForIngest } from "./ingest/select.js";
+} from "../src/server/backend.js";
+import { redactDebugPayload } from "../src/server/debug.js";
+import { buildHooks } from "../src/server/hooks.js";
+import { selectMessagesForIngest } from "../src/server/ingest/select.js";
 import type {
   CreateMemoryInput,
   Memory,
@@ -17,7 +17,7 @@ import type {
   SearchResult,
   StoreResult,
   UpdateMemoryInput,
-} from "./types.js";
+} from "../src/shared/types.js";
 
 type ChatMessageHook = NonNullable<Hooks["chat.message"]>;
 type ChatMessageInput = Parameters<ChatMessageHook>[0];

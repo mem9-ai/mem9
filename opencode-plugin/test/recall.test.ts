@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Hooks } from "@opencode-ai/plugin";
 
-import type { MemoryBackend } from "./backend.js";
-import type { IngestInput, IngestResult } from "./backend.js";
-import { buildHooks } from "./hooks.js";
-import { formatRecallBlock } from "./recall/format.js";
+import type { MemoryBackend } from "../src/server/backend.js";
+import type { IngestInput, IngestResult } from "../src/server/backend.js";
+import { buildHooks } from "../src/server/hooks.js";
+import { formatRecallBlock } from "../src/server/recall/format.js";
 import {
   buildRecallQuery,
   MAX_RECALL_QUERY_PARAM_LEN,
-} from "./recall/query.js";
+} from "../src/server/recall/query.js";
 import type {
   CreateMemoryInput,
   Memory,
@@ -17,7 +17,7 @@ import type {
   SearchResult,
   StoreResult,
   UpdateMemoryInput,
-} from "./types.js";
+} from "../src/shared/types.js";
 
 type ChatMessageHook = NonNullable<Hooks["chat.message"]>;
 type ChatMessageInput = Parameters<ChatMessageHook>[0];

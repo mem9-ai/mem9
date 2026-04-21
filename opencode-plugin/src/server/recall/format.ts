@@ -1,4 +1,4 @@
-import type { Memory } from "../types.js";
+import type { Memory } from "../../shared/types.js";
 
 const MAX_CONTENT_LEN = 500;
 const MAX_TAGS = 3;

@@ -10,7 +10,7 @@
   ],
   "exports": {
     ".": "./src/index.ts",
-    "./tui": "./tui/index.ts"
+    "./tui": "./src/tui/index.ts"
   },
   "license": "Apache-2.0",
   "publishConfig": {
@@ -36,7 +36,6 @@
   ],
   "files": [
     "src",
-    "tui",
     "README.md"
   ],
   "scripts": {

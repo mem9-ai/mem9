@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   parseCredentialsFile,
   stringifyCredentialsFile,
-} from "./credentials-store.js";
+} from "../src/shared/credentials-store.js";
 
 test("stringifyCredentialsFile writes the on-disk credentials structure", () => {
   const raw = stringifyCredentialsFile({

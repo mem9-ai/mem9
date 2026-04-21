@@ -1,12 +1,12 @@
-import { resolveMem9Home, resolveMem9Paths } from "../src/platform-paths.js";
-import { PLUGIN_ID, PLUGIN_PACKAGE_NAME } from "../src/plugin-meta.js";
-import { resolveServerPluginSpec } from "../src/plugin-spec.js";
+import { resolveMem9Home, resolveMem9Paths } from "../shared/platform-paths.js";
+import { PLUGIN_ID, PLUGIN_PACKAGE_NAME } from "../shared/plugin-meta.js";
+import { resolveServerPluginSpec } from "../shared/plugin-spec.js";
 import {
   loadSetupDefaults,
   writeSetupFiles,
   type SetupDefaults,
   type SetupScope,
-} from "../src/setup-files.js";
+} from "../shared/setup-files.js";
 
 interface TuiCommand {
   title: string;

@@ -5,7 +5,7 @@ import type {
   SearchResult,
   StoreResult,
   UpdateMemoryInput,
-} from "./types.js";
+} from "../shared/types.js";
 
 export interface IngestMessage {
   role: string;

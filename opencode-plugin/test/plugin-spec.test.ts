@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   normalizePluginSpecForMatch,
   resolveServerPluginSpec,
-} from "./plugin-spec.js";
+} from "../src/shared/plugin-spec.js";
 
 test("normalizePluginSpecForMatch strips package versions but keeps file paths", () => {
   assert.equal(

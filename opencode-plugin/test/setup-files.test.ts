@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import { resolveMem9Paths } from "./platform-paths.js";
-import { loadSetupDefaults, writeSetupFiles } from "./setup-files.js";
+import { resolveMem9Paths } from "../src/shared/platform-paths.js";
+import {
+  loadSetupDefaults,
+  writeSetupFiles,
+} from "../src/shared/setup-files.js";
 
 async function createPaths(): Promise<{
   root: string;

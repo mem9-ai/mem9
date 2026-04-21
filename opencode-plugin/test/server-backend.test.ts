@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ServerBackend } from "./server-backend.js";
+import { ServerBackend } from "../src/server/server-backend.js";
 
 test("ServerBackend uses X-API-Key and v1alpha2 paths", async () => {
   const originalFetch = globalThis.fetch;

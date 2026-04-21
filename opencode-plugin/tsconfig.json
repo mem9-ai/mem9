@@ -10,5 +10,5 @@
     "rootDir": ".",
     "declaration": true
   },
-  "include": ["src", "tui"]
+  "include": ["src", "test"]
 }

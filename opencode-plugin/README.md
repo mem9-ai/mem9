@@ -188,9 +188,8 @@ The npm package publishes:
 - `package.json`
 - `README.md`
 - runtime source files under `src/`
-- runtime TUI source files under `tui/`
 
-The package keeps `files: ["src", "tui", "README.md"]` in `package.json` and uses `src/.npmignore` to exclude test files such as `src/**/*.test.ts`.
+The package keeps `files: ["src", "README.md"]` in `package.json`. Tests live under `test/`, so the published tarball only carries runtime code.
 
 Check the final tarball contents before release:
 

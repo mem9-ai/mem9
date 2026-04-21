@@ -4,13 +4,16 @@ import path from "node:path";
 import test from "node:test";
 import type { PluginInput } from "@opencode-ai/plugin";
 
-import { mergeConfigLayers, resolveRuntimeIdentity } from "./config.js";
-import mem9PluginModule from "./index.js";
+import {
+  mergeConfigLayers,
+  resolveRuntimeIdentity,
+} from "../src/server/config.js";
+import mem9PluginModule from "../src/index.js";
 import {
   resolveMem9Home,
   resolveMem9Paths,
   resolveOpenCodeBasePaths,
-} from "./platform-paths.js";
+} from "../src/shared/platform-paths.js";
 
 function createPluginInput(): PluginInput {
   return {

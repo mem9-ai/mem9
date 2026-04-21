@@ -1,18 +1,18 @@
 import { readFile } from "node:fs/promises";
 import type { PluginInput } from "@opencode-ai/plugin";
-import { parseCredentialsFile } from "./credentials-store.js";
-import { DEFAULT_SCOPE_CONFIG } from "./defaults.js";
+import { parseCredentialsFile } from "../shared/credentials-store.js";
+import { DEFAULT_SCOPE_CONFIG } from "../shared/defaults.js";
 import {
   resolveOpenCodeBasePaths,
   resolveMem9Home,
   resolveMem9Paths,
   type Mem9ResolvedPaths,
-} from "./platform-paths.js";
+} from "../shared/platform-paths.js";
 import {
   DEFAULT_API_URL,
   type Mem9ConfigFile,
   type Mem9CredentialsFile,
-} from "./types.js";
+} from "../shared/types.js";
 
 const EMPTY_CREDENTIALS: Mem9CredentialsFile = {
   schemaVersion: 1,

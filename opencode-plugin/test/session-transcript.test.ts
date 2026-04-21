@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { PluginInput } from "@opencode-ai/plugin";
 
-import { createSessionTranscriptLoader } from "./session-transcript.js";
+import { createSessionTranscriptLoader } from "../src/server/session-transcript.js";
 
 function createClient(
   messagesImpl: (...args: unknown[]) => Promise<unknown>,
