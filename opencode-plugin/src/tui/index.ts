@@ -1,3 +1,4 @@
+import path from "node:path";
 import type {
   TuiCommand,
   TuiPlugin,
@@ -12,18 +13,35 @@ import { PLUGIN_ID } from "../shared/plugin-meta.js";
 import {
   loadSetupState,
   provisionApiKey,
-  selectSetupProfile,
+  writeScopeConfig,
   writeSetupFiles,
+  type ScopeConfigState,
+  type SetupProfileSummary,
+  type SetupScope,
   type SetupState,
 } from "../shared/setup-files.js";
 
-type SetupMode = "use-existing" | "create-new" | "manual-key";
+type SetupAction =
+  | "auto-api-key"
+  | "manual-api-key"
+  | "use-profile-in-scope"
+  | "configure-scope";
 
-interface SetupDraft {
+type ScopeFlowMode = "profile-only" | "full-config";
+
+interface ProfileDraft {
   profileId: string;
   label: string;
   baseUrl: string;
   apiKey: string;
+}
+
+interface ScopeDraft {
+  scope: SetupScope;
+  profileId: string;
+  debug: boolean;
+  defaultTimeoutMs: number;
+  searchTimeoutMs: number;
 }
 
 function getProjectDir(api: TuiPluginApi): string {
@@ -35,6 +53,11 @@ function getProjectDir(api: TuiPluginApi): string {
   return api.state.path.directory;
 }
 
+function getProjectName(api: TuiPluginApi): string {
+  const name = path.basename(getProjectDir(api)).trim();
+  return name.length > 0 ? name : "this project";
+}
+
 function resolvePaths(api: TuiPluginApi): Mem9ResolvedPaths {
   return resolveMem9Paths({
     configDir: api.state.path.config,
@@ -44,12 +67,26 @@ function resolvePaths(api: TuiPluginApi): Mem9ResolvedPaths {
   });
 }
 
-function createDraft(state: SetupState): SetupDraft {
+function createProfileDraft(state: SetupState): ProfileDraft {
   return {
     profileId: state.suggestedNewProfileId,
     label: state.suggestedLabel,
     baseUrl: state.suggestedBaseUrl,
     apiKey: "",
+  };
+}
+
+function createScopeDraft(
+  state: SetupState,
+  scope: SetupScope,
+): ScopeDraft {
+  const scopeState = state.scopeStates[scope];
+  return {
+    scope,
+    profileId: scopeState.profileId ?? state.usableProfiles[0]?.profileId ?? "",
+    debug: scopeState.debug,
+    defaultTimeoutMs: scopeState.defaultTimeoutMs,
+    searchTimeoutMs: scopeState.searchTimeoutMs,
   };
 }
 
@@ -66,43 +103,49 @@ function showError(
   });
 }
 
-function showSelectedSuccess(api: TuiPluginApi, profileId: string): void {
+function showProfileSavedSuccess(api: TuiPluginApi, profileId: string): void {
   api.ui.toast({
     variant: "success",
     title: "mem9 configured",
-    message: `Selected profile ${profileId} and set it as the OpenCode default. Restart OpenCode to reload mem9.`,
+    message: `Saved profile ${profileId} and set it as the default user profile. Restart OpenCode to reload mem9.`,
   });
 }
 
-function showSavedSuccess(api: TuiPluginApi, profileId: string): void {
-  api.ui.toast({
-    variant: "success",
-    title: "mem9 configured",
-    message: `Saved profile ${profileId} and set it as the OpenCode default. Restart OpenCode to reload mem9.`,
-  });
-}
-
-async function submitExistingProfile(
+function showScopeSavedSuccess(
   api: TuiPluginApi,
-  paths: Mem9ResolvedPaths,
+  scope: SetupScope,
   profileId: string,
-): Promise<void> {
-  try {
-    await selectSetupProfile({
-      paths,
-      profileId,
-    });
-    api.ui.dialog.clear();
-    showSelectedSuccess(api, profileId);
-  } catch (error) {
-    showError(api, error);
+): void {
+  const scopeLabel = scope === "user" ? "user settings" : "project settings";
+  api.ui.toast({
+    variant: "success",
+    title: "mem9 configured",
+    message: `Saved ${scopeLabel} with profile ${profileId}. Restart OpenCode to reload mem9.`,
+  });
+}
+
+function isReusableProfileID(state: SetupState, profileId: string): boolean {
+  return state.usableProfiles.some((profile) => profile.profileId === profileId);
+}
+
+function parsePositiveInteger(value: string, field: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
   }
+
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return Math.floor(parsed);
 }
 
 async function submitManualProfile(
   api: TuiPluginApi,
   paths: Mem9ResolvedPaths,
-  draft: SetupDraft,
+  draft: ProfileDraft,
 ): Promise<void> {
   try {
     await writeSetupFiles({
@@ -113,7 +156,7 @@ async function submitManualProfile(
       apiKey: draft.apiKey,
     });
     api.ui.dialog.clear();
-    showSavedSuccess(api, draft.profileId);
+    showProfileSavedSuccess(api, draft.profileId);
   } catch (error) {
     showError(api, error);
   }
@@ -122,13 +165,13 @@ async function submitManualProfile(
 async function submitProvisionedProfile(
   api: TuiPluginApi,
   paths: Mem9ResolvedPaths,
-  draft: SetupDraft,
+  draft: ProfileDraft,
 ): Promise<void> {
   try {
     api.ui.toast({
       variant: "info",
       title: "mem9 setup",
-      message: "Requesting a new API key from mem9...",
+      message: "Requesting a new mem9 API key...",
       duration: 3000,
     });
 
@@ -144,89 +187,89 @@ async function submitProvisionedProfile(
       apiKey,
     });
     api.ui.dialog.clear();
-    showSavedSuccess(api, draft.profileId);
+    showProfileSavedSuccess(api, draft.profileId);
   } catch (error) {
     api.ui.dialog.clear();
     showError(api, error, true);
   }
 }
 
-function isReusableProfileID(state: SetupState, profileId: string): boolean {
-  return state.usableProfiles.some((profile) => profile.profileId === profileId);
+async function submitScopeConfigDraft(
+  api: TuiPluginApi,
+  paths: Mem9ResolvedPaths,
+  draft: ScopeDraft,
+): Promise<void> {
+  try {
+    await writeScopeConfig({
+      paths,
+      scope: draft.scope,
+      profileId: draft.profileId,
+      debug: draft.debug,
+      defaultTimeoutMs: draft.defaultTimeoutMs,
+      searchTimeoutMs: draft.searchTimeoutMs,
+    });
+    api.ui.dialog.clear();
+    showScopeSavedSuccess(api, draft.scope, draft.profileId);
+  } catch (error) {
+    showError(api, error);
+  }
 }
 
-function showModeDialog(
+function showActionDialog(
   api: TuiPluginApi,
   paths: Mem9ResolvedPaths,
   state: SetupState,
 ): void {
   const options: Array<{
     title: string;
-    value: SetupMode;
+    value: SetupAction;
     description: string;
-  }> = [];
+  }> = [
+    {
+      title: "Get a mem9 API key automatically",
+      value: "auto-api-key",
+      description: "Request a new mem9 API key and save it as a profile.",
+    },
+    {
+      title: "Add an existing mem9 API key",
+      value: "manual-api-key",
+      description: "Paste a mem9 API key and save it as a profile.",
+    },
+  ];
 
   if (state.usableProfiles.length > 0) {
-    options.push({
-      title: "Use existing profile",
-      value: "use-existing",
-      description: "Pick a saved mem9 profile and make it the default for OpenCode.",
-    });
+    options.push(
+      {
+        title: "Use an existing mem9 profile in a scope",
+        value: "use-profile-in-scope",
+        description: "Choose a saved profile and apply it to user or project settings.",
+      },
+      {
+        title: "Configure user/project settings",
+        value: "configure-scope",
+        description: "Change scope profile, debug logging, and request timeouts.",
+      },
+    );
   }
 
-  options.push(
-    {
-      title: "Create profile automatically",
-      value: "create-new",
-      description: "Request a fresh API key from mem9 and save it as a new profile.",
-    },
-    {
-      title: "Create profile with API key",
-      value: "manual-key",
-      description: "Paste an existing API key and save it as a new profile.",
-    },
-  );
-
   api.ui.dialog.replace(() =>
-    api.ui.DialogSelect<SetupMode>({
-      title: "How should mem9 set up this OpenCode install?",
-      current: state.usableProfiles.length > 0 ? "use-existing" : "create-new",
+    api.ui.DialogSelect<SetupAction>({
+      title: "What do you want to set up?",
+      current: options[0]?.value,
       options,
       onSelect: (option) => {
-        if (option.value === "use-existing") {
-          showExistingProfileDialog(api, paths, state);
+        if (option.value === "auto-api-key" || option.value === "manual-api-key") {
+          const draft = createProfileDraft(state);
+          showProfileIdDialog(api, paths, state, option.value, draft);
           return;
         }
 
-        const draft = createDraft(state);
-        showProfileIdDialog(api, paths, state, option.value, draft);
-      },
-    }),
-  );
-}
+        if (option.value === "use-profile-in-scope") {
+          showScopeDialog(api, paths, state, "profile-only");
+          return;
+        }
 
-function showExistingProfileDialog(
-  api: TuiPluginApi,
-  paths: Mem9ResolvedPaths,
-  state: SetupState,
-): void {
-  const currentProfileId = state.usableProfiles.some(
-    (profile) => profile.profileId === state.suggestedProfileId,
-  )
-    ? state.suggestedProfileId
-    : state.usableProfiles[0]?.profileId;
-
-  api.ui.dialog.replace(() =>
-    api.ui.DialogSelect<string>({
-      title: "Choose a mem9 profile",
-      current: currentProfileId,
-      options: state.usableProfiles.map((profile) => ({
-        title: `${profile.label} (${profile.profileId})`,
-        value: profile.profileId,
-        description: profile.baseUrl,
-      })),
-      onSelect: (option) => {
-        void submitExistingProfile(api, paths, option.value);
+        showScopeDialog(api, paths, state, "full-config");
       },
     }),
   );
@@ -236,8 +279,8 @@ function showProfileIdDialog(
   api: TuiPluginApi,
   paths: Mem9ResolvedPaths,
   state: SetupState,
-  mode: SetupMode,
-  draft: SetupDraft,
+  action: "auto-api-key" | "manual-api-key",
+  draft: ProfileDraft,
 ): void {
   api.ui.dialog.replace(() =>
     api.ui.DialogPrompt({
@@ -257,7 +300,7 @@ function showProfileIdDialog(
         if (isReusableProfileID(state, next)) {
           api.ui.toast({
             variant: "warning",
-            message: "That profile already has credentials. Choose a new profile ID or reuse the existing profile.",
+            message: "That profile already has credentials. Pick a new profile ID or use the existing profile in scope settings.",
           });
           return;
         }
@@ -266,21 +309,21 @@ function showProfileIdDialog(
         if (draft.label.trim().length === 0) {
           draft.label = next === "default" ? "Personal" : next;
         }
-        showLabelDialog(api, paths, state, mode, draft);
+        showProfileLabelDialog(api, paths, state, action, draft);
       },
       onCancel: () => {
-        showModeDialog(api, paths, state);
+        showActionDialog(api, paths, state);
       },
     }),
   );
 }
 
-function showLabelDialog(
+function showProfileLabelDialog(
   api: TuiPluginApi,
   paths: Mem9ResolvedPaths,
   state: SetupState,
-  mode: SetupMode,
-  draft: SetupDraft,
+  action: "auto-api-key" | "manual-api-key",
+  draft: ProfileDraft,
 ): void {
   api.ui.dialog.replace(() =>
     api.ui.DialogPrompt({
@@ -298,21 +341,21 @@ function showLabelDialog(
         }
 
         draft.label = next;
-        showBaseUrlDialog(api, paths, state, mode, draft);
+        showProfileBaseUrlDialog(api, paths, state, action, draft);
       },
       onCancel: () => {
-        showProfileIdDialog(api, paths, state, mode, draft);
+        showProfileIdDialog(api, paths, state, action, draft);
       },
     }),
   );
 }
 
-function showBaseUrlDialog(
+function showProfileBaseUrlDialog(
   api: TuiPluginApi,
   paths: Mem9ResolvedPaths,
   state: SetupState,
-  mode: SetupMode,
-  draft: SetupDraft,
+  action: "auto-api-key" | "manual-api-key",
+  draft: ProfileDraft,
 ): void {
   api.ui.dialog.replace(() =>
     api.ui.DialogPrompt({
@@ -330,25 +373,25 @@ function showBaseUrlDialog(
         }
 
         draft.baseUrl = next;
-        if (mode === "create-new") {
+        if (action === "auto-api-key") {
           void submitProvisionedProfile(api, paths, draft);
           return;
         }
 
-        showApiKeyDialog(api, paths, state, draft);
+        showProfileApiKeyDialog(api, paths, state, draft);
       },
       onCancel: () => {
-        showLabelDialog(api, paths, state, mode, draft);
+        showProfileLabelDialog(api, paths, state, action, draft);
       },
     }),
   );
 }
 
-function showApiKeyDialog(
+function showProfileApiKeyDialog(
   api: TuiPluginApi,
   paths: Mem9ResolvedPaths,
   state: SetupState,
-  draft: SetupDraft,
+  draft: ProfileDraft,
 ): void {
   api.ui.toast({
     variant: "warning",
@@ -374,7 +417,161 @@ function showApiKeyDialog(
         void submitManualProfile(api, paths, draft);
       },
       onCancel: () => {
-        showBaseUrlDialog(api, paths, state, "manual-key", draft);
+        showProfileBaseUrlDialog(api, paths, state, "manual-api-key", draft);
+      },
+    }),
+  );
+}
+
+function showScopeDialog(
+  api: TuiPluginApi,
+  paths: Mem9ResolvedPaths,
+  state: SetupState,
+  mode: ScopeFlowMode,
+): void {
+  const projectName = getProjectName(api);
+
+  api.ui.dialog.replace(() =>
+    api.ui.DialogSelect<SetupScope>({
+      title: "Which settings scope do you want to update?",
+      current: "user",
+      options: [
+        {
+          title: "User settings",
+          value: "user",
+          description: "Use the same default mem9 settings across OpenCode on this machine.",
+        },
+        {
+          title: "Project settings",
+          value: "project",
+          description: `Only override mem9 settings for ${projectName}.`,
+        },
+      ],
+      onSelect: (option) => {
+        const draft = createScopeDraft(state, option.value);
+        showScopeProfileDialog(api, paths, state, mode, draft);
+      },
+    }),
+  );
+}
+
+function showScopeProfileDialog(
+  api: TuiPluginApi,
+  paths: Mem9ResolvedPaths,
+  state: SetupState,
+  mode: ScopeFlowMode,
+  draft: ScopeDraft,
+): void {
+  api.ui.dialog.replace(() =>
+    api.ui.DialogSelect<string>({
+      title: "Which mem9 profile should this scope use?",
+      current: draft.profileId,
+      options: state.profiles.map((profile) => ({
+        title: `${profile.label} (${profile.profileId})`,
+        value: profile.profileId,
+        description: `${profile.baseUrl} • ${profile.hasApiKey ? "API key configured" : "API key missing"}`,
+        disabled: !profile.hasApiKey,
+      })),
+      onSelect: (option) => {
+        draft.profileId = option.value;
+        if (mode === "profile-only") {
+          void submitScopeConfigDraft(api, paths, draft);
+          return;
+        }
+
+        showScopeDebugDialog(api, paths, state, draft);
+      },
+    }),
+  );
+}
+
+function showScopeDebugDialog(
+  api: TuiPluginApi,
+  paths: Mem9ResolvedPaths,
+  state: SetupState,
+  draft: ScopeDraft,
+): void {
+  api.ui.dialog.replace(() =>
+    api.ui.DialogSelect<boolean>({
+      title: "Debug logging",
+      current: draft.debug,
+      options: [
+        {
+          title: "Disabled",
+          value: false,
+          description: "Keep debug logging off.",
+        },
+        {
+          title: "Enabled",
+          value: true,
+          description: "Write redacted debug logs to the OpenCode state directory.",
+        },
+      ],
+      onSelect: (option) => {
+        draft.debug = option.value;
+        showDefaultTimeoutDialog(api, paths, state, draft);
+      },
+    }),
+  );
+}
+
+function showDefaultTimeoutDialog(
+  api: TuiPluginApi,
+  paths: Mem9ResolvedPaths,
+  state: SetupState,
+  draft: ScopeDraft,
+): void {
+  api.ui.dialog.replace(() =>
+    api.ui.DialogPrompt({
+      title: "Default request timeout (ms)",
+      value: String(draft.defaultTimeoutMs),
+      placeholder: "8000",
+      onConfirm: (value) => {
+        const parsed = parsePositiveInteger(value, "defaultTimeoutMs");
+        if (parsed === null) {
+          api.ui.toast({
+            variant: "warning",
+            message: "Default timeout must be a positive integer.",
+          });
+          return;
+        }
+
+        draft.defaultTimeoutMs = parsed;
+        showSearchTimeoutDialog(api, paths, state, draft);
+      },
+      onCancel: () => {
+        showScopeProfileDialog(api, paths, state, "full-config", draft);
+      },
+    }),
+  );
+}
+
+function showSearchTimeoutDialog(
+  api: TuiPluginApi,
+  paths: Mem9ResolvedPaths,
+  state: SetupState,
+  draft: ScopeDraft,
+): void {
+  api.ui.dialog.replace(() =>
+    api.ui.DialogPrompt({
+      title: "Search timeout (ms)",
+      value: String(draft.searchTimeoutMs),
+      placeholder: "15000",
+      onConfirm: (value) => {
+        const parsed = parsePositiveInteger(value, "searchTimeoutMs");
+        if (parsed === null) {
+          api.ui.toast({
+            variant: "warning",
+            message: "Search timeout must be a positive integer.",
+          });
+          return;
+        }
+
+        draft.searchTimeoutMs = parsed;
+        void submitScopeConfigDraft(api, paths, draft);
+      },
+      onCancel: () => {
+        showDefaultTimeoutDialog(api, paths, state, draft);
       },
     }),
   );
@@ -384,7 +581,7 @@ async function startSetup(api: TuiPluginApi): Promise<void> {
   try {
     const paths = resolvePaths(api);
     const state = await loadSetupState(paths);
-    showModeDialog(api, paths, state);
+    showActionDialog(api, paths, state);
   } catch (error) {
     showError(api, error);
   }
@@ -396,7 +593,7 @@ const tui: TuiPlugin = async (api): Promise<void> => {
       title: "mem9: setup",
       value: "mem9-setup",
       category: "mem9",
-      description: "Reuse a mem9 profile or create a new one for OpenCode.",
+      description: "Manage mem9 API keys, profiles, and scope settings.",
       slash: {
         name: "mem9-setup",
       },

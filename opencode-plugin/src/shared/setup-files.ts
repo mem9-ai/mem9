@@ -5,14 +5,25 @@ import { parseCredentialsFile, stringifyCredentialsFile } from "./credentials-st
 import { DEFAULT_SCOPE_CONFIG } from "./defaults.js";
 import {
   DEFAULT_API_URL,
+  type Mem9ConfigFile,
   type Mem9CredentialsFile,
   type Mem9Profile,
 } from "./types.js";
+
+export type SetupScope = "user" | "project";
 
 export interface SetupProfileSummary {
   profileId: string;
   label: string;
   baseUrl: string;
+  hasApiKey: boolean;
+}
+
+export interface ScopeConfigState {
+  profileId?: string;
+  debug: boolean;
+  defaultTimeoutMs: number;
+  searchTimeoutMs: number;
 }
 
 export interface SetupState {
@@ -20,7 +31,9 @@ export interface SetupState {
   suggestedNewProfileId: string;
   suggestedLabel: string;
   suggestedBaseUrl: string;
+  profiles: SetupProfileSummary[];
   usableProfiles: SetupProfileSummary[];
+  scopeStates: Record<SetupScope, ScopeConfigState>;
 }
 
 export interface SetupRequest {
@@ -31,9 +44,13 @@ export interface SetupRequest {
   apiKey: string;
 }
 
-export interface SelectProfileRequest {
+export interface ScopeConfigRequest {
   paths: Mem9ResolvedPaths;
+  scope: SetupScope;
   profileId: string;
+  debug: boolean;
+  defaultTimeoutMs: number;
+  searchTimeoutMs: number;
 }
 
 export interface ProvisionApiKeyOptions {
@@ -60,6 +77,14 @@ function normalizeBaseUrl(value: unknown): string | undefined {
   return normalized ? normalized.replace(/\/+$/, "") : undefined;
 }
 
+function normalizeTimeoutMs(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(value);
+}
+
 function requireString(value: string, field: string): string {
   const trimmed = value.trim();
   if (trimmed.length === 0) {
@@ -72,40 +97,11 @@ function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error;
 }
 
-async function readJsonObject(filePath: string): Promise<Record<string, unknown> | undefined> {
-  try {
-    const raw = await readFile(filePath, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (!isRecord(parsed)) {
-      throw new Error("invalid json object");
-    }
-    return parsed;
-  } catch (error) {
-    if (isErrnoException(error) && error.code === "ENOENT") {
-      return undefined;
-    }
-    throw error;
-  }
-}
-
-async function readCredentialsFile(filePath: string): Promise<Mem9CredentialsFile> {
-  try {
-    const raw = await readFile(filePath, "utf8");
-    return parseCredentialsFile(raw);
-  } catch (error) {
-    if (isErrnoException(error) && error.code === "ENOENT") {
-      return {
-        schemaVersion: 1,
-        profiles: {},
-      };
-    }
-    throw error;
-  }
-}
-
-async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, JSON.stringify(value, null, 2) + "\n", "utf8");
+function resolveScopeConfigFile(
+  paths: Mem9ResolvedPaths,
+  scope: SetupScope,
+): string {
+  return scope === "user" ? paths.globalConfigFile : paths.projectConfigFile;
 }
 
 function hasApiKey(profile: unknown): boolean {
@@ -114,6 +110,19 @@ function hasApiKey(profile: unknown): boolean {
   }
 
   return Boolean(normalizeOptionalString(profile.apiKey));
+}
+
+function normalizeProfileRecord(
+  profileId: string,
+  profile: Mem9Profile | undefined,
+): Mem9Profile {
+  return {
+    label:
+      normalizeOptionalString(profile?.label)
+      ?? (profileId === "default" ? "Personal" : profileId),
+    baseUrl: normalizeBaseUrl(profile?.baseUrl) ?? DEFAULT_API_URL,
+    apiKey: typeof profile?.apiKey === "string" ? profile.apiKey : "",
+  };
 }
 
 function buildDefaultProfileId(
@@ -152,79 +161,189 @@ function buildSuggestedNewProfileId(
   return `${preferredProfileId}-${suffix}`;
 }
 
-function normalizeProfileRecord(
-  profileId: string,
-  profile: Mem9Profile | undefined,
-): Mem9Profile {
-  return {
-    label:
-      normalizeOptionalString(profile?.label)
-      ?? (profileId === "default" ? "Personal" : profileId),
-    baseUrl: normalizeBaseUrl(profile?.baseUrl) ?? DEFAULT_API_URL,
-    apiKey: typeof profile?.apiKey === "string" ? profile.apiKey : "",
-  };
+function sortProfileSummaries(
+  left: SetupProfileSummary,
+  right: SetupProfileSummary,
+): number {
+  if (left.profileId === "default") {
+    return -1;
+  }
+  if (right.profileId === "default") {
+    return 1;
+  }
+  if (left.hasApiKey !== right.hasApiKey) {
+    return left.hasApiKey ? -1 : 1;
+  }
+  return left.profileId.localeCompare(right.profileId);
 }
 
-function buildUsableProfiles(
+function buildProfiles(
   profiles: Record<string, Mem9Profile>,
 ): SetupProfileSummary[] {
   return Object.entries(profiles)
-    .filter(([, profile]) => hasApiKey(profile))
-    .sort(([left], [right]) => {
-      if (left === "default") {
-        return -1;
-      }
-      if (right === "default") {
-        return 1;
-      }
-      return left.localeCompare(right);
-    })
     .map(([profileId, profile]) => {
       const normalized = normalizeProfileRecord(profileId, profile);
       return {
         profileId,
         label: normalized.label,
         baseUrl: normalized.baseUrl,
+        hasApiKey: normalized.apiKey.trim().length > 0,
       };
-    });
+    })
+    .sort(sortProfileSummaries);
 }
 
-function createGlobalConfig(
+function normalizeConfigLayer(
+  value: Record<string, unknown> | undefined,
+): Mem9ConfigFile {
+  return {
+    schemaVersion: 1,
+    profileId: normalizeOptionalString(value?.profileId),
+    debug: typeof value?.debug === "boolean" ? value.debug : undefined,
+    defaultTimeoutMs:
+      typeof value?.defaultTimeoutMs === "number" ? value.defaultTimeoutMs : undefined,
+    searchTimeoutMs:
+      typeof value?.searchTimeoutMs === "number" ? value.searchTimeoutMs : undefined,
+  };
+}
+
+function buildScopeState(
+  config: Mem9ConfigFile,
+  usableProfiles: SetupProfileSummary[],
+  fallbackProfileId?: string,
+): ScopeConfigState {
+  const usableProfileIds = new Set(
+    usableProfiles.map((profile) => profile.profileId),
+  );
+  const configuredProfileId = normalizeOptionalString(config.profileId);
+  const resolvedProfileId =
+    (configuredProfileId && usableProfileIds.has(configuredProfileId))
+      ? configuredProfileId
+      : usableProfiles[0]?.profileId ?? fallbackProfileId;
+
+  return {
+    profileId: resolvedProfileId,
+    debug: config.debug ?? DEFAULT_SCOPE_CONFIG.debug,
+    defaultTimeoutMs: normalizeTimeoutMs(
+      config.defaultTimeoutMs,
+      DEFAULT_SCOPE_CONFIG.defaultTimeoutMs,
+    ),
+    searchTimeoutMs: normalizeTimeoutMs(
+      config.searchTimeoutMs,
+      DEFAULT_SCOPE_CONFIG.searchTimeoutMs,
+    ),
+  };
+}
+
+function mergeConfigLayers(
+  ...layers: Mem9ConfigFile[]
+): Mem9ConfigFile {
+  const merged: Mem9ConfigFile = {
+    schemaVersion: 1,
+  };
+
+  for (const layer of layers) {
+    if (layer.profileId !== undefined) {
+      merged.profileId = layer.profileId;
+    }
+    if (layer.debug !== undefined) {
+      merged.debug = layer.debug;
+    }
+    if (layer.defaultTimeoutMs !== undefined) {
+      merged.defaultTimeoutMs = layer.defaultTimeoutMs;
+    }
+    if (layer.searchTimeoutMs !== undefined) {
+      merged.searchTimeoutMs = layer.searchTimeoutMs;
+    }
+  }
+
+  return merged;
+}
+
+function createScopeConfig(
   existing: Record<string, unknown> | undefined,
-  profileId: string,
+  input: ScopeConfigState,
 ): Record<string, unknown> {
   return {
     ...(existing ?? {}),
     schemaVersion: 1,
-    profileId,
-    debug:
-      typeof existing?.debug === "boolean"
-        ? existing.debug
-        : DEFAULT_SCOPE_CONFIG.debug,
-    defaultTimeoutMs:
-      typeof existing?.defaultTimeoutMs === "number"
-        ? existing.defaultTimeoutMs
-        : DEFAULT_SCOPE_CONFIG.defaultTimeoutMs,
-    searchTimeoutMs:
-      typeof existing?.searchTimeoutMs === "number"
-        ? existing.searchTimeoutMs
-        : DEFAULT_SCOPE_CONFIG.searchTimeoutMs,
+    profileId: input.profileId,
+    debug: input.debug,
+    defaultTimeoutMs: normalizeTimeoutMs(
+      input.defaultTimeoutMs,
+      DEFAULT_SCOPE_CONFIG.defaultTimeoutMs,
+    ),
+    searchTimeoutMs: normalizeTimeoutMs(
+      input.searchTimeoutMs,
+      DEFAULT_SCOPE_CONFIG.searchTimeoutMs,
+    ),
   };
 }
 
+async function readJsonObject(filePath: string): Promise<Record<string, unknown> | undefined> {
+  try {
+    const raw = await readFile(filePath, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isRecord(parsed)) {
+      throw new Error("invalid json object");
+    }
+    return parsed;
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+async function readCredentialsFile(filePath: string): Promise<Mem9CredentialsFile> {
+  try {
+    const raw = await readFile(filePath, "utf8");
+    return parseCredentialsFile(raw);
+  } catch (error) {
+    if (isErrnoException(error) && error.code === "ENOENT") {
+      return {
+        schemaVersion: 1,
+        profiles: {},
+      };
+    }
+    throw error;
+  }
+}
+
+async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, JSON.stringify(value, null, 2) + "\n", "utf8");
+}
+
 export async function loadSetupState(paths: Mem9ResolvedPaths): Promise<SetupState> {
-  const [globalConfig, credentials] = await Promise.all([
+  const [globalConfigRaw, projectConfigRaw, credentials] = await Promise.all([
     readJsonObject(paths.globalConfigFile),
+    readJsonObject(paths.projectConfigFile),
     readCredentialsFile(paths.credentialsFile),
   ]);
+  const globalConfig = normalizeConfigLayer(globalConfigRaw);
+  const projectConfig = normalizeConfigLayer(projectConfigRaw);
+  const profiles = buildProfiles(credentials.profiles);
+  const usableProfiles = profiles.filter((profile) => profile.hasApiKey);
 
   const suggestedProfileId = buildDefaultProfileId(
     credentials.profiles,
-    normalizeOptionalString(globalConfig?.profileId),
+    globalConfig.profileId,
   );
   const suggestedProfile = normalizeProfileRecord(
     suggestedProfileId,
     credentials.profiles[suggestedProfileId],
+  );
+  const userScopeState = buildScopeState(
+    globalConfig,
+    usableProfiles,
+    suggestedProfileId,
+  );
+  const projectScopeState = buildScopeState(
+    mergeConfigLayers(globalConfig, projectConfig),
+    usableProfiles,
+    userScopeState.profileId ?? suggestedProfileId,
   );
 
   return {
@@ -235,7 +354,12 @@ export async function loadSetupState(paths: Mem9ResolvedPaths): Promise<SetupSta
     ),
     suggestedLabel: suggestedProfile.label,
     suggestedBaseUrl: suggestedProfile.baseUrl,
-    usableProfiles: buildUsableProfiles(credentials.profiles),
+    profiles,
+    usableProfiles,
+    scopeStates: {
+      user: userScopeState,
+      project: projectScopeState,
+    },
   };
 }
 
@@ -245,10 +369,15 @@ export async function writeSetupFiles(input: SetupRequest): Promise<void> {
   const baseUrl = requireString(normalizeBaseUrl(input.baseUrl) ?? "", "baseUrl");
   const apiKey = requireString(input.apiKey, "apiKey");
 
-  const [credentials, globalConfig] = await Promise.all([
+  const [credentials, globalConfigRaw] = await Promise.all([
     readCredentialsFile(input.paths.credentialsFile),
     readJsonObject(input.paths.globalConfigFile),
   ]);
+  const globalConfig = buildScopeState(
+    normalizeConfigLayer(globalConfigRaw),
+    [],
+    profileId,
+  );
 
   const nextCredentials: Mem9CredentialsFile = {
     schemaVersion: 1,
@@ -263,7 +392,13 @@ export async function writeSetupFiles(input: SetupRequest): Promise<void> {
   };
 
   await Promise.all([
-    writeJsonFile(input.paths.globalConfigFile, createGlobalConfig(globalConfig, profileId)),
+    writeJsonFile(
+      input.paths.globalConfigFile,
+      createScopeConfig(globalConfigRaw, {
+        ...globalConfig,
+        profileId,
+      }),
+    ),
     (async () => {
       await mkdir(path.dirname(input.paths.credentialsFile), { recursive: true });
       await writeFile(
@@ -275,13 +410,14 @@ export async function writeSetupFiles(input: SetupRequest): Promise<void> {
   ]);
 }
 
-export async function selectSetupProfile(
-  input: SelectProfileRequest,
+export async function writeScopeConfig(
+  input: ScopeConfigRequest,
 ): Promise<void> {
   const profileId = requireString(input.profileId, "profileId");
-  const [credentials, globalConfig] = await Promise.all([
+  const configFile = resolveScopeConfigFile(input.paths, input.scope);
+  const [existing, credentials] = await Promise.all([
+    readJsonObject(configFile),
     readCredentialsFile(input.paths.credentialsFile),
-    readJsonObject(input.paths.globalConfigFile),
   ]);
   const profile = credentials.profiles[profileId];
 
@@ -290,8 +426,13 @@ export async function selectSetupProfile(
   }
 
   await writeJsonFile(
-    input.paths.globalConfigFile,
-    createGlobalConfig(globalConfig, profileId),
+    configFile,
+    createScopeConfig(existing, {
+      profileId,
+      debug: input.debug,
+      defaultTimeoutMs: input.defaultTimeoutMs,
+      searchTimeoutMs: input.searchTimeoutMs,
+    }),
   );
 }
 
