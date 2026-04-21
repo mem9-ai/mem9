@@ -134,23 +134,37 @@ When the TUI plugin is active, OpenCode registers:
 
 - `/mem9-setup`
 
-That command only initializes mem9 identity for this OpenCode install. It writes:
+That command is the single setup entrypoint for both shared mem9 identity and OpenCode scope config.
+
+Profile actions use shared credentials in:
 
 - `$MEM9_HOME/.credentials.json`
-- `<OpenCode config dir>/mem9.json`
 
-When usable profiles already exist, the command offers:
+Scope settings use:
 
-- reuse an existing profile
-- request a new API key and create a new profile
-- paste an API key and create a new profile
+- user config: `<OpenCode config dir>/mem9.json`
+- project config: `<project>/.opencode/mem9.json`
 
-When no usable profile exists, the command offers:
+When no usable profile exists, the command offers two actions:
 
-- request a new API key and create a new profile
-- paste an API key and create a new profile
+- `Get a mem9 API key automatically`
+- `Add an existing mem9 API key`
 
-If you enter a profile ID that already has working credentials, setup asks you to reuse that profile or pick a new ID.
+Both actions save a shared profile and set it as the default user profile for OpenCode, then stop there.
+
+When usable profiles already exist, the command offers four actions:
+
+- `Get a mem9 API key automatically`
+- `Add an existing mem9 API key`
+- `Use an existing mem9 profile in a scope`
+- `Configure user/project settings`
+
+The scope actions are separate from API key management:
+
+- `Use an existing mem9 profile in a scope` asks for `user` or `project`, then writes the selected `profileId` into that scope while preserving the current debug and timeout settings.
+- `Configure user/project settings` asks for `user` or `project`, then lets you edit `profileId`, `debug`, `defaultTimeoutMs`, and `searchTimeoutMs`.
+
+If you enter a profile ID that already has working credentials, setup asks you to pick a new profile ID or use the existing profile from a scope action.
 
 If automatic API key creation fails, the command stops and asks you to run `/mem9-setup` again later.
 

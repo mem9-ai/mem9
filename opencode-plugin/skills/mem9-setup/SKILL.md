@@ -9,10 +9,10 @@ Execute the setup directly. Keep it simple and keep installation separate from i
 
 ## What This Setup Owns
 
-This setup owns mem9 identity for OpenCode. It does two things:
+This setup owns both mem9 identity and OpenCode scope config. It does two things:
 
 1. maintain shared credentials in `$MEM9_HOME/.credentials.json`
-2. point OpenCode user config at the chosen `profileId`
+2. update OpenCode user or project `mem9.json`
 
 Use this model:
 
@@ -31,21 +31,35 @@ If the TUI plugin is active, tell the user to run:
 /mem9-setup
 ```
 
-That command supports three actions when usable profiles already exist:
+That command supports two actions when no usable profile exists:
 
-- reuse an existing profile
-- request a new API key and create a new profile
-- paste an API key and create a new profile
+- get a mem9 API key automatically
+- add an existing mem9 API key
 
-When no usable profile exists, it supports:
+That command supports four actions when usable profiles already exist:
 
-- request a new API key and create a new profile
-- paste an API key and create a new profile
+- get a mem9 API key automatically
+- add an existing mem9 API key
+- use an existing mem9 profile in a scope
+- configure user/project settings
 
-The command writes:
+The profile actions write:
 
 - `$MEM9_HOME/.credentials.json`
+
+Profile creation also updates the user-level OpenCode config so first-time setup is usable immediately.
+
+The scope actions write one of these:
+
 - `<OpenCode config dir>/mem9.json`
+- `<project>/.opencode/mem9.json`
+
+Scope config fields are:
+
+- `profileId`
+- `debug`
+- `defaultTimeoutMs`
+- `searchTimeoutMs`
 
 The current OpenCode prompt is plain text, so API keys stay visible while the user types them.
 
@@ -110,7 +124,7 @@ export MEM9_TENANT_ID="..."
 
 Use this guidance:
 
-- `Setup pending`: run `/mem9-setup`, add `MEM9_API_KEY`, or point `profileId` at a profile with a non-empty `apiKey`
+- `Setup pending`: run `/mem9-setup`, add `MEM9_API_KEY`, or point the active scope config at a profile with a non-empty `apiKey`
 - selected profile still does not work: confirm the profile exists in `$MEM9_HOME/.credentials.json` and has a non-empty `apiKey`
 - project behaves differently: check for `<project>/.opencode/mem9.json`
 - recall, ingest, or logs appear twice: keep one active server plugin registration
@@ -122,4 +136,5 @@ After successful setup, send a short confirmation that includes:
 
 - which `profileId` OpenCode will use
 - where credentials were stored if file mode was used
+- which scope config file changed when settings mode was used
 - the reminder to restart OpenCode
