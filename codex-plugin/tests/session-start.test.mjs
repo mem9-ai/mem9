@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   buildSessionStartMessage,
   runSessionStart,
-} from "../runtime/session-start.mjs";
+} from "../hooks/session-start.mjs";
 
 test("session start emits ready context for a project override", async () => {
   const output = await runSessionStart({

@@ -5,7 +5,7 @@ import {
   buildRecallUrl,
   extractMemories,
   runUserPromptSubmit,
-} from "../runtime/user-prompt-submit.mjs";
+} from "../hooks/user-prompt-submit.mjs";
 
 test("buildRecallUrl encodes q, agent id, and limit", () => {
   const url = new URL(

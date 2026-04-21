@@ -9,8 +9,8 @@ import {
   loadRuntimeStateFromDisk,
   resolveMem9Home,
   resolveRuntimeConfig,
-} from "../runtime/shared/config.mjs";
-import { resolveProjectRoot } from "../runtime/shared/project-root.mjs";
+} from "../hooks/shared/config.mjs";
+import { resolveProjectRoot } from "../hooks/shared/project-root.mjs";
 
 const REPO_ROOT = "/workspace/app";
 const PROJECT_CWD = "/workspace/app/packages/web";

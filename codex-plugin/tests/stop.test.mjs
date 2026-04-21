@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { runStop } from "../runtime/stop.mjs";
+import { runStop } from "../hooks/stop.mjs";
 import {
   parseTranscriptText,
   selectStopWindow,
-} from "../runtime/shared/transcript.mjs";
+} from "../hooks/shared/transcript.mjs";
 
 test("transcript parser falls back to response messages when event messages are absent", () => {
   const transcript = [
@@ -157,7 +157,7 @@ test("transcript parser supports Codex response_item rollout payloads as fallbac
 });
 
 test("selectStopWindow keeps the newest budget-fitting slice", () => {
-  /** @type {import("../runtime/shared/transcript.mjs").IngestMessage[]} */
+  /** @type {import("../hooks/shared/transcript.mjs").IngestMessage[]} */
   const messages = [
     { role: "user", content: "u1" },
     { role: "assistant", content: "a1" },

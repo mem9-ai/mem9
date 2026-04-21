@@ -13,7 +13,7 @@ import {
   appendDebugLog,
   debugEnabled,
   resolveDebugLogFile,
-} from "../runtime/shared/debug.mjs";
+} from "../hooks/shared/debug.mjs";
 
 function createTempRoot() {
   const parent = path.join(process.cwd(), ".tmp-debug-tests");

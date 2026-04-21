@@ -13,8 +13,9 @@ import test from "node:test";
 import {
   applyCodexHooksPatch,
   assertNodeVersion,
+  buildInstallMetadata,
   buildNodeCommand,
-  buildRuntimeCommands,
+  buildHookCommands,
   mergeMem9Hooks,
   removeManagedHooks,
   renderHooksTemplate,
@@ -124,13 +125,13 @@ test("mergeMem9Hooks replaces old mem9-managed groups and keeps foreign hooks", 
     },
     renderHooksTemplate({
       templateText: readFileSync("./templates/hooks.json", "utf8"),
-      runtimeDir: "/scope/mem9/runtime",
+      hooksDir: "/scope/mem9/hooks",
     }),
   );
 
   assert.equal(
     merged.hooks.SessionStart[0].hooks[0].command,
-    buildNodeCommand("/scope/mem9/runtime/session-start.mjs"),
+    buildNodeCommand("/scope/mem9/hooks/session-start.mjs"),
   );
   assert.equal(
     merged.hooks.SessionStart[1].hooks[0].command,
@@ -146,13 +147,27 @@ test("mergeMem9Hooks replaces old mem9-managed groups and keeps foreign hooks", 
   );
 });
 
-test("buildRuntimeCommands points hooks at the installed runtime directory", () => {
-  const commands = buildRuntimeCommands("/scope/mem9/runtime");
+test("buildHookCommands points hooks at the installed hook shim directory", () => {
+  const commands = buildHookCommands("/scope/mem9/hooks");
 
   assert.deepEqual(commands, {
-    sessionStartCommand: buildNodeCommand("/scope/mem9/runtime/session-start.mjs"),
-    userPromptSubmitCommand: buildNodeCommand("/scope/mem9/runtime/user-prompt-submit.mjs"),
-    stopCommand: buildNodeCommand("/scope/mem9/runtime/stop.mjs"),
+    sessionStartCommand: buildNodeCommand("/scope/mem9/hooks/session-start.mjs"),
+    userPromptSubmitCommand: buildNodeCommand("/scope/mem9/hooks/user-prompt-submit.mjs"),
+    stopCommand: buildNodeCommand("/scope/mem9/hooks/stop.mjs"),
+  });
+});
+
+test("buildInstallMetadata derives marketplace and plugin identity from the installed cache path", () => {
+  const installMetadata = buildInstallMetadata(
+    "/scope/codex-home",
+    "/scope/codex-home/plugins/cache/acme-labs/mem9-pro/local",
+  );
+
+  assert.deepEqual(installMetadata, {
+    schemaVersion: 1,
+    marketplaceName: "acme-labs",
+    pluginName: "mem9-pro",
+    shimVersion: 1,
   });
 });
 
@@ -163,7 +178,7 @@ test("buildNodeCommand shell-quotes POSIX metacharacters", () => {
   );
 });
 
-test("runSetup installs global config, hooks, credentials, and runtime files", async () => {
+test("runSetup installs global config, hooks, credentials, and hook shims", async () => {
   const tempRoot = createTempRoot();
 
   try {
@@ -187,6 +202,11 @@ test("runSetup installs global config, hooks, credentials, and runtime files", a
           SessionStart: [
             {
               hooks: [
+                {
+                  type: "command",
+                  command: buildNodeCommand(path.join(codexHome, "mem9", "runtime", "session-start.mjs")),
+                  statusMessage: "[mem9] session start",
+                },
                 {
                   type: "command",
                   command: "echo existing-session-start",
@@ -254,12 +274,21 @@ test("runSetup installs global config, hooks, credentials, and runtime files", a
     assert.equal(result.scope, "global");
     assert.equal(result.profileId, "work");
     assert.equal(
-      existsSync(path.join(codexHome, "mem9", "runtime", "session-start.mjs")),
+      existsSync(path.join(codexHome, "mem9", "hooks", "session-start.mjs")),
       true,
     );
     assert.equal(
-      existsSync(path.join(codexHome, "mem9", "runtime", "shared", "config.mjs")),
+      existsSync(path.join(codexHome, "mem9", "hooks", "shared", "bootstrap.mjs")),
       true,
+    );
+    assert.deepEqual(
+      JSON.parse(readFileSync(path.join(codexHome, "mem9", "install.json"), "utf8")),
+      {
+        schemaVersion: 1,
+        marketplaceName: "mem9-ai",
+        pluginName: "mem9",
+        shimVersion: 1,
+      },
     );
 
     const globalConfig = JSON.parse(
@@ -278,7 +307,7 @@ test("runSetup installs global config, hooks, credentials, and runtime files", a
     );
     assert.equal(
       hooks.hooks.SessionStart[0].hooks[0].command,
-      buildNodeCommand(path.join(codexHome, "mem9", "runtime", "session-start.mjs")),
+      buildNodeCommand(path.join(codexHome, "mem9", "hooks", "session-start.mjs")),
     );
     assert.equal(
       hooks.hooks.SessionStart[1].hooks[0].command,

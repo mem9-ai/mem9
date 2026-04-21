@@ -21,6 +21,8 @@ test("plugin manifest exposes mem9 setup skill and basic metadata", () => {
 test("plugin templates and skills exist with mem9 hook wiring", () => {
   assert.equal(existsSync("./skills/setup/SKILL.md"), true);
   assert.equal(existsSync("./skills/project-config/SKILL.md"), true);
+  assert.equal(existsSync("./hooks/session-start.mjs"), true);
+  assert.equal(existsSync("./bootstrap-hooks/session-start.mjs"), true);
   assert.equal(existsSync("./templates/hooks.json"), true);
   assert.equal(existsSync("../.agents/plugins/marketplace.json"), true);
 
@@ -71,6 +73,8 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /\$CODEX_HOME\/hooks\.json/);
   assert.match(readme, /<project>\/\.codex\/mem9\/config\.json/);
   assert.match(readme, /\$MEM9_HOME\/\.credentials\.json/);
+  assert.match(readme, /\$CODEX_HOME\/mem9\/hooks\//);
+  assert.match(readme, /\$CODEX_HOME\/mem9\/install\.json/);
   assert.match(readme, /MEM9_DEBUG=1/);
   assert.match(readme, /\$CODEX_HOME\/mem9\/logs\/codex-hooks\.jsonl/);
   assert.match(readme, /You do not need to enable hooks manually first/);
