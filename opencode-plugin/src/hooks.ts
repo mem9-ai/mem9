@@ -1,25 +1,29 @@
 import type { Hooks } from "@opencode-ai/plugin";
 import type { IngestMessage, MemoryBackend } from "./backend.js";
 import type { DebugLogger } from "./debug.js";
+import { selectMessagesForIngest } from "./ingest/select.js";
 import { submitMessagesForIngest } from "./ingest/submit.js";
 import { formatRecallBlock } from "./recall/format.js";
 import { buildRecallQuery } from "./recall/query.js";
+import type { SessionTranscriptLoader } from "./session-transcript.js";
 
 const MAX_RECALL_RESULTS = 8;
 const MIN_RECALL_QUERY_LEN = 5;
 const SESSION_CACHE_MAX_ENTRIES = 100;
 const SESSION_CACHE_TTL_MS = 15 * 60 * 1000;
-const MAX_TRANSCRIPT_MESSAGES = 24;
 const DEFAULT_AGENT_ID = "opencode";
 const COMPACTION_HINT =
   "Preserve durable user preferences, project decisions, and unfinished work that should survive compaction.";
 
 type ChatMessageHook = NonNullable<Hooks["chat.message"]>;
 type ChatMessageOutput = Parameters<ChatMessageHook>[1];
+type EventHook = NonNullable<Hooks["event"]>;
+type EventInput = Parameters<EventHook>[0];
 
 interface SessionState {
   latestPrompt: string | null;
-  transcript: IngestMessage[];
+  lastIngestFingerprint: string | null;
+  pendingIngestFingerprint: string | null;
   agentID: string;
   updatedAt: number;
 }
@@ -27,6 +31,7 @@ interface SessionState {
 export interface BuildHooksOptions {
   agentID?: string;
   debugLogger?: DebugLogger;
+  loadSessionTranscript?: SessionTranscriptLoader;
 }
 
 function runInBackground(task: Promise<unknown>): void {
@@ -99,7 +104,8 @@ function ensureSessionState(
 
   const state: SessionState = {
     latestPrompt: null,
-    transcript: [],
+    lastIngestFingerprint: null,
+    pendingIngestFingerprint: null,
     agentID: fallbackAgentID,
     updatedAt: now,
   };
@@ -107,20 +113,93 @@ function ensureSessionState(
   return state;
 }
 
-function appendTranscriptMessage(state: SessionState, message: IngestMessage): void {
-  const content = message.content.trim();
-  if (!content) {
+function buildIngestFingerprint(messages: IngestMessage[]): string {
+  return JSON.stringify(messages);
+}
+
+function hasAssistantMessage(messages: IngestMessage[]): boolean {
+  return messages.some((message) => message.role === "assistant");
+}
+
+async function ingestSessionTranscript(
+  sessionID: string,
+  reason: "session.idle" | "session.compacting",
+  sessionStateByID: Map<string, SessionState>,
+  backend: MemoryBackend,
+  options: BuildHooksOptions,
+  fallbackAgentID: string,
+): Promise<void> {
+  if (!options.loadSessionTranscript) {
     return;
   }
 
-  state.transcript.push({
-    role: message.role,
-    content,
-  });
+  const now = Date.now();
+  pruneSessionState(sessionStateByID, now);
+  const state = ensureSessionState(sessionStateByID, sessionID, now, fallbackAgentID);
 
-  if (state.transcript.length > MAX_TRANSCRIPT_MESSAGES) {
-    state.transcript.splice(0, state.transcript.length - MAX_TRANSCRIPT_MESSAGES);
+  let transcript: IngestMessage[];
+  try {
+    transcript = await options.loadSessionTranscript(sessionID);
+  } catch (error) {
+    await options.debugLogger?.(`${reason}.error`, {
+      sessionID,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return;
   }
+
+  const selectedMessages = selectMessagesForIngest(transcript);
+  if (selectedMessages.length === 0) {
+    await options.debugLogger?.(`${reason}.skip`, {
+      sessionID,
+      reason: "empty_selection",
+    });
+    return;
+  }
+
+  if (!hasAssistantMessage(selectedMessages)) {
+    await options.debugLogger?.(`${reason}.skip`, {
+      sessionID,
+      reason: "no_assistant_message",
+    });
+    return;
+  }
+
+  const fingerprint = buildIngestFingerprint(selectedMessages);
+  if (
+    state.pendingIngestFingerprint === fingerprint ||
+    state.lastIngestFingerprint === fingerprint
+  ) {
+    await options.debugLogger?.(`${reason}.skip`, {
+      sessionID,
+      reason: "duplicate_transcript",
+    });
+    return;
+  }
+
+  state.pendingIngestFingerprint = fingerprint;
+  runInBackground(
+    (async () => {
+      try {
+        await options.debugLogger?.(reason, {
+          sessionID,
+          messageCount: selectedMessages.length,
+        });
+        await submitMessagesForIngest({
+          backend,
+          messages: transcript,
+          sessionID,
+          agentID: state.agentID,
+          debugLogger: options.debugLogger,
+        });
+        state.lastIngestFingerprint = fingerprint;
+      } finally {
+        if (state.pendingIngestFingerprint === fingerprint) {
+          state.pendingIngestFingerprint = null;
+        }
+      }
+    })(),
+  );
 }
 
 export function buildHooks(
@@ -129,9 +208,8 @@ export function buildHooks(
 ): Pick<
   Hooks,
   | "chat.message"
+  | "event"
   | "experimental.chat.system.transform"
-  | "experimental.text.complete"
-  | "tool.execute.after"
   | "experimental.session.compacting"
 > {
   const sessionStateByID = new Map<string, SessionState>();
@@ -146,16 +224,21 @@ export function buildHooks(
       state.agentID = resolveAgentID(input.agent, state.agentID);
 
       const prompt = extractLatestUserPrompt(output.parts);
-      if (!prompt) {
-        state.latestPrompt = null;
+      state.latestPrompt = prompt;
+    },
+    event: async (input) => {
+      if (input.event.type !== "session.idle") {
         return;
       }
 
-      state.latestPrompt = prompt;
-      appendTranscriptMessage(state, {
-        role: "user",
-        content: prompt,
-      });
+      await ingestSessionTranscript(
+        input.event.properties.sessionID,
+        "session.idle",
+        sessionStateByID,
+        backend,
+        options,
+        fallbackAgentID,
+      );
     },
     "experimental.chat.system.transform": async (input, output) => {
       if (!input.sessionID) {
@@ -184,50 +267,25 @@ export function buildHooks(
         // Recall failures must not block chat.
       }
     },
-    "experimental.text.complete": async (input, output) => {
-      const content = output.text.trim();
-      if (!content) {
-        return;
-      }
-
-      const now = Date.now();
-      pruneSessionState(sessionStateByID, now);
-
-      const state = ensureSessionState(sessionStateByID, input.sessionID, now, fallbackAgentID);
-      appendTranscriptMessage(state, {
-        role: "assistant",
-        content,
-      });
-
-      runInBackground(
-        submitMessagesForIngest({
-          backend,
-          messages: state.transcript,
-          sessionID: input.sessionID,
-          agentID: state.agentID,
-          debugLogger: options.debugLogger,
-        }),
-      );
-    },
-    "tool.execute.after": async (input, output) => {
-      if (!options.debugLogger) {
-        return;
-      }
-
-      runInBackground(
-        options.debugLogger("tool.execute.after", {
-          sessionID: input.sessionID,
-          tool: input.tool,
-          callID: input.callID,
-          args: input.args,
-          title: output.title,
-          output: output.output,
-          metadata: output.metadata,
-        }),
-      );
-    },
     "experimental.session.compacting": async (input, output) => {
       output.context.push(COMPACTION_HINT);
+
+      const state = sessionStateByID.get(input.sessionID);
+      if (state) {
+        state.updatedAt = Date.now();
+      }
+
+      runInBackground(
+        ingestSessionTranscript(
+          input.sessionID,
+          "session.compacting",
+          sessionStateByID,
+          backend,
+          options,
+          fallbackAgentID,
+        ),
+      );
+
       if (!options.debugLogger) {
         return;
       }

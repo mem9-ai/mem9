@@ -22,12 +22,8 @@ import type {
 type ChatMessageHook = NonNullable<Hooks["chat.message"]>;
 type ChatMessageInput = Parameters<ChatMessageHook>[0];
 type ChatMessageOutput = Parameters<ChatMessageHook>[1];
-type TextCompleteHook = NonNullable<Hooks["experimental.text.complete"]>;
-type TextCompleteInput = Parameters<TextCompleteHook>[0];
-type TextCompleteOutput = Parameters<TextCompleteHook>[1];
-type ToolExecuteAfterHook = NonNullable<Hooks["tool.execute.after"]>;
-type ToolExecuteAfterInput = Parameters<ToolExecuteAfterHook>[0];
-type ToolExecuteAfterOutput = Parameters<ToolExecuteAfterHook>[1];
+type EventHook = NonNullable<Hooks["event"]>;
+type EventInput = Parameters<EventHook>[0];
 type SessionCompactingHook = NonNullable<Hooks["experimental.session.compacting"]>;
 type SessionCompactingInput = Parameters<SessionCompactingHook>[0];
 type SessionCompactingOutput = Parameters<SessionCompactingHook>[1];
@@ -127,36 +123,12 @@ function textPart(text: string): ChatMessageOutput["parts"][number] {
   } as unknown as ChatMessageOutput["parts"][number];
 }
 
-function createTextCompleteInput(sessionID: string): TextCompleteInput {
+function createSessionIdleEventInput(sessionID: string): EventInput {
   return {
-    sessionID,
-    messageID: "message-1",
-    partID: "part-1",
-  };
-}
-
-function createTextCompleteOutput(text: string): TextCompleteOutput {
-  return { text };
-}
-
-function createToolExecuteAfterInput(sessionID: string): ToolExecuteAfterInput {
-  return {
-    tool: "memory_search",
-    sessionID,
-    callID: "call-1",
-    args: {
-      query: "find relevant memories",
-    },
-  };
-}
-
-function createToolExecuteAfterOutput(): ToolExecuteAfterOutput {
-  return {
-    title: "Memory search",
-    output: "Search completed successfully.",
-    metadata: {
-      resultCount: 1,
-    },
+    event: {
+      type: "session.idle",
+      properties: { sessionID },
+    } as EventInput["event"],
   };
 }
 
@@ -249,7 +221,19 @@ test("redactDebugPayload masks mem9 secrets inside free-form strings", () => {
   assert.equal(redacted.error, "mem9 request failed with mk_*** during retry");
 });
 
-test("buildHooks auto-ingests cleaned transcript messages in smart mode", async () => {
+test("redactDebugPayload masks bearer and provider secrets inside free-form strings", () => {
+  const redacted = redactDebugPayload({
+    error:
+      "Authorization: Bearer sk-live-abc1234567890 leaked sk_proj_projectsecret123456 and xoxb-1234567890-1234567890-secretvalue",
+  });
+
+  assert.equal(
+    redacted.error,
+    "Authorization: Bearer sk-live-*** leaked sk_proj_*** and xoxb-***",
+  );
+});
+
+test("buildHooks auto-ingests transcript messages when the session becomes idle", async () => {
   const ingestCalls: IngestInput[] = [];
   const hooks = buildHooks(
     createBackend({
@@ -261,30 +245,36 @@ test("buildHooks auto-ingests cleaned transcript messages in smart mode", async 
         };
       },
     }),
-  );
-
-  const onChatMessage = hooks["chat.message"];
-  const onTextComplete = hooks["experimental.text.complete"];
-  assert.ok(onChatMessage);
-  assert.ok(onTextComplete);
-
-  await onChatMessage(
-    createChatMessageInput("session-1", { agent: "agent-42" }),
-    createChatMessageOutput([
-      textPart(`
+    {
+      loadSessionTranscript: async () => [
+        {
+          role: "user",
+          content: `
 <relevant-memories>
 1. Old memory
 </relevant-memories>
 
 Remember that I prefer focused patches.
-`),
-    ]),
+`,
+        },
+        {
+          role: "assistant",
+          content: "I will keep the patch focused.",
+        },
+      ],
+    },
   );
 
-  await onTextComplete(
-    createTextCompleteInput("session-1"),
-    createTextCompleteOutput("I will keep the patch focused."),
+  const onChatMessage = hooks["chat.message"];
+  const onEvent = hooks.event;
+  assert.ok(onChatMessage);
+  assert.ok(onEvent);
+
+  await onChatMessage(
+    createChatMessageInput("session-1", { agent: "agent-42" }),
+    createChatMessageOutput([textPart("Remember that I prefer focused patches.")]),
   );
+  await onEvent(createSessionIdleEventInput("session-1"));
   await waitForBackgroundTasks();
 
   assert.deepEqual(ingestCalls, [
@@ -306,7 +296,102 @@ Remember that I prefer focused patches.
   ]);
 });
 
-test("experimental.text.complete resolves before background ingest completes", async () => {
+test("buildHooks suppresses duplicate session.idle ingests for unchanged transcript", async () => {
+  const ingestCalls: IngestInput[] = [];
+  const hooks = buildHooks(
+    createBackend({
+      async ingestImpl(input) {
+        ingestCalls.push(input);
+        return {
+          status: "ok",
+          memories_changed: 1,
+        };
+      },
+    }),
+    {
+      loadSessionTranscript: async () => [
+        { role: "user", content: "Remember concise updates." },
+        { role: "assistant", content: "I will keep updates concise." },
+      ],
+    },
+  );
+
+  const onEvent = hooks.event;
+  assert.ok(onEvent);
+
+  await onEvent(createSessionIdleEventInput("session-dedupe"));
+  await waitForBackgroundTasks();
+  await onEvent(createSessionIdleEventInput("session-dedupe"));
+  await waitForBackgroundTasks();
+
+  assert.equal(ingestCalls.length, 1);
+});
+
+test("buildHooks retries session.idle ingest after a previous failure", async () => {
+  let attempt = 0;
+  const ingestCalls: IngestInput[] = [];
+  const hooks = buildHooks(
+    createBackend({
+      async ingestImpl(input) {
+        attempt += 1;
+        ingestCalls.push(input);
+        if (attempt === 1) {
+          throw new Error("temporary ingest failure");
+        }
+        return {
+          status: "ok",
+          memories_changed: 1,
+        };
+      },
+    }),
+    {
+      loadSessionTranscript: async () => [
+        { role: "user", content: "Remember the retry behavior." },
+        { role: "assistant", content: "I retried after the failure." },
+      ],
+    },
+  );
+
+  const onEvent = hooks.event;
+  assert.ok(onEvent);
+
+  await onEvent(createSessionIdleEventInput("session-retry"));
+  await waitForBackgroundTasks();
+  await onEvent(createSessionIdleEventInput("session-retry"));
+  await waitForBackgroundTasks();
+
+  assert.equal(ingestCalls.length, 2);
+});
+
+test("buildHooks skips session.idle ingest when the transcript has no assistant message", async () => {
+  const ingestCalls: IngestInput[] = [];
+  const hooks = buildHooks(
+    createBackend({
+      async ingestImpl(input) {
+        ingestCalls.push(input);
+        return {
+          status: "ok",
+          memories_changed: 1,
+        };
+      },
+    }),
+    {
+      loadSessionTranscript: async () => [
+        { role: "user", content: "Only a user message is present." },
+      ],
+    },
+  );
+
+  const onEvent = hooks.event;
+  assert.ok(onEvent);
+
+  await onEvent(createSessionIdleEventInput("session-user-only"));
+  await waitForBackgroundTasks();
+
+  assert.deepEqual(ingestCalls, []);
+});
+
+test("event hook resolves before background ingest completes", async () => {
   const ingestDeferred = createDeferred<IngestResult>();
   let ingestStarted = false;
   const hooks = buildHooks(
@@ -316,23 +401,18 @@ test("experimental.text.complete resolves before background ingest completes", a
         return ingestDeferred.promise;
       },
     }),
+    {
+      loadSessionTranscript: async () => [
+        { role: "user", content: "Remember the background ingest behavior." },
+        { role: "assistant", content: "I captured the latest assistant reply." },
+      ],
+    },
   );
 
-  const onChatMessage = hooks["chat.message"];
-  const onTextComplete = hooks["experimental.text.complete"];
-  assert.ok(onChatMessage);
-  assert.ok(onTextComplete);
+  const onEvent = hooks.event;
+  assert.ok(onEvent);
 
-  await onChatMessage(
-    createChatMessageInput("session-detached"),
-    createChatMessageOutput([textPart("Remember the background ingest behavior.")]),
-  );
-
-  const hookPromise = onTextComplete(
-    createTextCompleteInput("session-detached"),
-    createTextCompleteOutput("I captured the latest assistant reply."),
-  );
-
+  const hookPromise = onEvent(createSessionIdleEventInput("session-detached"));
   const raceWinner = await Promise.race([
     hookPromise.then(() => "hook"),
     new Promise<string>((resolve) => {
@@ -360,16 +440,10 @@ test("buildHooks appends a compaction hint and emits debug events", async () => 
   });
 
   const onSessionCompacting = hooks["experimental.session.compacting"];
-  const onToolExecuteAfter = hooks["tool.execute.after"];
   assert.ok(onSessionCompacting);
-  assert.ok(onToolExecuteAfter);
 
   const compactionOutput = createSessionCompactingOutput();
   await onSessionCompacting(createSessionCompactingInput("session-compact"), compactionOutput);
-  await onToolExecuteAfter(
-    createToolExecuteAfterInput("session-compact"),
-    createToolExecuteAfterOutput(),
-  );
   await waitForBackgroundTasks();
 
   assert.deepEqual(compactionOutput.context, [
@@ -383,47 +457,109 @@ test("buildHooks appends a compaction hint and emits debug events", async () => 
         hint: "Preserve durable user preferences, project decisions, and unfinished work that should survive compaction.",
       },
     },
-    {
-      event: "tool.execute.after",
-      payload: {
-        sessionID: "session-compact",
-        tool: "memory_search",
-        callID: "call-1",
-        args: {
-          query: "find relevant memories",
-        },
-        title: "Memory search",
-        output: "Search completed successfully.",
-        metadata: {
-          resultCount: 1,
-        },
+  ]);
+});
+
+test("buildHooks ingests the current transcript before compaction", async () => {
+  const ingestCalls: IngestInput[] = [];
+  const hooks = buildHooks(
+    createBackend({
+      async ingestImpl(input) {
+        ingestCalls.push(input);
+        return {
+          status: "ok",
+          memories_changed: 1,
+        };
       },
+    }),
+    {
+      loadSessionTranscript: async () => [
+        { role: "user", content: "Remember the decisions before compaction." },
+        { role: "assistant", content: "I captured the latest project decision." },
+      ],
+    },
+  );
+
+  const onSessionCompacting = hooks["experimental.session.compacting"];
+  assert.ok(onSessionCompacting);
+
+  await onSessionCompacting(
+    createSessionCompactingInput("session-precompact"),
+    createSessionCompactingOutput(),
+  );
+  await waitForBackgroundTasks();
+
+  assert.deepEqual(ingestCalls, [
+    {
+      session_id: "session-precompact",
+      agent_id: "opencode",
+      mode: "smart",
+      messages: [
+        {
+          role: "user",
+          content: "Remember the decisions before compaction.",
+        },
+        {
+          role: "assistant",
+          content: "I captured the latest project decision.",
+        },
+      ],
     },
   ]);
 });
 
+test("buildHooks suppresses duplicate idle ingest after a matching pre-compaction ingest", async () => {
+  const ingestCalls: IngestInput[] = [];
+  const hooks = buildHooks(
+    createBackend({
+      async ingestImpl(input) {
+        ingestCalls.push(input);
+        return {
+          status: "ok",
+          memories_changed: 1,
+        };
+      },
+    }),
+    {
+      loadSessionTranscript: async () => [
+        { role: "user", content: "Remember the duplicated transcript." },
+        { role: "assistant", content: "I only need one ingest for this turn." },
+      ],
+    },
+  );
+
+  const onSessionCompacting = hooks["experimental.session.compacting"];
+  const onEvent = hooks.event;
+  assert.ok(onSessionCompacting);
+  assert.ok(onEvent);
+
+  await onSessionCompacting(
+    createSessionCompactingInput("session-compaction-dedupe"),
+    createSessionCompactingOutput(),
+  );
+  await waitForBackgroundTasks();
+
+  await onEvent(createSessionIdleEventInput("session-compaction-dedupe"));
+  await waitForBackgroundTasks();
+
+  assert.equal(ingestCalls.length, 1);
+});
+
 test("debug hooks resolve before background logging completes", async () => {
-  const firstLogDeferred = createDeferred<void>();
-  const secondLogDeferred = createDeferred<void>();
-  const logPromises = [firstLogDeferred.promise, secondLogDeferred.promise];
+  const logDeferred = createDeferred<void>();
   const logEvents: string[] = [];
   const hooks = buildHooks(createBackend(), {
     debugLogger: async (event) => {
       logEvents.push(event);
-      const next = logPromises.shift();
-      if (next) {
-        await next;
-      }
+      await logDeferred.promise;
     },
   });
 
   const onSessionCompacting = hooks["experimental.session.compacting"];
-  const onToolExecuteAfter = hooks["tool.execute.after"];
   assert.ok(onSessionCompacting);
-  assert.ok(onToolExecuteAfter);
 
   const compactionOutput = createSessionCompactingOutput();
-  const compactionRaceWinner = await Promise.race([
+  const raceWinner = await Promise.race([
     onSessionCompacting(createSessionCompactingInput("session-debug"), compactionOutput).then(
       () => "hook",
     ),
@@ -432,28 +568,13 @@ test("debug hooks resolve before background logging completes", async () => {
     }),
   ]);
 
-  assert.equal(compactionRaceWinner, "hook");
+  assert.equal(raceWinner, "hook");
   assert.deepEqual(compactionOutput.context, [
     "Preserve durable user preferences, project decisions, and unfinished work that should survive compaction.",
   ]);
   await waitForBackgroundTasks();
   assert.deepEqual(logEvents, ["session.compacting"]);
 
-  const toolRaceWinner = await Promise.race([
-    onToolExecuteAfter(
-      createToolExecuteAfterInput("session-debug"),
-      createToolExecuteAfterOutput(),
-    ).then(() => "hook"),
-    new Promise<string>((resolve) => {
-      setTimeout(() => resolve("timer"), 0);
-    }),
-  ]);
-
-  assert.equal(toolRaceWinner, "hook");
-  await waitForBackgroundTasks();
-  assert.deepEqual(logEvents, ["session.compacting", "tool.execute.after"]);
-
-  firstLogDeferred.resolve();
-  secondLogDeferred.resolve();
+  logDeferred.resolve();
   await waitForBackgroundTasks();
 });

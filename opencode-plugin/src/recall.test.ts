@@ -25,6 +25,9 @@ type ChatMessageOutput = Parameters<ChatMessageHook>[1];
 type SystemTransformHook = NonNullable<Hooks["experimental.chat.system.transform"]>;
 type SystemTransformInput = Parameters<SystemTransformHook>[0];
 type SystemTransformOutput = Parameters<SystemTransformHook>[1];
+type SessionCompactingHook = NonNullable<Hooks["experimental.session.compacting"]>;
+type SessionCompactingInput = Parameters<SessionCompactingHook>[0];
+type SessionCompactingOutput = Parameters<SessionCompactingHook>[1];
 
 function createMemory(overrides: Partial<Memory> = {}): Memory {
   return {
@@ -113,6 +116,14 @@ function createSystemTransformInput(sessionID: string): SystemTransformInput {
 
 function createSystemTransformOutput(system: string[] = []): SystemTransformOutput {
   return { system };
+}
+
+function createSessionCompactingInput(sessionID: string): SessionCompactingInput {
+  return { sessionID };
+}
+
+function createSessionCompactingOutput(): SessionCompactingOutput {
+  return { context: [] };
 }
 
 function encodedQueryParamLength(query: string): number {
@@ -267,6 +278,44 @@ test("buildHooks captures the latest non-synthetic text parts and injects releva
       "</relevant-memories>",
     ].join("\n"),
   ]);
+});
+
+test("buildHooks preserves the latest recall prompt across compaction", async () => {
+  const queries: SearchInput[] = [];
+  const hooks = buildHooks(
+    createBackend(async (input) => {
+      queries.push(input);
+      return {
+        memories: [],
+        total: 0,
+        limit: input.limit ?? 0,
+        offset: input.offset ?? 0,
+      };
+    }),
+  );
+
+  const onChatMessage = hooks["chat.message"];
+  const onSystemTransform = hooks["experimental.chat.system.transform"];
+  const onSessionCompacting = hooks["experimental.session.compacting"];
+  assert.ok(onChatMessage);
+  assert.ok(onSystemTransform);
+  assert.ok(onSessionCompacting);
+
+  await onChatMessage(
+    createChatMessageInput("session-compact-recall"),
+    createChatMessageOutput([textPart("Carry this prompt through compaction.")]),
+  );
+  await onSessionCompacting(
+    createSessionCompactingInput("session-compact-recall"),
+    createSessionCompactingOutput(),
+  );
+
+  await onSystemTransform(
+    createSystemTransformInput("session-compact-recall"),
+    createSystemTransformOutput(),
+  );
+
+  assert.deepEqual(queries, [{ q: "Carry this prompt through compaction.", limit: 8 }]);
 });
 
 test("buildHooks bounds very large captured prompts before search", async () => {

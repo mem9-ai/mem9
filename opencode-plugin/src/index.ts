@@ -9,6 +9,7 @@ import { ServerBackend } from "./server-backend.js";
 import { buildPendingSetupHooks } from "./setup-flow.js";
 import { buildTools } from "./tools.js";
 import { buildHooks } from "./hooks.js";
+import { createSessionTranscriptLoader } from "./session-transcript.js";
 
 function buildPluginHooksAndTools(
   backend: MemoryBackend,
@@ -48,6 +49,7 @@ const mem9Plugin: Plugin = async (input) => {
   return buildPluginHooksAndTools(backend, {
     agentID: "opencode",
     debugLogger,
+    loadSessionTranscript: createSessionTranscriptLoader(input.client),
   });
 };
 
