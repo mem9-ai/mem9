@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { buildSessionStartMessage } from "../hooks/session-start.mjs";
 import {
   DEFAULT_AGENT_ID,
   DEFAULT_REQUEST_TIMEOUT_MS,
@@ -259,6 +260,42 @@ test("plugin disabled via config.toml returns plugin_disabled", () => {
   assert.equal(state.issueCode, "plugin_disabled");
 });
 
+test("plugin disabled parser accepts a table header with surrounding whitespace and a trailing comment", () => {
+  const state = loadRuntimeStateFromDisk(createRuntimeDisk({
+    globalConfig: {
+      schemaVersion: 1,
+      profileId: "default",
+    },
+    credentials: DEFAULT_CREDENTIALS,
+    installMetadata: DEFAULT_INSTALL,
+    configToml: ' \t[plugins."mem9@mem9-ai"]   # managed by codex\n enabled = false\n',
+  }));
+
+  assert.equal(state.pluginState, "plugin_disabled");
+  assert.equal(state.issueCode, "plugin_disabled");
+});
+
+test("plugin disabled parser stops at the next table header even when it has a trailing comment", () => {
+  const state = loadRuntimeStateFromDisk(createRuntimeDisk({
+    globalConfig: {
+      schemaVersion: 1,
+      profileId: "default",
+    },
+    credentials: DEFAULT_CREDENTIALS,
+    installMetadata: DEFAULT_INSTALL,
+    configToml: [
+      '[plugins."mem9@mem9-ai"]',
+      "enabled = false",
+      "[plugins.other] # keep reading after this header",
+      "enabled = true",
+      "",
+    ].join("\n"),
+  }));
+
+  assert.equal(state.pluginState, "plugin_disabled");
+  assert.equal(state.issueCode, "plugin_disabled");
+});
+
 test("missing install metadata returns plugin_missing", () => {
   const state = loadRuntimeStateFromDisk(createRuntimeDisk({
     globalConfig: {
@@ -449,6 +486,57 @@ for (const scenario of [
     assert.equal(state.issueCode, scenario.expectedIssueCode);
   });
 }
+
+test("session start guidance for a broken project override points to project repair and global setup", () => {
+  const state = loadRuntimeStateFromDisk(createRuntimeDisk({
+    invalidJsonPaths: [PROJECT_CONFIG_PATH],
+    existingPaths: [PROJECT_CONFIG_PATH],
+    installMetadata: DEFAULT_INSTALL,
+    credentials: DEFAULT_CREDENTIALS,
+    configToml: "",
+  }));
+  const message = buildSessionStartMessage({
+    configSource: state.configSource,
+    projectConfigMatched: state.projectConfigMatched,
+    profileId: state.runtime.profileId,
+    warnings: state.warnings,
+    legacyPausedSources: state.legacyPausedSources,
+    effectiveLegacyPausedSource: state.effectiveLegacyPausedSource,
+    issueCode: state.issueCode,
+  });
+
+  assert.equal(state.issueCode, "invalid_config");
+  assert.equal(state.projectConfigMatched, true);
+  assert.match(message, /\.codex\/mem9\/config\.json/);
+  assert.match(message, /\$mem9:project-config/);
+  assert.match(message, /\$mem9:setup/);
+  assert.doesNotMatch(message, /--reset/);
+});
+
+test("session start guidance for broken global and project configs avoids reset guidance", () => {
+  const state = loadRuntimeStateFromDisk(createRuntimeDisk({
+    invalidJsonPaths: [GLOBAL_CONFIG_PATH, PROJECT_CONFIG_PATH],
+    existingPaths: [GLOBAL_CONFIG_PATH, PROJECT_CONFIG_PATH],
+    installMetadata: DEFAULT_INSTALL,
+    credentials: DEFAULT_CREDENTIALS,
+    configToml: "",
+  }));
+  const message = buildSessionStartMessage({
+    configSource: state.configSource,
+    projectConfigMatched: state.projectConfigMatched,
+    profileId: state.runtime.profileId,
+    warnings: state.warnings,
+    legacyPausedSources: state.legacyPausedSources,
+    effectiveLegacyPausedSource: state.effectiveLegacyPausedSource,
+    issueCode: state.issueCode,
+  });
+
+  assert.equal(state.issueCode, "invalid_config");
+  assert.equal(state.projectConfigMatched, true);
+  assert.match(message, /\$mem9:project-config/);
+  assert.match(message, /\$mem9:setup/);
+  assert.doesNotMatch(message, /--reset/);
+});
 
 test("loadRuntimeFromDisk throws when the runtime state is not ready", () => {
   assert.throws(

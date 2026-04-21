@@ -332,18 +332,68 @@ function loadScopeConfigFile(filePath, exists, readJson) {
   }
 }
 
+function stripTomlLineComment(line) {
+  const text = String(line ?? "");
+  let quotedBy = "";
+  let escaped = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const ch = text[index];
+
+    if (quotedBy) {
+      if (quotedBy === "\"" && ch === "\\" && !escaped) {
+        escaped = true;
+        continue;
+      }
+
+      if (ch === quotedBy && !escaped) {
+        quotedBy = "";
+      }
+
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\"" || ch === "'") {
+      quotedBy = ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "#") {
+      return text.slice(0, index);
+    }
+  }
+
+  return text;
+}
+
+function parseTomlTableHeader(line) {
+  const normalized = stripTomlLineComment(line).trim();
+  return /^\[[^\]]+\]$/.test(normalized) ? normalized : "";
+}
+
 function parsePluginEnabledState(configTomlText, pluginId = DEFAULT_PLUGIN_ID) {
   const text = String(configTomlText ?? "");
   const lines = text.split(/\r?\n/);
-  const sectionHeaderPattern = /^\s*\[[^\]]+\]\s*$/;
-  const pluginSectionPattern = new RegExp(
-    `^\\s*\\[plugins\\.(?:"${pluginId.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")}"|'${pluginId.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")}')\\]\\s*$`,
-  );
+  const pluginTableHeaders = new Set([
+    `[plugins."${pluginId}"]`,
+    `[plugins.'${pluginId}']`,
+  ]);
   let inPluginSection = false;
 
   for (const line of lines) {
-    if (pluginSectionPattern.test(line)) {
-      inPluginSection = true;
+    const header = parseTomlTableHeader(line);
+    if (header) {
+      if (pluginTableHeaders.has(header)) {
+        inPluginSection = true;
+        continue;
+      }
+
+      if (inPluginSection) {
+        break;
+      }
+
       continue;
     }
 
@@ -351,11 +401,7 @@ function parsePluginEnabledState(configTomlText, pluginId = DEFAULT_PLUGIN_ID) {
       continue;
     }
 
-    if (sectionHeaderPattern.test(line)) {
-      break;
-    }
-
-    const match = line.match(/^\s*enabled\s*=\s*(true|false)\s*(?:#.*)?$/i);
+    const match = stripTomlLineComment(line).match(/^\s*enabled\s*=\s*(true|false)\s*$/i);
     if (match) {
       return match[1].toLowerCase() !== "false";
     }

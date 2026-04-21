@@ -72,7 +72,7 @@ export function buildSessionStartMessage(
   }
 
   if (state.issueCode === "invalid_config" && state.projectConfigMatched) {
-    return `mem9 cannot read this project's override file \`.codex/mem9/config.json\`. Run \`${projectConfigCommand}\` to repair it, or \`${projectConfigCommand} --reset\` to return to the global default.`;
+    return `mem9 cannot read this project's override file \`.codex/mem9/config.json\`. Run \`${projectConfigCommand}\` to repair the local override, then run \`${setupCommand}\` if the global default in \`$CODEX_HOME/mem9/config.json\` also needs repair.`;
   }
 
   if (

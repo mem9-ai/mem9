@@ -3,11 +3,13 @@ import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
 import {
   readInstallMetadata,
@@ -220,6 +222,39 @@ test("runHookShim takes the repair path when the active plugin root is missing",
 
     assert.equal(parsed.hookSpecificOutput.hookEventName, "SessionStart");
     assert.match(parsed.hookSpecificOutput.additionalContext, /active mem9 plugin files are unavailable/);
+    assert.equal(stdoutText, output);
+  } finally {
+    process.stdout.write = originalWrite;
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("installed bootstrap shim keeps the repair path self-contained", async () => {
+  const tempRoot = createTempRoot();
+  const originalWrite = process.stdout.write;
+
+  try {
+    const codexHome = path.join(tempRoot, "codex-home");
+    const shimPath = path.join(codexHome, "mem9", "hooks", "shared", "bootstrap.mjs");
+    mkdirSync(path.dirname(shimPath), { recursive: true });
+    writeFileSync(
+      shimPath,
+      readFileSync(new URL("../bootstrap-hooks/shared/bootstrap.mjs", import.meta.url), "utf8"),
+    );
+
+    let stdoutText = "";
+    process.stdout.write = /** @type {typeof process.stdout.write} */ ((chunk) => {
+      stdoutText += String(chunk);
+      return true;
+    });
+
+    const installedShim = await import(pathToFileURL(shimPath).href);
+    const output = await installedShim.runHookShim("session-start.mjs", { codexHome });
+    const parsed = JSON.parse(output);
+
+    assert.equal(parsed.hookSpecificOutput.hookEventName, "SessionStart");
+    assert.match(parsed.hookSpecificOutput.additionalContext, /hooks remain installed/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /\$mem9:cleanup/);
     assert.equal(stdoutText, output);
   } finally {
     process.stdout.write = originalWrite;

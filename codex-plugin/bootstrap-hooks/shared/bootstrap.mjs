@@ -5,8 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { hookAdditionalContext } from "../../hooks/shared/format.mjs";
-
 export const DEFAULT_PLUGIN_VERSION = "local";
 export const PLUGINS_CACHE_DIR = path.join("plugins", "cache");
 export const DEFAULT_INSTALL_METADATA = {
@@ -28,6 +26,23 @@ function isRecord(value) {
  */
 function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Keeps the installed hook shim self-contained after setup copies it into
+ * `$CODEX_HOME/mem9/hooks/shared/bootstrap.mjs`.
+ *
+ * @param {"SessionStart" | "UserPromptSubmit"} eventName
+ * @param {string} text
+ * @returns {string}
+ */
+function hookAdditionalContext(eventName, text) {
+  return JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: eventName,
+      additionalContext: text,
+    },
+  });
 }
 
 /**
