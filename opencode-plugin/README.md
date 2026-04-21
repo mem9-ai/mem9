@@ -142,3 +142,19 @@ Debug payloads are redacted before they are written. The logger masks obvious se
 pnpm test
 pnpm run typecheck
 ```
+
+## Publish Surface
+
+The npm package publishes:
+
+- `package.json`
+- `README.md`
+- runtime source files under `src/`
+
+The package does not publish test files under `src/**/*.test.ts`.
+
+Check the final tarball contents before release:
+
+```bash
+pnpm run pack:check
+```
