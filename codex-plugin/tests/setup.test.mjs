@@ -361,7 +361,76 @@ test("runSetup can create a global profile from CLI args", async () => {
   }
 });
 
-test("runSetup refuses an existing profile with an empty api key in non-interactive mode", async () => {
+test("runSetup provisions a global profile when api key is omitted", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const projectRoot = path.join(tempRoot, "project");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    mkdirSync(projectRoot, { recursive: true });
+    mkdirSync(mem9Home, { recursive: true });
+
+    /** @type {Array<{url: string, method: string}>} */
+    const fetchCalls = [];
+
+    const result = await runSetup(
+      [
+        "--profile",
+        "default",
+        "--label",
+        "default",
+        "--base-url",
+        "https://api.mem9.ai",
+      ],
+      {
+        cwd: projectRoot,
+        codexHome,
+        mem9Home,
+        interactive: false,
+        userWritable: true,
+        credentialsWritable: true,
+        fetch: async (
+          /** @type {string | URL} */ url,
+          /** @type {{method?: string} | undefined} */ init,
+        ) => {
+          const request = init ?? {};
+          fetchCalls.push({
+            url: String(url),
+            method: String(request.method ?? "GET"),
+          });
+
+          return {
+            ok: true,
+            status: 200,
+            async json() {
+              return {
+                id: "key-provisioned",
+              };
+            },
+          };
+        },
+      },
+    );
+
+    assert.equal(result.selection, "provisioned");
+    assert.deepEqual(fetchCalls, [
+      {
+        url: "https://api.mem9.ai/v1alpha1/mem9s",
+        method: "POST",
+      },
+    ]);
+
+    const credentials = JSON.parse(
+      readFileSync(path.join(mem9Home, ".credentials.json"), "utf8"),
+    );
+    assert.equal(credentials.profiles.default.apiKey, "key-provisioned");
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runSetup provisions an existing profile missing api key in non-interactive mode", async () => {
   const tempRoot = createTempRoot();
 
   try {
@@ -385,19 +454,68 @@ test("runSetup refuses an existing profile with an empty api key in non-interact
       }, null, 2),
     );
 
+    const result = await runSetup(
+      ["--profile", "work"],
+      {
+        cwd: projectRoot,
+        codexHome,
+        mem9Home,
+        interactive: false,
+        userWritable: true,
+        credentialsWritable: true,
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              id: "key-repaired",
+            };
+          },
+        }),
+      },
+    );
+
+    assert.equal(result.selection, "provisioned");
+
+    const credentials = JSON.parse(
+      readFileSync(path.join(mem9Home, ".credentials.json"), "utf8"),
+    );
+    assert.equal(credentials.profiles.work.apiKey, "key-repaired");
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runSetup manual mode prints guidance instead of reading an api key", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const projectRoot = path.join(tempRoot, "project");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    mkdirSync(projectRoot, { recursive: true });
+    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(mem9Home, { recursive: true });
+
     await assert.rejects(
       () => runSetup(
-        ["--profile", "work"],
+        [],
         {
           cwd: projectRoot,
           codexHome,
           mem9Home,
-          interactive: false,
+          interactive: true,
           userWritable: true,
           credentialsWritable: true,
+          prompter: {
+            async text() {
+              return "manual";
+            },
+            close() {},
+          },
         },
       ),
-      /API key is required/,
+      /Add a mem9 profile manually in `\$MEM9_HOME\/\.credentials\.json`\./,
     );
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });

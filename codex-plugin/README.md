@@ -37,8 +37,7 @@ The plugin is user-installed. The hooks are global. Per-project differences live
 - Codex CLI `0.122.0` or newer
 - A Codex App build with plugin and hook support
 - Node.js 22 or newer
-- Network access to the mem9 API
-- A mem9 API key
+- Network access to the mem9 server API
 
 ## Install
 
@@ -82,19 +81,27 @@ Common examples:
 
 ```text
 $mem9:setup
-$mem9:setup --profile work
-$mem9:setup --profile work --api-key <key>
+$mem9:setup --create-new
+$mem9:setup --use-existing --profile work
 ```
 
 What it does:
 
 1. checks `Node.js >= 22`
-2. creates or repairs global profiles in `$MEM9_HOME/.credentials.json`
+2. creates a new mem9 API key automatically or selects an existing global profile
+3. creates or repairs global profiles in `$MEM9_HOME/.credentials.json`
 3. writes the global default config
 4. enables `codex_hooks`
 5. installs or repairs the managed hooks in `$CODEX_HOME/hooks.json`
 6. installs runtime scripts in `$CODEX_HOME/mem9/runtime/`
 7. removes old mem9-managed project hooks from the current repository, when setup runs inside a Git repository
+
+First-run setup supports two paths:
+
+- `create-new` provisions a fresh mem9 API key and writes it into the selected global profile
+- `manual` prints how to add a profile in `$MEM9_HOME/.credentials.json`, then you rerun setup and choose `use-existing`
+
+Inside Codex, setup does not ask for API keys through the TUI.
 
 ### `$mem9:project-config`
 
@@ -224,5 +231,5 @@ You can override the file path with `MEM9_DEBUG_LOG_FILE`.
 - If a project is disabled, run `$mem9:project-config --reset` to inherit the global default again.
 - If a project needs another profile, run `$mem9:project-config --profile <id>`.
 - If the selected profile is missing, run `$mem9:setup` to create or repair global profiles.
-- If the selected profile is missing an API key, run `$mem9:setup`, edit `$MEM9_HOME/.credentials.json`, or set `MEM9_API_KEY`.
+- If the selected profile is missing an API key, run `$mem9:setup` and choose `create-new`, or add the profile manually in `$MEM9_HOME/.credentials.json` and rerun setup with `--use-existing`.
 - If setup repairs malformed JSON files, it keeps sibling `.bak` copies before rewriting them.

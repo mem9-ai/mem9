@@ -12,7 +12,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { emitKeypressEvents } from "node:readline";
 import readline from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -86,6 +85,10 @@ function readTextFile(filePath, readFile = readFileSync) {
 
 function getProfiles(credentials) {
   return isRecord(credentials?.profiles) ? credentials.profiles : {};
+}
+
+function hasApiKey(profile) {
+  return Boolean(normalizeString(profile?.apiKey));
 }
 
 function hasProfileUpdates(args) {
@@ -237,72 +240,8 @@ function sanitizeBackupsForOutput(backups, context) {
   }));
 }
 
-async function readSecretText(
-  input,
-  output,
-  prompt,
-  defaultValue = "",
-) {
-  if (!input?.isTTY || typeof input.setRawMode !== "function") {
-    throw new Error("A TTY is required to enter an API key interactively.");
-  }
-
-  emitKeypressEvents(input);
-  const wasRaw = input.isRaw;
-  output.write(prompt);
-
-  return await new Promise((resolve, reject) => {
-    let value = "";
-
-    /**
-     * @returns {void}
-     */
-    function cleanup() {
-      input.off("keypress", onKeypress);
-      input.setRawMode(Boolean(wasRaw));
-      output.write("\n");
-    }
-
-    /**
-     * @param {string} chunk
-     * @param {{name?: string, ctrl?: boolean}} key
-     * @returns {void}
-     */
-    function onKeypress(chunk, key = {}) {
-      if (key.ctrl && key.name === "c") {
-        cleanup();
-        reject(new Error("Setup cancelled."));
-        return;
-      }
-
-      if (key.name === "return" || key.name === "enter") {
-        cleanup();
-        resolve(value || defaultValue);
-        return;
-      }
-
-      if (key.name === "backspace") {
-        value = value.slice(0, -1);
-        return;
-      }
-
-      if (typeof chunk === "string" && chunk >= " " && chunk !== "\u007f") {
-        value += chunk;
-      }
-    }
-
-    input.setRawMode(true);
-    input.on("keypress", onKeypress);
-    input.resume();
-  });
-}
-
 async function promptText(prompter, label, options = {}) {
   if (!prompter?.text) {
-    if (options.required) {
-      throw new Error(`${label} is required. Pass it with CLI args or run setup in a TTY.`);
-    }
-
     return normalizeString(options.defaultValue);
   }
 
@@ -334,27 +273,18 @@ function createInteractivePrompter({
         ? ` [${options.defaultValue}]`
         : "";
       const prompt = `${label}${suffix}: `;
+      const rl = readline.createInterface({
+        input,
+        output,
+      });
       let answer = "";
 
-      if (options.secret) {
-        answer = await readSecretText(
-          input,
-          output,
-          prompt,
-          typeof options.defaultValue === "string" ? options.defaultValue : "",
-        );
-      } else {
-        const rl = readline.createInterface({
-          input,
-          output,
-        });
-
-        try {
-          answer = await rl.question(prompt);
-        } finally {
-          rl.close();
-        }
+      try {
+        answer = await rl.question(prompt);
+      } finally {
+        rl.close();
       }
+
       const normalized = options.trim === false
         ? String(answer ?? "")
         : normalizeString(answer);
@@ -384,6 +314,8 @@ export function parseArgs(argv = process.argv.slice(2)) {
     label: "",
     baseUrl: "",
     apiKey: "",
+    createNew: false,
+    useExisting: false,
     defaultTimeoutMs: undefined,
     searchTimeoutMs: undefined,
   };
@@ -413,6 +345,12 @@ export function parseArgs(argv = process.argv.slice(2)) {
         args.apiKey = typeof nextValue === "string" ? nextValue : "";
         index += 1;
         break;
+      case "--create-new":
+        args.createNew = true;
+        break;
+      case "--use-existing":
+        args.useExisting = true;
+        break;
       case "--default-timeout-ms":
         args.defaultTimeoutMs = parseIntegerArg(token, nextValue);
         index += 1;
@@ -424,6 +362,10 @@ export function parseArgs(argv = process.argv.slice(2)) {
       default:
         throw new Error(`Unknown argument: ${token}`);
     }
+  }
+
+  if (args.createNew && args.useExisting) {
+    throw new Error("--create-new and --use-existing cannot be used together.");
   }
 
   return args;
@@ -674,6 +616,192 @@ export function upsertCredentialsProfile(credentials, profile) {
   return next;
 }
 
+function buildUsableProfiles(profiles) {
+  return Object.fromEntries(
+    Object.entries(isRecord(profiles) ? profiles : {}).filter(([, profile]) =>
+      hasApiKey(profile),
+    ),
+  );
+}
+
+function buildManualProfileGuidance(profileId, baseUrl = DEFAULT_BASE_URL) {
+  const nextProfileId = normalizeString(profileId) || "default";
+  const nextBaseUrl = normalizeBaseUrl(baseUrl) || DEFAULT_BASE_URL;
+
+  return [
+    "Add a mem9 profile manually in `$MEM9_HOME/.credentials.json`.",
+    `Use profile ID \`${nextProfileId}\` and base URL \`${nextBaseUrl}\`.`,
+    `Then rerun setup with \`--use-existing --profile ${nextProfileId}\`, or rerun setup from a trusted shell with \`--profile ${nextProfileId} --base-url ${nextBaseUrl} --api-key <key>\`.`,
+  ].join(" ");
+}
+
+async function provisionApiKey({
+  baseUrl,
+  fetchImpl = globalThis.fetch,
+  timeoutMs = 8_000,
+}) {
+  if (typeof fetchImpl !== "function") {
+    throw new Error("Global fetch is unavailable, so mem9 create-new setup cannot provision an API key.");
+  }
+
+  const targetBaseUrl = normalizeBaseUrl(baseUrl) || DEFAULT_BASE_URL;
+  let response;
+
+  try {
+    response = await fetchImpl(`${targetBaseUrl}/v1alpha1/mem9s`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError") {
+      throw new Error(`mem9 create-new setup timed out after ${timeoutMs}ms.`);
+    }
+
+    throw new Error(
+      `mem9 create-new setup failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  if (!response?.ok) {
+    throw new Error(`mem9 create-new setup failed with HTTP ${response?.status ?? "unknown"}.`);
+  }
+
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    throw new Error(
+      `mem9 create-new setup returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  const apiKey = normalizeString(payload?.id);
+  if (!apiKey) {
+    throw new Error("mem9 create-new setup did not return an API key.");
+  }
+
+  return apiKey;
+}
+
+async function resolveSetupMode({
+  args,
+  profiles,
+  prompter,
+}) {
+  const usableProfiles = buildUsableProfiles(profiles);
+  const hasUsableProfiles = Object.keys(usableProfiles).length > 0;
+
+  if (args.createNew) {
+    return "create-new";
+  }
+  if (args.useExisting) {
+    return "use-existing";
+  }
+  if (args.apiKey) {
+    return "manual-key";
+  }
+  if (args.profileId && hasApiKey(profiles[args.profileId]) && !hasProfileUpdates(args)) {
+    return "use-existing";
+  }
+  if (!prompter) {
+    return "create-new";
+  }
+
+  const promptLabel = hasUsableProfiles
+    ? "Setup mode [use-existing|create-new|manual]"
+    : "Setup mode [create-new|manual]";
+  const defaultValue = hasUsableProfiles ? "use-existing" : "create-new";
+  const mode = normalizeString(await promptText(prompter, promptLabel, {
+    defaultValue,
+    required: true,
+    trim: false,
+  })).toLowerCase();
+
+  if (
+    mode === "create-new"
+    || mode === "use-existing"
+    || mode === "manual"
+  ) {
+    return mode;
+  }
+
+  throw new Error("Setup mode must be `use-existing`, `create-new`, or `manual`.");
+}
+
+async function resolveCreateNewSelection({
+  args,
+  profiles,
+  prompter,
+  fetchImpl,
+  provisionTimeoutMs,
+}) {
+  const profileId = normalizeString(args.profileId)
+    || buildDefaultProfileId(profiles);
+  const current = normalizeProfileRecord(profileId, profiles[profileId]);
+  const label = normalizeString(args.label)
+    || await promptText(prompter, "Profile label", {
+      defaultValue: current.label,
+      required: true,
+    })
+    || current.label;
+  const baseUrl = normalizeBaseUrl(args.baseUrl)
+    || normalizeBaseUrl(await promptText(prompter, "Base URL", {
+      defaultValue: current.baseUrl,
+      required: true,
+    }))
+    || current.baseUrl
+    || DEFAULT_BASE_URL;
+  const apiKey = await provisionApiKey({
+    baseUrl,
+    fetchImpl,
+    timeoutMs: provisionTimeoutMs,
+  });
+
+  return {
+    profileId,
+    profile: {
+      label,
+      baseUrl,
+      apiKey,
+    },
+    selection: "provisioned",
+  };
+}
+
+async function resolveExistingSelection({
+  args,
+  profiles,
+  prompter,
+}) {
+  const usableProfiles = buildUsableProfiles(profiles);
+  const usableProfileIds = Object.keys(usableProfiles).sort();
+
+  if (usableProfileIds.length === 0) {
+    throw new Error(buildManualProfileGuidance(args.profileId, args.baseUrl));
+  }
+
+  const profileId = normalizeString(args.profileId)
+    || await promptText(prompter, "Profile ID", {
+      defaultValue: buildDefaultProfileId(usableProfiles),
+      required: true,
+    })
+    || buildDefaultProfileId(usableProfiles);
+
+  const current = normalizeProfileRecord(profileId, usableProfiles[profileId]);
+  if (!hasApiKey(current)) {
+    throw new Error(buildManualProfileGuidance(profileId, current.baseUrl || args.baseUrl));
+  }
+
+  return {
+    profileId,
+    profile: current,
+    selection: "existing",
+  };
+}
+
 export function buildScopeConfig(profileId, options = {}) {
   const current = isRecord(options.existingConfig) ? options.existingConfig : {};
 
@@ -716,42 +844,47 @@ export async function resolveProfileSelection({
   args,
   credentials,
   prompter,
+  fetchImpl,
+  provisionTimeoutMs,
 }) {
   const profiles = getProfiles(credentials);
-  let profileId = normalizeString(args.profileId);
+  const mode = await resolveSetupMode({
+    args,
+    profiles,
+    prompter,
+  });
 
-  if (!profileId) {
-    profileId = await promptText(prompter, "Profile ID", {
-      defaultValue: buildDefaultProfileId(profiles),
-      required: true,
+  if (mode === "use-existing") {
+    return resolveExistingSelection({
+      args,
+      profiles,
+      prompter,
     });
   }
 
-  const current = normalizeProfileRecord(profileId, profiles[profileId]);
-  if (profiles[profileId] && !hasProfileUpdates(args)) {
-    if (!current.apiKey) {
-      const apiKey = await promptText(prompter, "API key", {
-        required: true,
-        secret: true,
-        trim: false,
-      });
-
-      return {
-        profileId,
-        profile: {
-          ...current,
-          apiKey,
-        },
-        selection: "updated",
-      };
-    }
-
-    return {
-      profileId,
-      profile: current,
-      selection: "existing",
-    };
+  if (mode === "create-new") {
+    return resolveCreateNewSelection({
+      args,
+      profiles,
+      prompter,
+      fetchImpl,
+      provisionTimeoutMs,
+    });
   }
+
+  if (mode === "manual") {
+    const profileId = normalizeString(args.profileId)
+      || buildDefaultProfileId(profiles);
+    const current = normalizeProfileRecord(profileId, profiles[profileId]);
+    const baseUrl = normalizeBaseUrl(args.baseUrl)
+      || current.baseUrl
+      || DEFAULT_BASE_URL;
+    throw new Error(buildManualProfileGuidance(profileId, baseUrl));
+  }
+
+  const profileId = normalizeString(args.profileId)
+    || buildDefaultProfileId(profiles);
+  const current = normalizeProfileRecord(profileId, profiles[profileId]);
 
   const label = normalizeString(args.label)
     || await promptText(prompter, "Profile label", {
@@ -765,15 +898,10 @@ export async function resolveProfileSelection({
     }))
     || DEFAULT_BASE_URL;
   const apiKey = args.apiKey
-    || current.apiKey
-    || await promptText(prompter, "API key", {
-      required: true,
-      secret: true,
-      trim: false,
-    });
+    || current.apiKey;
 
   if (!apiKey) {
-    throw new Error(`API key is required for profile "${profileId}".`);
+    throw new Error(buildManualProfileGuidance(profileId, baseUrl));
   }
 
   return {
@@ -881,6 +1009,8 @@ export async function runSetup(argv = process.argv.slice(2), options = {}) {
       args,
       credentials,
       prompter,
+      fetchImpl: options.fetch,
+      provisionTimeoutMs: options.provisionTimeoutMs,
     });
     const nextCredentials = upsertCredentialsProfile(credentials, {
       profileId: selection.profileId,
