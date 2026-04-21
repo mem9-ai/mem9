@@ -51,8 +51,27 @@ test("applyCodexHooksPatch enables codex hooks without removing existing feature
 
   assert.match(patched, /\[features\]/);
   assert.match(patched, /foo = true/);
-  assert.match(patched, /codex_hooks = true/);
+  assert.match(patched, /foo = true\ncodex_hooks = true/);
   assert.match(patched, /\[model\]/);
+});
+
+test("applyCodexHooksPatch inserts codex_hooks directly under features when missing", () => {
+  const patched = applyCodexHooksPatch([
+    "[features]",
+    "multi_agent = true",
+    "",
+    "# [mcp_servers]",
+    "# enabled = true",
+    "",
+    "[model_providers.example]",
+    "name = \"Example\"",
+    "",
+  ].join("\n"));
+
+  assert.match(
+    patched,
+    /\[features\]\ncodex_hooks = true\nmulti_agent = true\n\n# \[mcp_servers\]/,
+  );
 });
 
 test("removeManagedHooks removes only mem9 hooks from mixed groups", () => {

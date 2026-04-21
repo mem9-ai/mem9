@@ -590,6 +590,7 @@ export function applyCodexHooksPatch(sourceText = "") {
   const text = String(sourceText ?? "");
   const eol = text.includes("\r\n") ? "\r\n" : "\n";
   const lines = text ? text.split(/\r?\n/) : [];
+  const sectionHeaderPattern = /^\s*\[[^\]]+\]\s*$/;
 
   if (lines.at(-1) === "") {
     lines.pop();
@@ -602,7 +603,7 @@ export function applyCodexHooksPatch(sourceText = "") {
     if (/^\s*\[features\]\s*$/.test(lines[index])) {
       sectionStart = index;
       for (let probe = index + 1; probe < lines.length; probe += 1) {
-        if (/^\s*\[[^\]]+\]\s*$/.test(lines[probe])) {
+        if (sectionHeaderPattern.test(lines[probe])) {
           sectionEnd = probe;
           break;
         }
@@ -620,22 +621,31 @@ export function applyCodexHooksPatch(sourceText = "") {
   }
 
   const before = lines.slice(0, sectionStart + 1);
-  const inside = lines
-    .slice(sectionStart + 1, sectionEnd)
-    .filter((line) => !/^\s*codex_hooks\s*=/.test(line));
-  const trailingBlanks = [];
+  const inside = lines.slice(sectionStart + 1, sectionEnd);
+  const after = lines.slice(sectionEnd);
+  let seenCodexHooks = false;
+  const normalizedInside = [];
 
-  while (inside.at(-1) === "") {
-    trailingBlanks.unshift(inside.pop());
+  for (const line of inside) {
+    if (/^\s*codex_hooks\s*=/.test(line)) {
+      if (seenCodexHooks) {
+        continue;
+      }
+      seenCodexHooks = true;
+      normalizedInside.push("codex_hooks = true");
+      continue;
+    }
+
+    normalizedInside.push(line);
   }
 
-  const after = lines.slice(sectionEnd);
+  if (!seenCodexHooks) {
+    normalizedInside.unshift("codex_hooks = true");
+  }
 
   const rebuilt = [
     ...before,
-    ...inside,
-    "codex_hooks = true",
-    ...trailingBlanks,
+    ...normalizedInside,
     ...after,
   ];
 
