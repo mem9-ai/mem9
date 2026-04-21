@@ -27,9 +27,19 @@ function buildPluginHooksAndTools(
 
 const mem9Plugin: Plugin = async (input) => {
   const cfg = await resolveEffectiveConfig(input);
+  const debugLogger = createDebugLogger({
+    enabled: cfg.debug === true,
+    logDir: cfg.paths?.logDir,
+  });
   const identity = await resolvePluginIdentity(cfg);
 
   if (!identity) {
+    await debugLogger("plugin.pending_setup", {
+      profileId: cfg.profileId,
+      debug: cfg.debug === true,
+      defaultTimeoutMs: cfg.defaultTimeoutMs,
+      searchTimeoutMs: cfg.searchTimeoutMs,
+    });
     return buildPendingSetupHooks(input, cfg);
   }
 
@@ -42,9 +52,12 @@ const mem9Plugin: Plugin = async (input) => {
     defaultTimeoutMs: cfg.defaultTimeoutMs,
     searchTimeoutMs: cfg.searchTimeoutMs,
   });
-  const debugLogger = createDebugLogger({
-    enabled: cfg.debug === true,
-    logDir: cfg.paths?.logDir,
+  await debugLogger("plugin.ready", {
+    identitySource: identity.source,
+    profileId: cfg.profileId,
+    debug: cfg.debug === true,
+    defaultTimeoutMs: cfg.defaultTimeoutMs,
+    searchTimeoutMs: cfg.searchTimeoutMs,
   });
 
   return buildPluginHooksAndTools(backend, {

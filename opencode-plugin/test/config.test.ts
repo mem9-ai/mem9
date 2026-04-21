@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import type { PluginInput } from "@opencode-ai/plugin";
@@ -114,6 +114,25 @@ async function withPatchedAbortSignalTimeout(
 async function writeJSON(filePath: string, value: unknown): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, JSON.stringify(value, null, 2) + "\n", "utf8");
+}
+
+interface DebugRecord {
+  event: string;
+  payload: Record<string, unknown>;
+}
+
+async function readDebugRecords(logDir: string): Promise<DebugRecord[]> {
+  const entries = (await readdir(logDir)).filter((name) => name.endsWith(".jsonl")).sort();
+  const latestFile = entries.at(-1);
+  if (!latestFile) {
+    return [];
+  }
+
+  const text = await readFile(path.join(logDir, latestFile), "utf8");
+  return text
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as DebugRecord);
 }
 
 test("resolveMem9Home prefers MEM9_HOME and otherwise falls back to home .mem9", () => {
@@ -393,14 +412,77 @@ test("mem9 plugin returns the pending setup skeleton when no identity is availab
   }
 });
 
+test("mem9 plugin writes a startup debug record when setup is still pending", async () => {
+  const fixtureRoot = path.join(
+    process.cwd(),
+    "dist-test",
+    `pending-setup-debug-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+  const configHome = path.join(fixtureRoot, "config-home");
+  const dataHome = path.join(fixtureRoot, "data-home");
+  const configDir = path.join(configHome, "opencode");
+  const dataDir = path.join(dataHome, "opencode");
+  const mem9Home = path.join(fixtureRoot, "mem9-home");
+  const projectDir = path.join(fixtureRoot, "worktree");
+  const resolvedPaths = resolveMem9Paths({
+    configDir,
+    dataDir,
+    projectDir,
+    mem9Home,
+  });
+
+  try {
+    await writeJSON(resolvedPaths.projectConfigFile, {
+      schemaVersion: 1,
+      profileId: "default",
+      debug: true,
+    });
+
+    await withEnv(
+      {
+        MEM9_API_KEY: undefined,
+        MEM9_API_URL: undefined,
+        MEM9_TENANT_ID: undefined,
+        MEM9_HOME: mem9Home,
+        XDG_CONFIG_HOME: configHome,
+        XDG_DATA_HOME: dataHome,
+      },
+      async () => {
+        const input: PluginInput = {
+          ...createPluginInput(),
+          directory: projectDir,
+          worktree: projectDir,
+        };
+
+        const warnings = await captureWarnings(async () => {
+          const hooks = await mem9PluginModule.server(input);
+          assert.deepEqual(hooks, {});
+        });
+
+        assert.equal(
+          warnings.some((message) => message.includes("Setup pending")),
+          true,
+        );
+
+        const records = await readDebugRecords(resolvedPaths.logDir);
+        assert.equal(records.some((record) => record.event === "plugin.pending_setup"), true);
+      },
+    );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 test("mem9 plugin becomes usable from profile config and credentials files", async () => {
   const fixtureRoot = path.join(
     process.cwd(),
     "dist-test",
     `profile-startup-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
-  const configDir = path.join(fixtureRoot, "config");
-  const dataDir = path.join(fixtureRoot, "state");
+  const configHome = path.join(fixtureRoot, "config-home");
+  const dataHome = path.join(fixtureRoot, "data-home");
+  const configDir = path.join(configHome, "opencode");
+  const dataDir = path.join(dataHome, "opencode");
   const mem9Home = path.join(fixtureRoot, "mem9-home");
   const projectDir = path.join(fixtureRoot, "worktree");
   const resolvedPaths = resolveMem9Paths({
@@ -432,8 +514,8 @@ test("mem9 plugin becomes usable from profile config and credentials files", asy
         MEM9_API_KEY: undefined,
         MEM9_API_URL: undefined,
         MEM9_HOME: mem9Home,
-        XDG_CONFIG_HOME: configDir,
-        XDG_DATA_HOME: dataDir,
+        XDG_CONFIG_HOME: configHome,
+        XDG_DATA_HOME: dataHome,
         MEM9_TENANT_ID: undefined,
       },
       async () => {
@@ -459,6 +541,11 @@ test("mem9 plugin becomes usable from profile config and credentials files", asy
           warnings.some((message) => message.includes("Setup pending")),
           false,
         );
+
+        const records = await readDebugRecords(resolvedPaths.logDir);
+        const readyRecord = records.find((record) => record.event === "plugin.ready");
+        assert.ok(readyRecord);
+        assert.equal(readyRecord.payload.identitySource, "profile");
       },
     );
   } finally {

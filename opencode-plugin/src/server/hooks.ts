@@ -225,6 +225,26 @@ export function buildHooks(
 
       const prompt = extractLatestUserPrompt(output.parts);
       state.latestPrompt = prompt;
+
+      if (!options.debugLogger) {
+        return;
+      }
+
+      if (!prompt) {
+        await options.debugLogger("recall.capture.skip", {
+          sessionID: input.sessionID,
+          agentID: state.agentID,
+          reason: "no_user_text",
+        });
+        return;
+      }
+
+      await options.debugLogger("recall.capture", {
+        sessionID: input.sessionID,
+        agentID: state.agentID,
+        prompt,
+        promptLength: prompt.length,
+      });
     },
     event: async (input) => {
       if (input.event.type !== "session.idle") {
@@ -242,6 +262,9 @@ export function buildHooks(
     },
     "experimental.chat.system.transform": async (input, output) => {
       if (!input.sessionID) {
+        await options.debugLogger?.("recall.skip", {
+          reason: "missing_session_id",
+        });
         return;
       }
 
@@ -249,21 +272,46 @@ export function buildHooks(
 
       const state = sessionStateByID.get(input.sessionID);
       if (!state || !state.latestPrompt) {
+        await options.debugLogger?.("recall.skip", {
+          sessionID: input.sessionID,
+          reason: "no_captured_prompt",
+        });
         return;
       }
 
       const query = buildRecallQuery(state.latestPrompt);
       if (query.length < MIN_RECALL_QUERY_LEN) {
+        await options.debugLogger?.("recall.skip", {
+          sessionID: input.sessionID,
+          reason: "query_too_short",
+          queryText: query,
+          queryLength: query.length,
+        });
         return;
       }
 
       try {
+        await options.debugLogger?.("recall.request", {
+          sessionID: input.sessionID,
+          queryText: query,
+          queryLength: query.length,
+          limit: MAX_RECALL_RESULTS,
+        });
         const result = await backend.search({ q: query, limit: MAX_RECALL_RESULTS });
         const block = formatRecallBlock(result.memories);
+        await options.debugLogger?.("recall.result", {
+          sessionID: input.sessionID,
+          memoryCount: result.memories.length,
+          injected: Boolean(block),
+        });
         if (block) {
           output.system.push(block);
         }
-      } catch {
+      } catch (error) {
+        await options.debugLogger?.("recall.error", {
+          sessionID: input.sessionID,
+          error: error instanceof Error ? error.message : String(error),
+        });
         // Recall failures must not block chat.
       }
     },

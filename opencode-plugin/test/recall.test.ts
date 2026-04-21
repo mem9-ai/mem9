@@ -230,6 +230,7 @@ test("formatRecallBlock preserves order and bounds content, tags, and age", () =
 
 test("buildHooks captures the latest non-synthetic text parts and injects relevant memories", async () => {
   const queries: SearchInput[] = [];
+  const debugEvents: Array<{ event: string; payload: Record<string, unknown> }> = [];
   const hooks = buildHooks(
     createBackend(async (input) => {
       queries.push(input);
@@ -244,6 +245,11 @@ test("buildHooks captures the latest non-synthetic text parts and injects releva
         offset: input.offset ?? 0,
       };
     }),
+    {
+      debugLogger: async (event, payload = {}) => {
+        debugEvents.push({ event, payload });
+      },
+    },
   );
 
   const onChatMessage = hooks["chat.message"];
@@ -278,6 +284,16 @@ test("buildHooks captures the latest non-synthetic text parts and injects releva
       "</relevant-memories>",
     ].join("\n"),
   ]);
+  assert.deepEqual(
+    debugEvents.map((entry) => entry.event),
+    ["recall.capture", "recall.capture", "recall.request", "recall.result"],
+  );
+  assert.equal(
+    debugEvents[2]?.payload.queryLength,
+    "Please fix the failing TypeScript recall hook.".length,
+  );
+  assert.equal(debugEvents[3]?.payload.memoryCount, 1);
+  assert.equal(debugEvents[3]?.payload.injected, true);
 });
 
 test("buildHooks preserves the latest recall prompt across compaction", async () => {
@@ -405,6 +421,7 @@ test("buildHooks bounds CJK-heavy prompts by encoded size before search", async 
 
 test("buildHooks skips recall when the cleaned query is too short", async () => {
   let searchCalls = 0;
+  const debugEvents: Array<{ event: string; payload: Record<string, unknown> }> = [];
   const hooks = buildHooks(
     createBackend(async () => {
       searchCalls += 1;
@@ -415,6 +432,11 @@ test("buildHooks skips recall when the cleaned query is too short", async () => 
         offset: 0,
       };
     }),
+    {
+      debugLogger: async (event, payload = {}) => {
+        debugEvents.push({ event, payload });
+      },
+    },
   );
 
   const onChatMessage = hooks["chat.message"];
@@ -434,6 +456,11 @@ test("buildHooks skips recall when the cleaned query is too short", async () => 
 
   assert.equal(searchCalls, 0);
   assert.deepEqual(output.system, ["Existing system"]);
+  assert.deepEqual(
+    debugEvents.map((entry) => entry.event),
+    ["recall.capture", "recall.skip"],
+  );
+  assert.equal(debugEvents[1]?.payload.reason, "query_too_short");
 });
 
 test("buildHooks keeps prompt caches isolated per hook instance", async () => {
@@ -473,10 +500,16 @@ test("buildHooks keeps prompt caches isolated per hook instance", async () => {
 });
 
 test("buildHooks degrades gracefully when recall search fails", async () => {
+  const debugEvents: Array<{ event: string; payload: Record<string, unknown> }> = [];
   const hooks = buildHooks(
     createBackend(async () => {
       throw new Error("search backend unavailable");
     }),
+    {
+      debugLogger: async (event, payload = {}) => {
+        debugEvents.push({ event, payload });
+      },
+    },
   );
 
   const onChatMessage = hooks["chat.message"];
@@ -493,4 +526,9 @@ test("buildHooks degrades gracefully when recall search fails", async () => {
   await onSystemTransform(createSystemTransformInput("session-3"), output);
 
   assert.deepEqual(output.system, ["Existing system"]);
+  assert.deepEqual(
+    debugEvents.map((entry) => entry.event),
+    ["recall.capture", "recall.request", "recall.error"],
+  );
+  assert.equal(debugEvents[2]?.payload.error, "search backend unavailable");
 });
