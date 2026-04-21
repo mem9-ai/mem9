@@ -1,0 +1,97 @@
+name: Server and plugin checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/server-plugin-checks.yml"
+      - "Makefile"
+      - "server/**"
+      - "openclaw-plugin/**"
+      - "opencode-plugin/**"
+      - "claude-plugin/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/server-plugin-checks.yml"
+      - "Makefile"
+      - "server/**"
+      - "openclaw-plugin/**"
+      - "opencode-plugin/**"
+      - "claude-plugin/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  server-test:
+    name: Server vet and tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Vet
+        run: make vet
+
+      - name: Test with coverage
+        run: make test-cover
+
+      - name: Print coverage summary
+        if: always()
+        run: |
+          if [ -f server/coverage/coverage.txt ]; then
+            tail -n 1 server/coverage/coverage.txt
+          fi
+
+      - name: Upload server coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-coverage
+          path: |
+            server/coverage/coverage.out
+            server/coverage/coverage.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+  plugin-typecheck:
+    name: Plugin typecheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Typecheck OpenClaw plugin
+        working-directory: openclaw-plugin
+        run: |
+          npm install --no-audit --no-fund
+          npm run typecheck
+
+      - name: Typecheck OpenCode plugin
+        working-directory: opencode-plugin
+        run: |
+          npm install --no-audit --no-fund
+          npm run typecheck
+
+      - name: Check Claude plugin hooks
+        working-directory: claude-plugin
+        run: |
+          bash -n hooks/common.sh hooks/pre-compact.sh hooks/session-end.sh hooks/session-start.sh hooks/stop.sh hooks/user-prompt-submit.sh
+          node --check hooks/lib/hook-json.mjs
+          node --check hooks/lib/memories-formatter.mjs
+          node --check hooks/lib/transcript-parser.mjs
