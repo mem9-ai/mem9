@@ -44,6 +44,12 @@ interface ScopeDraft {
   searchTimeoutMs: number;
 }
 
+export interface SetupActionOption {
+  title: string;
+  value: SetupAction;
+  description: string;
+}
+
 function getProjectDir(api: TuiPluginApi): string {
   const worktree = api.state.path.worktree.trim();
   if (worktree.length > 0) {
@@ -126,6 +132,40 @@ function showScopeSavedSuccess(
 
 function isReusableProfileID(state: SetupState, profileId: string): boolean {
   return state.usableProfiles.some((profile) => profile.profileId === profileId);
+}
+
+export function buildSetupActionOptions(
+  state: Pick<SetupState, "usableProfiles">,
+): SetupActionOption[] {
+  const options: SetupActionOption[] = [
+    {
+      title: "Get a mem9 API key automatically",
+      value: "auto-api-key",
+      description: "Request a new mem9 API key and save it as a profile.",
+    },
+    {
+      title: "Add an existing mem9 API key",
+      value: "manual-api-key",
+      description: "Paste a mem9 API key and save it as a profile.",
+    },
+  ];
+
+  if (state.usableProfiles.length > 0) {
+    options.push(
+      {
+        title: "Use an existing mem9 profile in a scope",
+        value: "use-profile-in-scope",
+        description: "Choose a saved profile and apply it to user or project settings.",
+      },
+      {
+        title: "Configure user/project settings",
+        value: "configure-scope",
+        description: "Change scope profile, debug logging, and request timeouts.",
+      },
+    );
+  }
+
+  return options;
 }
 
 function parsePositiveInteger(value: string, field: string): number | null {
@@ -220,37 +260,7 @@ function showActionDialog(
   paths: Mem9ResolvedPaths,
   state: SetupState,
 ): void {
-  const options: Array<{
-    title: string;
-    value: SetupAction;
-    description: string;
-  }> = [
-    {
-      title: "Get a mem9 API key automatically",
-      value: "auto-api-key",
-      description: "Request a new mem9 API key and save it as a profile.",
-    },
-    {
-      title: "Add an existing mem9 API key",
-      value: "manual-api-key",
-      description: "Paste a mem9 API key and save it as a profile.",
-    },
-  ];
-
-  if (state.usableProfiles.length > 0) {
-    options.push(
-      {
-        title: "Use an existing mem9 profile in a scope",
-        value: "use-profile-in-scope",
-        description: "Choose a saved profile and apply it to user or project settings.",
-      },
-      {
-        title: "Configure user/project settings",
-        value: "configure-scope",
-        description: "Change scope profile, debug logging, and request timeouts.",
-      },
-    );
-  }
+  const options = buildSetupActionOptions(state);
 
   api.ui.dialog.replace(() =>
     api.ui.DialogSelect<SetupAction>({
