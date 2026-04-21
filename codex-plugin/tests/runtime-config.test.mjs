@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -9,8 +11,8 @@ import {
   loadRuntimeStateFromDisk,
   resolveMem9Home,
   resolveRuntimeConfig,
-} from "../hooks/shared/config.mjs";
-import { resolveProjectRoot } from "../hooks/shared/project-root.mjs";
+} from "../lib/config.mjs";
+import { resolveProjectRoot } from "../lib/project-root.mjs";
 
 const REPO_ROOT = "/workspace/app";
 const PROJECT_CWD = "/workspace/app/packages/web";

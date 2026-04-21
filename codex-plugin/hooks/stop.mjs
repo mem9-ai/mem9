@@ -3,9 +3,9 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { loadRuntimeStateFromDisk } from "./shared/config.mjs";
+import { loadRuntimeStateFromDisk } from "../lib/config.mjs";
 import { appendDebugError, appendDebugLog } from "./shared/debug.mjs";
-import { mem9FetchJson, mem9Headers } from "./shared/http.mjs";
+import { mem9FetchJson, mem9Headers } from "../lib/http.mjs";
 import { parseTranscriptText, selectStopWindow } from "./shared/transcript.mjs";
 
 export const STOP_MAX_MESSAGES = 20;

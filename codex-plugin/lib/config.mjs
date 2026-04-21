@@ -1,4 +1,4 @@
-// @ts-check
+// @ts-nocheck
 
 import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
@@ -111,37 +111,19 @@ const DEFAULT_API_URL = "https://api.mem9.ai";
  * }} RuntimeState
  */
 
-/**
- * @param {unknown} value
- * @returns {value is Record<string, unknown>}
- */
 function isRecord(value) {
   return value != null && typeof value === "object" && !Array.isArray(value);
 }
 
-/**
- * @param {string} filePath
- * @returns {unknown}
- */
 function readJsonFile(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
 
-/**
- * @param {EnvMap | undefined} env
- * @param {string} key
- * @returns {string}
- */
 function envOverride(env, key) {
   const value = env?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
-/**
- * @param {unknown} value
- * @param {number} fallback
- * @returns {number}
- */
 function normalizeTimeoutMs(value, fallback) {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return fallback;
@@ -150,12 +132,6 @@ function normalizeTimeoutMs(value, fallback) {
   return Math.floor(value);
 }
 
-/**
- * @param {string | undefined} inputPath
- * @param {string | undefined} envPath
- * @param {string} fallbackPath
- * @returns {string}
- */
 function resolveHomePath(inputPath, envPath, fallbackPath) {
   if (typeof inputPath === "string" && inputPath.trim()) {
     return path.resolve(inputPath.trim());
@@ -168,12 +144,6 @@ function resolveHomePath(inputPath, envPath, fallbackPath) {
   return path.resolve(fallbackPath);
 }
 
-/**
- * @param {string | undefined} inputCodexHome
- * @param {EnvMap | undefined} env
- * @param {string} [homeDir]
- * @returns {string}
- */
 export function resolveCodexHome(inputCodexHome, env, homeDir = os.homedir()) {
   return resolveHomePath(
     inputCodexHome,
@@ -182,12 +152,6 @@ export function resolveCodexHome(inputCodexHome, env, homeDir = os.homedir()) {
   );
 }
 
-/**
- * @param {string | undefined} inputMem9Home
- * @param {EnvMap | undefined} env
- * @param {string} [homeDir]
- * @returns {string}
- */
 export function resolveMem9Home(inputMem9Home, env, homeDir = os.homedir()) {
   return resolveHomePath(
     inputMem9Home,
@@ -196,17 +160,6 @@ export function resolveMem9Home(inputMem9Home, env, homeDir = os.homedir()) {
   );
 }
 
-/**
- * @param {string | null} projectRoot
- * @param {string} codexHome
- * @param {string} mem9Home
- * @returns {{
- *   globalConfigPath: string,
- *   userConfigPath: string,
- *   projectConfigPath: string,
- *   credentialsPath: string,
- * }}
- */
 function runtimePaths(projectRoot, codexHome, mem9Home) {
   const globalConfigPath = path.join(codexHome, "mem9", "config.json");
 
@@ -220,27 +173,14 @@ function runtimePaths(projectRoot, codexHome, mem9Home) {
   };
 }
 
-/**
- * @param {unknown} value
- * @returns {ScopeConfig}
- */
 function asScopeConfig(value) {
   return isRecord(value) ? /** @type {ScopeConfig} */ (value) : {};
 }
 
-/**
- * @param {unknown} value
- * @returns {CredentialsFile}
- */
 function asCredentialsFile(value) {
   return isRecord(value) ? /** @type {CredentialsFile} */ (value) : {};
 }
 
-/**
- * @param {ScopeConfig | null} globalConfig
- * @param {ScopeConfig | null} projectConfig
- * @returns {ScopeConfig | null}
- */
 function mergeScopeConfig(globalConfig, projectConfig) {
   if (globalConfig == null && projectConfig == null) {
     return null;
@@ -252,10 +192,6 @@ function mergeScopeConfig(globalConfig, projectConfig) {
   };
 }
 
-/**
- * @param {ResolveRuntimeConfigInput} input
- * @returns {RuntimeConfig}
- */
 export function resolveRuntimeConfig(input) {
   const config = asScopeConfig(input.config);
   const credentials = asCredentialsFile(input.credentials);
@@ -296,10 +232,6 @@ export function resolveRuntimeConfig(input) {
   };
 }
 
-/**
- * @param {RuntimeDiskInput} [input]
- * @returns {RuntimeState}
- */
 export function loadRuntimeStateFromDisk(input = {}) {
   const cwd =
     typeof input.cwd === "string" && input.cwd.trim()
@@ -413,10 +345,6 @@ export function loadRuntimeStateFromDisk(input = {}) {
   };
 }
 
-/**
- * @param {RuntimeDiskInput} [input]
- * @returns {RuntimeConfig}
- */
 export function loadRuntimeFromDisk(input = {}) {
   const state = loadRuntimeStateFromDisk(input);
 

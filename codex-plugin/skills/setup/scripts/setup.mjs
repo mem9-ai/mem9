@@ -20,8 +20,8 @@ import {
   DEFAULT_SEARCH_TIMEOUT_MS,
   resolveCodexHome,
   resolveMem9Home,
-} from "../../../hooks/shared/config.mjs";
-import { resolveProjectRoot } from "../../../hooks/shared/project-root.mjs";
+} from "../../../lib/config.mjs";
+import { resolveProjectRoot } from "../../../lib/project-root.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(SCRIPT_DIR, "../../..");

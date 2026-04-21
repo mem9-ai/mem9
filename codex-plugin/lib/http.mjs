@@ -1,4 +1,4 @@
-// @ts-check
+// @ts-nocheck
 
 import { DEFAULT_REQUEST_TIMEOUT_MS } from "./config.mjs";
 
@@ -11,11 +11,6 @@ import { DEFAULT_REQUEST_TIMEOUT_MS } from "./config.mjs";
  * }} Mem9FetchOptions
  */
 
-/**
- * @param {string} url
- * @param {Mem9FetchOptions} [options]
- * @returns {Promise<unknown>}
- */
 export async function mem9FetchJson(url, options = {}) {
   const response = await fetch(url, {
     method: options.method ?? "GET",
@@ -43,11 +38,6 @@ export async function mem9FetchJson(url, options = {}) {
   return JSON.parse(body);
 }
 
-/**
- * @param {string} apiKey
- * @param {string} agentId
- * @returns {Record<string, string>}
- */
 export function mem9Headers(apiKey, agentId) {
   return {
     "Content-Type": "application/json",

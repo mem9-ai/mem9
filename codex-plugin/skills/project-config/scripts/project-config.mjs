@@ -17,8 +17,8 @@ import {
   DEFAULT_SEARCH_TIMEOUT_MS,
   resolveCodexHome,
   resolveMem9Home,
-} from "../../../hooks/shared/config.mjs";
-import { resolveProjectRoot } from "../../../hooks/shared/project-root.mjs";
+} from "../../../lib/config.mjs";
+import { resolveProjectRoot } from "../../../lib/project-root.mjs";
 
 function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";

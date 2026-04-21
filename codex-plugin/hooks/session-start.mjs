@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { loadRuntimeStateFromDisk } from "./shared/config.mjs";
+import { loadRuntimeStateFromDisk } from "../lib/config.mjs";
 import { appendDebugError, appendDebugLog } from "./shared/debug.mjs";
 import { hookAdditionalContext } from "./shared/format.mjs";
 
@@ -121,7 +121,12 @@ export async function main() {
   });
 
   return runSessionStart({
-    state,
+    state: {
+      configSource: /** @type {"global" | "project"} */ (state.configSource),
+      projectConfigMatched: state.projectConfigMatched,
+      profileId: state.runtime.profileId,
+      issueCode: state.issueCode,
+    },
   });
 }
 
