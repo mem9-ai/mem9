@@ -61,6 +61,8 @@ interface SetupProfileOptionState {
   currentProfileId?: string;
 }
 
+let hasShownVisibleApiKeyWarning = false;
+
 function scheduleDialogTransition(next: () => void): void {
   // Delay prompt-to-prompt transitions so the next dialog does not reuse
   // the same Enter keypress that confirmed the current prompt.
@@ -454,11 +456,14 @@ function showProfileApiKeyDialog(
   state: SetupState,
   draft: ProfileDraft,
 ): void {
-  api.ui.toast({
-    variant: "warning",
-    message: "The current OpenCode prompt is plain text. Your API key stays visible while typing.",
-    duration: 4000,
-  });
+  if (!hasShownVisibleApiKeyWarning) {
+    hasShownVisibleApiKeyWarning = true;
+    api.ui.toast({
+      variant: "warning",
+      message: "API key input is visible while typing.",
+      duration: 4000,
+    });
+  }
 
   api.ui.dialog.replace(() =>
     api.ui.DialogPrompt({
