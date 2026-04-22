@@ -8,9 +8,12 @@
 
 <p align="center">
   For OpenClaw and ClawHub installs, start here: <a href="https://mem9.ai/openclaw-memory">mem9.ai/openclaw-memory</a>
+  <br/>
+  Hermes Agent, Claude Code, OpenCode, and Codex guides are below.
 </p>
 
 <p align="center">
+  <a href="https://tidbcloud.com"><img src="https://img.shields.io/badge/Powered%20by-TiDB%20Cloud%20Starter-E60C0C?style=flat&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIj48cGF0aCBkPSJNMTEuOTk4NCAxLjk5OTAyTDMuNzE4NzUgNy40OTkwMkwzLjcxODc1IDE3TDExLjk5NjQgMjIuNUwyMC4yODE0IDE3VjcuNDk5MDJMMTEuOTk4NCAxLjk5OTAyWiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=" alt="Powered by TiDB Cloud Starter"></a>
   <a href="https://goreportcard.com/report/github.com/mem9-ai/mem9/server"><img src="https://goreportcard.com/badge/github.com/mem9-ai/mem9/server" alt="Go Report Card"></a>
   <a href="https://github.com/mem9-ai/mem9/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
   <a href="https://github.com/mem9-ai/mem9"><img src="https://img.shields.io/github/stars/mem9-ai/mem9?style=social" alt="Stars"></a>
@@ -20,58 +23,28 @@
 
 ## Quick Start
 
-### Hosted API
+1. Choose your mem9 endpoint.
 
-The hosted mem9 API is the default path. Use `https://api.mem9.ai`, then follow the runtime guide that matches your agent:
+   - Hosted API: `https://api.mem9.ai`
+   - Self-hosted: apply the matching control-plane schema, run `mnemo-server`, and follow the provisioning notes in [Self-Hosting](#self-hosting)
 
-| Runtime | Install / docs |
-|---|---|
-| OpenClaw | [OpenClaw / ClawHub install guide](https://mem9.ai/openclaw-memory) |
-| Hermes Agent | [mem9-hermes-plugin README](https://github.com/mem9-ai/mem9-hermes-plugin#readme) |
-| Claude Code | [`claude-plugin/README.md`](claude-plugin/README.md) |
-| OpenCode | [`opencode-plugin/README.md`](opencode-plugin/README.md) |
-| Codex | [`codex-plugin/README.md`](codex-plugin/README.md) |
-| Any HTTP client / custom runtime | Provision a space, then call `/v1alpha2/mem9s/memories` with `X-API-Key: <space-id>` and [API Reference](#api-reference) |
+2. Pick your runtime guide.
 
-All supported runtimes can point at the same mem9 space on the hosted API, so OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, and custom clients can share one memory pool.
+   - [OpenClaw / ClawHub](https://mem9.ai/openclaw-memory)
+   - [Hermes Agent](https://github.com/mem9-ai/mem9-hermes-plugin#readme)
+   - [Claude Code](claude-plugin/README.md)
+   - [OpenCode](opencode-plugin/README.md)
+   - [Codex](codex-plugin/README.md)
+   - [Any HTTP client / custom runtime](#api-reference)
 
-### Self-Hosted
+3. Set your credentials.
 
-Before first start, apply the control-plane schema that matches your backend: `server/schema.sql`, `server/schema_pg.sql`, or `server/schema_db9.sql`.
+   ```bash
+   export MEM9_API_URL="https://api.mem9.ai"
+   export MEM9_API_KEY="<space-id>"
+   ```
 
-Start the local server, then choose the tenant path that matches your backend:
-
-```bash
-cd server
-MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
-```
-
-Set `MNEMO_DB_BACKEND=postgres` or `MNEMO_DB_BACKEND=db9` before startup when you are not using the default TiDB backend.
-
-TiDB supports three tenant flows.
-
-TiDB Zero auto-provisioning is the default on `tidb`, so this `curl` path works out of the box on fresh installs:
-
-```bash
-curl -s -X POST http://localhost:8080/v1alpha1/mem9s
-# -> {"id":"tenant-id"}
-
-export MEM9_API_URL="http://localhost:8080"
-export MEM9_API_KEY="tenant-id"
-```
-
-TiDB Cloud Pool auto-provisioning uses `MNEMO_TIDB_ZERO_ENABLED=false` together with `MNEMO_TIDBCLOUD_API_KEY` and `MNEMO_TIDBCLOUD_API_SECRET`, then uses the same `curl` flow.
-
-Manual bootstrap uses pre-existing tenants mode. Seed an active tenant row in the control-plane DB, make sure its tenant database and schema are already live, then use that tenant ID as the API key for `v1alpha2` requests:
-
-```bash
-export MEM9_API_URL="http://localhost:8080"
-export MEM9_API_KEY="<existing-tenant-id>"
-```
-
-`postgres` and `db9` use that same advanced manual-bootstrap path.
-
-Follow the runtime-specific docs above for the last-mile agent setup. Build steps, Docker, backend selection, and the full environment reference live in [Self-Hosting](#self-hosting).
+   For self-hosted deployments, use your server URL and either a provisioned space ID or an existing tenant ID.
 
 ## Why mem9
 
