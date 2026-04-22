@@ -12,9 +12,12 @@ test("plugin manifest exposes mem9 setup skill and basic metadata", () => {
   );
 
   assert.equal(manifest.name, "mem9");
+  assert.equal(manifest.version, "0.2.0");
   assert.equal(manifest.skills, "./skills/");
   assert.equal(typeof manifest.description, "string");
   assert.match(manifest.description, /\$mem9:setup/);
+  assert.equal(packageManifest.version, "0.2.0");
+  assert.equal(packageManifest.version, manifest.version);
   assert.equal(packageManifest.engines.node, ">=22");
   assert.equal(packageManifest.files.includes("lib/"), true);
 });

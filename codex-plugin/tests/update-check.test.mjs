@@ -124,3 +124,42 @@ test("resolveUpgradeNotice surfaces a remote update once per released version", 
   assert.equal(second.message, "");
   assert.equal(second.state.lastNotifiedVersion, "0.2.0");
 });
+
+test("resolveUpgradeNotice keeps a newer remote release pending when a local upgrade notice wins", async () => {
+  const result = await resolveUpgradeNotice({
+    pluginVersion: "0.2.0",
+    runtime: {
+      updateCheck: DEFAULT_UPDATE_CHECK,
+    },
+    stateFile: {
+      schemaVersion: 1,
+      lastSeenVersion: "0.1.0",
+    },
+    manifest: {
+      latestVersion: "0.3.0",
+      upgradeCommand: "codex plugin marketplace upgrade mem9-ai",
+    },
+    now: "2026-04-22T00:00:00.000Z",
+  });
+
+  assert.match(result.message, /mem9 upgraded to v0\.2\.0/);
+  assert.equal(result.state.lastSeenVersion, "0.2.0");
+  assert.equal(result.state.lastCheckedAt, "2026-04-22T00:00:00.000Z");
+  assert.equal(result.state.lastNotifiedVersion, undefined);
+
+  const followUp = await resolveUpgradeNotice({
+    pluginVersion: "0.2.0",
+    runtime: {
+      updateCheck: DEFAULT_UPDATE_CHECK,
+    },
+    stateFile: result.state,
+    manifest: {
+      latestVersion: "0.3.0",
+      upgradeCommand: "codex plugin marketplace upgrade mem9-ai",
+    },
+    now: "2026-04-23T01:00:00.000Z",
+  });
+
+  assert.match(followUp.message, /mem9 v0\.3\.0 is available/);
+  assert.equal(followUp.state.lastNotifiedVersion, "0.3.0");
+});

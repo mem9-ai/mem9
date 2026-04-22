@@ -249,6 +249,38 @@ function sanitizeDisplayPath(filePath, { cwd, codexHome, mem9Home }) {
   return path.basename(resolved);
 }
 
+function sanitizeRelativePath(filePath, basePath, options = {}) {
+  const resolvedBase = normalizeString(basePath) ? path.resolve(basePath) : "";
+  if (!resolvedBase) {
+    return "";
+  }
+
+  const resolved = path.resolve(filePath);
+  if (!options.allowParentTraversal) {
+    if (resolved === resolvedBase) {
+      return ".";
+    }
+
+    if (resolved.startsWith(`${resolvedBase}${path.sep}`)) {
+      return path.relative(resolvedBase, resolved).replaceAll(path.sep, "/");
+    }
+
+    return "";
+  }
+
+  const relative = path.relative(resolvedBase, resolved).replaceAll(path.sep, "/");
+  if (!relative) {
+    return ".";
+  }
+
+  return path.isAbsolute(relative) ? "" : relative;
+}
+
+function sanitizeProjectPath(filePath, context) {
+  const projectRelative = sanitizeRelativePath(filePath, context.projectRoot);
+  return projectRelative || sanitizeDisplayPath(filePath, context);
+}
+
 function sanitizeBackupsForOutput(backups, context) {
   return backups.map((backup) => ({
     sourcePath: sanitizeDisplayPath(backup.sourcePath, context),
@@ -468,7 +500,9 @@ function summarizeScopeFile(filePath, context, fsOps = {}, options = {}) {
   return {
     state: inspected.state,
     exists: inspected.exists,
-    path: sanitizeDisplayPath(filePath, context),
+    path: options.projectRelative
+      ? sanitizeProjectPath(filePath, context)
+      : sanitizeDisplayPath(filePath, context),
     summary,
   };
 }
@@ -1139,6 +1173,7 @@ function resolveCommandContext(args = {}, options = {}) {
       cwd,
       codexHome,
       mem9Home,
+      projectRoot,
     },
   };
 }
@@ -1155,12 +1190,16 @@ function sanitizeScopeResultForOutput(result, context) {
     profileId: result.profileId ?? "",
     action: result.action,
     configSummary: result.configSummary ?? null,
-    configPath: sanitizeDisplayPath(result.configPath, context),
+    configPath: result.scope === "project"
+      ? sanitizeProjectPath(result.configPath, context)
+      : sanitizeDisplayPath(result.configPath, context),
     installPath: sanitizeDisplayPath(result.installPath, context),
     hooksPath: sanitizeDisplayPath(result.hooksPath, context),
     hooksDir: sanitizeDisplayPath(result.hooksDir, context),
     configTomlPath: sanitizeDisplayPath(result.configTomlPath, context),
-    legacyProjectHooksPath: sanitizeOptionalPath(result.legacyProjectHooksPath, context),
+    legacyProjectHooksPath: normalizeString(result.legacyProjectHooksPath)
+      ? sanitizeProjectPath(result.legacyProjectHooksPath, context)
+      : "",
     backups: sanitizeBackupsForOutput(result.backups, context),
   };
 }
@@ -1369,7 +1408,10 @@ export function inspectSetup(argv = process.argv.slice(2), options = {}) {
       path.join(context.projectRoot, ".codex", "mem9", "config.json"),
       context.pathContext,
       context.fsOps,
-      { includeUpdateCheck: false },
+      {
+        includeUpdateCheck: false,
+        projectRelative: true,
+      },
     )
     : {
       state: "not_in_repo",

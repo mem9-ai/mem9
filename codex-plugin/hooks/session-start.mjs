@@ -166,12 +166,15 @@ export async function main() {
       issueCode: state.issueCode,
     },
   });
-  const upgradeNotice = await resolveUpgradeNotice({
-    codexHome: state.codexHome,
-    statePath: state.statePath,
-    pluginVersion: state.pluginVersion,
-    runtime: state.runtime,
-  });
+  const shouldResolveUpgradeNotice = state.issueCode === "ready";
+  const upgradeNotice = shouldResolveUpgradeNotice
+    ? await resolveUpgradeNotice({
+      codexHome: state.codexHome,
+      statePath: state.statePath,
+      pluginVersion: state.pluginVersion,
+      runtime: state.runtime,
+    })
+    : { message: "", state: null };
   appendDebugLog({
     hook: "SessionStart",
     stage: "upgrade_notice_resolved",
@@ -181,8 +184,11 @@ export async function main() {
     fields: {
       pluginVersion: state.pluginVersion,
       hasUpgradeNotice: upgradeNotice.message ? "true" : "false",
-      updateCheckEnabled: state.runtime.updateCheck.enabled ? "true" : "false",
-      updateCheckIntervalHours: String(state.runtime.updateCheck.intervalHours),
+      upgradeCheckSkipped: shouldResolveUpgradeNotice ? "false" : "true",
+      updateCheckEnabled: shouldResolveUpgradeNotice && state.runtime.updateCheck.enabled ? "true" : "false",
+      updateCheckIntervalHours: shouldResolveUpgradeNotice
+        ? String(state.runtime.updateCheck.intervalHours)
+        : "",
     },
   });
 

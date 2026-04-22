@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { mem9FetchJson, mem9Headers } from "../../../lib/http.mjs";
+import { buildMem9Url, mem9FetchJson, mem9Headers } from "../../../lib/http.mjs";
 import { loadReadyRuntimeState } from "../../../lib/skill-runtime.mjs";
 
 const DEFAULT_LIMIT = 10;
@@ -56,7 +56,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
 }
 
 export function buildRecallUrl(baseUrl, query, agentId, limit = DEFAULT_LIMIT) {
-  const url = new URL("/v1alpha2/mem9s/memories", `${baseUrl.replace(/\/+$/, "")}/`);
+  const url = buildMem9Url(baseUrl, "v1alpha2/mem9s/memories");
   url.searchParams.set("q", query);
   url.searchParams.set("agent_id", agentId);
   url.searchParams.set("limit", String(limit));

@@ -63,9 +63,10 @@ test("runStore posts a synchronous memory create and prints a safe summary", asy
     });
     assert.equal(result.profileId, "default");
     assert.equal(result.configSource, "global");
-    assert.equal(result.content, "The user prefers concise release notes.");
+    assert.equal(result.contentChars, "The user prefers concise release notes.".length);
     assert.deepEqual(JSON.parse(stdoutText), result);
     assert.equal(stdoutText.includes("key-save"), false);
+    assert.equal(stdoutText.includes("The user prefers concise release notes."), false);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -91,7 +92,35 @@ test("runStore accepts the content from stdin text", async () => {
     },
   );
 
-  assert.equal(result.content, "Remember that release notes should stay short.");
+  assert.equal(result.contentChars, "Remember that release notes should stay short.".length);
+});
+
+test("runStore keeps a configured base path", async () => {
+  /** @type {{url?: string}} */
+  const request = {};
+
+  await runStore(
+    ["--content", "Remember this."],
+    {
+      state: {
+        configSource: "global",
+        runtime: {
+          profileId: "default",
+          baseUrl: "https://api.mem9.ai/base",
+          apiKey: "key-save",
+          agentId: "codex",
+          defaultTimeoutMs: 8000,
+        },
+      },
+      fetchJson: async (/** @type {string} */ url) => {
+        request.url = url;
+        return { status: "ok" };
+      },
+      stdout: { write() {} },
+    },
+  );
+
+  assert.equal(request.url, "https://api.mem9.ai/base/v1alpha2/mem9s/memories");
 });
 
 test("runtime helper explains plugin disabled in Codex settings for manual store", () => {

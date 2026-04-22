@@ -168,6 +168,20 @@ test("buildRecallUrl encodes q, agent id, and limit", () => {
   assert.equal(url.searchParams.get("limit"), "10");
 });
 
+test("buildRecallUrl keeps a configured base path", () => {
+  const url = new URL(
+    buildRecallUrl("https://api.mem9.ai/base", "hello world", "codex"),
+  );
+
+  assert.equal(
+    url.origin + url.pathname,
+    "https://api.mem9.ai/base/v1alpha2/mem9s/memories",
+  );
+  assert.equal(url.searchParams.get("q"), "hello world");
+  assert.equal(url.searchParams.get("agent_id"), "codex");
+  assert.equal(url.searchParams.get("limit"), "10");
+});
+
 test("extractMemories accepts both server response shapes", () => {
   assert.deepEqual(extractMemories({ memories: [{ content: "a" }] }), [{ content: "a" }]);
   assert.deepEqual(extractMemories({ data: [{ content: "b" }] }), [{ content: "b" }]);

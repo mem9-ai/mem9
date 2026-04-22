@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { mem9FetchJson, mem9Headers } from "../../../lib/http.mjs";
+import { buildMem9Url, mem9FetchJson, mem9Headers } from "../../../lib/http.mjs";
 import { loadReadyRuntimeState } from "../../../lib/skill-runtime.mjs";
 
 function normalizeString(value) {
@@ -71,7 +71,7 @@ export async function runStore(argv = process.argv.slice(2), options = {}) {
   });
   const fetchJson = options.fetchJson ?? mem9FetchJson;
   await fetchJson(
-    new URL("/v1alpha2/mem9s/memories", `${state.runtime.baseUrl.replace(/\/+$/, "")}/`).toString(),
+    buildMem9Url(state.runtime.baseUrl, "v1alpha2/mem9s/memories").toString(),
     {
       method: "POST",
       headers: mem9Headers(state.runtime.apiKey, state.runtime.agentId),
@@ -87,7 +87,7 @@ export async function runStore(argv = process.argv.slice(2), options = {}) {
     status: "ok",
     profileId: state.runtime.profileId,
     configSource: state.configSource,
-    content,
+    contentChars: content.length,
   };
   const stdout = options.stdout ?? process.stdout;
   stdout?.write?.(`${JSON.stringify(summary)}\n`);

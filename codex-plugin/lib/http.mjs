@@ -45,3 +45,10 @@ export function mem9Headers(apiKey, agentId) {
     "X-Mnemo-Agent-Id": agentId,
   };
 }
+
+export function buildMem9Url(baseUrl, relativePath) {
+  return new URL(
+    String(relativePath ?? "").replace(/^\/+/, ""),
+    `${String(baseUrl ?? "").replace(/\/+$/, "")}/`,
+  );
+}

@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 
 import { loadRuntimeStateFromDisk } from "../lib/config.mjs";
 import { appendDebugError, appendDebugLog } from "./shared/debug.mjs";
-import { mem9FetchJson, mem9Headers } from "../lib/http.mjs";
+import { buildMem9Url, mem9FetchJson, mem9Headers } from "../lib/http.mjs";
 import { parseTranscriptText, selectStopWindow } from "./shared/transcript.mjs";
 
 export const STOP_MAX_MESSAGES = 20;
@@ -35,7 +35,7 @@ let debugContext = {};
  * @returns {string}
  */
 export function buildIngestUrl(baseUrl) {
-  return `${baseUrl.replace(/\/+$/, "")}/v1alpha2/mem9s/memories`;
+  return buildMem9Url(baseUrl, "v1alpha2/mem9s/memories").toString();
 }
 
 /**

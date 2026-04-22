@@ -1,6 +1,6 @@
 {
   "name": "@mem9/codex-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Persistent memory for Codex with setup-driven hooks, prompt recall, and stop-time save.",
   "type": "module",
   "license": "Apache-2.0",

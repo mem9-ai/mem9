@@ -18,6 +18,14 @@ test("buildRecallUrl encodes q, agent_id, and limit", () => {
   );
 });
 
+test("buildRecallUrl keeps a configured base path", () => {
+  const url = buildRecallUrl("https://api.mem9.ai/base", "remember rust tips", "codex", 7);
+  assert.equal(
+    url,
+    "https://api.mem9.ai/base/v1alpha2/mem9s/memories?q=remember+rust+tips&agent_id=codex&limit=7",
+  );
+});
+
 test("runRecall calls mem9 with the current runtime and prints a safe summary", async () => {
   const tempRoot = createTempRoot("recall");
 

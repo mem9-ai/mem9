@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { loadRuntimeStateFromDisk } from "../lib/config.mjs";
 import { appendDebugError, appendDebugLog } from "./shared/debug.mjs";
 import { formatMemoriesBlock, hookAdditionalContext, stripInjectedMemories } from "./shared/format.mjs";
-import { mem9FetchJson, mem9Headers } from "../lib/http.mjs";
+import { buildMem9Url, mem9FetchJson, mem9Headers } from "../lib/http.mjs";
 
 const RECALL_LIMIT = 10;
 
@@ -36,7 +36,7 @@ let debugContext = {};
  * @returns {string}
  */
 export function buildRecallUrl(baseUrl, prompt, agentId, limit = RECALL_LIMIT) {
-  const url = new URL("/v1alpha2/mem9s/memories", `${baseUrl.replace(/\/+$/, "")}/`);
+  const url = buildMem9Url(baseUrl, "v1alpha2/mem9s/memories");
   url.searchParams.set("q", prompt);
   url.searchParams.set("agent_id", agentId);
   url.searchParams.set("limit", String(limit));

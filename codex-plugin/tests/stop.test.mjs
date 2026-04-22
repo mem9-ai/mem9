@@ -9,7 +9,7 @@ import {
 import path from "node:path";
 import test from "node:test";
 
-import { runStop } from "../hooks/stop.mjs";
+import { buildIngestUrl, runStop } from "../hooks/stop.mjs";
 import {
   parseTranscriptText,
   selectStopWindow,
@@ -19,6 +19,13 @@ import { createTempRoot } from "./test-temp.mjs";
 const STOP_ENTRY = path.resolve("./hooks/stop.mjs");
 /** @type {Array<"plugin_disabled" | "plugin_missing" | "legacy_paused">} */
 const NON_READY_ISSUE_CODES = ["plugin_disabled", "plugin_missing", "legacy_paused"];
+
+test("buildIngestUrl keeps a configured base path", () => {
+  assert.equal(
+    buildIngestUrl("https://api.mem9.ai/base"),
+    "https://api.mem9.ai/base/v1alpha2/mem9s/memories",
+  );
+});
 
 /**
  * @param {string} filePath

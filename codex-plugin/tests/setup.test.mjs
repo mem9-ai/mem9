@@ -475,6 +475,56 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
   }
 });
 
+test("inspect keeps project config paths readable from a nested repo cwd", () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const projectRoot = path.join(tempRoot, "repo");
+    const nestedCwd = path.join(projectRoot, "packages", "web");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
+    mkdirSync(nestedCwd, { recursive: true });
+    mkdirSync(path.join(codexHome, "mem9"), { recursive: true });
+    mkdirSync(mem9Home, { recursive: true });
+
+    writeJson(path.join(codexHome, "mem9", "config.json"), {
+      schemaVersion: 1,
+      profileId: "default",
+    });
+    writeJson(path.join(projectRoot, ".codex", "mem9", "config.json"), {
+      schemaVersion: 1,
+      profileId: "work",
+    });
+    writeJson(path.join(mem9Home, ".credentials.json"), {
+      schemaVersion: 1,
+      profiles: {
+        default: {
+          label: "Default",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-default",
+        },
+        work: {
+          label: "Work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-work",
+        },
+      },
+    });
+
+    const summary = inspectSetup(["inspect"], {
+      cwd: nestedCwd,
+      codexHome,
+      mem9Home,
+      hookShimSourceDir: "./bootstrap-hooks",
+    });
+
+    assert.equal(summary.projectConfig.path, ".codex/mem9/config.json");
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("main prints inspect json without mutating files", async () => {
   const tempRoot = createTempRoot();
 

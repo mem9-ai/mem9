@@ -615,7 +615,14 @@ export async function resolveUpgradeNotice(input) {
   }
 
   const remote = await maybeResolveRemoteUpdateNotice(remoteInput);
-  const persistedState = normalizeUpdateState(remote.state);
+  const persistedState = normalizeUpdateState(
+    localNotice && remote.message
+      ? {
+        ...remote.state,
+        lastNotifiedVersion: previousState.lastNotifiedVersion,
+      }
+      : remote.state,
+  );
 
   if (!Object.prototype.hasOwnProperty.call(input, "stateFile") && statePath) {
     writeUpdateStateFile(statePath, persistedState, {

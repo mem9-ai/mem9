@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -6,6 +9,52 @@ import {
   buildSessionStartMessage,
   runSessionStart,
 } from "../hooks/session-start.mjs";
+import { createTempRoot } from "./test-temp.mjs";
+
+const SESSION_START_ENTRY = path.resolve("./hooks/session-start.mjs");
+
+/**
+ * @param {string} filePath
+ * @param {unknown} value
+ */
+function writeJson(filePath, value) {
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+/**
+ * @param {string} scriptPath
+ * @param {{cwd: string, env: Record<string, string | undefined>, input: string}} input
+ */
+async function runNodeHook(scriptPath, input) {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [scriptPath], {
+      cwd: input.cwd,
+      env: input.env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      resolve({
+        code,
+        signal,
+        stdout,
+        stderr,
+      });
+    });
+
+    child.stdin.end(input.input);
+  });
+}
 
 test("session start emits ready context for a project override", async () => {
   const output = await runSessionStart({
@@ -137,4 +186,42 @@ test("session start explains api key repair paths", () => {
   assert.match(message, /\$mem9:setup/);
   assert.match(message, /\$MEM9_HOME\/\.credentials\.json/);
   assert.match(message, /MEM9_API_KEY/);
+});
+
+test("session start skips upgrade state writes when runtime is not ready", async () => {
+  const tempRoot = createTempRoot("session-start");
+
+  try {
+    const cwd = path.join(tempRoot, "workspace");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    mkdirSync(cwd, { recursive: true });
+    writeJson(path.join(codexHome, "mem9", "install.json"), {
+      schemaVersion: 1,
+      marketplaceName: "mem9-ai",
+      pluginName: "mem9",
+      shimVersion: 1,
+    });
+    mkdirSync(
+      path.join(codexHome, "plugins", "cache", "mem9-ai", "mem9", "0.2.0"),
+      { recursive: true },
+    );
+    writeFileSync(path.join(codexHome, "config.toml"), "\n");
+    mkdirSync(mem9Home, { recursive: true });
+
+    const result = await runNodeHook(SESSION_START_ENTRY, {
+      cwd,
+      env: {
+        ...process.env,
+        CODEX_HOME: codexHome,
+        MEM9_HOME: mem9Home,
+      },
+      input: "{}",
+    });
+
+    assert.equal(result.code, 0);
+    assert.equal(existsSync(path.join(codexHome, "mem9", "state.json")), false);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
