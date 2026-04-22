@@ -39,6 +39,111 @@ function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function isHelpToken(token) {
+  const normalized = normalizeString(token);
+  return normalized === "--help" || normalized === "-h";
+}
+
+function detectCleanupHelpRequest(argv = process.argv.slice(2)) {
+  const tokens = Array.isArray(argv)
+    ? argv.map((token) => normalizeString(token)).filter(Boolean)
+    : [];
+  const helpIndex = tokens.findIndex(isHelpToken);
+
+  if (tokens.length === 0 || helpIndex === 0) {
+    return {
+      command: "",
+    };
+  }
+
+  if (helpIndex === -1) {
+    return null;
+  }
+
+  return {
+    command: tokens[0] || "",
+  };
+}
+
+function buildCleanupHelpText(command = "") {
+  switch (normalizeString(command)) {
+    case "inspect":
+      return [
+        "mem9 cleanup inspect",
+        "",
+        "Usage:",
+        "  node ./scripts/cleanup.mjs inspect [--cwd <path>]",
+        "",
+        "Print the current cleanup targets as JSON.",
+        "",
+        "Flags:",
+        "  --cwd <path>    Resolve repo-local paths from this directory.",
+        "",
+        "Example:",
+        "  node ./scripts/cleanup.mjs inspect --cwd .",
+        "",
+      ].join("\n");
+    case "run":
+      return [
+        "mem9 cleanup run",
+        "",
+        "Usage:",
+        "  node ./scripts/cleanup.mjs run [--include-project] [--cwd <path>]",
+        "",
+        "Remove mem9-managed Codex files.",
+        "",
+        "Flags:",
+        "  --include-project   Also remove the current project's .codex/mem9/config.json override.",
+        "  --cwd <path>        Resolve repo-local paths from this directory.",
+        "",
+        "Examples:",
+        "  node ./scripts/cleanup.mjs run",
+        "  node ./scripts/cleanup.mjs run --include-project --cwd .",
+        "",
+      ].join("\n");
+    default:
+      return [
+        "mem9 cleanup",
+        "",
+        "Remove mem9-managed Codex files before reinstalling, resetting, or uninstalling mem9.",
+        "",
+        "Usage:",
+        "  node ./scripts/cleanup.mjs inspect [--cwd <path>]",
+        "  node ./scripts/cleanup.mjs run [--include-project] [--cwd <path>]",
+        "",
+        "Commands:",
+        "  inspect     Print the current cleanup targets as JSON.",
+        "  run         Remove mem9-managed global files and optionally the current project override.",
+        "",
+        "Notes:",
+        "  - Successful non-help commands print sanitized JSON summaries.",
+        "  - Global cleanup keeps $MEM9_HOME/.credentials.json, $CODEX_HOME/config.toml, and debug logs.",
+        "",
+        "Examples:",
+        "  node ./scripts/cleanup.mjs inspect --cwd .",
+        "  node ./scripts/cleanup.mjs run",
+        "  node ./scripts/cleanup.mjs run --include-project --cwd .",
+        "",
+        "Run a subcommand with --help for more detail.",
+        "",
+      ].join("\n");
+  }
+}
+
+function maybeWriteCleanupHelp(argv, stdout) {
+  const request = detectCleanupHelpRequest(argv);
+  if (!request) {
+    return null;
+  }
+
+  stdout.write(buildCleanupHelpText(request.command));
+  return {
+    status: "ok",
+    command: "help",
+    topic: request.command || "root",
+  };
+}
+
 function sanitizeRelativePath(filePath, basePath, options = {}) {
   const resolvedBase = normalizeString(basePath) ? path.resolve(basePath) : "";
   if (!resolvedBase) {
@@ -509,11 +614,16 @@ function ensureWritableCleanupTargets(context, includeProject) {
 }
 
 function runCleanup(argv = process.argv.slice(2), options = {}) {
+  const stdout = options.stdout ?? process.stdout;
+  const helpResult = Array.isArray(argv) ? maybeWriteCleanupHelp(argv, stdout) : null;
+  if (helpResult) {
+    return helpResult;
+  }
+
   const args = Array.isArray(argv) ? parseArgs(argv) : argv;
   const context = resolveContext(args, options);
   const exists = context.fsOps.existsSync ?? existsSync;
   const removePath = context.fsOps.rmSync ?? rmSync;
-  const stdout = options.stdout ?? process.stdout;
 
   if (args.command === "inspect") {
     return inspectCleanup(args, {
@@ -591,16 +701,24 @@ function runCleanup(argv = process.argv.slice(2), options = {}) {
 
 export {
   inspectCleanup,
+  main,
   parseArgs,
   runCleanup,
 };
+
+function main(argv = process.argv.slice(2), options = {}) {
+  return runCleanup(argv, {
+    ...options,
+    stdout: options.stdout ?? process.stdout,
+  });
+}
 
 if (
   process.argv[1]
   && import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   Promise.resolve()
-    .then(() => runCleanup(process.argv.slice(2)))
+    .then(() => main(process.argv.slice(2)))
     .catch((error) => {
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
       process.exitCode = 1;

@@ -13,6 +13,7 @@ import test from "node:test";
 
 import {
   inspectCleanup,
+  main,
   runCleanup,
 } from "../skills/cleanup/scripts/cleanup.mjs";
 import { createTempRoot } from "./test-temp.mjs";
@@ -129,6 +130,48 @@ function createStdoutCapture() {
     },
   };
 }
+
+test("main prints top-level cleanup help without mutating files", () => {
+  const fixture = createCleanupFixture();
+
+  try {
+    const stdout = createStdoutCapture();
+    const result = main(
+      ["--help"],
+      {
+        cwd: fixture.projectRoot,
+        codexHome: fixture.codexHome,
+        mem9Home: fixture.mem9Home,
+        stdout,
+      },
+    );
+
+    assert.equal(result.command, "help");
+    assert.equal(result.topic, "root");
+    assert.match(stdout.chunks.join(""), /^mem9 cleanup\n/m);
+    assert.match(stdout.chunks.join(""), /run \[--include-project\] \[--cwd <path>\]/);
+    assert.equal(existsSync(path.join(fixture.codexHome, "mem9", "config.json")), true);
+    assert.equal(existsSync(path.join(fixture.projectRoot, ".codex", "mem9", "config.json")), true);
+  } finally {
+    rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("runCleanup prints command-specific cleanup help", () => {
+  const stdout = createStdoutCapture();
+  const result = runCleanup(
+    ["run", "--help"],
+    {
+      stdout,
+    },
+  );
+
+  assert.equal(result.command, "help");
+  assert.equal(result.topic, "run");
+  assert.match(stdout.chunks.join(""), /^mem9 cleanup run\n/m);
+  assert.match(stdout.chunks.join(""), /--include-project/);
+  assert.match(stdout.chunks.join(""), /node \.\/scripts\/cleanup\.mjs run --include-project --cwd \./);
+});
 
 test("inspect reports sanitized removable targets", () => {
   const fixture = createCleanupFixture();

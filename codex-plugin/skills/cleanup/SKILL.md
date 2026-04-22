@@ -10,6 +10,9 @@ allowed-tools:
 
 Resolve `./scripts/cleanup.mjs` relative to this skill directory.
 
+If you need the current CLI surface, flags, or examples, run `node ./scripts/cleanup.mjs --help` first.
+Use command-specific help when needed, for example `node ./scripts/cleanup.mjs run --help`.
+
 Run this workflow:
 
 1. Inspect the current cleanup targets first:
