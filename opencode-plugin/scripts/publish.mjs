@@ -26,15 +26,15 @@ function fail(message) {
 
 function printHelp() {
   console.log(`Usage:
-  pnpm run publish:release -- <current|major|minor|patch|premajor|preminor|prepatch|prerelease> [--channel <alpha|beta|rc>] [--dry-run]
+  pnpm run publish:release <current|major|minor|patch|premajor|preminor|prepatch|prerelease> [--channel <alpha|beta|rc>] [--dry-run]
 
 Examples:
-  pnpm run publish:release -- current
-  pnpm run publish:release -- patch
-  pnpm run publish:release -- patch --channel rc
-  pnpm run publish:release -- prepatch --channel beta
-  pnpm run publish:release -- prerelease --channel rc
-  pnpm run publish:release -- prepatch --channel rc --dry-run
+  pnpm run publish:release current
+  pnpm run publish:release patch
+  pnpm run publish:release patch --channel rc
+  pnpm run publish:release prepatch --channel beta
+  pnpm run publish:release prerelease --channel rc
+  pnpm run publish:release prepatch --channel rc --dry-run
 
 Behavior:
   - \`current\` publishes the exact version already in package.json and derives the npm tag from that version.
@@ -52,6 +52,10 @@ function parseArgs(argv) {
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (arg === "--") {
+      continue;
+    }
+
     if (arg === "--help" || arg === "-h") {
       return { help: true };
     }

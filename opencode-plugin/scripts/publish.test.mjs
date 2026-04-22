@@ -19,6 +19,15 @@ test("parseArgs accepts current release mode", () => {
   });
 });
 
+test("parseArgs accepts the pnpm argument separator", () => {
+  assert.deepEqual(parseArgs(["--", "current", "--dry-run"]), {
+    help: false,
+    increment: "current",
+    channel: undefined,
+    dryRun: true,
+  });
+});
+
 test("parseArgs accepts stable releases", () => {
   assert.deepEqual(parseArgs(["patch"]), {
     help: false,
