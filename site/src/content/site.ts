@@ -13,6 +13,7 @@ export interface SiteNavCopy {
   platforms: string;
   benchmark: string;
   openclaw: string;
+  hermes: string;
   yourMemory: string;
   billing: string;
   security: string;
@@ -102,6 +103,9 @@ export interface SitePlatformItem {
   desc: string;
   detail: string;
   badge?: string;
+  href?: string;
+  ctaLabel?: string;
+  external?: boolean;
 }
 
 export interface SitePlatformsCopy {
@@ -2357,9 +2361,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
 export const siteCopy: Record<SiteLocale, SiteDictionary> = {
   en: {
     meta: {
-      title: 'mem9 - Unlimited Memory Infrastructure for OpenClaw',
+      title: 'mem9 - Unlimited Memory Infrastructure for OpenClaw and Hermes',
       description:
-        'mem9.ai is unlimited memory infrastructure for OpenClaw. Persistent recall, hybrid search, and multi-agent context for Claude Code, OpenCode, OpenClaw, and custom tools.',
+        'mem9.ai is unlimited memory infrastructure for OpenClaw, Hermes, and multi-agent tools. Persistent recall, hybrid search, and shared context that survives sessions and machines.',
     },
     nav: {
       home: 'Home',
@@ -2367,6 +2371,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       platforms: 'Platforms',
       benchmark: 'Benchmark',
       openclaw: 'OpenClaw',
+      hermes: 'Hermes',
       yourMemory: 'Your Memory',
       billing: 'Billing',
       security: 'Security',
@@ -2460,13 +2465,23 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: 'Platforms',
       title: 'One memory layer. Every agent.',
       description:
-        "Agents shouldn't lose context when they switch tools. mem9 gives every agent in your stack a shared, persistent memory that stays durable, searchable, and always in sync.",
+        "Agents shouldn't lose context when they switch tools. mem9 gives every agent in your stack a shared, persistent memory that stays durable, searchable, and always in sync across OpenClaw, Hermes, and the mem9 dashboard.",
       items: [
         {
           name: 'OpenClaw',
           desc: 'Unlimited memory',
           detail:
             'Give your OpenClaw agents memory that never expires. Recall past conversations, reuse learned knowledge, and stay consistent session after session.',
+          href: '/openclaw-memory',
+          ctaLabel: 'Open OpenClaw guide',
+        },
+        {
+          name: 'Hermes',
+          desc: 'Official Agent support',
+          detail:
+            'Install mem9 for Hermes with one instruction, let Hermes run the official install script, complete provider linking when needed, and verify activation with hermes memory status.',
+          href: '/hermes-memory',
+          ctaLabel: 'Open Hermes guide',
         },
         {
           name: 'Your Memory',
@@ -2474,10 +2489,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'Visualize, manage, analyze, import, and export your memories from the official mem9.ai interface.',
           badge: 'Beta',
+          href: 'https://mem9.ai/your-memory',
+          ctaLabel: 'Try Your Memory',
+          external: true,
         },
       ],
       ctaLabel: 'Try Your Memory',
-      note: 'Also works with any client that can read or write through the mem9 API layer.',
+      note: 'Official setup guides are now available for OpenClaw and Hermes. Any client that can read or write through the mem9 API layer can also connect directly.',
     },
     benchmark: {
       kicker: 'Benchmark',
@@ -2661,6 +2679,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       platforms: '平台',
       benchmark: '基准测试',
       openclaw: 'OpenClaw',
+      hermes: 'Hermes',
       yourMemory: '你的记忆',
       billing: '定价',
       security: '安全',
@@ -2751,13 +2770,23 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: '平台',
       title: '一层记忆，覆盖每个 Agent。',
       description:
-        'Agent 在切换工具时不该丢掉上下文。mem9 为你的整套 Agent 栈提供共享且持久的记忆层，始终可搜索、可同步、可长期保存。',
+        'Agent 在切换工具时不该丢掉上下文。mem9 为你的整套 Agent 栈提供共享且持久的记忆层，覆盖 OpenClaw、Hermes 和 mem9 dashboard，始终可搜索、可同步、可长期保存。',
       items: [
         {
           name: 'OpenClaw',
           desc: '无限记忆',
           detail:
             '为你的 OpenClaw Agent 提供永不过期的记忆。回忆过去的对话，复用已经学到的知识，并在一轮又一轮会话中保持一致。',
+          href: '/openclaw-memory',
+          ctaLabel: '打开 OpenClaw 指南',
+        },
+        {
+          name: 'Hermes',
+          desc: '官方 Agent 支持',
+          detail:
+            '给 Hermes 一条说明，它就会自己读取 skill、运行官方安装脚本、在需要时完成 provider link，并用 hermes memory status 验证 mem9 已启用。',
+          href: '/hermes-memory',
+          ctaLabel: '打开 Hermes 指南',
         },
         {
           name: '你的记忆',
@@ -2765,10 +2794,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             '通过 mem9.ai 官方界面可视化管理、分析，并导入导出你的 memories。',
           badge: 'Beta',
+          href: 'https://mem9.ai/your-memory',
+          ctaLabel: '试试你的记忆',
+          external: true,
         },
       ],
       ctaLabel: '试试你的记忆',
-      note: '任何能够通过 mem9 API 层读写的客户端也都可以接入。',
+      note: '现在已经为 OpenClaw 和 Hermes 提供官方接入指引；任何能够通过 mem9 API 层读写的客户端也都可以直接接入。',
     },
     benchmark: {
       kicker: '基准测试',
@@ -2946,6 +2978,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       platforms: '平台',
       benchmark: '基準測試',
       openclaw: 'OpenClaw',
+      hermes: 'Hermes',
       yourMemory: '你的記憶',
       billing: '定價',
       security: '安全',
@@ -3036,13 +3069,23 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: '平台',
       title: '一層記憶，覆蓋每個 Agent。',
       description:
-        'Agent 在切換工具時不該丟掉上下文。mem9 為你的整套 Agent 堆疊提供共享且持久的記憶層，始終可搜尋、可同步、可長期保存。',
+        'Agent 在切換工具時不該丟掉上下文。mem9 為你的整套 Agent 堆疊提供共享且持久的記憶層，覆蓋 OpenClaw、Hermes 和 mem9 dashboard，始終可搜尋、可同步、可長期保存。',
       items: [
         {
           name: 'OpenClaw',
           desc: '無限記憶',
           detail:
             '為你的 OpenClaw Agent 提供永不過期的記憶。回想過去的對話，重用已學到的知識，並在一輪又一輪會話中保持一致。',
+          href: '/openclaw-memory',
+          ctaLabel: '打開 OpenClaw 指南',
+        },
+        {
+          name: 'Hermes',
+          desc: '官方 Agent 支援',
+          detail:
+            '給 Hermes 一段說明，它就會自己讀取 skill、執行官方安裝腳本、在需要時完成 provider link，並用 hermes memory status 驗證 mem9 已啟用。',
+          href: '/hermes-memory',
+          ctaLabel: '打開 Hermes 指南',
         },
         {
           name: '你的記憶',
@@ -3050,10 +3093,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             '透過 mem9.ai 官方介面，以視覺化方式管理、分析，並匯入匯出你的 memories。',
           badge: 'Beta',
+          href: 'https://mem9.ai/your-memory',
+          ctaLabel: '試試你的記憶',
+          external: true,
         },
       ],
       ctaLabel: '試試你的記憶',
-      note: '任何能夠透過 mem9 API 層讀寫的客戶端也都可以接入。',
+      note: '現在已為 OpenClaw 和 Hermes 提供官方接入指南；任何能夠透過 mem9 API 層讀寫的客戶端也都可以直接接入。',
     },
     benchmark: {
       kicker: '基準測試',
@@ -3231,6 +3277,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       platforms: '対応環境',
       benchmark: 'ベンチマーク',
       openclaw: 'OpenClaw',
+      hermes: 'Hermes',
       yourMemory: 'あなたの記憶',
       billing: '料金',
       security: 'セキュリティ',
@@ -3324,13 +3371,23 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: '対応環境',
       title: 'ひとつのメモリレイヤーを、すべてのエージェントへ。',
       description:
-        'ツールを切り替えるたびにエージェントが文脈を失うべきではありません。mem9 はスタック内のすべてのエージェントに、永続的で検索可能、常に同期された共有メモリを提供します。',
+        'ツールを切り替えるたびにエージェントが文脈を失うべきではありません。mem9 は OpenClaw、Hermes、mem9 ダッシュボードをまたいで、スタック内のすべてのエージェントに永続的で検索可能、常に同期された共有メモリを提供します。',
       items: [
         {
           name: 'OpenClaw',
           desc: 'Unlimited memory',
           detail:
             'OpenClaw エージェントに期限のない記憶を与えます。過去の会話を呼び戻し、学習済みの知識を再利用し、セッションをまたいで一貫性を保てます。',
+          href: '/openclaw-memory',
+          ctaLabel: 'OpenClaw ガイドを開く',
+        },
+        {
+          name: 'Hermes',
+          desc: '公式 Agent サポート',
+          detail:
+            'Hermes に 1 文渡すだけで、skill の読込、公式インストールスクリプトの実行、必要時の provider link、hermes memory status での確認まで進められます。',
+          href: '/hermes-memory',
+          ctaLabel: 'Hermes ガイドを開く',
         },
         {
           name: 'あなたの記憶',
@@ -3338,10 +3395,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'mem9.ai の公式 UI から、あなたの memories を可視化して管理し、分析し、インポートとエクスポートを行えます。',
           badge: 'Beta',
+          href: 'https://mem9.ai/your-memory',
+          ctaLabel: 'あなたの記憶を試す',
+          external: true,
         },
       ],
       ctaLabel: 'あなたの記憶を試す',
-      note: 'mem9 API レイヤー経由で読み書きできるクライアントなら、そのまま利用できます。',
+      note: 'OpenClaw と Hermes には公式セットアップガイドがあります。mem9 API レイヤー経由で読み書きできるクライアントなら、他のツールでもそのまま利用できます。',
     },
     benchmark: {
       kicker: 'ベンチマーク',
@@ -3521,6 +3581,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       platforms: '플랫폼',
       benchmark: '벤치마크',
       openclaw: 'OpenClaw',
+      hermes: 'Hermes',
       yourMemory: '당신의 기억',
       billing: '요금',
       security: '보안',
@@ -3611,13 +3672,23 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: '플랫폼',
       title: '하나의 메모리 레이어. 모든 에이전트.',
       description:
-        '도구를 바꿀 때마다 에이전트가 컨텍스트를 잃어서는 안 됩니다. mem9는 스택 전체의 에이전트에게 공유되고 지속적이며, 검색 가능하고 항상 동기화된 메모리를 제공합니다.',
+        '도구를 바꿀 때마다 에이전트가 컨텍스트를 잃어서는 안 됩니다. mem9는 OpenClaw, Hermes, mem9 대시보드 전반에서 스택 전체의 에이전트에게 공유되고 지속적이며, 검색 가능하고 항상 동기화된 메모리를 제공합니다.',
       items: [
         {
           name: 'OpenClaw',
           desc: 'Unlimited memory',
           detail:
             'OpenClaw 에이전트에 만료되지 않는 메모리를 제공합니다. 이전 대화를 다시 불러오고, 배운 지식을 재사용하며, 세션이 바뀌어도 일관성을 유지합니다.',
+          href: '/openclaw-memory',
+          ctaLabel: 'OpenClaw 가이드 열기',
+        },
+        {
+          name: 'Hermes',
+          desc: '공식 Agent 지원',
+          detail:
+            'Hermes 에게 한 문장만 주면 skill 을 읽고 공식 설치 스크립트를 실행하고, 필요 시 provider link 를 마친 뒤 hermes memory status 로 mem9 활성화를 확인합니다.',
+          href: '/hermes-memory',
+          ctaLabel: 'Hermes 가이드 열기',
         },
         {
           name: '당신의 기억',
@@ -3625,10 +3696,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'mem9.ai 공식 인터페이스에서 당신의 memories 를 시각화해 관리하고, 분석하고, 가져오고 내보낼 수 있습니다.',
           badge: 'Beta',
+          href: 'https://mem9.ai/your-memory',
+          ctaLabel: '당신의 기억 사용해보기',
+          external: true,
         },
       ],
       ctaLabel: '당신의 기억 사용해보기',
-      note: 'mem9 API 레이어를 통해 읽고 쓸 수 있는 모든 클라이언트와도 함께 동작합니다.',
+      note: '이제 OpenClaw 와 Hermes 용 공식 설정 가이드를 제공합니다. mem9 API 레이어를 통해 읽고 쓸 수 있는 다른 클라이언트도 직접 연결할 수 있습니다.',
     },
     benchmark: {
       kicker: '벤치마크',
@@ -3808,6 +3882,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       platforms: 'Platform',
       benchmark: 'Benchmark',
       openclaw: 'OpenClaw',
+      hermes: 'Hermes',
       yourMemory: 'Memori Anda',
       billing: 'Harga',
       security: 'Keamanan',
@@ -3901,13 +3976,23 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: 'Platform',
       title: 'Satu lapisan memori. Untuk setiap agent.',
       description:
-        'Agent tidak seharusnya kehilangan konteks saat berpindah tool. mem9 memberi semua agent di stack Anda memori bersama yang persisten, dapat dicari, dan selalu sinkron.',
+        'Agent tidak seharusnya kehilangan konteks saat berpindah tool. mem9 memberi semua agent di stack Anda memori bersama yang persisten, dapat dicari, dan selalu sinkron di OpenClaw, Hermes, dan dashboard mem9.',
       items: [
         {
           name: 'OpenClaw',
           desc: 'Unlimited memory',
           detail:
             'Berikan agent OpenClaw Anda memori yang tidak pernah kedaluwarsa. Panggil kembali percakapan lama, gunakan ulang pengetahuan yang sudah dipelajari, dan tetap konsisten dari sesi ke sesi.',
+          href: '/openclaw-memory',
+          ctaLabel: 'Buka panduan OpenClaw',
+        },
+        {
+          name: 'Hermes',
+          desc: 'Dukungan Agent resmi',
+          detail:
+            'Kirim satu instruksi ke Hermes lalu biarkan ia membaca skill, menjalankan script instalasi resmi, menyelesaikan provider link bila perlu, dan memverifikasi aktivasi dengan hermes memory status.',
+          href: '/hermes-memory',
+          ctaLabel: 'Buka panduan Hermes',
         },
         {
           name: 'Memori Anda',
@@ -3915,10 +4000,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'Visualisasikan, kelola, analisis, impor, dan ekspor memories Anda dari antarmuka resmi mem9.ai.',
           badge: 'Beta',
+          href: 'https://mem9.ai/your-memory',
+          ctaLabel: 'Coba Memori Anda',
+          external: true,
         },
       ],
       ctaLabel: 'Coba Memori Anda',
-      note: 'Juga bekerja dengan klien apa pun yang dapat membaca atau menulis melalui lapisan API mem9.',
+      note: 'Sekarang tersedia panduan setup resmi untuk OpenClaw dan Hermes. Klien lain yang bisa membaca atau menulis lewat lapisan API mem9 juga bisa terhubung langsung.',
     },
     benchmark: {
       kicker: 'Benchmark',
@@ -4098,6 +4186,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       platforms: 'แพลตฟอร์ม',
       benchmark: 'เบนช์มาร์ก',
       openclaw: 'OpenClaw',
+      hermes: 'Hermes',
       yourMemory: 'ความทรงจำของคุณ',
       billing: 'ราคา',
       security: 'ความปลอดภัย',
@@ -4191,13 +4280,23 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: 'แพลตฟอร์ม',
       title: 'เมมโมรีเลเยอร์เดียว สำหรับทุกเอเจนต์',
       description:
-        'เอเจนต์ไม่ควรสูญเสียบริบทเมื่อสลับเครื่องมือ mem9 ทำให้ทุกเอเจนต์ในสแตกของคุณมีหน่วยความจำร่วมกันแบบถาวร ค้นหาได้ และซิงก์กันเสมอ',
+        'เอเจนต์ไม่ควรสูญเสียบริบทเมื่อสลับเครื่องมือ mem9 ทำให้ทุกเอเจนต์ในสแตกของคุณมีหน่วยความจำร่วมกันแบบถาวร ค้นหาได้ และซิงก์กันเสมอ ครอบคลุมทั้ง OpenClaw, Hermes และแดชบอร์ดของ mem9',
       items: [
         {
           name: 'OpenClaw',
           desc: 'Unlimited memory',
           detail:
             'มอบหน่วยความจำที่ไม่มีวันหมดอายุให้กับเอเจนต์ OpenClaw ของคุณ เรียกดูบทสนทนาเก่า ใช้ความรู้ที่เคยเรียนรู้ซ้ำ และคงความสม่ำเสมอได้ในทุกเซสชัน',
+          href: '/openclaw-memory',
+          ctaLabel: 'เปิดคู่มือ OpenClaw',
+        },
+        {
+          name: 'Hermes',
+          desc: 'รองรับ Agent อย่างเป็นทางการ',
+          detail:
+            'ส่งคำสั่งเพียงประโยคเดียวให้ Hermes แล้วปล่อยให้มันอ่าน skill, รันสคริปต์ติดตั้งทางการ, ทำ provider link เมื่อจำเป็น และตรวจสอบการเปิดใช้ด้วย hermes memory status',
+          href: '/hermes-memory',
+          ctaLabel: 'เปิดคู่มือ Hermes',
         },
         {
           name: 'ความทรงจำของคุณ',
@@ -4205,10 +4304,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'ดูภาพรวม จัดการ วิเคราะห์ นำเข้า และส่งออก memories ของคุณผ่านอินเทอร์เฟซทางการของ mem9.ai',
           badge: 'Beta',
+          href: 'https://mem9.ai/your-memory',
+          ctaLabel: 'ลองใช้ความทรงจำของคุณ',
+          external: true,
         },
       ],
       ctaLabel: 'ลองใช้ความทรงจำของคุณ',
-      note: 'ยังทำงานได้กับไคลเอนต์ใดก็ตามที่อ่านหรือเขียนผ่านชั้น API ของ mem9 ได้',
+      note: 'ตอนนี้มีคู่มือ setup อย่างเป็นทางการสำหรับ OpenClaw และ Hermes แล้ว และไคลเอนต์อื่นที่อ่านหรือเขียนผ่านชั้น API ของ mem9 ได้ก็สามารถเชื่อมต่อโดยตรงได้เช่นกัน',
     },
     benchmark: {
       kicker: 'เบนช์มาร์ก',

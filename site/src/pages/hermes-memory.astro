@@ -1,0 +1,373 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Navbar from "../components/Navbar.astro";
+import Footer from "../components/Footer.astro";
+import { DEFAULT_LOCALE, siteCopy } from "../content/site";
+
+const copy = siteCopy[DEFAULT_LOCALE];
+const meta = {
+  title: "Hermes Agent Memory Plugin | mem9",
+  description:
+    "Persistent cloud memory for Hermes Agent with one-instruction setup, official install script support, provider linking, and visual memory management in mem9.",
+};
+---
+
+<Layout meta={meta} locale={DEFAULT_LOCALE}>
+  <Navbar
+    nav={copy.nav}
+    aria={copy.aria}
+    localeNames={copy.localeNames}
+    themeOptions={copy.themeOptions}
+  />
+
+  <main class="landing">
+    <section class="hero">
+      <div class="container hero-shell">
+        <div class="hero-copy">
+          <p class="eyebrow">Hermes Agent Memory Plugin</p>
+          <h1>Persistent cloud memory for Hermes Agent</h1>
+          <p class="subtitle">
+            mem9 gives Hermes durable memory across sessions and machines, shared recall across
+            workflows, official install-script onboarding, and a visual dashboard for review,
+            import, and export.
+          </p>
+          <p class="question-strip">
+            How do I give Hermes long-term memory? How do I install mem9 from one message inside
+            Hermes? How do I verify the memory provider is actually active? mem9 is the hosted
+            memory layer for that job.
+          </p>
+
+          <div class="cta-row">
+            <a class="button primary" href="/hermes/SKILL.md" target="_blank">Open SKILL.md</a>
+          </div>
+
+          <div class="link-row">
+            <a href="https://mem9.ai/your-memory">Dashboard</a>
+            <a href="/#security">Security</a>
+            <a href="https://github.com/mem9-ai/mem9-hermes-plugin" target="_blank" rel="noopener"
+              >Source</a
+            >
+          </div>
+        </div>
+
+        <aside class="surface-card install-card">
+          <p class="card-kicker">Install entry</p>
+          <h2>Send one instruction to Hermes</h2>
+          <ol>
+            <li>Open a Hermes chat on the target machine.</li>
+            <li>Paste the <code>https://mem9.ai/hermes/SKILL.md</code> instruction.</li>
+            <li>
+              Let Hermes run install, finish setup, and verify with
+              <code>hermes memory status</code>.
+            </li>
+          </ol>
+          <p class="card-note">
+            The mem9 Hermes flow uses the official install script, completes provider linking when
+            needed, and stops only after Hermes reports mem9 as active.
+          </p>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-kicker">Why mem9</p>
+          <h2 class="section-title">Three reasons Hermes users pick it over local memory files</h2>
+        </div>
+        <div class="grid three-up">
+          <article class="surface-card panel">
+            <h3>One-instruction onboarding inside Hermes</h3>
+            <p>
+              Start from a single message. Hermes can read the public skill, run the official
+              install script, and walk through the mem9 activation flow on the current machine.
+            </p>
+          </article>
+          <article class="surface-card panel">
+            <h3>Persistent memory across sessions and machines</h3>
+            <p>
+              Restart Hermes, switch devices, or reopen work later. Your memory stays in the cloud
+              instead of disappearing with local state or one machine.
+            </p>
+          </article>
+          <article class="surface-card panel">
+            <h3>Verified activation, not hand-wavy setup</h3>
+            <p>
+              The Hermes skill does not stop at install. It finishes provider linking when needed
+              and verifies the result with <code>hermes memory status</code>.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section comparison">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-kicker">Best for</p>
+          <h2 class="section-title">When mem9 is a better fit than default local memory</h2>
+        </div>
+        <div class="grid two-up">
+          <article class="surface-card panel">
+            <h3>Default or local memory</h3>
+            <ul>
+              <li>Often tied to one machine or one local Hermes checkout</li>
+              <li>Easy to lose during reinstalls, resets, or repo moves</li>
+              <li>Hard to inspect, analyze, or share across workflows</li>
+            </ul>
+          </article>
+          <article class="surface-card panel accent-panel">
+            <h3>mem9 for Hermes</h3>
+            <ul>
+              <li>Cloud-persistent memory that follows your Hermes Agent</li>
+              <li>Official install-script flow plus provider-link recovery when required</li>
+              <li>Hybrid recall and a dashboard for visual inspection and management</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-heading">
+          <p class="section-kicker">Use cases</p>
+          <h2 class="section-title">Problem-driven questions mem9 is built to answer for Hermes</h2>
+        </div>
+        <div class="grid two-up">
+          <article class="surface-card panel">
+            <h3>How do I give Hermes long-term memory?</h3>
+            <p>
+              Install mem9 and let Hermes persist useful facts, user preferences, and project
+              context in the cloud instead of rebuilding everything from scratch every session.
+            </p>
+          </article>
+          <article class="surface-card panel">
+            <h3>How do I let Hermes install mem9 by itself?</h3>
+            <p>
+              Give Hermes the public skill URL. The flow is designed so Hermes can read the
+              instructions, run the official installer, and continue until the memory provider is
+              actually active.
+            </p>
+          </article>
+          <article class="surface-card panel">
+            <h3>How do I reconnect an existing mem9 API key in Hermes?</h3>
+            <p>
+              The Hermes flow can reuse an existing <code>MEM9_API_KEY</code> when you already have
+              one, instead of forcing a fresh space every time you move to another machine.
+            </p>
+          </article>
+          <article class="surface-card panel">
+            <h3>How do I know Hermes memory is really working?</h3>
+            <p>
+              The mem9 Hermes skill treats <code>hermes memory status</code> as a verification
+              gate, not as an optional follow-up, so install is only complete after Hermes reports
+              mem9 as active.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section final-cta">
+      <div class="container surface-card cta-panel">
+        <p class="section-kicker">Get started</p>
+        <h2 class="section-title">Point Hermes at the skill, then manage memory visually</h2>
+        <p class="cta-copy">
+          Start from the public Hermes skill, let the agent complete install and verification, then
+          use the same mem9 credential in the dashboard to review, analyze, import, and export
+          memory.
+        </p>
+        <div class="cta-row">
+          <a class="button primary" href="/hermes/SKILL.md">Hermes install guide</a>
+          <a class="button secondary" href="https://mem9.ai/your-memory">Open dashboard</a>
+          <a
+            class="button ghost"
+            href="https://github.com/mem9-ai/mem9-hermes-plugin"
+            target="_blank"
+            rel="noopener"
+          >
+            View plugin source
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <Footer footer={copy.footer} />
+</Layout>
+
+<style>
+  .landing {
+    padding-bottom: 4rem;
+  }
+
+  .hero {
+    padding: 5rem 0 3rem;
+  }
+
+  .hero-shell {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: minmax(0, 1.7fr) minmax(300px, 0.95fr);
+    align-items: start;
+  }
+
+  .hero-copy {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .eyebrow,
+  .section-kicker,
+  .card-kicker {
+    margin: 0;
+    color: var(--accent);
+    font-size: 0.86rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  h1,
+  .section-title,
+  .install-card h2 {
+    margin: 0;
+    color: var(--text);
+    font-family: var(--font-display);
+    letter-spacing: -0.04em;
+    line-height: 1.02;
+  }
+
+  h1 {
+    font-size: clamp(2.7rem, 6vw, 4.8rem);
+    max-width: 13ch;
+  }
+
+  .subtitle,
+  .question-strip,
+  .cta-copy,
+  .panel p,
+  .install-card p,
+  .install-card li {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 1.04rem;
+    line-height: 1.7;
+  }
+
+  .question-strip {
+    max-width: 68ch;
+  }
+
+  .section {
+    padding: 1.75rem 0;
+  }
+
+  .section-heading {
+    display: grid;
+    gap: 0.55rem;
+    margin-bottom: 1.4rem;
+  }
+
+  .section-title {
+    max-width: 15ch;
+    font-size: clamp(2rem, 4vw, 3rem);
+  }
+
+  .cta-row,
+  .link-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+    align-items: center;
+  }
+
+  .link-row a {
+    color: var(--text-dim);
+    text-decoration: none;
+  }
+
+  .link-row a:hover {
+    color: var(--text);
+  }
+
+  .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 3rem;
+    padding: 0.8rem 1.25rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-family: var(--font-display);
+    font-weight: 700;
+    text-decoration: none;
+    transition: transform 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
+  }
+
+  .button:hover {
+    transform: translateY(-1px);
+    opacity: 0.96;
+  }
+
+  .button.primary {
+    background: linear-gradient(135deg, var(--text) 0%, color-mix(in srgb, var(--text) 74%, var(--accent)) 100%);
+    color: var(--bg-deep);
+  }
+
+  .button.secondary,
+  .button.ghost {
+    border-color: var(--border);
+    color: var(--text);
+    background: color-mix(in srgb, var(--surface-gradient-end) 86%, transparent);
+  }
+
+  .install-card,
+  .panel,
+  .cta-panel {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .install-card ol,
+  .panel ul {
+    margin: 0;
+    padding-left: 1.15rem;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+
+  .grid {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .three-up {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .two-up {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .accent-panel {
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+    background:
+      radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 16%, transparent), transparent 45%),
+      linear-gradient(180deg, var(--surface-gradient-start), var(--surface-gradient-end));
+  }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.94em;
+  }
+
+  @media (max-width: 960px) {
+    .hero-shell,
+    .three-up,
+    .two-up {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
