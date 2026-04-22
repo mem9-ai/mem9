@@ -4,11 +4,12 @@ title: opencode-plugin — OpenCode plugin for mem9
 
 ## Overview
 
-TypeScript OpenCode plugin that injects memories via hooks and exposes five memory tools backed by mem9 API.
+TypeScript OpenCode plugin package with a server entry for mem9 hooks and tools plus a TUI entry for `/mem9-setup`.
 
 ## Commands
 
 ```bash
+cd opencode-plugin && pnpm test
 cd opencode-plugin && pnpm run typecheck
 ```
 
@@ -33,6 +34,11 @@ cd opencode-plugin && pnpm run typecheck
 - Runtime prefers `MEM9_API_KEY`; `MEM9_API_URL` defaults to `https://api.mem9.ai`; legacy `MEM9_TENANT_ID` still works for compatibility.
 - Debug logs live under the OpenCode state dir at `plugins/mem9/log/`.
 - Default API URL is `https://api.mem9.ai` when no `MEM9_API_URL` is set.
+- Package exports raw TypeScript: `"."` and `"./server"` load `src/index.ts`, and `"./tui"` loads `src/tui/index.ts`.
+- Keep one-off npm caches and similar throwaway files under `opencode-plugin/.tmp/`, not the repo root or worktree root.
+- Chain `DialogPrompt` follow-up steps through `scheduleDialogTransition()` so the next prompt does not consume the same Enter keypress.
+- Use `showToast()` for plugin TUI messages so success and validation toasts keep a visible default duration.
+- Manual API key entry in the TUI still uses a plain-text OpenCode prompt, so keep the one-time visibility warning in place.
 - Tool handlers return JSON strings with `{ ok, ... }` payloads.
 - Known 404s return `null`/`false`; unexpected errors are re-thrown.
 

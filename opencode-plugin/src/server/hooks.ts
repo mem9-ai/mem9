@@ -1,11 +1,11 @@
 import type { Hooks } from "@opencode-ai/plugin";
-import type { IngestMessage, MemoryBackend } from "./backend.js";
-import type { DebugLogger } from "./debug.js";
-import { selectMessagesForIngest } from "./ingest/select.js";
-import { submitMessagesForIngest } from "./ingest/submit.js";
-import { formatRecallBlock } from "./recall/format.js";
-import { buildRecallQuery } from "./recall/query.js";
-import type { SessionTranscriptLoader } from "./session-transcript.js";
+import type { IngestMessage, MemoryBackend } from "./backend.ts";
+import type { DebugLogger } from "./debug.ts";
+import { selectMessagesForIngest } from "./ingest/select.ts";
+import { submitMessagesForIngest } from "./ingest/submit.ts";
+import { formatRecallBlock } from "./recall/format.ts";
+import { buildRecallQuery } from "./recall/query.ts";
+import type { SessionTranscriptLoader } from "./session-transcript.ts";
 
 const MAX_RECALL_RESULTS = 10;
 const MIN_RECALL_QUERY_LEN = 5;

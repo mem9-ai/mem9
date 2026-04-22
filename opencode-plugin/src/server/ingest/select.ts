@@ -1,4 +1,4 @@
-import type { IngestMessage } from "../backend.js";
+import type { IngestMessage } from "../backend.ts";
 
 const RELEVANT_MEMORIES_BLOCK_RE = /<relevant-memories>[\s\S]*?(<\/relevant-memories>|$)/g;
 const MAX_INGEST_MESSAGES = 12;

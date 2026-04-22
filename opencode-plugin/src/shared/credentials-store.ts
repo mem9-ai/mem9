@@ -1,4 +1,4 @@
-import type { Mem9CredentialsFile, Mem9Profile } from "./types.js";
+import type { Mem9CredentialsFile, Mem9Profile } from "./types.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

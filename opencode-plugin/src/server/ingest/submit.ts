@@ -1,6 +1,6 @@
-import type { IngestInput, IngestResult, MemoryBackend } from "../backend.js";
-import type { DebugLogger } from "../debug.js";
-import { selectMessagesForIngest } from "./select.js";
+import type { IngestInput, IngestResult, MemoryBackend } from "../backend.ts";
+import type { DebugLogger } from "../debug.ts";
+import { selectMessagesForIngest } from "./select.ts";
 
 export interface SubmitIngestOptions {
   backend: MemoryBackend;
