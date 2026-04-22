@@ -17,6 +17,7 @@ The current skill surface is:
 `$mem9:setup` is the configuration entrypoint. It inspects the current state first, manages shared profiles in `$MEM9_HOME/.credentials.json`, then applies either global or project scope.
 The plugin is user-installed. The hooks are global. Per-project differences live in a local override file created through setup scope commands.
 The managed hook commands stay fixed after setup. Plugin updates reuse those same entrypoints.
+Global setup also owns remote release-check settings through `updateCheck` in `$CODEX_HOME/mem9/config.json`.
 
 ## Quick Start
 
@@ -88,6 +89,26 @@ For local testing:
    pnpm --dir codex-plugin typecheck
    ```
 
+## Upgrading
+
+### Git marketplace installs
+
+Upgrade the Git marketplace entry, then restart Codex:
+
+```bash
+codex plugin marketplace upgrade mem9-ai
+```
+
+mem9 keeps stable hook shims, so most releases only need a restart.
+Migration releases surface a `SessionStart` notice that asks for `$mem9:setup` once.
+
+### Local checkout testing
+
+For repo-local marketplace testing, pull the latest checkout or switch branches, then restart Codex so it reloads the local marketplace and plugin files.
+Reinstall `mem9` from the repo-local marketplace when the marketplace entry changes or Codex still shows the older package.
+Most local checkout updates only need a restart.
+Migration releases surface the same `SessionStart` notice for `$mem9:setup`.
+
 ## Commands
 
 ### `$mem9:setup`
@@ -108,10 +129,13 @@ Common examples for the script layer:
 node ./skills/setup/scripts/setup.mjs inspect
 node ./skills/setup/scripts/setup.mjs profile create --profile work --label Work --base-url https://api.mem9.ai --provision-api-key
 node ./skills/setup/scripts/setup.mjs profile save-key --profile work --label Work --base-url https://api.mem9.ai --api-key-env MEM9_API_KEY
-node ./skills/setup/scripts/setup.mjs scope apply --scope user --profile work --default-timeout-ms 8000 --search-timeout-ms 15000
+node ./skills/setup/scripts/setup.mjs scope apply --scope user --profile work --default-timeout-ms 8000 --search-timeout-ms 15000 --update-check enabled --update-check-interval-hours 24
 node ./skills/setup/scripts/setup.mjs scope apply --scope project --profile work --default-timeout-ms 8000 --search-timeout-ms 15000
 node ./skills/setup/scripts/setup.mjs scope clear --scope project
 ```
+
+`--update-check` flags apply to `scope apply --scope user`.
+Project scope keeps profile and timeout overrides.
 
 What it does:
 
@@ -119,7 +143,7 @@ What it does:
 2. inspects the saved profiles in `$MEM9_HOME/.credentials.json`
 3. asks whether to use an existing global profile, create a new mem9 API key, or handle credentials manually
 4. creates or repairs global profiles in `$MEM9_HOME/.credentials.json`
-5. writes the global default config
+5. writes the global default config, including `updateCheck.enabled` and `updateCheck.intervalHours`
 6. enables `codex_hooks`
 7. installs or repairs the managed hooks in `$CODEX_HOME/hooks.json`
 8. installs stable hook shims in `$CODEX_HOME/mem9/hooks/`
@@ -153,6 +177,7 @@ What it does:
 - `run` removes `$CODEX_HOME/mem9/hooks/`
 - `run` removes `$CODEX_HOME/mem9/install.json`
 - `run` removes `$CODEX_HOME/mem9/config.json`
+- `run` removes `$CODEX_HOME/mem9/state.json`
 - `run --include-project` also removes `<project>/.codex/mem9/config.json`
 
 What it does not do:
@@ -198,6 +223,7 @@ Global mem9 runtime and config:
 $CODEX_HOME/mem9/hooks/
 $CODEX_HOME/mem9/install.json
 $CODEX_HOME/mem9/config.json
+$CODEX_HOME/mem9/state.json
 $CODEX_HOME/mem9/logs/codex-hooks.jsonl
 ```
 
@@ -239,7 +265,11 @@ Global default config:
   "schemaVersion": 1,
   "profileId": "default",
   "defaultTimeoutMs": 8000,
-  "searchTimeoutMs": 15000
+  "searchTimeoutMs": 15000,
+  "updateCheck": {
+    "enabled": true,
+    "intervalHours": 24
+  }
 }
 ```
 
@@ -251,6 +281,8 @@ Project override example:
   "profileId": "work"
 }
 ```
+
+Remote update-check settings stay in the global config.
 
 ## Runtime Overrides
 

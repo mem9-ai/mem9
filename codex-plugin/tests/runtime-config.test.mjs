@@ -224,6 +224,56 @@ test("project override resolves fields by precedence", () => {
   assert.equal(runtime.apiKey, "project-key");
   assert.equal(runtime.defaultTimeoutMs, 8_100);
   assert.equal(runtime.searchTimeoutMs, 16_200);
+  assert.equal(runtime.updateCheck.enabled, true);
+  assert.equal(runtime.updateCheck.intervalHours, 24);
+});
+
+test("runtime defaults update checks when the global config does not set them", () => {
+  const state = loadRuntimeStateFromDisk(createRuntimeDisk({
+    globalConfig: {
+      schemaVersion: 1,
+      profileId: "default",
+    },
+    credentials: DEFAULT_CREDENTIALS,
+    installMetadata: DEFAULT_INSTALL,
+    configToml: "",
+    pluginVersions: ["0.2.0"],
+  }));
+
+  assert.equal(state.issueCode, "ready");
+  assert.equal(state.runtime.updateCheck.enabled, true);
+  assert.equal(state.runtime.updateCheck.intervalHours, 24);
+});
+
+test("project override does not override global update-check settings", () => {
+  const state = loadRuntimeStateFromDisk(createRuntimeDisk({
+    globalConfig: {
+      schemaVersion: 1,
+      profileId: "default",
+      updateCheck: {
+        enabled: false,
+        intervalHours: 48,
+      },
+    },
+    projectConfig: {
+      schemaVersion: 1,
+      profileId: "work",
+      updateCheck: {
+        enabled: true,
+        intervalHours: 1,
+      },
+    },
+    credentials: DEFAULT_CREDENTIALS,
+    installMetadata: DEFAULT_INSTALL,
+    configToml: "",
+    pluginVersions: ["0.2.0"],
+  }));
+
+  assert.equal(state.issueCode, "ready");
+  assert.equal(state.configSource, "project");
+  assert.equal(state.runtime.profileId, "work");
+  assert.equal(state.runtime.updateCheck.enabled, false);
+  assert.equal(state.runtime.updateCheck.intervalHours, 48);
 });
 
 test("a project override can be ready without a global config file", () => {
@@ -583,6 +633,8 @@ test("env overrides still replace api url and api key", () => {
   assert.equal(runtime.agentId, DEFAULT_AGENT_ID);
   assert.equal(runtime.defaultTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS);
   assert.equal(runtime.searchTimeoutMs, DEFAULT_SEARCH_TIMEOUT_MS);
+  assert.equal(runtime.updateCheck.enabled, true);
+  assert.equal(runtime.updateCheck.intervalHours, 24);
 });
 
 test("resolveMem9Home uses MEM9_HOME and otherwise falls back to home .mem9", () => {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  appendUpgradeNotice,
   buildSessionStartMessage,
   runSessionStart,
 } from "../hooks/session-start.mjs";
@@ -44,6 +45,37 @@ test("session start reports plugin missing with cleanup and reinstall guidance",
   assert.match(message, /\$mem9:cleanup/);
   assert.match(message, /reinstall the mem9 plugin/);
   assert.match(message, /\$mem9:setup/);
+});
+
+test("session start appends upgrade notices after the runtime message", async () => {
+  const output = await runSessionStart({
+    state: {
+      configSource: "global",
+      profileId: "default",
+      issueCode: "ready",
+    },
+    upgradeNotice: "mem9 upgraded to v0.2.0. Restart picked it up.",
+  });
+
+  const parsed = JSON.parse(output);
+  const message = parsed.hookSpecificOutput.additionalContext;
+  assert.match(message, /global default config/);
+  assert.match(message, /mem9 upgraded to v0\.2\.0/);
+  assert.ok(message.indexOf("global default config") < message.indexOf("mem9 upgraded to v0.2.0"));
+});
+
+test("session start keeps repair guidance ahead of upgrade notices", () => {
+  const message = appendUpgradeNotice(
+    buildSessionStartMessage({
+      configSource: "project",
+      issueCode: "missing_profile",
+    }),
+    "mem9 upgraded to v0.2.0. Restart picked it up.",
+  );
+
+  assert.match(message, /\$mem9:setup/);
+  assert.match(message, /mem9 upgraded to v0\.2\.0/);
+  assert.ok(message.indexOf("$mem9:setup") < message.indexOf("mem9 upgraded to v0.2.0"));
 });
 
 test("session start reports project legacy pause with migration guidance", () => {

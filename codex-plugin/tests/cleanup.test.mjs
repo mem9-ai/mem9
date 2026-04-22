@@ -3,7 +3,6 @@
 import assert from "node:assert/strict";
 import {
   existsSync,
-  mkdtempSync,
   mkdirSync,
   readFileSync,
   rmSync,
@@ -16,12 +15,7 @@ import {
   inspectCleanup,
   runCleanup,
 } from "../skills/cleanup/scripts/cleanup.mjs";
-
-function createTempRoot() {
-  const parent = path.join(process.cwd(), ".tmp-cleanup-tests");
-  mkdirSync(parent, { recursive: true });
-  return mkdtempSync(path.join(parent, "case-"));
-}
+import { createTempRoot } from "./test-temp.mjs";
 
 function writeJson(filePath, value) {
   mkdirSync(path.dirname(filePath), { recursive: true });
@@ -33,7 +27,7 @@ function readJson(filePath) {
 }
 
 function createCleanupFixture() {
-  const tempRoot = createTempRoot();
+  const tempRoot = createTempRoot("cleanup");
   const projectRoot = path.join(tempRoot, "repo");
   const codexHome = path.join(tempRoot, "codex-home");
   const mem9Home = path.join(tempRoot, "mem9-home");
@@ -92,6 +86,10 @@ function createCleanupFixture() {
     schemaVersion: 1,
     enabled: true,
     profileId: "default",
+  });
+  writeJson(path.join(codexHome, "mem9", "state.json"), {
+    schemaVersion: 1,
+    lastSeenVersion: "0.1.0",
   });
   writeJson(path.join(projectRoot, ".codex", "mem9", "config.json"), {
     schemaVersion: 1,
@@ -154,6 +152,7 @@ test("inspect reports sanitized removable targets", () => {
     assert.equal(summary.global.hooksDir.path, "$CODEX_HOME/mem9/hooks");
     assert.equal(summary.global.installMetadata.path, "$CODEX_HOME/mem9/install.json");
     assert.equal(summary.global.globalConfig.path, "$CODEX_HOME/mem9/config.json");
+    assert.equal(summary.global.stateFile.path, "$CODEX_HOME/mem9/state.json");
     assert.equal(summary.project.config.path, ".codex/mem9/config.json");
     assert.equal(summary.credentials.path, "$MEM9_HOME/.credentials.json");
     assert.equal(summary.configToml.path, "$CODEX_HOME/config.toml");
@@ -175,6 +174,10 @@ test("inspect reports sanitized removable targets", () => {
       {
         kind: "globalConfig",
         path: "$CODEX_HOME/mem9/config.json",
+      },
+      {
+        kind: "stateFile",
+        path: "$CODEX_HOME/mem9/state.json",
       },
     ]);
     assert.deepEqual(summary.removableTargets.project, [
@@ -210,6 +213,7 @@ test("run removes only mem9-managed global artifacts", () => {
     assert.equal(result.removed.hooksDir, true);
     assert.equal(result.removed.installMetadata, true);
     assert.equal(result.removed.globalConfig, true);
+    assert.equal(result.removed.stateFile, true);
     assert.equal(result.removed.projectConfig, false);
     assert.equal(result.paths.hooksDir, "$CODEX_HOME/mem9/hooks");
     assert.equal(result.paths.projectConfig, ".codex/mem9/config.json");
@@ -230,6 +234,7 @@ test("run removes only mem9-managed global artifacts", () => {
     assert.equal(existsSync(path.join(fixture.codexHome, "mem9", "hooks")), false);
     assert.equal(existsSync(path.join(fixture.codexHome, "mem9", "install.json")), false);
     assert.equal(existsSync(path.join(fixture.codexHome, "mem9", "config.json")), false);
+    assert.equal(existsSync(path.join(fixture.codexHome, "mem9", "state.json")), false);
     assert.equal(existsSync(path.join(fixture.projectRoot, ".codex", "mem9", "config.json")), true);
   } finally {
     rmSync(fixture.tempRoot, { recursive: true, force: true });

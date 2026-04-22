@@ -197,6 +197,7 @@ function resolveContext(args = {}, options = {}) {
     hooksDir: path.join(codexHome, "mem9", "hooks"),
     installPath: path.join(codexHome, "mem9", "install.json"),
     configPath: path.join(codexHome, "mem9", "config.json"),
+    statePath: path.join(codexHome, "mem9", "state.json"),
     configTomlPath: path.join(codexHome, "config.toml"),
     debugLogPath: path.join(codexHome, "mem9", "logs", "codex-hooks.jsonl"),
   };
@@ -264,6 +265,7 @@ function buildCleanupSnapshot(context) {
   const hooksDirPresent = exists(context.globalPaths.hooksDir);
   const installMetadataPresent = exists(context.globalPaths.installPath);
   const globalConfigPresent = exists(context.globalPaths.configPath);
+  const stateFilePresent = exists(context.globalPaths.statePath);
   const projectConfigPresent = context.projectRoot && context.projectConfigPath
     ? exists(context.projectConfigPath)
     : false;
@@ -289,6 +291,11 @@ function buildCleanupSnapshot(context) {
     present: globalConfigPresent,
     path: sanitizeDisplayPath(context.globalPaths.configPath, context.pathContext),
     wouldRemove: globalConfigPresent,
+  };
+  const stateFileTarget = {
+    present: stateFilePresent,
+    path: sanitizeDisplayPath(context.globalPaths.statePath, context.pathContext),
+    wouldRemove: stateFilePresent,
   };
   const projectConfigTarget = {
     available: Boolean(context.projectRoot),
@@ -344,6 +351,12 @@ function buildCleanupSnapshot(context) {
           path: globalConfigTarget.path,
         }
         : null,
+      stateFileTarget.wouldRemove
+        ? {
+          kind: "stateFile",
+          path: stateFileTarget.path,
+        }
+        : null,
     ].filter(Boolean),
     project: [
       projectConfigTarget.wouldRemove
@@ -368,6 +381,7 @@ function buildCleanupSnapshot(context) {
       hooksDir: hooksDirTarget,
       installMetadata: installMetadataTarget,
       globalConfig: globalConfigTarget,
+      stateFile: stateFileTarget,
     },
     project: {
       available: Boolean(context.projectRoot),
@@ -531,6 +545,8 @@ function runCleanup(argv = process.argv.slice(2), options = {}) {
   removePath(context.globalPaths.installPath, { force: true });
   const removedGlobalConfig = exists(context.globalPaths.configPath);
   removePath(context.globalPaths.configPath, { force: true });
+  const removedStateFile = exists(context.globalPaths.statePath);
+  removePath(context.globalPaths.statePath, { force: true });
 
   let removedProjectConfig = false;
   if (args.includeProject && context.projectConfigPath) {
@@ -553,6 +569,7 @@ function runCleanup(argv = process.argv.slice(2), options = {}) {
       hooksDir: removedHooksDir,
       installMetadata: removedInstallMetadata,
       globalConfig: removedGlobalConfig,
+      stateFile: removedStateFile,
       projectConfig: removedProjectConfig,
     },
     paths: {
@@ -560,6 +577,7 @@ function runCleanup(argv = process.argv.slice(2), options = {}) {
       hooksDir: before.global.hooksDir.path,
       installMetadata: before.global.installMetadata.path,
       globalConfig: before.global.globalConfig.path,
+      stateFile: before.global.stateFile.path,
       projectConfig: before.project.config.path,
     },
     credentials: before.credentials,

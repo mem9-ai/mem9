@@ -22,8 +22,10 @@ node ./scripts/setup.mjs inspect
 
 2. Use the JSON summary to decide the next action with the user.
    Pay attention to `runtime`, `plugin`, `globalConfig`, `projectConfig`, and `profiles`.
+   Global `updateCheck` settings live under `globalConfig.summary.updateCheck`.
 3. Keep the default flow global-first.
-   Apply project scope only when the user explicitly asks for a repo-local override.
+   Apply project scope only when the user explicitly asks for a repo-local profile or timeout override.
+   Remote release-check settings live in user scope.
 4. When the user wants mem9 to create a new API key, run:
 
 ```bash
@@ -54,7 +56,9 @@ node ./scripts/setup.mjs scope apply \
   --scope user \
   --profile <profile-id> \
   --default-timeout-ms <ms> \
-  --search-timeout-ms <ms>
+  --search-timeout-ms <ms> \
+  --update-check enabled \
+  --update-check-interval-hours <hours>
 ```
 
 7. When the user explicitly wants a project override, run one of:
@@ -73,6 +77,9 @@ set -euo pipefail
 node ./scripts/setup.mjs scope clear --scope project
 ```
 
+Project scope keeps `profileId`, `defaultTimeoutMs`, and `searchTimeoutMs`.
+User scope also owns `updateCheck.enabled` and `updateCheck.intervalHours`.
+
 Common flags:
 
 - `inspect`
@@ -88,7 +95,12 @@ Common flags:
 - `--scope user|project`
 - `--default-timeout-ms <ms>`
 - `--search-timeout-ms <ms>`
+- `--update-check enabled|disabled`
+- `--update-check-interval-hours <hours>`
 - `--cwd <repo-root>`
+
+`--update-check` flags apply to `scope apply --scope user`.
+Most mem9 plugin releases take effect after a Codex restart. Migration releases may ask for `$mem9:setup` once after restart.
 
 `scope apply` and `scope clear` install or repair the managed mem9 runtime in `$CODEX_HOME`.
 They enable `codex_hooks`, repair `$CODEX_HOME/hooks.json`, install stable shims in `$CODEX_HOME/mem9/hooks/`, and write install metadata to `$CODEX_HOME/mem9/install.json`.

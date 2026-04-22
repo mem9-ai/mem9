@@ -41,7 +41,7 @@ Common flags:
 - `--include-project`
 - `--cwd <repo-root>`
 
-`run` removes mem9-managed entries from `$CODEX_HOME/hooks.json`, `$CODEX_HOME/mem9/hooks/`, `$CODEX_HOME/mem9/install.json`, and `$CODEX_HOME/mem9/config.json`.
+`run` removes mem9-managed entries from `$CODEX_HOME/hooks.json`, `$CODEX_HOME/mem9/hooks/`, `$CODEX_HOME/mem9/install.json`, `$CODEX_HOME/mem9/config.json`, and `$CODEX_HOME/mem9/state.json`.
 `run --include-project` also removes `<project>/.codex/mem9/config.json`.
 
 Keep `$MEM9_HOME/.credentials.json`, `$CODEX_HOME/config.toml`, and mem9 debug logs untouched.

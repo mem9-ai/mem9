@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 
 import { resolveProjectRoot } from "./project-root.mjs";
+import {
+  normalizeUpdateCheckConfig,
+  resolveUpdateStatePath,
+} from "./update-check.mjs";
 
 export const DEFAULT_AGENT_ID = "codex";
 export const DEFAULT_REQUEST_TIMEOUT_MS = 8_000;
@@ -61,6 +65,13 @@ const PLUGINS_CACHE_DIR = path.join("plugins", "cache");
 
 /**
  * @typedef {{
+ *   enabled?: boolean,
+ *   intervalHours?: number,
+ * }} UpdateCheckConfig
+ */
+
+/**
+ * @typedef {{
  *   schemaVersion?: number,
  *   profiles?: Record<string, Mem9Profile>,
  * }} CredentialsFile
@@ -73,6 +84,7 @@ const PLUGINS_CACHE_DIR = path.join("plugins", "cache");
  *   profileId?: string,
  *   defaultTimeoutMs?: number,
  *   searchTimeoutMs?: number,
+ *   updateCheck?: UpdateCheckConfig,
  * }} ScopeConfig
  */
 
@@ -86,6 +98,7 @@ const PLUGINS_CACHE_DIR = path.join("plugins", "cache");
  *   agentId: string,
  *   defaultTimeoutMs: number,
  *   searchTimeoutMs: number,
+ *   updateCheck: { enabled: boolean, intervalHours: number },
  * }} RuntimeConfig
  */
 
@@ -127,19 +140,21 @@ const PLUGINS_CACHE_DIR = path.join("plugins", "cache");
  *   credentialsPath: string,
  *   configTomlPath: string,
  *   installPath: string,
+ *   statePath: string,
  *   configPath: string,
- *   globalConfigExists: boolean,
- *   userConfigExists: boolean,
- *   projectConfigExists: boolean,
- *   config: ScopeConfig | null,
+  *   globalConfigExists: boolean,
+  *   userConfigExists: boolean,
+  *   projectConfigExists: boolean,
+  *   config: ScopeConfig | null,
  *   credentials: CredentialsFile | null,
- *   runtime: RuntimeConfig,
- *   pluginState: PluginState,
- *   pluginIssueDetail: PluginIssueDetail | null,
- *   warnings: RuntimeWarningCode[],
- *   legacyPausedSources: LegacyPausedSource[],
- *   effectiveLegacyPausedSource: LegacyPausedSource | null,
- *   issueCode: RuntimeIssueCode,
+  *   runtime: RuntimeConfig,
+  *   pluginState: PluginState,
+  *   pluginIssueDetail: PluginIssueDetail | null,
+ *   pluginVersion: string,
+  *   warnings: RuntimeWarningCode[],
+  *   legacyPausedSources: LegacyPausedSource[],
+  *   effectiveLegacyPausedSource: LegacyPausedSource | null,
+  *   issueCode: RuntimeIssueCode,
  * }} RuntimeState
  */
 
@@ -155,6 +170,7 @@ const PLUGINS_CACHE_DIR = path.join("plugins", "cache");
  * @typedef {{
  *   state: PluginState,
  *   issueDetail: PluginIssueDetail | null,
+ *   pluginVersion: string,
  * }} PluginStateResult
  */
 
@@ -230,6 +246,7 @@ function runtimePaths(projectRoot, codexHome, mem9Home) {
     credentialsPath: path.join(mem9Home, ".credentials.json"),
     configTomlPath: path.join(codexHome, "config.toml"),
     installPath: path.join(codexHome, "mem9", "install.json"),
+    statePath: resolveUpdateStatePath(codexHome),
   };
 }
 
@@ -293,6 +310,7 @@ function buildEffectiveScopeConfig(globalConfig, projectConfig) {
       globalConfig?.searchTimeoutMs,
       DEFAULT_SEARCH_TIMEOUT_MS,
     ),
+    updateCheck: normalizeUpdateCheckConfig(globalConfig?.updateCheck),
   };
 }
 
@@ -478,6 +496,7 @@ function loadPluginState({
     return {
       state: "plugin_missing",
       issueDetail: installIssue ?? "missing_active_plugin_root",
+      pluginVersion,
     };
   }
 
@@ -485,12 +504,14 @@ function loadPluginState({
     return {
       state: "plugin_disabled",
       issueDetail: null,
+      pluginVersion,
     };
   }
 
   return {
     state: "enabled",
     issueDetail: null,
+    pluginVersion,
   };
 }
 
@@ -614,6 +635,7 @@ export function resolveRuntimeConfig(input) {
       config.searchTimeoutMs,
       DEFAULT_SEARCH_TIMEOUT_MS,
     ),
+    updateCheck: normalizeUpdateCheckConfig(config.updateCheck),
   };
 }
 
@@ -637,6 +659,7 @@ export function loadRuntimeStateFromDisk(input = {}) {
     credentialsPath,
     configTomlPath,
     installPath,
+    statePath,
   } = runtimePaths(projectRoot, codexHome, mem9Home);
   const globalLoad = loadScopeConfigFile(globalConfigPath, exists, readJson);
   const projectLoad = loadScopeConfigFile(projectConfigPath, exists, readJson);
@@ -723,6 +746,7 @@ export function loadRuntimeStateFromDisk(input = {}) {
     credentialsPath,
     configTomlPath,
     installPath,
+    statePath,
     configPath: configSource === "project" ? projectConfigPath : globalConfigPath,
     globalConfigExists: globalLoad.exists,
     userConfigExists: globalLoad.exists,
@@ -732,6 +756,7 @@ export function loadRuntimeStateFromDisk(input = {}) {
     runtime: runtimeWithCredentials,
     pluginState: plugin.state,
     pluginIssueDetail: plugin.issueDetail,
+    pluginVersion: plugin.pluginVersion,
     warnings,
     legacyPausedSources,
     effectiveLegacyPausedSource,

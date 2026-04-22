@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 import { loadRuntimeStateFromDisk } from "../lib/config.mjs";
+import { resolveUpgradeNotice } from "../lib/update-check.mjs";
 import { appendDebugError, appendDebugLog } from "./shared/debug.mjs";
 import { hookAdditionalContext } from "./shared/format.mjs";
 
@@ -95,13 +96,36 @@ export function buildSessionStartMessage(
 }
 
 /**
- * @param {{state?: SessionStartState, setupCommand?: string}} [input]
+ * @param {string} message
+ * @param {string} upgradeNotice
+ * @returns {string}
+ */
+export function appendUpgradeNotice(message, upgradeNotice) {
+  const base = String(message ?? "").trim();
+  const notice = String(upgradeNotice ?? "").trim();
+
+  if (!notice) {
+    return base;
+  }
+
+  if (!base) {
+    return notice;
+  }
+
+  return `${base} ${notice}`;
+}
+
+/**
+ * @param {{state?: SessionStartState, setupCommand?: string, upgradeNotice?: string}} [input]
  * @returns {Promise<string>}
  */
 export async function runSessionStart(input = {}) {
-  const message = buildSessionStartMessage(
-    input.state ?? { configSource: "global", issueCode: "missing_config" },
-    input.setupCommand,
+  const message = appendUpgradeNotice(
+    buildSessionStartMessage(
+      input.state ?? { configSource: "global", issueCode: "missing_config" },
+      input.setupCommand,
+    ),
+    input.upgradeNotice ?? "",
   );
   return hookAdditionalContext("SessionStart", message);
 }
@@ -142,6 +166,25 @@ export async function main() {
       issueCode: state.issueCode,
     },
   });
+  const upgradeNotice = await resolveUpgradeNotice({
+    codexHome: state.codexHome,
+    statePath: state.statePath,
+    pluginVersion: state.pluginVersion,
+    runtime: state.runtime,
+  });
+  appendDebugLog({
+    hook: "SessionStart",
+    stage: "upgrade_notice_resolved",
+    cwd,
+    codexHome: state.codexHome,
+    mem9Home: state.mem9Home,
+    fields: {
+      pluginVersion: state.pluginVersion,
+      hasUpgradeNotice: upgradeNotice.message ? "true" : "false",
+      updateCheckEnabled: state.runtime.updateCheck.enabled ? "true" : "false",
+      updateCheckIntervalHours: String(state.runtime.updateCheck.intervalHours),
+    },
+  });
 
   return runSessionStart({
     state: {
@@ -153,6 +196,7 @@ export async function main() {
       effectiveLegacyPausedSource: state.effectiveLegacyPausedSource,
       issueCode: state.issueCode,
     },
+    upgradeNotice: upgradeNotice.message,
   });
 }
 

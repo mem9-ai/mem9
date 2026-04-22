@@ -29,6 +29,10 @@ const PACKAGE_ROOT = path.resolve(SCRIPT_DIR, "../../..");
 const HOOK_SHIM_SOURCE_DIR = path.join(PACKAGE_ROOT, "bootstrap-hooks");
 const HOOK_TEMPLATE_PATH = path.join(PACKAGE_ROOT, "templates", "hooks.json");
 const DEFAULT_BASE_URL = "https://api.mem9.ai";
+const DEFAULT_UPDATE_CHECK = Object.freeze({
+  enabled: true,
+  intervalHours: 24,
+});
 const DEFAULT_INSTALL_METADATA = {
   schemaVersion: 1,
   marketplaceName: "mem9-ai",
@@ -84,6 +88,15 @@ function parseIntegerArg(flag, value) {
   }
 
   return parsed;
+}
+
+function parseUpdateCheckMode(value) {
+  const normalized = normalizeString(value).toLowerCase();
+  if (normalized === "enabled" || normalized === "disabled") {
+    return normalized;
+  }
+
+  throw new Error("`--update-check` must be `enabled` or `disabled`.");
 }
 
 function readTextFile(filePath, readFile = readFileSync) {
@@ -272,6 +285,18 @@ function summarizeProfiles(profiles) {
     });
 }
 
+function normalizeUpdateCheckConfig(value) {
+  const current = isRecord(value) ? value : {};
+
+  return {
+    enabled: current.enabled !== false,
+    intervalHours: normalizeTimeoutMs(
+      current.intervalHours,
+      DEFAULT_UPDATE_CHECK.intervalHours,
+    ),
+  };
+}
+
 function stripTomlLineComment(line) {
   const text = String(line ?? "");
   let quotedBy = "";
@@ -369,12 +394,12 @@ function inspectJsonFile(filePath, fallback, fsOps = {}) {
   }
 }
 
-function summarizeScopeConfigState(config) {
+function summarizeScopeConfigState(config, options = {}) {
   if (!isRecord(config)) {
     return null;
   }
 
-  return {
+  const summary = {
     profileId: normalizeString(config.profileId),
     defaultTimeoutMs: normalizeTimeoutMs(
       config.defaultTimeoutMs,
@@ -386,12 +411,18 @@ function summarizeScopeConfigState(config) {
     ),
     legacyEnabledFalse: config.enabled === false,
   };
+
+  if (options.includeUpdateCheck) {
+    summary.updateCheck = normalizeUpdateCheckConfig(config.updateCheck);
+  }
+
+  return summary;
 }
 
-function summarizeScopeFile(filePath, context, fsOps = {}) {
+function summarizeScopeFile(filePath, context, fsOps = {}, options = {}) {
   const inspected = inspectJsonFile(filePath, {}, fsOps);
   const summary = inspected.state === "valid"
-    ? summarizeScopeConfigState(inspected.value)
+    ? summarizeScopeConfigState(inspected.value, options)
     : null;
 
   return {
@@ -475,6 +506,8 @@ export function parseArgs(argv = process.argv.slice(2)) {
     scope: "",
     defaultTimeoutMs: undefined,
     searchTimeoutMs: undefined,
+    updateCheck: "",
+    updateCheckIntervalHours: undefined,
   };
 
   const [command = "", maybeSubcommand = "", ...rest] = argv;
@@ -537,11 +570,29 @@ export function parseArgs(argv = process.argv.slice(2)) {
         args.searchTimeoutMs = parseIntegerArg(token, nextValue);
         index += 1;
         break;
+      case "--update-check":
+        args.updateCheck = parseUpdateCheckMode(nextValue);
+        index += 1;
+        break;
+      case "--update-check-interval-hours":
+        args.updateCheckIntervalHours = parseIntegerArg(token, nextValue);
+        index += 1;
+        break;
       case "":
         break;
       default:
         throw new Error(`Unknown argument: ${token}`);
     }
+  }
+
+  const hasUpdateCheckFlags = Boolean(args.updateCheck)
+    || args.updateCheckIntervalHours !== undefined;
+
+  if (
+    hasUpdateCheckFlags
+    && !(args.command === "scope" && args.subcommand === "apply")
+  ) {
+    throw new Error("`--update-check` flags only support `scope apply`.");
   }
 
   if (args.command === "profile" && !["create", "save-key"].includes(args.subcommand)) {
@@ -569,6 +620,9 @@ export function parseArgs(argv = process.argv.slice(2)) {
     if (!["user", "project"].includes(args.scope)) {
       throw new Error("`scope apply` requires `--scope user` or `--scope project`.");
     }
+    if (args.scope !== "user" && hasUpdateCheckFlags) {
+      throw new Error("`--update-check` flags only support `--scope user`.");
+    }
     requireString("--profile", args.profileId);
   }
 
@@ -584,6 +638,8 @@ export function parseArgs(argv = process.argv.slice(2)) {
       || args.provisionApiKey
       || args.defaultTimeoutMs !== undefined
       || args.searchTimeoutMs !== undefined
+      || args.updateCheck
+      || args.updateCheckIntervalHours !== undefined
     ) {
       throw new Error("`scope clear` only accepts `--scope project` and `--cwd`.");
     }
@@ -948,6 +1004,8 @@ async function provisionApiKey({
 
 export function buildScopeConfig(profileId, options = {}) {
   const existingConfig = isRecord(options.existingConfig) ? options.existingConfig : {};
+  const scope = normalizeString(options.scope);
+  const currentUpdateCheck = normalizeUpdateCheckConfig(existingConfig.updateCheck);
 
   return {
     schemaVersion: 1,
@@ -960,6 +1018,19 @@ export function buildScopeConfig(profileId, options = {}) {
       options.searchTimeoutMs ?? existingConfig.searchTimeoutMs,
       DEFAULT_SEARCH_TIMEOUT_MS,
     ),
+    updateCheck: scope === "user"
+      ? {
+        enabled: options.updateCheck === "enabled"
+          ? true
+          : options.updateCheck === "disabled"
+            ? false
+            : currentUpdateCheck.enabled,
+        intervalHours: normalizeTimeoutMs(
+          options.updateCheckIntervalHours,
+          currentUpdateCheck.intervalHours,
+        ),
+      }
+      : undefined,
   };
 }
 
@@ -1040,6 +1111,7 @@ function sanitizeScopeResultForOutput(result, context) {
     scope: result.scope,
     profileId: result.profileId ?? "",
     action: result.action,
+    configSummary: result.configSummary ?? null,
     configPath: sanitizeDisplayPath(result.configPath, context),
     installPath: sanitizeDisplayPath(result.installPath, context),
     hooksPath: sanitizeDisplayPath(result.hooksPath, context),
@@ -1247,12 +1319,14 @@ export function inspectSetup(argv = process.argv.slice(2), options = {}) {
     context.globalPaths.configPath,
     context.pathContext,
     context.fsOps,
+    { includeUpdateCheck: true },
   );
   const projectConfigSummary = context.projectRoot
     ? summarizeScopeFile(
       path.join(context.projectRoot, ".codex", "mem9", "config.json"),
       context.pathContext,
       context.fsOps,
+      { includeUpdateCheck: false },
     )
     : {
       state: "not_in_repo",
@@ -1533,9 +1607,12 @@ async function runScopeApply(args, options = {}) {
   );
   const backups = backupFiles([...invalidJsonFiles], context.fsOps);
   const nextConfig = buildScopeConfig(args.profileId, {
+    scope: args.scope,
     existingConfig: resolveConfigWriteFallback(args.scope, targetConfig, globalConfig),
     defaultTimeoutMs: args.defaultTimeoutMs,
     searchTimeoutMs: args.searchTimeoutMs,
+    updateCheck: args.updateCheck,
+    updateCheckIntervalHours: args.updateCheckIntervalHours,
   });
 
   applyManagedRuntimeRepair(context, preparedRepair, options);
@@ -1547,6 +1624,9 @@ async function runScopeApply(args, options = {}) {
     action: "written",
     scope: args.scope,
     profileId: args.profileId,
+    configSummary: summarizeScopeConfigState(nextConfig, {
+      includeUpdateCheck: args.scope === "user",
+    }),
     configPath: targetConfigPath,
     configTomlPath: context.globalPaths.configTomlPath,
     hooksPath: context.globalPaths.hooksPath,

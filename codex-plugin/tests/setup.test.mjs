@@ -3,7 +3,6 @@
 import assert from "node:assert/strict";
 import {
   existsSync,
-  mkdtempSync,
   mkdirSync,
   readFileSync,
   rmSync,
@@ -26,12 +25,7 @@ import {
   renderHooksTemplate,
   runSetup,
 } from "../skills/setup/scripts/setup.mjs";
-
-function createTempRoot() {
-  const parent = path.join(process.cwd(), ".tmp-setup-tests");
-  mkdirSync(parent, { recursive: true });
-  return mkdtempSync(path.join(parent, "case-"));
-}
+import { createTempRoot } from "./test-temp.mjs";
 
 function writeJson(filePath, value) {
   mkdirSync(path.dirname(filePath), { recursive: true });
@@ -64,6 +58,8 @@ test("parseArgs supports the setup subcommands", () => {
       scope: "",
       defaultTimeoutMs: undefined,
       searchTimeoutMs: undefined,
+      updateCheck: "",
+      updateCheckIntervalHours: undefined,
     },
   );
 
@@ -91,6 +87,8 @@ test("parseArgs supports the setup subcommands", () => {
       scope: "",
       defaultTimeoutMs: undefined,
       searchTimeoutMs: undefined,
+      updateCheck: "",
+      updateCheckIntervalHours: undefined,
     },
   );
 
@@ -119,7 +117,54 @@ test("parseArgs supports the setup subcommands", () => {
       scope: "project",
       defaultTimeoutMs: 8100,
       searchTimeoutMs: 15100,
+      updateCheck: "",
+      updateCheckIntervalHours: undefined,
     },
+  );
+
+  assert.deepEqual(
+    parseArgs([
+      "scope",
+      "apply",
+      "--scope",
+      "user",
+      "--profile",
+      "work",
+      "--update-check",
+      "disabled",
+      "--update-check-interval-hours",
+      "72",
+    ]),
+    {
+      command: "scope",
+      subcommand: "apply",
+      cwd: "",
+      profileId: "work",
+      label: "",
+      baseUrl: "",
+      apiKeyEnv: "",
+      provisionApiKey: false,
+      scope: "user",
+      defaultTimeoutMs: undefined,
+      searchTimeoutMs: undefined,
+      updateCheck: "disabled",
+      updateCheckIntervalHours: 72,
+    },
+  );
+
+  assert.throws(
+    () =>
+      parseArgs([
+        "scope",
+        "apply",
+        "--scope",
+        "project",
+        "--profile",
+        "work",
+        "--update-check",
+        "disabled",
+      ]),
+    /--scope user/,
   );
 });
 
@@ -286,7 +331,7 @@ test("buildInstallMetadata derives marketplace and plugin identity from the inst
 });
 
 test("inspect reports runtime, plugin, configs, and saved profiles without exposing API keys", () => {
-  const tempRoot = createTempRoot();
+  const tempRoot = createTempRoot("setup");
 
   try {
     const projectRoot = path.join(tempRoot, "project");
@@ -317,6 +362,10 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
       profileId: "default",
       defaultTimeoutMs: 8300,
       searchTimeoutMs: 15300,
+      updateCheck: {
+        enabled: false,
+        intervalHours: 72,
+      },
     });
     writeJson(path.join(projectRoot, ".codex", "mem9", "config.json"), {
       schemaVersion: 1,
@@ -324,6 +373,10 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
       profileId: "work",
       defaultTimeoutMs: 9100,
       searchTimeoutMs: 15500,
+      updateCheck: {
+        enabled: true,
+        intervalHours: 6,
+      },
     });
     writeJson(path.join(mem9Home, ".credentials.json"), {
       schemaVersion: 1,
@@ -359,8 +412,13 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
     assert.equal(summary.plugin.installMetadataPresent, true);
     assert.equal(summary.globalConfig.summary.profileId, "default");
     assert.equal(summary.globalConfig.summary.legacyEnabledFalse, true);
+    assert.deepEqual(summary.globalConfig.summary.updateCheck, {
+      enabled: false,
+      intervalHours: 72,
+    });
     assert.equal(summary.projectConfig.summary.profileId, "work");
     assert.equal(summary.projectConfig.summary.legacyEnabledFalse, true);
+    assert.equal(summary.projectConfig.summary.updateCheck, undefined);
     assert.deepEqual(summary.profiles.usableProfileIds, ["default"]);
     assert.equal(summary.profiles.items[1].hasApiKey, false);
     assert.equal(JSON.stringify(summary).includes("key-default"), false);
@@ -659,6 +717,10 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
         "user",
         "--profile",
         "work",
+        "--update-check",
+        "disabled",
+        "--update-check-interval-hours",
+        "72",
       ],
       {
         cwd: projectRoot,
@@ -676,6 +738,10 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
     assert.equal(result.command, "scope.apply");
     assert.equal(result.scope, "user");
     assert.equal(result.profileId, "work");
+    assert.deepEqual(result.configSummary.updateCheck, {
+      enabled: false,
+      intervalHours: 72,
+    });
     assert.equal(
       existsSync(path.join(codexHome, "mem9", "hooks", "session-start.mjs")),
       true,
@@ -698,6 +764,10 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
     assert.equal(globalConfig.profileId, "work");
     assert.equal(globalConfig.defaultTimeoutMs, 8000);
     assert.equal(globalConfig.searchTimeoutMs, 15000);
+    assert.deepEqual(globalConfig.updateCheck, {
+      enabled: false,
+      intervalHours: 72,
+    });
 
     const patchedToml = readFileSync(path.join(codexHome, "config.toml"), "utf8");
     assert.match(patchedToml, /other = true/);
@@ -723,6 +793,10 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
 
     const stdoutSummary = JSON.parse(stdoutText);
     assert.equal(stdoutSummary.scope, "user");
+    assert.deepEqual(stdoutSummary.configSummary.updateCheck, {
+      enabled: false,
+      intervalHours: 72,
+    });
     assert.equal(stdoutText.includes("key-1"), false);
     assert.equal(JSON.stringify(stdoutSummary).includes("key-1"), false);
   } finally {
@@ -792,6 +866,7 @@ test("scope apply project writes a local override and clears legacy enabled fals
     assert.equal(saved.defaultTimeoutMs, 9100);
     assert.equal(saved.searchTimeoutMs, 15200);
     assert.equal("enabled" in saved, false);
+    assert.equal("updateCheck" in saved, false);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -988,6 +1063,10 @@ test("scope apply repairs malformed json files and rewrites them with valid conf
     const repairedInstall = readJson(path.join(codexHome, "mem9", "install.json"));
 
     assert.equal(repairedConfig.profileId, "work");
+    assert.deepEqual(repairedConfig.updateCheck, {
+      enabled: true,
+      intervalHours: 24,
+    });
     assert.equal(repairedHooks.hooks.Stop[0].hooks[0].statusMessage, "[mem9] save");
     assert.equal(repairedInstall.pluginName, "mem9");
 
@@ -998,6 +1077,10 @@ test("scope apply repairs malformed json files and rewrites them with valid conf
 
     const stdoutSummary = JSON.parse(stdoutText);
     assert.equal(stdoutSummary.backups.length, 3);
+    assert.deepEqual(stdoutSummary.configSummary.updateCheck, {
+      enabled: true,
+      intervalHours: 24,
+    });
     assert.equal(stdoutText.includes("key-fixed"), false);
     assert.equal(stdoutText.includes(tempRoot), false);
   } finally {
