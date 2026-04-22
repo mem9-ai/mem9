@@ -212,6 +212,26 @@ test("applyCodexHooksPatch inserts codex_hooks directly under features when miss
   );
 });
 
+test("applyCodexHooksPatch handles commented features and next section headers", () => {
+  const patched = applyCodexHooksPatch([
+    "[features] # local overrides",
+    "multi_agent = true",
+    "",
+    "[model_providers.example] # keep this section boundary",
+    "name = \"Example\"",
+    "",
+  ].join("\n"));
+
+  assert.match(
+    patched,
+    /\[features\] # local overrides\ncodex_hooks = true\nmulti_agent = true\n\n\[model_providers\.example\] # keep this section boundary/,
+  );
+  assert.doesNotMatch(
+    patched,
+    /\n\[features\]\ncodex_hooks = true\n\[model_providers\.example\]/,
+  );
+});
+
 test("removeManagedHooks removes only mem9 hooks from mixed groups", () => {
   const cleaned = removeManagedHooks({
     hooks: {

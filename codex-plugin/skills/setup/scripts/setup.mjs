@@ -857,7 +857,10 @@ export function applyCodexHooksPatch(sourceText = "") {
   const text = String(sourceText ?? "");
   const eol = text.includes("\r\n") ? "\r\n" : "\n";
   const lines = text ? text.split(/\r?\n/) : [];
-  const sectionHeaderPattern = /^\s*\[[^\]]+\]\s*$/;
+  const normalizedTableHeader = (line) => {
+    const normalized = stripTomlLineComment(line).trim();
+    return /^\[[^\]]+\]$/.test(normalized) ? normalized : "";
+  };
 
   if (lines.at(-1) === "") {
     lines.pop();
@@ -867,10 +870,10 @@ export function applyCodexHooksPatch(sourceText = "") {
   let sectionEnd = lines.length;
 
   for (let index = 0; index < lines.length; index += 1) {
-    if (/^\s*\[features\]\s*$/.test(lines[index])) {
+    if (normalizedTableHeader(lines[index]) === "[features]") {
       sectionStart = index;
       for (let probe = index + 1; probe < lines.length; probe += 1) {
-        if (sectionHeaderPattern.test(lines[probe])) {
+        if (normalizedTableHeader(lines[probe])) {
           sectionEnd = probe;
           break;
         }
