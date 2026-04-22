@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseArgs, resolveReleasePlan } from "./publish.mjs";
+import { deriveTagFromVersion, parseArgs, resolveReleasePlan } from "./publish.mjs";
+
+test("parseArgs accepts current release mode", () => {
+  assert.deepEqual(parseArgs(["current", "--dry-run"]), {
+    help: false,
+    increment: "current",
+    channel: undefined,
+    dryRun: true,
+  });
+});
 
 test("parseArgs accepts stable releases", () => {
   assert.deepEqual(parseArgs(["patch"]), {
@@ -18,6 +27,29 @@ test("parseArgs accepts prerelease options", () => {
     increment: "prepatch",
     channel: "rc",
     dryRun: true,
+  });
+});
+
+test("parseArgs rejects channel overrides for current mode", () => {
+  assert.throws(
+    () => parseArgs(["current", "--channel", "rc"]),
+    /current does not accept --channel/,
+  );
+});
+
+test("deriveTagFromVersion maps versions to npm tags", () => {
+  assert.equal(deriveTagFromVersion("0.1.0"), "latest");
+  assert.equal(deriveTagFromVersion("0.1.1-alpha.0"), "alpha");
+  assert.equal(deriveTagFromVersion("0.1.1-beta.2"), "beta");
+  assert.equal(deriveTagFromVersion("0.1.1-rc.3"), "rc");
+});
+
+test("resolveReleasePlan keeps the current version when current mode is used", () => {
+  assert.deepEqual(resolveReleasePlan("0.1.1-rc.2", "current"), {
+    currentVersion: "0.1.1-rc.2",
+    nextVersion: "0.1.1-rc.2",
+    normalizedIncrement: "current",
+    tag: "rc",
   });
 });
 

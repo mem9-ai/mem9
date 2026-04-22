@@ -25,9 +25,10 @@ function fail(message) {
 
 function printHelp() {
   console.log(`Usage:
-  pnpm run publish:release -- <major|minor|patch|premajor|preminor|prepatch|prerelease> [--channel <alpha|beta|rc>] [--dry-run]
+  pnpm run publish:release -- <current|major|minor|patch|premajor|preminor|prepatch|prerelease> [--channel <alpha|beta|rc>] [--dry-run]
 
 Examples:
+  pnpm run publish:release -- current
   pnpm run publish:release -- patch
   pnpm run publish:release -- patch --channel rc
   pnpm run publish:release -- prepatch --channel beta
@@ -35,6 +36,7 @@ Examples:
   pnpm run publish:release -- prepatch --channel rc --dry-run
 
 Behavior:
+  - \`current\` publishes the exact version already in package.json and derives the npm tag from that version.
   - Stable releases publish to the npm \`latest\` tag.
   - Stable increments with \`--channel\` become prereleases for that channel.
   - \`prerelease\` continues the current prerelease stream for the selected channel.
@@ -80,12 +82,20 @@ function parseArgs(argv) {
     fail("release increment is required");
   }
 
-  if (!STABLE_INCREMENTS.has(increment) && !PRERELEASE_INCREMENTS.has(increment)) {
+  if (
+    increment !== "current"
+    && !STABLE_INCREMENTS.has(increment)
+    && !PRERELEASE_INCREMENTS.has(increment)
+  ) {
     fail(`unsupported increment "${increment}"`);
   }
 
   if (channel && !CHANNELS.has(channel)) {
     fail(`unsupported channel "${channel}"`);
+  }
+
+  if (increment === "current" && channel) {
+    fail("current does not accept --channel; the npm tag comes from the current package version");
   }
 
   return {
@@ -133,7 +143,21 @@ function toPreIncrement(increment) {
   }
 }
 
+function deriveTagFromVersion(version) {
+  const parsed = parseVersion(version);
+  return parsed.channel ?? "latest";
+}
+
 function resolveReleasePlan(currentVersion, increment, channel) {
+  if (increment === "current") {
+    return {
+      currentVersion,
+      nextVersion: currentVersion,
+      normalizedIncrement: "current",
+      tag: deriveTagFromVersion(currentVersion),
+    };
+  }
+
   const current = parseVersion(currentVersion);
 
   if (STABLE_INCREMENTS.has(increment) && !channel) {
@@ -274,11 +298,13 @@ async function main() {
   const originalPackageJson = readFileSync(packageJsonPath, "utf8");
 
   try {
-    writeFileSync(
-      packageJsonPath,
-      JSON.stringify({ ...pkg, version: plan.nextVersion }, null, 2) + "\n",
-      "utf8",
-    );
+    if (plan.nextVersion !== currentVersion) {
+      writeFileSync(
+        packageJsonPath,
+        JSON.stringify({ ...pkg, version: plan.nextVersion }, null, 2) + "\n",
+        "utf8",
+      );
+    }
     writePublishNpmrc(token);
     console.log(
       `[mem9] Releasing @mem9/opencode ${plan.currentVersion} -> ${plan.nextVersion} (${plan.tag})${args.dryRun ? " [dry-run]" : ""}`,
@@ -328,6 +354,7 @@ export {
   parseArgs,
   parseVersion,
   formatVersion,
+  deriveTagFromVersion,
   resolveReleasePlan,
   readPublishToken,
 };

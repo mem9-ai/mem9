@@ -272,6 +272,7 @@ pnpm run pack:check
 Publish through the package release script:
 
 ```bash
+pnpm run publish:release -- current
 pnpm run publish:release -- patch
 pnpm run publish:release -- prepatch --channel rc
 pnpm run publish:release -- prerelease --channel rc
@@ -281,6 +282,7 @@ pnpm run publish:release -- prepatch --channel beta --dry-run
 The script:
 
 - reads `NPM_ACCESSTOKEN` from `opencode-plugin/.publish.env`
+- supports `current` for publishing the exact version already in `package.json`
 - bumps `package.json` to the target version
 - runs `pnpm test`
 - runs `pnpm run typecheck`
@@ -291,6 +293,9 @@ Stable releases publish to `latest`.
 Prereleases publish to `alpha`, `beta`, or `rc`.
 
 If you want the Quick Start examples in this README to work unchanged, publish the first public release to `latest`.
+
+Use `current` when the version in `package.json` is already correct, such as after merging a release PR to `main`.
+Use `patch`, `prepatch`, or `prerelease` when you want the script to calculate the next version for you.
 
 ## Publish Surface
 
