@@ -22,6 +22,7 @@ test("plugin manifest exposes mem9 setup skill and basic metadata", () => {
 test("plugin templates and skills exist with mem9 hook wiring", () => {
   assert.equal(existsSync("./skills/setup/SKILL.md"), true);
   assert.equal(existsSync("./skills/project-config/SKILL.md"), false);
+  assert.equal(existsSync("./skills/cleanup/SKILL.md"), true);
   assert.equal(existsSync("./skills/recall/SKILL.md"), true);
   assert.equal(existsSync("./skills/store/SKILL.md"), true);
   assert.equal(existsSync("./lib/config.mjs"), true);
@@ -35,6 +36,7 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
   assert.equal(existsSync("./hooks/shared/skill-runtime.mjs"), false);
 
   const setupSkill = readFileSync("./skills/setup/SKILL.md", "utf8");
+  const cleanupSkill = readFileSync("./skills/cleanup/SKILL.md", "utf8");
   const recallSkill = readFileSync("./skills/recall/SKILL.md", "utf8");
   const storeSkill = readFileSync("./skills/store/SKILL.md", "utf8");
   const marketplace = JSON.parse(
@@ -52,6 +54,11 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
   assert.match(setupSkill, /scope clear/);
   assert.match(setupSkill, /MEM9_API_KEY/);
   assert.doesNotMatch(setupSkill, /disable-model-invocation:\s*true/);
+  assert.match(cleanupSkill, /node \.\/scripts\/cleanup\.mjs inspect/);
+  assert.match(cleanupSkill, /node \.\/scripts\/cleanup\.mjs run/);
+  assert.match(cleanupSkill, /--include-project/);
+  assert.match(cleanupSkill, /\$CODEX_HOME\/hooks\.json/);
+  assert.match(cleanupSkill, /\$MEM9_HOME\/\.credentials\.json/);
   assert.match(recallSkill, /cat <<'EOF' \| node \.\/scripts\/recall\.mjs/);
   assert.match(storeSkill, /cat <<'EOF' \| node \.\/scripts\/store\.mjs/);
   assert.equal(marketplace.name, "mem9-ai");
@@ -79,13 +86,22 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /persistent memory/i);
   assert.match(readme, /## Quick Start/);
   assert.match(readme, /\$mem9:setup/);
+  assert.match(readme, /\$mem9:cleanup/);
   assert.match(readme, /\$mem9:recall/);
   assert.match(readme, /\$mem9:store/);
+  assert.doesNotMatch(readme, /\$mem9:project-config/);
   assert.match(readme, /codex plugin marketplace add mem9-ai\/mem9/);
   assert.match(readme, /install `mem9` from the `mem9-ai` marketplace inside Codex/i);
   assert.match(readme, /<repo>\/\.agents\/plugins\/marketplace\.json/);
   assert.match(readme, /Codex CLI `0\.122\.0` or newer/);
   assert.match(readme, /Node\.js 22 or newer/);
+  assert.match(readme, /setup\.mjs inspect/);
+  assert.match(readme, /profile create/);
+  assert.match(readme, /profile save-key/);
+  assert.match(readme, /scope apply/);
+  assert.match(readme, /scope clear/);
+  assert.match(readme, /cleanup\.mjs inspect/);
+  assert.match(readme, /cleanup\.mjs run --include-project/);
   assert.match(readme, /\$CODEX_HOME\/hooks\.json/);
   assert.match(readme, /<project>\/\.codex\/mem9\/config\.json/);
   assert.match(readme, /\$MEM9_HOME\/\.credentials\.json/);

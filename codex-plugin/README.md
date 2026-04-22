@@ -7,7 +7,15 @@ After setup, it does two things automatically:
 - recalls relevant memories before each user prompt
 - saves a recent `user` / `assistant` window when Codex stops
 
-The plugin is user-installed. The hooks are global. Per-project differences live in a local override file.
+The current skill surface is:
+
+- `$mem9:setup`
+- `$mem9:cleanup`
+- `$mem9:recall`
+- `$mem9:store`
+
+`$mem9:setup` is the configuration entrypoint. It inspects the current state first, manages shared profiles in `$MEM9_HOME/.credentials.json`, then applies either global or project scope.
+The plugin is user-installed. The hooks are global. Per-project differences live in a local override file created through setup scope commands.
 The managed hook commands stay fixed after setup. Plugin updates reuse those same entrypoints.
 
 ## Quick Start
@@ -25,17 +33,18 @@ The managed hook commands stay fixed after setup. Plugin updates reuse those sam
    $mem9:setup
    ```
 
-4. If one repository needs a different profile or timeout, run:
-
-   ```text
-   $mem9:project-config
-   ```
-
+4. If one repository needs a different profile or timeout, rerun `$mem9:setup` in that repository and apply project scope.
 5. When you want an on-demand recall or an explicit store, run:
 
    ```text
    $mem9:recall
    $mem9:store
+   ```
+
+6. When you want to remove mem9-managed Codex files before reinstalling, resetting, or uninstalling, run:
+
+   ```text
+   $mem9:cleanup
    ```
 
 `$mem9:setup` inspects the saved global profiles first, then enables `codex_hooks` and installs the managed hooks with the path you choose. You do not need to enable hooks manually first.
@@ -85,12 +94,23 @@ For local testing:
 
 Global bootstrap for mem9 in Codex.
 
-Common examples:
+The setup skill drives a small script subcommand model under the hood:
 
-```text
-$mem9:setup
-$mem9:setup --create-new
-$mem9:setup --use-existing --profile work
+- `setup.mjs inspect` reports runtime, plugin, global config, project config, and profile state
+- `setup.mjs profile create` creates or repairs a global profile and can provision a mem9 API key
+- `setup.mjs profile save-key` stores a provided API key in a global profile
+- `setup.mjs scope apply --scope user|project` writes config and installs or repairs the managed hooks
+- `setup.mjs scope clear --scope project` removes the repo-local override and returns that repository to the global default
+
+Common examples for the script layer:
+
+```bash
+node ./skills/setup/scripts/setup.mjs inspect
+node ./skills/setup/scripts/setup.mjs profile create --profile work --label Work --base-url https://api.mem9.ai --provision-api-key
+node ./skills/setup/scripts/setup.mjs profile save-key --profile work --label Work --base-url https://api.mem9.ai --api-key-env MEM9_API_KEY
+node ./skills/setup/scripts/setup.mjs scope apply --scope user --profile work --default-timeout-ms 8000 --search-timeout-ms 15000
+node ./skills/setup/scripts/setup.mjs scope apply --scope project --profile work --default-timeout-ms 8000 --search-timeout-ms 15000
+node ./skills/setup/scripts/setup.mjs scope clear --scope project
 ```
 
 What it does:
@@ -114,30 +134,32 @@ First-run setup supports two paths:
 
 Inside Codex, setup does not ask for API keys through the TUI.
 
-### `$mem9:project-config`
+### `$mem9:cleanup`
 
-Local override for the current Git repository.
+Cleanup for the mem9-managed Codex files.
 
-Common examples:
+The cleanup skill also uses an inspect-first script workflow:
 
-```text
-$mem9:project-config
-$mem9:project-config --profile work
-$mem9:project-config --disable
-$mem9:project-config --reset
+```bash
+node ./skills/cleanup/scripts/cleanup.mjs inspect
+node ./skills/cleanup/scripts/cleanup.mjs run
+node ./skills/cleanup/scripts/cleanup.mjs run --include-project
 ```
 
 What it does:
 
-- writes `<project>/.codex/mem9/config.json`
-- switches the current project to an existing global `profileId`
-- disables mem9 only for the current project
-- removes the local override and goes back to the global default
+- `inspect` emits machine-readable JSON with sanitized paths and the current removable targets
+- `run` removes mem9-managed entries from `$CODEX_HOME/hooks.json`
+- `run` removes `$CODEX_HOME/mem9/hooks/`
+- `run` removes `$CODEX_HOME/mem9/install.json`
+- `run` removes `$CODEX_HOME/mem9/config.json`
+- `run --include-project` also removes `<project>/.codex/mem9/config.json`
 
 What it does not do:
 
-- it does not create profiles
-- it does not store API keys in the project
+- it keeps `$MEM9_HOME/.credentials.json`
+- it keeps `$CODEX_HOME/config.toml`
+- it keeps `$CODEX_HOME/mem9/logs/codex-hooks.jsonl`
 
 ### `$mem9:recall`
 
@@ -163,20 +185,23 @@ What it does:
 
 ## Where Mem9 Stores Data
 
-Global hooks and feature flag:
+Global Codex integration:
 
 ```text
 $CODEX_HOME/hooks.json
 $CODEX_HOME/config.toml
 ```
 
-Global default config:
+Global mem9 runtime and config:
 
 ```text
+$CODEX_HOME/mem9/hooks/
+$CODEX_HOME/mem9/install.json
 $CODEX_HOME/mem9/config.json
+$CODEX_HOME/mem9/logs/codex-hooks.jsonl
 ```
 
-Project override:
+Project override written by `scope apply --scope project`:
 
 ```text
 <project>/.codex/mem9/config.json
@@ -186,18 +211,6 @@ Shared credentials:
 
 ```text
 $MEM9_HOME/.credentials.json
-```
-
-Managed hook shims:
-
-```text
-$CODEX_HOME/mem9/hooks/
-```
-
-Install metadata:
-
-```text
-$CODEX_HOME/mem9/install.json
 ```
 
 `MEM9_HOME` defaults to `$HOME/.mem9`.
@@ -267,8 +280,8 @@ You can override the file path with `MEM9_DEBUG_LOG_FILE`.
 ## Troubleshooting
 
 - If `SessionStart` says mem9 is not configured, run `$mem9:setup`.
-- If a project is disabled, run `$mem9:project-config --reset` to inherit the global default again.
-- If a project needs another profile, run `$mem9:project-config --profile <id>`.
+- If a repository needs a different profile, timeout, or a cleared local override, rerun `$mem9:setup` in that repository and apply or clear project scope.
+- If you want to remove the managed Codex files before reinstalling or resetting mem9, run `$mem9:cleanup`.
 - If the selected profile is missing, run `$mem9:setup` to create or repair global profiles.
 - If the selected profile is missing an API key, run `$mem9:setup` and choose `create-new`, or add the profile manually in `$MEM9_HOME/.credentials.json` and rerun setup with `--use-existing`.
 - If setup repairs malformed JSON files, it keeps sibling `.bak` copies before rewriting them.
