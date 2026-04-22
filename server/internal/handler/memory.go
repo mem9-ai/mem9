@@ -93,7 +93,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			if result != nil {
 				written = int64(result.MemoriesChanged)
 			}
-			go s.refreshWriteMetrics(auth, svc, written)
+			go s.afterSuccessfulIngest(auth, svc, written)
 			respond(w, http.StatusOK, map[string]string{"status": "ok"})
 		} else {
 			go func() {
@@ -106,7 +106,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				if result != nil {
 					written = int64(result.MemoriesChanged)
 				}
-				s.refreshWriteMetrics(auth, svc, written)
+				s.afterSuccessfulIngest(auth, svc, written)
 			}()
 			respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 		}
@@ -324,6 +324,9 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		for i := range memories {
 			memories[i].Content = service.TemporalRecallProjection(memories[i].Content, memories[i].Metadata)
 		}
+	}
+	if filter.Query != "" {
+		s.recordRecallMetering(auth)
 	}
 
 	respond(w, http.StatusOK, listResponse{

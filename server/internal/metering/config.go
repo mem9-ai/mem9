@@ -3,10 +3,10 @@
 //
 // It is a slimmed-down port of the PingCAP metering_sdk
 // (https://github.com/pingcap/metering_sdk), adapted for mem9: no shared-pool
-// concept, tenant/cluster as the two-level identity, a 10-second in-memory
-// batch with lossy-on-error flush, and slog-based logging. Supported
-// destinations are S3 object storage (`s3://`) and webhook POST endpoints
-// (`http://` / `https://`).
+// concept, tenant/cluster as the two-level identity, slog-based logging, S3
+// delivery with a 10-second in-memory batch, and webhook delivery with one
+// request per recorded event. Supported destinations are S3 object storage
+// (`s3://`) and webhook POST endpoints (`http://` / `https://`).
 //
 // NOTE: the writer is fully implemented, but this round only wires startup
 // lifecycle. Caller-side Record() hooks still land in a follow-up change.
@@ -25,7 +25,7 @@ type Config struct {
 	URL           string // metering destination: s3://bucket/prefix/ or http(s)://webhook
 	Bucket        string
 	Prefix        string        // optional, prepended to every object key
-	FlushInterval time.Duration // default 10s
+	FlushInterval time.Duration // default 10s; used by batched transports such as S3
 	ChannelSize   int           // default 1024
 }
 

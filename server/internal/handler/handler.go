@@ -18,6 +18,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/llm"
+	"github.com/qiffang/mnemos/server/internal/metering"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/repository"
@@ -37,6 +38,7 @@ type Server struct {
 	ingestMode    service.IngestMode
 	dbBackend     string
 	logger        *slog.Logger
+	metering      metering.Writer
 	startedAt     time.Time
 	svcCache      sync.Map
 	gaugeDebounce sync.Map // cluster_id -> time.Time of last Gauge refresh
@@ -68,6 +70,11 @@ func NewServer(
 		logger:      logger,
 		startedAt:   time.Now().UTC(),
 	}
+}
+
+func (s *Server) WithMetering(writer metering.Writer) *Server {
+	s.metering = writer
+	return s
 }
 
 // resolvedSvc holds the correct service instances for a request.
