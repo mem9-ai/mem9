@@ -50,6 +50,3 @@ benchmark/MR-NIAH/.cache/
 
 # Claude Code and experiment outputs
 .claude/
-
-# Package-local generated output without a dedicated local ignore file
-openclaw-plugin/dist-test/
