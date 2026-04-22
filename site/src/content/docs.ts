@@ -61,7 +61,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         'mem9 gives OpenClaw a durable cloud memory layer plus a dashboard for inspecting, managing, and analyzing what your agents remember. This guide focuses on the official mem9.ai experience: how to install it, what to expect, and how to use it well over time.',
       summaryTitle: 'What this guide covers',
       summaryBullets: [
-        'The fastest official path: start from mem9.ai/SKILL.md.',
+        'The fastest official path: start from mem9.ai/openclaw/SKILL.md.',
         'What mem9 actually changes compared with local memory files.',
         'How setup, reconnect, uninstall, and dashboard workflows behave.',
         'Where Hook mode and Context Engine support fit into the product.',
@@ -104,7 +104,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         title: 'Quick Start',
         intro: 'If you only do one thing, do this first.',
         paragraphs: [
-          'Read https://mem9.ai/SKILL.md and follow the instructions to install and configure mem9 for OpenClaw. That is the main official entry point for the hosted mem9.ai service.',
+          'Read https://mem9.ai/openclaw/SKILL.md and follow the instructions to install and configure mem9 for OpenClaw. That is the main official entry point for the hosted mem9.ai service.',
           '<a href="https://clawhub.ai/c4pt0r/mem9-ai" target="_blank" rel="noopener noreferrer">ClawHub</a> can be used as an optional install source, but this guide assumes the official mem9.ai flow so the experience matches the website, dashboard, and support materials.',
         ],
         bullets: [
@@ -257,9 +257,9 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
         subsections: [
           {
-            title: 'Start from mem9.ai/SKILL.md',
+            title: 'Start from mem9.ai/openclaw/SKILL.md',
             paragraphs: [
-              'Read https://mem9.ai/SKILL.md and follow the onboarding instructions inside OpenClaw. That is the source of truth for the official hosted workflow.',
+              'Read https://mem9.ai/openclaw/SKILL.md and follow the onboarding instructions inside OpenClaw. That is the source of truth for the official hosted workflow.',
             ],
           },
           {
@@ -465,7 +465,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           },
           {
             label: 'SKILL.md',
-            href: 'https://mem9.ai/SKILL.md',
+            href: 'https://mem9.ai/openclaw/SKILL.md',
             external: true,
           },
         ],
@@ -485,7 +485,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         'mem9 为 OpenClaw 提供云端长期记忆层，以及一个可以查看、管理和分析记忆的可视化应用。这个文档页聚焦官方 mem9.ai 托管体验：如何安装、setup 之后会得到什么、日常使用应该期待什么，以及长期如何维护这份记忆。',
       summaryTitle: '这份文档会讲什么',
       summaryBullets: [
-        '最快的官方入口：从 mem9.ai/SKILL.md 开始。',
+        '最快的官方入口：从 mem9.ai/openclaw/SKILL.md 开始。',
         'mem9 相比本地 memory 文件到底改变了什么。',
         'setup、reconnect、uninstall 和 Dashboard 的真实行为。',
         'Hook 模式与 Context Engine 支持在产品里的定位。',
@@ -528,7 +528,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         title: '最短开始方式',
         intro: '如果你现在就要开始，先做这一件事。',
         paragraphs: [
-          '阅读 https://mem9.ai/SKILL.md ，按照说明为 OpenClaw 安装并配置 mem9。这就是 mem9.ai 官方托管服务的主入口。',
+          '阅读 https://mem9.ai/openclaw/SKILL.md ，按照说明为 OpenClaw 安装并配置 mem9。这就是 mem9.ai 官方托管服务的主入口。',
           '<a href="https://clawhub.ai/c4pt0r/mem9-ai" target="_blank" rel="noopener noreferrer">ClawHub</a> 可以作为可选安装来源，但这份手册默认你走的是 mem9.ai 官网路径，这样和官网、Dashboard、支持材料保持一致。',
         ],
         bullets: [
@@ -686,9 +686,9 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
         subsections: [
           {
-            title: '从 mem9.ai/SKILL.md 开始',
+            title: '从 mem9.ai/openclaw/SKILL.md 开始',
             paragraphs: [
-              '阅读 https://mem9.ai/SKILL.md，并在 OpenClaw 中按说明完成接入。这是官方托管流程的事实入口。',
+              '阅读 https://mem9.ai/openclaw/SKILL.md，并在 OpenClaw 中按说明完成接入。这是官方托管流程的事实入口。',
             ],
           },
           {
@@ -894,7 +894,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           },
           {
             label: 'SKILL.md',
-            href: 'https://mem9.ai/SKILL.md',
+            href: 'https://mem9.ai/openclaw/SKILL.md',
             external: true,
           },
         ],
@@ -914,7 +914,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         'mem9 は OpenClaw にクラウド長期記憶レイヤーを提供し、記憶の確認・管理・分析ができる可視化アプリも備えています。このページは mem9.ai の公式ホスト版を前提に、導入方法、setup 後に得られるもの、日常運用での期待値、そして長期的なメモリ運用の考え方をまとめています。',
       summaryTitle: 'このドキュメントでわかること',
       summaryBullets: [
-        '最速の公式入口は mem9.ai/SKILL.md です。',
+        '最速の公式入口は mem9.ai/openclaw/SKILL.md です。',
         'mem9 がローカル memory ファイルと比べて何を変えるのか。',
         'setup、reconnect、uninstall、Dashboard の実際の挙動。',
         'Hook モードと Context Engine 対応の位置づけ。',
@@ -957,7 +957,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         title: '最短の始め方',
         intro: '今すぐ始めるなら、まずはこれだけです。',
         paragraphs: [
-          'https://mem9.ai/SKILL.md を読み、案内に従って OpenClaw に mem9 をインストール・設定してください。これが mem9.ai 公式ホスト版の主入口です。',
+          'https://mem9.ai/openclaw/SKILL.md を読み、案内に従って OpenClaw に mem9 をインストール・設定してください。これが mem9.ai 公式ホスト版の主入口です。',
           '<a href="https://clawhub.ai/c4pt0r/mem9-ai" target="_blank" rel="noopener noreferrer">ClawHub</a> も任意のインストール元として利用できますが、このガイドは公式サイト経由の体験を前提にしています。',
         ],
         bullets: [
@@ -1109,9 +1109,9 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
         subsections: [
           {
-            title: 'mem9.ai/SKILL.md から始める',
+            title: 'mem9.ai/openclaw/SKILL.md から始める',
             paragraphs: [
-              'https://mem9.ai/SKILL.md を読み、OpenClaw 内で案内に従って接続します。これが公式ホスト版の基準フローです。',
+              'https://mem9.ai/openclaw/SKILL.md を読み、OpenClaw 内で案内に従って接続します。これが公式ホスト版の基準フローです。',
             ],
           },
           {
@@ -1317,7 +1317,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           },
           {
             label: 'SKILL.md',
-            href: 'https://mem9.ai/SKILL.md',
+            href: 'https://mem9.ai/openclaw/SKILL.md',
             external: true,
           },
         ],
@@ -1337,7 +1337,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         'mem9는 OpenClaw에 클라우드 장기 메모리 레이어를 제공하고, 저장된 메모리를 확인·관리·분석할 수 있는 시각화 앱도 함께 제공합니다. 이 문서는 공식 mem9.ai 호스팅 경험을 기준으로 설치 방법, setup 이후 얻는 것, 일상 사용에서 기대할 점, 그리고 장기 운영 방식을 정리합니다.',
       summaryTitle: '이 문서에서 다루는 내용',
       summaryBullets: [
-        '가장 빠른 공식 진입점은 mem9.ai/SKILL.md입니다.',
+        '가장 빠른 공식 진입점은 mem9.ai/openclaw/SKILL.md입니다.',
         'mem9가 로컬 memory 파일 대비 무엇을 바꾸는지.',
         'setup, reconnect, uninstall, Dashboard의 실제 동작.',
         'Hook 모드와 Context Engine 지원의 위치.',
@@ -1380,7 +1380,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         title: '가장 빠른 시작 방법',
         intro: '지금 바로 시작하려면 이 한 가지부터 하세요.',
         paragraphs: [
-          'https://mem9.ai/SKILL.md 를 읽고 안내에 따라 OpenClaw에 mem9를 설치하고 설정하세요. 이것이 mem9.ai 공식 호스팅 서비스의 기본 진입점입니다.',
+          'https://mem9.ai/openclaw/SKILL.md 를 읽고 안내에 따라 OpenClaw에 mem9를 설치하고 설정하세요. 이것이 mem9.ai 공식 호스팅 서비스의 기본 진입점입니다.',
           '<a href="https://clawhub.ai/c4pt0r/mem9-ai" target="_blank" rel="noopener noreferrer">ClawHub</a>도 선택 가능한 설치 경로이지만, 이 가이드는 공식 웹사이트 경로를 기준으로 작성되었습니다.',
         ],
         bullets: [
@@ -1532,9 +1532,9 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
         subsections: [
           {
-            title: 'mem9.ai/SKILL.md 에서 시작하기',
+            title: 'mem9.ai/openclaw/SKILL.md 에서 시작하기',
             paragraphs: [
-              'https://mem9.ai/SKILL.md 를 읽고 OpenClaw 안에서 안내에 따라 연결하세요. 이것이 공식 호스팅 워크플로의 기준입니다.',
+              'https://mem9.ai/openclaw/SKILL.md 를 읽고 OpenClaw 안에서 안내에 따라 연결하세요. 이것이 공식 호스팅 워크플로의 기준입니다.',
             ],
           },
           {
@@ -1740,7 +1740,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           },
           {
             label: 'SKILL.md',
-            href: 'https://mem9.ai/SKILL.md',
+            href: 'https://mem9.ai/openclaw/SKILL.md',
             external: true,
           },
         ],
@@ -1760,7 +1760,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         'mem9 memberi OpenClaw lapisan memori jangka panjang di cloud, plus aplikasi visual untuk melihat, mengelola, dan menganalisis memori. Halaman ini berfokus pada pengalaman resmi mem9.ai: cara memasang, apa yang didapat setelah setup, apa yang perlu diharapkan dalam penggunaan harian, dan bagaimana merawat memori itu dari waktu ke waktu.',
       summaryTitle: 'Apa yang dibahas di dokumen ini',
       summaryBullets: [
-        'Jalur resmi tercepat dimulai dari mem9.ai/SKILL.md.',
+        'Jalur resmi tercepat dimulai dari mem9.ai/openclaw/SKILL.md.',
         'Apa yang berubah ketika memakai mem9 dibanding file memory lokal.',
         'Perilaku nyata setup, reconnect, uninstall, dan Dashboard.',
         'Posisi Hook mode dan dukungan Context Engine.',
@@ -1803,7 +1803,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         title: 'Cara tercepat untuk mulai',
         intro: 'Jika Anda ingin mulai sekarang juga, lakukan satu hal ini dulu.',
         paragraphs: [
-          'Baca https://mem9.ai/SKILL.md lalu ikuti petunjuk untuk memasang dan mengonfigurasi mem9 di OpenClaw. Itulah pintu masuk utama untuk layanan hosted resmi mem9.ai.',
+          'Baca https://mem9.ai/openclaw/SKILL.md lalu ikuti petunjuk untuk memasang dan mengonfigurasi mem9 di OpenClaw. Itulah pintu masuk utama untuk layanan hosted resmi mem9.ai.',
           '<a href="https://clawhub.ai/c4pt0r/mem9-ai" target="_blank" rel="noopener noreferrer">ClawHub</a> tetap bisa dipakai sebagai sumber pemasangan opsional, tetapi panduan ini mengasumsikan jalur resmi dari situs mem9.ai agar pengalaman tetap konsisten.',
         ],
         bullets: [
@@ -1961,9 +1961,9 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
         subsections: [
           {
-            title: 'Mulai dari mem9.ai/SKILL.md',
+            title: 'Mulai dari mem9.ai/openclaw/SKILL.md',
             paragraphs: [
-              'Baca https://mem9.ai/SKILL.md dan ikuti instruksi di OpenClaw. Itulah jalur resmi untuk pengalaman hosted.',
+              'Baca https://mem9.ai/openclaw/SKILL.md dan ikuti instruksi di OpenClaw. Itulah jalur resmi untuk pengalaman hosted.',
             ],
           },
           {
@@ -2169,7 +2169,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           },
           {
             label: 'SKILL.md',
-            href: 'https://mem9.ai/SKILL.md',
+            href: 'https://mem9.ai/openclaw/SKILL.md',
             external: true,
           },
         ],
@@ -2189,7 +2189,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         'mem9 มอบเลเยอร์หน่วยความจำระยะยาวบนคลาวด์ให้กับ OpenClaw พร้อมแอปแบบภาพสำหรับดู จัดการ และวิเคราะห์หน่วยความจำ หน้านี้เน้นประสบการณ์แบบ hosted บน mem9.ai อย่างเป็นทางการ: ติดตั้งอย่างไร หลัง setup แล้วได้อะไร ควรคาดหวังอะไรในการใช้งานประจำวัน และควรดูแลหน่วยความจำนี้อย่างไรในระยะยาว',
       summaryTitle: 'เอกสารนี้ครอบคลุมอะไรบ้าง',
       summaryBullets: [
-        'ทางเข้าทางการที่เร็วที่สุดเริ่มจาก mem9.ai/SKILL.md',
+        'ทางเข้าทางการที่เร็วที่สุดเริ่มจาก mem9.ai/openclaw/SKILL.md',
         'mem9 เปลี่ยนอะไรเมื่อเทียบกับไฟล์ memory แบบโลคัล',
         'พฤติกรรมจริงของ setup, reconnect, uninstall และ Dashboard',
         'ตำแหน่งของ Hook mode และการรองรับ Context Engine',
@@ -2232,7 +2232,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         title: 'วิธีเริ่มที่สั้นที่สุด',
         intro: 'ถ้าคุณอยากเริ่มตอนนี้ ให้ทำสิ่งนี้ก่อนเพียงอย่างเดียว',
         paragraphs: [
-          'อ่าน https://mem9.ai/SKILL.md แล้วทำตามคำแนะนำเพื่อติดตั้งและตั้งค่า mem9 สำหรับ OpenClaw นี่คือทางเข้าหลักของบริการ hosted อย่างเป็นทางการบน mem9.ai',
+          'อ่าน https://mem9.ai/openclaw/SKILL.md แล้วทำตามคำแนะนำเพื่อติดตั้งและตั้งค่า mem9 สำหรับ OpenClaw นี่คือทางเข้าหลักของบริการ hosted อย่างเป็นทางการบน mem9.ai',
           '<a href="https://clawhub.ai/c4pt0r/mem9-ai" target="_blank" rel="noopener noreferrer">ClawHub</a> ยังใช้เป็นแหล่งติดตั้งทางเลือกได้ แต่คู่มือนี้อ้างอิงเส้นทางทางการจากเว็บไซต์ mem9.ai เป็นหลัก',
         ],
         bullets: [
@@ -2390,9 +2390,9 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
         subsections: [
           {
-            title: 'เริ่มจาก mem9.ai/SKILL.md',
+            title: 'เริ่มจาก mem9.ai/openclaw/SKILL.md',
             paragraphs: [
-              'อ่าน https://mem9.ai/SKILL.md แล้วทำตามคำแนะนำใน OpenClaw นี่คือ workflow มาตรฐานของประสบการณ์ hosted',
+              'อ่าน https://mem9.ai/openclaw/SKILL.md แล้วทำตามคำแนะนำใน OpenClaw นี่คือ workflow มาตรฐานของประสบการณ์ hosted',
             ],
           },
           {
@@ -2598,7 +2598,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           },
           {
             label: 'SKILL.md',
-            href: 'https://mem9.ai/SKILL.md',
+            href: 'https://mem9.ai/openclaw/SKILL.md',
             external: true,
           },
         ],

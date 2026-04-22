@@ -1,0 +1,66 @@
+---
+name: mem9
+version: 1.0.45
+homepage: "https://mem9.ai/openclaw/SKILL.md"
+description: "Persistent cloud memory plugin for OpenClaw. This document routes setup, troubleshooting, and uninstall flows and defines config boundaries."
+keywords: ["mem9", "openclaw memory", "persistent memory", "cloud memory", "memory plugin", "setup mem9", "install mem9", "reconnect mem9", "uninstall mem9"]
+user-invocable: true
+metadata: {"openclaw":{"emoji":"🧠","homepage":"https://mem9.ai/openclaw-memory","primaryEnv":"MEM9_API_KEY"}}
+---
+
+# mem9
+
+mem9 is the persistent cloud memory plugin for OpenClaw. It keeps durable memory across sessions and machines.
+
+This is the canonical OpenClaw install skill URL. The legacy alias `https://mem9.ai/SKILL.md` remains available as a backward-compatible launcher.
+
+This top-level `SKILL.md` is a routing and safety document. It is the entry point for setup, troubleshooting, and uninstall flows. It is not the canonical reference for runtime request behavior.
+
+## What This Skill Does
+
+- Route first-time install, reconnect, config review, and mainland China / Alibaba Cloud npm install handling to `https://mem9.ai/SETUP.md`.
+- Route setup failures, recovery work, and broken local state to `https://mem9.ai/TROUBLESHOOTING.md`.
+- Route local mem9 removal on this machine to `https://mem9.ai/UNINSTALL.md`.
+- Preserve filtered `utm_*` params from a remote `SKILL.md` URL through the create-new setup flow and first restart.
+- Prevent invalid compatibility fallbacks: never write `plugins.entries.mem9.apiKey`; only `plugins.entries.mem9.config.apiKey` is valid.
+- Keep restart notices honest: only claim post-restart verification has resumed after that work has actually started.
+- Keep history import manual. Do not scan or upload local memory or session files from this skill.
+
+## Source / Runtime Authority
+
+- Official source: [mem9-ai/mem9](https://github.com/mem9-ai/mem9) and [mem9.ai](https://mem9.ai/).
+- Default setup network target is `https://api.mem9.ai` unless the user explicitly chooses another `apiUrl`.
+- The installed mem9 plugin contains the actual OpenClaw integration, request logic, default base URL handling, and runtime behavior.
+- This `SKILL.md` is not the backend API contract and does not define day-to-day memory semantics.
+- For OpenClaw-specific runtime details, use the plugin README: [openclaw-plugin/README.md](https://github.com/mem9-ai/mem9/blob/main/openclaw-plugin/README.md).
+
+## Allowed Config Scope
+
+Only these `openclaw.json` paths may be changed during setup:
+
+- `plugins.slots.memory`
+- `plugins.entries.mem9.enabled`
+- `plugins.entries.mem9.config.apiUrl`
+- `plugins.entries.mem9.config.apiKey`
+- `plugins.entries.mem9.config.provisionToken` for create-new only; generate it once per create-new run before the first restart and keep it stable through the first successful post-restart provision on this machine
+- `plugins.entries.mem9.config.provisionQueryParams` for create-new only, and only when the remote `SKILL.md` URL contains filtered `utm_*` parameters; when present, it must be written before the first restart
+- `plugins.allow`
+
+Do not change any other config keys unless the user explicitly asks.
+
+The scope above is exhaustive. In particular, do not write `plugins.entries.mem9.apiKey` at the entry top level. OpenClaw rejects that key as invalid config before the mem9 plugin can load.
+
+## Routing
+
+- Install, enable, reconnect, or review mem9 config changes: read `https://mem9.ai/SETUP.md`.
+- Setup failures, broken reconnects, local cleanup issues, or recovery guidance: read `https://mem9.ai/TROUBLESHOOTING.md`.
+- Uninstall, remove, disable, or roll back mem9 on this machine: read `https://mem9.ai/UNINSTALL.md`.
+- If an uninstall request also mentions `reset session`, `restart gateway`, `重启网关`, clearing local mem9 history, or equivalent, still route to `https://mem9.ai/UNINSTALL.md` first and keep those actions as post-verification follow-up only.
+- If this skill is loaded remotely, use the absolute URLs above exactly. Do not rewrite them relative to another directory.
+- If the current remote `SKILL.md` URL contains filtered `utm_*` params, append that same filtered `utm_*` map when opening `https://mem9.ai/SETUP.md`, `https://mem9.ai/TROUBLESHOOTING.md`, or `https://mem9.ai/UNINSTALL.md`.
+
+## Definition of Done
+
+- The correct supporting document was used for the user's intent: `https://mem9.ai/SETUP.md`, `https://mem9.ai/TROUBLESHOOTING.md`, or `https://mem9.ai/UNINSTALL.md`.
+- No `openclaw.json` paths outside the allowed scope were changed.
+- Runtime behavior claims defer to the installed plugin and its README, not to this top-level routing document.
