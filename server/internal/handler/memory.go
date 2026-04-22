@@ -93,7 +93,8 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			if result != nil {
 				written = int64(result.MemoriesChanged)
 			}
-			go s.afterSuccessfulIngest(auth, svc, written)
+			s.recordIngestMetering(auth, svc)
+			go s.refreshWriteMetrics(auth, svc, written)
 			respond(w, http.StatusOK, map[string]string{"status": "ok"})
 		} else {
 			go func() {

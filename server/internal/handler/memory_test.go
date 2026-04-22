@@ -175,6 +175,18 @@ func (w *captureMeteringWriter) snapshot() []metering.Event {
 	return out
 }
 
+type blockingMeteringWriter struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (w *blockingMeteringWriter) Record(evt metering.Event) {
+	close(w.started)
+	<-w.release
+}
+
+func (w *blockingMeteringWriter) Close(context.Context) error { return nil }
+
 func cloneMap(in map[string]any) map[string]any {
 	if in == nil {
 		return nil
@@ -377,6 +389,56 @@ func TestCreateMemory_SyncMessages_RecordsIngestMetering(t *testing.T) {
 	}
 	if got := events[0].Data["active_memory_count"]; got != int64(126) {
 		t.Fatalf("active_memory_count = %v, want 126", got)
+	}
+}
+
+func TestCreateMemory_SyncMessages_WaitsForMeteringBeforeReturning(t *testing.T) {
+	memRepo := &testMemoryRepo{countStatsTotal: 126}
+	blockingWriter := &blockingMeteringWriter{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithMetering(blockingWriter)
+
+	body := map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "hello"},
+			{"role": "assistant", "content": "hi there"},
+		},
+		"session_id": "test-session",
+		"sync":       true,
+	}
+	req := makeTenantRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+	done := make(chan struct{})
+
+	go func() {
+		srv.createMemory(rr, req)
+		close(done)
+	}()
+
+	select {
+	case <-blockingWriter.started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for sync ingest metering to start")
+	}
+
+	select {
+	case <-done:
+		t.Fatal("sync createMemory returned before metering Record completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(blockingWriter.release)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for createMemory to return after metering completed")
+	}
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 
