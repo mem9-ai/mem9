@@ -26,7 +26,14 @@
 1. Choose your mem9 endpoint.
 
    - Hosted API: `https://api.mem9.ai`
-   - Self-hosted: apply the matching control-plane schema, run `mnemo-server`, and follow the provisioning notes in [Self-Hosting](#self-hosting)
+   - Self-hosted: apply the matching control-plane schema, then start `mnemo-server`:
+
+     ```bash
+     cd server
+     MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
+     ```
+
+     Then follow the provisioning notes in [Self-Hosting](#self-hosting).
 
 2. Pick your runtime guide.
 
@@ -41,10 +48,10 @@
 
    ```bash
    export MEM9_API_URL="https://api.mem9.ai"
-   export MEM9_API_KEY="<space-id>"
+   export MEM9_API_KEY="<mem9-api-key>"
    ```
 
-   For self-hosted deployments, use your server URL and either a provisioned space ID or an existing tenant ID.
+   For self-hosted deployments, use your server URL and the mem9 API key for that deployment, whether it was auto-provisioned or bootstrapped manually.
 
 ## Why mem9
 
