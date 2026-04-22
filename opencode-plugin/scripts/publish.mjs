@@ -1,3 +1,7 @@
+// Run from the package directory:
+//   pnpm run publish:release current
+//   pnpm run publish:release current --dry-run
+
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -26,15 +30,15 @@ function fail(message) {
 
 function printHelp() {
   console.log(`Usage:
-  pnpm run publish:release <current|major|minor|patch|premajor|preminor|prepatch|prerelease> [--channel <alpha|beta|rc>] [--dry-run]
+  node ./scripts/publish.mjs <current|major|minor|patch|premajor|preminor|prepatch|prerelease> [--channel <alpha|beta|rc>] [--dry-run]
 
 Examples:
-  pnpm run publish:release current
-  pnpm run publish:release patch
-  pnpm run publish:release patch --channel rc
-  pnpm run publish:release prepatch --channel beta
-  pnpm run publish:release prerelease --channel rc
-  pnpm run publish:release prepatch --channel rc --dry-run
+  node ./scripts/publish.mjs current
+  node ./scripts/publish.mjs patch
+  node ./scripts/publish.mjs patch --channel rc
+  node ./scripts/publish.mjs prepatch --channel beta
+  node ./scripts/publish.mjs prerelease --channel rc
+  node ./scripts/publish.mjs prepatch --channel rc --dry-run
 
 Behavior:
   - \`current\` publishes the exact version already in package.json and derives the npm tag from that version.

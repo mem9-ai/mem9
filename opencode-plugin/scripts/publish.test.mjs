@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
@@ -220,4 +221,15 @@ test("buildPublishArgs forwards dry-run without extra flags", () => {
     "--no-git-checks",
     "--dry-run",
   ]);
+});
+
+test("help output documents direct script usage", () => {
+  const result = spawnSync(process.execPath, ["./scripts/publish.mjs", "--help"], {
+    cwd: new URL("..", import.meta.url),
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /node \.\/scripts\/publish\.mjs current/);
+  assert.doesNotMatch(result.stdout, /pnpm run publish:release -- current/);
 });
