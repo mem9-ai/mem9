@@ -21,6 +21,7 @@ dist/
 *.tgz
 .netlify/
 .npm-cache-publish/
+opencode-plugin/.tmp/
 
 # Python cache
 __pycache__/

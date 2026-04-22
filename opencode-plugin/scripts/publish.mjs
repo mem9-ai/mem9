@@ -21,7 +21,7 @@
 //   - `--skip-branch-check` skips only the publish-branch sync gate.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -30,6 +30,7 @@ const packageDir = path.resolve(scriptDir, "..");
 const packageJsonPath = path.join(packageDir, "package.json");
 const publishEnvPath = path.join(packageDir, ".publish.env");
 const publishNpmrcPath = path.join(packageDir, ".npmrc.publish.tmp");
+const publishCacheDir = path.join(packageDir, ".tmp", "npm-cache-publish");
 const pnpmBin = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const gitBin = process.platform === "win32" ? "git.exe" : "git";
 
@@ -360,9 +361,11 @@ function writePublishNpmrc(token) {
 }
 
 function runPnpm(args) {
+  mkdirSync(publishCacheDir, { recursive: true });
   const env = {
     ...process.env,
     npm_config_userconfig: publishNpmrcPath,
+    npm_config_cache: publishCacheDir,
   };
   const result = spawnSync(pnpmBin, args, {
     cwd: packageDir,
