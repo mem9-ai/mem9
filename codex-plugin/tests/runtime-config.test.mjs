@@ -136,6 +136,28 @@ test("resolveProjectRoot walks up to the nearest git marker", () => {
   assert.equal(projectRoot, `${REPO_ROOT}/packages/web`);
 });
 
+test("resolveProjectRoot treats a worktree .git file as the repo root marker", () => {
+  const projectRoot = resolveProjectRoot({
+    cwd: `${REPO_ROOT}/packages/web/src`,
+    exists(filePath) {
+      return filePath === `${REPO_ROOT}/.git`;
+    },
+  });
+
+  assert.equal(projectRoot, REPO_ROOT);
+});
+
+test("resolveProjectRoot ignores .codex-only directories", () => {
+  const projectRoot = resolveProjectRoot({
+    cwd: `${REPO_ROOT}/packages/web/src`,
+    exists(filePath) {
+      return filePath.endsWith("/.codex");
+    },
+  });
+
+  assert.equal(projectRoot, null);
+});
+
 test("loadRuntimeStateFromDisk falls back to global config outside repos", () => {
   const state = loadRuntimeStateFromDisk(createRuntimeDisk({
     cwd: OUTSIDE_CWD,
