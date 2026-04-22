@@ -38,6 +38,23 @@ Recommended pattern:
 - install the server plugin once at user scope
 - keep project-specific behavior in `<project>/.opencode/mem9.json`
 
+`@mem9/opencode` resolves npm `latest`.
+If you publish a prerelease channel, install it with an explicit npm specifier instead:
+
+```json
+{
+  "plugin": ["@mem9/opencode@rc"]
+}
+```
+
+You can also pin an exact prerelease version:
+
+```json
+{
+  "plugin": ["@mem9/opencode@0.1.0-rc.0"]
+}
+```
+
 Avoid duplicate plugin loading, such as:
 
 - user scope plugin plus project scope plugin
@@ -272,6 +289,8 @@ The script:
 
 Stable releases publish to `latest`.
 Prereleases publish to `alpha`, `beta`, or `rc`.
+
+If you want the Quick Start examples in this README to work unchanged, publish the first public release to `latest`.
 
 ## Publish Surface
 
