@@ -1,0 +1,128 @@
+name: Local server smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/local-server-smoke.yml"
+      - "e2e/local-server-smoke.sh"
+      - "server/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/local-server-smoke.yml"
+      - "e2e/local-server-smoke.sh"
+      - "server/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-server-smoke:
+    name: Local server smoke
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: mnemo
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mnemo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/mnemo?sslmode=disable
+      MNEMO_BASE: http://127.0.0.1:18081
+      MNEMO_SMOKE_TENANT_ID: ci-local-smoke
+      NO_PROXY: 127.0.0.1,localhost
+      SMOKE_LOG_DIR: /tmp/mem9-local-smoke
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Build server
+        run: make build
+
+      - name: Initialize local database
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f server/schema_pg.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO tenants (
+            id, name, db_host, db_port, db_user, db_password, db_name, db_tls,
+            provider, cluster_id, status, schema_version, created_at, updated_at
+          )
+          VALUES (
+            'ci-local-smoke', 'ci-local-smoke', '127.0.0.1', 5432, 'postgres',
+            'postgres', 'mnemo', false, 'ci_local', 'ci-local-smoke',
+            'active', 1, NOW(), NOW()
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            status = 'active',
+            updated_at = NOW();
+          SQL
+
+      - name: Start local server
+        run: |
+          mkdir -p "$SMOKE_LOG_DIR"
+          MNEMO_DB_BACKEND=postgres \
+          MNEMO_DSN="$DATABASE_URL" \
+          MNEMO_TIDB_ZERO_ENABLED=false \
+          MNEMO_INGEST_MODE=raw \
+          MNEMO_PORT=18081 \
+          MNEMO_UPLOAD_DIR="$SMOKE_LOG_DIR/uploads" \
+          ./server/bin/mnemo-server > "$SMOKE_LOG_DIR/mnemo-server.log" 2>&1 &
+          echo "$!" > "$SMOKE_LOG_DIR/mnemo-server.pid"
+
+      - name: Wait for local server
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS "$MNEMO_BASE/healthz"; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "mnemo-server did not become healthy"
+          cat "$SMOKE_LOG_DIR/mnemo-server.log"
+          exit 1
+
+      - name: Run local server smoke
+        run: |
+          bash e2e/local-server-smoke.sh | tee "$SMOKE_LOG_DIR/local-server-smoke.log"
+
+      - name: Stop local server
+        if: always()
+        run: |
+          if [ -f "$SMOKE_LOG_DIR/mnemo-server.pid" ]; then
+            kill "$(cat "$SMOKE_LOG_DIR/mnemo-server.pid")" || true
+          fi
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-server-smoke-logs
+          path: |
+            /tmp/mem9-local-smoke/*.log
+          if-no-files-found: warn
+          retention-days: 7
