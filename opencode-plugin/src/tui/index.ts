@@ -61,6 +61,12 @@ interface SetupProfileOptionState {
   currentProfileId?: string;
 }
 
+function scheduleDialogTransition(next: () => void): void {
+  // Delay prompt-to-prompt transitions so the next dialog does not reuse
+  // the same Enter keypress that confirmed the current prompt.
+  setTimeout(next, 0);
+}
+
 function getProjectDir(api: TuiPluginApi): string {
   const worktree = api.state.path.worktree.trim();
   if (worktree.length > 0) {
@@ -354,7 +360,9 @@ function showProfileIdDialog(
         if (draft.label.trim().length === 0) {
           draft.label = next === "default" ? "Personal" : next;
         }
-        showProfileLabelDialog(api, paths, state, action, draft);
+        scheduleDialogTransition(() => {
+          showProfileLabelDialog(api, paths, state, action, draft);
+        });
       },
       onCancel: () => {
         showActionDialog(api, paths, state);
@@ -386,10 +394,14 @@ function showProfileLabelDialog(
         }
 
         draft.label = next;
-        showProfileBaseUrlDialog(api, paths, state, action, draft);
+        scheduleDialogTransition(() => {
+          showProfileBaseUrlDialog(api, paths, state, action, draft);
+        });
       },
       onCancel: () => {
-        showProfileIdDialog(api, paths, state, action, draft);
+        scheduleDialogTransition(() => {
+          showProfileIdDialog(api, paths, state, action, draft);
+        });
       },
     }),
   );
@@ -423,10 +435,14 @@ function showProfileBaseUrlDialog(
           return;
         }
 
-        showProfileApiKeyDialog(api, paths, state, draft);
+        scheduleDialogTransition(() => {
+          showProfileApiKeyDialog(api, paths, state, draft);
+        });
       },
       onCancel: () => {
-        showProfileLabelDialog(api, paths, state, action, draft);
+        scheduleDialogTransition(() => {
+          showProfileLabelDialog(api, paths, state, action, draft);
+        });
       },
     }),
   );
@@ -462,7 +478,9 @@ function showProfileApiKeyDialog(
         void submitManualProfile(api, paths, draft);
       },
       onCancel: () => {
-        showProfileBaseUrlDialog(api, paths, state, "manual-api-key", draft);
+        scheduleDialogTransition(() => {
+          showProfileBaseUrlDialog(api, paths, state, "manual-api-key", draft);
+        });
       },
     }),
   );
@@ -578,7 +596,9 @@ function showDefaultTimeoutDialog(
         }
 
         draft.defaultTimeoutMs = parsed;
-        showSearchTimeoutDialog(api, paths, state, draft);
+        scheduleDialogTransition(() => {
+          showSearchTimeoutDialog(api, paths, state, draft);
+        });
       },
       onCancel: () => {
         showScopeDebugDialog(api, paths, state, draft);
@@ -612,7 +632,9 @@ function showSearchTimeoutDialog(
         void submitScopeConfigDraft(api, paths, draft);
       },
       onCancel: () => {
-        showDefaultTimeoutDialog(api, paths, state, draft);
+        scheduleDialogTransition(() => {
+          showDefaultTimeoutDialog(api, paths, state, draft);
+        });
       },
     }),
   );
