@@ -19,6 +19,7 @@ import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   DEFAULT_SEARCH_TIMEOUT_MS,
   loadRuntimeStateFromDisk,
+  resolveInstalledPluginCacheVersion,
   resolveCodexHome,
   resolveMem9Home,
 } from "../../../lib/config.mjs";
@@ -26,6 +27,7 @@ import { resolveProjectRoot } from "../../../lib/project-root.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(SCRIPT_DIR, "../../..");
+const PLUGIN_MANIFEST_PATH = path.join(PACKAGE_ROOT, ".codex-plugin", "plugin.json");
 const HOOK_SHIM_SOURCE_DIR = path.join(PACKAGE_ROOT, "bootstrap-hooks");
 const HOOK_TEMPLATE_PATH = path.join(PACKAGE_ROOT, "templates", "hooks.json");
 const DEFAULT_BASE_URL = "https://api.mem9.ai";
@@ -101,6 +103,250 @@ function parseUpdateCheckMode(value) {
 
 function readTextFile(filePath, readFile = readFileSync) {
   return readFile(filePath, "utf8");
+}
+
+function isHelpToken(token) {
+  const normalized = normalizeString(token);
+  return normalized === "--help" || normalized === "-h";
+}
+
+function detectSetupHelpRequest(argv = process.argv.slice(2)) {
+  const tokens = Array.isArray(argv)
+    ? argv.map((token) => normalizeString(token)).filter(Boolean)
+    : [];
+  const helpIndex = tokens.findIndex(isHelpToken);
+
+  if (tokens.length === 0 || helpIndex === 0) {
+    return {
+      command: "",
+      subcommand: "",
+    };
+  }
+
+  if (helpIndex === -1) {
+    return null;
+  }
+
+  const [command = "", subcommand = ""] = tokens;
+
+  if (command === "inspect") {
+    return {
+      command,
+      subcommand: "",
+    };
+  }
+
+  if (command === "profile" || command === "scope") {
+    return {
+      command,
+      subcommand,
+    };
+  }
+
+  return {
+    command: "",
+    subcommand: "",
+  };
+}
+
+function buildSetupHelpText(command = "", subcommand = "") {
+  const topic = `${normalizeString(command)}:${normalizeString(subcommand)}`.replace(/:$/, "");
+
+  switch (topic) {
+    case "inspect":
+      return [
+        "mem9 setup inspect",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs inspect [--cwd <path>]",
+        "",
+        "Print the current mem9 setup state as JSON.",
+        "",
+        "Flags:",
+        "  --cwd <path>    Resolve repo-local paths from this directory.",
+        "",
+        "Example:",
+        "  node ./scripts/setup.mjs inspect --cwd .",
+        "",
+      ].join("\n");
+    case "profile":
+      return [
+        "mem9 setup profile",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs profile create ...",
+        "  node ./scripts/setup.mjs profile save-key ...",
+        "",
+        "Subcommands:",
+        "  create      Create or update a profile by provisioning a new mem9 API key.",
+        "  save-key    Create or update a profile from an API key that already exists.",
+        "",
+        "Run a subcommand with --help for full flag details.",
+        "",
+      ].join("\n");
+    case "profile:create":
+      return [
+        "mem9 setup profile create",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs profile create \\",
+        "    --profile <profile-id> \\",
+        "    [--label <profile-label>] \\",
+        "    [--base-url <mem9-api-base-url>] \\",
+        "    --provision-api-key \\",
+        "    [--cwd <path>]",
+        "",
+        "Required flags:",
+        "  --profile <profile-id>",
+        "  --provision-api-key",
+        "",
+        "Optional flags:",
+        "  --label <profile-label>           Defaults to the profile id or existing label.",
+        "  --base-url <mem9-api-base-url>    Defaults to https://api.mem9.ai.",
+        "  --cwd <path>                      Resolve repo-local paths from this directory.",
+        "",
+        "Example:",
+        "  node ./scripts/setup.mjs profile create --profile default --label Default --provision-api-key",
+        "",
+      ].join("\n");
+    case "profile:save-key":
+      return [
+        "mem9 setup profile save-key",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs profile save-key \\",
+        "    --profile <profile-id> \\",
+        "    [--label <profile-label>] \\",
+        "    [--base-url <mem9-api-base-url>] \\",
+        "    --api-key-env <env-var> \\",
+        "    [--cwd <path>]",
+        "",
+        "Required flags:",
+        "  --profile <profile-id>",
+        "  --api-key-env <env-var>",
+        "",
+        "Optional flags:",
+        "  --label <profile-label>           Defaults to the profile id or existing label.",
+        "  --base-url <mem9-api-base-url>    Defaults to https://api.mem9.ai.",
+        "  --cwd <path>                      Resolve repo-local paths from this directory.",
+        "",
+        "Example:",
+        "  MEM9_API_KEY='<your-mem9-api-key>' node ./scripts/setup.mjs profile save-key --profile default --label Default --base-url https://api.mem9.ai --api-key-env MEM9_API_KEY",
+        "",
+      ].join("\n");
+    case "scope":
+      return [
+        "mem9 setup scope",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs scope apply ...",
+        "  node ./scripts/setup.mjs scope clear ...",
+        "",
+        "Subcommands:",
+        "  apply      Write user or project mem9 config and repair managed Codex runtime files.",
+        "  clear      Remove the current project's mem9 override.",
+        "",
+        "Run a subcommand with --help for full flag details.",
+        "",
+      ].join("\n");
+    case "scope:apply":
+      return [
+        "mem9 setup scope apply",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs scope apply \\",
+        "    --scope <user|project> \\",
+        "    --profile <profile-id> \\",
+        "    [--default-timeout-ms <ms>] \\",
+        "    [--search-timeout-ms <ms>] \\",
+        "    [--update-check <enabled|disabled>] \\",
+        "    [--update-check-interval-hours <hours>] \\",
+        "    [--cwd <path>]",
+        "",
+        "Required flags:",
+        "  --scope <user|project>",
+        "  --profile <profile-id>",
+        "",
+        "Optional flags:",
+        "  --default-timeout-ms <ms>             Defaults to the existing value or runtime default.",
+        "  --search-timeout-ms <ms>              Defaults to the existing value or runtime default.",
+        "  --update-check <enabled|disabled>     User scope only.",
+        "  --update-check-interval-hours <hours> User scope only.",
+        "  --cwd <path>                          Resolve repo-local paths from this directory.",
+        "",
+        "Examples:",
+        "  node ./scripts/setup.mjs scope apply --scope user --profile default --default-timeout-ms 8000 --search-timeout-ms 15000 --update-check enabled --update-check-interval-hours 24",
+        "  node ./scripts/setup.mjs scope apply --scope project --profile work --default-timeout-ms 8000 --search-timeout-ms 15000 --cwd .",
+        "",
+      ].join("\n");
+    case "scope:clear":
+      return [
+        "mem9 setup scope clear",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs scope clear --scope project [--cwd <path>]",
+        "",
+        "Required flags:",
+        "  --scope project",
+        "",
+        "Optional flags:",
+        "  --cwd <path>    Resolve repo-local paths from this directory.",
+        "",
+        "Example:",
+        "  node ./scripts/setup.mjs scope clear --scope project --cwd .",
+        "",
+      ].join("\n");
+    default:
+      return [
+        "mem9 setup",
+        "",
+        "Inspect and configure mem9 for Codex.",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs inspect [--cwd <path>]",
+        "  node ./scripts/setup.mjs profile create --profile <profile-id> [--label <profile-label>] [--base-url <mem9-api-base-url>] --provision-api-key [--cwd <path>]",
+        "  node ./scripts/setup.mjs profile save-key --profile <profile-id> [--label <profile-label>] [--base-url <mem9-api-base-url>] --api-key-env <env-var> [--cwd <path>]",
+        "  node ./scripts/setup.mjs scope apply --scope <user|project> --profile <profile-id> [--default-timeout-ms <ms>] [--search-timeout-ms <ms>] [--update-check <enabled|disabled>] [--update-check-interval-hours <hours>] [--cwd <path>]",
+        "  node ./scripts/setup.mjs scope clear --scope project [--cwd <path>]",
+        "",
+        "Commands:",
+        "  inspect              Print the current mem9 setup state as JSON.",
+        "  profile create       Create or update a profile by provisioning a new mem9 API key.",
+        "  profile save-key     Create or update a profile from an existing API key env var.",
+        "  scope apply          Write user or project config and repair managed Codex runtime files.",
+        "  scope clear          Remove the current project's mem9 override.",
+        "",
+        "Notes:",
+        "  - Successful non-help commands print sanitized JSON summaries.",
+        "  - `scope apply` and `scope clear` repair $CODEX_HOME hooks and install metadata.",
+        "  - Save API keys from a trusted shell with MEM9_API_KEY when possible.",
+        "",
+        "Examples:",
+        "  node ./scripts/setup.mjs inspect --cwd .",
+        "  node ./scripts/setup.mjs profile create --profile default --label Default --provision-api-key",
+        "  MEM9_API_KEY='<your-mem9-api-key>' node ./scripts/setup.mjs profile save-key --profile default --label Default --base-url https://api.mem9.ai --api-key-env MEM9_API_KEY",
+        "  node ./scripts/setup.mjs scope apply --scope user --profile default --default-timeout-ms 8000 --search-timeout-ms 15000 --update-check enabled --update-check-interval-hours 24",
+        "",
+        "Run a subcommand with --help for more detail.",
+        "",
+      ].join("\n");
+  }
+}
+
+function maybeWriteSetupHelp(argv, stdout) {
+  const request = detectSetupHelpRequest(argv);
+  if (!request) {
+    return null;
+  }
+
+  stdout.write(buildSetupHelpText(request.command, request.subcommand));
+  return {
+    status: "ok",
+    command: "help",
+    topic: request.command
+      ? [request.command, request.subcommand].filter(Boolean).join(" ")
+      : "root",
+  };
 }
 
 function getProfiles(credentials) {
@@ -335,7 +581,77 @@ function summarizeProfileDisplaySummary(profile) {
   return `${displayName} (${keyStatus}) · ${baseUrl}`;
 }
 
-function summarizeProfiles(profiles) {
+function summarizeInstalledSetupScriptPath(context) {
+  const currentScriptPath = path.join(SCRIPT_DIR, "setup.mjs");
+  const displayPath = sanitizeDisplayPath(currentScriptPath, context.pathContext);
+
+  if (displayPath.startsWith("$CODEX_HOME/")) {
+    return displayPath;
+  }
+
+  const installIdentity = buildInstallMetadata(context.codexHome, PACKAGE_ROOT);
+  const manifest = readJsonFileOrDefault(
+    PLUGIN_MANIFEST_PATH,
+    {},
+    context.fsOps,
+  );
+  const activePluginVersion = resolveInstalledPluginCacheVersion({
+    codexHome: context.codexHome,
+    marketplaceName: installIdentity.marketplaceName,
+    pluginName: installIdentity.pluginName,
+    readDirNames(dirPath) {
+      return (context.fsOps.readdirSync ?? readdirSync)(dirPath, {
+        withFileTypes: true,
+      })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    },
+  });
+  const pluginVersion = activePluginVersion || normalizeString(manifest.version) || "local";
+
+  return `$CODEX_HOME/plugins/cache/${installIdentity.marketplaceName}/${installIdentity.pluginName}/${pluginVersion}/skills/setup/scripts/setup.mjs`;
+}
+
+function summarizeShellPath(displayPath) {
+  if (displayPath === "$CODEX_HOME") {
+    return "\"${CODEX_HOME}\"";
+  }
+
+  if (displayPath.startsWith("$CODEX_HOME/")) {
+    return `"${"${CODEX_HOME}"}${displayPath.slice("$CODEX_HOME".length)}"`;
+  }
+
+  if (displayPath === "$MEM9_HOME") {
+    return "\"${MEM9_HOME}\"";
+  }
+
+  if (displayPath.startsWith("$MEM9_HOME/")) {
+    return `"${"${MEM9_HOME}"}${displayPath.slice("$MEM9_HOME".length)}"`;
+  }
+
+  return shellQuote(displayPath);
+}
+
+function buildManualSaveKeyShellCommand(profileId, label, baseUrl, context, options = {}) {
+  const nextProfileId = normalizeString(profileId) || "<profile-id>";
+  const nextLabel = normalizeString(label) || nextProfileId || "<profile-label>";
+  const nextBaseUrl = normalizeBaseUrl(baseUrl) || DEFAULT_BASE_URL;
+  const apiKeyEnv = normalizeString(options.apiKeyEnv) || "MEM9_API_KEY";
+  const setupScriptPath = summarizeInstalledSetupScriptPath(context);
+  const setupScriptReference = summarizeShellPath(setupScriptPath);
+  const shellValuePlaceholder = normalizeString(options.apiKeyPlaceholder)
+    || "<your-mem9-api-key>";
+
+  return [
+    `${apiKeyEnv}=${shellQuote(shellValuePlaceholder)} node ${setupScriptReference} profile save-key`,
+    `--profile ${shellQuote(nextProfileId)}`,
+    `--label ${shellQuote(nextLabel)}`,
+    `--base-url ${shellQuote(nextBaseUrl)}`,
+    `--api-key-env ${apiKeyEnv}`,
+  ].join(" ");
+}
+
+function summarizeProfiles(profiles, context) {
   return Object.entries(isRecord(profiles) ? profiles : {})
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([profileId, profile]) => {
@@ -353,6 +669,12 @@ function summarizeProfiles(profiles) {
           baseUrl: current.baseUrl,
           apiKey: current.apiKey,
         }),
+        manualSaveKeyCommand: buildManualSaveKeyShellCommand(
+          profileId,
+          current.label,
+          current.baseUrl,
+          context,
+        ),
       };
     });
 }
@@ -1016,14 +1338,24 @@ export function upsertCredentialsProfile(credentials, profile) {
   return next;
 }
 
-function buildManualProfileGuidance(profileId, label, baseUrl = DEFAULT_BASE_URL) {
+function buildManualProfileGuidance(profileId, label, baseUrl = DEFAULT_BASE_URL, context) {
   const nextProfileId = normalizeString(profileId) || "default";
   const nextLabel = normalizeString(label) || nextProfileId;
   const nextBaseUrl = normalizeBaseUrl(baseUrl) || DEFAULT_BASE_URL;
+  const manualShellCommand = context
+    ? buildManualSaveKeyShellCommand(
+      nextProfileId,
+      nextLabel,
+      nextBaseUrl,
+      context,
+    )
+    : "";
 
   return [
     "Prefer saving the API key from a trusted shell instead of pasting secrets into Codex.",
-    `Export \`MEM9_API_KEY\`, then run \`node ./scripts/setup.mjs profile save-key --profile ${nextProfileId} --label ${nextLabel} --base-url ${nextBaseUrl} --api-key-env MEM9_API_KEY\`.`,
+    manualShellCommand
+      ? `Run \`${manualShellCommand}\`.`
+      : `Run \`profile save-key\` with \`MEM9_API_KEY\` from a trusted shell.`,
     "You can also edit `$MEM9_HOME/.credentials.json` directly.",
   ].join(" ");
 }
@@ -1393,7 +1725,7 @@ export function inspectSetup(argv = process.argv.slice(2), options = {}) {
     context.fsOps,
   );
   const profiles = getProfiles(credentialsInspection.value);
-  const profileSummaries = summarizeProfiles(profiles);
+  const profileSummaries = summarizeProfiles(profiles, context);
   const usableProfileIds = profileSummaries
     .filter((profile) => profile.hasApiKey)
     .map((profile) => profile.profileId);
@@ -1470,6 +1802,12 @@ export function inspectSetup(argv = process.argv.slice(2), options = {}) {
       defaultProfileId: buildDefaultProfileId(profiles),
       hasUsableProfiles: usableProfileIds.length > 0,
       usableProfileIds,
+      manualSaveKeyTemplate: buildManualSaveKeyShellCommand(
+        "<profile-id>",
+        "<profile-label>",
+        DEFAULT_BASE_URL,
+        context,
+      ),
       items: profileSummaries,
     },
     paths: {
@@ -1489,6 +1827,7 @@ export function inspectSetup(argv = process.argv.slice(2), options = {}) {
         context.globalPaths.installPath,
         context.pathContext,
       ),
+      setupScriptPath: summarizeInstalledSetupScriptPath(context),
     },
   };
 }
@@ -1562,7 +1901,7 @@ async function runProfileSaveKey(args, options = {}) {
 
   if (!apiKey) {
     throw new Error(
-      `Environment variable \`${args.apiKeyEnv}\` is empty. ${buildManualProfileGuidance(nextProfile.profileId, nextProfile.label, nextProfile.baseUrl)}`,
+      `Environment variable \`${args.apiKeyEnv}\` is empty. ${buildManualProfileGuidance(nextProfile.profileId, nextProfile.label, nextProfile.baseUrl, context)}`,
     );
   }
 
@@ -1654,7 +1993,7 @@ async function runScopeApply(args, options = {}) {
   }
 
   if (!hasApiKey(currentProfile)) {
-    throw new Error(`Profile "${args.profileId}" is missing an API key. ${buildManualProfileGuidance(args.profileId, currentProfile.label, currentProfile.baseUrl)}`);
+    throw new Error(`Profile "${args.profileId}" is missing an API key. ${buildManualProfileGuidance(args.profileId, currentProfile.label, currentProfile.baseUrl, context)}`);
   }
 
   const invalidJsonFiles = new Set();
@@ -1796,6 +2135,12 @@ async function runScopeClear(args, options = {}) {
 }
 
 export async function runSetup(argv = process.argv.slice(2), options = {}) {
+  const stdout = options.stdout ?? process.stdout;
+  const helpResult = Array.isArray(argv) ? maybeWriteSetupHelp(argv, stdout) : null;
+  if (helpResult) {
+    return helpResult;
+  }
+
   const args = Array.isArray(argv) ? parseArgs(argv) : argv;
 
   if (args.command === "inspect") {
@@ -1822,8 +2167,13 @@ export async function runSetup(argv = process.argv.slice(2), options = {}) {
 }
 
 export async function main(argv = process.argv.slice(2), options = {}) {
-  const args = Array.isArray(argv) ? parseArgs(argv) : argv;
   const stdout = options.stdout ?? process.stdout;
+  const helpResult = Array.isArray(argv) ? maybeWriteSetupHelp(argv, stdout) : null;
+  if (helpResult) {
+    return helpResult;
+  }
+
+  const args = Array.isArray(argv) ? parseArgs(argv) : argv;
 
   if (args.command === "inspect") {
     const summary = inspectSetup(args, options);

@@ -234,6 +234,33 @@ function isValidPluginVersionSegment(pluginVersion) {
     );
 }
 
+export function resolveInstalledPluginCacheVersion({
+  codexHome,
+  marketplaceName,
+  pluginName,
+  readDirNames = readDirNamesFromDisk,
+}) {
+  try {
+    const discoveredVersions = readDirNames(
+      path.join(
+        codexHome,
+        PLUGINS_CACHE_DIR,
+        marketplaceName,
+        pluginName,
+      ),
+    ).filter(isValidPluginVersionSegment);
+
+    discoveredVersions.sort();
+    if (discoveredVersions.includes(DEFAULT_PLUGIN_VERSION)) {
+      return DEFAULT_PLUGIN_VERSION;
+    }
+
+    return discoveredVersions.at(-1) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function runtimePaths(projectRoot, codexHome, mem9Home) {
   const globalConfigPath = path.join(codexHome, "mem9", "config.json");
 
@@ -474,26 +501,12 @@ function loadPluginState({
     }
   }
 
-  let pluginVersion = "";
-  try {
-    const discoveredVersions = readDirNames(
-      path.join(
-        codexHome,
-        PLUGINS_CACHE_DIR,
-        installIdentity.marketplaceName,
-        installIdentity.pluginName,
-      ),
-    ).filter(isValidPluginVersionSegment);
-
-    discoveredVersions.sort();
-    if (discoveredVersions.includes(DEFAULT_PLUGIN_VERSION)) {
-      pluginVersion = DEFAULT_PLUGIN_VERSION;
-    } else {
-      pluginVersion = discoveredVersions.at(-1) ?? "";
-    }
-  } catch {
-    pluginVersion = "";
-  }
+  const pluginVersion = resolveInstalledPluginCacheVersion({
+    codexHome,
+    marketplaceName: installIdentity.marketplaceName,
+    pluginName: installIdentity.pluginName,
+    readDirNames,
+  });
 
   if (installIssue || !pluginVersion) {
     return {

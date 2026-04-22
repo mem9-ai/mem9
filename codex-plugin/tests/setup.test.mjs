@@ -168,6 +168,58 @@ test("parseArgs supports the setup subcommands", () => {
   );
 });
 
+test("main prints top-level setup help without mutating files", async () => {
+  const tempRoot = createTempRoot("setup");
+
+  try {
+    let stdoutText = "";
+    const result = await main(
+      ["--help"],
+      {
+        cwd: tempRoot,
+        codexHome: path.join(tempRoot, "codex-home"),
+        mem9Home: path.join(tempRoot, "mem9-home"),
+        stdout: {
+          write(chunk) {
+            stdoutText += chunk;
+          },
+        },
+      },
+    );
+
+    assert.equal(result.command, "help");
+    assert.equal(result.topic, "root");
+    assert.match(stdoutText, /^mem9 setup\n/m);
+    assert.match(stdoutText, /profile save-key/);
+    assert.match(stdoutText, /scope clear/);
+    assert.match(stdoutText, /Run a subcommand with --help for more detail\./);
+    assert.equal(existsSync(path.join(tempRoot, "codex-home", "mem9", "config.json")), false);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("main prints command-specific setup help", async () => {
+  let stdoutText = "";
+
+  const result = await main(
+    ["profile", "save-key", "--help"],
+    {
+      stdout: {
+        write(chunk) {
+          stdoutText += chunk;
+        },
+      },
+    },
+  );
+
+  assert.equal(result.command, "help");
+  assert.equal(result.topic, "profile save-key");
+  assert.match(stdoutText, /^mem9 setup profile save-key\n/m);
+  assert.match(stdoutText, /--api-key-env <env-var>/);
+  assert.match(stdoutText, /MEM9_API_KEY='<your-mem9-api-key>' node \.\/scripts\/setup\.mjs profile save-key/);
+});
+
 test("assertNodeVersion rejects runtimes below Node 22", () => {
   assert.equal(assertNodeVersion("22.1.0"), 22);
   assert.throws(
@@ -445,6 +497,10 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
     assert.equal(summary.projectConfig.summary.legacyEnabledFalse, true);
     assert.equal(summary.projectConfig.summary.updateCheck, undefined);
     assert.deepEqual(summary.profiles.usableProfileIds, ["default"]);
+    assert.match(
+      summary.profiles.manualSaveKeyTemplate,
+      /^MEM9_API_KEY='<your-mem9-api-key>' node "\$\{CODEX_HOME\}\/plugins\/cache\/mem9-ai\/mem9\/local\/skills\/setup\/scripts\/setup\.mjs" profile save-key /,
+    );
     const profilesById = Object.fromEntries(
       summary.profiles.items.map((profile) => [profile.profileId, profile]),
     );
@@ -454,6 +510,18 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
       "Default (key-...ault) · https://api.mem9.ai",
     );
     assert.equal(profilesById.default.apiKeyPreview, "key-...ault");
+    assert.match(
+      profilesById.default.manualSaveKeyCommand,
+      /--profile 'default'/,
+    );
+    assert.match(
+      profilesById.default.manualSaveKeyCommand,
+      /--label 'Default'/,
+    );
+    assert.match(
+      profilesById.default.manualSaveKeyCommand,
+      /\$\{CODEX_HOME\}\/plugins\/cache\/mem9-ai\/mem9\/local\/skills\/setup\/scripts\/setup\.mjs/,
+    );
     assert.equal(profilesById.solo.hasApiKey, false);
     assert.equal(profilesById.solo.displayName, "solo");
     assert.equal(
@@ -468,6 +536,10 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
       "Work (API key pending) · https://api.mem9.ai",
     );
     assert.equal(profilesById.work.apiKeyPreview, "");
+    assert.equal(
+      summary.paths.setupScriptPath,
+      "$CODEX_HOME/plugins/cache/mem9-ai/mem9/local/skills/setup/scripts/setup.mjs",
+    );
     assert.equal(JSON.stringify(summary).includes("key-default"), false);
     assert.equal(JSON.stringify(summary).includes(tempRoot), false);
   } finally {
@@ -709,6 +781,7 @@ test("profile save-key errors with guidance when the env var is missing", async 
     mkdirSync(projectRoot, { recursive: true });
     mkdirSync(codexHome, { recursive: true });
     mkdirSync(mem9Home, { recursive: true });
+    installActivePlugin(codexHome);
 
     await assert.rejects(
       () => runSetup(
@@ -732,7 +805,70 @@ test("profile save-key errors with guidance when the env var is missing", async 
           env: {},
         },
       ),
-      /MEM9_API_KEY/,
+      (error) => {
+        assert.match(error.message, /MEM9_API_KEY/);
+        assert.match(
+          error.message,
+          /\$\{CODEX_HOME\}\/plugins\/cache\/mem9-ai\/mem9\/local\/skills\/setup\/scripts\/setup\.mjs/,
+        );
+        assert.match(error.message, /profile save-key/);
+        return true;
+      },
+    );
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("scope apply errors with stable guidance when the selected profile is missing an API key", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const projectRoot = path.join(tempRoot, "project");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    mkdirSync(projectRoot, { recursive: true });
+    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(mem9Home, { recursive: true });
+    installActivePlugin(codexHome);
+
+    writeJson(path.join(mem9Home, ".credentials.json"), {
+      schemaVersion: 1,
+      profiles: {
+        work: {
+          label: "Work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "",
+        },
+      },
+    });
+
+    await assert.rejects(
+      () => runSetup(
+        [
+          "scope",
+          "apply",
+          "--scope",
+          "user",
+          "--profile",
+          "work",
+        ],
+        {
+          cwd: projectRoot,
+          codexHome,
+          mem9Home,
+          userWritable: true,
+        },
+      ),
+      (error) => {
+        assert.match(error.message, /Profile "work" is missing an API key/);
+        assert.match(
+          error.message,
+          /\$\{CODEX_HOME\}\/plugins\/cache\/mem9-ai\/mem9\/local\/skills\/setup\/scripts\/setup\.mjs/,
+        );
+        assert.match(error.message, /profile save-key/);
+        return true;
+      },
     );
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
