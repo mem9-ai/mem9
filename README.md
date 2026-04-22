@@ -33,7 +33,7 @@
      MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
      ```
 
-     For PostgreSQL or db9, also set `MNEMO_DB_BACKEND=postgres` or `MNEMO_DB_BACKEND=db9` before launch. Then use the provisioning flow in [API Reference](#api-reference) and the backend notes in [Self-Hosting](#self-hosting).
+     See [Self-Hosting](#self-hosting) for backend-specific setup details, and [API Reference](#api-reference) for provisioning.
 
 2. Pick your runtime guide.
 
