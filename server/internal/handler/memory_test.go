@@ -201,6 +201,15 @@ func waitForMeteringEvents(t *testing.T, writer *captureMeteringWriter, want int
 	return nil
 }
 
+func ensureNoMeteringEvents(t *testing.T, writer *captureMeteringWriter, timeout time.Duration) {
+	t.Helper()
+	time.Sleep(timeout)
+	events := writer.snapshot()
+	if len(events) != 0 {
+		t.Fatalf("expected no metering events, got %+v", events)
+	}
+}
+
 // newTestServer creates a Server with pre-populated svcCache for testing.
 func newTestServer(memRepo *testMemoryRepo, sessRepo *testSessionRepo) *Server {
 	srv := NewServer(nil, nil, "", nil, nil, "", false, service.ModeSmart, "", slog.Default())
@@ -427,6 +436,53 @@ func TestCreateMemory_AsyncMessages_Returns202(t *testing.T) {
 	if resp["status"] != "accepted" {
 		t.Errorf("expected status=accepted, got %q", resp["status"])
 	}
+}
+
+func TestCreateMemory_AsyncMessages_ReconcileFailed_DoesNotRecordIngestMetering(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":["test fact"],"message_tags":[["tag1"],["tag2"]]}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &failSearchMemoryRepo{}
+	meteringWriter := &captureMeteringWriter{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default()).WithMetering(meteringWriter)
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(&memRepo.testMemoryRepo, nil, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(&testSessionRepo{}, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("tenant-a-0x0"), svc)
+
+	body := map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "hello"},
+			{"role": "assistant", "content": "hi there"},
+		},
+		"session_id": "test-session",
+	}
+	req := makeTenantRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
+	}
+	ensureNoMeteringEvents(t, meteringWriter, 100*time.Millisecond)
 }
 
 // failSearchMemoryRepo embeds testMemoryRepo but makes KeywordSearch fail,

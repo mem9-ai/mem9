@@ -102,6 +102,10 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 					slog.Error("async ingest failed", "session", ingestReq.SessionID, "err", err)
 					return
 				}
+				if result != nil && result.Status == "failed" {
+					slog.Error("async ingest reconcile failed", "session", ingestReq.SessionID)
+					return
+				}
 				var written int64
 				if result != nil {
 					written = int64(result.MemoriesChanged)
