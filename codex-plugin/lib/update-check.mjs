@@ -460,7 +460,7 @@ async function maybeResolveRemoteUpdateNotice(input) {
   }
 
   return {
-    message: `mem9 v${manifest.latestVersion} is available. Restart Codex or run \`${manifest.upgradeCommand}\`.`,
+    message: `mem9 v${manifest.latestVersion} is available. Run \`${manifest.upgradeCommand}\`, then restart Codex. For local checkout updates, pull the latest plugin files and restart Codex.`,
     state: {
       ...nextState,
       lastNotifiedVersion: manifest.latestVersion,

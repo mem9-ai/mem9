@@ -105,6 +105,8 @@ test("resolveUpgradeNotice surfaces a remote update once per released version", 
 
   assert.match(first.message, /mem9 v0\.2\.0 is available/);
   assert.match(first.message, /codex plugin marketplace upgrade mem9-ai/);
+  assert.match(first.message, /then restart Codex/);
+  assert.match(first.message, /local checkout updates/);
   assert.equal(first.state.lastCheckedAt, "2026-04-22T00:00:00.000Z");
   assert.equal(first.state.lastNotifiedVersion, "0.2.0");
 
@@ -161,5 +163,6 @@ test("resolveUpgradeNotice keeps a newer remote release pending when a local upg
   });
 
   assert.match(followUp.message, /mem9 v0\.3\.0 is available/);
+  assert.match(followUp.message, /then restart Codex/);
   assert.equal(followUp.state.lastNotifiedVersion, "0.3.0");
 });
