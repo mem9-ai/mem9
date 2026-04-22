@@ -22,6 +22,7 @@ node ./scripts/setup.mjs inspect
 
 2. Use the JSON summary to decide the next action with the user.
    Pay attention to `runtime`, `plugin`, `globalConfig`, `projectConfig`, and `profiles`.
+   Prefer `profiles.items[*].displaySummary` when you present saved profiles to the user.
    `profiles.items[*].apiKeyPreview` helps match a saved profile to the dashboard key without exposing the full secret.
    Global `updateCheck` settings live under `globalConfig.summary.updateCheck`.
 3. Keep the default flow global-first.

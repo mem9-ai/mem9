@@ -288,6 +288,31 @@ function summarizeApiKeyPreview(apiKey) {
   return `${normalized.slice(0, 4)}...${normalized.slice(-4)}`;
 }
 
+function summarizeProfileDisplayName(profileId, label) {
+  const nextProfileId = normalizeString(profileId);
+  const nextLabel = normalizeString(label) || nextProfileId;
+
+  if (nextLabel === nextProfileId) {
+    return nextProfileId;
+  }
+
+  return `${nextLabel} (${nextProfileId})`;
+}
+
+function summarizeProfileDisplaySummary(profile) {
+  const profileId = normalizeString(profile.profileId);
+  const label = normalizeString(profile.label) || profileId;
+  const baseUrl = normalizeString(profile.baseUrl);
+  const apiKeyPreview = summarizeApiKeyPreview(profile.apiKey);
+  const keyStatus = apiKeyPreview || "API key pending";
+  const identitySummary =
+    label === profileId
+      ? `${profileId} (${keyStatus})`
+      : `${label} (${profileId} · ${keyStatus})`;
+
+  return `${identitySummary} · ${baseUrl}`;
+}
+
 function summarizeProfiles(profiles) {
   return Object.entries(isRecord(profiles) ? profiles : {})
     .sort(([left], [right]) => left.localeCompare(right))
@@ -299,6 +324,13 @@ function summarizeProfiles(profiles) {
         baseUrl: current.baseUrl,
         hasApiKey: hasApiKey(current),
         apiKeyPreview: summarizeApiKeyPreview(current.apiKey),
+        displayName: summarizeProfileDisplayName(profileId, current.label),
+        displaySummary: summarizeProfileDisplaySummary({
+          profileId,
+          label: current.label,
+          baseUrl: current.baseUrl,
+          apiKey: current.apiKey,
+        }),
       };
     });
 }

@@ -406,6 +406,11 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
           baseUrl: "https://api.mem9.ai",
           apiKey: "key-default",
         },
+        solo: {
+          label: "",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "",
+        },
         work: {
           label: "Work",
           baseUrl: "https://api.mem9.ai",
@@ -440,9 +445,29 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
     assert.equal(summary.projectConfig.summary.legacyEnabledFalse, true);
     assert.equal(summary.projectConfig.summary.updateCheck, undefined);
     assert.deepEqual(summary.profiles.usableProfileIds, ["default"]);
-    assert.equal(summary.profiles.items[0].apiKeyPreview, "key-...ault");
-    assert.equal(summary.profiles.items[1].hasApiKey, false);
-    assert.equal(summary.profiles.items[1].apiKeyPreview, "");
+    const profilesById = Object.fromEntries(
+      summary.profiles.items.map((profile) => [profile.profileId, profile]),
+    );
+    assert.equal(profilesById.default.displayName, "Default (default)");
+    assert.equal(
+      profilesById.default.displaySummary,
+      "Default (default · key-...ault) · https://api.mem9.ai",
+    );
+    assert.equal(profilesById.default.apiKeyPreview, "key-...ault");
+    assert.equal(profilesById.solo.hasApiKey, false);
+    assert.equal(profilesById.solo.displayName, "solo");
+    assert.equal(
+      profilesById.solo.displaySummary,
+      "solo (API key pending) · https://api.mem9.ai",
+    );
+    assert.equal(profilesById.solo.apiKeyPreview, "");
+    assert.equal(profilesById.work.hasApiKey, false);
+    assert.equal(profilesById.work.displayName, "Work (work)");
+    assert.equal(
+      profilesById.work.displaySummary,
+      "Work (work · API key pending) · https://api.mem9.ai",
+    );
+    assert.equal(profilesById.work.apiKeyPreview, "");
     assert.equal(JSON.stringify(summary).includes("key-default"), false);
     assert.equal(JSON.stringify(summary).includes(tempRoot), false);
   } finally {
