@@ -237,7 +237,6 @@ Global default config:
 ```json
 {
   "schemaVersion": 1,
-  "enabled": true,
   "profileId": "default",
   "defaultTimeoutMs": 8000,
   "searchTimeoutMs": 15000
