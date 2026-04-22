@@ -25,7 +25,6 @@ const PROJECT_CONFIG_PATH = `${REPO_ROOT}/.codex/mem9/config.json`;
 const CREDENTIALS_PATH = `${MEM9_HOME}/.credentials.json`;
 const CONFIG_TOML_PATH = `${CODEX_HOME}/config.toml`;
 const INSTALL_PATH = `${CODEX_HOME}/mem9/install.json`;
-const PLUGIN_DIR = `${CODEX_HOME}/plugins/cache/mem9-ai/mem9`;
 
 const DEFAULT_INSTALL = {
   schemaVersion: 1,
@@ -49,6 +48,10 @@ const DEFAULT_CREDENTIALS = {
     },
   },
 };
+
+function normalizeFixtureString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
 
 function createRuntimeDisk(options = {}) {
   const cwd = options.cwd ?? PROJECT_CWD;
@@ -87,7 +90,21 @@ function createRuntimeDisk(options = {}) {
     existingPaths.add(CONFIG_TOML_PATH);
   }
 
-  dirNames.set(PLUGIN_DIR, options.pluginVersions ?? ["local"]);
+  const installIdentity = options.installMetadata && typeof options.installMetadata === "object"
+    ? options.installMetadata
+    : DEFAULT_INSTALL;
+  const pluginMarketplaceName =
+    normalizeFixtureString(installIdentity.marketplaceName)
+      ? normalizeFixtureString(installIdentity.marketplaceName)
+      : DEFAULT_INSTALL.marketplaceName;
+  const pluginName =
+    normalizeFixtureString(installIdentity.pluginName)
+      ? normalizeFixtureString(installIdentity.pluginName)
+      : DEFAULT_INSTALL.pluginName;
+  const pluginDir =
+    `${CODEX_HOME}/plugins/cache/${pluginMarketplaceName}/${pluginName}`;
+
+  dirNames.set(pluginDir, options.pluginVersions ?? ["local"]);
 
   return {
     cwd,
@@ -366,6 +383,80 @@ test("plugin disabled parser stops at the next table header even when it has a t
 
   assert.equal(state.pluginState, "plugin_disabled");
   assert.equal(state.issueCode, "plugin_disabled");
+});
+
+test("plugin disabled parser uses the installed plugin identity from install metadata", () => {
+  const state = loadRuntimeStateFromDisk(createRuntimeDisk({
+    globalConfig: {
+      schemaVersion: 1,
+      profileId: "default",
+    },
+    credentials: DEFAULT_CREDENTIALS,
+    installMetadata: {
+      schemaVersion: 1,
+      marketplaceName: "acme-labs",
+      pluginName: "mem9-pro",
+      shimVersion: 1,
+    },
+    configToml: [
+      '[plugins."mem9-pro@acme-labs"]',
+      "enabled = false",
+      "",
+    ].join("\n"),
+  }));
+
+  assert.equal(state.pluginState, "plugin_disabled");
+  assert.equal(state.issueCode, "plugin_disabled");
+});
+
+test("plugin disabled parser trims the installed plugin identity from install metadata", () => {
+  const state = loadRuntimeStateFromDisk(createRuntimeDisk({
+    globalConfig: {
+      schemaVersion: 1,
+      profileId: "default",
+    },
+    credentials: DEFAULT_CREDENTIALS,
+    installMetadata: {
+      schemaVersion: 1,
+      marketplaceName: " acme-labs ",
+      pluginName: " mem9-pro ",
+      shimVersion: 1,
+    },
+    configToml: [
+      '[plugins."mem9-pro@acme-labs"]',
+      "enabled = false",
+      "",
+    ].join("\n"),
+  }));
+
+  assert.equal(state.pluginState, "plugin_disabled");
+  assert.equal(state.issueCode, "plugin_disabled");
+});
+
+test("plugin disabled parser ignores the default plugin id when a different install identity is active", () => {
+  const state = loadRuntimeStateFromDisk(createRuntimeDisk({
+    globalConfig: {
+      schemaVersion: 1,
+      profileId: "default",
+    },
+    credentials: DEFAULT_CREDENTIALS,
+    installMetadata: {
+      schemaVersion: 1,
+      marketplaceName: "acme-labs",
+      pluginName: "mem9-pro",
+      shimVersion: 1,
+    },
+    configToml: [
+      '[plugins."mem9@mem9-ai"]',
+      "enabled = false",
+      '[plugins."mem9-pro@acme-labs"]',
+      "enabled = true",
+      "",
+    ].join("\n"),
+  }));
+
+  assert.equal(state.pluginState, "enabled");
+  assert.equal(state.issueCode, "ready");
 });
 
 test("missing install metadata returns plugin_missing", () => {

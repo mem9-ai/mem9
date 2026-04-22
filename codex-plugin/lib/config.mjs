@@ -437,15 +437,6 @@ function loadPluginState({
   readText,
   readDirNames,
 }) {
-  let pluginEnabled = true;
-  if (exists(configTomlPath)) {
-    try {
-      pluginEnabled = parsePluginEnabledState(readText(configTomlPath));
-    } catch {
-      pluginEnabled = true;
-    }
-  }
-
   let installIssue = /** @type {PluginIssueDetail | null} */ (null);
   let installIdentity = DEFAULT_PLUGIN_INSTALL_IDENTITY;
 
@@ -468,6 +459,18 @@ function loadPluginState({
       }
     } catch {
       installIssue = "invalid_install_metadata";
+    }
+  }
+
+  let pluginEnabled = true;
+  if (exists(configTomlPath)) {
+    try {
+      pluginEnabled = parsePluginEnabledState(
+        readText(configTomlPath),
+        `${installIdentity.pluginName}@${installIdentity.marketplaceName}`,
+      );
+    } catch {
+      pluginEnabled = true;
     }
   }
 
