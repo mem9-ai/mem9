@@ -3,7 +3,6 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import {
   mkdirSync,
-  mkdtempSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -15,16 +14,11 @@ import {
   extractMemories,
   runUserPromptSubmit,
 } from "../hooks/user-prompt-submit.mjs";
+import { createTempRoot } from "./test-temp.mjs";
 
 const USER_PROMPT_SUBMIT_ENTRY = path.resolve("./hooks/user-prompt-submit.mjs");
 /** @type {Array<"plugin_disabled" | "plugin_missing" | "legacy_paused">} */
 const NON_READY_ISSUE_CODES = ["plugin_disabled", "plugin_missing", "legacy_paused"];
-
-function createTempRoot() {
-  const parent = path.join(process.cwd(), ".tmp-user-prompt-submit-tests");
-  mkdirSync(parent, { recursive: true });
-  return mkdtempSync(path.join(parent, "case-"));
-}
 
 /**
  * @param {string} filePath

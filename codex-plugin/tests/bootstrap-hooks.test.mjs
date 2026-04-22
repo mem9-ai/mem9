@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -16,12 +15,7 @@ import {
   resolveActivePluginVersion,
   runHookShim,
 } from "../bootstrap-hooks/shared/bootstrap.mjs";
-
-function createTempRoot() {
-  const parent = path.join(process.cwd(), ".tmp-bootstrap-tests");
-  mkdirSync(parent, { recursive: true });
-  return mkdtempSync(path.join(parent, "case-"));
-}
+import { createTempRoot } from "./test-temp.mjs";
 
 /**
  * @param {string} filePath
@@ -33,7 +27,7 @@ function writeJson(filePath, value) {
 }
 
 test("resolveActivePluginVersion matches Codex local preference and lexical sort", () => {
-  const tempRoot = createTempRoot();
+  const tempRoot = createTempRoot("bootstrap");
 
   try {
     const codexHome = path.join(tempRoot, "codex-home");

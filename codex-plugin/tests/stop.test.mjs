@@ -3,7 +3,6 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import {
   mkdirSync,
-  mkdtempSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -15,16 +14,11 @@ import {
   parseTranscriptText,
   selectStopWindow,
 } from "../hooks/shared/transcript.mjs";
+import { createTempRoot } from "./test-temp.mjs";
 
 const STOP_ENTRY = path.resolve("./hooks/stop.mjs");
 /** @type {Array<"plugin_disabled" | "plugin_missing" | "legacy_paused">} */
 const NON_READY_ISSUE_CODES = ["plugin_disabled", "plugin_missing", "legacy_paused"];
-
-function createTempRoot() {
-  const parent = path.join(process.cwd(), ".tmp-stop-tests");
-  mkdirSync(parent, { recursive: true });
-  return mkdtempSync(path.join(parent, "case-"));
-}
 
 /**
  * @param {string} filePath

@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import {
   existsSync,
-  mkdtempSync,
-  mkdirSync,
   readFileSync,
   rmSync,
 } from "node:fs";
@@ -14,12 +12,7 @@ import {
   debugEnabled,
   resolveDebugLogFile,
 } from "../hooks/shared/debug.mjs";
-
-function createTempRoot() {
-  const parent = path.join(process.cwd(), ".tmp-debug-tests");
-  mkdirSync(parent, { recursive: true });
-  return mkdtempSync(path.join(parent, "case-"));
-}
+import { createTempRoot } from "./test-temp.mjs";
 
 test("debugEnabled only turns on for MEM9_DEBUG=1", () => {
   assert.equal(debugEnabled({ MEM9_DEBUG: "1" }), true);
@@ -35,7 +28,7 @@ test("resolveDebugLogFile defaults to the codex global logs path", () => {
 });
 
 test("appendDebugLog writes sanitized jsonl records to the codex-local log path", () => {
-  const tempRoot = createTempRoot();
+  const tempRoot = createTempRoot("debug");
 
   try {
     const projectRoot = path.join(tempRoot, "project");

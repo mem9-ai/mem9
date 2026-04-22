@@ -1,19 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
 import { buildRuntimeIssueMessage } from "../lib/skill-runtime.mjs";
 import { runStore } from "../skills/store/scripts/store.mjs";
-
-function createTempRoot() {
-  const parent = path.join(process.cwd(), ".tmp-store-tests");
-  mkdirSync(parent, { recursive: true });
-  return mkdtempSync(path.join(parent, "case-"));
-}
+import { createTempRoot } from "./test-temp.mjs";
 
 test("runStore posts a synchronous memory create and prints a safe summary", async () => {
-  const tempRoot = createTempRoot();
+  const tempRoot = createTempRoot("store");
 
   try {
     const projectRoot = path.join(tempRoot, "project");

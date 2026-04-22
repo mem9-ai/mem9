@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -8,12 +8,7 @@ import {
   runRecall,
 } from "../skills/recall/scripts/recall.mjs";
 import { buildRuntimeIssueMessage } from "../lib/skill-runtime.mjs";
-
-function createTempRoot() {
-  const parent = path.join(process.cwd(), ".tmp-recall-tests");
-  mkdirSync(parent, { recursive: true });
-  return mkdtempSync(path.join(parent, "case-"));
-}
+import { createTempRoot } from "./test-temp.mjs";
 
 test("buildRecallUrl encodes q, agent_id, and limit", () => {
   const url = buildRecallUrl("https://api.mem9.ai/", "remember rust tips", "codex", 7);
@@ -24,7 +19,7 @@ test("buildRecallUrl encodes q, agent_id, and limit", () => {
 });
 
 test("runRecall calls mem9 with the current runtime and prints a safe summary", async () => {
-  const tempRoot = createTempRoot();
+  const tempRoot = createTempRoot("recall");
 
   try {
     const projectRoot = path.join(tempRoot, "project");
