@@ -3,6 +3,7 @@ import type {
   TuiCommand,
   TuiPlugin,
   TuiPluginApi,
+  TuiToast,
 } from "@opencode-ai/plugin/tui";
 import {
   resolveMem9Home,
@@ -62,11 +63,19 @@ interface SetupProfileOptionState {
 }
 
 let hasShownVisibleApiKeyWarning = false;
+const DEFAULT_TOAST_DURATION_MS = 5000;
 
 function scheduleDialogTransition(next: () => void): void {
   // Delay prompt-to-prompt transitions so the next dialog does not reuse
   // the same Enter keypress that confirmed the current prompt.
   setTimeout(next, 0);
+}
+
+function showToast(api: TuiPluginApi, toast: TuiToast): void {
+  api.ui.toast({
+    duration: toast.duration ?? DEFAULT_TOAST_DURATION_MS,
+    ...toast,
+  });
 }
 
 function getProjectDir(api: TuiPluginApi): string {
@@ -121,7 +130,7 @@ function showError(
   retryCommand = false,
 ): void {
   const suffix = retryCommand ? " Run /mem9-setup again when you are ready to retry." : "";
-  api.ui.toast({
+  showToast(api, {
     variant: "error",
     title: "mem9 setup failed",
     message: `${error instanceof Error ? error.message : String(error)}${suffix}`,
@@ -129,7 +138,7 @@ function showError(
 }
 
 function showProfileSavedSuccess(api: TuiPluginApi, profileId: string): void {
-  api.ui.toast({
+  showToast(api, {
     variant: "success",
     title: "mem9 configured",
     message: `Saved profile ${profileId} and set it as the default user profile. Restart OpenCode to reload mem9.`,
@@ -142,7 +151,7 @@ function showScopeSavedSuccess(
   profileId: string,
 ): void {
   const scopeLabel = scope === "user" ? "user settings" : "project settings";
-  api.ui.toast({
+  showToast(api, {
     variant: "success",
     title: "mem9 configured",
     message: `Saved ${scopeLabel} with profile ${profileId}. Restart OpenCode to reload mem9.`,
@@ -343,7 +352,7 @@ function showProfileIdDialog(
       onConfirm: (value) => {
         const next = value.trim();
         if (next.length === 0) {
-          api.ui.toast({
+          showToast(api, {
             variant: "warning",
             message: "Profile ID is required.",
           });
@@ -351,7 +360,7 @@ function showProfileIdDialog(
         }
 
         if (isReusableProfileID(state, next)) {
-          api.ui.toast({
+          showToast(api, {
             variant: "warning",
             message: "That profile already has credentials. Pick a new profile ID or use the existing profile in scope settings.",
           });
@@ -388,7 +397,7 @@ function showProfileLabelDialog(
       onConfirm: (value) => {
         const next = value.trim();
         if (next.length === 0) {
-          api.ui.toast({
+          showToast(api, {
             variant: "warning",
             message: "Profile label is required.",
           });
@@ -424,7 +433,7 @@ function showProfileBaseUrlDialog(
       onConfirm: (value) => {
         const next = value.trim();
         if (next.length === 0) {
-          api.ui.toast({
+          showToast(api, {
             variant: "warning",
             message: "mem9 API URL is required.",
           });
@@ -458,7 +467,7 @@ function showProfileApiKeyDialog(
 ): void {
   if (!hasShownVisibleApiKeyWarning) {
     hasShownVisibleApiKeyWarning = true;
-    api.ui.toast({
+    showToast(api, {
       variant: "warning",
       message: "API key input is visible while typing.",
       duration: 4000,
@@ -472,7 +481,7 @@ function showProfileApiKeyDialog(
       onConfirm: (value) => {
         const next = value.trim();
         if (next.length === 0) {
-          api.ui.toast({
+          showToast(api, {
             variant: "warning",
             message: "mem9 API key is required.",
           });
@@ -593,7 +602,7 @@ function showDefaultTimeoutDialog(
       onConfirm: (value) => {
         const parsed = parsePositiveInteger(value, "defaultTimeoutMs");
         if (parsed === null) {
-          api.ui.toast({
+          showToast(api, {
             variant: "warning",
             message: "Default timeout must be a positive integer.",
           });
@@ -626,7 +635,7 @@ function showSearchTimeoutDialog(
       onConfirm: (value) => {
         const parsed = parsePositiveInteger(value, "searchTimeoutMs");
         if (parsed === null) {
-          api.ui.toast({
+          showToast(api, {
             variant: "warning",
             message: "Search timeout must be a positive integer.",
           });
