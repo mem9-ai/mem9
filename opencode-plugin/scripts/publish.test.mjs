@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  assertGitPublishState,
   buildPublishArgs,
   deriveTagFromVersion,
+  normalizePublishBranch,
   parseArgs,
   resolveReleasePlan,
 } from "./publish.mjs";
@@ -128,13 +130,74 @@ test("resolveReleasePlan promotes major prereleases to their stable version", ()
   });
 });
 
-test("buildPublishArgs keeps git safety checks in place", () => {
+test("normalizePublishBranch prefers origin HEAD and falls back to main", () => {
+  assert.equal(normalizePublishBranch("origin/main"), "main");
+  assert.equal(normalizePublishBranch("origin/release"), "release");
+  assert.equal(normalizePublishBranch(""), "main");
+});
+
+test("assertGitPublishState accepts a clean synced publish branch", () => {
+  assert.doesNotThrow(() =>
+    assertGitPublishState({
+      statusOutput: "",
+      currentBranch: "main",
+      publishBranch: "main",
+      aheadCount: 0,
+      behindCount: 0,
+    }),
+  );
+});
+
+test("assertGitPublishState rejects dirty worktrees", () => {
+  assert.throws(
+    () =>
+      assertGitPublishState({
+        statusOutput: " M opencode-plugin/package.json",
+        currentBranch: "main",
+        publishBranch: "main",
+        aheadCount: 0,
+        behindCount: 0,
+      }),
+    /working tree must be clean/,
+  );
+});
+
+test("assertGitPublishState rejects the wrong branch", () => {
+  assert.throws(
+    () =>
+      assertGitPublishState({
+        statusOutput: "",
+        currentBranch: "feat/opencode-plugin-research",
+        publishBranch: "main",
+        aheadCount: 0,
+        behindCount: 0,
+      }),
+    /publish from main/,
+  );
+});
+
+test("assertGitPublishState rejects branches that diverge from origin", () => {
+  assert.throws(
+    () =>
+      assertGitPublishState({
+        statusOutput: "",
+        currentBranch: "main",
+        publishBranch: "main",
+        aheadCount: 1,
+        behindCount: 0,
+      }),
+    /must match origin\/main exactly/,
+  );
+});
+
+test("buildPublishArgs uses explicit git-check bypass after preflight checks", () => {
   assert.deepEqual(buildPublishArgs("latest", false), [
     "publish",
     "--access",
     "public",
     "--tag",
     "latest",
+    "--no-git-checks",
   ]);
 });
 
@@ -145,6 +208,7 @@ test("buildPublishArgs forwards dry-run without extra flags", () => {
     "public",
     "--tag",
     "rc",
+    "--no-git-checks",
     "--dry-run",
   ]);
 });

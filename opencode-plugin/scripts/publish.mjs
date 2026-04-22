@@ -9,6 +9,7 @@ const packageJsonPath = path.join(packageDir, "package.json");
 const publishEnvPath = path.join(packageDir, ".publish.env");
 const publishNpmrcPath = path.join(packageDir, ".npmrc.publish.tmp");
 const pnpmBin = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+const gitBin = process.platform === "win32" ? "git.exe" : "git";
 
 const STABLE_INCREMENTS = new Set(["major", "minor", "patch"]);
 const PRERELEASE_INCREMENTS = new Set([
@@ -146,6 +147,36 @@ function toPreIncrement(increment) {
 function deriveTagFromVersion(version) {
   const parsed = parseVersion(version);
   return parsed.channel ?? "latest";
+}
+
+function normalizePublishBranch(remoteHeadRef) {
+  const prefix = "origin/";
+  if (!remoteHeadRef.startsWith(prefix)) {
+    return "main";
+  }
+
+  const branch = remoteHeadRef.slice(prefix.length).trim();
+  return branch || "main";
+}
+
+function assertGitPublishState({
+  statusOutput,
+  currentBranch,
+  publishBranch,
+  aheadCount,
+  behindCount,
+}) {
+  if (statusOutput.trim()) {
+    fail("git working tree must be clean before publishing");
+  }
+
+  if (currentBranch !== publishBranch) {
+    fail(`publish from ${publishBranch}; current branch is ${currentBranch || "(detached)"}`);
+  }
+
+  if (aheadCount !== 0 || behindCount !== 0) {
+    fail(`publish branch must match origin/${publishBranch} exactly before publishing`);
+  }
 }
 
 function applyStableIncrement(current, increment) {
@@ -304,6 +335,66 @@ function runPnpm(args) {
   }
 }
 
+function readCommandOutput(bin, args, cwd) {
+  const result = spawnSync(bin, args, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  if (result.status !== 0) {
+    const stderr = result.stderr.trim();
+    fail(
+      stderr
+        ? `command failed: ${bin} ${args.join(" ")}: ${stderr}`
+        : `command failed: ${bin} ${args.join(" ")}`,
+    );
+  }
+
+  return result.stdout.trim();
+}
+
+function resolveRepoRoot() {
+  return readCommandOutput(gitBin, ["rev-parse", "--show-toplevel"], packageDir);
+}
+
+function resolvePublishBranch(repoRoot) {
+  try {
+    const remoteHeadRef = readCommandOutput(
+      gitBin,
+      ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+      repoRoot,
+    );
+    return normalizePublishBranch(remoteHeadRef);
+  } catch {
+    return "main";
+  }
+}
+
+function ensureGitPublishReady(repoRoot) {
+  const statusOutput = readCommandOutput(
+    gitBin,
+    ["status", "--porcelain", "--untracked-files=all"],
+    repoRoot,
+  );
+  const currentBranch = readCommandOutput(gitBin, ["branch", "--show-current"], repoRoot);
+  const publishBranch = resolvePublishBranch(repoRoot);
+  const upstreamRef = `origin/${publishBranch}`;
+  const countsOutput = readCommandOutput(
+    gitBin,
+    ["rev-list", "--left-right", "--count", `HEAD...${upstreamRef}`],
+    repoRoot,
+  );
+  const [aheadRaw = "0", behindRaw = "0"] = countsOutput.split(/\s+/);
+  assertGitPublishState({
+    statusOutput,
+    currentBranch,
+    publishBranch,
+    aheadCount: Number(aheadRaw),
+    behindCount: Number(behindRaw),
+  });
+}
+
 function buildPublishArgs(tag, dryRun) {
   const publishArgs = [
     "publish",
@@ -311,6 +402,7 @@ function buildPublishArgs(tag, dryRun) {
     "public",
     "--tag",
     tag,
+    "--no-git-checks",
   ];
   if (dryRun) {
     publishArgs.push("--dry-run");
@@ -329,6 +421,8 @@ async function main() {
   const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8"));
   const currentVersion = String(pkg.version ?? "");
   const plan = resolveReleasePlan(currentVersion, args.increment, args.channel);
+  const repoRoot = resolveRepoRoot();
+  ensureGitPublishReady(repoRoot);
   const token = readPublishToken();
   const originalPackageJson = readFileSync(packageJsonPath, "utf8");
 
@@ -378,6 +472,8 @@ export {
   parseVersion,
   formatVersion,
   deriveTagFromVersion,
+  normalizePublishBranch,
+  assertGitPublishState,
   buildPublishArgs,
   resolveReleasePlan,
   readPublishToken,
