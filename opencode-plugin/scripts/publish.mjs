@@ -7,6 +7,7 @@
 //   pnpm run publish:release current
 //   pnpm run publish:release current --dry-run
 //   pnpm run publish:release patch
+//   pnpm run publish:release patch --skip-branch-check
 //
 // Direct script entrypoint:
 //   node ./scripts/publish.mjs current
@@ -17,6 +18,7 @@
 //   - `node ./scripts/publish.mjs ...` matches the `--help` output.
 //   - Both `pnpm run publish:release current` and
 //     `pnpm run publish:release -- current` are accepted.
+//   - `--skip-branch-check` skips only the publish-branch sync gate.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -46,11 +48,12 @@ function fail(message) {
 
 function printHelp() {
   console.log(`Usage:
-  node ./scripts/publish.mjs <current|major|minor|patch|premajor|preminor|prepatch|prerelease> [--channel <alpha|beta|rc>] [--dry-run]
+  node ./scripts/publish.mjs <current|major|minor|patch|premajor|preminor|prepatch|prerelease> [--channel <alpha|beta|rc>] [--dry-run] [--skip-branch-check]
 
 Examples:
   node ./scripts/publish.mjs current
   node ./scripts/publish.mjs patch
+  node ./scripts/publish.mjs patch --skip-branch-check
   node ./scripts/publish.mjs patch --channel rc
   node ./scripts/publish.mjs prepatch --channel beta
   node ./scripts/publish.mjs prerelease --channel rc
@@ -61,6 +64,7 @@ Behavior:
   - Stable releases publish to the npm \`latest\` tag.
   - Stable increments with \`--channel\` become prereleases for that channel.
   - \`prerelease\` continues the current prerelease stream for the selected channel.
+  - \`--skip-branch-check\` skips only the publish-branch sync gate; the working tree must still be clean.
   - The script reads NPM_ACCESSTOKEN from opencode-plugin/.publish.env only.
 `);
 }
@@ -69,6 +73,7 @@ function parseArgs(argv) {
   let increment = "";
   let channel;
   let dryRun = false;
+  let skipBranchCheck = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -82,6 +87,11 @@ function parseArgs(argv) {
 
     if (arg === "--dry-run") {
       dryRun = true;
+      continue;
+    }
+
+    if (arg === "--skip-branch-check") {
+      skipBranchCheck = true;
       continue;
     }
 
@@ -128,6 +138,7 @@ function parseArgs(argv) {
     increment,
     channel,
     dryRun,
+    skipBranchCheck,
   };
 }
 
@@ -189,9 +200,14 @@ function assertGitPublishState({
   publishBranch,
   aheadCount,
   behindCount,
+  skipBranchCheck = false,
 }) {
   if (statusOutput.trim()) {
     fail("git working tree must be clean before publishing");
+  }
+
+  if (skipBranchCheck) {
+    return;
   }
 
   if (currentBranch !== publishBranch) {
@@ -395,7 +411,7 @@ function resolvePublishBranch(repoRoot) {
   }
 }
 
-function ensureGitPublishReady(repoRoot) {
+function ensureGitPublishReady(repoRoot, options = {}) {
   const statusOutput = readCommandOutput(
     gitBin,
     ["status", "--porcelain", "--untracked-files=all"],
@@ -416,6 +432,7 @@ function ensureGitPublishReady(repoRoot) {
     publishBranch,
     aheadCount: Number(aheadRaw),
     behindCount: Number(behindRaw),
+    skipBranchCheck: options.skipBranchCheck,
   });
 }
 
@@ -446,7 +463,9 @@ async function main() {
   const currentVersion = String(pkg.version ?? "");
   const plan = resolveReleasePlan(currentVersion, args.increment, args.channel);
   const repoRoot = resolveRepoRoot();
-  ensureGitPublishReady(repoRoot);
+  ensureGitPublishReady(repoRoot, {
+    skipBranchCheck: args.skipBranchCheck,
+  });
   const token = readPublishToken();
   const originalPackageJson = readFileSync(packageJsonPath, "utf8");
 

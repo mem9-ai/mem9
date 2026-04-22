@@ -17,6 +17,7 @@ test("parseArgs accepts current release mode", () => {
     increment: "current",
     channel: undefined,
     dryRun: true,
+    skipBranchCheck: false,
   });
 });
 
@@ -26,6 +27,7 @@ test("parseArgs accepts the pnpm argument separator", () => {
     increment: "current",
     channel: undefined,
     dryRun: true,
+    skipBranchCheck: false,
   });
 });
 
@@ -35,6 +37,7 @@ test("parseArgs accepts stable releases", () => {
     increment: "patch",
     channel: undefined,
     dryRun: false,
+    skipBranchCheck: false,
   });
 });
 
@@ -44,6 +47,17 @@ test("parseArgs accepts prerelease options", () => {
     increment: "prepatch",
     channel: "rc",
     dryRun: true,
+    skipBranchCheck: false,
+  });
+});
+
+test("parseArgs accepts skip-branch-check", () => {
+  assert.deepEqual(parseArgs(["patch", "--skip-branch-check"]), {
+    help: false,
+    increment: "patch",
+    channel: undefined,
+    dryRun: false,
+    skipBranchCheck: true,
   });
 });
 
@@ -154,6 +168,19 @@ test("assertGitPublishState accepts a clean synced publish branch", () => {
       publishBranch: "main",
       aheadCount: 0,
       behindCount: 0,
+    }),
+  );
+});
+
+test("assertGitPublishState allows clean feature branches when skip-branch-check is enabled", () => {
+  assert.doesNotThrow(() =>
+    assertGitPublishState({
+      statusOutput: "",
+      currentBranch: "fix/opencode-plugin-release-readiness",
+      publishBranch: "main",
+      aheadCount: 4,
+      behindCount: 0,
+      skipBranchCheck: true,
     }),
   );
 });
