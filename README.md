@@ -33,7 +33,7 @@
      MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" go run ./cmd/mnemo-server
      ```
 
-     Then follow the provisioning notes in [Self-Hosting](#self-hosting).
+     For PostgreSQL or db9, also set `MNEMO_DB_BACKEND=postgres` or `MNEMO_DB_BACKEND=db9` before launch. Then use the provisioning flow in [API Reference](#api-reference) and the backend notes in [Self-Hosting](#self-hosting).
 
 2. Pick your runtime guide.
 
@@ -47,11 +47,16 @@
 3. Set your credentials.
 
    ```bash
+   # Hosted API
    export MEM9_API_URL="https://api.mem9.ai"
+   export MEM9_API_KEY="<mem9-api-key>"
+
+   # Self-hosted
+   export MEM9_API_URL="http://localhost:8080"
    export MEM9_API_KEY="<mem9-api-key>"
    ```
 
-   For self-hosted deployments, use your server URL and the mem9 API key for that deployment, whether it was auto-provisioned or bootstrapped manually.
+   For self-hosted deployments, use your server URL and the mem9 API key returned or configured by your provisioning flow.
 
 ## Why mem9
 
@@ -92,29 +97,41 @@ The hosted mem9 API is the fastest way to put persistent memory behind an agent 
 
 Under the hood, the hosted mem9 API runs the same mem9 server model surfaced in this repository, with TiDB Cloud Starter providing managed provisioning, native vector search, full-text search, server-side auto-embedding, hybrid search, and MySQL-compatible storage semantics.
 
-## Related Repositories
+## API Reference
 
-| Repository | What it owns | When to look there |
-|---|---|---|
-| [`mem9`](.) | Core Go API server, agent plugins, CLI, site, dashboard frontend, benchmark harnesses, and docs | You are working on the shared memory server, plugin integrations, or the main product docs |
-| [`mem9-node`](https://github.com/mem9-ai/mem9-node) | Dashboard analysis backend, async jobs, and worker flows | A dashboard feature depends on backend APIs, background jobs, or analysis pipelines |
-| [`mem9-hermes-plugin`](https://github.com/mem9-ai/mem9-hermes-plugin) | Hermes Agent plugin packaging, setup flow, and Hermes-specific docs | You are changing Hermes installation, activation, or runtime-specific behavior |
+Set `X-Mnemo-Agent-Id` on authenticated memory, import, and session-message requests when you want the server to distinguish which runtime or agent instance is writing and recalling memories inside the same mem9 space. This works on both the tenant-path `v1alpha1` routes and the `v1alpha2` API-key routes.
 
-## Repository Map
+### Provisioning
 
-| Path | Role |
-|---|---|
-| [`server/`](server/) | Core Go REST API and source of truth for spaces, memories, search, ingest, and tenant provisioning |
-| [`cli/`](cli/) | Standalone Go CLI for exercising mem9 API and ingest flows |
-| [`openclaw-plugin/`](openclaw-plugin/) | OpenClaw memory plugin |
-| [`opencode-plugin/`](opencode-plugin/) | OpenCode plugin |
-| [`claude-plugin/`](claude-plugin/) | Claude Code hooks and skills integration |
-| [`codex-plugin/`](codex-plugin/) | Codex marketplace plugin and managed hooks |
-| [`site/`](site/) | Public mem9.ai site and published onboarding assets |
-| [`dashboard/`](dashboard/) | Dashboard product frontend and supporting product docs |
-| [`benchmark/`](benchmark/) | Benchmark harnesses and datasets for mem9 evaluation |
-| [`e2e/`](e2e/) | Live end-to-end scripts against a running mem9 server |
-| [`docs/`](docs/) | Architecture notes, design docs, and feature specs |
+Use this endpoint when you want mem9 to auto-provision a new TiDB-backed space.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1alpha1/mem9s` | TiDB auto-provision endpoint when a provisioner is configured. TiDB Zero enables this path by default on `tidb`; TiDB Cloud Pool uses `MNEMO_TIDB_ZERO_ENABLED=false` with `MNEMO_TIDBCLOUD_API_KEY` and `MNEMO_TIDBCLOUD_API_SECRET`. Manual-bootstrap deployments use pre-existing tenants instead of this path. Returns `{ "id" }`. Accepts optional `utm_*` query params for attribution logging |
+
+Prefer `v1alpha2` for all new integrations. It uses `X-API-Key` and is the primary API surface for current runtimes.
+
+### Preferred API (`v1alpha2`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1alpha2/mem9s/memories` | Preferred unified write endpoint. Requires `X-API-Key` header |
+| `GET` | `/v1alpha2/mem9s/memories` | Preferred search endpoint. Requires `X-API-Key` header |
+| `GET` | `/v1alpha2/mem9s/memories/{id}` | Preferred get-by-id endpoint. Requires `X-API-Key` header |
+| `PUT` | `/v1alpha2/mem9s/memories/{id}` | Preferred update endpoint. Requires `X-API-Key` header |
+| `DELETE` | `/v1alpha2/mem9s/memories/{id}` | Preferred delete endpoint. Requires `X-API-Key` header |
+
+### Legacy Tenant-Path API (`v1alpha1`)
+
+Use these endpoints only when you need compatibility with older tenant-ID-in-path clients.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy unified write endpoint. Tenant key travels in the URL path |
+| `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy search endpoint for `tenantID`-configured clients |
+| `GET` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy get-by-id endpoint |
+| `PUT` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy update endpoint. Optional `If-Match` for version check |
+| `DELETE` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy delete endpoint |
 
 ## Self-Hosting
 
@@ -230,41 +247,29 @@ These are only relevant when `MNEMO_ENCRYPT_TYPE=kms`. The server uses the AWS S
 |----------|----------|---------|-------------|
 | `MNEMO_TEST_DSN` | No | Falls back to `MNEMO_DSN` | Integration-test DSN used by server repository tests |
 
-## API Reference
+## Repository Map
 
-Set `X-Mnemo-Agent-Id` on requests when you want the server to distinguish which runtime or agent instance is writing and recalling memories inside the same mem9 space.
+| Path | Role |
+|---|---|
+| [`server/`](server/) | Core Go REST API and source of truth for spaces, memories, search, ingest, and tenant provisioning |
+| [`cli/`](cli/) | Standalone Go CLI for exercising mem9 API and ingest flows |
+| [`openclaw-plugin/`](openclaw-plugin/) | OpenClaw memory plugin |
+| [`opencode-plugin/`](opencode-plugin/) | OpenCode plugin |
+| [`claude-plugin/`](claude-plugin/) | Claude Code hooks and skills integration |
+| [`codex-plugin/`](codex-plugin/) | Codex marketplace plugin and managed hooks |
+| [`site/`](site/) | Public mem9.ai site and published onboarding assets |
+| [`dashboard/`](dashboard/) | Dashboard product frontend and supporting product docs |
+| [`benchmark/`](benchmark/) | Benchmark harnesses and datasets for mem9 evaluation |
+| [`e2e/`](e2e/) | Live end-to-end scripts against a running mem9 server |
+| [`docs/`](docs/) | Architecture notes, design docs, and feature specs |
 
-### Provisioning
+## Related Repositories
 
-Use this endpoint when you want mem9 to auto-provision a new TiDB-backed space.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/v1alpha1/mem9s` | TiDB auto-provision endpoint when a provisioner is configured. TiDB Zero enables this path by default on `tidb`; TiDB Cloud Pool uses `MNEMO_TIDB_ZERO_ENABLED=false` with `MNEMO_TIDBCLOUD_API_KEY` and `MNEMO_TIDBCLOUD_API_SECRET`. Manual-bootstrap deployments use pre-existing tenants instead of this path. Returns `{ "id" }`. Accepts optional `utm_*` query params for attribution logging |
-
-Prefer `v1alpha2` for all new integrations. It uses `X-API-Key` and is the primary API surface for current runtimes.
-
-### Preferred API (`v1alpha2`)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/v1alpha2/mem9s/memories` | Preferred unified write endpoint. Requires `X-API-Key` header |
-| `GET` | `/v1alpha2/mem9s/memories` | Preferred search endpoint. Requires `X-API-Key` header |
-| `GET` | `/v1alpha2/mem9s/memories/{id}` | Preferred get-by-id endpoint. Requires `X-API-Key` header |
-| `PUT` | `/v1alpha2/mem9s/memories/{id}` | Preferred update endpoint. Requires `X-API-Key` header |
-| `DELETE` | `/v1alpha2/mem9s/memories/{id}` | Preferred delete endpoint. Requires `X-API-Key` header |
-
-### Legacy Tenant-Path API (`v1alpha1`)
-
-Use these endpoints only when you need compatibility with older tenant-ID-in-path clients.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy unified write endpoint. Tenant key travels in the URL path |
-| `GET` | `/v1alpha1/mem9s/{tenantID}/memories` | Legacy search endpoint for `tenantID`-configured clients |
-| `GET` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy get-by-id endpoint |
-| `PUT` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy update endpoint. Optional `If-Match` for version check |
-| `DELETE` | `/v1alpha1/mem9s/{tenantID}/memories/{id}` | Legacy delete endpoint |
+| Repository | What it owns | When to look there |
+|---|---|---|
+| [`mem9`](.) | Core Go API server, agent plugins, CLI, site, dashboard frontend, benchmark harnesses, and docs | You are working on the shared memory server, plugin integrations, or the main product docs |
+| [`mem9-node`](https://github.com/mem9-ai/mem9-node) | Dashboard analysis backend, async jobs, and worker flows | A dashboard feature depends on backend APIs, background jobs, or analysis pipelines |
+| [`mem9-hermes-plugin`](https://github.com/mem9-ai/mem9-hermes-plugin) | Hermes Agent plugin packaging, setup flow, and Hermes-specific docs | You are changing Hermes installation, activation, or runtime-specific behavior |
 
 ## Contributing
 
