@@ -27,7 +27,7 @@ type SetupAction =
   | "use-profile-in-scope"
   | "configure-scope";
 
-type ScopeFlowMode = "profile-only" | "full-config";
+type ScopeFlowMode = "profile-only" | "settings-only";
 
 interface ProfileDraft {
   profileId: string;
@@ -48,6 +48,17 @@ export interface SetupActionOption {
   title: string;
   value: SetupAction;
   description: string;
+}
+
+export interface SetupProfileOption {
+  title: string;
+  value: string;
+  description: string;
+  disabled: boolean;
+}
+
+interface SetupProfileOptionState {
+  currentProfileId?: string;
 }
 
 function getProjectDir(api: TuiPluginApi): string {
@@ -155,17 +166,41 @@ export function buildSetupActionOptions(
       {
         title: "Use an existing mem9 profile in a scope",
         value: "use-profile-in-scope",
-        description: "Choose a saved profile and apply it to user or project settings.",
+        description: "Choose which saved profile user or project settings should use.",
       },
       {
-        title: "Configure user/project settings",
+        title: "Adjust scope settings",
         value: "configure-scope",
-        description: "Change scope profile, debug logging, and request timeouts.",
+        description: "Change debug logging, request timeouts, and other mem9 settings for a user or project scope.",
       },
     );
   }
 
   return options;
+}
+
+function formatProfileTitle(profile: SetupProfileSummary): string {
+  return profile.label === profile.profileId
+    ? profile.label
+    : `${profile.label} (${profile.profileId})`;
+}
+
+export function buildScopeProfileOptions(
+  state: Pick<SetupState, "profiles">,
+  optionState: SetupProfileOptionState = {},
+): SetupProfileOption[] {
+  return state.profiles.map((profile) => ({
+    title: formatProfileTitle(profile),
+    value: profile.profileId,
+    description: [
+      profile.apiKeyPreview || "API key missing",
+      profile.baseUrl,
+      profile.profileId === optionState.currentProfileId ? "Current in this scope" : undefined,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(" | "),
+    disabled: !profile.hasApiKey,
+  }));
 }
 
 function parsePositiveInteger(value: string, field: string): number | null {
@@ -279,7 +314,7 @@ function showActionDialog(
           return;
         }
 
-        showScopeDialog(api, paths, state, "full-config");
+        showScopeDialog(api, paths, state, "settings-only");
       },
     }),
   );
@@ -459,7 +494,12 @@ function showScopeDialog(
       ],
       onSelect: (option) => {
         const draft = createScopeDraft(state, option.value);
-        showScopeProfileDialog(api, paths, state, mode, draft);
+        if (mode === "profile-only") {
+          showScopeProfileDialog(api, paths, state, draft);
+          return;
+        }
+
+        showScopeDebugDialog(api, paths, state, draft);
       },
     }),
   );
@@ -469,27 +509,18 @@ function showScopeProfileDialog(
   api: TuiPluginApi,
   paths: Mem9ResolvedPaths,
   state: SetupState,
-  mode: ScopeFlowMode,
   draft: ScopeDraft,
 ): void {
   api.ui.dialog.replace(() =>
     api.ui.DialogSelect<string>({
       title: "Which mem9 profile should this scope use?",
       current: draft.profileId,
-      options: state.profiles.map((profile) => ({
-        title: `${profile.label} (${profile.profileId})`,
-        value: profile.profileId,
-        description: `${profile.baseUrl} • ${profile.hasApiKey ? "API key configured" : "API key missing"}`,
-        disabled: !profile.hasApiKey,
-      })),
+      options: buildScopeProfileOptions(state, {
+        currentProfileId: draft.profileId,
+      }),
       onSelect: (option) => {
         draft.profileId = option.value;
-        if (mode === "profile-only") {
-          void submitScopeConfigDraft(api, paths, draft);
-          return;
-        }
-
-        showScopeDebugDialog(api, paths, state, draft);
+        void submitScopeConfigDraft(api, paths, draft);
       },
     }),
   );
@@ -550,7 +581,7 @@ function showDefaultTimeoutDialog(
         showSearchTimeoutDialog(api, paths, state, draft);
       },
       onCancel: () => {
-        showScopeProfileDialog(api, paths, state, "full-config", draft);
+        showScopeDebugDialog(api, paths, state, draft);
       },
     }),
   );

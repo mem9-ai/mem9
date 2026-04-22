@@ -17,6 +17,7 @@ export interface SetupProfileSummary {
   label: string;
   baseUrl: string;
   hasApiKey: boolean;
+  apiKeyPreview: string;
 }
 
 export interface ScopeConfigState {
@@ -112,6 +113,23 @@ function hasApiKey(profile: unknown): boolean {
   return Boolean(normalizeOptionalString(profile.apiKey));
 }
 
+function summarizeApiKeyPreview(apiKey: string): string {
+  const normalized = apiKey.trim();
+  if (normalized.length === 0) {
+    return "";
+  }
+
+  if (normalized.length <= 4) {
+    return `${normalized.slice(0, 1)}...`;
+  }
+
+  if (normalized.length <= 8) {
+    return `${normalized.slice(0, 2)}...${normalized.slice(-2)}`;
+  }
+
+  return `${normalized.slice(0, 4)}...${normalized.slice(-4)}`;
+}
+
 function normalizeProfileRecord(
   profileId: string,
   profile: Mem9Profile | undefined,
@@ -188,6 +206,7 @@ function buildProfiles(
         label: normalized.label,
         baseUrl: normalized.baseUrl,
         hasApiKey: normalized.apiKey.trim().length > 0,
+        apiKeyPreview: summarizeApiKeyPreview(normalized.apiKey),
       };
     })
     .sort(sortProfileSummaries);
