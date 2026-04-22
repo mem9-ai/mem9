@@ -1,6 +1,22 @@
+// Publish helper for @mem9/opencode.
+//
 // Run from the package directory:
+//   cd opencode-plugin
+//
+// Normal package-level entrypoint:
 //   pnpm run publish:release current
 //   pnpm run publish:release current --dry-run
+//   pnpm run publish:release patch
+//
+// Direct script entrypoint:
+//   node ./scripts/publish.mjs current
+//   node ./scripts/publish.mjs current --dry-run
+//
+// Argument notes:
+//   - `pnpm run publish:release ...` is the normal workflow.
+//   - `node ./scripts/publish.mjs ...` matches the `--help` output.
+//   - Both `pnpm run publish:release current` and
+//     `pnpm run publish:release -- current` are accepted.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
