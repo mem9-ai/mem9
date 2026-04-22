@@ -39,6 +39,33 @@ function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function sanitizeRelativePath(filePath, basePath, options = {}) {
+  const resolvedBase = normalizeString(basePath) ? path.resolve(basePath) : "";
+  if (!resolvedBase) {
+    return "";
+  }
+
+  const resolved = path.resolve(filePath);
+  if (!options.allowParentTraversal) {
+    if (resolved === resolvedBase) {
+      return ".";
+    }
+
+    if (resolved.startsWith(`${resolvedBase}${path.sep}`)) {
+      return path.relative(resolvedBase, resolved).replaceAll(path.sep, "/");
+    }
+
+    return "";
+  }
+
+  const relative = path.relative(resolvedBase, resolved).replaceAll(path.sep, "/");
+  if (!relative) {
+    return ".";
+  }
+
+  return path.isAbsolute(relative) ? "" : relative;
+}
+
 function sanitizeDisplayPath(filePath, { cwd, codexHome, mem9Home }) {
   const resolved = path.resolve(filePath);
   const resolvedCwd = normalizeString(cwd) ? path.resolve(cwd) : "";
@@ -70,6 +97,18 @@ function sanitizeDisplayPath(filePath, { cwd, codexHome, mem9Home }) {
   }
 
   return path.basename(resolved);
+}
+
+function sanitizeProjectConfigPath(filePath, context) {
+  const projectRelative = sanitizeRelativePath(filePath, context.projectRoot);
+  return projectRelative || sanitizeDisplayPath(filePath, context);
+}
+
+function sanitizeProjectRootPath(filePath, context) {
+  const cwdRelative = sanitizeRelativePath(filePath, context.cwd, {
+    allowParentTraversal: true,
+  });
+  return cwdRelative || sanitizeDisplayPath(filePath, context);
 }
 
 function sanitizeOptionalPath(filePath, context) {
@@ -178,6 +217,7 @@ function resolveContext(args = {}, options = {}) {
       cwd,
       codexHome,
       mem9Home,
+      projectRoot,
     },
   };
 }
@@ -253,7 +293,9 @@ function buildCleanupSnapshot(context) {
   const projectConfigTarget = {
     available: Boolean(context.projectRoot),
     present: Boolean(projectConfigPresent),
-    path: sanitizeOptionalPath(context.projectConfigPath, context.pathContext),
+    path: normalizeString(context.projectConfigPath)
+      ? sanitizeProjectConfigPath(context.projectConfigPath, context.pathContext)
+      : "",
     wouldRemove: Boolean(projectConfigPresent),
   };
   const credentialsTarget = {
@@ -382,7 +424,11 @@ function removeManagedHooks(existingHooks) {
   next.hooks = isRecord(next.hooks) ? next.hooks : {};
 
   for (const eventName of MEM9_EVENTS) {
-    const groups = Array.isArray(next.hooks[eventName]) ? next.hooks[eventName] : [];
+    if (!Array.isArray(next.hooks[eventName])) {
+      continue;
+    }
+
+    const groups = next.hooks[eventName];
     next.hooks[eventName] = groups
       .map((group) => {
         if (!isRecord(group) || !Array.isArray(group.hooks)) {
@@ -416,7 +462,9 @@ function inspectCleanup(argv = process.argv.slice(2), options = {}) {
     status: "ok",
     command: "inspect",
     cwd: sanitizeDisplayPath(context.cwd, context.pathContext),
-    projectRoot: sanitizeOptionalPath(context.projectRoot, context.pathContext),
+    projectRoot: normalizeString(context.projectRoot)
+      ? sanitizeProjectRootPath(context.projectRoot, context.pathContext)
+      : "",
     wouldRemove: snapshot.wouldRemove,
     removableTargets: snapshot.removableTargets,
     global: snapshot.global,
@@ -465,11 +513,14 @@ function runCleanup(argv = process.argv.slice(2), options = {}) {
   const before = buildCleanupSnapshot(context);
   let managedHooksAction = "already-clear";
 
-  if (before.global.managedHooks.state === "present") {
+  if (
+    before.global.managedHooks.state === "present"
+    && before.global.managedHooks.managedHookCount > 0
+  ) {
     const existingHooks = readJsonFile(context.globalPaths.hooksPath, context.fsOps);
     const nextHooks = removeManagedHooks(existingHooks);
     writeJsonFile(context.globalPaths.hooksPath, nextHooks, context.fsOps);
-    managedHooksAction = before.global.managedHooks.managedHookCount > 0 ? "updated" : "already-clear";
+    managedHooksAction = "updated";
   } else if (before.global.managedHooks.state === "invalid") {
     managedHooksAction = "skipped-invalid";
   }
@@ -492,7 +543,9 @@ function runCleanup(argv = process.argv.slice(2), options = {}) {
     command: "run",
     includeProject: args.includeProject,
     cwd: sanitizeDisplayPath(context.cwd, context.pathContext),
-    projectRoot: sanitizeOptionalPath(context.projectRoot, context.pathContext),
+    projectRoot: normalizeString(context.projectRoot)
+      ? sanitizeProjectRootPath(context.projectRoot, context.pathContext)
+      : "",
     wouldRemoveBefore: before.wouldRemove,
     removableTargetsBefore: before.removableTargets,
     removed: {

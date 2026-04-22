@@ -236,6 +236,104 @@ test("run removes only mem9-managed global artifacts", () => {
   }
 });
 
+test("run leaves a foreign-only hooks.json byte-for-byte untouched", () => {
+  const fixture = createCleanupFixture();
+
+  try {
+    const hooksPath = path.join(fixture.codexHome, "hooks.json");
+    const foreignOnlyHooks = [
+      "{",
+      "  \"hooks\": {",
+      "    \"SessionStart\": [",
+      "      {",
+      "        \"hooks\": [",
+      "          {",
+      "            \"statusMessage\": \"foreign-session-start\",",
+      "            \"command\": \"echo foreign-session-start\",",
+      "            \"type\": \"command\"",
+      "          }",
+      "        ]",
+      "      }",
+      "    ]",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+
+    writeFileSync(hooksPath, foreignOnlyHooks);
+
+    const result = runCleanup(["run"], {
+      cwd: fixture.projectRoot,
+      codexHome: fixture.codexHome,
+      mem9Home: fixture.mem9Home,
+      stdout: createStdoutCapture(),
+    });
+
+    assert.equal(result.removed.managedHooks, "already-clear");
+    assert.equal(readFileSync(hooksPath, "utf8"), foreignOnlyHooks);
+  } finally {
+    rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("run preserves sparse foreign hook structure after removing mem9 hooks", () => {
+  const fixture = createCleanupFixture();
+
+  try {
+    const hooksPath = path.join(fixture.codexHome, "hooks.json");
+    writeJson(hooksPath, {
+      hooks: {
+        SessionStart: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: `node ${path.join(fixture.codexHome, "mem9", "hooks", "session-start.mjs")}`,
+                statusMessage: "[mem9] session start",
+              },
+              {
+                type: "command",
+                command: "echo foreign-session-start",
+                statusMessage: "foreign-session-start",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const result = runCleanup(["run"], {
+      cwd: fixture.projectRoot,
+      codexHome: fixture.codexHome,
+      mem9Home: fixture.mem9Home,
+      stdout: createStdoutCapture(),
+    });
+
+    assert.equal(result.removed.managedHooks, "updated");
+
+    const hooks = readJson(hooksPath);
+    assert.deepEqual(hooks, {
+      hooks: {
+        SessionStart: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: "echo foreign-session-start",
+                statusMessage: "foreign-session-start",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    assert.equal("UserPromptSubmit" in hooks.hooks, false);
+    assert.equal("Stop" in hooks.hooks, false);
+  } finally {
+    rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("run --include-project also removes the current project config", () => {
   const fixture = createCleanupFixture();
 
@@ -253,6 +351,39 @@ test("run --include-project also removes the current project config", () => {
       existsSync(path.join(fixture.projectRoot, ".codex", "mem9", "config.json")),
       false,
     );
+  } finally {
+    rmSync(fixture.tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("inspect and run keep project paths readable from a nested repo cwd", () => {
+  const fixture = createCleanupFixture();
+  const nestedCwd = path.join(fixture.projectRoot, "packages", "web");
+  mkdirSync(nestedCwd, { recursive: true });
+
+  try {
+    const inspectSummary = inspectCleanup(["inspect"], {
+      cwd: nestedCwd,
+      codexHome: fixture.codexHome,
+      mem9Home: fixture.mem9Home,
+      stdout: createStdoutCapture(),
+    });
+
+    assert.equal(inspectSummary.cwd, ".");
+    assert.equal(inspectSummary.projectRoot, "../..");
+    assert.equal(inspectSummary.project.config.path, ".codex/mem9/config.json");
+
+    const runResult = runCleanup(["run", "--include-project"], {
+      cwd: nestedCwd,
+      codexHome: fixture.codexHome,
+      mem9Home: fixture.mem9Home,
+      stdout: createStdoutCapture(),
+    });
+
+    assert.equal(runResult.cwd, ".");
+    assert.equal(runResult.projectRoot, "../..");
+    assert.equal(runResult.paths.projectConfig, ".codex/mem9/config.json");
+    assert.equal(runResult.removed.projectConfig, true);
   } finally {
     rmSync(fixture.tempRoot, { recursive: true, force: true });
   }
