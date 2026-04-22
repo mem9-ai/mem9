@@ -27,7 +27,9 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
   assert.equal(existsSync("./skills/project-config/SKILL.md"), false);
   assert.equal(existsSync("./skills/cleanup/SKILL.md"), true);
   assert.equal(existsSync("./skills/recall/SKILL.md"), true);
+  assert.equal(existsSync("./skills/recall/agents/openai.yaml"), true);
   assert.equal(existsSync("./skills/store/SKILL.md"), true);
+  assert.equal(existsSync("./skills/store/agents/openai.yaml"), true);
   assert.equal(existsSync("./lib/config.mjs"), true);
   assert.equal(existsSync("./hooks/session-start.mjs"), true);
   assert.equal(existsSync("./bootstrap-hooks/session-start.mjs"), true);
@@ -41,7 +43,9 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
   const setupSkill = readFileSync("./skills/setup/SKILL.md", "utf8");
   const cleanupSkill = readFileSync("./skills/cleanup/SKILL.md", "utf8");
   const recallSkill = readFileSync("./skills/recall/SKILL.md", "utf8");
+  const recallSkillPolicy = readFileSync("./skills/recall/agents/openai.yaml", "utf8");
   const storeSkill = readFileSync("./skills/store/SKILL.md", "utf8");
+  const storeSkillPolicy = readFileSync("./skills/store/agents/openai.yaml", "utf8");
   const marketplace = JSON.parse(
     readFileSync("../.agents/plugins/marketplace.json", "utf8"),
   );
@@ -50,24 +54,35 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
   );
 
   assert.match(setupSkill, /node \.\/scripts\/setup\.mjs/);
+  assert.match(setupSkill, /node \.\/scripts\/setup\.mjs --help/);
+  assert.match(setupSkill, /profile save-key --help/);
   assert.match(setupSkill, /setup\.mjs inspect/);
   assert.match(setupSkill, /profile create/);
   assert.match(setupSkill, /profile save-key/);
   assert.match(setupSkill, /scope apply/);
   assert.match(setupSkill, /scope clear/);
   assert.match(setupSkill, /MEM9_API_KEY/);
+  assert.match(setupSkill, /copy `profiles\.items\[\*\]\.displaySummary` verbatim/);
+  assert.match(setupSkill, /Do not rewrite it into generic text like `key saved`/);
+  assert.match(setupSkill, /Example: `default \(019d\.\.\.4356\) · https:\/\/api\.mem9\.ai`/);
   assert.match(setupSkill, /updateCheck/);
   assert.match(setupSkill, /--update-check enabled\|disabled/);
   assert.match(setupSkill, /--update-check-interval-hours <hours>/);
   assert.doesNotMatch(setupSkill, /disable-model-invocation:\s*true/);
+  assert.match(cleanupSkill, /node \.\/scripts\/cleanup\.mjs --help/);
+  assert.match(cleanupSkill, /cleanup\.mjs run --help/);
   assert.match(cleanupSkill, /node \.\/scripts\/cleanup\.mjs inspect/);
   assert.match(cleanupSkill, /node \.\/scripts\/cleanup\.mjs run/);
   assert.match(cleanupSkill, /--include-project/);
   assert.match(cleanupSkill, /\$CODEX_HOME\/hooks\.json/);
   assert.match(cleanupSkill, /\$CODEX_HOME\/mem9\/state\.json/);
   assert.match(cleanupSkill, /\$MEM9_HOME\/\.credentials\.json/);
+  assert.match(recallSkill, /node \.\/scripts\/recall\.mjs --help/);
   assert.match(recallSkill, /cat <<'EOF' \| node \.\/scripts\/recall\.mjs/);
+  assert.match(recallSkillPolicy, /allow_implicit_invocation:\s*false/);
+  assert.match(storeSkill, /node \.\/scripts\/store\.mjs --help/);
   assert.match(storeSkill, /cat <<'EOF' \| node \.\/scripts\/store\.mjs/);
+  assert.match(storeSkillPolicy, /allow_implicit_invocation:\s*false/);
   assert.equal(marketplace.name, "mem9-ai");
   assert.equal(marketplace.plugins[0].name, "mem9");
   assert.equal(marketplace.plugins[0].source.path, "./codex-plugin");
