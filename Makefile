@@ -1,7 +1,7 @@
 MAKEFILE_DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 IMG ?= $(REGISTRY)/mnemo-server:$(COMMIT)
 
-.PHONY: build vet clean run test test-cover test-integration docker
+.PHONY: build vet clean run test test-cover test-integration e2e-check docker
 
 build:
 	mkdir -p $(MAKEFILE_DIR)/server/bin
@@ -25,6 +25,10 @@ test-cover:
 
 test-integration:
 	cd server && go test -tags=integration -race -count=1 -v ./internal/repository/tidb/
+
+e2e-check:
+	bash e2e/check-scripts.sh
+
 clean:
 	rm -f server/bin/mnemo-server
 

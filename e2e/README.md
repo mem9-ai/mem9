@@ -2,9 +2,23 @@
 title: E2E Tests
 ---
 
-End-to-end tests for the CRDT branch with user/space model. All scripts run
-against a live mnemo-server instance using the `user_space_test_01` database
-with auto-embedding enabled.
+End-to-end and smoke scripts for live mnemo-server validation. The API smoke
+scripts exercise tenant provisioning, ingestion, recall/search, sessions, UTM
+attribution, and existing-tenant compatibility. The CRDT scripts exercise the
+user/space model.
+
+Most scripts in this directory hit a running mnemo-server. Use the offline
+guardrail below for PR-safe checks that do not require dev/staging, secrets, or
+network access.
+
+## Offline guardrail
+
+```bash
+make e2e-check
+```
+
+This checks shell syntax, shell strict mode, Python syntax, and v1alpha2 wrapper
+targets. It does not call any Mem9 API and is safe to run in PR CI.
 
 ## Prerequisites
 
