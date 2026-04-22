@@ -1,17 +1,17 @@
 export MNEMO_LLM_MODEL="qwen3.6-flash"
-export OPENAI_JUDGE_MODEL="gpt-4o"
-export OPENAI_CHAT_MODEL="gpt-4o"
+export OPENAI_JUDGE_MODEL="qwen3.6-plus"
+export OPENAI_CHAT_MODEL="qwen3.6-plus"
 
 ── Results ──────────────────────────────────
-Overall F1 (micro): 58.14%  (n=1968)
-Overall F1 (macro): 49.99%
-Overall LLM (micro): 57.57%  (n=1525)
-Overall LLM (macro): 47.93%
-Overall Evidence Recall: 53.54%
+Overall F1 (micro): 59.51%  (n=1986)
+Overall F1 (macro): 51.94%
+Overall LLM (micro): 59.35%  (n=1540)
+Overall LLM (macro): 50.28%
+Overall Evidence Recall: 52.93%
 
-  Cat 1 (multi-hop   ):  F1=22.04%  LLM=24.91%  ER=24.7%  (n=277  llm_n=277)
-  Cat 2 (single-hop  ):  F1=62.25%  LLM=74.05%  ER=65.8%  (n=316  llm_n=316)
-  Cat 3 (temporal    ):  F1=16.68%  LLM=27.08%  ER=19.1%  (n=96  llm_n=96)
-  Cat 4 (open-domain ):  F1=53.51%  LLM=65.67%  ER=60.6%  (n=836  llm_n=836)
-  Cat 5 (adversarial ):  F1=95.49%  LLM=N/A  ER=56.7%  (n=443)
+  Cat 1 (multi-hop   ):  F1=22.83%  LLM=31.91%  ER=25.1%  (n=282  llm_n=282)
+  Cat 2 (single-hop  ):  F1=65.42%  LLM=70.40%  ER=67.4%  (n=321  llm_n=321)
+  Cat 3 (temporal    ):  F1=21.20%  LLM=31.25%  ER=18.9%  (n=96  llm_n=96)
+  Cat 4 (open-domain ):  F1=54.94%  LLM=67.54%  ER=58.9%  (n=841  llm_n=841)
+  Cat 5 (adversarial ):  F1=95.29%  LLM=N/A  ER=55.8%  (n=446)
 ──────────────────────────────────────────────
