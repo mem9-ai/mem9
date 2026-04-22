@@ -148,6 +148,37 @@ function deriveTagFromVersion(version) {
   return parsed.channel ?? "latest";
 }
 
+function applyStableIncrement(current, increment) {
+  const next = { ...current, channel: null, prereleaseNumber: null };
+
+  if (increment === "major") {
+    if (current.channel && current.minor === 0 && current.patch === 0) {
+      return next;
+    }
+
+    next.major += 1;
+    next.minor = 0;
+    next.patch = 0;
+    return next;
+  }
+
+  if (increment === "minor") {
+    if (current.channel && current.patch === 0) {
+      return next;
+    }
+
+    next.minor += 1;
+    next.patch = 0;
+    return next;
+  }
+
+  if (!current.channel) {
+    next.patch += 1;
+  }
+
+  return next;
+}
+
 function resolveReleasePlan(currentVersion, increment, channel) {
   if (increment === "current") {
     return {
@@ -161,18 +192,7 @@ function resolveReleasePlan(currentVersion, increment, channel) {
   const current = parseVersion(currentVersion);
 
   if (STABLE_INCREMENTS.has(increment) && !channel) {
-    const next = { ...current, channel: null, prereleaseNumber: null };
-
-    if (increment === "major") {
-      next.major += 1;
-      next.minor = 0;
-      next.patch = 0;
-    } else if (increment === "minor") {
-      next.minor += 1;
-      next.patch = 0;
-    } else {
-      next.patch += 1;
-    }
+    const next = applyStableIncrement(current, increment);
 
     return {
       currentVersion,
@@ -284,6 +304,21 @@ function runPnpm(args) {
   }
 }
 
+function buildPublishArgs(tag, dryRun) {
+  const publishArgs = [
+    "publish",
+    "--access",
+    "public",
+    "--tag",
+    tag,
+  ];
+  if (dryRun) {
+    publishArgs.push("--dry-run");
+  }
+
+  return publishArgs;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
@@ -312,19 +347,7 @@ async function main() {
     runPnpm(["test"]);
     runPnpm(["run", "typecheck"]);
     runPnpm(["run", "pack:check"]);
-
-    const publishArgs = [
-      "publish",
-      "--access",
-      "public",
-      "--tag",
-      plan.tag,
-      "--no-git-checks",
-    ];
-    if (args.dryRun) {
-      publishArgs.push("--dry-run");
-    }
-    runPnpm(publishArgs);
+    runPnpm(buildPublishArgs(plan.tag, args.dryRun));
   } catch (error) {
     writeFileSync(packageJsonPath, originalPackageJson, "utf8");
     throw error;
@@ -355,6 +378,7 @@ export {
   parseVersion,
   formatVersion,
   deriveTagFromVersion,
+  buildPublishArgs,
   resolveReleasePlan,
   readPublishToken,
 };

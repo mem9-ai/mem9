@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { deriveTagFromVersion, parseArgs, resolveReleasePlan } from "./publish.mjs";
+import {
+  buildPublishArgs,
+  deriveTagFromVersion,
+  parseArgs,
+  resolveReleasePlan,
+} from "./publish.mjs";
 
 test("parseArgs accepts current release mode", () => {
   assert.deepEqual(parseArgs(["current", "--dry-run"]), {
@@ -94,4 +99,52 @@ test("resolveReleasePlan requires a prerelease base for prerelease increments", 
     () => resolveReleasePlan("0.1.0", "prerelease", "rc"),
     /already be a prerelease/,
   );
+});
+
+test("resolveReleasePlan promotes patch prereleases to their stable version", () => {
+  assert.deepEqual(resolveReleasePlan("0.1.1-rc.2", "patch"), {
+    currentVersion: "0.1.1-rc.2",
+    nextVersion: "0.1.1",
+    normalizedIncrement: "patch",
+    tag: "latest",
+  });
+});
+
+test("resolveReleasePlan promotes minor prereleases to their stable version", () => {
+  assert.deepEqual(resolveReleasePlan("0.2.0-rc.2", "minor"), {
+    currentVersion: "0.2.0-rc.2",
+    nextVersion: "0.2.0",
+    normalizedIncrement: "minor",
+    tag: "latest",
+  });
+});
+
+test("resolveReleasePlan promotes major prereleases to their stable version", () => {
+  assert.deepEqual(resolveReleasePlan("1.0.0-rc.2", "major"), {
+    currentVersion: "1.0.0-rc.2",
+    nextVersion: "1.0.0",
+    normalizedIncrement: "major",
+    tag: "latest",
+  });
+});
+
+test("buildPublishArgs keeps git safety checks in place", () => {
+  assert.deepEqual(buildPublishArgs("latest", false), [
+    "publish",
+    "--access",
+    "public",
+    "--tag",
+    "latest",
+  ]);
+});
+
+test("buildPublishArgs forwards dry-run without extra flags", () => {
+  assert.deepEqual(buildPublishArgs("rc", true), [
+    "publish",
+    "--access",
+    "public",
+    "--tag",
+    "rc",
+    "--dry-run",
+  ]);
 });
