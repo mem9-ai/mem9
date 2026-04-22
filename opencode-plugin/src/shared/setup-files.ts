@@ -1,14 +1,14 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { Mem9ResolvedPaths } from "./platform-paths.js";
-import { parseCredentialsFile, stringifyCredentialsFile } from "./credentials-store.js";
-import { DEFAULT_SCOPE_CONFIG } from "./defaults.js";
+import type { Mem9ResolvedPaths } from "./platform-paths.ts";
+import { parseCredentialsFile, stringifyCredentialsFile } from "./credentials-store.ts";
+import { DEFAULT_SCOPE_CONFIG } from "./defaults.ts";
 import {
   DEFAULT_API_URL,
   type Mem9ConfigFile,
   type Mem9CredentialsFile,
   type Mem9Profile,
-} from "./types.js";
+} from "./types.ts";
 
 export type SetupScope = "user" | "project";
 

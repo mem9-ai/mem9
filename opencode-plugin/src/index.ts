@@ -1,1 +1,1 @@
-export { default } from "./server/index.js";
+export { default } from "./server/index.ts";

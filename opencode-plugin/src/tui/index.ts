@@ -8,8 +8,8 @@ import {
   resolveMem9Home,
   resolveMem9Paths,
   type Mem9ResolvedPaths,
-} from "../shared/platform-paths.js";
-import { PLUGIN_ID } from "../shared/plugin-meta.js";
+} from "../shared/platform-paths.ts";
+import { PLUGIN_ID } from "../shared/plugin-meta.ts";
 import {
   loadSetupState,
   provisionApiKey,
@@ -19,7 +19,7 @@ import {
   type SetupProfileSummary,
   type SetupScope,
   type SetupState,
-} from "../shared/setup-files.js";
+} from "../shared/setup-files.ts";
 
 type SetupAction =
   | "auto-api-key"
