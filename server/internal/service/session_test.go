@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"github.com/qiffang/mnemos/server/internal/domain"
 	"testing"
+	"time"
+
+	"github.com/qiffang/mnemos/server/internal/domain"
 )
 
 type stubSessionRepo struct {
@@ -27,6 +30,9 @@ type stubSessionRepo struct {
 	autoVecResults []domain.Memory
 	autoVecErr     error
 	ftsAvail       bool
+	sessionRows    []*domain.Session
+	listSessionIDs []string
+	listLimit      int
 }
 
 func intPtr(v int) *int {
@@ -65,8 +71,10 @@ func (s *stubSessionRepo) KeywordSearch(_ context.Context, _ string, _ domain.Me
 
 func (s *stubSessionRepo) FTSAvailable() bool { return s.ftsAvail }
 
-func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, _ []string, _ int) ([]*domain.Session, error) {
-	return nil, nil
+func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, ids []string, limit int) ([]*domain.Session, error) {
+	s.listSessionIDs = append([]string(nil), ids...)
+	s.listLimit = limit
+	return append([]*domain.Session(nil), s.sessionRows...), nil
 }
 
 func newTestSessionService(repo *stubSessionRepo) *SessionService {
@@ -273,6 +281,49 @@ func TestSessionService_Search_defaultLimit(t *testing.T) {
 	_, err := svc.Search(context.Background(), domain.MemoryFilter{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSessionService_SearchCandidates_ExpandsAdjacentTurns(t *testing.T) {
+	now := time.Now()
+	repo := &stubSessionRepo{
+		keywordResults: []domain.Memory{
+			{
+				ID:         "s-question",
+				SessionID:  "sess-1",
+				Content:    "Which company do you like the most these days?",
+				MemoryType: domain.TypeSession,
+				Metadata:   json.RawMessage(`{"role":"user","seq":7,"content_type":"text"}`),
+				UpdatedAt:  now,
+				State:      domain.StateActive,
+			},
+		},
+		sessionRows: []*domain.Session{
+			{ID: "s-question", SessionID: "sess-1", Seq: 7, Role: "user", Content: "Which company do you like the most these days?", ContentType: "text", State: domain.StateActive, CreatedAt: now.Add(-1 * time.Minute), UpdatedAt: now.Add(-1 * time.Minute)},
+			{ID: "s-answer", SessionID: "sess-1", Seq: 8, Role: "assistant", Content: `Definitely "Under Armour" right now.`, ContentType: "text", State: domain.StateActive, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+	svc := newTestSessionService(repo)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{Query: "What company does John like?", Limit: 5}, RecallSourceSession, RecallCandidateOptions{
+		EnableAdjacentTurns: true,
+		AdjacentTurnRadius:  1,
+		AdjacentTurnTopN:    2,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 2 {
+		t.Fatalf("expected 2 candidates, got %d", len(candidates))
+	}
+	if candidates[0].Memory.ID != "s-question" {
+		t.Fatalf("expected seed candidate to remain present, got %q", candidates[0].Memory.ID)
+	}
+	if candidates[1].Memory.ID != "s-answer" {
+		t.Fatalf("expected adjacent answer candidate to be appended, got %q", candidates[1].Memory.ID)
+	}
+	if len(repo.listSessionIDs) != 1 || repo.listSessionIDs[0] != "sess-1" {
+		t.Fatalf("expected ListBySessionIDs to request sess-1, got %+v", repo.listSessionIDs)
 	}
 }
 

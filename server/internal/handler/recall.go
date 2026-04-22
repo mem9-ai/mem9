@@ -29,6 +29,8 @@ const (
 	enumerationPinnedKeepMax     = 1
 	richTopFetchMultiplier       = 4
 	richTopSecondHopTopN         = 5
+	sessionAdjacentTurnTopN      = 4
+	sessionAdjacentTurnRadius    = 1
 	balancedSelectionRounds      = 2
 	defaultConfidenceGapStop     = 18
 	recallRRFMaxScore            = 2.0 / 61.0
@@ -60,11 +62,17 @@ var (
 	answerPastCueRe              = regexp.MustCompile(`(?i)\b(?:went|had|did|got|was|were|happened|previously|earlier|ago|last\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn|friday|saturday|sunday|monday|tuesday|wednesday|thursday))\b|(?:之前|以前|当时|去了|发生了|上周|上个月|去年|昨天|前天)`)
 	answerNegationRe             = regexp.MustCompile(`(?i)\b(?:did not|didn't|never|no longer|not\b)\b|(?:没有|没|未)`)
 	recallLeadingBracketRunRe    = regexp.MustCompile(`^(?:\[[^\]\n]{0,160}\]\s*)+`)
+	recallSpeakerTagRe           = regexp.MustCompile(`(?i)\[speaker:([^\]]+)\]`)
+	recallImageCaptionTagRe      = regexp.MustCompile(`(?is)\[image-caption:[^\]]+\]`)
 	recallTemporalTokenRe        = regexp.MustCompile(`\b(?:19|20)\d{2}\b|\b(?:january|february|march|april|may|june|july|august|september|october|november|december|monday|tuesday|wednesday|thursday|friday|saturday|sunday|spring|summer|fall|autumn|winter)\b|(?:\d{4}年|\d{1,2}月|昨天|今天|明天|上周|下周|去年|今年|明年|春天|夏天|秋天|冬天)`)
 	recallEnumerationPluralRe    = regexp.MustCompile(`\b(?:activities|books|events|items|pets|names|artists|bands|places|countries|movies|songs|games|restaurants|authors|albums|hobbies|shows|concerts)\b`)
 	recallEnumerationTypeCueRe   = regexp.MustCompile(`\bwhat\s+(?:type|types|kind|kinds)\s+of\b`)
 	recallEnumerationBothCueRe   = regexp.MustCompile(`\b(?:what|which)\b.*\bboth\b`)
 	recallEnumerationDoneCueRe   = regexp.MustCompile(`\bwhat\s+(?:has|have)\s+.+\s+done\b`)
+	recallSpeakerUtteranceRe     = regexp.MustCompile(`(?i)^what did\s+([a-z][a-z'-]*)\s+say\b`)
+	recallVisualQuestionRe       = regexp.MustCompile(`(?i)\b(?:photo|picture|painting|drawing|poster|sign|bowl|pot|mug|flowers?|tattoo|desk|bookcase|console|landscape|scene)\b`)
+	recallQuotedTextArtifactRe   = regexp.MustCompile(`(?i)\b(?:sign|poster|posters|note|notes|letter|letters|message|messages|text|caption)\b`)
+	recallTextActionRe           = regexp.MustCompile(`(?i)\b(?:say|says|said|read|reads|written|write|writes)\b`)
 	recallCoverageEnglishTokenRe = regexp.MustCompile(`\b[a-z][a-z0-9'-]{3,}\b`)
 	recallCoverageCJKTokenRe     = regexp.MustCompile(`[\p{Han}]{2,6}`)
 	recallCoverageSpaceRe        = regexp.MustCompile(`\s+`)
@@ -83,6 +91,9 @@ type recallQueryProfile struct {
 	lower          string
 	temporalIntent recallTemporalIntent
 	temporalTokens []string
+	targetSpeaker  string
+	visualQuestion bool
+	quotedQuestion bool
 }
 
 type recallQueryShape int
@@ -377,6 +388,11 @@ func recallCandidateOptions(shape recallQueryShape, enableSecondHop bool) servic
 	opts := service.RecallCandidateOptions{
 		EnableSecondHop: enableSecondHop,
 	}
+	if shouldExpandAdjacentSessionTurns(shape) {
+		opts.EnableAdjacentTurns = true
+		opts.AdjacentTurnRadius = sessionAdjacentTurnRadius
+		opts.AdjacentTurnTopN = sessionAdjacentTurnTopN
+	}
 	if shape == recallQueryShapeEnumeration {
 		opts.FetchMultiplier = enumerationFetchMultiplier
 		if enableSecondHop {
@@ -391,6 +407,10 @@ func recallCandidateOptions(shape recallQueryShape, enableSecondHop bool) servic
 		}
 	}
 	return opts
+}
+
+func shouldExpandAdjacentSessionTurns(shape recallQueryShape) bool {
+	return shape != recallQueryShapeEnumeration
 }
 
 func shouldUseBalancedTopSelection(shape recallQueryShape) bool {
@@ -811,6 +831,9 @@ func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float
 	content, temporalDisplay, temporalKind := recallContentForScoring(memory)
 	shape := profile.shape
 	lower := strings.ToLower(content)
+	spokenBody, hasCaption := recallSpokenBodyForScoring(content)
+	questionLike := strings.ContainsAny(spokenBody, "?？")
+	speaker := extractRecallSpeaker(content)
 	unitCount := recallAnswerUnitCount(content)
 	entitySignals := recallEntitySignalCount(content)
 	namedCJKAnswer := hasStandaloneCJKNamedAnswer(content)
@@ -818,6 +841,32 @@ func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float
 	bonus := 0.0
 	if unitCount > 0 && unitCount <= 18 {
 		bonus += 0.05
+	}
+	if profile.targetSpeaker != "" {
+		switch {
+		case speaker == profile.targetSpeaker:
+			bonus += 0.20
+		case speaker != "":
+			bonus -= 0.10
+		}
+		if questionLike {
+			bonus -= 0.12
+		} else if strings.TrimSpace(spokenBody) != "" {
+			bonus += 0.04
+		}
+	}
+	if hasCaption {
+		switch {
+		case profile.visualQuestion || profile.quotedQuestion:
+			bonus += 0.10
+		case strings.TrimSpace(spokenBody) == "":
+			bonus -= 0.22
+		default:
+			bonus -= 0.06
+			if questionLike {
+				bonus -= 0.10
+			}
+		}
 	}
 
 	switch shape {
@@ -937,6 +986,22 @@ func extractRecallCoverageTokens(memory domain.Memory, queryTokens map[string]st
 	return out
 }
 
+func extractRecallTargetSpeaker(lower string) string {
+	match := recallSpeakerUtteranceRe.FindStringSubmatch(lower)
+	if len(match) < 2 {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(match[1]))
+}
+
+func extractRecallSpeaker(content string) string {
+	match := recallSpeakerTagRe.FindStringSubmatch(content)
+	if len(match) < 2 {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(match[1]))
+}
+
 func addRecallCoverageToken(tokens map[string]struct{}, raw string, queryTokens map[string]struct{}) {
 	token := normalizeRecallCoverageToken(raw)
 	if token == "" || isRecallCoverageStopword(token) {
@@ -995,8 +1060,11 @@ func recallContentForScoring(memory domain.Memory) (string, string, string) {
 func buildRecallQueryProfile(query string) recallQueryProfile {
 	lower := strings.ToLower(strings.TrimSpace(query))
 	profile := recallQueryProfile{
-		shape: classifyRecallQueryShape(query),
-		lower: lower,
+		shape:          classifyRecallQueryShape(query),
+		lower:          lower,
+		targetSpeaker:  extractRecallTargetSpeaker(lower),
+		visualQuestion: recallVisualQuestionRe.MatchString(query),
+		quotedQuestion: recallQuotedTextArtifactRe.MatchString(query) && recallTextActionRe.MatchString(query),
 	}
 	if profile.shape == recallQueryShapeTime {
 		profile.temporalIntent = classifyRecallTemporalIntent(lower)
@@ -1105,6 +1173,15 @@ func stripRecallTemporalHeader(content string) (string, bool) {
 	headerLower := strings.ToLower(header)
 	hasAnchor := answerYearRe.MatchString(header) || containsMonthName(headerLower) || answerCNTimeRe.MatchString(header) || strings.Contains(headerLower, " on ")
 	return body, hasAnchor
+}
+
+func recallSpokenBodyForScoring(content string) (string, bool) {
+	body, _ := stripRecallTemporalHeader(content)
+	hasCaption := recallImageCaptionTagRe.MatchString(body)
+	if hasCaption {
+		body = recallImageCaptionTagRe.ReplaceAllString(body, "")
+	}
+	return strings.TrimSpace(body), hasCaption
 }
 
 func temporalConstraintMatchBonus(tokens []string, lowerContent string) float64 {
