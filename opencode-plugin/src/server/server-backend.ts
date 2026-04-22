@@ -1,4 +1,8 @@
-import type { MemoryBackend } from "./backend.js";
+import type {
+  IngestInput,
+  IngestResult,
+  MemoryBackend,
+} from "./backend.js";
 import type {
   Memory,
   StoreResult,
@@ -6,54 +10,93 @@ import type {
   CreateMemoryInput,
   UpdateMemoryInput,
   SearchInput,
-} from "./types.js";
+} from "../shared/types.js";
+import { DEFAULT_SCOPE_CONFIG } from "../shared/defaults.js";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeTimeoutMs(value: number | undefined, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(value);
+}
+
+export interface ServerBackendOptions {
+  defaultTimeoutMs?: number;
+  searchTimeoutMs?: number;
+}
 
 /**
  * ServerBackend — talks to mem9 REST API.
- * Used when MEM9_API_URL + MEM9_TENANT_ID are set.
+ * Used when a runtime API key is available.
  */
 export class ServerBackend implements MemoryBackend {
   private baseUrl: string;
-  private tenantID: string;
-  private agentName: string;
+  private defaultTimeoutMs: number;
+  private searchTimeoutMs: number;
 
-  constructor(apiUrl: string, tenantID: string, agentName: string = "opencode") {
+  constructor(
+    apiUrl: string,
+    private apiKey: string,
+    private agentName: string = "opencode",
+    options: ServerBackendOptions = {},
+  ) {
     this.baseUrl = apiUrl.replace(/\/+$/, "");
-    this.tenantID = tenantID;
-    this.agentName = agentName;
+    this.defaultTimeoutMs = normalizeTimeoutMs(
+      options.defaultTimeoutMs,
+      DEFAULT_SCOPE_CONFIG.defaultTimeoutMs,
+    );
+    this.searchTimeoutMs = normalizeTimeoutMs(
+      options.searchTimeoutMs,
+      DEFAULT_SCOPE_CONFIG.searchTimeoutMs,
+    );
   }
 
-  private tenantPath(path: string): string {
-    if (!this.tenantID) {
-      throw new Error("MEM9_TENANT_ID is required");
-    }
-    return `/v1alpha1/mem9s/${this.tenantID}${path}`;
+  private memoryPath(path: string): string {
+    return `/v1alpha2/mem9s${path}`;
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    timeoutMs = this.defaultTimeoutMs,
+  ): Promise<T> {
     const url = this.baseUrl + path;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "X-Mnemo-Agent-Id": this.agentName,
+      "X-API-Key": this.apiKey,
     };
     const resp = await fetch(url, {
       method,
       headers,
       body: body != null ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (resp.status === 204) return undefined as T;
 
-    const data = await resp.json();
+    const text = await resp.text();
+    const data = text ? (JSON.parse(text) as unknown) : undefined;
     if (!resp.ok) {
-      throw new Error((data as { error?: string }).error ?? `HTTP ${resp.status}`);
+      const message =
+        isRecord(data) && typeof data.error === "string" ? data.error : `HTTP ${resp.status}`;
+      throw new Error(message);
     }
     return data as T;
   }
 
   async store(input: CreateMemoryInput): Promise<StoreResult> {
-    return this.request<StoreResult>("POST", this.tenantPath("/memories"), input);
+    return this.request<StoreResult>("POST", this.memoryPath("/memories"), input);
+  }
+
+  async ingest(input: IngestInput): Promise<IngestResult> {
+    return this.request<IngestResult>("POST", this.memoryPath("/memories"), input);
   }
 
   async search(input: SearchInput): Promise<SearchResult> {
@@ -71,7 +114,12 @@ export class ServerBackend implements MemoryBackend {
       total: number;
       limit: number;
       offset: number;
-    }>("GET", `${this.tenantPath("/memories")}${qs ? "?" + qs : ""}`);
+    }>(
+      "GET",
+      `${this.memoryPath("/memories")}${qs ? "?" + qs : ""}`,
+      undefined,
+      this.searchTimeoutMs,
+    );
 
     return {
       memories: raw.memories ?? [],
@@ -83,7 +131,7 @@ export class ServerBackend implements MemoryBackend {
 
   async get(id: string): Promise<Memory | null> {
     try {
-      return await this.request<Memory>("GET", this.tenantPath(`/memories/${id}`));
+      return await this.request<Memory>("GET", this.memoryPath(`/memories/${id}`));
     } catch (err) {
       if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
         return null;
@@ -94,7 +142,7 @@ export class ServerBackend implements MemoryBackend {
 
   async update(id: string, input: UpdateMemoryInput): Promise<Memory | null> {
     try {
-      return await this.request<Memory>("PUT", this.tenantPath(`/memories/${id}`), input);
+      return await this.request<Memory>("PUT", this.memoryPath(`/memories/${id}`), input);
     } catch (err) {
       if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
         return null;
@@ -105,7 +153,7 @@ export class ServerBackend implements MemoryBackend {
 
   async remove(id: string): Promise<boolean> {
     try {
-      await this.request("DELETE", this.tenantPath(`/memories/${id}`));
+      await this.request("DELETE", this.memoryPath(`/memories/${id}`));
       return true;
     } catch (err) {
       if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {

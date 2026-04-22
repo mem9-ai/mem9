@@ -1,0 +1,3 @@
+.tmp/
+.npmrc.publish.tmp
+dist-test/

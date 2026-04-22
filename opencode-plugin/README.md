@@ -1,57 +1,21 @@
 # OpenCode Plugin for mem9
 
-Persistent memory for [OpenCode](https://opencode.ai) — injects memories into system prompt automatically, with 5 memory tools.
+Persistent memory for [OpenCode](https://opencode.ai).
 
-## 🚀 Quick Start
+The package ships two plugin entrypoints:
 
-```bash
-# 1. Provision a mem9 space
-curl -sX POST https://api.mem9.ai/v1alpha1/mem9s | jq .
-# → { "id": "uuid" }
+- a server plugin for recall, auto-ingest, and memory tools
+- a TUI plugin for interactive setup inside OpenCode
 
-# 2. Set your mem9 space ID
-export MEM9_TENANT_ID="uuid"
+## Quick Start
 
-# 3. Add plugin to opencode.json
-echo '{"plugin": ["@mem9/opencode"]}' > opencode.json
+### 1. Install the server plugin
 
-# 4. Start OpenCode - plugin auto-installs from npm
-opencode
-```
+Install the server plugin in one scope only.
 
-**That's it!** Your agent now has persistent cloud memory. The plugin defaults to `https://api.mem9.ai` — no API URL config needed.
+User scope:
 
----
-
-## How It Works
-
-```
-System Prompt Transform → Inject recent memories into system prompt
-          ↓
-    Agent works normally, can use memory_* tools anytime
-```
-
-| Hook / Tool | Trigger | What it does |
-|---|---|---|
-| `system.transform` | Every chat turn | Injects recent memories into system prompt |
-| `memory_store` tool | Agent decides | Store a new memory (with optional key for upsert) |
-| `memory_search` tool | Agent decides | Hybrid vector + keyword search (or keyword-only) |
-| `memory_get` tool | Agent decides | Retrieve a single memory by ID |
-| `memory_update` tool | Agent decides | Update an existing memory |
-| `memory_delete` tool | Agent decides | Delete a memory by ID |
-
-## Prerequisites
-
-- [OpenCode](https://opencode.ai) installed
-- A mem9 space ID (provision one at `https://api.mem9.ai`)
-
-## Installation
-
-### Method A: npm plugin (Recommended)
-
-The simplest way — OpenCode auto-installs npm plugins at startup.
-
-Add to your `opencode.json`:
+File: `~/.config/opencode/opencode.json`
 
 ```json
 {
@@ -59,84 +23,246 @@ Add to your `opencode.json`:
 }
 ```
 
-That's it. OpenCode will install `@mem9/opencode` from npm automatically on next startup.
+Project scope:
 
-### Method B: From source
-
-```bash
-git clone https://github.com/mem9-ai/mem9.git
-cd mem9/opencode-plugin
-npm install
-npm run build
-```
-
-Then register in `opencode.json`:
+File: `<project>/.opencode/opencode.json`
 
 ```json
 {
-  "plugin": ["file:///absolute/path/to/mem9/opencode-plugin/dist/index.js"]
+  "plugin": ["@mem9/opencode"]
 }
 ```
 
-### Set environment variables
+Recommended pattern:
 
-The plugin defaults to `https://api.mem9.ai`. You only need to set your space ID:
+- install the server plugin once at user scope
+- keep project-specific behavior in `<project>/.opencode/mem9.json`
 
-```bash
-export MEM9_TENANT_ID="uuid"
+`@mem9/opencode` resolves npm `latest`.
+If you publish a prerelease channel, install it with an explicit npm specifier instead:
+
+```json
+{
+  "plugin": ["@mem9/opencode@rc"]
+}
 ```
 
-For self-hosted servers, also set:
-```bash
-export MEM9_API_URL="http://your-server:8080"
+You can also pin an exact prerelease version:
+
+```json
+{
+  "plugin": ["@mem9/opencode@0.1.0-rc.0"]
+}
 ```
 
-`MEM9_TENANT_ID` must be present in the environment used to launch OpenCode. For project-scoped setup, prefer `direnv` or a project launch script instead of storing env vars in `opencode.json` or editing shell RC files from automation.
+Avoid duplicate plugin loading, such as:
 
-### Migrating from MNEMO_ env vars
+- user scope plugin plus project scope plugin
+- npm plugin plus local file plugin
 
-> **Breaking change (v0.1.0):** `MNEMO_API_URL`, `MNEMO_TENANT_ID`, and `MNEMO_API_TOKEN` are no longer supported. Rename to `MEM9_API_URL`, `MEM9_TENANT_ID`, and `MEM9_API_TOKEN`.
+### 2. Install the TUI plugin for `/mem9-setup`
 
-### Verify
+File: `~/.config/opencode/tui.json`
 
-Start OpenCode in your project. You should see this log line:
-
+```json
+{
+  "plugin": ["@mem9/opencode"]
+}
 ```
-[mem9] Server mode (mem9 REST API)
+
+That enables the `/mem9-setup` command inside OpenCode.
+
+### 3. Restart OpenCode and run `/mem9-setup`
+
+`/mem9-setup` is the single entrypoint for both:
+
+- shared mem9 credentials
+- OpenCode user/project mem9 settings
+
+When no usable profile exists, it shows two actions:
+
+- `Get a mem9 API key automatically`
+- `Add an existing mem9 API key`
+
+When usable profiles already exist, it shows four actions:
+
+- `Get a mem9 API key automatically`
+- `Add an existing mem9 API key`
+- `Use an existing mem9 profile in a scope`
+- `Configure user/project settings`
+
+Profile creation ends after the profile is saved. Scope configuration is a separate action.
+
+## File Layout
+
+OpenCode config directory:
+
+- macOS/Linux: usually `~/.config/opencode`
+- Windows: usually `%APPDATA%\\opencode`
+
+OpenCode state directory:
+
+- macOS/Linux: usually `~/.local/share/opencode`
+- Windows: usually `%LOCALAPPDATA%\\opencode`
+
+mem9 uses these files:
+
+- server plugin list: `~/.config/opencode/opencode.json` or `<project>/.opencode/opencode.json`
+- TUI plugin list: `~/.config/opencode/tui.json`
+- shared credentials: `$MEM9_HOME/.credentials.json`
+- user mem9 config: `<OpenCode config dir>/mem9.json`
+- project mem9 config: `<project>/.opencode/mem9.json`
+- debug logs: `<OpenCode state dir>/plugins/mem9/log/YYYY-MM-DD.jsonl`
+
+`MEM9_HOME` defaults to `$HOME/.mem9`.
+
+## Credentials File
+
+Shared credentials live in:
+
+```text
+$MEM9_HOME/.credentials.json
 ```
 
-If you see `[mem9] No MEM9_TENANT_ID configured...`, check your env vars.
+Example:
 
-## Environment Variables Reference
-
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `MEM9_TENANT_ID` | Yes | — | Mem9 space ID for URL routing (`/v1alpha1/mem9s/{tenantID}/memories/...`) |
-| `MEM9_API_URL` | No | `https://api.mem9.ai` | mem9 API base URL |
-
-## File Structure
-
+```json
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "default": {
+      "label": "Personal",
+      "baseUrl": "https://api.mem9.ai",
+      "apiKey": "..."
+    }
+  }
+}
 ```
-opencode-plugin/
-├── README.md              # This file
-├── package.json           # npm package config
-├── tsconfig.json          # TypeScript config
-├── skills/
-│   └── mem9-setup/        # Setup skill (onboarding guide)
-│       └── SKILL.md
-└── src/
-    ├── index.ts           # Plugin entry point (wiring)
-    ├── types.ts           # Config loading, Memory types
-    ├── backend.ts         # MemoryBackend interface
-    ├── server-backend.ts  # Server mode: mem9 REST API client
-    ├── tools.ts           # 5 memory tools (store/search/get/update/delete)
-    └── hooks.ts           # system.transform hook (memory injection)
+
+`profiles` stores credentials only.
+
+## OpenCode mem9 Config
+
+User and project mem9 config use the same schema:
+
+```json
+{
+  "schemaVersion": 1,
+  "profileId": "default",
+  "debug": false,
+  "defaultTimeoutMs": 8000,
+  "searchTimeoutMs": 15000
+}
 ```
+
+Field meanings:
+
+- `profileId`: which shared profile this scope should use
+- `debug`: enable redacted JSONL debug logs
+- `defaultTimeoutMs`: request timeout for normal mem9 calls
+- `searchTimeoutMs`: request timeout for recall search
+
+Project config overrides user config for the current repository.
+
+## Runtime Overrides
+
+These environment variables still override disk config at runtime:
+
+- `MEM9_API_KEY`
+- `MEM9_API_URL`
+- `MEM9_DEBUG`
+- `MEM9_HOME`
+
+Legacy compatibility remains:
+
+- `MEM9_TENANT_ID`
+
+`MEM9_TENANT_ID` is treated as the API key source for older setups.
+
+## Local Development Install
+
+You can also point OpenCode at a local checkout.
+
+Server plugin example:
+
+```json
+{
+  "plugin": ["./.opencode/plugins/mem9/src/index.ts"]
+}
+```
+
+TUI plugin example:
+
+```json
+{
+  "plugin": ["./.opencode/plugins/mem9/src/tui/index.ts"]
+}
+```
+
+Keep the same one-scope rule for the server plugin even when using local paths.
+
+## What the Plugin Does
+
+The server plugin does three things:
+
+- recalls relevant mem9 memories before each chat turn
+- exposes mem9 memory tools inside OpenCode
+- starts best-effort background smart ingest when the session becomes idle and when compaction begins
+
+### Hook Flow
+
+OpenCode integration currently uses four runtime hooks:
+
+| Hook | What mem9 does |
+| --- | --- |
+| `chat.message` | Captures the latest real user prompt and updates in-memory session state. |
+| `experimental.chat.system.transform` | Searches mem9 with the captured prompt and injects a `<relevant-memories>` block. |
+| `event` with `session.idle` | Starts a best-effort background smart-ingest pass for the recent transcript window. |
+| `experimental.session.compacting` | Pushes a compaction hint and starts another best-effort background smart-ingest pass. |
+
+### Recall
+
+The plugin captures the latest real user prompt from `chat.message`, cleans it, bounds it, and injects a formatted recall block during `experimental.chat.system.transform`.
+
+### Auto-ingest
+
+The plugin ingests from two points:
+
+- `session.idle`
+- `experimental.session.compacting`
+
+Both paths fetch up to 24 recent session messages, keep real text-only `user` and `assistant` turns, strip injected memory blocks, and upload the last 12 cleaned messages in the background.
+
+Identical transcripts are deduped per in-memory session state, so a matching idle ingest and compaction ingest share one upload while that session state stays warm.
+
+Two timing details matter:
+
+- hook completion happens before the background upload finishes
+- the dedupe window is in-memory and TTL-bound to about 15 minutes, so restart or cache expiry can upload the same transcript again
+
+### Tools
+
+The plugin registers these tools:
+
+- `memory_store`
+- `memory_search`
+- `memory_get`
+- `memory_update`
+- `memory_delete`
 
 ## Troubleshooting
 
-| Problem | Cause | Fix |
-|---|---|---|
-| `No MEM9_TENANT_ID configured` | Missing env var | Set `MEM9_TENANT_ID` |
-| Plugin not loading | Not registered in OpenCode config | Add to `opencode.json` plugins section |
-| `404` on API call | Bad space ID | Verify your space ID; run `curl https://api.mem9.ai/healthz` |
+- `Setup pending` means the plugin could not find a usable runtime identity. Run `/mem9-setup`, add `MEM9_API_KEY`, or point the active `mem9.json` scope at a profile with a non-empty `apiKey`.
+- If `/mem9-setup` is missing, confirm `@mem9/opencode` is listed in `~/.config/opencode/tui.json`.
+- If recall or tools work in one project and not another, check whether the project has its own `.opencode/mem9.json` override.
+- If recall, auto-ingest, or debug logs appear to run twice, check for duplicate plugin registration across user scope, project scope, npm, or local file paths.
+- If the selected profile exists but has no `apiKey`, update that profile in `$MEM9_HOME/.credentials.json`.
+- If debug logging is enabled and no file appears, confirm OpenCode can write to its state directory.
+
+## Local Verification
+
+```bash
+pnpm test
+pnpm run typecheck
+pnpm run pack:check
+```

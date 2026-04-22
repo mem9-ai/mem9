@@ -9,7 +9,7 @@ TypeScript OpenCode plugin that injects memories via hooks and exposes five memo
 ## Commands
 
 ```bash
-cd opencode-plugin && npm run typecheck
+cd opencode-plugin && pnpm run typecheck
 ```
 
 ## Where to look
@@ -17,17 +17,21 @@ cd opencode-plugin && npm run typecheck
 | Task | File |
 |------|------|
 | Plugin wiring | `src/index.ts` |
-| Config and shared types | `src/types.ts` |
-| Backend interface | `src/backend.ts` |
-| REST API client | `src/server-backend.ts` |
-| Tool definitions | `src/tools.ts` |
-| Hook wiring | `src/hooks.ts` |
-| Setup skill | `skills/mem9-setup/SKILL.md` |
+| Config and shared types | `src/shared/types.ts` |
+| Backend interface | `src/server/backend.ts` |
+| REST API client | `src/server/server-backend.ts` |
+| Tool definitions | `src/server/tools.ts` |
+| Hook wiring | `src/server/hooks.ts` |
+| TUI setup command | `src/tui/index.ts` |
 
 ## Local conventions
 
-- Plugin startup is fail-soft: missing env vars log a warning and return `{}`.
-- `MEM9_TENANT_ID` is required; `MEM9_API_URL` defaults to `https://api.mem9.ai`.
+- Plugin startup is fail-soft: missing runtime identity logs a setup-pending warning and returns `{}`.
+- Shared credentials live at `$MEM9_HOME/.credentials.json`; `MEM9_HOME` defaults to `$HOME/.mem9`.
+- User config lives in `<OpenCode config dir>/mem9.json`; project config lives in `<project>/.opencode/mem9.json`.
+- Install the plugin in one scope only. Use project config overrides for per-project differences instead of loading duplicate plugin instances.
+- Runtime prefers `MEM9_API_KEY`; `MEM9_API_URL` defaults to `https://api.mem9.ai`; legacy `MEM9_TENANT_ID` still works for compatibility.
+- Debug logs live under the OpenCode state dir at `plugins/mem9/log/`.
 - Default API URL is `https://api.mem9.ai` when no `MEM9_API_URL` is set.
 - Tool handlers return JSON strings with `{ ok, ... }` payloads.
 - Known 404s return `null`/`false`; unexpected errors are re-thrown.
@@ -42,4 +46,5 @@ cd opencode-plugin && npm run typecheck
 
 - Do NOT invent a local persistence mode; this package is server-backed.
 - Do NOT bypass `buildTools()` / `buildHooks()` with ad hoc registration.
-- Do NOT treat missing tenant config as recoverable after backend construction.
+- Do NOT reintroduce tenant-only setup as the primary configuration model.
+- Do NOT normalize duplicate plugin installation as a supported pattern.

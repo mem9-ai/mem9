@@ -1,11 +1,28 @@
 import type {
+  CreateMemoryInput,
   Memory,
+  SearchInput,
   SearchResult,
   StoreResult,
-  CreateMemoryInput,
   UpdateMemoryInput,
-  SearchInput,
-  } from "./types.js";
+} from "../shared/types.js";
+
+export interface IngestMessage {
+  role: string;
+  content: string;
+}
+
+export interface IngestInput {
+  messages: IngestMessage[];
+  session_id: string;
+  agent_id: string;
+  mode?: "smart";
+}
+
+export interface IngestResult {
+  status: string;
+  memories_changed?: number;
+}
 
 /**
  * MemoryBackend — abstraction for server mode.
@@ -18,4 +35,5 @@ export interface MemoryBackend {
   update(id: string, input: UpdateMemoryInput): Promise<Memory | null>;
   remove(id: string): Promise<boolean>;
   listRecent(limit: number): Promise<Memory[]>;
+  ingest(input: IngestInput): Promise<IngestResult>;
 }

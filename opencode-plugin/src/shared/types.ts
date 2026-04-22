@@ -1,11 +1,23 @@
 /** Default mem9 API endpoint. */
 export const DEFAULT_API_URL = "https://api.mem9.ai";
 
-/** Env-based configuration for mem9 plugin. */
-export interface Mem9Config {
-  // Server mode (mem9-server REST API)
-  apiUrl?: string;
-  tenantID?: string;
+export interface Mem9ConfigFile {
+  schemaVersion: 1;
+  profileId?: string;
+  debug?: boolean;
+  defaultTimeoutMs?: number;
+  searchTimeoutMs?: number;
+}
+
+export interface Mem9Profile {
+  label: string;
+  baseUrl: string;
+  apiKey: string;
+}
+
+export interface Mem9CredentialsFile {
+  schemaVersion: 1;
+  profiles: Record<string, Mem9Profile>;
 }
 
 export interface Memory {
@@ -60,11 +72,3 @@ export interface SearchInput {
 }
 
 export type StoreResult = Memory;
-
-/** Load config from env vars. */
-export function loadConfig(): Mem9Config {
-  return {
-    apiUrl: process.env.MEM9_API_URL ?? undefined,
-    tenantID: process.env.MEM9_TENANT_ID ?? undefined,
-  };
-}
