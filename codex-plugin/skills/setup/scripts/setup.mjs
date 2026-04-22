@@ -271,6 +271,23 @@ function requireString(flag, value) {
   return normalized;
 }
 
+function summarizeApiKeyPreview(apiKey) {
+  const normalized = normalizeString(apiKey);
+  if (!normalized) {
+    return "";
+  }
+
+  if (normalized.length <= 4) {
+    return normalized[0] ? `${normalized[0]}...` : "";
+  }
+
+  if (normalized.length <= 8) {
+    return `${normalized.slice(0, 2)}...${normalized.slice(-2)}`;
+  }
+
+  return `${normalized.slice(0, 4)}...${normalized.slice(-4)}`;
+}
+
 function summarizeProfiles(profiles) {
   return Object.entries(isRecord(profiles) ? profiles : {})
     .sort(([left], [right]) => left.localeCompare(right))
@@ -281,6 +298,7 @@ function summarizeProfiles(profiles) {
         label: current.label,
         baseUrl: current.baseUrl,
         hasApiKey: hasApiKey(current),
+        apiKeyPreview: summarizeApiKeyPreview(current.apiKey),
       };
     });
 }

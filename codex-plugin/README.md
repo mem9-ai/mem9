@@ -123,6 +123,8 @@ The setup skill drives a small script subcommand model under the hood:
 - `setup.mjs scope apply --scope user|project` writes config and installs or repairs the managed hooks
 - `setup.mjs scope clear --scope project` removes the repo-local override and returns that repository to the global default
 
+`setup.mjs inspect` includes `profiles.items[*].apiKeyPreview` so you can match a saved profile to the dashboard key without exposing the full secret.
+
 Common examples for the script layer:
 
 ```bash

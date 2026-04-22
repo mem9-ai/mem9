@@ -440,7 +440,9 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
     assert.equal(summary.projectConfig.summary.legacyEnabledFalse, true);
     assert.equal(summary.projectConfig.summary.updateCheck, undefined);
     assert.deepEqual(summary.profiles.usableProfileIds, ["default"]);
+    assert.equal(summary.profiles.items[0].apiKeyPreview, "key-...ault");
     assert.equal(summary.profiles.items[1].hasApiKey, false);
+    assert.equal(summary.profiles.items[1].apiKeyPreview, "");
     assert.equal(JSON.stringify(summary).includes("key-default"), false);
     assert.equal(JSON.stringify(summary).includes(tempRoot), false);
   } finally {
