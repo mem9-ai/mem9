@@ -109,6 +109,20 @@ Reinstall `mem9` from the repo-local marketplace when the marketplace entry chan
 Most local checkout updates only need a restart.
 Migration releases surface the same `SessionStart` notice for `$mem9:setup`.
 
+## Uninstall
+
+Follow this order:
+
+1. Enter Codex and run `$mem9:cleanup`.
+2. In Codex, open `/plugins`, search for `mem9`, and uninstall the plugin.
+3. After step 2 succeeds, exit Codex and run:
+
+   ```bash
+   codex plugin marketplace remove mem9-ai
+   ```
+
+This order keeps mem9-managed hooks and plugin state in sync while you remove the integration.
+
 ## Commands
 
 ### `$mem9:setup`
