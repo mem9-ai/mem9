@@ -328,6 +328,12 @@ const meta = {
   .cta-panel {
     display: grid;
     gap: 0.9rem;
+    padding: clamp(1.25rem, 2vw, 1.7rem);
+  }
+
+  .panel h3,
+  .install-card h2 {
+    line-height: 1.08;
   }
 
   .install-card ol,
@@ -368,6 +374,14 @@ const meta = {
     .three-up,
     .two-up {
       grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .install-card,
+    .panel,
+    .cta-panel {
+      padding: 1.1rem;
     }
   }
 </style>
