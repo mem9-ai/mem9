@@ -10,6 +10,8 @@ allowed-tools:
 
 Use this skill when the user explicitly asks Codex to remember or store something in mem9.
 
+If you need the current CLI surface, flags, or examples, run `node ./scripts/store.mjs --help` first.
+
 Resolve `./scripts/store.mjs` relative to this skill directory, extract the one memory that should be saved, then run:
 
 ```bash

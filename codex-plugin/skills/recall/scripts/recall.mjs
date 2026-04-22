@@ -14,6 +14,48 @@ function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function isHelpToken(token) {
+  const normalized = normalizeString(token);
+  return normalized === "--help" || normalized === "-h";
+}
+
+function shouldWriteRecallHelp(argv = process.argv.slice(2)) {
+  const tokens = Array.isArray(argv)
+    ? argv.map((token) => normalizeString(token)).filter(Boolean)
+    : [];
+  return tokens.length === 0 || tokens.some(isHelpToken);
+}
+
+function buildRecallHelpText() {
+  return [
+    "mem9 recall",
+    "",
+    "Recall mem9 memories with the current effective profile.",
+    "",
+    "Usage:",
+    "  node ./scripts/recall.mjs --query <query> [--limit <count>] [--cwd <path>]",
+    "  cat <<'EOF' | node ./scripts/recall.mjs [--limit <count>] [--cwd <path>]",
+    "  your query here",
+    "  EOF",
+    "",
+    "Flags:",
+    "  --query <query>    Recall query text. Reads stdin when omitted.",
+    "  --limit <count>    Maximum memories to return. Defaults to 10.",
+    "  --cwd <path>       Resolve repo-local runtime config from this directory.",
+    "",
+    "Notes:",
+    "  - Successful non-help commands print a sanitized JSON summary.",
+    "  - This script uses the current effective mem9 profile and project override when present.",
+    "",
+    "Examples:",
+    "  node ./scripts/recall.mjs --query 'release checklist' --limit 5",
+    "  cat <<'EOF' | node ./scripts/recall.mjs --cwd .",
+    "  team preferences",
+    "  EOF",
+    "",
+  ].join("\n");
+}
+
 function parseIntegerArg(flag, value) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -155,6 +197,16 @@ export async function runRecall(argv = process.argv.slice(2), options = {}) {
 }
 
 export async function main(argv = process.argv.slice(2), options = {}) {
+  const stdout = options.stdout ?? process.stdout;
+  if (Array.isArray(argv) && shouldWriteRecallHelp(argv)) {
+    stdout?.write?.(buildRecallHelpText());
+    return {
+      status: "ok",
+      command: "help",
+      topic: "root",
+    };
+  }
+
   return runRecall(argv, options);
 }
 

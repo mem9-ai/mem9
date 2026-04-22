@@ -10,6 +10,8 @@ allowed-tools:
 
 Use this skill when the user explicitly asks to look up saved memories or recover prior context on demand.
 
+If you need the current CLI surface, flags, or examples, run `node ./scripts/recall.mjs --help` first.
+
 Resolve `./scripts/recall.mjs` relative to this skill directory, extract the recall query from the current request, then run:
 
 ```bash

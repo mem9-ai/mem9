@@ -4,8 +4,31 @@ import path from "node:path";
 import test from "node:test";
 
 import { buildRuntimeIssueMessage } from "../lib/skill-runtime.mjs";
-import { runStore } from "../skills/store/scripts/store.mjs";
+import { main, runStore } from "../skills/store/scripts/store.mjs";
 import { createTempRoot } from "./test-temp.mjs";
+
+test("main prints store help without calling mem9", async () => {
+  let stdoutText = "";
+
+  const result = /** @type {{status: string, command: string, topic: string}} */ (
+    await main(
+      ["--help"],
+      {
+        stdout: {
+          write(/** @type {string} */ chunk) {
+            stdoutText += chunk;
+          },
+        },
+      },
+    )
+  );
+
+  assert.equal(result.command, "help");
+  assert.equal(result.topic, "root");
+  assert.match(stdoutText, /^mem9 store\n/m);
+  assert.match(stdoutText, /--content <memory-text>/);
+  assert.match(stdoutText, /Successful non-help commands print a sanitized JSON summary\./);
+});
 
 test("runStore posts a synchronous memory create and prints a safe summary", async () => {
   const tempRoot = createTempRoot("store");

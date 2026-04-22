@@ -5,6 +5,7 @@ import test from "node:test";
 
 import {
   buildRecallUrl,
+  main,
   runRecall,
 } from "../skills/recall/scripts/recall.mjs";
 import { buildRuntimeIssueMessage } from "../lib/skill-runtime.mjs";
@@ -24,6 +25,29 @@ test("buildRecallUrl keeps a configured base path", () => {
     url,
     "https://api.mem9.ai/base/v1alpha2/mem9s/memories?q=remember+rust+tips&agent_id=codex&limit=7",
   );
+});
+
+test("main prints recall help without calling mem9", async () => {
+  let stdoutText = "";
+
+  const result = /** @type {{status: string, command: string, topic: string}} */ (
+    await main(
+      ["--help"],
+      {
+        stdout: {
+          write(/** @type {string} */ chunk) {
+            stdoutText += chunk;
+          },
+        },
+      },
+    )
+  );
+
+  assert.equal(result.command, "help");
+  assert.equal(result.topic, "root");
+  assert.match(stdoutText, /^mem9 recall\n/m);
+  assert.match(stdoutText, /--query <query>/);
+  assert.match(stdoutText, /Successful non-help commands print a sanitized JSON summary\./);
 });
 
 test("runRecall calls mem9 with the current runtime and prints a safe summary", async () => {

@@ -12,6 +12,47 @@ function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function isHelpToken(token) {
+  const normalized = normalizeString(token);
+  return normalized === "--help" || normalized === "-h";
+}
+
+function shouldWriteStoreHelp(argv = process.argv.slice(2)) {
+  const tokens = Array.isArray(argv)
+    ? argv.map((token) => normalizeString(token)).filter(Boolean)
+    : [];
+  return tokens.length === 0 || tokens.some(isHelpToken);
+}
+
+function buildStoreHelpText() {
+  return [
+    "mem9 store",
+    "",
+    "Store one memory with the current effective profile.",
+    "",
+    "Usage:",
+    "  node ./scripts/store.mjs --content <memory-text> [--cwd <path>]",
+    "  cat <<'EOF' | node ./scripts/store.mjs [--cwd <path>]",
+    "  memory text here",
+    "  EOF",
+    "",
+    "Flags:",
+    "  --content <memory-text>   Memory content to store. Reads stdin when omitted.",
+    "  --cwd <path>              Resolve repo-local runtime config from this directory.",
+    "",
+    "Notes:",
+    "  - Successful non-help commands print a sanitized JSON summary.",
+    "  - This script uses the current effective mem9 profile and project override when present.",
+    "",
+    "Examples:",
+    "  node ./scripts/store.mjs --content 'The team prefers short release notes.'",
+    "  cat <<'EOF' | node ./scripts/store.mjs --cwd .",
+    "  Remember that we pin Node 22 for Codex hooks.",
+    "  EOF",
+    "",
+  ].join("\n");
+}
+
 export function parseArgs(argv = process.argv.slice(2)) {
   const args = {
     cwd: "",
@@ -95,6 +136,16 @@ export async function runStore(argv = process.argv.slice(2), options = {}) {
 }
 
 export async function main(argv = process.argv.slice(2), options = {}) {
+  const stdout = options.stdout ?? process.stdout;
+  if (Array.isArray(argv) && shouldWriteStoreHelp(argv)) {
+    stdout?.write?.(buildStoreHelpText());
+    return {
+      status: "ok",
+      command: "help",
+      topic: "root",
+    };
+  }
+
   return runStore(argv, options);
 }
 
