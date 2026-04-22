@@ -9,75 +9,28 @@ The package ships two plugin entrypoints:
 
 ## Quick Start
 
-### 1. Install the server plugin
+### 1. Install mem9 once at user scope
 
-Install the server plugin in one scope only.
-
-User scope:
-
-File: `~/.config/opencode/opencode.json`
-
-```json
-{
-  "plugin": ["@mem9/opencode"]
-}
+```bash
+opencode plugin --global @mem9/opencode
 ```
 
-Project scope:
+That adds `@mem9/opencode` to both:
 
-File: `<project>/.opencode/opencode.json`
+- `~/.config/opencode/opencode.json`
+- `~/.config/opencode/tui.json`
+- `%APPDATA%\\opencode\\opencode.json`
+- `%APPDATA%\\opencode\\tui.json`
 
-```json
-{
-  "plugin": ["@mem9/opencode"]
-}
-```
+mem9 works best with one global plugin install plus project-level `mem9.json` overrides.
+OpenCode merges plugin lists across scopes, so one install keeps recall, ingest, and tools predictable.
 
-Recommended pattern:
+### 2. Restart OpenCode and run `/mem9-setup`
 
-- install the server plugin once at user scope
-- keep project-specific behavior in `<project>/.opencode/mem9.json`
-
-`@mem9/opencode` resolves npm `latest`.
-If you publish a prerelease channel, install it with an explicit npm specifier instead:
-
-```json
-{
-  "plugin": ["@mem9/opencode@rc"]
-}
-```
-
-You can also pin an exact prerelease version:
-
-```json
-{
-  "plugin": ["@mem9/opencode@0.1.0-rc.0"]
-}
-```
-
-Avoid duplicate plugin loading, such as:
-
-- user scope plugin plus project scope plugin
-- npm plugin plus local file plugin
-
-### 2. Install the TUI plugin for `/mem9-setup`
-
-File: `~/.config/opencode/tui.json`
-
-```json
-{
-  "plugin": ["@mem9/opencode"]
-}
-```
-
-That enables the `/mem9-setup` command inside OpenCode.
-
-### 3. Restart OpenCode and run `/mem9-setup`
-
-`/mem9-setup` is the single entrypoint for both:
+`/mem9-setup` is the main entrypoint for:
 
 - shared mem9 credentials
-- OpenCode user/project mem9 settings
+- OpenCode mem9 settings
 
 When no usable profile exists, it shows two actions:
 
@@ -89,32 +42,45 @@ When usable profiles already exist, it shows four actions:
 - `Get a mem9 API key automatically`
 - `Add an existing mem9 API key`
 - `Use an existing mem9 profile in a scope`
-- `Configure user/project settings`
+- `Adjust scope settings`
 
-Profile creation ends after the profile is saved. Scope configuration is a separate action.
+The last two actions have separate jobs:
 
-## File Layout
+- `Use an existing mem9 profile in a scope` changes which profile a user or project scope uses
+- `Adjust scope settings` changes `debug`, `defaultTimeoutMs`, and `searchTimeoutMs` for a user or project scope
 
-OpenCode config directory:
+### 3. Add project overrides only when you need them
 
-- macOS/Linux: usually `~/.config/opencode`
-- Windows: usually `%APPDATA%\\opencode`
+Keep the plugin install global.
+Use `<project>/.opencode/mem9.json` when one repository needs a different profile, debug flag, or timeout values.
 
-OpenCode state directory:
+Example:
 
-- macOS/Linux: usually `~/.local/share/opencode`
-- Windows: usually `%LOCALAPPDATA%\\opencode`
+```json
+{
+  "schemaVersion": 1,
+  "profileId": "default",
+  "debug": false,
+  "defaultTimeoutMs": 8000,
+  "searchTimeoutMs": 15000
+}
+```
 
-mem9 uses these files:
+## Where mem9 stores data
 
-- server plugin list: `~/.config/opencode/opencode.json` or `<project>/.opencode/opencode.json`
-- TUI plugin list: `~/.config/opencode/tui.json`
-- shared credentials: `$MEM9_HOME/.credentials.json`
-- user mem9 config: `<OpenCode config dir>/mem9.json`
-- project mem9 config: `<project>/.opencode/mem9.json`
-- debug logs: `<OpenCode state dir>/plugins/mem9/log/YYYY-MM-DD.jsonl`
+- Shared credentials:
+  macOS/Linux: `$HOME/.mem9/.credentials.json`
+  Windows: `%USERPROFILE%\\.mem9\\.credentials.json`
+- Global mem9 config:
+  macOS/Linux: `~/.config/opencode/mem9.json`
+  Windows: `%APPDATA%\\opencode\\mem9.json`
+- Project mem9 override:
+  all platforms: `<project>/.opencode/mem9.json`
+- Debug logs:
+  macOS/Linux: `~/.local/share/opencode/plugins/mem9/log/YYYY-MM-DD.jsonl`
+  Windows: `%LOCALAPPDATA%\\opencode\\plugins\\mem9\\log\\YYYY-MM-DD.jsonl`
 
-`MEM9_HOME` defaults to `$HOME/.mem9`.
+`MEM9_HOME` defaults to `$HOME/.mem9` on macOS/Linux and `%USERPROFILE%\\.mem9` on Windows.
 
 ## Credentials File
 
@@ -179,27 +145,27 @@ Legacy compatibility remains:
 
 `MEM9_TENANT_ID` is treated as the API key source for older setups.
 
-## Local Development Install
+## Upgrading
 
-You can also point OpenCode at a local checkout.
+OpenCode caches npm plugins by package specifier.
+When config points at `@mem9/opencode`, OpenCode resolves it as `@mem9/opencode@latest`.
 
-Server plugin example:
+Reliable upgrade flow:
 
-```json
-{
-  "plugin": ["./.opencode/plugins/mem9/src/index.ts"]
-}
+1. Quit OpenCode.
+2. Delete the cached folder that matches the installed specifier.
+   Default install on macOS/Linux: `~/.cache/opencode/packages/@mem9/opencode@latest`
+   On Windows, open your OpenCode cache directory for the current user and delete the `@mem9/opencode@latest` folder.
+   If you pinned an exact version such as `@mem9/opencode@0.1.1`, delete that exact folder name instead.
+3. Run:
+
+```bash
+opencode plugin --force --global @mem9/opencode
 ```
 
-TUI plugin example:
+4. Restart OpenCode.
 
-```json
-{
-  "plugin": ["./.opencode/plugins/mem9/src/tui/index.ts"]
-}
-```
-
-Keep the same one-scope rule for the server plugin even when using local paths.
+For prerelease testing, install an explicit npm specifier such as `@mem9/opencode@rc` or an exact version.
 
 ## What the Plugin Does
 
@@ -258,11 +224,3 @@ The plugin registers these tools:
 - If recall, auto-ingest, or debug logs appear to run twice, check for duplicate plugin registration across user scope, project scope, npm, or local file paths.
 - If the selected profile exists but has no `apiKey`, update that profile in `$MEM9_HOME/.credentials.json`.
 - If debug logging is enabled and no file appears, confirm OpenCode can write to its state directory.
-
-## Local Verification
-
-```bash
-pnpm test
-pnpm run typecheck
-pnpm run pack:check
-```
