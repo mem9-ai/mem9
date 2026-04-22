@@ -290,27 +290,17 @@ function summarizeApiKeyPreview(apiKey) {
 
 function summarizeProfileDisplayName(profileId, label) {
   const nextProfileId = normalizeString(profileId);
-  const nextLabel = normalizeString(label) || nextProfileId;
-
-  if (nextLabel === nextProfileId) {
-    return nextProfileId;
-  }
-
-  return `${nextLabel} (${nextProfileId})`;
+  return normalizeString(label) || nextProfileId;
 }
 
 function summarizeProfileDisplaySummary(profile) {
   const profileId = normalizeString(profile.profileId);
-  const label = normalizeString(profile.label) || profileId;
+  const displayName = summarizeProfileDisplayName(profileId, profile.label);
   const baseUrl = normalizeString(profile.baseUrl);
   const apiKeyPreview = summarizeApiKeyPreview(profile.apiKey);
   const keyStatus = apiKeyPreview || "API key pending";
-  const identitySummary =
-    label === profileId
-      ? `${profileId} (${keyStatus})`
-      : `${label} (${profileId} · ${keyStatus})`;
 
-  return `${identitySummary} · ${baseUrl}`;
+  return `${displayName} (${keyStatus}) · ${baseUrl}`;
 }
 
 function summarizeProfiles(profiles) {
