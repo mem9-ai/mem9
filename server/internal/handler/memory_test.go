@@ -644,6 +644,63 @@ func TestListMemories_DefaultRecall_PrefersSessionForExactQuery(t *testing.T) {
 	}
 }
 
+func TestListMemories_DefaultRecall_ExactKeepsComplementaryInsightEvidence(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			switch filter.MemoryType {
+			case string(domain.TypePinned):
+				return nil, nil
+			case string(domain.TypeInsight):
+				return []domain.Memory{
+					{ID: "m1", Content: `Caroline wants to provide "trans-focused counseling and mental health support".`, MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-90 * time.Minute), State: domain.StateActive},
+				}, nil
+			default:
+				return nil, nil
+			}
+		},
+	}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "s1", Content: `[date:10:37 am on 27 June, 2023] [speaker:Caroline] Lately, I've been looking into counseling and mental health as a career. I want to help people who have gone through the same things as me.`, MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What career path has Caroline decided to pursue?")+"&limit=3", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) < 2 {
+		t.Fatalf("expected complementary exact recall to keep at least 2 memories, got %d", len(resp.Memories))
+	}
+
+	ids := map[string]struct{}{}
+	for _, mem := range resp.Memories {
+		ids[mem.ID] = struct{}{}
+	}
+	if _, ok := ids["s1"]; !ok {
+		t.Fatalf("expected session evidence to be retained, got %+v", resp.Memories)
+	}
+	if _, ok := ids["m1"]; !ok {
+		t.Fatalf("expected complementary insight evidence to be retained, got %+v", resp.Memories)
+	}
+	if resp.Memories[0].ID != "s1" {
+		t.Fatalf("expected direct session evidence first for exact query, got %q", resp.Memories[0].ID)
+	}
+}
+
 func TestListMemories_DefaultRecall_KeepsQualifiedPinnedFirst(t *testing.T) {
 	now := time.Now()
 	memRepo := &testMemoryRepo{

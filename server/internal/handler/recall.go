@@ -27,6 +27,9 @@ const (
 	enumerationFetchMultiplier   = 4
 	enumerationSecondHopTopN     = 5
 	enumerationPinnedKeepMax     = 1
+	richTopFetchMultiplier       = 4
+	richTopSecondHopTopN         = 5
+	balancedSelectionRounds      = 2
 	defaultConfidenceGapStop     = 18
 	recallRRFMaxScore            = 2.0 / 61.0
 )
@@ -324,6 +327,9 @@ func selectMixedRecallCandidates(
 	if profile.shape == recallQueryShapeEnumeration {
 		return selectEnumerationRecallCandidates(profile, budget, candidates, seen)
 	}
+	if shouldUseBalancedTopSelection(profile.shape) {
+		return selectBalancedRecallCandidates(profile, budget, candidates, seen)
+	}
 	memories, cutoffReason := selectTopRecallCandidates(profile.shape, budget, defaultMixedMinConfidence, true, candidates, seen)
 	return memories, cutoffReason, recallSelectionStats{mode: "top"}
 }
@@ -376,8 +382,107 @@ func recallCandidateOptions(shape recallQueryShape, enableSecondHop bool) servic
 		if enableSecondHop {
 			opts.SecondHopTopN = enumerationSecondHopTopN
 		}
+		return opts
+	}
+	if shape == recallQueryShapeExact || shape == recallQueryShapeGeneral {
+		opts.FetchMultiplier = richTopFetchMultiplier
+		if enableSecondHop {
+			opts.SecondHopTopN = richTopSecondHopTopN
+		}
 	}
 	return opts
+}
+
+func shouldUseBalancedTopSelection(shape recallQueryShape) bool {
+	switch shape {
+	case recallQueryShapeExact, recallQueryShapeGeneral:
+		return true
+	default:
+		return false
+	}
+}
+
+func selectBalancedRecallCandidates(
+	profile recallQueryProfile,
+	budget int,
+	candidates []service.RecallCandidate,
+	seen map[string]struct{},
+) ([]domain.Memory, string, recallSelectionStats) {
+	stats := recallSelectionStats{mode: "balanced"}
+	if budget <= 0 {
+		return []domain.Memory{}, "budget_exhausted", stats
+	}
+
+	deduped := dedupeRecallCandidates(profile.shape, candidates)
+	if len(deduped) == 0 {
+		return []domain.Memory{}, "no_candidates", stats
+	}
+
+	if seen == nil {
+		seen = make(map[string]struct{}, budget)
+	}
+
+	queryTokens := extractRecallQueryTokens(profile.lower)
+	coverageSeen := make(map[string]struct{}, budget*2)
+	selected := make([]domain.Memory, 0, minInt(budget, len(deduped)))
+	cutoffReason := "budget_exhausted"
+	lastConfidence := -1
+
+	buckets := splitBalancedBuckets(profile.shape, deduped)
+	for round := 0; round < balancedSelectionRounds && len(selected) < budget; round++ {
+		progress := false
+		for i := range buckets {
+			candidate, tokens, ok := nextEnumerationCandidate(&buckets[i].index, buckets[i].candidates, seen, defaultMixedMinConfidence, queryTokens, coverageSeen, true)
+			if !ok {
+				continue
+			}
+			rememberRecallCoverage(tokens, coverageSeen)
+			rememberRecallCandidate(candidate, seen, &selected)
+			recordRecallSourceSelection(&stats, candidate.SourcePool)
+			stats.coverageFirstPassCount++
+			lastConfidence = recallConfidenceValue(candidate.Memory)
+			progress = true
+			if len(selected) >= budget {
+				break
+			}
+		}
+		if !progress {
+			break
+		}
+	}
+
+	for _, candidate := range deduped {
+		if len(selected) >= budget {
+			break
+		}
+		key := recallMemoryKey(candidate.Memory)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+
+		confidence := recallConfidenceValue(candidate.Memory)
+		if confidence < defaultMixedMinConfidence {
+			cutoffReason = "min_confidence"
+			break
+		}
+		if lastConfidence >= 0 && lastConfidence-confidence > defaultConfidenceGapStop {
+			cutoffReason = "confidence_gap"
+			break
+		}
+
+		tokens := extractRecallCoverageTokens(candidate.Memory, queryTokens)
+		rememberRecallCoverage(tokens, coverageSeen)
+		rememberRecallCandidate(candidate, seen, &selected)
+		recordRecallSourceSelection(&stats, candidate.SourcePool)
+		stats.backfillCount++
+		lastConfidence = confidence
+	}
+
+	if len(selected) == 0 && cutoffReason == "budget_exhausted" {
+		cutoffReason = "no_selected"
+	}
+	stats.coverageTokenCount = len(coverageSeen)
+	return selected, cutoffReason, stats
 }
 
 func selectEnumerationRecallCandidates(
@@ -481,6 +586,22 @@ func splitEnumerationBuckets(candidates []service.RecallCandidate) []enumeration
 		{candidates: session},
 		{candidates: pinned},
 		{candidates: other},
+	}
+}
+
+func splitBalancedBuckets(shape recallQueryShape, candidates []service.RecallCandidate) []enumerationBucket {
+	buckets := splitEnumerationBuckets(candidates)
+	if shape != recallQueryShapeExact {
+		return buckets
+	}
+	if len(buckets) < 2 {
+		return buckets
+	}
+	return []enumerationBucket{
+		buckets[1],
+		buckets[0],
+		buckets[2],
+		buckets[3],
 	}
 }
 
