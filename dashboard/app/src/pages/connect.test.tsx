@@ -7,7 +7,7 @@ import { ConnectPage } from "./connect";
 import { loadConnectRouteData, type ConnectRouteLoaderData } from "./connect-loader";
 
 const mocks = vi.hoisted(() => ({
-  getActiveSpaceId: vi.fn<() => string | null>(() => null),
+  getActiveApiKey: vi.fn<() => string | null>(() => null),
   initMixpanelOnLogin: vi.fn(),
   loaderData: {
     hasBootstrapParams: false,
@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
     initialInput: "",
   } as ConnectRouteLoaderData,
   navigate: vi.fn(() => Promise.resolve()),
-  setSpaceId: vi.fn(),
+  setApiKey: vi.fn(),
   trackMixpanelEvent: vi.fn(),
   verifySpace: vi.fn(),
 }));
@@ -50,9 +50,9 @@ vi.mock("@/lib/mixpanel", () => ({
 vi.mock("@/lib/session", () => ({
   MEM9_CONNECT_READY_EVENT: "mem9-connect-ready",
   MEM9_SPACE_HANDOFF_EVENT: "mem9-space-handoff",
-  getActiveSpaceId: () => mocks.getActiveSpaceId(),
-  setSpaceId: (spaceId: string, remember?: boolean) =>
-    mocks.setSpaceId(spaceId, remember),
+  getActiveApiKey: () => mocks.getActiveApiKey(),
+  setApiKey: (apiKey: string, remember?: boolean) =>
+    mocks.setApiKey(apiKey, remember),
 }));
 
 function setLoaderData(next: ConnectRouteLoaderData): void {
@@ -65,11 +65,11 @@ function currentURL(): string {
 
 beforeEach(() => {
   resetConnectBootstrapForTests();
-  mocks.getActiveSpaceId.mockReset();
-  mocks.getActiveSpaceId.mockReturnValue(null);
+  mocks.getActiveApiKey.mockReset();
+  mocks.getActiveApiKey.mockReturnValue(null);
   mocks.initMixpanelOnLogin.mockReset();
   mocks.navigate.mockClear();
-  mocks.setSpaceId.mockReset();
+  mocks.setApiKey.mockReset();
   mocks.trackMixpanelEvent.mockReset();
   mocks.verifySpace.mockReset();
   setLoaderData({
@@ -104,7 +104,7 @@ describe("loadConnectRouteData", () => {
   });
 
   it("auto-logins key params, replaces the active space, and strips them from the URL", async () => {
-    mocks.getActiveSpaceId.mockReturnValue("space-old");
+    mocks.getActiveApiKey.mockReturnValue("space-old");
     mocks.verifySpace.mockResolvedValue({
       created_at: "",
       memory_count: 0,
@@ -129,7 +129,7 @@ describe("loadConnectRouteData", () => {
     }
 
     expect(mocks.verifySpace).toHaveBeenCalledWith("space-new");
-    expect(mocks.setSpaceId).toHaveBeenCalledWith("space-new", false);
+    expect(mocks.setApiKey).toHaveBeenCalledWith("space-new", false);
     expect(currentURL()).toBe("/your-memory?foo=1#details");
   });
 
@@ -144,14 +144,14 @@ describe("loadConnectRouteData", () => {
       initialError: i18n.t("connect.error.invalid"),
       initialInput: "bad-space",
     });
-    expect(mocks.setSpaceId).not.toHaveBeenCalled();
+    expect(mocks.setApiKey).not.toHaveBeenCalled();
     expect(currentURL()).toBe("/your-memory");
   });
 });
 
 describe("ConnectPage", () => {
   it("shows bootstrap-prefilled input and does not auto-redirect an existing session", async () => {
-    mocks.getActiveSpaceId.mockReturnValue("space-existing");
+    mocks.getActiveApiKey.mockReturnValue("space-existing");
     setLoaderData({
       hasBootstrapParams: true,
       initialError: "",
@@ -168,7 +168,7 @@ describe("ConnectPage", () => {
   });
 
   it("auto-redirects existing sessions when there are no bootstrap params", async () => {
-    mocks.getActiveSpaceId.mockReturnValue("space-existing");
+    mocks.getActiveApiKey.mockReturnValue("space-existing");
 
     render(<ConnectPage />);
 
@@ -191,5 +191,26 @@ describe("ConnectPage", () => {
 
     expect(screen.getByDisplayValue("bad-space")).toBeInTheDocument();
     expect(screen.getByText(i18n.t("connect.error.invalid"))).toBeInTheDocument();
+  });
+
+  it("renders MEM9_API_KEY wording and retrieval guidance", () => {
+    render(<ConnectPage />);
+
+    expect(screen.getByText("Enter your MEM9_API_KEY")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("MEM9_API_KEY")).toBeInTheDocument();
+    expect(
+      screen.getByText("MEM9_API_KEY unlocks your memory. Keep it private."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Get your MEM9_API_KEY")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "In OpenClaw, copy MEM9_API_KEY from your mem9 or environment settings.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Other agent tools usually expose the same MEM9_API_KEY in their mem9 config.",
+      ),
+    ).toBeInTheDocument();
   });
 });

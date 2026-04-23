@@ -5,7 +5,7 @@ import {
   consumeConnectBootstrap,
   initializeConnectBootstrapFromLocation,
 } from "@/lib/connect-bootstrap";
-import { setSpaceId } from "@/lib/session";
+import { setApiKey } from "@/lib/session";
 
 export interface ConnectRouteLoaderData {
   hasBootstrapParams: boolean;
@@ -41,7 +41,7 @@ export async function loadConnectRouteData(): Promise<ConnectRouteLoaderData> {
 
   try {
     await api.verifySpace(bootstrap.autoConnectKey);
-    setSpaceId(bootstrap.autoConnectKey, false);
+    setApiKey(bootstrap.autoConnectKey, false);
     throw redirect({ replace: true, to: "/space" });
   } catch (error) {
     if (isRedirect(error)) {

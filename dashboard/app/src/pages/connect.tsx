@@ -9,10 +9,10 @@ import { api } from "@/api/client";
 import { initMixpanelOnLogin, trackMixpanelEvent } from "@/lib/mixpanel";
 import type { ConnectRouteLoaderData } from "@/pages/connect-loader";
 import {
-  getActiveSpaceId,
+  getActiveApiKey,
   MEM9_CONNECT_READY_EVENT,
   MEM9_SPACE_HANDOFF_EVENT,
-  setSpaceId,
+  setApiKey,
 } from "@/lib/session";
 
 const connectRoute = getRouteApi("/");
@@ -39,8 +39,8 @@ export function ConnectPage() {
   const [loading, setLoading] = useState(false);
   const [rememberLogin, setRememberLogin] = useState(false);
   const [pendingConnect, setPendingConnect] = useState<{
+    apiKey: string;
     remember: boolean;
-    spaceId: string;
   } | null>(null);
 
   useEffect(() => {
@@ -48,7 +48,7 @@ export function ConnectPage() {
       return;
     }
 
-    if (getActiveSpaceId()) {
+    if (getActiveApiKey()) {
       void navigate({ to: "/space", replace: true });
     }
   }, [loaderData.hasBootstrapParams, navigate]);
@@ -88,7 +88,7 @@ export function ConnectPage() {
       setInput(nextSpaceId);
       setRememberLogin(false);
       setPendingConnect((current) =>
-        current ?? { remember: false, spaceId: nextSpaceId },
+        current ?? { apiKey: nextSpaceId, remember: false },
       );
     }
 
@@ -112,7 +112,7 @@ export function ConnectPage() {
     let cancelled = false;
 
     async function connectToSpace() {
-      const normalizedInput = connectRequest.spaceId.trim();
+      const normalizedInput = connectRequest.apiKey.trim();
       if (!normalizedInput) {
         setPendingConnect(null);
         return;
@@ -127,7 +127,7 @@ export function ConnectPage() {
         trackMixpanelEvent("Dashboard/Connect/SubmitClicked", {
           pageName: "connect",
         });
-        setSpaceId(normalizedInput, connectRequest.remember);
+        setApiKey(normalizedInput, connectRequest.remember);
 
         if (!cancelled) {
           await navigate({ to: "/space", replace: true });
@@ -157,8 +157,8 @@ export function ConnectPage() {
     e.preventDefault();
     setError("");
     setPendingConnect({
+      apiKey: input,
       remember: rememberLogin,
-      spaceId: input,
     });
   }
 
@@ -270,7 +270,7 @@ export function ConnectPage() {
             {t("connect.how_title")}
           </h2>
           <div className="space-y-3">
-            {(["how_1", "how_2", "how_3"] as const).map((key, i) => (
+            {(["how_1", "how_2"] as const).map((key, i) => (
               <div key={key} className="flex items-start gap-3">
                 <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-secondary text-[11px] font-semibold text-muted-foreground">
                   {i + 1}
