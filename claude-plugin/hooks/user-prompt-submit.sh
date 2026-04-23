@@ -36,7 +36,7 @@ mem9_debug "UserPromptSubmit" "recall_request" \
   "auth_source" "${MEM9_AUTH_SOURCE:-unknown}"
 
 encoded_prompt="$(printf '%s' "${prompt}" | node -e 'const fs=require("node:fs"); const raw=fs.readFileSync(0, "utf8").trim(); process.stdout.write(encodeURIComponent(raw));')"
-if ! response="$(mem9_api_get "/memories?q=${encoded_prompt}&agent_id=${MEM9_AGENT_ID}&limit=10" 2>/dev/null)"; then
+if ! response="$(mem9_api_get "/memories?q=${encoded_prompt}&limit=10" 2>/dev/null)"; then
   mem9_debug "UserPromptSubmit" "recall_request_failed" \
     "prompt_length" "${#prompt}"
   exit 0
