@@ -24,6 +24,7 @@ import (
 
 // testMemoryRepo is a minimal MemoryRepo mock for handler tests.
 type testMemoryRepo struct {
+	mu                   sync.Mutex
 	createCalls          []*domain.Memory
 	keywordSearchResults []domain.Memory
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
@@ -36,11 +37,15 @@ type testMemoryRepo struct {
 }
 
 func (m *testMemoryRepo) Create(_ context.Context, mem *domain.Memory) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.createCalls = append(m.createCalls, mem)
 	return nil
 }
 
 func (m *testMemoryRepo) GetByID(_ context.Context, id string) (*domain.Memory, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for _, mem := range m.createCalls {
 		if mem.ID == id {
 			cp := *mem
@@ -52,11 +57,15 @@ func (m *testMemoryRepo) GetByID(_ context.Context, id string) (*domain.Memory, 
 func (m *testMemoryRepo) UpdateOptimistic(context.Context, *domain.Memory, int) error { return nil }
 func (m *testMemoryRepo) SoftDelete(context.Context, string, string) error            { return nil }
 func (m *testMemoryRepo) BulkSoftDelete(_ context.Context, ids []string, _ string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.bulkSoftDeleteCalls = append(m.bulkSoftDeleteCalls, append([]string(nil), ids...))
 	return m.bulkSoftDeleteResult, nil
 }
 func (m *testMemoryRepo) ArchiveMemory(context.Context, string, string) error { return nil }
 func (m *testMemoryRepo) ArchiveAndCreate(_ context.Context, _, _ string, mem *domain.Memory) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.createCalls = append(m.createCalls, mem)
 	return nil
 }
@@ -75,11 +84,15 @@ func (m *testMemoryRepo) AutoVectorSearch(context.Context, string, domain.Memory
 }
 
 func (m *testMemoryRepo) KeywordSearch(ctx context.Context, query string, filter domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	m.mu.Lock()
 	m.lastKeywordFilter = filter
-	if m.keywordSearchHook != nil {
-		return m.keywordSearchHook(ctx, query, filter, limit)
+	hook := m.keywordSearchHook
+	results := append([]domain.Memory(nil), m.keywordSearchResults...)
+	m.mu.Unlock()
+	if hook != nil {
+		return hook(ctx, query, filter, limit)
 	}
-	return append([]domain.Memory(nil), m.keywordSearchResults...), nil
+	return results, nil
 }
 
 func (m *testMemoryRepo) FTSSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
@@ -100,6 +113,7 @@ func (m *testMemoryRepo) CountStats(context.Context) (int64, int64, error) {
 
 // testSessionRepo is a minimal SessionRepo mock for handler tests.
 type testSessionRepo struct {
+	mu                   sync.Mutex
 	bulkCreateCalled     bool
 	patchTagsCalled      bool
 	patchedHash          string
@@ -112,12 +126,16 @@ type testSessionRepo struct {
 }
 
 func (s *testSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Session) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.bulkCreateCalled = true
 	s.sessions = sessions
 	return nil
 }
 
 func (s *testSessionRepo) PatchTags(_ context.Context, sessionID, hash string, tags []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.patchTagsCalled = true
 	s.patchedSessionID = sessionID
 	s.patchedHash = hash
@@ -138,11 +156,15 @@ func (s *testSessionRepo) FTSSearch(context.Context, string, domain.MemoryFilter
 }
 
 func (s *testSessionRepo) KeywordSearch(ctx context.Context, query string, filter domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	s.mu.Lock()
 	s.lastKeywordFilter = filter
-	if s.keywordSearchHook != nil {
-		return s.keywordSearchHook(ctx, query, filter, limit)
+	hook := s.keywordSearchHook
+	results := append([]domain.Memory(nil), s.keywordSearchResults...)
+	s.mu.Unlock()
+	if hook != nil {
+		return hook(ctx, query, filter, limit)
 	}
-	return append([]domain.Memory(nil), s.keywordSearchResults...), nil
+	return results, nil
 }
 func (s *testSessionRepo) FTSAvailable() bool { return false }
 func (s *testSessionRepo) ListBySessionIDs(context.Context, []string, int) ([]*domain.Session, error) {
