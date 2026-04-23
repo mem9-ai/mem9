@@ -1,10 +1,10 @@
 import { tool } from "@opencode-ai/plugin";
-import type { MemoryBackend } from "./backend.js";
+import type { MemoryBackend } from "./backend.ts";
 import type {
   CreateMemoryInput,
   UpdateMemoryInput,
   SearchInput,
-} from "../shared/types.js";
+} from "../shared/types.ts";
 
 /**
  * Build the 5 memory tools for OpenCode.

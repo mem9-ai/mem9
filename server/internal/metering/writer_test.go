@@ -68,7 +68,7 @@ func (f *fakeS3) snapshot() []fakePut {
 	return out
 }
 
-type payload struct {
+type s3Payload struct {
 	Timestamp int64            `json:"timestamp"`
 	Category  string           `json:"category"`
 	TenantID  string           `json:"tenant_id"`
@@ -77,13 +77,21 @@ type payload struct {
 	Data      []map[string]any `json:"data"`
 }
 
+type webhookPayload struct {
+	ID        string                 `json:"id"`
+	EventType string                 `json:"event_type"`
+	CreatedAt string                 `json:"created_at"`
+	Payload   map[string]any         `json:"payload"`
+	Metadata  map[string]interface{} `json:"metadata"`
+}
+
 func newTestLogger() (*slog.Logger, *bytes.Buffer) {
 	buf := &bytes.Buffer{}
 	logger := slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	return logger, buf
 }
 
-func decodePayload(t *testing.T, body []byte) payload {
+func decodePayload(t *testing.T, body []byte) s3Payload {
 	t.Helper()
 	r, err := gzip.NewReader(bytes.NewReader(body))
 	if err != nil {
@@ -96,7 +104,7 @@ func decodePayload(t *testing.T, body []byte) payload {
 		t.Fatalf("io.ReadAll: %v", err)
 	}
 
-	var p payload
+	var p s3Payload
 	if err := json.Unmarshal(raw, &p); err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
@@ -222,16 +230,16 @@ func TestNew_EmptyURL_ReturnsNoop(t *testing.T) {
 func TestNew_HTTPURL_PostsWebhookJSON(t *testing.T) {
 	type requestRecord struct {
 		contentType string
-		payload     payload
+		payload     webhookPayload
 	}
-	reqCh := make(chan requestRecord, 1)
+	reqCh := make(chan requestRecord, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("io.ReadAll: %v", err)
 		}
-		var p payload
+		var p webhookPayload
 		if err := json.Unmarshal(body, &p); err != nil {
 			t.Fatalf("json.Unmarshal: %v", err)
 		}
@@ -247,25 +255,63 @@ func TestNew_HTTPURL_PostsWebhookJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	ww, ok := w.(*webhookWriter)
+	if !ok {
+		t.Fatalf("New returned %T, want *webhookWriter", w)
+	}
+	fixed := time.Unix(1710000003, 0).UTC()
+	var idCounter int
+	ww.now = func() time.Time { return fixed }
+	ww.idFn = func() string {
+		idCounter++
+		return "evt-test-" + string(rune('0'+idCounter))
+	}
 
-	w.Record(Event{Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636", AgentID: "agent-a", Data: map[string]any{"op": "store"}})
+	w.Record(Event{Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636", Data: map[string]any{"event_type": "recall", "recall_call_count": 1}})
+	w.Record(Event{Category: "mem9-api", TenantID: "tenant-a", ClusterID: "10006636", Data: map[string]any{"event_type": "ingest", "active_memory_count": 126}})
 	if err := w.Close(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 
-	select {
-	case got := <-reqCh:
+	gotRequests := make([]requestRecord, 0, 2)
+	for i := 0; i < 2; i++ {
+		select {
+		case got := <-reqCh:
+			gotRequests = append(gotRequests, got)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for webhook request")
+		}
+	}
+
+	for i, got := range gotRequests {
 		if got.contentType != "application/json" {
-			t.Fatalf("Content-Type = %q, want application/json", got.contentType)
+			t.Fatalf("request[%d] Content-Type = %q, want application/json", i, got.contentType)
 		}
-		if got.payload.Category != "mem9-api" || got.payload.TenantID != "tenant-a" || got.payload.ClusterID != "10006636" {
-			t.Fatalf("unexpected webhook payload: %+v", got.payload)
+		if got.payload.ID == "" {
+			t.Fatalf("request[%d] missing event id", i)
 		}
-		if len(got.payload.Data) != 1 {
-			t.Fatalf("payload data len = %d, want 1", len(got.payload.Data))
+		if got.payload.CreatedAt != "2024-03-09T16:00:03Z" {
+			t.Fatalf("request[%d] created_at = %q, want 2024-03-09T16:00:03Z", i, got.payload.CreatedAt)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for webhook request")
+		if got.payload.Metadata["tenant_id"] != "tenant-a" || got.payload.Metadata["cluster_id"] != "10006636" {
+			t.Fatalf("request[%d] unexpected metadata: %+v", i, got.payload.Metadata)
+		}
+	}
+
+	if gotRequests[0].payload.EventType != "recall" {
+		t.Fatalf("first event_type = %q, want recall", gotRequests[0].payload.EventType)
+	}
+	if gotRequests[0].payload.Payload["recall_call_count"] != float64(1) {
+		t.Fatalf("first payload = %+v, want recall_call_count=1", gotRequests[0].payload.Payload)
+	}
+	if _, ok := gotRequests[0].payload.Payload["event_type"]; ok {
+		t.Fatalf("first payload unexpectedly retained event_type: %+v", gotRequests[0].payload.Payload)
+	}
+	if gotRequests[1].payload.EventType != "ingest" {
+		t.Fatalf("second event_type = %q, want ingest", gotRequests[1].payload.EventType)
+	}
+	if gotRequests[1].payload.Payload["active_memory_count"] != float64(126) {
+		t.Fatalf("second payload = %+v, want active_memory_count=126", gotRequests[1].payload.Payload)
 	}
 }
 

@@ -13,6 +13,7 @@
   "include": [
     "bootstrap-hooks/**/*.mjs",
     "hooks/**/*.mjs",
+    "lib/**/*.mjs",
     "skills/**/*.mjs",
     "tests/**/*.mjs"
   ],

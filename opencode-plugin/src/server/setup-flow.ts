@@ -1,5 +1,5 @@
 import type { Hooks, PluginInput } from "@opencode-ai/plugin";
-import type { EffectiveConfig } from "./config.js";
+import type { EffectiveConfig } from "./config.ts";
 
 export function buildPendingSetupHooks(
   _input: PluginInput,

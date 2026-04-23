@@ -9,25 +9,32 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import readline from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   DEFAULT_SEARCH_TIMEOUT_MS,
+  loadRuntimeStateFromDisk,
+  resolveInstalledPluginCacheVersion,
   resolveCodexHome,
   resolveMem9Home,
-} from "../../../hooks/shared/config.mjs";
-import { resolveProjectRoot } from "../../../hooks/shared/project-root.mjs";
+} from "../../../lib/config.mjs";
+import { resolveProjectRoot } from "../../../lib/project-root.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(SCRIPT_DIR, "../../..");
+const PLUGIN_MANIFEST_PATH = path.join(PACKAGE_ROOT, ".codex-plugin", "plugin.json");
 const HOOK_SHIM_SOURCE_DIR = path.join(PACKAGE_ROOT, "bootstrap-hooks");
 const HOOK_TEMPLATE_PATH = path.join(PACKAGE_ROOT, "templates", "hooks.json");
 const DEFAULT_BASE_URL = "https://api.mem9.ai";
+const DEFAULT_UPDATE_CHECK = Object.freeze({
+  enabled: true,
+  intervalHours: 24,
+});
 const DEFAULT_INSTALL_METADATA = {
   schemaVersion: 1,
   marketplaceName: "mem9-ai",
@@ -77,7 +84,7 @@ function normalizeTimeoutMs(value, fallback) {
 }
 
 function parseIntegerArg(flag, value) {
-  const parsed = Number.parseInt(value, 10);
+  const parsed = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     throw new Error(`${flag} must be a positive integer.`);
   }
@@ -85,8 +92,261 @@ function parseIntegerArg(flag, value) {
   return parsed;
 }
 
+function parseUpdateCheckMode(value) {
+  const normalized = normalizeString(value).toLowerCase();
+  if (normalized === "enabled" || normalized === "disabled") {
+    return normalized;
+  }
+
+  throw new Error("`--update-check` must be `enabled` or `disabled`.");
+}
+
 function readTextFile(filePath, readFile = readFileSync) {
   return readFile(filePath, "utf8");
+}
+
+function isHelpToken(token) {
+  const normalized = normalizeString(token);
+  return normalized === "--help" || normalized === "-h";
+}
+
+function detectSetupHelpRequest(argv = process.argv.slice(2)) {
+  const tokens = Array.isArray(argv)
+    ? argv.map((token) => normalizeString(token)).filter(Boolean)
+    : [];
+  const helpIndex = tokens.findIndex(isHelpToken);
+
+  if (tokens.length === 0 || helpIndex === 0) {
+    return {
+      command: "",
+      subcommand: "",
+    };
+  }
+
+  if (helpIndex === -1) {
+    return null;
+  }
+
+  const [command = "", subcommand = ""] = tokens;
+
+  if (command === "inspect") {
+    return {
+      command,
+      subcommand: "",
+    };
+  }
+
+  if (command === "profile" || command === "scope") {
+    return {
+      command,
+      subcommand,
+    };
+  }
+
+  return {
+    command: "",
+    subcommand: "",
+  };
+}
+
+function buildSetupHelpText(command = "", subcommand = "") {
+  const topic = `${normalizeString(command)}:${normalizeString(subcommand)}`.replace(/:$/, "");
+
+  switch (topic) {
+    case "inspect":
+      return [
+        "mem9 setup inspect",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs inspect [--cwd <path>]",
+        "",
+        "Print the current mem9 setup state as JSON.",
+        "",
+        "Flags:",
+        "  --cwd <path>    Resolve repo-local paths from this directory.",
+        "",
+        "Example:",
+        "  node ./scripts/setup.mjs inspect --cwd .",
+        "",
+      ].join("\n");
+    case "profile":
+      return [
+        "mem9 setup profile",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs profile create ...",
+        "  node ./scripts/setup.mjs profile save-key ...",
+        "",
+        "Subcommands:",
+        "  create      Create or update a profile by provisioning a new mem9 API key.",
+        "  save-key    Create or update a profile from an API key that already exists.",
+        "",
+        "Run a subcommand with --help for full flag details.",
+        "",
+      ].join("\n");
+    case "profile:create":
+      return [
+        "mem9 setup profile create",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs profile create \\",
+        "    --profile <profile-id> \\",
+        "    [--label <profile-label>] \\",
+        "    [--base-url <mem9-api-base-url>] \\",
+        "    --provision-api-key \\",
+        "    [--cwd <path>]",
+        "",
+        "Required flags:",
+        "  --profile <profile-id>",
+        "  --provision-api-key",
+        "",
+        "Optional flags:",
+        "  --label <profile-label>           Defaults to the profile id or existing label.",
+        "  --base-url <mem9-api-base-url>    Defaults to https://api.mem9.ai.",
+        "  --cwd <path>                      Resolve repo-local paths from this directory.",
+        "",
+        "Example:",
+        "  node ./scripts/setup.mjs profile create --profile default --label Default --provision-api-key",
+        "",
+      ].join("\n");
+    case "profile:save-key":
+      return [
+        "mem9 setup profile save-key",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs profile save-key \\",
+        "    --profile <profile-id> \\",
+        "    [--label <profile-label>] \\",
+        "    [--base-url <mem9-api-base-url>] \\",
+        "    --api-key-env <env-var> \\",
+        "    [--cwd <path>]",
+        "",
+        "Required flags:",
+        "  --profile <profile-id>",
+        "  --api-key-env <env-var>",
+        "",
+        "Optional flags:",
+        "  --label <profile-label>           Defaults to the profile id or existing label.",
+        "  --base-url <mem9-api-base-url>    Defaults to https://api.mem9.ai.",
+        "  --cwd <path>                      Resolve repo-local paths from this directory.",
+        "",
+        "Example:",
+        "  MEM9_API_KEY='<your-mem9-api-key>' node ./scripts/setup.mjs profile save-key --profile default --label Default --base-url https://api.mem9.ai --api-key-env MEM9_API_KEY",
+        "",
+      ].join("\n");
+    case "scope":
+      return [
+        "mem9 setup scope",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs scope apply ...",
+        "  node ./scripts/setup.mjs scope clear ...",
+        "",
+        "Subcommands:",
+        "  apply      Write user or project mem9 config and repair managed Codex runtime files.",
+        "  clear      Remove the current project's mem9 override.",
+        "",
+        "Run a subcommand with --help for full flag details.",
+        "",
+      ].join("\n");
+    case "scope:apply":
+      return [
+        "mem9 setup scope apply",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs scope apply \\",
+        "    --scope <user|project> \\",
+        "    --profile <profile-id> \\",
+        "    [--default-timeout-ms <ms>] \\",
+        "    [--search-timeout-ms <ms>] \\",
+        "    [--update-check <enabled|disabled>] \\",
+        "    [--update-check-interval-hours <hours>] \\",
+        "    [--cwd <path>]",
+        "",
+        "Required flags:",
+        "  --scope <user|project>",
+        "  --profile <profile-id>",
+        "",
+        "Optional flags:",
+        "  --default-timeout-ms <ms>             Defaults to the existing value or runtime default.",
+        "  --search-timeout-ms <ms>              Defaults to the existing value or runtime default.",
+        "  --update-check <enabled|disabled>     User scope only.",
+        "  --update-check-interval-hours <hours> User scope only.",
+        "  --cwd <path>                          Resolve repo-local paths from this directory.",
+        "",
+        "Examples:",
+        "  node ./scripts/setup.mjs scope apply --scope user --profile default --default-timeout-ms 8000 --search-timeout-ms 15000 --update-check enabled --update-check-interval-hours 24",
+        "  node ./scripts/setup.mjs scope apply --scope project --profile work --default-timeout-ms 8000 --search-timeout-ms 15000 --cwd .",
+        "",
+      ].join("\n");
+    case "scope:clear":
+      return [
+        "mem9 setup scope clear",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs scope clear --scope project [--cwd <path>]",
+        "",
+        "Required flags:",
+        "  --scope project",
+        "",
+        "Optional flags:",
+        "  --cwd <path>    Resolve repo-local paths from this directory.",
+        "",
+        "Example:",
+        "  node ./scripts/setup.mjs scope clear --scope project --cwd .",
+        "",
+      ].join("\n");
+    default:
+      return [
+        "mem9 setup",
+        "",
+        "Inspect and configure mem9 for Codex.",
+        "",
+        "Usage:",
+        "  node ./scripts/setup.mjs inspect [--cwd <path>]",
+        "  node ./scripts/setup.mjs profile create --profile <profile-id> [--label <profile-label>] [--base-url <mem9-api-base-url>] --provision-api-key [--cwd <path>]",
+        "  node ./scripts/setup.mjs profile save-key --profile <profile-id> [--label <profile-label>] [--base-url <mem9-api-base-url>] --api-key-env <env-var> [--cwd <path>]",
+        "  node ./scripts/setup.mjs scope apply --scope <user|project> --profile <profile-id> [--default-timeout-ms <ms>] [--search-timeout-ms <ms>] [--update-check <enabled|disabled>] [--update-check-interval-hours <hours>] [--cwd <path>]",
+        "  node ./scripts/setup.mjs scope clear --scope project [--cwd <path>]",
+        "",
+        "Commands:",
+        "  inspect              Print the current mem9 setup state as JSON.",
+        "  profile create       Create or update a profile by provisioning a new mem9 API key.",
+        "  profile save-key     Create or update a profile from an existing API key env var.",
+        "  scope apply          Write user or project config and repair managed Codex runtime files.",
+        "  scope clear          Remove the current project's mem9 override.",
+        "",
+        "Notes:",
+        "  - Successful non-help commands print sanitized JSON summaries.",
+        "  - `scope apply` and `scope clear` repair $CODEX_HOME hooks and install metadata.",
+        "  - Save API keys from a trusted shell with MEM9_API_KEY when possible.",
+        "",
+        "Examples:",
+        "  node ./scripts/setup.mjs inspect --cwd .",
+        "  node ./scripts/setup.mjs profile create --profile default --label Default --provision-api-key",
+        "  MEM9_API_KEY='<your-mem9-api-key>' node ./scripts/setup.mjs profile save-key --profile default --label Default --base-url https://api.mem9.ai --api-key-env MEM9_API_KEY",
+        "  node ./scripts/setup.mjs scope apply --scope user --profile default --default-timeout-ms 8000 --search-timeout-ms 15000 --update-check enabled --update-check-interval-hours 24",
+        "",
+        "Run a subcommand with --help for more detail.",
+        "",
+      ].join("\n");
+  }
+}
+
+function maybeWriteSetupHelp(argv, stdout) {
+  const request = detectSetupHelpRequest(argv);
+  if (!request) {
+    return null;
+  }
+
+  stdout.write(buildSetupHelpText(request.command, request.subcommand));
+  return {
+    status: "ok",
+    command: "help",
+    topic: request.command
+      ? [request.command, request.subcommand].filter(Boolean).join(" ")
+      : "root",
+  };
 }
 
 function getProfiles(credentials) {
@@ -95,10 +355,6 @@ function getProfiles(credentials) {
 
 function hasApiKey(profile) {
   return Boolean(normalizeString(profile?.apiKey));
-}
-
-function hasProfileUpdates(args) {
-  return Boolean(args.label || args.baseUrl || args.apiKey);
 }
 
 function buildDefaultProfileId(profiles) {
@@ -239,6 +495,38 @@ function sanitizeDisplayPath(filePath, { cwd, codexHome, mem9Home }) {
   return path.basename(resolved);
 }
 
+function sanitizeRelativePath(filePath, basePath, options = {}) {
+  const resolvedBase = normalizeString(basePath) ? path.resolve(basePath) : "";
+  if (!resolvedBase) {
+    return "";
+  }
+
+  const resolved = path.resolve(filePath);
+  if (!options.allowParentTraversal) {
+    if (resolved === resolvedBase) {
+      return ".";
+    }
+
+    if (resolved.startsWith(`${resolvedBase}${path.sep}`)) {
+      return path.relative(resolvedBase, resolved).replaceAll(path.sep, "/");
+    }
+
+    return "";
+  }
+
+  const relative = path.relative(resolvedBase, resolved).replaceAll(path.sep, "/");
+  if (!relative) {
+    return ".";
+  }
+
+  return path.isAbsolute(relative) ? "" : relative;
+}
+
+function sanitizeProjectPath(filePath, context) {
+  const projectRelative = sanitizeRelativePath(filePath, context.projectRoot);
+  return projectRelative || sanitizeDisplayPath(filePath, context);
+}
+
 function sanitizeBackupsForOutput(backups, context) {
   return backups.map((backup) => ({
     sourcePath: sanitizeDisplayPath(backup.sourcePath, context),
@@ -246,90 +534,419 @@ function sanitizeBackupsForOutput(backups, context) {
   }));
 }
 
-async function promptText(prompter, label, options = {}) {
-  if (!prompter?.text) {
-    return normalizeString(options.defaultValue);
-  }
-
-  const value = await prompter.text(label, options);
-  const normalized = options.trim === false ? String(value ?? "") : normalizeString(value);
-
-  if (normalized) {
-    return normalized;
-  }
-
-  if (options.required) {
-    throw new Error(`${label} is required.`);
-  }
-
-  return normalizeString(options.defaultValue);
+function sanitizeOptionalPath(filePath, context) {
+  return normalizeString(filePath)
+    ? sanitizeDisplayPath(filePath, context)
+    : "";
 }
 
-function createInteractivePrompter({
-  input = process.stdin,
-  output = process.stderr,
-} = {}) {
-  if (!input?.isTTY) {
+function requireString(flag, value) {
+  const normalized = normalizeString(value);
+  if (!normalized) {
+    throw new Error(`${flag} is required.`);
+  }
+
+  return normalized;
+}
+
+function summarizeApiKeyPreview(apiKey) {
+  const normalized = normalizeString(apiKey);
+  if (!normalized) {
+    return "";
+  }
+
+  if (normalized.length <= 4) {
+    return normalized[0] ? `${normalized[0]}...` : "";
+  }
+
+  if (normalized.length <= 8) {
+    return `${normalized.slice(0, 2)}...${normalized.slice(-2)}`;
+  }
+
+  return `${normalized.slice(0, 4)}...${normalized.slice(-4)}`;
+}
+
+function summarizeProfileDisplayName(profileId, label) {
+  const nextProfileId = normalizeString(profileId);
+  return normalizeString(label) || nextProfileId;
+}
+
+function summarizeProfileDisplaySummary(profile) {
+  const profileId = normalizeString(profile.profileId);
+  const displayName = summarizeProfileDisplayName(profileId, profile.label);
+  const baseUrl = normalizeString(profile.baseUrl);
+  const apiKeyPreview = summarizeApiKeyPreview(profile.apiKey);
+  const keyStatus = apiKeyPreview || "API key pending";
+
+  return `${displayName} (${keyStatus}) · ${baseUrl}`;
+}
+
+function resolveInstallIdentityFromMetadata(installPath, fsOps = {}) {
+  const install = readJsonFileOrDefault(installPath, {}, fsOps);
+  const marketplaceName = normalizeString(install.marketplaceName);
+  const pluginName = normalizeString(install.pluginName);
+
+  if (!marketplaceName || !pluginName) {
     return null;
   }
 
   return {
-    async text(label, options = {}) {
-      const suffix = options.defaultValue
-        ? ` [${options.defaultValue}]`
-        : "";
-      const prompt = `${label}${suffix}: `;
-      const rl = readline.createInterface({
-        input,
-        output,
-      });
-      let answer = "";
-
-      try {
-        answer = await rl.question(prompt);
-      } finally {
-        rl.close();
-      }
-
-      const normalized = options.trim === false
-        ? String(answer ?? "")
-        : normalizeString(answer);
-
-      if (normalized) {
-        return normalized;
-      }
-
-      if (options.defaultValue) {
-        return options.defaultValue;
-      }
-
-      if (options.required) {
-        throw new Error(`${label} is required.`);
-      }
-
-      return "";
-    },
-    close() {},
+    marketplaceName,
+    pluginName,
   };
+}
+
+function summarizeInstalledSetupScriptPath(context) {
+  const currentScriptPath = path.join(SCRIPT_DIR, "setup.mjs");
+  const displayPath = sanitizeDisplayPath(currentScriptPath, context.pathContext);
+
+  if (displayPath.startsWith("$CODEX_HOME/")) {
+    return displayPath;
+  }
+
+  const installIdentity = resolveInstallIdentityFromMetadata(
+    context.globalPaths.installPath,
+    context.fsOps,
+  ) ?? buildInstallMetadata(context.codexHome, PACKAGE_ROOT);
+  const manifest = readJsonFileOrDefault(
+    PLUGIN_MANIFEST_PATH,
+    {},
+    context.fsOps,
+  );
+  const activePluginVersion = resolveInstalledPluginCacheVersion({
+    codexHome: context.codexHome,
+    marketplaceName: installIdentity.marketplaceName,
+    pluginName: installIdentity.pluginName,
+    readDirNames(dirPath) {
+      return (context.fsOps.readdirSync ?? readdirSync)(dirPath, {
+        withFileTypes: true,
+      })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    },
+  });
+  const pluginVersion = activePluginVersion || normalizeString(manifest.version) || "local";
+
+  return `$CODEX_HOME/plugins/cache/${installIdentity.marketplaceName}/${installIdentity.pluginName}/${pluginVersion}/skills/setup/scripts/setup.mjs`;
+}
+
+function summarizeShellPath(displayPath) {
+  if (displayPath === "$CODEX_HOME") {
+    return "\"${CODEX_HOME}\"";
+  }
+
+  if (displayPath.startsWith("$CODEX_HOME/")) {
+    return `"${"${CODEX_HOME}"}${displayPath.slice("$CODEX_HOME".length)}"`;
+  }
+
+  if (displayPath === "$MEM9_HOME") {
+    return "\"${MEM9_HOME}\"";
+  }
+
+  if (displayPath.startsWith("$MEM9_HOME/")) {
+    return `"${"${MEM9_HOME}"}${displayPath.slice("$MEM9_HOME".length)}"`;
+  }
+
+  return shellQuote(displayPath);
+}
+
+function buildManualSaveKeyShellCommand(profileId, label, baseUrl, context, options = {}) {
+  const nextProfileId = normalizeString(profileId) || "<profile-id>";
+  const nextLabel = normalizeString(label) || nextProfileId || "<profile-label>";
+  const nextBaseUrl = normalizeBaseUrl(baseUrl) || DEFAULT_BASE_URL;
+  const apiKeyEnv = normalizeString(options.apiKeyEnv) || "MEM9_API_KEY";
+  const setupScriptPath = summarizeInstalledSetupScriptPath(context);
+  const setupScriptReference = summarizeShellPath(setupScriptPath);
+  const shellValuePlaceholder = normalizeString(options.apiKeyPlaceholder)
+    || "<your-mem9-api-key>";
+
+  return [
+    `${apiKeyEnv}=${shellQuote(shellValuePlaceholder)} node ${setupScriptReference} profile save-key`,
+    `--profile ${shellQuote(nextProfileId)}`,
+    `--label ${shellQuote(nextLabel)}`,
+    `--base-url ${shellQuote(nextBaseUrl)}`,
+    `--api-key-env ${apiKeyEnv}`,
+  ].join(" ");
+}
+
+function summarizeProfiles(profiles, context) {
+  return Object.entries(isRecord(profiles) ? profiles : {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([profileId, profile]) => {
+      const current = normalizeProfileRecord(profileId, profile);
+      return {
+        profileId,
+        label: current.label,
+        baseUrl: current.baseUrl,
+        hasApiKey: hasApiKey(current),
+        apiKeyPreview: summarizeApiKeyPreview(current.apiKey),
+        displayName: summarizeProfileDisplayName(profileId, current.label),
+        displaySummary: summarizeProfileDisplaySummary({
+          profileId,
+          label: current.label,
+          baseUrl: current.baseUrl,
+          apiKey: current.apiKey,
+        }),
+        manualSaveKeyCommand: buildManualSaveKeyShellCommand(
+          profileId,
+          current.label,
+          current.baseUrl,
+          context,
+        ),
+      };
+    });
+}
+
+function normalizeUpdateCheckConfig(value) {
+  const current = isRecord(value) ? value : {};
+
+  return {
+    enabled: current.enabled !== false,
+    intervalHours: normalizeTimeoutMs(
+      current.intervalHours,
+      DEFAULT_UPDATE_CHECK.intervalHours,
+    ),
+  };
+}
+
+function stripTomlLineComment(line) {
+  const text = String(line ?? "");
+  let quotedBy = "";
+  let escaped = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const ch = text[index];
+
+    if (quotedBy) {
+      if (quotedBy === "\"" && ch === "\\" && !escaped) {
+        escaped = true;
+        continue;
+      }
+
+      if (ch === quotedBy && !escaped) {
+        quotedBy = "";
+      }
+
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\"" || ch === "'") {
+      quotedBy = ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "#") {
+      return text.slice(0, index);
+    }
+  }
+
+  return text;
+}
+
+function parseFeaturesCodexHooksEnabled(configTomlText = "") {
+  const lines = String(configTomlText ?? "").split(/\r?\n/);
+  let inFeatures = false;
+
+  for (const line of lines) {
+    const normalized = stripTomlLineComment(line).trim();
+
+    if (/^\[[^\]]+\]$/.test(normalized)) {
+      inFeatures = normalized === "[features]";
+      continue;
+    }
+
+    if (!inFeatures) {
+      continue;
+    }
+
+    const match = normalized.match(/^codex_hooks\s*=\s*(true|false)$/i);
+    if (match) {
+      return match[1].toLowerCase() === "true";
+    }
+  }
+
+  return false;
+}
+
+function inspectJsonFile(filePath, fallback, fsOps = {}) {
+  const exists = fsOps.existsSync ?? existsSync;
+  const readFile = fsOps.readFileSync ?? readFileSync;
+
+  if (!exists(filePath)) {
+    return {
+      state: "missing",
+      exists: false,
+      value: fallback,
+    };
+  }
+
+  const raw = readTextFile(filePath, readFile).trim();
+  if (!raw) {
+    return {
+      state: "valid",
+      exists: true,
+      value: fallback,
+    };
+  }
+
+  try {
+    return {
+      state: "valid",
+      exists: true,
+      value: JSON.parse(raw),
+    };
+  } catch {
+    return {
+      state: "invalid",
+      exists: true,
+      value: fallback,
+    };
+  }
+}
+
+function summarizeScopeConfigState(config, options = {}) {
+  if (!isRecord(config)) {
+    return null;
+  }
+
+  const summary = {
+    profileId: normalizeString(config.profileId),
+    defaultTimeoutMs: normalizeTimeoutMs(
+      config.defaultTimeoutMs,
+      DEFAULT_REQUEST_TIMEOUT_MS,
+    ),
+    searchTimeoutMs: normalizeTimeoutMs(
+      config.searchTimeoutMs,
+      DEFAULT_SEARCH_TIMEOUT_MS,
+    ),
+    legacyEnabledFalse: config.enabled === false,
+  };
+
+  if (options.includeUpdateCheck) {
+    summary.updateCheck = normalizeUpdateCheckConfig(config.updateCheck);
+  }
+
+  return summary;
+}
+
+function summarizeScopeFile(filePath, context, fsOps = {}, options = {}) {
+  const inspected = inspectJsonFile(filePath, {}, fsOps);
+  const summary = inspected.state === "valid"
+    ? summarizeScopeConfigState(inspected.value, options)
+    : null;
+
+  return {
+    state: inspected.state,
+    exists: inspected.exists,
+    path: options.projectRelative
+      ? sanitizeProjectPath(filePath, context)
+      : sanitizeDisplayPath(filePath, context),
+    summary,
+  };
+}
+
+function inspectInstallMetadata(filePath, context, fsOps = {}) {
+  const inspected = inspectJsonFile(filePath, {}, fsOps);
+  const install = isRecord(inspected.value) ? inspected.value : {};
+  const ready = inspected.state === "valid"
+    && normalizeString(install.marketplaceName)
+    && normalizeString(install.pluginName);
+
+  return {
+    state: ready ? "ready" : inspected.state,
+    present: inspected.exists,
+    path: sanitizeDisplayPath(filePath, context),
+  };
+}
+
+function listRelativeFiles(dirPath, fsOps = {}, prefix = "") {
+  const readDir = fsOps.readdirSync ?? readdirSync;
+
+  return readDir(dirPath, { withFileTypes: true }).flatMap((entry) => {
+    const relativePath = prefix
+      ? path.join(prefix, entry.name)
+      : entry.name;
+    const sourcePath = path.join(dirPath, entry.name);
+
+    if (entry.isDirectory()) {
+      return listRelativeFiles(sourcePath, fsOps, relativePath);
+    }
+
+    return [relativePath];
+  });
+}
+
+function detectHookShimsInstalled(sourceDir, targetDir, fsOps = {}) {
+  const exists = fsOps.existsSync ?? existsSync;
+
+  try {
+    return listRelativeFiles(sourceDir, fsOps)
+      .every((relativePath) => exists(path.join(targetDir, relativePath)));
+  } catch {
+    return false;
+  }
+}
+
+function detectManagedHooksInstalled(existingHooks) {
+  for (const eventName of MEM9_EVENTS) {
+    const groups = Array.isArray(existingHooks?.hooks?.[eventName])
+      ? existingHooks.hooks[eventName]
+      : [];
+    const hasManagedHook = groups.some((group) =>
+      Array.isArray(group?.hooks)
+      && group.hooks.some((hook) => isMem9ManagedHook(eventName, hook)),
+    );
+
+    if (!hasManagedHook) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export function parseArgs(argv = process.argv.slice(2)) {
   const args = {
+    command: "",
+    subcommand: "",
     cwd: "",
     profileId: "",
     label: "",
     baseUrl: "",
-    apiKey: "",
-    createNew: false,
-    inspectProfiles: false,
-    useExisting: false,
+    apiKeyEnv: "",
+    provisionApiKey: false,
+    scope: "",
     defaultTimeoutMs: undefined,
     searchTimeoutMs: undefined,
+    updateCheck: "",
+    updateCheckIntervalHours: undefined,
   };
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index];
-    const nextValue = argv[index + 1];
+  const [command = "", maybeSubcommand = "", ...rest] = argv;
+  args.command = normalizeString(command);
+
+  if (!args.command) {
+    throw new Error("Expected one of: inspect, profile, scope.");
+  }
+
+  if (args.command === "profile" || args.command === "scope") {
+    args.subcommand = normalizeString(maybeSubcommand);
+    if (!args.subcommand) {
+      throw new Error(`Expected a subcommand after \`${args.command}\`.`);
+    }
+  }
+
+  const flagArgs = args.command === "inspect"
+    ? [maybeSubcommand, ...rest].filter((token, index) =>
+      index > 0 || normalizeString(token).startsWith("--"),
+    )
+    : rest;
+
+  for (let index = 0; index < flagArgs.length; index += 1) {
+    const token = flagArgs[index];
+    const nextValue = flagArgs[index + 1];
 
     switch (token) {
       case "--cwd":
@@ -348,18 +965,16 @@ export function parseArgs(argv = process.argv.slice(2)) {
         args.baseUrl = normalizeBaseUrl(nextValue);
         index += 1;
         break;
-      case "--api-key":
-        args.apiKey = typeof nextValue === "string" ? nextValue : "";
+      case "--api-key-env":
+        args.apiKeyEnv = normalizeString(nextValue);
         index += 1;
         break;
-      case "--create-new":
-        args.createNew = true;
+      case "--provision-api-key":
+        args.provisionApiKey = true;
         break;
-      case "--inspect-profiles":
-        args.inspectProfiles = true;
-        break;
-      case "--use-existing":
-        args.useExisting = true;
+      case "--scope":
+        args.scope = normalizeString(nextValue);
+        index += 1;
         break;
       case "--default-timeout-ms":
         args.defaultTimeoutMs = parseIntegerArg(token, nextValue);
@@ -369,13 +984,79 @@ export function parseArgs(argv = process.argv.slice(2)) {
         args.searchTimeoutMs = parseIntegerArg(token, nextValue);
         index += 1;
         break;
+      case "--update-check":
+        args.updateCheck = parseUpdateCheckMode(nextValue);
+        index += 1;
+        break;
+      case "--update-check-interval-hours":
+        args.updateCheckIntervalHours = parseIntegerArg(token, nextValue);
+        index += 1;
+        break;
+      case "":
+        break;
       default:
         throw new Error(`Unknown argument: ${token}`);
     }
   }
 
-  if (args.createNew && args.useExisting) {
-    throw new Error("--create-new and --use-existing cannot be used together.");
+  const hasUpdateCheckFlags = Boolean(args.updateCheck)
+    || args.updateCheckIntervalHours !== undefined;
+
+  if (
+    hasUpdateCheckFlags
+    && !(args.command === "scope" && args.subcommand === "apply")
+  ) {
+    throw new Error("`--update-check` flags only support `scope apply`.");
+  }
+
+  if (args.command === "profile" && !["create", "save-key"].includes(args.subcommand)) {
+    throw new Error("Profile subcommands must be `create` or `save-key`.");
+  }
+
+  if (args.command === "scope" && !["apply", "clear"].includes(args.subcommand)) {
+    throw new Error("Scope subcommands must be `apply` or `clear`.");
+  }
+
+  if (args.command === "profile" && args.subcommand === "create") {
+    requireString("--profile", args.profileId);
+    if (!args.provisionApiKey) {
+      throw new Error("`profile create` requires `--provision-api-key`.");
+    }
+  }
+
+  if (args.command === "profile" && args.subcommand === "save-key") {
+    requireString("--profile", args.profileId);
+    requireString("--api-key-env", args.apiKeyEnv);
+  }
+
+  if (args.command === "scope" && args.subcommand === "apply") {
+    requireString("--scope", args.scope);
+    if (!["user", "project"].includes(args.scope)) {
+      throw new Error("`scope apply` requires `--scope user` or `--scope project`.");
+    }
+    if (args.scope !== "user" && hasUpdateCheckFlags) {
+      throw new Error("`--update-check` flags only support `--scope user`.");
+    }
+    requireString("--profile", args.profileId);
+  }
+
+  if (args.command === "scope" && args.subcommand === "clear") {
+    if (args.scope !== "project") {
+      throw new Error("`scope clear` only supports `--scope project`.");
+    }
+    if (
+      args.profileId
+      || args.label
+      || args.baseUrl
+      || args.apiKeyEnv
+      || args.provisionApiKey
+      || args.defaultTimeoutMs !== undefined
+      || args.searchTimeoutMs !== undefined
+      || args.updateCheck
+      || args.updateCheckIntervalHours !== undefined
+    ) {
+      throw new Error("`scope clear` only accepts `--scope project` and `--cwd`.");
+    }
   }
 
   return args;
@@ -590,6 +1271,10 @@ export function applyCodexHooksPatch(sourceText = "") {
   const text = String(sourceText ?? "");
   const eol = text.includes("\r\n") ? "\r\n" : "\n";
   const lines = text ? text.split(/\r?\n/) : [];
+  const normalizedTableHeader = (line) => {
+    const normalized = stripTomlLineComment(line).trim();
+    return /^\[[^\]]+\]$/.test(normalized) ? normalized : "";
+  };
 
   if (lines.at(-1) === "") {
     lines.pop();
@@ -599,10 +1284,10 @@ export function applyCodexHooksPatch(sourceText = "") {
   let sectionEnd = lines.length;
 
   for (let index = 0; index < lines.length; index += 1) {
-    if (/^\s*\[features\]\s*$/.test(lines[index])) {
+    if (normalizedTableHeader(lines[index]) === "[features]") {
       sectionStart = index;
       for (let probe = index + 1; probe < lines.length; probe += 1) {
-        if (/^\s*\[[^\]]+\]\s*$/.test(lines[probe])) {
+        if (normalizedTableHeader(lines[probe])) {
           sectionEnd = probe;
           break;
         }
@@ -620,22 +1305,31 @@ export function applyCodexHooksPatch(sourceText = "") {
   }
 
   const before = lines.slice(0, sectionStart + 1);
-  const inside = lines
-    .slice(sectionStart + 1, sectionEnd)
-    .filter((line) => !/^\s*codex_hooks\s*=/.test(line));
-  const trailingBlanks = [];
+  const inside = lines.slice(sectionStart + 1, sectionEnd);
+  const after = lines.slice(sectionEnd);
+  let seenCodexHooks = false;
+  const normalizedInside = [];
 
-  while (inside.at(-1) === "") {
-    trailingBlanks.unshift(inside.pop());
+  for (const line of inside) {
+    if (/^\s*codex_hooks\s*=/.test(line)) {
+      if (seenCodexHooks) {
+        continue;
+      }
+      seenCodexHooks = true;
+      normalizedInside.push("codex_hooks = true");
+      continue;
+    }
+
+    normalizedInside.push(line);
   }
 
-  const after = lines.slice(sectionEnd);
+  if (!seenCodexHooks) {
+    normalizedInside.unshift("codex_hooks = true");
+  }
 
   const rebuilt = [
     ...before,
-    ...inside,
-    "codex_hooks = true",
-    ...trailingBlanks,
+    ...normalizedInside,
     ...after,
   ];
 
@@ -662,97 +1356,25 @@ export function upsertCredentialsProfile(credentials, profile) {
   return next;
 }
 
-function buildUsableProfiles(profiles) {
-  return Object.fromEntries(
-    Object.entries(isRecord(profiles) ? profiles : {}).filter(([, profile]) =>
-      hasApiKey(profile),
-    ),
-  );
-}
-
-export function summarizeProfiles(profiles) {
-  return Object.entries(isRecord(profiles) ? profiles : {})
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([profileId, profile]) => {
-      const current = normalizeProfileRecord(profileId, profile);
-      return {
-        profileId,
-        label: current.label,
-        baseUrl: current.baseUrl,
-        hasApiKey: hasApiKey(current),
-      };
-    });
-}
-
-export function inspectProfiles(argv = process.argv.slice(2), options = {}) {
-  const args = Array.isArray(argv) ? parseArgs(argv) : argv;
-  const env = options.env ?? process.env;
-  const cwd = path.resolve(
-    normalizeString(options.cwd)
-      || normalizeString(args.cwd)
-      || process.cwd(),
-  );
-  const codexHome = resolveCodexHome(
-    options.codexHome,
-    env,
-    options.homeDir,
-  );
-  const mem9Home = resolveMem9Home(
-    options.mem9Home,
-    env,
-    options.homeDir,
-  );
-  const fsOps = {
-    existsSync: options.existsSync,
-    readFileSync: options.readFileSync,
-  };
-  const credentialsPath = path.join(mem9Home, ".credentials.json");
-  const credentialsExists = (fsOps.existsSync ?? existsSync)(credentialsPath);
-  let credentialsState = credentialsExists ? "ready" : "missing";
-  const credentials = readJsonFileOrDefault(
-    credentialsPath,
-    {
-      schemaVersion: 1,
-      profiles: {},
-    },
-    fsOps,
-    {
-      fallbackOnParseError: true,
-      onParseError() {
-        credentialsState = "invalid";
-      },
-    },
-  );
-  const profiles = getProfiles(credentials);
-  const profileSummaries = summarizeProfiles(profiles);
-  const usableProfileIds = profileSummaries
-    .filter((profile) => profile.hasApiKey)
-    .map((profile) => profile.profileId);
-
-  return {
-    status: "ok",
-    credentialsState,
-    credentialsPath: sanitizeDisplayPath(credentialsPath, {
-      cwd,
-      codexHome,
-      mem9Home,
-    }),
-    defaultProfileId: buildDefaultProfileId(profiles),
-    hasUsableProfiles: usableProfileIds.length > 0,
-    recommendedMode: usableProfileIds.length > 0 ? "use-existing" : "create-new",
-    profiles: profileSummaries,
-    usableProfileIds,
-  };
-}
-
-function buildManualProfileGuidance(profileId, baseUrl = DEFAULT_BASE_URL) {
+function buildManualProfileGuidance(profileId, label, baseUrl = DEFAULT_BASE_URL, context) {
   const nextProfileId = normalizeString(profileId) || "default";
+  const nextLabel = normalizeString(label) || nextProfileId;
   const nextBaseUrl = normalizeBaseUrl(baseUrl) || DEFAULT_BASE_URL;
+  const manualShellCommand = context
+    ? buildManualSaveKeyShellCommand(
+      nextProfileId,
+      nextLabel,
+      nextBaseUrl,
+      context,
+    )
+    : "";
 
   return [
-    "Add a mem9 profile manually in `$MEM9_HOME/.credentials.json`.",
-    `Use profile ID \`${nextProfileId}\` and base URL \`${nextBaseUrl}\`.`,
-    `Then rerun setup with \`--use-existing --profile ${nextProfileId}\`, or rerun setup from a trusted shell with \`--profile ${nextProfileId} --base-url ${nextBaseUrl} --api-key <key>\`.`,
+    "Prefer saving the API key from a trusted shell instead of pasting secrets into Codex.",
+    manualShellCommand
+      ? `Run \`${manualShellCommand}\`.`
+      : `Run \`profile save-key\` with \`MEM9_API_KEY\` from a trusted shell.`,
+    "You can also edit `$MEM9_HOME/.credentials.json` directly.",
   ].join(" ");
 }
 
@@ -762,7 +1384,7 @@ async function provisionApiKey({
   timeoutMs = 8_000,
 }) {
   if (typeof fetchImpl !== "function") {
-    throw new Error("Global fetch is unavailable, so mem9 create-new setup cannot provision an API key.");
+    throw new Error("Global fetch is unavailable, so mem9 profile creation cannot provision an API key.");
   }
 
   const targetBaseUrl = normalizeBaseUrl(baseUrl) || DEFAULT_BASE_URL;
@@ -778,16 +1400,16 @@ async function provisionApiKey({
     });
   } catch (error) {
     if (error instanceof Error && error.name === "TimeoutError") {
-      throw new Error(`mem9 create-new setup timed out after ${timeoutMs}ms.`);
+      throw new Error(`mem9 profile creation timed out after ${timeoutMs}ms.`);
     }
 
     throw new Error(
-      `mem9 create-new setup failed: ${error instanceof Error ? error.message : String(error)}`,
+      `mem9 profile creation failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 
   if (!response?.ok) {
-    throw new Error(`mem9 create-new setup failed with HTTP ${response?.status ?? "unknown"}.`);
+    throw new Error(`mem9 profile creation failed with HTTP ${response?.status ?? "unknown"}.`);
   }
 
   let payload;
@@ -795,149 +1417,47 @@ async function provisionApiKey({
     payload = await response.json();
   } catch (error) {
     throw new Error(
-      `mem9 create-new setup returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `mem9 profile creation returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 
   const apiKey = normalizeString(payload?.id);
   if (!apiKey) {
-    throw new Error("mem9 create-new setup did not return an API key.");
+    throw new Error("mem9 profile creation did not return an API key.");
   }
 
   return apiKey;
 }
 
-async function resolveSetupMode({
-  args,
-  profiles,
-  prompter,
-}) {
-  const usableProfiles = buildUsableProfiles(profiles);
-  const hasUsableProfiles = Object.keys(usableProfiles).length > 0;
-
-  if (args.createNew) {
-    return "create-new";
-  }
-  if (args.useExisting) {
-    return "use-existing";
-  }
-  if (args.apiKey) {
-    return "manual-key";
-  }
-  if (args.profileId && hasApiKey(profiles[args.profileId]) && !hasProfileUpdates(args)) {
-    return "use-existing";
-  }
-  if (!prompter) {
-    return "create-new";
-  }
-
-  const promptLabel = hasUsableProfiles
-    ? "Setup mode [use-existing|create-new|manual]"
-    : "Setup mode [create-new|manual]";
-  const defaultValue = hasUsableProfiles ? "use-existing" : "create-new";
-  const mode = normalizeString(await promptText(prompter, promptLabel, {
-    defaultValue,
-    required: true,
-    trim: false,
-  })).toLowerCase();
-
-  if (
-    mode === "create-new"
-    || mode === "use-existing"
-    || mode === "manual"
-  ) {
-    return mode;
-  }
-
-  throw new Error("Setup mode must be `use-existing`, `create-new`, or `manual`.");
-}
-
-async function resolveCreateNewSelection({
-  args,
-  profiles,
-  prompter,
-  fetchImpl,
-  provisionTimeoutMs,
-}) {
-  const profileId = normalizeString(args.profileId)
-    || buildDefaultProfileId(profiles);
-  const current = normalizeProfileRecord(profileId, profiles[profileId]);
-  const label = normalizeString(args.label)
-    || await promptText(prompter, "Profile label", {
-      defaultValue: current.label,
-      required: true,
-    })
-    || current.label;
-  const baseUrl = normalizeBaseUrl(args.baseUrl)
-    || normalizeBaseUrl(await promptText(prompter, "Base URL", {
-      defaultValue: current.baseUrl,
-      required: true,
-    }))
-    || current.baseUrl
-    || DEFAULT_BASE_URL;
-  const apiKey = await provisionApiKey({
-    baseUrl,
-    fetchImpl,
-    timeoutMs: provisionTimeoutMs,
-  });
-
-  return {
-    profileId,
-    profile: {
-      label,
-      baseUrl,
-      apiKey,
-    },
-    selection: "provisioned",
-  };
-}
-
-async function resolveExistingSelection({
-  args,
-  profiles,
-  prompter,
-}) {
-  const usableProfiles = buildUsableProfiles(profiles);
-  const usableProfileIds = Object.keys(usableProfiles).sort();
-
-  if (usableProfileIds.length === 0) {
-    throw new Error(buildManualProfileGuidance(args.profileId, args.baseUrl));
-  }
-
-  const profileId = normalizeString(args.profileId)
-    || await promptText(prompter, "Profile ID", {
-      defaultValue: buildDefaultProfileId(usableProfiles),
-      required: true,
-    })
-    || buildDefaultProfileId(usableProfiles);
-
-  const current = normalizeProfileRecord(profileId, usableProfiles[profileId]);
-  if (!hasApiKey(current)) {
-    throw new Error(buildManualProfileGuidance(profileId, current.baseUrl || args.baseUrl));
-  }
-
-  return {
-    profileId,
-    profile: current,
-    selection: "existing",
-  };
-}
-
 export function buildScopeConfig(profileId, options = {}) {
-  const current = isRecord(options.existingConfig) ? options.existingConfig : {};
+  const existingConfig = isRecord(options.existingConfig) ? options.existingConfig : {};
+  const scope = normalizeString(options.scope);
+  const currentUpdateCheck = normalizeUpdateCheckConfig(existingConfig.updateCheck);
 
   return {
-    ...current,
     schemaVersion: 1,
     profileId,
     defaultTimeoutMs: normalizeTimeoutMs(
-      options.defaultTimeoutMs ?? current.defaultTimeoutMs,
+      options.defaultTimeoutMs ?? existingConfig.defaultTimeoutMs,
       DEFAULT_REQUEST_TIMEOUT_MS,
     ),
     searchTimeoutMs: normalizeTimeoutMs(
-      options.searchTimeoutMs ?? current.searchTimeoutMs,
+      options.searchTimeoutMs ?? existingConfig.searchTimeoutMs,
       DEFAULT_SEARCH_TIMEOUT_MS,
     ),
+    updateCheck: scope === "user"
+      ? {
+        enabled: options.updateCheck === "enabled"
+          ? true
+          : options.updateCheck === "disabled"
+            ? false
+            : currentUpdateCheck.enabled,
+        intervalHours: normalizeTimeoutMs(
+          options.updateCheckIntervalHours,
+          currentUpdateCheck.intervalHours,
+        ),
+      }
+      : undefined,
   };
 }
 
@@ -961,101 +1481,15 @@ export function installHookShims(sourceDir, targetDir, fsOps = {}) {
   }
 }
 
-export async function resolveProfileSelection({
-  args,
-  credentials,
-  prompter,
-  fetchImpl,
-  provisionTimeoutMs,
-}) {
-  const profiles = getProfiles(credentials);
-  const mode = await resolveSetupMode({
-    args,
-    profiles,
-    prompter,
-  });
-
-  if (mode === "use-existing") {
-    return resolveExistingSelection({
-      args,
-      profiles,
-      prompter,
-    });
-  }
-
-  if (mode === "create-new") {
-    return resolveCreateNewSelection({
-      args,
-      profiles,
-      prompter,
-      fetchImpl,
-      provisionTimeoutMs,
-    });
-  }
-
-  if (mode === "manual") {
-    const profileId = normalizeString(args.profileId)
-      || buildDefaultProfileId(profiles);
-    const current = normalizeProfileRecord(profileId, profiles[profileId]);
-    const baseUrl = normalizeBaseUrl(args.baseUrl)
-      || current.baseUrl
-      || DEFAULT_BASE_URL;
-    throw new Error(buildManualProfileGuidance(profileId, baseUrl));
-  }
-
-  const profileId = normalizeString(args.profileId)
-    || buildDefaultProfileId(profiles);
-  const current = normalizeProfileRecord(profileId, profiles[profileId]);
-
-  const label = normalizeString(args.label)
-    || await promptText(prompter, "Profile label", {
-      defaultValue: current.label,
-      required: true,
-    });
-  const baseUrl = normalizeBaseUrl(args.baseUrl)
-    || normalizeBaseUrl(await promptText(prompter, "Base URL", {
-      defaultValue: current.baseUrl,
-      required: true,
-    }))
-    || DEFAULT_BASE_URL;
-  const apiKey = args.apiKey
-    || current.apiKey;
-
-  if (!apiKey) {
-    throw new Error(buildManualProfileGuidance(profileId, baseUrl));
-  }
-
-  return {
-    profileId,
-    profile: {
-      label,
-      baseUrl,
-      apiKey,
-    },
-    selection: profiles[profileId] ? "updated" : "created",
-  };
-}
-
-export async function runSetup(argv = process.argv.slice(2), options = {}) {
-  const args = Array.isArray(argv) ? parseArgs(argv) : argv;
-  assertNodeVersion(options.nodeVersion);
-
+function resolveCommandContext(args = {}, options = {}) {
   const env = options.env ?? process.env;
   const cwd = path.resolve(
     normalizeString(options.cwd)
       || normalizeString(args.cwd)
       || process.cwd(),
   );
-  const codexHome = resolveCodexHome(
-    options.codexHome,
-    env,
-    options.homeDir,
-  );
-  const mem9Home = resolveMem9Home(
-    options.mem9Home,
-    env,
-    options.homeDir,
-  );
+  const codexHome = resolveCodexHome(options.codexHome, env, options.homeDir);
+  const mem9Home = resolveMem9Home(options.mem9Home, env, options.homeDir);
   const fsOps = {
     accessSync: options.accessSync,
     constants: options.constants,
@@ -1066,23 +1500,7 @@ export async function runSetup(argv = process.argv.slice(2), options = {}) {
     readdirSync: options.readdirSync,
     writeFileSync: options.writeFileSync,
   };
-  const globalWritable = typeof options.userWritable === "boolean"
-    ? options.userWritable
-    : isWritablePath(codexHome, fsOps);
-  const credentialsWritable = typeof options.credentialsWritable === "boolean"
-    ? options.credentialsWritable
-    : isWritablePath(mem9Home, fsOps);
-  if (!globalWritable) {
-    throw new Error("Global Codex home is not writable.");
-  }
-  if (!credentialsWritable) {
-    throw new Error("Shared mem9 home is not writable.");
-  }
   const globalPaths = resolveGlobalPaths(codexHome);
-  const installMetadata = buildInstallMetadata(
-    codexHome,
-    options.packageRoot ?? PACKAGE_ROOT,
-  );
   const projectRoot = resolveProjectRoot({
     cwd,
     exists: fsOps.existsSync ?? existsSync,
@@ -1090,25 +1508,94 @@ export async function runSetup(argv = process.argv.slice(2), options = {}) {
   const legacyProjectHooksPath = projectRoot
     ? path.join(projectRoot, ".codex", "hooks.json")
     : "";
-  const credentialsPath = path.join(mem9Home, ".credentials.json");
-  const invalidJsonFiles = new Set();
-  const noteInvalidJson = (filePath) => {
-    invalidJsonFiles.add(filePath);
-  };
-  const credentials = readJsonFileOrDefault(
-    credentialsPath,
-    {
-      schemaVersion: 1,
-      profiles: {},
+
+  return {
+    args,
+    env,
+    cwd,
+    codexHome,
+    mem9Home,
+    fsOps,
+    globalPaths,
+    projectRoot,
+    legacyProjectHooksPath,
+    pathContext: {
+      cwd,
+      codexHome,
+      mem9Home,
+      projectRoot,
     },
+  };
+}
+
+function emitMachineSummary(summary, context, stdout) {
+  stdout?.write?.(`${JSON.stringify(summary)}\n`);
+}
+
+function sanitizeScopeResultForOutput(result, context) {
+  return {
+    status: result.status,
+    command: result.command,
+    scope: result.scope,
+    profileId: result.profileId ?? "",
+    action: result.action,
+    configSummary: result.configSummary ?? null,
+    configPath: result.scope === "project"
+      ? sanitizeProjectPath(result.configPath, context)
+      : sanitizeDisplayPath(result.configPath, context),
+    installPath: sanitizeDisplayPath(result.installPath, context),
+    hooksPath: sanitizeDisplayPath(result.hooksPath, context),
+    hooksDir: sanitizeDisplayPath(result.hooksDir, context),
+    configTomlPath: sanitizeDisplayPath(result.configTomlPath, context),
+    legacyProjectHooksPath: normalizeString(result.legacyProjectHooksPath)
+      ? sanitizeProjectPath(result.legacyProjectHooksPath, context)
+      : "",
+    backups: sanitizeBackupsForOutput(result.backups, context),
+  };
+}
+
+function sanitizeProfileResultForOutput(result, context) {
+  return {
+    status: result.status,
+    command: result.command,
+    profileId: result.profileId,
+    action: result.action,
+    baseUrl: result.baseUrl,
+    credentialsPath: sanitizeDisplayPath(result.credentialsPath, context),
+    apiKeyEnv: result.apiKeyEnv ?? "",
+    backups: sanitizeBackupsForOutput(result.backups, context),
+  };
+}
+
+function prepareManagedRuntimeRepair(context, noteInvalidJson, options = {}) {
+  const fsOps = context.fsOps;
+  const existingConfigToml = readTextFileOrDefault(
+    context.globalPaths.configTomlPath,
+    "",
+    fsOps,
+  );
+  const existingHooks = readJsonFileOrDefault(
+    context.globalPaths.hooksPath,
+    { hooks: {} },
     fsOps,
     {
       fallbackOnParseError: true,
       onParseError: noteInvalidJson,
     },
   );
-  const existingConfig = readJsonFileOrDefault(
-    globalPaths.configPath,
+  const existingLegacyProjectHooks = context.legacyProjectHooksPath
+    ? readJsonFileOrDefault(
+      context.legacyProjectHooksPath,
+      { hooks: {} },
+      fsOps,
+      {
+        fallbackOnParseError: true,
+        onParseError: noteInvalidJson,
+      },
+    )
+    : { hooks: {} };
+  readJsonFileOrDefault(
+    context.globalPaths.installPath,
     {},
     fsOps,
     {
@@ -1116,149 +1603,605 @@ export async function runSetup(argv = process.argv.slice(2), options = {}) {
       onParseError: noteInvalidJson,
     },
   );
-  const hooksTemplateText = options.hooksTemplateText
-    ?? readTextFile(HOOK_TEMPLATE_PATH);
-  let prompter = options.prompter;
-  let needsPromptClose = false;
 
-  if (!prompter && options.interactive !== false) {
-    prompter = createInteractivePrompter({
-      input: options.stdin,
-      output: options.stderr,
-    });
-    needsPromptClose = Boolean(prompter);
-  }
+  return {
+    existingConfigToml,
+    existingHooks,
+    existingLegacyProjectHooks,
+    installMetadata: buildInstallMetadata(
+      context.codexHome,
+      options.packageRoot ?? PACKAGE_ROOT,
+    ),
+    mem9Hooks: renderHooksTemplate({
+      templateText: options.hooksTemplateText
+        ?? readTextFile(HOOK_TEMPLATE_PATH),
+      hooksDir: context.globalPaths.hooksDir,
+    }),
+  };
+}
 
-  try {
-    const selection = await resolveProfileSelection({
-      args,
-      credentials,
-      prompter,
-      fetchImpl: options.fetch,
-      provisionTimeoutMs: options.provisionTimeoutMs,
-    });
-    const nextCredentials = upsertCredentialsProfile(credentials, {
-      profileId: selection.profileId,
-      ...selection.profile,
-    });
-    const nextScopeConfig = buildScopeConfig(selection.profileId, {
-      existingConfig,
-      defaultTimeoutMs: args.defaultTimeoutMs,
-      searchTimeoutMs: args.searchTimeoutMs,
-    });
-    const existingConfigToml = readTextFileOrDefault(
-      globalPaths.configTomlPath,
-      "",
-      fsOps,
-    );
-    const existingHooks = readJsonFileOrDefault(
-      globalPaths.hooksPath,
-      { hooks: {} },
-      fsOps,
-      {
-        fallbackOnParseError: true,
-        onParseError: noteInvalidJson,
-      },
-    );
-    const existingLegacyProjectHooks = legacyProjectHooksPath
-      ? readJsonFileOrDefault(
-        legacyProjectHooksPath,
-        { hooks: {} },
-        fsOps,
-        {
-          fallbackOnParseError: true,
-          onParseError: noteInvalidJson,
-        },
-      )
-      : { hooks: {} };
-    const mem9Hooks = renderHooksTemplate({
-      templateText: hooksTemplateText,
-      hooksDir: globalPaths.hooksDir,
-    });
-    const backups = backupFiles([...invalidJsonFiles], fsOps);
+function applyManagedRuntimeRepair(context, prepared, options = {}) {
+  installHookShims(
+    options.hookShimSourceDir ?? HOOK_SHIM_SOURCE_DIR,
+    context.globalPaths.hooksDir,
+    context.fsOps,
+  );
+  writeJsonFile(
+    context.globalPaths.installPath,
+    prepared.installMetadata,
+    context.fsOps,
+  );
+  writeTextFile(
+    context.globalPaths.configTomlPath,
+    applyCodexHooksPatch(prepared.existingConfigToml),
+    context.fsOps,
+  );
+  writeJsonFile(
+    context.globalPaths.hooksPath,
+    mergeMem9Hooks(prepared.existingHooks, prepared.mem9Hooks),
+    context.fsOps,
+  );
 
-    installHookShims(
-      options.hookShimSourceDir ?? HOOK_SHIM_SOURCE_DIR,
-      globalPaths.hooksDir,
-      fsOps,
-    );
-    writeJsonFile(globalPaths.installPath, installMetadata, fsOps);
-    writeJsonFile(credentialsPath, nextCredentials, fsOps);
-    writeJsonFile(globalPaths.configPath, nextScopeConfig, fsOps);
-    writeTextFile(
-      globalPaths.configTomlPath,
-      applyCodexHooksPatch(existingConfigToml),
-      fsOps,
-    );
+  if (
+    context.legacyProjectHooksPath
+    && (context.fsOps.existsSync ?? existsSync)(context.legacyProjectHooksPath)
+  ) {
     writeJsonFile(
-      globalPaths.hooksPath,
-      mergeMem9Hooks(existingHooks, mem9Hooks),
-      fsOps,
+      context.legacyProjectHooksPath,
+      removeManagedHooks(prepared.existingLegacyProjectHooks),
+      context.fsOps,
     );
-    if (legacyProjectHooksPath && (fsOps.existsSync ?? existsSync)(legacyProjectHooksPath)) {
-      writeJsonFile(
-        legacyProjectHooksPath,
-        removeManagedHooks(existingLegacyProjectHooks),
-        fsOps,
-      );
-    }
-
-    const summary = {
-      status: "ok",
-      scope: "global",
-      profileId: selection.profileId,
-      selection: selection.selection,
-      paths: {
-        configPath: globalPaths.configPath,
-        configTomlPath: globalPaths.configTomlPath,
-        hooksPath: globalPaths.hooksPath,
-        hooksDir: globalPaths.hooksDir,
-        installPath: globalPaths.installPath,
-        credentialsPath,
-        legacyProjectHooksPath,
-      },
-      backups,
-    };
-
-    if (options.stdout?.write) {
-      options.stdout.write(
-        `${JSON.stringify({
-          status: summary.status,
-          scope: summary.scope,
-          profileId: summary.profileId,
-          selection: summary.selection,
-          backups: sanitizeBackupsForOutput(summary.backups, {
-            cwd,
-            codexHome,
-            mem9Home,
-          }),
-        })}\n`,
-      );
-    }
-
-    return summary;
-  } finally {
-    if (needsPromptClose) {
-      prompter?.close?.();
-    }
   }
 }
 
-export async function main(argv = process.argv.slice(2), options = {}) {
+function loadCredentialsForWrite(context, noteInvalidJson) {
+  return readJsonFileOrDefault(
+    path.join(context.mem9Home, ".credentials.json"),
+    {
+      schemaVersion: 1,
+      profiles: {},
+    },
+    context.fsOps,
+    {
+      fallbackOnParseError: true,
+      onParseError: noteInvalidJson,
+    },
+  );
+}
+
+function resolveWritableFlags(context, options = {}) {
+  const projectConfigPath = context.projectRoot
+    ? path.join(context.projectRoot, ".codex", "mem9", "config.json")
+    : "";
+
+  return {
+    globalWritable: typeof options.userWritable === "boolean"
+      ? options.userWritable
+      : isWritablePath(context.codexHome, context.fsOps),
+    credentialsWritable: typeof options.credentialsWritable === "boolean"
+      ? options.credentialsWritable
+      : isWritablePath(context.mem9Home, context.fsOps),
+    projectWritable: typeof options.projectWritable === "boolean"
+      ? options.projectWritable
+      : (projectConfigPath ? isWritablePath(projectConfigPath, context.fsOps) : false),
+  };
+}
+
+function resolveProfileForWrite(args, profiles) {
+  const profileId = requireString("--profile", args.profileId);
+  const current = normalizeProfileRecord(profileId, profiles[profileId]);
+
+  return {
+    profileId,
+    label: normalizeString(args.label) || current.label,
+    baseUrl: normalizeBaseUrl(args.baseUrl) || current.baseUrl || DEFAULT_BASE_URL,
+    current,
+    existed: Boolean(profiles[profileId]),
+  };
+}
+
+export function inspectSetup(argv = process.argv.slice(2), options = {}) {
+  const args = Array.isArray(argv) ? parseArgs(argv) : argv;
+  const context = resolveCommandContext(args, options);
+  const runtimeState = loadRuntimeStateFromDisk({
+    cwd: context.cwd,
+    codexHome: context.codexHome,
+    mem9Home: context.mem9Home,
+    env: context.env,
+    exists: context.fsOps.existsSync,
+    readJson(filePath) {
+      return JSON.parse(readTextFile(filePath, context.fsOps.readFileSync ?? readFileSync));
+    },
+    readText(filePath) {
+      return readTextFile(filePath, context.fsOps.readFileSync ?? readFileSync);
+    },
+    readDirNames(dirPath) {
+      return (context.fsOps.readdirSync ?? readdirSync)(dirPath, {
+        withFileTypes: true,
+      })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    },
+  });
+  const hooksTomlText = readTextFileOrDefault(
+    context.globalPaths.configTomlPath,
+    "",
+    context.fsOps,
+  );
+  const hooksJson = inspectJsonFile(
+    context.globalPaths.hooksPath,
+    { hooks: {} },
+    context.fsOps,
+  );
+  const credentialsPath = path.join(context.mem9Home, ".credentials.json");
+  const credentialsInspection = inspectJsonFile(
+    credentialsPath,
+    {
+      schemaVersion: 1,
+      profiles: {},
+    },
+    context.fsOps,
+  );
+  const profiles = getProfiles(credentialsInspection.value);
+  const profileSummaries = summarizeProfiles(profiles, context);
+  const usableProfileIds = profileSummaries
+    .filter((profile) => profile.hasApiKey)
+    .map((profile) => profile.profileId);
+  const globalConfigSummary = summarizeScopeFile(
+    context.globalPaths.configPath,
+    context.pathContext,
+    context.fsOps,
+    { includeUpdateCheck: true },
+  );
+  const projectConfigSummary = context.projectRoot
+    ? summarizeScopeFile(
+      path.join(context.projectRoot, ".codex", "mem9", "config.json"),
+      context.pathContext,
+      context.fsOps,
+      {
+        includeUpdateCheck: false,
+        projectRelative: true,
+      },
+    )
+    : {
+      state: "not_in_repo",
+      exists: false,
+      path: "",
+      summary: null,
+    };
+  const installMetadata = inspectInstallMetadata(
+    context.globalPaths.installPath,
+    context.pathContext,
+    context.fsOps,
+  );
+  const nodeMajor = Number.parseInt(
+    String(options.nodeVersion ?? process.versions.node).split(".")[0] ?? "",
+    10,
+  );
+
+  return {
+    status: "ok",
+    command: "inspect",
+    environment: {
+      nodeVersion: String(options.nodeVersion ?? process.versions.node),
+      nodeVersionSupported: Number.isFinite(nodeMajor) && nodeMajor >= 22,
+    },
+    runtime: {
+      issueCode: runtimeState.issueCode,
+      pluginState: runtimeState.pluginState,
+      pluginIssueDetail: runtimeState.pluginIssueDetail,
+      scope: runtimeState.scope,
+      configSource: runtimeState.configSource,
+      projectConfigMatched: runtimeState.projectConfigMatched,
+      profileId: runtimeState.runtime.profileId,
+      defaultTimeoutMs: runtimeState.runtime.defaultTimeoutMs,
+      searchTimeoutMs: runtimeState.runtime.searchTimeoutMs,
+      warnings: runtimeState.warnings,
+      legacyPausedSources: runtimeState.legacyPausedSources,
+      effectiveLegacyPausedSource: runtimeState.effectiveLegacyPausedSource,
+    },
+    plugin: {
+      hooksFeatureEnabled: parseFeaturesCodexHooksEnabled(hooksTomlText),
+      hooksInstalled: hooksJson.state === "valid"
+        && detectManagedHooksInstalled(hooksJson.value),
+      hookShimsInstalled: detectHookShimsInstalled(
+        options.hookShimSourceDir ?? HOOK_SHIM_SOURCE_DIR,
+        context.globalPaths.hooksDir,
+        context.fsOps,
+      ),
+      installMetadataState: installMetadata.state,
+      installMetadataPresent: installMetadata.present,
+    },
+    globalConfig: globalConfigSummary,
+    projectConfig: projectConfigSummary,
+    profiles: {
+      credentialsState: credentialsInspection.state,
+      credentialsPath: sanitizeDisplayPath(credentialsPath, context.pathContext),
+      defaultProfileId: buildDefaultProfileId(profiles),
+      hasUsableProfiles: usableProfileIds.length > 0,
+      usableProfileIds,
+      manualSaveKeyTemplate: buildManualSaveKeyShellCommand(
+        "<profile-id>",
+        "<profile-label>",
+        DEFAULT_BASE_URL,
+        context,
+      ),
+      items: profileSummaries,
+    },
+    paths: {
+      configTomlPath: sanitizeDisplayPath(
+        context.globalPaths.configTomlPath,
+        context.pathContext,
+      ),
+      hooksPath: sanitizeDisplayPath(
+        context.globalPaths.hooksPath,
+        context.pathContext,
+      ),
+      hooksDir: sanitizeDisplayPath(
+        context.globalPaths.hooksDir,
+        context.pathContext,
+      ),
+      installPath: sanitizeDisplayPath(
+        context.globalPaths.installPath,
+        context.pathContext,
+      ),
+      setupScriptPath: summarizeInstalledSetupScriptPath(context),
+    },
+  };
+}
+
+async function runProfileCreate(args, options = {}) {
+  assertNodeVersion(options.nodeVersion);
+  const context = resolveCommandContext(args, options);
+  const { credentialsWritable } = resolveWritableFlags(context, options);
+  if (!credentialsWritable) {
+    throw new Error("Shared mem9 home is not writable.");
+  }
+
+  const invalidJsonFiles = new Set();
+  const credentialsPath = path.join(context.mem9Home, ".credentials.json");
+  const credentials = loadCredentialsForWrite(context, (filePath) => {
+    invalidJsonFiles.add(filePath);
+  });
+  const profiles = getProfiles(credentials);
+  const nextProfile = resolveProfileForWrite(args, profiles);
+  const apiKey = await provisionApiKey({
+    baseUrl: nextProfile.baseUrl,
+    fetchImpl: options.fetch,
+    timeoutMs: options.provisionTimeoutMs,
+  });
+  const backups = backupFiles([...invalidJsonFiles], context.fsOps);
+  const nextCredentials = upsertCredentialsProfile(credentials, {
+    profileId: nextProfile.profileId,
+    label: nextProfile.label,
+    baseUrl: nextProfile.baseUrl,
+    apiKey,
+  });
+
+  writeJsonFile(credentialsPath, nextCredentials, context.fsOps);
+
+  const result = {
+    status: "ok",
+    command: "profile.create",
+    action: nextProfile.existed ? "updated" : "created",
+    profileId: nextProfile.profileId,
+    label: nextProfile.label,
+    baseUrl: nextProfile.baseUrl,
+    credentialsPath,
+    backups,
+  };
+
+  emitMachineSummary(
+    sanitizeProfileResultForOutput(result, context.pathContext),
+    context.pathContext,
+    options.stdout,
+  );
+
+  return result;
+}
+
+async function runProfileSaveKey(args, options = {}) {
+  assertNodeVersion(options.nodeVersion);
+  const context = resolveCommandContext(args, options);
+  const { credentialsWritable } = resolveWritableFlags(context, options);
+  if (!credentialsWritable) {
+    throw new Error("Shared mem9 home is not writable.");
+  }
+
+  const apiKey = normalizeString(context.env[args.apiKeyEnv]);
+  const invalidJsonFiles = new Set();
+  const credentialsPath = path.join(context.mem9Home, ".credentials.json");
+  const credentials = loadCredentialsForWrite(context, (filePath) => {
+    invalidJsonFiles.add(filePath);
+  });
+  const profiles = getProfiles(credentials);
+  const nextProfile = resolveProfileForWrite(args, profiles);
+
+  if (!apiKey) {
+    throw new Error(
+      `Environment variable \`${args.apiKeyEnv}\` is empty. ${buildManualProfileGuidance(nextProfile.profileId, nextProfile.label, nextProfile.baseUrl, context)}`,
+    );
+  }
+
+  const backups = backupFiles([...invalidJsonFiles], context.fsOps);
+  const nextCredentials = upsertCredentialsProfile(credentials, {
+    profileId: nextProfile.profileId,
+    label: nextProfile.label,
+    baseUrl: nextProfile.baseUrl,
+    apiKey,
+  });
+
+  writeJsonFile(credentialsPath, nextCredentials, context.fsOps);
+
+  const result = {
+    status: "ok",
+    command: "profile.save-key",
+    action: nextProfile.existed ? "updated" : "created",
+    profileId: nextProfile.profileId,
+    label: nextProfile.label,
+    baseUrl: nextProfile.baseUrl,
+    credentialsPath,
+    apiKeyEnv: args.apiKeyEnv,
+    backups,
+  };
+
+  emitMachineSummary(
+    sanitizeProfileResultForOutput(result, context.pathContext),
+    context.pathContext,
+    options.stdout,
+  );
+
+  return result;
+}
+
+function readValidatedCredentials(context) {
+  const credentialsPath = path.join(context.mem9Home, ".credentials.json");
+  const inspected = inspectJsonFile(
+    credentialsPath,
+    {
+      schemaVersion: 1,
+      profiles: {},
+    },
+    context.fsOps,
+  );
+
+  if (inspected.state === "invalid") {
+    throw new Error("Shared mem9 credentials are invalid. Run `$mem9:setup` to repair the saved profiles.");
+  }
+
+  return {
+    credentialsPath,
+    credentials: inspected.value,
+  };
+}
+
+function resolveConfigWriteFallback(scope, targetConfig, globalConfig) {
+  if (scope !== "project") {
+    return targetConfig;
+  }
+
+  return {
+    defaultTimeoutMs: targetConfig?.defaultTimeoutMs ?? globalConfig?.defaultTimeoutMs,
+    searchTimeoutMs: targetConfig?.searchTimeoutMs ?? globalConfig?.searchTimeoutMs,
+  };
+}
+
+async function runScopeApply(args, options = {}) {
+  assertNodeVersion(options.nodeVersion);
+  const context = resolveCommandContext(args, options);
+  const { globalWritable, projectWritable } = resolveWritableFlags(context, options);
+  if (!globalWritable) {
+    throw new Error("Global Codex home is not writable.");
+  }
+
+  if (args.scope === "project" && !context.projectRoot) {
+    throw new Error("Current directory is not inside a Git repository. Run `$mem9:setup` from a project before applying project scope.");
+  }
+
+  if (args.scope === "project" && !projectWritable) {
+    throw new Error("Current project mem9 config path is not writable.");
+  }
+
+  const { credentials } = readValidatedCredentials(context);
+  const profiles = getProfiles(credentials);
+  const currentProfile = normalizeProfileRecord(args.profileId, profiles[args.profileId]);
+
+  if (!profiles[args.profileId]) {
+    throw new Error(`Profile "${args.profileId}" was not found. Run \`$mem9:setup\` to create or repair global profiles.`);
+  }
+
+  if (!hasApiKey(currentProfile)) {
+    throw new Error(`Profile "${args.profileId}" is missing an API key. ${buildManualProfileGuidance(args.profileId, currentProfile.label, currentProfile.baseUrl, context)}`);
+  }
+
+  const invalidJsonFiles = new Set();
+  const globalConfig = readJsonFileOrDefault(
+    context.globalPaths.configPath,
+    {},
+    context.fsOps,
+    {
+      fallbackOnParseError: true,
+      onParseError(filePath) {
+        invalidJsonFiles.add(filePath);
+      },
+    },
+  );
+  const targetConfigPath = args.scope === "project"
+    ? path.join(context.projectRoot, ".codex", "mem9", "config.json")
+    : context.globalPaths.configPath;
+  const targetConfig = readJsonFileOrDefault(
+    targetConfigPath,
+    {},
+    context.fsOps,
+    {
+      fallbackOnParseError: true,
+      onParseError(filePath) {
+        invalidJsonFiles.add(filePath);
+      },
+    },
+  );
+  const preparedRepair = prepareManagedRuntimeRepair(
+    context,
+    (filePath) => {
+      invalidJsonFiles.add(filePath);
+    },
+    options,
+  );
+  const backups = backupFiles([...invalidJsonFiles], context.fsOps);
+  const nextConfig = buildScopeConfig(args.profileId, {
+    scope: args.scope,
+    existingConfig: resolveConfigWriteFallback(args.scope, targetConfig, globalConfig),
+    defaultTimeoutMs: args.defaultTimeoutMs,
+    searchTimeoutMs: args.searchTimeoutMs,
+    updateCheck: args.updateCheck,
+    updateCheckIntervalHours: args.updateCheckIntervalHours,
+  });
+
+  applyManagedRuntimeRepair(context, preparedRepair, options);
+  writeJsonFile(targetConfigPath, nextConfig, context.fsOps);
+
+  const result = {
+    status: "ok",
+    command: "scope.apply",
+    action: "written",
+    scope: args.scope,
+    profileId: args.profileId,
+    configSummary: summarizeScopeConfigState(nextConfig, {
+      includeUpdateCheck: args.scope === "user",
+    }),
+    configPath: targetConfigPath,
+    configTomlPath: context.globalPaths.configTomlPath,
+    hooksPath: context.globalPaths.hooksPath,
+    hooksDir: context.globalPaths.hooksDir,
+    installPath: context.globalPaths.installPath,
+    legacyProjectHooksPath: context.legacyProjectHooksPath,
+    backups,
+  };
+
+  emitMachineSummary(
+    sanitizeScopeResultForOutput(result, context.pathContext),
+    context.pathContext,
+    options.stdout,
+  );
+
+  return result;
+}
+
+async function runScopeClear(args, options = {}) {
+  assertNodeVersion(options.nodeVersion);
+  const context = resolveCommandContext(args, options);
+  const { globalWritable, projectWritable } = resolveWritableFlags(context, options);
+  if (!globalWritable) {
+    throw new Error("Global Codex home is not writable.");
+  }
+
+  if (!context.projectRoot) {
+    throw new Error("Current directory is not inside a Git repository. Run `$mem9:setup` from a project before clearing project scope.");
+  }
+
+  if (!projectWritable) {
+    throw new Error("Current project mem9 config path is not writable.");
+  }
+
+  const invalidJsonFiles = new Set();
+  const targetConfigPath = path.join(context.projectRoot, ".codex", "mem9", "config.json");
+  readJsonFileOrDefault(
+    targetConfigPath,
+    {},
+    context.fsOps,
+    {
+      fallbackOnParseError: true,
+      onParseError(filePath) {
+        invalidJsonFiles.add(filePath);
+      },
+    },
+  );
+  const existed = (context.fsOps.existsSync ?? existsSync)(targetConfigPath);
+  const preparedRepair = prepareManagedRuntimeRepair(
+    context,
+    (filePath) => {
+      invalidJsonFiles.add(filePath);
+    },
+    options,
+  );
+  const backups = backupFiles([...invalidJsonFiles], context.fsOps);
+
+  applyManagedRuntimeRepair(context, preparedRepair, options);
+  rmSync(targetConfigPath, { force: true });
+
+  const result = {
+    status: "ok",
+    command: "scope.clear",
+    action: existed ? "removed" : "already-clear",
+    scope: "project",
+    configPath: targetConfigPath,
+    configTomlPath: context.globalPaths.configTomlPath,
+    hooksPath: context.globalPaths.hooksPath,
+    hooksDir: context.globalPaths.hooksDir,
+    installPath: context.globalPaths.installPath,
+    legacyProjectHooksPath: context.legacyProjectHooksPath,
+    backups,
+  };
+
+  emitMachineSummary(
+    sanitizeScopeResultForOutput(result, context.pathContext),
+    context.pathContext,
+    options.stdout,
+  );
+
+  return result;
+}
+
+export async function runSetup(argv = process.argv.slice(2), options = {}) {
+  const stdout = options.stdout ?? process.stdout;
+  const helpResult = Array.isArray(argv) ? maybeWriteSetupHelp(argv, stdout) : null;
+  if (helpResult) {
+    return helpResult;
+  }
+
   const args = Array.isArray(argv) ? parseArgs(argv) : argv;
 
-  if (args.inspectProfiles) {
-    const summary = inspectProfiles(args, options);
-    const stdout = options.stdout ?? process.stdout;
-    stdout?.write?.(`${JSON.stringify(summary)}\n`);
+  if (args.command === "inspect") {
+    return inspectSetup(args, options);
+  }
+
+  if (args.command === "profile" && args.subcommand === "create") {
+    return runProfileCreate(args, options);
+  }
+
+  if (args.command === "profile" && args.subcommand === "save-key") {
+    return runProfileSaveKey(args, options);
+  }
+
+  if (args.command === "scope" && args.subcommand === "apply") {
+    return runScopeApply(args, options);
+  }
+
+  if (args.command === "scope" && args.subcommand === "clear") {
+    return runScopeClear(args, options);
+  }
+
+  throw new Error("Unsupported mem9 setup command.");
+}
+
+export async function main(argv = process.argv.slice(2), options = {}) {
+  const stdout = options.stdout ?? process.stdout;
+  const helpResult = Array.isArray(argv) ? maybeWriteSetupHelp(argv, stdout) : null;
+  if (helpResult) {
+    return helpResult;
+  }
+
+  const args = Array.isArray(argv) ? parseArgs(argv) : argv;
+
+  if (args.command === "inspect") {
+    const summary = inspectSetup(args, options);
+    emitMachineSummary(summary, undefined, stdout);
     return summary;
   }
 
   return runSetup(args, {
     ...options,
-    stdout: options.stdout ?? process.stdout,
-    stdin: options.stdin ?? process.stdin,
-    stderr: options.stderr ?? process.stderr,
+    stdout,
   });
 }
 

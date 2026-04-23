@@ -2,7 +2,7 @@ import type {
   IngestInput,
   IngestResult,
   MemoryBackend,
-} from "./backend.js";
+} from "./backend.ts";
 import type {
   Memory,
   StoreResult,
@@ -10,8 +10,8 @@ import type {
   CreateMemoryInput,
   UpdateMemoryInput,
   SearchInput,
-} from "../shared/types.js";
-import { DEFAULT_SCOPE_CONFIG } from "../shared/defaults.js";
+} from "../shared/types.ts";
+import { DEFAULT_SCOPE_CONFIG } from "../shared/defaults.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

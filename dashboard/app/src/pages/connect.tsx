@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Loader2, Globe, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,12 +7,15 @@ import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { api } from "@/api/client";
 import { initMixpanelOnLogin, trackMixpanelEvent } from "@/lib/mixpanel";
+import type { ConnectRouteLoaderData } from "@/pages/connect-loader";
 import {
   getActiveSpaceId,
   MEM9_CONNECT_READY_EVENT,
   MEM9_SPACE_HANDOFF_EVENT,
   setSpaceId,
 } from "@/lib/session";
+
+const connectRoute = getRouteApi("/");
 
 function getOpenerOrigin(): string | null {
   if (!document.referrer) {
@@ -29,9 +32,10 @@ function getOpenerOrigin(): string | null {
 export function ConnectPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const loaderData = connectRoute.useLoaderData() as ConnectRouteLoaderData;
   const openerOrigin = getOpenerOrigin();
-  const [input, setInput] = useState("");
-  const [error, setError] = useState("");
+  const [input, setInput] = useState(() => loaderData.initialInput);
+  const [error, setError] = useState(() => loaderData.initialError);
   const [loading, setLoading] = useState(false);
   const [rememberLogin, setRememberLogin] = useState(false);
   const [pendingConnect, setPendingConnect] = useState<{
@@ -40,14 +44,19 @@ export function ConnectPage() {
   } | null>(null);
 
   useEffect(() => {
-    if (window.opener) {
+    if (window.opener || loaderData.hasBootstrapParams) {
       return;
     }
 
     if (getActiveSpaceId()) {
       void navigate({ to: "/space", replace: true });
     }
-  }, [navigate]);
+  }, [loaderData.hasBootstrapParams, navigate]);
+
+  useEffect(() => {
+    setInput(loaderData.initialInput);
+    setError(loaderData.initialError);
+  }, [loaderData.initialError, loaderData.initialInput]);
 
   useEffect(() => {
     if (!window.opener) {
