@@ -9,6 +9,8 @@ import (
 	"time"
 	"unicode"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
@@ -127,22 +129,47 @@ func (s *Server) defaultConfidenceRecallSearch(
 	sessionFilter := filter
 	sessionFilter.Limit = recallCandidateLimit(profile.shape, service.RecallSourceSession)
 
-	pinnedStart := time.Now()
-	pinnedCandidates, err := svc.memory.SearchCandidates(ctx, pinnedFilter, service.RecallSourcePinned, recallCandidateOptions(profile.shape, false))
-	pinnedDuration := time.Since(pinnedStart)
-	if err != nil {
-		return nil, 0, err
-	}
-	insightStart := time.Now()
-	insightCandidates, err := svc.memory.SearchCandidates(ctx, insightFilter, service.RecallSourceInsight, recallCandidateOptions(profile.shape, true))
-	insightDuration := time.Since(insightStart)
-	if err != nil {
-		return nil, 0, err
-	}
-	sessionStart := time.Now()
-	sessionCandidates, err := svc.session.SearchCandidates(ctx, sessionFilter, service.RecallSourceSession, recallCandidateOptions(profile.shape, false))
-	sessionDuration := time.Since(sessionStart)
-	if err != nil {
+	var (
+		pinnedCandidates  []service.RecallCandidate
+		insightCandidates []service.RecallCandidate
+		sessionCandidates []service.RecallCandidate
+		pinnedDuration    time.Duration
+		insightDuration   time.Duration
+		sessionDuration   time.Duration
+	)
+
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		branchStart := time.Now()
+		candidates, err := svc.memory.SearchCandidates(groupCtx, pinnedFilter, service.RecallSourcePinned, recallCandidateOptions(profile.shape, false))
+		pinnedDuration = time.Since(branchStart)
+		if err != nil {
+			return err
+		}
+		pinnedCandidates = candidates
+		return nil
+	})
+	group.Go(func() error {
+		branchStart := time.Now()
+		candidates, err := svc.memory.SearchCandidates(groupCtx, insightFilter, service.RecallSourceInsight, recallCandidateOptions(profile.shape, true))
+		insightDuration = time.Since(branchStart)
+		if err != nil {
+			return err
+		}
+		insightCandidates = candidates
+		return nil
+	})
+	group.Go(func() error {
+		branchStart := time.Now()
+		candidates, err := svc.session.SearchCandidates(groupCtx, sessionFilter, service.RecallSourceSession, recallCandidateOptions(profile.shape, false))
+		sessionDuration = time.Since(branchStart)
+		if err != nil {
+			return err
+		}
+		sessionCandidates = candidates
+		return nil
+	})
+	if err := group.Wait(); err != nil {
 		return nil, 0, err
 	}
 

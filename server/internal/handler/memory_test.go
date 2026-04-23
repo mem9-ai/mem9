@@ -1142,6 +1142,92 @@ func TestListMemories_DefaultRecall_EnumerationFiltersLowConfidenceNoise(t *test
 	}
 }
 
+func TestDefaultConfidenceRecallSearch_FansOutPoolSearchesConcurrently(t *testing.T) {
+	release := make(chan struct{})
+	allStarted := make(chan struct{})
+	var (
+		mu          sync.Mutex
+		started     int
+		inFlight    int
+		maxInFlight int
+	)
+
+	enter := func(ctx context.Context) error {
+		mu.Lock()
+		started++
+		inFlight++
+		if inFlight > maxInFlight {
+			maxInFlight = inFlight
+		}
+		if started == 3 {
+			close(allStarted)
+		}
+		mu.Unlock()
+
+		defer func() {
+			mu.Lock()
+			inFlight--
+			mu.Unlock()
+		}()
+
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(ctx context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			if err := enter(ctx); err != nil {
+				return nil, err
+			}
+			return nil, nil
+		},
+	}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(ctx context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			if err := enter(ctx); err != nil {
+				return nil, err
+			}
+			return nil, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+	auth := &domain.AuthInfo{ClusterID: "cluster-a"}
+	svc := srv.resolveServices(auth)
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+
+	go func() {
+		select {
+		case <-allStarted:
+			close(release)
+		case <-ctx.Done():
+		}
+	}()
+
+	if _, _, err := srv.defaultConfidenceRecallSearch(ctx, auth, svc, domain.MemoryFilter{
+		Query: "tell me about john",
+		Limit: 10,
+	}); err != nil {
+		t.Fatalf("expected concurrent recall fan-out to complete, got %v", err)
+	}
+
+	mu.Lock()
+	gotStarted := started
+	gotMaxInFlight := maxInFlight
+	mu.Unlock()
+
+	if gotStarted != 3 {
+		t.Fatalf("expected 3 pool searches to start, got %d", gotStarted)
+	}
+	if gotMaxInFlight != 3 {
+		t.Fatalf("expected all 3 pool searches to overlap, max_in_flight=%d", gotMaxInFlight)
+	}
+}
+
 func TestListMemories_DefaultRecall_PrefersSessionForChineseExactQuery(t *testing.T) {
 	now := time.Now()
 	memRepo := &testMemoryRepo{
