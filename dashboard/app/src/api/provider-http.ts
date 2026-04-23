@@ -65,6 +65,14 @@ function normalizeMemory(memory: Partial<Memory>): Memory {
   };
 }
 
+function hasValidMemoryShape(memory: Partial<Memory>): boolean {
+  return (
+    typeof memory.id === "string" &&
+    memory.id.trim().length > 0 &&
+    typeof memory.content === "string"
+  );
+}
+
 function normalizeMemoryListResponse(
   response: Partial<MemoryListResponse>,
 ): MemoryListResponse {
@@ -265,6 +273,9 @@ export const httpProvider: DashboardProvider = {
         body: JSON.stringify(input),
       },
     );
+    if (!hasValidMemoryShape(response)) {
+      throw new Error("Manual add requires pinned-memory create support on the server.");
+    }
     const normalized = normalizeMemory(response);
     await upsertCachedMemories(apiKey, [normalized]);
     return normalized;

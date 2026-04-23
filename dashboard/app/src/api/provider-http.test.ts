@@ -89,6 +89,30 @@ describe("httpProvider", () => {
     );
   });
 
+  it("rejects legacy accepted responses for manual creates and skips cache writes", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "accepted",
+        }),
+        {
+          status: 202,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(
+      httpProvider.createMemory("space-1", {
+        content: "Remember my coffee order",
+        memory_type: "pinned",
+      }),
+    ).rejects.toThrow(
+      "Manual add requires pinned-memory create support on the server.",
+    );
+    expect(upsertCachedMemories).not.toHaveBeenCalled();
+  });
+
   it("uses the same fixed path for multipart imports and keeps auth in headers", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
