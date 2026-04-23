@@ -156,11 +156,12 @@ type Phase1Result struct {
 
 // ExtractedFact holds a single atomic fact and the tags the LLM assigned to it.
 type ExtractedFact struct {
-	Text       string            `json:"text"`
-	Tags       []string          `json:"tags,omitempty"`
-	FactType   string            `json:"fact_type,omitempty"` // "fact" | "query_intent" | "raw_fallback"; omitted = "fact"
-	SourceSeqs []int             `json:"source_seqs,omitempty"`
-	Temporal   *TemporalMetadata `json:"-"`
+	Text        string               `json:"text"`
+	Tags        []string             `json:"tags,omitempty"`
+	FactType    string               `json:"fact_type,omitempty"` // "fact" | "query_intent" | "raw_fallback"; omitted = "fact"
+	SourceSeqs  []int                `json:"source_seqs,omitempty"`
+	SourceTurns []sourceTurnMetadata `json:"source_turns,omitempty"`
+	Temporal    *TemporalMetadata    `json:"-"`
 }
 
 // dropQueryIntentFacts removes facts classified as query_intent by the extraction
@@ -1202,6 +1203,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				continue
 			}
 			sourceSeqs := sourceSeqsForReconcileText(event.Text, facts)
+			sourceTurns := sourceTurnsForReconcileText(event.Text, facts)
 			newID, addErr := s.addInsight(
 				ctx,
 				agentName,
@@ -1209,7 +1211,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				sessionID,
 				normalizedText,
 				ensureRawFallbackTag(event.Tags, facts),
-				SetSourceSeqMetadata(MergeTemporalMetadata(nil, temporal), sourceSeqs),
+				SetSourceProvenanceMetadata(MergeTemporalMetadata(nil, temporal), sourceSeqs, sourceTurns),
 			)
 			if addErr != nil {
 				slog.Warn("failed to add insight", "err", addErr)
@@ -1240,7 +1242,8 @@ Analyze the new facts and determine whether each should be added, updated, or de
 			}
 			effectiveTags = ensureRawFallbackTag(effectiveTags, facts)
 			sourceSeqs := sourceSeqsForReconcileText(event.Text, facts)
-			metadata := SetSourceSeqMetadata(MergeTemporalMetadata(existingMemories[intID].Metadata, temporal), sourceSeqs)
+			sourceTurns := sourceTurnsForReconcileText(event.Text, facts)
+			metadata := SetSourceProvenanceMetadata(MergeTemporalMetadata(existingMemories[intID].Metadata, temporal), sourceSeqs, sourceTurns)
 			if existingMemories[intID].MemoryType == domain.TypePinned {
 				slog.Warn("skipping UPDATE for pinned memory — treating as ADD", "id", realID)
 				newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, normalizedText, effectiveTags, metadata)

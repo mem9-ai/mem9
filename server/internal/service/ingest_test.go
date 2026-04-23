@@ -398,6 +398,9 @@ func TestExtractPhase1AnnotatesSourceSeqs(t *testing.T) {
 	if !reflect.DeepEqual(result.Facts[0].SourceSeqs, []int{41}) {
 		t.Fatalf("expected source seq [41], got %v", result.Facts[0].SourceSeqs)
 	}
+	if len(result.Facts[0].SourceTurns) != 1 || result.Facts[0].SourceTurns[0].Seq != 41 {
+		t.Fatalf("expected source turn seq [41], got %+v", result.Facts[0].SourceTurns)
+	}
 }
 
 func TestReconcilePhase2PersistsSourceSeqMetadata(t *testing.T) {
@@ -416,13 +419,55 @@ func TestReconcilePhase2PersistsSourceSeqMetadata(t *testing.T) {
 		t.Fatalf("expected 1 created memory, got %d", len(memRepo.createCalls))
 	}
 	var metadata struct {
-		SourceSeqs []int `json:"source_seqs"`
+		SourceSeqs  []int                `json:"source_seqs"`
+		SourceTurns []sourceTurnMetadata `json:"source_turns"`
 	}
 	if err := json.Unmarshal(memRepo.createCalls[0].Metadata, &metadata); err != nil {
 		t.Fatalf("metadata unmarshal error = %v", err)
 	}
 	if !reflect.DeepEqual(metadata.SourceSeqs, []int{2, 4}) {
 		t.Fatalf("source_seqs = %v, want [2 4]", metadata.SourceSeqs)
+	}
+	if len(metadata.SourceTurns) != 0 {
+		t.Fatalf("source_turns should be empty when facts did not provide turn payloads, got %+v", metadata.SourceTurns)
+	}
+}
+
+func TestReconcilePhase2AddPersistsSourceTurnMetadata(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{}
+	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	_, err := svc.ReconcilePhase2(context.Background(), "agent-1", "agent-1", "sess-1", []ExtractedFact{
+		{
+			Text:       "Jon lost his job, which motivated him to start a dance studio",
+			Tags:       []string{"work"},
+			SourceSeqs: []int{4, 2, 4},
+			SourceTurns: []sourceTurnMetadata{
+				{Seq: 4, Content: "[date:1 January 2023] [speaker:Jon] I lost my job and decided to start a dance studio."},
+				{Seq: 2, Content: "[date:1 January 2023] [speaker:Gina] You should open your own studio."},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ReconcilePhase2() error = %v", err)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 created memory, got %d", len(memRepo.createCalls))
+	}
+	var metadata struct {
+		SourceSeqs  []int                `json:"source_seqs"`
+		SourceTurns []sourceTurnMetadata `json:"source_turns"`
+	}
+	if err := json.Unmarshal(memRepo.createCalls[0].Metadata, &metadata); err != nil {
+		t.Fatalf("metadata unmarshal error = %v", err)
+	}
+	if !reflect.DeepEqual(metadata.SourceSeqs, []int{2, 4}) {
+		t.Fatalf("source_seqs = %v, want [2 4]", metadata.SourceSeqs)
+	}
+	if len(metadata.SourceTurns) != 2 || metadata.SourceTurns[0].Seq != 2 || metadata.SourceTurns[1].Seq != 4 {
+		t.Fatalf("source_turns = %+v, want seqs [2 4]", metadata.SourceTurns)
 	}
 }
 
