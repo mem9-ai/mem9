@@ -1,6 +1,6 @@
 # Codex Plugin for mem9
 
-Persistent memory for Codex.
+Persistent memory for [Codex](https://developers.openai.com/codex).
 
 After setup, it does two things automatically:
 
@@ -31,7 +31,7 @@ The plugin exposes:
 codex plugin marketplace add mem9-ai/mem9
 ```
 
-2. Install `mem9` from the `mem9-ai` marketplace inside Codex.
+2. In Codex, run `/plugins`, search for `mem9`, open the `mem9-ai` marketplace entry, and choose `Install plugin`.
 3. Run:
 
    ```text
@@ -146,7 +146,7 @@ For local testing:
 
 1. Clone this repository.
 2. Open Codex with the repository root as the working directory. Codex discovers the repo-local marketplace from `<repo>/.agents/plugins/marketplace.json`.
-3. Install `mem9` from the repo-local marketplace Codex discovers for this checkout.
+3. In Codex, run `/plugins`, search for `mem9`, open the repo-local marketplace entry for this checkout, and choose `Install plugin`.
 4. Run `$mem9:setup`.
 5. Restart Codex after plugin or marketplace changes.
 6. Reinstall `mem9` from the repo-local marketplace when Codex still shows the older package after restart.

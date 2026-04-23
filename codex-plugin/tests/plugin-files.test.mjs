@@ -105,7 +105,7 @@ test("README explains global hooks and project overrides", () => {
   const readme = readFileSync("./README.md", "utf8");
 
   assert.match(readme, /^# Codex Plugin for mem9/m);
-  assert.match(readme, /persistent memory/i);
+  assert.match(readme, /Persistent memory for \[Codex\]\(https:\/\/developers\.openai\.com\/codex\)\./);
   assert.match(readme, /## Install and First-Time Setup/);
   assert.match(readme, /## Daily Commands/);
   assert.match(readme, /\$mem9:setup/);
@@ -114,7 +114,7 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /\$mem9:store/);
   assert.doesNotMatch(readme, /\$mem9:project-config/);
   assert.match(readme, /codex plugin marketplace add mem9-ai\/mem9/);
-  assert.match(readme, /install `mem9` from the `mem9-ai` marketplace inside Codex/i);
+  assert.match(readme, /run `\/plugins`, search for `mem9`, open the `mem9-ai` marketplace entry, and choose `Install plugin`/i);
   assert.match(readme, /## Upgrade/);
   assert.match(readme, /codex plugin marketplace upgrade mem9-ai/);
   assert.match(readme, /This updates the installed mem9 plugin for normal releases\./);
@@ -128,6 +128,7 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /keeps `\$MEM9_HOME\/\.credentials\.json`/);
   assert.match(readme, /delete `\$MEM9_HOME\/\.credentials\.json` after the uninstall steps finish/i);
   assert.match(readme, /## Local Development \/ Testing/);
+  assert.match(readme, /open the repo-local marketplace entry for this checkout, and choose `Install plugin`/i);
   assert.match(readme, /## Debugging/);
   assert.match(readme, /## Reference: Files, Config, Environment/);
   assert.match(readme, /### File Layout/);
