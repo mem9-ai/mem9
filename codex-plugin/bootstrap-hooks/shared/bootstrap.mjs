@@ -290,7 +290,7 @@ function resolveInstallMetadataForShim(input = {}) {
 function buildPluginMissingSessionStartOutput() {
   return hookAdditionalContext(
     "SessionStart",
-    "mem9 hooks remain installed, but the mem9 hook runtime needs repair. If `mem9` is missing from `/plugins`, reinstall the plugin first. Then run `$mem9:cleanup`, followed by `$mem9:setup`.",
+    "mem9 hooks remain installed, but the mem9 hook runtime needs repair. If the plugin is missing from `/plugins`, reinstall it first. Then run `$mem9:cleanup`, followed by `$mem9:setup`.",
   );
 }
 

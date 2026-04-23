@@ -178,6 +178,7 @@ test("runtime helper explains plugin reinstall recovery for manual recall", () =
   assert.match(message, /\/plugins/);
   assert.match(message, /\$mem9:cleanup/);
   assert.match(message, /\$mem9:setup/);
+  assert.doesNotMatch(message, /`mem9` is missing from `\/plugins`/);
   assert.ok(message.indexOf("/plugins") < message.indexOf("$mem9:cleanup"));
   assert.ok(message.indexOf("$mem9:cleanup") < message.indexOf("$mem9:setup"));
 });
