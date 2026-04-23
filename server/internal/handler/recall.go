@@ -867,12 +867,21 @@ func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float
 			bonus += 0.14
 			if !questionLike && strings.TrimSpace(spokenBody) != "" {
 				bonus += 0.04
+				if shape == recallQueryShapeExact {
+					bonus += 0.06
+				}
 			}
 		case speaker != "":
-			bonus -= 0.06
+			penalty := 0.06
 			if questionLike {
-				bonus -= 0.04
+				penalty += 0.04
+				if shape == recallQueryShapeExact {
+					penalty += 0.10
+				}
+			} else if shape == recallQueryShapeExact {
+				penalty += 0.02
 			}
+			bonus -= penalty
 		case shape == recallQueryShapeExact || shape == recallQueryShapeTime || shape == recallQueryShapeGeneral:
 			bonus -= 0.04
 		}

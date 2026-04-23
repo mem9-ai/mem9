@@ -914,6 +914,41 @@ func TestListMemories_DefaultRecall_PrefersRelationshipStatusSelfStatement(t *te
 	}
 }
 
+func TestListMemories_DefaultRecall_DemotesNonSubjectPromptForSymbolQuestion(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `[date:10:31 am on 13 October, 2023] [speaker:Melanie] That's awesome, Caroline! You drew it? What does it mean to you?`, MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+				{ID: "m2", Content: `[date:3:31 pm on 23 August, 2023] [speaker:Caroline] Thanks, Melanie. Art gives me a sense of freedom, but so does having supportive people around, promoting LGBTQ rights and being true to myself.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-1 * time.Minute), State: domain.StateActive},
+				{ID: "m3", Content: `Caroline views abstract art as a form of self-expression.`, MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-2 * time.Minute), State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What does Caroline's drawing symbolize for her?")+"&limit=3", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) == 0 {
+		t.Fatal("expected at least one memory")
+	}
+	if resp.Memories[0].ID != "m2" {
+		t.Fatalf("expected subject answer turn first, got %q", resp.Memories[0].ID)
+	}
+}
+
 func TestListMemories_DefaultRecall_ExpandsAdjacentSessionAnswerTurn(t *testing.T) {
 	now := time.Now()
 	memRepo := &testMemoryRepo{
