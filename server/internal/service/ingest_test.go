@@ -398,6 +398,9 @@ func TestExtractPhase1AnnotatesSourceSeqs(t *testing.T) {
 	if !reflect.DeepEqual(result.Facts[0].SourceSeqs, []int{41}) {
 		t.Fatalf("expected source seq [41], got %v", result.Facts[0].SourceSeqs)
 	}
+	if len(result.Facts[0].SourceTurns) != 1 || result.Facts[0].SourceTurns[0].Seq != 41 {
+		t.Fatalf("expected source turn seq [41], got %+v", result.Facts[0].SourceTurns)
+	}
 }
 
 func TestReconcilePhase2PersistsSourceSeqMetadata(t *testing.T) {
@@ -416,13 +419,17 @@ func TestReconcilePhase2PersistsSourceSeqMetadata(t *testing.T) {
 		t.Fatalf("expected 1 created memory, got %d", len(memRepo.createCalls))
 	}
 	var metadata struct {
-		SourceSeqs []int `json:"source_seqs"`
+		SourceSeqs  []int                `json:"source_seqs"`
+		SourceTurns []sourceTurnMetadata `json:"source_turns"`
 	}
 	if err := json.Unmarshal(memRepo.createCalls[0].Metadata, &metadata); err != nil {
 		t.Fatalf("metadata unmarshal error = %v", err)
 	}
 	if !reflect.DeepEqual(metadata.SourceSeqs, []int{2, 4}) {
 		t.Fatalf("source_seqs = %v, want [2 4]", metadata.SourceSeqs)
+	}
+	if len(metadata.SourceTurns) != 0 {
+		t.Fatalf("source_turns should be empty when facts did not provide turn payloads, got %+v", metadata.SourceTurns)
 	}
 }
 

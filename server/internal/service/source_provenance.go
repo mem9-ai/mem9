@@ -9,8 +9,9 @@ import (
 )
 
 const (
-	sourceSeqsMetadataKey = "source_seqs"
-	maxSourceSeqsPerFact  = 6
+	sourceSeqsMetadataKey  = "source_seqs"
+	sourceTurnsMetadataKey = "source_turns"
+	maxSourceSeqsPerFact   = 6
 )
 
 var sourceProvenanceTokenRe = regexp.MustCompile(`[A-Za-z]+(?:'[A-Za-z]+)?|\d+|[\p{Han}]{2,}`)
@@ -26,6 +27,11 @@ var sourceProvenanceStopwords = map[string]struct{}{
 	"date": {}, "speaker": {}, "user": {}, "assistant": {},
 }
 
+type sourceTurnMetadata struct {
+	Seq     int    `json:"seq"`
+	Content string `json:"content"`
+}
+
 func annotateFactsWithSourceSeqs(input preparedExtractionInput, facts []ExtractedFact) []ExtractedFact {
 	if len(facts) == 0 {
 		return facts
@@ -35,19 +41,66 @@ func annotateFactsWithSourceSeqs(input preparedExtractionInput, facts []Extracte
 	for i := range out {
 		if len(out[i].SourceSeqs) > 0 {
 			out[i].SourceSeqs = normalizeSourceSeqs(out[i].SourceSeqs)
-			continue
-		}
-		if strings.EqualFold(out[i].FactType, factTypeRawFallback) {
+		} else if strings.EqualFold(out[i].FactType, factTypeRawFallback) {
 			out[i].SourceSeqs = messageSourceSeqs(input.messages)
-			continue
+		} else {
+			out[i].SourceSeqs = inferSourceSeqs(out[i].Text, input.messages)
 		}
-		out[i].SourceSeqs = inferSourceSeqs(out[i].Text, input.messages)
+		out[i].SourceTurns = sourceTurnsFromMessages(input.messages, out[i].SourceSeqs)
 	}
 	return out
 }
 
 func metadataForExtractedFact(fact ExtractedFact) json.RawMessage {
-	return SetSourceSeqMetadata(MergeTemporalMetadata(nil, fact.Temporal), fact.SourceSeqs)
+	return SetSourceProvenanceMetadata(MergeTemporalMetadata(nil, fact.Temporal), fact.SourceSeqs, fact.SourceTurns)
+}
+
+func SetSourceProvenanceMetadata(existing json.RawMessage, seqs []int, turns []sourceTurnMetadata) json.RawMessage {
+	var payload map[string]json.RawMessage
+	if len(existing) > 0 {
+		if err := json.Unmarshal(existing, &payload); err != nil {
+			payload = nil
+		}
+	}
+	if payload == nil {
+		payload = map[string]json.RawMessage{}
+	}
+
+	seqs = normalizeSourceSeqs(seqs)
+	turns = normalizeSourceTurns(seqs, turns)
+	if len(seqs) == 0 {
+		delete(payload, sourceSeqsMetadataKey)
+		delete(payload, sourceTurnsMetadataKey)
+		if len(payload) == 0 {
+			return nil
+		}
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			return existing
+		}
+		return raw
+	}
+
+	rawSeqs, err := json.Marshal(seqs)
+	if err != nil {
+		return existing
+	}
+	payload[sourceSeqsMetadataKey] = rawSeqs
+	if len(turns) == 0 {
+		delete(payload, sourceTurnsMetadataKey)
+	} else {
+		rawTurns, err := json.Marshal(turns)
+		if err != nil {
+			return existing
+		}
+		payload[sourceTurnsMetadataKey] = rawTurns
+	}
+
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return existing
+	}
+	return raw
 }
 
 func MergeSourceSeqMetadata(existing json.RawMessage, seqs []int) json.RawMessage {
@@ -180,6 +233,60 @@ func sourceSeqsForReconcileText(text string, facts []ExtractedFact) []int {
 	return normalizeSourceSeqs(seqs)
 }
 
+func sourceTurnsForReconcileText(text string, facts []ExtractedFact) []sourceTurnMetadata {
+	if len(facts) == 0 {
+		return nil
+	}
+	if len(facts) == 1 {
+		return normalizeSourceTurns(facts[0].SourceSeqs, facts[0].SourceTurns)
+	}
+
+	query := sourceTokenSet(text)
+	if len(query) == 0 {
+		return nil
+	}
+
+	type candidate struct {
+		index int
+		hits  int
+	}
+	candidates := make([]candidate, 0, len(facts))
+	maxHits := 0
+	for i, fact := range facts {
+		hits := countTokenOverlap(query, sourceTokenSet(projectReconcileFactText(fact)))
+		if hits == 0 {
+			continue
+		}
+		if hits > maxHits {
+			maxHits = hits
+		}
+		candidates = append(candidates, candidate{index: i, hits: hits})
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].hits != candidates[j].hits {
+			return candidates[i].hits > candidates[j].hits
+		}
+		return candidates[i].index < candidates[j].index
+	})
+
+	minHits := sourceMinHits(len(query))
+	var turns []sourceTurnMetadata
+	for _, candidate := range candidates {
+		if candidate.hits < minHits && candidate.hits < maxHits {
+			continue
+		}
+		if float64(candidate.hits) < math.Ceil(float64(maxHits)*0.6) {
+			continue
+		}
+		turns = append(turns, facts[candidate.index].SourceTurns...)
+	}
+	return normalizeSourceTurns(nil, turns)
+}
+
 func inferSourceSeqs(text string, messages []IngestMessage) []int {
 	query := sourceTokenSet(text)
 	if len(query) == 0 {
@@ -289,6 +396,37 @@ func messageSourceSeqs(messages []IngestMessage) []int {
 	return normalizeSourceSeqs(seqs)
 }
 
+func sourceTurnsFromMessages(messages []IngestMessage, seqs []int) []sourceTurnMetadata {
+	seqs = normalizeSourceSeqs(seqs)
+	if len(seqs) == 0 {
+		return nil
+	}
+	contentsBySeq := make(map[int]string, len(messages))
+	for _, msg := range messages {
+		if msg.Seq == nil || !strings.EqualFold(msg.Role, "user") {
+			continue
+		}
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			continue
+		}
+		if _, exists := contentsBySeq[*msg.Seq]; exists {
+			continue
+		}
+		contentsBySeq[*msg.Seq] = content
+	}
+
+	turns := make([]sourceTurnMetadata, 0, len(seqs))
+	for _, seq := range seqs {
+		content, ok := contentsBySeq[seq]
+		if !ok {
+			continue
+		}
+		turns = append(turns, sourceTurnMetadata{Seq: seq, Content: content})
+	}
+	return normalizeSourceTurns(seqs, turns)
+}
+
 func parseSourceSeqsRaw(raw json.RawMessage) []int {
 	var nums []int
 	if err := json.Unmarshal(raw, &nums); err == nil {
@@ -349,5 +487,48 @@ func normalizeSourceSeqs(seqs []int) []int {
 	if len(out) == 0 {
 		return nil
 	}
+	return out
+}
+
+func normalizeSourceTurns(seqs []int, turns []sourceTurnMetadata) []sourceTurnMetadata {
+	if len(turns) == 0 {
+		return nil
+	}
+	allowed := make(map[int]struct{}, len(seqs))
+	if len(seqs) > 0 {
+		for _, seq := range seqs {
+			allowed[seq] = struct{}{}
+		}
+	}
+	seen := make(map[int]struct{}, len(turns))
+	out := make([]sourceTurnMetadata, 0, len(turns))
+	for _, turn := range turns {
+		if turn.Seq < 0 {
+			continue
+		}
+		if len(allowed) > 0 {
+			if _, ok := allowed[turn.Seq]; !ok {
+				continue
+			}
+		}
+		turn.Content = strings.TrimSpace(turn.Content)
+		if turn.Content == "" {
+			continue
+		}
+		if _, ok := seen[turn.Seq]; ok {
+			continue
+		}
+		seen[turn.Seq] = struct{}{}
+		out = append(out, turn)
+		if len(out) >= maxSourceSeqsPerFact {
+			break
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Seq < out[j].Seq
+	})
 	return out
 }
