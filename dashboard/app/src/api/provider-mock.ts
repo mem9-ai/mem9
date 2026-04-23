@@ -220,7 +220,9 @@ export const mockProvider: DashboardProvider = {
     await delay(400);
     const id = apiKey.trim();
     if (!id || id.length < 8) {
-      throw new Error("Cannot access this space. Please check your ID.");
+      throw new Error(
+        "Cannot access this memory. Check your MEM9_API_KEY and try again.",
+      );
     }
     return { ...mockSpaceInfo, tenant_id: id };
   },
