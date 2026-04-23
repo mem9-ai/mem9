@@ -86,7 +86,7 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
   assert.equal(marketplace.name, "mem9-ai");
   assert.equal(marketplace.plugins[0].name, "mem9");
   assert.equal(marketplace.plugins[0].source.path, "./codex-plugin");
-  assert.equal(marketplace.plugins[0].policy.authentication, "ON_INSTALL");
+  assert.equal(marketplace.plugins[0].policy.authentication, "ON_USE");
   assert.equal(
     hooksTemplate.hooks.SessionStart[0].hooks[0].statusMessage,
     "[mem9] session start",
