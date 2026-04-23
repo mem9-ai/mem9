@@ -13,6 +13,10 @@ export const DEFAULT_UPDATE_CHECK = Object.freeze({
   intervalHours: 24,
 });
 
+export const DEFAULT_INSTALL_IDENTITY = Object.freeze({
+  marketplaceName: "mem9-ai",
+  pluginName: "mem9",
+});
 export const DEFAULT_REMOTE_UPGRADE_COMMAND =
   "codex plugin marketplace upgrade mem9-ai";
 export const REMOTE_UPDATE_MANIFEST_URL =
@@ -53,6 +57,13 @@ export const REMOTE_UPDATE_TIMEOUT_MS = 2_000;
  */
 
 /**
+ * @typedef {{
+ *   marketplaceName: string,
+ *   pluginName: string,
+ * }} InstallIdentity
+ */
+
+/**
  * @typedef {{ ok?: boolean, json: () => Promise<unknown> }} FetchLikeResponse
  */
 
@@ -64,6 +75,7 @@ export const REMOTE_UPDATE_TIMEOUT_MS = 2_000;
  * @typedef {{
  *   fetchImpl?: FetchLike,
  *   url?: string,
+ *   upgradeCommand?: string,
  * }} FetchRemoteManifestInput
  */
 
@@ -72,10 +84,14 @@ export const REMOTE_UPDATE_TIMEOUT_MS = 2_000;
  *   pluginVersion?: string,
  *   runtime?: { updateCheck?: UpdateCheckConfig },
  *   state: UpdateState | unknown,
- *   now?: Date | string | number,
- *   manifest?: unknown,
- *   fetchImpl?: FetchLike,
- *   url?: string,
+  *   installIdentity?: InstallIdentity,
+ *   codexHome?: string,
+ *   exists?: (filePath: string) => boolean,
+ *   readJson?: (filePath: string) => unknown,
+  *   now?: Date | string | number,
+  *   manifest?: unknown,
+  *   fetchImpl?: FetchLike,
+  *   url?: string,
  * }} RemoteNoticeInput
  */
 
@@ -99,11 +115,12 @@ export const REMOTE_UPDATE_TIMEOUT_MS = 2_000;
  * @typedef {{
  *   pluginVersion?: string,
  *   runtime?: { updateCheck?: UpdateCheckConfig },
+ *   installIdentity?: InstallIdentity,
  *   statePath?: string,
  *   codexHome?: string,
  *   stateFile?: unknown,
- *   exists?: (filePath: string) => boolean,
- *   readJson?: (filePath: string) => unknown,
+  *   exists?: (filePath: string) => boolean,
+  *   readJson?: (filePath: string) => unknown,
  *   mkdir?: (dirPath: string) => void,
  *   writeText?: (filePath: string, text: string) => void,
  *   now?: Date | string | number,
@@ -176,6 +193,35 @@ function normalizeTimestamp(value) {
  */
 function normalizeVersionText(value) {
   return normalizeString(value).replace(/^v/i, "");
+}
+
+/**
+ * @param {unknown} value
+ * @returns {InstallIdentity | null}
+ */
+function normalizeInstallIdentity(value) {
+  const current = isRecord(value) ? value : {};
+  const marketplaceName = normalizeString(current.marketplaceName);
+  const pluginName = normalizeString(current.pluginName);
+
+  if (!marketplaceName || !pluginName) {
+    return null;
+  }
+
+  return {
+    marketplaceName,
+    pluginName,
+  };
+}
+
+/**
+ * @param {string} marketplaceName
+ * @returns {string}
+ */
+export function buildMarketplaceUpgradeCommand(marketplaceName) {
+  const normalizedMarketplaceName = normalizeString(marketplaceName)
+    || DEFAULT_INSTALL_IDENTITY.marketplaceName;
+  return `codex plugin marketplace upgrade ${normalizedMarketplaceName}`;
 }
 
 /**
@@ -331,9 +377,10 @@ function compareParsedVersions(left, right) {
 
 /**
  * @param {unknown} value
+ * @param {string} fallbackUpgradeCommand
  * @returns {RemoteManifest | null}
  */
-function normalizeRemoteManifest(value) {
+function normalizeRemoteManifest(value, fallbackUpgradeCommand) {
   const current = isRecord(value) ? value : {};
   const latestVersion = normalizeVersionText(
     typeof current.latestVersion === "string" ? current.latestVersion : current.version,
@@ -343,9 +390,11 @@ function normalizeRemoteManifest(value) {
     return null;
   }
 
-  const upgradeCommand =
-    normalizeString(current.upgradeCommand)
-    || DEFAULT_REMOTE_UPGRADE_COMMAND;
+  const configuredUpgradeCommand = normalizeString(current.upgradeCommand);
+  const upgradeCommand = configuredUpgradeCommand
+    && configuredUpgradeCommand !== DEFAULT_REMOTE_UPGRADE_COMMAND
+    ? configuredUpgradeCommand
+    : fallbackUpgradeCommand;
 
   return {
     latestVersion,
@@ -397,9 +446,47 @@ async function fetchRemoteManifest(input = {}) {
       return null;
     }
 
-    return normalizeRemoteManifest(await response.json());
+    return normalizeRemoteManifest(
+      await response.json(),
+      normalizeString(input.upgradeCommand) || DEFAULT_REMOTE_UPGRADE_COMMAND,
+    );
   } catch {
     return null;
+  }
+}
+
+/**
+ * @param {{
+ *   installIdentity?: InstallIdentity,
+ *   codexHome?: string,
+ *   exists?: (filePath: string) => boolean,
+ *   readJson?: (filePath: string) => unknown,
+ * }} input
+ * @returns {InstallIdentity}
+ */
+function resolveInstallIdentity(input) {
+  const explicitIdentity = normalizeInstallIdentity(input.installIdentity);
+  if (explicitIdentity) {
+    return explicitIdentity;
+  }
+
+  if (!input.codexHome) {
+    return { ...DEFAULT_INSTALL_IDENTITY };
+  }
+
+  const installPath = path.join(input.codexHome, "mem9", "install.json");
+  const exists = input.exists ?? existsSync;
+  const readJson = input.readJson ?? readJsonFile;
+
+  if (!exists(installPath)) {
+    return { ...DEFAULT_INSTALL_IDENTITY };
+  }
+
+  try {
+    return normalizeInstallIdentity(readJson(installPath))
+      ?? { ...DEFAULT_INSTALL_IDENTITY };
+  } catch {
+    return { ...DEFAULT_INSTALL_IDENTITY };
   }
 }
 
@@ -411,6 +498,10 @@ async function maybeResolveRemoteUpdateNotice(input) {
   const state = normalizeUpdateState(input.state);
   const pluginVersion = normalizeVersionText(input.pluginVersion);
   const updateCheck = normalizeUpdateCheckConfig(input.runtime?.updateCheck);
+  const installIdentity = resolveInstallIdentity(input);
+  const fallbackUpgradeCommand = buildMarketplaceUpgradeCommand(
+    installIdentity.marketplaceName,
+  );
 
   if (!updateCheck.enabled || !pluginVersion || pluginVersion === "local") {
     return {
@@ -439,10 +530,11 @@ async function maybeResolveRemoteUpdateNotice(input) {
     lastCheckedAt: now.toISOString(),
   };
   const manifest = Object.prototype.hasOwnProperty.call(input, "manifest")
-    ? normalizeRemoteManifest(input.manifest)
+    ? normalizeRemoteManifest(input.manifest, fallbackUpgradeCommand)
     : await fetchRemoteManifest({
       fetchImpl: input.fetchImpl,
       url: input.url,
+      upgradeCommand: fallbackUpgradeCommand,
     });
 
   if (!manifest || comparePluginVersions(manifest.latestVersion, pluginVersion) !== 1) {
@@ -605,6 +697,10 @@ export async function resolveUpgradeNotice(input) {
   const remoteInput = {
     pluginVersion,
     runtime: input.runtime,
+    installIdentity: input.installIdentity,
+    codexHome: input.codexHome,
+    exists: input.exists,
+    readJson: input.readJson,
     state: nextState,
     now: input.now,
     fetchImpl: input.fetchImpl,

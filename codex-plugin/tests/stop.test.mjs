@@ -313,6 +313,45 @@ test("transcript parser supports Codex response_item rollout payloads as fallbac
   ]);
 });
 
+test("transcript parser keeps assistant response_item messages when event messages only cover the user turn", () => {
+  const transcript = [
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: "# AGENTS.md instructions for ~/repo\n<INSTRUCTIONS>\n...\n</INSTRUCTIONS>",
+          },
+        ],
+      },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: {
+        type: "user_message",
+        message: "real user prompt",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "assistant reply from response item" }],
+      },
+    }),
+  ].join("\n");
+
+  const messages = parseTranscriptText(transcript);
+  assert.deepEqual(messages, [
+    { role: "user", content: "real user prompt" },
+    { role: "assistant", content: "assistant reply from response item" },
+  ]);
+});
+
 test("selectStopWindow keeps the newest budget-fitting slice", () => {
   /** @type {import("../hooks/shared/transcript.mjs").IngestMessage[]} */
   const messages = [

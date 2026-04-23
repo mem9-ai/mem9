@@ -123,10 +123,14 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /3\.\s+After step 2 succeeds, exit Codex and run:/);
   assert.match(readme, /codex plugin marketplace remove mem9-ai/);
   assert.match(readme, /keeps mem9-managed hooks and plugin state in sync/i);
+  assert.match(readme, /keeps `\$MEM9_HOME\/\.credentials\.json`/);
+  assert.match(readme, /delete `\$MEM9_HOME\/\.credentials\.json` after the uninstall steps finish/i);
   assert.match(readme, /<project>\/\.codex\/mem9\/config\.json/);
   assert.match(readme, /\$MEM9_HOME\/\.credentials\.json/);
   assert.match(readme, /\$CODEX_HOME\/mem9\/install\.json/);
   assert.match(readme, /MEM9_DEBUG=1/);
   assert.match(readme, /\$CODEX_HOME\/mem9\/logs\/codex-hooks\.jsonl/);
   assert.match(readme, /You do not need to enable hooks manually first/);
+  assert.doesNotMatch(readme, /--use-existing/);
+  assert.match(readme, /rerun `\$mem9:setup` with `use-existing`/);
 });

@@ -1,6 +1,12 @@
 // @ts-check
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -26,6 +32,43 @@ function isRecord(value) {
  */
 function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * @param {string} text
+ * @param {string} from
+ * @param {string} to
+ * @returns {string}
+ */
+function replacePathToken(text, from, to) {
+  if (!from) {
+    return text;
+  }
+
+  return text.split(from).join(to);
+}
+
+/**
+ * @param {string} value
+ * @param {{
+ *   codexHome?: string,
+ *   homeDir?: string,
+ * }} [context]
+ * @returns {string}
+ */
+function sanitizeDebugText(value, context = {}) {
+  let next = String(value);
+  const homeDir = normalizeString(context.homeDir) || os.homedir();
+  const replacements = [
+    [normalizeString(context.codexHome), "$CODEX_HOME"],
+    [homeDir, "~"],
+  ];
+
+  for (const [from, to] of replacements) {
+    next = replacePathToken(next, from, to);
+  }
+
+  return next;
 }
 
 /**
@@ -58,6 +101,103 @@ function resolveCodexHome(inputCodexHome, env = process.env, homeDir = os.homedi
   }
 
   return path.resolve(path.join(homeDir, ".codex"));
+}
+
+/**
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {boolean}
+ */
+function debugEnabled(env = process.env) {
+  return normalizeString(env?.MEM9_DEBUG) === "1";
+}
+
+/**
+ * @param {{
+ *   codexHome: string,
+ *   env?: Record<string, string | undefined>,
+ *   homeDir?: string,
+ * }} input
+ * @returns {string}
+ */
+function resolveDebugLogFile(input) {
+  const override = normalizeString(input.env?.MEM9_DEBUG_LOG_FILE);
+  if (override) {
+    return path.resolve(override);
+  }
+
+  return path.join(input.codexHome, "mem9", "logs", "codex-hooks.jsonl");
+}
+
+/**
+ * @param {string} scriptName
+ * @returns {string}
+ */
+function scriptHookName(scriptName) {
+  if (scriptName === "session-start.mjs") {
+    return "SessionStart";
+  }
+  if (scriptName === "user-prompt-submit.mjs") {
+    return "UserPromptSubmit";
+  }
+  if (scriptName === "stop.mjs") {
+    return "Stop";
+  }
+
+  return scriptName;
+}
+
+/**
+ * @param {{
+ *   scriptName: string,
+ *   error: unknown,
+ *   codexHome: string,
+ *   hookPath?: string,
+ *   pluginVersion?: string,
+ *   env?: Record<string, string | undefined>,
+ *   homeDir?: string,
+ * }} input
+ * @returns {boolean}
+ */
+function appendShimDebugError(input) {
+  if (!debugEnabled(input.env)) {
+    return false;
+  }
+
+  const logFile = resolveDebugLogFile({
+    codexHome: input.codexHome,
+    env: input.env,
+    homeDir: input.homeDir,
+  });
+  const entry = {
+    ts: new Date().toISOString(),
+    hook: scriptHookName(input.scriptName),
+    stage: "hook_failed",
+    source: "bootstrap-shim",
+    ...(input.pluginVersion ? { pluginVersion: input.pluginVersion } : {}),
+    ...(input.hookPath
+      ? {
+        hookPath: sanitizeDebugText(input.hookPath, {
+          codexHome: input.codexHome,
+          homeDir: input.homeDir,
+        }),
+      }
+      : {}),
+    error: sanitizeDebugText(
+      input.error instanceof Error ? input.error.message : String(input.error),
+      {
+        codexHome: input.codexHome,
+        homeDir: input.homeDir,
+      },
+    ),
+  };
+
+  try {
+    mkdirSync(path.dirname(logFile), { recursive: true });
+    appendFileSync(logFile, `${JSON.stringify(entry)}\n`, "utf8");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -264,17 +404,30 @@ export async function runHookShim(scriptName, input = {}) {
     return handleMissingPluginHook(scriptName);
   }
 
-  process.env.MEM9_CODEX_PLUGIN_VERSION = pluginVersion;
+  try {
+    process.env.MEM9_CODEX_PLUGIN_VERSION = pluginVersion;
 
-  const module = await import(pathToFileURL(hookPath).href);
-  if (typeof module.main !== "function") {
-    throw new Error(`mem9 hook shim expected \`${scriptName}\` to export \`main()\`.`);
+    const module = await import(pathToFileURL(hookPath).href);
+    if (typeof module.main !== "function") {
+      throw new Error(`mem9 hook shim expected \`${scriptName}\` to export \`main()\`.`);
+    }
+
+    const output = await module.main();
+    if (typeof output === "string" && output) {
+      process.stdout.write(output);
+    }
+
+    return output;
+  } catch (error) {
+    appendShimDebugError({
+      scriptName,
+      error,
+      codexHome: install.codexHome,
+      hookPath,
+      pluginVersion,
+      env: input.env,
+      homeDir: input.homeDir,
+    });
+    throw error;
   }
-
-  const output = await module.main();
-  if (typeof output === "string" && output) {
-    process.stdout.write(output);
-  }
-
-  return output;
 }

@@ -122,6 +122,8 @@ Follow this order:
    ```
 
 This order keeps mem9-managed hooks and plugin state in sync while you remove the integration.
+This uninstall flow keeps `$MEM9_HOME/.credentials.json`.
+If you want a full removal, delete `$MEM9_HOME/.credentials.json` after the uninstall steps finish.
 
 ## Commands
 
@@ -330,6 +332,6 @@ You can override the file path with `MEM9_DEBUG_LOG_FILE`.
 - If a repository needs a different profile, timeout, or a cleared local override, rerun `$mem9:setup` in that repository and apply or clear project scope.
 - If you want to remove the managed Codex files before reinstalling or resetting mem9, run `$mem9:cleanup`.
 - If the selected profile is missing, run `$mem9:setup` to create or repair global profiles.
-- If the selected profile is missing an API key, run `$mem9:setup` and choose `create-new`, or add the profile manually in `$MEM9_HOME/.credentials.json` and rerun setup with `--use-existing`.
+- If the selected profile is missing an API key, run `$mem9:setup` and choose `create-new`, or add the profile manually in `$MEM9_HOME/.credentials.json` and rerun `$mem9:setup` with `use-existing`.
 - If setup repairs malformed JSON files, it keeps sibling `.bak` copies before rewriting them.
 - If you installed an older prerelease that still points hooks at `$CODEX_HOME/mem9/runtime/`, run `$mem9:setup` once after upgrading.

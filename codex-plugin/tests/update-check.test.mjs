@@ -166,3 +166,63 @@ test("resolveUpgradeNotice keeps a newer remote release pending when a local upg
   assert.match(followUp.message, /then restart Codex/);
   assert.equal(followUp.state.lastNotifiedVersion, "0.3.0");
 });
+
+test("resolveUpgradeNotice uses the installed marketplace identity for remote upgrade guidance", async () => {
+  const result = await resolveUpgradeNotice({
+    pluginVersion: "0.2.0",
+    installIdentity: {
+      marketplaceName: "acme-labs",
+      pluginName: "mem9-pro",
+    },
+    runtime: {
+      updateCheck: DEFAULT_UPDATE_CHECK,
+    },
+    stateFile: {
+      schemaVersion: 1,
+      lastSeenVersion: "0.2.0",
+    },
+    manifest: {
+      latestVersion: "0.3.0",
+      upgradeCommand: "codex plugin marketplace upgrade mem9-ai",
+    },
+    now: "2026-04-23T01:00:00.000Z",
+  });
+
+  assert.match(result.message, /codex plugin marketplace upgrade acme-labs/);
+  assert.doesNotMatch(result.message, /codex plugin marketplace upgrade mem9-ai/);
+});
+
+test("resolveUpgradeNotice reads install metadata from codexHome for remote upgrade guidance", async () => {
+  const codexHome = "/scope/codex-home";
+  const installPath = `${codexHome}/mem9/install.json`;
+
+  const result = await resolveUpgradeNotice({
+    pluginVersion: "0.2.0",
+    codexHome,
+    runtime: {
+      updateCheck: DEFAULT_UPDATE_CHECK,
+    },
+    stateFile: {
+      schemaVersion: 1,
+      lastSeenVersion: "0.2.0",
+    },
+    exists(filePath) {
+      return filePath === installPath;
+    },
+    readJson(filePath) {
+      assert.equal(filePath, installPath);
+      return {
+        marketplaceName: "acme-enterprise",
+        pluginName: "mem9-pro",
+      };
+    },
+    manifest: {
+      latestVersion: "0.3.0",
+      upgradeCommand: "codex plugin marketplace upgrade mem9-ai",
+    },
+    now: "2026-04-23T01:00:00.000Z",
+  });
+
+  assert.match(result.message, /codex plugin marketplace upgrade acme-enterprise/);
+  assert.doesNotMatch(result.message, /codex plugin marketplace upgrade mem9-ai/);
+});

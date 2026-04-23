@@ -547,6 +547,66 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
   }
 });
 
+test("inspect uses install metadata identity for setup script repair guidance", () => {
+  const tempRoot = createTempRoot("setup");
+
+  try {
+    const projectRoot = path.join(tempRoot, "project");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
+    mkdirSync(path.join(codexHome, "mem9", "hooks", "shared"), { recursive: true });
+    mkdirSync(
+      path.join(codexHome, "plugins", "cache", "acme-labs", "mem9-pro", "local"),
+      { recursive: true },
+    );
+    mkdirSync(mem9Home, { recursive: true });
+
+    writeFileSync(
+      path.join(codexHome, "config.toml"),
+      "[features]\ncodex_hooks = true\n",
+    );
+    writeJson(path.join(codexHome, "mem9", "install.json"), {
+      schemaVersion: 1,
+      marketplaceName: "acme-labs",
+      pluginName: "mem9-pro",
+      shimVersion: 1,
+    });
+    writeJson(path.join(codexHome, "mem9", "config.json"), {
+      schemaVersion: 1,
+      profileId: "default",
+    });
+    writeJson(path.join(mem9Home, ".credentials.json"), {
+      schemaVersion: 1,
+      profiles: {
+        default: {
+          label: "Default",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-default",
+        },
+      },
+    });
+
+    const summary = inspectSetup(["inspect"], {
+      cwd: projectRoot,
+      codexHome,
+      mem9Home,
+      hookShimSourceDir: "./bootstrap-hooks",
+    });
+
+    assert.equal(
+      summary.paths.setupScriptPath,
+      "$CODEX_HOME/plugins/cache/acme-labs/mem9-pro/local/skills/setup/scripts/setup.mjs",
+    );
+    assert.match(
+      summary.profiles.manualSaveKeyTemplate,
+      /\$\{CODEX_HOME\}\/plugins\/cache\/acme-labs\/mem9-pro\/local\/skills\/setup\/scripts\/setup\.mjs/,
+    );
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("inspect keeps project config paths readable from a nested repo cwd", () => {
   const tempRoot = createTempRoot();
 

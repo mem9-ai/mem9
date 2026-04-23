@@ -52,6 +52,27 @@ function normalizeVisibleMessage(role, content) {
 }
 
 /**
+ * @param {IngestMessage[]} messages
+ * @param {IngestMessage | null} message
+ */
+function appendIfDistinct(messages, message) {
+  if (!message) {
+    return;
+  }
+
+  const previous = messages.at(-1);
+  if (
+    previous
+    && previous.role === message.role
+    && previous.content === message.content
+  ) {
+    return;
+  }
+
+  messages.push(message);
+}
+
+/**
  * @param {unknown} lineValue
  * @returns {IngestMessage | null}
  */
@@ -142,6 +163,8 @@ export function parseTranscriptText(raw) {
   const eventMessages = [];
   /** @type {IngestMessage[]} */
   const responseMessages = [];
+  /** @type {Array<{eventMessage: IngestMessage | null, responseMessages: IngestMessage[]}>} */
+  const lineRecords = [];
 
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
@@ -153,22 +176,49 @@ export function parseTranscriptText(raw) {
       const value = JSON.parse(trimmed);
       const eventMessage = extractEventMessage(value);
       if (eventMessage) {
-        eventMessages.push(eventMessage);
+        appendIfDistinct(eventMessages, eventMessage);
       }
 
+      /** @type {IngestMessage[]} */
+      const lineResponseMessages = [];
       for (const candidate of extractResponseCandidates(value)) {
         const message = normalizeTranscriptItem(candidate);
         if (message) {
-          responseMessages.push(message);
+          appendIfDistinct(lineResponseMessages, message);
+          appendIfDistinct(responseMessages, message);
         }
       }
+      lineRecords.push({
+        eventMessage,
+        responseMessages: lineResponseMessages,
+      });
     } catch {
       // Ignore malformed lines. Hooks should degrade gracefully.
     }
   }
 
-  if (eventMessages.some((message) => message.role === "user")) {
+  const hasEventUser = eventMessages.some((message) => message.role === "user");
+  const hasEventAssistant = eventMessages.some((message) => message.role === "assistant");
+
+  if (hasEventUser && hasEventAssistant) {
     return eventMessages;
+  }
+
+  if (hasEventUser) {
+    /** @type {IngestMessage[]} */
+    const mergedMessages = [];
+
+    for (const record of lineRecords) {
+      appendIfDistinct(mergedMessages, record.eventMessage);
+
+      for (const message of record.responseMessages) {
+        if (message.role === "assistant") {
+          appendIfDistinct(mergedMessages, message);
+        }
+      }
+    }
+
+    return mergedMessages;
   }
 
   return responseMessages;

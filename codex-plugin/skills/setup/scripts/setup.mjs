@@ -581,6 +581,21 @@ function summarizeProfileDisplaySummary(profile) {
   return `${displayName} (${keyStatus}) · ${baseUrl}`;
 }
 
+function resolveInstallIdentityFromMetadata(installPath, fsOps = {}) {
+  const install = readJsonFileOrDefault(installPath, {}, fsOps);
+  const marketplaceName = normalizeString(install.marketplaceName);
+  const pluginName = normalizeString(install.pluginName);
+
+  if (!marketplaceName || !pluginName) {
+    return null;
+  }
+
+  return {
+    marketplaceName,
+    pluginName,
+  };
+}
+
 function summarizeInstalledSetupScriptPath(context) {
   const currentScriptPath = path.join(SCRIPT_DIR, "setup.mjs");
   const displayPath = sanitizeDisplayPath(currentScriptPath, context.pathContext);
@@ -589,7 +604,10 @@ function summarizeInstalledSetupScriptPath(context) {
     return displayPath;
   }
 
-  const installIdentity = buildInstallMetadata(context.codexHome, PACKAGE_ROOT);
+  const installIdentity = resolveInstallIdentityFromMetadata(
+    context.globalPaths.installPath,
+    context.fsOps,
+  ) ?? buildInstallMetadata(context.codexHome, PACKAGE_ROOT);
   const manifest = readJsonFileOrDefault(
     PLUGIN_MANIFEST_PATH,
     {},
