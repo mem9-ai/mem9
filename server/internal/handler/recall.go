@@ -70,6 +70,9 @@ var (
 	recallEnumerationBothCueRe   = regexp.MustCompile(`\b(?:what|which)\b.*\bboth\b`)
 	recallEnumerationDoneCueRe   = regexp.MustCompile(`\bwhat\s+(?:has|have)\s+.+\s+done\b`)
 	recallSpeakerUtteranceRe     = regexp.MustCompile(`(?i)^what did\s+([a-z][a-z'-]*)\s+say\b`)
+	recallSubjectAuxSpeakerRe    = regexp.MustCompile(`(?i)\b(?:did|does|do|was|were|is|are|has|have|had|will|would|can|could|should)\s+([a-z][a-z'-]*)\b`)
+	recallSubjectAuxMultiRe      = regexp.MustCompile(`(?i)\b(?:did|does|do|was|were|is|are|has|have|had|will|would|can|could|should)\s+(?:both\s+)?[a-z][a-z'-]*(?:\s+and\s+[a-z][a-z'-]*)+\b`)
+	recallSelfFactQuestionRe     = regexp.MustCompile(`(?i)(?:\bidentity\b|\brelationship status\b|\bsingle\b|\bmarried\b|\bengaged\b)`)
 	recallVisualQuestionRe       = regexp.MustCompile(`(?i)\b(?:photo|picture|painting|drawing|poster|sign|bowl|pot|mug|flowers?|tattoo|desk|bookcase|console|landscape|scene)\b`)
 	recallQuotedTextArtifactRe   = regexp.MustCompile(`(?i)\b(?:sign|poster|posters|note|notes|letter|letters|message|messages|text|caption)\b`)
 	recallTextActionRe           = regexp.MustCompile(`(?i)\b(?:say|says|said|read|reads|written|write|writes)\b`)
@@ -87,13 +90,15 @@ const (
 )
 
 type recallQueryProfile struct {
-	shape          recallQueryShape
-	lower          string
-	temporalIntent recallTemporalIntent
-	temporalTokens []string
-	targetSpeaker  string
-	visualQuestion bool
-	quotedQuestion bool
+	shape            recallQueryShape
+	lower            string
+	temporalIntent   recallTemporalIntent
+	temporalTokens   []string
+	targetSpeaker    string
+	subjectSpeaker   string
+	selfFactQuestion bool
+	visualQuestion   bool
+	quotedQuestion   bool
 }
 
 type recallQueryShape int
@@ -834,6 +839,7 @@ func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float
 	spokenBody, hasCaption := recallSpokenBodyForScoring(content)
 	questionLike := strings.ContainsAny(spokenBody, "?？")
 	speaker := extractRecallSpeaker(content)
+	selfFactCues := recallSelfFactCueCount(lower)
 	unitCount := recallAnswerUnitCount(content)
 	entitySignals := recallEntitySignalCount(content)
 	namedCJKAnswer := hasStandaloneCJKNamedAnswer(content)
@@ -844,7 +850,7 @@ func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float
 	}
 	if profile.targetSpeaker != "" {
 		switch {
-		case speaker == profile.targetSpeaker:
+		case sameRecallPerson(speaker, profile.targetSpeaker):
 			bonus += 0.20
 		case speaker != "":
 			bonus -= 0.10
@@ -853,6 +859,35 @@ func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float
 			bonus -= 0.12
 		} else if strings.TrimSpace(spokenBody) != "" {
 			bonus += 0.04
+		}
+	}
+	if profile.subjectSpeaker != "" && profile.targetSpeaker == "" {
+		switch {
+		case sameRecallPerson(speaker, profile.subjectSpeaker):
+			bonus += 0.14
+			if !questionLike && strings.TrimSpace(spokenBody) != "" {
+				bonus += 0.04
+			}
+		case speaker != "":
+			bonus -= 0.06
+			if questionLike {
+				bonus -= 0.04
+			}
+		case shape == recallQueryShapeExact || shape == recallQueryShapeTime || shape == recallQueryShapeGeneral:
+			bonus -= 0.04
+		}
+	}
+	if profile.selfFactQuestion {
+		switch {
+		case selfFactCues >= 2:
+			bonus += 0.18
+		case selfFactCues == 1:
+			bonus += 0.10
+		default:
+			bonus -= 0.04
+		}
+		if profile.subjectSpeaker != "" && sameRecallPerson(speaker, profile.subjectSpeaker) && !questionLike {
+			bonus += 0.08
 		}
 	}
 	if hasCaption {
@@ -991,7 +1026,22 @@ func extractRecallTargetSpeaker(lower string) string {
 	if len(match) < 2 {
 		return ""
 	}
-	return strings.ToLower(strings.TrimSpace(match[1]))
+	return normalizeRecallPersonToken(match[1])
+}
+
+func extractRecallSubjectSpeaker(query string) string {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return ""
+	}
+	if recallSubjectAuxMultiRe.FindString(trimmed) != "" {
+		return ""
+	}
+	match := recallSubjectAuxSpeakerRe.FindStringSubmatch(trimmed)
+	if len(match) < 2 {
+		return ""
+	}
+	return normalizeRecallPersonToken(match[1])
 }
 
 func extractRecallSpeaker(content string) string {
@@ -999,7 +1049,38 @@ func extractRecallSpeaker(content string) string {
 	if len(match) < 2 {
 		return ""
 	}
-	return strings.ToLower(strings.TrimSpace(match[1]))
+	return normalizeRecallPersonToken(match[1])
+}
+
+func normalizeRecallPersonToken(raw string) string {
+	token := strings.ToLower(strings.TrimSpace(raw))
+	token = strings.Trim(token, " \t\n\r.,!?;:\"()[]{}")
+	token = strings.TrimSuffix(token, "'s")
+	token = strings.TrimSuffix(token, "’s")
+	return strings.TrimSpace(token)
+}
+
+func sameRecallPerson(left, right string) bool {
+	left = normalizeRecallPersonToken(left)
+	right = normalizeRecallPersonToken(right)
+	if left == "" || right == "" {
+		return false
+	}
+	if left == right {
+		return true
+	}
+
+	shorter, longer := left, right
+	if len(shorter) > len(longer) {
+		shorter, longer = longer, shorter
+	}
+	if len(shorter) < 3 {
+		return false
+	}
+	if len(longer)-len(shorter) > 4 {
+		return false
+	}
+	return strings.HasPrefix(longer, shorter)
 }
 
 func addRecallCoverageToken(tokens map[string]struct{}, raw string, queryTokens map[string]struct{}) {
@@ -1022,6 +1103,21 @@ func normalizeRecallCoverageToken(raw string) string {
 		return ""
 	}
 	return token
+}
+
+func recallSelfFactCueCount(lower string) int {
+	cues := []string{
+		"transgender", "trans woman", "trans man",
+		"single", "married", "engaged", "boyfriend", "girlfriend", "wife", "husband", "partner",
+		"identify as", "i am", "i'm", "my identity",
+	}
+	count := 0
+	for _, cue := range cues {
+		if strings.Contains(lower, cue) {
+			count++
+		}
+	}
+	return count
 }
 
 func isRecallCoverageStopword(token string) bool {
@@ -1060,11 +1156,13 @@ func recallContentForScoring(memory domain.Memory) (string, string, string) {
 func buildRecallQueryProfile(query string) recallQueryProfile {
 	lower := strings.ToLower(strings.TrimSpace(query))
 	profile := recallQueryProfile{
-		shape:          classifyRecallQueryShape(query),
-		lower:          lower,
-		targetSpeaker:  extractRecallTargetSpeaker(lower),
-		visualQuestion: recallVisualQuestionRe.MatchString(query),
-		quotedQuestion: recallQuotedTextArtifactRe.MatchString(query) && recallTextActionRe.MatchString(query),
+		shape:            classifyRecallQueryShape(query),
+		lower:            lower,
+		targetSpeaker:    extractRecallTargetSpeaker(lower),
+		subjectSpeaker:   extractRecallSubjectSpeaker(query),
+		selfFactQuestion: recallSelfFactQuestionRe.MatchString(lower),
+		visualQuestion:   recallVisualQuestionRe.MatchString(query),
+		quotedQuestion:   recallQuotedTextArtifactRe.MatchString(query) && recallTextActionRe.MatchString(query),
 	}
 	if profile.shape == recallQueryShapeTime {
 		profile.temporalIntent = classifyRecallTemporalIntent(lower)
