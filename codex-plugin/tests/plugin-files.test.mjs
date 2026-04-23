@@ -137,6 +137,8 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /\$CODEX_HOME\/mem9\/install\.json/);
   assert.match(readme, /MEM9_DEBUG=1/);
   assert.match(readme, /\$CODEX_HOME\/mem9\/logs\/codex-hooks\.jsonl/);
+  assert.match(readme, /searches `\/v1alpha2\/mem9s\/memories` with the current API key/);
+  assert.doesNotMatch(readme, /agent_id=codex/);
   assert.match(readme, /node \.\/skills\/setup\/scripts\/setup\.mjs --help/);
   assert.match(readme, /node \.\/skills\/cleanup\/scripts\/cleanup\.mjs --help/);
   assert.match(readme, /You do not need to enable hooks manually first/);

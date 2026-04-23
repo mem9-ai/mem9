@@ -93,7 +93,7 @@ What it does:
 
 - uses the current effective profile
 - respects project override config when present
-- searches `/v1alpha2/mem9s/memories` with `agent_id=codex`
+- searches `/v1alpha2/mem9s/memories` with the current API key
 - uses `searchTimeoutMs`
 
 ### `$mem9:store`

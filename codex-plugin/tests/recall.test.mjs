@@ -11,19 +11,19 @@ import {
 import { buildRuntimeIssueMessage } from "../lib/skill-runtime.mjs";
 import { createTempRoot } from "./test-temp.mjs";
 
-test("buildRecallUrl encodes q, agent_id, and limit", () => {
-  const url = buildRecallUrl("https://api.mem9.ai/", "remember rust tips", "codex", 7);
+test("buildRecallUrl encodes q and limit", () => {
+  const url = buildRecallUrl("https://api.mem9.ai/", "remember rust tips", 7);
   assert.equal(
     url,
-    "https://api.mem9.ai/v1alpha2/mem9s/memories?q=remember+rust+tips&agent_id=codex&limit=7",
+    "https://api.mem9.ai/v1alpha2/mem9s/memories?q=remember+rust+tips&limit=7",
   );
 });
 
 test("buildRecallUrl keeps a configured base path", () => {
-  const url = buildRecallUrl("https://api.mem9.ai/base", "remember rust tips", "codex", 7);
+  const url = buildRecallUrl("https://api.mem9.ai/base", "remember rust tips", 7);
   assert.equal(
     url,
-    "https://api.mem9.ai/base/v1alpha2/mem9s/memories?q=remember+rust+tips&agent_id=codex&limit=7",
+    "https://api.mem9.ai/base/v1alpha2/mem9s/memories?q=remember+rust+tips&limit=7",
   );
 });
 
@@ -103,7 +103,7 @@ test("runRecall calls mem9 with the current runtime and prints a safe summary", 
 
     assert.equal(
       request.url,
-      "https://api.mem9.ai/v1alpha2/mem9s/memories?q=team+preferences&agent_id=codex&limit=10",
+      "https://api.mem9.ai/v1alpha2/mem9s/memories?q=team+preferences&limit=10",
     );
     assert.deepEqual(request.options, {
       method: "GET",

@@ -97,10 +97,9 @@ export function parseArgs(argv = process.argv.slice(2)) {
   return args;
 }
 
-export function buildRecallUrl(baseUrl, query, agentId, limit = DEFAULT_LIMIT) {
+export function buildRecallUrl(baseUrl, query, limit = DEFAULT_LIMIT) {
   const url = buildMem9Url(baseUrl, "v1alpha2/mem9s/memories");
   url.searchParams.set("q", query);
-  url.searchParams.set("agent_id", agentId);
   url.searchParams.set("limit", String(limit));
   return url.toString();
 }
@@ -170,7 +169,6 @@ export async function runRecall(argv = process.argv.slice(2), options = {}) {
     buildRecallUrl(
       state.runtime.baseUrl,
       query,
-      state.runtime.agentId,
       args.limit,
     ),
     {

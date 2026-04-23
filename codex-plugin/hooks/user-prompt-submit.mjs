@@ -31,14 +31,12 @@ let debugContext = {};
 /**
  * @param {string} baseUrl
  * @param {string} prompt
- * @param {string} agentId
  * @param {number} [limit]
  * @returns {string}
  */
-export function buildRecallUrl(baseUrl, prompt, agentId, limit = RECALL_LIMIT) {
+export function buildRecallUrl(baseUrl, prompt, limit = RECALL_LIMIT) {
   const url = buildMem9Url(baseUrl, "v1alpha2/mem9s/memories");
   url.searchParams.set("q", prompt);
-  url.searchParams.set("agent_id", agentId);
   url.searchParams.set("limit", String(limit));
   return url.toString();
 }
@@ -96,7 +94,7 @@ export async function runUserPromptSubmit(input) {
     timeoutMs: input.runtime.searchTimeoutMs,
   });
   const result = await input.search(
-    buildRecallUrl(input.runtime.baseUrl, query, input.runtime.agentId),
+    buildRecallUrl(input.runtime.baseUrl, query),
     { timeoutMs: input.runtime.searchTimeoutMs },
   );
   const memories = extractMemories(result).slice(0, RECALL_LIMIT);

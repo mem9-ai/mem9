@@ -157,20 +157,20 @@ function createRuntimeLayout(tempRoot, issueCode, baseUrl) {
   };
 }
 
-test("buildRecallUrl encodes q, agent id, and limit", () => {
+test("buildRecallUrl encodes q and limit", () => {
   const url = new URL(
-    buildRecallUrl("https://api.mem9.ai/", "hello world", "codex"),
+    buildRecallUrl("https://api.mem9.ai/", "hello world"),
   );
 
   assert.equal(url.origin + url.pathname, "https://api.mem9.ai/v1alpha2/mem9s/memories");
   assert.equal(url.searchParams.get("q"), "hello world");
-  assert.equal(url.searchParams.get("agent_id"), "codex");
+  assert.equal(url.searchParams.get("agent_id"), null);
   assert.equal(url.searchParams.get("limit"), "10");
 });
 
 test("buildRecallUrl keeps a configured base path", () => {
   const url = new URL(
-    buildRecallUrl("https://api.mem9.ai/base", "hello world", "codex"),
+    buildRecallUrl("https://api.mem9.ai/base", "hello world"),
   );
 
   assert.equal(
@@ -178,7 +178,7 @@ test("buildRecallUrl keeps a configured base path", () => {
     "https://api.mem9.ai/base/v1alpha2/mem9s/memories",
   );
   assert.equal(url.searchParams.get("q"), "hello world");
-  assert.equal(url.searchParams.get("agent_id"), "codex");
+  assert.equal(url.searchParams.get("agent_id"), null);
   assert.equal(url.searchParams.get("limit"), "10");
 });
 
@@ -220,7 +220,7 @@ test("user prompt submit recalls memories with the search timeout bucket", async
 
   assert.equal(timeoutMs, 15_000);
   assert.ok(requestedUrl);
-  assert.match(requestedUrl, /agent_id=codex/);
+  assert.doesNotMatch(requestedUrl, /agent_id=/);
   assert.match(requestedUrl, /limit=10/);
 
   const parsed = JSON.parse(output);
