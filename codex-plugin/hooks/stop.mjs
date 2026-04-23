@@ -3,9 +3,9 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { loadRuntimeStateFromDisk } from "./shared/config.mjs";
+import { loadRuntimeStateFromDisk } from "../lib/config.mjs";
 import { appendDebugError, appendDebugLog } from "./shared/debug.mjs";
-import { mem9FetchJson, mem9Headers } from "./shared/http.mjs";
+import { buildMem9Url, mem9FetchJson, mem9Headers } from "../lib/http.mjs";
 import { parseTranscriptText, selectStopWindow } from "./shared/transcript.mjs";
 
 export const STOP_MAX_MESSAGES = 20;
@@ -35,7 +35,7 @@ let debugContext = {};
  * @returns {string}
  */
 export function buildIngestUrl(baseUrl) {
-  return `${baseUrl.replace(/\/+$/, "")}/v1alpha2/mem9s/memories`;
+  return buildMem9Url(baseUrl, "v1alpha2/mem9s/memories").toString();
 }
 
 /**
@@ -136,6 +136,10 @@ export async function main() {
       configSource: state.configSource,
       profileId: state.runtime.profileId,
       projectConfigMatched: state.projectConfigMatched,
+      warnings: state.warnings.join(","),
+      pluginState: state.pluginState,
+      pluginIssueDetail: state.pluginIssueDetail,
+      effectiveLegacyPausedSource: state.effectiveLegacyPausedSource,
       issueCode: state.issueCode,
     },
   });
@@ -148,6 +152,10 @@ export async function main() {
         configSource: state.configSource,
         profileId: state.runtime.profileId,
         projectConfigMatched: state.projectConfigMatched,
+        warnings: state.warnings.join(","),
+        pluginState: state.pluginState,
+        pluginIssueDetail: state.pluginIssueDetail,
+        effectiveLegacyPausedSource: state.effectiveLegacyPausedSource,
         issueCode: state.issueCode,
       },
     });

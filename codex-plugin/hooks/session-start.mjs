@@ -3,7 +3,8 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { loadRuntimeStateFromDisk } from "./shared/config.mjs";
+import { loadRuntimeStateFromDisk } from "../lib/config.mjs";
+import { resolveUpgradeNotice } from "../lib/update-check.mjs";
 import { appendDebugError, appendDebugLog } from "./shared/debug.mjs";
 import { hookAdditionalContext } from "./shared/format.mjs";
 
@@ -15,43 +16,62 @@ let debugContext = {};
  *   configSource: "global" | "project",
  *   projectConfigMatched?: boolean,
  *   profileId?: string,
- *   issueCode: "ready" | "disabled" | "missing_config" | "invalid_config" | "missing_profile" | "invalid_credentials" | "missing_api_key",
+ *   warnings?: ("invalid_global_config_ignored" | "invalid_project_config_ignored")[],
+ *   legacyPausedSources?: ("global" | "project")[],
+ *   effectiveLegacyPausedSource?: "global" | "project" | null,
+ *   issueCode: "ready" | "plugin_disabled" | "plugin_missing" | "legacy_paused" | "missing_config" | "invalid_config" | "missing_profile" | "invalid_credentials" | "missing_api_key",
  * }} SessionStartState
  */
 
 /**
  * @param {SessionStartState} state
  * @param {string} [setupCommand]
- * @param {string} [projectConfigCommand]
  * @returns {string}
  */
 export function buildSessionStartMessage(
   state,
   setupCommand = "$mem9:setup",
-  projectConfigCommand = "$mem9:project-config",
 ) {
   const profileText = state.profileId
     ? `profile \`${state.profileId}\``
     : "the current profile";
 
   if (state.issueCode === "ready") {
-    if (state.configSource === "project") {
-      return `mem9 is ready. This session uses the local override in \`.codex/mem9/config.json\` with ${profileText}. It will recall on user prompt submit and save a recent conversation window on stop.`;
+    const warningMessages = [];
+
+    if (state.warnings?.includes("invalid_project_config_ignored")) {
+      warningMessages.push("The project override could not be read, so this session fell back to the global default.");
     }
 
-    return `mem9 is ready. This session uses the global default config with ${profileText}. It will recall on user prompt submit and save a recent conversation window on stop.`;
-  }
-
-  if (state.issueCode === "disabled") {
-    if (state.configSource === "project") {
-      return `mem9 is disabled for this project. This session will not recall or save. Run \`${projectConfigCommand} --reset\` to inherit the global default again.`;
+    if (state.warnings?.includes("invalid_global_config_ignored")) {
+      warningMessages.push("The global default could not be read, so this session is running from the project override only.");
     }
 
-    return `mem9 is disabled globally. This session will not recall or save. Run \`${setupCommand}\` to select a working default profile and enable mem9 again.`;
+    if (state.configSource === "project") {
+      return `mem9 is ready. This session uses the local override in \`.codex/mem9/config.json\` with ${profileText}. It will recall on user prompt submit and save a recent conversation window on stop.${warningMessages.length > 0 ? ` ${warningMessages.join(" ")}` : ""}`;
+    }
+
+    return `mem9 is ready. This session uses the global default config with ${profileText}. It will recall on user prompt submit and save a recent conversation window on stop.${warningMessages.length > 0 ? ` ${warningMessages.join(" ")}` : ""}`;
   }
 
-  if (state.issueCode === "invalid_config" && state.configSource === "project") {
-    return `mem9 cannot read this project's override file \`.codex/mem9/config.json\`. Run \`${projectConfigCommand}\` to repair it, or \`${projectConfigCommand} --reset\` to return to the global default.`;
+  if (state.issueCode === "plugin_missing") {
+    return `mem9 hooks remain installed, but the mem9 hook runtime needs repair. If the plugin is missing from \`/plugins\`, reinstall it first. Then run \`$mem9:cleanup\`, followed by \`${setupCommand}\`.`;
+  }
+
+  if (state.issueCode === "plugin_disabled") {
+    return "mem9 is disabled in the Codex plugin settings. This session will not recall or save. Re-enable the mem9 plugin to resume immediately.";
+  }
+
+  if (state.issueCode === "legacy_paused") {
+    if (state.effectiveLegacyPausedSource === "project") {
+      return `mem9 is paused for this repository by a legacy \`enabled = false\` override. Run \`${setupCommand}\` in this repository to migrate that paused state.`;
+    }
+
+    return `mem9 is paused globally by a legacy \`enabled = false\` config. Run \`${setupCommand}\` to migrate the global paused state.`;
+  }
+
+  if (state.issueCode === "invalid_config" && state.projectConfigMatched) {
+    return `mem9 cannot read this project's override file \`.codex/mem9/config.json\`. Run \`${setupCommand}\` in this repository to inspect it and either reapply or clear project scope. Run \`${setupCommand}\` again if the global default in \`$CODEX_HOME/mem9/config.json\` also needs repair.`;
   }
 
   if (
@@ -66,7 +86,7 @@ export function buildSessionStartMessage(
     || state.issueCode === "invalid_credentials"
   ) {
     if (state.configSource === "project") {
-      return `mem9 cannot use the selected profile. Run \`${setupCommand}\` to repair the global profile set, or run \`${projectConfigCommand}\` to switch this project to another existing profile.`;
+      return `mem9 cannot use the selected profile. Run \`${setupCommand}\` to repair the global profile set. If this repository should use another saved profile, rerun \`${setupCommand}\` here and apply project scope with that profile.`;
     }
 
     return `mem9 cannot use the selected profile. Run \`${setupCommand}\` and select an existing profile or create a new profile.`;
@@ -76,13 +96,36 @@ export function buildSessionStartMessage(
 }
 
 /**
- * @param {{state?: SessionStartState, setupCommand?: string}} [input]
+ * @param {string} message
+ * @param {string} upgradeNotice
+ * @returns {string}
+ */
+export function appendUpgradeNotice(message, upgradeNotice) {
+  const base = String(message ?? "").trim();
+  const notice = String(upgradeNotice ?? "").trim();
+
+  if (!notice) {
+    return base;
+  }
+
+  if (!base) {
+    return notice;
+  }
+
+  return `${base} ${notice}`;
+}
+
+/**
+ * @param {{state?: SessionStartState, setupCommand?: string, upgradeNotice?: string}} [input]
  * @returns {Promise<string>}
  */
 export async function runSessionStart(input = {}) {
-  const message = buildSessionStartMessage(
-    input.state ?? { configSource: "global", issueCode: "missing_config" },
-    input.setupCommand,
+  const message = appendUpgradeNotice(
+    buildSessionStartMessage(
+      input.state ?? { configSource: "global", issueCode: "missing_config" },
+      input.setupCommand,
+    ),
+    input.upgradeNotice ?? "",
   );
   return hookAdditionalContext("SessionStart", message);
 }
@@ -116,12 +159,50 @@ export async function main() {
       configSource: state.configSource,
       profileId: state.runtime.profileId,
       projectConfigMatched: state.projectConfigMatched,
+      warnings: state.warnings.join(","),
+      pluginState: state.pluginState,
+      pluginIssueDetail: state.pluginIssueDetail,
+      effectiveLegacyPausedSource: state.effectiveLegacyPausedSource,
       issueCode: state.issueCode,
+    },
+  });
+  const shouldResolveUpgradeNotice = state.issueCode === "ready";
+  const upgradeNotice = shouldResolveUpgradeNotice
+    ? await resolveUpgradeNotice({
+      codexHome: state.codexHome,
+      statePath: state.statePath,
+      pluginVersion: state.pluginVersion,
+      runtime: state.runtime,
+    })
+    : { message: "", state: null };
+  appendDebugLog({
+    hook: "SessionStart",
+    stage: "upgrade_notice_resolved",
+    cwd,
+    codexHome: state.codexHome,
+    mem9Home: state.mem9Home,
+    fields: {
+      pluginVersion: state.pluginVersion,
+      hasUpgradeNotice: upgradeNotice.message ? "true" : "false",
+      upgradeCheckSkipped: shouldResolveUpgradeNotice ? "false" : "true",
+      updateCheckEnabled: shouldResolveUpgradeNotice && state.runtime.updateCheck.enabled ? "true" : "false",
+      updateCheckIntervalHours: shouldResolveUpgradeNotice
+        ? String(state.runtime.updateCheck.intervalHours)
+        : "",
     },
   });
 
   return runSessionStart({
-    state,
+    state: {
+      configSource: /** @type {"global" | "project"} */ (state.configSource),
+      projectConfigMatched: state.projectConfigMatched,
+      profileId: state.runtime.profileId,
+      warnings: state.warnings,
+      legacyPausedSources: /** @type {("global" | "project")[]} */ (state.legacyPausedSources),
+      effectiveLegacyPausedSource: state.effectiveLegacyPausedSource,
+      issueCode: state.issueCode,
+    },
+    upgradeNotice: upgradeNotice.message,
   });
 }
 

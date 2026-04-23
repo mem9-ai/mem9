@@ -4,7 +4,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { resolveCodexHome } from "./config.mjs";
+import { resolveCodexHome } from "../../lib/config.mjs";
 
 /**
  * @typedef {Record<string, string | number | boolean | null | undefined>} DebugFields
