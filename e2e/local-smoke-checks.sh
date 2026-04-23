@@ -1,6 +1,7 @@
 #!/bin/bash
-# Local server smoke test for CI. Requires a running mnemo-server and a seeded
-# active tenant, but does not require dev/staging, secrets, LLMs, or embeddings.
+# Shared local smoke assertions for CI/dev. Requires a running mnemo-server and
+# a seeded active tenant, but does not require dev/staging, secrets, LLMs, or
+# embeddings.
 set -euo pipefail
 
 export NO_PROXY="${NO_PROXY:+$NO_PROXY,}127.0.0.1,localhost"
@@ -130,7 +131,7 @@ authed_curl() {
 }
 
 echo "========================================================"
-echo "  Mem9 local server smoke"
+echo "  Mem9 local smoke checks"
 echo "  Base URL : $BASE"
 echo "  Tenant   : $TENANT_ID"
 echo "  Marker   : $MARKER"
