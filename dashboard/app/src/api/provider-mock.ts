@@ -264,7 +264,7 @@ export const mockProvider: DashboardProvider = {
     const mem: Memory = {
       id: `mem-${Date.now()}`,
       content: input.content,
-      memory_type: "pinned",
+      memory_type: input.memory_type,
       source: "dashboard",
       tags: input.tags ?? [],
       metadata: null,

@@ -3,7 +3,6 @@ import type {
   Memory,
   MemoryListParams,
   MemoryListResponse,
-  MemoryBatchCreateResponse,
   MemoryCreateInput,
   MemoryUpdateInput,
   MemoryStats,
@@ -258,17 +257,15 @@ export const httpProvider: DashboardProvider = {
     spaceId: string,
     input: MemoryCreateInput,
   ): Promise<Memory> {
-    const res = await request<MemoryBatchCreateResponse>(
+    const response = await request<Memory>(
       spaceId,
-      "/memories/batch",
+      "/memories",
       {
         method: "POST",
-        body: JSON.stringify({ memories: [input] }),
+        body: JSON.stringify(input),
       },
     );
-    const created = res.memories[0];
-    if (!created) throw new Error("No memory returned from batch create");
-    const normalized = normalizeMemory(created);
+    const normalized = normalizeMemory(response);
     await upsertCachedMemories(spaceId, [normalized]);
     return normalized;
   },

@@ -26,6 +26,7 @@ import (
 type testMemoryRepo struct {
 	mu                   sync.Mutex
 	createCalls          []*domain.Memory
+	bulkCreateCalls      int
 	keywordSearchResults []domain.Memory
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	lastKeywordFilter    domain.MemoryFilter
@@ -73,8 +74,13 @@ func (m *testMemoryRepo) SetState(context.Context, string, domain.MemoryState) e
 func (m *testMemoryRepo) List(context.Context, domain.MemoryFilter) ([]domain.Memory, int, error) {
 	return nil, 0, nil
 }
-func (m *testMemoryRepo) Count(context.Context) (int, error)                 { return 0, nil }
-func (m *testMemoryRepo) BulkCreate(context.Context, []*domain.Memory) error { return nil }
+func (m *testMemoryRepo) Count(context.Context) (int, error) { return 0, nil }
+func (m *testMemoryRepo) BulkCreate(context.Context, []*domain.Memory) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.bulkCreateCalls++
+	return nil
+}
 func (m *testMemoryRepo) VectorSearch(context.Context, []float32, domain.MemoryFilter, int) ([]domain.Memory, error) {
 	return nil, nil
 }
@@ -290,7 +296,8 @@ func makeTenantRequest(t *testing.T, method, path string, body any) *http.Reques
 }
 
 func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
-	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
+	memRepo := &testMemoryRepo{}
+	srv := newTestServer(memRepo, &testSessionRepo{})
 
 	body := map[string]any{
 		"content": "test memory content",
@@ -303,6 +310,89 @@ func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["status"] != "ok" {
+		t.Fatalf("expected status=ok, got %q", resp["status"])
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected legacy create path to write once, got %d", len(memRepo.createCalls))
+	}
+	if memRepo.bulkCreateCalls != 0 {
+		t.Fatalf("expected legacy create path to skip bulk create, got %d", memRepo.bulkCreateCalls)
+	}
+}
+
+func TestCreateMemory_ContentWithPinnedMemoryType_Returns201Memory(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	srv := newTestServer(memRepo, &testSessionRepo{})
+	content := "remember I prefer pour-over coffee"
+
+	body := map[string]any{
+		"content":     content,
+		"memory_type": "pinned",
+		"tags":        []string{"preference", "coffee"},
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp domain.Memory
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.MemoryType != domain.TypePinned {
+		t.Fatalf("expected pinned memory type, got %q", resp.MemoryType)
+	}
+	if resp.Content != content {
+		t.Fatalf("expected content %q, got %q", content, resp.Content)
+	}
+	if memRepo.bulkCreateCalls != 1 {
+		t.Fatalf("expected pinned content path to use bulk create once, got %d", memRepo.bulkCreateCalls)
+	}
+	if len(memRepo.createCalls) != 0 {
+		t.Fatalf("expected pinned content path to skip legacy create, got %d", len(memRepo.createCalls))
+	}
+}
+
+func TestCreateMemory_ContentWithUnsupportedExplicitMemoryType_Returns400(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	srv := newTestServer(memRepo, &testSessionRepo{})
+
+	body := map[string]any{
+		"content":     "remember this",
+		"memory_type": "insight",
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(resp["error"], "memory_type") {
+		t.Fatalf("expected memory_type validation error, got %q", resp["error"])
+	}
+	if memRepo.bulkCreateCalls != 0 {
+		t.Fatalf("expected validation failure to skip bulk create, got %d", memRepo.bulkCreateCalls)
+	}
+	if len(memRepo.createCalls) != 0 {
+		t.Fatalf("expected validation failure to skip legacy create, got %d", len(memRepo.createCalls))
 	}
 }
 

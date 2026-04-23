@@ -29,11 +29,17 @@ export interface MemoryListResponse {
 
 export interface MemoryCreateInput {
   content: string;
+  memory_type: "pinned";
+  tags?: string[];
+}
+
+export interface MemoryBatchCreateInput {
+  content: string;
   tags?: string[];
 }
 
 export interface MemoryBatchCreateRequest {
-  memories: MemoryCreateInput[];
+  memories: MemoryBatchCreateInput[];
 }
 
 export interface MemoryBatchCreateResponse {

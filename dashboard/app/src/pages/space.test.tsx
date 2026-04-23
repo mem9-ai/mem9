@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { router } from "@/router";
+import { features } from "@/config/features";
 import i18n from "@/i18n";
 import type { Memory } from "@/types/memory";
 import type { SpaceAnalysisState } from "@/types/analysis";
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   useSelectedSessionMessages: vi.fn(),
   useMemories: vi.fn(),
   useDeepAnalysisReports: vi.fn(),
+  createMemoryMutateAsync: vi.fn(),
 }));
 
 const FIXED_NOW = new Date("2026-03-21T12:00:00Z");
@@ -417,7 +419,10 @@ vi.mock("@/api/queries", () => ({
       isFetching: false,
     };
   },
-  useCreateMemory: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateMemory: () => ({
+    mutateAsync: mocks.createMemoryMutateAsync,
+    isPending: false,
+  }),
   useDeleteMemory: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateMemory: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useExportMemories: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -530,6 +535,17 @@ describe("SpacePage", () => {
     mocks.useSelectedSessionMessages.mockClear();
     mocks.useMemories.mockClear();
     mocks.useDeepAnalysisReports.mockClear();
+    mocks.createMemoryMutateAsync.mockReset();
+    mocks.createMemoryMutateAsync.mockResolvedValue(
+      createMemory(
+        "mem-new-1",
+        "Remember my coffee order",
+        "2026-03-21T12:00:00Z",
+        "pinned",
+        ["preference", "coffee"],
+      ),
+    );
+    features.enableManualAdd = false;
     await i18n.changeLanguage("en");
     window.history.pushState({}, "", "/your-memory/space");
     await act(async () => {
@@ -600,6 +616,39 @@ describe("SpacePage", () => {
 
     await waitFor(() => {
       expect(mocks.useStats).toHaveBeenCalledWith("space-1", undefined, true);
+    });
+  });
+
+  it("creates pinned manual memory from the toolbar add dialog", async () => {
+    features.enableManualAdd = true;
+
+    renderSpacePage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add memory" }));
+
+    const dialog = screen.getByRole("dialog");
+    const textboxes = within(dialog).getAllByRole("textbox");
+    const contentInput = textboxes[0];
+    const tagsInput = textboxes[1];
+
+    if (!contentInput || !tagsInput) {
+      throw new Error("Expected content and tags inputs in the add dialog");
+    }
+
+    fireEvent.change(contentInput, {
+      target: { value: "Remember my coffee order" },
+    });
+    fireEvent.change(tagsInput, {
+      target: { value: "preference, coffee" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mocks.createMemoryMutateAsync).toHaveBeenCalledWith({
+        content: "Remember my coffee order",
+        memory_type: "pinned",
+        tags: ["preference", "coffee"],
+      });
     });
   });
 
