@@ -144,7 +144,10 @@ test("runHookShim takes the repair path when install metadata is missing", async
 
     assert.equal(parsed.hookSpecificOutput.hookEventName, "SessionStart");
     assert.match(parsed.hookSpecificOutput.additionalContext, /hooks remain installed/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /hook runtime needs repair/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /\/plugins/);
     assert.match(parsed.hookSpecificOutput.additionalContext, /\$mem9:cleanup/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /\$mem9:setup/);
     assert.equal(stdoutText, output);
   } finally {
     process.stdout.write = originalWrite;
@@ -215,7 +218,10 @@ test("runHookShim takes the repair path when the active plugin root is missing",
     const parsed = JSON.parse(output);
 
     assert.equal(parsed.hookSpecificOutput.hookEventName, "SessionStart");
-    assert.match(parsed.hookSpecificOutput.additionalContext, /active mem9 plugin files are unavailable/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /hook runtime needs repair/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /\/plugins/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /\$mem9:cleanup/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /\$mem9:setup/);
     assert.equal(stdoutText, output);
   } finally {
     process.stdout.write = originalWrite;
@@ -248,7 +254,10 @@ test("installed bootstrap shim keeps the repair path self-contained", async () =
 
     assert.equal(parsed.hookSpecificOutput.hookEventName, "SessionStart");
     assert.match(parsed.hookSpecificOutput.additionalContext, /hooks remain installed/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /hook runtime needs repair/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /\/plugins/);
     assert.match(parsed.hookSpecificOutput.additionalContext, /\$mem9:cleanup/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /\$mem9:setup/);
     assert.equal(stdoutText, output);
   } finally {
     process.stdout.write = originalWrite;

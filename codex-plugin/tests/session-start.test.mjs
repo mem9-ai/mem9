@@ -84,16 +84,19 @@ test("session start mentions ready fallback when a broken project override is ig
   assert.match(message, /fell back to the global default/);
 });
 
-test("session start reports plugin missing with cleanup and reinstall guidance", () => {
+test("session start reports plugin missing with reinstall-before-cleanup guidance", () => {
   const message = buildSessionStartMessage({
     configSource: "global",
     issueCode: "plugin_missing",
   });
 
   assert.match(message, /hooks remain installed/);
+  assert.match(message, /hook runtime needs repair/);
+  assert.match(message, /\/plugins/);
   assert.match(message, /\$mem9:cleanup/);
-  assert.match(message, /reinstall the mem9 plugin/);
   assert.match(message, /\$mem9:setup/);
+  assert.ok(message.indexOf("/plugins") < message.indexOf("$mem9:cleanup"));
+  assert.ok(message.indexOf("$mem9:cleanup") < message.indexOf("$mem9:setup"));
 });
 
 test("session start appends upgrade notices after the runtime message", async () => {

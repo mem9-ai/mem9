@@ -174,9 +174,12 @@ test("runtime helper explains plugin reinstall recovery for manual recall", () =
     configSource: "global",
   });
 
+  assert.match(message, /hook runtime needs repair/);
+  assert.match(message, /\/plugins/);
   assert.match(message, /\$mem9:cleanup/);
-  assert.match(message, /reinstall the mem9 plugin/);
-  assert.match(message, /rerun `\$mem9:setup`/);
+  assert.match(message, /\$mem9:setup/);
+  assert.ok(message.indexOf("/plugins") < message.indexOf("$mem9:cleanup"));
+  assert.ok(message.indexOf("$mem9:cleanup") < message.indexOf("$mem9:setup"));
 });
 
 test("runtime helper explains project legacy pause migration for manual recall", () => {
