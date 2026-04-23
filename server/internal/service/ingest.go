@@ -1203,6 +1203,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				continue
 			}
 			sourceSeqs := sourceSeqsForReconcileText(event.Text, facts)
+			sourceTurns := sourceTurnsForReconcileText(event.Text, facts)
 			newID, addErr := s.addInsight(
 				ctx,
 				agentName,
@@ -1210,7 +1211,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				sessionID,
 				normalizedText,
 				ensureRawFallbackTag(event.Tags, facts),
-				SetSourceSeqMetadata(MergeTemporalMetadata(nil, temporal), sourceSeqs),
+				SetSourceProvenanceMetadata(MergeTemporalMetadata(nil, temporal), sourceSeqs, sourceTurns),
 			)
 			if addErr != nil {
 				slog.Warn("failed to add insight", "err", addErr)
