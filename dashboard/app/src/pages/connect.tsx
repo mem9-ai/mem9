@@ -134,9 +134,8 @@ export function ConnectPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(
-            err instanceof Error ? err.message : t("connect.error.invalid"),
-          );
+          void err;
+          setError(t("connect.error.invalid"));
         }
       } finally {
         if (!cancelled) {

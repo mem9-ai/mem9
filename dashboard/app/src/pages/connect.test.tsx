@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isRedirect } from "@tanstack/react-router";
 import i18n from "@/i18n";
@@ -212,5 +212,23 @@ describe("ConnectPage", () => {
         "Other agent tools usually expose the same MEM9_API_KEY in their mem9 config.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("shows the generic invalid copy when manual connect fails", async () => {
+    mocks.verifySpace.mockRejectedValue(new Error("invalid API key"));
+
+    render(<ConnectPage />);
+
+    fireEvent.change(screen.getByPlaceholderText("MEM9_API_KEY"), {
+      target: { value: "bad-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /open memory/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(i18n.t("connect.error.invalid")),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText("invalid API key")).not.toBeInTheDocument();
   });
 });
