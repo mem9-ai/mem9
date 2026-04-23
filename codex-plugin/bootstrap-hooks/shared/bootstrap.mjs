@@ -1,12 +1,22 @@
 // @ts-check
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const DEFAULT_PLUGIN_VERSION = "local";
 export const PLUGINS_CACHE_DIR = path.join("plugins", "cache");
+export const DEFAULT_INSTALL_METADATA = {
+  marketplaceName: "mem9-ai",
+  pluginName: "mem9",
+};
 
 /**
  * @param {unknown} value
@@ -25,6 +35,60 @@ function normalizeString(value) {
 }
 
 /**
+ * @param {string} text
+ * @param {string} from
+ * @param {string} to
+ * @returns {string}
+ */
+function replacePathToken(text, from, to) {
+  if (!from) {
+    return text;
+  }
+
+  return text.split(from).join(to);
+}
+
+/**
+ * @param {string} value
+ * @param {{
+ *   codexHome?: string,
+ *   homeDir?: string,
+ * }} [context]
+ * @returns {string}
+ */
+function sanitizeDebugText(value, context = {}) {
+  let next = String(value);
+  const homeDir = normalizeString(context.homeDir) || os.homedir();
+  const replacements = [
+    [normalizeString(context.codexHome), "$CODEX_HOME"],
+    [homeDir, "~"],
+  ];
+
+  for (const [from, to] of replacements) {
+    next = replacePathToken(next, from, to);
+  }
+
+  return next;
+}
+
+/**
+ * Keeps the installed hook shim self-contained after setup copies it into
+ * `$CODEX_HOME/mem9/hooks/shared/bootstrap.mjs`.
+ *
+ * @param {"SessionStart" | "UserPromptSubmit"} eventName
+ * @param {string} text
+ * @returns {string}
+ */
+function hookAdditionalContext(eventName, text) {
+  return JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: eventName,
+      additionalContext: text,
+    },
+  });
+}
+
+/**
  * @param {string | undefined} inputCodexHome
  * @param {Record<string, string | undefined>} [env]
  * @param {string} [homeDir]
@@ -37,6 +101,103 @@ function resolveCodexHome(inputCodexHome, env = process.env, homeDir = os.homedi
   }
 
   return path.resolve(path.join(homeDir, ".codex"));
+}
+
+/**
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {boolean}
+ */
+function debugEnabled(env = process.env) {
+  return normalizeString(env?.MEM9_DEBUG) === "1";
+}
+
+/**
+ * @param {{
+ *   codexHome: string,
+ *   env?: Record<string, string | undefined>,
+ *   homeDir?: string,
+ * }} input
+ * @returns {string}
+ */
+function resolveDebugLogFile(input) {
+  const override = normalizeString(input.env?.MEM9_DEBUG_LOG_FILE);
+  if (override) {
+    return path.resolve(override);
+  }
+
+  return path.join(input.codexHome, "mem9", "logs", "codex-hooks.jsonl");
+}
+
+/**
+ * @param {string} scriptName
+ * @returns {string}
+ */
+function scriptHookName(scriptName) {
+  if (scriptName === "session-start.mjs") {
+    return "SessionStart";
+  }
+  if (scriptName === "user-prompt-submit.mjs") {
+    return "UserPromptSubmit";
+  }
+  if (scriptName === "stop.mjs") {
+    return "Stop";
+  }
+
+  return scriptName;
+}
+
+/**
+ * @param {{
+ *   scriptName: string,
+ *   error: unknown,
+ *   codexHome: string,
+ *   hookPath?: string,
+ *   pluginVersion?: string,
+ *   env?: Record<string, string | undefined>,
+ *   homeDir?: string,
+ * }} input
+ * @returns {boolean}
+ */
+function appendShimDebugError(input) {
+  if (!debugEnabled(input.env)) {
+    return false;
+  }
+
+  const logFile = resolveDebugLogFile({
+    codexHome: input.codexHome,
+    env: input.env,
+    homeDir: input.homeDir,
+  });
+  const entry = {
+    ts: new Date().toISOString(),
+    hook: scriptHookName(input.scriptName),
+    stage: "hook_failed",
+    source: "bootstrap-shim",
+    ...(input.pluginVersion ? { pluginVersion: input.pluginVersion } : {}),
+    ...(input.hookPath
+      ? {
+        hookPath: sanitizeDebugText(input.hookPath, {
+          codexHome: input.codexHome,
+          homeDir: input.homeDir,
+        }),
+      }
+      : {}),
+    error: sanitizeDebugText(
+      input.error instanceof Error ? input.error.message : String(input.error),
+      {
+        codexHome: input.codexHome,
+        homeDir: input.homeDir,
+      },
+    ),
+  };
+
+  try {
+    mkdirSync(path.dirname(logFile), { recursive: true });
+    appendFileSync(logFile, `${JSON.stringify(entry)}\n`, "utf8");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -98,6 +259,55 @@ export function readInstallMetadata(input = {}) {
     marketplaceName,
     pluginName,
   };
+}
+
+/**
+ * @param {{
+ *   codexHome?: string,
+ *   env?: Record<string, string | undefined>,
+ *   homeDir?: string,
+ * }} [input]
+ */
+function resolveInstallMetadataForShim(input = {}) {
+  const codexHome = resolveCodexHome(input.codexHome, input.env, input.homeDir);
+
+  try {
+    return {
+      ...readInstallMetadata(input),
+      repairNeeded: false,
+    };
+  } catch {
+    return {
+      codexHome,
+      installPath: path.join(codexHome, "mem9", "install.json"),
+      marketplaceName: DEFAULT_INSTALL_METADATA.marketplaceName,
+      pluginName: DEFAULT_INSTALL_METADATA.pluginName,
+      repairNeeded: true,
+    };
+  }
+}
+
+function buildPluginMissingSessionStartOutput() {
+  return hookAdditionalContext(
+    "SessionStart",
+    "mem9 hooks remain installed, but the mem9 hook runtime needs repair. If the plugin is missing from `/plugins`, reinstall it first. Then run `$mem9:cleanup`, followed by `$mem9:setup`.",
+  );
+}
+
+/**
+ * @param {string} scriptName
+ * @returns {string | undefined}
+ */
+function handleMissingPluginHook(scriptName) {
+  if (scriptName === "session-start.mjs") {
+    const output = buildPluginMissingSessionStartOutput();
+    if (output) {
+      process.stdout.write(output);
+    }
+    return output;
+  }
+
+  return undefined;
 }
 
 /**
@@ -177,33 +387,47 @@ export function resolveActivePluginRoot(input) {
  * }} [input]
  */
 export async function runHookShim(scriptName, input = {}) {
-  const install = readInstallMetadata(input);
+  const install = resolveInstallMetadataForShim(input);
+
+  if (install.repairNeeded) {
+    return handleMissingPluginHook(scriptName);
+  }
+
   const { pluginVersion, pluginRoot } = resolveActivePluginRoot(install);
 
   if (!pluginVersion || !pluginRoot) {
-    throw new Error(
-      `mem9 hook shim could not find an active installed plugin version in \`$CODEX_HOME/${PLUGINS_CACHE_DIR.replaceAll(path.sep, "/")}/${install.marketplaceName}/${install.pluginName}\`.`,
-    );
+    return handleMissingPluginHook(scriptName);
   }
 
   const hookPath = path.join(pluginRoot, "hooks", scriptName);
   if (!existsSync(hookPath)) {
-    throw new Error(
-      `mem9 hook shim could not find \`${scriptName}\` in the active plugin version \`${pluginVersion}\`. Reinstall the mem9 plugin.`,
-    );
+    return handleMissingPluginHook(scriptName);
   }
 
-  process.env.MEM9_CODEX_PLUGIN_VERSION = pluginVersion;
+  try {
+    process.env.MEM9_CODEX_PLUGIN_VERSION = pluginVersion;
 
-  const module = await import(pathToFileURL(hookPath).href);
-  if (typeof module.main !== "function") {
-    throw new Error(`mem9 hook shim expected \`${scriptName}\` to export \`main()\`.`);
+    const module = await import(pathToFileURL(hookPath).href);
+    if (typeof module.main !== "function") {
+      throw new Error(`mem9 hook shim expected \`${scriptName}\` to export \`main()\`.`);
+    }
+
+    const output = await module.main();
+    if (typeof output === "string" && output) {
+      process.stdout.write(output);
+    }
+
+    return output;
+  } catch (error) {
+    appendShimDebugError({
+      scriptName,
+      error,
+      codexHome: install.codexHome,
+      hookPath,
+      pluginVersion,
+      env: input.env,
+      homeDir: input.homeDir,
+    });
+    throw error;
   }
-
-  const output = await module.main();
-  if (typeof output === "string" && output) {
-    process.stdout.write(output);
-  }
-
-  return output;
 }

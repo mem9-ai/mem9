@@ -1,6 +1,6 @@
 {
   "name": "mem9",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Persistent memory for Codex. Run $mem9:setup once, then mem9 recalls before prompts and saves recent turns on stop.",
   "author": {
     "name": "mem9-ai"

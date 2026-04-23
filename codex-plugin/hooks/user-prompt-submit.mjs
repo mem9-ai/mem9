@@ -3,10 +3,10 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { loadRuntimeStateFromDisk } from "./shared/config.mjs";
+import { loadRuntimeStateFromDisk } from "../lib/config.mjs";
 import { appendDebugError, appendDebugLog } from "./shared/debug.mjs";
 import { formatMemoriesBlock, hookAdditionalContext, stripInjectedMemories } from "./shared/format.mjs";
-import { mem9FetchJson, mem9Headers } from "./shared/http.mjs";
+import { buildMem9Url, mem9FetchJson, mem9Headers } from "../lib/http.mjs";
 
 const RECALL_LIMIT = 10;
 
@@ -31,14 +31,12 @@ let debugContext = {};
 /**
  * @param {string} baseUrl
  * @param {string} prompt
- * @param {string} agentId
  * @param {number} [limit]
  * @returns {string}
  */
-export function buildRecallUrl(baseUrl, prompt, agentId, limit = RECALL_LIMIT) {
-  const url = new URL("/v1alpha2/mem9s/memories", `${baseUrl.replace(/\/+$/, "")}/`);
+export function buildRecallUrl(baseUrl, prompt, limit = RECALL_LIMIT) {
+  const url = buildMem9Url(baseUrl, "v1alpha2/mem9s/memories");
   url.searchParams.set("q", prompt);
-  url.searchParams.set("agent_id", agentId);
   url.searchParams.set("limit", String(limit));
   return url.toString();
 }
@@ -96,7 +94,7 @@ export async function runUserPromptSubmit(input) {
     timeoutMs: input.runtime.searchTimeoutMs,
   });
   const result = await input.search(
-    buildRecallUrl(input.runtime.baseUrl, query, input.runtime.agentId),
+    buildRecallUrl(input.runtime.baseUrl, query),
     { timeoutMs: input.runtime.searchTimeoutMs },
   );
   const memories = extractMemories(result).slice(0, RECALL_LIMIT);
@@ -148,6 +146,10 @@ export async function main() {
       configSource: state.configSource,
       profileId: state.runtime.profileId,
       projectConfigMatched: state.projectConfigMatched,
+      warnings: state.warnings.join(","),
+      pluginState: state.pluginState,
+      pluginIssueDetail: state.pluginIssueDetail,
+      effectiveLegacyPausedSource: state.effectiveLegacyPausedSource,
       issueCode: state.issueCode,
     },
   });
@@ -160,6 +162,10 @@ export async function main() {
         configSource: state.configSource,
         profileId: state.runtime.profileId,
         projectConfigMatched: state.projectConfigMatched,
+        warnings: state.warnings.join(","),
+        pluginState: state.pluginState,
+        pluginIssueDetail: state.pluginIssueDetail,
+        effectiveLegacyPausedSource: state.effectiveLegacyPausedSource,
         issueCode: state.issueCode,
       },
     });

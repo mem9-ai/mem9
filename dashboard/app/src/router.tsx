@@ -12,8 +12,10 @@ import { trackGa4PageView } from "@/lib/ga4";
 import type { MemoryType, MemoryFacet } from "@/types/memory";
 import type { AnalysisCategory } from "@/types/analysis";
 import type { TimeRangePreset } from "@/types/time-range";
+import { initializeConnectBootstrapFromLocation } from "@/lib/connect-bootstrap";
 import { trackMixpanelPageView } from "@/lib/mixpanel";
 import { ConnectPage } from "@/pages/connect";
+import { loadConnectRouteData } from "@/pages/connect-loader";
 import { SpacePage } from "@/pages/space";
 
 const PixelFarmPage = lazy(async () => {
@@ -58,6 +60,8 @@ function RootLayout() {
   );
 }
 
+initializeConnectBootstrapFromLocation();
+
 const rootRoute = createRootRoute({
   component: RootLayout,
 });
@@ -66,6 +70,7 @@ const connectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: ConnectPage,
+  loader: loadConnectRouteData,
 });
 
 const VALID_TYPES = ["pinned", "insight"];

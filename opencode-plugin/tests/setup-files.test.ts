@@ -109,12 +109,14 @@ test("loadSetupState returns profile summaries and scope defaults for user and p
           label: "Personal",
           baseUrl: "https://api.mem9.ai",
           hasApiKey: true,
+          apiKeyPreview: "mk_d...ault",
         },
         {
           profileId: "acme",
           label: "Acme",
           baseUrl: "https://acme.mem9.ai",
           hasApiKey: false,
+          apiKeyPreview: "",
         },
       ],
       usableProfiles: [
@@ -123,6 +125,7 @@ test("loadSetupState returns profile summaries and scope defaults for user and p
           label: "Personal",
           baseUrl: "https://api.mem9.ai",
           hasApiKey: true,
+          apiKeyPreview: "mk_d...ault",
         },
       ],
       scopeStates: {

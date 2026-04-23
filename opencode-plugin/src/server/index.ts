@@ -1,16 +1,16 @@
 import type { Hooks, Plugin } from "@opencode-ai/plugin";
-import type { MemoryBackend } from "./backend.js";
+import type { MemoryBackend } from "./backend.ts";
 import {
   resolveEffectiveConfig,
   resolvePluginIdentity,
-} from "./config.js";
-import { createDebugLogger } from "./debug.js";
-import { ServerBackend } from "./server-backend.js";
-import { buildPendingSetupHooks } from "./setup-flow.js";
-import { buildTools } from "./tools.js";
-import { buildHooks } from "./hooks.js";
-import { createSessionTranscriptLoader } from "./session-transcript.js";
-import { PLUGIN_ID } from "../shared/plugin-meta.js";
+} from "./config.ts";
+import { createDebugLogger } from "./debug.ts";
+import { ServerBackend } from "./server-backend.ts";
+import { buildPendingSetupHooks } from "./setup-flow.ts";
+import { buildTools } from "./tools.ts";
+import { buildHooks } from "./hooks.ts";
+import { createSessionTranscriptLoader } from "./session-transcript.ts";
+import { PLUGIN_ID } from "../shared/plugin-meta.ts";
 
 function buildPluginHooksAndTools(
   backend: MemoryBackend,

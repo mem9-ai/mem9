@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
+import "@/lib/connect-bootstrap-init";
 import { router } from "@/router";
 import { initGa4 } from "@/lib/ga4";
 import { enableMixpanelAutoClickTracking } from "@/lib/mixpanel-auto-click";

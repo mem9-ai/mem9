@@ -156,10 +156,11 @@ type Phase1Result struct {
 
 // ExtractedFact holds a single atomic fact and the tags the LLM assigned to it.
 type ExtractedFact struct {
-	Text     string            `json:"text"`
-	Tags     []string          `json:"tags,omitempty"`
-	FactType string            `json:"fact_type,omitempty"` // "fact" | "query_intent" | "raw_fallback"; omitted = "fact"
-	Temporal *TemporalMetadata `json:"-"`
+	Text       string            `json:"text"`
+	Tags       []string          `json:"tags,omitempty"`
+	FactType   string            `json:"fact_type,omitempty"` // "fact" | "query_intent" | "raw_fallback"; omitted = "fact"
+	SourceSeqs []int             `json:"source_seqs,omitempty"`
+	Temporal   *TemporalMetadata `json:"-"`
 }
 
 // dropQueryIntentFacts removes facts classified as query_intent by the extraction
@@ -279,13 +280,13 @@ func buildRawFallbackFacts(input preparedExtractionInput, reason string) []Extra
 		return nil
 	}
 	slog.Warn("using raw fallback fact", "reason", reason, "len", len(text))
-	return normalizeRawFallbackFacts(input, []ExtractedFact{buildRawFallbackFact(text)})
+	return annotateFactsWithSourceSeqs(input, normalizeRawFallbackFacts(input, []ExtractedFact{buildRawFallbackFact(text)}))
 }
 
 func finalizeExtractedFacts(input preparedExtractionInput, parsed []ExtractedFact, emptyReason string) []ExtractedFact {
 	facts := dropQueryIntentFacts(parsed)
 	if len(facts) > 0 {
-		return normalizeTemporalFacts(input, facts)
+		return annotateFactsWithSourceSeqs(input, normalizeTemporalFacts(input, facts))
 	}
 	reason := emptyReason
 	if len(parsed) > 0 {
@@ -372,7 +373,7 @@ func (s *IngestService) ExtractPhase1(ctx context.Context, messages []IngestMess
 		return nil, err
 	}
 	return &Phase1Result{
-		Facts:       facts,
+		Facts:       annotateFactsWithSourceSeqs(input, facts),
 		MessageTags: expandMessageTags(messageTags, input, len(messages)),
 	}, nil
 }
@@ -1200,6 +1201,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 			if normalizedText == "" {
 				continue
 			}
+			sourceSeqs := sourceSeqsForReconcileText(event.Text, facts)
 			newID, addErr := s.addInsight(
 				ctx,
 				agentName,
@@ -1207,7 +1209,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				sessionID,
 				normalizedText,
 				ensureRawFallbackTag(event.Tags, facts),
-				MergeTemporalMetadata(nil, temporal),
+				SetSourceSeqMetadata(MergeTemporalMetadata(nil, temporal), sourceSeqs),
 			)
 			if addErr != nil {
 				slog.Warn("failed to add insight", "err", addErr)
@@ -1237,7 +1239,8 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				effectiveTags = existingMemories[intID].Tags
 			}
 			effectiveTags = ensureRawFallbackTag(effectiveTags, facts)
-			metadata := MergeTemporalMetadata(existingMemories[intID].Metadata, temporal)
+			sourceSeqs := sourceSeqsForReconcileText(event.Text, facts)
+			metadata := SetSourceSeqMetadata(MergeTemporalMetadata(existingMemories[intID].Metadata, temporal), sourceSeqs)
 			if existingMemories[intID].MemoryType == domain.TypePinned {
 				slog.Warn("skipping UPDATE for pinned memory — treating as ADD", "id", realID)
 				newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, normalizedText, effectiveTags, metadata)
@@ -1493,7 +1496,7 @@ func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, ses
 	var ids []string
 	var warnings int
 	for _, fact := range facts {
-		id, err := s.addInsight(ctx, agentName, agentID, sessionID, fact.Text, fact.Tags, MergeTemporalMetadata(nil, fact.Temporal))
+		id, err := s.addInsight(ctx, agentName, agentID, sessionID, fact.Text, fact.Tags, metadataForExtractedFact(fact))
 		if err != nil {
 			slog.Warn("failed to add fact", "err", err, "fact_len", len(fact.Text))
 			warnings++

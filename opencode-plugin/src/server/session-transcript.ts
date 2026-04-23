@@ -1,5 +1,5 @@
 import type { PluginInput } from "@opencode-ai/plugin";
-import type { IngestMessage } from "./backend.js";
+import type { IngestMessage } from "./backend.ts";
 
 const SESSION_TRANSCRIPT_FETCH_LIMIT = 24;
 

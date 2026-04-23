@@ -5,7 +5,7 @@ import {
   DEFAULT_AGENT_ID,
   DEFAULT_REQUEST_TIMEOUT_MS,
   DEFAULT_SEARCH_TIMEOUT_MS,
-} from "../hooks/shared/config.mjs";
+} from "../lib/config.mjs";
 
 test("shared config scaffold exports expected defaults", () => {
   assert.equal(DEFAULT_AGENT_ID, "codex");

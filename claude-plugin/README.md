@@ -51,7 +51,7 @@ SessionStart(startup)
   -> create auth.json if missing
 
 UserPromptSubmit
-  -> GET /v1alpha2/mem9s/memories?q=...&agent_id=claude-code-main
+  -> GET /v1alpha2/mem9s/memories?q=...
   -> inject <relevant-memories>...</relevant-memories>
 
 Stop
@@ -70,11 +70,13 @@ SessionEnd
 Automatic recall uses:
 
 ```text
-GET /v1alpha2/mem9s/memories?q=<prompt>&agent_id=claude-code-main&limit=10
+GET /v1alpha2/mem9s/memories?q=<prompt>&limit=10
 Headers:
   X-API-Key: <api_key>
   X-Mnemo-Agent-Id: claude-code
 ```
+
+Recall intentionally omits `agent_id` so every agent bucket in the account (e.g. other plugins) contributes to the result set. Ingest still scopes writes by `agent_id` (see below).
 
 Automatic transcript ingest uses:
 
