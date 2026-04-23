@@ -104,9 +104,10 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
 test("README explains global hooks and project overrides", () => {
   const readme = readFileSync("./README.md", "utf8");
 
-  assert.match(readme, /^# Mem9 for Codex/m);
+  assert.match(readme, /^# Codex Plugin for mem9/m);
   assert.match(readme, /persistent memory/i);
-  assert.match(readme, /## Quick Start/);
+  assert.match(readme, /## Install and First-Time Setup/);
+  assert.match(readme, /## Daily Commands/);
   assert.match(readme, /\$mem9:setup/);
   assert.match(readme, /\$mem9:cleanup/);
   assert.match(readme, /\$mem9:recall/);
@@ -114,9 +115,10 @@ test("README explains global hooks and project overrides", () => {
   assert.doesNotMatch(readme, /\$mem9:project-config/);
   assert.match(readme, /codex plugin marketplace add mem9-ai\/mem9/);
   assert.match(readme, /install `mem9` from the `mem9-ai` marketplace inside Codex/i);
-  assert.match(readme, /## Upgrading/);
+  assert.match(readme, /## Upgrade/);
   assert.match(readme, /codex plugin marketplace upgrade mem9-ai/);
-  assert.match(readme, /## Uninstall/);
+  assert.match(readme, /This updates the installed mem9 plugin for normal releases\./);
+  assert.match(readme, /## Uninstall \/ Reset/);
   assert.match(readme, /Follow this order:/);
   assert.match(readme, /1\.\s+Enter Codex and run `\$mem9:cleanup`\./);
   assert.match(readme, /2\.\s+In Codex, open `\/plugins`, search for `mem9`, and uninstall the plugin\./);
@@ -125,12 +127,19 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /keeps mem9-managed hooks and plugin state in sync/i);
   assert.match(readme, /keeps `\$MEM9_HOME\/\.credentials\.json`/);
   assert.match(readme, /delete `\$MEM9_HOME\/\.credentials\.json` after the uninstall steps finish/i);
+  assert.match(readme, /## Local Development \/ Testing/);
+  assert.match(readme, /## Debugging/);
+  assert.match(readme, /## Reference: Files, Config, Environment/);
+  assert.match(readme, /### File Layout/);
+  assert.match(readme, /### Config Files/);
   assert.match(readme, /<project>\/\.codex\/mem9\/config\.json/);
   assert.match(readme, /\$MEM9_HOME\/\.credentials\.json/);
   assert.match(readme, /\$CODEX_HOME\/mem9\/install\.json/);
   assert.match(readme, /MEM9_DEBUG=1/);
   assert.match(readme, /\$CODEX_HOME\/mem9\/logs\/codex-hooks\.jsonl/);
+  assert.match(readme, /node \.\/skills\/setup\/scripts\/setup\.mjs --help/);
+  assert.match(readme, /node \.\/skills\/cleanup\/scripts\/cleanup\.mjs --help/);
   assert.match(readme, /You do not need to enable hooks manually first/);
   assert.doesNotMatch(readme, /--use-existing/);
-  assert.match(readme, /rerun `\$mem9:setup` with `use-existing`/);
+  assert.match(readme, /rerun `\$mem9:setup`, then choose `use-existing`/);
 });
