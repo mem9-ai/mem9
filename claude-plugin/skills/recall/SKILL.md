@@ -15,7 +15,7 @@ Use this skill when the current request could benefit from historical context st
 
 1. Check `${CLAUDE_PLUGIN_DATA}/auth.json`. If it is missing, tell the user to run `/mem9:setup` first.
 2. Use `${CLAUDE_PLUGIN_DATA}/auth.json` only as request credentials. Do not print the file contents or the API key.
-3. Search Mem9 with the current question and `agent_id=claude-code-main`.
+3. Search Mem9 with the current question across all agents in the account (no `agent_id` filter).
 
 ```bash
 set -euo pipefail
@@ -35,7 +35,7 @@ curl -sf --max-time 8 \
   -H "Content-Type: application/json" \
   -H "X-API-Key: ${api_key}" \
   -H "X-Mnemo-Agent-Id: claude-code" \
-  "${base_url%/}/v1alpha2/mem9s/memories?q=${encoded_query}&agent_id=claude-code-main&limit=10"
+  "${base_url%/}/v1alpha2/mem9s/memories?q=${encoded_query}&limit=10"
 ```
 
 Return only the memories that help with the current question. Never reveal secret values.
