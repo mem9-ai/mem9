@@ -62,15 +62,21 @@ var (
 	answerAnchoredPeriodRe       = regexp.MustCompile(`(?i)\b(?:the\s+)?(?:week|weekend|month|year|summer|winter|spring|fall|autumn)\s+(?:before|after)\b`)
 	answerFutureCueRe            = regexp.MustCompile(`(?i)\b(?:will|planning|plan|plans|planned|thinking about|going to|gonna|scheduled|upcoming|next\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn))\b|(?:计划|打算|准备|将要|将会|下周|下个月|明年)`)
 	answerPastCueRe              = regexp.MustCompile(`(?i)\b(?:went|had|did|got|was|were|happened|previously|earlier|ago|last\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn|friday|saturday|sunday|monday|tuesday|wednesday|thursday))\b|(?:之前|以前|当时|去了|发生了|上周|上个月|去年|昨天|前天)`)
+	answerGenericFrequencyRe     = regexp.MustCompile(`(?i)\b(?:usually|often|generally|typically|normally|once or twice a year|twice a year|every year|each year)\b`)
+	answerDurationUnitRe         = regexp.MustCompile(`(?i)\b(?:minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)\b|(?:分钟|小时|天|周|星期|个月|月|年)`)
+	answerDurationPhraseRe       = regexp.MustCompile(`(?i)\b(?:for\s+)?(?:about|around|approximately|roughly|almost|nearly|over|under|more than|less than|at least)?\s*(?:\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|couple|few|several)\s+(?:minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years)\b|(?:[零一二三四五六七八九十百千万两\d]+(?:分钟|小时|天|周|星期|个月|月|年))`)
+	answerSinceCueRe             = regexp.MustCompile(`(?i)\b(?:since|starting|started|began|beginning|from\s+\w+\s+\d{4})\b|(?:自从|从.*开始)`)
+	answerExplicitFrequencyRe    = regexp.MustCompile(`(?i)\b(?:once|twice|thrice|\d+\s+times|one time|two times|three times|multiple times|several times|every day|every week|every month|every year|daily|weekly|monthly|yearly|once a day|twice a day|multiple times a day|once or twice a year|twice a year|on weekends|every weekend|rarely|seldom)\b|(?:每天|每周|每月|每年|一次|两次|三次|多次|经常)`)
 	answerNegationRe             = regexp.MustCompile(`(?i)\b(?:did not|didn't|never|no longer|not\b)\b|(?:没有|没|未)`)
 	recallLeadingBracketRunRe    = regexp.MustCompile(`^(?:\[[^\]\n]{0,160}\]\s*)+`)
 	recallSpeakerTagRe           = regexp.MustCompile(`(?i)\[speaker:([^\]]+)\]`)
 	recallImageCaptionTagRe      = regexp.MustCompile(`(?is)\[image-caption:[^\]]+\]`)
 	recallTemporalTokenRe        = regexp.MustCompile(`\b(?:19|20)\d{2}\b|\b(?:january|february|march|april|may|june|july|august|september|october|november|december|monday|tuesday|wednesday|thursday|friday|saturday|sunday|spring|summer|fall|autumn|winter)\b|(?:\d{4}年|\d{1,2}月|昨天|今天|明天|上周|下周|去年|今年|明年|春天|夏天|秋天|冬天)`)
-	recallEnumerationPluralRe    = regexp.MustCompile(`\b(?:activities|books|events|items|pets|names|artists|bands|places|countries|movies|songs|games|restaurants|authors|albums|hobbies|shows|concerts)\b`)
+	recallEnumerationPluralRe    = regexp.MustCompile(`\b(?:activities|books|events|items|pets|names|artists|bands|places|countries|movies|songs|games|restaurants|authors|albums|hobbies|shows|concerts|goals|projects|fields|ways|instruments|dishes|recipes)\b`)
 	recallEnumerationTypeCueRe   = regexp.MustCompile(`\bwhat\s+(?:type|types|kind|kinds)\s+of\b`)
 	recallEnumerationBothCueRe   = regexp.MustCompile(`\b(?:what|which)\b.*\bboth\b`)
 	recallEnumerationDoneCueRe   = regexp.MustCompile(`\bwhat\s+(?:has|have)\s+.+\s+done\b`)
+	recallEnumerationWaysCueRe   = regexp.MustCompile(`(?i)\b(?:in what ways|what ways)\b`)
 	recallSpeakerUtteranceRe     = regexp.MustCompile(`(?i)^what did\s+([a-z][a-z'-]*)\s+say\b`)
 	recallSubjectAuxSpeakerRe    = regexp.MustCompile(`(?i)\b(?:did|does|do|was|were|is|are|has|have|had|will|would|can|could|should)\s+([a-z][a-z'-]*)\b`)
 	recallSubjectAuxMultiRe      = regexp.MustCompile(`(?i)\b(?:did|does|do|was|were|is|are|has|have|had|will|would|can|could|should)\s+(?:both\s+)?[a-z][a-z'-]*(?:\s+and\s+[a-z][a-z'-]*)+\b`)
@@ -98,6 +104,10 @@ type recallQueryProfile struct {
 	temporalTokens   []string
 	targetSpeaker    string
 	subjectSpeaker   string
+	focusTokens      []string
+	repeatCountQuery bool
+	durationQuery    bool
+	frequencyQuery   bool
 	selfFactQuestion bool
 	visualQuestion   bool
 	quotedQuestion   bool
@@ -484,7 +494,7 @@ func selectBalancedRecallCandidates(
 	for round := 0; round < balancedSelectionRounds && len(selected) < budget; round++ {
 		progress := false
 		for i := range buckets {
-			candidate, tokens, ok := nextEnumerationCandidate(&buckets[i].index, buckets[i].candidates, seen, defaultMixedMinConfidence, queryTokens, coverageSeen, true)
+			candidate, tokens, ok := nextEnumerationCandidate(&buckets[i].index, buckets[i].candidates, seen, defaultMixedMinConfidence, queryTokens, coverageSeen, nil, false, false, true)
 			if !ok {
 				continue
 			}
@@ -567,7 +577,7 @@ func selectEnumerationRecallCandidates(
 	for len(selected) < budget && progress {
 		progress = false
 		for i := range buckets {
-			candidate, tokens, ok := nextEnumerationCandidate(&buckets[i].index, buckets[i].candidates, seen, enumerationMinConfidence, queryTokens, coverageSeen, true)
+			candidate, tokens, ok := nextEnumerationCandidate(&buckets[i].index, buckets[i].candidates, seen, enumerationMinConfidence, queryTokens, coverageSeen, profile.focusTokens, true, profile.repeatCountQuery, true)
 			if !ok {
 				continue
 			}
@@ -664,6 +674,9 @@ func nextEnumerationCandidate(
 	minConfidence int,
 	queryTokens map[string]struct{},
 	coverageSeen map[string]struct{},
+	focusTokens []string,
+	requireFocus bool,
+	repeatCountQuery bool,
 	requireNewCoverage bool,
 ) (service.RecallCandidate, []string, bool) {
 	for *index < len(candidates) {
@@ -676,6 +689,16 @@ func nextEnumerationCandidate(
 		}
 		if recallConfidenceValue(candidate.Memory) < minConfidence {
 			continue
+		}
+		if requireFocus && len(focusTokens) > 0 && recallFocusMatchCount(candidate.Memory, focusTokens) == 0 {
+			continue
+		}
+		if repeatCountQuery {
+			content, temporalDisplay, _ := recallContentForScoring(candidate.Memory)
+			lowerContent := strings.ToLower(content)
+			if answerGenericFrequencyRe.MatchString(lowerContent) && !hasRecallBodyEventCue(content, temporalDisplay) {
+				continue
+			}
 		}
 
 		tokens := extractRecallCoverageTokens(candidate.Memory, queryTokens)
@@ -870,6 +893,10 @@ func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float
 	unitCount := recallAnswerUnitCount(content)
 	entitySignals := recallEntitySignalCount(content)
 	namedCJKAnswer := hasStandaloneCJKNamedAnswer(content)
+	focusMatches := recallFocusMatchCount(memory, profile.focusTokens)
+	durationAnswer := containsRecallDurationAnswer(content)
+	durationRangeAnswer := containsRecallDurationRange(content)
+	frequencyAnswer := containsRecallFrequencyAnswer(content)
 
 	bonus := 0.0
 	if unitCount > 0 && unitCount <= 18 {
@@ -994,6 +1021,52 @@ func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float
 		case len(coverageTokens) == 1:
 			bonus += 0.12
 		}
+		if len(profile.focusTokens) > 0 {
+			switch {
+			case focusMatches >= 2:
+				bonus += 0.16
+			case focusMatches == 1:
+				bonus += 0.08
+			default:
+				bonus -= 0.08
+			}
+		}
+		if profile.repeatCountQuery {
+			if hasRecallBodyEventCue(content, temporalDisplay) {
+				bonus += 0.10
+			}
+			if answerGenericFrequencyRe.MatchString(lower) && !hasRecallBodyEventCue(content, temporalDisplay) {
+				bonus -= 0.35
+			}
+		}
+	}
+	if profile.durationQuery {
+		switch {
+		case durationAnswer:
+			bonus += 0.22
+		case durationRangeAnswer:
+			bonus += 0.16
+		}
+		if frequencyAnswer {
+			bonus -= 0.10
+		}
+		if answerSinceCueRe.MatchString(lower) && !durationAnswer && !durationRangeAnswer {
+			bonus -= 0.18
+		}
+		if questionLike {
+			bonus -= 0.12
+		}
+	}
+	if profile.frequencyQuery {
+		switch {
+		case frequencyAnswer:
+			bonus += 0.24
+		case durationAnswer || durationRangeAnswer:
+			bonus -= 0.18
+		}
+		if questionLike {
+			bonus -= 0.12
+		}
 	}
 
 	return bonus
@@ -1055,6 +1128,52 @@ func extractRecallCoverageTokens(memory domain.Memory, queryTokens map[string]st
 	}
 	sort.Strings(out)
 	return out
+}
+
+func recallFocusMatchCount(memory domain.Memory, focusTokens []string) int {
+	if len(focusTokens) == 0 {
+		return 0
+	}
+	content, temporalDisplay, _ := recallContentForScoring(memory)
+	lowerContent := strings.ToLower(content)
+	lowerDisplay := strings.ToLower(temporalDisplay)
+	matches := 0
+	for _, token := range focusTokens {
+		if token == "" {
+			continue
+		}
+		if strings.Contains(lowerContent, token) || (lowerDisplay != "" && strings.Contains(lowerDisplay, token)) {
+			matches++
+		}
+	}
+	return matches
+}
+
+func containsRecallDurationAnswer(content string) bool {
+	lower := strings.ToLower(content)
+	return answerDurationPhraseRe.MatchString(content) || answerDurationPhraseRe.MatchString(lower)
+}
+
+func containsRecallDurationRange(content string) bool {
+	lower := strings.ToLower(content)
+	if answerDurationPhraseRe.MatchString(content) {
+		return true
+	}
+	if !(strings.Contains(lower, " from ") && strings.Contains(lower, " to ") || strings.Contains(lower, " between ") && strings.Contains(lower, " and ")) {
+		return false
+	}
+	return containsMonthName(lower) || answerYearRe.MatchString(content) || answerDurationUnitRe.MatchString(content)
+}
+
+func containsRecallFrequencyAnswer(content string) bool {
+	lower := strings.ToLower(content)
+	if answerExplicitFrequencyRe.MatchString(content) || answerExplicitFrequencyRe.MatchString(lower) {
+		return true
+	}
+	if answerGenericFrequencyRe.MatchString(lower) {
+		return true
+	}
+	return strings.Contains(lower, "times a day") || strings.Contains(lower, "times per day") || strings.Contains(lower, "times per week")
 }
 
 func extractRecallTargetSpeaker(lower string) string {
@@ -1171,6 +1290,19 @@ func isRecallCoverageStopword(token string) bool {
 	}
 }
 
+func isRecallFocusStopword(token string) bool {
+	switch token {
+	case "what", "which", "when", "where", "with", "does", "have", "has", "done", "did", "they", "them", "their", "this", "that", "those", "these":
+		return true
+	case "items", "books", "instruments", "artists", "bands", "places", "events", "games", "projects", "ways", "times", "kind", "kinds", "type", "types":
+		return true
+	case "some", "many", "more", "very", "really", "about", "into", "from", "over", "after", "before":
+		return true
+	default:
+		return false
+	}
+}
+
 func recallContentForScoring(memory domain.Memory) (string, string, string) {
 	content, legacyDisplay := service.CleanTemporalContent(memory.Content)
 	content = service.StripTemporalProjection(content)
@@ -1196,15 +1328,42 @@ func buildRecallQueryProfile(query string) recallQueryProfile {
 		lower:            lower,
 		targetSpeaker:    extractRecallTargetSpeaker(lower),
 		subjectSpeaker:   extractRecallSubjectSpeaker(query),
+		repeatCountQuery: isRepeatCountRecallQuestion(query, lower),
+		durationQuery:    isDurationRecallQuestion(query, lower),
+		frequencyQuery:   isFrequencyRecallQuestion(query, lower),
 		selfFactQuestion: recallSelfFactQuestionRe.MatchString(lower),
 		visualQuestion:   recallVisualQuestionRe.MatchString(query),
 		quotedQuestion:   recallQuotedTextArtifactRe.MatchString(query) && recallTextActionRe.MatchString(query),
 	}
+	profile.focusTokens = buildRecallFocusTokens(profile)
 	if profile.shape == recallQueryShapeTime {
 		profile.temporalIntent = classifyRecallTemporalIntent(lower)
 		profile.temporalTokens = extractRecallTemporalTokens(lower)
 	}
 	return profile
+}
+
+func buildRecallFocusTokens(profile recallQueryProfile) []string {
+	if profile.shape != recallQueryShapeEnumeration {
+		return nil
+	}
+	tokens := make(map[string]struct{})
+	for _, match := range recallCoverageEnglishTokenRe.FindAllString(profile.lower, -1) {
+		token := normalizeRecallCoverageToken(match)
+		if token == "" || isRecallFocusStopword(token) {
+			continue
+		}
+		if token == profile.subjectSpeaker || token == profile.targetSpeaker {
+			continue
+		}
+		tokens[token] = struct{}{}
+	}
+	out := make([]string, 0, len(tokens))
+	for token := range tokens {
+		out = append(out, token)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func classifyRecallTemporalIntent(lower string) recallTemporalIntent {
@@ -1362,9 +1521,14 @@ func classifyRecallQueryShape(query string) recallQueryShape {
 	case hasAnyPrefix(trimmed, "哪里", "哪儿", "在哪", "什么地方", "哪座城市", "哪座"):
 		return recallQueryShapeLocation
 	case strings.HasPrefix(lower, "how many"), strings.HasPrefix(lower, "how much"):
+		if isRepeatCountRecallQuestion(trimmed, lower) {
+			return recallQueryShapeEnumeration
+		}
 		return recallQueryShapeCount
-	case hasAnyPrefix(trimmed, "有多少", "多少个", "多少次", "多少", "几个", "几次"):
+	case hasAnyPrefix(trimmed, "有多少", "多少个", "多少", "几个", "几次"):
 		return recallQueryShapeCount
+	case hasAnyPrefix(trimmed, "多少次"):
+		return recallQueryShapeEnumeration
 	case isEnumerationRecallQuery(trimmed, lower):
 		return recallQueryShapeEnumeration
 	case strings.HasPrefix(lower, "who "), strings.HasPrefix(lower, "which "):
@@ -1388,6 +1552,8 @@ func isEnumerationRecallQuery(trimmed, lower string) bool {
 	switch {
 	case hasAnyPrefix(trimmed, "哪些", "有哪些", "都有什么", "做过哪些", "参加过哪些", "名字有哪些", "什么活动", "什么书", "什么事件", "什么名字", "什么类型"):
 		return true
+	case recallEnumerationWaysCueRe.MatchString(lower):
+		return true
 	case recallEnumerationTypeCueRe.MatchString(lower):
 		return true
 	case recallEnumerationBothCueRe.MatchString(lower):
@@ -1396,6 +1562,58 @@ func isEnumerationRecallQuery(trimmed, lower string) bool {
 		return true
 	case strings.HasPrefix(lower, "what "), strings.HasPrefix(lower, "which "):
 		return recallEnumerationPluralRe.MatchString(lower) || recallEnumerationDoneCueRe.MatchString(lower)
+	default:
+		return false
+	}
+}
+
+func isRepeatCountRecallQuestion(trimmed, lower string) bool {
+	switch {
+	case strings.HasPrefix(lower, "how many times "):
+		return true
+	case hasAnyPrefix(trimmed, "多少次"):
+		return true
+	default:
+		return false
+	}
+}
+
+func isDurationRecallQuestion(trimmed, lower string) bool {
+	switch {
+	case strings.HasPrefix(lower, "how long "):
+		return true
+	case hasAnyPrefix(trimmed, "多久", "多长时间", "多长"):
+		return true
+	default:
+		return false
+	}
+}
+
+func isFrequencyRecallQuestion(trimmed, lower string) bool {
+	switch {
+	case strings.HasPrefix(lower, "how often "):
+		return true
+	case hasAnyPrefix(trimmed, "多久一次", "多频繁", "多常", "多经常"):
+		return true
+	default:
+		return false
+	}
+}
+
+func hasRecallBodyEventCue(content, temporalDisplay string) bool {
+	body, _ := stripRecallTemporalHeader(content)
+	bodyLower := strings.ToLower(body)
+	switch {
+	case answerYearRe.MatchString(body), containsMonthName(bodyLower), answerWeekdayNameRe.MatchString(bodyLower):
+		return true
+	case answerRelativeTimeRe.MatchString(body), answerCNRelativeTimeRe.MatchString(body):
+		return true
+	case answerPastCueRe.MatchString(body):
+		return true
+	case strings.Contains(bodyLower, "recently"), strings.Contains(bodyLower, "again"):
+		return true
+	case temporalDisplay != "" && !answerGenericFrequencyRe.MatchString(bodyLower):
+		return true
 	default:
 		return false
 	}
