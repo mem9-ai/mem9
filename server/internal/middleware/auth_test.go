@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unsafe"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
+	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/tenant"
 )
 
@@ -599,4 +601,325 @@ func TestResolveTenant_BlacklistedCluster_SpendLimit_Returns429(t *testing.T) {
 	if got := rr.Body.String(); !strings.Contains(got, "cluster quota exhausted") {
 		t.Fatalf("body = %q, want cluster quota exhausted", got)
 	}
+}
+
+type mockSpendLimitAdjuster struct {
+	getSpendLimitFn      func(ctx context.Context, clusterID string) (int, error)
+	increaseSpendLimitFn func(ctx context.Context, clusterID string, monthlyCents int) error
+}
+
+func (m *mockSpendLimitAdjuster) GetSpendLimit(ctx context.Context, clusterID string) (int, error) {
+	return m.getSpendLimitFn(ctx, clusterID)
+}
+
+func (m *mockSpendLimitAdjuster) IncreaseSpendLimit(ctx context.Context, clusterID string, monthlyCents int) error {
+	return m.increaseSpendLimitFn(ctx, clusterID, monthlyCents)
+}
+
+type autoSpendLimitTracker struct {
+	mu                   sync.Mutex
+	getCalls             int
+	increaseCalls        int
+	increaseMonthlyCents int
+	getCalled            chan struct{}
+	increaseCalled       chan struct{}
+}
+
+func newAutoSpendLimitTracker() *autoSpendLimitTracker {
+	return &autoSpendLimitTracker{
+		getCalled:      make(chan struct{}, 1),
+		increaseCalled: make(chan struct{}, 1),
+	}
+}
+
+func (t *autoSpendLimitTracker) markGet() {
+	t.mu.Lock()
+	t.getCalls++
+	t.mu.Unlock()
+	select {
+	case t.getCalled <- struct{}{}:
+	default:
+	}
+}
+
+func (t *autoSpendLimitTracker) markIncrease(monthlyCents int) {
+	t.mu.Lock()
+	t.increaseCalls++
+	t.increaseMonthlyCents = monthlyCents
+	t.mu.Unlock()
+	select {
+	case t.increaseCalled <- struct{}{}:
+	default:
+	}
+}
+
+func (t *autoSpendLimitTracker) snapshot() (int, int, int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.getCalls, t.increaseCalls, t.increaseMonthlyCents
+}
+
+func autoSpendLimitCfg(enabled bool) AutoSpendLimitConfig {
+	return AutoSpendLimitConfig{Enabled: enabled, Increment: 500, Max: 10000}
+}
+
+func autoSpendLimitStarterTenant(id, clusterID string) *domain.Tenant {
+	return &domain.Tenant{
+		ID:        id,
+		Status:    domain.TenantActive,
+		ClusterID: clusterID,
+		Provider:  tenant.StarterProvisionerType,
+	}
+}
+
+func autoSpendLimitZeroTenant(id, clusterID string) *domain.Tenant {
+	return &domain.Tenant{
+		ID:        id,
+		Status:    domain.TenantActive,
+		ClusterID: clusterID,
+		Provider:  tenant.ZeroProvisionerType,
+	}
+}
+
+func autoSpendLimitResolveTenantRequest(tenantID string) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, &chi.Context{
+		URLParams: chi.RouteParams{
+			Keys:   []string{"tenantID"},
+			Values: []string{tenantID},
+		},
+	}))
+}
+
+func autoSpendLimitResolveApiKeyRequest(tenantID string) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/v1alpha2/mem9s/memories", nil)
+	req.Header.Set(APIKeyHeader, tenantID)
+	return req
+}
+
+func autoSpendLimitRequestHandler(t *testing.T) http.Handler {
+	t.Helper()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler should not be called")
+	})
+}
+
+func autoSpendLimitServe(
+	t *testing.T,
+	resolve func(repository.TenantRepo, tenantDBGetter, encrypt.Encryptor, map[string]struct{}, ...authOption) func(http.Handler) http.Handler,
+	req *http.Request,
+	repo stubTenantRepo,
+	pool stubPool,
+	adjuster tenant.SpendLimitAdjuster,
+	cooldown *SpendLimitCooldown,
+	cfg AutoSpendLimitConfig,
+) *httptest.ResponseRecorder {
+	t.Helper()
+	handler := resolve(repo, pool, encrypt.NewPlainEncryptor(), nil, WithSpendLimitAdjuster(adjuster, cooldown, cfg))(autoSpendLimitRequestHandler(t))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	return rr
+}
+
+func autoSpendLimitCases() []struct {
+	name                 string
+	tenant               *domain.Tenant
+	poolErr              error
+	cfg                  AutoSpendLimitConfig
+	preRecord            bool
+	adjusterNil          bool
+	currentLimit         int
+	getErr               error
+	increaseErr          error
+	wantStatus           int
+	wantGetCalls         int
+	wantIncreaseCalls    int
+	wantIncreaseCents    int
+	checkCooldownRestart bool
+} {
+	return []struct {
+		name                 string
+		tenant               *domain.Tenant
+		poolErr              error
+		cfg                  AutoSpendLimitConfig
+		preRecord            bool
+		adjusterNil          bool
+		currentLimit         int
+		getErr               error
+		increaseErr          error
+		wantStatus           int
+		wantGetCalls         int
+		wantIncreaseCalls    int
+		wantIncreaseCents    int
+		checkCooldownRestart bool
+	}{
+		{
+			name:              "disabled config skips adjuster",
+			tenant:            autoSpendLimitStarterTenant("tenant-1", "cluster-1"),
+			poolErr:           spendLimitErr,
+			cfg:               autoSpendLimitCfg(false),
+			wantStatus:        http.StatusServiceUnavailable,
+			wantGetCalls:      0,
+			wantIncreaseCalls: 0,
+		},
+		{
+			name:              "starter spend-limit error triggers raise",
+			tenant:            autoSpendLimitStarterTenant("tenant-1", "cluster-1"),
+			poolErr:           spendLimitErr,
+			cfg:               autoSpendLimitCfg(true),
+			currentLimit:      9500,
+			wantStatus:        http.StatusServiceUnavailable,
+			wantGetCalls:      1,
+			wantIncreaseCalls: 1,
+			wantIncreaseCents: 10000,
+		},
+		{
+			name:              "zero tenant fires adjuster (same as starter)",
+			tenant:            autoSpendLimitZeroTenant("tenant-2", "cluster-2"),
+			poolErr:           spendLimitErr,
+			cfg:               autoSpendLimitCfg(true),
+			currentLimit:      500,
+			wantStatus:        http.StatusServiceUnavailable,
+			wantGetCalls:      1,
+			wantIncreaseCalls: 1,
+			wantIncreaseCents: 1000,
+		},
+		{
+			name:              "non spend-limit error skips adjuster",
+			tenant:            autoSpendLimitStarterTenant("tenant-3", "cluster-3"),
+			poolErr:           errors.New("connection refused"),
+			cfg:               autoSpendLimitCfg(true),
+			wantStatus:        http.StatusServiceUnavailable,
+			wantGetCalls:      0,
+			wantIncreaseCalls: 0,
+		},
+		{
+			name:              "cooldown active skips adjuster",
+			tenant:            autoSpendLimitStarterTenant("tenant-4", "cluster-4"),
+			poolErr:           spendLimitErr,
+			cfg:               autoSpendLimitCfg(true),
+			preRecord:         true,
+			wantStatus:        http.StatusServiceUnavailable,
+			wantGetCalls:      0,
+			wantIncreaseCalls: 0,
+		},
+		{
+			name:                 "max cap skips increase",
+			tenant:               autoSpendLimitStarterTenant("tenant-5", "cluster-5"),
+			poolErr:              spendLimitErr,
+			cfg:                  autoSpendLimitCfg(true),
+			currentLimit:         10000,
+			wantStatus:           http.StatusServiceUnavailable,
+			wantGetCalls:         1,
+			wantIncreaseCalls:    0,
+			checkCooldownRestart: true,
+		},
+		{
+			name:                 "get spend-limit error records failure",
+			tenant:               autoSpendLimitStarterTenant("tenant-6", "cluster-6"),
+			poolErr:              spendLimitErr,
+			cfg:                  autoSpendLimitCfg(true),
+			currentLimit:         9000,
+			getErr:               errors.New("get limit failed"),
+			wantStatus:           http.StatusServiceUnavailable,
+			wantGetCalls:         1,
+			wantIncreaseCalls:    0,
+			checkCooldownRestart: true,
+		},
+		{
+			name:                 "increase spend-limit error records failure",
+			tenant:               autoSpendLimitStarterTenant("tenant-7", "cluster-7"),
+			poolErr:              spendLimitErr,
+			cfg:                  autoSpendLimitCfg(true),
+			currentLimit:         9500,
+			increaseErr:          errors.New("patch failed"),
+			wantStatus:           http.StatusServiceUnavailable,
+			wantGetCalls:         1,
+			wantIncreaseCalls:    1,
+			wantIncreaseCents:    10000,
+			checkCooldownRestart: true,
+		},
+		{
+			name:              "nil adjuster does not panic",
+			tenant:            autoSpendLimitStarterTenant("tenant-8", "cluster-8"),
+			poolErr:           spendLimitErr,
+			cfg:               autoSpendLimitCfg(true),
+			adjusterNil:       true,
+			wantStatus:        http.StatusServiceUnavailable,
+			wantGetCalls:      0,
+			wantIncreaseCalls: 0,
+		},
+	}
+}
+
+func runAutoSpendLimitCases(
+	t *testing.T,
+	resolve func(repository.TenantRepo, tenantDBGetter, encrypt.Encryptor, map[string]struct{}, ...authOption) func(http.Handler) http.Handler,
+	requestBuilder func(string) *http.Request,
+) {
+	t.Helper()
+	for _, tc := range autoSpendLimitCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			cooldown := NewSpendLimitCooldown(50 * time.Millisecond)
+			if tc.preRecord {
+				cooldown.RecordSuccess(tc.tenant.ClusterID)
+			}
+
+			repo := stubTenantRepo{tenants: map[string]*domain.Tenant{tc.tenant.ID: tc.tenant}}
+			pool := stubPool{err: tc.poolErr}
+
+			var adjuster tenant.SpendLimitAdjuster
+			tracker := newAutoSpendLimitTracker()
+			if !tc.adjusterNil {
+				adjuster = &mockSpendLimitAdjuster{
+					getSpendLimitFn: func(ctx context.Context, clusterID string) (int, error) {
+						tracker.markGet()
+						return tc.currentLimit, tc.getErr
+					},
+					increaseSpendLimitFn: func(ctx context.Context, clusterID string, monthlyCents int) error {
+						tracker.markIncrease(monthlyCents)
+						return tc.increaseErr
+					},
+				}
+			}
+
+			req := requestBuilder(tc.tenant.ID)
+			rr := autoSpendLimitServe(t, resolve, req, repo, pool, adjuster, cooldown, tc.cfg)
+
+			if rr.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", rr.Code, tc.wantStatus)
+			}
+
+			time.Sleep(100 * time.Millisecond)
+
+			if !tc.adjusterNil {
+				getCalls, increaseCalls, increaseCents := tracker.snapshot()
+				if getCalls != tc.wantGetCalls {
+					t.Fatalf("GetSpendLimit calls = %d, want %d", getCalls, tc.wantGetCalls)
+				}
+				if increaseCalls != tc.wantIncreaseCalls {
+					t.Fatalf("IncreaseSpendLimit calls = %d, want %d", increaseCalls, tc.wantIncreaseCalls)
+				}
+				if tc.wantIncreaseCalls > 0 && increaseCents != tc.wantIncreaseCents {
+					t.Fatalf("IncreaseSpendLimit monthlyCents = %d, want %d", increaseCents, tc.wantIncreaseCents)
+				}
+			}
+
+			if tc.checkCooldownRestart && !cooldown.TryStartRaise(tc.tenant.ClusterID) {
+				t.Fatal("cooldown was not released after the failed adjustment")
+			}
+		})
+	}
+}
+
+func TestResolveTenant_AutoSpendLimit(t *testing.T) {
+	runAutoSpendLimitCases(t, ResolveTenant, func(tenantID string) *http.Request {
+		return autoSpendLimitResolveTenantRequest(tenantID)
+	})
+}
+
+func TestResolveApiKey_AutoSpendLimit(t *testing.T) {
+	runAutoSpendLimitCases(t, ResolveApiKey, func(tenantID string) *http.Request {
+		return autoSpendLimitResolveApiKeyRequest(tenantID)
+	})
 }

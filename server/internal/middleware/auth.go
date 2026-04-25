@@ -29,6 +29,30 @@ type tenantDBGetter interface {
 	Backend() string
 }
 
+type authOption func(*authConfig)
+
+type authConfig struct {
+	spendLimitAdjuster tenant.SpendLimitAdjuster
+	spendLimitCooldown *SpendLimitCooldown
+	autoSpendLimitCfg  AutoSpendLimitConfig
+}
+
+// AutoSpendLimitConfig controls auto spend-limit adjustment behavior.
+type AutoSpendLimitConfig struct {
+	Enabled   bool
+	Increment int
+	Max       int
+}
+
+// WithSpendLimitAdjuster wires spend-limit adjustment dependencies into auth middleware.
+func WithSpendLimitAdjuster(adjuster tenant.SpendLimitAdjuster, cooldown *SpendLimitCooldown, cfg AutoSpendLimitConfig) authOption {
+	return func(c *authConfig) {
+		c.spendLimitAdjuster = adjuster
+		c.spendLimitCooldown = cooldown
+		c.autoSpendLimitCfg = cfg
+	}
+}
+
 func isSpendLimitError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "usage quota being exhausted")
 }
@@ -48,7 +72,16 @@ func ResolveTenant(
 	pool tenantDBGetter,
 	enc encrypt.Encryptor,
 	clusterBlacklist map[string]struct{},
+	opts ...authOption,
 ) func(http.Handler) http.Handler {
+	state := authConfig{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&state)
+		}
+	}
+	_ = state
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authStart := time.Now()
@@ -86,6 +119,46 @@ func ResolveTenant(
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			poolDuration := time.Since(poolStart)
 			if err != nil {
+				isStarterOrZero := t.Provider == tenant.StarterProvisionerType || t.Provider == tenant.ZeroProvisionerType
+				if state.spendLimitAdjuster != nil && state.autoSpendLimitCfg.Enabled && isSpendLimitError(err) {
+					if isStarterOrZero && state.spendLimitCooldown.TryStartRaise(t.ClusterID) {
+						adjuster := state.spendLimitAdjuster
+						cool := state.spendLimitCooldown
+						cfg := state.autoSpendLimitCfg
+						cid := t.ClusterID
+						go func() {
+							succeeded := false
+							defer func() {
+								if !succeeded {
+									cool.RecordFailure(cid)
+								}
+							}()
+							ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+							defer cancel()
+							currentLimit, err := adjuster.GetSpendLimit(ctx, cid)
+							if err != nil {
+								slog.ErrorContext(ctx, "auto spend limit: get current limit failed",
+									"cluster_id", cid, "err", err)
+								return
+							}
+							newLimit := min(currentLimit+cfg.Increment, cfg.Max)
+							if newLimit <= currentLimit {
+								slog.InfoContext(ctx, "auto spend limit: already at max cap",
+									"cluster_id", cid, "current", currentLimit, "max", cfg.Max)
+								return
+							}
+							if err := adjuster.IncreaseSpendLimit(ctx, cid, newLimit); err != nil {
+								slog.ErrorContext(ctx, "auto spend limit: PATCH failed",
+									"cluster_id", cid, "from_amount", currentLimit, "to_amount", newLimit, "err", err)
+								return
+							}
+							succeeded = true
+							cool.RecordSuccess(cid)
+							slog.InfoContext(ctx, "auto spend limit: increased",
+								"cluster_id", cid, "from_amount", currentLimit, "to_amount", newLimit)
+						}()
+					}
+				}
 				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", poolDuration.Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", err)
 				if _, blocked := clusterBlacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
 					writeError(w, http.StatusTooManyRequests, "cluster quota exhausted")
@@ -126,7 +199,16 @@ func ResolveApiKey(
 	pool tenantDBGetter,
 	enc encrypt.Encryptor,
 	clusterBlacklist map[string]struct{},
+	opts ...authOption,
 ) func(http.Handler) http.Handler {
+	state := authConfig{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&state)
+		}
+	}
+	_ = state
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authStart := time.Now()
@@ -162,6 +244,46 @@ func ResolveApiKey(
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			poolDuration := time.Since(poolStart)
 			if err != nil {
+				isStarterOrZero := t.Provider == tenant.StarterProvisionerType || t.Provider == tenant.ZeroProvisionerType
+				if state.spendLimitAdjuster != nil && state.autoSpendLimitCfg.Enabled && isSpendLimitError(err) {
+					if isStarterOrZero && state.spendLimitCooldown.TryStartRaise(t.ClusterID) {
+						adjuster := state.spendLimitAdjuster
+						cool := state.spendLimitCooldown
+						cfg := state.autoSpendLimitCfg
+						cid := t.ClusterID
+						go func() {
+							succeeded := false
+							defer func() {
+								if !succeeded {
+									cool.RecordFailure(cid)
+								}
+							}()
+							ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+							defer cancel()
+							currentLimit, err := adjuster.GetSpendLimit(ctx, cid)
+							if err != nil {
+								slog.ErrorContext(ctx, "auto spend limit: get current limit failed",
+									"cluster_id", cid, "err", err)
+								return
+							}
+							newLimit := min(currentLimit+cfg.Increment, cfg.Max)
+							if newLimit <= currentLimit {
+								slog.InfoContext(ctx, "auto spend limit: already at max cap",
+									"cluster_id", cid, "current", currentLimit, "max", cfg.Max)
+								return
+							}
+							if err := adjuster.IncreaseSpendLimit(ctx, cid, newLimit); err != nil {
+								slog.ErrorContext(ctx, "auto spend limit: PATCH failed",
+									"cluster_id", cid, "from_amount", currentLimit, "to_amount", newLimit, "err", err)
+								return
+							}
+							succeeded = true
+							cool.RecordSuccess(cid)
+							slog.InfoContext(ctx, "auto spend limit: increased",
+								"cluster_id", cid, "from_amount", currentLimit, "to_amount", newLimit)
+						}()
+					}
+				}
 				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", poolDuration.Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", err)
 				if _, blocked := clusterBlacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
 					writeError(w, http.StatusTooManyRequests, "cluster quota exhausted")
