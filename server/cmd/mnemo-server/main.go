@@ -162,14 +162,35 @@ func main() {
 		logger.Info("no provisioner configured (pre-existing tenants mode)")
 	}
 
+	var spendLimitAdjuster tenant.SpendLimitAdjuster
+	var spendLimitCooldown *middleware.SpendLimitCooldown
+	var autoSpendLimitCfg middleware.AutoSpendLimitConfig
+	if cfg.AutoSpendLimitEnabled {
+		if os.Getenv("MNEMO_TIDBCLOUD_API_KEY") != "" && os.Getenv("MNEMO_TIDBCLOUD_API_SECRET") != "" {
+			spendLimitAdjuster = tenant.NewTiDBCloudProvisioner(cfg.TiDBCloudAPIURL, cfg.TiDBCloudPoolID)
+			spendLimitCooldown = middleware.NewSpendLimitCooldown(cfg.AutoSpendLimitCooldown)
+			autoSpendLimitCfg = middleware.AutoSpendLimitConfig{Enabled: true, Increment: cfg.AutoSpendLimitIncrement, Max: cfg.AutoSpendLimitMax}
+			logger.Info("auto spend limit enabled", "increment", cfg.AutoSpendLimitIncrement, "max", cfg.AutoSpendLimitMax, "cooldown", cfg.AutoSpendLimitCooldown.String())
+		} else {
+			logger.Warn("auto spend limit enabled but TiDB Cloud credentials missing; disabled")
+		}
+	}
+
 	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled, encryptor)
 	if utmRepo != nil {
 		tenantSvc.WithUTMRepo(utmRepo)
 	}
 
 	// Middleware.
-	tenantMW := middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
-	apiKeyMW := middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
+	var tenantMW func(http.Handler) http.Handler
+	var apiKeyMW func(http.Handler) http.Handler
+	if spendLimitAdjuster != nil {
+		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg))
+		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg))
+	} else {
+		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
+		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
+	}
 	rl := middleware.NewRateLimiter(cfg.RateLimit, cfg.RateBurst)
 	defer rl.Stop()
 	rateMW := rl.Middleware()

@@ -101,11 +101,72 @@ func (p *TiDBCloudProvisioner) ProviderType() string {
 	return StarterProvisionerType
 }
 
+var _ SpendLimitAdjuster = (*TiDBCloudProvisioner)(nil)
+
 // InitSchema for TiDB Cloud Pool is intentionally a no-op.
 // The Pool API guarantees every claimed cluster already has the memories
 // table pre-created before takeover. If this guarantee is ever violated,
 // activation failure will surface at first memory write (no cluster_id context).
 func (p *TiDBCloudProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
+	return nil
+}
+
+// GetSpendLimit returns the monthly spend limit in USD cents.
+func (p *TiDBCloudProvisioner) GetSpendLimit(ctx context.Context, clusterID string) (int, error) {
+	endpoint := fmt.Sprintf("%s/v1beta1/clusters/%s", strings.TrimRight(p.apiURL, "/"), clusterID)
+	resp, err := p.doDigestAuthRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return 0, fmt.Errorf("get spend limit: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("get spend limit: status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		Cluster struct {
+			SpendingLimit struct {
+				Monthly int `json:"monthly"`
+			} `json:"spendingLimit"`
+		} `json:"cluster"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("get spend limit: decode response: %w", err)
+	}
+
+	return result.Cluster.SpendingLimit.Monthly, nil
+}
+
+// IncreaseSpendLimit updates the monthly spend limit in USD cents.
+func (p *TiDBCloudProvisioner) IncreaseSpendLimit(ctx context.Context, clusterID string, monthlyCents int) error {
+	endpoint := fmt.Sprintf("%s/v1beta1/clusters/%s", strings.TrimRight(p.apiURL, "/"), clusterID)
+	payload := map[string]any{
+		"updateMask": "spendingLimit",
+		"cluster": map[string]any{
+			"spendingLimit": map[string]any{
+				"monthly": monthlyCents,
+			},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal spend limit request body: %w", err)
+	}
+
+	resp, err := p.doDigestAuthRequest(ctx, "PATCH", endpoint, body)
+	if err != nil {
+		return fmt.Errorf("increase spend limit: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("increase spend limit: status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
 	return nil
 }
 
@@ -185,7 +246,7 @@ func tokenizeDigestHeader(header string) []string {
 	var current strings.Builder
 	inQuote := false
 
-	for i := 0; i < len(header); i++ {
+	for i := range header {
 		ch := header[i]
 		switch ch {
 		case '"':

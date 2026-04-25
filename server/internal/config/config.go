@@ -97,6 +97,12 @@ type Config struct {
 	// MNEMO_CLUSTER_BLACKLIST (comma-separated). Empty by default.
 	ClusterBlacklist map[string]struct{}
 
+	// AutoSpendLimit controls automatic spend-limit increases for eligible clusters.
+	AutoSpendLimitEnabled   bool
+	AutoSpendLimitIncrement int
+	AutoSpendLimitMax       int
+	AutoSpendLimitCooldown  time.Duration
+
 	UTMEnabled bool
 }
 
@@ -152,6 +158,10 @@ func Load() (*Config, error) {
 		EncryptKey:               os.Getenv("MNEMO_ENCRYPT_KEY"),
 		DebugLLM:                 envBool("MNEMO_DEBUG_LLM", false),
 		ClusterBlacklist:         parseClusterBlacklist(os.Getenv("MNEMO_CLUSTER_BLACKLIST")),
+		AutoSpendLimitEnabled:    envBool("MNEMO_AUTO_SPEND_LIMIT_ENABLED", false),
+		AutoSpendLimitIncrement:  envInt("MNEMO_AUTO_SPEND_LIMIT_INCREMENT", 500),
+		AutoSpendLimitMax:        envInt("MNEMO_AUTO_SPEND_LIMIT_MAX", 10000),
+		AutoSpendLimitCooldown:   envDuration("MNEMO_AUTO_SPEND_LIMIT_COOLDOWN", 1*time.Hour),
 		UTMEnabled:               envBool("MNEMO_UTM_ENABLED", false),
 	}
 	// Validate ingest mode.
@@ -168,6 +178,16 @@ func Load() (*Config, error) {
 		// ok
 	default:
 		return nil, fmt.Errorf("unsupported MNEMO_DB_BACKEND %q; valid values are \"tidb\", \"postgres\", and \"db9\"", cfg.DBBackend)
+	}
+
+	if cfg.AutoSpendLimitIncrement <= 0 {
+		return nil, fmt.Errorf("MNEMO_AUTO_SPEND_LIMIT_INCREMENT must be positive")
+	}
+	if cfg.AutoSpendLimitMax <= cfg.AutoSpendLimitIncrement {
+		return nil, fmt.Errorf("MNEMO_AUTO_SPEND_LIMIT_MAX must be greater than increment")
+	}
+	if cfg.AutoSpendLimitCooldown <= 0 {
+		return nil, fmt.Errorf("MNEMO_AUTO_SPEND_LIMIT_COOLDOWN must be positive")
 	}
 
 	return cfg, nil
@@ -218,7 +238,7 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 
 func parseClusterBlacklist(raw string) map[string]struct{} {
 	out := make(map[string]struct{})
-	for _, id := range strings.Split(raw, ",") {
+	for id := range strings.SplitSeq(raw, ",") {
 		if id := strings.TrimSpace(id); id != "" {
 			out[id] = struct{}{}
 		}
