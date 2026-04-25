@@ -29,6 +29,7 @@ const (
 	enumerationFetchMultiplier   = 4
 	enumerationSecondHopTopN     = 5
 	enumerationPinnedKeepMax     = 1
+	enumerationAdjacentTurnTopN  = 12
 	richTopFetchMultiplier       = 4
 	richTopSecondHopTopN         = 5
 	sessionAdjacentTurnTopN      = 4
@@ -437,6 +438,9 @@ func recallCandidateOptions(shape recallQueryShape, enableSecondHop bool) servic
 	}
 	if shape == recallQueryShapeEnumeration {
 		opts.FetchMultiplier = enumerationFetchMultiplier
+		opts.EnableAdjacentTurns = true
+		opts.AdjacentTurnRadius = sessionAdjacentTurnRadius
+		opts.AdjacentTurnTopN = enumerationAdjacentTurnTopN
 		if enableSecondHop {
 			opts.SecondHopTopN = enumerationSecondHopTopN
 		}
@@ -1068,7 +1072,6 @@ func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float
 			bonus -= 0.12
 		}
 	}
-
 	return bonus
 }
 

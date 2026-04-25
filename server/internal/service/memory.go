@@ -152,7 +152,7 @@ func (s *MemoryService) Search(ctx context.Context, filter domain.MemoryFilter) 
 		if err != nil {
 			return nil, 0, err
 		}
-			return finalizeSearchResults(mems, filter.Query), total, nil
+		return finalizeSearchResults(mems, filter.Query), total, nil
 	}
 	searchFilter := filter
 	searchFilter.SessionID = ""

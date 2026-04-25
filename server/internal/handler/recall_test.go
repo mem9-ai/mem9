@@ -206,3 +206,23 @@ func TestBuildRecallConfidence_TimeFutureIntentPrefersPlannedFutureEvidence(t *t
 		t.Fatalf("expected future-planning evidence to outrank past event for future time query: future=%d past=%d", gotFuture, gotPast)
 	}
 }
+
+func TestRecallCandidateOptions_EnumerationExpandsAdjacentTurns(t *testing.T) {
+	opts := recallCandidateOptions(recallQueryShapeEnumeration, true)
+
+	if !opts.EnableAdjacentTurns {
+		t.Fatal("enumeration recall should expand adjacent session turns")
+	}
+	if opts.AdjacentTurnRadius != sessionAdjacentTurnRadius {
+		t.Fatalf("adjacent radius = %d, want %d", opts.AdjacentTurnRadius, sessionAdjacentTurnRadius)
+	}
+	if opts.AdjacentTurnTopN != enumerationAdjacentTurnTopN {
+		t.Fatalf("adjacent topN = %d, want %d", opts.AdjacentTurnTopN, enumerationAdjacentTurnTopN)
+	}
+	if opts.FetchMultiplier != enumerationFetchMultiplier {
+		t.Fatalf("fetch multiplier = %d, want %d", opts.FetchMultiplier, enumerationFetchMultiplier)
+	}
+	if opts.SecondHopTopN != enumerationSecondHopTopN {
+		t.Fatalf("second hop topN = %d, want %d", opts.SecondHopTopN, enumerationSecondHopTopN)
+	}
+}
