@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { Loader2, Globe, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,14 @@ function getOpenerOrigin(): string | null {
   } catch {
     return null;
   }
+}
+
+function InlineToken({ children }: { children?: ReactNode }) {
+  return (
+    <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[0.92em] text-foreground">
+      {children}
+    </code>
+  );
 }
 
 export function ConnectPage() {
@@ -198,7 +206,7 @@ export function ConnectPage() {
             {t("connect.title")}
           </h1>
           <p className="mt-2 text-[15px] text-muted-foreground">
-            {t("connect.subtitle")}
+            <Trans i18nKey="connect.subtitle" components={{ code: <InlineToken /> }} />
           </p>
         </div>
 
@@ -260,13 +268,13 @@ export function ConnectPage() {
           </form>
 
           <p className="mt-4 text-center text-xs text-soft-foreground">
-            {t("connect.security")}
+            <Trans i18nKey="connect.security" components={{ code: <InlineToken /> }} />
           </p>
         </div>
 
         <div className="mt-10 space-y-4">
           <h2 className="text-xs font-semibold uppercase tracking-[0.22em] text-ring">
-            {t("connect.how_title")}
+            <Trans i18nKey="connect.how_title" components={{ code: <InlineToken /> }} />
           </h2>
           <div className="space-y-3">
             {(["how_1", "how_2"] as const).map((key, i) => (
@@ -275,7 +283,7 @@ export function ConnectPage() {
                   {i + 1}
                 </span>
                 <p className="text-sm leading-relaxed text-muted-foreground">
-                  {t(`connect.${key}`)}
+                  <Trans i18nKey={`connect.${key}`} components={{ code: <InlineToken /> }} />
                 </p>
               </div>
             ))}

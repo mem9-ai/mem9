@@ -2,17 +2,17 @@
   "_locale": "en",
   "connect": {
     "title": "Your Memory",
-    "subtitle": "Use your MEM9_API_KEY to continue",
+    "subtitle": "Use your <code>MEM9_API_KEY</code> to continue",
     "placeholder": "MEM9_API_KEY",
     "submit": "Open memory space",
     "remember_login": "Keep me signed in for 15 days",
-    "security": "MEM9_API_KEY is your private key. Do not share it.",
+    "security": "<code>MEM9_API_KEY</code> is your private key. Do not share it.",
     "error": {
       "invalid": "Cannot access this memory space. Check your MEM9_API_KEY and try again."
     },
-    "how_title": "How to get your MEM9_API_KEY",
-    "how_1": "Ask OpenClaw to show you the MEM9_API_KEY it is already using.",
-    "how_2": "For other agent tools, ask the agent to show you its MEM9_API_KEY or tell you where it is stored."
+    "how_title": "How to get your <code>MEM9_API_KEY</code>",
+    "how_1": "Ask OpenClaw to show you the <code>MEM9_API_KEY</code> it is already using.",
+    "how_2": "For other agent tools, ask the agent to show you its <code>MEM9_API_KEY</code> or tell you where it is stored."
   },
   "space": {
     "title": "Your Memory",

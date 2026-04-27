@@ -63,7 +63,16 @@ function currentURL(): string {
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }
 
-beforeEach(() => {
+function getByExactText(text: string): HTMLElement {
+  return screen.getByText((_, element) => element?.textContent === text);
+}
+
+function getInlineCodeTokens(): HTMLElement[] {
+  return screen.getAllByText("MEM9_API_KEY", { selector: "code" });
+}
+
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
   resetConnectBootstrapForTests();
   mocks.getActiveApiKey.mockReset();
   mocks.getActiveApiKey.mockReturnValue(null);
@@ -196,22 +205,38 @@ describe("ConnectPage", () => {
   it("renders MEM9_API_KEY wording and retrieval guidance", () => {
     render(<ConnectPage />);
 
-    expect(
-      screen.getByText("Use your MEM9_API_KEY to continue"),
-    ).toBeInTheDocument();
+    expect(getByExactText("Use your MEM9_API_KEY to continue")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("MEM9_API_KEY")).toBeInTheDocument();
+    expect(getInlineCodeTokens()).toHaveLength(5);
     expect(
-      screen.getByText("MEM9_API_KEY is your private key. Do not share it."),
+      getByExactText("MEM9_API_KEY is your private key. Do not share it."),
     ).toBeInTheDocument();
-    expect(screen.getByText("How to get your MEM9_API_KEY")).toBeInTheDocument();
+    expect(getByExactText("How to get your MEM9_API_KEY")).toBeInTheDocument();
     expect(
-      screen.getByText(
+      getByExactText(
         "Ask OpenClaw to show you the MEM9_API_KEY it is already using.",
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
+      getByExactText(
         "For other agent tools, ask the agent to show you its MEM9_API_KEY or tell you where it is stored.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("renders zh-CN MEM9_API_KEY guidance with inline code tokens", async () => {
+    await i18n.changeLanguage("zh-CN");
+
+    render(<ConnectPage />);
+
+    expect(getByExactText("使用 MEM9_API_KEY 继续")).toBeInTheDocument();
+    expect(getInlineCodeTokens()).toHaveLength(5);
+    expect(
+      getByExactText("MEM9_API_KEY 是你的私密密钥。请勿分享。"),
+    ).toBeInTheDocument();
+    expect(
+      getByExactText(
+        "让 OpenClaw 直接把它当前正在使用的 MEM9_API_KEY 发给你。",
       ),
     ).toBeInTheDocument();
   });
