@@ -2,11 +2,11 @@
   "_locale": "en",
   "connect": {
     "title": "Your Memory",
-    "subtitle": "Enter your MEM9_API_KEY to open your memory space",
+    "subtitle": "Use your MEM9_API_KEY to continue",
     "placeholder": "MEM9_API_KEY",
     "submit": "Open memory space",
     "remember_login": "Keep me signed in for 15 days",
-    "security": "MEM9_API_KEY is your private key. Do not share it with others.",
+    "security": "MEM9_API_KEY is your private key. Do not share it.",
     "error": {
       "invalid": "Cannot access this memory space. Check your MEM9_API_KEY and try again."
     },

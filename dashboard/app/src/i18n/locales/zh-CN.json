@@ -2,11 +2,11 @@
   "_locale": "zh-CN",
   "connect": {
     "title": "Your Memory",
-    "subtitle": "输入 MEM9_API_KEY 以打开你的记忆空间",
+    "subtitle": "使用 MEM9_API_KEY 继续",
     "placeholder": "MEM9_API_KEY",
     "submit": "打开记忆空间",
     "remember_login": "保留登录状态 15 天",
-    "security": "MEM9_API_KEY 是你的私密密钥。请勿分享给他人。",
+    "security": "MEM9_API_KEY 是你的私密密钥。请勿分享。",
     "error": {
       "invalid": "无法访问这个记忆空间，请检查 MEM9_API_KEY 后重试"
     },

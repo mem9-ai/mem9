@@ -197,13 +197,11 @@ describe("ConnectPage", () => {
     render(<ConnectPage />);
 
     expect(
-      screen.getByText("Enter your MEM9_API_KEY to open your memory space"),
+      screen.getByText("Use your MEM9_API_KEY to continue"),
     ).toBeInTheDocument();
     expect(screen.getByPlaceholderText("MEM9_API_KEY")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "MEM9_API_KEY is your private key. Do not share it with others.",
-      ),
+      screen.getByText("MEM9_API_KEY is your private key. Do not share it."),
     ).toBeInTheDocument();
     expect(screen.getByText("How to get your MEM9_API_KEY")).toBeInTheDocument();
     expect(
