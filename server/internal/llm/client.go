@@ -390,7 +390,7 @@ func supportsReasoningSplit(model string) *bool {
 // cache_control markers in message content. Currently scoped to Qwen3 models
 // per Aliyun Bailian docs (qwen3-max, qwen3-coder-plus, qwen3-vl-plus, ...).
 func supportsExplicitCache(model string) bool {
-	return strings.HasPrefix(strings.ToLower(model), "qwen3-")
+	return strings.HasPrefix(strings.ToLower(model), "qwen")
 }
 
 func StripMarkdownFences(s string) string {
