@@ -37,6 +37,7 @@ vendor/
 # Server outputs
 server/bin
 server/coverage/
+server/.tmp
 
 # Benchmark results
 benchmark/results/*
