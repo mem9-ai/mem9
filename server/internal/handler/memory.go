@@ -63,6 +63,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if hasMessages && strings.TrimSpace(req.MemoryType) != "" {
+		s.handleError(r.Context(), w, &domain.ValidationError{Field: "memory_type", Message: "memory_type is only allowed with content, not messages"})
+		return
+	}
+
 	if hasMessages {
 		messages := append([]service.IngestMessage(nil), req.Messages...)
 		ingestReq := service.IngestRequest{

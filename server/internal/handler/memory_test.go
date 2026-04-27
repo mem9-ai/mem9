@@ -396,6 +396,23 @@ func TestCreateMemory_ContentWithUnsupportedExplicitMemoryType_Returns400(t *tes
 	}
 }
 
+func TestCreateMemory_MessagesWithMemoryType_Returns400(t *testing.T) {
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
+
+	body := map[string]any{
+		"messages":    []map[string]string{{"role": "user", "content": "hello"}},
+		"memory_type": "pinned",
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestCreateMemory_SyncContent_WithSessionID_DoesNotPersistRawSession(t *testing.T) {
 	sessRepo := &testSessionRepo{}
 	srv := newTestServer(&testMemoryRepo{}, sessRepo)
