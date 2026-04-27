@@ -2,17 +2,17 @@
   "_locale": "zh-CN",
   "connect": {
     "title": "Your Memory",
-    "subtitle": "输入你的 MEM9_API_KEY",
+    "subtitle": "输入 MEM9_API_KEY 以打开你的记忆空间",
     "placeholder": "MEM9_API_KEY",
-    "submit": "打开记忆",
+    "submit": "打开记忆空间",
     "remember_login": "保留登录状态 15 天",
-    "security": "MEM9_API_KEY 可以访问你的记忆，请妥善保管",
+    "security": "MEM9_API_KEY 是你的私密密钥。请勿分享给他人。",
     "error": {
-      "invalid": "无法访问这份记忆，请检查 MEM9_API_KEY 后重试"
+      "invalid": "无法访问这个记忆空间，请检查 MEM9_API_KEY 后重试"
     },
-    "how_title": "去哪里拿 MEM9_API_KEY",
-    "how_1": "在 OpenClaw 里，从 mem9 或环境设置复制 MEM9_API_KEY。",
-    "how_2": "其他 agent 工具通常也会在 mem9 配置里暴露同一个 MEM9_API_KEY。"
+    "how_title": "如何获取 MEM9_API_KEY",
+    "how_1": "让 OpenClaw 直接把它当前正在使用的 MEM9_API_KEY 发给你。",
+    "how_2": "对于其他 agent 工具，让它直接把自己的 MEM9_API_KEY 发给你，或告诉你存放位置。"
   },
   "space": {
     "title": "Your Memory",

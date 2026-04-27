@@ -196,20 +196,24 @@ describe("ConnectPage", () => {
   it("renders MEM9_API_KEY wording and retrieval guidance", () => {
     render(<ConnectPage />);
 
-    expect(screen.getByText("Enter your MEM9_API_KEY")).toBeInTheDocument();
+    expect(
+      screen.getByText("Enter your MEM9_API_KEY to open your memory space"),
+    ).toBeInTheDocument();
     expect(screen.getByPlaceholderText("MEM9_API_KEY")).toBeInTheDocument();
     expect(
-      screen.getByText("MEM9_API_KEY unlocks your memory. Keep it private."),
+      screen.getByText(
+        "MEM9_API_KEY is your private key. Do not share it with others.",
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByText("Get your MEM9_API_KEY")).toBeInTheDocument();
+    expect(screen.getByText("How to get your MEM9_API_KEY")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "In OpenClaw, copy MEM9_API_KEY from your mem9 or environment settings.",
+        "Ask OpenClaw to show you the MEM9_API_KEY it is already using.",
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Other agent tools usually expose the same MEM9_API_KEY in their mem9 config.",
+        "For other agent tools, ask the agent to show you its MEM9_API_KEY or tell you where it is stored.",
       ),
     ).toBeInTheDocument();
   });

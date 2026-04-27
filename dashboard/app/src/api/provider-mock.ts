@@ -221,7 +221,7 @@ export const mockProvider: DashboardProvider = {
     const id = apiKey.trim();
     if (!id || id.length < 8) {
       throw new Error(
-        "Cannot access this memory. Check your MEM9_API_KEY and try again.",
+        "Cannot access this memory space. Check your MEM9_API_KEY and try again.",
       );
     }
     return { ...mockSpaceInfo, tenant_id: id };
