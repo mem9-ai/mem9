@@ -30,7 +30,7 @@ import {
   mockSpaceInfo,
 } from "./mock-data";
 
-const AGENT_ID = "dashboard";
+const AGENT_ID = "mem9-dashboard";
 
 function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -42,7 +42,7 @@ const mockImportTaskStore: ImportTask[] = [
   {
     id: "task-001",
     tenant_id: "demo",
-    agent_id: "dashboard",
+    agent_id: AGENT_ID,
     file_name: "memories-backup.json",
     file_type: "memory",
     status: "done",
@@ -55,7 +55,7 @@ const mockImportTaskStore: ImportTask[] = [
   {
     id: "task-002",
     tenant_id: "demo",
-    agent_id: "dashboard",
+    agent_id: AGENT_ID,
     file_name: "team-knowledge.json",
     file_type: "memory",
     status: "done",
@@ -68,7 +68,7 @@ const mockImportTaskStore: ImportTask[] = [
   {
     id: "task-003",
     tenant_id: "demo",
-    agent_id: "dashboard",
+    agent_id: AGENT_ID,
     file_name: "invalid-format.json",
     file_type: "memory",
     status: "failed",
@@ -81,7 +81,7 @@ const mockImportTaskStore: ImportTask[] = [
   {
     id: "task-004",
     tenant_id: "demo",
-    agent_id: "dashboard",
+    agent_id: AGENT_ID,
     file_name: "latest-export.json",
     file_type: "memory",
     status: "processing",

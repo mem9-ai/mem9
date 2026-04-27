@@ -39,7 +39,7 @@ describe("httpProvider", () => {
     expect(url).toBe("/your-memory/api/memories?limit=1");
     expect(url).not.toContain("space-1");
     expect(headers.get("X-API-Key")).toBe("space-1");
-    expect(headers.get("X-Mnemo-Agent-Id")).toBe("dashboard");
+    expect(headers.get("X-Mnemo-Agent-Id")).toBe("mem9-dashboard");
     expect(headers.get("Content-Type")).toBe("application/json");
   });
 
@@ -82,7 +82,7 @@ describe("httpProvider", () => {
       }),
     );
     expect(headers.get("X-API-Key")).toBe("space-1");
-    expect(headers.get("X-Mnemo-Agent-Id")).toBe("dashboard");
+    expect(headers.get("X-Mnemo-Agent-Id")).toBe("mem9-dashboard");
     expect(upsertCachedMemories).toHaveBeenCalledWith(
       "space-1",
       [expect.objectContaining({ id: "mem-1", memory_type: "pinned" })],
@@ -148,7 +148,7 @@ describe("httpProvider", () => {
     expect(url).toBe("/your-memory/api/imports");
     expect(url).not.toContain("space-1");
     expect(headers.get("X-API-Key")).toBe("space-1");
-    expect(headers.get("X-Mnemo-Agent-Id")).toBe("dashboard");
+    expect(headers.get("X-Mnemo-Agent-Id")).toBe("mem9-dashboard");
     expect(headers.has("Content-Type")).toBe(false);
     expect(init?.body).toBeInstanceOf(FormData);
   });
@@ -192,7 +192,7 @@ describe("httpProvider", () => {
     const headers = init?.headers as Headers;
     expect(url).toBe("/your-memory/api/session-messages?session_id=sess-1");
     expect(headers.get("X-API-Key")).toBe("space-1");
-    expect(headers.get("X-Mnemo-Agent-Id")).toBe("dashboard");
+    expect(headers.get("X-Mnemo-Agent-Id")).toBe("mem9-dashboard");
     expect(headers.get("Content-Type")).toBe("application/json");
   });
 

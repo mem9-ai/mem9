@@ -24,7 +24,7 @@ const API_BASE = (import.meta.env.VITE_API_BASE || "/your-memory/api").replace(
   /\/+$/,
   "",
 );
-const AGENT_ID = "dashboard";
+const AGENT_ID = "mem9-dashboard";
 const EMPTY_TIMESTAMP = new Date(0).toISOString();
 
 function normalizeTags(tags: unknown): string[] {
