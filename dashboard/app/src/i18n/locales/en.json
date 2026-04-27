@@ -109,6 +109,7 @@
   "empty": {
     "title": "This space has no memories yet",
     "description": "Memories are accumulated as you chat with your agent. You can also save the first one now.",
+    "description_readonly": "Memories are accumulated as you chat with your agent.",
     "cta": "Save your first memory"
   },
   "legend": {

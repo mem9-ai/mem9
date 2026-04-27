@@ -109,6 +109,7 @@
   "empty": {
     "title": "这个 space 还没有记忆",
     "description": "记忆会在你和 agent 对话时自动积累，你也可以现在手动保存第一条",
+    "description_readonly": "记忆会在你和 agent 对话时自动积累。",
     "cta": "保存第一条记忆"
   },
   "legend": {

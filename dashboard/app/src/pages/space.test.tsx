@@ -167,6 +167,16 @@ const archivedMemory = createMemory(
   "2026-03-21T00:00:00Z",
 );
 
+const defaultMemories = [
+  activityNewest,
+  preferenceMemory,
+  activityOlder,
+  archivedMemory,
+];
+
+let mockedPageMemories = [...defaultMemories];
+let mockedSourceMemories = [...defaultMemories];
+
 const analysisState: SpaceAnalysisState = {
   phase: "completed",
   snapshot: {
@@ -325,7 +335,13 @@ vi.mock("@/api/queries", () => ({
   useStats: (spaceId: string, range?: string, enabled = true) => {
     mocks.useStats(spaceId, range, enabled);
     return {
-      data: enabled ? { total: 4, pinned: 0, insight: 4 } : undefined,
+      data: enabled
+        ? {
+            total: mockedPageMemories.length,
+            pinned: mockedPageMemories.filter((memory) => memory.memory_type === "pinned").length,
+            insight: mockedPageMemories.filter((memory) => memory.memory_type === "insight").length,
+          }
+        : undefined,
       isLoading: false,
       isFetching: false,
     };
@@ -336,8 +352,8 @@ vi.mock("@/api/queries", () => ({
       data: {
         pages: [
           {
-            memories: [activityNewest, preferenceMemory, activityOlder, archivedMemory],
-            total: 4,
+            memories: mockedPageMemories,
+            total: mockedPageMemories.length,
             limit: 50,
             offset: 0,
           },
@@ -436,7 +452,7 @@ vi.mock("@/api/source-memories", () => ({
   useSourceMemories: (_spaceId: string) => {
     mocks.useSourceMemories(_spaceId);
     return {
-      data: [activityNewest, preferenceMemory, activityOlder, archivedMemory],
+      data: mockedSourceMemories,
       isLoading: false,
       isFetching: false,
       refetch: vi.fn(async () => undefined),
@@ -545,6 +561,8 @@ describe("SpacePage", () => {
         ["preference", "coffee"],
       ),
     );
+    mockedPageMemories = [...defaultMemories];
+    mockedSourceMemories = [...defaultMemories];
     features.enableManualAdd = false;
     await i18n.changeLanguage("en");
     window.history.pushState({}, "", "/your-memory/space");
@@ -650,6 +668,38 @@ describe("SpacePage", () => {
         tags: ["preference", "coffee"],
       });
     });
+  });
+
+  it("hides empty-state manual-add affordance when manual add is gated off", async () => {
+    mockedPageMemories = [];
+    mockedSourceMemories = [];
+
+    renderSpacePage();
+
+    expect(screen.getByText("This space has no memories yet")).toBeInTheDocument();
+    expect(
+      screen.getByText("Memories are accumulated as you chat with your agent."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Save your first memory" }),
+    ).toBeNull();
+  });
+
+  it("shows empty-state manual-add affordance when manual add is enabled", async () => {
+    mockedPageMemories = [];
+    mockedSourceMemories = [];
+    features.enableManualAdd = true;
+
+    renderSpacePage();
+
+    expect(
+      screen.getByText(
+        "Memories are accumulated as you chat with your agent. You can also save the first one now.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Save your first memory" }),
+    ).toBeInTheDocument();
   });
 
   it("navigates to memory farm in the current tab from the single CTA", async () => {
