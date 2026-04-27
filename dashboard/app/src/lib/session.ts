@@ -1,72 +1,156 @@
+const API_KEY_KEY = "mem9-api-key";
 const SPACE_ID_KEY = "mem9-space-id";
 const LAST_ACTIVE_KEY = "mem9-last-active";
+const REMEMBERED_API_KEY = "mem9-remembered-api-key";
 const REMEMBERED_SPACE_KEY = "mem9-remembered-space";
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const REMEMBER_ME_TTL_MS = 15 * 24 * 60 * 60 * 1000;
 export const MEM9_CONNECT_READY_EVENT = "mem9-connect-ready";
 export const MEM9_SPACE_HANDOFF_EVENT = "mem9-space-handoff";
 
-interface RememberedSpace {
-  spaceId: string;
+interface RememberedApiKey {
+  apiKey: string;
   expiresAt: number;
 }
 
-function writeSessionState(storage: Storage, id: string): void {
-  storage.setItem(SPACE_ID_KEY, id);
+function writeSessionKey(storage: Storage, apiKey: string): void {
+  storage.setItem(API_KEY_KEY, apiKey);
+  removeLegacySessionState(storage);
+}
+
+function removeLegacySessionState(storage: Storage): void {
+  storage.removeItem(SPACE_ID_KEY);
+}
+
+function removeLegacyRememberedState(storage: Storage): void {
+  storage.removeItem(REMEMBERED_SPACE_KEY);
+}
+
+function writeSessionState(storage: Storage, apiKey: string): void {
+  writeSessionKey(storage, apiKey);
   storage.setItem(LAST_ACTIVE_KEY, String(Date.now()));
 }
 
-export function getSpaceId(): string | null {
-  return sessionStorage.getItem(SPACE_ID_KEY);
+function migrateLegacySessionState(storage: Storage): string | null {
+  const legacyApiKey = storage.getItem(SPACE_ID_KEY);
+  if (!legacyApiKey) {
+    return null;
+  }
+
+  writeSessionKey(storage, legacyApiKey);
+  return legacyApiKey;
 }
 
-function readRememberedSpace(): RememberedSpace | null {
+function readRawRememberedApiKey(
+  storage: Storage,
+  key: string,
+  valueKey: "apiKey" | "spaceId",
+): RememberedApiKey | null {
   try {
-    const raw = localStorage.getItem(REMEMBERED_SPACE_KEY);
+    const raw = storage.getItem(key);
     if (!raw) return null;
 
-    const parsed = JSON.parse(raw) as Partial<RememberedSpace>;
+    const parsed = JSON.parse(raw) as Partial<RememberedApiKey & { spaceId: string }>;
+    const storedValue = parsed[valueKey];
     if (
-      typeof parsed.spaceId !== "string" ||
+      typeof storedValue !== "string" ||
       typeof parsed.expiresAt !== "number"
     ) {
-      localStorage.removeItem(REMEMBERED_SPACE_KEY);
+      storage.removeItem(key);
       return null;
     }
 
     if (parsed.expiresAt <= Date.now()) {
-      localStorage.removeItem(REMEMBERED_SPACE_KEY);
+      storage.removeItem(key);
       return null;
     }
 
     return {
-      spaceId: parsed.spaceId,
+      apiKey: storedValue,
       expiresAt: parsed.expiresAt,
     };
   } catch {
-    localStorage.removeItem(REMEMBERED_SPACE_KEY);
+    storage.removeItem(key);
     return null;
   }
 }
 
-export function setSpaceId(id: string, remember = false): void {
-  writeSessionState(sessionStorage, id);
+function writeRememberedApiKey(
+  storage: Storage,
+  apiKey: string,
+  expiresAt = Date.now() + REMEMBER_ME_TTL_MS,
+): void {
+  const remembered: RememberedApiKey = {
+    apiKey,
+    expiresAt,
+  };
+  storage.setItem(REMEMBERED_API_KEY, JSON.stringify(remembered));
+  removeLegacyRememberedState(storage);
+}
+
+function readRememberedApiKey(): RememberedApiKey | null {
+  const rememberedApiKey = readRawRememberedApiKey(
+    localStorage,
+    REMEMBERED_API_KEY,
+    "apiKey",
+  );
+  if (rememberedApiKey) {
+    removeLegacyRememberedState(localStorage);
+    return rememberedApiKey;
+  }
+
+  const legacyRememberedApiKey = readRawRememberedApiKey(
+    localStorage,
+    REMEMBERED_SPACE_KEY,
+    "spaceId",
+  );
+  if (!legacyRememberedApiKey) {
+    return null;
+  }
+
+  writeRememberedApiKey(
+    localStorage,
+    legacyRememberedApiKey.apiKey,
+    legacyRememberedApiKey.expiresAt,
+  );
+  return legacyRememberedApiKey;
+}
+
+export function getApiKey(): string | null {
+  const apiKey = sessionStorage.getItem(API_KEY_KEY);
+  if (apiKey) {
+    removeLegacySessionState(sessionStorage);
+    return apiKey;
+  }
+
+  return migrateLegacySessionState(sessionStorage);
+}
+
+export function setApiKey(apiKey: string, remember = false): void {
+  writeSessionState(sessionStorage, apiKey);
 
   if (remember) {
-    const remembered: RememberedSpace = {
-      spaceId: id,
-      expiresAt: Date.now() + REMEMBER_ME_TTL_MS,
-    };
-    localStorage.setItem(REMEMBERED_SPACE_KEY, JSON.stringify(remembered));
+    writeRememberedApiKey(localStorage, apiKey);
     return;
   }
 
-  localStorage.removeItem(REMEMBERED_SPACE_KEY);
+  localStorage.removeItem(REMEMBERED_API_KEY);
+  removeLegacyRememberedState(localStorage);
+}
+
+export function getSpaceId(): string | null {
+  return getApiKey();
+}
+
+export function setSpaceId(spaceId: string, remember = false): void {
+  setApiKey(spaceId, remember);
 }
 
 export function clearSpace(): void {
+  sessionStorage.removeItem(API_KEY_KEY);
   sessionStorage.removeItem(SPACE_ID_KEY);
   sessionStorage.removeItem(LAST_ACTIVE_KEY);
+  localStorage.removeItem(REMEMBERED_API_KEY);
   localStorage.removeItem(REMEMBERED_SPACE_KEY);
 }
 
@@ -80,24 +164,36 @@ export function isSessionExpired(): boolean {
   return Date.now() - Number(last) > IDLE_TIMEOUT_MS;
 }
 
-export function restoreRememberedSpace(): string | null {
-  const remembered = readRememberedSpace();
+export function restoreRememberedApiKey(): string | null {
+  const remembered = readRememberedApiKey();
   if (!remembered) return null;
 
-  writeSessionState(sessionStorage, remembered.spaceId);
-  return remembered.spaceId;
+  writeSessionState(sessionStorage, remembered.apiKey);
+  return remembered.apiKey;
+}
+
+export function getActiveApiKey(): string | null {
+  return getApiKey() ?? restoreRememberedApiKey();
+}
+
+export function restoreRememberedSpace(): string | null {
+  return restoreRememberedApiKey();
 }
 
 export function getActiveSpaceId(): string | null {
-  return getSpaceId() ?? restoreRememberedSpace();
+  return getActiveApiKey();
 }
 
-export function isRememberedSpace(spaceId: string): boolean {
-  if (!spaceId) {
+export function isRememberedApiKey(apiKey: string): boolean {
+  if (!apiKey) {
     return false;
   }
 
-  return readRememberedSpace()?.spaceId === spaceId;
+  return readRememberedApiKey()?.apiKey === apiKey;
+}
+
+export function isRememberedSpace(spaceId: string): boolean {
+  return isRememberedApiKey(spaceId);
 }
 
 export function maskSpaceId(id: string): string {

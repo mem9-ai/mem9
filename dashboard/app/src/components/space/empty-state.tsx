@@ -5,9 +5,11 @@ import { Button } from "@/components/ui/button";
 export function EmptyState({
   t,
   onAdd,
+  canAdd,
 }: {
   t: TFunction;
   onAdd: () => void;
+  canAdd: boolean;
 }) {
   return (
     <div className="flex flex-col items-center justify-center gap-5 py-16 text-center">
@@ -17,18 +19,20 @@ export function EmptyState({
       <div>
         <h3 className="text-base font-semibold">{t("empty.title")}</h3>
         <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
-          {t("empty.description")}
+          {t(canAdd ? "empty.description" : "empty.description_readonly")}
         </p>
       </div>
-      <Button
-        onClick={onAdd}
-        data-mp-event="Dashboard/EmptyState/AddClicked"
-        data-mp-page-name="space"
-        className="gap-2 text-sm"
-      >
-        <Plus className="size-4" />
-        {t("empty.cta")}
-      </Button>
+      {canAdd && (
+        <Button
+          onClick={onAdd}
+          data-mp-event="Dashboard/EmptyState/AddClicked"
+          data-mp-page-name="space"
+          className="gap-2 text-sm"
+        >
+          <Plus className="size-4" />
+          {t("empty.cta")}
+        </Button>
+      )}
     </div>
   );
 }

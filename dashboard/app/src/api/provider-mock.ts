@@ -216,17 +216,19 @@ function mockTopicSummary(params?: TimeRangeParams): TopicSummary {
 }
 
 export const mockProvider: DashboardProvider = {
-  async verifySpace(spaceId: string): Promise<SpaceInfo> {
+  async verifySpace(apiKey: string): Promise<SpaceInfo> {
     await delay(400);
-    const id = spaceId.trim();
+    const id = apiKey.trim();
     if (!id || id.length < 8) {
-      throw new Error("Cannot access this space. Please check your ID.");
+      throw new Error(
+        "Cannot access this memory space. Check your MEM9_API_KEY and try again.",
+      );
     }
     return { ...mockSpaceInfo, tenant_id: id };
   },
 
   async listMemories(
-    _spaceId: string,
+    _apiKey: string,
     params: MemoryListParams = {},
   ): Promise<MemoryListResponse> {
     await delay(300);
@@ -234,7 +236,7 @@ export const mockProvider: DashboardProvider = {
   },
 
   async listSessionMessages(
-    _spaceId: string,
+    _apiKey: string,
     params: SessionMessageListParams,
   ): Promise<SessionMessageListResponse> {
     await delay(180);
@@ -242,14 +244,14 @@ export const mockProvider: DashboardProvider = {
   },
 
   async getStats(
-    _spaceId: string,
+    _apiKey: string,
     params?: TimeRangeParams,
   ): Promise<MemoryStats> {
     await delay(200);
     return mockStats(params);
   },
 
-  async getMemory(_spaceId: string, memoryId: string): Promise<Memory> {
+  async getMemory(_apiKey: string, memoryId: string): Promise<Memory> {
     await delay(150);
     const mem = mockStore.find((m) => m.id === memoryId);
     if (!mem) throw new Error("Memory not found");
@@ -257,14 +259,14 @@ export const mockProvider: DashboardProvider = {
   },
 
   async createMemory(
-    _spaceId: string,
+    apiKey: string,
     input: MemoryCreateInput,
   ): Promise<Memory> {
     await delay(500);
     const mem: Memory = {
       id: `mem-${Date.now()}`,
       content: input.content,
-      memory_type: "pinned",
+      memory_type: input.memory_type,
       source: "dashboard",
       tags: input.tags ?? [],
       metadata: null,
@@ -277,12 +279,12 @@ export const mockProvider: DashboardProvider = {
       updated_at: new Date().toISOString(),
     };
     mockStore.unshift(mem);
-    await upsertCachedMemories(_spaceId, [mem]);
+    await upsertCachedMemories(apiKey, [mem]);
     return mem;
   },
 
   async updateMemory(
-    _spaceId: string,
+    apiKey: string,
     memoryId: string,
     input: MemoryUpdateInput,
     _version?: number,
@@ -303,22 +305,22 @@ export const mockProvider: DashboardProvider = {
     };
     const idx = mockStore.indexOf(existing);
     mockStore[idx] = updated;
-    await upsertCachedMemories(_spaceId, [updated]);
+    await upsertCachedMemories(apiKey, [updated]);
     return { ...updated };
   },
 
-  async deleteMemory(_spaceId: string, memoryId: string): Promise<void> {
+  async deleteMemory(apiKey: string, memoryId: string): Promise<void> {
     await delay(300);
     mockStore = mockStore.filter((m) => m.id !== memoryId);
-    await removeCachedMemory(_spaceId, memoryId);
+    await removeCachedMemory(apiKey, memoryId);
   },
 
-  async exportMemories(_spaceId: string): Promise<MemoryExportFile> {
+  async exportMemories(apiKey: string): Promise<MemoryExportFile> {
     await delay(500);
     return {
       schema_version: "mem9.memory_export.v1",
       exported_at: new Date().toISOString(),
-      source_space_id: _spaceId,
+      source_space_id: apiKey,
       agent_id: AGENT_ID,
       memories: mockStore.map((m) => ({
         content: m.content,
@@ -333,13 +335,13 @@ export const mockProvider: DashboardProvider = {
   },
 
   async importMemories(
-    _spaceId: string,
+    apiKey: string,
     file: File,
   ): Promise<ImportTask> {
     await delay(800);
     const task: ImportTask = {
       id: `task-${Date.now()}`,
-      tenant_id: _spaceId,
+      tenant_id: apiKey,
       agent_id: AGENT_ID,
       file_name: file.name,
       file_type: "memory",
@@ -364,7 +366,7 @@ export const mockProvider: DashboardProvider = {
   },
 
   async getImportTask(
-    _spaceId: string,
+    apiKey: string,
     taskId: string,
   ): Promise<ImportTask> {
     await delay(300);
@@ -372,7 +374,7 @@ export const mockProvider: DashboardProvider = {
     if (task) return { ...task };
     return {
       id: taskId,
-      tenant_id: _spaceId,
+      tenant_id: apiKey,
       agent_id: AGENT_ID,
       file_name: "import.json",
       file_type: "memory",
@@ -385,7 +387,7 @@ export const mockProvider: DashboardProvider = {
     };
   },
 
-  async listImportTasks(_spaceId: string): Promise<ImportTaskList> {
+  async listImportTasks(_apiKey: string): Promise<ImportTaskList> {
     await delay(400);
     if (mockImportTaskStore.length === 0) {
       return { tasks: [], status: "empty" };
@@ -408,7 +410,7 @@ export const mockProvider: DashboardProvider = {
   },
 
   async getTopicSummary(
-    _spaceId: string,
+    _apiKey: string,
     params?: TimeRangeParams,
   ): Promise<TopicSummary> {
     await delay(250);

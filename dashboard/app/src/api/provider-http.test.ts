@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { upsertCachedMemories } from "./local-cache";
 import { httpProvider } from "./provider-http";
+
+vi.mock("./local-cache", () => ({
+  removeCachedMemory: vi.fn().mockResolvedValue(undefined),
+  upsertCachedMemories: vi.fn().mockResolvedValue(undefined),
+}));
 
 describe("httpProvider", () => {
   afterEach(() => {
@@ -35,6 +41,76 @@ describe("httpProvider", () => {
     expect(headers.get("X-API-Key")).toBe("space-1");
     expect(headers.get("X-Mnemo-Agent-Id")).toBe("dashboard");
     expect(headers.get("Content-Type")).toBe("application/json");
+  });
+
+  it("posts manual creates to /memories with explicit pinned memory_type", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "mem-1",
+          content: "Remember my coffee order",
+          memory_type: "pinned",
+          tags: ["preference", "coffee"],
+          created_at: "2026-03-16T00:00:00Z",
+          updated_at: "2026-03-16T00:00:00Z",
+        }),
+        {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    const result = await httpProvider.createMemory("space-1", {
+      content: "Remember my coffee order",
+      memory_type: "pinned",
+      tags: ["preference", "coffee"],
+    });
+
+    expect(result.memory_type).toBe("pinned");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    const headers = init?.headers as Headers;
+    expect(url).toBe("/your-memory/api/memories");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe(
+      JSON.stringify({
+        content: "Remember my coffee order",
+        memory_type: "pinned",
+        tags: ["preference", "coffee"],
+      }),
+    );
+    expect(headers.get("X-API-Key")).toBe("space-1");
+    expect(headers.get("X-Mnemo-Agent-Id")).toBe("dashboard");
+    expect(upsertCachedMemories).toHaveBeenCalledWith(
+      "space-1",
+      [expect.objectContaining({ id: "mem-1", memory_type: "pinned" })],
+    );
+  });
+
+  it("rejects legacy accepted responses for manual creates and skips cache writes", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "accepted",
+        }),
+        {
+          status: 202,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(
+      httpProvider.createMemory("space-1", {
+        content: "Remember my coffee order",
+        memory_type: "pinned",
+      }),
+    ).rejects.toThrow(
+      "Manual add requires pinned-memory create support on the server.",
+    );
+    expect(upsertCachedMemories).not.toHaveBeenCalled();
   });
 
   it("uses the same fixed path for multipart imports and keeps auth in headers", async () => {

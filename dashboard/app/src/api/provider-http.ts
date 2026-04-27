@@ -3,7 +3,6 @@ import type {
   Memory,
   MemoryListParams,
   MemoryListResponse,
-  MemoryBatchCreateResponse,
   MemoryCreateInput,
   MemoryUpdateInput,
   MemoryStats,
@@ -34,7 +33,7 @@ function normalizeTags(tags: unknown): string[] {
 }
 
 function buildHeaders(
-  spaceId: string,
+  apiKey: string,
   initHeaders?: HeadersInit,
   includeContentType = true,
 ): Headers {
@@ -42,7 +41,7 @@ function buildHeaders(
   if (includeContentType) {
     headers.set("Content-Type", "application/json");
   }
-  headers.set("X-API-Key", spaceId.trim());
+  headers.set("X-API-Key", apiKey.trim());
   headers.set("X-Mnemo-Agent-Id", AGENT_ID);
   return headers;
 }
@@ -64,6 +63,14 @@ function normalizeMemory(memory: Partial<Memory>): Memory {
     updated_at: memory.updated_at ?? EMPTY_TIMESTAMP,
     score: memory.score,
   };
+}
+
+function hasValidMemoryShape(memory: Partial<Memory>): boolean {
+  return (
+    typeof memory.id === "string" &&
+    memory.id.trim().length > 0 &&
+    typeof memory.content === "string"
+  );
 }
 
 function normalizeMemoryListResponse(
@@ -109,14 +116,14 @@ function normalizeSessionMessageListResponse(
 }
 
 async function request<T>(
-  spaceId: string,
+  apiKey: string,
   path: string,
   init?: RequestInit,
 ): Promise<T> {
   const url = `${API_BASE}${path}`;
   const res = await fetch(url, {
     ...init,
-    headers: buildHeaders(spaceId, init?.headers),
+    headers: buildHeaders(apiKey, init?.headers),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -127,14 +134,14 @@ async function request<T>(
 }
 
 async function requestRaw(
-  spaceId: string,
+  apiKey: string,
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
   const url = `${API_BASE}${path}`;
   const res = await fetch(url, {
     ...init,
-    headers: buildHeaders(spaceId, init?.headers, false),
+    headers: buildHeaders(apiKey, init?.headers, false),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -144,8 +151,8 @@ async function requestRaw(
 }
 
 export const httpProvider: DashboardProvider = {
-  async verifySpace(spaceId: string): Promise<SpaceInfo> {
-    const id = spaceId.trim();
+  async verifySpace(apiKey: string): Promise<SpaceInfo> {
+    const id = apiKey.trim();
     const res = await request<MemoryListResponse>(id, "/memories?limit=1");
     return {
       tenant_id: id,
@@ -158,7 +165,7 @@ export const httpProvider: DashboardProvider = {
   },
 
   async listMemories(
-    spaceId: string,
+    apiKey: string,
     params: MemoryListParams = {},
   ): Promise<MemoryListResponse> {
     const qs = new URLSearchParams();
@@ -170,16 +177,16 @@ export const httpProvider: DashboardProvider = {
     qs.set("limit", String(params.limit ?? 50));
     qs.set("offset", String(params.offset ?? 0));
     const response = await request<MemoryListResponse>(
-      spaceId,
+      apiKey,
       `/memories?${qs}`,
     );
     const normalized = normalizeMemoryListResponse(response);
-    void upsertCachedMemories(spaceId, normalized.memories);
+    void upsertCachedMemories(apiKey, normalized.memories);
     return normalized;
   },
 
   async listSessionMessages(
-    spaceId: string,
+    apiKey: string,
     params: SessionMessageListParams,
   ): Promise<SessionMessageListResponse> {
     const sessionIDs = Array.from(
@@ -204,7 +211,7 @@ export const httpProvider: DashboardProvider = {
 
     const url = `${API_BASE}/session-messages?${qs}`;
     const res = await fetch(url, {
-      headers: buildHeaders(spaceId),
+      headers: buildHeaders(apiKey),
     });
 
     if (res.status === 404 || res.status === 405 || res.status === 501) {
@@ -220,7 +227,7 @@ export const httpProvider: DashboardProvider = {
   },
 
   async getStats(
-    spaceId: string,
+    apiKey: string,
     params?: TimeRangeParams,
   ): Promise<MemoryStats> {
     const qs = new URLSearchParams({ limit: "1" });
@@ -233,9 +240,9 @@ export const httpProvider: DashboardProvider = {
     qsInsight.set("memory_type", "insight");
 
     const [all, pinned, insight] = await Promise.all([
-      request<MemoryListResponse>(spaceId, `/memories?${qs}`),
-      request<MemoryListResponse>(spaceId, `/memories?${qsPinned}`),
-      request<MemoryListResponse>(spaceId, `/memories?${qsInsight}`),
+      request<MemoryListResponse>(apiKey, `/memories?${qs}`),
+      request<MemoryListResponse>(apiKey, `/memories?${qsPinned}`),
+      request<MemoryListResponse>(apiKey, `/memories?${qsInsight}`),
     ]);
     return {
       total: all.total,
@@ -244,37 +251,38 @@ export const httpProvider: DashboardProvider = {
     };
   },
 
-  async getMemory(spaceId: string, memoryId: string): Promise<Memory> {
+  async getMemory(apiKey: string, memoryId: string): Promise<Memory> {
     const response = await request<Memory>(
-      spaceId,
+      apiKey,
       `/memories/${memoryId}`,
     );
     const normalized = normalizeMemory(response);
-    void upsertCachedMemories(spaceId, [normalized]);
+    void upsertCachedMemories(apiKey, [normalized]);
     return normalized;
   },
 
   async createMemory(
-    spaceId: string,
+    apiKey: string,
     input: MemoryCreateInput,
   ): Promise<Memory> {
-    const res = await request<MemoryBatchCreateResponse>(
-      spaceId,
-      "/memories/batch",
+    const response = await request<Memory>(
+      apiKey,
+      "/memories",
       {
         method: "POST",
-        body: JSON.stringify({ memories: [input] }),
+        body: JSON.stringify(input),
       },
     );
-    const created = res.memories[0];
-    if (!created) throw new Error("No memory returned from batch create");
-    const normalized = normalizeMemory(created);
-    await upsertCachedMemories(spaceId, [normalized]);
+    if (!hasValidMemoryShape(response)) {
+      throw new Error("Manual add requires pinned-memory create support on the server.");
+    }
+    const normalized = normalizeMemory(response);
+    await upsertCachedMemories(apiKey, [normalized]);
     return normalized;
   },
 
   async updateMemory(
-    spaceId: string,
+    apiKey: string,
     memoryId: string,
     input: MemoryUpdateInput,
     version?: number,
@@ -282,7 +290,7 @@ export const httpProvider: DashboardProvider = {
     const headers: Record<string, string> = {};
     if (version !== undefined) headers["If-Match"] = String(version);
     const response = await request<Memory>(
-      spaceId,
+      apiKey,
       `/memories/${memoryId}`,
       {
         method: "PUT",
@@ -291,25 +299,25 @@ export const httpProvider: DashboardProvider = {
       },
     );
     const normalized = normalizeMemory(response);
-    await upsertCachedMemories(spaceId, [normalized]);
+    await upsertCachedMemories(apiKey, [normalized]);
     return normalized;
   },
 
-  async deleteMemory(spaceId: string, memoryId: string): Promise<void> {
-    await request<void>(spaceId, `/memories/${memoryId}`, {
+  async deleteMemory(apiKey: string, memoryId: string): Promise<void> {
+    await request<void>(apiKey, `/memories/${memoryId}`, {
       method: "DELETE",
     });
-    await removeCachedMemory(spaceId, memoryId);
+    await removeCachedMemory(apiKey, memoryId);
   },
 
-  async exportMemories(spaceId: string): Promise<MemoryExportFile> {
+  async exportMemories(apiKey: string): Promise<MemoryExportFile> {
     const PAGE = 200;
     const allMemories: Memory[] = [];
     let offset = 0;
     let total = Infinity;
 
     while (offset < total) {
-      const page = await this.listMemories(spaceId, {
+      const page = await this.listMemories(apiKey, {
         limit: PAGE,
         offset,
       });
@@ -321,7 +329,7 @@ export const httpProvider: DashboardProvider = {
     return {
       schema_version: "mem9.memory_export.v1",
       exported_at: new Date().toISOString(),
-      source_space_id: spaceId,
+      source_space_id: apiKey,
       agent_id: AGENT_ID,
       memories: allMemories.map((m) => ({
         content: m.content,
@@ -335,13 +343,13 @@ export const httpProvider: DashboardProvider = {
     };
   },
 
-  async importMemories(spaceId: string, file: File): Promise<ImportTask> {
+  async importMemories(apiKey: string, file: File): Promise<ImportTask> {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("agent_id", AGENT_ID);
     formData.append("file_type", "memory");
 
-    const res = await requestRaw(spaceId, "/imports", {
+    const res = await requestRaw(apiKey, "/imports", {
       method: "POST",
       body: formData,
     });
@@ -349,14 +357,14 @@ export const httpProvider: DashboardProvider = {
   },
 
   async getImportTask(
-    spaceId: string,
+    apiKey: string,
     taskId: string,
   ): Promise<ImportTask> {
-    return request<ImportTask>(spaceId, `/imports/${taskId}`);
+    return request<ImportTask>(apiKey, `/imports/${taskId}`);
   },
 
-  async listImportTasks(spaceId: string): Promise<ImportTaskList> {
-    const tasks = await request<ImportTask[]>(spaceId, "/imports");
+  async listImportTasks(apiKey: string): Promise<ImportTaskList> {
+    const tasks = await request<ImportTask[]>(apiKey, "/imports");
     if (!tasks || tasks.length === 0) {
       return { tasks: [], status: "empty" };
     }
@@ -375,7 +383,7 @@ export const httpProvider: DashboardProvider = {
   },
 
   async getTopicSummary(
-    _spaceId: string,
+    _apiKey: string,
     _params?: TimeRangeParams,
   ): Promise<TopicSummary> {
     // Backend /summary not yet available; return empty.

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isRedirect } from "@tanstack/react-router";
 import i18n from "@/i18n";
@@ -7,7 +7,7 @@ import { ConnectPage } from "./connect";
 import { loadConnectRouteData, type ConnectRouteLoaderData } from "./connect-loader";
 
 const mocks = vi.hoisted(() => ({
-  getActiveSpaceId: vi.fn<() => string | null>(() => null),
+  getActiveApiKey: vi.fn<() => string | null>(() => null),
   initMixpanelOnLogin: vi.fn(),
   loaderData: {
     hasBootstrapParams: false,
@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
     initialInput: "",
   } as ConnectRouteLoaderData,
   navigate: vi.fn(() => Promise.resolve()),
-  setSpaceId: vi.fn(),
+  setApiKey: vi.fn(),
   trackMixpanelEvent: vi.fn(),
   verifySpace: vi.fn(),
 }));
@@ -50,9 +50,9 @@ vi.mock("@/lib/mixpanel", () => ({
 vi.mock("@/lib/session", () => ({
   MEM9_CONNECT_READY_EVENT: "mem9-connect-ready",
   MEM9_SPACE_HANDOFF_EVENT: "mem9-space-handoff",
-  getActiveSpaceId: () => mocks.getActiveSpaceId(),
-  setSpaceId: (spaceId: string, remember?: boolean) =>
-    mocks.setSpaceId(spaceId, remember),
+  getActiveApiKey: () => mocks.getActiveApiKey(),
+  setApiKey: (apiKey: string, remember?: boolean) =>
+    mocks.setApiKey(apiKey, remember),
 }));
 
 function setLoaderData(next: ConnectRouteLoaderData): void {
@@ -63,13 +63,22 @@ function currentURL(): string {
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
 }
 
-beforeEach(() => {
+function getByExactText(text: string): HTMLElement {
+  return screen.getByText((_, element) => element?.textContent === text);
+}
+
+function getInlineCodeTokens(): HTMLElement[] {
+  return screen.getAllByText("MEM9_API_KEY", { selector: "code" });
+}
+
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
   resetConnectBootstrapForTests();
-  mocks.getActiveSpaceId.mockReset();
-  mocks.getActiveSpaceId.mockReturnValue(null);
+  mocks.getActiveApiKey.mockReset();
+  mocks.getActiveApiKey.mockReturnValue(null);
   mocks.initMixpanelOnLogin.mockReset();
   mocks.navigate.mockClear();
-  mocks.setSpaceId.mockReset();
+  mocks.setApiKey.mockReset();
   mocks.trackMixpanelEvent.mockReset();
   mocks.verifySpace.mockReset();
   setLoaderData({
@@ -104,7 +113,7 @@ describe("loadConnectRouteData", () => {
   });
 
   it("auto-logins key params, replaces the active space, and strips them from the URL", async () => {
-    mocks.getActiveSpaceId.mockReturnValue("space-old");
+    mocks.getActiveApiKey.mockReturnValue("space-old");
     mocks.verifySpace.mockResolvedValue({
       created_at: "",
       memory_count: 0,
@@ -129,7 +138,7 @@ describe("loadConnectRouteData", () => {
     }
 
     expect(mocks.verifySpace).toHaveBeenCalledWith("space-new");
-    expect(mocks.setSpaceId).toHaveBeenCalledWith("space-new", false);
+    expect(mocks.setApiKey).toHaveBeenCalledWith("space-new", false);
     expect(currentURL()).toBe("/your-memory?foo=1#details");
   });
 
@@ -144,14 +153,14 @@ describe("loadConnectRouteData", () => {
       initialError: i18n.t("connect.error.invalid"),
       initialInput: "bad-space",
     });
-    expect(mocks.setSpaceId).not.toHaveBeenCalled();
+    expect(mocks.setApiKey).not.toHaveBeenCalled();
     expect(currentURL()).toBe("/your-memory");
   });
 });
 
 describe("ConnectPage", () => {
   it("shows bootstrap-prefilled input and does not auto-redirect an existing session", async () => {
-    mocks.getActiveSpaceId.mockReturnValue("space-existing");
+    mocks.getActiveApiKey.mockReturnValue("space-existing");
     setLoaderData({
       hasBootstrapParams: true,
       initialError: "",
@@ -168,7 +177,7 @@ describe("ConnectPage", () => {
   });
 
   it("auto-redirects existing sessions when there are no bootstrap params", async () => {
-    mocks.getActiveSpaceId.mockReturnValue("space-existing");
+    mocks.getActiveApiKey.mockReturnValue("space-existing");
 
     render(<ConnectPage />);
 
@@ -191,5 +200,64 @@ describe("ConnectPage", () => {
 
     expect(screen.getByDisplayValue("bad-space")).toBeInTheDocument();
     expect(screen.getByText(i18n.t("connect.error.invalid"))).toBeInTheDocument();
+  });
+
+  it("renders MEM9_API_KEY wording and retrieval guidance", () => {
+    render(<ConnectPage />);
+
+    expect(getByExactText("Use your MEM9_API_KEY to continue")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("MEM9_API_KEY")).toBeInTheDocument();
+    expect(getInlineCodeTokens()).toHaveLength(5);
+    expect(
+      getByExactText("MEM9_API_KEY is your private key. Do not share it."),
+    ).toBeInTheDocument();
+    expect(getByExactText("How to get your MEM9_API_KEY")).toBeInTheDocument();
+    expect(
+      getByExactText(
+        "Ask OpenClaw to show you the MEM9_API_KEY it is already using.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      getByExactText(
+        "For other agent tools, ask the agent to show you its MEM9_API_KEY or tell you where it is stored.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("renders zh-CN MEM9_API_KEY guidance with inline code tokens", async () => {
+    await i18n.changeLanguage("zh-CN");
+
+    render(<ConnectPage />);
+
+    expect(getByExactText("使用 MEM9_API_KEY 继续")).toBeInTheDocument();
+    expect(getInlineCodeTokens()).toHaveLength(5);
+    expect(
+      getByExactText("MEM9_API_KEY 是你的私密密钥。请勿分享。"),
+    ).toBeInTheDocument();
+    expect(
+      getByExactText(
+        "让 OpenClaw 直接把它当前正在使用的 MEM9_API_KEY 发给你。",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the generic invalid copy when manual connect fails", async () => {
+    mocks.verifySpace.mockRejectedValue(new Error("invalid API key"));
+
+    render(<ConnectPage />);
+
+    fireEvent.change(screen.getByPlaceholderText("MEM9_API_KEY"), {
+      target: { value: "bad-key" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("connect.submit") }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(i18n.t("connect.error.invalid")),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText("invalid API key")).not.toBeInTheDocument();
   });
 });

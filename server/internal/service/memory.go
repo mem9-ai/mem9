@@ -141,6 +141,25 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 
 }
 
+func (s *MemoryService) CreatePinned(ctx context.Context, agentID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, int, error) {
+	memories, err := s.BulkCreate(ctx, agentID, []BulkMemoryInput{
+		{
+			Content:  content,
+			Tags:     tags,
+			Metadata: metadata,
+		},
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(memories) == 0 {
+		return nil, 0, fmt.Errorf("bulk create returned no memories")
+	}
+
+	mem := memories[0]
+	return &mem, len(memories), nil
+}
+
 // Get returns a single memory by ID.
 func (s *MemoryService) Get(ctx context.Context, id string) (*domain.Memory, error) {
 	return s.memories.GetByID(ctx, id)

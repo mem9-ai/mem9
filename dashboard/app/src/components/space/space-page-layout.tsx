@@ -479,7 +479,11 @@ export const SpacePageLayout = ({
 
             <div id="memory-list" className="mt-4 scroll-mt-20">
               {isEmpty ? (
-                <EmptyState t={t} onAdd={() => setAddOpen(true)} />
+                <EmptyState
+                  t={t}
+                  onAdd={() => setAddOpen(true)}
+                  canAdd={features.enableManualAdd}
+                />
               ) : dataModel.displayedMemories.length === 0 && !dataModel.isMemoryLoading ? (
                 <div className="flex flex-col items-center justify-center gap-2 py-16">
                   <Search className="size-8 text-foreground/15" />
