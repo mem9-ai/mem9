@@ -4,7 +4,7 @@
     "title": "Your Memory",
     "subtitle": "Use your <code>MEM9_API_KEY</code> to continue",
     "placeholder": "MEM9_API_KEY",
-    "submit": "Open memory space",
+    "submit": "Open your memory",
     "remember_login": "Keep me signed in for 15 days",
     "security": "<code>MEM9_API_KEY</code> is your private key. Do not share it.",
     "error": {

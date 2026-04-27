@@ -249,7 +249,9 @@ describe("ConnectPage", () => {
     fireEvent.change(screen.getByPlaceholderText("MEM9_API_KEY"), {
       target: { value: "bad-key" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /open memory/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("connect.submit") }),
+    );
 
     await waitFor(() => {
       expect(
