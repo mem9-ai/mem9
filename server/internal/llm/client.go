@@ -63,8 +63,60 @@ func New(cfg Config) *Client {
 }
 
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string         `json:"role"`
+	Content messageContent `json:"content"`
+}
+
+// messageContent marshals as a JSON string by default, or as an array of
+// content blocks when blocks is non-nil. The block form is used to attach
+// Anthropic-style cache_control markers for providers that support them
+// (e.g. Qwen3 / DashScope explicit context cache).
+type messageContent struct {
+	text   string
+	blocks []contentBlock
+}
+
+func (m messageContent) MarshalJSON() ([]byte, error) {
+	if m.blocks != nil {
+		return json.Marshal(m.blocks)
+	}
+	return json.Marshal(m.text)
+}
+
+func (m *messageContent) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && data[0] == '[' {
+		var blocks []contentBlock
+		if err := json.Unmarshal(data, &blocks); err != nil {
+			return err
+		}
+		m.blocks = blocks
+		return nil
+	}
+	return json.Unmarshal(data, &m.text)
+}
+
+type contentBlock struct {
+	Type         string        `json:"type"`
+	Text         string        `json:"text"`
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
+}
+
+type cacheControl struct {
+	Type string `json:"type"`
+}
+
+func plainContent(s string) messageContent {
+	return messageContent{text: s}
+}
+
+func cachedContent(s string) messageContent {
+	return messageContent{
+		blocks: []contentBlock{{
+			Type:         "text",
+			Text:         s,
+			CacheControl: &cacheControl{Type: "ephemeral"},
+		}},
+	}
 }
 
 type responseFormat struct {
@@ -152,9 +204,15 @@ func (c *Client) CompleteJSONWithScope(ctx context.Context, system, user string,
 }
 
 func (c *Client) complete(ctx context.Context, system, user string, respFmt *responseFormat, scope CallScope) (string, error) {
+	useExplicitCache := supportsExplicitCache(c.model)
+
+	sysContent := plainContent(system)
+	if useExplicitCache {
+		sysContent = cachedContent(system)
+	}
 	messages := []Message{
-		{Role: "system", Content: system},
-		{Role: "user", Content: user},
+		{Role: "system", Content: sysContent},
+		{Role: "user", Content: plainContent(user)},
 	}
 
 	enableThinking := disableThinkingOptions(c.model)
@@ -169,14 +227,26 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 		ReasoningSplit: reasoningSplit,
 	}, scope)
 	if err != nil {
-		// If 400 and thinking parameters were sent, retry without them (provider may not support them).
+		// If 400 and any provider-specific extras were applied (thinking flags or
+		// content-block cache markers), retry once with everything stripped.
 		var httpErr *HTTPStatusError
-		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (enableThinking != nil || reasoningSplit != nil) {
-			recordRetryMetric(scope, "thinking_param_400_fallback")
-			slog.Warn("LLM rejected thinking parameters (HTTP 400), retrying without them", "model", c.model)
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (enableThinking != nil || reasoningSplit != nil || useExplicitCache) {
+			if useExplicitCache {
+				recordRetryMetric(scope, "cache_control_400_fallback")
+			} else {
+				recordRetryMetric(scope, "thinking_param_400_fallback")
+			}
+			slog.Warn("LLM rejected provider-specific parameters (HTTP 400), retrying without them",
+				"model", c.model,
+				"had_cache_control", useExplicitCache,
+				"had_thinking_flags", enableThinking != nil || reasoningSplit != nil)
+			plainMessages := []Message{
+				{Role: "system", Content: plainContent(system)},
+				{Role: "user", Content: plainContent(user)},
+			}
 			return c.doRequest(ctx, chatRequest{
 				Model:          c.model,
-				Messages:       messages,
+				Messages:       plainMessages,
 				Temperature:    c.temperature,
 				ResponseFormat: respFmt,
 			}, scope)
@@ -314,6 +384,13 @@ func supportsReasoningSplit(model string) *bool {
 		return &reasoningSplit
 	}
 	return nil
+}
+
+// supportsExplicitCache reports whether the model supports Anthropic-style
+// cache_control markers in message content. Currently scoped to Qwen3 models
+// per Aliyun Bailian docs (qwen3-max, qwen3-coder-plus, qwen3-vl-plus, ...).
+func supportsExplicitCache(model string) bool {
+	return strings.HasPrefix(strings.ToLower(model), "qwen3-")
 }
 
 func StripMarkdownFences(s string) string {

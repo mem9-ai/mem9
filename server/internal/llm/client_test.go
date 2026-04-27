@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -262,6 +263,201 @@ func TestComplete(t *testing.T) {
 		}
 		if got != "hello" {
 			t.Fatalf("content = %q, want %q", got, "hello")
+		}
+	})
+
+	t.Run("qwen3 model emits cache_control on system only", func(t *testing.T) {
+		var rawBody []byte
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			rawBody = b
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "qwen3-max"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		got, err := client.Complete(context.Background(), "system-prompt", "user-prompt")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "hello" {
+			t.Fatalf("content = %q, want %q", got, "hello")
+		}
+
+		// Inspect raw JSON to verify the wire shape, not the decoded form.
+		var wire struct {
+			Messages []struct {
+				Role    string          `json:"role"`
+				Content json.RawMessage `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(rawBody, &wire); err != nil {
+			t.Fatalf("decode raw body: %v", err)
+		}
+		if len(wire.Messages) != 2 {
+			t.Fatalf("messages len = %d, want 2", len(wire.Messages))
+		}
+
+		// system message must be a content-block array carrying cache_control:ephemeral
+		if wire.Messages[0].Role != "system" {
+			t.Fatalf("messages[0].role = %q, want system", wire.Messages[0].Role)
+		}
+		var sysBlocks []struct {
+			Type         string `json:"type"`
+			Text         string `json:"text"`
+			CacheControl *struct {
+				Type string `json:"type"`
+			} `json:"cache_control"`
+		}
+		if err := json.Unmarshal(wire.Messages[0].Content, &sysBlocks); err != nil {
+			t.Fatalf("system content is not an array of blocks: %v\nraw: %s", err, string(wire.Messages[0].Content))
+		}
+		if len(sysBlocks) != 1 {
+			t.Fatalf("system blocks len = %d, want 1", len(sysBlocks))
+		}
+		if sysBlocks[0].Type != "text" {
+			t.Fatalf("system block type = %q, want text", sysBlocks[0].Type)
+		}
+		if sysBlocks[0].Text != "system-prompt" {
+			t.Fatalf("system block text = %q, want %q", sysBlocks[0].Text, "system-prompt")
+		}
+		if sysBlocks[0].CacheControl == nil {
+			t.Fatalf("system block missing cache_control")
+		}
+		if sysBlocks[0].CacheControl.Type != "ephemeral" {
+			t.Fatalf("cache_control.type = %q, want ephemeral", sysBlocks[0].CacheControl.Type)
+		}
+
+		// user message must remain a plain string (no cache_control on dynamic content)
+		if wire.Messages[1].Role != "user" {
+			t.Fatalf("messages[1].role = %q, want user", wire.Messages[1].Role)
+		}
+		var userText string
+		if err := json.Unmarshal(wire.Messages[1].Content, &userText); err != nil {
+			t.Fatalf("user content is not a plain string: %v\nraw: %s", err, string(wire.Messages[1].Content))
+		}
+		if userText != "user-prompt" {
+			t.Fatalf("user content = %q, want %q", userText, "user-prompt")
+		}
+	})
+
+	t.Run("non-qwen3 model keeps plain string content", func(t *testing.T) {
+		var rawBody []byte
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			rawBody = b
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}]}`))
+		}))
+		defer server.Close()
+
+		// gpt-4o-mini and qwen-plus should both stay on plain string content.
+		for _, model := range []string{"gpt-4o-mini", "qwen-plus"} {
+			client := New(Config{APIKey: "key", BaseURL: server.URL, Model: model})
+			if client == nil {
+				t.Fatalf("model %s: expected client, got nil", model)
+			}
+			if _, err := client.Complete(context.Background(), "sys", "user"); err != nil {
+				t.Fatalf("model %s: unexpected error: %v", model, err)
+			}
+
+			var wire struct {
+				Messages []struct {
+					Role    string          `json:"role"`
+					Content json.RawMessage `json:"content"`
+				} `json:"messages"`
+			}
+			if err := json.Unmarshal(rawBody, &wire); err != nil {
+				t.Fatalf("model %s: decode raw body: %v", model, err)
+			}
+			for i, m := range wire.Messages {
+				if len(m.Content) == 0 || m.Content[0] != '"' {
+					t.Fatalf("model %s: messages[%d].content not plain string: %s", model, i, string(m.Content))
+				}
+			}
+		}
+	})
+
+	t.Run("400 with cache_control retries with plain content", func(t *testing.T) {
+		var requestBodies [][]byte
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			requestBodies = append(requestBodies, b)
+
+			if len(requestBodies) == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":{"message":"unsupported content shape"}}`))
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "qwen3-max"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		got, err := client.Complete(context.Background(), "sys", "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "hello" {
+			t.Fatalf("content = %q, want %q", got, "hello")
+		}
+		if len(requestBodies) != 2 {
+			t.Fatalf("request count = %d, want 2", len(requestBodies))
+		}
+
+		// First request: system content is an array (cache_control attached).
+		// Second (retry): system content is a plain string.
+		decodeShape := func(body []byte) (sysIsArray, userIsArray bool) {
+			var wire struct {
+				Messages []struct {
+					Role    string          `json:"role"`
+					Content json.RawMessage `json:"content"`
+				} `json:"messages"`
+			}
+			if err := json.Unmarshal(body, &wire); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			if len(wire.Messages) != 2 {
+				t.Fatalf("messages len = %d, want 2", len(wire.Messages))
+			}
+			return wire.Messages[0].Content[0] == '[', wire.Messages[1].Content[0] == '['
+		}
+
+		sys1, user1 := decodeShape(requestBodies[0])
+		sys2, user2 := decodeShape(requestBodies[1])
+		if !sys1 {
+			t.Fatalf("first request: system content not an array")
+		}
+		if user1 {
+			t.Fatalf("first request: user content unexpectedly an array")
+		}
+		if sys2 {
+			t.Fatalf("retry request: system content still an array (cache_control should be stripped)")
+		}
+		if user2 {
+			t.Fatalf("retry request: user content unexpectedly an array")
 		}
 	})
 
