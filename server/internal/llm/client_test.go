@@ -364,8 +364,8 @@ func TestComplete(t *testing.T) {
 		}))
 		defer server.Close()
 
-		// gpt-4o-mini and qwen-plus should both stay on plain string content.
-		for _, model := range []string{"gpt-4o-mini", "qwen-plus"} {
+		// gpt-4o-mini and gemini-plus should both stay on plain string content.
+		for _, model := range []string{"gpt-4o-mini", "gemini-plus"} {
 			client := New(Config{APIKey: "key", BaseURL: server.URL, Model: model})
 			if client == nil {
 				t.Fatalf("model %s: expected client, got nil", model)
