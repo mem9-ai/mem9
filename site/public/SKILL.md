@@ -1,38 +1,44 @@
 ---
 name: mem9
-version: 1.0.46
-homepage: "https://mem9.ai"
-description: "Backward-compatible mem9 install skill. Default to the OpenClaw hosted flow and route explicit Hermes installs to the Hermes-specific skill."
-keywords: ["mem9", "openclaw memory", "hermes memory", "persistent memory", "cloud memory", "memory plugin", "setup mem9", "install mem9", "reconnect mem9", "uninstall mem9"]
+version: 1.0.47
+homepage: "https://mem9.ai/SKILL.md"
+description: "Persistent cloud memory plugin for OpenClaw. This backward-compatible root entry routes setup, troubleshooting, and uninstall flows, and hands explicit Hermes installs to the Hermes-specific skill."
+keywords: ["mem9", "openclaw memory", "persistent memory", "cloud memory", "memory plugin", "setup mem9", "install mem9", "reconnect mem9", "uninstall mem9"]
 user-invocable: true
-metadata: {"defaultPlatform":"openclaw","platforms":["openclaw","hermes"]}
+metadata: {"openclaw":{"emoji":"🧠","homepage":"https://mem9.ai/openclaw-memory","primaryEnv":"MEM9_API_KEY"}}
 ---
 
 # mem9
 
-mem9 is the persistent cloud memory plugin for OpenClaw, and this root `SKILL.md` remains the backward-compatible entry point for the existing hosted OpenClaw setup flow.
+mem9 is the persistent cloud memory plugin for OpenClaw. It keeps durable memory across sessions and machines.
+
+This is the backward-compatible root OpenClaw install skill URL. The canonical OpenClaw entry is `https://mem9.ai/openclaw/SKILL.md`.
 
 If the user explicitly says `Hermes`, or asks Hermes itself to install, reconnect, verify, or repair mem9, switch to `https://mem9.ai/hermes/SKILL.md` and do not apply OpenClaw config rules to Hermes.
 
+This root OpenClaw `SKILL.md` is a routing and safety document. It is the entry point for setup, troubleshooting, and uninstall flows. It is not the canonical reference for runtime request behavior.
+
 ## What This Skill Does
 
-- Keep the historical OpenClaw setup, troubleshooting, and uninstall flow working from `https://mem9.ai/SKILL.md`.
-- Route first-time OpenClaw install, reconnect, config review, and mainland China / Alibaba Cloud npm install handling to `https://mem9.ai/SETUP.md`.
-- Route OpenClaw setup failures, recovery work, and broken local state to `https://mem9.ai/TROUBLESHOOTING.md`.
+- Keep the historical OpenClaw hosted flow working from `https://mem9.ai/SKILL.md`.
+- Route first-time install, reconnect, config review, and mainland China / Alibaba Cloud npm install handling to `https://mem9.ai/SETUP.md`.
+- Route setup failures, recovery work, and broken local state to `https://mem9.ai/TROUBLESHOOTING.md`.
 - Route local mem9 removal on this machine to `https://mem9.ai/UNINSTALL.md`.
-- Preserve filtered `utm_*` params from a remote `SKILL.md` URL through the OpenClaw create-new setup flow and first restart.
-- Prevent invalid OpenClaw compatibility fallbacks: never write `plugins.entries.mem9.apiKey`; only `plugins.entries.mem9.config.apiKey` is valid.
+- Preserve filtered `utm_*` params from a remote `SKILL.md` URL through the create-new setup flow and first restart.
+- Prevent invalid compatibility fallbacks: never write `plugins.entries.mem9.apiKey`; only `plugins.entries.mem9.config.apiKey` is valid.
+- Keep restart notices honest: only claim post-restart verification has resumed after that work has actually started.
 - Keep history import manual. Do not scan or upload local memory or session files from this skill.
 - Route explicit Hermes install or repair requests to `https://mem9.ai/hermes/SKILL.md`.
 
 ## Source / Runtime Authority
 
 - Official source: [mem9-ai/mem9](https://github.com/mem9-ai/mem9) and [mem9.ai](https://mem9.ai/).
+- Backward-compatible root OpenClaw skill URL: `https://mem9.ai/SKILL.md`.
 - Canonical OpenClaw skill URL: `https://mem9.ai/openclaw/SKILL.md`.
 - Canonical Hermes skill URL: `https://mem9.ai/hermes/SKILL.md`.
-- Default OpenClaw setup network target is `https://api.mem9.ai` unless the user explicitly chooses another `apiUrl`.
+- Default setup network target is `https://api.mem9.ai` unless the user explicitly chooses another `apiUrl`.
 - The installed mem9 plugin contains the actual OpenClaw integration, request logic, default base URL handling, and runtime behavior.
-- This root `SKILL.md` is a backward-compatible OpenClaw routing and safety document plus a Hermes router. It is not the backend API contract and does not define day-to-day memory semantics.
+- This root OpenClaw `SKILL.md` is not the backend API contract and does not define day-to-day memory semantics.
 - For OpenClaw-specific runtime details, use the plugin README: [openclaw-plugin/README.md](https://github.com/mem9-ai/mem9/blob/main/openclaw-plugin/README.md).
 
 ## Allowed Config Scope
@@ -53,7 +59,7 @@ The scope above is exhaustive. In particular, do not write `plugins.entries.mem9
 
 ## Routing
 
-- Default and backward-compatible behavior: treat `https://mem9.ai/SKILL.md` as the OpenClaw hosted install entry.
+- Backward-compatible root OpenClaw URL: `https://mem9.ai/SKILL.md`.
 - Canonical OpenClaw URL: `https://mem9.ai/openclaw/SKILL.md`.
 - Explicit Hermes install, reconnect, verification, or repair requests: use `https://mem9.ai/hermes/SKILL.md` instead of the OpenClaw support documents below.
 - OpenClaw install, enable, reconnect, or review mem9 config changes: read `https://mem9.ai/SETUP.md`.
@@ -61,12 +67,12 @@ The scope above is exhaustive. In particular, do not write `plugins.entries.mem9
 - OpenClaw uninstall, remove, disable, or roll back mem9 on this machine: read `https://mem9.ai/UNINSTALL.md`.
 - If an OpenClaw uninstall request also mentions `reset session`, `restart gateway`, `重启网关`, clearing local mem9 history, or equivalent, still route to `https://mem9.ai/UNINSTALL.md` first and keep those actions as post-verification follow-up only.
 - If the target client is unclear, default to the OpenClaw flow for backward compatibility.
-- If this skill is loaded remotely and the active flow is OpenClaw, use the absolute support-document URLs above exactly.
+- If this skill is loaded remotely and the active flow is OpenClaw, use the root OpenClaw support-document URLs above exactly.
 - If the current remote root `SKILL.md` URL contains filtered `utm_*` params, append that same filtered `utm_*` map when opening `https://mem9.ai/SETUP.md`, `https://mem9.ai/TROUBLESHOOTING.md`, or `https://mem9.ai/UNINSTALL.md`.
-- If this root launcher was opened with filtered `utm_*` params and then routes to Hermes, preserve those same filtered `utm_*` params when handing off to `https://mem9.ai/hermes/SKILL.md`.
+- If this root OpenClaw entry was opened with filtered `utm_*` params and then routes to Hermes, preserve those same filtered `utm_*` params when handing off to `https://mem9.ai/hermes/SKILL.md`.
 
 ## Definition of Done
 
-- Backward-compatible OpenClaw flows from `https://mem9.ai/SKILL.md` still retain the same allowed `openclaw.json` key scope and support-document routing.
+- Backward-compatible OpenClaw flows from `https://mem9.ai/SKILL.md` retain the same allowed `openclaw.json` key scope and root support-document routing.
 - Explicit Hermes requests are routed to `https://mem9.ai/hermes/SKILL.md` without mixing in OpenClaw config rules.
 - No OpenClaw config paths outside the allowed scope were changed.
