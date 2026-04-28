@@ -1,4 +1,5 @@
 ---
+import { agentGuideTargets } from '../content/site';
 import type { SitePlatformsCopy } from '../content/site';
 
 interface Props {
@@ -7,7 +8,7 @@ interface Props {
 
 const { platforms } = Astro.props;
 const hasSingleItem = platforms.items.length === 1;
-const yourMemoryHref = 'https://mem9.ai/your-memory';
+const yourMemoryHref = '/your-memory/';
 ---
 
 <section id="platforms" class="agents">
@@ -20,31 +21,54 @@ const yourMemoryHref = 'https://mem9.ai/your-memory';
       </p>
     </div>
     <div class="agent-grid">
-      {platforms.items.map((agent, index) => (
-        <div class:list={['agent-card', hasSingleItem && 'is-wide', agent.badge && 'has-action']}>
-          <div class="agent-head">
-            <div class="agent-name" data-i18n={`platforms.items.${index}.name`}>{agent.name}</div>
-            {agent.badge && <span class="agent-badge">{agent.badge}</span>}
-          </div>
-          <div class="agent-desc" data-i18n={`platforms.items.${index}.desc`}>{agent.desc}</div>
-          <div class="agent-detail" data-i18n={`platforms.items.${index}.detail`}>
-            {agent.detail}
-          </div>
-          {agent.badge && (
-            <div class="agent-action-row">
-              <a
-                href={yourMemoryHref}
-                target="_blank"
-                rel="noreferrer"
-                class="agent-cta-button"
-              >
-                <span data-i18n="platforms.ctaLabel">{platforms.ctaLabel}</span>
-                <span class="agent-cta-arrow" aria-hidden="true">→</span>
-              </a>
+      {platforms.items.map((agent, index) => {
+        const guideTarget = agent.guideId ? agentGuideTargets[agent.guideId] : null;
+        const href = guideTarget?.href ?? agent.href;
+        const external = guideTarget?.external ?? agent.external ?? false;
+
+        return (
+          <div class:list={['agent-card', hasSingleItem && 'is-wide', agent.badge && 'has-action']}>
+            <div class="agent-head">
+              <div class="agent-name" data-i18n={`platforms.items.${index}.name`}>{agent.name}</div>
+              {agent.badge && <span class="agent-badge">{agent.badge}</span>}
             </div>
-          )}
-        </div>
-      ))}
+            <div class="agent-desc" data-i18n={`platforms.items.${index}.desc`}>{agent.desc}</div>
+            <div class="agent-detail" data-i18n={`platforms.items.${index}.detail`}>
+              {agent.detail}
+            </div>
+            {href && !agent.badge && (
+              <div class="agent-guide-row">
+                <a
+                  href={href}
+                  target={external ? "_blank" : undefined}
+                  rel={external ? "noopener noreferrer" : undefined}
+                  class="agent-guide-link"
+                >
+                  <span data-i18n="platforms.guideCtaLabel">{platforms.guideCtaLabel}</span>
+                  {external ? (
+                    <span class="agent-cta-arrow" aria-hidden="true">↗</span>
+                  ) : (
+                    <span class="agent-cta-arrow" aria-hidden="true">→</span>
+                  )}
+                </a>
+              </div>
+            )}
+            {agent.badge && (
+              <div class="agent-action-row">
+                <a
+                  href={yourMemoryHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="agent-cta-button"
+                >
+                  <span data-i18n="platforms.ctaLabel">{platforms.ctaLabel}</span>
+                  <span class="agent-cta-arrow" aria-hidden="true">↗</span>
+                </a>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
     <p class="agent-note" data-i18n="platforms.note">
       {platforms.note}
@@ -58,7 +82,8 @@ const yourMemoryHref = 'https://mem9.ai/your-memory';
   }
 
   .section-title {
-    max-width: 12.5ch;
+    max-width: 100%;
+    text-wrap: balance;
   }
 
   .section-head {
@@ -129,8 +154,7 @@ const yourMemoryHref = 'https://mem9.ai/your-memory';
     font-size: 0.78rem;
     color: var(--accent);
     margin-bottom: 0.75rem;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .agent-detail {
@@ -140,51 +164,62 @@ const yourMemoryHref = 'https://mem9.ai/your-memory';
     line-height: 1.4;
   }
 
+  .agent-guide-row {
+    margin-top: 1.15rem;
+  }
+
+  .agent-guide-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.05em;
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+
+  .agent-guide-link:hover,
+  .agent-guide-link:focus-visible {
+    color: var(--text);
+  }
+
   .agent-action-row {
-    margin-top: 1.35rem;
-    padding-top: 0.95rem;
-    border-top: 1px solid var(--border);
+    margin-top: 1.15rem;
   }
 
   .agent-cta-button {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    min-height: 3.35rem;
-    padding: 0.95rem 1.1rem 0.95rem 1.2rem;
-    border-radius: 0.95rem;
-    border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
-    background: linear-gradient(135deg, var(--text) 0%, color-mix(in srgb, var(--text) 74%, var(--accent)) 100%);
-    color: var(--bg-deep);
-    box-shadow:
-      inset 0 1px 0 color-mix(in srgb, white 22%, transparent),
-      0 14px 30px color-mix(in srgb, var(--text) 16%, transparent);
-    font-family: var(--font-display);
-    font-size: 1.04rem;
-    font-weight: 800;
-    letter-spacing: -0.015em;
+    gap: 0.4rem;
+    padding: 0.55rem 0.95rem;
+    border-radius: 0.65rem;
+    border: 1px solid var(--button-active-border);
+    background: var(--button-active-bg);
+    color: var(--text);
+    font-size: 0.88rem;
+    font-weight: 600;
+    letter-spacing: -0.005em;
     text-decoration: none;
-    transition:
-      transform 0.2s ease,
-      box-shadow 0.2s ease,
-      opacity 0.2s ease,
-      border-color 0.2s ease;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
   }
 
-  .agent-cta-button:hover {
-    transform: translateY(-1px) scale(1.01);
-    opacity: 0.99;
-    border-color: color-mix(in srgb, var(--text) 26%, transparent);
-    box-shadow:
-      inset 0 1px 0 color-mix(in srgb, white 24%, transparent),
-      0 18px 38px color-mix(in srgb, var(--text) 20%, transparent);
+  .agent-cta-button:hover,
+  .agent-cta-button:focus-visible {
+    background: var(--button-hover-bg, var(--button-active-bg));
+    border-color: var(--text);
+    color: var(--text);
   }
 
   .agent-cta-arrow {
-    font-size: 1.15rem;
+    font-size: 0.95rem;
     line-height: 1;
-    opacity: 0.88;
+    opacity: 0.7;
+  }
+
+  .agent-guide-link .agent-cta-arrow {
+    font-size: 0.85rem;
   }
 
   .agent-note {
