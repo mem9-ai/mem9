@@ -135,17 +135,16 @@ It is hosted on Netlify and **automatically deployed from the `main` branch**.
 
 | File | Purpose |
 |---|---|
-| `site/public/SKILL.md` | Backward-compatible root OpenClaw entry — served at `https://mem9.ai/SKILL.md` |
-| `site/public/SETUP.md`, `site/public/TROUBLESHOOTING.md`, `site/public/UNINSTALL.md` | Backward-compatible root OpenClaw support docs |
-| `site/public/openclaw/` | Canonical OpenClaw public docs — served at `https://mem9.ai/openclaw/` |
-| `site/public/hermes/SKILL.md` | Hermes public entry — served at `https://mem9.ai/hermes/SKILL.md` |
+| `site/public/SKILL.md` | Production OpenClaw entry — served at `https://mem9.ai/SKILL.md` |
+| `site/public/SETUP.md`, `site/public/TROUBLESHOOTING.md`, `site/public/UNINSTALL.md` | Production OpenClaw support docs |
+| `site/public/openclaw/` | Mirrored OpenClaw public docs — served at `https://mem9.ai/openclaw/` |
+| `site/public/hermes/` | Hermes public docs — served at `https://mem9.ai/hermes/` |
 
 When updating the public onboarding docs that agents fetch:
 
-- Edit the root OpenClaw alias docs in `site/public/`.
-- Edit the canonical OpenClaw docs in `site/public/openclaw/`.
-- Keep the root and canonical OpenClaw doc sets in lockstep; differences should be limited to alias/canonical wording and `/openclaw/` path prefixes.
-- Edit `site/public/hermes/SKILL.md` for Hermes-specific flow changes.
+- Keep the production OpenClaw docs in `site/public/` aligned with the intended `main` branch behavior.
+- Keep `site/public/openclaw/` in lockstep with the root OpenClaw docs so `https://mem9.ai/SKILL.md` and `https://mem9.ai/openclaw/SKILL.md` behave the same for OpenClaw installs.
+- Edit `site/public/hermes/` for Hermes-specific flow changes.
 
 Do **not** edit obsolete copies outside `site/public/` (e.g. `clawhub-skill/mem9/SKILL.md` has been removed).
 Do **not** manually sync to clawhub — Netlify handles publishing automatically.

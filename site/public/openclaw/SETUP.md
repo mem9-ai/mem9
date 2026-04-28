@@ -16,7 +16,7 @@ When this file is read, send ONLY the choice prompt below. Do not include enviro
 
 ## Safety Rules
 
-- Only edit the exact `openclaw.json` keys listed in the active OpenClaw routing skill. The canonical entry `https://mem9.ai/openclaw/SKILL.md` and the backward-compatible alias `https://mem9.ai/SKILL.md` must be treated as equivalent sources for that allowed-key scope.
+- Only edit the exact `openclaw.json` keys listed in `SKILL.md`.
 - Do not upload local history from this setup flow.
 - Do not use direct web-request commands, raw memory API calls, or scripted shell patch commands in this public setup flow.
 - Do not change the user's global npm registry config during setup unless the user explicitly asks for a permanent mirror change.

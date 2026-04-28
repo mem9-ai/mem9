@@ -38,9 +38,9 @@ cd site && npx tsc --noEmit
 - Netlify should keep `site/` as the package directory with the base directory unset. `netlify.toml` still lives here, but its build paths resolve from the repo root so it can build both `site/` and `dashboard/app/`, then copy dashboard assets into `site/dist/your-memory/`.
 - Locale and theme state use typed string unions and storage keys defined in `src/content/site.ts`.
 - Locale switching is runtime-driven via `data-i18n` attributes plus `src/scripts/site-ui.ts`; new locales usually touch `site.ts`, `site-ui.ts`, and `Layout.astro` together.
-- `public/SKILL.md`, `public/SETUP.md`, `public/TROUBLESHOOTING.md`, and `public/UNINSTALL.md` are the backward-compatible root OpenClaw onboarding docs served verbatim.
-- `public/openclaw/` is the canonical OpenClaw public doc set; keep it in lockstep with the root OpenClaw copies, with differences limited to alias/canonical wording and `/openclaw/` path prefixes.
-- `public/hermes/SKILL.md` is the Hermes-specific public entry.
+- `public/SKILL.md`, `public/SETUP.md`, `public/TROUBLESHOOTING.md`, and `public/UNINSTALL.md` are the production OpenClaw onboarding docs served verbatim.
+- `public/openclaw/` mirrors the OpenClaw doc set so `/SKILL.md` and `/openclaw/SKILL.md` behave the same for OpenClaw installs.
+- `public/hermes/` contains the Hermes-specific public doc set.
 
 ## Anti-patterns
 
