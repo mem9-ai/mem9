@@ -102,6 +102,43 @@ type chatResponse struct {
 	} `json:"error,omitempty"`
 }
 
+type bedrockContentBlock struct {
+	Text string `json:"text,omitempty"`
+}
+
+type bedrockSystemBlock struct {
+	Text string `json:"text"`
+}
+
+type bedrockMessage struct {
+	Role    string                `json:"role"`
+	Content []bedrockContentBlock `json:"content"`
+}
+
+type bedrockInferenceConfig struct {
+	MaxTokens   int     `json:"maxTokens,omitempty"`
+	Temperature float64 `json:"temperature,omitempty"`
+}
+
+type bedrockConverseRequest struct {
+	System          []bedrockSystemBlock   `json:"system,omitempty"`
+	Messages        []bedrockMessage       `json:"messages"`
+	InferenceConfig bedrockInferenceConfig `json:"inferenceConfig,omitempty"`
+}
+
+type bedrockConverseResponse struct {
+	Output *struct {
+		Message struct {
+			Content []bedrockContentBlock `json:"content"`
+		} `json:"message"`
+	} `json:"output,omitempty"`
+	Usage *struct {
+		InputTokens  int `json:"inputTokens"`
+		OutputTokens int `json:"outputTokens"`
+		TotalTokens  int `json:"totalTokens"`
+	} `json:"usage,omitempty"`
+}
+
 // HTTPStatusError is returned when the LLM API responds with an HTTP error status code.
 // This enables callers (e.g., CompleteJSON) to detect specific HTTP codes.
 type HTTPStatusError struct {
@@ -195,12 +232,23 @@ func recordRetryMetric(scope CallScope, reason string) {
 func (c *Client) doRequest(ctx context.Context, cr chatRequest, scope CallScope) (string, error) {
 	start := time.Now()
 
-	body, err := json.Marshal(cr)
+	isBedrock := isBedrockConverseURL(c.baseURL)
+	var body []byte
+	var err error
+	if isBedrock {
+		body, err = json.Marshal(buildBedrockConverseRequest(cr))
+	} else {
+		body, err = json.Marshal(cr)
+	}
 	if err != nil {
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
+	requestURL := c.baseURL + "/chat/completions"
+	if isBedrock {
+		requestURL = c.baseURL
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
@@ -231,6 +279,10 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest, scope CallScope)
 			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Step, c.model, "error").Inc()
 		}
 		return "", &HTTPStatusError{Code: resp.StatusCode, Body: string(respBody)}
+	}
+
+	if isBedrock {
+		return c.parseBedrockConverseResponse(respBody, duration, scope)
 	}
 
 	var chatResp chatResponse
@@ -290,6 +342,86 @@ func (c *Client) doRequest(ctx context.Context, cr chatRequest, scope CallScope)
 		}
 	}
 	return content, nil
+}
+
+func isBedrockConverseURL(baseURL string) bool {
+	return strings.HasSuffix(strings.TrimRight(baseURL, "/"), "/converse")
+}
+
+func buildBedrockConverseRequest(cr chatRequest) bedrockConverseRequest {
+	req := bedrockConverseRequest{
+		InferenceConfig: bedrockInferenceConfig{
+			MaxTokens:   4096,
+			Temperature: cr.Temperature,
+		},
+	}
+	for _, msg := range cr.Messages {
+		if strings.TrimSpace(msg.Content) == "" {
+			continue
+		}
+		if msg.Role == "system" {
+			req.System = append(req.System, bedrockSystemBlock{Text: msg.Content})
+			continue
+		}
+		role := msg.Role
+		if role != "assistant" {
+			role = "user"
+		}
+		req.Messages = append(req.Messages, bedrockMessage{
+			Role:    role,
+			Content: []bedrockContentBlock{{Text: msg.Content}},
+		})
+	}
+	if len(req.Messages) == 0 {
+		req.Messages = append(req.Messages, bedrockMessage{
+			Role:    "user",
+			Content: []bedrockContentBlock{{Text: ""}},
+		})
+	}
+	return req
+}
+
+func (c *Client) parseBedrockConverseResponse(respBody []byte, duration float64, scope CallScope) (string, error) {
+	var converseResp bedrockConverseResponse
+	if err := json.Unmarshal(respBody, &converseResp); err != nil {
+		metrics.LLMRequestDuration.WithLabelValues(c.model, "error").Observe(duration)
+		if scope.enabled() {
+			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Step, c.model, "error").Inc()
+		}
+		return "", fmt.Errorf("decode bedrock response: %w", err)
+	}
+
+	if converseResp.Output == nil {
+		metrics.LLMRequestDuration.WithLabelValues(c.model, "error").Observe(duration)
+		if scope.enabled() {
+			metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Step, c.model, "error").Inc()
+		}
+		return "", fmt.Errorf("bedrock returned no output")
+	}
+
+	var content strings.Builder
+	for _, block := range converseResp.Output.Message.Content {
+		content.WriteString(block.Text)
+	}
+	text := content.String()
+	if c.debugLLM {
+		slog.Debug("llm raw response", "model", c.model, "len", len(text), "raw", text)
+	}
+
+	metrics.LLMRequestDuration.WithLabelValues(c.model, "success").Observe(duration)
+	if scope.enabled() {
+		metrics.LLMRequestsByStepTotal.WithLabelValues(scope.Step, c.model, "success").Inc()
+	}
+	if converseResp.Usage != nil {
+		metrics.LLMTokensTotal.WithLabelValues(c.model, "input").Add(float64(converseResp.Usage.InputTokens))
+		metrics.LLMTokensTotal.WithLabelValues(c.model, "output").Add(float64(converseResp.Usage.OutputTokens))
+		metrics.LLMTokensTotal.WithLabelValues(c.model, "total").Add(float64(converseResp.Usage.TotalTokens))
+		if scope.enabled() {
+			metrics.LLMTokensByStepTotal.WithLabelValues(scope.Step, c.model, "input").Add(float64(converseResp.Usage.InputTokens))
+			metrics.LLMTokensByStepTotal.WithLabelValues(scope.Step, c.model, "output").Add(float64(converseResp.Usage.OutputTokens))
+		}
+	}
+	return text, nil
 }
 
 func (s CallScope) enabled() bool {

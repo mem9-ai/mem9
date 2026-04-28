@@ -164,6 +164,54 @@ func TestComplete(t *testing.T) {
 		}
 	})
 
+	t.Run("bedrock converse success", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				t.Fatalf("method = %s, want POST", r.Method)
+			}
+			if r.URL.Path != "/model/test-model/converse" {
+				t.Fatalf("path = %s, want /model/test-model/converse", r.URL.Path)
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer key" {
+				t.Fatalf("Authorization header = %q, want %q", got, "Bearer key")
+			}
+
+			var req bedrockConverseRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if len(req.System) != 1 || req.System[0].Text != "sys" {
+				t.Fatalf("unexpected system: %#v", req.System)
+			}
+			if len(req.Messages) != 1 || req.Messages[0].Role != "user" || req.Messages[0].Content[0].Text != "user" {
+				t.Fatalf("unexpected messages: %#v", req.Messages)
+			}
+			if req.InferenceConfig.MaxTokens != 4096 {
+				t.Fatalf("maxTokens = %d, want 4096", req.InferenceConfig.MaxTokens)
+			}
+			if req.InferenceConfig.Temperature != 0.1 {
+				t.Fatalf("temperature = %v, want %v", req.InferenceConfig.Temperature, 0.1)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"output":{"message":{"role":"assistant","content":[{"text":"hello from bedrock"}]}},"usage":{"inputTokens":1,"outputTokens":2,"totalTokens":3}}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL + "/model/test-model/converse", Model: "test-model"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		got, err := client.Complete(context.Background(), "sys", "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "hello from bedrock" {
+			t.Fatalf("content = %q, want %q", got, "hello from bedrock")
+		}
+	})
+
 	t.Run("api error response", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
