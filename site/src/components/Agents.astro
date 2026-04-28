@@ -7,7 +7,6 @@ interface Props {
 
 const { platforms } = Astro.props;
 const hasSingleItem = platforms.items.length === 1;
-const yourMemoryHref = 'https://mem9.ai/your-memory';
 ---
 
 <section id="platforms" class="agents">
@@ -21,7 +20,7 @@ const yourMemoryHref = 'https://mem9.ai/your-memory';
     </div>
     <div class="agent-grid">
       {platforms.items.map((agent, index) => (
-        <div class:list={['agent-card', hasSingleItem && 'is-wide', agent.badge && 'has-action']}>
+        <div class:list={['agent-card', hasSingleItem && 'is-wide', agent.href && 'has-action']}>
           <div class="agent-head">
             <div class="agent-name" data-i18n={`platforms.items.${index}.name`}>{agent.name}</div>
             {agent.badge && <span class="agent-badge">{agent.badge}</span>}
@@ -30,15 +29,17 @@ const yourMemoryHref = 'https://mem9.ai/your-memory';
           <div class="agent-detail" data-i18n={`platforms.items.${index}.detail`}>
             {agent.detail}
           </div>
-          {agent.badge && (
+          {agent.href && (
             <div class="agent-action-row">
               <a
-                href={yourMemoryHref}
-                target="_blank"
-                rel="noreferrer"
+                href={agent.href}
+                target={agent.external ? "_blank" : undefined}
+                rel={agent.external ? "noreferrer" : undefined}
                 class="agent-cta-button"
               >
-                <span data-i18n="platforms.ctaLabel">{platforms.ctaLabel}</span>
+                <span data-i18n={`platforms.items.${index}.ctaLabel`}>
+                  {agent.ctaLabel ?? platforms.ctaLabel}
+                </span>
                 <span class="agent-cta-arrow" aria-hidden="true">→</span>
               </a>
             </div>
