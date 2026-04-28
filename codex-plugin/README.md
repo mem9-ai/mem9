@@ -32,14 +32,15 @@ codex plugin marketplace add mem9-ai/mem9
 ```
 
 2. In Codex, run `/plugins`, search for `mem9`, open the `mem9-ai` marketplace entry, and choose `Install plugin`.
-3. Run:
+3. Restart Codex or open a fresh Codex session with the same `CODEX_HOME`.
+4. Run:
 
    ```text
    $mem9:setup
    ```
 
-4. If one repository needs a different profile or timeout, rerun `$mem9:setup` in that repository and apply project scope.
-5. When you want an on-demand recall or an explicit store, run:
+5. If one repository needs a different profile or timeout, rerun `$mem9:setup` in that repository and apply project scope.
+6. When you want an on-demand recall or an explicit store, run:
 
    ```text
    $mem9:recall
@@ -184,6 +185,8 @@ You can override the file path with `MEM9_DEBUG_LOG_FILE`.
 
 Common issues:
 
+- If `$mem9:setup` returns `no matches` after installing from `/plugins`, restart Codex or open a fresh Codex session. Codex loads plugin skills when the session starts.
+- If `inspect` reports `missing_install_metadata` before setup finishes, continue with `$mem9:setup`. `scope apply` writes `$CODEX_HOME/mem9/install.json`.
 - If `SessionStart` says mem9 is not configured, run `$mem9:setup`.
 - If a repository needs a different profile, timeout, or a cleared local override, rerun `$mem9:setup` in that repository and apply or clear project scope.
 - If you want to remove the managed Codex files before reinstalling or resetting mem9, run `$mem9:cleanup`.
