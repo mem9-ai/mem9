@@ -8,6 +8,20 @@ function linkTarget(link: SiteLinkCopy): string | undefined {
 function linkRel(link: SiteLinkCopy): string | undefined {
   return link.external ? "noopener noreferrer" : undefined;
 }
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function renderInline(text: string): string {
+  return escapeHtml(text).replace(
+    /`([^`]+)`/g,
+    '<code class="faq-inline-code">$1</code>',
+  );
+}
 ---
 
 <section id="faq" class="faq" data-faq-root data-faq-locale={DEFAULT_LOCALE}>
@@ -31,15 +45,56 @@ function linkRel(link: SiteLinkCopy): string | undefined {
                 </summary>
                 <div class="faq-body">
                   {item.answer.map((paragraph) => (
-                    <p class="faq-answer">{paragraph}</p>
+                    <p class="faq-answer" set:html={renderInline(paragraph)}></p>
                   ))}
 
                   {item.bullets && (
                     <ul class="faq-bullets">
                       {item.bullets.map((bullet) => (
-                        <li>{bullet}</li>
+                        <li set:html={renderInline(bullet)}></li>
                       ))}
                     </ul>
+                  )}
+
+                  {item.groups && item.groups.length > 0 && (
+                    <div class="faq-groups">
+                      {item.groups.map((group) => (
+                        <div class="faq-group">
+                          <p class="faq-group-label">{group.label}</p>
+                          {group.body && (
+                            <p class="faq-group-body">
+                              <Fragment set:html={renderInline(group.body)} />
+                              {group.link && !group.example && (
+                                <>
+                                  {' '}
+                                  <a
+                                    href={group.link.href}
+                                    target={linkTarget(group.link)}
+                                    rel={linkRel(group.link)}
+                                    class="faq-inline-link"
+                                  >
+                                    {group.link.label}
+                                  </a>
+                                </>
+                              )}
+                            </p>
+                          )}
+                          {group.example && (
+                            <pre class="faq-code"><code>{group.example.code}</code></pre>
+                          )}
+                          {group.example && group.link && (
+                            <a
+                              href={group.link.href}
+                              target={linkTarget(group.link)}
+                              rel={linkRel(group.link)}
+                              class="faq-inline-link"
+                            >
+                              {group.link.label}
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   )}
 
                   {item.examples && (
@@ -211,6 +266,51 @@ function linkRel(link: SiteLinkCopy): string | undefined {
     line-height: 1.62;
   }
 
+  .faq-groups {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .faq-group {
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .faq-group-label {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .faq-group-body {
+    font-size: 0.92rem;
+    line-height: 1.6;
+    color: var(--text-dim);
+  }
+
+  .faq-group .faq-code {
+    margin-top: 0.1rem;
+  }
+
+  .faq-inline-link {
+    color: var(--text);
+    border-bottom: 1px solid var(--button-active-border);
+    text-decoration: none;
+    padding-bottom: 0.02rem;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .faq-inline-link:hover,
+  .faq-inline-link:focus-visible {
+    border-bottom-color: var(--text);
+  }
+
+  .faq-group > .faq-inline-link {
+    justify-self: start;
+    align-self: start;
+  }
+
   .faq-examples {
     display: grid;
     gap: 0.85rem;
@@ -224,8 +324,7 @@ function linkRel(link: SiteLinkCopy): string | undefined {
   .faq-example-label {
     font-family: var(--font-mono);
     font-size: 0.76rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
+    letter-spacing: 0.05em;
     color: var(--accent);
   }
 
@@ -234,9 +333,19 @@ function linkRel(link: SiteLinkCopy): string | undefined {
     border-radius: 0.95rem;
     background: var(--bg-terminal);
     border: 1px solid var(--border);
-    border-left: 2px solid var(--accent);
     overflow-x: auto;
     box-shadow: var(--surface-inset), var(--surface-shadow-soft);
+  }
+
+  .faq-body :global(.faq-inline-code) {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    padding: 0.08em 0.4em;
+    border-radius: 0.4em;
+    background: var(--bg-terminal);
+    border: 1px solid var(--border);
+    color: var(--text);
+    white-space: nowrap;
   }
 
   .faq-code code {
