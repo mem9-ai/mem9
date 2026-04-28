@@ -171,7 +171,7 @@ func (s *MemoryService) Search(ctx context.Context, filter domain.MemoryFilter) 
 		if err != nil {
 			return nil, 0, err
 		}
-		return populateRelativeAge(mems), total, nil
+		return finalizeSearchResults(mems, filter.Query), total, nil
 	}
 	searchFilter := filter
 	searchFilter.SessionID = ""
@@ -265,7 +265,7 @@ func (s *MemoryService) ftsOnlySearch(ctx context.Context, filter domain.MemoryF
 	slog.Info("fts search completed", "query_len", len(filter.Query), "results", len(ftsResults))
 
 	page, total := s.paginate(ftsResults, offset, limit)
-	return populateRelativeAge(page), total, nil
+	return finalizeSearchResults(page, filter.Query), total, nil
 }
 
 func observeRecallEmbeddingRequest(embedder *embed.Embedder, err error) {
@@ -313,7 +313,7 @@ func (s *MemoryService) keywordOnlySearch(ctx context.Context, filter domain.Mem
 	slog.Info("keyword search completed (FTS unavailable)", "query_len", len(filter.Query), "results", len(kwResults))
 
 	page, total := s.paginate(kwResults, offset, limit)
-	return populateRelativeAge(page), total, nil
+	return finalizeSearchResults(page, filter.Query), total, nil
 }
 
 func (s *MemoryService) ftsOnlyCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool, opts RecallCandidateOptions) ([]RecallCandidate, error) {
@@ -397,7 +397,7 @@ func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFi
 	merged := sortByScore(mems, scores)
 
 	page, total := s.paginate(merged, offset, limit)
-	return populateRelativeAge(setScores(page, scores)), total, nil
+	return finalizeSearchResults(setScores(page, scores), filter.Query), total, nil
 }
 
 func (s *MemoryService) hybridCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool, opts RecallCandidateOptions) ([]RecallCandidate, error) {
@@ -506,7 +506,7 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 	merged := sortByScore(mems, scores)
 
 	page, total := s.paginate(merged, offset, limit)
-	return populateRelativeAge(setScores(page, scores)), total, nil
+	return finalizeSearchResults(setScores(page, scores), filter.Query), total, nil
 }
 
 func (s *MemoryService) autoHybridCandidates(

@@ -129,6 +129,9 @@ type testSessionRepo struct {
 	keywordSearchResults []domain.Memory
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	lastKeywordFilter    domain.MemoryFilter
+	sessionListResults   []*domain.Session
+	lastSessionIDs       []string
+	lastSessionLimit     int
 }
 
 func (s *testSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Session) error {
@@ -173,8 +176,10 @@ func (s *testSessionRepo) KeywordSearch(ctx context.Context, query string, filte
 	return results, nil
 }
 func (s *testSessionRepo) FTSAvailable() bool { return false }
-func (s *testSessionRepo) ListBySessionIDs(context.Context, []string, int) ([]*domain.Session, error) {
-	return nil, nil
+func (s *testSessionRepo) ListBySessionIDs(_ context.Context, sessionIDs []string, limit int) ([]*domain.Session, error) {
+	s.lastSessionIDs = append([]string(nil), sessionIDs...)
+	s.lastSessionLimit = limit
+	return append([]*domain.Session(nil), s.sessionListResults...), nil
 }
 
 func intPtr(v int) *int {
@@ -1039,6 +1044,371 @@ func TestListMemories_DefaultRecall_RecordsMetering(t *testing.T) {
 	}
 }
 
+func TestListMemories_DefaultRecall_ExactKeepsComplementaryInsightEvidence(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			switch filter.MemoryType {
+			case string(domain.TypePinned):
+				return nil, nil
+			case string(domain.TypeInsight):
+				return []domain.Memory{
+					{ID: "m1", Content: `Caroline wants to provide "trans-focused counseling and mental health support".`, MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-90 * time.Minute), State: domain.StateActive},
+				}, nil
+			default:
+				return nil, nil
+			}
+		},
+	}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "s1", Content: `[date:10:37 am on 27 June, 2023] [speaker:Caroline] Lately, I've been looking into counseling and mental health as a career. I want to help people who have gone through the same things as me.`, MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What career path has Caroline decided to pursue?")+"&limit=3", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) < 2 {
+		t.Fatalf("expected complementary exact recall to keep at least 2 memories, got %d", len(resp.Memories))
+	}
+
+	ids := map[string]struct{}{}
+	for _, mem := range resp.Memories {
+		ids[mem.ID] = struct{}{}
+	}
+	if _, ok := ids["s1"]; !ok {
+		t.Fatalf("expected session evidence to be retained, got %+v", resp.Memories)
+	}
+	if _, ok := ids["m1"]; !ok {
+		t.Fatalf("expected complementary insight evidence to be retained, got %+v", resp.Memories)
+	}
+	if resp.Memories[0].ID != "s1" {
+		t.Fatalf("expected direct session evidence first for exact query, got %q", resp.Memories[0].ID)
+	}
+}
+
+func TestListMemories_DefaultRecall_PrefersTargetSpeakerForSpeechQuestion(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `[date:12:48 am on 1 February, 2023] [speaker:Gina] I'm so proud of the new store location.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-1 * time.Minute), State: domain.StateActive},
+				{ID: "m2", Content: `[date:12:48 am on 1 February, 2023] [speaker:Jon] Way to go, hard work's paying off!`, MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What did Jon say about Gina's progress with her store?")+"&limit=2", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) == 0 {
+		t.Fatal("expected at least one memory")
+	}
+	if resp.Memories[0].ID != "m2" {
+		t.Fatalf("expected target-speaker session first, got %q", resp.Memories[0].ID)
+	}
+}
+
+func TestListMemories_DefaultRecall_DownranksCaptionHeavyNonVisualSessionNoise(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: "[date:1:26 pm on 3 April, 2023] [speaker:Jon] Gina, good luck with your store!\n[image-caption: a photo of a dress with a sign on it that says june bunty]", MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+				{ID: "m2", Content: "[date:12:48 am on 1 February, 2023] [speaker:Jon] Wow, Gina! You found the perfect spot for your store. Way to go, hard work's paying off!", MemoryType: domain.TypeSession, UpdatedAt: now.Add(-1 * time.Minute), State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What did Jon say about Gina's progress with her store?")+"&limit=2", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) == 0 {
+		t.Fatal("expected at least one memory")
+	}
+	if resp.Memories[0].ID != "m2" {
+		t.Fatalf("expected direct spoken session first, got %q", resp.Memories[0].ID)
+	}
+}
+
+func TestListMemories_DefaultRecall_PrefersSubjectSpeakerForPersonalPreferenceQuestion(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `[date:11:41 am on 6 November, 2023] [speaker:John] LeBron's moments of determination and heart are incredible.`, MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+				{ID: "m2", Content: `[date:3:00 pm on 2 October, 2023] [speaker:Tim] The Wolves are solid and LeBron's skills and leadership are amazing.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-1 * time.Minute), State: domain.StateActive},
+				{ID: "m3", Content: `[date:3:00 pm on 2 October, 2023] [speaker:Tim] LeBron is incredible. Have you ever had the opportunity to meet him or see him play live?`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-2 * time.Minute), State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What does John like about Lebron James?")+"&limit=3", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) == 0 {
+		t.Fatal("expected at least one memory")
+	}
+	if resp.Memories[0].ID != "m1" {
+		t.Fatalf("expected subject speaker answer first, got %q", resp.Memories[0].ID)
+	}
+}
+
+func TestListMemories_DefaultRecall_PrefersSubjectAnswerForResearchQuestion(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `[date:10:31 am on 13 October, 2023] [speaker:Melanie] Hey Caroline! Great to hear from you! Wow, what an amazing journey. Congrats!`, MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+				{ID: "m2", Content: `[date:10:31 am on 13 October, 2023] [speaker:Caroline] I researched adoption agencies and lawyers so I can understand the process better.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-1 * time.Minute), State: domain.StateActive},
+				{ID: "m3", Content: `Caroline wants to adopt children and build a family.`, MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-2 * time.Minute), State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What did Caroline research?")+"&limit=3", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) == 0 {
+		t.Fatal("expected at least one memory")
+	}
+	if resp.Memories[0].ID != "m2" {
+		t.Fatalf("expected subject research answer first, got %q", resp.Memories[0].ID)
+	}
+}
+
+func TestListMemories_DefaultRecall_PrefersSelfIdentityStatement(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `[date:10:31 am on 13 October, 2023] [speaker:Melanie] That's awesome, Caroline! You drew it? What does it mean to you?`, MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+				{ID: "m2", Content: `[date:10:31 am on 13 October, 2023] [speaker:Caroline] I'm a transgender woman, and that painting is about accepting who I am.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-1 * time.Minute), State: domain.StateActive},
+				{ID: "m3", Content: `Caroline volunteers for the LGBTQ+ community.`, MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-2 * time.Minute), State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What is Caroline's identity?")+"&limit=3", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) == 0 {
+		t.Fatal("expected at least one memory")
+	}
+	if resp.Memories[0].ID != "m2" {
+		t.Fatalf("expected self-identity statement first, got %q", resp.Memories[0].ID)
+	}
+}
+
+func TestListMemories_DefaultRecall_PrefersRelationshipStatusSelfStatement(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `[date:8:56 pm on 20 July, 2023] [speaker:Melanie] Hey Caroline! Good to talk to you again. What's up? Anything new since last time?`, MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+				{ID: "m2", Content: `[date:8:56 pm on 20 July, 2023] [speaker:Caroline] I'm single right now and focusing on getting ready to adopt.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-1 * time.Minute), State: domain.StateActive},
+				{ID: "m3", Content: `Caroline is ready to be a mom and adopt children.`, MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-2 * time.Minute), State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What is Caroline's relationship status?")+"&limit=3", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) == 0 {
+		t.Fatal("expected at least one memory")
+	}
+	if resp.Memories[0].ID != "m2" {
+		t.Fatalf("expected relationship-status self statement first, got %q", resp.Memories[0].ID)
+	}
+}
+
+func TestListMemories_DefaultRecall_DemotesNonSubjectPromptForSymbolQuestion(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `[date:10:31 am on 13 October, 2023] [speaker:Melanie] That's awesome, Caroline! You drew it? What does it mean to you?`, MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+				{ID: "m2", Content: `[date:3:31 pm on 23 August, 2023] [speaker:Caroline] Thanks, Melanie. Art gives me a sense of freedom, but so does having supportive people around, promoting LGBTQ rights and being true to myself.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-1 * time.Minute), State: domain.StateActive},
+				{ID: "m3", Content: `Caroline views abstract art as a form of self-expression.`, MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-2 * time.Minute), State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What does Caroline's drawing symbolize for her?")+"&limit=3", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) == 0 {
+		t.Fatal("expected at least one memory")
+	}
+	if resp.Memories[0].ID != "m2" {
+		t.Fatalf("expected subject answer turn first, got %q", resp.Memories[0].ID)
+	}
+}
+
+func TestListMemories_DefaultRecall_ExpandsAdjacentSessionAnswerTurn(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			switch filter.MemoryType {
+			case string(domain.TypePinned):
+				return nil, nil
+			case string(domain.TypeInsight):
+				return []domain.Memory{
+					{ID: "m1", Content: "John likes outdoor gear brands.", MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-2 * time.Hour), State: domain.StateActive},
+				}, nil
+			default:
+				return nil, nil
+			}
+		},
+	}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{
+					ID:         "s-question",
+					SessionID:  "sess-1",
+					Content:    "[speaker:Melanie] Which company do you like the most these days?",
+					MemoryType: domain.TypeSession,
+					Metadata:   json.RawMessage(`{"role":"user","seq":7,"content_type":"text"}`),
+					UpdatedAt:  now,
+					State:      domain.StateActive,
+				},
+			}, nil
+		},
+		sessionListResults: []*domain.Session{
+			{ID: "s-before", SessionID: "sess-1", Seq: 6, Role: "assistant", Content: "I finally replaced my old hiking boots.", ContentType: "text", State: domain.StateActive, CreatedAt: now.Add(-2 * time.Minute), UpdatedAt: now.Add(-2 * time.Minute)},
+			{ID: "s-question", SessionID: "sess-1", Seq: 7, Role: "user", Content: "Which company do you like the most these days?", ContentType: "text", State: domain.StateActive, CreatedAt: now.Add(-1 * time.Minute), UpdatedAt: now.Add(-1 * time.Minute)},
+			{ID: "s-answer", SessionID: "sess-1", Seq: 8, Role: "assistant", Content: `Definitely "Under Armour" right now.`, ContentType: "text", State: domain.StateActive, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What company does John like?")+"&limit=3", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) == 0 {
+		t.Fatal("expected at least one memory")
+	}
+	if resp.Memories[0].ID != "s-answer" {
+		t.Fatalf("expected adjacent session answer first, got %q", resp.Memories[0].ID)
+	}
+	if resp.Memories[0].Confidence == nil || *resp.Memories[0].Confidence < defaultMixedMinConfidence {
+		t.Fatalf("expected adjacent answer confidence >= %d, got %+v", defaultMixedMinConfidence, resp.Memories[0].Confidence)
+	}
+	if len(sessRepo.lastSessionIDs) != 1 || sessRepo.lastSessionIDs[0] != "sess-1" {
+		t.Fatalf("expected adjacent expansion to inspect sess-1, got %+v", sessRepo.lastSessionIDs)
+	}
+}
+
 func TestListMemories_DefaultRecall_KeepsQualifiedPinnedFirst(t *testing.T) {
 	now := time.Now()
 	memRepo := &testMemoryRepo{
@@ -1268,6 +1638,214 @@ func TestListMemories_DefaultRecall_EnumerationFiltersLowConfidenceNoise(t *test
 	}
 	if len(resp.Memories) != 0 {
 		t.Fatalf("expected low-confidence enumeration noise to be filtered out, got %d memories", len(resp.Memories))
+	}
+}
+
+func TestClassifyRecallQueryShape_ExpandedEnumerationQueries(t *testing.T) {
+	tests := []struct {
+		query string
+		want  recallQueryShape
+	}{
+		{query: "What instruments does Melanie play?", want: recallQueryShapeEnumeration},
+		{query: "What are John's goals for his career?", want: recallQueryShapeEnumeration},
+		{query: "In what ways is Caroline participating in the LGBTQ community?", want: recallQueryShapeEnumeration},
+		{query: "How many times has Melanie gone to the beach in 2023?", want: recallQueryShapeEnumeration},
+	}
+
+	for _, tt := range tests {
+		if got := classifyRecallQueryShape(tt.query); got != tt.want {
+			t.Fatalf("classifyRecallQueryShape(%q) = %v, want %v", tt.query, got, tt.want)
+		}
+	}
+}
+
+func TestListMemories_DefaultRecall_EnumerationPrefersFocusMatchedMemories(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `[date:6:55 pm on 20 October, 2023] [speaker:Melanie] Our camping trip got off to a bad start and the whole family was shaken up.`, MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+				{ID: "m2", Content: `[date:9:55 am on 22 October, 2023] [speaker:Melanie] These figurines I bought yesterday remind me of family love.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-1 * time.Minute), State: domain.StateActive},
+				{ID: "m3", Content: `[date:11:54 am on 2 May, 2023] [speaker:Melanie] I bought a new pair of hiking shoes last week and they already feel broken in.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-2 * time.Minute), State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("What items has Melanie bought?")+"&limit=2", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) < 2 {
+		t.Fatalf("expected at least 2 memories, got %d", len(resp.Memories))
+	}
+
+	got := map[string]struct{}{
+		resp.Memories[0].ID: {},
+		resp.Memories[1].ID: {},
+	}
+	if _, ok := got["m2"]; !ok {
+		t.Fatalf("expected figurines memory in top 2, got %+v", resp.Memories[:2])
+	}
+	if _, ok := got["m3"]; !ok {
+		t.Fatalf("expected shoes memory in top 2, got %+v", resp.Memories[:2])
+	}
+}
+
+func TestListMemories_DefaultRecall_RepeatCountIncludesConcreteEvents(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `[date:8:56 pm on 20 July, 2023] [speaker:Melanie] Seeing my kids' faces so happy at the beach was the best! We don't go often, usually only once or twice a year.`, MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+				{ID: "m2", Content: `[date:8:56 pm on 20 July, 2023] [speaker:Melanie] We went to the beach recently and the kids had such a blast.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-1 * time.Minute), State: domain.StateActive},
+				{ID: "m3", Content: `[date:1:33 pm on 25 August, 2023] [speaker:Melanie] We spent the afternoon at the beach again and I loved how peaceful it felt.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-2 * time.Minute), State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("How many times has Melanie gone to the beach in 2023?")+"&limit=2", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) < 3 {
+		t.Fatalf("expected expanded repeat-count recall to return at least 3 memories, got %d", len(resp.Memories))
+	}
+
+	got := map[string]struct{}{}
+	for _, mem := range resp.Memories {
+		got[mem.ID] = struct{}{}
+	}
+	if _, ok := got["m2"]; !ok {
+		t.Fatalf("expected first beach event memory in returned set, got %+v", resp.Memories)
+	}
+	if _, ok := got["m3"]; !ok {
+		t.Fatalf("expected second beach event memory in returned set, got %+v", resp.Memories)
+	}
+}
+
+func TestListMemories_DefaultRecall_DurationPrefersExactSpanMemory(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `[date:5:33 pm on 26 August, 2023] [speaker:Jolene] I've been into yoga lately and it helps me recharge.`, MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+				{ID: "m2", Content: `[date:7:18 pm on 2 March, 2023] [speaker:Jolene] I've been doing yoga for 3 years now and it keeps me grounded.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-1 * time.Minute), State: domain.StateActive},
+				{ID: "m3", Content: `[date:7:39 pm on 8 September, 2023] [speaker:Jolene] Since February 2023, yoga has been part of my routine.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-2 * time.Minute), State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("How long has Jolene been doing yoga?")+"&limit=2", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) == 0 {
+		t.Fatalf("expected memories, got none")
+	}
+	if resp.Memories[0].ID != "m2" {
+		t.Fatalf("expected exact duration memory first, got %+v", resp.Memories)
+	}
+}
+
+func TestListMemories_DefaultRecall_FrequencyPrefersCadenceOverDuration(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `[date:5:23 pm on 13 June, 2023] [speaker:Audrey] I take my dogs for walks multiple times a day.`, MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+				{ID: "m2", Content: `[date:5:23 pm on 13 June, 2023] [speaker:Audrey] We usually walk for about an hour and let them explore.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-1 * time.Minute), State: domain.StateActive},
+				{ID: "m3", Content: `[date:7:09 pm on 1 October, 2023] [speaker:Audrey] Taking the dogs out for a walk in the park helps clear my mind.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-2 * time.Minute), State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("How often does Audrey take her dogs for walks?")+"&limit=2", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) == 0 {
+		t.Fatalf("expected memories, got none")
+	}
+	if resp.Memories[0].ID != "m1" {
+		t.Fatalf("expected explicit cadence memory first, got %+v", resp.Memories)
+	}
+}
+
+func TestListMemories_DefaultRecall_DurationDemotesQuestionTurns(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `[date:7:55 pm on 9 June, 2023] [speaker:Caroline] Wow, what an amazing family pic! How long have you been married?`, MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+				{ID: "m2", Content: `[date:7:55 pm on 9 June, 2023] [speaker:Melanie] We've been married for 5 years now.`, MemoryType: domain.TypeSession, UpdatedAt: now.Add(-1 * time.Minute), State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("How long have Mel and her husband been married?")+"&limit=2", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) == 0 {
+		t.Fatalf("expected memories, got none")
+	}
+	if resp.Memories[0].ID != "m2" {
+		t.Fatalf("expected direct duration answer first, got %+v", resp.Memories)
 	}
 }
 
