@@ -1,4 +1,5 @@
 ---
+import { agentGuideTargets } from '../content/site';
 import type { SiteAriaCopy, SiteHeroCopy } from '../content/site';
 
 interface Props {
@@ -44,7 +45,15 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
 <section class="hero">
   <div class="container hero-shell">
     <div class="hero-copy">
-      <p class="eyebrow" data-i18n="hero.eyebrow">{hero.eyebrow}</p>
+      <a
+        href={tidbCloudHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="hero-credit"
+      >
+        <span data-i18n="hero.poweredByLabel">{poweredByLabel}</span>
+        <img src="/tidb-logo.svg" alt="TiDB Cloud" />
+      </a>
 
       <h1 class="title">
         <span class="title-line" data-i18n="hero.titleLead">{hero.titleLead}</span>
@@ -59,16 +68,6 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
       <p class="subtitle" data-i18n="hero.subtitle">
         {hero.subtitle}
       </p>
-
-      <a
-        href={tidbCloudHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="powered-inline"
-      >
-        <span data-i18n="hero.poweredByLabel">{poweredByLabel}</span>
-        <img src="/tidb-logo.svg" alt="TiDB Cloud" />
-      </a>
 
       <div class="cta-grid" data-onboarding-shell data-onboarding-version="stable">
         {showOnboardingVersionTabs && (
@@ -103,7 +102,10 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
           </div>
         )}
         <div class="cta-card surface-card">
-          <p class="cta-label" data-i18n="hero.onboardingLabel">{hero.onboardingLabel}</p>
+          <div class="cta-card-head">
+            <p class="cta-label" data-i18n="hero.onboardingLabel">{hero.onboardingLabel}</p>
+            <span class="cta-badge" data-i18n="hero.onboardingBadge">{hero.onboardingBadge}</span>
+          </div>
           <div class="cta-command">
             <code
               data-onboarding-command
@@ -162,10 +164,41 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
               </svg>
             </button>
           </div>
+          <p class="cta-hint" data-i18n="hero.onboardingHint" data-i18n-html set:html={hero.onboardingHint}></p>
           <p class="sr-only" data-copy-feedback aria-live="polite"></p>
         </div>
-        <p class="cta-hint" data-i18n="hero.onboardingHint">{hero.onboardingHint}</p>
       </div>
+
+      {hero.guideSelector && (
+        <aside class="works-with" aria-label={hero.guideSelector.label}>
+          <p class="works-with-label" data-i18n="hero.guideSelector.label">{hero.guideSelector.label}</p>
+          <ul class="works-with-list">
+            {hero.guideSelector.items.map((item, index) => {
+              const target = agentGuideTargets[item.id];
+              return (
+                <>
+                  {index > 0 && (
+                    <li class="works-with-sep" aria-hidden="true">◆</li>
+                  )}
+                  <li>
+                    <a
+                      class="works-with-link"
+                      href={target.href}
+                      target={target.external ? "_blank" : undefined}
+                      rel={target.external ? "noopener noreferrer" : undefined}
+                    >
+                      <span class="works-with-name" data-i18n={`hero.guideSelector.items.${index}.label`}>{item.label}</span>
+                      {target.external && (
+                        <span class="works-with-arrow" aria-hidden="true">↗</span>
+                      )}
+                    </a>
+                  </li>
+                </>
+              );
+            })}
+          </ul>
+        </aside>
+      )}
 
       <div class="beta-feature-wrap" data-beta-highlights hidden>
         <article class="beta-feature-card surface-card">
@@ -194,16 +227,17 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
         ))}
       </div>
 
-      <p class="hero-link-inline">
+      <aside class="hero-footer">
         <a
           href={tidbZeroHref}
           target="_blank"
           rel="noopener noreferrer"
+          class="hero-substrate-link"
           data-i18n="hero.substrateCtaLabel"
         >
           {substrateCtaLabel}
         </a>
-      </p>
+      </aside>
     </div>
   </div>
 </section>
@@ -239,7 +273,8 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
   .title {
     font-size: clamp(3.125rem, 4.7vw, 3.75rem);
     line-height: 1.08;
-    max-width: 9.2ch;
+    max-width: 100%;
+    text-wrap: balance;
     margin-bottom: 1rem;
   }
 
@@ -269,42 +304,122 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
     margin-bottom: 1.5rem;
   }
 
-  .powered-inline {
-    display: flex;
+  .hero-credit {
+    display: inline-flex;
     align-items: center;
-    justify-content: flex-start;
     gap: 0.55rem;
-    width: fit-content;
-    margin: 0 0 1.55rem;
+    margin-bottom: 1.1rem;
+    padding: 0.32rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-elevated-end);
     color: var(--text-soft);
-    font-size: 0.94rem;
-    line-height: 1.4;
-    transition: color 0.18s ease, transform 0.18s ease;
+    font-size: 0.8rem;
+    font-family: var(--font-mono);
+    letter-spacing: 0.02em;
+    line-height: 1;
+    transition: color 0.18s ease, border-color 0.18s ease;
   }
 
-  .powered-inline:hover,
-  .powered-inline:focus-visible {
+  .hero-credit:hover,
+  .hero-credit:focus-visible {
+    color: var(--text);
+    border-color: var(--border-strong);
     opacity: 1;
-    color: var(--text-dim);
-    transform: translateY(-1px);
   }
 
-  .powered-inline img {
+  .hero-credit img {
     display: block;
     width: auto;
-    height: 0.92rem;
-    transition: transform 0.18s ease, opacity 0.18s ease;
+    height: 0.85rem;
+    transition: opacity 0.18s ease;
   }
 
-  .powered-inline:hover img,
-  .powered-inline:focus-visible img {
+  .hero-credit:hover img,
+  .hero-credit:focus-visible img {
     opacity: 0.92;
-    transform: translateX(1px);
   }
 
   .cta-grid {
     width: min(100%, var(--content-rail));
     margin-bottom: 0.55rem;
+  }
+
+  .cta-grid[data-onboarding-shell] {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .works-with {
+    width: min(100%, var(--content-rail));
+    margin: 2rem 0 0;
+    display: grid;
+    gap: 0.7rem;
+  }
+
+  .works-with-label {
+    color: var(--text-soft);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+    margin: 0;
+  }
+
+  .works-with-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.85rem;
+  }
+
+  .works-with-link {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.28rem;
+    color: var(--text);
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+
+  .works-with-name {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s ease;
+  }
+
+  .works-with-link:hover .works-with-name,
+  .works-with-link:focus-visible .works-with-name {
+    border-bottom-color: var(--accent);
+  }
+
+  .works-with-arrow {
+    display: inline-flex;
+    align-items: baseline;
+    color: var(--text-soft);
+    font-size: 0.78em;
+    transform: translateY(-0.05em);
+    text-decoration: none;
+    transition: color 0.2s ease, transform 0.2s ease;
+  }
+
+  .works-with-link:hover .works-with-arrow,
+  .works-with-link:focus-visible .works-with-arrow {
+    color: var(--accent);
+    transform: translate(0.1em, -0.18em);
+  }
+
+  .works-with-sep {
+    color: var(--accent);
+    font-size: 0.5rem;
+    line-height: 1;
+    opacity: 0.5;
+    transform: translateY(-0.2em);
   }
 
   .cta-grid[data-onboarding-version='beta'] {
@@ -353,16 +468,26 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
   }
 
   .cta-card {
-    padding: 1rem 1rem 1.05rem;
-    min-height: 132px;
+    padding: 0.95rem 1.05rem 0.85rem;
     background: linear-gradient(180deg, var(--surface-elevated-start), var(--surface-elevated-end));
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--surface-shadow-soft);
   }
 
   .hero-highlights {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.85rem;
+    gap: 1rem;
     width: min(100%, var(--content-rail));
+    margin-top: 2rem;
+  }
+
+  .highlight-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 1rem 1.05rem 1.1rem;
+    min-height: 0;
   }
 
   .beta-feature-wrap {
@@ -418,20 +543,49 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
     max-width: none;
   }
 
+  .cta-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.7rem;
+  }
+
   .cta-label {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    margin: 0;
+    line-height: 1.2;
+  }
+
+  .cta-badge {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
     font-family: var(--font-mono);
-    font-size: 0.76rem;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--text-dim);
-    margin-bottom: 1rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 0.22rem 0.55rem;
+    border-radius: 999px;
+    line-height: 1.2;
+    white-space: nowrap;
   }
 
   .cta-hint {
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     color: var(--text-soft);
-    line-height: 1.55;
-    margin-top: 0.65rem;
+    line-height: 1.5;
+    margin: 0.7rem 0 0;
+  }
+
+  .cta-hint :global(strong) {
+    font-weight: 600;
+    color: var(--text);
   }
 
   .cta-card code {
@@ -509,16 +663,11 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
     display: block;
   }
 
-  .highlight-card {
-    min-height: 140px;
-    padding: 1rem 1rem 1.05rem;
-    background: linear-gradient(180deg, var(--surface-elevated-start), var(--surface-elevated-end));
-  }
-
   .highlight-title {
-    font-size: 1rem;
-    letter-spacing: -0.03em;
-    margin-bottom: 0.6rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
     color: var(--text);
   }
 
@@ -540,20 +689,21 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
     color: var(--text-dim);
   }
 
-  .hero-link-inline {
+  .hero-footer {
     width: min(100%, var(--content-rail));
-    margin-top: 1rem;
+    margin-top: 1.5rem;
   }
 
-  .hero-link-inline a {
-    color: var(--text-dim);
-    font-size: 0.95rem;
-    line-height: 1.6;
+  .hero-substrate-link {
+    color: var(--text-soft);
+    font-size: 0.85rem;
+    line-height: 1.5;
     text-decoration: none;
+    transition: color 0.18s ease;
   }
 
-  .hero-link-inline a:hover,
-  .hero-link-inline a:focus-visible {
+  .hero-substrate-link:hover,
+  .hero-substrate-link:focus-visible {
     color: var(--text);
     opacity: 1;
   }
@@ -572,7 +722,8 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
     .title {
       font-size: clamp(3rem, 4.7vw, 3.75rem);
       line-height: 1.08;
-      max-width: 9.2ch;
+      max-width: 100%;
+      text-wrap: balance;
       margin-bottom: 0.9rem;
     }
 
@@ -583,17 +734,20 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
       margin-bottom: 1.35rem;
     }
 
-    .powered-inline {
-      margin-bottom: 1.35rem;
+    .works-with {
+      margin-top: 1.7rem;
+    }
+
+    .hero-footer {
+      margin-top: 1.7rem;
     }
 
     .cta-card {
-      min-height: 122px;
-      padding: 0.9rem 0.95rem 1rem;
+      padding: 0.85rem 0.95rem 0.95rem;
     }
 
-    .cta-label {
-      margin-bottom: 0.8rem;
+    .cta-card-head {
+      margin-bottom: 0.6rem;
     }
   }
 
@@ -606,7 +760,8 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
     .title {
       font-size: clamp(3rem, 4.7vw, 3.75rem);
       line-height: 1.08;
-      max-width: 9.2ch;
+      max-width: 100%;
+      text-wrap: balance;
     }
 
     .subtitle {
@@ -615,8 +770,12 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
       margin-bottom: 1.1rem;
     }
 
-    .powered-inline {
-      margin-bottom: 1.2rem;
+    .works-with {
+      margin-top: 1.5rem;
+    }
+
+    .hero-footer {
+      margin-top: 1.5rem;
     }
 
     .cta-card code {
@@ -624,18 +783,12 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
       line-height: 1.5;
     }
 
-    .highlight-card {
-      min-height: 128px;
-      padding: 0.95rem;
-    }
-
     .highlight-title {
-      font-size: 0.95rem;
-      margin-bottom: 0.5rem;
+      font-size: 0.92rem;
     }
 
     .highlight-description {
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       line-height: 1.5;
     }
   }
@@ -669,6 +822,24 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
       flex-direction: column;
     }
 
+    .cta-card-head {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.45rem;
+    }
+
+    .works-with-list {
+      gap: 0.45rem 0.7rem;
+    }
+
+    .works-with-name {
+      font-size: 0.95rem;
+    }
+
+    .works-with-sep {
+      font-size: 0.45rem;
+    }
+
     .beta-feature-head {
       align-items: flex-start;
       flex-direction: column;
@@ -676,17 +847,21 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
 
     .hero-highlights {
       grid-template-columns: 1fr;
+      gap: 0.85rem;
     }
 
-    .highlight-card {
-      min-height: 0;
+    .hero-footer {
+      margin-top: 1.25rem;
     }
 
-    .powered-inline {
-      width: fit-content;
-      max-width: 100%;
-      justify-content: flex-start;
-      flex-wrap: wrap;
+    .hero-credit {
+      margin-bottom: 0.85rem;
+      padding: 0.3rem 0.65rem;
+      font-size: 0.74rem;
+    }
+
+    .hero-credit img {
+      height: 0.78rem;
     }
   }
 

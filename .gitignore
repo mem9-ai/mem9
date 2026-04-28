@@ -18,6 +18,7 @@ Thumbs.db
 # JavaScript package outputs
 node_modules/
 dist/
+.astro/
 *.tgz
 .netlify/
 

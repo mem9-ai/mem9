@@ -2,6 +2,31 @@ export type SiteLocale = 'en' | 'zh' | 'zh-Hant' | 'ja' | 'ko' | 'id' | 'th';
 export type SiteThemePreference = 'light' | 'dark' | 'system';
 export type SiteResolvedTheme = 'light' | 'dark';
 
+export const agentGuideTargets = {
+  openclaw: {
+    href: 'https://mem9.ai/SKILL.md',
+    external: true,
+  },
+  hermes: {
+    href: 'https://github.com/mem9-ai/mem9-hermes-plugin#readme',
+    external: true,
+  },
+  claude: {
+    href: 'https://github.com/mem9-ai/mem9/tree/main/claude-plugin#readme',
+    external: true,
+  },
+  opencode: {
+    href: 'https://github.com/mem9-ai/mem9/tree/main/opencode-plugin#readme',
+    external: true,
+  },
+  codex: {
+    href: 'https://github.com/mem9-ai/mem9/tree/main/codex-plugin#readme',
+    external: true,
+  },
+} as const;
+
+export type SiteAgentGuideId = keyof typeof agentGuideTargets;
+
 export interface SiteMeta {
   title: string;
   description: string;
@@ -33,13 +58,25 @@ export interface SiteHeroFeature {
   description: string;
 }
 
+export interface SiteGuideLinkCopy {
+  id: SiteAgentGuideId;
+  label: string;
+}
+
+export interface SiteHeroGuideSelectorCopy {
+  label: string;
+  items: SiteGuideLinkCopy[];
+}
+
 export interface SiteHeroCopy {
   eyebrow: string;
   titleLead: string;
   titleAccent: string;
   subtitle: string;
   poweredByLabel?: string;
+  guideSelector?: SiteHeroGuideSelectorCopy;
   onboardingLabel: string;
+  onboardingBadge: string;
   onboardingHint: string;
   onboardingStableLabel: string;
   onboardingBetaLabel: string;
@@ -69,10 +106,18 @@ export interface SiteCodeSampleCopy {
   code: string;
 }
 
+export interface SiteFaqGroupCopy {
+  label: string;
+  body?: string;
+  example?: SiteCodeSampleCopy;
+  link?: SiteLinkCopy;
+}
+
 export interface SiteFaqItemCopy {
   question: string;
   answer: string[];
   bullets?: string[];
+  groups?: SiteFaqGroupCopy[];
   links?: SiteLinkCopy[];
   examples?: SiteCodeSampleCopy[];
 }
@@ -102,6 +147,9 @@ export interface SitePlatformItem {
   desc: string;
   detail: string;
   badge?: string;
+  guideId?: SiteAgentGuideId;
+  href?: string;
+  external?: boolean;
 }
 
 export interface SitePlatformsCopy {
@@ -110,6 +158,7 @@ export interface SitePlatformsCopy {
   description: string;
   items: SitePlatformItem[];
   ctaLabel: string;
+  guideCtaLabel: string;
   note: string;
 }
 
@@ -308,6 +357,14 @@ const localeNames: Record<SiteLocale, string> = {
   th: 'ไทย',
 };
 
+const guideSelectorItems: SiteGuideLinkCopy[] = [
+  { id: 'openclaw', label: 'OpenClaw' },
+  { id: 'hermes', label: 'Hermes Agent' },
+  { id: 'claude', label: 'Claude Code' },
+  { id: 'opencode', label: 'OpenCode' },
+  { id: 'codex', label: 'Codex' },
+];
+
 const stableOnboardingCommand =
   'Read https://mem9.ai/SKILL.md and follow the instructions to install and configure mem9 for OpenClaw';
 const provisionKeyCode = 'curl -sX POST https://api.mem9.ai/v1alpha1/mem9s';
@@ -348,65 +405,61 @@ const sessionMessagesCode =
 const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
   en: {
     kicker: 'FAQ',
-    title: 'How API keys and mem9 API work',
-    description:
-      'These are the questions we receive most often from onboarding emails and first-time API users.',
+    title: 'Common questions',
+    description: 'Quick answers about API keys, security, and using mem9.',
     items: [
       {
         question: 'How do I get a mem9 API key?',
         answer: [
-          'There are two supported paths. The fastest path is to paste the onboarding command below into OpenClaw and let mem9 guide setup or reconnect for you.',
-          'If you want to provision a key directly, call the hosted provisioning endpoint. The response body returns an `id`, and that value is your mem9 API key.',
+          'Pick the path that matches how you use mem9. Each one provisions a key tied to the same memory space.',
+        ],
+        groups: [
+          {
+            label: 'For OpenClaw users',
+            body: 'Paste this command into your OpenClaw chat. It will install mem9 and provision a key automatically.',
+            example: { label: 'Paste in OpenClaw', code: stableOnboardingCommand },
+          },
+          {
+            label: 'For other agents',
+            body: 'Open the setup guide for your agent. They ship a one-step install or plugin readme that handles the key for you.',
+            link: { label: 'See all supported agents', href: '#platforms' },
+          },
+          {
+            label: 'For custom integrations',
+            body: 'Provision a key yourself via the HTTP API, then pass it as the `X-API-Key` header.',
+            example: { label: 'Provision via API', code: provisionKeyCode },
+            link: { label: 'Open API reference', href: '/api' },
+          },
+        ],
+      },
+      {
+        question: 'How should I keep my API key safe?',
+        answer: [
+          'Treat your API key like a password. Anyone with the key can read and write your memories.',
         ],
         bullets: [
-          'Use the same key later in Your Memory or on another trusted machine.',
-          'Keep it private. Anyone who has the key can access that mem9 space.',
-        ],
-        links: [
-          { label: 'Open SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
-          { label: 'Open API reference', href: '/api' },
-        ],
-        examples: [
-          { label: 'Onboarding command', code: stableOnboardingCommand },
-          { label: 'Direct provisioning', code: provisionKeyCode },
+          'Store it in a password manager or a controlled secret store.',
+          'Never commit it to a repository, paste it into screenshots, or share it in public channels.',
+          'If a key is leaked, rotate it by provisioning a new one.',
         ],
       },
       {
-        question: 'Can I reuse the same API key on another machine or in Your Memory?',
+        question: 'Can I reuse the same API key across machines and agents?',
         answer: [
-          'Yes. The same API key reconnects the same mem9 space on another trusted machine, and it is also the credential you use inside Your Memory.',
-          'If the dashboard asks for a Space ID, enter the same mem9 API key there.',
-        ],
-        links: [{ label: 'Open Your Memory', href: 'https://mem9.ai/your-memory', external: true }],
-      },
-      {
-        question: 'How should I store the API key?',
-        answer: [
-          'Treat the API key like a secret. Store it in a password manager, secure vault, or another controlled secret store.',
-          'Do not commit it to a repository, paste it into screenshots, or share it in public channels.',
+          'Yes. The same key connects to the same memory space from any machine, agent, or the Your Memory dashboard.',
         ],
       },
       {
         question: 'What can I do with the mem9 API?',
         answer: [
-          'The hosted API lets you provision a key, create and search memories, update or delete individual memories, upload memory or session files, and inspect captured session messages.',
-          'Most users only need `v1alpha2` day to day, with `X-API-Key` as the primary auth header.',
+          'Read, write, search, and manage memories and sessions. Most integrations use the `v1alpha2` endpoints with the `X-API-Key` header.',
         ],
         links: [{ label: 'Browse all endpoints', href: '/api' }],
       },
       {
-        question: 'What is the difference between v1alpha1 and v1alpha2?',
+        question: 'Is my data secure?',
         answer: [
-          '`v1alpha1` is mainly for provisioning a new key and for legacy tenant-scoped compatibility routes.',
-          '`v1alpha2` is the normal hosted path for reads, writes, imports, and session lookups. Send your key in `X-API-Key`, and optionally send `X-Mnemo-Agent-Id` when you want agent attribution.',
-        ],
-        links: [{ label: 'See version and auth details', href: '/api' }],
-      },
-      {
-        question: 'Is mem9 secure?',
-        answer: [
-          'mem9 is built on enterprise-grade cloud infrastructure with encryption in transit and at rest, access controls, auditability, and clear operational boundaries.',
-          'If you need deeper trust details, start with the security overview on the homepage and reach out for additional materials.',
+          'mem9 runs on enterprise-grade cloud infrastructure with encryption in transit and at rest, plus access controls and audit logging.',
         ],
         links: [{ label: 'Jump to security overview', href: '/#security' }],
       },
@@ -414,64 +467,61 @@ const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
   },
   zh: {
     kicker: 'FAQ',
-    title: 'API Key 与 mem9 API 常见问题',
-    description: '这些是我们在邮件咨询、安装引导和首次接入 API 时最常收到的问题。',
+    title: '常见问题',
+    description: '关于 API Key、安全和使用 mem9 的快速解答。',
     items: [
       {
         question: '如何获取 mem9 API key？',
         answer: [
-          '有两种官方方式。最快的是把下面这条 onboarding command 直接粘贴给 OpenClaw，让它按 SKILL.md 帮你完成 setup 或 reconnect。',
-          '如果你想通过程序直接创建，调用 hosted provision 接口即可。响应里的 `id` 就是你的 mem9 API key。',
+          '按你使用 mem9 的方式选择一种获取方式，每条路径都会绑定到同一个记忆空间。',
+        ],
+        groups: [
+          {
+            label: 'OpenClaw 用户',
+            body: '把下面这条命令粘贴到 OpenClaw 对话中，它会自动为你安装 mem9 并申请 API Key。',
+            example: { label: '粘贴到 OpenClaw', code: stableOnboardingCommand },
+          },
+          {
+            label: '使用其他 Agent',
+            body: '打开你所用 Agent 的接入指南，它们都会有一键安装或插件 readme，自动帮你完成 Key 的申请。',
+            link: { label: '查看所有支持的 Agent', href: '#platforms' },
+          },
+          {
+            label: '自己集成',
+            body: '通过 HTTP API 自己申请一个 Key，然后用 `X-API-Key` 请求头携带它。',
+            example: { label: '通过 API 申请', code: provisionKeyCode },
+            link: { label: '打开 API 文档', href: '/api' },
+          },
+        ],
+      },
+      {
+        question: '如何保护我的 API key？',
+        answer: [
+          '请把 API Key 当作密码对待，任何拿到它的人都能读写你的记忆。',
         ],
         bullets: [
-          '之后在 Your Memory 或另一台可信机器上继续使用同一个 key。',
-          '请把它当作密钥保存，拿到它的人都能访问对应的 mem9 space。',
-        ],
-        links: [
-          { label: '打开 SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
-          { label: '打开 API 文档', href: '/api' },
-        ],
-        examples: [
-          { label: 'Onboarding command', code: stableOnboardingCommand },
-          { label: '直接 provision', code: provisionKeyCode },
+          '存放在密码管理器或受控的 secret store 中。',
+          '不要提交到代码仓库、出现在截图里，也不要发到公开聊天频道。',
+          '一旦泄漏，请立即申请一个新的 Key 替换。',
         ],
       },
       {
-        question: '同一个 API key 能在另一台机器或 Your Memory 中复用吗？',
+        question: '同一个 API key 可以在不同机器和 Agent 中复用吗？',
         answer: [
-          '可以。同一个 API key 会重新连接到同一个 mem9 space，在另一台可信机器上也一样。',
-          '它也是你登录 Your Memory 时使用的凭证；如果 dashboard 提示填写 Space ID，就填这个 API key。',
-        ],
-        links: [{ label: '打开 Your Memory', href: 'https://mem9.ai/your-memory', external: true }],
-      },
-      {
-        question: 'API key 应该怎么保存？',
-        answer: [
-          '请把 API key 当作 secret 保存，推荐放进密码管理器、团队密钥库或其他受控的 secret store。',
-          '不要提交到代码仓库，不要出现在截图里，也不要发到公开聊天频道。',
+          '可以。同一个 Key 在任意机器、Agent 或 Your Memory 面板中都连接到同一个记忆空间。',
         ],
       },
       {
         question: 'mem9 API 能做什么？',
         answer: [
-          'hosted API 可以创建 key、写入和搜索记忆、更新或删除单条记忆、上传 memory / session 文件，以及读取捕获到的 session messages。',
-          '大多数日常调用只需要 `v1alpha2`，并通过 `X-API-Key` 认证。',
+          '读写、搜索和管理你的记忆与会话。大多数集成使用带有 `X-API-Key` 请求头的 `v1alpha2` 接口。',
         ],
         links: [{ label: '查看全部接口', href: '/api' }],
       },
       {
-        question: '`v1alpha1` 和 `v1alpha2` 有什么区别？',
-        answer: [
-          '`v1alpha1` 主要用于创建新 key，以及兼容旧的 tenant-scoped 路由。',
-          '`v1alpha2` 是正常的 hosted 读写、导入和 session 查询路径。把 key 放在 `X-API-Key` 里；如果需要标记 agent 身份，可以额外带上 `X-Mnemo-Agent-Id`。',
-        ],
-        links: [{ label: '查看版本与认证说明', href: '/api' }],
-      },
-      {
         question: 'mem9 安全吗？',
         answer: [
-          'mem9 运行在企业级云基础设施上，具备传输与静态加密、访问控制、可审计性以及清晰的数据处理边界。',
-          '如果你需要更详细的信任材料，可以先看首页的安全概览，再联系团队获取补充信息。',
+          'mem9 运行在企业级云基础设施上，提供传输与静态加密、访问控制以及审计日志。',
         ],
         links: [{ label: '跳转到安全概览', href: '/#security' }],
       },
@@ -479,64 +529,61 @@ const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
   },
   'zh-Hant': {
     kicker: 'FAQ',
-    title: 'API Key 與 mem9 API 常見問題',
-    description: '這些是我們在郵件諮詢、安裝引導與第一次串接 API 時最常收到的問題。',
+    title: '常見問題',
+    description: '關於 API Key、安全和使用 mem9 的快速解答。',
     items: [
       {
         question: '如何取得 mem9 API key？',
         answer: [
-          '有兩種官方方式。最快的是把下面這條 onboarding command 直接貼給 OpenClaw，讓它依照 SKILL.md 幫你完成 setup 或 reconnect。',
-          '如果你想用程式直接建立，呼叫 hosted provision 介面即可。回應裡的 `id` 就是你的 mem9 API key。',
+          '依你使用 mem9 的方式挑一條路徑，每條都會綁定到同一個記憶空間。',
+        ],
+        groups: [
+          {
+            label: 'OpenClaw 用戶',
+            body: '把下面這條命令貼到 OpenClaw 對話中，它會自動為你安裝 mem9 並申請 API Key。',
+            example: { label: '貼到 OpenClaw', code: stableOnboardingCommand },
+          },
+          {
+            label: '使用其他 Agent',
+            body: '開啟你所用 Agent 的接入指南，它們都會有一鍵安裝或外掛 readme，自動幫你完成 Key 的申請。',
+            link: { label: '查看所有支援的 Agent', href: '#platforms' },
+          },
+          {
+            label: '自己整合',
+            body: '透過 HTTP API 自己申請一個 Key，再用 `X-API-Key` 請求頭帶上它。',
+            example: { label: '透過 API 申請', code: provisionKeyCode },
+            link: { label: '打開 API 文件', href: '/api' },
+          },
+        ],
+      },
+      {
+        question: '如何保護我的 API key？',
+        answer: [
+          '請把 API Key 當作密碼對待，任何拿到它的人都能讀寫你的記憶。',
         ],
         bullets: [
-          '之後在 Your Memory 或另一台可信任機器上都使用同一個 key。',
-          '請把它當成密鑰保存，拿到它的人都能存取對應的 mem9 space。',
-        ],
-        links: [
-          { label: '打開 SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
-          { label: '打開 API 文件', href: '/api' },
-        ],
-        examples: [
-          { label: 'Onboarding command', code: stableOnboardingCommand },
-          { label: '直接 provision', code: provisionKeyCode },
+          '存放在密碼管理器或受控的 secret store 中。',
+          '不要提交到程式碼倉庫、出現在截圖裡，也不要貼到公開聊天頻道。',
+          '一旦外洩，請立即申請一個新的 Key 替換。',
         ],
       },
       {
-        question: '同一個 API key 能在另一台機器或 Your Memory 裡重用嗎？',
+        question: '同一個 API key 可以在不同機器和 Agent 中重複使用嗎？',
         answer: [
-          '可以。同一個 API key 會重新連到同一個 mem9 space，在另一台可信任機器上也是如此。',
-          '它也是你登入 Your Memory 時使用的憑證；如果 dashboard 要求輸入 Space ID，就填這個 API key。',
-        ],
-        links: [{ label: '打開 Your Memory', href: 'https://mem9.ai/your-memory', external: true }],
-      },
-      {
-        question: 'API key 應該怎麼保存？',
-        answer: [
-          '請把 API key 當作 secret 保存，建議放進密碼管理器、團隊金鑰庫或其他受控的 secret store。',
-          '不要提交到程式碼倉庫，不要出現在截圖裡，也不要貼到公開聊天頻道。',
+          '可以。同一個 Key 在任意機器、Agent 或 Your Memory 面板中都連接到同一個記憶空間。',
         ],
       },
       {
-        question: 'mem9 API 可以做什麼？',
+        question: 'mem9 API 能做什麼？',
         answer: [
-          'hosted API 可以建立 key、寫入與搜尋記憶、更新或刪除單筆記憶、上傳 memory / session 檔案，以及讀取捕捉到的 session messages。',
-          '大多數日常呼叫只需要 `v1alpha2`，並透過 `X-API-Key` 驗證。',
+          '讀寫、搜尋和管理你的記憶與會話。大多數整合使用帶有 `X-API-Key` 請求頭的 `v1alpha2` 介面。',
         ],
         links: [{ label: '查看全部端點', href: '/api' }],
       },
       {
-        question: '`v1alpha1` 和 `v1alpha2` 有什麼差別？',
-        answer: [
-          '`v1alpha1` 主要用來建立新 key，以及相容舊的 tenant-scoped 路由。',
-          '`v1alpha2` 是正常的 hosted 讀寫、匯入與 session 查詢路徑。把 key 放在 `X-API-Key`；若要標示 agent 身分，可另外帶上 `X-Mnemo-Agent-Id`。',
-        ],
-        links: [{ label: '查看版本與驗證說明', href: '/api' }],
-      },
-      {
         question: 'mem9 安全嗎？',
         answer: [
-          'mem9 建置於企業級雲端基礎設施上，具備傳輸與靜態加密、存取控制、可稽核性，以及清楚的資料處理邊界。',
-          '如果你需要更完整的信任材料，可以先看首頁的安全概覽，再聯絡團隊取得更多資訊。',
+          'mem9 運行在企業級雲端基礎設施上，提供傳輸與靜態加密、存取控制以及稽核日誌。',
         ],
         links: [{ label: '跳到安全概覽', href: '/#security' }],
       },
@@ -544,64 +591,61 @@ const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
   },
   ja: {
     kicker: 'FAQ',
-    title: 'API key と mem9 API のよくある質問',
-    description: 'メールでの問い合わせ、セットアップ、初回 API 利用で特によく出る質問をまとめました。',
+    title: 'よくある質問',
+    description: 'API Key、セキュリティ、mem9 の使い方についての簡単な回答です。',
     items: [
       {
         question: 'mem9 API key はどう取得しますか？',
         answer: [
-          '公式の方法は 2 つあります。最速なのは、下の onboarding command をそのまま OpenClaw に貼り付け、SKILL.md の流れで setup / reconnect を進める方法です。',
-          'プログラムから直接作成したい場合は hosted の provision エンドポイントを呼びます。返ってくる `id` がそのまま mem9 API key です。',
+          'mem9 の使い方に合わせてパスを選んでください。どのパスでも同じメモリ空間に紐づく Key が発行されます。',
+        ],
+        groups: [
+          {
+            label: 'OpenClaw ユーザー',
+            body: 'このコマンドを OpenClaw のチャットに貼り付けてください。OpenClaw が mem9 をインストールし、API Key を自動発行します。',
+            example: { label: 'OpenClaw に貼り付け', code: stableOnboardingCommand },
+          },
+          {
+            label: 'その他のエージェント',
+            body: '使用しているエージェントのセットアップガイドを開いてください。各ガイドにワンステップのインストールやプラグイン readme があり、Key の発行も自動で行われます。',
+            link: { label: '対応エージェント一覧へ', href: '#platforms' },
+          },
+          {
+            label: '独自連携を作る場合',
+            body: 'HTTP API 経由で自分で Key を発行し、`X-API-Key` ヘッダーに乗せてください。',
+            example: { label: 'API で発行', code: provisionKeyCode },
+            link: { label: 'API リファレンスを開く', href: '/api' },
+          },
+        ],
+      },
+      {
+        question: 'API key はどう安全に保管すべきですか？',
+        answer: [
+          'API Key はパスワードと同様に扱ってください。Key を持つ人はあなたのメモリを読み書きできます。',
         ],
         bullets: [
-          '同じ key をあとで Your Memory や別の信頼できるマシンでも使えます。',
-          'この key を持つ人はその mem9 space にアクセスできるので、秘密情報として扱ってください。',
-        ],
-        links: [
-          { label: 'SKILL.md を開く', href: 'https://mem9.ai/SKILL.md', external: true },
-          { label: 'API リファレンスを開く', href: '/api' },
-        ],
-        examples: [
-          { label: 'Onboarding command', code: stableOnboardingCommand },
-          { label: '直接 provision', code: provisionKeyCode },
+          'パスワードマネージャーや管理された secret store に保存します。',
+          'リポジトリへのコミット、スクリーンショットへの露出、公開チャネルでの共有は避けます。',
+          '漏洩した場合は、新しい Key を発行してローテーションしてください。',
         ],
       },
       {
-        question: '同じ API key を別のマシンや Your Memory でも使えますか？',
+        question: 'マシンやエージェントをまたいで同じ API key を使えますか？',
         answer: [
-          'はい。同じ API key を使えば、別の信頼できるマシンでも同じ mem9 space に再接続できます。',
-          'Your Memory でも同じ値を使います。ダッシュボードで Space ID を求められた場合も、その API key を入力してください。',
-        ],
-        links: [{ label: 'Your Memory を開く', href: 'https://mem9.ai/your-memory', external: true }],
-      },
-      {
-        question: 'API key はどう保管すべきですか？',
-        answer: [
-          'API key は secret として扱い、パスワードマネージャーや安全な vault など、管理された保管先に保存してください。',
-          'リポジトリに commit したり、スクリーンショットに映したり、公開チャネルに貼ったりしないでください。',
+          'はい。同じ Key であれば、どのマシンやエージェントからでも、Your Memory ダッシュボードからでも、同じメモリ空間に接続できます。',
         ],
       },
       {
         question: 'mem9 API では何ができますか？',
         answer: [
-          'hosted API では、key の発行、memory の作成・検索・更新・削除、memory / session ファイルのアップロード、保存済み session messages の参照ができます。',
-          '日常利用のほとんどは `v1alpha2` と `X-API-Key` で十分です。',
+          'メモリやセッションの読み書き、検索、管理ができます。ほとんどの連携では `X-API-Key` ヘッダー付きの `v1alpha2` エンドポイントを使用します。',
         ],
         links: [{ label: '全エンドポイントを見る', href: '/api' }],
       },
       {
-        question: '`v1alpha1` と `v1alpha2` の違いは何ですか？',
+        question: 'データは安全ですか？',
         answer: [
-          '`v1alpha1` は主に新しい key の発行と、tenant-scoped な互換ルート向けです。',
-          '`v1alpha2` は通常の hosted read/write、import、session lookup 用です。key は `X-API-Key` に入れ、必要なら `X-Mnemo-Agent-Id` で agent を識別します。',
-        ],
-        links: [{ label: 'バージョンと認証を見る', href: '/api' }],
-      },
-      {
-        question: 'mem9 は安全ですか？',
-        answer: [
-          'mem9 はエンタープライズ級のクラウド基盤上で運用され、転送時・保存時の暗号化、アクセス制御、監査性、明確な運用境界を備えています。',
-          'より詳しい trust 情報が必要な場合は、まずホームページの security overview を確認し、そのうえで追加資料を依頼してください。',
+          'mem9 はエンタープライズ級のクラウド基盤上で運用され、転送時・保存時の暗号化、アクセス制御、監査ログを備えています。',
         ],
         links: [{ label: 'Security overview へ移動', href: '/#security' }],
       },
@@ -609,64 +653,61 @@ const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
   },
   ko: {
     kicker: 'FAQ',
-    title: 'API key 와 mem9 API 자주 묻는 질문',
-    description: '이메일 문의, 설치 온보딩, 첫 API 연결에서 가장 자주 나오는 질문을 모았습니다.',
+    title: '자주 묻는 질문',
+    description: 'API Key, 보안, mem9 사용법에 대한 빠른 답변입니다.',
     items: [
       {
         question: 'mem9 API key 는 어떻게 얻나요?',
         answer: [
-          '공식 경로는 두 가지입니다. 가장 빠른 방법은 아래 onboarding command 를 그대로 OpenClaw 에 붙여 넣고, SKILL.md 흐름에 따라 setup 또는 reconnect 를 진행하는 것입니다.',
-          '프로그램에서 직접 만들고 싶다면 hosted provision 엔드포인트를 호출하면 됩니다. 응답의 `id` 값이 그대로 mem9 API key 입니다.',
+          'mem9 사용 방식에 맞는 경로를 선택하세요. 모든 경로는 같은 메모리 공간에 연결되는 Key를 발급합니다.',
+        ],
+        groups: [
+          {
+            label: 'OpenClaw 사용자',
+            body: '이 명령어를 OpenClaw 채팅에 붙여넣으세요. OpenClaw가 mem9를 설치하고 API Key를 자동 발급합니다.',
+            example: { label: 'OpenClaw에 붙여넣기', code: stableOnboardingCommand },
+          },
+          {
+            label: '다른 에이전트',
+            body: '사용 중인 에이전트의 설정 가이드를 여세요. 가이드에는 한 번에 설치되는 명령이나 플러그인 readme가 있어 Key 발급도 자동으로 처리됩니다.',
+            link: { label: '지원 에이전트 보기', href: '#platforms' },
+          },
+          {
+            label: '자체 통합',
+            body: 'HTTP API로 Key를 직접 발급한 뒤 `X-API-Key` 헤더에 실어 보내세요.',
+            example: { label: 'API로 발급', code: provisionKeyCode },
+            link: { label: 'API 레퍼런스 열기', href: '/api' },
+          },
+        ],
+      },
+      {
+        question: 'API key 를 어떻게 안전하게 보관하나요?',
+        answer: [
+          'API Key는 비밀번호처럼 다루세요. Key를 가진 사람은 누구나 당신의 메모리를 읽고 쓸 수 있습니다.',
         ],
         bullets: [
-          '같은 key 를 나중에 Your Memory 나 다른 신뢰 가능한 머신에서도 그대로 사용합니다.',
-          '이 key 를 가진 사람은 해당 mem9 space 에 접근할 수 있으므로 비밀 정보처럼 다루세요.',
-        ],
-        links: [
-          { label: 'SKILL.md 열기', href: 'https://mem9.ai/SKILL.md', external: true },
-          { label: 'API 레퍼런스 열기', href: '/api' },
-        ],
-        examples: [
-          { label: 'Onboarding command', code: stableOnboardingCommand },
-          { label: '직접 provision', code: provisionKeyCode },
+          '비밀번호 관리자나 통제된 secret store에 보관합니다.',
+          '저장소에 커밋하거나, 스크린샷에 노출하거나, 공개 채널에 공유하지 마세요.',
+          '유출되었다면 즉시 새 Key를 발급해 교체하세요.',
         ],
       },
       {
-        question: '같은 API key 를 다른 머신이나 Your Memory 에서도 쓸 수 있나요?',
+        question: '여러 머신과 에이전트에서 같은 API key 를 재사용할 수 있나요?',
         answer: [
-          '네. 같은 API key 는 다른 신뢰 가능한 머신에서도 동일한 mem9 space 로 다시 연결됩니다.',
-          'Your Memory 에서도 같은 값을 사용합니다. 대시보드가 Space ID 를 물으면 그 API key 를 입력하면 됩니다.',
-        ],
-        links: [{ label: 'Your Memory 열기', href: 'https://mem9.ai/your-memory', external: true }],
-      },
-      {
-        question: 'API key 는 어떻게 보관해야 하나요?',
-        answer: [
-          'API key 는 secret 으로 취급하고, 비밀번호 관리자나 안전한 vault 같은 통제된 저장소에 보관하세요.',
-          '저장소에 commit 하거나, 스크린샷에 노출하거나, 공개 채널에 공유하지 마세요.',
+          '네. 같은 Key는 어느 머신, 에이전트, Your Memory 대시보드에서든 같은 메모리 공간에 연결됩니다.',
         ],
       },
       {
         question: 'mem9 API 로 무엇을 할 수 있나요?',
         answer: [
-          'hosted API 로 key 발급, memory 생성/검색/수정/삭제, memory / session 파일 업로드, 저장된 session messages 조회를 할 수 있습니다.',
-          '일상적인 사용은 대부분 `v1alpha2` 와 `X-API-Key` 만으로 충분합니다.',
+          '메모리와 세션을 읽고, 쓰고, 검색하고 관리할 수 있습니다. 대부분의 통합은 `X-API-Key` 헤더와 함께 `v1alpha2` 엔드포인트를 사용합니다.',
         ],
         links: [{ label: '전체 엔드포인트 보기', href: '/api' }],
       },
       {
-        question: '`v1alpha1` 과 `v1alpha2` 의 차이는 무엇인가요?',
+        question: '데이터는 안전한가요?',
         answer: [
-          '`v1alpha1` 은 주로 새 key 발급과 tenant-scoped 호환 라우트용입니다.',
-          '`v1alpha2` 는 일반적인 hosted 읽기/쓰기, import, session 조회 경로입니다. key 는 `X-API-Key` 에 넣고, 필요하면 `X-Mnemo-Agent-Id` 로 agent 를 표시합니다.',
-        ],
-        links: [{ label: '버전과 인증 보기', href: '/api' }],
-      },
-      {
-        question: 'mem9 는 안전한가요?',
-        answer: [
-          'mem9 는 엔터프라이즈급 클라우드 인프라 위에서 운영되며, 전송 중/저장 시 암호화, 접근 제어, 감사 가능성, 명확한 운영 경계를 갖추고 있습니다.',
-          '더 자세한 신뢰 자료가 필요하면 먼저 홈페이지의 security overview 를 보고, 추가 자료를 요청하세요.',
+          'mem9는 전송 중과 저장 시 암호화, 접근 제어, 감사 로그를 갖춘 엔터프라이즈급 클라우드 인프라에서 실행됩니다.',
         ],
         links: [{ label: 'Security overview 로 이동', href: '/#security' }],
       },
@@ -674,65 +715,61 @@ const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
   },
   id: {
     kicker: 'FAQ',
-    title: 'Pertanyaan umum tentang API key dan mem9 API',
-    description:
-      'Ini adalah pertanyaan yang paling sering kami terima lewat email onboarding dan dari pengguna API pertama kali.',
+    title: 'Pertanyaan Umum',
+    description: 'Jawaban cepat tentang API key, keamanan, dan penggunaan mem9.',
     items: [
       {
         question: 'Bagaimana cara mendapatkan mem9 API key?',
         answer: [
-          'Ada dua jalur resmi. Cara tercepat adalah menempelkan onboarding command di bawah ini ke OpenClaw lalu mengikuti alur SKILL.md untuk setup atau reconnect.',
-          'Jika Anda ingin membuat key secara programatis, panggil endpoint provision hosted. Nilai `id` di response adalah mem9 API key Anda.',
+          'Pilih jalur yang sesuai dengan cara Anda memakai mem9. Semua jalur menghasilkan Key yang terhubung ke ruang memori yang sama.',
+        ],
+        groups: [
+          {
+            label: 'Pengguna OpenClaw',
+            body: 'Tempelkan perintah ini ke obrolan OpenClaw Anda. OpenClaw akan menginstal mem9 dan menyediakan API Key secara otomatis.',
+            example: { label: 'Tempel di OpenClaw', code: stableOnboardingCommand },
+          },
+          {
+            label: 'Agent lain',
+            body: 'Buka panduan setup untuk agent Anda. Masing-masing menyediakan instalasi satu langkah atau readme plugin yang juga mengurus pembuatan Key.',
+            link: { label: 'Lihat semua agent yang didukung', href: '#platforms' },
+          },
+          {
+            label: 'Integrasi kustom',
+            body: 'Buat Key sendiri lewat HTTP API, lalu kirim sebagai header `X-API-Key`.',
+            example: { label: 'Buat via API', code: provisionKeyCode },
+            link: { label: 'Buka referensi API', href: '/api' },
+          },
+        ],
+      },
+      {
+        question: 'Bagaimana cara menjaga keamanan API key?',
+        answer: [
+          'Perlakukan API Key seperti kata sandi. Siapa pun yang memiliki Key dapat membaca dan menulis memori Anda.',
         ],
         bullets: [
-          'Gunakan key yang sama nanti di Your Memory atau di mesin tepercaya lainnya.',
-          'Simpan sebagai rahasia. Siapa pun yang memiliki key ini dapat mengakses mem9 space tersebut.',
-        ],
-        links: [
-          { label: 'Buka SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
-          { label: 'Buka referensi API', href: '/api' },
-        ],
-        examples: [
-          { label: 'Onboarding command', code: stableOnboardingCommand },
-          { label: 'Provision langsung', code: provisionKeyCode },
-        ],
-      },
-      {
-        question: 'Bisakah API key yang sama dipakai di mesin lain atau di Your Memory?',
-        answer: [
-          'Ya. API key yang sama akan menghubungkan kembali ke mem9 space yang sama di mesin tepercaya lainnya.',
-          'Nilai yang sama juga dipakai di Your Memory. Jika dashboard meminta Space ID, masukkan API key tersebut.',
-        ],
-        links: [{ label: 'Buka Your Memory', href: 'https://mem9.ai/your-memory', external: true }],
-      },
-      {
-        question: 'Bagaimana sebaiknya menyimpan API key?',
-        answer: [
-          'Perlakukan API key sebagai secret. Simpan di password manager, secure vault, atau secret store lain yang terkontrol.',
+          'Simpan di password manager atau secret store yang terkontrol.',
           'Jangan commit ke repository, jangan tampilkan di screenshot, dan jangan bagikan di channel publik.',
+          'Jika bocor, segera rotasi dengan membuat Key baru.',
+        ],
+      },
+      {
+        question: 'Bisakah saya menggunakan API key yang sama di beberapa mesin dan agent?',
+        answer: [
+          'Ya. Key yang sama terhubung ke ruang memori yang sama dari mesin, agent, atau dasbor Your Memory mana pun.',
         ],
       },
       {
         question: 'Apa saja yang bisa dilakukan dengan mem9 API?',
         answer: [
-          'Hosted API memungkinkan Anda membuat key, membuat dan mencari memory, memperbarui atau menghapus memory, mengunggah file memory / session, dan membaca session messages yang tersimpan.',
-          'Untuk penggunaan harian, sebagian besar cukup memakai `v1alpha2` dengan `X-API-Key`.',
+          'Membaca, menulis, mencari, dan mengelola memori serta sesi. Sebagian besar integrasi menggunakan endpoint `v1alpha2` dengan header `X-API-Key`.',
         ],
         links: [{ label: 'Lihat semua endpoint', href: '/api' }],
       },
       {
-        question: 'Apa perbedaan `v1alpha1` dan `v1alpha2`?',
+        question: 'Apakah data saya aman?',
         answer: [
-          '`v1alpha1` terutama dipakai untuk membuat key baru dan rute kompatibilitas tenant-scoped lama.',
-          '`v1alpha2` adalah jalur hosted normal untuk read/write, import, dan lookup session. Kirim key di `X-API-Key`, lalu tambahkan `X-Mnemo-Agent-Id` jika Anda ingin atribusi agent.',
-        ],
-        links: [{ label: 'Lihat detail versi dan auth', href: '/api' }],
-      },
-      {
-        question: 'Apakah mem9 aman?',
-        answer: [
-          'mem9 dibangun di atas infrastruktur cloud kelas enterprise dengan enkripsi saat transit dan saat tersimpan, kontrol akses, auditabilitas, dan batas operasional yang jelas.',
-          'Jika Anda membutuhkan materi trust yang lebih detail, mulai dari ringkasan security di homepage lalu hubungi tim untuk materi tambahan.',
+          'mem9 berjalan di infrastruktur cloud kelas enterprise dengan enkripsi saat transit dan saat tersimpan, kontrol akses, dan log audit.',
         ],
         links: [{ label: 'Lompat ke ringkasan security', href: '/#security' }],
       },
@@ -740,64 +777,61 @@ const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
   },
   th: {
     kicker: 'FAQ',
-    title: 'คำถามที่พบบ่อยเกี่ยวกับ API key และ mem9 API',
-    description: 'นี่คือคำถามที่เราได้รับบ่อยที่สุดจากอีเมล onboarding และผู้ใช้ที่เริ่มใช้ API เป็นครั้งแรก',
+    title: 'คำถามที่พบบ่อย',
+    description: 'คำตอบด่วนเกี่ยวกับ API Key ความปลอดภัย และการใช้งาน mem9',
     items: [
       {
         question: 'จะขอ mem9 API key ได้อย่างไร?',
         answer: [
-          'มี 2 วิธีอย่างเป็นทางการ วิธีที่เร็วที่สุดคือวาง onboarding command ด้านล่างให้ OpenClaw แล้วให้มันทำตามขั้นตอนใน SKILL.md เพื่อ setup หรือ reconnect ให้คุณ',
-          'ถ้าต้องการสร้าง key ผ่านโปรแกรมโดยตรง ให้เรียก hosted provision endpoint ค่าที่อยู่ใน `id` ของ response คือ mem9 API key ของคุณ',
+          'เลือกเส้นทางที่ตรงกับวิธีใช้ mem9 ของคุณ ทุกเส้นทางจะออก Key ที่ผูกกับพื้นที่หน่วยความจำเดียวกัน',
+        ],
+        groups: [
+          {
+            label: 'ผู้ใช้ OpenClaw',
+            body: 'วางคำสั่งนี้ลงในแชท OpenClaw แล้ว OpenClaw จะติดตั้ง mem9 และออก API Key ให้คุณโดยอัตโนมัติ',
+            example: { label: 'วางใน OpenClaw', code: stableOnboardingCommand },
+          },
+          {
+            label: 'เอเจนต์อื่น ๆ',
+            body: 'เปิดคู่มือตั้งค่าของเอเจนต์ที่คุณใช้ ทุกคู่มือมีคำสั่งติดตั้งหรือ readme ของปลั๊กอิน ที่จัดการเรื่องการขอ Key ให้เรียบร้อย',
+            link: { label: 'ดูเอเจนต์ที่รองรับ', href: '#platforms' },
+          },
+          {
+            label: 'สร้างการเชื่อมต่อเอง',
+            body: 'สร้าง Key ผ่าน HTTP API ของเรา แล้วส่งผ่าน header `X-API-Key`',
+            example: { label: 'ออก Key ผ่าน API', code: provisionKeyCode },
+            link: { label: 'เปิดเอกสาร API', href: '/api' },
+          },
+        ],
+      },
+      {
+        question: 'จะรักษาความปลอดภัยของ API key อย่างไร?',
+        answer: [
+          'ปฏิบัติกับ API Key เหมือนรหัสผ่าน ใครก็ตามที่มี Key สามารถอ่านและเขียนหน่วยความจำของคุณได้',
         ],
         bullets: [
-          'ใช้ key เดียวกันนี้ต่อใน Your Memory หรือบนเครื่องที่เชื่อถือได้เครื่องอื่น',
-          'เก็บเป็นความลับ เพราะใครก็ตามที่มี key นี้สามารถเข้าถึง mem9 space นั้นได้',
-        ],
-        links: [
-          { label: 'เปิด SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
-          { label: 'เปิดเอกสาร API', href: '/api' },
-        ],
-        examples: [
-          { label: 'Onboarding command', code: stableOnboardingCommand },
-          { label: 'Provision โดยตรง', code: provisionKeyCode },
-        ],
-      },
-      {
-        question: 'ใช้ API key เดียวกันบนอีกเครื่องหรือใน Your Memory ได้ไหม?',
-        answer: [
-          'ได้ API key เดียวกันจะเชื่อมกลับไปยัง mem9 space เดิมบนอีกเครื่องที่เชื่อถือได้',
-          'ค่าเดียวกันนี้ยังใช้กับ Your Memory ด้วย หาก dashboard ขอ Space ID ให้ใส่ API key นี้',
-        ],
-        links: [{ label: 'เปิด Your Memory', href: 'https://mem9.ai/your-memory', external: true }],
-      },
-      {
-        question: 'ควรเก็บ API key อย่างไร?',
-        answer: [
-          'ให้ปฏิบัติกับ API key เหมือน secret และเก็บไว้ใน password manager, secure vault หรือ secret store ที่ควบคุมได้',
+          'เก็บไว้ใน password manager หรือ secret store ที่ควบคุมได้',
           'อย่า commit ลง repository อย่าให้ติดใน screenshot และอย่าแชร์ในช่องทางสาธารณะ',
+          'หากรั่วไหล ให้สร้าง Key ใหม่เพื่อหมุนเวียนทันที',
+        ],
+      },
+      {
+        question: 'ใช้ API key เดียวกันข้ามเครื่องและเอเจนต์ได้ไหม?',
+        answer: [
+          'ได้ Key เดียวกันเชื่อมต่อกับพื้นที่หน่วยความจำเดียวกันจากทุกเครื่อง เอเจนต์ หรือแดชบอร์ด Your Memory',
         ],
       },
       {
         question: 'mem9 API ทำอะไรได้บ้าง?',
         answer: [
-          'hosted API ใช้สร้าง key, สร้างและค้นหา memory, อัปเดตหรือลบ memory, อัปโหลดไฟล์ memory / session และอ่าน session messages ที่ถูกเก็บไว้',
-          'สำหรับการใช้งานประจำวัน ส่วนใหญ่ใช้แค่ `v1alpha2` พร้อม `X-API-Key` ก็เพียงพอ',
+          'อ่าน เขียน ค้นหา และจัดการหน่วยความจำกับเซสชัน การผสานการทำงานส่วนใหญ่ใช้ endpoint `v1alpha2` พร้อม header `X-API-Key`',
         ],
         links: [{ label: 'ดู endpoint ทั้งหมด', href: '/api' }],
       },
       {
-        question: '`v1alpha1` กับ `v1alpha2` ต่างกันอย่างไร?',
+        question: 'ข้อมูลของฉันปลอดภัยไหม?',
         answer: [
-          '`v1alpha1` ใช้หลัก ๆ สำหรับสร้าง key ใหม่และรองรับ legacy tenant-scoped routes',
-          '`v1alpha2` คือเส้นทาง hosted ปกติสำหรับ read/write, import และ session lookup ให้ส่ง key ผ่าน `X-API-Key` และเพิ่ม `X-Mnemo-Agent-Id` ได้หากต้องการระบุ agent',
-        ],
-        links: [{ label: 'ดูรายละเอียดเวอร์ชันและ auth', href: '/api' }],
-      },
-      {
-        question: 'mem9 ปลอดภัยไหม?',
-        answer: [
-          'mem9 ทำงานบนโครงสร้างพื้นฐานคลาวด์ระดับองค์กร พร้อมการเข้ารหัสทั้งขณะส่งและขณะเก็บ การควบคุมสิทธิ์ การตรวจสอบย้อนหลังได้ และขอบเขตการปฏิบัติการที่ชัดเจน',
-          'หากต้องการข้อมูลด้านความน่าเชื่อถือเพิ่มเติม ให้เริ่มจาก security overview บนหน้าแรก แล้วติดต่อทีมเพื่อขอเอกสารเพิ่ม',
+          'mem9 ทำงานบนโครงสร้างพื้นฐานคลาวด์ระดับองค์กร พร้อมการเข้ารหัสทั้งขณะส่งและขณะเก็บ การควบคุมสิทธิ์ และ audit log',
         ],
         links: [{ label: 'ไปที่ security overview', href: '/#security' }],
       },
@@ -1136,7 +1170,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       'If you are onboarding OpenClaw rather than building a direct integration, start from the public SKILL.md. Use the same API key later in Your Memory.',
     ctaLinks: [
       { label: 'SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
-      { label: 'Your Memory', href: 'https://mem9.ai/your-memory', external: true },
+      { label: 'Your Memory', href: '/your-memory/', external: true },
       { label: 'GitHub', href: 'https://github.com/mem9-ai/mem9', external: true },
     ],
   },
@@ -1338,7 +1372,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ctaBody: '如果你的目标是接入 OpenClaw，而不是自己写一个直接集成，请从公开的 SKILL.md 开始。之后在 Your Memory 中继续使用同一个 API key。',
     ctaLinks: [
       { label: 'SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
-      { label: 'Your Memory', href: 'https://mem9.ai/your-memory', external: true },
+      { label: 'Your Memory', href: '/your-memory/', external: true },
       { label: 'GitHub', href: 'https://github.com/mem9-ai/mem9', external: true },
     ],
   },
@@ -1540,7 +1574,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ctaBody: '如果你的目標是接入 OpenClaw，而不是自己實作直接整合，請先從公開的 SKILL.md 開始。之後在 Your Memory 繼續使用同一個 API key。',
     ctaLinks: [
       { label: 'SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
-      { label: 'Your Memory', href: 'https://mem9.ai/your-memory', external: true },
+      { label: 'Your Memory', href: '/your-memory/', external: true },
       { label: 'GitHub', href: 'https://github.com/mem9-ai/mem9', external: true },
     ],
   },
@@ -1742,7 +1776,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ctaBody: '直接 integration を作るのではなく OpenClaw をつなぎたいなら、まず公開 SKILL.md から始めてください。その後、同じ API key を Your Memory でも使えます。',
     ctaLinks: [
       { label: 'SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
-      { label: 'Your Memory', href: 'https://mem9.ai/your-memory', external: true },
+      { label: 'Your Memory', href: '/your-memory/', external: true },
       { label: 'GitHub', href: 'https://github.com/mem9-ai/mem9', external: true },
     ],
   },
@@ -1944,7 +1978,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ctaBody: '직접 integration 을 만드는 것이 아니라 OpenClaw 를 연결하려는 목적이라면 공개 SKILL.md 부터 시작하세요. 이후 같은 API key 를 Your Memory 에서도 사용할 수 있습니다.',
     ctaLinks: [
       { label: 'SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
-      { label: 'Your Memory', href: 'https://mem9.ai/your-memory', external: true },
+      { label: 'Your Memory', href: '/your-memory/', external: true },
       { label: 'GitHub', href: 'https://github.com/mem9-ai/mem9', external: true },
     ],
   },
@@ -2146,7 +2180,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ctaBody: 'Jika Anda sedang onboarding OpenClaw dan bukan membangun integrasi langsung, mulai dari SKILL.md publik. Gunakan API key yang sama nanti di Your Memory.',
     ctaLinks: [
       { label: 'SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
-      { label: 'Your Memory', href: 'https://mem9.ai/your-memory', external: true },
+      { label: 'Your Memory', href: '/your-memory/', external: true },
       { label: 'GitHub', href: 'https://github.com/mem9-ai/mem9', external: true },
     ],
   },
@@ -2348,7 +2382,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ctaBody: 'ถ้าคุณกำลัง onboarding OpenClaw มากกว่าการสร้าง integration โดยตรง ให้เริ่มจาก SKILL.md สาธารณะ แล้วใช้ API key เดียวกันต่อใน Your Memory',
     ctaLinks: [
       { label: 'SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
-      { label: 'Your Memory', href: 'https://mem9.ai/your-memory', external: true },
+      { label: 'Your Memory', href: '/your-memory/', external: true },
       { label: 'GitHub', href: 'https://github.com/mem9-ai/mem9', external: true },
     ],
   },
@@ -2357,9 +2391,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
 export const siteCopy: Record<SiteLocale, SiteDictionary> = {
   en: {
     meta: {
-      title: 'mem9 - Unlimited Memory Infrastructure for OpenClaw',
+      title: 'mem9 - Persistent Memory for AI Agents',
       description:
-        'mem9.ai is unlimited memory infrastructure for OpenClaw. Persistent recall, hybrid search, and multi-agent context for Claude Code, OpenCode, OpenClaw, and custom tools.',
+        'mem9.ai gives OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, and custom tools shared persistent memory with hybrid recall and a visual dashboard.',
     },
     nav: {
       home: 'Home',
@@ -2368,7 +2402,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: 'Benchmark',
       openclaw: 'OpenClaw',
       yourMemory: 'Your Memory',
-      billing: 'Billing',
+      billing: 'Pricing',
       security: 'Security',
       faq: 'FAQ',
       github: 'GitHub',
@@ -2379,12 +2413,18 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     hero: {
       eyebrow: 'MEM9.AI',
       titleLead: 'Unlimited memory',
-      titleAccent: 'for OpenClaw',
+      titleAccent: 'for AI agents',
       subtitle:
-        'Your agents forget everything between sessions. mem9 fixes that. Persistent memory infrastructure with hybrid search, shared spaces, and cross-agent recall from first write to forever.',
+        'Your agents forget everything between sessions. mem9 gives the agents you use one shared memory layer with hybrid recall and a visual dashboard.',
       poweredByLabel: 'Powered by TiDB Cloud',
-      onboardingLabel: 'How to install',
-      onboardingHint: 'Copy the command above into OpenClaw to get started. An API key is generated automatically \u2014 no sign-up required.',
+      guideSelector: {
+        label: 'Works with these agents',
+        items: guideSelectorItems,
+      },
+      onboardingLabel: 'Install for OpenClaw',
+      onboardingBadge: 'Paste in OpenClaw',
+      onboardingHint:
+        'OpenClaw will automatically install mem9 and provision an <strong>API key</strong> for you.',
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
@@ -2396,23 +2436,23 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       betaFeature: {
         title: 'Context Engine Support',
         description:
-          'Now with support for the latest Context Engine, mem9 helps your agent remember what matters and bring in only the right memory for each task—so users repeat less, responses stay more accurate, and prompts stay lean. The result is a faster, more focused agent experience with lower token usage and less wasted cost.',
+          'Now with support for the latest Context Engine, mem9 helps your agent remember what matters and bring in only the right memory for each task, so users repeat less, responses stay more accurate, and prompts stay lean.',
       },
       highlights: [
         {
-          title: 'Never forget again',
+          title: 'Persistent across sessions',
           description:
-            'Cloud-persistent memory that survives resets, restarts, and machine switches.',
+            'Cloud memory survives resets, restarts, long-running projects, and machine switches.',
         },
         {
-          title: 'Securely backed up',
+          title: 'Shared across agents',
           description:
-            'Your agent memory lives in durable cloud storage, not fragile local files.',
+            'One memory space can serve any agent or API client through the same key.',
         },
         {
-          title: 'Seamless onboarding',
+          title: 'Visible in a dashboard',
           description:
-            'Start with one instruction, then bring over existing memory without breaking your flow.',
+            'Review, analyze, import, and export memory from the hosted mem9.ai interface.',
         },
       ],
     },
@@ -2460,13 +2500,42 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: 'Platforms',
       title: 'One memory layer. Every agent.',
       description:
-        "Agents shouldn't lose context when they switch tools. mem9 gives every agent in your stack a shared, persistent memory that stays durable, searchable, and always in sync.",
+        'Give every runtime in your agent stack the same durable, searchable memory space.',
       items: [
         {
           name: 'OpenClaw',
-          desc: 'Unlimited memory',
+          desc: 'Memory plugin',
           detail:
-            'Give your OpenClaw agents memory that never expires. Recall past conversations, reuse learned knowledge, and stay consistent session after session.',
+            'Paste the install command at the top of this page into OpenClaw and it sets up automatically.',
+          guideId: 'openclaw',
+        },
+        {
+          name: 'Hermes Agent',
+          desc: 'Memory provider',
+          detail:
+            'Install the standalone Hermes memory provider plugin and activate it in Hermes Agent.',
+          guideId: 'hermes',
+        },
+        {
+          name: 'Claude Code',
+          desc: 'Hooks and skills',
+          detail:
+            'Use the Claude Code plugin package to persist and recall memory through mem9 hooks.',
+          guideId: 'claude',
+        },
+        {
+          name: 'OpenCode',
+          desc: 'Plugin SDK',
+          detail:
+            'Load the mem9 OpenCode integration from your OpenCode config and share the same mem9 API.',
+          guideId: 'opencode',
+        },
+        {
+          name: 'Codex',
+          desc: 'Managed hooks',
+          detail:
+            'Use the Codex plugin to install managed hooks and project overrides backed by mem9.',
+          guideId: 'codex',
         },
         {
           name: 'Your Memory',
@@ -2477,7 +2546,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         },
       ],
       ctaLabel: 'Try Your Memory',
-      note: 'Also works with any client that can read or write through the mem9 API layer.',
+      guideCtaLabel: 'Read guide',
+      note:
+        'Custom HTTP clients can also read and write through the mem9 API layer and share the same memory space.',
     },
     benchmark: {
       kicker: 'Benchmark',
@@ -2499,7 +2570,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         { name: 'Open-domain QA', f1: '56.57%', llm: '79.55%', er: '60.1%' },
         { name: 'Adversarial', f1: '96.19%', llm: 'N/A', er: '57.1%' },
       ],
-      source: 'LoCoMo Benchmark — Long-Conversation Memory evaluation framework',
+      source: 'LoCoMo Benchmark: Long-Conversation Memory evaluation framework',
     },
     faq: faqCopyByLocale.en,
     apiPage: apiPageByLocale.en,
@@ -2651,9 +2722,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
   },
   zh: {
     meta: {
-      title: 'mem9 - 面向 OpenClaw 的无限记忆基础设施',
+      title: 'mem9 - 面向 AI Agents 的持久记忆',
       description:
-        'mem9.ai 为 OpenClaw 提供无限记忆基础设施，支持持久召回、混合搜索，以及面向 Claude Code、OpenCode、OpenClaw 和自定义工具的多 Agent 上下文共享。',
+        'mem9.ai 为 OpenClaw、Hermes Agent、Claude Code、OpenCode、Codex 和自定义工具提供共享持久记忆、混合召回和可视化管理界面。',
     },
     nav: {
       home: '首页',
@@ -2673,12 +2744,18 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     hero: {
       eyebrow: 'MEM9.AI',
       titleLead: '无限记忆',
-      titleAccent: 'for OpenClaw',
+      titleAccent: 'for AI agents',
       subtitle:
-        '你的 Agent 会在每次会话结束后忘掉一切，mem9 负责修复这件事。它提供持久化记忆基础设施，支持混合搜索、共享空间和跨 Agent 召回，从第一次写入一直保留到未来。',
-      poweredByLabel: 'Powered by TiDB Cloud',
-      onboardingLabel: '如何安装',
-      onboardingHint: '把上面这条命令复制给 OpenClaw 即可完成安装，按提示操作会自动生成 API Key，无需注册申请。',
+        '你的 Agent 会在会话之间丢失上下文。mem9 为你使用的 Agent 提供同一层共享记忆，支持混合召回和可视化管理。',
+      poweredByLabel: '由 TiDB Cloud 提供支持',
+      guideSelector: {
+        label: '支持以下 Agent',
+        items: guideSelectorItems,
+      },
+      onboardingLabel: '为 OpenClaw 安装',
+      onboardingBadge: '粘贴到 OpenClaw',
+      onboardingHint:
+        'OpenClaw 会自动为你安装 mem9 并申请 <strong>API Key</strong>。',
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
@@ -2686,24 +2763,24 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       onboardingCommandBeta:
         '阅读 https://mem9.ai/beta/SKILL.md ，按照说明为 OpenClaw 安装并配置 mem9',
       substrateCtaLabel:
-        'Need the backend substrate behind memory? Explore via TiDB Cloud Zero \u2192',
+        '想了解记忆背后的后端基础设施？通过 TiDB Cloud Zero 一探究竟 \u2192',
       betaFeature: {
         title: 'Context Engine 支持',
         description:
-          '现在已支持最新的 Context Engine，mem9 能帮助你的 Agent 记住真正重要的内容，并在每个任务里只带入最合适的记忆。这样用户不需要反复重复信息，回复会更准确，提示词也能保持精简。最终效果是 Agent 体验更快、更聚焦，同时减少 token 消耗和无谓成本。',
+          '现在已支持最新的 Context Engine，mem9 能帮助你的 Agent 记住真正重要的内容，并在每个任务里只带入合适的记忆。',
       },
       highlights: [
         {
-          title: '不再遗忘',
-          description: '云端持久记忆可跨越重置、重启和设备切换持续保留。',
+          title: '跨会话持久保存',
+          description: '云端记忆可跨越重置、重启、长期项目和设备切换持续保留。',
         },
         {
-          title: '安全备份',
-          description: '你的 Agent 记忆存放在耐久云存储里，而不是脆弱的本地文件。',
+          title: '跨 Agent 共享',
+          description: '同一个记忆空间可以通过同一把 Key 服务任意 Agent 与 API 客户端。',
         },
         {
-          title: '无缝接入',
-          description: '从一条指令开始，再逐步迁移已有记忆，不会打断现有工作流。',
+          title: '可视化管理',
+          description: '在 mem9.ai 官方界面中审查、分析、导入和导出记忆。',
         },
       ],
     },
@@ -2751,13 +2828,37 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: '平台',
       title: '一层记忆，覆盖每个 Agent。',
       description:
-        'Agent 在切换工具时不该丢掉上下文。mem9 为你的整套 Agent 栈提供共享且持久的记忆层，始终可搜索、可同步、可长期保存。',
+        '让你的 Agent 栈里的每个运行时共享同一个持久、可搜索的记忆空间。',
       items: [
         {
           name: 'OpenClaw',
-          desc: '无限记忆',
-          detail:
-            '为你的 OpenClaw Agent 提供永不过期的记忆。回忆过去的对话，复用已经学到的知识，并在一轮又一轮会话中保持一致。',
+          desc: 'Memory plugin',
+          detail: '把页面顶部的安装命令粘贴给 OpenClaw，它会自动完成接入。',
+          guideId: 'openclaw',
+        },
+        {
+          name: 'Hermes Agent',
+          desc: 'Memory provider',
+          detail: '安装独立的 Hermes memory provider 插件，并在 Hermes Agent 中启用。',
+          guideId: 'hermes',
+        },
+        {
+          name: 'Claude Code',
+          desc: 'Hooks and skills',
+          detail: '使用 Claude Code 插件，通过 mem9 hooks 持久化和召回记忆。',
+          guideId: 'claude',
+        },
+        {
+          name: 'OpenCode',
+          desc: 'Plugin SDK',
+          detail: '从 OpenCode 配置加载 mem9 集成，并共享同一套 mem9 API。',
+          guideId: 'opencode',
+        },
+        {
+          name: 'Codex',
+          desc: 'Managed hooks',
+          detail: '使用 Codex 插件安装托管 hooks 和项目级覆盖配置，后端由 mem9 支撑。',
+          guideId: 'codex',
         },
         {
           name: '你的记忆',
@@ -2768,7 +2869,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         },
       ],
       ctaLabel: '试试你的记忆',
-      note: '任何能够通过 mem9 API 层读写的客户端也都可以接入。',
+      guideCtaLabel: '阅读指南',
+      note:
+        '自定义 HTTP 客户端也可以通过 mem9 API 层读写，并共享同一个记忆空间。',
     },
     benchmark: {
       kicker: '基准测试',
@@ -2790,7 +2893,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         { name: '开放域问答', f1: '56.57%', llm: '79.55%', er: '60.1%' },
         { name: '对抗测试', f1: '96.19%', llm: 'N/A', er: '57.1%' },
       ],
-      source: 'LoCoMo Benchmark — 长对话记忆评估框架',
+      source: 'LoCoMo Benchmark：长对话记忆评估框架',
     },
     faq: faqCopyByLocale.zh,
     apiPage: apiPageByLocale.zh,
@@ -2805,8 +2908,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       intro:
         'mem9 的设计目标，是在提供持久云记忆能力的同时，保持清晰的操作边界和稳固的安全基础。',
       bridgeBody:
-        'Memory is often the first state problem in an agent system. When your workflow expands into files, artifacts, and retrieval, drive9 becomes the next layer.',
-      bridgeCtaLabel: 'Explore drive9 \u2192',
+        '记忆通常是 Agent 系统中的第一个状态难题。当你的工作流扩展到文件、产物和检索时，drive9 会成为下一层。',
+      bridgeCtaLabel: '探索 drive9 \u2192',
       dataTitle: 'mem9 如何处理数据',
       dataBody:
         'mem9 会存储记忆数据，帮助 Agent 在跨会话、跨设备和跨工作流时保留有用上下文。相关数据流被限定在产品的核心职责内，即存储、检索和提供记忆，并围绕访问与运维设有清晰的数据处理边界。',
@@ -2958,12 +3061,18 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     hero: {
       eyebrow: 'MEM9.AI',
       titleLead: '無限記憶',
-      titleAccent: 'for OpenClaw',
+      titleAccent: 'for AI agents',
       subtitle:
-        '你的 Agent 會在每次會話結束後忘掉一切，mem9 負責修復這件事。它提供持久化記憶基礎設施，支援混合搜尋、共享空間和跨 Agent 召回，從第一次寫入一路保留到未來。',
-      poweredByLabel: 'Powered by TiDB Cloud',
-      onboardingLabel: '如何安裝',
-      onboardingHint: '把上面這條指令複製給 OpenClaw 即可完成安裝，按提示操作會自動產生 API Key，無需註冊申請。',
+        '你的 Agent 會在會話之間遺忘所有內容。mem9 為你使用的 Agent 提供同一層共享記憶，支援混合召回和可視化管理。',
+      poweredByLabel: '由 TiDB Cloud 提供支援',
+      guideSelector: {
+        label: '支援以下 Agent',
+        items: guideSelectorItems,
+      },
+      onboardingLabel: '為 OpenClaw 安裝',
+      onboardingBadge: '貼上到 OpenClaw',
+      onboardingHint:
+        'OpenClaw 會自動為你安裝 mem9 並申請 <strong>API Key</strong>。',
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
@@ -2971,7 +3080,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       onboardingCommandBeta:
         '閱讀 https://mem9.ai/beta/SKILL.md，按照說明為 OpenClaw 安裝並配置 mem9',
       substrateCtaLabel:
-        'Need the backend substrate behind memory? Explore via TiDB Cloud Zero \u2192',
+        '想了解記憶背後的後端基礎設施？透過 TiDB Cloud Zero 一探究竟 \u2192',
       betaFeature: {
         title: 'Context Engine 支援',
         description:
@@ -3040,9 +3149,38 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       items: [
         {
           name: 'OpenClaw',
-          desc: '無限記憶',
+          desc: '記憶外掛',
           detail:
-            '為你的 OpenClaw Agent 提供永不過期的記憶。回想過去的對話，重用已學到的知識，並在一輪又一輪會話中保持一致。',
+            '把頁面頂部的安裝命令貼給 OpenClaw，它會自動完成接入。',
+          guideId: 'openclaw',
+        },
+        {
+          name: 'Hermes Agent',
+          desc: '記憶提供者',
+          detail:
+            '安裝獨立的 Hermes memory provider 外掛，並在 Hermes Agent 中啟用。',
+          guideId: 'hermes',
+        },
+        {
+          name: 'Claude Code',
+          desc: 'Hooks 與技能',
+          detail:
+            '使用 Claude Code 外掛，透過 mem9 hooks 持久化並召回記憶。',
+          guideId: 'claude',
+        },
+        {
+          name: 'OpenCode',
+          desc: 'Plugin SDK',
+          detail:
+            '從 OpenCode 設定載入 mem9 整合，並共享同一套 mem9 API。',
+          guideId: 'opencode',
+        },
+        {
+          name: 'Codex',
+          desc: '託管 hooks',
+          detail:
+            '使用 Codex 外掛安裝託管 hooks 和專案級覆寫設定，後端由 mem9 支撐。',
+          guideId: 'codex',
         },
         {
           name: '你的記憶',
@@ -3053,7 +3191,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         },
       ],
       ctaLabel: '試試你的記憶',
-      note: '任何能夠透過 mem9 API 層讀寫的客戶端也都可以接入。',
+      guideCtaLabel: '閱讀指南',
+      note:
+        '自訂 HTTP 客戶端也可以透過 mem9 API 層讀寫，並共享同一個記憶空間。',
     },
     benchmark: {
       kicker: '基準測試',
@@ -3075,7 +3215,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         { name: '開放域問答', f1: '56.57%', llm: '79.55%', er: '60.1%' },
         { name: '對抗測試', f1: '96.19%', llm: 'N/A', er: '57.1%' },
       ],
-      source: 'LoCoMo Benchmark — 長對話記憶評估框架',
+      source: 'LoCoMo Benchmark：長對話記憶評估框架',
     },
     faq: faqCopyByLocale['zh-Hant'],
     apiPage: apiPageByLocale['zh-Hant'],
@@ -3090,8 +3230,8 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       intro:
         'mem9 的設計目標，是在提供持久雲端記憶能力的同時，維持清楚的操作邊界與穩固的安全基礎。',
       bridgeBody:
-        'Memory is often the first state problem in an agent system. When your workflow expands into files, artifacts, and retrieval, drive9 becomes the next layer.',
-      bridgeCtaLabel: 'Explore drive9 \u2192',
+        '記憶通常是 Agent 系統中的第一個狀態難題。當你的工作流擴展到檔案、產物和檢索時，drive9 會成為下一層。',
+      bridgeCtaLabel: '探索 drive9 \u2192',
       dataTitle: 'mem9 如何處理資料',
       dataBody:
         'mem9 會儲存記憶資料，幫助 Agent 在跨會話、跨裝置與跨工作流程時保留有用上下文。相關資料流被限定在產品的核心職責內，也就是儲存、檢索與提供記憶，並圍繞存取與營運設有清楚的資料處理邊界。',
@@ -3243,12 +3383,18 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     hero: {
       eyebrow: 'MEM9.AI',
       titleLead: 'Unlimited memory',
-      titleAccent: 'for OpenClaw',
+      titleAccent: 'for AI agents',
       subtitle:
-        'エージェントはセッションが変わるたびにすべてを忘れます。mem9 はそれを解決します。ハイブリッド検索、共有スペース、エージェント間リコールを備えた永続メモリ基盤で、最初の書き込みからずっと記憶を保ちます。',
-      poweredByLabel: 'Powered by TiDB Cloud',
-      onboardingLabel: 'インストール方法',
-      onboardingHint: '上のコマンドを OpenClaw にコピーしてください。案内に従えば API Key が自動生成されます \u2014 登録不要です。',
+        'エージェントはセッションが変わるたびにすべてを忘れます。mem9 は、ハイブリッド検索とビジュアルダッシュボードを備えた共有メモリレイヤーを、利用中のエージェントに提供します。',
+      poweredByLabel: 'TiDB Cloud で稼働',
+      guideSelector: {
+        label: '対応エージェント',
+        items: guideSelectorItems,
+      },
+      onboardingLabel: 'OpenClaw にインストール',
+      onboardingBadge: 'OpenClaw に貼り付け',
+      onboardingHint:
+        'OpenClaw が自動的に mem9 をインストールし、<strong>API Key</strong> を発行します。',
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
@@ -3256,7 +3402,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       onboardingCommandBeta:
         'https://mem9.ai/beta/SKILL.md を読み、手順に沿って OpenClaw 向けに mem9 をインストールして設定してください',
       substrateCtaLabel:
-        'Need the backend substrate behind memory? Explore via TiDB Cloud Zero \u2192',
+        'メモリの裏側にあるバックエンド基盤が気になりますか？ TiDB Cloud Zero でご確認ください \u2192',
       betaFeature: {
         title: 'Context Engine サポート',
         description:
@@ -3281,7 +3427,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       ],
     },
     trust: {
-      title: 'Security & Privacy',
+      title: 'セキュリティとプライバシー',
       body:
         'mem9 は本番利用を前提に、エンタープライズグレードのクラウド基盤上で構築されています。通信時と保存時の暗号化、アクセス制御、監査性、そして明確なデータ取り扱い境界を備えています。',
       supporting: '詳しくはセキュリティ概要とホワイトペーパーをご覧ください。',
@@ -3328,9 +3474,38 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       items: [
         {
           name: 'OpenClaw',
-          desc: 'Unlimited memory',
+          desc: 'メモリプラグイン',
           detail:
-            'OpenClaw エージェントに期限のない記憶を与えます。過去の会話を呼び戻し、学習済みの知識を再利用し、セッションをまたいで一貫性を保てます。',
+            'ページ上部のインストールコマンドを OpenClaw に貼り付けるだけで自動的にセットアップされます。',
+          guideId: 'openclaw',
+        },
+        {
+          name: 'Hermes Agent',
+          desc: 'メモリプロバイダー',
+          detail:
+            'スタンドアロンの Hermes memory provider プラグインをインストールし、Hermes Agent で有効化します。',
+          guideId: 'hermes',
+        },
+        {
+          name: 'Claude Code',
+          desc: 'Hooks とスキル',
+          detail:
+            'Claude Code プラグインパッケージを使い、mem9 hooks 経由でメモリを保存してリコールします。',
+          guideId: 'claude',
+        },
+        {
+          name: 'OpenCode',
+          desc: 'Plugin SDK',
+          detail:
+            'OpenCode 設定から mem9 OpenCode 連携を読み込み、同じ mem9 API を共有します。',
+          guideId: 'opencode',
+        },
+        {
+          name: 'Codex',
+          desc: '管理フック',
+          detail:
+            'Codex プラグインで mem9 を基盤とする管理 hooks とプロジェクト上書き設定を導入します。',
+          guideId: 'codex',
         },
         {
           name: 'あなたの記憶',
@@ -3341,7 +3516,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         },
       ],
       ctaLabel: 'あなたの記憶を試す',
-      note: 'mem9 API レイヤー経由で読み書きできるクライアントなら、そのまま利用できます。',
+      guideCtaLabel: 'ガイドを読む',
+      note:
+        'カスタム HTTP クライアントも mem9 API レイヤーを通じて読み書きでき、同じメモリ空間を共有できます。',
     },
     benchmark: {
       kicker: 'ベンチマーク',
@@ -3363,7 +3540,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         { name: 'オープンドメインQA', f1: '56.57%', llm: '79.55%', er: '60.1%' },
         { name: '敵対的テスト', f1: '96.19%', llm: 'N/A', er: '57.1%' },
       ],
-      source: 'LoCoMo Benchmark — 長文会話メモリ評価フレームワーク',
+      source: 'LoCoMo Benchmark：長文会話メモリ評価フレームワーク',
     },
     faq: faqCopyByLocale.ja,
     apiPage: apiPageByLocale.ja,
@@ -3373,13 +3550,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         description:
           'mem9 のデータ取り扱い、暗号化、アクセス制御、運用境界への考え方を紹介します。',
       },
-      kicker: 'Security',
-      title: 'Security & Privacy',
+      kicker: 'セキュリティ',
+      title: 'セキュリティとプライバシー',
       intro:
         'mem9 は、永続クラウドメモリの利点を提供しながら、明確な運用境界と強固なセキュリティ基盤を保つよう設計されています。',
       bridgeBody:
-        'Memory is often the first state problem in an agent system. When your workflow expands into files, artifacts, and retrieval, drive9 becomes the next layer.',
-      bridgeCtaLabel: 'Explore drive9 \u2192',
+        'メモリはエージェントシステムにおいて最初に直面する状態管理の課題になりがちです。ワークフローがファイル、アーティファクト、検索へと広がるとき、drive9 が次のレイヤーになります。',
+      bridgeCtaLabel: 'drive9 を見る \u2192',
       dataTitle: 'mem9 のデータ取り扱い',
       dataBody:
         'mem9 は、エージェントがセッション、デバイス、ワークフローをまたいで有用な文脈を保てるようにメモリデータを保存します。データフローはその役割に絞られており、保存、検索、提供という機能の周囲に明確なデータ取り扱い境界を設けています。',
@@ -3533,12 +3710,18 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     hero: {
       eyebrow: 'MEM9.AI',
       titleLead: '무제한 메모리',
-      titleAccent: 'for OpenClaw',
+      titleAccent: 'for AI agents',
       subtitle:
-        '에이전트는 세션이 바뀔 때마다 모든 것을 잊습니다. mem9가 이를 해결합니다. 하이브리드 검색, 공유 공간, 에이전트 간 리콜을 갖춘 지속 메모리 인프라로 첫 번째 기록부터 계속 기억을 유지합니다.',
-      poweredByLabel: 'Powered by TiDB Cloud',
-      onboardingLabel: '설치 방법',
-      onboardingHint: '위 명령어를 OpenClaw 에 복사하세요. 안내에 따라 진행하면 API Key 가 자동 생성됩니다 \u2014 가입 불필요.',
+        '에이전트는 세션이 바뀔 때마다 모든 것을 잊습니다. mem9는 사용 중인 에이전트에 하이브리드 리콜과 시각적 대시보드를 갖춘 공유 메모리 레이어를 제공합니다.',
+      poweredByLabel: 'TiDB Cloud 기반',
+      guideSelector: {
+        label: '지원되는 에이전트',
+        items: guideSelectorItems,
+      },
+      onboardingLabel: 'OpenClaw에 설치',
+      onboardingBadge: 'OpenClaw에 붙여넣기',
+      onboardingHint:
+        'OpenClaw가 자동으로 mem9를 설치하고 <strong>API Key</strong>를 발급합니다.',
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
@@ -3546,7 +3729,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       onboardingCommandBeta:
         'https://mem9.ai/beta/SKILL.md 를 읽고 안내에 따라 OpenClaw용 mem9를 설치하고 설정하세요',
       substrateCtaLabel:
-        'Need the backend substrate behind memory? Explore via TiDB Cloud Zero \u2192',
+        '메모리의 백엔드 인프라가 궁금하신가요? TiDB Cloud Zero에서 살펴보세요 \u2192',
       betaFeature: {
         title: 'Context Engine 지원',
         description:
@@ -3568,7 +3751,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       ],
     },
     trust: {
-      title: 'Security & Privacy',
+      title: '보안 및 개인정보 보호',
       body:
         'mem9는 프로덕션 사용을 위해 엔터프라이즈급 클라우드 인프라 위에 구축되었으며, 전송 중 및 저장 시 암호화, 접근 제어, 감사 가능성, 그리고 명확한 데이터 처리 경계를 갖추고 있습니다.',
       supporting: '보안 개요와 백서에서 더 자세히 확인할 수 있습니다.',
@@ -3615,9 +3798,38 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       items: [
         {
           name: 'OpenClaw',
-          desc: 'Unlimited memory',
+          desc: '메모리 플러그인',
           detail:
-            'OpenClaw 에이전트에 만료되지 않는 메모리를 제공합니다. 이전 대화를 다시 불러오고, 배운 지식을 재사용하며, 세션이 바뀌어도 일관성을 유지합니다.',
+            '페이지 상단의 설치 명령어를 OpenClaw에 붙여넣으면 자동으로 설정됩니다.',
+          guideId: 'openclaw',
+        },
+        {
+          name: 'Hermes Agent',
+          desc: '메모리 제공자',
+          detail:
+            '독립형 Hermes memory provider 플러그인을 설치하고 Hermes Agent에서 활성화합니다.',
+          guideId: 'hermes',
+        },
+        {
+          name: 'Claude Code',
+          desc: '후크와 스킬',
+          detail:
+            'Claude Code 플러그인 패키지로 mem9 후크를 통해 메모리를 저장하고 리콜합니다.',
+          guideId: 'claude',
+        },
+        {
+          name: 'OpenCode',
+          desc: 'Plugin SDK',
+          detail:
+            'OpenCode 설정에서 mem9 OpenCode 통합을 로드하고 같은 mem9 API를 공유합니다.',
+          guideId: 'opencode',
+        },
+        {
+          name: 'Codex',
+          desc: '관리형 후크',
+          detail:
+            'Codex 플러그인으로 mem9 기반의 관리형 후크와 프로젝트 재정의 설정을 설치합니다.',
+          guideId: 'codex',
         },
         {
           name: '당신의 기억',
@@ -3628,7 +3840,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         },
       ],
       ctaLabel: '당신의 기억 사용해보기',
-      note: 'mem9 API 레이어를 통해 읽고 쓸 수 있는 모든 클라이언트와도 함께 동작합니다.',
+      guideCtaLabel: '가이드 읽기',
+      note:
+        '커스텀 HTTP 클라이언트도 mem9 API 레이어를 통해 읽고 쓸 수 있으며 같은 메모리 공간을 공유합니다.',
     },
     benchmark: {
       kicker: '벤치마크',
@@ -3650,7 +3864,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         { name: '오픈도메인 QA', f1: '56.57%', llm: '79.55%', er: '60.1%' },
         { name: '적대적 테스트', f1: '96.19%', llm: 'N/A', er: '57.1%' },
       ],
-      source: 'LoCoMo Benchmark — 장문 대화 메모리 평가 프레임워크',
+      source: 'LoCoMo Benchmark: 장문 대화 메모리 평가 프레임워크',
     },
     faq: faqCopyByLocale.ko,
     apiPage: apiPageByLocale.ko,
@@ -3660,13 +3874,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         description:
           'mem9의 데이터 처리, 암호화, 접근 제어, 운영 경계에 대한 접근 방식을 소개합니다.',
       },
-      kicker: 'Security',
-      title: 'Security & Privacy',
+      kicker: '보안',
+      title: '보안 및 개인정보 보호',
       intro:
         'mem9는 지속형 클라우드 메모리의 이점을 제공하면서도 명확한 운영 경계와 강한 보안 기반을 유지하도록 설계되었습니다.',
       bridgeBody:
-        'Memory is often the first state problem in an agent system. When your workflow expands into files, artifacts, and retrieval, drive9 becomes the next layer.',
-      bridgeCtaLabel: 'Explore drive9 \u2192',
+        '메모리는 에이전트 시스템에서 가장 먼저 마주하는 상태 문제입니다. 워크플로가 파일, 아티팩트, 검색까지 확장되면 drive9이 다음 레이어가 됩니다.',
+      bridgeCtaLabel: 'drive9 살펴보기 \u2192',
       dataTitle: 'mem9의 데이터 처리 방식',
       dataBody:
         'mem9는 에이전트가 세션, 장치, 워크플로 전반에서 유용한 컨텍스트를 유지할 수 있도록 메모리 데이터를 저장합니다. 데이터 흐름은 이 역할에 맞춰 제한되며, 저장, 검색, 제공이라는 기능 주변에 명확한 데이터 처리 경계를 둡니다.',
@@ -3820,12 +4034,18 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     hero: {
       eyebrow: 'MEM9.AI',
       titleLead: 'Memori tanpa batas',
-      titleAccent: 'for OpenClaw',
+      titleAccent: 'untuk AI agents',
       subtitle:
-        'Agent Anda melupakan semuanya di antara sesi. mem9 memperbaikinya. Infrastruktur memori persisten dengan pencarian hybrid, ruang bersama, dan recall lintas agent dari penulisan pertama hingga seterusnya.',
-      poweredByLabel: 'Powered by TiDB Cloud',
-      onboardingLabel: 'Cara install',
-      onboardingHint: 'Salin perintah di atas ke OpenClaw untuk memulai. API key akan dibuat otomatis \u2014 tanpa perlu mendaftar.',
+        'Agent Anda melupakan semuanya di antara sesi. mem9 memberi agent yang Anda gunakan satu lapis memori bersama dengan recall hybrid dan dashboard visual.',
+      poweredByLabel: 'Didukung TiDB Cloud',
+      guideSelector: {
+        label: 'Bekerja dengan agent berikut',
+        items: guideSelectorItems,
+      },
+      onboardingLabel: 'Instal untuk OpenClaw',
+      onboardingBadge: 'Tempel di OpenClaw',
+      onboardingHint:
+        'OpenClaw akan otomatis menginstal mem9 dan menyediakan <strong>API Key</strong> untuk Anda.',
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
@@ -3833,7 +4053,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       onboardingCommandBeta:
         'Baca https://mem9.ai/beta/SKILL.md lalu ikuti petunjuk untuk menginstal dan mengonfigurasi mem9 untuk OpenClaw',
       substrateCtaLabel:
-        'Need the backend substrate behind memory? Explore via TiDB Cloud Zero \u2192',
+        'Penasaran dengan substrat backend di balik memory? Jelajahi via TiDB Cloud Zero \u2192',
       betaFeature: {
         title: 'Dukungan Context Engine',
         description:
@@ -3858,7 +4078,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       ],
     },
     trust: {
-      title: 'Security & Privacy',
+      title: 'Keamanan & Privasi',
       body:
         'mem9 dibangun untuk penggunaan production di atas infrastruktur cloud kelas enterprise, dengan enkripsi saat transit dan saat tersimpan, kontrol akses, auditabilitas, dan batas penanganan data yang jelas.',
       supporting: 'Pelajari lebih lanjut di ringkasan keamanan dan white paper kami.',
@@ -3905,9 +4125,38 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       items: [
         {
           name: 'OpenClaw',
-          desc: 'Unlimited memory',
+          desc: 'Plugin memori',
           detail:
-            'Berikan agent OpenClaw Anda memori yang tidak pernah kedaluwarsa. Panggil kembali percakapan lama, gunakan ulang pengetahuan yang sudah dipelajari, dan tetap konsisten dari sesi ke sesi.',
+            'Tempelkan perintah instal di bagian atas halaman ini ke OpenClaw, lalu ia akan menyiapkan semuanya secara otomatis.',
+          guideId: 'openclaw',
+        },
+        {
+          name: 'Hermes Agent',
+          desc: 'Penyedia memori',
+          detail:
+            'Instal plugin Hermes memory provider mandiri, lalu aktifkan di Hermes Agent.',
+          guideId: 'hermes',
+        },
+        {
+          name: 'Claude Code',
+          desc: 'Kait dan kemampuan',
+          detail:
+            'Gunakan paket plugin Claude Code untuk menyimpan dan memanggil kembali memori melalui kait mem9.',
+          guideId: 'claude',
+        },
+        {
+          name: 'OpenCode',
+          desc: 'Plugin SDK',
+          detail:
+            'Muat integrasi mem9 OpenCode dari konfigurasi OpenCode Anda dan gunakan mem9 API yang sama.',
+          guideId: 'opencode',
+        },
+        {
+          name: 'Codex',
+          desc: 'Kait terkelola',
+          detail:
+            'Gunakan plugin Codex untuk memasang kait terkelola dan konfigurasi proyek yang didukung mem9.',
+          guideId: 'codex',
         },
         {
           name: 'Memori Anda',
@@ -3918,7 +4167,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         },
       ],
       ctaLabel: 'Coba Memori Anda',
-      note: 'Juga bekerja dengan klien apa pun yang dapat membaca atau menulis melalui lapisan API mem9.',
+      guideCtaLabel: 'Baca panduan',
+      note:
+        'Client HTTP kustom juga bisa membaca dan menulis melalui layer mem9 API serta berbagi ruang memori yang sama.',
     },
     benchmark: {
       kicker: 'Benchmark',
@@ -3940,7 +4191,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         { name: 'QA Domain Terbuka', f1: '56.57%', llm: '79.55%', er: '60.1%' },
         { name: 'Adversarial', f1: '96.19%', llm: 'N/A', er: '57.1%' },
       ],
-      source: 'LoCoMo Benchmark — Kerangka evaluasi memori percakapan panjang',
+      source: 'LoCoMo Benchmark: Kerangka evaluasi memori percakapan panjang',
     },
     faq: faqCopyByLocale.id,
     apiPage: apiPageByLocale.id,
@@ -3950,13 +4201,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         description:
           'Pelajari bagaimana mem9 menangani data, enkripsi, kontrol akses, dan batas operasional.',
       },
-      kicker: 'Security',
-      title: 'Security & Privacy',
+      kicker: 'Keamanan',
+      title: 'Keamanan & Privasi',
       intro:
         'mem9 dirancang untuk memberi manfaat memori cloud persisten dengan batas operasional yang jelas dan fondasi keamanan yang kuat.',
       bridgeBody:
-        'Memory is often the first state problem in an agent system. When your workflow expands into files, artifacts, and retrieval, drive9 becomes the next layer.',
-      bridgeCtaLabel: 'Explore drive9 \u2192',
+        'Memori sering kali menjadi masalah state pertama di sistem agent. Ketika alur kerja Anda meluas ke file, artefak, dan retrieval, drive9 menjadi lapisan berikutnya.',
+      bridgeCtaLabel: 'Jelajahi drive9 \u2192',
       dataTitle: 'Bagaimana mem9 menangani data',
       dataBody:
         'mem9 menyimpan data memori untuk membantu agent mempertahankan konteks yang berguna di berbagai sesi, perangkat, dan alur kerja. Aliran data dibatasi pada fungsi utamanya: menyimpan, mengambil, dan menyajikan memori dengan batas penanganan data yang jelas untuk akses dan operasi.',
@@ -4110,12 +4361,18 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     hero: {
       eyebrow: 'MEM9.AI',
       titleLead: 'หน่วยความจำไม่จำกัด',
-      titleAccent: 'for OpenClaw',
+      titleAccent: 'สำหรับ AI agents',
       subtitle:
-        'เอเจนต์ของคุณลืมทุกอย่างระหว่างแต่ละเซสชัน mem9 เข้ามาแก้ปัญหานี้ด้วยโครงสร้างพื้นฐานหน่วยความจำแบบถาวรที่มีการค้นหาแบบ hybrid พื้นที่ร่วมกัน และการเรียกคืนข้ามเอเจนต์ตั้งแต่การเขียนครั้งแรกไปจนตลอดการใช้งาน',
-      poweredByLabel: 'Powered by TiDB Cloud',
-      onboardingLabel: 'วิธีติดตั้ง',
-      onboardingHint: 'คัดลอกคำสั่งด้านบนไปวางใน OpenClaw เพื่อเริ่มต้น API key จะถูกสร้างให้อัตโนมัติ \u2014 ไม่ต้องสมัครสมาชิก',
+        'เอเจนต์ของคุณลืมทุกอย่างระหว่างแต่ละเซสชัน mem9 มอบเลเยอร์หน่วยความจำที่แชร์ร่วมกันให้กับเอเจนต์ที่คุณใช้งาน พร้อมการค้นคืนแบบ hybrid และแดชบอร์ดแบบภาพ',
+      poweredByLabel: 'ขับเคลื่อนโดย TiDB Cloud',
+      guideSelector: {
+        label: 'ใช้งานได้กับเอเจนต์เหล่านี้',
+        items: guideSelectorItems,
+      },
+      onboardingLabel: 'ติดตั้งสำหรับ OpenClaw',
+      onboardingBadge: 'วางใน OpenClaw',
+      onboardingHint:
+        'OpenClaw จะติดตั้ง mem9 และออก <strong>API Key</strong> ให้คุณโดยอัตโนมัติ',
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
@@ -4123,7 +4380,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       onboardingCommandBeta:
         'อ่าน https://mem9.ai/beta/SKILL.md แล้วทำตามขั้นตอนเพื่อติดตั้งและตั้งค่า mem9 สำหรับ OpenClaw',
       substrateCtaLabel:
-        'Need the backend substrate behind memory? Explore via TiDB Cloud Zero \u2192',
+        'สนใจโครงสร้างพื้นฐานเบื้องหลัง memory ใช่ไหม? สำรวจผ่าน TiDB Cloud Zero \u2192',
       betaFeature: {
         title: 'รองรับ Context Engine',
         description:
@@ -4148,7 +4405,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       ],
     },
     trust: {
-      title: 'Security & Privacy',
+      title: 'ความปลอดภัยและความเป็นส่วนตัว',
       body:
         'mem9 ถูกสร้างมาสำหรับการใช้งานระดับ production บนโครงสร้างพื้นฐานคลาวด์ระดับ enterprise พร้อมการเข้ารหัสระหว่างส่งและขณะจัดเก็บ การควบคุมสิทธิ์ การตรวจสอบย้อนหลังได้ และขอบเขตการจัดการข้อมูลที่ชัดเจน',
       supporting: 'ดูรายละเอียดเพิ่มเติมได้ในภาพรวมด้านความปลอดภัยและ white paper ของเรา',
@@ -4195,9 +4452,38 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       items: [
         {
           name: 'OpenClaw',
-          desc: 'Unlimited memory',
+          desc: 'ปลั๊กอินหน่วยความจำ',
           detail:
-            'มอบหน่วยความจำที่ไม่มีวันหมดอายุให้กับเอเจนต์ OpenClaw ของคุณ เรียกดูบทสนทนาเก่า ใช้ความรู้ที่เคยเรียนรู้ซ้ำ และคงความสม่ำเสมอได้ในทุกเซสชัน',
+            'วางคำสั่งติดตั้งจากด้านบนของหน้านี้ลงใน OpenClaw แล้วระบบจะตั้งค่าให้อัตโนมัติ',
+          guideId: 'openclaw',
+        },
+        {
+          name: 'Hermes Agent',
+          desc: 'ผู้ให้บริการหน่วยความจำ',
+          detail:
+            'ติดตั้งปลั๊กอิน Hermes memory provider แบบ standalone แล้วเปิดใช้งานใน Hermes Agent',
+          guideId: 'hermes',
+        },
+        {
+          name: 'Claude Code',
+          desc: 'ฮุกและทักษะ',
+          detail:
+            'ใช้แพ็กเกจปลั๊กอิน Claude Code เพื่อบันทึกและเรียกคืนหน่วยความจำผ่านฮุกของ mem9',
+          guideId: 'claude',
+        },
+        {
+          name: 'OpenCode',
+          desc: 'Plugin SDK',
+          detail:
+            'โหลดการเชื่อมต่อ mem9 OpenCode จาก config ของ OpenCode แล้วใช้ mem9 API ชุดเดียวกัน',
+          guideId: 'opencode',
+        },
+        {
+          name: 'Codex',
+          desc: 'ฮุกแบบจัดการ',
+          detail:
+            'ใช้ปลั๊กอิน Codex เพื่อติดตั้งฮุกแบบจัดการและการตั้งค่าระดับโปรเจกต์ที่ใช้ mem9 เป็นฐาน',
+          guideId: 'codex',
         },
         {
           name: 'ความทรงจำของคุณ',
@@ -4208,7 +4494,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         },
       ],
       ctaLabel: 'ลองใช้ความทรงจำของคุณ',
-      note: 'ยังทำงานได้กับไคลเอนต์ใดก็ตามที่อ่านหรือเขียนผ่านชั้น API ของ mem9 ได้',
+      guideCtaLabel: 'อ่านคู่มือ',
+      note:
+        'HTTP client แบบกำหนดเองก็อ่านและเขียนผ่านเลเยอร์ mem9 API ได้ และแชร์พื้นที่หน่วยความจำเดียวกัน',
     },
     benchmark: {
       kicker: 'เบนช์มาร์ก',
@@ -4230,7 +4518,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         { name: 'QA โดเมนเปิด', f1: '56.57%', llm: '79.55%', er: '60.1%' },
         { name: 'การทดสอบเชิงรุก', f1: '96.19%', llm: 'N/A', er: '57.1%' },
       ],
-      source: 'LoCoMo Benchmark — เฟรมเวิร์กประเมินหน่วยความจำการสนทนายาว',
+      source: 'LoCoMo Benchmark: เฟรมเวิร์กประเมินหน่วยความจำการสนทนายาว',
     },
     faq: faqCopyByLocale.th,
     apiPage: apiPageByLocale.th,
@@ -4240,13 +4528,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         description:
           'ดูว่า mem9 จัดการข้อมูล การเข้ารหัส การควบคุมสิทธิ์ และขอบเขตการปฏิบัติงานอย่างไร',
       },
-      kicker: 'Security',
-      title: 'Security & Privacy',
+      kicker: 'ความปลอดภัย',
+      title: 'ความปลอดภัยและความเป็นส่วนตัว',
       intro:
         'mem9 ถูกออกแบบมาเพื่อให้ได้ประโยชน์จาก cloud memory แบบถาวร พร้อมขอบเขตการปฏิบัติงานที่ชัดเจนและรากฐานด้านความปลอดภัยที่แข็งแรง',
       bridgeBody:
-        'Memory is often the first state problem in an agent system. When your workflow expands into files, artifacts, and retrieval, drive9 becomes the next layer.',
-      bridgeCtaLabel: 'Explore drive9 \u2192',
+        'หน่วยความจำมักเป็นปัญหา state แรกของระบบเอเจนต์ เมื่อเวิร์กโฟลว์ของคุณขยายไปที่ไฟล์ อาร์ติแฟกต์ และการค้นคืน drive9 จะกลายเป็นเลเยอร์ถัดไป',
+      bridgeCtaLabel: 'สำรวจ drive9 \u2192',
       dataTitle: 'mem9 จัดการข้อมูลอย่างไร',
       dataBody:
         'mem9 จัดเก็บข้อมูลหน่วยความจำเพื่อช่วยให้เอเจนต์รักษาบริบทที่มีประโยชน์ไว้ได้ข้ามเซสชัน อุปกรณ์ และเวิร์กโฟลว์ การไหลของข้อมูลถูกจำกัดให้อยู่ในหน้าที่หลักของผลิตภัณฑ์ คือการจัดเก็บ ค้นคืน และให้บริการหน่วยความจำ พร้อมขอบเขตการจัดการข้อมูลที่ชัดเจนสำหรับการเข้าถึงและการปฏิบัติงาน',
