@@ -309,7 +309,7 @@ const localeNames: Record<SiteLocale, string> = {
 };
 
 const stableOnboardingCommand =
-  'Read https://mem9.ai/openclaw/SKILL.md and follow the instructions to install and configure mem9 for OpenClaw';
+  'Read https://mem9.ai/SKILL.md and follow the instructions to install and configure mem9 for OpenClaw';
 const provisionKeyCode = 'curl -sX POST https://api.mem9.ai/v1alpha1/mem9s';
 const exportApiEnvCode = `export API_KEY="your-api-key"
 export API="https://api.mem9.ai/v1alpha2/mem9s"`;
@@ -363,7 +363,7 @@ const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
           'Keep it private. Anyone who has the key can access that mem9 space.',
         ],
         links: [
-          { label: 'Open SKILL.md', href: 'https://mem9.ai/openclaw/SKILL.md', external: true },
+          { label: 'Open SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
           { label: 'Open API reference', href: '/api' },
         ],
         examples: [
@@ -428,7 +428,7 @@ const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
           '请把它当作密钥保存，拿到它的人都能访问对应的 mem9 space。',
         ],
         links: [
-          { label: '打开 SKILL.md', href: 'https://mem9.ai/openclaw/SKILL.md', external: true },
+          { label: '打开 SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
           { label: '打开 API 文档', href: '/api' },
         ],
         examples: [
@@ -493,7 +493,7 @@ const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
           '請把它當成密鑰保存，拿到它的人都能存取對應的 mem9 space。',
         ],
         links: [
-          { label: '打開 SKILL.md', href: 'https://mem9.ai/openclaw/SKILL.md', external: true },
+          { label: '打開 SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
           { label: '打開 API 文件', href: '/api' },
         ],
         examples: [
@@ -558,7 +558,7 @@ const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
           'この key を持つ人はその mem9 space にアクセスできるので、秘密情報として扱ってください。',
         ],
         links: [
-          { label: 'SKILL.md を開く', href: 'https://mem9.ai/openclaw/SKILL.md', external: true },
+          { label: 'SKILL.md を開く', href: 'https://mem9.ai/SKILL.md', external: true },
           { label: 'API リファレンスを開く', href: '/api' },
         ],
         examples: [
@@ -623,7 +623,7 @@ const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
           '이 key 를 가진 사람은 해당 mem9 space 에 접근할 수 있으므로 비밀 정보처럼 다루세요.',
         ],
         links: [
-          { label: 'SKILL.md 열기', href: 'https://mem9.ai/openclaw/SKILL.md', external: true },
+          { label: 'SKILL.md 열기', href: 'https://mem9.ai/SKILL.md', external: true },
           { label: 'API 레퍼런스 열기', href: '/api' },
         ],
         examples: [
@@ -689,7 +689,7 @@ const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
           'Simpan sebagai rahasia. Siapa pun yang memiliki key ini dapat mengakses mem9 space tersebut.',
         ],
         links: [
-          { label: 'Buka SKILL.md', href: 'https://mem9.ai/openclaw/SKILL.md', external: true },
+          { label: 'Buka SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
           { label: 'Buka referensi API', href: '/api' },
         ],
         examples: [
@@ -754,7 +754,7 @@ const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
           'เก็บเป็นความลับ เพราะใครก็ตามที่มี key นี้สามารถเข้าถึง mem9 space นั้นได้',
         ],
         links: [
-          { label: 'เปิด SKILL.md', href: 'https://mem9.ai/openclaw/SKILL.md', external: true },
+          { label: 'เปิด SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
           { label: 'เปิดเอกสาร API', href: '/api' },
         ],
         examples: [
@@ -1135,7 +1135,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ctaBody:
       'If you are onboarding OpenClaw rather than building a direct integration, start from the public SKILL.md. Use the same API key later in Your Memory.',
     ctaLinks: [
-      { label: 'SKILL.md', href: 'https://mem9.ai/openclaw/SKILL.md', external: true },
+      { label: 'SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
       { label: 'Your Memory', href: 'https://mem9.ai/your-memory', external: true },
       { label: 'GitHub', href: 'https://github.com/mem9-ai/mem9', external: true },
     ],
@@ -1337,7 +1337,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ctaTitle: '如果你更需要引导式接入？',
     ctaBody: '如果你的目标是接入 OpenClaw，而不是自己写一个直接集成，请从公开的 SKILL.md 开始。之后在 Your Memory 中继续使用同一个 API key。',
     ctaLinks: [
-      { label: 'SKILL.md', href: 'https://mem9.ai/openclaw/SKILL.md', external: true },
+      { label: 'SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
       { label: 'Your Memory', href: 'https://mem9.ai/your-memory', external: true },
       { label: 'GitHub', href: 'https://github.com/mem9-ai/mem9', external: true },
     ],
@@ -1539,7 +1539,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ctaTitle: '如果你更需要引導式接入？',
     ctaBody: '如果你的目標是接入 OpenClaw，而不是自己實作直接整合，請先從公開的 SKILL.md 開始。之後在 Your Memory 繼續使用同一個 API key。',
     ctaLinks: [
-      { label: 'SKILL.md', href: 'https://mem9.ai/openclaw/SKILL.md', external: true },
+      { label: 'SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
       { label: 'Your Memory', href: 'https://mem9.ai/your-memory', external: true },
       { label: 'GitHub', href: 'https://github.com/mem9-ai/mem9', external: true },
     ],
@@ -1741,7 +1741,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ctaTitle: 'ガイド付きの導入が必要ですか？',
     ctaBody: '直接 integration を作るのではなく OpenClaw をつなぎたいなら、まず公開 SKILL.md から始めてください。その後、同じ API key を Your Memory でも使えます。',
     ctaLinks: [
-      { label: 'SKILL.md', href: 'https://mem9.ai/openclaw/SKILL.md', external: true },
+      { label: 'SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
       { label: 'Your Memory', href: 'https://mem9.ai/your-memory', external: true },
       { label: 'GitHub', href: 'https://github.com/mem9-ai/mem9', external: true },
     ],
@@ -1943,7 +1943,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ctaTitle: '가이드형 온보딩이 더 필요하신가요?',
     ctaBody: '직접 integration 을 만드는 것이 아니라 OpenClaw 를 연결하려는 목적이라면 공개 SKILL.md 부터 시작하세요. 이후 같은 API key 를 Your Memory 에서도 사용할 수 있습니다.',
     ctaLinks: [
-      { label: 'SKILL.md', href: 'https://mem9.ai/openclaw/SKILL.md', external: true },
+      { label: 'SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
       { label: 'Your Memory', href: 'https://mem9.ai/your-memory', external: true },
       { label: 'GitHub', href: 'https://github.com/mem9-ai/mem9', external: true },
     ],
@@ -2145,7 +2145,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ctaTitle: 'Butuh jalur yang lebih terpandu?',
     ctaBody: 'Jika Anda sedang onboarding OpenClaw dan bukan membangun integrasi langsung, mulai dari SKILL.md publik. Gunakan API key yang sama nanti di Your Memory.',
     ctaLinks: [
-      { label: 'SKILL.md', href: 'https://mem9.ai/openclaw/SKILL.md', external: true },
+      { label: 'SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
       { label: 'Your Memory', href: 'https://mem9.ai/your-memory', external: true },
       { label: 'GitHub', href: 'https://github.com/mem9-ai/mem9', external: true },
     ],
@@ -2347,7 +2347,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     ctaTitle: 'ถ้าคุณต้องการเส้นทางแบบมีตัวช่วยมากกว่า?',
     ctaBody: 'ถ้าคุณกำลัง onboarding OpenClaw มากกว่าการสร้าง integration โดยตรง ให้เริ่มจาก SKILL.md สาธารณะ แล้วใช้ API key เดียวกันต่อใน Your Memory',
     ctaLinks: [
-      { label: 'SKILL.md', href: 'https://mem9.ai/openclaw/SKILL.md', external: true },
+      { label: 'SKILL.md', href: 'https://mem9.ai/SKILL.md', external: true },
       { label: 'Your Memory', href: 'https://mem9.ai/your-memory', external: true },
       { label: 'GitHub', href: 'https://github.com/mem9-ai/mem9', external: true },
     ],
@@ -2388,7 +2388,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
-        'Read https://mem9.ai/openclaw/SKILL.md and follow the instructions to install and configure mem9 for OpenClaw',
+        'Read https://mem9.ai/SKILL.md and follow the instructions to install and configure mem9 for OpenClaw',
       onboardingCommandBeta:
         'Read https://mem9.ai/beta/SKILL.md and follow the instructions to install and configure mem9 for OpenClaw',
       substrateCtaLabel:
@@ -2682,7 +2682,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
-        '阅读 https://mem9.ai/openclaw/SKILL.md ，按照说明为 OpenClaw 安装并配置 mem9',
+        '阅读 https://mem9.ai/SKILL.md ，按照说明为 OpenClaw 安装并配置 mem9',
       onboardingCommandBeta:
         '阅读 https://mem9.ai/beta/SKILL.md ，按照说明为 OpenClaw 安装并配置 mem9',
       substrateCtaLabel:
@@ -2967,7 +2967,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
-        '閱讀 https://mem9.ai/openclaw/SKILL.md，按照說明為 OpenClaw 安裝並配置 mem9',
+        '閱讀 https://mem9.ai/SKILL.md，按照說明為 OpenClaw 安裝並配置 mem9',
       onboardingCommandBeta:
         '閱讀 https://mem9.ai/beta/SKILL.md，按照說明為 OpenClaw 安裝並配置 mem9',
       substrateCtaLabel:
@@ -3252,7 +3252,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
-        'https://mem9.ai/openclaw/SKILL.md を読み、手順に沿って OpenClaw 向けに mem9 をインストールして設定してください',
+        'https://mem9.ai/SKILL.md を読み、手順に沿って OpenClaw 向けに mem9 をインストールして設定してください',
       onboardingCommandBeta:
         'https://mem9.ai/beta/SKILL.md を読み、手順に沿って OpenClaw 向けに mem9 をインストールして設定してください',
       substrateCtaLabel:
@@ -3542,7 +3542,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
-        'https://mem9.ai/openclaw/SKILL.md 를 읽고 안내에 따라 OpenClaw용 mem9를 설치하고 설정하세요',
+        'https://mem9.ai/SKILL.md 를 읽고 안내에 따라 OpenClaw용 mem9를 설치하고 설정하세요',
       onboardingCommandBeta:
         'https://mem9.ai/beta/SKILL.md 를 읽고 안내에 따라 OpenClaw용 mem9를 설치하고 설정하세요',
       substrateCtaLabel:
@@ -3829,7 +3829,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
-        'Baca https://mem9.ai/openclaw/SKILL.md lalu ikuti petunjuk untuk menginstal dan mengonfigurasi mem9 untuk OpenClaw',
+        'Baca https://mem9.ai/SKILL.md lalu ikuti petunjuk untuk menginstal dan mengonfigurasi mem9 untuk OpenClaw',
       onboardingCommandBeta:
         'Baca https://mem9.ai/beta/SKILL.md lalu ikuti petunjuk untuk menginstal dan mengonfigurasi mem9 untuk OpenClaw',
       substrateCtaLabel:
@@ -4119,7 +4119,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       onboardingStableLabel: 'Stable',
       onboardingBetaLabel: 'Beta',
       onboardingCommandStable:
-        'อ่าน https://mem9.ai/openclaw/SKILL.md แล้วทำตามขั้นตอนเพื่อติดตั้งและตั้งค่า mem9 สำหรับ OpenClaw',
+        'อ่าน https://mem9.ai/SKILL.md แล้วทำตามขั้นตอนเพื่อติดตั้งและตั้งค่า mem9 สำหรับ OpenClaw',
       onboardingCommandBeta:
         'อ่าน https://mem9.ai/beta/SKILL.md แล้วทำตามขั้นตอนเพื่อติดตั้งและตั้งค่า mem9 สำหรับ OpenClaw',
       substrateCtaLabel:
