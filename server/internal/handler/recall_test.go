@@ -49,6 +49,41 @@ func TestClassifyRecallQueryShape_Bilingual(t *testing.T) {
 	}
 }
 
+func TestBuildRecallQueryProfilePolicy(t *testing.T) {
+	tests := []struct {
+		name       string
+		query      string
+		wantShape  recallQueryShape
+		wantPolicy recallPolicy
+	}{
+		{name: "plain exact precision", query: "What company does John like?", wantShape: recallQueryShapeExact, wantPolicy: recallPolicyPrecision},
+		{name: "entity precision", query: "who is john", wantShape: recallQueryShapeEntity, wantPolicy: recallPolicyPrecision},
+		{name: "location precision", query: "where is the office", wantShape: recallQueryShapeLocation, wantPolicy: recallPolicyPrecision},
+		{name: "time policy", query: "when did it ship", wantShape: recallQueryShapeTime, wantPolicy: recallPolicyTime},
+		{name: "what year precision", query: "What year did Jolene start practicing yoga?", wantShape: recallQueryShapeExact, wantPolicy: recallPolicyPrecision},
+		{name: "which month precision", query: "Which month did John achieve a career-high score?", wantShape: recallQueryShapeEntity, wantPolicy: recallPolicyPrecision},
+		{name: "repeat count stays enumeration", query: "How many times has Melanie gone to the beach in 2023?", wantShape: recallQueryShapeEnumeration, wantPolicy: recallPolicyEnumeration},
+		{name: "type kind precision", query: "What type of music does John like?", wantShape: recallQueryShapeEnumeration, wantPolicy: recallPolicyPrecision},
+		{name: "ways reasoning", query: "In what ways is Caroline participating in the LGBTQ community?", wantShape: recallQueryShapeEnumeration, wantPolicy: recallPolicyReasoning},
+		{name: "plural enumeration", query: "What activities does Melanie partake in?", wantShape: recallQueryShapeEnumeration, wantPolicy: recallPolicyEnumeration},
+		{name: "how many count precision", query: "how many deployments happened", wantShape: recallQueryShapeCount, wantPolicy: recallPolicyPrecision},
+		{name: "duration precision", query: "How long has Jolene been doing yoga?", wantShape: recallQueryShapeGeneral, wantPolicy: recallPolicyPrecision},
+		{name: "general fallback", query: "tell me about john", wantShape: recallQueryShapeGeneral, wantPolicy: recallPolicyGeneral},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildRecallQueryProfile(tt.query)
+			if got.shape != tt.wantShape {
+				t.Fatalf("shape = %v, want %v", got.shape, tt.wantShape)
+			}
+			if got.policy != tt.wantPolicy {
+				t.Fatalf("policy = %v, want %v", got.policy, tt.wantPolicy)
+			}
+		})
+	}
+}
+
 func TestRecallAnswerUnitCount_CJKAware(t *testing.T) {
 	if got := recallAnswerUnitCount("在上海办公"); got <= 1 {
 		t.Fatalf("expected CJK-aware token count > 1, got %d", got)
@@ -208,7 +243,7 @@ func TestBuildRecallConfidence_TimeFutureIntentPrefersPlannedFutureEvidence(t *t
 }
 
 func TestRecallCandidateOptions_EnumerationExpandsAdjacentTurns(t *testing.T) {
-	opts := recallCandidateOptions(recallQueryShapeEnumeration, true)
+	opts := recallCandidateOptions(recallQueryProfile{shape: recallQueryShapeEnumeration, policy: recallPolicyEnumeration}, true)
 
 	if !opts.EnableAdjacentTurns {
 		t.Fatal("enumeration recall should expand adjacent session turns")
@@ -224,5 +259,47 @@ func TestRecallCandidateOptions_EnumerationExpandsAdjacentTurns(t *testing.T) {
 	}
 	if opts.SecondHopTopN != enumerationSecondHopTopN {
 		t.Fatalf("second hop topN = %d, want %d", opts.SecondHopTopN, enumerationSecondHopTopN)
+	}
+}
+
+func TestRecallCandidateOptions_PolicyGatesAdjacentTurns(t *testing.T) {
+	tests := []struct {
+		name             string
+		profile          recallQueryProfile
+		enableSecondHop  bool
+		wantAdjacent     bool
+		wantSecondHop    bool
+		wantFetch        int
+		wantSecondHopTop int
+		wantAdjacentTopN int
+	}{
+		{name: "precision", profile: recallQueryProfile{shape: recallQueryShapeExact, policy: recallPolicyPrecision}, enableSecondHop: true},
+		{name: "visual precision", profile: recallQueryProfile{shape: recallQueryShapeExact, policy: recallPolicyPrecision, visualQuestion: true}, enableSecondHop: true},
+		{name: "quoted precision", profile: recallQueryProfile{shape: recallQueryShapeExact, policy: recallPolicyPrecision, quotedQuestion: true}, enableSecondHop: true},
+		{name: "time", profile: recallQueryProfile{shape: recallQueryShapeTime, policy: recallPolicyTime}, enableSecondHop: true},
+		{name: "general", profile: recallQueryProfile{shape: recallQueryShapeGeneral, policy: recallPolicyGeneral}, enableSecondHop: true},
+		{name: "reasoning", profile: recallQueryProfile{shape: recallQueryShapeGeneral, policy: recallPolicyReasoning}, enableSecondHop: true, wantSecondHop: true, wantFetch: richTopFetchMultiplier, wantSecondHopTop: richTopSecondHopTopN},
+		{name: "enumeration", profile: recallQueryProfile{shape: recallQueryShapeEnumeration, policy: recallPolicyEnumeration}, enableSecondHop: true, wantAdjacent: true, wantSecondHop: true, wantFetch: enumerationFetchMultiplier, wantSecondHopTop: enumerationSecondHopTopN, wantAdjacentTopN: enumerationAdjacentTurnTopN},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := recallCandidateOptions(tt.profile, tt.enableSecondHop)
+			if opts.EnableAdjacentTurns != tt.wantAdjacent {
+				t.Fatalf("adjacent = %v, want %v", opts.EnableAdjacentTurns, tt.wantAdjacent)
+			}
+			if opts.EnableSecondHop != tt.wantSecondHop {
+				t.Fatalf("second hop = %v, want %v", opts.EnableSecondHop, tt.wantSecondHop)
+			}
+			if opts.FetchMultiplier != tt.wantFetch {
+				t.Fatalf("fetch multiplier = %d, want %d", opts.FetchMultiplier, tt.wantFetch)
+			}
+			if opts.SecondHopTopN != tt.wantSecondHopTop {
+				t.Fatalf("second hop topN = %d, want %d", opts.SecondHopTopN, tt.wantSecondHopTop)
+			}
+			if opts.AdjacentTurnTopN != tt.wantAdjacentTopN {
+				t.Fatalf("adjacent topN = %d, want %d", opts.AdjacentTurnTopN, tt.wantAdjacentTopN)
+			}
+		})
 	}
 }

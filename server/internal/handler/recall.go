@@ -29,7 +29,7 @@ const (
 	enumerationFetchMultiplier   = 4
 	enumerationSecondHopTopN     = 5
 	enumerationPinnedKeepMax     = 1
-	enumerationAdjacentTurnTopN  = 12
+	enumerationAdjacentTurnTopN  = 4
 	richTopFetchMultiplier       = 4
 	richTopSecondHopTopN         = 5
 	sessionAdjacentTurnTopN      = 4
@@ -78,6 +78,7 @@ var (
 	recallEnumerationBothCueRe   = regexp.MustCompile(`\b(?:what|which)\b.*\bboth\b`)
 	recallEnumerationDoneCueRe   = regexp.MustCompile(`\bwhat\s+(?:has|have)\s+.+\s+done\b`)
 	recallEnumerationWaysCueRe   = regexp.MustCompile(`(?i)\b(?:in what ways|what ways)\b`)
+	recallReasoningCueRe         = regexp.MustCompile(`(?i)\b(?:in what ways|why|how|would|likely|if)\b`)
 	recallSpeakerUtteranceRe     = regexp.MustCompile(`(?i)^what did\s+([a-z][a-z'-]*)\s+say\b`)
 	recallSubjectAuxSpeakerRe    = regexp.MustCompile(`(?i)\b(?:did|does|do|was|were|is|are|has|have|had|will|would|can|could|should)\s+([a-z][a-z'-]*)\b`)
 	recallSubjectAuxMultiRe      = regexp.MustCompile(`(?i)\b(?:did|does|do|was|were|is|are|has|have|had|will|would|can|could|should)\s+(?:both\s+)?[a-z][a-z'-]*(?:\s+and\s+[a-z][a-z'-]*)+\b`)
@@ -100,6 +101,7 @@ const (
 
 type recallQueryProfile struct {
 	shape            recallQueryShape
+	policy           recallPolicy
 	lower            string
 	temporalIntent   recallTemporalIntent
 	temporalTokens   []string
@@ -126,6 +128,16 @@ const (
 	recallQueryShapeExact
 )
 
+type recallPolicy int
+
+const (
+	recallPolicyGeneral recallPolicy = iota
+	recallPolicyPrecision
+	recallPolicyTime
+	recallPolicyEnumeration
+	recallPolicyReasoning
+)
+
 type recallSelectionStats struct {
 	mode                   string
 	insightSelected        int
@@ -143,21 +155,24 @@ func (s *Server) defaultConfidenceRecallSearch(
 ) ([]domain.Memory, int, error) {
 	start := time.Now()
 	profile := buildRecallQueryProfile(filter.Query)
-	budget := effectiveRecallBudget(profile.shape, filter.Limit)
+	budget := effectiveRecallBudget(profile, filter.Limit)
 	if budget <= 0 {
 		return []domain.Memory{}, 0, nil
 	}
 
 	pinnedFilter := filter
 	pinnedFilter.MemoryType = string(domain.TypePinned)
-	pinnedFilter.Limit = recallCandidateLimit(profile.shape, service.RecallSourcePinned)
+	pinnedFilter.Limit = recallCandidateLimit(profile, service.RecallSourcePinned)
 
 	insightFilter := filter
 	insightFilter.MemoryType = string(domain.TypeInsight)
-	insightFilter.Limit = recallCandidateLimit(profile.shape, service.RecallSourceInsight)
+	insightFilter.Limit = recallCandidateLimit(profile, service.RecallSourceInsight)
 
 	sessionFilter := filter
-	sessionFilter.Limit = recallCandidateLimit(profile.shape, service.RecallSourceSession)
+	sessionFilter.Limit = recallCandidateLimit(profile, service.RecallSourceSession)
+	pinnedOptions := recallCandidateOptions(profile, false)
+	insightOptions := recallCandidateOptions(profile, true)
+	sessionOptions := recallCandidateOptions(profile, false)
 
 	var (
 		pinnedCandidates  []service.RecallCandidate
@@ -171,7 +186,7 @@ func (s *Server) defaultConfidenceRecallSearch(
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
 		branchStart := time.Now()
-		candidates, err := svc.memory.SearchCandidates(groupCtx, pinnedFilter, service.RecallSourcePinned, recallCandidateOptions(profile.shape, false))
+		candidates, err := svc.memory.SearchCandidates(groupCtx, pinnedFilter, service.RecallSourcePinned, pinnedOptions)
 		pinnedDuration = time.Since(branchStart)
 		if err != nil {
 			return err
@@ -181,7 +196,7 @@ func (s *Server) defaultConfidenceRecallSearch(
 	})
 	group.Go(func() error {
 		branchStart := time.Now()
-		candidates, err := svc.memory.SearchCandidates(groupCtx, insightFilter, service.RecallSourceInsight, recallCandidateOptions(profile.shape, true))
+		candidates, err := svc.memory.SearchCandidates(groupCtx, insightFilter, service.RecallSourceInsight, insightOptions)
 		insightDuration = time.Since(branchStart)
 		if err != nil {
 			return err
@@ -191,7 +206,7 @@ func (s *Server) defaultConfidenceRecallSearch(
 	})
 	group.Go(func() error {
 		branchStart := time.Now()
-		candidates, err := svc.session.SearchCandidates(groupCtx, sessionFilter, service.RecallSourceSession, recallCandidateOptions(profile.shape, false))
+		candidates, err := svc.session.SearchCandidates(groupCtx, sessionFilter, service.RecallSourceSession, sessionOptions)
 		sessionDuration = time.Since(branchStart)
 		if err != nil {
 			return err
@@ -208,7 +223,7 @@ func (s *Server) defaultConfidenceRecallSearch(
 	sessionCandidates = applyRecallConfidence(profile, sessionCandidates)
 
 	selectionStart := time.Now()
-	pinned, seen := selectPinnedRecallCandidates(profile.shape, budget, pinnedCandidates)
+	pinned, seen := selectPinnedRecallCandidates(profile, budget, pinnedCandidates)
 	mixed, cutoffReason, stats := selectMixedRecallCandidates(profile, budget-len(pinned), append(insightCandidates, sessionCandidates...), seen)
 	selectionDuration := time.Since(selectionStart)
 
@@ -217,6 +232,7 @@ func (s *Server) defaultConfidenceRecallSearch(
 		"cluster_id", auth.ClusterID,
 		"query_len", len(filter.Query),
 		"shape", recallQueryShapeLabel(profile.shape),
+		"policy", recallPolicyLabel(profile.policy),
 		"selection_mode", stats.mode,
 		"requested_limit", filter.Limit,
 		"effective_budget", budget,
@@ -231,6 +247,12 @@ func (s *Server) defaultConfidenceRecallSearch(
 		"backfill_selected", stats.backfillCount,
 		"returned", len(memories),
 		"cutoff_reason", cutoffReason,
+		"session_adjacent_enabled", sessionOptions.EnableAdjacentTurns,
+		"session_adjacent_top_n", sessionOptions.AdjacentTurnTopN,
+		"session_fetch_multiplier", sessionOptions.FetchMultiplier,
+		"insight_second_hop_enabled", insightOptions.EnableSecondHop,
+		"insight_second_hop_top_n", insightOptions.SecondHopTopN,
+		"insight_fetch_multiplier", insightOptions.FetchMultiplier,
 		"pinned_ms", pinnedDuration.Milliseconds(),
 		"insight_ms", insightDuration.Milliseconds(),
 		"session_ms", sessionDuration.Milliseconds(),
@@ -260,18 +282,22 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 
 	profile := buildRecallQueryProfile(filter.Query)
 	effectiveFilter := filter
-	effectiveFilter.Limit = effectiveRecallBudget(profile.shape, filter.Limit)
+	effectiveFilter.Limit = effectiveRecallBudget(profile, filter.Limit)
+	candidateOptions := recallCandidateOptions(profile, filter.MemoryType == string(domain.TypeInsight))
 
 	candidateStart := time.Now()
 	switch filter.MemoryType {
 	case string(domain.TypeSession):
-		candidates, err = svc.session.SearchCandidates(ctx, effectiveFilter, service.RecallSourceSession, recallCandidateOptions(profile.shape, false))
+		candidateOptions = recallCandidateOptions(profile, false)
+		candidates, err = svc.session.SearchCandidates(ctx, effectiveFilter, service.RecallSourceSession, candidateOptions)
 	case string(domain.TypePinned):
-		candidates, err = svc.memory.SearchCandidates(ctx, effectiveFilter, service.RecallSourcePinned, recallCandidateOptions(profile.shape, false))
+		candidateOptions = recallCandidateOptions(profile, false)
+		candidates, err = svc.memory.SearchCandidates(ctx, effectiveFilter, service.RecallSourcePinned, candidateOptions)
 		minConfidence = defaultPinnedMinConfidence
 		applyGapCutoff = false
 	case string(domain.TypeInsight):
-		candidates, err = svc.memory.SearchCandidates(ctx, effectiveFilter, service.RecallSourceInsight, recallCandidateOptions(profile.shape, true))
+		candidateOptions = recallCandidateOptions(profile, true)
+		candidates, err = svc.memory.SearchCandidates(ctx, effectiveFilter, service.RecallSourceInsight, candidateOptions)
 	default:
 		return []domain.Memory{}, 0, nil
 	}
@@ -287,10 +313,10 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 		stats        recallSelectionStats
 	)
 	selectionStart := time.Now()
-	if profile.shape == recallQueryShapeEnumeration {
+	if profile.policy == recallPolicyEnumeration {
 		memories, cutoffReason, stats = selectEnumerationRecallCandidates(profile, effectiveFilter.Limit, candidates, nil)
 	} else {
-		memories, cutoffReason = selectTopRecallCandidates(profile.shape, effectiveFilter.Limit, minConfidence, applyGapCutoff, candidates, nil)
+		memories, cutoffReason = selectTopRecallCandidates(profile, effectiveFilter.Limit, minConfidence, applyGapCutoff, candidates, nil)
 		stats.mode = "top"
 	}
 	selectionDuration := time.Since(selectionStart)
@@ -303,6 +329,7 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 		"cluster_id", auth.ClusterID,
 		"query_len", len(filter.Query),
 		"shape", recallQueryShapeLabel(profile.shape),
+		"policy", recallPolicyLabel(profile.policy),
 		"selection_mode", stats.mode,
 		"memory_type", filter.MemoryType,
 		"requested_limit", filter.Limit,
@@ -316,6 +343,11 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 		"backfill_selected", stats.backfillCount,
 		"returned", len(memories),
 		"cutoff_reason", cutoffReason,
+		"adjacent_enabled", candidateOptions.EnableAdjacentTurns,
+		"adjacent_top_n", candidateOptions.AdjacentTurnTopN,
+		"fetch_multiplier", candidateOptions.FetchMultiplier,
+		"second_hop_enabled", candidateOptions.EnableSecondHop,
+		"second_hop_top_n", candidateOptions.SecondHopTopN,
 		"candidate_ms", candidateDuration.Milliseconds(),
 		"selection_ms", selectionDuration.Milliseconds(),
 		"total_ms", time.Since(start).Milliseconds(),
@@ -350,13 +382,13 @@ func buildRecallConfidence(profile recallQueryProfile, candidate service.RecallC
 		agreementBonus +
 		recencyBonus(candidate.Memory.UpdatedAt) +
 		answerEvidenceBonus(profile, candidate.Memory) +
-		sourcePrior(profile.shape, candidate.SourcePool)
+		sourcePrior(profile, candidate.SourcePool)
 
 	return int(clampFloat64(confidenceRaw, 0, 1)*100 + 0.5)
 }
 
 func selectPinnedRecallCandidates(
-	shape recallQueryShape,
+	profile recallQueryProfile,
 	budget int,
 	candidates []service.RecallCandidate,
 ) ([]domain.Memory, map[string]struct{}) {
@@ -364,7 +396,7 @@ func selectPinnedRecallCandidates(
 		return []domain.Memory{}, map[string]struct{}{}
 	}
 
-	selected, _ := selectTopRecallCandidates(shape, minInt(pinnedKeepMax(shape), budget), defaultPinnedMinConfidence, false, candidates, nil)
+	selected, _ := selectTopRecallCandidates(profile, minInt(pinnedKeepMax(profile), budget), defaultPinnedMinConfidence, false, candidates, nil)
 	seen := make(map[string]struct{}, len(selected))
 	for _, mem := range selected {
 		seen[recallMemoryKey(mem)] = struct{}{}
@@ -378,28 +410,28 @@ func selectMixedRecallCandidates(
 	candidates []service.RecallCandidate,
 	seen map[string]struct{},
 ) ([]domain.Memory, string, recallSelectionStats) {
-	if profile.shape == recallQueryShapeEnumeration {
+	if profile.policy == recallPolicyEnumeration {
 		return selectEnumerationRecallCandidates(profile, budget, candidates, seen)
 	}
-	if shouldUseBalancedTopSelection(profile.shape) {
+	if shouldUseBalancedTopSelection(profile) {
 		return selectBalancedRecallCandidates(profile, budget, candidates, seen)
 	}
-	memories, cutoffReason := selectTopRecallCandidates(profile.shape, budget, defaultMixedMinConfidence, true, candidates, seen)
+	memories, cutoffReason := selectTopRecallCandidates(profile, budget, defaultMixedMinConfidence, true, candidates, seen)
 	return memories, cutoffReason, recallSelectionStats{mode: "top"}
 }
 
-func effectiveRecallBudget(shape recallQueryShape, requested int) int {
+func effectiveRecallBudget(profile recallQueryProfile, requested int) int {
 	if requested <= 0 {
 		return 0
 	}
-	if shape != recallQueryShapeEnumeration {
+	if profile.policy != recallPolicyEnumeration {
 		return requested
 	}
 	return minInt(requested*enumerationBudgetMultiplier, enumerationMaxBudget)
 }
 
-func recallCandidateLimit(shape recallQueryShape, pool service.RecallSourcePool) int {
-	if shape == recallQueryShapeEnumeration {
+func recallCandidateLimit(profile recallQueryProfile, pool service.RecallSourcePool) int {
+	if profile.policy == recallPolicyEnumeration {
 		switch pool {
 		case service.RecallSourcePinned:
 			return defaultPinnedCandidateLimit
@@ -420,48 +452,38 @@ func recallCandidateLimit(shape recallQueryShape, pool service.RecallSourcePool)
 	}
 }
 
-func pinnedKeepMax(shape recallQueryShape) int {
-	if shape == recallQueryShapeEnumeration {
+func pinnedKeepMax(profile recallQueryProfile) int {
+	if profile.policy == recallPolicyEnumeration {
 		return enumerationPinnedKeepMax
 	}
 	return defaultPinnedKeepMax
 }
 
-func recallCandidateOptions(shape recallQueryShape, enableSecondHop bool) service.RecallCandidateOptions {
-	opts := service.RecallCandidateOptions{
-		EnableSecondHop: enableSecondHop,
-	}
-	if shouldExpandAdjacentSessionTurns(shape) {
-		opts.EnableAdjacentTurns = true
-		opts.AdjacentTurnRadius = sessionAdjacentTurnRadius
-		opts.AdjacentTurnTopN = sessionAdjacentTurnTopN
-	}
-	if shape == recallQueryShapeEnumeration {
+func recallCandidateOptions(profile recallQueryProfile, enableSecondHop bool) service.RecallCandidateOptions {
+	opts := service.RecallCandidateOptions{}
+	switch profile.policy {
+	case recallPolicyEnumeration:
 		opts.FetchMultiplier = enumerationFetchMultiplier
 		opts.EnableAdjacentTurns = true
 		opts.AdjacentTurnRadius = sessionAdjacentTurnRadius
 		opts.AdjacentTurnTopN = enumerationAdjacentTurnTopN
 		if enableSecondHop {
+			opts.EnableSecondHop = true
 			opts.SecondHopTopN = enumerationSecondHopTopN
 		}
-		return opts
-	}
-	if shape == recallQueryShapeExact || shape == recallQueryShapeGeneral {
+	case recallPolicyReasoning:
 		opts.FetchMultiplier = richTopFetchMultiplier
 		if enableSecondHop {
+			opts.EnableSecondHop = true
 			opts.SecondHopTopN = richTopSecondHopTopN
 		}
 	}
 	return opts
 }
 
-func shouldExpandAdjacentSessionTurns(shape recallQueryShape) bool {
-	return shape != recallQueryShapeEnumeration
-}
-
-func shouldUseBalancedTopSelection(shape recallQueryShape) bool {
-	switch shape {
-	case recallQueryShapeExact, recallQueryShapeGeneral:
+func shouldUseBalancedTopSelection(profile recallQueryProfile) bool {
+	switch profile.policy {
+	case recallPolicyPrecision, recallPolicyReasoning:
 		return true
 	default:
 		return false
@@ -479,7 +501,7 @@ func selectBalancedRecallCandidates(
 		return []domain.Memory{}, "budget_exhausted", stats
 	}
 
-	deduped := dedupeRecallCandidates(profile.shape, candidates)
+	deduped := dedupeRecallCandidates(profile, candidates)
 	if len(deduped) == 0 {
 		return []domain.Memory{}, "no_candidates", stats
 	}
@@ -562,7 +584,7 @@ func selectEnumerationRecallCandidates(
 		return []domain.Memory{}, "budget_exhausted", stats
 	}
 
-	deduped := dedupeRecallCandidates(profile.shape, candidates)
+	deduped := dedupeRecallCandidates(profile, candidates)
 	if len(deduped) == 0 {
 		return []domain.Memory{}, "no_candidates", stats
 	}
@@ -745,7 +767,7 @@ func rememberRecallCoverage(tokens []string, coverageSeen map[string]struct{}) {
 }
 
 func selectTopRecallCandidates(
-	shape recallQueryShape,
+	profile recallQueryProfile,
 	budget int,
 	minConfidence int,
 	applyGapCutoff bool,
@@ -756,7 +778,7 @@ func selectTopRecallCandidates(
 		return []domain.Memory{}, "budget_exhausted"
 	}
 
-	deduped := dedupeRecallCandidates(shape, candidates)
+	deduped := dedupeRecallCandidates(profile, candidates)
 	if len(deduped) == 0 {
 		return []domain.Memory{}, "no_candidates"
 	}
@@ -799,11 +821,11 @@ func selectTopRecallCandidates(
 	return selected, cutoffReason
 }
 
-func dedupeRecallCandidates(shape recallQueryShape, candidates []service.RecallCandidate) []service.RecallCandidate {
+func dedupeRecallCandidates(profile recallQueryProfile, candidates []service.RecallCandidate) []service.RecallCandidate {
 	bestByKey := make(map[string]service.RecallCandidate, len(candidates))
 	for _, candidate := range candidates {
 		key := recallMemoryKey(candidate.Memory)
-		if existing, ok := bestByKey[key]; !ok || recallCandidateLess(shape, existing, candidate) {
+		if existing, ok := bestByKey[key]; !ok || recallCandidateLess(profile, existing, candidate) {
 			bestByKey[key] = candidate
 		}
 	}
@@ -813,20 +835,20 @@ func dedupeRecallCandidates(shape recallQueryShape, candidates []service.RecallC
 		out = append(out, candidate)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		return recallCandidateLess(shape, out[j], out[i])
+		return recallCandidateLess(profile, out[j], out[i])
 	})
 	return out
 }
 
-func recallCandidateLess(shape recallQueryShape, left, right service.RecallCandidate) bool {
+func recallCandidateLess(profile recallQueryProfile, left, right service.RecallCandidate) bool {
 	leftConfidence := recallConfidenceValue(left.Memory)
 	rightConfidence := recallConfidenceValue(right.Memory)
 	if leftConfidence != rightConfidence {
 		return leftConfidence < rightConfidence
 	}
 
-	leftPref := sourcePreference(shape, left.SourcePool)
-	rightPref := sourcePreference(shape, right.SourcePool)
+	leftPref := sourcePreference(profile, left.SourcePool)
+	rightPref := sourcePreference(profile, right.SourcePool)
 	if leftPref != rightPref {
 		return leftPref < rightPref
 	}
@@ -837,8 +859,8 @@ func recallCandidateLess(shape recallQueryShape, left, right service.RecallCandi
 	return left.Memory.ID > right.Memory.ID
 }
 
-func sourcePreference(shape recallQueryShape, pool service.RecallSourcePool) int {
-	if isExactRecallShape(shape) {
+func sourcePreference(profile recallQueryProfile, pool service.RecallSourcePool) int {
+	if profile.policy == recallPolicyPrecision || profile.policy == recallPolicyTime {
 		switch pool {
 		case service.RecallSourceSession:
 			return 2
@@ -848,17 +870,6 @@ func sourcePreference(shape recallQueryShape, pool service.RecallSourcePool) int
 			return 0
 		}
 	}
-	if shape == recallQueryShapeTime {
-		switch pool {
-		case service.RecallSourceSession:
-			return 2
-		case service.RecallSourceInsight:
-			return 1
-		default:
-			return 0
-		}
-	}
-
 	switch pool {
 	case service.RecallSourceInsight:
 		return 2
@@ -869,17 +880,20 @@ func sourcePreference(shape recallQueryShape, pool service.RecallSourcePool) int
 	}
 }
 
-func sourcePrior(shape recallQueryShape, pool service.RecallSourcePool) float64 {
+func sourcePrior(profile recallQueryProfile, pool service.RecallSourcePool) float64 {
 	switch pool {
 	case service.RecallSourceSession:
-		if isExactRecallShape(shape) {
+		if profile.repeatCountQuery {
+			return 0.10
+		}
+		if profile.policy == recallPolicyPrecision {
 			return 0.15
 		}
-		if shape == recallQueryShapeTime {
+		if profile.policy == recallPolicyTime {
 			return 0.08
 		}
 	case service.RecallSourceInsight:
-		if shape == recallQueryShapeGeneral {
+		if profile.policy == recallPolicyGeneral || profile.policy == recallPolicyReasoning {
 			return 0.10
 		}
 	}
@@ -888,7 +902,7 @@ func sourcePrior(shape recallQueryShape, pool service.RecallSourcePool) float64 
 
 func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float64 {
 	content, temporalDisplay, temporalKind := recallContentForScoring(memory)
-	shape := profile.shape
+	shape := recallEvidenceShape(profile)
 	lower := strings.ToLower(content)
 	spokenBody, hasCaption := recallSpokenBodyForScoring(content)
 	questionLike := strings.ContainsAny(spokenBody, "?？")
@@ -1338,16 +1352,50 @@ func buildRecallQueryProfile(query string) recallQueryProfile {
 		visualQuestion:   recallVisualQuestionRe.MatchString(query),
 		quotedQuestion:   recallQuotedTextArtifactRe.MatchString(query) && recallTextActionRe.MatchString(query),
 	}
+	profile.policy = classifyRecallPolicy(profile)
 	profile.focusTokens = buildRecallFocusTokens(profile)
-	if profile.shape == recallQueryShapeTime {
+	if profile.policy == recallPolicyTime {
 		profile.temporalIntent = classifyRecallTemporalIntent(lower)
 		profile.temporalTokens = extractRecallTemporalTokens(lower)
 	}
 	return profile
 }
 
+func classifyRecallPolicy(profile recallQueryProfile) recallPolicy {
+	switch {
+	case profile.repeatCountQuery:
+		return recallPolicyEnumeration
+	case recallEnumerationTypeCueRe.MatchString(profile.lower), strings.Contains(profile.lower, "什么类型"), strings.Contains(profile.lower, "什么种类"):
+		return recallPolicyPrecision
+	case profile.shape == recallQueryShapeTime:
+		return recallPolicyTime
+	case profile.shape == recallQueryShapeCount || profile.durationQuery || profile.frequencyQuery:
+		return recallPolicyPrecision
+	case recallReasoningCueRe.MatchString(profile.lower):
+		return recallPolicyReasoning
+	case profile.shape == recallQueryShapeEnumeration:
+		return recallPolicyEnumeration
+	case isExactRecallShape(profile.shape):
+		return recallPolicyPrecision
+	default:
+		return recallPolicyGeneral
+	}
+}
+
+func recallEvidenceShape(profile recallQueryProfile) recallQueryShape {
+	switch profile.policy {
+	case recallPolicyPrecision:
+		if profile.shape == recallQueryShapeEnumeration {
+			return recallQueryShapeExact
+		}
+	case recallPolicyTime:
+		return recallQueryShapeTime
+	}
+	return profile.shape
+}
+
 func buildRecallFocusTokens(profile recallQueryProfile) []string {
-	if profile.shape != recallQueryShapeEnumeration {
+	if profile.policy != recallPolicyEnumeration {
 		return nil
 	}
 	tokens := make(map[string]struct{})
@@ -1636,6 +1684,21 @@ func recallQueryShapeLabel(shape recallQueryShape) string {
 		return "enumeration"
 	case recallQueryShapeExact:
 		return "exact"
+	default:
+		return "general"
+	}
+}
+
+func recallPolicyLabel(policy recallPolicy) string {
+	switch policy {
+	case recallPolicyPrecision:
+		return "precision"
+	case recallPolicyTime:
+		return "time"
+	case recallPolicyEnumeration:
+		return "enumeration"
+	case recallPolicyReasoning:
+		return "reasoning"
 	default:
 		return "general"
 	}

@@ -136,14 +136,21 @@ func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFi
 	vecResults, err := s.sessions.AutoVectorSearch(ctx, f.Query, f, fetchLimit)
 	skipped := errors.Is(err, domain.ErrAutoVectorSearchSkipped)
 	observeRecallAutoEmbeddingRequest(s.autoModel, err, skipped)
+	vecErr := err
 	if err != nil && !skipped {
-		return nil, fmt.Errorf("session auto vector search: %w", err)
+		slog.WarnContext(ctx, "session auto hybrid search continuing without vector leg", "query_len", len(f.Query), "err", err)
 	}
 	vecResults = applyMinScore(vecResults, f.MinScore)
 
 	kwResults, err := s.ftsOrKeyword(ctx, f, fetchLimit)
 	if err != nil {
-		return nil, err
+		if vecErr != nil && !skipped {
+			return nil, fmt.Errorf("session auto vector search: %w; %w", vecErr, err)
+		}
+		if skipped {
+			return nil, err
+		}
+		slog.WarnContext(ctx, "session auto hybrid search continuing without keyword leg", "query_len", len(f.Query), "err", err)
 	}
 
 	slog.Info("session auto hybrid search", "query_len", len(f.Query), "vec", len(vecResults), "kw", len(kwResults))
@@ -168,8 +175,9 @@ func (s *SessionService) autoHybridCandidates(
 	skipped := errors.Is(err, domain.ErrAutoVectorSearchSkipped)
 	observeRecallAutoEmbeddingRequest(s.autoModel, err, skipped)
 	vectorDuration := time.Since(vectorStart)
+	vecErr := err
 	if err != nil && !skipped {
-		return nil, fmt.Errorf("session auto vector search: %w", err)
+		slog.WarnContext(ctx, "session recall candidate search continuing without vector leg", "query_len", len(f.Query), "err", err)
 	}
 	vecResults = applyMinScore(vecResults, f.MinScore)
 
@@ -177,7 +185,13 @@ func (s *SessionService) autoHybridCandidates(
 	kwResults, err := s.ftsOrKeyword(ctx, f, fetchLimit)
 	keywordDuration := time.Since(keywordStart)
 	if err != nil {
-		return nil, err
+		if vecErr != nil && !skipped {
+			return nil, fmt.Errorf("session auto vector search: %w; %w", vecErr, err)
+		}
+		if skipped {
+			return nil, err
+		}
+		slog.WarnContext(ctx, "session recall candidate search continuing without keyword leg", "query_len", len(f.Query), "err", err)
 	}
 
 	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, kwResults, vecResults, opts)

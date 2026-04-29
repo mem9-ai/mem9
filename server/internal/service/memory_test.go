@@ -389,6 +389,57 @@ func TestSearchFTSOnlyWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestSearchAutoHybridFallsBackToFTSWhenAutoVectorFails(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		ftsAvail:  true,
+		vectorErr: errors.New("TiDB Cloud Inference: status code 503"),
+		ftsResults: []domain.Memory{
+			{ID: "fts-1", Content: "result from FTS", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
+		Query: "test query",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Search() should degrade to FTS when auto vector fails, got error: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected total=1, got %d", total)
+	}
+	if len(results) != 1 || results[0].ID != "fts-1" {
+		t.Fatalf("expected fts-1 from FTS fallback, got %v", results)
+	}
+}
+
+func TestSearchCandidatesAutoHybridFallsBackToFTSWhenAutoVectorFails(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		ftsAvail:  true,
+		vectorErr: errors.New("TiDB Cloud Inference: status code 503"),
+		ftsResults: []domain.Memory{
+			{ID: "fts-1", Content: "candidate from FTS", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{
+		Query: "test query",
+		Limit: 10,
+	}, RecallSourceInsight, RecallCandidateOptions{})
+	if err != nil {
+		t.Fatalf("SearchCandidates() should degrade to FTS when auto vector fails, got error: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Memory.ID != "fts-1" {
+		t.Fatalf("expected fts-1 candidate from FTS fallback, got %v", candidates)
+	}
+}
+
 // TestSearchEmptyQueryReturnsList verifies that Search() with empty query
 // delegates to List() instead of any search path.
 func TestSearchEmptyQueryReturnsList(t *testing.T) {

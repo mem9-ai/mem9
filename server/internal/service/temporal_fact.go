@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	temporalKindExplicitAbsolute    = "explicit_absolute"
-	temporalKindLocalAnchorRelative = "local_anchor_relative"
+	temporalKindExplicitAbsolute     = "explicit_absolute"
+	temporalKindLocalAnchorRelative  = "local_anchor_relative"
 	temporalKindHeaderAnchorRelative = "header_anchor_relative"
-	temporalKindDeicticRelative     = "deictic_relative"
+	temporalKindDeicticRelative      = "deictic_relative"
 )
 
 const (
@@ -70,7 +70,7 @@ var (
 	temporalYearOnlyRe         = regexp.MustCompile(`\b(?:19|20)\d{2}\b`)
 	temporalAnchoredPeriodRe   = regexp.MustCompile(`(?i)\b(?:the\s+)?(?:week|weekend|month|year|summer|winter|spring|fall|autumn)\s+(?:before|after)\s+(?:\d{1,2}\s+[A-Za-z]+,\s+\d{4}|\d{1,2}\s+[A-Za-z]+\s+\d{4}|[A-Za-z]+\s+\d{4})\b`)
 
-	temporalRelativeCueRe = regexp.MustCompile(`(?i)\b(?:yesterday|today|tomorrow|last\s+(?:night|week|weekend|month|year|summer|winter|spring|fall|autumn|friday|saturday|sunday|monday|tuesday|wednesday|thursday)|next\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn|friday|saturday|sunday|monday|tuesday|wednesday|thursday)|this\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn)|the\s+(?:past\s+)?(?:week|weekend))\b`)
+	temporalRelativeCueRe = regexp.MustCompile(`(?i)\b(?:yesterday|today|tomorrow|last\s+(?:night|week|weekend|month|year|summer|winter|spring|fall|autumn|mon(?:day)?|tue(?:sday|s)?|wed(?:nesday)?|thu(?:rsday|rs)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)|next\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn|mon(?:day)?|tue(?:sday|s)?|wed(?:nesday)?|thu(?:rsday|rs)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)|this\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn)|the\s+(?:past\s+)?(?:week|weekend))\b`)
 	temporalCNRelativeRe  = regexp.MustCompile(`上周[一二三四五六日天]|下周[一二三四五六日天]|前天|昨天|今天|明天|后天|上周|本周|这周|下周|上个月|这个月|本月|下个月|去年|今年|明年`)
 	temporalWordTokenRe   = regexp.MustCompile(`[A-Za-z]+(?:'[A-Za-z]+)?|\d+`)
 
@@ -170,7 +170,6 @@ func TemporalRecallProjection(content string, metadata json.RawMessage) string {
 	if cleaned == "" {
 		cleaned = strings.TrimSpace(content)
 	}
-
 	if meta, ok := ParseTemporalMetadata(metadata); ok && shouldProjectTemporalDisplay(cleaned, meta.Display) {
 		return cleaned + " [time: " + meta.Display + "]"
 	}
@@ -712,9 +711,9 @@ func buildRangeTemporalMetadata(kind, anchorSource, granularity string, start, e
 	start = startOfDay(start)
 	end = startOfDay(end)
 	meta := &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  granularity,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   granularity,
 		ResolvedStart: formatISODate(start),
 		ResolvedEnd:   formatISODate(end),
 	}
@@ -729,33 +728,33 @@ func buildRangeTemporalMetadata(kind, anchorSource, granularity string, start, e
 func buildMonthTemporalMetadata(kind, anchorSource string, month time.Time) *TemporalMetadata {
 	month = startOfMonth(month)
 	return &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  temporalGranularityMonth,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   temporalGranularityMonth,
 		ResolvedStart: month.Format("2006-01"),
-		Display:      month.Format("2006-01"),
+		Display:       month.Format("2006-01"),
 	}
 }
 
 func buildYearTemporalMetadata(kind, anchorSource string, year int) *TemporalMetadata {
 	display := strconv.Itoa(year)
 	return &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  temporalGranularityYear,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   temporalGranularityYear,
 		ResolvedStart: display,
-		Display:      display,
+		Display:       display,
 	}
 }
 
 func buildSeasonTemporalMetadata(kind, anchorSource, season string, year int) *TemporalMetadata {
 	display := season + " " + strconv.Itoa(year)
 	return &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  temporalGranularitySeason,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   temporalGranularitySeason,
 		ResolvedStart: display,
-		Display:      display,
+		Display:       display,
 	}
 }
 
@@ -964,25 +963,25 @@ func resolveRelativeTemporalText(text string, anchor time.Time) (string, bool) {
 
 func temporalWeekdayPatterns() map[time.Weekday]*regexp.Regexp {
 	return map[time.Weekday]*regexp.Regexp{
-		time.Monday:    regexp.MustCompile(`(?i)\blast monday\b`),
-		time.Tuesday:   regexp.MustCompile(`(?i)\blast tuesday\b`),
-		time.Wednesday: regexp.MustCompile(`(?i)\blast wednesday\b`),
-		time.Thursday:  regexp.MustCompile(`(?i)\blast thursday\b`),
-		time.Friday:    regexp.MustCompile(`(?i)\blast friday\b`),
-		time.Saturday:  regexp.MustCompile(`(?i)\blast saturday\b`),
-		time.Sunday:    regexp.MustCompile(`(?i)\blast sunday\b`),
+		time.Monday:    regexp.MustCompile(`(?i)\blast mon(?:day)?\b`),
+		time.Tuesday:   regexp.MustCompile(`(?i)\blast tue(?:sday|s)?\b`),
+		time.Wednesday: regexp.MustCompile(`(?i)\blast wed(?:nesday)?\b`),
+		time.Thursday:  regexp.MustCompile(`(?i)\blast thu(?:rsday|rs)?\b`),
+		time.Friday:    regexp.MustCompile(`(?i)\blast fri(?:day)?\b`),
+		time.Saturday:  regexp.MustCompile(`(?i)\blast sat(?:urday)?\b`),
+		time.Sunday:    regexp.MustCompile(`(?i)\blast sun(?:day)?\b`),
 	}
 }
 
 func temporalNextWeekdayPatterns() map[time.Weekday]*regexp.Regexp {
 	return map[time.Weekday]*regexp.Regexp{
-		time.Monday:    regexp.MustCompile(`(?i)\bnext monday\b`),
-		time.Tuesday:   regexp.MustCompile(`(?i)\bnext tuesday\b`),
-		time.Wednesday: regexp.MustCompile(`(?i)\bnext wednesday\b`),
-		time.Thursday:  regexp.MustCompile(`(?i)\bnext thursday\b`),
-		time.Friday:    regexp.MustCompile(`(?i)\bnext friday\b`),
-		time.Saturday:  regexp.MustCompile(`(?i)\bnext saturday\b`),
-		time.Sunday:    regexp.MustCompile(`(?i)\bnext sunday\b`),
+		time.Monday:    regexp.MustCompile(`(?i)\bnext mon(?:day)?\b`),
+		time.Tuesday:   regexp.MustCompile(`(?i)\bnext tue(?:sday|s)?\b`),
+		time.Wednesday: regexp.MustCompile(`(?i)\bnext wed(?:nesday)?\b`),
+		time.Thursday:  regexp.MustCompile(`(?i)\bnext thu(?:rsday|rs)?\b`),
+		time.Friday:    regexp.MustCompile(`(?i)\bnext fri(?:day)?\b`),
+		time.Saturday:  regexp.MustCompile(`(?i)\bnext sat(?:urday)?\b`),
+		time.Sunday:    regexp.MustCompile(`(?i)\bnext sun(?:day)?\b`),
 	}
 }
 

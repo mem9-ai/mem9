@@ -1344,7 +1344,7 @@ func TestListMemories_DefaultRecall_DemotesNonSubjectPromptForSymbolQuestion(t *
 	}
 }
 
-func TestListMemories_DefaultRecall_ExpandsAdjacentSessionAnswerTurn(t *testing.T) {
+func TestListMemories_DefaultRecall_ExactDoesNotExpandAdjacentSessionAnswerTurn(t *testing.T) {
 	now := time.Now()
 	memRepo := &testMemoryRepo{
 		keywordSearchHook: func(_ context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
@@ -1398,14 +1398,13 @@ func TestListMemories_DefaultRecall_ExpandsAdjacentSessionAnswerTurn(t *testing.
 	if len(resp.Memories) == 0 {
 		t.Fatal("expected at least one memory")
 	}
-	if resp.Memories[0].ID != "s-answer" {
-		t.Fatalf("expected adjacent session answer first, got %q", resp.Memories[0].ID)
+	for _, mem := range resp.Memories {
+		if mem.ID == "s-answer" {
+			t.Fatalf("exact precision recall should not use adjacent answer turn, got %+v", resp.Memories)
+		}
 	}
-	if resp.Memories[0].Confidence == nil || *resp.Memories[0].Confidence < defaultMixedMinConfidence {
-		t.Fatalf("expected adjacent answer confidence >= %d, got %+v", defaultMixedMinConfidence, resp.Memories[0].Confidence)
-	}
-	if len(sessRepo.lastSessionIDs) != 1 || sessRepo.lastSessionIDs[0] != "sess-1" {
-		t.Fatalf("expected adjacent expansion to inspect sess-1, got %+v", sessRepo.lastSessionIDs)
+	if len(sessRepo.lastSessionIDs) != 0 {
+		t.Fatalf("exact precision recall should not inspect adjacent sessions, got %+v", sessRepo.lastSessionIDs)
 	}
 }
 

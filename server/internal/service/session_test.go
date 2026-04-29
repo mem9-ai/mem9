@@ -284,6 +284,48 @@ func TestSessionService_Search_defaultLimit(t *testing.T) {
 	}
 }
 
+func TestSessionService_AutoHybridFallsBackToFTSWhenAutoVectorFails(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubSessionRepo{
+		autoVecErr: errors.New("TiDB Cloud Inference: status code 503"),
+		ftsAvail:   true,
+		ftsResults: []domain.Memory{
+			{ID: "fts-1", Content: "session result from FTS", MemoryType: domain.TypeSession, State: domain.StateActive},
+		},
+	}
+	svc := NewSessionService(repo, nil, "auto-model")
+
+	results, err := svc.Search(context.Background(), domain.MemoryFilter{Query: "test query", Limit: 10})
+	if err != nil {
+		t.Fatalf("Search() should degrade to FTS when auto vector fails, got error: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "fts-1" {
+		t.Fatalf("expected fts-1 from FTS fallback, got %v", results)
+	}
+}
+
+func TestSessionService_SearchCandidatesAutoHybridFallsBackToFTSWhenAutoVectorFails(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubSessionRepo{
+		autoVecErr: errors.New("TiDB Cloud Inference: status code 503"),
+		ftsAvail:   true,
+		ftsResults: []domain.Memory{
+			{ID: "fts-1", Content: "session candidate from FTS", MemoryType: domain.TypeSession, State: domain.StateActive},
+		},
+	}
+	svc := NewSessionService(repo, nil, "auto-model")
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{Query: "test query", Limit: 10}, RecallSourceSession, RecallCandidateOptions{})
+	if err != nil {
+		t.Fatalf("SearchCandidates() should degrade to FTS when auto vector fails, got error: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Memory.ID != "fts-1" {
+		t.Fatalf("expected fts-1 candidate from FTS fallback, got %v", candidates)
+	}
+}
+
 func TestSessionService_SearchCandidates_ExpandsAdjacentTurns(t *testing.T) {
 	now := time.Now()
 	repo := &stubSessionRepo{

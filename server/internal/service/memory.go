@@ -446,7 +446,7 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 	vecResults, vecErr := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
 	observeRecallAutoEmbeddingRequest(s.autoModel, vecErr, false)
 	if vecErr != nil {
-		return nil, 0, fmt.Errorf("auto vector search: %w", vecErr)
+		slog.WarnContext(ctx, "auto hybrid memory search continuing without vector leg", "query_len", len(filter.Query), "err", vecErr)
 	}
 
 	minScore := filter.MinScore
@@ -468,13 +468,19 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 		var kwErr error
 		kwResults, kwErr = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
 		if kwErr != nil {
-			return nil, 0, fmt.Errorf("FTS search: %w", kwErr)
+			if vecErr != nil {
+				return nil, 0, fmt.Errorf("auto vector search: %w; FTS search: %w", vecErr, kwErr)
+			}
+			slog.WarnContext(ctx, "auto hybrid memory search continuing without keyword leg", "query_len", len(filter.Query), "err", kwErr)
 		}
 	} else {
 		var kwErr error
 		kwResults, kwErr = s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
 		if kwErr != nil {
-			return nil, 0, fmt.Errorf("keyword search: %w", kwErr)
+			if vecErr != nil {
+				return nil, 0, fmt.Errorf("auto vector search: %w; keyword search: %w", vecErr, kwErr)
+			}
+			slog.WarnContext(ctx, "auto hybrid memory search continuing without keyword leg", "query_len", len(filter.Query), "err", kwErr)
 		}
 	}
 
@@ -523,8 +529,9 @@ func (s *MemoryService) autoHybridCandidates(
 	vecResults, err := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
 	observeRecallAutoEmbeddingRequest(s.autoModel, err, false)
 	vectorDuration := time.Since(vectorStart)
+	vecErr := err
 	if err != nil {
-		return nil, fmt.Errorf("auto vector search: %w", err)
+		slog.WarnContext(ctx, "memory recall candidate search continuing without vector leg", "query_len", len(filter.Query), "err", err)
 	}
 	vecResults = applyMinScore(vecResults, filter.MinScore)
 
@@ -533,12 +540,18 @@ func (s *MemoryService) autoHybridCandidates(
 	if s.memories.FTSAvailable() {
 		kwResults, err = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
 		if err != nil {
-			return nil, fmt.Errorf("FTS search: %w", err)
+			if vecErr != nil {
+				return nil, fmt.Errorf("auto vector search: %w; FTS search: %w", vecErr, err)
+			}
+			slog.WarnContext(ctx, "memory recall candidate search continuing without keyword leg", "query_len", len(filter.Query), "err", err)
 		}
 	} else {
 		kwResults, err = s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
 		if err != nil {
-			return nil, fmt.Errorf("keyword search: %w", err)
+			if vecErr != nil {
+				return nil, fmt.Errorf("auto vector search: %w; keyword search: %w", vecErr, err)
+			}
+			slog.WarnContext(ctx, "memory recall candidate search continuing without keyword leg", "query_len", len(filter.Query), "err", err)
 		}
 	}
 	keywordDuration := time.Since(keywordStart)
