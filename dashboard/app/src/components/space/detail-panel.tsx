@@ -156,9 +156,17 @@ export const DetailPanelContent = ({
   }, [m.id, sessionMessages, sessionMessagesLoading]);
 
   return (
-    <div className={cn("relative flex h-full min-h-0 flex-col bg-background/50 backdrop-blur-sm", className)}>
-      <div className="flex items-center justify-between border-b border-border/40 bg-secondary/30 px-6 py-4">
-        <div className="flex items-center gap-2">
+    <div
+      className={cn(
+        // `min-w-0 overflow-hidden` keep the panel chrome (header buttons,
+        // delete CTA in the footer) anchored even when long unbreakable
+        // content inside the scroll area tries to expand the column.
+        "relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background/50 backdrop-blur-sm",
+        className,
+      )}
+    >
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/40 bg-secondary/30 px-6 py-4">
+        <div className="flex min-w-0 items-center gap-2">
           <div
             className={`inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ${
               isPinned
@@ -175,7 +183,7 @@ export const DetailPanelContent = ({
           </div>
           {facet && <FacetBadge facet={facet} t={t} />}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {isPinned && onEdit && (
             <Button
               variant="ghost"
@@ -221,16 +229,22 @@ export const DetailPanelContent = ({
       <div
         ref={scrollAreaRef}
         data-testid="detail-scroll-area"
-        className={cn("flex-1 overflow-y-auto px-7 py-6", scrollAreaClassName)}
+        className={cn(
+          // Vertical scroll only; horizontal must always be clipped so the
+          // panel chrome (header / delete footer) cannot get pushed offscreen
+          // by long codeblocks or paths inside the memory or session preview.
+          "min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-7 py-6",
+          scrollAreaClassName,
+        )}
       >
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           {/* Memory Insight */}
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2 mb-3 text-[11px] font-semibold uppercase tracking-wider text-type-insight">
               <Sparkles className="size-3.5" />
               {t("detail.metadata", { defaultValue: "Extracted Memory" })}
             </div>
-            <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground/90 font-medium">
+            <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-[15px] leading-relaxed text-foreground/90 font-medium">
               {m.content}
             </p>
           </div>

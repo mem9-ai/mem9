@@ -29,11 +29,17 @@ export function DeleteDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
+        <DialogHeader className="min-w-0">
           <DialogTitle>{t("delete.title")}</DialogTitle>
           <DialogDescription asChild>
-            <div>
-              <p className="my-3 rounded-lg bg-secondary p-3 text-sm italic leading-relaxed text-muted-foreground">
+            <div className="min-w-0">
+              {/*
+                Memory content can include long paths, URLs or hashes with no
+                soft-break opportunities. `break-words` + `overflow-wrap:
+                anywhere` make sure the preview block stays inside the modal
+                regardless of what the user is about to delete.
+              */}
+              <p className="my-3 whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-lg bg-secondary p-3 text-sm italic leading-relaxed text-muted-foreground">
                 &ldquo;
                 {memory.content.length > 120
                   ? memory.content.slice(0, 120) + "…"

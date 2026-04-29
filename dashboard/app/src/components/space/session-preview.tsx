@@ -365,7 +365,9 @@ const SessionMarkdownContent = ({ content }: { content: string }) => {
               <code
                 {...props}
                 className={cn(
-                  "rounded bg-secondary/80 px-1.5 py-0.5 font-mono text-[12px]",
+                  // `break-all` so a long inline token (path / id / hash)
+                  // wraps mid-string instead of pushing the bubble wider.
+                  "rounded bg-secondary/80 px-1.5 py-0.5 font-mono text-[12px] break-all",
                   className,
                 )}
               >
@@ -396,7 +398,10 @@ const SessionMarkdownContent = ({ content }: { content: string }) => {
           <pre
             {...props}
             className={cn(
-              "my-3 overflow-x-auto rounded-xl border border-border/50 bg-secondary/70 px-4 py-3",
+              // `max-w-full` caps the codeblock at the bubble's content area;
+              // `overflow-x-auto` then scrolls long lines internally instead
+              // of pushing the bubble — and the panel chrome — outward.
+              "my-3 max-w-full overflow-x-auto rounded-xl border border-border/50 bg-secondary/70 px-4 py-3",
               className,
             )}
           />
@@ -488,8 +493,8 @@ const ToolResultMessageRow = ({
             {toggleLabel}
           </button>
         </div>
-        <div className="w-full break-words rounded-2xl rounded-tl-sm border border-primary/10 bg-primary/[0.03] px-4 py-2.5 text-[13px] leading-relaxed text-foreground/90">
-          <div className="break-words">
+        <div className="w-full max-w-full break-words rounded-2xl rounded-tl-sm border border-primary/10 bg-primary/[0.03] px-4 py-2.5 text-[13px] leading-relaxed text-foreground/90">
+          <div className="min-w-0 break-words [overflow-wrap:anywhere]">
             <ToolResultMessageContent
               message={message}
               compactMetadata={compactMetadata}
@@ -569,13 +574,18 @@ export const DetailSessionPreview = ({
                   <div
                     className={cn(
                       "break-words rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed",
-                      "inline-block max-w-full",
+                      // `block w-fit max-w-full` is more deterministic than
+                      // `inline-block max-w-full` when the bubble contains a
+                      // <pre> with `overflow-x: auto` — `fit-content` clamps
+                      // the bubble to min(intrinsic, parent width) instead of
+                      // shrink-to-fit's browser-dependent inline-block sizing.
+                      "block w-fit max-w-full",
                       isUser
                         ? "rounded-tl-sm bg-secondary/60 text-foreground/90"
                         : "rounded-tl-sm border border-primary/10 bg-primary/[0.03] text-foreground/90",
                     )}
                   >
-                    <div className="break-words">
+                    <div className="min-w-0 break-words [overflow-wrap:anywhere]">
                       <SessionMessageContent
                         content={message.content}
                         compactMetadata={compactMetadata}

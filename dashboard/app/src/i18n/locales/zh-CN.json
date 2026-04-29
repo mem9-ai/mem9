@@ -219,6 +219,16 @@
       "pulse": "Memory Pulse",
       "insight": "Memory Insight",
       "analysis": "Memory Analysis"
+    },
+    "tabs_short": {
+      "pulse": "节奏",
+      "insight": "洞察",
+      "analysis": "分析"
+    },
+    "desktop_only": {
+      "title": "Memory Insight 需要更宽的屏幕",
+      "body": "关系画布需要至少平板横屏（1024px 宽）才能完整铺开。",
+      "hint": "把平板转为横屏，或在桌面浏览器打开 mem9.ai/your-memory。"
     }
   },
   "analysis": {

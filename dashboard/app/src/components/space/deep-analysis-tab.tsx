@@ -972,6 +972,11 @@ export function DeepAnalysisTab({
     }
   };
 
+  // The empty-state card below already surfaces a primary "Create report" CTA
+  // when there are no reports yet, so we hide the redundant header CTA in that
+  // case to avoid duplicate prompts.
+  const showHeaderCreateButton = reports.length > 0;
+
   return (
     <div className="space-y-4">
       <DeepAnalysisOverlay active={hasActiveReport} />
@@ -987,16 +992,18 @@ export function DeepAnalysisTab({
             {t("deep_analysis.subtitle")}
           </p>
         </div>
-        <Button
-          onClick={() => {
-            void handleCreateReport();
-          }}
-          disabled={isCreating || hasActiveReport}
-          className="gap-2"
-        >
-          {isCreating ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-          {t("deep_analysis.create")}
-        </Button>
+        {showHeaderCreateButton && (
+          <Button
+            onClick={() => {
+              void handleCreateReport();
+            }}
+            disabled={isCreating || hasActiveReport}
+            className="gap-2"
+          >
+            {isCreating ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            {t("deep_analysis.create")}
+          </Button>
+        )}
       </div>
 
       {inlineError && (

@@ -219,6 +219,16 @@
       "pulse": "Memory Pulse",
       "insight": "Memory Insight",
       "analysis": "Memory Analysis"
+    },
+    "tabs_short": {
+      "pulse": "Pulse",
+      "insight": "Insight",
+      "analysis": "Analysis"
+    },
+    "desktop_only": {
+      "title": "Memory Insight needs a wider screen",
+      "body": "The relations canvas needs at least a tablet in landscape (1024px wide) to lay the bubbles out legibly.",
+      "hint": "Rotate your tablet to landscape, or open mem9.ai/your-memory on a desktop browser."
     }
   },
   "analysis": {

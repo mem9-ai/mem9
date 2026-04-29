@@ -1595,7 +1595,12 @@ export function MemoryInsightRelations({
               ? t("memory_insight.relations.detail_entity")
               : t("memory_insight.relations.detail_global")}
           closeLabel={t("detail.close")}
-          contentClassName="top-auto right-0 bottom-0 left-0 h-[75vh] max-h-[75vh] w-full max-w-full rounded-t-[1.5rem] rounded-b-none sm:max-w-full"
+          // Bottom sheet on phones / portrait tablets, right-edge drawer at
+          // ≥1024px (iPad landscape and small desktop windows). Without the
+          // `lg:` upgrade the default md:w-[30rem] from `side-drawer` would
+          // collide with the sheet's positioning and pin it as a 480px-wide
+          // card to the bottom-left corner.
+          variant="responsive-sheet"
         >
           <div className="px-4 py-4">
             <RelationDetailPanel
