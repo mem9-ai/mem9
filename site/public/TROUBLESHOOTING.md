@@ -11,6 +11,7 @@ Confirm these first:
 - `plugins.entries.mem9.config.apiUrl` points to the intended mem9 API
 - `plugins.entries.mem9.config.apiKey` is present for the steady-state reconnect flow
 - In reconnect mode, the read-back value of `plugins.entries.mem9.config.apiKey` exactly matches the user's original key before the first restart
+- On OpenClaw `4.23+` / `2026.4.22+`, `plugins.entries.mem9.hooks.allowConversationAccess` is `true`
 - On OpenClaw `>= 2.2.0`, `plugins.allow` includes `mem9`
 
 ## Common Issues
@@ -95,6 +96,15 @@ Confirm these first:
 - Rewrite the original user-provided key to the correct field
 - Restart and verify again
 - If a new key is still auto-provisioned after that, stop the reconnect flow and keep troubleshooting instead of silently switching mem9 spaces
+
+### Plugin Loads But Conversations Are Not Uploaded
+
+- Treat this as missing OpenClaw hook permission before treating it as a mem9 API failure
+- Re-check whether gateway logs contain `[mem9] agent_end conversation messages are unavailable`
+- On OpenClaw `4.23+` / `2026.4.22+`, set `plugins.entries.mem9.hooks.allowConversationAccess = true`
+- Keep `allowConversationAccess` as a sibling of `enabled` and `config`; do not put it under `plugins.entries.mem9.config`
+- Restart OpenClaw after writing the hook policy
+- On older OpenClaw versions that reject `hooks.allowConversationAccess`, upgrade OpenClaw before expecting full automatic conversation upload from `agent_end`
 
 ### Reconnect Looked Broken, But Logs Already Show mem9 Activity
 

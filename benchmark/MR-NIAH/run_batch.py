@@ -53,10 +53,78 @@ SESS_OUT = OUTPUT / "sessions"
 META_SUFFIX = ".meta.json"
 PROFILE_MEMORY_DIR = "memory"
 OPENCLAW_DEFAULT_WORKSPACE_DIRNAME = ".openclaw"
+_openclaw_conversation_access_support: Optional[bool] = None
+_openclaw_conversation_access_skip_logged = False
 
 
 def now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _parse_openclaw_version_text(text: str) -> Optional[tuple[int, int, int]]:
+    match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", text)
+    if not match:
+        return None
+    return (
+        int(match.group(1)),
+        int(match.group(2)),
+        int(match.group(3) or 0),
+    )
+
+
+def openclaw_supports_conversation_access() -> bool:
+    global _openclaw_conversation_access_support
+    if _openclaw_conversation_access_support is not None:
+        return _openclaw_conversation_access_support
+
+    proc = subprocess.run(
+        ["openclaw", "--version"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    version = _parse_openclaw_version_text(f"{proc.stdout}\n{proc.stderr}")
+    if version is None:
+        _openclaw_conversation_access_support = False
+        return False
+
+    major, minor, patch = version
+    if major >= 2026:
+        _openclaw_conversation_access_support = (major, minor, patch) >= (2026, 4, 22)
+    else:
+        _openclaw_conversation_access_support = (major, minor, patch) >= (4, 23, 0)
+    return _openclaw_conversation_access_support
+
+
+def ensure_mem9_conversation_access(profile: str) -> None:
+    global _openclaw_conversation_access_skip_logged
+    if not openclaw_supports_conversation_access():
+        if not _openclaw_conversation_access_skip_logged:
+            print(
+                "[mem9] OpenClaw version does not support hooks.allowConversationAccess; "
+                "automatic conversation upload requires OpenClaw 4.23+ / 2026.4.22+",
+                file=sys.stderr,
+                flush=True,
+            )
+            _openclaw_conversation_access_skip_logged = True
+        return
+
+    subprocess.run(
+        [
+            "openclaw",
+            "--profile",
+            profile,
+            "config",
+            "set",
+            "plugins.entries.mem9.hooks.allowConversationAccess",
+            "true",
+        ],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
 
 
 def extract_last_compaction_event(session_file: Path) -> Optional[Dict[str, Any]]:
@@ -1563,6 +1631,7 @@ def main() -> int:
                         # The OpenClaw mem9 plugin treats apiKey as the primary v1alpha2 credential.
                         # Keep tenantID in sync for backward compatibility / debugging, but always
                         # set apiKey so the plugin does not keep using a stale placeholder.
+                        ensure_mem9_conversation_access(args.profile)
                         for key in (
                             "plugins.entries.mem9.config.apiKey",
                             "plugins.entries.mem9.config.tenantID",
@@ -1584,7 +1653,7 @@ def main() -> int:
                             )
                     except subprocess.CalledProcessError as e:
                         msg = (e.stderr or e.stdout or "").strip()
-                        raise RuntimeError(f"openclaw config set mem9 apiKey failed: {msg}") from e
+                        raise RuntimeError(f"openclaw config set mem9 profile config failed: {msg}") from e
                     # Restart gateway per case to ensure it picks up the new tenant config.
                     _stop_process(gateway_proc)
                     gateway_proc = None

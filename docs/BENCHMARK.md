@@ -48,7 +48,7 @@ Stops any leftover gateways from previous runs and removes old temporary profile
 Sets up two OpenClaw profiles:
 
 - **Profile A (baseline)** — vanilla agent, no plugins.
-- **Profile B (treatment)** — mem9 plugin installed and configured to point at the mem9 API and space ID.
+- **Profile B (treatment)** — mem9 plugin installed and configured to point at the mem9 API and space ID. On OpenClaw 4.23+ / 2026.4.22+, the profile also enables `plugins.entries.mem9.hooks.allowConversationAccess` so `agent_end` can upload conversation messages.
 
 Both profiles use `anthropic/claude-sonnet-4-6` and are given the same API key.
 

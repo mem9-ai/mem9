@@ -122,6 +122,9 @@ and saves new ones — all transparently.
     "entries": {
       "mem9": {
         "enabled": true,
+        "hooks": {
+          "allowConversationAccess": true
+        },
         "config": {
           "apiUrl": "http://localhost:8080",
           "apiKey": "uuid"
@@ -558,6 +561,11 @@ the `X-API-Key` header. Legacy `tenantID` config remains supported as an alias
 for the same value; the plugin still uses `/v1alpha2/mem9s/...` rather than
 keeping a separate v1alpha1 codepath.
 
+On OpenClaw 4.23+ / 2026.4.22+, the config also sets the entry-level hook
+policy `plugins.entries.mem9.hooks.allowConversationAccess = true` so
+`agent_end` includes conversation messages for automatic upload. This is an
+OpenClaw plugin-entry permission, not part of `plugins.entries.mem9.config`.
+
 **Why plugin (kind: "memory") instead of skill?**
 
 | | Plugin (`kind: "memory"`) | Skill |
@@ -578,6 +586,9 @@ This is the same philosophy as the Claude Code side: Hooks (automatic) over MCP 
 {
   "mem9": {
     "enabled": true,
+    "hooks": {
+      "allowConversationAccess": true
+    },
     "config": {
       "apiUrl": "http://localhost:8080",
       "apiKey": "uuid"
