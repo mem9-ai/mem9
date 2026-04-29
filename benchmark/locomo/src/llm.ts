@@ -2,6 +2,8 @@ import type { QACategory } from './types.js'
 
 import { env } from 'node:process'
 
+import { fetchWithRetry } from './fetch.js'
+
 const SYSTEM_PROMPT = 'You are a helpful assistant answering questions about a person based on their conversation history stored in memory.'
 
 const apiKey = (): string => {
@@ -17,13 +19,13 @@ const buildPrompt = (context: string, question: string, category: QACategory): s
   if (category === 5) {
     return `${contextSection}Answer the following question using only the memories above. If this topic is not mentioned anywhere in the memories, respond with exactly: "No information available"\n\nQuestion: ${question}\nShort answer:`
   }
-  return `${contextSection}Answer the following question based on the memories above.\n- Answer in a short phrase (under 10 words)\n- Use exact words from the memories when possible\n- Memories include timestamps; use them to resolve relative time expressions when possible\n\nQuestion: ${question}\nShort answer:`
+  return `${contextSection}Answer the following question based on the memories above.\n- Answer in a short phrase (under 10 words)\n- Use exact words from the memories when possible\n- IMPORTANT: Memories may contain relative time expressions like "yesterday", "last week", "recently" along with date metadata in [date:...] tags. Always resolve these to absolute dates/times (e.g. "yesterday" in a memory dated "8 May 2023" means "7 May 2023"). Answer with the absolute date, not the relative expression.\n- When the question asks "when", always prefer answering with a specific date or time period\n\nQuestion: ${question}\nShort answer:`
 }
 
 interface ChatMessage { role: 'system' | 'user' | 'assistant', content: string }
 
 const chat = async (messages: ChatMessage[], model: string, maxTokens: number): Promise<string> => {
-  const response = await fetch(`${baseUrl()}/chat/completions`, {
+  const response = await fetchWithRetry(`${baseUrl()}/chat/completions`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey()}`,
@@ -34,6 +36,7 @@ const chat = async (messages: ChatMessage[], model: string, maxTokens: number): 
       temperature: 0,
       max_tokens: maxTokens,
       messages,
+      ...(model.toLowerCase().includes('qwen') && { enable_thinking: false }),
     }),
   })
 
