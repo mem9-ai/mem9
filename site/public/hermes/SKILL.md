@@ -46,7 +46,6 @@ Only these actions are in scope unless the user explicitly asks for more:
 - Run `hermes plugins install mem9-ai/mem9-hermes-plugin` only as a fallback when the official install script is unavailable or when the upstream instructions explicitly require the manual path
 - Run the upstream helper script `link-memory-provider.sh` from the installed mem9 Hermes plugin when the Hermes provider link is missing
 - Set `HERMES_PROJECT_ROOT` only for the current install/link command when Hermes cannot auto-detect the project root
-- Run `hermes memory setup`
 - Run `hermes memory status`
 - Run the documented uninstall commands from `UNINSTALL.md` when the user explicitly asks to remove mem9 from Hermes
 - Read and update mem9-related files under `${HERMES_HOME:-$HOME/.hermes}` only when needed for the official setup or uninstall flow

@@ -9,9 +9,10 @@ Confirm these first:
 - `hermes version` works
 - the mem9 Hermes plugin is installed
 - the mem9 provider link exists inside the Hermes repo's `plugins/memory/` directory
-- `hermes memory setup` completed and selected `mem9`
 - `hermes memory status` shows whether mem9 is active
 - if reconnecting an existing space, the expected `MEM9_API_KEY` is available to the setup flow
+
+Do not run `hermes memory setup` from this skill. The interactive picker only lists providers it can already detect, so when mem9 is partially installed it just selects "built-in only" and overwrites the install script's work. Repair through the install script and `link-memory-provider.sh` instead.
 
 ## Common Issues
 
@@ -34,13 +35,12 @@ curl -fsSL https://raw.githubusercontent.com/mem9-ai/mem9-hermes-plugin/main/ins
 hermes plugins install mem9-ai/mem9-hermes-plugin
 ```
 
-- If the fallback path is used, continue with the provider-link step and `hermes memory setup`.
+- If the fallback path is used, continue with the provider-link step and verify with `hermes memory status`.
 
 ### mem9 Is Installed But Not Active
 
 - Run the upstream helper script `link-memory-provider.sh` from the installed mem9 plugin.
 - If Hermes cannot auto-detect the project root, rerun that helper with `HERMES_PROJECT_ROOT` set for that one command only.
-- After the link step, run `hermes memory setup`.
 - Verify again with `hermes memory status`.
 
 ### Existing API Key Did Not Reconnect Correctly
@@ -52,13 +52,13 @@ hermes plugins install mem9-ai/mem9-hermes-plugin
 ### Connectivity Failed During Install
 
 - The upstream README says the install script can finish plugin installation even if the final connectivity test fails.
-- If that happens, run `hermes memory setup` and then `hermes memory status`.
+- If that happens, re-run the install script once connectivity is restored, then `hermes memory status`.
 - Re-check that the default mem9 API URL is still `https://api.mem9.ai` unless the user explicitly chose another endpoint.
 
 ### mem9 Still Does Not Work After Setup
 
-- Re-run the provider-link step.
-- Re-run `hermes memory setup`.
+- Re-run the official install script.
+- Re-run the provider-link step (`link-memory-provider.sh`) if Hermes still does not see mem9.
 - Re-run `hermes memory status`.
 - If mem9 is still inactive, report the failure clearly and stop instead of claiming install succeeded.
 

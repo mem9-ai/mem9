@@ -10,9 +10,8 @@ When this file is read for install or repair, send only this short approval prom
 >
 > Plan:
 > 1. Check that `hermes` is available.
-> 2. Run the official mem9 install script.
-> 3. If Hermes still needs the provider link step, finish it with the upstream helper script.
-> 4. Verify with `hermes memory status`.
+> 2. Run the official mem9 install script (it handles install, key, `.env`, `mem9.json`, and provider symlink).
+> 3. Verify with `hermes memory status`. Only if mem9 is still inactive, run the upstream `link-memory-provider.sh` helper.
 >
 > If that looks good, reply exactly: `approve install`
 
@@ -51,16 +50,16 @@ Rules:
 - The upstream README says this script installs the plugin, obtains or reuses an API key, writes `.env`, writes `mem9.json`, and creates the provider symlink.
 - If the script installs the plugin but reports a connectivity failure or leaves mem9 inactive, continue to Step 3.
 
-## Step 3 — Provider Link And Setup Finish
+## Step 3 — Provider Link Repair (Only If Needed)
+
+The official install script already handles plugin install, key provisioning, `.env`, `mem9.json`, and the provider symlink. Only run this step if `hermes memory status` in Step 4 shows mem9 is not active.
 
 If mem9 is installed but Hermes does not yet see it as an active memory provider:
 
 - Run the upstream helper script `link-memory-provider.sh` from the installed mem9 Hermes plugin.
 - If the helper script cannot locate the Hermes repo automatically, rerun it with `HERMES_PROJECT_ROOT` set for that one command only.
-- After the link step, run `hermes memory setup`.
-- In `hermes memory setup`, choose `mem9` as the provider.
-- Prefer the upstream auto-provision flow when the user did not provide an existing key.
-- If the user explicitly provided an existing key, reconnect with that key instead of creating a new one.
+- Re-run `hermes memory status` to confirm.
+- Do not run `hermes memory setup` from this skill. The interactive picker only lists providers it can already detect, so triggering it here just selects "built-in only" and overwrites the install script's work.
 
 Manual fallback is only for cases where the official install script is unavailable or the upstream instructions explicitly require it:
 
@@ -68,7 +67,7 @@ Manual fallback is only for cases where the official install script is unavailab
 hermes plugins install mem9-ai/mem9-hermes-plugin
 ```
 
-If the manual install path is used, still finish the provider-link step and `hermes memory setup` before verification.
+If the manual install path is used, still finish the provider-link step before verification.
 
 ## Step 4 — Verification
 
@@ -86,7 +85,7 @@ Success criteria:
 
 If verification fails:
 
-- First finish the documented upstream repair path: provider link step, then `hermes memory setup`, then `hermes memory status`.
+- First finish the documented upstream repair path: re-run the install script, then if needed run `link-memory-provider.sh`, then `hermes memory status`.
 - If mem9 is still inactive after that sequence, report the failure clearly and stop instead of pretending install succeeded.
 
 ## Required Final Handoff
