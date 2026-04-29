@@ -126,18 +126,16 @@ func (p *TiDBCloudProvisioner) GetSpendLimit(ctx context.Context, clusterID stri
 	}
 
 	var result struct {
-		Cluster struct {
-			SpendingLimit struct {
-				Monthly int `json:"monthly"`
-			} `json:"spendingLimit"`
-		} `json:"cluster"`
+		SpendingLimit struct {
+			Monthly int `json:"monthly"`
+		} `json:"spendingLimit"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return 0, fmt.Errorf("get spend limit: decode response: %w", err)
 	}
 
-	return result.Cluster.SpendingLimit.Monthly, nil
+	return result.SpendingLimit.Monthly, nil
 }
 
 // IncreaseSpendLimit updates the monthly spend limit in USD cents.
