@@ -469,6 +469,349 @@ func TestSearchIgnoresSessionAndSourceFilters(t *testing.T) {
 	}
 }
 
+func TestSearchCandidatesAddsClusterScopedLocalSessionGapFillTurnsForInsightRecall(t *testing.T) {
+	t.Parallel()
+
+	scoreA := 0.91
+	scoreB := 0.89
+	memRepo := &memoryRepoMock{
+		ftsAvail: false,
+		autoVectorSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{
+					ID:         "insight-1",
+					Content:    "summary seeded from seq 2",
+					SessionID:  "conv-30",
+					Metadata:   json.RawMessage(`{"source_seqs":[2]}`),
+					MemoryType: domain.TypeInsight,
+					State:      domain.StateActive,
+					Score:      &scoreA,
+				},
+				{
+					ID:         "insight-2",
+					Content:    "summary seeded from seq 3",
+					SessionID:  "conv-30",
+					Metadata:   json.RawMessage(`{"source_seqs":[3]}`),
+					MemoryType: domain.TypeInsight,
+					State:      domain.StateActive,
+					Score:      &scoreB,
+				},
+			}, nil
+		},
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return nil, nil
+		},
+	}
+	sessionRepo := &stubSessionRepo{
+		sessionRows: []*domain.Session{
+			{ID: "turn-0", SessionID: "conv-30", Seq: 0, Role: "user", Content: "[date:2024-01-01] before one", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-1", SessionID: "conv-30", Seq: 1, Role: "user", Content: "[date:2024-01-01] before two", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-2", SessionID: "conv-30", Seq: 2, Role: "user", Content: "[date:2024-01-02] seed one", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-3", SessionID: "conv-30", Seq: 3, Role: "user", Content: "[date:2024-01-02] seed two", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-4", SessionID: "conv-30", Seq: 4, Role: "user", Content: "[date:2024-01-03] after one", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-5", SessionID: "conv-30", Seq: 5, Role: "user", Content: "[date:2024-01-03] after two", ContentType: "text", State: domain.StateActive},
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart, sessionRepo)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{
+		Query: "what happened next?",
+		Limit: 5,
+	}, RecallSourceInsight, RecallCandidateOptions{})
+	if err != nil {
+		t.Fatalf("SearchCandidates() error = %v", err)
+	}
+
+	if len(sessionRepo.listSessionIDs) != 1 || sessionRepo.listSessionIDs[0] != "conv-30" {
+		t.Fatalf("expected raw session lookup for conv-30, got %v", sessionRepo.listSessionIDs)
+	}
+	if sessionRepo.listLimit != 101 {
+		t.Fatalf("expected raw session fetch limit 101, got %d", sessionRepo.listLimit)
+	}
+
+	hasTurn0 := false
+	hasTurn1 := false
+	hasTurn4 := false
+	hasTurn5 := false
+	hasTurn2 := false
+	hasTurn3 := false
+	summaryCount := 0
+	for _, candidate := range candidates {
+		switch candidate.Memory.ID {
+		case "insight-1", "insight-2":
+			summaryCount++
+		case "turn-0":
+			hasTurn0 = true
+		case "turn-1":
+			hasTurn1 = true
+		case "turn-2":
+			hasTurn2 = true
+		case "turn-3":
+			hasTurn3 = true
+		case "turn-4":
+			hasTurn4 = true
+		case "turn-5":
+			hasTurn5 = true
+		}
+	}
+
+	if !hasTurn0 || !hasTurn1 || !hasTurn4 || !hasTurn5 {
+		t.Fatalf("expected adjacent local-session turns from both neighboring sessions, got %+v", candidates)
+	}
+	if hasTurn2 || hasTurn3 {
+		t.Fatalf("did not expect in-band source seq turns turn-2/turn-3 to be injected, got %+v", candidates)
+	}
+	if summaryCount != 1 {
+		t.Fatalf("expected only one overlapping insight summary after prune, got %d candidates: %+v", summaryCount, candidates)
+	}
+}
+
+func TestSearchCandidatesSkipsLocalSessionGapFillWithoutDateHeaders(t *testing.T) {
+	t.Parallel()
+
+	scoreA := 0.91
+	scoreB := 0.89
+	memRepo := &memoryRepoMock{
+		ftsAvail: false,
+		autoVectorSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{
+					ID:         "insight-1",
+					Content:    "summary seeded from seq 2",
+					SessionID:  "conv-30",
+					Metadata:   json.RawMessage(`{"source_seqs":[2]}`),
+					MemoryType: domain.TypeInsight,
+					State:      domain.StateActive,
+					Score:      &scoreA,
+				},
+				{
+					ID:         "insight-2",
+					Content:    "summary seeded from seq 3",
+					SessionID:  "conv-30",
+					Metadata:   json.RawMessage(`{"source_seqs":[3]}`),
+					MemoryType: domain.TypeInsight,
+					State:      domain.StateActive,
+					Score:      &scoreB,
+				},
+			}, nil
+		},
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return nil, nil
+		},
+	}
+	sessionRepo := &stubSessionRepo{
+		sessionRows: []*domain.Session{
+			{ID: "turn-0", SessionID: "conv-30", Seq: 0, Role: "user", Content: "before one", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-1", SessionID: "conv-30", Seq: 1, Role: "user", Content: "before two", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-2", SessionID: "conv-30", Seq: 2, Role: "user", Content: "seed one", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-3", SessionID: "conv-30", Seq: 3, Role: "user", Content: "seed two", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-4", SessionID: "conv-30", Seq: 4, Role: "user", Content: "after one", ContentType: "text", State: domain.StateActive},
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart, sessionRepo)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{
+		Query: "what happened next?",
+		Limit: 5,
+	}, RecallSourceInsight, RecallCandidateOptions{})
+	if err != nil {
+		t.Fatalf("SearchCandidates() error = %v", err)
+	}
+
+	for _, candidate := range candidates {
+		switch candidate.Memory.ID {
+		case "turn-0", "turn-1", "turn-2", "turn-3", "turn-4":
+			t.Fatalf("did not expect local-session gap fill without date headers, got %+v", candidates)
+		}
+	}
+}
+
+func TestSearchCandidatesSkipsSourceSeqAdjacentTurnsWithoutTightCluster(t *testing.T) {
+	t.Parallel()
+
+	scoreA := 0.91
+	scoreB := 0.89
+	memRepo := &memoryRepoMock{
+		ftsAvail: false,
+		autoVectorSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{
+					ID:         "insight-1",
+					Content:    "summary seeded from seq 5",
+					SessionID:  "conv-30",
+					Metadata:   json.RawMessage(`{"source_seqs":[5]}`),
+					MemoryType: domain.TypeInsight,
+					State:      domain.StateActive,
+					Score:      &scoreA,
+				},
+				{
+					ID:         "insight-2",
+					Content:    "summary seeded from seq 12",
+					SessionID:  "conv-30",
+					Metadata:   json.RawMessage(`{"source_seqs":[12]}`),
+					MemoryType: domain.TypeInsight,
+					State:      domain.StateActive,
+					Score:      &scoreB,
+				},
+			}, nil
+		},
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return nil, nil
+		},
+	}
+	sessionRepo := &stubSessionRepo{
+		sessionRows: []*domain.Session{
+			{ID: "turn-4", SessionID: "conv-30", Seq: 4, Role: "user", Content: "neighbor before", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-6", SessionID: "conv-30", Seq: 6, Role: "user", Content: "neighbor after", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-11", SessionID: "conv-30", Seq: 11, Role: "user", Content: "other before", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-13", SessionID: "conv-30", Seq: 13, Role: "user", Content: "other after", ContentType: "text", State: domain.StateActive},
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart, sessionRepo)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{
+		Query: "what happened next?",
+		Limit: 5,
+	}, RecallSourceInsight, RecallCandidateOptions{})
+	if err != nil {
+		t.Fatalf("SearchCandidates() error = %v", err)
+	}
+
+	if len(sessionRepo.listSessionIDs) != 0 {
+		t.Fatalf("expected no raw session lookup without a tight cluster, got %v", sessionRepo.listSessionIDs)
+	}
+
+	for _, candidate := range candidates {
+		switch candidate.Memory.ID {
+		case "turn-4", "turn-6", "turn-11", "turn-13":
+			t.Fatalf("did not expect adjacent raw turn injection without a tight cluster, got %+v", candidates)
+		}
+	}
+}
+
+func TestSearchCandidatesSkipsLocalSessionGapFillWhenSeedsAreNotBoundaryAnchored(t *testing.T) {
+	t.Parallel()
+
+	scoreA := 0.91
+	scoreB := 0.89
+	memRepo := &memoryRepoMock{
+		ftsAvail: false,
+		autoVectorSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{
+					ID:         "insight-1",
+					Content:    "summary seeded from seq 3",
+					SessionID:  "conv-30",
+					Metadata:   json.RawMessage(`{"source_seqs":[3]}`),
+					MemoryType: domain.TypeInsight,
+					State:      domain.StateActive,
+					Score:      &scoreA,
+				},
+				{
+					ID:         "insight-2",
+					Content:    "summary seeded from seq 4",
+					SessionID:  "conv-30",
+					Metadata:   json.RawMessage(`{"source_seqs":[4]}`),
+					MemoryType: domain.TypeInsight,
+					State:      domain.StateActive,
+					Score:      &scoreB,
+				},
+			}, nil
+		},
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return nil, nil
+		},
+	}
+	sessionRepo := &stubSessionRepo{
+		sessionRows: []*domain.Session{
+			{ID: "turn-0", SessionID: "conv-30", Seq: 0, Role: "user", Content: "[date:2024-01-01] before one", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-1", SessionID: "conv-30", Seq: 1, Role: "user", Content: "[date:2024-01-02] anchor start", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-2", SessionID: "conv-30", Seq: 2, Role: "user", Content: "[date:2024-01-02] anchor left", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-3", SessionID: "conv-30", Seq: 3, Role: "user", Content: "[date:2024-01-02] seed one", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-4", SessionID: "conv-30", Seq: 4, Role: "user", Content: "[date:2024-01-02] seed two", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-5", SessionID: "conv-30", Seq: 5, Role: "user", Content: "[date:2024-01-02] anchor right", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-6", SessionID: "conv-30", Seq: 6, Role: "user", Content: "[date:2024-01-02] anchor end", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-7", SessionID: "conv-30", Seq: 7, Role: "user", Content: "[date:2024-01-03] after one", ContentType: "text", State: domain.StateActive},
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart, sessionRepo)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{
+		Query: "what happened next?",
+		Limit: 5,
+	}, RecallSourceInsight, RecallCandidateOptions{})
+	if err != nil {
+		t.Fatalf("SearchCandidates() error = %v", err)
+	}
+
+	for _, candidate := range candidates {
+		switch candidate.Memory.ID {
+		case "turn-0", "turn-7":
+			t.Fatalf("did not expect local-session gap fill when source seqs are not boundary-anchored, got %+v", candidates)
+		}
+	}
+}
+
+func TestSearchCandidatesSkipsLocalSessionGapFillWhenClusterTouchesTwoSessions(t *testing.T) {
+	t.Parallel()
+
+	scoreA := 0.91
+	scoreB := 0.89
+	memRepo := &memoryRepoMock{
+		ftsAvail: false,
+		autoVectorSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{
+					ID:         "insight-1",
+					Content:    "summary seeded from seq 1",
+					SessionID:  "conv-30",
+					Metadata:   json.RawMessage(`{"source_seqs":[1]}`),
+					MemoryType: domain.TypeInsight,
+					State:      domain.StateActive,
+					Score:      &scoreA,
+				},
+				{
+					ID:         "insight-2",
+					Content:    "summary seeded from seq 2",
+					SessionID:  "conv-30",
+					Metadata:   json.RawMessage(`{"source_seqs":[2]}`),
+					MemoryType: domain.TypeInsight,
+					State:      domain.StateActive,
+					Score:      &scoreB,
+				},
+			}, nil
+		},
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return nil, nil
+		},
+	}
+	sessionRepo := &stubSessionRepo{
+		sessionRows: []*domain.Session{
+			{ID: "turn-0", SessionID: "conv-30", Seq: 0, Role: "user", Content: "[date:2024-01-01] before one", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-1", SessionID: "conv-30", Seq: 1, Role: "user", Content: "[date:2024-01-01] seed one", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-2", SessionID: "conv-30", Seq: 2, Role: "user", Content: "[date:2024-01-02] seed two", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-3", SessionID: "conv-30", Seq: 3, Role: "user", Content: "[date:2024-01-02] after one", ContentType: "text", State: domain.StateActive},
+			{ID: "turn-4", SessionID: "conv-30", Seq: 4, Role: "user", Content: "[date:2024-01-03] after two", ContentType: "text", State: domain.StateActive},
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart, sessionRepo)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{
+		Query: "what happened next?",
+		Limit: 5,
+	}, RecallSourceInsight, RecallCandidateOptions{})
+	if err != nil {
+		t.Fatalf("SearchCandidates() error = %v", err)
+	}
+
+	for _, candidate := range candidates {
+		switch candidate.Memory.ID {
+		case "turn-0", "turn-4":
+			t.Fatalf("did not expect local-session gap fill when source seqs already touch two sessions, got %+v", candidates)
+		}
+	}
+}
+
 func TestCreateFallsBackToRawWhenLLMUnavailable(t *testing.T) {
 	t.Parallel()
 
