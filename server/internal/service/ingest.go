@@ -681,7 +681,7 @@ atomic facts from a conversation.
 8. Keep concerns, risks, and worries the user expresses about their work, systems, platforms, or ongoing operations,
 	 even when stated as background context for a direct action request. These signals have lasting value.
    Examples to keep:
-     - "小红书最近数据不好 老可能被封号" -> "User is concerned their Xiaohongshu account may be at risk of being banned due to poor recent metrics"
+      - "小红书账号最近数据不好，担心可能被封号"
      - "The API keeps returning 500s, something might be broken upstream"
      - "I think the deployment pipeline is getting flaky"
    Examples to skip:
@@ -828,7 +828,7 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 8. Keep concerns, risks, and worries the user expresses about their work, systems, platforms, or ongoing operations,
 	 even when stated as background context for a direct action request. These signals have lasting value.
    Examples to keep:
-     - "小红书最近数据不好 老可能被封号" -> "User is concerned their Xiaohongshu account may be at risk of being banned due to poor recent metrics"
+     - "小红书账号最近数据不好，担心可能被封号"
      - "The API keeps returning 500s, something might be broken upstream"
      - "I think the deployment pipeline is getting flaky"
    Examples to skip:
