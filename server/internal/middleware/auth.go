@@ -212,7 +212,7 @@ func ResolveApiKey(
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authStart := time.Now()
-			apiKey := r.Header.Get(APIKeyHeader)
+			apiKey := strings.TrimSpace(r.Header.Get(APIKeyHeader))
 			if apiKey == "" {
 				writeError(w, http.StatusBadRequest, "missing API key")
 				return
