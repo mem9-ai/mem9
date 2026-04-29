@@ -23,6 +23,10 @@ export const agentGuideTargets = {
     href: 'https://github.com/mem9-ai/mem9/tree/main/codex-plugin#readme',
     external: true,
   },
+  dify: {
+    href: 'https://github.com/mem9-ai/mem9-dify-plugin#readme',
+    external: true,
+  },
 } as const;
 
 export type SiteAgentGuideId = keyof typeof agentGuideTargets;
@@ -363,6 +367,7 @@ const guideSelectorItems: SiteGuideLinkCopy[] = [
   { id: 'claude', label: 'Claude Code' },
   { id: 'opencode', label: 'OpenCode' },
   { id: 'codex', label: 'Codex' },
+  { id: 'dify', label: 'Dify' },
 ];
 
 const stableOnboardingCommand =
@@ -2393,7 +2398,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     meta: {
       title: 'mem9 - Persistent Memory for AI Agents',
       description:
-        'mem9.ai gives OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, and custom tools shared persistent memory with hybrid recall and a visual dashboard.',
+        'mem9.ai gives OpenClaw, Hermes Agent, Dify, Claude Code, OpenCode, Codex, and custom tools shared persistent memory with hybrid recall and a visual dashboard.',
     },
     nav: {
       home: 'Home',
@@ -2418,7 +2423,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'Your agents forget everything between sessions. mem9 gives the agents you use one shared memory layer with hybrid recall and a visual dashboard.',
       poweredByLabel: 'Powered by TiDB Cloud',
       guideSelector: {
-        label: 'Works with these agents',
+        label: 'Works with your agent stack',
         items: guideSelectorItems,
       },
       onboardingLabel: 'Install for OpenClaw',
@@ -2498,9 +2503,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     platforms: {
       kicker: 'Platforms',
-      title: 'One memory layer. Every agent.',
+      title: 'Shared memory, every agent stack',
       description:
-        'Give every runtime in your agent stack the same durable, searchable memory space.',
+        'Give every agent runtime and workflow platform in your stack the same durable, searchable memory space.',
       items: [
         {
           name: 'OpenClaw',
@@ -2536,6 +2541,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'Use the Codex plugin to install managed hooks and project overrides backed by mem9.',
           guideId: 'codex',
+        },
+        {
+          name: 'Dify',
+          desc: 'Agent and workflow platform',
+          detail:
+            'Add mem9 tools to Dify Agent apps and Workflow apps, with one shared space or per-node API keys.',
+          guideId: 'dify',
         },
         {
           name: 'Your Memory',
@@ -2724,7 +2736,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     meta: {
       title: 'mem9 - 面向 AI Agents 的持久记忆',
       description:
-        'mem9.ai 为 OpenClaw、Hermes Agent、Claude Code、OpenCode、Codex 和自定义工具提供共享持久记忆、混合召回和可视化管理界面。',
+        'mem9.ai 为 OpenClaw、Hermes Agent、Dify、Claude Code、OpenCode、Codex 和自定义工具提供共享持久记忆、混合召回和可视化管理界面。',
     },
     nav: {
       home: '首页',
@@ -2749,7 +2761,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         '你的 Agent 会在会话之间丢失上下文。mem9 为你使用的 Agent 提供同一层共享记忆，支持混合召回和可视化管理。',
       poweredByLabel: '由 TiDB Cloud 提供支持',
       guideSelector: {
-        label: '支持以下 Agent',
+        label: '支持你的 Agent 栈',
         items: guideSelectorItems,
       },
       onboardingLabel: '为 OpenClaw 安装',
@@ -2826,9 +2838,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     platforms: {
       kicker: '平台',
-      title: '一层记忆，覆盖每个 Agent。',
+      title: '共享记忆，覆盖每个 Agent 栈',
       description:
-        '让你的 Agent 栈里的每个运行时共享同一个持久、可搜索的记忆空间。',
+        '让你的 Agent 栈里的运行时和工作流平台共享同一个持久、可搜索的记忆空间。',
       items: [
         {
           name: 'OpenClaw',
@@ -2859,6 +2871,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           desc: 'Managed hooks',
           detail: '使用 Codex 插件安装托管 hooks 和项目级覆盖配置，后端由 mem9 支撑。',
           guideId: 'codex',
+        },
+        {
+          name: 'Dify',
+          desc: 'Agent 与工作流平台',
+          detail:
+            '为 Dify Agent 应用和 Workflow 应用加入 mem9 工具，支持一个共享空间或节点级 API Key。',
+          guideId: 'dify',
         },
         {
           name: '你的记忆',
@@ -3041,7 +3060,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     meta: {
       title: 'mem9 - 面向 OpenClaw 的無限記憶基礎設施',
       description:
-        'mem9.ai 為 OpenClaw 提供無限記憶基礎設施，支援持久召回、混合搜尋，以及面向 Claude Code、OpenCode、OpenClaw 和自訂工具的多 Agent 上下文共享。',
+        'mem9.ai 為 OpenClaw 提供無限記憶基礎設施，支援持久召回、混合搜尋，以及面向 Dify、Claude Code、OpenCode、OpenClaw 和自訂工具的多 Agent 上下文共享。',
     },
     nav: {
       home: '首頁',
@@ -3066,7 +3085,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         '你的 Agent 會在會話之間遺忘所有內容。mem9 為你使用的 Agent 提供同一層共享記憶，支援混合召回和可視化管理。',
       poweredByLabel: '由 TiDB Cloud 提供支援',
       guideSelector: {
-        label: '支援以下 Agent',
+        label: '支援你的 Agent 堆疊',
         items: guideSelectorItems,
       },
       onboardingLabel: '為 OpenClaw 安裝',
@@ -3143,9 +3162,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     platforms: {
       kicker: '平台',
-      title: '一層記憶，覆蓋每個 Agent。',
+      title: '共享記憶，覆蓋每個 Agent 堆疊',
       description:
-        'Agent 在切換工具時不該丟掉上下文。mem9 為你的整套 Agent 堆疊提供共享且持久的記憶層，始終可搜尋、可同步、可長期保存。',
+        'mem9 為你的 Agent 執行環境與工作流平台提供共享且持久的記憶層，始終可搜尋、可同步、可長期保存。',
       items: [
         {
           name: 'OpenClaw',
@@ -3181,6 +3200,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             '使用 Codex 外掛安裝託管 hooks 和專案級覆寫設定，後端由 mem9 支撐。',
           guideId: 'codex',
+        },
+        {
+          name: 'Dify',
+          desc: 'Agent 與工作流平台',
+          detail:
+            '為 Dify Agent 應用與 Workflow 應用加入 mem9 工具，支援一個共享空間或節點級 API Key。',
+          guideId: 'dify',
         },
         {
           name: '你的記憶',
@@ -3363,7 +3389,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     meta: {
       title: 'mem9 - OpenClaw 向け無制限メモリ基盤',
       description:
-        'mem9.ai は OpenClaw 向けの無制限メモリ基盤です。永続リコール、ハイブリッド検索、そして Claude Code、OpenCode、OpenClaw、独自ツール向けのマルチエージェント文脈共有を提供します。',
+        'mem9.ai は OpenClaw 向けの無制限メモリ基盤です。永続リコール、ハイブリッド検索、そして Dify、Claude Code、OpenCode、OpenClaw、独自ツール向けのマルチエージェント文脈共有を提供します。',
     },
     nav: {
       home: 'ホーム',
@@ -3388,7 +3414,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'エージェントはセッションが変わるたびにすべてを忘れます。mem9 は、ハイブリッド検索とビジュアルダッシュボードを備えた共有メモリレイヤーを、利用中のエージェントに提供します。',
       poweredByLabel: 'TiDB Cloud で稼働',
       guideSelector: {
-        label: '対応エージェント',
+        label: 'エージェントスタックに対応',
         items: guideSelectorItems,
       },
       onboardingLabel: 'OpenClaw にインストール',
@@ -3468,9 +3494,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     platforms: {
       kicker: '対応環境',
-      title: 'ひとつのメモリレイヤーを、すべてのエージェントへ。',
+      title: '共有メモリを、すべてのエージェントスタックへ',
       description:
-        'ツールを切り替えるたびにエージェントが文脈を失うべきではありません。mem9 はスタック内のすべてのエージェントに、永続的で検索可能、常に同期された共有メモリを提供します。',
+        'mem9 はエージェントランタイムとワークフロープラットフォームに、永続的で検索可能、常に同期された共有メモリを提供します。',
       items: [
         {
           name: 'OpenClaw',
@@ -3506,6 +3532,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'Codex プラグインで mem9 を基盤とする管理 hooks とプロジェクト上書き設定を導入します。',
           guideId: 'codex',
+        },
+        {
+          name: 'Dify',
+          desc: 'エージェントとワークフローのプラットフォーム',
+          detail:
+            'Dify の Agent アプリと Workflow アプリに mem9 ツールを追加し、共有スペースまたはノード別 API キーで使えます。',
+          guideId: 'dify',
         },
         {
           name: 'あなたの記憶',
@@ -3690,7 +3723,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     meta: {
       title: 'mem9 - OpenClaw를 위한 무제한 메모리 인프라',
       description:
-        'mem9.ai는 OpenClaw를 위한 무제한 메모리 인프라입니다. 지속 리콜, 하이브리드 검색, 그리고 Claude Code, OpenCode, OpenClaw 및 커스텀 도구를 위한 멀티 에이전트 컨텍스트 공유를 제공합니다.',
+        'mem9.ai는 OpenClaw를 위한 무제한 메모리 인프라입니다. 지속 리콜, 하이브리드 검색, 그리고 Dify, Claude Code, OpenCode, OpenClaw 및 커스텀 도구를 위한 멀티 에이전트 컨텍스트 공유를 제공합니다.',
     },
     nav: {
       home: '홈',
@@ -3715,7 +3748,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         '에이전트는 세션이 바뀔 때마다 모든 것을 잊습니다. mem9는 사용 중인 에이전트에 하이브리드 리콜과 시각적 대시보드를 갖춘 공유 메모리 레이어를 제공합니다.',
       poweredByLabel: 'TiDB Cloud 기반',
       guideSelector: {
-        label: '지원되는 에이전트',
+        label: '에이전트 스택과 연동',
         items: guideSelectorItems,
       },
       onboardingLabel: 'OpenClaw에 설치',
@@ -3792,9 +3825,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     platforms: {
       kicker: '플랫폼',
-      title: '하나의 메모리 레이어. 모든 에이전트.',
+      title: '공유 메모리, 모든 에이전트 스택에',
       description:
-        '도구를 바꿀 때마다 에이전트가 컨텍스트를 잃어서는 안 됩니다. mem9는 스택 전체의 에이전트에게 공유되고 지속적이며, 검색 가능하고 항상 동기화된 메모리를 제공합니다.',
+        'mem9는 에이전트 런타임과 워크플로 플랫폼에 공유되고 지속적이며, 검색 가능하고 항상 동기화된 메모리를 제공합니다.',
       items: [
         {
           name: 'OpenClaw',
@@ -3830,6 +3863,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'Codex 플러그인으로 mem9 기반의 관리형 후크와 프로젝트 재정의 설정을 설치합니다.',
           guideId: 'codex',
+        },
+        {
+          name: 'Dify',
+          desc: '에이전트 및 워크플로 플랫폼',
+          detail:
+            'Dify Agent 앱과 Workflow 앱에 mem9 도구를 추가하고 공유 공간 또는 노드별 API 키로 사용할 수 있습니다.',
+          guideId: 'dify',
         },
         {
           name: '당신의 기억',
@@ -4014,7 +4054,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     meta: {
       title: 'mem9 - Infrastruktur memori tanpa batas untuk OpenClaw',
       description:
-        'mem9.ai adalah infrastruktur memori tanpa batas untuk OpenClaw. Menyediakan recall persisten, pencarian hybrid, dan konteks multi-agent untuk Claude Code, OpenCode, OpenClaw, dan tool kustom.',
+        'mem9.ai adalah infrastruktur memori tanpa batas untuk OpenClaw. Menyediakan recall persisten, pencarian hybrid, dan konteks multi-agent untuk Dify, Claude Code, OpenCode, OpenClaw, dan tool kustom.',
     },
     nav: {
       home: 'Beranda',
@@ -4039,7 +4079,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'Agent Anda melupakan semuanya di antara sesi. mem9 memberi agent yang Anda gunakan satu lapis memori bersama dengan recall hybrid dan dashboard visual.',
       poweredByLabel: 'Didukung TiDB Cloud',
       guideSelector: {
-        label: 'Bekerja dengan agent berikut',
+        label: 'Bekerja dengan stack agent Anda',
         items: guideSelectorItems,
       },
       onboardingLabel: 'Instal untuk OpenClaw',
@@ -4119,9 +4159,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     platforms: {
       kicker: 'Platform',
-      title: 'Satu lapisan memori. Untuk setiap agent.',
+      title: 'Memori bersama untuk setiap stack agent',
       description:
-        'Agent tidak seharusnya kehilangan konteks saat berpindah tool. mem9 memberi semua agent di stack Anda memori bersama yang persisten, dapat dicari, dan selalu sinkron.',
+        'mem9 memberi runtime agent dan platform workflow Anda memori bersama yang persisten, dapat dicari, dan selalu sinkron.',
       items: [
         {
           name: 'OpenClaw',
@@ -4157,6 +4197,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'Gunakan plugin Codex untuk memasang kait terkelola dan konfigurasi proyek yang didukung mem9.',
           guideId: 'codex',
+        },
+        {
+          name: 'Dify',
+          desc: 'Platform agent dan workflow',
+          detail:
+            'Tambahkan tool mem9 ke aplikasi Agent dan Workflow Dify, dengan satu ruang bersama atau API key per node.',
+          guideId: 'dify',
         },
         {
           name: 'Memori Anda',
@@ -4341,7 +4388,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     meta: {
       title: 'mem9 - โครงสร้างพื้นฐานหน่วยความจำไม่จำกัดสำหรับ OpenClaw',
       description:
-        'mem9.ai คือโครงสร้างพื้นฐานหน่วยความจำไม่จำกัดสำหรับ OpenClaw พร้อมการเรียกคืนแบบถาวร การค้นหาแบบ hybrid และบริบทแบบ multi-agent สำหรับ Claude Code, OpenCode, OpenClaw และเครื่องมือแบบกำหนดเอง',
+        'mem9.ai คือโครงสร้างพื้นฐานหน่วยความจำไม่จำกัดสำหรับ OpenClaw พร้อมการเรียกคืนแบบถาวร การค้นหาแบบ hybrid และบริบทแบบ multi-agent สำหรับ Dify, Claude Code, OpenCode, OpenClaw และเครื่องมือแบบกำหนดเอง',
     },
     nav: {
       home: 'หน้าแรก',
@@ -4366,7 +4413,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'เอเจนต์ของคุณลืมทุกอย่างระหว่างแต่ละเซสชัน mem9 มอบเลเยอร์หน่วยความจำที่แชร์ร่วมกันให้กับเอเจนต์ที่คุณใช้งาน พร้อมการค้นคืนแบบ hybrid และแดชบอร์ดแบบภาพ',
       poweredByLabel: 'ขับเคลื่อนโดย TiDB Cloud',
       guideSelector: {
-        label: 'ใช้งานได้กับเอเจนต์เหล่านี้',
+        label: 'ใช้งานได้กับสแตกเอเจนต์ของคุณ',
         items: guideSelectorItems,
       },
       onboardingLabel: 'ติดตั้งสำหรับ OpenClaw',
@@ -4446,9 +4493,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     platforms: {
       kicker: 'แพลตฟอร์ม',
-      title: 'เมมโมรีเลเยอร์เดียว สำหรับทุกเอเจนต์',
+      title: 'หน่วยความจำร่วมสำหรับทุกสแตกเอเจนต์',
       description:
-        'เอเจนต์ไม่ควรสูญเสียบริบทเมื่อสลับเครื่องมือ mem9 ทำให้ทุกเอเจนต์ในสแตกของคุณมีหน่วยความจำร่วมกันแบบถาวร ค้นหาได้ และซิงก์กันเสมอ',
+        'mem9 ทำให้ runtime ของเอเจนต์และแพลตฟอร์มเวิร์กโฟลว์ของคุณมีหน่วยความจำร่วมกันแบบถาวร ค้นหาได้ และซิงก์กันเสมอ',
       items: [
         {
           name: 'OpenClaw',
@@ -4484,6 +4531,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           detail:
             'ใช้ปลั๊กอิน Codex เพื่อติดตั้งฮุกแบบจัดการและการตั้งค่าระดับโปรเจกต์ที่ใช้ mem9 เป็นฐาน',
           guideId: 'codex',
+        },
+        {
+          name: 'Dify',
+          desc: 'แพลตฟอร์มเอเจนต์และเวิร์กโฟลว์',
+          detail:
+            'เพิ่มเครื่องมือ mem9 ให้แอป Agent และ Workflow ของ Dify พร้อมใช้พื้นที่ร่วมกันหรือ API key แยกตามโหนด',
+          guideId: 'dify',
         },
         {
           name: 'ความทรงจำของคุณ',
