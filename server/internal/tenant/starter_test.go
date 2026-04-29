@@ -93,7 +93,7 @@ func TestTiDBCloudProvisioner_SpendLimit_GetSpendLimit_Success(t *testing.T) {
 	server := newSpendLimitDigestServer(t, spendLimitMockConfig{
 		expectedMethod: http.MethodGet,
 		responseStatus: http.StatusOK,
-		responseBody:   `{"cluster":{"spendingLimit":{"monthly":500}}}`,
+		responseBody:   `{"clusterId":"cluster-123","spendingLimit":{"monthly":500}}`,
 	})
 	defer server.Close()
 
@@ -113,7 +113,7 @@ func TestTiDBCloudProvisioner_SpendLimit_GetSpendLimit_InvalidJSON(t *testing.T)
 	server := newSpendLimitDigestServer(t, spendLimitMockConfig{
 		expectedMethod: http.MethodGet,
 		responseStatus: http.StatusOK,
-		responseBody:   `{"cluster":{"spendingLimit":{"monthly":500}}`,
+		responseBody:   `{"clusterId":"cluster-123","spendingLimit":{"monthly":500}`,
 	})
 	defer server.Close()
 
