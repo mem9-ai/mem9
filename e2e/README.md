@@ -17,6 +17,8 @@ with auto-embedding enabled.
 
 | Script | What it tests |
 |--------|--------------|
+| `local-smoke-checks.sh` | Shared health/version/auth/create/list/search/get/update/delete assertions used by local smoke lanes once `mnemo-server` and a tenant are already up |
+| `local-tidb-smoke.sh` | Boots a local TiDB playground, seeds a manual tenant on the `tidb` backend path, starts `mnemo-server`, and runs `local-smoke-checks.sh` against the real TiDB code path |
 | `crdt-e2e-tests.sh` | Core CRDT server behavior: LWW fast path, dominating/dominated writes, concurrent tie-break, tombstone, write_id idempotency, bootstrap endpoint (8 tests) |
 | `plugin-crdt-e2e.py` | Plugin Option C clock strategy: simulates `ServerBackend.store()` read-increment-write flow, verifies clock propagation end-to-end (6 tests) |
 | `crdt-server-merge-e2e.py` | Server-side section merge: two agents write disjoint sections concurrently, server merges atomically via `X-Mnemo-Merged`, both agents read identical final content (13 tests) |
