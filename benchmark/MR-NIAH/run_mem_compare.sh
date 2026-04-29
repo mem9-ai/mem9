@@ -113,6 +113,26 @@ log() {
   echo "[$(date '+%H:%M:%S')] $*" >&2
 }
 
+openclaw_supports_conversation_access() {
+  local version
+  version="$(openclaw --version 2>/dev/null | head -n 1 || true)"
+  python3 - "$version" <<'PY'
+import re
+import sys
+
+match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", sys.argv[1])
+if not match:
+    raise SystemExit(1)
+
+major = int(match.group(1))
+minor = int(match.group(2))
+patch = int(match.group(3) or 0)
+if major >= 2026:
+    raise SystemExit(0 if (major, minor, patch) >= (2026, 4, 22) else 1)
+raise SystemExit(0 if (major, minor, patch) >= (4, 23, 0) else 1)
+PY
+}
+
 usage() {
   cat >&2 <<EOF
 Usage: $(basename "$0") [options]
@@ -801,6 +821,11 @@ PY
 
   openclaw --profile "$MEM_PROFILE" config set plugins.slots.memory mem9 >/dev/null
   openclaw --profile "$MEM_PROFILE" config set plugins.entries.mem9.enabled true >/dev/null
+  if openclaw_supports_conversation_access; then
+    openclaw --profile "$MEM_PROFILE" config set plugins.entries.mem9.hooks.allowConversationAccess true >/dev/null
+  else
+    log "OpenClaw version does not support hooks.allowConversationAccess; automatic conversation upload requires OpenClaw 4.23+ / 2026.4.22+"
+  fi
   openclaw --profile "$MEM_PROFILE" config set plugins.entries.mem9.config.apiUrl "$api_url" >/dev/null
   openclaw --profile "$MEM_PROFILE" config set plugins.entries.mem9.config.apiKey "$MEM9_SPACE_ID" >/dev/null
   # Keep tenantID in sync with apiKey (apiKey is the primary v1alpha2 credential; tenantID helps debug/back-compat).

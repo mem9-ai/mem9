@@ -1,48 +1,172 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
+import { useEffect, useState, type ReactNode } from "react";
+import { getRouteApi, useNavigate } from "@tanstack/react-router";
+import { Trans, useTranslation } from "react-i18next";
 import { Loader2, Globe, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { api } from "@/api/client";
 import { initMixpanelOnLogin, trackMixpanelEvent } from "@/lib/mixpanel";
-import { getActiveSpaceId, setSpaceId } from "@/lib/session";
+import type { ConnectRouteLoaderData } from "@/pages/connect-loader";
+import {
+  getActiveApiKey,
+  MEM9_CONNECT_READY_EVENT,
+  MEM9_SPACE_HANDOFF_EVENT,
+  setApiKey,
+} from "@/lib/session";
+
+const connectRoute = getRouteApi("/");
+
+function getOpenerOrigin(): string | null {
+  if (!document.referrer) {
+    return null;
+  }
+
+  try {
+    return new URL(document.referrer).origin;
+  } catch {
+    return null;
+  }
+}
+
+function InlineToken({ children }: { children?: ReactNode }) {
+  return (
+    <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[0.92em] text-foreground">
+      {children}
+    </code>
+  );
+}
 
 export function ConnectPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const [input, setInput] = useState("");
-  const [error, setError] = useState("");
+  const loaderData = connectRoute.useLoaderData() as ConnectRouteLoaderData;
+  const openerOrigin = getOpenerOrigin();
+  const [input, setInput] = useState(() => loaderData.initialInput);
+  const [error, setError] = useState(() => loaderData.initialError);
   const [loading, setLoading] = useState(false);
   const [rememberLogin, setRememberLogin] = useState(false);
+  const [pendingConnect, setPendingConnect] = useState<{
+    apiKey: string;
+    remember: boolean;
+  } | null>(null);
 
   useEffect(() => {
-    if (getActiveSpaceId()) {
-      navigate({ to: "/space", replace: true });
+    if (window.opener || loaderData.hasBootstrapParams) {
+      return;
     }
-  }, [navigate]);
 
-  async function handleSubmit(e: React.FormEvent) {
+    if (getActiveApiKey()) {
+      void navigate({ to: "/space", replace: true });
+    }
+  }, [loaderData.hasBootstrapParams, navigate]);
+
+  useEffect(() => {
+    setInput(loaderData.initialInput);
+    setError(loaderData.initialError);
+  }, [loaderData.initialError, loaderData.initialInput]);
+
+  useEffect(() => {
+    if (!window.opener) {
+      return;
+    }
+
+    function handleMessage(event: MessageEvent) {
+      if (event.source !== window.opener) {
+        return;
+      }
+
+      if (openerOrigin && event.origin !== openerOrigin) {
+        return;
+      }
+
+      const data = event.data as { spaceId?: string; type?: string };
+      if (
+        data?.type !== MEM9_SPACE_HANDOFF_EVENT ||
+        typeof data.spaceId !== "string"
+      ) {
+        return;
+      }
+
+      const nextSpaceId = data.spaceId.trim();
+      if (!nextSpaceId) {
+        return;
+      }
+
+      setInput(nextSpaceId);
+      setRememberLogin(false);
+      setPendingConnect((current) =>
+        current ?? { apiKey: nextSpaceId, remember: false },
+      );
+    }
+
+    window.addEventListener("message", handleMessage);
+    window.opener.postMessage(
+      { type: MEM9_CONNECT_READY_EVENT },
+      openerOrigin ?? "*",
+    );
+
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, [openerOrigin]);
+
+  useEffect(() => {
+    if (!pendingConnect) {
+      return;
+    }
+
+    const connectRequest = pendingConnect;
+    let cancelled = false;
+
+    async function connectToSpace() {
+      const normalizedInput = connectRequest.apiKey.trim();
+      if (!normalizedInput) {
+        setPendingConnect(null);
+        return;
+      }
+
+      setError("");
+      setLoading(true);
+
+      try {
+        await api.verifySpace(normalizedInput);
+        initMixpanelOnLogin();
+        trackMixpanelEvent("Dashboard/Connect/SubmitClicked", {
+          pageName: "connect",
+        });
+        setApiKey(normalizedInput, connectRequest.remember);
+
+        if (!cancelled) {
+          await navigate({ to: "/space", replace: true });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          void err;
+          setError(t("connect.error.invalid"));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setPendingConnect(null);
+        }
+      }
+    }
+
+    void connectToSpace();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, pendingConnect, t]);
+
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    setLoading(true);
-    const normalizedInput = input.trim();
-    try {
-      await api.verifySpace(normalizedInput);
-      initMixpanelOnLogin();
-      trackMixpanelEvent("Dashboard/Connect/SubmitClicked", {
-        pageName: "connect",
-      });
-      setSpaceId(normalizedInput, rememberLogin);
-      navigate({ to: "/space", replace: true });
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : t("connect.error.invalid"),
-      );
-    } finally {
-      setLoading(false);
-    }
+    setPendingConnect({
+      apiKey: input,
+      remember: rememberLogin,
+    });
   }
 
   const toggleLang = () =>
@@ -82,7 +206,7 @@ export function ConnectPage() {
             {t("connect.title")}
           </h1>
           <p className="mt-2 text-[15px] text-muted-foreground">
-            {t("connect.subtitle")}
+            <Trans i18nKey="connect.subtitle" components={{ code: <InlineToken /> }} />
           </p>
         </div>
 
@@ -144,22 +268,22 @@ export function ConnectPage() {
           </form>
 
           <p className="mt-4 text-center text-xs text-soft-foreground">
-            {t("connect.security")}
+            <Trans i18nKey="connect.security" components={{ code: <InlineToken /> }} />
           </p>
         </div>
 
         <div className="mt-10 space-y-4">
           <h2 className="text-xs font-semibold uppercase tracking-[0.22em] text-ring">
-            {t("connect.how_title")}
+            <Trans i18nKey="connect.how_title" components={{ code: <InlineToken /> }} />
           </h2>
           <div className="space-y-3">
-            {(["how_1", "how_2", "how_3"] as const).map((key, i) => (
+            {(["how_1", "how_2"] as const).map((key, i) => (
               <div key={key} className="flex items-start gap-3">
                 <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-secondary text-[11px] font-semibold text-muted-foreground">
                   {i + 1}
                 </span>
                 <p className="text-sm leading-relaxed text-muted-foreground">
-                  {t(`connect.${key}`)}
+                  <Trans i18nKey={`connect.${key}`} components={{ code: <InlineToken /> }} />
                 </p>
               </div>
             ))}

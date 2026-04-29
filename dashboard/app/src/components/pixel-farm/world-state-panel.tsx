@@ -11,6 +11,10 @@ function formatBuckets(count: number): string {
   return count === 1 ? "1 bucket" : `${count} buckets`;
 }
 
+function formatPlantCount(count: number): string {
+  return count === 1 ? "1 plant" : `${count} plants`;
+}
+
 export function PixelFarmWorldStatePanel({
   spaceId,
   worldQuery,
@@ -70,42 +74,32 @@ export function PixelFarmWorldStatePanel({
 
       {worldQuery.worldState ? (
         <div className="mt-3 space-y-2 text-xs text-[#f6dca6]/82">
-          {worldQuery.worldState.animalBuckets.map((animalBucket) => (
-            <div
-              key={animalBucket.id}
-              className="rounded-xl border border-[#d89b6b]/18 bg-[#1a1410]/55 px-3 py-2"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-[#f6dca6]">
-                  #{animalBucket.rank} {animalBucket.tagLabel}
-                </span>
-                <span className="uppercase tracking-[0.18em] text-[#f6dca6]/50">
-                  {animalBucket.zone}
-                </span>
-              </div>
-              <div className="mt-1">
-                {animalBucket.totalCount} memories, {animalBucket.instanceCount} animals, {animalBucket.tier}
-              </div>
+          <div className="rounded-xl border border-[#f6dca6]/12 bg-[#0d141b]/55 px-3 py-2">
+            <div>Main field: {worldQuery.worldState.fields.mainField.cells.length} tiles</div>
+            <div>
+              Event field: {worldQuery.worldState.fields.eventField?.cells.length ?? 0} tiles
             </div>
-          ))}
-          {worldQuery.worldState.cropBuckets.map((cropBucket) => (
+            <div>NPCs: {worldQuery.worldState.npcs.length}</div>
+            <div>Buckets: {formatBuckets(worldQuery.worldState.memoryBuckets.length)}</div>
+          </div>
+          {worldQuery.worldState.memoryBuckets.map((bucket) => (
             <div
-              key={cropBucket.id}
+              key={bucket.id}
               className="rounded-xl border border-[#f6dca6]/12 bg-[#0d141b]/55 px-3 py-2"
             >
               <div className="flex items-center justify-between gap-3">
                 <span className="font-medium text-[#f6dca6]">
-                  #{cropBucket.rank} {cropBucket.tagLabel}
+                  #{bucket.rank} {bucket.tagLabel}
                 </span>
                 <span className="uppercase tracking-[0.18em] text-[#f6dca6]/50">
-                  plot {cropBucket.plotIndex + 1}
+                  {bucket.cropFamily}
                 </span>
               </div>
               <div className="mt-1">
-                {cropBucket.totalCount} memories, {formatBuckets(cropBucket.instances.length)}
+                {bucket.totalMemoryCount} memories, {formatPlantCount(bucket.plantCount)}
               </div>
               <div className="mt-1">
-                Crop: {cropBucket.cropFamily}
+                Plant capacity: {bucket.plantCapacity}
               </div>
             </div>
           ))}

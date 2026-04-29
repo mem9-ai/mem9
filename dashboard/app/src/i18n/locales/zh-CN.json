@@ -2,18 +2,17 @@
   "_locale": "zh-CN",
   "connect": {
     "title": "Your Memory",
-    "subtitle": "进入你的记忆空间",
-    "placeholder": "Space ID",
-    "submit": "进入 Space",
+    "subtitle": "使用 <code>MEM9_API_KEY</code> 继续",
+    "placeholder": "MEM9_API_KEY",
+    "submit": "打开记忆空间",
     "remember_login": "保留登录状态 15 天",
-    "security": "Space ID 是你的私密标识，请勿分享给他人",
+    "security": "<code>MEM9_API_KEY</code> 是你的私密密钥。请勿分享。",
     "error": {
-      "invalid": "无法访问此 Space，请检查 ID 后重试"
+      "invalid": "无法访问这个记忆空间，请检查 MEM9_API_KEY 后重试"
     },
-    "how_title": "mem9 是什么",
-    "how_1": "你的 agent 在对话中自动积累记忆",
-    "how_2": "你也可以让 agent 明确记住特定内容",
-    "how_3": "这里展示的是已经存下来的记忆"
+    "how_title": "如何获取 <code>MEM9_API_KEY</code>",
+    "how_1": "让 OpenClaw 直接把它当前正在使用的 <code>MEM9_API_KEY</code> 发给你。",
+    "how_2": "对于其他 agent 工具，让它直接把自己的 <code>MEM9_API_KEY</code> 发给你，或告诉你存放位置。"
   },
   "space": {
     "title": "Your Memory",
@@ -38,7 +37,8 @@
     "load_more": "加载更多",
     "loading": "正在加载记忆…",
     "via": "来自",
-    "copied": "已复制到剪贴板"
+    "copied": "已复制到剪贴板",
+    "linked_session": "有对话来源"
   },
   "detail": {
     "type": {
@@ -55,21 +55,28 @@
     "mixed_badge": "混合",
     "derived_tags": "派生标签",
     "metadata": "元数据",
-    "delete": "删除这条记忆",
+    "delete": "删除",
+    "delete_button_label": "删除记忆",
     "edit": "编辑",
     "close": "关闭"
   },
   "session_preview": {
     "title": "对话原文",
     "loading": "正在加载对话…",
+    "jump_to_start": "开头",
+    "jump_to_latest": "最新",
     "show_metadata": "展开",
     "hide_metadata": "收起",
+    "show_tool_result": "展开结果",
+    "hide_tool_result": "收起结果",
+    "tool_result_empty": "工具结果",
     "metadata_summary_empty": "点击查看元数据",
     "role": {
       "user": "用户",
       "assistant": "助手",
       "system": "系统",
-      "tool": "工具"
+      "tool": "工具",
+      "toolResult": "工具结果"
     }
   },
   "add": {
@@ -102,6 +109,7 @@
   "empty": {
     "title": "这个 space 还没有记忆",
     "description": "记忆会在你和 agent 对话时自动积累，你也可以现在手动保存第一条",
+    "description_readonly": "记忆会在你和 agent 对话时自动积累。",
     "cta": "保存第一条记忆"
   },
   "legend": {
@@ -211,6 +219,16 @@
       "pulse": "Memory Pulse",
       "insight": "Memory Insight",
       "analysis": "Memory Analysis"
+    },
+    "tabs_short": {
+      "pulse": "节奏",
+      "insight": "洞察",
+      "analysis": "分析"
+    },
+    "desktop_only": {
+      "title": "Memory Insight 需要更宽的屏幕",
+      "body": "关系画布需要至少平板横屏（1024px 宽）才能完整铺开。",
+      "hint": "把平板转为横屏，或在桌面浏览器打开 mem9.ai/your-memory。"
     }
   },
   "analysis": {
@@ -513,6 +531,41 @@
       "music": "音乐",
       "on": "开",
       "off": "关"
+    },
+    "npc_tips": {
+      "title": "提示",
+      "items": {
+        "move": "方向键或 WASD 可以移动。",
+        "run": "按住 Shift 可以奔跑。",
+        "interact": "按空格可以交互。",
+        "bucket-to-crops": "每种作物对应一个记忆 bucket。",
+        "bucket-slices": "同一个 bucket 会分散到多株作物上。",
+        "latest-first": "每个 bucket 都按最新记忆排在最前。"
+      }
+    },
+    "npc_dialog": {
+      "title": "农场闲话",
+      "tips": {
+        "move": "咯咯，方向键或 WASD 就能在田里溜达啦。",
+        "run": "哞，按住 Shift 就能跑得更快一点。",
+        "interact": "轻轻按一下空格，我们就会回你一句。",
+        "bucket-to-crops": "哞，每一种作物都照看着一整桶记忆呢。",
+        "bucket-slices": "咯咯，同一桶记忆会分散长成好几株作物。",
+        "latest-first": "农场里最新的记忆，总是先冒出头。"
+      },
+      "deep": {
+        "persona_summary": "哞，我看你这阵子的心思总在 {{summary}} 附近打转呢。",
+        "theme_highlight": "咯咯，{{theme}} 最近一直在这片记忆田里冒头。",
+        "recommendation": "农场的风都在提醒你，{{recommendation}} 也许正合适。"
+      },
+      "light": {
+        "summary_snapshot": "哞，这阵子的田地味道里全是 {{summary}}。",
+        "top_tag": "咯咯，{{tag}} 最近像小苗一样一茬一茬地冒出来。",
+        "top_topic": "连鸡窝边上都在悄悄念叨 {{topic}} 呢。"
+      }
+    },
+    "plant_dialog": {
+      "intro": "这株小苗长在 #{{tag}} 这片地里。这里一共收着 {{count}} 条记忆。你现在看到的是其中一小段。"
     },
     "feedback": {
       "button": "反馈",

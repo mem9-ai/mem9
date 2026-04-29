@@ -3,24 +3,38 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/repository"
+	"github.com/qiffang/mnemos/server/internal/reqid"
 	"github.com/qiffang/mnemos/server/internal/tenant"
 )
 
+type utmRepo interface {
+	Create(ctx context.Context, utm *domain.TenantUTM) error
+}
+
+type tenantDBPool interface {
+	Backend() string
+	Get(ctx context.Context, tenantID, dsn string) (*sql.DB, error)
+}
+
 type TenantService struct {
 	tenants     repository.TenantRepo
+	utms        utmRepo
 	provisioner tenant.Provisioner
-	pool        *tenant.TenantPool
+	pool        tenantDBPool
 	logger      *slog.Logger
 	autoModel   string
 	autoDims    int
+	clientDims  int
 	ftsEnabled  bool
 	encryptor   encrypt.Encryptor
 }
@@ -28,10 +42,11 @@ type TenantService struct {
 func NewTenantService(
 	tenants repository.TenantRepo,
 	provisioner tenant.Provisioner,
-	pool *tenant.TenantPool,
+	pool tenantDBPool,
 	logger *slog.Logger,
 	autoModel string,
 	autoDims int,
+	clientDims int,
 	ftsEnabled bool,
 	encryptor encrypt.Encryptor,
 ) *TenantService {
@@ -42,8 +57,58 @@ func NewTenantService(
 		logger:      logger,
 		autoModel:   autoModel,
 		autoDims:    autoDims,
+		clientDims:  clientDims,
 		ftsEnabled:  ftsEnabled,
 		encryptor:   encryptor,
+	}
+}
+
+func (s *TenantService) WithUTMRepo(r utmRepo) *TenantService {
+	s.utms = r
+	return s
+}
+
+// KeyStatus validates a candidate API key against the control-plane tenant row.
+func (s *TenantService) KeyStatus(ctx context.Context, apiKey string) (domain.KeyStatus, error) {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return "", &domain.ValidationError{Field: "X-API-Key", Message: "missing or malformed X-API-Key"}
+	}
+	if s.tenants == nil {
+		return "", fmt.Errorf("tenant repository not configured")
+	}
+
+	t, err := s.tenants.GetByID(ctx, apiKey)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return "", domain.ErrNotFound
+		}
+		return "", fmt.Errorf("get tenant for key status: %w", err)
+	}
+
+	if t.DeletedAt != nil {
+		if t.Status != domain.TenantDeleted && s.logger != nil {
+			s.logger.WarnContext(ctx, "tenant deleted_at set with non-deleted status",
+				"status", t.Status,
+			)
+		}
+		return "", domain.ErrNotFound
+	}
+
+	switch t.Status {
+	case domain.TenantActive:
+		return domain.KeyStatusActive, nil
+	case domain.TenantProvisioning, domain.TenantSuspended:
+		return domain.KeyStatusInactive, nil
+	case domain.TenantDeleted:
+		return "", domain.ErrNotFound
+	default:
+		if s.logger != nil {
+			s.logger.WarnContext(ctx, "unknown tenant status for key status",
+				"status", t.Status,
+			)
+		}
+		return domain.KeyStatusInactive, nil
 	}
 }
 
@@ -52,19 +117,72 @@ type ProvisionResult struct {
 	ID string `json:"id"`
 }
 
+type ProvisionRequest struct {
+	UTM map[string]string `json:"utm,omitempty"`
+}
+
+func (s *TenantService) logProvisionStart(ctx context.Context, req ProvisionRequest) {
+	if s.logger == nil {
+		return
+	}
+
+	s.logger.Info("tenant provision start",
+		"request_id", reqid.FromContext(ctx),
+		"utm", req.UTM,
+	)
+}
+
+func (s *TenantService) logProvisionComplete(ctx context.Context, tenantID string, req ProvisionRequest) {
+	if s.logger == nil {
+		return
+	}
+
+	s.logger.Info("tenant provision complete",
+		"request_id", reqid.FromContext(ctx),
+		"tenant_id", tenantID,
+		"utm", req.UTM,
+	)
+}
+
+func (s *TenantService) logProvisionFailure(ctx context.Context, tenantID string, req ProvisionRequest, err error) {
+	if s.logger == nil {
+		return
+	}
+
+	attrs := []any{
+		"request_id", reqid.FromContext(ctx),
+		"utm", req.UTM,
+		"err", err,
+	}
+	if tenantID != "" {
+		attrs = append(attrs, "tenant_id", tenantID)
+	}
+
+	s.logger.Error("tenant provision failed", attrs...)
+}
+
 // Provision creates a new cluster and registers it as a tenant.
-func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error) {
+func (s *TenantService) Provision(ctx context.Context, req ProvisionRequest) (*ProvisionResult, error) {
+	s.logProvisionStart(ctx, req)
+
 	if s.pool == nil {
-		return nil, fmt.Errorf("tenant pool not configured")
+		err := fmt.Errorf("tenant pool not configured")
+		s.logProvisionFailure(ctx, "", req, err)
+		return nil, err
 	}
 	if s.pool.Backend() != "tidb" {
-		return nil, &domain.ValidationError{Message: fmt.Sprintf("auto-provisioning requires tidb backend; got %q", s.pool.Backend())}
+		err := &domain.ValidationError{Message: fmt.Sprintf("auto-provisioning requires tidb backend; got %q", s.pool.Backend())}
+		s.logProvisionFailure(ctx, "", req, err)
+		return nil, err
 	}
 	if s.provisioner == nil {
-		return nil, &domain.ValidationError{Message: "provisioning not configured"}
+		err := &domain.ValidationError{Message: "provisioning not configured"}
+		s.logProvisionFailure(ctx, "", req, err)
+		return nil, err
 	}
 
 	total := time.Now()
+	tenantID := ""
 
 	// Step 1: Acquire cluster from provisioner
 	t0 := time.Now()
@@ -75,13 +193,16 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	metrics.ProvisionStepDuration.WithLabelValues("cluster_acquire_" + providerType).Observe(elapsed.Seconds())
 	if err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
+		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("provision cluster: %w", err)
 	}
+	tenantID = info.ID
 
 	// Encrypt password before storing
 	encryptedPassword, err := s.encryptor.Encrypt(ctx, info.Password)
 	if err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
+		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("encrypt tenant password: %w", err)
 	}
 
@@ -111,6 +232,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 			"cluster_id", info.ClusterID,
 			"provider", providerType,
 			"err", err)
+		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("create tenant record: %w", err)
 	}
 	elapsed = time.Since(t0)
@@ -124,6 +246,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	db, err := s.pool.Get(ctx, info.ID, plainTenant.DSNForBackend(s.pool.Backend()))
 	if err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
+		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("get tenant db: %w", err)
 	}
 
@@ -133,6 +256,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 			s.logger.Error("tenant schema init failed", "tenant_id", info.ID, "err", err)
 		}
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
+		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("init tenant schema: %w", err)
 	}
 	elapsed = time.Since(t0)
@@ -142,6 +266,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	t0 = time.Now()
 	if err := s.tenants.UpdateSchemaVersion(ctx, info.ID, 1); err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
+		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("update schema version: %w", err)
 	}
 	elapsed = time.Since(t0)
@@ -151,6 +276,7 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	t0 = time.Now()
 	if err := s.tenants.UpdateStatus(ctx, info.ID, domain.TenantActive); err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
+		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("activate tenant: %w", err)
 	}
 	elapsed = time.Since(t0)
@@ -161,6 +287,14 @@ func (s *TenantService) Provision(ctx context.Context) (*ProvisionResult, error)
 	s.logger.Info("provision step", "step", "total", "duration_ms", totalElapsed.Milliseconds(), "tenant_id", info.ID)
 	metrics.ProvisionStepDuration.WithLabelValues("total").Observe(totalElapsed.Seconds())
 	metrics.ProvisionTotal.WithLabelValues("success").Inc()
+	s.logProvisionComplete(ctx, info.ID, req)
+
+	if len(req.UTM) > 0 && s.utms != nil {
+		utm := utmFromRequest(info.ID, req.UTM)
+		if err := s.utms.Create(ctx, utm); err != nil {
+			s.logger.Warn("utm save failed (non-fatal)", "tenant_id", info.ID, "err", err)
+		}
+	}
 
 	return &ProvisionResult{
 		ID: info.ID,
@@ -205,7 +339,7 @@ func (s *TenantService) GetInfo(ctx context.Context, tenantID string) (*domain.T
 }
 
 func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) error {
-	if _, err := db.ExecContext(ctx, tenant.BuildSessionsSchema(s.autoModel, s.autoDims)); err != nil {
+	if _, err := db.ExecContext(ctx, tenant.BuildSessionsSchema(s.autoModel, s.autoDims, s.clientDims)); err != nil {
 		return fmt.Errorf("ensure sessions table: create: %w", err)
 	}
 	if s.autoModel != "" {
@@ -233,4 +367,14 @@ func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) err
 		}
 	}
 	return nil
+}
+
+func utmFromRequest(tenantID string, raw map[string]string) *domain.TenantUTM {
+	return &domain.TenantUTM{
+		TenantID: tenantID,
+		Source:   raw["utm_source"],
+		Medium:   raw["utm_medium"],
+		Campaign: raw["utm_campaign"],
+		Content:  raw["utm_content"],
+	}
 }

@@ -167,7 +167,7 @@ When you run a full baseline-vs-mem comparison (not `--profile`, not `--compare`
 5. Chooses a mem9 history load strategy via `--mem9-load-method`:
    - `line-write` (default): replays the transcript by posting each JSONL message line to `v1alpha2 /memories` sequentially.
    - `import-session`: uploads the full transcript via `v1alpha1 /imports` (`file_type=session`) and polls the task.
-6. Installs the `openclaw-plugin` into the memory profile, adds `plugins.allow=["mem9"]`, and writes the tenant credentials into `plugins.entries.mem9.config`.
+6. Installs the `openclaw-plugin` into the memory profile, adds `plugins.allow=["mem9"]`, writes the tenant credentials into `plugins.entries.mem9.config`, and enables `plugins.entries.mem9.hooks.allowConversationAccess=true` on OpenClaw 4.23+ / 2026.4.22+.
 7. Calls `run_batch.py` twice (baseline vs mem), writing into `results-${profile}` for baseline and `results-${mem_profile}` for the mem run.
 8. Prints accuracy for both runs and the delta.
 

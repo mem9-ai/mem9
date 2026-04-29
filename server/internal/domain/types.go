@@ -48,6 +48,8 @@ type Memory struct {
 
 	Score *float64 `json:"score,omitempty"`
 
+	Confidence *int `json:"confidence,omitempty"`
+
 	// RelativeAge is a human-readable recency string (e.g. "3 days ago").
 	// Populated server-side at query time for search results only; never stored.
 	RelativeAge string `json:"relative_age,omitempty"`
@@ -84,6 +86,14 @@ const (
 	TenantActive       TenantStatus = "active"
 	TenantSuspended    TenantStatus = "suspended"
 	TenantDeleted      TenantStatus = "deleted"
+)
+
+// KeyStatus is the normalized API-key validation result exposed to console.
+type KeyStatus string
+
+const (
+	KeyStatusActive   KeyStatus = "active"
+	KeyStatusInactive KeyStatus = "inactive"
 )
 
 // Tenant represents a provisioned customer with a dedicated database.
@@ -136,6 +146,17 @@ func (t *Tenant) DSNForBackend(backend string) string {
 		}
 		return dsn
 	}
+}
+
+// TenantUTM holds marketing attribution params captured at provision time.
+// Immutable after creation; one row per tenant.
+type TenantUTM struct {
+	TenantID  string    `json:"tenant_id"`
+	Source    string    `json:"utm_source,omitempty"`
+	Medium    string    `json:"utm_medium,omitempty"`
+	Campaign  string    `json:"utm_campaign,omitempty"`
+	Content   string    `json:"utm_content,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // TenantInfo describes tenant metadata.

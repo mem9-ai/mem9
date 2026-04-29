@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type Phaser from "phaser";
+import i18n from "@/i18n";
 import {
   createPixelFarmGame,
   type PixelFarmDebugState,
@@ -11,13 +12,27 @@ import {
   PIXEL_FARM_BUBBLE_APPEAR_SOUND_DURATION_MS,
   PIXEL_FARM_BUBBLE_APPEAR_SOUND_KEY,
 } from "@/lib/pixel-farm/runtime-assets";
+import {
+  createPixelFarmOpenBubbleState,
+  type PixelFarmOpenBubbleState,
+} from "@/lib/pixel-farm/dialog-state";
+import { shouldIgnoreRepeatedDialogInteraction } from "@/lib/pixel-farm/dialog-interaction";
 import type { PixelFarmWorldState } from "@/lib/pixel-farm/data/types";
+import { buildPixelFarmPlantDialogEntries } from "@/lib/pixel-farm/plant-dialog-content";
+import {
+  buildPixelFarmNpcDialogCatalog,
+  pickNextPixelFarmNpcDialogEntry,
+  type PixelFarmNpcDialogRotationState,
+} from "@/lib/pixel-farm/npc-dialog-content";
+import { getPixelFarmNpcDialogTitle } from "@/lib/pixel-farm/npc-tips";
+import type { PixelFarmNpcDialogContentState } from "@/lib/pixel-farm/use-pixel-farm-npc-dialog-content";
 import type { Memory } from "@/types/memory";
 
 interface PhaserStageProps {
   debugActorState?: PixelFarmDebugState | null;
   memoryById?: Record<string, Memory>;
   musicEnabled?: boolean;
+  npcDialogContent?: PixelFarmNpcDialogContentState | null;
   onInteractionDebugChange?: ((info: PixelFarmInteractionDebugInfo) => void) | null;
   onPointerDebugChange?: ((info: PixelFarmPointerDebugInfo) => void) | null;
   resolveInteractionMemories?: ((tagKey: string) => Promise<Memory[]>) | null;
@@ -26,118 +41,15 @@ interface PhaserStageProps {
   worldState?: PixelFarmWorldState | null;
 }
 
-interface PixelFarmOpenBubbleState {
-  animalInstanceId: string | null;
-  interactionNonce: number;
-  memoryIds: string[];
-  memories: Memory[];
-  memoryIndex: number;
-  screenX: number;
-  screenY: number;
-  tagLabel: string;
-  targetId: string;
-}
-
-const PIXEL_FARM_EMPTY_MEMORY_MESSAGES = [
-  "No memories have formed here.",
-  "Nothing has taken shape here.",
-  "This place holds no memory.",
-  "No traces remain.",
-  "This place is quiet.",
-  "Nothing stirs here.",
-  "No signs of life.",
-  "It feels untouched.",
-  "Nothing is here.",
-  "There's nothing here yet.",
-  "This place is empty.",
-  "Nothing has appeared here yet.",
-  "Nothing has settled here yet.",
-  "No one has come by.",
-  "This spot is still waiting.",
-] as const;
-
-function resolveAvailableMemoryIds(
-  memoryIds: readonly string[],
-  memoryById: Record<string, Memory>,
-): string[] {
-  return memoryIds.filter((memoryId) => memoryById[memoryId]);
-}
-
-function createOpenBubbleState(
-  info: PixelFarmInteractionDebugInfo,
-  memories: readonly Memory[],
-  current: PixelFarmOpenBubbleState | null,
-): PixelFarmOpenBubbleState | null {
-  const target = info.target;
-  if (!target || memories.length < 1) {
-    return null;
-  }
-
-  const memoryIds = memories.map((memory) => memory.id);
-  if (current && current.targetId === target.id && info.interactionNonce === current.interactionNonce) {
-    return {
-      ...current,
-      animalInstanceId: target.animalInstanceId ?? null,
-      memories: [...memories],
-      memoryIds,
-      screenX: target.screenX,
-      screenY: target.screenY,
-      tagLabel: target.tagLabel,
-    };
-  }
-
-  if (!current || current.targetId !== target.id) {
-    return {
-      animalInstanceId: target.animalInstanceId ?? null,
-      interactionNonce: info.interactionNonce,
-      memories: [...memories],
-      memoryIds,
-      memoryIndex: 0,
-      screenX: target.screenX,
-      screenY: target.screenY,
-      tagLabel: target.tagLabel,
-      targetId: target.id,
-    };
-  }
-
+function createFallbackNpcDialogContent(): PixelFarmNpcDialogContentState {
   return {
-    ...current,
-    animalInstanceId: target.animalInstanceId ?? null,
-    interactionNonce: info.interactionNonce,
-    memories: [...memories],
-    memoryIds,
-    memoryIndex: info.interactionNonce > current.interactionNonce
-      ? (current.memoryIndex + 1) % memoryIds.length
-      : Math.min(current.memoryIndex, memoryIds.length - 1),
-    screenX: target.screenX,
-    screenY: target.screenY,
-    tagLabel: target.tagLabel,
-  };
-}
-
-function createFallbackMemory(targetId: string, tagLabel: string): Memory {
-  const now = new Date().toISOString();
-  const content = PIXEL_FARM_EMPTY_MEMORY_MESSAGES[
-    Math.floor(Math.random() * PIXEL_FARM_EMPTY_MEMORY_MESSAGES.length)
-  ] ?? "This place is empty.";
-
-  return {
-    id: `pixel-farm-empty:${targetId}`,
-    content,
-    memory_type: "insight",
-    source: "pixel-farm",
-    tags: tagLabel ? [tagLabel] : [],
-    metadata: {
-      pixelFarmFallback: true,
-      targetId,
-    },
-    agent_id: "pixel-farm",
-    session_id: "pixel-farm",
-    state: "active",
-    version: 1,
-    updated_by: "pixel-farm",
-    created_at: now,
-    updated_at: now,
+    catalog: buildPixelFarmNpcDialogCatalog({
+      deepReport: null,
+      lightSnapshot: null,
+      t: (key, vars) => i18n.t(key, vars),
+    }),
+    deepReport: null,
+    lightSnapshot: null,
   };
 }
 
@@ -177,6 +89,7 @@ export function PhaserStage({
   debugActorState = null,
   memoryById = {},
   musicEnabled = true,
+  npcDialogContent = null,
   onInteractionDebugChange = null,
   onPointerDebugChange = null,
   showInteractionDebug = false,
@@ -197,8 +110,10 @@ export function PhaserStage({
   const showSpatialDebugRef = useRef(showSpatialDebug);
   const worldStateRef = useRef<PixelFarmWorldState | null>(worldState);
   const memoryByIdRef = useRef(memoryById);
+  const npcDialogContentRef = useRef<PixelFarmNpcDialogContentState | null>(npcDialogContent);
   const openBubbleStateRef = useRef<PixelFarmOpenBubbleState | null>(null);
   const pausedAnimalInstanceIdRef = useRef<string | null>(null);
+  const npcDialogRotationRef = useRef<PixelFarmNpcDialogRotationState | null>(null);
   const handledInteractionNonceRef = useRef(0);
   const bubbleAppearSoundRef = useRef<Phaser.Sound.BaseSound | null>(null);
   const bubbleAppearSoundStopTimerRef = useRef<number | null>(null);
@@ -238,14 +153,16 @@ export function PhaserStage({
   }, [memoryById]);
 
   useEffect(() => {
+    npcDialogContentRef.current = npcDialogContent;
+  }, [npcDialogContent]);
+
+  useEffect(() => {
     openBubbleStateRef.current = openBubbleState;
   }, [openBubbleState]);
 
-  const pausedAnimalInstanceId = openBubbleState?.animalInstanceId ?? null;
-
   useEffect(() => {
-    pausedAnimalInstanceIdRef.current = pausedAnimalInstanceId;
-  }, [pausedAnimalInstanceId]);
+    pausedAnimalInstanceIdRef.current = openBubbleState?.animalInstanceId ?? null;
+  }, [openBubbleState]);
 
   useEffect(() => {
     const uiScene = gameRef.current?.scene.getScene("pixel-farm-ui") as PixelFarmUIScene | undefined;
@@ -258,29 +175,26 @@ export function PhaserStage({
       return;
     }
 
-    const visibleMemories = openBubbleState.memories.length > 0
-      ? openBubbleState.memories
-      : resolveAvailableMemoryIds(openBubbleState.memoryIds, memoryById)
-          .map((memoryId) => memoryById[memoryId]!)
-          .filter(Boolean);
-
-    if (visibleMemories.length === 0) {
+    if (openBubbleState.entries.length === 0) {
       uiScene.closeDialog();
       return;
     }
 
     uiScene.openDialog({
       targetId: openBubbleState.targetId,
+      bucketTotalMemoryCount: openBubbleState.bucketTotalMemoryCount,
+      entries: openBubbleState.entries,
       interactionNonce: openBubbleState.interactionNonce,
       tagLabel: openBubbleState.tagLabel,
-      memories: visibleMemories,
-      memoryIndex: openBubbleState.memoryIndex % visibleMemories.length,
+      memoryIndex: openBubbleState.memoryIndex % openBubbleState.entries.length,
+      showCounter: openBubbleState.showCounter,
+      startIndexInclusive: openBubbleState.startIndexInclusive,
       anchorWorldX: openBubbleState.screenX,
       anchorWorldY: openBubbleState.screenY,
       anchorScreenX: openBubbleState.screenX,
       anchorScreenY: openBubbleState.screenY,
     });
-  }, [memoryById, openBubbleState]);
+  }, [openBubbleState]);
 
   useEffect(() => {
     if (!hostRef.current || gameRef.current) {
@@ -311,6 +225,17 @@ export function PhaserStage({
             uiScene?.refreshDialogAnchor(target.screenX, target.screenY);
           }
 
+          if (shouldIgnoreRepeatedDialogInteraction({
+            currentBubble,
+            interactionNonce: info.interactionNonce,
+            targetKind: target.kind,
+            targetId: target.id,
+          })) {
+            uiScene?.refreshDialogAnchor(target.screenX, target.screenY);
+            handledInteractionNonceRef.current = info.interactionNonce;
+            return;
+          }
+
           if (
             info.interactionNonce === handledInteractionNonceRef.current ||
             info.interactionNonce < 1 ||
@@ -320,15 +245,56 @@ export function PhaserStage({
             return;
           }
 
-          const resolvedMemories = target.memoryIds
-            .map((memoryId) => memoryByIdRef.current[memoryId])
-            .filter((memory): memory is Memory => Boolean(memory));
-          const dialogMemories = resolvedMemories.length > 0
-            ? resolvedMemories
-            : [createFallbackMemory(target.id, target.tagLabel)];
-
           setOpenBubbleState((current) => {
-            const next = createOpenBubbleState(info, dialogMemories, current);
+            const entries =
+              target.kind === "plant"
+                ? buildPixelFarmPlantDialogEntries({
+                    bucketTotalMemoryCount: target.bucketTotalMemoryCount ?? target.memoryIds.length,
+                    memories: target.memoryIds
+                      .map((memoryId) => memoryByIdRef.current[memoryId])
+                      .filter((memory): memory is Memory => Boolean(memory)),
+                    tagLabel: target.tagLabel,
+                    t: (key, vars) => i18n.t(key, vars),
+                  })
+                : (() => {
+                    const nextDialog = pickNextPixelFarmNpcDialogEntry({
+                      catalog:
+                        npcDialogContentRef.current?.catalog ?? createFallbackNpcDialogContent().catalog,
+                      rotationState: npcDialogRotationRef.current,
+                    });
+                    npcDialogRotationRef.current = nextDialog.rotationState;
+                    return [{ id: nextDialog.entry.id, kind: "npc" as const, content: nextDialog.entry.text }];
+                  })();
+
+            if (entries.length < 1) {
+              return null;
+            }
+
+            const next = createPixelFarmOpenBubbleState(
+              {
+                interactionNonce: info.interactionNonce,
+                target: {
+                  animalInstanceId: target.animalInstanceId ?? null,
+                  bucketTotalMemoryCount:
+                    target.kind === "plant"
+                      ? (target.bucketTotalMemoryCount ?? entries.length)
+                      : 1,
+                  id: target.id,
+                  memoryIds: [...target.memoryIds],
+                  screenX: target.screenX,
+                  screenY: target.screenY,
+                  showCounter: target.kind === "plant",
+                  startIndexInclusive:
+                    target.kind === "plant" ? (target.startIndexInclusive ?? 0) : 0,
+                  tagLabel:
+                    target.kind === "plant"
+                      ? target.tagLabel
+                      : getPixelFarmNpcDialogTitle(),
+                },
+              },
+              entries,
+              current,
+            );
             if (
               next &&
               (!current ||

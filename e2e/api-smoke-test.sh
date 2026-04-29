@@ -9,7 +9,7 @@
 #   4. Ingest via content (async reconcile, expect 202)
 #   5. Validation errors (bad request shapes)
 #   6. List memories
-#   7. Search by query (?q=) — includes relative_age check on results
+#   7. Search by query (?q=) — includes confidence check on results
 #   8. Search by tags (?tags=)
 #   9. Get memory by ID (uses first ID from list, if any)
 #  10. Update memory (PUT /{id})
@@ -255,20 +255,24 @@ if [ "$SEARCH_OK" = "true" ]; then
   code=$(http_code "$resp")
   bdy=$(body "$resp")
   check "GET /memories?q=TiDB returns 200" "$code" "200"
-  SEARCH_RELATIVE_AGE=$(printf '%s' "$bdy" | python3 -c "
+  SEARCH_CONFIDENCE=$(printf '%s' "$bdy" | python3 -c "
 import sys, json
 mems = json.load(sys.stdin).get('memories', [])
-print(mems[0].get('relative_age', '') if mems else 'no-results')
+if not mems:
+    print('no-results')
+else:
+    c = mems[0].get('confidence')
+    print(str(c) if c is not None else '')
 " 2>/dev/null || true)
-  if [ "$SEARCH_RELATIVE_AGE" = "no-results" ]; then
-    info "search: no results yet — relative_age check skipped"
+  if [ "$SEARCH_CONFIDENCE" = "no-results" ]; then
+    info "search: no results yet — confidence check skipped"
   else
     TOTAL=$((TOTAL+1))
-    if [ -n "$SEARCH_RELATIVE_AGE" ]; then
-      ok "search: first result has relative_age (got='$SEARCH_RELATIVE_AGE')"
+    if [ -n "$SEARCH_CONFIDENCE" ]; then
+      ok "search: first result has confidence (got='$SEARCH_CONFIDENCE')"
       PASS=$((PASS+1))
     else
-      fail "search: first result missing relative_age field"
+      fail "search: first result missing confidence field"
       FAIL=$((FAIL+1))
     fi
   fi
@@ -306,13 +310,20 @@ if [ -n "$FIRST_MEM_ID" ]; then
   ORIG_VERSION=$(printf '%s' "$bdy" | python3 -c "import sys,json; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || true)
   info "Original version: $ORIG_VERSION"
   NEXT_VERSION=$((ORIG_VERSION+1))
+  UPDATE_PAYLOAD=$(printf '%s' "$ORIG_CONTENT" | python3 -c '
+import json
+import sys
+
+content = sys.stdin.read()
+print(json.dumps({
+    "content": f"{content} (smoke-updated)",
+    "tags": ["smoke", "updated"],
+}))
+')
 
   resp=$(curl_mem_json "$MEM_BASE/$FIRST_MEM_ID" -X PUT \
     -H "Content-Type: application/json" \
-    -d "{
-      \"content\": \"${ORIG_CONTENT} (smoke-updated)\",
-      \"tags\": [\"smoke\", \"updated\"]
-    }")
+    -d "$UPDATE_PAYLOAD")
   code=$(http_code "$resp")
   bdy=$(body "$resp")
   check "PUT /{id} returns 200" "$code" "200"

@@ -2,7 +2,14 @@ export interface PluginConfig {
   // Server mode (apiUrl present → server)
   apiUrl?: string;
   apiKey?: string;
+  provisionToken?: string;
+  provisionQueryParams?: Record<string, string>;
   tenantID?: string;
+  defaultTimeoutMs?: number;
+  searchTimeoutMs?: number;
+  debug?: boolean;
+  // Deprecated: use debug
+  debugRecall?: boolean;
 
   tenantName?: string;
 
@@ -25,6 +32,7 @@ export interface Memory {
   created_at: string;
   updated_at: string;
   score?: number;
+  confidence?: number;
 
   // Smart memory pipeline (server mode)
   memory_type?: string;

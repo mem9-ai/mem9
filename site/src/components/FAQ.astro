@@ -1,59 +1,396 @@
 ---
-import type { SiteFaqCopy } from '../content/site';
+import { DEFAULT_LOCALE, siteCopy, siteLocales, type SiteLinkCopy } from "../content/site";
 
-interface Props {
-  faq: SiteFaqCopy;
+function linkTarget(link: SiteLinkCopy): string | undefined {
+  return link.external ? "_blank" : undefined;
 }
 
-const { faq } = Astro.props;
+function linkRel(link: SiteLinkCopy): string | undefined {
+  return link.external ? "noopener noreferrer" : undefined;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function renderInline(text: string): string {
+  return escapeHtml(text).replace(
+    /`([^`]+)`/g,
+    '<code class="faq-inline-code">$1</code>',
+  );
+}
 ---
 
-<section id="faq" class="faq">
-  <div class="container">
-    <div class="section-head">
-      <p class="section-kicker" data-i18n="faq.kicker">{faq.kicker}</p>
-      <h2 class="section-title" data-i18n="faq.title">{faq.title}</h2>
-    </div>
+<section id="faq" class="faq" data-faq-root data-faq-locale={DEFAULT_LOCALE}>
+  {siteLocales.map((locale) => {
+    const faq = siteCopy[locale].faq;
+    return (
+      <div class="faq-copy" data-faq-copy={locale} hidden={locale !== DEFAULT_LOCALE}>
+        <div class="container">
+          <div class="section-head">
+            <p class="section-kicker">{faq.kicker}</p>
+            <h2 class="section-title">{faq.title}</h2>
+            <p class="section-desc faq-desc">{faq.description}</p>
+          </div>
 
-    <article class="faq-card surface-card">
-      <h3 class="faq-question" data-i18n="faq.question">{faq.question}</h3>
-      <p class="faq-answer" data-i18n="faq.answer">
-        {faq.answer}
-      </p>
-    </article>
-  </div>
+          <div class="faq-list">
+            {faq.items.map((item, index) => (
+              <details class="faq-item surface-card" open={index === 0}>
+                <summary class="faq-summary">
+                  <span class="faq-question">{item.question}</span>
+                  <span class="faq-icon" aria-hidden="true"></span>
+                </summary>
+                <div class="faq-body">
+                  {item.answer.map((paragraph) => (
+                    <p class="faq-answer" set:html={renderInline(paragraph)}></p>
+                  ))}
+
+                  {item.bullets && (
+                    <ul class="faq-bullets">
+                      {item.bullets.map((bullet) => (
+                        <li set:html={renderInline(bullet)}></li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {item.groups && item.groups.length > 0 && (
+                    <div class="faq-groups">
+                      {item.groups.map((group) => (
+                        <div class="faq-group">
+                          <p class="faq-group-label">{group.label}</p>
+                          {group.body && (
+                            <p class="faq-group-body">
+                              <Fragment set:html={renderInline(group.body)} />
+                              {group.link && !group.example && (
+                                <>
+                                  {' '}
+                                  <a
+                                    href={group.link.href}
+                                    target={linkTarget(group.link)}
+                                    rel={linkRel(group.link)}
+                                    class="faq-inline-link"
+                                  >
+                                    {group.link.label}
+                                  </a>
+                                </>
+                              )}
+                            </p>
+                          )}
+                          {group.example && (
+                            <pre class="faq-code"><code>{group.example.code}</code></pre>
+                          )}
+                          {group.example && group.link && (
+                            <a
+                              href={group.link.href}
+                              target={linkTarget(group.link)}
+                              rel={linkRel(group.link)}
+                              class="faq-inline-link"
+                            >
+                              {group.link.label}
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {item.examples && (
+                    <div class="faq-examples">
+                      {item.examples.map((example) => (
+                        <div class="faq-example">
+                          <p class="faq-example-label">{example.label}</p>
+                          <pre class="faq-code"><code>{example.code}</code></pre>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {item.links && item.links.length > 0 && (
+                    <div class="faq-links">
+                      {item.links.map((link) => (
+                        <a href={link.href} target={linkTarget(link)} rel={linkRel(link)} class="faq-link">
+                          {link.label}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </details>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  })}
 </section>
 
 <style>
   .faq {
     padding-top: 3.25rem;
-    padding-bottom: 4.5rem;
+    padding-bottom: 4.75rem;
+  }
+
+  .faq-copy[hidden] {
+    display: none;
   }
 
   .section-head,
-  .faq-card {
-    width: min(100%, var(--content-rail));
+  .faq-list {
+    width: min(100%, var(--section-grid));
     margin-left: auto;
     margin-right: auto;
   }
 
   .section-head {
-    margin-bottom: 1.5rem;
+    width: min(100%, var(--content-rail));
+    margin-bottom: 1.6rem;
   }
 
-  .faq-card {
-    padding: 1.5rem;
+  .faq-desc {
+    max-width: 64ch;
+  }
+
+  .faq-list {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .faq-item {
     background: linear-gradient(180deg, var(--surface-elevated-start), var(--surface-elevated-end));
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+
+  .faq-item:hover {
+    border-color: var(--border-strong);
+  }
+
+  .faq-summary {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.25rem 1.35rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+
+  .faq-summary:hover {
+    background: var(--button-active-bg);
+  }
+
+  .faq-summary:hover .faq-icon {
+    color: var(--text);
+  }
+
+  .faq-summary::-webkit-details-marker {
+    display: none;
   }
 
   .faq-question {
-    font-size: 1.2rem;
-    margin-bottom: 0.7rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .faq-icon {
+    flex: none;
+    width: 1.05rem;
+    height: 1.05rem;
+    position: relative;
+    color: var(--accent);
+  }
+
+  .faq-icon::before,
+  .faq-icon::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: 0.85rem;
+    height: 1.5px;
+    border-radius: 999px;
+    background: currentColor;
+    transform: translate(-50%, -50%);
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+
+  .faq-icon::after {
+    transform: translate(-50%, -50%) rotate(90deg);
+  }
+
+  .faq-item[open] .faq-icon::after {
+    transform: translate(-50%, -50%) rotate(180deg);
+    opacity: 0;
+  }
+
+  .faq-body {
+    padding: 0 1.35rem 1.35rem;
+    display: grid;
+    gap: 0.8rem;
+    color: var(--text-dim);
+    animation: faq-reveal 0.25s ease;
+  }
+
+  .faq-item[open] .faq-body {
+    border-top: 1px solid var(--border);
+    padding-top: 1.1rem;
+  }
+
+  @keyframes faq-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .faq-answer {
+    font-size: 0.96rem;
+    line-height: 1.68;
+  }
+
+  .faq-bullets {
+    padding-left: 1.15rem;
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .faq-bullets li {
+    line-height: 1.62;
+  }
+
+  .faq-groups {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .faq-group {
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .faq-group-label {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .faq-group-body {
+    font-size: 0.92rem;
+    line-height: 1.6;
     color: var(--text-dim);
-    font-size: 1rem;
-    line-height: 1.65;
+  }
+
+  .faq-group .faq-code {
+    margin-top: 0.1rem;
+  }
+
+  .faq-inline-link {
+    color: var(--text);
+    border-bottom: 1px solid var(--button-active-border);
+    text-decoration: none;
+    padding-bottom: 0.02rem;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .faq-inline-link:hover,
+  .faq-inline-link:focus-visible {
+    border-bottom-color: var(--text);
+  }
+
+  .faq-group > .faq-inline-link {
+    justify-self: start;
+    align-self: start;
+  }
+
+  .faq-examples {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .faq-example {
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .faq-example-label {
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+  }
+
+  .faq-code {
+    padding: 0.85rem 1rem;
+    border-radius: 0.95rem;
+    background: var(--bg-terminal);
+    border: 1px solid var(--border);
+    overflow-x: auto;
+    box-shadow: var(--surface-inset), var(--surface-shadow-soft);
+  }
+
+  .faq-body :global(.faq-inline-code) {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    padding: 0.08em 0.4em;
+    border-radius: 0.4em;
+    background: var(--bg-terminal);
+    border: 1px solid var(--border);
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  .faq-code code {
+    display: block;
+    white-space: pre;
+    font-size: 0.86rem;
+    line-height: 1.6;
+    color: var(--text);
+  }
+
+  .faq-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding-top: 0.1rem;
+  }
+
+  .faq-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text);
+    border-bottom: 1px solid var(--button-active-border);
+    padding-bottom: 0.05rem;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .faq-link:hover {
+    border-bottom-color: var(--text);
+    opacity: 1;
+  }
+
+  @media (max-width: 720px) {
+    .faq-summary,
+    .faq-body {
+      padding-left: 1.05rem;
+      padding-right: 1.05rem;
+    }
+
+    .faq-question {
+      font-size: 1rem;
+    }
+
+    .faq-code code {
+      font-size: 0.8rem;
+    }
   }
 </style>

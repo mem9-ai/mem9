@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -17,15 +18,26 @@ import (
 	"github.com/qiffang/mnemos/server/internal/service"
 )
 
+var (
+	// Keep the application timeout below the benchmark client's 10m request timeout
+	// so slow sync ingest returns a structured JSON 504 instead of a socket-level abort.
+	syncIngestTimeout = 9 * time.Minute
+)
+
 type createMemoryRequest struct {
-	Content   string                  `json:"content,omitempty"`
-	AgentID   string                  `json:"agent_id,omitempty"`
-	Tags      []string                `json:"tags,omitempty"`
-	Metadata  json.RawMessage         `json:"metadata,omitempty"`
-	Messages  []service.IngestMessage `json:"messages,omitempty"`
-	SessionID string                  `json:"session_id,omitempty"`
-	Mode      service.IngestMode      `json:"mode,omitempty"`
-	Sync      bool                    `json:"sync,omitempty"`
+	Content    string                  `json:"content,omitempty"`
+	MemoryType string                  `json:"memory_type,omitempty"`
+	AgentID    string                  `json:"agent_id,omitempty"`
+	Tags       []string                `json:"tags,omitempty"`
+	Metadata   json.RawMessage         `json:"metadata,omitempty"`
+	Messages   []service.IngestMessage `json:"messages,omitempty"`
+	SessionID  string                  `json:"session_id,omitempty"`
+	Mode       service.IngestMode      `json:"mode,omitempty"`
+	Sync       bool                    `json:"sync,omitempty"`
+}
+
+func isSyncIngestTimeout(ctx context.Context, err error) bool {
+	return err != nil && errors.Is(err, context.DeadlineExceeded) && errors.Is(ctx.Err(), context.DeadlineExceeded)
 }
 
 func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +63,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if hasMessages && strings.TrimSpace(req.MemoryType) != "" {
+		s.handleError(r.Context(), w, &domain.ValidationError{Field: "memory_type", Message: "memory_type is only allowed with content, not messages"})
+		return
+	}
+
 	if hasMessages {
 		messages := append([]service.IngestMessage(nil), req.Messages...)
 		ingestReq := service.IngestRequest{
@@ -61,9 +78,17 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if req.Sync {
-			result, err := s.ingestMessages(r.Context(), auth, svc, ingestReq)
+			syncCtx, cancel := context.WithTimeout(r.Context(), syncIngestTimeout)
+			defer cancel()
+
+			result, err := s.ingestMessages(syncCtx, auth, svc, ingestReq)
 			if err != nil {
-				s.handleError(r.Context(), w, err)
+				if isSyncIngestTimeout(syncCtx, err) {
+					s.logger.Warn("sync ingest timed out", "session", ingestReq.SessionID, "timeout", syncIngestTimeout)
+					respondError(w, http.StatusGatewayTimeout, fmt.Sprintf("sync ingest timed out after %s", syncIngestTimeout))
+					return
+				}
+				s.handleError(syncCtx, w, err)
 				return
 			}
 			if result != nil && result.Status == "failed" {
@@ -74,6 +99,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			if result != nil {
 				written = int64(result.MemoriesChanged)
 			}
+			s.recordIngestMetering(auth, svc)
 			go s.refreshWriteMetrics(auth, svc, written)
 			respond(w, http.StatusOK, map[string]string{"status": "ok"})
 		} else {
@@ -83,11 +109,15 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 					slog.Error("async ingest failed", "session", ingestReq.SessionID, "err", err)
 					return
 				}
+				if result != nil && result.Status == "failed" {
+					slog.Error("async ingest reconcile failed", "session", ingestReq.SessionID)
+					return
+				}
 				var written int64
 				if result != nil {
 					written = int64(result.MemoriesChanged)
 				}
-				s.refreshWriteMetrics(auth, svc, written)
+				s.afterSuccessfulIngest(auth, svc, written)
 			}()
 			respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 		}
@@ -106,8 +136,30 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	tags := append([]string(nil), req.Tags...)
 	metadata := append(json.RawMessage(nil), req.Metadata...)
 	content := req.Content
+	explicitMemoryType := strings.TrimSpace(req.MemoryType)
+
+	if explicitMemoryType != "" {
+		if explicitMemoryType != string(domain.TypePinned) {
+			s.handleError(r.Context(), w, &domain.ValidationError{
+				Field:   "memory_type",
+				Message: fmt.Sprintf("unsupported value %q; only %q is supported on the explicit content path", explicitMemoryType, domain.TypePinned),
+			})
+			return
+		}
+
+		mem, written, err := svc.memory.CreatePinned(r.Context(), agentID, content, tags, metadata)
+		if err != nil {
+			slog.Error("pinned memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
+			s.handleError(r.Context(), w, err)
+			return
+		}
+		go s.refreshWriteMetrics(auth, svc, int64(written))
+		respond(w, http.StatusCreated, mem)
+		return
+	}
 
 	if req.Sync {
+		// s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
 		mem, written, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
 		if err != nil {
 			slog.Error("sync memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
@@ -118,7 +170,8 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		go s.refreshWriteMetrics(auth, svc, int64(written))
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	} else {
-		go func(auth *domain.AuthInfo, agentName, actorAgentID, content string, tags []string, metadata json.RawMessage) {
+		go func(auth *domain.AuthInfo, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage) {
+			// s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
 			mem, written, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
 			if err != nil {
 				slog.Error("async memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
@@ -130,7 +183,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", "")
 			}
 			s.refreshWriteMetrics(auth, svc, int64(written))
-		}(auth, auth.AgentName, agentID, content, tags, metadata)
+		}(auth, auth.AgentName, agentID, req.SessionID, content, tags, metadata)
 
 		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 	}
@@ -139,6 +192,29 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 // ingestMessages runs the full ingest pipeline: BulkCreate → ExtractPhase1 → PatchTags + ReconcilePhase2.
 // TODO: wrap all database writes (BulkCreate, PatchTags, ReconcilePhase2) in a single transaction to guarantee atomicity.
 func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, req service.IngestRequest) (*service.IngestResult, error) {
+	start := time.Now()
+	var (
+		bulkCreateDuration    time.Duration
+		extractPhase1Duration time.Duration
+		patchTagsDuration     time.Duration
+		reconcileDuration     time.Duration
+		factsCount            int
+		status                = "ok"
+	)
+	defer func() {
+		s.logger.Info("messages ingest timings",
+			"session", req.SessionID,
+			"messages", len(req.Messages),
+			"facts", factsCount,
+			"status", status,
+			"bulk_create_ms", bulkCreateDuration.Milliseconds(),
+			"extract_phase1_ms", extractPhase1Duration.Milliseconds(),
+			"patch_tags_ms", patchTagsDuration.Milliseconds(),
+			"reconcile_phase2_ms", reconcileDuration.Milliseconds(),
+			"total_ms", time.Since(start).Milliseconds(),
+		)
+	}()
+
 	// Strip plugin-injected context (e.g. <relevant-memories>) before any storage or LLM path.
 	// This is the single sanitization point for the handler-driven pipeline (BulkCreate, ExtractPhase1, etc.).
 	req.Messages = service.StripInjectedContext(req.Messages)
@@ -146,16 +222,22 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	// Session persistence is best-effort for both sync and async paths.
 	// sync=true guarantees only that reconcile (memory extraction) completed —
 	// raw session rows in /session-messages may be absent if BulkCreate fails.
+	bulkCreateStart := time.Now()
 	if err := svc.session.BulkCreate(ctx, auth.AgentName, req); err != nil {
 		slog.Error("session raw save failed",
 			"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
 	}
+	bulkCreateDuration = time.Since(bulkCreateStart)
 
+	extractPhase1Start := time.Now()
 	phase1, err := svc.ingest.ExtractPhase1(ctx, req.Messages)
+	extractPhase1Duration = time.Since(extractPhase1Start)
 	if err != nil {
+		status = "phase1_error"
 		slog.Error("phase1 extraction failed", "session", req.SessionID, "err", err)
 		return nil, fmt.Errorf("phase1 extraction: %w", err)
 	}
+	factsCount = len(phase1.Facts)
 
 	var wg sync.WaitGroup
 	var reconcileResult *service.IngestResult
@@ -164,12 +246,16 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		patchTagsStart := time.Now()
+		defer func() {
+			patchTagsDuration = time.Since(patchTagsStart)
+		}()
 		for i, msg := range req.Messages {
 			tags := tagsAtIndex(phase1.MessageTags, i)
 			if len(tags) == 0 {
 				continue
 			}
-			hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content)
+			hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content, msg.Seq)
 			if err := svc.session.PatchTags(ctx, req.SessionID, hash, tags); err != nil {
 				slog.Warn("session tag patch failed",
 					"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
@@ -179,6 +265,10 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 
 	go func() {
 		defer wg.Done()
+		reconcileStart := time.Now()
+		defer func() {
+			reconcileDuration = time.Since(reconcileStart)
+		}()
 		reconcileResult, reconcileErr = svc.ingest.ReconcilePhase2(
 			ctx, auth.AgentName, req.AgentID, req.SessionID, phase1.Facts)
 	}()
@@ -186,8 +276,12 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	wg.Wait()
 
 	if reconcileErr != nil {
+		status = "reconcile_error"
 		slog.Error("memories reconcile failed", "session", req.SessionID, "err", reconcileErr)
 		return nil, fmt.Errorf("reconcile: %w", reconcileErr)
+	}
+	if reconcileResult != nil {
+		status = reconcileResult.Status
 	}
 
 	return reconcileResult, nil
@@ -203,6 +297,8 @@ type listResponse struct {
 func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	auth := authInfo(r)
 	q := r.URL.Query()
+	rawQuery := q.Get("q")
+	query := normalizeRecallQuery(rawQuery, time.Now())
 
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	offset, _ := strconv.Atoi(q.Get("offset"))
@@ -219,7 +315,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filter := domain.MemoryFilter{
-		Query:      q.Get("q"),
+		Query:      query,
 		Tags:       tags,
 		Source:     q.Get("source"),
 		State:      q.Get("state"),
@@ -237,31 +333,32 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	var total int
 	var err error
 
-	if !onlySession {
+	switch {
+	case filter.Query != "" && filter.MemoryType == "":
+		memories, total, err = s.defaultConfidenceRecallSearch(r.Context(), auth, svc, filter)
+	case filter.Query != "" && (filter.MemoryType == string(domain.TypeSession) ||
+		filter.MemoryType == string(domain.TypePinned) ||
+		filter.MemoryType == string(domain.TypeInsight)):
+		memories, total, err = s.singlePoolConfidenceRecallSearch(r.Context(), auth, svc, filter)
+	case !onlySession:
 		memories, total, err = svc.memory.Search(r.Context(), filter)
-		if err != nil {
-			s.handleError(r.Context(), w, err)
-			return
-		}
 	}
 
-	if filter.Query != "" && onlySession {
-		// SessionService.Search preserves SessionID/Source filters from the caller — intentional:
-		// session-scoped filtering is meaningful for the sessions table. MemoryService.Search
-		// resets these fields to broaden memory recall; the asymmetry is by design.
-		// session.Search is all-or-nothing: returns (results, nil) or (nil, err), never partial results + err.
-		// total is only incremented on success, so the response total stays consistent with the slice length.
-		sessionMems, sessErr := svc.session.Search(r.Context(), filter)
-		if sessErr != nil {
-			slog.Warn("session search failed", "cluster_id", auth.ClusterID, "err", sessErr)
-		} else {
-			memories = append(memories, sessionMems...)
-			total += len(sessionMems)
-		}
+	if err != nil {
+		s.handleError(r.Context(), w, err)
+		return
 	}
 
 	if memories == nil {
 		memories = []domain.Memory{}
+	}
+	if rawQuery != "" && classifyRecallQueryShape(rawQuery) == recallQueryShapeTime {
+		for i := range memories {
+			memories[i].Content = service.TemporalRecallProjection(memories[i].Content, memories[i].Metadata)
+		}
+	}
+	if filter.Query != "" {
+		s.recordRecallMetering(auth)
 	}
 
 	respond(w, http.StatusOK, listResponse{
@@ -270,6 +367,82 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		Limit:    limit,
 		Offset:   offset,
 	})
+}
+
+func normalizeRecallQuery(query string, now time.Time) string {
+	return service.NormalizeTemporalRecallQuery(query, now)
+}
+
+type contentSessionMeta struct {
+	Speaker   string `json:"speaker"`
+	TurnIndex int    `json:"turn_index"`
+}
+
+// func (s *Server) persistContentSession(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, sessionID, agentID, content string, metadata json.RawMessage) {
+// 	if sessionID == "" || svc.session == nil {
+// 		return
+// 	}
+//
+// 	seq, role := contentSessionFields(content, metadata)
+// 	if err := svc.session.CreateRawTurn(ctx, sessionID, agentID, auth.AgentName, seq, role, content); err != nil {
+// 		slog.Error("content session raw save failed", "cluster_id", auth.ClusterID, "session", sessionID, "err", err)
+// 	}
+// }
+
+// func contentSessionFields(content string, metadata json.RawMessage) (int, string) {
+// 	meta := contentSessionMeta{TurnIndex: -1}
+// 	if len(metadata) > 0 {
+// 		_ = json.Unmarshal(metadata, &meta)
+// 	}
+//
+// 	role := roleFromSpeaker(meta.Speaker)
+// 	if role == "" {
+// 		role = roleFromSpeaker(content)
+// 	}
+// 	if role == "" {
+// 		role = "user"
+// 	}
+//
+// 	if meta.TurnIndex >= 0 {
+// 		return meta.TurnIndex, role
+// 	}
+// 	return 0, role
+// }
+
+// func roleFromSpeaker(raw string) string {
+// 	lower := strings.ToLower(raw)
+// 	switch {
+// 	case strings.Contains(lower, "speaker 1"), lower == "user":
+// 		return "user"
+// 	case strings.Contains(lower, "speaker 2"), lower == "assistant", strings.Contains(lower, "assistant"):
+// 		return "assistant"
+// 	default:
+// 		return ""
+// 	}
+// }
+
+func trimUniqueMemories(mems []domain.Memory, limit int) []domain.Memory {
+	if limit <= 0 {
+		return []domain.Memory{}
+	}
+
+	out := make([]domain.Memory, 0, limit)
+	seen := make(map[string]struct{}, limit)
+	for _, mem := range mems {
+		if len(out) >= limit {
+			break
+		}
+		key := mem.Content
+		if key == "" {
+			key = mem.ID
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, mem)
+	}
+	return out
 }
 
 func (s *Server) getMemory(w http.ResponseWriter, r *http.Request) {
@@ -332,6 +505,31 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 
 	go s.refreshWriteMetrics(auth, svc, 0)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type batchDeleteRequest struct {
+	IDs []string `json:"ids"`
+}
+
+func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
+	var req batchDeleteRequest
+	if err := decode(r, &req); err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
+
+	auth := authInfo(r)
+	svc := s.resolveServices(auth)
+	deleted, err := svc.memory.BulkDelete(r.Context(), req.IDs, auth.AgentName)
+	if err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
+
+	go s.refreshWriteMetrics(auth, svc, 0)
+	respond(w, http.StatusOK, map[string]any{
+		"deleted": deleted,
+	})
 }
 
 type bulkCreateRequest struct {

@@ -1,4 +1,31 @@
-# Go
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment and secrets
+.env
+.env.local
+.publish.env
+.npmrc
+
+# JavaScript package outputs
+node_modules/
+dist/
+.astro/
+*.tgz
+.netlify/
+
+# Python cache
+__pycache__/
+
+# Go build outputs
 *.exe
 *.exe~
 *.dll
@@ -8,41 +35,20 @@
 *.out
 vendor/
 
-# Binary output
+# Server outputs
 server/bin
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Environment
-.env
-.env.local
-
-# Node (openclaw-plugin)
-node_modules/
-dist/
-*.tgz
-.netlify/
+server/coverage/
+server/.tmp
 
 # Benchmark results
 benchmark/results/*
 !benchmark/results/.gitkeep
+benchmark/MR-NIAH/origin/
+benchmark/MR-NIAH/output/
+benchmark/MR-NIAH/results*/
+benchmark/MR-NIAH/logs/
+benchmark/MR-NIAH/results-logs/
+benchmark/MR-NIAH/.cache/
 
-# Claude Code
+# Claude Code and experiment outputs
 .claude/
-__pycache__/
-/benchmark/MR-NIAH/origin/
-/benchmark/MR-NIAH/output/
-/benchmark/MR-NIAH/results*/
-/benchmark/MR-NIAH/logs/
-/benchmark/MR-NIAH/results-logs/
-/benchmark/MR-NIAH/.cache/
-

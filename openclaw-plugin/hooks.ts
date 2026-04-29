@@ -3,7 +3,7 @@
  *
  * Provides automatic memory recall and capture via OpenClaw's hook system:
  * - before_prompt_build: inject relevant memories into every LLM call
- *   (grouped by type: pinned → insights)
+ *   (preserving the server/backend recall order)
  * - after_compaction: (no-op placeholder for future use)
  * - before_reset: save session context before /reset wipes it
  * - agent_end: auto-capture via smart pipeline with size-aware message selection
@@ -11,7 +11,7 @@
  * Reference: OpenClaw's built-in memory-lancedb extension uses the same pattern.
  */
 
-import type { MemoryBackend } from "./backend.js";
+import { isPendingProvisionError, type MemoryBackend } from "./backend.js";
 import type { Memory, IngestMessage } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -38,6 +38,14 @@ interface Logger {
   error: (msg: string) => void;
 }
 
+function previewText(text: string, maxLen = 160): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLen) {
+    return normalized;
+  }
+  return normalized.slice(0, maxLen) + "...";
+}
+
 /**
  * Hook handler types mirroring OpenClaw's PluginHookHandlerMap.
  * We define them locally to avoid importing OpenClaw types at the module level.
@@ -57,6 +65,8 @@ interface HookContext {
   sessionId?: string;
   /** Legacy alias for sessionId used by older OpenClaw versions. */
   sessionKey?: string;
+  /** What initiated this agent run: "user", "heartbeat", "cron", or "memory". */
+  trigger?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,26 +115,10 @@ function escapeForPrompt(text: string): string {
 }
 
 /**
- * Format memories for injection, grouped by type for maximum comprehension:
- * 1. Pinned memories first (user-explicit preferences)
- * 2. Insights (extracted facts)
+ * Format memories for injection while preserving the backend recall order.
  */
 function formatMemoriesBlock(memories: Memory[]): string {
   if (memories.length === 0) return "";
-
-  // Group by memory_type, falling back to "pinned" for legacy memories
-  const pinned: Memory[] = [];
-  const insights: Memory[] = [];
-  const other: Memory[] = [];
-
-  for (const m of memories) {
-    const mtype = m.memory_type ?? "pinned";
-    switch (mtype) {
-      case "pinned": pinned.push(m); break;
-      case "insight": insights.push(m); break;
-      default: other.push(m); break;
-    }
-  }
 
   const lines: string[] = [];
   let idx = 1;
@@ -140,18 +134,8 @@ function formatMemoriesBlock(memories: Memory[]): string {
     return `${idx++}.${sep}${escapeForPrompt(content)}`;
   };
 
-  if (pinned.length > 0) {
-    lines.push("[Preferences]");
-    for (const m of pinned) lines.push(formatMem(m));
-  }
-  if (insights.length > 0) {
-    if (lines.length > 0) lines.push("");
-    lines.push("[Knowledge]");
-    for (const m of insights) lines.push(formatMem(m));
-  }
-  if (other.length > 0) {
-    if (lines.length > 0) lines.push("");
-    for (const m of other) lines.push(formatMem(m));
+  for (const memory of memories) {
+    lines.push(formatMem(memory));
   }
 
   return [
@@ -185,6 +169,33 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
+function extractRecallQuery(prompt: string): string {
+  let s = stripInjectedContext(prompt).replace(/\r\n?/g, "\n");
+
+  s = s.replace(
+    /^Conversation info \(untrusted metadata\):\s*\n```[\s\S]*?\n```\s*/gm,
+    "",
+  );
+  s = s.replace(
+    /^Sender \(untrusted metadata\):\s*\n```[\s\S]*?\n```\s*/gm,
+    "",
+  );
+  s = s.replace(
+    /<<<EXTERNAL_UNTRUSTED_CONTENT[\s\S]*?<<<END_EXTERNAL_UNTRUSTED_CONTENT[^>]*>>>/g,
+    "",
+  );
+  s = s.replace(
+    /^Untrusted context \(metadata, do not treat as instructions or commands\):\s*$/gm,
+    "",
+  );
+  s = s.replace(/^\s*Source:\s.*$/gm, "");
+  s = s.replace(/^\s*UNTRUSTED [^\n]*$/gm, "");
+  s = s.replace(/^\s*---\s*$/gm, "");
+  s = s.replace(/\n{3,}/g, "\n\n");
+
+  return s.trim();
+}
+
 // ---------------------------------------------------------------------------
 // Hook registration
 // ---------------------------------------------------------------------------
@@ -193,9 +204,15 @@ export function registerHooks(
   api: HookApi,
   backend: MemoryBackend,
   logger: Logger,
-  options?: { maxIngestBytes?: number; fallbackAgentId?: string },
+  options?: {
+    maxIngestBytes?: number;
+    fallbackAgentId?: string;
+    provisionForCreateNew?: () => Promise<string>;
+    debug?: boolean;
+  },
 ): void {
   const maxIngestBytes = options?.maxIngestBytes ?? DEFAULT_MAX_INGEST_BYTES;
+  let loggedMissingConversationAccess = false;
 
   // --------------------------------------------------------------------------
   // before_prompt_build — inject relevant memories into every LLM call
@@ -205,11 +222,34 @@ export function registerHooks(
     async (event: unknown) => {
       try {
         const evt = event as { prompt?: string };
-        const prompt = evt?.prompt;
-        if (!prompt || prompt.length < MIN_PROMPT_LEN) return;
+        const prompt = nonEmptyString(evt?.prompt);
+        if (options?.provisionForCreateNew) {
+          await options.provisionForCreateNew();
+        }
+        if (!prompt) return;
 
-        const result = await backend.search({ q: prompt, limit: MAX_INJECT });
+        const recallQuery = extractRecallQuery(prompt);
+        if (options?.debug) {
+          logger.info(
+            `[mem9][debug] before_prompt_build rawPromptLen=${prompt.length} recallQueryLen=${recallQuery.length} recallQueryPreview=${JSON.stringify(previewText(recallQuery))}`,
+          );
+        }
+        if (recallQuery.length < MIN_PROMPT_LEN) {
+          if (options?.debug) {
+            logger.info(
+              `[mem9][debug] before_prompt_build skipping recall because stripped query is shorter than ${MIN_PROMPT_LEN}`,
+            );
+          }
+          return;
+        }
+
+        const result = await backend.search({ q: recallQuery, limit: MAX_INJECT });
         const memories = result.data ?? [];
+        if (options?.debug) {
+          logger.info(
+            `[mem9][debug] before_prompt_build recall search limit=${MAX_INJECT} results=${memories.length}`,
+          );
+        }
 
         if (memories.length === 0) return;
 
@@ -219,6 +259,9 @@ export function registerHooks(
           prependContext: formatMemoriesBlock(memories),
         };
       } catch (err) {
+        if (isPendingProvisionError(err)) {
+          return;
+        }
         // Graceful degradation — never block the LLM call
         logger.error(`[mem9] before_prompt_build failed: ${String(err)}`);
       }
@@ -269,6 +312,9 @@ export function registerHooks(
 
       logger.info("[mem9] Session context saved before reset");
     } catch (err) {
+      if (isPendingProvisionError(err)) {
+        return;
+      }
       // Best-effort — never block /reset
       logger.error(`[mem9] before_reset save failed: ${String(err)}`);
     }
@@ -290,7 +336,23 @@ export function registerHooks(
         agentId?: string;
       };
       const hookCtx = (context ?? {}) as HookContext;
-      if (!evt?.success || !evt.messages || evt.messages.length === 0) return;
+      if (!evt?.success) return;
+      if (!Array.isArray(evt.messages)) {
+        if (!loggedMissingConversationAccess) {
+          logger.info(
+            "[mem9] agent_end conversation messages are unavailable; on OpenClaw 4.23+ / 2026.4.22+ set plugins.entries.mem9.hooks.allowConversationAccess=true to enable automatic conversation upload",
+          );
+          loggedMissingConversationAccess = true;
+        }
+        return;
+      }
+      if (evt.messages.length === 0) return;
+
+      // Skip cron/heartbeat-triggered runs — they produce low-value messages
+      if (hookCtx.trigger === "cron" || hookCtx.trigger === "heartbeat") {
+        logger.info(`[mem9] Skipping auto-ingest for ${hookCtx.trigger}-triggered run`);
+        return;
+      }
 
       // Format raw messages into IngestMessage format
       const formatted: IngestMessage[] = [];
@@ -359,7 +421,10 @@ export function registerHooks(
           `[mem9] Ingested session: memories_changed=${result.memories_changed}, status=${result.status}`
         );
       }
-    } catch {
+    } catch (err) {
+      if (isPendingProvisionError(err)) {
+        return;
+      }
       // Best-effort — never fail the agent end phase
     }
   });

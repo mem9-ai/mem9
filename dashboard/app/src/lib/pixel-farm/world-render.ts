@@ -13,16 +13,15 @@ import {
 } from "@/lib/pixel-farm/cow";
 import { pixelFarmDepthForY } from "@/lib/pixel-farm/depth";
 import type {
-  PixelFarmAnimalBucketState,
-  PixelFarmBucketState,
-  PixelFarmCropBucketState,
+  PixelFarmMemoryBucketState,
+  PixelFarmNpcState,
   PixelFarmWorldState,
 } from "@/lib/pixel-farm/data/types";
+import { buildPixelFarmPlantPlacements } from "@/lib/pixel-farm/plant-placement";
 import {
   maskHasTile,
-  PIXEL_FARM_COLLISIONS,
-  PIXEL_FARM_LAYERS,
   PIXEL_FARM_ROOT_LAYER,
+  PIXEL_FARM_COLLISIONS,
 } from "@/lib/pixel-farm/island-mask";
 import {
   buildPixelFarmCollisionIndex,
@@ -32,16 +31,15 @@ import {
 import {
   PIXEL_FARM_BUCKET_ANIMAL_PALETTES,
   PIXEL_FARM_CROP_BUCKET_PALETTES,
-  PIXEL_FARM_MAIN_FIELD_COUNT,
+  type PixelFarmCropStage,
 } from "@/lib/pixel-farm/palette";
 import {
   PIXEL_FARM_ASSET_SOURCE_CONFIG,
   PIXEL_FARM_TILE_SIZE,
   type PixelFarmAssetTileSelection,
 } from "@/lib/pixel-farm/tileset-config";
+
 const DATA_ENTITY_DEPTH = 15;
-const MAX_BUCKET_RENDER_COUNT = 6;
-const TILLED_SOURCE_IDS = new Set(["tilledDirtWide", "tiledDirt"]);
 const CHICKEN_ROAM_TARGET_MIN_DISTANCE = 4;
 const CHICKEN_ROAM_TARGET_MAX_ATTEMPTS = 10;
 
@@ -75,12 +73,6 @@ interface PixelFarmCellBounds {
   maxRow: number;
 }
 
-interface PixelFarmPlotLayout {
-  capacity: number;
-  bucketCells: readonly PixelFarmGridCell[];
-  cells: readonly PixelFarmGridCell[];
-}
-
 interface PixelFarmAnimalPenLayout {
   animalCells: readonly PixelFarmGridCell[];
   allowedCellKeys: ReadonlySet<string>;
@@ -111,11 +103,15 @@ export interface PixelFarmInteractablePoint {
 
 export interface PixelFarmInteractableTarget {
   id: string;
-  kind: "animal" | "crop";
+  bucketId: string | null;
+  bucketTotalMemoryCount: number | null;
+  endIndexExclusive: number | null;
+  kind: "npc" | "plant";
   memoryIds: readonly string[];
-  tagKey: string;
+  plantId: string | null;
+  startIndexInclusive: number | null;
+  tagKey: string | null;
   tagLabel: string;
-  totalMemoryCount: number;
   getInteractionPoints: () => ReadonlyArray<PixelFarmInteractablePoint>;
   getOccupiedCells: () => ReadonlyArray<PixelFarmGridCell>;
   getWorldAnchors: () => ReadonlyArray<{ x: number; y: number }>;
@@ -154,10 +150,6 @@ function measureCellBounds(cells: readonly PixelFarmGridCell[]): PixelFarmCellBo
   );
 }
 
-function lerp(min: number, max: number, ratio: number): number {
-  return min + (max - min) * ratio;
-}
-
 function cellDistance(left: PixelFarmGridCell, right: PixelFarmGridCell): number {
   return Math.abs(left.row - right.row) + Math.abs(left.column - right.column);
 }
@@ -180,57 +172,6 @@ function canSpawnFromWalkableSet(
   );
 }
 
-function pickDistributedCells(
-  cells: readonly PixelFarmGridCell[],
-  count: number,
-): PixelFarmGridCell[] {
-  if (count <= 0 || cells.length < 1) {
-    return [];
-  }
-
-  const sortedCells = [...cells].sort(compareGridCells);
-  if (sortedCells.length <= count) {
-    return sortedCells;
-  }
-
-  const bounds = measureCellBounds(sortedCells);
-  const targetRows = Math.max(1, Math.round(Math.sqrt(count)));
-  const targetColumns = Math.max(1, Math.ceil(count / targetRows));
-  const remaining = [...sortedCells];
-  const picked: PixelFarmGridCell[] = [];
-
-  for (let index = 0; index < count; index += 1) {
-    const targetRowIndex = Math.floor(index / targetColumns);
-    const targetColumnIndex = index % targetColumns;
-    const targetRow =
-      targetRows === 1
-        ? (bounds.minRow + bounds.maxRow) * 0.5
-        : lerp(bounds.minRow, bounds.maxRow, targetRowIndex / (targetRows - 1));
-    const targetColumn =
-      targetColumns === 1
-        ? (bounds.minColumn + bounds.maxColumn) * 0.5
-        : lerp(bounds.minColumn, bounds.maxColumn, targetColumnIndex / (targetColumns - 1));
-
-    let bestIndex = 0;
-    let bestDistance = Number.POSITIVE_INFINITY;
-
-    for (const [candidateIndex, candidate] of remaining.entries()) {
-      const distance =
-        Math.abs(candidate.row - targetRow) + Math.abs(candidate.column - targetColumn);
-      if (distance >= bestDistance) {
-        continue;
-      }
-
-      bestDistance = distance;
-      bestIndex = candidateIndex;
-    }
-
-    picked.push(remaining.splice(bestIndex, 1)[0]!);
-  }
-
-  return picked.sort(compareGridCells);
-}
-
 function pickRandomCells(
   cells: readonly PixelFarmGridCell[],
   count: number,
@@ -242,52 +183,6 @@ function pickRandomCells(
   return Phaser.Utils.Array.Shuffle([...cells])
     .slice(0, Math.min(count, cells.length))
     .sort(compareGridCells);
-}
-
-function collectConnectedComponents(
-  cells: readonly PixelFarmGridCell[],
-): PixelFarmGridCell[][] {
-  const remaining = new Set(cells.map((cell) => gridCellKey(cell.row, cell.column)));
-  const components: PixelFarmGridCell[][] = [];
-  const directions = [
-    { row: -1, column: 0 },
-    { row: 1, column: 0 },
-    { row: 0, column: -1 },
-    { row: 0, column: 1 },
-  ] as const;
-
-  for (const cell of cells) {
-    const startKey = gridCellKey(cell.row, cell.column);
-    if (!remaining.has(startKey)) {
-      continue;
-    }
-
-    remaining.delete(startKey);
-
-    const component: PixelFarmGridCell[] = [];
-    const queue = [cell];
-
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      component.push(current);
-
-      for (const direction of directions) {
-        const nextRow = current.row + direction.row;
-        const nextColumn = current.column + direction.column;
-        const nextKey = gridCellKey(nextRow, nextColumn);
-        if (!remaining.has(nextKey)) {
-          continue;
-        }
-
-        remaining.delete(nextKey);
-        queue.push({ row: nextRow, column: nextColumn });
-      }
-    }
-
-    components.push(component.sort(compareGridCells));
-  }
-
-  return components;
 }
 
 function collisionRectForCell(cell: PixelFarmGridCell): PixelFarmCollisionRect {
@@ -320,61 +215,20 @@ function collectWalkableCells(bounds: PixelFarmCellBounds): PixelFarmGridCell[] 
   return cells;
 }
 
-function collectTilledCells(): PixelFarmGridCell[] {
-  return PIXEL_FARM_LAYERS.flatMap((layer) =>
-    Object.entries(layer.overrides)
-      .filter(([, tile]) => TILLED_SOURCE_IDS.has(tile.sourceId))
-      .map(([key]) => {
-        const [rowValue, columnValue] = key.split(":");
-        return {
-          row: Number(rowValue),
-          column: Number(columnValue),
-        };
-      })
-      .filter((cell) => Number.isFinite(cell.row) && Number.isFinite(cell.column)),
-  );
-}
-
-function createMainPlotLayouts(): PixelFarmPlotLayout[] {
-  const tilledCells = collectTilledCells();
-
-  return collectConnectedComponents(tilledCells)
-    .sort((left, right) => {
-      if (right.length !== left.length) {
-        return right.length - left.length;
-      }
-
-      const leftBounds = measureCellBounds(left);
-      const rightBounds = measureCellBounds(right);
-      if (leftBounds.minRow !== rightBounds.minRow) {
-        return leftBounds.minRow - rightBounds.minRow;
-      }
-
-      return leftBounds.minColumn - rightBounds.minColumn;
-    })
-    .slice(0, PIXEL_FARM_MAIN_FIELD_COUNT)
-    .map((cells) => ({
-      capacity: cells.length,
-      bucketCells: pickDistributedCells(cells, MAX_BUCKET_RENDER_COUNT),
-      cells,
-    }));
-}
-
 function findCropTile(
-  cropBucket: PixelFarmCropBucketState,
-  bucket: PixelFarmBucketState,
+  cropFamily: string,
+  cropStage: PixelFarmCropStage,
 ): PixelFarmAssetTileSelection | null {
   const cropPalette = PIXEL_FARM_CROP_BUCKET_PALETTES.find(
-    (candidate) => candidate.family === cropBucket.cropFamily,
+    (candidate) => candidate.family === cropFamily,
   );
   if (!cropPalette) {
     return null;
   }
 
-  return cropPalette.stages[bucket.stage];
+  return cropPalette.stages[cropStage];
 }
 
-const MAIN_PLOT_LAYOUTS = createMainPlotLayouts();
 const ISLAND_WALKABLE_CELLS = collectWalkableCells({
   minRow: 0,
   maxRow: PIXEL_FARM_ROOT_LAYER.mask.length - 1,
@@ -467,8 +321,8 @@ export class PixelFarmWorldRenderer {
       return;
     }
 
-    this.renderCropBuckets(worldState.cropBuckets);
-    this.renderAnimalBuckets(worldState.animalBuckets);
+    this.renderMemoryPlants(worldState.memoryBuckets, worldState);
+    this.renderNpcs(worldState.npcs);
     this.updateInteractableStructureVersion();
   }
 
@@ -502,106 +356,62 @@ export class PixelFarmWorldRenderer {
     this.interactableStructureVersion += 1;
   }
 
-  private renderCropBuckets(cropBuckets: readonly PixelFarmCropBucketState[]): void {
-    const cropBucketsByPlot = new Map<number, PixelFarmCropBucketState[]>();
-
-    for (const cropBucket of cropBuckets) {
-      const buckets = cropBucketsByPlot.get(cropBucket.plotIndex);
-      if (buckets) {
-        buckets.push(cropBucket);
-        continue;
-      }
-
-      cropBucketsByPlot.set(cropBucket.plotIndex, [cropBucket]);
-    }
-
-    for (const [plotIndex, plotBuckets] of cropBucketsByPlot.entries()) {
-      const layout = MAIN_PLOT_LAYOUTS[plotIndex];
-      if (!layout) {
-        continue;
-      }
-
-      this.renderCropPlot(
-        layout,
-        [...plotBuckets].sort((left, right) => left.rank - right.rank),
-      );
-    }
-  }
-
-  private renderAnimalBuckets(animalBuckets: readonly PixelFarmAnimalBucketState[]): void {
-    const chickenBuckets = animalBuckets.filter((bucket) => bucket.zone === "chicken-pen");
-    const cowBuckets = animalBuckets.filter((bucket) => bucket.zone === "cow-pen");
-
-    this.renderAnimalPen(CHICKEN_PEN_LAYOUT, chickenBuckets);
-    this.renderAnimalPen(COW_PEN_LAYOUT, cowBuckets);
-  }
-
-  private renderCropPlot(
-    layout: PixelFarmPlotLayout,
-    cropBuckets: readonly PixelFarmCropBucketState[],
+  private renderMemoryPlants(
+    memoryBuckets: readonly PixelFarmMemoryBucketState[],
+    worldState: PixelFarmWorldState,
   ): void {
-    if (layout.cells.length < 1 || cropBuckets.length < 1) {
-      return;
-    }
+    const placements = buildPixelFarmPlantPlacements({
+      eventField: worldState.fields.eventField,
+      mainField: worldState.fields.mainField,
+      memoryBuckets,
+    });
 
-    const anchors = pickDistributedCells(layout.cells, cropBuckets.length);
-    const remainingCells = [...layout.cells];
-
-    for (const [bucketIndex, cropBucket] of cropBuckets.entries()) {
-      const anchor = anchors[bucketIndex] ?? remainingCells[0];
-      if (!anchor) {
+    for (const placement of placements) {
+      const tile = findCropTile(placement.bucket.cropFamily, placement.plant.cropStage);
+      if (!tile) {
         continue;
       }
 
-      const cropCells = this.takeNearestCells(
-        remainingCells,
-        anchor,
-        cropBucket.instances.length,
-      );
-      const instanceAnchors: Array<{ x: number; y: number }> = [];
-      const occupiedCells: PixelFarmGridCell[] = [];
+      const sprite = this.addCropTile(placement.cell, tile);
+      const worldAnchor = { x: sprite.x, y: sprite.y };
+      const occupiedCell = { row: placement.cell.row, column: placement.cell.column };
 
-      for (const [instanceIndex, instance] of cropBucket.instances.entries()) {
-        const cell = cropCells[instanceIndex];
-        if (!cell || !instance.active) {
-          continue;
-        }
-
-        const tile = findCropTile(cropBucket, instance);
-        if (!tile) {
-          continue;
-        }
-
-        const sprite = this.addCropTile(cell, tile);
-        instanceAnchors.push({ x: sprite.x, y: sprite.y });
-        occupiedCells.push({ row: cell.row, column: cell.column });
-      }
-
-      if (instanceAnchors.length > 0) {
-        this.interactableTargets.push({
-          id: cropBucket.id,
-          kind: "crop",
-          memoryIds: [...cropBucket.memoryIds],
-          tagKey: cropBucket.tagKey,
-          tagLabel: cropBucket.tagLabel,
-          totalMemoryCount: cropBucket.totalCount,
-          getInteractionPoints: () =>
-            occupiedCells.map((cell, index) => ({
-              occupiedCell: { ...cell },
-              worldAnchor: { ...instanceAnchors[index]! },
-            })),
-          getOccupiedCells: () => occupiedCells.map((cell) => ({ ...cell })),
-          getWorldAnchors: () => [...instanceAnchors],
-        });
-      }
+      this.interactableTargets.push({
+        id: placement.plant.id,
+        bucketId: placement.bucket.id,
+        bucketTotalMemoryCount: placement.bucket.totalMemoryCount,
+        endIndexExclusive: placement.plant.endIndexExclusive,
+        kind: "plant",
+        memoryIds: [...placement.plant.memoryIds],
+        plantId: placement.plant.id,
+        startIndexInclusive: placement.plant.startIndexInclusive,
+        tagKey: placement.bucket.tagKey,
+        tagLabel: placement.bucket.tagLabel,
+        getInteractionPoints: () => [
+          {
+            occupiedCell: { ...occupiedCell },
+            worldAnchor: { ...worldAnchor },
+          },
+        ],
+        getOccupiedCells: () => [{ ...occupiedCell }],
+        getWorldAnchors: () => [{ ...worldAnchor }],
+      });
     }
+  }
+
+  private renderNpcs(npcs: readonly PixelFarmNpcState[]): void {
+    const chickenNpcs = npcs.filter((npc) => npc.kind === "chicken");
+    const herdNpcs = npcs.filter((npc) => npc.kind === "baby-cow" || npc.kind === "cow");
+
+    this.renderAnimalPen(CHICKEN_PEN_LAYOUT, chickenNpcs);
+    this.renderAnimalPen(COW_PEN_LAYOUT, herdNpcs);
   }
 
   private renderAnimalPen(
     layout: PixelFarmAnimalPenLayout,
-    animalBuckets: readonly PixelFarmAnimalBucketState[],
+    npcs: readonly PixelFarmNpcState[],
   ): void {
-    if (layout.animalCells.length < 1 || animalBuckets.length < 1) {
+    if (layout.animalCells.length < 1 || npcs.length < 1) {
       return;
     }
 
@@ -609,72 +419,25 @@ export class PixelFarmWorldRenderer {
     const chickenColorOffset = Phaser.Math.Between(0, CHICKEN_RENDER_COLORS.length - 1);
     const cowColorOffset = Phaser.Math.Between(0, COW_RENDER_COLORS.length - 1);
 
-    for (const animalBucket of animalBuckets) {
-      const renderedAnimals: Array<{
-        animal: PixelFarmRenderedAnimal;
-        instanceId: string;
-      }> = [];
-
-      for (let instanceIndex = 0; instanceIndex < animalBucket.instanceCount; instanceIndex += 1) {
-        const cell = layout.animalCells[placementIndex % layout.animalCells.length]!;
-        const animalInstanceId = `${animalBucket.id}:${instanceIndex}`;
-        const renderedAnimal = this.createAnimal(
-          layout,
-          cell,
-          animalBucket,
-          placementIndex,
-          chickenColorOffset,
-          cowColorOffset,
-        );
-        placementIndex += 1;
-        if (!renderedAnimal) {
-          continue;
-        }
-
-        this.animals.push(renderedAnimal);
-        this.animalInstanceById.set(animalInstanceId, renderedAnimal);
-        renderedAnimals.push({
-          animal: renderedAnimal,
-          instanceId: animalInstanceId,
-        });
+    for (const npc of npcs) {
+      const cell =
+        npc.position ?? layout.animalCells[placementIndex % layout.animalCells.length]!;
+      const renderedAnimal = this.createAnimal(
+        layout,
+        cell,
+        npc,
+        placementIndex,
+        chickenColorOffset,
+        cowColorOffset,
+      );
+      placementIndex += 1;
+      if (!renderedAnimal) {
+        continue;
       }
 
-      if (renderedAnimals.length > 0) {
-        this.interactableTargets.push({
-          id: animalBucket.id,
-          kind: "animal",
-          memoryIds: [...animalBucket.memoryIds],
-          tagKey: animalBucket.tagKey,
-          tagLabel: animalBucket.tagLabel,
-          totalMemoryCount: animalBucket.totalCount,
-          getInteractionPoints: () =>
-            renderedAnimals.map(({ animal, instanceId }) => {
-              const body = animal.body as Phaser.Physics.Arcade.Body | undefined;
-              const sampleX = body ? body.x + body.width * 0.5 : animal.x;
-              const sampleY = body ? body.y + body.height - 1 : animal.y - 1;
-              return {
-                animalInstanceId: instanceId,
-                occupiedCell: this.worldPointToGridCell(sampleX, sampleY),
-                worldAnchor: {
-                  x: animal.x,
-                  y: animal.y,
-                },
-              };
-            }),
-          getOccupiedCells: () =>
-            renderedAnimals.map(({ animal }) => {
-              const body = animal.body as Phaser.Physics.Arcade.Body | undefined;
-              const sampleX = body ? body.x + body.width * 0.5 : animal.x;
-              const sampleY = body ? body.y + body.height - 1 : animal.y - 1;
-              return this.worldPointToGridCell(sampleX, sampleY);
-            }),
-          getWorldAnchors: () =>
-            renderedAnimals.map(({ animal }) => ({
-              x: animal.x,
-              y: animal.y,
-            })),
-        });
-      }
+      this.animals.push(renderedAnimal);
+      this.animalInstanceById.set(npc.id, renderedAnimal);
+      this.interactableTargets.push(this.createNpcInteractableTarget(npc, renderedAnimal));
     }
   }
 
@@ -690,35 +453,6 @@ export class PixelFarmWorldRenderer {
     sprite.setDepth(pixelFarmDepthForY(DATA_ENTITY_DEPTH, y));
     this.cropObjects.push(sprite);
     return sprite;
-  }
-
-  private takeNearestCells(
-    cells: PixelFarmGridCell[],
-    anchor: PixelFarmGridCell,
-    count: number,
-  ): PixelFarmGridCell[] {
-    if (count <= 0 || cells.length < 1) {
-      return [];
-    }
-
-    const ranked = cells
-      .map((cell, index) => ({
-        distance: cellDistance(cell, anchor),
-        index,
-      }))
-      .sort((left, right) => left.distance - right.distance || left.index - right.index)
-      .slice(0, count)
-      .sort((left, right) => right.index - left.index);
-
-    const picked: PixelFarmGridCell[] = [];
-    for (const entry of ranked) {
-      const cell = cells.splice(entry.index, 1)[0];
-      if (cell) {
-        picked.push(cell);
-      }
-    }
-
-    return picked.sort(compareGridCells);
   }
 
   private penWorldBounds(layout: PixelFarmAnimalPenLayout): PixelFarmWorldBounds {
@@ -826,7 +560,7 @@ export class PixelFarmWorldRenderer {
   private createAnimal(
     layout: PixelFarmAnimalPenLayout,
     cell: PixelFarmGridCell,
-    animalBucket: PixelFarmAnimalBucketState,
+    npc: PixelFarmNpcState,
     index: number,
     chickenColorOffset: number,
     cowColorOffset: number,
@@ -835,7 +569,7 @@ export class PixelFarmWorldRenderer {
     const flipX = index % 2 === 1;
     const canOccupy = this.animalCanOccupy(layout);
 
-    switch (animalBucket.tier) {
+    switch (npc.kind) {
       case "chicken": {
         const color = CHICKEN_RENDER_COLORS[
           (index + chickenColorOffset) % CHICKEN_RENDER_COLORS.length
@@ -856,7 +590,7 @@ export class PixelFarmWorldRenderer {
       }
       case "baby-cow": {
         const palette = PIXEL_FARM_BUCKET_ANIMAL_PALETTES.find(
-          (candidate) => candidate.tier === animalBucket.tier,
+          (candidate) => candidate.tier === npc.kind,
         );
         const color = (palette?.color ?? "brown") as PixelFarmBabyCowColor;
         const babyCow = new PixelFarmBabyCow({
@@ -890,6 +624,39 @@ export class PixelFarmWorldRenderer {
       default:
         return null;
     }
+  }
+
+  private createNpcInteractableTarget(
+    npc: PixelFarmNpcState,
+    animal: PixelFarmRenderedAnimal,
+  ): PixelFarmInteractableTarget {
+    const currentAnchor = () => ({
+      x: animal.x,
+      y: animal.y,
+    });
+    const currentCell = () => this.worldPointToGridCell(animal.x, animal.y);
+
+    return {
+      id: npc.id,
+      bucketId: null,
+      bucketTotalMemoryCount: null,
+      endIndexExclusive: null,
+      kind: "npc",
+      memoryIds: [],
+      plantId: null,
+      startIndexInclusive: null,
+      tagKey: null,
+      tagLabel: npc.kind,
+      getInteractionPoints: () => [
+        {
+          animalInstanceId: npc.id,
+          occupiedCell: currentCell(),
+          worldAnchor: currentAnchor(),
+        },
+      ],
+      getOccupiedCells: () => [currentCell()],
+      getWorldAnchors: () => [currentAnchor()],
+    };
   }
 }
 

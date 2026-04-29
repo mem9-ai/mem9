@@ -93,6 +93,45 @@ var (
 		},
 		[]string{"model", "type"},
 	)
+	// LLMTokensByStepTotal counts LLM token consumption split by step.
+	// step: "extraction" | "extraction_and_classification" | "reconciliation"
+	// type: "input" | "output"
+	LLMTokensByStepTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "llm_tokens_by_step_total",
+			Help:      "Total number of LLM tokens consumed, split by step.",
+		},
+		[]string{"step", "model", "type"},
+	)
+	// LLMRequestsByStepTotal counts LLM requests split by step.
+	// status: "success" | "error"
+	LLMRequestsByStepTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "llm_requests_by_step_total",
+			Help:      "Total number of LLM requests, split by step.",
+		},
+		[]string{"step", "model", "status"},
+	)
+	// LLMRetryTotal counts retry attempts for LLM-backed steps.
+	LLMRetryTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "llm_retry_total",
+			Help:      "Total number of LLM retry attempts, split by step and reason.",
+		},
+		[]string{"step", "reason"},
+	)
+	// EmbeddingRequestsTotal counts model-backed embedding requests for recall query embedding.
+	EmbeddingRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "embedding_requests_total",
+			Help:      "Total number of embedding requests, split by step.",
+		},
+		[]string{"step", "model", "status"},
+	)
 	// ActiveMemoryTotal is the current total number of active memories per cluster.
 	// Use sum(mnemo_active_memory_total) for the global aggregate.
 	ActiveMemoryTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{

@@ -5,9 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -18,6 +20,11 @@ import (
 const (
 	defaultSessionFetchMultiplier = 3
 	DefaultSessionLimit           = 10
+	sessionAdjacentTurnWeight     = 0.8
+	defaultAdjacentTurnRadius     = 1
+	defaultAdjacentTurnTopN       = 4
+	minAdjacentTurnFetchLimit     = 16
+	maxAdjacentTurnFetchLimit     = 64
 )
 
 type SessionService struct {
@@ -47,12 +54,20 @@ func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req I
 	for i, msg := range req.Messages {
 		sess := newSessionFromIngestMessage(
 			req.SessionID, req.AgentID, agentName,
-			i, msg.Role, msg.Content,
+			i, msg,
 		)
 		sessions = append(sessions, sess)
 	}
 	if err := s.sessions.BulkCreate(ctx, sessions); err != nil {
 		return fmt.Errorf("session bulk create: %w", err)
+	}
+	return nil
+}
+
+func (s *SessionService) CreateRawTurn(ctx context.Context, sessionID, agentID, source string, seq int, role, content string) error {
+	sess := newSession(sessionID, agentID, source, seq, role, content, &seq)
+	if err := s.sessions.BulkCreate(ctx, []*domain.Session{sess}); err != nil {
+		return fmt.Errorf("session raw create: %w", err)
 	}
 	return nil
 }
@@ -87,9 +102,41 @@ func (s *SessionService) Search(ctx context.Context, f domain.MemoryFilter) ([]d
 	return dedupByContent(results), nil
 }
 
+func (s *SessionService) SearchCandidates(
+	ctx context.Context,
+	f domain.MemoryFilter,
+	sourcePool RecallSourcePool,
+	opts RecallCandidateOptions,
+) ([]RecallCandidate, error) {
+	limit := normalizeRecallLimit(f.Limit, DefaultSessionLimit)
+	fetchLimit := limit * normalizeRecallFetchMultiplier(opts.FetchMultiplier, defaultSessionFetchMultiplier)
+
+	sf := f
+	sf.Offset = 0
+
+	var candidates []RecallCandidate
+	var err error
+
+	if s.autoModel != "" {
+		candidates, err = s.autoHybridCandidates(ctx, sf, sourcePool, opts, fetchLimit)
+	} else if s.embedder != nil {
+		candidates, err = s.hybridCandidates(ctx, sf, sourcePool, opts, fetchLimit)
+	} else if s.sessions.FTSAvailable() {
+		candidates, err = s.ftsCandidates(ctx, sf, sourcePool, opts, fetchLimit)
+	} else {
+		candidates, err = s.keywordCandidates(ctx, sf, sourcePool, opts, fetchLimit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return dedupRecallCandidatesByContent(candidates), nil
+}
+
 func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
 	vecResults, err := s.sessions.AutoVectorSearch(ctx, f.Query, f, fetchLimit)
-	if err != nil {
+	skipped := errors.Is(err, domain.ErrAutoVectorSearchSkipped)
+	observeRecallAutoEmbeddingRequest(s.autoModel, err, skipped)
+	if err != nil && !skipped {
 		return nil, fmt.Errorf("session auto vector search: %w", err)
 	}
 	vecResults = applyMinScore(vecResults, f.MinScore)
@@ -108,8 +155,53 @@ func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFi
 	return populateRelativeAge(setScores(page, scores)), nil
 }
 
+func (s *SessionService) autoHybridCandidates(
+	ctx context.Context,
+	f domain.MemoryFilter,
+	sourcePool RecallSourcePool,
+	opts RecallCandidateOptions,
+	fetchLimit int,
+) ([]RecallCandidate, error) {
+	start := time.Now()
+	vectorStart := time.Now()
+	vecResults, err := s.sessions.AutoVectorSearch(ctx, f.Query, f, fetchLimit)
+	skipped := errors.Is(err, domain.ErrAutoVectorSearchSkipped)
+	observeRecallAutoEmbeddingRequest(s.autoModel, err, skipped)
+	vectorDuration := time.Since(vectorStart)
+	if err != nil && !skipped {
+		return nil, fmt.Errorf("session auto vector search: %w", err)
+	}
+	vecResults = applyMinScore(vecResults, f.MinScore)
+
+	keywordStart := time.Now()
+	kwResults, err := s.ftsOrKeyword(ctx, f, fetchLimit)
+	keywordDuration := time.Since(keywordStart)
+	if err != nil {
+		return nil, err
+	}
+
+	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, kwResults, vecResults, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.InfoContext(ctx, "session recall candidate search",
+		"query_len", len(f.Query),
+		"source_pool", string(sourcePool),
+		"fetch_limit", fetchLimit,
+		"vector_ms", vectorDuration.Milliseconds(),
+		"keyword_ms", keywordDuration.Milliseconds(),
+		"adjacent_enabled", opts.EnableAdjacentTurns,
+		"adjacent_count", len(adjacentResults),
+		"total_ms", time.Since(start).Milliseconds(),
+	)
+
+	return mergeRecallCandidatesWithExtraWeight(sourcePool, kwResults, vecResults, adjacentResults, sessionAdjacentTurnWeight), nil
+}
+
 func (s *SessionService) hybridSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
 	queryVec, err := s.embedder.Embed(ctx, f.Query)
+	observeRecallEmbeddingRequest(s.embedder, err)
 	if err != nil {
 		return nil, fmt.Errorf("session embed query: %w", err)
 	}
@@ -134,6 +226,38 @@ func (s *SessionService) hybridSearch(ctx context.Context, f domain.MemoryFilter
 	return populateRelativeAge(setScores(page, scores)), nil
 }
 
+func (s *SessionService) hybridCandidates(
+	ctx context.Context,
+	f domain.MemoryFilter,
+	sourcePool RecallSourcePool,
+	opts RecallCandidateOptions,
+	fetchLimit int,
+) ([]RecallCandidate, error) {
+	queryVec, err := s.embedder.Embed(ctx, f.Query)
+	observeRecallEmbeddingRequest(s.embedder, err)
+	if err != nil {
+		return nil, fmt.Errorf("session embed query: %w", err)
+	}
+
+	vecResults, err := s.sessions.VectorSearch(ctx, queryVec, f, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("session vector search: %w", err)
+	}
+	vecResults = applyMinScore(vecResults, f.MinScore)
+
+	kwResults, err := s.ftsOrKeyword(ctx, f, fetchLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, kwResults, vecResults, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return mergeRecallCandidatesWithExtraWeight(sourcePool, kwResults, vecResults, adjacentResults, sessionAdjacentTurnWeight), nil
+}
+
 func (s *SessionService) ftsSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
 	results, err := s.sessions.FTSSearch(ctx, f.Query, f, fetchLimit)
 	if err != nil {
@@ -143,6 +267,18 @@ func (s *SessionService) ftsSearch(ctx context.Context, f domain.MemoryFilter, l
 	return populateRelativeAge(page), nil
 }
 
+func (s *SessionService) ftsCandidates(ctx context.Context, f domain.MemoryFilter, sourcePool RecallSourcePool, opts RecallCandidateOptions, fetchLimit int) ([]RecallCandidate, error) {
+	results, err := s.sessions.FTSSearch(ctx, f.Query, f, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("session fts search: %w", err)
+	}
+	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, results, nil, opts)
+	if err != nil {
+		return nil, err
+	}
+	return mergeRecallCandidatesWithExtraWeight(sourcePool, results, nil, adjacentResults, sessionAdjacentTurnWeight), nil
+}
+
 func (s *SessionService) keywordSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
 	results, err := s.sessions.KeywordSearch(ctx, f.Query, f, fetchLimit)
 	if err != nil {
@@ -150,6 +286,18 @@ func (s *SessionService) keywordSearch(ctx context.Context, f domain.MemoryFilte
 	}
 	page, _ := paginateResults(results, f.Offset, limit)
 	return populateRelativeAge(page), nil
+}
+
+func (s *SessionService) keywordCandidates(ctx context.Context, f domain.MemoryFilter, sourcePool RecallSourcePool, opts RecallCandidateOptions, fetchLimit int) ([]RecallCandidate, error) {
+	results, err := s.sessions.KeywordSearch(ctx, f.Query, f, fetchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("session keyword search: %w", err)
+	}
+	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, results, nil, opts)
+	if err != nil {
+		return nil, err
+	}
+	return mergeRecallCandidatesWithExtraWeight(sourcePool, results, nil, adjacentResults, sessionAdjacentTurnWeight), nil
 }
 
 func (s *SessionService) ftsOrKeyword(ctx context.Context, f domain.MemoryFilter, fetchLimit int) ([]domain.Memory, error) {
@@ -165,6 +313,203 @@ func (s *SessionService) ftsOrKeyword(ctx context.Context, f domain.MemoryFilter
 		return nil, fmt.Errorf("session keyword search: %w", err)
 	}
 	return r, nil
+}
+
+func (s *SessionService) adjacentTurnResults(
+	ctx context.Context,
+	sourcePool RecallSourcePool,
+	kwResults, vecResults []domain.Memory,
+	opts RecallCandidateOptions,
+) ([]domain.Memory, error) {
+	if !opts.EnableAdjacentTurns {
+		return nil, nil
+	}
+
+	seeds := topAdjacentTurnSeeds(mergeRecallCandidates(sourcePool, kwResults, vecResults, nil), opts.AdjacentTurnTopN)
+	if len(seeds) == 0 {
+		return nil, nil
+	}
+
+	sessionIDs := make([]string, 0, len(seeds))
+	seenSessionIDs := make(map[string]struct{}, len(seeds))
+	for _, seed := range seeds {
+		if seed.Memory.SessionID == "" {
+			continue
+		}
+		if _, ok := seenSessionIDs[seed.Memory.SessionID]; ok {
+			continue
+		}
+		seenSessionIDs[seed.Memory.SessionID] = struct{}{}
+		sessionIDs = append(sessionIDs, seed.Memory.SessionID)
+	}
+	if len(sessionIDs) == 0 {
+		return nil, nil
+	}
+
+	fetchLimit := adjacentTurnFetchLimit(seeds, opts.AdjacentTurnRadius)
+	start := time.Now()
+	sessions, err := s.sessions.ListBySessionIDs(ctx, sessionIDs, fetchLimit)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotSupported) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("session adjacent turn lookup: %w", err)
+	}
+	adjacent := adjacentTurnMemories(seeds, sessions, opts.AdjacentTurnRadius)
+	slog.InfoContext(ctx, "session adjacent turn expansion",
+		"source_pool", string(sourcePool),
+		"seed_count", len(seeds),
+		"session_count", len(sessionIDs),
+		"fetch_limit", fetchLimit,
+		"adjacent_count", len(adjacent),
+		"total_ms", time.Since(start).Milliseconds(),
+	)
+	return adjacent, nil
+}
+
+func topAdjacentTurnSeeds(candidates []RecallCandidate, topN int) []RecallCandidate {
+	if topN <= 0 {
+		topN = defaultAdjacentTurnTopN
+	}
+	capHint := topN
+	if len(candidates) < capHint {
+		capHint = len(candidates)
+	}
+	seeds := make([]RecallCandidate, 0, capHint)
+	seen := make(map[string]struct{}, topN)
+	for _, candidate := range candidates {
+		if candidate.Memory.ID == "" || candidate.Memory.SessionID == "" {
+			continue
+		}
+		if _, ok := seen[candidate.Memory.ID]; ok {
+			continue
+		}
+		seen[candidate.Memory.ID] = struct{}{}
+		seeds = append(seeds, candidate)
+		if len(seeds) >= topN {
+			break
+		}
+	}
+	return seeds
+}
+
+func adjacentTurnFetchLimit(seeds []RecallCandidate, radius int) int {
+	if radius <= 0 {
+		radius = defaultAdjacentTurnRadius
+	}
+	limit := minAdjacentTurnFetchLimit
+	for _, seed := range seeds {
+		seq, ok := sessionSeqFromMemory(seed.Memory)
+		if !ok {
+			return maxAdjacentTurnFetchLimit
+		}
+		candidateLimit := seq + radius + 2
+		if candidateLimit > limit {
+			limit = candidateLimit
+		}
+	}
+	if limit > maxAdjacentTurnFetchLimit {
+		return maxAdjacentTurnFetchLimit
+	}
+	return limit
+}
+
+func adjacentTurnMemories(seeds []RecallCandidate, sessions []*domain.Session, radius int) []domain.Memory {
+	if radius <= 0 {
+		radius = defaultAdjacentTurnRadius
+	}
+
+	bySession := make(map[string][]*domain.Session, len(sessions))
+	for _, session := range sessions {
+		if session == nil || session.SessionID == "" {
+			continue
+		}
+		bySession[session.SessionID] = append(bySession[session.SessionID], session)
+	}
+
+	seen := make(map[string]struct{}, len(seeds))
+	for _, seed := range seeds {
+		seen[seed.Memory.ID] = struct{}{}
+	}
+
+	results := make([]domain.Memory, 0, len(seeds)*radius*2)
+	for _, seed := range seeds {
+		turns := bySession[seed.Memory.SessionID]
+		if len(turns) == 0 {
+			continue
+		}
+		seedIndex := -1
+		for i, turn := range turns {
+			if turn != nil && turn.ID == seed.Memory.ID {
+				seedIndex = i
+				break
+			}
+		}
+		if seedIndex < 0 {
+			continue
+		}
+		for _, idx := range adjacentTurnIndexes(seedIndex, len(turns), radius) {
+			neighbor := turns[idx]
+			if neighbor == nil || neighbor.ID == "" {
+				continue
+			}
+			if _, ok := seen[neighbor.ID]; ok {
+				continue
+			}
+			seen[neighbor.ID] = struct{}{}
+			results = append(results, sessionToMemory(neighbor))
+		}
+	}
+	return results
+}
+
+func adjacentTurnIndexes(seedIndex, total, radius int) []int {
+	indexes := make([]int, 0, radius*2)
+	for step := 1; step <= radius; step++ {
+		next := seedIndex + step
+		if next < total {
+			indexes = append(indexes, next)
+		}
+		prev := seedIndex - step
+		if prev >= 0 {
+			indexes = append(indexes, prev)
+		}
+	}
+	return indexes
+}
+
+func sessionSeqFromMemory(memory domain.Memory) (int, bool) {
+	if len(memory.Metadata) == 0 {
+		return 0, false
+	}
+	var metadata struct {
+		Seq *int `json:"seq"`
+	}
+	if err := json.Unmarshal(memory.Metadata, &metadata); err != nil || metadata.Seq == nil {
+		return 0, false
+	}
+	return *metadata.Seq, true
+}
+
+func sessionToMemory(session *domain.Session) domain.Memory {
+	metadata, _ := json.Marshal(map[string]any{
+		"role":         session.Role,
+		"seq":          session.Seq,
+		"content_type": session.ContentType,
+	})
+	return domain.Memory{
+		ID:         session.ID,
+		Content:    session.Content,
+		MemoryType: domain.TypeSession,
+		Source:     session.Source,
+		Tags:       append([]string(nil), session.Tags...),
+		Metadata:   metadata,
+		AgentID:    session.AgentID,
+		SessionID:  session.SessionID,
+		State:      session.State,
+		CreatedAt:  session.CreatedAt,
+		UpdatedAt:  session.UpdatedAt,
+	}
 }
 
 func applyMinScore(results []domain.Memory, minScore float64) []domain.Memory {
@@ -196,29 +541,44 @@ func dedupByContent(mems []domain.Memory) []domain.Memory {
 	return out
 }
 
-// sessionContentHash returns SHA-256(sessionID+role+content) as a hex string.
-// Two sends of the same message content within the same session produce the same
-// hash, so INSERT IGNORE deduplicates them. This is intentional: the plugin sends
-// cumulative overlapping slices on every agent turn; verbatim logging would store
-// each message N times. Identical messages in different sessions or roles are always
-// distinct (session_id and role are part of the input).
+// sessionContentHash returns a stable dedup hash as a hex string.
+// Without an explicit seq, it preserves the legacy SHA-256(sessionID+role+content)
+// behavior so cumulative overlapping plugin slices still deduplicate.
+// When seq is provided, it is folded into the hash to preserve distinct turn-level
+// provenance for otherwise identical message bodies within the same session.
 //
 // TODO(content-hash-migration): migrate to SHA-256(role+content) — dropping sessionID from the hash keeps
 // the same write-time dedup guarantee (the unique index is (session_id, content_hash),
 // so cross-session collisions are still impossible) while making content_hash
 // comparable across sessions. That would let the search path dedup by content_hash
 // instead of by the raw content string.
-func sessionContentHash(sessionID, role, content string) string {
-	h := sha256.Sum256([]byte(sessionID + role + content))
+func sessionContentHash(sessionID, role, content string, seq *int) string {
+	input := sessionID + role + content
+	if seq != nil {
+		input = fmt.Sprintf("%s\x00%s\x00%d\x00%s", sessionID, role, *seq, content)
+	}
+	h := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(h[:])
 }
 
 // SessionContentHash is the exported version for use by the handler fan-out goroutine.
-func SessionContentHash(sessionID, role, content string) string {
-	return sessionContentHash(sessionID, role, content)
+func SessionContentHash(sessionID, role, content string, seq *int) string {
+	return sessionContentHash(sessionID, role, content, seq)
 }
 
-func newSessionFromIngestMessage(sessionID, agentID, source string, seq int, role, content string) *domain.Session {
+func effectiveMessageSeq(msg IngestMessage, fallback int) int {
+	if msg.Seq != nil {
+		return *msg.Seq
+	}
+	return fallback
+}
+
+func newSessionFromIngestMessage(sessionID, agentID, source string, fallbackSeq int, msg IngestMessage) *domain.Session {
+	seq := effectiveMessageSeq(msg, fallbackSeq)
+	return newSession(sessionID, agentID, source, seq, msg.Role, msg.Content, msg.Seq)
+}
+
+func newSession(sessionID, agentID, source string, seq int, role, content string, explicitSeq *int) *domain.Session {
 	return &domain.Session{
 		ID:          uuid.New().String(),
 		SessionID:   sessionID,
@@ -228,7 +588,7 @@ func newSessionFromIngestMessage(sessionID, agentID, source string, seq int, rol
 		Role:        role,
 		Content:     content,
 		ContentType: detectSessionContentType(content),
-		ContentHash: sessionContentHash(sessionID, role, content),
+		ContentHash: sessionContentHash(sessionID, role, content, explicitSeq),
 		Tags:        []string{},
 		State:       domain.StateActive,
 	}

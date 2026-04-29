@@ -1,4 +1,6 @@
 ---
+import ContactModal from "../components/ContactModal.astro";
+import { siteCopy } from "../content/site";
 import type { SiteLocale, SiteMeta } from '../content/site';
 
 interface Props {
@@ -19,6 +21,7 @@ const base = import.meta.env.BASE_URL;
 const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://mem9.ai').toString();
 const htmlLang = locale === 'zh' ? 'zh-CN' : locale === 'zh-Hant' ? 'zh-Hant' : locale;
 const ga4MeasurementID = import.meta.env.PUBLIC_GA4_MEASUREMENT_ID?.trim() ?? '';
+const modalCopy = siteCopy[locale].billing;
 ---
 
 <!doctype html>
@@ -159,6 +162,7 @@ const ga4MeasurementID = import.meta.env.PUBLIC_GA4_MEASUREMENT_ID?.trim() ?? ''
   </head>
   <body id="top">
     <slot />
+    <ContactModal billing={modalCopy} />
     <script>
       import { initSiteUI } from '../scripts/site-ui';
 

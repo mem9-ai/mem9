@@ -385,6 +385,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
         paragraphs: [
           'If the user wants the same memory back later, the usual path is simply to reinstall mem9 and reconnect with the original API key.',
+          'The uninstall flow is designed around a single restart, and resetting the current session is a separate follow-up after uninstall verification succeeds.',
         ],
       },
       {
@@ -813,6 +814,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
         paragraphs: [
           '如果以后想把同一份记忆接回来，通常只需要重新安装 mem9，然后用原来的 API key reconnect。',
+          '卸载流程应该只发生一次重启；如果还想 reset 当前 session，应当在卸载验证成功后作为单独后续动作处理。',
         ],
       },
       {
@@ -1235,6 +1237,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
         paragraphs: [
           '同じ記憶を後で再接続したい場合は、通常は再インストールして元の API key で reconnect するだけで十分です。',
+          'uninstall フローは 1 回の再起動で完了する前提であり、現在の session の reset は検証成功後の別フォローアップです。',
         ],
       },
       {
@@ -1657,6 +1660,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
         paragraphs: [
           '같은 기억을 나중에 다시 연결하고 싶다면, 보통은 다시 설치하고 원래 API key로 reconnect 하면 충분합니다.',
+          'uninstall 흐름은 한 번의 재시작만 전제로 하며, 현재 session reset은 제거 검증이 끝난 뒤의 별도 후속 작업입니다.',
         ],
       },
       {
@@ -2085,6 +2089,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
         paragraphs: [
           'Jika pengguna ingin menyambung kembali memori yang sama nanti, biasanya cukup memasang ulang mem9 lalu reconnect dengan API key yang sama.',
+          'Alur uninstall dirancang hanya dengan satu restart, dan reset session saat ini adalah tindak lanjut terpisah setelah verifikasi uninstall berhasil.',
         ],
       },
       {
@@ -2513,6 +2518,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
         paragraphs: [
           'ถ้าต้องการเชื่อมต่อความจำชุดเดิมกลับมาในภายหลัง ปกติเพียงติดตั้ง mem9 ใหม่แล้ว reconnect ด้วย API key เดิมก็เพียงพอ',
+          'โฟลว์ uninstall ถูกออกแบบให้มีการรีสตาร์ตเพียงครั้งเดียว และการรีเซ็ต session ปัจจุบันเป็นงานติดตามแยกต่างหากหลังยืนยันการ uninstall สำเร็จ',
         ],
       },
       {

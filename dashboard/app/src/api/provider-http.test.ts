@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { upsertCachedMemories } from "./local-cache";
 import { httpProvider } from "./provider-http";
+
+vi.mock("./local-cache", () => ({
+  removeCachedMemory: vi.fn().mockResolvedValue(undefined),
+  upsertCachedMemories: vi.fn().mockResolvedValue(undefined),
+}));
 
 describe("httpProvider", () => {
   afterEach(() => {
@@ -33,8 +39,78 @@ describe("httpProvider", () => {
     expect(url).toBe("/your-memory/api/memories?limit=1");
     expect(url).not.toContain("space-1");
     expect(headers.get("X-API-Key")).toBe("space-1");
-    expect(headers.get("X-Mnemo-Agent-Id")).toBe("dashboard");
+    expect(headers.get("X-Mnemo-Agent-Id")).toBe("mem9-dashboard");
     expect(headers.get("Content-Type")).toBe("application/json");
+  });
+
+  it("posts manual creates to /memories with explicit pinned memory_type", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "mem-1",
+          content: "Remember my coffee order",
+          memory_type: "pinned",
+          tags: ["preference", "coffee"],
+          created_at: "2026-03-16T00:00:00Z",
+          updated_at: "2026-03-16T00:00:00Z",
+        }),
+        {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    const result = await httpProvider.createMemory("space-1", {
+      content: "Remember my coffee order",
+      memory_type: "pinned",
+      tags: ["preference", "coffee"],
+    });
+
+    expect(result.memory_type).toBe("pinned");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    const headers = init?.headers as Headers;
+    expect(url).toBe("/your-memory/api/memories");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe(
+      JSON.stringify({
+        content: "Remember my coffee order",
+        memory_type: "pinned",
+        tags: ["preference", "coffee"],
+      }),
+    );
+    expect(headers.get("X-API-Key")).toBe("space-1");
+    expect(headers.get("X-Mnemo-Agent-Id")).toBe("mem9-dashboard");
+    expect(upsertCachedMemories).toHaveBeenCalledWith(
+      "space-1",
+      [expect.objectContaining({ id: "mem-1", memory_type: "pinned" })],
+    );
+  });
+
+  it("rejects legacy accepted responses for manual creates and skips cache writes", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "accepted",
+        }),
+        {
+          status: 202,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(
+      httpProvider.createMemory("space-1", {
+        content: "Remember my coffee order",
+        memory_type: "pinned",
+      }),
+    ).rejects.toThrow(
+      "Manual add requires pinned-memory create support on the server.",
+    );
+    expect(upsertCachedMemories).not.toHaveBeenCalled();
   });
 
   it("uses the same fixed path for multipart imports and keeps auth in headers", async () => {
@@ -72,12 +148,12 @@ describe("httpProvider", () => {
     expect(url).toBe("/your-memory/api/imports");
     expect(url).not.toContain("space-1");
     expect(headers.get("X-API-Key")).toBe("space-1");
-    expect(headers.get("X-Mnemo-Agent-Id")).toBe("dashboard");
+    expect(headers.get("X-Mnemo-Agent-Id")).toBe("mem9-dashboard");
     expect(headers.has("Content-Type")).toBe(false);
     expect(init?.body).toBeInstanceOf(FormData);
   });
 
-  it("requests session preview messages with repeatable session_id params", async () => {
+  it("requests selected-memory session messages without an explicit limit", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -106,8 +182,7 @@ describe("httpProvider", () => {
     );
 
     const result = await httpProvider.listSessionMessages("space-1", {
-      session_ids: ["sess-1", "sess-2"],
-      limit_per_session: 4,
+      session_ids: ["sess-1"],
     });
 
     expect(result.messages).toHaveLength(1);
@@ -115,15 +190,13 @@ describe("httpProvider", () => {
 
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     const headers = init?.headers as Headers;
-    expect(url).toBe(
-      "/your-memory/api/session-messages?session_id=sess-1&session_id=sess-2&limit_per_session=4",
-    );
+    expect(url).toBe("/your-memory/api/session-messages?session_id=sess-1");
     expect(headers.get("X-API-Key")).toBe("space-1");
-    expect(headers.get("X-Mnemo-Agent-Id")).toBe("dashboard");
+    expect(headers.get("X-Mnemo-Agent-Id")).toBe("mem9-dashboard");
     expect(headers.get("Content-Type")).toBe("application/json");
   });
 
-  it("returns an empty session preview result when the endpoint is unavailable", async () => {
+  it("returns an empty session-message result when the endpoint is unavailable", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({

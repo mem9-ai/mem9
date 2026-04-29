@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 )
@@ -28,6 +30,13 @@ type stubSessionRepo struct {
 	autoVecResults []domain.Memory
 	autoVecErr     error
 	ftsAvail       bool
+	sessionRows    []*domain.Session
+	listSessionIDs []string
+	listLimit      int
+}
+
+func intPtr(v int) *int {
+	return &v
 }
 
 func (s *stubSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Session) error {
@@ -62,8 +71,10 @@ func (s *stubSessionRepo) KeywordSearch(_ context.Context, _ string, _ domain.Me
 
 func (s *stubSessionRepo) FTSAvailable() bool { return s.ftsAvail }
 
-func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, _ []string, _ int) ([]*domain.Session, error) {
-	return nil, nil
+func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, ids []string, limit int) ([]*domain.Session, error) {
+	s.listSessionIDs = append([]string(nil), ids...)
+	s.listLimit = limit
+	return append([]*domain.Session(nil), s.sessionRows...), nil
 }
 
 func newTestSessionService(repo *stubSessionRepo) *SessionService {
@@ -124,6 +135,33 @@ func TestSessionService_BulkCreate_buildsCorrectSessions(t *testing.T) {
 
 	if s0.ContentHash == s1.ContentHash {
 		t.Error("different messages must produce different content hashes")
+	}
+}
+
+func TestSessionService_BulkCreate_usesExplicitSeqWhenProvided(t *testing.T) {
+	repo := &stubSessionRepo{}
+	svc := newTestSessionService(repo)
+
+	req := IngestRequest{
+		SessionID: "sess-1",
+		AgentID:   "agent-x",
+		Messages: []IngestMessage{
+			{Role: "user", Content: "Hello world", Seq: intPtr(7)},
+			{Role: "assistant", Content: "Hi there", Seq: intPtr(11)},
+		},
+	}
+
+	if err := svc.BulkCreate(context.Background(), "source-agent", req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(repo.createdSessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(repo.createdSessions))
+	}
+	if repo.createdSessions[0].Seq != 7 {
+		t.Fatalf("session[0].Seq = %d, want 7", repo.createdSessions[0].Seq)
+	}
+	if repo.createdSessions[1].Seq != 11 {
+		t.Fatalf("session[1].Seq = %d, want 11", repo.createdSessions[1].Seq)
 	}
 }
 
@@ -246,6 +284,49 @@ func TestSessionService_Search_defaultLimit(t *testing.T) {
 	}
 }
 
+func TestSessionService_SearchCandidates_ExpandsAdjacentTurns(t *testing.T) {
+	now := time.Now()
+	repo := &stubSessionRepo{
+		keywordResults: []domain.Memory{
+			{
+				ID:         "s-question",
+				SessionID:  "sess-1",
+				Content:    "Which company do you like the most these days?",
+				MemoryType: domain.TypeSession,
+				Metadata:   json.RawMessage(`{"role":"user","seq":7,"content_type":"text"}`),
+				UpdatedAt:  now,
+				State:      domain.StateActive,
+			},
+		},
+		sessionRows: []*domain.Session{
+			{ID: "s-question", SessionID: "sess-1", Seq: 7, Role: "user", Content: "Which company do you like the most these days?", ContentType: "text", State: domain.StateActive, CreatedAt: now.Add(-1 * time.Minute), UpdatedAt: now.Add(-1 * time.Minute)},
+			{ID: "s-answer", SessionID: "sess-1", Seq: 8, Role: "assistant", Content: `Definitely "Under Armour" right now.`, ContentType: "text", State: domain.StateActive, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+	svc := newTestSessionService(repo)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{Query: "What company does John like?", Limit: 5}, RecallSourceSession, RecallCandidateOptions{
+		EnableAdjacentTurns: true,
+		AdjacentTurnRadius:  1,
+		AdjacentTurnTopN:    2,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 2 {
+		t.Fatalf("expected 2 candidates, got %d", len(candidates))
+	}
+	if candidates[0].Memory.ID != "s-question" {
+		t.Fatalf("expected seed candidate to remain present, got %q", candidates[0].Memory.ID)
+	}
+	if candidates[1].Memory.ID != "s-answer" {
+		t.Fatalf("expected adjacent answer candidate to be appended, got %q", candidates[1].Memory.ID)
+	}
+	if len(repo.listSessionIDs) != 1 || repo.listSessionIDs[0] != "sess-1" {
+		t.Fatalf("expected ListBySessionIDs to request sess-1, got %+v", repo.listSessionIDs)
+	}
+}
+
 func TestSessionContentHash_differentInputsProduceDifferentHashes(t *testing.T) {
 	cases := [][2]string{
 		{"sess-a role-user content-x", "sess-a role-user content-y"},
@@ -253,8 +334,8 @@ func TestSessionContentHash_differentInputsProduceDifferentHashes(t *testing.T) 
 		{"sess-a role-user content-x", "sess-a role-assistant content-x"},
 	}
 	for _, c := range cases {
-		h1 := SessionContentHash("sess-a", "user", c[0])
-		h2 := SessionContentHash("sess-a", "user", c[1])
+		h1 := SessionContentHash("sess-a", "user", c[0], nil)
+		h2 := SessionContentHash("sess-a", "user", c[1], nil)
 		if h1 == h2 {
 			t.Errorf("expected different hashes for different inputs: %q vs %q", c[0], c[1])
 		}
@@ -262,10 +343,18 @@ func TestSessionContentHash_differentInputsProduceDifferentHashes(t *testing.T) 
 }
 
 func TestSessionContentHash_sameInputProducesSameHash(t *testing.T) {
-	h1 := SessionContentHash("sess-1", "user", "hello world")
-	h2 := SessionContentHash("sess-1", "user", "hello world")
+	h1 := SessionContentHash("sess-1", "user", "hello world", nil)
+	h2 := SessionContentHash("sess-1", "user", "hello world", nil)
 	if h1 != h2 {
 		t.Errorf("expected identical hashes, got %q vs %q", h1, h2)
+	}
+}
+
+func TestSessionContentHash_explicitSeqProducesDistinctHashes(t *testing.T) {
+	h1 := SessionContentHash("sess-1", "assistant", "Take care, bye!", intPtr(15))
+	h2 := SessionContentHash("sess-1", "assistant", "Take care, bye!", intPtr(36))
+	if h1 == h2 {
+		t.Fatalf("expected distinct hashes for explicit seq values, got %q", h1)
 	}
 }
 

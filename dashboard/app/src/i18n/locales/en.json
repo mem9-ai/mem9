@@ -2,18 +2,17 @@
   "_locale": "en",
   "connect": {
     "title": "Your Memory",
-    "subtitle": "Enter your memory space",
-    "placeholder": "Space ID",
-    "submit": "Enter space",
+    "subtitle": "Use your <code>MEM9_API_KEY</code> to continue",
+    "placeholder": "MEM9_API_KEY",
+    "submit": "Open your memory",
     "remember_login": "Keep me signed in for 15 days",
-    "security": "Space ID is your private key. Do not share it with others.",
+    "security": "<code>MEM9_API_KEY</code> is your private key. Do not share it.",
     "error": {
-      "invalid": "Cannot access this space. Please check your ID and try again."
+      "invalid": "Cannot access this memory space. Check your MEM9_API_KEY and try again."
     },
-    "how_title": "What is mem9",
-    "how_1": "Your agent accumulates memories during conversations",
-    "how_2": "You can also ask your agent to remember specific things",
-    "how_3": "This dashboard shows what has been saved"
+    "how_title": "How to get your <code>MEM9_API_KEY</code>",
+    "how_1": "Ask OpenClaw to show you the <code>MEM9_API_KEY</code> it is already using.",
+    "how_2": "For other agent tools, ask the agent to show you its <code>MEM9_API_KEY</code> or tell you where it is stored."
   },
   "space": {
     "title": "Your Memory",
@@ -38,7 +37,8 @@
     "load_more": "Load more",
     "loading": "Loading memories...",
     "via": "via",
-    "copied": "Copied to clipboard"
+    "copied": "Copied to clipboard",
+    "linked_session": "From a conversation"
   },
   "detail": {
     "type": {
@@ -55,21 +55,28 @@
     "mixed_badge": "Mixed",
     "derived_tags": "Derived tags",
     "metadata": "Metadata",
-    "delete": "Delete this memory",
+    "delete": "Delete",
+    "delete_button_label": "Delete memory",
     "edit": "Edit",
     "close": "Close"
   },
   "session_preview": {
     "title": "Original Conversation",
     "loading": "Loading conversation...",
+    "jump_to_start": "Start",
+    "jump_to_latest": "Latest",
     "show_metadata": "Expand",
     "hide_metadata": "Collapse",
+    "show_tool_result": "Show result",
+    "hide_tool_result": "Hide result",
+    "tool_result_empty": "Tool result",
     "metadata_summary_empty": "Tap to view metadata",
     "role": {
       "user": "User",
       "assistant": "Assistant",
       "system": "System",
-      "tool": "Tool"
+      "tool": "Tool",
+      "toolResult": "Tool result"
     }
   },
   "add": {
@@ -102,6 +109,7 @@
   "empty": {
     "title": "This space has no memories yet",
     "description": "Memories are accumulated as you chat with your agent. You can also save the first one now.",
+    "description_readonly": "Memories are accumulated as you chat with your agent.",
     "cta": "Save your first memory"
   },
   "legend": {
@@ -211,6 +219,16 @@
       "pulse": "Memory Pulse",
       "insight": "Memory Insight",
       "analysis": "Memory Analysis"
+    },
+    "tabs_short": {
+      "pulse": "Pulse",
+      "insight": "Insight",
+      "analysis": "Analysis"
+    },
+    "desktop_only": {
+      "title": "Memory Insight needs a wider screen",
+      "body": "The relations canvas needs at least a tablet in landscape (1024px wide) to lay the bubbles out legibly.",
+      "hint": "Rotate your tablet to landscape, or open mem9.ai/your-memory on a desktop browser."
     }
   },
   "analysis": {
@@ -513,6 +531,41 @@
       "music": "Music",
       "on": "On",
       "off": "Off"
+    },
+    "npc_tips": {
+      "title": "Tip",
+      "items": {
+        "move": "Use arrow keys or WASD to move.",
+        "run": "Hold Shift to run.",
+        "interact": "Press Space to interact.",
+        "bucket-to-crops": "Each crop family maps to one memory bucket.",
+        "bucket-slices": "One bucket can spread across multiple crops.",
+        "latest-first": "Each bucket shows the newest memories first."
+      }
+    },
+    "npc_dialog": {
+      "title": "Farm Talk",
+      "tips": {
+        "move": "Cluck, use arrow keys or WASD to wander the field.",
+        "run": "Moo, hold Shift if you want to scamper faster.",
+        "interact": "Tap Space and one of us will chirp back.",
+        "bucket-to-crops": "Moo, each crop family is tending one whole bucket of memories.",
+        "bucket-slices": "Cluck, one bucket can sprout across several crops.",
+        "latest-first": "Around here, the freshest memories poke up first."
+      },
+      "deep": {
+        "persona_summary": "Moo, your thoughts keep grazing around {{summary}} lately.",
+        "theme_highlight": "Cluck, {{theme}} keeps rustling through this whole memory field.",
+        "recommendation": "The barn breeze says {{recommendation}} would help next."
+      },
+      "light": {
+        "summary_snapshot": "Moo, the field feels full of {{summary}} these days.",
+        "top_tag": "Cluck, {{tag}} keeps popping up like fresh sprouts.",
+        "top_topic": "This little coop can't stop talking about {{topic}}."
+      }
+    },
+    "plant_dialog": {
+      "intro": "This little sprout grows in the #{{tag}} patch. There are {{count}} memories tucked into this group. This plant is only showing one slice of them."
     },
     "feedback": {
       "button": "Feedback",

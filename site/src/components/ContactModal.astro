@@ -1,0 +1,285 @@
+---
+import type { SiteBillingPageCopy } from "../content/site";
+
+interface Props {
+  billing: SiteBillingPageCopy;
+}
+
+const { billing } = Astro.props;
+---
+
+<div class="contact-modal-overlay" data-contact-modal hidden>
+  <div
+    class="contact-modal-card surface-card"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="contact-modal-title"
+  >
+    <div class="contact-modal-panel">
+      <p class="contact-modal-message" id="contact-modal-title" data-i18n="billing.contactMessage">
+        {billing.contactMessage}
+      </p>
+      <p class="contact-modal-email" data-contact-modal-email>{billing.contactEmail}</p>
+      <button
+        type="button"
+        class="contact-modal-copy-button"
+        data-contact-modal-copy
+        data-i18n="billing.contactCopyLabel"
+      >
+        {billing.contactCopyLabel}
+      </button>
+      <p class="contact-modal-feedback" data-contact-modal-feedback aria-live="polite"></p>
+      <span data-contact-modal-copy-success hidden data-i18n="billing.contactCopiedMessage">
+        {billing.contactCopiedMessage}
+      </span>
+      <span data-contact-modal-copy-failure hidden data-i18n="billing.contactCopyFailedMessage">
+        {billing.contactCopyFailedMessage}
+      </span>
+    </div>
+
+    <button
+      type="button"
+      class="contact-modal-close-button"
+      data-contact-modal-close
+      data-i18n="billing.modalOkLabel"
+    >
+      {billing.modalOkLabel}
+    </button>
+  </div>
+</div>
+
+<script is:inline>
+  (function () {
+    var modal = document.querySelector("[data-contact-modal]");
+    var closeButton = document.querySelector("[data-contact-modal-close]");
+    var copyButton = document.querySelector("[data-contact-modal-copy]");
+    var emailNode = document.querySelector("[data-contact-modal-email]");
+    var feedbackNode = document.querySelector("[data-contact-modal-feedback]");
+    var successNode = document.querySelector("[data-contact-modal-copy-success]");
+    var failureNode = document.querySelector("[data-contact-modal-copy-failure]");
+    var openButtons = document.querySelectorAll("[data-contact-modal-trigger]");
+
+    if (
+      !modal ||
+      !closeButton ||
+      !copyButton ||
+      !emailNode ||
+      !feedbackNode ||
+      !successNode ||
+      !failureNode ||
+      openButtons.length === 0
+    ) {
+      return;
+    }
+
+    function setVisible(isVisible) {
+      if (isVisible) {
+        modal.hidden = false;
+        requestAnimationFrame(function () {
+          modal.classList.add("is-visible");
+        });
+        return;
+      }
+
+      modal.classList.remove("is-visible");
+      setTimeout(function () {
+        modal.hidden = true;
+      }, 200);
+    }
+
+    async function copyEmail() {
+      var email = emailNode.textContent ? emailNode.textContent.trim() : "";
+      if (!email) {
+        return false;
+      }
+
+      try {
+        await navigator.clipboard.writeText(email);
+        return true;
+      } catch (error) {
+        var textarea = document.createElement("textarea");
+        textarea.value = email;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "absolute";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+
+        var copied = false;
+        try {
+          copied = document.execCommand("copy");
+        } catch (copyError) {
+          copied = false;
+        }
+
+        document.body.removeChild(textarea);
+        return copied;
+      }
+    }
+
+    async function handleCopy() {
+      var copied = await copyEmail();
+      feedbackNode.textContent = copied
+        ? successNode.textContent.trim()
+        : failureNode.textContent.trim();
+    }
+
+    openButtons.forEach(function (button) {
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        feedbackNode.textContent = "";
+        setVisible(true);
+      });
+    });
+
+    copyButton.addEventListener("click", function () {
+      void handleCopy();
+    });
+
+    closeButton.addEventListener("click", function () {
+      setVisible(false);
+    });
+
+    modal.addEventListener("click", function (event) {
+      if (event.target === modal) {
+        setVisible(false);
+      }
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !modal.hidden) {
+        setVisible(false);
+      }
+    });
+  })();
+</script>
+
+<style>
+  .contact-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(6px);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .contact-modal-overlay[hidden] {
+    display: none;
+  }
+
+  .contact-modal-overlay.is-visible {
+    opacity: 1;
+  }
+
+  .contact-modal-card {
+    max-width: 480px;
+    width: calc(100% - 2rem);
+    padding: 2rem;
+    text-align: center;
+    transform: translateY(12px) scale(0.97);
+    transition: transform 0.2s ease;
+  }
+
+  .contact-modal-overlay.is-visible .contact-modal-card {
+    transform: translateY(0) scale(1);
+  }
+
+  .contact-modal-panel {
+    display: grid;
+    gap: 0.85rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .contact-modal-message {
+    margin: 0;
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: var(--text);
+  }
+
+  .contact-modal-email {
+    margin: 0;
+    padding: 0.85rem 1rem;
+    border-radius: 0.85rem;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 92%, black 8%);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    user-select: all;
+    word-break: break-all;
+  }
+
+  .contact-modal-copy-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.75rem;
+    padding: 0.65rem 1.2rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 88%, white 12%);
+    color: var(--text);
+    font-family: var(--font-display);
+    font-size: 0.92rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition:
+      transform 0.15s ease,
+      border-color 0.15s ease,
+      background 0.15s ease;
+  }
+
+  .contact-modal-copy-button:hover {
+    transform: translateY(-1px);
+    border-color: var(--border-strong);
+    background: color-mix(in srgb, var(--surface) 82%, white 18%);
+  }
+
+  .contact-modal-feedback {
+    min-height: 1.25rem;
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    line-height: 1.4;
+  }
+
+  .contact-modal-close-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 7rem;
+    min-height: 2.75rem;
+    padding: 0.6rem 1.5rem;
+    border-radius: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+    background: linear-gradient(
+      135deg,
+      var(--text) 0%,
+      color-mix(in srgb, var(--text) 74%, var(--accent)) 100%
+    );
+    color: var(--bg-deep);
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, white 22%, transparent),
+      0 8px 20px color-mix(in srgb, var(--text) 12%, transparent);
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.15s ease,
+      opacity 0.15s ease;
+  }
+
+  .contact-modal-close-button:hover {
+    transform: translateY(-1px);
+    opacity: 0.95;
+  }
+</style>

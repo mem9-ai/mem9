@@ -28,7 +28,7 @@ cd openclaw-plugin && npm run typecheck
 - ESM only; local imports always end with `.js`.
 - `MemoryBackend` is the seam between hooks/tools and the HTTP implementation.
 - `ServerBackend` is the only backend currently used; keep request logic centralized there.
-- `AbortSignal.timeout(8_000)` is the standard fetch timeout.
+- Timeouts are configurable: `searchTimeoutMs` defaults to 15000ms, and `defaultTimeoutMs` defaults to 8000ms for other requests.
 - Plugin uses `kind: "memory"`; OpenClaw owns lifecycle timing, this package only supplies tools/hooks.
 
 ## Error handling

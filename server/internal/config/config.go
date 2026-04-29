@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -36,12 +37,13 @@ type Config struct {
 	LLMTemperature float64
 	IngestMode     string
 
-	TiDBZeroEnabled       bool
-	TiDBZeroAPIURL        string
-	TenantPoolMaxIdle     int
-	TenantPoolMaxOpen     int
-	TenantPoolIdleTimeout time.Duration
-	TenantPoolTotalLimit  int
+	TiDBZeroEnabled          bool
+	TiDBZeroAPIURL           string
+	TenantPoolMaxIdle        int
+	TenantPoolMaxOpen        int
+	TenantPoolConnectTimeout time.Duration
+	TenantPoolIdleTimeout    time.Duration
+	TenantPoolTotalLimit     int
 
 	// TiDB Cloud Pool configuration
 	TiDBCloudAPIURL string
@@ -56,6 +58,11 @@ type Config struct {
 	// WorkerConcurrency controls how many upload tasks are processed in parallel.
 	// Defaults to 5.
 	WorkerConcurrency int
+
+	// Metering writes compressed usage batches to a destination URL.
+	MeteringEnabled       bool
+	MeteringURL           string
+	MeteringFlushInterval time.Duration
 
 	// DebugLLM enables logging of raw LLM response content, which may contain
 	// user data. Disabled by default. Enable only in dev/test environments via
@@ -89,6 +96,14 @@ type Config struct {
 	// should be returned as 429 instead of 503. Populated from
 	// MNEMO_CLUSTER_BLACKLIST (comma-separated). Empty by default.
 	ClusterBlacklist map[string]struct{}
+
+	// AutoSpendLimit controls automatic spend-limit increases for eligible clusters.
+	AutoSpendLimitEnabled   bool
+	AutoSpendLimitIncrement int
+	AutoSpendLimitMax       int
+	AutoSpendLimitCooldown  time.Duration
+
+	UTMEnabled bool
 }
 
 func Load() (*Config, error) {
@@ -97,38 +112,57 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("MNEMO_DSN is required")
 	}
 
+	meteringEnabled := envBool("MNEMO_METERING_ENABLED", false)
+	meteringURL := ""
+	if meteringEnabled {
+		var err error
+		meteringURL, err = parseMeteringURL(os.Getenv("MNEMO_METERING_URL"))
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	cfg := &Config{
-		Port:                  envOr("MNEMO_PORT", "8080"),
-		DSN:                   dsn,
-		DBBackend:             envOr("MNEMO_DB_BACKEND", "tidb"),
-		RateLimit:             envFloat("MNEMO_RATE_LIMIT", 100),
-		RateBurst:             envInt("MNEMO_RATE_BURST", 200),
-		EmbedAutoModel:        os.Getenv("MNEMO_EMBED_AUTO_MODEL"),
-		EmbedAutoDims:         envInt("MNEMO_EMBED_AUTO_DIMS", 1024),
-		EmbedAPIKey:           os.Getenv("MNEMO_EMBED_API_KEY"),
-		EmbedBaseURL:          os.Getenv("MNEMO_EMBED_BASE_URL"),
-		EmbedModel:            os.Getenv("MNEMO_EMBED_MODEL"),
-		EmbedDims:             envInt("MNEMO_EMBED_DIMS", 1536),
-		LLMAPIKey:             os.Getenv("MNEMO_LLM_API_KEY"),
-		LLMBaseURL:            os.Getenv("MNEMO_LLM_BASE_URL"),
-		LLMModel:              envOr("MNEMO_LLM_MODEL", "gpt-4o-mini"),
-		LLMTemperature:        envFloat("MNEMO_LLM_TEMPERATURE", 0.1),
-		IngestMode:            envOr("MNEMO_INGEST_MODE", "smart"),
-		TiDBZeroEnabled:       envBool("MNEMO_TIDB_ZERO_ENABLED", true),
-		TiDBZeroAPIURL:        envOr("MNEMO_TIDB_ZERO_API_URL", "https://zero.tidbapi.com/v1alpha1"),
-		TiDBCloudAPIURL:       envOr("MNEMO_TIDBCLOUD_API_URL", "https://serverless.tidbapi.com"),
-		TiDBCloudPoolID:       envOr("MNEMO_TIDBCLOUD_POOL_ID", "2"),
-		TenantPoolMaxIdle:     envInt("MNEMO_TENANT_POOL_MAX_IDLE", 5),
-		TenantPoolMaxOpen:     envInt("MNEMO_TENANT_POOL_MAX_OPEN", 10),
-		TenantPoolIdleTimeout: envDuration("MNEMO_TENANT_POOL_IDLE_TIMEOUT", 10*time.Minute),
-		TenantPoolTotalLimit:  envInt("MNEMO_TENANT_POOL_TOTAL_LIMIT", 200),
-		UploadDir:             envOr("MNEMO_UPLOAD_DIR", "./uploads"),
-		FTSEnabled:            envBool("MNEMO_FTS_ENABLED", false),
-		WorkerConcurrency:     envInt("MNEMO_WORKER_CONCURRENCY", 5),
-		EncryptType:           envOr("MNEMO_ENCRYPT_TYPE", "plain"),
-		EncryptKey:            os.Getenv("MNEMO_ENCRYPT_KEY"),
-		DebugLLM:              envBool("MNEMO_DEBUG_LLM", false),
-		ClusterBlacklist:      parseClusterBlacklist(os.Getenv("MNEMO_CLUSTER_BLACKLIST")),
+		Port:                     envOr("MNEMO_PORT", "8080"),
+		DSN:                      dsn,
+		DBBackend:                envOr("MNEMO_DB_BACKEND", "tidb"),
+		RateLimit:                envFloat("MNEMO_RATE_LIMIT", 100),
+		RateBurst:                envInt("MNEMO_RATE_BURST", 200),
+		EmbedAutoModel:           os.Getenv("MNEMO_EMBED_AUTO_MODEL"),
+		EmbedAutoDims:            envInt("MNEMO_EMBED_AUTO_DIMS", 1024),
+		EmbedAPIKey:              os.Getenv("MNEMO_EMBED_API_KEY"),
+		EmbedBaseURL:             os.Getenv("MNEMO_EMBED_BASE_URL"),
+		EmbedModel:               os.Getenv("MNEMO_EMBED_MODEL"),
+		EmbedDims:                envInt("MNEMO_EMBED_DIMS", 1536),
+		LLMAPIKey:                os.Getenv("MNEMO_LLM_API_KEY"),
+		LLMBaseURL:               os.Getenv("MNEMO_LLM_BASE_URL"),
+		LLMModel:                 envOr("MNEMO_LLM_MODEL", "gpt-4o-mini"),
+		LLMTemperature:           envFloat("MNEMO_LLM_TEMPERATURE", 0.1),
+		IngestMode:               envOr("MNEMO_INGEST_MODE", "smart"),
+		TiDBZeroEnabled:          envBool("MNEMO_TIDB_ZERO_ENABLED", true),
+		TiDBZeroAPIURL:           envOr("MNEMO_TIDB_ZERO_API_URL", "https://zero.tidbapi.com/v1alpha1"),
+		TiDBCloudAPIURL:          envOr("MNEMO_TIDBCLOUD_API_URL", "https://serverless.tidbapi.com"),
+		TiDBCloudPoolID:          envOr("MNEMO_TIDBCLOUD_POOL_ID", "2"),
+		TenantPoolMaxIdle:        envInt("MNEMO_TENANT_POOL_MAX_IDLE", 5),
+		TenantPoolMaxOpen:        envInt("MNEMO_TENANT_POOL_MAX_OPEN", 10),
+		TenantPoolConnectTimeout: envDuration("MNEMO_TENANT_POOL_CONNECT_TIMEOUT", 3*time.Second),
+		TenantPoolIdleTimeout:    envDuration("MNEMO_TENANT_POOL_IDLE_TIMEOUT", 10*time.Minute),
+		TenantPoolTotalLimit:     envInt("MNEMO_TENANT_POOL_TOTAL_LIMIT", 200),
+		UploadDir:                envOr("MNEMO_UPLOAD_DIR", "./uploads"),
+		FTSEnabled:               envBool("MNEMO_FTS_ENABLED", false),
+		WorkerConcurrency:        envInt("MNEMO_WORKER_CONCURRENCY", 5),
+		MeteringEnabled:          meteringEnabled,
+		MeteringURL:              meteringURL,
+		MeteringFlushInterval:    envDuration("MNEMO_METERING_FLUSH_INTERVAL", 10*time.Second),
+		EncryptType:              envOr("MNEMO_ENCRYPT_TYPE", "plain"),
+		EncryptKey:               os.Getenv("MNEMO_ENCRYPT_KEY"),
+		DebugLLM:                 envBool("MNEMO_DEBUG_LLM", false),
+		ClusterBlacklist:         parseClusterBlacklist(os.Getenv("MNEMO_CLUSTER_BLACKLIST")),
+		AutoSpendLimitEnabled:    envBool("MNEMO_AUTO_SPEND_LIMIT_ENABLED", false),
+		AutoSpendLimitIncrement:  envInt("MNEMO_AUTO_SPEND_LIMIT_INCREMENT", 500),
+		AutoSpendLimitMax:        envInt("MNEMO_AUTO_SPEND_LIMIT_MAX", 10000),
+		AutoSpendLimitCooldown:   envDuration("MNEMO_AUTO_SPEND_LIMIT_COOLDOWN", 1*time.Hour),
+		UTMEnabled:               envBool("MNEMO_UTM_ENABLED", false),
 	}
 	// Validate ingest mode.
 	switch cfg.IngestMode {
@@ -144,6 +178,16 @@ func Load() (*Config, error) {
 		// ok
 	default:
 		return nil, fmt.Errorf("unsupported MNEMO_DB_BACKEND %q; valid values are \"tidb\", \"postgres\", and \"db9\"", cfg.DBBackend)
+	}
+
+	if cfg.AutoSpendLimitIncrement <= 0 {
+		return nil, fmt.Errorf("MNEMO_AUTO_SPEND_LIMIT_INCREMENT must be positive")
+	}
+	if cfg.AutoSpendLimitMax <= cfg.AutoSpendLimitIncrement {
+		return nil, fmt.Errorf("MNEMO_AUTO_SPEND_LIMIT_MAX must be greater than increment")
+	}
+	if cfg.AutoSpendLimitCooldown <= 0 {
+		return nil, fmt.Errorf("MNEMO_AUTO_SPEND_LIMIT_COOLDOWN must be positive")
 	}
 
 	return cfg, nil
@@ -194,12 +238,34 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 
 func parseClusterBlacklist(raw string) map[string]struct{} {
 	out := make(map[string]struct{})
-	for _, id := range strings.Split(raw, ",") {
+	for id := range strings.SplitSeq(raw, ",") {
 		if id := strings.TrimSpace(id); id != "" {
 			out[id] = struct{}{}
 		}
 	}
 	return out
+}
+
+func parseMeteringURL(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid MNEMO_METERING_URL: %w", err)
+	}
+	switch u.Scheme {
+	case "s3", "http", "https":
+		// ok
+	default:
+		return "", fmt.Errorf("invalid MNEMO_METERING_URL: unsupported scheme %q", u.Scheme)
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("invalid MNEMO_METERING_URL: host is required")
+	}
+
+	return raw, nil
 }
 
 // LogValue returns a slog.Value with sensitive fields masked.

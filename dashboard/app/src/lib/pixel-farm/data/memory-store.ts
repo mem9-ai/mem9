@@ -17,7 +17,10 @@ export interface PixelFarmMemoryStore {
 }
 
 function compareByUpdatedAtDesc(left: Memory, right: Memory): number {
-  return right.updated_at.localeCompare(left.updated_at);
+  const leftTime = left.updated_at || left.created_at;
+  const rightTime = right.updated_at || right.created_at;
+
+  return rightTime.localeCompare(leftTime) || left.id.localeCompare(right.id);
 }
 
 export function createPixelFarmMemoryStore(): PixelFarmMemoryStore {
@@ -72,4 +75,3 @@ export function createPixelFarmMemoryStore(): PixelFarmMemoryStore {
     },
   };
 }
-

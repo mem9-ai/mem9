@@ -1,11 +1,13 @@
 {
   "name": "@mem9/opencode",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "OpenCode memory plugin — cloud-persistent AI agent memory with hybrid vector + keyword search via mem9",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./server": "./src/index.ts",
+    "./tui": "./src/tui/index.ts"
   },
   "license": "Apache-2.0",
   "publishConfig": {
@@ -34,11 +36,14 @@
     "README.md"
   ],
   "scripts": {
+    "test": "node ./scripts/test.mjs",
+    "pack:check": "pnpm pack --dry-run",
+    "publish:release": "node ./scripts/publish.mjs",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck"
+    "prepublishOnly": "pnpm run typecheck"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "1.2.15"
+    "@opencode-ai/plugin": "1.14.19"
   },
   "devDependencies": {
     "@types/node": "^25.3.3",

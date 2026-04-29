@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,6 +15,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/handler"
 	"github.com/qiffang/mnemos/server/internal/llm"
+	"github.com/qiffang/mnemos/server/internal/metering"
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/reqid"
@@ -95,22 +97,53 @@ func main() {
 
 	// Repositories.
 	tenantRepo := repository.NewTenantRepo(cfg.DBBackend, db)
+	var utmRepo repository.UTMRepo
+	if cfg.UTMEnabled {
+		if err := db.QueryRowContext(context.Background(), "SELECT 1 FROM tenant_utm LIMIT 0").Err(); err != nil {
+			logger.Warn("MNEMO_UTM_ENABLED=true but tenant_utm table not found; disabling UTM tracking", "err", err)
+		} else {
+			utmRepo = repository.NewUTMRepo(cfg.DBBackend, db)
+			logger.Info("UTM tracking enabled")
+		}
+	}
 	uploadTaskRepo := repository.NewUploadTaskRepo(cfg.DBBackend, db)
 	tenantPool := tenant.NewPool(tenant.PoolConfig{
-		MaxIdle:     cfg.TenantPoolMaxIdle,
-		MaxOpen:     cfg.TenantPoolMaxOpen,
-		IdleTimeout: cfg.TenantPoolIdleTimeout,
-		TotalLimit:  cfg.TenantPoolTotalLimit,
-		Backend:     cfg.DBBackend,
+		MaxIdle:        cfg.TenantPoolMaxIdle,
+		MaxOpen:        cfg.TenantPoolMaxOpen,
+		ConnectTimeout: cfg.TenantPoolConnectTimeout,
+		IdleTimeout:    cfg.TenantPoolIdleTimeout,
+		TotalLimit:     cfg.TenantPoolTotalLimit,
+		Backend:        cfg.DBBackend,
 	})
 	defer tenantPool.Close()
+
+	meteringWriter, err := metering.New(context.Background(), metering.Config{
+		Enabled:       cfg.MeteringEnabled,
+		URL:           cfg.MeteringURL,
+		FlushInterval: cfg.MeteringFlushInterval,
+	}, logger)
+	if err != nil {
+		logger.Error("failed to initialize metering writer", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := meteringWriter.Close(ctx); err != nil {
+			logger.Error("metering close error", "err", err)
+		}
+	}()
+	if cfg.MeteringEnabled && cfg.MeteringURL == "" {
+		logger.Warn("MNEMO_METERING_ENABLED=true but MNEMO_METERING_URL empty; metering disabled")
+	}
+	logger.Info("metering writer initialized", "enabled", cfg.MeteringEnabled, "destination", redactMeteringURLForLog(cfg.MeteringURL))
 
 	// Services.
 	// Select provisioner based on configuration
 	var provisioner tenant.Provisioner
 	if cfg.TiDBZeroEnabled && cfg.DBBackend == "tidb" {
 		// Zero mode (explicit toggle takes precedence)
-		provisioner = tenant.NewZeroProvisioner(cfg.TiDBZeroAPIURL, cfg.DBBackend, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled)
+		provisioner = tenant.NewZeroProvisioner(cfg.TiDBZeroAPIURL, cfg.DBBackend, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled)
 		logger.Info("using TiDB Zero provisioner")
 	} else if cfg.TiDBZeroEnabled {
 		logger.Warn("TiDB Zero provisioning is only supported with tidb backend; disabling auto-provisioning", "backend", cfg.DBBackend)
@@ -129,24 +162,49 @@ func main() {
 		logger.Info("no provisioner configured (pre-existing tenants mode)")
 	}
 
-	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.FTSEnabled, encryptor)
+	var spendLimitAdjuster tenant.SpendLimitAdjuster
+	var spendLimitCooldown *middleware.SpendLimitCooldown
+	var autoSpendLimitCfg middleware.AutoSpendLimitConfig
+	if cfg.AutoSpendLimitEnabled {
+		if os.Getenv("MNEMO_TIDBCLOUD_API_KEY") != "" && os.Getenv("MNEMO_TIDBCLOUD_API_SECRET") != "" {
+			spendLimitAdjuster = tenant.NewTiDBCloudProvisioner(cfg.TiDBCloudAPIURL, cfg.TiDBCloudPoolID)
+			spendLimitCooldown = middleware.NewSpendLimitCooldown(cfg.AutoSpendLimitCooldown)
+			autoSpendLimitCfg = middleware.AutoSpendLimitConfig{Enabled: true, Increment: cfg.AutoSpendLimitIncrement, Max: cfg.AutoSpendLimitMax}
+			logger.Info("auto spend limit enabled", "increment", cfg.AutoSpendLimitIncrement, "max", cfg.AutoSpendLimitMax, "cooldown", cfg.AutoSpendLimitCooldown.String())
+		} else {
+			logger.Warn("auto spend limit enabled but TiDB Cloud credentials missing; disabled")
+		}
+	}
+
+	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled, encryptor)
+	if utmRepo != nil {
+		tenantSvc.WithUTMRepo(utmRepo)
+	}
 
 	// Middleware.
-	tenantMW := middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
-	apiKeyMW := middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
+	var tenantMW func(http.Handler) http.Handler
+	var apiKeyMW func(http.Handler) http.Handler
+	if spendLimitAdjuster != nil {
+		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg))
+		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg))
+	} else {
+		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
+		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
+	}
 	rl := middleware.NewRateLimiter(cfg.RateLimit, cfg.RateBurst)
 	defer rl.Stop()
 	rateMW := rl.Middleware()
 
 	// Handler.
-	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger)
+	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger).
+		WithMetering(meteringWriter)
 	router := srv.Router(tenantMW, rateMW, apiKeyMW)
 
 	httpSrv := &http.Server{
 		Addr:         ":" + cfg.Port,
 		Handler:      router,
 		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 120 * time.Second, // extended from 30s to support sync ingest (LLM reconcile can take >30s)
+		WriteTimeout: 15 * time.Minute, // keep transport timeout above sync ingest so callers can receive structured 504s
 		IdleTimeout:  60 * time.Second,
 	}
 
@@ -194,4 +252,15 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("server stopped")
+}
+
+func redactMeteringURLForLog(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "<invalid>"
+	}
+	return u.Scheme + "://" + u.Host
 }

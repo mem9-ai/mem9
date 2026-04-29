@@ -15,7 +15,7 @@ interface Props {
 }
 
 const { nav, aria, localeNames, themeOptions, currentPath = '/' } = Astro.props;
-const isDocsPage = currentPath === '/docs';
+const isActivePath = (path: string): boolean => currentPath === path;
 ---
 
 <nav class="nav">
@@ -27,22 +27,76 @@ const isDocsPage = currentPath === '/docs';
 
     <div class="nav-right">
       <div class="nav-links">
-        <a href="/#top" class="nav-section-link" data-i18n="nav.home">{nav.home}</a>
-        <a href="/#security" class="nav-section-link" data-i18n="nav.security">{nav.security}</a>
-        <a href="https://mem9.ai/your-memory" class="nav-product-link">
-          <span data-i18n="nav.yourMemory">{nav.yourMemory}</span>
-          <span class="nav-badge">Beta</span>
+        <div class="nav-dropdown">
+          <a
+            href="/#top"
+            class:list={['nav-section-link', isActivePath('/') && 'is-active']}
+            aria-current={isActivePath('/') ? 'page' : undefined}
+          >
+            <span data-i18n="nav.home">{nav.home}</span>
+            <svg class="nav-caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+          <div class="nav-dropdown-menu">
+            <div class="nav-dropdown-menu-inner surface-card">
+              <a href="/#features" class="dropdown-item" data-i18n="nav.features">{nav.features}</a>
+              <a href="/#benchmark" class="dropdown-item" data-i18n="nav.benchmark">{nav.benchmark}</a>
+              <a href="/#platforms" class="dropdown-item" data-i18n="nav.platforms">{nav.platforms}</a>
+              <a href="/#security" class="dropdown-item" data-i18n="nav.security">{nav.security}</a>
+              <a href="/#faq" class="dropdown-item" data-i18n="nav.faq">{nav.faq}</a>
+            </div>
+          </div>
+        </div>
+        <a
+          href="/pricing"
+          class:list={['nav-section-link', isActivePath('/pricing') && 'is-active']}
+          data-i18n="nav.billing"
+          aria-current={isActivePath('/pricing') ? 'page' : undefined}
+        >
+          {nav.billing}
         </a>
-        <a href="/openclaw-memory" class="nav-section-link" data-i18n="nav.openclaw">{nav.openclaw}</a>
-        <a href="/billing" class="nav-section-link" data-i18n="nav.billing">{nav.billing}</a>
-        <a href="/#security" class="nav-section-link" data-i18n="nav.security">{nav.security}</a>
         <a
           href="/docs"
-          class:list={['nav-section-link', 'nav-docs-link', isDocsPage && 'is-active']}
+          class:list={['nav-section-link', 'nav-docs-link', isActivePath('/docs') && 'is-active']}
           data-i18n="nav.docs"
-          aria-current={isDocsPage ? 'page' : undefined}
+          aria-current={isActivePath('/docs') ? 'page' : undefined}
         >
           {nav.docs}
+        </a>
+        <a
+          href="/api"
+          class:list={['nav-section-link', 'nav-api-link', isActivePath('/api') && 'is-active']}
+          data-i18n="nav.api"
+          aria-current={isActivePath('/api') ? 'page' : undefined}
+        >
+          {nav.api}
+        </a>
+        <a
+          href="/your-memory/"
+          class="nav-section-link nav-external-link"
+          target="_blank"
+          rel="noopener"
+        >
+          <span data-i18n="nav.yourMemory">{nav.yourMemory}</span>
+          <svg class="external-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M6 3.5h6.5V10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M12.5 3.5L4 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </a>
+        <a
+          href="https://github.com/mem9-ai/mem9"
+          class="nav-section-link nav-github-link"
+          target="_blank"
+          rel="noopener"
+          aria-label={nav.github}
+          title={nav.github}
+          data-i18n-attr="aria-label:nav.github;title:nav.github"
+        >
+          <svg class="nav-github-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M12 .5C5.65.5.5 5.65.5 12.02c0 5.1 3.29 9.41 7.86 10.94.57.1.78-.25.78-.55 0-.27-.01-.99-.02-1.94-3.2.69-3.87-1.54-3.87-1.54-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.69 1.25 3.34.95.1-.74.4-1.25.72-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.16 1.17.92-.25 1.9-.38 2.88-.39.98.01 1.96.14 2.88.39 2.19-1.48 3.16-1.17 3.16-1.17.62 1.58.23 2.75.11 3.04.74.8 1.18 1.82 1.18 3.08 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.13 0 1.54-.01 2.78-.01 3.16 0 .31.21.66.79.55 4.56-1.53 7.85-5.84 7.85-10.94C23.5 5.65 18.35.5 12 .5z"
+            />
+          </svg>
         </a>
       </div>
 
@@ -277,25 +331,112 @@ const isDocsPage = currentPath === '/docs';
     color: var(--text);
   }
 
-  .nav-product-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
+  /* Home dropdown */
+  .nav-dropdown {
+    position: relative;
   }
 
-  .nav-badge {
+  .nav-dropdown > a {
     display: inline-flex;
     align-items: center;
-    padding: 0.15rem 0.45rem;
-    border-radius: 999px;
-    border: 1px solid var(--button-active-border);
+    gap: 0.25rem;
+  }
+
+  .nav-caret {
+    width: 0.7rem;
+    height: 0.7rem;
+    transition: transform 0.2s ease;
+  }
+
+  .nav-dropdown:hover .nav-caret {
+    transform: rotate(180deg);
+  }
+
+  .nav-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    min-width: 10rem;
+    padding-top: 0.6rem;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+  }
+
+  .nav-dropdown-menu-inner {
+    padding: 0.45rem;
+    display: grid;
+    gap: 0.15rem;
+    background: var(--menu-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 0.9rem;
+    box-shadow: var(--menu-shadow);
+  }
+
+  .nav-dropdown:hover .nav-dropdown-menu {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .dropdown-item {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.7rem;
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .dropdown-item:hover {
     background: var(--button-active-bg);
-    color: var(--accent);
-    font-family: var(--font-mono);
-    font-size: 0.64rem;
-    line-height: 1;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    color: var(--text);
+  }
+
+  /* External link icon */
+  .nav-external-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  .external-icon {
+    width: 0.9rem;
+    height: 0.9rem;
+    opacity: 0.7;
+    flex-shrink: 0;
+    color: var(--text-soft);
+    transition: opacity 0.18s ease, color 0.18s ease;
+  }
+
+  .nav-external-link:hover .external-icon,
+  .nav-external-link:focus-visible .external-icon {
+    opacity: 1;
+    color: var(--text);
+  }
+
+  /* GitHub icon link */
+  .nav-github-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-soft);
+    transition: color 0.2s ease;
+  }
+
+  .nav-github-link:hover,
+  .nav-github-link:focus-visible {
+    color: var(--text);
+  }
+
+  .nav-github-icon {
+    width: 1.2rem;
+    height: 1.2rem;
+    display: block;
   }
 
   .nav-actions {
@@ -403,24 +544,16 @@ const isDocsPage = currentPath === '/docs';
       gap: 0.7rem;
     }
 
-    .nav-links .nav-section-link:not(.nav-docs-link) {
+    .nav-links .nav-section-link:not(.nav-docs-link):not(.nav-api-link):not(.nav-github-link),
+    .nav-dropdown {
       display: none;
     }
 
-    .nav-links .nav-product-link {
-      font-size: 0.82rem;
-      gap: 0.32rem;
-    }
-
-    .nav-links .nav-docs-link {
+    .nav-links .nav-docs-link,
+    .nav-links .nav-api-link {
       display: inline-flex;
       align-items: center;
       font-size: 0.84rem;
-    }
-
-    .nav-badge {
-      padding: 0.14rem 0.38rem;
-      font-size: 0.58rem;
     }
 
     .language-menu {

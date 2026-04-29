@@ -13,6 +13,7 @@ type MemoryRepo interface {
 	GetByID(ctx context.Context, id string) (*domain.Memory, error)
 	UpdateOptimistic(ctx context.Context, m *domain.Memory, expectedVersion int) error
 	SoftDelete(ctx context.Context, id, agentName string) error
+	BulkSoftDelete(ctx context.Context, ids []string, agentName string) (int64, error)
 	ArchiveMemory(ctx context.Context, id, supersededBy string) error
 	ArchiveAndCreate(ctx context.Context, archiveID, supersededBy string, newMem *domain.Memory) error
 	SetState(ctx context.Context, id string, state domain.MemoryState) error
@@ -65,6 +66,11 @@ type UploadTaskRepo interface {
 	UpdateTotalChunks(ctx context.Context, taskID string, totalChunks int) error
 	FetchPending(ctx context.Context, limit int) ([]domain.UploadTask, error)
 	ResetProcessing(ctx context.Context, staleTimeout time.Duration) (int64, error)
+}
+
+// UTMRepo persists marketing attribution data captured at tenant provision time.
+type UTMRepo interface {
+	Create(ctx context.Context, utm *domain.TenantUTM) error
 }
 
 // SessionRepo handles raw session message storage and search.
