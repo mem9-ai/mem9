@@ -212,7 +212,7 @@ func ResolveApiKey(
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authStart := time.Now()
-			apiKey := r.Header.Get(APIKeyHeader)
+			apiKey := strings.TrimSpace(r.Header.Get(APIKeyHeader))
 			if apiKey == "" {
 				writeError(w, http.StatusBadRequest, "missing API key")
 				return
@@ -225,7 +225,7 @@ func ResolveApiKey(
 				writeError(w, http.StatusBadRequest, "invalid API key")
 				return
 			}
-			if t.Status != domain.TenantActive {
+			if t.DeletedAt != nil || t.Status != domain.TenantActive {
 				writeError(w, http.StatusBadRequest, "invalid API key")
 				return
 			}

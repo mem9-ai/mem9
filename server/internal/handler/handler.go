@@ -170,6 +170,9 @@ func (s *Server) Router(
 	// Provision a new tenant — no auth, no body.
 	r.Post("/v1alpha1/mem9s", s.provisionMem9s)
 
+	// Key status validates X-API-Key against control-plane state only.
+	r.Get("/v1alpha2/status", s.getKeyStatus)
+
 	// Tenant-scoped routes — tenantMW resolves {tenantID} to DB connection.
 	r.Route("/v1alpha1/mem9s/{tenantID}", func(r chi.Router) {
 		r.Use(tenantMW)

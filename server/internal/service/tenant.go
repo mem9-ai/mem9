@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -64,6 +66,50 @@ func NewTenantService(
 func (s *TenantService) WithUTMRepo(r utmRepo) *TenantService {
 	s.utms = r
 	return s
+}
+
+// KeyStatus validates a candidate API key against the control-plane tenant row.
+func (s *TenantService) KeyStatus(ctx context.Context, apiKey string) (domain.KeyStatus, error) {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return "", &domain.ValidationError{Field: "X-API-Key", Message: "missing or malformed X-API-Key"}
+	}
+	if s.tenants == nil {
+		return "", fmt.Errorf("tenant repository not configured")
+	}
+
+	t, err := s.tenants.GetByID(ctx, apiKey)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return "", domain.ErrNotFound
+		}
+		return "", fmt.Errorf("get tenant for key status: %w", err)
+	}
+
+	if t.DeletedAt != nil {
+		if t.Status != domain.TenantDeleted && s.logger != nil {
+			s.logger.WarnContext(ctx, "tenant deleted_at set with non-deleted status",
+				"status", t.Status,
+			)
+		}
+		return "", domain.ErrNotFound
+	}
+
+	switch t.Status {
+	case domain.TenantActive:
+		return domain.KeyStatusActive, nil
+	case domain.TenantProvisioning, domain.TenantSuspended:
+		return domain.KeyStatusInactive, nil
+	case domain.TenantDeleted:
+		return "", domain.ErrNotFound
+	default:
+		if s.logger != nil {
+			s.logger.WarnContext(ctx, "unknown tenant status for key status",
+				"status", t.Status,
+			)
+		}
+		return domain.KeyStatusInactive, nil
+	}
 }
 
 // ProvisionResult is the output of Provision.
