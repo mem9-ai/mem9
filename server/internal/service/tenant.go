@@ -86,10 +86,13 @@ func (s *TenantService) KeyStatus(ctx context.Context, apiKey string) (domain.Ke
 		return "", fmt.Errorf("get tenant for key status: %w", err)
 	}
 
-	if t.DeletedAt != nil && t.Status != domain.TenantDeleted && s.logger != nil {
-		s.logger.WarnContext(ctx, "tenant deleted_at set with non-deleted status",
-			"status", t.Status,
-		)
+	if t.DeletedAt != nil {
+		if t.Status != domain.TenantDeleted && s.logger != nil {
+			s.logger.WarnContext(ctx, "tenant deleted_at set with non-deleted status",
+				"status", t.Status,
+			)
+		}
+		return "", domain.ErrNotFound
 	}
 
 	switch t.Status {

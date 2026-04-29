@@ -225,7 +225,7 @@ func ResolveApiKey(
 				writeError(w, http.StatusBadRequest, "invalid API key")
 				return
 			}
-			if t.Status != domain.TenantActive {
+			if t.DeletedAt != nil || t.Status != domain.TenantActive {
 				writeError(w, http.StatusBadRequest, "invalid API key")
 				return
 			}

@@ -161,6 +161,40 @@ func TestResolveApiKey_InactiveTenant(t *testing.T) {
 	}
 }
 
+func TestResolveApiKey_DeletedAtRejectsKey(t *testing.T) {
+	pool := tenant.NewPool(tenant.PoolConfig{Backend: "tidb"})
+	defer pool.Close()
+
+	now := time.Now()
+	repo := stubTenantRepo{
+		tenants: map[string]*domain.Tenant{
+			"tenant-1": {
+				ID:        "tenant-1",
+				Status:    domain.TenantActive,
+				DeletedAt: &now,
+			},
+		},
+	}
+
+	enc := encrypt.NewPlainEncryptor()
+	mw := ResolveApiKey(repo, pool, enc, nil)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1alpha2/mem9s/memories", nil)
+	req.Header.Set(APIKeyHeader, "tenant-1")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+	if got := rr.Body.String(); !strings.Contains(got, "invalid API key") {
+		t.Fatalf("body = %q, want invalid API key", got)
+	}
+}
+
 func TestResolveApiKey_PopulatesAuthInfo(t *testing.T) {
 	pool := tenant.NewPool(tenant.PoolConfig{Backend: "tidb"})
 	defer pool.Close()
