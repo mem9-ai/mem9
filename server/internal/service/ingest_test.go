@@ -302,6 +302,19 @@ func TestNormalizeStandaloneTemporalContent_PureDeicticUsesMetadataOnly(t *testi
 	}
 }
 
+func TestTemporalRecallPresentationProjection_PrependsDisplay(t *testing.T) {
+	t.Parallel()
+
+	got := TemporalRecallPresentationProjection(
+		"Melanie made a plate in pottery class yesterday.",
+		MergeTemporalMetadata(nil, &TemporalMetadata{Kind: "deictic_relative", Display: "24 August 2023"}),
+	)
+	want := "[time: 24 August 2023]\nMelanie made a plate in pottery class yesterday."
+	if got != want {
+		t.Fatalf("projection = %q, want %q", got, want)
+	}
+}
+
 func TestExtractFactsTagsOmitted(t *testing.T) {
 	t.Parallel()
 

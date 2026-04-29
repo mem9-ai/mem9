@@ -262,6 +262,29 @@ func TestRecallCandidateOptions_EnumerationExpandsAdjacentTurns(t *testing.T) {
 	}
 }
 
+func TestEffectiveRecallBudget_OnlyEnumerationExpands(t *testing.T) {
+	tests := []struct {
+		name      string
+		profile   recallQueryProfile
+		requested int
+		want      int
+	}{
+		{name: "precision unchanged", profile: recallQueryProfile{policy: recallPolicyPrecision}, requested: 10, want: 10},
+		{name: "general unchanged", profile: recallQueryProfile{policy: recallPolicyGeneral}, requested: 10, want: 10},
+		{name: "time unchanged", profile: recallQueryProfile{policy: recallPolicyTime}, requested: 10, want: 10},
+		{name: "reasoning unchanged", profile: recallQueryProfile{policy: recallPolicyReasoning}, requested: 10, want: 10},
+		{name: "enumeration existing expansion", profile: recallQueryProfile{policy: recallPolicyEnumeration}, requested: 10, want: 20},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := effectiveRecallBudget(tt.profile, tt.requested); got != tt.want {
+				t.Fatalf("effectiveRecallBudget() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRecallCandidateOptions_PolicyGatesAdjacentTurns(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -301,5 +324,27 @@ func TestRecallCandidateOptions_PolicyGatesAdjacentTurns(t *testing.T) {
 				t.Fatalf("adjacent topN = %d, want %d", opts.AdjacentTurnTopN, tt.wantAdjacentTopN)
 			}
 		})
+	}
+}
+
+func TestPrepareRecallPresentation_TimePrioritizesAnswerLikeInsight(t *testing.T) {
+	profile := buildRecallQueryProfile("When did Melanie make a plate in pottery class?")
+	memories := []domain.Memory{
+		{
+			ID:         "raw",
+			MemoryType: domain.TypeSession,
+			Content:    "[date:1:33 pm on 25 August, 2023] [speaker:Melanie] Yeah, I made it in pottery class yesterday.",
+		},
+		{
+			ID:         "insight",
+			MemoryType: domain.TypeInsight,
+			Content:    "Melanie made a plate in pottery class on 24 August 2023.\n[source-turns]\n[dia:D14:4] [date:1:33 pm on 25 August, 2023] [speaker:Melanie] Yeah, I made it in pottery class yesterday.",
+			Metadata:   service.MergeTemporalMetadata(nil, &service.TemporalMetadata{Kind: "deictic_relative", Display: "24 August 2023"}),
+		},
+	}
+
+	got := prepareRecallPresentation(profile, memories)
+	if got[0].ID != "insight" {
+		t.Fatalf("first memory = %q, want answer-like temporal insight", got[0].ID)
 	}
 }

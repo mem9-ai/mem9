@@ -354,7 +354,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	}
 	if rawQuery != "" && classifyRecallQueryShape(rawQuery) == recallQueryShapeTime {
 		for i := range memories {
-			memories[i].Content = service.TemporalRecallProjection(memories[i].Content, memories[i].Metadata)
+			memories[i].Content = service.TemporalRecallPresentationProjection(memories[i].Content, memories[i].Metadata)
 		}
 	}
 	if filter.Query != "" {

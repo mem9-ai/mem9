@@ -25,19 +25,22 @@ const (
 	defaultAdjacentTurnTopN       = 4
 	minAdjacentTurnFetchLimit     = 16
 	maxAdjacentTurnFetchLimit     = 64
+	sessionBulkCreateMaxAttempts  = 3
 )
 
 type SessionService struct {
-	sessions  repository.SessionRepo
-	embedder  *embed.Embedder
-	autoModel string
+	sessions             repository.SessionRepo
+	embedder             *embed.Embedder
+	autoModel            string
+	bulkCreateRetryDelay time.Duration
 }
 
 func NewSessionService(sessions repository.SessionRepo, embedder *embed.Embedder, autoModel string) *SessionService {
 	return &SessionService{
-		sessions:  sessions,
-		embedder:  embedder,
-		autoModel: autoModel,
+		sessions:             sessions,
+		embedder:             embedder,
+		autoModel:            autoModel,
+		bulkCreateRetryDelay: 300 * time.Millisecond,
 	}
 }
 
@@ -58,7 +61,7 @@ func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req I
 		)
 		sessions = append(sessions, sess)
 	}
-	if err := s.sessions.BulkCreate(ctx, sessions); err != nil {
+	if err := s.bulkCreateWithRetry(ctx, sessions); err != nil {
 		return fmt.Errorf("session bulk create: %w", err)
 	}
 	return nil
@@ -66,10 +69,49 @@ func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req I
 
 func (s *SessionService) CreateRawTurn(ctx context.Context, sessionID, agentID, source string, seq int, role, content string) error {
 	sess := newSession(sessionID, agentID, source, seq, role, content, &seq)
-	if err := s.sessions.BulkCreate(ctx, []*domain.Session{sess}); err != nil {
+	if err := s.bulkCreateWithRetry(ctx, []*domain.Session{sess}); err != nil {
 		return fmt.Errorf("session raw create: %w", err)
 	}
 	return nil
+}
+
+func (s *SessionService) bulkCreateWithRetry(ctx context.Context, sessions []*domain.Session) error {
+	var err error
+	for attempt := 1; attempt <= sessionBulkCreateMaxAttempts; attempt++ {
+		err = s.sessions.BulkCreate(ctx, sessions)
+		if err == nil {
+			return nil
+		}
+		if attempt == sessionBulkCreateMaxAttempts || !isTransientSessionBulkCreateError(err) {
+			return err
+		}
+		delay := time.Duration(attempt) * s.bulkCreateRetryDelay
+		slog.WarnContext(ctx, "session bulk create transient error, retrying", "attempt", attempt, "delay_ms", delay.Milliseconds(), "err", err)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return err
+}
+
+func isTransientSessionBulkCreateError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "tidb cloud inference") {
+		return strings.Contains(msg, "status code 5") ||
+			strings.Contains(msg, "bedrock is unable to process") ||
+			strings.Contains(msg, "unexpected error during processing") ||
+			strings.Contains(msg, "temporarily") ||
+			strings.Contains(msg, "timeout") ||
+			strings.Contains(msg, "context deadline exceeded")
+	}
+	return false
 }
 
 func (s *SessionService) Search(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, error) {

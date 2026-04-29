@@ -179,6 +179,20 @@ func TemporalRecallProjection(content string, metadata json.RawMessage) string {
 	return cleaned
 }
 
+func TemporalRecallPresentationProjection(content string, metadata json.RawMessage) string {
+	cleaned, legacyDisplay := sanitizeLegacyTemporalContent(content)
+	if cleaned == "" {
+		cleaned = strings.TrimSpace(content)
+	}
+	if meta, ok := ParseTemporalMetadata(metadata); ok && shouldProjectTemporalDisplay(cleaned, meta.Display) {
+		return "[time: " + meta.Display + "]\n" + cleaned
+	}
+	if shouldProjectTemporalDisplay(cleaned, legacyDisplay) {
+		return "[time: " + legacyDisplay + "]\n" + cleaned
+	}
+	return cleaned
+}
+
 func ProjectTemporalFactText(content string, temporal *TemporalMetadata) string {
 	return TemporalRecallProjection(content, MergeTemporalMetadata(nil, temporal))
 }

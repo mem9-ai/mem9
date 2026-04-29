@@ -12,7 +12,9 @@ import (
 
 type stubSessionRepo struct {
 	bulkCreateCalled bool
+	bulkCreateCalls  int
 	bulkCreateErr    error
+	bulkCreateErrs   []error
 	createdSessions  []*domain.Session
 
 	patchTagsCalled bool
@@ -41,7 +43,13 @@ func intPtr(v int) *int {
 
 func (s *stubSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Session) error {
 	s.bulkCreateCalled = true
+	s.bulkCreateCalls++
 	s.createdSessions = sessions
+	if len(s.bulkCreateErrs) > 0 {
+		err := s.bulkCreateErrs[0]
+		s.bulkCreateErrs = s.bulkCreateErrs[1:]
+		return err
+	}
 	return s.bulkCreateErr
 }
 
@@ -78,7 +86,9 @@ func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, ids []string, limi
 }
 
 func newTestSessionService(repo *stubSessionRepo) *SessionService {
-	return NewSessionService(repo, nil, "")
+	svc := NewSessionService(repo, nil, "")
+	svc.bulkCreateRetryDelay = time.Nanosecond
+	return svc
 }
 
 func TestSessionService_BulkCreate_buildsCorrectSessions(t *testing.T) {
@@ -190,6 +200,61 @@ func TestSessionService_BulkCreate_propagatesRepoError(t *testing.T) {
 	err := svc.BulkCreate(context.Background(), "src", req)
 	if !errors.Is(err, sentinel) {
 		t.Errorf("expected sentinel error, got %v", err)
+	}
+	if repo.bulkCreateCalls != 1 {
+		t.Fatalf("bulkCreateCalls = %d, want 1", repo.bulkCreateCalls)
+	}
+}
+
+func TestSessionService_BulkCreate_retriesTransientTiDBInferenceError(t *testing.T) {
+	transient := errors.New("sessions bulk insert: Error 1105 (HY000): TiDB Cloud Inference: status code 504")
+	repo := &stubSessionRepo{bulkCreateErrs: []error{transient, nil}}
+	svc := newTestSessionService(repo)
+
+	req := IngestRequest{
+		SessionID: "s",
+		Messages:  []IngestMessage{{Role: "user", Content: "hi"}},
+	}
+	if err := svc.BulkCreate(context.Background(), "src", req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.bulkCreateCalls != 2 {
+		t.Fatalf("bulkCreateCalls = %d, want 2", repo.bulkCreateCalls)
+	}
+}
+
+func TestSessionService_BulkCreate_retriesUnexpectedProcessingTiDBInferenceError(t *testing.T) {
+	transient := errors.New("sessions bulk insert: Error 1105 (HY000): TiDB Cloud Inference: failed to generate embedding: The system encountered an unexpected error during processing. Try your request again.")
+	repo := &stubSessionRepo{bulkCreateErrs: []error{transient, nil}}
+	svc := newTestSessionService(repo)
+
+	req := IngestRequest{
+		SessionID: "s",
+		Messages:  []IngestMessage{{Role: "user", Content: "hi"}},
+	}
+	if err := svc.BulkCreate(context.Background(), "src", req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.bulkCreateCalls != 2 {
+		t.Fatalf("bulkCreateCalls = %d, want 2", repo.bulkCreateCalls)
+	}
+}
+
+func TestSessionService_BulkCreate_stopsAfterTransientRetryBudget(t *testing.T) {
+	transient := errors.New("sessions bulk insert: Error 1105 (HY000): TiDB Cloud Inference: Bedrock is unable to process your request")
+	repo := &stubSessionRepo{bulkCreateErr: transient}
+	svc := newTestSessionService(repo)
+
+	req := IngestRequest{
+		SessionID: "s",
+		Messages:  []IngestMessage{{Role: "user", Content: "hi"}},
+	}
+	err := svc.BulkCreate(context.Background(), "src", req)
+	if !errors.Is(err, transient) {
+		t.Fatalf("expected transient error after retries, got %v", err)
+	}
+	if repo.bulkCreateCalls != sessionBulkCreateMaxAttempts {
+		t.Fatalf("bulkCreateCalls = %d, want %d", repo.bulkCreateCalls, sessionBulkCreateMaxAttempts)
 	}
 }
 

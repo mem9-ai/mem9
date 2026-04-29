@@ -228,6 +228,7 @@ func (s *Server) defaultConfidenceRecallSearch(
 	selectionDuration := time.Since(selectionStart)
 
 	memories := append(pinned, mixed...)
+	memories = prepareRecallPresentation(profile, memories)
 	slog.InfoContext(ctx, "confidence recall search",
 		"cluster_id", auth.ClusterID,
 		"query_len", len(filter.Query),
@@ -319,6 +320,7 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 		memories, cutoffReason = selectTopRecallCandidates(profile, effectiveFilter.Limit, minConfidence, applyGapCutoff, candidates, nil)
 		stats.mode = "top"
 	}
+	memories = prepareRecallPresentation(profile, memories)
 	selectionDuration := time.Since(selectionStart)
 
 	pinnedSelected := 0
@@ -424,10 +426,12 @@ func effectiveRecallBudget(profile recallQueryProfile, requested int) int {
 	if requested <= 0 {
 		return 0
 	}
-	if profile.policy != recallPolicyEnumeration {
+	switch profile.policy {
+	case recallPolicyEnumeration:
+		return minInt(requested*enumerationBudgetMultiplier, enumerationMaxBudget)
+	default:
 		return requested
 	}
-	return minInt(requested*enumerationBudgetMultiplier, enumerationMaxBudget)
 }
 
 func recallCandidateLimit(profile recallQueryProfile, pool service.RecallSourcePool) int {
@@ -819,6 +823,49 @@ func selectTopRecallCandidates(
 		cutoffReason = "no_selected"
 	}
 	return selected, cutoffReason
+}
+
+func prepareRecallPresentation(profile recallQueryProfile, memories []domain.Memory) []domain.Memory {
+	if profile.policy != recallPolicyTime || len(memories) <= 1 {
+		return memories
+	}
+	sort.SliceStable(memories, func(i, j int) bool {
+		return temporalRecallPresentationPriority(memories[i]) > temporalRecallPresentationPriority(memories[j])
+	})
+	return memories
+}
+
+func temporalRecallPresentationPriority(memory domain.Memory) int {
+	content, temporalDisplay, _ := recallContentForScoring(memory)
+	body, hasHeaderAnchor := stripRecallTemporalHeader(content)
+	bodyLower := strings.ToLower(body)
+
+	score := 0
+	if temporalDisplay != "" {
+		score += 6
+	}
+	if answerYearRe.MatchString(body) || containsMonthName(bodyLower) || answerCNTimeRe.MatchString(body) {
+		score += 5
+	}
+	if answerRelativeTimeRe.MatchString(body) || answerCNRelativeTimeRe.MatchString(body) || answerAnchoredPeriodRe.MatchString(bodyLower) {
+		score += 3
+	}
+	if hasHeaderAnchor {
+		score += 1
+	}
+	if memory.MemoryType == domain.TypeInsight {
+		score += 2
+	}
+	if strings.Contains(content, "\n[source-turns]\n") {
+		score += 1
+	}
+	if strings.ContainsAny(strings.TrimSpace(body), "?？") {
+		score -= 4
+	}
+	if len([]rune(strings.TrimSpace(body))) <= 220 {
+		score += 1
+	}
+	return score
 }
 
 func dedupeRecallCandidates(profile recallQueryProfile, candidates []service.RecallCandidate) []service.RecallCandidate {
