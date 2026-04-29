@@ -51,11 +51,24 @@ const formatContent = (sampleId: string, sessionNo: number, turnIndex: number, d
 
 const sleep = async (ms: number): Promise<void> => await new Promise(resolve => setTimeout(resolve, ms))
 
+const countSessionMemories = async (sessionId: string): Promise<number> => {
+  const limit = 200
+  let offset = 0
+  let total = 0
+
+  while (true) {
+    const memories = await searchMemories({ session_id: sessionId, agent_id: getAgentId(), limit, offset })
+    total += memories.length
+    if (memories.length < limit) return total
+    offset += limit
+  }
+}
+
 const waitForSessionMemories = async (sessionId: string, expectedCount: number): Promise<void> => {
   const deadline = Date.now() + 60_000
   while (Date.now() < deadline) {
-    const memories = await searchMemories({ session_id: sessionId, agent_id: getAgentId(), limit: expectedCount })
-    if (memories.length >= expectedCount) return
+    const count = await countSessionMemories(sessionId)
+    if (count >= expectedCount) return
     await sleep(1000)
   }
   throw new Error(`Timed out waiting for mem9 writes for session ${sessionId}`)
