@@ -22,6 +22,8 @@ When this file is read, send ONLY the choice prompt below. Do not include enviro
 - Do not change the user's global npm registry config during setup unless the user explicitly asks for a permanent mirror change.
 - Reconnect and create-new are separate branches. Once one branch is selected, ignore the other branch unless the user explicitly changes their choice.
 - The allowed config scope is exhaustive. Never add fallback keys outside it. In particular, never write `plugins.entries.mem9.apiKey`; only `plugins.entries.mem9.config.apiKey` is valid.
+- On OpenClaw 4.23+ / 2026.4.22+, write `plugins.entries.mem9.hooks.allowConversationAccess = true` as an entry-level hook policy so mem9 can read conversation messages during `agent_end`. Do not put this under `plugins.entries.mem9.config`.
+- On older OpenClaw versions that reject `hooks.allowConversationAccess`, skip that key and state that full automatic conversation upload requires upgrading OpenClaw.
 - In create-new mode, generate `PROVISION_TOKEN` once immediately after the branch is selected, write it under `plugins.entries.mem9.config.provisionToken` before the first restart, and keep that exact value stable through the first successful post-restart provision on this machine.
 - Before taking any action, show one dry-run preview that covers install, config edits, expected restarts, and what the user must do after the restart.
 - Use one explicit approval for the entire disclosed flow. Do not ask for a second approval unless the scope materially changes.
@@ -67,6 +69,7 @@ When this file is read, send ONLY the choice prompt below. Do not include enviro
   - a short restart-and-return instruction in the user's language that says the gateway will restart automatically, the user should return to this chat in a few minutes, and the user should say `hi`
 - In create-new mode, the exact config keys list must explicitly include `plugins.entries.mem9.config.provisionToken`.
 - In create-new mode, if `REMOTE_SKILL_UTM_PARAMS` is non-empty, the exact config keys list must explicitly include `plugins.entries.mem9.config.provisionQueryParams`.
+- For OpenClaw 4.23+ / 2026.4.22+, the exact config keys list must explicitly include `plugins.entries.mem9.hooks.allowConversationAccess`.
 - Approval phrases:
   - reconnect after the key is already captured: `approve reconnect`
   - create-new: `approve create`
@@ -102,6 +105,7 @@ The dry-run preview must disclose:
 - reconnect path expects one restart after config is written and read back
 - create-new path expects one restart without `apiKey`; after the restart, the first user message must trigger exactly one create-new provision through the normal plugin hook path
 - create-new path will also write one unique `provisionToken` before the first restart so repeated post-restart retries on this machine collapse to the same key
+- OpenClaw 4.23+ / 2026.4.22+ will also get `plugins.entries.mem9.hooks.allowConversationAccess = true` before restart; older versions skip that key and require an OpenClaw upgrade for full automatic conversation upload
 - if create-new has `REMOTE_SKILL_UTM_PARAMS`, the dry-run must explicitly say those filtered `utm_*` values will be written under `plugins.entries.mem9.config.provisionQueryParams` before the first restart
 - local history will not be uploaded by this setup flow
 - one short restart-and-return instruction in the user's language
@@ -199,6 +203,8 @@ Routing rule:
 
 - If the version is `>= 2.2.0`, use the config shape with `plugins.allow`
 - If the version is `< 2.2.0`, use the config shape without `plugins.allow`
+- If the version is OpenClaw `4.23+` or date-style `2026.4.22+`, use the config shape with `plugins.entries.mem9.hooks.allowConversationAccess = true`
+- If the version is older than OpenClaw `4.23` / `2026.4.22`, skip `plugins.entries.mem9.hooks.allowConversationAccess` because older strict schemas may reject it, and tell the user that full automatic conversation upload requires upgrading OpenClaw
 - If the version is unavailable or unclear, stop and ask the user which OpenClaw version they are using before editing `openclaw.json`
 
 ## Step 3 — Edit openclaw.json
@@ -213,6 +219,7 @@ Before writing `openclaw.json`:
 - If create-new is selected, read back `plugins.entries.mem9.config.provisionToken` before the first restart and require an exact match to `PROVISION_TOKEN`
 - If create-new started from a remote `SKILL.md` URL with `utm_*` params, include `plugins.entries.mem9.config.provisionQueryParams` in the disclosed key list
 - If create-new has `REMOTE_SKILL_UTM_PARAMS`, read back `plugins.entries.mem9.config.provisionQueryParams` before the first restart and require an exact key/value match
+- If OpenClaw is `4.23+` / `2026.4.22+`, include `plugins.entries.mem9.hooks.allowConversationAccess` in the disclosed key list and read it back as `true` before the first restart
 - Apply the mem9 config in one contiguous update after install succeeds. Do not split it into a pre-install slot switch and a later config write.
 - `plugins.entries.mem9.apiKey` at the entry top level is invalid on OpenClaw. Never duplicate or mirror the secret there as a compatibility fallback.
 
@@ -222,6 +229,7 @@ Effective changes for OpenClaw `>= 2.2.0`:
 
 - `plugins.slots.memory = "mem9"`
 - `plugins.entries.mem9.enabled = true`
+- For OpenClaw `4.23+` / `2026.4.22+`, `plugins.entries.mem9.hooks.allowConversationAccess = true`
 - `plugins.entries.mem9.config.apiUrl = "https://api.mem9.ai"` unless the user chose another `apiUrl`
 - `plugins.entries.mem9.config.apiKey = "<USER_PROVIDED_MEM9_API_KEY>"`
 - `plugins.allow` includes `"mem9"`
@@ -231,6 +239,7 @@ Reconnect hard rules:
 - In reconnect mode, never leave `plugins.entries.mem9.config.apiKey` absent for the first restart.
 - The only valid reconnect secret path is `plugins.entries.mem9.config.apiKey`.
 - Do not write or test `plugins.entries.mem9.apiKey` at the entry top level. OpenClaw rejects it before the plugin loads.
+- On OpenClaw `4.23+` / `2026.4.22+`, do not restart until `plugins.entries.mem9.hooks.allowConversationAccess` reads back as `true`.
 - Immediately after writing config, read back `plugins.entries.mem9.config.apiKey`.
 - The read-back value must exactly match `USER_PROVIDED_MEM9_API_KEY` before the first restart.
 - If the read-back value is missing or different, fix config first. Do not restart yet.
@@ -245,6 +254,9 @@ Minimal shape if creating a fresh file:
     "entries": {
       "mem9": {
         "enabled": true,
+        "hooks": {
+          "allowConversationAccess": true
+        },
         "config": {
           "apiUrl": "https://api.mem9.ai",
           "apiKey": "<your-api-key>"
@@ -256,7 +268,7 @@ Minimal shape if creating a fresh file:
 }
 ```
 
-For OpenClaw `< 2.2.0`, use the same shape without `plugins.allow`.
+For OpenClaw `< 2.2.0`, use the same shape without `plugins.allow`. For OpenClaw versions older than `4.23` / `2026.4.22`, also omit `plugins.entries.mem9.hooks.allowConversationAccess` and tell the user to upgrade OpenClaw for full automatic conversation upload.
 
 ### Create New API Key During Setup
 
@@ -264,6 +276,7 @@ Effective changes for OpenClaw `>= 2.2.0`:
 
 - `plugins.slots.memory = "mem9"`
 - `plugins.entries.mem9.enabled = true`
+- For OpenClaw `4.23+` / `2026.4.22+`, `plugins.entries.mem9.hooks.allowConversationAccess = true`
 - `plugins.entries.mem9.config.apiUrl = "https://api.mem9.ai"` unless the user chose another `apiUrl`
 - Leave `plugins.entries.mem9.config.apiKey` absent for the first restart
 - Set `plugins.entries.mem9.config.provisionToken = "<PROVISION_TOKEN>"` for the first restart
@@ -274,6 +287,7 @@ Create-new hard rules:
 
 - Only the create-new branch may leave `apiKey` absent for the first restart.
 - Only the create-new branch may accept a generated key as the final mem9 credential.
+- On OpenClaw `4.23+` / `2026.4.22+`, never start the first restart until `plugins.entries.mem9.hooks.allowConversationAccess` reads back as `true`.
 - Never start the first restart in create-new mode with `plugins.entries.mem9.config.provisionToken` absent, regenerated, or different from `PROVISION_TOKEN`.
 - Immediately after writing config in create-new mode, read back `plugins.entries.mem9.config.provisionToken`.
 - The read-back value must exactly match `PROVISION_TOKEN` before the first restart.
@@ -291,6 +305,9 @@ Minimal shape if creating a fresh file:
     "entries": {
       "mem9": {
         "enabled": true,
+        "hooks": {
+          "allowConversationAccess": true
+        },
         "config": {
           "apiUrl": "https://api.mem9.ai",
           "provisionToken": "<generated-provision-token>"
@@ -309,6 +326,9 @@ If remote-skill `utm_*` params are present, add them under `config.provisionQuer
   "plugins": {
     "entries": {
       "mem9": {
+        "hooks": {
+          "allowConversationAccess": true
+        },
         "config": {
           "apiUrl": "https://api.mem9.ai",
           "provisionToken": "<generated-provision-token>",
@@ -323,7 +343,7 @@ If remote-skill `utm_*` params are present, add them under `config.provisionQuer
 }
 ```
 
-For OpenClaw `< 2.2.0`, use the same shape without `plugins.allow`.
+For OpenClaw `< 2.2.0`, use the same shape without `plugins.allow`. For OpenClaw versions older than `4.23` / `2026.4.22`, also omit `plugins.entries.mem9.hooks.allowConversationAccess` and tell the user to upgrade OpenClaw for full automatic conversation upload.
 
 ## Step 4 — Restart Flow
 
@@ -416,6 +436,7 @@ If any positive health signal is present, treat the plugin as operational and pr
 Reconnect is successful only if all of the following are true:
 
 - `plugins.entries.mem9.config.apiKey` was read back before the first restart and exactly matched `USER_PROVIDED_MEM9_API_KEY`
+- On OpenClaw `4.23+` / `2026.4.22+`, `plugins.entries.mem9.hooks.allowConversationAccess` was read back before the first restart and exactly matched `true`
 - The plugin can reach the mem9 API
 - OpenClaw loads the mem9 plugin without config or plugin errors
 - The first valid startup did not auto-provision a new key
@@ -434,6 +455,7 @@ Create-new is successful only if all of the following are true:
 - OpenClaw loads the mem9 plugin without config or plugin errors
 - The create-new flow produced a key from exactly one post-restart provision request after the first restart
 - `PROVISION_TOKEN` was written before the first restart and remained stable for the create-new run
+- On OpenClaw `4.23+` / `2026.4.22+`, `plugins.entries.mem9.hooks.allowConversationAccess` was read back before the first restart and exactly matched `true`
 - If `REMOTE_SKILL_UTM_PARAMS` is non-empty, `plugins.entries.mem9.config.provisionQueryParams` was read back before the first restart and exactly matched that map
 - No different additional key replaced `AUTO_PROVISIONED_MEM9_API_KEY` later in the same create-new run
 - The plugin is running with the generated key on this machine (confirmed by positive health signals or absence of startup errors)

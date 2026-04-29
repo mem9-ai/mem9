@@ -479,6 +479,27 @@ test("debugRecall still works as a deprecated alias for debug", async () => {
   }
 });
 
+test("agent_end logs conversation-access diagnostic once when messages are unavailable", async () => {
+  const infoLogs: string[] = [];
+  const api = createStubApi(
+    {
+      apiUrl: uniqueApiUrl("agent-end-no-messages"),
+      apiKey: "space-agent-end-no-messages",
+    },
+    { infoLogs },
+  );
+  mnemoPlugin.register(api);
+
+  const agentEnd = api.getHook("agent_end");
+  await agentEnd({ success: true });
+  await agentEnd({ success: true });
+
+  assert.equal(
+    infoLogs.filter((line) => line.includes("allowConversationAccess=true")).length,
+    1,
+  );
+});
+
 test("first post-restart prompt provisions once and unlocks memory access", async () => {
   const originalFetch = globalThis.fetch;
   const apiUrl = uniqueApiUrl("explicit-provision");
