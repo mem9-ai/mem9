@@ -9,7 +9,7 @@
 <p align="center">
   For OpenClaw and ClawHub installs, start here: <a href="https://mem9.ai/openclaw-memory">mem9.ai/openclaw-memory</a>
   <br/>
-  Hermes Agent, Claude Code, OpenCode, and Codex guides are below.
+  Hermes Agent, Claude Code, OpenCode, Codex, and Dify guides are below.
 </p>
 
 <p align="center">
@@ -35,13 +35,14 @@
 
      See [Self-Hosting](#self-hosting) for backend-specific setup details, and [API Reference](#api-reference) for provisioning.
 
-2. Pick your runtime guide.
+2. Pick your integration guide.
 
    - [OpenClaw / ClawHub](https://mem9.ai/openclaw-memory)
    - [Hermes Agent](https://github.com/mem9-ai/mem9-hermes-plugin#readme)
    - [Claude Code](claude-plugin/README.md)
    - [OpenCode](opencode-plugin/README.md)
    - [Codex](codex-plugin/README.md)
+   - [Dify](https://github.com/mem9-ai/mem9-dify-plugin#readme)
    - [Any HTTP client / custom runtime](#api-reference)
 
 3. Set your credentials.
@@ -65,11 +66,11 @@ mem9 gives coding agents one shared memory layer instead of separate local noteb
 | What mem9 gives you | Why it matters |
 |---|---|
 | Persistent memory across sessions and machines | Your context survives restarts, laptop switches, and long-running projects |
-| Shared memory across agents | OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, and custom clients can recall the same facts |
+| Shared memory across agents and workflow platforms | OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, Dify apps, and custom clients can recall the same facts |
 | Stateless integrations | Runtime plugins stay thin because storage, search, ingest, and policy live in the server |
 | Hybrid recall and a visual dashboard | Semantic search, keyword search, and inspection workflows stay in one system |
 
-## Supported Agents
+## Supported Platforms and Agent Runtimes
 
 | Platform | Integration shape | Install / docs |
 |---|---|---|
@@ -78,9 +79,10 @@ mem9 gives coding agents one shared memory layer instead of separate local noteb
 | Claude Code | Marketplace plugin with hooks and skills | [`claude-plugin/README.md`](claude-plugin/README.md) |
 | OpenCode | Plugin SDK integration loaded from `opencode.json` | [`opencode-plugin/README.md`](opencode-plugin/README.md) |
 | Codex | Marketplace plugin with managed hooks and project overrides | [`codex-plugin/README.md`](codex-plugin/README.md) |
+| Dify | Tool plugin for Dify Agent apps and Workflow apps, with single-space and multi-space authorization | [mem9-dify-plugin README](https://github.com/mem9-ai/mem9-dify-plugin#readme) |
 | Any HTTP client / custom runtime | Direct REST API integration | [API Reference](#api-reference) |
 
-All supported runtimes expose the same core memory flow: store, search, get, update, and delete against the mem9 server API.
+All supported runtimes and platform integrations expose the same core memory flow: store, search, get, update, and delete against the mem9 server API.
 
 ## Why the Hosted API
 
@@ -89,7 +91,7 @@ The hosted mem9 API is the fastest way to put persistent memory behind an agent 
 | Hosted API capability | Why teams start here |
 |---|---|
 | Hosted mem9 API with instant space provisioning | You can install an agent integration first and skip standing up infrastructure on day one |
-| Shared memory across runtimes | One space can serve OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, and custom clients together |
+| Shared memory across runtimes and platforms | One space can serve OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, Dify apps, and custom clients together |
 | Managed search and storage | Hybrid recall works out of the box without a separate vector stack or sync layer |
 | TiDB Cloud Starter foundation | The hosted path benefits from instant provisioning, native vector search, full-text search, server-side auto-embedding, hybrid search, and MySQL-compatible operational semantics |
 | Same API contract as self-hosted mem9 | Moving to your own deployment is a base-URL and credential change, not a plugin rewrite |
@@ -270,6 +272,7 @@ These are only relevant when `MNEMO_ENCRYPT_TYPE=kms`. The server uses the AWS S
 | [`mem9`](.) | Core Go API server, agent plugins, CLI, site, dashboard frontend, benchmark harnesses, and docs | You are working on the shared memory server, plugin integrations, or the main product docs |
 | [`mem9-node`](https://github.com/mem9-ai/mem9-node) | Dashboard analysis backend, async jobs, and worker flows | A dashboard feature depends on backend APIs, background jobs, or analysis pipelines |
 | [`mem9-hermes-plugin`](https://github.com/mem9-ai/mem9-hermes-plugin) | Hermes Agent plugin packaging, setup flow, and Hermes-specific docs | You are changing Hermes installation, activation, or runtime-specific behavior |
+| [`mem9-dify-plugin`](https://github.com/mem9-ai/mem9-dify-plugin) | Dify tool plugin, memory tools, authorization modes, and Dify-specific docs | You are changing Dify Agent app, Workflow app, or multi-space plugin behavior |
 
 ## Contributing
 
