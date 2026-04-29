@@ -148,10 +148,16 @@ func TestKeyStatus(t *testing.T) {
 			wantErr: domain.ErrNotFound,
 		},
 		{
-			name:    "deleted at",
+			name:    "deleted status with deleted at",
 			apiKey:  "key-deleted-at",
 			tenant:  &domain.Tenant{Status: domain.TenantDeleted, DeletedAt: &now},
 			wantErr: domain.ErrNotFound,
+		},
+		{
+			name:   "active with deleted at",
+			apiKey: "key-active-deleted-at",
+			tenant: &domain.Tenant{Status: domain.TenantActive, DeletedAt: &now},
+			want:   domain.KeyStatusActive,
 		},
 		{
 			name:    "missing",
@@ -248,9 +254,12 @@ func TestKeyStatusLogsDeletedAtMismatchWithoutAPIKey(t *testing.T) {
 		encrypt.NewPlainEncryptor(),
 	)
 
-	_, err := svc.KeyStatus(context.Background(), "secret-key")
-	if !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("KeyStatus() err = %v, want %v", err, domain.ErrNotFound)
+	got, err := svc.KeyStatus(context.Background(), "secret-key")
+	if err != nil {
+		t.Fatalf("KeyStatus() err = %v", err)
+	}
+	if got != domain.KeyStatusActive {
+		t.Fatalf("KeyStatus() = %q, want %q", got, domain.KeyStatusActive)
 	}
 
 	raw := buf.String()
