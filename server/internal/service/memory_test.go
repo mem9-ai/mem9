@@ -19,6 +19,20 @@ func floatEqual(a, b float64) bool {
 	return math.Abs(a-b) < 1e-9
 }
 
+type bulkCreateCaptureRepo struct {
+	memoryRepoMock
+	bulkCreateCalls [][]domain.Memory
+}
+
+func (m *bulkCreateCaptureRepo) BulkCreate(_ context.Context, memories []*domain.Memory) error {
+	copied := make([]domain.Memory, len(memories))
+	for i, memory := range memories {
+		copied[i] = *memory
+	}
+	m.bulkCreateCalls = append(m.bulkCreateCalls, copied)
+	return nil
+}
+
 func TestApplyTypeWeights(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -476,6 +490,59 @@ func TestCreateFallsBackToRawWhenLLMUnavailable(t *testing.T) {
 	}
 	if mem.MemoryType != domain.TypeInsight {
 		t.Fatalf("expected insight memory type, got %s", mem.MemoryType)
+	}
+}
+
+func TestCreatePinnedUsesBulkCreateSemantics(t *testing.T) {
+	t.Parallel()
+
+	repo := &bulkCreateCaptureRepo{}
+	svc := NewMemoryService(repo, nil, nil, "", ModeSmart)
+
+	mem, written, err := svc.CreatePinned(
+		context.Background(),
+		"agent-1",
+		"user prefers pour-over coffee",
+		[]string{"preference", "coffee"},
+		json.RawMessage(`{"source":"manual"}`),
+	)
+	if err != nil {
+		t.Fatalf("CreatePinned() error = %v", err)
+	}
+	if mem == nil {
+		t.Fatal("expected created memory")
+	}
+	if written != 1 {
+		t.Fatalf("expected 1 written memory, got %d", written)
+	}
+	if len(repo.bulkCreateCalls) != 1 {
+		t.Fatalf("expected 1 bulk create call, got %d", len(repo.bulkCreateCalls))
+	}
+
+	created := repo.bulkCreateCalls[0][0]
+	if created.MemoryType != domain.TypePinned {
+		t.Fatalf("expected pinned memory type, got %s", created.MemoryType)
+	}
+	if created.Source != "agent-1" {
+		t.Fatalf("expected source agent-1, got %q", created.Source)
+	}
+	if created.UpdatedBy != "agent-1" {
+		t.Fatalf("expected updated_by agent-1, got %q", created.UpdatedBy)
+	}
+	if created.State != domain.StateActive {
+		t.Fatalf("expected active state, got %q", created.State)
+	}
+	if created.Content != "user prefers pour-over coffee" {
+		t.Fatalf("expected content preserved, got %q", created.Content)
+	}
+	if len(created.Tags) != 2 || created.Tags[0] != "preference" || created.Tags[1] != "coffee" {
+		t.Fatalf("expected tags preserved, got %v", created.Tags)
+	}
+	if string(created.Metadata) != `{"source":"manual"}` {
+		t.Fatalf("expected metadata preserved, got %s", string(created.Metadata))
+	}
+	if mem.MemoryType != domain.TypePinned {
+		t.Fatalf("expected returned memory type pinned, got %s", mem.MemoryType)
 	}
 }
 

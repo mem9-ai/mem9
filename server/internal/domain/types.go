@@ -88,6 +88,14 @@ const (
 	TenantDeleted      TenantStatus = "deleted"
 )
 
+// KeyStatus is the normalized API-key validation result exposed to console.
+type KeyStatus string
+
+const (
+	KeyStatusActive   KeyStatus = "active"
+	KeyStatusInactive KeyStatus = "inactive"
+)
+
 // Tenant represents a provisioned customer with a dedicated database.
 type Tenant struct {
 	ID   string `json:"id"`

@@ -1,14 +1,14 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { Mem9ResolvedPaths } from "./platform-paths.js";
-import { parseCredentialsFile, stringifyCredentialsFile } from "./credentials-store.js";
-import { DEFAULT_SCOPE_CONFIG } from "./defaults.js";
+import type { Mem9ResolvedPaths } from "./platform-paths.ts";
+import { parseCredentialsFile, stringifyCredentialsFile } from "./credentials-store.ts";
+import { DEFAULT_SCOPE_CONFIG } from "./defaults.ts";
 import {
   DEFAULT_API_URL,
   type Mem9ConfigFile,
   type Mem9CredentialsFile,
   type Mem9Profile,
-} from "./types.js";
+} from "./types.ts";
 
 export type SetupScope = "user" | "project";
 
@@ -17,6 +17,7 @@ export interface SetupProfileSummary {
   label: string;
   baseUrl: string;
   hasApiKey: boolean;
+  apiKeyPreview: string;
 }
 
 export interface ScopeConfigState {
@@ -112,6 +113,23 @@ function hasApiKey(profile: unknown): boolean {
   return Boolean(normalizeOptionalString(profile.apiKey));
 }
 
+function summarizeApiKeyPreview(apiKey: string): string {
+  const normalized = apiKey.trim();
+  if (normalized.length === 0) {
+    return "";
+  }
+
+  if (normalized.length <= 4) {
+    return `${normalized.slice(0, 1)}...`;
+  }
+
+  if (normalized.length <= 8) {
+    return `${normalized.slice(0, 2)}...${normalized.slice(-2)}`;
+  }
+
+  return `${normalized.slice(0, 4)}...${normalized.slice(-4)}`;
+}
+
 function normalizeProfileRecord(
   profileId: string,
   profile: Mem9Profile | undefined,
@@ -188,6 +206,7 @@ function buildProfiles(
         label: normalized.label,
         baseUrl: normalized.baseUrl,
         hasApiKey: normalized.apiKey.trim().length > 0,
+        apiKeyPreview: summarizeApiKeyPreview(normalized.apiKey),
       };
     })
     .sort(sortProfileSummaries);

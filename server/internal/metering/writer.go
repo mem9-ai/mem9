@@ -11,13 +11,14 @@ import (
 )
 
 // Event is the unit passed to Writer.Record. It is non-blocking — the writer
-// enqueues it for later batching and flushing.
+// enqueues it for later asynchronous delivery.
 //
 // Category and TenantID MUST be non-empty; events with either missing are
 // silently dropped (no log, no error, no panic).
 //
 // ClusterID may be empty (rendered as "_" in the S3 key).
-// AgentID may be empty; when present it is merged into Data as "agent_id".
+// AgentID may be empty. S3 batches currently merge it into Data as "agent_id";
+// webhook delivery currently ignores it.
 // Data may be nil or empty; it is the caller-defined per-event payload.
 type Event struct {
 	Category  string
@@ -27,9 +28,9 @@ type Event struct {
 	Data      map[string]any
 }
 
-// Writer records metering events asynchronously and flushes them through the
+// Writer records metering events asynchronously and delivers them through the
 // configured destination transport. Record is non-blocking and safe for
-// concurrent use. Close flushes any pending batch and stops the background
+// concurrent use. Close flushes any pending work and stops the background
 // goroutine.
 type Writer interface {
 	// Record enqueues evt for later flush. Must not block. Must be safe for
@@ -45,7 +46,7 @@ type Writer interface {
 
 // New constructs a Writer. When cfg.Enabled is false or cfg.URL is empty,
 // returns a no-op Writer and logs at Info level. Otherwise it selects the
-// destination transport from the URL scheme, starts the background flusher
+// destination transport from the URL scheme, starts the background delivery
 // goroutine, and returns the configured Writer.
 //
 // The ctx argument is used only for initial AWS SDK config loading. The
@@ -67,7 +68,6 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (Writer, error) {
 		return nil, fmt.Errorf("metering: parse destination URL: %w", err)
 	}
 
-	var transport batchTransport
 	switch u.Scheme {
 	case "s3":
 		if u.Host == "" {
@@ -79,14 +79,12 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (Writer, error) {
 		if err != nil {
 			return nil, err
 		}
-		transport = newS3Transport(cfg.Bucket, cfg.Prefix, client)
+		return newS3Writer(cfg, client, logger), nil
 	case "http", "https":
-		transport = newWebhookTransport(cfg.URL, &http.Client{Timeout: 10 * time.Second})
+		return newWebhookWriter(cfg, cfg.URL, &http.Client{Timeout: 10 * time.Second}, logger), nil
 	default:
 		return nil, fmt.Errorf("metering: unsupported destination scheme %q", u.Scheme)
 	}
-
-	return newTransportWriter(cfg, transport, logger), nil
 }
 
 // noopWriter drops all events. Used when metering is disabled.

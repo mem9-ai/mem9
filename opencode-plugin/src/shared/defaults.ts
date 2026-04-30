@@ -1,4 +1,4 @@
-import type { Mem9ConfigFile } from "./types.js";
+import type { Mem9ConfigFile } from "./types.ts";
 
 export const DEFAULT_SCOPE_CONFIG: Required<
   Pick<

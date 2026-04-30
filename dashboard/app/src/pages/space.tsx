@@ -93,6 +93,7 @@ export function SpacePage() {
     try {
       await dataModel.createMutation.mutateAsync({
         content,
+        memory_type: "pinned",
         tags: tags.length ? tags : undefined,
       });
       setAddOpen(false);

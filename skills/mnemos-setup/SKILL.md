@@ -52,6 +52,9 @@ Add to `openclaw.json`:
     "entries": {
       "mem9": {
         "enabled": true,
+        "hooks": {
+          "allowConversationAccess": true
+        },
         "config": {
           "apiUrl": "http://localhost:8080",
           "apiKey": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
@@ -71,6 +74,7 @@ Compatibility note:
 
 - Preferred config: `apiKey` -> plugin uses v1alpha2 with `X-API-Key`.
 - Legacy config: `tenantID` -> plugin treats it as an alias for `apiKey` and still uses v1alpha2.
+- OpenClaw 4.23+ / 2026.4.22+ requires `plugins.entries.mem9.hooks.allowConversationAccess = true` so mem9 can read conversation messages in `agent_end` and upload them. Older OpenClaw builds that reject this hook policy should omit the `hooks` block and upgrade for full automatic conversation upload.
 - The underlying value is the same UUID either way.
 
 ---

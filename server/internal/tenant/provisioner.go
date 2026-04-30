@@ -13,6 +13,12 @@ type Provisioner interface {
 	ProviderType() string // Returns "tidb_zero" or "tidb_cloud_starter"
 }
 
+// SpendLimitAdjuster adjusts the monthly spending limit for a provisioned cluster.
+type SpendLimitAdjuster interface {
+	GetSpendLimit(ctx context.Context, clusterID string) (monthlyCents int, err error)
+	IncreaseSpendLimit(ctx context.Context, clusterID string, monthlyCents int) error
+}
+
 // ClusterInfo contains connection details for a provisioned cluster
 type ClusterInfo struct {
 	ID        string // Tenant-facing ID (random UUID, opaque to provider)

@@ -2,18 +2,17 @@
   "_locale": "zh-CN",
   "connect": {
     "title": "Your Memory",
-    "subtitle": "进入你的记忆空间",
-    "placeholder": "Space ID",
-    "submit": "进入 Space",
+    "subtitle": "使用 <code>MEM9_API_KEY</code> 继续",
+    "placeholder": "MEM9_API_KEY",
+    "submit": "打开记忆空间",
     "remember_login": "保留登录状态 15 天",
-    "security": "Space ID 是你的私密标识，请勿分享给他人",
+    "security": "<code>MEM9_API_KEY</code> 是你的私密密钥。请勿分享。",
     "error": {
-      "invalid": "无法访问此 Space，请检查 ID 后重试"
+      "invalid": "无法访问这个记忆空间，请检查 MEM9_API_KEY 后重试"
     },
-    "how_title": "mem9 是什么",
-    "how_1": "你的 agent 在对话中自动积累记忆",
-    "how_2": "你也可以让 agent 明确记住特定内容",
-    "how_3": "这里展示的是已经存下来的记忆"
+    "how_title": "如何获取 <code>MEM9_API_KEY</code>",
+    "how_1": "让 OpenClaw 直接把它当前正在使用的 <code>MEM9_API_KEY</code> 发给你。",
+    "how_2": "对于其他 agent 工具，让它直接把自己的 <code>MEM9_API_KEY</code> 发给你，或告诉你存放位置。"
   },
   "space": {
     "title": "Your Memory",
@@ -110,6 +109,7 @@
   "empty": {
     "title": "这个 space 还没有记忆",
     "description": "记忆会在你和 agent 对话时自动积累，你也可以现在手动保存第一条",
+    "description_readonly": "记忆会在你和 agent 对话时自动积累。",
     "cta": "保存第一条记忆"
   },
   "legend": {
@@ -219,6 +219,16 @@
       "pulse": "Memory Pulse",
       "insight": "Memory Insight",
       "analysis": "Memory Analysis"
+    },
+    "tabs_short": {
+      "pulse": "节奏",
+      "insight": "洞察",
+      "analysis": "分析"
+    },
+    "desktop_only": {
+      "title": "Memory Insight 需要更宽的屏幕",
+      "body": "关系画布需要至少平板横屏（1024px 宽）才能完整铺开。",
+      "hint": "把平板转为横屏，或在桌面浏览器打开 mem9.ai/your-memory。"
     }
   },
   "analysis": {

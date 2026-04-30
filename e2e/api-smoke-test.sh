@@ -310,13 +310,20 @@ if [ -n "$FIRST_MEM_ID" ]; then
   ORIG_VERSION=$(printf '%s' "$bdy" | python3 -c "import sys,json; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || true)
   info "Original version: $ORIG_VERSION"
   NEXT_VERSION=$((ORIG_VERSION+1))
+  UPDATE_PAYLOAD=$(printf '%s' "$ORIG_CONTENT" | python3 -c '
+import json
+import sys
+
+content = sys.stdin.read()
+print(json.dumps({
+    "content": f"{content} (smoke-updated)",
+    "tags": ["smoke", "updated"],
+}))
+')
 
   resp=$(curl_mem_json "$MEM_BASE/$FIRST_MEM_ID" -X PUT \
     -H "Content-Type: application/json" \
-    -d "{
-      \"content\": \"${ORIG_CONTENT} (smoke-updated)\",
-      \"tags\": [\"smoke\", \"updated\"]
-    }")
+    -d "$UPDATE_PAYLOAD")
   code=$(http_code "$resp")
   bdy=$(body "$resp")
   check "PUT /{id} returns 200" "$code" "200"

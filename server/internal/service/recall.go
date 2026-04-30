@@ -21,9 +21,12 @@ type RecallCandidate struct {
 }
 
 type RecallCandidateOptions struct {
-	EnableSecondHop bool
-	FetchMultiplier int
-	SecondHopTopN   int
+	EnableSecondHop     bool
+	FetchMultiplier     int
+	SecondHopTopN       int
+	EnableAdjacentTurns bool
+	AdjacentTurnRadius  int
+	AdjacentTurnTopN    int
 }
 
 func normalizeRecallLimit(limit, fallback int) int {
@@ -44,6 +47,14 @@ func mergeRecallCandidates(
 	sourcePool RecallSourcePool,
 	kwResults, vecResults, secondHopResults []domain.Memory,
 ) []RecallCandidate {
+	return mergeRecallCandidatesWithExtraWeight(sourcePool, kwResults, vecResults, secondHopResults, secondHopWeight)
+}
+
+func mergeRecallCandidatesWithExtraWeight(
+	sourcePool RecallSourcePool,
+	kwResults, vecResults, extraResults []domain.Memory,
+	extraWeight float64,
+) []RecallCandidate {
 	scores := rrfMerge(kwResults, vecResults)
 	mems := collectMems(kwResults, vecResults)
 
@@ -52,15 +63,15 @@ func mergeRecallCandidates(
 		inKeyword[m.ID] = struct{}{}
 	}
 
-	vectorSimilarity := make(map[string]float64, len(vecResults)+len(secondHopResults))
+	vectorSimilarity := make(map[string]float64, len(vecResults)+len(extraResults))
 	for _, m := range vecResults {
 		if m.Score != nil {
 			vectorSimilarity[m.ID] = *m.Score
 		}
 	}
 
-	for rank, m := range secondHopResults {
-		scores[m.ID] += secondHopWeight / (rrfK + float64(rank+1))
+	for rank, m := range extraResults {
+		scores[m.ID] += extraWeight / (rrfK + float64(rank+1))
 		if _, exists := mems[m.ID]; !exists {
 			mems[m.ID] = m
 		}

@@ -1,18 +1,21 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
+import { useEffect, useState, type ReactNode } from "react";
+import { getRouteApi, useNavigate } from "@tanstack/react-router";
+import { Trans, useTranslation } from "react-i18next";
 import { Loader2, Globe, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { api } from "@/api/client";
 import { initMixpanelOnLogin, trackMixpanelEvent } from "@/lib/mixpanel";
+import type { ConnectRouteLoaderData } from "@/pages/connect-loader";
 import {
-  getActiveSpaceId,
+  getActiveApiKey,
   MEM9_CONNECT_READY_EVENT,
   MEM9_SPACE_HANDOFF_EVENT,
-  setSpaceId,
+  setApiKey,
 } from "@/lib/session";
+
+const connectRoute = getRouteApi("/");
 
 function getOpenerOrigin(): string | null {
   if (!document.referrer) {
@@ -26,28 +29,42 @@ function getOpenerOrigin(): string | null {
   }
 }
 
+function InlineToken({ children }: { children?: ReactNode }) {
+  return (
+    <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[0.92em] text-foreground">
+      {children}
+    </code>
+  );
+}
+
 export function ConnectPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const loaderData = connectRoute.useLoaderData() as ConnectRouteLoaderData;
   const openerOrigin = getOpenerOrigin();
-  const [input, setInput] = useState("");
-  const [error, setError] = useState("");
+  const [input, setInput] = useState(() => loaderData.initialInput);
+  const [error, setError] = useState(() => loaderData.initialError);
   const [loading, setLoading] = useState(false);
   const [rememberLogin, setRememberLogin] = useState(false);
   const [pendingConnect, setPendingConnect] = useState<{
+    apiKey: string;
     remember: boolean;
-    spaceId: string;
   } | null>(null);
 
   useEffect(() => {
-    if (window.opener) {
+    if (window.opener || loaderData.hasBootstrapParams) {
       return;
     }
 
-    if (getActiveSpaceId()) {
+    if (getActiveApiKey()) {
       void navigate({ to: "/space", replace: true });
     }
-  }, [navigate]);
+  }, [loaderData.hasBootstrapParams, navigate]);
+
+  useEffect(() => {
+    setInput(loaderData.initialInput);
+    setError(loaderData.initialError);
+  }, [loaderData.initialError, loaderData.initialInput]);
 
   useEffect(() => {
     if (!window.opener) {
@@ -79,7 +96,7 @@ export function ConnectPage() {
       setInput(nextSpaceId);
       setRememberLogin(false);
       setPendingConnect((current) =>
-        current ?? { remember: false, spaceId: nextSpaceId },
+        current ?? { apiKey: nextSpaceId, remember: false },
       );
     }
 
@@ -103,7 +120,7 @@ export function ConnectPage() {
     let cancelled = false;
 
     async function connectToSpace() {
-      const normalizedInput = connectRequest.spaceId.trim();
+      const normalizedInput = connectRequest.apiKey.trim();
       if (!normalizedInput) {
         setPendingConnect(null);
         return;
@@ -118,16 +135,15 @@ export function ConnectPage() {
         trackMixpanelEvent("Dashboard/Connect/SubmitClicked", {
           pageName: "connect",
         });
-        setSpaceId(normalizedInput, connectRequest.remember);
+        setApiKey(normalizedInput, connectRequest.remember);
 
         if (!cancelled) {
           await navigate({ to: "/space", replace: true });
         }
       } catch (err) {
         if (!cancelled) {
-          setError(
-            err instanceof Error ? err.message : t("connect.error.invalid"),
-          );
+          void err;
+          setError(t("connect.error.invalid"));
         }
       } finally {
         if (!cancelled) {
@@ -148,8 +164,8 @@ export function ConnectPage() {
     e.preventDefault();
     setError("");
     setPendingConnect({
+      apiKey: input,
       remember: rememberLogin,
-      spaceId: input,
     });
   }
 
@@ -190,7 +206,7 @@ export function ConnectPage() {
             {t("connect.title")}
           </h1>
           <p className="mt-2 text-[15px] text-muted-foreground">
-            {t("connect.subtitle")}
+            <Trans i18nKey="connect.subtitle" components={{ code: <InlineToken /> }} />
           </p>
         </div>
 
@@ -252,22 +268,22 @@ export function ConnectPage() {
           </form>
 
           <p className="mt-4 text-center text-xs text-soft-foreground">
-            {t("connect.security")}
+            <Trans i18nKey="connect.security" components={{ code: <InlineToken /> }} />
           </p>
         </div>
 
         <div className="mt-10 space-y-4">
           <h2 className="text-xs font-semibold uppercase tracking-[0.22em] text-ring">
-            {t("connect.how_title")}
+            <Trans i18nKey="connect.how_title" components={{ code: <InlineToken /> }} />
           </h2>
           <div className="space-y-3">
-            {(["how_1", "how_2", "how_3"] as const).map((key, i) => (
+            {(["how_1", "how_2"] as const).map((key, i) => (
               <div key={key} className="flex items-start gap-3">
                 <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-secondary text-[11px] font-semibold text-muted-foreground">
                   {i + 1}
                 </span>
                 <p className="text-sm leading-relaxed text-muted-foreground">
-                  {t(`connect.${key}`)}
+                  <Trans i18nKey={`connect.${key}`} components={{ code: <InlineToken /> }} />
                 </p>
               </div>
             ))}

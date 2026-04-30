@@ -101,6 +101,9 @@ The OpenClaw plugin adds a new optional config field:
   "plugins": {
     "entries": {
       "mem9": {
+        "hooks": {
+          "allowConversationAccess": true
+        },
         "config": {
           "provisionQueryParams": {
             "utm_source": "bosn"
@@ -127,9 +130,10 @@ of polluting all subsequent API traffic.
 
 The public setup docs now explicitly allow:
 
+- `plugins.entries.mem9.hooks.allowConversationAccess` for OpenClaw 4.23+ / 2026.4.22+
 - `plugins.entries.mem9.config.provisionQueryParams`
 
-but only for:
+The UTM field is only for:
 
 - remote `SKILL.md` onboarding
 - create-new branch

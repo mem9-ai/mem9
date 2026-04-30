@@ -25,14 +25,15 @@ var (
 )
 
 type createMemoryRequest struct {
-	Content   string                  `json:"content,omitempty"`
-	AgentID   string                  `json:"agent_id,omitempty"`
-	Tags      []string                `json:"tags,omitempty"`
-	Metadata  json.RawMessage         `json:"metadata,omitempty"`
-	Messages  []service.IngestMessage `json:"messages,omitempty"`
-	SessionID string                  `json:"session_id,omitempty"`
-	Mode      service.IngestMode      `json:"mode,omitempty"`
-	Sync      bool                    `json:"sync,omitempty"`
+	Content    string                  `json:"content,omitempty"`
+	MemoryType string                  `json:"memory_type,omitempty"`
+	AgentID    string                  `json:"agent_id,omitempty"`
+	Tags       []string                `json:"tags,omitempty"`
+	Metadata   json.RawMessage         `json:"metadata,omitempty"`
+	Messages   []service.IngestMessage `json:"messages,omitempty"`
+	SessionID  string                  `json:"session_id,omitempty"`
+	Mode       service.IngestMode      `json:"mode,omitempty"`
+	Sync       bool                    `json:"sync,omitempty"`
 }
 
 func isSyncIngestTimeout(ctx context.Context, err error) bool {
@@ -59,6 +60,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 
 	if hasMessages && hasContent {
 		s.handleError(r.Context(), w, &domain.ValidationError{Field: "body", Message: "provide either content or messages, not both"})
+		return
+	}
+
+	if hasMessages && strings.TrimSpace(req.MemoryType) != "" {
+		s.handleError(r.Context(), w, &domain.ValidationError{Field: "memory_type", Message: "memory_type is only allowed with content, not messages"})
 		return
 	}
 
@@ -93,6 +99,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			if result != nil {
 				written = int64(result.MemoriesChanged)
 			}
+			s.recordIngestMetering(auth, svc)
 			go s.refreshWriteMetrics(auth, svc, written)
 			respond(w, http.StatusOK, map[string]string{"status": "ok"})
 		} else {
@@ -102,11 +109,15 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 					slog.Error("async ingest failed", "session", ingestReq.SessionID, "err", err)
 					return
 				}
+				if result != nil && result.Status == "failed" {
+					slog.Error("async ingest reconcile failed", "session", ingestReq.SessionID)
+					return
+				}
 				var written int64
 				if result != nil {
 					written = int64(result.MemoriesChanged)
 				}
-				s.refreshWriteMetrics(auth, svc, written)
+				s.afterSuccessfulIngest(auth, svc, written)
 			}()
 			respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 		}
@@ -125,6 +136,27 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	tags := append([]string(nil), req.Tags...)
 	metadata := append(json.RawMessage(nil), req.Metadata...)
 	content := req.Content
+	explicitMemoryType := strings.TrimSpace(req.MemoryType)
+
+	if explicitMemoryType != "" {
+		if explicitMemoryType != string(domain.TypePinned) {
+			s.handleError(r.Context(), w, &domain.ValidationError{
+				Field:   "memory_type",
+				Message: fmt.Sprintf("unsupported value %q; only %q is supported on the explicit content path", explicitMemoryType, domain.TypePinned),
+			})
+			return
+		}
+
+		mem, written, err := svc.memory.CreatePinned(r.Context(), agentID, content, tags, metadata)
+		if err != nil {
+			slog.Error("pinned memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
+			s.handleError(r.Context(), w, err)
+			return
+		}
+		go s.refreshWriteMetrics(auth, svc, int64(written))
+		respond(w, http.StatusCreated, mem)
+		return
+	}
 
 	if req.Sync {
 		// s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
@@ -324,6 +356,9 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		for i := range memories {
 			memories[i].Content = service.TemporalRecallProjection(memories[i].Content, memories[i].Metadata)
 		}
+	}
+	if filter.Query != "" {
+		s.recordRecallMetering(auth)
 	}
 
 	respond(w, http.StatusOK, listResponse{

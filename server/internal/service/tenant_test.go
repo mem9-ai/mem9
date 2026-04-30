@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
@@ -105,6 +106,165 @@ func TestProvisionRejectsNonTiDBBackend(t *testing.T) {
 	}
 }
 
+func TestKeyStatus(t *testing.T) {
+	now := time.Now()
+	repoErr := errors.New("repo failed")
+
+	tests := []struct {
+		name    string
+		apiKey  string
+		tenant  *domain.Tenant
+		repoErr error
+		want    domain.KeyStatus
+		wantErr error
+	}{
+		{
+			name:    "empty key",
+			apiKey:  "   ",
+			wantErr: domain.ErrValidation,
+		},
+		{
+			name:   "active",
+			apiKey: "key-active",
+			tenant: &domain.Tenant{Status: domain.TenantActive},
+			want:   domain.KeyStatusActive,
+		},
+		{
+			name:   "provisioning",
+			apiKey: "key-provisioning",
+			tenant: &domain.Tenant{Status: domain.TenantProvisioning},
+			want:   domain.KeyStatusInactive,
+		},
+		{
+			name:   "suspended",
+			apiKey: "key-suspended",
+			tenant: &domain.Tenant{Status: domain.TenantSuspended},
+			want:   domain.KeyStatusInactive,
+		},
+		{
+			name:    "deleted status",
+			apiKey:  "key-deleted",
+			tenant:  &domain.Tenant{Status: domain.TenantDeleted},
+			wantErr: domain.ErrNotFound,
+		},
+		{
+			name:    "deleted at",
+			apiKey:  "key-deleted-at",
+			tenant:  &domain.Tenant{Status: domain.TenantDeleted, DeletedAt: &now},
+			wantErr: domain.ErrNotFound,
+		},
+		{
+			name:    "missing",
+			apiKey:  "key-missing",
+			wantErr: domain.ErrNotFound,
+		},
+		{
+			name:    "repo failure",
+			apiKey:  "key-repo-failure",
+			repoErr: repoErr,
+			wantErr: repoErr,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewTenantService(
+				&mockTenantRepo{getTenant: tt.tenant, getErr: tt.repoErr},
+				nil,
+				nil,
+				nil,
+				"",
+				0,
+				0,
+				false,
+				encrypt.NewPlainEncryptor(),
+			)
+
+			got, err := svc.KeyStatus(context.Background(), tt.apiKey)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("KeyStatus() err = %v, want %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("KeyStatus() err = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("KeyStatus() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestKeyStatusLogsUnknownStatusWithoutAPIKey(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	svc := NewTenantService(
+		&mockTenantRepo{getTenant: &domain.Tenant{Status: domain.TenantStatus("mystery")}},
+		nil,
+		nil,
+		logger,
+		"",
+		0,
+		0,
+		false,
+		encrypt.NewPlainEncryptor(),
+	)
+
+	got, err := svc.KeyStatus(context.Background(), "secret-key")
+	if err != nil {
+		t.Fatalf("KeyStatus() err = %v", err)
+	}
+	if got != domain.KeyStatusInactive {
+		t.Fatalf("KeyStatus() = %q, want %q", got, domain.KeyStatusInactive)
+	}
+
+	raw := buf.String()
+	if !strings.Contains(raw, "unknown tenant status for key status") {
+		t.Fatalf("log = %q, want unknown status warning", raw)
+	}
+	if !strings.Contains(raw, "mystery") {
+		t.Fatalf("log = %q, want status value", raw)
+	}
+	if strings.Contains(raw, "secret-key") {
+		t.Fatalf("log leaked API key: %q", raw)
+	}
+}
+
+func TestKeyStatusLogsDeletedAtMismatchWithoutAPIKey(t *testing.T) {
+	now := time.Now()
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	svc := NewTenantService(
+		&mockTenantRepo{getTenant: &domain.Tenant{Status: domain.TenantActive, DeletedAt: &now}},
+		nil,
+		nil,
+		logger,
+		"",
+		0,
+		0,
+		false,
+		encrypt.NewPlainEncryptor(),
+	)
+
+	_, err := svc.KeyStatus(context.Background(), "secret-key")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("KeyStatus() err = %v, want %v", err, domain.ErrNotFound)
+	}
+
+	raw := buf.String()
+	if !strings.Contains(raw, "tenant deleted_at set with non-deleted status") {
+		t.Fatalf("log = %q, want deleted_at mismatch warning", raw)
+	}
+	if !strings.Contains(raw, string(domain.TenantActive)) {
+		t.Fatalf("log = %q, want status value", raw)
+	}
+	if strings.Contains(raw, "secret-key") {
+		t.Fatalf("log leaked API key: %q", raw)
+	}
+}
+
 // TestProvision_WithEncryptor tests that Provision encrypts password for storage
 // but uses plaintext for DSN connection.
 func TestProvision_WithEncryptor(t *testing.T) {
@@ -191,6 +351,8 @@ func (m *mockProvisioner) ProviderType() string {
 // mockTenantRepo is a test double for repository.TenantRepo
 type mockTenantRepo struct {
 	createdTenant *domain.Tenant
+	getTenant     *domain.Tenant
+	getErr        error
 }
 
 func (m *mockTenantRepo) Create(ctx context.Context, t *domain.Tenant) error {
@@ -199,6 +361,12 @@ func (m *mockTenantRepo) Create(ctx context.Context, t *domain.Tenant) error {
 }
 
 func (m *mockTenantRepo) GetByID(ctx context.Context, id string) (*domain.Tenant, error) {
+	if m.getErr != nil {
+		return nil, m.getErr
+	}
+	if m.getTenant != nil {
+		return m.getTenant, nil
+	}
 	return nil, domain.ErrNotFound
 }
 

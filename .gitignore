@@ -18,9 +18,9 @@ Thumbs.db
 # JavaScript package outputs
 node_modules/
 dist/
+.astro/
 *.tgz
 .netlify/
-.npm-cache-publish/
 
 # Python cache
 __pycache__/
@@ -38,6 +38,7 @@ vendor/
 # Server outputs
 server/bin
 server/coverage/
+server/.tmp
 
 # Benchmark results
 benchmark/results/*
@@ -51,6 +52,3 @@ benchmark/MR-NIAH/.cache/
 
 # Claude Code and experiment outputs
 .claude/
-
-# Package-local generated output without a dedicated local ignore file
-openclaw-plugin/dist-test/

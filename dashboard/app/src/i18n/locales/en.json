@@ -2,18 +2,17 @@
   "_locale": "en",
   "connect": {
     "title": "Your Memory",
-    "subtitle": "Enter your memory space",
-    "placeholder": "Space ID",
-    "submit": "Enter space",
+    "subtitle": "Use your <code>MEM9_API_KEY</code> to continue",
+    "placeholder": "MEM9_API_KEY",
+    "submit": "Open your memory",
     "remember_login": "Keep me signed in for 15 days",
-    "security": "Space ID is your private key. Do not share it with others.",
+    "security": "<code>MEM9_API_KEY</code> is your private key. Do not share it.",
     "error": {
-      "invalid": "Cannot access this space. Please check your ID and try again."
+      "invalid": "Cannot access this memory space. Check your MEM9_API_KEY and try again."
     },
-    "how_title": "What is mem9",
-    "how_1": "Your agent accumulates memories during conversations",
-    "how_2": "You can also ask your agent to remember specific things",
-    "how_3": "This dashboard shows what has been saved"
+    "how_title": "How to get your <code>MEM9_API_KEY</code>",
+    "how_1": "Ask OpenClaw to show you the <code>MEM9_API_KEY</code> it is already using.",
+    "how_2": "For other agent tools, ask the agent to show you its <code>MEM9_API_KEY</code> or tell you where it is stored."
   },
   "space": {
     "title": "Your Memory",
@@ -110,6 +109,7 @@
   "empty": {
     "title": "This space has no memories yet",
     "description": "Memories are accumulated as you chat with your agent. You can also save the first one now.",
+    "description_readonly": "Memories are accumulated as you chat with your agent.",
     "cta": "Save your first memory"
   },
   "legend": {
@@ -219,6 +219,16 @@
       "pulse": "Memory Pulse",
       "insight": "Memory Insight",
       "analysis": "Memory Analysis"
+    },
+    "tabs_short": {
+      "pulse": "Pulse",
+      "insight": "Insight",
+      "analysis": "Analysis"
+    },
+    "desktop_only": {
+      "title": "Memory Insight needs a wider screen",
+      "body": "The relations canvas needs at least a tablet in landscape (1024px wide) to lay the bubbles out legibly.",
+      "hint": "Rotate your tablet to landscape, or open mem9.ai/your-memory on a desktop browser."
     }
   },
   "analysis": {

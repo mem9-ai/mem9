@@ -31,6 +31,9 @@ Add mem9 to your project's `openclaw.json`:
     "entries": {
       "mem9": {
         "enabled": true,
+        "hooks": {
+          "allowConversationAccess": true
+        },
         "config": {
           "apiUrl": "http://localhost:8080",
           "apiKey": "uuid",
@@ -146,6 +149,9 @@ Each agent uses the same `apiKey` for the shared memory pool. The plugin sends t
     "entries": {
       "mem9": {
         "enabled": true,
+        "hooks": {
+          "allowConversationAccess": true
+        },
         "config": {
           "apiUrl": "http://your-server:8080",
           "apiKey": "uuid"
@@ -156,7 +162,7 @@ Each agent uses the same `apiKey` for the shared memory pool. The plugin sends t
 }
 ```
 
-That's it. The server handles scoping and conflict resolution. Conceptually, the only required values are `apiUrl` + `apiKey`.
+That's it. The server handles scoping and conflict resolution. Conceptually, the required mem9 credential values are `apiUrl` + `apiKey`; OpenClaw 4.23+ also needs the entry-level hook permission shown above for automatic conversation upload.
 
 ### Verify
 
@@ -186,6 +192,8 @@ Defined in `openclaw.plugin.json`:
 
 > **Note**: `apiKey` takes precedence when both fields are set. If only `tenantID` is present, the plugin treats it as a legacy alias for `apiKey`, still uses v1alpha2, and logs a deprecation warning once at startup. `provisionToken` and `provisionQueryParams` are ignored after an `apiKey` is already configured, and non-`utm_*` keys are dropped before the provision request is sent. During create-new onboarding, the plugin shares one in-flight provision result across concurrent local registrations and reuses the persisted result for the same `provisionToken`, so repeated reloads or repeated setup retries do not create multiple keys. The only valid secret path is `plugins.entries.mem9.config.apiKey`; `plugins.entries.mem9.apiKey` at the entry top level is invalid on OpenClaw and prevents the gateway from loading.
 
+OpenClaw 4.23+ / 2026.4.22+ requires the entry-level hook policy `plugins.entries.mem9.hooks.allowConversationAccess = true` for `agent_end` to include conversation messages. Without it, mem9 can still load, but automatic conversation upload cannot read the conversation to ingest it. This is an OpenClaw plugin-entry permission, not a mem9 `config` field. Older OpenClaw builds that reject this hook policy should omit the `hooks` block and upgrade for full automatic conversation upload.
+
 For debugging, set `"debug": true` in the plugin config. The plugin will emit `[mem9][debug]` lines; current coverage shows how `before_prompt_build` stripped OpenClaw metadata wrappers before issuing the recall search. `"debugRecall": true` still works as a deprecated alias.
 
 ## Timeout Behavior
@@ -201,8 +209,11 @@ Example:
 {
   "plugins": {
     "entries": {
-      "openclaw": {
+      "mem9": {
         "enabled": true,
+        "hooks": {
+          "allowConversationAccess": true
+        },
         "config": {
           "apiUrl": "http://your-server:8080",
           "apiKey": "uuid",
@@ -238,4 +249,5 @@ openclaw-plugin/
 | `config reload skipped (invalid config): plugins.entries.mem9: Unrecognized key: "apiKey"` | Setup wrote `plugins.entries.mem9.apiKey` instead of `plugins.entries.mem9.config.apiKey` | Remove the invalid top-level key and keep the secret only under `config.apiKey` |
 | Multiple auto-provisioned keys appear during create-new | Setup retriggered create-new provisioning before the first result was reused, or an older plugin still auto-provisions on startup | Upgrade to `@mem9/mem9@0.4.7+`; newer builds provision only from the first post-restart user message and reuse one local result across duplicate setup retries |
 | Search requests time out | Hybrid/vector search exceeds plugin timeout | Increase `searchTimeoutMs` in plugin config |
+| Conversations are not uploaded on OpenClaw 4.23+ | `agent_end` does not include conversation messages without explicit hook permission | Set `plugins.entries.mem9.hooks.allowConversationAccess` to `true` and restart OpenClaw |
 | Plugin not loading | Not in memory slot | Set `"slots": {"memory": "mem9"}` in openclaw.json |

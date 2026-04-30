@@ -156,10 +156,12 @@ type Phase1Result struct {
 
 // ExtractedFact holds a single atomic fact and the tags the LLM assigned to it.
 type ExtractedFact struct {
-	Text     string            `json:"text"`
-	Tags     []string          `json:"tags,omitempty"`
-	FactType string            `json:"fact_type,omitempty"` // "fact" | "query_intent" | "raw_fallback"; omitted = "fact"
-	Temporal *TemporalMetadata `json:"-"`
+	Text        string               `json:"text"`
+	Tags        []string             `json:"tags,omitempty"`
+	FactType    string               `json:"fact_type,omitempty"` // "fact" | "query_intent" | "raw_fallback"; omitted = "fact"
+	SourceSeqs  []int                `json:"source_seqs,omitempty"`
+	SourceTurns []sourceTurnMetadata `json:"source_turns,omitempty"`
+	Temporal    *TemporalMetadata    `json:"-"`
 }
 
 // dropQueryIntentFacts removes facts classified as query_intent by the extraction
@@ -279,13 +281,13 @@ func buildRawFallbackFacts(input preparedExtractionInput, reason string) []Extra
 		return nil
 	}
 	slog.Warn("using raw fallback fact", "reason", reason, "len", len(text))
-	return normalizeRawFallbackFacts(input, []ExtractedFact{buildRawFallbackFact(text)})
+	return annotateFactsWithSourceSeqs(input, normalizeRawFallbackFacts(input, []ExtractedFact{buildRawFallbackFact(text)}))
 }
 
 func finalizeExtractedFacts(input preparedExtractionInput, parsed []ExtractedFact, emptyReason string) []ExtractedFact {
 	facts := dropQueryIntentFacts(parsed)
 	if len(facts) > 0 {
-		return normalizeTemporalFacts(input, facts)
+		return annotateFactsWithSourceSeqs(input, normalizeTemporalFacts(input, facts))
 	}
 	reason := emptyReason
 	if len(parsed) > 0 {
@@ -372,7 +374,7 @@ func (s *IngestService) ExtractPhase1(ctx context.Context, messages []IngestMess
 		return nil, err
 	}
 	return &Phase1Result{
-		Facts:       facts,
+		Facts:       annotateFactsWithSourceSeqs(input, facts),
 		MessageTags: expandMessageTags(messageTags, input, len(messages)),
 	}, nil
 }
@@ -679,7 +681,7 @@ atomic facts from a conversation.
 8. Keep concerns, risks, and worries the user expresses about their work, systems, platforms, or ongoing operations,
 	 even when stated as background context for a direct action request. These signals have lasting value.
    Examples to keep:
-     - "小红书最近数据不好 老可能被封号" -> "User is concerned their Xiaohongshu account may be at risk of being banned due to poor recent metrics"
+      - "小红书账号最近数据不好，担心可能被封号"
      - "The API keeps returning 500s, something might be broken upstream"
      - "I think the deployment pipeline is getting flaky"
    Examples to skip:
@@ -826,7 +828,7 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 8. Keep concerns, risks, and worries the user expresses about their work, systems, platforms, or ongoing operations,
 	 even when stated as background context for a direct action request. These signals have lasting value.
    Examples to keep:
-     - "小红书最近数据不好 老可能被封号" -> "User is concerned their Xiaohongshu account may be at risk of being banned due to poor recent metrics"
+     - "小红书账号最近数据不好，担心可能被封号"
      - "The API keeps returning 500s, something might be broken upstream"
      - "I think the deployment pipeline is getting flaky"
    Examples to skip:
@@ -1200,6 +1202,8 @@ Analyze the new facts and determine whether each should be added, updated, or de
 			if normalizedText == "" {
 				continue
 			}
+			sourceSeqs := sourceSeqsForReconcileText(event.Text, facts)
+			sourceTurns := sourceTurnsForReconcileText(event.Text, facts)
 			newID, addErr := s.addInsight(
 				ctx,
 				agentName,
@@ -1207,7 +1211,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				sessionID,
 				normalizedText,
 				ensureRawFallbackTag(event.Tags, facts),
-				MergeTemporalMetadata(nil, temporal),
+				SetSourceProvenanceMetadata(MergeTemporalMetadata(nil, temporal), sourceSeqs, sourceTurns),
 			)
 			if addErr != nil {
 				slog.Warn("failed to add insight", "err", addErr)
@@ -1237,7 +1241,9 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				effectiveTags = existingMemories[intID].Tags
 			}
 			effectiveTags = ensureRawFallbackTag(effectiveTags, facts)
-			metadata := MergeTemporalMetadata(existingMemories[intID].Metadata, temporal)
+			sourceSeqs := sourceSeqsForReconcileText(event.Text, facts)
+			sourceTurns := sourceTurnsForReconcileText(event.Text, facts)
+			metadata := SetSourceProvenanceMetadata(MergeTemporalMetadata(existingMemories[intID].Metadata, temporal), sourceSeqs, sourceTurns)
 			if existingMemories[intID].MemoryType == domain.TypePinned {
 				slog.Warn("skipping UPDATE for pinned memory — treating as ADD", "id", realID)
 				newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, normalizedText, effectiveTags, metadata)
@@ -1493,7 +1499,7 @@ func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, ses
 	var ids []string
 	var warnings int
 	for _, fact := range facts {
-		id, err := s.addInsight(ctx, agentName, agentID, sessionID, fact.Text, fact.Tags, MergeTemporalMetadata(nil, fact.Temporal))
+		id, err := s.addInsight(ctx, agentName, agentID, sessionID, fact.Text, fact.Tags, metadataForExtractedFact(fact))
 		if err != nil {
 			slog.Warn("failed to add fact", "err", err, "fact_len", len(fact.Text))
 			warnings++

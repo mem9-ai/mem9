@@ -1,7 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import Navbar from '../components/Navbar.astro';
-import Billing from '../components/Billing.astro';
+import Pricing from '../components/Pricing.astro';
 import Footer from '../components/Footer.astro';
 import { DEFAULT_LOCALE, siteCopy } from '../content/site';
 
@@ -19,10 +19,10 @@ const copy = siteCopy[DEFAULT_LOCALE];
     aria={copy.aria}
     localeNames={copy.localeNames}
     themeOptions={copy.themeOptions}
-    currentPath="/billing"
+    currentPath="/pricing"
   />
   <main>
-    <Billing billing={copy.billing} />
+    <Pricing billing={copy.billing} />
   </main>
   <Footer footer={copy.footer} />
 </Layout>

@@ -18,6 +18,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/llm"
+	"github.com/qiffang/mnemos/server/internal/metering"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/repository"
@@ -37,6 +38,7 @@ type Server struct {
 	ingestMode    service.IngestMode
 	dbBackend     string
 	logger        *slog.Logger
+	metering      metering.Writer
 	startedAt     time.Time
 	svcCache      sync.Map
 	gaugeDebounce sync.Map // cluster_id -> time.Time of last Gauge refresh
@@ -68,6 +70,11 @@ func NewServer(
 		logger:      logger,
 		startedAt:   time.Now().UTC(),
 	}
+}
+
+func (s *Server) WithMetering(writer metering.Writer) *Server {
+	s.metering = writer
+	return s
 }
 
 // resolvedSvc holds the correct service instances for a request.
@@ -162,6 +169,9 @@ func (s *Server) Router(
 
 	// Provision a new tenant — no auth, no body.
 	r.Post("/v1alpha1/mem9s", s.provisionMem9s)
+
+	// Key status validates X-API-Key against control-plane state only.
+	r.Get("/v1alpha2/status", s.getKeyStatus)
 
 	// Tenant-scoped routes — tenantMW resolves {tenantID} to DB connection.
 	r.Route("/v1alpha1/mem9s/{tenantID}", func(r chi.Router) {

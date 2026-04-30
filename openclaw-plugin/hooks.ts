@@ -212,6 +212,7 @@ export function registerHooks(
   },
 ): void {
   const maxIngestBytes = options?.maxIngestBytes ?? DEFAULT_MAX_INGEST_BYTES;
+  let loggedMissingConversationAccess = false;
 
   // --------------------------------------------------------------------------
   // before_prompt_build — inject relevant memories into every LLM call
@@ -335,7 +336,17 @@ export function registerHooks(
         agentId?: string;
       };
       const hookCtx = (context ?? {}) as HookContext;
-      if (!evt?.success || !evt.messages || evt.messages.length === 0) return;
+      if (!evt?.success) return;
+      if (!Array.isArray(evt.messages)) {
+        if (!loggedMissingConversationAccess) {
+          logger.info(
+            "[mem9] agent_end conversation messages are unavailable; on OpenClaw 4.23+ / 2026.4.22+ set plugins.entries.mem9.hooks.allowConversationAccess=true to enable automatic conversation upload",
+          );
+          loggedMissingConversationAccess = true;
+        }
+        return;
+      }
+      if (evt.messages.length === 0) return;
 
       // Skip cron/heartbeat-triggered runs — they produce low-value messages
       if (hookCtx.trigger === "cron" || hookCtx.trigger === "heartbeat") {

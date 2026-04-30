@@ -67,6 +67,26 @@ validate_anthropic_api_key() {
   exit 1
 }
 
+openclaw_supports_conversation_access() {
+  local version
+  version="$(openclaw --version 2>/dev/null | head -n 1 || true)"
+  python3 - "$version" <<'PY'
+import re
+import sys
+
+match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", sys.argv[1])
+if not match:
+    raise SystemExit(1)
+
+major = int(match.group(1))
+minor = int(match.group(2))
+patch = int(match.group(3) or 0)
+if major >= 2026:
+    raise SystemExit(0 if (major, minor, patch) >= (2026, 4, 22) else 1)
+raise SystemExit(0 if (major, minor, patch) >= (4, 23, 0) else 1)
+PY
+}
+
 if [[ -z "$BENCH_PROMPT_FILE" ]]; then
   echo "ERROR: BENCH_PROMPT_FILE is required but not set."
   echo "  export BENCH_PROMPT_FILE='path/to/prompts.yaml'"
@@ -170,6 +190,11 @@ openclaw --profile "$PROFILE_B" plugins install --link "$ROOT/openclaw-plugin"
 openclaw --profile "$PROFILE_B" config set --strict-json plugins.allow '["mem9"]'
 openclaw --profile "$PROFILE_B" config set plugins.slots.memory mem9
 openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.enabled true
+if openclaw_supports_conversation_access; then
+  openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.hooks.allowConversationAccess true
+else
+  echo "    OpenClaw version does not support hooks.allowConversationAccess; automatic conversation upload requires OpenClaw 4.23+ / 2026.4.22+"
+fi
 openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.config.apiUrl "$MEM9_BASE_URL"
 openclaw --profile "$PROFILE_B" config set plugins.entries.mem9.config.apiKey "$MEM9_SPACE_ID"
 

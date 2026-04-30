@@ -392,7 +392,12 @@ function updateTranslations(dictionary: SiteDictionary): void {
       return;
     }
 
-    element.textContent = textFor(dictionary, key);
+    const value = textFor(dictionary, key);
+    if (element.dataset.i18nHtml !== undefined) {
+      element.innerHTML = value;
+    } else {
+      element.textContent = value;
+    }
   });
 
   document.querySelectorAll<HTMLElement>('[data-i18n-attr]').forEach((element) => {
