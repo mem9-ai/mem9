@@ -126,7 +126,7 @@ cd server && MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" go run ./cmd
 | OpenCode wiring      | `opencode-plugin/src/index.ts`              |
 | OpenClaw wiring      | `openclaw-plugin/index.ts`                  |
 | Site copy/content    | `site/src/content/site.ts`                  |
-| Production SKILL.md  | `site/public/SKILL.md`                      |
+| Public onboarding docs | `site/public/SKILL.md`, `site/public/openclaw/`, `site/public/hermes/` |
 
 ## site/ — Netlify deployment
 
@@ -135,13 +135,18 @@ It is hosted on Netlify and **automatically deployed from the `main` branch**.
 
 | File | Purpose |
 |---|---|
-| `site/public/SKILL.md` | **Production** SKILL.md — served at `https://mem9.ai/SKILL.md` |
+| `site/public/SKILL.md` | Production OpenClaw entry — served at `https://mem9.ai/SKILL.md` |
+| `site/public/SETUP.md`, `site/public/TROUBLESHOOTING.md`, `site/public/UNINSTALL.md` | Production OpenClaw support docs |
+| `site/public/openclaw/` | Mirrored OpenClaw public docs — served at `https://mem9.ai/openclaw/` |
+| `site/public/hermes/` | Hermes public docs — served at `https://mem9.ai/hermes/` |
 
-When updating the SKILL.md that agents fetch, edit **only** these two files:
+When updating the public onboarding docs that agents fetch:
 
-- `site/public/SKILL.md` — production, changes go live within seconds after merging to `main`
+- Keep the production OpenClaw docs in `site/public/` aligned with the intended `main` branch behavior.
+- Keep `site/public/openclaw/` in lockstep with the root OpenClaw docs so `https://mem9.ai/SKILL.md` and `https://mem9.ai/openclaw/SKILL.md` behave the same for OpenClaw installs.
+- Edit `site/public/hermes/` for Hermes-specific flow changes.
 
-Do **not** edit any other copy (e.g. `clawhub-skill/mem9/SKILL.md` has been removed).
+Do **not** edit obsolete copies outside `site/public/` (e.g. `clawhub-skill/mem9/SKILL.md` has been removed).
 Do **not** manually sync to clawhub — Netlify handles publishing automatically.
 
 ## Hierarchical AGENTS.md files
