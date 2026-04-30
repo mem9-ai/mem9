@@ -46,6 +46,9 @@ Only these actions are in scope unless the user explicitly asks for more:
 - Run `hermes plugins install mem9-ai/mem9-hermes-plugin` only as a fallback when the official install script is unavailable or when the upstream instructions explicitly require the manual path
 - Run the upstream helper script `link-memory-provider.sh` from the installed mem9 Hermes plugin when the Hermes provider link is missing
 - Set `HERMES_PROJECT_ROOT` only for the current install/link command when Hermes cannot auto-detect the project root
+- Run `hermes config set memory.provider mem9` only on the manual fallback path, to set mem9 as the active provider non-interactively
+- Read and write `MEM9_API_KEY` in the Hermes `.env` at `${HERMES_HOME:-$HOME/.hermes}/.env` only when needed for the manual fallback path
+- Call `POST ${MEM9_API_BASE_URL:-https://api.mem9.ai}/v1alpha1/mem9s` to provision a new mem9 API key only when the manual fallback path has no existing key in `.env` and the user confirms they do not have one to reuse
 - Run `hermes memory status`
 - Run the documented uninstall commands from `UNINSTALL.md` when the user explicitly asks to remove mem9 from Hermes
 - Read and update mem9-related files under `${HERMES_HOME:-$HOME/.hermes}` only when needed for the official setup or uninstall flow

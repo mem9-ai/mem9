@@ -56,18 +56,74 @@ The official install script already handles plugin install, key provisioning, `.
 
 If mem9 is installed but Hermes does not yet see it as an active memory provider:
 
-- Run the upstream helper script `link-memory-provider.sh` from the installed mem9 Hermes plugin.
+- Run the upstream helper script at `${HERMES_HOME:-$HOME/.hermes}/plugins/mem9/scripts/link-memory-provider.sh`.
 - If the helper script cannot locate the Hermes repo automatically, rerun it with `HERMES_PROJECT_ROOT` set for that one command only.
 - Re-run `hermes memory status` to confirm.
 - Do not run `hermes memory setup` from this skill. The interactive picker only lists providers it can already detect, so triggering it here just selects "built-in only" and overwrites the install script's work.
 
-Manual fallback is only for cases where the official install script is unavailable or the upstream instructions explicitly require it:
+## Step 3b — Manual Install Fallback
+
+Use this path only when the official install script in Step 2 is unavailable or upstream instructions explicitly require it. Run the steps in order:
 
 ```bash
+# 1. Install the plugin files
 hermes plugins install mem9-ai/mem9-hermes-plugin
+
+# 2. Link into the Hermes memory provider directory
+bash "${HERMES_HOME:-$HOME/.hermes}/plugins/mem9/scripts/link-memory-provider.sh"
 ```
 
-If the manual install path is used, still finish the provider-link step before verification.
+### 3. Ensure `MEM9_API_KEY` is in the Hermes `.env`
+
+The Hermes `.env` lives at `${HERMES_HOME:-$HOME/.hermes}/.env` (the Hermes home root, not under `plugins/mem9/`). Resolve the key as follows before continuing:
+
+**Case A — `.env` already has a non-empty `MEM9_API_KEY`.**
+Reuse it as-is. Do not ask the user, do not call the API, do not overwrite it. Skip ahead to step 4.
+
+**Case B — `.env` is missing or has no `MEM9_API_KEY`.**
+Ask the user to choose between exactly these two options, and wait for their reply before doing anything:
+
+> No `MEM9_API_KEY` was found in `${HERMES_HOME:-$HOME/.hermes}/.env`. Pick one:
+>
+> **1) Use an existing `MEM9_API_KEY`** — paste the key you want to reuse (for example, the one from another machine where mem9 is already set up).
+>
+> **2) Create a new `MEM9_API_KEY`** — I will call the mem9 API to provision a fresh key for this machine.
+>
+> Reply with `1` (and the key) or `2`.
+
+Then act on their choice:
+
+- **If the user picks 1**, take the key they pasted and write it to `.env` as `MEM9_API_KEY=<key>`.
+- **If the user picks 2**, provision a new key by calling the mem9 API:
+
+  ```bash
+  curl -fsSL -X POST "${MEM9_API_BASE_URL:-https://api.mem9.ai}/v1alpha1/mem9s"
+  ```
+
+  The response is JSON of the form `{"id":"<new-api-key>"}`. Extract the `id` value and write it to `.env` as `MEM9_API_KEY=<key>`. After writing, surface the new key to the user once and remind them to save it for recovery or reuse on another machine.
+
+When writing `.env`, create the file if it does not exist, preserve any other keys that are already there, and use the form:
+
+```
+MEM9_API_KEY=<key>
+```
+
+Rules:
+
+- Do not present option 2 (create new) as the default. Wait for an explicit user choice — auto-provisioning when the user actually has a key would silently strand them on a new mem9 space.
+- Never overwrite an existing non-empty `MEM9_API_KEY` in `.env` without explicit user confirmation.
+- Keep the default mem9 API base URL at `https://api.mem9.ai` unless the user explicitly chose another endpoint, in which case set `MEM9_API_BASE_URL` for the `curl` call only.
+- If the user already supplied a key earlier in the conversation (Step 1 preflight), treat that as option 1 with the key pre-filled — do not ask the choice question again.
+
+### 4. Set mem9 as the active memory provider
+
+```bash
+# Non-interactive equivalent of the picker — avoids `hermes memory setup`,
+# which silently falls back to "built-in only" if mem9 isn't yet detectable.
+hermes config set memory.provider mem9
+```
+
+After this command completes, continue to Step 4 to verify.
 
 ## Step 4 — Verification
 
