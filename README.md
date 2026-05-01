@@ -278,6 +278,10 @@ These are only relevant when `MNEMO_ENCRYPT_TYPE=kms`. The server uses the AWS S
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
+## Acknowledgements
+
+mem9's smart-ingest algorithm adapts ideas from [mem0](https://github.com/mem0ai/mem0)'s v3 ADD-only memory work under Apache-2.0, including additive extraction, exact hash dedupe, memory linking, and entity-aware retrieval. Thanks to the mem0 team for publishing the [token-efficient memory algorithm writeup](https://mem0.ai/blog/mem0-the-token-efficient-memory-algorithm), the [OSS v2 to v3 migration notes](https://docs.mem0.ai/migration/oss-v2-to-v3), and the reference implementation and prompts.
+
 ## License
 
 [Apache-2.0](LICENSE)

@@ -47,6 +47,20 @@ type MemoryRepo interface {
 	CountStats(ctx context.Context) (total int64, last7d int64, err error)
 }
 
+// MemoryHashRepo is implemented by repositories that can perform exact
+// ADD-only dedupe by stored content hash.
+type MemoryHashRepo interface {
+	ListByContentHashes(ctx context.Context, agentID string, hashes []string) (map[string]domain.Memory, error)
+}
+
+// MemoryEntityRepo is implemented by repositories that persist entity-memory
+// links and expose entity-aware recall boosts.
+type MemoryEntityRepo interface {
+	ReplaceMemoryEntities(ctx context.Context, agentID, memoryID string, entities []domain.MemoryEntity) error
+	DeleteMemoryEntities(ctx context.Context, memoryID string) error
+	EntityMemoryBoosts(ctx context.Context, agentID string, entityKeys []string, limit int) (map[string]float64, error)
+}
+
 // TenantRepo manages tenant records in the control plane DB.
 type TenantRepo interface {
 	Create(ctx context.Context, t *domain.Tenant) error
@@ -89,4 +103,7 @@ type SessionRepo interface {
 	// session_id ASC, created_at ASC, seq ASC, id ASC. At most limitPerSession rows are
 	// returned per session_id. Returns ErrNotSupported on non-TiDB backends.
 	ListBySessionIDs(ctx context.Context, sessionIDs []string, limitPerSession int) ([]*domain.Session, error)
+	// ListRecentBySessionID returns the most recent active raw session rows for one
+	// session, ordered chronologically after applying the limit.
+	ListRecentBySessionID(ctx context.Context, sessionID string, limit int) ([]*domain.Session, error)
 }

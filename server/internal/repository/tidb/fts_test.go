@@ -338,7 +338,7 @@ func normalizeDriverValue(v any) any {
 
 func memoryColumns() []string {
 	return []string{
-		"id", "content", "source", "tags", "metadata", "embedding", "memory_type", "agent_id",
+		"id", "content", "source", "tags", "metadata", "embedding", "content_hash", "memory_type", "agent_id",
 		"session_id", "state", "version", "updated_by", "created_at", "updated_at", "superseded_by",
 	}
 }
@@ -355,6 +355,7 @@ func memoryRow(id, content, agentID, sessionID, state string, tags []byte, ts ti
 		"chat",
 		tags,
 		[]byte(`{"k":"v"}`),
+		nil,
 		nil,
 		string(domain.TypeInsight),
 		agentID,

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -28,9 +29,10 @@ const defaultTaskTimeout = 30 * time.Minute
 
 // SessionFile is the expected JSON format for session file uploads.
 type SessionFile struct {
-	AgentID   string          `json:"agent_id"`
-	SessionID string          `json:"session_id"`
-	Messages  []IngestMessage `json:"messages"`
+	AgentID         string          `json:"agent_id"`
+	SessionID       string          `json:"session_id"`
+	ObservationDate string          `json:"observation_date,omitempty"`
+	Messages        []IngestMessage `json:"messages"`
 }
 
 // MemoryFile is the expected JSON format for memory file uploads.
@@ -183,6 +185,9 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 	if err != nil {
 		return w.failTask(ctx, task, fmt.Errorf("get tenant db: %w", err), logger)
 	}
+	if err := ensureUploadAdditiveMemorySchema(taskCtx, db, w.pool.Backend()); err != nil {
+		return w.failTask(ctx, task, err, logger)
+	}
 
 	memRepo := repository.NewMemoryRepo(w.pool.Backend(), db, w.autoModel, w.ftsEnabled, tenantInfo.ClusterID)
 	ingestSvc := NewIngestService(memRepo, w.llmClient, w.embedder, w.autoModel, w.mode)
@@ -246,10 +251,11 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 				return w.failTask(ctx, task, fmt.Errorf("checkpoint progress: %w", err), logger)
 			}
 			_, err := ingestSvc.Ingest(taskCtx, agentName, IngestRequest{
-				AgentID:   file.AgentID,
-				SessionID: file.SessionID,
-				Messages:  chunk,
-				Mode:      w.mode,
+				AgentID:         file.AgentID,
+				SessionID:       file.SessionID,
+				ObservationDate: file.ObservationDate,
+				Messages:        chunk,
+				Mode:            w.mode,
 			})
 			if err != nil {
 				return w.failTask(ctx, task, fmt.Errorf("ingest session chunk: %w", err), logger)
@@ -304,17 +310,19 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 				if entry.MemoryType != "" {
 					memType = domain.MemoryType(entry.MemoryType)
 				}
+				contentHash := memoryContentHash(entry.Content)
 				memories = append(memories, &domain.Memory{
-					ID:         uuid.New().String(),
-					Content:    entry.Content,
-					Source:     entry.Source,
-					Tags:       entry.Tags,
-					Metadata:   metadata,
-					MemoryType: memType,
-					AgentID:    file.AgentID,
-					State:      domain.StateActive,
-					Version:    1,
-					UpdatedBy:  agentName,
+					ID:          uuid.New().String(),
+					Content:     entry.Content,
+					Source:      entry.Source,
+					Tags:        entry.Tags,
+					Metadata:    metadata,
+					ContentHash: contentHash,
+					MemoryType:  memType,
+					AgentID:     file.AgentID,
+					State:       domain.StateActive,
+					Version:     1,
+					UpdatedBy:   agentName,
 				})
 			}
 			writeStart := time.Now()
@@ -322,6 +330,9 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 			metrics.MemoryWriteDuration.WithLabelValues("bulk_create", metricStatus(bulkErr)).Observe(time.Since(writeStart).Seconds())
 			if bulkErr != nil {
 				return w.failTask(ctx, task, fmt.Errorf("bulk create memories: %w", bulkErr), logger)
+			}
+			for _, memory := range memories {
+				replaceMemoryEntityLinks(taskCtx, memRepo, memory.AgentID, memory.ID, memory.Content)
 			}
 			clusterID := tenantInfo.ClusterID
 			if clusterID == "" {
@@ -351,6 +362,46 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 	logger.Info("upload task completed", "task_id", task.TaskID)
 	return nil
 
+}
+
+func ensureUploadAdditiveMemorySchema(ctx context.Context, db *sql.DB, backend string) error {
+	switch backend {
+	case "postgres", "db9":
+		if _, err := db.ExecContext(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64) NULL`); err != nil {
+			return fmt.Errorf("ensure upload additive schema: content_hash: %w", err)
+		}
+		if _, err := db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_memory_content_hash ON memories(agent_id, state, content_hash)`); err != nil {
+			return fmt.Errorf("ensure upload additive schema: content_hash index: %w", err)
+		}
+		for _, stmt := range postgresMemoryEntitiesSchemaStatements() {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("ensure upload additive schema: memory_entities: %w", err)
+			}
+		}
+	default:
+		exists, err := tenant.ColumnExists(ctx, db, "memories", "content_hash")
+		if err != nil {
+			return fmt.Errorf("ensure upload additive schema: check content_hash: %w", err)
+		}
+		if !exists {
+			if _, err := db.ExecContext(ctx, `ALTER TABLE memories ADD COLUMN content_hash VARCHAR(64) NULL AFTER embedding`); err != nil && !tenant.IsColumnExistsError(err) {
+				return fmt.Errorf("ensure upload additive schema: content_hash: %w", err)
+			}
+		}
+		indexExists, err := tenant.IndexExists(ctx, db, "memories", "idx_memory_content_hash")
+		if err != nil {
+			return fmt.Errorf("ensure upload additive schema: check content_hash index: %w", err)
+		}
+		if !indexExists {
+			if _, err := db.ExecContext(ctx, `CREATE INDEX idx_memory_content_hash ON memories(agent_id, state, content_hash)`); err != nil && !tenant.IsIndexExistsError(err) {
+				return fmt.Errorf("ensure upload additive schema: content_hash index: %w", err)
+			}
+		}
+		if _, err := db.ExecContext(ctx, tenant.BuildMemoryEntitiesSchema(backend)); err != nil {
+			return fmt.Errorf("ensure upload additive schema: memory_entities: %w", err)
+		}
+	}
+	return nil
 }
 
 // failTask marks task as failed and cleans up the file.
@@ -433,6 +484,7 @@ func parseSessionFile(data []byte) (SessionFile, error) {
 
 	// Try JSONL: parse each line, skipping non-message lines.
 	var messages []IngestMessage
+	var observationDate string
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // up to 10MB per line
 	for scanner.Scan() {
@@ -442,18 +494,29 @@ func parseSessionFile(data []byte) (SessionFile, error) {
 		}
 
 		// Try simple {role, content} format first.
-		var simple IngestMessage
+		var simple struct {
+			Role            string `json:"role"`
+			Content         string `json:"content"`
+			Timestamp       string `json:"timestamp"`
+			ObservationDate string `json:"observation_date"`
+		}
 		if err := json.Unmarshal(line, &simple); err != nil {
 			// Skip lines that aren't valid JSON (metadata, etc.)
 			continue
 		}
+		if observationDate == "" {
+			observationDate = firstNonEmpty(simple.ObservationDate, simple.Timestamp)
+		}
 		if simple.Role != "" && simple.Content != "" {
-			messages = append(messages, simple)
+			messages = append(messages, IngestMessage{Role: simple.Role, Content: simple.Content})
 			continue
 		}
 
 		// Try OpenClaw format: {"type":"message","message":{"role":"...","content":[...]}}
-		msg := parseOpenClawLine(line)
+		msg, timestamp := parseOpenClawLineWithTimestamp(line)
+		if observationDate == "" {
+			observationDate = timestamp
+		}
 		if msg != nil {
 			messages = append(messages, *msg)
 		}
@@ -465,32 +528,47 @@ func parseSessionFile(data []byte) (SessionFile, error) {
 		return SessionFile{}, fmt.Errorf("no valid messages found in file")
 	}
 
-	return SessionFile{Messages: messages}, nil
+	return SessionFile{ObservationDate: observationDate, Messages: messages}, nil
 }
 
 // parseOpenClawLine extracts an IngestMessage from an OpenClaw JSONL line.
 // OpenClaw format: {"type":"message","message":{"role":"user","content":[{"type":"text","text":"..."}]}}
 func parseOpenClawLine(line []byte) *IngestMessage {
+	msg, _ := parseOpenClawLineWithTimestamp(line)
+	return msg
+}
+
+func parseOpenClawLineWithTimestamp(line []byte) (*IngestMessage, string) {
 	var entry struct {
-		Type    string `json:"type"`
-		Message struct {
+		Type      string `json:"type"`
+		Timestamp string `json:"timestamp"`
+		Message   struct {
 			Role    string          `json:"role"`
 			Content json.RawMessage `json:"content"`
 		} `json:"message"`
 	}
 	if err := json.Unmarshal(line, &entry); err != nil {
-		return nil
+		return nil, ""
 	}
 	if entry.Type != "message" || entry.Message.Role == "" {
-		return nil
+		return nil, firstNonEmpty(entry.Timestamp)
 	}
 	role := entry.Message.Role
 
 	content := flattenContentBlocks(entry.Message.Content)
 	if content == "" {
-		return nil
+		return nil, firstNonEmpty(entry.Timestamp)
 	}
-	return &IngestMessage{Role: role, Content: content}
+	return &IngestMessage{Role: role, Content: content}, firstNonEmpty(entry.Timestamp)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 // flattenContentBlocks converts a content field to a plain string.

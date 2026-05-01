@@ -195,6 +195,9 @@ func (p *ZeroProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, BuildMemorySchema(p.autoModel, p.autoDims, p.clientDims)); err != nil {
 		return fmt.Errorf("init schema: create table: %w", err)
 	}
+	if _, err := db.ExecContext(ctx, BuildMemoryEntitiesSchema("tidb")); err != nil {
+		return fmt.Errorf("init schema: memory entities table: %w", err)
+	}
 	if p.autoModel != "" {
 		exists, err := IndexExists(ctx, db, "memories", "idx_cosine")
 		if err != nil {

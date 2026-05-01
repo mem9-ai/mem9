@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,6 +45,26 @@ type MemoryService struct {
 	ingest    *IngestService
 }
 
+type MemoryCreateOptions struct {
+	ObservationDate string
+}
+
+func observationDateFromMetadata(metadata json.RawMessage) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(metadata, &payload); err != nil {
+		return ""
+	}
+	for _, key := range []string{"observation_date", "observed_at", "timestamp", "created_at", "date"} {
+		if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
 func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, embedder *embed.Embedder, autoModel string, ingestMode IngestMode) *MemoryService {
 	return &MemoryService{
 		memories:  memories,
@@ -54,6 +75,10 @@ func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, emb
 }
 
 func (s *MemoryService) Create(ctx context.Context, agentID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, int, error) {
+	return s.CreateWithOptions(ctx, agentID, content, tags, metadata, MemoryCreateOptions{})
+}
+
+func (s *MemoryService) CreateWithOptions(ctx context.Context, agentID, content string, tags []string, metadata json.RawMessage, opts MemoryCreateOptions) (*domain.Memory, int, error) {
 	if err := validateMemoryInput(content, tags); err != nil {
 		return nil, 0, err
 	}
@@ -76,20 +101,22 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 		}
 
 		now := time.Now()
+		contentHash := memoryContentHash(content)
 		mem := &domain.Memory{
-			ID:         uuid.New().String(),
-			Content:    content,
-			Source:     agentID,
-			Tags:       tags,
-			Metadata:   metadata,
-			Embedding:  embedding,
-			MemoryType: domain.TypeInsight,
-			AgentID:    agentID,
-			State:      domain.StateActive,
-			Version:    1,
-			UpdatedBy:  agentID,
-			CreatedAt:  now,
-			UpdatedAt:  now,
+			ID:          uuid.New().String(),
+			Content:     content,
+			Source:      agentID,
+			Tags:        tags,
+			Metadata:    metadata,
+			Embedding:   embedding,
+			ContentHash: contentHash,
+			MemoryType:  domain.TypeInsight,
+			AgentID:     agentID,
+			State:       domain.StateActive,
+			Version:     1,
+			UpdatedBy:   agentID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
 		}
 		writeStart := time.Now()
 		err := s.memories.Create(ctx, mem)
@@ -97,10 +124,15 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 		if err != nil {
 			return nil, 0, fmt.Errorf("create raw memory: %w", err)
 		}
+		replaceMemoryEntityLinks(ctx, s.memories, agentID, mem.ID, mem.Content)
 		return mem, 1, nil
 	}
 
-	result, err := s.ingest.ReconcileContent(ctx, agentID, agentID, "", []string{content})
+	observationDate := strings.TrimSpace(opts.ObservationDate)
+	if observationDate == "" {
+		observationDate = observationDateFromMetadata(metadata)
+	}
+	result, err := s.ingest.ReconcileContentWithContext(ctx, agentID, agentID, "", []string{content}, ExtractionContext{ObservationDate: observationDate})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -123,10 +155,11 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 			mem.Tags = tags
 		}
 		if len(metadata) > 0 {
-			mem.Metadata = metadata
+			mem.Metadata = mergeJSONMetadata(mem.Metadata, metadata)
 		}
 		if len(tags) > 0 || len(metadata) > 0 {
 			if err := s.memories.UpdateOptimistic(ctx, mem, 0); err == nil {
+				replaceMemoryEntityLinks(ctx, s.memories, mem.AgentID, mem.ID, mem.Content)
 				patchWrites++
 			}
 		}
@@ -206,16 +239,23 @@ func (s *MemoryService) SearchCandidates(
 	searchFilter.SessionID = ""
 	searchFilter.Source = ""
 
+	var (
+		candidates []RecallCandidate
+		err        error
+	)
 	if s.autoModel != "" {
-		return s.autoHybridCandidates(ctx, searchFilter, sourcePool, opts)
+		candidates, err = s.autoHybridCandidates(ctx, searchFilter, sourcePool, opts)
+	} else if s.embedder != nil {
+		candidates, err = s.hybridCandidates(ctx, searchFilter, sourcePool, opts)
+	} else if s.memories.FTSAvailable() {
+		candidates, err = s.ftsOnlyCandidates(ctx, searchFilter, sourcePool, opts)
+	} else {
+		candidates, err = s.keywordOnlyCandidates(ctx, searchFilter, sourcePool, opts)
 	}
-	if s.embedder != nil {
-		return s.hybridCandidates(ctx, searchFilter, sourcePool, opts)
+	if err != nil {
+		return nil, err
 	}
-	if s.memories.FTSAvailable() {
-		return s.ftsOnlyCandidates(ctx, searchFilter, sourcePool, opts)
-	}
-	return s.keywordOnlyCandidates(ctx, searchFilter, sourcePool, opts)
+	return s.applyEntityBoosts(ctx, searchFilter, candidates), nil
 }
 
 const rrfK = 60.0
@@ -820,12 +860,18 @@ func (s *MemoryService) Update(ctx context.Context, agentName, id, content strin
 		}
 		current.Embedding = embedding
 	}
+	if contentChanged {
+		current.ContentHash = memoryContentHash(current.Content)
+	}
 
 	writeStart := time.Now()
 	err = s.memories.UpdateOptimistic(ctx, current, 0)
 	metrics.MemoryWriteDuration.WithLabelValues("update", metricStatus(err)).Observe(time.Since(writeStart).Seconds())
 	if err != nil {
 		return nil, err
+	}
+	if contentChanged {
+		replaceMemoryEntityLinks(ctx, s.memories, current.AgentID, current.ID, current.Content)
 	}
 
 	updated, err := s.memories.GetByID(ctx, id)
@@ -837,7 +883,11 @@ func (s *MemoryService) Update(ctx context.Context, agentName, id, content strin
 }
 
 func (s *MemoryService) Delete(ctx context.Context, id, agentName string) error {
-	return s.memories.SoftDelete(ctx, id, agentName)
+	if err := s.memories.SoftDelete(ctx, id, agentName); err != nil {
+		return err
+	}
+	deleteMemoryEntityLinks(ctx, s.memories, id)
+	return nil
 }
 
 // BulkDelete soft-deletes multiple memories by ID. Returns the number of
@@ -865,7 +915,14 @@ func (s *MemoryService) BulkDelete(ctx context.Context, ids []string, agentName 
 		return 0, &domain.ValidationError{Field: "ids", Message: "required"}
 	}
 
-	return s.memories.BulkSoftDelete(ctx, unique, agentName)
+	deleted, err := s.memories.BulkSoftDelete(ctx, unique, agentName)
+	if err != nil {
+		return deleted, err
+	}
+	for _, id := range unique {
+		deleteMemoryEntityLinks(ctx, s.memories, id)
+	}
+	return deleted, nil
 }
 
 func (s *MemoryService) Bootstrap(ctx context.Context, limit int) ([]domain.Memory, error) {
@@ -907,19 +964,21 @@ func (s *MemoryService) BulkCreate(ctx context.Context, agentName string, items 
 			}
 		}
 
+		contentHash := memoryContentHash(item.Content)
 		memories = append(memories, &domain.Memory{
-			ID:         uuid.New().String(),
-			Content:    item.Content,
-			Source:     agentName,
-			Tags:       item.Tags,
-			Metadata:   item.Metadata,
-			Embedding:  embedding,
-			MemoryType: domain.TypePinned,
-			State:      domain.StateActive,
-			Version:    1,
-			UpdatedBy:  agentName,
-			CreatedAt:  now,
-			UpdatedAt:  now,
+			ID:          uuid.New().String(),
+			Content:     item.Content,
+			Source:      agentName,
+			Tags:        item.Tags,
+			Metadata:    item.Metadata,
+			Embedding:   embedding,
+			ContentHash: contentHash,
+			MemoryType:  domain.TypePinned,
+			State:       domain.StateActive,
+			Version:     1,
+			UpdatedBy:   agentName,
+			CreatedAt:   now,
+			UpdatedAt:   now,
 		})
 	}
 
@@ -932,6 +991,7 @@ func (s *MemoryService) BulkCreate(ctx context.Context, agentName string, items 
 
 	result := make([]domain.Memory, len(memories))
 	for i, m := range memories {
+		replaceMemoryEntityLinks(ctx, s.memories, m.AgentID, m.ID, m.Content)
 		result[i] = *m
 	}
 	return result, nil

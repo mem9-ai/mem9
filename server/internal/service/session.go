@@ -45,6 +45,10 @@ func (s *SessionService) ListBySessionIDs(ctx context.Context, sessionIDs []stri
 	return s.sessions.ListBySessionIDs(ctx, sessionIDs, limitPerSession)
 }
 
+func (s *SessionService) ListRecentBySessionID(ctx context.Context, sessionID string, limit int) ([]*domain.Session, error) {
+	return s.sessions.ListRecentBySessionID(ctx, sessionID, limit)
+}
+
 func (s *SessionService) PatchTags(ctx context.Context, sessionID, contentHash string, tags []string) error {
 	return s.sessions.PatchTags(ctx, sessionID, contentHash, tags)
 }

@@ -31,8 +31,11 @@ type stubSessionRepo struct {
 	autoVecErr     error
 	ftsAvail       bool
 	sessionRows    []*domain.Session
+	recentRows     []*domain.Session
 	listSessionIDs []string
 	listLimit      int
+	recentSession  string
+	recentLimit    int
 }
 
 func intPtr(v int) *int {
@@ -75,6 +78,12 @@ func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, ids []string, limi
 	s.listSessionIDs = append([]string(nil), ids...)
 	s.listLimit = limit
 	return append([]*domain.Session(nil), s.sessionRows...), nil
+}
+
+func (s *stubSessionRepo) ListRecentBySessionID(_ context.Context, sessionID string, limit int) ([]*domain.Session, error) {
+	s.recentSession = sessionID
+	s.recentLimit = limit
+	return append([]*domain.Session(nil), s.recentRows...), nil
 }
 
 func newTestSessionService(repo *stubSessionRepo) *SessionService {
@@ -389,4 +398,8 @@ func (c *capturingSessionRepo) FTSAvailable() bool { return c.stub.FTSAvailable(
 
 func (c *capturingSessionRepo) ListBySessionIDs(ctx context.Context, ids []string, limit int) ([]*domain.Session, error) {
 	return c.stub.ListBySessionIDs(ctx, ids, limit)
+}
+
+func (c *capturingSessionRepo) ListRecentBySessionID(ctx context.Context, sessionID string, limit int) ([]*domain.Session, error) {
+	return c.stub.ListRecentBySessionID(ctx, sessionID, limit)
 }

@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS memories (
     tags            JSONB,
     metadata        JSONB,
     embedding       vector(1536)    NULL,
+    content_hash    VARCHAR(64)     NULL,
     memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned',
     agent_id        VARCHAR(100)    NULL,
     session_id      VARCHAR(100)    NULL,
@@ -48,7 +49,20 @@ CREATE INDEX IF NOT EXISTS idx_memory_source ON memories(source);
 CREATE INDEX IF NOT EXISTS idx_memory_state ON memories(state);
 CREATE INDEX IF NOT EXISTS idx_memory_agent ON memories(agent_id);
 CREATE INDEX IF NOT EXISTS idx_memory_session ON memories(session_id);
+CREATE INDEX IF NOT EXISTS idx_memory_content_hash ON memories(agent_id, state, content_hash);
 CREATE INDEX IF NOT EXISTS idx_memory_updated ON memories(updated_at);
+
+CREATE TABLE IF NOT EXISTS memory_entities (
+    agent_id      VARCHAR(100) NOT NULL DEFAULT '',
+    entity_key    VARCHAR(64)  NOT NULL,
+    entity_text   VARCHAR(255) NOT NULL,
+    entity_type   VARCHAR(32)  NOT NULL,
+    memory_id     VARCHAR(36)  NOT NULL,
+    created_at    TIMESTAMPTZ  DEFAULT NOW(),
+    PRIMARY KEY (agent_id, entity_key, memory_id)
+);
+CREATE INDEX IF NOT EXISTS idx_memory_entities_memory ON memory_entities(memory_id);
+CREATE INDEX IF NOT EXISTS idx_memory_entities_lookup ON memory_entities(agent_id, entity_key);
 
 CREATE TABLE IF NOT EXISTS upload_tasks (
     task_id       VARCHAR(36)   PRIMARY KEY,

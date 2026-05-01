@@ -13,6 +13,7 @@ const TenantMemorySchemaBase = `CREATE TABLE IF NOT EXISTS memories (
     tags            JSON,
     metadata        JSON,
     %s
+    content_hash    VARCHAR(64)     NULL,
     memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned',
     agent_id        VARCHAR(100)    NULL,
     session_id      VARCHAR(100)    NULL,
@@ -27,6 +28,7 @@ const TenantMemorySchemaBase = `CREATE TABLE IF NOT EXISTS memories (
     INDEX idx_state               (state),
     INDEX idx_agent               (agent_id),
     INDEX idx_session             (session_id),
+    INDEX idx_memory_content_hash (agent_id, state, content_hash),
     INDEX idx_updated             (updated_at)
 )`
 
@@ -38,6 +40,7 @@ const TenantMemorySchemaPostgres = `CREATE TABLE IF NOT EXISTS memories (
     tags            JSONB,
     metadata        JSONB,
     embedding       vector(1536)    NULL,
+    content_hash    VARCHAR(64)     NULL,
     memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned',
     agent_id        VARCHAR(100)    NULL,
     session_id      VARCHAR(100)    NULL,
@@ -53,6 +56,7 @@ CREATE INDEX IF NOT EXISTS idx_source ON memories(source);
 CREATE INDEX IF NOT EXISTS idx_state ON memories(state);
 CREATE INDEX IF NOT EXISTS idx_agent ON memories(agent_id);
 CREATE INDEX IF NOT EXISTS idx_session ON memories(session_id);
+CREATE INDEX IF NOT EXISTS idx_memory_content_hash ON memories(agent_id, state, content_hash);
 CREATE INDEX IF NOT EXISTS idx_updated ON memories(updated_at);
 CREATE OR REPLACE FUNCTION update_updated_at() RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_memories_updated ON memories;
@@ -67,6 +71,7 @@ const TenantMemorySchemaDB9Base = `CREATE TABLE IF NOT EXISTS memories (
     tags            JSONB,
     metadata        JSONB,
     %s
+    content_hash    VARCHAR(64)     NULL,
     memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned',
     agent_id        VARCHAR(100)    NULL,
     session_id      VARCHAR(100)    NULL,
@@ -82,6 +87,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_source ON memories(source);
 CREATE INDEX IF NOT EXISTS idx_memory_state ON memories(state);
 CREATE INDEX IF NOT EXISTS idx_memory_agent ON memories(agent_id);
 CREATE INDEX IF NOT EXISTS idx_memory_session ON memories(session_id);
+CREATE INDEX IF NOT EXISTS idx_memory_content_hash ON memories(agent_id, state, content_hash);
 CREATE INDEX IF NOT EXISTS idx_memory_updated ON memories(updated_at);
 CREATE OR REPLACE FUNCTION update_updated_at() RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_memories_updated ON memories;
@@ -124,6 +130,40 @@ func BuildDB9MemorySchema(autoModel string, autoDims int, clientDims int) string
 		embeddingCol = fmt.Sprintf(`embedding VECTOR(%d) NULL,`, dims)
 	}
 	return fmt.Sprintf(TenantMemorySchemaDB9Base, embeddingCol)
+}
+
+const TenantMemoryEntitiesSchemaTiDB = `CREATE TABLE IF NOT EXISTS memory_entities (
+    agent_id      VARCHAR(100)  NOT NULL DEFAULT '',
+    entity_key    VARCHAR(64)   NOT NULL,
+    entity_text   VARCHAR(255)  NOT NULL,
+    entity_type   VARCHAR(32)   NOT NULL,
+    memory_id     VARCHAR(36)   NOT NULL,
+    created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (agent_id, entity_key, memory_id),
+    INDEX idx_memory_entities_memory (memory_id),
+    INDEX idx_memory_entities_lookup (agent_id, entity_key)
+)`
+
+const TenantMemoryEntitiesSchemaPostgres = `CREATE TABLE IF NOT EXISTS memory_entities (
+    agent_id      VARCHAR(100) NOT NULL DEFAULT '',
+    entity_key    VARCHAR(64)  NOT NULL,
+    entity_text   VARCHAR(255) NOT NULL,
+    entity_type   VARCHAR(32)  NOT NULL,
+    memory_id     VARCHAR(36)  NOT NULL,
+    created_at    TIMESTAMPTZ  DEFAULT NOW(),
+    PRIMARY KEY (agent_id, entity_key, memory_id)
+);
+CREATE INDEX IF NOT EXISTS idx_memory_entities_memory ON memory_entities(memory_id);
+CREATE INDEX IF NOT EXISTS idx_memory_entities_lookup ON memory_entities(agent_id, entity_key);
+`
+
+func BuildMemoryEntitiesSchema(backend string) string {
+	switch backend {
+	case "postgres", "db9":
+		return TenantMemoryEntitiesSchemaPostgres
+	default:
+		return TenantMemoryEntitiesSchemaTiDB
+	}
 }
 
 const TenantSessionsSchemaBase = `CREATE TABLE IF NOT EXISTS sessions (

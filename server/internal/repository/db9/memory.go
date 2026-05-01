@@ -39,7 +39,7 @@ func NewMemoryRepo(db *sql.DB, autoModel string, ftsEnabled bool, clusterID stri
 	}
 }
 
-const allColumns = `id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at, superseded_by`
+const allColumns = `id, content, source, tags, metadata, embedding, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at, superseded_by`
 
 // Create inserts a new memory. When autoModel is set, embedding column is omitted
 // (db9's GENERATED ALWAYS AS will auto-compute it).
@@ -56,10 +56,10 @@ func (r *DB9MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
 		memoryType = string(domain.TypePinned)
 	}
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO memories (id, content, source, tags, metadata, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, NOW(), NOW())`,
+		`INSERT INTO memories (id, content, source, tags, metadata, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, NOW(), NOW())`,
 		m.ID, m.Content, nullString(m.Source),
-		tagsJSON, nullJSON(m.Metadata), memoryType, nullString(m.AgentID), nullString(m.SessionID),
+		tagsJSON, nullJSON(m.Metadata), nullString(m.ContentHash), memoryType, nullString(m.AgentID), nullString(m.SessionID),
 		m.Version, nullString(m.UpdatedBy),
 	)
 	if err != nil {
@@ -78,9 +78,9 @@ func (r *DB9MemoryRepo) UpdateOptimistic(ctx context.Context, m *domain.Memory, 
 	// Auto-embedding mode: don't write embedding column
 	tagsJSON := marshalTags(m.Tags)
 
-	query := `UPDATE memories SET content = $1, tags = $2, metadata = $3, version = version + 1, updated_by = $4, updated_at = NOW()
-		 WHERE id = $5`
-	args := []any{m.Content, tagsJSON, nullJSON(m.Metadata), nullString(m.UpdatedBy), m.ID}
+	query := `UPDATE memories SET content = $1, tags = $2, metadata = $3, content_hash = $4, version = version + 1, updated_by = $5, updated_at = NOW()
+		 WHERE id = $6`
+	args := []any{m.Content, tagsJSON, nullJSON(m.Metadata), nullString(m.ContentHash), nullString(m.UpdatedBy), m.ID}
 
 	if expectedVersion > 0 {
 		query += fmt.Sprintf(" AND version = $%d", len(args)+1)
@@ -118,10 +118,10 @@ func (r *DB9MemoryRepo) BulkCreate(ctx context.Context, memories []*domain.Memor
 			memoryType = string(domain.TypePinned)
 		}
 		_, execErr := tx.ExecContext(ctx,
-			`INSERT INTO memories (id, content, source, tags, metadata, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, NOW(), NOW())`,
+			`INSERT INTO memories (id, content, source, tags, metadata, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, NOW(), NOW())`,
 			m.ID, m.Content, nullString(m.Source),
-			tagsJSON, nullJSON(m.Metadata), memoryType, nullString(m.AgentID), nullString(m.SessionID),
+			tagsJSON, nullJSON(m.Metadata), nullString(m.ContentHash), memoryType, nullString(m.AgentID), nullString(m.SessionID),
 			m.Version, nullString(m.UpdatedBy),
 		)
 		if execErr != nil {
@@ -166,10 +166,10 @@ func (r *DB9MemoryRepo) ArchiveAndCreate(ctx context.Context, archiveID, superse
 	}
 
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO memories (id, content, source, tags, metadata, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', $9, $10, NOW(), NOW())`,
+		`INSERT INTO memories (id, content, source, tags, metadata, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, NOW(), NOW())`,
 		newMem.ID, newMem.Content, nullString(newMem.Source),
-		tagsJSON, nullJSON(newMem.Metadata), memoryType, nullString(newMem.AgentID), nullString(newMem.SessionID),
+		tagsJSON, nullJSON(newMem.Metadata), nullString(newMem.ContentHash), memoryType, nullString(newMem.AgentID), nullString(newMem.SessionID),
 		newMem.Version, nullString(newMem.UpdatedBy),
 	)
 	if err != nil {
@@ -296,13 +296,13 @@ func (r *DB9MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Me
 // scanMemoryRowsWithDistance scans a row with distance score appended.
 func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, contentHash, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON []byte
 	var embeddingStr sql.NullString
 	var distance float64
 
 	err := rows.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &contentHash, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy,
 		&distance)
 	if err != nil {
@@ -315,6 +315,7 @@ func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.ContentHash = contentHash.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive
@@ -332,13 +333,13 @@ func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 // scanMemoryRowsWithFTSScore scans a row with FTS score appended.
 func scanMemoryRowsWithFTSScore(rows *sql.Rows) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, contentHash, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON []byte
 	var embeddingStr sql.NullString
 	var ftsScore float64
 
 	err := rows.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &contentHash, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy,
 		&ftsScore)
 	if err != nil {
@@ -351,6 +352,7 @@ func scanMemoryRowsWithFTSScore(rows *sql.Rows) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.ContentHash = contentHash.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive

@@ -338,6 +338,69 @@ func (s *TenantService) GetInfo(ctx context.Context, tenantID string) (*domain.T
 	}, nil
 }
 
+func (s *TenantService) EnsureAdditiveMemorySchema(ctx context.Context, db *sql.DB) error {
+	if db == nil {
+		return fmt.Errorf("ensure additive memory schema: db connection is nil")
+	}
+	backend := "tidb"
+	if s.pool != nil && s.pool.Backend() != "" {
+		backend = s.pool.Backend()
+	}
+	switch backend {
+	case "postgres", "db9":
+		if _, err := db.ExecContext(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64) NULL`); err != nil {
+			return fmt.Errorf("ensure additive memory schema: content_hash: %w", err)
+		}
+		if _, err := db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_memory_content_hash ON memories(agent_id, state, content_hash)`); err != nil {
+			return fmt.Errorf("ensure additive memory schema: content_hash index: %w", err)
+		}
+		for _, stmt := range postgresMemoryEntitiesSchemaStatements() {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("ensure additive memory schema: memory_entities: %w", err)
+			}
+		}
+	default:
+		exists, err := tenant.ColumnExists(ctx, db, "memories", "content_hash")
+		if err != nil {
+			return fmt.Errorf("ensure additive memory schema: check content_hash: %w", err)
+		}
+		if !exists {
+			if _, err := db.ExecContext(ctx, `ALTER TABLE memories ADD COLUMN content_hash VARCHAR(64) NULL AFTER embedding`); err != nil && !tenant.IsColumnExistsError(err) {
+				return fmt.Errorf("ensure additive memory schema: content_hash: %w", err)
+			}
+		}
+		indexExists, err := tenant.IndexExists(ctx, db, "memories", "idx_memory_content_hash")
+		if err != nil {
+			return fmt.Errorf("ensure additive memory schema: check content_hash index: %w", err)
+		}
+		if !indexExists {
+			if _, err := db.ExecContext(ctx, `CREATE INDEX idx_memory_content_hash ON memories(agent_id, state, content_hash)`); err != nil && !tenant.IsIndexExistsError(err) {
+				return fmt.Errorf("ensure additive memory schema: content_hash index: %w", err)
+			}
+		}
+		if _, err := db.ExecContext(ctx, tenant.BuildMemoryEntitiesSchema(backend)); err != nil {
+			return fmt.Errorf("ensure additive memory schema: memory_entities: %w", err)
+		}
+	}
+	return nil
+}
+
+func postgresMemoryEntitiesSchemaStatements() []string {
+	return []string{
+		`CREATE TABLE IF NOT EXISTS memory_entities (
+			agent_id      VARCHAR(100) NOT NULL DEFAULT '',
+			entity_key    VARCHAR(64)  NOT NULL,
+			entity_text   VARCHAR(255) NOT NULL,
+			entity_type   VARCHAR(32)  NOT NULL,
+			memory_id     VARCHAR(36)  NOT NULL,
+			created_at    TIMESTAMPTZ  DEFAULT NOW(),
+			PRIMARY KEY (agent_id, entity_key, memory_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_memory_entities_memory ON memory_entities(memory_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_memory_entities_lookup ON memory_entities(agent_id, entity_key)`,
+	}
+}
+
 func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, tenant.BuildSessionsSchema(s.autoModel, s.autoDims, s.clientDims)); err != nil {
 		return fmt.Errorf("ensure sessions table: create: %w", err)

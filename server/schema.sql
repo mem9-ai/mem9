@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS memories (
   tags            JSON,
   metadata        JSON,
   embedding       VECTOR(1536)    NULL,
+  content_hash    VARCHAR(64)     NULL,
 
   -- Classification
   memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned'
@@ -54,7 +55,20 @@ CREATE TABLE IF NOT EXISTS memories (
   INDEX idx_state               (state),
   INDEX idx_agent               (agent_id),
   INDEX idx_session             (session_id),
+  INDEX idx_memory_content_hash (agent_id, state, content_hash),
   INDEX idx_updated             (updated_at)
+);
+
+CREATE TABLE IF NOT EXISTS memory_entities (
+  agent_id      VARCHAR(100)  NOT NULL DEFAULT '',
+  entity_key    VARCHAR(64)   NOT NULL,
+  entity_text   VARCHAR(255)  NOT NULL,
+  entity_type   VARCHAR(32)   NOT NULL,
+  memory_id     VARCHAR(36)   NOT NULL,
+  created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (agent_id, entity_key, memory_id),
+  INDEX idx_memory_entities_memory (memory_id),
+  INDEX idx_memory_entities_lookup (agent_id, entity_key)
 );
 
 -- Full-text search index (TiDB Cloud Serverless with MULTILINGUAL tokenizer).

@@ -98,6 +98,7 @@ func createTables(db *sql.DB) error {
 		tags            JSON,
 		metadata        JSON,
 		embedding       TEXT            NULL,
+		content_hash    VARCHAR(64)     NULL,
 		memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned',
 		agent_id        VARCHAR(100)    NULL,
 		session_id      VARCHAR(100)    NULL,
@@ -112,10 +113,25 @@ func createTables(db *sql.DB) error {
 		INDEX idx_state               (state),
 		INDEX idx_agent               (agent_id),
 		INDEX idx_session             (session_id),
+		INDEX idx_memory_content_hash (agent_id, state, content_hash),
 		INDEX idx_updated             (updated_at)
 	)`)
 	if err != nil {
 		return fmt.Errorf("create memories table: %w", err)
+	}
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS memory_entities (
+		agent_id      VARCHAR(100)  NOT NULL DEFAULT '',
+		entity_key    VARCHAR(64)   NOT NULL,
+		entity_text   VARCHAR(255)  NOT NULL,
+		entity_type   VARCHAR(32)   NOT NULL,
+		memory_id     VARCHAR(36)   NOT NULL,
+		created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (agent_id, entity_key, memory_id),
+		INDEX idx_memory_entities_memory (memory_id),
+		INDEX idx_memory_entities_lookup (agent_id, entity_key)
+	)`)
+	if err != nil {
+		return fmt.Errorf("create memory_entities table: %w", err)
 	}
 
 	return nil
@@ -124,7 +140,7 @@ func createTables(db *sql.DB) error {
 func truncateAll(db *sql.DB) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	for _, table := range []string{"tenants", "memories"} {
+	for _, table := range []string{"tenants", "memory_entities", "memories"} {
 		if _, err := db.ExecContext(ctx, "DELETE FROM "+table); err != nil {
 			return fmt.Errorf("truncate %s: %w", table, err)
 		}
@@ -136,6 +152,9 @@ func truncateMemories(t *testing.T) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if _, err := testDB.ExecContext(ctx, "DELETE FROM memory_entities"); err != nil {
+		t.Fatalf("truncate memory_entities: %v", err)
+	}
 	if _, err := testDB.ExecContext(ctx, "DELETE FROM memories"); err != nil {
 		t.Fatalf("truncate memories: %v", err)
 	}

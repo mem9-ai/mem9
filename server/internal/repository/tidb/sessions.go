@@ -540,6 +540,34 @@ func (r *SessionRepo) ListBySessionIDs(ctx context.Context, sessionIDs []string,
 	return scanSessionDomainRows(rows)
 }
 
+func (r *SessionRepo) ListRecentBySessionID(ctx context.Context, sessionID string, limit int) ([]*domain.Session, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" || limit <= 0 {
+		return nil, nil
+	}
+
+	sqlQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type,
+		content_hash, tags, state, created_at, updated_at
+		FROM (
+			SELECT *
+			FROM sessions
+			WHERE session_id = ? AND state = 'active'
+			ORDER BY created_at DESC, seq DESC, id DESC
+			LIMIT ?
+		) t
+		ORDER BY created_at ASC, seq ASC, id ASC`
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, sessionID, limit)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("sessions list recent by session id: cluster_id=%s: %w", r.clusterID, err)
+	}
+	defer rows.Close()
+	return scanSessionDomainRows(rows)
+}
+
 func scanSessionDomainRows(rows *sql.Rows) ([]*domain.Session, error) {
 	var result []*domain.Session
 	for rows.Next() {

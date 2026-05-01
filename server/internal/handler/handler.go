@@ -94,6 +94,13 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		if cached, ok := s.svcCache.Load(key); ok {
 			return cached.(resolvedSvc)
 		}
+		if s.tenant != nil {
+			if err := s.tenant.EnsureAdditiveMemorySchema(context.Background(), auth.TenantDB); err != nil {
+				s.logger.Warn("additive memory schema migration failed",
+					"cluster_id", auth.ClusterID,
+					"err", err)
+			}
+		}
 		memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		svc := resolvedSvc{
@@ -116,6 +123,14 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	key := tenantSvcKey(fmt.Sprintf("%s-%p", auth.TenantID, auth.TenantDB))
 	if cached, ok := s.svcCache.Load(key); ok {
 		return cached.(resolvedSvc)
+	}
+	if s.tenant != nil {
+		if err := s.tenant.EnsureAdditiveMemorySchema(context.Background(), auth.TenantDB); err != nil {
+			s.logger.Warn("additive memory schema migration failed",
+				"cluster_id", auth.ClusterID,
+				"tenant", auth.TenantID,
+				"err", err)
+		}
 	}
 	memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
