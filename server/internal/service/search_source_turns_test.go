@@ -36,8 +36,6 @@ func withSearchEnv(t *testing.T, values map[string]string, fn func()) {
 }
 
 func TestDecorateSearchResultsWithSourceTurnsSelectsSpeakerAwareTurn(t *testing.T) {
-	t.Parallel()
-
 	withSearchEnv(t, map[string]string{
 		"MEM9_SOURCE_TURN_PER_MEMORY_LIMIT": "1",
 		"MEM9_SOURCE_TURN_TOTAL_LIMIT":      "1",
@@ -76,9 +74,37 @@ func TestDecorateSearchResultsWithSourceTurnsSelectsSpeakerAwareTurn(t *testing.
 	})
 }
 
-func TestDecorateSearchResultsWithSourceTurnsClearsUnselectedProvenance(t *testing.T) {
-	t.Parallel()
+func TestDecorateSearchResultsWithSourceTurnsSelectsSubjectSpeakerTurn(t *testing.T) {
+	withSearchEnv(t, map[string]string{
+		"MEM9_SOURCE_TURN_PER_MEMORY_LIMIT": "1",
+		"MEM9_SOURCE_TURN_TOTAL_LIMIT":      "1",
+		"MEM9_SOURCE_TURN_MIN_SCORE":        "2",
+	}, func() {
+		memories := decorateSearchResultsWithSourceTurns([]domain.Memory{
+			{
+				ID:         "m1",
+				Content:    "Melanie discussed relationship status and Caroline discussed Pride events.",
+				MemoryType: domain.TypeInsight,
+				Metadata: SetSourceProvenanceMetadata(nil, []int{1, 2}, []sourceTurnMetadata{
+					{Seq: 1, Content: "[date:3 July 2023] [speaker:Caroline] I went to Pride last weekend and met people from a support group."},
+					{Seq: 2, Content: "[date:3 July 2023] [speaker:Melanie] I'm single right now and focusing on my kids."},
+				}),
+			},
+		}, "What is Melanie's relationship status?")
 
+		if len(memories) != 1 {
+			t.Fatalf("expected 1 memory, got %d", len(memories))
+		}
+		if strings.Contains(memories[0].Content, "[speaker:Caroline]") {
+			t.Fatalf("expected Caroline source turn pruned, got content %q", memories[0].Content)
+		}
+		if !strings.Contains(memories[0].Content, "[speaker:Melanie]") {
+			t.Fatalf("expected Melanie source turn included, got content %q", memories[0].Content)
+		}
+	})
+}
+
+func TestDecorateSearchResultsWithSourceTurnsClearsUnselectedProvenance(t *testing.T) {
 	withSearchEnv(t, map[string]string{
 		"MEM9_SOURCE_TURN_MIN_SCORE": "7",
 	}, func() {

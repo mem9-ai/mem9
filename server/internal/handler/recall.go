@@ -212,7 +212,7 @@ func (s *Server) defaultConfidenceRecallSearch(
 	mixed, cutoffReason, stats := selectMixedRecallCandidates(profile, budget-len(pinned), append(insightCandidates, sessionCandidates...), seen)
 	selectionDuration := time.Since(selectionStart)
 
-	memories := append(pinned, mixed...)
+	memories := service.FinalizeSearchResults(append(pinned, mixed...), filter.Query)
 	slog.InfoContext(ctx, "confidence recall search",
 		"cluster_id", auth.ClusterID,
 		"query_len", len(filter.Query),
@@ -293,6 +293,7 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 		memories, cutoffReason = selectTopRecallCandidates(profile.shape, effectiveFilter.Limit, minConfidence, applyGapCutoff, candidates, nil)
 		stats.mode = "top"
 	}
+	memories = service.FinalizeSearchResults(memories, filter.Query)
 	selectionDuration := time.Since(selectionStart)
 
 	pinnedSelected := 0

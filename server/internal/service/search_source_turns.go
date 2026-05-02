@@ -17,6 +17,8 @@ const (
 )
 
 var targetSpeakerQuestionRe = regexp.MustCompile(`(?i)\bhow\s+(?:does|did)\s+([a-z][a-z'-]*)\s+(?:describe|feel|respond|react|view|think|say)\b`)
+var subjectSpeakerQuestionRe = regexp.MustCompile(`(?i)\b(?:did|does|do|was|were|is|are|has|have|had|will|would|can|could|should)\s+([a-z][a-z'-]*)\b`)
+var possessiveSpeakerQuestionRe = regexp.MustCompile(`(?i)\b([a-z][a-z'-]*)'s\b`)
 
 type searchSourceTurnCandidate struct {
 	memoryIndex int
@@ -25,7 +27,9 @@ type searchSourceTurnCandidate struct {
 	turn        sourceTurnMetadata
 }
 
-func finalizeSearchResults(memories []domain.Memory, query string) []domain.Memory {
+// FinalizeSearchResults applies query-time response shaping that should happen
+// after all recall pools have been merged and selected.
+func FinalizeSearchResults(memories []domain.Memory, query string) []domain.Memory {
 	return populateRelativeAge(decorateSearchResultsWithSourceTurns(memories, query))
 }
 
@@ -197,6 +201,7 @@ func scoreSearchSourceTurn(question, memoryContent, sourceContent string) int {
 	memoryTokens := tokenSet(tokenizeForSourceTurnScoring(memoryContent))
 	speakerTokens := tokenizeForSourceTurnScoring(extractSearchSpeakerLabel(sourceContent))
 	targetSpeakerTokens := tokenSet(extractSearchTargetSpeakerTokens(question))
+	subjectSpeakerTokens := tokenSet(extractSearchSubjectSpeakerTokens(question))
 	questionSet := tokenSet(questionTokens)
 
 	score := 0
@@ -212,10 +217,24 @@ func scoreSearchSourceTurn(question, memoryContent, sourceContent string) int {
 	for _, token := range speakerTokens {
 		if _, ok := targetSpeakerTokens[token]; ok {
 			score += 8
+		} else if _, ok := subjectSpeakerTokens[token]; ok {
+			score += 8
 		} else if len(targetSpeakerTokens) == 0 {
 			if _, ok := questionSet[token]; ok {
 				score += 3
 			}
+		}
+	}
+	if len(subjectSpeakerTokens) > 0 && len(speakerTokens) > 0 {
+		matchesSubject := false
+		for _, token := range speakerTokens {
+			if _, ok := subjectSpeakerTokens[token]; ok {
+				matchesSubject = true
+				break
+			}
+		}
+		if !matchesSubject {
+			score -= 4
 		}
 	}
 
@@ -248,11 +267,27 @@ func extractSearchTargetSpeakerTokens(question string) []string {
 	return tokenizeForSourceTurnScoring(match[1])
 }
 
+func extractSearchSubjectSpeakerTokens(question string) []string {
+	for _, re := range []*regexp.Regexp{subjectSpeakerQuestionRe, possessiveSpeakerQuestionRe} {
+		match := re.FindStringSubmatch(question)
+		if len(match) < 2 {
+			continue
+		}
+		tokens := tokenizeForSourceTurnScoring(match[1])
+		if len(tokens) == 0 {
+			continue
+		}
+		return tokens
+	}
+	return nil
+}
+
 func tokenizeForSourceTurnScoring(text string) []string {
 	matches := sourceProvenanceTokenRe.FindAllString(strings.ToLower(text), -1)
 	out := make([]string, 0, len(matches))
 	for _, token := range matches {
 		token = strings.Trim(token, "'")
+		token = strings.TrimSuffix(token, "'s")
 		if len([]rune(token)) < 2 {
 			continue
 		}
