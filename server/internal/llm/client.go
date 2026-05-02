@@ -159,6 +159,7 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 
 	enableThinking := disableThinkingOptions(c.model)
 	reasoningSplit := supportsReasoningSplit(c.model)
+	requireThinkingDisabled := enableThinking != nil && isQwenModel(c.model)
 
 	result, err := c.doRequest(ctx, chatRequest{
 		Model:          c.model,
@@ -172,6 +173,9 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 		// If 400 and thinking parameters were sent, retry without them (provider may not support them).
 		var httpErr *HTTPStatusError
 		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (enableThinking != nil || reasoningSplit != nil) && isUnsupportedThinkingParamError(httpErr.Body) {
+			if requireThinkingDisabled {
+				return result, err
+			}
 			recordRetryMetric(scope, "thinking_param_400_fallback")
 			slog.Warn("LLM rejected thinking parameters (HTTP 400), retrying without them", "model", c.model)
 			return c.doRequest(ctx, chatRequest{
@@ -301,12 +305,15 @@ func (c *Client) DebugLLM() bool {
 }
 
 func disableThinkingOptions(model string) *bool {
-	lower := strings.ToLower(model)
-	if strings.Contains(lower, "qwen") && strings.Contains(lower, "plus") && !strings.Contains(lower, "flash") {
+	if isQwenModel(model) {
 		enableThinking := false
 		return &enableThinking
 	}
 	return nil
+}
+
+func isQwenModel(model string) bool {
+	return strings.Contains(strings.ToLower(model), "qwen")
 }
 
 func supportsReasoningSplit(model string) *bool {

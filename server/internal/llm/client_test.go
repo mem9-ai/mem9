@@ -236,14 +236,14 @@ func TestComplete(t *testing.T) {
 		}
 	})
 
-	t.Run("qwen flash model omits thinking params", func(t *testing.T) {
+	t.Run("qwen flash model disables thinking with enable_thinking", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var req chatRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				t.Fatalf("decode request: %v", err)
 			}
-			if req.EnableThinking != nil {
-				t.Fatalf("enable_thinking = %v, want nil", req.EnableThinking)
+			if req.EnableThinking == nil || *req.EnableThinking {
+				t.Fatalf("enable_thinking = %v, want %v", req.EnableThinking, false)
 			}
 			if req.ReasoningSplit != nil {
 				t.Fatalf("reasoning_split = %v, want nil", req.ReasoningSplit)
@@ -265,6 +265,37 @@ func TestComplete(t *testing.T) {
 		}
 		if got != "hello" {
 			t.Fatalf("content = %q, want %q", got, "hello")
+		}
+	})
+
+	t.Run("qwen thinking disable rejection does not retry without enable_thinking", func(t *testing.T) {
+		var requestCount int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount++
+			var req chatRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if req.EnableThinking == nil || *req.EnableThinking {
+				t.Fatalf("enable_thinking = %v, want %v", req.EnableThinking, false)
+			}
+
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"unsupported parameter: enable_thinking"}}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "qwen3.6-flash"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		_, err := client.Complete(context.Background(), "sys", "user")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if requestCount != 1 {
+			t.Fatalf("request count = %d, want 1", requestCount)
 		}
 	})
 
