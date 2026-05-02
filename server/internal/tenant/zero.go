@@ -9,12 +9,16 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
 type ZeroClient struct {
-	baseURL    string
-	httpClient *http.Client
+	baseURL     string
+	httpClient  *http.Client
+	limiter     *zeroCreateLimiter
+	maxAttempts int
+	retryBase   time.Duration
 }
 
 type ZeroInstance struct {
@@ -29,11 +33,103 @@ type ZeroInstance struct {
 
 func NewZeroClient(baseURL string) *ZeroClient {
 	return &ZeroClient{
-		baseURL: baseURL,
+		baseURL:     baseURL,
+		limiter:     newZeroCreateLimiter(2, 10),
+		maxAttempts: 5,
+		retryBase:   2 * time.Second,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
+}
+
+type zeroCreateLimiter struct {
+	mu        sync.Mutex
+	perSecond int
+	perMinute int
+	calls     []time.Time
+}
+
+func newZeroCreateLimiter(perSecond, perMinute int) *zeroCreateLimiter {
+	return &zeroCreateLimiter{
+		perSecond: perSecond,
+		perMinute: perMinute,
+	}
+}
+
+func (l *zeroCreateLimiter) Wait(ctx context.Context) error {
+	if l == nil {
+		return nil
+	}
+	for {
+		delay := l.reserveDelay(time.Now())
+		if delay <= 0 {
+			return nil
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func (l *zeroCreateLimiter) reserveDelay(now time.Time) time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	minuteCutoff := now.Add(-time.Minute)
+	secondCutoff := now.Add(-time.Second)
+	kept := l.calls[:0]
+	recentSecond := 0
+	for _, t := range l.calls {
+		if t.After(minuteCutoff) {
+			kept = append(kept, t)
+			if t.After(secondCutoff) {
+				recentSecond++
+			}
+		}
+	}
+	l.calls = kept
+
+	var delay time.Duration
+	if l.perSecond > 0 && recentSecond >= l.perSecond {
+		threshold := now
+		seen := 0
+		for _, t := range l.calls {
+			if t.After(secondCutoff) {
+				seen++
+				if seen == recentSecond-l.perSecond+1 {
+					threshold = t.Add(time.Second)
+					break
+				}
+			}
+		}
+		delay = maxDuration(delay, time.Until(threshold))
+	}
+	if l.perMinute > 0 && len(l.calls) >= l.perMinute {
+		threshold := l.calls[len(l.calls)-l.perMinute].Add(time.Minute)
+		delay = maxDuration(delay, time.Until(threshold))
+	}
+	if delay > 0 {
+		return delay + deterministicLimiterJitter(now)
+	}
+
+	l.calls = append(l.calls, now)
+	return 0
+}
+
+func deterministicLimiterJitter(now time.Time) time.Duration {
+	return time.Duration(now.UnixNano()%250) * time.Millisecond
+}
+
+func maxDuration(a, b time.Duration) time.Duration {
+	if b > a {
+		return b
+	}
+	return a
 }
 
 type zeroCreateRequest struct {
@@ -63,50 +159,98 @@ func (c *ZeroClient) CreateInstance(ctx context.Context, tag string) (*ZeroInsta
 		return nil, fmt.Errorf("zero api create instance: encode request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return nil, fmt.Errorf("zero api create instance: build request: %w", err)
+	maxAttempts := c.maxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 1
 	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("zero api create instance: request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("zero api create instance: read response: %w", err)
+	retryBase := c.retryBase
+	if retryBase <= 0 {
+		retryBase = time.Second
 	}
 
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		snippet := string(body)
-		if len(snippet) > 1024 {
-			snippet = snippet[:1024]
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if err := c.limiter.Wait(ctx); err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("zero api create instance: status %d: %s", resp.StatusCode, snippet)
-	}
 
-	var parsed zeroCreateResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("zero api create instance: decode response: %w", err)
-	}
-
-	inst := &ZeroInstance{
-		ID:       parsed.Instance.ID,
-		Host:     parsed.Instance.Connection.Host,
-		Port:     parsed.Instance.Connection.Port,
-		Username: parsed.Instance.Connection.Username,
-		Password: parsed.Instance.Connection.Password,
-		ClaimURL: parsed.Instance.ClaimInfo.ClaimURL,
-	}
-	if parsed.Instance.ExpiresAt != "" {
-		if t, err := time.Parse(time.RFC3339, parsed.Instance.ExpiresAt); err == nil {
-			inst.ClaimExpiresAt = &t
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+		if err != nil {
+			return nil, fmt.Errorf("zero api create instance: build request: %w", err)
 		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("zero api create instance: request failed: %w", err)
+		}
+
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("zero api create instance: read response: %w", readErr)
+		}
+
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			snippet := string(body)
+			if len(snippet) > 1024 {
+				snippet = snippet[:1024]
+			}
+			if resp.StatusCode == http.StatusTooManyRequests && attempt < maxAttempts {
+				if err := sleepContext(ctx, zeroRateLimitRetryDelay(snippet, retryBase, attempt)); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			return nil, fmt.Errorf("zero api create instance: status %d: %s", resp.StatusCode, snippet)
+		}
+
+		var parsed zeroCreateResponse
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return nil, fmt.Errorf("zero api create instance: decode response: %w", err)
+		}
+
+		inst := &ZeroInstance{
+			ID:       parsed.Instance.ID,
+			Host:     parsed.Instance.Connection.Host,
+			Port:     parsed.Instance.Connection.Port,
+			Username: parsed.Instance.Connection.Username,
+			Password: parsed.Instance.Connection.Password,
+			ClaimURL: parsed.Instance.ClaimInfo.ClaimURL,
+		}
+		if parsed.Instance.ExpiresAt != "" {
+			if t, err := time.Parse(time.RFC3339, parsed.Instance.ExpiresAt); err == nil {
+				inst.ClaimExpiresAt = &t
+			}
+		}
+		return inst, nil
 	}
-	return inst, nil
+	return nil, fmt.Errorf("zero api create instance: exhausted retries")
+}
+
+func zeroRateLimitRetryDelay(body string, base time.Duration, attempt int) time.Duration {
+	lower := strings.ToLower(body)
+	switch {
+	case strings.Contains(lower, "per minute"):
+		return time.Duration(attempt*5) * base
+	case strings.Contains(lower, "per second"):
+		return time.Duration(attempt) * base
+	default:
+		return time.Duration(attempt) * base
+	}
+}
+
+func sleepContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // ZeroProvisioner implements service.Provisioner for TiDB Zero API.

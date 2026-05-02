@@ -202,6 +202,7 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 		reconcileDuration     time.Duration
 		factsCount            int
 		assistantFactsCount   int
+		factsMissingSourceSeq int
 		assistantMessages     int
 		status                = "ok"
 	)
@@ -217,6 +218,7 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 			"facts_per_message", factsPerMessage,
 			"assistant_messages", assistantMessages,
 			"assistant_facts", assistantFactsCount,
+			"facts_missing_source_seq", factsMissingSourceSeq,
 			"status", status,
 			"bulk_create_ms", bulkCreateDuration.Milliseconds(),
 			"extract_phase1_ms", extractPhase1Duration.Milliseconds(),
@@ -252,6 +254,7 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	factsCount = len(phase1.Facts)
 	assistantMessages = countMessagesWithRole(req.Messages, "assistant")
 	assistantFactsCount = countFactsWithRole(phase1.Facts, req.Messages, "assistant")
+	factsMissingSourceSeq = countFactsMissingSourceSeq(phase1.Facts)
 
 	var wg sync.WaitGroup
 	var reconcileResult *service.IngestResult
@@ -391,6 +394,16 @@ func countFactsWithRole(facts []service.ExtractedFact, messages []service.Ingest
 				count++
 				break
 			}
+		}
+	}
+	return count
+}
+
+func countFactsMissingSourceSeq(facts []service.ExtractedFact) int {
+	var count int
+	for _, fact := range facts {
+		if len(fact.SourceSeqs) == 0 {
+			count++
 		}
 	}
 	return count

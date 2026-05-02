@@ -130,7 +130,7 @@ func (c *Client) CompleteJSON(ctx context.Context, system, user string) (string,
 	result, err := c.complete(ctx, system, user, &responseFormat{Type: "json_object"}, CallScope{})
 	if err != nil {
 		var httpErr *HTTPStatusError
-		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest {
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && isUnsupportedResponseFormatError(httpErr.Body) {
 			slog.Warn("LLM rejected response_format:json_object (HTTP 400), retrying without it")
 			return c.complete(ctx, system, user, nil, CallScope{})
 		}
@@ -142,7 +142,7 @@ func (c *Client) CompleteJSONWithScope(ctx context.Context, system, user string,
 	result, err := c.complete(ctx, system, user, &responseFormat{Type: "json_object"}, scope)
 	if err != nil {
 		var httpErr *HTTPStatusError
-		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest {
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && isUnsupportedResponseFormatError(httpErr.Body) {
 			recordRetryMetric(scope, "response_format_400_fallback")
 			slog.Warn("LLM rejected response_format:json_object (HTTP 400), retrying without it")
 			return c.complete(ctx, system, user, nil, scope)
@@ -171,7 +171,7 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 	if err != nil {
 		// If 400 and thinking parameters were sent, retry without them (provider may not support them).
 		var httpErr *HTTPStatusError
-		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (enableThinking != nil || reasoningSplit != nil) {
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (enableThinking != nil || reasoningSplit != nil) && isUnsupportedThinkingParamError(httpErr.Body) {
 			recordRetryMetric(scope, "thinking_param_400_fallback")
 			slog.Warn("LLM rejected thinking parameters (HTTP 400), retrying without them", "model", c.model)
 			return c.doRequest(ctx, chatRequest{
@@ -301,7 +301,8 @@ func (c *Client) DebugLLM() bool {
 }
 
 func disableThinkingOptions(model string) *bool {
-	if strings.Contains(strings.ToLower(model), "qwen") {
+	lower := strings.ToLower(model)
+	if strings.Contains(lower, "qwen") && strings.Contains(lower, "plus") && !strings.Contains(lower, "flash") {
 		enableThinking := false
 		return &enableThinking
 	}
@@ -314,6 +315,20 @@ func supportsReasoningSplit(model string) *bool {
 		return &reasoningSplit
 	}
 	return nil
+}
+
+func isUnsupportedResponseFormatError(body string) bool {
+	lower := strings.ToLower(body)
+	return strings.Contains(lower, "response_format") ||
+		strings.Contains(lower, "json_object") ||
+		(strings.Contains(lower, "unsupported") && strings.Contains(lower, "format"))
+}
+
+func isUnsupportedThinkingParamError(body string) bool {
+	lower := strings.ToLower(body)
+	return strings.Contains(lower, "enable_thinking") ||
+		strings.Contains(lower, "reasoning_split") ||
+		(strings.Contains(lower, "thinking") && (strings.Contains(lower, "unsupported") || strings.Contains(lower, "unknown")))
 }
 
 func StripMarkdownFences(s string) string {

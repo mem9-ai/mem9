@@ -406,6 +406,62 @@ func TestExtractPhase1AnnotatesSourceSeqs(t *testing.T) {
 	}
 }
 
+func TestExtractPhase1AnnotatesAssistantSourceSeqs(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp := `{"facts": [{"text": "Maria adopted a cat named Bailey", "tags": ["pets"], "attributed_to": "Maria"}], "message_tags": [["pets"]]}`
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	result, err := svc.ExtractPhase1(context.Background(), []IngestMessage{
+		{Role: "assistant", Content: "[date:1 January 2023] [speaker:Maria] I adopted a cat named Bailey.", Seq: intPtr(42)},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+	if len(result.Facts) != 1 {
+		t.Fatalf("expected 1 fact, got %d", len(result.Facts))
+	}
+	if !reflect.DeepEqual(result.Facts[0].SourceSeqs, []int{42}) {
+		t.Fatalf("expected assistant source seq [42], got %v", result.Facts[0].SourceSeqs)
+	}
+	if len(result.Facts[0].SourceTurns) != 1 || result.Facts[0].SourceTurns[0].Seq != 42 {
+		t.Fatalf("expected assistant source turn seq [42], got %+v", result.Facts[0].SourceTurns)
+	}
+}
+
+func TestAnnotateFactsWithSourceSeqsFallsBackToSingleAssistantMessage(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "assistant", Content: "[date:1 January 2023] [speaker:Maria] I took the overnight train to Porto.", Seq: intPtr(77)},
+	}, maxExtractionConversationRunes)
+
+	facts := annotateFactsWithSourceSeqs(input, []ExtractedFact{{
+		Text: "Maria prefers slow travel for memorable trips",
+		Tags: []string{"travel"},
+	}})
+	if len(facts) != 1 {
+		t.Fatalf("expected 1 fact, got %d", len(facts))
+	}
+	if !reflect.DeepEqual(facts[0].SourceSeqs, []int{77}) {
+		t.Fatalf("expected fallback source seq [77], got %v", facts[0].SourceSeqs)
+	}
+	if len(facts[0].SourceTurns) != 1 || facts[0].SourceTurns[0].Seq != 77 {
+		t.Fatalf("expected fallback source turn seq [77], got %+v", facts[0].SourceTurns)
+	}
+}
+
 func TestReconcilePhase2PersistsSourceSeqMetadata(t *testing.T) {
 	t.Parallel()
 

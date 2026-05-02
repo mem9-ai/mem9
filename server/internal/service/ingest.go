@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -37,6 +38,8 @@ const (
 
 var formattedConversationMessageRE = regexp.MustCompile(`(?:^|\n\n)([A-Za-z][A-Za-z0-9_-]*): `)
 var extractionDateTagRE = regexp.MustCompile(`(?i)\[date:\s*([^\]]+)\]`)
+var nearDupShadowEnabled = strings.EqualFold(os.Getenv("MNEMO_NEAR_DUP_SHADOW"), "1") ||
+	strings.EqualFold(os.Getenv("MNEMO_NEAR_DUP_SHADOW"), "true")
 
 // IngestRequest is the input for the ingest pipeline.
 type IngestRequest struct {
@@ -1113,13 +1116,14 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 		)
 	}()
 
-	// Shadow mode: record cosine similarity of the nearest existing memory to each
-	// extracted fact. Facts always pass through unchanged — suppression is deferred
-	// until the score distribution is analyzed from prod metrics.
-	// Once a threshold is validated, add: if score >= threshold { drop or annotate }
-	for i := range facts {
-		if id, score, err := s.memories.NearDupSearch(ctx, projectReconcileFactText(facts[i])); err == nil && id != "" {
-			metrics.NearDupCosineScore.Observe(score)
+	// Optional shadow mode for near-duplicate score collection. It is intentionally
+	// off by default because it adds one vector query per extracted fact and can
+	// dominate by-turn ingest workloads.
+	if nearDupShadowEnabled {
+		for i := range facts {
+			if id, score, err := s.memories.NearDupSearch(ctx, projectReconcileFactText(facts[i])); err == nil && id != "" {
+				metrics.NearDupCosineScore.Observe(score)
+			}
 		}
 	}
 

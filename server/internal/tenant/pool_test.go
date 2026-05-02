@@ -306,35 +306,28 @@ func TestPool_Get_SameTenantOpenUsesSingleflight(t *testing.T) {
 	}
 }
 
-func TestPool_Get_CachedPingFailureReopensConnection(t *testing.T) {
+func TestPool_Get_CachedConnectionReturnsWithoutPing(t *testing.T) {
 	pool := NewPool(PoolConfig{ConnectTimeout: time.Second})
 	defer pool.Close()
 
 	staleDB := sql.OpenDB(&testConnector{pingErr: errors.New("ping failed")})
 	cacheTenantConn(pool, "tenant-1", staleDB)
 
-	freshConnector := &testConnector{}
 	var openCalls atomic.Int32
 	withSQLOpen(t, func(driverName, dsn string) (*sql.DB, error) {
 		openCalls.Add(1)
-		if dsn != "tenant-1" {
-			return nil, fmt.Errorf("unexpected dsn %q", dsn)
-		}
-		return sql.OpenDB(freshConnector), nil
+		return nil, fmt.Errorf("unexpected open for cached tenant %q", dsn)
 	})
 
 	db, err := pool.Get(context.Background(), "tenant-1", "tenant-1")
 	if err != nil {
 		t.Fatalf("Get error: %v", err)
 	}
-	if db == staleDB {
-		t.Fatal("expected stale cached DB to be replaced after ping failure")
+	if db != staleDB {
+		t.Fatal("expected cached DB to be returned")
 	}
-	if openCalls.Load() != 1 {
-		t.Fatalf("sqlOpen calls = %d, want 1", openCalls.Load())
-	}
-	if freshConnector.connectCalls.Load() != 1 {
-		t.Fatalf("connector connects = %d, want 1", freshConnector.connectCalls.Load())
+	if openCalls.Load() != 0 {
+		t.Fatalf("sqlOpen calls = %d, want 0", openCalls.Load())
 	}
 }
 

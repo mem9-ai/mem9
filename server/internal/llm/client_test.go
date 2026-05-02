@@ -207,7 +207,7 @@ func TestComplete(t *testing.T) {
 		}
 	})
 
-	t.Run("qwen model disables thinking with enable_thinking", func(t *testing.T) {
+	t.Run("qwen plus model disables thinking with enable_thinking", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var req chatRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -223,6 +223,38 @@ func TestComplete(t *testing.T) {
 		defer server.Close()
 
 		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "qwen-plus"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		got, err := client.Complete(context.Background(), "sys", "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "hello" {
+			t.Fatalf("content = %q, want %q", got, "hello")
+		}
+	})
+
+	t.Run("qwen flash model omits thinking params", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req chatRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if req.EnableThinking != nil {
+				t.Fatalf("enable_thinking = %v, want nil", req.EnableThinking)
+			}
+			if req.ReasoningSplit != nil {
+				t.Fatalf("reasoning_split = %v, want nil", req.ReasoningSplit)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "qwen3-flash"})
 		if client == nil {
 			t.Fatal("expected client, got nil")
 		}
@@ -276,7 +308,7 @@ func TestComplete(t *testing.T) {
 
 			if len(requests) == 1 {
 				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(`{"error":{"message":"unsupported param"}}`))
+				_, _ = w.Write([]byte(`{"error":{"message":"unsupported parameter: reasoning_split"}}`))
 				return
 			}
 
@@ -308,6 +340,82 @@ func TestComplete(t *testing.T) {
 		}
 	})
 
+}
+
+func TestCompleteJSONFallback(t *testing.T) {
+	t.Run("unsupported response format retries without response_format", func(t *testing.T) {
+		var requests []chatRequest
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req chatRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			requests = append(requests, req)
+
+			if len(requests) == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":{"message":"unsupported response_format json_object"}}`))
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"ok\":true}"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "test-model"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		got, err := client.CompleteJSON(context.Background(), "sys", "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != `{"ok":true}` {
+			t.Fatalf("content = %q, want JSON object", got)
+		}
+		if len(requests) != 2 {
+			t.Fatalf("request count = %d, want 2", len(requests))
+		}
+		if requests[0].ResponseFormat == nil {
+			t.Fatal("first request response_format = nil, want json_object")
+		}
+		if requests[1].ResponseFormat != nil {
+			t.Fatalf("second request response_format = %#v, want nil", requests[1].ResponseFormat)
+		}
+	})
+
+	t.Run("data inspection 400 does not retry without response_format", func(t *testing.T) {
+		var requestCount int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount++
+			var req chatRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if req.ResponseFormat == nil {
+				t.Fatal("response_format = nil, want json_object")
+			}
+
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"Data inspection failed: input contains invalid content"}}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "test-model"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		_, err := client.CompleteJSON(context.Background(), "sys", "user")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if requestCount != 1 {
+			t.Fatalf("request count = %d, want 1", requestCount)
+		}
+	})
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
