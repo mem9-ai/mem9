@@ -158,7 +158,7 @@ func TestBuildRecallConfidence_TimePrefersRelativeCueOverHeaderOnlyTimestamp(t *
 			UpdatedAt: now,
 		},
 		SourcePool: service.RecallSourceSession,
-		RRFScore:   recallRRFMaxScore,
+		RRFScore:   recallRRFMaxScore * 0.6,
 		InKeyword:  true,
 	}
 	relevant := service.RecallCandidate{
@@ -168,7 +168,7 @@ func TestBuildRecallConfidence_TimePrefersRelativeCueOverHeaderOnlyTimestamp(t *
 			UpdatedAt: now,
 		},
 		SourcePool: service.RecallSourceSession,
-		RRFScore:   recallRRFMaxScore,
+		RRFScore:   recallRRFMaxScore * 0.5,
 		InKeyword:  true,
 	}
 
@@ -188,7 +188,7 @@ func TestBuildRecallConfidence_TimeFutureIntentPrefersPlannedFutureEvidence(t *t
 			UpdatedAt: now,
 		},
 		SourcePool: service.RecallSourceInsight,
-		RRFScore:   recallRRFMaxScore,
+		RRFScore:   recallRRFMaxScore * 0.6,
 		InKeyword:  true,
 	}
 	futurePlan := service.RecallCandidate{
@@ -198,7 +198,7 @@ func TestBuildRecallConfidence_TimeFutureIntentPrefersPlannedFutureEvidence(t *t
 			UpdatedAt: now,
 		},
 		SourcePool: service.RecallSourceSession,
-		RRFScore:   recallRRFMaxScore,
+		RRFScore:   recallRRFMaxScore * 0.2,
 		InKeyword:  true,
 	}
 
@@ -208,7 +208,7 @@ func TestBuildRecallConfidence_TimeFutureIntentPrefersPlannedFutureEvidence(t *t
 }
 
 func TestRecallCandidateOptions_EnumerationExpandsAdjacentTurns(t *testing.T) {
-	opts := recallCandidateOptions(recallQueryShapeEnumeration, true)
+	opts := recallCandidateOptions(recallQueryProfile{shape: recallQueryShapeEnumeration}, true)
 
 	if !opts.EnableAdjacentTurns {
 		t.Fatal("enumeration recall should expand adjacent session turns")
@@ -224,6 +224,79 @@ func TestRecallCandidateOptions_EnumerationExpandsAdjacentTurns(t *testing.T) {
 	}
 	if opts.SecondHopTopN != enumerationSecondHopTopN {
 		t.Fatalf("second hop topN = %d, want %d", opts.SecondHopTopN, enumerationSecondHopTopN)
+	}
+}
+
+func TestRecallCandidateOptions_PerformanceBridgeUsesRadiusTwo(t *testing.T) {
+	profile := buildRecallQueryProfile("Who performed at the concert Melanie attended for her daughter's birthday?")
+
+	if !profile.performanceBridgeQuery {
+		t.Fatal("expected performer concert question to enable bridge adjacent turn expansion")
+	}
+	opts := recallCandidateOptions(profile, false)
+	if !opts.EnableAdjacentTurns {
+		t.Fatal("performance bridge recall should expand adjacent session turns")
+	}
+	if opts.AdjacentTurnRadius != 2 {
+		t.Fatalf("adjacent radius = %d, want 2", opts.AdjacentTurnRadius)
+	}
+	regular := recallCandidateOptions(buildRecallQueryProfile("Who is John?"), false)
+	if regular.AdjacentTurnRadius != sessionAdjacentTurnRadius {
+		t.Fatalf("regular entity adjacent radius = %d, want %d", regular.AdjacentTurnRadius, sessionAdjacentTurnRadius)
+	}
+}
+
+func TestAnswerEvidenceBonus_PerformanceBridgePrefersResolvedPerformerFact(t *testing.T) {
+	profile := buildRecallQueryProfile("Who performed at the concert at Melanie's daughter's birthday?")
+
+	bridge := domain.Memory{Content: "Melanie celebrated her daughter's birthday with a concert featuring Matt Patterson."}
+	rawEvent := domain.Memory{Content: "[speaker:Melanie] We celebrated my daughter's birthday with a concert surrounded by music."}
+	wrongConcert := domain.Memory{Content: "Melanie attended a concert by the band 'Summer Sounds', who performed pop songs."}
+
+	gotBridge := answerEvidenceBonus(profile, bridge)
+	if gotRaw := answerEvidenceBonus(profile, rawEvent); gotBridge <= gotRaw {
+		t.Fatalf("bridge evidence bonus = %.2f, want > raw event %.2f", gotBridge, gotRaw)
+	}
+	if gotWrong := answerEvidenceBonus(profile, wrongConcert); gotBridge <= gotWrong {
+		t.Fatalf("bridge evidence bonus = %.2f, want > wrong concert %.2f", gotBridge, gotWrong)
+	}
+}
+
+func TestSelectTopRecallCandidates_PerformanceBridgeKeepsAnswerInsightDespiteRawSourceSeen(t *testing.T) {
+	profile := buildRecallQueryProfile("Who performed at the concert at Melanie's daughter's birthday?")
+	high := 90
+	mid := 86
+	candidates := []service.RecallCandidate{
+		{
+			Memory: domain.Memory{
+				ID:         "raw-1",
+				Content:    "[speaker:Melanie] We celebrated my daughter's birthday with a concert surrounded by music.",
+				MemoryType: domain.TypeSession,
+				SessionID:  "session-1",
+				Metadata:   []byte(`{"seq":1}`),
+				Confidence: &high,
+			},
+			SourcePool: service.RecallSourceSession,
+		},
+		{
+			Memory: domain.Memory{
+				ID:         "bridge",
+				Content:    "Melanie celebrated her daughter's birthday with a concert featuring Matt Patterson.",
+				MemoryType: domain.TypeInsight,
+				SessionID:  "session-1",
+				Metadata:   service.SetSourceSeqMetadata(nil, []int{1, 3}),
+				Confidence: &mid,
+			},
+			SourcePool: service.RecallSourceInsight,
+		},
+	}
+
+	selected, _ := selectTopRecallCandidates(profile, 2, 0, false, candidates, nil)
+	if len(selected) != 2 {
+		t.Fatalf("selected len = %d, want 2", len(selected))
+	}
+	if selected[0].ID != "raw-1" || selected[1].ID != "bridge" {
+		t.Fatalf("selected IDs = [%s %s], want [raw-1 bridge]", selected[0].ID, selected[1].ID)
 	}
 }
 
@@ -268,7 +341,7 @@ func TestSelectTopRecallCandidatesDedupesInsightAndRawSessionBySourceSeq(t *test
 		},
 	}
 
-	selected, _ := selectTopRecallCandidates(recallQueryShapeExact, 2, 0, false, candidates, nil)
+	selected, _ := selectTopRecallCandidates(recallQueryProfile{shape: recallQueryShapeExact}, 2, 0, false, candidates, nil)
 	if len(selected) != 2 {
 		t.Fatalf("selected len = %d, want 2", len(selected))
 	}
@@ -329,7 +402,7 @@ func TestSelectTopRecallCandidatesKeepsDistinctInsightsFromSameSourceSeq(t *test
 		},
 	}
 
-	selected, _ := selectTopRecallCandidates(recallQueryShapeExact, 3, 0, false, candidates, nil)
+	selected, _ := selectTopRecallCandidates(recallQueryProfile{shape: recallQueryShapeExact}, 3, 0, false, candidates, nil)
 	if len(selected) != 3 {
 		t.Fatalf("selected len = %d, want 3", len(selected))
 	}

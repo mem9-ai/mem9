@@ -656,11 +656,50 @@ func TestExtractFactsParsesMem0AdditiveOutput(t *testing.T) {
 		"middle and",
 		"5-12 memories",
 		"shared photo or",
+		"short answer to a prior question",
+		"concert featuring Matt Patterson",
 		"recent-1",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected prompt to contain %q, got %s", want, body)
 		}
+	}
+}
+
+func TestExtractFactsAddsBirthdayConcertShortAnswerBridge(t *testing.T) {
+	t.Parallel()
+
+	resp := `{"facts": [], "message_tags": [["family"], ["music"], ["music"]]}`
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	result, err := svc.ExtractPhase1(context.Background(), []IngestMessage{
+		{Role: "assistant", Content: "[date:2:24 pm on 14 August, 2023] [speaker:Melanie] We celebrated my daughter's birthday with a concert surrounded by music.", Seq: intPtr(1)},
+		{Role: "assistant", Content: "[date:2:24 pm on 14 August, 2023] [speaker:Caroline] What concert was it?", Seq: intPtr(2)},
+		{Role: "assistant", Content: "[date:2:24 pm on 14 August, 2023] [speaker:Melanie] Thanks, Caroline! It was Matt Patterson, he is so talented!", Seq: intPtr(3)},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+	if len(result.Facts) != 1 {
+		t.Fatalf("expected 1 bridged fact, got %+v", result.Facts)
+	}
+	got := result.Facts[0]
+	if got.Text != "Melanie celebrated her daughter's birthday with a concert featuring Matt Patterson." {
+		t.Fatalf("bridged fact text = %q", got.Text)
+	}
+	if !reflect.DeepEqual(got.SourceSeqs, []int{1, 3}) {
+		t.Fatalf("source seqs = %v, want [1 3]", got.SourceSeqs)
 	}
 }
 

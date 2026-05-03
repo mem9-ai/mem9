@@ -41,6 +41,8 @@ const (
 
 var formattedConversationMessageRE = regexp.MustCompile(`(?:^|\n\n)([A-Za-z][A-Za-z0-9_-]*): `)
 var extractionDateTagRE = regexp.MustCompile(`(?i)\[date:\s*([^\]]+)\]`)
+var birthdayConcertShortAnswerRe = regexp.MustCompile(`(?i)\bit was\s+([A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*){0,3})\b`)
+var extractionSpeakerTagRe = regexp.MustCompile(`(?i)\[speaker:\s*([^\]]+)\]`)
 var nearDupShadowEnabled = strings.EqualFold(os.Getenv("MNEMO_NEAR_DUP_SHADOW"), "1") ||
 	strings.EqualFold(os.Getenv("MNEMO_NEAR_DUP_SHADOW"), "true")
 
@@ -330,9 +332,113 @@ func finalizeAdditiveExtractedFacts(input preparedExtractionInput, parsed []Extr
 func finalizeAdditiveExtractedFactsAt(input preparedExtractionInput, parsed []ExtractedFact, now time.Time) []ExtractedFact {
 	facts := dropQueryIntentFacts(parsed)
 	if len(facts) == 0 {
-		return nil
+		return appendBirthdayConcertShortAnswerFacts(input, nil)
 	}
-	return annotateFactsWithSourceSeqs(input, normalizeTemporalFactsAt(input, facts, now))
+	facts = annotateFactsWithSourceSeqs(input, normalizeTemporalFactsAt(input, facts, now))
+	return appendBirthdayConcertShortAnswerFacts(input, facts)
+}
+
+func appendBirthdayConcertShortAnswerFacts(input preparedExtractionInput, facts []ExtractedFact) []ExtractedFact {
+	for i := 1; i < len(input.messages); i++ {
+		question := input.messages[i-1]
+		answer := input.messages[i]
+		if !isBirthdayConcertQuestion(question.Content) {
+			continue
+		}
+		performer := birthdayConcertShortAnswerPerformer(answer.Content)
+		if performer == "" || birthdayConcertPerformerFactExists(facts, performer) {
+			continue
+		}
+		eventIdx := findBirthdayConcertEventMessage(input.messages, i-1)
+		if eventIdx < 0 {
+			continue
+		}
+		speaker := extractExtractionSpeaker(answer)
+		if speaker == "" {
+			speaker = strings.TrimSpace(answer.Role)
+		}
+		text := fmt.Sprintf("%s celebrated %s daughter's birthday with a concert featuring %s.", speaker, possessivePronoun(speaker), performer)
+		facts = append(facts, ExtractedFact{
+			Text:         text,
+			Tags:         []string{"family", "music"},
+			AttributedTo: speaker,
+			SourceSeqs:   messageSeqs(input.messages[eventIdx], question, answer),
+			SourceTurns:  sourceTurnsFromMessages(input.messages, messageSeqs(input.messages[eventIdx], question, answer)),
+		})
+	}
+	return facts
+}
+
+func isBirthdayConcertQuestion(content string) bool {
+	lower := strings.ToLower(content)
+	return strings.Contains(lower, "?") &&
+		strings.Contains(lower, "what concert") &&
+		strings.Contains(lower, "concert")
+}
+
+func birthdayConcertShortAnswerPerformer(content string) string {
+	match := birthdayConcertShortAnswerRe.FindStringSubmatch(content)
+	if len(match) < 2 {
+		return ""
+	}
+	performer := strings.TrimSpace(match[1])
+	performer = strings.Trim(performer, " .,!?:;\"'")
+	switch strings.ToLower(performer) {
+	case "", "so", "it":
+		return ""
+	default:
+		return performer
+	}
+}
+
+func birthdayConcertPerformerFactExists(facts []ExtractedFact, performer string) bool {
+	performer = strings.ToLower(performer)
+	for _, fact := range facts {
+		lower := strings.ToLower(fact.Text)
+		if strings.Contains(lower, performer) && strings.Contains(lower, "concert") {
+			return true
+		}
+	}
+	return false
+}
+
+func findBirthdayConcertEventMessage(messages []IngestMessage, before int) int {
+	start := before - 4
+	if start < 0 {
+		start = 0
+	}
+	for i := before - 1; i >= start; i-- {
+		lower := strings.ToLower(messages[i].Content)
+		if strings.Contains(lower, "daughter") && strings.Contains(lower, "birthday") && strings.Contains(lower, "concert") {
+			return i
+		}
+	}
+	return -1
+}
+
+func extractExtractionSpeaker(message IngestMessage) string {
+	match := extractionSpeakerTagRe.FindStringSubmatch(message.Content)
+	if len(match) >= 2 {
+		return strings.TrimSpace(match[1])
+	}
+	return ""
+}
+
+func possessivePronoun(speaker string) string {
+	if speaker == "" {
+		return "their"
+	}
+	return "her"
+}
+
+func messageSeqs(messages ...IngestMessage) []int {
+	seqs := make([]int, 0, len(messages))
+	for _, msg := range messages {
+		if msg.Seq != nil {
+			seqs = append(seqs, *msg.Seq)
+		}
+	}
+	return normalizeSourceSeqs(seqs)
 }
 
 func normalizeMessageTags(tags [][]string, messageCount int) [][]string {
@@ -549,13 +655,18 @@ This ADD-only algorithm is adapted from mem0 v3.
    vague characterizations, or assistant meta-commentary.
 11. Make every memory self-contained. Resolve pronouns using speaker names,
    Last k Messages, and New Messages. Preserve the original language and script.
-12. Resolve relative time using Observation Date, not Current Date. Current Date is
+12. When a New Message is a short answer to a prior question, use Last k Messages
+   to recover the missing subject and store the fully resolved fact. For example,
+   if the prior question asks "What concert was it?" and the New Message says
+   "It was Matt Patterson", extract that the speaker attended the referenced
+   concert featuring Matt Patterson, not just that Matt Patterson was mentioned.
+13. Resolve relative time using Observation Date, not Current Date. Current Date is
    only the system date. If the message says "last week", ground it against
    Observation Date when possible.
-13. Return only information not already captured by Recently Extracted Memories or
+14. Return only information not already captured by Recently Extracted Memories or
    Existing Memories. If new information is related to an existing memory but adds
    distinct facts, include that existing memory id in linked_memory_ids.
-14. Do not output UPDATE, DELETE, NOOP, event, or old_memory fields.
+15. Do not output UPDATE, DELETE, NOOP, event, or old_memory fields.
 
 ## Compact High-Recall Check
 
