@@ -18,28 +18,35 @@ Average effective baseline: Overall LLM (micro) 64.65%.
 Current accepted run:
 
 Results file:
-/home/ec2-user/git/mem9-benchmark/locomo/results/2026-05-03T21-33-59-472Z_mem9-current.json
+/home/ec2-user/git/mem9-benchmark/locomo/results/2026-05-03T22-24-43-577Z_mem9-current.json
 
 ── Results ──────────────────────────────────
-Overall F1 (micro): 62.34%  (n=1986)
-Overall F1 (macro): 54.68%
-Overall LLM (micro): 65.26%  (n=1540)
-Overall LLM (macro): 57.16%
-Overall Evidence Recall: 67.51%
+Overall F1 (micro): 62.73%  (n=1986)
+Overall F1 (macro): 55.73%
+Overall LLM (micro): 66.69%  (n=1540)
+Overall LLM (macro): 58.63%
+Overall Evidence Recall: 67.63%
 
-  Cat 1 (multi-hop   ):  F1=26.34%  LLM=37.23%  ER=44.4%  (n=282  llm_n=282)
-  Cat 2 (temporal    ):  F1=69.90%  LLM=79.75%  ER=83.2%  (n=321  llm_n=321)
-  Cat 3 (open-domain ):  F1=23.28%  LLM=39.58%  ER=46.2%  (n=96  llm_n=96)
-  Cat 4 (single-hop  ):  F1=58.39%  LLM=72.06%  ER=75.2%  (n=841  llm_n=841)
-  Cat 5 (adversarial ):  F1=95.52%  LLM=N/A  ER=60.7%  (n=446)
+  Cat 1 (multi-hop   ):  F1=26.28%  LLM=37.94%  ER=43.6%  (n=282  llm_n=282)
+  Cat 2 (temporal    ):  F1=71.31%  LLM=81.31%  ER=83.8%  (n=321  llm_n=321)
+  Cat 3 (open-domain ):  F1=27.44%  LLM=41.67%  ER=45.1%  (n=96  llm_n=96)
+  Cat 4 (single-hop  ):  F1=58.57%  LLM=73.60%  ER=76.2%  (n=841  llm_n=841)
+  Cat 5 (adversarial ):  F1=95.07%  LLM=N/A  ER=59.6%  (n=446)
 ──────────────────────────────────────────────
 
 Delta versus effective average baseline:
 
-- Overall LLM (micro): +0.61pp
-- Overall F1 (micro): +0.69pp
-- Overall Evidence Recall: +0.74pp
-- Cat 2 LLM: +4.36pp
-- Cat 3 LLM: +3.13pp
-- Cat 1 LLM: -0.30pp
-- Cat 4 LLM: -0.80pp
+- Overall LLM (micro): +2.04pp
+- Overall F1 (micro): +1.33pp
+- Overall Evidence Recall: +0.86pp
+- Cat 2 LLM: +5.92pp
+- Cat 3 LLM: +5.22pp
+- Cat 1 LLM: +0.41pp
+- Cat 4 LLM: +0.74pp
+
+Delta versus previous accepted run
+(`/home/ec2-user/git/mem9-benchmark/locomo/results/2026-05-03T21-33-59-472Z_mem9-current.json`):
+
+- Overall LLM (micro): +1.43pp
+- Overall F1 (micro): +0.40pp
+- Overall Evidence Recall: +0.13pp
