@@ -104,6 +104,74 @@ func TestDecorateSearchResultsWithSourceTurnsSelectsSubjectSpeakerTurn(t *testin
 	})
 }
 
+func TestDecorateSearchResultsWithSourceTurnsKeepsPossessiveSecondarySpeaker(t *testing.T) {
+	withSearchEnv(t, map[string]string{
+		"MEM9_SOURCE_TURN_PER_MEMORY_LIMIT": "2",
+		"MEM9_SOURCE_TURN_TOTAL_LIMIT":      "2",
+		"MEM9_SOURCE_TURN_MIN_SCORE":        "2",
+	}, func() {
+		memories := decorateSearchResultsWithSourceTurns([]domain.Memory{
+			{
+				ID:         "m1",
+				Content:    "Melanie read Becoming Nicole after Caroline suggested it.",
+				MemoryType: domain.TypeInsight,
+				Metadata: SetSourceProvenanceMetadata(nil, []int{1, 2, 3}, []sourceTurnMetadata{
+					{Seq: 1, Content: "[date:10 July 2023] [speaker:Caroline] I think you should read Becoming Nicole."},
+					{Seq: 2, Content: "[date:12 July 2023] [speaker:Melanie] I read Becoming Nicole after your suggestion."},
+					{Seq: 3, Content: "[date:12 July 2023] [speaker:Andrew] I finished a different book yesterday."},
+				}),
+			},
+		}, "What book did Melanie read from Caroline's suggestion?")
+
+		if len(memories) != 1 {
+			t.Fatalf("expected 1 memory, got %d", len(memories))
+		}
+		if !strings.Contains(memories[0].Content, "[speaker:Caroline]") {
+			t.Fatalf("expected Caroline source turn included, got content %q", memories[0].Content)
+		}
+		if !strings.Contains(memories[0].Content, "[speaker:Melanie]") {
+			t.Fatalf("expected Melanie source turn included, got content %q", memories[0].Content)
+		}
+		if strings.Contains(memories[0].Content, "[speaker:Andrew]") {
+			t.Fatalf("expected unrelated speaker source turn pruned, got content %q", memories[0].Content)
+		}
+	})
+}
+
+func TestDecorateSearchResultsWithSourceTurnsKeepsBothNamedSpeakers(t *testing.T) {
+	withSearchEnv(t, map[string]string{
+		"MEM9_SOURCE_TURN_PER_MEMORY_LIMIT": "2",
+		"MEM9_SOURCE_TURN_TOTAL_LIMIT":      "2",
+		"MEM9_SOURCE_TURN_MIN_SCORE":        "2",
+	}, func() {
+		memories := decorateSearchResultsWithSourceTurns([]domain.Memory{
+			{
+				ID:         "m1",
+				Content:    "Jon and Gina both lost jobs and started their own businesses.",
+				MemoryType: domain.TypeInsight,
+				Metadata: SetSourceProvenanceMetadata(nil, []int{1, 2, 3}, []sourceTurnMetadata{
+					{Seq: 1, Content: "[date:19 June 2023] [speaker:Jon] I lost my job and started my own dance studio."},
+					{Seq: 2, Content: "[date:20 June 2023] [speaker:Gina] I lost my job too, so I opened my own store."},
+					{Seq: 3, Content: "[date:20 June 2023] [speaker:Maria] I visited a farmers market yesterday."},
+				}),
+			},
+		}, "What do Jon and Gina both have in common?")
+
+		if len(memories) != 1 {
+			t.Fatalf("expected 1 memory, got %d", len(memories))
+		}
+		if !strings.Contains(memories[0].Content, "[speaker:Jon]") {
+			t.Fatalf("expected Jon source turn included, got content %q", memories[0].Content)
+		}
+		if !strings.Contains(memories[0].Content, "[speaker:Gina]") {
+			t.Fatalf("expected Gina source turn included, got content %q", memories[0].Content)
+		}
+		if strings.Contains(memories[0].Content, "[speaker:Maria]") {
+			t.Fatalf("expected unrelated speaker source turn pruned, got content %q", memories[0].Content)
+		}
+	})
+}
+
 func TestDecorateSearchResultsWithSourceTurnsClearsUnselectedProvenance(t *testing.T) {
 	withSearchEnv(t, map[string]string{
 		"MEM9_SOURCE_TURN_MIN_SCORE": "7",
@@ -141,4 +209,32 @@ func TestDecorateSearchResultsWithSourceTurnsClearsUnselectedProvenance(t *testi
 			t.Fatalf("source_turns should be cleared from decorated response metadata: %s", memories[0].Metadata)
 		}
 	})
+}
+
+func TestSearchEvidenceKeysMatchesInsightAndRawSessionSourceSeq(t *testing.T) {
+	sessionMetadata, err := json.Marshal(map[string]any{"seq": 4})
+	if err != nil {
+		t.Fatalf("marshal session metadata: %v", err)
+	}
+	insight := domain.Memory{
+		ID:         "insight-1",
+		MemoryType: domain.TypeInsight,
+		SessionID:  "session-1",
+		Metadata:   SetSourceSeqMetadata(nil, []int{4}),
+	}
+	raw := domain.Memory{
+		ID:         "raw-1",
+		MemoryType: domain.TypeSession,
+		SessionID:  "session-1",
+		Metadata:   sessionMetadata,
+	}
+
+	insightKeys := SearchEvidenceKeys(insight)
+	rawKeys := SearchEvidenceKeys(raw)
+	if len(insightKeys) != 1 || insightKeys[0] != "session-1#4" {
+		t.Fatalf("insight evidence keys = %v, want [session-1#4]", insightKeys)
+	}
+	if len(rawKeys) != 1 || rawKeys[0] != "session-1#4" {
+		t.Fatalf("raw evidence keys = %v, want [session-1#4]", rawKeys)
+	}
 }

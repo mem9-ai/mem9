@@ -226,3 +226,164 @@ func TestRecallCandidateOptions_EnumerationExpandsAdjacentTurns(t *testing.T) {
 		t.Fatalf("second hop topN = %d, want %d", opts.SecondHopTopN, enumerationSecondHopTopN)
 	}
 }
+
+func TestSelectTopRecallCandidatesDedupesInsightAndRawSessionBySourceSeq(t *testing.T) {
+	high := 90
+	mid := 85
+	low := 80
+	sessionMetadata := []byte(`{"seq":3}`)
+	candidates := []service.RecallCandidate{
+		{
+			Memory: domain.Memory{
+				ID:         "raw-3",
+				Content:    "raw turn about homemade ice cream",
+				MemoryType: domain.TypeSession,
+				SessionID:  "session-1",
+				Metadata:   sessionMetadata,
+				Confidence: &high,
+			},
+			SourcePool: service.RecallSourceSession,
+		},
+		{
+			Memory: domain.Memory{
+				ID:         "insight-3",
+				Content:    "Nate made homemade ice cream.",
+				MemoryType: domain.TypeInsight,
+				SessionID:  "session-1",
+				Metadata:   service.SetSourceSeqMetadata(nil, []int{3}),
+				Confidence: &mid,
+			},
+			SourcePool: service.RecallSourceInsight,
+		},
+		{
+			Memory: domain.Memory{
+				ID:         "recipe",
+				Content:    "Nate made ice cream with coconut milk, vanilla extract, sugar, and salt.",
+				MemoryType: domain.TypeSession,
+				SessionID:  "session-1",
+				Metadata:   []byte(`{"seq":8}`),
+				Confidence: &low,
+			},
+			SourcePool: service.RecallSourceSession,
+		},
+	}
+
+	selected, _ := selectTopRecallCandidates(recallQueryShapeExact, 2, 0, false, candidates, nil)
+	if len(selected) != 2 {
+		t.Fatalf("selected len = %d, want 2", len(selected))
+	}
+	if selected[0].ID != "raw-3" || selected[1].ID != "recipe" {
+		t.Fatalf("selected IDs = [%s %s], want [raw-3 recipe]", selected[0].ID, selected[1].ID)
+	}
+}
+
+func TestSelectTopRecallCandidatesKeepsDistinctInsightsFromSameSourceSeq(t *testing.T) {
+	high := 90
+	mid := 88
+	rawConfidence := 86
+	low := 80
+	candidates := []service.RecallCandidate{
+		{
+			Memory: domain.Memory{
+				ID:         "insight-3-a",
+				Content:    "Nate made homemade ice cream.",
+				MemoryType: domain.TypeInsight,
+				SessionID:  "session-1",
+				Metadata:   service.SetSourceSeqMetadata(nil, []int{3}),
+				Confidence: &high,
+			},
+			SourcePool: service.RecallSourceInsight,
+		},
+		{
+			Memory: domain.Memory{
+				ID:         "insight-3-b",
+				Content:    "Nate used coconut milk for the ice cream.",
+				MemoryType: domain.TypeInsight,
+				SessionID:  "session-1",
+				Metadata:   service.SetSourceSeqMetadata(nil, []int{3}),
+				Confidence: &mid,
+			},
+			SourcePool: service.RecallSourceInsight,
+		},
+		{
+			Memory: domain.Memory{
+				ID:         "raw-3",
+				Content:    "raw turn about homemade coconut milk ice cream",
+				MemoryType: domain.TypeSession,
+				SessionID:  "session-1",
+				Metadata:   []byte(`{"seq":3}`),
+				Confidence: &rawConfidence,
+			},
+			SourcePool: service.RecallSourceSession,
+		},
+		{
+			Memory: domain.Memory{
+				ID:         "raw-8",
+				Content:    "Nate also painted miniatures.",
+				MemoryType: domain.TypeSession,
+				SessionID:  "session-1",
+				Metadata:   []byte(`{"seq":8}`),
+				Confidence: &low,
+			},
+			SourcePool: service.RecallSourceSession,
+		},
+	}
+
+	selected, _ := selectTopRecallCandidates(recallQueryShapeExact, 3, 0, false, candidates, nil)
+	if len(selected) != 3 {
+		t.Fatalf("selected len = %d, want 3", len(selected))
+	}
+	if selected[0].ID != "insight-3-a" || selected[1].ID != "insight-3-b" || selected[2].ID != "raw-8" {
+		t.Fatalf("selected IDs = [%s %s %s], want [insight-3-a insight-3-b raw-8]", selected[0].ID, selected[1].ID, selected[2].ID)
+	}
+}
+
+func TestSelectEnumerationRecallCandidatesDedupesInsightAndRawSessionBySourceSeq(t *testing.T) {
+	high := 90
+	mid := 85
+	low := 80
+	profile := recallQueryProfile{shape: recallQueryShapeEnumeration, lower: "what activities does nate do"}
+	candidates := []service.RecallCandidate{
+		{
+			Memory: domain.Memory{
+				ID:         "insight-2",
+				Content:    "Nate likes cooking and gaming.",
+				MemoryType: domain.TypeInsight,
+				SessionID:  "session-1",
+				Metadata:   service.SetSourceSeqMetadata(nil, []int{2}),
+				Confidence: &high,
+			},
+			SourcePool: service.RecallSourceInsight,
+		},
+		{
+			Memory: domain.Memory{
+				ID:         "raw-2",
+				Content:    "Nate talked about cooking and gaming.",
+				MemoryType: domain.TypeSession,
+				SessionID:  "session-1",
+				Metadata:   []byte(`{"seq":2}`),
+				Confidence: &mid,
+			},
+			SourcePool: service.RecallSourceSession,
+		},
+		{
+			Memory: domain.Memory{
+				ID:         "raw-7",
+				Content:    "Nate also paints miniatures.",
+				MemoryType: domain.TypeSession,
+				SessionID:  "session-1",
+				Metadata:   []byte(`{"seq":7}`),
+				Confidence: &low,
+			},
+			SourcePool: service.RecallSourceSession,
+		},
+	}
+
+	selected, _, _ := selectEnumerationRecallCandidates(profile, 2, candidates, nil)
+	if len(selected) != 2 {
+		t.Fatalf("selected len = %d, want 2", len(selected))
+	}
+	if selected[0].ID != "insight-2" || selected[1].ID != "raw-7" {
+		t.Fatalf("selected IDs = [%s %s], want [insight-2 raw-7]", selected[0].ID, selected[1].ID)
+	}
+}

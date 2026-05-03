@@ -34,6 +34,9 @@ const (
 	factTypeQueryIntent            = "query_intent"
 	factTypeRawFallback            = "raw_fallback"
 	rawFallbackTag                 = "raw-fallback"
+	extractionAuditMinMessages     = 10
+	extractionAuditMaxExpected     = 8
+	extractionAuditMaxFacts        = 12
 )
 
 var formattedConversationMessageRE = regexp.MustCompile(`(?:^|\n\n)([A-Za-z][A-Za-z0-9_-]*): `)
@@ -553,6 +556,18 @@ This ADD-only algorithm is adapted from mem0 v3.
    Existing Memories. If new information is related to an existing memory but adds
    distinct facts, include that existing memory id in linked_memory_ids.
 14. Do not output UPDATE, DELETE, NOOP, event, or old_memory fields.
+
+## Compact High-Recall Check
+
+Before finalizing, quickly re-read New Messages and fix omissions:
+
+- Do not stop at the first topic. Extract meaningful facts from the middle and
+  end of the chunk too.
+- Preserve motivations, emotional reactions, transitions/changes, shared photo or
+  document details, exact titles, places, dates, quantities, and named people.
+- If 10+ informational messages yield fewer than 3 memories, re-read the chunk;
+  you are probably missing facts. Prefer 5-12 memories for rich multi-topic
+  chunks, while still skipping true duplicates and pure filler.
 ` + messageTagRule + `
 Return ONLY valid JSON. No markdown fences, no explanation.
 
@@ -586,6 +601,51 @@ Observation Date: %s
 Current Date: %s%s
 
 Extract every ADD-worthy new memory from New Messages. Use all context sections only for reference resolution, dedupe, and linked_memory_ids.`, serializePromptMessages(ctx.LastMessages), serializePromptMemories(ctx.RecentlyExtractedMemories), serializePromptMemories(existingMemories), input.formatted, observationDate, now.Format("2006-01-02"), messageTagHint)
+}
+
+func additiveExtractionAuditSystemPrompt() string {
+	return `You are a Memory Extraction QA pass. Your only operation is ADD.
+
+Find durable facts that were missed by the first extraction pass. Extract from
+BOTH user and assistant messages, including named assistant-role speakers when
+they are real people. Preserve exact names, titles, dates, counts, places,
+image-caption facts, recommendations, transitions, motivations, and personal
+details. Do not repeat facts already present in First-Pass Memories.
+
+Return ONLY valid JSON in this shape:
+{"memory": [{"text": "omitted memory", "tags": ["tag"], "attributed_to": "speaker"}]}
+
+If nothing was missed, return {"memory":[]}.`
+}
+
+func additiveExtractionAuditUserPrompt(input preparedExtractionInput, currentFacts []ExtractedFact, ctx ExtractionContext, observationDate, currentDate string) string {
+	return fmt.Sprintf(`New Messages:
+%s
+
+First-Pass Memories:
+%s
+
+Observation Date: %s
+Current Date: %s
+
+Return only omitted ADD-worthy memories from New Messages.`, input.formatted, serializePromptFacts(currentFacts), observationDate, currentDate)
+}
+
+func serializePromptFacts(facts []ExtractedFact) string {
+	refs := make([]map[string]string, 0, len(facts))
+	for _, fact := range facts {
+		text := strings.TrimSpace(fact.Text)
+		if text == "" {
+			continue
+		}
+		ref := map[string]string{"text": text}
+		if attributedTo := strings.TrimSpace(fact.AttributedTo); attributedTo != "" {
+			ref["attributed_to"] = attributedTo
+		}
+		refs = append(refs, ref)
+	}
+	refsJSON, _ := json.Marshal(refs)
+	return string(refsJSON)
 }
 
 func (s *IngestService) existingMemoriesForExtraction(ctx context.Context, agentID, conversation string) []domain.Memory {
@@ -939,6 +999,104 @@ func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
 	return out
 }
 
+func shouldAuditExtraction(input preparedExtractionInput, facts []ExtractedFact) bool {
+	if len(input.messages) < extractionAuditMinMessages {
+		return false
+	}
+	if len(facts) == 0 {
+		return true
+	}
+	for _, fact := range facts {
+		if strings.EqualFold(fact.FactType, factTypeRawFallback) {
+			return false
+		}
+	}
+	expected := (len(input.messages) + 2) / 3
+	if expected < 4 {
+		expected = 4
+	}
+	if expected > extractionAuditMaxExpected {
+		expected = extractionAuditMaxExpected
+	}
+	return len(facts) < expected
+}
+
+func mergeAuditExtractedFacts(base, audit []ExtractedFact) []ExtractedFact {
+	if len(audit) == 0 {
+		return base
+	}
+	seen := make(map[string]struct{}, len(base)+len(audit))
+	out := make([]ExtractedFact, 0, len(base)+len(audit))
+	for _, fact := range base {
+		key := normalizedFactDedupeKey(fact.Text)
+		if key != "" {
+			seen[key] = struct{}{}
+		}
+		out = append(out, fact)
+	}
+	for _, fact := range audit {
+		key := normalizedFactDedupeKey(fact.Text)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, fact)
+		if len(out)-len(base) >= extractionAuditMaxFacts {
+			break
+		}
+	}
+	return out
+}
+
+func normalizedFactDedupeKey(text string) string {
+	text = strings.ToLower(strings.TrimSpace(text))
+	if text == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(text), " ")
+}
+
+func (s *IngestService) auditOmittedFactsIfNeeded(ctx context.Context, input preparedExtractionInput, facts []ExtractedFact, extractionCtx ExtractionContext, observationTime time.Time) []ExtractedFact {
+	if s.llm == nil || !shouldAuditExtraction(input, facts) {
+		return facts
+	}
+	now := time.Now()
+	_, observationDate := resolveExtractionObservation(extractionCtx, input, now)
+	systemPrompt := additiveExtractionAuditSystemPrompt()
+	userPrompt := additiveExtractionAuditUserPrompt(input, facts, extractionCtx, observationDate, now.Format("2006-01-02"))
+
+	type extractResponse struct {
+		Facts  []ExtractedFact `json:"facts"`
+		Memory []ExtractedFact `json:"memory"`
+	}
+
+	scope := llm.CallScope{Step: "extraction_audit"}
+	start := time.Now()
+	raw, err := s.llm.CompleteJSONWithScope(ctx, systemPrompt, userPrompt, scope)
+	if err != nil {
+		slog.Warn("extraction audit failed; keeping first-pass facts", "err", err)
+		return facts
+	}
+	parsed, err := llm.ParseJSON[extractResponse](raw)
+	if err != nil {
+		slog.Warn("extraction audit returned invalid JSON; keeping first-pass facts", "len", len(raw), "err", err)
+		return facts
+	}
+	auditFacts := finalizeAdditiveExtractedFactsAt(input, normalizeParsedFacts(raw, append(parsed.Memory, parsed.Facts...)), observationTime)
+	merged := mergeAuditExtractedFacts(facts, auditFacts)
+	slog.Info("extraction audit completed",
+		"messages", len(input.messages),
+		"first_pass_facts", len(facts),
+		"audit_facts", len(auditFacts),
+		"merged_facts", len(merged),
+		"duration_ms", time.Since(start).Milliseconds(),
+	)
+	return merged
+}
+
 // extractFacts calls the LLM to extract atomic facts only, without per-message tag generation.
 // Used by extractAndReconcile (ReconcileContent path) where message_tags are not needed.
 func (s *IngestService) extractFacts(ctx context.Context, conversation string) ([]ExtractedFact, error) {
@@ -1006,6 +1164,7 @@ func (s *IngestService) extractFactsForAgentWithContext(ctx context.Context, age
 	}
 
 	facts := finalizeAdditiveExtractedFactsAt(input, normalizeParsedFacts(lastRaw, append(parsed.Memory, parsed.Facts...)), observationTime)
+	facts = s.auditOmittedFactsIfNeeded(ctx, input, facts, extractionCtx, observationTime)
 	slog.Info("facts extracted", "facts", len(facts))
 	return facts, nil
 }
@@ -1083,6 +1242,7 @@ func (s *IngestService) extractFactsAndTagsForAgentWithContext(ctx context.Conte
 	}
 
 	facts := finalizeAdditiveExtractedFactsAt(input, normalizeParsedFacts(lastRaw, append(parsed.Memory, parsed.Facts...)), observationTime)
+	facts = s.auditOmittedFactsIfNeeded(ctx, input, facts, extractionCtx, observationTime)
 
 	// Normalise message_tags to exactly messageCount entries.
 	messageTags := normalizeMessageTags(parsed.MessageTags, messageCount)

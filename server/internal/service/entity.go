@@ -311,7 +311,9 @@ func (s *MemoryService) applyEntityBoosts(ctx context.Context, filter domain.Mem
 	if limit <= 0 || limit > entityRecallBoostMaxMatches {
 		limit = entityRecallBoostMaxMatches
 	}
-	boosts, err := entityRepo.EntityMemoryBoosts(ctx, filter.AgentID, keys, limit)
+	boostCtx, cancel := withRecallTimeout(ctx, recallEntityBoostTimeout)
+	boosts, err := entityRepo.EntityMemoryBoosts(boostCtx, filter.AgentID, keys, limit)
+	cancel()
 	if err != nil {
 		slog.Warn("entity recall boost failed", "err", err)
 		return candidates

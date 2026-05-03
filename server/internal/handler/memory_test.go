@@ -1947,6 +1947,40 @@ func TestDefaultConfidenceRecallSearch_FansOutPoolSearchesConcurrently(t *testin
 	}
 }
 
+func TestDefaultConfidenceRecallSearch_ContinuesWhenInsightPoolFails(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			if filter.MemoryType == string(domain.TypeInsight) {
+				return nil, errors.New("insight pool down")
+			}
+			return nil, nil
+		},
+	}
+	sessRepo := &testSessionRepo{
+		keywordSearchResults: []domain.Memory{
+			{ID: "s1", Content: "John likes Under Armour.", MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+	auth := &domain.AuthInfo{ClusterID: "cluster-a"}
+	svc := srv.resolveServices(auth)
+
+	results, total, err := srv.defaultConfidenceRecallSearch(context.Background(), auth, svc, domain.MemoryFilter{
+		Query: "What brand does John like?",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("expected recall to continue with session pool, got %v", err)
+	}
+	if total != 1 || len(results) != 1 {
+		t.Fatalf("expected one session result, got total=%d results=%d", total, len(results))
+	}
+	if results[0].ID != "s1" {
+		t.Fatalf("expected session result s1, got %+v", results)
+	}
+}
+
 func TestListMemories_DefaultRecall_PrefersSessionForChineseExactQuery(t *testing.T) {
 	now := time.Now()
 	memRepo := &testMemoryRepo{

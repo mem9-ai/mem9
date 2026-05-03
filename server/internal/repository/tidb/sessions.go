@@ -36,6 +36,12 @@ func (r *SessionRepo) BulkCreate(ctx context.Context, sessions []*domain.Session
 		return nil
 	}
 
+	return withTransientDBRetry(ctx, r.clusterID, "sessions bulk create", func() error {
+		return r.bulkCreateOnce(ctx, sessions)
+	})
+}
+
+func (r *SessionRepo) bulkCreateOnce(ctx context.Context, sessions []*domain.Session) error {
 	var stmtSQL string
 	if r.autoModel != "" {
 		stmtSQL = `INSERT IGNORE INTO sessions
@@ -92,7 +98,7 @@ func (r *SessionRepo) BulkCreate(ctx context.Context, sessions []*domain.Session
 
 func (r *SessionRepo) PatchTags(ctx context.Context, sessionID, contentHash string, tags []string) error {
 	tagsJSON := marshalTags(tags)
-	_, err := r.db.ExecContext(ctx,
+	_, _, err := execContextWithRetry(ctx, r.db, r.clusterID, "session patch tags",
 		`UPDATE sessions SET tags = ? WHERE session_id = ? AND content_hash = ? AND JSON_LENGTH(COALESCE(tags, '[]')) = 0`,
 		tagsJSON, sessionID, contentHash,
 	)
@@ -159,7 +165,7 @@ func (r *SessionRepo) AutoVectorSearch(ctx context.Context, query string, f doma
 	fullArgs = append(fullArgs, query, limit)
 
 	start := time.Now()
-	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "sessions auto vector search", sqlQuery, fullArgs...)
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, domain.ErrAutoVectorSearchSkipped
@@ -199,7 +205,7 @@ func (r *SessionRepo) VectorSearch(ctx context.Context, queryVec []float32, f do
 	fullArgs = append(fullArgs, vecStr, limit)
 
 	start := time.Now()
-	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "sessions vector search", sqlQuery, fullArgs...)
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
@@ -275,7 +281,7 @@ func (r *SessionRepo) fetchSessionFTSCandidates(ctx context.Context, safeQ strin
 		ORDER BY fts_match_word('` + safeQ + `', content) DESC, id
 		LIMIT ?`
 
-	rows, err := r.db.QueryContext(ctx, sqlQuery, limit)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "sessions fts candidates", sqlQuery, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +320,7 @@ func (r *SessionRepo) fetchFilteredFTSSessions(ctx context.Context, candidates [
 		FROM sessions
 		WHERE id IN (` + strings.Join(placeholders, ",") + `) AND ` + where
 
-	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "sessions fts filtered", sqlQuery, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -357,7 +363,7 @@ func (r *SessionRepo) filteredFTSSearch(ctx context.Context, safeQ, where string
 	fullArgs = append(fullArgs, args...)
 	fullArgs = append(fullArgs, limit)
 
-	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "sessions fts filtered fallback", sqlQuery, fullArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +388,7 @@ func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.
 	args = append(args, limit)
 
 	start := time.Now()
-	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "sessions keyword search", sqlQuery, args...)
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
@@ -529,7 +535,7 @@ func (r *SessionRepo) ListBySessionIDs(ctx context.Context, sessionIDs []string,
 		WHERE rn <= ?
 		ORDER BY session_id ASC, created_at ASC, seq ASC, id ASC`
 
-	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "sessions list by session ids", sqlQuery, args...)
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
@@ -557,7 +563,7 @@ func (r *SessionRepo) ListRecentBySessionID(ctx context.Context, sessionID strin
 		) t
 		ORDER BY created_at ASC, seq ASC, id ASC`
 
-	rows, err := r.db.QueryContext(ctx, sqlQuery, sessionID, limit)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "sessions list recent by session id", sqlQuery, sessionID, limit)
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil

@@ -5,6 +5,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -17,7 +18,9 @@ const (
 )
 
 var targetSpeakerQuestionRe = regexp.MustCompile(`(?i)\bhow\s+(?:does|did)\s+([a-z][a-z'-]*)\s+(?:describe|feel|respond|react|view|think|say)\b`)
-var subjectSpeakerQuestionRe = regexp.MustCompile(`(?i)\b(?:did|does|do|was|were|is|are|has|have|had|will|would|can|could|should)\s+([a-z][a-z'-]*)\b`)
+var subjectSpeakerQuestionRe = regexp.MustCompile(`(?i)\b(?:did|does|do|was|were|is|are|has|have|had|will|would|can|could|should|might)\s+([a-z][a-z'-]*)\b`)
+var multiSpeakerQuestionRe = regexp.MustCompile(`(?i)\b(?:did|does|do|was|were|is|are|has|have|had|will|would|can|could|should|might)\s+(?:both\s+)?([a-z][a-z'-]*(?:\s+and\s+[a-z][a-z'-]*)+)\b`)
+var bothSpeakerQuestionRe = regexp.MustCompile(`(?i)\bboth\s+([a-z][a-z'-]*)\s+and\s+([a-z][a-z'-]*)\b`)
 var possessiveSpeakerQuestionRe = regexp.MustCompile(`(?i)\b([a-z][a-z'-]*)'s\b`)
 
 type searchSourceTurnCandidate struct {
@@ -164,6 +167,46 @@ func parseSourceTurnsFromMetadata(metadata json.RawMessage) []sourceTurnMetadata
 	return normalizeSourceTurns(nil, turns)
 }
 
+// SearchEvidenceKeys returns stable source-provenance keys that let recall
+// deduplicate an extracted insight against the raw session turns it cites.
+func SearchEvidenceKeys(memory domain.Memory) []string {
+	sessionID := strings.TrimSpace(memory.SessionID)
+	if sessionID == "" {
+		return nil
+	}
+
+	var seqs []int
+	switch memory.MemoryType {
+	case domain.TypeSession:
+		if seq, ok := sessionSeqFromMemory(memory); ok {
+			seqs = []int{seq}
+		}
+	default:
+		seqs = sourceSeqsFromMetadata(memory.Metadata)
+	}
+	seqs = normalizeSourceSeqs(seqs)
+	if len(seqs) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(seqs))
+	for _, seq := range seqs {
+		keys = append(keys, sessionID+"#"+strconv.Itoa(seq))
+	}
+	return keys
+}
+
+func sourceSeqsFromMetadata(metadata json.RawMessage) []int {
+	if len(metadata) == 0 {
+		return nil
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(metadata, &payload); err != nil {
+		return nil
+	}
+	return parseSourceSeqsRaw(payload[sourceSeqsMetadataKey])
+}
+
 func parseJSONInt(raw json.RawMessage) (int, bool) {
 	var num int
 	if err := json.Unmarshal(raw, &num); err == nil {
@@ -201,7 +244,7 @@ func scoreSearchSourceTurn(question, memoryContent, sourceContent string) int {
 	memoryTokens := tokenSet(tokenizeForSourceTurnScoring(memoryContent))
 	speakerTokens := tokenizeForSourceTurnScoring(extractSearchSpeakerLabel(sourceContent))
 	targetSpeakerTokens := tokenSet(extractSearchTargetSpeakerTokens(question))
-	subjectSpeakerTokens := tokenSet(extractSearchSubjectSpeakerTokens(question))
+	mentionedSpeakerTokens := tokenSet(extractSearchMentionedSpeakerTokens(question))
 	questionSet := tokenSet(questionTokens)
 
 	score := 0
@@ -217,23 +260,23 @@ func scoreSearchSourceTurn(question, memoryContent, sourceContent string) int {
 	for _, token := range speakerTokens {
 		if _, ok := targetSpeakerTokens[token]; ok {
 			score += 8
-		} else if _, ok := subjectSpeakerTokens[token]; ok {
+		} else if _, ok := mentionedSpeakerTokens[token]; ok {
 			score += 8
-		} else if len(targetSpeakerTokens) == 0 {
+		} else if len(targetSpeakerTokens) == 0 && len(mentionedSpeakerTokens) == 0 {
 			if _, ok := questionSet[token]; ok {
 				score += 3
 			}
 		}
 	}
-	if len(subjectSpeakerTokens) > 0 && len(speakerTokens) > 0 {
-		matchesSubject := false
+	if len(mentionedSpeakerTokens) > 0 && len(speakerTokens) > 0 {
+		matchesMentioned := false
 		for _, token := range speakerTokens {
-			if _, ok := subjectSpeakerTokens[token]; ok {
-				matchesSubject = true
+			if _, ok := mentionedSpeakerTokens[token]; ok {
+				matchesMentioned = true
 				break
 			}
 		}
-		if !matchesSubject {
+		if !matchesMentioned {
 			score -= 4
 		}
 	}
@@ -268,18 +311,55 @@ func extractSearchTargetSpeakerTokens(question string) []string {
 }
 
 func extractSearchSubjectSpeakerTokens(question string) []string {
+	mentioned := extractSearchMentionedSpeakerTokens(question)
+	if len(mentioned) > 0 {
+		return mentioned
+	}
+	return nil
+}
+
+func extractSearchMentionedSpeakerTokens(question string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 4)
+	add := func(raw string) {
+		for _, token := range tokenizeForSourceTurnScoring(raw) {
+			if _, ok := seen[token]; ok {
+				continue
+			}
+			seen[token] = struct{}{}
+			out = append(out, token)
+		}
+	}
+
+	for _, match := range multiSpeakerQuestionRe.FindAllStringSubmatch(question, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		for _, part := range strings.Split(match[1], " and ") {
+			add(part)
+		}
+	}
+	for _, match := range bothSpeakerQuestionRe.FindAllStringSubmatch(question, -1) {
+		if len(match) < 3 {
+			continue
+		}
+		add(match[1])
+		add(match[2])
+	}
+	for _, match := range possessiveSpeakerQuestionRe.FindAllStringSubmatch(question, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		add(match[1])
+	}
 	for _, re := range []*regexp.Regexp{subjectSpeakerQuestionRe, possessiveSpeakerQuestionRe} {
 		match := re.FindStringSubmatch(question)
 		if len(match) < 2 {
 			continue
 		}
-		tokens := tokenizeForSourceTurnScoring(match[1])
-		if len(tokens) == 0 {
-			continue
-		}
-		return tokens
+		add(match[1])
 	}
-	return nil
+	return out
 }
 
 func tokenizeForSourceTurnScoring(text string) []string {

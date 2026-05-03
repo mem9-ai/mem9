@@ -371,6 +371,70 @@ func TestExtractPhase1FactTagsPopulated(t *testing.T) {
 	}
 }
 
+func TestExtractPhase1AuditsLowDensityFacts(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	calls := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls++
+		call := calls
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		resp := `{"memory":[{"text":"Alice likes jazz"},{"text":"Bob visited Kyoto in 2024"}]}`
+		if call == 2 {
+			resp = `{"memory":[{"text":"Alice adopted a cat named Nori"},{"text":"Bob owns a signed basketball"},{"text":"Alice likes jazz"}]}`
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	messages := []IngestMessage{
+		{Role: "user", Content: "Alice likes jazz."},
+		{Role: "assistant", Content: "Bob visited Kyoto in 2024."},
+		{Role: "user", Content: "Alice adopted a cat named Nori."},
+		{Role: "assistant", Content: "Bob owns a signed basketball."},
+		{Role: "user", Content: "Alice started a pottery class."},
+		{Role: "assistant", Content: "Bob recommended Little Women."},
+		{Role: "user", Content: "Alice moved to Portland."},
+		{Role: "assistant", Content: "Bob plans a March hiking trip."},
+		{Role: "user", Content: "Alice prefers oat milk."},
+		{Role: "assistant", Content: "Bob plays violin."},
+	}
+	result, err := svc.ExtractPhase1(context.Background(), messages)
+	if err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+
+	mu.Lock()
+	gotCalls := calls
+	mu.Unlock()
+	if gotCalls != 2 {
+		t.Fatalf("expected first-pass extraction plus audit call, got %d calls", gotCalls)
+	}
+	if len(result.Facts) != 4 {
+		t.Fatalf("expected 4 deduped facts after audit, got %d: %+v", len(result.Facts), result.Facts)
+	}
+	texts := map[string]bool{}
+	for _, fact := range result.Facts {
+		texts[fact.Text] = true
+	}
+	for _, want := range []string{"Alice likes jazz", "Bob visited Kyoto in 2024", "Alice adopted a cat named Nori", "Bob owns a signed basketball"} {
+		if !texts[want] {
+			t.Fatalf("expected audited fact %q in %+v", want, result.Facts)
+		}
+	}
+}
+
 func TestExtractPhase1AnnotatesSourceSeqs(t *testing.T) {
 	t.Parallel()
 
@@ -577,7 +641,23 @@ func TestExtractFactsParsesMem0AdditiveOutput(t *testing.T) {
 	if len(facts[0].LinkedMemoryIDs) != 1 || facts[0].LinkedMemoryIDs[0] != "mem-1" {
 		t.Fatalf("expected linked_memory_ids [mem-1], got %v", facts[0].LinkedMemoryIDs)
 	}
-	for _, want := range []string{"Summary:", "Last k Messages:", "Recently Extracted Memories:", "Existing Memories:", "New Messages:", "Observation Date: 2023-05-08", "Current Date:", "When in doubt, extract", "Casual topics are still extractable", "Extract from BOTH user and assistant messages", "recent-1"} {
+	for _, want := range []string{
+		"Summary:",
+		"Last k Messages:",
+		"Recently Extracted Memories:",
+		"Existing Memories:",
+		"New Messages:",
+		"Observation Date: 2023-05-08",
+		"Current Date:",
+		"When in doubt, extract",
+		"Casual topics are still extractable",
+		"Extract from BOTH user and assistant messages",
+		"Compact High-Recall Check",
+		"middle and",
+		"5-12 memories",
+		"shared photo or",
+		"recent-1",
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected prompt to contain %q, got %s", want, body)
 		}

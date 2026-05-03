@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -296,6 +297,68 @@ func TestComplete(t *testing.T) {
 		}
 		if requestCount != 1 {
 			t.Fatalf("request count = %d, want 1", requestCount)
+		}
+	})
+
+	t.Run("transient transport error retries", func(t *testing.T) {
+		requestCount := 0
+		client := New(Config{APIKey: "key", BaseURL: "https://example.com/v1", Model: "test-model"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+		client.http = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			requestCount++
+			if requestCount == 1 {
+				return nil, io.ErrUnexpectedEOF
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"choices":[{"message":{"content":"hello"}}]}`)),
+			}, nil
+		})}
+
+		got, err := client.Complete(context.Background(), "sys", "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "hello" {
+			t.Fatalf("content = %q, want %q", got, "hello")
+		}
+		if requestCount != 2 {
+			t.Fatalf("request count = %d, want 2", requestCount)
+		}
+	})
+
+	t.Run("http 500 retries", func(t *testing.T) {
+		requestCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount++
+			if requestCount == 1 {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"error":{"message":"temporary"}}`))
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "test-model"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		got, err := client.Complete(context.Background(), "sys", "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "hello" {
+			t.Fatalf("content = %q, want %q", got, "hello")
+		}
+		if requestCount != 2 {
+			t.Fatalf("request count = %d, want 2", requestCount)
 		}
 	})
 

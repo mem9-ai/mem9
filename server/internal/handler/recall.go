@@ -2,14 +2,14 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/service"
@@ -168,39 +168,62 @@ func (s *Server) defaultConfidenceRecallSearch(
 		sessionDuration   time.Duration
 	)
 
-	group, groupCtx := errgroup.WithContext(ctx)
-	group.Go(func() error {
+	var (
+		pinnedErr  error
+		insightErr error
+		sessionErr error
+	)
+
+	var group sync.WaitGroup
+	group.Add(3)
+	go func() {
+		defer group.Done()
 		branchStart := time.Now()
-		candidates, err := svc.memory.SearchCandidates(groupCtx, pinnedFilter, service.RecallSourcePinned, recallCandidateOptions(profile.shape, false))
+		candidates, err := svc.memory.SearchCandidates(ctx, pinnedFilter, service.RecallSourcePinned, recallCandidateOptions(profile.shape, false))
 		pinnedDuration = time.Since(branchStart)
 		if err != nil {
-			return err
+			pinnedErr = err
+			slog.WarnContext(ctx, "recall candidate pool failed; continuing with available pools",
+				"source_pool", string(service.RecallSourcePinned),
+				"err", err,
+			)
+			return
 		}
 		pinnedCandidates = candidates
-		return nil
-	})
-	group.Go(func() error {
+	}()
+	go func() {
+		defer group.Done()
 		branchStart := time.Now()
-		candidates, err := svc.memory.SearchCandidates(groupCtx, insightFilter, service.RecallSourceInsight, recallCandidateOptions(profile.shape, true))
+		candidates, err := svc.memory.SearchCandidates(ctx, insightFilter, service.RecallSourceInsight, recallCandidateOptions(profile.shape, true))
 		insightDuration = time.Since(branchStart)
 		if err != nil {
-			return err
+			insightErr = err
+			slog.WarnContext(ctx, "recall candidate pool failed; continuing with available pools",
+				"source_pool", string(service.RecallSourceInsight),
+				"err", err,
+			)
+			return
 		}
 		insightCandidates = candidates
-		return nil
-	})
-	group.Go(func() error {
+	}()
+	go func() {
+		defer group.Done()
 		branchStart := time.Now()
-		candidates, err := svc.session.SearchCandidates(groupCtx, sessionFilter, service.RecallSourceSession, recallCandidateOptions(profile.shape, false))
+		candidates, err := svc.session.SearchCandidates(ctx, sessionFilter, service.RecallSourceSession, recallCandidateOptions(profile.shape, false))
 		sessionDuration = time.Since(branchStart)
 		if err != nil {
-			return err
+			sessionErr = err
+			slog.WarnContext(ctx, "recall candidate pool failed; continuing with available pools",
+				"source_pool", string(service.RecallSourceSession),
+				"err", err,
+			)
+			return
 		}
 		sessionCandidates = candidates
-		return nil
-	})
-	if err := group.Wait(); err != nil {
-		return nil, 0, err
+	}()
+	group.Wait()
+	if pinnedErr != nil && insightErr != nil && sessionErr != nil {
+		return nil, 0, errors.Join(pinnedErr, insightErr, sessionErr)
 	}
 
 	pinnedCandidates = applyRecallConfidence(profile, pinnedCandidates)
@@ -368,7 +391,7 @@ func selectPinnedRecallCandidates(
 	selected, _ := selectTopRecallCandidates(shape, minInt(pinnedKeepMax(shape), budget), defaultPinnedMinConfidence, false, candidates, nil)
 	seen := make(map[string]struct{}, len(selected))
 	for _, mem := range selected {
-		seen[recallMemoryKey(mem)] = struct{}{}
+		rememberRecallMemorySeen(mem, seen)
 	}
 	return selected, seen
 }
@@ -522,8 +545,7 @@ func selectBalancedRecallCandidates(
 		if len(selected) >= budget {
 			break
 		}
-		key := recallMemoryKey(candidate.Memory)
-		if _, exists := seen[key]; exists {
+		if recallMemorySeen(candidate.Memory, seen) {
 			continue
 		}
 
@@ -601,8 +623,7 @@ func selectEnumerationRecallCandidates(
 		if len(selected) >= budget {
 			break
 		}
-		key := recallMemoryKey(candidate.Memory)
-		if _, exists := seen[key]; exists {
+		if recallMemorySeen(candidate.Memory, seen) {
 			continue
 		}
 		confidence := recallConfidenceValue(candidate.Memory)
@@ -688,8 +709,7 @@ func nextEnumerationCandidate(
 		candidate := candidates[*index]
 		*index++
 
-		key := recallMemoryKey(candidate.Memory)
-		if _, exists := seen[key]; exists {
+		if recallMemorySeen(candidate.Memory, seen) {
 			continue
 		}
 		if recallConfidenceValue(candidate.Memory) < minConfidence {
@@ -716,9 +736,55 @@ func nextEnumerationCandidate(
 }
 
 func rememberRecallCandidate(candidate service.RecallCandidate, seen map[string]struct{}, selected *[]domain.Memory) {
-	key := recallMemoryKey(candidate.Memory)
-	seen[key] = struct{}{}
+	rememberRecallMemorySeen(candidate.Memory, seen)
 	*selected = append(*selected, candidate.Memory)
+}
+
+func recallMemorySeen(mem domain.Memory, seen map[string]struct{}) bool {
+	if len(seen) == 0 {
+		return false
+	}
+	for _, key := range recallMemoryLookupKeys(mem) {
+		if _, exists := seen[key]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+func rememberRecallMemorySeen(mem domain.Memory, seen map[string]struct{}) {
+	if seen == nil {
+		return
+	}
+	for _, key := range recallMemoryRememberKeys(mem) {
+		seen[key] = struct{}{}
+	}
+}
+
+func recallMemoryLookupKeys(mem domain.Memory) []string {
+	keys := []string{recallMemoryKey(mem)}
+	for _, key := range service.SearchEvidenceKeys(mem) {
+		switch mem.MemoryType {
+		case domain.TypeSession:
+			keys = append(keys, "evidence:insight:"+key)
+		case domain.TypeInsight:
+			keys = append(keys, "evidence:session:"+key)
+		}
+	}
+	return keys
+}
+
+func recallMemoryRememberKeys(mem domain.Memory) []string {
+	keys := []string{recallMemoryKey(mem)}
+	for _, key := range service.SearchEvidenceKeys(mem) {
+		switch mem.MemoryType {
+		case domain.TypeSession:
+			keys = append(keys, "evidence:session:"+key)
+		case domain.TypeInsight:
+			keys = append(keys, "evidence:insight:"+key)
+		}
+	}
+	return keys
 }
 
 func recordRecallSourceSelection(stats *recallSelectionStats, pool service.RecallSourcePool) {
@@ -774,8 +840,7 @@ func selectTopRecallCandidates(
 		if len(selected) >= budget {
 			break
 		}
-		key := recallMemoryKey(candidate.Memory)
-		if _, exists := seen[key]; exists {
+		if recallMemorySeen(candidate.Memory, seen) {
 			continue
 		}
 
@@ -789,7 +854,7 @@ func selectTopRecallCandidates(
 			break
 		}
 
-		seen[key] = struct{}{}
+		rememberRecallMemorySeen(candidate.Memory, seen)
 		selected = append(selected, candidate.Memory)
 		lastConfidence = confidence
 	}

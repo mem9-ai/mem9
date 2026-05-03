@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,6 +32,7 @@ type stubSessionRepo struct {
 	autoVecErr     error
 	ftsAvail       bool
 	sessionRows    []*domain.Session
+	listErr        error
 	recentRows     []*domain.Session
 	listSessionIDs []string
 	listLimit      int
@@ -77,6 +79,9 @@ func (s *stubSessionRepo) FTSAvailable() bool { return s.ftsAvail }
 func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, ids []string, limit int) ([]*domain.Session, error) {
 	s.listSessionIDs = append([]string(nil), ids...)
 	s.listLimit = limit
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
 	return append([]*domain.Session(nil), s.sessionRows...), nil
 }
 
@@ -333,6 +338,118 @@ func TestSessionService_SearchCandidates_ExpandsAdjacentTurns(t *testing.T) {
 	}
 	if len(repo.listSessionIDs) != 1 || repo.listSessionIDs[0] != "sess-1" {
 		t.Fatalf("expected ListBySessionIDs to request sess-1, got %+v", repo.listSessionIDs)
+	}
+}
+
+func TestSessionService_AutoHybridCandidatesFallsBackToKeywordWhenVectorFails(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubSessionRepo{
+		autoVecErr: errors.New("invalid connection"),
+		keywordResults: []domain.Memory{
+			{ID: "kw-1", Content: "keyword session result", MemoryType: domain.TypeSession, State: domain.StateActive},
+		},
+		ftsAvail: false,
+	}
+	svc := NewSessionService(repo, nil, "auto-model")
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{
+		Query: "keyword session result",
+		Limit: 5,
+	}, RecallSourceSession, RecallCandidateOptions{})
+	if err != nil {
+		t.Fatalf("SearchCandidates() should fall back to keyword, got error: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Memory.ID != "kw-1" {
+		t.Fatalf("expected keyword candidate, got %+v", candidates)
+	}
+	if !candidates[0].InKeyword || candidates[0].InVector {
+		t.Fatalf("expected keyword-only candidate, got %+v", candidates[0])
+	}
+}
+
+func TestSessionService_AutoHybridCandidatesFallsBackToVectorWhenKeywordFails(t *testing.T) {
+	t.Parallel()
+
+	score := 0.91
+	repo := &stubSessionRepo{
+		autoVecResults: []domain.Memory{
+			{ID: "vec-1", Content: "semantic session result", Score: &score, MemoryType: domain.TypeSession, State: domain.StateActive},
+		},
+		keywordErr: errors.New("invalid connection"),
+		ftsAvail:   false,
+	}
+	svc := NewSessionService(repo, nil, "auto-model")
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{
+		Query: "semantic session result",
+		Limit: 5,
+	}, RecallSourceSession, RecallCandidateOptions{})
+	if err != nil {
+		t.Fatalf("SearchCandidates() should fall back to vector, got error: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Memory.ID != "vec-1" {
+		t.Fatalf("expected vector candidate, got %+v", candidates)
+	}
+	if !candidates[0].InVector || candidates[0].InKeyword {
+		t.Fatalf("expected vector-only candidate, got %+v", candidates[0])
+	}
+}
+
+func TestSessionService_AutoHybridCandidatesReturnsErrorWhenAllBranchesFail(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubSessionRepo{
+		autoVecErr: errors.New("vector down"),
+		keywordErr: errors.New("keyword down"),
+		ftsAvail:   false,
+	}
+	svc := NewSessionService(repo, nil, "auto-model")
+
+	_, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{
+		Query: "no route",
+		Limit: 5,
+	}, RecallSourceSession, RecallCandidateOptions{})
+	if err == nil {
+		t.Fatal("expected error when both vector and text branches fail")
+	}
+	if !strings.Contains(err.Error(), "session recall branches failed") {
+		t.Fatalf("expected joined branch error, got %v", err)
+	}
+}
+
+func TestSessionService_SearchCandidatesIgnoresAdjacentLookupFailure(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubSessionRepo{
+		keywordResults: []domain.Memory{
+			{
+				ID:         "s-question",
+				SessionID:  "sess-1",
+				Content:    "Which company do you like?",
+				MemoryType: domain.TypeSession,
+				Metadata:   json.RawMessage(`{"role":"user","seq":7,"content_type":"text"}`),
+				State:      domain.StateActive,
+			},
+		},
+		listErr:  errors.New("invalid connection"),
+		ftsAvail: false,
+	}
+	svc := newTestSessionService(repo)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{Query: "What company does John like?", Limit: 5}, RecallSourceSession, RecallCandidateOptions{
+		EnableAdjacentTurns: true,
+		AdjacentTurnRadius:  1,
+		AdjacentTurnTopN:    2,
+	})
+	if err != nil {
+		t.Fatalf("adjacent lookup failure should not fail recall, got error: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Memory.ID != "s-question" {
+		t.Fatalf("expected base keyword candidate only, got %+v", candidates)
+	}
+	if len(repo.listSessionIDs) != 1 || repo.listSessionIDs[0] != "sess-1" {
+		t.Fatalf("expected adjacent lookup to be attempted for sess-1, got %+v", repo.listSessionIDs)
 	}
 }
 

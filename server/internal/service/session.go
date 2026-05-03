@@ -137,17 +137,29 @@ func (s *SessionService) SearchCandidates(
 }
 
 func (s *SessionService) autoHybridSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
-	vecResults, err := s.sessions.AutoVectorSearch(ctx, f.Query, f, fetchLimit)
+	vectorCtx, vectorCancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+	vecResults, err := s.sessions.AutoVectorSearch(vectorCtx, f.Query, f, fetchLimit)
+	vectorCancel()
 	skipped := errors.Is(err, domain.ErrAutoVectorSearchSkipped)
 	observeRecallAutoEmbeddingRequest(s.autoModel, err, skipped)
-	if err != nil && !skipped {
-		return nil, fmt.Errorf("session auto vector search: %w", err)
-	}
-	vecResults = applyMinScore(vecResults, f.MinScore)
-
-	kwResults, err := s.ftsOrKeyword(ctx, f, fetchLimit)
+	var vecErr error
 	if err != nil {
-		return nil, err
+		if skipped {
+			vecResults = nil
+		} else {
+			vecErr = fmt.Errorf("session auto vector search: %w", err)
+			logRecallBranchFailure(ctx, "session", "auto_vector", vecErr)
+		}
+	} else {
+		vecResults = applyMinScore(vecResults, f.MinScore)
+	}
+
+	kwResults, textBranch, kwErr := s.ftsOrKeywordWithBranch(ctx, f, fetchLimit)
+	if kwErr != nil {
+		logRecallBranchFailure(ctx, "session", textBranch, kwErr)
+	}
+	if vecErr != nil && kwErr != nil {
+		return nil, joinedRecallBranchError("session", vecErr, kwErr)
 	}
 
 	slog.Info("session auto hybrid search", "query_len", len(f.Query), "vec", len(vecResults), "kw", len(kwResults))
@@ -168,25 +180,37 @@ func (s *SessionService) autoHybridCandidates(
 ) ([]RecallCandidate, error) {
 	start := time.Now()
 	vectorStart := time.Now()
-	vecResults, err := s.sessions.AutoVectorSearch(ctx, f.Query, f, fetchLimit)
+	vectorCtx, vectorCancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+	vecResults, err := s.sessions.AutoVectorSearch(vectorCtx, f.Query, f, fetchLimit)
+	vectorCancel()
 	skipped := errors.Is(err, domain.ErrAutoVectorSearchSkipped)
 	observeRecallAutoEmbeddingRequest(s.autoModel, err, skipped)
 	vectorDuration := time.Since(vectorStart)
-	if err != nil && !skipped {
-		return nil, fmt.Errorf("session auto vector search: %w", err)
+	var vecErr error
+	if err != nil {
+		if skipped {
+			vecResults = nil
+		} else {
+			vecErr = fmt.Errorf("session auto vector search: %w", err)
+			logRecallBranchFailure(ctx, "session", "auto_vector", vecErr)
+		}
+	} else {
+		vecResults = applyMinScore(vecResults, f.MinScore)
 	}
-	vecResults = applyMinScore(vecResults, f.MinScore)
 
 	keywordStart := time.Now()
-	kwResults, err := s.ftsOrKeyword(ctx, f, fetchLimit)
+	kwResults, textBranch, kwErr := s.ftsOrKeywordWithBranch(ctx, f, fetchLimit)
 	keywordDuration := time.Since(keywordStart)
-	if err != nil {
-		return nil, err
+	if kwErr != nil {
+		logRecallBranchFailure(ctx, "session", textBranch, kwErr)
+	}
+	if vecErr != nil && kwErr != nil {
+		return nil, joinedRecallBranchError("session", vecErr, kwErr)
 	}
 
 	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, kwResults, vecResults, opts)
 	if err != nil {
-		return nil, err
+		logRecallBranchFailure(ctx, "session", "adjacent_turns", err)
 	}
 
 	slog.InfoContext(ctx, "session recall candidate search",
@@ -210,15 +234,23 @@ func (s *SessionService) hybridSearch(ctx context.Context, f domain.MemoryFilter
 		return nil, fmt.Errorf("session embed query: %w", err)
 	}
 
-	vecResults, err := s.sessions.VectorSearch(ctx, queryVec, f, fetchLimit)
+	vectorCtx, vectorCancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+	vecResults, err := s.sessions.VectorSearch(vectorCtx, queryVec, f, fetchLimit)
+	vectorCancel()
+	var vecErr error
 	if err != nil {
-		return nil, fmt.Errorf("session vector search: %w", err)
+		vecErr = fmt.Errorf("session vector search: %w", err)
+		logRecallBranchFailure(ctx, "session", "vector", vecErr)
+	} else {
+		vecResults = applyMinScore(vecResults, f.MinScore)
 	}
-	vecResults = applyMinScore(vecResults, f.MinScore)
 
-	kwResults, err := s.ftsOrKeyword(ctx, f, fetchLimit)
-	if err != nil {
-		return nil, err
+	kwResults, textBranch, kwErr := s.ftsOrKeywordWithBranch(ctx, f, fetchLimit)
+	if kwErr != nil {
+		logRecallBranchFailure(ctx, "session", textBranch, kwErr)
+	}
+	if vecErr != nil && kwErr != nil {
+		return nil, joinedRecallBranchError("session", vecErr, kwErr)
 	}
 
 	slog.Info("session hybrid search", "query_len", len(f.Query), "vec", len(vecResults), "kw", len(kwResults))
@@ -243,27 +275,37 @@ func (s *SessionService) hybridCandidates(
 		return nil, fmt.Errorf("session embed query: %w", err)
 	}
 
-	vecResults, err := s.sessions.VectorSearch(ctx, queryVec, f, fetchLimit)
+	vectorCtx, vectorCancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+	vecResults, err := s.sessions.VectorSearch(vectorCtx, queryVec, f, fetchLimit)
+	vectorCancel()
+	var vecErr error
 	if err != nil {
-		return nil, fmt.Errorf("session vector search: %w", err)
+		vecErr = fmt.Errorf("session vector search: %w", err)
+		logRecallBranchFailure(ctx, "session", "vector", vecErr)
+	} else {
+		vecResults = applyMinScore(vecResults, f.MinScore)
 	}
-	vecResults = applyMinScore(vecResults, f.MinScore)
 
-	kwResults, err := s.ftsOrKeyword(ctx, f, fetchLimit)
-	if err != nil {
-		return nil, err
+	kwResults, textBranch, kwErr := s.ftsOrKeywordWithBranch(ctx, f, fetchLimit)
+	if kwErr != nil {
+		logRecallBranchFailure(ctx, "session", textBranch, kwErr)
+	}
+	if vecErr != nil && kwErr != nil {
+		return nil, joinedRecallBranchError("session", vecErr, kwErr)
 	}
 
 	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, kwResults, vecResults, opts)
 	if err != nil {
-		return nil, err
+		logRecallBranchFailure(ctx, "session", "adjacent_turns", err)
 	}
 
 	return mergeRecallCandidatesWithExtraWeight(sourcePool, kwResults, vecResults, adjacentResults, sessionAdjacentTurnWeight), nil
 }
 
 func (s *SessionService) ftsSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
-	results, err := s.sessions.FTSSearch(ctx, f.Query, f, fetchLimit)
+	branchCtx, cancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+	results, err := s.sessions.FTSSearch(branchCtx, f.Query, f, fetchLimit)
+	cancel()
 	if err != nil {
 		return nil, fmt.Errorf("session fts search: %w", err)
 	}
@@ -272,19 +314,23 @@ func (s *SessionService) ftsSearch(ctx context.Context, f domain.MemoryFilter, l
 }
 
 func (s *SessionService) ftsCandidates(ctx context.Context, f domain.MemoryFilter, sourcePool RecallSourcePool, opts RecallCandidateOptions, fetchLimit int) ([]RecallCandidate, error) {
-	results, err := s.sessions.FTSSearch(ctx, f.Query, f, fetchLimit)
+	branchCtx, cancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+	results, err := s.sessions.FTSSearch(branchCtx, f.Query, f, fetchLimit)
+	cancel()
 	if err != nil {
 		return nil, fmt.Errorf("session fts search: %w", err)
 	}
 	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, results, nil, opts)
 	if err != nil {
-		return nil, err
+		logRecallBranchFailure(ctx, "session", "adjacent_turns", err)
 	}
 	return mergeRecallCandidatesWithExtraWeight(sourcePool, results, nil, adjacentResults, sessionAdjacentTurnWeight), nil
 }
 
 func (s *SessionService) keywordSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
-	results, err := s.sessions.KeywordSearch(ctx, f.Query, f, fetchLimit)
+	branchCtx, cancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+	results, err := s.sessions.KeywordSearch(branchCtx, f.Query, f, fetchLimit)
+	cancel()
 	if err != nil {
 		return nil, fmt.Errorf("session keyword search: %w", err)
 	}
@@ -293,30 +339,41 @@ func (s *SessionService) keywordSearch(ctx context.Context, f domain.MemoryFilte
 }
 
 func (s *SessionService) keywordCandidates(ctx context.Context, f domain.MemoryFilter, sourcePool RecallSourcePool, opts RecallCandidateOptions, fetchLimit int) ([]RecallCandidate, error) {
-	results, err := s.sessions.KeywordSearch(ctx, f.Query, f, fetchLimit)
+	branchCtx, cancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+	results, err := s.sessions.KeywordSearch(branchCtx, f.Query, f, fetchLimit)
+	cancel()
 	if err != nil {
 		return nil, fmt.Errorf("session keyword search: %w", err)
 	}
 	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, results, nil, opts)
 	if err != nil {
-		return nil, err
+		logRecallBranchFailure(ctx, "session", "adjacent_turns", err)
 	}
 	return mergeRecallCandidatesWithExtraWeight(sourcePool, results, nil, adjacentResults, sessionAdjacentTurnWeight), nil
 }
 
 func (s *SessionService) ftsOrKeyword(ctx context.Context, f domain.MemoryFilter, fetchLimit int) ([]domain.Memory, error) {
+	results, _, err := s.ftsOrKeywordWithBranch(ctx, f, fetchLimit)
+	return results, err
+}
+
+func (s *SessionService) ftsOrKeywordWithBranch(ctx context.Context, f domain.MemoryFilter, fetchLimit int) ([]domain.Memory, string, error) {
 	if s.sessions.FTSAvailable() {
-		r, err := s.sessions.FTSSearch(ctx, f.Query, f, fetchLimit)
+		branchCtx, cancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+		r, err := s.sessions.FTSSearch(branchCtx, f.Query, f, fetchLimit)
+		cancel()
 		if err != nil {
-			return nil, fmt.Errorf("session fts search: %w", err)
+			return nil, "fts", fmt.Errorf("session fts search: %w", err)
 		}
-		return r, nil
+		return r, "fts", nil
 	}
-	r, err := s.sessions.KeywordSearch(ctx, f.Query, f, fetchLimit)
+	branchCtx, cancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+	r, err := s.sessions.KeywordSearch(branchCtx, f.Query, f, fetchLimit)
+	cancel()
 	if err != nil {
-		return nil, fmt.Errorf("session keyword search: %w", err)
+		return nil, "keyword", fmt.Errorf("session keyword search: %w", err)
 	}
-	return r, nil
+	return r, "keyword", nil
 }
 
 func (s *SessionService) adjacentTurnResults(
@@ -352,7 +409,9 @@ func (s *SessionService) adjacentTurnResults(
 
 	fetchLimit := adjacentTurnFetchLimit(seeds, opts.AdjacentTurnRadius)
 	start := time.Now()
-	sessions, err := s.sessions.ListBySessionIDs(ctx, sessionIDs, fetchLimit)
+	branchCtx, cancel := withRecallTimeout(ctx, recallAdjacentTurnTimeout)
+	sessions, err := s.sessions.ListBySessionIDs(branchCtx, sessionIDs, fetchLimit)
+	cancel()
 	if err != nil {
 		if errors.Is(err, domain.ErrNotSupported) {
 			return nil, nil

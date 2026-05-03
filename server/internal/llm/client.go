@@ -161,7 +161,7 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 	reasoningSplit := supportsReasoningSplit(c.model)
 	requireThinkingDisabled := enableThinking != nil && isQwenModel(c.model)
 
-	result, err := c.doRequest(ctx, chatRequest{
+	result, err := c.doRequestWithTransientRetry(ctx, chatRequest{
 		Model:          c.model,
 		Messages:       messages,
 		Temperature:    c.temperature,
@@ -178,7 +178,7 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 			}
 			recordRetryMetric(scope, "thinking_param_400_fallback")
 			slog.Warn("LLM rejected thinking parameters (HTTP 400), retrying without them", "model", c.model)
-			return c.doRequest(ctx, chatRequest{
+			return c.doRequestWithTransientRetry(ctx, chatRequest{
 				Model:          c.model,
 				Messages:       messages,
 				Temperature:    c.temperature,
@@ -193,6 +193,67 @@ func recordRetryMetric(scope CallScope, reason string) {
 	if scope.enabled() {
 		metrics.LLMRetryTotal.WithLabelValues(scope.Step, reason).Inc()
 	}
+}
+
+func (c *Client) doRequestWithTransientRetry(ctx context.Context, cr chatRequest, scope CallScope) (string, error) {
+	const maxAttempts = 3
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		result, err := c.doRequest(ctx, cr, scope)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if attempt == maxAttempts || !isTransientLLMError(err) || ctx.Err() != nil {
+			return result, err
+		}
+		recordRetryMetric(scope, "transient_error_retry")
+		delay := transientRetryDelay(attempt)
+		slog.Warn("LLM transient error, retrying", "model", c.model, "attempt", attempt, "delay_ms", delay.Milliseconds(), "err", err)
+		if sleepErr := sleepContext(ctx, delay); sleepErr != nil {
+			return "", sleepErr
+		}
+	}
+	return "", lastErr
+}
+
+func transientRetryDelay(attempt int) time.Duration {
+	switch attempt {
+	case 1:
+		return 250 * time.Millisecond
+	default:
+		return 750 * time.Millisecond
+	}
+}
+
+func sleepContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func isTransientLLMError(err error) bool {
+	var httpErr *HTTPStatusError
+	if errors.As(err, &httpErr) {
+		return httpErr.Code == http.StatusTooManyRequests || httpErr.Code >= http.StatusInternalServerError
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unexpected eof") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "server closed idle connection") ||
+		strings.Contains(msg, "tls handshake timeout") ||
+		strings.Contains(msg, "temporary failure")
 }
 
 // doRequest sends a single chat completion request and handles metrics/response parsing.
