@@ -82,5 +82,14 @@
       "placeholder": "uuid...",
       "sensitive": true
     }
+  },
+  "contracts": {
+    "tools": [
+      "memory_store",
+      "memory_search",
+      "memory_get",
+      "memory_update",
+      "memory_delete"
+    ]
   }
 }

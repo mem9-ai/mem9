@@ -379,10 +379,16 @@ Before every restart:
 2. After the user returns from that restart, resume verification in the current turn.
 3. Let the first resumed user message trigger the plugin's automatic create-new provision through the normal hook path. Do not wait for startup auto-provision logs, and do not rely on any internal plugin tool.
 4. Read recent gateway logs and extract the single generated key as `AUTO_PROVISIONED_MEM9_API_KEY`
-5. Do not schedule a second mem9-only restart just to persist `apiKey` in `openclaw.json`
-6. Proceed directly to verification once the generated key and positive health signals are confirmed
+5. If the first resumed message did not create a key and there is no mem9 startup/config error, trigger exactly one minimal gateway agent turn locally, then re-check logs and the local provision state. Use the current OpenClaw executable and a stable setup session id:
 
-If the first resumed turn does not produce a key in logs, stop and use `TROUBLESHOOTING.md`.
+```bash
+openclaw agent --session-id mem9-setup-trigger --message "mem9 setup trigger: reply with OK only" --timeout 180 --json
+```
+
+6. Do not schedule a second mem9-only restart just to persist `apiKey` in `openclaw.json`
+7. Proceed directly to verification once the generated key and positive health signals are confirmed
+
+If neither the first resumed turn nor the one local gateway agent trigger produces a key, stop and use `TROUBLESHOOTING.md`.
 
 If the gateway logs show a generated key before the first resumed user message after the restart, treat that as abnormal startup behavior and stop the happy path.
 
@@ -407,6 +413,7 @@ If multiple different keys appear during one create-new run, treat that as an ab
 - After the first post-restart `hi`, either finish verification in that resumed turn or surface a concrete blocking problem.
 - Do not ask for another keepalive message while the only missing step is the plugin's first-message create-new provision; that step must be driven by the same resumed turn.
 - Do not ask for repeated keepalive messages such as another `hi` unless a real additional restart occurred after the first resumed turn began.
+- If a resumed chat message does not produce a gateway-side `agent_end` hook, do not ask the user for another `hi`. Use the one local gateway agent trigger from the Create-New Path instead, then verify.
 - If the first resumed turn already produced the generated key and no mem9-specific startup error remains, treat that same turn as the happy-path verification turn. Do not ask for another `hi` just to confirm that create-new already ran.
 - If the first post-restart host status briefly reports memory as unavailable, do one silent re-check before telling the user anything else.
 - That silent re-check must use the current config plus mem9-specific logs or activity to confirm whether the plugin is actually healthy.
