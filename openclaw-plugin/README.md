@@ -2,7 +2,7 @@
 
 Memory plugin for [OpenClaw](https://github.com/openclaw) — replaces the built-in memory slot with cloud-persistent shared memory. Runs in server mode only, connecting to `mnemo-server` via `apiUrl` + `apiKey` (preferred) or legacy `tenantID`. Optional `provisionToken` and `provisionQueryParams` are used only during first-time create-new setup before an explicit `apiKey` is configured.
 
-When `apiKey` is absent during create-new onboarding, the plugin does not auto-provision on startup. Instead, the first post-restart user message triggers exactly one create-new provision through the normal hook path. The plugin coordinates that call across concurrent OpenClaw plugin registrations on the same machine and reuses the generated key locally for future restarts tied to the same `provisionToken`.
+When `apiKey` is absent during create-new onboarding, the plugin does not auto-provision on startup. Instead, the first post-restart OpenClaw agent turn that runs `before_prompt_build` triggers exactly one create-new provision. Setup/control chats such as TUI local embedded sessions may not run that plugin hook themselves, so onboarding can trigger one minimal OpenClaw agent turn to complete provisioning. The plugin coordinates that call across concurrent OpenClaw plugin registrations on the same machine and reuses the generated key locally for future restarts tied to the same `provisionToken`.
 
 ## 🚀 Quick Start (Server Mode)
 
@@ -182,7 +182,7 @@ Defined in `openclaw.plugin.json`:
 |---|---|---|
 | `apiUrl` | string | mnemo-server URL |
 | `apiKey` | string | Preferred key. Uses `/v1alpha2/mem9s/...` with `X-API-Key` header |
-| `provisionToken` | string | Optional one-time create-new token used locally to ensure the first-message create-new provision runs only once and is reused on this machine until an explicit `apiKey` is configured |
+| `provisionToken` | string | Optional one-time create-new token used locally to ensure create-new provisioning runs only once from an OpenClaw agent turn and is reused on this machine until an explicit `apiKey` is configured |
 | `provisionQueryParams` | object | Optional `utm_*` map forwarded only to the initial `POST /v1alpha1/mem9s` request made during create-new when `apiKey` is absent |
 | `defaultTimeoutMs` | number | Default timeout for non-search mem9 API requests in milliseconds. Default: `8000` |
 | `searchTimeoutMs` | number | Timeout for `memory_search` and automatic recall search in milliseconds. Default: `15000` |
@@ -247,7 +247,7 @@ openclaw-plugin/
 | `No mode configured` | Missing config | Add `apiUrl` and `apiKey` (or legacy `tenantID`) to plugin config |
 | `Server mode requires...` | Missing key | Add `apiKey` (or legacy `tenantID`) to config |
 | `config reload skipped (invalid config): plugins.entries.mem9: Unrecognized key: "apiKey"` | Setup wrote `plugins.entries.mem9.apiKey` instead of `plugins.entries.mem9.config.apiKey` | Remove the invalid top-level key and keep the secret only under `config.apiKey` |
-| Multiple auto-provisioned keys appear during create-new | Setup retriggered create-new provisioning before the first result was reused, or an older plugin still auto-provisions on startup | Upgrade to `@mem9/mem9@0.4.7+`; newer builds provision only from the first post-restart user message and reuse one local result across duplicate setup retries |
+| Multiple auto-provisioned keys appear during create-new | Setup retriggered create-new provisioning before the first result was reused, or an older plugin still auto-provisions on startup | Upgrade to `@mem9/mem9@0.4.7+`; newer builds provision only from an OpenClaw agent turn that runs `before_prompt_build` and reuse one local result across duplicate setup retries |
 | Search requests time out | Hybrid/vector search exceeds plugin timeout | Increase `searchTimeoutMs` in plugin config |
 | Conversations are not uploaded on OpenClaw 4.23+ | `agent_end` does not include conversation messages without explicit hook permission | Set `plugins.entries.mem9.hooks.allowConversationAccess` to `true` and restart OpenClaw |
 | Plugin not loading | Not in memory slot | Set `"slots": {"memory": "mem9"}` in openclaw.json |

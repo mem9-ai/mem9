@@ -30,6 +30,25 @@ When this file is read, send ONLY the choice prompt below. Do not include enviro
 - In create-new mode, if the remote `SKILL.md` URL contains filtered `utm_*` params, do not proceed to the first restart until `plugins.entries.mem9.config.provisionQueryParams` has been disclosed and read back exactly.
 - If install schedules or hints at a deferred restart, the pre-restart config read-back is still a hard gate. Do not let the first restart happen with only a partial mem9 config update applied.
 
+## Critical Create-New Verification Rules
+
+These rules must be applied before any user-facing "still waiting" or retry message after the restart:
+
+- Create-new provisioning is driven by the mem9 plugin's `before_prompt_build` hook on an OpenClaw agent turn, not by `agent_end`.
+- The setup chat may be running as TUI local embedded or another control session that does not itself run gateway/plugin hooks. The user's first post-restart `hi` is the signal to resume verification; do not assume that same chat message has already triggered create-new provisioning.
+- In create-new mode, `plugins.entries.mem9.config.apiKey` remains absent by design. Do not classify missing config `apiKey` as failure. Verify the generated key from recent mem9 logs or the matching local provision state under `~/.openclaw/mem9/provision/`.
+- The matching provision state filename is `sha256(JSON.stringify({apiUrl, provisionToken, provisionQueryParams: sortedProvisionQueryParams})) + ".json"`, where `provisionQueryParams` defaults to `{}` and keys are sorted lexicographically.
+- If the first resumed turn finds no generated key and no mem9 startup/config error, run exactly one OpenClaw agent trigger in that same turn before replying with failure or asking the user for anything else:
+
+```bash
+openclaw agent --session-id mem9-setup-provision --message "mem9 setup trigger: reply with OK only" --timeout 180 --json
+```
+
+- After that trigger, re-check recent mem9 logs and the matching provision state. If the key is present, finish onboarding immediately in the same turn.
+- Do not ask the user for another `hi` while the only missing step is create-new provisioning. Another `hi` is allowed only after a real additional restart.
+- If the trigger exits successfully after an embedded fallback and the mem9 provision state is `done`, treat it as a valid local OpenClaw agent turn.
+- If no key appears after the one trigger, stop and use `TROUBLESHOOTING.md`.
+
 ## Terminology
 
 - User-facing term: `API key`
@@ -103,7 +122,7 @@ The dry-run preview must disclose:
 - only mem9 plugin config keys will be changed
 - plugin install happens before any config write that points `plugins.slots.memory` at `mem9`
 - reconnect path expects one restart after config is written and read back
-- create-new path expects one restart without `apiKey`; after the restart, the first user message must trigger exactly one create-new provision through the normal plugin hook path
+- create-new path expects one restart without `apiKey`; after the restart, one OpenClaw agent turn that runs `before_prompt_build` must trigger exactly one create-new provision
 - create-new path will also write one unique `provisionToken` before the first restart so repeated post-restart retries on this machine collapse to the same key
 - OpenClaw 4.23+ / 2026.4.22+ will also get `plugins.entries.mem9.hooks.allowConversationAccess = true` before restart; older versions skip that key and require an OpenClaw upgrade for full automatic conversation upload
 - if create-new has `REMOTE_SKILL_UTM_PARAMS`, the dry-run must explicitly say those filtered `utm_*` values will be written under `plugins.entries.mem9.config.provisionQueryParams` before the first restart
@@ -376,18 +395,18 @@ Before every restart:
    That same restart must already have the exact `plugins.entries.mem9.config.provisionToken = PROVISION_TOKEN` in config.
    If `REMOTE_SKILL_UTM_PARAMS` is non-empty, that same restart must already have the exact `plugins.entries.mem9.config.provisionQueryParams` map present in config.
 2. After the user returns from that restart, resume verification in the current turn.
-3. Let the first resumed user message trigger the plugin's automatic create-new provision through the normal hook path. Do not wait for startup auto-provision logs, and do not rely on any internal plugin tool.
-4. Read recent gateway logs and extract the single generated key as `AUTO_PROVISIONED_MEM9_API_KEY`
-5. If the first resumed message did not create a key and there is no mem9 startup/config error, trigger exactly one minimal gateway agent turn locally, then re-check logs and the local provision state. Use the current OpenClaw executable and a stable setup session id:
+3. Check recent mem9 logs and the matching local provision state for a generated key. Do not check only `plugins.entries.mem9.config.apiKey`; it stays absent by design in create-new mode.
+4. If no generated key is found and there is no mem9 startup/config error, trigger exactly one minimal OpenClaw agent turn locally in the same resumed turn, then re-check logs and the local provision state. Use the current OpenClaw executable and a stable setup session id:
 
 ```bash
-openclaw agent --session-id mem9-setup-trigger --message "mem9 setup trigger: reply with OK only" --timeout 180 --json
+openclaw agent --session-id mem9-setup-provision --message "mem9 setup trigger: reply with OK only" --timeout 180 --json
 ```
 
+5. Read recent mem9 logs and extract the single generated key as `AUTO_PROVISIONED_MEM9_API_KEY`, or read it from the matching `~/.openclaw/mem9/provision/<hash>.json` state when logs are truncated.
 6. Do not schedule a second mem9-only restart just to persist `apiKey` in `openclaw.json`
 7. Proceed directly to verification once the generated key and positive health signals are confirmed
 
-If neither the first resumed turn nor the one local gateway agent trigger produces a key, stop and use `TROUBLESHOOTING.md`.
+If neither the first resumed checks nor the one local OpenClaw agent trigger produces a key, stop and use `TROUBLESHOOTING.md`.
 
 If the gateway logs show a generated key before the first resumed user message after the restart, treat that as abnormal startup behavior and stop the happy path.
 
@@ -410,9 +429,9 @@ If multiple different keys appear during one create-new run, treat that as an ab
 - Do not enumerate internal checklists, log lines, temporary status flips, or diagnostic reasoning in the resume reply.
 - Do not stream intermediate verification details to the user unless the flow is blocked or has failed.
 - After the first post-restart `hi`, either finish verification in that resumed turn or surface a concrete blocking problem.
-- Do not ask for another keepalive message while the only missing step is the plugin's first-message create-new provision; that step must be driven by the same resumed turn.
+- Do not ask for another keepalive message while the only missing step is create-new provisioning; that step must be driven by the same resumed turn using the trigger in the Create-New Path if needed.
 - Do not ask for repeated keepalive messages such as another `hi` unless a real additional restart occurred after the first resumed turn began.
-- If a resumed chat message does not produce a gateway-side `agent_end` hook, do not ask the user for another `hi`. Use the one local gateway agent trigger from the Create-New Path instead, then verify.
+- If a resumed chat message does not produce a plugin `before_prompt_build` hook, do not ask the user for another `hi`. Use the one local OpenClaw agent trigger from the Create-New Path instead, then verify.
 - If the first resumed turn already produced the generated key and no mem9-specific startup error remains, treat that same turn as the happy-path verification turn. Do not ask for another `hi` just to confirm that create-new already ran.
 - If the first post-restart host status briefly reports memory as unavailable, do one silent re-check before telling the user anything else.
 - That silent re-check must use the current config plus mem9-specific logs or activity to confirm whether the plugin is actually healthy.
@@ -432,6 +451,8 @@ Any one of the following in recent gateway logs means the plugin is healthy, reg
 - `[mem9] Injecting N memories into prompt context` (where N is any number including 0)
 - `[mem9] Ingest accepted for async processing`
 - `[mem9] Ingested session: memories_changed=...`
+- `[mem9] *** Auto-provisioned apiKey=...`
+- `[mem9] reusing locally persisted create-new API key for this provisionToken`
 - `[mem9] Server mode (v1alpha2)` with no subsequent plugin startup error
 
 If any positive health signal is present, treat the plugin as operational and proceed to the final handoff. Do not treat `openclaw status` showing `enabled (plugin mem9) · unavailable` as failure when logs show positive activity. That transient status is a known OpenClaw probe timing issue immediately after restart.
@@ -460,12 +481,13 @@ Create-new is successful only if all of the following are true:
 
 - The plugin can reach the mem9 API
 - OpenClaw loads the mem9 plugin without config or plugin errors
-- The create-new flow produced a key from exactly one post-restart provision request after the first restart
+- The create-new flow produced a key from exactly one post-restart provision request after the first restart, verified from mem9 logs or the matching local provision state
 - `PROVISION_TOKEN` was written before the first restart and remained stable for the create-new run
 - On OpenClaw `4.23+` / `2026.4.22+`, `plugins.entries.mem9.hooks.allowConversationAccess` was read back before the first restart and exactly matched `true`
 - If `REMOTE_SKILL_UTM_PARAMS` is non-empty, `plugins.entries.mem9.config.provisionQueryParams` was read back before the first restart and exactly matched that map
 - No different additional key replaced `AUTO_PROVISIONED_MEM9_API_KEY` later in the same create-new run
 - The plugin is running with the generated key on this machine (confirmed by positive health signals or absence of startup errors)
+- `plugins.entries.mem9.config.apiKey` may remain absent after create-new success; that is not a failure
 - Empty memory results are acceptable for a new mem9 space
 
 **Verification priority**: Log-based health signals take precedence over `openclaw status`. If `openclaw status` shows `enabled (plugin mem9) · unavailable` but recent logs contain any positive health signal listed in the Positive Health Signals section above, the plugin is healthy and verification passes. This transient unavailable state is a known OpenClaw probe timing issue and must not block the final handoff.

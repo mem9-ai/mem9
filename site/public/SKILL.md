@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.45
+version: 1.0.46
 homepage: "https://mem9.ai/openclaw-memory"
 description: "Persistent cloud memory plugin for OpenClaw. This document routes setup, troubleshooting, and uninstall flows and defines config boundaries."
 keywords: ["mem9", "openclaw memory", "persistent memory", "cloud memory", "memory plugin", "setup mem9", "install mem9", "reconnect mem9", "uninstall mem9"]
@@ -22,6 +22,8 @@ This top-level `SKILL.md` is a routing and safety document. It is the entry poin
 - Preserve filtered `utm_*` params from a remote `SKILL.md` URL through the create-new setup flow and first restart.
 - Prevent invalid compatibility fallbacks: never write `plugins.entries.mem9.apiKey`; only `plugins.entries.mem9.config.apiKey` is valid.
 - Configure OpenClaw 4.23+ hook permission with `plugins.entries.mem9.hooks.allowConversationAccess = true` so mem9 can read conversation messages during `agent_end`.
+- Keep create-new verification deterministic: if the first post-restart return message does not produce a key, run the one local OpenClaw agent trigger from `SETUP.md` in that same resumed turn; never ask for repeated `hi` messages.
+- In create-new mode, do not treat missing `plugins.entries.mem9.config.apiKey` as failure. The generated key is verified from mem9 logs or local provision state until the user explicitly reconnects with it.
 - Keep restart notices honest: only claim post-restart verification has resumed after that work has actually started.
 - Keep history import manual. Do not scan or upload local memory or session files from this skill.
 
