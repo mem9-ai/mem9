@@ -234,11 +234,6 @@
           },
           "201": {
             "description": "Pinned memory created from explicit content.",
-            "headers": {
-              "ETag": {
-                "$ref": "#/components/headers/ETag"
-              }
-            },
             "content": {
               "application/json": {
                 "schema": {
@@ -612,11 +607,6 @@
           },
           "201": {
             "description": "Pinned memory created from explicit content.",
-            "headers": {
-              "ETag": {
-                "$ref": "#/components/headers/ETag"
-              }
-            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2068,9 +2058,27 @@
         }
       },
       "Metadata": {
-        "type": "object",
-        "additionalProperties": true,
-        "nullable": true
+        "description": "Raw JSON metadata. The server accepts any valid JSON value.",
+        "nullable": true,
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": true
+          },
+          {
+            "type": "array",
+            "items": {}
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
       },
       "MemoryType": {
         "type": "string",
