@@ -175,6 +175,7 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 | `MNEMO_RATE_BURST` | No | `200` | Burst size |
 | `MNEMO_UPLOAD_DIR` | No | `./uploads` | Directory used for uploaded file storage |
 | `MNEMO_WORKER_CONCURRENCY` | No | `5` | Parallelism for async upload ingest workers |
+| `MNEMO_UTM_ENABLED` | No | `false` | Enable UTM campaign tracking. When enabled, `utm_*` query params on provisioning requests are stored in the control-plane DB. Requires the `tenant_utm` table to exist |
 
 #### Embedding And Ingest
 
@@ -193,6 +194,16 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 | `MNEMO_INGEST_MODE` | No | `smart` | Ingest mode: `smart` or `raw` |
 | `MNEMO_FTS_ENABLED` | No | `false` | Enable TiDB full-text search path. Only set this on clusters that support TiDB FTS |
 
+#### Search Source Turns
+
+The `MEM9_SOURCE_TURN_*` variables control how many source turn conversations are attached to search results as contextual decorations.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `MEM9_SOURCE_TURN_MIN_SCORE` | No | `2` | Minimum term-frequency relevance score for a source turn to be included in search result decorations |
+| `MEM9_SOURCE_TURN_PER_MEMORY_LIMIT` | No | `2` | Maximum source turns attached to a single memory in search results |
+| `MEM9_SOURCE_TURN_TOTAL_LIMIT` | No | `12` | Maximum total source turns across all memories in a single search response |
+
 #### Provisioning And Pooling
 
 | Variable | Required | Default | Description |
@@ -209,6 +220,17 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 | `MNEMO_TENANT_POOL_IDLE_TIMEOUT` | No | `10m` | Idle timeout for tenant database handles |
 | `MNEMO_TENANT_POOL_TOTAL_LIMIT` | No | `200` | Total tenant database handles allowed across the process |
 | `MNEMO_CLUSTER_BLACKLIST` | No | — | Comma-separated TiDB cluster IDs whose spend-limit errors should be translated to HTTP 429 instead of 503 |
+
+#### Auto Spend Limit
+
+These variables control automatic spend-limit increases for TiDB Cloud clusters that hit their cap. The feature progressively raises the limit up to `MNEMO_AUTO_SPEND_LIMIT_MAX` with a configurable cooldown between increments.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `MNEMO_AUTO_SPEND_LIMIT_ENABLED` | No | `false` | Enable automatic spend-limit increases for TiDB Cloud clusters. Requires valid `MNEMO_TIDBCLOUD_API_KEY` and `MNEMO_TIDBCLOUD_API_SECRET` |
+| `MNEMO_AUTO_SPEND_LIMIT_INCREMENT` | No | `500` | Amount to increase the spend limit by each step (in USD cents: 500 = $5.00) |
+| `MNEMO_AUTO_SPEND_LIMIT_MAX` | No | `10000` | Maximum spend limit allowed (in USD cents: 10000 = $100.00). Must be greater than the increment |
+| `MNEMO_AUTO_SPEND_LIMIT_COOLDOWN` | No | `1h` | Minimum time between consecutive spend-limit increases for the same cluster |
 
 #### Metering
 
