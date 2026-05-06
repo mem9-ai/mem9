@@ -746,6 +746,9 @@
           "200": {
             "$ref": "#/components/responses/Memory"
           },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
@@ -843,6 +846,9 @@
         "responses": {
           "204": {
             "description": "Memory deleted."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -993,6 +999,9 @@
         "responses": {
           "200": {
             "$ref": "#/components/responses/TaskList"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -1490,7 +1499,7 @@
         }
       },
       "BadRequest": {
-        "description": "Invalid request.",
+        "description": "Invalid request. For v1alpha2 API-key routes this also includes missing, invalid, or inactive X-API-Key values returned by the authentication middleware.",
         "content": {
           "application/json": {
             "schema": {
