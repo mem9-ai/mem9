@@ -1,0 +1,2115 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "mem9 Server API",
+    "version": "v1alpha2",
+    "description": "OpenAPI specification for the mem9 Go server routes registered by server/internal/handler/handler.go."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local development server"
+    },
+    {
+      "url": "https://api.mem9.ai",
+      "description": "Production API server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Health and runtime metadata endpoints."
+    },
+    {
+      "name": "Metrics",
+      "description": "Prometheus metrics endpoint."
+    },
+    {
+      "name": "Provisioning",
+      "description": "Tenant provisioning endpoints."
+    },
+    {
+      "name": "Status",
+      "description": "API key status endpoints."
+    },
+    {
+      "name": "Memories v1alpha1",
+      "description": "Tenant-path memory API."
+    },
+    {
+      "name": "Memories v1alpha2",
+      "description": "API-key memory API."
+    },
+    {
+      "name": "Imports v1alpha1",
+      "description": "Tenant-path file import API."
+    },
+    {
+      "name": "Imports v1alpha2",
+      "description": "API-key file import API."
+    },
+    {
+      "name": "Sessions v1alpha1",
+      "description": "Tenant-path raw session message API."
+    },
+    {
+      "name": "Sessions v1alpha2",
+      "description": "API-key raw session message API."
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "operationId": "getHealth",
+        "summary": "Check server health",
+        "responses": {
+          "200": {
+            "description": "Server is healthy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/versionz": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "operationId": "getVersion",
+        "summary": "Get runtime version metadata",
+        "responses": {
+          "200": {
+            "description": "Runtime metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "operationId": "getMetrics",
+        "summary": "Get Prometheus metrics",
+        "responses": {
+          "200": {
+            "description": "Prometheus metrics text exposition.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/plain; version=0.0.4": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1alpha1/mem9s": {
+      "post": {
+        "tags": [
+          "Provisioning"
+        ],
+        "operationId": "provisionMem9s",
+        "summary": "Provision a mem9 tenant",
+        "description": "Creates a new tenant. The endpoint has no request body. Optional UTM query parameters are captured when present.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UtmSource"
+          },
+          {
+            "$ref": "#/components/parameters/UtmMedium"
+          },
+          {
+            "$ref": "#/components/parameters/UtmCampaign"
+          },
+          {
+            "$ref": "#/components/parameters/UtmContent"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Tenant provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1alpha2/status": {
+      "get": {
+        "tags": [
+          "Status"
+        ],
+        "operationId": "getKeyStatus",
+        "summary": "Get API key status",
+        "description": "Validates X-API-Key against the control-plane state and returns whether the key is active or inactive.",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API key status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v1alpha1/mem9s/{tenantID}/memories": {
+      "post": {
+        "tags": [
+          "Memories v1alpha1"
+        ],
+        "operationId": "createTenantMemory",
+        "summary": "Create or ingest memory data for a tenant",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantID"
+          },
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CreateMemory"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/IngestOk"
+          },
+          "201": {
+            "description": "Pinned memory created from explicit content.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Memory"
+                }
+              }
+            }
+          },
+          "202": {
+            "$ref": "#/components/responses/IngestAccepted"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Memories v1alpha1"
+        ],
+        "operationId": "listTenantMemories",
+        "summary": "List or search tenant memories",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantID"
+          },
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/MemoryQuery"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Tags"
+          },
+          {
+            "$ref": "#/components/parameters/Source"
+          },
+          {
+            "$ref": "#/components/parameters/State"
+          },
+          {
+            "$ref": "#/components/parameters/MemoryType"
+          },
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/SessionID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MemoryList"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1alpha1/mem9s/{tenantID}/memories/{id}": {
+      "get": {
+        "tags": [
+          "Memories v1alpha1"
+        ],
+        "operationId": "getTenantMemory",
+        "summary": "Get a tenant memory by ID",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantID"
+          },
+          {
+            "$ref": "#/components/parameters/MemoryID"
+          },
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Memory"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Memories v1alpha1"
+        ],
+        "operationId": "updateTenantMemory",
+        "summary": "Update a tenant memory",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantID"
+          },
+          {
+            "$ref": "#/components/parameters/MemoryID"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          },
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/UpdateMemory"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MemoryWithETag"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Memories v1alpha1"
+        ],
+        "operationId": "deleteTenantMemory",
+        "summary": "Delete a tenant memory",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantID"
+          },
+          {
+            "$ref": "#/components/parameters/MemoryID"
+          },
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Memory deleted."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1alpha1/mem9s/{tenantID}/imports": {
+      "post": {
+        "tags": [
+          "Imports v1alpha1"
+        ],
+        "operationId": "createTenantImport",
+        "summary": "Create an async tenant import task",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantID"
+          },
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CreateImport"
+        },
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/TaskCreated"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Imports v1alpha1"
+        ],
+        "operationId": "listTenantImports",
+        "summary": "List tenant import tasks",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantID"
+          },
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/TaskList"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1alpha1/mem9s/{tenantID}/imports/{id}": {
+      "get": {
+        "tags": [
+          "Imports v1alpha1"
+        ],
+        "operationId": "getTenantImport",
+        "summary": "Get a tenant import task",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantID"
+          },
+          {
+            "$ref": "#/components/parameters/TaskID"
+          },
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/TaskDetail"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1alpha1/mem9s/{tenantID}/session-messages": {
+      "get": {
+        "tags": [
+          "Sessions v1alpha1"
+        ],
+        "operationId": "listTenantSessionMessages",
+        "summary": "List raw session messages for one or more sessions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantID"
+          },
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionIDRepeated"
+          },
+          {
+            "$ref": "#/components/parameters/LimitPerSession"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/SessionMessages"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1alpha2/mem9s/memories": {
+      "post": {
+        "tags": [
+          "Memories v1alpha2"
+        ],
+        "operationId": "createMemory",
+        "summary": "Create or ingest memory data",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CreateMemory"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/IngestOk"
+          },
+          "201": {
+            "description": "Pinned memory created from explicit content.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Memory"
+                }
+              }
+            }
+          },
+          "202": {
+            "$ref": "#/components/responses/IngestAccepted"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/GatewayTimeout"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Memories v1alpha2"
+        ],
+        "operationId": "listMemories",
+        "summary": "List or search memories",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/MemoryQuery"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/Tags"
+          },
+          {
+            "$ref": "#/components/parameters/Source"
+          },
+          {
+            "$ref": "#/components/parameters/State"
+          },
+          {
+            "$ref": "#/components/parameters/MemoryType"
+          },
+          {
+            "$ref": "#/components/parameters/AgentID"
+          },
+          {
+            "$ref": "#/components/parameters/SessionID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MemoryList"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1alpha2/mem9s/memories/{id}": {
+      "get": {
+        "tags": [
+          "Memories v1alpha2"
+        ],
+        "operationId": "getMemory",
+        "summary": "Get a memory by ID",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MemoryID"
+          },
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Memory"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Memories v1alpha2"
+        ],
+        "operationId": "updateMemory",
+        "summary": "Update a memory",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MemoryID"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          },
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/UpdateMemory"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MemoryWithETag"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Memories v1alpha2"
+        ],
+        "operationId": "deleteMemory",
+        "summary": "Delete a memory",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MemoryID"
+          },
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Memory deleted."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1alpha2/mem9s/memories/batch-delete": {
+      "post": {
+        "tags": [
+          "Memories v1alpha2"
+        ],
+        "operationId": "batchDeleteMemories",
+        "summary": "Delete multiple memories",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchDeleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch delete result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchDeleteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1alpha2/mem9s/imports": {
+      "post": {
+        "tags": [
+          "Imports v1alpha2"
+        ],
+        "operationId": "createImport",
+        "summary": "Create an async import task",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CreateImport"
+        },
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/TaskCreated"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Imports v1alpha2"
+        ],
+        "operationId": "listImports",
+        "summary": "List import tasks",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/TaskList"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1alpha2/mem9s/imports/{id}": {
+      "get": {
+        "tags": [
+          "Imports v1alpha2"
+        ],
+        "operationId": "getImport",
+        "summary": "Get an import task",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TaskID"
+          },
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/TaskDetail"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/v1alpha2/mem9s/session-messages": {
+      "get": {
+        "tags": [
+          "Sessions v1alpha2"
+        ],
+        "operationId": "listSessionMessages",
+        "summary": "List raw session messages for one or more sessions",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          },
+          {
+            "$ref": "#/components/parameters/SessionIDRepeated"
+          },
+          {
+            "$ref": "#/components/parameters/LimitPerSession"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/SessionMessages"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "API key used by v1alpha2 routes."
+      }
+    },
+    "parameters": {
+      "TenantID": {
+        "name": "tenantID",
+        "in": "path",
+        "required": true,
+        "description": "Tenant identifier in v1alpha1 tenant-path routes.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "MemoryID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Memory identifier.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "TaskID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Import task identifier.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "XMnemoAgentId": {
+        "name": "X-Mnemo-Agent-Id",
+        "in": "header",
+        "required": false,
+        "description": "Optional per-agent identity header used as the default agent_id when a request body or form does not provide one.",
+        "schema": {
+          "type": "string",
+          "maxLength": 100
+        }
+      },
+      "IfMatch": {
+        "name": "If-Match",
+        "in": "header",
+        "required": false,
+        "description": "Optional expected memory version for optimistic update.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "MemoryQuery": {
+        "name": "q",
+        "in": "query",
+        "required": false,
+        "description": "Natural-language search query. When omitted, the endpoint lists memories by filters.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "description": "Maximum number of memories to return. Values <= 0 or > 200 are replaced by the server default.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      },
+      "Offset": {
+        "name": "offset",
+        "in": "query",
+        "required": false,
+        "description": "Pagination offset. Negative values are treated as 0.",
+        "schema": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "Tags": {
+        "name": "tags",
+        "in": "query",
+        "required": false,
+        "description": "Comma-separated tag filter.",
+        "schema": {
+          "type": "string",
+          "example": "project,backend"
+        }
+      },
+      "Source": {
+        "name": "source",
+        "in": "query",
+        "required": false,
+        "description": "Memory source filter.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "State": {
+        "name": "state",
+        "in": "query",
+        "required": false,
+        "description": "Memory lifecycle state filter.",
+        "schema": {
+          "$ref": "#/components/schemas/MemoryState"
+        }
+      },
+      "MemoryType": {
+        "name": "memory_type",
+        "in": "query",
+        "required": false,
+        "description": "Memory type filter.",
+        "schema": {
+          "$ref": "#/components/schemas/MemoryType"
+        }
+      },
+      "AgentID": {
+        "name": "agent_id",
+        "in": "query",
+        "required": false,
+        "description": "Agent identifier filter.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "SessionID": {
+        "name": "session_id",
+        "in": "query",
+        "required": false,
+        "description": "Session identifier filter.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "SessionIDRepeated": {
+        "name": "session_id",
+        "in": "query",
+        "required": true,
+        "description": "One or more session IDs. Repeat the query parameter for multiple sessions. Maximum 100 IDs.",
+        "style": "form",
+        "explode": true,
+        "schema": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "LimitPerSession": {
+        "name": "limit_per_session",
+        "in": "query",
+        "required": false,
+        "description": "Maximum messages returned per session. Must be positive and cannot exceed 500.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 500
+        }
+      },
+      "UtmSource": {
+        "name": "utm_source",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "UtmMedium": {
+        "name": "utm_medium",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "UtmCampaign": {
+        "name": "utm_campaign",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "UtmContent": {
+        "name": "utm_content",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "headers": {
+      "ETag": {
+        "description": "Memory version returned as a decimal integer string.",
+        "schema": {
+          "type": "string",
+          "example": "3"
+        }
+      }
+    },
+    "requestBodies": {
+      "CreateMemory": {
+        "required": true,
+        "description": "Create an explicit memory from content or ingest messages. Provide either content or messages, not both.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateMemoryRequest"
+            },
+            "examples": {
+              "pinnedContent": {
+                "summary": "Create pinned memory synchronously",
+                "value": {
+                  "content": "The project uses TiDB as its primary database.",
+                  "memory_type": "pinned",
+                  "agent_id": "codex",
+                  "tags": [
+                    "architecture"
+                  ],
+                  "metadata": {
+                    "source_file": "README.md"
+                  }
+                }
+              },
+              "messageIngest": {
+                "summary": "Ingest conversation messages",
+                "value": {
+                  "session_id": "session-123",
+                  "agent_id": "codex",
+                  "mode": "smart",
+                  "sync": true,
+                  "messages": [
+                    {
+                      "role": "user",
+                      "content": "Remember that deploys use make docker.",
+                      "seq": 1
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "UpdateMemory": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateMemoryRequest"
+            }
+          }
+        }
+      },
+      "CreateImport": {
+        "required": true,
+        "description": "Multipart upload for async file ingest. File size is limited to 50 MiB.",
+        "content": {
+          "multipart/form-data": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateImportRequest"
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "Memory": {
+        "description": "Memory.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Memory"
+            }
+          }
+        }
+      },
+      "MemoryWithETag": {
+        "description": "Updated memory.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Memory"
+            }
+          }
+        }
+      },
+      "MemoryList": {
+        "description": "Memory list or search result.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MemoryListResponse"
+            }
+          }
+        }
+      },
+      "IngestOk": {
+        "description": "Synchronous ingest completed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/StatusResponse"
+            },
+            "example": {
+              "status": "ok"
+            }
+          }
+        }
+      },
+      "IngestAccepted": {
+        "description": "Asynchronous ingest accepted.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/StatusResponse"
+            },
+            "example": {
+              "status": "accepted"
+            }
+          }
+        }
+      },
+      "TaskCreated": {
+        "description": "Import task accepted.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/TaskCreateResponse"
+            }
+          }
+        }
+      },
+      "TaskDetail": {
+        "description": "Import task detail.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/TaskDetail"
+            }
+          }
+        }
+      },
+      "TaskList": {
+        "description": "Import task list.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/TaskListResponse"
+            }
+          }
+        }
+      },
+      "SessionMessages": {
+        "description": "Raw session messages.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SessionMessagesResponse"
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Invalid request.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing or invalid authentication credentials.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Authenticated but not authorized.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Version, duplicate-key, or resource conflict.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "NotImplemented": {
+        "description": "Operation is not supported.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Rate limit exceeded.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Internal server error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "Write conflict or temporarily unavailable backend.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "GatewayTimeout": {
+        "description": "Synchronous ingest timed out.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          }
+        }
+      },
+      "VersionResponse": {
+        "type": "object",
+        "required": [
+          "go_version",
+          "started_at"
+        ],
+        "properties": {
+          "go_version": {
+            "type": "string",
+            "example": "go1.23.4"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProvisionResponse": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Provisioned tenant ID."
+          }
+        }
+      },
+      "KeyStatusResponse": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/KeyStatus"
+          }
+        }
+      },
+      "StatusResponse": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "examples": [
+              "ok",
+              "accepted"
+            ]
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateMemoryRequest": {
+        "type": "object",
+        "description": "Provide either content or messages, not both. memory_type is only accepted for content requests. mode is only accepted for messages requests.",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Explicit memory content. Required when messages is absent."
+          },
+          "memory_type": {
+            "$ref": "#/components/schemas/MemoryType"
+          },
+          "agent_id": {
+            "type": "string",
+            "description": "Agent identity. Defaults from X-Mnemo-Agent-Id when omitted."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/Metadata"
+          },
+          "messages": {
+            "type": "array",
+            "description": "Conversation messages for ingest. Required when content is absent.",
+            "items": {
+              "$ref": "#/components/schemas/IngestMessage"
+            }
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/IngestMode"
+          },
+          "sync": {
+            "type": "boolean",
+            "description": "When true, wait for ingest completion up to the server timeout. When false or omitted, ingest runs asynchronously."
+          }
+        }
+      },
+      "IngestMessage": {
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "example": "user"
+          },
+          "content": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Optional sequence number."
+          }
+        }
+      },
+      "UpdateMemoryRequest": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/Metadata"
+          }
+        }
+      },
+      "BatchDeleteRequest": {
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "BatchDeleteResponse": {
+        "type": "object",
+        "required": [
+          "deleted"
+        ],
+        "properties": {
+          "deleted": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "CreateImportRequest": {
+        "type": "object",
+        "required": [
+          "file",
+          "file_type"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": "File to import. Maximum size is 50 MiB."
+          },
+          "file_type": {
+            "$ref": "#/components/schemas/FileType"
+          },
+          "agent_id": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Agent identity. Defaults from X-Mnemo-Agent-Id when omitted."
+          },
+          "session_id": {
+            "type": "string",
+            "description": "Optional session ID associated with session imports."
+          }
+        }
+      },
+      "MemoryListResponse": {
+        "type": "object",
+        "required": [
+          "memories",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "memories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Memory"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "Memory": {
+        "type": "object",
+        "required": [
+          "id",
+          "content",
+          "memory_type",
+          "state",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "memory_type": {
+            "$ref": "#/components/schemas/MemoryType"
+          },
+          "source": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/Metadata"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "superseded_by": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/MemoryState"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "score": {
+            "type": "number",
+            "format": "double",
+            "nullable": true,
+            "description": "Search relevance score when returned by search endpoints."
+          },
+          "confidence": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Confidence score when returned by recall/search."
+          },
+          "relative_age": {
+            "type": "string",
+            "description": "Human-readable recency string populated for query-time search results."
+          }
+        }
+      },
+      "TaskCreateResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          }
+        }
+      },
+      "TaskDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "file",
+          "status",
+          "total",
+          "done"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "done": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "TaskListResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "tasks"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "empty",
+              "done",
+              "partial",
+              "processing"
+            ]
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskDetail"
+            }
+          }
+        }
+      },
+      "SessionMessage": {
+        "type": "object",
+        "required": [
+          "id",
+          "seq",
+          "role",
+          "content",
+          "content_type",
+          "tags",
+          "state",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "role": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "state": {
+            "$ref": "#/components/schemas/MemoryState"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SessionMessagesResponse": {
+        "type": "object",
+        "required": [
+          "messages",
+          "limit_per_session"
+        ],
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionMessage"
+            }
+          },
+          "limit_per_session": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          }
+        }
+      },
+      "Metadata": {
+        "type": "object",
+        "additionalProperties": true,
+        "nullable": true
+      },
+      "MemoryType": {
+        "type": "string",
+        "enum": [
+          "pinned",
+          "insight",
+          "session"
+        ]
+      },
+      "MemoryState": {
+        "type": "string",
+        "enum": [
+          "active",
+          "paused",
+          "archived",
+          "deleted"
+        ]
+      },
+      "KeyStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "inactive"
+        ]
+      },
+      "IngestMode": {
+        "type": "string",
+        "enum": [
+          "smart",
+          "raw"
+        ]
+      },
+      "TaskStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "processing",
+          "done",
+          "failed"
+        ]
+      },
+      "FileType": {
+        "type": "string",
+        "enum": [
+          "session",
+          "memory"
+        ]
+      }
+    }
+  }
+}
