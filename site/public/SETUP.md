@@ -20,6 +20,9 @@ When this file is read, send ONLY the choice prompt below. Do not include enviro
 - Do not upload local history from this setup flow.
 - Do not use direct web-request commands, raw memory API calls, or scripted shell patch commands in this public setup flow.
 - Do not change the user's global npm registry config during setup unless the user explicitly asks for a permanent mirror change.
+- Install the package only with `openclaw plugins install @mem9/mem9`, optionally prefixed by a one-shot `NPM_CONFIG_REGISTRY=...` environment variable. Do not use `npm install -g @mem9/mem9`, `npm install @mem9/mem9`, `npx`, or a manually copied global npm package as a substitute.
+- A successful package install means OpenClaw's plugin registry recognizes the plugin id `mem9`. A plain npm global install is not success, because OpenClaw 5.5 does not discover global npm packages as plugins and will reject `plugins.slots.memory = "mem9"` with `plugin not found: mem9`.
+- Before writing `plugins.slots.memory = "mem9"`, confirm that the install was performed by `openclaw plugins install @mem9/mem9`, not by npm directly.
 - Reconnect and create-new are separate branches. Once one branch is selected, ignore the other branch unless the user explicitly changes their choice.
 - The allowed config scope is exhaustive. Never add fallback keys outside it. In particular, never write `plugins.entries.mem9.apiKey`; only `plugins.entries.mem9.config.apiKey` is valid.
 - On OpenClaw 4.23+ / 2026.4.22+, write `plugins.entries.mem9.hooks.allowConversationAccess = true` as an entry-level hook policy so mem9 can read conversation messages during `agent_end`. Do not put this under `plugins.entries.mem9.config`.
@@ -48,6 +51,40 @@ openclaw agent --session-id mem9-setup-provision --message "mem9 setup trigger: 
 - Do not ask the user for another `hi` while the only missing step is create-new provisioning. Another `hi` is allowed only after a real additional restart.
 - If the trigger exits successfully after an embedded fallback and the mem9 provision state is `done`, treat it as a valid local OpenClaw agent turn.
 - If no key appears after the one trigger, stop and use `TROUBLESHOOTING.md`.
+
+## Critical Install Rule
+
+The only valid install command family for this OpenClaw plugin is:
+
+```bash
+openclaw plugins install @mem9/mem9
+```
+
+or, when using the temporary China npm mirror:
+
+```bash
+NPM_CONFIG_REGISTRY=https://registry.npmmirror.com openclaw plugins install @mem9/mem9
+```
+
+Never run these as setup substitutes:
+
+```bash
+npm install -g @mem9/mem9
+npm install @mem9/mem9
+```
+
+Those npm commands can download the package, but they do not register it in OpenClaw's plugin install registry. If config is pointed at `mem9` after only a global npm install, OpenClaw reports:
+
+```text
+plugins.slots.memory: plugin not found: mem9
+```
+
+If this mistake already happened, recover in this order:
+
+1. Remove or temporarily roll back only the mem9 wiring from `plugins.slots.memory`, `plugins.entries.mem9`, and `plugins.allow`.
+2. Run `openclaw plugins install @mem9/mem9`.
+3. Confirm OpenClaw recognizes plugin id `mem9`.
+4. Reapply the approved mem9 config and continue the setup flow.
 
 ## Terminology
 
