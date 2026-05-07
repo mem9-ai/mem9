@@ -61,6 +61,12 @@ type MemoryEntityRepo interface {
 	EntityMemoryBoosts(ctx context.Context, agentID string, entityKeys []string, limit int) (map[string]float64, error)
 }
 
+// MemoryEntityFilterRepo narrows entity boosts to the same memory scope used by
+// the primary search path, including session_id for speaker-scoped retrieval.
+type MemoryEntityFilterRepo interface {
+	EntityMemoryBoostsForFilter(ctx context.Context, f domain.MemoryFilter, entityKeys []string, limit int) (map[string]float64, error)
+}
+
 // TenantRepo manages tenant records in the control plane DB.
 type TenantRepo interface {
 	Create(ctx context.Context, t *domain.Tenant) error

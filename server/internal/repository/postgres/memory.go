@@ -601,6 +601,10 @@ func (r *MemoryRepo) DeleteMemoryEntities(ctx context.Context, memoryID string) 
 }
 
 func (r *MemoryRepo) EntityMemoryBoosts(ctx context.Context, agentID string, entityKeys []string, limit int) (map[string]float64, error) {
+	return r.EntityMemoryBoostsForFilter(ctx, domain.MemoryFilter{AgentID: agentID}, entityKeys, limit)
+}
+
+func (r *MemoryRepo) EntityMemoryBoostsForFilter(ctx context.Context, f domain.MemoryFilter, entityKeys []string, limit int) (map[string]float64, error) {
 	result := make(map[string]float64)
 	if len(entityKeys) == 0 {
 		return result, nil
@@ -609,19 +613,62 @@ func (r *MemoryRepo) EntityMemoryBoosts(ctx context.Context, agentID string, ent
 		limit = 50
 	}
 	placeholders := make([]string, len(entityKeys))
-	args := make([]any, 0, len(entityKeys)+2)
-	args = append(args, agentID)
+	args := make([]any, 0, len(entityKeys)+8)
 	for i, key := range entityKeys {
-		placeholders[i] = fmt.Sprintf("$%d", i+2)
+		placeholders[i] = fmt.Sprintf("$%d", len(args)+1)
 		args = append(args, key)
+	}
+	conds := []string{"me.entity_key IN (" + strings.Join(placeholders, ",") + ")"}
+	if f.State == "all" {
+		// no state filter
+	} else if f.State != "" {
+		conds = append(conds, fmt.Sprintf("m.state = $%d", len(args)+1))
+		args = append(args, f.State)
+	} else {
+		conds = append(conds, "m.state = 'active'")
+	}
+	if f.MemoryType != "" {
+		types := strings.Split(f.MemoryType, ",")
+		if len(types) == 1 {
+			conds = append(conds, fmt.Sprintf("m.memory_type = $%d", len(args)+1))
+			args = append(args, strings.TrimSpace(types[0]))
+		} else {
+			typePlaceholders := make([]string, len(types))
+			for i, t := range types {
+				typePlaceholders[i] = fmt.Sprintf("$%d", len(args)+1)
+				args = append(args, strings.TrimSpace(t))
+			}
+			conds = append(conds, "m.memory_type IN ("+strings.Join(typePlaceholders, ",")+")")
+		}
+	}
+	if f.AgentID != "" {
+		conds = append(conds, fmt.Sprintf("m.agent_id = $%d", len(args)+1))
+		args = append(args, f.AgentID)
+	}
+	if f.SessionID != "" {
+		conds = append(conds, fmt.Sprintf("m.session_id = $%d", len(args)+1))
+		args = append(args, f.SessionID)
+	}
+	if f.Source != "" {
+		conds = append(conds, fmt.Sprintf("m.source = $%d", len(args)+1))
+		args = append(args, f.Source)
+	}
+	for _, tag := range f.Tags {
+		tagJSON, err := json.Marshal(tag)
+		if err != nil {
+			continue
+		}
+		conds = append(conds, fmt.Sprintf("m.tags @> $%d::jsonb", len(args)+1))
+		args = append(args, "["+string(tagJSON)+"]")
 	}
 	limitParam := len(args) + 1
 	args = append(args, limit)
-	rows, err := r.db.QueryContext(ctx, `SELECT memory_id, COUNT(*) AS matches
-		FROM memory_entities
-		WHERE agent_id = $1 AND entity_key IN (`+strings.Join(placeholders, ",")+`)
-		GROUP BY memory_id
-		ORDER BY matches DESC, memory_id
+	rows, err := r.db.QueryContext(ctx, `SELECT me.memory_id, COUNT(*) AS matches
+		FROM memory_entities me
+		JOIN memories m ON m.id = me.memory_id
+		WHERE `+strings.Join(conds, " AND ")+`
+		GROUP BY me.memory_id
+		ORDER BY matches DESC, me.memory_id
 		LIMIT $`+fmt.Sprint(limitParam), args...)
 	if err != nil {
 		return nil, fmt.Errorf("entity memory boosts: %w", err)

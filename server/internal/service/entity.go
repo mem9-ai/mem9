@@ -74,6 +74,40 @@ func mergeAdditiveMemoryMetadata(base json.RawMessage, fact ExtractedFact, conte
 			payload[contentHashMetadataKey] = raw
 		}
 	}
+	if factProfileV2Enabled() {
+		if raw, err := json.Marshal(factProfileSchemaVersion); err == nil {
+			payload[factSchemaVersionMetadataKey] = raw
+		}
+		kind := normalizeFactKind(fact.FactKind, fact.Text, fact.Tags, fact.Temporal)
+		if raw, err := json.Marshal(kind); err == nil {
+			payload[factKindMetadataKey] = raw
+		}
+		entities := normalizeFactEntities(fact.Entities)
+		if len(entities) == 0 {
+			entities = normalizeFactEntities(factEntitiesFromText(fact.Text))
+		}
+		if len(entities) > 0 {
+			if raw, err := json.Marshal(entities); err == nil {
+				payload[factEntitiesMetadataKey] = raw
+			}
+		} else {
+			delete(payload, factEntitiesMetadataKey)
+		}
+		answerShapes := normalizeAnswerShapes(fact.AnswerShapes)
+		if len(answerShapes) == 0 {
+			answerShapes = inferAnswerShapes(fact.Text, fact.Tags, fact.Temporal)
+		}
+		if raw, err := json.Marshal(answerShapes); err == nil {
+			payload[answerShapesMetadataKey] = raw
+		}
+		if shouldHintSourcePacket(fact) {
+			if raw, err := json.Marshal(true); err == nil {
+				payload[sourcePacketHintMetadataKey] = raw
+			}
+		} else {
+			delete(payload, sourcePacketHintMetadataKey)
+		}
+	}
 	if attributedTo := strings.TrimSpace(fact.AttributedTo); attributedTo != "" {
 		if raw, err := json.Marshal(attributedTo); err == nil {
 			payload[attributedToMetadataKey] = raw
@@ -162,12 +196,17 @@ func validateLinkedMemoryIDs(ctx context.Context, repo repository.MemoryRepo, ag
 	return out
 }
 
-func replaceMemoryEntityLinks(ctx context.Context, repo repository.MemoryRepo, agentID, memoryID, content string) {
+func replaceMemoryEntityLinks(ctx context.Context, repo repository.MemoryRepo, agentID, memoryID, content string, metadata ...json.RawMessage) {
 	entityRepo, ok := repo.(repository.MemoryEntityRepo)
 	if !ok || memoryID == "" {
 		return
 	}
 	entities := extractMemoryEntities(content)
+	if len(metadata) > 0 {
+		entities = append(entities, metadataFactEntities(metadata[0])...)
+	}
+	entities = expandMemoryEntityAliases(entities)
+	entities = dedupeMemoryEntities(entities)
 	if err := entityRepo.ReplaceMemoryEntities(ctx, agentID, memoryID, entities); err != nil {
 		slog.Warn("replace memory entity links failed", "memory_id", memoryID, "err", err)
 	}
@@ -236,6 +275,97 @@ func extractMemoryEntities(text string) []domain.MemoryEntity {
 	return entities
 }
 
+func factEntitiesFromText(text string) []FactEntity {
+	entities := extractMemoryEntities(text)
+	out := make([]FactEntity, 0, len(entities))
+	for _, entity := range entities {
+		out = append(out, FactEntity{Text: entity.Text, Type: entity.Type})
+	}
+	return out
+}
+
+func dedupeMemoryEntities(entities []domain.MemoryEntity) []domain.MemoryEntity {
+	seen := make(map[string]struct{}, len(entities))
+	out := make([]domain.MemoryEntity, 0, len(entities))
+	for _, entity := range entities {
+		if entity.Key == "" {
+			entity.Key = memoryEntityKey(entity.Text)
+		}
+		if entity.Key == "" || entity.Text == "" {
+			continue
+		}
+		if _, ok := seen[entity.Key]; ok {
+			continue
+		}
+		seen[entity.Key] = struct{}{}
+		out = append(out, entity)
+		if len(out) >= maxMemoryEntities {
+			break
+		}
+	}
+	return out
+}
+
+func expandMemoryEntityAliases(entities []domain.MemoryEntity) []domain.MemoryEntity {
+	if len(entities) == 0 {
+		return nil
+	}
+	out := make([]domain.MemoryEntity, 0, len(entities)*2)
+	for _, entity := range entities {
+		if entity.Key == "" {
+			entity.Key = memoryEntityKey(entity.Text)
+		}
+		if entity.Key != "" && entity.Text != "" {
+			out = append(out, entity)
+		}
+		for _, alias := range memoryEntityAliases(entity.Text) {
+			out = append(out, domain.MemoryEntity{
+				Key:  memoryEntityKey(alias),
+				Text: truncateRunes(alias, 255),
+				Type: "alias",
+			})
+		}
+	}
+	return out
+}
+
+func memoryEntityAliases(text string) []string {
+	text = normalizeEntityText(text)
+	parts := strings.Fields(text)
+	if len(parts) < 2 {
+		lemma := lemmatizeForBM25(text)
+		if lemma != "" && !strings.EqualFold(lemma, text) && isUsefulEntity(lemma) {
+			return []string{lemma}
+		}
+		return nil
+	}
+	seen := map[string]struct{}{}
+	aliases := make([]string, 0, len(parts)+1)
+	add := func(value string) {
+		value = normalizeEntityText(value)
+		if !isUsefulEntity(value) {
+			return
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		aliases = append(aliases, value)
+	}
+	add(parts[len(parts)-1])
+	for _, part := range parts {
+		if len(part) >= 4 {
+			add(part)
+		}
+	}
+	lemma := lemmatizeForBM25(text)
+	if lemma != "" && !strings.EqualFold(lemma, text) {
+		add(lemma)
+	}
+	return aliases
+}
+
 func normalizeEntityText(text string) string {
 	text = strings.TrimSpace(text)
 	text = strings.Trim(text, `"'`+"`“”‘’.,;:!?()[]{}<>")
@@ -295,15 +425,18 @@ func entityKeys(entities []domain.MemoryEntity) []string {
 	return keys
 }
 
+func expandedEntityKeys(entities []domain.MemoryEntity) []string {
+	return entityKeys(expandMemoryEntityAliases(entities))
+}
+
 func (s *MemoryService) applyEntityBoosts(ctx context.Context, filter domain.MemoryFilter, candidates []RecallCandidate) []RecallCandidate {
 	if len(candidates) == 0 || strings.TrimSpace(filter.Query) == "" {
 		return candidates
 	}
-	entityRepo, ok := s.memories.(repository.MemoryEntityRepo)
-	if !ok {
+	if _, ok := s.memories.(repository.MemoryEntityRepo); !ok {
 		return candidates
 	}
-	keys := entityKeys(extractMemoryEntities(filter.Query))
+	keys := expandedEntityKeys(extractMemoryEntities(filter.Query))
 	if len(keys) == 0 {
 		return candidates
 	}
@@ -312,7 +445,7 @@ func (s *MemoryService) applyEntityBoosts(ctx context.Context, filter domain.Mem
 		limit = entityRecallBoostMaxMatches
 	}
 	boostCtx, cancel := withRecallTimeout(ctx, recallEntityBoostTimeout)
-	boosts, err := entityRepo.EntityMemoryBoosts(boostCtx, filter.AgentID, keys, limit)
+	boosts, err := s.entityBoostsForFilter(boostCtx, filter, keys, limit)
 	cancel()
 	if err != nil {
 		slog.Warn("entity recall boost failed", "err", err)

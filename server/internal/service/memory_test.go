@@ -163,6 +163,54 @@ func TestRrfMerge(t *testing.T) {
 	}
 }
 
+func TestLemmatizeForBM25NormalizesCommonInflections(t *testing.T) {
+	got := lemmatizeForBM25("Who recommended books about running businesses?")
+	want := "who recommend book about run business"
+	if got != want {
+		t.Fatalf("lemmatizeForBM25() = %q, want %q", got, want)
+	}
+}
+
+func TestMem0RankMemoriesUsesSemanticCandidateSetOnly(t *testing.T) {
+	svc := NewMemoryService(&memoryRepoMock{}, nil, nil, "auto-model", ModeSmart)
+	semScore := 0.80
+	kwScore := 14.0
+	ranked, scores := svc.mem0RankMemories(context.Background(), domain.MemoryFilter{
+		Query: "Which books did Melanie recommend?",
+		Limit: 2,
+	}, []domain.Memory{
+		{ID: "keyword-only", Content: "Melanie recommended a book.", Score: &kwScore},
+		{ID: "semantic", Content: "Melanie recommended Becoming Nicole.", Score: &kwScore},
+	}, []domain.Memory{
+		{ID: "semantic", Content: "Melanie recommended Becoming Nicole.", Score: &semScore},
+	}, 2)
+
+	if len(ranked) != 1 || ranked[0].ID != "semantic" {
+		t.Fatalf("ranked = %+v, want only semantic candidate", ranked)
+	}
+	if _, ok := scores["keyword-only"]; ok {
+		t.Fatalf("keyword-only candidate should not be scored: %+v", scores)
+	}
+}
+
+func TestTextSearchUsesBM25LemmatizedQuery(t *testing.T) {
+	var gotQuery string
+	repo := &memoryRepoMock{
+		ftsAvail: true,
+		ftsSearchHook: func(_ context.Context, query string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			gotQuery = query
+			return nil, nil
+		},
+	}
+	svc := NewMemoryService(repo, nil, nil, "auto-model", ModeSmart)
+	if _, _, err := svc.textSearch(context.Background(), domain.MemoryFilter{Query: "recommended books"}, 10); err != nil {
+		t.Fatalf("textSearch() error = %v", err)
+	}
+	if gotQuery != "recommend book" {
+		t.Fatalf("FTS query = %q, want lemmatized query", gotQuery)
+	}
+}
+
 func TestValidateMemoryInput(t *testing.T) {
 	tooLongContent := strings.Repeat("a", maxContentLen+1)
 	tooManyTags := make([]string, maxTags+1)
@@ -436,7 +484,7 @@ func TestSearchEmptyQueryPopulatesRelativeAge(t *testing.T) {
 	}
 }
 
-func TestSearchIgnoresSessionAndSourceFilters(t *testing.T) {
+func TestSearchPreservesSessionAndSourceFilters(t *testing.T) {
 	t.Parallel()
 
 	memRepo := &memoryRepoMock{
@@ -458,11 +506,11 @@ func TestSearchIgnoresSessionAndSourceFilters(t *testing.T) {
 		t.Fatalf("Search() error: %v", err)
 	}
 
-	if memRepo.lastKeywordFilter.Source != "" {
-		t.Fatalf("expected keyword search Source filter cleared, got %q", memRepo.lastKeywordFilter.Source)
+	if memRepo.lastKeywordFilter.Source != "legacy-source" {
+		t.Fatalf("expected keyword search Source filter preserved, got %q", memRepo.lastKeywordFilter.Source)
 	}
-	if memRepo.lastKeywordFilter.SessionID != "" {
-		t.Fatalf("expected keyword search SessionID filter cleared, got %q", memRepo.lastKeywordFilter.SessionID)
+	if memRepo.lastKeywordFilter.SessionID != "session-123" {
+		t.Fatalf("expected keyword search SessionID filter preserved, got %q", memRepo.lastKeywordFilter.SessionID)
 	}
 	if memRepo.lastKeywordFilter.AgentID != "agent-1" {
 		t.Fatalf("expected keyword search AgentID preserved, got %q", memRepo.lastKeywordFilter.AgentID)

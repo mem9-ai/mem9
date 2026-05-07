@@ -19,6 +19,8 @@ type RecallCandidate struct {
 	InKeyword        bool
 	VectorSimilarity float64
 	EntityBoost      float64
+	ProfileBoost     float64
+	RiskPenalty      float64
 }
 
 type RecallCandidateOptions struct {

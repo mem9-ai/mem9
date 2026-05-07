@@ -179,14 +179,18 @@ type Phase1Result struct {
 
 // ExtractedFact holds a single atomic fact and the tags the LLM assigned to it.
 type ExtractedFact struct {
-	Text            string               `json:"text"`
-	Tags            []string             `json:"tags,omitempty"`
-	FactType        string               `json:"fact_type,omitempty"` // "fact" | "query_intent" | "raw_fallback"; omitted = "fact"
-	AttributedTo    string               `json:"attributed_to,omitempty"`
-	LinkedMemoryIDs []string             `json:"linked_memory_ids,omitempty"`
-	SourceSeqs      []int                `json:"source_seqs,omitempty"`
-	SourceTurns     []sourceTurnMetadata `json:"source_turns,omitempty"`
-	Temporal        *TemporalMetadata    `json:"-"`
+	Text             string               `json:"text"`
+	Tags             []string             `json:"tags,omitempty"`
+	FactType         string               `json:"fact_type,omitempty"` // "fact" | "query_intent" | "raw_fallback"; omitted = "fact"
+	FactKind         string               `json:"fact_kind,omitempty"`
+	AttributedTo     string               `json:"attributed_to,omitempty"`
+	Entities         FactEntityList       `json:"entities,omitempty"`
+	AnswerShapes     []string             `json:"answer_shapes,omitempty"`
+	SourcePacketHint bool                 `json:"source_packet_hint,omitempty"`
+	LinkedMemoryIDs  []string             `json:"linked_memory_ids,omitempty"`
+	SourceSeqs       []int                `json:"source_seqs,omitempty"`
+	SourceTurns      []sourceTurnMetadata `json:"source_turns,omitempty"`
+	Temporal         *TemporalMetadata    `json:"-"`
 }
 
 // dropQueryIntentFacts removes facts classified as query_intent by the extraction
@@ -667,6 +671,16 @@ This ADD-only algorithm is adapted from mem0 v3.
    Existing Memories. If new information is related to an existing memory but adds
    distinct facts, include that existing memory id in linked_memory_ids.
 15. Do not output UPDATE, DELETE, NOOP, event, or old_memory fields.
+16. For each memory, also output compact structured profile fields:
+   - fact_kind: one of preference, event, relationship, plan, recommendation,
+     count, temporal, location, artifact, quote, reason, generic.
+   - entities: important people, places, titles, artifacts, brands, identifiers,
+     and named objects as [{"text":"...", "type":"person|place|title|object|code|other"}].
+   - answer_shapes: one or more of date, count, title, person, place, list,
+     reason, quote, yes_no, generic.
+   - source_packet_hint: true when the original source wording/date/speaker is
+     likely needed to answer faithfully, especially reasons, quotes, counts,
+     dates, recommendations, artifact titles, and multi-speaker facts.
 
 ## Compact High-Recall Check
 
@@ -683,7 +697,7 @@ Before finalizing, quickly re-read New Messages and fix omissions:
 Return ONLY valid JSON. No markdown fences, no explanation.
 
 Output shape:
-{"memory": [{"text": "new memory", "tags": ["tag"], "attributed_to": "user", "linked_memory_ids": ["existing-id"]}]` + messageTagOutput + `}`
+{"memory": [{"text": "new memory", "tags": ["tag"], "fact_kind": "event", "entities": [{"text": "Alice", "type": "person"}], "answer_shapes": ["date"], "source_packet_hint": true, "attributed_to": "user", "linked_memory_ids": ["existing-id"]}]` + messageTagOutput + `}`
 }
 
 func additiveExtractionUserPrompt(existingMemories []domain.Memory, input preparedExtractionInput, ctx ExtractionContext, includeMessageTags bool, messageCount int) string {
@@ -721,10 +735,11 @@ Find durable facts that were missed by the first extraction pass. Extract from
 BOTH user and assistant messages, including named assistant-role speakers when
 they are real people. Preserve exact names, titles, dates, counts, places,
 image-caption facts, recommendations, transitions, motivations, and personal
-details. Do not repeat facts already present in First-Pass Memories.
+details. Do not repeat facts already present in First-Pass Memories. Include
+fact_kind, entities, answer_shapes, and source_packet_hint for each omitted memory.
 
 Return ONLY valid JSON in this shape:
-{"memory": [{"text": "omitted memory", "tags": ["tag"], "attributed_to": "speaker"}]}
+{"memory": [{"text": "omitted memory", "tags": ["tag"], "fact_kind": "event", "entities": [{"text": "Alice", "type": "person"}], "answer_shapes": ["date"], "source_packet_hint": true, "attributed_to": "speaker"}]}
 
 If nothing was missed, return {"memory":[]}.`
 }
@@ -984,7 +999,7 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 	if err != nil {
 		return nil, fmt.Errorf("create raw memory: %w", err)
 	}
-	replaceMemoryEntityLinks(ctx, s.memories, req.AgentID, m.ID, m.Content)
+	replaceMemoryEntityLinks(ctx, s.memories, req.AgentID, m.ID, m.Content, m.Metadata)
 	return &IngestResult{
 		Status:          "complete",
 		MemoriesChanged: 1,
@@ -1093,18 +1108,32 @@ func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
 	// garbage string, but the actual fact fields are top-level keys.  Recover
 	// the fact when a top-level "text" field is present.
 	type flattenedFact struct {
-		Facts           interface{} `json:"facts"`
-		Text            string      `json:"text"`
-		Tags            []string    `json:"tags"`
-		FactType        string      `json:"fact_type,omitempty"`
-		AttributedTo    string      `json:"attributed_to,omitempty"`
-		LinkedMemoryIDs []string    `json:"linked_memory_ids,omitempty"`
+		Facts            interface{}    `json:"facts"`
+		Text             string         `json:"text"`
+		Tags             []string       `json:"tags"`
+		FactType         string         `json:"fact_type,omitempty"`
+		FactKind         string         `json:"fact_kind,omitempty"`
+		AttributedTo     string         `json:"attributed_to,omitempty"`
+		Entities         FactEntityList `json:"entities,omitempty"`
+		AnswerShapes     []string       `json:"answer_shapes,omitempty"`
+		SourcePacketHint bool           `json:"source_packet_hint,omitempty"`
+		LinkedMemoryIDs  []string       `json:"linked_memory_ids,omitempty"`
 	}
 	var flat flattenedFact
 	if err := json.Unmarshal([]byte(cleaned), &flat); err == nil {
 		if t := strings.TrimSpace(flat.Text); t != "" {
 			slog.Warn("normalizeParsedFacts: recovered fact from flattened-fact corruption", "text", t)
-			out = append(out, ExtractedFact{Text: t, Tags: flat.Tags, FactType: flat.FactType, AttributedTo: flat.AttributedTo, LinkedMemoryIDs: flat.LinkedMemoryIDs})
+			out = append(out, ExtractedFact{
+				Text:             t,
+				Tags:             flat.Tags,
+				FactType:         flat.FactType,
+				FactKind:         flat.FactKind,
+				AttributedTo:     flat.AttributedTo,
+				Entities:         flat.Entities,
+				AnswerShapes:     flat.AnswerShapes,
+				SourcePacketHint: flat.SourcePacketHint,
+				LinkedMemoryIDs:  flat.LinkedMemoryIDs,
+			})
 		}
 	}
 	return out
@@ -1732,7 +1761,7 @@ func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sess
 	if err != nil {
 		return "", fmt.Errorf("create insight: %w", err)
 	}
-	replaceMemoryEntityLinks(ctx, s.memories, agentID, m.ID, m.Content)
+	replaceMemoryEntityLinks(ctx, s.memories, agentID, m.ID, m.Content, m.Metadata)
 	return m.ID, nil
 }
 
@@ -1780,7 +1809,7 @@ func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, s
 	if err != nil {
 		return "", fmt.Errorf("archive and create for %s: %w", oldID, err)
 	}
-	replaceMemoryEntityLinks(ctx, s.memories, agentID, newID, newContent)
+	replaceMemoryEntityLinks(ctx, s.memories, agentID, newID, newContent, m.Metadata)
 	deleteMemoryEntityLinks(ctx, s.memories, oldID)
 	return newID, nil
 }
