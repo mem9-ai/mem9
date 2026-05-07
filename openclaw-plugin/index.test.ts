@@ -132,7 +132,7 @@ test("register does not auto-provision on startup during create-new", async () =
     assert.deepEqual(errorLogs, []);
     assert.equal(
       infoLogs.includes(
-        "[mem9] apiKey not configured; waiting for the first post-restart message to finish create-new provision",
+        "[mem9] apiKey not configured; waiting for an OpenClaw agent turn that runs before_prompt_build to finish create-new provision",
       ),
       true,
     );
@@ -500,7 +500,7 @@ test("agent_end logs conversation-access diagnostic once when messages are unava
   );
 });
 
-test("first post-restart prompt provisions once and unlocks memory access", async () => {
+test("first before_prompt_build hook provisions once and unlocks memory access", async () => {
   const originalFetch = globalThis.fetch;
   const apiUrl = uniqueApiUrl("explicit-provision");
   let capability: SearchCapability | null = null;
@@ -578,7 +578,7 @@ test("first post-restart prompt provisions once and unlocks memory access", asyn
   }
 });
 
-test("concurrent first-post-restart prompts share one server request", async () => {
+test("concurrent before_prompt_build prompts share one server request", async () => {
   const originalFetch = globalThis.fetch;
   const apiUrl = uniqueApiUrl("shared-explicit");
   let provisionRequests = 0;

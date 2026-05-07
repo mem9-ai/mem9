@@ -658,7 +658,7 @@ const mnemoPlugin = {
     if (!configuredApiKey) {
       if (configuredProvisionToken) {
         api.logger.info(
-          "[mem9] apiKey not configured; waiting for the first post-restart message to finish create-new provision",
+          "[mem9] apiKey not configured; waiting for an OpenClaw agent turn that runs before_prompt_build to finish create-new provision",
         );
       } else {
         api.logger.info("[mem9] apiKey not configured; mem9 will stay idle until apiKey is configured");

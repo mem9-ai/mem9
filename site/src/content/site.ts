@@ -77,7 +77,6 @@ export interface SiteHeroCopy {
   titleLead: string;
   titleAccent: string;
   subtitle: string;
-  poweredByLabel?: string;
   guideSelector?: SiteHeroGuideSelectorCopy;
   onboardingLabel: string;
   onboardingBadge: string;
@@ -86,7 +85,6 @@ export interface SiteHeroCopy {
   onboardingBetaLabel: string;
   onboardingCommandStable: string;
   onboardingCommandBeta: string;
-  substrateCtaLabel?: string;
   betaFeature: SiteHeroFeature;
   highlights: SiteHeroHighlight[];
 }
@@ -302,6 +300,7 @@ export interface SiteFooterCopy {
   contributing: string;
   security: string;
   contact: string;
+  poweredByLabel: string;
   copyright: string;
 }
 
@@ -2421,7 +2420,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for AI agents',
       subtitle:
         'Your agents forget everything between sessions. mem9 gives the agents you use one shared memory layer with hybrid recall and a visual dashboard.',
-      poweredByLabel: 'Powered by TiDB Cloud',
       guideSelector: {
         label: 'Works with your agent stack',
         items: guideSelectorItems,
@@ -2436,8 +2434,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'Read https://mem9.ai/SKILL.md and follow the instructions to install and configure mem9 for OpenClaw',
       onboardingCommandBeta:
         'Read https://mem9.ai/beta/SKILL.md and follow the instructions to install and configure mem9 for OpenClaw',
-      substrateCtaLabel:
-        'Need the backend substrate behind memory? Explore via TiDB Cloud Zero \u2192',
       betaFeature: {
         title: 'Context Engine Support',
         description:
@@ -2710,6 +2706,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       contributing: 'Contributing',
       security: 'Security',
       contact: 'Contact Us',
+      poweredByLabel: 'Powered by TiDB Cloud',
       copyright: 'mem9.ai. Unlimited memory infrastructure for AI agents.',
     },
     aria: {
@@ -2759,7 +2756,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for AI agents',
       subtitle:
         '你的 Agent 会在会话之间丢失上下文。mem9 为你使用的 Agent 提供同一层共享记忆，支持混合召回和可视化管理。',
-      poweredByLabel: '由 TiDB Cloud 提供支持',
       guideSelector: {
         label: '支持你的 Agent 栈',
         items: guideSelectorItems,
@@ -2774,8 +2770,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         '阅读 https://mem9.ai/SKILL.md ，按照说明为 OpenClaw 安装并配置 mem9',
       onboardingCommandBeta:
         '阅读 https://mem9.ai/beta/SKILL.md ，按照说明为 OpenClaw 安装并配置 mem9',
-      substrateCtaLabel:
-        '想了解记忆背后的后端基础设施？通过 TiDB Cloud Zero 一探究竟 \u2192',
       betaFeature: {
         title: 'Context Engine 支持',
         description:
@@ -3034,6 +3028,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       contributing: '参与贡献',
       security: '安全',
       contact: '联系我们',
+      poweredByLabel: '由 TiDB Cloud 提供支持',
       copyright: 'mem9.ai。为 AI Agents 提供无限记忆基础设施。',
     },
     aria: {
@@ -3083,7 +3078,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for AI agents',
       subtitle:
         '你的 Agent 會在會話之間遺忘所有內容。mem9 為你使用的 Agent 提供同一層共享記憶，支援混合召回和可視化管理。',
-      poweredByLabel: '由 TiDB Cloud 提供支援',
       guideSelector: {
         label: '支援你的 Agent 堆疊',
         items: guideSelectorItems,
@@ -3098,8 +3092,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         '閱讀 https://mem9.ai/SKILL.md，按照說明為 OpenClaw 安裝並配置 mem9',
       onboardingCommandBeta:
         '閱讀 https://mem9.ai/beta/SKILL.md，按照說明為 OpenClaw 安裝並配置 mem9',
-      substrateCtaLabel:
-        '想了解記憶背後的後端基礎設施？透過 TiDB Cloud Zero 一探究竟 \u2192',
       betaFeature: {
         title: 'Context Engine 支援',
         description:
@@ -3363,6 +3355,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       contributing: '參與貢獻',
       security: '安全',
       contact: '聯絡我們',
+      poweredByLabel: '由 TiDB Cloud 提供支援',
       copyright: 'mem9.ai。為 AI Agents 提供無限記憶基礎設施。',
     },
     aria: {
@@ -3412,7 +3405,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for AI agents',
       subtitle:
         'エージェントはセッションが変わるたびにすべてを忘れます。mem9 は、ハイブリッド検索とビジュアルダッシュボードを備えた共有メモリレイヤーを、利用中のエージェントに提供します。',
-      poweredByLabel: 'TiDB Cloud で稼働',
       guideSelector: {
         label: 'エージェントスタックに対応',
         items: guideSelectorItems,
@@ -3427,8 +3419,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'https://mem9.ai/SKILL.md を読み、手順に沿って OpenClaw 向けに mem9 をインストールして設定してください',
       onboardingCommandBeta:
         'https://mem9.ai/beta/SKILL.md を読み、手順に沿って OpenClaw 向けに mem9 をインストールして設定してください',
-      substrateCtaLabel:
-        'メモリの裏側にあるバックエンド基盤が気になりますか？ TiDB Cloud Zero でご確認ください \u2192',
       betaFeature: {
         title: 'Context Engine サポート',
         description:
@@ -3697,6 +3687,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       contributing: 'コントリビュート',
       security: 'セキュリティ',
       contact: 'お問い合わせ',
+      poweredByLabel: 'TiDB Cloud で稼働',
       copyright: 'mem9.ai。AI エージェント向けの無制限メモリ基盤。',
     },
     aria: {
@@ -3746,7 +3737,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'for AI agents',
       subtitle:
         '에이전트는 세션이 바뀔 때마다 모든 것을 잊습니다. mem9는 사용 중인 에이전트에 하이브리드 리콜과 시각적 대시보드를 갖춘 공유 메모리 레이어를 제공합니다.',
-      poweredByLabel: 'TiDB Cloud 기반',
       guideSelector: {
         label: '에이전트 스택과 연동',
         items: guideSelectorItems,
@@ -3761,8 +3751,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'https://mem9.ai/SKILL.md 를 읽고 안내에 따라 OpenClaw용 mem9를 설치하고 설정하세요',
       onboardingCommandBeta:
         'https://mem9.ai/beta/SKILL.md 를 읽고 안내에 따라 OpenClaw용 mem9를 설치하고 설정하세요',
-      substrateCtaLabel:
-        '메모리의 백엔드 인프라가 궁금하신가요? TiDB Cloud Zero에서 살펴보세요 \u2192',
       betaFeature: {
         title: 'Context Engine 지원',
         description:
@@ -4028,6 +4016,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       contributing: '기여하기',
       security: '보안',
       contact: '문의하기',
+      poweredByLabel: 'TiDB Cloud 기반',
       copyright: 'mem9.ai. AI 에이전트를 위한 무제한 메모리 인프라.',
     },
     aria: {
@@ -4077,7 +4066,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'untuk AI agents',
       subtitle:
         'Agent Anda melupakan semuanya di antara sesi. mem9 memberi agent yang Anda gunakan satu lapis memori bersama dengan recall hybrid dan dashboard visual.',
-      poweredByLabel: 'Didukung TiDB Cloud',
       guideSelector: {
         label: 'Bekerja dengan stack agent Anda',
         items: guideSelectorItems,
@@ -4092,8 +4080,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'Baca https://mem9.ai/SKILL.md lalu ikuti petunjuk untuk menginstal dan mengonfigurasi mem9 untuk OpenClaw',
       onboardingCommandBeta:
         'Baca https://mem9.ai/beta/SKILL.md lalu ikuti petunjuk untuk menginstal dan mengonfigurasi mem9 untuk OpenClaw',
-      substrateCtaLabel:
-        'Penasaran dengan substrat backend di balik memory? Jelajahi via TiDB Cloud Zero \u2192',
       betaFeature: {
         title: 'Dukungan Context Engine',
         description:
@@ -4362,6 +4348,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       contributing: 'Berkontribusi',
       security: 'Keamanan',
       contact: 'Hubungi Kami',
+      poweredByLabel: 'Didukung TiDB Cloud',
       copyright: 'mem9.ai. Infrastruktur memori tanpa batas untuk AI agents.',
     },
     aria: {
@@ -4411,7 +4398,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       titleAccent: 'สำหรับ AI agents',
       subtitle:
         'เอเจนต์ของคุณลืมทุกอย่างระหว่างแต่ละเซสชัน mem9 มอบเลเยอร์หน่วยความจำที่แชร์ร่วมกันให้กับเอเจนต์ที่คุณใช้งาน พร้อมการค้นคืนแบบ hybrid และแดชบอร์ดแบบภาพ',
-      poweredByLabel: 'ขับเคลื่อนโดย TiDB Cloud',
       guideSelector: {
         label: 'ใช้งานได้กับสแตกเอเจนต์ของคุณ',
         items: guideSelectorItems,
@@ -4426,8 +4412,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         'อ่าน https://mem9.ai/SKILL.md แล้วทำตามขั้นตอนเพื่อติดตั้งและตั้งค่า mem9 สำหรับ OpenClaw',
       onboardingCommandBeta:
         'อ่าน https://mem9.ai/beta/SKILL.md แล้วทำตามขั้นตอนเพื่อติดตั้งและตั้งค่า mem9 สำหรับ OpenClaw',
-      substrateCtaLabel:
-        'สนใจโครงสร้างพื้นฐานเบื้องหลัง memory ใช่ไหม? สำรวจผ่าน TiDB Cloud Zero \u2192',
       betaFeature: {
         title: 'รองรับ Context Engine',
         description:
@@ -4696,6 +4680,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       contributing: 'ร่วมพัฒนา',
       security: 'ความปลอดภัย',
       contact: 'ติดต่อเรา',
+      poweredByLabel: 'ขับเคลื่อนโดย TiDB Cloud',
       copyright: 'mem9.ai โครงสร้างพื้นฐานหน่วยความจำไม่จำกัดสำหรับ AI agents',
     },
     aria: {

@@ -6,6 +6,7 @@ interface Props {
 }
 
 const { footer } = Astro.props;
+const tidbCloudHref = 'https://www.pingcap.com?utm_source=mem9&utm_medium=referral&utm_campaign=agent-state-stack';
 ---
 
 <footer class="footer">
@@ -47,6 +48,15 @@ const { footer } = Astro.props;
         {footer.contact}
       </a>
     </div>
+    <a
+      href={tidbCloudHref}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="footer-credit"
+    >
+      <span data-i18n="footer.poweredByLabel">{footer.poweredByLabel}</span>
+      <img src="/tidb-logo.svg" alt="TiDB Cloud" />
+    </a>
     <p class="copyright" data-i18n="footer.copyright">
       {footer.copyright}
     </p>
@@ -94,6 +104,42 @@ const { footer } = Astro.props;
 
   .footer-contact-link {
     color: inherit;
+  }
+
+  .footer-credit {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.28rem 0.62rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-elevated-end);
+    color: var(--text-soft);
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    text-decoration: none;
+    transition: color 0.18s ease, border-color 0.18s ease;
+  }
+
+  .footer-credit:hover,
+  .footer-credit:focus-visible {
+    color: var(--text);
+    border-color: var(--border-strong);
+    opacity: 1;
+  }
+
+  .footer-credit img {
+    display: block;
+    width: auto;
+    height: 0.82rem;
+    transition: opacity 0.18s ease;
+  }
+
+  .footer-credit:hover img,
+  .footer-credit:focus-visible img {
+    opacity: 0.92;
   }
 
   .copyright {

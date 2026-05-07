@@ -1,6 +1,6 @@
 {
   "name": "@mem9/mem9",
-  "version": "0.4.9",
+  "version": "0.4.12",
   "description": "OpenClaw shared memory plugin — cloud-persistent memory with hybrid vector + keyword search via mnemo-server",
   "type": "module",
   "license": "Apache-2.0",
@@ -22,21 +22,23 @@
     "ai-agent"
   ],
   "files": [
-    "*.ts",
+    "dist",
     "openclaw.plugin.json",
     "README.md"
   ],
-  "main": "./index.ts",
+  "main": "./dist/index.js",
   "exports": {
-    ".": "./index.ts"
+    ".": "./dist/index.js"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
+    "build": "rm -rf ./dist && tsc -p ./tsconfig.build.json",
+    "prepack": "npm run build",
     "test": "rm -rf ./dist-test && tsc -p ./tsconfig.test.json && node --test ./dist-test/*.test.js",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck"
+    "prepublishOnly": "npm run typecheck && npm run build"
   },
   "peerDependencies": {
     "openclaw": ">=2026.1.26"
@@ -49,6 +51,9 @@
   "openclaw": {
     "extensions": [
       "./index.ts"
+    ],
+    "runtimeExtensions": [
+      "./dist/index.js"
     ]
   }
 }

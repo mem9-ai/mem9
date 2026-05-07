@@ -1,6 +1,6 @@
 ---
 name: mem9
-version: 1.0.45
+version: 1.0.49
 homepage: "https://mem9.ai/openclaw-memory"
 description: "Persistent cloud memory plugin for OpenClaw. This document routes setup, troubleshooting, and uninstall flows and defines config boundaries."
 keywords: ["mem9", "openclaw memory", "persistent memory", "cloud memory", "memory plugin", "setup mem9", "install mem9", "reconnect mem9", "uninstall mem9"]
@@ -20,8 +20,13 @@ This top-level `SKILL.md` is a routing and safety document. It is the entry poin
 - Route setup failures, recovery work, and broken local state to `TROUBLESHOOTING.md`.
 - Route local mem9 removal on this machine to `UNINSTALL.md`.
 - Preserve filtered `utm_*` params from a remote `SKILL.md` URL through the create-new setup flow and first restart.
+- Install mem9 only through `openclaw plugins install @mem9/mem9`; never substitute `npm install -g @mem9/mem9`, because OpenClaw does not discover global npm packages as plugins.
 - Prevent invalid compatibility fallbacks: never write `plugins.entries.mem9.apiKey`; only `plugins.entries.mem9.config.apiKey` is valid.
 - Configure OpenClaw 4.23+ hook permission with `plugins.entries.mem9.hooks.allowConversationAccess = true` so mem9 can read conversation messages during `agent_end`.
+- Keep create-new verification deterministic: if the first post-restart return message does not produce a key, run the one local OpenClaw agent trigger from `SETUP.md` in that same resumed turn; never ask for repeated `hi` messages.
+- In create-new mode, do not treat missing `plugins.entries.mem9.config.apiKey` as failure. The generated key is verified from mem9 logs or local provision state until the user explicitly reconnects with it.
+- Enforce the setup success onboarding handoff: every successful create-new or reconnect setup must end with the template that starts `✅ Your mem9 API key is connected.` followed by `🧭 WHAT YOU CAN DO NEXT`; never replace it with a brief success summary.
+- Keep API keys out of local memory/history notes during setup. Do not write the full key or a key preview into `MEMORY.md`, `memory/*.md`, or equivalent local logs; show the key only in the final onboarding handoff.
 - Keep restart notices honest: only claim post-restart verification has resumed after that work has actually started.
 - Keep history import manual. Do not scan or upload local memory or session files from this skill.
 
