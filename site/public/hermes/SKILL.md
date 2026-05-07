@@ -1,6 +1,6 @@
 ---
 name: mem9-hermes
-version: 1.0.45
+version: 1.0.0
 homepage: "https://mem9.ai/hermes/SKILL.md"
 description: "Persistent cloud memory plugin for Hermes. This document routes setup, troubleshooting, and uninstall flows for the Hermes Agent integration."
 keywords: ["mem9", "hermes", "hermes memory", "install mem9", "MEM9_API_KEY", "persistent memory", "cloud memory"]
