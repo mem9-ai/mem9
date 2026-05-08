@@ -34,7 +34,7 @@ const (
 	richTopSecondHopTopN         = 5
 	sessionAdjacentTurnTopN      = 4
 	sessionAdjacentTurnRadius    = 1
-	balancedSelectionRounds      = 2
+	balancedSelectionRounds      = 5
 	defaultConfidenceGapStop     = 18
 	recallRRFMaxScore            = 2.0 / 61.0
 )
