@@ -181,6 +181,26 @@ gh issue view <number> --comments
 gh pr view <number> --comments
 ```
 
+### Review loop approval policy
+
+When the user names a specific PR and says `run the review loop`, `use the loop
+to resolve review comments`, or equivalent wording, treat that as approval for a
+bounded review-comment resolution loop on that PR.
+
+This approval covers only actions required by the loop:
+
+1. Commit changes that directly address review feedback.
+2. Push those commits to the PR branch.
+3. Post GitHub review-thread replies.
+4. Resolve fixed GitHub review threads.
+5. Post the configured GitHub reviewer trigger comment, such as `@codex review`.
+6. Repeat the same sequence until the loop reaches its configured stop condition.
+
+This approval does not cover force-pushes, rebases, merges, creating new PRs,
+deployments, deleting files outside the working tree, or unrelated code changes.
+Stop and ask before those actions. Stop and ask if a review comment requires a
+product or architecture decision that is not clearly implied by the PR.
+
 ## Explicitly absent
 
 - No `.cursor/rules/`, `.cursorrules`, or `.github/copilot-instructions.md` were found.
