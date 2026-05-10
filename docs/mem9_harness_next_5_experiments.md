@@ -46,7 +46,7 @@ one homogeneous mechanism covering >=8 judged rows and <=4 risk rows.
 Success criteria:
 
 - Classify at least 50 Cat1/Cat4 ER0 failures.
-- Identify one production mechanism with expected net >= +8 LLM rows.
+- Identify one production mechanism with expected target-slice net >= +8 LLM rows, enough to justify incubate; formal keep still requires +1.0pp Overall LLM or net +15.
 - Produce row-level evidence: question, gold evidence, stored candidate status,
   first rank if present, source metadata, and risk rows.
 
@@ -106,8 +106,8 @@ USING_LAST_INGEST=true bash /home/ec2-user/git/clawd/disc/scripts/locomo.sh
 
 Expected metric movement:
 
-Overall LLM +0.30pp or pairwise net +8; mixed-speaker +3pp; no Cat2/Cat4 severe
-regression.
+Incubate at Overall LLM +0.30pp..+0.99pp or pairwise net +5..+14; keep at
++1.0pp or pairwise net +15; mixed-speaker +3pp; no Cat2/Cat4 severe regression.
 
 Success criteria:
 
@@ -170,7 +170,9 @@ bash /home/ec2-user/git/clawd/disc/scripts/locomo.sh
 
 Expected metric movement:
 
-Cat4 LLM +1.0pp or Overall LLM +0.30pp; evidence recall non-regressing.
+Cat4 LLM +1.0pp may justify incubate if Overall is +0.30pp..+0.99pp; formal
+keep requires Overall +1.0pp or pairwise net +15, with evidence recall
+non-regressing.
 
 Success criteria:
 
@@ -234,8 +236,8 @@ bash /home/ec2-user/git/clawd/disc/scripts/locomo.sh
 
 Expected metric movement:
 
-Cat2 LLM +1.0pp; Overall +0.15..0.30pp. This can enter incubate only if no bucket
-regresses.
+Cat2 LLM +1.0pp; Overall +0.30pp..+0.99pp can enter incubate only if no bucket
+regresses. Formal keep requires Overall +1.0pp or pairwise net +15.
 
 Success criteria:
 
@@ -297,7 +299,8 @@ bash /home/ec2-user/git/clawd/disc/scripts/locomo.sh
 
 Expected metric movement:
 
-Cat1 +1.0pp, duplicate-context count down, Overall +0.30pp.
+Cat1 +1.0pp, duplicate-context count down, Overall +0.30pp..+0.99pp for
+incubate; formal keep requires Overall +1.0pp or pairwise net +15.
 
 Success criteria:
 

@@ -31,10 +31,11 @@ Archived logs:
 Promotion gate:
 
 - Active Overall LLM micro baseline: 68.29%.
-- Promotion gate: 68.59%.
+- Promotion gate: 69.29%.
 - Strategy promotion should beat this active framework baseline/control by at
-  least +0.3pp Overall LLM micro or net +8 LLM-correct pairwise, with no severe
-  Cat2/Cat4 or performance regression.
+  least +1.0pp Overall LLM micro over the clean control mean or net +15
+  LLM-correct pairwise, with no severe Cat2/Cat4/mixed-speaker or performance
+  regression.
 - Cached-retrieval candidates must still compare primarily against a same-cache
   clean control with the same protocol, judge, answer model, ingest cache, and
   retrieval limit before any fresh active-framework promotion run.

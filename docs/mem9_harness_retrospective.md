@@ -15,9 +15,10 @@ to a process failure made of four interacting problems:
    with 144 `harness-review` rows and 373 `cached-retrieval` rows; recent rows
    are dominated by harness repairs and preflight rejects rather than accepted
    server changes (`/home/ec2-user/Documents/Dev/harness/experiments/registry.jsonl`).
-2. The active promotion gate is smaller than observed no-change variance. The
-   baseline is 68.29% and gate 68.59% (`benchmark/BASELINE.md:31-36`), but recent
-   no-change/control scores include 68.62%, 66.67%, and 66.73%
+2. The former active promotion gate was smaller than observed no-change variance.
+   At audit time the baseline was 68.29% and the gate was 68.59%; after this
+   audit follow-up the formal gate is 69.29% (`benchmark/BASELINE.md:31-36`).
+   Recent no-change/control scores include 68.62%, 66.67%, and 66.73%
    (`registry.jsonl:542`, `registry.jsonl:551`, `registry.jsonl:555`).
 3. The latest cached-control path is not clean enough to trust without repair.
    Harness policy says reverted product-path candidates contaminate their cache
@@ -51,7 +52,7 @@ should be promoted until that state is closed or explicitly validated.
 | `/home/ec2-user/Documents/Dev/harness/experiments/registry.jsonl` | Experiment registry | 556 rows | Decisions, lanes, scores, changed files, cache/control metadata | Medium-high | Some rows are backfilled; backfill can use loose cache identity (`locomo_backfill_manifests.py:429-440`). |
 | `/home/ec2-user/Documents/Dev/harness/learns` | Failure notes | 807 files | Reverts, preflight rejects, harness repairs | Medium | Authoritative only when tied to result artifacts. |
 | `/home/ec2-user/Documents/Dev/harness/proposals` | Success notes | 18 files | Historical keeps and baseline moves | Medium-high | Several predate repaired harness and active mem0-style protocol. |
-| `/home/ec2-user/git/mem9/benchmark/BASELINE.md` | Active baseline | current | Baseline 68.29, gate 68.59, category buckets | High for current policy | Static harness text can drift; baseline lock is preferred. |
+| `/home/ec2-user/git/mem9/benchmark/BASELINE.md` | Active baseline | current | Baseline 68.29, formal gate 69.29 after audit follow-up, category buckets | High for current policy | Static harness text can drift; baseline lock is preferred. |
 | `/home/ec2-user/git/mem9-benchmark/locomo/results` | Raw benchmark outputs | 283 result/cache files | Full QA rows, predictions, retrieved contexts, stats | High for score artifacts | LLM provider failures can drop rows (`cli.ts:550-565`). |
 | `/home/ec2-user/git/mem9-benchmark/locomo/src` | Benchmark implementation | current | Retrieval, answer prompt, judge, scoring, stats | High | It contains benchmark-side answer/context aids, so not pure server quality. |
 | `/home/ec2-user/git/mem9/server` | Product server code | current | Ingest, recall, ranking, reconciliation | High | Current dirty `recall.go` must be resolved before new runs. |
@@ -82,7 +83,7 @@ Missing evidence:
 | 2026-05-09 / 450 | Assistant assertion ingest | Extract concrete assistant assertions | +0.24pp, Cat4 -1.13pp | revert | `/home/ec2-user/Documents/Dev/harness/learns/assistant_assertion_answer_bearing_ingest_revert_20260509T010521Z-450.md:27` |
 | 2026-05-09 / 494-495 | Keyword-only BM25 admission | Admit strong BM25-only hits | cached +0.65pp; product 67.10 vs 67.88 | revert | `/home/ec2-user/Documents/Dev/harness/learns/keyword_only_bm25_admission_continue_20260509T095901Z_494.md:24`, `/home/ec2-user/Documents/Dev/harness/learns/keyword_only_bm25_admission_product_revert_20260509T101122Z_495.md:10` |
 | 2026-05-09 / 537 | Speaker tag role labels | Use real speaker labels during extraction | +0.28pp then +0.35pp, below gate; mixed/Cat4 down | continue then revert | `/home/ec2-user/Documents/Dev/harness/learns/speaker_tag_role_label_product_continue_20260509T191116Z_537.md:30`, `/home/ec2-user/Documents/Dev/harness/learns/speaker_tag_role_label_product_revalidation_revert_20260509T210843Z_537.md:28` |
-| 2026-05-10 | Entity-store active baseline | Current accepted mem0-style baseline | 68.29, gate 68.59 | baseline | `/home/ec2-user/git/mem9/benchmark/BASELINE.md:31-45`, `:74-93` |
+| 2026-05-10 | Entity-store active baseline | Current accepted mem0-style baseline | 68.29; former audit-time gate 68.59, later raised to 69.29 | baseline | `/home/ec2-user/git/mem9/benchmark/BASELINE.md:31-45`, `:74-93` |
 | 2026-05-10 / 545 | Entity-confirmed keyword admission | Mem0-derived bounded keyword admission | cached net +8; product 66.84 vs 68.29 | revert | `/home/ec2-user/Documents/Dev/harness/learns/entity_confirmed_keyword_admission_continue_20260510T075432Z_545.md:19`, `/home/ec2-user/Documents/Dev/harness/learns/entity_confirmed_keyword_product_revert_20260510T082906Z_545.md:26` |
 | 2026-05-10 / 548 | Cat1 second-hop retrieval | Source-linked second-hop recall | cached 67.04 vs control 67.12 | revert | `/home/ec2-user/Documents/Dev/harness/learns/cat1_multihop_second_hop_retrieve_reject_20260510T161808Z_548.md:9` |
 | 2026-05-10 / 548-550 | Carried product + kind/type preflight | Retry entity admission, then kind/type source priority | product 66.67; preflight moved 3<8 | revert/reject | `/home/ec2-user/Documents/Dev/harness/learns/entity_confirmed_keyword_product_revert_20260510T164239Z_548.md:14`, `/home/ec2-user/Documents/Dev/harness/experiments/registry.jsonl:556` |
@@ -157,11 +158,14 @@ their labels imply.
 ## Benchmark Trustworthiness Assessment
 
 The LoCoMo harness is useful as a rough signal, but it is not trustworthy enough
-for single-run +0.3pp promotions right now.
+for single-run +0.3pp promotions right now. The formal keep gate has therefore
+been raised to +1.0pp over clean control mean or net +15 LLM-correct pairwise,
+while +0.30pp..+0.99pp remains an incubate-only band.
 
 Evidence:
 
-- Active gate: 68.29 baseline and 68.59 gate (`BASELINE.md:31-36`).
+- Former audit-time gate: 68.29 baseline and 68.59 gate. Current formal gate:
+  69.29 (`BASELINE.md:31-36`).
 - No-change/control movement is larger than the gate: 68.62, 66.67, 66.73
   (`registry.jsonl:542`, `registry.jsonl:551`, `registry.jsonl:555`).
 - Question-level failures return `null` and are dropped (`cli.ts:550-565`).
