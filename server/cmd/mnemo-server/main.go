@@ -218,6 +218,8 @@ func main() {
 		embedder,
 		llmClient,
 		cfg.EmbedAutoModel,
+		cfg.EmbedAutoDims,
+		cfg.EmbedDims,
 		cfg.FTSEnabled,
 		service.IngestMode(cfg.IngestMode),
 		logger,

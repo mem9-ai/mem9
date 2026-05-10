@@ -86,7 +86,7 @@ func TestExpandMemoryEntityAliasesAddsSurnameAndLemma(t *testing.T) {
 
 func TestReplaceMemoryEntityLinksStoresAliases(t *testing.T) {
 	repo := &memoryRepoMock{}
-	replaceMemoryEntityLinks(context.Background(), repo, "agent-1", "mem-1", "Jon opened Dance Studio Alpha.", nil)
+	replaceMemoryEntityLinks(context.Background(), repo, nil, "", "agent-1", "mem-1", "Jon opened Dance Studio Alpha.", nil)
 	links := repo.entityLinks["mem-1"]
 	keys := map[string]bool{}
 	for _, entity := range links {

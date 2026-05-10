@@ -573,10 +573,10 @@ func (r *MemoryRepo) ReplaceMemoryEntities(ctx context.Context, agentID, memoryI
 	if len(entities) == 0 {
 		return tx.Commit()
 	}
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO memory_entities (agent_id, entity_key, entity_text, entity_type, memory_id, created_at)
-		VALUES ($1, $2, $3, $4, $5, NOW())
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO memory_entities (agent_id, entity_key, entity_text, entity_type, embedding, memory_id, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW())
 		ON CONFLICT (agent_id, entity_key, memory_id)
-		DO UPDATE SET entity_text = EXCLUDED.entity_text, entity_type = EXCLUDED.entity_type`)
+		DO UPDATE SET entity_text = EXCLUDED.entity_text, entity_type = EXCLUDED.entity_type, embedding = EXCLUDED.embedding`)
 	if err != nil {
 		return fmt.Errorf("prepare memory entities: %w", err)
 	}
@@ -585,11 +585,49 @@ func (r *MemoryRepo) ReplaceMemoryEntities(ctx context.Context, agentID, memoryI
 		if entity.Key == "" || entity.Text == "" {
 			continue
 		}
-		if _, err := stmt.ExecContext(ctx, agentID, entity.Key, entity.Text, entity.Type, memoryID); err != nil {
+		if _, err := stmt.ExecContext(ctx, agentID, entity.Key, entity.Text, entity.Type, vecToParam(entity.Embedding), memoryID); err != nil {
 			return fmt.Errorf("insert memory entity: %w", err)
 		}
 	}
 	return tx.Commit()
+}
+
+func (r *MemoryRepo) EntityMemoryVectorBoosts(ctx context.Context, f domain.MemoryFilter, queryText string, queryVec []float32, limit int) (map[string]float64, error) {
+	result := make(map[string]float64)
+	if len(queryVec) == 0 {
+		return result, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	conds, args := r.entityFilterConds(f)
+	conds = append(conds, "me.embedding IS NOT NULL")
+	vecParamIdx := len(args) + 1
+	limitParamIdx := vecParamIdx + 1
+	query := fmt.Sprintf(`SELECT me.memory_id, MIN(me.embedding <=> $%d) AS distance
+		FROM memory_entities me
+		JOIN memories m ON m.id = me.memory_id
+		WHERE %s
+		GROUP BY me.memory_id
+		ORDER BY distance ASC, me.memory_id
+		LIMIT $%d`, vecParamIdx, strings.Join(conds, " AND "), limitParamIdx)
+	fullArgs := make([]any, 0, len(args)+2)
+	fullArgs = append(fullArgs, args...)
+	fullArgs = append(fullArgs, pgvector.NewVector(queryVec), limit)
+	rows, err := r.db.QueryContext(ctx, query, fullArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("entity memory vector boosts: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var memoryID string
+		var distance float64
+		if err := rows.Scan(&memoryID, &distance); err != nil {
+			return nil, fmt.Errorf("scan entity memory vector boost: %w", err)
+		}
+		result[memoryID] = clampScore(1 - distance)
+	}
+	return result, rows.Err()
 }
 
 func (r *MemoryRepo) DeleteMemoryEntities(ctx context.Context, memoryID string) error {
@@ -687,6 +725,67 @@ func (r *MemoryRepo) EntityMemoryBoostsForFilter(ctx context.Context, f domain.M
 		result[memoryID] = float64(matches) / denom
 	}
 	return result, rows.Err()
+}
+
+func (r *MemoryRepo) entityFilterConds(f domain.MemoryFilter) ([]string, []any) {
+	conds := []string{}
+	args := []any{}
+	if f.State == "all" {
+		// no state filter
+	} else if f.State != "" {
+		conds = append(conds, fmt.Sprintf("m.state = $%d", len(args)+1))
+		args = append(args, f.State)
+	} else {
+		conds = append(conds, "m.state = 'active'")
+	}
+	if f.MemoryType != "" {
+		types := strings.Split(f.MemoryType, ",")
+		if len(types) == 1 {
+			conds = append(conds, fmt.Sprintf("m.memory_type = $%d", len(args)+1))
+			args = append(args, strings.TrimSpace(types[0]))
+		} else {
+			typePlaceholders := make([]string, len(types))
+			for i, t := range types {
+				typePlaceholders[i] = fmt.Sprintf("$%d", len(args)+1)
+				args = append(args, strings.TrimSpace(t))
+			}
+			conds = append(conds, "m.memory_type IN ("+strings.Join(typePlaceholders, ",")+")")
+		}
+	}
+	if f.AgentID != "" {
+		conds = append(conds, fmt.Sprintf("m.agent_id = $%d", len(args)+1))
+		args = append(args, f.AgentID)
+	}
+	if f.SessionID != "" {
+		conds = append(conds, fmt.Sprintf("m.session_id = $%d", len(args)+1))
+		args = append(args, f.SessionID)
+	}
+	if f.Source != "" {
+		conds = append(conds, fmt.Sprintf("m.source = $%d", len(args)+1))
+		args = append(args, f.Source)
+	}
+	for _, tag := range f.Tags {
+		tagJSON, err := json.Marshal(tag)
+		if err != nil {
+			continue
+		}
+		conds = append(conds, fmt.Sprintf("m.tags @> $%d::jsonb", len(args)+1))
+		args = append(args, "["+string(tagJSON)+"]")
+	}
+	if len(conds) == 0 {
+		conds = append(conds, "1=1")
+	}
+	return conds, args
+}
+
+func clampScore(score float64) float64 {
+	if score < 0 {
+		return 0
+	}
+	if score > 1 {
+		return 1
+	}
+	return score
 }
 
 // ---- Helpers ----

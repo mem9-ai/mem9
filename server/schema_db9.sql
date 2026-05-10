@@ -85,6 +85,9 @@ CREATE TABLE IF NOT EXISTS memory_entities (
     entity_key    VARCHAR(64)  NOT NULL,
     entity_text   VARCHAR(255) NOT NULL,
     entity_type   VARCHAR(32)  NOT NULL,
+    embedding     vector(1024) GENERATED ALWAYS AS (
+        EMBED_TEXT('amazon.titan-embed-text-v2:0', entity_text, '{"dimensions": 1024}')
+    ) STORED,
     memory_id     VARCHAR(36)  NOT NULL,
     created_at    TIMESTAMPTZ  DEFAULT NOW(),
     PRIMARY KEY (agent_id, entity_key, memory_id)

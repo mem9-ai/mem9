@@ -58,6 +58,8 @@ type UploadWorker struct {
 	embedder     *embed.Embedder
 	llmClient    *llm.Client
 	autoModel    string
+	autoDims     int
+	clientDims   int
 	ftsEnabled   bool
 	mode         IngestMode
 	logger       *slog.Logger
@@ -74,6 +76,8 @@ func NewUploadWorker(
 	embedder *embed.Embedder,
 	llmClient *llm.Client,
 	autoModel string,
+	autoDims int,
+	clientDims int,
 	ftsEnabled bool,
 	mode IngestMode,
 	logger *slog.Logger,
@@ -93,6 +97,8 @@ func NewUploadWorker(
 		embedder:     embedder,
 		llmClient:    llmClient,
 		autoModel:    autoModel,
+		autoDims:     autoDims,
+		clientDims:   clientDims,
 		ftsEnabled:   ftsEnabled,
 		mode:         mode,
 		logger:       logger,
@@ -185,7 +191,7 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 	if err != nil {
 		return w.failTask(ctx, task, fmt.Errorf("get tenant db: %w", err), logger)
 	}
-	if err := ensureUploadAdditiveMemorySchema(taskCtx, db, w.pool.Backend()); err != nil {
+	if err := ensureUploadAdditiveMemorySchema(taskCtx, db, w.pool.Backend(), w.autoModel, w.autoDims, w.clientDims); err != nil {
 		return w.failTask(ctx, task, err, logger)
 	}
 
@@ -332,7 +338,7 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 				return w.failTask(ctx, task, fmt.Errorf("bulk create memories: %w", bulkErr), logger)
 			}
 			for _, memory := range memories {
-				replaceMemoryEntityLinks(taskCtx, memRepo, memory.AgentID, memory.ID, memory.Content)
+				replaceMemoryEntityLinks(taskCtx, memRepo, w.embedder, w.autoModel, memory.AgentID, memory.ID, memory.Content)
 			}
 			clusterID := tenantInfo.ClusterID
 			if clusterID == "" {
@@ -364,7 +370,7 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 
 }
 
-func ensureUploadAdditiveMemorySchema(ctx context.Context, db *sql.DB, backend string) error {
+func ensureUploadAdditiveMemorySchema(ctx context.Context, db *sql.DB, backend string, autoModel string, autoDims int, clientDims int) error {
 	switch backend {
 	case "postgres", "db9":
 		if _, err := db.ExecContext(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64) NULL`); err != nil {
@@ -373,7 +379,7 @@ func ensureUploadAdditiveMemorySchema(ctx context.Context, db *sql.DB, backend s
 		if _, err := db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_memory_content_hash ON memories(agent_id, state, content_hash)`); err != nil {
 			return fmt.Errorf("ensure upload additive schema: content_hash index: %w", err)
 		}
-		for _, stmt := range postgresMemoryEntitiesSchemaStatements() {
+		for _, stmt := range postgresMemoryEntitiesSchemaStatements(backend, autoModel, autoDims, clientDims) {
 			if _, err := db.ExecContext(ctx, stmt); err != nil {
 				return fmt.Errorf("ensure upload additive schema: memory_entities: %w", err)
 			}
@@ -397,8 +403,17 @@ func ensureUploadAdditiveMemorySchema(ctx context.Context, db *sql.DB, backend s
 				return fmt.Errorf("ensure upload additive schema: content_hash index: %w", err)
 			}
 		}
-		if _, err := db.ExecContext(ctx, tenant.BuildMemoryEntitiesSchema(backend)); err != nil {
+		if _, err := db.ExecContext(ctx, tenant.BuildMemoryEntitiesSchema(backend, autoModel, autoDims, clientDims)); err != nil {
 			return fmt.Errorf("ensure upload additive schema: memory_entities: %w", err)
+		}
+		exists, err = tenant.ColumnExists(ctx, db, "memory_entities", "embedding")
+		if err != nil {
+			return fmt.Errorf("ensure upload additive schema: check memory_entities.embedding: %w", err)
+		}
+		if !exists {
+			if _, err := db.ExecContext(ctx, `ALTER TABLE memory_entities ADD COLUMN `+tidbEntityEmbeddingColumnSQL(autoModel, autoDims, clientDims)+` AFTER entity_type`); err != nil && !tenant.IsColumnExistsError(err) {
+				return fmt.Errorf("ensure upload additive schema: memory_entities.embedding: %w", err)
+			}
 		}
 	}
 	return nil

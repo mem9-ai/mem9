@@ -132,11 +132,12 @@ func BuildDB9MemorySchema(autoModel string, autoDims int, clientDims int) string
 	return fmt.Sprintf(TenantMemorySchemaDB9Base, embeddingCol)
 }
 
-const TenantMemoryEntitiesSchemaTiDB = `CREATE TABLE IF NOT EXISTS memory_entities (
+const TenantMemoryEntitiesSchemaTiDBBase = `CREATE TABLE IF NOT EXISTS memory_entities (
     agent_id      VARCHAR(100)  NOT NULL DEFAULT '',
     entity_key    VARCHAR(64)   NOT NULL,
     entity_text   VARCHAR(255)  NOT NULL,
     entity_type   VARCHAR(32)   NOT NULL,
+    %s
     memory_id     VARCHAR(36)   NOT NULL,
     created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (agent_id, entity_key, memory_id),
@@ -144,11 +145,12 @@ const TenantMemoryEntitiesSchemaTiDB = `CREATE TABLE IF NOT EXISTS memory_entiti
     INDEX idx_memory_entities_lookup (agent_id, entity_key)
 )`
 
-const TenantMemoryEntitiesSchemaPostgres = `CREATE TABLE IF NOT EXISTS memory_entities (
+const TenantMemoryEntitiesSchemaPostgresBase = `CREATE TABLE IF NOT EXISTS memory_entities (
     agent_id      VARCHAR(100) NOT NULL DEFAULT '',
     entity_key    VARCHAR(64)  NOT NULL,
     entity_text   VARCHAR(255) NOT NULL,
     entity_type   VARCHAR(32)  NOT NULL,
+    %s
     memory_id     VARCHAR(36)  NOT NULL,
     created_at    TIMESTAMPTZ  DEFAULT NOW(),
     PRIMARY KEY (agent_id, entity_key, memory_id)
@@ -157,12 +159,41 @@ CREATE INDEX IF NOT EXISTS idx_memory_entities_memory ON memory_entities(memory_
 CREATE INDEX IF NOT EXISTS idx_memory_entities_lookup ON memory_entities(agent_id, entity_key);
 `
 
-func BuildMemoryEntitiesSchema(backend string) string {
+func BuildMemoryEntitiesSchema(backend string, autoModel string, autoDims int, clientDims int) string {
+	dims := clientDims
+	if autoModel != "" {
+		dims = autoDims
+	}
+	if dims <= 0 {
+		dims = 1536
+	}
+	var embeddingCol string
 	switch backend {
-	case "postgres", "db9":
-		return TenantMemoryEntitiesSchemaPostgres
+	case "db9":
+		if autoModel != "" {
+			sanitizedModel := strings.ReplaceAll(autoModel, "'", "''")
+			embeddingCol = fmt.Sprintf(
+				`embedding vector(%d) GENERATED ALWAYS AS (EMBED_TEXT('%s', entity_text, '{"dimensions": %d}')) STORED,`,
+				dims, sanitizedModel, dims,
+			)
+		} else {
+			embeddingCol = fmt.Sprintf(`embedding vector(%d) NULL,`, dims)
+		}
+		return fmt.Sprintf(TenantMemoryEntitiesSchemaPostgresBase, embeddingCol)
+	case "postgres":
+		embeddingCol = fmt.Sprintf(`embedding vector(%d) NULL,`, dims)
+		return fmt.Sprintf(TenantMemoryEntitiesSchemaPostgresBase, embeddingCol)
 	default:
-		return TenantMemoryEntitiesSchemaTiDB
+		if autoModel != "" {
+			sanitizedModel := strings.ReplaceAll(autoModel, "'", "''")
+			embeddingCol = fmt.Sprintf(
+				`embedding VECTOR(%d) GENERATED ALWAYS AS (EMBED_TEXT('%s', entity_text, '{"dimensions": %d}')) STORED,`,
+				dims, sanitizedModel, dims,
+			)
+		} else {
+			embeddingCol = fmt.Sprintf(`embedding VECTOR(%d) NULL,`, dims)
+		}
+		return fmt.Sprintf(TenantMemoryEntitiesSchemaTiDBBase, embeddingCol)
 	}
 }
 

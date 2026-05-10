@@ -48,6 +48,7 @@ type memoryRepoMock struct {
 	contentHashResults   map[string]domain.Memory
 	entityLinks          map[string][]domain.MemoryEntity
 	entityBoosts         map[string]float64
+	entityVectorBoosts   map[string]float64
 }
 
 type setStateCall struct {
@@ -1659,6 +1660,16 @@ func (m *memoryRepoMock) EntityMemoryBoosts(ctx context.Context, agentID string,
 		if matches > 0 {
 			out[memoryID] = float64(matches) / float64(max(1, len(entityKeys)))
 		}
+	}
+	return out, nil
+}
+
+func (m *memoryRepoMock) EntityMemoryVectorBoosts(ctx context.Context, f domain.MemoryFilter, queryText string, queryVec []float32, limit int) (map[string]float64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make(map[string]float64, len(m.entityVectorBoosts))
+	for id, boost := range m.entityVectorBoosts {
+		out[id] = boost
 	}
 	return out, nil
 }

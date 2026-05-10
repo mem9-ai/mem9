@@ -999,7 +999,7 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 	if err != nil {
 		return nil, fmt.Errorf("create raw memory: %w", err)
 	}
-	replaceMemoryEntityLinks(ctx, s.memories, req.AgentID, m.ID, m.Content, m.Metadata)
+	replaceMemoryEntityLinks(ctx, s.memories, s.embedder, s.autoModel, req.AgentID, m.ID, m.Content, m.Metadata)
 	return &IngestResult{
 		Status:          "complete",
 		MemoriesChanged: 1,
@@ -1761,7 +1761,7 @@ func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sess
 	if err != nil {
 		return "", fmt.Errorf("create insight: %w", err)
 	}
-	replaceMemoryEntityLinks(ctx, s.memories, agentID, m.ID, m.Content, m.Metadata)
+	replaceMemoryEntityLinks(ctx, s.memories, s.embedder, s.autoModel, agentID, m.ID, m.Content, m.Metadata)
 	return m.ID, nil
 }
 
@@ -1809,7 +1809,7 @@ func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, s
 	if err != nil {
 		return "", fmt.Errorf("archive and create for %s: %w", oldID, err)
 	}
-	replaceMemoryEntityLinks(ctx, s.memories, agentID, newID, newContent, m.Metadata)
+	replaceMemoryEntityLinks(ctx, s.memories, s.embedder, s.autoModel, agentID, newID, newContent, m.Metadata)
 	deleteMemoryEntityLinks(ctx, s.memories, oldID)
 	return newID, nil
 }

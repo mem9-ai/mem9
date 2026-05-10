@@ -193,6 +193,30 @@ func TestMem0RankMemoriesUsesSemanticCandidateSetOnly(t *testing.T) {
 	}
 }
 
+func TestMem0RankMemoriesUsesEntityVectorBoost(t *testing.T) {
+	repo := &memoryRepoMock{
+		entityVectorBoosts: map[string]float64{
+			"entity-hit": 0.9,
+		},
+	}
+	svc := NewMemoryService(repo, nil, nil, "auto-model", ModeSmart)
+	semScore := 0.7
+	ranked, scores := svc.mem0RankMemories(context.Background(), domain.MemoryFilter{
+		Query: "Which tool is used for local vector search?",
+		Limit: 2,
+	}, nil, []domain.Memory{
+		{ID: "plain", Content: "A generic memory.", Score: &semScore},
+		{ID: "entity-hit", Content: "pgvector is used locally.", Score: &semScore},
+	}, 2)
+
+	if len(ranked) != 2 || ranked[0].ID != "entity-hit" {
+		t.Fatalf("ranked = %+v, want entity-hit first", ranked)
+	}
+	if scores["entity-hit"] <= scores["plain"] {
+		t.Fatalf("entity vector boost did not improve score: %+v", scores)
+	}
+}
+
 func TestTextSearchUsesBM25LemmatizedQuery(t *testing.T) {
 	var gotQuery string
 	repo := &memoryRepoMock{

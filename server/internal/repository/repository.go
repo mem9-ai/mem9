@@ -67,6 +67,13 @@ type MemoryEntityFilterRepo interface {
 	EntityMemoryBoostsForFilter(ctx context.Context, f domain.MemoryFilter, entityKeys []string, limit int) (map[string]float64, error)
 }
 
+// MemoryEntityVectorRepo exposes vector search over stored entity mentions.
+// queryText is used by auto-embedding backends; queryVec is used by client-side
+// embedding backends.
+type MemoryEntityVectorRepo interface {
+	EntityMemoryVectorBoosts(ctx context.Context, f domain.MemoryFilter, queryText string, queryVec []float32, limit int) (map[string]float64, error)
+}
+
 // TenantRepo manages tenant records in the control plane DB.
 type TenantRepo interface {
 	Create(ctx context.Context, t *domain.Tenant) error

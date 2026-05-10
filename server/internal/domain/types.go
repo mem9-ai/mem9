@@ -58,9 +58,10 @@ type Memory struct {
 
 // MemoryEntity links a normalized entity mention to a memory for recall boosts.
 type MemoryEntity struct {
-	Key  string `json:"key"`
-	Text string `json:"text"`
-	Type string `json:"type"`
+	Key       string    `json:"key"`
+	Text      string    `json:"text"`
+	Type      string    `json:"type"`
+	Embedding []float32 `json:"-"`
 }
 
 type AuthInfo struct {

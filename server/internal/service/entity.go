@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/repository"
 )
 
@@ -23,6 +24,7 @@ const (
 	maxMemoryEntities           = 20
 	entityRecallBoostWeight     = 0.5
 	entityRecallBoostMaxMatches = 200
+	entityVectorMinScore        = 0.2
 )
 
 var (
@@ -196,7 +198,7 @@ func validateLinkedMemoryIDs(ctx context.Context, repo repository.MemoryRepo, ag
 	return out
 }
 
-func replaceMemoryEntityLinks(ctx context.Context, repo repository.MemoryRepo, agentID, memoryID, content string, metadata ...json.RawMessage) {
+func replaceMemoryEntityLinks(ctx context.Context, repo repository.MemoryRepo, embedder *embed.Embedder, autoModel string, agentID, memoryID, content string, metadata ...json.RawMessage) {
 	entityRepo, ok := repo.(repository.MemoryEntityRepo)
 	if !ok || memoryID == "" {
 		return
@@ -207,9 +209,37 @@ func replaceMemoryEntityLinks(ctx context.Context, repo repository.MemoryRepo, a
 	}
 	entities = expandMemoryEntityAliases(entities)
 	entities = dedupeMemoryEntities(entities)
+	entities = embedMemoryEntities(ctx, embedder, autoModel, entities)
 	if err := entityRepo.ReplaceMemoryEntities(ctx, agentID, memoryID, entities); err != nil {
 		slog.Warn("replace memory entity links failed", "memory_id", memoryID, "err", err)
 	}
+}
+
+func embedMemoryEntities(ctx context.Context, embedder *embed.Embedder, autoModel string, entities []domain.MemoryEntity) []domain.MemoryEntity {
+	if len(entities) == 0 || autoModel != "" || embedder == nil {
+		return entities
+	}
+	out := make([]domain.MemoryEntity, len(entities))
+	copy(out, entities)
+	cache := make(map[string][]float32, len(out))
+	for i := range out {
+		text := strings.TrimSpace(out[i].Text)
+		if text == "" {
+			continue
+		}
+		if vec, ok := cache[text]; ok {
+			out[i].Embedding = vec
+			continue
+		}
+		vec, err := embedder.Embed(ctx, text)
+		if err != nil {
+			slog.Warn("embed memory entity failed", "entity", text, "err", err)
+			continue
+		}
+		cache[text] = vec
+		out[i].Embedding = vec
+	}
+	return out
 }
 
 func deleteMemoryEntityLinks(ctx context.Context, repo repository.MemoryRepo, memoryID string) {
@@ -437,7 +467,7 @@ func (s *MemoryService) applyEntityBoosts(ctx context.Context, filter domain.Mem
 		return candidates
 	}
 	keys := expandedEntityKeys(extractMemoryEntities(filter.Query))
-	if len(keys) == 0 {
+	if len(keys) == 0 && s.autoModel == "" && s.embedder == nil {
 		return candidates
 	}
 	limit := len(candidates) * 3
@@ -445,7 +475,7 @@ func (s *MemoryService) applyEntityBoosts(ctx context.Context, filter domain.Mem
 		limit = entityRecallBoostMaxMatches
 	}
 	boostCtx, cancel := withRecallTimeout(ctx, recallEntityBoostTimeout)
-	boosts, err := s.entityBoostsForFilter(boostCtx, filter, keys, limit)
+	boosts, err := s.combinedEntityBoostsForFilter(boostCtx, filter, keys, limit)
 	cancel()
 	if err != nil {
 		slog.Warn("entity recall boost failed", "err", err)

@@ -124,6 +124,7 @@ func createTables(db *sql.DB) error {
 		entity_key    VARCHAR(64)   NOT NULL,
 		entity_text   VARCHAR(255)  NOT NULL,
 		entity_type   VARCHAR(32)   NOT NULL,
+		embedding     TEXT          NULL,
 		memory_id     VARCHAR(36)   NOT NULL,
 		created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY (agent_id, entity_key, memory_id),

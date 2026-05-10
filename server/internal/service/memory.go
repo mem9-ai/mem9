@@ -138,7 +138,7 @@ func (s *MemoryService) CreateWithOptions(ctx context.Context, agentID, content 
 		if err != nil {
 			return nil, 0, fmt.Errorf("create raw memory: %w", err)
 		}
-		replaceMemoryEntityLinks(ctx, s.memories, agentID, mem.ID, mem.Content)
+		replaceMemoryEntityLinks(ctx, s.memories, s.embedder, s.autoModel, agentID, mem.ID, mem.Content)
 		return mem, 1, nil
 	}
 
@@ -173,7 +173,7 @@ func (s *MemoryService) CreateWithOptions(ctx context.Context, agentID, content 
 		}
 		if len(tags) > 0 || len(metadata) > 0 {
 			if err := s.memories.UpdateOptimistic(ctx, mem, 0); err == nil {
-				replaceMemoryEntityLinks(ctx, s.memories, mem.AgentID, mem.ID, mem.Content)
+				replaceMemoryEntityLinks(ctx, s.memories, s.embedder, s.autoModel, mem.AgentID, mem.ID, mem.Content)
 				patchWrites++
 			}
 		}
@@ -353,6 +353,46 @@ func (s *MemoryService) entityBoostsForFilter(ctx context.Context, filter domain
 	return entityRepo.EntityMemoryBoosts(ctx, filter.AgentID, entityKeys, limit)
 }
 
+func (s *MemoryService) combinedEntityBoostsForFilter(ctx context.Context, filter domain.MemoryFilter, entityKeys []string, limit int) (map[string]float64, error) {
+	boosts, err := s.entityBoostsForFilter(ctx, filter, entityKeys, limit)
+	if err != nil {
+		return nil, err
+	}
+	if boosts == nil {
+		boosts = map[string]float64{}
+	}
+	vectorRepo, ok := s.memories.(repository.MemoryEntityVectorRepo)
+	if !ok || strings.TrimSpace(filter.Query) == "" {
+		return boosts, nil
+	}
+	var queryVec []float32
+	if s.autoModel == "" {
+		if s.embedder == nil {
+			return boosts, nil
+		}
+		vec, embedErr := s.embedder.Embed(ctx, filter.Query)
+		if embedErr != nil {
+			slog.Warn("embed entity query failed", "err", embedErr)
+			return boosts, nil
+		}
+		queryVec = vec
+	}
+	vectorBoosts, err := vectorRepo.EntityMemoryVectorBoosts(ctx, filter, filter.Query, queryVec, limit)
+	if err != nil {
+		slog.Warn("entity vector scoring failed", "err", err)
+		return boosts, nil
+	}
+	for id, boost := range vectorBoosts {
+		if boost < entityVectorMinScore {
+			continue
+		}
+		if boost > boosts[id] {
+			boosts[id] = boost
+		}
+	}
+	return boosts, nil
+}
+
 func (s *MemoryService) mem0RankMemories(ctx context.Context, filter domain.MemoryFilter, kwResults, vecResults []domain.Memory, limit int) ([]domain.Memory, map[string]float64) {
 	semanticThreshold := mem0SemanticThreshold(filter)
 	semanticScores := make(map[string]float64, len(vecResults))
@@ -385,7 +425,7 @@ func (s *MemoryService) mem0RankMemories(ctx context.Context, filter domain.Memo
 	entityKeys := expandedEntityKeys(extractMemoryEntities(filter.Query))
 	boostLimit := maxInt(limit*6, entityRecallBoostMaxMatches)
 	boostCtx, cancel := withRecallTimeout(ctx, recallEntityBoostTimeout)
-	entityBoosts, err := s.entityBoostsForFilter(boostCtx, filter, entityKeys, boostLimit)
+	entityBoosts, err := s.combinedEntityBoostsForFilter(boostCtx, filter, entityKeys, boostLimit)
 	cancel()
 	if err != nil {
 		slog.Warn("entity memory scoring failed", "err", err)
@@ -1239,7 +1279,7 @@ func (s *MemoryService) Update(ctx context.Context, agentName, id, content strin
 		return nil, err
 	}
 	if contentChanged {
-		replaceMemoryEntityLinks(ctx, s.memories, current.AgentID, current.ID, current.Content)
+		replaceMemoryEntityLinks(ctx, s.memories, s.embedder, s.autoModel, current.AgentID, current.ID, current.Content)
 	}
 
 	updated, err := s.memories.GetByID(ctx, id)
@@ -1359,7 +1399,7 @@ func (s *MemoryService) BulkCreate(ctx context.Context, agentName string, items 
 
 	result := make([]domain.Memory, len(memories))
 	for i, m := range memories {
-		replaceMemoryEntityLinks(ctx, s.memories, m.AgentID, m.ID, m.Content)
+		replaceMemoryEntityLinks(ctx, s.memories, s.embedder, s.autoModel, m.AgentID, m.ID, m.Content)
 		result[i] = *m
 	}
 	return result, nil

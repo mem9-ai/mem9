@@ -442,7 +442,7 @@ func (s *TenantService) EnsureAdditiveMemorySchema(ctx context.Context, db *sql.
 		if _, err := db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_memory_content_hash ON memories(agent_id, state, content_hash)`); err != nil {
 			return fmt.Errorf("ensure additive memory schema: content_hash index: %w", err)
 		}
-		for _, stmt := range postgresMemoryEntitiesSchemaStatements() {
+		for _, stmt := range postgresMemoryEntitiesSchemaStatements(backend, s.autoModel, s.autoDims, s.clientDims) {
 			if _, err := db.ExecContext(ctx, stmt); err != nil {
 				return fmt.Errorf("ensure additive memory schema: memory_entities: %w", err)
 			}
@@ -466,27 +466,76 @@ func (s *TenantService) EnsureAdditiveMemorySchema(ctx context.Context, db *sql.
 				return fmt.Errorf("ensure additive memory schema: content_hash index: %w", err)
 			}
 		}
-		if _, err := db.ExecContext(ctx, tenant.BuildMemoryEntitiesSchema(backend)); err != nil {
+		if _, err := db.ExecContext(ctx, tenant.BuildMemoryEntitiesSchema(backend, s.autoModel, s.autoDims, s.clientDims)); err != nil {
 			return fmt.Errorf("ensure additive memory schema: memory_entities: %w", err)
+		}
+		exists, err = tenant.ColumnExists(ctx, db, "memory_entities", "embedding")
+		if err != nil {
+			return fmt.Errorf("ensure additive memory schema: check memory_entities.embedding: %w", err)
+		}
+		if !exists {
+			if _, err := db.ExecContext(ctx, `ALTER TABLE memory_entities ADD COLUMN `+tidbEntityEmbeddingColumnSQL(s.autoModel, s.autoDims, s.clientDims)+` AFTER entity_type`); err != nil && !tenant.IsColumnExistsError(err) {
+				return fmt.Errorf("ensure additive memory schema: memory_entities.embedding: %w", err)
+			}
 		}
 	}
 	return nil
 }
 
-func postgresMemoryEntitiesSchemaStatements() []string {
+func postgresMemoryEntitiesSchemaStatements(backend string, autoModel string, autoDims int, clientDims int) []string {
+	dims := clientDims
+	if autoModel != "" {
+		dims = autoDims
+	}
+	if dims <= 0 {
+		dims = 1536
+	}
+	embeddingCol := fmt.Sprintf(`embedding vector(%d) NULL,`, dims)
+	alterCol := fmt.Sprintf(`embedding vector(%d) NULL`, dims)
+	if backend == "db9" && autoModel != "" {
+		sanitizedModel := strings.ReplaceAll(autoModel, "'", "''")
+		embeddingCol = fmt.Sprintf(
+			`embedding vector(%d) GENERATED ALWAYS AS (EMBED_TEXT('%s', entity_text, '{"dimensions": %d}')) STORED,`,
+			dims, sanitizedModel, dims,
+		)
+		alterCol = fmt.Sprintf(
+			`embedding vector(%d) GENERATED ALWAYS AS (EMBED_TEXT('%s', entity_text, '{"dimensions": %d}')) STORED`,
+			dims, sanitizedModel, dims,
+		)
+	}
 	return []string{
-		`CREATE TABLE IF NOT EXISTS memory_entities (
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS memory_entities (
 			agent_id      VARCHAR(100) NOT NULL DEFAULT '',
 			entity_key    VARCHAR(64)  NOT NULL,
 			entity_text   VARCHAR(255) NOT NULL,
 			entity_type   VARCHAR(32)  NOT NULL,
+			%s
 			memory_id     VARCHAR(36)  NOT NULL,
 			created_at    TIMESTAMPTZ  DEFAULT NOW(),
 			PRIMARY KEY (agent_id, entity_key, memory_id)
-		)`,
+		)`, embeddingCol),
+		`ALTER TABLE memory_entities ADD COLUMN IF NOT EXISTS ` + alterCol,
 		`CREATE INDEX IF NOT EXISTS idx_memory_entities_memory ON memory_entities(memory_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_memory_entities_lookup ON memory_entities(agent_id, entity_key)`,
 	}
+}
+
+func tidbEntityEmbeddingColumnSQL(autoModel string, autoDims int, clientDims int) string {
+	dims := clientDims
+	if autoModel != "" {
+		dims = autoDims
+	}
+	if dims <= 0 {
+		dims = 1536
+	}
+	if autoModel != "" {
+		sanitizedModel := strings.ReplaceAll(autoModel, "'", "''")
+		return fmt.Sprintf(
+			`embedding VECTOR(%d) GENERATED ALWAYS AS (EMBED_TEXT('%s', entity_text, '{"dimensions": %d}')) STORED`,
+			dims, sanitizedModel, dims,
+		)
+	}
+	return fmt.Sprintf(`embedding VECTOR(%d) NULL`, dims)
 }
 
 func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) error {
