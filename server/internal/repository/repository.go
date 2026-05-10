@@ -74,6 +74,17 @@ type MemoryEntityVectorRepo interface {
 	EntityMemoryVectorBoosts(ctx context.Context, f domain.MemoryFilter, queryText string, queryVec []float32, limit int) (map[string]float64, error)
 }
 
+// MemoryEntityMaintenanceRepo exposes maintenance operations for entity store
+// backfill, relationship persistence, indexing, and cleanup.
+type MemoryEntityMaintenanceRepo interface {
+	ListUnembeddedMemoryEntities(ctx context.Context, limit int) ([]domain.MemoryEntityBackfillRow, error)
+	UpdateMemoryEntityEmbedding(ctx context.Context, agentID, entityKey, memoryID string, embedding []float32) error
+	ReplaceMemoryRelationships(ctx context.Context, agentID, memoryID string, relationships []domain.MemoryRelationship) error
+	DeleteMemoryRelationships(ctx context.Context, memoryID string) error
+	CleanupEntityStore(ctx context.Context) (int64, error)
+	EnsureMemoryEntityVectorIndex(ctx context.Context) error
+}
+
 // TenantRepo manages tenant records in the control plane DB.
 type TenantRepo interface {
 	Create(ctx context.Context, t *domain.Tenant) error

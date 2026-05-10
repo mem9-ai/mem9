@@ -267,7 +267,7 @@ func (s *MemoryService) SearchCandidates(
 	}
 	candidates = s.expandLinkedMemoryCandidates(ctx, searchFilter, sourcePool, candidates)
 	candidates = s.applyEntityBoosts(ctx, searchFilter, candidates)
-	return applyFactProfileScoring(searchFilter, candidates), nil
+	return applyLocalReranking(applyFactProfileScoring(searchFilter, candidates)), nil
 }
 
 const rrfK = 60.0
@@ -337,6 +337,62 @@ func rrfMerge(ftsResults, vecResults []domain.Memory) map[string]float64 {
 
 func (s *MemoryService) paginate(results []domain.Memory, offset, limit int) ([]domain.Memory, int) {
 	return paginateResults(results, offset, limit)
+}
+
+func (s *MemoryService) BackfillEntityEmbeddings(ctx context.Context, limit int) (int, error) {
+	if s.autoModel != "" || s.embedder == nil {
+		return 0, nil
+	}
+	maintenanceRepo, ok := s.memories.(repository.MemoryEntityMaintenanceRepo)
+	if !ok {
+		return 0, nil
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := maintenanceRepo.ListUnembeddedMemoryEntities(ctx, limit)
+	if err != nil {
+		return 0, err
+	}
+	var updated int
+	cache := map[string][]float32{}
+	for _, row := range rows {
+		text := strings.TrimSpace(row.Text)
+		if text == "" {
+			continue
+		}
+		vec, ok := cache[text]
+		if !ok {
+			var embedErr error
+			vec, embedErr = s.embedder.Embed(ctx, text)
+			if embedErr != nil {
+				slog.Warn("entity backfill embedding failed", "entity", text, "err", embedErr)
+				continue
+			}
+			cache[text] = vec
+		}
+		if err := maintenanceRepo.UpdateMemoryEntityEmbedding(ctx, row.AgentID, row.Key, row.MemoryID, vec); err != nil {
+			return updated, err
+		}
+		updated++
+	}
+	return updated, nil
+}
+
+func (s *MemoryService) CleanupEntityStore(ctx context.Context) (int64, error) {
+	maintenanceRepo, ok := s.memories.(repository.MemoryEntityMaintenanceRepo)
+	if !ok {
+		return 0, nil
+	}
+	return maintenanceRepo.CleanupEntityStore(ctx)
+}
+
+func (s *MemoryService) EnsureEntityVectorIndex(ctx context.Context) error {
+	maintenanceRepo, ok := s.memories.(repository.MemoryEntityMaintenanceRepo)
+	if !ok {
+		return nil
+	}
+	return maintenanceRepo.EnsureMemoryEntityVectorIndex(ctx)
 }
 
 func (s *MemoryService) entityBoostsForFilter(ctx context.Context, filter domain.MemoryFilter, entityKeys []string, limit int) (map[string]float64, error) {

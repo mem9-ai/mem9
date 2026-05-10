@@ -49,6 +49,7 @@ type memoryRepoMock struct {
 	entityLinks          map[string][]domain.MemoryEntity
 	entityBoosts         map[string]float64
 	entityVectorBoosts   map[string]float64
+	relationships        map[string][]domain.MemoryRelationship
 }
 
 type setStateCall struct {
@@ -1632,6 +1633,39 @@ func (m *memoryRepoMock) DeleteMemoryEntities(ctx context.Context, memoryID stri
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.entityLinks, memoryID)
+	return nil
+}
+
+func (m *memoryRepoMock) ReplaceMemoryRelationships(ctx context.Context, agentID, memoryID string, relationships []domain.MemoryRelationship) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.relationships == nil {
+		m.relationships = map[string][]domain.MemoryRelationship{}
+	}
+	m.relationships[memoryID] = append([]domain.MemoryRelationship(nil), relationships...)
+	return nil
+}
+
+func (m *memoryRepoMock) DeleteMemoryRelationships(ctx context.Context, memoryID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.relationships, memoryID)
+	return nil
+}
+
+func (m *memoryRepoMock) ListUnembeddedMemoryEntities(ctx context.Context, limit int) ([]domain.MemoryEntityBackfillRow, error) {
+	return nil, nil
+}
+
+func (m *memoryRepoMock) UpdateMemoryEntityEmbedding(ctx context.Context, agentID, entityKey, memoryID string, embedding []float32) error {
+	return nil
+}
+
+func (m *memoryRepoMock) CleanupEntityStore(ctx context.Context) (int64, error) {
+	return 0, nil
+}
+
+func (m *memoryRepoMock) EnsureMemoryEntityVectorIndex(ctx context.Context) error {
 	return nil
 }
 

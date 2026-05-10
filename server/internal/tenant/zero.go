@@ -342,6 +342,14 @@ func (p *ZeroProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, BuildMemoryEntitiesSchema("tidb", p.autoModel, p.autoDims, p.clientDims)); err != nil {
 		return fmt.Errorf("init schema: memory entities table: %w", err)
 	}
+	for _, stmt := range strings.Split(strings.TrimSpace(BuildEntitySupportSchema("tidb", p.autoModel, p.autoDims, p.clientDims)), ";\n") {
+		if strings.TrimSpace(stmt) == "" {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("init schema: entity support tables: %w", err)
+		}
+	}
 	if p.autoModel != "" {
 		exists, err := IndexExists(ctx, db, "memories", "idx_cosine")
 		if err != nil {

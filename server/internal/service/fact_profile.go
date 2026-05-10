@@ -263,9 +263,10 @@ func metadataFactEntities(metadata json.RawMessage) []domain.MemoryEntity {
 			typ = "metadata"
 		}
 		entities = append(entities, domain.MemoryEntity{
-			Key:  memoryEntityKey(text),
-			Text: truncateRunes(text, 255),
-			Type: typ,
+			Key:          memoryEntityKey(text),
+			CanonicalKey: memoryEntityKey(text),
+			Text:         truncateRunes(text, 255),
+			Type:         typ,
 		})
 	}
 	return entities

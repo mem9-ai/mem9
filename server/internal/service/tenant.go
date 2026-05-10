@@ -447,6 +447,17 @@ func (s *TenantService) EnsureAdditiveMemorySchema(ctx context.Context, db *sql.
 				return fmt.Errorf("ensure additive memory schema: memory_entities: %w", err)
 			}
 		}
+		for _, stmt := range postgresEntitySupportSchemaStatements(backend, s.autoModel, s.autoDims, s.clientDims) {
+			if strings.TrimSpace(stmt) == "" {
+				continue
+			}
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("ensure additive memory schema: entity support: %w", err)
+			}
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE memory_entities SET canonical_entity_key = entity_key WHERE canonical_entity_key IS NULL OR canonical_entity_key = ''`); err != nil {
+			return fmt.Errorf("ensure additive memory schema: canonical entity key backfill: %w", err)
+		}
 	default:
 		exists, err := tenant.ColumnExists(ctx, db, "memories", "content_hash")
 		if err != nil {
@@ -469,6 +480,18 @@ func (s *TenantService) EnsureAdditiveMemorySchema(ctx context.Context, db *sql.
 		if _, err := db.ExecContext(ctx, tenant.BuildMemoryEntitiesSchema(backend, s.autoModel, s.autoDims, s.clientDims)); err != nil {
 			return fmt.Errorf("ensure additive memory schema: memory_entities: %w", err)
 		}
+		exists, err = tenant.ColumnExists(ctx, db, "memory_entities", "canonical_entity_key")
+		if err != nil {
+			return fmt.Errorf("ensure additive memory schema: check memory_entities.canonical_entity_key: %w", err)
+		}
+		if !exists {
+			if _, err := db.ExecContext(ctx, `ALTER TABLE memory_entities ADD COLUMN canonical_entity_key VARCHAR(64) NOT NULL DEFAULT '' AFTER entity_key`); err != nil && !tenant.IsColumnExistsError(err) {
+				return fmt.Errorf("ensure additive memory schema: memory_entities.canonical_entity_key: %w", err)
+			}
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE memory_entities SET canonical_entity_key = entity_key WHERE canonical_entity_key = ''`); err != nil {
+			return fmt.Errorf("ensure additive memory schema: canonical entity key backfill: %w", err)
+		}
 		exists, err = tenant.ColumnExists(ctx, db, "memory_entities", "embedding")
 		if err != nil {
 			return fmt.Errorf("ensure additive memory schema: check memory_entities.embedding: %w", err)
@@ -476,6 +499,14 @@ func (s *TenantService) EnsureAdditiveMemorySchema(ctx context.Context, db *sql.
 		if !exists {
 			if _, err := db.ExecContext(ctx, `ALTER TABLE memory_entities ADD COLUMN `+tidbEntityEmbeddingColumnSQL(s.autoModel, s.autoDims, s.clientDims)+` AFTER entity_type`); err != nil && !tenant.IsColumnExistsError(err) {
 				return fmt.Errorf("ensure additive memory schema: memory_entities.embedding: %w", err)
+			}
+		}
+		for _, stmt := range entitySupportSchemaStatements(backend, s.autoModel, s.autoDims, s.clientDims) {
+			if strings.TrimSpace(stmt) == "" {
+				continue
+			}
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("ensure additive memory schema: entity support: %w", err)
 			}
 		}
 	}
@@ -507,6 +538,7 @@ func postgresMemoryEntitiesSchemaStatements(backend string, autoModel string, au
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS memory_entities (
 			agent_id      VARCHAR(100) NOT NULL DEFAULT '',
 			entity_key    VARCHAR(64)  NOT NULL,
+			canonical_entity_key VARCHAR(64) NOT NULL DEFAULT '',
 			entity_text   VARCHAR(255) NOT NULL,
 			entity_type   VARCHAR(32)  NOT NULL,
 			%s
@@ -514,10 +546,19 @@ func postgresMemoryEntitiesSchemaStatements(backend string, autoModel string, au
 			created_at    TIMESTAMPTZ  DEFAULT NOW(),
 			PRIMARY KEY (agent_id, entity_key, memory_id)
 		)`, embeddingCol),
+		`ALTER TABLE memory_entities ADD COLUMN IF NOT EXISTS canonical_entity_key VARCHAR(64) NOT NULL DEFAULT ''`,
 		`ALTER TABLE memory_entities ADD COLUMN IF NOT EXISTS ` + alterCol,
 		`CREATE INDEX IF NOT EXISTS idx_memory_entities_memory ON memory_entities(memory_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_memory_entities_lookup ON memory_entities(agent_id, entity_key)`,
 	}
+}
+
+func postgresEntitySupportSchemaStatements(backend string, autoModel string, autoDims int, clientDims int) []string {
+	return entitySupportSchemaStatements(backend, autoModel, autoDims, clientDims)
+}
+
+func entitySupportSchemaStatements(backend string, autoModel string, autoDims int, clientDims int) []string {
+	return strings.Split(strings.TrimSpace(tenant.BuildEntitySupportSchema(backend, autoModel, autoDims, clientDims)), ";\n")
 }
 
 func tidbEntityEmbeddingColumnSQL(autoModel string, autoDims int, clientDims int) string {

@@ -996,13 +996,13 @@ func (r *MemoryRepo) replaceMemoryEntitiesOnce(ctx context.Context, agentID, mem
 	}
 	var stmtSQL string
 	if r.autoModel != "" {
-		stmtSQL = `INSERT INTO memory_entities (agent_id, entity_key, entity_text, entity_type, memory_id, created_at)
-			VALUES (?, ?, ?, ?, ?, NOW())
-			ON DUPLICATE KEY UPDATE entity_text = VALUES(entity_text), entity_type = VALUES(entity_type)`
-	} else {
-		stmtSQL = `INSERT INTO memory_entities (agent_id, entity_key, entity_text, entity_type, embedding, memory_id, created_at)
+		stmtSQL = `INSERT INTO memory_entities (agent_id, entity_key, canonical_entity_key, entity_text, entity_type, memory_id, created_at)
 			VALUES (?, ?, ?, ?, ?, ?, NOW())
-			ON DUPLICATE KEY UPDATE entity_text = VALUES(entity_text), entity_type = VALUES(entity_type), embedding = VALUES(embedding)`
+			ON DUPLICATE KEY UPDATE canonical_entity_key = VALUES(canonical_entity_key), entity_text = VALUES(entity_text), entity_type = VALUES(entity_type)`
+	} else {
+		stmtSQL = `INSERT INTO memory_entities (agent_id, entity_key, canonical_entity_key, entity_text, entity_type, embedding, memory_id, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+			ON DUPLICATE KEY UPDATE canonical_entity_key = VALUES(canonical_entity_key), entity_text = VALUES(entity_text), entity_type = VALUES(entity_type), embedding = VALUES(embedding)`
 	}
 	stmt, err := tx.PrepareContext(ctx, stmtSQL)
 	if err != nil {
@@ -1013,17 +1013,67 @@ func (r *MemoryRepo) replaceMemoryEntitiesOnce(ctx context.Context, agentID, mem
 		if entity.Key == "" || entity.Text == "" {
 			continue
 		}
+		canonicalKey := entity.CanonicalKey
+		if canonicalKey == "" {
+			canonicalKey = entity.Key
+		}
 		var execErr error
 		if r.autoModel != "" {
-			_, execErr = stmt.ExecContext(ctx, agentID, entity.Key, entity.Text, entity.Type, memoryID)
+			_, execErr = stmt.ExecContext(ctx, agentID, entity.Key, canonicalKey, entity.Text, entity.Type, memoryID)
 		} else {
-			_, execErr = stmt.ExecContext(ctx, agentID, entity.Key, entity.Text, entity.Type, vecToString(entity.Embedding), memoryID)
+			_, execErr = stmt.ExecContext(ctx, agentID, entity.Key, canonicalKey, entity.Text, entity.Type, vecToString(entity.Embedding), memoryID)
 		}
 		if execErr != nil {
 			return fmt.Errorf("insert memory entity: %w", execErr)
 		}
+		if err := r.upsertCanonicalEntity(ctx, tx, agentID, canonicalKey, entity); err != nil {
+			return err
+		}
+		if entity.Key != canonicalKey {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO memory_entity_aliases (agent_id, alias_key, entity_key, alias_text, created_at)
+				VALUES (?, ?, ?, ?, NOW())
+				ON DUPLICATE KEY UPDATE entity_key = VALUES(entity_key), alias_text = VALUES(alias_text)`,
+				agentID, entity.Key, canonicalKey, entity.Text); err != nil {
+				return fmt.Errorf("insert memory entity alias: %w", err)
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE canonical_memory_entities c
+		SET memory_count = (
+			SELECT COUNT(DISTINCT me.memory_id)
+			FROM memory_entities me
+			WHERE me.agent_id = c.agent_id AND me.canonical_entity_key = c.entity_key
+		)
+		WHERE c.agent_id = ?`, agentID); err != nil {
+		return fmt.Errorf("refresh canonical entity counts: %w", err)
 	}
 	return tx.Commit()
+}
+
+func (r *MemoryRepo) upsertCanonicalEntity(ctx context.Context, tx *sql.Tx, agentID, canonicalKey string, entity domain.MemoryEntity) error {
+	if canonicalKey == "" || entity.Text == "" {
+		return nil
+	}
+	entityType := entity.Type
+	if entityType == "alias" {
+		entityType = "entity"
+	}
+	if r.autoModel != "" {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO canonical_memory_entities (agent_id, entity_key, entity_text, entity_type, memory_count, created_at, updated_at)
+			VALUES (?, ?, ?, ?, 0, NOW(), NOW())
+			ON DUPLICATE KEY UPDATE entity_text = IF(entity_text = '' OR entity_type = 'alias', VALUES(entity_text), entity_text), entity_type = IF(entity_type = 'alias', VALUES(entity_type), entity_type), updated_at = NOW()`,
+			agentID, canonicalKey, entity.Text, entityType); err != nil {
+			return fmt.Errorf("upsert canonical entity: %w", err)
+		}
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO canonical_memory_entities (agent_id, entity_key, entity_text, entity_type, embedding, memory_count, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, 0, NOW(), NOW())
+		ON DUPLICATE KEY UPDATE entity_text = IF(entity_text = '' OR entity_type = 'alias', VALUES(entity_text), entity_text), entity_type = IF(entity_type = 'alias', VALUES(entity_type), entity_type), embedding = COALESCE(embedding, VALUES(embedding)), updated_at = NOW()`,
+		agentID, canonicalKey, entity.Text, entityType, vecToString(entity.Embedding)); err != nil {
+		return fmt.Errorf("upsert canonical entity: %w", err)
+	}
+	return nil
 }
 
 func (r *MemoryRepo) EntityMemoryVectorBoosts(ctx context.Context, f domain.MemoryFilter, queryText string, queryVec []float32, limit int) (map[string]float64, error) {
@@ -1103,7 +1153,12 @@ func (r *MemoryRepo) EntityMemoryBoostsForFilter(ctx context.Context, f domain.M
 		args = append(args, key)
 	}
 
-	conds := []string{"me.entity_key IN (" + strings.Join(entityPlaceholders, ",") + ")"}
+	aliasPlaceholders := make([]string, len(entityKeys))
+	for i, key := range entityKeys {
+		aliasPlaceholders[i] = "?"
+		args = append(args, key)
+	}
+	conds := []string{"(me.entity_key IN (" + strings.Join(entityPlaceholders, ",") + ") OR me.canonical_entity_key IN (SELECT mea.entity_key FROM memory_entity_aliases mea WHERE mea.agent_id = me.agent_id AND mea.alias_key IN (" + strings.Join(aliasPlaceholders, ",") + ")))"}
 	if f.State == "all" {
 		// no state filter
 	} else if f.State != "" {
@@ -1225,6 +1280,141 @@ func (r *MemoryRepo) entityFilterConds(f domain.MemoryFilter) ([]string, []any) 
 	return conds, args
 }
 
+func (r *MemoryRepo) ListUnembeddedMemoryEntities(ctx context.Context, limit int) ([]domain.MemoryEntityBackfillRow, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "list unembedded memory entities", `SELECT agent_id, entity_key, memory_id, entity_text
+		FROM memory_entities
+		WHERE embedding IS NULL
+		ORDER BY created_at ASC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list unembedded memory entities: %w", err)
+	}
+	defer rows.Close()
+	var out []domain.MemoryEntityBackfillRow
+	for rows.Next() {
+		var row domain.MemoryEntityBackfillRow
+		if err := rows.Scan(&row.AgentID, &row.Key, &row.MemoryID, &row.Text); err != nil {
+			return nil, fmt.Errorf("scan unembedded memory entity: %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *MemoryRepo) UpdateMemoryEntityEmbedding(ctx context.Context, agentID, entityKey, memoryID string, embedding []float32) error {
+	if r.autoModel != "" || len(embedding) == 0 {
+		return nil
+	}
+	_, _, err := execContextWithRetry(ctx, r.db, r.clusterID, "update memory entity embedding", `UPDATE memory_entities
+		SET embedding = ?
+		WHERE agent_id = ? AND entity_key = ? AND memory_id = ?`,
+		vecToString(embedding), agentID, entityKey, memoryID)
+	if err != nil {
+		return fmt.Errorf("update memory entity embedding: %w", err)
+	}
+	_, _, err = execContextWithRetry(ctx, r.db, r.clusterID, "update canonical entity embedding", `UPDATE canonical_memory_entities
+		SET embedding = COALESCE(embedding, ?), updated_at = NOW()
+		WHERE agent_id = ? AND entity_key IN (
+			SELECT canonical_entity_key FROM memory_entities WHERE agent_id = ? AND entity_key = ? AND memory_id = ?
+		)`, vecToString(embedding), agentID, agentID, entityKey, memoryID)
+	if err != nil {
+		return fmt.Errorf("update canonical entity embedding: %w", err)
+	}
+	return nil
+}
+
+func (r *MemoryRepo) ReplaceMemoryRelationships(ctx context.Context, agentID, memoryID string, relationships []domain.MemoryRelationship) error {
+	return withTransientDBRetry(ctx, r.clusterID, "replace memory relationships", func() error {
+		tx, err := r.db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("replace memory relationships begin tx: %w", err)
+		}
+		defer tx.Rollback()
+		if _, err := tx.ExecContext(ctx, `DELETE FROM memory_relationships WHERE memory_id = ?`, memoryID); err != nil {
+			return fmt.Errorf("delete memory relationships: %w", err)
+		}
+		if len(relationships) == 0 {
+			return tx.Commit()
+		}
+		stmt, err := tx.PrepareContext(ctx, `INSERT INTO memory_relationships (agent_id, source_entity_key, target_entity_key, relationship_type, memory_id, created_at)
+			VALUES (?, ?, ?, ?, ?, NOW())
+			ON DUPLICATE KEY UPDATE relationship_type = VALUES(relationship_type)`)
+		if err != nil {
+			return fmt.Errorf("prepare memory relationships: %w", err)
+		}
+		defer stmt.Close()
+		for _, rel := range relationships {
+			if rel.SourceEntityKey == "" || rel.TargetEntityKey == "" || rel.SourceEntityKey == rel.TargetEntityKey {
+				continue
+			}
+			relAgentID := rel.AgentID
+			if relAgentID == "" {
+				relAgentID = agentID
+			}
+			relType := strings.TrimSpace(rel.RelationshipType)
+			if relType == "" {
+				relType = "related"
+			}
+			if _, err := stmt.ExecContext(ctx, relAgentID, rel.SourceEntityKey, rel.TargetEntityKey, relType, memoryID); err != nil {
+				return fmt.Errorf("insert memory relationship: %w", err)
+			}
+		}
+		return tx.Commit()
+	})
+}
+
+func (r *MemoryRepo) DeleteMemoryRelationships(ctx context.Context, memoryID string) error {
+	_, _, err := execContextWithRetry(ctx, r.db, r.clusterID, "delete memory relationships", `DELETE FROM memory_relationships WHERE memory_id = ?`, memoryID)
+	if err != nil {
+		return fmt.Errorf("delete memory relationships: %w", err)
+	}
+	return nil
+}
+
+func (r *MemoryRepo) CleanupEntityStore(ctx context.Context) (int64, error) {
+	var total int64
+	if _, _, err := execContextWithRetry(ctx, r.db, r.clusterID, "rebuild canonical entities", `INSERT INTO canonical_memory_entities (agent_id, entity_key, entity_text, entity_type, memory_count, created_at, updated_at)
+		SELECT agent_id, COALESCE(NULLIF(canonical_entity_key, ''), entity_key), MIN(entity_text), MIN(entity_type), COUNT(DISTINCT memory_id), NOW(), NOW()
+		FROM memory_entities
+		GROUP BY agent_id, COALESCE(NULLIF(canonical_entity_key, ''), entity_key)
+		ON DUPLICATE KEY UPDATE memory_count = VALUES(memory_count), updated_at = NOW()`); err != nil {
+		return total, fmt.Errorf("rebuild canonical entities: %w", err)
+	}
+	for _, stmt := range []string{
+		`DELETE me FROM memory_entities me LEFT JOIN memories m ON m.id = me.memory_id WHERE m.id IS NULL OR m.state = 'deleted'`,
+		`DELETE mr FROM memory_relationships mr LEFT JOIN memories m ON m.id = mr.memory_id WHERE m.id IS NULL OR m.state = 'deleted'`,
+		`DELETE mea FROM memory_entity_aliases mea LEFT JOIN memory_entities me ON me.agent_id = mea.agent_id AND me.canonical_entity_key = mea.entity_key WHERE me.memory_id IS NULL`,
+		`DELETE c FROM canonical_memory_entities c LEFT JOIN memory_entities me ON me.agent_id = c.agent_id AND me.canonical_entity_key = c.entity_key WHERE me.memory_id IS NULL`,
+	} {
+		res, _, err := execContextWithRetry(ctx, r.db, r.clusterID, "cleanup entity store", stmt)
+		if err != nil {
+			return total, fmt.Errorf("cleanup entity store: %w", err)
+		}
+		if n, err := res.RowsAffected(); err == nil {
+			total += n
+		}
+	}
+	return total, nil
+}
+
+func (r *MemoryRepo) EnsureMemoryEntityVectorIndex(ctx context.Context) error {
+	if r.autoModel == "" {
+		return nil
+	}
+	if _, _, err := execContextWithRetry(ctx, r.db, r.clusterID, "ensure memory entity vector index",
+		`ALTER TABLE memory_entities ADD VECTOR INDEX idx_memory_entities_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !isIndexExistsError(err) {
+		return fmt.Errorf("ensure memory entity vector index: %w", err)
+	}
+	if _, _, err := execContextWithRetry(ctx, r.db, r.clusterID, "ensure canonical entity vector index",
+		`ALTER TABLE canonical_memory_entities ADD VECTOR INDEX idx_canonical_memory_entities_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !isIndexExistsError(err) {
+		return fmt.Errorf("ensure canonical entity vector index: %w", err)
+	}
+	return nil
+}
+
 func clampScore(score float64) float64 {
 	if score < 0 {
 		return 0
@@ -1233,6 +1423,11 @@ func clampScore(score float64) float64 {
 		return 1
 	}
 	return score
+}
+
+func isIndexExistsError(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	return errors.As(err, &mysqlErr) && mysqlErr.Number == 1061
 }
 
 // nullJSON returns nil (NULL) for empty/nil JSON, otherwise the raw bytes.

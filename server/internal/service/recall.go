@@ -1,6 +1,10 @@
 package service
 
-import "github.com/qiffang/mnemos/server/internal/domain"
+import (
+	"sort"
+
+	"github.com/qiffang/mnemos/server/internal/domain"
+)
 
 type RecallSourcePool string
 
@@ -121,4 +125,38 @@ func dedupRecallCandidatesByContent(candidates []RecallCandidate) []RecallCandid
 		out = append(out, candidate)
 	}
 	return out
+}
+
+func applyLocalReranking(candidates []RecallCandidate) []RecallCandidate {
+	if len(candidates) < 2 {
+		return candidates
+	}
+	out := make([]RecallCandidate, len(candidates))
+	copy(out, candidates)
+	sort.SliceStable(out, func(i, j int) bool {
+		left := localRerankScore(out[i])
+		right := localRerankScore(out[j])
+		if left != right {
+			return left > right
+		}
+		return out[i].RRFRank < out[j].RRFRank
+	})
+	for i := range out {
+		out[i].RRFRank = i + 1
+	}
+	return out
+}
+
+func localRerankScore(candidate RecallCandidate) float64 {
+	score := candidate.RRFScore + candidate.ProfileBoost - candidate.RiskPenalty
+	if candidate.EntityBoost > 0 {
+		score += 0.35 * candidate.EntityBoost / (rrfK + 1)
+	}
+	if candidate.InVector && candidate.VectorSimilarity > 0 {
+		score += 0.10 * candidate.VectorSimilarity / (rrfK + 1)
+	}
+	if candidate.InKeyword {
+		score += 0.05 / (rrfK + 1)
+	}
+	return score
 }

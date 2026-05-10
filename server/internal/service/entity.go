@@ -213,6 +213,7 @@ func replaceMemoryEntityLinks(ctx context.Context, repo repository.MemoryRepo, e
 	if err := entityRepo.ReplaceMemoryEntities(ctx, agentID, memoryID, entities); err != nil {
 		slog.Warn("replace memory entity links failed", "memory_id", memoryID, "err", err)
 	}
+	replaceMemoryRelationships(ctx, repo, agentID, memoryID, metadata, entities)
 }
 
 func embedMemoryEntities(ctx context.Context, embedder *embed.Embedder, autoModel string, entities []domain.MemoryEntity) []domain.MemoryEntity {
@@ -249,6 +250,60 @@ func deleteMemoryEntityLinks(ctx context.Context, repo repository.MemoryRepo, me
 	}
 	if err := entityRepo.DeleteMemoryEntities(ctx, memoryID); err != nil {
 		slog.Warn("delete memory entity links failed", "memory_id", memoryID, "err", err)
+	}
+	if maintenanceRepo, ok := repo.(repository.MemoryEntityMaintenanceRepo); ok {
+		if err := maintenanceRepo.DeleteMemoryRelationships(ctx, memoryID); err != nil {
+			slog.Warn("delete memory relationships failed", "memory_id", memoryID, "err", err)
+		}
+	}
+}
+
+func replaceMemoryRelationships(ctx context.Context, repo repository.MemoryRepo, agentID, memoryID string, metadata []json.RawMessage, entities []domain.MemoryEntity) {
+	maintenanceRepo, ok := repo.(repository.MemoryEntityMaintenanceRepo)
+	if !ok || memoryID == "" || len(metadata) == 0 {
+		return
+	}
+	profile := metadataFactProfile(metadata[0])
+	if profile.Kind != "relationship" || len(profile.Entities) < 2 {
+		_ = maintenanceRepo.DeleteMemoryRelationships(ctx, memoryID)
+		return
+	}
+	byKey := make(map[string]domain.MemoryEntity, len(entities))
+	for _, entity := range entities {
+		if entity.Key != "" {
+			byKey[entity.Key] = entity
+		}
+	}
+	var rels []domain.MemoryRelationship
+	for i := 0; i < len(profile.Entities); i++ {
+		for j := i + 1; j < len(profile.Entities); j++ {
+			leftKey := memoryEntityKey(profile.Entities[i].Text)
+			rightKey := memoryEntityKey(profile.Entities[j].Text)
+			left := canonicalKeyForEntity(byKey[leftKey])
+			right := canonicalKeyForEntity(byKey[rightKey])
+			if left == "" {
+				left = leftKey
+			}
+			if right == "" {
+				right = rightKey
+			}
+			if left == "" || right == "" || left == right {
+				continue
+			}
+			if right < left {
+				left, right = right, left
+			}
+			rels = append(rels, domain.MemoryRelationship{
+				AgentID:          agentID,
+				SourceEntityKey:  left,
+				TargetEntityKey:  right,
+				RelationshipType: "related",
+				MemoryID:         memoryID,
+			})
+		}
+	}
+	if err := maintenanceRepo.ReplaceMemoryRelationships(ctx, agentID, memoryID, rels); err != nil {
+		slog.Warn("replace memory relationships failed", "memory_id", memoryID, "err", err)
 	}
 }
 
@@ -294,9 +349,10 @@ func extractMemoryEntities(text string) []domain.MemoryEntity {
 		}
 		seen[key] = struct{}{}
 		entities = append(entities, domain.MemoryEntity{
-			Key:  key,
-			Text: truncateRunes(entityText, 255),
-			Type: candidate.typ,
+			Key:          key,
+			CanonicalKey: key,
+			Text:         truncateRunes(entityText, 255),
+			Type:         candidate.typ,
 		})
 		if len(entities) >= maxMemoryEntities {
 			break
@@ -320,6 +376,9 @@ func dedupeMemoryEntities(entities []domain.MemoryEntity) []domain.MemoryEntity 
 	for _, entity := range entities {
 		if entity.Key == "" {
 			entity.Key = memoryEntityKey(entity.Text)
+		}
+		if entity.CanonicalKey == "" {
+			entity.CanonicalKey = entity.Key
 		}
 		if entity.Key == "" || entity.Text == "" {
 			continue
@@ -345,18 +404,33 @@ func expandMemoryEntityAliases(entities []domain.MemoryEntity) []domain.MemoryEn
 		if entity.Key == "" {
 			entity.Key = memoryEntityKey(entity.Text)
 		}
+		if entity.CanonicalKey == "" {
+			entity.CanonicalKey = entity.Key
+		}
 		if entity.Key != "" && entity.Text != "" {
 			out = append(out, entity)
 		}
+		canonicalKey := entity.CanonicalKey
+		if canonicalKey == "" {
+			canonicalKey = entity.Key
+		}
 		for _, alias := range memoryEntityAliases(entity.Text) {
 			out = append(out, domain.MemoryEntity{
-				Key:  memoryEntityKey(alias),
-				Text: truncateRunes(alias, 255),
-				Type: "alias",
+				Key:          memoryEntityKey(alias),
+				CanonicalKey: canonicalKey,
+				Text:         truncateRunes(alias, 255),
+				Type:         "alias",
 			})
 		}
 	}
 	return out
+}
+
+func canonicalKeyForEntity(entity domain.MemoryEntity) string {
+	if entity.CanonicalKey != "" {
+		return entity.CanonicalKey
+	}
+	return entity.Key
 }
 
 func memoryEntityAliases(text string) []string {

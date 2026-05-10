@@ -384,6 +384,17 @@ func ensureUploadAdditiveMemorySchema(ctx context.Context, db *sql.DB, backend s
 				return fmt.Errorf("ensure upload additive schema: memory_entities: %w", err)
 			}
 		}
+		for _, stmt := range postgresEntitySupportSchemaStatements(backend, autoModel, autoDims, clientDims) {
+			if strings.TrimSpace(stmt) == "" {
+				continue
+			}
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("ensure upload additive schema: entity support: %w", err)
+			}
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE memory_entities SET canonical_entity_key = entity_key WHERE canonical_entity_key IS NULL OR canonical_entity_key = ''`); err != nil {
+			return fmt.Errorf("ensure upload additive schema: canonical entity key backfill: %w", err)
+		}
 	default:
 		exists, err := tenant.ColumnExists(ctx, db, "memories", "content_hash")
 		if err != nil {
@@ -406,6 +417,18 @@ func ensureUploadAdditiveMemorySchema(ctx context.Context, db *sql.DB, backend s
 		if _, err := db.ExecContext(ctx, tenant.BuildMemoryEntitiesSchema(backend, autoModel, autoDims, clientDims)); err != nil {
 			return fmt.Errorf("ensure upload additive schema: memory_entities: %w", err)
 		}
+		exists, err = tenant.ColumnExists(ctx, db, "memory_entities", "canonical_entity_key")
+		if err != nil {
+			return fmt.Errorf("ensure upload additive schema: check memory_entities.canonical_entity_key: %w", err)
+		}
+		if !exists {
+			if _, err := db.ExecContext(ctx, `ALTER TABLE memory_entities ADD COLUMN canonical_entity_key VARCHAR(64) NOT NULL DEFAULT '' AFTER entity_key`); err != nil && !tenant.IsColumnExistsError(err) {
+				return fmt.Errorf("ensure upload additive schema: memory_entities.canonical_entity_key: %w", err)
+			}
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE memory_entities SET canonical_entity_key = entity_key WHERE canonical_entity_key = ''`); err != nil {
+			return fmt.Errorf("ensure upload additive schema: canonical entity key backfill: %w", err)
+		}
 		exists, err = tenant.ColumnExists(ctx, db, "memory_entities", "embedding")
 		if err != nil {
 			return fmt.Errorf("ensure upload additive schema: check memory_entities.embedding: %w", err)
@@ -413,6 +436,14 @@ func ensureUploadAdditiveMemorySchema(ctx context.Context, db *sql.DB, backend s
 		if !exists {
 			if _, err := db.ExecContext(ctx, `ALTER TABLE memory_entities ADD COLUMN `+tidbEntityEmbeddingColumnSQL(autoModel, autoDims, clientDims)+` AFTER entity_type`); err != nil && !tenant.IsColumnExistsError(err) {
 				return fmt.Errorf("ensure upload additive schema: memory_entities.embedding: %w", err)
+			}
+		}
+		for _, stmt := range entitySupportSchemaStatements(backend, autoModel, autoDims, clientDims) {
+			if strings.TrimSpace(stmt) == "" {
+				continue
+			}
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("ensure upload additive schema: entity support: %w", err)
 			}
 		}
 	}

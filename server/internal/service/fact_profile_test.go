@@ -97,6 +97,27 @@ func TestReplaceMemoryEntityLinksStoresAliases(t *testing.T) {
 	}
 }
 
+func TestReplaceMemoryEntityLinksStoresRelationshipEdges(t *testing.T) {
+	repo := &memoryRepoMock{}
+	metadata := mergeAdditiveMemoryMetadata(nil, ExtractedFact{
+		Text:     "Caroline is Melanie's friend.",
+		FactKind: "relationship",
+		Entities: FactEntityList{
+			{Text: "Caroline", Type: "person"},
+			{Text: "Melanie", Type: "person"},
+		},
+	}, "hash-1", nil)
+
+	replaceMemoryEntityLinks(context.Background(), repo, nil, "", "agent-1", "mem-1", "Caroline is Melanie's friend.", metadata)
+	rels := repo.relationships["mem-1"]
+	if len(rels) != 1 {
+		t.Fatalf("expected one relationship, got %+v", rels)
+	}
+	if rels[0].SourceEntityKey == "" || rels[0].TargetEntityKey == "" || rels[0].SourceEntityKey == rels[0].TargetEntityKey {
+		t.Fatalf("invalid relationship keys: %+v", rels[0])
+	}
+}
+
 func TestApplyFactProfileScoringPromotesMatchingShapeAndEntity(t *testing.T) {
 	matchingMetadata := mergeAdditiveMemoryMetadata(nil, ExtractedFact{
 		Text:         "Melanie read Becoming Nicole.",

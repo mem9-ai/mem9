@@ -122,6 +122,7 @@ func createTables(db *sql.DB) error {
 	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS memory_entities (
 		agent_id      VARCHAR(100)  NOT NULL DEFAULT '',
 		entity_key    VARCHAR(64)   NOT NULL,
+		canonical_entity_key VARCHAR(64) NOT NULL DEFAULT '',
 		entity_text   VARCHAR(255)  NOT NULL,
 		entity_type   VARCHAR(32)   NOT NULL,
 		embedding     TEXT          NULL,
@@ -134,6 +135,43 @@ func createTables(db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("create memory_entities table: %w", err)
 	}
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS canonical_memory_entities (
+		agent_id      VARCHAR(100)  NOT NULL DEFAULT '',
+		entity_key    VARCHAR(64)   NOT NULL,
+		entity_text   VARCHAR(255)  NOT NULL,
+		entity_type   VARCHAR(32)   NOT NULL,
+		embedding     TEXT          NULL,
+		memory_count  INT           NOT NULL DEFAULT 0,
+		created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+		updated_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (agent_id, entity_key)
+	)`)
+	if err != nil {
+		return fmt.Errorf("create canonical_memory_entities table: %w", err)
+	}
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS memory_entity_aliases (
+		agent_id      VARCHAR(100)  NOT NULL DEFAULT '',
+		alias_key     VARCHAR(64)   NOT NULL,
+		entity_key    VARCHAR(64)   NOT NULL,
+		alias_text    VARCHAR(255)  NOT NULL,
+		created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (agent_id, alias_key)
+	)`)
+	if err != nil {
+		return fmt.Errorf("create memory_entity_aliases table: %w", err)
+	}
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS memory_relationships (
+		agent_id          VARCHAR(100) NOT NULL DEFAULT '',
+		source_entity_key VARCHAR(64)  NOT NULL,
+		target_entity_key VARCHAR(64)  NOT NULL,
+		relationship_type VARCHAR(64)  NOT NULL,
+		memory_id         VARCHAR(36)  NOT NULL,
+		created_at        TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (agent_id, source_entity_key, target_entity_key, relationship_type, memory_id)
+	)`)
+	if err != nil {
+		return fmt.Errorf("create memory_relationships table: %w", err)
+	}
 
 	return nil
 }
@@ -141,7 +179,7 @@ func createTables(db *sql.DB) error {
 func truncateAll(db *sql.DB) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	for _, table := range []string{"tenants", "memory_entities", "memories"} {
+	for _, table := range []string{"tenants", "memory_relationships", "memory_entity_aliases", "canonical_memory_entities", "memory_entities", "memories"} {
 		if _, err := db.ExecContext(ctx, "DELETE FROM "+table); err != nil {
 			return fmt.Errorf("truncate %s: %w", table, err)
 		}

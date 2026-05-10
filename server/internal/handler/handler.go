@@ -136,6 +136,9 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		if !loaded {
 			go func() {
 				s.ensureSessionsTableBestEffort(auth, "")
+				if err := svc.memory.EnsureEntityVectorIndex(context.Background()); err != nil {
+					s.logger.Warn("entity vector index ensure failed", "cluster_id", auth.ClusterID, "err", err)
+				}
 			}()
 		}
 		return actual.(resolvedSvc)
@@ -156,6 +159,9 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	if !loaded {
 		go func() {
 			s.ensureSessionsTableBestEffort(auth, auth.TenantID)
+			if err := svc.memory.EnsureEntityVectorIndex(context.Background()); err != nil {
+				s.logger.Warn("entity vector index ensure failed", "cluster_id", auth.ClusterID, "tenant", auth.TenantID, "err", err)
+			}
 		}()
 	}
 	return actual.(resolvedSvc)
