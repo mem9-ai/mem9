@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
@@ -48,6 +49,14 @@ func (r *handlerTenantRepo) UpdateStatus(ctx context.Context, id string, status 
 
 func (r *handlerTenantRepo) UpdateSchemaVersion(ctx context.Context, id string, version int) error {
 	return nil
+}
+
+func (r *handlerTenantRepo) TouchActivity(ctx context.Context, tenantID string, at time.Time) error {
+	return nil
+}
+
+func (r *handlerTenantRepo) CountActiveTenantsSince(ctx context.Context, since time.Time) (int64, error) {
+	return 0, nil
 }
 
 type handlerProvisioner struct {

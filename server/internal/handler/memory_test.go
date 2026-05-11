@@ -220,6 +220,50 @@ func (w *blockingMeteringWriter) Record(evt metering.Event) {
 
 func (w *blockingMeteringWriter) Close(context.Context) error { return nil }
 
+type handlerActivityTenantRepo struct {
+	mu         sync.Mutex
+	touchErr   error
+	count      int64
+	touchCalls int
+	touched    chan string
+}
+
+func (r *handlerActivityTenantRepo) Create(context.Context, *domain.Tenant) error { return nil }
+func (r *handlerActivityTenantRepo) GetByID(context.Context, string) (*domain.Tenant, error) {
+	return nil, domain.ErrNotFound
+}
+func (r *handlerActivityTenantRepo) GetByName(context.Context, string) (*domain.Tenant, error) {
+	return nil, domain.ErrNotFound
+}
+func (r *handlerActivityTenantRepo) UpdateStatus(context.Context, string, domain.TenantStatus) error {
+	return nil
+}
+func (r *handlerActivityTenantRepo) UpdateSchemaVersion(context.Context, string, int) error {
+	return nil
+}
+
+func (r *handlerActivityTenantRepo) TouchActivity(_ context.Context, tenantID string, _ time.Time) error {
+	r.mu.Lock()
+	r.touchCalls++
+	touched := r.touched
+	touchErr := r.touchErr
+	r.mu.Unlock()
+
+	if touched != nil {
+		select {
+		case touched <- tenantID:
+		default:
+		}
+	}
+	return touchErr
+}
+
+func (r *handlerActivityTenantRepo) CountActiveTenantsSince(context.Context, time.Time) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.count, nil
+}
+
 func cloneMap(in map[string]any) map[string]any {
 	if in == nil {
 		return nil
@@ -329,6 +373,37 @@ func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
 	}
 	if memRepo.bulkCreateCalls != 0 {
 		t.Fatalf("expected legacy create path to skip bulk create, got %d", memRepo.bulkCreateCalls)
+	}
+}
+
+func TestCreateMemory_ActivityFailureDoesNotFailWrite(t *testing.T) {
+	memRepo := &testMemoryRepo{countStatsTotal: 1}
+	activityRepo := &handlerActivityTenantRepo{
+		touchErr: errors.New("activity unavailable"),
+		touched:  make(chan string, 1),
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{}).
+		WithActivityTracker(service.NewActivityTracker(activityRepo, slog.Default()))
+
+	body := map[string]any{
+		"content": "test memory content",
+		"sync":    true,
+	}
+	req := makeTenantRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	select {
+	case tenantID := <-activityRepo.touched:
+		if tenantID != "tenant-a" {
+			t.Fatalf("activity tenant = %q, want tenant-a", tenantID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for activity touch")
 	}
 }
 
@@ -679,6 +754,47 @@ func TestCreateMemory_AsyncMessages_ReconcileFailed_DoesNotRecordIngestMetering(
 		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
 	}
 	ensureNoMeteringEvents(t, meteringWriter, 100*time.Millisecond)
+}
+
+func TestBulkCreateMemoriesTriggersPostWriteHooks(t *testing.T) {
+	memRepo := &testMemoryRepo{countStatsTotal: 2}
+	meteringWriter := &captureMeteringWriter{}
+	activityRepo := &handlerActivityTenantRepo{
+		count:   1,
+		touched: make(chan string, 1),
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{}).
+		WithMetering(meteringWriter).
+		WithActivityTracker(service.NewActivityTracker(activityRepo, slog.Default()))
+
+	body := map[string]any{
+		"memories": []map[string]any{
+			{"content": "bulk memory"},
+		},
+	}
+	req := makeTenantRequest(t, http.MethodPost, "/memories/bulk", body)
+	rr := httptest.NewRecorder()
+
+	srv.bulkCreateMemories(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if memRepo.bulkCreateCalls != 1 {
+		t.Fatalf("bulk create calls = %d, want 1", memRepo.bulkCreateCalls)
+	}
+	select {
+	case tenantID := <-activityRepo.touched:
+		if tenantID != "tenant-a" {
+			t.Fatalf("activity tenant = %q, want tenant-a", tenantID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for activity touch")
+	}
+	events := waitForMeteringEvents(t, meteringWriter, 1, time.Second)
+	if got := events[0].Data["event_type"]; got != "ingest" {
+		t.Fatalf("event_type = %v, want ingest", got)
+	}
 }
 
 // failSearchMemoryRepo embeds testMemoryRepo but makes KeywordSearch fail,

@@ -382,6 +382,14 @@ func (m *mockTenantRepo) UpdateSchemaVersion(ctx context.Context, id string, ver
 	return nil
 }
 
+func (m *mockTenantRepo) TouchActivity(ctx context.Context, tenantID string, at time.Time) error {
+	return nil
+}
+
+func (m *mockTenantRepo) CountActiveTenantsSince(ctx context.Context, since time.Time) (int64, error) {
+	return 0, nil
+}
+
 type mockPool struct {
 	backend string
 	db      *sql.DB

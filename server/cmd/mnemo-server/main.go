@@ -195,9 +195,12 @@ func main() {
 	defer rl.Stop()
 	rateMW := rl.Middleware()
 
+	activityTracker := service.NewActivityTracker(tenantRepo, logger)
+
 	// Handler.
 	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger).
-		WithMetering(meteringWriter)
+		WithMetering(meteringWriter).
+		WithActivityTracker(activityTracker)
 	router := srv.Router(tenantMW, rateMW, apiKeyMW)
 
 	httpSrv := &http.Server{
@@ -223,6 +226,7 @@ func main() {
 		logger,
 		cfg.WorkerConcurrency,
 		encryptor,
+		activityTracker,
 	)
 	go func() {
 		if err := uploadWorker.Run(workerCtx); err != nil {

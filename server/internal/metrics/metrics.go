@@ -149,6 +149,15 @@ var (
 		Help:      "Active memories created in the last 7 days for a cluster, refreshed on memory write or delete.",
 	}, []string{"cluster_id"})
 
+	// ActiveTenants7dTotal is the current total number of active tenants with
+	// recorded memory activity in the last 7 days. Value reflects the state at
+	// the last write event; it is not updated between events.
+	ActiveTenants7dTotal = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "mnemo",
+		Name:      "active_tenants_7d_total",
+		Help:      "Active tenants with recorded memory activity in the last 7 days.",
+	})
+
 	// MemoryChangesTotal counts the number of memory-level changes (ADD, UPDATE, and
 	// post-reconcile tag/metadata patches) per cluster. One UPDATE counts as one change
 	// even though it produces two DB rows (archive + create). DELETE actions are not

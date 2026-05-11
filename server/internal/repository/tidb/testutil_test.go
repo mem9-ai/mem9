@@ -89,6 +89,16 @@ func createTables(db *sql.DB) error {
 		return fmt.Errorf("create tenants table: %w", err)
 	}
 
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS tenant_activity (
+		tenant_id        VARCHAR(36) NOT NULL PRIMARY KEY,
+		last_activity_at TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		CONSTRAINT fk_tenant_activity FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+		INDEX idx_tenant_activity_last_activity (last_activity_at)
+	)`)
+	if err != nil {
+		return fmt.Errorf("create tenant_activity table: %w", err)
+	}
+
 	// Data plane table (memories). Note: VECTOR column omitted for MySQL compatibility.
 	// TiDB-specific VECTOR(1536) replaced with TEXT NULL for cross-DB compatibility.
 	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS memories (
@@ -124,7 +134,7 @@ func createTables(db *sql.DB) error {
 func truncateAll(db *sql.DB) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	for _, table := range []string{"tenants", "memories"} {
+	for _, table := range []string{"tenant_activity", "tenants", "memories"} {
 		if _, err := db.ExecContext(ctx, "DELETE FROM "+table); err != nil {
 			return fmt.Errorf("truncate %s: %w", table, err)
 		}
@@ -145,6 +155,9 @@ func truncateTenants(t *testing.T) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if _, err := testDB.ExecContext(ctx, "DELETE FROM tenant_activity"); err != nil {
+		t.Fatalf("truncate tenant_activity: %v", err)
+	}
 	if _, err := testDB.ExecContext(ctx, "DELETE FROM tenants"); err != nil {
 		t.Fatalf("truncate tenants: %v", err)
 	}

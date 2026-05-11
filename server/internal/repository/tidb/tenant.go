@@ -70,6 +70,38 @@ func (r *TenantRepoImpl) UpdateSchemaVersion(ctx context.Context, id string, ver
 	return nil
 }
 
+func (r *TenantRepoImpl) TouchActivity(ctx context.Context, tenantID string, at time.Time) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO tenant_activity (tenant_id, last_activity_at)
+		 VALUES (?, ?)
+		 ON DUPLICATE KEY UPDATE
+		   last_activity_at = GREATEST(last_activity_at, VALUES(last_activity_at))`,
+		tenantID, at,
+	)
+	if err != nil {
+		return fmt.Errorf("touch tenant activity: %w", err)
+	}
+	return nil
+}
+
+func (r *TenantRepoImpl) CountActiveTenantsSince(ctx context.Context, since time.Time) (int64, error) {
+	var count int64
+	// INNER JOIN deliberately skips orphan activity rows.
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*)
+		 FROM tenant_activity AS ta
+		 INNER JOIN tenants AS t ON t.id = ta.tenant_id
+		 WHERE t.status = 'active'
+		   AND t.deleted_at IS NULL
+		   AND ta.last_activity_at >= ?`,
+		since,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count active tenants since: %w", err)
+	}
+	return count, nil
+}
+
 func scanTenant(row *sql.Row) (*domain.Tenant, error) {
 	var t domain.Tenant
 	var clusterID, claimURL sql.NullString

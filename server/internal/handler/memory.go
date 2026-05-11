@@ -100,7 +100,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				written = int64(result.MemoriesChanged)
 			}
 			s.recordIngestMetering(auth, svc)
-			go s.refreshWriteMetrics(auth, svc, written)
+			go s.afterSuccessfulWrite(auth, svc, written)
 			respond(w, http.StatusOK, map[string]string{"status": "ok"})
 		} else {
 			go func() {
@@ -153,7 +153,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			s.handleError(r.Context(), w, err)
 			return
 		}
-		go s.refreshWriteMetrics(auth, svc, int64(written))
+		go s.afterSuccessfulWrite(auth, svc, int64(written))
 		respond(w, http.StatusCreated, mem)
 		return
 	}
@@ -167,7 +167,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = mem
-		go s.refreshWriteMetrics(auth, svc, int64(written))
+		go s.afterSuccessfulWrite(auth, svc, int64(written))
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	} else {
 		go func(auth *domain.AuthInfo, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage) {
@@ -182,7 +182,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			} else {
 				slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", "")
 			}
-			s.refreshWriteMetrics(auth, svc, int64(written))
+			s.afterSuccessfulWrite(auth, svc, int64(written))
 		}(auth, auth.AgentName, agentID, req.SessionID, content, tags, metadata)
 
 		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
@@ -488,7 +488,7 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go s.refreshWriteMetrics(auth, svc, 1)
+	go s.afterSuccessfulWrite(auth, svc, 1)
 	w.Header().Set("ETag", strconv.Itoa(mem.Version))
 	respond(w, http.StatusOK, mem)
 }
@@ -503,7 +503,7 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go s.refreshWriteMetrics(auth, svc, 0)
+	go s.afterSuccessfulWrite(auth, svc, 0)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -526,7 +526,7 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go s.refreshWriteMetrics(auth, svc, 0)
+	go s.afterSuccessfulWrite(auth, svc, 0)
 	respond(w, http.StatusOK, map[string]any{
 		"deleted": deleted,
 	})
@@ -551,6 +551,7 @@ func (s *Server) bulkCreateMemories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	go s.afterSuccessfulIngest(auth, svc, int64(len(memories)))
 	respond(w, http.StatusCreated, map[string]any{
 		"ok":       true,
 		"memories": memories,

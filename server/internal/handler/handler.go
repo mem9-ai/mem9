@@ -39,6 +39,7 @@ type Server struct {
 	dbBackend     string
 	logger        *slog.Logger
 	metering      metering.Writer
+	activity      *service.ActivityTracker
 	startedAt     time.Time
 	svcCache      sync.Map
 	gaugeDebounce sync.Map // cluster_id -> time.Time of last Gauge refresh
@@ -74,6 +75,11 @@ func NewServer(
 
 func (s *Server) WithMetering(writer metering.Writer) *Server {
 	s.metering = writer
+	return s
+}
+
+func (s *Server) WithActivityTracker(tracker *service.ActivityTracker) *Server {
+	s.activity = tracker
 	return s
 }
 

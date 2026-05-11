@@ -62,6 +62,7 @@ type UploadWorker struct {
 	pollInterval time.Duration
 	concurrency  int
 	encryptor    encrypt.Encryptor
+	activity     *ActivityTracker
 }
 
 // NewUploadWorker creates a new UploadWorker.
@@ -77,6 +78,7 @@ func NewUploadWorker(
 	logger *slog.Logger,
 	concurrency int,
 	encryptor encrypt.Encryptor,
+	activity *ActivityTracker,
 ) *UploadWorker {
 	if logger == nil {
 		logger = slog.Default()
@@ -97,6 +99,7 @@ func NewUploadWorker(
 		pollInterval: 5 * time.Second,
 		concurrency:  concurrency,
 		encryptor:    encryptor,
+		activity:     activity,
 	}
 }
 
@@ -254,6 +257,8 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 			if err != nil {
 				return w.failTask(ctx, task, fmt.Errorf("ingest session chunk: %w", err), logger)
 			}
+			// recordActivity uses context.Background internally per the best-effort contract.
+			w.recordActivity(task.TenantID)
 			doneChunks = i + 1
 		}
 
@@ -332,6 +337,8 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 				metrics.ActiveMemoryTotal.WithLabelValues(clusterID).Set(float64(total))
 				metrics.ActiveMemory7dTotal.WithLabelValues(clusterID).Set(float64(last7d))
 			}
+			// recordActivity uses context.Background internally per the best-effort contract.
+			w.recordActivity(task.TenantID)
 			batchIdx++
 			doneChunks = batchIdx
 		}
@@ -351,6 +358,13 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 	logger.Info("upload task completed", "task_id", task.TaskID)
 	return nil
 
+}
+
+func (w *UploadWorker) recordActivity(tenantID string) {
+	if w == nil || w.activity == nil {
+		return
+	}
+	w.activity.RecordMemoryActivity(tenantID, time.Now().UTC())
 }
 
 // failTask marks task as failed and cleans up the file.

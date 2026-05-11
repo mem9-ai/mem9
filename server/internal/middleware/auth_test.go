@@ -50,6 +50,14 @@ func (r stubTenantRepo) UpdateSchemaVersion(context.Context, string, int) error 
 	return nil
 }
 
+func (r stubTenantRepo) TouchActivity(context.Context, string, time.Time) error {
+	return nil
+}
+
+func (r stubTenantRepo) CountActiveTenantsSince(context.Context, time.Time) (int64, error) {
+	return 0, nil
+}
+
 type pingOKConnector struct{}
 
 func (pingOKConnector) Connect(context.Context) (driver.Conn, error) {

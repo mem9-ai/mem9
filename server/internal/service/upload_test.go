@@ -251,6 +251,21 @@ func TestParseMemoryFile(t *testing.T) {
 	}
 }
 
+func TestUploadWorkerRecordActivity(t *testing.T) {
+	repo := &activityTenantRepo{count: 1}
+	worker := &UploadWorker{activity: NewActivityTracker(repo, nil)}
+
+	worker.recordActivity("tenant-a")
+
+	repo.mu.Lock()
+	touchCalls := repo.touchCalls
+	countCalls := repo.countCalls
+	repo.mu.Unlock()
+	if touchCalls != 1 || countCalls != 1 {
+		t.Fatalf("calls = touch:%d count:%d, want 1/1", touchCalls, countCalls)
+	}
+}
+
 func makeMessages(n int) []IngestMessage {
 	msgs := make([]IngestMessage, n)
 	for i := range msgs {

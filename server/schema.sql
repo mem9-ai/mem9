@@ -24,6 +24,13 @@ CREATE TABLE IF NOT EXISTS tenants (
   INDEX idx_tenant_provider (provider)
 );
 
+CREATE TABLE IF NOT EXISTS tenant_activity (
+  tenant_id        VARCHAR(36) NOT NULL PRIMARY KEY,
+  last_activity_at TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_tenant_activity FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+  INDEX idx_tenant_activity_last_activity (last_activity_at)
+);
+
 -- Tenant data plane schema (per-tenant TiDB Serverless).
 CREATE TABLE IF NOT EXISTS memories (
   id              VARCHAR(36)     PRIMARY KEY,
