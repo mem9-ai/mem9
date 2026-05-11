@@ -31,7 +31,6 @@ and a small Astro site.
 | `docs/design/`       | Architecture/proposal notes and design drafts                |
 | `site/`              | Astro static site — deployed to Netlify from `main` branch   |
 | `e2e/`               | Live end-to-end scripts against a running server             |
-| `k8s/`               | Deployment and gateway manifests                             |
 | `benchmark/MR-NIAH/` | Benchmark harness for OpenClaw memory evaluation             |
 
 ## Commands
@@ -168,13 +167,12 @@ Use the local file when you work in these areas:
 - `site/AGENTS.md`
 - `dashboard/app/AGENTS.md`
 - `e2e/AGENTS.md`
-- `k8s/AGENTS.md`
 - `benchmark/MR-NIAH/AGENTS.md`
 
 Validate this map after editing:
 
 ```bash
-python3 -c 'from pathlib import Path; import re; text = Path("AGENTS.md").read_text(); paths = re.findall(r"`([^`]+/AGENTS\.md)`", text); missing = [p for p in paths if not Path(p).is_file()]; print("\n".join(missing)); raise SystemExit(1 if missing else 0)'
+python3 -c 'from pathlib import Path; import re, subprocess; text = Path("AGENTS.md").read_text(); paths = re.findall(r"`([^`]+/AGENTS\.md)`", text); tracked = set(subprocess.check_output(["git", "ls-files", "*AGENTS.md"], text=True).splitlines()); missing = [p for p in paths if p not in tracked]; print("\n".join(missing)); raise SystemExit(1 if missing else 0)'
 ```
 
 ## GitHub access
