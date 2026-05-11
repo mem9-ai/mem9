@@ -14,7 +14,7 @@ The plugin exposes:
 - `$mem9:recall`
 - `$mem9:store`
 
-`$mem9:setup` is the main entrypoint. It manages shared profiles in `$MEM9_HOME/.credentials.json`, applies either global or project scope, and repairs the managed Codex hooks when needed.
+`$mem9:setup` is the main entrypoint. It manages shared profiles in the mem9 home, applies either global or project scope, and repairs the managed Codex hooks in the Codex home.
 
 ## Requirements
 
@@ -32,7 +32,7 @@ codex plugin marketplace add mem9-ai/mem9
 ```
 
 2. In Codex, run `/plugins`, search for `mem9`, open the `mem9-ai` marketplace entry, and choose `Install plugin`.
-3. Restart Codex or open a fresh Codex session with the same `CODEX_HOME`.
+3. Restart Codex or open a fresh Codex session with the same `CODEX_HOME`. For normal installs, that is `$HOME/.codex`.
 4. Run:
 
    ```text
@@ -48,6 +48,35 @@ codex plugin marketplace add mem9-ai/mem9
    ```
 
 You do not need to enable hooks manually first. `$mem9:setup` inspects the saved profiles, enables `codex_hooks`, and installs the managed hooks.
+
+## Where Files Are Stored
+
+The Codex plugin uses two home directories:
+
+| Variable | Default when unset | What lives there |
+|---|---|---|
+| `CODEX_HOME` | `~/.codex` on macOS/Linux | Codex user state, `hooks.json`, `config.toml`, and mem9-managed Codex runtime files under `$CODEX_HOME/mem9/` |
+| `MEM9_HOME` | `~/.mem9` on macOS/Linux | Shared mem9 credential profiles in `$MEM9_HOME/.credentials.json` |
+
+Most macOS/Linux users can leave both variables unset. With the defaults, Codex integration files live under `~/.codex/`, and mem9 credentials live in `~/.mem9/.credentials.json`. In shell commands, `~` means the same home directory as `$HOME`.
+
+The defaults are equivalent to starting Codex from a shell with:
+
+```bash
+export CODEX_HOME="$HOME/.codex"
+export MEM9_HOME="$HOME/.mem9"
+codex
+```
+
+On Windows PowerShell, the same defaults resolve under your user profile:
+
+```powershell
+$env:CODEX_HOME = "$env:USERPROFILE\.codex"
+$env:MEM9_HOME = "$env:USERPROFILE\.mem9"
+codex
+```
+
+Use the same `CODEX_HOME` and `MEM9_HOME` in trusted-shell commands that save or update profile keys. `$mem9:setup` keeps API key entry out of the Codex TUI and writes the key to `$MEM9_HOME/.credentials.json`.
 
 ## Daily Commands
 
@@ -199,6 +228,13 @@ Common issues:
 
 ### File Layout
 
+Runtime defaults:
+
+```text
+CODEX_HOME=~/.codex
+MEM9_HOME=~/.mem9
+```
+
 Global Codex integration:
 
 ```text
@@ -227,8 +263,6 @@ Shared credentials:
 ```text
 $MEM9_HOME/.credentials.json
 ```
-
-`MEM9_HOME` defaults to `$HOME/.mem9`.
 
 ### Config Files
 
@@ -273,10 +307,11 @@ Project override example:
 
 Remote update-check settings stay in the global config.
 
-### Runtime Overrides
+### Environment Overrides
 
-Runtime can still override request settings with environment variables:
+Runtime and setup can use environment variables:
 
 - `MEM9_API_URL`
 - `MEM9_API_KEY`
+- `CODEX_HOME`
 - `MEM9_HOME`

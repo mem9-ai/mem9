@@ -14,6 +14,32 @@ Resolve `./scripts/setup.mjs` relative to this skill directory.
 If you need the current CLI surface, flags, or examples, run `node ./scripts/setup.mjs --help` first.
 Use command-specific help when needed, for example `node ./scripts/setup.mjs profile save-key --help`.
 
+Know the two home directories before setup:
+
+- `CODEX_HOME` falls back to `~/.codex` on macOS/Linux.
+- `MEM9_HOME` falls back to `~/.mem9` on macOS/Linux.
+- Codex integration files live under `$CODEX_HOME`, including `$CODEX_HOME/hooks.json`, `$CODEX_HOME/config.toml`, and `$CODEX_HOME/mem9/`.
+- mem9 credential profiles live in `$MEM9_HOME/.credentials.json`.
+
+When you mention local paths to the user, use symbolic or home-relative paths such as `$CODEX_HOME/mem9/config.json`, `$MEM9_HOME/.credentials.json`, or `~/.mem9/.credentials.json`.
+Most users can leave both variables unset. On macOS/Linux, the defaults are equivalent to starting Codex from a shell with:
+
+```bash
+export CODEX_HOME="$HOME/.codex"
+export MEM9_HOME="$HOME/.mem9"
+codex
+```
+
+On Windows PowerShell, use:
+
+```powershell
+$env:CODEX_HOME = "$env:USERPROFILE\.codex"
+$env:MEM9_HOME = "$env:USERPROFILE\.mem9"
+codex
+```
+
+For isolated state, set different values before starting Codex and use the same values in trusted-shell `profile save-key` commands.
+
 Run this workflow:
 
 1. Inspect the current mem9 state first:
@@ -31,7 +57,7 @@ node ./scripts/setup.mjs inspect
    `profiles.items[*].manualSaveKeyCommand` is the exact trusted-shell command for saving a key onto an existing profile.
    `profiles.manualSaveKeyTemplate` is the placeholder version for a brand-new profile.
    Global `updateCheck` settings live under `globalConfig.summary.updateCheck`.
-3. After `inspect`, stop and present the available paths before you run anything else.
+3. After `inspect`, stop and present the available setup choices before you run anything else.
    Show:
    - saved profiles from `profiles.items[*].displaySummary`
      Example: `default (019d...4356) · https://api.mem9.ai`
@@ -55,6 +81,7 @@ node ./scripts/setup.mjs profile create \
 
 6. When the user wants to provide the key manually, do not ask them to paste the secret into Codex.
    Prefer a trusted shell plus `MEM9_API_KEY`.
+   The trusted shell must use the same `CODEX_HOME` and `MEM9_HOME` that Codex will use.
    If `inspect` already returned a matching `profiles.items[*].manualSaveKeyCommand`, show that exact command.
    Otherwise use `profiles.manualSaveKeyTemplate`.
    Only run `profile save-key` inside Codex when `MEM9_API_KEY` is already present in the process environment.
