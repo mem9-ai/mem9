@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS memories (
   tags            JSON,
   metadata        JSON,
   embedding       VECTOR(1536)    NULL,
+  content_hash    VARCHAR(64)     NULL,
 
   -- Classification
   memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned'
@@ -54,7 +55,58 @@ CREATE TABLE IF NOT EXISTS memories (
   INDEX idx_state               (state),
   INDEX idx_agent               (agent_id),
   INDEX idx_session             (session_id),
+  INDEX idx_memory_content_hash (agent_id, state, content_hash),
   INDEX idx_updated             (updated_at)
+);
+
+CREATE TABLE IF NOT EXISTS memory_entities (
+  agent_id      VARCHAR(100)  NOT NULL DEFAULT '',
+  entity_key    VARCHAR(64)   NOT NULL,
+  canonical_entity_key VARCHAR(64) NOT NULL DEFAULT '',
+  entity_text   VARCHAR(255)  NOT NULL,
+  entity_type   VARCHAR(32)   NOT NULL,
+  embedding     VECTOR(1536)  NULL,
+  memory_id     VARCHAR(36)   NOT NULL,
+  created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (agent_id, entity_key, memory_id),
+  INDEX idx_memory_entities_memory (memory_id),
+  INDEX idx_memory_entities_lookup (agent_id, entity_key)
+);
+
+CREATE TABLE IF NOT EXISTS canonical_memory_entities (
+  agent_id      VARCHAR(100)  NOT NULL DEFAULT '',
+  entity_key    VARCHAR(64)   NOT NULL,
+  entity_text   VARCHAR(255)  NOT NULL,
+  entity_type   VARCHAR(32)   NOT NULL,
+  embedding     VECTOR(1536)  NULL,
+  memory_count  INT           NOT NULL DEFAULT 0,
+  created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (agent_id, entity_key),
+  INDEX idx_canonical_memory_entities_type (agent_id, entity_type)
+);
+
+CREATE TABLE IF NOT EXISTS memory_entity_aliases (
+  agent_id      VARCHAR(100)  NOT NULL DEFAULT '',
+  alias_key     VARCHAR(64)   NOT NULL,
+  entity_key    VARCHAR(64)   NOT NULL,
+  alias_text    VARCHAR(255)  NOT NULL,
+  created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (agent_id, alias_key),
+  INDEX idx_memory_entity_aliases_entity (agent_id, entity_key)
+);
+
+CREATE TABLE IF NOT EXISTS memory_relationships (
+  agent_id          VARCHAR(100) NOT NULL DEFAULT '',
+  source_entity_key VARCHAR(64)  NOT NULL,
+  target_entity_key VARCHAR(64)  NOT NULL,
+  relationship_type VARCHAR(64)  NOT NULL,
+  memory_id         VARCHAR(36)  NOT NULL,
+  created_at        TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (agent_id, source_entity_key, target_entity_key, relationship_type, memory_id),
+  INDEX idx_memory_relationships_memory (memory_id),
+  INDEX idx_memory_relationships_source (agent_id, source_entity_key),
+  INDEX idx_memory_relationships_target (agent_id, target_entity_key)
 );
 
 -- Full-text search index (TiDB Cloud Serverless with MULTILINGUAL tokenizer).

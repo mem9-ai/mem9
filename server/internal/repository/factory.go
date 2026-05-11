@@ -115,3 +115,6 @@ func (stubSessionRepo) FTSAvailable() bool { return false }
 func (stubSessionRepo) ListBySessionIDs(_ context.Context, _ []string, _ int) ([]*domain.Session, error) {
 	return nil, fmt.Errorf("session messages: %w", domain.ErrNotSupported)
 }
+func (stubSessionRepo) ListRecentBySessionID(_ context.Context, _ string, _ int) ([]*domain.Session, error) {
+	return nil, nil
+}

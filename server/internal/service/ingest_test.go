@@ -45,6 +45,11 @@ type memoryRepoMock struct {
 	bulkSoftDeleteAgent  string
 	bulkSoftDeleteResult int64
 	bulkSoftDeleteErr    error
+	contentHashResults   map[string]domain.Memory
+	entityLinks          map[string][]domain.MemoryEntity
+	entityBoosts         map[string]float64
+	entityVectorBoosts   map[string]float64
+	relationships        map[string][]domain.MemoryRelationship
 }
 
 type setStateCall struct {
@@ -368,6 +373,70 @@ func TestExtractPhase1FactTagsPopulated(t *testing.T) {
 	}
 }
 
+func TestExtractPhase1AuditsLowDensityFacts(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	calls := 0
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls++
+		call := calls
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		resp := `{"memory":[{"text":"Alice likes jazz"},{"text":"Bob visited Kyoto in 2024"}]}`
+		if call == 2 {
+			resp = `{"memory":[{"text":"Alice adopted a cat named Nori"},{"text":"Bob owns a signed basketball"},{"text":"Alice likes jazz"}]}`
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	messages := []IngestMessage{
+		{Role: "user", Content: "Alice likes jazz."},
+		{Role: "assistant", Content: "Bob visited Kyoto in 2024."},
+		{Role: "user", Content: "Alice adopted a cat named Nori."},
+		{Role: "assistant", Content: "Bob owns a signed basketball."},
+		{Role: "user", Content: "Alice started a pottery class."},
+		{Role: "assistant", Content: "Bob recommended Little Women."},
+		{Role: "user", Content: "Alice moved to Portland."},
+		{Role: "assistant", Content: "Bob plans a March hiking trip."},
+		{Role: "user", Content: "Alice prefers oat milk."},
+		{Role: "assistant", Content: "Bob plays violin."},
+	}
+	result, err := svc.ExtractPhase1(context.Background(), messages)
+	if err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+
+	mu.Lock()
+	gotCalls := calls
+	mu.Unlock()
+	if gotCalls != 2 {
+		t.Fatalf("expected first-pass extraction plus audit call, got %d calls", gotCalls)
+	}
+	if len(result.Facts) != 4 {
+		t.Fatalf("expected 4 deduped facts after audit, got %d: %+v", len(result.Facts), result.Facts)
+	}
+	texts := map[string]bool{}
+	for _, fact := range result.Facts {
+		texts[fact.Text] = true
+	}
+	for _, want := range []string{"Alice likes jazz", "Bob visited Kyoto in 2024", "Alice adopted a cat named Nori", "Bob owns a signed basketball"} {
+		if !texts[want] {
+			t.Fatalf("expected audited fact %q in %+v", want, result.Facts)
+		}
+	}
+}
+
 func TestExtractPhase1AnnotatesSourceSeqs(t *testing.T) {
 	t.Parallel()
 
@@ -400,6 +469,62 @@ func TestExtractPhase1AnnotatesSourceSeqs(t *testing.T) {
 	}
 	if len(result.Facts[0].SourceTurns) != 1 || result.Facts[0].SourceTurns[0].Seq != 41 {
 		t.Fatalf("expected source turn seq [41], got %+v", result.Facts[0].SourceTurns)
+	}
+}
+
+func TestExtractPhase1AnnotatesAssistantSourceSeqs(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp := `{"facts": [{"text": "Maria adopted a cat named Bailey", "tags": ["pets"], "attributed_to": "Maria"}], "message_tags": [["pets"]]}`
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	result, err := svc.ExtractPhase1(context.Background(), []IngestMessage{
+		{Role: "assistant", Content: "[date:1 January 2023] [speaker:Maria] I adopted a cat named Bailey.", Seq: intPtr(42)},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+	if len(result.Facts) != 1 {
+		t.Fatalf("expected 1 fact, got %d", len(result.Facts))
+	}
+	if !reflect.DeepEqual(result.Facts[0].SourceSeqs, []int{42}) {
+		t.Fatalf("expected assistant source seq [42], got %v", result.Facts[0].SourceSeqs)
+	}
+	if len(result.Facts[0].SourceTurns) != 1 || result.Facts[0].SourceTurns[0].Seq != 42 {
+		t.Fatalf("expected assistant source turn seq [42], got %+v", result.Facts[0].SourceTurns)
+	}
+}
+
+func TestAnnotateFactsWithSourceSeqsFallsBackToSingleAssistantMessage(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "assistant", Content: "[date:1 January 2023] [speaker:Maria] I took the overnight train to Porto.", Seq: intPtr(77)},
+	}, maxExtractionConversationRunes)
+
+	facts := annotateFactsWithSourceSeqs(input, []ExtractedFact{{
+		Text: "Maria prefers slow travel for memorable trips",
+		Tags: []string{"travel"},
+	}})
+	if len(facts) != 1 {
+		t.Fatalf("expected 1 fact, got %d", len(facts))
+	}
+	if !reflect.DeepEqual(facts[0].SourceSeqs, []int{77}) {
+		t.Fatalf("expected fallback source seq [77], got %v", facts[0].SourceSeqs)
+	}
+	if len(facts[0].SourceTurns) != 1 || facts[0].SourceTurns[0].Seq != 77 {
+		t.Fatalf("expected fallback source turn seq [77], got %+v", facts[0].SourceTurns)
 	}
 }
 
@@ -468,6 +593,308 @@ func TestReconcilePhase2AddPersistsSourceTurnMetadata(t *testing.T) {
 	}
 	if len(metadata.SourceTurns) != 2 || metadata.SourceTurns[0].Seq != 2 || metadata.SourceTurns[1].Seq != 4 {
 		t.Fatalf("source_turns = %+v, want seqs [2 4]", metadata.SourceTurns)
+	}
+}
+
+func TestExtractFactsParsesMem0AdditiveOutput(t *testing.T) {
+	t.Parallel()
+
+	var body string
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"memory":[{"text":"Assistant recommended pgvector for semantic search","tags":["tech"],"attributed_to":"assistant","linked_memory_ids":["mem-1"]}]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{
+		kwResults: []domain.Memory{{ID: "mem-1", Content: "Uses PostgreSQL", MemoryType: domain.TypeInsight, State: domain.StateActive}},
+		getByID:   map[string]*domain.Memory{"mem-1": &domain.Memory{ID: "mem-1", AgentID: "agent-1", State: domain.StateActive}},
+	}
+	svc := NewIngestService(memRepo, llmClient, nil, "", ModeSmart)
+
+	facts, err := svc.extractFactsForAgentWithContext(context.Background(), "agent-1", "Assistant: Use pgvector for semantic search.", ExtractionContext{
+		ObservationDate: "1:56 pm on 8 May, 2023",
+		LastMessages: []IngestMessage{
+			{Role: "user", Content: "We use PostgreSQL."},
+		},
+		RecentlyExtractedMemories: []domain.Memory{
+			{ID: "recent-1", Content: "User uses PostgreSQL", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	})
+	if err != nil {
+		t.Fatalf("extractFactsForAgent() error = %v", err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("expected 1 fact, got %v", facts)
+	}
+	if facts[0].Text != "Assistant recommended pgvector for semantic search" {
+		t.Fatalf("unexpected fact text: %q", facts[0].Text)
+	}
+	if facts[0].AttributedTo != "assistant" {
+		t.Fatalf("expected attributed_to assistant, got %q", facts[0].AttributedTo)
+	}
+	if len(facts[0].LinkedMemoryIDs) != 1 || facts[0].LinkedMemoryIDs[0] != "mem-1" {
+		t.Fatalf("expected linked_memory_ids [mem-1], got %v", facts[0].LinkedMemoryIDs)
+	}
+	for _, want := range []string{
+		"Summary:",
+		"Last k Messages:",
+		"Recently Extracted Memories:",
+		"Existing Memories:",
+		"New Messages:",
+		"Observation Date: 2023-05-08",
+		"Current Date:",
+		"When in doubt, extract",
+		"Casual topics are still extractable",
+		"Extract from BOTH user and assistant messages",
+		"Compact High-Recall Check",
+		"middle and",
+		"5-12 memories",
+		"shared photo or",
+		"short answer to a prior question",
+		"concert featuring Matt Patterson",
+		"recent-1",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected prompt to contain %q, got %s", want, body)
+		}
+	}
+}
+
+func TestExtractFactsAddsBirthdayConcertShortAnswerBridge(t *testing.T) {
+	t.Parallel()
+
+	resp := `{"facts": [], "message_tags": [["family"], ["music"], ["music"]]}`
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": resp}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	result, err := svc.ExtractPhase1(context.Background(), []IngestMessage{
+		{Role: "assistant", Content: "[date:2:24 pm on 14 August, 2023] [speaker:Melanie] We celebrated my daughter's birthday with a concert surrounded by music.", Seq: intPtr(1)},
+		{Role: "assistant", Content: "[date:2:24 pm on 14 August, 2023] [speaker:Caroline] What concert was it?", Seq: intPtr(2)},
+		{Role: "assistant", Content: "[date:2:24 pm on 14 August, 2023] [speaker:Melanie] Thanks, Caroline! It was Matt Patterson, he is so talented!", Seq: intPtr(3)},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+	if len(result.Facts) != 1 {
+		t.Fatalf("expected 1 bridged fact, got %+v", result.Facts)
+	}
+	got := result.Facts[0]
+	if got.Text != "Melanie celebrated her daughter's birthday with a concert featuring Matt Patterson." {
+		t.Fatalf("bridged fact text = %q", got.Text)
+	}
+	if !reflect.DeepEqual(got.SourceSeqs, []int{1, 3}) {
+		t.Fatalf("source seqs = %v, want [1 3]", got.SourceSeqs)
+	}
+}
+
+func TestAdditiveExtractionObservationDateFallsBackToMessageDateTag(t *testing.T) {
+	t.Parallel()
+
+	var body string
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"memory":[{"text":"Alice visited the museum last week"}]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "", ModeSmart)
+
+	_, err := svc.extractFactsForAgent(context.Background(), "agent-1", "User: [date:1:56 pm on 8 May, 2023] [speaker:Alice] I visited the museum last week.")
+	if err != nil {
+		t.Fatalf("extractFactsForAgent() error = %v", err)
+	}
+	if !strings.Contains(body, "Observation Date: 2023-05-08") {
+		t.Fatalf("expected observation date from message date tag, got %s", body)
+	}
+}
+
+func TestReconcilePhase2AddOnlyNeverUpdatesOrDeletes(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{{ID: "old", Content: "Prefers light mode", MemoryType: domain.TypeInsight, State: domain.StateActive}},
+		setStateErr:   fmt.Errorf("delete should not be called"),
+	}
+	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart)
+
+	result, err := svc.ReconcilePhase2(context.Background(), "agent-1", "agent-1", "sess-1", []ExtractedFact{
+		{Text: "Prefers dark mode", Tags: []string{"preference"}},
+	})
+	if err != nil {
+		t.Fatalf("ReconcilePhase2() error = %v", err)
+	}
+	if result.MemoriesChanged != 1 || len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected one ADD, result=%+v createCalls=%d", result, len(memRepo.createCalls))
+	}
+	if len(memRepo.setStateCalls) != 0 {
+		t.Fatalf("expected no automatic deletes, got %v", memRepo.setStateCalls)
+	}
+}
+
+func TestReconcilePhase2SkipsExistingDuplicateHash(t *testing.T) {
+	t.Parallel()
+
+	text := "Prefers dark mode"
+	hash := memoryContentHash(text)
+	memRepo := &memoryRepoMock{
+		contentHashResults: map[string]domain.Memory{
+			hash: {ID: "existing", Content: text, AgentID: "agent-1", ContentHash: hash, State: domain.StateActive},
+		},
+	}
+	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart)
+
+	result, err := svc.ReconcilePhase2(context.Background(), "agent-1", "agent-1", "sess-1", []ExtractedFact{{Text: text}})
+	if err != nil {
+		t.Fatalf("ReconcilePhase2() error = %v", err)
+	}
+	if result.MemoriesChanged != 0 || len(memRepo.createCalls) != 0 {
+		t.Fatalf("expected existing hash duplicate skipped, result=%+v createCalls=%d", result, len(memRepo.createCalls))
+	}
+}
+
+func TestReconcilePhase2SkipsSameBatchDuplicateHash(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{}
+	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart)
+
+	result, err := svc.ReconcilePhase2(context.Background(), "agent-1", "agent-1", "sess-1", []ExtractedFact{
+		{Text: "Prefers dark mode", Tags: []string{"preference"}},
+		{Text: "Prefers dark mode", Tags: []string{"preference"}},
+	})
+	if err != nil {
+		t.Fatalf("ReconcilePhase2() error = %v", err)
+	}
+	if result.MemoriesChanged != 1 || len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected one create after same-batch duplicate skip, result=%+v createCalls=%d", result, len(memRepo.createCalls))
+	}
+}
+
+func TestExtractPhase1AssistantOnlyRecommendationCanBecomeMemory(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"memory":[{"text":"Assistant recommended using pgvector for semantic search","tags":["tech"]}],"message_tags":[["tech"]]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "", ModeSmart)
+
+	result, err := svc.ExtractPhase1(context.Background(), []IngestMessage{{Role: "assistant", Content: "Use pgvector for semantic search."}})
+	if err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+	if len(result.Facts) != 1 || result.Facts[0].Text != "Assistant recommended using pgvector for semantic search" {
+		t.Fatalf("expected assistant-only recommendation fact, got %+v", result.Facts)
+	}
+}
+
+func TestReconcilePhase2FiltersUnknownLinkedMemoryIDs(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		getByID: map[string]*domain.Memory{
+			"valid":       {ID: "valid", AgentID: "agent-1", State: domain.StateActive},
+			"other-agent": {ID: "other-agent", AgentID: "agent-2", State: domain.StateActive},
+		},
+	}
+	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart)
+
+	_, err := svc.ReconcilePhase2(context.Background(), "agent-1", "agent-1", "sess-1", []ExtractedFact{
+		{Text: "Uses pgvector", LinkedMemoryIDs: []string{"valid", "missing", "other-agent"}},
+	})
+	if err != nil {
+		t.Fatalf("ReconcilePhase2() error = %v", err)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected one create, got %d", len(memRepo.createCalls))
+	}
+	var metadata map[string]json.RawMessage
+	if err := json.Unmarshal(memRepo.createCalls[0].Metadata, &metadata); err != nil {
+		t.Fatalf("metadata unmarshal: %v", err)
+	}
+	var linked []string
+	if err := json.Unmarshal(metadata[linkedMemoryIDsMetadataKey], &linked); err != nil {
+		t.Fatalf("linked ids unmarshal: %v", err)
+	}
+	if len(linked) != 1 || linked[0] != "valid" {
+		t.Fatalf("expected only valid linked id retained, got %v", linked)
+	}
+}
+
+func TestEntityLinksCreatedAndRecallBoostApplied(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		kwResults: []domain.Memory{
+			{ID: "m1", Content: "General running shoes", MemoryType: domain.TypeInsight, State: domain.StateActive},
+			{ID: "m2", Content: `Definitely "Under Armour" right now.`, MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+	}
+	ingestSvc := NewIngestService(memRepo, nil, nil, "", ModeSmart)
+	_, err := ingestSvc.ReconcilePhase2(context.Background(), "agent-1", "agent-1", "sess-1", []ExtractedFact{
+		{Text: `Assistant recommended "Under Armour" shoes`, Tags: []string{"recommendation"}},
+	})
+	if err != nil {
+		t.Fatalf("ReconcilePhase2() error = %v", err)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected one created memory, got %d", len(memRepo.createCalls))
+	}
+	createdID := memRepo.createCalls[0].ID
+	if len(memRepo.entityLinks[createdID]) == 0 {
+		t.Fatalf("expected entity links for created memory")
+	}
+	createdMemory := *memRepo.createCalls[0]
+	memRepo.kwResults = []domain.Memory{
+		{ID: "m1", Content: "General running shoes", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		createdMemory,
+	}
+
+	memSvc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+	candidates, err := memSvc.SearchCandidates(context.Background(), domain.MemoryFilter{Query: "Under Armour", AgentID: "agent-1", Limit: 2}, RecallSourceInsight, RecallCandidateOptions{})
+	if err != nil {
+		t.Fatalf("SearchCandidates() error = %v", err)
+	}
+	if len(candidates) < 2 {
+		t.Fatalf("expected at least 2 candidates, got %d", len(candidates))
+	}
+	if candidates[0].Memory.ID != createdID {
+		t.Fatalf("expected entity-linked candidate boosted to top, got order %s, %s", candidates[0].Memory.ID, candidates[1].Memory.ID)
+	}
+	if candidates[0].EntityBoost <= 0 {
+		t.Fatalf("expected entity boost on top candidate, got %+v", candidates[0])
 	}
 }
 
@@ -561,7 +988,7 @@ func TestExtractPhase1SingleMessageUsesLLMExtraction(t *testing.T) {
 	}
 }
 
-func TestExtractFactsEmptyResultFallsBackToRawFact(t *testing.T) {
+func TestExtractFactsEmptyAdditiveResultStaysEmpty(t *testing.T) {
 	t.Parallel()
 
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -581,12 +1008,12 @@ func TestExtractFactsEmptyResultFallsBackToRawFact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
-	if len(facts) != 1 || facts[0].FactType != factTypeRawFallback || facts[0].Text != "I use Go 1.22" {
-		t.Fatalf("expected raw fallback fact after empty extraction, got %v", facts)
+	if len(facts) != 0 {
+		t.Fatalf("expected no facts after empty additive extraction, got %v", facts)
 	}
 }
 
-func TestExtractFactsSingleMessageEmptyResultFallsBackToRawFact(t *testing.T) {
+func TestExtractFactsSingleMessageEmptyAdditiveResultStaysEmpty(t *testing.T) {
 	t.Parallel()
 
 	callCount := 0
@@ -611,12 +1038,12 @@ func TestExtractFactsSingleMessageEmptyResultFallsBackToRawFact(t *testing.T) {
 	if callCount != 1 {
 		t.Fatalf("expected 1 LLM call for single-message extraction, got %d", callCount)
 	}
-	if len(facts) != 1 || facts[0].FactType != factTypeRawFallback || facts[0].Text != "I use Go 1.22" {
-		t.Fatalf("expected raw fallback fact after empty extraction, got %v", facts)
+	if len(facts) != 0 {
+		t.Fatalf("expected no facts after empty additive extraction, got %v", facts)
 	}
 }
 
-func TestExtractPhase1SingleMessageEmptyResultFallsBackToRawFact(t *testing.T) {
+func TestExtractPhase1SingleMessageEmptyAdditiveResultStaysEmpty(t *testing.T) {
 	t.Parallel()
 
 	callCount := 0
@@ -643,8 +1070,8 @@ func TestExtractPhase1SingleMessageEmptyResultFallsBackToRawFact(t *testing.T) {
 	if callCount != 1 {
 		t.Fatalf("expected 1 LLM call for single-message extraction, got %d", callCount)
 	}
-	if len(result.Facts) != 1 || result.Facts[0].FactType != factTypeRawFallback || result.Facts[0].Text != "I use Go 1.22" {
-		t.Fatalf("expected raw fallback fact after empty extraction, got %v", result.Facts)
+	if len(result.Facts) != 0 {
+		t.Fatalf("expected no facts after empty additive extraction, got %v", result.Facts)
 	}
 	if len(result.MessageTags) != 1 || len(result.MessageTags[0]) != 1 || result.MessageTags[0][0] != "tech" {
 		t.Fatalf("expected message_tags[0] = [tech], got %v", result.MessageTags)
@@ -682,14 +1109,8 @@ func TestExtractFactsRetryFallbackDropsFlattenedQueryIntent(t *testing.T) {
 	if callCount != 2 {
 		t.Fatalf("expected 2 LLM calls, got %d", callCount)
 	}
-	if len(facts) != 1 {
-		t.Fatalf("expected 1 raw fallback fact, got %v", facts)
-	}
-	if facts[0].FactType != factTypeRawFallback {
-		t.Fatalf("expected fact_type %q, got %q", factTypeRawFallback, facts[0].FactType)
-	}
-	if facts[0].Text != "how do I configure nginx?" {
-		t.Fatalf("expected fallback text to preserve user content, got %q", facts[0].Text)
+	if len(facts) != 0 {
+		t.Fatalf("expected query_intent-only additive extraction to stay empty, got %v", facts)
 	}
 }
 
@@ -724,8 +1145,8 @@ func TestExtractFactsAndTagsRetryFallbackDropsFlattenedQueryIntent(t *testing.T)
 	if callCount != 2 {
 		t.Fatalf("expected 2 LLM calls, got %d", callCount)
 	}
-	if len(facts) != 1 || facts[0].FactType != factTypeRawFallback {
-		t.Fatalf("expected 1 raw fallback fact, got %v", facts)
+	if len(facts) != 0 {
+		t.Fatalf("expected query_intent-only additive extraction to stay empty, got %v", facts)
 	}
 	if len(messageTags) != 2 {
 		t.Fatalf("expected 2 message_tags entries, got %d", len(messageTags))
@@ -822,8 +1243,8 @@ func TestReconcileAddSetsTagsOnMemory(t *testing.T) {
 		t.Fatalf("expected 1 create call, got %d", len(memRepo.createCalls))
 	}
 	got := memRepo.createCalls[0].Tags
-	if len(got) != 2 || got[0] != "tech" || got[1] != "work" {
-		t.Fatalf("expected tags [tech work], got %v", got)
+	if len(got) != 1 || got[0] != "tech" {
+		t.Fatalf("expected extraction tags [tech], got %v", got)
 	}
 }
 
@@ -920,8 +1341,9 @@ func TestReconcileUpdateTagsOmitted(t *testing.T) {
 	if len(memRepo.createCalls) != 1 {
 		t.Fatalf("expected 1 create call, got %d", len(memRepo.createCalls))
 	}
-	if memRepo.createCalls[0].Tags != nil {
-		t.Fatalf("expected nil tags, got %v", memRepo.createCalls[0].Tags)
+	got := memRepo.createCalls[0].Tags
+	if len(got) != 1 || got[0] != "work" {
+		t.Fatalf("expected extraction tags [work], got %v", got)
 	}
 }
 
@@ -1108,15 +1530,15 @@ func TestReconcileAddPreservesRawFallbackTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)
 	}
-	if callCount != 2 {
-		t.Fatalf("expected 2 LLM calls (extract + reconcile), got %d", callCount)
+	if callCount != 1 {
+		t.Fatalf("expected 1 additive extraction LLM call, got %d", callCount)
 	}
 	if len(memRepo.createCalls) != 1 {
 		t.Fatalf("expected 1 create call, got %d", len(memRepo.createCalls))
 	}
 	got := memRepo.createCalls[0].Tags
-	if len(got) != 2 || got[0] != "tech" || got[1] != rawFallbackTag {
-		t.Fatalf("expected reconcile ADD tags [tech %s], got %v", rawFallbackTag, got)
+	if len(got) != 1 || got[0] != "tech" {
+		t.Fatalf("expected additive extraction tags [tech], got %v", got)
 	}
 }
 
@@ -1165,7 +1587,125 @@ func (m *memoryRepoMock) Count(ctx context.Context) (int, error) {
 }
 
 func (m *memoryRepoMock) BulkCreate(ctx context.Context, memories []*domain.Memory) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.createCalls = append(m.createCalls, memories...)
 	return nil
+}
+
+func (m *memoryRepoMock) ListByContentHashes(ctx context.Context, agentID string, hashes []string) (map[string]domain.Memory, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make(map[string]domain.Memory)
+	for _, hash := range hashes {
+		if m.contentHashResults != nil {
+			if mem, ok := m.contentHashResults[hash]; ok {
+				out[hash] = mem
+				continue
+			}
+		}
+		for _, mem := range m.createCalls {
+			if mem.ContentHash != hash || mem.State != domain.StateActive {
+				continue
+			}
+			if agentID != "" && mem.AgentID != agentID {
+				continue
+			}
+			out[hash] = *mem
+			break
+		}
+	}
+	return out, nil
+}
+
+func (m *memoryRepoMock) ReplaceMemoryEntities(ctx context.Context, agentID, memoryID string, entities []domain.MemoryEntity) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.entityLinks == nil {
+		m.entityLinks = map[string][]domain.MemoryEntity{}
+	}
+	cp := append([]domain.MemoryEntity(nil), entities...)
+	m.entityLinks[memoryID] = cp
+	return nil
+}
+
+func (m *memoryRepoMock) DeleteMemoryEntities(ctx context.Context, memoryID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.entityLinks, memoryID)
+	return nil
+}
+
+func (m *memoryRepoMock) ReplaceMemoryRelationships(ctx context.Context, agentID, memoryID string, relationships []domain.MemoryRelationship) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.relationships == nil {
+		m.relationships = map[string][]domain.MemoryRelationship{}
+	}
+	m.relationships[memoryID] = append([]domain.MemoryRelationship(nil), relationships...)
+	return nil
+}
+
+func (m *memoryRepoMock) DeleteMemoryRelationships(ctx context.Context, memoryID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.relationships, memoryID)
+	return nil
+}
+
+func (m *memoryRepoMock) ListUnembeddedMemoryEntities(ctx context.Context, limit int) ([]domain.MemoryEntityBackfillRow, error) {
+	return nil, nil
+}
+
+func (m *memoryRepoMock) UpdateMemoryEntityEmbedding(ctx context.Context, agentID, entityKey, memoryID string, embedding []float32) error {
+	return nil
+}
+
+func (m *memoryRepoMock) CleanupEntityStore(ctx context.Context) (int64, error) {
+	return 0, nil
+}
+
+func (m *memoryRepoMock) EnsureMemoryEntityVectorIndex(ctx context.Context) error {
+	return nil
+}
+
+func (m *memoryRepoMock) EntityMemoryBoosts(ctx context.Context, agentID string, entityKeys []string, limit int) (map[string]float64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.entityBoosts != nil {
+		out := make(map[string]float64, len(m.entityBoosts))
+		for id, boost := range m.entityBoosts {
+			out[id] = boost
+		}
+		return out, nil
+	}
+	out := map[string]float64{}
+	keySet := make(map[string]struct{}, len(entityKeys))
+	for _, key := range entityKeys {
+		keySet[key] = struct{}{}
+	}
+	for memoryID, entities := range m.entityLinks {
+		var matches int
+		for _, entity := range entities {
+			if _, ok := keySet[entity.Key]; ok {
+				matches++
+			}
+		}
+		if matches > 0 {
+			out[memoryID] = float64(matches) / float64(max(1, len(entityKeys)))
+		}
+	}
+	return out, nil
+}
+
+func (m *memoryRepoMock) EntityMemoryVectorBoosts(ctx context.Context, f domain.MemoryFilter, queryText string, queryVec []float32, limit int) (map[string]float64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make(map[string]float64, len(m.entityVectorBoosts))
+	for id, boost := range m.entityVectorBoosts {
+		out[id] = boost
+	}
+	return out, nil
 }
 
 func (m *memoryRepoMock) VectorSearch(ctx context.Context, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
@@ -1673,7 +2213,7 @@ func TestIngestStripsInjectedContextAcrossModes(t *testing.T) {
 		{name: "raw mode without llm", mode: ModeRaw, withLLM: false, wantCreatedContent: "User: keep this", wantLLMCalls: 0},
 		{name: "smart mode without llm", mode: ModeSmart, withLLM: false, wantCreatedContent: "User: keep this", wantLLMCalls: 0},
 		{name: "raw mode with llm", mode: ModeRaw, withLLM: true, wantCreatedContent: "User: keep this", wantLLMCalls: 0},
-		{name: "smart mode with llm", mode: ModeSmart, withLLM: true, wantCreatedContent: "keep this", wantLLMCalls: 2},
+		{name: "smart mode with llm", mode: ModeSmart, withLLM: true, wantCreatedContent: "keep this", wantLLMCalls: 1},
 	}
 
 	for _, tt := range tests {
@@ -1752,28 +2292,18 @@ func TestIngestStripsInjectedContextAcrossModes(t *testing.T) {
 	}
 }
 
-// TestReconcileDeleteErrNotFoundIsNotWarning verifies the DELETE path in reconcile()
-// silently skips ErrNotFound (e.g., row already archived by a concurrent operation)
-// without counting it as a warning. Uses a mock LLM server to exercise the full path.
-func TestReconcileDeleteErrNotFoundIsNotWarning(t *testing.T) {
+// TestReconcileDoesNotAutoDelete verifies ADD-only reconcile never deletes
+// existing memories during ingest.
+func TestReconcileDoesNotAutoDelete(t *testing.T) {
 	t.Parallel()
 
-	// Mock LLM: first call returns extraction with one fact, second returns DELETE action.
 	callCount := 0
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		var resp string
-		if callCount == 1 {
-			// extractFacts response.
-			resp = `{"facts": [{"text": "user prefers dark mode", "tags": ["preference"]}]}`
-		} else {
-			// reconcile response — DELETE the existing memory.
-			resp = `{"memory": [{"id": "0", "text": "user prefers dark mode", "event": "DELETE"}]}`
-		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
-				{"message": map[string]string{"content": resp}},
+				{"message": map[string]string{"content": `{"memory": [{"text": "user prefers dark mode", "tags": ["preference"]}]}`}},
 			},
 		})
 	}))
@@ -1785,8 +2315,6 @@ func TestReconcileDeleteErrNotFoundIsNotWarning(t *testing.T) {
 		Model:   "test-model",
 	})
 
-	// Repository: SetState returns ErrNotFound (simulating already-archived row).
-	// AutoVectorSearch returns an existing memory so reconcile has something to DELETE.
 	memRepo := &memoryRepoMock{
 		setStateErr: domain.ErrNotFound,
 		vectorResults: []domain.Memory{
@@ -1814,39 +2342,27 @@ func TestReconcileDeleteErrNotFoundIsNotWarning(t *testing.T) {
 
 	// ErrNotFound from SetState should NOT count as a warning.
 	if res.Warnings != 0 {
-		t.Fatalf("expected 0 warnings for ErrNotFound, got %d", res.Warnings)
+		t.Fatalf("expected 0 warnings, got %d", res.Warnings)
 	}
 
-	// Verify SetState was actually called with the correct ID and state.
-	if len(memRepo.setStateCalls) != 1 {
-		t.Fatalf("expected 1 SetState call, got %d", len(memRepo.setStateCalls))
+	if callCount != 1 {
+		t.Fatalf("expected 1 additive extraction call, got %d", callCount)
 	}
-	if memRepo.setStateCalls[0].ID != "mem-123" {
-		t.Fatalf("expected SetState on mem-123, got %q", memRepo.setStateCalls[0].ID)
-	}
-	if memRepo.setStateCalls[0].State != domain.StateDeleted {
-		t.Fatalf("expected StateDeleted, got %q", memRepo.setStateCalls[0].State)
+	if len(memRepo.setStateCalls) != 0 {
+		t.Fatalf("expected no SetState calls in ADD-only ingest, got %d", len(memRepo.setStateCalls))
 	}
 }
 
-// TestReconcileDeleteRealErrorCountsAsWarning verifies that a real database error
-// (not ErrNotFound) during DELETE IS counted as a warning.
-func TestReconcileDeleteRealErrorCountsAsWarning(t *testing.T) {
+func TestReconcileNeverSurfacesDeleteErrors(t *testing.T) {
 	t.Parallel()
 
 	callCount := 0
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		var resp string
-		if callCount == 1 {
-			resp = `{"facts": [{"text": "user prefers dark mode", "tags": ["preference"]}]}`
-		} else {
-			resp = `{"memory": [{"id": "0", "text": "user prefers dark mode", "event": "DELETE"}]}`
-		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{
-				{"message": map[string]string{"content": resp}},
+				{"message": map[string]string{"content": `{"memory": [{"text": "user prefers dark mode", "tags": ["preference"]}]}`}},
 			},
 		})
 	}))
@@ -1883,9 +2399,11 @@ func TestReconcileDeleteRealErrorCountsAsWarning(t *testing.T) {
 		t.Fatal("expected non-nil result")
 	}
 
-	// Real error from SetState SHOULD count as a warning.
-	if res.Warnings != 1 {
-		t.Fatalf("expected 1 warning for real error, got %d", res.Warnings)
+	if res.Warnings != 0 {
+		t.Fatalf("expected 0 warnings because ADD-only ingest never deletes, got %d", res.Warnings)
+	}
+	if len(memRepo.setStateCalls) != 0 {
+		t.Fatalf("expected no SetState calls in ADD-only ingest, got %d", len(memRepo.setStateCalls))
 	}
 }
 
@@ -1940,29 +2458,20 @@ func TestTruncateRunes(t *testing.T) {
 	}
 }
 
-// TestReconcileFallbackWritesNothing verifies that when the LLM fails during
-// reconciliation (with existing memories present), the system writes nothing
-// instead of blindly adding all facts as duplicates.
-func TestReconcileFallbackWritesNothing(t *testing.T) {
+// TestAddOnlyExtractionWritesWithoutSecondReconcile verifies smart ingest now
+// persists extraction output directly without a second reconcile LLM call.
+func TestAddOnlyExtractionWritesWithoutSecondReconcile(t *testing.T) {
 	t.Parallel()
 
-	// Mock LLM: first call (extractFacts) succeeds, second call (reconcile) fails with 500.
 	callCount := 0
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		if callCount == 1 {
-			// extractFacts response.
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
-				"choices": []map[string]any{
-					{"message": map[string]string{"content": `{"facts": [{"text": "user prefers dark mode", "tags": ["preference"]}]}`}},
-				},
-			})
-			return
-		}
-		// All subsequent calls fail (reconcile + retry).
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error": "service unavailable"}`))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"memory": [{"text": "user prefers dark mode", "tags": ["preference"]}]}`}},
+			},
+		})
 	}))
 	defer mockLLM.Close()
 
@@ -1997,21 +2506,17 @@ func TestReconcileFallbackWritesNothing(t *testing.T) {
 		t.Fatal("expected non-nil result")
 	}
 
-	// With the safer fallback, nothing should be written on LLM failure.
-	if res.MemoriesChanged != 0 {
-		t.Fatalf("expected 0 memories changed (safe fallback), got %d", res.MemoriesChanged)
+	if res.MemoriesChanged != 1 {
+		t.Fatalf("expected 1 memory changed, got %d", res.MemoriesChanged)
 	}
-	// No Create calls should have been made.
-	if len(memRepo.createCalls) != 0 {
-		t.Fatalf("expected 0 Create calls (safe fallback), got %d", len(memRepo.createCalls))
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected 1 Create call, got %d", len(memRepo.createCalls))
 	}
-	// LLM failure should produce warnings=1 and status="partial" so callers
-	// can distinguish "nothing to remember" from "reconciliation failed."
-	if res.Warnings != 1 {
-		t.Fatalf("expected 1 warning for reconciliation LLM failure, got %d", res.Warnings)
+	if callCount != 1 {
+		t.Fatalf("expected 1 LLM call, got %d", callCount)
 	}
-	if res.Status != "partial" {
-		t.Fatalf("expected status 'partial' for reconciliation LLM failure, got %q", res.Status)
+	if res.Warnings != 0 {
+		t.Fatalf("expected 0 warnings, got %d", res.Warnings)
 	}
 }
 
@@ -2327,7 +2832,7 @@ func TestReconcileContentValidatesInput(t *testing.T) {
 func TestReconcileIncludesMemoryAge(t *testing.T) {
 	t.Parallel()
 
-	var reconcileBody string
+	var extractionBody string
 	var mu sync.Mutex
 
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2335,11 +2840,11 @@ func TestReconcileIncludesMemoryAge(t *testing.T) {
 		bodyStr := string(body)
 
 		var resp string
-		if strings.Contains(bodyStr, "Current memory contents:") {
+		if strings.Contains(bodyStr, "Existing Memories:") {
 			mu.Lock()
-			reconcileBody = bodyStr
+			extractionBody = bodyStr
 			mu.Unlock()
-			resp = `{"memory": [{"id": "0", "text": "Lives in Shanghai", "event": "UPDATE", "old_memory": "Lives in Beijing"}]}`
+			resp = `{"memory": [{"text": "Lives in Shanghai", "tags": ["location"], "linked_memory_ids": ["mem-old"]}]}`
 		} else {
 			resp = `{"facts": [{"text": "Lives in Shanghai", "tags": ["location"]}]}`
 		}
@@ -2383,20 +2888,20 @@ func TestReconcileIncludesMemoryAge(t *testing.T) {
 		t.Fatal("expected non-nil result")
 	}
 
-	// Verify the reconciliation LLM call includes "age" in the prompt body.
+	// Verify the additive extraction LLM call includes existing-memory age in the prompt body.
 	mu.Lock()
-	body := reconcileBody
+	body := extractionBody
 	mu.Unlock()
 
 	if !strings.Contains(body, `"age"`) && !strings.Contains(body, `\"age\"`) {
-		t.Fatalf("expected reconciliation prompt to contain age field, got: %s", body)
+		t.Fatalf("expected extraction prompt to contain age field, got: %s", body)
 	}
 	if !strings.Contains(body, "year") {
 		t.Fatalf("expected age to contain 'year' for a 1-year-old memory, got: %s", body)
 	}
 
 	if len(memRepo.createCalls) == 0 {
-		t.Fatal("expected ArchiveAndCreate to create a new memory")
+		t.Fatal("expected ADD-only ingest to create a new memory")
 	}
 }
 
@@ -2406,7 +2911,7 @@ func TestReconcileIncludesMemoryAge(t *testing.T) {
 func TestReconcileOmitsAgeForZeroTimestamp(t *testing.T) {
 	t.Parallel()
 
-	var reconcileBody string
+	var extractionBody string
 	var mu sync.Mutex
 
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2414,11 +2919,11 @@ func TestReconcileOmitsAgeForZeroTimestamp(t *testing.T) {
 		bodyStr := string(body)
 
 		var resp string
-		if strings.Contains(bodyStr, "Current memory contents:") {
+		if strings.Contains(bodyStr, "Existing Memories:") {
 			mu.Lock()
-			reconcileBody = bodyStr
+			extractionBody = bodyStr
 			mu.Unlock()
-			resp = `{"memory": [{"id": "0", "text": "Prefers dark mode", "event": "NOOP"}]}`
+			resp = `{"memory": []}`
 		} else {
 			resp = `{"facts": [{"text": "Prefers dark mode", "tags": ["preference"]}]}`
 		}
@@ -2460,21 +2965,21 @@ func TestReconcileOmitsAgeForZeroTimestamp(t *testing.T) {
 	}
 
 	mu.Lock()
-	body := reconcileBody
+	body := extractionBody
 	mu.Unlock()
 
 	// Check only the memory data section (system prompt examples contain "age").
-	if idx := strings.Index(body, "Current memory contents:"); idx >= 0 {
-		endIdx := strings.Index(body[idx:], "New facts")
+	if idx := strings.Index(body, "Existing Memories:"); idx >= 0 {
+		endIdx := strings.Index(body[idx:], "New Messages:")
 		if endIdx < 0 {
-			t.Fatal("could not find 'New facts' marker in reconciliation body")
+			t.Fatal("could not find 'New Messages' marker in extraction body")
 		}
 		memorySection := body[idx : idx+endIdx]
 		if strings.Contains(memorySection, "age") {
 			t.Fatalf("expected no age in memory data for zero timestamp, but found it in: %s", memorySection)
 		}
 	} else {
-		t.Fatal("could not find 'Current memory contents:' marker in reconciliation body")
+		t.Fatal("could not find 'Existing Memories:' marker in extraction body")
 	}
 }
 
@@ -2484,12 +2989,7 @@ func TestReconcileAcceptsEmptyChangeList(t *testing.T) {
 	callCount := 0
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		var resp string
-		if callCount == 1 {
-			resp = `{"facts": [{"text": "Prefers dark mode", "tags": ["preference"]}]}`
-		} else {
-			resp = `{"memory": []}`
-		}
+		resp := `{"memory": []}`
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{{"message": map[string]string{"content": resp}}},
@@ -2582,8 +3082,8 @@ func TestReconcileUpdatePreservesExistingTagsWhenLLMOmits(t *testing.T) {
 		t.Fatalf("expected 1 create call, got %d", len(memRepo.createCalls))
 	}
 	got := memRepo.createCalls[0].Tags
-	if len(got) != 2 || got[0] != "work" || got[1] != "career" {
-		t.Fatalf("expected existing tags [work career] preserved, got %v", got)
+	if len(got) != 1 || got[0] != "work" {
+		t.Fatalf("expected extraction tags [work], got %v", got)
 	}
 }
 
@@ -2636,8 +3136,8 @@ func TestReconcilePinnedFallbackPreservesExistingTagsWhenLLMOmits(t *testing.T) 
 		t.Fatalf("expected 1 create call (pinned fallback ADD), got %d", len(memRepo.createCalls))
 	}
 	got := memRepo.createCalls[0].Tags
-	if len(got) != 2 || got[0] != "tech" || got[1] != "language" {
-		t.Fatalf("expected existing tags [tech language] preserved, got %v", got)
+	if len(got) != 1 || got[0] != "tech" {
+		t.Fatalf("expected extraction tags [tech], got %v", got)
 	}
 }
 
@@ -2783,7 +3283,7 @@ func TestExtractPhase1FencedLegacyStringArrayFallback(t *testing.T) {
 	}
 }
 
-func TestExtractFactsAlternativeKeyFallsBackToRawFact(t *testing.T) {
+func TestExtractFactsAlternativeKeyEmptyAdditiveResultStaysEmpty(t *testing.T) {
 	t.Parallel()
 
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2803,11 +3303,8 @@ func TestExtractFactsAlternativeKeyFallsBackToRawFact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
-	if len(facts) != 1 {
-		t.Fatalf("expected 1 raw fallback fact for alternative-key schema, got %d: %v", len(facts), facts)
-	}
-	if facts[0].FactType != factTypeRawFallback || facts[0].Text != "I use Go 1.22" {
-		t.Fatalf("expected raw fallback fact preserving user text, got %+v", facts[0])
+	if len(facts) != 0 {
+		t.Fatalf("expected no facts for unsupported additive schema, got %v", facts)
 	}
 }
 
@@ -2925,11 +3422,7 @@ func TestReconcileTagsClampedViaReconcilePath(t *testing.T) {
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		var resp string
-		if callCount == 1 {
-			resp = `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}]}`
-		} else {
-			resp = fmt.Sprintf(`{"memory": [{"id": "new", "text": "Uses Go 1.22", "event": "ADD", "tags": %s}]}`, string(manyTagsJSON))
-		}
+		resp = fmt.Sprintf(`{"memory": [{"text": "Uses Go 1.22", "tags": %s}]}`, string(manyTagsJSON))
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{{"message": map[string]string{"content": resp}}},
@@ -2961,6 +3454,6 @@ func TestReconcileTagsClampedViaReconcilePath(t *testing.T) {
 		t.Fatalf("expected 1 create call, got %d", len(memRepo.createCalls))
 	}
 	if len(memRepo.createCalls[0].Tags) != maxTags {
-		t.Fatalf("expected event.Tags clamped to %d via reconcile ADD path, got %d", maxTags, len(memRepo.createCalls[0].Tags))
+		t.Fatalf("expected extraction tags clamped to %d via ADD-only path, got %d", maxTags, len(memRepo.createCalls[0].Tags))
 	}
 }

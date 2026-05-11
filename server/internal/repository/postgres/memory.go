@@ -31,7 +31,7 @@ func NewMemoryRepo(db *sql.DB, ftsEnabled bool, clusterID string) *MemoryRepo {
 
 func (r *MemoryRepo) FTSAvailable() bool { return r.ftsAvailable.Load() }
 
-const allColumns = `id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at, superseded_by`
+const allColumns = `id, content, source, tags, metadata, embedding, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at, superseded_by`
 
 func (r *MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
 	tagsJSON := marshalTags(m.Tags)
@@ -40,10 +40,10 @@ func (r *MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
 		memoryType = string(domain.TypePinned)
 	}
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO memories (id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, NOW(), NOW())`,
+		`INSERT INTO memories (id, content, source, tags, metadata, embedding, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, NOW(), NOW())`,
 		m.ID, m.Content, nullString(m.Source),
-		tagsJSON, nullJSON(m.Metadata), vecToParam(m.Embedding), memoryType, nullString(m.AgentID), nullString(m.SessionID),
+		tagsJSON, nullJSON(m.Metadata), vecToParam(m.Embedding), nullString(m.ContentHash), memoryType, nullString(m.AgentID), nullString(m.SessionID),
 		m.Version, nullString(m.UpdatedBy),
 	)
 	if err != nil {
@@ -62,9 +62,9 @@ func (r *MemoryRepo) GetByID(ctx context.Context, id string) (*domain.Memory, er
 func (r *MemoryRepo) UpdateOptimistic(ctx context.Context, m *domain.Memory, expectedVersion int) error {
 	tagsJSON := marshalTags(m.Tags)
 
-	query := `UPDATE memories SET content = $1, tags = $2, metadata = $3, embedding = $4, version = version + 1, updated_by = $5, updated_at = NOW()
-		 WHERE id = $6`
-	args := []any{m.Content, tagsJSON, nullJSON(m.Metadata), vecToParam(m.Embedding), nullString(m.UpdatedBy), m.ID}
+	query := `UPDATE memories SET content = $1, tags = $2, metadata = $3, embedding = $4, content_hash = $5, version = version + 1, updated_by = $6, updated_at = NOW()
+		 WHERE id = $7`
+	args := []any{m.Content, tagsJSON, nullJSON(m.Metadata), vecToParam(m.Embedding), nullString(m.ContentHash), nullString(m.UpdatedBy), m.ID}
 
 	if expectedVersion > 0 {
 		query += fmt.Sprintf(" AND version = $%d", len(args)+1)
@@ -180,10 +180,10 @@ func (r *MemoryRepo) ArchiveAndCreate(ctx context.Context, archiveID, superseded
 	}
 
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO memories (id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, NOW(), NOW())`,
+		`INSERT INTO memories (id, content, source, tags, metadata, embedding, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, NOW(), NOW())`,
 		newMem.ID, newMem.Content, nullString(newMem.Source),
-		tagsJSON, nullJSON(newMem.Metadata), vecToParam(newMem.Embedding), memoryType, nullString(newMem.AgentID), nullString(newMem.SessionID),
+		tagsJSON, nullJSON(newMem.Metadata), vecToParam(newMem.Embedding), nullString(newMem.ContentHash), memoryType, nullString(newMem.AgentID), nullString(newMem.SessionID),
 		newMem.Version, nullString(newMem.UpdatedBy),
 	)
 	if err != nil {
@@ -304,10 +304,10 @@ func (r *MemoryRepo) BulkCreate(ctx context.Context, memories []*domain.Memory) 
 			memoryType = string(domain.TypePinned)
 		}
 		_, execErr := tx.ExecContext(ctx,
-			`INSERT INTO memories (id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, NOW(), NOW())`,
+			`INSERT INTO memories (id, content, source, tags, metadata, embedding, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, NOW(), NOW())`,
 			m.ID, m.Content, nullString(m.Source),
-			tagsJSON, nullJSON(m.Metadata), vecToParam(m.Embedding), memoryType, nullString(m.AgentID), nullString(m.SessionID),
+			tagsJSON, nullJSON(m.Metadata), vecToParam(m.Embedding), nullString(m.ContentHash), memoryType, nullString(m.AgentID), nullString(m.SessionID),
 			m.Version, nullString(m.UpdatedBy),
 		)
 		if execErr != nil {
@@ -510,16 +510,475 @@ func (r *MemoryRepo) BuildFilterConds(f domain.MemoryFilter) ([]string, []any) {
 	return conds, args
 }
 
+func (r *MemoryRepo) ListByContentHashes(ctx context.Context, agentID string, hashes []string) (map[string]domain.Memory, error) {
+	result := make(map[string]domain.Memory)
+	if len(hashes) == 0 {
+		return result, nil
+	}
+	seen := make(map[string]struct{}, len(hashes))
+	unique := make([]string, 0, len(hashes))
+	for _, hash := range hashes {
+		hash = strings.TrimSpace(hash)
+		if hash == "" {
+			continue
+		}
+		if _, ok := seen[hash]; ok {
+			continue
+		}
+		seen[hash] = struct{}{}
+		unique = append(unique, hash)
+	}
+	if len(unique) == 0 {
+		return result, nil
+	}
+	placeholders := make([]string, len(unique))
+	args := make([]any, 0, len(unique)+1)
+	for i, hash := range unique {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args = append(args, hash)
+	}
+	where := "state = 'active' AND content_hash IN (" + strings.Join(placeholders, ",") + ")"
+	if agentID != "" {
+		where += fmt.Sprintf(" AND agent_id = $%d", len(args)+1)
+		args = append(args, agentID)
+	} else {
+		where += " AND (agent_id IS NULL OR agent_id = '')"
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT `+allColumns+` FROM memories WHERE `+where, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list by content hashes: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		m, err := scanMemoryRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		if m.ContentHash != "" {
+			result[m.ContentHash] = *m
+		}
+	}
+	return result, rows.Err()
+}
+
+func (r *MemoryRepo) ReplaceMemoryEntities(ctx context.Context, agentID, memoryID string, entities []domain.MemoryEntity) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("replace memory entities begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM memory_entities WHERE memory_id = $1`, memoryID); err != nil {
+		return fmt.Errorf("delete memory entities: %w", err)
+	}
+	if len(entities) == 0 {
+		return tx.Commit()
+	}
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO memory_entities (agent_id, entity_key, canonical_entity_key, entity_text, entity_type, embedding, memory_id, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+		ON CONFLICT (agent_id, entity_key, memory_id)
+		DO UPDATE SET canonical_entity_key = EXCLUDED.canonical_entity_key, entity_text = EXCLUDED.entity_text, entity_type = EXCLUDED.entity_type, embedding = EXCLUDED.embedding`)
+	if err != nil {
+		return fmt.Errorf("prepare memory entities: %w", err)
+	}
+	defer stmt.Close()
+	for _, entity := range entities {
+		if entity.Key == "" || entity.Text == "" {
+			continue
+		}
+		canonicalKey := entity.CanonicalKey
+		if canonicalKey == "" {
+			canonicalKey = entity.Key
+		}
+		if _, err := stmt.ExecContext(ctx, agentID, entity.Key, canonicalKey, entity.Text, entity.Type, vecToParam(entity.Embedding), memoryID); err != nil {
+			return fmt.Errorf("insert memory entity: %w", err)
+		}
+		if err := r.upsertCanonicalEntity(ctx, tx, agentID, canonicalKey, entity); err != nil {
+			return err
+		}
+		if entity.Key != canonicalKey {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO memory_entity_aliases (agent_id, alias_key, entity_key, alias_text, created_at)
+				VALUES ($1, $2, $3, $4, NOW())
+				ON CONFLICT (agent_id, alias_key)
+				DO UPDATE SET entity_key = EXCLUDED.entity_key, alias_text = EXCLUDED.alias_text`,
+				agentID, entity.Key, canonicalKey, entity.Text); err != nil {
+				return fmt.Errorf("insert memory entity alias: %w", err)
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE canonical_memory_entities c
+		SET memory_count = (
+			SELECT COUNT(DISTINCT me.memory_id)
+			FROM memory_entities me
+			WHERE me.agent_id = c.agent_id AND me.canonical_entity_key = c.entity_key
+		), updated_at = NOW()
+		WHERE c.agent_id = $1`, agentID); err != nil {
+		return fmt.Errorf("refresh canonical entity counts: %w", err)
+	}
+	return tx.Commit()
+}
+
+func (r *MemoryRepo) upsertCanonicalEntity(ctx context.Context, tx *sql.Tx, agentID, canonicalKey string, entity domain.MemoryEntity) error {
+	if canonicalKey == "" || entity.Text == "" {
+		return nil
+	}
+	entityType := entity.Type
+	if entityType == "alias" {
+		entityType = "entity"
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO canonical_memory_entities (agent_id, entity_key, entity_text, entity_type, embedding, memory_count, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, 0, NOW(), NOW())
+		ON CONFLICT (agent_id, entity_key)
+		DO UPDATE SET entity_text = CASE WHEN canonical_memory_entities.entity_text = '' OR canonical_memory_entities.entity_type = 'alias' THEN EXCLUDED.entity_text ELSE canonical_memory_entities.entity_text END,
+			entity_type = CASE WHEN canonical_memory_entities.entity_type = 'alias' THEN EXCLUDED.entity_type ELSE canonical_memory_entities.entity_type END,
+			embedding = COALESCE(canonical_memory_entities.embedding, EXCLUDED.embedding),
+			updated_at = NOW()`,
+		agentID, canonicalKey, entity.Text, entityType, vecToParam(entity.Embedding)); err != nil {
+		return fmt.Errorf("upsert canonical entity: %w", err)
+	}
+	return nil
+}
+
+func (r *MemoryRepo) EntityMemoryVectorBoosts(ctx context.Context, f domain.MemoryFilter, queryText string, queryVec []float32, limit int) (map[string]float64, error) {
+	result := make(map[string]float64)
+	if len(queryVec) == 0 {
+		return result, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	conds, args := r.entityFilterConds(f)
+	conds = append(conds, "me.embedding IS NOT NULL")
+	vecParamIdx := len(args) + 1
+	limitParamIdx := vecParamIdx + 1
+	query := fmt.Sprintf(`SELECT me.memory_id, MIN(me.embedding <=> $%d) AS distance
+		FROM memory_entities me
+		JOIN memories m ON m.id = me.memory_id
+		WHERE %s
+		GROUP BY me.memory_id
+		ORDER BY distance ASC, me.memory_id
+		LIMIT $%d`, vecParamIdx, strings.Join(conds, " AND "), limitParamIdx)
+	fullArgs := make([]any, 0, len(args)+2)
+	fullArgs = append(fullArgs, args...)
+	fullArgs = append(fullArgs, pgvector.NewVector(queryVec), limit)
+	rows, err := r.db.QueryContext(ctx, query, fullArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("entity memory vector boosts: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var memoryID string
+		var distance float64
+		if err := rows.Scan(&memoryID, &distance); err != nil {
+			return nil, fmt.Errorf("scan entity memory vector boost: %w", err)
+		}
+		result[memoryID] = clampScore(1 - distance)
+	}
+	return result, rows.Err()
+}
+
+func (r *MemoryRepo) DeleteMemoryEntities(ctx context.Context, memoryID string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM memory_entities WHERE memory_id = $1`, memoryID)
+	if err != nil {
+		return fmt.Errorf("delete memory entities: %w", err)
+	}
+	return nil
+}
+
+func (r *MemoryRepo) EntityMemoryBoosts(ctx context.Context, agentID string, entityKeys []string, limit int) (map[string]float64, error) {
+	return r.EntityMemoryBoostsForFilter(ctx, domain.MemoryFilter{AgentID: agentID}, entityKeys, limit)
+}
+
+func (r *MemoryRepo) EntityMemoryBoostsForFilter(ctx context.Context, f domain.MemoryFilter, entityKeys []string, limit int) (map[string]float64, error) {
+	result := make(map[string]float64)
+	if len(entityKeys) == 0 {
+		return result, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	placeholders := make([]string, len(entityKeys))
+	args := make([]any, 0, len(entityKeys)+8)
+	for i, key := range entityKeys {
+		placeholders[i] = fmt.Sprintf("$%d", len(args)+1)
+		args = append(args, key)
+	}
+	aliasPlaceholders := make([]string, len(entityKeys))
+	for i, key := range entityKeys {
+		aliasPlaceholders[i] = fmt.Sprintf("$%d", len(args)+1)
+		args = append(args, key)
+	}
+	conds := []string{"(me.entity_key IN (" + strings.Join(placeholders, ",") + ") OR me.canonical_entity_key IN (SELECT mea.entity_key FROM memory_entity_aliases mea WHERE mea.agent_id = me.agent_id AND mea.alias_key IN (" + strings.Join(aliasPlaceholders, ",") + ")))"}
+	if f.State == "all" {
+		// no state filter
+	} else if f.State != "" {
+		conds = append(conds, fmt.Sprintf("m.state = $%d", len(args)+1))
+		args = append(args, f.State)
+	} else {
+		conds = append(conds, "m.state = 'active'")
+	}
+	if f.MemoryType != "" {
+		types := strings.Split(f.MemoryType, ",")
+		if len(types) == 1 {
+			conds = append(conds, fmt.Sprintf("m.memory_type = $%d", len(args)+1))
+			args = append(args, strings.TrimSpace(types[0]))
+		} else {
+			typePlaceholders := make([]string, len(types))
+			for i, t := range types {
+				typePlaceholders[i] = fmt.Sprintf("$%d", len(args)+1)
+				args = append(args, strings.TrimSpace(t))
+			}
+			conds = append(conds, "m.memory_type IN ("+strings.Join(typePlaceholders, ",")+")")
+		}
+	}
+	if f.AgentID != "" {
+		conds = append(conds, fmt.Sprintf("m.agent_id = $%d", len(args)+1))
+		args = append(args, f.AgentID)
+	}
+	if f.SessionID != "" {
+		conds = append(conds, fmt.Sprintf("m.session_id = $%d", len(args)+1))
+		args = append(args, f.SessionID)
+	}
+	if f.Source != "" {
+		conds = append(conds, fmt.Sprintf("m.source = $%d", len(args)+1))
+		args = append(args, f.Source)
+	}
+	for _, tag := range f.Tags {
+		tagJSON, err := json.Marshal(tag)
+		if err != nil {
+			continue
+		}
+		conds = append(conds, fmt.Sprintf("m.tags @> $%d::jsonb", len(args)+1))
+		args = append(args, "["+string(tagJSON)+"]")
+	}
+	limitParam := len(args) + 1
+	args = append(args, limit)
+	rows, err := r.db.QueryContext(ctx, `SELECT me.memory_id, COUNT(*) AS matches
+		FROM memory_entities me
+		JOIN memories m ON m.id = me.memory_id
+		WHERE `+strings.Join(conds, " AND ")+`
+		GROUP BY me.memory_id
+		ORDER BY matches DESC, me.memory_id
+		LIMIT $`+fmt.Sprint(limitParam), args...)
+	if err != nil {
+		return nil, fmt.Errorf("entity memory boosts: %w", err)
+	}
+	defer rows.Close()
+	denom := float64(len(entityKeys))
+	if denom < 1 {
+		denom = 1
+	}
+	for rows.Next() {
+		var memoryID string
+		var matches int
+		if err := rows.Scan(&memoryID, &matches); err != nil {
+			return nil, fmt.Errorf("scan entity memory boost: %w", err)
+		}
+		result[memoryID] = float64(matches) / denom
+	}
+	return result, rows.Err()
+}
+
+func (r *MemoryRepo) entityFilterConds(f domain.MemoryFilter) ([]string, []any) {
+	conds := []string{}
+	args := []any{}
+	if f.State == "all" {
+		// no state filter
+	} else if f.State != "" {
+		conds = append(conds, fmt.Sprintf("m.state = $%d", len(args)+1))
+		args = append(args, f.State)
+	} else {
+		conds = append(conds, "m.state = 'active'")
+	}
+	if f.MemoryType != "" {
+		types := strings.Split(f.MemoryType, ",")
+		if len(types) == 1 {
+			conds = append(conds, fmt.Sprintf("m.memory_type = $%d", len(args)+1))
+			args = append(args, strings.TrimSpace(types[0]))
+		} else {
+			typePlaceholders := make([]string, len(types))
+			for i, t := range types {
+				typePlaceholders[i] = fmt.Sprintf("$%d", len(args)+1)
+				args = append(args, strings.TrimSpace(t))
+			}
+			conds = append(conds, "m.memory_type IN ("+strings.Join(typePlaceholders, ",")+")")
+		}
+	}
+	if f.AgentID != "" {
+		conds = append(conds, fmt.Sprintf("m.agent_id = $%d", len(args)+1))
+		args = append(args, f.AgentID)
+	}
+	if f.SessionID != "" {
+		conds = append(conds, fmt.Sprintf("m.session_id = $%d", len(args)+1))
+		args = append(args, f.SessionID)
+	}
+	if f.Source != "" {
+		conds = append(conds, fmt.Sprintf("m.source = $%d", len(args)+1))
+		args = append(args, f.Source)
+	}
+	for _, tag := range f.Tags {
+		tagJSON, err := json.Marshal(tag)
+		if err != nil {
+			continue
+		}
+		conds = append(conds, fmt.Sprintf("m.tags @> $%d::jsonb", len(args)+1))
+		args = append(args, "["+string(tagJSON)+"]")
+	}
+	if len(conds) == 0 {
+		conds = append(conds, "1=1")
+	}
+	return conds, args
+}
+
+func (r *MemoryRepo) ListUnembeddedMemoryEntities(ctx context.Context, limit int) ([]domain.MemoryEntityBackfillRow, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT agent_id, entity_key, memory_id, entity_text
+		FROM memory_entities
+		WHERE embedding IS NULL
+		ORDER BY created_at ASC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list unembedded memory entities: %w", err)
+	}
+	defer rows.Close()
+	var out []domain.MemoryEntityBackfillRow
+	for rows.Next() {
+		var row domain.MemoryEntityBackfillRow
+		if err := rows.Scan(&row.AgentID, &row.Key, &row.MemoryID, &row.Text); err != nil {
+			return nil, fmt.Errorf("scan unembedded memory entity: %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *MemoryRepo) UpdateMemoryEntityEmbedding(ctx context.Context, agentID, entityKey, memoryID string, embedding []float32) error {
+	if len(embedding) == 0 {
+		return nil
+	}
+	if _, err := r.db.ExecContext(ctx, `UPDATE memory_entities
+		SET embedding = $1
+		WHERE agent_id = $2 AND entity_key = $3 AND memory_id = $4`,
+		vecToParam(embedding), agentID, entityKey, memoryID); err != nil {
+		return fmt.Errorf("update memory entity embedding: %w", err)
+	}
+	if _, err := r.db.ExecContext(ctx, `UPDATE canonical_memory_entities
+		SET embedding = COALESCE(embedding, $1), updated_at = NOW()
+		WHERE agent_id = $2 AND entity_key IN (
+			SELECT canonical_entity_key FROM memory_entities WHERE agent_id = $3 AND entity_key = $4 AND memory_id = $5
+		)`, vecToParam(embedding), agentID, agentID, entityKey, memoryID); err != nil {
+		return fmt.Errorf("update canonical entity embedding: %w", err)
+	}
+	return nil
+}
+
+func (r *MemoryRepo) ReplaceMemoryRelationships(ctx context.Context, agentID, memoryID string, relationships []domain.MemoryRelationship) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("replace memory relationships begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM memory_relationships WHERE memory_id = $1`, memoryID); err != nil {
+		return fmt.Errorf("delete memory relationships: %w", err)
+	}
+	if len(relationships) == 0 {
+		return tx.Commit()
+	}
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO memory_relationships (agent_id, source_entity_key, target_entity_key, relationship_type, memory_id, created_at)
+		VALUES ($1, $2, $3, $4, $5, NOW())
+		ON CONFLICT (agent_id, source_entity_key, target_entity_key, relationship_type, memory_id)
+		DO NOTHING`)
+	if err != nil {
+		return fmt.Errorf("prepare memory relationships: %w", err)
+	}
+	defer stmt.Close()
+	for _, rel := range relationships {
+		if rel.SourceEntityKey == "" || rel.TargetEntityKey == "" || rel.SourceEntityKey == rel.TargetEntityKey {
+			continue
+		}
+		relAgentID := rel.AgentID
+		if relAgentID == "" {
+			relAgentID = agentID
+		}
+		relType := strings.TrimSpace(rel.RelationshipType)
+		if relType == "" {
+			relType = "related"
+		}
+		if _, err := stmt.ExecContext(ctx, relAgentID, rel.SourceEntityKey, rel.TargetEntityKey, relType, memoryID); err != nil {
+			return fmt.Errorf("insert memory relationship: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *MemoryRepo) DeleteMemoryRelationships(ctx context.Context, memoryID string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM memory_relationships WHERE memory_id = $1`, memoryID)
+	if err != nil {
+		return fmt.Errorf("delete memory relationships: %w", err)
+	}
+	return nil
+}
+
+func (r *MemoryRepo) CleanupEntityStore(ctx context.Context) (int64, error) {
+	var total int64
+	if _, err := r.db.ExecContext(ctx, `INSERT INTO canonical_memory_entities (agent_id, entity_key, entity_text, entity_type, memory_count, created_at, updated_at)
+		SELECT agent_id, COALESCE(NULLIF(canonical_entity_key, ''), entity_key), MIN(entity_text), MIN(entity_type), COUNT(DISTINCT memory_id), NOW(), NOW()
+		FROM memory_entities
+		GROUP BY agent_id, COALESCE(NULLIF(canonical_entity_key, ''), entity_key)
+		ON CONFLICT (agent_id, entity_key)
+		DO UPDATE SET memory_count = EXCLUDED.memory_count, updated_at = NOW()`); err != nil {
+		return total, fmt.Errorf("rebuild canonical entities: %w", err)
+	}
+	for _, stmt := range []string{
+		`DELETE FROM memory_entities me USING memories m WHERE m.id = me.memory_id AND m.state = 'deleted'`,
+		`DELETE FROM memory_entities me WHERE NOT EXISTS (SELECT 1 FROM memories m WHERE m.id = me.memory_id)`,
+		`DELETE FROM memory_relationships mr USING memories m WHERE m.id = mr.memory_id AND m.state = 'deleted'`,
+		`DELETE FROM memory_relationships mr WHERE NOT EXISTS (SELECT 1 FROM memories m WHERE m.id = mr.memory_id)`,
+		`DELETE FROM memory_entity_aliases mea WHERE NOT EXISTS (SELECT 1 FROM memory_entities me WHERE me.agent_id = mea.agent_id AND me.canonical_entity_key = mea.entity_key)`,
+		`DELETE FROM canonical_memory_entities c WHERE NOT EXISTS (SELECT 1 FROM memory_entities me WHERE me.agent_id = c.agent_id AND me.canonical_entity_key = c.entity_key)`,
+	} {
+		res, err := r.db.ExecContext(ctx, stmt)
+		if err != nil {
+			return total, fmt.Errorf("cleanup entity store: %w", err)
+		}
+		if n, err := res.RowsAffected(); err == nil {
+			total += n
+		}
+	}
+	return total, nil
+}
+
+func (r *MemoryRepo) EnsureMemoryEntityVectorIndex(ctx context.Context) error {
+	if _, err := r.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_memory_entities_embedding ON memory_entities USING hnsw (embedding vector_cosine_ops)`); err != nil {
+		return fmt.Errorf("ensure memory entity vector index: %w", err)
+	}
+	if _, err := r.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_canonical_memory_entities_embedding ON canonical_memory_entities USING hnsw (embedding vector_cosine_ops)`); err != nil {
+		return fmt.Errorf("ensure canonical entity vector index: %w", err)
+	}
+	return nil
+}
+
+func clampScore(score float64) float64 {
+	if score < 0 {
+		return 0
+	}
+	if score > 1 {
+		return 1
+	}
+	return score
+}
+
 // ---- Helpers ----
 
 func scanMemory(row *sql.Row) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, contentHash, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON []byte
 	var embeddingStr sql.NullString
 
 	err := row.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &contentHash, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy)
 	if err == sql.ErrNoRows {
 		return nil, domain.ErrNotFound
@@ -534,6 +993,7 @@ func scanMemory(row *sql.Row) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.ContentHash = contentHash.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive
@@ -547,12 +1007,12 @@ func scanMemory(row *sql.Row) (*domain.Memory, error) {
 
 func scanMemoryRows(rows *sql.Rows) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, contentHash, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON []byte
 	var embeddingStr sql.NullString
 
 	err := rows.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &contentHash, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy)
 	if err != nil {
 		return nil, fmt.Errorf("scan memory row: %w", err)
@@ -564,6 +1024,7 @@ func scanMemoryRows(rows *sql.Rows) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.ContentHash = contentHash.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive
@@ -577,13 +1038,13 @@ func scanMemoryRows(rows *sql.Rows) (*domain.Memory, error) {
 
 func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, contentHash, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON []byte
 	var embeddingStr sql.NullString
 	var distance float64
 
 	err := rows.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &contentHash, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy,
 		&distance)
 	if err != nil {
@@ -596,6 +1057,7 @@ func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.ContentHash = contentHash.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive
@@ -611,13 +1073,13 @@ func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 
 func scanMemoryRowsWithFTSScore(rows *sql.Rows) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, contentHash, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON []byte
 	var embeddingStr sql.NullString
 	var ftsScore float64
 
 	err := rows.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &contentHash, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy,
 		&ftsScore)
 	if err != nil {
@@ -630,6 +1092,7 @@ func scanMemoryRowsWithFTSScore(rows *sql.Rows) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.ContentHash = contentHash.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive

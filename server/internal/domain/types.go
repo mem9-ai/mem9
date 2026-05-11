@@ -28,13 +28,14 @@ const (
 
 // Memory represents a piece of shared knowledge stored in a space.
 type Memory struct {
-	ID         string          `json:"id"`
-	Content    string          `json:"content"`
-	MemoryType MemoryType      `json:"memory_type"`
-	Source     string          `json:"source,omitempty"`
-	Tags       []string        `json:"tags,omitempty"`
-	Metadata   json.RawMessage `json:"metadata,omitempty"`
-	Embedding  []float32       `json:"-"`
+	ID          string          `json:"id"`
+	Content     string          `json:"content"`
+	MemoryType  MemoryType      `json:"memory_type"`
+	Source      string          `json:"source,omitempty"`
+	Tags        []string        `json:"tags,omitempty"`
+	Metadata    json.RawMessage `json:"metadata,omitempty"`
+	Embedding   []float32       `json:"-"`
+	ContentHash string          `json:"-"`
 
 	AgentID      string `json:"agent_id,omitempty"`
 	SessionID    string `json:"session_id,omitempty"`
@@ -53,6 +54,32 @@ type Memory struct {
 	// RelativeAge is a human-readable recency string (e.g. "3 days ago").
 	// Populated server-side at query time for search results only; never stored.
 	RelativeAge string `json:"relative_age,omitempty"`
+}
+
+// MemoryEntity links a normalized entity mention to a memory for recall boosts.
+type MemoryEntity struct {
+	Key          string    `json:"key"`
+	CanonicalKey string    `json:"canonical_key,omitempty"`
+	Text         string    `json:"text"`
+	Type         string    `json:"type"`
+	Embedding    []float32 `json:"-"`
+}
+
+// MemoryRelationship links two canonical memory entities through a memory.
+type MemoryRelationship struct {
+	AgentID          string `json:"agent_id,omitempty"`
+	SourceEntityKey  string `json:"source_entity_key"`
+	TargetEntityKey  string `json:"target_entity_key"`
+	RelationshipType string `json:"relationship_type"`
+	MemoryID         string `json:"memory_id"`
+}
+
+// MemoryEntityBackfillRow is an entity mention that needs a stored embedding.
+type MemoryEntityBackfillRow struct {
+	AgentID  string
+	Key      string
+	MemoryID string
+	Text     string
 }
 
 type AuthInfo struct {

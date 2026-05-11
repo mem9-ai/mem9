@@ -87,6 +87,36 @@ type resolvedSvc struct {
 
 type tenantSvcKey string
 
+const tenantSchemaEnsureTimeout = 10 * time.Second
+
+func (s *Server) ensureAdditiveMemorySchemaBestEffort(auth *domain.AuthInfo, tenantLabel string) {
+	if s.tenant == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), tenantSchemaEnsureTimeout)
+	defer cancel()
+	if err := s.tenant.EnsureAdditiveMemorySchema(ctx, auth.TenantDB); err != nil {
+		s.logger.Warn("additive memory schema migration failed",
+			"cluster_id", auth.ClusterID,
+			"tenant", tenantLabel,
+			"err", err)
+	}
+}
+
+func (s *Server) ensureSessionsTableBestEffort(auth *domain.AuthInfo, tenantLabel string) {
+	if s.tenant == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), tenantSchemaEnsureTimeout)
+	defer cancel()
+	if err := s.tenant.EnsureSessionsTable(ctx, auth.TenantDB); err != nil {
+		s.logger.Warn("sessions table migration failed",
+			"cluster_id", auth.ClusterID,
+			"tenant", tenantLabel,
+			"err", err)
+	}
+}
+
 // resolveServices returns the correct services for a request.
 func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	if auth.TenantID == "" {
@@ -94,6 +124,7 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		if cached, ok := s.svcCache.Load(key); ok {
 			return cached.(resolvedSvc)
 		}
+		s.ensureAdditiveMemorySchemaBestEffort(auth, "")
 		memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		svc := resolvedSvc{
@@ -104,10 +135,9 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		actual, loaded := s.svcCache.LoadOrStore(key, svc)
 		if !loaded {
 			go func() {
-				if err := s.tenant.EnsureSessionsTable(context.Background(), auth.TenantDB); err != nil {
-					s.logger.Warn("sessions table migration failed",
-						"cluster_id", auth.ClusterID,
-						"err", err) // no tenant field: TenantID is empty in this branch
+				s.ensureSessionsTableBestEffort(auth, "")
+				if err := svc.memory.EnsureEntityVectorIndex(context.Background()); err != nil {
+					s.logger.Warn("entity vector index ensure failed", "cluster_id", auth.ClusterID, "err", err)
 				}
 			}()
 		}
@@ -117,6 +147,7 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	if cached, ok := s.svcCache.Load(key); ok {
 		return cached.(resolvedSvc)
 	}
+	s.ensureAdditiveMemorySchemaBestEffort(auth, auth.TenantID)
 	memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	svc := resolvedSvc{
@@ -127,11 +158,9 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	actual, loaded := s.svcCache.LoadOrStore(key, svc)
 	if !loaded {
 		go func() {
-			if err := s.tenant.EnsureSessionsTable(context.Background(), auth.TenantDB); err != nil {
-				s.logger.Warn("sessions table migration failed",
-					"cluster_id", auth.ClusterID,
-					"tenant", auth.TenantID,
-					"err", err)
+			s.ensureSessionsTableBestEffort(auth, auth.TenantID)
+			if err := svc.memory.EnsureEntityVectorIndex(context.Background()); err != nil {
+				s.logger.Warn("entity vector index ensure failed", "cluster_id", auth.ClusterID, "tenant", auth.TenantID, "err", err)
 			}
 		}()
 	}

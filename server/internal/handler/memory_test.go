@@ -130,8 +130,11 @@ type testSessionRepo struct {
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	lastKeywordFilter    domain.MemoryFilter
 	sessionListResults   []*domain.Session
+	recentSessionResults []*domain.Session
 	lastSessionIDs       []string
 	lastSessionLimit     int
+	lastRecentSessionID  string
+	lastRecentLimit      int
 }
 
 func (s *testSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Session) error {
@@ -180,6 +183,12 @@ func (s *testSessionRepo) ListBySessionIDs(_ context.Context, sessionIDs []strin
 	s.lastSessionIDs = append([]string(nil), sessionIDs...)
 	s.lastSessionLimit = limit
 	return append([]*domain.Session(nil), s.sessionListResults...), nil
+}
+
+func (s *testSessionRepo) ListRecentBySessionID(_ context.Context, sessionID string, limit int) ([]*domain.Session, error) {
+	s.lastRecentSessionID = sessionID
+	s.lastRecentLimit = limit
+	return append([]*domain.Session(nil), s.recentSessionResults...), nil
 }
 
 func intPtr(v int) *int {
@@ -634,7 +643,7 @@ func TestCreateMemory_AsyncMessages_Returns202(t *testing.T) {
 	}
 }
 
-func TestCreateMemory_AsyncMessages_ReconcileFailed_DoesNotRecordIngestMetering(t *testing.T) {
+func TestCreateMemory_AsyncMessages_AddOnlySearchFailureRecordsIngestMetering(t *testing.T) {
 	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
@@ -678,11 +687,14 @@ func TestCreateMemory_AsyncMessages_ReconcileFailed_DoesNotRecordIngestMetering(
 	if rr.Code != http.StatusAccepted {
 		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
 	}
-	ensureNoMeteringEvents(t, meteringWriter, 100*time.Millisecond)
+	events := waitForMeteringEvents(t, meteringWriter, 1, time.Second)
+	if events[0].Data["event_type"] != "ingest" {
+		t.Fatalf("expected ingest metering event, got %+v", events[0])
+	}
 }
 
-// failSearchMemoryRepo embeds testMemoryRepo but makes KeywordSearch fail,
-// triggering gatherExistingMemories → reconcile → ReconcilePhase2 Status:"failed".
+// failSearchMemoryRepo embeds testMemoryRepo but makes KeywordSearch fail.
+// ADD-only extraction treats existing-memory lookup as best-effort context.
 type failSearchMemoryRepo struct {
 	testMemoryRepo
 }
@@ -803,8 +815,8 @@ func TestCreateMemory_SyncMessages_StripsInjectedContext(t *testing.T) {
 	}
 }
 
-func TestCreateMemory_SyncMessages_ReconcileFailure_Returns500(t *testing.T) {
-	// Mock LLM that returns valid facts for ExtractPhase1.
+func TestCreateMemory_SyncMessages_AddOnlySearchFailureReturns200(t *testing.T) {
+	// Mock LLM that returns valid additive facts for ExtractPhase1.
 	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
@@ -845,8 +857,8 @@ func TestCreateMemory_SyncMessages_ReconcileFailure_Returns500(t *testing.T) {
 
 	srv.createMemory(rr, req)
 
-	if rr.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d: %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -1932,6 +1944,40 @@ func TestDefaultConfidenceRecallSearch_FansOutPoolSearchesConcurrently(t *testin
 	}
 	if gotMaxInFlight != 3 {
 		t.Fatalf("expected all 3 pool searches to overlap, max_in_flight=%d", gotMaxInFlight)
+	}
+}
+
+func TestDefaultConfidenceRecallSearch_ContinuesWhenInsightPoolFails(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			if filter.MemoryType == string(domain.TypeInsight) {
+				return nil, errors.New("insight pool down")
+			}
+			return nil, nil
+		},
+	}
+	sessRepo := &testSessionRepo{
+		keywordSearchResults: []domain.Memory{
+			{ID: "s1", Content: "John likes Under Armour.", MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo)
+	auth := &domain.AuthInfo{ClusterID: "cluster-a"}
+	svc := srv.resolveServices(auth)
+
+	results, total, err := srv.defaultConfidenceRecallSearch(context.Background(), auth, svc, domain.MemoryFilter{
+		Query: "What brand does John like?",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("expected recall to continue with session pool, got %v", err)
+	}
+	if total != 1 || len(results) != 1 {
+		t.Fatalf("expected one session result, got total=%d results=%d", total, len(results))
+	}
+	if results[0].ID != "s1" {
+		t.Fatalf("expected session result s1, got %+v", results)
 	}
 }
 

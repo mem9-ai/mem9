@@ -130,7 +130,7 @@ func (c *Client) CompleteJSON(ctx context.Context, system, user string) (string,
 	result, err := c.complete(ctx, system, user, &responseFormat{Type: "json_object"}, CallScope{})
 	if err != nil {
 		var httpErr *HTTPStatusError
-		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest {
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && isUnsupportedResponseFormatError(httpErr.Body) {
 			slog.Warn("LLM rejected response_format:json_object (HTTP 400), retrying without it")
 			return c.complete(ctx, system, user, nil, CallScope{})
 		}
@@ -142,7 +142,7 @@ func (c *Client) CompleteJSONWithScope(ctx context.Context, system, user string,
 	result, err := c.complete(ctx, system, user, &responseFormat{Type: "json_object"}, scope)
 	if err != nil {
 		var httpErr *HTTPStatusError
-		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest {
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && isUnsupportedResponseFormatError(httpErr.Body) {
 			recordRetryMetric(scope, "response_format_400_fallback")
 			slog.Warn("LLM rejected response_format:json_object (HTTP 400), retrying without it")
 			return c.complete(ctx, system, user, nil, scope)
@@ -159,8 +159,9 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 
 	enableThinking := disableThinkingOptions(c.model)
 	reasoningSplit := supportsReasoningSplit(c.model)
+	requireThinkingDisabled := enableThinking != nil && isQwenModel(c.model)
 
-	result, err := c.doRequest(ctx, chatRequest{
+	result, err := c.doRequestWithTransientRetry(ctx, chatRequest{
 		Model:          c.model,
 		Messages:       messages,
 		Temperature:    c.temperature,
@@ -171,10 +172,13 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 	if err != nil {
 		// If 400 and thinking parameters were sent, retry without them (provider may not support them).
 		var httpErr *HTTPStatusError
-		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (enableThinking != nil || reasoningSplit != nil) {
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (enableThinking != nil || reasoningSplit != nil) && isUnsupportedThinkingParamError(httpErr.Body) {
+			if requireThinkingDisabled {
+				return result, err
+			}
 			recordRetryMetric(scope, "thinking_param_400_fallback")
 			slog.Warn("LLM rejected thinking parameters (HTTP 400), retrying without them", "model", c.model)
-			return c.doRequest(ctx, chatRequest{
+			return c.doRequestWithTransientRetry(ctx, chatRequest{
 				Model:          c.model,
 				Messages:       messages,
 				Temperature:    c.temperature,
@@ -189,6 +193,67 @@ func recordRetryMetric(scope CallScope, reason string) {
 	if scope.enabled() {
 		metrics.LLMRetryTotal.WithLabelValues(scope.Step, reason).Inc()
 	}
+}
+
+func (c *Client) doRequestWithTransientRetry(ctx context.Context, cr chatRequest, scope CallScope) (string, error) {
+	const maxAttempts = 3
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		result, err := c.doRequest(ctx, cr, scope)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if attempt == maxAttempts || !isTransientLLMError(err) || ctx.Err() != nil {
+			return result, err
+		}
+		recordRetryMetric(scope, "transient_error_retry")
+		delay := transientRetryDelay(attempt)
+		slog.Warn("LLM transient error, retrying", "model", c.model, "attempt", attempt, "delay_ms", delay.Milliseconds(), "err", err)
+		if sleepErr := sleepContext(ctx, delay); sleepErr != nil {
+			return "", sleepErr
+		}
+	}
+	return "", lastErr
+}
+
+func transientRetryDelay(attempt int) time.Duration {
+	switch attempt {
+	case 1:
+		return 250 * time.Millisecond
+	default:
+		return 750 * time.Millisecond
+	}
+}
+
+func sleepContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func isTransientLLMError(err error) bool {
+	var httpErr *HTTPStatusError
+	if errors.As(err, &httpErr) {
+		return httpErr.Code == http.StatusTooManyRequests || httpErr.Code >= http.StatusInternalServerError
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unexpected eof") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "server closed idle connection") ||
+		strings.Contains(msg, "tls handshake timeout") ||
+		strings.Contains(msg, "temporary failure")
 }
 
 // doRequest sends a single chat completion request and handles metrics/response parsing.
@@ -301,11 +366,15 @@ func (c *Client) DebugLLM() bool {
 }
 
 func disableThinkingOptions(model string) *bool {
-	if strings.Contains(strings.ToLower(model), "qwen") {
+	if isQwenModel(model) {
 		enableThinking := false
 		return &enableThinking
 	}
 	return nil
+}
+
+func isQwenModel(model string) bool {
+	return strings.Contains(strings.ToLower(model), "qwen")
 }
 
 func supportsReasoningSplit(model string) *bool {
@@ -314,6 +383,20 @@ func supportsReasoningSplit(model string) *bool {
 		return &reasoningSplit
 	}
 	return nil
+}
+
+func isUnsupportedResponseFormatError(body string) bool {
+	lower := strings.ToLower(body)
+	return strings.Contains(lower, "response_format") ||
+		strings.Contains(lower, "json_object") ||
+		(strings.Contains(lower, "unsupported") && strings.Contains(lower, "format"))
+}
+
+func isUnsupportedThinkingParamError(body string) bool {
+	lower := strings.ToLower(body)
+	return strings.Contains(lower, "enable_thinking") ||
+		strings.Contains(lower, "reasoning_split") ||
+		(strings.Contains(lower, "thinking") && (strings.Contains(lower, "unsupported") || strings.Contains(lower, "unknown")))
 }
 
 func StripMarkdownFences(s string) string {

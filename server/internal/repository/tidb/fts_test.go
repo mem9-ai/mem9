@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -93,6 +94,83 @@ func TestMemoryFTSSearch_PostFiltersAfterFTSTopK(t *testing.T) {
 	}
 	if results[1].Score == nil || *results[1].Score != 7.7 {
 		t.Fatalf("results[1].Score = %v, want 7.7", results[1].Score)
+	}
+}
+
+func TestMemoryFTSSearch_RetriesTransientCandidateQuery(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	db := newScriptedTestDB(t, []*queryExpectation{
+		{
+			mustContain: []string{
+				"SELECT id, fts_match_word('golang', content) AS fts_score",
+				"FROM memories",
+				"WHERE fts_match_word('golang', content)",
+			},
+			wantArgs: []any{1},
+			err:      errors.New("invalid connection"),
+		},
+		{
+			mustContain: []string{
+				"SELECT id, fts_match_word('golang', content) AS fts_score",
+				"FROM memories",
+				"WHERE fts_match_word('golang', content)",
+			},
+			wantArgs: []any{1},
+			rows: &scriptedRows{
+				columns: []string{"id", "fts_score"},
+				values: [][]driver.Value{
+					{"m-good", 8.8},
+				},
+			},
+		},
+		{
+			mustContain: []string{
+				"SELECT " + allColumns + " FROM memories",
+				"WHERE id IN (?) AND state = ? AND agent_id = ?",
+			},
+			wantArgs: []any{"m-good", "active", "agent-1"},
+			rows: &scriptedRows{
+				columns: memoryColumns(),
+				values: [][]driver.Value{
+					memoryRow("m-good", "match one", "agent-1", "session-1", "active", []byte(`[]`), now),
+				},
+			},
+		},
+	})
+	defer db.Close()
+
+	repo := NewMemoryRepo(db, "", true, "cluster-1")
+	results, err := repo.FTSSearch(context.Background(), "golang", domain.MemoryFilter{
+		State:   "active",
+		AgentID: "agent-1",
+	}, 1)
+	if err != nil {
+		t.Fatalf("FTSSearch: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "m-good" {
+		t.Fatalf("results = %#v, want one m-good", results)
+	}
+}
+
+func TestMemoryFTSSearch_DoesNotRetryContextDeadline(t *testing.T) {
+	db := newScriptedTestDB(t, []*queryExpectation{
+		{
+			mustContain: []string{
+				"SELECT id, fts_match_word('golang', content) AS fts_score",
+				"FROM memories",
+			},
+			wantArgs: []any{1},
+			err:      context.DeadlineExceeded,
+		},
+	})
+	defer db.Close()
+
+	repo := NewMemoryRepo(db, "", true, "cluster-1")
+	_, err := repo.FTSSearch(context.Background(), "golang", domain.MemoryFilter{
+		State: "active",
+	}, 1)
+	if err == nil {
+		t.Fatal("FTSSearch error = nil, want context deadline error")
 	}
 }
 
@@ -338,7 +416,7 @@ func normalizeDriverValue(v any) any {
 
 func memoryColumns() []string {
 	return []string{
-		"id", "content", "source", "tags", "metadata", "embedding", "memory_type", "agent_id",
+		"id", "content", "source", "tags", "metadata", "embedding", "content_hash", "memory_type", "agent_id",
 		"session_id", "state", "version", "updated_by", "created_at", "updated_at", "superseded_by",
 	}
 }
@@ -355,6 +433,7 @@ func memoryRow(id, content, agentID, sessionID, state string, tags []byte, ts ti
 		"chat",
 		tags,
 		[]byte(`{"k":"v"}`),
+		nil,
 		nil,
 		string(domain.TypeInsight),
 		agentID,

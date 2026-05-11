@@ -34,7 +34,7 @@ func NewMemoryRepo(db *sql.DB, autoModel string, ftsEnabled bool, clusterID stri
 
 func (r *MemoryRepo) FTSAvailable() bool { return r.ftsAvailable.Load() }
 
-const allColumns = `id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at, superseded_by`
+const allColumns = `id, content, source, tags, metadata, embedding, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at, superseded_by`
 
 func (r *MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
 	tagsJSON := marshalTags(m.Tags)
@@ -43,36 +43,48 @@ func (r *MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
 		memoryType = string(domain.TypePinned)
 	}
 	if r.autoModel != "" {
-		_, err := r.db.ExecContext(ctx,
-			`INSERT INTO memories (id, content, source, tags, metadata, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NOW(), NOW())`,
+		_, attempts, err := execContextWithRetry(ctx, r.db, r.clusterID, "create memory",
+			`INSERT INTO memories (id, content, source, tags, metadata, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NOW(), NOW())`,
 			m.ID, m.Content, nullString(m.Source),
-			tagsJSON, nullJSON(m.Metadata), memoryType, nullString(m.AgentID), nullString(m.SessionID),
+			tagsJSON, nullJSON(m.Metadata), nullString(m.ContentHash), memoryType, nullString(m.AgentID), nullString(m.SessionID),
 			m.Version, nullString(m.UpdatedBy),
 		)
 		if err != nil {
+			if attempts > 1 && isDuplicateKeyError(err) {
+				return nil
+			}
 			return fmt.Errorf("create memory: %w", err)
 		}
 		return nil
 	}
-	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO memories (id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NOW(), NOW())`,
+	_, attempts, err := execContextWithRetry(ctx, r.db, r.clusterID, "create memory",
+		`INSERT INTO memories (id, content, source, tags, metadata, embedding, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NOW(), NOW())`,
 		m.ID, m.Content, nullString(m.Source),
-		tagsJSON, nullJSON(m.Metadata), vecToString(m.Embedding), memoryType, nullString(m.AgentID), nullString(m.SessionID),
+		tagsJSON, nullJSON(m.Metadata), vecToString(m.Embedding), nullString(m.ContentHash), memoryType, nullString(m.AgentID), nullString(m.SessionID),
 		m.Version, nullString(m.UpdatedBy),
 	)
 	if err != nil {
+		if attempts > 1 && isDuplicateKeyError(err) {
+			return nil
+		}
 		return fmt.Errorf("create memory: %w", err)
 	}
 	return nil
 }
 
 func (r *MemoryRepo) GetByID(ctx context.Context, id string) (*domain.Memory, error) {
-	row := r.db.QueryRowContext(ctx,
-		`SELECT `+allColumns+` FROM memories WHERE id = ? AND state = 'active'`, id,
-	)
-	return scanMemory(row)
+	var memory *domain.Memory
+	err := queryRowScanWithRetry(ctx, r.clusterID, "get memory by id", func() error {
+		row := r.db.QueryRowContext(ctx,
+			`SELECT `+allColumns+` FROM memories WHERE id = ? AND state = 'active'`, id,
+		)
+		var scanErr error
+		memory, scanErr = scanMemory(row)
+		return scanErr
+	})
+	return memory, err
 }
 
 func (r *MemoryRepo) UpdateOptimistic(ctx context.Context, m *domain.Memory, expectedVersion int) error {
@@ -81,13 +93,13 @@ func (r *MemoryRepo) UpdateOptimistic(ctx context.Context, m *domain.Memory, exp
 	var query string
 	var args []any
 	if r.autoModel != "" {
-		query = `UPDATE memories SET content = ?, tags = ?, metadata = ?, version = version + 1, updated_by = ?, updated_at = NOW()
+		query = `UPDATE memories SET content = ?, tags = ?, metadata = ?, content_hash = ?, version = version + 1, updated_by = ?, updated_at = NOW()
 			 WHERE id = ?`
-		args = []any{m.Content, tagsJSON, nullJSON(m.Metadata), nullString(m.UpdatedBy), m.ID}
+		args = []any{m.Content, tagsJSON, nullJSON(m.Metadata), nullString(m.ContentHash), nullString(m.UpdatedBy), m.ID}
 	} else {
-		query = `UPDATE memories SET content = ?, tags = ?, metadata = ?, embedding = ?, version = version + 1, updated_by = ?, updated_at = NOW()
+		query = `UPDATE memories SET content = ?, tags = ?, metadata = ?, embedding = ?, content_hash = ?, version = version + 1, updated_by = ?, updated_at = NOW()
 			 WHERE id = ?`
-		args = []any{m.Content, tagsJSON, nullJSON(m.Metadata), vecToString(m.Embedding), nullString(m.UpdatedBy), m.ID}
+		args = []any{m.Content, tagsJSON, nullJSON(m.Metadata), vecToString(m.Embedding), nullString(m.ContentHash), nullString(m.UpdatedBy), m.ID}
 	}
 	if expectedVersion > 0 {
 		query += " AND version = ?"
@@ -204,18 +216,18 @@ func (r *MemoryRepo) ArchiveAndCreate(ctx context.Context, archiveID, superseded
 
 	if r.autoModel != "" {
 		_, err = tx.ExecContext(ctx,
-			`INSERT INTO memories (id, content, source, tags, metadata, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NOW(), NOW())`,
+			`INSERT INTO memories (id, content, source, tags, metadata, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NOW(), NOW())`,
 			newMem.ID, newMem.Content, nullString(newMem.Source),
-			tagsJSON, nullJSON(newMem.Metadata), memoryType, nullString(newMem.AgentID), nullString(newMem.SessionID),
+			tagsJSON, nullJSON(newMem.Metadata), nullString(newMem.ContentHash), memoryType, nullString(newMem.AgentID), nullString(newMem.SessionID),
 			newMem.Version, nullString(newMem.UpdatedBy),
 		)
 	} else {
 		_, err = tx.ExecContext(ctx,
-			`INSERT INTO memories (id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NOW(), NOW())`,
+			`INSERT INTO memories (id, content, source, tags, metadata, embedding, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NOW(), NOW())`,
 			newMem.ID, newMem.Content, nullString(newMem.Source),
-			tagsJSON, nullJSON(newMem.Metadata), vecToString(newMem.Embedding), memoryType, nullString(newMem.AgentID), nullString(newMem.SessionID),
+			tagsJSON, nullJSON(newMem.Metadata), vecToString(newMem.Embedding), nullString(newMem.ContentHash), memoryType, nullString(newMem.AgentID), nullString(newMem.SessionID),
 			newMem.Version, nullString(newMem.UpdatedBy),
 		)
 	}
@@ -246,7 +258,9 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 	// Count total matches.
 	var total int
 	countQuery := "SELECT COUNT(*) FROM memories WHERE " + where
-	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+	if err := queryRowScanWithRetry(ctx, r.clusterID, "list memories count", func() error {
+		return r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
+	}); err != nil {
 		slog.Error("list memories: count failed", "cluster_id", r.clusterID, "err", err)
 		return nil, 0, fmt.Errorf("count memories: %w", err)
 	}
@@ -268,7 +282,7 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 	copy(dataArgs, args)
 	dataArgs = append(dataArgs, limit, offset)
 
-	rows, err := r.db.QueryContext(ctx, dataQuery, dataArgs...)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "list memories query", dataQuery, dataArgs...)
 	if err != nil {
 		slog.Error("list memories: query failed", "cluster_id", r.clusterID, "err", err)
 		return nil, 0, fmt.Errorf("list memories: %w", err)
@@ -288,9 +302,11 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 
 func (r *MemoryRepo) Count(ctx context.Context) (int, error) {
 	var count int
-	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM memories WHERE state = 'active'`,
-	).Scan(&count)
+	err := queryRowScanWithRetry(ctx, r.clusterID, "count memories", func() error {
+		return r.db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM memories WHERE state = 'active'`,
+		).Scan(&count)
+	})
 	if err != nil {
 		slog.Error("count memories failed", "cluster_id", r.clusterID, "err", err)
 		return 0, fmt.Errorf("count memories: %w", err)
@@ -302,7 +318,7 @@ func (r *MemoryRepo) ListBootstrap(ctx context.Context, limit int) ([]domain.Mem
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	rows, err := r.db.QueryContext(ctx,
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "list bootstrap",
 		`SELECT `+allColumns+` FROM memories WHERE state = 'active' ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
@@ -332,11 +348,11 @@ func (r *MemoryRepo) BulkCreate(ctx context.Context, memories []*domain.Memory) 
 
 	var stmtSQL string
 	if r.autoModel != "" {
-		stmtSQL = `INSERT INTO memories (id, content, source, tags, metadata, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NOW(), NOW())`
-	} else {
-		stmtSQL = `INSERT INTO memories (id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
+		stmtSQL = `INSERT INTO memories (id, content, source, tags, metadata, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NOW(), NOW())`
+	} else {
+		stmtSQL = `INSERT INTO memories (id, content, source, tags, metadata, embedding, content_hash, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NOW(), NOW())`
 	}
 
 	stmt, err := tx.PrepareContext(ctx, stmtSQL)
@@ -355,13 +371,13 @@ func (r *MemoryRepo) BulkCreate(ctx context.Context, memories []*domain.Memory) 
 		if r.autoModel != "" {
 			_, execErr = stmt.ExecContext(ctx,
 				m.ID, m.Content, nullString(m.Source),
-				tagsJSON, nullJSON(m.Metadata), memoryType, nullString(m.AgentID), nullString(m.SessionID),
+				tagsJSON, nullJSON(m.Metadata), nullString(m.ContentHash), memoryType, nullString(m.AgentID), nullString(m.SessionID),
 				m.Version, nullString(m.UpdatedBy),
 			)
 		} else {
 			_, execErr = stmt.ExecContext(ctx,
 				m.ID, m.Content, nullString(m.Source),
-				tagsJSON, nullJSON(m.Metadata), vecToString(m.Embedding), memoryType, nullString(m.AgentID), nullString(m.SessionID),
+				tagsJSON, nullJSON(m.Metadata), vecToString(m.Embedding), nullString(m.ContentHash), memoryType, nullString(m.AgentID), nullString(m.SessionID),
 				m.Version, nullString(m.UpdatedBy),
 			)
 		}
@@ -402,7 +418,7 @@ func (r *MemoryRepo) VectorSearch(ctx context.Context, queryVec []float32, f dom
 	fullArgs = append(fullArgs, vecStr, limit)
 
 	start := time.Now()
-	rows, err := r.db.QueryContext(ctx, query, fullArgs...)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "memory vector search", query, fullArgs...)
 	if err != nil {
 		slog.ErrorContext(ctx, "vector search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 		return nil, fmt.Errorf("vector search: %w", err)
@@ -442,7 +458,7 @@ func (r *MemoryRepo) AutoVectorSearch(ctx context.Context, queryText string, f d
 	fullArgs = append(fullArgs, queryText, limit)
 
 	start := time.Now()
-	rows, err := r.db.QueryContext(ctx, query, fullArgs...)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "memory auto vector search", query, fullArgs...)
 	if err != nil {
 		slog.ErrorContext(ctx, "auto vector search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 		return nil, fmt.Errorf("auto vector search: cluster_id=%s: %w", r.clusterID, err)
@@ -477,7 +493,7 @@ func (r *MemoryRepo) KeywordSearch(ctx context.Context, query string, f domain.M
 	args = append(args, limit)
 
 	start := time.Now()
-	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "memory keyword search", sqlQuery, args...)
 	if err != nil {
 		slog.ErrorContext(ctx, "keyword search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 		return nil, fmt.Errorf("keyword search: %w", err)
@@ -572,7 +588,7 @@ func (r *MemoryRepo) fetchMemoryFTSCandidates(ctx context.Context, safeQ string,
 		ORDER BY fts_match_word('` + safeQ + `', content) DESC, id
 		LIMIT ?`
 
-	rows, err := r.db.QueryContext(ctx, sqlQuery, limit)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "memory fts candidates", sqlQuery, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -610,7 +626,7 @@ func (r *MemoryRepo) fetchFilteredFTSMemories(ctx context.Context, candidates []
 	sqlQuery := `SELECT ` + allColumns + ` FROM memories
 		WHERE id IN (` + strings.Join(placeholders, ",") + `) AND ` + where
 
-	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "memory fts filtered", sqlQuery, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -654,7 +670,7 @@ func (r *MemoryRepo) filteredFTSSearch(ctx context.Context, safeQ, where string,
 	fullArgs = append(fullArgs, args...)
 	fullArgs = append(fullArgs, limit)
 
-	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "memory fts filtered fallback", sqlQuery, fullArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -741,11 +757,11 @@ func (r *MemoryRepo) buildFilterConds(f domain.MemoryFilter) ([]string, []any) {
 // scanMemory scans a single row into a Memory.
 func scanMemory(row *sql.Row) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, contentHash, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON, embeddingStr []byte
 
 	err := row.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &contentHash, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy)
 	if err == sql.ErrNoRows {
 		return nil, domain.ErrNotFound
@@ -760,6 +776,7 @@ func scanMemory(row *sql.Row) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.ContentHash = contentHash.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive
@@ -774,11 +791,11 @@ func scanMemory(row *sql.Row) (*domain.Memory, error) {
 // scanMemoryRows scans from *sql.Rows (used by List and KeywordSearch).
 func scanMemoryRows(rows *sql.Rows) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, contentHash, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON, embeddingStr []byte
 
 	err := rows.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &contentHash, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy)
 	if err != nil {
 		return nil, fmt.Errorf("scan memory row: %w", err)
@@ -790,6 +807,7 @@ func scanMemoryRows(rows *sql.Rows) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.ContentHash = contentHash.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive
@@ -804,12 +822,12 @@ func scanMemoryRows(rows *sql.Rows) (*domain.Memory, error) {
 // scanMemoryRowsWithDistance scans a row that includes a trailing distance column (used by VectorSearch).
 func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, contentHash, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON, embeddingStr []byte
 	var distance float64
 
 	err := rows.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &contentHash, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy,
 		&distance)
 	if err != nil {
@@ -822,6 +840,7 @@ func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.ContentHash = contentHash.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive
@@ -839,12 +858,12 @@ func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 // scanMemoryRowsWithFTSScore scans a row that includes a trailing fts_score column (used by FTSSearch).
 func scanMemoryRowsWithFTSScore(rows *sql.Rows) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, contentHash, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON, embeddingStr []byte
 	var ftsScore float64
 
 	err := rows.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &contentHash, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy,
 		&ftsScore)
 	if err != nil {
@@ -857,6 +876,7 @@ func scanMemoryRowsWithFTSScore(rows *sql.Rows) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.ContentHash = contentHash.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive
@@ -903,6 +923,511 @@ func nullString(s string) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: s, Valid: true}
+}
+
+func (r *MemoryRepo) ListByContentHashes(ctx context.Context, agentID string, hashes []string) (map[string]domain.Memory, error) {
+	result := make(map[string]domain.Memory)
+	if len(hashes) == 0 {
+		return result, nil
+	}
+	seen := make(map[string]struct{}, len(hashes))
+	unique := make([]string, 0, len(hashes))
+	for _, hash := range hashes {
+		hash = strings.TrimSpace(hash)
+		if hash == "" {
+			continue
+		}
+		if _, ok := seen[hash]; ok {
+			continue
+		}
+		seen[hash] = struct{}{}
+		unique = append(unique, hash)
+	}
+	if len(unique) == 0 {
+		return result, nil
+	}
+	placeholders := make([]string, len(unique))
+	args := make([]any, 0, len(unique)+1)
+	for i, hash := range unique {
+		placeholders[i] = "?"
+		args = append(args, hash)
+	}
+	where := "state = 'active' AND content_hash IN (" + strings.Join(placeholders, ",") + ")"
+	if agentID != "" {
+		where += " AND agent_id = ?"
+		args = append(args, agentID)
+	} else {
+		where += " AND (agent_id IS NULL OR agent_id = '')"
+	}
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "list memories by content hashes", `SELECT `+allColumns+` FROM memories WHERE `+where, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list by content hashes: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		m, err := scanMemoryRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		if m.ContentHash != "" {
+			result[m.ContentHash] = *m
+		}
+	}
+	return result, rows.Err()
+}
+
+func (r *MemoryRepo) ReplaceMemoryEntities(ctx context.Context, agentID, memoryID string, entities []domain.MemoryEntity) error {
+	return withTransientDBRetry(ctx, r.clusterID, "replace memory entities", func() error {
+		return r.replaceMemoryEntitiesOnce(ctx, agentID, memoryID, entities)
+	})
+}
+
+func (r *MemoryRepo) replaceMemoryEntitiesOnce(ctx context.Context, agentID, memoryID string, entities []domain.MemoryEntity) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("replace memory entities begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM memory_entities WHERE memory_id = ?`, memoryID); err != nil {
+		return fmt.Errorf("delete memory entities: %w", err)
+	}
+	if len(entities) == 0 {
+		return tx.Commit()
+	}
+	var stmtSQL string
+	if r.autoModel != "" {
+		stmtSQL = `INSERT INTO memory_entities (agent_id, entity_key, canonical_entity_key, entity_text, entity_type, memory_id, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, NOW())
+			ON DUPLICATE KEY UPDATE canonical_entity_key = VALUES(canonical_entity_key), entity_text = VALUES(entity_text), entity_type = VALUES(entity_type)`
+	} else {
+		stmtSQL = `INSERT INTO memory_entities (agent_id, entity_key, canonical_entity_key, entity_text, entity_type, embedding, memory_id, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+			ON DUPLICATE KEY UPDATE canonical_entity_key = VALUES(canonical_entity_key), entity_text = VALUES(entity_text), entity_type = VALUES(entity_type), embedding = VALUES(embedding)`
+	}
+	stmt, err := tx.PrepareContext(ctx, stmtSQL)
+	if err != nil {
+		return fmt.Errorf("prepare memory entities: %w", err)
+	}
+	defer stmt.Close()
+	for _, entity := range entities {
+		if entity.Key == "" || entity.Text == "" {
+			continue
+		}
+		canonicalKey := entity.CanonicalKey
+		if canonicalKey == "" {
+			canonicalKey = entity.Key
+		}
+		var execErr error
+		if r.autoModel != "" {
+			_, execErr = stmt.ExecContext(ctx, agentID, entity.Key, canonicalKey, entity.Text, entity.Type, memoryID)
+		} else {
+			_, execErr = stmt.ExecContext(ctx, agentID, entity.Key, canonicalKey, entity.Text, entity.Type, vecToString(entity.Embedding), memoryID)
+		}
+		if execErr != nil {
+			return fmt.Errorf("insert memory entity: %w", execErr)
+		}
+		if err := r.upsertCanonicalEntity(ctx, tx, agentID, canonicalKey, entity); err != nil {
+			return err
+		}
+		if entity.Key != canonicalKey {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO memory_entity_aliases (agent_id, alias_key, entity_key, alias_text, created_at)
+				VALUES (?, ?, ?, ?, NOW())
+				ON DUPLICATE KEY UPDATE entity_key = VALUES(entity_key), alias_text = VALUES(alias_text)`,
+				agentID, entity.Key, canonicalKey, entity.Text); err != nil {
+				return fmt.Errorf("insert memory entity alias: %w", err)
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE canonical_memory_entities c
+		SET memory_count = (
+			SELECT COUNT(DISTINCT me.memory_id)
+			FROM memory_entities me
+			WHERE me.agent_id = c.agent_id AND me.canonical_entity_key = c.entity_key
+		)
+		WHERE c.agent_id = ?`, agentID); err != nil {
+		return fmt.Errorf("refresh canonical entity counts: %w", err)
+	}
+	return tx.Commit()
+}
+
+func (r *MemoryRepo) upsertCanonicalEntity(ctx context.Context, tx *sql.Tx, agentID, canonicalKey string, entity domain.MemoryEntity) error {
+	if canonicalKey == "" || entity.Text == "" {
+		return nil
+	}
+	entityType := entity.Type
+	if entityType == "alias" {
+		entityType = "entity"
+	}
+	if r.autoModel != "" {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO canonical_memory_entities (agent_id, entity_key, entity_text, entity_type, memory_count, created_at, updated_at)
+			VALUES (?, ?, ?, ?, 0, NOW(), NOW())
+			ON DUPLICATE KEY UPDATE entity_text = IF(entity_text = '' OR entity_type = 'alias', VALUES(entity_text), entity_text), entity_type = IF(entity_type = 'alias', VALUES(entity_type), entity_type), updated_at = NOW()`,
+			agentID, canonicalKey, entity.Text, entityType); err != nil {
+			return fmt.Errorf("upsert canonical entity: %w", err)
+		}
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO canonical_memory_entities (agent_id, entity_key, entity_text, entity_type, embedding, memory_count, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, 0, NOW(), NOW())
+		ON DUPLICATE KEY UPDATE entity_text = IF(entity_text = '' OR entity_type = 'alias', VALUES(entity_text), entity_text), entity_type = IF(entity_type = 'alias', VALUES(entity_type), entity_type), embedding = COALESCE(embedding, VALUES(embedding)), updated_at = NOW()`,
+		agentID, canonicalKey, entity.Text, entityType, vecToString(entity.Embedding)); err != nil {
+		return fmt.Errorf("upsert canonical entity: %w", err)
+	}
+	return nil
+}
+
+func (r *MemoryRepo) EntityMemoryVectorBoosts(ctx context.Context, f domain.MemoryFilter, queryText string, queryVec []float32, limit int) (map[string]float64, error) {
+	result := make(map[string]float64)
+	if limit <= 0 {
+		limit = 50
+	}
+	var distanceExpr string
+	var queryArg any
+	if r.autoModel != "" {
+		if strings.TrimSpace(queryText) == "" {
+			return result, nil
+		}
+		distanceExpr = "VEC_EMBED_COSINE_DISTANCE(me.embedding, ?)"
+		queryArg = queryText
+	} else {
+		queryArg = vecToString(queryVec)
+		if queryArg == nil {
+			return result, nil
+		}
+		distanceExpr = "VEC_COSINE_DISTANCE(me.embedding, ?)"
+	}
+
+	conds, args := r.entityFilterConds(f)
+	conds = append(conds, "me.embedding IS NOT NULL")
+
+	fullArgs := make([]any, 0, len(args)+2)
+	fullArgs = append(fullArgs, queryArg)
+	fullArgs = append(fullArgs, args...)
+	fullArgs = append(fullArgs, limit)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "entity memory vector boosts", `SELECT me.memory_id, MIN(`+distanceExpr+`) AS distance
+		FROM memory_entities me
+		JOIN memories m ON m.id = me.memory_id
+		WHERE `+strings.Join(conds, " AND ")+`
+		GROUP BY me.memory_id
+		ORDER BY distance ASC, me.memory_id
+		LIMIT ?`, fullArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("entity memory vector boosts: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var memoryID string
+		var distance float64
+		if err := rows.Scan(&memoryID, &distance); err != nil {
+			return nil, fmt.Errorf("scan entity memory vector boost: %w", err)
+		}
+		result[memoryID] = clampScore(1 - distance)
+	}
+	return result, rows.Err()
+}
+
+func (r *MemoryRepo) DeleteMemoryEntities(ctx context.Context, memoryID string) error {
+	_, _, err := execContextWithRetry(ctx, r.db, r.clusterID, "delete memory entities", `DELETE FROM memory_entities WHERE memory_id = ?`, memoryID)
+	if err != nil {
+		return fmt.Errorf("delete memory entities: %w", err)
+	}
+	return nil
+}
+
+func (r *MemoryRepo) EntityMemoryBoosts(ctx context.Context, agentID string, entityKeys []string, limit int) (map[string]float64, error) {
+	return r.EntityMemoryBoostsForFilter(ctx, domain.MemoryFilter{AgentID: agentID}, entityKeys, limit)
+}
+
+func (r *MemoryRepo) EntityMemoryBoostsForFilter(ctx context.Context, f domain.MemoryFilter, entityKeys []string, limit int) (map[string]float64, error) {
+	result := make(map[string]float64)
+	if len(entityKeys) == 0 {
+		return result, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	entityPlaceholders := make([]string, len(entityKeys))
+	args := make([]any, 0, len(entityKeys)+8)
+	for i, key := range entityKeys {
+		entityPlaceholders[i] = "?"
+		args = append(args, key)
+	}
+
+	aliasPlaceholders := make([]string, len(entityKeys))
+	for i, key := range entityKeys {
+		aliasPlaceholders[i] = "?"
+		args = append(args, key)
+	}
+	conds := []string{"(me.entity_key IN (" + strings.Join(entityPlaceholders, ",") + ") OR me.canonical_entity_key IN (SELECT mea.entity_key FROM memory_entity_aliases mea WHERE mea.agent_id = me.agent_id AND mea.alias_key IN (" + strings.Join(aliasPlaceholders, ",") + ")))"}
+	if f.State == "all" {
+		// no state filter
+	} else if f.State != "" {
+		conds = append(conds, "m.state = ?")
+		args = append(args, f.State)
+	} else {
+		conds = append(conds, "m.state = 'active'")
+	}
+	if f.MemoryType != "" {
+		types := strings.Split(f.MemoryType, ",")
+		if len(types) == 1 {
+			conds = append(conds, "m.memory_type = ?")
+			args = append(args, strings.TrimSpace(types[0]))
+		} else {
+			typePlaceholders := make([]string, len(types))
+			for i, t := range types {
+				typePlaceholders[i] = "?"
+				args = append(args, strings.TrimSpace(t))
+			}
+			conds = append(conds, "m.memory_type IN ("+strings.Join(typePlaceholders, ",")+")")
+		}
+	}
+	if f.AgentID != "" {
+		conds = append(conds, "m.agent_id = ?")
+		args = append(args, f.AgentID)
+	}
+	if f.SessionID != "" {
+		conds = append(conds, "m.session_id = ?")
+		args = append(args, f.SessionID)
+	}
+	if f.Source != "" {
+		conds = append(conds, "m.source = ?")
+		args = append(args, f.Source)
+	}
+	for _, tag := range f.Tags {
+		tagJSON, err := json.Marshal(tag)
+		if err != nil {
+			continue
+		}
+		conds = append(conds, "JSON_CONTAINS(m.tags, ?)")
+		args = append(args, string(tagJSON))
+	}
+
+	args = append(args, limit)
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "entity memory boosts", `SELECT me.memory_id, COUNT(*) AS matches
+		FROM memory_entities me
+		JOIN memories m ON m.id = me.memory_id
+		WHERE `+strings.Join(conds, " AND ")+`
+		GROUP BY me.memory_id
+		ORDER BY matches DESC, me.memory_id
+		LIMIT ?`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("entity memory boosts: %w", err)
+	}
+	defer rows.Close()
+	denom := float64(len(entityKeys))
+	if denom < 1 {
+		denom = 1
+	}
+	for rows.Next() {
+		var memoryID string
+		var matches int
+		if err := rows.Scan(&memoryID, &matches); err != nil {
+			return nil, fmt.Errorf("scan entity memory boost: %w", err)
+		}
+		result[memoryID] = float64(matches) / denom
+	}
+	return result, rows.Err()
+}
+
+func (r *MemoryRepo) entityFilterConds(f domain.MemoryFilter) ([]string, []any) {
+	conds := []string{}
+	args := []any{}
+	if f.State == "all" {
+		// no state filter
+	} else if f.State != "" {
+		conds = append(conds, "m.state = ?")
+		args = append(args, f.State)
+	} else {
+		conds = append(conds, "m.state = 'active'")
+	}
+	if f.MemoryType != "" {
+		types := strings.Split(f.MemoryType, ",")
+		if len(types) == 1 {
+			conds = append(conds, "m.memory_type = ?")
+			args = append(args, strings.TrimSpace(types[0]))
+		} else {
+			typePlaceholders := make([]string, len(types))
+			for i, t := range types {
+				typePlaceholders[i] = "?"
+				args = append(args, strings.TrimSpace(t))
+			}
+			conds = append(conds, "m.memory_type IN ("+strings.Join(typePlaceholders, ",")+")")
+		}
+	}
+	if f.AgentID != "" {
+		conds = append(conds, "m.agent_id = ?")
+		args = append(args, f.AgentID)
+	}
+	if f.SessionID != "" {
+		conds = append(conds, "m.session_id = ?")
+		args = append(args, f.SessionID)
+	}
+	if f.Source != "" {
+		conds = append(conds, "m.source = ?")
+		args = append(args, f.Source)
+	}
+	for _, tag := range f.Tags {
+		tagJSON, err := json.Marshal(tag)
+		if err != nil {
+			continue
+		}
+		conds = append(conds, "JSON_CONTAINS(m.tags, ?)")
+		args = append(args, string(tagJSON))
+	}
+	if len(conds) == 0 {
+		conds = append(conds, "1=1")
+	}
+	return conds, args
+}
+
+func (r *MemoryRepo) ListUnembeddedMemoryEntities(ctx context.Context, limit int) ([]domain.MemoryEntityBackfillRow, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := queryContextWithRetry(ctx, r.db, r.clusterID, "list unembedded memory entities", `SELECT agent_id, entity_key, memory_id, entity_text
+		FROM memory_entities
+		WHERE embedding IS NULL
+		ORDER BY created_at ASC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list unembedded memory entities: %w", err)
+	}
+	defer rows.Close()
+	var out []domain.MemoryEntityBackfillRow
+	for rows.Next() {
+		var row domain.MemoryEntityBackfillRow
+		if err := rows.Scan(&row.AgentID, &row.Key, &row.MemoryID, &row.Text); err != nil {
+			return nil, fmt.Errorf("scan unembedded memory entity: %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *MemoryRepo) UpdateMemoryEntityEmbedding(ctx context.Context, agentID, entityKey, memoryID string, embedding []float32) error {
+	if r.autoModel != "" || len(embedding) == 0 {
+		return nil
+	}
+	_, _, err := execContextWithRetry(ctx, r.db, r.clusterID, "update memory entity embedding", `UPDATE memory_entities
+		SET embedding = ?
+		WHERE agent_id = ? AND entity_key = ? AND memory_id = ?`,
+		vecToString(embedding), agentID, entityKey, memoryID)
+	if err != nil {
+		return fmt.Errorf("update memory entity embedding: %w", err)
+	}
+	_, _, err = execContextWithRetry(ctx, r.db, r.clusterID, "update canonical entity embedding", `UPDATE canonical_memory_entities
+		SET embedding = COALESCE(embedding, ?), updated_at = NOW()
+		WHERE agent_id = ? AND entity_key IN (
+			SELECT canonical_entity_key FROM memory_entities WHERE agent_id = ? AND entity_key = ? AND memory_id = ?
+		)`, vecToString(embedding), agentID, agentID, entityKey, memoryID)
+	if err != nil {
+		return fmt.Errorf("update canonical entity embedding: %w", err)
+	}
+	return nil
+}
+
+func (r *MemoryRepo) ReplaceMemoryRelationships(ctx context.Context, agentID, memoryID string, relationships []domain.MemoryRelationship) error {
+	return withTransientDBRetry(ctx, r.clusterID, "replace memory relationships", func() error {
+		tx, err := r.db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("replace memory relationships begin tx: %w", err)
+		}
+		defer tx.Rollback()
+		if _, err := tx.ExecContext(ctx, `DELETE FROM memory_relationships WHERE memory_id = ?`, memoryID); err != nil {
+			return fmt.Errorf("delete memory relationships: %w", err)
+		}
+		if len(relationships) == 0 {
+			return tx.Commit()
+		}
+		stmt, err := tx.PrepareContext(ctx, `INSERT INTO memory_relationships (agent_id, source_entity_key, target_entity_key, relationship_type, memory_id, created_at)
+			VALUES (?, ?, ?, ?, ?, NOW())
+			ON DUPLICATE KEY UPDATE relationship_type = VALUES(relationship_type)`)
+		if err != nil {
+			return fmt.Errorf("prepare memory relationships: %w", err)
+		}
+		defer stmt.Close()
+		for _, rel := range relationships {
+			if rel.SourceEntityKey == "" || rel.TargetEntityKey == "" || rel.SourceEntityKey == rel.TargetEntityKey {
+				continue
+			}
+			relAgentID := rel.AgentID
+			if relAgentID == "" {
+				relAgentID = agentID
+			}
+			relType := strings.TrimSpace(rel.RelationshipType)
+			if relType == "" {
+				relType = "related"
+			}
+			if _, err := stmt.ExecContext(ctx, relAgentID, rel.SourceEntityKey, rel.TargetEntityKey, relType, memoryID); err != nil {
+				return fmt.Errorf("insert memory relationship: %w", err)
+			}
+		}
+		return tx.Commit()
+	})
+}
+
+func (r *MemoryRepo) DeleteMemoryRelationships(ctx context.Context, memoryID string) error {
+	_, _, err := execContextWithRetry(ctx, r.db, r.clusterID, "delete memory relationships", `DELETE FROM memory_relationships WHERE memory_id = ?`, memoryID)
+	if err != nil {
+		return fmt.Errorf("delete memory relationships: %w", err)
+	}
+	return nil
+}
+
+func (r *MemoryRepo) CleanupEntityStore(ctx context.Context) (int64, error) {
+	var total int64
+	if _, _, err := execContextWithRetry(ctx, r.db, r.clusterID, "rebuild canonical entities", `INSERT INTO canonical_memory_entities (agent_id, entity_key, entity_text, entity_type, memory_count, created_at, updated_at)
+		SELECT agent_id, COALESCE(NULLIF(canonical_entity_key, ''), entity_key), MIN(entity_text), MIN(entity_type), COUNT(DISTINCT memory_id), NOW(), NOW()
+		FROM memory_entities
+		GROUP BY agent_id, COALESCE(NULLIF(canonical_entity_key, ''), entity_key)
+		ON DUPLICATE KEY UPDATE memory_count = VALUES(memory_count), updated_at = NOW()`); err != nil {
+		return total, fmt.Errorf("rebuild canonical entities: %w", err)
+	}
+	for _, stmt := range []string{
+		`DELETE me FROM memory_entities me LEFT JOIN memories m ON m.id = me.memory_id WHERE m.id IS NULL OR m.state = 'deleted'`,
+		`DELETE mr FROM memory_relationships mr LEFT JOIN memories m ON m.id = mr.memory_id WHERE m.id IS NULL OR m.state = 'deleted'`,
+		`DELETE mea FROM memory_entity_aliases mea LEFT JOIN memory_entities me ON me.agent_id = mea.agent_id AND me.canonical_entity_key = mea.entity_key WHERE me.memory_id IS NULL`,
+		`DELETE c FROM canonical_memory_entities c LEFT JOIN memory_entities me ON me.agent_id = c.agent_id AND me.canonical_entity_key = c.entity_key WHERE me.memory_id IS NULL`,
+	} {
+		res, _, err := execContextWithRetry(ctx, r.db, r.clusterID, "cleanup entity store", stmt)
+		if err != nil {
+			return total, fmt.Errorf("cleanup entity store: %w", err)
+		}
+		if n, err := res.RowsAffected(); err == nil {
+			total += n
+		}
+	}
+	return total, nil
+}
+
+func (r *MemoryRepo) EnsureMemoryEntityVectorIndex(ctx context.Context) error {
+	if r.autoModel == "" {
+		return nil
+	}
+	if _, _, err := execContextWithRetry(ctx, r.db, r.clusterID, "ensure memory entity vector index",
+		`ALTER TABLE memory_entities ADD VECTOR INDEX idx_memory_entities_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !isIndexExistsError(err) {
+		return fmt.Errorf("ensure memory entity vector index: %w", err)
+	}
+	if _, _, err := execContextWithRetry(ctx, r.db, r.clusterID, "ensure canonical entity vector index",
+		`ALTER TABLE canonical_memory_entities ADD VECTOR INDEX idx_canonical_memory_entities_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !isIndexExistsError(err) {
+		return fmt.Errorf("ensure canonical entity vector index: %w", err)
+	}
+	return nil
+}
+
+func clampScore(score float64) float64 {
+	if score < 0 {
+		return 0
+	}
+	if score > 1 {
+		return 1
+	}
+	return score
+}
+
+func isIndexExistsError(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	return errors.As(err, &mysqlErr) && mysqlErr.Number == 1061
 }
 
 // nullJSON returns nil (NULL) for empty/nil JSON, otherwise the raw bytes.
@@ -959,16 +1484,18 @@ func (r *MemoryRepo) NearDupSearch(ctx context.Context, queryText string) (strin
 	}
 	var id string
 	var dist float64
-	err := r.db.QueryRowContext(ctx,
-		`SELECT id, VEC_EMBED_COSINE_DISTANCE(embedding, ?) AS dist
-		 FROM memories
-		 WHERE state = 'active'
-		   AND memory_type IN ('insight', 'pinned')
-		   AND embedding IS NOT NULL
-		 ORDER BY VEC_EMBED_COSINE_DISTANCE(embedding, ?)
-		 LIMIT 1`,
-		queryText, queryText,
-	).Scan(&id, &dist)
+	err := queryRowScanWithRetry(ctx, r.clusterID, "near dup search", func() error {
+		return r.db.QueryRowContext(ctx,
+			`SELECT id, VEC_EMBED_COSINE_DISTANCE(embedding, ?) AS dist
+			 FROM memories
+			 WHERE state = 'active'
+			   AND memory_type IN ('insight', 'pinned')
+			   AND embedding IS NOT NULL
+			 ORDER BY VEC_EMBED_COSINE_DISTANCE(embedding, ?)
+			 LIMIT 1`,
+			queryText, queryText,
+		).Scan(&id, &dist)
+	})
 	if err == sql.ErrNoRows {
 		return "", 0, nil
 	}
@@ -979,11 +1506,13 @@ func (r *MemoryRepo) NearDupSearch(ctx context.Context, queryText string) (strin
 }
 
 func (r *MemoryRepo) CountStats(ctx context.Context) (total int64, last7d int64, err error) {
-	row := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*), COUNT(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 1 END)
-		 FROM memories WHERE state = 'active'`,
-	)
-	if err = row.Scan(&total, &last7d); err != nil {
+	if err = queryRowScanWithRetry(ctx, r.clusterID, "count memory stats", func() error {
+		row := r.db.QueryRowContext(ctx,
+			`SELECT COUNT(*), COUNT(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 1 END)
+			 FROM memories WHERE state = 'active'`,
+		)
+		return row.Scan(&total, &last7d)
+	}); err != nil {
 		return 0, 0, fmt.Errorf("count stats: %w", err)
 	}
 	return total, last7d, nil

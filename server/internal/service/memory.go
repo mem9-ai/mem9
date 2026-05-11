@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,6 +37,19 @@ const (
 	// threshold the query likely has no strong match (e.g. adversarial), so
 	// second-hop is skipped to avoid injecting noise.
 	secondHopGateScore = 0.5
+
+	recallPrimaryBranchTimeout = 20 * time.Second
+	recallSecondHopTimeout     = 8 * time.Second
+	recallAdjacentTurnTimeout  = 5 * time.Second
+	recallEntityBoostTimeout   = 2 * time.Second
+	recallLinkedMemoryTimeout  = 2 * time.Second
+
+	linkedRecallSeedLimit = 20
+	linkedRecallMaxAdds   = 10
+	linkedRecallWeight    = 0.85
+
+	mem0SemanticMinScore = 0.10
+	mem0EntityBoostMax   = 0.50
 )
 
 type MemoryService struct {
@@ -42,6 +57,26 @@ type MemoryService struct {
 	embedder  *embed.Embedder
 	autoModel string
 	ingest    *IngestService
+}
+
+type MemoryCreateOptions struct {
+	ObservationDate string
+}
+
+func observationDateFromMetadata(metadata json.RawMessage) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(metadata, &payload); err != nil {
+		return ""
+	}
+	for _, key := range []string{"observation_date", "observed_at", "timestamp", "created_at", "date"} {
+		if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, embedder *embed.Embedder, autoModel string, ingestMode IngestMode) *MemoryService {
@@ -54,6 +89,10 @@ func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, emb
 }
 
 func (s *MemoryService) Create(ctx context.Context, agentID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, int, error) {
+	return s.CreateWithOptions(ctx, agentID, content, tags, metadata, MemoryCreateOptions{})
+}
+
+func (s *MemoryService) CreateWithOptions(ctx context.Context, agentID, content string, tags []string, metadata json.RawMessage, opts MemoryCreateOptions) (*domain.Memory, int, error) {
 	if err := validateMemoryInput(content, tags); err != nil {
 		return nil, 0, err
 	}
@@ -76,20 +115,22 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 		}
 
 		now := time.Now()
+		contentHash := memoryContentHash(content)
 		mem := &domain.Memory{
-			ID:         uuid.New().String(),
-			Content:    content,
-			Source:     agentID,
-			Tags:       tags,
-			Metadata:   metadata,
-			Embedding:  embedding,
-			MemoryType: domain.TypeInsight,
-			AgentID:    agentID,
-			State:      domain.StateActive,
-			Version:    1,
-			UpdatedBy:  agentID,
-			CreatedAt:  now,
-			UpdatedAt:  now,
+			ID:          uuid.New().String(),
+			Content:     content,
+			Source:      agentID,
+			Tags:        tags,
+			Metadata:    metadata,
+			Embedding:   embedding,
+			ContentHash: contentHash,
+			MemoryType:  domain.TypeInsight,
+			AgentID:     agentID,
+			State:       domain.StateActive,
+			Version:     1,
+			UpdatedBy:   agentID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
 		}
 		writeStart := time.Now()
 		err := s.memories.Create(ctx, mem)
@@ -97,10 +138,15 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 		if err != nil {
 			return nil, 0, fmt.Errorf("create raw memory: %w", err)
 		}
+		replaceMemoryEntityLinks(ctx, s.memories, s.embedder, s.autoModel, agentID, mem.ID, mem.Content)
 		return mem, 1, nil
 	}
 
-	result, err := s.ingest.ReconcileContent(ctx, agentID, agentID, "", []string{content})
+	observationDate := strings.TrimSpace(opts.ObservationDate)
+	if observationDate == "" {
+		observationDate = observationDateFromMetadata(metadata)
+	}
+	result, err := s.ingest.ReconcileContentWithContext(ctx, agentID, agentID, "", []string{content}, ExtractionContext{ObservationDate: observationDate})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -123,10 +169,11 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 			mem.Tags = tags
 		}
 		if len(metadata) > 0 {
-			mem.Metadata = metadata
+			mem.Metadata = mergeJSONMetadata(mem.Metadata, metadata)
 		}
 		if len(tags) > 0 || len(metadata) > 0 {
 			if err := s.memories.UpdateOptimistic(ctx, mem, 0); err == nil {
+				replaceMemoryEntityLinks(ctx, s.memories, s.embedder, s.autoModel, mem.AgentID, mem.ID, mem.Content)
 				patchWrites++
 			}
 		}
@@ -171,11 +218,9 @@ func (s *MemoryService) Search(ctx context.Context, filter domain.MemoryFilter) 
 		if err != nil {
 			return nil, 0, err
 		}
-		return finalizeSearchResults(mems, filter.Query), total, nil
+		return FinalizeSearchResults(mems, filter.Query), total, nil
 	}
 	searchFilter := filter
-	searchFilter.SessionID = ""
-	searchFilter.Source = ""
 
 	slog.Info("memory search", "query_len", len(filter.Query), "auto_model", s.autoModel, "fts", s.memories.FTSAvailable())
 	if s.autoModel != "" {
@@ -203,22 +248,81 @@ func (s *MemoryService) SearchCandidates(
 	}
 
 	searchFilter := filter
-	searchFilter.SessionID = ""
-	searchFilter.Source = ""
 
+	var (
+		candidates []RecallCandidate
+		err        error
+	)
 	if s.autoModel != "" {
-		return s.autoHybridCandidates(ctx, searchFilter, sourcePool, opts)
+		candidates, err = s.autoHybridCandidates(ctx, searchFilter, sourcePool, opts)
+	} else if s.embedder != nil {
+		candidates, err = s.hybridCandidates(ctx, searchFilter, sourcePool, opts)
+	} else if s.memories.FTSAvailable() {
+		candidates, err = s.ftsOnlyCandidates(ctx, searchFilter, sourcePool, opts)
+	} else {
+		candidates, err = s.keywordOnlyCandidates(ctx, searchFilter, sourcePool, opts)
 	}
-	if s.embedder != nil {
-		return s.hybridCandidates(ctx, searchFilter, sourcePool, opts)
+	if err != nil {
+		return nil, err
 	}
-	if s.memories.FTSAvailable() {
-		return s.ftsOnlyCandidates(ctx, searchFilter, sourcePool, opts)
-	}
-	return s.keywordOnlyCandidates(ctx, searchFilter, sourcePool, opts)
+	candidates = s.expandLinkedMemoryCandidates(ctx, searchFilter, sourcePool, candidates)
+	candidates = s.applyEntityBoosts(ctx, searchFilter, candidates)
+	return applyLocalReranking(applyFactProfileScoring(searchFilter, candidates)), nil
 }
 
 const rrfK = 60.0
+
+func mem0InternalFetchLimit(limit int) int {
+	if limit <= 0 {
+		limit = 10
+	}
+	return maxInt(limit*4, 60)
+}
+
+func mem0QueryTermCount(query string) int {
+	lemmatized := lemmatizeForBM25(query)
+	return len(strings.FieldsFunc(strings.ToLower(lemmatized), func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+	}))
+}
+
+func mem0BM25Params(query string) (float64, float64) {
+	terms := mem0QueryTermCount(query)
+	switch {
+	case terms <= 3:
+		return 5.0, 0.7
+	case terms <= 6:
+		return 7.0, 0.6
+	case terms <= 9:
+		return 9.0, 0.5
+	case terms <= 15:
+		return 10.0, 0.5
+	default:
+		return 12.0, 0.5
+	}
+}
+
+func mem0NormalizeBM25(query string, raw float64) float64 {
+	midpoint, steepness := mem0BM25Params(query)
+	return 1.0 / (1.0 + math.Exp(-steepness*(raw-midpoint)))
+}
+
+func memoryScore(m domain.Memory) float64 {
+	if m.Score == nil {
+		return 0
+	}
+	return *m.Score
+}
+
+func mem0SemanticThreshold(filter domain.MemoryFilter) float64 {
+	if filter.MinScore < 0 {
+		return -1
+	}
+	if filter.MinScore > 0 {
+		return filter.MinScore
+	}
+	return mem0SemanticMinScore
+}
 
 func rrfMerge(ftsResults, vecResults []domain.Memory) map[string]float64 {
 	scores := make(map[string]float64, len(ftsResults)+len(vecResults))
@@ -233,6 +337,210 @@ func rrfMerge(ftsResults, vecResults []domain.Memory) map[string]float64 {
 
 func (s *MemoryService) paginate(results []domain.Memory, offset, limit int) ([]domain.Memory, int) {
 	return paginateResults(results, offset, limit)
+}
+
+func (s *MemoryService) BackfillEntityEmbeddings(ctx context.Context, limit int) (int, error) {
+	if s.autoModel != "" || s.embedder == nil {
+		return 0, nil
+	}
+	maintenanceRepo, ok := s.memories.(repository.MemoryEntityMaintenanceRepo)
+	if !ok {
+		return 0, nil
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := maintenanceRepo.ListUnembeddedMemoryEntities(ctx, limit)
+	if err != nil {
+		return 0, err
+	}
+	var updated int
+	cache := map[string][]float32{}
+	for _, row := range rows {
+		text := strings.TrimSpace(row.Text)
+		if text == "" {
+			continue
+		}
+		vec, ok := cache[text]
+		if !ok {
+			var embedErr error
+			vec, embedErr = s.embedder.Embed(ctx, text)
+			if embedErr != nil {
+				slog.Warn("entity backfill embedding failed", "entity", text, "err", embedErr)
+				continue
+			}
+			cache[text] = vec
+		}
+		if err := maintenanceRepo.UpdateMemoryEntityEmbedding(ctx, row.AgentID, row.Key, row.MemoryID, vec); err != nil {
+			return updated, err
+		}
+		updated++
+	}
+	return updated, nil
+}
+
+func (s *MemoryService) CleanupEntityStore(ctx context.Context) (int64, error) {
+	maintenanceRepo, ok := s.memories.(repository.MemoryEntityMaintenanceRepo)
+	if !ok {
+		return 0, nil
+	}
+	return maintenanceRepo.CleanupEntityStore(ctx)
+}
+
+func (s *MemoryService) EnsureEntityVectorIndex(ctx context.Context) error {
+	maintenanceRepo, ok := s.memories.(repository.MemoryEntityMaintenanceRepo)
+	if !ok {
+		return nil
+	}
+	return maintenanceRepo.EnsureMemoryEntityVectorIndex(ctx)
+}
+
+func (s *MemoryService) entityBoostsForFilter(ctx context.Context, filter domain.MemoryFilter, entityKeys []string, limit int) (map[string]float64, error) {
+	entityRepo, ok := s.memories.(repository.MemoryEntityRepo)
+	if !ok || len(entityKeys) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = entityRecallBoostMaxMatches
+	}
+	if filterRepo, ok := s.memories.(repository.MemoryEntityFilterRepo); ok {
+		return filterRepo.EntityMemoryBoostsForFilter(ctx, filter, entityKeys, limit)
+	}
+	return entityRepo.EntityMemoryBoosts(ctx, filter.AgentID, entityKeys, limit)
+}
+
+func (s *MemoryService) combinedEntityBoostsForFilter(ctx context.Context, filter domain.MemoryFilter, entityKeys []string, limit int) (map[string]float64, error) {
+	boosts, err := s.entityBoostsForFilter(ctx, filter, entityKeys, limit)
+	if err != nil {
+		return nil, err
+	}
+	if boosts == nil {
+		boosts = map[string]float64{}
+	}
+	vectorRepo, ok := s.memories.(repository.MemoryEntityVectorRepo)
+	if !ok || strings.TrimSpace(filter.Query) == "" {
+		return boosts, nil
+	}
+	var queryVec []float32
+	if s.autoModel == "" {
+		if s.embedder == nil {
+			return boosts, nil
+		}
+		vec, embedErr := s.embedder.Embed(ctx, filter.Query)
+		if embedErr != nil {
+			slog.Warn("embed entity query failed", "err", embedErr)
+			return boosts, nil
+		}
+		queryVec = vec
+	}
+	vectorBoosts, err := vectorRepo.EntityMemoryVectorBoosts(ctx, filter, filter.Query, queryVec, limit)
+	if err != nil {
+		slog.Warn("entity vector scoring failed", "err", err)
+		return boosts, nil
+	}
+	for id, boost := range vectorBoosts {
+		if boost < entityVectorMinScore {
+			continue
+		}
+		if boost > boosts[id] {
+			boosts[id] = boost
+		}
+	}
+	return boosts, nil
+}
+
+func (s *MemoryService) mem0RankMemories(ctx context.Context, filter domain.MemoryFilter, kwResults, vecResults []domain.Memory, limit int) ([]domain.Memory, map[string]float64) {
+	semanticThreshold := mem0SemanticThreshold(filter)
+	semanticScores := make(map[string]float64, len(vecResults))
+	mems := make(map[string]domain.Memory, len(vecResults)+len(kwResults))
+	for _, m := range vecResults {
+		score := memoryScore(m)
+		if semanticThreshold >= 0 && score < semanticThreshold {
+			continue
+		}
+		if prev, ok := semanticScores[m.ID]; !ok || score > prev {
+			semanticScores[m.ID] = score
+			mems[m.ID] = m
+		}
+	}
+
+	keywordScores := make(map[string]float64, len(kwResults))
+	for rank, m := range kwResults {
+		raw := memoryScore(m)
+		rankSignal := 1.0 / float64(rank+1)
+		if raw <= 0 {
+			raw = 1.0 / (rrfK + float64(rank+1))
+		}
+		normalized := mem0NormalizeBM25(filter.Query, raw)
+		if raw <= 1 {
+			normalized = maxFloat(normalized, rankSignal)
+		}
+		keywordScores[m.ID] = maxFloat(keywordScores[m.ID], normalized)
+	}
+
+	entityKeys := expandedEntityKeys(extractMemoryEntities(filter.Query))
+	boostLimit := maxInt(limit*6, entityRecallBoostMaxMatches)
+	boostCtx, cancel := withRecallTimeout(ctx, recallEntityBoostTimeout)
+	entityBoosts, err := s.combinedEntityBoostsForFilter(boostCtx, filter, entityKeys, boostLimit)
+	cancel()
+	if err != nil {
+		slog.Warn("entity memory scoring failed", "err", err)
+		entityBoosts = nil
+	}
+
+	hasKeyword := len(keywordScores) > 0
+	hasEntity := len(entityBoosts) > 0
+	scores := make(map[string]float64, len(mems))
+	for id, m := range mems {
+		semantic := semanticScores[id]
+		keyword := keywordScores[id]
+		entity := clampFloat(entityBoosts[id], 0, 1)
+		maxPossible := 1.0
+		if hasKeyword {
+			maxPossible += 1.0
+		}
+		if hasEntity {
+			maxPossible += mem0EntityBoostMax
+		}
+		score := (semantic + keyword + mem0EntityBoostMax*entity) / maxPossible
+		score = clampFloat(score, 0, 1)
+		if m.MemoryType == domain.TypePinned {
+			score *= 1.5
+		}
+		scores[id] = score
+	}
+	return sortByScore(mems, scores), scores
+}
+
+func mem0RecallCandidates(sourcePool RecallSourcePool, ranked []domain.Memory, scores map[string]float64, kwResults, vecResults []domain.Memory) []RecallCandidate {
+	inKeyword := make(map[string]struct{}, len(kwResults))
+	for _, m := range kwResults {
+		inKeyword[m.ID] = struct{}{}
+	}
+	vectorSimilarity := make(map[string]float64, len(vecResults))
+	for _, m := range vecResults {
+		if m.Score != nil {
+			vectorSimilarity[m.ID] = *m.Score
+		}
+	}
+	candidates := make([]RecallCandidate, 0, len(ranked))
+	for rank, m := range ranked {
+		candidate := RecallCandidate{
+			Memory:     m,
+			SourcePool: sourcePool,
+			RRFScore:   scores[m.ID],
+			RRFRank:    rank + 1,
+		}
+		if _, ok := inKeyword[m.ID]; ok {
+			candidate.InKeyword = true
+		}
+		if sim, ok := vectorSimilarity[m.ID]; ok {
+			candidate.InVector = true
+			candidate.VectorSimilarity = sim
+		}
+		candidates = append(candidates, candidate)
+	}
+	return candidates
 }
 
 func paginateResults(results []domain.Memory, offset, limit int) ([]domain.Memory, int) {
@@ -256,16 +564,20 @@ func (s *MemoryService) ftsOnlySearch(ctx context.Context, filter domain.MemoryF
 	if offset < 0 {
 		offset = 0
 	}
-	fetchLimit := limit * 3
+	fetchLimit := mem0InternalFetchLimit(limit)
+	textFilter := filter
+	if lemmatized := strings.TrimSpace(lemmatizeForBM25(filter.Query)); lemmatized != "" {
+		textFilter.Query = lemmatized
+	}
 
-	ftsResults, err := s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
+	ftsResults, err := s.memories.FTSSearch(ctx, textFilter.Query, textFilter, fetchLimit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("FTS search: %w", err)
 	}
 	slog.Info("fts search completed", "query_len", len(filter.Query), "results", len(ftsResults))
 
 	page, total := s.paginate(ftsResults, offset, limit)
-	return finalizeSearchResults(page, filter.Query), total, nil
+	return FinalizeSearchResults(page, filter.Query), total, nil
 }
 
 func observeRecallEmbeddingRequest(embedder *embed.Embedder, err error) {
@@ -305,22 +617,213 @@ func (s *MemoryService) keywordOnlySearch(ctx context.Context, filter domain.Mem
 		offset = 0
 	}
 	fetchLimit := limit * 3
+	textFilter := filter
+	if lemmatized := strings.TrimSpace(lemmatizeForBM25(filter.Query)); lemmatized != "" {
+		textFilter.Query = lemmatized
+	}
 
-	kwResults, err := s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
+	kwResults, err := s.memories.KeywordSearch(ctx, textFilter.Query, textFilter, fetchLimit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("keyword search: %w", err)
 	}
 	slog.Info("keyword search completed (FTS unavailable)", "query_len", len(filter.Query), "results", len(kwResults))
 
 	page, total := s.paginate(kwResults, offset, limit)
-	return finalizeSearchResults(page, filter.Query), total, nil
+	return FinalizeSearchResults(page, filter.Query), total, nil
+}
+
+func logRecallBranchFailure(ctx context.Context, scope, branch string, err error) {
+	if err == nil {
+		return
+	}
+	slog.WarnContext(ctx, "hybrid recall branch failed; continuing with available branch",
+		"scope", scope,
+		"branch", branch,
+		"err", err,
+	)
+}
+
+func joinedRecallBranchError(scope string, errs ...error) error {
+	err := errors.Join(errs...)
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s recall branches failed: %w", scope, err)
+}
+
+func withRecallTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+func (s *MemoryService) textSearch(ctx context.Context, filter domain.MemoryFilter, fetchLimit int) ([]domain.Memory, string, error) {
+	textFilter := filter
+	if lemmatized := strings.TrimSpace(lemmatizeForBM25(filter.Query)); lemmatized != "" {
+		textFilter.Query = lemmatized
+	}
+	if s.memories.FTSAvailable() {
+		branchCtx, cancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+		results, err := s.memories.FTSSearch(branchCtx, textFilter.Query, textFilter, fetchLimit)
+		cancel()
+		if err != nil {
+			return nil, "fts", fmt.Errorf("FTS search: %w", err)
+		}
+		return results, "fts", nil
+	}
+	branchCtx, cancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+	results, err := s.memories.KeywordSearch(branchCtx, textFilter.Query, textFilter, fetchLimit)
+	cancel()
+	if err != nil {
+		return nil, "keyword", fmt.Errorf("keyword search: %w", err)
+	}
+	return results, "keyword", nil
+}
+
+func linkedMemoryIDsFromMetadata(metadata json.RawMessage) []string {
+	if len(metadata) == 0 || string(metadata) == "null" {
+		return nil
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(metadata, &payload); err != nil {
+		return nil
+	}
+	raw := payload[linkedMemoryIDsMetadataKey]
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var ids []string
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return nil
+	}
+	return normalizeLinkedMemoryIDs(ids)
+}
+
+func (s *MemoryService) expandLinkedMemoryCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool, candidates []RecallCandidate) []RecallCandidate {
+	if len(candidates) == 0 || s.memories == nil {
+		return candidates
+	}
+
+	out := make([]RecallCandidate, len(candidates))
+	copy(out, candidates)
+
+	idIndex := make(map[string]int, len(out))
+	seenContent := make(map[string]struct{}, len(out))
+	for i, candidate := range out {
+		if candidate.Memory.ID != "" {
+			idIndex[candidate.Memory.ID] = i
+		}
+		if content := strings.TrimSpace(candidate.Memory.Content); content != "" {
+			seenContent[content] = struct{}{}
+		}
+	}
+
+	seedLimit := minInt(len(out), linkedRecallSeedLimit)
+	scoreByID := make(map[string]float64)
+	order := make([]string, 0, seedLimit)
+	boosted := 0
+	for i := 0; i < seedLimit; i++ {
+		seed := out[i]
+		ids := linkedMemoryIDsFromMetadata(seed.Memory.Metadata)
+		if len(ids) == 0 {
+			continue
+		}
+		score := seed.RRFScore * linkedRecallWeight
+		if score <= 0 {
+			rank := seed.RRFRank
+			if rank <= 0 {
+				rank = i + 1
+			}
+			score = linkedRecallWeight / (rrfK + float64(rank))
+		}
+		for _, id := range ids {
+			if id == "" || id == seed.Memory.ID {
+				continue
+			}
+			if idx, ok := idIndex[id]; ok {
+				out[idx].RRFScore += score * 0.5
+				boosted++
+				continue
+			}
+			if _, exists := scoreByID[id]; !exists {
+				order = append(order, id)
+			}
+			if prev, exists := scoreByID[id]; !exists || score > prev {
+				scoreByID[id] = score
+			}
+		}
+	}
+	if len(order) == 0 && boosted == 0 {
+		return candidates
+	}
+
+	added := 0
+	fetchCtx, cancel := withRecallTimeout(ctx, recallLinkedMemoryTimeout)
+	defer cancel()
+	for _, id := range order {
+		if added >= linkedRecallMaxAdds || fetchCtx.Err() != nil {
+			break
+		}
+		m, err := s.memories.GetByID(fetchCtx, id)
+		if err != nil || m == nil {
+			continue
+		}
+		if filter.AgentID != "" && m.AgentID != "" && m.AgentID != filter.AgentID {
+			continue
+		}
+		if m.State != "" && m.State != domain.StateActive {
+			continue
+		}
+		content := strings.TrimSpace(m.Content)
+		if content != "" {
+			if _, exists := seenContent[content]; exists {
+				continue
+			}
+			seenContent[content] = struct{}{}
+		}
+		score := scoreByID[id]
+		out = append(out, RecallCandidate{
+			Memory:     *m,
+			SourcePool: sourcePool,
+			RRFScore:   score,
+			RRFRank:    len(out) + 1,
+		})
+		idIndex[id] = len(out) - 1
+		added++
+	}
+
+	if added == 0 && boosted == 0 {
+		return candidates
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].RRFScore != out[j].RRFScore {
+			return out[i].RRFScore > out[j].RRFScore
+		}
+		return out[i].RRFRank < out[j].RRFRank
+	})
+	for i := range out {
+		out[i].RRFRank = i + 1
+	}
+	slog.InfoContext(ctx, "linked memory candidates expanded",
+		"source_pool", string(sourcePool),
+		"seed_limit", seedLimit,
+		"linked_ids", len(order),
+		"added", added,
+		"boosted", boosted,
+	)
+	return out
 }
 
 func (s *MemoryService) ftsOnlyCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool, opts RecallCandidateOptions) ([]RecallCandidate, error) {
 	limit := normalizeRecallLimit(filter.Limit, 10)
 	fetchLimit := limit * normalizeRecallFetchMultiplier(opts.FetchMultiplier, 3)
+	textFilter := filter
+	if lemmatized := strings.TrimSpace(lemmatizeForBM25(filter.Query)); lemmatized != "" {
+		textFilter.Query = lemmatized
+	}
 
-	ftsResults, err := s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
+	ftsResults, err := s.memories.FTSSearch(ctx, textFilter.Query, textFilter, fetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("FTS search: %w", err)
 	}
@@ -330,8 +833,12 @@ func (s *MemoryService) ftsOnlyCandidates(ctx context.Context, filter domain.Mem
 func (s *MemoryService) keywordOnlyCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool, opts RecallCandidateOptions) ([]RecallCandidate, error) {
 	limit := normalizeRecallLimit(filter.Limit, 10)
 	fetchLimit := limit * normalizeRecallFetchMultiplier(opts.FetchMultiplier, 3)
+	textFilter := filter
+	if lemmatized := strings.TrimSpace(lemmatizeForBM25(filter.Query)); lemmatized != "" {
+		textFilter.Query = lemmatized
+	}
 
-	kwResults, err := s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
+	kwResults, err := s.memories.KeywordSearch(ctx, textFilter.Query, textFilter, fetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("keyword search: %w", err)
 	}
@@ -355,54 +862,48 @@ func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFi
 		return nil, 0, fmt.Errorf("embed query for search: %w", err)
 	}
 
-	vecResults, vecErr := s.memories.VectorSearch(ctx, queryVec, filter, fetchLimit)
+	vectorCtx, vectorCancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+	vecResults, vecErr := s.memories.VectorSearch(vectorCtx, queryVec, filter, fetchLimit)
+	vectorCancel()
 	if vecErr != nil {
-		return nil, 0, fmt.Errorf("vector search: %w", vecErr)
-	}
-
-	minScore := filter.MinScore
-	if minScore == 0 {
-		minScore = defaultMinScore
-	}
-	if minScore > 0 {
-		filtered := vecResults[:0]
-		for _, m := range vecResults {
-			if m.Score != nil && *m.Score >= minScore {
-				filtered = append(filtered, m)
-			}
-		}
-		vecResults = filtered
-	}
-
-	var kwResults []domain.Memory
-	if s.memories.FTSAvailable() {
-		var kwErr error
-		kwResults, kwErr = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
-		if kwErr != nil {
-			return nil, 0, fmt.Errorf("FTS search: %w", kwErr)
-		}
+		vecErr = fmt.Errorf("vector search: %w", vecErr)
+		logRecallBranchFailure(ctx, "memory", "vector", vecErr)
 	} else {
-		var kwErr error
-		kwResults, kwErr = s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
-		if kwErr != nil {
-			return nil, 0, fmt.Errorf("keyword search: %w", kwErr)
+		minScore := mem0SemanticThreshold(filter)
+		if minScore >= 0 {
+			filtered := vecResults[:0]
+			for _, m := range vecResults {
+				if m.Score != nil && *m.Score >= minScore {
+					filtered = append(filtered, m)
+				}
+			}
+			vecResults = filtered
 		}
+	}
+
+	kwResults, textBranch, kwErr := s.textSearch(ctx, filter, fetchLimit)
+	if kwErr != nil {
+		logRecallBranchFailure(ctx, "memory", textBranch, kwErr)
+	}
+	if vecErr != nil && kwErr != nil {
+		return nil, 0, joinedRecallBranchError("memory", vecErr, kwErr)
 	}
 
 	slog.Info("hybrid search completed", "query_len", len(filter.Query), "vec_results", len(vecResults), "kw_results", len(kwResults))
 
-	scores := rrfMerge(kwResults, vecResults)
-	mems := collectMems(kwResults, vecResults)
-	applyTypeWeights(mems, scores)
-	merged := sortByScore(mems, scores)
+	if vecErr != nil && len(vecResults) == 0 {
+		page, total := s.paginate(kwResults, offset, limit)
+		return FinalizeSearchResults(page, filter.Query), total, nil
+	}
+	merged, scores := s.mem0RankMemories(ctx, filter, kwResults, vecResults, limit)
 
 	page, total := s.paginate(merged, offset, limit)
-	return finalizeSearchResults(setScores(page, scores), filter.Query), total, nil
+	return FinalizeSearchResults(overwriteScores(page, scores), filter.Query), total, nil
 }
 
 func (s *MemoryService) hybridCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool, opts RecallCandidateOptions) ([]RecallCandidate, error) {
 	limit := normalizeRecallLimit(filter.Limit, 10)
-	fetchLimit := limit * normalizeRecallFetchMultiplier(opts.FetchMultiplier, 3)
+	fetchLimit := maxInt(mem0InternalFetchLimit(limit), limit*normalizeRecallFetchMultiplier(opts.FetchMultiplier, 3))
 
 	queryVec, err := s.embedder.Embed(ctx, filter.Query)
 	observeRecallEmbeddingRequest(s.embedder, err)
@@ -410,26 +911,32 @@ func (s *MemoryService) hybridCandidates(ctx context.Context, filter domain.Memo
 		return nil, fmt.Errorf("embed query for search: %w", err)
 	}
 
-	vecResults, err := s.memories.VectorSearch(ctx, queryVec, filter, fetchLimit)
-	if err != nil {
-		return nil, fmt.Errorf("vector search: %w", err)
-	}
-	vecResults = applyMinScore(vecResults, filter.MinScore)
-
-	var kwResults []domain.Memory
-	if s.memories.FTSAvailable() {
-		kwResults, err = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
-		if err != nil {
-			return nil, fmt.Errorf("FTS search: %w", err)
-		}
+	vectorCtx, vectorCancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+	vecResults, vecErr := s.memories.VectorSearch(vectorCtx, queryVec, filter, fetchLimit)
+	vectorCancel()
+	if vecErr != nil {
+		vecErr = fmt.Errorf("vector search: %w", vecErr)
+		logRecallBranchFailure(ctx, "memory", "vector", vecErr)
 	} else {
-		kwResults, err = s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
-		if err != nil {
-			return nil, fmt.Errorf("keyword search: %w", err)
+		minScore := mem0SemanticThreshold(filter)
+		if minScore >= 0 {
+			vecResults = applyMinScore(vecResults, minScore)
 		}
 	}
 
-	return dedupRecallCandidatesByContent(mergeRecallCandidates(sourcePool, kwResults, vecResults, nil)), nil
+	kwResults, textBranch, kwErr := s.textSearch(ctx, filter, fetchLimit)
+	if kwErr != nil {
+		logRecallBranchFailure(ctx, "memory", textBranch, kwErr)
+	}
+	if vecErr != nil && kwErr != nil {
+		return nil, joinedRecallBranchError("memory", vecErr, kwErr)
+	}
+
+	if vecErr != nil && len(vecResults) == 0 {
+		return dedupRecallCandidatesByContent(mergeRecallCandidates(sourcePool, kwResults, nil, nil)), nil
+	}
+	merged, scores := s.mem0RankMemories(ctx, filter, kwResults, vecResults, limit)
+	return dedupRecallCandidatesByContent(mem0RecallCandidates(sourcePool, merged, scores, kwResults, vecResults)), nil
 }
 
 func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
@@ -441,72 +948,55 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 	if offset < 0 {
 		offset = 0
 	}
-	fetchLimit := limit * 3
+	fetchLimit := mem0InternalFetchLimit(limit)
 
-	vecResults, vecErr := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
-	observeRecallAutoEmbeddingRequest(s.autoModel, vecErr, false)
+	vectorCtx, vectorCancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+	vecResults, vecErr := s.memories.AutoVectorSearch(vectorCtx, filter.Query, filter, fetchLimit)
+	vectorCancel()
+	skipped := errors.Is(vecErr, domain.ErrAutoVectorSearchSkipped)
+	vectorUnavailable := false
+	observeRecallAutoEmbeddingRequest(s.autoModel, vecErr, skipped)
 	if vecErr != nil {
-		return nil, 0, fmt.Errorf("auto vector search: %w", vecErr)
-	}
-
-	minScore := filter.MinScore
-	if minScore == 0 {
-		minScore = defaultMinScore
-	}
-	if minScore > 0 {
-		filtered := vecResults[:0]
-		for _, m := range vecResults {
-			if m.Score != nil && *m.Score >= minScore {
-				filtered = append(filtered, m)
-			}
-		}
-		vecResults = filtered
-	}
-
-	var kwResults []domain.Memory
-	if s.memories.FTSAvailable() {
-		var kwErr error
-		kwResults, kwErr = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
-		if kwErr != nil {
-			return nil, 0, fmt.Errorf("FTS search: %w", kwErr)
+		if skipped {
+			vecErr = nil
+			vecResults = nil
+			vectorUnavailable = true
+		} else {
+			vecErr = fmt.Errorf("auto vector search: %w", vecErr)
+			vectorUnavailable = true
+			logRecallBranchFailure(ctx, "memory", "auto_vector", vecErr)
 		}
 	} else {
-		var kwErr error
-		kwResults, kwErr = s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
-		if kwErr != nil {
-			return nil, 0, fmt.Errorf("keyword search: %w", kwErr)
+		minScore := mem0SemanticThreshold(filter)
+		if minScore >= 0 {
+			filtered := vecResults[:0]
+			for _, m := range vecResults {
+				if m.Score != nil && *m.Score >= minScore {
+					filtered = append(filtered, m)
+				}
+			}
+			vecResults = filtered
 		}
+	}
+
+	kwResults, textBranch, kwErr := s.textSearch(ctx, filter, fetchLimit)
+	if kwErr != nil {
+		logRecallBranchFailure(ctx, "memory", textBranch, kwErr)
+	}
+	if vecErr != nil && kwErr != nil {
+		return nil, 0, joinedRecallBranchError("memory", vecErr, kwErr)
 	}
 
 	slog.Info("auto hybrid search completed", "query_len", len(filter.Query), "vec_results", len(vecResults), "kw_results", len(kwResults))
 
-	scores := rrfMerge(kwResults, vecResults)
-	mems := collectMems(kwResults, vecResults)
-
-	// Second-hop: skip when the best first-hop vector score is below the gate
-	// threshold — a low score suggests the query has no strong match (e.g.
-	// adversarial), so expanding search would mainly inject noise.
-	maxVecScore := 0.0
-	for _, m := range vecResults {
-		if m.Score != nil && *m.Score > maxVecScore {
-			maxVecScore = *m.Score
-		}
+	if vectorUnavailable && len(vecResults) == 0 {
+		page, total := s.paginate(kwResults, offset, limit)
+		return FinalizeSearchResults(page, filter.Query), total, nil
 	}
-	if maxVecScore >= secondHopGateScore {
-		secondHopMems := s.secondHopAutoSearch(ctx, mems, scores, filter, limit, secondHopTopN)
-		for rank, m := range secondHopMems {
-			scores[m.ID] += secondHopWeight / (rrfK + float64(rank+1))
-			if _, exists := mems[m.ID]; !exists {
-				mems[m.ID] = m
-			}
-		}
-	}
-
-	applyTypeWeights(mems, scores)
-	merged := sortByScore(mems, scores)
+	merged, scores := s.mem0RankMemories(ctx, filter, kwResults, vecResults, limit)
 
 	page, total := s.paginate(merged, offset, limit)
-	return finalizeSearchResults(setScores(page, scores), filter.Query), total, nil
+	return FinalizeSearchResults(overwriteScores(page, scores), filter.Query), total, nil
 }
 
 func (s *MemoryService) autoHybridCandidates(
@@ -517,52 +1007,44 @@ func (s *MemoryService) autoHybridCandidates(
 ) ([]RecallCandidate, error) {
 	start := time.Now()
 	limit := normalizeRecallLimit(filter.Limit, 10)
-	fetchLimit := limit * normalizeRecallFetchMultiplier(opts.FetchMultiplier, 3)
+	fetchLimit := maxInt(mem0InternalFetchLimit(limit), limit*normalizeRecallFetchMultiplier(opts.FetchMultiplier, 3))
 
 	vectorStart := time.Now()
-	vecResults, err := s.memories.AutoVectorSearch(ctx, filter.Query, filter, fetchLimit)
-	observeRecallAutoEmbeddingRequest(s.autoModel, err, false)
+	vectorCtx, vectorCancel := withRecallTimeout(ctx, recallPrimaryBranchTimeout)
+	vecResults, err := s.memories.AutoVectorSearch(vectorCtx, filter.Query, filter, fetchLimit)
+	vectorCancel()
+	skipped := errors.Is(err, domain.ErrAutoVectorSearchSkipped)
+	observeRecallAutoEmbeddingRequest(s.autoModel, err, skipped)
 	vectorDuration := time.Since(vectorStart)
+	var vecErr error
+	vectorUnavailable := false
 	if err != nil {
-		return nil, fmt.Errorf("auto vector search: %w", err)
-	}
-	vecResults = applyMinScore(vecResults, filter.MinScore)
-
-	var kwResults []domain.Memory
-	keywordStart := time.Now()
-	if s.memories.FTSAvailable() {
-		kwResults, err = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
-		if err != nil {
-			return nil, fmt.Errorf("FTS search: %w", err)
+		if skipped {
+			vecResults = nil
+			vectorUnavailable = true
+		} else {
+			vecErr = fmt.Errorf("auto vector search: %w", err)
+			vectorUnavailable = true
+			logRecallBranchFailure(ctx, "memory", "auto_vector", vecErr)
 		}
 	} else {
-		kwResults, err = s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
-		if err != nil {
-			return nil, fmt.Errorf("keyword search: %w", err)
+		minScore := mem0SemanticThreshold(filter)
+		if minScore >= 0 {
+			vecResults = applyMinScore(vecResults, minScore)
 		}
+	}
+
+	keywordStart := time.Now()
+	kwResults, textBranch, kwErr := s.textSearch(ctx, filter, fetchLimit)
+	if kwErr != nil {
+		logRecallBranchFailure(ctx, "memory", textBranch, kwErr)
 	}
 	keywordDuration := time.Since(keywordStart)
-
-	var secondHopResults []domain.Memory
-	secondHopStart := time.Now()
-	if opts.EnableSecondHop {
-		maxVecScore := 0.0
-		for _, m := range vecResults {
-			if m.Score != nil && *m.Score > maxVecScore {
-				maxVecScore = *m.Score
-			}
-		}
-		if maxVecScore >= secondHopGateScore {
-			scores := rrfMerge(kwResults, vecResults)
-			mems := collectMems(kwResults, vecResults)
-			topN := opts.SecondHopTopN
-			if topN <= 0 {
-				topN = secondHopTopN
-			}
-			secondHopResults = s.secondHopAutoSearch(ctx, mems, scores, filter, limit, topN)
-		}
+	if vecErr != nil && kwErr != nil {
+		return nil, joinedRecallBranchError("memory", vecErr, kwErr)
 	}
-	secondHopDuration := time.Since(secondHopStart)
+
+	secondHopDuration := time.Duration(0)
 
 	slog.InfoContext(ctx, "memory recall candidate search",
 		"query_len", len(filter.Query),
@@ -572,12 +1054,16 @@ func (s *MemoryService) autoHybridCandidates(
 		"vector_ms", vectorDuration.Milliseconds(),
 		"keyword_ms", keywordDuration.Milliseconds(),
 		"second_hop_ms", secondHopDuration.Milliseconds(),
-		"second_hop_enabled", opts.EnableSecondHop,
-		"second_hop_count", len(secondHopResults),
+		"second_hop_enabled", false,
+		"second_hop_count", 0,
 		"total_ms", time.Since(start).Milliseconds(),
 	)
 
-	return dedupRecallCandidatesByContent(mergeRecallCandidates(sourcePool, kwResults, vecResults, secondHopResults)), nil
+	if vectorUnavailable && len(vecResults) == 0 {
+		return dedupRecallCandidatesByContent(mergeRecallCandidates(sourcePool, kwResults, nil, nil)), nil
+	}
+	merged, scores := s.mem0RankMemories(ctx, filter, kwResults, vecResults, limit)
+	return dedupRecallCandidatesByContent(mem0RecallCandidates(sourcePool, merged, scores, kwResults, vecResults)), nil
 }
 
 // secondHopAutoSearch runs concurrent AutoVectorSearch calls using the top-N
@@ -608,6 +1094,9 @@ func (s *MemoryService) secondHopAutoSearch(
 		seedIDs[m.ID] = struct{}{}
 	}
 
+	hopCtx, cancel := withRecallTimeout(ctx, recallSecondHopTimeout)
+	defer cancel()
+
 	// Launch concurrent second-hop searches using first-hop embeddings
 	// to avoid redundant embedding API calls.
 	type hopResult struct {
@@ -618,12 +1107,12 @@ func (s *MemoryService) secondHopAutoSearch(
 	for _, seed := range seeds {
 		if len(seed.Embedding) > 0 {
 			go func(vec []float32) {
-				results, err := s.memories.VectorSearch(ctx, vec, filter, limit)
+				results, err := s.memories.VectorSearch(hopCtx, vec, filter, limit)
 				ch <- hopResult{results: results, err: err}
 			}(seed.Embedding)
 		} else {
 			go func(content string) {
-				results, err := s.memories.AutoVectorSearch(ctx, content, filter, limit)
+				results, err := s.memories.AutoVectorSearch(hopCtx, content, filter, limit)
 				ch <- hopResult{results: results, err: err}
 			}(seed.Content)
 		}
@@ -632,8 +1121,27 @@ func (s *MemoryService) secondHopAutoSearch(
 	// Collect results: deduplicate, exclude seeds, keep best score per ID.
 	bestByID := make(map[string]domain.Memory)
 	bestScore := make(map[string]float64)
+	rankedResults := func() []domain.Memory {
+		if len(bestByID) == 0 {
+			return nil
+		}
+		result := make([]domain.Memory, 0, len(bestByID))
+		for _, m := range bestByID {
+			result = append(result, m)
+		}
+		sort.Slice(result, func(i, j int) bool {
+			return bestScore[result[i].ID] > bestScore[result[j].ID]
+		})
+		return result
+	}
 	for i := 0; i < topN; i++ {
-		hr := <-ch
+		var hr hopResult
+		select {
+		case hr = <-ch:
+		case <-hopCtx.Done():
+			slog.Warn("second-hop search timed out", "err", hopCtx.Err(), "received", i, "top_n", topN)
+			return rankedResults()
+		}
 		if hr.err != nil {
 			slog.Warn("second-hop search failed", "err", hr.err)
 			continue
@@ -656,19 +1164,7 @@ func (s *MemoryService) secondHopAutoSearch(
 		}
 	}
 
-	if len(bestByID) == 0 {
-		return nil
-	}
-
-	// Sort by cosine similarity to produce a single ranked list for RRF.
-	result := make([]domain.Memory, 0, len(bestByID))
-	for _, m := range bestByID {
-		result = append(result, m)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		return bestScore[result[i].ID] > bestScore[result[j].ID]
-	})
-	return result
+	return rankedResults()
 }
 
 func collectMems(kwResults, vecResults []domain.Memory) map[string]domain.Memory {
@@ -705,6 +1201,14 @@ func setScores(page []domain.Memory, scores map[string]float64) []domain.Memory 
 			sc := scores[page[i].ID]
 			page[i].Score = &sc
 		}
+	}
+	return page
+}
+
+func overwriteScores(page []domain.Memory, scores map[string]float64) []domain.Memory {
+	for i := range page {
+		sc := scores[page[i].ID]
+		page[i].Score = &sc
 	}
 	return page
 }
@@ -820,12 +1324,18 @@ func (s *MemoryService) Update(ctx context.Context, agentName, id, content strin
 		}
 		current.Embedding = embedding
 	}
+	if contentChanged {
+		current.ContentHash = memoryContentHash(current.Content)
+	}
 
 	writeStart := time.Now()
 	err = s.memories.UpdateOptimistic(ctx, current, 0)
 	metrics.MemoryWriteDuration.WithLabelValues("update", metricStatus(err)).Observe(time.Since(writeStart).Seconds())
 	if err != nil {
 		return nil, err
+	}
+	if contentChanged {
+		replaceMemoryEntityLinks(ctx, s.memories, s.embedder, s.autoModel, current.AgentID, current.ID, current.Content)
 	}
 
 	updated, err := s.memories.GetByID(ctx, id)
@@ -837,7 +1347,11 @@ func (s *MemoryService) Update(ctx context.Context, agentName, id, content strin
 }
 
 func (s *MemoryService) Delete(ctx context.Context, id, agentName string) error {
-	return s.memories.SoftDelete(ctx, id, agentName)
+	if err := s.memories.SoftDelete(ctx, id, agentName); err != nil {
+		return err
+	}
+	deleteMemoryEntityLinks(ctx, s.memories, id)
+	return nil
 }
 
 // BulkDelete soft-deletes multiple memories by ID. Returns the number of
@@ -865,7 +1379,14 @@ func (s *MemoryService) BulkDelete(ctx context.Context, ids []string, agentName 
 		return 0, &domain.ValidationError{Field: "ids", Message: "required"}
 	}
 
-	return s.memories.BulkSoftDelete(ctx, unique, agentName)
+	deleted, err := s.memories.BulkSoftDelete(ctx, unique, agentName)
+	if err != nil {
+		return deleted, err
+	}
+	for _, id := range unique {
+		deleteMemoryEntityLinks(ctx, s.memories, id)
+	}
+	return deleted, nil
 }
 
 func (s *MemoryService) Bootstrap(ctx context.Context, limit int) ([]domain.Memory, error) {
@@ -907,19 +1428,21 @@ func (s *MemoryService) BulkCreate(ctx context.Context, agentName string, items 
 			}
 		}
 
+		contentHash := memoryContentHash(item.Content)
 		memories = append(memories, &domain.Memory{
-			ID:         uuid.New().String(),
-			Content:    item.Content,
-			Source:     agentName,
-			Tags:       item.Tags,
-			Metadata:   item.Metadata,
-			Embedding:  embedding,
-			MemoryType: domain.TypePinned,
-			State:      domain.StateActive,
-			Version:    1,
-			UpdatedBy:  agentName,
-			CreatedAt:  now,
-			UpdatedAt:  now,
+			ID:          uuid.New().String(),
+			Content:     item.Content,
+			Source:      agentName,
+			Tags:        item.Tags,
+			Metadata:    item.Metadata,
+			Embedding:   embedding,
+			ContentHash: contentHash,
+			MemoryType:  domain.TypePinned,
+			State:       domain.StateActive,
+			Version:     1,
+			UpdatedBy:   agentName,
+			CreatedAt:   now,
+			UpdatedAt:   now,
 		})
 	}
 
@@ -932,6 +1455,7 @@ func (s *MemoryService) BulkCreate(ctx context.Context, agentName string, items 
 
 	result := make([]domain.Memory, len(memories))
 	for i, m := range memories {
+		replaceMemoryEntityLinks(ctx, s.memories, s.embedder, s.autoModel, m.AgentID, m.ID, m.Content)
 		result[i] = *m
 	}
 	return result, nil

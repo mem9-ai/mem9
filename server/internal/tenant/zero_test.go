@@ -102,6 +102,37 @@ func TestZeroClient_CreateInstance_HTTPError(t *testing.T) {
 	}
 }
 
+func TestZeroClient_CreateInstance_RateLimitRetry(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"message":"Rate limit exceeded. The limit is 2 requests per second."}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"instance":{"id":"cluster-test","connection":{"host":"test.tidbcloud.com","port":4000,"username":"root","password":"secret"},"claimInfo":{"claimUrl":"https://tidbcloud.com/claim/test"}}}`))
+	}))
+	defer server.Close()
+
+	client := NewZeroClient(server.URL)
+	client.limiter = nil
+	client.maxAttempts = 2
+	client.retryBase = time.Millisecond
+
+	instance, err := client.CreateInstance(context.Background(), "mnemos-test")
+	if err != nil {
+		t.Fatalf("CreateInstance error: %v", err)
+	}
+	if instance.ID != "cluster-test" {
+		t.Fatalf("ID = %q, want cluster-test", instance.ID)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want 2", requests)
+	}
+}
+
 func TestZeroClient_CreateInstance_InvalidJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

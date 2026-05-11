@@ -25,15 +25,16 @@ var (
 )
 
 type createMemoryRequest struct {
-	Content    string                  `json:"content,omitempty"`
-	MemoryType string                  `json:"memory_type,omitempty"`
-	AgentID    string                  `json:"agent_id,omitempty"`
-	Tags       []string                `json:"tags,omitempty"`
-	Metadata   json.RawMessage         `json:"metadata,omitempty"`
-	Messages   []service.IngestMessage `json:"messages,omitempty"`
-	SessionID  string                  `json:"session_id,omitempty"`
-	Mode       service.IngestMode      `json:"mode,omitempty"`
-	Sync       bool                    `json:"sync,omitempty"`
+	Content         string                  `json:"content,omitempty"`
+	MemoryType      string                  `json:"memory_type,omitempty"`
+	AgentID         string                  `json:"agent_id,omitempty"`
+	Tags            []string                `json:"tags,omitempty"`
+	Metadata        json.RawMessage         `json:"metadata,omitempty"`
+	Messages        []service.IngestMessage `json:"messages,omitempty"`
+	SessionID       string                  `json:"session_id,omitempty"`
+	Mode            service.IngestMode      `json:"mode,omitempty"`
+	ObservationDate string                  `json:"observation_date,omitempty"`
+	Sync            bool                    `json:"sync,omitempty"`
 }
 
 func isSyncIngestTimeout(ctx context.Context, err error) bool {
@@ -71,10 +72,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	if hasMessages {
 		messages := append([]service.IngestMessage(nil), req.Messages...)
 		ingestReq := service.IngestRequest{
-			Messages:  messages,
-			SessionID: req.SessionID,
-			AgentID:   agentID,
-			Mode:      req.Mode,
+			Messages:        messages,
+			SessionID:       req.SessionID,
+			AgentID:         agentID,
+			Mode:            req.Mode,
+			ObservationDate: req.ObservationDate,
 		}
 
 		if req.Sync {
@@ -160,7 +162,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 
 	if req.Sync {
 		// s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
-		mem, written, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
+		mem, written, err := svc.memory.CreateWithOptions(r.Context(), agentID, content, tags, metadata, service.MemoryCreateOptions{ObservationDate: req.ObservationDate})
 		if err != nil {
 			slog.Error("sync memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
 			s.handleError(r.Context(), w, err)
@@ -170,9 +172,9 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		go s.refreshWriteMetrics(auth, svc, int64(written))
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	} else {
-		go func(auth *domain.AuthInfo, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage) {
+		go func(auth *domain.AuthInfo, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage, observationDate string) {
 			// s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
-			mem, written, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
+			mem, written, err := svc.memory.CreateWithOptions(context.Background(), actorAgentID, content, tags, metadata, service.MemoryCreateOptions{ObservationDate: observationDate})
 			if err != nil {
 				slog.Error("async memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
 				return
@@ -183,7 +185,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", "")
 			}
 			s.refreshWriteMetrics(auth, svc, int64(written))
-		}(auth, auth.AgentName, agentID, req.SessionID, content, tags, metadata)
+		}(auth, auth.AgentName, agentID, req.SessionID, content, tags, metadata, req.ObservationDate)
 
 		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 	}
@@ -199,13 +201,24 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 		patchTagsDuration     time.Duration
 		reconcileDuration     time.Duration
 		factsCount            int
+		assistantFactsCount   int
+		factsMissingSourceSeq int
+		assistantMessages     int
 		status                = "ok"
 	)
 	defer func() {
+		factsPerMessage := 0.0
+		if len(req.Messages) > 0 {
+			factsPerMessage = float64(factsCount) / float64(len(req.Messages))
+		}
 		s.logger.Info("messages ingest timings",
 			"session", req.SessionID,
 			"messages", len(req.Messages),
 			"facts", factsCount,
+			"facts_per_message", factsPerMessage,
+			"assistant_messages", assistantMessages,
+			"assistant_facts", assistantFactsCount,
+			"facts_missing_source_seq", factsMissingSourceSeq,
 			"status", status,
 			"bulk_create_ms", bulkCreateDuration.Milliseconds(),
 			"extract_phase1_ms", extractPhase1Duration.Milliseconds(),
@@ -228,9 +241,10 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 			"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
 	}
 	bulkCreateDuration = time.Since(bulkCreateStart)
+	extractionCtx := s.buildExtractionContext(ctx, svc, req)
 
 	extractPhase1Start := time.Now()
-	phase1, err := svc.ingest.ExtractPhase1(ctx, req.Messages)
+	phase1, err := svc.ingest.ExtractPhase1ForAgentWithContext(ctx, req.AgentID, req.Messages, extractionCtx)
 	extractPhase1Duration = time.Since(extractPhase1Start)
 	if err != nil {
 		status = "phase1_error"
@@ -238,6 +252,9 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 		return nil, fmt.Errorf("phase1 extraction: %w", err)
 	}
 	factsCount = len(phase1.Facts)
+	assistantMessages = countMessagesWithRole(req.Messages, "assistant")
+	assistantFactsCount = countFactsWithRole(phase1.Facts, req.Messages, "assistant")
+	factsMissingSourceSeq = countFactsMissingSourceSeq(phase1.Facts)
 
 	var wg sync.WaitGroup
 	var reconcileResult *service.IngestResult
@@ -285,6 +302,111 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	}
 
 	return reconcileResult, nil
+}
+
+func (s *Server) buildExtractionContext(ctx context.Context, svc resolvedSvc, req service.IngestRequest) service.ExtractionContext {
+	extractionCtx := req.Extraction
+	if extractionCtx.ObservationDate == "" {
+		extractionCtx.ObservationDate = req.ObservationDate
+	}
+	extractionCtx.LastMessages = append(extractionCtx.LastMessages, s.recentSessionMessagesForExtraction(ctx, svc, req)...)
+	extractionCtx.RecentlyExtractedMemories = append(extractionCtx.RecentlyExtractedMemories, s.recentExtractedMemoriesForExtraction(ctx, svc, req)...)
+	return extractionCtx
+}
+
+func (s *Server) recentSessionMessagesForExtraction(ctx context.Context, svc resolvedSvc, req service.IngestRequest) []service.IngestMessage {
+	if strings.TrimSpace(req.SessionID) == "" {
+		return nil
+	}
+	const lastK = 20
+	currentHashes := make(map[string]struct{}, len(req.Messages))
+	for _, msg := range req.Messages {
+		hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content, msg.Seq)
+		if hash != "" {
+			currentHashes[hash] = struct{}{}
+		}
+	}
+	rows, err := svc.session.ListRecentBySessionID(ctx, req.SessionID, lastK+len(req.Messages))
+	if err != nil {
+		slog.Debug("last-k session context unavailable", "session", req.SessionID, "err", err)
+		return nil
+	}
+	messages := make([]service.IngestMessage, 0, lastK)
+	for _, row := range rows {
+		if row == nil || strings.TrimSpace(row.Content) == "" {
+			continue
+		}
+		if _, current := currentHashes[row.ContentHash]; current {
+			continue
+		}
+		seq := row.Seq
+		messages = append(messages, service.IngestMessage{
+			Role:    row.Role,
+			Content: row.Content,
+			Seq:     &seq,
+		})
+	}
+	if len(messages) > lastK {
+		messages = messages[len(messages)-lastK:]
+	}
+	return messages
+}
+
+func (s *Server) recentExtractedMemoriesForExtraction(ctx context.Context, svc resolvedSvc, req service.IngestRequest) []domain.Memory {
+	if strings.TrimSpace(req.SessionID) == "" {
+		return nil
+	}
+	memories, _, err := svc.memory.Search(ctx, domain.MemoryFilter{
+		State:      string(domain.StateActive),
+		MemoryType: string(domain.TypeInsight),
+		AgentID:    req.AgentID,
+		SessionID:  req.SessionID,
+		Limit:      20,
+	})
+	if err != nil {
+		slog.Debug("recent extracted memory context unavailable", "session", req.SessionID, "err", err)
+		return nil
+	}
+	return memories
+}
+
+func countMessagesWithRole(messages []service.IngestMessage, role string) int {
+	var count int
+	for _, msg := range messages {
+		if strings.EqualFold(msg.Role, role) {
+			count++
+		}
+	}
+	return count
+}
+
+func countFactsWithRole(facts []service.ExtractedFact, messages []service.IngestMessage, role string) int {
+	rolesBySeq := make(map[int]string, len(messages))
+	for _, msg := range messages {
+		if msg.Seq != nil {
+			rolesBySeq[*msg.Seq] = msg.Role
+		}
+	}
+	var count int
+	for _, fact := range facts {
+		for _, seq := range fact.SourceSeqs {
+			if strings.EqualFold(rolesBySeq[seq], role) {
+				count++
+				break
+			}
+		}
+	}
+	return count
+}
+
+func countFactsMissingSourceSeq(facts []service.ExtractedFact) int {
+	var count int
+	for _, fact := range facts {
+		if len(fact.SourceSeqs) == 0 {
+			count++
+		}
+	}
+	return count
 }
 
 type listResponse struct {

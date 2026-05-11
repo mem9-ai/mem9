@@ -45,6 +45,9 @@ func annotateFactsWithSourceSeqs(input preparedExtractionInput, facts []Extracte
 			out[i].SourceSeqs = messageSourceSeqs(input.messages)
 		} else {
 			out[i].SourceSeqs = inferSourceSeqs(out[i].Text, input.messages)
+			if len(out[i].SourceSeqs) == 0 {
+				out[i].SourceSeqs = singleMessageSourceSeq(input.messages)
+			}
 		}
 		out[i].SourceTurns = sourceTurnsFromMessages(input.messages, out[i].SourceSeqs)
 	}
@@ -300,7 +303,7 @@ func inferSourceSeqs(text string, messages []IngestMessage) []int {
 	var candidates []candidate
 	maxHits := 0
 	for _, msg := range messages {
-		if msg.Seq == nil || !strings.EqualFold(msg.Role, "user") {
+		if msg.Seq == nil || !isSourceProvenanceRole(msg.Role) {
 			continue
 		}
 		hits := countTokenOverlap(query, sourceTokenSet(msg.Content))
@@ -385,7 +388,7 @@ func countTokenOverlap(left, right map[string]struct{}) int {
 func messageSourceSeqs(messages []IngestMessage) []int {
 	seqs := make([]int, 0, len(messages))
 	for _, msg := range messages {
-		if msg.Seq == nil || !strings.EqualFold(msg.Role, "user") {
+		if msg.Seq == nil || !isSourceProvenanceRole(msg.Role) {
 			continue
 		}
 		seqs = append(seqs, *msg.Seq)
@@ -403,7 +406,7 @@ func sourceTurnsFromMessages(messages []IngestMessage, seqs []int) []sourceTurnM
 	}
 	contentsBySeq := make(map[int]string, len(messages))
 	for _, msg := range messages {
-		if msg.Seq == nil || !strings.EqualFold(msg.Role, "user") {
+		if msg.Seq == nil || !isSourceProvenanceRole(msg.Role) {
 			continue
 		}
 		content := strings.TrimSpace(msg.Content)
@@ -425,6 +428,29 @@ func sourceTurnsFromMessages(messages []IngestMessage, seqs []int) []sourceTurnM
 		turns = append(turns, sourceTurnMetadata{Seq: seq, Content: content})
 	}
 	return normalizeSourceTurns(seqs, turns)
+}
+
+func singleMessageSourceSeq(messages []IngestMessage) []int {
+	var seqs []int
+	for _, msg := range messages {
+		if msg.Seq == nil || !isSourceProvenanceRole(msg.Role) {
+			continue
+		}
+		seqs = append(seqs, *msg.Seq)
+		if len(seqs) > 1 {
+			return nil
+		}
+	}
+	return normalizeSourceSeqs(seqs)
+}
+
+func isSourceProvenanceRole(role string) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "user", "assistant", "system", "tool":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseSourceSeqsRaw(raw json.RawMessage) []int {

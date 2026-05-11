@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	temporalKindExplicitAbsolute    = "explicit_absolute"
-	temporalKindLocalAnchorRelative = "local_anchor_relative"
+	temporalKindExplicitAbsolute     = "explicit_absolute"
+	temporalKindLocalAnchorRelative  = "local_anchor_relative"
 	temporalKindHeaderAnchorRelative = "header_anchor_relative"
-	temporalKindDeicticRelative     = "deictic_relative"
+	temporalKindDeicticRelative      = "deictic_relative"
 )
 
 const (
@@ -712,9 +712,9 @@ func buildRangeTemporalMetadata(kind, anchorSource, granularity string, start, e
 	start = startOfDay(start)
 	end = startOfDay(end)
 	meta := &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  granularity,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   granularity,
 		ResolvedStart: formatISODate(start),
 		ResolvedEnd:   formatISODate(end),
 	}
@@ -729,33 +729,33 @@ func buildRangeTemporalMetadata(kind, anchorSource, granularity string, start, e
 func buildMonthTemporalMetadata(kind, anchorSource string, month time.Time) *TemporalMetadata {
 	month = startOfMonth(month)
 	return &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  temporalGranularityMonth,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   temporalGranularityMonth,
 		ResolvedStart: month.Format("2006-01"),
-		Display:      month.Format("2006-01"),
+		Display:       month.Format("2006-01"),
 	}
 }
 
 func buildYearTemporalMetadata(kind, anchorSource string, year int) *TemporalMetadata {
 	display := strconv.Itoa(year)
 	return &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  temporalGranularityYear,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   temporalGranularityYear,
 		ResolvedStart: display,
-		Display:      display,
+		Display:       display,
 	}
 }
 
 func buildSeasonTemporalMetadata(kind, anchorSource, season string, year int) *TemporalMetadata {
 	display := season + " " + strconv.Itoa(year)
 	return &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  temporalGranularitySeason,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   temporalGranularitySeason,
 		ResolvedStart: display,
-		Display:      display,
+		Display:       display,
 	}
 }
 

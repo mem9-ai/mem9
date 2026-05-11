@@ -94,23 +94,13 @@ func (p *TenantPool) Get(ctx context.Context, tenantID string, dsn string) (*sql
 	p.mu.RUnlock()
 
 	if ok {
-		pingStart := time.Now()
-		if err := conn.db.PingContext(ctx); err == nil {
-			p.mu.Lock()
-			if cached, stillOk := p.conns[tenantID]; stillOk {
-				cached.lastUsed = time.Now()
-				conn = cached
-			}
-			p.mu.Unlock()
-			return conn.db, nil
-		} else {
-			slog.ErrorContext(ctx, "tenant pool cached ping failed",
-				"tenant_id", tenantID,
-				"duration_ms", time.Since(pingStart).Milliseconds(),
-				"err", err,
-			)
-			p.removeIfMatch(tenantID, conn)
+		p.mu.Lock()
+		if cached, stillOk := p.conns[tenantID]; stillOk {
+			cached.lastUsed = time.Now()
+			conn = cached
 		}
+		p.mu.Unlock()
+		return conn.db, nil
 	}
 
 	// open tenantDB

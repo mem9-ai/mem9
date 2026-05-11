@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS memories (
     tags            JSONB,
     metadata        JSONB,
     embedding       vector(1536)    NULL,
+    content_hash    VARCHAR(64)     NULL,
     memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned',
     agent_id        VARCHAR(100)    NULL,
     session_id      VARCHAR(100)    NULL,
@@ -48,7 +49,58 @@ CREATE INDEX IF NOT EXISTS idx_memory_source ON memories(source);
 CREATE INDEX IF NOT EXISTS idx_memory_state ON memories(state);
 CREATE INDEX IF NOT EXISTS idx_memory_agent ON memories(agent_id);
 CREATE INDEX IF NOT EXISTS idx_memory_session ON memories(session_id);
+CREATE INDEX IF NOT EXISTS idx_memory_content_hash ON memories(agent_id, state, content_hash);
 CREATE INDEX IF NOT EXISTS idx_memory_updated ON memories(updated_at);
+
+CREATE TABLE IF NOT EXISTS memory_entities (
+    agent_id      VARCHAR(100) NOT NULL DEFAULT '',
+    entity_key    VARCHAR(64)  NOT NULL,
+    canonical_entity_key VARCHAR(64) NOT NULL DEFAULT '',
+    entity_text   VARCHAR(255) NOT NULL,
+    entity_type   VARCHAR(32)  NOT NULL,
+    embedding     vector(1536) NULL,
+    memory_id     VARCHAR(36)  NOT NULL,
+    created_at    TIMESTAMPTZ  DEFAULT NOW(),
+    PRIMARY KEY (agent_id, entity_key, memory_id)
+);
+CREATE INDEX IF NOT EXISTS idx_memory_entities_memory ON memory_entities(memory_id);
+CREATE INDEX IF NOT EXISTS idx_memory_entities_lookup ON memory_entities(agent_id, entity_key);
+
+CREATE TABLE IF NOT EXISTS canonical_memory_entities (
+    agent_id      VARCHAR(100) NOT NULL DEFAULT '',
+    entity_key    VARCHAR(64)  NOT NULL,
+    entity_text   VARCHAR(255) NOT NULL,
+    entity_type   VARCHAR(32)  NOT NULL,
+    embedding     vector(1536) NULL,
+    memory_count  INT          NOT NULL DEFAULT 0,
+    created_at    TIMESTAMPTZ  DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ  DEFAULT NOW(),
+    PRIMARY KEY (agent_id, entity_key)
+);
+CREATE INDEX IF NOT EXISTS idx_canonical_memory_entities_type ON canonical_memory_entities(agent_id, entity_type);
+
+CREATE TABLE IF NOT EXISTS memory_entity_aliases (
+    agent_id      VARCHAR(100) NOT NULL DEFAULT '',
+    alias_key     VARCHAR(64)  NOT NULL,
+    entity_key    VARCHAR(64)  NOT NULL,
+    alias_text    VARCHAR(255) NOT NULL,
+    created_at    TIMESTAMPTZ  DEFAULT NOW(),
+    PRIMARY KEY (agent_id, alias_key)
+);
+CREATE INDEX IF NOT EXISTS idx_memory_entity_aliases_entity ON memory_entity_aliases(agent_id, entity_key);
+
+CREATE TABLE IF NOT EXISTS memory_relationships (
+    agent_id          VARCHAR(100) NOT NULL DEFAULT '',
+    source_entity_key VARCHAR(64)  NOT NULL,
+    target_entity_key VARCHAR(64)  NOT NULL,
+    relationship_type VARCHAR(64)  NOT NULL,
+    memory_id         VARCHAR(36)  NOT NULL,
+    created_at        TIMESTAMPTZ  DEFAULT NOW(),
+    PRIMARY KEY (agent_id, source_entity_key, target_entity_key, relationship_type, memory_id)
+);
+CREATE INDEX IF NOT EXISTS idx_memory_relationships_memory ON memory_relationships(memory_id);
+CREATE INDEX IF NOT EXISTS idx_memory_relationships_source ON memory_relationships(agent_id, source_entity_key);
+CREATE INDEX IF NOT EXISTS idx_memory_relationships_target ON memory_relationships(agent_id, target_entity_key);
 
 CREATE TABLE IF NOT EXISTS upload_tasks (
     task_id       VARCHAR(36)   PRIMARY KEY,

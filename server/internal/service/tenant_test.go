@@ -294,12 +294,9 @@ func TestProvision_WithEncryptor(t *testing.T) {
 	// Create mock tenant repo to capture stored password
 	mockRepo := &mockTenantRepo{}
 
-	// Create pool (we can't easily mock it, but we verify the tenant struct passed to Get)
-	pool := tenant.NewPool(tenant.PoolConfig{Backend: "tidb"})
-	defer pool.Close()
-
 	// Create service with a real logger (discard output)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	pool := &mockPool{backend: "tidb", err: errors.New("db unavailable")}
 	svc := NewTenantService(mockRepo, mockProv, pool, logger, "", 0, 0, false, enc)
 
 	// Call Provision
@@ -327,10 +324,62 @@ func TestProvision_WithEncryptor(t *testing.T) {
 	}
 }
 
+func TestProvision_RetriesTransientSchemaInitFailure(t *testing.T) {
+	prevDelays := tenantSchemaInitRetryDelays
+	tenantSchemaInitRetryDelays = []time.Duration{time.Millisecond}
+	t.Cleanup(func() {
+		tenantSchemaInitRetryDelays = prevDelays
+	})
+
+	mockProv := &mockProvisioner{
+		info: &tenant.ClusterInfo{
+			ID:        "tenant-retry",
+			ClusterID: "tenant-retry",
+			Host:      "test-host",
+			Port:      4000,
+			Username:  "root",
+			Password:  "plaintext-password",
+			DBName:    "test",
+		},
+		initErrs: []error{errors.New("init schema: check vector index: invalid connection")},
+	}
+	mockPool := &mockPool{backend: "tidb", db: &sql.DB{}}
+	svc := NewTenantService(
+		&mockTenantRepo{},
+		mockProv,
+		mockPool,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		"",
+		0,
+		0,
+		false,
+		encrypt.NewPlainEncryptor(),
+	)
+
+	result, err := svc.Provision(context.Background(), ProvisionRequest{})
+	if err != nil {
+		t.Fatalf("Provision() error = %v", err)
+	}
+	if result == nil || result.ID != "tenant-retry" {
+		t.Fatalf("Provision() result = %#v", result)
+	}
+	if mockProv.initCalls != 2 {
+		t.Fatalf("InitSchema calls = %d, want 2", mockProv.initCalls)
+	}
+	if mockPool.getCalls != 2 {
+		t.Fatalf("pool Get calls = %d, want 2", mockPool.getCalls)
+	}
+	if mockPool.removeCalls != 1 {
+		t.Fatalf("pool Remove calls = %d, want 1", mockPool.removeCalls)
+	}
+}
+
 // mockProvisioner is a test double for tenant.Provisioner
 type mockProvisioner struct {
-	info *tenant.ClusterInfo
-	err  error
+	info      *tenant.ClusterInfo
+	err       error
+	initErrs  []error
+	initCalls int
 }
 
 func (m *mockProvisioner) Provision(ctx context.Context) (*tenant.ClusterInfo, error) {
@@ -341,6 +390,12 @@ func (m *mockProvisioner) Provision(ctx context.Context) (*tenant.ClusterInfo, e
 }
 
 func (m *mockProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
+	m.initCalls++
+	if len(m.initErrs) > 0 {
+		err := m.initErrs[0]
+		m.initErrs = m.initErrs[1:]
+		return err
+	}
 	return nil
 }
 
@@ -383,9 +438,11 @@ func (m *mockTenantRepo) UpdateSchemaVersion(ctx context.Context, id string, ver
 }
 
 type mockPool struct {
-	backend string
-	db      *sql.DB
-	err     error
+	backend     string
+	db          *sql.DB
+	err         error
+	getCalls    int
+	removeCalls int
 }
 
 func (m *mockPool) Backend() string {
@@ -393,10 +450,15 @@ func (m *mockPool) Backend() string {
 }
 
 func (m *mockPool) Get(ctx context.Context, tenantID, dsn string) (*sql.DB, error) {
+	m.getCalls++
 	if m.err != nil {
 		return nil, m.err
 	}
 	return m.db, nil
+}
+
+func (m *mockPool) Remove(tenantID string) {
+	m.removeCalls++
 }
 
 func decodeJSONLogs(t *testing.T, buf *bytes.Buffer) []map[string]any {

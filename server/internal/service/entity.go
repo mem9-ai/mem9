@@ -1,0 +1,587 @@
+package service
+
+import (
+	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
+	"log/slog"
+	"regexp"
+	"sort"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/embed"
+	"github.com/qiffang/mnemos/server/internal/repository"
+)
+
+const (
+	contentHashMetadataKey      = "content_hash"
+	attributedToMetadataKey     = "attributed_to"
+	linkedMemoryIDsMetadataKey  = "linked_memory_ids"
+	maxMemoryEntities           = 20
+	entityRecallBoostWeight     = 0.5
+	entityRecallBoostMaxMatches = 200
+	entityVectorMinScore        = 0.2
+)
+
+var (
+	quotedEntityRE   = regexp.MustCompile(`["“”'‘’` + "`" + `]([^"“”'‘’` + "`" + `]{2,80})["“”'‘’` + "`" + `]`)
+	properEntityRE   = regexp.MustCompile(`\b(?:[A-Z][A-Za-z0-9]*|[A-Z]{2,})(?:[\s.-]+(?:[A-Z][A-Za-z0-9]*|[A-Z]{2,})){0,4}\b`)
+	codeLikeEntityRE = regexp.MustCompile(`\b[A-Za-z][A-Za-z0-9]*(?:[-_./:][A-Za-z0-9]+)+\b|\b[A-Za-z]+[0-9][A-Za-z0-9]*\b|\b[A-Z]{2,}\b`)
+	cjkEntityRE      = regexp.MustCompile(`[\p{Han}]{2,12}`)
+	spaceEntityRE    = regexp.MustCompile(`\s+`)
+)
+
+var entityStopwords = map[string]struct{}{
+	"a": {}, "about": {}, "after": {}, "agent": {}, "all": {}, "also": {}, "an": {}, "and": {},
+	"api": {}, "app": {}, "assistant": {}, "before": {}, "but": {}, "can": {}, "code": {},
+	"current": {}, "date": {}, "day": {}, "did": {}, "do": {}, "does": {}, "for": {}, "from": {},
+	"go": {}, "has": {}, "have": {}, "how": {}, "i": {}, "if": {}, "in": {}, "is": {}, "it": {},
+	"last": {}, "memory": {}, "my": {}, "new": {}, "next": {}, "not": {}, "now": {}, "of": {},
+	"on": {}, "or": {}, "our": {}, "please": {}, "project": {}, "repo": {}, "server": {},
+	"that": {}, "the": {}, "this": {}, "to": {}, "today": {}, "tomorrow": {}, "user": {},
+	"using": {}, "was": {}, "we": {}, "what": {}, "when": {}, "where": {}, "with": {}, "you": {},
+	"your": {},
+}
+
+// MemoryContentHash returns the mem0-style exact-content hash used for
+// ADD-only deduplication.
+func MemoryContentHash(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
+	}
+	sum := md5.Sum([]byte(content))
+	return hex.EncodeToString(sum[:])
+}
+
+func memoryContentHash(content string) string {
+	return MemoryContentHash(content)
+}
+
+func mergeAdditiveMemoryMetadata(base json.RawMessage, fact ExtractedFact, contentHash string, linkedIDs []string) json.RawMessage {
+	payload := map[string]json.RawMessage{}
+	if len(base) > 0 {
+		_ = json.Unmarshal(base, &payload)
+	}
+	if payload == nil {
+		payload = map[string]json.RawMessage{}
+	}
+
+	if contentHash != "" {
+		if raw, err := json.Marshal(contentHash); err == nil {
+			payload[contentHashMetadataKey] = raw
+		}
+	}
+	if factProfileV2Enabled() {
+		if raw, err := json.Marshal(factProfileSchemaVersion); err == nil {
+			payload[factSchemaVersionMetadataKey] = raw
+		}
+		kind := normalizeFactKind(fact.FactKind, fact.Text, fact.Tags, fact.Temporal)
+		if raw, err := json.Marshal(kind); err == nil {
+			payload[factKindMetadataKey] = raw
+		}
+		entities := normalizeFactEntities(fact.Entities)
+		if len(entities) == 0 {
+			entities = normalizeFactEntities(factEntitiesFromText(fact.Text))
+		}
+		if len(entities) > 0 {
+			if raw, err := json.Marshal(entities); err == nil {
+				payload[factEntitiesMetadataKey] = raw
+			}
+		} else {
+			delete(payload, factEntitiesMetadataKey)
+		}
+		answerShapes := normalizeAnswerShapes(fact.AnswerShapes)
+		if len(answerShapes) == 0 {
+			answerShapes = inferAnswerShapes(fact.Text, fact.Tags, fact.Temporal)
+		}
+		if raw, err := json.Marshal(answerShapes); err == nil {
+			payload[answerShapesMetadataKey] = raw
+		}
+		if shouldHintSourcePacket(fact) {
+			if raw, err := json.Marshal(true); err == nil {
+				payload[sourcePacketHintMetadataKey] = raw
+			}
+		} else {
+			delete(payload, sourcePacketHintMetadataKey)
+		}
+	}
+	if attributedTo := strings.TrimSpace(fact.AttributedTo); attributedTo != "" {
+		if raw, err := json.Marshal(attributedTo); err == nil {
+			payload[attributedToMetadataKey] = raw
+		}
+	}
+	linkedIDs = normalizeLinkedMemoryIDs(linkedIDs)
+	if len(linkedIDs) > 0 {
+		if raw, err := json.Marshal(linkedIDs); err == nil {
+			payload[linkedMemoryIDsMetadataKey] = raw
+		}
+	} else {
+		delete(payload, linkedMemoryIDsMetadataKey)
+	}
+
+	if len(payload) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return base
+	}
+	return raw
+}
+
+func mergeJSONMetadata(base, overlay json.RawMessage) json.RawMessage {
+	if len(overlay) == 0 || string(overlay) == "null" {
+		return base
+	}
+	payload := map[string]json.RawMessage{}
+	if len(base) > 0 {
+		_ = json.Unmarshal(base, &payload)
+	}
+	if payload == nil {
+		payload = map[string]json.RawMessage{}
+	}
+	var extra map[string]json.RawMessage
+	if err := json.Unmarshal(overlay, &extra); err != nil {
+		return overlay
+	}
+	for key, value := range extra {
+		payload[key] = value
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return overlay
+	}
+	return raw
+}
+
+func normalizeLinkedMemoryIDs(ids []string) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func validateLinkedMemoryIDs(ctx context.Context, repo repository.MemoryRepo, agentID string, ids []string) []string {
+	ids = normalizeLinkedMemoryIDs(ids)
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		m, err := repo.GetByID(ctx, id)
+		if err != nil {
+			continue
+		}
+		if agentID != "" && m.AgentID != "" && m.AgentID != agentID {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
+}
+
+func replaceMemoryEntityLinks(ctx context.Context, repo repository.MemoryRepo, embedder *embed.Embedder, autoModel string, agentID, memoryID, content string, metadata ...json.RawMessage) {
+	entityRepo, ok := repo.(repository.MemoryEntityRepo)
+	if !ok || memoryID == "" {
+		return
+	}
+	entities := extractMemoryEntities(content)
+	if len(metadata) > 0 {
+		entities = append(entities, metadataFactEntities(metadata[0])...)
+	}
+	entities = expandMemoryEntityAliases(entities)
+	entities = dedupeMemoryEntities(entities)
+	entities = embedMemoryEntities(ctx, embedder, autoModel, entities)
+	if err := entityRepo.ReplaceMemoryEntities(ctx, agentID, memoryID, entities); err != nil {
+		slog.Warn("replace memory entity links failed", "memory_id", memoryID, "err", err)
+	}
+	replaceMemoryRelationships(ctx, repo, agentID, memoryID, metadata, entities)
+}
+
+func embedMemoryEntities(ctx context.Context, embedder *embed.Embedder, autoModel string, entities []domain.MemoryEntity) []domain.MemoryEntity {
+	if len(entities) == 0 || autoModel != "" || embedder == nil {
+		return entities
+	}
+	out := make([]domain.MemoryEntity, len(entities))
+	copy(out, entities)
+	cache := make(map[string][]float32, len(out))
+	for i := range out {
+		text := strings.TrimSpace(out[i].Text)
+		if text == "" {
+			continue
+		}
+		if vec, ok := cache[text]; ok {
+			out[i].Embedding = vec
+			continue
+		}
+		vec, err := embedder.Embed(ctx, text)
+		if err != nil {
+			slog.Warn("embed memory entity failed", "entity", text, "err", err)
+			continue
+		}
+		cache[text] = vec
+		out[i].Embedding = vec
+	}
+	return out
+}
+
+func deleteMemoryEntityLinks(ctx context.Context, repo repository.MemoryRepo, memoryID string) {
+	entityRepo, ok := repo.(repository.MemoryEntityRepo)
+	if !ok || memoryID == "" {
+		return
+	}
+	if err := entityRepo.DeleteMemoryEntities(ctx, memoryID); err != nil {
+		slog.Warn("delete memory entity links failed", "memory_id", memoryID, "err", err)
+	}
+	if maintenanceRepo, ok := repo.(repository.MemoryEntityMaintenanceRepo); ok {
+		if err := maintenanceRepo.DeleteMemoryRelationships(ctx, memoryID); err != nil {
+			slog.Warn("delete memory relationships failed", "memory_id", memoryID, "err", err)
+		}
+	}
+}
+
+func replaceMemoryRelationships(ctx context.Context, repo repository.MemoryRepo, agentID, memoryID string, metadata []json.RawMessage, entities []domain.MemoryEntity) {
+	maintenanceRepo, ok := repo.(repository.MemoryEntityMaintenanceRepo)
+	if !ok || memoryID == "" || len(metadata) == 0 {
+		return
+	}
+	profile := metadataFactProfile(metadata[0])
+	if profile.Kind != "relationship" || len(profile.Entities) < 2 {
+		_ = maintenanceRepo.DeleteMemoryRelationships(ctx, memoryID)
+		return
+	}
+	byKey := make(map[string]domain.MemoryEntity, len(entities))
+	for _, entity := range entities {
+		if entity.Key != "" {
+			byKey[entity.Key] = entity
+		}
+	}
+	var rels []domain.MemoryRelationship
+	for i := 0; i < len(profile.Entities); i++ {
+		for j := i + 1; j < len(profile.Entities); j++ {
+			leftKey := memoryEntityKey(profile.Entities[i].Text)
+			rightKey := memoryEntityKey(profile.Entities[j].Text)
+			left := canonicalKeyForEntity(byKey[leftKey])
+			right := canonicalKeyForEntity(byKey[rightKey])
+			if left == "" {
+				left = leftKey
+			}
+			if right == "" {
+				right = rightKey
+			}
+			if left == "" || right == "" || left == right {
+				continue
+			}
+			if right < left {
+				left, right = right, left
+			}
+			rels = append(rels, domain.MemoryRelationship{
+				AgentID:          agentID,
+				SourceEntityKey:  left,
+				TargetEntityKey:  right,
+				RelationshipType: "related",
+				MemoryID:         memoryID,
+			})
+		}
+	}
+	if err := maintenanceRepo.ReplaceMemoryRelationships(ctx, agentID, memoryID, rels); err != nil {
+		slog.Warn("replace memory relationships failed", "memory_id", memoryID, "err", err)
+	}
+}
+
+func extractMemoryEntities(text string) []domain.MemoryEntity {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+
+	type candidate struct {
+		text string
+		typ  string
+	}
+	candidates := make([]candidate, 0, 16)
+	for _, match := range quotedEntityRE.FindAllStringSubmatch(text, -1) {
+		if len(match) > 1 {
+			candidates = append(candidates, candidate{text: match[1], typ: "quoted"})
+		}
+	}
+	for _, match := range properEntityRE.FindAllString(text, -1) {
+		candidates = append(candidates, candidate{text: match, typ: "name"})
+	}
+	for _, match := range codeLikeEntityRE.FindAllString(text, -1) {
+		candidates = append(candidates, candidate{text: match, typ: "code"})
+	}
+	for _, match := range cjkEntityRE.FindAllString(text, -1) {
+		candidates = append(candidates, candidate{text: match, typ: "cjk"})
+	}
+
+	seen := make(map[string]struct{}, len(candidates))
+	entities := make([]domain.MemoryEntity, 0, len(candidates))
+	for _, candidate := range candidates {
+		entityText := normalizeEntityText(candidate.text)
+		if !isUsefulEntity(entityText) {
+			continue
+		}
+		key := memoryEntityKey(entityText)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		entities = append(entities, domain.MemoryEntity{
+			Key:          key,
+			CanonicalKey: key,
+			Text:         truncateRunes(entityText, 255),
+			Type:         candidate.typ,
+		})
+		if len(entities) >= maxMemoryEntities {
+			break
+		}
+	}
+	return entities
+}
+
+func factEntitiesFromText(text string) []FactEntity {
+	entities := extractMemoryEntities(text)
+	out := make([]FactEntity, 0, len(entities))
+	for _, entity := range entities {
+		out = append(out, FactEntity{Text: entity.Text, Type: entity.Type})
+	}
+	return out
+}
+
+func dedupeMemoryEntities(entities []domain.MemoryEntity) []domain.MemoryEntity {
+	seen := make(map[string]struct{}, len(entities))
+	out := make([]domain.MemoryEntity, 0, len(entities))
+	for _, entity := range entities {
+		if entity.Key == "" {
+			entity.Key = memoryEntityKey(entity.Text)
+		}
+		if entity.CanonicalKey == "" {
+			entity.CanonicalKey = entity.Key
+		}
+		if entity.Key == "" || entity.Text == "" {
+			continue
+		}
+		if _, ok := seen[entity.Key]; ok {
+			continue
+		}
+		seen[entity.Key] = struct{}{}
+		out = append(out, entity)
+		if len(out) >= maxMemoryEntities {
+			break
+		}
+	}
+	return out
+}
+
+func expandMemoryEntityAliases(entities []domain.MemoryEntity) []domain.MemoryEntity {
+	if len(entities) == 0 {
+		return nil
+	}
+	out := make([]domain.MemoryEntity, 0, len(entities)*2)
+	for _, entity := range entities {
+		if entity.Key == "" {
+			entity.Key = memoryEntityKey(entity.Text)
+		}
+		if entity.CanonicalKey == "" {
+			entity.CanonicalKey = entity.Key
+		}
+		if entity.Key != "" && entity.Text != "" {
+			out = append(out, entity)
+		}
+		canonicalKey := entity.CanonicalKey
+		if canonicalKey == "" {
+			canonicalKey = entity.Key
+		}
+		for _, alias := range memoryEntityAliases(entity.Text) {
+			out = append(out, domain.MemoryEntity{
+				Key:          memoryEntityKey(alias),
+				CanonicalKey: canonicalKey,
+				Text:         truncateRunes(alias, 255),
+				Type:         "alias",
+			})
+		}
+	}
+	return out
+}
+
+func canonicalKeyForEntity(entity domain.MemoryEntity) string {
+	if entity.CanonicalKey != "" {
+		return entity.CanonicalKey
+	}
+	return entity.Key
+}
+
+func memoryEntityAliases(text string) []string {
+	text = normalizeEntityText(text)
+	parts := strings.Fields(text)
+	if len(parts) < 2 {
+		lemma := lemmatizeForBM25(text)
+		if lemma != "" && !strings.EqualFold(lemma, text) && isUsefulEntity(lemma) {
+			return []string{lemma}
+		}
+		return nil
+	}
+	seen := map[string]struct{}{}
+	aliases := make([]string, 0, len(parts)+1)
+	add := func(value string) {
+		value = normalizeEntityText(value)
+		if !isUsefulEntity(value) {
+			return
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		aliases = append(aliases, value)
+	}
+	add(parts[len(parts)-1])
+	for _, part := range parts {
+		if len(part) >= 4 {
+			add(part)
+		}
+	}
+	lemma := lemmatizeForBM25(text)
+	if lemma != "" && !strings.EqualFold(lemma, text) {
+		add(lemma)
+	}
+	return aliases
+}
+
+func normalizeEntityText(text string) string {
+	text = strings.TrimSpace(text)
+	text = strings.Trim(text, `"'`+"`“”‘’.,;:!?()[]{}<>")
+	text = spaceEntityRE.ReplaceAllString(text, " ")
+	return strings.TrimSpace(text)
+}
+
+func isUsefulEntity(text string) bool {
+	if utf8.RuneCountInString(text) < 2 {
+		return false
+	}
+	if utf8.RuneCountInString(text) > 80 {
+		return false
+	}
+	lower := strings.ToLower(text)
+	if _, ok := entityStopwords[lower]; ok {
+		return false
+	}
+	first, _ := utf8.DecodeRuneInString(text)
+	if unicode.IsDigit(first) {
+		return false
+	}
+	parts := strings.Fields(lower)
+	if len(parts) == 1 {
+		if _, ok := entityStopwords[parts[0]]; ok {
+			return false
+		}
+		if utf8.RuneCountInString(parts[0]) < 3 && !strings.ContainsAny(parts[0], "-_./:0123456789") {
+			return false
+		}
+	}
+	return true
+}
+
+func memoryEntityKey(text string) string {
+	text = strings.ToLower(normalizeEntityText(text))
+	if text == "" {
+		return ""
+	}
+	sum := md5.Sum([]byte(text))
+	return hex.EncodeToString(sum[:])
+}
+
+func entityKeys(entities []domain.MemoryEntity) []string {
+	keys := make([]string, 0, len(entities))
+	seen := make(map[string]struct{}, len(entities))
+	for _, entity := range entities {
+		if entity.Key == "" {
+			continue
+		}
+		if _, ok := seen[entity.Key]; ok {
+			continue
+		}
+		seen[entity.Key] = struct{}{}
+		keys = append(keys, entity.Key)
+	}
+	return keys
+}
+
+func expandedEntityKeys(entities []domain.MemoryEntity) []string {
+	return entityKeys(expandMemoryEntityAliases(entities))
+}
+
+func (s *MemoryService) applyEntityBoosts(ctx context.Context, filter domain.MemoryFilter, candidates []RecallCandidate) []RecallCandidate {
+	if len(candidates) == 0 || strings.TrimSpace(filter.Query) == "" {
+		return candidates
+	}
+	if _, ok := s.memories.(repository.MemoryEntityRepo); !ok {
+		return candidates
+	}
+	keys := expandedEntityKeys(extractMemoryEntities(filter.Query))
+	if len(keys) == 0 && s.autoModel == "" && s.embedder == nil {
+		return candidates
+	}
+	limit := len(candidates) * 3
+	if limit <= 0 || limit > entityRecallBoostMaxMatches {
+		limit = entityRecallBoostMaxMatches
+	}
+	boostCtx, cancel := withRecallTimeout(ctx, recallEntityBoostTimeout)
+	boosts, err := s.combinedEntityBoostsForFilter(boostCtx, filter, keys, limit)
+	cancel()
+	if err != nil {
+		slog.Warn("entity recall boost failed", "err", err)
+		return candidates
+	}
+	if len(boosts) == 0 {
+		return candidates
+	}
+
+	out := make([]RecallCandidate, len(candidates))
+	copy(out, candidates)
+	changed := false
+	for i := range out {
+		boost, ok := boosts[out[i].Memory.ID]
+		if !ok || boost <= 0 {
+			continue
+		}
+		out[i].EntityBoost = boost
+		out[i].RRFScore += entityRecallBoostWeight * boost / (rrfK + 1)
+		changed = true
+	}
+	if !changed {
+		return candidates
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].RRFScore != out[j].RRFScore {
+			return out[i].RRFScore > out[j].RRFScore
+		}
+		return out[i].RRFRank < out[j].RRFRank
+	})
+	for i := range out {
+		out[i].RRFRank = i + 1
+	}
+	return out
+}

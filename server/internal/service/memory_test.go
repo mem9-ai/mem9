@@ -163,6 +163,78 @@ func TestRrfMerge(t *testing.T) {
 	}
 }
 
+func TestLemmatizeForBM25NormalizesCommonInflections(t *testing.T) {
+	got := lemmatizeForBM25("Who recommended books about running businesses?")
+	want := "who recommend book about run business"
+	if got != want {
+		t.Fatalf("lemmatizeForBM25() = %q, want %q", got, want)
+	}
+}
+
+func TestMem0RankMemoriesUsesSemanticCandidateSetOnly(t *testing.T) {
+	svc := NewMemoryService(&memoryRepoMock{}, nil, nil, "auto-model", ModeSmart)
+	semScore := 0.80
+	kwScore := 14.0
+	ranked, scores := svc.mem0RankMemories(context.Background(), domain.MemoryFilter{
+		Query: "Which books did Melanie recommend?",
+		Limit: 2,
+	}, []domain.Memory{
+		{ID: "keyword-only", Content: "Melanie recommended a book.", Score: &kwScore},
+		{ID: "semantic", Content: "Melanie recommended Becoming Nicole.", Score: &kwScore},
+	}, []domain.Memory{
+		{ID: "semantic", Content: "Melanie recommended Becoming Nicole.", Score: &semScore},
+	}, 2)
+
+	if len(ranked) != 1 || ranked[0].ID != "semantic" {
+		t.Fatalf("ranked = %+v, want only semantic candidate", ranked)
+	}
+	if _, ok := scores["keyword-only"]; ok {
+		t.Fatalf("keyword-only candidate should not be scored: %+v", scores)
+	}
+}
+
+func TestMem0RankMemoriesUsesEntityVectorBoost(t *testing.T) {
+	repo := &memoryRepoMock{
+		entityVectorBoosts: map[string]float64{
+			"entity-hit": 0.9,
+		},
+	}
+	svc := NewMemoryService(repo, nil, nil, "auto-model", ModeSmart)
+	semScore := 0.7
+	ranked, scores := svc.mem0RankMemories(context.Background(), domain.MemoryFilter{
+		Query: "Which tool is used for local vector search?",
+		Limit: 2,
+	}, nil, []domain.Memory{
+		{ID: "plain", Content: "A generic memory.", Score: &semScore},
+		{ID: "entity-hit", Content: "pgvector is used locally.", Score: &semScore},
+	}, 2)
+
+	if len(ranked) != 2 || ranked[0].ID != "entity-hit" {
+		t.Fatalf("ranked = %+v, want entity-hit first", ranked)
+	}
+	if scores["entity-hit"] <= scores["plain"] {
+		t.Fatalf("entity vector boost did not improve score: %+v", scores)
+	}
+}
+
+func TestTextSearchUsesBM25LemmatizedQuery(t *testing.T) {
+	var gotQuery string
+	repo := &memoryRepoMock{
+		ftsAvail: true,
+		ftsSearchHook: func(_ context.Context, query string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			gotQuery = query
+			return nil, nil
+		},
+	}
+	svc := NewMemoryService(repo, nil, nil, "auto-model", ModeSmart)
+	if _, _, err := svc.textSearch(context.Background(), domain.MemoryFilter{Query: "recommended books"}, 10); err != nil {
+		t.Fatalf("textSearch() error = %v", err)
+	}
+	if gotQuery != "recommend book" {
+		t.Fatalf("FTS query = %q, want lemmatized query", gotQuery)
+	}
+}
+
 func TestValidateMemoryInput(t *testing.T) {
 	tooLongContent := strings.Repeat("a", maxContentLen+1)
 	tooManyTags := make([]string, maxTags+1)
@@ -436,7 +508,7 @@ func TestSearchEmptyQueryPopulatesRelativeAge(t *testing.T) {
 	}
 }
 
-func TestSearchIgnoresSessionAndSourceFilters(t *testing.T) {
+func TestSearchPreservesSessionAndSourceFilters(t *testing.T) {
 	t.Parallel()
 
 	memRepo := &memoryRepoMock{
@@ -458,14 +530,211 @@ func TestSearchIgnoresSessionAndSourceFilters(t *testing.T) {
 		t.Fatalf("Search() error: %v", err)
 	}
 
-	if memRepo.lastKeywordFilter.Source != "" {
-		t.Fatalf("expected keyword search Source filter cleared, got %q", memRepo.lastKeywordFilter.Source)
+	if memRepo.lastKeywordFilter.Source != "legacy-source" {
+		t.Fatalf("expected keyword search Source filter preserved, got %q", memRepo.lastKeywordFilter.Source)
 	}
-	if memRepo.lastKeywordFilter.SessionID != "" {
-		t.Fatalf("expected keyword search SessionID filter cleared, got %q", memRepo.lastKeywordFilter.SessionID)
+	if memRepo.lastKeywordFilter.SessionID != "session-123" {
+		t.Fatalf("expected keyword search SessionID filter preserved, got %q", memRepo.lastKeywordFilter.SessionID)
 	}
 	if memRepo.lastKeywordFilter.AgentID != "agent-1" {
 		t.Fatalf("expected keyword search AgentID preserved, got %q", memRepo.lastKeywordFilter.AgentID)
+	}
+}
+
+func TestAutoHybridCandidatesFallsBackToKeywordWhenVectorFails(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		vectorErr: errors.New("invalid connection"),
+		kwResults: []domain.Memory{
+			{ID: "kw-1", Content: "keyword result", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+		ftsAvail: false,
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{
+		Query:   "keyword result",
+		AgentID: "agent-1",
+		Limit:   5,
+	}, RecallSourceInsight, RecallCandidateOptions{})
+	if err != nil {
+		t.Fatalf("SearchCandidates() should fall back to keyword, got error: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Memory.ID != "kw-1" {
+		t.Fatalf("expected keyword candidate, got %+v", candidates)
+	}
+	if !candidates[0].InKeyword || candidates[0].InVector {
+		t.Fatalf("expected keyword-only candidate, got %+v", candidates[0])
+	}
+}
+
+func TestAutoHybridCandidatesFallsBackToVectorWhenTextSearchFails(t *testing.T) {
+	t.Parallel()
+
+	score := 0.9
+	memRepo := &memoryRepoMock{
+		vectorResults: []domain.Memory{
+			{ID: "vec-1", Content: "semantic result", Score: &score, MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+		ftsErr:   errors.New("invalid connection"),
+		ftsAvail: true,
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{
+		Query:   "semantic result",
+		AgentID: "agent-1",
+		Limit:   5,
+	}, RecallSourceInsight, RecallCandidateOptions{})
+	if err != nil {
+		t.Fatalf("SearchCandidates() should fall back to vector, got error: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Memory.ID != "vec-1" {
+		t.Fatalf("expected vector candidate, got %+v", candidates)
+	}
+	if !candidates[0].InVector || candidates[0].InKeyword {
+		t.Fatalf("expected vector-only candidate, got %+v", candidates[0])
+	}
+}
+
+func TestAutoHybridCandidatesReturnsErrorWhenAllBranchesFail(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		vectorErr: errors.New("vector down"),
+		kwErr:     errors.New("keyword down"),
+		ftsAvail:  false,
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	_, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{
+		Query:   "no route",
+		AgentID: "agent-1",
+		Limit:   5,
+	}, RecallSourceInsight, RecallCandidateOptions{})
+	if err == nil {
+		t.Fatal("expected error when both vector and text branches fail")
+	}
+	if !strings.Contains(err.Error(), "memory recall branches failed") {
+		t.Fatalf("expected joined branch error, got %v", err)
+	}
+}
+
+func TestSearchCandidatesExpandsLinkedMemoryIDs(t *testing.T) {
+	t.Parallel()
+
+	seed := domain.Memory{
+		ID:         "seed",
+		Content:    "Melanie read a book recommended by Caroline.",
+		AgentID:    "agent-1",
+		State:      domain.StateActive,
+		MemoryType: domain.TypeInsight,
+		Metadata:   json.RawMessage(`{"linked_memory_ids":["linked-book"]}`),
+	}
+	linked := &domain.Memory{
+		ID:         "linked-book",
+		Content:    `Caroline's favorite book is "Becoming Nicole".`,
+		AgentID:    "agent-1",
+		State:      domain.StateActive,
+		MemoryType: domain.TypeInsight,
+	}
+	memRepo := &memoryRepoMock{
+		kwResults: []domain.Memory{seed},
+		getByID: map[string]*domain.Memory{
+			"linked-book": linked,
+		},
+		ftsAvail: false,
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{
+		Query:   "What book did Melanie read from Caroline's suggestion?",
+		AgentID: "agent-1",
+		Limit:   5,
+	}, RecallSourceInsight, RecallCandidateOptions{})
+	if err != nil {
+		t.Fatalf("SearchCandidates() error: %v", err)
+	}
+
+	var linkedCandidate *RecallCandidate
+	for i := range candidates {
+		if candidates[i].Memory.ID == "linked-book" {
+			linkedCandidate = &candidates[i]
+			break
+		}
+	}
+	if linkedCandidate == nil {
+		t.Fatalf("expected linked memory candidate, got %+v", candidates)
+	}
+	if linkedCandidate.SourcePool != RecallSourceInsight {
+		t.Fatalf("expected linked candidate to keep insight source pool, got %q", linkedCandidate.SourcePool)
+	}
+	if linkedCandidate.RRFScore <= 0 {
+		t.Fatalf("expected linked candidate to receive recall score, got %+v", linkedCandidate)
+	}
+}
+
+func TestSearchCandidatesSkipsInvalidLinkedMemoryIDs(t *testing.T) {
+	t.Parallel()
+
+	seed := domain.Memory{
+		ID:         "seed",
+		Content:    "Joanna named the stuffed animal dog Tilly.",
+		AgentID:    "agent-1",
+		State:      domain.StateActive,
+		MemoryType: domain.TypeInsight,
+		Metadata:   json.RawMessage(`{"linked_memory_ids":["missing","other-agent","archived","valid"]}`),
+	}
+	memRepo := &memoryRepoMock{
+		kwResults: []domain.Memory{seed},
+		getByID: map[string]*domain.Memory{
+			"other-agent": {
+				ID:         "other-agent",
+				Content:    "Other agent memory",
+				AgentID:    "agent-2",
+				State:      domain.StateActive,
+				MemoryType: domain.TypeInsight,
+			},
+			"archived": {
+				ID:         "archived",
+				Content:    "Archived memory",
+				AgentID:    "agent-1",
+				State:      domain.StateArchived,
+				MemoryType: domain.TypeInsight,
+			},
+			"valid": {
+				ID:         "valid",
+				Content:    "Nate gave Joanna a stuffed animal dog on May 25, 2022.",
+				AgentID:    "agent-1",
+				State:      domain.StateActive,
+				MemoryType: domain.TypeInsight,
+			},
+		},
+		ftsAvail: false,
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{
+		Query:   "When did Nate get Tilly for Joanna?",
+		AgentID: "agent-1",
+		Limit:   5,
+	}, RecallSourceInsight, RecallCandidateOptions{})
+	if err != nil {
+		t.Fatalf("SearchCandidates() error: %v", err)
+	}
+
+	ids := map[string]bool{}
+	for _, candidate := range candidates {
+		ids[candidate.Memory.ID] = true
+	}
+	if !ids["valid"] {
+		t.Fatalf("expected valid linked memory, got ids=%v", ids)
+	}
+	for _, invalid := range []string{"missing", "other-agent", "archived"} {
+		if ids[invalid] {
+			t.Fatalf("did not expect invalid linked memory %q, got ids=%v", invalid, ids)
+		}
 	}
 }
 
