@@ -132,22 +132,20 @@ var (
 		},
 		[]string{"step", "model", "status"},
 	)
-	// ActiveMemoryTotal is the current total number of active memories per cluster.
-	// Use sum(mnemo_active_memory_total) for the global aggregate.
-	ActiveMemoryTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	// ActiveMemoryTotal is the current server-level total number of active memories.
+	ActiveMemoryTotal = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "mnemo",
 		Name:      "active_memory_total",
-		Help:      "Total active memories for a cluster, refreshed on memory write or delete.",
-	}, []string{"cluster_id"})
+		Help:      "Total active memories across active tenants, refreshed after memory write, delete, or import.",
+	})
 
-	// ActiveMemory7dTotal is the current total number of active memories created in the
-	// last 7 days per cluster. Use sum(mnemo_active_memory_7d_total) for the global aggregate.
-	// Value reflects the state at the last write or delete event; it is not updated between events.
-	ActiveMemory7dTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	// ActiveMemory7dTotal is the current server-level total number of active memories
+	// created in the last 7 days.
+	ActiveMemory7dTotal = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "mnemo",
 		Name:      "active_memory_7d_total",
-		Help:      "Active memories created in the last 7 days for a cluster, refreshed on memory write or delete.",
-	}, []string{"cluster_id"})
+		Help:      "Active memories created in the last 7 days across active tenants, refreshed after memory write, delete, or import.",
+	})
 
 	// ActiveTenants7dTotal is the current total number of active tenants with
 	// recorded memory activity in the last 7 days. Value reflects the state at

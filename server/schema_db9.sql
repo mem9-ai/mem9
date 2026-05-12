@@ -45,8 +45,11 @@ CREATE INDEX IF NOT EXISTS idx_tenant_status ON tenants(status);
 CREATE INDEX IF NOT EXISTS idx_tenant_provider ON tenants(provider);
 
 CREATE TABLE IF NOT EXISTS tenant_activity (
-    tenant_id        VARCHAR(36) PRIMARY KEY,
-    last_activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    tenant_id                  VARCHAR(36) PRIMARY KEY,
+    last_activity_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    active_memory_total        BIGINT      NOT NULL DEFAULT 0,
+    active_memory_7d_total     BIGINT      NOT NULL DEFAULT 0,
+    memory_stats_observed_at   TIMESTAMPTZ NULL,
     CONSTRAINT fk_tenant_activity FOREIGN KEY (tenant_id) REFERENCES tenants(id)
 );
 CREATE INDEX IF NOT EXISTS idx_tenant_activity_last_activity ON tenant_activity(last_activity_at);

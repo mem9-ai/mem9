@@ -16,10 +16,6 @@ func (s *Server) afterSuccessfulWrite(auth *domain.AuthInfo, svc resolvedSvc, wr
 		return
 	}
 	s.refreshWriteMetrics(auth, svc, written)
-	if s.activity == nil || auth == nil {
-		return
-	}
-	s.activity.RecordMemoryActivity(auth.TenantID, time.Now().UTC())
 }
 
 func (s *Server) afterSuccessfulIngest(auth *domain.AuthInfo, svc resolvedSvc, written int64) {

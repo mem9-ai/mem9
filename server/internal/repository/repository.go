@@ -55,7 +55,9 @@ type TenantRepo interface {
 	UpdateStatus(ctx context.Context, id string, status domain.TenantStatus) error
 	UpdateSchemaVersion(ctx context.Context, id string, version int) error
 	TouchActivity(ctx context.Context, tenantID string, at time.Time) error
+	UpsertMemoryStats(ctx context.Context, tenantID string, activityAt time.Time, total, last7d int64, observedAt time.Time) error
 	CountActiveTenantsSince(ctx context.Context, since time.Time) (int64, error)
+	SumActiveMemoryStats(ctx context.Context) (total int64, last7d int64, err error)
 }
 
 // UploadTaskRepo manages upload task records in the control plane DB.

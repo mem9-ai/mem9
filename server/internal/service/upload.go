@@ -257,8 +257,12 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 			if err != nil {
 				return w.failTask(ctx, task, fmt.Errorf("ingest session chunk: %w", err), logger)
 			}
-			// recordActivity uses context.Background internally per the best-effort contract.
-			w.recordActivity(task.TenantID)
+			if i == len(chunks)-1 {
+				w.recordMemoryStats(taskCtx, task.TenantID, memRepo)
+			} else {
+				// recordActivity uses context.Background internally per the best-effort contract.
+				w.recordActivity(task.TenantID)
+			}
 			doneChunks = i + 1
 		}
 
@@ -333,12 +337,7 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 				clusterID = "default"
 			}
 			metrics.MemoryChangesTotal.WithLabelValues(clusterID).Add(float64(len(memories)))
-			if total, last7d, err := memRepo.CountStats(taskCtx); err == nil {
-				metrics.ActiveMemoryTotal.WithLabelValues(clusterID).Set(float64(total))
-				metrics.ActiveMemory7dTotal.WithLabelValues(clusterID).Set(float64(last7d))
-			}
-			// recordActivity uses context.Background internally per the best-effort contract.
-			w.recordActivity(task.TenantID)
+			w.recordMemoryStats(taskCtx, task.TenantID, memRepo)
 			batchIdx++
 			doneChunks = batchIdx
 		}
@@ -365,6 +364,25 @@ func (w *UploadWorker) recordActivity(tenantID string) {
 		return
 	}
 	w.activity.RecordMemoryActivity(tenantID, time.Now().UTC())
+}
+
+func (w *UploadWorker) recordMemoryStats(ctx context.Context, tenantID string, memRepo repository.MemoryRepo) {
+	if w == nil || w.activity == nil || memRepo == nil {
+		return
+	}
+
+	observedAt := time.Now().UTC()
+	total, last7d, err := memRepo.CountStats(ctx)
+	if err != nil {
+		logger := w.logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Warn("upload memory stats skipped: count stats failed", "tenant_id", tenantID, "err", err)
+		w.recordActivity(tenantID)
+		return
+	}
+	w.activity.RecordMemoryStats(ctx, tenantID, observedAt, total, last7d, observedAt)
 }
 
 // failTask marks task as failed and cleans up the file.

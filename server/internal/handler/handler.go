@@ -28,21 +28,20 @@ import (
 
 // Server holds the HTTP handlers and their dependencies.
 type Server struct {
-	tenant        *service.TenantService
-	uploadTasks   repository.UploadTaskRepo
-	uploadDir     string
-	embedder      *embed.Embedder
-	llmClient     *llm.Client
-	autoModel     string
-	ftsEnabled    bool
-	ingestMode    service.IngestMode
-	dbBackend     string
-	logger        *slog.Logger
-	metering      metering.Writer
-	activity      *service.ActivityTracker
-	startedAt     time.Time
-	svcCache      sync.Map
-	gaugeDebounce sync.Map // cluster_id -> time.Time of last Gauge refresh
+	tenant      *service.TenantService
+	uploadTasks repository.UploadTaskRepo
+	uploadDir   string
+	embedder    *embed.Embedder
+	llmClient   *llm.Client
+	autoModel   string
+	ftsEnabled  bool
+	ingestMode  service.IngestMode
+	dbBackend   string
+	logger      *slog.Logger
+	metering    metering.Writer
+	activity    *service.ActivityTracker
+	startedAt   time.Time
+	svcCache    sync.Map
 }
 
 // NewServer creates a new HTTP handler server.

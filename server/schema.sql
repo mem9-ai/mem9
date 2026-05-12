@@ -25,8 +25,11 @@ CREATE TABLE IF NOT EXISTS tenants (
 );
 
 CREATE TABLE IF NOT EXISTS tenant_activity (
-  tenant_id        VARCHAR(36) NOT NULL PRIMARY KEY,
-  last_activity_at TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  tenant_id                  VARCHAR(36) NOT NULL PRIMARY KEY,
+  last_activity_at           TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  active_memory_total        BIGINT      NOT NULL DEFAULT 0,
+  active_memory_7d_total     BIGINT      NOT NULL DEFAULT 0,
+  memory_stats_observed_at   TIMESTAMP   NULL,
   CONSTRAINT fk_tenant_activity FOREIGN KEY (tenant_id) REFERENCES tenants(id),
   INDEX idx_tenant_activity_last_activity (last_activity_at)
 );

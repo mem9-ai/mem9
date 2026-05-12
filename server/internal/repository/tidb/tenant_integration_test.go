@@ -243,3 +243,93 @@ func TestTenantCountActiveTenantsSince(t *testing.T) {
 		t.Fatalf("active tenants since = %d, want 1", got)
 	}
 }
+
+func TestTenantUpsertMemoryStatsKeepsNewestObservedCounts(t *testing.T) {
+	if err := truncateAll(testDB); err != nil {
+		t.Fatalf("truncateAll: %v", err)
+	}
+	repo := NewTenantRepo(testDB)
+	ctx := context.Background()
+
+	tenant := newTestTenant(func(t *domain.Tenant) { t.Status = domain.TenantActive })
+	if err := repo.Create(ctx, tenant); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	observedNew := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	observedOld := observedNew.Add(-time.Minute)
+	activityOld := observedNew
+	activityNew := observedNew.Add(time.Minute)
+
+	if err := repo.UpsertMemoryStats(ctx, tenant.ID, activityOld, 100, 50, observedNew); err != nil {
+		t.Fatalf("UpsertMemoryStats newer: %v", err)
+	}
+	if err := repo.UpsertMemoryStats(ctx, tenant.ID, activityNew, 1, 1, observedOld); err != nil {
+		t.Fatalf("UpsertMemoryStats older: %v", err)
+	}
+
+	var gotActivity time.Time
+	var total, last7d int64
+	var gotObserved time.Time
+	if err := testDB.QueryRowContext(ctx,
+		`SELECT last_activity_at, active_memory_total, active_memory_7d_total, memory_stats_observed_at
+		 FROM tenant_activity WHERE tenant_id = ?`,
+		tenant.ID,
+	).Scan(&gotActivity, &total, &last7d, &gotObserved); err != nil {
+		t.Fatalf("query tenant_activity: %v", err)
+	}
+	if !gotActivity.Equal(activityNew) {
+		t.Fatalf("last_activity_at = %s, want %s", gotActivity, activityNew)
+	}
+	if total != 100 || last7d != 50 {
+		t.Fatalf("memory stats = %d/%d, want 100/50", total, last7d)
+	}
+	if !gotObserved.Equal(observedNew) {
+		t.Fatalf("memory_stats_observed_at = %s, want %s", gotObserved, observedNew)
+	}
+}
+
+func TestTenantSumActiveMemoryStats(t *testing.T) {
+	if err := truncateAll(testDB); err != nil {
+		t.Fatalf("truncateAll: %v", err)
+	}
+	repo := NewTenantRepo(testDB)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	activeA := newTestTenant(func(t *domain.Tenant) { t.Status = domain.TenantActive })
+	activeB := newTestTenant(func(t *domain.Tenant) { t.Status = domain.TenantActive })
+	suspended := newTestTenant(func(t *domain.Tenant) { t.Status = domain.TenantSuspended })
+	deleted := newTestTenant(func(t *domain.Tenant) { t.Status = domain.TenantDeleted })
+	deletedAt := newTestTenant(func(t *domain.Tenant) { t.Status = domain.TenantActive })
+
+	for _, tenant := range []*domain.Tenant{activeA, activeB, suspended, deleted, deletedAt} {
+		if err := repo.Create(ctx, tenant); err != nil {
+			t.Fatalf("Create(%s): %v", tenant.ID, err)
+		}
+	}
+	if _, err := testDB.ExecContext(ctx, `UPDATE tenants SET deleted_at = ? WHERE id = ?`, now, deletedAt.ID); err != nil {
+		t.Fatalf("mark deleted_at: %v", err)
+	}
+
+	stats := map[string][2]int64{
+		activeA.ID:   {10, 4},
+		activeB.ID:   {3, 2},
+		suspended.ID: {100, 100},
+		deleted.ID:   {100, 100},
+		deletedAt.ID: {100, 100},
+	}
+	for tenantID, counts := range stats {
+		if err := repo.UpsertMemoryStats(ctx, tenantID, now, counts[0], counts[1], now); err != nil {
+			t.Fatalf("UpsertMemoryStats(%s): %v", tenantID, err)
+		}
+	}
+
+	total, last7d, err := repo.SumActiveMemoryStats(ctx)
+	if err != nil {
+		t.Fatalf("SumActiveMemoryStats: %v", err)
+	}
+	if total != 13 || last7d != 6 {
+		t.Fatalf("active memory stats = %d/%d, want 13/6", total, last7d)
+	}
+}
