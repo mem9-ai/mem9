@@ -52,3 +52,26 @@ it explicitly.
 
 This matrix is not permission to run. The user must explicitly approve one
 experiment and its validation lane before implementation or benchmark execution.
+
+## Executed Experiment Record: Final-Selection Provenance Rescue
+
+Date: 2026-05-12
+
+This record was added after the user explicitly approved the retrieval/ranking experiment from `docs/mem9_retrieval_ranking_diagnostic_plan.md`. It does not authorize any full LoCoMo benchmark.
+
+| Field | Value |
+|---|---|
+| Experiment | Final-selection provenance rescue within already retrieved/ranked candidates |
+| Pipeline stage | Retrieval/ranking final selection |
+| Hypothesis | Some Cat1/Cat4 ER0 failures are caused by high-confidence source-provenance memories already being present in the ranked candidate list but being lost during final top-k selection. |
+| Approved scope | Offline replay, minimal production-side implementation only if replay passed, focused Go tests, predict-only trace validation. |
+| Excluded scope | Full benchmark, LLM judge, benchmark scoring changes, prompt changes, harness promotion changes, ingestion/storage/reconciliation changes, broad keyword/BM25/entity/source/date boosts, new candidate admission, context expansion. |
+| Replay evidence | `docs/mem9_final_selection_rescue_replay.md`; 161 target rows replayed, 42 safe rows improved, 4 risk rows affected, 0 target-gold regressions. |
+| Implementation evidence | `docs/mem9_final_selection_rescue_implementation.md`; implementation limited to `server/internal/handler/recall.go` plus focused tests in `server/internal/handler/recall_test.go`. |
+| Test evidence | Focused handler tests passed with `go test -count=1 ./internal/handler -run 'TestFinalSelectionProvenanceRescue|TestSelectTopRecallCandidatesDedupesInsightAndRawSessionBySourceSeq|TestSelectTopRecallCandidatesKeepsDistinctInsightsFromSameSourceSeq|TestSelectEnumerationRecallCandidatesDedupesInsightAndRawSessionBySourceSeq|TestSelectTopRecallCandidates_PerformanceBridgeKeepsAnswerInsightDespiteRawSourceSeen'`. |
+| Predict-only evidence | `docs/mem9_final_selection_rescue_predict_only_result.md`; diagnostic directory `/home/ec2-user/Documents/Dev/harness/diagnostics/20260512T011857Z-final-selection-rescue-predict-only`. |
+| Predict-only result | 1,986 rows; target 161 rows: 32 improved, 129 neutral, 0 regressed by final-context gold dia_id coverage; non-target rows: 80 improved, 1,731 neutral, 16 regressed. |
+| Returned count check | No row increased returned memory count; one row decreased from 40 to 30 combined memories. |
+| Schema check | Normal result and memory schemas unchanged. |
+| Current recommendation | `GO_FOR_FULL_BENCHMARK_APPROVAL`, pending explicit user approval before any full LoCoMo or LLM judge run. |
+| Rollback | Revert `server/internal/handler/recall.go` and `server/internal/handler/recall_test.go` candidate changes; trace-only files can remain isolated behind `MNEMO_RECALL_TRACE_DIR` or be reverted separately. |

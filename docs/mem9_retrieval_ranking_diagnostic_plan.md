@@ -384,3 +384,57 @@ Medium. The evidence is row-level and mechanism-specific, but it comes from LoCo
 ## Explicit Recommendation
 
 GO for a narrow retrieval/ranking implementation only after explicit user approval. The supported mechanism is final-selection provenance rescue within already retrieved/ranked candidates. Do not implement from this plan without approval.
+
+## Approved Experiment Result: Final-Selection Provenance Rescue
+
+Date: 2026-05-12
+
+Status: `GO_FOR_FULL_BENCHMARK_APPROVAL`, pending explicit user approval before any full LoCoMo benchmark or LLM judge run.
+
+Evidence:
+
+- Offline replay report: `docs/mem9_final_selection_rescue_replay.md`
+- Implementation report: `docs/mem9_final_selection_rescue_implementation.md`
+- Predict-only validation report: `docs/mem9_final_selection_rescue_predict_only_result.md`
+- Replay rows artifact: `/home/ec2-user/Documents/Dev/harness/diagnostics/20260511T062806Z-er0-trace/exports/final_selection_rescue_replay_rows.json`
+- Predict-only validation directory: `/home/ec2-user/Documents/Dev/harness/diagnostics/20260512T011857Z-final-selection-rescue-predict-only`
+
+Replay result:
+
+- Target rows replayed: 161.
+- Safe rows improved: 42.
+- Risk rows affected: 4.
+- Target-gold regressions: 0.
+- Gate result: pass, because the approved rule covered >=8 safe rows with <=4 risk rows.
+
+Implemented mechanism:
+
+- Final-selection provenance rescue inside `server/internal/handler/recall.go`.
+- Operates only over already retrieved/ranked candidates.
+- Does not admit new candidates.
+- Does not change ingestion, storage, reconciliation, benchmark scoring, prompts, harness promotion rules, or returned top-k size.
+- Requires explicit source provenance and confidence >=65.
+- Replaces at most one selected memory per speaker recall.
+
+Focused tests:
+
+- Added in `server/internal/handler/recall_test.go`.
+- Command run:
+  `cd server && go test -count=1 ./internal/handler -run 'TestFinalSelectionProvenanceRescue|TestSelectTopRecallCandidatesDedupesInsightAndRawSessionBySourceSeq|TestSelectTopRecallCandidatesKeepsDistinctInsightsFromSameSourceSeq|TestSelectEnumerationRecallCandidatesDedupesInsightAndRawSessionBySourceSeq|TestSelectTopRecallCandidates_PerformanceBridgeKeepsAnswerInsightDespiteRawSourceSeen'`
+- Result: pass.
+
+Predict-only validation:
+
+- Settings: `LOCOMO_PROTOCOL=mem0-style`, `LOCOMO_ANSWER_PROMPT=mem0-speaker`, `LOCOMO_SPEAKER_INGEST_MODE=batch2`, `LOCOMO_SPEAKER_TOP_K=10`, `MEM9_RETRIEVAL_LIMIT=20`.
+- LLM judge: not run.
+- Full benchmark: not run.
+- Row denominator: 1,986.
+- Target movement on the 161 rows: 32 improved, 129 neutral, 0 regressed.
+- Risk movement: 4 risk rows changed selected sets, 0 target-gold gains, 0 target-gold regressions.
+- Non-target movement: 80 improved, 1,731 neutral, 16 regressed by final-context gold dia_id coverage.
+- API/result schema: unchanged.
+- Returned memory count: no row increased returned memory count; one row decreased from 40 to 30 combined memories.
+
+Interpretation:
+
+The approved retrieval/ranking mechanism is supported by offline replay and predict-only trace validation. It is still not proven as a benchmark score improvement because no full LoCoMo benchmark or LLM judge has been run under this approval.
