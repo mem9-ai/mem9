@@ -68,7 +68,7 @@ func (t *ActivityTracker) recordMemoryActivity(tenantID string, at time.Time, re
 	t.refreshAggregateMetrics(ctx, time.Now().UTC())
 }
 
-func (t *ActivityTracker) RecordMemoryStats(ctx context.Context, tenantID string, activityAt time.Time, total, last7d int64, observedAt time.Time) {
+func (t *ActivityTracker) RecordMemoryStats(_ context.Context, tenantID string, activityAt time.Time, total, last7d int64, observedAt time.Time) {
 	if t == nil || t.tenants == nil || tenantID == "" {
 		return
 	}
@@ -79,12 +79,7 @@ func (t *ActivityTracker) RecordMemoryStats(ctx context.Context, tenantID string
 		observedAt = time.Now().UTC()
 	}
 
-	callCtx := ctx
-	var cancel context.CancelFunc
-	if callCtx == nil {
-		callCtx = context.Background()
-	}
-	callCtx, cancel = context.WithTimeout(callCtx, activityTrackerTimeout)
+	callCtx, cancel := context.WithTimeout(context.Background(), activityTrackerTimeout)
 	defer cancel()
 
 	if err := t.tenants.UpsertMemoryStats(callCtx, tenantID, activityAt, total, last7d, observedAt); err != nil {

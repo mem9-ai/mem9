@@ -228,6 +228,25 @@ func TestActivityTrackerRecordsMemoryStatsAndRefreshesGauges(t *testing.T) {
 	}
 }
 
+func TestActivityTrackerRecordMemoryStatsUsesIndependentContext(t *testing.T) {
+	resetActivityGauges()
+	repo := &activityTenantRepo{count: 1, memoryTotal: 9, memoryLast7d: 4}
+	tracker := NewActivityTracker(repo, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tracker.RecordMemoryStats(ctx, "tenant-a", time.Now(), 9, 4, time.Now())
+
+	repo.mu.Lock()
+	upsertCalls := repo.upsertCalls
+	countCalls := repo.countCalls
+	sumCalls := repo.sumCalls
+	repo.mu.Unlock()
+	if upsertCalls != 1 || countCalls != 1 || sumCalls != 1 {
+		t.Fatalf("calls = upsert:%d count:%d sum:%d, want 1/1/1", upsertCalls, countCalls, sumCalls)
+	}
+}
+
 func TestActivityTrackerDebouncesAggregateRefreshButNotStatsUpsert(t *testing.T) {
 	resetActivityGauges()
 	repo := &activityTenantRepo{count: 1, memoryTotal: 20, memoryLast7d: 8}
