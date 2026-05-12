@@ -268,6 +268,22 @@ func TestUploadWorkerRecordActivity(t *testing.T) {
 	}
 }
 
+func TestUploadWorkerRecordActivityOnlyDoesNotRefresh(t *testing.T) {
+	repo := &activityTenantRepo{count: 1}
+	worker := &UploadWorker{activity: NewActivityTracker(repo, nil)}
+
+	worker.recordActivityOnly("tenant-a")
+
+	repo.mu.Lock()
+	touchCalls := repo.touchCalls
+	countCalls := repo.countCalls
+	sumCalls := repo.sumCalls
+	repo.mu.Unlock()
+	if touchCalls != 1 || countCalls != 0 || sumCalls != 0 {
+		t.Fatalf("calls = touch:%d count:%d sum:%d, want 1/0/0", touchCalls, countCalls, sumCalls)
+	}
+}
+
 type uploadMemoryStatsRepo struct {
 	memoryRepoMock
 	total  int64

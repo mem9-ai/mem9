@@ -260,8 +260,7 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 			if i == len(chunks)-1 {
 				w.recordMemoryStats(taskCtx, task.TenantID, memRepo)
 			} else {
-				// recordActivity uses context.Background internally per the best-effort contract.
-				w.recordActivity(task.TenantID)
+				w.recordActivityOnly(task.TenantID)
 			}
 			doneChunks = i + 1
 		}
@@ -337,7 +336,11 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 				clusterID = "default"
 			}
 			metrics.MemoryChangesTotal.WithLabelValues(clusterID).Add(float64(len(memories)))
-			w.recordMemoryStats(taskCtx, task.TenantID, memRepo)
+			if batchIdx == totalBatches-1 {
+				w.recordMemoryStats(taskCtx, task.TenantID, memRepo)
+			} else {
+				w.recordActivityOnly(task.TenantID)
+			}
 			batchIdx++
 			doneChunks = batchIdx
 		}
@@ -364,6 +367,13 @@ func (w *UploadWorker) recordActivity(tenantID string) {
 		return
 	}
 	w.activity.RecordMemoryActivity(tenantID, time.Now().UTC())
+}
+
+func (w *UploadWorker) recordActivityOnly(tenantID string) {
+	if w == nil || w.activity == nil {
+		return
+	}
+	w.activity.RecordMemoryActivityOnly(tenantID, time.Now().UTC())
 }
 
 func (w *UploadWorker) recordMemoryStats(ctx context.Context, tenantID string, memRepo repository.MemoryRepo) {

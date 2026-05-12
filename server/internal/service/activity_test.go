@@ -179,6 +179,29 @@ func TestActivityTrackerDebouncesMetricRefresh(t *testing.T) {
 	}
 }
 
+func TestActivityTrackerRecordMemoryActivityOnlyDoesNotRefresh(t *testing.T) {
+	resetActivityGauges()
+	repo := &activityTenantRepo{count: 4, memoryTotal: 12, memoryLast7d: 6}
+	tracker := NewActivityTracker(repo, nil)
+
+	tracker.RecordMemoryActivityOnly("tenant-a", time.Now())
+
+	if got := activeTenantGaugeValue(t); got != 0 {
+		t.Fatalf("active tenant gauge = %v, want 0", got)
+	}
+	if got := activeMemoryGaugeValue(t); got != 0 {
+		t.Fatalf("active memory gauge = %v, want 0", got)
+	}
+	repo.mu.Lock()
+	touchCalls := repo.touchCalls
+	countCalls := repo.countCalls
+	sumCalls := repo.sumCalls
+	repo.mu.Unlock()
+	if touchCalls != 1 || countCalls != 0 || sumCalls != 0 {
+		t.Fatalf("calls = touch:%d count:%d sum:%d, want 1/0/0", touchCalls, countCalls, sumCalls)
+	}
+}
+
 func TestActivityTrackerRecordsMemoryStatsAndRefreshesGauges(t *testing.T) {
 	resetActivityGauges()
 	repo := &activityTenantRepo{count: 2, memoryTotal: 14, memoryLast7d: 5}

@@ -39,6 +39,14 @@ func NewActivityTracker(tenants repository.TenantRepo, logger *slog.Logger) *Act
 }
 
 func (t *ActivityTracker) RecordMemoryActivity(tenantID string, at time.Time) {
+	t.recordMemoryActivity(tenantID, at, true)
+}
+
+func (t *ActivityTracker) RecordMemoryActivityOnly(tenantID string, at time.Time) {
+	t.recordMemoryActivity(tenantID, at, false)
+}
+
+func (t *ActivityTracker) recordMemoryActivity(tenantID string, at time.Time, refresh bool) {
 	if t == nil || t.tenants == nil || tenantID == "" {
 		return
 	}
@@ -54,6 +62,9 @@ func (t *ActivityTracker) RecordMemoryActivity(tenantID string, at time.Time) {
 		return
 	}
 
+	if !refresh {
+		return
+	}
 	t.refreshAggregateMetrics(ctx, time.Now().UTC())
 }
 
