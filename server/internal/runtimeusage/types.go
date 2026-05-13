@@ -110,6 +110,7 @@ type OutboxStore interface {
 	StoreAdjustmentPending(ctx context.Context, lease *OperationLease, adj Adjustment, event MeteringEvent) error
 	MarkOperationDone(ctx context.Context, operationID string, reason string) error
 	MarkOperationRetryableFailure(ctx context.Context, operationID string, reason string) error
+	MarkUnknownAfterCrash(ctx context.Context, operationID string, reason string) error
 }
 
 type Manager interface {

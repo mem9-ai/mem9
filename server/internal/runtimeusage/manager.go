@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/metering"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 )
@@ -178,14 +179,37 @@ func (m *manager) AfterMemoryDeleteFailure(ctx context.Context, lease *Operation
 	if lease == nil || m.outbox == nil {
 		return
 	}
-	if err := m.outbox.StoreAdjustmentDone(ctx, lease.OperationID, "memoryDeleteFailed"); err != nil {
-		m.logger.WarnContext(ctx, "runtime usage adjustment intent cleanup failed",
+	if errors.Is(cause, domain.ErrNotFound) {
+		if err := m.outbox.StoreAdjustmentDone(ctx, lease.OperationID, "memoryDeleteNotFound"); err != nil {
+			m.logger.WarnContext(ctx, "runtime usage adjustment intent cleanup failed",
+				"operation_id", lease.OperationID,
+				"tenant_id", lease.Subject.TenantID,
+				"cluster_id", lease.Subject.ClusterID,
+				"err", err,
+			)
+		}
+		return
+	}
+	reason := "memory delete failed before quota delta was known"
+	if cause != nil {
+		reason = cause.Error()
+	}
+	if err := m.outbox.MarkUnknownAfterCrash(ctx, lease.OperationID, reason); err != nil {
+		m.logger.WarnContext(ctx, "runtime usage adjustment intent unknown mark failed",
 			"operation_id", lease.OperationID,
 			"tenant_id", lease.Subject.TenantID,
 			"cluster_id", lease.Subject.ClusterID,
 			"err", err,
 		)
 	}
+	metrics.RuntimeUsageManualReconciliationTotal.WithLabelValues("memory_delete_failed_unknown").Inc()
+	metrics.RuntimeUsageReservationUnknownTotal.WithLabelValues(outboxPhaseAdjustmentIntent).Inc()
+	m.logger.ErrorContext(ctx, "manual_reconciliation_required: runtime usage memory delete failed before quota delta was known",
+		"operation_id", lease.OperationID,
+		"tenant_id", lease.Subject.TenantID,
+		"cluster_id", lease.Subject.ClusterID,
+		"err", cause,
+	)
 }
 
 func (m *manager) reserve(ctx context.Context, subject Subject, meter string, units int64) (*OperationLease, error) {

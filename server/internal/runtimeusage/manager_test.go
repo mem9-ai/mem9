@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/metering"
 )
 
@@ -70,6 +71,7 @@ type fakeOutboxStore struct {
 	adjustmentPending int
 	done              int
 	retryable         int
+	unknown           int
 	commitErr         error
 }
 
@@ -110,6 +112,11 @@ func (s *fakeOutboxStore) MarkOperationDone(context.Context, string, string) err
 
 func (s *fakeOutboxStore) MarkOperationRetryableFailure(context.Context, string, string) error {
 	s.retryable++
+	return nil
+}
+
+func (s *fakeOutboxStore) MarkUnknownAfterCrash(context.Context, string, string) error {
+	s.unknown++
 	return nil
 }
 
@@ -163,6 +170,42 @@ func TestManagerDeleteZeroDeltaSkipsAdjustmentAndMetering(t *testing.T) {
 	}
 	if len(writer.events) != 0 {
 		t.Fatalf("metering events = %+v, want none", writer.events)
+	}
+}
+
+func TestManagerMemoryDeleteFailureNotFoundMarksAdjustmentDone(t *testing.T) {
+	quota := &fakeQuotaClient{}
+	writer := &captureWriter{}
+	outbox := &fakeOutboxStore{}
+	manager := NewManager(Config{Enabled: true, Outbox: outbox}, quota, writer, nil)
+	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
+
+	lease, err := manager.BeforeMemoryDelete(context.Background(), subject, MemoryDeleteTarget{MemoryIDs: []string{"mem-1"}})
+	if err != nil {
+		t.Fatalf("BeforeMemoryDelete: %v", err)
+	}
+	manager.AfterMemoryDeleteFailure(context.Background(), lease, domain.ErrNotFound)
+
+	if outbox.adjustmentIntent != 1 || outbox.adjustmentDone != 1 || outbox.unknown != 0 {
+		t.Fatalf("outbox = %+v, want adjustment intent done without unknown", outbox)
+	}
+}
+
+func TestManagerMemoryDeleteFailureAmbiguousMarksUnknown(t *testing.T) {
+	quota := &fakeQuotaClient{}
+	writer := &captureWriter{}
+	outbox := &fakeOutboxStore{}
+	manager := NewManager(Config{Enabled: true, Outbox: outbox}, quota, writer, nil)
+	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
+
+	lease, err := manager.BeforeMemoryDelete(context.Background(), subject, MemoryDeleteTarget{MemoryIDs: []string{"mem-1"}})
+	if err != nil {
+		t.Fatalf("BeforeMemoryDelete: %v", err)
+	}
+	manager.AfterMemoryDeleteFailure(context.Background(), lease, errString("delete commit failed"))
+
+	if outbox.adjustmentIntent != 1 || outbox.unknown != 1 || outbox.adjustmentDone != 0 {
+		t.Fatalf("outbox = %+v, want adjustment intent marked unknown", outbox)
 	}
 }
 
