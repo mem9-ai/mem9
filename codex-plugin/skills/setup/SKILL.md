@@ -151,7 +151,8 @@ Common flags:
 Most mem9 plugin releases take effect after a Codex restart. Migration releases may ask for `$mem9:setup` once after restart.
 
 `scope apply` and `scope clear` install or repair the managed mem9 runtime in `$CODEX_HOME`.
-They enable `codex_hooks`, repair `$CODEX_HOME/hooks.json`, install stable shims in `$CODEX_HOME/mem9/hooks/`, and write install metadata to `$CODEX_HOME/mem9/install.json`.
+They enable the Codex hooks feature, repair `$CODEX_HOME/hooks.json`, install stable shims in `$CODEX_HOME/mem9/hooks/`, and write install metadata to `$CODEX_HOME/mem9/install.json`.
+Codex `0.129.0+` uses `hooks = true`; Codex `0.122.0` through `0.128.x` uses `codex_hooks = true`.
 
 Do not ask the user to paste API keys into the Codex TUI.
 Prefer `MEM9_API_KEY` plus a trusted-shell `profile save-key` command.

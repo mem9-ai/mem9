@@ -47,7 +47,7 @@ codex plugin marketplace add mem9-ai/mem9
    $mem9:store
    ```
 
-You do not need to enable hooks manually first. `$mem9:setup` inspects the saved profiles, enables `codex_hooks`, and installs the managed hooks.
+You do not need to enable hooks manually first. `$mem9:setup` inspects the saved profiles, enables the Codex hooks feature, and installs the managed hooks. Codex `0.129.0+` uses `hooks = true`; Codex `0.122.0` through `0.128.x` uses `codex_hooks = true`.
 
 ## Where Files Are Stored
 
@@ -89,7 +89,7 @@ What it does:
 - inspects the current runtime, profiles, and scope config
 - lets you create a new mem9 API key or reuse an existing global profile
 - applies either user scope or project scope
-- repairs `codex_hooks`, `$CODEX_HOME/hooks.json`, and the managed hook shims
+- repairs the Codex hooks feature flag, `$CODEX_HOME/hooks.json`, and the managed hook shims
 - keeps API key entry out of the Codex TUI
 
 Project scope keeps profile and timeout overrides.
