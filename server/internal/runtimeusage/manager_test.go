@@ -70,6 +70,7 @@ type fakeOutboxStore struct {
 	adjustmentPending int
 	done              int
 	retryable         int
+	commitErr         error
 }
 
 func (s *fakeOutboxStore) StoreReservedActive(context.Context, *OperationLease, *Reservation, time.Time) error {
@@ -79,7 +80,7 @@ func (s *fakeOutboxStore) StoreReservedActive(context.Context, *OperationLease, 
 
 func (s *fakeOutboxStore) StoreCommitPending(context.Context, *OperationLease, MeteringEvent) error {
 	s.commitPending++
-	return nil
+	return s.commitErr
 }
 
 func (s *fakeOutboxStore) StoreReleasePending(context.Context, *OperationLease, string) error {
@@ -199,5 +200,61 @@ func TestManagerCommitFailureLeavesOutboxPendingAndSkipsMetering(t *testing.T) {
 	}
 	if len(writer.events) != 0 {
 		t.Fatalf("metering events = %+v, want none before quota commit", writer.events)
+	}
+}
+
+func TestManagerRecallCommitPendingFailureReleasesReservation(t *testing.T) {
+	quota := &fakeQuotaClient{}
+	writer := &captureWriter{}
+	outbox := &fakeOutboxStore{commitErr: errString("outbox unavailable")}
+	manager := NewManager(Config{Enabled: true, Outbox: outbox}, quota, writer, nil)
+	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
+
+	lease, err := manager.BeforeRecall(context.Background(), subject)
+	if err != nil {
+		t.Fatalf("BeforeRecall: %v", err)
+	}
+	err = manager.AfterRecallSuccess(context.Background(), lease, RecallResult{MemoryIDs: []string{"mem-1"}, AgentName: "Codex"})
+	if err == nil {
+		t.Fatal("AfterRecallSuccess error = nil, want commit pending error")
+	}
+
+	wantFinalize := lease.OperationID + ":" + ReservationStatusReleased + ":recallCommitPendingFailed"
+	if len(quota.finalized) != 1 || quota.finalized[0] != wantFinalize {
+		t.Fatalf("finalized = %+v, want [%s]", quota.finalized, wantFinalize)
+	}
+	if outbox.releasePending != 1 || outbox.done != 1 {
+		t.Fatalf("outbox release state = %+v, want release pending and done", outbox)
+	}
+	if len(writer.events) != 0 {
+		t.Fatalf("metering events = %+v, want none", writer.events)
+	}
+}
+
+func TestManagerMemoryCreateCommitPendingFailureReleasesReservation(t *testing.T) {
+	quota := &fakeQuotaClient{}
+	writer := &captureWriter{}
+	outbox := &fakeOutboxStore{commitErr: errString("outbox unavailable")}
+	manager := NewManager(Config{Enabled: true, Outbox: outbox}, quota, writer, nil)
+	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
+
+	lease, err := manager.BeforeMemoryCreate(context.Background(), subject, 1)
+	if err != nil {
+		t.Fatalf("BeforeMemoryCreate: %v", err)
+	}
+	err = manager.AfterMemoryCreateSuccess(context.Background(), lease, MemoryCreateResult{MemoryIDs: []string{"mem-1"}, AgentName: "Codex"})
+	if err == nil {
+		t.Fatal("AfterMemoryCreateSuccess error = nil, want commit pending error")
+	}
+
+	wantFinalize := lease.OperationID + ":" + ReservationStatusReleased + ":memoryCreateCommitPendingFailed"
+	if len(quota.finalized) != 1 || quota.finalized[0] != wantFinalize {
+		t.Fatalf("finalized = %+v, want [%s]", quota.finalized, wantFinalize)
+	}
+	if outbox.releasePending != 1 || outbox.done != 1 {
+		t.Fatalf("outbox release state = %+v, want release pending and done", outbox)
+	}
+	if len(writer.events) != 0 {
+		t.Fatalf("metering events = %+v, want none", writer.events)
 	}
 }

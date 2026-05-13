@@ -74,6 +74,7 @@ func (m *manager) AfterRecallSuccess(ctx context.Context, lease *OperationLease,
 	}
 	event := m.consoleMeteringEvent(lease, EventTypeRecall, result.AgentName, result.MemoryIDs, lease.Units)
 	if err := m.storeCommitPending(ctx, lease, event); err != nil {
+		m.release(ctx, lease, "recallCommitPendingFailed")
 		return err
 	}
 	if err := m.client.FinalizeReservation(ctx, lease.Subject, lease.OperationID, ReservationStatusCommitted, "recallCompleted"); err != nil {
@@ -98,6 +99,7 @@ func (m *manager) AfterMemoryCreateSuccess(ctx context.Context, lease *Operation
 	}
 	event := m.consoleMeteringEvent(lease, EventTypeMemoryCreated, result.AgentName, result.MemoryIDs, lease.Units)
 	if err := m.storeCommitPending(ctx, lease, event); err != nil {
+		m.release(ctx, lease, "memoryCreateCommitPendingFailed")
 		return err
 	}
 	if err := m.client.FinalizeReservation(ctx, lease.Subject, lease.OperationID, ReservationStatusCommitted, "memoryCreated"); err != nil {
