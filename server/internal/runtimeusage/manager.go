@@ -79,6 +79,9 @@ func (m *manager) AfterRecallSuccess(ctx context.Context, lease *OperationLease,
 	}
 	if err := m.client.FinalizeReservation(ctx, lease.Subject, lease.OperationID, ReservationStatusCommitted, "recallCompleted"); err != nil {
 		m.markRetryable(ctx, lease.OperationID, err)
+		if m.outbox != nil {
+			return nil
+		}
 		return err
 	}
 	m.recordConsoleMetering(lease, event)
@@ -104,6 +107,9 @@ func (m *manager) AfterMemoryCreateSuccess(ctx context.Context, lease *Operation
 	}
 	if err := m.client.FinalizeReservation(ctx, lease.Subject, lease.OperationID, ReservationStatusCommitted, "memoryCreated"); err != nil {
 		m.markRetryable(ctx, lease.OperationID, err)
+		if m.outbox != nil {
+			return nil
+		}
 		return err
 	}
 	m.recordConsoleMetering(lease, event)
@@ -159,6 +165,9 @@ func (m *manager) AfterMemoryDeleteSuccess(ctx context.Context, lease *Operation
 	}
 	if err := m.client.ApplyAdjustment(ctx, lease.Subject, adj); err != nil {
 		m.markRetryable(ctx, lease.OperationID, err)
+		if m.outbox != nil {
+			return nil
+		}
 		return err
 	}
 	m.recordConsoleMetering(lease, event)

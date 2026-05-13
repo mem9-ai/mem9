@@ -179,7 +179,7 @@ func TestManagerFailOpenDoesNotBypassQuotaDenied(t *testing.T) {
 	}
 }
 
-func TestManagerCommitFailureLeavesOutboxPendingAndSkipsMetering(t *testing.T) {
+func TestManagerCommitFailureWithOutboxQueuesRetryAndReturnsSuccess(t *testing.T) {
 	quota := &fakeQuotaClient{finalizeErr: &UnavailableError{Err: errString("timeout")}}
 	writer := &captureWriter{}
 	outbox := &fakeOutboxStore{}
@@ -191,8 +191,8 @@ func TestManagerCommitFailureLeavesOutboxPendingAndSkipsMetering(t *testing.T) {
 		t.Fatalf("BeforeRecall: %v", err)
 	}
 	err = manager.AfterRecallSuccess(context.Background(), lease, RecallResult{MemoryIDs: []string{"mem-1"}, AgentName: "Codex"})
-	if err == nil {
-		t.Fatal("AfterRecallSuccess error = nil, want finalize error")
+	if err != nil {
+		t.Fatalf("AfterRecallSuccess: %v", err)
 	}
 
 	if outbox.reservedActive != 1 || outbox.commitPending != 1 || outbox.retryable != 1 {
@@ -200,6 +200,100 @@ func TestManagerCommitFailureLeavesOutboxPendingAndSkipsMetering(t *testing.T) {
 	}
 	if len(writer.events) != 0 {
 		t.Fatalf("metering events = %+v, want none before quota commit", writer.events)
+	}
+}
+
+func TestManagerMemoryCreateCommitFailureWithOutboxQueuesRetryAndReturnsSuccess(t *testing.T) {
+	quota := &fakeQuotaClient{finalizeErr: &UnavailableError{Err: errString("timeout")}}
+	writer := &captureWriter{}
+	outbox := &fakeOutboxStore{}
+	manager := NewManager(Config{Enabled: true, Outbox: outbox}, quota, writer, nil)
+	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
+
+	lease, err := manager.BeforeMemoryCreate(context.Background(), subject, 1)
+	if err != nil {
+		t.Fatalf("BeforeMemoryCreate: %v", err)
+	}
+	err = manager.AfterMemoryCreateSuccess(context.Background(), lease, MemoryCreateResult{MemoryIDs: []string{"mem-1"}, AgentName: "Codex"})
+	if err != nil {
+		t.Fatalf("AfterMemoryCreateSuccess: %v", err)
+	}
+
+	if outbox.reservedActive != 1 || outbox.commitPending != 1 || outbox.retryable != 1 {
+		t.Fatalf("outbox = %+v, want reserved, commit pending, retryable", outbox)
+	}
+	if len(writer.events) != 0 {
+		t.Fatalf("metering events = %+v, want none before quota commit", writer.events)
+	}
+}
+
+func TestManagerCommitFailureWithoutOutboxReturnsError(t *testing.T) {
+	quota := &fakeQuotaClient{finalizeErr: &UnavailableError{Err: errString("timeout")}}
+	writer := &captureWriter{}
+	manager := NewManager(Config{Enabled: true}, quota, writer, nil)
+	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
+
+	lease, err := manager.BeforeRecall(context.Background(), subject)
+	if err != nil {
+		t.Fatalf("BeforeRecall: %v", err)
+	}
+	err = manager.AfterRecallSuccess(context.Background(), lease, RecallResult{MemoryIDs: []string{"mem-1"}, AgentName: "Codex"})
+	if err == nil {
+		t.Fatal("AfterRecallSuccess error = nil, want finalize error without outbox")
+	}
+	if len(writer.events) != 0 {
+		t.Fatalf("metering events = %+v, want none before quota commit", writer.events)
+	}
+}
+
+func TestManagerAdjustmentFailureWithOutboxQueuesRetryAndReturnsSuccess(t *testing.T) {
+	quota := &fakeQuotaClient{adjustErr: &UnavailableError{Err: errString("timeout")}}
+	writer := &captureWriter{}
+	outbox := &fakeOutboxStore{}
+	manager := NewManager(Config{Enabled: true, Outbox: outbox}, quota, writer, nil)
+	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
+
+	lease, err := manager.BeforeMemoryDelete(context.Background(), subject, MemoryDeleteTarget{MemoryIDs: []string{"mem-1"}})
+	if err != nil {
+		t.Fatalf("BeforeMemoryDelete: %v", err)
+	}
+	err = manager.AfterMemoryDeleteSuccess(context.Background(), lease, MemoryDeleteResult{
+		MemoryIDs:        []string{"mem-1"},
+		MemorySlotsDelta: -1,
+		AgentName:        "Codex",
+	})
+	if err != nil {
+		t.Fatalf("AfterMemoryDeleteSuccess: %v", err)
+	}
+
+	if outbox.adjustmentIntent != 1 || outbox.adjustmentPending != 1 || outbox.retryable != 1 {
+		t.Fatalf("outbox = %+v, want adjustment intent, adjustment pending, retryable", outbox)
+	}
+	if len(writer.events) != 0 {
+		t.Fatalf("metering events = %+v, want none before quota adjustment", writer.events)
+	}
+}
+
+func TestManagerAdjustmentFailureWithoutOutboxReturnsError(t *testing.T) {
+	quota := &fakeQuotaClient{adjustErr: &UnavailableError{Err: errString("timeout")}}
+	writer := &captureWriter{}
+	manager := NewManager(Config{Enabled: true}, quota, writer, nil)
+	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
+
+	lease, err := manager.BeforeMemoryDelete(context.Background(), subject, MemoryDeleteTarget{MemoryIDs: []string{"mem-1"}})
+	if err != nil {
+		t.Fatalf("BeforeMemoryDelete: %v", err)
+	}
+	err = manager.AfterMemoryDeleteSuccess(context.Background(), lease, MemoryDeleteResult{
+		MemoryIDs:        []string{"mem-1"},
+		MemorySlotsDelta: -1,
+		AgentName:        "Codex",
+	})
+	if err == nil {
+		t.Fatal("AfterMemoryDeleteSuccess error = nil, want adjustment error without outbox")
+	}
+	if len(writer.events) != 0 {
+		t.Fatalf("metering events = %+v, want none before quota adjustment", writer.events)
 	}
 }
 
