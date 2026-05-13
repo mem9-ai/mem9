@@ -36,6 +36,7 @@ const (
 )
 
 type outboxPayload struct {
+	APIKeySubject   string                 `json:"apiKeySubject,omitempty"`
 	Meter           string                 `json:"meter,omitempty"`
 	Units           int64                  `json:"units,omitempty"`
 	Delta           int64                  `json:"delta,omitempty"`
@@ -139,10 +140,11 @@ func (s *SQLStore) StoreReservedActive(ctx context.Context, lease *OperationLeas
 		return nil
 	}
 	payload := outboxPayload{
-		Meter:  lease.Meter,
-		Units:  lease.Units,
-		Status: "reserved",
-		Reason: "reservationAccepted",
+		APIKeySubject: lease.Subject.APIKeySubject,
+		Meter:         lease.Meter,
+		Units:         lease.Units,
+		Status:        "reserved",
+		Reason:        "reservationAccepted",
 	}
 	if reservation != nil {
 		payload.Status = reservation.Status
@@ -155,11 +157,12 @@ func (s *SQLStore) StoreCommitPending(ctx context.Context, lease *OperationLease
 		return nil
 	}
 	payload := outboxPayload{
-		Meter:  lease.Meter,
-		Units:  lease.Units,
-		Status: ReservationStatusCommitted,
-		Reason: reservationCommitReason,
-		Event:  outboxEventFromMetering(event),
+		APIKeySubject: lease.Subject.APIKeySubject,
+		Meter:         lease.Meter,
+		Units:         lease.Units,
+		Status:        ReservationStatusCommitted,
+		Reason:        reservationCommitReason,
+		Event:         outboxEventFromMetering(event, lease.Subject.APIKeySubject),
 	}
 	return s.storeOperation(ctx, lease, outboxStepCommitReservation, outboxPhaseCommitPending, payload, time.Time{}, s.now())
 }
@@ -169,10 +172,11 @@ func (s *SQLStore) StoreReleasePending(ctx context.Context, lease *OperationLeas
 		return nil
 	}
 	payload := outboxPayload{
-		Meter:  lease.Meter,
-		Units:  lease.Units,
-		Status: ReservationStatusReleased,
-		Reason: reason,
+		APIKeySubject: lease.Subject.APIKeySubject,
+		Meter:         lease.Meter,
+		Units:         lease.Units,
+		Status:        ReservationStatusReleased,
+		Reason:        reason,
 	}
 	return s.storeOperation(ctx, lease, outboxStepReleaseReservation, outboxPhaseReleasePending, payload, time.Time{}, s.now())
 }
@@ -182,6 +186,7 @@ func (s *SQLStore) StoreAdjustmentIntent(ctx context.Context, lease *OperationLe
 		return nil
 	}
 	payload := outboxPayload{
+		APIKeySubject:   lease.Subject.APIKeySubject,
 		Meter:           lease.Meter,
 		Reason:          "memoryDeleteStarted",
 		TargetMemoryIDs: append([]string(nil), target.MemoryIDs...),
@@ -198,10 +203,11 @@ func (s *SQLStore) StoreAdjustmentPending(ctx context.Context, lease *OperationL
 		return nil
 	}
 	payload := outboxPayload{
-		Meter:  adj.Meter,
-		Delta:  adj.Delta,
-		Reason: adj.Reason,
-		Event:  outboxEventFromMetering(event),
+		APIKeySubject: lease.Subject.APIKeySubject,
+		Meter:         adj.Meter,
+		Delta:         adj.Delta,
+		Reason:        adj.Reason,
+		Event:         outboxEventFromMetering(event, lease.Subject.APIKeySubject),
 	}
 	return s.storeOperation(ctx, lease, outboxStepApplyAdjustment, outboxPhaseAdjustmentPending, payload, time.Time{}, s.now())
 }
@@ -539,14 +545,15 @@ func marshalOutboxPayload(payload outboxPayload) ([]byte, string, error) {
 	return payloadJSON, hex.EncodeToString(sum[:]), nil
 }
 
-func outboxEventFromMetering(event MeteringEvent) *outboxMeteringPayload {
+func outboxEventFromMetering(event MeteringEvent, apiKeySubject string) *outboxMeteringPayload {
 	return &outboxMeteringPayload{
-		EventType:  event.EventType,
-		Meter:      event.Meter,
-		Units:      event.Units,
-		OccurredAt: event.OccurredAt.UTC(),
-		AgentName:  event.AgentName,
-		MemoryIDs:  append([]string(nil), event.MemoryIDs...),
+		APIKeySubject: apiKeySubject,
+		EventType:     event.EventType,
+		Meter:         event.Meter,
+		Units:         event.Units,
+		OccurredAt:    event.OccurredAt.UTC(),
+		AgentName:     event.AgentName,
+		MemoryIDs:     append([]string(nil), event.MemoryIDs...),
 	}
 }
 

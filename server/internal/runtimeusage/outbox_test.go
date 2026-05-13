@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"io"
 	"strings"
 	"sync"
@@ -132,6 +133,37 @@ func TestSQLStoreStoreOperationUsesAtomicUpsert(t *testing.T) {
 				t.Fatalf("query does not contain %q:\n%s", tt.want, rec.execs[0].query)
 			}
 		})
+	}
+}
+
+func TestSQLStoreStoreCommitPendingPersistsAPIKeySubject(t *testing.T) {
+	rec := &recordingStore{}
+	store := NewSQLStore(newRecordingDB(t, rec), "tidb")
+	store.now = func() time.Time { return time.Unix(100, 0).UTC() }
+
+	lease := &OperationLease{
+		OperationID: "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
+		Subject:     Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "api-key-subject"},
+		Meter:       MeterRecalls,
+		Units:       1,
+		Reserved:    true,
+	}
+	if err := store.StoreCommitPending(context.Background(), lease, MeteringEvent{EventType: EventTypeRecall, Meter: MeterRecalls, Units: 1}); err != nil {
+		t.Fatalf("StoreCommitPending: %v", err)
+	}
+
+	if len(rec.execs) != 1 {
+		t.Fatalf("exec count = %d, want 1", len(rec.execs))
+	}
+	var payload outboxPayload
+	if err := json.Unmarshal([]byte(rec.execs[0].args[6].Value.(string)), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.APIKeySubject != "api-key-subject" {
+		t.Fatalf("payload APIKeySubject = %q, want api-key-subject", payload.APIKeySubject)
+	}
+	if payload.Event == nil || payload.Event.APIKeySubject != "api-key-subject" {
+		t.Fatalf("payload event = %+v, want APIKeySubject", payload.Event)
 	}
 }
 

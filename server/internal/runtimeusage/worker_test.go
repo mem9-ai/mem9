@@ -89,6 +89,87 @@ func TestWorkerCommitPendingFinalizesQuotaBeforeMetering(t *testing.T) {
 	}
 }
 
+func TestWorkerCommitPendingReplaysStoredAPIKeySubject(t *testing.T) {
+	row := outboxRow{
+		OperationID:    "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
+		TenantID:       "tenant-a",
+		ClusterID:      "cluster-a",
+		SubjectVersion: subjectVersionTenantIDV1,
+		Step:           outboxStepCommitReservation,
+		Phase:          outboxPhaseCommitPending,
+		PayloadJSON: []byte(`{
+			"apiKeySubject":"api-key-subject",
+			"meter":"recalls",
+			"units":1,
+			"status":"committed",
+			"reason":"operationSucceeded",
+			"event":{
+				"apiKeySubject":"api-key-subject",
+				"eventType":"recall",
+				"meter":"recalls",
+				"units":1,
+				"occurredAt":"2026-05-13T00:00:00Z",
+				"agentName":"Codex",
+				"memoryIds":["mem-1"]
+			}
+		}`),
+	}
+	store := &fakeWorkerStore{rows: []outboxRow{row}}
+	quota := &fakeQuotaClient{}
+	writer := &captureWriter{}
+	worker := newWorker(store, quota, writer, nil)
+
+	if err := worker.runOnce(context.Background()); err != nil {
+		t.Fatalf("runOnce: %v", err)
+	}
+	if len(quota.finalizeSubjects) != 1 || quota.finalizeSubjects[0].APIKeySubject != "api-key-subject" {
+		t.Fatalf("finalize subjects = %+v, want stored API key subject", quota.finalizeSubjects)
+	}
+	if len(writer.events) != 1 || writer.events[0].APIKeySubject != "api-key-subject" {
+		t.Fatalf("events = %+v, want stored API key subject", writer.events)
+	}
+}
+
+func TestWorkerAdjustmentPendingReplaysStoredAPIKeySubject(t *testing.T) {
+	row := outboxRow{
+		OperationID:    "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
+		TenantID:       "tenant-a",
+		ClusterID:      "cluster-a",
+		SubjectVersion: subjectVersionTenantIDV1,
+		Step:           outboxStepApplyAdjustment,
+		Phase:          outboxPhaseAdjustmentPending,
+		PayloadJSON: []byte(`{
+			"apiKeySubject":"api-key-subject",
+			"meter":"memory_slots",
+			"delta":-1,
+			"reason":"memoryDeleted",
+			"event":{
+				"apiKeySubject":"api-key-subject",
+				"eventType":"memoryDeleted",
+				"meter":"memory_slots",
+				"units":-1,
+				"occurredAt":"2026-05-13T00:00:00Z",
+				"agentName":"Codex",
+				"memoryIds":["mem-1"]
+			}
+		}`),
+	}
+	store := &fakeWorkerStore{rows: []outboxRow{row}}
+	quota := &fakeQuotaClient{}
+	writer := &captureWriter{}
+	worker := newWorker(store, quota, writer, nil)
+
+	if err := worker.runOnce(context.Background()); err != nil {
+		t.Fatalf("runOnce: %v", err)
+	}
+	if len(quota.adjustSubjects) != 1 || quota.adjustSubjects[0].APIKeySubject != "api-key-subject" {
+		t.Fatalf("adjust subjects = %+v, want stored API key subject", quota.adjustSubjects)
+	}
+	if len(writer.events) != 1 || writer.events[0].APIKeySubject != "api-key-subject" {
+		t.Fatalf("events = %+v, want stored API key subject", writer.events)
+	}
+}
+
 func TestWorkerCommitConflictMarksTerminalFailed(t *testing.T) {
 	row := outboxRow{
 		OperationID:    "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",

@@ -114,7 +114,7 @@ func (w *Worker) processCommit(ctx context.Context, row outboxRow, payload outbo
 		w.markUnknown(ctx, row, "commit worker saw unsupported phase")
 		return
 	}
-	subject := rowSubject(row)
+	subject := rowSubject(row, payload)
 	if err := w.client.FinalizeReservation(ctx, subject, row.OperationID, ReservationStatusCommitted, payload.Reason); err != nil {
 		w.markQuotaFailure(ctx, row, err)
 		return
@@ -127,7 +127,7 @@ func (w *Worker) processRelease(ctx context.Context, row outboxRow, payload outb
 		w.markUnknown(ctx, row, "release worker saw unsupported phase")
 		return
 	}
-	subject := rowSubject(row)
+	subject := rowSubject(row, payload)
 	if err := w.client.FinalizeReservation(ctx, subject, row.OperationID, ReservationStatusReleased, payload.Reason); err != nil {
 		w.markQuotaFailure(ctx, row, err)
 		return
@@ -146,7 +146,7 @@ func (w *Worker) processAdjustment(ctx context.Context, row outboxRow, payload o
 		w.markUnknown(ctx, row, "adjustment worker saw unsupported phase")
 		return
 	}
-	subject := rowSubject(row)
+	subject := rowSubject(row, payload)
 	adj := Adjustment{
 		OperationID: row.OperationID,
 		Meter:       payload.Meter,
@@ -172,7 +172,7 @@ func (w *Worker) requeueMetering(ctx context.Context, row outboxRow, payload out
 	if err := w.store.DeferPending(ctx, row.OperationID, "metering event requeued"); err != nil {
 		w.logger.WarnContext(ctx, "runtime usage metering requeue defer failed", "operation_id", row.OperationID, "err", err)
 	}
-	w.metering.Record(eventFromOutbox(row, *payload.Event))
+	w.metering.Record(eventFromOutbox(row, payload))
 }
 
 func (w *Worker) recordPayloadEvent(ctx context.Context, row outboxRow, payload outboxPayload) {
@@ -186,7 +186,7 @@ func (w *Worker) recordPayloadEvent(ctx context.Context, row outboxRow, payload 
 		w.markRetryable(ctx, row, errString("metering writer missing"))
 		return
 	}
-	w.metering.Record(eventFromOutbox(row, *payload.Event))
+	w.metering.Record(eventFromOutbox(row, payload))
 }
 
 func (w *Worker) markUnknownIfExpired(ctx context.Context, row outboxRow, reason string) {
@@ -244,31 +244,38 @@ func (w *Worker) markTerminal(ctx context.Context, row outboxRow, err error) {
 	)
 }
 
-func rowSubject(row outboxRow) Subject {
+func rowSubject(row outboxRow, payload outboxPayload) Subject {
 	return Subject{
 		TenantID:      row.TenantID,
 		ClusterID:     row.ClusterID,
-		APIKeySubject: row.TenantID,
+		APIKeySubject: apiKeySubjectFromOutbox(row, payload),
 	}
 }
 
-func eventFromOutbox(row outboxRow, payload outboxMeteringPayload) metering.Event {
-	apiKeySubject := payload.APIKeySubject
-	if apiKeySubject == "" {
-		apiKeySubject = row.TenantID
+func apiKeySubjectFromOutbox(row outboxRow, payload outboxPayload) string {
+	if payload.Event != nil && payload.Event.APIKeySubject != "" {
+		return payload.Event.APIKeySubject
 	}
+	if payload.APIKeySubject != "" {
+		return payload.APIKeySubject
+	}
+	return row.TenantID
+}
+
+func eventFromOutbox(row outboxRow, payload outboxPayload) metering.Event {
+	event := payload.Event
 	return metering.Event{
 		Category:      "runtime-usage",
 		TenantID:      row.TenantID,
 		ClusterID:     row.ClusterID,
-		AgentID:       payload.AgentName,
+		AgentID:       event.AgentName,
 		OperationID:   row.OperationID,
-		APIKeySubject: apiKeySubject,
-		EventType:     payload.EventType,
-		Meter:         payload.Meter,
-		Units:         payload.Units,
-		OccurredAt:    payload.OccurredAt.UTC(),
-		MemoryIDs:     append([]string(nil), payload.MemoryIDs...),
+		APIKeySubject: apiKeySubjectFromOutbox(row, payload),
+		EventType:     event.EventType,
+		Meter:         event.Meter,
+		Units:         event.Units,
+		OccurredAt:    event.OccurredAt.UTC(),
+		MemoryIDs:     append([]string(nil), event.MemoryIDs...),
 	}
 }
 

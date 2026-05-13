@@ -10,13 +10,15 @@ import (
 )
 
 type fakeQuotaClient struct {
-	reserveOps  []Operation
-	finalized   []string
-	adjusted    []Adjustment
-	err         error
-	reserveErr  error
-	finalizeErr error
-	adjustErr   error
+	reserveOps       []Operation
+	finalized        []string
+	adjusted         []Adjustment
+	finalizeSubjects []Subject
+	adjustSubjects   []Subject
+	err              error
+	reserveErr       error
+	finalizeErr      error
+	adjustErr        error
 }
 
 func (c *fakeQuotaClient) Reserve(_ context.Context, _ Subject, operationID string, op Operation) (*Reservation, error) {
@@ -30,7 +32,7 @@ func (c *fakeQuotaClient) Reserve(_ context.Context, _ Subject, operationID stri
 	return &Reservation{OperationID: operationID, Meter: op.Meter, Units: op.Units, Status: "reserved"}, nil
 }
 
-func (c *fakeQuotaClient) FinalizeReservation(_ context.Context, _ Subject, operationID string, status string, reason string) error {
+func (c *fakeQuotaClient) FinalizeReservation(_ context.Context, subject Subject, operationID string, status string, reason string) error {
 	if c.finalizeErr != nil {
 		return c.finalizeErr
 	}
@@ -38,10 +40,11 @@ func (c *fakeQuotaClient) FinalizeReservation(_ context.Context, _ Subject, oper
 		return c.err
 	}
 	c.finalized = append(c.finalized, operationID+":"+status+":"+reason)
+	c.finalizeSubjects = append(c.finalizeSubjects, subject)
 	return nil
 }
 
-func (c *fakeQuotaClient) ApplyAdjustment(_ context.Context, _ Subject, adj Adjustment) error {
+func (c *fakeQuotaClient) ApplyAdjustment(_ context.Context, subject Subject, adj Adjustment) error {
 	if c.adjustErr != nil {
 		return c.adjustErr
 	}
@@ -49,6 +52,7 @@ func (c *fakeQuotaClient) ApplyAdjustment(_ context.Context, _ Subject, adj Adju
 		return c.err
 	}
 	c.adjusted = append(c.adjusted, adj)
+	c.adjustSubjects = append(c.adjustSubjects, subject)
 	return nil
 }
 
