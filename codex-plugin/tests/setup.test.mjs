@@ -228,7 +228,7 @@ test("assertNodeVersion rejects runtimes below Node 22", () => {
   );
 });
 
-test("applyCodexHooksPatch enables codex hooks without removing existing feature keys", () => {
+test("applyCodexHooksPatch enables legacy codex hooks without removing existing feature keys", () => {
   const patched = applyCodexHooksPatch([
     "[features]",
     "foo = true",
@@ -242,10 +242,29 @@ test("applyCodexHooksPatch enables codex hooks without removing existing feature
   assert.match(patched, /\[features\]/);
   assert.match(patched, /foo = true/);
   assert.match(patched, /foo = true\ncodex_hooks = true/);
+  assert.doesNotMatch(patched, /^hooks = true$/m);
   assert.match(patched, /\[model\]/);
 });
 
-test("applyCodexHooksPatch inserts codex_hooks directly under features when missing", () => {
+test("applyCodexHooksPatch writes hooks for Codex 0.129+ and removes legacy aliases", () => {
+  const patched = applyCodexHooksPatch([
+    "[features]",
+    "foo = true",
+    "codex_hooks = true",
+    "hooks = false",
+    "",
+  ].join("\n"), {
+    featureKey: "hooks",
+  });
+
+  assert.match(patched, /\[features\]/);
+  assert.match(patched, /foo = true/);
+  assert.match(patched, /foo = true\nhooks = true/);
+  assert.doesNotMatch(patched, /codex_hooks = true/);
+  assert.doesNotMatch(patched, /hooks = false/);
+});
+
+test("applyCodexHooksPatch inserts the selected feature key directly under features when missing", () => {
   const patched = applyCodexHooksPatch([
     "[features]",
     "multi_agent = true",
@@ -262,6 +281,15 @@ test("applyCodexHooksPatch inserts codex_hooks directly under features when miss
     patched,
     /\[features\]\ncodex_hooks = true\nmulti_agent = true\n\n# \[mcp_servers\]/,
   );
+});
+
+test("applyCodexHooksPatch falls back to codex_hooks for unknown feature keys", () => {
+  const patched = applyCodexHooksPatch("[features]\nhooks = true\n", {
+    featureKey: "unknown",
+  });
+
+  assert.match(patched, /\[features\]\ncodex_hooks = true\n/);
+  assert.doesNotMatch(patched, /\nhooks = true\n/);
 });
 
 test("applyCodexHooksPatch handles commented features and next section headers", () => {
@@ -476,6 +504,9 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
       codexHome,
       mem9Home,
       hookShimSourceDir: "./bootstrap-hooks",
+      execFileSync() {
+        throw new Error("codex unavailable");
+      },
     });
 
     assert.equal(summary.status, "ok");
@@ -485,6 +516,10 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
     assert.deepEqual(summary.runtime.legacyPausedSources, ["global", "project"]);
     assert.equal(summary.runtime.effectiveLegacyPausedSource, "project");
     assert.equal(summary.plugin.hooksFeatureEnabled, true);
+    assert.equal(summary.plugin.hooksFeatureKey, "codex_hooks");
+    assert.equal(summary.plugin.preferredHooksFeatureKey, "codex_hooks");
+    assert.equal(summary.plugin.codexVersion, "");
+    assert.equal(summary.plugin.codexVersionSource, "unavailable");
     assert.equal(summary.plugin.hooksInstalled, true);
     assert.equal(summary.plugin.installMetadataPresent, true);
     assert.equal(summary.globalConfig.summary.profileId, "default");
@@ -602,6 +637,39 @@ test("inspect uses install metadata identity for setup script repair guidance", 
       summary.profiles.manualSaveKeyTemplate,
       /\$\{CODEX_HOME\}\/plugins\/cache\/acme-labs\/mem9-pro\/local\/skills\/setup\/scripts\/setup\.mjs/,
     );
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("inspect recognizes the renamed hooks feature key", () => {
+  const tempRoot = createTempRoot("setup");
+
+  try {
+    const projectRoot = path.join(tempRoot, "project");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
+    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(mem9Home, { recursive: true });
+
+    writeFileSync(
+      path.join(codexHome, "config.toml"),
+      "[features]\nhooks = true\n",
+    );
+
+    const summary = inspectSetup(["inspect"], {
+      cwd: projectRoot,
+      codexHome,
+      mem9Home,
+      codexVersion: "codex 0.129.0",
+    });
+
+    assert.equal(summary.plugin.hooksFeatureEnabled, true);
+    assert.equal(summary.plugin.hooksFeatureKey, "hooks");
+    assert.equal(summary.plugin.preferredHooksFeatureKey, "hooks");
+    assert.equal(summary.plugin.codexVersion, "codex 0.129.0");
+    assert.equal(summary.plugin.codexVersionSource, "test");
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -1020,6 +1088,9 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
         codexHome,
         mem9Home,
         userWritable: true,
+        execFileSync() {
+          throw new Error("codex unavailable");
+        },
         stdout: {
           write(chunk) {
             stdoutText += chunk;
@@ -1092,6 +1163,111 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
     });
     assert.equal(stdoutText.includes("key-1"), false);
     assert.equal(JSON.stringify(stdoutSummary).includes("key-1"), false);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("scope apply preserves an existing renamed hooks feature key", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const projectRoot = path.join(tempRoot, "project");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
+    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(mem9Home, { recursive: true });
+
+    writeFileSync(
+      path.join(codexHome, "config.toml"),
+      "[features]\nhooks = true\ncodex_hooks = true\n",
+    );
+    writeJson(path.join(mem9Home, ".credentials.json"), {
+      schemaVersion: 1,
+      profiles: {
+        work: {
+          label: "Work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-1",
+        },
+      },
+    });
+
+    await runSetup(
+      [
+        "scope",
+        "apply",
+        "--scope",
+        "user",
+        "--profile",
+        "work",
+      ],
+      {
+        cwd: projectRoot,
+        codexHome,
+        mem9Home,
+        userWritable: true,
+      },
+    );
+
+    const patchedToml = readFileSync(path.join(codexHome, "config.toml"), "utf8");
+    assert.match(patchedToml, /\[features\]\nhooks = true\n/);
+    assert.doesNotMatch(patchedToml, /codex_hooks = true/);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("scope apply migrates legacy codex_hooks to hooks for Codex 0.129+", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const projectRoot = path.join(tempRoot, "project");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const mem9Home = path.join(tempRoot, "mem9-home");
+    mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
+    mkdirSync(codexHome, { recursive: true });
+    mkdirSync(mem9Home, { recursive: true });
+
+    writeFileSync(
+      path.join(codexHome, "config.toml"),
+      "[features]\ncodex_hooks = true\nother = true\n",
+    );
+    writeJson(path.join(mem9Home, ".credentials.json"), {
+      schemaVersion: 1,
+      profiles: {
+        work: {
+          label: "Work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-1",
+        },
+      },
+    });
+
+    await runSetup(
+      [
+        "scope",
+        "apply",
+        "--scope",
+        "user",
+        "--profile",
+        "work",
+      ],
+      {
+        cwd: projectRoot,
+        codexHome,
+        mem9Home,
+        userWritable: true,
+        execFileSync() {
+          return "codex 0.129.0\n";
+        },
+      },
+    );
+
+    const patchedToml = readFileSync(path.join(codexHome, "config.toml"), "utf8");
+    assert.match(patchedToml, /\[features\]\nhooks = true\nother = true\n/);
+    assert.doesNotMatch(patchedToml, /codex_hooks = true/);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }

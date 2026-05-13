@@ -2,6 +2,9 @@
 // @ts-nocheck
 
 import {
+  execFileSync,
+} from "node:child_process";
+import {
   accessSync,
   constants,
   copyFileSync,
@@ -41,6 +44,14 @@ const DEFAULT_INSTALL_METADATA = {
   pluginName: "mem9",
   shimVersion: 1,
 };
+const CODEX_HOOKS_CANONICAL_RENAME_VERSION = {
+  major: 0,
+  minor: 129,
+  patch: 0,
+};
+const HOOKS_FEATURE_KEY = "hooks";
+const LEGACY_HOOKS_FEATURE_KEY = "codex_hooks";
+const HOOKS_FEATURE_KEYS = [HOOKS_FEATURE_KEY, LEGACY_HOOKS_FEATURE_KEY];
 const MEM9_EVENTS = ["SessionStart", "UserPromptSubmit", "Stop"];
 const HOOK_TEMPLATE_KEYS = {
   sessionStartCommand: "__MEM9_SESSION_START_COMMAND__",
@@ -90,6 +101,89 @@ function parseIntegerArg(flag, value) {
   }
 
   return parsed;
+}
+
+function parseSemver(value) {
+  const match = normalizeString(value).match(/(?:^|[^0-9])v?(\d+)\.(\d+)\.(\d+)(?:[^0-9]|$)/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    major: Number.parseInt(match[1], 10),
+    minor: Number.parseInt(match[2], 10),
+    patch: Number.parseInt(match[3], 10),
+  };
+}
+
+function compareSemver(left, right) {
+  if (!left || !right) {
+    return null;
+  }
+
+  for (const key of ["major", "minor", "patch"]) {
+    if (left[key] > right[key]) {
+      return 1;
+    }
+    if (left[key] < right[key]) {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+function detectCodexVersion(options = {}) {
+  const explicitVersion = normalizeString(options.codexVersion);
+  if (explicitVersion) {
+    return {
+      version: explicitVersion,
+      source: "test",
+    };
+  }
+
+  const execFile = options.execFileSync ?? execFileSync;
+  if (typeof execFile !== "function") {
+    return {
+      version: "",
+      source: "unavailable",
+    };
+  }
+
+  try {
+    const output = execFile("codex", ["--version"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 1000,
+    });
+    const detectedVersion = normalizeString(output);
+    if (detectedVersion) {
+      return {
+        version: detectedVersion,
+        source: "codex-cli",
+      };
+    }
+  } catch {}
+
+  return {
+    version: "",
+    source: "unavailable",
+  };
+}
+
+function selectHooksFeatureKey(options = {}) {
+  const detected = detectCodexVersion(options);
+  const parsed = parseSemver(detected.version);
+  const comparison = compareSemver(parsed, CODEX_HOOKS_CANONICAL_RENAME_VERSION);
+  const key = comparison != null && comparison >= 0
+    ? HOOKS_FEATURE_KEY
+    : LEGACY_HOOKS_FEATURE_KEY;
+
+  return {
+    key,
+    codexVersion: parsed ? detected.version : "",
+    source: detected.source,
+  };
 }
 
 function parseUpdateCheckMode(value) {
@@ -745,9 +839,11 @@ function stripTomlLineComment(line) {
   return text;
 }
 
-function parseFeaturesCodexHooksEnabled(configTomlText = "") {
+function parseFeaturesHooksState(configTomlText = "") {
   const lines = String(configTomlText ?? "").split(/\r?\n/);
   let inFeatures = false;
+  /** @type {{ key: string, enabled: boolean }[]} */
+  const features = [];
 
   for (const line of lines) {
     const normalized = stripTomlLineComment(line).trim();
@@ -761,13 +857,21 @@ function parseFeaturesCodexHooksEnabled(configTomlText = "") {
       continue;
     }
 
-    const match = normalized.match(/^codex_hooks\s*=\s*(true|false)$/i);
+    const match = normalized.match(/^(hooks|codex_hooks)\s*=\s*(true|false)$/i);
     if (match) {
-      return match[1].toLowerCase() === "true";
+      features.push({
+        key: match[1].toLowerCase(),
+        enabled: match[2].toLowerCase() === "true",
+      });
     }
   }
 
-  return false;
+  const enabledKey = features.find((feature) => feature.enabled)?.key ?? "";
+
+  return {
+    enabled: Boolean(enabledKey),
+    key: enabledKey || features[0]?.key || "",
+  };
 }
 
 function inspectJsonFile(filePath, fallback, fsOps = {}) {
@@ -1267,7 +1371,10 @@ export function mergeMem9Hooks(existingHooks, mem9Hooks) {
   return next;
 }
 
-export function applyCodexHooksPatch(sourceText = "") {
+export function applyCodexHooksPatch(sourceText = "", options = {}) {
+  const targetKey = HOOKS_FEATURE_KEYS.includes(normalizeString(options.featureKey))
+    ? normalizeString(options.featureKey)
+    : LEGACY_HOOKS_FEATURE_KEY;
   const text = String(sourceText ?? "");
   const eol = text.includes("\r\n") ? "\r\n" : "\n";
   const lines = text ? text.split(/\r?\n/) : [];
@@ -1300,31 +1407,35 @@ export function applyCodexHooksPatch(sourceText = "") {
     if (lines.length > 0) {
       lines.push("");
     }
-    lines.push("[features]", "codex_hooks = true");
+    lines.push("[features]", `${targetKey} = true`);
     return `${lines.join(eol)}${eol}`;
   }
 
   const before = lines.slice(0, sectionStart + 1);
   const inside = lines.slice(sectionStart + 1, sectionEnd);
   const after = lines.slice(sectionEnd);
-  let seenCodexHooks = false;
+  let seenTargetKey = false;
   const normalizedInside = [];
 
   for (const line of inside) {
-    if (/^\s*codex_hooks\s*=/.test(line)) {
-      if (seenCodexHooks) {
+    const match = line.match(/^\s*(hooks|codex_hooks)\s*=/);
+    if (match) {
+      if (match[1] !== targetKey) {
         continue;
       }
-      seenCodexHooks = true;
-      normalizedInside.push("codex_hooks = true");
+      if (seenTargetKey) {
+        continue;
+      }
+      seenTargetKey = true;
+      normalizedInside.push(`${targetKey} = true`);
       continue;
     }
 
     normalizedInside.push(line);
   }
 
-  if (!seenCodexHooks) {
-    normalizedInside.unshift("codex_hooks = true");
+  if (!seenTargetKey) {
+    normalizedInside.unshift(`${targetKey} = true`);
   }
 
   const rebuilt = [
@@ -1528,6 +1639,18 @@ function resolveCommandContext(args = {}, options = {}) {
   };
 }
 
+function resolveHooksFeature(options = {}) {
+  return options.hooksFeatureKey
+    ? {
+        key: HOOKS_FEATURE_KEYS.includes(normalizeString(options.hooksFeatureKey))
+          ? normalizeString(options.hooksFeatureKey)
+          : LEGACY_HOOKS_FEATURE_KEY,
+        codexVersion: "",
+        source: "configured",
+      }
+    : selectHooksFeatureKey(options);
+}
+
 function emitMachineSummary(summary, context, stdout) {
   stdout?.write?.(`${JSON.stringify(summary)}\n`);
 }
@@ -1621,6 +1744,15 @@ function prepareManagedRuntimeRepair(context, noteInvalidJson, options = {}) {
 }
 
 function applyManagedRuntimeRepair(context, prepared, options = {}) {
+  const existingHooksFeature = parseFeaturesHooksState(prepared.existingConfigToml);
+  const detectedHooksFeature = resolveHooksFeature(options);
+  const hooksFeature = detectedHooksFeature.source !== "unavailable"
+    ? detectedHooksFeature
+    : existingHooksFeature.enabled
+    ? {
+        key: existingHooksFeature.key,
+      }
+    : detectedHooksFeature;
   installHookShims(
     options.hookShimSourceDir ?? HOOK_SHIM_SOURCE_DIR,
     context.globalPaths.hooksDir,
@@ -1633,7 +1765,9 @@ function applyManagedRuntimeRepair(context, prepared, options = {}) {
   );
   writeTextFile(
     context.globalPaths.configTomlPath,
-    applyCodexHooksPatch(prepared.existingConfigToml),
+    applyCodexHooksPatch(prepared.existingConfigToml, {
+      featureKey: hooksFeature.key,
+    }),
     context.fsOps,
   );
   writeJsonFile(
@@ -1728,6 +1862,8 @@ export function inspectSetup(argv = process.argv.slice(2), options = {}) {
     "",
     context.fsOps,
   );
+  const hooksFeatureState = parseFeaturesHooksState(hooksTomlText);
+  const preferredHooksFeature = resolveHooksFeature(options);
   const hooksJson = inspectJsonFile(
     context.globalPaths.hooksPath,
     { hooks: {} },
@@ -1801,7 +1937,11 @@ export function inspectSetup(argv = process.argv.slice(2), options = {}) {
       effectiveLegacyPausedSource: runtimeState.effectiveLegacyPausedSource,
     },
     plugin: {
-      hooksFeatureEnabled: parseFeaturesCodexHooksEnabled(hooksTomlText),
+      hooksFeatureEnabled: hooksFeatureState.enabled,
+      hooksFeatureKey: hooksFeatureState.key,
+      preferredHooksFeatureKey: preferredHooksFeature.key,
+      codexVersion: preferredHooksFeature.codexVersion,
+      codexVersionSource: preferredHooksFeature.source,
       hooksInstalled: hooksJson.state === "valid"
         && detectManagedHooksInstalled(hooksJson.value),
       hookShimsInstalled: detectHookShimsInstalled(
