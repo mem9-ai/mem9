@@ -44,6 +44,7 @@ type Config struct {
 	TenantPoolConnectTimeout time.Duration
 	TenantPoolIdleTimeout    time.Duration
 	TenantPoolTotalLimit     int
+	ChainRecallStopScore     float64
 
 	// TiDB Cloud Pool configuration
 	TiDBCloudAPIURL string
@@ -148,6 +149,7 @@ func Load() (*Config, error) {
 		TenantPoolConnectTimeout: envDuration("MNEMO_TENANT_POOL_CONNECT_TIMEOUT", 3*time.Second),
 		TenantPoolIdleTimeout:    envDuration("MNEMO_TENANT_POOL_IDLE_TIMEOUT", 10*time.Minute),
 		TenantPoolTotalLimit:     envInt("MNEMO_TENANT_POOL_TOTAL_LIMIT", 200),
+		ChainRecallStopScore:     envFloat("MNEMO_CHAIN_RECALL_STOP_SCORE", 0.5),
 		UploadDir:                envOr("MNEMO_UPLOAD_DIR", "./uploads"),
 		FTSEnabled:               envBool("MNEMO_FTS_ENABLED", false),
 		WorkerConcurrency:        envInt("MNEMO_WORKER_CONCURRENCY", 5),
@@ -188,6 +190,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.AutoSpendLimitCooldown <= 0 {
 		return nil, fmt.Errorf("MNEMO_AUTO_SPEND_LIMIT_COOLDOWN must be positive")
+	}
+	if cfg.ChainRecallStopScore < 0 || cfg.ChainRecallStopScore > 1 {
+		return nil, fmt.Errorf("MNEMO_CHAIN_RECALL_STOP_SCORE must be between 0 and 1")
 	}
 
 	return cfg, nil

@@ -34,6 +34,51 @@ CREATE TABLE IF NOT EXISTS tenant_activity (
   INDEX idx_tenant_activity_last_activity (last_activity_at)
 );
 
+CREATE TABLE IF NOT EXISTS space_chains (
+  id                  VARCHAR(36)   PRIMARY KEY,
+  project_id          VARCHAR(255)  NULL,
+  name                VARCHAR(255)  NOT NULL,
+  description         TEXT          NULL,
+  created_by_user_id  VARCHAR(255)  NULL,
+  deleted_at          TIMESTAMP     NULL,
+  deleted_by_user_id  VARCHAR(255)  NULL,
+  created_at          TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+  updated_at          TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_space_chains_project (project_id),
+  INDEX idx_space_chains_deleted (deleted_at)
+);
+
+CREATE TABLE IF NOT EXISTS space_chain_bindings (
+  id                  VARCHAR(36)   PRIMARY KEY,
+  chain_id            VARCHAR(36)   NOT NULL,
+  chain_api_key       VARCHAR(255)  NOT NULL,
+  created_by_user_id  VARCHAR(255)  NULL,
+  disabled            TINYINT(1)    NOT NULL DEFAULT 0,
+  disabled_at         TIMESTAMP     NULL,
+  disabled_by_user_id VARCHAR(255)  NULL,
+  created_at          TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE INDEX idx_space_chain_bindings_key (chain_api_key),
+  INDEX idx_space_chain_bindings_chain (chain_id),
+  CONSTRAINT fk_space_chain_bindings_chain FOREIGN KEY (chain_id) REFERENCES space_chains(id)
+);
+
+CREATE TABLE IF NOT EXISTS space_chain_nodes (
+  id                  VARCHAR(36)   PRIMARY KEY,
+  chain_id            VARCHAR(36)   NOT NULL,
+  tenant_id           VARCHAR(36)   NOT NULL,
+  external_space_id   VARCHAR(255)  NULL,
+  display_name        VARCHAR(255)  NULL,
+  position            INT           NOT NULL,
+  created_at          TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+  updated_at          TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE INDEX idx_space_chain_nodes_tenant (chain_id, tenant_id),
+  UNIQUE INDEX idx_space_chain_nodes_external_space (chain_id, external_space_id),
+  UNIQUE INDEX idx_space_chain_nodes_position (chain_id, position),
+  INDEX idx_space_chain_nodes_external_lookup (external_space_id),
+  CONSTRAINT fk_space_chain_nodes_chain FOREIGN KEY (chain_id) REFERENCES space_chains(id),
+  CONSTRAINT fk_space_chain_nodes_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+);
+
 -- Tenant data plane schema (per-tenant TiDB Serverless).
 CREATE TABLE IF NOT EXISTS memories (
   id              VARCHAR(36)     PRIMARY KEY,

@@ -28,20 +28,22 @@ import (
 
 // Server holds the HTTP handlers and their dependencies.
 type Server struct {
-	tenant      *service.TenantService
-	uploadTasks repository.UploadTaskRepo
-	uploadDir   string
-	embedder    *embed.Embedder
-	llmClient   *llm.Client
-	autoModel   string
-	ftsEnabled  bool
-	ingestMode  service.IngestMode
-	dbBackend   string
-	logger      *slog.Logger
-	metering    metering.Writer
-	activity    *service.ActivityTracker
-	startedAt   time.Time
-	svcCache    sync.Map
+	tenant               *service.TenantService
+	chains               *service.SpaceChainService
+	uploadTasks          repository.UploadTaskRepo
+	uploadDir            string
+	embedder             *embed.Embedder
+	llmClient            *llm.Client
+	autoModel            string
+	ftsEnabled           bool
+	ingestMode           service.IngestMode
+	dbBackend            string
+	logger               *slog.Logger
+	metering             metering.Writer
+	activity             *service.ActivityTracker
+	startedAt            time.Time
+	svcCache             sync.Map
+	chainRecallStopScore float64
 }
 
 // NewServer creates a new HTTP handler server.
@@ -58,18 +60,27 @@ func NewServer(
 	logger *slog.Logger,
 ) *Server {
 	return &Server{
-		tenant:      tenantSvc,
-		uploadTasks: uploadTasks,
-		uploadDir:   uploadDir,
-		embedder:    embedder,
-		llmClient:   llmClient,
-		autoModel:   autoModel,
-		ftsEnabled:  ftsEnabled,
-		ingestMode:  ingestMode,
-		dbBackend:   dbBackend,
-		logger:      logger,
-		startedAt:   time.Now().UTC(),
+		tenant:               tenantSvc,
+		uploadTasks:          uploadTasks,
+		uploadDir:            uploadDir,
+		embedder:             embedder,
+		llmClient:            llmClient,
+		autoModel:            autoModel,
+		ftsEnabled:           ftsEnabled,
+		ingestMode:           ingestMode,
+		dbBackend:            dbBackend,
+		logger:               logger,
+		startedAt:            time.Now().UTC(),
+		chainRecallStopScore: 0.5,
 	}
+}
+
+func (s *Server) WithSpaceChainService(chains *service.SpaceChainService, stopScore float64) *Server {
+	s.chains = chains
+	if stopScore >= 0 {
+		s.chainRecallStopScore = stopScore
+	}
+	return s
 }
 
 func (s *Server) WithMetering(writer metering.Writer) *Server {
@@ -177,6 +188,19 @@ func (s *Server) Router(
 
 	// Key status validates X-API-Key against control-plane state only.
 	r.Get("/v1alpha2/status", s.getKeyStatus)
+
+	r.Post("/v1alpha2/space-chains", s.createSpaceChain)
+	r.Get("/v1alpha2/space-chains/by-key", s.getSpaceChainByKey)
+	r.Route("/v1alpha2/space-chains/{chainID}", func(r chi.Router) {
+		r.Get("/", s.getSpaceChain)
+		r.Patch("/", s.updateSpaceChain)
+		r.Delete("/", s.deleteSpaceChain)
+		r.Get("/nodes", s.listSpaceChainNodes)
+		r.Put("/nodes", s.replaceSpaceChainNodes)
+		r.Get("/bindings", s.listSpaceChainBindings)
+		r.Post("/bindings", s.createSpaceChainBinding)
+		r.Patch("/bindings/{bindingID}", s.disableSpaceChainBinding)
+	})
 
 	// Tenant-scoped routes — tenantMW resolves {tenantID} to DB connection.
 	r.Route("/v1alpha1/mem9s/{tenantID}", func(r chi.Router) {

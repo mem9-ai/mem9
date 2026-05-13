@@ -54,6 +54,49 @@ CREATE TABLE IF NOT EXISTS tenant_activity (
 );
 CREATE INDEX IF NOT EXISTS idx_tenant_activity_last_activity ON tenant_activity(last_activity_at);
 
+CREATE TABLE IF NOT EXISTS space_chains (
+    id                  VARCHAR(36)   PRIMARY KEY,
+    project_id          VARCHAR(255)  NULL,
+    name                VARCHAR(255)  NOT NULL,
+    description         TEXT          NULL,
+    created_by_user_id  VARCHAR(255)  NULL,
+    deleted_at          TIMESTAMPTZ   NULL,
+    deleted_by_user_id  VARCHAR(255)  NULL,
+    created_at          TIMESTAMPTZ   DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ   DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_space_chains_project ON space_chains(project_id);
+CREATE INDEX IF NOT EXISTS idx_space_chains_deleted ON space_chains(deleted_at);
+
+CREATE TABLE IF NOT EXISTS space_chain_bindings (
+    id                  VARCHAR(36)   PRIMARY KEY,
+    chain_id            VARCHAR(36)   NOT NULL REFERENCES space_chains(id),
+    chain_api_key       VARCHAR(255)  NOT NULL UNIQUE,
+    created_by_user_id  VARCHAR(255)  NULL,
+    disabled            BOOLEAN       NOT NULL DEFAULT FALSE,
+    disabled_at         TIMESTAMPTZ   NULL,
+    disabled_by_user_id VARCHAR(255)  NULL,
+    created_at          TIMESTAMPTZ   DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_space_chain_bindings_chain ON space_chain_bindings(chain_id);
+
+CREATE TABLE IF NOT EXISTS space_chain_nodes (
+    id                  VARCHAR(36)   PRIMARY KEY,
+    chain_id            VARCHAR(36)   NOT NULL REFERENCES space_chains(id),
+    tenant_id           VARCHAR(36)   NOT NULL REFERENCES tenants(id),
+    external_space_id   VARCHAR(255)  NULL,
+    display_name        VARCHAR(255)  NULL,
+    position            INT           NOT NULL,
+    created_at          TIMESTAMPTZ   DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ   DEFAULT NOW(),
+    CONSTRAINT uniq_space_chain_nodes_tenant UNIQUE (chain_id, tenant_id),
+    CONSTRAINT uniq_space_chain_nodes_position UNIQUE (chain_id, position)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_space_chain_nodes_external_space
+    ON space_chain_nodes(chain_id, external_space_id)
+    WHERE external_space_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_space_chain_nodes_external_lookup ON space_chain_nodes(external_space_id);
+
 -- memories table with auto-embedding column.
 -- Note: The embedding column definition depends on whether auto-embedding is enabled.
 -- When using schema_db9.sql directly (manual setup), use this version with GENERATED ALWAYS.
@@ -120,3 +163,9 @@ CREATE TRIGGER trg_memories_updated BEFORE UPDATE ON memories FOR EACH ROW EXECU
 
 DROP TRIGGER IF EXISTS trg_upload_tasks_updated ON upload_tasks;
 CREATE TRIGGER trg_upload_tasks_updated BEFORE UPDATE ON upload_tasks FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS trg_space_chains_updated ON space_chains;
+CREATE TRIGGER trg_space_chains_updated BEFORE UPDATE ON space_chains FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS trg_space_chain_nodes_updated ON space_chain_nodes;
+CREATE TRIGGER trg_space_chain_nodes_updated BEFORE UPDATE ON space_chain_nodes FOR EACH ROW EXECUTE FUNCTION update_updated_at();

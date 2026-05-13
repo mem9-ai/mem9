@@ -65,6 +65,14 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	auth := authInfo(r)
+	if auth.IsChain() {
+		var err error
+		auth, err = s.firstChainNodeAuth(auth)
+		if err != nil {
+			s.handleError(r.Context(), w, err)
+			return
+		}
+	}
 
 	agentID := r.FormValue("agent_id")
 	if agentID == "" {
@@ -183,6 +191,14 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 // GET /v1alpha1/mem9s/{tenantID}/imports
 func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 	auth := authInfo(r)
+	if auth.IsChain() {
+		var err error
+		auth, err = s.firstChainNodeAuth(auth)
+		if err != nil {
+			s.handleError(r.Context(), w, err)
+			return
+		}
+	}
 	tasks, err := s.uploadTasks.ListByTenant(r.Context(), auth.TenantID)
 	if err != nil {
 		s.handleError(r.Context(), w, err)
@@ -238,6 +254,14 @@ func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {
 
 	// Verify tenant ownership.
 	auth := authInfo(r)
+	if auth.IsChain() {
+		var err error
+		auth, err = s.firstChainNodeAuth(auth)
+		if err != nil {
+			s.handleError(r.Context(), w, err)
+			return
+		}
+	}
 	if task.TenantID != auth.TenantID {
 		s.handleError(r.Context(), w, domain.ErrNotFound)
 		return

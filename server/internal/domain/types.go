@@ -53,6 +53,19 @@ type Memory struct {
 	// RelativeAge is a human-readable recency string (e.g. "3 days ago").
 	// Populated server-side at query time for search results only; never stored.
 	RelativeAge string `json:"relative_age,omitempty"`
+
+	// ChainSource is populated only when the response was produced through a Space Chain.
+	ChainSource *ChainSource `json:"chain_source,omitempty"`
+}
+
+const ChainKeyPrefix = "chain_"
+
+// ChainSource identifies which Space Chain node produced a response item.
+type ChainSource struct {
+	ChainID         string `json:"chain_id"`
+	NodePosition    int    `json:"node_position"`
+	TenantID        string `json:"tenant_id"`
+	ExternalSpaceID string `json:"external_space_id,omitempty"`
 }
 
 type AuthInfo struct {
@@ -62,6 +75,65 @@ type AuthInfo struct {
 	TenantID  string
 	TenantDB  *sql.DB
 	ClusterID string
+
+	// Chain is non-nil when X-API-Key resolved to a Space Chain key.
+	Chain *ChainAuth
+}
+
+func (a *AuthInfo) IsChain() bool {
+	return a != nil && a.Chain != nil
+}
+
+// ChainAuth is request auth material resolved from a chain_ API key.
+type ChainAuth struct {
+	ChainID string
+	APIKey  string
+	Nodes   []ChainAuthNode
+}
+
+// ChainAuthNode is a resolved Space Chain node with an open tenant DB handle.
+type ChainAuthNode struct {
+	SpaceChainNode
+	TenantDB  *sql.DB
+	ClusterID string
+}
+
+// SpaceChain is the control-plane source of truth for an ordered chain of Spaces.
+type SpaceChain struct {
+	ID              string     `json:"id"`
+	ProjectID       string     `json:"project_id,omitempty"`
+	Name            string     `json:"name"`
+	Description     string     `json:"description,omitempty"`
+	CreatedByUserID string     `json:"created_by_user_id,omitempty"`
+	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
+	DeletedByUserID string     `json:"deleted_by_user_id,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+
+	Bindings []SpaceChainBinding `json:"bindings,omitempty"`
+	Nodes    []SpaceChainNode    `json:"nodes,omitempty"`
+}
+
+type SpaceChainBinding struct {
+	ID               string     `json:"id"`
+	ChainID          string     `json:"chain_id"`
+	ChainAPIKey      string     `json:"chain_api_key,omitempty"`
+	CreatedByUserID  string     `json:"created_by_user_id,omitempty"`
+	Disabled         bool       `json:"disabled"`
+	DisabledAt       *time.Time `json:"disabled_at,omitempty"`
+	DisabledByUserID string     `json:"disabled_by_user_id,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+}
+
+type SpaceChainNode struct {
+	ID              string    `json:"id"`
+	ChainID         string    `json:"chain_id"`
+	TenantID        string    `json:"tenant_id"`
+	ExternalSpaceID string    `json:"external_space_id,omitempty"`
+	DisplayName     string    `json:"display_name,omitempty"`
+	Position        int       `json:"position"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // MemoryFilter encapsulates search/list query parameters.

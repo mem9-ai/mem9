@@ -35,6 +35,7 @@ type authConfig struct {
 	spendLimitAdjuster tenant.SpendLimitAdjuster
 	spendLimitCooldown *SpendLimitCooldown
 	autoSpendLimitCfg  AutoSpendLimitConfig
+	spaceChains        repository.SpaceChainRepo
 }
 
 // AutoSpendLimitConfig controls auto spend-limit adjustment behavior.
@@ -50,6 +51,12 @@ func WithSpendLimitAdjuster(adjuster tenant.SpendLimitAdjuster, cooldown *SpendL
 		c.spendLimitAdjuster = adjuster
 		c.spendLimitCooldown = cooldown
 		c.autoSpendLimitCfg = cfg
+	}
+}
+
+func WithSpaceChainRepo(chains repository.SpaceChainRepo) authOption {
+	return func(c *authConfig) {
+		c.spaceChains = chains
 	}
 }
 
@@ -215,6 +222,94 @@ func ResolveApiKey(
 			apiKey := strings.TrimSpace(r.Header.Get(APIKeyHeader))
 			if apiKey == "" {
 				writeError(w, http.StatusBadRequest, "missing API key")
+				return
+			}
+
+			if strings.HasPrefix(apiKey, domain.ChainKeyPrefix) {
+				if state.spaceChains == nil {
+					writeError(w, http.StatusServiceUnavailable, "space chain auth unavailable")
+					return
+				}
+				chainLookupStart := time.Now()
+				chain, err := state.spaceChains.GetByKey(r.Context(), apiKey)
+				chainLookupDuration := time.Since(chainLookupStart)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, "invalid API key")
+					return
+				}
+				if len(chain.Nodes) == 0 {
+					writeError(w, http.StatusBadRequest, "Space Chain has no nodes.")
+					return
+				}
+
+				info := &domain.AuthInfo{
+					Chain: &domain.ChainAuth{
+						ChainID: chain.ID,
+						APIKey:  apiKey,
+						Nodes:   make([]domain.ChainAuthNode, 0, len(chain.Nodes)),
+					},
+				}
+				if agentID := r.Header.Get(AgentIDHeader); agentID != "" {
+					info.AgentName = agentID
+				}
+
+				var totalPoolDuration time.Duration
+				for _, node := range chain.Nodes {
+					t, err := tenantRepo.GetByID(r.Context(), node.TenantID)
+					if err != nil || t.DeletedAt != nil || t.Status != domain.TenantActive {
+						slog.ErrorContext(r.Context(), "space chain node tenant unavailable",
+							"chain_id", chain.ID,
+							"node_position", node.Position,
+							"tenant_id", node.TenantID,
+							"err", err)
+						writeError(w, http.StatusServiceUnavailable, "chain node tenant unavailable")
+						return
+					}
+
+					decryptedPassword, err := enc.Decrypt(r.Context(), t.DBPassword)
+					if err != nil {
+						writeError(w, http.StatusInternalServerError, "failed to decrypt tenant credentials")
+						return
+					}
+					t.DBPassword = decryptedPassword
+
+					poolStart := time.Now()
+					db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
+					poolDuration := time.Since(poolStart)
+					totalPoolDuration += poolDuration
+					if err != nil {
+						slog.ErrorContext(r.Context(), "cannot connect to space chain node database",
+							"chain_id", chain.ID,
+							"node_position", node.Position,
+							"tenant_id", t.ID,
+							"cluster_id", t.ClusterID,
+							"duration_ms", poolDuration.Milliseconds(),
+							"classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err),
+							"err", err)
+						if _, blocked := clusterBlacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
+							writeError(w, http.StatusTooManyRequests, "cluster quota exhausted")
+							return
+						}
+						writeError(w, http.StatusServiceUnavailable, "chain node tenant unavailable")
+						return
+					}
+					info.Chain.Nodes = append(info.Chain.Nodes, domain.ChainAuthNode{
+						SpaceChainNode: node,
+						TenantDB:       db,
+						ClusterID:      t.ClusterID,
+					})
+				}
+
+				slog.InfoContext(r.Context(), "tenant auth resolved",
+					"auth_mode", "space_chain_key",
+					"chain_id", chain.ID,
+					"nodes", len(info.Chain.Nodes),
+					"chain_lookup_ms", chainLookupDuration.Milliseconds(),
+					"pool_get_ms", totalPoolDuration.Milliseconds(),
+					"total_ms", time.Since(authStart).Milliseconds(),
+				)
+				ctx := context.WithValue(r.Context(), authInfoKey, info)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 

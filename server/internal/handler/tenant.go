@@ -80,6 +80,30 @@ func (s *Server) getKeyStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.HasPrefix(apiKey, domain.ChainKeyPrefix) {
+		if s.chains == nil {
+			respondError(w, http.StatusInternalServerError, "auth backend unavailable")
+			return
+		}
+		status, err := s.chains.KeyStatus(r.Context(), apiKey)
+		if err != nil {
+			switch {
+			case errors.Is(err, domain.ErrNotFound):
+				respondError(w, http.StatusNotFound, "key not found")
+			default:
+				logger := s.logger
+				if logger == nil {
+					logger = slog.Default()
+				}
+				logger.ErrorContext(r.Context(), "chain key status lookup failed", "err", err)
+				respondError(w, http.StatusInternalServerError, "auth backend unavailable")
+			}
+			return
+		}
+		respond(w, http.StatusOK, keyStatusResponse{Status: status})
+		return
+	}
+
 	status, err := s.tenant.KeyStatus(r.Context(), apiKey)
 	if err != nil {
 		switch {

@@ -60,6 +60,25 @@ type TenantRepo interface {
 	SumActiveMemoryStats(ctx context.Context) (total int64, last7d int64, err error)
 }
 
+// SpaceChainRepo manages Space Chain control-plane records.
+type SpaceChainRepo interface {
+	Create(ctx context.Context, chain *domain.SpaceChain, binding *domain.SpaceChainBinding) error
+	GetByID(ctx context.Context, id string) (*domain.SpaceChain, error)
+	GetByKey(ctx context.Context, key string) (*domain.SpaceChain, error)
+	Update(ctx context.Context, chain *domain.SpaceChain) error
+	SoftDelete(ctx context.Context, id, deletedByUserID string) error
+
+	CreateBinding(ctx context.Context, binding *domain.SpaceChainBinding) error
+	ListBindings(ctx context.Context, chainID string) ([]domain.SpaceChainBinding, error)
+	DisableBinding(ctx context.Context, chainID, bindingID, disabledByUserID string) error
+
+	ListNodes(ctx context.Context, chainID string) ([]domain.SpaceChainNode, error)
+	ReplaceNodes(ctx context.Context, chainID string, nodes []domain.SpaceChainNode) error
+	RemoveNodeByExternalSpaceID(ctx context.Context, externalSpaceID string) error
+
+	KeyStatus(ctx context.Context, key string) (domain.KeyStatus, error)
+}
+
 // UploadTaskRepo manages upload task records in the control plane DB.
 type UploadTaskRepo interface {
 	Create(ctx context.Context, task *domain.UploadTask) error

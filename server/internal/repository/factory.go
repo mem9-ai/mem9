@@ -37,6 +37,18 @@ func NewTenantRepo(backend string, db *sql.DB) TenantRepo {
 	}
 }
 
+// NewSpaceChainRepo creates a SpaceChainRepo for the specified backend.
+func NewSpaceChainRepo(backend string, db *sql.DB) SpaceChainRepo {
+	switch backend {
+	case "db9":
+		return db9.NewSpaceChainRepo(db)
+	case "postgres":
+		return postgres.NewSpaceChainRepo(db)
+	default:
+		return tidb.NewSpaceChainRepo(db)
+	}
+}
+
 // NewUploadTaskRepo creates an UploadTaskRepo for the specified backend.
 func NewUploadTaskRepo(backend string, db *sql.DB) UploadTaskRepo {
 	switch backend {

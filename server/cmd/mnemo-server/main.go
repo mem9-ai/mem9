@@ -97,6 +97,7 @@ func main() {
 
 	// Repositories.
 	tenantRepo := repository.NewTenantRepo(cfg.DBBackend, db)
+	spaceChainRepo := repository.NewSpaceChainRepo(cfg.DBBackend, db)
 	var utmRepo repository.UTMRepo
 	if cfg.UTMEnabled {
 		if err := db.QueryRowContext(context.Background(), "SELECT 1 FROM tenant_utm LIMIT 0").Err(); err != nil {
@@ -180,16 +181,17 @@ func main() {
 	if utmRepo != nil {
 		tenantSvc.WithUTMRepo(utmRepo)
 	}
+	spaceChainSvc := service.NewSpaceChainService(spaceChainRepo)
 
 	// Middleware.
 	var tenantMW func(http.Handler) http.Handler
 	var apiKeyMW func(http.Handler) http.Handler
 	if spendLimitAdjuster != nil {
 		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg))
-		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg))
+		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg), middleware.WithSpaceChainRepo(spaceChainRepo))
 	} else {
 		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
-		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
+		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithSpaceChainRepo(spaceChainRepo))
 	}
 	rl := middleware.NewRateLimiter(cfg.RateLimit, cfg.RateBurst)
 	defer rl.Stop()
@@ -199,6 +201,7 @@ func main() {
 
 	// Handler.
 	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger).
+		WithSpaceChainService(spaceChainSvc, cfg.ChainRecallStopScore).
 		WithMetering(meteringWriter).
 		WithActivityTracker(activityTracker)
 	router := srv.Router(tenantMW, rateMW, apiKeyMW)

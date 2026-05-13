@@ -48,6 +48,18 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	auth := authInfo(r)
+	var writeChainSource *domain.ChainSource
+	if auth.IsChain() {
+		var err error
+		if len(auth.Chain.Nodes) > 0 {
+			writeChainSource = chainSource(auth, auth.Chain.Nodes[0])
+		}
+		auth, err = s.firstChainNodeAuth(auth)
+		if err != nil {
+			s.handleError(r.Context(), w, err)
+			return
+		}
+	}
 	svc := s.resolveServices(auth)
 
 	agentID := req.AgentID
@@ -153,6 +165,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			s.handleError(r.Context(), w, err)
 			return
 		}
+		mem.ChainSource = writeChainSource
 		go s.afterSuccessfulWrite(auth, svc, int64(written))
 		respond(w, http.StatusCreated, mem)
 		return
@@ -325,23 +338,26 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		Limit:      limit,
 		Offset:     offset,
 	}
-	svc := s.resolveServices(auth)
-
 	onlySession := filter.MemoryType == string(domain.TypeSession)
 
 	var memories []domain.Memory
 	var total int
 	var err error
 
-	switch {
-	case filter.Query != "" && filter.MemoryType == "":
-		memories, total, err = s.defaultConfidenceRecallSearch(r.Context(), auth, svc, filter)
-	case filter.Query != "" && (filter.MemoryType == string(domain.TypeSession) ||
-		filter.MemoryType == string(domain.TypePinned) ||
-		filter.MemoryType == string(domain.TypeInsight)):
-		memories, total, err = s.singlePoolConfidenceRecallSearch(r.Context(), auth, svc, filter)
-	case !onlySession:
-		memories, total, err = svc.memory.Search(r.Context(), filter)
+	if auth.IsChain() {
+		memories, total, err = s.listChainMemories(r.Context(), auth, filter)
+	} else {
+		svc := s.resolveServices(auth)
+		switch {
+		case filter.Query != "" && filter.MemoryType == "":
+			memories, total, err = s.defaultConfidenceRecallSearch(r.Context(), auth, svc, filter)
+		case filter.Query != "" && (filter.MemoryType == string(domain.TypeSession) ||
+			filter.MemoryType == string(domain.TypePinned) ||
+			filter.MemoryType == string(domain.TypeInsight)):
+			memories, total, err = s.singlePoolConfidenceRecallSearch(r.Context(), auth, svc, filter)
+		case !onlySession:
+			memories, total, err = svc.memory.Search(r.Context(), filter)
+		}
 	}
 
 	if err != nil {
@@ -447,9 +463,19 @@ func trimUniqueMemories(mems []domain.Memory, limit int) []domain.Memory {
 
 func (s *Server) getMemory(w http.ResponseWriter, r *http.Request) {
 	auth := authInfo(r)
-	svc := s.resolveServices(auth)
 	id := chi.URLParam(r, "id")
 
+	if auth.IsChain() {
+		mem, err := s.getChainMemory(r.Context(), auth, id)
+		if err != nil {
+			s.handleError(r.Context(), w, err)
+			return
+		}
+		respond(w, http.StatusOK, mem)
+		return
+	}
+
+	svc := s.resolveServices(auth)
 	mem, err := svc.memory.Get(r.Context(), id)
 	if err != nil {
 		s.handleError(r.Context(), w, err)
@@ -474,7 +500,6 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	auth := authInfo(r)
-	svc := s.resolveServices(auth)
 	id := chi.URLParam(r, "id")
 
 	var ifMatch int
@@ -482,6 +507,19 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 		ifMatch, _ = strconv.Atoi(h)
 	}
 
+	if auth.IsChain() {
+		mem, nodeAuth, nodeSvc, err := s.updateChainMemory(r.Context(), auth, id, req, ifMatch)
+		if err != nil {
+			s.handleError(r.Context(), w, err)
+			return
+		}
+		go s.afterSuccessfulWrite(nodeAuth, nodeSvc, 1)
+		w.Header().Set("ETag", strconv.Itoa(mem.Version))
+		respond(w, http.StatusOK, mem)
+		return
+	}
+
+	svc := s.resolveServices(auth)
 	mem, err := svc.memory.Update(r.Context(), auth.AgentName, id, req.Content, req.Tags, req.Metadata, ifMatch)
 	if err != nil {
 		s.handleError(r.Context(), w, err)
@@ -495,9 +533,20 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 	auth := authInfo(r)
-	svc := s.resolveServices(auth)
 	id := chi.URLParam(r, "id")
 
+	if auth.IsChain() {
+		nodeAuth, nodeSvc, err := s.deleteChainMemory(r.Context(), auth, id)
+		if err != nil {
+			s.handleError(r.Context(), w, err)
+			return
+		}
+		go s.afterSuccessfulWrite(nodeAuth, nodeSvc, 0)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	svc := s.resolveServices(auth)
 	if err := svc.memory.Delete(r.Context(), id, auth.AgentName); err != nil {
 		s.handleError(r.Context(), w, err)
 		return
@@ -519,6 +568,18 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	auth := authInfo(r)
+	if auth.IsChain() {
+		deleted, err := s.batchDeleteChainMemories(r.Context(), auth, req.IDs)
+		if err != nil {
+			s.handleError(r.Context(), w, err)
+			return
+		}
+		respond(w, http.StatusOK, map[string]any{
+			"deleted": deleted,
+		})
+		return
+	}
+
 	svc := s.resolveServices(auth)
 	deleted, err := svc.memory.BulkDelete(r.Context(), req.IDs, auth.AgentName)
 	if err != nil {
@@ -544,12 +605,25 @@ func (s *Server) bulkCreateMemories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	auth := authInfo(r)
+	var writeChainSource *domain.ChainSource
+	if auth.IsChain() {
+		var err error
+		if len(auth.Chain.Nodes) > 0 {
+			writeChainSource = chainSource(auth, auth.Chain.Nodes[0])
+		}
+		auth, err = s.firstChainNodeAuth(auth)
+		if err != nil {
+			s.handleError(r.Context(), w, err)
+			return
+		}
+	}
 	svc := s.resolveServices(auth)
 	memories, err := svc.memory.BulkCreate(r.Context(), auth.AgentName, req.Memories)
 	if err != nil {
 		s.handleError(r.Context(), w, err)
 		return
 	}
+	applyChainSource(memories, writeChainSource)
 
 	go s.afterSuccessfulIngest(auth, svc, int64(len(memories)))
 	respond(w, http.StatusCreated, map[string]any{
@@ -560,6 +634,15 @@ func (s *Server) bulkCreateMemories(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) bootstrapMemories(w http.ResponseWriter, r *http.Request) {
 	auth := authInfo(r)
+	if auth.IsChain() {
+		var err error
+		auth, err = s.firstChainNodeAuth(auth)
+		if err != nil {
+			s.handleError(r.Context(), w, err)
+			return
+		}
+	}
+
 	svc := s.resolveServices(auth)
 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -596,23 +679,23 @@ const (
 )
 
 type sessionMessageResponse struct {
-	ID          string             `json:"id"`
-	SessionID   string             `json:"session_id,omitempty"`
-	AgentID     string             `json:"agent_id,omitempty"`
-	Source      string             `json:"source,omitempty"`
-	Seq         int                `json:"seq"`
-	Role        string             `json:"role"`
-	Content     string             `json:"content"`
-	ContentType string             `json:"content_type"`
-	Tags        []string           `json:"tags"`
-	State       domain.MemoryState `json:"state"`
-	CreatedAt   time.Time          `json:"created_at"`
-	UpdatedAt   time.Time          `json:"updated_at"`
+	ID          string              `json:"id"`
+	SessionID   string              `json:"session_id,omitempty"`
+	AgentID     string              `json:"agent_id,omitempty"`
+	Source      string              `json:"source,omitempty"`
+	Seq         int                 `json:"seq"`
+	Role        string              `json:"role"`
+	Content     string              `json:"content"`
+	ContentType string              `json:"content_type"`
+	Tags        []string            `json:"tags"`
+	State       domain.MemoryState  `json:"state"`
+	CreatedAt   time.Time           `json:"created_at"`
+	UpdatedAt   time.Time           `json:"updated_at"`
+	ChainSource *domain.ChainSource `json:"chain_source,omitempty"`
 }
 
 func (s *Server) handleListSessionMessages(w http.ResponseWriter, r *http.Request) {
 	auth := authInfo(r)
-	svc := s.resolveServices(auth)
 
 	rawIDs := r.URL.Query()["session_id"]
 	if len(rawIDs) == 0 {
@@ -643,6 +726,20 @@ func (s *Server) handleListSessionMessages(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	if auth.IsChain() {
+		messages, err := s.listChainSessionMessages(r.Context(), auth, sessionIDs, limitPerSession)
+		if err != nil {
+			s.handleError(r.Context(), w, err)
+			return
+		}
+		respond(w, http.StatusOK, map[string]any{
+			"messages":          messages,
+			"limit_per_session": limitPerSession,
+		})
+		return
+	}
+
+	svc := s.resolveServices(auth)
 	sessions, err := svc.session.ListBySessionIDs(r.Context(), sessionIDs, limitPerSession)
 	if err != nil {
 		s.handleError(r.Context(), w, err)
