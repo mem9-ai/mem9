@@ -189,9 +189,10 @@ func ResolveTenant(
 			)
 
 			info := &domain.AuthInfo{
-				TenantID:  t.ID,
-				TenantDB:  db,
-				ClusterID: t.ClusterID,
+				TenantID:      t.ID,
+				TenantDB:      db,
+				ClusterID:     t.ClusterID,
+				APIKeySubject: t.ID,
 			}
 			if agentID := r.Header.Get(AgentIDHeader); agentID != "" {
 				info.AgentName = agentID
@@ -410,9 +411,10 @@ func ResolveApiKey(
 			)
 
 			info := &domain.AuthInfo{
-				TenantID:  t.ID,
-				TenantDB:  db,
-				ClusterID: t.ClusterID,
+				TenantID:      t.ID,
+				TenantDB:      db,
+				ClusterID:     t.ClusterID,
+				APIKeySubject: t.ID,
 			}
 			if agentID := r.Header.Get(AgentIDHeader); agentID != "" {
 				info.AgentName = agentID

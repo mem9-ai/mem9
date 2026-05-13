@@ -85,10 +85,83 @@ type webhookPayload struct {
 	Metadata  map[string]interface{} `json:"metadata"`
 }
 
+type fakeConsoleStore struct {
+	mu            sync.Mutex
+	upserted      []string
+	done          []string
+	terminal      []string
+	retryFailures []string
+	noDeadline    int
+}
+
+func (s *fakeConsoleStore) UpsertMeteringPending(ctx context.Context, evt Event, _ []byte, _ string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.recordDeadlineLocked(ctx)
+	s.upserted = append(s.upserted, evt.OperationID)
+	return nil
+}
+
+func (s *fakeConsoleStore) MarkMeteringDone(ctx context.Context, operationID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.recordDeadlineLocked(ctx)
+	s.done = append(s.done, operationID)
+	return nil
+}
+
+func (s *fakeConsoleStore) MarkMeteringTerminalFailed(ctx context.Context, operationID, _ string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.recordDeadlineLocked(ctx)
+	s.terminal = append(s.terminal, operationID)
+	return nil
+}
+
+func (s *fakeConsoleStore) MarkMeteringRetryableFailure(ctx context.Context, operationID, _ string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.recordDeadlineLocked(ctx)
+	s.retryFailures = append(s.retryFailures, operationID)
+	return nil
+}
+
+func (s *fakeConsoleStore) recordDeadlineLocked(ctx context.Context) {
+	if _, ok := ctx.Deadline(); !ok {
+		s.noDeadline++
+	}
+}
+
+func (s *fakeConsoleStore) counts() (upserted, done, terminal, retry int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.upserted), len(s.done), len(s.terminal), len(s.retryFailures)
+}
+
+func (s *fakeConsoleStore) noDeadlineCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.noDeadline
+}
+
 func newTestLogger() (*slog.Logger, *bytes.Buffer) {
 	buf := &bytes.Buffer{}
 	logger := slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	return logger, buf
+}
+
+func waitForConsoleStore(t *testing.T, store *fakeConsoleStore, wantDone int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		_, done, _, _ := store.counts()
+		if done == wantDone {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	upserted, done, terminal, retry := store.counts()
+	t.Fatalf("timed out waiting for done=%d; got upserted=%d done=%d terminal=%d retry=%d", wantDone, upserted, done, terminal, retry)
 }
 
 func decodePayload(t *testing.T, body []byte) s3Payload {
@@ -843,6 +916,81 @@ func TestRecord_MalformedEvent_DroppedSilently(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "channel full") || strings.Contains(buf.String(), "flush failed") {
 		t.Fatalf("unexpected logs for malformed events: %q", buf.String())
+	}
+}
+
+func TestConsoleRuntimeWriter_SendsConsoleShapeAndMarksDone(t *testing.T) {
+	var (
+		gotMethod string
+		gotPath   string
+		gotAuth   string
+		gotAPIKey string
+		gotBody   map[string]any
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotAPIKey = r.Header.Get("X-API-Key")
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"accepted"}`))
+	}))
+	defer server.Close()
+
+	store := &fakeConsoleStore{}
+	logger, _ := newTestLogger()
+	writer, err := NewConsoleRuntime(ConsoleRuntimeConfig{
+		BaseURL:        server.URL + "/",
+		InternalSecret: "internal-secret",
+		Timeout:        time.Second,
+		Store:          store,
+	}, logger)
+	if err != nil {
+		t.Fatalf("NewConsoleRuntime: %v", err)
+	}
+	defer writer.Close(context.Background())
+
+	writer.Record(Event{
+		TenantID:      "tenant-a",
+		ClusterID:     "cluster-a",
+		AgentID:       "Codex",
+		OperationID:   "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
+		APIKeySubject: "tenant-a",
+		EventType:     "recall",
+		Meter:         "recalls",
+		Units:         1,
+		OccurredAt:    time.Date(2026, 5, 13, 1, 2, 3, 0, time.UTC),
+		MemoryIDs:     []string{"mem-1", "mem-2"},
+	})
+
+	waitForConsoleStore(t, store, 1, time.Second)
+	upserted, done, terminal, retry := store.counts()
+	if upserted != 1 || done != 1 || terminal != 0 || retry != 0 {
+		t.Fatalf("store counts = upserted=%d done=%d terminal=%d retry=%d", upserted, done, terminal, retry)
+	}
+	if store.noDeadlineCount() != 0 {
+		t.Fatalf("store calls without deadline = %d, want 0", store.noDeadlineCount())
+	}
+	if gotMethod != http.MethodPut {
+		t.Fatalf("method = %s, want PUT", gotMethod)
+	}
+	if gotPath != "/api/internal/metering/events/018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	if gotAuth != "Bearer internal-secret" {
+		t.Fatalf("Authorization = %q", gotAuth)
+	}
+	if gotAPIKey != "tenant-a" {
+		t.Fatalf("X-API-Key = %q", gotAPIKey)
+	}
+	if gotBody["eventType"] != "recall" || gotBody["meter"] != "recalls" || gotBody["agentName"] != "Codex" {
+		t.Fatalf("unexpected body: %+v", gotBody)
+	}
+	if gotBody["units"] != float64(1) {
+		t.Fatalf("units = %#v, want 1", gotBody["units"])
 	}
 }
 

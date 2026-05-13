@@ -836,7 +836,7 @@ func (s *MemoryService) Update(ctx context.Context, agentName, id, content strin
 	return updated, nil
 }
 
-func (s *MemoryService) Delete(ctx context.Context, id, agentName string) error {
+func (s *MemoryService) Delete(ctx context.Context, id, agentName string) (int64, error) {
 	return s.memories.SoftDelete(ctx, id, agentName)
 }
 

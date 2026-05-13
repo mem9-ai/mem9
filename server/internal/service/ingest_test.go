@@ -1168,8 +1168,8 @@ func (m *memoryRepoMock) UpdateOptimistic(ctx context.Context, mem *domain.Memor
 	return m.updateOptimisticErr
 }
 
-func (m *memoryRepoMock) SoftDelete(ctx context.Context, id, agentName string) error {
-	return nil
+func (m *memoryRepoMock) SoftDelete(ctx context.Context, id, agentName string) (int64, error) {
+	return 1, nil
 }
 
 func (m *memoryRepoMock) BulkSoftDelete(ctx context.Context, ids []string, agentName string) (int64, error) {

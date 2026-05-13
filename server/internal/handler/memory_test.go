@@ -19,6 +19,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/llm"
 	"github.com/qiffang/mnemos/server/internal/metering"
 	"github.com/qiffang/mnemos/server/internal/middleware"
+	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
 
@@ -57,7 +58,7 @@ func (m *testMemoryRepo) GetByID(_ context.Context, id string) (*domain.Memory, 
 	return nil, domain.ErrNotFound
 }
 func (m *testMemoryRepo) UpdateOptimistic(context.Context, *domain.Memory, int) error { return nil }
-func (m *testMemoryRepo) SoftDelete(context.Context, string, string) error            { return nil }
+func (m *testMemoryRepo) SoftDelete(context.Context, string, string) (int64, error)   { return 1, nil }
 func (m *testMemoryRepo) BulkSoftDelete(_ context.Context, ids []string, _ string) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -223,6 +224,44 @@ func (w *blockingMeteringWriter) Record(evt metering.Event) {
 }
 
 func (w *blockingMeteringWriter) Close(context.Context) error { return nil }
+
+type captureRuntimeUsageManager struct {
+	beforeRecallCalls       int
+	afterRecallSuccessCalls int
+	beforeCreateCalls       int
+	beforeDeleteCalls       int
+	enabled                 bool
+}
+
+func (m *captureRuntimeUsageManager) Enabled() bool { return m.enabled }
+func (m *captureRuntimeUsageManager) BeforeRecall(context.Context, runtimeusage.Subject) (*runtimeusage.OperationLease, error) {
+	m.beforeRecallCalls++
+	return &runtimeusage.OperationLease{OperationID: "op-recall", Reserved: true}, nil
+}
+func (m *captureRuntimeUsageManager) AfterRecallSuccess(context.Context, *runtimeusage.OperationLease, runtimeusage.RecallResult) error {
+	m.afterRecallSuccessCalls++
+	return nil
+}
+func (m *captureRuntimeUsageManager) AfterRecallFailure(context.Context, *runtimeusage.OperationLease, error) {
+}
+func (m *captureRuntimeUsageManager) BeforeMemoryCreate(context.Context, runtimeusage.Subject, int64) (*runtimeusage.OperationLease, error) {
+	m.beforeCreateCalls++
+	return &runtimeusage.OperationLease{OperationID: "op-create", Reserved: true}, nil
+}
+func (m *captureRuntimeUsageManager) AfterMemoryCreateSuccess(context.Context, *runtimeusage.OperationLease, runtimeusage.MemoryCreateResult) error {
+	return nil
+}
+func (m *captureRuntimeUsageManager) AfterMemoryCreateFailure(context.Context, *runtimeusage.OperationLease, error) {
+}
+func (m *captureRuntimeUsageManager) BeforeMemoryDelete(context.Context, runtimeusage.Subject, runtimeusage.MemoryDeleteTarget) (*runtimeusage.OperationLease, error) {
+	m.beforeDeleteCalls++
+	return &runtimeusage.OperationLease{OperationID: "op-delete"}, nil
+}
+func (m *captureRuntimeUsageManager) AfterMemoryDeleteSuccess(context.Context, *runtimeusage.OperationLease, runtimeusage.MemoryDeleteResult) error {
+	return nil
+}
+func (m *captureRuntimeUsageManager) AfterMemoryDeleteFailure(context.Context, *runtimeusage.OperationLease, error) {
+}
 
 type handlerActivityTenantRepo struct {
 	mu              sync.Mutex
@@ -407,6 +446,56 @@ func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
 	}
 	if memRepo.bulkCreateCalls != 0 {
 		t.Fatalf("expected legacy create path to skip bulk create, got %d", memRepo.bulkCreateCalls)
+	}
+}
+
+func TestCreateMemory_RuntimeUsageBlocksUnknownDeltaContent(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	body := map[string]any{
+		"content": "test memory content",
+		"sync":    true,
+	}
+	req := makeTenantRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409: %s", rr.Code, rr.Body.String())
+	}
+	if runtimeUsage.beforeCreateCalls != 0 {
+		t.Fatalf("BeforeMemoryCreate calls = %d, want 0", runtimeUsage.beforeCreateCalls)
+	}
+	if len(memRepo.createCalls) != 0 {
+		t.Fatalf("create calls = %d, want 0", len(memRepo.createCalls))
+	}
+}
+
+func TestCreateMemory_RuntimeUsageAllowsPinnedKnownDelta(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	body := map[string]any{
+		"content":     "test memory content",
+		"memory_type": "pinned",
+	}
+	req := makeTenantRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201: %s", rr.Code, rr.Body.String())
+	}
+	if runtimeUsage.beforeCreateCalls != 1 {
+		t.Fatalf("BeforeMemoryCreate calls = %d, want 1", runtimeUsage.beforeCreateCalls)
+	}
+	if memRepo.bulkCreateCalls != 1 {
+		t.Fatalf("bulk create calls = %d, want 1", memRepo.bulkCreateCalls)
 	}
 }
 

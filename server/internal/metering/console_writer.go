@@ -1,0 +1,390 @@
+package metering
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/qiffang/mnemos/server/internal/metrics"
+)
+
+type ConsoleRuntimeConfig struct {
+	BaseURL        string
+	InternalSecret string
+	Timeout        time.Duration
+	ChannelSize    int
+	Store          ConsoleEventStore
+}
+
+type ConsoleEventStore interface {
+	UpsertMeteringPending(ctx context.Context, evt Event, payloadJSON []byte, payloadHash string) error
+	MarkMeteringDone(ctx context.Context, operationID string) error
+	MarkMeteringTerminalFailed(ctx context.Context, operationID, reason string) error
+	MarkMeteringRetryableFailure(ctx context.Context, operationID, reason string) error
+}
+
+const consoleOutboxTimeout = 2 * time.Second
+
+type consoleMeteringPayload struct {
+	EventType  string   `json:"eventType"`
+	Meter      string   `json:"meter"`
+	Units      int64    `json:"units"`
+	OccurredAt string   `json:"occurredAt"`
+	AgentName  string   `json:"agentName,omitempty"`
+	MemoryIDs  []string `json:"memoryIds,omitempty"`
+}
+
+type consoleQueuedEvent struct {
+	evt         Event
+	payloadJSON []byte
+	payloadHash string
+}
+
+type consoleRuntimeWriter struct {
+	cfg    ConsoleRuntimeConfig
+	client httpDoer
+	logger *slog.Logger
+
+	ch   chan consoleQueuedEvent
+	done chan struct{}
+	wg   sync.WaitGroup
+
+	closeOnce sync.Once
+
+	lastFullWarn int64
+	now          func() time.Time
+
+	closeCtxMu sync.Mutex
+	closeCtx   context.Context
+
+	runtimeCtx    context.Context
+	runtimeCancel context.CancelFunc
+}
+
+func NewConsoleRuntime(cfg ConsoleRuntimeConfig, logger *slog.Logger) (Writer, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if strings.TrimSpace(cfg.BaseURL) == "" {
+		return nil, fmt.Errorf("metering: console runtime base URL is required")
+	}
+	if strings.TrimSpace(cfg.InternalSecret) == "" {
+		return nil, fmt.Errorf("metering: console runtime internal secret is required")
+	}
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = 5 * time.Second
+	}
+	if cfg.ChannelSize <= 0 {
+		cfg.ChannelSize = defaultChannelSize
+	}
+	baseURL := strings.TrimRight(cfg.BaseURL, "/")
+	cfg.BaseURL = baseURL
+	return newConsoleRuntimeWriter(cfg, &http.Client{Timeout: cfg.Timeout}, logger), nil
+}
+
+func newConsoleRuntimeWriter(cfg ConsoleRuntimeConfig, client httpDoer, logger *slog.Logger) *consoleRuntimeWriter {
+	runtimeCtx, runtimeCancel := context.WithCancel(context.Background())
+	w := &consoleRuntimeWriter{
+		cfg:           cfg,
+		client:        client,
+		logger:        logger,
+		ch:            make(chan consoleQueuedEvent, cfg.ChannelSize),
+		done:          make(chan struct{}),
+		now:           time.Now,
+		runtimeCtx:    runtimeCtx,
+		runtimeCancel: runtimeCancel,
+	}
+	w.wg.Add(1)
+	go w.run()
+	return w
+}
+
+func (w *consoleRuntimeWriter) Record(evt Event) {
+	if evt.OccurredAt.IsZero() {
+		evt.OccurredAt = w.now().UTC()
+	}
+	item, err := w.makeQueuedEvent(evt)
+	if err != nil {
+		w.logInvalidEvent(evt, err)
+		return
+	}
+	if w.cfg.Store != nil {
+		ctx, cancel := consoleOutboxContext()
+		defer cancel()
+		if err := w.cfg.Store.UpsertMeteringPending(ctx, evt, item.payloadJSON, item.payloadHash); err != nil {
+			w.logger.Error("metering: console event outbox upsert failed",
+				"operation_id", evt.OperationID,
+				"tenant_id", evt.TenantID,
+				"cluster_id", evt.ClusterID,
+				"payload_hash", item.payloadHash,
+				"err", err,
+			)
+			return
+		}
+	}
+	select {
+	case w.ch <- item:
+	default:
+		w.maybeWarnFull()
+	}
+}
+
+func (w *consoleRuntimeWriter) Close(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	w.closeOnce.Do(func() {
+		w.closeCtxMu.Lock()
+		w.closeCtx = ctx
+		w.closeCtxMu.Unlock()
+		if w.runtimeCancel != nil {
+			w.runtimeCancel()
+		}
+		if w.done != nil {
+			close(w.done)
+		}
+	})
+
+	waitCh := make(chan struct{})
+	go func() {
+		w.wg.Wait()
+		close(waitCh)
+	}()
+
+	select {
+	case <-waitCh:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (w *consoleRuntimeWriter) makeQueuedEvent(evt Event) (consoleQueuedEvent, error) {
+	if evt.OperationID == "" {
+		return consoleQueuedEvent{}, fmt.Errorf("operation ID is required")
+	}
+	if evt.APIKeySubject == "" {
+		return consoleQueuedEvent{}, fmt.Errorf("API key subject is required")
+	}
+	if evt.EventType == "" {
+		return consoleQueuedEvent{}, fmt.Errorf("event type is required")
+	}
+	if evt.Meter == "" {
+		return consoleQueuedEvent{}, fmt.Errorf("meter is required")
+	}
+	if evt.Units == 0 {
+		return consoleQueuedEvent{}, fmt.Errorf("units must be non-zero")
+	}
+	payload := consoleMeteringPayload{
+		EventType:  evt.EventType,
+		Meter:      evt.Meter,
+		Units:      evt.Units,
+		OccurredAt: evt.OccurredAt.UTC().Format(time.RFC3339),
+		AgentName:  evt.AgentID,
+		MemoryIDs:  append([]string(nil), evt.MemoryIDs...),
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return consoleQueuedEvent{}, err
+	}
+	sum := sha256.Sum256(payloadJSON)
+	return consoleQueuedEvent{
+		evt:         evt,
+		payloadJSON: payloadJSON,
+		payloadHash: hex.EncodeToString(sum[:]),
+	}, nil
+}
+
+func (w *consoleRuntimeWriter) run() {
+	defer w.wg.Done()
+
+	for {
+		select {
+		case item := <-w.ch:
+			w.deliver(item)
+		case <-w.done:
+			w.drainAndDeliver(w.shutdownContext())
+			return
+		}
+	}
+}
+
+func (w *consoleRuntimeWriter) deliver(item consoleQueuedEvent) {
+	if err := w.putEvent(w.runtimeCtx, item); err != nil {
+		if w.runtimeCtx.Err() != nil {
+			shutdownCtx := w.shutdownContext()
+			if shutdownCtx.Err() == nil {
+				if retryErr := w.putEvent(shutdownCtx, item); retryErr == nil {
+					return
+				} else {
+					err = retryErr
+				}
+			}
+		}
+		w.markRetryableFailure(item, err)
+	}
+}
+
+func (w *consoleRuntimeWriter) drainAndDeliver(ctx context.Context) {
+	for {
+		select {
+		case item := <-w.ch:
+			if err := w.putEvent(ctx, item); err != nil {
+				w.markRetryableFailure(item, err)
+				if ctx.Err() != nil {
+					return
+				}
+			}
+		default:
+			return
+		}
+	}
+}
+
+func (w *consoleRuntimeWriter) shutdownContext() context.Context {
+	w.closeCtxMu.Lock()
+	defer w.closeCtxMu.Unlock()
+	if w.closeCtx == nil {
+		return context.Background()
+	}
+	return w.closeCtx
+}
+
+func (w *consoleRuntimeWriter) putEvent(ctx context.Context, item consoleQueuedEvent) error {
+	endpoint := w.cfg.BaseURL + "/api/internal/metering/events/" + item.evt.OperationID
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(item.payloadJSON))
+	if err != nil {
+		return fmt.Errorf("metering: build console request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+w.cfg.InternalSecret)
+	req.Header.Set("X-API-Key", item.evt.APIKeySubject)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := w.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("metering: put console event: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+
+	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
+		w.markDone(item)
+		return nil
+	}
+	if resp.StatusCode == http.StatusConflict && consoleBodyIsDeduped(body) {
+		w.markDone(item)
+		return nil
+	}
+	if resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusBadRequest {
+		w.markTerminalFailed(item, fmt.Sprintf("console metering returned status %d", resp.StatusCode))
+		return nil
+	}
+	return fmt.Errorf("metering: console returned status %d", resp.StatusCode)
+}
+
+func consoleBodyIsDeduped(body []byte) bool {
+	var parsed struct {
+		Status  string `json:"status"`
+		Code    string `json:"code"`
+		Deduped bool   `json:"deduped"`
+	}
+	if err := json.Unmarshal(body, &parsed); err == nil {
+		status := strings.ToLower(parsed.Status)
+		code := strings.ToLower(parsed.Code)
+		return parsed.Deduped || status == "deduped" || status == "accepted" || code == "deduped"
+	}
+	return false
+}
+
+func (w *consoleRuntimeWriter) markDone(item consoleQueuedEvent) {
+	if w.cfg.Store != nil {
+		ctx, cancel := consoleOutboxContext()
+		defer cancel()
+		if err := w.cfg.Store.MarkMeteringDone(ctx, item.evt.OperationID); err != nil {
+			w.logger.Error("metering: mark console event done failed",
+				"operation_id", item.evt.OperationID,
+				"payload_hash", item.payloadHash,
+				"err", err,
+			)
+		}
+	}
+}
+
+func (w *consoleRuntimeWriter) markTerminalFailed(item consoleQueuedEvent, reason string) {
+	metrics.RuntimeUsageMeteringDeliveryFailedTotal.WithLabelValues("terminal_response").Inc()
+	if w.cfg.Store != nil {
+		ctx, cancel := consoleOutboxContext()
+		defer cancel()
+		if err := w.cfg.Store.MarkMeteringTerminalFailed(ctx, item.evt.OperationID, reason); err != nil {
+			w.logger.Error("metering: mark console event terminal failed failed",
+				"operation_id", item.evt.OperationID,
+				"payload_hash", item.payloadHash,
+				"err", err,
+			)
+		}
+	}
+	w.logger.Error("metering: console event terminal failed",
+		"operation_id", item.evt.OperationID,
+		"tenant_id", item.evt.TenantID,
+		"cluster_id", item.evt.ClusterID,
+		"payload_hash", item.payloadHash,
+		"reason", reason,
+	)
+}
+
+func (w *consoleRuntimeWriter) markRetryableFailure(item consoleQueuedEvent, err error) {
+	if w.cfg.Store != nil {
+		ctx, cancel := consoleOutboxContext()
+		defer cancel()
+		_ = w.cfg.Store.MarkMeteringRetryableFailure(ctx, item.evt.OperationID, err.Error())
+	}
+	w.logger.Warn("metering: console delivery failed, will retry from outbox",
+		"operation_id", item.evt.OperationID,
+		"tenant_id", item.evt.TenantID,
+		"cluster_id", item.evt.ClusterID,
+		"payload_hash", item.payloadHash,
+		"err", err,
+	)
+}
+
+func (w *consoleRuntimeWriter) logInvalidEvent(evt Event, err error) {
+	metrics.RuntimeUsageMeteringDeliveryFailedTotal.WithLabelValues("invalid_event").Inc()
+	if evt.OperationID != "" && w.cfg.Store != nil {
+		ctx, cancel := consoleOutboxContext()
+		defer cancel()
+		_ = w.cfg.Store.MarkMeteringTerminalFailed(ctx, evt.OperationID, err.Error())
+	}
+	w.logger.Error("metering: invalid console event",
+		"operation_id", evt.OperationID,
+		"tenant_id", evt.TenantID,
+		"cluster_id", evt.ClusterID,
+		"err", err,
+	)
+}
+
+func consoleOutboxContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), consoleOutboxTimeout)
+}
+
+func (w *consoleRuntimeWriter) maybeWarnFull() {
+	now := w.now().Unix()
+	last := atomic.LoadInt64(&w.lastFullWarn)
+	if now-last < 10 {
+		return
+	}
+	if !atomic.CompareAndSwapInt64(&w.lastFullWarn, last, now) {
+		return
+	}
+	w.logger.Warn("metering: console event channel full, keeping outbox row for retry", "capacity", cap(w.ch))
+}

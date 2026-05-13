@@ -186,3 +186,22 @@ CREATE TABLE IF NOT EXISTS upload_tasks (
   INDEX idx_upload_tenant (tenant_id),
   INDEX idx_upload_poll (status, created_at)
 );
+
+CREATE TABLE IF NOT EXISTS runtime_usage_outbox (
+  operation_id      VARCHAR(36) PRIMARY KEY,
+  tenant_id         VARCHAR(36) NOT NULL,
+  cluster_id        VARCHAR(255) NULL,
+  subject_version   VARCHAR(32) NOT NULL DEFAULT 'tenant_id_v1',
+  step              VARCHAR(32) NOT NULL,
+  phase             VARCHAR(32) NOT NULL,
+  payload_json      JSON        NOT NULL,
+  payload_hash      VARCHAR(64) NOT NULL,
+  expires_at        TIMESTAMP   NULL,
+  status            VARCHAR(20) NOT NULL DEFAULT 'pending',
+  attempt_count     INT         NOT NULL DEFAULT 0,
+  next_attempt_at   TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_error        TEXT        NULL,
+  created_at        TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+  updated_at        TIMESTAMP   DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_runtime_usage_outbox_poll (status, next_attempt_at)
+);

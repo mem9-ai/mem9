@@ -177,6 +177,41 @@ var (
 		},
 		[]string{"op", "status"},
 	)
+
+	// RuntimeUsageManualReconciliationTotal counts runtime usage operations that
+	// require operator reconciliation because local state cannot safely infer the
+	// final quota or metering outcome.
+	RuntimeUsageManualReconciliationTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "runtime_usage_manual_reconciliation_total",
+			Help:      "Runtime usage operations requiring manual reconciliation.",
+		},
+		[]string{"reason"},
+	)
+
+	// RuntimeUsageReservationUnknownTotal counts reservations or adjustment
+	// intents whose mem9 operation outcome was not durably persisted before the
+	// local watchdog deadline.
+	RuntimeUsageReservationUnknownTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "runtime_usage_reservation_unknown_total",
+			Help:      "Runtime usage reservations or adjustment intents with unknown operation outcome after local deadline.",
+		},
+		[]string{"phase"},
+	)
+
+	// RuntimeUsageMeteringDeliveryFailedTotal counts console metering events
+	// that reached a terminal failed state.
+	RuntimeUsageMeteringDeliveryFailedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "runtime_usage_metering_delivery_failed_total",
+			Help:      "Console runtime usage metering events that reached terminal failed state.",
+		},
+		[]string{"reason"},
+	)
 )
 
 // Middleware records HTTP request count and duration for each request.

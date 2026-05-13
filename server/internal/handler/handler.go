@@ -23,6 +23,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/reqid"
+	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
 
@@ -40,6 +41,7 @@ type Server struct {
 	dbBackend            string
 	logger               *slog.Logger
 	metering             metering.Writer
+	runtimeUsage         runtimeusage.Manager
 	activity             *service.ActivityTracker
 	startedAt            time.Time
 	svcCache             sync.Map
@@ -85,6 +87,11 @@ func (s *Server) WithSpaceChainService(chains *service.SpaceChainService, stopSc
 
 func (s *Server) WithMetering(writer metering.Writer) *Server {
 	s.metering = writer
+	return s
+}
+
+func (s *Server) WithRuntimeUsage(manager runtimeusage.Manager) *Server {
+	s.runtimeUsage = manager
 	return s
 }
 

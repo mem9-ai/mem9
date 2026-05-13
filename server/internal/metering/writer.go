@@ -26,6 +26,14 @@ type Event struct {
 	ClusterID string
 	AgentID   string
 	Data      map[string]any
+
+	OperationID   string
+	APIKeySubject string
+	EventType     string
+	Meter         string
+	Units         int64
+	OccurredAt    time.Time
+	MemoryIDs     []string
 }
 
 // Writer records metering events asynchronously and delivers them through the

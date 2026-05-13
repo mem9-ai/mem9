@@ -169,7 +169,7 @@ func (s *Server) deleteChainMemory(ctx context.Context, auth *domain.AuthInfo, i
 			}
 			return nil, resolvedSvc{}, err
 		}
-		if err := svc.memory.Delete(ctx, id, auth.AgentName); err != nil {
+		if _, err := svc.memory.Delete(ctx, id, auth.AgentName); err != nil {
 			return nil, resolvedSvc{}, err
 		}
 		return nodeAuth, svc, nil
@@ -213,11 +213,12 @@ func (s *Server) batchDeleteChainMemories(ctx context.Context, auth *domain.Auth
 				}
 				return deleted, err
 			}
-			if err := svc.memory.Delete(ctx, id, auth.AgentName); err != nil {
+			removed, err := svc.memory.Delete(ctx, id, auth.AgentName)
+			if err != nil {
 				return deleted, err
 			}
 			go s.afterSuccessfulWrite(nodeAuth, svc, 0)
-			deleted++
+			deleted += removed
 			break
 		}
 	}

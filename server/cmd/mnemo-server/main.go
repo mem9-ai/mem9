@@ -19,6 +19,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/reqid"
+	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 	"github.com/qiffang/mnemos/server/internal/service"
 	"github.com/qiffang/mnemos/server/internal/tenant"
 )
@@ -140,6 +141,62 @@ func main() {
 	}
 	logger.Info("metering writer initialized", "enabled", cfg.MeteringEnabled, "destination", redactMeteringURLForLog(cfg.MeteringURL))
 
+	var runtimeUsageMetering metering.Writer
+	var runtimeUsageStore *runtimeusage.SQLStore
+	if cfg.RuntimeUsageEnabled {
+		if cfg.RuntimeUsageOutboxEnabled {
+			runtimeUsageStore = runtimeusage.NewSQLStore(db, cfg.DBBackend)
+			if err := runtimeUsageStore.EnsureSchema(context.Background()); err != nil {
+				logger.Error("failed to initialize runtime usage outbox", "err", err)
+				os.Exit(1)
+			}
+		}
+		runtimeUsageMetering, err = metering.NewConsoleRuntime(metering.ConsoleRuntimeConfig{
+			BaseURL:        cfg.RuntimeUsageBaseURL,
+			InternalSecret: cfg.RuntimeUsageInternalSecret,
+			Timeout:        cfg.RuntimeUsageMeteringTimeout,
+			Store:          runtimeUsageStore,
+		}, logger)
+		if err != nil {
+			logger.Error("failed to initialize runtime usage metering writer", "err", err)
+			os.Exit(1)
+		}
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := runtimeUsageMetering.Close(ctx); err != nil {
+				logger.Error("runtime usage metering close error", "err", err)
+			}
+		}()
+		logger.Info("runtime usage metering writer initialized", "enabled", true)
+	}
+	runtimeUsageClient := runtimeusage.NewHTTPClient(cfg.RuntimeUsageBaseURL, cfg.RuntimeUsageInternalSecret, cfg.RuntimeUsageTimeout)
+	runtimeUsageManager := runtimeusage.NewManager(runtimeusage.Config{
+		Enabled:         cfg.RuntimeUsageEnabled,
+		BaseURL:         cfg.RuntimeUsageBaseURL,
+		InternalSecret:  cfg.RuntimeUsageInternalSecret,
+		Timeout:         cfg.RuntimeUsageTimeout,
+		MeteringTimeout: cfg.RuntimeUsageMeteringTimeout,
+		ReservationTTL:  cfg.RuntimeUsageReservationTTL,
+		OperationTTL:    cfg.RuntimeUsageOperationTTL,
+		FailOpen:        cfg.RuntimeUsageFailOpen,
+		OutboxEnabled:   cfg.RuntimeUsageOutboxEnabled,
+		Outbox:          runtimeUsageStore,
+	}, runtimeUsageClient, runtimeUsageMetering, logger)
+	var runtimeUsageWorkerCancel context.CancelFunc
+	if cfg.RuntimeUsageEnabled && runtimeUsageStore != nil {
+		var runtimeUsageWorkerCtx context.Context
+		runtimeUsageWorkerCtx, runtimeUsageWorkerCancel = context.WithCancel(context.Background())
+		defer runtimeUsageWorkerCancel()
+		go func() {
+			err := runtimeusage.NewWorker(runtimeUsageStore, runtimeUsageClient, runtimeUsageMetering, logger).Run(runtimeUsageWorkerCtx)
+			if err != nil && err != context.Canceled {
+				logger.Error("runtime usage outbox worker stopped", "err", err)
+			}
+		}()
+	}
+	logger.Info("runtime usage initialized", "enabled", cfg.RuntimeUsageEnabled)
+
 	// Services.
 	// Select provisioner based on configuration
 	var provisioner tenant.Provisioner
@@ -204,6 +261,7 @@ func main() {
 	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger).
 		WithSpaceChainService(spaceChainSvc, cfg.ChainRecallStopScore).
 		WithMetering(meteringWriter).
+		WithRuntimeUsage(runtimeUsageManager).
 		WithActivityTracker(activityTracker)
 	router := srv.Router(tenantMW, rateMW, apiKeyMW)
 
@@ -245,6 +303,9 @@ func main() {
 		sig := <-sigCh
 		logger.Info("received signal, shutting down", "signal", sig)
 
+		if runtimeUsageWorkerCancel != nil {
+			runtimeUsageWorkerCancel()
+		}
 		workerCancel() // Stop upload worker first.
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

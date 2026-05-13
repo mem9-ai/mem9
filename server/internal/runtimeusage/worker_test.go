@@ -1,0 +1,105 @@
+package runtimeusage
+
+import (
+	"context"
+	"testing"
+	"time"
+)
+
+type fakeWorkerStore struct {
+	rows      []outboxRow
+	done      []string
+	retryable []string
+	unknown   []string
+	deferred  []string
+}
+
+func (s *fakeWorkerStore) PendingRows(context.Context, int) ([]outboxRow, error) {
+	return append([]outboxRow(nil), s.rows...), nil
+}
+
+func (s *fakeWorkerStore) MarkOperationDone(_ context.Context, operationID string, _ string) error {
+	s.done = append(s.done, operationID)
+	return nil
+}
+
+func (s *fakeWorkerStore) MarkOperationRetryableFailure(_ context.Context, operationID string, _ string) error {
+	s.retryable = append(s.retryable, operationID)
+	return nil
+}
+
+func (s *fakeWorkerStore) MarkUnknownAfterCrash(_ context.Context, operationID string, _ string) error {
+	s.unknown = append(s.unknown, operationID)
+	return nil
+}
+
+func (s *fakeWorkerStore) DeferPending(_ context.Context, operationID string, _ string) error {
+	s.deferred = append(s.deferred, operationID)
+	return nil
+}
+
+func TestWorkerCommitPendingFinalizesQuotaBeforeMetering(t *testing.T) {
+	row := outboxRow{
+		OperationID:    "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
+		TenantID:       "tenant-a",
+		ClusterID:      "cluster-a",
+		SubjectVersion: subjectVersionTenantIDV1,
+		Step:           outboxStepCommitReservation,
+		Phase:          outboxPhaseCommitPending,
+		PayloadJSON: []byte(`{
+			"meter":"recalls",
+			"units":1,
+			"status":"committed",
+			"reason":"operationSucceeded",
+			"event":{
+				"eventType":"recall",
+				"meter":"recalls",
+				"units":1,
+				"occurredAt":"2026-05-13T00:00:00Z",
+				"agentName":"Codex",
+				"memoryIds":["mem-1"]
+			}
+		}`),
+	}
+	store := &fakeWorkerStore{rows: []outboxRow{row}}
+	quota := &fakeQuotaClient{}
+	writer := &captureWriter{}
+	worker := newWorker(store, quota, writer, nil)
+
+	if err := worker.runOnce(context.Background()); err != nil {
+		t.Fatalf("runOnce: %v", err)
+	}
+	if len(quota.finalized) != 1 {
+		t.Fatalf("finalized = %+v, want one commit", quota.finalized)
+	}
+	if len(writer.events) != 1 {
+		t.Fatalf("events = %+v, want one metering event", writer.events)
+	}
+	if writer.events[0].OperationID != row.OperationID || writer.events[0].APIKeySubject != "tenant-a" {
+		t.Fatalf("event = %+v", writer.events[0])
+	}
+	if len(store.retryable) != 0 || len(store.unknown) != 0 {
+		t.Fatalf("store retryable=%+v unknown=%+v, want none", store.retryable, store.unknown)
+	}
+}
+
+func TestWorkerReservedActiveMarksUnknownOnlyAfterExpiry(t *testing.T) {
+	row := outboxRow{
+		OperationID:    "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
+		TenantID:       "tenant-a",
+		SubjectVersion: subjectVersionTenantIDV1,
+		Step:           outboxStepCommitReservation,
+		Phase:          outboxPhaseReservedActive,
+		PayloadJSON:    []byte(`{"meter":"recalls","units":1}`),
+		ExpiresAt:      time.Now().UTC().Add(-3 * time.Minute),
+	}
+	store := &fakeWorkerStore{rows: []outboxRow{row}}
+	worker := newWorker(store, &fakeQuotaClient{}, &captureWriter{}, nil)
+
+	if err := worker.runOnce(context.Background()); err != nil {
+		t.Fatalf("runOnce: %v", err)
+	}
+	if len(store.unknown) != 1 || store.unknown[0] != row.OperationID {
+		t.Fatalf("unknown = %+v, want operation marked unknown", store.unknown)
+	}
+}
