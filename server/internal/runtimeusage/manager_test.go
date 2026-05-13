@@ -174,6 +174,36 @@ func TestManagerDeleteZeroDeltaSkipsAdjustmentAndMetering(t *testing.T) {
 	}
 }
 
+func TestManagerDeletePositiveDeltaMarksUnknownAndSkipsAdjustment(t *testing.T) {
+	quota := &fakeQuotaClient{}
+	writer := &captureWriter{}
+	outbox := &fakeOutboxStore{}
+	manager := NewManager(Config{Enabled: true, Outbox: outbox}, quota, writer, nil)
+	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
+
+	lease, err := manager.BeforeMemoryDelete(context.Background(), subject, MemoryDeleteTarget{MemoryIDs: []string{"mem-1"}})
+	if err != nil {
+		t.Fatalf("BeforeMemoryDelete: %v", err)
+	}
+	err = manager.AfterMemoryDeleteSuccess(context.Background(), lease, MemoryDeleteResult{
+		MemoryIDs:        []string{"mem-1"},
+		MemorySlotsDelta: 1,
+		AgentName:        "Codex",
+	})
+	if err == nil {
+		t.Fatal("AfterMemoryDeleteSuccess error = nil, want positive delta error")
+	}
+	if len(quota.adjusted) != 0 {
+		t.Fatalf("adjustments = %+v, want none", quota.adjusted)
+	}
+	if outbox.adjustmentIntent != 1 || outbox.adjustmentPending != 0 || outbox.unknown != 1 {
+		t.Fatalf("outbox = %+v, want adjustment intent marked unknown without pending adjustment", outbox)
+	}
+	if len(writer.events) != 0 {
+		t.Fatalf("metering events = %+v, want none", writer.events)
+	}
+}
+
 func TestManagerMemoryDeleteFailureNotFoundMarksAdjustmentDone(t *testing.T) {
 	quota := &fakeQuotaClient{}
 	writer := &captureWriter{}

@@ -44,6 +44,11 @@ type consoleMeteringPayload struct {
 	MemoryIDs  []string `json:"memoryIds,omitempty"`
 }
 
+type consoleMeteringHashPayload struct {
+	APIKeySubject string `json:"apiKeySubject"`
+	consoleMeteringPayload
+}
+
 type consoleQueuedEvent struct {
 	evt         Event
 	payloadJSON []byte
@@ -198,7 +203,14 @@ func (w *consoleRuntimeWriter) makeQueuedEvent(evt Event) (consoleQueuedEvent, e
 	if err != nil {
 		return consoleQueuedEvent{}, err
 	}
-	sum := sha256.Sum256(payloadJSON)
+	hashJSON, err := json.Marshal(consoleMeteringHashPayload{
+		APIKeySubject:          evt.APIKeySubject,
+		consoleMeteringPayload: payload,
+	})
+	if err != nil {
+		return consoleQueuedEvent{}, err
+	}
+	sum := sha256.Sum256(hashJSON)
 	return consoleQueuedEvent{
 		evt:         evt,
 		payloadJSON: payloadJSON,

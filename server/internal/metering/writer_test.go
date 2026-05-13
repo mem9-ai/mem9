@@ -994,6 +994,37 @@ func TestConsoleRuntimeWriter_SendsConsoleShapeAndMarksDone(t *testing.T) {
 	}
 }
 
+func TestConsoleRuntimeWriter_PayloadHashIncludesAPIKeySubject(t *testing.T) {
+	w := &consoleRuntimeWriter{}
+	evt := Event{
+		OperationID:   "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
+		APIKeySubject: "api-key-a",
+		EventType:     "recall",
+		Meter:         "recalls",
+		Units:         1,
+		OccurredAt:    time.Date(2026, 5, 13, 1, 2, 3, 0, time.UTC),
+		AgentID:       "Codex",
+		MemoryIDs:     []string{"mem-1"},
+	}
+
+	first, err := w.makeQueuedEvent(evt)
+	if err != nil {
+		t.Fatalf("makeQueuedEvent first: %v", err)
+	}
+	evt.APIKeySubject = "api-key-b"
+	second, err := w.makeQueuedEvent(evt)
+	if err != nil {
+		t.Fatalf("makeQueuedEvent second: %v", err)
+	}
+
+	if first.payloadHash == second.payloadHash {
+		t.Fatalf("payload hash did not change when APIKeySubject changed: %s", first.payloadHash)
+	}
+	if !bytes.Equal(first.payloadJSON, second.payloadJSON) {
+		t.Fatalf("console payload JSON changed with APIKeySubject: first=%s second=%s", first.payloadJSON, second.payloadJSON)
+	}
+}
+
 func TestGzipRoundTrip(t *testing.T) {
 	p := newGzipPool()
 	input := []byte(`{"category":"mem9-api","tenant_id":"tenant-a","cluster_id":"10006636"}`)

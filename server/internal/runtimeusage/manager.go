@@ -3,6 +3,7 @@ package runtimeusage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -154,6 +155,9 @@ func (m *manager) AfterMemoryDeleteSuccess(ctx context.Context, lease *Operation
 		}
 		return nil
 	}
+	if result.MemorySlotsDelta > 0 {
+		return m.rejectPositiveDeleteDelta(ctx, lease, result.MemorySlotsDelta)
+	}
 	adj := Adjustment{
 		OperationID: lease.OperationID,
 		Meter:       MeterMemorySlots,
@@ -210,6 +214,31 @@ func (m *manager) AfterMemoryDeleteFailure(ctx context.Context, lease *Operation
 		"cluster_id", lease.Subject.ClusterID,
 		"err", cause,
 	)
+}
+
+func (m *manager) rejectPositiveDeleteDelta(ctx context.Context, lease *OperationLease, delta int64) error {
+	err := fmt.Errorf("runtime usage memory delete delta must be non-positive: %d", delta)
+	if lease == nil || m.outbox == nil {
+		return err
+	}
+	if markErr := m.outbox.MarkUnknownAfterCrash(ctx, lease.OperationID, err.Error()); markErr != nil {
+		m.logger.WarnContext(ctx, "runtime usage positive delete delta unknown mark failed",
+			"operation_id", lease.OperationID,
+			"tenant_id", lease.Subject.TenantID,
+			"cluster_id", lease.Subject.ClusterID,
+			"memory_slots_delta", delta,
+			"err", markErr,
+		)
+	}
+	metrics.RuntimeUsageManualReconciliationTotal.WithLabelValues("memory_delete_positive_delta").Inc()
+	metrics.RuntimeUsageReservationUnknownTotal.WithLabelValues(outboxPhaseAdjustmentIntent).Inc()
+	m.logger.ErrorContext(ctx, "manual_reconciliation_required: runtime usage memory delete delta was positive",
+		"operation_id", lease.OperationID,
+		"tenant_id", lease.Subject.TenantID,
+		"cluster_id", lease.Subject.ClusterID,
+		"memory_slots_delta", delta,
+	)
+	return err
 }
 
 func (m *manager) reserve(ctx context.Context, subject Subject, meter string, units int64) (*OperationLease, error) {
