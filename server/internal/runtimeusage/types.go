@@ -19,6 +19,8 @@ const (
 
 	ReservationStatusCommitted = "committed"
 	ReservationStatusReleased  = "released"
+
+	reservationCommitReason = "operationSucceeded"
 )
 
 type Config struct {

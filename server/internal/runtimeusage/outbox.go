@@ -158,7 +158,7 @@ func (s *SQLStore) StoreCommitPending(ctx context.Context, lease *OperationLease
 		Meter:  lease.Meter,
 		Units:  lease.Units,
 		Status: ReservationStatusCommitted,
-		Reason: "operationSucceeded",
+		Reason: reservationCommitReason,
 		Event:  outboxEventFromMetering(event),
 	}
 	return s.storeOperation(ctx, lease, outboxStepCommitReservation, outboxPhaseCommitPending, payload, time.Time{}, s.now())

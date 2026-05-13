@@ -137,8 +137,9 @@ func TestManagerRecallCommitsBeforeMetering(t *testing.T) {
 	if len(quota.reserveOps) != 1 || quota.reserveOps[0].Meter != MeterRecalls || quota.reserveOps[0].Units != 1 {
 		t.Fatalf("reserve ops = %+v", quota.reserveOps)
 	}
-	if len(quota.finalized) != 1 {
-		t.Fatalf("finalized = %+v", quota.finalized)
+	wantFinalize := lease.OperationID + ":" + ReservationStatusCommitted + ":" + reservationCommitReason
+	if len(quota.finalized) != 1 || quota.finalized[0] != wantFinalize {
+		t.Fatalf("finalized = %+v, want [%s]", quota.finalized, wantFinalize)
 	}
 	if len(writer.events) != 1 {
 		t.Fatalf("metering events = %+v", writer.events)

@@ -78,7 +78,7 @@ func (m *manager) AfterRecallSuccess(ctx context.Context, lease *OperationLease,
 		m.release(ctx, lease, "recallCommitPendingFailed")
 		return err
 	}
-	if err := m.client.FinalizeReservation(ctx, lease.Subject, lease.OperationID, ReservationStatusCommitted, "recallCompleted"); err != nil {
+	if err := m.client.FinalizeReservation(ctx, lease.Subject, lease.OperationID, ReservationStatusCommitted, reservationCommitReason); err != nil {
 		m.markRetryable(ctx, lease.OperationID, err)
 		if m.outbox != nil {
 			return nil
@@ -106,7 +106,7 @@ func (m *manager) AfterMemoryCreateSuccess(ctx context.Context, lease *Operation
 		m.release(ctx, lease, "memoryCreateCommitPendingFailed")
 		return err
 	}
-	if err := m.client.FinalizeReservation(ctx, lease.Subject, lease.OperationID, ReservationStatusCommitted, "memoryCreated"); err != nil {
+	if err := m.client.FinalizeReservation(ctx, lease.Subject, lease.OperationID, ReservationStatusCommitted, reservationCommitReason); err != nil {
 		m.markRetryable(ctx, lease.OperationID, err)
 		if m.outbox != nil {
 			return nil
