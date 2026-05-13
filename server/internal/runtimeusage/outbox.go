@@ -214,6 +214,10 @@ func (s *SQLStore) MarkOperationRetryableFailure(ctx context.Context, operationI
 	return s.markRetryableFailure(ctx, operationID, reason)
 }
 
+func (s *SQLStore) MarkOperationTerminalFailed(ctx context.Context, operationID string, reason string) error {
+	return s.updateStatus(ctx, operationID, outboxStatusTerminalFailed, outboxPhaseTerminalFailed, reason)
+}
+
 func (s *SQLStore) PendingRows(ctx context.Context, limit int) ([]outboxRow, error) {
 	if s == nil || s.db == nil {
 		return nil, nil

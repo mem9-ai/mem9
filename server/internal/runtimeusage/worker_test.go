@@ -10,6 +10,7 @@ type fakeWorkerStore struct {
 	rows      []outboxRow
 	done      []string
 	retryable []string
+	terminal  []string
 	unknown   []string
 	deferred  []string
 }
@@ -25,6 +26,11 @@ func (s *fakeWorkerStore) MarkOperationDone(_ context.Context, operationID strin
 
 func (s *fakeWorkerStore) MarkOperationRetryableFailure(_ context.Context, operationID string, _ string) error {
 	s.retryable = append(s.retryable, operationID)
+	return nil
+}
+
+func (s *fakeWorkerStore) MarkOperationTerminalFailed(_ context.Context, operationID string, _ string) error {
+	s.terminal = append(s.terminal, operationID)
 	return nil
 }
 
@@ -80,6 +86,31 @@ func TestWorkerCommitPendingFinalizesQuotaBeforeMetering(t *testing.T) {
 	}
 	if len(store.retryable) != 0 || len(store.unknown) != 0 {
 		t.Fatalf("store retryable=%+v unknown=%+v, want none", store.retryable, store.unknown)
+	}
+}
+
+func TestWorkerCommitConflictMarksTerminalFailed(t *testing.T) {
+	row := outboxRow{
+		OperationID:    "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
+		TenantID:       "tenant-a",
+		ClusterID:      "cluster-a",
+		SubjectVersion: subjectVersionTenantIDV1,
+		Step:           outboxStepCommitReservation,
+		Phase:          outboxPhaseCommitPending,
+		PayloadJSON:    []byte(`{"meter":"recalls","units":1,"status":"committed","reason":"operationSucceeded"}`),
+	}
+	store := &fakeWorkerStore{rows: []outboxRow{row}}
+	quota := &fakeQuotaClient{finalizeErr: &ConflictError{StatusCode: 409}}
+	worker := newWorker(store, quota, &captureWriter{}, nil)
+
+	if err := worker.runOnce(context.Background()); err != nil {
+		t.Fatalf("runOnce: %v", err)
+	}
+	if len(store.terminal) != 1 || store.terminal[0] != row.OperationID {
+		t.Fatalf("terminal = %+v, want operation marked terminal", store.terminal)
+	}
+	if len(store.retryable) != 0 {
+		t.Fatalf("retryable = %+v, want none", store.retryable)
 	}
 }
 

@@ -226,8 +226,6 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 					"cluster_id", auth.ClusterID,
 					"err", err)
 				finalized = true
-				s.handleRuntimeUsageError(w, err)
-				return
 			}
 			finalized = true
 		}
@@ -469,8 +467,6 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 					"cluster_id", auth.ClusterID,
 					"err", err)
 				recallFinalized = true
-				s.handleRuntimeUsageError(w, err)
-				return
 			}
 			recallFinalized = true
 		}
@@ -685,8 +681,6 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 				"cluster_id", auth.ClusterID,
 				"err", err)
 			finalized = true
-			s.handleRuntimeUsageError(w, err)
-			return
 		}
 		finalized = true
 	}
@@ -761,8 +755,6 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 				"cluster_id", auth.ClusterID,
 				"err", err)
 			finalized = true
-			s.handleRuntimeUsageError(w, err)
-			return
 		}
 		finalized = true
 	}
@@ -838,8 +830,6 @@ func (s *Server) bulkCreateMemories(w http.ResponseWriter, r *http.Request) {
 				"cluster_id", auth.ClusterID,
 				"err", err)
 			finalized = true
-			s.handleRuntimeUsageError(w, err)
-			return
 		}
 		finalized = true
 	}

@@ -3,6 +3,7 @@ package runtimeusage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -23,6 +24,7 @@ type workerStore interface {
 	PendingRows(ctx context.Context, limit int) ([]outboxRow, error)
 	MarkOperationDone(ctx context.Context, operationID string, reason string) error
 	MarkOperationRetryableFailure(ctx context.Context, operationID string, reason string) error
+	MarkOperationTerminalFailed(ctx context.Context, operationID string, reason string) error
 	MarkUnknownAfterCrash(ctx context.Context, operationID string, reason string) error
 	DeferPending(ctx context.Context, operationID string, reason string) error
 }
@@ -114,7 +116,7 @@ func (w *Worker) processCommit(ctx context.Context, row outboxRow, payload outbo
 	}
 	subject := rowSubject(row)
 	if err := w.client.FinalizeReservation(ctx, subject, row.OperationID, ReservationStatusCommitted, payload.Reason); err != nil {
-		w.markRetryable(ctx, row, err)
+		w.markQuotaFailure(ctx, row, err)
 		return
 	}
 	w.recordPayloadEvent(ctx, row, payload)
@@ -127,7 +129,7 @@ func (w *Worker) processRelease(ctx context.Context, row outboxRow, payload outb
 	}
 	subject := rowSubject(row)
 	if err := w.client.FinalizeReservation(ctx, subject, row.OperationID, ReservationStatusReleased, payload.Reason); err != nil {
-		w.markRetryable(ctx, row, err)
+		w.markQuotaFailure(ctx, row, err)
 		return
 	}
 	if err := w.store.MarkOperationDone(ctx, row.OperationID, "reservationReleased"); err != nil {
@@ -152,7 +154,7 @@ func (w *Worker) processAdjustment(ctx context.Context, row outboxRow, payload o
 		Reason:      payload.Reason,
 	}
 	if err := w.client.ApplyAdjustment(ctx, subject, adj); err != nil {
-		w.markRetryable(ctx, row, err)
+		w.markQuotaFailure(ctx, row, err)
 		return
 	}
 	w.recordPayloadEvent(ctx, row, payload)
@@ -216,6 +218,30 @@ func (w *Worker) markRetryable(ctx context.Context, row outboxRow, err error) {
 	if err := w.store.MarkOperationRetryableFailure(ctx, row.OperationID, err.Error()); err != nil {
 		w.logger.WarnContext(ctx, "runtime usage outbox retry update failed", "operation_id", row.OperationID, "err", err)
 	}
+}
+
+func (w *Worker) markQuotaFailure(ctx context.Context, row outboxRow, err error) {
+	var conflict *ConflictError
+	if errors.As(err, &conflict) {
+		w.markTerminal(ctx, row, err)
+		return
+	}
+	w.markRetryable(ctx, row, err)
+}
+
+func (w *Worker) markTerminal(ctx context.Context, row outboxRow, err error) {
+	if err := w.store.MarkOperationTerminalFailed(ctx, row.OperationID, err.Error()); err != nil {
+		w.logger.WarnContext(ctx, "runtime usage outbox terminal update failed", "operation_id", row.OperationID, "err", err)
+	}
+	metrics.RuntimeUsageManualReconciliationTotal.WithLabelValues("quota_conflict").Inc()
+	w.logger.ErrorContext(ctx, "manual_reconciliation_required: runtime usage outbox terminal failed",
+		"operation_id", row.OperationID,
+		"tenant_id", row.TenantID,
+		"cluster_id", row.ClusterID,
+		"step", row.Step,
+		"phase", row.Phase,
+		"err", err,
+	)
 }
 
 func rowSubject(row outboxRow) Subject {
