@@ -386,8 +386,16 @@ func (m *mockTenantRepo) TouchActivity(ctx context.Context, tenantID string, at 
 	return nil
 }
 
+func (m *mockTenantRepo) UpsertMemoryStats(ctx context.Context, tenantID string, activityAt time.Time, total, last7d int64, observedAt time.Time) error {
+	return nil
+}
+
 func (m *mockTenantRepo) CountActiveTenantsSince(ctx context.Context, since time.Time) (int64, error) {
 	return 0, nil
+}
+
+func (m *mockTenantRepo) SumActiveMemoryStats(ctx context.Context) (int64, int64, error) {
+	return 0, 0, nil
 }
 
 type mockPool struct {

@@ -17,7 +17,7 @@ const (
 )
 
 // ActivityTracker records tenant-level memory activity and refreshes the
-// process-global active-tenant metric on a debounce.
+// process-global activity metrics on a debounce.
 type ActivityTracker struct {
 	tenants repository.TenantRepo
 	logger  *slog.Logger
@@ -39,6 +39,14 @@ func NewActivityTracker(tenants repository.TenantRepo, logger *slog.Logger) *Act
 }
 
 func (t *ActivityTracker) RecordMemoryActivity(tenantID string, at time.Time) {
+	t.recordMemoryActivity(tenantID, at, true)
+}
+
+func (t *ActivityTracker) RecordMemoryActivityOnly(tenantID string, at time.Time) {
+	t.recordMemoryActivity(tenantID, at, false)
+}
+
+func (t *ActivityTracker) recordMemoryActivity(tenantID string, at time.Time, refresh bool) {
 	if t == nil || t.tenants == nil || tenantID == "" {
 		return
 	}
@@ -54,18 +62,61 @@ func (t *ActivityTracker) RecordMemoryActivity(tenantID string, at time.Time) {
 		return
 	}
 
-	now := time.Now().UTC()
+	if !refresh {
+		return
+	}
+	t.refreshAggregateMetrics(ctx, time.Now().UTC())
+}
+
+func (t *ActivityTracker) RecordMemoryStats(_ context.Context, tenantID string, activityAt time.Time, total, last7d int64, observedAt time.Time) {
+	if t == nil || t.tenants == nil || tenantID == "" {
+		return
+	}
+	if activityAt.IsZero() {
+		activityAt = time.Now().UTC()
+	}
+	if observedAt.IsZero() {
+		observedAt = time.Now().UTC()
+	}
+
+	callCtx, cancel := context.WithTimeout(context.Background(), activityTrackerTimeout)
+	defer cancel()
+
+	if err := t.tenants.UpsertMemoryStats(callCtx, tenantID, activityAt, total, last7d, observedAt); err != nil {
+		t.logger.Warn("record tenant memory stats failed", "tenant_id", tenantID, "err", err)
+		return
+	}
+
+	t.refreshAggregateMetrics(callCtx, time.Now().UTC())
+}
+
+func (t *ActivityTracker) refreshAggregateMetrics(ctx context.Context, now time.Time) {
+	if t == nil || t.tenants == nil {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
 	if !t.shouldRefresh(now) {
 		return
 	}
 
-	count, err := t.tenants.CountActiveTenantsSince(ctx, now.Add(-activeTenantWindow))
+	activeTenants, err := t.tenants.CountActiveTenantsSince(ctx, now.Add(-activeTenantWindow))
 	if err != nil {
 		t.clearRefreshClaim(now)
-		t.logger.Warn("refresh active tenants metric failed", "err", err)
+		t.logger.Warn("refresh aggregate metrics failed", "metric", "active_tenants_7d_total", "err", err)
 		return
 	}
-	metrics.ActiveTenants7dTotal.Set(float64(count))
+	activeMemory, activeMemory7d, err := t.tenants.SumActiveMemoryStats(ctx)
+	if err != nil {
+		t.clearRefreshClaim(now)
+		t.logger.Warn("refresh aggregate metrics failed", "metric", "active_memory", "err", err)
+		return
+	}
+
+	metrics.ActiveTenants7dTotal.Set(float64(activeTenants))
+	metrics.ActiveMemoryTotal.Set(float64(activeMemory))
+	metrics.ActiveMemory7dTotal.Set(float64(activeMemory7d))
 }
 
 func (t *ActivityTracker) shouldRefresh(now time.Time) bool {

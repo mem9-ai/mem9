@@ -54,8 +54,16 @@ func (r stubTenantRepo) TouchActivity(context.Context, string, time.Time) error 
 	return nil
 }
 
+func (r stubTenantRepo) UpsertMemoryStats(context.Context, string, time.Time, int64, int64, time.Time) error {
+	return nil
+}
+
 func (r stubTenantRepo) CountActiveTenantsSince(context.Context, time.Time) (int64, error) {
 	return 0, nil
+}
+
+func (r stubTenantRepo) SumActiveMemoryStats(context.Context) (int64, int64, error) {
+	return 0, 0, nil
 }
 
 type pingOKConnector struct{}

@@ -687,6 +687,10 @@ func dedupStrings(ss []string) []string {
 }
 
 func (s *Server) refreshWriteMetrics(auth *domain.AuthInfo, svc resolvedSvc, written int64) {
+	if auth == nil || svc.memory == nil {
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -699,18 +703,25 @@ func (s *Server) refreshWriteMetrics(auth *domain.AuthInfo, svc resolvedSvc, wri
 		metrics.MemoryChangesTotal.WithLabelValues(clusterID).Add(float64(written))
 	}
 
-	const gaugeTTL = 30 * time.Second
-	now := time.Now()
-	if last, ok := s.gaugeDebounce.Load(clusterID); ok && now.Sub(last.(time.Time)) < gaugeTTL {
+	if s.activity == nil || auth.TenantID == "" {
+		logger := s.logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Warn("refreshWriteMetrics: activity tracker unavailable", "tenant_id", auth.TenantID, "cluster_id", clusterID)
 		return
 	}
-	s.gaugeDebounce.Store(clusterID, now)
 
+	observedAt := time.Now().UTC()
 	total, last7d, err := svc.memory.CountStats(ctx)
 	if err != nil {
-		slog.Warn("refreshWriteMetrics: count stats failed", "err", err)
+		logger := s.logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Warn("refreshWriteMetrics: count stats failed", "tenant_id", auth.TenantID, "cluster_id", clusterID, "err", err)
+		s.activity.RecordMemoryActivity(auth.TenantID, observedAt)
 		return
 	}
-	metrics.ActiveMemoryTotal.WithLabelValues(clusterID).Set(float64(total))
-	metrics.ActiveMemory7dTotal.WithLabelValues(clusterID).Set(float64(last7d))
+	s.activity.RecordMemoryStats(ctx, auth.TenantID, observedAt, total, last7d, observedAt)
 }

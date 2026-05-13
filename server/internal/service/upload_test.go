@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"testing"
 )
 
@@ -263,6 +265,67 @@ func TestUploadWorkerRecordActivity(t *testing.T) {
 	repo.mu.Unlock()
 	if touchCalls != 1 || countCalls != 1 {
 		t.Fatalf("calls = touch:%d count:%d, want 1/1", touchCalls, countCalls)
+	}
+}
+
+func TestUploadWorkerRecordActivityOnlyDoesNotRefresh(t *testing.T) {
+	repo := &activityTenantRepo{count: 1}
+	worker := &UploadWorker{activity: NewActivityTracker(repo, nil)}
+
+	worker.recordActivityOnly("tenant-a")
+
+	repo.mu.Lock()
+	touchCalls := repo.touchCalls
+	countCalls := repo.countCalls
+	sumCalls := repo.sumCalls
+	repo.mu.Unlock()
+	if touchCalls != 1 || countCalls != 0 || sumCalls != 0 {
+		t.Fatalf("calls = touch:%d count:%d sum:%d, want 1/0/0", touchCalls, countCalls, sumCalls)
+	}
+}
+
+type uploadMemoryStatsRepo struct {
+	memoryRepoMock
+	total  int64
+	last7d int64
+	err    error
+}
+
+func (r *uploadMemoryStatsRepo) CountStats(context.Context) (int64, int64, error) {
+	return r.total, r.last7d, r.err
+}
+
+func TestUploadWorkerRecordMemoryStats(t *testing.T) {
+	repo := &activityTenantRepo{count: 1, memoryTotal: 7, memoryLast7d: 3}
+	worker := &UploadWorker{activity: NewActivityTracker(repo, nil)}
+	memRepo := &uploadMemoryStatsRepo{total: 7, last7d: 3}
+
+	worker.recordMemoryStats(context.Background(), "tenant-a", memRepo)
+
+	repo.mu.Lock()
+	upsertCalls := repo.upsertCalls
+	touchCalls := repo.touchCalls
+	statsTotal := repo.lastStatsTotal
+	statsLast7d := repo.lastStatsLast7d
+	repo.mu.Unlock()
+	if upsertCalls != 1 || touchCalls != 0 || statsTotal != 7 || statsLast7d != 3 {
+		t.Fatalf("calls = upsert:%d touch:%d stats:%d/%d, want 1/0/7/3", upsertCalls, touchCalls, statsTotal, statsLast7d)
+	}
+}
+
+func TestUploadWorkerRecordMemoryStatsFallsBackToActivity(t *testing.T) {
+	repo := &activityTenantRepo{count: 1}
+	worker := &UploadWorker{activity: NewActivityTracker(repo, nil)}
+	memRepo := &uploadMemoryStatsRepo{err: errors.New("count failed")}
+
+	worker.recordMemoryStats(context.Background(), "tenant-a", memRepo)
+
+	repo.mu.Lock()
+	upsertCalls := repo.upsertCalls
+	touchCalls := repo.touchCalls
+	repo.mu.Unlock()
+	if upsertCalls != 0 || touchCalls != 1 {
+		t.Fatalf("calls = upsert:%d touch:%d, want 0/1", upsertCalls, touchCalls)
 	}
 }
 

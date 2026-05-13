@@ -35,6 +35,7 @@ type testMemoryRepo struct {
 	countStatsTotal      int64
 	countStatsLast7d     int64
 	countStatsErr        error
+	countStatsCalls      int
 }
 
 func (m *testMemoryRepo) Create(_ context.Context, mem *domain.Memory) error {
@@ -114,6 +115,9 @@ func (m *testMemoryRepo) NearDupSearch(context.Context, string) (string, float64
 }
 
 func (m *testMemoryRepo) CountStats(context.Context) (int64, int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.countStatsCalls++
 	return m.countStatsTotal, m.countStatsLast7d, m.countStatsErr
 }
 
@@ -221,11 +225,17 @@ func (w *blockingMeteringWriter) Record(evt metering.Event) {
 func (w *blockingMeteringWriter) Close(context.Context) error { return nil }
 
 type handlerActivityTenantRepo struct {
-	mu         sync.Mutex
-	touchErr   error
-	count      int64
-	touchCalls int
-	touched    chan string
+	mu              sync.Mutex
+	touchErr        error
+	upsertErr       error
+	count           int64
+	memoryTotal     int64
+	memoryLast7d    int64
+	touchCalls      int
+	upsertCalls     int
+	lastStatsTotal  int64
+	lastStatsLast7d int64
+	touched         chan string
 }
 
 func (r *handlerActivityTenantRepo) Create(context.Context, *domain.Tenant) error { return nil }
@@ -258,10 +268,34 @@ func (r *handlerActivityTenantRepo) TouchActivity(_ context.Context, tenantID st
 	return touchErr
 }
 
+func (r *handlerActivityTenantRepo) UpsertMemoryStats(_ context.Context, tenantID string, _ time.Time, total, last7d int64, _ time.Time) error {
+	r.mu.Lock()
+	r.upsertCalls++
+	r.lastStatsTotal = total
+	r.lastStatsLast7d = last7d
+	touched := r.touched
+	upsertErr := r.upsertErr
+	r.mu.Unlock()
+
+	if touched != nil {
+		select {
+		case touched <- tenantID:
+		default:
+		}
+	}
+	return upsertErr
+}
+
 func (r *handlerActivityTenantRepo) CountActiveTenantsSince(context.Context, time.Time) (int64, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.count, nil
+}
+
+func (r *handlerActivityTenantRepo) SumActiveMemoryStats(context.Context) (int64, int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.memoryTotal, r.memoryLast7d, nil
 }
 
 func cloneMap(in map[string]any) map[string]any {
@@ -379,8 +413,8 @@ func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
 func TestCreateMemory_ActivityFailureDoesNotFailWrite(t *testing.T) {
 	memRepo := &testMemoryRepo{countStatsTotal: 1}
 	activityRepo := &handlerActivityTenantRepo{
-		touchErr: errors.New("activity unavailable"),
-		touched:  make(chan string, 1),
+		upsertErr: errors.New("activity unavailable"),
+		touched:   make(chan string, 1),
 	}
 	srv := newTestServer(memRepo, &testSessionRepo{}).
 		WithActivityTracker(service.NewActivityTracker(activityRepo, slog.Default()))
@@ -404,6 +438,84 @@ func TestCreateMemory_ActivityFailureDoesNotFailWrite(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for activity touch")
+	}
+}
+
+func TestRefreshWriteMetricsRecordsMemoryStats(t *testing.T) {
+	memRepo := &testMemoryRepo{countStatsTotal: 42, countStatsLast7d: 7}
+	activityRepo := &handlerActivityTenantRepo{
+		count:        1,
+		memoryTotal:  42,
+		memoryLast7d: 7,
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{}).
+		WithActivityTracker(service.NewActivityTracker(activityRepo, slog.Default()))
+	svc := resolvedSvc{memory: service.NewMemoryService(memRepo, nil, nil, "", service.ModeSmart)}
+	auth := &domain.AuthInfo{TenantID: "tenant-a", ClusterID: "10006636"}
+
+	srv.refreshWriteMetrics(auth, svc, 1)
+
+	activityRepo.mu.Lock()
+	upsertCalls := activityRepo.upsertCalls
+	touchCalls := activityRepo.touchCalls
+	statsTotal := activityRepo.lastStatsTotal
+	statsLast7d := activityRepo.lastStatsLast7d
+	activityRepo.mu.Unlock()
+	if upsertCalls != 1 || touchCalls != 0 || statsTotal != 42 || statsLast7d != 7 {
+		t.Fatalf("activity = upsert:%d touch:%d stats:%d/%d, want 1/0/42/7", upsertCalls, touchCalls, statsTotal, statsLast7d)
+	}
+}
+
+func TestRefreshWriteMetricsSkipsStatsWhenActivityTrackerMissing(t *testing.T) {
+	memRepo := &testMemoryRepo{countStatsTotal: 42, countStatsLast7d: 7}
+	srv := newTestServer(memRepo, &testSessionRepo{})
+	svc := resolvedSvc{memory: service.NewMemoryService(memRepo, nil, nil, "", service.ModeSmart)}
+	auth := &domain.AuthInfo{TenantID: "tenant-a", ClusterID: "10006636"}
+
+	srv.refreshWriteMetrics(auth, svc, 1)
+
+	memRepo.mu.Lock()
+	countStatsCalls := memRepo.countStatsCalls
+	memRepo.mu.Unlock()
+	if countStatsCalls != 0 {
+		t.Fatalf("CountStats calls = %d, want 0", countStatsCalls)
+	}
+}
+
+func TestCreateMemory_CountStatsFailureStillRecordsActivity(t *testing.T) {
+	memRepo := &testMemoryRepo{countStatsErr: errors.New("count failed")}
+	activityRepo := &handlerActivityTenantRepo{
+		touched: make(chan string, 1),
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{}).
+		WithActivityTracker(service.NewActivityTracker(activityRepo, slog.Default()))
+
+	body := map[string]any{
+		"content": "test memory content",
+		"sync":    true,
+	}
+	req := makeTenantRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	select {
+	case tenantID := <-activityRepo.touched:
+		if tenantID != "tenant-a" {
+			t.Fatalf("activity tenant = %q, want tenant-a", tenantID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for activity touch")
+	}
+	activityRepo.mu.Lock()
+	touchCalls := activityRepo.touchCalls
+	upsertCalls := activityRepo.upsertCalls
+	activityRepo.mu.Unlock()
+	if touchCalls != 1 || upsertCalls != 0 {
+		t.Fatalf("activity calls = touch:%d upsert:%d, want 1/0", touchCalls, upsertCalls)
 	}
 }
 
