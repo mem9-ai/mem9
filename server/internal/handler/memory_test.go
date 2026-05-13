@@ -1064,6 +1064,56 @@ func TestBulkCreateMemories_RuntimeUsageFinalizationFailureFailsClosed(t *testin
 	}
 }
 
+func TestBulkCreateMemories_RuntimeUsageValidatesBeforeQuota(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	body := map[string]any{
+		"memories": []map[string]any{
+			{"content": ""},
+		},
+	}
+	req := makeTenantRequest(t, http.MethodPost, "/memories/bulk", body)
+	rr := httptest.NewRecorder()
+
+	srv.bulkCreateMemories(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rr.Code, rr.Body.String())
+	}
+	if runtimeUsage.beforeCreateCalls != 0 {
+		t.Fatalf("BeforeMemoryCreate calls = %d, want 0", runtimeUsage.beforeCreateCalls)
+	}
+	if memRepo.bulkCreateCalls != 0 {
+		t.Fatalf("bulk create calls = %d, want 0", memRepo.bulkCreateCalls)
+	}
+}
+
+func TestBatchDeleteMemories_RuntimeUsageValidatesBeforeAdjustmentIntent(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	body := map[string]any{
+		"ids": []string{"", ""},
+	}
+	req := makeTenantRequest(t, http.MethodPost, "/memories/delete", body)
+	rr := httptest.NewRecorder()
+
+	srv.batchDeleteMemories(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rr.Code, rr.Body.String())
+	}
+	if runtimeUsage.beforeDeleteCalls != 0 {
+		t.Fatalf("BeforeMemoryDelete calls = %d, want 0", runtimeUsage.beforeDeleteCalls)
+	}
+	if len(memRepo.bulkSoftDeleteCalls) != 0 {
+		t.Fatalf("bulk soft delete calls = %d, want 0", len(memRepo.bulkSoftDeleteCalls))
+	}
+}
+
 // failSearchMemoryRepo embeds testMemoryRepo but makes KeywordSearch fail,
 // triggering gatherExistingMemories → reconcile → ReconcilePhase2 Status:"failed".
 type failSearchMemoryRepo struct {

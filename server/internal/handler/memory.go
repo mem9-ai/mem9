@@ -720,11 +720,16 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	svc := s.resolveServices(auth)
+	deleteIDs, err := service.ValidateBulkDeleteIDs(req.IDs)
+	if err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
 	var lease *runtimeusage.OperationLease
 	finalized := false
 	if s.runtimeUsageEnabled() {
 		var err error
-		lease, err = s.runtimeUsage.BeforeMemoryDelete(r.Context(), subjectFromAuth(auth), runtimeusage.MemoryDeleteTarget{MemoryIDs: append([]string(nil), req.IDs...)})
+		lease, err = s.runtimeUsage.BeforeMemoryDelete(r.Context(), subjectFromAuth(auth), runtimeusage.MemoryDeleteTarget{MemoryIDs: append([]string(nil), deleteIDs...)})
 		if err != nil {
 			s.handleRuntimeUsageError(w, err)
 			return
@@ -735,7 +740,7 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 	}
-	deleted, err := svc.memory.BulkDelete(r.Context(), req.IDs, auth.AgentName)
+	deleted, err := svc.memory.BulkDelete(r.Context(), deleteIDs, auth.AgentName)
 	if err != nil {
 		if s.runtimeUsageEnabled() {
 			s.runtimeUsage.AfterMemoryDeleteFailure(context.Background(), lease, err)
@@ -746,7 +751,7 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.runtimeUsageEnabled() {
 		if err := s.runtimeUsage.AfterMemoryDeleteSuccess(r.Context(), lease, runtimeusage.MemoryDeleteResult{
-			MemoryIDs:        append([]string(nil), req.IDs...),
+			MemoryIDs:        append([]string(nil), deleteIDs...),
 			MemorySlotsDelta: -deleted,
 			AgentName:        auth.AgentName,
 		}); err != nil {
@@ -793,8 +798,8 @@ func (s *Server) bulkCreateMemories(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	svc := s.resolveServices(auth)
-	if len(req.Memories) == 0 {
-		s.handleError(r.Context(), w, &domain.ValidationError{Field: "memories", Message: "required"})
+	if err := service.ValidateBulkMemoryInputs(req.Memories); err != nil {
+		s.handleError(r.Context(), w, err)
 		return
 	}
 	var lease *runtimeusage.OperationLease

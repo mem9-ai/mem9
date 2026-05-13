@@ -843,11 +843,20 @@ func (s *MemoryService) Delete(ctx context.Context, id, agentName string) (int64
 // BulkDelete soft-deletes multiple memories by ID. Returns the number of
 // memories actually deleted (already-deleted rows are excluded from the count).
 func (s *MemoryService) BulkDelete(ctx context.Context, ids []string, agentName string) (int64, error) {
+	unique, err := ValidateBulkDeleteIDs(ids)
+	if err != nil {
+		return 0, err
+	}
+
+	return s.memories.BulkSoftDelete(ctx, unique, agentName)
+}
+
+func ValidateBulkDeleteIDs(ids []string) ([]string, error) {
 	if len(ids) == 0 {
-		return 0, &domain.ValidationError{Field: "ids", Message: "required"}
+		return nil, &domain.ValidationError{Field: "ids", Message: "required"}
 	}
 	if len(ids) > maxBulkDeleteSize {
-		return 0, &domain.ValidationError{Field: "ids", Message: "too many (max 1000)"}
+		return nil, &domain.ValidationError{Field: "ids", Message: "too many (max 1000)"}
 	}
 
 	seen := make(map[string]struct{}, len(ids))
@@ -862,10 +871,9 @@ func (s *MemoryService) BulkDelete(ctx context.Context, ids []string, agentName 
 		}
 	}
 	if len(unique) == 0 {
-		return 0, &domain.ValidationError{Field: "ids", Message: "required"}
+		return nil, &domain.ValidationError{Field: "ids", Message: "required"}
 	}
-
-	return s.memories.BulkSoftDelete(ctx, unique, agentName)
+	return unique, nil
 }
 
 func (s *MemoryService) Bootstrap(ctx context.Context, limit int) ([]domain.Memory, error) {
@@ -880,24 +888,13 @@ func (s *MemoryService) Bootstrap(ctx context.Context, limit int) ([]domain.Memo
 
 // BulkCreate creates multiple memories at once.
 func (s *MemoryService) BulkCreate(ctx context.Context, agentName string, items []BulkMemoryInput) ([]domain.Memory, error) {
-	if len(items) == 0 {
-		return nil, &domain.ValidationError{Field: "memories", Message: "required"}
-	}
-	if len(items) > maxBulkSize {
-		return nil, &domain.ValidationError{Field: "memories", Message: "too many (max 100)"}
+	if err := ValidateBulkMemoryInputs(items); err != nil {
+		return nil, err
 	}
 
 	now := time.Now()
 	memories := make([]*domain.Memory, 0, len(items))
-	for i, item := range items {
-		if err := validateMemoryInput(item.Content, item.Tags); err != nil {
-			var ve *domain.ValidationError
-			if errors.As(err, &ve) {
-				ve.Field = "memories[" + strconv.Itoa(i) + "]." + ve.Field
-			}
-			return nil, err
-		}
-
+	for _, item := range items {
 		var embedding []float32
 		if s.autoModel == "" && s.embedder != nil {
 			var err error
@@ -935,6 +932,26 @@ func (s *MemoryService) BulkCreate(ctx context.Context, agentName string, items 
 		result[i] = *m
 	}
 	return result, nil
+}
+
+func ValidateBulkMemoryInputs(items []BulkMemoryInput) error {
+	if len(items) == 0 {
+		return &domain.ValidationError{Field: "memories", Message: "required"}
+	}
+	if len(items) > maxBulkSize {
+		return &domain.ValidationError{Field: "memories", Message: "too many (max 100)"}
+	}
+
+	for i, item := range items {
+		if err := validateMemoryInput(item.Content, item.Tags); err != nil {
+			var ve *domain.ValidationError
+			if errors.As(err, &ve) {
+				ve.Field = "memories[" + strconv.Itoa(i) + "]." + ve.Field
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 // BulkMemoryInput is the input shape for each item in a bulk create request.
