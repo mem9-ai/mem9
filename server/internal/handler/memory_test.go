@@ -229,8 +229,10 @@ type captureRuntimeUsageManager struct {
 	beforeRecallCalls       int
 	afterRecallSuccessCalls int
 	beforeCreateCalls       int
+	afterCreateFailureCalls int
 	beforeDeleteCalls       int
 	enabled                 bool
+	afterCreateSuccessErr   error
 }
 
 func (m *captureRuntimeUsageManager) Enabled() bool { return m.enabled }
@@ -249,9 +251,10 @@ func (m *captureRuntimeUsageManager) BeforeMemoryCreate(context.Context, runtime
 	return &runtimeusage.OperationLease{OperationID: "op-create", Reserved: true}, nil
 }
 func (m *captureRuntimeUsageManager) AfterMemoryCreateSuccess(context.Context, *runtimeusage.OperationLease, runtimeusage.MemoryCreateResult) error {
-	return nil
+	return m.afterCreateSuccessErr
 }
 func (m *captureRuntimeUsageManager) AfterMemoryCreateFailure(context.Context, *runtimeusage.OperationLease, error) {
+	m.afterCreateFailureCalls++
 }
 func (m *captureRuntimeUsageManager) BeforeMemoryDelete(context.Context, runtimeusage.Subject, runtimeusage.MemoryDeleteTarget) (*runtimeusage.OperationLease, error) {
 	m.beforeDeleteCalls++
@@ -493,6 +496,37 @@ func TestCreateMemory_RuntimeUsageAllowsPinnedKnownDelta(t *testing.T) {
 	}
 	if runtimeUsage.beforeCreateCalls != 1 {
 		t.Fatalf("BeforeMemoryCreate calls = %d, want 1", runtimeUsage.beforeCreateCalls)
+	}
+	if memRepo.bulkCreateCalls != 1 {
+		t.Fatalf("bulk create calls = %d, want 1", memRepo.bulkCreateCalls)
+	}
+}
+
+func TestCreateMemory_RuntimeUsageFinalizationFailureFailsClosed(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{
+		enabled:               true,
+		afterCreateSuccessErr: &runtimeusage.UnavailableError{Err: errors.New("console unavailable")},
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	body := map[string]any{
+		"content":     "test memory content",
+		"memory_type": "pinned",
+	}
+	req := makeTenantRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", rr.Code, rr.Body.String())
+	}
+	if runtimeUsage.beforeCreateCalls != 1 {
+		t.Fatalf("BeforeMemoryCreate calls = %d, want 1", runtimeUsage.beforeCreateCalls)
+	}
+	if runtimeUsage.afterCreateFailureCalls != 0 {
+		t.Fatalf("AfterMemoryCreateFailure calls = %d, want 0", runtimeUsage.afterCreateFailureCalls)
 	}
 	if memRepo.bulkCreateCalls != 1 {
 		t.Fatalf("bulk create calls = %d, want 1", memRepo.bulkCreateCalls)
@@ -995,6 +1029,38 @@ func TestBulkCreateMemoriesTriggersPostWriteHooks(t *testing.T) {
 	events := waitForMeteringEvents(t, meteringWriter, 1, time.Second)
 	if got := events[0].Data["event_type"]; got != "ingest" {
 		t.Fatalf("event_type = %v, want ingest", got)
+	}
+}
+
+func TestBulkCreateMemories_RuntimeUsageFinalizationFailureFailsClosed(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{
+		enabled:               true,
+		afterCreateSuccessErr: &runtimeusage.UnavailableError{Err: errors.New("console unavailable")},
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	body := map[string]any{
+		"memories": []map[string]any{
+			{"content": "bulk memory"},
+		},
+	}
+	req := makeTenantRequest(t, http.MethodPost, "/memories/bulk", body)
+	rr := httptest.NewRecorder()
+
+	srv.bulkCreateMemories(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", rr.Code, rr.Body.String())
+	}
+	if runtimeUsage.beforeCreateCalls != 1 {
+		t.Fatalf("BeforeMemoryCreate calls = %d, want 1", runtimeUsage.beforeCreateCalls)
+	}
+	if runtimeUsage.afterCreateFailureCalls != 0 {
+		t.Fatalf("AfterMemoryCreateFailure calls = %d, want 0", runtimeUsage.afterCreateFailureCalls)
+	}
+	if memRepo.bulkCreateCalls != 1 {
+		t.Fatalf("bulk create calls = %d, want 1", memRepo.bulkCreateCalls)
 	}
 }
 
