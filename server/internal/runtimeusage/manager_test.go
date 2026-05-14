@@ -278,7 +278,7 @@ func TestManagerCommitFailureWithOutboxQueuesRetryAndReturnsSuccess(t *testing.T
 	}
 
 	if outbox.reservedActive != 0 || outbox.commitPending != 1 || outbox.retryable != 1 {
-		t.Fatalf("outbox = %+v, want commit pending and retryable without active reservation write", outbox)
+		t.Fatalf("outbox = %+v, want recall commit pending and retryable without active reservation write", outbox)
 	}
 	if len(writer.events) != 0 {
 		t.Fatalf("metering events = %+v, want none before quota commit", writer.events)
@@ -301,8 +301,8 @@ func TestManagerMemoryCreateCommitFailureWithOutboxQueuesRetryAndReturnsSuccess(
 		t.Fatalf("AfterMemoryCreateSuccess: %v", err)
 	}
 
-	if outbox.reservedActive != 0 || outbox.commitPending != 1 || outbox.retryable != 1 {
-		t.Fatalf("outbox = %+v, want commit pending and retryable without active reservation write", outbox)
+	if outbox.reservedActive != 1 || outbox.commitPending != 1 || outbox.retryable != 1 {
+		t.Fatalf("outbox = %+v, want memory create active reservation, commit pending, retryable", outbox)
 	}
 	if len(writer.events) != 0 {
 		t.Fatalf("metering events = %+v, want none before quota commit", writer.events)
@@ -427,8 +427,8 @@ func TestManagerMemoryCreateCommitPendingFailureCommitsDirectly(t *testing.T) {
 	if len(quota.finalized) != 1 || quota.finalized[0] != wantFinalize {
 		t.Fatalf("finalized = %+v, want [%s]", quota.finalized, wantFinalize)
 	}
-	if outbox.releasePending != 0 || outbox.done != 0 {
-		t.Fatalf("outbox release state = %+v, want no release after successful memory create", outbox)
+	if outbox.releasePending != 0 || outbox.done != 1 {
+		t.Fatalf("outbox release state = %+v, want no release and done after successful memory create", outbox)
 	}
 	if len(writer.events) != 1 {
 		t.Fatalf("metering events = %+v, want direct metering after commit", writer.events)

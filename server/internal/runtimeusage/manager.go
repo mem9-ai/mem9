@@ -67,7 +67,7 @@ func (noopManager) AfterMemoryDeleteFailure(context.Context, *OperationLease, er
 func (m *manager) Enabled() bool { return true }
 
 func (m *manager) BeforeRecall(ctx context.Context, subject Subject) (*OperationLease, error) {
-	return m.reserve(ctx, subject, MeterRecalls, 1)
+	return m.reserve(ctx, subject, MeterRecalls, 1, false)
 }
 
 func (m *manager) AfterRecallSuccess(ctx context.Context, lease *OperationLease, result RecallResult) error {
@@ -94,7 +94,7 @@ func (m *manager) AfterRecallFailure(ctx context.Context, lease *OperationLease,
 }
 
 func (m *manager) BeforeMemoryCreate(ctx context.Context, subject Subject, units int64) (*OperationLease, error) {
-	return m.reserve(ctx, subject, MeterMemorySlots, units)
+	return m.reserve(ctx, subject, MeterMemorySlots, units, true)
 }
 
 func (m *manager) AfterMemoryCreateSuccess(ctx context.Context, lease *OperationLease, result MemoryCreateResult) error {
@@ -239,7 +239,7 @@ func (m *manager) rejectPositiveDeleteDelta(ctx context.Context, lease *Operatio
 	return err
 }
 
-func (m *manager) reserve(ctx context.Context, subject Subject, meter string, units int64) (*OperationLease, error) {
+func (m *manager) reserve(ctx context.Context, subject Subject, meter string, units int64, storeActive bool) (*OperationLease, error) {
 	if units <= 0 {
 		return nil, errors.New("runtime usage reserve units must be positive")
 	}
@@ -254,7 +254,7 @@ func (m *manager) reserve(ctx context.Context, subject Subject, meter string, un
 		Units:       units,
 		Reserved:    true,
 	}
-	_, err = m.client.Reserve(ctx, subject, operationID, Operation{Meter: meter, Units: units})
+	reservation, err := m.client.Reserve(ctx, subject, operationID, Operation{Meter: meter, Units: units})
 	if err != nil {
 		var denied *QuotaDeniedError
 		if errors.As(err, &denied) {
@@ -276,6 +276,13 @@ func (m *manager) reserve(ctx context.Context, subject Subject, meter string, un
 			return lease, nil
 		}
 		return nil, err
+	}
+	if storeActive && m.outbox != nil {
+		expiresAt := reservationExpiresAt(reservation, m.now().UTC(), m.cfg.ReservationTTL)
+		if err := m.outbox.StoreReservedActive(ctx, lease, reservation, expiresAt); err != nil {
+			m.release(ctx, lease, reservationReleaseOperationAbandoned, fmt.Sprintf("reservedActiveOutboxFailed: %v", err))
+			return nil, &UnavailableError{Err: err}
+		}
 	}
 	return lease, nil
 }
@@ -362,6 +369,9 @@ func (m *manager) commitReservationWithoutOutbox(ctx context.Context, lease *Ope
 		)
 		return fmt.Errorf("runtime usage commit not durable: outbox: %v; finalize: %w", outboxErr, err)
 	}
+	if lease.Meter == MeterMemorySlots {
+		m.markDoneBestEffort(ctx, lease, "quotaFinalizedWithoutOutbox")
+	}
 	m.recordConsoleMetering(lease, event)
 	return nil
 }
@@ -378,8 +388,23 @@ func (m *manager) applyAdjustmentWithoutOutbox(ctx context.Context, lease *Opera
 		)
 		return fmt.Errorf("runtime usage adjustment not durable: outbox: %v; apply: %w", outboxErr, err)
 	}
+	m.markDoneBestEffort(ctx, lease, "quotaAdjustedWithoutOutbox")
 	m.recordConsoleMetering(lease, event)
 	return nil
+}
+
+func (m *manager) markDoneBestEffort(ctx context.Context, lease *OperationLease, reason string) {
+	if m.outbox == nil || lease == nil {
+		return
+	}
+	if err := m.outbox.MarkOperationDone(ctx, lease.OperationID, reason); err != nil {
+		m.logger.WarnContext(ctx, "runtime usage outbox done update failed after direct finalization",
+			"operation_id", lease.OperationID,
+			"tenant_id", lease.Subject.TenantID,
+			"cluster_id", lease.Subject.ClusterID,
+			"err", err,
+		)
+	}
 }
 
 func (m *manager) storeCommitPending(ctx context.Context, lease *OperationLease, event MeteringEvent) error {
@@ -446,6 +471,16 @@ func releaseDetail(prefix string, cause error) string {
 		return prefix
 	}
 	return fmt.Sprintf("%s: %v", prefix, cause)
+}
+
+func reservationExpiresAt(reservation *Reservation, now time.Time, fallback time.Duration) time.Time {
+	if reservation != nil && !reservation.ExpiresAt.IsZero() {
+		return reservation.ExpiresAt.UTC()
+	}
+	if fallback <= 0 {
+		fallback = 30 * time.Minute
+	}
+	return now.Add(fallback)
 }
 
 func newOperationID() (string, error) {

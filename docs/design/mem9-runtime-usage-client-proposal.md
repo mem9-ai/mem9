@@ -813,8 +813,12 @@ Worker behavior:
 
 Crash and primary-writer-unavailable handling:
 
-1. `BeforeRecall` and known-unit `BeforeMemoryCreate` insert `reserved_active`
-   after console returns `reserved` and before mem9 work starts.
+1. Known-unit `BeforeMemoryCreate` inserts `reserved_active` after console
+   returns `reserved` and before mem9 write work starts. `BeforeRecall` does not
+   insert this local row in A1 so high-QPS recall does not depend on the
+   control-plane outbox table before doing read work; console reservation
+   `expiresAt` remains the crash fallback for that pre-finalization recall
+   window.
 2. On mem9 success, the manager updates the row to `commit_pending` with the
    metering payload before attempting the synchronous commit.
 3. On mem9 failure, the manager updates the row to `release_pending` before
@@ -850,9 +854,9 @@ Reservation leak prevention uses three layers:
 
 1. Handler-level `defer` release for normal failure paths after a reservation is
    acquired but before success finalization.
-2. Local outbox rows for active reservations before executing mem9 work. Startup
-   resumes pending `release_reservation`, `commit_reservation`,
-   `apply_adjustment`, and `submit_metering_event` rows.
+2. Local outbox rows for active memory-slot write reservations before executing
+   mem9 write work. Startup resumes pending `release_reservation`,
+   `commit_reservation`, `apply_adjustment`, and `submit_metering_event` rows.
 3. Console-server `expiresAt` auto-expiry as the final authority for process
    crashes before mem9-server can persist a local outbox row.
 
@@ -862,11 +866,15 @@ console omits `expiresAt`, use `MNEMO_RUNTIME_USAGE_RESERVATION_TTL` as the loca
 deadline. The default is `30m`; production should set it to match console's quota
 reservation TTL.
 
-`BeforeRecall` and `BeforeMemoryCreate` must durably insert the active
-reservation outbox row after console returns `reserved` and before executing the
-mem9 operation. If this insert fails before execution, release the console
-reservation best-effort and return `503`; this is a true fail-closed path because
-the mem9 operation has not started.
+`BeforeMemoryCreate` must durably insert the active reservation outbox row after
+console returns `reserved` and before executing the mem9 write operation. If
+this insert fails before execution, release the console reservation best-effort
+and return `503`; this is a true fail-closed path because the mem9 operation has
+not started. `BeforeRecall` intentionally skips the local active row in A1 to
+avoid putting the control-plane outbox table on the normal recall read path; if
+the process crashes before recall commit or release can be persisted, console
+reservation expiry is the source of truth and the recall may require
+coarse-grained audit from logs rather than row-level local reconciliation.
 
 The outbox worker should mark unresolved `reserved_active` work
 `unknown_after_crash` after `expiresAt + 2m` and emit
@@ -1002,7 +1010,8 @@ promotes them into the internal API contract:
 15. Handler tests cover delete adjustment after success.
 16. Handler tests cover batch delete skipping adjustment for `deleted == 0`.
 17. Handler tests cover runtime usage forcing or rejecting async smart ingest.
-18. Outbox tests cover active reservation row creation before mem9 work starts.
+18. Outbox tests cover active memory-create reservation row creation before
+    mem9 write work starts, and recall skipping the active row.
 19. Outbox tests cover retryable commit failure enqueueing work.
 20. Outbox tests cover pre-execution outbox failure returning `503`.
 21. Outbox tests cover post-execution outbox failure returning operation success
