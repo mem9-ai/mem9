@@ -331,6 +331,54 @@ func TestResolveApiKey_PopulatesAuthInfo(t *testing.T) {
 	}
 }
 
+func TestResolveApiKey_PreservesAPIKeySubject(t *testing.T) {
+	pool := tenant.NewPool(tenant.PoolConfig{Backend: "tidb"})
+	defer pool.Close()
+
+	db := sql.OpenDB(pingOKConnector{})
+	defer db.Close()
+	cacheTenantDB(t, pool, "tenant-1", db)
+
+	repo := stubTenantRepo{
+		tenants: map[string]*domain.Tenant{
+			"api-key-a": {
+				ID:       "tenant-1",
+				Status:   domain.TenantActive,
+				DBHost:   "127.0.0.1",
+				DBPort:   4000,
+				DBUser:   "user",
+				DBName:   "db",
+				Provider: "tidb",
+			},
+		},
+	}
+
+	enc := encrypt.NewPlainEncryptor()
+	mw := ResolveApiKey(repo, pool, enc, nil)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		info := AuthFromContext(r.Context())
+		if info == nil {
+			t.Fatal("auth info missing from context")
+		}
+		if info.TenantID != "tenant-1" {
+			t.Fatalf("tenant ID = %q, want %q", info.TenantID, "tenant-1")
+		}
+		if info.APIKeySubject != "api-key-a" {
+			t.Fatalf("APIKeySubject = %q, want api-key-a", info.APIKeySubject)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1alpha2/mem9s/memories", nil)
+	req.Header.Set(APIKeyHeader, " api-key-a ")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNoContent)
+	}
+}
+
 func TestResolveApiKey_MD5Encryptor_DecryptsPassword(t *testing.T) {
 	pool := tenant.NewPool(tenant.PoolConfig{Backend: "tidb"})
 	defer pool.Close()

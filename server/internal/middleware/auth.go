@@ -414,7 +414,7 @@ func ResolveApiKey(
 				TenantID:      t.ID,
 				TenantDB:      db,
 				ClusterID:     t.ClusterID,
-				APIKeySubject: t.ID,
+				APIKeySubject: apiKey,
 			}
 			if agentID := r.Header.Get(AgentIDHeader); agentID != "" {
 				info.AgentName = agentID
