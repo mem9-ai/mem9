@@ -502,7 +502,7 @@ func TestCreateMemory_RuntimeUsageAllowsPinnedKnownDelta(t *testing.T) {
 	}
 }
 
-func TestCreateMemory_RuntimeUsageFinalizationFailureKeepsSuccess(t *testing.T) {
+func TestCreateMemory_RuntimeUsageFinalizationFailureFailsClosed(t *testing.T) {
 	memRepo := &testMemoryRepo{}
 	runtimeUsage := &captureRuntimeUsageManager{
 		enabled:               true,
@@ -519,8 +519,8 @@ func TestCreateMemory_RuntimeUsageFinalizationFailureKeepsSuccess(t *testing.T) 
 
 	srv.createMemory(rr, req)
 
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want 201: %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", rr.Code, rr.Body.String())
 	}
 	if runtimeUsage.beforeCreateCalls != 1 {
 		t.Fatalf("BeforeMemoryCreate calls = %d, want 1", runtimeUsage.beforeCreateCalls)
@@ -1032,7 +1032,7 @@ func TestBulkCreateMemoriesTriggersPostWriteHooks(t *testing.T) {
 	}
 }
 
-func TestBulkCreateMemories_RuntimeUsageFinalizationFailureKeepsSuccess(t *testing.T) {
+func TestBulkCreateMemories_RuntimeUsageFinalizationFailureFailsClosed(t *testing.T) {
 	memRepo := &testMemoryRepo{}
 	runtimeUsage := &captureRuntimeUsageManager{
 		enabled:               true,
@@ -1050,8 +1050,8 @@ func TestBulkCreateMemories_RuntimeUsageFinalizationFailureKeepsSuccess(t *testi
 
 	srv.bulkCreateMemories(rr, req)
 
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want 201: %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", rr.Code, rr.Body.String())
 	}
 	if runtimeUsage.beforeCreateCalls != 1 {
 		t.Fatalf("BeforeMemoryCreate calls = %d, want 1", runtimeUsage.beforeCreateCalls)

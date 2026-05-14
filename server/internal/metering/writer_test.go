@@ -164,6 +164,20 @@ func waitForConsoleStore(t *testing.T, store *fakeConsoleStore, wantDone int, ti
 	t.Fatalf("timed out waiting for done=%d; got upserted=%d done=%d terminal=%d retry=%d", wantDone, upserted, done, terminal, retry)
 }
 
+func waitForConsoleTerminal(t *testing.T, store *fakeConsoleStore, wantTerminal int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		_, _, terminal, _ := store.counts()
+		if terminal == wantTerminal {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	upserted, done, terminal, retry := store.counts()
+	t.Fatalf("timed out waiting for terminal=%d; got upserted=%d done=%d terminal=%d retry=%d", wantTerminal, upserted, done, terminal, retry)
+}
+
 func decodePayload(t *testing.T, body []byte) s3Payload {
 	t.Helper()
 	r, err := gzip.NewReader(bytes.NewReader(body))
@@ -991,6 +1005,45 @@ func TestConsoleRuntimeWriter_SendsConsoleShapeAndMarksDone(t *testing.T) {
 	}
 	if gotBody["units"] != float64(1) {
 		t.Fatalf("units = %#v, want 1", gotBody["units"])
+	}
+}
+
+func TestConsoleRuntimeWriter_ConflictMarksTerminalEvenWithDedupedBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"status":"accepted","deduped":true}`))
+	}))
+	defer server.Close()
+
+	store := &fakeConsoleStore{}
+	logger, _ := newTestLogger()
+	writer, err := NewConsoleRuntime(ConsoleRuntimeConfig{
+		BaseURL:        server.URL,
+		InternalSecret: "internal-secret",
+		Timeout:        time.Second,
+		Store:          store,
+	}, logger)
+	if err != nil {
+		t.Fatalf("NewConsoleRuntime: %v", err)
+	}
+	defer writer.Close(context.Background())
+
+	writer.Record(Event{
+		TenantID:      "tenant-a",
+		ClusterID:     "cluster-a",
+		AgentID:       "Codex",
+		OperationID:   "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
+		APIKeySubject: "tenant-a",
+		EventType:     "recall",
+		Meter:         "recalls",
+		Units:         1,
+		OccurredAt:    time.Date(2026, 5, 13, 1, 2, 3, 0, time.UTC),
+	})
+
+	waitForConsoleTerminal(t, store, 1, time.Second)
+	upserted, done, terminal, retry := store.counts()
+	if upserted != 1 || done != 0 || terminal != 1 || retry != 0 {
+		t.Fatalf("store counts = upserted=%d done=%d terminal=%d retry=%d", upserted, done, terminal, retry)
 	}
 }
 

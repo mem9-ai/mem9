@@ -76,8 +76,7 @@ func (m *manager) AfterRecallSuccess(ctx context.Context, lease *OperationLease,
 	}
 	event := m.consoleMeteringEvent(lease, EventTypeRecall, result.AgentName, result.MemoryIDs, lease.Units)
 	if err := m.storeCommitPending(ctx, lease, event); err != nil {
-		m.release(ctx, lease, "recallCommitPendingFailed")
-		return err
+		return m.commitReservationWithoutOutbox(ctx, lease, event, err)
 	}
 	if err := m.client.FinalizeReservation(ctx, lease.Subject, lease.OperationID, ReservationStatusCommitted, reservationCommitReason); err != nil {
 		m.markRetryable(ctx, lease.OperationID, err)
@@ -91,7 +90,7 @@ func (m *manager) AfterRecallSuccess(ctx context.Context, lease *OperationLease,
 }
 
 func (m *manager) AfterRecallFailure(ctx context.Context, lease *OperationLease, cause error) {
-	m.release(ctx, lease, "recallFailed")
+	m.release(ctx, lease, reservationReleaseReason(cause), releaseDetail("recallFailed", cause))
 }
 
 func (m *manager) BeforeMemoryCreate(ctx context.Context, subject Subject, units int64) (*OperationLease, error) {
@@ -104,8 +103,7 @@ func (m *manager) AfterMemoryCreateSuccess(ctx context.Context, lease *Operation
 	}
 	event := m.consoleMeteringEvent(lease, EventTypeMemoryCreated, result.AgentName, result.MemoryIDs, lease.Units)
 	if err := m.storeCommitPending(ctx, lease, event); err != nil {
-		m.release(ctx, lease, "memoryCreateCommitPendingFailed")
-		return err
+		return m.commitReservationWithoutOutbox(ctx, lease, event, err)
 	}
 	if err := m.client.FinalizeReservation(ctx, lease.Subject, lease.OperationID, ReservationStatusCommitted, reservationCommitReason); err != nil {
 		m.markRetryable(ctx, lease.OperationID, err)
@@ -119,7 +117,7 @@ func (m *manager) AfterMemoryCreateSuccess(ctx context.Context, lease *Operation
 }
 
 func (m *manager) AfterMemoryCreateFailure(ctx context.Context, lease *OperationLease, cause error) {
-	m.release(ctx, lease, "memoryCreateFailed")
+	m.release(ctx, lease, reservationReleaseReason(cause), releaseDetail("memoryCreateFailed", cause))
 }
 
 func (m *manager) BeforeMemoryDelete(ctx context.Context, subject Subject, target MemoryDeleteTarget) (*OperationLease, error) {
@@ -166,7 +164,7 @@ func (m *manager) AfterMemoryDeleteSuccess(ctx context.Context, lease *Operation
 	}
 	event := m.consoleMeteringEvent(lease, EventTypeMemoryDeleted, result.AgentName, result.MemoryIDs, result.MemorySlotsDelta)
 	if err := m.storeAdjustmentPending(ctx, lease, adj, event); err != nil {
-		return err
+		return m.applyAdjustmentWithoutOutbox(ctx, lease, adj, event, err)
 	}
 	if err := m.client.ApplyAdjustment(ctx, lease.Subject, adj); err != nil {
 		m.markRetryable(ctx, lease.OperationID, err)
@@ -256,7 +254,7 @@ func (m *manager) reserve(ctx context.Context, subject Subject, meter string, un
 		Units:       units,
 		Reserved:    true,
 	}
-	reservation, err := m.client.Reserve(ctx, subject, operationID, Operation{Meter: meter, Units: units})
+	_, err = m.client.Reserve(ctx, subject, operationID, Operation{Meter: meter, Units: units})
 	if err != nil {
 		var denied *QuotaDeniedError
 		if errors.As(err, &denied) {
@@ -279,17 +277,10 @@ func (m *manager) reserve(ctx context.Context, subject Subject, meter string, un
 		}
 		return nil, err
 	}
-	if m.outbox != nil {
-		expiresAt := reservationExpiresAt(reservation, m.now().UTC(), m.cfg.ReservationTTL)
-		if err := m.outbox.StoreReservedActive(ctx, lease, reservation, expiresAt); err != nil {
-			m.release(ctx, lease, "outboxStoreFailed")
-			return nil, &UnavailableError{Err: err}
-		}
-	}
 	return lease, nil
 }
 
-func (m *manager) release(ctx context.Context, lease *OperationLease, reason string) {
+func (m *manager) release(ctx context.Context, lease *OperationLease, reason string, detail string) {
 	if lease == nil || !lease.Reserved {
 		return
 	}
@@ -301,6 +292,9 @@ func (m *manager) release(ctx context.Context, lease *OperationLease, reason str
 				"cluster_id", lease.Subject.ClusterID,
 				"err", err,
 			)
+		}
+		if detail != "" && detail != reason {
+			m.markRetryable(ctx, lease.OperationID, errors.New(detail))
 		}
 	}
 	if err := m.client.FinalizeReservation(ctx, lease.Subject, lease.OperationID, ReservationStatusReleased, reason); err != nil {
@@ -356,6 +350,38 @@ func (m *manager) recordConsoleMetering(lease *OperationLease, event MeteringEve
 	})
 }
 
+func (m *manager) commitReservationWithoutOutbox(ctx context.Context, lease *OperationLease, event MeteringEvent, outboxErr error) error {
+	if err := m.client.FinalizeReservation(ctx, lease.Subject, lease.OperationID, ReservationStatusCommitted, reservationCommitReason); err != nil {
+		metrics.RuntimeUsageManualReconciliationTotal.WithLabelValues("commit_after_outbox_failed").Inc()
+		m.logger.ErrorContext(ctx, "manual_reconciliation_required: runtime usage commit failed after outbox failure",
+			"operation_id", lease.OperationID,
+			"tenant_id", lease.Subject.TenantID,
+			"cluster_id", lease.Subject.ClusterID,
+			"outbox_err", outboxErr,
+			"err", err,
+		)
+		return fmt.Errorf("runtime usage commit not durable: outbox: %v; finalize: %w", outboxErr, err)
+	}
+	m.recordConsoleMetering(lease, event)
+	return nil
+}
+
+func (m *manager) applyAdjustmentWithoutOutbox(ctx context.Context, lease *OperationLease, adj Adjustment, event MeteringEvent, outboxErr error) error {
+	if err := m.client.ApplyAdjustment(ctx, lease.Subject, adj); err != nil {
+		metrics.RuntimeUsageManualReconciliationTotal.WithLabelValues("adjustment_after_outbox_failed").Inc()
+		m.logger.ErrorContext(ctx, "manual_reconciliation_required: runtime usage adjustment failed after outbox failure",
+			"operation_id", lease.OperationID,
+			"tenant_id", lease.Subject.TenantID,
+			"cluster_id", lease.Subject.ClusterID,
+			"outbox_err", outboxErr,
+			"err", err,
+		)
+		return fmt.Errorf("runtime usage adjustment not durable: outbox: %v; apply: %w", outboxErr, err)
+	}
+	m.recordConsoleMetering(lease, event)
+	return nil
+}
+
 func (m *manager) storeCommitPending(ctx context.Context, lease *OperationLease, event MeteringEvent) error {
 	if m.outbox == nil {
 		return nil
@@ -402,14 +428,24 @@ func (m *manager) markRetryable(ctx context.Context, operationID string, err err
 	}
 }
 
-func reservationExpiresAt(reservation *Reservation, now time.Time, fallback time.Duration) time.Time {
-	if reservation != nil && !reservation.ExpiresAt.IsZero() {
-		return reservation.ExpiresAt.UTC()
+func reservationReleaseReason(cause error) string {
+	switch {
+	case errors.Is(cause, context.Canceled):
+		return reservationReleaseClientCancelled
+	case errors.Is(cause, context.DeadlineExceeded):
+		return reservationReleaseTimeout
+	case cause == nil:
+		return reservationReleaseOperationAbandoned
+	default:
+		return reservationReleaseOperationFailed
 	}
-	if fallback <= 0 {
-		fallback = 30 * time.Minute
+}
+
+func releaseDetail(prefix string, cause error) string {
+	if cause == nil {
+		return prefix
 	}
-	return now.Add(fallback)
+	return fmt.Sprintf("%s: %v", prefix, cause)
 }
 
 func newOperationID() (string, error) {

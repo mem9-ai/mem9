@@ -288,13 +288,9 @@ func (w *consoleRuntimeWriter) putEvent(ctx context.Context, item consoleQueuedE
 		return fmt.Errorf("metering: put console event: %w", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 
 	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
-		w.markDone(item)
-		return nil
-	}
-	if resp.StatusCode == http.StatusConflict && consoleBodyIsDeduped(body) {
 		w.markDone(item)
 		return nil
 	}
@@ -303,20 +299,6 @@ func (w *consoleRuntimeWriter) putEvent(ctx context.Context, item consoleQueuedE
 		return nil
 	}
 	return fmt.Errorf("metering: console returned status %d", resp.StatusCode)
-}
-
-func consoleBodyIsDeduped(body []byte) bool {
-	var parsed struct {
-		Status  string `json:"status"`
-		Code    string `json:"code"`
-		Deduped bool   `json:"deduped"`
-	}
-	if err := json.Unmarshal(body, &parsed); err == nil {
-		status := strings.ToLower(parsed.Status)
-		code := strings.ToLower(parsed.Code)
-		return parsed.Deduped || status == "deduped" || status == "accepted" || code == "deduped"
-	}
-	return false
 }
 
 func (w *consoleRuntimeWriter) markDone(item consoleQueuedEvent) {

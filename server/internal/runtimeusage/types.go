@@ -20,7 +20,11 @@ const (
 	ReservationStatusCommitted = "committed"
 	ReservationStatusReleased  = "released"
 
-	reservationCommitReason = "operationSucceeded"
+	reservationCommitReason              = "operationSucceeded"
+	reservationReleaseOperationFailed    = "operationFailed"
+	reservationReleaseOperationAbandoned = "operationAbandoned"
+	reservationReleaseClientCancelled    = "clientCancelled"
+	reservationReleaseTimeout            = "timeout"
 )
 
 type Config struct {
@@ -104,7 +108,6 @@ type MeteringEvent struct {
 }
 
 type OutboxStore interface {
-	StoreReservedActive(ctx context.Context, lease *OperationLease, reservation *Reservation, expiresAt time.Time) error
 	StoreCommitPending(ctx context.Context, lease *OperationLease, event MeteringEvent) error
 	StoreReleasePending(ctx context.Context, lease *OperationLease, reason string) error
 	StoreAdjustmentIntent(ctx context.Context, lease *OperationLease, target MemoryDeleteTarget, expiresAt time.Time) error
