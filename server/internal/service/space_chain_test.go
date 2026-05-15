@@ -85,9 +85,31 @@ func TestSpaceChainReplaceNodesRejectsChainKeyNode(t *testing.T) {
 	}
 }
 
+func TestSpaceChainDisableBindingRejectsLastActiveKey(t *testing.T) {
+	repo := &fakeSpaceChainRepo{
+		chain: &domain.SpaceChain{
+			ID: "chain-1",
+			Bindings: []domain.SpaceChainBinding{
+				{ID: "binding-1", ChainID: "chain-1", ChainAPIKey: "chain_key"},
+			},
+		},
+	}
+	svc := NewSpaceChainService(repo)
+
+	err := svc.DisableBinding(context.Background(), "chain-1", "binding-1", "user-1")
+	var validation *domain.ValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("expected validation error, got %T: %v", err, err)
+	}
+	if !strings.Contains(validation.Message, "at least one Space Chain key must remain active") {
+		t.Fatalf("validation message = %q", validation.Message)
+	}
+}
+
 type fakeSpaceChainRepo struct {
-	chain *domain.SpaceChain
-	nodes []domain.SpaceChainNode
+	chain             *domain.SpaceChain
+	nodes             []domain.SpaceChainNode
+	disabledBindingID string
 }
 
 func (r *fakeSpaceChainRepo) Create(_ context.Context, chain *domain.SpaceChain, binding *domain.SpaceChainBinding) error {
@@ -115,6 +137,13 @@ func (r *fakeSpaceChainRepo) GetByKey(_ context.Context, _ string) (*domain.Spac
 	return r.chain, nil
 }
 
+func (r *fakeSpaceChainRepo) GetByKeyIncludingDisabled(_ context.Context, _ string) (*domain.SpaceChain, error) {
+	if r.chain == nil {
+		return nil, domain.ErrNotFound
+	}
+	return r.chain, nil
+}
+
 func (r *fakeSpaceChainRepo) Update(_ context.Context, chain *domain.SpaceChain) error {
 	r.chain = chain
 	return nil
@@ -136,7 +165,10 @@ func (r *fakeSpaceChainRepo) ListBindings(_ context.Context, _ string) ([]domain
 	return r.chain.Bindings, nil
 }
 
-func (r *fakeSpaceChainRepo) DisableBinding(_ context.Context, _, _, _ string) error { return nil }
+func (r *fakeSpaceChainRepo) DisableBinding(_ context.Context, _, bindingID, _ string) error {
+	r.disabledBindingID = bindingID
+	return nil
+}
 
 func (r *fakeSpaceChainRepo) ListNodes(_ context.Context, _ string) ([]domain.SpaceChainNode, error) {
 	return r.nodes, nil

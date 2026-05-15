@@ -49,7 +49,7 @@ func (s *Server) createSpaceChain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getSpaceChain(w http.ResponseWriter, r *http.Request) {
-	chain, ok := s.authorizeSpaceChain(w, r)
+	chain, ok := s.authorizeSpaceChainManagement(w, r)
 	if !ok {
 		return
 	}
@@ -75,7 +75,7 @@ func (s *Server) getSpaceChainByKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateSpaceChain(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.authorizeSpaceChain(w, r); !ok {
+	if _, ok := s.authorizeSpaceChainManagement(w, r); !ok {
 		return
 	}
 	var req updateSpaceChainRequest
@@ -92,7 +92,7 @@ func (s *Server) updateSpaceChain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteSpaceChain(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.authorizeSpaceChain(w, r); !ok {
+	if _, ok := s.authorizeSpaceChainManagement(w, r); !ok {
 		return
 	}
 	var req deleteSpaceChainRequest
@@ -107,7 +107,7 @@ func (s *Server) deleteSpaceChain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listSpaceChainNodes(w http.ResponseWriter, r *http.Request) {
-	chain, ok := s.authorizeSpaceChain(w, r)
+	chain, ok := s.authorizeSpaceChainManagement(w, r)
 	if !ok {
 		return
 	}
@@ -115,7 +115,7 @@ func (s *Server) listSpaceChainNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) replaceSpaceChainNodes(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.authorizeSpaceChain(w, r); !ok {
+	if _, ok := s.authorizeSpaceChainManagement(w, r); !ok {
 		return
 	}
 	var req replaceSpaceChainNodesRequest
@@ -132,7 +132,7 @@ func (s *Server) replaceSpaceChainNodes(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) listSpaceChainBindings(w http.ResponseWriter, r *http.Request) {
-	chain, ok := s.authorizeSpaceChain(w, r)
+	chain, ok := s.authorizeSpaceChainManagement(w, r)
 	if !ok {
 		return
 	}
@@ -140,7 +140,7 @@ func (s *Server) listSpaceChainBindings(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) createSpaceChainBinding(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.authorizeSpaceChain(w, r); !ok {
+	if _, ok := s.authorizeSpaceChainManagement(w, r); !ok {
 		return
 	}
 	var req createSpaceChainBindingRequest
@@ -157,7 +157,7 @@ func (s *Server) createSpaceChainBinding(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) disableSpaceChainBinding(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.authorizeSpaceChain(w, r); !ok {
+	if _, ok := s.authorizeSpaceChainManagement(w, r); !ok {
 		return
 	}
 	var req disableSpaceChainBindingRequest
@@ -176,7 +176,7 @@ func (s *Server) disableSpaceChainBinding(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) authorizeSpaceChain(w http.ResponseWriter, r *http.Request) (*domain.SpaceChain, bool) {
+func (s *Server) authorizeSpaceChainManagement(w http.ResponseWriter, r *http.Request) (*domain.SpaceChain, bool) {
 	if s.chains == nil {
 		respondError(w, http.StatusServiceUnavailable, "space chain service unavailable")
 		return nil, false
@@ -186,7 +186,7 @@ func (s *Server) authorizeSpaceChain(w http.ResponseWriter, r *http.Request) (*d
 		respondError(w, http.StatusUnauthorized, "missing or malformed X-API-Key")
 		return nil, false
 	}
-	chain, err := s.chains.Authorize(r.Context(), chi.URLParam(r, "chainID"), apiKey)
+	chain, err := s.chains.AuthorizeManagement(r.Context(), chi.URLParam(r, "chainID"), apiKey)
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrNotFound):
@@ -198,7 +198,7 @@ func (s *Server) authorizeSpaceChain(w http.ResponseWriter, r *http.Request) (*d
 			if logger == nil {
 				logger = slog.Default()
 			}
-			logger.ErrorContext(r.Context(), "space chain auth failed", "err", err)
+			logger.ErrorContext(r.Context(), "space chain management auth failed", "err", err)
 			respondError(w, http.StatusInternalServerError, "space chain auth failed")
 		}
 		return nil, false

@@ -126,6 +126,24 @@ func (s *SpaceChainService) Authorize(ctx context.Context, chainID, key string) 
 	return chain, nil
 }
 
+func (s *SpaceChainService) AuthorizeManagement(ctx context.Context, chainID, key string) (*domain.SpaceChain, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, &domain.ValidationError{Field: "X-API-Key", Message: "missing or malformed X-API-Key"}
+	}
+	if !strings.HasPrefix(key, domain.ChainKeyPrefix) {
+		return nil, &domain.ValidationError{Field: "X-API-Key", Message: "not a chain key"}
+	}
+	chain, err := s.chains.GetByKeyIncludingDisabled(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if chain.ID != chainID {
+		return nil, domain.ErrNotFound
+	}
+	return chain, nil
+}
+
 func (s *SpaceChainService) Update(ctx context.Context, chainID string, req UpdateSpaceChainRequest) (*domain.SpaceChain, error) {
 	chainID = strings.TrimSpace(chainID)
 	name := strings.TrimSpace(req.Name)
@@ -189,12 +207,12 @@ func (s *SpaceChainService) DisableBinding(ctx context.Context, chainID, binding
 	if bindingID == "" {
 		return &domain.ValidationError{Field: "binding_id", Message: "required"}
 	}
+	foundActive := false
+	active := 0
 	bindings, err := s.chains.ListBindings(ctx, chainID)
 	if err != nil {
 		return err
 	}
-	active := 0
-	foundActive := false
 	for _, binding := range bindings {
 		if binding.Disabled {
 			continue
@@ -208,7 +226,7 @@ func (s *SpaceChainService) DisableBinding(ctx context.Context, chainID, binding
 		return domain.ErrNotFound
 	}
 	if active <= 1 {
-		return &domain.ValidationError{Field: "binding_id", Message: "cannot disable the last active chain key"}
+		return &domain.ValidationError{Field: "binding_id", Message: "at least one Space Chain key must remain active"}
 	}
 	return s.chains.DisableBinding(ctx, chainID, bindingID, strings.TrimSpace(disabledByUserID))
 }

@@ -65,6 +65,7 @@ type SpaceChainRepo interface {
 	Create(ctx context.Context, chain *domain.SpaceChain, binding *domain.SpaceChainBinding) error
 	GetByID(ctx context.Context, id string) (*domain.SpaceChain, error)
 	GetByKey(ctx context.Context, key string) (*domain.SpaceChain, error)
+	GetByKeyIncludingDisabled(ctx context.Context, key string) (*domain.SpaceChain, error)
 	Update(ctx context.Context, chain *domain.SpaceChain) error
 	SoftDelete(ctx context.Context, id, deletedByUserID string) error
 

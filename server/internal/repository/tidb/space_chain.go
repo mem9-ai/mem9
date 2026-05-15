@@ -79,6 +79,24 @@ func (r *SpaceChainRepoImpl) GetByKey(ctx context.Context, key string) (*domain.
 	return chain, nil
 }
 
+func (r *SpaceChainRepoImpl) GetByKeyIncludingDisabled(ctx context.Context, key string) (*domain.SpaceChain, error) {
+	row := r.db.QueryRowContext(ctx,
+		`SELECT sc.id, sc.project_id, sc.name, sc.description, sc.created_by_user_id, sc.deleted_at, sc.deleted_by_user_id, sc.created_at, sc.updated_at
+		 FROM space_chain_bindings AS b
+		 INNER JOIN space_chains AS sc ON sc.id = b.chain_id
+		 WHERE b.chain_api_key = ? AND sc.deleted_at IS NULL`,
+		key,
+	)
+	chain, err := scanSpaceChain(row)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.hydrate(ctx, chain); err != nil {
+		return nil, err
+	}
+	return chain, nil
+}
+
 func (r *SpaceChainRepoImpl) Update(ctx context.Context, chain *domain.SpaceChain) error {
 	res, err := r.db.ExecContext(ctx,
 		`UPDATE space_chains
@@ -136,7 +154,7 @@ func (r *SpaceChainRepoImpl) ListBindings(ctx context.Context, chainID string) (
 		`SELECT id, chain_id, chain_api_key, created_by_user_id, disabled, disabled_at, disabled_by_user_id, created_at
 		 FROM space_chain_bindings
 		 WHERE chain_id = ?
-		 ORDER BY created_at ASC, id ASC`,
+		 ORDER BY created_at DESC, id DESC`,
 		chainID,
 	)
 	if err != nil {
