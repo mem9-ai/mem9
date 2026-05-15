@@ -22,6 +22,9 @@ MNEMO_BASE=$DEV POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-round2.sh
 MNEMO_BASE=$DEV bash e2e/api-smoke-test-v1alpha2.sh
 MNEMO_BASE=$DEV POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-round2-v1alpha2.sh
 
+# Space Chain management/runtime
+MNEMO_BASE=$DEV POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-space-chain.sh
+
 # Session storage tests (both API versions)
 MNEMO_BASE=$DEV POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-sessions.sh
 MNEMO_BASE=$DEV MNEMO_API_VERSION=v1alpha2 POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-sessions.sh
@@ -42,6 +45,7 @@ for script in \
   "e2e/api-smoke-test-v1alpha2.sh" \
   "POLL_TIMEOUT_S=60 e2e/api-smoke-test-round2.sh" \
   "POLL_TIMEOUT_S=60 e2e/api-smoke-test-round2-v1alpha2.sh" \
+  "POLL_TIMEOUT_S=60 e2e/api-smoke-test-space-chain.sh" \
   "POLL_TIMEOUT_S=60 e2e/api-smoke-test-sessions.sh" \
   "e2e/api-smoke-test-utm.sh"; do
   eval "MNEMO_BASE=$DEV bash $script"
@@ -89,6 +93,36 @@ concurrent async ingest bumps.
 | 7   | Delete                  | `DELETE /memories/{id}` returns 204                                                   |
 | 8   | Get after delete        | `GET /memories/{id}` returns 404                                                      |
 | 9   | Idempotent re-delete    | Second `DELETE` on already-deleted ID returns 204 (no-op, not 404)                    |
+
+### Space Chain (`api-smoke-test-space-chain.sh`)
+
+Validates the primary Space Chain happy path against a live server. The script
+provisions two fresh Spaces, creates a Space Chain, verifies the empty-chain
+runtime error, replaces nodes with the exact management API payload shape,
+writes through the `chain_` key, verifies `chain_source` provenance, exercises
+get/update/delete by id through the chain key, soft-deletes the chain, and
+confirms the deleted chain key is no longer active.
+
+| #   | Case                     | What is verified                                                                                 |
+| --- | ------------------------ | ------------------------------------------------------------------------------------------------ |
+| 1   | Healthcheck              | `GET /healthz` returns 200 with `status=ok`                                                       |
+| 2   | Provision Spaces         | Two `POST /v1alpha1/mem9s` calls return fresh tenant IDs                                          |
+| 3   | Create Space Chain       | `POST /v1alpha2/space-chains` returns a chain id, binding id, and `chain_` key                    |
+| 4   | Chain key status         | `GET /v1alpha2/status` returns `active` for the chain key                                         |
+| 5   | Empty-chain write        | Runtime write through a chain with no nodes returns 400 with a clear error                        |
+| 6   | By-key lookup            | `GET /v1alpha2/space-chains/by-key` resolves the created chain                                    |
+| 7   | Binding list             | `GET /v1alpha2/space-chains/{id}/bindings` includes the initial binding and key                   |
+| 8   | Duplicate nodes rejected | Duplicate `tenant_id` node replacement returns 400                                                |
+| 9   | Replace nodes            | `PUT /v1alpha2/space-chains/{id}/nodes` stores two nodes with positions 0 and 1                   |
+| 10  | List nodes               | `GET /v1alpha2/space-chains/{id}/nodes` returns the stored order                                  |
+| 11  | Chain write              | `POST /v1alpha2/mem9s/memories` with the chain key returns 202 `accepted`                         |
+| 12  | Chain list provenance    | Polled list result includes `chain_source` for node position 0 and the first Space tenant         |
+| 13  | Chain get by id          | `GET /v1alpha2/mem9s/memories/{id}` returns the memory and same `chain_source`                    |
+| 14  | Chain update by id       | `PUT /v1alpha2/mem9s/memories/{id}` advances version and preserves first-node provenance          |
+| 15  | Chain delete by id       | `DELETE /v1alpha2/mem9s/memories/{id}` returns 204                                                |
+| 16  | Deleted memory 404       | Subsequent chain `GET /memories/{id}` returns 404                                                 |
+| 17  | Chain soft-delete        | `DELETE /v1alpha2/space-chains/{id}` returns 204                                                  |
+| 18  | Deleted key inactive     | `GET /v1alpha2/status` returns 404 for the deleted chain key                                      |
 
 ### Session storage (`api-smoke-test-sessions.sh`)
 
@@ -163,6 +197,9 @@ is not set.
 bash e2e/api-smoke-test.sh
 bash e2e/api-smoke-test-round2.sh
 
+# Space Chain management/runtime smoke
+bash e2e/api-smoke-test-space-chain.sh
+
 # Session storage regression tests
 bash e2e/api-smoke-test-sessions.sh
 
@@ -195,6 +232,7 @@ python3 e2e/concurrent-real-doc-test.py
 
 - `api-smoke-test.sh` / `api-smoke-test-v1alpha2.sh` — CRUD smoke, ingest, search, tag filter (tests 1–11)
 - `api-smoke-test-round2.sh` / `api-smoke-test-round2-v1alpha2.sh` — per-ID ops: GET, PUT, If-Match LWW, DELETE, idempotent re-delete (tests 1–9)
+- `api-smoke-test-space-chain.sh` — Space Chain management/runtime: create chain, validate nodes/bindings, write/read/update/delete via `chain_` key, cleanup (tests 1–18)
 - `api-smoke-test-sessions.sh` — session storage: write, dedup, unified search, type filter, metadata, no-query exclusion, lazy migration (tests 1–13; tests 11–13 require `MNEMO_EXISTING_TENANT_ID`)
 - `api-smoke-test-existing-tenant.sh` — backward-compat: pre-existing tenant read/write/search across v1alpha1 and v1alpha2 (tests 1–12)
 - `api-smoke-test-utm.sh` — UTM attribution: param normalization, filtering, empty-value dropping (tests 1–5 always; tests 6–10 require `MNEMO_METADB_DSN` and `MNEMO_UTM_ENABLED=true` on server)
@@ -207,7 +245,7 @@ python3 e2e/concurrent-real-doc-test.py
 | -------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------- |
 | `MNEMO_BASE`               | `https://api.mem9.ai`          | all smoke scripts                                                                              |
 | `MNEMO_API_VERSION`        | `v1alpha1`                     | `api-smoke-test.sh`, `api-smoke-test-round2.sh`, `api-smoke-test-sessions.sh`                  |
-| `POLL_TIMEOUT_S`           | `20` (round2), `30` (sessions) | `api-smoke-test-round2*.sh`, `api-smoke-test-sessions.sh`, `api-smoke-test-existing-tenant.sh` |
+| `POLL_TIMEOUT_S`           | `20` (round2), `30` (sessions, Space Chain) | `api-smoke-test-round2*.sh`, `api-smoke-test-space-chain.sh`, `api-smoke-test-sessions.sh`, `api-smoke-test-existing-tenant.sh` |
 | `MNEMO_EXISTING_TENANT_ID` | —                              | `api-smoke-test-existing-tenant.sh`, `api-smoke-test-sessions.sh` (tests 11–13)                |
 | `MNEMO_METADB_DSN`         | —                              | `api-smoke-test-utm.sh` (tests 6–10); format: `user:pass@tcp(host:port)/dbname`                |
 | `MNEMO_TEST_BASE`          | `http://127.0.0.1:18081`       | CRDT scripts                                                                                   |
@@ -221,6 +259,7 @@ python3 e2e/concurrent-real-doc-test.py
 | `api-smoke-test-v1alpha2.sh`        | v1alpha2                       | One-liner wrapper — sets `MNEMO_API_VERSION=v1alpha2`                |
 | `api-smoke-test-round2.sh`          | v1alpha1 (default) or v1alpha2 | Per-ID ops: GET, PUT, If-Match LWW, DELETE, idempotent re-delete     |
 | `api-smoke-test-round2-v1alpha2.sh` | v1alpha2                       | One-liner wrapper — sets `MNEMO_API_VERSION=v1alpha2`                |
+| `api-smoke-test-space-chain.sh`     | v1alpha2                       | Space Chain management/runtime happy path                            |
 | `api-smoke-test-sessions.sh`        | v1alpha1 (default) or v1alpha2 | Session storage: write, dedup, unified search, type filter, metadata |
 | `api-smoke-test-existing-tenant.sh` | v1alpha1 + v1alpha2            | Backward-compat: pre-existing tenant full lifecycle, both auth modes |
 | `api-smoke-test-utm.sh`             | v1alpha1                       | UTM attribution: param normalization + optional DB row verification  |
