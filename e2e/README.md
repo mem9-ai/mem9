@@ -2,18 +2,29 @@
 title: E2E Tests
 ---
 
-End-to-end tests for the CRDT branch with user/space model. All scripts run
-against a live mnemo-server instance using the `user_space_test_01` database
-with auto-embedding enabled.
+End-to-end tests against a live mnemo-server instance. Server API smoke scripts
+use `MNEMO_BASE`; CRDT user/space scripts use `MNEMO_TEST_BASE` and
+`MNEMO_TEST_USER_TOKEN`.
+
+## Server API Smoke
+
+| Script | What it tests |
+|--------|--------------|
+| `api-smoke-test-space-chain.sh` | Space Chain management/runtime happy path: create chain, validate nodes and bindings, write/read/update/delete through a `chain_` key, and cleanup |
+
+```bash
+MNEMO_BASE=https://api.mem9.ai POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-space-chain.sh
+```
 
 ## Prerequisites
 
-- mnemo-server running (default `127.0.0.1:18081`, override with `MNEMO_TEST_BASE`)
+- mnemo-server running (`MNEMO_BASE` for server API smoke scripts;
+  `MNEMO_TEST_BASE` defaults to `127.0.0.1:18081` for CRDT scripts)
 - `MNEMO_TEST_USER_TOKEN` env var set to a valid user token (see below)
 - Python 3.8+ or bash (no extra dependencies — stdlib only)
 - `jq` installed (for bash script)
 
-## Scripts
+## CRDT Scripts
 
 | Script | What it tests |
 |--------|--------------|
