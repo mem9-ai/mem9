@@ -6,10 +6,13 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/qiffang/mnemos/server/internal/domain"
 )
 
 type testDriver struct{}
@@ -23,7 +26,15 @@ type testConnector struct {
 	pingRelease  chan struct{}
 	pingErr      error
 	connectErr   error
+	schemaRows   []schemaTestRow
 	connectCalls atomic.Int32
+	queryCalls   atomic.Int32
+}
+
+type schemaTestRow struct {
+	table                string
+	extra                string
+	generationExpression string
 }
 
 func (c *testConnector) Connect(context.Context) (driver.Conn, error) {
@@ -50,6 +61,14 @@ func (c *testConn) Begin() (driver.Tx, error) {
 	return nil, errors.New("begin not supported")
 }
 
+func (c *testConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	if strings.Contains(query, "information_schema.COLUMNS") {
+		c.connector.queryCalls.Add(1)
+		return &schemaRows{rows: c.connector.schemaRows}, nil
+	}
+	return nil, errors.New("query not supported")
+}
+
 func (c *testConn) Ping(ctx context.Context) error {
 	if c.connector.pingStarted != nil {
 		select {
@@ -65,6 +84,29 @@ func (c *testConn) Ping(ctx context.Context) error {
 		}
 	}
 	return c.connector.pingErr
+}
+
+type schemaRows struct {
+	rows []schemaTestRow
+	idx  int
+}
+
+func (*schemaRows) Columns() []string {
+	return []string{"TABLE_NAME", "EXTRA", "GENERATION_EXPRESSION"}
+}
+
+func (*schemaRows) Close() error { return nil }
+
+func (r *schemaRows) Next(dest []driver.Value) error {
+	if r.idx >= len(r.rows) {
+		return io.EOF
+	}
+	row := r.rows[r.idx]
+	r.idx++
+	dest[0] = row.table
+	dest[1] = row.extra
+	dest[2] = row.generationExpression
+	return nil
 }
 
 type getResult struct {
@@ -427,5 +469,65 @@ func TestPool_Get_InFlightOpenCountsTowardTotalLimit(t *testing.T) {
 	close(slowConnector.pingRelease)
 	if slow := <-slowCh; slow.err != nil {
 		t.Fatalf("slow tenant Get error: %v", slow.err)
+	}
+}
+
+func TestPool_Get_EmbeddingSchemaMismatchFailsBeforeCaching(t *testing.T) {
+	pool := NewPool(PoolConfig{ConnectTimeout: time.Second})
+	defer pool.Close()
+
+	connector := &testConnector{
+		schemaRows: []schemaTestRow{
+			{table: "memories", extra: "STORED GENERATED"},
+		},
+	}
+	withSQLOpen(t, func(driverName, dsn string) (*sql.DB, error) {
+		return sql.OpenDB(connector), nil
+	})
+
+	_, err := pool.Get(context.Background(), "tenant-1", "tenant-1")
+	if err == nil {
+		t.Fatal("expected schema compatibility error, got nil")
+	}
+	if !errors.Is(err, domain.ErrSchemaIncompatible) {
+		t.Fatalf("expected ErrSchemaIncompatible, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "memories.embedding is a generated Auto Embed column") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if connector.queryCalls.Load() != 1 {
+		t.Fatalf("schema query calls = %d, want 1", connector.queryCalls.Load())
+	}
+	if got := pool.Stats(); len(got) != 0 {
+		t.Fatalf("expected mismatched tenant not to be cached, got %+v", got)
+	}
+}
+
+func TestPool_Get_EmbeddingSchemaCheckRunsOnlyOnFirstOpen(t *testing.T) {
+	pool := NewPool(PoolConfig{ConnectTimeout: time.Second})
+	defer pool.Close()
+
+	connector := &testConnector{
+		schemaRows: []schemaTestRow{
+			{table: "memories"},
+		},
+	}
+	withSQLOpen(t, func(driverName, dsn string) (*sql.DB, error) {
+		return sql.OpenDB(connector), nil
+	})
+
+	first, err := pool.Get(context.Background(), "tenant-1", "tenant-1")
+	if err != nil {
+		t.Fatalf("first Get error: %v", err)
+	}
+	second, err := pool.Get(context.Background(), "tenant-1", "tenant-1")
+	if err != nil {
+		t.Fatalf("second Get error: %v", err)
+	}
+	if first != second {
+		t.Fatal("expected cached DB on second Get")
+	}
+	if connector.queryCalls.Load() != 1 {
+		t.Fatalf("schema query calls = %d, want 1", connector.queryCalls.Load())
 	}
 }

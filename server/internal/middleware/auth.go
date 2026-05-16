@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -167,6 +168,10 @@ func ResolveTenant(
 					}
 				}
 				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", poolDuration.Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", err)
+				if errors.Is(err, domain.ErrSchemaIncompatible) {
+					writeError(w, http.StatusConflict, err.Error())
+					return
+				}
 				if _, blocked := clusterBlacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
 					writeError(w, http.StatusTooManyRequests, "cluster quota exhausted")
 					return
@@ -286,6 +291,10 @@ func ResolveApiKey(
 							"duration_ms", poolDuration.Milliseconds(),
 							"classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err),
 							"err", err)
+						if errors.Is(err, domain.ErrSchemaIncompatible) {
+							writeError(w, http.StatusConflict, err.Error())
+							return
+						}
 						if _, blocked := clusterBlacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
 							writeError(w, http.StatusTooManyRequests, "cluster quota exhausted")
 							return
@@ -380,6 +389,10 @@ func ResolveApiKey(
 					}
 				}
 				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", poolDuration.Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", err)
+				if errors.Is(err, domain.ErrSchemaIncompatible) {
+					writeError(w, http.StatusConflict, err.Error())
+					return
+				}
 				if _, blocked := clusterBlacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
 					writeError(w, http.StatusTooManyRequests, "cluster quota exhausted")
 					return

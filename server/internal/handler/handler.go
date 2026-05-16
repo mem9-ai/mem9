@@ -274,6 +274,8 @@ func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err err
 		respondError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, domain.ErrNotSupported):
 		respondError(w, http.StatusNotImplemented, err.Error())
+	case errors.Is(err, domain.ErrSchemaIncompatible):
+		respondError(w, http.StatusConflict, err.Error())
 	default:
 		s.logger.Error("internal error", "err", err, "request_id", reqid.FromContext(ctx))
 		respondError(w, http.StatusInternalServerError, "internal server error")

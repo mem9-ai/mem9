@@ -115,6 +115,7 @@ func main() {
 		IdleTimeout:    cfg.TenantPoolIdleTimeout,
 		TotalLimit:     cfg.TenantPoolTotalLimit,
 		Backend:        cfg.DBBackend,
+		EmbedAutoModel: cfg.EmbedAutoModel,
 	})
 	defer tenantPool.Close()
 

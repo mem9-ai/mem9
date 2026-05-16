@@ -22,6 +22,7 @@ type TenantPool struct {
 	idleTimeout    time.Duration
 	totalLimit     int
 	backend        string // "tidb", "postgres", or "db9"
+	embedAutoModel string
 	stopCh         chan struct{}
 	connectGroup   singleflight.Group
 	opening        int
@@ -41,6 +42,7 @@ type PoolConfig struct {
 	IdleTimeout    time.Duration
 	TotalLimit     int
 	Backend        string // "tidb" (default), "postgres", or "db9"
+	EmbedAutoModel string
 	ConnectTimeout time.Duration
 }
 
@@ -76,6 +78,7 @@ func NewPool(cfg PoolConfig) *TenantPool {
 		idleTimeout:    cfg.IdleTimeout,
 		totalLimit:     cfg.TotalLimit,
 		backend:        backend,
+		embedAutoModel: cfg.EmbedAutoModel,
 		stopCh:         make(chan struct{}),
 		connectTimeout: cfg.ConnectTimeout,
 	}
@@ -181,6 +184,15 @@ func (p *TenantPool) openTenantDB(tenantID string, dsn string) (*sql.DB, error) 
 		p.opening--
 		p.mu.Unlock()
 		return nil, err
+	}
+	if p.backend == "tidb" {
+		if err := CheckEmbeddingSchemaCompatibility(openCtx, db, p.embedAutoModel); err != nil {
+			_ = db.Close()
+			p.mu.Lock()
+			p.opening--
+			p.mu.Unlock()
+			return nil, err
+		}
 	}
 
 	now := time.Now()
