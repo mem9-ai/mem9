@@ -122,7 +122,7 @@ confirms the deleted chain key is no longer active.
 | 15  | Chain delete by id       | `DELETE /v1alpha2/mem9s/memories/{id}` returns 204                                                |
 | 16  | Deleted memory 404       | Subsequent chain `GET /memories/{id}` returns 404                                                 |
 | 17  | Chain soft-delete        | `DELETE /v1alpha2/space-chains/{id}` returns 204                                                  |
-| 18  | Deleted key inactive     | `GET /v1alpha2/status` returns 404 for the deleted chain key                                      |
+| 18  | Deleted key inactive     | `GET /v1alpha2/status` returns `inactive` for the deleted chain key                               |
 
 ### Session storage (`api-smoke-test-sessions.sh`)
 

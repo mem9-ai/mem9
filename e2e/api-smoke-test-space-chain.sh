@@ -79,6 +79,19 @@ check() {
   return 1
 }
 
+check_secret_equal() {
+  local desc="$1" got="$2" want="$3"
+  TOTAL=$((TOTAL+1))
+  if [ "$got" = "$want" ]; then
+    ok "$desc"
+    PASS=$((PASS+1))
+    return 0
+  fi
+  fail "$desc - expected value did not match actual value (redacted)"
+  FAIL=$((FAIL+1))
+  return 1
+}
+
 check_contains() {
   local desc="$1" haystack="$2" needle="$3"
   TOTAL=$((TOTAL+1))
@@ -327,7 +340,7 @@ check "GET /space-chains/{id}/bindings returns 200" "$code" "200"
 GOT_BINDING_ID=$(printf '%s' "$bdy" | json_field "bindings.0.id")
 GOT_BINDING_KEY=$(printf '%s' "$bdy" | json_field "bindings.0.chain_api_key")
 check "initial binding ID matches" "$GOT_BINDING_ID" "$BINDING_ID"
-check "initial binding key matches" "$GOT_BINDING_KEY" "$CHAIN_API_KEY"
+check_secret_equal "initial binding key matches" "$GOT_BINDING_KEY" "$CHAIN_API_KEY"
 
 # ============================================================================
 # TEST 8 - Duplicate node replacement is rejected
@@ -552,7 +565,10 @@ CHAIN_DELETED=true
 step "18" "Verify deleted chain key is inactive"
 resp=$(curl_chain_json "$BASE/v1alpha2/status")
 code=$(http_code "$resp")
-check "GET /v1alpha2/status returns 404 for deleted chain key" "$code" "404"
+bdy=$(body "$resp")
+check "GET /v1alpha2/status returns 200 for deleted chain key" "$code" "200"
+STATUS=$(printf '%s' "$bdy" | json_field "status")
+check "deleted chain key status is inactive" "$STATUS" "inactive"
 
 echo ""
 echo "========================================================"
