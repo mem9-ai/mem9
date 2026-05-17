@@ -1,6 +1,8 @@
 package tenant
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 )
@@ -165,4 +167,86 @@ func BuildSessionsSchema(autoModel string, autoDims int, clientDims int) string 
 		embeddingCol = fmt.Sprintf(`embedding VECTOR(%d) NULL,`, dims)
 	}
 	return fmt.Sprintf(TenantSessionsSchemaBase, embeddingCol)
+}
+
+// InitTiDBTenantSchema creates or completes the TiDB tenant data-plane schema.
+func InitTiDBTenantSchema(ctx context.Context, db *sql.DB, autoModel string, autoDims int, clientDims int, ftsEnabled bool) error {
+	if db == nil {
+		return fmt.Errorf("init schema: db connection is nil")
+	}
+
+	if err := ensureTable(ctx, db, "memories", BuildMemorySchema(autoModel, autoDims, clientDims)); err != nil {
+		return fmt.Errorf("init schema: memories table: %w", err)
+	}
+	if err := ensureVectorIndex(ctx, db, "memories", "idx_cosine"); err != nil {
+		return fmt.Errorf("init schema: memories vector index: %w", err)
+	}
+	if ftsEnabled {
+		if err := ensureFullTextIndex(ctx, db, "memories", "idx_fts_content"); err != nil {
+			return fmt.Errorf("init schema: memories fulltext index: %w", err)
+		}
+	}
+
+	if err := ensureTable(ctx, db, "sessions", BuildSessionsSchema(autoModel, autoDims, clientDims)); err != nil {
+		return fmt.Errorf("init schema: sessions table: %w", err)
+	}
+	if err := ensureVectorIndex(ctx, db, "sessions", "idx_sessions_cosine"); err != nil {
+		return fmt.Errorf("init schema: sessions vector index: %w", err)
+	}
+	if ftsEnabled {
+		if err := ensureFullTextIndex(ctx, db, "sessions", "idx_sessions_fts"); err != nil {
+			return fmt.Errorf("init schema: sessions fulltext index: %w", err)
+		}
+	}
+	return nil
+}
+
+func ensureTable(ctx context.Context, db *sql.DB, table, createSQL string) error {
+	exists, err := TableExists(ctx, db, table)
+	if err != nil {
+		return fmt.Errorf("check table: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, createSQL); err != nil {
+		return fmt.Errorf("create: %w", err)
+	}
+	return nil
+}
+
+func ensureVectorIndex(ctx context.Context, db *sql.DB, table, indexName string) error {
+	exists, err := IndexExists(ctx, db, table, indexName)
+	if err != nil {
+		return fmt.Errorf("check vector index: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(
+		`ALTER TABLE %s ADD VECTOR INDEX %s ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`,
+		table,
+		indexName,
+	)); err != nil && !IsIndexExistsError(err) {
+		return err
+	}
+	return nil
+}
+
+func ensureFullTextIndex(ctx context.Context, db *sql.DB, table, indexName string) error {
+	exists, err := IndexExists(ctx, db, table, indexName)
+	if err != nil {
+		return fmt.Errorf("check fulltext index: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(
+		`ALTER TABLE %s ADD FULLTEXT INDEX %s (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`,
+		table,
+		indexName,
+	)); err != nil && !IsIndexExistsError(err) {
+		return err
+	}
+	return nil
 }

@@ -162,9 +162,6 @@ func (p *ZeroProvisioner) ProviderType() string {
 // InitSchema executes DDL to create the schema for Zero clusters.
 // Note: Zero mode only supports tidb backend for auto-provisioning.
 func (p *ZeroProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
-	if db == nil {
-		return fmt.Errorf("init schema: db connection is nil")
-	}
 	/*
 		case "postgres":
 			if _, err := db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS vector`); err != nil {
@@ -192,60 +189,5 @@ func (p *ZeroProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
 			}
 			return nil
 	*/
-	if _, err := db.ExecContext(ctx, BuildMemorySchema(p.autoModel, p.autoDims, p.clientDims)); err != nil {
-		return fmt.Errorf("init schema: create table: %w", err)
-	}
-	if p.autoModel != "" {
-		exists, err := IndexExists(ctx, db, "memories", "idx_cosine")
-		if err != nil {
-			return fmt.Errorf("init schema: check vector index: %w", err)
-		}
-		if !exists {
-			if _, err := db.ExecContext(ctx,
-				`ALTER TABLE memories ADD VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !IsIndexExistsError(err) {
-				return fmt.Errorf("init schema: vector index: %w", err)
-			}
-		}
-	}
-	if p.ftsEnabled {
-		exists, err := IndexExists(ctx, db, "memories", "idx_fts_content")
-		if err != nil {
-			return fmt.Errorf("init schema: check fulltext index: %w", err)
-		}
-		if !exists {
-			if _, err := db.ExecContext(ctx,
-				`ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !IsIndexExistsError(err) {
-				return fmt.Errorf("init schema: fulltext index: %w", err)
-			}
-		}
-	}
-	if _, err := db.ExecContext(ctx, BuildSessionsSchema(p.autoModel, p.autoDims, p.clientDims)); err != nil {
-		return fmt.Errorf("init schema: sessions table: %w", err)
-	}
-	if p.autoModel != "" {
-		exists, err := IndexExists(ctx, db, "sessions", "idx_sessions_cosine")
-		if err != nil {
-			return fmt.Errorf("init schema: check sessions vector index: %w", err)
-		}
-		if !exists {
-			if _, err := db.ExecContext(ctx,
-				`ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !IsIndexExistsError(err) {
-				return fmt.Errorf("init schema: sessions vector index: %w", err)
-			}
-		}
-	}
-	if p.ftsEnabled {
-		exists, err := IndexExists(ctx, db, "sessions", "idx_sessions_fts")
-		if err != nil {
-			return fmt.Errorf("init schema: check sessions fulltext index: %w", err)
-		}
-		if !exists {
-			if _, err := db.ExecContext(ctx,
-				`ALTER TABLE sessions ADD FULLTEXT INDEX idx_sessions_fts (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !IsIndexExistsError(err) {
-				return fmt.Errorf("init schema: sessions fulltext index: %w", err)
-			}
-		}
-	}
-	return nil
-
+	return InitTiDBTenantSchema(ctx, db, p.autoModel, p.autoDims, p.clientDims, p.ftsEnabled)
 }

@@ -97,7 +97,7 @@ func TestTiDBCloudProvisioner_SpendLimit_GetSpendLimit_Success(t *testing.T) {
 	})
 	defer server.Close()
 
-	p := NewTiDBCloudProvisioner(server.URL, "test-pool")
+	p := NewTiDBCloudProvisioner(server.URL, "test-pool", "", 0, 0, false)
 	got, err := p.GetSpendLimit(context.Background(), "cluster-123")
 	if err != nil {
 		t.Fatalf("GetSpendLimit error: %v", err)
@@ -117,7 +117,7 @@ func TestTiDBCloudProvisioner_SpendLimit_GetSpendLimit_InvalidJSON(t *testing.T)
 	})
 	defer server.Close()
 
-	p := NewTiDBCloudProvisioner(server.URL, "test-pool")
+	p := NewTiDBCloudProvisioner(server.URL, "test-pool", "", 0, 0, false)
 	_, err := p.GetSpendLimit(context.Background(), "cluster-123")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -137,7 +137,7 @@ func TestTiDBCloudProvisioner_SpendLimit_GetSpendLimit_APIError(t *testing.T) {
 	})
 	defer server.Close()
 
-	p := NewTiDBCloudProvisioner(server.URL, "test-pool")
+	p := NewTiDBCloudProvisioner(server.URL, "test-pool", "", 0, 0, false)
 	_, err := p.GetSpendLimit(context.Background(), "cluster-123")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -158,7 +158,7 @@ func TestTiDBCloudProvisioner_SpendLimit_IncreaseSpendLimit_Success(t *testing.T
 	})
 	defer server.Close()
 
-	p := NewTiDBCloudProvisioner(server.URL, "test-pool")
+	p := NewTiDBCloudProvisioner(server.URL, "test-pool", "", 0, 0, false)
 	if err := p.IncreaseSpendLimit(context.Background(), "cluster-123", wantMonthly); err != nil {
 		t.Fatalf("IncreaseSpendLimit error: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestTiDBCloudProvisioner_SpendLimit_IncreaseSpendLimit_403(t *testing.T) {
 	})
 	defer server.Close()
 
-	p := NewTiDBCloudProvisioner(server.URL, "test-pool")
+	p := NewTiDBCloudProvisioner(server.URL, "test-pool", "", 0, 0, false)
 	err := p.IncreaseSpendLimit(context.Background(), "cluster-123", wantMonthly)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -198,7 +198,7 @@ func TestTiDBCloudProvisioner_SpendLimit_IncreaseSpendLimit_404(t *testing.T) {
 	})
 	defer server.Close()
 
-	p := NewTiDBCloudProvisioner(server.URL, "test-pool")
+	p := NewTiDBCloudProvisioner(server.URL, "test-pool", "", 0, 0, false)
 	err := p.IncreaseSpendLimit(context.Background(), "cluster-123", wantMonthly)
 	if err == nil {
 		t.Fatal("expected error, got nil")

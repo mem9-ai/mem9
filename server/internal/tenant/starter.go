@@ -22,21 +22,29 @@ import (
 // Note: MNEMO_TIDBCLOUD_API_KEY and MNEMO_TIDBCLOUD_API_SECRET are read via os.Getenv()
 // (not Config) as these are sensitive credentials that should not be persisted.
 type TiDBCloudProvisioner struct {
-	apiURL    string
-	apiKey    string
-	apiSecret string
-	poolID    string
-	client    *http.Client
+	apiURL     string
+	apiKey     string
+	apiSecret  string
+	poolID     string
+	autoModel  string
+	autoDims   int
+	clientDims int
+	ftsEnabled bool
+	client     *http.Client
 }
 
 // NewTiDBCloudProvisioner creates a provisioner for TiDB Cloud Pool API.
-func NewTiDBCloudProvisioner(apiURL, poolID string) *TiDBCloudProvisioner {
+func NewTiDBCloudProvisioner(apiURL, poolID, autoModel string, autoDims int, clientDims int, ftsEnabled bool) *TiDBCloudProvisioner {
 	return &TiDBCloudProvisioner{
-		apiURL:    apiURL,
-		apiKey:    os.Getenv("MNEMO_TIDBCLOUD_API_KEY"),
-		apiSecret: os.Getenv("MNEMO_TIDBCLOUD_API_SECRET"),
-		poolID:    poolID,
-		client:    &http.Client{Timeout: 60 * time.Second},
+		apiURL:     apiURL,
+		apiKey:     os.Getenv("MNEMO_TIDBCLOUD_API_KEY"),
+		apiSecret:  os.Getenv("MNEMO_TIDBCLOUD_API_SECRET"),
+		poolID:     poolID,
+		autoModel:  autoModel,
+		autoDims:   autoDims,
+		clientDims: clientDims,
+		ftsEnabled: ftsEnabled,
+		client:     &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
@@ -103,12 +111,11 @@ func (p *TiDBCloudProvisioner) ProviderType() string {
 
 var _ SpendLimitAdjuster = (*TiDBCloudProvisioner)(nil)
 
-// InitSchema for TiDB Cloud Pool is intentionally a no-op.
-// The Pool API guarantees every claimed cluster already has the memories
-// table pre-created before takeover. If this guarantee is ever violated,
-// activation failure will surface at first memory write (no cluster_id context).
+// InitSchema creates or completes the tenant schema for TiDB Cloud Pool clusters.
+// Some deployments can use TiDB Cloud's pool init-schema feature, but it is not
+// required; these DDLs are idempotent when the pool already pre-created tables.
 func (p *TiDBCloudProvisioner) InitSchema(ctx context.Context, db *sql.DB) error {
-	return nil
+	return InitTiDBTenantSchema(ctx, db, p.autoModel, p.autoDims, p.clientDims, p.ftsEnabled)
 }
 
 // GetSpendLimit returns the monthly spend limit in USD cents.

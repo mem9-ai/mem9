@@ -2,8 +2,11 @@ package tenant
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -22,6 +25,78 @@ func setupTiDBCloudEnv(t *testing.T) func() {
 		os.Setenv("MNEMO_TIDBCLOUD_API_KEY", oldKey)
 		os.Setenv("MNEMO_TIDBCLOUD_API_SECRET", oldSecret)
 	}
+}
+
+type schemaInitConnector struct {
+	execs          []string
+	existingTables map[string]bool
+}
+
+func (c *schemaInitConnector) Connect(context.Context) (driver.Conn, error) {
+	return &schemaInitConn{recorder: c}, nil
+}
+
+func (c *schemaInitConnector) Driver() driver.Driver {
+	return schemaInitDriver{}
+}
+
+type schemaInitDriver struct{}
+
+func (schemaInitDriver) Open(string) (driver.Conn, error) {
+	return nil, fmt.Errorf("open not supported")
+}
+
+type schemaInitConn struct {
+	recorder *schemaInitConnector
+}
+
+func (c *schemaInitConn) Prepare(string) (driver.Stmt, error) {
+	return nil, fmt.Errorf("prepare not supported")
+}
+
+func (c *schemaInitConn) Close() error { return nil }
+
+func (c *schemaInitConn) Begin() (driver.Tx, error) {
+	return nil, fmt.Errorf("begin not supported")
+}
+
+func (c *schemaInitConn) ExecContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Result, error) {
+	c.recorder.execs = append(c.recorder.execs, query)
+	return driver.RowsAffected(0), nil
+}
+
+func (c *schemaInitConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	if strings.Contains(query, "information_schema.TABLES") {
+		var count int64
+		if len(args) > 0 {
+			if table, ok := args[0].Value.(string); ok && c.recorder.existingTables[table] {
+				count = 1
+			}
+		}
+		return &schemaInitRows{values: [][]driver.Value{{count}}}, nil
+	}
+	if strings.Contains(query, "information_schema.STATISTICS") {
+		return &schemaInitRows{values: [][]driver.Value{{int64(0)}}}, nil
+	}
+	return nil, fmt.Errorf("unexpected query %q with args %v", query, args)
+}
+
+type schemaInitRows struct {
+	values [][]driver.Value
+	idx    int
+}
+
+func (*schemaInitRows) Columns() []string { return []string{"COUNT(*)"} }
+
+func (*schemaInitRows) Close() error { return nil }
+
+func (r *schemaInitRows) Next(dest []driver.Value) error {
+	if r.idx >= len(r.values) {
+		return io.EOF
+	}
+	copy(dest, r.values[r.idx])
+	r.idx++
+	return nil
 }
 
 // TestTiDBCloudProvisioner_Provision_Success tests successful cluster provisioning
@@ -89,7 +164,7 @@ func TestTiDBCloudProvisioner_Provision_Success(t *testing.T) {
 	defer server.Close()
 
 	// Create provisioner
-	p := NewTiDBCloudProvisioner(server.URL, "test-pool")
+	p := NewTiDBCloudProvisioner(server.URL, "test-pool", "", 0, 0, false)
 
 	ctx := context.Background()
 	info, err := p.Provision(ctx)
@@ -143,7 +218,7 @@ func TestTiDBCloudProvisioner_Provision_APIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewTiDBCloudProvisioner(server.URL, "pool")
+	p := NewTiDBCloudProvisioner(server.URL, "pool", "", 0, 0, false)
 	ctx := context.Background()
 
 	_, err := p.Provision(ctx)
@@ -164,17 +239,108 @@ func TestTiDBCloudProvisioner_ProviderType(t *testing.T) {
 	}
 }
 
-// TestTiDBCloudProvisioner_InitSchema tests schema initialization (no-op)
-func TestTiDBCloudProvisioner_InitSchema(t *testing.T) {
+// TestTiDBCloudProvisioner_InitSchema_NilDB tests schema initialization error handling.
+func TestTiDBCloudProvisioner_InitSchema_NilDB(t *testing.T) {
 	cleanup := setupTiDBCloudEnv(t)
 	defer cleanup()
 
-	p := NewTiDBCloudProvisioner("http://localhost", "pool")
+	p := NewTiDBCloudProvisioner("http://localhost", "pool", "", 0, 0, false)
 
-	// InitSchema should return nil even with nil db (it's a no-op)
 	err := p.InitSchema(context.Background(), nil)
-	if err != nil {
-		t.Errorf("expected no error, got: %v", err)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "db connection is nil") {
+		t.Fatalf("expected nil DB error, got %v", err)
+	}
+}
+
+func TestTiDBCloudProvisioner_InitSchema_AutoEmbedding(t *testing.T) {
+	p := NewTiDBCloudProvisioner("http://localhost", "pool", "tidbcloud_free/amazon/titan-embed-text-v2", 1024, 1536, true)
+	recorder := &schemaInitConnector{}
+	db := sql.OpenDB(recorder)
+	defer db.Close()
+
+	if err := p.InitSchema(context.Background(), db); err != nil {
+		t.Fatalf("InitSchema failed: %v", err)
+	}
+
+	executed := strings.Join(recorder.execs, "\n")
+	wantSubstrings := []string{
+		"CREATE TABLE IF NOT EXISTS memories",
+		"embedding VECTOR(1024) GENERATED ALWAYS AS (EMBED_TEXT('tidbcloud_free/amazon/titan-embed-text-v2', content, '{\"dimensions\": 1024}')) STORED",
+		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
+		"ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content",
+		"CREATE TABLE IF NOT EXISTS sessions",
+		"embedding VECTOR(1024) GENERATED ALWAYS AS (EMBED_TEXT('tidbcloud_free/amazon/titan-embed-text-v2', content, '{\"dimensions\": 1024}')) STORED",
+		"ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine",
+		"ALTER TABLE sessions ADD FULLTEXT INDEX idx_sessions_fts",
+	}
+	for _, want := range wantSubstrings {
+		if !strings.Contains(executed, want) {
+			t.Fatalf("executed DDL missing %q\n%s", want, executed)
+		}
+	}
+}
+
+func TestTiDBCloudProvisioner_InitSchema_ClientEmbedding(t *testing.T) {
+	p := NewTiDBCloudProvisioner("http://localhost", "pool", "", 1024, 1536, false)
+	recorder := &schemaInitConnector{}
+	db := sql.OpenDB(recorder)
+	defer db.Close()
+
+	if err := p.InitSchema(context.Background(), db); err != nil {
+		t.Fatalf("InitSchema failed: %v", err)
+	}
+
+	executed := strings.Join(recorder.execs, "\n")
+	wantSubstrings := []string{
+		"CREATE TABLE IF NOT EXISTS memories",
+		"embedding VECTOR(1536) NULL",
+		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
+		"CREATE TABLE IF NOT EXISTS sessions",
+		"ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine",
+	}
+	for _, want := range wantSubstrings {
+		if !strings.Contains(executed, want) {
+			t.Fatalf("executed DDL missing %q\n%s", want, executed)
+		}
+	}
+	if strings.Contains(executed, "EMBED_TEXT(") {
+		t.Fatalf("client embedding schema should not use EMBED_TEXT:\n%s", executed)
+	}
+	if strings.Contains(executed, "FULLTEXT INDEX") {
+		t.Fatalf("FTS disabled schema should not create fulltext indexes:\n%s", executed)
+	}
+}
+
+func TestTiDBCloudProvisioner_InitSchema_ExistingTablesSkipsCreate(t *testing.T) {
+	p := NewTiDBCloudProvisioner("http://localhost", "pool", "", 1024, 1536, false)
+	recorder := &schemaInitConnector{
+		existingTables: map[string]bool{
+			"memories": true,
+			"sessions": true,
+		},
+	}
+	db := sql.OpenDB(recorder)
+	defer db.Close()
+
+	if err := p.InitSchema(context.Background(), db); err != nil {
+		t.Fatalf("InitSchema failed: %v", err)
+	}
+
+	executed := strings.Join(recorder.execs, "\n")
+	if strings.Contains(executed, "CREATE TABLE") {
+		t.Fatalf("existing tables should skip CREATE TABLE:\n%s", executed)
+	}
+	wantSubstrings := []string{
+		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
+		"ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine",
+	}
+	for _, want := range wantSubstrings {
+		if !strings.Contains(executed, want) {
+			t.Fatalf("executed DDL missing %q\n%s", want, executed)
+		}
 	}
 }
 

@@ -42,3 +42,18 @@ func IndexExists(ctx context.Context, db *sql.DB, table, indexName string) (bool
 	}
 	return count > 0, nil
 }
+
+// TableExists reports whether the named table exists in the current database.
+func TableExists(ctx context.Context, db *sql.DB, table string) (bool, error) {
+	var count int
+	err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM information_schema.TABLES
+		 WHERE TABLE_SCHEMA = DATABASE()
+		   AND TABLE_NAME = ?`,
+		table,
+	).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}

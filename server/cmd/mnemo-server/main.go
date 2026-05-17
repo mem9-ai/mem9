@@ -154,7 +154,7 @@ func main() {
 	// Check for TiDB Cloud credentials (only if Zero is not enabled)
 	if provisioner == nil && cfg.DBBackend == "tidb" {
 		if os.Getenv("MNEMO_TIDBCLOUD_API_KEY") != "" && os.Getenv("MNEMO_TIDBCLOUD_API_SECRET") != "" {
-			provisioner = tenant.NewTiDBCloudProvisioner(cfg.TiDBCloudAPIURL, cfg.TiDBCloudPoolID)
+			provisioner = tenant.NewTiDBCloudProvisioner(cfg.TiDBCloudAPIURL, cfg.TiDBCloudPoolID, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled)
 			logger.Info("using TiDB Cloud Pool provisioner")
 		}
 	}
@@ -169,7 +169,7 @@ func main() {
 	var autoSpendLimitCfg middleware.AutoSpendLimitConfig
 	if cfg.AutoSpendLimitEnabled {
 		if os.Getenv("MNEMO_TIDBCLOUD_API_KEY") != "" && os.Getenv("MNEMO_TIDBCLOUD_API_SECRET") != "" {
-			spendLimitAdjuster = tenant.NewTiDBCloudProvisioner(cfg.TiDBCloudAPIURL, cfg.TiDBCloudPoolID)
+			spendLimitAdjuster = tenant.NewTiDBCloudProvisioner(cfg.TiDBCloudAPIURL, cfg.TiDBCloudPoolID, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled)
 			spendLimitCooldown = middleware.NewSpendLimitCooldown(cfg.AutoSpendLimitCooldown)
 			autoSpendLimitCfg = middleware.AutoSpendLimitConfig{Enabled: true, Increment: cfg.AutoSpendLimitIncrement, Max: cfg.AutoSpendLimitMax}
 			logger.Info("auto spend limit enabled", "increment", cfg.AutoSpendLimitIncrement, "max", cfg.AutoSpendLimitMax, "cooldown", cfg.AutoSpendLimitCooldown.String())
