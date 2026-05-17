@@ -186,7 +186,9 @@ func (p *TenantPool) openTenantDB(tenantID string, dsn string) (*sql.DB, error) 
 		return nil, err
 	}
 	if p.backend == "tidb" {
-		if err := CheckEmbeddingSchemaCompatibility(openCtx, db, p.embedAutoModel); err != nil {
+		schemaCtx, schemaCancel := context.WithTimeout(context.Background(), p.connectTimeout)
+		defer schemaCancel()
+		if err := CheckEmbeddingSchemaCompatibility(schemaCtx, db, p.embedAutoModel); err != nil {
 			_ = db.Close()
 			p.mu.Lock()
 			p.opening--

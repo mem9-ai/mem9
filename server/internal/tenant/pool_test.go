@@ -24,8 +24,10 @@ func (testDriver) Open(name string) (driver.Conn, error) {
 type testConnector struct {
 	pingStarted  chan struct{}
 	pingRelease  chan struct{}
+	pingDelay    time.Duration
 	pingErr      error
 	connectErr   error
+	queryDelay   time.Duration
 	schemaRows   []schemaTestRow
 	connectCalls atomic.Int32
 	queryCalls   atomic.Int32
@@ -61,9 +63,16 @@ func (c *testConn) Begin() (driver.Tx, error) {
 	return nil, errors.New("begin not supported")
 }
 
-func (c *testConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+func (c *testConn) QueryContext(ctx context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	if strings.Contains(query, "information_schema.COLUMNS") {
 		c.connector.queryCalls.Add(1)
+		if c.connector.queryDelay > 0 {
+			select {
+			case <-time.After(c.connector.queryDelay):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 		return &schemaRows{rows: c.connector.schemaRows}, nil
 	}
 	return nil, errors.New("query not supported")
@@ -79,6 +88,13 @@ func (c *testConn) Ping(ctx context.Context) error {
 	if c.connector.pingRelease != nil {
 		select {
 		case <-c.connector.pingRelease:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if c.connector.pingDelay > 0 {
+		select {
+		case <-time.After(c.connector.pingDelay):
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -500,6 +516,33 @@ func TestPool_Get_EmbeddingSchemaMismatchFailsBeforeCaching(t *testing.T) {
 	}
 	if got := pool.Stats(); len(got) != 0 {
 		t.Fatalf("expected mismatched tenant not to be cached, got %+v", got)
+	}
+}
+
+func TestPool_Get_EmbeddingSchemaCheckUsesFreshTimeoutAfterPing(t *testing.T) {
+	pool := NewPool(PoolConfig{ConnectTimeout: 200 * time.Millisecond})
+	defer pool.Close()
+
+	connector := &testConnector{
+		pingDelay:  150 * time.Millisecond,
+		queryDelay: 100 * time.Millisecond,
+		schemaRows: []schemaTestRow{
+			{table: "memories"},
+		},
+	}
+	withSQLOpen(t, func(driverName, dsn string) (*sql.DB, error) {
+		return sql.OpenDB(connector), nil
+	})
+
+	db, err := pool.Get(context.Background(), "tenant-1", "tenant-1")
+	if err != nil {
+		t.Fatalf("Get error: %v", err)
+	}
+	if db == nil {
+		t.Fatal("expected opened DB")
+	}
+	if connector.queryCalls.Load() != 1 {
+		t.Fatalf("schema query calls = %d, want 1", connector.queryCalls.Load())
 	}
 }
 
