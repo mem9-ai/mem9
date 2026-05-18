@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/qiffang/mnemos/server/internal/domain"
 )
 
 func setupTiDBCloudEnv(t *testing.T) func() {
@@ -30,6 +33,7 @@ func setupTiDBCloudEnv(t *testing.T) func() {
 type schemaInitConnector struct {
 	execs          []string
 	existingTables map[string]bool
+	schemaRows     []schemaTestRow
 }
 
 func (c *schemaInitConnector) Connect(context.Context) (driver.Conn, error) {
@@ -66,6 +70,9 @@ func (c *schemaInitConn) ExecContext(_ context.Context, query string, _ []driver
 }
 
 func (c *schemaInitConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	if strings.Contains(query, "information_schema.COLUMNS") {
+		return &schemaRows{rows: c.recorder.schemaRows}, nil
+	}
 	if strings.Contains(query, "information_schema.TABLES") {
 		var count int64
 		if len(args) > 0 {
@@ -341,6 +348,54 @@ func TestTiDBCloudProvisioner_InitSchema_ExistingTablesSkipsCreate(t *testing.T)
 		if !strings.Contains(executed, want) {
 			t.Fatalf("executed DDL missing %q\n%s", want, executed)
 		}
+	}
+}
+
+func TestTiDBCloudProvisioner_InitSchema_EmbeddingSchemaMismatch(t *testing.T) {
+	tests := []struct {
+		name            string
+		autoModel       string
+		schemaRows      []schemaTestRow
+		wantErrContains string
+	}{
+		{
+			name: "generated memory embedding with auto embedding disabled",
+			schemaRows: []schemaTestRow{
+				{table: "memories", extra: "STORED GENERATED"},
+			},
+			wantErrContains: "memories.embedding is a generated Auto Embed column",
+		},
+		{
+			name:      "regular session embedding with auto embedding enabled",
+			autoModel: "tidbcloud_free/amazon/titan-embed-text-v2",
+			schemaRows: []schemaTestRow{
+				{table: "sessions"},
+			},
+			wantErrContains: "sessions.embedding is a regular vector column",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewTiDBCloudProvisioner("http://localhost", "pool", tt.autoModel, 1024, 1536, false)
+			recorder := &schemaInitConnector{schemaRows: tt.schemaRows}
+			db := sql.OpenDB(recorder)
+			defer db.Close()
+
+			err := p.InitSchema(context.Background(), db)
+			if err == nil {
+				t.Fatal("expected schema compatibility error, got nil")
+			}
+			if !errors.Is(err, domain.ErrSchemaIncompatible) {
+				t.Fatalf("expected ErrSchemaIncompatible, got %v", err)
+			}
+			if !strings.Contains(err.Error(), tt.wantErrContains) {
+				t.Fatalf("error = %q, want substring %q", err.Error(), tt.wantErrContains)
+			}
+			if len(recorder.execs) != 0 {
+				t.Fatalf("schema mismatch should fail before DDL, got execs: %v", recorder.execs)
+			}
+		})
 	}
 }
 

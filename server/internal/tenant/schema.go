@@ -175,6 +175,10 @@ func InitTiDBTenantSchema(ctx context.Context, db *sql.DB, autoModel string, aut
 		return fmt.Errorf("init schema: db connection is nil")
 	}
 
+	if err := CheckEmbeddingSchemaCompatibility(ctx, db, autoModel); err != nil {
+		return fmt.Errorf("init schema: embedding schema compatibility: %w", err)
+	}
+
 	if err := ensureTable(ctx, db, "memories", BuildMemorySchema(autoModel, autoDims, clientDims)); err != nil {
 		return fmt.Errorf("init schema: memories table: %w", err)
 	}
