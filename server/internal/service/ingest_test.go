@@ -561,7 +561,7 @@ func TestExtractPhase1SingleMessageUsesLLMExtraction(t *testing.T) {
 	}
 }
 
-func TestExtractFactsEmptyResultFallsBackToRawFact(t *testing.T) {
+func TestExtractFactsEmptyResultReturnsNoFacts(t *testing.T) {
 	t.Parallel()
 
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -581,12 +581,12 @@ func TestExtractFactsEmptyResultFallsBackToRawFact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
-	if len(facts) != 1 || facts[0].FactType != factTypeRawFallback || facts[0].Text != "I use Go 1.22" {
-		t.Fatalf("expected raw fallback fact after empty extraction, got %v", facts)
+	if len(facts) != 0 {
+		t.Fatalf("expected no facts after empty extraction, got %v", facts)
 	}
 }
 
-func TestExtractFactsSingleMessageEmptyResultFallsBackToRawFact(t *testing.T) {
+func TestExtractFactsSingleMessageEmptyResultReturnsNoFacts(t *testing.T) {
 	t.Parallel()
 
 	callCount := 0
@@ -611,12 +611,12 @@ func TestExtractFactsSingleMessageEmptyResultFallsBackToRawFact(t *testing.T) {
 	if callCount != 1 {
 		t.Fatalf("expected 1 LLM call for single-message extraction, got %d", callCount)
 	}
-	if len(facts) != 1 || facts[0].FactType != factTypeRawFallback || facts[0].Text != "I use Go 1.22" {
-		t.Fatalf("expected raw fallback fact after empty extraction, got %v", facts)
+	if len(facts) != 0 {
+		t.Fatalf("expected no facts after empty extraction, got %v", facts)
 	}
 }
 
-func TestExtractPhase1SingleMessageEmptyResultFallsBackToRawFact(t *testing.T) {
+func TestExtractPhase1SingleMessageEmptyResultReturnsNoFacts(t *testing.T) {
 	t.Parallel()
 
 	callCount := 0
@@ -643,15 +643,15 @@ func TestExtractPhase1SingleMessageEmptyResultFallsBackToRawFact(t *testing.T) {
 	if callCount != 1 {
 		t.Fatalf("expected 1 LLM call for single-message extraction, got %d", callCount)
 	}
-	if len(result.Facts) != 1 || result.Facts[0].FactType != factTypeRawFallback || result.Facts[0].Text != "I use Go 1.22" {
-		t.Fatalf("expected raw fallback fact after empty extraction, got %v", result.Facts)
+	if len(result.Facts) != 0 {
+		t.Fatalf("expected no facts after empty extraction, got %v", result.Facts)
 	}
 	if len(result.MessageTags) != 1 || len(result.MessageTags[0]) != 1 || result.MessageTags[0][0] != "tech" {
 		t.Fatalf("expected message_tags[0] = [tech], got %v", result.MessageTags)
 	}
 }
 
-func TestExtractFactsRetryFallbackDropsFlattenedQueryIntent(t *testing.T) {
+func TestExtractFactsRetryRecoveryDropsFlattenedQueryIntent(t *testing.T) {
 	t.Parallel()
 
 	callCount := 0
@@ -682,18 +682,12 @@ func TestExtractFactsRetryFallbackDropsFlattenedQueryIntent(t *testing.T) {
 	if callCount != 2 {
 		t.Fatalf("expected 2 LLM calls, got %d", callCount)
 	}
-	if len(facts) != 1 {
-		t.Fatalf("expected 1 raw fallback fact, got %v", facts)
-	}
-	if facts[0].FactType != factTypeRawFallback {
-		t.Fatalf("expected fact_type %q, got %q", factTypeRawFallback, facts[0].FactType)
-	}
-	if facts[0].Text != "how do I configure nginx?" {
-		t.Fatalf("expected fallback text to preserve user content, got %q", facts[0].Text)
+	if len(facts) != 0 {
+		t.Fatalf("expected query_intent-only extraction to return no facts, got %v", facts)
 	}
 }
 
-func TestExtractFactsAndTagsRetryFallbackDropsFlattenedQueryIntent(t *testing.T) {
+func TestExtractFactsAndTagsRetryRecoveryDropsFlattenedQueryIntent(t *testing.T) {
 	t.Parallel()
 
 	callCount := 0
@@ -724,8 +718,8 @@ func TestExtractFactsAndTagsRetryFallbackDropsFlattenedQueryIntent(t *testing.T)
 	if callCount != 2 {
 		t.Fatalf("expected 2 LLM calls, got %d", callCount)
 	}
-	if len(facts) != 1 || facts[0].FactType != factTypeRawFallback {
-		t.Fatalf("expected 1 raw fallback fact, got %v", facts)
+	if len(facts) != 0 {
+		t.Fatalf("expected query_intent-only extraction to return no facts, got %v", facts)
 	}
 	if len(messageTags) != 2 {
 		t.Fatalf("expected 2 message_tags entries, got %d", len(messageTags))
@@ -1076,7 +1070,7 @@ func TestReconcilePinnedFallbackCarriesTags(t *testing.T) {
 	}
 }
 
-func TestReconcileAddPreservesRawFallbackTag(t *testing.T) {
+func TestIngestDoesNotReconcileWhenExtractionReturnsNoFacts(t *testing.T) {
 	t.Parallel()
 
 	callCount := 0
@@ -1108,15 +1102,11 @@ func TestReconcileAddPreservesRawFallbackTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Ingest() error = %v", err)
 	}
-	if callCount != 2 {
-		t.Fatalf("expected 2 LLM calls (extract + reconcile), got %d", callCount)
+	if callCount != 1 {
+		t.Fatalf("expected 1 LLM call for extraction only, got %d", callCount)
 	}
-	if len(memRepo.createCalls) != 1 {
-		t.Fatalf("expected 1 create call, got %d", len(memRepo.createCalls))
-	}
-	got := memRepo.createCalls[0].Tags
-	if len(got) != 2 || got[0] != "tech" || got[1] != rawFallbackTag {
-		t.Fatalf("expected reconcile ADD tags [tech %s], got %v", rawFallbackTag, got)
+	if len(memRepo.createCalls) != 0 {
+		t.Fatalf("expected no create calls when extraction returns no facts, got %d", len(memRepo.createCalls))
 	}
 }
 
@@ -2783,7 +2773,7 @@ func TestExtractPhase1FencedLegacyStringArrayFallback(t *testing.T) {
 	}
 }
 
-func TestExtractFactsAlternativeKeyFallsBackToRawFact(t *testing.T) {
+func TestExtractFactsAlternativeKeyReturnsNoFacts(t *testing.T) {
 	t.Parallel()
 
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2803,11 +2793,8 @@ func TestExtractFactsAlternativeKeyFallsBackToRawFact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
-	if len(facts) != 1 {
-		t.Fatalf("expected 1 raw fallback fact for alternative-key schema, got %d: %v", len(facts), facts)
-	}
-	if facts[0].FactType != factTypeRawFallback || facts[0].Text != "I use Go 1.22" {
-		t.Fatalf("expected raw fallback fact preserving user text, got %+v", facts[0])
+	if len(facts) != 0 {
+		t.Fatalf("expected alternative-key schema to return no facts, got %d: %v", len(facts), facts)
 	}
 }
 
@@ -2836,8 +2823,8 @@ func TestExtractFactsFlattenedFactNoTextNoTags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
-	if len(facts) != 1 || facts[0].FactType != factTypeRawFallback || facts[0].Text != "hello" {
-		t.Fatalf("expected raw fallback fact for unrecoverable junk response, got %v", facts)
+	if len(facts) != 0 {
+		t.Fatalf("expected unrecoverable junk response to return no facts, got %v", facts)
 	}
 }
 
@@ -2855,8 +2842,8 @@ func TestExtractFactsFlattenedFactTagsOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extractFacts() error = %v", err)
 	}
-	if len(facts) != 1 || facts[0].FactType != factTypeRawFallback || facts[0].Text != "hello" {
-		t.Fatalf("expected raw fallback fact when flattened-fact has tags but no text, got %v", facts)
+	if len(facts) != 0 {
+		t.Fatalf("expected flattened-fact with tags but no text to return no facts, got %v", facts)
 	}
 }
 

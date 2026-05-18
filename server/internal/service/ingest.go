@@ -186,7 +186,6 @@ type preparedExtractionInput struct {
 	messages        []IngestMessage
 	originalIndices []int
 	formatted       string
-	fallbackText    string
 }
 
 func prepareExtractionInput(messages []IngestMessage, maxConversationRunes int) preparedExtractionInput {
@@ -207,7 +206,6 @@ func prepareExtractionInput(messages []IngestMessage, maxConversationRunes int) 
 		return input
 	}
 	input.formatted = truncateRunes(formatConversation(input.messages), maxConversationRunes)
-	input.fallbackText = truncateRunes(buildRawFallbackSourceText(input.messages), maxConversationRunes)
 	return input
 }
 
@@ -247,43 +245,6 @@ func parseConversationMessages(conversation string) []IngestMessage {
 	return messages
 }
 
-func buildRawFallbackSourceText(messages []IngestMessage) string {
-	var userParts []string
-	var allParts []string
-	for _, msg := range messages {
-		content := strings.TrimSpace(msg.Content)
-		if content == "" {
-			continue
-		}
-		allParts = append(allParts, content)
-		if strings.EqualFold(msg.Role, "user") {
-			userParts = append(userParts, content)
-		}
-	}
-	if len(userParts) > 0 {
-		return strings.Join(userParts, "\n\n")
-	}
-	return strings.Join(allParts, "\n\n")
-}
-
-func buildRawFallbackFact(text string) ExtractedFact {
-	return ExtractedFact{
-		Text:     text,
-		Tags:     []string{rawFallbackTag},
-		FactType: factTypeRawFallback,
-	}
-}
-
-func buildRawFallbackFacts(input preparedExtractionInput, reason string) []ExtractedFact {
-	text := strings.TrimSpace(input.fallbackText)
-	if text == "" {
-		slog.Warn("raw fallback unavailable", "reason", reason)
-		return nil
-	}
-	slog.Warn("using raw fallback fact", "reason", reason, "len", len(text))
-	return annotateFactsWithSourceSeqs(input, normalizeRawFallbackFacts(input, []ExtractedFact{buildRawFallbackFact(text)}))
-}
-
 func finalizeExtractedFacts(input preparedExtractionInput, parsed []ExtractedFact, emptyReason string) []ExtractedFact {
 	facts := dropQueryIntentFacts(parsed)
 	if len(facts) > 0 {
@@ -293,7 +254,8 @@ func finalizeExtractedFacts(input preparedExtractionInput, parsed []ExtractedFac
 	if len(parsed) > 0 {
 		reason = "query_intent_only"
 	}
-	return buildRawFallbackFacts(input, reason)
+	slog.Info("no facts extracted", "reason", reason)
+	return nil
 }
 
 func normalizeMessageTags(tags [][]string, messageCount int) [][]string {
@@ -322,30 +284,6 @@ func expandMessageTags(cleanedTags [][]string, input preparedExtractionInput, or
 		}
 	}
 	return out
-}
-
-func hasTag(tags []string, target string) bool {
-	for _, tag := range tags {
-		if strings.EqualFold(tag, target) {
-			return true
-		}
-	}
-	return false
-}
-
-func ensureRawFallbackTag(tags []string, facts []ExtractedFact) []string {
-	if len(facts) != 1 {
-		return tags
-	}
-	fact := facts[0]
-	if !strings.EqualFold(fact.FactType, factTypeRawFallback) && !hasTag(fact.Tags, rawFallbackTag) {
-		return tags
-	}
-	if hasTag(tags, rawFallbackTag) {
-		return tags
-	}
-	out := append([]string{}, tags...)
-	return append(out, rawFallbackTag)
 }
 
 func projectReconcileFactText(fact ExtractedFact) string {
@@ -739,8 +677,8 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 	scope := llm.CallScope{Step: "extraction"}
 	raw, err := s.llm.CompleteJSONWithScope(ctx, systemPrompt, userPrompt, scope)
 	if err != nil {
-		slog.Warn("extraction LLM call failed, using raw fallback", "err", err)
-		return buildRawFallbackFacts(input, "llm_error_fallback"), nil
+		slog.Warn("extraction LLM call failed; returning no facts", "err", err)
+		return nil, nil
 	}
 
 	parsed, err := llm.ParseJSON[extractResponse](raw)
@@ -751,8 +689,8 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt,
 			scope)
 		if retryErr != nil {
-			slog.Warn("extraction retry failed, using raw fallback", "err", retryErr)
-			return buildRawFallbackFacts(input, "llm_error_fallback"), nil
+			slog.Warn("extraction retry failed; returning no facts", "err", retryErr)
+			return nil, nil
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
@@ -762,13 +700,12 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 				return facts, nil
 			}
 			if s.llm.DebugLLM() {
-				slog.Warn("json parse llm resp failed, using raw fallback", "len", len(raw2), "raw", raw2, "err", err)
+				slog.Warn("json parse llm resp failed; returning no facts", "len", len(raw2), "raw", raw2, "err", err)
 			} else {
-				slog.Warn("json parse llm resp failed, using raw fallback", "len", len(raw2), "err", err)
+				slog.Warn("json parse llm resp failed; returning no facts", "len", len(raw2), "err", err)
 			}
-			facts := buildRawFallbackFacts(input, "parse_error_fallback")
-			slog.Info("facts extracted", "facts", len(facts))
-			return facts, nil
+			slog.Info("facts extracted", "facts", 0)
+			return nil, nil
 		}
 		lastRaw = raw2
 	}
@@ -912,8 +849,8 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 	scope := llm.CallScope{Step: "extraction_and_classification"}
 	raw, err := s.llm.CompleteJSONWithScope(ctx, systemPrompt, userPrompt, scope)
 	if err != nil {
-		slog.Warn("extraction LLM call failed, using raw fallback", "err", err)
-		return buildRawFallbackFacts(input, "llm_error_fallback"), normalizeMessageTags(nil, messageCount), nil
+		slog.Warn("extraction LLM call failed; returning no facts", "err", err)
+		return nil, normalizeMessageTags(nil, messageCount), nil
 	}
 
 	parsed, err := llm.ParseJSON[extractResponse](raw)
@@ -924,8 +861,8 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt,
 			scope)
 		if retryErr != nil {
-			slog.Warn("extraction retry failed, using raw fallback", "err", retryErr)
-			return buildRawFallbackFacts(input, "llm_error_fallback"), normalizeMessageTags(nil, messageCount), nil
+			slog.Warn("extraction retry failed; returning no facts", "err", retryErr)
+			return nil, normalizeMessageTags(nil, messageCount), nil
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
@@ -943,13 +880,12 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 				return facts, messageTags, nil
 			}
 			if s.llm.DebugLLM() {
-				slog.Warn("json parse llm resp failed, using raw fallback", "len", len(raw2), "raw", raw2, "err", err)
+				slog.Warn("json parse llm resp failed; returning no facts", "len", len(raw2), "raw", raw2, "err", err)
 			} else {
-				slog.Warn("json parse llm resp failed, using raw fallback", "len", len(raw2), "err", err)
+				slog.Warn("json parse llm resp failed; returning no facts", "len", len(raw2), "err", err)
 			}
-			facts := buildRawFallbackFacts(input, "parse_error_fallback")
-			slog.Info("facts and tags extracted", "facts", len(facts), "tagged_messages", messageCount)
-			return facts, messageTags, nil
+			slog.Info("facts and tags extracted", "facts", 0, "tagged_messages", messageCount)
+			return nil, messageTags, nil
 		}
 		lastRaw = raw2
 	}
@@ -1083,8 +1019,6 @@ Assign 1-3 short lowercase tags to each ADD or UPDATE entry.
 Tags describe the topic or category of the memory.
 Examples: "tech", "personal", "preference", "work", "location", "habit"
 Use hyphens for multi-word tags: "programming-language", "work-tool".
-If a new fact includes the tag "raw-fallback", every ADD or UPDATE derived from it
-must also include the tag "raw-fallback" to preserve provenance.
 Omit the "tags" field entirely for DELETE entries.
 
 ## Examples
@@ -1210,7 +1144,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				agentID,
 				sessionID,
 				normalizedText,
-				ensureRawFallbackTag(event.Tags, facts),
+				event.Tags,
 				SetSourceProvenanceMetadata(MergeTemporalMetadata(nil, temporal), sourceSeqs, sourceTurns),
 			)
 			if addErr != nil {
@@ -1240,7 +1174,6 @@ Analyze the new facts and determine whether each should be added, updated, or de
 			if effectiveTags == nil {
 				effectiveTags = existingMemories[intID].Tags
 			}
-			effectiveTags = ensureRawFallbackTag(effectiveTags, facts)
 			sourceSeqs := sourceSeqsForReconcileText(event.Text, facts)
 			sourceTurns := sourceTurnsForReconcileText(event.Text, facts)
 			metadata := SetSourceProvenanceMetadata(MergeTemporalMetadata(existingMemories[intID].Metadata, temporal), sourceSeqs, sourceTurns)
