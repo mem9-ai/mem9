@@ -1083,7 +1083,7 @@ func TestConsoleRuntimeWriter_PayloadHashIncludesAPIKeySubject(t *testing.T) {
 		t.Fatalf("payload hash did not change when APIKeySubject changed: %s", first.payloadHash)
 	}
 	if !bytes.Equal(first.payloadJSON, second.payloadJSON) {
-		t.Fatalf("console payload JSON changed with APIKeySubject: first=%s second=%s", first.payloadJSON, second.payloadJSON)
+		t.Fatalf("runtime usage payload JSON changed with APIKeySubject: first=%s second=%s", first.payloadJSON, second.payloadJSON)
 	}
 }
 

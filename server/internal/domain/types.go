@@ -76,8 +76,8 @@ type AuthInfo struct {
 	TenantDB  *sql.DB
 	ClusterID string
 
-	// APIKeySubject is the billing/quota subject passed to console internal
-	// runtime usage APIs. It must not be logged raw.
+	// APIKeySubject is the billing/quota subject passed to runtime usage
+	// service APIs. It must not be logged raw.
 	APIKeySubject string
 
 	// Chain is non-nil when X-API-Key resolved to a Space Chain key.

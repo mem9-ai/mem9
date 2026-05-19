@@ -83,10 +83,10 @@ func NewConsoleRuntime(cfg ConsoleRuntimeConfig, logger *slog.Logger) (Writer, e
 		logger = slog.Default()
 	}
 	if strings.TrimSpace(cfg.BaseURL) == "" {
-		return nil, fmt.Errorf("metering: console runtime base URL is required")
+		return nil, fmt.Errorf("metering: runtime usage service base URL is required")
 	}
 	if strings.TrimSpace(cfg.InternalSecret) == "" {
-		return nil, fmt.Errorf("metering: console runtime internal secret is required")
+		return nil, fmt.Errorf("metering: runtime usage service internal secret is required")
 	}
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 5 * time.Second
@@ -131,7 +131,7 @@ func (w *consoleRuntimeWriter) Record(evt Event) {
 		ctx, cancel := consoleOutboxContext()
 		defer cancel()
 		if err := w.cfg.Store.UpsertMeteringPending(ctx, item.evt, item.payloadJSON, item.payloadHash); err != nil {
-			w.logger.Error("metering: console event outbox upsert failed",
+			w.logger.Error("metering: runtime usage service event outbox upsert failed",
 				"operation_id", evt.OperationID,
 				"tenant_id", evt.TenantID,
 				"cluster_id", evt.ClusterID,
@@ -399,7 +399,7 @@ func (w *consoleRuntimeWriter) putEvent(ctx context.Context, item consoleQueuedE
 	endpoint := w.cfg.BaseURL + "/api/internal/metering/events/" + item.evt.OperationID
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(item.payloadJSON))
 	if err != nil {
-		return fmt.Errorf("metering: build console request: %w", err)
+		return fmt.Errorf("metering: build runtime usage service request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+w.cfg.InternalSecret)
 	req.Header.Set("X-API-Key", item.evt.APIKeySubject)
@@ -407,7 +407,7 @@ func (w *consoleRuntimeWriter) putEvent(ctx context.Context, item consoleQueuedE
 
 	resp, err := w.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("metering: put console event: %w", err)
+		return fmt.Errorf("metering: put runtime usage service event: %w", err)
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
@@ -417,10 +417,10 @@ func (w *consoleRuntimeWriter) putEvent(ctx context.Context, item consoleQueuedE
 		return nil
 	}
 	if resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusBadRequest {
-		w.markTerminalFailed(item, fmt.Sprintf("console metering returned status %d", resp.StatusCode))
+		w.markTerminalFailed(item, fmt.Sprintf("runtime usage service metering returned status %d", resp.StatusCode))
 		return nil
 	}
-	return fmt.Errorf("metering: console returned status %d", resp.StatusCode)
+	return fmt.Errorf("metering: runtime usage service returned status %d", resp.StatusCode)
 }
 
 func (w *consoleRuntimeWriter) markDone(item consoleQueuedEvent) {
@@ -428,7 +428,7 @@ func (w *consoleRuntimeWriter) markDone(item consoleQueuedEvent) {
 		ctx, cancel := consoleOutboxContext()
 		defer cancel()
 		if err := w.cfg.Store.MarkMeteringDone(ctx, item.evt.OperationID); err != nil {
-			w.logger.Error("metering: mark console event done failed",
+			w.logger.Error("metering: mark runtime usage service event done failed",
 				"operation_id", item.evt.OperationID,
 				"payload_hash", item.payloadHash,
 				"err", err,
@@ -443,14 +443,14 @@ func (w *consoleRuntimeWriter) markTerminalFailed(item consoleQueuedEvent, reaso
 		ctx, cancel := consoleOutboxContext()
 		defer cancel()
 		if err := w.cfg.Store.MarkMeteringTerminalFailed(ctx, item.evt.OperationID, reason); err != nil {
-			w.logger.Error("metering: mark console event terminal failed failed",
+			w.logger.Error("metering: mark runtime usage service event terminal failed failed",
 				"operation_id", item.evt.OperationID,
 				"payload_hash", item.payloadHash,
 				"err", err,
 			)
 		}
 	}
-	w.logger.Error("metering: console event terminal failed",
+	w.logger.Error("metering: runtime usage service event terminal failed",
 		"operation_id", item.evt.OperationID,
 		"tenant_id", item.evt.TenantID,
 		"cluster_id", item.evt.ClusterID,
@@ -465,7 +465,7 @@ func (w *consoleRuntimeWriter) markRetryableFailure(item consoleQueuedEvent, err
 		defer cancel()
 		_ = w.cfg.Store.MarkMeteringRetryableFailure(ctx, item.evt.OperationID, err.Error())
 	}
-	w.logger.Warn("metering: console delivery failed, will retry from outbox",
+	w.logger.Warn("metering: runtime usage service delivery failed, will retry from outbox",
 		"operation_id", item.evt.OperationID,
 		"tenant_id", item.evt.TenantID,
 		"cluster_id", item.evt.ClusterID,
@@ -481,7 +481,7 @@ func (w *consoleRuntimeWriter) logInvalidEvent(evt Event, err error) {
 		defer cancel()
 		_ = w.cfg.Store.MarkMeteringTerminalFailed(ctx, evt.OperationID, err.Error())
 	}
-	w.logger.Error("metering: invalid console event",
+	w.logger.Error("metering: invalid runtime usage service event",
 		"operation_id", evt.OperationID,
 		"tenant_id", evt.TenantID,
 		"cluster_id", evt.ClusterID,
@@ -502,5 +502,5 @@ func (w *consoleRuntimeWriter) maybeWarnFull() {
 	if !atomic.CompareAndSwapInt64(&w.lastFullWarn, last, now) {
 		return
 	}
-	w.logger.Warn("metering: console event channel full, keeping outbox row for retry", "capacity", cap(w.ch))
+	w.logger.Warn("metering: runtime usage service event channel full, keeping outbox row for retry", "capacity", cap(w.ch))
 }

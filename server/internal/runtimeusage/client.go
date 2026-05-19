@@ -77,7 +77,7 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 		return &ConflictError{StatusCode: resp.StatusCode, Body: respBody}
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return &UnavailableError{Err: fmt.Errorf("console returned status %d", resp.StatusCode)}
+		return &UnavailableError{Err: fmt.Errorf("runtime usage service returned status %d", resp.StatusCode)}
 	}
 	if out != nil && len(respBody) > 0 {
 		if err := json.Unmarshal(respBody, out); err != nil {

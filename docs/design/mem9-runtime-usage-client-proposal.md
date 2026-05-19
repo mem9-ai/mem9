@@ -8,10 +8,10 @@ last_updated: 2026-05-19
 ## Summary
 
 Add a billing-grade runtime usage client to mem9-server so commercial SaaS mode
-can enforce console-owned runtime quotas and submit reliable metering events.
-The current implementation follows the inline console contract snapshot below so
-public readers can audit the endpoint, meter, event, retry, and conflict
-semantics from this repository.
+can enforce runtime usage service quotas and submit reliable metering events.
+The current implementation follows the inline runtime usage service contract
+snapshot below so public readers can audit the endpoint, meter, event, retry,
+and conflict semantics from this repository.
 
 Runtime usage is request-count based:
 
@@ -19,11 +19,11 @@ Runtime usage is request-count based:
 2. Memory write operations reserve and meter `memory_write_requests` with
    `units: 1`.
 3. Affected object count is diagnostic metadata, not quota units.
-4. The caller's `X-API-Key` remains the console runtime quota subject.
+4. The caller's `X-API-Key` remains the runtime usage quota subject.
 
-## Console Contract
+## Runtime Usage Service Contract
 
-mem9-server uses these console internal endpoints:
+mem9-server uses these runtime usage service internal endpoints:
 
 1. `PUT /api/internal/quota/reservations/{operationId}`
 2. `PATCH /api/internal/quota/reservations/{operationId}`
@@ -43,7 +43,7 @@ Reservation requests use one of two meters:
 {"meter":"memory_write_requests","units":1}
 ```
 
-Reservation finalization uses only console-supported reasons:
+Reservation finalization uses only runtime usage service supported reasons:
 
 1. Commit success: `operationSucceeded`
 2. Release failure: `operationFailed`
@@ -86,13 +86,14 @@ batch-delete paths.
 
 `occurredAt` is truncated to whole-second RFC3339 before payload construction
 because it is part of the canonical metering payload. Optional `agentName` is
-omitted unless it matches console validation:
+omitted unless it matches runtime usage service validation:
 `^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$`.
 
 Metering metadata is intentionally narrow. It should contain only stable,
 non-sensitive diagnostic fields such as `objectsAffected`. It must not contain
 prompts, memory content, raw API keys, bearer tokens, cookies, DSNs, or auth
-material. `memoryIds` are capped at 200 IDs to stay inside console validation.
+material. `memoryIds` are capped at 200 IDs to stay inside runtime usage
+service validation.
 
 ## Request Flow
 
@@ -102,7 +103,8 @@ For recall:
 2. On recall success, persist `commit_pending` if an outbox is configured.
 3. Commit the reservation.
 4. Submit a `memoryRecall` metering event.
-5. On recall failure, release the reservation with a mapped console reason.
+5. On recall failure, release the reservation with a mapped runtime usage
+   service reason.
 
 For memory writes:
 
@@ -115,7 +117,7 @@ For memory writes:
 
 The SQL outbox is intentionally not used for pre-success reservation state in
 the normal path. It is limited to post-success commit and metering retry state,
-because console now owns reliable metering ingress behind
+because the runtime usage service owns reliable metering ingress behind
 `PUT /api/internal/metering/events/{operationId}`.
 
 ## Covered Operations
@@ -138,8 +140,8 @@ finishes.
 
 ## Failure Semantics
 
-Quota denial returns `402`. Transient console failures return `503` unless
-fail-open mode is configured for reservation failures.
+Quota denial returns `402`. Transient runtime usage service failures return
+`503` unless fail-open mode is configured for reservation failures.
 
 After a mem9 operation succeeds, mem9-server must not release the reservation.
 It either commits synchronously, durably queues commit/metering retry, or marks

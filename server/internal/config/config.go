@@ -65,8 +65,8 @@ type Config struct {
 	MeteringURL           string
 	MeteringFlushInterval time.Duration
 
-	// RuntimeUsage enables commercial SaaS quota gating plus console billing
-	// metering. Console metering uses RuntimeUsageBaseURL, not MeteringURL.
+	// RuntimeUsage enables commercial SaaS quota gating plus runtime usage
+	// service metering. Runtime usage metering uses RuntimeUsageBaseURL, not MeteringURL.
 	RuntimeUsageEnabled         bool
 	RuntimeUsageBaseURL         string
 	RuntimeUsageInternalSecret  string `json:"-"`

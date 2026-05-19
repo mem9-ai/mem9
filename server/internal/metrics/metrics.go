@@ -202,13 +202,13 @@ var (
 		[]string{"phase"},
 	)
 
-	// RuntimeUsageMeteringDeliveryFailedTotal counts console metering events
-	// that reached a terminal failed state.
+	// RuntimeUsageMeteringDeliveryFailedTotal counts runtime usage service
+	// metering events that reached a terminal failed state.
 	RuntimeUsageMeteringDeliveryFailedTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: "mnemo",
 			Name:      "runtime_usage_metering_delivery_failed_total",
-			Help:      "Console runtime usage metering events that reached terminal failed state.",
+			Help:      "Runtime usage service metering events that reached terminal failed state.",
 		},
 		[]string{"reason"},
 	)

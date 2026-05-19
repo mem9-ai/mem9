@@ -116,7 +116,7 @@ func TestLoad_MeteringURLValidationErrorRedactsRawURL(t *testing.T) {
 func TestLoad_RuntimeUsageConfig(t *testing.T) {
 	t.Setenv("MNEMO_DSN", "test-dsn")
 	t.Setenv("MNEMO_RUNTIME_USAGE_ENABLED", "true")
-	t.Setenv("MNEMO_RUNTIME_USAGE_BASE_URL", "https://console.example.com/internal/")
+	t.Setenv("MNEMO_RUNTIME_USAGE_BASE_URL", "https://runtime-usage.example.com/internal/")
 	t.Setenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET", "secret-value")
 	t.Setenv("MNEMO_RUNTIME_USAGE_TIMEOUT", "4s")
 	t.Setenv("MNEMO_RUNTIME_USAGE_METERING_TIMEOUT", "6s")
@@ -130,7 +130,7 @@ func TestLoad_RuntimeUsageConfig(t *testing.T) {
 	if !cfg.RuntimeUsageEnabled {
 		t.Fatal("RuntimeUsageEnabled = false, want true")
 	}
-	if cfg.RuntimeUsageBaseURL != "https://console.example.com/internal" {
+	if cfg.RuntimeUsageBaseURL != "https://runtime-usage.example.com/internal" {
 		t.Fatalf("RuntimeUsageBaseURL = %q", cfg.RuntimeUsageBaseURL)
 	}
 	if cfg.RuntimeUsageInternalSecret != "secret-value" {
@@ -152,7 +152,7 @@ func TestLoad_RuntimeUsageConfig(t *testing.T) {
 		t.Fatal("RuntimeUsageOutboxEnabled = false, want default true when runtime usage is enabled")
 	}
 	if cfg.MeteringEnabled {
-		t.Fatal("MeteringEnabled = true, want false; console billing metering must not require MNEMO_METERING_ENABLED")
+		t.Fatal("MeteringEnabled = true, want false; runtime usage metering must not require MNEMO_METERING_ENABLED")
 	}
 }
 
@@ -165,7 +165,7 @@ func TestLoad_RuntimeUsageRequiresBaseURLAndSecret(t *testing.T) {
 	}{
 		{name: "missing base URL", secret: "secret", wantSubstr: "MNEMO_RUNTIME_USAGE_BASE_URL is required"},
 		{name: "invalid base URL", baseURL: "ftp://token:secret@example.com/path?api_key=secret", secret: "secret", wantSubstr: "invalid MNEMO_RUNTIME_USAGE_BASE_URL"},
-		{name: "missing secret", baseURL: "https://console.example.com", wantSubstr: "MNEMO_RUNTIME_USAGE_INTERNAL_SECRET is required"},
+		{name: "missing secret", baseURL: "https://runtime-usage.example.com", wantSubstr: "MNEMO_RUNTIME_USAGE_INTERNAL_SECRET is required"},
 	}
 
 	for _, tt := range tests {
@@ -196,7 +196,7 @@ func TestLoad_RuntimeUsageRequiresBaseURLAndSecret(t *testing.T) {
 func TestLoad_RuntimeUsageOutboxCannotBeDisabledWithoutFailOpen(t *testing.T) {
 	t.Setenv("MNEMO_DSN", "test-dsn")
 	t.Setenv("MNEMO_RUNTIME_USAGE_ENABLED", "true")
-	t.Setenv("MNEMO_RUNTIME_USAGE_BASE_URL", "https://console.example.com")
+	t.Setenv("MNEMO_RUNTIME_USAGE_BASE_URL", "https://runtime-usage.example.com")
 	t.Setenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET", "secret-value")
 	t.Setenv("MNEMO_RUNTIME_USAGE_OUTBOX_ENABLED", "false")
 
@@ -206,10 +206,10 @@ func TestLoad_RuntimeUsageOutboxCannotBeDisabledWithoutFailOpen(t *testing.T) {
 	}
 }
 
-func TestLoad_RuntimeUsageBaseURLDrivesConsoleMeteringWhenLegacyMeteringEnabled(t *testing.T) {
+func TestLoad_RuntimeUsageBaseURLDrivesRuntimeUsageMeteringWhenLegacyMeteringEnabled(t *testing.T) {
 	t.Setenv("MNEMO_DSN", "test-dsn")
 	t.Setenv("MNEMO_RUNTIME_USAGE_ENABLED", "true")
-	t.Setenv("MNEMO_RUNTIME_USAGE_BASE_URL", "https://console.example.com")
+	t.Setenv("MNEMO_RUNTIME_USAGE_BASE_URL", "https://runtime-usage.example.com")
 	t.Setenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET", "secret-value")
 	t.Setenv("MNEMO_METERING_ENABLED", "true")
 	t.Setenv("MNEMO_METERING_URL", "s3://legacy-export/mem9/")
@@ -218,7 +218,7 @@ func TestLoad_RuntimeUsageBaseURLDrivesConsoleMeteringWhenLegacyMeteringEnabled(
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.RuntimeUsageBaseURL != "https://console.example.com" {
+	if cfg.RuntimeUsageBaseURL != "https://runtime-usage.example.com" {
 		t.Fatalf("RuntimeUsageBaseURL = %q", cfg.RuntimeUsageBaseURL)
 	}
 	if cfg.MeteringURL != "s3://legacy-export/mem9/" {
