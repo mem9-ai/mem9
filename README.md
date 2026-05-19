@@ -204,6 +204,12 @@ The `MEM9_SOURCE_TURN_*` variables control how many source turn conversations ar
 | `MEM9_SOURCE_TURN_PER_MEMORY_LIMIT` | No | `2` | Maximum source turns attached to a single memory in search results |
 | `MEM9_SOURCE_TURN_TOTAL_LIMIT` | No | `12` | Maximum total source turns across all memories in a single search response |
 
+#### Space Chain Recall
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `MNEMO_CHAIN_RECALL_STOP_SCORE` | No | `0.5` | Stop querying later Space Chain nodes once a node result score reaches this threshold. Must be between `0` and `1` |
+
 #### Provisioning And Pooling
 
 | Variable | Required | Default | Description |
@@ -234,9 +240,9 @@ These variables control automatic spend-limit increases for TiDB Cloud clusters 
 
 #### Metering
 
-These are the supported rollout variables for the server-side metering writer. The writer is initialized at server startup, but this round does not wire any `Record()` call sites yet, so no usage events are emitted until caller hooks are added.
+These variables configure the legacy server-side API metering writer. It emits `mem9-api` events for successful recall and ingest operations and is separate from runtime usage quota metering.
 
-The public env surface is intentionally small for now. Metering location is configured as a single destination URL. Supported schemes are:
+Metering location is configured as a single destination URL. Supported schemes are:
 
 - `s3://<bucket>/<prefix>/` for compressed JSON batches in S3
 - `http://...` or `https://...` for JSON batch webhooks
@@ -246,6 +252,24 @@ The public env surface is intentionally small for now. Metering location is conf
 | `MNEMO_METERING_ENABLED` | No | `false` | Enable the metering writer. When `false`, the writer is a no-op |
 | `MNEMO_METERING_URL` | No | — | Metering destination URL. Supported forms: `s3://<bucket>/<prefix>/`, `http://...`, or `https://...`. If empty, the writer stays disabled even when `MNEMO_METERING_ENABLED=true` |
 | `MNEMO_METERING_FLUSH_INTERVAL` | No | `10s` | In-memory batch flush interval for the metering writer |
+
+#### Runtime Usage Quota And Metering
+
+Runtime usage is disabled by default. When enabled, the server reserves quota before memory recall/write operations, releases reservations after failed operations, commits reservations after successful operations, and sends console metering events to the runtime usage service. This path uses `MNEMO_RUNTIME_USAGE_BASE_URL` and does not use `MNEMO_METERING_URL`.
+
+The runtime usage outbox uses the control-plane `runtime_usage_outbox` table for pending reservation finalization and metering delivery. It is enabled by default when runtime usage is enabled.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `MNEMO_RUNTIME_USAGE_ENABLED` | No | `false` | Enable runtime usage quota gating and console metering for memory recall/write operations |
+| `MNEMO_RUNTIME_USAGE_BASE_URL` | Yes when enabled | — | Runtime usage service base URL. Must be `http` or `https`; query and fragment are rejected |
+| `MNEMO_RUNTIME_USAGE_INTERNAL_SECRET` | Yes when enabled | — | Bearer token for internal runtime usage service calls |
+| `MNEMO_RUNTIME_USAGE_TIMEOUT` | No | `3s` | Timeout for quota reservation and finalization requests |
+| `MNEMO_RUNTIME_USAGE_METERING_TIMEOUT` | No | `5s` | Timeout for console metering event delivery requests |
+| `MNEMO_RUNTIME_USAGE_RESERVATION_TTL` | No | `30m` | Runtime usage reservation lifetime setting |
+| `MNEMO_RUNTIME_USAGE_OPERATION_TTL` | No | `30m` | Runtime usage operation lifetime setting |
+| `MNEMO_RUNTIME_USAGE_FAIL_OPEN` | No | `false` | Allow operations when quota reservation fails with a retryable runtime usage service error. Quota denials and operation conflicts still fail closed |
+| `MNEMO_RUNTIME_USAGE_OUTBOX_ENABLED` | No | same as `MNEMO_RUNTIME_USAGE_ENABLED` | Persist pending reservation and metering steps for retry. If explicitly set to `false` while runtime usage is enabled, `MNEMO_RUNTIME_USAGE_FAIL_OPEN` must be `true` |
 
 #### Security And Debugging
 

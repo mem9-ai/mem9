@@ -23,6 +23,7 @@ cd server && go test -race -count=1 -run TestFunctionName ./internal/handler/
 | Tenant endpoints | `tenant.go` |
 | Import task endpoints | `task.go` |
 | Metering admin endpoints | `metering.go` |
+| Runtime usage helpers and error mapping | `runtime_usage.go` |
 
 ## Local conventions
 
@@ -30,6 +31,7 @@ cd server && go test -race -count=1 -run TestFunctionName ./internal/handler/
 - Add or change routes in `handler.go`.
 - Keep HTTP/domain error mapping in `handler.go`.
 - Read `X-Mnemo-Agent-Id` through the existing request helpers instead of duplicating header parsing.
+- Use the existing runtime usage helpers for quota error responses and post-success finalization; finalization after tenant writes must survive request cancellation.
 - Use `respond()` and existing error helpers for JSON responses.
 
 ## Anti-patterns

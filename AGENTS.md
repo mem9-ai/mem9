@@ -21,7 +21,7 @@ and a small Astro site.
 
 | Path                 | Role                                                         |
 | -------------------- | ------------------------------------------------------------ |
-| `server/`            | Go API server, business logic, TiDB SQL, tenant provisioning |
+| `server/`            | Go API server, business logic, TiDB SQL, tenant provisioning, runtime usage |
 | `cli/`               | Standalone Go CLI for exercising mnemo-server endpoints      |
 | `dashboard/app/`     | React dashboard SPA; frontend half of the dashboard product  |
 | `openclaw-plugin/`   | OpenClaw memory plugin (`kind: "memory"`)                    |
@@ -73,6 +73,7 @@ cd server && MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" go run ./cmd
 - `INSERT ... ON DUPLICATE KEY UPDATE` is the expected upsert pattern.
 - Atomic version bump happens in SQL: `SET version = version + 1`.
 - `X-Mnemo-Agent-Id` is the per-agent identity header for memory requests.
+- Legacy API metering uses `MNEMO_METERING_*`; runtime usage quota and console metering use `MNEMO_RUNTIME_USAGE_*` and do not use `MNEMO_METERING_URL`.
 - Always use `make` targets for building and Docker image operations — never construct raw `go build` or `docker build` commands from scratch. Use `make build-linux` for the server binary and `REGISTRY=<ecr> COMMIT=<tag> make docker` for images.
 
 ## Go style
@@ -121,6 +122,8 @@ cd server && MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" go run ./cmd
 | Ingest pipeline      | `server/internal/service/ingest.go`         |
 | TiDB SQL             | `server/internal/repository/tidb/memory.go` |
 | Tenant provisioning  | `server/internal/service/tenant.go`         |
+| Runtime usage quota  | `server/internal/runtimeusage/`             |
+| Metering writer      | `server/internal/metering/`                 |
 | CLI command wiring   | `cli/main.go`                               |
 | Dashboard frontend   | `dashboard/app/`                            |
 | Dashboard backend (sibling repo) | `../mem9-node/apps/api/`        |
