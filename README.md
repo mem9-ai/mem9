@@ -266,8 +266,8 @@ The runtime usage outbox uses the control-plane `runtime_usage_outbox` table for
 | `MNEMO_RUNTIME_USAGE_INTERNAL_SECRET` | Yes when enabled | — | Bearer token for internal runtime usage service calls |
 | `MNEMO_RUNTIME_USAGE_TIMEOUT` | No | `3s` | Timeout for quota reservation and finalization requests |
 | `MNEMO_RUNTIME_USAGE_METERING_TIMEOUT` | No | `5s` | Timeout for console metering event delivery requests |
-| `MNEMO_RUNTIME_USAGE_RESERVATION_TTL` | No | `30m` | Runtime usage reservation lifetime setting |
-| `MNEMO_RUNTIME_USAGE_OPERATION_TTL` | No | `30m` | Runtime usage operation lifetime setting |
+| `MNEMO_RUNTIME_USAGE_RESERVATION_TTL` | No | `30m` | Parsed into server config, but currently not sent to reservation requests; changing it does not alter reservation lifetimes |
+| `MNEMO_RUNTIME_USAGE_OPERATION_TTL` | No | `30m` | Parsed into server config, but currently not used to expire runtime usage outbox rows; changing it does not alter outbox lifetimes |
 | `MNEMO_RUNTIME_USAGE_FAIL_OPEN` | No | `false` | Allow operations when quota reservation fails with a retryable runtime usage service error. Quota denials and operation conflicts still fail closed |
 | `MNEMO_RUNTIME_USAGE_OUTBOX_ENABLED` | No | same as `MNEMO_RUNTIME_USAGE_ENABLED` | Persist pending reservation and metering steps for retry. If explicitly set to `false` while runtime usage is enabled, `MNEMO_RUNTIME_USAGE_FAIL_OPEN` must be `true` |
 
