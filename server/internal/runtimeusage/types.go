@@ -68,7 +68,7 @@ type Reservation struct {
 	Units                  int64     `json:"units"`
 	Status                 string    `json:"status"`
 	ExpiresAt              time.Time `json:"expiresAt"`
-	RemainingIncludedUnits int64     `json:"remainingIncludedUnits"`
+	RemainingIncludedUnits *int64    `json:"remainingIncludedUnits"`
 	ReservedUnits          int64     `json:"reservedUnits"`
 	OverageAllowed         bool      `json:"overageAllowed"`
 }
