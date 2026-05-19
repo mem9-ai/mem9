@@ -677,8 +677,8 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 	scope := llm.CallScope{Step: "extraction"}
 	raw, err := s.llm.CompleteJSONWithScope(ctx, systemPrompt, userPrompt, scope)
 	if err != nil {
-		slog.Warn("extraction LLM call failed; returning no facts", "err", err)
-		return nil, nil
+		slog.Warn("extraction LLM call failed", "err", err)
+		return nil, fmt.Errorf("extraction llm call: %w", err)
 	}
 
 	parsed, err := llm.ParseJSON[extractResponse](raw)
@@ -689,8 +689,8 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt,
 			scope)
 		if retryErr != nil {
-			slog.Warn("extraction retry failed; returning no facts", "err", retryErr)
-			return nil, nil
+			slog.Warn("extraction retry failed", "err", retryErr)
+			return nil, fmt.Errorf("extraction retry: %w", retryErr)
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
@@ -700,12 +700,11 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 				return facts, nil
 			}
 			if s.llm.DebugLLM() {
-				slog.Warn("json parse llm resp failed; returning no facts", "len", len(raw2), "raw", raw2, "err", err)
+				slog.Warn("json parse llm resp failed", "len", len(raw2), "raw", raw2, "err", err)
 			} else {
-				slog.Warn("json parse llm resp failed; returning no facts", "len", len(raw2), "err", err)
+				slog.Warn("json parse llm resp failed", "len", len(raw2), "err", err)
 			}
-			slog.Info("facts extracted", "facts", 0)
-			return nil, nil
+			return nil, fmt.Errorf("extraction response parse: %w", err)
 		}
 		lastRaw = raw2
 	}
@@ -849,8 +848,8 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 	scope := llm.CallScope{Step: "extraction_and_classification"}
 	raw, err := s.llm.CompleteJSONWithScope(ctx, systemPrompt, userPrompt, scope)
 	if err != nil {
-		slog.Warn("extraction LLM call failed; returning no facts", "err", err)
-		return nil, normalizeMessageTags(nil, messageCount), nil
+		slog.Warn("extraction LLM call failed", "err", err)
+		return nil, normalizeMessageTags(nil, messageCount), fmt.Errorf("extraction llm call: %w", err)
 	}
 
 	parsed, err := llm.ParseJSON[extractResponse](raw)
@@ -861,8 +860,8 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt,
 			scope)
 		if retryErr != nil {
-			slog.Warn("extraction retry failed; returning no facts", "err", retryErr)
-			return nil, normalizeMessageTags(nil, messageCount), nil
+			slog.Warn("extraction retry failed", "err", retryErr)
+			return nil, normalizeMessageTags(nil, messageCount), fmt.Errorf("extraction retry: %w", retryErr)
 		}
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
@@ -880,12 +879,11 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 				return facts, messageTags, nil
 			}
 			if s.llm.DebugLLM() {
-				slog.Warn("json parse llm resp failed; returning no facts", "len", len(raw2), "raw", raw2, "err", err)
+				slog.Warn("json parse llm resp failed", "len", len(raw2), "raw", raw2, "err", err)
 			} else {
-				slog.Warn("json parse llm resp failed; returning no facts", "len", len(raw2), "err", err)
+				slog.Warn("json parse llm resp failed", "len", len(raw2), "err", err)
 			}
-			slog.Info("facts and tags extracted", "facts", 0, "tagged_messages", messageCount)
-			return nil, messageTags, nil
+			return nil, messageTags, fmt.Errorf("extraction response parse: %w", err)
 		}
 		lastRaw = raw2
 	}

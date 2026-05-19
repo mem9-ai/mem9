@@ -616,6 +616,60 @@ func TestExtractFactsSingleMessageEmptyResultReturnsNoFacts(t *testing.T) {
 	}
 }
 
+func TestIngestExtractionLLMFailureReturnsFailedStatus(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	memRepo := &memoryRepoMock{}
+	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
+
+	res, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
+		Mode:      ModeSmart,
+		SessionID: "sess-extraction-failure",
+		AgentID:   "agent-1",
+		Messages: []IngestMessage{
+			{Role: "user", Content: "I use Go 1.22"},
+			{Role: "assistant", Content: "Noted."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if res == nil || res.Status != "failed" {
+		t.Fatalf("expected failed ingest result, got %+v", res)
+	}
+	if len(memRepo.createCalls) != 0 {
+		t.Fatalf("expected no create calls after extraction failure, got %d", len(memRepo.createCalls))
+	}
+}
+
+func TestExtractPhase1ExtractionLLMFailureReturnsError(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	result, err := svc.ExtractPhase1(context.Background(), []IngestMessage{
+		{Role: "user", Content: "I use Go 1.22"},
+	})
+	if err == nil {
+		t.Fatal("expected ExtractPhase1() error after extraction LLM failure")
+	}
+	if result != nil {
+		t.Fatalf("expected nil result after extraction LLM failure, got %+v", result)
+	}
+}
+
 func TestExtractPhase1SingleMessageEmptyResultReturnsNoFacts(t *testing.T) {
 	t.Parallel()
 
@@ -2820,8 +2874,8 @@ func TestExtractFactsFlattenedFactNoTextNoTags(t *testing.T) {
 	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
 
 	facts, err := svc.extractFacts(context.Background(), "User: hello\n\nAssistant: ok")
-	if err != nil {
-		t.Fatalf("extractFacts() error = %v", err)
+	if err == nil {
+		t.Fatal("expected extractFacts() error for unrecoverable junk response")
 	}
 	if len(facts) != 0 {
 		t.Fatalf("expected unrecoverable junk response to return no facts, got %v", facts)
@@ -2839,8 +2893,8 @@ func TestExtractFactsFlattenedFactTagsOnly(t *testing.T) {
 	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
 
 	facts, err := svc.extractFacts(context.Background(), "User: hello\n\nAssistant: ok")
-	if err != nil {
-		t.Fatalf("extractFacts() error = %v", err)
+	if err == nil {
+		t.Fatal("expected extractFacts() error when flattened-fact has tags but no text")
 	}
 	if len(facts) != 0 {
 		t.Fatalf("expected flattened-fact with tags but no text to return no facts, got %v", facts)
