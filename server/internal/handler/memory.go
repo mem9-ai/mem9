@@ -142,7 +142,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				if result != nil {
 					ids = result.InsightIDs
 				}
-				if err := s.runtimeUsage.AfterMemoryCreateSuccess(syncCtx, lease, runtimeusage.MemoryCreateResult{
+				if err := s.runtimeUsage.AfterMemoryCreateSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryCreateResult{
 					MemoryIDs:       ids,
 					AgentName:       auth.AgentName,
 					ObjectsAffected: written,
@@ -277,7 +277,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			if memoryID != "" {
 				ids = []string{memoryID}
 			}
-			if err := s.runtimeUsage.AfterMemoryCreateSuccess(r.Context(), lease, runtimeusage.MemoryCreateResult{
+			if err := s.runtimeUsage.AfterMemoryCreateSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryCreateResult{
 				MemoryIDs:       ids,
 				AgentName:       auth.AgentName,
 				ObjectsAffected: int64(written),
@@ -330,7 +330,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			if mem != nil && mem.ID != "" {
 				ids = []string{mem.ID}
 			}
-			if err := s.runtimeUsage.AfterMemoryCreateSuccess(r.Context(), lease, runtimeusage.MemoryCreateResult{
+			if err := s.runtimeUsage.AfterMemoryCreateSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryCreateResult{
 				MemoryIDs:       ids,
 				AgentName:       auth.AgentName,
 				ObjectsAffected: int64(written),
@@ -769,7 +769,7 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 		}
 		mem.ChainSource = target.source
 		if s.runtimeUsageEnabled() {
-			if err := s.runtimeUsage.AfterMemoryUpdateSuccess(r.Context(), lease, runtimeusage.MemoryUpdateResult{
+			if err := s.runtimeUsage.AfterMemoryUpdateSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryUpdateResult{
 				MemoryIDs:       []string{mem.ID},
 				AgentName:       target.nodeAuth.AgentName,
 				ObjectsAffected: 1,
@@ -817,7 +817,7 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.runtimeUsageEnabled() {
-		if err := s.runtimeUsage.AfterMemoryUpdateSuccess(r.Context(), lease, runtimeusage.MemoryUpdateResult{
+		if err := s.runtimeUsage.AfterMemoryUpdateSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryUpdateResult{
 			MemoryIDs:       []string{mem.ID},
 			AgentName:       auth.AgentName,
 			ObjectsAffected: 1,
@@ -873,7 +873,7 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if s.runtimeUsageEnabled() {
-			if err := s.runtimeUsage.AfterMemoryDeleteSuccess(r.Context(), lease, runtimeusage.MemoryDeleteResult{
+			if err := s.runtimeUsage.AfterMemoryDeleteSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryDeleteResult{
 				MemoryIDs:       []string{id},
 				AgentName:       target.nodeAuth.AgentName,
 				ObjectsAffected: deleted,
@@ -921,7 +921,7 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.runtimeUsageEnabled() {
-		if err := s.runtimeUsage.AfterMemoryDeleteSuccess(r.Context(), lease, runtimeusage.MemoryDeleteResult{
+		if err := s.runtimeUsage.AfterMemoryDeleteSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryDeleteResult{
 			MemoryIDs:       []string{id},
 			AgentName:       auth.AgentName,
 			ObjectsAffected: deleted,
@@ -985,7 +985,7 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if s.runtimeUsageEnabled() {
-				if err := s.runtimeUsage.AfterMemoryDeleteSuccess(r.Context(), lease, runtimeusage.MemoryDeleteResult{
+				if err := s.runtimeUsage.AfterMemoryDeleteSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryDeleteResult{
 					MemoryIDs:       append([]string(nil), group.ids...),
 					AgentName:       group.target.nodeAuth.AgentName,
 					ObjectsAffected: groupDeleted,
@@ -1046,7 +1046,7 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.runtimeUsageEnabled() {
-		if err := s.runtimeUsage.AfterMemoryDeleteSuccess(r.Context(), lease, runtimeusage.MemoryDeleteResult{
+		if err := s.runtimeUsage.AfterMemoryDeleteSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryDeleteResult{
 			MemoryIDs:       append([]string(nil), deleteIDs...),
 			AgentName:       auth.AgentName,
 			ObjectsAffected: deleted,
@@ -1124,7 +1124,7 @@ func (s *Server) bulkCreateMemories(w http.ResponseWriter, r *http.Request) {
 	}
 	applyChainSource(memories, writeChainSource)
 	if s.runtimeUsageEnabled() {
-		if err := s.runtimeUsage.AfterMemoryCreateSuccess(r.Context(), lease, runtimeusage.MemoryCreateResult{
+		if err := s.runtimeUsage.AfterMemoryCreateSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryCreateResult{
 			MemoryIDs:       memoryIDs(memories),
 			AgentName:       auth.AgentName,
 			ObjectsAffected: int64(len(memories)),

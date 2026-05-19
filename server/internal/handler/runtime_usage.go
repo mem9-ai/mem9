@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -22,6 +23,11 @@ func memoryIDs(memories []domain.Memory) []string {
 		}
 	}
 	return ids
+}
+
+func runtimeUsagePostSuccessContext() context.Context {
+	// Post-success finalization must survive request cancellation after tenant writes commit.
+	return context.Background()
 }
 
 func subjectFromAuth(auth *domain.AuthInfo) runtimeusage.Subject {

@@ -29,6 +29,7 @@ type testMemoryRepo struct {
 	mu                   sync.Mutex
 	createCalls          []*domain.Memory
 	bulkCreateCalls      int
+	bulkCreateHook       func(context.Context)
 	keywordSearchResults []domain.Memory
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	lastKeywordFilter    domain.MemoryFilter
@@ -100,10 +101,14 @@ func (m *testMemoryRepo) List(context.Context, domain.MemoryFilter) ([]domain.Me
 	return nil, 0, nil
 }
 func (m *testMemoryRepo) Count(context.Context) (int, error) { return 0, nil }
-func (m *testMemoryRepo) BulkCreate(context.Context, []*domain.Memory) error {
+func (m *testMemoryRepo) BulkCreate(ctx context.Context, _ []*domain.Memory) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.bulkCreateCalls++
+	hook := m.bulkCreateHook
+	m.mu.Unlock()
+	if hook != nil {
+		hook(ctx)
+	}
 	return nil
 }
 func (m *testMemoryRepo) VectorSearch(context.Context, []float32, domain.MemoryFilter, int) ([]domain.Memory, error) {
@@ -249,21 +254,25 @@ func (w *blockingMeteringWriter) Record(evt metering.Event) {
 func (w *blockingMeteringWriter) Close(context.Context) error { return nil }
 
 type captureRuntimeUsageManager struct {
-	beforeRecallCalls       int
-	afterRecallSuccessCalls int
-	beforeCreateCalls       int
-	afterCreateFailureCalls int
-	beforeUpdateCalls       int
-	afterUpdateSuccessCalls int
-	afterUpdateFailureCalls int
-	beforeDeleteCalls       int
-	afterDeleteSuccessCalls int
-	enabled                 bool
-	afterCreateSuccessErr   error
-	beforeUpdateSubjects    []runtimeusage.Subject
-	beforeDeleteSubjects    []runtimeusage.Subject
-	updateResults           []runtimeusage.MemoryUpdateResult
-	deleteResults           []runtimeusage.MemoryDeleteResult
+	beforeRecallCalls        int
+	afterRecallSuccessCalls  int
+	beforeCreateCalls        int
+	afterCreateSuccessCalls  int
+	afterCreateFailureCalls  int
+	beforeUpdateCalls        int
+	afterUpdateSuccessCalls  int
+	afterUpdateFailureCalls  int
+	beforeDeleteCalls        int
+	afterDeleteSuccessCalls  int
+	enabled                  bool
+	afterCreateSuccessErr    error
+	beforeCreateSubjects     []runtimeusage.Subject
+	createResults            []runtimeusage.MemoryCreateResult
+	createSuccessContextErrs []error
+	beforeUpdateSubjects     []runtimeusage.Subject
+	beforeDeleteSubjects     []runtimeusage.Subject
+	updateResults            []runtimeusage.MemoryUpdateResult
+	deleteResults            []runtimeusage.MemoryDeleteResult
 }
 
 func (m *captureRuntimeUsageManager) Enabled() bool { return m.enabled }
@@ -277,11 +286,15 @@ func (m *captureRuntimeUsageManager) AfterRecallSuccess(context.Context, *runtim
 }
 func (m *captureRuntimeUsageManager) AfterRecallFailure(context.Context, *runtimeusage.OperationLease, error) {
 }
-func (m *captureRuntimeUsageManager) BeforeMemoryCreate(context.Context, runtimeusage.Subject, int64) (*runtimeusage.OperationLease, error) {
+func (m *captureRuntimeUsageManager) BeforeMemoryCreate(_ context.Context, subject runtimeusage.Subject, _ int64) (*runtimeusage.OperationLease, error) {
 	m.beforeCreateCalls++
+	m.beforeCreateSubjects = append(m.beforeCreateSubjects, subject)
 	return &runtimeusage.OperationLease{OperationID: "op-create", Reserved: true}, nil
 }
-func (m *captureRuntimeUsageManager) AfterMemoryCreateSuccess(context.Context, *runtimeusage.OperationLease, runtimeusage.MemoryCreateResult) error {
+func (m *captureRuntimeUsageManager) AfterMemoryCreateSuccess(ctx context.Context, _ *runtimeusage.OperationLease, result runtimeusage.MemoryCreateResult) error {
+	m.afterCreateSuccessCalls++
+	m.createResults = append(m.createResults, result)
+	m.createSuccessContextErrs = append(m.createSuccessContextErrs, ctx.Err())
 	return m.afterCreateSuccessErr
 }
 func (m *captureRuntimeUsageManager) AfterMemoryCreateFailure(context.Context, *runtimeusage.OperationLease, error) {
@@ -1140,6 +1153,72 @@ func TestBulkCreateMemories_RuntimeUsageFinalizationFailureFailsClosed(t *testin
 	}
 }
 
+func TestBulkCreateMemories_RuntimeUsageFinalizationIgnoresRequestCancellation(t *testing.T) {
+	var cancel context.CancelFunc
+	memRepo := &testMemoryRepo{
+		bulkCreateHook: func(context.Context) {
+			cancel()
+		},
+	}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	body := map[string]any{
+		"memories": []map[string]any{
+			{"content": "bulk memory"},
+		},
+	}
+	req := makeTenantRequest(t, http.MethodPost, "/memories/bulk", body)
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	srv.bulkCreateMemories(rr, req)
+
+	if ctx.Err() != context.Canceled {
+		t.Fatal("request context was not canceled during bulk create")
+	}
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201: %s", rr.Code, rr.Body.String())
+	}
+	if runtimeUsage.afterCreateSuccessCalls != 1 {
+		t.Fatalf("AfterMemoryCreateSuccess calls = %d, want 1", runtimeUsage.afterCreateSuccessCalls)
+	}
+	if len(runtimeUsage.createSuccessContextErrs) != 1 || runtimeUsage.createSuccessContextErrs[0] != nil {
+		t.Fatalf("finalization context errors = %+v, want [<nil>]", runtimeUsage.createSuccessContextErrs)
+	}
+}
+
+func TestBulkCreateMemories_ChainRuntimeUsageUsesResolvedNodeSubject(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	body := map[string]any{
+		"memories": []map[string]any{
+			{"content": "bulk memory"},
+		},
+	}
+	req := makeChainRequest(t, http.MethodPost, "/memories/bulk", body)
+	rr := httptest.NewRecorder()
+
+	srv.bulkCreateMemories(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201: %s", rr.Code, rr.Body.String())
+	}
+	if runtimeUsage.beforeCreateCalls != 1 || runtimeUsage.afterCreateSuccessCalls != 1 {
+		t.Fatalf("runtime create calls = before:%d success:%d, want 1/1", runtimeUsage.beforeCreateCalls, runtimeUsage.afterCreateSuccessCalls)
+	}
+	if len(runtimeUsage.beforeCreateSubjects) != 1 ||
+		runtimeUsage.beforeCreateSubjects[0].TenantID != "tenant-a" ||
+		runtimeUsage.beforeCreateSubjects[0].ClusterID != "10006636" ||
+		runtimeUsage.beforeCreateSubjects[0].APIKeySubject != "chain-key-a" {
+		t.Fatalf("create subject = %+v, want tenant-a/10006636 with chain-key-a subject", runtimeUsage.beforeCreateSubjects)
+	}
+}
+
 func TestBulkCreateMemories_RuntimeUsageValidatesBeforeQuota(t *testing.T) {
 	memRepo := &testMemoryRepo{}
 	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
@@ -1240,8 +1319,11 @@ func TestUpdateMemory_ChainRuntimeUsageUsesResolvedNodeSubject(t *testing.T) {
 	if runtimeUsage.beforeUpdateCalls != 1 || runtimeUsage.afterUpdateSuccessCalls != 1 {
 		t.Fatalf("runtime update calls = before:%d success:%d, want 1/1", runtimeUsage.beforeUpdateCalls, runtimeUsage.afterUpdateSuccessCalls)
 	}
-	if len(runtimeUsage.beforeUpdateSubjects) != 1 || runtimeUsage.beforeUpdateSubjects[0].TenantID != "tenant-a" || runtimeUsage.beforeUpdateSubjects[0].ClusterID != "10006636" {
-		t.Fatalf("update subject = %+v, want tenant-a/10006636", runtimeUsage.beforeUpdateSubjects)
+	if len(runtimeUsage.beforeUpdateSubjects) != 1 ||
+		runtimeUsage.beforeUpdateSubjects[0].TenantID != "tenant-a" ||
+		runtimeUsage.beforeUpdateSubjects[0].ClusterID != "10006636" ||
+		runtimeUsage.beforeUpdateSubjects[0].APIKeySubject != "chain-key-a" {
+		t.Fatalf("update subject = %+v, want tenant-a/10006636 with chain-key-a subject", runtimeUsage.beforeUpdateSubjects)
 	}
 }
 
@@ -1265,8 +1347,11 @@ func TestDeleteMemory_ChainRuntimeUsageUsesResolvedNodeSubject(t *testing.T) {
 	if runtimeUsage.beforeDeleteCalls != 1 || runtimeUsage.afterDeleteSuccessCalls != 1 {
 		t.Fatalf("runtime delete calls = before:%d success:%d, want 1/1", runtimeUsage.beforeDeleteCalls, runtimeUsage.afterDeleteSuccessCalls)
 	}
-	if len(runtimeUsage.beforeDeleteSubjects) != 1 || runtimeUsage.beforeDeleteSubjects[0].TenantID != "tenant-a" || runtimeUsage.beforeDeleteSubjects[0].ClusterID != "10006636" {
-		t.Fatalf("delete subject = %+v, want tenant-a/10006636", runtimeUsage.beforeDeleteSubjects)
+	if len(runtimeUsage.beforeDeleteSubjects) != 1 ||
+		runtimeUsage.beforeDeleteSubjects[0].TenantID != "tenant-a" ||
+		runtimeUsage.beforeDeleteSubjects[0].ClusterID != "10006636" ||
+		runtimeUsage.beforeDeleteSubjects[0].APIKeySubject != "chain-key-a" {
+		t.Fatalf("delete subject = %+v, want tenant-a/10006636 with chain-key-a subject", runtimeUsage.beforeDeleteSubjects)
 	}
 }
 
@@ -1298,6 +1383,12 @@ func TestBatchDeleteMemories_ChainRuntimeUsageGroupsByResolvedNode(t *testing.T)
 	}
 	if len(memRepo.bulkSoftDeleteCalls) != 1 || len(memRepo.bulkSoftDeleteCalls[0]) != 2 {
 		t.Fatalf("bulk delete calls = %+v, want one grouped call with two IDs", memRepo.bulkSoftDeleteCalls)
+	}
+	if len(runtimeUsage.beforeDeleteSubjects) != 1 ||
+		runtimeUsage.beforeDeleteSubjects[0].TenantID != "tenant-a" ||
+		runtimeUsage.beforeDeleteSubjects[0].ClusterID != "10006636" ||
+		runtimeUsage.beforeDeleteSubjects[0].APIKeySubject != "chain-key-a" {
+		t.Fatalf("batch delete subject = %+v, want tenant-a/10006636 with chain-key-a subject", runtimeUsage.beforeDeleteSubjects)
 	}
 }
 

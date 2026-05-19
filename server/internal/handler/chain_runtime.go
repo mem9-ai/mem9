@@ -18,11 +18,16 @@ func (s *Server) firstChainNodeAuth(auth *domain.AuthInfo) (*domain.AuthInfo, er
 }
 
 func chainNodeAuth(auth *domain.AuthInfo, node domain.ChainAuthNode) *domain.AuthInfo {
+	apiKeySubject := auth.APIKeySubject
+	if apiKeySubject == "" && auth.Chain != nil {
+		apiKeySubject = auth.Chain.APIKey
+	}
 	return &domain.AuthInfo{
-		AgentName: auth.AgentName,
-		TenantID:  node.TenantID,
-		TenantDB:  node.TenantDB,
-		ClusterID: node.ClusterID,
+		AgentName:     auth.AgentName,
+		TenantID:      node.TenantID,
+		TenantDB:      node.TenantDB,
+		ClusterID:     node.ClusterID,
+		APIKeySubject: apiKeySubject,
 	}
 }
 
