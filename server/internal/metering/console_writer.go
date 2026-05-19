@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,12 +37,13 @@ type ConsoleEventStore interface {
 const consoleOutboxTimeout = 2 * time.Second
 
 type consoleMeteringPayload struct {
-	EventType  string   `json:"eventType"`
-	Meter      string   `json:"meter"`
-	Units      int64    `json:"units"`
-	OccurredAt string   `json:"occurredAt"`
-	AgentName  string   `json:"agentName,omitempty"`
-	MemoryIDs  []string `json:"memoryIds,omitempty"`
+	EventType  string         `json:"eventType"`
+	Meter      string         `json:"meter"`
+	Units      int64          `json:"units"`
+	OccurredAt string         `json:"occurredAt"`
+	AgentName  string         `json:"agentName,omitempty"`
+	MemoryIDs  []string       `json:"memoryIds,omitempty"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
 }
 
 type consoleMeteringHashPayload struct {
@@ -116,7 +118,9 @@ func newConsoleRuntimeWriter(cfg ConsoleRuntimeConfig, client httpDoer, logger *
 
 func (w *consoleRuntimeWriter) Record(evt Event) {
 	if evt.OccurredAt.IsZero() {
-		evt.OccurredAt = w.now().UTC()
+		evt.OccurredAt = w.now().UTC().Truncate(time.Second)
+	} else {
+		evt.OccurredAt = evt.OccurredAt.UTC().Truncate(time.Second)
 	}
 	item, err := w.makeQueuedEvent(evt)
 	if err != nil {
@@ -126,7 +130,7 @@ func (w *consoleRuntimeWriter) Record(evt Event) {
 	if w.cfg.Store != nil {
 		ctx, cancel := consoleOutboxContext()
 		defer cancel()
-		if err := w.cfg.Store.UpsertMeteringPending(ctx, evt, item.payloadJSON, item.payloadHash); err != nil {
+		if err := w.cfg.Store.UpsertMeteringPending(ctx, item.evt, item.payloadJSON, item.payloadHash); err != nil {
 			w.logger.Error("metering: console event outbox upsert failed",
 				"operation_id", evt.OperationID,
 				"tenant_id", evt.TenantID,
@@ -191,13 +195,15 @@ func (w *consoleRuntimeWriter) makeQueuedEvent(evt Event) (consoleQueuedEvent, e
 	if evt.Units == 0 {
 		return consoleQueuedEvent{}, fmt.Errorf("units must be non-zero")
 	}
+	occurredAt := evt.OccurredAt.UTC().Truncate(time.Second)
 	payload := consoleMeteringPayload{
 		EventType:  evt.EventType,
 		Meter:      evt.Meter,
 		Units:      evt.Units,
-		OccurredAt: evt.OccurredAt.UTC().Format(time.RFC3339),
-		AgentName:  evt.AgentID,
-		MemoryIDs:  append([]string(nil), evt.MemoryIDs...),
+		OccurredAt: occurredAt.Format(time.RFC3339),
+		AgentName:  consoleAgentName(evt.AgentID),
+		MemoryIDs:  consoleMemoryIDs(evt.MemoryIDs),
+		Metadata:   consoleMetadata(evt.Metadata),
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -211,11 +217,127 @@ func (w *consoleRuntimeWriter) makeQueuedEvent(evt Event) (consoleQueuedEvent, e
 		return consoleQueuedEvent{}, err
 	}
 	sum := sha256.Sum256(hashJSON)
+	evt.OccurredAt = occurredAt
+	evt.AgentID = payload.AgentName
+	evt.MemoryIDs = append([]string(nil), payload.MemoryIDs...)
+	evt.Metadata = consoleMetadata(payload.Metadata)
 	return consoleQueuedEvent{
 		evt:         evt,
 		payloadJSON: payloadJSON,
 		payloadHash: hex.EncodeToString(sum[:]),
 	}, nil
+}
+
+var (
+	consoleAgentNamePattern   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$`)
+	consoleMemoryIDPattern    = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,128}$`)
+	consoleMetadataKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
+)
+
+func consoleAgentName(agentName string) string {
+	if consoleAgentNamePattern.MatchString(agentName) && !looksSensitive(agentName) {
+		return agentName
+	}
+	return ""
+}
+
+func consoleMemoryIDs(ids []string) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]string, 0, min(len(ids), 200))
+	seen := make(map[string]struct{}, min(len(ids), 200))
+	for _, id := range ids {
+		if len(out) >= 200 {
+			break
+		}
+		if !consoleMemoryIDPattern.MatchString(id) || looksSensitive(id) {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func consoleMetadata(metadata map[string]any) map[string]any {
+	if len(metadata) == 0 {
+		return nil
+	}
+	out := make(map[string]any, min(len(metadata), 20))
+	for key, value := range metadata {
+		if len(out) >= 20 {
+			break
+		}
+		if !consoleMetadataKeyPattern.MatchString(key) || sensitiveMetadataKey(key) {
+			continue
+		}
+		switch v := value.(type) {
+		case string:
+			if len(v) > 512 || looksSensitive(v) {
+				continue
+			}
+			out[key] = v
+		case int:
+			out[key] = v
+		case int8:
+			out[key] = int64(v)
+		case int16:
+			out[key] = int64(v)
+		case int32:
+			out[key] = int64(v)
+		case int64:
+			out[key] = v
+		case uint:
+			out[key] = uint64(v)
+		case uint8:
+			out[key] = uint64(v)
+		case uint16:
+			out[key] = uint64(v)
+		case uint32:
+			out[key] = uint64(v)
+		case uint64:
+			out[key] = v
+		case float32:
+			out[key] = float64(v)
+		case float64:
+			out[key] = v
+		case bool:
+			out[key] = v
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func sensitiveMetadataKey(key string) bool {
+	key = strings.ToLower(key)
+	sensitive := []string{"authorization", "cookie", "token", "secret", "password", "api_key", "apikey", "dsn", "prompt", "content"}
+	for _, marker := range sensitive {
+		if strings.Contains(key, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksSensitive(value string) bool {
+	value = strings.TrimSpace(value)
+	lower := strings.ToLower(value)
+	return strings.HasPrefix(lower, "bearer ") ||
+		strings.Contains(lower, "authorization:") ||
+		strings.Contains(lower, "password=") ||
+		strings.Contains(lower, "x-api-key") ||
+		strings.Contains(lower, "mnemo_") ||
+		strings.Contains(lower, "mem9_")
 }
 
 func (w *consoleRuntimeWriter) run() {

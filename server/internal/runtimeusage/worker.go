@@ -96,8 +96,6 @@ func (w *Worker) processRow(ctx context.Context, row outboxRow) {
 		w.processCommit(ctx, row, payload)
 	case outboxStepReleaseReservation:
 		w.processRelease(ctx, row, payload)
-	case outboxStepApplyAdjustment:
-		w.processAdjustment(ctx, row, payload)
 	case outboxStepSubmitMetering:
 		w.requeueMetering(ctx, row, payload)
 	default:
@@ -106,10 +104,6 @@ func (w *Worker) processRow(ctx context.Context, row outboxRow) {
 }
 
 func (w *Worker) processCommit(ctx context.Context, row outboxRow, payload outboxPayload) {
-	if row.Phase == outboxPhaseReservedActive {
-		w.markUnknownIfExpired(ctx, row, "reserved operation expired before success/failure was persisted")
-		return
-	}
 	if row.Phase != outboxPhaseCommitPending {
 		w.markUnknown(ctx, row, "commit worker saw unsupported phase")
 		return
@@ -135,29 +129,6 @@ func (w *Worker) processRelease(ctx context.Context, row outboxRow, payload outb
 	if err := w.store.MarkOperationDone(ctx, row.OperationID, "reservationReleased"); err != nil {
 		w.logger.WarnContext(ctx, "runtime usage outbox mark done failed", "operation_id", row.OperationID, "err", err)
 	}
-}
-
-func (w *Worker) processAdjustment(ctx context.Context, row outboxRow, payload outboxPayload) {
-	if row.Phase == outboxPhaseAdjustmentIntent {
-		w.markUnknownIfExpired(ctx, row, "adjustment intent expired before success/failure was persisted")
-		return
-	}
-	if row.Phase != outboxPhaseAdjustmentPending {
-		w.markUnknown(ctx, row, "adjustment worker saw unsupported phase")
-		return
-	}
-	subject := rowSubject(row, payload)
-	adj := Adjustment{
-		OperationID: row.OperationID,
-		Meter:       payload.Meter,
-		Delta:       payload.Delta,
-		Reason:      payload.Reason,
-	}
-	if err := w.client.ApplyAdjustment(ctx, subject, adj); err != nil {
-		w.markQuotaFailure(ctx, row, err)
-		return
-	}
-	w.recordPayloadEvent(ctx, row, payload)
 }
 
 func (w *Worker) requeueMetering(ctx context.Context, row outboxRow, payload outboxPayload) {
@@ -187,16 +158,6 @@ func (w *Worker) recordPayloadEvent(ctx context.Context, row outboxRow, payload 
 		return
 	}
 	w.metering.Record(eventFromOutbox(row, payload))
-}
-
-func (w *Worker) markUnknownIfExpired(ctx context.Context, row outboxRow, reason string) {
-	if row.ExpiresAt.IsZero() || time.Now().UTC().Before(row.ExpiresAt.UTC().Add(2*time.Minute)) {
-		if err := w.store.DeferPending(ctx, row.OperationID, reason); err != nil {
-			w.logger.WarnContext(ctx, "runtime usage outbox defer failed", "operation_id", row.OperationID, "err", err)
-		}
-		return
-	}
-	w.markUnknown(ctx, row, reason)
 }
 
 func (w *Worker) markUnknown(ctx context.Context, row outboxRow, reason string) {
@@ -274,8 +235,9 @@ func eventFromOutbox(row outboxRow, payload outboxPayload) metering.Event {
 		EventType:     event.EventType,
 		Meter:         event.Meter,
 		Units:         event.Units,
-		OccurredAt:    event.OccurredAt.UTC(),
+		OccurredAt:    event.OccurredAt.UTC().Truncate(time.Second),
 		MemoryIDs:     append([]string(nil), event.MemoryIDs...),
+		Metadata:      cloneAnyMap(event.Metadata),
 	}
 }
 

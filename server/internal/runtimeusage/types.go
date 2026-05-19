@@ -10,10 +10,11 @@ import (
 )
 
 const (
-	MeterRecalls     = "recalls"
-	MeterMemorySlots = "memory_slots"
+	MeterMemoryRecallRequests = "memory_recall_requests"
+	MeterMemoryWriteRequests  = "memory_write_requests"
 
-	EventTypeRecall        = "recall"
+	EventTypeMemoryRecall = "memoryRecall"
+
 	EventTypeMemoryCreated = "memoryCreated"
 	EventTypeMemoryDeleted = "memoryDeleted"
 
@@ -71,31 +72,21 @@ type Reservation struct {
 	OverageAllowed         bool      `json:"overageAllowed"`
 }
 
-type Adjustment struct {
-	OperationID string
-	Meter       string
-	Delta       int64
-	Reason      string
-}
-
 type RecallResult struct {
 	MemoryIDs []string
 	AgentName string
 }
 
 type MemoryCreateResult struct {
-	MemoryIDs []string
-	AgentName string
-}
-
-type MemoryDeleteTarget struct {
-	MemoryIDs []string
+	MemoryIDs       []string
+	AgentName       string
+	ObjectsAffected int64
 }
 
 type MemoryDeleteResult struct {
-	MemoryIDs        []string
-	MemorySlotsDelta int64
-	AgentName        string
+	MemoryIDs       []string
+	AgentName       string
+	ObjectsAffected int64
 }
 
 type MeteringEvent struct {
@@ -105,15 +96,12 @@ type MeteringEvent struct {
 	OccurredAt time.Time
 	AgentName  string
 	MemoryIDs  []string
+	Metadata   map[string]any
 }
 
 type OutboxStore interface {
-	StoreReservedActive(ctx context.Context, lease *OperationLease, reservation *Reservation, expiresAt time.Time) error
 	StoreCommitPending(ctx context.Context, lease *OperationLease, event MeteringEvent) error
 	StoreReleasePending(ctx context.Context, lease *OperationLease, reason string) error
-	StoreAdjustmentIntent(ctx context.Context, lease *OperationLease, target MemoryDeleteTarget, expiresAt time.Time) error
-	StoreAdjustmentDone(ctx context.Context, operationID string, reason string) error
-	StoreAdjustmentPending(ctx context.Context, lease *OperationLease, adj Adjustment, event MeteringEvent) error
 	MarkOperationDone(ctx context.Context, operationID string, reason string) error
 	MarkOperationRetryableFailure(ctx context.Context, operationID string, reason string) error
 	MarkUnknownAfterCrash(ctx context.Context, operationID string, reason string) error
@@ -127,7 +115,7 @@ type Manager interface {
 	BeforeMemoryCreate(ctx context.Context, subject Subject, units int64) (*OperationLease, error)
 	AfterMemoryCreateSuccess(ctx context.Context, lease *OperationLease, result MemoryCreateResult) error
 	AfterMemoryCreateFailure(ctx context.Context, lease *OperationLease, cause error)
-	BeforeMemoryDelete(ctx context.Context, subject Subject, target MemoryDeleteTarget) (*OperationLease, error)
+	BeforeMemoryDelete(ctx context.Context, subject Subject) (*OperationLease, error)
 	AfterMemoryDeleteSuccess(ctx context.Context, lease *OperationLease, result MemoryDeleteResult) error
 	AfterMemoryDeleteFailure(ctx context.Context, lease *OperationLease, cause error)
 }
@@ -135,7 +123,6 @@ type Manager interface {
 type QuotaClient interface {
 	Reserve(ctx context.Context, subject Subject, operationID string, op Operation) (*Reservation, error)
 	FinalizeReservation(ctx context.Context, subject Subject, operationID string, status string, reason string) error
-	ApplyAdjustment(ctx context.Context, subject Subject, adj Adjustment) error
 }
 
 type QuotaDeniedError struct {

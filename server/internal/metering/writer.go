@@ -34,6 +34,7 @@ type Event struct {
 	Units         int64
 	OccurredAt    time.Time
 	MemoryIDs     []string
+	Metadata      map[string]any
 }
 
 // Writer records metering events asynchronously and delivers them through the

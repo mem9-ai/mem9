@@ -50,15 +50,6 @@ func (c *HTTPClient) FinalizeReservation(ctx context.Context, subject Subject, o
 	return c.doJSON(ctx, http.MethodPatch, "/api/internal/quota/reservations/"+operationID, subject, body, nil)
 }
 
-func (c *HTTPClient) ApplyAdjustment(ctx context.Context, subject Subject, adj Adjustment) error {
-	body := map[string]any{
-		"meter":  adj.Meter,
-		"delta":  adj.Delta,
-		"reason": adj.Reason,
-	}
-	return c.doJSON(ctx, http.MethodPut, "/api/internal/quota/adjustments/"+adj.OperationID, subject, body, nil)
-}
-
 func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Subject, body any, out any) error {
 	payload, err := json.Marshal(body)
 	if err != nil {

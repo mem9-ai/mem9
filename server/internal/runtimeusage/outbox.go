@@ -17,18 +17,14 @@ const (
 
 	outboxStepCommitReservation  = "commit_reservation"
 	outboxStepReleaseReservation = "release_reservation"
-	outboxStepApplyAdjustment    = "apply_adjustment"
 	outboxStepSubmitMetering     = "submit_metering_event"
 
-	outboxPhaseReservedActive    = "reserved_active"
-	outboxPhaseCommitPending     = "commit_pending"
-	outboxPhaseReleasePending    = "release_pending"
-	outboxPhaseAdjustmentIntent  = "adjustment_intent"
-	outboxPhaseAdjustmentPending = "adjustment_pending"
-	outboxPhaseMeteringPending   = "metering_pending"
-	outboxPhaseDone              = "done"
-	outboxPhaseUnknown           = "unknown_after_crash"
-	outboxPhaseTerminalFailed    = "terminal_failed"
+	outboxPhaseCommitPending   = "commit_pending"
+	outboxPhaseReleasePending  = "release_pending"
+	outboxPhaseMeteringPending = "metering_pending"
+	outboxPhaseDone            = "done"
+	outboxPhaseUnknown         = "unknown_after_crash"
+	outboxPhaseTerminalFailed  = "terminal_failed"
 
 	outboxStatusPending        = "pending"
 	outboxStatusDone           = "done"
@@ -36,24 +32,23 @@ const (
 )
 
 type outboxPayload struct {
-	APIKeySubject   string                 `json:"apiKeySubject,omitempty"`
-	Meter           string                 `json:"meter,omitempty"`
-	Units           int64                  `json:"units,omitempty"`
-	Delta           int64                  `json:"delta,omitempty"`
-	Status          string                 `json:"status,omitempty"`
-	Reason          string                 `json:"reason,omitempty"`
-	TargetMemoryIDs []string               `json:"targetMemoryIds,omitempty"`
-	Event           *outboxMeteringPayload `json:"event,omitempty"`
+	APIKeySubject string                 `json:"apiKeySubject,omitempty"`
+	Meter         string                 `json:"meter,omitempty"`
+	Units         int64                  `json:"units,omitempty"`
+	Status        string                 `json:"status,omitempty"`
+	Reason        string                 `json:"reason,omitempty"`
+	Event         *outboxMeteringPayload `json:"event,omitempty"`
 }
 
 type outboxMeteringPayload struct {
-	APIKeySubject string    `json:"apiKeySubject,omitempty"`
-	EventType     string    `json:"eventType"`
-	Meter         string    `json:"meter"`
-	Units         int64     `json:"units"`
-	OccurredAt    time.Time `json:"occurredAt"`
-	AgentName     string    `json:"agentName,omitempty"`
-	MemoryIDs     []string  `json:"memoryIds,omitempty"`
+	APIKeySubject string         `json:"apiKeySubject,omitempty"`
+	EventType     string         `json:"eventType"`
+	Meter         string         `json:"meter"`
+	Units         int64          `json:"units"`
+	OccurredAt    time.Time      `json:"occurredAt"`
+	AgentName     string         `json:"agentName,omitempty"`
+	MemoryIDs     []string       `json:"memoryIds,omitempty"`
+	Metadata      map[string]any `json:"metadata,omitempty"`
 }
 
 type outboxRow struct {
@@ -135,23 +130,6 @@ func (s *SQLStore) EnsureSchema(ctx context.Context) error {
 	return nil
 }
 
-func (s *SQLStore) StoreReservedActive(ctx context.Context, lease *OperationLease, reservation *Reservation, expiresAt time.Time) error {
-	if lease == nil {
-		return nil
-	}
-	payload := outboxPayload{
-		APIKeySubject: lease.Subject.APIKeySubject,
-		Meter:         lease.Meter,
-		Units:         lease.Units,
-		Status:        "reserved",
-		Reason:        "reservationAccepted",
-	}
-	if reservation != nil {
-		payload.Status = reservation.Status
-	}
-	return s.storeOperation(ctx, lease, outboxStepCommitReservation, outboxPhaseReservedActive, payload, expiresAt, expiresAt.Add(2*time.Minute))
-}
-
 func (s *SQLStore) StoreCommitPending(ctx context.Context, lease *OperationLease, event MeteringEvent) error {
 	if lease == nil {
 		return nil
@@ -179,37 +157,6 @@ func (s *SQLStore) StoreReleasePending(ctx context.Context, lease *OperationLeas
 		Reason:        reason,
 	}
 	return s.storeOperation(ctx, lease, outboxStepReleaseReservation, outboxPhaseReleasePending, payload, time.Time{}, s.now())
-}
-
-func (s *SQLStore) StoreAdjustmentIntent(ctx context.Context, lease *OperationLease, target MemoryDeleteTarget, expiresAt time.Time) error {
-	if lease == nil {
-		return nil
-	}
-	payload := outboxPayload{
-		APIKeySubject:   lease.Subject.APIKeySubject,
-		Meter:           lease.Meter,
-		Reason:          "memoryDeleteStarted",
-		TargetMemoryIDs: append([]string(nil), target.MemoryIDs...),
-	}
-	return s.storeOperation(ctx, lease, outboxStepApplyAdjustment, outboxPhaseAdjustmentIntent, payload, expiresAt, expiresAt.Add(2*time.Minute))
-}
-
-func (s *SQLStore) StoreAdjustmentDone(ctx context.Context, operationID string, reason string) error {
-	return s.updateStatus(ctx, operationID, outboxStatusDone, outboxPhaseDone, reason)
-}
-
-func (s *SQLStore) StoreAdjustmentPending(ctx context.Context, lease *OperationLease, adj Adjustment, event MeteringEvent) error {
-	if lease == nil {
-		return nil
-	}
-	payload := outboxPayload{
-		APIKeySubject: lease.Subject.APIKeySubject,
-		Meter:         adj.Meter,
-		Delta:         adj.Delta,
-		Reason:        adj.Reason,
-		Event:         outboxEventFromMetering(event, lease.Subject.APIKeySubject),
-	}
-	return s.storeOperation(ctx, lease, outboxStepApplyAdjustment, outboxPhaseAdjustmentPending, payload, time.Time{}, s.now())
 }
 
 func (s *SQLStore) MarkOperationDone(ctx context.Context, operationID string, reason string) error {
@@ -551,9 +498,10 @@ func outboxEventFromMetering(event MeteringEvent, apiKeySubject string) *outboxM
 		EventType:     event.EventType,
 		Meter:         event.Meter,
 		Units:         event.Units,
-		OccurredAt:    event.OccurredAt.UTC(),
+		OccurredAt:    event.OccurredAt.UTC().Truncate(time.Second),
 		AgentName:     event.AgentName,
 		MemoryIDs:     append([]string(nil), event.MemoryIDs...),
+		Metadata:      cloneAnyMap(event.Metadata),
 	}
 }
 
@@ -564,9 +512,10 @@ func marshalMeteringPendingPayload(evt metering.Event) ([]byte, error) {
 			EventType:     evt.EventType,
 			Meter:         evt.Meter,
 			Units:         evt.Units,
-			OccurredAt:    evt.OccurredAt.UTC(),
+			OccurredAt:    evt.OccurredAt.UTC().Truncate(time.Second),
 			AgentName:     evt.AgentID,
 			MemoryIDs:     append([]string(nil), evt.MemoryIDs...),
+			Metadata:      cloneAnyMap(evt.Metadata),
 		},
 	}
 	payloadJSON, err := json.Marshal(payload)
@@ -574,6 +523,17 @@ func marshalMeteringPendingPayload(evt metering.Event) ([]byte, error) {
 		return nil, fmt.Errorf("marshal runtime usage metering outbox payload: %w", err)
 	}
 	return payloadJSON, nil
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func retryBackoff(attempts int, minDelay, maxDelay time.Duration) time.Duration {

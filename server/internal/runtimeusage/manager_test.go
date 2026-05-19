@@ -3,22 +3,17 @@ package runtimeusage
 import (
 	"context"
 	"testing"
-	"time"
 
-	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/metering"
 )
 
 type fakeQuotaClient struct {
 	reserveOps       []Operation
 	finalized        []string
-	adjusted         []Adjustment
 	finalizeSubjects []Subject
-	adjustSubjects   []Subject
 	err              error
 	reserveErr       error
 	finalizeErr      error
-	adjustErr        error
 }
 
 func (c *fakeQuotaClient) Reserve(_ context.Context, _ Subject, operationID string, op Operation) (*Reservation, error) {
@@ -44,18 +39,6 @@ func (c *fakeQuotaClient) FinalizeReservation(_ context.Context, subject Subject
 	return nil
 }
 
-func (c *fakeQuotaClient) ApplyAdjustment(_ context.Context, subject Subject, adj Adjustment) error {
-	if c.adjustErr != nil {
-		return c.adjustErr
-	}
-	if c.err != nil {
-		return c.err
-	}
-	c.adjusted = append(c.adjusted, adj)
-	c.adjustSubjects = append(c.adjustSubjects, subject)
-	return nil
-}
-
 type captureWriter struct {
 	events []metering.Event
 }
@@ -67,23 +50,14 @@ func (w *captureWriter) Record(evt metering.Event) {
 func (w *captureWriter) Close(context.Context) error { return nil }
 
 type fakeOutboxStore struct {
-	reservedActive    int
-	commitPending     int
-	releasePending    int
-	adjustmentIntent  int
-	adjustmentDone    int
-	adjustmentPending int
-	done              int
-	retryable         int
-	unknown           int
-	commitErr         error
-	releaseReasons    []string
-	retryReasons      []string
-}
-
-func (s *fakeOutboxStore) StoreReservedActive(context.Context, *OperationLease, *Reservation, time.Time) error {
-	s.reservedActive++
-	return nil
+	commitPending  int
+	releasePending int
+	done           int
+	retryable      int
+	unknown        int
+	commitErr      error
+	releaseReasons []string
+	retryReasons   []string
 }
 
 func (s *fakeOutboxStore) StoreCommitPending(context.Context, *OperationLease, MeteringEvent) error {
@@ -94,21 +68,6 @@ func (s *fakeOutboxStore) StoreCommitPending(context.Context, *OperationLease, M
 func (s *fakeOutboxStore) StoreReleasePending(_ context.Context, _ *OperationLease, reason string) error {
 	s.releasePending++
 	s.releaseReasons = append(s.releaseReasons, reason)
-	return nil
-}
-
-func (s *fakeOutboxStore) StoreAdjustmentIntent(context.Context, *OperationLease, MemoryDeleteTarget, time.Time) error {
-	s.adjustmentIntent++
-	return nil
-}
-
-func (s *fakeOutboxStore) StoreAdjustmentDone(context.Context, string, string) error {
-	s.adjustmentDone++
-	return nil
-}
-
-func (s *fakeOutboxStore) StoreAdjustmentPending(context.Context, *OperationLease, Adjustment, MeteringEvent) error {
-	s.adjustmentPending++
 	return nil
 }
 
@@ -142,7 +101,7 @@ func TestManagerRecallCommitsBeforeMetering(t *testing.T) {
 		t.Fatalf("AfterRecallSuccess: %v", err)
 	}
 
-	if len(quota.reserveOps) != 1 || quota.reserveOps[0].Meter != MeterRecalls || quota.reserveOps[0].Units != 1 {
+	if len(quota.reserveOps) != 1 || quota.reserveOps[0].Meter != MeterMemoryRecallRequests || quota.reserveOps[0].Units != 1 {
 		t.Fatalf("reserve ops = %+v", quota.reserveOps)
 	}
 	wantFinalize := lease.OperationID + ":" + ReservationStatusCommitted + ":" + reservationCommitReason
@@ -156,95 +115,65 @@ func TestManagerRecallCommitsBeforeMetering(t *testing.T) {
 	if evt.OperationID != lease.OperationID {
 		t.Fatalf("event OperationID = %q, want %q", evt.OperationID, lease.OperationID)
 	}
-	if evt.APIKeySubject != "tenant-a" || evt.EventType != EventTypeRecall || evt.Meter != MeterRecalls || evt.Units != 1 {
+	if evt.APIKeySubject != "tenant-a" || evt.EventType != EventTypeMemoryRecall || evt.Meter != MeterMemoryRecallRequests || evt.Units != 1 {
 		t.Fatalf("unexpected event: %+v", evt)
 	}
 }
 
-func TestManagerDeleteZeroDeltaSkipsAdjustmentAndMetering(t *testing.T) {
+func TestManagerMemoryDeleteUsesWriteRequestMeter(t *testing.T) {
 	quota := &fakeQuotaClient{}
 	writer := &captureWriter{}
 	manager := NewManager(Config{Enabled: true}, quota, writer, nil)
 	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
 
-	lease, err := manager.BeforeMemoryDelete(context.Background(), subject, MemoryDeleteTarget{MemoryIDs: []string{"mem-1"}})
+	lease, err := manager.BeforeMemoryDelete(context.Background(), subject)
 	if err != nil {
 		t.Fatalf("BeforeMemoryDelete: %v", err)
 	}
-	if err := manager.AfterMemoryDeleteSuccess(context.Background(), lease, MemoryDeleteResult{MemorySlotsDelta: 0}); err != nil {
+	if err := manager.AfterMemoryDeleteSuccess(context.Background(), lease, MemoryDeleteResult{
+		MemoryIDs:       []string{"mem-1"},
+		AgentName:       "Codex",
+		ObjectsAffected: 1,
+	}); err != nil {
 		t.Fatalf("AfterMemoryDeleteSuccess: %v", err)
 	}
-	if len(quota.adjusted) != 0 {
-		t.Fatalf("adjustments = %+v, want none", quota.adjusted)
+	if len(quota.reserveOps) != 1 || quota.reserveOps[0].Meter != MeterMemoryWriteRequests || quota.reserveOps[0].Units != 1 {
+		t.Fatalf("reserve ops = %+v", quota.reserveOps)
 	}
-	if len(writer.events) != 0 {
-		t.Fatalf("metering events = %+v, want none", writer.events)
+	wantFinalize := lease.OperationID + ":" + ReservationStatusCommitted + ":" + reservationCommitReason
+	if len(quota.finalized) != 1 || quota.finalized[0] != wantFinalize {
+		t.Fatalf("finalized = %+v, want [%s]", quota.finalized, wantFinalize)
 	}
-}
-
-func TestManagerDeletePositiveDeltaMarksUnknownAndSkipsAdjustment(t *testing.T) {
-	quota := &fakeQuotaClient{}
-	writer := &captureWriter{}
-	outbox := &fakeOutboxStore{}
-	manager := NewManager(Config{Enabled: true, Outbox: outbox}, quota, writer, nil)
-	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
-
-	lease, err := manager.BeforeMemoryDelete(context.Background(), subject, MemoryDeleteTarget{MemoryIDs: []string{"mem-1"}})
-	if err != nil {
-		t.Fatalf("BeforeMemoryDelete: %v", err)
+	if len(writer.events) != 1 {
+		t.Fatalf("metering events = %+v, want one", writer.events)
 	}
-	err = manager.AfterMemoryDeleteSuccess(context.Background(), lease, MemoryDeleteResult{
-		MemoryIDs:        []string{"mem-1"},
-		MemorySlotsDelta: 1,
-		AgentName:        "Codex",
-	})
-	if err == nil {
-		t.Fatal("AfterMemoryDeleteSuccess error = nil, want positive delta error")
+	evt := writer.events[0]
+	if evt.EventType != EventTypeMemoryDeleted || evt.Meter != MeterMemoryWriteRequests || evt.Units != 1 {
+		t.Fatalf("unexpected event: %+v", evt)
 	}
-	if len(quota.adjusted) != 0 {
-		t.Fatalf("adjustments = %+v, want none", quota.adjusted)
-	}
-	if outbox.adjustmentIntent != 1 || outbox.adjustmentPending != 0 || outbox.unknown != 1 {
-		t.Fatalf("outbox = %+v, want adjustment intent marked unknown without pending adjustment", outbox)
-	}
-	if len(writer.events) != 0 {
-		t.Fatalf("metering events = %+v, want none", writer.events)
+	if evt.Metadata["objectsAffected"] != int64(1) {
+		t.Fatalf("metadata = %+v, want objectsAffected=1", evt.Metadata)
 	}
 }
 
-func TestManagerMemoryDeleteFailureNotFoundMarksAdjustmentDone(t *testing.T) {
+func TestManagerMemoryDeleteFailureReleasesReservation(t *testing.T) {
 	quota := &fakeQuotaClient{}
-	writer := &captureWriter{}
 	outbox := &fakeOutboxStore{}
-	manager := NewManager(Config{Enabled: true, Outbox: outbox}, quota, writer, nil)
+	manager := NewManager(Config{Enabled: true, Outbox: outbox}, quota, &captureWriter{}, nil)
 	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
 
-	lease, err := manager.BeforeMemoryDelete(context.Background(), subject, MemoryDeleteTarget{MemoryIDs: []string{"mem-1"}})
-	if err != nil {
-		t.Fatalf("BeforeMemoryDelete: %v", err)
-	}
-	manager.AfterMemoryDeleteFailure(context.Background(), lease, domain.ErrNotFound)
-
-	if outbox.adjustmentIntent != 1 || outbox.adjustmentDone != 1 || outbox.unknown != 0 {
-		t.Fatalf("outbox = %+v, want adjustment intent done without unknown", outbox)
-	}
-}
-
-func TestManagerMemoryDeleteFailureAmbiguousMarksUnknown(t *testing.T) {
-	quota := &fakeQuotaClient{}
-	writer := &captureWriter{}
-	outbox := &fakeOutboxStore{}
-	manager := NewManager(Config{Enabled: true, Outbox: outbox}, quota, writer, nil)
-	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
-
-	lease, err := manager.BeforeMemoryDelete(context.Background(), subject, MemoryDeleteTarget{MemoryIDs: []string{"mem-1"}})
+	lease, err := manager.BeforeMemoryDelete(context.Background(), subject)
 	if err != nil {
 		t.Fatalf("BeforeMemoryDelete: %v", err)
 	}
 	manager.AfterMemoryDeleteFailure(context.Background(), lease, errString("delete commit failed"))
 
-	if outbox.adjustmentIntent != 1 || outbox.unknown != 1 || outbox.adjustmentDone != 0 {
-		t.Fatalf("outbox = %+v, want adjustment intent marked unknown", outbox)
+	wantFinalize := lease.OperationID + ":" + ReservationStatusReleased + ":" + reservationReleaseOperationFailed
+	if len(quota.finalized) != 1 || quota.finalized[0] != wantFinalize {
+		t.Fatalf("finalized = %+v, want [%s]", quota.finalized, wantFinalize)
+	}
+	if outbox.releasePending != 1 {
+		t.Fatalf("outbox = %+v, want release pending", outbox)
 	}
 }
 
@@ -277,7 +206,7 @@ func TestManagerCommitFailureWithOutboxQueuesRetryAndReturnsSuccess(t *testing.T
 		t.Fatalf("AfterRecallSuccess: %v", err)
 	}
 
-	if outbox.reservedActive != 0 || outbox.commitPending != 1 || outbox.retryable != 1 {
+	if outbox.commitPending != 1 || outbox.retryable != 1 {
 		t.Fatalf("outbox = %+v, want recall commit pending and retryable without active reservation write", outbox)
 	}
 	if len(writer.events) != 0 {
@@ -301,8 +230,8 @@ func TestManagerMemoryCreateCommitFailureWithOutboxQueuesRetryAndReturnsSuccess(
 		t.Fatalf("AfterMemoryCreateSuccess: %v", err)
 	}
 
-	if outbox.reservedActive != 1 || outbox.commitPending != 1 || outbox.retryable != 1 {
-		t.Fatalf("outbox = %+v, want memory create active reservation, commit pending, retryable", outbox)
+	if outbox.commitPending != 1 || outbox.retryable != 1 {
+		t.Fatalf("outbox = %+v, want memory create commit pending and retryable without active reservation write", outbox)
 	}
 	if len(writer.events) != 0 {
 		t.Fatalf("metering events = %+v, want none before quota commit", writer.events)
@@ -328,54 +257,54 @@ func TestManagerCommitFailureWithoutOutboxReturnsError(t *testing.T) {
 	}
 }
 
-func TestManagerAdjustmentFailureWithOutboxQueuesRetryAndReturnsSuccess(t *testing.T) {
-	quota := &fakeQuotaClient{adjustErr: &UnavailableError{Err: errString("timeout")}}
+func TestManagerMemoryDeleteCommitFailureWithOutboxQueuesRetryAndReturnsSuccess(t *testing.T) {
+	quota := &fakeQuotaClient{finalizeErr: &UnavailableError{Err: errString("timeout")}}
 	writer := &captureWriter{}
 	outbox := &fakeOutboxStore{}
 	manager := NewManager(Config{Enabled: true, Outbox: outbox}, quota, writer, nil)
 	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
 
-	lease, err := manager.BeforeMemoryDelete(context.Background(), subject, MemoryDeleteTarget{MemoryIDs: []string{"mem-1"}})
+	lease, err := manager.BeforeMemoryDelete(context.Background(), subject)
 	if err != nil {
 		t.Fatalf("BeforeMemoryDelete: %v", err)
 	}
 	err = manager.AfterMemoryDeleteSuccess(context.Background(), lease, MemoryDeleteResult{
-		MemoryIDs:        []string{"mem-1"},
-		MemorySlotsDelta: -1,
-		AgentName:        "Codex",
+		MemoryIDs:       []string{"mem-1"},
+		AgentName:       "Codex",
+		ObjectsAffected: 1,
 	})
 	if err != nil {
 		t.Fatalf("AfterMemoryDeleteSuccess: %v", err)
 	}
 
-	if outbox.adjustmentIntent != 1 || outbox.adjustmentPending != 1 || outbox.retryable != 1 {
-		t.Fatalf("outbox = %+v, want adjustment intent, adjustment pending, retryable", outbox)
+	if outbox.commitPending != 1 || outbox.retryable != 1 {
+		t.Fatalf("outbox = %+v, want commit pending and retryable", outbox)
 	}
 	if len(writer.events) != 0 {
-		t.Fatalf("metering events = %+v, want none before quota adjustment", writer.events)
+		t.Fatalf("metering events = %+v, want none before quota commit", writer.events)
 	}
 }
 
-func TestManagerAdjustmentFailureWithoutOutboxReturnsError(t *testing.T) {
-	quota := &fakeQuotaClient{adjustErr: &UnavailableError{Err: errString("timeout")}}
+func TestManagerMemoryDeleteCommitFailureWithoutOutboxReturnsError(t *testing.T) {
+	quota := &fakeQuotaClient{finalizeErr: &UnavailableError{Err: errString("timeout")}}
 	writer := &captureWriter{}
 	manager := NewManager(Config{Enabled: true}, quota, writer, nil)
 	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
 
-	lease, err := manager.BeforeMemoryDelete(context.Background(), subject, MemoryDeleteTarget{MemoryIDs: []string{"mem-1"}})
+	lease, err := manager.BeforeMemoryDelete(context.Background(), subject)
 	if err != nil {
 		t.Fatalf("BeforeMemoryDelete: %v", err)
 	}
 	err = manager.AfterMemoryDeleteSuccess(context.Background(), lease, MemoryDeleteResult{
-		MemoryIDs:        []string{"mem-1"},
-		MemorySlotsDelta: -1,
-		AgentName:        "Codex",
+		MemoryIDs:       []string{"mem-1"},
+		AgentName:       "Codex",
+		ObjectsAffected: 1,
 	})
 	if err == nil {
-		t.Fatal("AfterMemoryDeleteSuccess error = nil, want adjustment error without outbox")
+		t.Fatal("AfterMemoryDeleteSuccess error = nil, want commit error without outbox")
 	}
 	if len(writer.events) != 0 {
-		t.Fatalf("metering events = %+v, want none before quota adjustment", writer.events)
+		t.Fatalf("metering events = %+v, want none before quota commit", writer.events)
 	}
 }
 
@@ -399,8 +328,8 @@ func TestManagerRecallCommitPendingFailureCommitsDirectly(t *testing.T) {
 	if len(quota.finalized) != 1 || quota.finalized[0] != wantFinalize {
 		t.Fatalf("finalized = %+v, want [%s]", quota.finalized, wantFinalize)
 	}
-	if outbox.releasePending != 0 || outbox.done != 0 {
-		t.Fatalf("outbox release state = %+v, want no release after successful recall", outbox)
+	if outbox.releasePending != 0 || outbox.done != 1 {
+		t.Fatalf("outbox release state = %+v, want no release and best-effort done after successful recall", outbox)
 	}
 	if len(writer.events) != 1 {
 		t.Fatalf("metering events = %+v, want direct metering after commit", writer.events)

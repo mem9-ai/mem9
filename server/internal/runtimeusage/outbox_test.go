@@ -118,11 +118,11 @@ func TestSQLStoreStoreOperationUsesAtomicUpsert(t *testing.T) {
 			lease := &OperationLease{
 				OperationID: "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
 				Subject:     Subject{TenantID: "tenant-a", ClusterID: "cluster-a"},
-				Meter:       MeterRecalls,
+				Meter:       MeterMemoryRecallRequests,
 				Units:       1,
 				Reserved:    true,
 			}
-			if err := store.StoreCommitPending(context.Background(), lease, MeteringEvent{EventType: EventTypeRecall, Meter: MeterRecalls, Units: 1}); err != nil {
+			if err := store.StoreCommitPending(context.Background(), lease, MeteringEvent{EventType: EventTypeMemoryRecall, Meter: MeterMemoryRecallRequests, Units: 1}); err != nil {
 				t.Fatalf("StoreCommitPending: %v", err)
 			}
 
@@ -144,11 +144,11 @@ func TestSQLStoreStoreCommitPendingPersistsAPIKeySubject(t *testing.T) {
 	lease := &OperationLease{
 		OperationID: "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
 		Subject:     Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "api-key-subject"},
-		Meter:       MeterRecalls,
+		Meter:       MeterMemoryRecallRequests,
 		Units:       1,
 		Reserved:    true,
 	}
-	if err := store.StoreCommitPending(context.Background(), lease, MeteringEvent{EventType: EventTypeRecall, Meter: MeterRecalls, Units: 1}); err != nil {
+	if err := store.StoreCommitPending(context.Background(), lease, MeteringEvent{EventType: EventTypeMemoryRecall, Meter: MeterMemoryRecallRequests, Units: 1}); err != nil {
 		t.Fatalf("StoreCommitPending: %v", err)
 	}
 
@@ -177,7 +177,7 @@ func TestSQLStoreUpsertMeteringPendingUsesAtomicUpsertAndDetectsConflict(t *test
 		OperationID: "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
 		TenantID:    "tenant-a",
 		ClusterID:   "cluster-a",
-	}, []byte(`{"eventType":"recall"}`), "hash-a")
+	}, []byte(`{"eventType":"memoryRecall"}`), "hash-a")
 	if err == nil {
 		t.Fatal("UpsertMeteringPending error = nil, want payload hash conflict")
 	}

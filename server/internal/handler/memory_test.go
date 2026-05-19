@@ -256,9 +256,9 @@ func (m *captureRuntimeUsageManager) AfterMemoryCreateSuccess(context.Context, *
 func (m *captureRuntimeUsageManager) AfterMemoryCreateFailure(context.Context, *runtimeusage.OperationLease, error) {
 	m.afterCreateFailureCalls++
 }
-func (m *captureRuntimeUsageManager) BeforeMemoryDelete(context.Context, runtimeusage.Subject, runtimeusage.MemoryDeleteTarget) (*runtimeusage.OperationLease, error) {
+func (m *captureRuntimeUsageManager) BeforeMemoryDelete(context.Context, runtimeusage.Subject) (*runtimeusage.OperationLease, error) {
 	m.beforeDeleteCalls++
-	return &runtimeusage.OperationLease{OperationID: "op-delete"}, nil
+	return &runtimeusage.OperationLease{OperationID: "op-delete", Reserved: true}, nil
 }
 func (m *captureRuntimeUsageManager) AfterMemoryDeleteSuccess(context.Context, *runtimeusage.OperationLease, runtimeusage.MemoryDeleteResult) error {
 	return nil
@@ -452,7 +452,7 @@ func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
 	}
 }
 
-func TestCreateMemory_RuntimeUsageBlocksUnknownDeltaContent(t *testing.T) {
+func TestCreateMemory_RuntimeUsageAllowsSmartContentWrite(t *testing.T) {
 	memRepo := &testMemoryRepo{}
 	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
 	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
@@ -466,14 +466,14 @@ func TestCreateMemory_RuntimeUsageBlocksUnknownDeltaContent(t *testing.T) {
 
 	srv.createMemory(rr, req)
 
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want 409: %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
 	}
-	if runtimeUsage.beforeCreateCalls != 0 {
-		t.Fatalf("BeforeMemoryCreate calls = %d, want 0", runtimeUsage.beforeCreateCalls)
+	if runtimeUsage.beforeCreateCalls != 1 {
+		t.Fatalf("BeforeMemoryCreate calls = %d, want 1", runtimeUsage.beforeCreateCalls)
 	}
-	if len(memRepo.createCalls) != 0 {
-		t.Fatalf("create calls = %d, want 0", len(memRepo.createCalls))
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("create calls = %d, want 1", len(memRepo.createCalls))
 	}
 }
 
@@ -1090,7 +1090,7 @@ func TestBulkCreateMemories_RuntimeUsageValidatesBeforeQuota(t *testing.T) {
 	}
 }
 
-func TestBatchDeleteMemories_RuntimeUsageValidatesBeforeAdjustmentIntent(t *testing.T) {
+func TestBatchDeleteMemories_RuntimeUsageValidatesBeforeQuota(t *testing.T) {
 	memRepo := &testMemoryRepo{}
 	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
 	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)

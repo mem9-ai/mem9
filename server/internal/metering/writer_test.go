@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -973,11 +974,12 @@ func TestConsoleRuntimeWriter_SendsConsoleShapeAndMarksDone(t *testing.T) {
 		AgentID:       "Codex",
 		OperationID:   "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
 		APIKeySubject: "tenant-a",
-		EventType:     "recall",
-		Meter:         "recalls",
+		EventType:     "memoryRecall",
+		Meter:         "memory_recall_requests",
 		Units:         1,
-		OccurredAt:    time.Date(2026, 5, 13, 1, 2, 3, 0, time.UTC),
+		OccurredAt:    time.Date(2026, 5, 13, 1, 2, 3, 123, time.UTC),
 		MemoryIDs:     []string{"mem-1", "mem-2"},
+		Metadata:      map[string]any{"objectsAffected": int64(2)},
 	})
 
 	waitForConsoleStore(t, store, 1, time.Second)
@@ -1000,11 +1002,18 @@ func TestConsoleRuntimeWriter_SendsConsoleShapeAndMarksDone(t *testing.T) {
 	if gotAPIKey != "tenant-a" {
 		t.Fatalf("X-API-Key = %q", gotAPIKey)
 	}
-	if gotBody["eventType"] != "recall" || gotBody["meter"] != "recalls" || gotBody["agentName"] != "Codex" {
+	if gotBody["eventType"] != "memoryRecall" || gotBody["meter"] != "memory_recall_requests" || gotBody["agentName"] != "Codex" {
 		t.Fatalf("unexpected body: %+v", gotBody)
 	}
 	if gotBody["units"] != float64(1) {
 		t.Fatalf("units = %#v, want 1", gotBody["units"])
+	}
+	if gotBody["occurredAt"] != "2026-05-13T01:02:03Z" {
+		t.Fatalf("occurredAt = %#v, want whole-second RFC3339", gotBody["occurredAt"])
+	}
+	metadata, ok := gotBody["metadata"].(map[string]any)
+	if !ok || metadata["objectsAffected"] != float64(2) {
+		t.Fatalf("metadata = %#v, want objectsAffected=2", gotBody["metadata"])
 	}
 }
 
@@ -1034,8 +1043,8 @@ func TestConsoleRuntimeWriter_ConflictMarksTerminalEvenWithDedupedBody(t *testin
 		AgentID:       "Codex",
 		OperationID:   "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
 		APIKeySubject: "tenant-a",
-		EventType:     "recall",
-		Meter:         "recalls",
+		EventType:     "memoryRecall",
+		Meter:         "memory_recall_requests",
 		Units:         1,
 		OccurredAt:    time.Date(2026, 5, 13, 1, 2, 3, 0, time.UTC),
 	})
@@ -1052,8 +1061,8 @@ func TestConsoleRuntimeWriter_PayloadHashIncludesAPIKeySubject(t *testing.T) {
 	evt := Event{
 		OperationID:   "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
 		APIKeySubject: "api-key-a",
-		EventType:     "recall",
-		Meter:         "recalls",
+		EventType:     "memoryRecall",
+		Meter:         "memory_recall_requests",
 		Units:         1,
 		OccurredAt:    time.Date(2026, 5, 13, 1, 2, 3, 0, time.UTC),
 		AgentID:       "Codex",
@@ -1075,6 +1084,51 @@ func TestConsoleRuntimeWriter_PayloadHashIncludesAPIKeySubject(t *testing.T) {
 	}
 	if !bytes.Equal(first.payloadJSON, second.payloadJSON) {
 		t.Fatalf("console payload JSON changed with APIKeySubject: first=%s second=%s", first.payloadJSON, second.payloadJSON)
+	}
+}
+
+func TestConsoleRuntimeWriter_OmitsInvalidAgentNameAndCapsMemoryIDs(t *testing.T) {
+	w := &consoleRuntimeWriter{}
+	ids := make([]string, 0, 205)
+	for i := 0; i < 205; i++ {
+		ids = append(ids, fmt.Sprintf("mem-%d", i))
+	}
+	evt := Event{
+		OperationID:   "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
+		APIKeySubject: "api-key-a",
+		EventType:     "memoryCreated",
+		Meter:         "memory_write_requests",
+		Units:         1,
+		OccurredAt:    time.Date(2026, 5, 13, 1, 2, 3, 0, time.UTC),
+		AgentID:       "@codex",
+		MemoryIDs:     ids,
+		Metadata: map[string]any{
+			"objectsAffected": 205,
+			"authorization":   "Bearer secret",
+		},
+	}
+
+	item, err := w.makeQueuedEvent(evt)
+	if err != nil {
+		t.Fatalf("makeQueuedEvent: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(item.payloadJSON, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if _, ok := payload["agentName"]; ok {
+		t.Fatalf("agentName present in payload: %+v", payload)
+	}
+	memoryIDs, ok := payload["memoryIds"].([]any)
+	if !ok || len(memoryIDs) != 200 {
+		t.Fatalf("memoryIds len = %d, want 200", len(memoryIDs))
+	}
+	metadata, ok := payload["metadata"].(map[string]any)
+	if !ok || metadata["objectsAffected"] != float64(205) {
+		t.Fatalf("metadata = %#v, want objectsAffected=205", payload["metadata"])
+	}
+	if _, ok := metadata["authorization"]; ok {
+		t.Fatalf("sensitive metadata was retained: %+v", metadata)
 	}
 }
 
