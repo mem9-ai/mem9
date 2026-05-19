@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 )
+
+const runtimeUsagePostSuccessTimeout = 10 * time.Second
 
 func (s *Server) runtimeUsageEnabled() bool {
 	return s != nil && s.runtimeUsage != nil && s.runtimeUsage.Enabled()
@@ -25,9 +28,11 @@ func memoryIDs(memories []domain.Memory) []string {
 	return ids
 }
 
-func runtimeUsagePostSuccessContext() context.Context {
+func withRuntimeUsagePostSuccessContext(run func(context.Context) error) error {
 	// Post-success finalization must survive request cancellation after tenant writes commit.
-	return context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), runtimeUsagePostSuccessTimeout)
+	defer cancel()
+	return run(ctx)
 }
 
 func subjectFromAuth(auth *domain.AuthInfo) runtimeusage.Subject {
@@ -35,6 +40,9 @@ func subjectFromAuth(auth *domain.AuthInfo) runtimeusage.Subject {
 		return runtimeusage.Subject{}
 	}
 	subject := auth.APIKeySubject
+	if subject == "" && auth.Chain != nil {
+		subject = auth.Chain.APIKey
+	}
 	if subject == "" {
 		subject = auth.TenantID
 	}

@@ -142,10 +142,12 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				if result != nil {
 					ids = result.InsightIDs
 				}
-				if err := s.runtimeUsage.AfterMemoryCreateSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryCreateResult{
-					MemoryIDs:       ids,
-					AgentName:       auth.AgentName,
-					ObjectsAffected: written,
+				if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+					return s.runtimeUsage.AfterMemoryCreateSuccess(ctx, lease, runtimeusage.MemoryCreateResult{
+						MemoryIDs:       ids,
+						AgentName:       auth.AgentName,
+						ObjectsAffected: written,
+					})
 				}); err != nil {
 					s.logger.Error("runtime usage sync ingest finalization failed",
 						"operation_id", lease.OperationID,
@@ -277,10 +279,12 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			if memoryID != "" {
 				ids = []string{memoryID}
 			}
-			if err := s.runtimeUsage.AfterMemoryCreateSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryCreateResult{
-				MemoryIDs:       ids,
-				AgentName:       auth.AgentName,
-				ObjectsAffected: int64(written),
+			if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+				return s.runtimeUsage.AfterMemoryCreateSuccess(ctx, lease, runtimeusage.MemoryCreateResult{
+					MemoryIDs:       ids,
+					AgentName:       auth.AgentName,
+					ObjectsAffected: int64(written),
+				})
 			}); err != nil {
 				s.logger.Error("runtime usage memory create finalization failed",
 					"operation_id", lease.OperationID,
@@ -330,10 +334,12 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			if mem != nil && mem.ID != "" {
 				ids = []string{mem.ID}
 			}
-			if err := s.runtimeUsage.AfterMemoryCreateSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryCreateResult{
-				MemoryIDs:       ids,
-				AgentName:       auth.AgentName,
-				ObjectsAffected: int64(written),
+			if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+				return s.runtimeUsage.AfterMemoryCreateSuccess(ctx, lease, runtimeusage.MemoryCreateResult{
+					MemoryIDs:       ids,
+					AgentName:       auth.AgentName,
+					ObjectsAffected: int64(written),
+				})
 			}); err != nil {
 				s.logger.Error("runtime usage sync memory create finalization failed",
 					"operation_id", lease.OperationID,
@@ -590,9 +596,11 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	}
 	if filter.Query != "" {
 		if s.runtimeUsageEnabled() && recallLease != nil {
-			if err := s.runtimeUsage.AfterRecallSuccess(r.Context(), recallLease, runtimeusage.RecallResult{
-				MemoryIDs: memoryIDs(memories),
-				AgentName: auth.AgentName,
+			if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+				return s.runtimeUsage.AfterRecallSuccess(ctx, recallLease, runtimeusage.RecallResult{
+					MemoryIDs: memoryIDs(memories),
+					AgentName: auth.AgentName,
+				})
 			}); err != nil {
 				s.logger.Error("runtime usage recall finalization failed",
 					"operation_id", recallLease.OperationID,
@@ -769,10 +777,12 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 		}
 		mem.ChainSource = target.source
 		if s.runtimeUsageEnabled() {
-			if err := s.runtimeUsage.AfterMemoryUpdateSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryUpdateResult{
-				MemoryIDs:       []string{mem.ID},
-				AgentName:       target.nodeAuth.AgentName,
-				ObjectsAffected: 1,
+			if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+				return s.runtimeUsage.AfterMemoryUpdateSuccess(ctx, lease, runtimeusage.MemoryUpdateResult{
+					MemoryIDs:       []string{mem.ID},
+					AgentName:       target.nodeAuth.AgentName,
+					ObjectsAffected: 1,
+				})
 			}); err != nil {
 				s.logger.Error("runtime usage chain memory update finalization failed",
 					"operation_id", lease.OperationID,
@@ -817,10 +827,12 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.runtimeUsageEnabled() {
-		if err := s.runtimeUsage.AfterMemoryUpdateSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryUpdateResult{
-			MemoryIDs:       []string{mem.ID},
-			AgentName:       auth.AgentName,
-			ObjectsAffected: 1,
+		if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+			return s.runtimeUsage.AfterMemoryUpdateSuccess(ctx, lease, runtimeusage.MemoryUpdateResult{
+				MemoryIDs:       []string{mem.ID},
+				AgentName:       auth.AgentName,
+				ObjectsAffected: 1,
+			})
 		}); err != nil {
 			s.logger.Error("runtime usage memory update finalization failed",
 				"operation_id", lease.OperationID,
@@ -873,10 +885,12 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if s.runtimeUsageEnabled() {
-			if err := s.runtimeUsage.AfterMemoryDeleteSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryDeleteResult{
-				MemoryIDs:       []string{id},
-				AgentName:       target.nodeAuth.AgentName,
-				ObjectsAffected: deleted,
+			if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+				return s.runtimeUsage.AfterMemoryDeleteSuccess(ctx, lease, runtimeusage.MemoryDeleteResult{
+					MemoryIDs:       []string{id},
+					AgentName:       target.nodeAuth.AgentName,
+					ObjectsAffected: deleted,
+				})
 			}); err != nil {
 				s.logger.Error("runtime usage chain memory delete finalization failed",
 					"operation_id", lease.OperationID,
@@ -921,10 +935,12 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.runtimeUsageEnabled() {
-		if err := s.runtimeUsage.AfterMemoryDeleteSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryDeleteResult{
-			MemoryIDs:       []string{id},
-			AgentName:       auth.AgentName,
-			ObjectsAffected: deleted,
+		if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+			return s.runtimeUsage.AfterMemoryDeleteSuccess(ctx, lease, runtimeusage.MemoryDeleteResult{
+				MemoryIDs:       []string{id},
+				AgentName:       auth.AgentName,
+				ObjectsAffected: deleted,
+			})
 		}); err != nil {
 			s.logger.Error("runtime usage memory delete finalization failed",
 				"operation_id", lease.OperationID,
@@ -985,10 +1001,12 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if s.runtimeUsageEnabled() {
-				if err := s.runtimeUsage.AfterMemoryDeleteSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryDeleteResult{
-					MemoryIDs:       append([]string(nil), group.ids...),
-					AgentName:       group.target.nodeAuth.AgentName,
-					ObjectsAffected: groupDeleted,
+				if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+					return s.runtimeUsage.AfterMemoryDeleteSuccess(ctx, lease, runtimeusage.MemoryDeleteResult{
+						MemoryIDs:       append([]string(nil), group.ids...),
+						AgentName:       group.target.nodeAuth.AgentName,
+						ObjectsAffected: groupDeleted,
+					})
 				}); err != nil {
 					s.logger.Error("runtime usage chain batch delete finalization failed",
 						"operation_id", lease.OperationID,
@@ -1046,10 +1064,12 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.runtimeUsageEnabled() {
-		if err := s.runtimeUsage.AfterMemoryDeleteSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryDeleteResult{
-			MemoryIDs:       append([]string(nil), deleteIDs...),
-			AgentName:       auth.AgentName,
-			ObjectsAffected: deleted,
+		if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+			return s.runtimeUsage.AfterMemoryDeleteSuccess(ctx, lease, runtimeusage.MemoryDeleteResult{
+				MemoryIDs:       append([]string(nil), deleteIDs...),
+				AgentName:       auth.AgentName,
+				ObjectsAffected: deleted,
+			})
 		}); err != nil {
 			s.logger.Error("runtime usage batch delete finalization failed",
 				"operation_id", lease.OperationID,
@@ -1124,10 +1144,12 @@ func (s *Server) bulkCreateMemories(w http.ResponseWriter, r *http.Request) {
 	}
 	applyChainSource(memories, writeChainSource)
 	if s.runtimeUsageEnabled() {
-		if err := s.runtimeUsage.AfterMemoryCreateSuccess(runtimeUsagePostSuccessContext(), lease, runtimeusage.MemoryCreateResult{
-			MemoryIDs:       memoryIDs(memories),
-			AgentName:       auth.AgentName,
-			ObjectsAffected: int64(len(memories)),
+		if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+			return s.runtimeUsage.AfterMemoryCreateSuccess(ctx, lease, runtimeusage.MemoryCreateResult{
+				MemoryIDs:       memoryIDs(memories),
+				AgentName:       auth.AgentName,
+				ObjectsAffected: int64(len(memories)),
+			})
 		}); err != nil {
 			s.logger.Error("runtime usage bulk create finalization failed",
 				"operation_id", lease.OperationID,

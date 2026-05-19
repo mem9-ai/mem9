@@ -266,6 +266,9 @@ type captureRuntimeUsageManager struct {
 	afterDeleteSuccessCalls  int
 	enabled                  bool
 	afterCreateSuccessErr    error
+	beforeRecallSubjects     []runtimeusage.Subject
+	recallResults            []runtimeusage.RecallResult
+	recallSuccessContextErrs []error
 	beforeCreateSubjects     []runtimeusage.Subject
 	createResults            []runtimeusage.MemoryCreateResult
 	createSuccessContextErrs []error
@@ -276,12 +279,15 @@ type captureRuntimeUsageManager struct {
 }
 
 func (m *captureRuntimeUsageManager) Enabled() bool { return m.enabled }
-func (m *captureRuntimeUsageManager) BeforeRecall(context.Context, runtimeusage.Subject) (*runtimeusage.OperationLease, error) {
+func (m *captureRuntimeUsageManager) BeforeRecall(_ context.Context, subject runtimeusage.Subject) (*runtimeusage.OperationLease, error) {
 	m.beforeRecallCalls++
+	m.beforeRecallSubjects = append(m.beforeRecallSubjects, subject)
 	return &runtimeusage.OperationLease{OperationID: "op-recall", Reserved: true}, nil
 }
-func (m *captureRuntimeUsageManager) AfterRecallSuccess(context.Context, *runtimeusage.OperationLease, runtimeusage.RecallResult) error {
+func (m *captureRuntimeUsageManager) AfterRecallSuccess(ctx context.Context, _ *runtimeusage.OperationLease, result runtimeusage.RecallResult) error {
 	m.afterRecallSuccessCalls++
+	m.recallResults = append(m.recallResults, result)
+	m.recallSuccessContextErrs = append(m.recallSuccessContextErrs, ctx.Err())
 	return nil
 }
 func (m *captureRuntimeUsageManager) AfterRecallFailure(context.Context, *runtimeusage.OperationLease, error) {
@@ -1216,6 +1222,71 @@ func TestBulkCreateMemories_ChainRuntimeUsageUsesResolvedNodeSubject(t *testing.
 		runtimeUsage.beforeCreateSubjects[0].ClusterID != "10006636" ||
 		runtimeUsage.beforeCreateSubjects[0].APIKeySubject != "chain-key-a" {
 		t.Fatalf("create subject = %+v, want tenant-a/10006636 with chain-key-a subject", runtimeUsage.beforeCreateSubjects)
+	}
+}
+
+func TestListMemories_RuntimeUsageRecallFinalizationIgnoresRequestCancellation(t *testing.T) {
+	now := time.Now()
+	var cancelRequest context.CancelFunc
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			cancelRequest()
+			return []domain.Memory{
+				{ID: "m1", Content: `"Under Armour"`, MemoryType: domain.TypePinned, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	req := makeTenantRequest(t, http.MethodGet, "/memories?q=what%20company%20does%20john%20like&memory_type=pinned&limit=10", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	cancelRequest = cancel
+	defer cancel()
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if ctx.Err() != context.Canceled {
+		t.Fatal("request context was not canceled during recall")
+	}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if runtimeUsage.afterRecallSuccessCalls != 1 {
+		t.Fatalf("AfterRecallSuccess calls = %d, want 1", runtimeUsage.afterRecallSuccessCalls)
+	}
+	if len(runtimeUsage.recallSuccessContextErrs) != 1 || runtimeUsage.recallSuccessContextErrs[0] != nil {
+		t.Fatalf("recall finalization context errors = %+v, want [<nil>]", runtimeUsage.recallSuccessContextErrs)
+	}
+}
+
+func TestListMemories_ChainRuntimeUsageRecallUsesChainAPIKeySubject(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `"Under Armour"`, MemoryType: domain.TypePinned, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	req := makeChainRequest(t, http.MethodGet, "/memories?q=what%20company%20does%20john%20like&memory_type=pinned&limit=10", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if runtimeUsage.beforeRecallCalls != 1 || runtimeUsage.afterRecallSuccessCalls != 1 {
+		t.Fatalf("runtime recall calls = before:%d success:%d, want 1/1", runtimeUsage.beforeRecallCalls, runtimeUsage.afterRecallSuccessCalls)
+	}
+	if len(runtimeUsage.beforeRecallSubjects) != 1 || runtimeUsage.beforeRecallSubjects[0].APIKeySubject != "chain-key-a" {
+		t.Fatalf("recall subject = %+v, want chain-key-a API key subject", runtimeUsage.beforeRecallSubjects)
 	}
 }
 
