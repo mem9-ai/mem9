@@ -156,6 +156,42 @@ func TestManagerMemoryDeleteUsesWriteRequestMeter(t *testing.T) {
 	}
 }
 
+func TestManagerMemoryUpdateUsesWriteRequestMeter(t *testing.T) {
+	quota := &fakeQuotaClient{}
+	writer := &captureWriter{}
+	manager := NewManager(Config{Enabled: true}, quota, writer, nil)
+	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "tenant-a", AgentName: "Codex"}
+
+	lease, err := manager.BeforeMemoryUpdate(context.Background(), subject)
+	if err != nil {
+		t.Fatalf("BeforeMemoryUpdate: %v", err)
+	}
+	if err := manager.AfterMemoryUpdateSuccess(context.Background(), lease, MemoryUpdateResult{
+		MemoryIDs:       []string{"mem-1"},
+		AgentName:       "Codex",
+		ObjectsAffected: 1,
+	}); err != nil {
+		t.Fatalf("AfterMemoryUpdateSuccess: %v", err)
+	}
+	if len(quota.reserveOps) != 1 || quota.reserveOps[0].Meter != MeterMemoryWriteRequests || quota.reserveOps[0].Units != 1 {
+		t.Fatalf("reserve ops = %+v", quota.reserveOps)
+	}
+	wantFinalize := lease.OperationID + ":" + ReservationStatusCommitted + ":" + reservationCommitReason
+	if len(quota.finalized) != 1 || quota.finalized[0] != wantFinalize {
+		t.Fatalf("finalized = %+v, want [%s]", quota.finalized, wantFinalize)
+	}
+	if len(writer.events) != 1 {
+		t.Fatalf("metering events = %+v, want one", writer.events)
+	}
+	evt := writer.events[0]
+	if evt.EventType != EventTypeMemoryUpdated || evt.Meter != MeterMemoryWriteRequests || evt.Units != 1 {
+		t.Fatalf("unexpected event: %+v", evt)
+	}
+	if evt.Metadata["objectsAffected"] != int64(1) {
+		t.Fatalf("metadata = %+v, want objectsAffected=1", evt.Metadata)
+	}
+}
+
 func TestManagerMemoryDeleteFailureReleasesReservation(t *testing.T) {
 	quota := &fakeQuotaClient{}
 	outbox := &fakeOutboxStore{}

@@ -3,17 +3,15 @@ title: mem9-server Runtime Usage Client Proposal
 status: draft
 created: 2026-05-13
 last_updated: 2026-05-19
-sources:
-  - https://github.com/mem9-ai/mem9-console-server/pull/36
 ---
 
 ## Summary
 
 Add a billing-grade runtime usage client to mem9-server so commercial SaaS mode
 can enforce console-owned runtime quotas and submit reliable metering events.
-The current implementation follows console-server PR #36 and the
-`docs/api/openapi-internal-v1.yaml` contract at merge commit
-`a9b7be673bd0f9d78373c04c9b1a66669308b939`.
+The current implementation follows the inline console contract snapshot below so
+public readers can audit the endpoint, meter, event, retry, and conflict
+semantics from this repository.
 
 Runtime usage is request-count based:
 
@@ -83,7 +81,8 @@ Write events use:
 Supported write event types are `memoryCreated`, `memoryUpdated`,
 `memoryDeleted`, `memoryMerged`, and `memoryCleanup`. This PR emits
 `memoryCreated` for create, bulk-create, content ingest, and message ingest
-paths, and `memoryDeleted` for delete and batch-delete paths.
+paths, `memoryUpdated` for update paths, and `memoryDeleted` for delete and
+batch-delete paths.
 
 `occurredAt` is truncated to whole-second RFC3339 before payload construction
 because it is part of the canonical metering payload. Optional `agentName` is
@@ -128,8 +127,10 @@ Runtime usage currently covers:
 3. Smart content create.
 4. Message ingest.
 5. Bulk create.
-6. Delete.
-7. Batch delete.
+6. Update.
+7. Delete.
+8. Batch delete.
+9. Chain update, delete, and batch-delete against the resolved node subject.
 
 Async create and ingest paths reserve before returning `202 Accepted`; the
 background worker commits or releases the reservation after the operation

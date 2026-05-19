@@ -55,6 +55,13 @@ func (noopManager) AfterMemoryCreateSuccess(context.Context, *OperationLease, Me
 	return nil
 }
 func (noopManager) AfterMemoryCreateFailure(context.Context, *OperationLease, error) {}
+func (noopManager) BeforeMemoryUpdate(context.Context, Subject) (*OperationLease, error) {
+	return nil, nil
+}
+func (noopManager) AfterMemoryUpdateSuccess(context.Context, *OperationLease, MemoryUpdateResult) error {
+	return nil
+}
+func (noopManager) AfterMemoryUpdateFailure(context.Context, *OperationLease, error) {}
 func (noopManager) BeforeMemoryDelete(context.Context, Subject) (*OperationLease, error) {
 	return nil, nil
 }
@@ -117,6 +124,33 @@ func (m *manager) AfterMemoryCreateSuccess(ctx context.Context, lease *Operation
 
 func (m *manager) AfterMemoryCreateFailure(ctx context.Context, lease *OperationLease, cause error) {
 	m.release(ctx, lease, reservationReleaseReason(cause), releaseDetail("memoryCreateFailed", cause))
+}
+
+func (m *manager) BeforeMemoryUpdate(ctx context.Context, subject Subject) (*OperationLease, error) {
+	return m.reserve(ctx, subject, MeterMemoryWriteRequests, 1)
+}
+
+func (m *manager) AfterMemoryUpdateSuccess(ctx context.Context, lease *OperationLease, result MemoryUpdateResult) error {
+	if lease == nil || !lease.Reserved {
+		return nil
+	}
+	event := m.consoleMeteringEvent(lease, EventTypeMemoryUpdated, result.AgentName, result.MemoryIDs, lease.Units, objectsAffectedMetadata(result.ObjectsAffected))
+	if err := m.storeCommitPending(ctx, lease, event); err != nil {
+		return m.commitReservationWithoutOutbox(ctx, lease, event, err)
+	}
+	if err := m.client.FinalizeReservation(ctx, lease.Subject, lease.OperationID, ReservationStatusCommitted, reservationCommitReason); err != nil {
+		m.markRetryable(ctx, lease.OperationID, err)
+		if m.outbox != nil {
+			return nil
+		}
+		return err
+	}
+	m.recordConsoleMetering(lease, event)
+	return nil
+}
+
+func (m *manager) AfterMemoryUpdateFailure(ctx context.Context, lease *OperationLease, cause error) {
+	m.release(ctx, lease, reservationReleaseReason(cause), releaseDetail("memoryUpdateFailed", cause))
 }
 
 func (m *manager) BeforeMemoryDelete(ctx context.Context, subject Subject) (*OperationLease, error) {

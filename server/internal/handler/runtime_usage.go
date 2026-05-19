@@ -61,6 +61,13 @@ func (s *Server) handleRuntimeUsageError(w http.ResponseWriter, err error) {
 	respondError(w, status, "runtime usage unavailable")
 }
 
+func isRuntimeUsageError(err error) bool {
+	var denied *runtimeusage.QuotaDeniedError
+	var unavailable *runtimeusage.UnavailableError
+	var conflict *runtimeusage.ConflictError
+	return errors.As(err, &denied) || errors.As(err, &unavailable) || errors.As(err, &conflict)
+}
+
 func ensureMem9QuotaDeniedCode(body []byte) []byte {
 	body = bytes.TrimSpace(body)
 	if len(body) == 0 {

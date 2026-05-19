@@ -739,22 +739,99 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if auth.IsChain() {
-		mem, nodeAuth, nodeSvc, err := s.updateChainMemory(r.Context(), auth, id, req, ifMatch)
+		target, err := s.findChainMemoryTarget(r.Context(), auth, id)
 		if err != nil {
 			s.handleError(r.Context(), w, err)
 			return
 		}
-		go s.afterSuccessfulWrite(nodeAuth, nodeSvc, 1)
+		var lease *runtimeusage.OperationLease
+		finalized := false
+		if s.runtimeUsageEnabled() {
+			lease, err = s.runtimeUsage.BeforeMemoryUpdate(r.Context(), subjectFromAuth(target.nodeAuth))
+			if err != nil {
+				s.handleRuntimeUsageError(w, err)
+				return
+			}
+			defer func() {
+				if !finalized {
+					s.runtimeUsage.AfterMemoryUpdateFailure(context.Background(), lease, context.Canceled)
+				}
+			}()
+		}
+		mem, err := target.svc.memory.Update(r.Context(), auth.AgentName, id, req.Content, req.Tags, req.Metadata, ifMatch)
+		if err != nil {
+			if s.runtimeUsageEnabled() {
+				s.runtimeUsage.AfterMemoryUpdateFailure(context.Background(), lease, err)
+				finalized = true
+			}
+			s.handleError(r.Context(), w, err)
+			return
+		}
+		mem.ChainSource = target.source
+		if s.runtimeUsageEnabled() {
+			if err := s.runtimeUsage.AfterMemoryUpdateSuccess(r.Context(), lease, runtimeusage.MemoryUpdateResult{
+				MemoryIDs:       []string{mem.ID},
+				AgentName:       target.nodeAuth.AgentName,
+				ObjectsAffected: 1,
+			}); err != nil {
+				s.logger.Error("runtime usage chain memory update finalization failed",
+					"operation_id", lease.OperationID,
+					"tenant_id", target.nodeAuth.TenantID,
+					"cluster_id", target.nodeAuth.ClusterID,
+					"err", err)
+				finalized = true
+				s.handleRuntimeUsageError(w, err)
+				return
+			}
+			finalized = true
+		}
+		go s.afterSuccessfulWrite(target.nodeAuth, target.svc, 1)
 		w.Header().Set("ETag", strconv.Itoa(mem.Version))
 		respond(w, http.StatusOK, mem)
 		return
 	}
 
 	svc := s.resolveServices(auth)
+	var lease *runtimeusage.OperationLease
+	finalized := false
+	if s.runtimeUsageEnabled() {
+		var err error
+		lease, err = s.runtimeUsage.BeforeMemoryUpdate(r.Context(), subjectFromAuth(auth))
+		if err != nil {
+			s.handleRuntimeUsageError(w, err)
+			return
+		}
+		defer func() {
+			if !finalized {
+				s.runtimeUsage.AfterMemoryUpdateFailure(context.Background(), lease, context.Canceled)
+			}
+		}()
+	}
 	mem, err := svc.memory.Update(r.Context(), auth.AgentName, id, req.Content, req.Tags, req.Metadata, ifMatch)
 	if err != nil {
+		if s.runtimeUsageEnabled() {
+			s.runtimeUsage.AfterMemoryUpdateFailure(context.Background(), lease, err)
+			finalized = true
+		}
 		s.handleError(r.Context(), w, err)
 		return
+	}
+	if s.runtimeUsageEnabled() {
+		if err := s.runtimeUsage.AfterMemoryUpdateSuccess(r.Context(), lease, runtimeusage.MemoryUpdateResult{
+			MemoryIDs:       []string{mem.ID},
+			AgentName:       auth.AgentName,
+			ObjectsAffected: 1,
+		}); err != nil {
+			s.logger.Error("runtime usage memory update finalization failed",
+				"operation_id", lease.OperationID,
+				"tenant_id", auth.TenantID,
+				"cluster_id", auth.ClusterID,
+				"err", err)
+			finalized = true
+			s.handleRuntimeUsageError(w, err)
+			return
+		}
+		finalized = true
 	}
 
 	go s.afterSuccessfulWrite(auth, svc, 1)
@@ -767,12 +844,52 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	if auth.IsChain() {
-		nodeAuth, nodeSvc, err := s.deleteChainMemory(r.Context(), auth, id)
+		target, err := s.findChainMemoryTarget(r.Context(), auth, id)
 		if err != nil {
 			s.handleError(r.Context(), w, err)
 			return
 		}
-		go s.afterSuccessfulWrite(nodeAuth, nodeSvc, 0)
+		var lease *runtimeusage.OperationLease
+		finalized := false
+		if s.runtimeUsageEnabled() {
+			lease, err = s.runtimeUsage.BeforeMemoryDelete(r.Context(), subjectFromAuth(target.nodeAuth))
+			if err != nil {
+				s.handleRuntimeUsageError(w, err)
+				return
+			}
+			defer func() {
+				if !finalized {
+					s.runtimeUsage.AfterMemoryDeleteFailure(context.Background(), lease, context.Canceled)
+				}
+			}()
+		}
+		deleted, err := target.svc.memory.Delete(r.Context(), id, auth.AgentName)
+		if err != nil {
+			if s.runtimeUsageEnabled() {
+				s.runtimeUsage.AfterMemoryDeleteFailure(context.Background(), lease, err)
+				finalized = true
+			}
+			s.handleError(r.Context(), w, err)
+			return
+		}
+		if s.runtimeUsageEnabled() {
+			if err := s.runtimeUsage.AfterMemoryDeleteSuccess(r.Context(), lease, runtimeusage.MemoryDeleteResult{
+				MemoryIDs:       []string{id},
+				AgentName:       target.nodeAuth.AgentName,
+				ObjectsAffected: deleted,
+			}); err != nil {
+				s.logger.Error("runtime usage chain memory delete finalization failed",
+					"operation_id", lease.OperationID,
+					"tenant_id", target.nodeAuth.TenantID,
+					"cluster_id", target.nodeAuth.ClusterID,
+					"err", err)
+				finalized = true
+				s.handleRuntimeUsageError(w, err)
+				return
+			}
+			finalized = true
+		}
+		go s.afterSuccessfulWrite(target.nodeAuth, target.svc, 0)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -838,10 +955,59 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 
 	auth := authInfo(r)
 	if auth.IsChain() {
-		deleted, err := s.batchDeleteChainMemories(r.Context(), auth, req.IDs)
+		groups, err := s.chainDeleteGroups(r.Context(), auth, req.IDs)
 		if err != nil {
-			s.handleError(r.Context(), w, err)
+			if isRuntimeUsageError(err) {
+				s.handleRuntimeUsageError(w, err)
+			} else {
+				s.handleError(r.Context(), w, err)
+			}
 			return
+		}
+		var deleted int64
+		for _, group := range groups {
+			var lease *runtimeusage.OperationLease
+			finalized := false
+			if s.runtimeUsageEnabled() {
+				lease, err = s.runtimeUsage.BeforeMemoryDelete(r.Context(), subjectFromAuth(group.target.nodeAuth))
+				if err != nil {
+					s.handleRuntimeUsageError(w, err)
+					return
+				}
+			}
+			groupDeleted, err := group.target.svc.memory.BulkDelete(r.Context(), group.ids, auth.AgentName)
+			if err != nil {
+				if s.runtimeUsageEnabled() {
+					s.runtimeUsage.AfterMemoryDeleteFailure(context.Background(), lease, err)
+					finalized = true
+				}
+				s.handleError(r.Context(), w, err)
+				return
+			}
+			if s.runtimeUsageEnabled() {
+				if err := s.runtimeUsage.AfterMemoryDeleteSuccess(r.Context(), lease, runtimeusage.MemoryDeleteResult{
+					MemoryIDs:       append([]string(nil), group.ids...),
+					AgentName:       group.target.nodeAuth.AgentName,
+					ObjectsAffected: groupDeleted,
+				}); err != nil {
+					s.logger.Error("runtime usage chain batch delete finalization failed",
+						"operation_id", lease.OperationID,
+						"tenant_id", group.target.nodeAuth.TenantID,
+						"cluster_id", group.target.nodeAuth.ClusterID,
+						"err", err)
+					finalized = true
+					s.handleRuntimeUsageError(w, err)
+					return
+				}
+				finalized = true
+			}
+			if s.runtimeUsageEnabled() && !finalized {
+				s.runtimeUsage.AfterMemoryDeleteFailure(context.Background(), lease, context.Canceled)
+			}
+			if groupDeleted > 0 {
+				go s.afterSuccessfulWrite(group.target.nodeAuth, group.target.svc, 0)
+			}
+			deleted += groupDeleted
 		}
 		respond(w, http.StatusOK, map[string]any{
 			"deleted": deleted,

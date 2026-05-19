@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/llm"
 	"github.com/qiffang/mnemos/server/internal/metering"
@@ -31,6 +32,8 @@ type testMemoryRepo struct {
 	keywordSearchResults []domain.Memory
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	lastKeywordFilter    domain.MemoryFilter
+	softDeleteCalls      []string
+	softDeleteResult     int64
 	bulkSoftDeleteCalls  [][]string
 	bulkSoftDeleteResult int64
 	countStatsTotal      int64
@@ -57,8 +60,28 @@ func (m *testMemoryRepo) GetByID(_ context.Context, id string) (*domain.Memory, 
 	}
 	return nil, domain.ErrNotFound
 }
-func (m *testMemoryRepo) UpdateOptimistic(context.Context, *domain.Memory, int) error { return nil }
-func (m *testMemoryRepo) SoftDelete(context.Context, string, string) (int64, error)   { return 1, nil }
+func (m *testMemoryRepo) UpdateOptimistic(_ context.Context, mem *domain.Memory, _ int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.createCalls {
+		if m.createCalls[i].ID == mem.ID {
+			cp := *mem
+			cp.Version++
+			m.createCalls[i] = &cp
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+func (m *testMemoryRepo) SoftDelete(_ context.Context, id string, _ string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.softDeleteCalls = append(m.softDeleteCalls, id)
+	if m.softDeleteResult != 0 {
+		return m.softDeleteResult, nil
+	}
+	return 1, nil
+}
 func (m *testMemoryRepo) BulkSoftDelete(_ context.Context, ids []string, _ string) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -230,9 +253,17 @@ type captureRuntimeUsageManager struct {
 	afterRecallSuccessCalls int
 	beforeCreateCalls       int
 	afterCreateFailureCalls int
+	beforeUpdateCalls       int
+	afterUpdateSuccessCalls int
+	afterUpdateFailureCalls int
 	beforeDeleteCalls       int
+	afterDeleteSuccessCalls int
 	enabled                 bool
 	afterCreateSuccessErr   error
+	beforeUpdateSubjects    []runtimeusage.Subject
+	beforeDeleteSubjects    []runtimeusage.Subject
+	updateResults           []runtimeusage.MemoryUpdateResult
+	deleteResults           []runtimeusage.MemoryDeleteResult
 }
 
 func (m *captureRuntimeUsageManager) Enabled() bool { return m.enabled }
@@ -256,11 +287,27 @@ func (m *captureRuntimeUsageManager) AfterMemoryCreateSuccess(context.Context, *
 func (m *captureRuntimeUsageManager) AfterMemoryCreateFailure(context.Context, *runtimeusage.OperationLease, error) {
 	m.afterCreateFailureCalls++
 }
-func (m *captureRuntimeUsageManager) BeforeMemoryDelete(context.Context, runtimeusage.Subject) (*runtimeusage.OperationLease, error) {
+func (m *captureRuntimeUsageManager) BeforeMemoryUpdate(_ context.Context, subject runtimeusage.Subject) (*runtimeusage.OperationLease, error) {
+	m.beforeUpdateCalls++
+	m.beforeUpdateSubjects = append(m.beforeUpdateSubjects, subject)
+	return &runtimeusage.OperationLease{OperationID: "op-update", Reserved: true}, nil
+}
+func (m *captureRuntimeUsageManager) AfterMemoryUpdateSuccess(_ context.Context, _ *runtimeusage.OperationLease, result runtimeusage.MemoryUpdateResult) error {
+	m.afterUpdateSuccessCalls++
+	m.updateResults = append(m.updateResults, result)
+	return nil
+}
+func (m *captureRuntimeUsageManager) AfterMemoryUpdateFailure(context.Context, *runtimeusage.OperationLease, error) {
+	m.afterUpdateFailureCalls++
+}
+func (m *captureRuntimeUsageManager) BeforeMemoryDelete(_ context.Context, subject runtimeusage.Subject) (*runtimeusage.OperationLease, error) {
 	m.beforeDeleteCalls++
+	m.beforeDeleteSubjects = append(m.beforeDeleteSubjects, subject)
 	return &runtimeusage.OperationLease{OperationID: "op-delete", Reserved: true}, nil
 }
-func (m *captureRuntimeUsageManager) AfterMemoryDeleteSuccess(context.Context, *runtimeusage.OperationLease, runtimeusage.MemoryDeleteResult) error {
+func (m *captureRuntimeUsageManager) AfterMemoryDeleteSuccess(_ context.Context, _ *runtimeusage.OperationLease, result runtimeusage.MemoryDeleteResult) error {
+	m.afterDeleteSuccessCalls++
+	m.deleteResults = append(m.deleteResults, result)
 	return nil
 }
 func (m *captureRuntimeUsageManager) AfterMemoryDeleteFailure(context.Context, *runtimeusage.OperationLease, error) {
@@ -418,6 +465,35 @@ func makeTenantRequest(t *testing.T, method, path string, body any) *http.Reques
 	}
 	ctx := middleware.WithAuthContext(req.Context(), auth)
 	return req.WithContext(ctx)
+}
+
+func makeChainRequest(t *testing.T, method, path string, body any) *http.Request {
+	t.Helper()
+	req := makeRequest(t, method, path, body)
+	auth := &domain.AuthInfo{
+		AgentName: "test-agent",
+		Chain: &domain.ChainAuth{
+			ChainID: "chain-a",
+			APIKey:  "chain-key-a",
+			Nodes: []domain.ChainAuthNode{
+				{
+					SpaceChainNode: domain.SpaceChainNode{
+						TenantID: "tenant-a",
+						Position: 1,
+					},
+					ClusterID: "10006636",
+				},
+			},
+		},
+	}
+	ctx := middleware.WithAuthContext(req.Context(), auth)
+	return req.WithContext(ctx)
+}
+
+func withURLParam(req *http.Request, key string, value string) *http.Request {
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add(key, value)
+	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 }
 
 func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
@@ -1111,6 +1187,117 @@ func TestBatchDeleteMemories_RuntimeUsageValidatesBeforeQuota(t *testing.T) {
 	}
 	if len(memRepo.bulkSoftDeleteCalls) != 0 {
 		t.Fatalf("bulk soft delete calls = %d, want 0", len(memRepo.bulkSoftDeleteCalls))
+	}
+}
+
+func TestUpdateMemory_RuntimeUsageRecordsUpdate(t *testing.T) {
+	memRepo := &testMemoryRepo{
+		createCalls: []*domain.Memory{
+			{ID: "mem-1", Content: "old", Version: 1},
+		},
+	}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	body := map[string]any{"content": "new"}
+	req := withURLParam(makeTenantRequest(t, http.MethodPatch, "/memories/mem-1", body), "id", "mem-1")
+	rr := httptest.NewRecorder()
+
+	srv.updateMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if runtimeUsage.beforeUpdateCalls != 1 || runtimeUsage.afterUpdateSuccessCalls != 1 {
+		t.Fatalf("runtime update calls = before:%d success:%d, want 1/1", runtimeUsage.beforeUpdateCalls, runtimeUsage.afterUpdateSuccessCalls)
+	}
+	if len(runtimeUsage.updateResults) != 1 || len(runtimeUsage.updateResults[0].MemoryIDs) != 1 || runtimeUsage.updateResults[0].MemoryIDs[0] != "mem-1" {
+		t.Fatalf("update results = %+v, want mem-1", runtimeUsage.updateResults)
+	}
+	if runtimeUsage.updateResults[0].ObjectsAffected != 1 {
+		t.Fatalf("objects affected = %d, want 1", runtimeUsage.updateResults[0].ObjectsAffected)
+	}
+}
+
+func TestUpdateMemory_ChainRuntimeUsageUsesResolvedNodeSubject(t *testing.T) {
+	memRepo := &testMemoryRepo{
+		createCalls: []*domain.Memory{
+			{ID: "mem-1", Content: "old", Version: 1},
+		},
+	}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	body := map[string]any{"content": "new"}
+	req := withURLParam(makeChainRequest(t, http.MethodPatch, "/memories/mem-1", body), "id", "mem-1")
+	rr := httptest.NewRecorder()
+
+	srv.updateMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if runtimeUsage.beforeUpdateCalls != 1 || runtimeUsage.afterUpdateSuccessCalls != 1 {
+		t.Fatalf("runtime update calls = before:%d success:%d, want 1/1", runtimeUsage.beforeUpdateCalls, runtimeUsage.afterUpdateSuccessCalls)
+	}
+	if len(runtimeUsage.beforeUpdateSubjects) != 1 || runtimeUsage.beforeUpdateSubjects[0].TenantID != "tenant-a" || runtimeUsage.beforeUpdateSubjects[0].ClusterID != "10006636" {
+		t.Fatalf("update subject = %+v, want tenant-a/10006636", runtimeUsage.beforeUpdateSubjects)
+	}
+}
+
+func TestDeleteMemory_ChainRuntimeUsageUsesResolvedNodeSubject(t *testing.T) {
+	memRepo := &testMemoryRepo{
+		createCalls: []*domain.Memory{
+			{ID: "mem-1", Content: "old", Version: 1},
+		},
+	}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	req := withURLParam(makeChainRequest(t, http.MethodDelete, "/memories/mem-1", nil), "id", "mem-1")
+	rr := httptest.NewRecorder()
+
+	srv.deleteMemory(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204: %s", rr.Code, rr.Body.String())
+	}
+	if runtimeUsage.beforeDeleteCalls != 1 || runtimeUsage.afterDeleteSuccessCalls != 1 {
+		t.Fatalf("runtime delete calls = before:%d success:%d, want 1/1", runtimeUsage.beforeDeleteCalls, runtimeUsage.afterDeleteSuccessCalls)
+	}
+	if len(runtimeUsage.beforeDeleteSubjects) != 1 || runtimeUsage.beforeDeleteSubjects[0].TenantID != "tenant-a" || runtimeUsage.beforeDeleteSubjects[0].ClusterID != "10006636" {
+		t.Fatalf("delete subject = %+v, want tenant-a/10006636", runtimeUsage.beforeDeleteSubjects)
+	}
+}
+
+func TestBatchDeleteMemories_ChainRuntimeUsageGroupsByResolvedNode(t *testing.T) {
+	memRepo := &testMemoryRepo{
+		createCalls: []*domain.Memory{
+			{ID: "mem-1", Content: "one", Version: 1},
+			{ID: "mem-2", Content: "two", Version: 1},
+		},
+		bulkSoftDeleteResult: 2,
+	}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	body := map[string]any{"ids": []string{"mem-1", "mem-2"}}
+	req := makeChainRequest(t, http.MethodPost, "/memories/delete", body)
+	rr := httptest.NewRecorder()
+
+	srv.batchDeleteMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if runtimeUsage.beforeDeleteCalls != 1 || runtimeUsage.afterDeleteSuccessCalls != 1 {
+		t.Fatalf("runtime batch delete calls = before:%d success:%d, want 1/1", runtimeUsage.beforeDeleteCalls, runtimeUsage.afterDeleteSuccessCalls)
+	}
+	if len(runtimeUsage.deleteResults) != 1 || runtimeUsage.deleteResults[0].ObjectsAffected != 2 {
+		t.Fatalf("delete results = %+v, want objectsAffected=2", runtimeUsage.deleteResults)
+	}
+	if len(memRepo.bulkSoftDeleteCalls) != 1 || len(memRepo.bulkSoftDeleteCalls[0]) != 2 {
+		t.Fatalf("bulk delete calls = %+v, want one grouped call with two IDs", memRepo.bulkSoftDeleteCalls)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/service"
 )
 
 func (s *Server) firstChainNodeAuth(auth *domain.AuthInfo) (*domain.AuthInfo, error) {
@@ -38,6 +39,66 @@ func applyChainSource(memories []domain.Memory, source *domain.ChainSource) {
 	for i := range memories {
 		memories[i].ChainSource = source
 	}
+}
+
+type chainMemoryTarget struct {
+	nodeAuth *domain.AuthInfo
+	svc      resolvedSvc
+	source   *domain.ChainSource
+}
+
+type chainDeleteGroup struct {
+	target chainMemoryTarget
+	ids    []string
+}
+
+func (s *Server) findChainMemoryTarget(ctx context.Context, auth *domain.AuthInfo, id string) (chainMemoryTarget, error) {
+	if auth == nil || auth.Chain == nil || len(auth.Chain.Nodes) == 0 {
+		return chainMemoryTarget{}, &domain.ValidationError{Message: "Space Chain has no nodes."}
+	}
+	for _, node := range auth.Chain.Nodes {
+		nodeAuth := chainNodeAuth(auth, node)
+		svc := s.resolveServices(nodeAuth)
+		if _, err := svc.memory.Get(ctx, id); err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				continue
+			}
+			return chainMemoryTarget{}, err
+		}
+		return chainMemoryTarget{
+			nodeAuth: nodeAuth,
+			svc:      svc,
+			source:   chainSource(auth, node),
+		}, nil
+	}
+	return chainMemoryTarget{}, domain.ErrNotFound
+}
+
+func (s *Server) chainDeleteGroups(ctx context.Context, auth *domain.AuthInfo, ids []string) ([]chainDeleteGroup, error) {
+	deleteIDs, err := service.ValidateBulkDeleteIDs(ids)
+	if err != nil {
+		return nil, err
+	}
+	groups := make([]chainDeleteGroup, 0)
+	groupIndexes := make(map[string]int)
+	for _, id := range deleteIDs {
+		target, err := s.findChainMemoryTarget(ctx, auth, id)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		key := target.nodeAuth.TenantID + "\x00" + target.nodeAuth.ClusterID
+		index, ok := groupIndexes[key]
+		if !ok {
+			index = len(groups)
+			groupIndexes[key] = index
+			groups = append(groups, chainDeleteGroup{target: target})
+		}
+		groups[index].ids = append(groups[index].ids, id)
+	}
+	return groups, nil
 }
 
 func (s *Server) listChainMemories(ctx context.Context, auth *domain.AuthInfo, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
@@ -131,98 +192,6 @@ func (s *Server) getChainMemory(ctx context.Context, auth *domain.AuthInfo, id s
 		return mem, nil
 	}
 	return nil, domain.ErrNotFound
-}
-
-func (s *Server) updateChainMemory(ctx context.Context, auth *domain.AuthInfo, id string, req updateMemoryRequest, ifMatch int) (*domain.Memory, *domain.AuthInfo, resolvedSvc, error) {
-	if auth == nil || auth.Chain == nil || len(auth.Chain.Nodes) == 0 {
-		return nil, nil, resolvedSvc{}, &domain.ValidationError{Message: "Space Chain has no nodes."}
-	}
-	for _, node := range auth.Chain.Nodes {
-		nodeAuth := chainNodeAuth(auth, node)
-		svc := s.resolveServices(nodeAuth)
-		if _, err := svc.memory.Get(ctx, id); err != nil {
-			if errors.Is(err, domain.ErrNotFound) {
-				continue
-			}
-			return nil, nil, resolvedSvc{}, err
-		}
-		mem, err := svc.memory.Update(ctx, auth.AgentName, id, req.Content, req.Tags, req.Metadata, ifMatch)
-		if err != nil {
-			return nil, nil, resolvedSvc{}, err
-		}
-		mem.ChainSource = chainSource(auth, node)
-		return mem, nodeAuth, svc, nil
-	}
-	return nil, nil, resolvedSvc{}, domain.ErrNotFound
-}
-
-func (s *Server) deleteChainMemory(ctx context.Context, auth *domain.AuthInfo, id string) (*domain.AuthInfo, resolvedSvc, error) {
-	if auth == nil || auth.Chain == nil || len(auth.Chain.Nodes) == 0 {
-		return nil, resolvedSvc{}, &domain.ValidationError{Message: "Space Chain has no nodes."}
-	}
-	for _, node := range auth.Chain.Nodes {
-		nodeAuth := chainNodeAuth(auth, node)
-		svc := s.resolveServices(nodeAuth)
-		if _, err := svc.memory.Get(ctx, id); err != nil {
-			if errors.Is(err, domain.ErrNotFound) {
-				continue
-			}
-			return nil, resolvedSvc{}, err
-		}
-		if _, err := svc.memory.Delete(ctx, id, auth.AgentName); err != nil {
-			return nil, resolvedSvc{}, err
-		}
-		return nodeAuth, svc, nil
-	}
-	return nil, resolvedSvc{}, domain.ErrNotFound
-}
-
-func (s *Server) batchDeleteChainMemories(ctx context.Context, auth *domain.AuthInfo, ids []string) (int64, error) {
-	if auth == nil || auth.Chain == nil || len(auth.Chain.Nodes) == 0 {
-		return 0, &domain.ValidationError{Message: "Space Chain has no nodes."}
-	}
-	if len(ids) == 0 {
-		return 0, &domain.ValidationError{Field: "ids", Message: "required"}
-	}
-	if len(ids) > 1000 {
-		return 0, &domain.ValidationError{Field: "ids", Message: "too many (max 1000)"}
-	}
-	seen := make(map[string]struct{}, len(ids))
-	unique := make([]string, 0, len(ids))
-	for _, id := range ids {
-		if id == "" {
-			continue
-		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		unique = append(unique, id)
-	}
-	if len(unique) == 0 {
-		return 0, &domain.ValidationError{Field: "ids", Message: "required"}
-	}
-	var deleted int64
-	for _, id := range unique {
-		for _, node := range auth.Chain.Nodes {
-			nodeAuth := chainNodeAuth(auth, node)
-			svc := s.resolveServices(nodeAuth)
-			if _, err := svc.memory.Get(ctx, id); err != nil {
-				if errors.Is(err, domain.ErrNotFound) {
-					continue
-				}
-				return deleted, err
-			}
-			removed, err := svc.memory.Delete(ctx, id, auth.AgentName)
-			if err != nil {
-				return deleted, err
-			}
-			go s.afterSuccessfulWrite(nodeAuth, svc, 0)
-			deleted += removed
-			break
-		}
-	}
-	return deleted, nil
 }
 
 func topChainScore(memories []domain.Memory) float64 {

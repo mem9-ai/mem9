@@ -16,6 +16,7 @@ const (
 	EventTypeMemoryRecall = "memoryRecall"
 
 	EventTypeMemoryCreated = "memoryCreated"
+	EventTypeMemoryUpdated = "memoryUpdated"
 	EventTypeMemoryDeleted = "memoryDeleted"
 
 	ReservationStatusCommitted = "committed"
@@ -83,6 +84,12 @@ type MemoryCreateResult struct {
 	ObjectsAffected int64
 }
 
+type MemoryUpdateResult struct {
+	MemoryIDs       []string
+	AgentName       string
+	ObjectsAffected int64
+}
+
 type MemoryDeleteResult struct {
 	MemoryIDs       []string
 	AgentName       string
@@ -115,6 +122,9 @@ type Manager interface {
 	BeforeMemoryCreate(ctx context.Context, subject Subject, units int64) (*OperationLease, error)
 	AfterMemoryCreateSuccess(ctx context.Context, lease *OperationLease, result MemoryCreateResult) error
 	AfterMemoryCreateFailure(ctx context.Context, lease *OperationLease, cause error)
+	BeforeMemoryUpdate(ctx context.Context, subject Subject) (*OperationLease, error)
+	AfterMemoryUpdateSuccess(ctx context.Context, lease *OperationLease, result MemoryUpdateResult) error
+	AfterMemoryUpdateFailure(ctx context.Context, lease *OperationLease, cause error)
 	BeforeMemoryDelete(ctx context.Context, subject Subject) (*OperationLease, error)
 	AfterMemoryDeleteSuccess(ctx context.Context, lease *OperationLease, result MemoryDeleteResult) error
 	AfterMemoryDeleteFailure(ctx context.Context, lease *OperationLease, cause error)
