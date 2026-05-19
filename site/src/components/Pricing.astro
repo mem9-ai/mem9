@@ -18,54 +18,79 @@ const { billing } = Astro.props;
       </p>
     </div>
 
-    <div class="pricing-grid">
-      {billing.tiers.map((tier, index) => (
-        <div class:list={['pricing-card', 'surface-card', tier.highlighted && 'is-highlighted']}>
-          <div class="card-header">
-            <h3 class="tier-name" data-i18n={`billing.tiers.${index}.name`}>{tier.name}</h3>
-            <div class="tier-price-row">
-              <span class="tier-price" data-i18n={`billing.tiers.${index}.price`}>{tier.price}</span>
-              {tier.period && (
-                <span class="tier-period" data-i18n={`billing.tiers.${index}.period`}>{tier.period}</span>
-              )}
-            </div>
-          </div>
-
-          <ul class="tier-features">
-            {tier.features.map((feature, fIndex) => (
-              <li class="tier-feature" data-i18n={`billing.tiers.${index}.features.${fIndex}`}>
-                {feature}
-              </li>
+    <div class="pricing-table-wrap surface-card">
+      <table class="pricing-table">
+        <thead>
+          <tr>
+            <th scope="col" class="feature-heading"></th>
+            {billing.tiers.map((tier, index) => (
+              <th
+                scope="col"
+                class:list={['tier-heading', tier.highlighted && 'is-highlighted']}
+              >
+                <div class="card-header">
+                  <h3 class="tier-name" data-i18n={`billing.tiers.${index}.name`}>{tier.name}</h3>
+                  <div class="tier-price-row">
+                    <span
+                      class:list={['tier-price', tier.promoPrice && 'is-crossed']}
+                      data-i18n={`billing.tiers.${index}.price`}
+                    >
+                      {tier.price}
+                    </span>
+                    {tier.promoPrice && (
+                      <span class="tier-price tier-price-promo" data-i18n={`billing.tiers.${index}.promoPrice`}>
+                        {tier.promoPrice}
+                      </span>
+                    )}
+                    {tier.period && (
+                      <span class="tier-period" data-i18n={`billing.tiers.${index}.period`}>{tier.period}</span>
+                    )}
+                  </div>
+                  {tier.ctaAction === 'mailto' ? (
+                    <button
+                      type="button"
+                      class="cta-button"
+                      data-billing-contact
+                      data-billing-track
+                      data-tier={tier.name}
+                      data-i18n={`billing.tiers.${index}.ctaLabel`}
+                    >
+                      {tier.ctaLabel}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      class="cta-button"
+                      data-billing-alert
+                      data-billing-track
+                      data-tier={tier.name}
+                      data-i18n={`billing.tiers.${index}.ctaLabel`}
+                    >
+                      {tier.ctaLabel}
+                    </button>
+                  )}
+                </div>
+              </th>
             ))}
-          </ul>
-
-          <div class="card-cta">
-            {tier.ctaAction === 'mailto' ? (
-              <button
-                type="button"
-                class="cta-button"
-                data-billing-contact
-                data-billing-track
-                data-tier={tier.name}
-                data-i18n={`billing.tiers.${index}.ctaLabel`}
-              >
-                {tier.ctaLabel}
-              </button>
-            ) : (
-              <button
-                type="button"
-                class="cta-button"
-                data-billing-alert
-                data-billing-track
-                data-tier={tier.name}
-                data-i18n={`billing.tiers.${index}.ctaLabel`}
-              >
-                {tier.ctaLabel}
-              </button>
-            )}
-          </div>
-        </div>
-      ))}
+          </tr>
+        </thead>
+        <tbody>
+          {billing.featureLabels.map((label, featureIndex) => (
+            <tr>
+              <th scope="row" class="feature-label" data-i18n={`billing.featureLabels.${featureIndex}`}>
+                {label}
+              </th>
+              {billing.tiers.map((tier, tierIndex) => (
+                <td class:list={[tier.highlighted && 'is-highlighted']}>
+                  <span data-i18n={`billing.tiers.${tierIndex}.features.${featureIndex}`}>
+                    {tier.features[featureIndex]}
+                  </span>
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   </div>
 
@@ -254,53 +279,60 @@ const { billing } = Astro.props;
     margin-right: auto;
   }
 
-  .pricing-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 1.25rem;
+  .pricing-table-wrap {
     width: min(100%, var(--max-w));
     margin: 0 auto;
+    padding: 0;
+    overflow-x: auto;
   }
 
-  .pricing-card {
-    display: flex;
-    flex-direction: column;
-    padding: 1.75rem 1.5rem;
-    transition: border-color 0.2s ease, transform 0.2s ease;
-  }
-
-  .pricing-card:hover {
-    border-color: var(--border-strong);
-    transform: translateY(-2px);
-  }
-
-  .pricing-card.is-highlighted {
-    border-color: var(--button-active-border);
-    position: relative;
-  }
-
-  .pricing-card.is-highlighted::before {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    border: 2px solid var(--accent);
-    pointer-events: none;
+  .pricing-table {
+    width: 100%;
+    min-width: 920px;
+    border-collapse: collapse;
+    table-layout: fixed;
   }
 
   .card-header {
-    margin-bottom: 1.5rem;
-    padding-bottom: 1.25rem;
+    display: grid;
+    gap: 1rem;
+    min-height: 11.5rem;
+    padding: 1.5rem 1rem 1.25rem;
+    align-content: start;
+    text-align: left;
+  }
+
+  .feature-heading {
+    width: 19%;
+  }
+
+  .tier-heading,
+  .feature-label,
+  .pricing-table td {
     border-bottom: 1px solid var(--border);
+  }
+
+  .tier-heading {
+    vertical-align: top;
+    font-weight: inherit;
+  }
+
+  .tier-heading.is-highlighted,
+  .pricing-table td.is-highlighted {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+
+  .tier-heading.is-highlighted {
+    box-shadow: inset 0 2px 0 var(--accent);
   }
 
   .tier-name {
     font-family: var(--font-mono);
-    font-size: 0.82rem;
+    font-size: 1rem;
     font-weight: 500;
-    letter-spacing: 0.05em;
+    letter-spacing: 0;
     color: var(--accent);
-    margin-bottom: 0.65rem;
+    margin: 0;
   }
 
   .tier-price-row {
@@ -311,11 +343,23 @@ const { billing } = Astro.props;
 
   .tier-price {
     font-family: var(--font-display);
-    font-size: 2.6rem;
+    font-size: 2.25rem;
     font-weight: 800;
-    letter-spacing: -0.04em;
+    letter-spacing: 0;
     line-height: 1;
     color: var(--text);
+  }
+
+  .tier-price.is-crossed {
+    color: var(--text-dim);
+    font-size: 2rem;
+    text-decoration: line-through;
+    text-decoration-thickness: 0.12em;
+    text-decoration-color: color-mix(in srgb, var(--text) 70%, transparent);
+  }
+
+  .tier-price-promo {
+    margin-left: 0.35rem;
   }
 
   .tier-period {
@@ -323,36 +367,28 @@ const { billing } = Astro.props;
     color: var(--text-dim);
   }
 
-  .tier-features {
-    list-style: none;
-    display: grid;
-    gap: 0.65rem;
-    flex: 1 1 auto;
-    margin-bottom: 1.5rem;
+  .feature-label,
+  .pricing-table td {
+    padding: 1rem;
+    text-align: left;
+    vertical-align: middle;
   }
 
-  .tier-feature {
-    position: relative;
-    padding-left: 1.35rem;
-    font-size: 0.92rem;
-    color: var(--text-dim);
+  .feature-label {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text);
+    background: color-mix(in srgb, var(--surface) 90%, var(--text) 10%);
+  }
+
+  .pricing-table td {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    color: var(--text);
     line-height: 1.45;
-  }
-
-  .tier-feature::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0.45em;
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: 50%;
-    background: var(--green-dot);
-    opacity: 0.5;
-  }
-
-  .card-cta {
-    margin-top: auto;
   }
 
   .cta-button {
@@ -374,9 +410,9 @@ const { billing } = Astro.props;
       inset 0 1px 0 color-mix(in srgb, white 22%, transparent),
       0 10px 24px color-mix(in srgb, var(--text) 12%, transparent);
     font-family: var(--font-display);
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     font-weight: 700;
-    letter-spacing: -0.01em;
+    letter-spacing: 0;
     text-decoration: none;
     cursor: pointer;
     transition:
@@ -528,8 +564,10 @@ const { billing } = Astro.props;
   }
 
   @media (max-width: 960px) {
-    .pricing-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+    .pricing-table-wrap {
+      width: calc(100% + 1rem);
+      margin-left: -0.5rem;
+      border-radius: 0.8rem;
     }
   }
 
@@ -539,12 +577,22 @@ const { billing } = Astro.props;
       padding-bottom: 4rem;
     }
 
-    .pricing-grid {
-      grid-template-columns: 1fr;
+    .pricing-table {
+      min-width: 780px;
     }
 
     .tier-price {
-      font-size: 2.2rem;
+      font-size: 2rem;
+    }
+
+    .card-header {
+      min-height: 10.75rem;
+      padding: 1.25rem 0.85rem 1rem;
+    }
+
+    .feature-label,
+    .pricing-table td {
+      padding: 0.85rem;
     }
   }
 </style>

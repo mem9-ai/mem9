@@ -189,6 +189,7 @@ export interface SiteSecurityPageCopy {
 export interface SiteBillingTier {
   name: string;
   price: string;
+  promoPrice?: string;
   period: string;
   features: string[];
   ctaLabel: string;
@@ -201,6 +202,7 @@ export interface SiteBillingPageCopy {
   kicker: string;
   title: string;
   description: string;
+  featureLabels: string[];
   tiers: SiteBillingTier[];
   alertMessage: string;
   contactMessage: string;
@@ -2640,15 +2642,22 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: 'Pricing',
       title: 'Simple, transparent pricing',
       description: 'Start free. Scale when you need to.',
+      featureLabels: [
+        'End users',
+        'Add requests',
+        'Retrieval requests',
+        'Support',
+      ],
       tiers: [
         {
           name: 'Free',
           price: '$0',
           period: '',
           features: [
-            '10,000 memories',
-            '1,000 retrieval API calls / month',
-            'Community support',
+            'Unlimited',
+            '13,000 / month',
+            '1,300 / month',
+            'Community',
           ],
           ctaLabel: 'Get Started',
           ctaAction: 'alert',
@@ -2656,11 +2665,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Starter',
           price: '$9',
+          promoPrice: '$0',
           period: ' / mo',
           features: [
-            '50,000 memories',
-            '5,000 retrieval API calls / month',
-            'Email support',
+            'Unlimited',
+            '65,000 / month',
+            '6,500 / month',
+            'Email',
           ],
           ctaLabel: 'Buy Now',
           ctaAction: 'alert',
@@ -2668,11 +2679,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Pro',
           price: '$120',
+          promoPrice: '$0',
           period: ' / mo',
           features: [
-            'Unlimited memories',
-            '50,000 retrieval API calls / month',
-            'Priority support',
+            'Unlimited',
+            '650,000 / month',
+            '65,000 / month',
+            'Priority',
           ],
           ctaLabel: 'Buy Now',
           ctaAction: 'alert',
@@ -2683,8 +2696,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           price: 'Custom',
           period: '',
           features: [
-            'Unlimited memories',
-            'Unlimited API calls',
+            'Unlimited',
+            'Unlimited',
+            'Unlimited',
             'Dedicated support & Custom SLA',
           ],
           ctaLabel: 'Contact Us',
@@ -2963,15 +2977,22 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: '定价',
       title: '简单透明的定价',
       description: '免费起步，按需扩展。',
+      featureLabels: [
+        '终端用户',
+        '添加请求',
+        '检索请求',
+        '支持',
+      ],
       tiers: [
         {
           name: 'Free',
           price: '$0',
           period: '',
           features: [
-            '10,000 条记忆',
-            '1,000 次检索 API 调用 / 月',
-            '社区支持',
+            '不限',
+            '13,000 / 月',
+            '1,300 / 月',
+            '社区',
           ],
           ctaLabel: '开始使用',
           ctaAction: 'alert',
@@ -2979,11 +3000,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Starter',
           price: '$9',
+          promoPrice: '$0',
           period: ' / 月',
           features: [
-            '50,000 条记忆',
-            '5,000 次检索 API 调用 / 月',
-            '邮件支持',
+            '不限',
+            '65,000 / 月',
+            '6,500 / 月',
+            '邮件',
           ],
           ctaLabel: '立即购买',
           ctaAction: 'alert',
@@ -2991,11 +3014,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Pro',
           price: '$120',
+          promoPrice: '$0',
           period: ' / 月',
           features: [
-            '无限记忆',
-            '50,000 次检索 API 调用 / 月',
-            '优先支持',
+            '不限',
+            '650,000 / 月',
+            '65,000 / 月',
+            '优先',
           ],
           ctaLabel: '立即购买',
           ctaAction: 'alert',
@@ -3006,8 +3031,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           price: '自定义',
           period: '',
           features: [
-            '无限记忆',
-            '无限 API 调用',
+            '不限',
+            '不限',
+            '不限',
             '专属支持 & 自定义 SLA',
           ],
           ctaLabel: '联系我们',
@@ -3290,15 +3316,22 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: '定價',
       title: '簡單透明的定價',
       description: '免費起步，按需擴展。',
+      featureLabels: [
+        '終端使用者',
+        '新增請求',
+        '檢索請求',
+        '支援',
+      ],
       tiers: [
         {
           name: 'Free',
           price: '$0',
           period: '',
           features: [
-            '10,000 條記憶',
-            '1,000 次檢索 API 呼叫 / 月',
-            '社群支援',
+            '不限',
+            '13,000 / 月',
+            '1,300 / 月',
+            '社群',
           ],
           ctaLabel: '開始使用',
           ctaAction: 'alert',
@@ -3306,11 +3339,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Starter',
           price: '$9',
+          promoPrice: '$0',
           period: ' / 月',
           features: [
-            '50,000 條記憶',
-            '5,000 次檢索 API 呼叫 / 月',
-            '電郵支援',
+            '不限',
+            '65,000 / 月',
+            '6,500 / 月',
+            '電郵',
           ],
           ctaLabel: '立即購買',
           ctaAction: 'alert',
@@ -3318,11 +3353,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Pro',
           price: '$120',
+          promoPrice: '$0',
           period: ' / 月',
           features: [
-            '無限記憶',
-            '50,000 次檢索 API 呼叫 / 月',
-            '優先支援',
+            '不限',
+            '650,000 / 月',
+            '65,000 / 月',
+            '優先',
           ],
           ctaLabel: '立即購買',
           ctaAction: 'alert',
@@ -3333,8 +3370,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           price: '自訂',
           period: '',
           features: [
-            '無限記憶',
-            '無限 API 呼叫',
+            '不限',
+            '不限',
+            '不限',
             '專屬支援 & 自訂 SLA',
           ],
           ctaLabel: '聯絡我們',
@@ -3620,15 +3658,22 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: '料金',
       title: 'シンプルで透明な料金体系',
       description: '無料で始めて、必要に応じてスケール。',
+      featureLabels: [
+        'エンドユーザー',
+        '追加リクエスト',
+        '検索リクエスト',
+        'サポート',
+      ],
       tiers: [
         {
           name: 'Free',
           price: '$0',
           period: '',
           features: [
-            '10,000 メモリ',
-            '1,000 検索 API コール / 月',
-            'コミュニティサポート',
+            '無制限',
+            '13,000 / 月',
+            '1,300 / 月',
+            'コミュニティ',
           ],
           ctaLabel: '始める',
           ctaAction: 'alert',
@@ -3636,11 +3681,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Starter',
           price: '$9',
+          promoPrice: '$0',
           period: ' / 月',
           features: [
-            '50,000 メモリ',
-            '5,000 検索 API コール / 月',
-            'メールサポート',
+            '無制限',
+            '65,000 / 月',
+            '6,500 / 月',
+            'メール',
           ],
           ctaLabel: '購入する',
           ctaAction: 'alert',
@@ -3648,11 +3695,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Pro',
           price: '$120',
+          promoPrice: '$0',
           period: ' / 月',
           features: [
-            '無制限メモリ',
-            '50,000 検索 API コール / 月',
-            '優先サポート',
+            '無制限',
+            '650,000 / 月',
+            '65,000 / 月',
+            '優先',
           ],
           ctaLabel: '購入する',
           ctaAction: 'alert',
@@ -3663,8 +3712,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           price: 'カスタム',
           period: '',
           features: [
-            '無制限メモリ',
-            '無制限 API コール',
+            '無制限',
+            '無制限',
+            '無制限',
             '専任サポート & カスタム SLA',
           ],
           ctaLabel: 'お問い合わせ',
@@ -3949,15 +3999,22 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: '요금',
       title: '간단하고 투명한 요금제',
       description: '무료로 시작하고, 필요할 때 확장하세요.',
+      featureLabels: [
+        '최종 사용자',
+        '추가 요청',
+        '검색 요청',
+        '지원',
+      ],
       tiers: [
         {
           name: 'Free',
           price: '$0',
           period: '',
           features: [
-            '10,000 메모리',
-            '1,000 검색 API 호출 / 월',
-            '커뮤니티 지원',
+            '무제한',
+            '13,000 / 월',
+            '1,300 / 월',
+            '커뮤니티',
           ],
           ctaLabel: '시작하기',
           ctaAction: 'alert',
@@ -3965,11 +4022,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Starter',
           price: '$9',
+          promoPrice: '$0',
           period: ' / 월',
           features: [
-            '50,000 메모리',
-            '5,000 검색 API 호출 / 월',
-            '이메일 지원',
+            '무제한',
+            '65,000 / 월',
+            '6,500 / 월',
+            '이메일',
           ],
           ctaLabel: '구매하기',
           ctaAction: 'alert',
@@ -3977,11 +4036,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Pro',
           price: '$120',
+          promoPrice: '$0',
           period: ' / 월',
           features: [
-            '무제한 메모리',
-            '50,000 검색 API 호출 / 월',
-            '우선 지원',
+            '무제한',
+            '650,000 / 월',
+            '65,000 / 월',
+            '우선',
           ],
           ctaLabel: '구매하기',
           ctaAction: 'alert',
@@ -3992,8 +4053,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           price: '맞춤형',
           period: '',
           features: [
-            '무제한 메모리',
-            '무제한 API 호출',
+            '무제한',
+            '무제한',
+            '무제한',
             '전담 지원 & 맞춤 SLA',
           ],
           ctaLabel: '문의하기',
@@ -4281,15 +4343,22 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: 'Harga',
       title: 'Harga yang sederhana dan transparan',
       description: 'Mulai gratis. Skalakan saat dibutuhkan.',
+      featureLabels: [
+        'Pengguna akhir',
+        'Permintaan add',
+        'Permintaan retrieval',
+        'Dukungan',
+      ],
       tiers: [
         {
           name: 'Free',
           price: '$0',
           period: '',
           features: [
-            '10.000 memori',
-            '1.000 panggilan retrieval API / bulan',
-            'Dukungan komunitas',
+            'Tanpa batas',
+            '13.000 / bulan',
+            '1.300 / bulan',
+            'Komunitas',
           ],
           ctaLabel: 'Mulai',
           ctaAction: 'alert',
@@ -4297,11 +4366,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Starter',
           price: '$9',
+          promoPrice: '$0',
           period: ' / bln',
           features: [
-            '50.000 memori',
-            '5.000 panggilan retrieval API / bulan',
-            'Dukungan email',
+            'Tanpa batas',
+            '65.000 / bulan',
+            '6.500 / bulan',
+            'Email',
           ],
           ctaLabel: 'Beli Sekarang',
           ctaAction: 'alert',
@@ -4309,11 +4380,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Pro',
           price: '$120',
+          promoPrice: '$0',
           period: ' / bln',
           features: [
-            'Memori tanpa batas',
-            '50.000 panggilan retrieval API / bulan',
-            'Dukungan prioritas',
+            'Tanpa batas',
+            '650.000 / bulan',
+            '65.000 / bulan',
+            'Prioritas',
           ],
           ctaLabel: 'Beli Sekarang',
           ctaAction: 'alert',
@@ -4324,8 +4397,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           price: 'Kustom',
           period: '',
           features: [
-            'Memori tanpa batas',
-            'Panggilan API tanpa batas',
+            'Tanpa batas',
+            'Tanpa batas',
+            'Tanpa batas',
             'Dukungan khusus & SLA kustom',
           ],
           ctaLabel: 'Hubungi Kami',
@@ -4613,15 +4687,22 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: 'ราคา',
       title: 'ราคาที่เรียบง่ายและโปร่งใส',
       description: 'เริ่มต้นฟรี ขยายเมื่อคุณต้องการ',
+      featureLabels: [
+        'ผู้ใช้ปลายทาง',
+        'Add requests',
+        'Retrieval requests',
+        'การสนับสนุน',
+      ],
       tiers: [
         {
           name: 'Free',
           price: '$0',
           period: '',
           features: [
-            '10,000 หน่วยความจำ',
-            '1,000 retrieval API calls / เดือน',
-            'การสนับสนุนจากชุมชน',
+            'ไม่จำกัด',
+            '13,000 / เดือน',
+            '1,300 / เดือน',
+            'ชุมชน',
           ],
           ctaLabel: 'เริ่มใช้งาน',
           ctaAction: 'alert',
@@ -4629,11 +4710,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Starter',
           price: '$9',
+          promoPrice: '$0',
           period: ' / เดือน',
           features: [
-            '50,000 หน่วยความจำ',
-            '5,000 retrieval API calls / เดือน',
-            'สนับสนุนทางอีเมล',
+            'ไม่จำกัด',
+            '65,000 / เดือน',
+            '6,500 / เดือน',
+            'อีเมล',
           ],
           ctaLabel: 'ซื้อเลย',
           ctaAction: 'alert',
@@ -4641,11 +4724,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Pro',
           price: '$120',
+          promoPrice: '$0',
           period: ' / เดือน',
           features: [
-            'หน่วยความจำไม่จำกัด',
-            '50,000 retrieval API calls / เดือน',
-            'สนับสนุนแบบเร่งด่วน',
+            'ไม่จำกัด',
+            '650,000 / เดือน',
+            '65,000 / เดือน',
+            'เร่งด่วน',
           ],
           ctaLabel: 'ซื้อเลย',
           ctaAction: 'alert',
@@ -4656,8 +4741,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           price: 'กำหนดเอง',
           period: '',
           features: [
-            'หน่วยความจำไม่จำกัด',
-            'API calls ไม่จำกัด',
+            'ไม่จำกัด',
+            'ไม่จำกัด',
+            'ไม่จำกัด',
             'สนับสนุนเฉพาะ & SLA กำหนดเอง',
           ],
           ctaLabel: 'ติดต่อเรา',
