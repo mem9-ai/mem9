@@ -160,6 +160,79 @@ func TestNormalizeTemporalFacts_ResolvesLastWeekToAnchoredPeriod(t *testing.T) {
 	}
 }
 
+func TestNormalizeTemporalFacts_AnchoredWeekAddsMetadata(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "Caroline applied to adoption agencies the week before 23 August 2023."},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFacts(input, []ExtractedFact{
+		{Text: "Caroline applied to adoption agencies the week before 23 August 2023", Tags: []string{"event", "timeline"}},
+	})
+	if got[0].Text != "Caroline applied to adoption agencies the week before 23 August 2023" {
+		t.Fatalf("normalized fact = %q, want unchanged", got[0].Text)
+	}
+	if got[0].Temporal == nil || got[0].Temporal.Display != "2023-08-16~2023-08-22" || got[0].Temporal.AnchorSource != temporalAnchorSourceLocal {
+		t.Fatalf("temporal metadata = %+v, want week range before 2023-08-23", got[0].Temporal)
+	}
+}
+
+func TestNormalizeTemporalFacts_AnchoredMonthAfterAddsMetadata(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "Jolene plans to travel the month after August 2023."},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFacts(input, []ExtractedFact{
+		{Text: "Jolene plans to travel the month after August 2023", Tags: []string{"event", "timeline"}},
+	})
+	if got[0].Temporal == nil || got[0].Temporal.Display != "2023-09" || got[0].Temporal.AnchorSource != temporalAnchorSourceLocal {
+		t.Fatalf("temporal metadata = %+v, want 2023-09", got[0].Temporal)
+	}
+}
+
+func TestNormalizeTemporalFacts_ResolvedSeasonAddsMetadata(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Content: "[9:48 am on 4 February, 2023] Here's a picture I took on vacation last summer in Bogota."},
+	}, maxExtractionConversationRunes)
+
+	got := normalizeTemporalFacts(input, []ExtractedFact{
+		{Text: "Jolene visited Bogota last summer", Tags: []string{"event", "timeline"}},
+	})
+	if got[0].Text != "Jolene visited Bogota in summer 2022" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "Jolene visited Bogota in summer 2022")
+	}
+	if got[0].Temporal == nil || got[0].Temporal.Display != "summer 2022" || got[0].Temporal.AnchorSource != temporalAnchorSourceHeader {
+		t.Fatalf("temporal metadata = %+v, want summer 2022 from header", got[0].Temporal)
+	}
+}
+
+func TestNormalizeReconciledTemporalContentWithFacts_PreservesSourceTemporal(t *testing.T) {
+	t.Parallel()
+
+	facts := []ExtractedFact{{
+		Text: "Jolene visited Bogota in summer 2022",
+		Temporal: &TemporalMetadata{
+			Kind:         temporalKindExplicitAbsolute,
+			AnchorSource: temporalAnchorSourceHeader,
+			Granularity:  temporalGranularitySeason,
+			Display:      "summer 2022",
+		},
+	}}
+
+	text, meta := normalizeReconciledTemporalContentWithFacts("Jolene visited Bogota last summer", facts)
+	if text != "Jolene visited Bogota in summer 2022" {
+		t.Fatalf("normalized text = %q, want source-normalized text", text)
+	}
+	if meta == nil || meta.Display != "summer 2022" || meta.AnchorSource != temporalAnchorSourceHeader {
+		t.Fatalf("temporal metadata = %+v, want source summer 2022", meta)
+	}
+}
+
 func TestNormalizeTemporalFacts_UsesCurrentDateForChineseRelativeDayWithoutTimestamp(t *testing.T) {
 	t.Parallel()
 
