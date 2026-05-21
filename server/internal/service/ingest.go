@@ -675,6 +675,13 @@ atomic facts from a conversation.
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
+   Preserve lists, counts, named entities, and concrete examples when the user
+   mentions them. This includes family members, pets, places, books, media,
+   activities, goals, projects, tools, and repeated events.
+   - Good: "Melanie has pets named Luna, Oliver, and Bailey"
+   - Bad: "Melanie has pets"
+   If a quantity is implied but not exact, keep cautious wording such as
+   "at least two" or "a son and other children" instead of inventing a number.
 4. Preserve the user's original language.
 5. Omit pure greetings, filler, and debugging chatter with no lasting value.
 6. Do NOT extract search queries or lookup questions as facts.
@@ -820,6 +827,13 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
+   Preserve lists, counts, named entities, and concrete examples when the user
+   mentions them. This includes family members, pets, places, books, media,
+   activities, goals, projects, tools, and repeated events.
+   - Good: "Melanie has pets named Luna, Oliver, and Bailey"
+   - Bad: "Melanie has pets"
+   If a quantity is implied but not exact, keep cautious wording such as
+   "at least two" or "a son and other children" instead of inventing a number.
 4. Preserve the user's original language.
 5. Omit pure greetings, filler, and debugging chatter with no lasting value.
 6. Do NOT extract search queries or lookup questions as facts.

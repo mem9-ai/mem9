@@ -73,7 +73,7 @@ var (
 	recallSpeakerTagRe           = regexp.MustCompile(`(?i)\[speaker:([^\]]+)\]`)
 	recallImageCaptionTagRe      = regexp.MustCompile(`(?is)\[image-caption:[^\]]+\]`)
 	recallTemporalTokenRe        = regexp.MustCompile(`\b(?:19|20)\d{2}\b|\b(?:january|february|march|april|may|june|july|august|september|october|november|december|monday|tuesday|wednesday|thursday|friday|saturday|sunday|spring|summer|fall|autumn|winter)\b|(?:\d{4}年|\d{1,2}月|昨天|今天|明天|上周|下周|去年|今年|明年|春天|夏天|秋天|冬天)`)
-	recallEnumerationPluralRe    = regexp.MustCompile(`\b(?:activities|books|events|items|pets|names|artists|bands|places|countries|movies|songs|games|restaurants|authors|albums|hobbies|shows|concerts|goals|projects|fields|ways|instruments|dishes|recipes)\b`)
+	recallEnumerationPluralRe    = regexp.MustCompile(`\b(?:activities|books|events|items|pets|names|artists|bands|places|countries|cities|states|movies|songs|games|restaurants|authors|albums|hobbies|shows|concerts|goals|projects|fields|ways|instruments|exercises|foods|dishes|recipes)\b`)
 	recallEnumerationTypeCueRe   = regexp.MustCompile(`\bwhat\s+(?:type|types|kind|kinds)\s+of\b`)
 	recallEnumerationBothCueRe   = regexp.MustCompile(`\b(?:what|which)\b.*\bboth\b`)
 	recallEnumerationDoneCueRe   = regexp.MustCompile(`\bwhat\s+(?:has|have)\s+.+\s+done\b`)
