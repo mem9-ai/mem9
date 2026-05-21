@@ -65,6 +65,7 @@ cat > "${site_dist_dir}/_redirects" <<REDIRECTS
 /console/auth/*    ${console_api_origin}/auth/:splat            200!
 /console/assets/*  ${console_fe_origin}/console/assets/:splat   200
 /console/favicon.svg  ${console_fe_origin}/console/favicon.svg  200
-/console           /console/                                    301
+/console           ${console_fe_origin}/console/index.html      200
+/console/          ${console_fe_origin}/console/index.html      200
 /console/*         ${console_fe_origin}/console/index.html      200
 REDIRECTS
