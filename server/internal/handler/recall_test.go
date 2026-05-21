@@ -21,6 +21,9 @@ func TestClassifyRecallQueryShape_Bilingual(t *testing.T) {
 		{name: "location english", query: "where is the office", want: recallQueryShapeLocation},
 		{name: "enumeration english activities", query: "What activities does Melanie partake in?", want: recallQueryShapeEnumeration},
 		{name: "enumeration english books", query: "What books has Melanie read?", want: recallQueryShapeEnumeration},
+		{name: "enumeration english cities", query: "Which US cities does John mention visiting?", want: recallQueryShapeEnumeration},
+		{name: "enumeration english foods", query: "What foods does Audrey like eating?", want: recallQueryShapeEnumeration},
+		{name: "enumeration english exercises", query: "What exercises has John done?", want: recallQueryShapeEnumeration},
 		{name: "enumeration english names", query: "What are Melanie's pets' names?", want: recallQueryShapeEnumeration},
 		{name: "exact english", query: "what company does john like", want: recallQueryShapeExact},
 		{name: "entity chinese", query: "谁负责这个项目", want: recallQueryShapeEntity},
@@ -115,6 +118,57 @@ func TestAnswerEvidenceBonus_BilingualSignals(t *testing.T) {
 				t.Fatalf("answerEvidenceBonus(%v, %q) = %.2f, want > %.2f for %q", tt.shape, tt.strong, strong, weak, tt.weak)
 			}
 		})
+	}
+}
+
+func TestRecallQuestionSpecificTokens_StripsQuestionBoilerplate(t *testing.T) {
+	profile := buildRecallQueryProfile("What did Caroline research?")
+	tokens := recallQuestionSpecificTokens(profile)
+	if len(tokens) != 1 || tokens[0] != "research" {
+		t.Fatalf("tokens = %v, want [research]", tokens)
+	}
+
+	profile = buildRecallQueryProfile("Would Melanie go on another roadtrip soon?")
+	tokens = recallQuestionSpecificTokens(profile)
+	if len(tokens) != 1 || tokens[0] != "roadtrip" {
+		t.Fatalf("tokens = %v, want [roadtrip]", tokens)
+	}
+}
+
+func TestRecallQuestionSpecificTokenMatchCount_HandlesActionInflection(t *testing.T) {
+	profile := buildRecallQueryProfile("What did Caroline research?")
+
+	direct := "[date:12 May 2023] [speaker:Caroline] Researching adoption agencies has been a dream."
+	generic := "[date:23 August 2023] [speaker:Caroline] I got help from an adoption advice group."
+	if got := recallQuestionSpecificTokenMatchCount(profile, direct, ""); got != 1 {
+		t.Fatalf("direct token matches = %d, want 1", got)
+	}
+	if got := recallQuestionSpecificTokenMatchCount(profile, generic, ""); got != 0 {
+		t.Fatalf("generic token matches = %d, want 0", got)
+	}
+}
+
+func TestBuildRecallQueryProfile_DoesNotTokenizeNonTimeTemporalQuery(t *testing.T) {
+	profile := buildRecallQueryProfile("Which country was Evan visiting in May 2023?")
+	if profile.shape != recallQueryShapeEntity {
+		t.Fatalf("shape = %v, want entity", profile.shape)
+	}
+	if len(profile.temporalTokens) != 0 {
+		t.Fatalf("temporal tokens = %v, want none for non-time shape", profile.temporalTokens)
+	}
+}
+
+func TestAnswerEvidenceBonus_QuestionSpecificOverlapPrefersDirectEvidence(t *testing.T) {
+	profile := buildRecallQueryProfile("Would Melanie go on another roadtrip soon?")
+
+	direct := domain.Memory{
+		Content: "[date:20 October 2023] [speaker:Melanie] That roadtrip this past weekend was insane; we were freaked when my son got into an accident.",
+	}
+	generic := domain.Memory{
+		Content: "[date:20 October 2023] [speaker:Melanie] I love camping trips with my family because nature helps me reset.",
+	}
+	if gotDirect, gotGeneric := answerEvidenceBonus(profile, direct), answerEvidenceBonus(profile, generic); gotDirect <= gotGeneric {
+		t.Fatalf("expected direct roadtrip evidence to outrank generic camping evidence: direct=%.2f generic=%.2f", gotDirect, gotGeneric)
 	}
 }
 
