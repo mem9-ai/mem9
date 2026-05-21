@@ -40,7 +40,8 @@ server/bin
 server/coverage/
 server/.tmp
 
-# Benchmark results
+# Benchmark dataset & results
+benchmark/locomo/data
 benchmark/results/*
 !benchmark/results/.gitkeep
 benchmark/MR-NIAH/origin/

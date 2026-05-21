@@ -9,7 +9,7 @@ The harness works by:
 3. asking an OpenAI-compatible model to answer from the retrieved context, and
 4. scoring answers with the LoCoMo-style per-category rubric.
 
-Unlike the OpenClaw plugin flow, this benchmark intentionally uses **raw memory writes** (`content` + metadata) instead of the smart `messages` ingest pipeline. That keeps the benchmark focused on retrieval quality over the original dialogue turns rather than on fact extraction behavior.
+By default this benchmark uses **raw memory writes** (`content` + metadata) instead of the smart `messages` ingest pipeline so the default run stays focused on retrieval quality over the original dialogue turns. You can also switch to the smart pipeline with `--ingest-mode messages` when you want to evaluate end-to-end ingestion behavior.
 
 ## Files
 
@@ -18,7 +18,8 @@ Unlike the OpenClaw plugin flow, this benchmark intentionally uses **raw memory 
 - `src/retrieve.ts` — queries mem9 search/list API and builds retrieval context
 - `src/llm.ts` — OpenAI-compatible answer generation + optional LLM judge
 - `src/evaluation.ts` — LoCoMo scoring
-- `data/` — put your dataset and generated helper files here
+- `data/` — put your dataset here
+- `results/` — local benchmark outputs (ignored by git)
 - `USAGE.md` — exact setup and run steps
 
 ## Data layout
@@ -29,14 +30,15 @@ Place the LoCoMo JSON file at:
 data/locomo10.json
 ```
 
-The harness also writes:
+Run the benchmark with:
 
-- `data/conversation_ids.json` — `{ sample_id: session_id }` mapping
-- `results/*.json` — benchmark outputs
+```bash
+npm run start
+```
 
 ## Key design choice
 
-Each LoCoMo `sample_id` is mapped to one `mem9 session_id`. During ingest, every dialogue turn becomes one raw memory with structured metadata:
+Each LoCoMo `sample_id` is mapped to one `mem9 session_id`. In the default `raw` mode, every dialogue turn becomes one memory with structured metadata:
 
 - `sample_id`
 - `session_no`
