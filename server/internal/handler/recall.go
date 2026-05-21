@@ -901,10 +901,19 @@ func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float
 	durationAnswer := containsRecallDurationAnswer(content)
 	durationRangeAnswer := containsRecallDurationRange(content)
 	frequencyAnswer := containsRecallFrequencyAnswer(content)
+	questionTokenMatches := recallQuestionSpecificTokenMatchCount(profile, content, temporalDisplay)
 
 	bonus := 0.0
 	if unitCount > 0 && unitCount <= 18 {
 		bonus += 0.05
+	}
+	switch {
+	case questionTokenMatches >= 3:
+		bonus += 0.14
+	case questionTokenMatches == 2:
+		bonus += 0.10
+	case questionTokenMatches == 1:
+		bonus += 0.06
 	}
 	if profile.targetSpeaker != "" {
 		switch {
@@ -1150,6 +1159,79 @@ func recallFocusMatchCount(memory domain.Memory, focusTokens []string) int {
 		}
 	}
 	return matches
+}
+
+func recallQuestionSpecificTokenMatchCount(profile recallQueryProfile, content, temporalDisplay string) int {
+	switch profile.shape {
+	case recallQueryShapeEntity, recallQueryShapeLocation, recallQueryShapeEnumeration, recallQueryShapeExact, recallQueryShapeGeneral:
+	default:
+		return 0
+	}
+
+	tokens := recallQuestionSpecificTokens(profile)
+	if len(tokens) == 0 {
+		return 0
+	}
+	haystack := strings.ToLower(content)
+	if temporalDisplay != "" {
+		haystack += " " + strings.ToLower(temporalDisplay)
+	}
+
+	matches := 0
+	for _, token := range tokens {
+		if strings.Contains(haystack, token) {
+			matches++
+		}
+	}
+	return matches
+}
+
+func recallQuestionSpecificTokens(profile recallQueryProfile) []string {
+	if strings.TrimSpace(profile.lower) == "" {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	for _, match := range recallCoverageEnglishTokenRe.FindAllString(profile.lower, -1) {
+		token := normalizeRecallCoverageToken(match)
+		if token == "" || len([]rune(token)) < 4 || isRecallQuestionTokenStopword(token) {
+			continue
+		}
+		if sameRecallPerson(token, profile.subjectSpeaker) || sameRecallPerson(token, profile.targetSpeaker) {
+			continue
+		}
+		seen[token] = struct{}{}
+	}
+	for _, match := range recallCoverageCJKTokenRe.FindAllString(profile.lower, -1) {
+		token := normalizeRecallCoverageToken(match)
+		if token == "" || isRecallQuestionTokenStopword(token) {
+			continue
+		}
+		seen[token] = struct{}{}
+	}
+
+	out := make([]string, 0, len(seen))
+	for token := range seen {
+		out = append(out, token)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func isRecallQuestionTokenStopword(token string) bool {
+	if isRecallCoverageStopword(token) || isRecallFocusStopword(token) {
+		return true
+	}
+	switch token {
+	case "about", "again", "also", "another", "anything", "around", "because", "been", "being", "could", "does", "doing", "done", "ever", "from", "going", "have", "having", "into", "just", "like", "likely", "mentioned", "more", "much", "need", "needs", "partake", "soon", "than", "that", "then", "there", "these", "they", "thing", "things", "this", "those", "through", "what", "when", "where", "which", "while", "will", "with", "would":
+		return true
+	case "person", "people", "someone", "something", "information":
+		return true
+	case "哪些", "什么", "哪里", "哪个", "多少", "怎么", "如何":
+		return true
+	default:
+		return false
+	}
 }
 
 func containsRecallDurationAnswer(content string) bool {
