@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sort"
+	"strings"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/service"
@@ -119,8 +120,12 @@ func (s *Server) listChainMemories(ctx context.Context, auth *domain.AuthInfo, f
 	visited := make([]domain.Memory, 0, requestLimit*len(auth.Chain.Nodes))
 	visitedNodes := 0
 	stopReason := "exhausted_chain"
-	stopScore := 0.0
+	topScore := 0.0
+	stopConfidence := 0
+	stopEligible := false
+	stopBlockedReason := ""
 	queryMode := filter.Query != ""
+	profile := buildRecallQueryProfile(filter.Query)
 
 	perNodeFilter := filter
 	perNodeFilter.Offset = 0
@@ -156,10 +161,16 @@ func (s *Server) listChainMemories(ctx context.Context, auth *domain.AuthInfo, f
 
 		if queryMode {
 			nodeTopScore := topChainScore(memories)
-			if nodeTopScore > stopScore {
-				stopScore = nodeTopScore
+			if nodeTopScore > topScore {
+				topScore = nodeTopScore
 			}
-			if nodeTopScore >= s.chainRecallStopScore {
+			decision := chainRecallStopDecision(profile, memories, s.chainRecallStopScore)
+			if decision.confidence > stopConfidence {
+				stopConfidence = decision.confidence
+			}
+			stopEligible = decision.eligible
+			stopBlockedReason = decision.blockedReason
+			if decision.stop {
 				stopReason = "threshold_hit"
 				break
 			}
@@ -172,11 +183,90 @@ func (s *Server) listChainMemories(ctx context.Context, auth *domain.AuthInfo, f
 		"chain_id", auth.Chain.ChainID,
 		"visited_node_count", visitedNodes,
 		"stop_reason", stopReason,
-		"stop_score", stopScore,
+		"top_score", topScore,
+		"stop_confidence", stopConfidence,
+		"stop_eligible", stopEligible,
+		"stop_blocked_reason", stopBlockedReason,
 		"threshold", s.chainRecallStopScore,
 		"returned", len(memories),
 	)
 	return memories, totalBeforePage, nil
+}
+
+type chainRecallStopStatus struct {
+	stop          bool
+	eligible      bool
+	confidence    int
+	blockedReason string
+}
+
+func chainRecallStopDecision(profile recallQueryProfile, memories []domain.Memory, threshold float64) chainRecallStopStatus {
+	confidence := topChainStopConfidence(memories)
+	eligible, blockedReason := chainRecallStopEligible(profile)
+	if !eligible {
+		return chainRecallStopStatus{
+			eligible:      false,
+			confidence:    confidence,
+			blockedReason: blockedReason,
+		}
+	}
+	thresholdConfidence := chainRecallStopConfidenceThreshold(threshold)
+	return chainRecallStopStatus{
+		stop:       confidence >= thresholdConfidence,
+		eligible:   true,
+		confidence: confidence,
+	}
+}
+
+func chainRecallStopEligible(profile recallQueryProfile) (bool, string) {
+	if strings.TrimSpace(profile.lower) == "" {
+		return false, "empty_query"
+	}
+	if profile.shape == recallQueryShapeEnumeration {
+		return false, "enumeration_query"
+	}
+	switch profile.shape {
+	case recallQueryShapeEntity, recallQueryShapeCount, recallQueryShapeTime, recallQueryShapeLocation, recallQueryShapeExact:
+		return true, ""
+	}
+	if len(extractRecallQueryTokens(profile.lower)) < 2 {
+		return false, "single_token_query"
+	}
+	return true, ""
+}
+
+func chainRecallStopConfidenceThreshold(threshold float64) int {
+	if threshold < 0 {
+		threshold = 0
+	}
+	if threshold > 1 {
+		threshold = 1
+	}
+	return int(threshold*100 + 0.5)
+}
+
+func topChainStopConfidence(memories []domain.Memory) int {
+	best := 0
+	for _, mem := range memories {
+		confidence := chainStopConfidence(mem)
+		if confidence > best {
+			best = confidence
+		}
+	}
+	return best
+}
+
+func chainStopConfidence(mem domain.Memory) int {
+	if mem.Confidence == nil {
+		return 0
+	}
+	if *mem.Confidence < 0 {
+		return 0
+	}
+	if *mem.Confidence > 100 {
+		return 100
+	}
+	return *mem.Confidence
 }
 
 func (s *Server) getChainMemory(ctx context.Context, auth *domain.AuthInfo, id string) (*domain.Memory, error) {

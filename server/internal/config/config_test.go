@@ -23,6 +23,18 @@ func TestConfig_MeteringSurfaceReduced(t *testing.T) {
 	}
 }
 
+func TestLoad_ChainRecallStopScoreDefaultsToHighConfidence(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ChainRecallStopScore != 0.8 {
+		t.Fatalf("ChainRecallStopScore = %v, want 0.8", cfg.ChainRecallStopScore)
+	}
+}
+
 func TestLoad_MeteringSupportedFields(t *testing.T) {
 	t.Setenv("MNEMO_DSN", "test-dsn")
 	t.Setenv("MNEMO_METERING_ENABLED", "true")

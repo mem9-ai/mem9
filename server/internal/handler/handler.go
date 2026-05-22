@@ -73,7 +73,7 @@ func NewServer(
 		dbBackend:            dbBackend,
 		logger:               logger,
 		startedAt:            time.Now().UTC(),
-		chainRecallStopScore: 0.5,
+		chainRecallStopScore: 0.8,
 	}
 }
 

@@ -178,7 +178,7 @@ func Load() (*Config, error) {
 		TenantPoolConnectTimeout:    envDuration("MNEMO_TENANT_POOL_CONNECT_TIMEOUT", 3*time.Second),
 		TenantPoolIdleTimeout:       envDuration("MNEMO_TENANT_POOL_IDLE_TIMEOUT", 10*time.Minute),
 		TenantPoolTotalLimit:        envInt("MNEMO_TENANT_POOL_TOTAL_LIMIT", 200),
-		ChainRecallStopScore:        envFloat("MNEMO_CHAIN_RECALL_STOP_SCORE", 0.5),
+		ChainRecallStopScore:        envFloat("MNEMO_CHAIN_RECALL_STOP_SCORE", 0.8),
 		UploadDir:                   envOr("MNEMO_UPLOAD_DIR", "./uploads"),
 		FTSEnabled:                  envBool("MNEMO_FTS_ENABLED", false),
 		WorkerConcurrency:           envInt("MNEMO_WORKER_CONCURRENCY", 5),

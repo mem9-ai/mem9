@@ -208,7 +208,7 @@ The `MEM9_SOURCE_TURN_*` variables control how many source turn conversations ar
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `MNEMO_CHAIN_RECALL_STOP_SCORE` | No | `0.5` | Stop querying later Space Chain nodes once a node result score reaches this threshold. Must be between `0` and `1` |
+| `MNEMO_CHAIN_RECALL_STOP_SCORE` | No | `0.8` | Stop querying later Space Chain nodes only when an eligible query has a top normalized confidence at or above this threshold. Raw search `score` values do not trigger chain stop. Must be between `0` and `1` |
 
 #### Provisioning And Pooling
 

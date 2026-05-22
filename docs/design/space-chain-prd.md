@@ -173,8 +173,8 @@ For query-based recall:
 1. Load active nodes ordered by `position`.
 2. Search node 1 using the existing memory/session recall path.
 3. Add node 1 candidates to the visited candidate set.
-4. If node 1's top fused score is greater than or equal to
-   `MNEMO_CHAIN_RECALL_STOP_SCORE`, stop.
+4. If the query is stop-eligible and node 1's top normalized confidence is
+   greater than or equal to `MNEMO_CHAIN_RECALL_STOP_SCORE`, stop.
 5. Otherwise continue to node 2, and repeat.
 6. If no node reaches the threshold, all nodes are visited.
 7. Return a final reranked result set built from all visited nodes.
@@ -182,7 +182,12 @@ For query-based recall:
 Configuration:
 
 - `MNEMO_CHAIN_RECALL_STOP_SCORE`
-- Default: `0.5`
+- Default: `0.8`
+
+Raw search `score` values are not used for stopping because FTS scores are not
+normalized and may exceed 1.0. Single-token keyword queries and enumeration
+queries are not stop-eligible, so they visit all chain nodes and rerank the
+aggregate candidate set.
 
 The final result set must merge facts and raw session results across visited
 nodes. Existing per-node recall behavior, type weighting, session recall, and
@@ -321,7 +326,7 @@ Required logging:
 - `chain_` key status returns active/inactive through existing status response.
 - Duplicate nodes are rejected.
 - Empty chain reads and writes return a clear error.
-- Recall visits nodes in order and stops when top score is at least
+- Recall visits nodes in order and stops when top normalized confidence is at least
   `MNEMO_CHAIN_RECALL_STOP_SCORE`.
 - If no node reaches the threshold, recall searches all nodes and reranks the
   aggregate candidate set.
