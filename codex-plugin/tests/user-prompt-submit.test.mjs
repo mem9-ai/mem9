@@ -203,6 +203,7 @@ test("user prompt submit recalls memories with the search timeout bucket", async
       apiKey: "key-1",
       agentId: "codex",
       searchTimeoutMs: 15_000,
+      recallMinPromptLength: 5,
     },
     async search(url, options) {
       requestedUrl = url;
@@ -245,6 +246,7 @@ test("user prompt submit skips empty queries after stripping injected memories",
       apiKey: "key-1",
       agentId: "codex",
       searchTimeoutMs: 15_000,
+      recallMinPromptLength: 5,
     },
     async search() {
       called = true;
@@ -258,6 +260,69 @@ test("user prompt submit skips empty queries after stripping injected memories",
   assert.equal(called, false);
   assert.equal(output, "");
   assert.equal(debugEvents[0]?.stage, "prompt_empty");
+});
+
+test("user prompt submit skips recall when the stripped query is shorter than the configured minimum", async () => {
+  let called = false;
+  /** @type {Array<{stage: string, fields: Record<string, unknown> | undefined}>} */
+  const debugEvents = [];
+  const prompt = "<relevant-memories>\n1. old\n</relevant-memories>\n\nhi";
+
+  const output = await runUserPromptSubmit({
+    prompt,
+    runtime: {
+      baseUrl: "https://api.mem9.ai",
+      apiKey: "key-1",
+      agentId: "codex",
+      searchTimeoutMs: 15_000,
+      recallMinPromptLength: 5,
+    },
+    async search() {
+      called = true;
+      return { memories: [] };
+    },
+    debug(stage, fields) {
+      debugEvents.push({ stage, fields });
+    },
+  });
+
+  assert.equal(called, false);
+  assert.equal(output, "");
+  assert.equal(debugEvents[0]?.stage, "prompt_too_short");
+  assert.deepEqual(debugEvents[0]?.fields, {
+    promptChars: prompt.length,
+    queryChars: 2,
+    recallMinPromptLength: 5,
+  });
+});
+
+test("user prompt submit allows short non-empty queries when the configured minimum is zero", async () => {
+  /** @type {string | null} */
+  let requestedUrl = null;
+
+  const output = await runUserPromptSubmit({
+    prompt: "hi",
+    runtime: {
+      baseUrl: "https://api.mem9.ai",
+      apiKey: "key-1",
+      agentId: "codex",
+      searchTimeoutMs: 15_000,
+      recallMinPromptLength: 0,
+    },
+    async search(url) {
+      requestedUrl = url;
+      return {
+        memories: [
+          { content: "Short prompts can still recall when configured." },
+        ],
+      };
+    },
+  });
+
+  assert.ok(requestedUrl);
+  const url = new URL(requestedUrl);
+  assert.equal(url.searchParams.get("q"), "hi");
+  assert.match(output, /Short prompts can still recall/);
 });
 
 for (const issueCode of NON_READY_ISSUE_CODES) {

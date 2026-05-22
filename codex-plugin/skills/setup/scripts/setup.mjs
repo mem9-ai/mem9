@@ -20,6 +20,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
+  DEFAULT_RECALL_MIN_PROMPT_LENGTH,
   DEFAULT_SEARCH_TIMEOUT_MS,
   loadRuntimeStateFromDisk,
   resolveInstalledPluginCacheVersion,
@@ -94,10 +95,27 @@ function normalizeTimeoutMs(value, fallback) {
   return Math.floor(value);
 }
 
+function normalizeNonNegativeInteger(value, fallback) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return fallback;
+  }
+
+  return Math.floor(value);
+}
+
 function parseIntegerArg(flag, value) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     throw new Error(`${flag} must be a positive integer.`);
+  }
+
+  return parsed;
+}
+
+function parseNonNegativeIntegerArg(flag, value) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${flag} must be a non-negative integer.`);
   }
 
   return parsed;
@@ -353,6 +371,7 @@ function buildSetupHelpText(command = "", subcommand = "") {
         "    --profile <profile-id> \\",
         "    [--default-timeout-ms <ms>] \\",
         "    [--search-timeout-ms <ms>] \\",
+        "    [--recall-min-prompt-length <chars>] \\",
         "    [--update-check <enabled|disabled>] \\",
         "    [--update-check-interval-hours <hours>] \\",
         "    [--cwd <path>]",
@@ -364,13 +383,14 @@ function buildSetupHelpText(command = "", subcommand = "") {
         "Optional flags:",
         "  --default-timeout-ms <ms>             Defaults to the existing value or runtime default.",
         "  --search-timeout-ms <ms>              Defaults to the existing value or runtime default.",
+        "  --recall-min-prompt-length <chars>    Defaults to the existing value or 5. Set 0 to recall every non-empty prompt.",
         "  --update-check <enabled|disabled>     User scope only.",
         "  --update-check-interval-hours <hours> User scope only.",
         "  --cwd <path>                          Resolve repo-local paths from this directory.",
         "",
         "Examples:",
-        "  node ./scripts/setup.mjs scope apply --scope user --profile default --default-timeout-ms 8000 --search-timeout-ms 15000 --update-check enabled --update-check-interval-hours 24",
-        "  node ./scripts/setup.mjs scope apply --scope project --profile work --default-timeout-ms 8000 --search-timeout-ms 15000 --cwd .",
+        "  node ./scripts/setup.mjs scope apply --scope user --profile default --default-timeout-ms 8000 --search-timeout-ms 15000 --recall-min-prompt-length 5 --update-check enabled --update-check-interval-hours 24",
+        "  node ./scripts/setup.mjs scope apply --scope project --profile work --default-timeout-ms 8000 --search-timeout-ms 15000 --recall-min-prompt-length 5 --cwd .",
         "",
       ].join("\n");
     case "scope:clear":
@@ -400,7 +420,7 @@ function buildSetupHelpText(command = "", subcommand = "") {
         "  node ./scripts/setup.mjs inspect [--cwd <path>]",
         "  node ./scripts/setup.mjs profile create --profile <profile-id> [--label <profile-label>] [--base-url <mem9-api-base-url>] --provision-api-key [--cwd <path>]",
         "  node ./scripts/setup.mjs profile save-key --profile <profile-id> [--label <profile-label>] [--base-url <mem9-api-base-url>] --api-key-env <env-var> [--cwd <path>]",
-        "  node ./scripts/setup.mjs scope apply --scope <user|project> --profile <profile-id> [--default-timeout-ms <ms>] [--search-timeout-ms <ms>] [--update-check <enabled|disabled>] [--update-check-interval-hours <hours>] [--cwd <path>]",
+        "  node ./scripts/setup.mjs scope apply --scope <user|project> --profile <profile-id> [--default-timeout-ms <ms>] [--search-timeout-ms <ms>] [--recall-min-prompt-length <chars>] [--update-check <enabled|disabled>] [--update-check-interval-hours <hours>] [--cwd <path>]",
         "  node ./scripts/setup.mjs scope clear --scope project [--cwd <path>]",
         "",
         "Commands:",
@@ -419,7 +439,7 @@ function buildSetupHelpText(command = "", subcommand = "") {
         "  node ./scripts/setup.mjs inspect --cwd .",
         "  node ./scripts/setup.mjs profile create --profile default --label Default --provision-api-key",
         "  MEM9_API_KEY='<your-mem9-api-key>' node ./scripts/setup.mjs profile save-key --profile default --label Default --base-url https://api.mem9.ai --api-key-env MEM9_API_KEY",
-        "  node ./scripts/setup.mjs scope apply --scope user --profile default --default-timeout-ms 8000 --search-timeout-ms 15000 --update-check enabled --update-check-interval-hours 24",
+        "  node ./scripts/setup.mjs scope apply --scope user --profile default --default-timeout-ms 8000 --search-timeout-ms 15000 --recall-min-prompt-length 5 --update-check enabled --update-check-interval-hours 24",
         "",
         "Run a subcommand with --help for more detail.",
         "",
@@ -925,6 +945,10 @@ function summarizeScopeConfigState(config, options = {}) {
       config.searchTimeoutMs,
       DEFAULT_SEARCH_TIMEOUT_MS,
     ),
+    recallMinPromptLength: normalizeNonNegativeInteger(
+      config.recallMinPromptLength,
+      DEFAULT_RECALL_MIN_PROMPT_LENGTH,
+    ),
     legacyEnabledFalse: config.enabled === false,
   };
 
@@ -1024,6 +1048,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
     scope: "",
     defaultTimeoutMs: undefined,
     searchTimeoutMs: undefined,
+    recallMinPromptLength: undefined,
     updateCheck: "",
     updateCheckIntervalHours: undefined,
   };
@@ -1086,6 +1111,10 @@ export function parseArgs(argv = process.argv.slice(2)) {
         break;
       case "--search-timeout-ms":
         args.searchTimeoutMs = parseIntegerArg(token, nextValue);
+        index += 1;
+        break;
+      case "--recall-min-prompt-length":
+        args.recallMinPromptLength = parseNonNegativeIntegerArg(token, nextValue);
         index += 1;
         break;
       case "--update-check":
@@ -1156,6 +1185,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
       || args.provisionApiKey
       || args.defaultTimeoutMs !== undefined
       || args.searchTimeoutMs !== undefined
+      || args.recallMinPromptLength !== undefined
       || args.updateCheck
       || args.updateCheckIntervalHours !== undefined
     ) {
@@ -1556,6 +1586,10 @@ export function buildScopeConfig(profileId, options = {}) {
       options.searchTimeoutMs ?? existingConfig.searchTimeoutMs,
       DEFAULT_SEARCH_TIMEOUT_MS,
     ),
+    recallMinPromptLength: normalizeNonNegativeInteger(
+      options.recallMinPromptLength ?? existingConfig.recallMinPromptLength,
+      DEFAULT_RECALL_MIN_PROMPT_LENGTH,
+    ),
     updateCheck: scope === "user"
       ? {
         enabled: options.updateCheck === "enabled"
@@ -1932,6 +1966,7 @@ export function inspectSetup(argv = process.argv.slice(2), options = {}) {
       profileId: runtimeState.runtime.profileId,
       defaultTimeoutMs: runtimeState.runtime.defaultTimeoutMs,
       searchTimeoutMs: runtimeState.runtime.searchTimeoutMs,
+      recallMinPromptLength: runtimeState.runtime.recallMinPromptLength,
       warnings: runtimeState.warnings,
       legacyPausedSources: runtimeState.legacyPausedSources,
       effectiveLegacyPausedSource: runtimeState.effectiveLegacyPausedSource,
@@ -2123,6 +2158,7 @@ function resolveConfigWriteFallback(scope, targetConfig, globalConfig) {
   return {
     defaultTimeoutMs: targetConfig?.defaultTimeoutMs ?? globalConfig?.defaultTimeoutMs,
     searchTimeoutMs: targetConfig?.searchTimeoutMs ?? globalConfig?.searchTimeoutMs,
+    recallMinPromptLength: targetConfig?.recallMinPromptLength ?? globalConfig?.recallMinPromptLength,
   };
 }
 
@@ -2193,6 +2229,7 @@ async function runScopeApply(args, options = {}) {
     existingConfig: resolveConfigWriteFallback(args.scope, targetConfig, globalConfig),
     defaultTimeoutMs: args.defaultTimeoutMs,
     searchTimeoutMs: args.searchTimeoutMs,
+    recallMinPromptLength: args.recallMinPromptLength,
     updateCheck: args.updateCheck,
     updateCheckIntervalHours: args.updateCheckIntervalHours,
   });

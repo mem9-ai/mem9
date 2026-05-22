@@ -19,6 +19,7 @@ let debugContext = {};
  *   apiKey: string,
  *   agentId: string,
  *   searchTimeoutMs: number,
+ *   recallMinPromptLength: number,
  * }} RecallRuntime
  */
 
@@ -80,6 +81,15 @@ export async function runUserPromptSubmit(input) {
   if (!query) {
     debug("prompt_empty", {
       promptChars: prompt.length,
+    });
+    return "";
+  }
+
+  if (query.length < input.runtime.recallMinPromptLength) {
+    debug("prompt_too_short", {
+      promptChars: prompt.length,
+      queryChars: query.length,
+      recallMinPromptLength: input.runtime.recallMinPromptLength,
     });
     return "";
   }

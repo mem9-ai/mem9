@@ -12,11 +12,11 @@ test("plugin manifest exposes mem9 setup skill and basic metadata", () => {
   );
 
   assert.equal(manifest.name, "mem9");
-  assert.equal(manifest.version, "0.2.2");
+  assert.equal(manifest.version, "0.2.3");
   assert.equal(manifest.skills, "./skills/");
   assert.equal(typeof manifest.description, "string");
   assert.match(manifest.description, /\$mem9:setup/);
-  assert.equal(packageManifest.version, "0.2.2");
+  assert.equal(packageManifest.version, "0.2.3");
   assert.equal(packageManifest.version, manifest.version);
   assert.equal(packageManifest.engines.node, ">=22");
   assert.equal(packageManifest.files.includes("lib/"), true);
@@ -66,6 +66,7 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
   assert.match(setupSkill, /Do not rewrite it into generic text like `key saved`/);
   assert.match(setupSkill, /Example: `default \(019d\.\.\.4356\) · https:\/\/api\.mem9\.ai`/);
   assert.match(setupSkill, /updateCheck/);
+  assert.match(setupSkill, /--recall-min-prompt-length <chars>/);
   assert.match(setupSkill, /--update-check enabled\|disabled/);
   assert.match(setupSkill, /--update-check-interval-hours <hours>/);
   assert.doesNotMatch(setupSkill, /disable-model-invocation:\s*true/);
@@ -133,6 +134,8 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /## Reference: Files, Config, Environment/);
   assert.match(readme, /### File Layout/);
   assert.match(readme, /### Config Files/);
+  assert.match(readme, /Automatic recall uses `recallMinPromptLength`/);
+  assert.match(readme, /"recallMinPromptLength": 5/);
   assert.match(readme, /<project>\/\.codex\/mem9\/config\.json/);
   assert.match(readme, /\$MEM9_HOME\/\.credentials\.json/);
   assert.match(readme, /\$CODEX_HOME\/mem9\/install\.json/);

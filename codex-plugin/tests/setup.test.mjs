@@ -58,6 +58,7 @@ test("parseArgs supports the setup subcommands", () => {
       scope: "",
       defaultTimeoutMs: undefined,
       searchTimeoutMs: undefined,
+      recallMinPromptLength: undefined,
       updateCheck: "",
       updateCheckIntervalHours: undefined,
     },
@@ -87,6 +88,7 @@ test("parseArgs supports the setup subcommands", () => {
       scope: "",
       defaultTimeoutMs: undefined,
       searchTimeoutMs: undefined,
+      recallMinPromptLength: undefined,
       updateCheck: "",
       updateCheckIntervalHours: undefined,
     },
@@ -104,6 +106,8 @@ test("parseArgs supports the setup subcommands", () => {
       "8100",
       "--search-timeout-ms",
       "15100",
+      "--recall-min-prompt-length",
+      "0",
     ]),
     {
       command: "scope",
@@ -117,6 +121,7 @@ test("parseArgs supports the setup subcommands", () => {
       scope: "project",
       defaultTimeoutMs: 8100,
       searchTimeoutMs: 15100,
+      recallMinPromptLength: 0,
       updateCheck: "",
       updateCheckIntervalHours: undefined,
     },
@@ -147,6 +152,7 @@ test("parseArgs supports the setup subcommands", () => {
       scope: "user",
       defaultTimeoutMs: undefined,
       searchTimeoutMs: undefined,
+      recallMinPromptLength: undefined,
       updateCheck: "disabled",
       updateCheckIntervalHours: 72,
     },
@@ -462,6 +468,7 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
       profileId: "default",
       defaultTimeoutMs: 8300,
       searchTimeoutMs: 15300,
+      recallMinPromptLength: 8,
       updateCheck: {
         enabled: false,
         intervalHours: 72,
@@ -473,6 +480,7 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
       profileId: "work",
       defaultTimeoutMs: 9100,
       searchTimeoutMs: 15500,
+      recallMinPromptLength: 4,
       updateCheck: {
         enabled: true,
         intervalHours: 6,
@@ -513,6 +521,7 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
     assert.equal(summary.command, "inspect");
     assert.equal(summary.environment.nodeVersionSupported, true);
     assert.equal(summary.runtime.pluginState, "enabled");
+    assert.equal(summary.runtime.recallMinPromptLength, 4);
     assert.deepEqual(summary.runtime.legacyPausedSources, ["global", "project"]);
     assert.equal(summary.runtime.effectiveLegacyPausedSource, "project");
     assert.equal(summary.plugin.hooksFeatureEnabled, true);
@@ -528,9 +537,11 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
       enabled: false,
       intervalHours: 72,
     });
+    assert.equal(summary.globalConfig.summary.recallMinPromptLength, 8);
     assert.equal(summary.projectConfig.summary.profileId, "work");
     assert.equal(summary.projectConfig.summary.legacyEnabledFalse, true);
     assert.equal(summary.projectConfig.summary.updateCheck, undefined);
+    assert.equal(summary.projectConfig.summary.recallMinPromptLength, 4);
     assert.deepEqual(summary.profiles.usableProfileIds, ["default"]);
     assert.match(
       summary.profiles.manualSaveKeyTemplate,
@@ -1082,6 +1093,8 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
         "disabled",
         "--update-check-interval-hours",
         "72",
+        "--recall-min-prompt-length",
+        "6",
       ],
       {
         cwd: projectRoot,
@@ -1106,6 +1119,7 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
       enabled: false,
       intervalHours: 72,
     });
+    assert.equal(result.configSummary.recallMinPromptLength, 6);
     assert.equal(
       existsSync(path.join(codexHome, "mem9", "hooks", "session-start.mjs")),
       true,
@@ -1128,6 +1142,7 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
     assert.equal(globalConfig.profileId, "work");
     assert.equal(globalConfig.defaultTimeoutMs, 8000);
     assert.equal(globalConfig.searchTimeoutMs, 15000);
+    assert.equal(globalConfig.recallMinPromptLength, 6);
     assert.deepEqual(globalConfig.updateCheck, {
       enabled: false,
       intervalHours: 72,
@@ -1161,6 +1176,7 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
       enabled: false,
       intervalHours: 72,
     });
+    assert.equal(stdoutSummary.configSummary.recallMinPromptLength, 6);
     assert.equal(stdoutText.includes("key-1"), false);
     assert.equal(JSON.stringify(stdoutSummary).includes("key-1"), false);
   } finally {
@@ -1290,6 +1306,7 @@ test("scope apply project writes a local override and clears legacy enabled fals
       profileId: "default",
       defaultTimeoutMs: 8200,
       searchTimeoutMs: 15200,
+      recallMinPromptLength: 7,
     });
     writeJson(path.join(mem9Home, ".credentials.json"), {
       schemaVersion: 1,
@@ -1311,6 +1328,7 @@ test("scope apply project writes a local override and clears legacy enabled fals
       enabled: false,
       profileId: "default",
       defaultTimeoutMs: 9100,
+      recallMinPromptLength: 3,
     });
 
     await runSetup(
@@ -1334,6 +1352,7 @@ test("scope apply project writes a local override and clears legacy enabled fals
     assert.equal(saved.profileId, "work");
     assert.equal(saved.defaultTimeoutMs, 9100);
     assert.equal(saved.searchTimeoutMs, 15200);
+    assert.equal(saved.recallMinPromptLength, 3);
     assert.equal("enabled" in saved, false);
     assert.equal("updateCheck" in saved, false);
   } finally {
@@ -1532,6 +1551,7 @@ test("scope apply repairs malformed json files and rewrites them with valid conf
     const repairedInstall = readJson(path.join(codexHome, "mem9", "install.json"));
 
     assert.equal(repairedConfig.profileId, "work");
+    assert.equal(repairedConfig.recallMinPromptLength, 5);
     assert.deepEqual(repairedConfig.updateCheck, {
       enabled: true,
       intervalHours: 24,

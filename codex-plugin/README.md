@@ -7,6 +7,8 @@ After setup, it does two things automatically:
 - recalls relevant memories before each user prompt
 - saves a recent `user` / `assistant` window when Codex stops
 
+Automatic recall uses `recallMinPromptLength`, which defaults to `5`, after stripping already-injected memory context from the current prompt.
+
 The plugin exposes:
 
 - `$mem9:setup`
@@ -39,7 +41,7 @@ codex plugin marketplace add mem9-ai/mem9
    $mem9:setup
    ```
 
-5. If one repository needs a different profile or timeout, rerun `$mem9:setup` in that repository and apply project scope.
+5. If one repository needs a different profile, timeout, or recall prompt-length threshold, rerun `$mem9:setup` in that repository and apply project scope.
 6. When you want an on-demand recall or an explicit store, run:
 
    ```text
@@ -92,7 +94,7 @@ What it does:
 - repairs the Codex hooks feature flag, `$CODEX_HOME/hooks.json`, and the managed hook shims
 - keeps API key entry out of the Codex TUI
 
-Project scope keeps profile and timeout overrides.
+Project scope keeps profile, timeout, and recall prompt-length overrides.
 User scope also owns `updateCheck.enabled` and `updateCheck.intervalHours`.
 
 ### `$mem9:cleanup`
@@ -217,7 +219,7 @@ Common issues:
 - If `$mem9:setup` returns `no matches` after installing from `/plugins`, restart Codex or open a fresh Codex session. Codex loads plugin skills when the session starts.
 - If `inspect` reports `missing_install_metadata` before setup finishes, continue with `$mem9:setup`. `scope apply` writes `$CODEX_HOME/mem9/install.json`.
 - If `SessionStart` says mem9 is not configured, run `$mem9:setup`.
-- If a repository needs a different profile, timeout, or a cleared local override, rerun `$mem9:setup` in that repository and apply or clear project scope.
+- If a repository needs a different profile, timeout, recall prompt-length threshold, or a cleared local override, rerun `$mem9:setup` in that repository and apply or clear project scope.
 - If you want to remove the managed Codex files before reinstalling or resetting mem9, run `$mem9:cleanup`.
 - If the selected profile is missing, run `$mem9:setup` to create or repair global profiles.
 - If the selected profile is missing an API key, run `$mem9:setup` and choose `create-new`, or add the profile manually in `$MEM9_HOME/.credentials.json` and rerun `$mem9:setup`, then choose `use-existing`.
@@ -289,6 +291,7 @@ Global default config:
   "profileId": "default",
   "defaultTimeoutMs": 8000,
   "searchTimeoutMs": 15000,
+  "recallMinPromptLength": 5,
   "updateCheck": {
     "enabled": true,
     "intervalHours": 24
@@ -301,11 +304,13 @@ Project override example:
 ```json
 {
   "schemaVersion": 1,
-  "profileId": "work"
+  "profileId": "work",
+  "recallMinPromptLength": 5
 }
 ```
 
 Remote update-check settings stay in the global config.
+Set `recallMinPromptLength` to `0` to recall on every non-empty stripped user prompt.
 
 ### Environment Overrides
 
