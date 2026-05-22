@@ -106,7 +106,7 @@ async function runNodeHook(scriptPath, input) {
 
 /**
  * @param {string} tempRoot
- * @param {"plugin_disabled" | "plugin_missing" | "legacy_paused"} issueCode
+ * @param {"ready" | "plugin_disabled" | "plugin_missing" | "legacy_paused"} issueCode
  * @param {string} baseUrl
  */
 function createRuntimeLayout(tempRoot, issueCode, baseUrl) {
@@ -323,6 +323,43 @@ test("user prompt submit allows short non-empty queries when the configured mini
   const url = new URL(requestedUrl);
   assert.equal(url.searchParams.get("q"), "hi");
   assert.match(output, /Short prompts can still recall/);
+});
+
+test("user prompt submit entrypoint skips short prompts using runtime config from disk", async () => {
+  const tempRoot = createTempRoot();
+  const server = await createCountingServer();
+
+  try {
+    const runtime = createRuntimeLayout(tempRoot, "ready", server.origin);
+    writeJson(path.join(runtime.codexHome, "mem9", "config.json"), {
+      schemaVersion: 1,
+      enabled: true,
+      profileId: "default",
+      recallMinPromptLength: 5,
+    });
+
+    const result = await runNodeHook(USER_PROMPT_SUBMIT_ENTRY, {
+      cwd: runtime.cwd,
+      env: {
+        ...process.env,
+        CODEX_HOME: runtime.codexHome,
+        MEM9_HOME: runtime.mem9Home,
+      },
+      input: JSON.stringify({
+        cwd: runtime.cwd,
+        prompt: "hi",
+      }),
+    });
+
+    assert.equal(result.code, 0);
+    assert.equal(result.signal, null);
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "");
+    assert.equal(server.getRequestCount(), 0);
+  } finally {
+    await server.close();
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 for (const issueCode of NON_READY_ISSUE_CODES) {
