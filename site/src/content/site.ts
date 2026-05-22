@@ -43,6 +43,7 @@ export interface SiteNavCopy {
   benchmark: string;
   openclaw: string;
   yourMemory: string;
+  login: string;
   billing: string;
   security: string;
   faq: string;
@@ -2408,6 +2409,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: 'Benchmark',
       openclaw: 'OpenClaw',
       yourMemory: 'Your Memory',
+      login: 'Log in',
       billing: 'Pricing',
       security: 'Security',
       faq: 'FAQ',
@@ -2756,6 +2758,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: '基准测试',
       openclaw: 'OpenClaw',
       yourMemory: '你的记忆',
+      login: '登录',
       billing: '定价',
       security: '安全',
       faq: '常见问题',
@@ -3090,6 +3093,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: '基準測試',
       openclaw: 'OpenClaw',
       yourMemory: '你的記憶',
+      login: '登入',
       billing: '定價',
       security: '安全',
       faq: '常見問題',
@@ -3429,6 +3433,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: 'ベンチマーク',
       openclaw: 'OpenClaw',
       yourMemory: 'あなたの記憶',
+      login: 'ログイン',
       billing: '料金',
       security: 'セキュリティ',
       faq: 'よくある質問',
@@ -3773,6 +3778,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: '벤치마크',
       openclaw: 'OpenClaw',
       yourMemory: '당신의 기억',
+      login: '로그인',
       billing: '요금',
       security: '보안',
       faq: '자주 묻는 질문',
@@ -4114,6 +4120,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: 'Benchmark',
       openclaw: 'OpenClaw',
       yourMemory: 'Memori Anda',
+      login: 'Masuk',
       billing: 'Harga',
       security: 'Keamanan',
       faq: 'FAQ',
@@ -4458,6 +4465,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: 'เบนช์มาร์ก',
       openclaw: 'OpenClaw',
       yourMemory: 'ความทรงจำของคุณ',
+      login: 'ล็อกอิน',
       billing: 'ราคา',
       security: 'ความปลอดภัย',
       faq: 'คำถามที่พบบ่อย',
