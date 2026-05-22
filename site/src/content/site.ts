@@ -44,6 +44,7 @@ export interface SiteNavCopy {
   openclaw: string;
   yourMemory: string;
   login: string;
+  preview: string;
   billing: string;
   security: string;
   faq: string;
@@ -2410,6 +2411,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       openclaw: 'OpenClaw',
       yourMemory: 'Your Memory',
       login: 'Log in',
+      preview: 'Preview',
       billing: 'Pricing',
       security: 'Security',
       faq: 'FAQ',
@@ -2759,6 +2761,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       openclaw: 'OpenClaw',
       yourMemory: '你的记忆',
       login: '登录',
+      preview: 'Preview',
       billing: '定价',
       security: '安全',
       faq: '常见问题',
@@ -3094,6 +3097,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       openclaw: 'OpenClaw',
       yourMemory: '你的記憶',
       login: '登入',
+      preview: 'Preview',
       billing: '定價',
       security: '安全',
       faq: '常見問題',
@@ -3434,6 +3438,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       openclaw: 'OpenClaw',
       yourMemory: 'あなたの記憶',
       login: 'ログイン',
+      preview: 'Preview',
       billing: '料金',
       security: 'セキュリティ',
       faq: 'よくある質問',
@@ -3779,6 +3784,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       openclaw: 'OpenClaw',
       yourMemory: '당신의 기억',
       login: '로그인',
+      preview: 'Preview',
       billing: '요금',
       security: '보안',
       faq: '자주 묻는 질문',
@@ -4121,6 +4127,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       openclaw: 'OpenClaw',
       yourMemory: 'Memori Anda',
       login: 'Masuk',
+      preview: 'Preview',
       billing: 'Harga',
       security: 'Keamanan',
       faq: 'FAQ',
@@ -4466,6 +4473,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       openclaw: 'OpenClaw',
       yourMemory: 'ความทรงจำของคุณ',
       login: 'ล็อกอิน',
+      preview: 'Preview',
       billing: 'ราคา',
       security: 'ความปลอดภัย',
       faq: 'คำถามที่พบบ่อย',
