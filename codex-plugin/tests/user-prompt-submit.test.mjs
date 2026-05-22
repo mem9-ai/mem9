@@ -335,19 +335,19 @@ test("user prompt submit entrypoint skips short prompts using runtime config fro
       schemaVersion: 1,
       enabled: true,
       profileId: "default",
-      recallMinPromptLength: 5,
+      recallMinPromptLength: 6,
     });
 
     const result = await runNodeHook(USER_PROMPT_SUBMIT_ENTRY, {
       cwd: runtime.cwd,
       env: {
-        ...process.env,
         CODEX_HOME: runtime.codexHome,
         MEM9_HOME: runtime.mem9Home,
+        PATH: process.env.PATH,
       },
       input: JSON.stringify({
         cwd: runtime.cwd,
-        prompt: "hi",
+        prompt: "hello",
       }),
     });
 
