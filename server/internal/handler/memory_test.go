@@ -174,6 +174,7 @@ type testSessionRepo struct {
 	listResults          []domain.Memory
 	listTotal            int
 	lastListFilter       domain.MemoryFilter
+	listCalls            int
 	softDeleteCalls      []string
 	softDeleteErr        error
 	bulkSoftDeleteCalls  [][]string
@@ -214,6 +215,7 @@ func (s *testSessionRepo) GetByID(_ context.Context, id string) (*domain.Memory,
 func (s *testSessionRepo) List(_ context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.listCalls++
 	s.lastListFilter = filter
 	return append([]domain.Memory(nil), s.listResults...), s.listTotal, nil
 }
@@ -548,6 +550,51 @@ func TestListMemories_SessionTypeListsSessionRows(t *testing.T) {
 		sessionRepo.lastListFilter.SessionID != "sess-1" ||
 		sessionRepo.lastListFilter.Source != "cli" ||
 		len(sessionRepo.lastListFilter.Tags) != 2 {
+		t.Fatalf("session list filter = %+v", sessionRepo.lastListFilter)
+	}
+}
+
+func TestListMemories_ChainSessionTypeListsSessionRowsWithoutQuery(t *testing.T) {
+	now := time.Now()
+	sessionRepo := &testSessionRepo{
+		listResults: []domain.Memory{
+			{
+				ID:         "sess-row-1",
+				Content:    "hello from a raw turn",
+				MemoryType: domain.TypeSession,
+				State:      domain.StateActive,
+				CreatedAt:  now,
+				UpdatedAt:  now,
+			},
+		},
+		listTotal: 1,
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	req := makeChainRequestWithNodes(t, http.MethodGet, "/memories?memory_type=session&limit=10&offset=0&state=active", nil, 2)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if sessionRepo.listCalls != 2 {
+		t.Fatalf("session list calls = %d, want one per chain node", sessionRepo.listCalls)
+	}
+	if resp.Total != 1 {
+		t.Fatalf("total = %d, want deduplicated total 1", resp.Total)
+	}
+	if len(resp.Memories) != 1 || resp.Memories[0].MemoryType != domain.TypeSession {
+		t.Fatalf("memories = %+v, want one session memory", resp.Memories)
+	}
+	if resp.Memories[0].ChainSource == nil || resp.Memories[0].ChainSource.ChainID != "chain-a" {
+		t.Fatalf("chain source = %+v, want chain-a", resp.Memories[0].ChainSource)
+	}
+	if sessionRepo.lastListFilter.MemoryType != "session" || sessionRepo.lastListFilter.State != "active" {
 		t.Fatalf("session list filter = %+v", sessionRepo.lastListFilter)
 	}
 }
