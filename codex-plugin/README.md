@@ -105,6 +105,8 @@ Use the same `CODEX_HOME` and `MEM9_HOME` when starting Codex and when saving pr
 
 ### What setup writes
 
+Manual edits are mainly for recovery or automation. The recommended path is still `$mem9:setup`.
+
 Saved profiles are written to `$MEM9_HOME/.credentials.json`:
 
 ```json
