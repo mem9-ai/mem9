@@ -726,6 +726,9 @@ func (s *Server) getMemory(w http.ResponseWriter, r *http.Request) {
 	mem, err := svc.memory.Get(r.Context(), id)
 	if errors.Is(err, domain.ErrNotFound) {
 		mem, err = svc.session.Get(r.Context(), id)
+		if errors.Is(err, domain.ErrNotSupported) {
+			err = domain.ErrNotFound
+		}
 	}
 	if err != nil {
 		s.handleError(r.Context(), w, err)
@@ -867,7 +870,7 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	if auth.IsChain() {
-		target, err := s.findChainMemoryTarget(r.Context(), auth, id)
+		target, err := s.findChainDeleteTarget(r.Context(), auth, id)
 		if err != nil {
 			s.handleError(r.Context(), w, err)
 			return

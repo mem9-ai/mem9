@@ -578,12 +578,52 @@ func TestGetMemory_FallsBackToSessionRow(t *testing.T) {
 	}
 }
 
+func TestGetMemory_SessionUnsupportedFallbackReturnsNotFound(t *testing.T) {
+	sessionRepo := &testSessionRepo{getErr: domain.ErrNotSupported}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	req := makeRequest(t, http.MethodGet, "/memories/missing-id", nil)
+	req = withURLParam(req, "id", "missing-id")
+	rr := httptest.NewRecorder()
+
+	srv.getMemory(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404: %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestDeleteMemory_FallsBackToSessionRow(t *testing.T) {
 	memRepo := &testMemoryRepo{softDeleteErr: domain.ErrNotFound}
 	sessionRepo := &testSessionRepo{}
 	srv := newTestServer(memRepo, sessionRepo)
 	req := makeRequest(t, http.MethodDelete, "/memories/sess-row-1", nil)
 	req = withURLParam(req, "id", "sess-row-1")
+	rr := httptest.NewRecorder()
+
+	srv.deleteMemory(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204: %s", rr.Code, rr.Body.String())
+	}
+	if len(sessionRepo.softDeleteCalls) != 1 || sessionRepo.softDeleteCalls[0] != "sess-row-1" {
+		t.Fatalf("session delete calls = %+v, want sess-row-1", sessionRepo.softDeleteCalls)
+	}
+}
+
+func TestDeleteMemory_ChainFallsBackToSessionRow(t *testing.T) {
+	memRepo := &testMemoryRepo{softDeleteErr: domain.ErrNotFound}
+	sessionRepo := &testSessionRepo{
+		getResult: &domain.Memory{
+			ID:         "sess-row-1",
+			Content:    "raw turn",
+			MemoryType: domain.TypeSession,
+			State:      domain.StateActive,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+		},
+	}
+	srv := newTestServer(memRepo, sessionRepo)
+	req := withURLParam(makeChainRequest(t, http.MethodDelete, "/memories/sess-row-1", nil), "id", "sess-row-1")
 	rr := httptest.NewRecorder()
 
 	srv.deleteMemory(rr, req)

@@ -59,6 +59,14 @@ type chainDeleteGroup struct {
 }
 
 func (s *Server) findChainMemoryTarget(ctx context.Context, auth *domain.AuthInfo, id string) (chainMemoryTarget, error) {
+	return s.findChainMemoryTargetWithOptions(ctx, auth, id, false)
+}
+
+func (s *Server) findChainDeleteTarget(ctx context.Context, auth *domain.AuthInfo, id string) (chainMemoryTarget, error) {
+	return s.findChainMemoryTargetWithOptions(ctx, auth, id, true)
+}
+
+func (s *Server) findChainMemoryTargetWithOptions(ctx context.Context, auth *domain.AuthInfo, id string, includeSessions bool) (chainMemoryTarget, error) {
 	if auth == nil || auth.Chain == nil || len(auth.Chain.Nodes) == 0 {
 		return chainMemoryTarget{}, &domain.ValidationError{Message: "Space Chain has no nodes."}
 	}
@@ -67,9 +75,18 @@ func (s *Server) findChainMemoryTarget(ctx context.Context, auth *domain.AuthInf
 		svc := s.resolveServices(nodeAuth)
 		if _, err := svc.memory.Get(ctx, id); err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
-				continue
+				if !includeSessions {
+					continue
+				}
+				if _, sessionErr := svc.session.Get(ctx, id); sessionErr != nil {
+					if errors.Is(sessionErr, domain.ErrNotFound) || errors.Is(sessionErr, domain.ErrNotSupported) {
+						continue
+					}
+					return chainMemoryTarget{}, sessionErr
+				}
+			} else {
+				return chainMemoryTarget{}, err
 			}
-			return chainMemoryTarget{}, err
 		}
 		return chainMemoryTarget{
 			nodeAuth: nodeAuth,
@@ -88,7 +105,7 @@ func (s *Server) chainDeleteGroups(ctx context.Context, auth *domain.AuthInfo, i
 	groups := make([]chainDeleteGroup, 0)
 	groupIndexes := make(map[string]int)
 	for _, id := range deleteIDs {
-		target, err := s.findChainMemoryTarget(ctx, auth, id)
+		target, err := s.findChainDeleteTarget(ctx, auth, id)
 		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
 				continue
