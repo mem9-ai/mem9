@@ -108,7 +108,14 @@ func (r *SessionRepo) GetByID(ctx context.Context, id string) (*domain.Memory, e
 		 FROM sessions WHERE id = ? AND state = 'active'`,
 		id,
 	)
-	return scanSessionMemory(row)
+	mem, err := scanSessionMemory(row)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return mem, nil
 }
 
 func (r *SessionRepo) SoftDelete(ctx context.Context, id, agentName string) (int64, error) {
@@ -127,6 +134,9 @@ func (r *SessionRepo) SoftDelete(ctx context.Context, id, agentName string) (int
 		return 0, domain.ErrNotFound
 	}
 	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return 0, domain.ErrNotFound
+		}
 		return 0, fmt.Errorf("session soft delete lock row: %w", err)
 	}
 

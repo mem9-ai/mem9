@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/qiffang/mnemos/server/internal/domain"
 )
 
@@ -58,6 +60,48 @@ func TestSessionRepoListFiltersAndPaginates(t *testing.T) {
 	}
 	if len(memories) != 1 || memories[0].ID != "s-2" || memories[0].MemoryType != domain.TypeSession {
 		t.Fatalf("memories = %+v, want session s-2", memories)
+	}
+}
+
+func TestSessionRepoGetByIDMissingTableReturnsNotFound(t *testing.T) {
+	db := newScriptedTestDB(t, []*queryExpectation{
+		{
+			mustContain: []string{
+				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at",
+				"FROM sessions WHERE id = ? AND state = 'active'",
+			},
+			wantArgs: []any{"missing-session-row"},
+			err:      &mysql.MySQLError{Number: 1146, Message: "Table doesn't exist"},
+		},
+	})
+	defer db.Close()
+
+	repo := NewSessionRepo(db, "", false, "cluster-1")
+	_, err := repo.GetByID(context.Background(), "missing-session-row")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("GetByID error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestSessionRepoSoftDeleteMissingTableReturnsNotFound(t *testing.T) {
+	db := newScriptedTestDB(t, []*queryExpectation{
+		{
+			mustContain: []string{
+				"SELECT state FROM sessions WHERE id = ? FOR UPDATE",
+			},
+			wantArgs: []any{"missing-session-row"},
+			err:      &mysql.MySQLError{Number: 1146, Message: "Table doesn't exist"},
+		},
+	})
+	defer db.Close()
+
+	repo := NewSessionRepo(db, "", false, "cluster-1")
+	deleted, err := repo.SoftDelete(context.Background(), "missing-session-row", "agent-1")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("SoftDelete error = %v, want ErrNotFound", err)
+	}
+	if deleted != 0 {
+		t.Fatalf("deleted = %d, want 0", deleted)
 	}
 }
 
