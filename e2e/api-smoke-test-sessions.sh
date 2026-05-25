@@ -458,9 +458,12 @@ import os
 
 print(json.dumps({"ids": json.loads(os.environ["REMAINING_SESSION_IDS_JSON"])}))
 ')
-  resp=$(curl_mem_json "$MEM_BASE/batch-delete" -X POST \
+  resp=$(curl_json -X POST \
+    -H "X-Mnemo-Agent-Id: $AGENT_A" \
+    -H "X-API-Key: $API_KEY" \
     -H "Content-Type: application/json" \
-    -d "$BATCH_DELETE_PAYLOAD")
+    -d "$BATCH_DELETE_PAYLOAD" \
+    "$BASE/v1alpha2/mem9s/memories/batch-delete")
   code=$(http_code "$resp")
   bdy=$(body "$resp")
   check "POST /memories/batch-delete returns 200" "$code" "200"
