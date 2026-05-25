@@ -2,6 +2,7 @@ package handler
 
 import (
 	"testing"
+	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 )
@@ -134,5 +135,28 @@ func TestChainRecallStopConfidenceThreshold_ConvertsFractionToPercent(t *testing
 				t.Fatalf("threshold = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFinalizeChainMemories_QueryModeSortsAndClipsByConfidence(t *testing.T) {
+	now := time.Now()
+	lowConfidence := 55
+	lowScore := 99.0
+	midConfidence := 75
+	midScore := 2.0
+	highConfidence := 90
+	highScore := 1.0
+
+	got := finalizeChainMemories([]domain.Memory{
+		{ID: "low-confidence-high-score", Score: &lowScore, Confidence: &lowConfidence, UpdatedAt: now},
+		{ID: "mid-confidence", Score: &midScore, Confidence: &midConfidence, UpdatedAt: now.Add(-time.Minute)},
+		{ID: "high-confidence", Score: &highScore, Confidence: &highConfidence, UpdatedAt: now.Add(-2 * time.Minute)},
+	}, 2, 0, true)
+
+	if len(got) != 2 {
+		t.Fatalf("memories = %d, want 2", len(got))
+	}
+	if got[0].ID != "high-confidence" || got[1].ID != "mid-confidence" {
+		t.Fatalf("ordered IDs = [%s, %s], want high-confidence then mid-confidence", got[0].ID, got[1].ID)
 	}
 }

@@ -319,10 +319,15 @@ func finalizeChainMemories(memories []domain.Memory, limit, offset int, queryMod
 	memories = uniqueChainMemories(memories)
 	if queryMode {
 		sort.SliceStable(memories, func(i, j int) bool {
-			left := chainRankScore(memories[i])
-			right := chainRankScore(memories[j])
-			if left != right {
-				return left > right
+			leftConfidence := chainStopConfidence(memories[i])
+			rightConfidence := chainStopConfidence(memories[j])
+			if leftConfidence != rightConfidence {
+				return leftConfidence > rightConfidence
+			}
+			leftScore := chainRankScore(memories[i])
+			rightScore := chainRankScore(memories[j])
+			if leftScore != rightScore {
+				return leftScore > rightScore
 			}
 			return memories[i].UpdatedAt.After(memories[j].UpdatedAt)
 		})
