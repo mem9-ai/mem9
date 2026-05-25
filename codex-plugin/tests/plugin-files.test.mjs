@@ -146,6 +146,8 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /### What setup writes/);
   assert.match(readme, /Manual edits are mainly for recovery or automation\. The recommended path is still `\$mem9:setup`/);
   assert.match(readme, /Saved profiles are written to `\$MEM9_HOME\/\.credentials\.json`/);
+  assert.match(readme, /The keys under `profiles` are profile IDs/);
+  assert.match(readme, /"profileId": "work"` selects the `profiles\.work` entry/);
   assert.match(readme, /The user-scope default is written to `\$CODEX_HOME\/mem9\/config\.json`/);
   assert.match(readme, /A project override is written to `<project>\/\.codex\/mem9\/config\.json`/);
   assert.match(readme, /"work": \{\s+"label": "Work"/);

@@ -122,6 +122,8 @@ Manual edits are mainly for recovery or automation. The recommended path is stil
 
 Saved profiles are written to `$MEM9_HOME/.credentials.json`:
 
+The keys under `profiles` are profile IDs. For example, `"profileId": "work"` selects the `profiles.work` entry.
+
 ```json
 {
   "schemaVersion": 1,
