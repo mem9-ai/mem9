@@ -86,11 +86,20 @@ Use `$mem9:setup` for profile setup. It creates or selects mem9 profiles, saves 
 
 ### Set the default profile
 
-Run `$mem9:setup`, choose or create a profile, then apply user scope. This selects the default profile Codex uses across repositories.
+1. Run `$mem9:setup`.
+2. Choose `create-new` to create a mem9 API key, or choose `use-existing` to reuse a saved profile.
+3. Choose `user scope`.
+
+This selects the default profile Codex uses across repositories.
 
 ### Use a different profile in one repository
 
-Open Codex from that repository, run `$mem9:setup`, choose or create the repository profile, then apply project scope. Project scope can override:
+1. Open Codex from that repository.
+2. Run `$mem9:setup`.
+3. Choose `create-new` or `use-existing` for the repository profile.
+4. Choose `project scope`.
+
+Project scope can override:
 
 - `profileId`
 - `defaultTimeoutMs`
@@ -99,7 +108,11 @@ Open Codex from that repository, run `$mem9:setup`, choose or create the reposit
 
 ### Return a repository to the default profile
 
-Open Codex from that repository, run `$mem9:setup`, then clear project scope. The repository will use the user-scope default profile again.
+1. Open Codex from that repository.
+2. Run `$mem9:setup`.
+3. Choose `clear project scope`.
+
+The repository will use the user-scope default profile again.
 
 Use the same `CODEX_HOME` and `MEM9_HOME` when starting Codex and when saving profile keys from a trusted shell. With the defaults above, Codex reads integration files from `~/.codex` and mem9 reads shared profiles from `~/.mem9`.
 

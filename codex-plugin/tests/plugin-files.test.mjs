@@ -135,10 +135,13 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /## Profiles and Project Scope/);
   assert.match(readme, /Use `\$mem9:setup` for profile setup/);
   assert.match(readme, /### Set the default profile/);
-  assert.match(readme, /then apply user scope/);
+  assert.match(readme, /Choose `create-new` to create a mem9 API key, or choose `use-existing` to reuse a saved profile/);
+  assert.match(readme, /Choose `user scope`/);
   assert.match(readme, /### Use a different profile in one repository/);
-  assert.match(readme, /then apply project scope/);
+  assert.match(readme, /Choose `create-new` or `use-existing` for the repository profile/);
+  assert.match(readme, /Choose `project scope`/);
   assert.match(readme, /### Return a repository to the default profile/);
+  assert.match(readme, /Choose `clear project scope`/);
   assert.match(readme, /Use the same `CODEX_HOME` and `MEM9_HOME` when starting Codex and when saving profile keys from a trusted shell/);
   assert.match(readme, /### What setup writes/);
   assert.match(readme, /Manual edits are mainly for recovery or automation\. The recommended path is still `\$mem9:setup`/);
