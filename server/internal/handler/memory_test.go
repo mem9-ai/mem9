@@ -627,21 +627,28 @@ func makeTenantRequest(t *testing.T, method, path string, body any) *http.Reques
 
 func makeChainRequest(t *testing.T, method, path string, body any) *http.Request {
 	t.Helper()
+	return makeChainRequestWithNodes(t, method, path, body, 1)
+}
+
+func makeChainRequestWithNodes(t *testing.T, method, path string, body any, count int) *http.Request {
+	t.Helper()
 	req := makeRequest(t, method, path, body)
+	nodes := make([]domain.ChainAuthNode, 0, count)
+	for i := 0; i < count; i++ {
+		nodes = append(nodes, domain.ChainAuthNode{
+			SpaceChainNode: domain.SpaceChainNode{
+				TenantID: "tenant-a",
+				Position: i + 1,
+			},
+			ClusterID: "10006636",
+		})
+	}
 	auth := &domain.AuthInfo{
 		AgentName: "test-agent",
 		Chain: &domain.ChainAuth{
 			ChainID: "chain-a",
 			APIKey:  "chain-key-a",
-			Nodes: []domain.ChainAuthNode{
-				{
-					SpaceChainNode: domain.SpaceChainNode{
-						TenantID: "tenant-a",
-						Position: 1,
-					},
-					ClusterID: "10006636",
-				},
-			},
+			Nodes:   nodes,
 		},
 	}
 	ctx := middleware.WithAuthContext(req.Context(), auth)
@@ -1426,6 +1433,64 @@ func TestListMemories_ChainRuntimeUsageRecallUsesChainAPIKeySubject(t *testing.T
 	}
 	if len(runtimeUsage.beforeRecallSubjects) != 1 || runtimeUsage.beforeRecallSubjects[0].APIKeySubject != "chain-key-a" {
 		t.Fatalf("recall subject = %+v, want chain-key-a API key subject", runtimeUsage.beforeRecallSubjects)
+	}
+}
+
+func TestListMemories_ChainStopsAfterHighConfidenceByDefault(t *testing.T) {
+	now := time.Now()
+	calls := 0
+	sessionRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			calls++
+			return []domain.Memory{
+				{ID: "session-memory", Content: "Bosn's timezone is Asia/Shanghai.", MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	srv.chainRecallStopScore = 0.1
+
+	req := makeChainRequestWithNodes(t, http.MethodGet, "/memories?q=what%20timezone%20does%20Bosn%20use&memory_type=session&limit=10", nil, 2)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if calls != 1 {
+		t.Fatalf("node searches = %d, want 1", calls)
+	}
+}
+
+func TestListMemories_ChainScanAllContinuesPastHighConfidence(t *testing.T) {
+	now := time.Now()
+	calls := 0
+	sessionRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			calls++
+			id := "session-memory-a"
+			if calls > 1 {
+				id = "session-memory-b"
+			}
+			return []domain.Memory{
+				{ID: id, Content: "Bosn's timezone is Asia/Shanghai.", MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	srv.chainRecallStopScore = 0.1
+
+	req := makeChainRequestWithNodes(t, http.MethodGet, "/memories?q=what%20timezone%20does%20Bosn%20use&memory_type=session&limit=10&scanAll=true", nil, 2)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if calls != 2 {
+		t.Fatalf("node searches = %d, want 2", calls)
 	}
 }
 

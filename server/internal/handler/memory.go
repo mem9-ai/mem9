@@ -539,6 +539,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		SessionID:  q.Get("session_id"),
 		Limit:      limit,
 		Offset:     offset,
+		ScanAll:    parseBoolQuery(q.Get("scanAll")),
 	}
 	onlySession := filter.MemoryType == string(domain.TypeSession)
 
@@ -624,6 +625,11 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		Limit:    limit,
 		Offset:   offset,
 	})
+}
+
+func parseBoolQuery(value string) bool {
+	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+	return err == nil && parsed
 }
 
 func normalizeRecallQuery(query string, now time.Time) string {

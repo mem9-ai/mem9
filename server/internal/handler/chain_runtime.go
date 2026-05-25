@@ -125,6 +125,7 @@ func (s *Server) listChainMemories(ctx context.Context, auth *domain.AuthInfo, f
 	stopEligible := false
 	stopBlockedReason := ""
 	queryMode := filter.Query != ""
+	scanAll := filter.ScanAll
 	profile := buildRecallQueryProfile(filter.Query)
 
 	perNodeFilter := filter
@@ -170,9 +171,12 @@ func (s *Server) listChainMemories(ctx context.Context, auth *domain.AuthInfo, f
 			}
 			stopEligible = decision.eligible
 			stopBlockedReason = decision.blockedReason
-			if decision.stop {
+			if decision.stop && !scanAll {
 				stopReason = "threshold_hit"
 				break
+			}
+			if decision.stop && scanAll {
+				stopReason = "scan_all"
 			}
 		}
 	}
@@ -188,6 +192,7 @@ func (s *Server) listChainMemories(ctx context.Context, auth *domain.AuthInfo, f
 		"stop_eligible", stopEligible,
 		"stop_blocked_reason", stopBlockedReason,
 		"threshold", s.chainRecallStopScore,
+		"scan_all", scanAll,
 		"returned", len(memories),
 	)
 	return memories, totalBeforePage, nil

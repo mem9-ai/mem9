@@ -304,6 +304,9 @@
           },
           {
             "$ref": "#/components/parameters/SessionID"
+          },
+          {
+            "$ref": "#/components/parameters/ScanAll"
           }
         ],
         "responses": {
@@ -1248,6 +1251,16 @@
         "description": "Session identifier filter.",
         "schema": {
           "type": "string"
+        }
+      },
+      "ScanAll": {
+        "name": "scanAll",
+        "in": "query",
+        "required": false,
+        "description": "When using a Space Chain API key, search every Space Chain node instead of stopping after a high-confidence result. Ignored for ordinary Space keys.",
+        "schema": {
+          "type": "boolean",
+          "default": false
         }
       },
       "SessionIDRepeated": {
