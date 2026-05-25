@@ -35,6 +35,7 @@ type testMemoryRepo struct {
 	lastKeywordFilter    domain.MemoryFilter
 	softDeleteCalls      []string
 	softDeleteResult     int64
+	softDeleteErr        error
 	bulkSoftDeleteCalls  [][]string
 	bulkSoftDeleteResult int64
 	countStatsTotal      int64
@@ -78,6 +79,9 @@ func (m *testMemoryRepo) SoftDelete(_ context.Context, id string, _ string) (int
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.softDeleteCalls = append(m.softDeleteCalls, id)
+	if m.softDeleteErr != nil {
+		return 0, m.softDeleteErr
+	}
 	if m.softDeleteResult != 0 {
 		return m.softDeleteResult, nil
 	}
@@ -165,6 +169,15 @@ type testSessionRepo struct {
 	sessionListResults   []*domain.Session
 	lastSessionIDs       []string
 	lastSessionLimit     int
+	getResult            *domain.Memory
+	getErr               error
+	listResults          []domain.Memory
+	listTotal            int
+	lastListFilter       domain.MemoryFilter
+	softDeleteCalls      []string
+	softDeleteErr        error
+	bulkSoftDeleteCalls  [][]string
+	bulkSoftDeleteResult int64
 }
 
 func (s *testSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Session) error {
@@ -183,6 +196,46 @@ func (s *testSessionRepo) PatchTags(_ context.Context, sessionID, hash string, t
 	s.patchedHash = hash
 	s.patchedTags = append([]string(nil), tags...)
 	return nil
+}
+
+func (s *testSessionRepo) GetByID(_ context.Context, id string) (*domain.Memory, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
+	if s.getResult != nil && s.getResult.ID == id {
+		cp := *s.getResult
+		return &cp, nil
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (s *testSessionRepo) List(_ context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastListFilter = filter
+	return append([]domain.Memory(nil), s.listResults...), s.listTotal, nil
+}
+
+func (s *testSessionRepo) SoftDelete(_ context.Context, id, _ string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.softDeleteCalls = append(s.softDeleteCalls, id)
+	if s.softDeleteErr != nil {
+		return 0, s.softDeleteErr
+	}
+	return 1, nil
+}
+
+func (s *testSessionRepo) BulkSoftDelete(_ context.Context, ids []string, _ string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.bulkSoftDeleteCalls = append(s.bulkSoftDeleteCalls, append([]string(nil), ids...))
+	if s.bulkSoftDeleteResult != 0 {
+		return s.bulkSoftDeleteResult, nil
+	}
+	return 0, nil
 }
 
 func (s *testSessionRepo) AutoVectorSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
@@ -455,6 +508,92 @@ func newTestServer(memRepo *testMemoryRepo, sessRepo *testSessionRepo) *Server {
 	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
 	srv.svcCache.Store(tenantSvcKey("tenant-a-0x0"), svc)
 	return srv
+}
+
+func TestListMemories_SessionTypeListsSessionRows(t *testing.T) {
+	sessionRepo := &testSessionRepo{
+		listResults: []domain.Memory{
+			{
+				ID:         "sess-row-1",
+				Content:    "hello from a raw turn",
+				MemoryType: domain.TypeSession,
+				State:      domain.StateActive,
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
+			},
+		},
+		listTotal: 7,
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	req := makeRequest(t, http.MethodGet, "/memories?memory_type=session&limit=10&offset=20&state=active&agent_id=codex&session_id=sess-1&source=cli&tags=alpha,beta", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Total != 7 || resp.Limit != 10 || resp.Offset != 20 {
+		t.Fatalf("page = total:%d limit:%d offset:%d, want 7/10/20", resp.Total, resp.Limit, resp.Offset)
+	}
+	if len(resp.Memories) != 1 || resp.Memories[0].MemoryType != domain.TypeSession {
+		t.Fatalf("memories = %+v, want one session memory", resp.Memories)
+	}
+	if sessionRepo.lastListFilter.MemoryType != "session" ||
+		sessionRepo.lastListFilter.AgentID != "codex" ||
+		sessionRepo.lastListFilter.SessionID != "sess-1" ||
+		sessionRepo.lastListFilter.Source != "cli" ||
+		len(sessionRepo.lastListFilter.Tags) != 2 {
+		t.Fatalf("session list filter = %+v", sessionRepo.lastListFilter)
+	}
+}
+
+func TestGetMemory_FallsBackToSessionRow(t *testing.T) {
+	sessionRepo := &testSessionRepo{
+		getResult: &domain.Memory{
+			ID:         "sess-row-1",
+			Content:    "raw turn",
+			MemoryType: domain.TypeSession,
+			State:      domain.StateActive,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+		},
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	req := makeRequest(t, http.MethodGet, "/memories/sess-row-1", nil)
+	req = withURLParam(req, "id", "sess-row-1")
+	rr := httptest.NewRecorder()
+
+	srv.getMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"memory_type":"session"`) {
+		t.Fatalf("body = %s, want session memory type", rr.Body.String())
+	}
+}
+
+func TestDeleteMemory_FallsBackToSessionRow(t *testing.T) {
+	memRepo := &testMemoryRepo{softDeleteErr: domain.ErrNotFound}
+	sessionRepo := &testSessionRepo{}
+	srv := newTestServer(memRepo, sessionRepo)
+	req := makeRequest(t, http.MethodDelete, "/memories/sess-row-1", nil)
+	req = withURLParam(req, "id", "sess-row-1")
+	rr := httptest.NewRecorder()
+
+	srv.deleteMemory(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204: %s", rr.Code, rr.Body.String())
+	}
+	if len(sessionRepo.softDeleteCalls) != 1 || sessionRepo.softDeleteCalls[0] != "sess-row-1" {
+		t.Fatalf("session delete calls = %+v, want sess-row-1", sessionRepo.softDeleteCalls)
+	}
 }
 
 // makeRequest creates an HTTP request with auth context injected.
