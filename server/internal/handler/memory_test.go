@@ -592,6 +592,34 @@ func TestGetMemory_SessionUnsupportedFallbackReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestGetMemory_ChainFallsBackToSessionRow(t *testing.T) {
+	sessionRepo := &testSessionRepo{
+		getResult: &domain.Memory{
+			ID:         "sess-row-1",
+			Content:    "raw turn",
+			MemoryType: domain.TypeSession,
+			State:      domain.StateActive,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+		},
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	req := withURLParam(makeChainRequest(t, http.MethodGet, "/memories/sess-row-1", nil), "id", "sess-row-1")
+	rr := httptest.NewRecorder()
+
+	srv.getMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"memory_type":"session"`) {
+		t.Fatalf("body = %s, want session memory type", rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"chain_source"`) {
+		t.Fatalf("body = %s, want chain source", rr.Body.String())
+	}
+}
+
 func TestDeleteMemory_FallsBackToSessionRow(t *testing.T) {
 	memRepo := &testMemoryRepo{softDeleteErr: domain.ErrNotFound}
 	sessionRepo := &testSessionRepo{}

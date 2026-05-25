@@ -301,9 +301,16 @@ func (s *Server) getChainMemory(ctx context.Context, auth *domain.AuthInfo, id s
 		mem, err := svc.memory.Get(ctx, id)
 		if err != nil {
 			if errors.Is(err, domain.ErrNotFound) {
-				continue
+				mem, err = svc.session.Get(ctx, id)
+				if err != nil {
+					if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrNotSupported) {
+						continue
+					}
+					return nil, err
+				}
+			} else {
+				return nil, err
 			}
-			return nil, err
 		}
 		mem.ChainSource = chainSource(auth, node)
 		return mem, nil
