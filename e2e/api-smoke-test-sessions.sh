@@ -1,22 +1,26 @@
 #!/bin/bash
 # api-smoke-test-sessions.sh
 # Session storage smoke test: verifies raw session write, deduplication,
-# memory_type filtering, and metadata projection.
+# memory_type filtering, metadata projection, and memory endpoint lifecycle.
 #
 # Tests covered:
 #   1. Provision tenant
 #   2. Session write via messages — expect 202
 #   3. Poll until sessions appear via memory_type=session filter
-#   4. Unified search (no memory_type) excludes session rows
+#   4. Unified search (no memory_type) includes session rows
 #   5. memory_type=session filter returns only sessions
 #   6. memory_type=insight filter excludes sessions
 #   7. Session metadata projection (role, seq, content_type in metadata field)
 #   8. No-query list excludes sessions
 #   9. session_id scoped filter
 #  10. Deduplication — same messages sent twice produce no extra rows
-#  11. Existing tenant: session write triggers lazy migration (requires MNEMO_EXISTING_TENANT_ID)
-#  12. Existing tenant: poll + retry until sessions appear after lazy table creation
-#  13. Existing tenant: memory_type=session filter works after migration
+#  11. No-query memory_type=session list returns raw sessions
+#  12. Get raw session row through memory endpoint
+#  13. Delete raw session row through memory endpoint
+#  14. Batch delete remaining raw session rows through memory endpoint
+#  15. Existing tenant: session write triggers lazy migration (requires MNEMO_EXISTING_TENANT_ID)
+#  16. Existing tenant: poll + retry until sessions appear after lazy table creation
+#  17. Existing tenant: memory_type=session filter works after migration
 #
 # Usage:
 #   bash e2e/api-smoke-test-sessions.sh
@@ -360,7 +364,120 @@ info "Session rows after re-send: $COUNT_AFTER"
 check "row count unchanged after duplicate send (dedup via content hash)" "$COUNT_AFTER" "$COUNT_BEFORE"
 
 # ============================================================================
-# TESTS 11-13 — Existing tenant: lazy sessions table migration
+# TEST 11 — No-query memory_type=session list returns raw sessions
+# ============================================================================
+step "11" "No-query session list: GET /memories?session_id=&memory_type=session"
+resp=$(curl_mem_json "$MEM_BASE?session_id=${SESSION_ID}&memory_type=session&limit=20")
+code=$(http_code "$resp")
+bdy=$(body "$resp")
+check "GET /memories?session_id=&memory_type=session returns 200" "$code" "200"
+
+NO_QUERY_SESSION_CHECK=$(printf '%s' "$bdy" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+mems = data.get('memories', [])
+if not mems:
+    print('no-results')
+    sys.exit()
+wrong_type = [m.get('memory_type') for m in mems if m.get('memory_type') != 'session']
+wrong_session = [m.get('session_id') for m in mems if m.get('session_id') != '$SESSION_ID']
+if wrong_type:
+    print('wrong-types:' + str(wrong_type))
+elif wrong_session:
+    print('wrong-sessions:' + str(wrong_session))
+else:
+    print('ok')
+" 2>/dev/null || true)
+check "no-query session list returns only rows for this session" "$NO_QUERY_SESSION_CHECK" "ok"
+
+SESSION_ROW_ID=$(printf '%s' "$bdy" | python3 -c "
+import sys, json
+mems = json.load(sys.stdin).get('memories', [])
+print(mems[0].get('id', '') if mems else '')
+" 2>/dev/null || true)
+if [ -n "$SESSION_ROW_ID" ]; then
+  SESSION_ROW_ID_FOUND="yes"
+else
+  SESSION_ROW_ID_FOUND="no"
+fi
+check "session row ID extracted for per-ID lifecycle checks" "$SESSION_ROW_ID_FOUND" "yes"
+
+REMAINING_SESSION_IDS_JSON=$(printf '%s' "$bdy" | python3 -c "
+import sys, json
+mems = json.load(sys.stdin).get('memories', [])
+ids = [m.get('id') for m in mems[1:] if m.get('id')]
+print(json.dumps(ids))
+" 2>/dev/null || true)
+
+# ============================================================================
+# TEST 12 — Get raw session row through memory endpoint
+# ============================================================================
+step "12" "Get session row by ID through memory endpoint"
+resp=$(curl_mem_json "$MEM_BASE/$SESSION_ROW_ID")
+code=$(http_code "$resp")
+bdy=$(body "$resp")
+check "GET /memories/{session-row-id} returns 200" "$code" "200"
+
+GET_SESSION_CHECK=$(printf '%s' "$bdy" | python3 -c "
+import sys, json
+m = json.load(sys.stdin)
+if m.get('memory_type') != 'session':
+    print('wrong-type:' + str(m.get('memory_type')))
+elif m.get('session_id') != '$SESSION_ID':
+    print('wrong-session:' + str(m.get('session_id')))
+else:
+    print('ok')
+" 2>/dev/null || true)
+check "GET by ID returns the expected session row" "$GET_SESSION_CHECK" "ok"
+
+# ============================================================================
+# TEST 13 — Delete raw session row through memory endpoint
+# ============================================================================
+step "13" "Delete session row by ID through memory endpoint"
+resp=$(curl_mem_json "$MEM_BASE/$SESSION_ROW_ID" -X DELETE)
+code=$(http_code "$resp")
+check "DELETE /memories/{session-row-id} returns 204" "$code" "204"
+
+resp=$(curl_mem_json "$MEM_BASE/$SESSION_ROW_ID")
+code=$(http_code "$resp")
+check "GET deleted session row returns 404" "$code" "404"
+
+# ============================================================================
+# TEST 14 — Batch delete remaining raw session rows through memory endpoint
+# ============================================================================
+step "14" "Batch delete remaining session rows through memory endpoint"
+REMAINING_SESSION_COUNT=$(printf '%s' "$REMAINING_SESSION_IDS_JSON" | python3 -c "
+import sys, json
+print(len(json.load(sys.stdin)))
+" 2>/dev/null || true)
+
+if [ -n "$REMAINING_SESSION_COUNT" ] && [ "$REMAINING_SESSION_COUNT" -gt 0 ]; then
+  BATCH_DELETE_PAYLOAD=$(REMAINING_SESSION_IDS_JSON="$REMAINING_SESSION_IDS_JSON" python3 -c '
+import json
+import os
+
+print(json.dumps({"ids": json.loads(os.environ["REMAINING_SESSION_IDS_JSON"])}))
+')
+  resp=$(curl_mem_json "$MEM_BASE/batch-delete" -X POST \
+    -H "Content-Type: application/json" \
+    -d "$BATCH_DELETE_PAYLOAD")
+  code=$(http_code "$resp")
+  bdy=$(body "$resp")
+  check "POST /memories/batch-delete returns 200" "$code" "200"
+
+  BATCH_DELETED=$(printf '%s' "$bdy" | python3 -c "
+import sys, json
+print(json.load(sys.stdin).get('deleted', ''))
+" 2>/dev/null || true)
+  check "batch delete removed remaining session rows" "$BATCH_DELETED" "$REMAINING_SESSION_COUNT"
+else
+  TOTAL=$((TOTAL+1))
+  ok "No remaining session rows to batch delete"
+  PASS=$((PASS+1))
+fi
+
+# ============================================================================
+# TESTS 15-17 — Existing tenant: lazy sessions table migration
 # Only runs when MNEMO_EXISTING_TENANT_ID is set.
 # The tenant database must NOT have a sessions table yet (created before PR #103).
 # On first request, EnsureSessionsTable fires in background (error 1146 is
@@ -398,7 +515,7 @@ if [ -n "$EXISTING_TENANT_ID" ]; then
   EXIST_UNIQUE_MARKER="MNEMO_EXIST_SESS_$(date +%s)"
   EXIST_SESSION_ID="smoke-exist-sessions-${EXIST_UNIQUE_MARKER}"
 
-  step "11" "Existing tenant: session write triggers lazy migration (POST /memories)"
+  step "15" "Existing tenant: session write triggers lazy migration (POST /memories)"
   resp=$(curl_exist_json "$EXIST_MEM_BASE" -X POST \
     -H "Content-Type: application/json" \
     -d "{
@@ -413,7 +530,7 @@ if [ -n "$EXISTING_TENANT_ID" ]; then
   check "existing tenant POST /memories (messages) returns 202" "$code" "202"
   check_contains "response has status=accepted" "$bdy" '"accepted"'
 
-  step "12" "Existing tenant: poll + retry writes until sessions appear (lazy table creation)"
+  step "16" "Existing tenant: poll + retry writes until sessions appear (lazy table creation)"
   info "First write may be silently dropped (error 1146 swallowed) — retrying until table is ready"
   EXIST_SESSION_APPEARED=false
   ELAPSED=0
@@ -457,7 +574,7 @@ print(len(json.load(sys.stdin).get('memories', [])))
     FAIL=$((FAIL+1))
   fi
 
-  step "13" "Existing tenant: session memory_type=session filter works after migration"
+  step "17" "Existing tenant: session memory_type=session filter works after migration"
   resp=$(curl_exist_json "$EXIST_MEM_BASE?q=${EXIST_UNIQUE_MARKER}&memory_type=session&limit=10")
   code=$(http_code "$resp")
   bdy=$(body "$resp")
@@ -476,7 +593,7 @@ else:
 " 2>/dev/null || true)
   check "existing tenant: all results have memory_type=session" "$EXIST_SESSION_ONLY" "yes"
 else
-  info "MNEMO_EXISTING_TENANT_ID not set — skipping lazy migration tests (11-13)"
+  info "MNEMO_EXISTING_TENANT_ID not set — skipping lazy migration tests (15-17)"
 fi
 
 

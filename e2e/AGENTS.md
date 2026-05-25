@@ -127,8 +127,9 @@ confirms the deleted chain key is no longer active.
 ### Session storage (`api-smoke-test-sessions.sh`)
 
 Regression tests for raw session storage (PR #103). Provisions a fresh tenant,
-ingests messages, and verifies all session-specific behaviors: session exclusion from
-unified recall, `memory_type` filtering, metadata projection, no-query exclusion, and deduplication.
+ingests messages, and verifies session-specific behavior: unified recall inclusion,
+`memory_type` filtering, metadata projection, no-query session listing, per-ID
+get/delete fallback, batch delete, no-query unified-list exclusion, and deduplication.
 Supports both v1alpha1 and v1alpha2 via `MNEMO_API_VERSION`.
 
 | #   | Case                                    | What is verified                                                                                     |
@@ -143,9 +144,13 @@ Supports both v1alpha1 and v1alpha2 via `MNEMO_API_VERSION`.
 | 8   | No-query list excludes sessions         | `GET /memories` (no `?q=`) returns no `memory_type=session` rows                                     |
 | 9   | `session_id` scoped filter              | All results belong to the expected `session_id`                                                      |
 | 10  | Deduplication                           | Re-sending identical messages does not increase row count                                            |
-| 11  | Existing tenant: session write          | `POST /memories {messages}` on pre-existing tenant returns 202 (requires `MNEMO_EXISTING_TENANT_ID`) |
-| 12  | Existing tenant: lazy migration         | Poll + retry writes until sessions appear — proves `EnsureSessionsTable` creates table in flight     |
-| 13  | Existing tenant: filter after migration | `memory_type=session` filter works correctly after lazy migration                                    |
+| 11  | No-query session listing                | `GET /memories?session_id=...&memory_type=session` returns raw session rows without `q`              |
+| 12  | Session row get fallback                | `GET /memories/{session-row-id}` returns `memory_type=session`                                       |
+| 13  | Session row delete fallback             | `DELETE /memories/{session-row-id}` returns 204 and subsequent get returns 404                       |
+| 14  | Session row batch delete                | `POST /memories/batch-delete` deletes remaining session rows                                         |
+| 15  | Existing tenant: session write          | `POST /memories {messages}` on pre-existing tenant returns 202 (requires `MNEMO_EXISTING_TENANT_ID`) |
+| 16  | Existing tenant: lazy migration         | Poll + retry writes until sessions appear — proves `EnsureSessionsTable` creates table in flight     |
+| 17  | Existing tenant: filter after migration | `memory_type=session` filter works correctly after lazy migration                                    |
 
 ### Existing-tenant compat (`api-smoke-test-existing-tenant.sh`)
 
@@ -233,7 +238,7 @@ python3 e2e/concurrent-real-doc-test.py
 - `api-smoke-test.sh` / `api-smoke-test-v1alpha2.sh` — CRUD smoke, ingest, search, tag filter (tests 1–11)
 - `api-smoke-test-round2.sh` / `api-smoke-test-round2-v1alpha2.sh` — per-ID ops: GET, PUT, If-Match LWW, DELETE, idempotent re-delete (tests 1–9)
 - `api-smoke-test-space-chain.sh` — Space Chain management/runtime: create chain, validate nodes/bindings, write/read/update/delete via `chain_` key, cleanup (tests 1–18)
-- `api-smoke-test-sessions.sh` — session storage: write, dedup, unified search, type filter, metadata, no-query exclusion, lazy migration (tests 1–13; tests 11–13 require `MNEMO_EXISTING_TENANT_ID`)
+- `api-smoke-test-sessions.sh` — session storage: write, dedup, unified search, type filter, metadata, no-query session list, per-ID get/delete, batch delete, lazy migration (tests 1–17; tests 15–17 require `MNEMO_EXISTING_TENANT_ID`)
 - `api-smoke-test-existing-tenant.sh` — backward-compat: pre-existing tenant read/write/search across v1alpha1 and v1alpha2 (tests 1–12)
 - `api-smoke-test-utm.sh` — UTM attribution: param normalization, filtering, empty-value dropping (tests 1–5 always; tests 6–10 require `MNEMO_METADB_DSN` and `MNEMO_UTM_ENABLED=true` on server)
 - `crdt-*` and `plugin-crdt-*` use the CRDT branch `/api/users`, `/api/spaces/provision`, `/api/memories` surface.
@@ -246,7 +251,7 @@ python3 e2e/concurrent-real-doc-test.py
 | `MNEMO_BASE`               | `https://api.mem9.ai`          | all smoke scripts                                                                              |
 | `MNEMO_API_VERSION`        | `v1alpha1`                     | `api-smoke-test.sh`, `api-smoke-test-round2.sh`, `api-smoke-test-sessions.sh`                  |
 | `POLL_TIMEOUT_S`           | `20` (round2), `30` (sessions, Space Chain) | `api-smoke-test-round2*.sh`, `api-smoke-test-space-chain.sh`, `api-smoke-test-sessions.sh`, `api-smoke-test-existing-tenant.sh` |
-| `MNEMO_EXISTING_TENANT_ID` | —                              | `api-smoke-test-existing-tenant.sh`, `api-smoke-test-sessions.sh` (tests 11–13)                |
+| `MNEMO_EXISTING_TENANT_ID` | —                              | `api-smoke-test-existing-tenant.sh`, `api-smoke-test-sessions.sh` (tests 15–17)                |
 | `MNEMO_METADB_DSN`         | —                              | `api-smoke-test-utm.sh` (tests 6–10); format: `user:pass@tcp(host:port)/dbname`                |
 | `MNEMO_TEST_BASE`          | `http://127.0.0.1:18081`       | CRDT scripts                                                                                   |
 | `MNEMO_TEST_USER_TOKEN`    | —                              | CRDT scripts                                                                                   |
@@ -260,7 +265,7 @@ python3 e2e/concurrent-real-doc-test.py
 | `api-smoke-test-round2.sh`          | v1alpha1 (default) or v1alpha2 | Per-ID ops: GET, PUT, If-Match LWW, DELETE, idempotent re-delete     |
 | `api-smoke-test-round2-v1alpha2.sh` | v1alpha2                       | One-liner wrapper — sets `MNEMO_API_VERSION=v1alpha2`                |
 | `api-smoke-test-space-chain.sh`     | v1alpha2                       | Space Chain management/runtime happy path                            |
-| `api-smoke-test-sessions.sh`        | v1alpha1 (default) or v1alpha2 | Session storage: write, dedup, unified search, type filter, metadata |
+| `api-smoke-test-sessions.sh`        | v1alpha1 (default) or v1alpha2 | Session storage: write, dedup, unified search, lifecycle             |
 | `api-smoke-test-existing-tenant.sh` | v1alpha1 + v1alpha2            | Backward-compat: pre-existing tenant full lifecycle, both auth modes |
 | `api-smoke-test-utm.sh`             | v1alpha1                       | UTM attribution: param normalization + optional DB row verification  |
 | `crdt-e2e-tests.sh`                 | CRDT branch                    | Core CRDT server behavior                                            |
