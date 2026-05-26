@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -512,6 +513,19 @@ func newTestServer(memRepo *testMemoryRepo, sessRepo *testSessionRepo) *Server {
 	return srv
 }
 
+func TestHandleError_ClientCanceledUses499(t *testing.T) {
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rr := httptest.NewRecorder()
+
+	srv.handleError(ctx, rr, fmt.Errorf("auto vector search: %w", context.Canceled))
+
+	if rr.Code != statusClientClosedRequest {
+		t.Fatalf("status = %d, want %d: %s", rr.Code, statusClientClosedRequest, rr.Body.String())
+	}
+}
+
 func TestListMemories_SessionTypeListsSessionRows(t *testing.T) {
 	sessionRepo := &testSessionRepo{
 		listResults: []domain.Memory{
@@ -551,6 +565,41 @@ func TestListMemories_SessionTypeListsSessionRows(t *testing.T) {
 		sessionRepo.lastListFilter.Source != "cli" ||
 		len(sessionRepo.lastListFilter.Tags) != 2 {
 		t.Fatalf("session list filter = %+v", sessionRepo.lastListFilter)
+	}
+}
+
+func TestListMemories_ServerDisableSessionSaveSkipsSessionRows(t *testing.T) {
+	sessionRepo := &testSessionRepo{
+		listResults: []domain.Memory{
+			{
+				ID:         "sess-row-1",
+				Content:    "hello from a raw turn",
+				MemoryType: domain.TypeSession,
+				State:      domain.StateActive,
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
+			},
+		},
+		listTotal: 1,
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo).WithDisableSessionSave(true)
+	req := makeRequest(t, http.MethodGet, "/memories?memory_type=session&limit=10", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if sessionRepo.listCalls != 0 {
+		t.Fatalf("session list calls = %d, want 0", sessionRepo.listCalls)
+	}
+	if resp.Total != 0 || len(resp.Memories) != 0 {
+		t.Fatalf("response = total:%d memories:%+v, want empty", resp.Total, resp.Memories)
 	}
 }
 
@@ -596,6 +645,41 @@ func TestListMemories_ChainSessionTypeListsSessionRowsWithoutQuery(t *testing.T)
 	}
 	if sessionRepo.lastListFilter.MemoryType != "session" || sessionRepo.lastListFilter.State != "active" {
 		t.Fatalf("session list filter = %+v", sessionRepo.lastListFilter)
+	}
+}
+
+func TestListMemories_ChainServerDisableSessionSaveSkipsSessionRows(t *testing.T) {
+	sessionRepo := &testSessionRepo{
+		listResults: []domain.Memory{
+			{
+				ID:         "sess-row-1",
+				Content:    "hello from a raw turn",
+				MemoryType: domain.TypeSession,
+				State:      domain.StateActive,
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
+			},
+		},
+		listTotal: 1,
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo).WithDisableSessionSave(true)
+	req := makeChainRequestWithNodes(t, http.MethodGet, "/memories?memory_type=session&limit=10", nil, 2)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if sessionRepo.listCalls != 0 {
+		t.Fatalf("session list calls = %d, want 0", sessionRepo.listCalls)
+	}
+	if resp.Total != 0 || len(resp.Memories) != 0 {
+		t.Fatalf("response = total:%d memories:%+v, want empty", resp.Total, resp.Memories)
 	}
 }
 
@@ -3226,6 +3310,41 @@ func TestDefaultConfidenceRecallSearch_FansOutPoolSearchesConcurrently(t *testin
 	}
 	if gotMaxInFlight != 3 {
 		t.Fatalf("expected all 3 pool searches to overlap, max_in_flight=%d", gotMaxInFlight)
+	}
+}
+
+func TestListMemories_ServerDisableSessionSaveSkipsDefaultRecallSessionPool(t *testing.T) {
+	now := time.Now()
+	sessionCalls := 0
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			if filter.MemoryType == string(domain.TypeInsight) {
+				return []domain.Memory{
+					{ID: "m1", Content: "John likes Under Armour.", MemoryType: domain.TypeInsight, UpdatedAt: now, State: domain.StateActive},
+				}, nil
+			}
+			return nil, nil
+		},
+	}
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			sessionCalls++
+			return []domain.Memory{
+				{ID: "s1", Content: "session result", MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessRepo).WithDisableSessionSave(true)
+	req := makeRequest(t, http.MethodGet, "/memories?q=what%20company%20does%20john%20like&limit=10", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if sessionCalls != 0 {
+		t.Fatalf("session recall calls = %d, want 0", sessionCalls)
 	}
 }
 

@@ -27,6 +27,8 @@ import (
 	"github.com/qiffang/mnemos/server/internal/service"
 )
 
+const statusClientClosedRequest = 499
+
 // Server holds the HTTP handlers and their dependencies.
 type Server struct {
 	tenant               *service.TenantService
@@ -275,6 +277,9 @@ func respondError(w http.ResponseWriter, status int, msg string) {
 // handleError maps domain errors to HTTP status codes.
 func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, context.Canceled) && errors.Is(ctx.Err(), context.Canceled):
+		s.logger.Info("request canceled by client", "err", err, "request_id", reqid.FromContext(ctx))
+		respondError(w, statusClientClosedRequest, "client closed request")
 	case errors.Is(err, domain.ErrNotFound):
 		respondError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, domain.ErrWriteConflict):

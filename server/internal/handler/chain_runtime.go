@@ -169,7 +169,11 @@ func (s *Server) listChainMemories(ctx context.Context, auth *domain.AuthInfo, f
 			perNodeFilter.MemoryType == string(domain.TypeInsight)):
 			memories, _, err = s.singlePoolConfidenceRecallSearch(ctx, nodeAuth, svc, perNodeFilter)
 		case perNodeFilter.MemoryType == string(domain.TypeSession):
-			memories, _, err = svc.session.List(ctx, perNodeFilter)
+			if s.disableSessionSave {
+				memories = []domain.Memory{}
+			} else {
+				memories, _, err = svc.session.List(ctx, perNodeFilter)
+			}
 		case perNodeFilter.MemoryType != string(domain.TypeSession):
 			memories, _, err = svc.memory.Search(ctx, perNodeFilter)
 		}

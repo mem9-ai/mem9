@@ -189,16 +189,18 @@ func (s *Server) defaultConfidenceRecallSearch(
 		insightCandidates = candidates
 		return nil
 	})
-	group.Go(func() error {
-		branchStart := time.Now()
-		candidates, err := svc.session.SearchCandidates(groupCtx, sessionFilter, service.RecallSourceSession, recallCandidateOptions(profile.shape, false))
-		sessionDuration = time.Since(branchStart)
-		if err != nil {
-			return err
-		}
-		sessionCandidates = candidates
-		return nil
-	})
+	if !s.disableSessionSave {
+		group.Go(func() error {
+			branchStart := time.Now()
+			candidates, err := svc.session.SearchCandidates(groupCtx, sessionFilter, service.RecallSourceSession, recallCandidateOptions(profile.shape, false))
+			sessionDuration = time.Since(branchStart)
+			if err != nil {
+				return err
+			}
+			sessionCandidates = candidates
+			return nil
+		})
+	}
 	if err := group.Wait(); err != nil {
 		return nil, 0, err
 	}
@@ -265,6 +267,9 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 	candidateStart := time.Now()
 	switch filter.MemoryType {
 	case string(domain.TypeSession):
+		if s.disableSessionSave {
+			return []domain.Memory{}, 0, nil
+		}
 		candidates, err = svc.session.SearchCandidates(ctx, effectiveFilter, service.RecallSourceSession, recallCandidateOptions(profile.shape, false))
 	case string(domain.TypePinned):
 		candidates, err = svc.memory.SearchCandidates(ctx, effectiveFilter, service.RecallSourcePinned, recallCandidateOptions(profile.shape, false))

@@ -37,7 +37,7 @@ type Config struct {
 	LLMTemperature float64
 	IngestMode     string
 
-	// DisableSessionSave skips raw session row persistence for message ingest.
+	// DisableSessionSave skips raw session row persistence and session recall.
 	// Smart ingest still extracts and reconciles facts into insight memories.
 	DisableSessionSave bool
 

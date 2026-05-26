@@ -581,7 +581,11 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 			filter.MemoryType == string(domain.TypeInsight)):
 			memories, total, err = s.singlePoolConfidenceRecallSearch(r.Context(), auth, svc, filter)
 		case onlySession:
-			memories, total, err = svc.session.List(r.Context(), filter)
+			if s.disableSessionSave {
+				memories, total = []domain.Memory{}, 0
+			} else {
+				memories, total, err = svc.session.List(r.Context(), filter)
+			}
 		case !onlySession:
 			memories, total, err = svc.memory.Search(r.Context(), filter)
 		}
