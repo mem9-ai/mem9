@@ -262,7 +262,8 @@ func main() {
 		WithSpaceChainService(spaceChainSvc, cfg.ChainRecallStopScore).
 		WithMetering(meteringWriter).
 		WithRuntimeUsage(runtimeUsageManager).
-		WithActivityTracker(activityTracker)
+		WithActivityTracker(activityTracker).
+		WithDisableSessionSave(cfg.DisableSessionSave)
 	router := srv.Router(tenantMW, rateMW, apiKeyMW)
 
 	httpSrv := &http.Server{

@@ -1723,6 +1723,10 @@
           "sync": {
             "type": "boolean",
             "description": "When true, wait for ingest completion up to the server timeout. When false or omitted, ingest runs asynchronously."
+          },
+          "disableSessionSave": {
+            "type": "boolean",
+            "description": "When true on message ingest requests, skip raw session message persistence and only run fact extraction and reconciliation. Defaults to false."
           }
         }
       },

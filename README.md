@@ -192,6 +192,7 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 | `MNEMO_LLM_MODEL` | No | `gpt-4o-mini` | LLM model for smart ingest |
 | `MNEMO_LLM_TEMPERATURE` | No | `0.1` | LLM temperature for smart ingest |
 | `MNEMO_INGEST_MODE` | No | `smart` | Ingest mode: `smart` or `raw` |
+| `MNEMO_DISABLE_SESSION_SAVE` | No | `false` | Disable raw session row persistence for message ingest while still extracting and reconciling facts |
 | `MNEMO_FTS_ENABLED` | No | `false` | Enable TiDB full-text search path. Only set this on clusters that support TiDB FTS |
 
 #### Search Source Turns

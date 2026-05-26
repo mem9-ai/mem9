@@ -46,6 +46,7 @@ type Server struct {
 	startedAt            time.Time
 	svcCache             sync.Map
 	chainRecallStopScore float64
+	disableSessionSave   bool
 }
 
 // NewServer creates a new HTTP handler server.
@@ -97,6 +98,11 @@ func (s *Server) WithRuntimeUsage(manager runtimeusage.Manager) *Server {
 
 func (s *Server) WithActivityTracker(tracker *service.ActivityTracker) *Server {
 	s.activity = tracker
+	return s
+}
+
+func (s *Server) WithDisableSessionSave(disabled bool) *Server {
+	s.disableSessionSave = disabled
 	return s
 }
 

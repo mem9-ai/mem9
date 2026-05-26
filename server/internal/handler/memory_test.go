@@ -1135,7 +1135,8 @@ func TestCreateMemory_AsyncContent_Returns202(t *testing.T) {
 }
 
 func TestCreateMemory_SyncMessages_Returns200(t *testing.T) {
-	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
+	sessRepo := &testSessionRepo{}
+	srv := newTestServer(&testMemoryRepo{}, sessRepo)
 
 	body := map[string]any{
 		"messages": []map[string]string{
@@ -1152,6 +1153,126 @@ func TestCreateMemory_SyncMessages_Returns200(t *testing.T) {
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !sessRepo.bulkCreateCalled {
+		t.Fatal("expected raw sessions to be persisted by default")
+	}
+}
+
+func TestCreateMemory_SyncMessages_DisableSessionSaveSkipsRawSessionAndStoresFacts(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":[{"text":"User prefers tea","tags":["preference"]}],"message_tags":[["preference"],[]]}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(memRepo, llmClient, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(sessRepo, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
+
+	body := map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "I prefer tea"},
+			{"role": "assistant", "content": "Noted"},
+		},
+		"session_id":         "test-session",
+		"sync":               true,
+		"disableSessionSave": true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if sessRepo.bulkCreateCalled {
+		t.Fatal("did not expect raw session BulkCreate when disableSessionSave=true")
+	}
+	if sessRepo.patchTagsCalled {
+		t.Fatal("did not expect session PatchTags when disableSessionSave=true")
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected one extracted fact memory, got %d", len(memRepo.createCalls))
+	}
+	if memRepo.createCalls[0].Content != "User prefers tea" {
+		t.Fatalf("created memory content = %q, want extracted fact", memRepo.createCalls[0].Content)
+	}
+}
+
+func TestCreateMemory_SyncMessages_ServerDisableSessionSaveSkipsRawSession(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":[{"text":"User prefers coffee","tags":["preference"]}],"message_tags":[["preference"],[]]}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default()).
+		WithDisableSessionSave(true)
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(memRepo, llmClient, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(sessRepo, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
+
+	body := map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "I prefer coffee"},
+			{"role": "assistant", "content": "Noted"},
+		},
+		"session_id": "test-session",
+		"sync":       true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if sessRepo.bulkCreateCalled {
+		t.Fatal("did not expect raw session BulkCreate when server disables session save")
+	}
+	if sessRepo.patchTagsCalled {
+		t.Fatal("did not expect session PatchTags when server disables session save")
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected one extracted fact memory, got %d", len(memRepo.createCalls))
 	}
 }
 
@@ -1297,6 +1418,78 @@ func TestCreateMemory_AsyncMessages_Returns202(t *testing.T) {
 	}
 	if resp["status"] != "accepted" {
 		t.Errorf("expected status=accepted, got %q", resp["status"])
+	}
+}
+
+func TestCreateMemory_AsyncMessages_DisableSessionSaveSkipsRawSession(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":[{"text":"User likes green tea","tags":["preference"]}],"message_tags":[["preference"]]}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(memRepo, llmClient, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(sessRepo, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
+
+	body := map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "I like green tea"},
+		},
+		"session_id":         "test-session",
+		"disableSessionSave": true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	deadline := time.Now().Add(time.Second)
+	var created int
+	for time.Now().Before(deadline) {
+		memRepo.mu.Lock()
+		created = len(memRepo.createCalls)
+		memRepo.mu.Unlock()
+		if created > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if created != 1 {
+		t.Fatalf("expected one extracted fact memory, got %d", created)
+	}
+
+	sessRepo.mu.Lock()
+	bulkCreateCalled := sessRepo.bulkCreateCalled
+	patchTagsCalled := sessRepo.patchTagsCalled
+	sessRepo.mu.Unlock()
+	if bulkCreateCalled {
+		t.Fatal("did not expect raw session BulkCreate when disableSessionSave=true")
+	}
+	if patchTagsCalled {
+		t.Fatal("did not expect session PatchTags when disableSessionSave=true")
 	}
 }
 

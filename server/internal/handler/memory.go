@@ -26,15 +26,16 @@ var (
 )
 
 type createMemoryRequest struct {
-	Content    string                  `json:"content,omitempty"`
-	MemoryType string                  `json:"memory_type,omitempty"`
-	AgentID    string                  `json:"agent_id,omitempty"`
-	Tags       []string                `json:"tags,omitempty"`
-	Metadata   json.RawMessage         `json:"metadata,omitempty"`
-	Messages   []service.IngestMessage `json:"messages,omitempty"`
-	SessionID  string                  `json:"session_id,omitempty"`
-	Mode       service.IngestMode      `json:"mode,omitempty"`
-	Sync       bool                    `json:"sync,omitempty"`
+	Content            string                  `json:"content,omitempty"`
+	MemoryType         string                  `json:"memory_type,omitempty"`
+	AgentID            string                  `json:"agent_id,omitempty"`
+	Tags               []string                `json:"tags,omitempty"`
+	Metadata           json.RawMessage         `json:"metadata,omitempty"`
+	Messages           []service.IngestMessage `json:"messages,omitempty"`
+	SessionID          string                  `json:"session_id,omitempty"`
+	Mode               service.IngestMode      `json:"mode,omitempty"`
+	Sync               bool                    `json:"sync,omitempty"`
+	DisableSessionSave bool                    `json:"disableSessionSave,omitempty"`
 }
 
 func isSyncIngestTimeout(ctx context.Context, err error) bool {
@@ -84,10 +85,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	if hasMessages {
 		messages := append([]service.IngestMessage(nil), req.Messages...)
 		ingestReq := service.IngestRequest{
-			Messages:  messages,
-			SessionID: req.SessionID,
-			AgentID:   agentID,
-			Mode:      req.Mode,
+			Messages:           messages,
+			SessionID:          req.SessionID,
+			AgentID:            agentID,
+			Mode:               req.Mode,
+			DisableSessionSave: s.disableSessionSave || req.DisableSessionSave,
 		}
 
 		if req.Sync {
@@ -404,7 +406,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ingestMessages runs the full ingest pipeline: BulkCreate → ExtractPhase1 → PatchTags + ReconcilePhase2.
+// ingestMessages runs the full ingest pipeline: optional BulkCreate → ExtractPhase1 → optional PatchTags + ReconcilePhase2.
 // TODO: wrap all database writes (BulkCreate, PatchTags, ReconcilePhase2) in a single transaction to guarantee atomicity.
 func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, req service.IngestRequest) (*service.IngestResult, error) {
 	start := time.Now()
@@ -434,15 +436,17 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	// This is the single sanitization point for the handler-driven pipeline (BulkCreate, ExtractPhase1, etc.).
 	req.Messages = service.StripInjectedContext(req.Messages)
 
-	// Session persistence is best-effort for both sync and async paths.
-	// sync=true guarantees only that reconcile (memory extraction) completed —
-	// raw session rows in /session-messages may be absent if BulkCreate fails.
-	bulkCreateStart := time.Now()
-	if err := svc.session.BulkCreate(ctx, auth.AgentName, req); err != nil {
-		slog.Error("session raw save failed",
-			"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
+	if !req.DisableSessionSave {
+		// Session persistence is best-effort for both sync and async paths.
+		// sync=true guarantees only that reconcile (memory extraction) completed —
+		// raw session rows in /session-messages may be absent if BulkCreate fails.
+		bulkCreateStart := time.Now()
+		if err := svc.session.BulkCreate(ctx, auth.AgentName, req); err != nil {
+			slog.Error("session raw save failed",
+				"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
+		}
+		bulkCreateDuration = time.Since(bulkCreateStart)
 	}
-	bulkCreateDuration = time.Since(bulkCreateStart)
 
 	extractPhase1Start := time.Now()
 	phase1, err := svc.ingest.ExtractPhase1(ctx, req.Messages)
@@ -458,26 +462,29 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	var reconcileResult *service.IngestResult
 	var reconcileErr error
 
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		patchTagsStart := time.Now()
-		defer func() {
-			patchTagsDuration = time.Since(patchTagsStart)
+	if !req.DisableSessionSave {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			patchTagsStart := time.Now()
+			defer func() {
+				patchTagsDuration = time.Since(patchTagsStart)
+			}()
+			for i, msg := range req.Messages {
+				tags := tagsAtIndex(phase1.MessageTags, i)
+				if len(tags) == 0 {
+					continue
+				}
+				hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content, msg.Seq)
+				if err := svc.session.PatchTags(ctx, req.SessionID, hash, tags); err != nil {
+					slog.Warn("session tag patch failed",
+						"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
+				}
+			}
 		}()
-		for i, msg := range req.Messages {
-			tags := tagsAtIndex(phase1.MessageTags, i)
-			if len(tags) == 0 {
-				continue
-			}
-			hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content, msg.Seq)
-			if err := svc.session.PatchTags(ctx, req.SessionID, hash, tags); err != nil {
-				slog.Warn("session tag patch failed",
-					"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
-			}
-		}
-	}()
+	}
 
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		reconcileStart := time.Now()

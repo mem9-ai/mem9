@@ -40,10 +40,11 @@ var formattedConversationMessageRE = regexp.MustCompile(`(?:^|\n\n)([A-Za-z][A-Z
 
 // IngestRequest is the input for the ingest pipeline.
 type IngestRequest struct {
-	Messages  []IngestMessage `json:"messages"`
-	SessionID string          `json:"session_id"`
-	AgentID   string          `json:"agent_id"`
-	Mode      IngestMode      `json:"mode"`
+	Messages           []IngestMessage `json:"messages"`
+	SessionID          string          `json:"session_id"`
+	AgentID            string          `json:"agent_id"`
+	Mode               IngestMode      `json:"mode"`
+	DisableSessionSave bool            `json:"disableSessionSave,omitempty"`
 }
 
 // IngestMessage represents a single conversation message.

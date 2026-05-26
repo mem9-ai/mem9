@@ -35,6 +35,19 @@ func TestLoad_ChainRecallStopScoreDefaultsToHighConfidence(t *testing.T) {
 	}
 }
 
+func TestLoad_DisableSessionSave(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+	t.Setenv("MNEMO_DISABLE_SESSION_SAVE", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.DisableSessionSave {
+		t.Fatal("DisableSessionSave = false, want true")
+	}
+}
+
 func TestLoad_MeteringSupportedFields(t *testing.T) {
 	t.Setenv("MNEMO_DSN", "test-dsn")
 	t.Setenv("MNEMO_METERING_ENABLED", "true")
