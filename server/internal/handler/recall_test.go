@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -258,6 +259,48 @@ func TestBuildRecallConfidence_TimeFutureIntentPrefersPlannedFutureEvidence(t *t
 
 	if gotFuture, gotPast := buildRecallConfidence(profile, futurePlan), buildRecallConfidence(profile, pastEvent); gotFuture <= gotPast {
 		t.Fatalf("expected future-planning evidence to outrank past event for future time query: future=%d past=%d", gotFuture, gotPast)
+	}
+}
+
+func TestSourceTurnEvidenceBonus_GuardsInsightBoost(t *testing.T) {
+	profile := buildRecallQueryProfile("How does John plan to honor the memories of his beloved pet?")
+	candidate := service.RecallCandidate{
+		Memory: domain.Memory{
+			ID:         "i1",
+			MemoryType: domain.TypeInsight,
+			Content:    "John is considering adopting a rescue dog to honor Max's memory.",
+			Metadata:   json.RawMessage(`{"source_turns":[{"seq":10,"content":"[date:11:51 am on 3 June, 2023] [speaker:John] I plan to honor Max's memory by adopting a rescue dog because Max was my beloved pet."}]}`),
+		},
+		SourcePool: service.RecallSourceInsight,
+	}
+
+	if got := sourceTurnEvidenceBonus(profile, candidate, 0.75); got <= 0 {
+		t.Fatalf("sourceTurnEvidenceBonus() = %.2f, want positive boost for grounded source turn", got)
+	}
+	if got := sourceTurnEvidenceBonus(profile, candidate, 0.91); got != 0 {
+		t.Fatalf("sourceTurnEvidenceBonus() = %.2f, want no boost for already-high confidence candidate", got)
+	}
+	if got := sourceTurnEvidenceBonus(profile, candidate, 0.85); got != 0 {
+		t.Fatalf("sourceTurnEvidenceBonus() = %.2f, want no medium-score boost for high confidence candidate", got)
+	}
+
+	durationProfile := buildRecallQueryProfile("How long was Max a part of John's family?")
+	if got := sourceTurnEvidenceBonus(durationProfile, candidate, 0.76); got != 0 {
+		t.Fatalf("sourceTurnEvidenceBonus() = %.2f, want no boost for duration query", got)
+	}
+	modalProfile := buildRecallQueryProfile("What might John's degree be in?")
+	if got := sourceTurnEvidenceBonus(modalProfile, candidate, 0.76); got != 0 {
+		t.Fatalf("sourceTurnEvidenceBonus() = %.2f, want no boost for modal inference query", got)
+	}
+	locationProfile := buildRecallQueryProfile("In which state is the shelter from which James adopted the puppy?")
+	if got := sourceTurnEvidenceBonus(locationProfile, candidate, 0.76); got != 0 {
+		t.Fatalf("sourceTurnEvidenceBonus() = %.2f, want no boost for location-like query", got)
+	}
+
+	candidate.SourcePool = service.RecallSourceSession
+	candidate.Memory.MemoryType = domain.TypeSession
+	if got := sourceTurnEvidenceBonus(profile, candidate, 0.76); got != 0 {
+		t.Fatalf("sourceTurnEvidenceBonus() = %.2f, want no boost outside insight pool", got)
 	}
 }
 
