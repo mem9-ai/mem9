@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"regexp"
 	"sort"
@@ -88,6 +89,9 @@ var (
 	recallCoverageEnglishTokenRe = regexp.MustCompile(`\b[a-z][a-z0-9'-]{3,}\b`)
 	recallCoverageCJKTokenRe     = regexp.MustCompile(`[\p{Han}]{2,6}`)
 	recallCoverageSpaceRe        = regexp.MustCompile(`\s+`)
+	recallSourceTurnTokenRe      = regexp.MustCompile(`[A-Za-z]+(?:'[A-Za-z]+)?|\d+|[\p{Han}]{2,}`)
+	recallSourceTurnModalRe      = regexp.MustCompile(`(?i)\b(?:might|likely|probably|infer|inferred|suggests?|imply|implies)\b`)
+	recallSourceTurnLocationRe   = regexp.MustCompile(`(?i)\b(?:which|what|in which)\s+(?:state|city|country|place|location)\b`)
 )
 
 type recallTemporalIntent int
@@ -133,6 +137,11 @@ type recallSelectionStats struct {
 	coverageTokenCount     int
 	coverageFirstPassCount int
 	backfillCount          int
+}
+
+type recallSourceTurnMetadata struct {
+	Seq     int    `json:"seq"`
+	Content string `json:"content"`
 }
 
 func (s *Server) defaultConfidenceRecallSearch(
@@ -351,8 +360,133 @@ func buildRecallConfidence(profile recallQueryProfile, candidate service.RecallC
 		recencyBonus(candidate.Memory.UpdatedAt) +
 		answerEvidenceBonus(profile, candidate.Memory) +
 		sourcePrior(profile.shape, candidate.SourcePool)
+	confidenceRaw += sourceTurnEvidenceBonus(profile, candidate, confidenceRaw)
 
 	return int(clampFloat64(confidenceRaw, 0, 1)*100 + 0.5)
+}
+
+func sourceTurnEvidenceBonus(profile recallQueryProfile, candidate service.RecallCandidate, baseConfidence float64) float64 {
+	if baseConfidence >= 0.88 || profile.durationQuery || profile.frequencyQuery {
+		return 0
+	}
+	if candidate.SourcePool != service.RecallSourceInsight || candidate.Memory.MemoryType != domain.TypeInsight {
+		return 0
+	}
+	switch profile.shape {
+	case recallQueryShapeExact, recallQueryShapeGeneral:
+	default:
+		return 0
+	}
+	if recallSourceTurnModalRe.MatchString(profile.lower) || recallSourceTurnLocationRe.MatchString(profile.lower) {
+		return 0
+	}
+
+	targetSpeaker := profile.subjectSpeaker
+	if profile.targetSpeaker != "" {
+		targetSpeaker = profile.targetSpeaker
+	}
+	if targetSpeaker == "" {
+		return 0
+	}
+
+	bestScore := 0
+	for _, turn := range parseRecallSourceTurns(candidate.Memory.Metadata) {
+		if !sameRecallPerson(extractRecallSpeaker(turn.Content), targetSpeaker) {
+			continue
+		}
+		score := scoreRecallSourceTurn(profile, candidate.Memory.Content, turn.Content)
+		if score > bestScore {
+			bestScore = score
+		}
+	}
+
+	switch {
+	case bestScore >= 18 && baseConfidence < 0.84:
+		return 0.04
+	case bestScore >= 14 && baseConfidence < 0.76:
+		return 0.03
+	default:
+		return 0
+	}
+}
+
+func parseRecallSourceTurns(metadata json.RawMessage) []recallSourceTurnMetadata {
+	if len(metadata) == 0 {
+		return nil
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(metadata, &payload); err != nil {
+		return nil
+	}
+	raw, ok := payload["source_turns"]
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+	var turns []recallSourceTurnMetadata
+	if err := json.Unmarshal(raw, &turns); err != nil {
+		return nil
+	}
+	return turns
+}
+
+func scoreRecallSourceTurn(profile recallQueryProfile, memoryContent, sourceContent string) int {
+	questionTokens := tokenizeRecallSourceTurn(profile.lower)
+	sourceTokens := recallSourceTurnTokenSet(tokenizeRecallSourceTurn(sourceContent))
+	memoryTokens := recallSourceTurnTokenSet(tokenizeRecallSourceTurn(memoryContent))
+	questionSet := recallSourceTurnTokenSet(questionTokens)
+
+	score := 0
+	for _, token := range questionTokens {
+		if _, ok := sourceTokens[token]; ok {
+			if len(token) >= 5 {
+				score += 3
+			} else {
+				score += 2
+			}
+		}
+	}
+	for token := range memoryTokens {
+		if _, ok := questionSet[token]; ok {
+			continue
+		}
+		if _, ok := sourceTokens[token]; ok {
+			score++
+		}
+	}
+	return minInt(score, 18)
+}
+
+func tokenizeRecallSourceTurn(text string) []string {
+	matches := recallSourceTurnTokenRe.FindAllString(strings.ToLower(text), -1)
+	out := make([]string, 0, len(matches))
+	for _, token := range matches {
+		token = strings.Trim(token, "'")
+		if len([]rune(token)) < 2 || isRecallSourceTurnStopword(token) {
+			continue
+		}
+		out = append(out, token)
+	}
+	return out
+}
+
+func recallSourceTurnTokenSet(tokens []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(tokens))
+	for _, token := range tokens {
+		set[token] = struct{}{}
+	}
+	return set
+}
+
+func isRecallSourceTurnStopword(token string) bool {
+	if isRecallQuestionTokenStopword(token) {
+		return true
+	}
+	switch token {
+	case "date", "speaker", "user", "assistant", "about", "after", "before", "during", "into", "onto", "over", "under", "very":
+		return true
+	default:
+		return false
+	}
 }
 
 func selectPinnedRecallCandidates(
