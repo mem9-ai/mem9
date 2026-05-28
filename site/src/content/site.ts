@@ -377,7 +377,11 @@ const stableOnboardingCommand =
 const provisionKeyCode = 'curl -sX POST https://api.mem9.ai/v1alpha1/mem9s';
 const exportApiEnvCode = `export API_KEY="your-api-key"
 export API="https://api.mem9.ai/v1alpha2/mem9s"`;
+const exportChainApiEnvCode = `export CHAIN_API_KEY="your-chain-api-key"
+export API="https://api.mem9.ai/v1alpha2/mem9s"
+export CHAIN_API="https://api.mem9.ai/v1alpha2/space-chains"`;
 const healthCheckCode = 'curl -s https://api.mem9.ai/healthz';
+const versionCheckCode = 'curl -s https://api.mem9.ai/versionz';
 const createMemoryCode = `curl -sX POST "$API/memories" \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: $API_KEY" \\
@@ -393,6 +397,10 @@ const updateMemoryCode = `curl -sX PUT "$API/memories/{id}" \\
   -H "If-Match: 3" \\
   -d '{"content":"Project uses PostgreSQL 16","tags":["tech","database"]}'`;
 const deleteMemoryCode = 'curl -sX DELETE -H "X-API-Key: $API_KEY" "$API/memories/{id}"';
+const batchDeleteMemoryCode = `curl -sX POST "$API/memories/batch-delete" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: $API_KEY" \\
+  -d '{"ids":["memory-id-1","memory-id-2"]}'`;
 const importMemoryFileCode = `curl -sX POST "$API/imports" \\
   -H "X-API-Key: $API_KEY" \\
   -F "file=@memory.json" \\
@@ -408,6 +416,36 @@ const listImportsCode = 'curl -s -H "X-API-Key: $API_KEY" "$API/imports"';
 const getImportCode = 'curl -s -H "X-API-Key: $API_KEY" "$API/imports/{id}"';
 const sessionMessagesCode =
   'curl -s -H "X-API-Key: $API_KEY" "$API/session-messages?session_id=ses-001&session_id=ses-002&limit_per_session=20"';
+const keyStatusCode = 'curl -s -H "X-API-Key: $API_KEY" https://api.mem9.ai/v1alpha2/status';
+const chainKeyStatusCode = 'curl -s -H "X-API-Key: $CHAIN_API_KEY" https://api.mem9.ai/v1alpha2/status';
+const createSpaceChainCode = `curl -sX POST https://api.mem9.ai/v1alpha2/space-chains \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"Team Knowledge Chain","description":"Ordered recall across team spaces"}'`;
+const getSpaceChainByKeyCode = 'curl -s -H "X-API-Key: $CHAIN_API_KEY" "$CHAIN_API/by-key"';
+const getSpaceChainCode = 'curl -s -H "X-API-Key: $CHAIN_API_KEY" "$CHAIN_API/{chain_id}"';
+const updateSpaceChainCode = `curl -sX PATCH "$CHAIN_API/{chain_id}" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: $CHAIN_API_KEY" \\
+  -d '{"name":"Team Knowledge Chain","description":"Updated description"}'`;
+const deleteSpaceChainCode = `curl -sX DELETE "$CHAIN_API/{chain_id}" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: $CHAIN_API_KEY" \\
+  -d '{"deleted_by_user_id":"user-123"}'`;
+const listSpaceChainNodesCode = 'curl -s -H "X-API-Key: $CHAIN_API_KEY" "$CHAIN_API/{chain_id}/nodes"';
+const replaceSpaceChainNodesCode = `curl -sX PUT "$CHAIN_API/{chain_id}/nodes" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: $CHAIN_API_KEY" \\
+  -d '{"nodes":[{"tenant_id":"space_key_a","display_name":"Team"},{"tenant_id":"space_key_b","display_name":"Company"}]}'`;
+const listSpaceChainBindingsCode = 'curl -s -H "X-API-Key: $CHAIN_API_KEY" "$CHAIN_API/{chain_id}/bindings"';
+const createSpaceChainBindingCode = `curl -sX POST "$CHAIN_API/{chain_id}/bindings" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: $CHAIN_API_KEY" \\
+  -d '{}'`;
+const disableSpaceChainBindingCode = `curl -sX PATCH "$CHAIN_API/{chain_id}/bindings/{binding_id}" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: $CHAIN_API_KEY" \\
+  -d '{"disabled":true,"disabled_by_user_id":"user-123"}'`;
+const recallSpaceChainCode = 'curl -s -H "X-API-Key: $CHAIN_API_KEY" "$API/memories?q=postgres&scanAll=true&limit=10"';
 
 const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
   en: {
@@ -872,6 +910,15 @@ const hostedMultipartHeaders: SiteApiFieldCopy[] = [
   { name: 'X-Mnemo-Agent-Id', description: 'Optional agent identity header for attribution.' },
 ];
 
+const chainManagementHeaders: SiteApiFieldCopy[] = [
+  { name: 'X-API-Key', description: 'Active Space Chain API key for this chain.', required: true },
+];
+
+const chainJSONWriteHeaders: SiteApiFieldCopy[] = [
+  { name: 'X-API-Key', description: 'Active Space Chain API key for this chain.', required: true },
+  { name: 'Content-Type', description: 'Set to `application/json` for JSON request bodies.', required: true },
+];
+
 const memoryCreateBodyFields: SiteApiFieldCopy[] = [
   { name: 'content', description: 'Plain memory content for direct writes.' },
   { name: 'messages', description: 'Conversation messages for ingest-based writes.' },
@@ -893,12 +940,21 @@ const memoryListQueryParams: SiteApiFieldCopy[] = [
   { name: 'session_id', description: 'Filter by session id.' },
   { name: 'limit', description: 'Page size. The handler caps large values.' },
   { name: 'offset', description: 'Offset for pagination.' },
+  {
+    name: 'scanAll',
+    description:
+      'Space Chain keys only. When true, recall searches every node and globally reranks the merged facts.',
+  },
 ];
 
 const memoryUpdateBodyFields: SiteApiFieldCopy[] = [
   { name: 'content', description: 'Updated memory content.' },
   { name: 'tags', description: 'Updated tag array.' },
   { name: 'metadata', description: 'Updated JSON metadata payload.' },
+];
+
+const batchDeleteBodyFields: SiteApiFieldCopy[] = [
+  { name: 'ids', description: 'Array of memory ids to delete.', required: true },
 ];
 
 const importBodyFields: SiteApiFieldCopy[] = [
@@ -919,6 +975,15 @@ const provisionResponseFields: SiteApiFieldCopy[] = [
 
 const healthResponseFields: SiteApiFieldCopy[] = [
   { name: 'status', description: 'Health status string. Hosted service returns `ok`.', required: true },
+];
+
+const versionResponseFields: SiteApiFieldCopy[] = [
+  { name: 'go_version', description: 'Go runtime version used by the server.', required: true },
+  { name: 'started_at', description: 'Server start timestamp.', required: true },
+];
+
+const keyStatusResponseFields: SiteApiFieldCopy[] = [
+  { name: 'status', description: '`active` when the key can be used, otherwise `inactive`.', required: true },
 ];
 
 const memoryListResponseFields: SiteApiFieldCopy[] = [
@@ -965,6 +1030,241 @@ const sessionMessagesResponseFields: SiteApiFieldCopy[] = [
   { name: 'messages', description: 'Array of captured session message rows.', required: true },
   { name: 'limit_per_session', description: 'Applied per-session limit.', required: true },
 ];
+
+const spaceChainCreateBodyFields: SiteApiFieldCopy[] = [
+  { name: 'name', description: 'Human-readable Space Chain name.', required: true },
+  { name: 'project_id', description: 'Optional project id for control-plane ownership.' },
+  { name: 'description', description: 'Optional Space Chain description.' },
+  { name: 'created_by_user_id', description: 'Optional user id for audit attribution.' },
+];
+
+const spaceChainCreateResponseFields: SiteApiFieldCopy[] = [
+  { name: 'chain', description: 'Created Space Chain object.', required: true },
+  { name: 'chain_api_key', description: 'New plaintext Space Chain API key. Store it now.', required: true },
+  { name: 'binding_id', description: 'Identifier of the initial key binding.', required: true },
+  { name: 'key_prefix', description: 'Space Chain key prefix, currently `chain_`.', required: true },
+  { name: 'key_preview', description: 'Short masked preview of the new key.', required: true },
+];
+
+const spaceChainObjectResponseFields: SiteApiFieldCopy[] = [
+  { name: 'id', description: 'Space Chain id.', required: true },
+  { name: 'project_id', description: 'Owning project id when present.' },
+  { name: 'name', description: 'Space Chain name.', required: true },
+  { name: 'description', description: 'Space Chain description.' },
+  { name: 'bindings', description: 'Key bindings when included.' },
+  { name: 'nodes', description: 'Ordered node list when included.' },
+  { name: 'created_at', description: 'Creation timestamp.', required: true },
+  { name: 'updated_at', description: 'Last update timestamp.', required: true },
+];
+
+const spaceChainUpdateBodyFields: SiteApiFieldCopy[] = [
+  { name: 'name', description: 'Updated Space Chain name.', required: true },
+  { name: 'description', description: 'Updated description.' },
+];
+
+const spaceChainDeleteBodyFields: SiteApiFieldCopy[] = [
+  { name: 'deleted_by_user_id', description: 'Optional user id for audit attribution.' },
+];
+
+const spaceChainNodesBodyFields: SiteApiFieldCopy[] = [
+  { name: 'nodes', description: 'Ordered array of Space Chain node inputs.', required: true },
+  { name: 'nodes[].tenant_id', description: 'Space API key / tenant id for the node.', required: true },
+  { name: 'nodes[].external_space_id', description: 'Optional console Space id for display and sync.' },
+  { name: 'nodes[].display_name', description: 'Optional display name for the node.' },
+];
+
+const spaceChainNodesResponseFields: SiteApiFieldCopy[] = [
+  { name: 'nodes', description: 'Ordered node list. Positions are zero-based.', required: true },
+];
+
+const spaceChainBindingsResponseFields: SiteApiFieldCopy[] = [
+  { name: 'bindings', description: 'Array of Space Chain API key bindings.', required: true },
+];
+
+const spaceChainBindingBodyFields: SiteApiFieldCopy[] = [
+  { name: 'chain_api_key', description: 'Optional caller-supplied key. Omit to generate one.' },
+  { name: 'created_by_user_id', description: 'Optional user id for audit attribution.' },
+];
+
+const spaceChainBindingResponseFields: SiteApiFieldCopy[] = [
+  { name: 'id', description: 'Binding id.', required: true },
+  { name: 'chain_id', description: 'Space Chain id.', required: true },
+  { name: 'chain_api_key', description: 'Plaintext key for newly created bindings.', required: true },
+  { name: 'disabled', description: 'Whether this key binding is disabled.', required: true },
+  { name: 'created_at', description: 'Creation timestamp.', required: true },
+];
+
+const spaceChainDisableBindingBodyFields: SiteApiFieldCopy[] = [
+  { name: 'disabled', description: 'Must be `true`.', required: true },
+  { name: 'disabled_by_user_id', description: 'Optional user id for audit attribution.' },
+];
+
+const spaceChainRuntimeResponseFields: SiteApiFieldCopy[] = [
+  { name: 'memories', description: 'Merged memories from the visited Space Chain nodes.', required: true },
+  { name: 'total', description: 'Matched rows before pagination after chain-level de-duplication.', required: true },
+  { name: 'limit', description: 'Applied page size.', required: true },
+  { name: 'offset', description: 'Applied page offset.', required: true },
+];
+
+const keyStatusEndpointGroup: SiteApiEndpointGroupCopy = {
+  id: 'key-status',
+  title: 'Key Status',
+  description: 'Validate whether a Space key or Space Chain key is currently usable before making runtime calls.',
+  endpoints: [
+    {
+      method: 'GET',
+      path: '/v1alpha2/status',
+      summary: 'Check API key status.',
+      description:
+        'Send either a normal mem9 Space key or a Space Chain key in `X-API-Key`. The response is `active` or `inactive`; unknown keys return `404`.',
+      headers: [{ name: 'X-API-Key', description: 'Space API key or Space Chain API key.', required: true }],
+      responseFields: keyStatusResponseFields,
+      examples: [
+        { label: 'Check Space key', code: keyStatusCode },
+        { label: 'Check Space Chain key', code: chainKeyStatusCode },
+      ],
+    },
+  ],
+};
+
+const batchDeleteMemoryEndpoint: SiteApiEndpointCopy = {
+  method: 'POST',
+  path: '/v1alpha2/mem9s/memories/batch-delete',
+  summary: 'Delete multiple memories.',
+  description:
+    'Deletes the provided memory ids in one request. When authenticated with a Space Chain key, the handler resolves each id to the node that owns it.',
+  headers: hostedJSONWriteHeaders,
+  bodyFields: batchDeleteBodyFields,
+  examples: [{ label: 'Batch delete memories', code: batchDeleteMemoryCode }],
+};
+
+const spaceChainEndpointGroup: SiteApiEndpointGroupCopy = {
+  id: 'space-chains',
+  title: 'Space Chains',
+  description:
+    'Create and manage ordered chains of Spaces. Runtime memory endpoints accept a Space Chain key and search the chain in node order, or all nodes when `scanAll=true`.',
+  endpoints: [
+    {
+      method: 'POST',
+      path: '/v1alpha2/space-chains',
+      summary: 'Create a Space Chain.',
+      description:
+        'Creates a Space Chain and returns its first plaintext chain key once. Store `chain_api_key` securely; later list responses only expose masked or bound key records.',
+      headers: [{ name: 'Content-Type', description: 'Set to `application/json` for JSON request bodies.', required: true }],
+      bodyFields: spaceChainCreateBodyFields,
+      responseFields: spaceChainCreateResponseFields,
+      examples: [
+        { label: 'Create Space Chain', code: createSpaceChainCode },
+        { label: 'Export Space Chain env vars', code: exportChainApiEnvCode },
+      ],
+    },
+    {
+      method: 'GET',
+      path: '/v1alpha2/space-chains/by-key',
+      summary: 'Read the Space Chain for a key.',
+      description: 'Looks up the active Space Chain associated with the `X-API-Key` chain key.',
+      headers: chainManagementHeaders,
+      responseFields: spaceChainObjectResponseFields,
+      examples: [{ label: 'Get by key', code: getSpaceChainByKeyCode }],
+    },
+    {
+      method: 'GET',
+      path: '/v1alpha2/space-chains/{chain_id}',
+      summary: 'Read one Space Chain.',
+      description: 'Returns chain metadata, nodes, and bindings for a chain key authorized to manage this Space Chain.',
+      headers: chainManagementHeaders,
+      responseFields: spaceChainObjectResponseFields,
+      examples: [{ label: 'Get Space Chain', code: getSpaceChainCode }],
+    },
+    {
+      method: 'PATCH',
+      path: '/v1alpha2/space-chains/{chain_id}',
+      summary: 'Update Space Chain details.',
+      description: 'Updates the display name and description for a Space Chain.',
+      headers: chainJSONWriteHeaders,
+      bodyFields: spaceChainUpdateBodyFields,
+      responseFields: spaceChainObjectResponseFields,
+      examples: [{ label: 'Update Space Chain', code: updateSpaceChainCode }],
+    },
+    {
+      method: 'DELETE',
+      path: '/v1alpha2/space-chains/{chain_id}',
+      summary: 'Delete a Space Chain.',
+      description: 'Soft-deletes the Space Chain. A successful delete returns `204 No Content`.',
+      headers: chainJSONWriteHeaders,
+      bodyFields: spaceChainDeleteBodyFields,
+      examples: [{ label: 'Delete Space Chain', code: deleteSpaceChainCode }],
+    },
+    {
+      method: 'GET',
+      path: '/v1alpha2/space-chains/{chain_id}/nodes',
+      summary: 'List Space Chain nodes.',
+      description: 'Returns the ordered node list. Node positions are zero-based and define sequential recall order.',
+      headers: chainManagementHeaders,
+      responseFields: spaceChainNodesResponseFields,
+      examples: [{ label: 'List nodes', code: listSpaceChainNodesCode }],
+    },
+    {
+      method: 'PUT',
+      path: '/v1alpha2/space-chains/{chain_id}/nodes',
+      summary: 'Replace Space Chain nodes.',
+      description:
+        'Replaces the entire ordered node list. Each node must reference a normal Space key / tenant id, not another Space Chain key.',
+      headers: chainJSONWriteHeaders,
+      bodyFields: spaceChainNodesBodyFields,
+      responseFields: spaceChainNodesResponseFields,
+      examples: [{ label: 'Replace nodes', code: replaceSpaceChainNodesCode }],
+    },
+    {
+      method: 'GET',
+      path: '/v1alpha2/space-chains/{chain_id}/bindings',
+      summary: 'List Space Chain key bindings.',
+      description: 'Returns all key bindings visible to the management key for this Space Chain.',
+      headers: chainManagementHeaders,
+      responseFields: spaceChainBindingsResponseFields,
+      examples: [{ label: 'List bindings', code: listSpaceChainBindingsCode }],
+    },
+    {
+      method: 'POST',
+      path: '/v1alpha2/space-chains/{chain_id}/bindings',
+      summary: 'Create a Space Chain key binding.',
+      description: 'Creates another chain key. Omit `chain_api_key` to let mem9 generate a key.',
+      headers: chainJSONWriteHeaders,
+      bodyFields: spaceChainBindingBodyFields,
+      responseFields: spaceChainBindingResponseFields,
+      examples: [{ label: 'Create binding', code: createSpaceChainBindingCode }],
+    },
+    {
+      method: 'PATCH',
+      path: '/v1alpha2/space-chains/{chain_id}/bindings/{binding_id}',
+      summary: 'Disable a Space Chain key binding.',
+      description: 'Disables an active binding. The API rejects disabling the last active key for a chain.',
+      headers: chainJSONWriteHeaders,
+      bodyFields: spaceChainDisableBindingBodyFields,
+      examples: [{ label: 'Disable binding', code: disableSpaceChainBindingCode }],
+    },
+    {
+      method: 'GET',
+      path: '/v1alpha2/mem9s/memories',
+      summary: 'Recall across a Space Chain.',
+      description:
+        'Use the normal memory search endpoint with a Space Chain key. By default recall visits nodes in order and stops early on high confidence; pass `scanAll=true` to search every node and globally rerank.',
+      headers: chainManagementHeaders,
+      queryParams: memoryListQueryParams,
+      responseFields: spaceChainRuntimeResponseFields,
+      examples: [{ label: 'Recall with scanAll', code: recallSpaceChainCode }],
+    },
+  ],
+};
+
+const versionEndpoint: SiteApiEndpointCopy = {
+  method: 'GET',
+  path: '/versionz',
+  summary: 'Check server version metadata.',
+  description: 'Returns runtime metadata that is useful for support and deployment verification.',
+  responseFields: versionResponseFields,
+  examples: [{ label: 'Version check', code: versionCheckCode }],
+};
 
 const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
   en: {
@@ -1038,6 +1338,8 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
           },
         ],
       },
+      keyStatusEndpointGroup,
+      spaceChainEndpointGroup,
       {
         id: 'memories',
         title: 'Memories',
@@ -1096,6 +1398,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             headers: hostedReadHeaders,
             examples: [{ label: 'Delete memory', code: deleteMemoryCode }],
           },
+          batchDeleteMemoryEndpoint,
         ],
       },
       {
@@ -1169,6 +1472,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             responseFields: healthResponseFields,
             examples: [{ label: 'Health check', code: healthCheckCode }],
           },
+          versionEndpoint,
         ],
       },
     ],
@@ -1247,6 +1551,8 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
           },
         ],
       },
+      keyStatusEndpointGroup,
+      spaceChainEndpointGroup,
       {
         id: 'memories',
         title: 'Memories',
@@ -1302,6 +1608,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             headers: hostedReadHeaders,
             examples: [{ label: '删除记忆', code: deleteMemoryCode }],
           },
+          batchDeleteMemoryEndpoint,
         ],
       },
       {
@@ -1372,6 +1679,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             responseFields: healthResponseFields,
             examples: [{ label: '健康检查', code: healthCheckCode }],
           },
+          versionEndpoint,
         ],
       },
     ],
@@ -1449,6 +1757,8 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
           },
         ],
       },
+      keyStatusEndpointGroup,
+      spaceChainEndpointGroup,
       {
         id: 'memories',
         title: 'Memories',
@@ -1504,6 +1814,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             headers: hostedReadHeaders,
             examples: [{ label: '刪除記憶', code: deleteMemoryCode }],
           },
+          batchDeleteMemoryEndpoint,
         ],
       },
       {
@@ -1574,6 +1885,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             responseFields: healthResponseFields,
             examples: [{ label: '健康檢查', code: healthCheckCode }],
           },
+          versionEndpoint,
         ],
       },
     ],
@@ -1651,6 +1963,8 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
           },
         ],
       },
+      keyStatusEndpointGroup,
+      spaceChainEndpointGroup,
       {
         id: 'memories',
         title: 'Memories',
@@ -1706,6 +2020,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             headers: hostedReadHeaders,
             examples: [{ label: 'Memory を削除', code: deleteMemoryCode }],
           },
+          batchDeleteMemoryEndpoint,
         ],
       },
       {
@@ -1776,6 +2091,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             responseFields: healthResponseFields,
             examples: [{ label: 'Health check', code: healthCheckCode }],
           },
+          versionEndpoint,
         ],
       },
     ],
@@ -1853,6 +2169,8 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
           },
         ],
       },
+      keyStatusEndpointGroup,
+      spaceChainEndpointGroup,
       {
         id: 'memories',
         title: 'Memories',
@@ -1908,6 +2226,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             headers: hostedReadHeaders,
             examples: [{ label: 'Memory 삭제', code: deleteMemoryCode }],
           },
+          batchDeleteMemoryEndpoint,
         ],
       },
       {
@@ -1978,6 +2297,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             responseFields: healthResponseFields,
             examples: [{ label: 'Health check', code: healthCheckCode }],
           },
+          versionEndpoint,
         ],
       },
     ],
@@ -2055,6 +2375,8 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
           },
         ],
       },
+      keyStatusEndpointGroup,
+      spaceChainEndpointGroup,
       {
         id: 'memories',
         title: 'Memories',
@@ -2110,6 +2432,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             headers: hostedReadHeaders,
             examples: [{ label: 'Hapus memory', code: deleteMemoryCode }],
           },
+          batchDeleteMemoryEndpoint,
         ],
       },
       {
@@ -2180,6 +2503,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             responseFields: healthResponseFields,
             examples: [{ label: 'Health check', code: healthCheckCode }],
           },
+          versionEndpoint,
         ],
       },
     ],
@@ -2257,6 +2581,8 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
           },
         ],
       },
+      keyStatusEndpointGroup,
+      spaceChainEndpointGroup,
       {
         id: 'memories',
         title: 'Memories',
@@ -2312,6 +2638,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             headers: hostedReadHeaders,
             examples: [{ label: 'ลบ memory', code: deleteMemoryCode }],
           },
+          batchDeleteMemoryEndpoint,
         ],
       },
       {
@@ -2382,6 +2709,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             responseFields: healthResponseFields,
             examples: [{ label: 'Health check', code: healthCheckCode }],
           },
+          versionEndpoint,
         ],
       },
     ],

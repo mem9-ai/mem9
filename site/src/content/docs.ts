@@ -47,6 +47,229 @@ export interface DocsPageCopy {
   sections: DocsSection[];
 }
 
+const spaceChainDocsSections: Record<DocsLocale, DocsSection> = {
+  en: {
+    id: 'space-chains',
+    label: '10',
+    title: 'Space Chains',
+    intro: 'Space Chain lets one recall key search several mem9 spaces in a deliberate order.',
+    paragraphs: [
+      'Use Space Chain when one agent should search layered knowledge sources without merging all data into one space. A common pattern is personal memory first, then team knowledge, then company knowledge.',
+      'Each node in the chain points to a normal mem9 space. The chain key is a separate key: clients call the same memory recall API with the chain key, and mem9 decides which spaces to visit.',
+    ],
+    bullets: [
+      'Keep different ownership boundaries while still offering one recall endpoint.',
+      'Put the most specific or most trusted space first.',
+      'Reuse existing spaces without copying their memories into a new store.',
+      'Rotate or disable Space Chain keys without changing the underlying space keys.',
+    ],
+    subsections: [
+      {
+        title: 'How recall works',
+        paragraphs: [
+          'By default, recall visits nodes from top to bottom. If an early node returns a high-confidence match, mem9 can stop there and avoid searching later, broader spaces.',
+          'When Force scanAll is enabled, mem9 searches every node and globally reranks the combined results. This is useful when you want the broadest answer or you are comparing knowledge across all spaces.',
+        ],
+      },
+      {
+        title: 'Creating and importing chains',
+        bullets: [
+          'Create Space Chain starts a new ordered chain and gives you a chain key.',
+          'Import key adds an existing chain key to the console so you can manage or test a chain you already created.',
+          'Add nodes from existing spaces, then save the node order before relying on recall behavior.',
+          'Use the Recall test area to compare normal ordered recall with Force scanAll.',
+        ],
+      },
+      {
+        title: 'What to watch for',
+        bullets: [
+          'A chain node must be a normal mem9 space, not another Space Chain.',
+          'A node without a usable space key cannot participate in runtime recall.',
+          'If an imported space was created with an incompatible backend schema, recall may ask you to refresh or recreate that space before it can be searched.',
+        ],
+      },
+    ],
+  },
+  zh: {
+    id: 'space-chains',
+    label: '10',
+    title: 'Space Chain',
+    intro: 'Space Chain 让一个 recall key 按顺序搜索多个 mem9 space。',
+    paragraphs: [
+      '当一个 Agent 需要按层级检索多份知识，但你又不想把所有数据混进同一个 space 时，就适合使用 Space Chain。常见顺序是：个人记忆、团队知识、公司知识。',
+      '链上的每个节点都指向一个普通 mem9 space。chain key 是单独的 key：客户端继续调用同一套 memory recall API，只是把 `X-API-Key` 换成 chain key，由 mem9 决定要访问哪些 space。',
+    ],
+    bullets: [
+      '保留不同 space 的数据边界，同时提供一个统一 recall 入口。',
+      '把最具体、最可信的 space 放在前面。',
+      '复用已有 space，不需要把记忆复制到新的存储里。',
+      '可以单独轮换或禁用 Space Chain key，不影响底层 space key。',
+    ],
+    subsections: [
+      {
+        title: '召回时如何工作',
+        paragraphs: [
+          '默认情况下，recall 会从上到下访问节点。如果靠前节点已经返回高 confidence 结果，mem9 可以提前停止，避免继续搜索后面更宽泛的 space。',
+          '开启 Force scanAll 时，mem9 会搜索所有节点，并把所有结果合并后做全局 rerank。它适合需要最大覆盖面，或想比较全部 space 知识的场景。',
+        ],
+      },
+      {
+        title: '创建和导入 chain',
+        bullets: [
+          'Create Space Chain 会创建一条新的有序 chain，并返回一个 chain key。',
+          'Import key 可以把已有 chain key 加到 Console 中，用来管理或测试已经存在的 chain。',
+          '从已有 space 添加节点后，需要保存节点顺序，再依赖这个顺序做 recall。',
+          '使用 Recall test 区域对比普通顺序 recall 和 Force scanAll 的差异。',
+        ],
+      },
+      {
+        title: '需要注意什么',
+        bullets: [
+          'chain node 必须是普通 mem9 space，不能是另一个 Space Chain。',
+          '没有可用 space key 的节点无法参与 runtime recall。',
+          '如果导入的 space 使用了与当前后端不兼容的 schema，recall 可能会提示你刷新或重建该 space 后再搜索。',
+        ],
+      },
+    ],
+  },
+  ja: {
+    id: 'space-chains',
+    label: '10',
+    title: 'Space Chains',
+    intro: 'Space Chain は、1 つの recall key で複数の mem9 space を順番に検索する仕組みです。',
+    paragraphs: [
+      'すべてのデータを 1 つの space に混ぜずに、個人、チーム、会社のような層ごとの知識を検索したい場合に使います。',
+      '各 node は通常の mem9 space を指します。client は同じ memory recall API を chain key で呼び出し、mem9 が訪問する space を決めます。',
+    ],
+    bullets: [
+      'データ境界を保ったまま、1 つの recall endpoint を提供できます。',
+      'より具体的、または信頼度の高い space を先頭に置きます。',
+      '既存 space をコピーせずに再利用できます。',
+      '基盤の space key を変えずに chain key を rotate / disable できます。',
+    ],
+    subsections: [
+      {
+        title: 'Recall の動き',
+        paragraphs: [
+          '通常は node を上から順番に検索します。早い node で高 confidence の結果が見つかると、後続の広い space を検索せずに止められます。',
+          'Force scanAll を有効にすると、すべての node を検索し、結果をまとめて global rerank します。',
+        ],
+      },
+      {
+        title: '作成と import',
+        bullets: [
+          'Create Space Chain は新しい chain と chain key を作成します。',
+          'Import key は既存の chain key を Console に追加し、管理やテストに使います。',
+          '既存 space から node を追加したら、recall 前に node order を保存してください。',
+          'Recall test で通常の順次 recall と Force scanAll を比較できます。',
+        ],
+      },
+    ],
+  },
+  ko: {
+    id: 'space-chains',
+    label: '10',
+    title: 'Space Chains',
+    intro: 'Space Chain 은 하나의 recall key 로 여러 mem9 space 를 정해진 순서대로 검색합니다.',
+    paragraphs: [
+      '모든 데이터를 한 space 로 합치지 않고 개인, 팀, 회사 지식처럼 계층화된 지식을 검색하고 싶을 때 사용합니다.',
+      '각 node 는 일반 mem9 space 를 가리킵니다. client 는 같은 memory recall API 를 chain key 로 호출하고, mem9 가 어떤 space 를 방문할지 결정합니다.',
+    ],
+    bullets: [
+      '데이터 경계를 유지하면서 하나의 recall endpoint 를 제공할 수 있습니다.',
+      '가장 구체적이거나 신뢰할 수 있는 space 를 앞에 둡니다.',
+      '기존 space 의 memory 를 복사하지 않고 재사용합니다.',
+      '하위 space key 를 바꾸지 않고 Space Chain key 를 교체하거나 비활성화할 수 있습니다.',
+    ],
+    subsections: [
+      {
+        title: 'Recall 방식',
+        paragraphs: [
+          '기본 recall 은 node 를 위에서 아래로 검색합니다. 앞쪽 node 에서 confidence 가 높은 결과가 나오면 뒤쪽의 더 넓은 space 검색을 멈출 수 있습니다.',
+          'Force scanAll 을 켜면 모든 node 를 검색하고 합쳐진 결과를 전역으로 rerank 합니다.',
+        ],
+      },
+      {
+        title: '생성과 import',
+        bullets: [
+          'Create Space Chain 은 새 chain 과 chain key 를 만듭니다.',
+          'Import key 는 기존 chain key 를 Console 에 추가해 관리하거나 테스트할 수 있게 합니다.',
+          '기존 space 에서 node 를 추가한 뒤 recall 에 의존하기 전에 node order 를 저장하세요.',
+          'Recall test 에서 일반 순차 recall 과 Force scanAll 을 비교할 수 있습니다.',
+        ],
+      },
+    ],
+  },
+  id: {
+    id: 'space-chains',
+    label: '10',
+    title: 'Space Chains',
+    intro: 'Space Chain membuat satu recall key dapat mencari beberapa mem9 space dalam urutan yang disengaja.',
+    paragraphs: [
+      'Gunakan saat agent perlu mencari knowledge berlapis tanpa mencampur semua data ke satu space, misalnya personal memory, team knowledge, lalu company knowledge.',
+      'Setiap node menunjuk ke mem9 space biasa. Client tetap memanggil memory recall API yang sama dengan chain key, lalu mem9 menentukan space yang dikunjungi.',
+    ],
+    bullets: [
+      'Menjaga batas data antar space sambil menyediakan satu endpoint recall.',
+      'Letakkan space paling spesifik atau paling tepercaya di awal.',
+      'Gunakan ulang space yang sudah ada tanpa menyalin memory.',
+      'Rotasi atau nonaktifkan Space Chain key tanpa mengubah space key di bawahnya.',
+    ],
+    subsections: [
+      {
+        title: 'Cara recall bekerja',
+        paragraphs: [
+          'Secara default, recall mengunjungi node dari atas ke bawah. Jika node awal memberi hasil high-confidence, mem9 dapat berhenti sebelum mencari space yang lebih luas.',
+          'Saat Force scanAll aktif, mem9 mencari semua node lalu melakukan global rerank pada hasil gabungan.',
+        ],
+      },
+      {
+        title: 'Membuat dan import chain',
+        bullets: [
+          'Create Space Chain membuat chain baru dan chain key.',
+          'Import key menambahkan chain key yang sudah ada ke Console untuk dikelola atau diuji.',
+          'Tambahkan node dari space yang sudah ada, lalu simpan urutan node sebelum mengandalkan recall.',
+          'Gunakan Recall test untuk membandingkan recall berurutan dengan Force scanAll.',
+        ],
+      },
+    ],
+  },
+  th: {
+    id: 'space-chains',
+    label: '10',
+    title: 'Space Chains',
+    intro: 'Space Chain ทำให้ recall key เดียวค้นหา mem9 space หลายชุดตามลำดับที่กำหนดได้',
+    paragraphs: [
+      'เหมาะเมื่อ agent ต้องค้นหา knowledge หลายชั้นโดยไม่รวมข้อมูลทั้งหมดไว้ใน space เดียว เช่น personal memory, team knowledge และ company knowledge',
+      'แต่ละ node ชี้ไปยัง mem9 space ปกติ client ยังเรียก memory recall API เดิมด้วย chain key แล้ว mem9 จะตัดสินใจว่าจะค้นหา space ใดบ้าง',
+    ],
+    bullets: [
+      'คงขอบเขตข้อมูลของแต่ละ space แต่มี recall endpoint เดียว',
+      'วาง space ที่เฉพาะเจาะจงหรือเชื่อถือได้ที่สุดไว้ก่อน',
+      'ใช้ space เดิมซ้ำโดยไม่ต้องคัดลอก memory',
+      'หมุนเวียนหรือปิด Space Chain key ได้โดยไม่กระทบ space key ด้านล่าง',
+    ],
+    subsections: [
+      {
+        title: 'Recall ทำงานอย่างไร',
+        paragraphs: [
+          'ค่าเริ่มต้นจะค้นหา node จากบนลงล่าง หาก node แรก ๆ ให้ผลลัพธ์ confidence สูง mem9 สามารถหยุดก่อนค้นหา space ที่กว้างกว่าได้',
+          'เมื่อเปิด Force scanAll mem9 จะค้นหาทุก node แล้ว rerank ผลลัพธ์รวมทั้งหมด',
+        ],
+      },
+      {
+        title: 'สร้างและ import chain',
+        bullets: [
+          'Create Space Chain สร้าง chain ใหม่และ chain key',
+          'Import key เพิ่ม chain key ที่มีอยู่เข้า Console เพื่อจัดการหรือทดสอบ',
+          'เพิ่ม node จาก space เดิม แล้วบันทึกลำดับ node ก่อนใช้งาน recall จริง',
+          'ใช้ Recall test เพื่อเปรียบเทียบ recall ตามลำดับกับ Force scanAll',
+        ],
+      },
+    ],
+  },
+};
+
 export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
   en: {
     meta: {
@@ -83,6 +306,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           'official-install-flow',
           'what-you-get-after-setup',
           'your-memory-dashboard',
+          'space-chains',
           'daily-usage-expectations',
           'reconnect-and-recovery',
           'uninstall-behavior',
@@ -306,9 +530,10 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           },
         ],
       },
+      spaceChainDocsSections.en,
       {
         id: 'daily-usage-expectations',
-        label: '10',
+        label: '11',
         title: 'Daily Usage Expectations',
         paragraphs: [
           'The most immediate day-to-day change is that users stop repeating the same project background, preferences, and working agreements every session.',
@@ -334,7 +559,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '11',
+        label: '12',
         title: 'Reconnect, New Machine, and API Key Care',
         subsections: [
           {
@@ -362,7 +587,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '12',
+        label: '13',
         title: 'Uninstall Behavior',
         intro: 'Uninstalling mem9 affects the local machine setup, not the remote cloud data.',
         subsections: [
@@ -390,7 +615,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '13',
+        label: '14',
         title: 'Security and Trust',
         paragraphs: [
           'mem9 positions itself as a production-ready memory layer, not an opaque black box. The product story emphasizes clear data handling boundaries and production-grade cloud infrastructure.',
@@ -417,7 +642,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '14',
+        label: '15',
         title: 'Product Expectations and Limits',
         subsections: [
           {
@@ -439,7 +664,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '15',
+        label: '16',
         title: 'Recommended Path and Official Links',
         intro: 'For a new user, the cleanest sequence looks like this.',
         bullets: [
@@ -507,6 +732,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           'official-install-flow',
           'what-you-get-after-setup',
           'your-memory-dashboard',
+          'space-chains',
           'daily-usage-expectations',
           'reconnect-and-recovery',
           'uninstall-behavior',
@@ -735,9 +961,10 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           },
         ],
       },
+      spaceChainDocsSections.zh,
       {
         id: 'daily-usage-expectations',
-        label: '10',
+        label: '11',
         title: '日常使用时，mem9 会怎样改变体验',
         paragraphs: [
           '最直接的变化通常是：你不需要每次重新解释项目背景，长期知识不会只留在某次聊天里，而且你还能明确要求“把这件事记下来”。',
@@ -763,7 +990,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '11',
+        label: '12',
         title: '恢复、重连和 API key 保管',
         subsections: [
           {
@@ -791,7 +1018,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '12',
+        label: '13',
         title: '卸载时，会发生什么，不会发生什么',
         intro: '卸载影响的是本地配置，不会直接删除远端云数据。',
         subsections: [
@@ -819,7 +1046,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '13',
+        label: '14',
         title: '安全和信任基础',
         paragraphs: [
           'mem9 对自己的定位是面向生产场景的长期记忆层，而不是一个不可控黑盒。官方叙述强调的是清晰的数据处理边界，以及生产级云基础设施。',
@@ -846,7 +1073,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '14',
+        label: '15',
         title: '真实使用时，应该有什么预期',
         subsections: [
           {
@@ -868,7 +1095,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '15',
+        label: '16',
         title: '给新用户的推荐顺序和官方入口',
         intro: '如果你第一次使用 mem9，推荐路径可以很简单。',
         bullets: [
@@ -936,6 +1163,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           'official-install-flow',
           'what-you-get-after-setup',
           'your-memory-dashboard',
+          'space-chains',
           'daily-usage-expectations',
           'reconnect-and-recovery',
           'uninstall-behavior',
@@ -1158,9 +1386,10 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           },
         ],
       },
+      spaceChainDocsSections.ja,
       {
         id: 'daily-usage-expectations',
-        label: '10',
+        label: '11',
         title: '日常利用で mem9 が変えること',
         paragraphs: [
           'もっとも直接的な変化は、毎回同じプロジェクト背景や作業ルールを説明し直さなくてよくなることです。',
@@ -1186,7 +1415,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '11',
+        label: '12',
         title: 'reconnect・復元・API key の管理',
         subsections: [
           {
@@ -1214,7 +1443,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '12',
+        label: '13',
         title: 'uninstall で起きること / 起きないこと',
         intro: 'uninstall はローカル設定に影響しますが、クラウド上のデータは直接削除しません。',
         subsections: [
@@ -1242,7 +1471,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '13',
+        label: '14',
         title: 'セキュリティと信頼の基盤',
         paragraphs: [
           'mem9 は、制御不能なブラックボックスではなく、本番運用を前提とした長期記憶レイヤーとして位置づけられています。説明の中心は、明確なデータ処理境界と本番級クラウド基盤です。',
@@ -1269,7 +1498,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '14',
+        label: '15',
         title: '実運用での期待値',
         subsections: [
           {
@@ -1291,7 +1520,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '15',
+        label: '16',
         title: '新規ユーザー向けおすすめ順序と公式入口',
         intro: '初めて mem9 を使うなら、次の流れがもっともシンプルです。',
         bullets: [
@@ -1359,6 +1588,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           'official-install-flow',
           'what-you-get-after-setup',
           'your-memory-dashboard',
+          'space-chains',
           'daily-usage-expectations',
           'reconnect-and-recovery',
           'uninstall-behavior',
@@ -1581,9 +1811,10 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           },
         ],
       },
+      spaceChainDocsSections.ko,
       {
         id: 'daily-usage-expectations',
-        label: '10',
+        label: '11',
         title: '일상 사용에서 어떻게 달라지는가',
         paragraphs: [
           '가장 즉각적인 변화는 프로젝트 배경, 선호, 작업 규칙을 매번 다시 설명하지 않아도 된다는 점입니다.',
@@ -1609,7 +1840,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '11',
+        label: '12',
         title: '복구, reconnect, API key 관리',
         subsections: [
           {
@@ -1637,7 +1868,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '12',
+        label: '13',
         title: '제거 시 일어나는 일과 일어나지 않는 일',
         intro: 'uninstall은 로컬 설정에 영향을 주지만 원격 클라우드 데이터는 직접 삭제하지 않습니다.',
         subsections: [
@@ -1665,7 +1896,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '13',
+        label: '14',
         title: '보안과 신뢰의 기반',
         paragraphs: [
           'mem9는 통제 불가능한 블랙박스가 아니라, 프로덕션 장기 메모리 레이어로 자리매김합니다. 공식 설명의 중심은 명확한 데이터 처리 경계와 프로덕션급 클라우드 인프라입니다.',
@@ -1692,7 +1923,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '14',
+        label: '15',
         title: '실사용에서의 기대치와 한계',
         subsections: [
           {
@@ -1714,7 +1945,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '15',
+        label: '16',
         title: '신규 사용자를 위한 추천 순서와 공식 링크',
         intro: '처음 mem9를 사용하는 사용자에게는 다음 순서가 가장 단순합니다.',
         bullets: [
@@ -1782,6 +2013,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           'official-install-flow',
           'what-you-get-after-setup',
           'your-memory-dashboard',
+          'space-chains',
           'daily-usage-expectations',
           'reconnect-and-recovery',
           'uninstall-behavior',
@@ -2010,9 +2242,10 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           },
         ],
       },
+      spaceChainDocsSections.id,
       {
         id: 'daily-usage-expectations',
-        label: '10',
+        label: '11',
         title: 'Bagaimana mem9 mengubah pengalaman harian',
         paragraphs: [
           'Perubahan paling langsung biasanya adalah Anda tidak perlu lagi menjelaskan ulang latar belakang proyek, preferensi, dan aturan kerja di setiap sesi.',
@@ -2038,7 +2271,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '11',
+        label: '12',
         title: 'Reconnect, pemulihan, dan penyimpanan API key',
         subsections: [
           {
@@ -2066,7 +2299,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '12',
+        label: '13',
         title: 'Apa yang terjadi dan tidak terjadi saat uninstall',
         intro: 'Uninstall memengaruhi konfigurasi lokal, bukan menghapus data cloud dari jarak jauh.',
         subsections: [
@@ -2094,7 +2327,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '13',
+        label: '14',
         title: 'Fondasi keamanan dan kepercayaan',
         paragraphs: [
           'mem9 memosisikan diri sebagai lapisan memori jangka panjang untuk penggunaan produksi, bukan kotak hitam yang tidak terkontrol. Narasi resminya menekankan batas penanganan data yang jelas dan infrastruktur cloud kelas produksi.',
@@ -2121,7 +2354,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '14',
+        label: '15',
         title: 'Ekspektasi nyata dan batasan produk',
         subsections: [
           {
@@ -2143,7 +2376,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '15',
+        label: '16',
         title: 'Urutan yang direkomendasikan dan tautan resmi',
         intro: 'Untuk pengguna baru, urutan paling sederhana biasanya seperti ini.',
         bullets: [
@@ -2211,6 +2444,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           'official-install-flow',
           'what-you-get-after-setup',
           'your-memory-dashboard',
+          'space-chains',
           'daily-usage-expectations',
           'reconnect-and-recovery',
           'uninstall-behavior',
@@ -2439,9 +2673,10 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           },
         ],
       },
+      spaceChainDocsSections.th,
       {
         id: 'daily-usage-expectations',
-        label: '10',
+        label: '11',
         title: 'mem9 เปลี่ยนประสบการณ์การใช้งานประจำวันอย่างไร',
         paragraphs: [
           'ความเปลี่ยนแปลงที่ชัดที่สุดคือคุณไม่ต้องอธิบายพื้นหลังโปรเจกต์ ความชอบ และกติกาการทำงานซ้ำในทุก session',
@@ -2467,7 +2702,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '11',
+        label: '12',
         title: 'Reconnect การกู้คืน และการเก็บ API key',
         subsections: [
           {
@@ -2495,7 +2730,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '12',
+        label: '13',
         title: 'สิ่งที่จะเกิดขึ้นและไม่เกิดขึ้นเมื่อ uninstall',
         intro: 'การ uninstall มีผลกับการตั้งค่าในเครื่อง แต่ไม่ได้ลบข้อมูลคลาวด์จากระยะไกลโดยตรง',
         subsections: [
@@ -2523,7 +2758,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '13',
+        label: '14',
         title: 'พื้นฐานด้านความปลอดภัยและความน่าเชื่อถือ',
         paragraphs: [
           'mem9 วางตำแหน่งตัวเองเป็นเลเยอร์หน่วยความจำระยะยาวสำหรับงาน production ไม่ใช่กล่องดำที่ควบคุมไม่ได้ เรื่องราวทางการจึงเน้นขอบเขตการจัดการข้อมูลที่ชัดเจนและโครงสร้างพื้นฐานคลาวด์ระดับ production',
@@ -2550,7 +2785,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '14',
+        label: '15',
         title: 'ความคาดหวังจริงและขอบเขตของผลิตภัณฑ์',
         subsections: [
           {
@@ -2572,7 +2807,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '15',
+        label: '16',
         title: 'ลำดับที่แนะนำและลิงก์ทางการ',
         intro: 'สำหรับผู้ใช้ใหม่ ลำดับที่เรียบง่ายที่สุดมักเป็นดังนี้',
         bullets: [
