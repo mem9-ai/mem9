@@ -21,6 +21,9 @@ mysql -h <host> -P <port> -u <user> -p < schema.sql
 # Run
 export MNEMO_DSN="user:pass@tcp(host:port)/mnemos?parseTime=true"
 go run ./cmd/mnemo-server
+
+# Or run from the repository root with auto-restart on server code changes
+MNEMO_DSN="user:pass@tcp(host:port)/mnemos?parseTime=true" make dev
 ```
 
 ### Claude Code Plugin

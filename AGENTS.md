@@ -41,6 +41,7 @@ make build
 make vet
 make test
 make test-integration
+MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" make dev
 
 # Single Go test
 cd server && go test -race -count=1 -run TestFunctionName ./internal/service/
@@ -62,6 +63,8 @@ cd cli && go build -o mnemo .
 
 # Run server locally
 cd server && MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" go run ./cmd/mnemo-server
+# Run server locally with auto-restart on server code changes
+MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" make dev
 ```
 
 ## Global conventions

@@ -379,6 +379,93 @@ func TestResolveApiKey_PreservesAPIKeySubject(t *testing.T) {
 	}
 }
 
+func TestResolveApiKey_SpaceChainResolvesNodesConcurrently(t *testing.T) {
+	db := sql.OpenDB(pingOKConnector{})
+	defer db.Close()
+	release := make(chan struct{})
+	pool := &blockingChainPool{
+		db:      db,
+		started: make(chan string, 2),
+		release: release,
+	}
+	enc := encrypt.NewPlainEncryptor()
+	repo := stubTenantRepo{
+		tenants: map[string]*domain.Tenant{
+			"tenant-1": {
+				ID:       "tenant-1",
+				Status:   domain.TenantActive,
+				DBHost:   "127.0.0.1",
+				DBPort:   4000,
+				DBUser:   "user",
+				DBName:   "db1",
+				Provider: "tidb",
+			},
+			"tenant-2": {
+				ID:       "tenant-2",
+				Status:   domain.TenantActive,
+				DBHost:   "127.0.0.1",
+				DBPort:   4000,
+				DBUser:   "user",
+				DBName:   "db2",
+				Provider: "tidb",
+			},
+		},
+	}
+	chains := &stubSpaceChainRepo{
+		chain: &domain.SpaceChain{
+			ID: "chain-1",
+			Nodes: []domain.SpaceChainNode{
+				{ID: "node-1", ChainID: "chain-1", TenantID: "tenant-1", Position: 0},
+				{ID: "node-2", ChainID: "chain-1", TenantID: "tenant-2", Position: 1},
+			},
+		},
+	}
+
+	mw := ResolveApiKey(repo, pool, enc, nil, WithSpaceChainRepo(chains))
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		info := AuthFromContext(r.Context())
+		if info == nil || info.Chain == nil {
+			t.Fatal("chain auth info missing from context")
+		}
+		if len(info.Chain.Nodes) != 2 {
+			t.Fatalf("resolved nodes = %d, want 2", len(info.Chain.Nodes))
+		}
+		if info.Chain.Nodes[0].TenantID != "tenant-1" || info.Chain.Nodes[1].TenantID != "tenant-2" {
+			t.Fatalf("resolved node order = [%s %s], want [tenant-1 tenant-2]",
+				info.Chain.Nodes[0].TenantID,
+				info.Chain.Nodes[1].TenantID)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1alpha2/mem9s/memories", nil)
+	req.Header.Set(APIKeyHeader, domain.ChainKeyPrefix+"test")
+	rr := httptest.NewRecorder()
+	done := make(chan struct{})
+	var closeRelease sync.Once
+	defer closeRelease.Do(func() { close(release) })
+	go func() {
+		handler.ServeHTTP(rr, req)
+		close(done)
+	}()
+
+	first := waitForStartedTenant(t, pool.started)
+	second := waitForStartedTenant(t, pool.started)
+	if first == second {
+		t.Fatalf("pool.Get started tenant %q twice, want two distinct chain nodes", first)
+	}
+
+	closeRelease.Do(func() { close(release) })
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("request did not complete after releasing pool.Get calls")
+	}
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d; body = %s", rr.Code, http.StatusNoContent, rr.Body.String())
+	}
+}
+
 func TestResolveApiKey_MD5Encryptor_DecryptsPassword(t *testing.T) {
 	pool := tenant.NewPool(tenant.PoolConfig{Backend: "tidb"})
 	defer pool.Close()
@@ -607,6 +694,107 @@ func (s stubPool) Get(_ context.Context, _ string, _ string) (*sql.DB, error) {
 }
 
 func (s stubPool) Backend() string { return "tidb" }
+
+type blockingChainPool struct {
+	db      *sql.DB
+	started chan string
+	release <-chan struct{}
+}
+
+func (p *blockingChainPool) Get(ctx context.Context, tenantID string, _ string) (*sql.DB, error) {
+	select {
+	case p.started <- tenantID:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	select {
+	case <-p.release:
+		return p.db, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (p *blockingChainPool) Backend() string { return "tidb" }
+
+func waitForStartedTenant(t *testing.T, started <-chan string) string {
+	t.Helper()
+	select {
+	case tenantID := <-started:
+		return tenantID
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("timed out waiting for concurrent chain node pool.Get")
+		return ""
+	}
+}
+
+type stubSpaceChainRepo struct {
+	chain *domain.SpaceChain
+	err   error
+}
+
+func (r *stubSpaceChainRepo) Create(context.Context, *domain.SpaceChain, *domain.SpaceChainBinding) error {
+	return nil
+}
+
+func (r *stubSpaceChainRepo) GetByID(context.Context, string) (*domain.SpaceChain, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.chain, nil
+}
+
+func (r *stubSpaceChainRepo) GetByKey(context.Context, string) (*domain.SpaceChain, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.chain, nil
+}
+
+func (r *stubSpaceChainRepo) GetByKeyIncludingDisabled(context.Context, string) (*domain.SpaceChain, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.chain, nil
+}
+
+func (r *stubSpaceChainRepo) Update(context.Context, *domain.SpaceChain) error { return nil }
+
+func (r *stubSpaceChainRepo) SoftDelete(context.Context, string, string) error { return nil }
+
+func (r *stubSpaceChainRepo) CreateBinding(context.Context, *domain.SpaceChainBinding) error {
+	return nil
+}
+
+func (r *stubSpaceChainRepo) ListBindings(context.Context, string) ([]domain.SpaceChainBinding, error) {
+	return nil, nil
+}
+
+func (r *stubSpaceChainRepo) DisableBinding(context.Context, string, string, string) error {
+	return nil
+}
+
+func (r *stubSpaceChainRepo) ListNodes(context.Context, string) ([]domain.SpaceChainNode, error) {
+	if r.chain == nil {
+		return nil, nil
+	}
+	return r.chain.Nodes, nil
+}
+
+func (r *stubSpaceChainRepo) ReplaceNodes(_ context.Context, _ string, nodes []domain.SpaceChainNode) error {
+	if r.chain != nil {
+		r.chain.Nodes = append([]domain.SpaceChainNode(nil), nodes...)
+	}
+	return nil
+}
+
+func (r *stubSpaceChainRepo) RemoveNodeByExternalSpaceID(context.Context, string) error {
+	return nil
+}
+
+func (r *stubSpaceChainRepo) KeyStatus(context.Context, string) (domain.KeyStatus, error) {
+	return "", nil
+}
 
 var spendLimitErr = errors.New("Error 1105 (HY000): Due to the usage quota being exhausted, access to the cluster has been restricted.")
 

@@ -10,6 +10,7 @@ Go REST API server for mem9. This area owns HTTP routing, services, tenant provi
 
 ```bash
 make build
+make dev
 make vet
 make test
 make test-integration

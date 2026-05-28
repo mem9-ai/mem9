@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1773,12 +1775,12 @@ func TestListMemories_ChainStopsAfterHighConfidenceByDefault(t *testing.T) {
 
 func TestListMemories_ChainScanAllContinuesPastHighConfidence(t *testing.T) {
 	now := time.Now()
-	calls := 0
+	var calls atomic.Int32
 	sessionRepo := &testSessionRepo{
 		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
-			calls++
+			call := calls.Add(1)
 			id := "session-memory-a"
-			if calls > 1 {
+			if call > 1 {
 				id = "session-memory-b"
 			}
 			return []domain.Memory{
@@ -1797,8 +1799,56 @@ func TestListMemories_ChainScanAllContinuesPastHighConfidence(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
 	}
-	if calls != 2 {
-		t.Fatalf("node searches = %d, want 2", calls)
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("node searches = %d, want 2", got)
+	}
+}
+
+func TestListMemories_ChainScanAllSearchesNodesConcurrently(t *testing.T) {
+	now := time.Now()
+	var calls atomic.Int32
+	started := make(chan int32, 2)
+	release := make(chan struct{})
+	sessionRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			call := calls.Add(1)
+			started <- call
+			<-release
+			return []domain.Memory{
+				{ID: fmt.Sprintf("session-memory-%d", call), Content: "Bosn's timezone is Asia/Shanghai.", MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+
+	req := makeChainRequestWithNodes(t, http.MethodGet, "/memories?q=what%20timezone%20does%20Bosn%20use&memory_type=session&limit=10&scanAll=true", nil, 2)
+	rr := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		srv.listMemories(rr, req)
+	}()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			close(release)
+			t.Fatalf("node search %d did not start before the first searches were released", i+1)
+		}
+	}
+	close(release)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scanAll request did not finish after releasing node searches")
+	}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("node searches = %d, want 2", got)
 	}
 }
 

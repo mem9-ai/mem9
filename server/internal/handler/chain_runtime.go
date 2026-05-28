@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
@@ -152,50 +154,45 @@ func (s *Server) listChainMemories(ctx context.Context, auth *domain.AuthInfo, f
 		perNodeFilter.Limit = requestLimit
 	}
 
-	for _, node := range auth.Chain.Nodes {
-		nodeAuth := chainNodeAuth(auth, node)
-		svc := s.resolveServices(nodeAuth)
-		visitedNodes++
-
-		var (
-			memories []domain.Memory
-			err      error
-		)
-		switch {
-		case perNodeFilter.Query != "" && perNodeFilter.MemoryType == "":
-			memories, _, err = s.defaultConfidenceRecallSearch(ctx, nodeAuth, svc, perNodeFilter)
-		case perNodeFilter.Query != "" && (perNodeFilter.MemoryType == string(domain.TypeSession) ||
-			perNodeFilter.MemoryType == string(domain.TypePinned) ||
-			perNodeFilter.MemoryType == string(domain.TypeInsight)):
-			memories, _, err = s.singlePoolConfidenceRecallSearch(ctx, nodeAuth, svc, perNodeFilter)
-		case perNodeFilter.MemoryType == string(domain.TypeSession):
-			memories, _, err = svc.session.List(ctx, perNodeFilter)
-		case perNodeFilter.MemoryType != string(domain.TypeSession):
-			memories, _, err = svc.memory.Search(ctx, perNodeFilter)
-		}
+	if scanAll {
+		results, err := s.listChainMemoriesScanAll(ctx, auth, perNodeFilter, profile, queryMode)
 		if err != nil {
 			return nil, 0, err
 		}
-		applyChainSource(memories, chainSource(auth, node))
-		visited = append(visited, memories...)
-
-		if queryMode {
-			nodeTopScore := topChainScore(memories)
-			if nodeTopScore > topScore {
-				topScore = nodeTopScore
+		visitedNodes = len(results)
+		for _, result := range results {
+			visited = append(visited, result.memories...)
+			topScore, stopConfidence, stopEligible, stopBlockedReason = updateChainRecallStats(
+				topScore,
+				stopConfidence,
+				stopEligible,
+				stopBlockedReason,
+				result,
+				queryMode,
+			)
+			if queryMode && result.decision.stop {
+				stopReason = "scan_all"
 			}
-			decision := chainRecallStopDecision(profile, memories, s.chainRecallStopScore)
-			if decision.confidence > stopConfidence {
-				stopConfidence = decision.confidence
+		}
+	} else {
+		for _, node := range auth.Chain.Nodes {
+			result, err := s.listChainNodeMemories(ctx, auth, node, perNodeFilter, profile, queryMode)
+			if err != nil {
+				return nil, 0, err
 			}
-			stopEligible = decision.eligible
-			stopBlockedReason = decision.blockedReason
-			if decision.stop && !scanAll {
+			visitedNodes++
+			visited = append(visited, result.memories...)
+			topScore, stopConfidence, stopEligible, stopBlockedReason = updateChainRecallStats(
+				topScore,
+				stopConfidence,
+				stopEligible,
+				stopBlockedReason,
+				result,
+				queryMode,
+			)
+			if queryMode && result.decision.stop {
 				stopReason = "threshold_hit"
 				break
-			}
-			if decision.stop && scanAll {
-				stopReason = "scan_all"
 			}
 		}
 	}
@@ -215,6 +212,100 @@ func (s *Server) listChainMemories(ctx context.Context, auth *domain.AuthInfo, f
 		"returned", len(memories),
 	)
 	return memories, totalBeforePage, nil
+}
+
+type chainNodeMemoryResult struct {
+	memories []domain.Memory
+	topScore float64
+	decision chainRecallStopStatus
+}
+
+func (s *Server) listChainMemoriesScanAll(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	filter domain.MemoryFilter,
+	profile recallQueryProfile,
+	queryMode bool,
+) ([]chainNodeMemoryResult, error) {
+	results := make([]chainNodeMemoryResult, len(auth.Chain.Nodes))
+	group, groupCtx := errgroup.WithContext(ctx)
+	for i, node := range auth.Chain.Nodes {
+		i, node := i, node
+		group.Go(func() error {
+			result, err := s.listChainNodeMemories(groupCtx, auth, node, filter, profile, queryMode)
+			if err != nil {
+				return err
+			}
+			results[i] = result
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func (s *Server) listChainNodeMemories(
+	ctx context.Context,
+	auth *domain.AuthInfo,
+	node domain.ChainAuthNode,
+	filter domain.MemoryFilter,
+	profile recallQueryProfile,
+	queryMode bool,
+) (chainNodeMemoryResult, error) {
+	nodeAuth := chainNodeAuth(auth, node)
+	svc := s.resolveServices(nodeAuth)
+
+	var (
+		memories []domain.Memory
+		err      error
+	)
+	switch {
+	case filter.Query != "" && filter.MemoryType == "":
+		memories, _, err = s.defaultConfidenceRecallSearch(ctx, nodeAuth, svc, filter)
+	case filter.Query != "" && (filter.MemoryType == string(domain.TypeSession) ||
+		filter.MemoryType == string(domain.TypePinned) ||
+		filter.MemoryType == string(domain.TypeInsight)):
+		memories, _, err = s.singlePoolConfidenceRecallSearch(ctx, nodeAuth, svc, filter)
+	case filter.MemoryType == string(domain.TypeSession):
+		memories, _, err = svc.session.List(ctx, filter)
+	case filter.MemoryType != string(domain.TypeSession):
+		memories, _, err = svc.memory.Search(ctx, filter)
+	}
+	if err != nil {
+		return chainNodeMemoryResult{}, err
+	}
+	applyChainSource(memories, chainSource(auth, node))
+
+	result := chainNodeMemoryResult{memories: memories}
+	if queryMode {
+		result.topScore = topChainScore(memories)
+		result.decision = chainRecallStopDecision(profile, memories, s.chainRecallStopScore)
+	}
+	return result, nil
+}
+
+func updateChainRecallStats(
+	topScore float64,
+	stopConfidence int,
+	stopEligible bool,
+	stopBlockedReason string,
+	result chainNodeMemoryResult,
+	queryMode bool,
+) (float64, int, bool, string) {
+	if !queryMode {
+		return topScore, stopConfidence, stopEligible, stopBlockedReason
+	}
+	if result.topScore > topScore {
+		topScore = result.topScore
+	}
+	if result.decision.confidence > stopConfidence {
+		stopConfidence = result.decision.confidence
+	}
+	stopEligible = result.decision.eligible
+	stopBlockedReason = result.decision.blockedReason
+	return topScore, stopConfidence, stopEligible, stopBlockedReason
 }
 
 type chainRecallStopStatus struct {

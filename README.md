@@ -149,6 +149,12 @@ cd server
 MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" ./bin/mnemo-server
 ```
 
+For local development with automatic rebuild and restart on server source changes:
+
+```bash
+MNEMO_DSN="user:pass@tcp(host:4000)/mnemos?parseTime=true" make dev
+```
+
 For PostgreSQL or db9 deployments, export `MNEMO_DB_BACKEND=postgres` or `MNEMO_DB_BACKEND=db9` before launching the server.
 
 ### Docker
