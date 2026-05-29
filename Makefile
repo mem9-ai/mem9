@@ -1,7 +1,7 @@
 MAKEFILE_DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 IMG ?= $(REGISTRY)/mnemo-server:$(COMMIT)
 
-.PHONY: build vet clean run dev test test-cover test-integration docker
+.PHONY: build vet clean run dev test test-cover test-integration docker compat-test
 
 build:
 	mkdir -p $(MAKEFILE_DIR)/server/bin
@@ -36,3 +36,6 @@ dev:
 
 docker: build-linux
 	docker build --platform=linux/amd64 -q -f ./server/Dockerfile -t $(IMG) .
+
+compat-test:
+	python3 -m unittest compat.tests.test_compat

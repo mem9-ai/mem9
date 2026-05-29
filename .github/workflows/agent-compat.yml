@@ -1,0 +1,114 @@
+name: Agent compatibility
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: Agent to test
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - openclaw
+          - hermes
+          - claude
+          - opencode
+          - codex
+          - dify
+      agent_ref:
+        description: Optional agent repo ref, tag, SHA, or path:<absolute-path> override
+        required: false
+        default: ""
+        type: string
+      lane:
+        description: Compatibility lane
+        required: true
+        default: contract
+        type: choice
+        options:
+          - contract
+          - hosted-smoke
+          - full
+      host_channel:
+        description: Host channel, mainly for OpenClaw
+        required: true
+        default: stable
+        type: choice
+        options:
+          - stable
+          - next
+      plugin_source:
+        description: OpenClaw plugin source: manifest, local, npm:<version>, or path:<path>
+        required: true
+        default: manifest
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  agent-compat:
+    name: ${{ inputs.agent }} / ${{ inputs.lane }} / ${{ inputs.host_channel }}
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ inputs.host_channel == 'next' }}
+
+    env:
+      MNEMO_BASE_URL: ${{ secrets.MNEMO_BASE_URL }}
+      CLAUDE_CODE_TOKEN: ${{ secrets.CLAUDE_CODE_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      COMPAT_OPENCLAW_STABLE_BIN: ${{ vars.COMPAT_OPENCLAW_STABLE_BIN }}
+      COMPAT_OPENCLAW_NEXT_BIN: ${{ vars.COMPAT_OPENCLAW_NEXT_BIN }}
+      COMPAT_OPENCLAW_STABLE_VERSION: ${{ vars.COMPAT_OPENCLAW_STABLE_VERSION }}
+      COMPAT_OPENCLAW_NEXT_VERSION: ${{ vars.COMPAT_OPENCLAW_NEXT_VERSION }}
+      COMPAT_OPENCLAW_MODEL_PRIMARY: ${{ vars.COMPAT_OPENCLAW_MODEL_PRIMARY }}
+      COMPAT_OPENCLAW_MODEL_SECONDARY: ${{ vars.COMPAT_OPENCLAW_MODEL_SECONDARY }}
+
+    steps:
+      - name: Checkout mem9
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Go
+        if: ${{ inputs.agent == 'all' }}
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Run agent compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          args=(
+            compat
+            agent "${{ inputs.agent }}"
+            --lane "${{ inputs.lane }}"
+            --host-channel "${{ inputs.host_channel }}"
+            --plugin-source "${{ inputs.plugin_source }}"
+          )
+
+          if [ -n "${{ inputs.agent_ref }}" ]; then
+            args+=(--agent-ref "${{ inputs.agent_ref }}")
+          fi
+
+          python3 "${args[@]}"
+
+      - name: Upload compatibility artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-compat-${{ inputs.agent }}-${{ inputs.lane }}-${{ inputs.host_channel }}
+          path: compat/artifacts/**
+          if-no-files-found: warn
+          retention-days: 14

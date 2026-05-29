@@ -1,0 +1,43 @@
+name: Compat framework checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/compat-framework-checks.yml"
+      - ".github/workflows/agent-compat.yml"
+      - "compat/**"
+      - "openclaw-plugin/**"
+      - "benchmark/**"
+      - "e2e/**"
+      - "Makefile"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/compat-framework-checks.yml"
+      - ".github/workflows/agent-compat.yml"
+      - "compat/**"
+      - "openclaw-plugin/**"
+      - "benchmark/**"
+      - "e2e/**"
+      - "Makefile"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compat-framework:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run compat harness tests
+        run: make compat-test

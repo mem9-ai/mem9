@@ -1,0 +1,226 @@
+{
+  "agents": {
+    "openclaw": {
+      "repo": "mem9-ai/mem9",
+      "path": "openclaw-plugin",
+      "default_ref": "main",
+      "channels": ["stable", "next"]
+    },
+    "hermes": {
+      "repo": "mem9-ai/mem9-hermes-plugin",
+      "default_ref": "main",
+      "path_env": "COMPAT_HERMES_REPO_PATH"
+    },
+    "claude": {
+      "repo": "mem9-ai/mem9",
+      "path": "claude-plugin",
+      "default_ref": "main"
+    },
+    "opencode": {
+      "repo": "mem9-ai/mem9",
+      "path": "opencode-plugin",
+      "default_ref": "main"
+    },
+    "codex": {
+      "repo": "mem9-ai/mem9",
+      "path": "codex-plugin",
+      "default_ref": "main"
+    },
+    "dify": {
+      "repo": "mem9-ai/mem9-dify-plugin",
+      "default_ref": "main",
+      "path_env": "COMPAT_DIFY_REPO_PATH"
+    }
+  },
+  "hosts": {
+    "openclaw": {
+      "stable": {
+        "executable": "${COMPAT_OPENCLAW_STABLE_BIN:-openclaw}",
+        "version_hint": "${COMPAT_OPENCLAW_STABLE_VERSION:-stable}",
+        "failure_policy": "block"
+      },
+      "next": {
+        "executable": "${COMPAT_OPENCLAW_NEXT_BIN:-openclaw}",
+        "version_hint": "${COMPAT_OPENCLAW_NEXT_VERSION:-next}",
+        "failure_policy": "alert"
+      }
+    }
+  },
+  "models": {
+    "primary": {
+      "openclaw_model": "${COMPAT_OPENCLAW_MODEL_PRIMARY:-anthropic/claude-sonnet-4-6}",
+      "api_key_env": "CLAUDE_CODE_TOKEN",
+      "fallback_api_key_env": "ANTHROPIC_API_KEY"
+    },
+    "secondary": {
+      "openclaw_model": "${COMPAT_OPENCLAW_MODEL_SECONDARY:-anthropic/claude-3-5-haiku-latest}",
+      "api_key_env": "CLAUDE_CODE_TOKEN",
+      "fallback_api_key_env": "ANTHROPIC_API_KEY"
+    }
+  },
+  "modules": {
+    "openclaw.install": { "agent": "openclaw", "kind": "openclaw" },
+    "openclaw.setup": { "agent": "openclaw", "kind": "openclaw" },
+    "openclaw.recall": { "agent": "openclaw", "kind": "openclaw" },
+    "openclaw.ingest": { "agent": "openclaw", "kind": "openclaw" },
+    "openclaw.compact": { "agent": "openclaw", "kind": "openclaw" },
+    "openclaw.restart": { "agent": "openclaw", "kind": "openclaw" },
+    "openclaw.failsoft": { "agent": "openclaw", "kind": "openclaw" },
+    "openclaw.unit-tests": {
+      "agent": "openclaw",
+      "kind": "command",
+      "failure_class": "host_contract_break",
+      "argv": ["bash", "-lc", "cd openclaw-plugin && npm install --no-audit --no-fund && npm run typecheck && npm test"]
+    },
+    "hermes.contract": {
+      "agent": "hermes",
+      "kind": "hermes-pytest",
+      "failure_class": "host_contract_break"
+    },
+    "hermes.hosted-contract": {
+      "agent": "hermes",
+      "kind": "hermes-hosted",
+      "failure_class": "host_contract_break"
+    },
+    "dify.contract": {
+      "agent": "dify",
+      "kind": "dify-contract",
+      "failure_class": "host_contract_break"
+    },
+    "dify.hosted-contract": {
+      "agent": "dify",
+      "kind": "dify-hosted",
+      "failure_class": "host_contract_break"
+    },
+    "opencode.contract": {
+      "agent": "opencode",
+      "kind": "command",
+      "failure_class": "host_contract_break",
+      "argv": ["bash", "-lc", "cd opencode-plugin && npm install --no-audit --no-fund && npm run typecheck && npm test"]
+    },
+    "claude.contract": {
+      "agent": "claude",
+      "kind": "command",
+      "failure_class": "host_contract_break",
+      "argv": ["bash", "-lc", "cd claude-plugin && bash -n hooks/common.sh hooks/pre-compact.sh hooks/session-end.sh hooks/session-start.sh hooks/stop.sh hooks/user-prompt-submit.sh && node --check hooks/lib/hook-json.mjs && node --check hooks/lib/memories-formatter.mjs && node --check hooks/lib/transcript-parser.mjs"]
+    },
+    "codex.contract": {
+      "agent": "codex",
+      "kind": "command",
+      "failure_class": "host_contract_break",
+      "argv": ["bash", "-lc", "cd codex-plugin && npm install --no-audit --no-fund && npm run typecheck && npm test"]
+    }
+  },
+  "suites": {
+    "openclaw-smoke": {
+      "shared_state": false,
+      "modules": ["openclaw.install", "openclaw.setup", "openclaw.recall", "openclaw.ingest"]
+    },
+    "openclaw-upgrade": {
+      "shared_state": false,
+      "modules": ["openclaw.install", "openclaw.setup", "openclaw.recall", "openclaw.compact", "openclaw.restart"]
+    },
+    "openclaw-plugin-release": {
+      "shared_state": false,
+      "modules": ["openclaw.install", "openclaw.setup", "openclaw.recall", "openclaw.compact", "openclaw.restart", "openclaw.failsoft"]
+    }
+  },
+  "agent_lanes": {
+    "contract": {
+      "openclaw": [
+        { "name": "openclaw-unit-tests", "kind": "module", "module": "openclaw.unit-tests" }
+      ],
+      "hermes": [
+        { "name": "hermes-pytest", "kind": "module", "module": "hermes.contract" }
+      ],
+      "claude": [
+        { "name": "claude-contract", "kind": "module", "module": "claude.contract" }
+      ],
+      "opencode": [
+        { "name": "opencode-contract", "kind": "module", "module": "opencode.contract" }
+      ],
+      "codex": [
+        { "name": "codex-contract", "kind": "module", "module": "codex.contract" }
+      ],
+      "dify": [
+        { "name": "dify-contract", "kind": "module", "module": "dify.contract" }
+      ]
+    },
+    "hosted-smoke": {
+      "openclaw": [
+        { "name": "openclaw-smoke", "kind": "suite", "suite": "openclaw-smoke", "plugin_source": "local" }
+      ],
+      "hermes": [
+        { "name": "hermes-hosted-contract", "kind": "module", "module": "hermes.hosted-contract" }
+      ],
+      "claude": [
+        { "name": "claude-contract", "kind": "module", "module": "claude.contract" }
+      ],
+      "opencode": [
+        { "name": "opencode-contract", "kind": "module", "module": "opencode.contract" }
+      ],
+      "codex": [
+        { "name": "codex-contract", "kind": "module", "module": "codex.contract" }
+      ],
+      "dify": [
+        { "name": "dify-hosted-contract", "kind": "module", "module": "dify.hosted-contract" }
+      ]
+    },
+    "full": {
+      "openclaw": [
+        { "name": "openclaw-upgrade", "kind": "suite", "suite": "openclaw-upgrade", "plugin_source": "local" }
+      ],
+      "hermes": [
+        { "name": "hermes-pytest", "kind": "module", "module": "hermes.contract" },
+        { "name": "hermes-hosted-contract", "kind": "module", "module": "hermes.hosted-contract" }
+      ],
+      "claude": [
+        { "name": "claude-contract", "kind": "module", "module": "claude.contract" }
+      ],
+      "opencode": [
+        { "name": "opencode-contract", "kind": "module", "module": "opencode.contract" }
+      ],
+      "codex": [
+        { "name": "codex-contract", "kind": "module", "module": "codex.contract" }
+      ],
+      "dify": [
+        { "name": "dify-contract", "kind": "module", "module": "dify.contract" },
+        { "name": "dify-hosted-contract", "kind": "module", "module": "dify.hosted-contract" }
+      ]
+    }
+  },
+  "matrices": {
+    "pr-core": {
+      "tasks": [
+        { "name": "compat-harness", "kind": "command", "argv": ["make", "compat-test"] },
+        { "name": "openclaw-contract", "kind": "command", "argv": ["bash", "-lc", "python3 compat agent openclaw --lane contract"] },
+        { "name": "hermes-contract", "kind": "command", "argv": ["bash", "-lc", "python3 compat agent hermes --lane contract"] },
+        { "name": "dify-contract", "kind": "command", "argv": ["bash", "-lc", "python3 compat agent dify --lane contract"] },
+        { "name": "opencode-contract", "kind": "command", "argv": ["bash", "-lc", "python3 compat agent opencode --lane contract"] },
+        { "name": "claude-contract", "kind": "command", "argv": ["bash", "-lc", "python3 compat agent claude --lane contract"] },
+        { "name": "codex-contract", "kind": "command", "argv": ["bash", "-lc", "python3 compat agent codex --lane contract"] }
+      ]
+    },
+    "nightly-full": {
+      "tasks": [
+        { "name": "agent-full", "kind": "command", "argv": ["bash", "-lc", "python3 compat agent all --lane full --host-channel stable --plugin-source local"] },
+        { "name": "openclaw-next-upgrade", "kind": "suite", "suite": "openclaw-upgrade", "host_channel": "next", "model_profile": "secondary", "plugin_source": "local" }
+      ]
+    },
+    "release-gate": {
+      "tasks": [
+        { "name": "existing-tenant-compat", "kind": "command", "argv": ["bash", "-lc", "MNEMO_BASE=${MNEMO_BASE_URL:?missing} MNEMO_EXISTING_TENANT_ID=${MNEMO_EXISTING_TENANT_ID:?missing} POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-existing-tenant.sh"] },
+        { "name": "agent-full", "kind": "command", "argv": ["bash", "-lc", "python3 compat agent all --lane full --host-channel stable --plugin-source local"] }
+      ]
+    }
+  },
+  "thresholds": {
+    "benchmark_accuracy_drop_absolute": 0.03,
+    "benchmark_accuracy_drop_relative": 0.10
+  },
+  "gate_policy": {
+    "stable_failure": "block",
+    "next_failure": "alert",
+    "benchmark_drift": "alert"
+  }
+}
