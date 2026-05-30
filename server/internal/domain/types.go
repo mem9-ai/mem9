@@ -130,14 +130,16 @@ type SpaceChainBinding struct {
 }
 
 type SpaceChainNode struct {
-	ID              string    `json:"id"`
-	ChainID         string    `json:"chain_id"`
-	TenantID        string    `json:"tenant_id"`
-	ExternalSpaceID string    `json:"external_space_id,omitempty"`
-	DisplayName     string    `json:"display_name,omitempty"`
-	Position        int       `json:"position"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID                   string    `json:"id"`
+	ChainID              string    `json:"chain_id"`
+	TenantID             string    `json:"tenant_id"`
+	ExternalSpaceID      string    `json:"external_space_id,omitempty"`
+	DisplayName          string    `json:"display_name,omitempty"`
+	Position             int       `json:"position"`
+	RoutingPolicyEnabled bool      `json:"routing_policy_enabled"`
+	RoutingPolicyPrompt  string    `json:"routing_policy_prompt,omitempty"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 // MemoryFilter encapsulates search/list query parameters.

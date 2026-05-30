@@ -85,6 +85,81 @@ func TestSpaceChainReplaceNodesRejectsChainKeyNode(t *testing.T) {
 	}
 }
 
+func TestSpaceChainReplaceNodesPreservesRoutingPolicyForSameSpace(t *testing.T) {
+	repo := &fakeSpaceChainRepo{
+		nodes: []domain.SpaceChainNode{
+			{
+				ID:                   "node-1",
+				ChainID:              "chain-1",
+				TenantID:             "tenant-1",
+				ExternalSpaceID:      "space-1",
+				Position:             1,
+				RoutingPolicyEnabled: true,
+				RoutingPolicyPrompt:  "facts about mem9",
+			},
+		},
+	}
+	svc := NewSpaceChainService(repo)
+
+	nodes, err := svc.ReplaceNodes(context.Background(), "chain-1", ReplaceSpaceChainNodesRequest{
+		Nodes: []SpaceChainNodeInput{
+			{TenantID: "tenant-0", ExternalSpaceID: "space-0"},
+			{TenantID: "tenant-1", ExternalSpaceID: "space-1"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceNodes returned error: %v", err)
+	}
+	if len(nodes) != 2 {
+		t.Fatalf("expected 2 nodes, got %d", len(nodes))
+	}
+	if !nodes[1].RoutingPolicyEnabled || nodes[1].RoutingPolicyPrompt != "facts about mem9" {
+		t.Fatalf("routing policy was not preserved: %#v", nodes[1])
+	}
+}
+
+func TestSpaceChainUpdateRoutingPolicyRejectsFirstNode(t *testing.T) {
+	repo := &fakeSpaceChainRepo{
+		nodes: []domain.SpaceChainNode{
+			{ID: "node-0", ChainID: "chain-1", TenantID: "tenant-0", ExternalSpaceID: "space-0", Position: 0},
+			{ID: "node-1", ChainID: "chain-1", TenantID: "tenant-1", ExternalSpaceID: "space-1", Position: 1},
+		},
+	}
+	svc := NewSpaceChainService(repo)
+
+	_, err := svc.UpdateNodeRoutingPolicy(context.Background(), "chain-1", "node-0", UpdateSpaceChainNodeRoutingPolicyRequest{
+		Enabled: true,
+		Prompt:  "facts about mem9",
+	})
+	var validation *domain.ValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("expected validation error, got %T: %v", err, err)
+	}
+	if !strings.Contains(validation.Message, "first Space Chain node") {
+		t.Fatalf("validation message = %q", validation.Message)
+	}
+}
+
+func TestSpaceChainUpdateRoutingPolicyRequiresPromptWhenEnabled(t *testing.T) {
+	repo := &fakeSpaceChainRepo{
+		nodes: []domain.SpaceChainNode{
+			{ID: "node-1", ChainID: "chain-1", TenantID: "tenant-1", ExternalSpaceID: "space-1", Position: 1},
+		},
+	}
+	svc := NewSpaceChainService(repo)
+
+	_, err := svc.UpdateNodeRoutingPolicy(context.Background(), "chain-1", "node-1", UpdateSpaceChainNodeRoutingPolicyRequest{
+		Enabled: true,
+	})
+	var validation *domain.ValidationError
+	if !errors.As(err, &validation) {
+		t.Fatalf("expected validation error, got %T: %v", err, err)
+	}
+	if validation.Field != "prompt" {
+		t.Fatalf("validation field = %q, want prompt", validation.Field)
+	}
+}
+
 func TestSpaceChainDisableBindingRejectsLastActiveKey(t *testing.T) {
 	repo := &fakeSpaceChainRepo{
 		chain: &domain.SpaceChain{
@@ -177,6 +252,18 @@ func (r *fakeSpaceChainRepo) ListNodes(_ context.Context, _ string) ([]domain.Sp
 func (r *fakeSpaceChainRepo) ReplaceNodes(_ context.Context, _ string, nodes []domain.SpaceChainNode) error {
 	r.nodes = append([]domain.SpaceChainNode(nil), nodes...)
 	return nil
+}
+
+func (r *fakeSpaceChainRepo) UpdateNodeRoutingPolicy(_ context.Context, _, nodeID string, enabled bool, prompt string) (*domain.SpaceChainNode, error) {
+	for i := range r.nodes {
+		if r.nodes[i].ID != nodeID {
+			continue
+		}
+		r.nodes[i].RoutingPolicyEnabled = enabled
+		r.nodes[i].RoutingPolicyPrompt = prompt
+		return &r.nodes[i], nil
+	}
+	return nil, domain.ErrNotFound
 }
 
 func (r *fakeSpaceChainRepo) RemoveNodeByExternalSpaceID(_ context.Context, _ string) error {

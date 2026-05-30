@@ -210,6 +210,7 @@ func (s *Server) Router(
 		r.Delete("/", s.deleteSpaceChain)
 		r.Get("/nodes", s.listSpaceChainNodes)
 		r.Put("/nodes", s.replaceSpaceChainNodes)
+		r.Put("/nodes/{nodeID}/routing-policy", s.updateSpaceChainNodeRoutingPolicy)
 		r.Get("/bindings", s.listSpaceChainBindings)
 		r.Post("/bindings", s.createSpaceChainBinding)
 		r.Patch("/bindings/{bindingID}", s.disableSpaceChainBinding)

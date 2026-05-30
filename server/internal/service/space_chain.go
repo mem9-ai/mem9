@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -56,6 +57,13 @@ type CreateSpaceChainBindingRequest struct {
 	ChainAPIKey     string `json:"chain_api_key,omitempty"`
 	CreatedByUserID string `json:"created_by_user_id,omitempty"`
 }
+
+type UpdateSpaceChainNodeRoutingPolicyRequest struct {
+	Enabled bool   `json:"enabled"`
+	Prompt  string `json:"prompt,omitempty"`
+}
+
+const maxRoutingPolicyPromptRunes = 1200
 
 func (s *SpaceChainService) Create(ctx context.Context, req CreateSpaceChainRequest) (*CreateSpaceChainResult, error) {
 	if s == nil || s.chains == nil {
@@ -236,6 +244,11 @@ func (s *SpaceChainService) ReplaceNodes(ctx context.Context, chainID string, re
 	if chainID == "" {
 		return nil, &domain.ValidationError{Field: "chain_id", Message: "required"}
 	}
+	existingNodes, err := s.chains.ListNodes(ctx, chainID)
+	if err != nil {
+		return nil, err
+	}
+	existingPolicies := routingPoliciesByStableNodeKey(existingNodes)
 	nodes := make([]domain.SpaceChainNode, 0, len(req.Nodes))
 	seenTenant := make(map[string]struct{}, len(req.Nodes))
 	seenExternal := make(map[string]struct{}, len(req.Nodes))
@@ -259,14 +272,19 @@ func (s *SpaceChainService) ReplaceNodes(ctx context.Context, chainID string, re
 			}
 			seenExternal[externalSpaceID] = struct{}{}
 		}
-		nodes = append(nodes, domain.SpaceChainNode{
+		node := domain.SpaceChainNode{
 			ID:              uuid.New().String(),
 			ChainID:         chainID,
 			TenantID:        tenantID,
 			ExternalSpaceID: externalSpaceID,
 			DisplayName:     strings.TrimSpace(in.DisplayName),
 			Position:        i,
-		})
+		}
+		if existing, ok := existingPolicies[stableNodePolicyKey(node)]; ok {
+			node.RoutingPolicyEnabled = existing.RoutingPolicyEnabled
+			node.RoutingPolicyPrompt = existing.RoutingPolicyPrompt
+		}
+		nodes = append(nodes, node)
 	}
 	if err := s.chains.ReplaceNodes(ctx, chainID, nodes); err != nil {
 		return nil, err
@@ -274,8 +292,60 @@ func (s *SpaceChainService) ReplaceNodes(ctx context.Context, chainID string, re
 	return s.chains.ListNodes(ctx, chainID)
 }
 
+func routingPoliciesByStableNodeKey(nodes []domain.SpaceChainNode) map[string]domain.SpaceChainNode {
+	out := make(map[string]domain.SpaceChainNode, len(nodes))
+	for _, node := range nodes {
+		if key := stableNodePolicyKey(node); key != "" {
+			out[key] = node
+		}
+	}
+	return out
+}
+
+func stableNodePolicyKey(node domain.SpaceChainNode) string {
+	if strings.TrimSpace(node.ExternalSpaceID) != "" {
+		return "external:" + strings.TrimSpace(node.ExternalSpaceID)
+	}
+	if strings.TrimSpace(node.TenantID) != "" {
+		return "tenant:" + strings.TrimSpace(node.TenantID)
+	}
+	return ""
+}
+
 func (s *SpaceChainService) ListNodes(ctx context.Context, chainID string) ([]domain.SpaceChainNode, error) {
 	return s.chains.ListNodes(ctx, strings.TrimSpace(chainID))
+}
+
+func (s *SpaceChainService) UpdateNodeRoutingPolicy(ctx context.Context, chainID, nodeID string, req UpdateSpaceChainNodeRoutingPolicyRequest) (*domain.SpaceChainNode, error) {
+	chainID = strings.TrimSpace(chainID)
+	nodeID = strings.TrimSpace(nodeID)
+	prompt := strings.TrimSpace(req.Prompt)
+	if chainID == "" {
+		return nil, &domain.ValidationError{Field: "chain_id", Message: "required"}
+	}
+	if nodeID == "" {
+		return nil, &domain.ValidationError{Field: "node_id", Message: "required"}
+	}
+	if req.Enabled && prompt == "" {
+		return nil, &domain.ValidationError{Field: "prompt", Message: "required when enabled"}
+	}
+	if utf8.RuneCountInString(prompt) > maxRoutingPolicyPromptRunes {
+		return nil, &domain.ValidationError{Field: "prompt", Message: "must be at most 1200 characters"}
+	}
+	nodes, err := s.chains.ListNodes(ctx, chainID)
+	if err != nil {
+		return nil, err
+	}
+	for _, node := range nodes {
+		if node.ID != nodeID {
+			continue
+		}
+		if node.Position == 0 {
+			return nil, &domain.ValidationError{Field: "node_id", Message: "routing policy cannot be configured on the first Space Chain node"}
+		}
+		return s.chains.UpdateNodeRoutingPolicy(ctx, chainID, nodeID, req.Enabled, prompt)
+	}
+	return nil, domain.ErrNotFound
 }
 
 func (s *SpaceChainService) RemoveNodeByExternalSpaceID(ctx context.Context, externalSpaceID string) error {

@@ -157,12 +157,19 @@ type Phase1Result struct {
 
 // ExtractedFact holds a single atomic fact and the tags the LLM assigned to it.
 type ExtractedFact struct {
-	Text        string               `json:"text"`
-	Tags        []string             `json:"tags,omitempty"`
-	FactType    string               `json:"fact_type,omitempty"` // "fact" | "query_intent" | "raw_fallback"; omitted = "fact"
-	SourceSeqs  []int                `json:"source_seqs,omitempty"`
-	SourceTurns []sourceTurnMetadata `json:"source_turns,omitempty"`
-	Temporal    *TemporalMetadata    `json:"-"`
+	Text         string               `json:"text"`
+	Tags         []string             `json:"tags,omitempty"`
+	FactType     string               `json:"fact_type,omitempty"` // "fact" | "query_intent" | "raw_fallback"; omitted = "fact"
+	RouteTargets []string             `json:"route_targets,omitempty"`
+	SourceSeqs   []int                `json:"source_seqs,omitempty"`
+	SourceTurns  []sourceTurnMetadata `json:"source_turns,omitempty"`
+	Temporal     *TemporalMetadata    `json:"-"`
+}
+
+type RoutingTarget struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+	Rule string `json:"rule"`
 }
 
 // dropQueryIntentFacts removes facts classified as query_intent by the extraction
@@ -291,6 +298,52 @@ func projectReconcileFactText(fact ExtractedFact) string {
 	return ProjectTemporalFactText(fact.Text, fact.Temporal)
 }
 
+func routingPromptSection(targets []RoutingTarget) string {
+	cleaned := make([]RoutingTarget, 0, len(targets))
+	seen := make(map[string]struct{}, len(targets))
+	for _, target := range targets {
+		target.ID = strings.TrimSpace(target.ID)
+		target.Name = strings.TrimSpace(target.Name)
+		target.Rule = strings.TrimSpace(target.Rule)
+		if target.ID == "" || target.Rule == "" {
+			continue
+		}
+		if _, ok := seen[target.ID]; ok {
+			continue
+		}
+		seen[target.ID] = struct{}{}
+		cleaned = append(cleaned, target)
+	}
+	if len(cleaned) == 0 {
+		return ""
+	}
+	targetsJSON, _ := json.MarshalIndent(cleaned, "", "  ")
+	return fmt.Sprintf(`
+
+## Rules — Space Chain routing
+
+Some target Spaces in the current Space Chain have knowledge extraction policies.
+For each extracted fact, decide whether it should also be routed to zero, one, or multiple target Spaces.
+
+Rules:
+1. Only classify extracted facts. Do not create extra facts for routing.
+2. A fact may match multiple target policies.
+3. Use only target IDs listed in "Allowed routing targets".
+4. Never route to the source Space or the first node of the Space Chain.
+5. If no target policy matches, omit "route_targets" or return an empty array.
+6. "route_targets" is control metadata. Do not put routing target IDs into "tags".
+7. If unsure, do not route.
+8. Preserve the original fact text and language.
+
+Allowed routing targets:
+%s
+
+When routing applies, include "route_targets" on the fact object:
+{"text": "fact one", "tags": ["tag1"], "fact_type": "fact", "route_targets": ["target_space_id"]}
+
+If the surrounding output schema includes "message_tags", keep returning it unchanged.`, string(targetsJSON))
+}
+
 func normalizeReconciledTemporalContent(content string) (string, *TemporalMetadata) {
 	content = StripTemporalProjection(content)
 	return NormalizeStandaloneTemporalContent(content, time.Now())
@@ -299,6 +352,10 @@ func normalizeReconciledTemporalContent(content string) (string, *TemporalMetada
 // ExtractPhase1 runs fact extraction and per-message tagging in a single LLM call.
 // Returns an empty Phase1Result (no error) when LLM is nil or messages are empty.
 func (s *IngestService) ExtractPhase1(ctx context.Context, messages []IngestMessage) (*Phase1Result, error) {
+	return s.ExtractPhase1WithRouting(ctx, messages, nil)
+}
+
+func (s *IngestService) ExtractPhase1WithRouting(ctx context.Context, messages []IngestMessage, routingTargets []RoutingTarget) (*Phase1Result, error) {
 	if s.llm == nil || len(messages) == 0 {
 		return &Phase1Result{}, nil
 	}
@@ -308,7 +365,7 @@ func (s *IngestService) ExtractPhase1(ctx context.Context, messages []IngestMess
 		return &Phase1Result{}, nil
 	}
 
-	facts, messageTags, err := s.extractFactsAndTags(ctx, input.formatted, len(input.messages))
+	facts, messageTags, err := s.extractFactsAndTagsWithRouting(ctx, input.formatted, len(input.messages), routingTargets)
 	if err != nil {
 		return nil, err
 	}
@@ -424,6 +481,16 @@ func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID
 		InsightIDs:      insightIDs,
 		Warnings:        totalWarnings,
 	}, nil
+}
+
+func (s *IngestService) ExtractContentWithRouting(ctx context.Context, content string, routingTargets []RoutingTarget) ([]ExtractedFact, error) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return nil, nil
+	}
+	const maxContentRunes = 32000
+	formatted := truncateRunes(content, maxContentRunes)
+	return s.extractFactsWithRouting(ctx, "User: "+formatted, routingTargets)
 }
 
 // ingestRaw stores messages as a single raw memory (legacy behavior).
@@ -552,16 +619,17 @@ func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
 	// garbage string, but the actual fact fields are top-level keys.  Recover
 	// the fact when a top-level "text" field is present.
 	type flattenedFact struct {
-		Facts    interface{} `json:"facts"`
-		Text     string      `json:"text"`
-		Tags     []string    `json:"tags"`
-		FactType string      `json:"fact_type,omitempty"`
+		Facts        interface{} `json:"facts"`
+		Text         string      `json:"text"`
+		Tags         []string    `json:"tags"`
+		FactType     string      `json:"fact_type,omitempty"`
+		RouteTargets []string    `json:"route_targets,omitempty"`
 	}
 	var flat flattenedFact
 	if err := json.Unmarshal([]byte(cleaned), &flat); err == nil {
 		if t := strings.TrimSpace(flat.Text); t != "" {
 			slog.Warn("normalizeParsedFacts: recovered fact from flattened-fact corruption", "text", t)
-			out = append(out, ExtractedFact{Text: t, Tags: flat.Tags, FactType: flat.FactType})
+			out = append(out, ExtractedFact{Text: t, Tags: flat.Tags, FactType: flat.FactType, RouteTargets: flat.RouteTargets})
 		}
 	}
 	return out
@@ -570,6 +638,10 @@ func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
 // extractFacts calls the LLM to extract atomic facts only, without per-message tag generation.
 // Used by extractAndReconcile (ReconcileContent path) where message_tags are not needed.
 func (s *IngestService) extractFacts(ctx context.Context, conversation string) ([]ExtractedFact, error) {
+	return s.extractFactsWithRouting(ctx, conversation, nil)
+}
+
+func (s *IngestService) extractFactsWithRouting(ctx context.Context, conversation string, routingTargets []RoutingTarget) ([]ExtractedFact, error) {
 	if s.llm == nil || conversation == "" {
 		return nil, nil
 	}
@@ -668,6 +740,7 @@ atomic facts from a conversation.
 Return ONLY valid JSON. No markdown fences, no explanation.
 
 {"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}, ...]}`
+	systemPrompt += routingPromptSection(routingTargets)
 
 	userPrompt := fmt.Sprintf("Extract facts.\n\n%s", input.formatted)
 
@@ -718,6 +791,10 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 // extractFactsAndTags calls the LLM to extract atomic facts and per-message tags
 // from the conversation in a single call.
 func (s *IngestService) extractFactsAndTags(ctx context.Context, conversation string, messageCount int) ([]ExtractedFact, [][]string, error) {
+	return s.extractFactsAndTagsWithRouting(ctx, conversation, messageCount, nil)
+}
+
+func (s *IngestService) extractFactsAndTagsWithRouting(ctx context.Context, conversation string, messageCount int, routingTargets []RoutingTarget) ([]ExtractedFact, [][]string, error) {
 	input := prepareExtractionInputFromConversation(conversation, maxExtractionConversationRunes)
 	if input.formatted == "" {
 		return nil, normalizeMessageTags(nil, messageCount), nil
@@ -838,6 +915,7 @@ Output: {"facts": [{"text": "Working remotely this week", "tags": ["work", "time
 Return ONLY valid JSON. No markdown fences, no explanation.
 
 {"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}], "message_tags": [["tag1", "tag2"], ["tag3"], [], ...]}`
+	systemPrompt += routingPromptSection(routingTargets)
 
 	userPrompt := fmt.Sprintf("Extract facts and assign message tags.\n\n%s", input.formatted)
 

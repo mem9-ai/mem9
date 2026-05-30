@@ -21,6 +21,8 @@ type replaceSpaceChainNodesRequest = service.ReplaceSpaceChainNodesRequest
 
 type createSpaceChainBindingRequest = service.CreateSpaceChainBindingRequest
 
+type updateSpaceChainNodeRoutingPolicyRequest = service.UpdateSpaceChainNodeRoutingPolicyRequest
+
 type deleteSpaceChainRequest struct {
 	DeletedByUserID string `json:"deleted_by_user_id,omitempty"`
 }
@@ -129,6 +131,23 @@ func (s *Server) replaceSpaceChainNodes(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	respond(w, http.StatusOK, map[string]any{"nodes": nodes})
+}
+
+func (s *Server) updateSpaceChainNodeRoutingPolicy(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorizeSpaceChainManagement(w, r); !ok {
+		return
+	}
+	var req updateSpaceChainNodeRoutingPolicyRequest
+	if err := decode(r, &req); err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
+	node, err := s.chains.UpdateNodeRoutingPolicy(r.Context(), chi.URLParam(r, "chainID"), chi.URLParam(r, "nodeID"), req)
+	if err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
+	respond(w, http.StatusOK, node)
 }
 
 func (s *Server) listSpaceChainBindings(w http.ResponseWriter, r *http.Request) {

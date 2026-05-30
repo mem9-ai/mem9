@@ -50,9 +50,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	auth := authInfo(r)
+	var chainAuth *domain.AuthInfo
 	var writeChainSource *domain.ChainSource
 	if auth.IsChain() {
 		var err error
+		chainAuth = auth
 		if len(auth.Chain.Nodes) > 0 {
 			writeChainSource = chainSource(auth, auth.Chain.Nodes[0])
 		}
@@ -112,7 +114,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				}()
 			}
 
-			result, err := s.ingestMessages(syncCtx, auth, svc, ingestReq)
+			result, err := s.ingestMessages(syncCtx, auth, svc, ingestReq, chainAuth)
 			if err != nil {
 				if s.runtimeUsageEnabled() {
 					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
@@ -176,7 +178,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			go func(lease *runtimeusage.OperationLease) {
-				result, err := s.ingestMessages(context.Background(), auth, svc, ingestReq)
+				result, err := s.ingestMessages(context.Background(), auth, svc, ingestReq, chainAuth)
 				if err != nil {
 					if s.runtimeUsageEnabled() {
 						s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
@@ -320,6 +322,55 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				}
 			}()
 		}
+		if chainAuth != nil && svc.ingest.HasLLM() {
+			result, err := s.createSmartContentWithRouting(r.Context(), chainAuth, svc, auth.AgentName, agentID, req.SessionID, content, tags, metadata)
+			if err != nil {
+				if s.runtimeUsageEnabled() {
+					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
+					finalized = true
+				}
+				slog.Error("sync routed memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
+				s.handleError(r.Context(), w, err)
+				return
+			}
+			if result != nil && result.Status == "failed" {
+				if s.runtimeUsageEnabled() {
+					err := errors.New("content reconciliation failed")
+					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
+					finalized = true
+				}
+				respondError(w, http.StatusInternalServerError, "content reconciliation failed")
+				return
+			}
+			var written int64
+			var ids []string
+			if result != nil {
+				written = int64(result.MemoriesChanged)
+				ids = result.InsightIDs
+			}
+			if s.runtimeUsageEnabled() {
+				if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+					return s.runtimeUsage.AfterMemoryCreateSuccess(ctx, lease, runtimeusage.MemoryCreateResult{
+						MemoryIDs:       ids,
+						AgentName:       auth.AgentName,
+						ObjectsAffected: written,
+					})
+				}); err != nil {
+					s.logger.Error("runtime usage sync routed memory create finalization failed",
+						"operation_id", lease.OperationID,
+						"tenant_id", auth.TenantID,
+						"cluster_id", auth.ClusterID,
+						"err", err)
+					finalized = true
+					s.handleRuntimeUsageError(w, err)
+					return
+				}
+				finalized = true
+			}
+			go s.afterSuccessfulWrite(auth, svc, written)
+			respond(w, http.StatusOK, map[string]string{"status": "ok"})
+			return
+		}
 		// s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
 		mem, written, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
 		if err != nil {
@@ -366,8 +417,47 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		go func(auth *domain.AuthInfo, lease *runtimeusage.OperationLease, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage) {
+		go func(auth, chainAuth *domain.AuthInfo, lease *runtimeusage.OperationLease, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage) {
 			// s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
+			if chainAuth != nil && svc.ingest.HasLLM() {
+				result, err := s.createSmartContentWithRouting(context.Background(), chainAuth, svc, agentName, actorAgentID, sessionID, content, tags, metadata)
+				if err != nil {
+					if s.runtimeUsageEnabled() {
+						s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
+					}
+					slog.Error("async routed memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
+					return
+				}
+				if result != nil && result.Status == "failed" {
+					if s.runtimeUsageEnabled() {
+						s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, errors.New("content reconciliation failed"))
+					}
+					slog.Error("async routed memory reconcile failed", "agent", actorAgentID, "actor", agentName)
+					return
+				}
+				var written int64
+				var ids []string
+				if result != nil {
+					written = int64(result.MemoriesChanged)
+					ids = result.InsightIDs
+				}
+				if s.runtimeUsageEnabled() {
+					if err := s.runtimeUsage.AfterMemoryCreateSuccess(context.Background(), lease, runtimeusage.MemoryCreateResult{
+						MemoryIDs:       ids,
+						AgentName:       auth.AgentName,
+						ObjectsAffected: written,
+					}); err != nil {
+						s.logger.Error("runtime usage async routed memory create finalization failed",
+							"operation_id", lease.OperationID,
+							"tenant_id", auth.TenantID,
+							"cluster_id", auth.ClusterID,
+							"err", err)
+						return
+					}
+				}
+				s.afterSuccessfulWrite(auth, svc, written)
+				return
+			}
 			mem, written, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
 			if err != nil {
 				if s.runtimeUsageEnabled() {
@@ -400,7 +490,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			s.afterSuccessfulWrite(auth, svc, int64(written))
-		}(auth, lease, auth.AgentName, agentID, req.SessionID, content, tags, metadata)
+		}(auth, chainAuth, lease, auth.AgentName, agentID, req.SessionID, content, tags, metadata)
 
 		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 	}
@@ -408,14 +498,16 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 
 // ingestMessages runs the full ingest pipeline: optional BulkCreate → ExtractPhase1 → optional PatchTags + ReconcilePhase2.
 // TODO: wrap all database writes (BulkCreate, PatchTags, ReconcilePhase2) in a single transaction to guarantee atomicity.
-func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, req service.IngestRequest) (*service.IngestResult, error) {
+func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, req service.IngestRequest, chainAuth *domain.AuthInfo) (*service.IngestResult, error) {
 	start := time.Now()
 	var (
 		bulkCreateDuration    time.Duration
 		extractPhase1Duration time.Duration
 		patchTagsDuration     time.Duration
 		reconcileDuration     time.Duration
+		routeDuration         time.Duration
 		factsCount            int
+		routedChanged         int
 		status                = "ok"
 	)
 	defer func() {
@@ -428,6 +520,8 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 			"extract_phase1_ms", extractPhase1Duration.Milliseconds(),
 			"patch_tags_ms", patchTagsDuration.Milliseconds(),
 			"reconcile_phase2_ms", reconcileDuration.Milliseconds(),
+			"route_ms", routeDuration.Milliseconds(),
+			"routed_changed", routedChanged,
 			"total_ms", time.Since(start).Milliseconds(),
 		)
 	}()
@@ -449,7 +543,7 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	}
 
 	extractPhase1Start := time.Now()
-	phase1, err := svc.ingest.ExtractPhase1(ctx, req.Messages)
+	phase1, err := svc.ingest.ExtractPhase1WithRouting(ctx, req.Messages, chainRoutingTargets(chainAuth))
 	extractPhase1Duration = time.Since(extractPhase1Start)
 	if err != nil {
 		status = "phase1_error"
@@ -505,8 +599,62 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	if reconcileResult != nil {
 		status = reconcileResult.Status
 	}
+	if chainAuth != nil && len(phase1.Facts) > 0 {
+		routeStart := time.Now()
+		routed := s.reconcileRoutedChainFacts(ctx, chainAuth, req, phase1.Facts)
+		routeDuration = time.Since(routeStart)
+		routedChanged = routed.memoriesChanged
+		if reconcileResult == nil {
+			reconcileResult = &service.IngestResult{Status: "complete"}
+		}
+		reconcileResult.MemoriesChanged += routed.memoriesChanged
+		reconcileResult.InsightIDs = append(reconcileResult.InsightIDs, routed.insightIDs...)
+		reconcileResult.Warnings += routed.warnings
+		if reconcileResult.Status == "" {
+			reconcileResult.Status = "complete"
+		}
+	}
 
 	return reconcileResult, nil
+}
+
+func (s *Server) createSmartContentWithRouting(ctx context.Context, chainAuth *domain.AuthInfo, svc resolvedSvc, agentName, agentID, sessionID, content string, tags []string, metadata json.RawMessage) (*service.IngestResult, error) {
+	facts, err := svc.ingest.ExtractContentWithRouting(ctx, content, chainRoutingTargets(chainAuth))
+	if err != nil {
+		return nil, err
+	}
+	if len(facts) == 0 {
+		return &service.IngestResult{Status: "complete"}, nil
+	}
+	result, err := svc.ingest.ReconcilePhase2(ctx, agentName, agentID, sessionID, facts)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		result = &service.IngestResult{Status: "complete"}
+	}
+	if result.Status == "failed" {
+		return result, nil
+	}
+
+	patchWrites := 0
+	if len(tags) > 0 || len(metadata) > 0 {
+		for _, id := range result.InsightIDs {
+			if _, err := svc.memory.Update(ctx, agentID, id, "", tags, metadata, 0); err == nil {
+				patchWrites++
+			}
+		}
+		result.MemoriesChanged += patchWrites
+	}
+
+	routed := s.reconcileRoutedChainFacts(ctx, chainAuth, service.IngestRequest{AgentID: agentID, SessionID: sessionID}, facts)
+	result.MemoriesChanged += routed.memoriesChanged
+	result.InsightIDs = append(result.InsightIDs, routed.insightIDs...)
+	result.Warnings += routed.warnings
+	if result.Status == "" {
+		result.Status = "complete"
+	}
+	return result, nil
 }
 
 type listResponse struct {

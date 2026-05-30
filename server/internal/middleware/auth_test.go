@@ -788,6 +788,21 @@ func (r *stubSpaceChainRepo) ReplaceNodes(_ context.Context, _ string, nodes []d
 	return nil
 }
 
+func (r *stubSpaceChainRepo) UpdateNodeRoutingPolicy(_ context.Context, _, nodeID string, enabled bool, prompt string) (*domain.SpaceChainNode, error) {
+	if r.chain == nil {
+		return nil, domain.ErrNotFound
+	}
+	for i := range r.chain.Nodes {
+		if r.chain.Nodes[i].ID != nodeID {
+			continue
+		}
+		r.chain.Nodes[i].RoutingPolicyEnabled = enabled
+		r.chain.Nodes[i].RoutingPolicyPrompt = prompt
+		return &r.chain.Nodes[i], nil
+	}
+	return nil, domain.ErrNotFound
+}
+
 func (r *stubSpaceChainRepo) RemoveNodeByExternalSpaceID(context.Context, string) error {
 	return nil
 }
