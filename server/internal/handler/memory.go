@@ -322,8 +322,9 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				}
 			}()
 		}
-		if chainAuth != nil && svc.ingest.HasLLM() {
-			result, err := s.createSmartContentWithRouting(r.Context(), chainAuth, svc, auth.AgentName, agentID, req.SessionID, content, tags, metadata)
+		routingTargets := chainRoutingTargets(chainAuth)
+		if len(routingTargets) > 0 && svc.ingest.HasLLM() {
+			result, err := s.createSmartContentWithRouting(r.Context(), chainAuth, svc, routingTargets, auth.AgentName, agentID, req.SessionID, content, tags, metadata)
 			if err != nil {
 				if s.runtimeUsageEnabled() {
 					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
@@ -417,10 +418,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		go func(auth, chainAuth *domain.AuthInfo, lease *runtimeusage.OperationLease, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage) {
+		routingTargets := chainRoutingTargets(chainAuth)
+		go func(auth, chainAuth *domain.AuthInfo, lease *runtimeusage.OperationLease, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage, routingTargets []service.RoutingTarget) {
 			// s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
-			if chainAuth != nil && svc.ingest.HasLLM() {
-				result, err := s.createSmartContentWithRouting(context.Background(), chainAuth, svc, agentName, actorAgentID, sessionID, content, tags, metadata)
+			if len(routingTargets) > 0 && svc.ingest.HasLLM() {
+				result, err := s.createSmartContentWithRouting(context.Background(), chainAuth, svc, routingTargets, agentName, actorAgentID, sessionID, content, tags, metadata)
 				if err != nil {
 					if s.runtimeUsageEnabled() {
 						s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
@@ -490,7 +492,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			s.afterSuccessfulWrite(auth, svc, int64(written))
-		}(auth, chainAuth, lease, auth.AgentName, agentID, req.SessionID, content, tags, metadata)
+		}(auth, chainAuth, lease, auth.AgentName, agentID, req.SessionID, content, tags, metadata, routingTargets)
 
 		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 	}
@@ -618,8 +620,8 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	return reconcileResult, nil
 }
 
-func (s *Server) createSmartContentWithRouting(ctx context.Context, chainAuth *domain.AuthInfo, svc resolvedSvc, agentName, agentID, sessionID, content string, tags []string, metadata json.RawMessage) (*service.IngestResult, error) {
-	facts, err := svc.ingest.ExtractContentWithRouting(ctx, content, chainRoutingTargets(chainAuth))
+func (s *Server) createSmartContentWithRouting(ctx context.Context, chainAuth *domain.AuthInfo, svc resolvedSvc, routingTargets []service.RoutingTarget, agentName, agentID, sessionID, content string, tags []string, metadata json.RawMessage) (*service.IngestResult, error) {
+	facts, err := svc.ingest.ExtractContentWithRouting(ctx, content, routingTargets)
 	if err != nil {
 		return nil, err
 	}

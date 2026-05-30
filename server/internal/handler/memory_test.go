@@ -973,6 +973,126 @@ func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
 	}
 }
 
+func newChainContentLLMTestServer(t *testing.T, llmCalls *atomic.Int32) (*Server, *testMemoryRepo) {
+	t.Helper()
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		llmCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":[{"text":"rewritten smart fact","tags":["smart"]}],"message_tags":[["smart"]]}`,
+				}},
+			},
+		})
+	}))
+	t.Cleanup(llmServer.Close)
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(memRepo, llmClient, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(sessRepo, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("tenant-a-0x0"), svc)
+	return srv, memRepo
+}
+
+func makeChainContentRequestWithoutRouting(t *testing.T, syncCreate bool) *http.Request {
+	t.Helper()
+	body := map[string]any{
+		"agent_id": "actor-agent",
+		"content":  "original chain content",
+	}
+	if syncCreate {
+		body["sync"] = true
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	auth := &domain.AuthInfo{
+		AgentName: "test-agent",
+		Chain: &domain.ChainAuth{
+			ChainID: "chain-a",
+			APIKey:  "chain-key-a",
+			Nodes: []domain.ChainAuthNode{
+				{
+					SpaceChainNode: domain.SpaceChainNode{
+						TenantID:        "tenant-a",
+						ExternalSpaceID: "space-source",
+						Position:        0,
+					},
+					ClusterID: "10006636",
+				},
+			},
+		},
+	}
+	ctx := middleware.WithAuthContext(req.Context(), auth)
+	return req.WithContext(ctx)
+}
+
+func TestCreateMemory_SyncChainContentWithoutRoutingPolicyUsesLegacyCreate(t *testing.T) {
+	var llmCalls atomic.Int32
+	srv, memRepo := newChainContentLLMTestServer(t, &llmCalls)
+	req := makeChainContentRequestWithoutRouting(t, true)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if got := llmCalls.Load(); got != 1 {
+		t.Fatalf("LLM calls = %d, want 1", got)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("create calls = %d, want 1", len(memRepo.createCalls))
+	}
+	if memRepo.createCalls[0].Source != "actor-agent" {
+		t.Fatalf("created source = %q, want actor-agent", memRepo.createCalls[0].Source)
+	}
+}
+
+func TestCreateMemory_AsyncChainContentWithoutRoutingPolicyUsesLegacyCreate(t *testing.T) {
+	var llmCalls atomic.Int32
+	srv, memRepo := newChainContentLLMTestServer(t, &llmCalls)
+	req := makeChainContentRequestWithoutRouting(t, false)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202: %s", rr.Code, rr.Body.String())
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		memRepo.mu.Lock()
+		created := len(memRepo.createCalls)
+		memRepo.mu.Unlock()
+		if created > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := llmCalls.Load(); got != 1 {
+		t.Fatalf("LLM calls = %d, want 1", got)
+	}
+	memRepo.mu.Lock()
+	defer memRepo.mu.Unlock()
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("create calls = %d, want 1", len(memRepo.createCalls))
+	}
+	if memRepo.createCalls[0].Source != "actor-agent" {
+		t.Fatalf("created source = %q, want actor-agent", memRepo.createCalls[0].Source)
+	}
+}
+
 func TestCreateMemory_RuntimeUsageAllowsSmartContentWrite(t *testing.T) {
 	memRepo := &testMemoryRepo{}
 	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
