@@ -38,22 +38,6 @@ const (
 
 var formattedConversationMessageRE = regexp.MustCompile(`(?:^|\n\n)([A-Za-z][A-Za-z0-9_-]*): `)
 
-var routingKeywordRE = regexp.MustCompile(`[A-Za-z0-9][A-Za-z0-9._-]{1,}`)
-
-var routingKeywordStopwords = map[string]struct{}{
-	"about":     {},
-	"fact":      {},
-	"facts":     {},
-	"knowledge": {},
-	"policy":    {},
-	"project":   {},
-	"related":   {},
-	"rule":      {},
-	"rules":     {},
-	"space":     {},
-	"team":      {},
-}
-
 // IngestRequest is the input for the ingest pipeline.
 type IngestRequest struct {
 	Messages           []IngestMessage `json:"messages"`
@@ -358,104 +342,6 @@ When routing applies, include "route_targets" on the fact object:
 {"text": "fact one", "tags": ["tag1"], "fact_type": "fact", "route_targets": ["target_space_id"]}
 
 If the surrounding output schema includes "message_tags", keep returning it unchanged.`, string(targetsJSON))
-}
-
-// Keep routing best-effort even when the LLM omits route_targets for obvious entity-token matches.
-func applyRoutingPolicyKeywordFallback(facts []ExtractedFact, targets []RoutingTarget) []ExtractedFact {
-	if len(facts) == 0 || len(targets) == 0 {
-		return facts
-	}
-
-	targetKeywords := make(map[string][]string, len(targets))
-	for _, target := range targets {
-		target.ID = strings.TrimSpace(target.ID)
-		if target.ID == "" {
-			continue
-		}
-		keywords := routingPolicyKeywords(target.Rule)
-		if len(keywords) == 0 {
-			continue
-		}
-		targetKeywords[target.ID] = keywords
-	}
-	if len(targetKeywords) == 0 {
-		return facts
-	}
-
-	out := make([]ExtractedFact, len(facts))
-	copy(out, facts)
-	for i := range out {
-		searchText := strings.ToLower(out[i].Text)
-		if searchText == "" {
-			continue
-		}
-		for targetID, keywords := range targetKeywords {
-			if hasRouteTarget(out[i].RouteTargets, targetID) {
-				continue
-			}
-			if routingTextContainsAnyKeyword(searchText, keywords) {
-				out[i].RouteTargets = append(out[i].RouteTargets, targetID)
-			}
-		}
-	}
-	return out
-}
-
-func routingPolicyKeywords(rule string) []string {
-	matches := routingKeywordRE.FindAllString(rule, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-	keywords := make([]string, 0, len(matches))
-	seen := make(map[string]struct{}, len(matches))
-	for _, match := range matches {
-		keyword := strings.ToLower(strings.TrimSpace(match))
-		if !isRoutingKeywordSignificant(keyword) {
-			continue
-		}
-		if _, ok := seen[keyword]; ok {
-			continue
-		}
-		seen[keyword] = struct{}{}
-		keywords = append(keywords, keyword)
-	}
-	return keywords
-}
-
-func isRoutingKeywordSignificant(keyword string) bool {
-	if keyword == "" {
-		return false
-	}
-	if _, stop := routingKeywordStopwords[keyword]; stop {
-		return false
-	}
-	if len(keyword) >= 4 {
-		return true
-	}
-	for _, r := range keyword {
-		if r >= '0' && r <= '9' {
-			return true
-		}
-	}
-	return false
-}
-
-func routingTextContainsAnyKeyword(text string, keywords []string) bool {
-	for _, keyword := range keywords {
-		if strings.Contains(text, keyword) {
-			return true
-		}
-	}
-	return false
-}
-
-func hasRouteTarget(targets []string, targetID string) bool {
-	for _, existing := range targets {
-		if strings.TrimSpace(existing) == targetID {
-			return true
-		}
-	}
-	return false
 }
 
 func normalizeReconciledTemporalContent(content string) (string, *TemporalMetadata) {
@@ -883,10 +769,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		parsed, err = llm.ParseJSON[extractResponse](raw2)
 		if err != nil {
 			if recovered := normalizeParsedFacts(raw2, nil); len(recovered) > 0 {
-				facts := applyRoutingPolicyKeywordFallback(
-					finalizeExtractedFacts(input, recovered, "empty_after_extraction"),
-					routingTargets,
-				)
+				facts := finalizeExtractedFacts(input, recovered, "empty_after_extraction")
 				slog.Info("facts extracted", "facts", len(facts))
 				return facts, nil
 			}
@@ -900,10 +783,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		lastRaw = raw2
 	}
 
-	facts := applyRoutingPolicyKeywordFallback(
-		finalizeExtractedFacts(input, normalizeParsedFacts(lastRaw, parsed.Facts), "empty_after_extraction"),
-		routingTargets,
-	)
+	facts := finalizeExtractedFacts(input, normalizeParsedFacts(lastRaw, parsed.Facts), "empty_after_extraction")
 	slog.Info("facts extracted", "facts", len(facts))
 	return facts, nil
 }
@@ -1073,10 +953,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 			}
 			messageTags := normalizeMessageTags(leg.MessageTags, messageCount)
 			if recovered := normalizeParsedFacts(raw2, nil); len(recovered) > 0 {
-				facts := applyRoutingPolicyKeywordFallback(
-					finalizeExtractedFacts(input, recovered, "empty_after_extraction"),
-					routingTargets,
-				)
+				facts := finalizeExtractedFacts(input, recovered, "empty_after_extraction")
 				slog.Info("facts and tags extracted", "facts", len(facts), "tagged_messages", messageCount)
 				return facts, messageTags, nil
 			}
@@ -1090,10 +967,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 		lastRaw = raw2
 	}
 
-	facts := applyRoutingPolicyKeywordFallback(
-		finalizeExtractedFacts(input, normalizeParsedFacts(lastRaw, parsed.Facts), "empty_after_extraction"),
-		routingTargets,
-	)
+	facts := finalizeExtractedFacts(input, normalizeParsedFacts(lastRaw, parsed.Facts), "empty_after_extraction")
 
 	// Normalise message_tags to exactly messageCount entries.
 	messageTags := normalizeMessageTags(parsed.MessageTags, messageCount)
