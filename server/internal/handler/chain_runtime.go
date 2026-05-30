@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
 
@@ -115,8 +116,28 @@ func (s *Server) reconcileRoutedChainFacts(ctx context.Context, auth *domain.Aut
 
 			nodeAuth := chainNodeAuth(auth, node)
 			targetSvc := s.resolveServices(nodeAuth)
+			var lease *runtimeusage.OperationLease
+			if s.runtimeUsageEnabled() {
+				var err error
+				lease, err = s.runtimeUsage.BeforeMemoryCreate(ctx, subjectFromAuth(nodeAuth), 1)
+				if err != nil {
+					logger.WarnContext(ctx, "space chain routed reconcile skipped by runtime usage",
+						"chain_id", auth.Chain.ChainID,
+						"target_space_id", targetID,
+						"facts", len(factsForTarget),
+						"err", err,
+					)
+					mu.Lock()
+					out.warnings++
+					mu.Unlock()
+					return
+				}
+			}
 			result, err := targetSvc.ingest.ReconcilePhase2(ctx, nodeAuth.AgentName, req.AgentID, req.SessionID, factsForTarget)
 			if err != nil {
+				if s.runtimeUsageEnabled() && lease != nil {
+					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
+				}
 				logger.WarnContext(ctx, "space chain routed reconcile failed",
 					"chain_id", auth.Chain.ChainID,
 					"target_space_id", targetID,
@@ -129,9 +150,12 @@ func (s *Server) reconcileRoutedChainFacts(ctx context.Context, auth *domain.Aut
 				return
 			}
 			if result == nil {
-				return
+				result = &service.IngestResult{Status: "complete"}
 			}
 			if result.Status == "failed" {
+				if s.runtimeUsageEnabled() && lease != nil {
+					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, errors.New("routed reconcile failed"))
+				}
 				logger.WarnContext(ctx, "space chain routed reconcile returned failed",
 					"chain_id", auth.Chain.ChainID,
 					"target_space_id", targetID,
@@ -142,6 +166,26 @@ func (s *Server) reconcileRoutedChainFacts(ctx context.Context, auth *domain.Aut
 				out.warnings += max(1, result.Warnings)
 				mu.Unlock()
 				return
+			}
+			if s.runtimeUsageEnabled() && lease != nil {
+				if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+					return s.runtimeUsage.AfterMemoryCreateSuccess(ctx, lease, runtimeusage.MemoryCreateResult{
+						MemoryIDs:       result.InsightIDs,
+						AgentName:       nodeAuth.AgentName,
+						ObjectsAffected: int64(result.MemoriesChanged),
+					})
+				}); err != nil {
+					logger.WarnContext(ctx, "space chain routed reconcile runtime usage finalization failed",
+						"chain_id", auth.Chain.ChainID,
+						"target_space_id", targetID,
+						"facts", len(factsForTarget),
+						"err", err,
+					)
+					mu.Lock()
+					out.warnings++
+					mu.Unlock()
+					return
+				}
 			}
 			mu.Lock()
 			out.memoriesChanged += result.MemoriesChanged

@@ -311,6 +311,7 @@ func (w *blockingMeteringWriter) Record(evt metering.Event) {
 func (w *blockingMeteringWriter) Close(context.Context) error { return nil }
 
 type captureRuntimeUsageManager struct {
+	mu                       sync.Mutex
 	beforeRecallCalls        int
 	afterRecallSuccessCalls  int
 	beforeCreateCalls        int
@@ -323,6 +324,7 @@ type captureRuntimeUsageManager struct {
 	afterDeleteSuccessCalls  int
 	enabled                  bool
 	afterCreateSuccessErr    error
+	beforeCreateErrByTenant  map[string]error
 	beforeRecallSubjects     []runtimeusage.Subject
 	recallResults            []runtimeusage.RecallResult
 	recallSuccessContextErrs []error
@@ -350,17 +352,28 @@ func (m *captureRuntimeUsageManager) AfterRecallSuccess(ctx context.Context, _ *
 func (m *captureRuntimeUsageManager) AfterRecallFailure(context.Context, *runtimeusage.OperationLease, error) {
 }
 func (m *captureRuntimeUsageManager) BeforeMemoryCreate(_ context.Context, subject runtimeusage.Subject, _ int64) (*runtimeusage.OperationLease, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.beforeCreateCalls++
 	m.beforeCreateSubjects = append(m.beforeCreateSubjects, subject)
+	if m.beforeCreateErrByTenant != nil {
+		if err := m.beforeCreateErrByTenant[subject.TenantID]; err != nil {
+			return nil, err
+		}
+	}
 	return &runtimeusage.OperationLease{OperationID: "op-create", Reserved: true}, nil
 }
 func (m *captureRuntimeUsageManager) AfterMemoryCreateSuccess(ctx context.Context, _ *runtimeusage.OperationLease, result runtimeusage.MemoryCreateResult) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.afterCreateSuccessCalls++
 	m.createResults = append(m.createResults, result)
 	m.createSuccessContextErrs = append(m.createSuccessContextErrs, ctx.Err())
 	return m.afterCreateSuccessErr
 }
 func (m *captureRuntimeUsageManager) AfterMemoryCreateFailure(context.Context, *runtimeusage.OperationLease, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.afterCreateFailureCalls++
 }
 func (m *captureRuntimeUsageManager) BeforeMemoryUpdate(_ context.Context, subject runtimeusage.Subject) (*runtimeusage.OperationLease, error) {
@@ -512,6 +525,156 @@ func newTestServer(memRepo *testMemoryRepo, sessRepo *testSessionRepo) *Server {
 	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
 	srv.svcCache.Store(tenantSvcKey("tenant-a-0x0"), svc)
 	return srv
+}
+
+func storeTestTenantServices(srv *Server, tenantID string, memRepo *testMemoryRepo) {
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(memRepo, nil, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, nil, nil, "", service.ModeSmart),
+		session: service.NewSessionService(&testSessionRepo{}, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey(fmt.Sprintf("%s-0x0", tenantID)), svc)
+}
+
+func TestReconcileRoutedChainFactsRuntimeUsageUsesTargetSubjects(t *testing.T) {
+	targetARepo := &testMemoryRepo{}
+	targetBRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+	storeTestTenantServices(srv, "tenant-target-a", targetARepo)
+	storeTestTenantServices(srv, "tenant-target-b", targetBRepo)
+
+	auth := &domain.AuthInfo{
+		AgentName: "chain-agent",
+		Chain: &domain.ChainAuth{
+			ChainID: "chain-a",
+			APIKey:  "chain-key-a",
+			Nodes: []domain.ChainAuthNode{
+				{
+					SpaceChainNode: domain.SpaceChainNode{TenantID: "tenant-source", ExternalSpaceID: "space-source", Position: 0},
+					ClusterID:      "cluster-source",
+				},
+				{
+					SpaceChainNode: domain.SpaceChainNode{
+						TenantID:             "tenant-target-a",
+						ExternalSpaceID:      "space-target-a",
+						Position:             1,
+						RoutingPolicyEnabled: true,
+						RoutingPolicyPrompt:  "facts about mem9",
+					},
+					ClusterID: "cluster-target-a",
+				},
+				{
+					SpaceChainNode: domain.SpaceChainNode{
+						TenantID:             "tenant-target-b",
+						ExternalSpaceID:      "space-target-b",
+						Position:             2,
+						RoutingPolicyEnabled: true,
+						RoutingPolicyPrompt:  "facts about PingCAP",
+					},
+					ClusterID: "cluster-target-b",
+				},
+			},
+		},
+	}
+
+	result := srv.reconcileRoutedChainFacts(context.Background(), auth, service.IngestRequest{
+		AgentID:   "actor-agent",
+		SessionID: "session-a",
+	}, []service.ExtractedFact{
+		{Text: "mem9 uses PingCAP TiDB for this test", Tags: []string{"tech"}, RouteTargets: []string{"space-target-a", "space-target-b"}},
+	})
+
+	if result.memoriesChanged != 2 {
+		t.Fatalf("memoriesChanged = %d, want 2", result.memoriesChanged)
+	}
+	if len(targetARepo.createCalls) != 1 || len(targetBRepo.createCalls) != 1 {
+		t.Fatalf("target writes = %d/%d, want 1/1", len(targetARepo.createCalls), len(targetBRepo.createCalls))
+	}
+	if runtimeUsage.beforeCreateCalls != 2 || runtimeUsage.afterCreateSuccessCalls != 2 {
+		t.Fatalf("runtime create calls = before:%d success:%d, want 2/2", runtimeUsage.beforeCreateCalls, runtimeUsage.afterCreateSuccessCalls)
+	}
+	wantSubjects := map[string]string{
+		"tenant-target-a": "cluster-target-a",
+		"tenant-target-b": "cluster-target-b",
+	}
+	for _, subject := range runtimeUsage.beforeCreateSubjects {
+		wantCluster, ok := wantSubjects[subject.TenantID]
+		if !ok {
+			t.Fatalf("unexpected create subject: %+v", subject)
+		}
+		if subject.ClusterID != wantCluster || subject.APIKeySubject != "chain-key-a" {
+			t.Fatalf("create subject = %+v, want cluster=%s apiKey=chain-key-a", subject, wantCluster)
+		}
+		delete(wantSubjects, subject.TenantID)
+	}
+	if len(wantSubjects) != 0 {
+		t.Fatalf("missing create subjects: %+v", wantSubjects)
+	}
+	for _, createResult := range runtimeUsage.createResults {
+		if createResult.AgentName != "chain-agent" || createResult.ObjectsAffected != 1 || len(createResult.MemoryIDs) != 1 {
+			t.Fatalf("create result = %+v, want chain-agent/1 object/1 memory", createResult)
+		}
+	}
+}
+
+func TestReconcileRoutedChainFactsSkipsTargetWhenRuntimeUsageDenied(t *testing.T) {
+	targetRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{
+		enabled: true,
+		beforeCreateErrByTenant: map[string]error{
+			"tenant-target-a": &runtimeusage.QuotaDeniedError{StatusCode: http.StatusPaymentRequired},
+		},
+	}
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+	storeTestTenantServices(srv, "tenant-target-a", targetRepo)
+
+	auth := &domain.AuthInfo{
+		AgentName: "chain-agent",
+		Chain: &domain.ChainAuth{
+			ChainID: "chain-a",
+			APIKey:  "chain-key-a",
+			Nodes: []domain.ChainAuthNode{
+				{
+					SpaceChainNode: domain.SpaceChainNode{TenantID: "tenant-source", ExternalSpaceID: "space-source", Position: 0},
+					ClusterID:      "cluster-source",
+				},
+				{
+					SpaceChainNode: domain.SpaceChainNode{
+						TenantID:             "tenant-target-a",
+						ExternalSpaceID:      "space-target-a",
+						Position:             1,
+						RoutingPolicyEnabled: true,
+						RoutingPolicyPrompt:  "facts about mem9",
+					},
+					ClusterID: "cluster-target-a",
+				},
+			},
+		},
+	}
+
+	result := srv.reconcileRoutedChainFacts(context.Background(), auth, service.IngestRequest{
+		AgentID:   "actor-agent",
+		SessionID: "session-a",
+	}, []service.ExtractedFact{
+		{Text: "mem9 should not write when target quota is denied", Tags: []string{"tech"}, RouteTargets: []string{"space-target-a"}},
+	})
+
+	if result.memoriesChanged != 0 {
+		t.Fatalf("memoriesChanged = %d, want 0", result.memoriesChanged)
+	}
+	if result.warnings != 1 {
+		t.Fatalf("warnings = %d, want 1", result.warnings)
+	}
+	if len(targetRepo.createCalls) != 0 {
+		t.Fatalf("target writes = %d, want 0", len(targetRepo.createCalls))
+	}
+	if runtimeUsage.beforeCreateCalls != 1 {
+		t.Fatalf("BeforeMemoryCreate calls = %d, want 1", runtimeUsage.beforeCreateCalls)
+	}
+	if runtimeUsage.afterCreateSuccessCalls != 0 || runtimeUsage.afterCreateFailureCalls != 0 {
+		t.Fatalf("runtime finalization calls = success:%d failure:%d, want 0/0", runtimeUsage.afterCreateSuccessCalls, runtimeUsage.afterCreateFailureCalls)
+	}
 }
 
 func TestListMemories_SessionTypeListsSessionRows(t *testing.T) {
