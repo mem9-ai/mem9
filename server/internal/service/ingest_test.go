@@ -459,6 +459,38 @@ func TestExtractPhase1WithRoutingIncludesPromptAndParsesTargets(t *testing.T) {
 	}
 }
 
+func TestExtractPhase1WithRoutingKeywordFallback(t *testing.T) {
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts": [{"text": "mem9 is one of the most relevant elements to Bosn", "tags": ["entity"]}, {"text": "PingCAP is one of the most relevant elements to Bosn", "tags": ["entity"]}], "message_tags": [["entity"]]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	result, err := svc.ExtractPhase1WithRouting(context.Background(), []IngestMessage{{Role: "user", Content: "mem9和PingCAP是Bosn最相关的元素"}}, []RoutingTarget{
+		{ID: "space_team", Name: "team knowledge", Rule: "和mem9有关"},
+		{ID: "space_company", Name: "company knowledge", Rule: "和PingCAP有关"},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPhase1WithRouting() error = %v", err)
+	}
+	if len(result.Facts) != 2 {
+		t.Fatalf("expected 2 facts, got %d", len(result.Facts))
+	}
+	if got, want := result.Facts[0].RouteTargets, []string{"space_team"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("first fact route targets = %v, want %v", got, want)
+	}
+	if got, want := result.Facts[1].RouteTargets, []string{"space_company"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("second fact route targets = %v, want %v", got, want)
+	}
+}
+
 func TestExtractPhase1AnnotatesSourceSeqs(t *testing.T) {
 	t.Parallel()
 
