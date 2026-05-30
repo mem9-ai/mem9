@@ -323,7 +323,9 @@ func routingPromptSection(targets []RoutingTarget) string {
 ## Rules — Space Chain routing
 
 Some target Spaces in the current Space Chain have knowledge extraction policies.
-For each extracted fact, decide whether it should also be routed to zero, one, or multiple target Spaces.
+After extracting facts, you must classify every extracted fact for routing.
+For each extracted fact, evaluate every allowed target rule independently and decide whether
+the fact should also be routed to zero, one, or multiple target Spaces.
 
 Rules:
 1. Only classify extracted facts. Do not create extra facts for routing.
@@ -332,8 +334,15 @@ Rules:
 4. Never route to the source Space or the first node of the Space Chain.
 5. If no target policy matches, omit "route_targets" or return an empty array.
 6. "route_targets" is control metadata. Do not put routing target IDs into "tags".
-7. If unsure, do not route.
-8. Preserve the original fact text and language.
+7. Judge routing semantically using both the extracted fact and the source message it came from.
+8. Semantic matches count even when the fact was rewritten, shortened, split, or translated during extraction.
+9. Treat each "rule" as a natural-language judgement prompt, not as a tag or exact keyword list.
+10. Entity names, product names, project names, organization names, and acronyms mentioned in a rule are strong routing signals.
+11. A short rule such as "和mem9有关" means route facts about, mentioning, or clearly related to mem9.
+12. A short rule such as "和PingCAP有关" means route facts about, mentioning, or clearly related to PingCAP.
+13. If a fact explicitly mentions a name or acronym from a rule, route it unless another part of the rule excludes it.
+14. If unsure, do not route.
+15. Preserve the original fact text and language.
 
 Allowed routing targets:
 %s
@@ -341,6 +350,7 @@ Allowed routing targets:
 When routing applies, include "route_targets" on the fact object:
 {"text": "fact one", "tags": ["tag1"], "fact_type": "fact", "route_targets": ["target_space_id"]}
 
+This extends the surrounding output schema only by adding optional "route_targets" to fact objects.
 If the surrounding output schema includes "message_tags", keep returning it unchanged.`, string(targetsJSON))
 }
 

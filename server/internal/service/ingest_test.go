@@ -449,6 +449,13 @@ func TestExtractPhase1WithRoutingIncludesPromptAndParsesTargets(t *testing.T) {
 	for _, want := range []string{
 		"Rules — Space Chain routing",
 		"Allowed routing targets",
+		"you must classify every extracted fact for routing",
+		"evaluate every allowed target rule independently",
+		"Semantic matches count even when the fact was rewritten, shortened, split, or translated during extraction",
+		`Treat each "rule" as a natural-language judgement prompt, not as a tag or exact keyword list`,
+		"Entity names, product names, project names, organization names, and acronyms mentioned in a rule are strong routing signals",
+		`A short rule such as "和mem9有关" means route facts about, mentioning, or clearly related to mem9`,
+		`A short rule such as "和PingCAP有关" means route facts about, mentioning, or clearly related to PingCAP`,
 		"space_mem9",
 		"space_team_rules",
 		`Do not put routing target IDs into "tags"`,
