@@ -233,10 +233,12 @@ func TestSessionFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 }
 
 func TestMemoryFTSSearch_StopsAtTotalCandidateLimit(t *testing.T) {
-	candidateRows, candidateArgs := ftsCandidateValues("m-cap", maxFTSCandidateTotalLimit)
-	postFilterArgs := append(candidateArgs, "active")
-	db := newScriptedTestDB(t, []*queryExpectation{
-		{
+	expectations := make([]*queryExpectation, 0, maxFTSCandidatePages*2)
+	for page := 0; page < maxFTSCandidatePages; page++ {
+		prefix := fmt.Sprintf("m-cap-%02d", page)
+		candidateArgs := ftsCandidateArgs(prefix, maxFTSCandidatePageLimit)
+		postFilterArgs := append(candidateArgs, "active")
+		expectations = append(expectations, &queryExpectation{
 			mustContain: []string{
 				"SELECT id, fts_match_word('golang', content) AS fts_score",
 				"FROM memories",
@@ -247,13 +249,12 @@ func TestMemoryFTSSearch_StopsAtTotalCandidateLimit(t *testing.T) {
 			mustNotContain: []string{
 				"state = ?",
 			},
-			wantArgs: []any{maxFTSCandidateTotalLimit, 0},
-			rows: &scriptedRows{
-				columns: []string{"id", "fts_score"},
-				values:  candidateRows,
+			wantArgs: []any{maxFTSCandidatePageLimit, page * maxFTSCandidatePageLimit},
+			rows: &generatedFTSCandidateRows{
+				prefix: prefix,
+				count:  maxFTSCandidatePageLimit,
 			},
-		},
-		{
+		}, &queryExpectation{
 			mustContain: []string{
 				"SELECT " + allColumns + " FROM memories",
 				"WHERE id IN (",
@@ -264,8 +265,9 @@ func TestMemoryFTSSearch_StopsAtTotalCandidateLimit(t *testing.T) {
 			rows: &scriptedRows{
 				columns: memoryColumns(),
 			},
-		},
-	})
+		})
+	}
+	db := newScriptedTestDB(t, expectations)
 	defer db.Close()
 
 	repo := NewMemoryRepo(db, "", true, "cluster-1")
@@ -281,10 +283,12 @@ func TestMemoryFTSSearch_StopsAtTotalCandidateLimit(t *testing.T) {
 }
 
 func TestSessionFTSSearch_StopsAtTotalCandidateLimit(t *testing.T) {
-	candidateRows, candidateArgs := ftsCandidateValues("s-cap", maxFTSCandidateTotalLimit)
-	postFilterArgs := append(candidateArgs, "active")
-	db := newScriptedTestDB(t, []*queryExpectation{
-		{
+	expectations := make([]*queryExpectation, 0, maxFTSCandidatePages*2)
+	for page := 0; page < maxFTSCandidatePages; page++ {
+		prefix := fmt.Sprintf("s-cap-%02d", page)
+		candidateArgs := ftsCandidateArgs(prefix, maxFTSCandidatePageLimit)
+		postFilterArgs := append(candidateArgs, "active")
+		expectations = append(expectations, &queryExpectation{
 			mustContain: []string{
 				"SELECT id, fts_match_word('golang', content) AS fts_score",
 				"FROM sessions",
@@ -295,13 +299,12 @@ func TestSessionFTSSearch_StopsAtTotalCandidateLimit(t *testing.T) {
 			mustNotContain: []string{
 				"state = ?",
 			},
-			wantArgs: []any{maxFTSCandidateTotalLimit, 0},
-			rows: &scriptedRows{
-				columns: []string{"id", "fts_score"},
-				values:  candidateRows,
+			wantArgs: []any{maxFTSCandidatePageLimit, page * maxFTSCandidatePageLimit},
+			rows: &generatedFTSCandidateRows{
+				prefix: prefix,
+				count:  maxFTSCandidatePageLimit,
 			},
-		},
-		{
+		}, &queryExpectation{
 			mustContain: []string{
 				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at",
 				"FROM sessions",
@@ -313,8 +316,9 @@ func TestSessionFTSSearch_StopsAtTotalCandidateLimit(t *testing.T) {
 			rows: &scriptedRows{
 				columns: sessionColumns(),
 			},
-		},
-	})
+		})
+	}
+	db := newScriptedTestDB(t, expectations)
 	defer db.Close()
 
 	repo := NewSessionRepo(db, "", true, "cluster-1")
@@ -333,7 +337,7 @@ type queryExpectation struct {
 	mustContain    []string
 	mustNotContain []string
 	wantArgs       []any
-	rows           *scriptedRows
+	rows           driver.Rows
 	err            error
 }
 
@@ -391,6 +395,28 @@ func (r *scriptedRows) Next(dest []driver.Value) error {
 		return io.EOF
 	}
 	copy(dest, r.values[r.index])
+	r.index++
+	return nil
+}
+
+type generatedFTSCandidateRows struct {
+	prefix string
+	count  int
+	index  int
+}
+
+func (r *generatedFTSCandidateRows) Columns() []string {
+	return []string{"id", "fts_score"}
+}
+
+func (r *generatedFTSCandidateRows) Close() error { return nil }
+
+func (r *generatedFTSCandidateRows) Next(dest []driver.Value) error {
+	if r.index >= r.count {
+		return io.EOF
+	}
+	dest[0] = fmt.Sprintf("%s-%04d", r.prefix, r.index)
+	dest[1] = float64(r.count - r.index)
 	r.index++
 	return nil
 }
@@ -489,15 +515,12 @@ func normalizeDriverValue(v any) any {
 	}
 }
 
-func ftsCandidateValues(prefix string, count int) ([][]driver.Value, []any) {
-	rows := make([][]driver.Value, count)
+func ftsCandidateArgs(prefix string, count int) []any {
 	args := make([]any, count)
 	for i := 0; i < count; i++ {
-		id := fmt.Sprintf("%s-%04d", prefix, i)
-		rows[i] = []driver.Value{id, float64(count - i)}
-		args[i] = id
+		args[i] = fmt.Sprintf("%s-%04d", prefix, i)
 	}
-	return rows, args
+	return args
 }
 
 func memoryColumns() []string {

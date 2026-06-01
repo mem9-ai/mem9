@@ -36,9 +36,10 @@ func (r *MemoryRepo) FTSAvailable() bool { return r.ftsAvailable.Load() }
 
 const (
 	allColumns               = `id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at, superseded_by`
-	maxFTSCandidatePageLimit = 1000
+	maxFTSCandidatePageLimit = 10000
+	maxFTSCandidatePages     = 30
 	// Keep pure-FTS expansion finite because post-filters run in a separate query.
-	maxFTSCandidateTotalLimit = 1000
+	maxFTSCandidateTotalLimit = maxFTSCandidatePageLimit * maxFTSCandidatePages
 )
 
 func (r *MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
