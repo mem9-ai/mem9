@@ -37,11 +37,10 @@ func (r *MemoryRepo) FTSAvailable() bool { return r.ftsAvailable.Load() }
 const (
 	allColumns               = `id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at, superseded_by`
 	maxFTSCandidatePageLimit = 10000
-	maxFTSCandidatePages     = 30
-	maxFTSFallbackPages      = maxFTSCandidatePages - 1
+	maxFTSFallbackPages      = 30
 	// TiDB Cloud FTS is only safe with fts_match_word as the only WHERE predicate,
 	// so wider recall uses bounded pure-FTS pages followed by post-filtering.
-	maxFTSFallbackCandidateLimit = maxFTSCandidatePageLimit * maxFTSCandidatePages
+	maxFTSFallbackCandidateLimit = maxFTSCandidatePageLimit * maxFTSFallbackPages
 )
 
 func (r *MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
