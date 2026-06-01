@@ -269,7 +269,7 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 	}
 
 	dataQuery := "SELECT " + allColumns + " FROM memories WHERE " +
-		where + " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
+		where + " ORDER BY " + memoryListOrderBy(f) + " LIMIT ? OFFSET ?"
 	// Copy args to avoid mutating the original slice (append may reuse underlying array).
 	dataArgs := make([]any, len(args), len(args)+2)
 	copy(dataArgs, args)
@@ -291,6 +291,27 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 		memories = append(memories, *m)
 	}
 	return memories, total, rows.Err()
+}
+
+func memoryListOrderBy(f domain.MemoryFilter) string {
+	column := "updated_at"
+	switch strings.TrimSpace(f.SortBy) {
+	case "content":
+		column = "content"
+	case "memory_type":
+		column = "memory_type"
+	case "tags":
+		column = "tags"
+	case "updated_at", "":
+		column = "updated_at"
+	}
+
+	direction := "DESC"
+	if strings.EqualFold(strings.TrimSpace(f.SortDir), "asc") {
+		direction = "ASC"
+	}
+
+	return column + " " + direction + ", id " + direction
 }
 
 func (r *MemoryRepo) Count(ctx context.Context) (int, error) {

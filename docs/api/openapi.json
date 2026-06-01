@@ -688,6 +688,12 @@
           },
           {
             "$ref": "#/components/parameters/SessionID"
+          },
+          {
+            "$ref": "#/components/parameters/SortBy"
+          },
+          {
+            "$ref": "#/components/parameters/SortDir"
           }
         ],
         "responses": {
@@ -1251,6 +1257,36 @@
         "description": "Session identifier filter.",
         "schema": {
           "type": "string"
+        }
+      },
+      "SortBy": {
+        "name": "sort_by",
+        "in": "query",
+        "required": false,
+        "description": "Sort field used when listing memories.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "content",
+            "memory_type",
+            "tags",
+            "updated_at"
+          ],
+          "default": "updated_at"
+        }
+      },
+      "SortDir": {
+        "name": "sort_dir",
+        "in": "query",
+        "required": false,
+        "description": "Sort direction used when listing memories.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "default": "desc"
         }
       },
       "ScanAll": {

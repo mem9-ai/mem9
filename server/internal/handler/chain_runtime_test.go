@@ -151,7 +151,7 @@ func TestFinalizeChainMemories_QueryModeSortsAndClipsByConfidence(t *testing.T) 
 		{ID: "low-confidence-high-score", Score: &lowScore, Confidence: &lowConfidence, UpdatedAt: now},
 		{ID: "mid-confidence", Score: &midScore, Confidence: &midConfidence, UpdatedAt: now.Add(-time.Minute)},
 		{ID: "high-confidence", Score: &highScore, Confidence: &highConfidence, UpdatedAt: now.Add(-2 * time.Minute)},
-	}, 2, 0, true)
+	}, domain.MemoryFilter{}, 2, 0, true)
 
 	if len(got) != 2 {
 		t.Fatalf("memories = %d, want 2", len(got))

@@ -151,6 +151,8 @@ type MemoryFilter struct {
 	MemoryType string
 	AgentID    string
 	SessionID  string
+	SortBy     string
+	SortDir    string
 	Limit      int
 	Offset     int
 	ScanAll    bool

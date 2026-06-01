@@ -694,6 +694,8 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		MemoryType: q.Get("memory_type"),
 		AgentID:    q.Get("agent_id"),
 		SessionID:  q.Get("session_id"),
+		SortBy:     q.Get("sort_by"),
+		SortDir:    q.Get("sort_dir"),
 		Limit:      limit,
 		Offset:     offset,
 		ScanAll:    parseBoolQuery(q.Get("scanAll")),
