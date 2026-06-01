@@ -383,11 +383,12 @@ func (r *SessionRepo) ftsSearchWithPostFilter(ctx context.Context, query string,
 	where := strings.Join(conds, " AND ")
 	safeQ := ftsSafeLiteral(query)
 
-	candidateLimit := limit
+	candidateLimit := initialFTSCandidatePageLimit(limit)
 	offset := 0
-	filtered := make([]domain.Memory, 0, limit)
-	for {
-		candidates, err := r.fetchSessionFTSCandidates(ctx, safeQ, candidateLimit, offset)
+	filtered := make([]domain.Memory, 0, min(limit, maxFTSCandidateTotalLimit))
+	for offset < maxFTSCandidateTotalLimit {
+		pageLimit := min(candidateLimit, maxFTSCandidateTotalLimit-offset)
+		candidates, err := r.fetchSessionFTSCandidates(ctx, safeQ, pageLimit, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -403,13 +404,14 @@ func (r *SessionRepo) ftsSearchWithPostFilter(ctx context.Context, query string,
 		if len(filtered) >= limit {
 			return filtered[:limit], nil
 		}
-		if len(candidates) < candidateLimit {
+		if len(candidates) < pageLimit {
 			return filtered, nil
 		}
 
 		offset += len(candidates)
 		candidateLimit = nextFTSCandidatePageLimit(candidateLimit)
 	}
+	return filtered, nil
 }
 
 func (r *SessionRepo) fetchSessionFTSCandidates(ctx context.Context, safeQ string, limit, offset int) ([]sessionFTSCandidate, error) {

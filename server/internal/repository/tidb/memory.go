@@ -37,6 +37,8 @@ func (r *MemoryRepo) FTSAvailable() bool { return r.ftsAvailable.Load() }
 const (
 	allColumns               = `id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at, superseded_by`
 	maxFTSCandidatePageLimit = 1000
+	// Keep pure-FTS expansion finite because post-filters run in a separate query.
+	maxFTSCandidateTotalLimit = 1000
 )
 
 func (r *MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
@@ -572,11 +574,12 @@ func (r *MemoryRepo) ftsSearchWithPostFilter(ctx context.Context, query string, 
 	where := strings.Join(conds, " AND ")
 	safeQ := ftsSafeLiteral(query)
 
-	candidateLimit := limit
+	candidateLimit := initialFTSCandidatePageLimit(limit)
 	offset := 0
-	filtered := make([]domain.Memory, 0, limit)
-	for {
-		candidates, err := r.fetchMemoryFTSCandidates(ctx, safeQ, candidateLimit, offset)
+	filtered := make([]domain.Memory, 0, min(limit, maxFTSCandidateTotalLimit))
+	for offset < maxFTSCandidateTotalLimit {
+		pageLimit := min(candidateLimit, maxFTSCandidateTotalLimit-offset)
+		candidates, err := r.fetchMemoryFTSCandidates(ctx, safeQ, pageLimit, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -592,13 +595,18 @@ func (r *MemoryRepo) ftsSearchWithPostFilter(ctx context.Context, query string, 
 		if len(filtered) >= limit {
 			return filtered[:limit], nil
 		}
-		if len(candidates) < candidateLimit {
+		if len(candidates) < pageLimit {
 			return filtered, nil
 		}
 
 		offset += len(candidates)
 		candidateLimit = nextFTSCandidatePageLimit(candidateLimit)
 	}
+	return filtered, nil
+}
+
+func initialFTSCandidatePageLimit(limit int) int {
+	return min(limit, maxFTSCandidatePageLimit)
 }
 
 func nextFTSCandidatePageLimit(current int) int {
