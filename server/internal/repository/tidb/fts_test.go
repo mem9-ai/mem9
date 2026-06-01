@@ -18,7 +18,8 @@ import (
 
 func TestMemoryFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
-	firstPageArgs := append(ftsCandidateArgs("m-page-0", maxFTSCandidatePageLimit), "active", "agent-1", `"tag-a"`)
+	initialCandidateLimit := 2
+	firstPageArgs := append(ftsCandidateArgs("m-page-0", initialCandidateLimit), "active", "agent-1", `"tag-a"`)
 	secondPageArgs := append(ftsCandidateArgs("m-page-1", maxFTSCandidatePageLimit), "active", "agent-1", `"tag-a"`)
 	db := newScriptedTestDB(t, []*queryExpectation{
 		{
@@ -34,10 +35,10 @@ func TestMemoryFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 				"agent_id = ?",
 				"JSON_CONTAINS(tags, ?)",
 			},
-			wantArgs: []any{maxFTSCandidatePageLimit, 0},
+			wantArgs: []any{initialCandidateLimit, 0},
 			rows: &generatedFTSCandidateRows{
 				prefix: "m-page-0",
-				count:  maxFTSCandidatePageLimit,
+				count:  initialCandidateLimit,
 			},
 		},
 		{
@@ -68,7 +69,7 @@ func TestMemoryFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 				"agent_id = ?",
 				"JSON_CONTAINS(tags, ?)",
 			},
-			wantArgs: []any{maxFTSCandidatePageLimit, maxFTSCandidatePageLimit},
+			wantArgs: []any{maxFTSCandidatePageLimit, initialCandidateLimit},
 			rows: &generatedFTSCandidateRows{
 				prefix: "m-page-1",
 				count:  maxFTSCandidatePageLimit,
@@ -108,8 +109,8 @@ func TestMemoryFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 	if results[0].ID != "m-page-0-0001" || results[1].ID != "m-page-1-0000" {
 		t.Fatalf("result IDs = [%s %s], want [m-page-0-0001 m-page-1-0000]", results[0].ID, results[1].ID)
 	}
-	if results[0].Score == nil || *results[0].Score != 9999 {
-		t.Fatalf("results[0].Score = %v, want 9999", results[0].Score)
+	if results[0].Score == nil || *results[0].Score != 1 {
+		t.Fatalf("results[0].Score = %v, want 1", results[0].Score)
 	}
 	if results[1].Score == nil || *results[1].Score != 10000 {
 		t.Fatalf("results[1].Score = %v, want 10000", results[1].Score)
@@ -118,7 +119,8 @@ func TestMemoryFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 
 func TestSessionFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
-	firstPageArgs := append(ftsCandidateArgs("s-page-0", maxFTSCandidatePageLimit), "active", "agent-1", "sess-1", "chat", `"tag-a"`)
+	initialCandidateLimit := 2
+	firstPageArgs := append(ftsCandidateArgs("s-page-0", initialCandidateLimit), "active", "agent-1", "sess-1", "chat", `"tag-a"`)
 	secondPageArgs := append(ftsCandidateArgs("s-page-1", maxFTSCandidatePageLimit), "active", "agent-1", "sess-1", "chat", `"tag-a"`)
 	db := newScriptedTestDB(t, []*queryExpectation{
 		{
@@ -136,10 +138,10 @@ func TestSessionFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 				"source = ?",
 				"JSON_CONTAINS(tags, ?)",
 			},
-			wantArgs: []any{maxFTSCandidatePageLimit, 0},
+			wantArgs: []any{initialCandidateLimit, 0},
 			rows: &generatedFTSCandidateRows{
 				prefix: "s-page-0",
-				count:  maxFTSCandidatePageLimit,
+				count:  initialCandidateLimit,
 			},
 		},
 		{
@@ -173,7 +175,7 @@ func TestSessionFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 				"source = ?",
 				"JSON_CONTAINS(tags, ?)",
 			},
-			wantArgs: []any{maxFTSCandidatePageLimit, maxFTSCandidatePageLimit},
+			wantArgs: []any{maxFTSCandidatePageLimit, initialCandidateLimit},
 			rows: &generatedFTSCandidateRows{
 				prefix: "s-page-1",
 				count:  maxFTSCandidatePageLimit,
@@ -216,20 +218,160 @@ func TestSessionFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 	if results[0].ID != "s-page-0-0001" || results[1].ID != "s-page-1-0000" {
 		t.Fatalf("result IDs = [%s %s], want [s-page-0-0001 s-page-1-0000]", results[0].ID, results[1].ID)
 	}
-	if results[0].Score == nil || *results[0].Score != 9999 {
-		t.Fatalf("results[0].Score = %v, want 9999", results[0].Score)
+	if results[0].Score == nil || *results[0].Score != 1 {
+		t.Fatalf("results[0].Score = %v, want 1", results[0].Score)
 	}
 	if results[1].Score == nil || *results[1].Score != 10000 {
 		t.Fatalf("results[1].Score = %v, want 10000", results[1].Score)
 	}
 }
 
-func TestMemoryFTSSearch_StopsAtTotalCandidateLimit(t *testing.T) {
-	expectations := make([]*queryExpectation, 0, maxFTSCandidatePages*2)
-	for page := 0; page < maxFTSCandidatePages; page++ {
+func TestMemoryFTSSearch_StopsAfterRequestedLimitPageWhenFull(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	candidateArgs := append(ftsCandidateArgs("m-full", 2), "active", "agent-1")
+	db := newScriptedTestDB(t, []*queryExpectation{
+		{
+			mustContain: []string{
+				"SELECT id, fts_match_word('golang', content) AS fts_score",
+				"FROM memories",
+				"WHERE fts_match_word('golang', content)",
+				"ORDER BY fts_match_word('golang', content) DESC, id",
+				"LIMIT ? OFFSET ?",
+			},
+			mustNotContain: []string{
+				"state = ?",
+				"agent_id = ?",
+			},
+			wantArgs: []any{2, 0},
+			rows: &generatedFTSCandidateRows{
+				prefix: "m-full",
+				count:  2,
+			},
+		},
+		{
+			mustContain: []string{
+				"SELECT " + allColumns + " FROM memories",
+				"WHERE id IN (",
+				"AND state = ? AND agent_id = ?",
+			},
+			mustNotContain: []string{"fts_match_word("},
+			wantArgs:       candidateArgs,
+			rows: &scriptedRows{
+				columns: memoryColumns(),
+				values: [][]driver.Value{
+					memoryRow("m-full-0000", "match one", "agent-1", "session-1", "active", []byte(`[]`), now),
+					memoryRow("m-full-0001", "match two", "agent-1", "session-2", "active", []byte(`[]`), now),
+				},
+			},
+		},
+	})
+	defer db.Close()
+
+	repo := NewMemoryRepo(db, "", true, "cluster-1")
+	results, err := repo.FTSSearch(context.Background(), "golang", domain.MemoryFilter{
+		State:   "active",
+		AgentID: "agent-1",
+	}, 2)
+	if err != nil {
+		t.Fatalf("FTSSearch: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+}
+
+func TestSessionFTSSearch_StopsAfterRequestedLimitPageWhenFull(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	candidateArgs := append(ftsCandidateArgs("s-full", 2), "active", "agent-1")
+	db := newScriptedTestDB(t, []*queryExpectation{
+		{
+			mustContain: []string{
+				"SELECT id, fts_match_word('golang', content) AS fts_score",
+				"FROM sessions",
+				"WHERE fts_match_word('golang', content)",
+				"ORDER BY fts_match_word('golang', content) DESC, id",
+				"LIMIT ? OFFSET ?",
+			},
+			mustNotContain: []string{
+				"state = ?",
+				"agent_id = ?",
+			},
+			wantArgs: []any{2, 0},
+			rows: &generatedFTSCandidateRows{
+				prefix: "s-full",
+				count:  2,
+			},
+		},
+		{
+			mustContain: []string{
+				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at",
+				"FROM sessions",
+				"WHERE id IN (",
+				"AND state = ? AND agent_id = ?",
+			},
+			mustNotContain: []string{"fts_match_word("},
+			wantArgs:       candidateArgs,
+			rows: &scriptedRows{
+				columns: sessionColumns(),
+				values: [][]driver.Value{
+					sessionRow("s-full-0000", "sess-1", "agent-1", "chat", 1, "user", "match one", []byte(`[]`), "active", now),
+					sessionRow("s-full-0001", "sess-2", "agent-1", "chat", 2, "assistant", "match two", []byte(`[]`), "active", now),
+				},
+			},
+		},
+	})
+	defer db.Close()
+
+	repo := NewSessionRepo(db, "", true, "cluster-1")
+	results, err := repo.FTSSearch(context.Background(), "golang", domain.MemoryFilter{
+		State:   "active",
+		AgentID: "agent-1",
+	}, 2)
+	if err != nil {
+		t.Fatalf("FTSSearch: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+}
+
+func TestMemoryFTSSearch_StopsAtCandidatePageLimit(t *testing.T) {
+	initialCandidateLimit := 1
+	initialCandidateArgs := ftsCandidateArgs("m-cap-initial", initialCandidateLimit)
+	expectations := make([]*queryExpectation, 0, 2+maxFTSFallbackPages*2)
+	expectations = append(expectations, &queryExpectation{
+		mustContain: []string{
+			"SELECT id, fts_match_word('golang', content) AS fts_score",
+			"FROM memories",
+			"WHERE fts_match_word('golang', content)",
+			"ORDER BY fts_match_word('golang', content) DESC, id",
+			"LIMIT ? OFFSET ?",
+		},
+		mustNotContain: []string{
+			"state = ?",
+		},
+		wantArgs: []any{initialCandidateLimit, 0},
+		rows: &generatedFTSCandidateRows{
+			prefix: "m-cap-initial",
+			count:  initialCandidateLimit,
+		},
+	}, &queryExpectation{
+		mustContain: []string{
+			"SELECT " + allColumns + " FROM memories",
+			"WHERE id IN (",
+			"AND state = ?",
+		},
+		mustNotContain: []string{"fts_match_word("},
+		wantArgs:       append(initialCandidateArgs, "active"),
+		rows: &scriptedRows{
+			columns: memoryColumns(),
+		},
+	})
+	for page := 0; page < maxFTSFallbackPages; page++ {
 		prefix := fmt.Sprintf("m-cap-%02d", page)
 		candidateArgs := ftsCandidateArgs(prefix, maxFTSCandidatePageLimit)
 		postFilterArgs := append(candidateArgs, "active")
+		offset := initialCandidateLimit + page*maxFTSCandidatePageLimit
 		expectations = append(expectations, &queryExpectation{
 			mustContain: []string{
 				"SELECT id, fts_match_word('golang', content) AS fts_score",
@@ -241,7 +383,7 @@ func TestMemoryFTSSearch_StopsAtTotalCandidateLimit(t *testing.T) {
 			mustNotContain: []string{
 				"state = ?",
 			},
-			wantArgs: []any{maxFTSCandidatePageLimit, page * maxFTSCandidatePageLimit},
+			wantArgs: []any{maxFTSCandidatePageLimit, offset},
 			rows: &generatedFTSCandidateRows{
 				prefix: prefix,
 				count:  maxFTSCandidatePageLimit,
@@ -265,7 +407,7 @@ func TestMemoryFTSSearch_StopsAtTotalCandidateLimit(t *testing.T) {
 	repo := NewMemoryRepo(db, "", true, "cluster-1")
 	results, err := repo.FTSSearch(context.Background(), "golang", domain.MemoryFilter{
 		State: "active",
-	}, maxFTSCandidateTotalLimit+1)
+	}, initialCandidateLimit)
 	if err != nil {
 		t.Fatalf("FTSSearch: %v", err)
 	}
@@ -274,12 +416,44 @@ func TestMemoryFTSSearch_StopsAtTotalCandidateLimit(t *testing.T) {
 	}
 }
 
-func TestSessionFTSSearch_StopsAtTotalCandidateLimit(t *testing.T) {
-	expectations := make([]*queryExpectation, 0, maxFTSCandidatePages*2)
-	for page := 0; page < maxFTSCandidatePages; page++ {
+func TestSessionFTSSearch_StopsAtCandidatePageLimit(t *testing.T) {
+	initialCandidateLimit := 1
+	initialCandidateArgs := ftsCandidateArgs("s-cap-initial", initialCandidateLimit)
+	expectations := make([]*queryExpectation, 0, 2+maxFTSFallbackPages*2)
+	expectations = append(expectations, &queryExpectation{
+		mustContain: []string{
+			"SELECT id, fts_match_word('golang', content) AS fts_score",
+			"FROM sessions",
+			"WHERE fts_match_word('golang', content)",
+			"ORDER BY fts_match_word('golang', content) DESC, id",
+			"LIMIT ? OFFSET ?",
+		},
+		mustNotContain: []string{
+			"state = ?",
+		},
+		wantArgs: []any{initialCandidateLimit, 0},
+		rows: &generatedFTSCandidateRows{
+			prefix: "s-cap-initial",
+			count:  initialCandidateLimit,
+		},
+	}, &queryExpectation{
+		mustContain: []string{
+			"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at",
+			"FROM sessions",
+			"WHERE id IN (",
+			"AND state = ?",
+		},
+		mustNotContain: []string{"fts_match_word("},
+		wantArgs:       append(initialCandidateArgs, "active"),
+		rows: &scriptedRows{
+			columns: sessionColumns(),
+		},
+	})
+	for page := 0; page < maxFTSFallbackPages; page++ {
 		prefix := fmt.Sprintf("s-cap-%02d", page)
 		candidateArgs := ftsCandidateArgs(prefix, maxFTSCandidatePageLimit)
 		postFilterArgs := append(candidateArgs, "active")
+		offset := initialCandidateLimit + page*maxFTSCandidatePageLimit
 		expectations = append(expectations, &queryExpectation{
 			mustContain: []string{
 				"SELECT id, fts_match_word('golang', content) AS fts_score",
@@ -291,7 +465,7 @@ func TestSessionFTSSearch_StopsAtTotalCandidateLimit(t *testing.T) {
 			mustNotContain: []string{
 				"state = ?",
 			},
-			wantArgs: []any{maxFTSCandidatePageLimit, page * maxFTSCandidatePageLimit},
+			wantArgs: []any{maxFTSCandidatePageLimit, offset},
 			rows: &generatedFTSCandidateRows{
 				prefix: prefix,
 				count:  maxFTSCandidatePageLimit,
@@ -316,7 +490,7 @@ func TestSessionFTSSearch_StopsAtTotalCandidateLimit(t *testing.T) {
 	repo := NewSessionRepo(db, "", true, "cluster-1")
 	results, err := repo.FTSSearch(context.Background(), "golang", domain.MemoryFilter{
 		State: "active",
-	}, maxFTSCandidateTotalLimit+1)
+	}, initialCandidateLimit)
 	if err != nil {
 		t.Fatalf("FTSSearch: %v", err)
 	}

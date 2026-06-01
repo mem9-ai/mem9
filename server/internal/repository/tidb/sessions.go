@@ -383,28 +383,40 @@ func (r *SessionRepo) ftsSearchWithPostFilter(ctx context.Context, query string,
 	where := strings.Join(conds, " AND ")
 	safeQ := ftsSafeLiteral(query)
 
-	filtered := make([]domain.Memory, 0, min(limit, maxFTSCandidateTotalLimit))
-	for page := 0; page < maxFTSCandidatePages; page++ {
-		offset := page * maxFTSCandidatePageLimit
+	filtered := make([]domain.Memory, 0, min(limit, maxFTSFallbackCandidateLimit))
+	initialCandidateLimit := min(limit, maxFTSCandidatePageLimit)
+	candidates, err := r.fetchSessionFTSCandidates(ctx, safeQ, initialCandidateLimit, 0)
+	if err != nil {
+		return nil, err
+	}
+	exhausted, err := appendFilteredFTSPage(ctx, candidates, where, args, &filtered, r.fetchFilteredFTSSessions)
+	if err != nil {
+		return nil, err
+	}
+	if len(filtered) >= limit {
+		return filtered[:limit], nil
+	}
+	if exhausted || len(candidates) < initialCandidateLimit {
+		return filtered, nil
+	}
+
+	offset := initialCandidateLimit
+	for page := 0; page < maxFTSFallbackPages; page++ {
 		candidates, err := r.fetchSessionFTSCandidates(ctx, safeQ, maxFTSCandidatePageLimit, offset)
 		if err != nil {
 			return nil, err
 		}
-		if len(candidates) == 0 {
-			return filtered, nil
-		}
-
-		page, err := r.fetchFilteredFTSSessions(ctx, candidates, where, args)
+		exhausted, err := appendFilteredFTSPage(ctx, candidates, where, args, &filtered, r.fetchFilteredFTSSessions)
 		if err != nil {
 			return nil, err
 		}
-		filtered = append(filtered, page...)
 		if len(filtered) >= limit {
 			return filtered[:limit], nil
 		}
-		if len(candidates) < maxFTSCandidatePageLimit {
+		if exhausted || len(candidates) < maxFTSCandidatePageLimit {
 			return filtered, nil
 		}
+		offset += maxFTSCandidatePageLimit
 	}
 	return filtered, nil
 }

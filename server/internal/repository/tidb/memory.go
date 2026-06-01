@@ -38,8 +38,10 @@ const (
 	allColumns               = `id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at, superseded_by`
 	maxFTSCandidatePageLimit = 10000
 	maxFTSCandidatePages     = 30
-	// Keep pure-FTS expansion finite because post-filters run in a separate query.
-	maxFTSCandidateTotalLimit = maxFTSCandidatePageLimit * maxFTSCandidatePages
+	maxFTSFallbackPages      = maxFTSCandidatePages - 1
+	// TiDB Cloud FTS is only safe with fts_match_word as the only WHERE predicate,
+	// so wider recall uses bounded pure-FTS pages followed by post-filtering.
+	maxFTSFallbackCandidateLimit = maxFTSCandidatePageLimit * maxFTSCandidatePages
 )
 
 func (r *MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
@@ -575,30 +577,61 @@ func (r *MemoryRepo) ftsSearchWithPostFilter(ctx context.Context, query string, 
 	where := strings.Join(conds, " AND ")
 	safeQ := ftsSafeLiteral(query)
 
-	filtered := make([]domain.Memory, 0, min(limit, maxFTSCandidateTotalLimit))
-	for page := 0; page < maxFTSCandidatePages; page++ {
-		offset := page * maxFTSCandidatePageLimit
+	filtered := make([]domain.Memory, 0, min(limit, maxFTSFallbackCandidateLimit))
+	initialCandidateLimit := min(limit, maxFTSCandidatePageLimit)
+	candidates, err := r.fetchMemoryFTSCandidates(ctx, safeQ, initialCandidateLimit, 0)
+	if err != nil {
+		return nil, err
+	}
+	exhausted, err := appendFilteredFTSPage(ctx, candidates, where, args, &filtered, r.fetchFilteredFTSMemories)
+	if err != nil {
+		return nil, err
+	}
+	if len(filtered) >= limit {
+		return filtered[:limit], nil
+	}
+	if exhausted || len(candidates) < initialCandidateLimit {
+		return filtered, nil
+	}
+
+	offset := initialCandidateLimit
+	for page := 0; page < maxFTSFallbackPages; page++ {
 		candidates, err := r.fetchMemoryFTSCandidates(ctx, safeQ, maxFTSCandidatePageLimit, offset)
 		if err != nil {
 			return nil, err
 		}
-		if len(candidates) == 0 {
-			return filtered, nil
-		}
-
-		page, err := r.fetchFilteredFTSMemories(ctx, candidates, where, args)
+		exhausted, err := appendFilteredFTSPage(ctx, candidates, where, args, &filtered, r.fetchFilteredFTSMemories)
 		if err != nil {
 			return nil, err
 		}
-		filtered = append(filtered, page...)
 		if len(filtered) >= limit {
 			return filtered[:limit], nil
 		}
-		if len(candidates) < maxFTSCandidatePageLimit {
+		if exhausted || len(candidates) < maxFTSCandidatePageLimit {
 			return filtered, nil
 		}
+		offset += maxFTSCandidatePageLimit
 	}
 	return filtered, nil
+}
+
+func appendFilteredFTSPage[T any](
+	ctx context.Context,
+	candidates []T,
+	where string,
+	args []any,
+	filtered *[]domain.Memory,
+	fetchFiltered func(context.Context, []T, string, []any) ([]domain.Memory, error),
+) (bool, error) {
+	if len(candidates) == 0 {
+		return true, nil
+	}
+	page, err := fetchFiltered(ctx, candidates, where, args)
+	if err != nil {
+		return false, err
+	}
+	*filtered = append(*filtered, page...)
+	return false, nil
 }
 
 func (r *MemoryRepo) fetchMemoryFTSCandidates(ctx context.Context, safeQ string, limit, offset int) ([]memoryFTSCandidate, error) {
