@@ -368,6 +368,104 @@ func TestExtractPhase1FactTagsPopulated(t *testing.T) {
 	}
 }
 
+func TestExtractPhase1WithoutRoutingOmitsRoutingPrompt(t *testing.T) {
+	var systemPrompt string
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode llm request: %v", err)
+		}
+		if len(req.Messages) > 0 {
+			systemPrompt = req.Messages[0].Content
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}], "message_tags": [["tech"]]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	if _, err := svc.ExtractPhase1(context.Background(), []IngestMessage{{Role: "user", Content: "I use Go 1.22"}}); err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+	if strings.Contains(systemPrompt, "Space Chain routing") {
+		t.Fatalf("routing section should be omitted without routing targets")
+	}
+	if strings.Contains(systemPrompt, "route_targets") {
+		t.Fatalf("route_targets should be omitted without routing targets")
+	}
+}
+
+func TestExtractPhase1WithRoutingIncludesPromptAndParsesTargets(t *testing.T) {
+	var systemPrompt string
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode llm request: %v", err)
+		}
+		if len(req.Messages) > 0 {
+			systemPrompt = req.Messages[0].Content
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts": [{"text": "mem9 uses Go for the API server", "tags": ["tech"], "route_targets": ["space_mem9", "space_team_rules"]}], "message_tags": [["tech"]]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	result, err := svc.ExtractPhase1WithRouting(context.Background(), []IngestMessage{{Role: "user", Content: "mem9 uses Go for the API server"}}, []RoutingTarget{
+		{ID: "space_mem9", Name: "mem9 project knowledge", Rule: "facts about mem9"},
+		{ID: "space_team_rules", Name: "team collaboration", Rule: "facts about team rules"},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPhase1WithRouting() error = %v", err)
+	}
+	if len(result.Facts) != 1 {
+		t.Fatalf("expected 1 fact, got %d", len(result.Facts))
+	}
+	if got, want := result.Facts[0].RouteTargets, []string{"space_mem9", "space_team_rules"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("route targets = %v, want %v", got, want)
+	}
+	for _, want := range []string{
+		"Rules — Space Chain routing",
+		"Allowed routing targets",
+		"you must classify every extracted fact for routing",
+		"evaluate every allowed target rule independently",
+		"Semantic matches count even when the fact was rewritten, shortened, split, or translated during extraction",
+		`Treat each "rule" as a natural-language judgement prompt, not as a tag or exact keyword list`,
+		"Entity names, product names, project names, organization names, and acronyms mentioned in a rule are strong routing signals",
+		`A short rule such as "和mem9有关" means route facts about, mentioning, or clearly related to mem9`,
+		`A short rule such as "和PingCAP有关" means route facts about, mentioning, or clearly related to PingCAP`,
+		"space_mem9",
+		"space_team_rules",
+		`Do not put routing target IDs into "tags"`,
+	} {
+		if !strings.Contains(systemPrompt, want) {
+			t.Fatalf("routing prompt missing %q in:\n%s", want, systemPrompt)
+		}
+	}
+}
+
 func TestExtractPhase1AnnotatesSourceSeqs(t *testing.T) {
 	t.Parallel()
 

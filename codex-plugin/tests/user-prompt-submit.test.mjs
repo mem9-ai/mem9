@@ -106,7 +106,7 @@ async function runNodeHook(scriptPath, input) {
 
 /**
  * @param {string} tempRoot
- * @param {"plugin_disabled" | "plugin_missing" | "legacy_paused"} issueCode
+ * @param {"ready" | "plugin_disabled" | "plugin_missing" | "legacy_paused"} issueCode
  * @param {string} baseUrl
  */
 function createRuntimeLayout(tempRoot, issueCode, baseUrl) {
@@ -203,6 +203,7 @@ test("user prompt submit recalls memories with the search timeout bucket", async
       apiKey: "key-1",
       agentId: "codex",
       searchTimeoutMs: 15_000,
+      recallMinPromptLength: 5,
     },
     async search(url, options) {
       requestedUrl = url;
@@ -245,6 +246,7 @@ test("user prompt submit skips empty queries after stripping injected memories",
       apiKey: "key-1",
       agentId: "codex",
       searchTimeoutMs: 15_000,
+      recallMinPromptLength: 5,
     },
     async search() {
       called = true;
@@ -258,6 +260,106 @@ test("user prompt submit skips empty queries after stripping injected memories",
   assert.equal(called, false);
   assert.equal(output, "");
   assert.equal(debugEvents[0]?.stage, "prompt_empty");
+});
+
+test("user prompt submit skips recall when the stripped query is shorter than the configured minimum", async () => {
+  let called = false;
+  /** @type {Array<{stage: string, fields: Record<string, unknown> | undefined}>} */
+  const debugEvents = [];
+  const prompt = "<relevant-memories>\n1. old\n</relevant-memories>\n\nhi";
+
+  const output = await runUserPromptSubmit({
+    prompt,
+    runtime: {
+      baseUrl: "https://api.mem9.ai",
+      apiKey: "key-1",
+      agentId: "codex",
+      searchTimeoutMs: 15_000,
+      recallMinPromptLength: 5,
+    },
+    async search() {
+      called = true;
+      return { memories: [] };
+    },
+    debug(stage, fields) {
+      debugEvents.push({ stage, fields });
+    },
+  });
+
+  assert.equal(called, false);
+  assert.equal(output, "");
+  assert.equal(debugEvents[0]?.stage, "prompt_too_short");
+  assert.deepEqual(debugEvents[0]?.fields, {
+    promptChars: prompt.length,
+    queryChars: 2,
+    recallMinPromptLength: 5,
+  });
+});
+
+test("user prompt submit allows short non-empty queries when the configured minimum is zero", async () => {
+  /** @type {string | null} */
+  let requestedUrl = null;
+
+  const output = await runUserPromptSubmit({
+    prompt: "hi",
+    runtime: {
+      baseUrl: "https://api.mem9.ai",
+      apiKey: "key-1",
+      agentId: "codex",
+      searchTimeoutMs: 15_000,
+      recallMinPromptLength: 0,
+    },
+    async search(url) {
+      requestedUrl = url;
+      return {
+        memories: [
+          { content: "Short prompts can still recall when configured." },
+        ],
+      };
+    },
+  });
+
+  assert.ok(requestedUrl);
+  const url = new URL(requestedUrl);
+  assert.equal(url.searchParams.get("q"), "hi");
+  assert.match(output, /Short prompts can still recall/);
+});
+
+test("user prompt submit entrypoint skips short prompts using runtime config from disk", async () => {
+  const tempRoot = createTempRoot();
+  const server = await createCountingServer();
+
+  try {
+    const runtime = createRuntimeLayout(tempRoot, "ready", server.origin);
+    writeJson(path.join(runtime.codexHome, "mem9", "config.json"), {
+      schemaVersion: 1,
+      enabled: true,
+      profileId: "default",
+      recallMinPromptLength: 6,
+    });
+
+    const result = await runNodeHook(USER_PROMPT_SUBMIT_ENTRY, {
+      cwd: runtime.cwd,
+      env: {
+        CODEX_HOME: runtime.codexHome,
+        MEM9_HOME: runtime.mem9Home,
+        PATH: process.env.PATH,
+      },
+      input: JSON.stringify({
+        cwd: runtime.cwd,
+        prompt: "hello",
+      }),
+    });
+
+    assert.equal(result.code, 0);
+    assert.equal(result.signal, null);
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "");
+    assert.equal(server.getRequestCount(), 0);
+  } finally {
+    await server.close();
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 for (const issueCode of NON_READY_ISSUE_CODES) {

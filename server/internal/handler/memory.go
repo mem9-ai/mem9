@@ -26,15 +26,16 @@ var (
 )
 
 type createMemoryRequest struct {
-	Content    string                  `json:"content,omitempty"`
-	MemoryType string                  `json:"memory_type,omitempty"`
-	AgentID    string                  `json:"agent_id,omitempty"`
-	Tags       []string                `json:"tags,omitempty"`
-	Metadata   json.RawMessage         `json:"metadata,omitempty"`
-	Messages   []service.IngestMessage `json:"messages,omitempty"`
-	SessionID  string                  `json:"session_id,omitempty"`
-	Mode       service.IngestMode      `json:"mode,omitempty"`
-	Sync       bool                    `json:"sync,omitempty"`
+	Content            string                  `json:"content,omitempty"`
+	MemoryType         string                  `json:"memory_type,omitempty"`
+	AgentID            string                  `json:"agent_id,omitempty"`
+	Tags               []string                `json:"tags,omitempty"`
+	Metadata           json.RawMessage         `json:"metadata,omitempty"`
+	Messages           []service.IngestMessage `json:"messages,omitempty"`
+	SessionID          string                  `json:"session_id,omitempty"`
+	Mode               service.IngestMode      `json:"mode,omitempty"`
+	Sync               bool                    `json:"sync,omitempty"`
+	DisableSessionSave bool                    `json:"disableSessionSave,omitempty"`
 }
 
 func isSyncIngestTimeout(ctx context.Context, err error) bool {
@@ -49,9 +50,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	auth := authInfo(r)
+	var chainAuth *domain.AuthInfo
 	var writeChainSource *domain.ChainSource
 	if auth.IsChain() {
 		var err error
+		chainAuth = auth
 		if len(auth.Chain.Nodes) > 0 {
 			writeChainSource = chainSource(auth, auth.Chain.Nodes[0])
 		}
@@ -84,10 +87,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	if hasMessages {
 		messages := append([]service.IngestMessage(nil), req.Messages...)
 		ingestReq := service.IngestRequest{
-			Messages:  messages,
-			SessionID: req.SessionID,
-			AgentID:   agentID,
-			Mode:      req.Mode,
+			Messages:           messages,
+			SessionID:          req.SessionID,
+			AgentID:            agentID,
+			Mode:               req.Mode,
+			DisableSessionSave: s.disableSessionSave || req.DisableSessionSave,
 		}
 
 		if req.Sync {
@@ -110,7 +114,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				}()
 			}
 
-			result, err := s.ingestMessages(syncCtx, auth, svc, ingestReq)
+			result, err := s.ingestMessages(syncCtx, auth, svc, ingestReq, chainAuth)
 			if err != nil {
 				if s.runtimeUsageEnabled() {
 					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
@@ -174,7 +178,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			go func(lease *runtimeusage.OperationLease) {
-				result, err := s.ingestMessages(context.Background(), auth, svc, ingestReq)
+				result, err := s.ingestMessages(context.Background(), auth, svc, ingestReq, chainAuth)
 				if err != nil {
 					if s.runtimeUsageEnabled() {
 						s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
@@ -318,6 +322,56 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				}
 			}()
 		}
+		routingTargets := chainRoutingTargets(chainAuth)
+		if len(routingTargets) > 0 && svc.ingest.HasLLM() {
+			result, err := s.createSmartContentWithRouting(r.Context(), chainAuth, svc, routingTargets, auth.AgentName, agentID, req.SessionID, content, tags, metadata)
+			if err != nil {
+				if s.runtimeUsageEnabled() {
+					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
+					finalized = true
+				}
+				slog.Error("sync routed memory create failed", "agent", agentID, "actor", auth.AgentName, "err", err)
+				s.handleError(r.Context(), w, err)
+				return
+			}
+			if result != nil && result.Status == "failed" {
+				if s.runtimeUsageEnabled() {
+					err := errors.New("content reconciliation failed")
+					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
+					finalized = true
+				}
+				respondError(w, http.StatusInternalServerError, "content reconciliation failed")
+				return
+			}
+			var written int64
+			var ids []string
+			if result != nil {
+				written = int64(result.MemoriesChanged)
+				ids = result.InsightIDs
+			}
+			if s.runtimeUsageEnabled() {
+				if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+					return s.runtimeUsage.AfterMemoryCreateSuccess(ctx, lease, runtimeusage.MemoryCreateResult{
+						MemoryIDs:       ids,
+						AgentName:       auth.AgentName,
+						ObjectsAffected: written,
+					})
+				}); err != nil {
+					s.logger.Error("runtime usage sync routed memory create finalization failed",
+						"operation_id", lease.OperationID,
+						"tenant_id", auth.TenantID,
+						"cluster_id", auth.ClusterID,
+						"err", err)
+					finalized = true
+					s.handleRuntimeUsageError(w, err)
+					return
+				}
+				finalized = true
+			}
+			go s.afterSuccessfulWrite(auth, svc, written)
+			respond(w, http.StatusOK, map[string]string{"status": "ok"})
+			return
+		}
 		// s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
 		mem, written, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
 		if err != nil {
@@ -364,8 +418,48 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		go func(auth *domain.AuthInfo, lease *runtimeusage.OperationLease, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage) {
+		routingTargets := chainRoutingTargets(chainAuth)
+		go func(auth, chainAuth *domain.AuthInfo, lease *runtimeusage.OperationLease, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage, routingTargets []service.RoutingTarget) {
 			// s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
+			if len(routingTargets) > 0 && svc.ingest.HasLLM() {
+				result, err := s.createSmartContentWithRouting(context.Background(), chainAuth, svc, routingTargets, agentName, actorAgentID, sessionID, content, tags, metadata)
+				if err != nil {
+					if s.runtimeUsageEnabled() {
+						s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
+					}
+					slog.Error("async routed memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
+					return
+				}
+				if result != nil && result.Status == "failed" {
+					if s.runtimeUsageEnabled() {
+						s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, errors.New("content reconciliation failed"))
+					}
+					slog.Error("async routed memory reconcile failed", "agent", actorAgentID, "actor", agentName)
+					return
+				}
+				var written int64
+				var ids []string
+				if result != nil {
+					written = int64(result.MemoriesChanged)
+					ids = result.InsightIDs
+				}
+				if s.runtimeUsageEnabled() {
+					if err := s.runtimeUsage.AfterMemoryCreateSuccess(context.Background(), lease, runtimeusage.MemoryCreateResult{
+						MemoryIDs:       ids,
+						AgentName:       auth.AgentName,
+						ObjectsAffected: written,
+					}); err != nil {
+						s.logger.Error("runtime usage async routed memory create finalization failed",
+							"operation_id", lease.OperationID,
+							"tenant_id", auth.TenantID,
+							"cluster_id", auth.ClusterID,
+							"err", err)
+						return
+					}
+				}
+				s.afterSuccessfulWrite(auth, svc, written)
+				return
+			}
 			mem, written, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
 			if err != nil {
 				if s.runtimeUsageEnabled() {
@@ -398,22 +492,24 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			s.afterSuccessfulWrite(auth, svc, int64(written))
-		}(auth, lease, auth.AgentName, agentID, req.SessionID, content, tags, metadata)
+		}(auth, chainAuth, lease, auth.AgentName, agentID, req.SessionID, content, tags, metadata, routingTargets)
 
 		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 	}
 }
 
-// ingestMessages runs the full ingest pipeline: BulkCreate → ExtractPhase1 → PatchTags + ReconcilePhase2.
+// ingestMessages runs the full ingest pipeline: optional BulkCreate → ExtractPhase1 → optional PatchTags + ReconcilePhase2.
 // TODO: wrap all database writes (BulkCreate, PatchTags, ReconcilePhase2) in a single transaction to guarantee atomicity.
-func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, req service.IngestRequest) (*service.IngestResult, error) {
+func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc resolvedSvc, req service.IngestRequest, chainAuth *domain.AuthInfo) (*service.IngestResult, error) {
 	start := time.Now()
 	var (
 		bulkCreateDuration    time.Duration
 		extractPhase1Duration time.Duration
 		patchTagsDuration     time.Duration
 		reconcileDuration     time.Duration
+		routeDuration         time.Duration
 		factsCount            int
+		routedChanged         int
 		status                = "ok"
 	)
 	defer func() {
@@ -426,6 +522,8 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 			"extract_phase1_ms", extractPhase1Duration.Milliseconds(),
 			"patch_tags_ms", patchTagsDuration.Milliseconds(),
 			"reconcile_phase2_ms", reconcileDuration.Milliseconds(),
+			"route_ms", routeDuration.Milliseconds(),
+			"routed_changed", routedChanged,
 			"total_ms", time.Since(start).Milliseconds(),
 		)
 	}()
@@ -434,18 +532,20 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	// This is the single sanitization point for the handler-driven pipeline (BulkCreate, ExtractPhase1, etc.).
 	req.Messages = service.StripInjectedContext(req.Messages)
 
-	// Session persistence is best-effort for both sync and async paths.
-	// sync=true guarantees only that reconcile (memory extraction) completed —
-	// raw session rows in /session-messages may be absent if BulkCreate fails.
-	bulkCreateStart := time.Now()
-	if err := svc.session.BulkCreate(ctx, auth.AgentName, req); err != nil {
-		slog.Error("session raw save failed",
-			"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
+	if !req.DisableSessionSave {
+		// Session persistence is best-effort for both sync and async paths.
+		// sync=true guarantees only that reconcile (memory extraction) completed —
+		// raw session rows in /session-messages may be absent if BulkCreate fails.
+		bulkCreateStart := time.Now()
+		if err := svc.session.BulkCreate(ctx, auth.AgentName, req); err != nil {
+			slog.Error("session raw save failed",
+				"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
+		}
+		bulkCreateDuration = time.Since(bulkCreateStart)
 	}
-	bulkCreateDuration = time.Since(bulkCreateStart)
 
 	extractPhase1Start := time.Now()
-	phase1, err := svc.ingest.ExtractPhase1(ctx, req.Messages)
+	phase1, err := svc.ingest.ExtractPhase1WithRouting(ctx, req.Messages, chainRoutingTargets(chainAuth))
 	extractPhase1Duration = time.Since(extractPhase1Start)
 	if err != nil {
 		status = "phase1_error"
@@ -458,26 +558,29 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	var reconcileResult *service.IngestResult
 	var reconcileErr error
 
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		patchTagsStart := time.Now()
-		defer func() {
-			patchTagsDuration = time.Since(patchTagsStart)
+	if !req.DisableSessionSave {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			patchTagsStart := time.Now()
+			defer func() {
+				patchTagsDuration = time.Since(patchTagsStart)
+			}()
+			for i, msg := range req.Messages {
+				tags := tagsAtIndex(phase1.MessageTags, i)
+				if len(tags) == 0 {
+					continue
+				}
+				hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content, msg.Seq)
+				if err := svc.session.PatchTags(ctx, req.SessionID, hash, tags); err != nil {
+					slog.Warn("session tag patch failed",
+						"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
+				}
+			}
 		}()
-		for i, msg := range req.Messages {
-			tags := tagsAtIndex(phase1.MessageTags, i)
-			if len(tags) == 0 {
-				continue
-			}
-			hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content, msg.Seq)
-			if err := svc.session.PatchTags(ctx, req.SessionID, hash, tags); err != nil {
-				slog.Warn("session tag patch failed",
-					"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
-			}
-		}
-	}()
+	}
 
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		reconcileStart := time.Now()
@@ -498,8 +601,62 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	if reconcileResult != nil {
 		status = reconcileResult.Status
 	}
+	if chainAuth != nil && len(phase1.Facts) > 0 {
+		routeStart := time.Now()
+		routed := s.reconcileRoutedChainFacts(ctx, chainAuth, req, phase1.Facts)
+		routeDuration = time.Since(routeStart)
+		routedChanged = routed.memoriesChanged
+		if reconcileResult == nil {
+			reconcileResult = &service.IngestResult{Status: "complete"}
+		}
+		reconcileResult.MemoriesChanged += routed.memoriesChanged
+		reconcileResult.InsightIDs = append(reconcileResult.InsightIDs, routed.insightIDs...)
+		reconcileResult.Warnings += routed.warnings
+		if reconcileResult.Status == "" {
+			reconcileResult.Status = "complete"
+		}
+	}
 
 	return reconcileResult, nil
+}
+
+func (s *Server) createSmartContentWithRouting(ctx context.Context, chainAuth *domain.AuthInfo, svc resolvedSvc, routingTargets []service.RoutingTarget, agentName, agentID, sessionID, content string, tags []string, metadata json.RawMessage) (*service.IngestResult, error) {
+	facts, err := svc.ingest.ExtractContentWithRouting(ctx, content, routingTargets)
+	if err != nil {
+		return nil, err
+	}
+	if len(facts) == 0 {
+		return &service.IngestResult{Status: "complete"}, nil
+	}
+	result, err := svc.ingest.ReconcilePhase2(ctx, agentName, agentID, sessionID, facts)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		result = &service.IngestResult{Status: "complete"}
+	}
+	if result.Status == "failed" {
+		return result, nil
+	}
+
+	patchWrites := 0
+	if len(tags) > 0 || len(metadata) > 0 {
+		for _, id := range result.InsightIDs {
+			if _, err := svc.memory.Update(ctx, agentID, id, "", tags, metadata, 0); err == nil {
+				patchWrites++
+			}
+		}
+		result.MemoriesChanged += patchWrites
+	}
+
+	routed := s.reconcileRoutedChainFacts(ctx, chainAuth, service.IngestRequest{AgentID: agentID, SessionID: sessionID}, facts)
+	result.MemoriesChanged += routed.memoriesChanged
+	result.InsightIDs = append(result.InsightIDs, routed.insightIDs...)
+	result.Warnings += routed.warnings
+	if result.Status == "" {
+		result.Status = "complete"
+	}
+	return result, nil
 }
 
 type listResponse struct {
@@ -538,8 +695,11 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		MemoryType: q.Get("memory_type"),
 		AgentID:    q.Get("agent_id"),
 		SessionID:  q.Get("session_id"),
+		SortBy:     q.Get("sort_by"),
+		SortDir:    q.Get("sort_dir"),
 		Limit:      limit,
 		Offset:     offset,
+		ScanAll:    parseBoolQuery(q.Get("scanAll")),
 	}
 	onlySession := filter.MemoryType == string(domain.TypeSession)
 
@@ -573,6 +733,8 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 			filter.MemoryType == string(domain.TypePinned) ||
 			filter.MemoryType == string(domain.TypeInsight)):
 			memories, total, err = s.singlePoolConfidenceRecallSearch(r.Context(), auth, svc, filter)
+		case onlySession:
+			memories, total, err = svc.session.List(r.Context(), filter)
 		case !onlySession:
 			memories, total, err = svc.memory.Search(r.Context(), filter)
 		}
@@ -657,6 +819,11 @@ func (s *Server) retrieveExternalContext(ctx context.Context, rawQuery string, q
 		return nil
 	}
 	return items
+}
+
+func parseBoolQuery(value string) bool {
+	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+	return err == nil && parsed
 }
 
 func normalizeRecallQuery(query string, now time.Time) string {
@@ -751,6 +918,12 @@ func (s *Server) getMemory(w http.ResponseWriter, r *http.Request) {
 
 	svc := s.resolveServices(auth)
 	mem, err := svc.memory.Get(r.Context(), id)
+	if errors.Is(err, domain.ErrNotFound) {
+		mem, err = svc.session.Get(r.Context(), id)
+		if errors.Is(err, domain.ErrNotSupported) {
+			err = domain.ErrNotFound
+		}
+	}
 	if err != nil {
 		s.handleError(r.Context(), w, err)
 		return
@@ -891,7 +1064,7 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	if auth.IsChain() {
-		target, err := s.findChainMemoryTarget(r.Context(), auth, id)
+		target, err := s.findChainDeleteTarget(r.Context(), auth, id)
 		if err != nil {
 			s.handleError(r.Context(), w, err)
 			return
@@ -911,6 +1084,9 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 			}()
 		}
 		deleted, err := target.svc.memory.Delete(r.Context(), id, auth.AgentName)
+		if errors.Is(err, domain.ErrNotFound) {
+			deleted, err = target.svc.session.Delete(r.Context(), id, auth.AgentName)
+		}
 		if err != nil {
 			if s.runtimeUsageEnabled() {
 				s.runtimeUsage.AfterMemoryDeleteFailure(context.Background(), lease, err)
@@ -961,6 +1137,12 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deleted, err := svc.memory.Delete(r.Context(), id, auth.AgentName)
+	if errors.Is(err, domain.ErrNotFound) {
+		deleted, err = svc.session.Delete(r.Context(), id, auth.AgentName)
+		if errors.Is(err, domain.ErrNotSupported) {
+			err = domain.ErrNotFound
+		}
+	}
 	if err != nil {
 		if s.runtimeUsageEnabled() {
 			s.runtimeUsage.AfterMemoryDeleteFailure(context.Background(), lease, err)
@@ -1035,6 +1217,16 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 				s.handleError(r.Context(), w, err)
 				return
 			}
+			sessionDeleted, sessionErr := group.target.svc.session.BulkDelete(r.Context(), group.ids, auth.AgentName)
+			if sessionErr != nil && !errors.Is(sessionErr, domain.ErrNotSupported) {
+				if s.runtimeUsageEnabled() {
+					s.runtimeUsage.AfterMemoryDeleteFailure(context.Background(), lease, sessionErr)
+					finalized = true
+				}
+				s.handleError(r.Context(), w, sessionErr)
+				return
+			}
+			groupDeleted += sessionDeleted
 			if s.runtimeUsageEnabled() {
 				if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
 					return s.runtimeUsage.AfterMemoryDeleteSuccess(ctx, lease, runtimeusage.MemoryDeleteResult{
@@ -1098,6 +1290,16 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 		s.handleError(r.Context(), w, err)
 		return
 	}
+	sessionDeleted, sessionErr := svc.session.BulkDelete(r.Context(), deleteIDs, auth.AgentName)
+	if sessionErr != nil && !errors.Is(sessionErr, domain.ErrNotSupported) {
+		if s.runtimeUsageEnabled() {
+			s.runtimeUsage.AfterMemoryDeleteFailure(context.Background(), lease, sessionErr)
+			finalized = true
+		}
+		s.handleError(r.Context(), w, sessionErr)
+		return
+	}
+	deleted += sessionDeleted
 	if s.runtimeUsageEnabled() {
 		if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
 			return s.runtimeUsage.AfterMemoryDeleteSuccess(ctx, lease, runtimeusage.MemoryDeleteResult{

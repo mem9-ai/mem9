@@ -33,6 +33,13 @@ type stubSessionRepo struct {
 	sessionRows    []*domain.Session
 	listSessionIDs []string
 	listLimit      int
+	getResult      *domain.Memory
+	getErr         error
+	listResults    []domain.Memory
+	listTotal      int
+	listFilter     domain.MemoryFilter
+	softDeleteID   string
+	bulkDeleteIDs  []string
 }
 
 func intPtr(v int) *int {
@@ -51,6 +58,25 @@ func (s *stubSessionRepo) PatchTags(_ context.Context, sessionID, contentHash st
 	s.patchedHash = contentHash
 	s.patchedTags = tags
 	return s.patchTagsErr
+}
+
+func (s *stubSessionRepo) GetByID(_ context.Context, _ string) (*domain.Memory, error) {
+	return s.getResult, s.getErr
+}
+
+func (s *stubSessionRepo) List(_ context.Context, f domain.MemoryFilter) ([]domain.Memory, int, error) {
+	s.listFilter = f
+	return append([]domain.Memory(nil), s.listResults...), s.listTotal, nil
+}
+
+func (s *stubSessionRepo) SoftDelete(_ context.Context, id, _ string) (int64, error) {
+	s.softDeleteID = id
+	return 1, nil
+}
+
+func (s *stubSessionRepo) BulkSoftDelete(_ context.Context, ids []string, _ string) (int64, error) {
+	s.bulkDeleteIDs = append([]string(nil), ids...)
+	return int64(len(ids)), nil
 }
 
 func (s *stubSessionRepo) AutoVectorSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
@@ -284,6 +310,45 @@ func TestSessionService_Search_defaultLimit(t *testing.T) {
 	}
 }
 
+func TestSessionService_ListDelegatesToRepo(t *testing.T) {
+	repo := &stubSessionRepo{
+		listResults: []domain.Memory{{ID: "s-1", MemoryType: domain.TypeSession}},
+		listTotal:   3,
+	}
+	svc := newTestSessionService(repo)
+
+	results, total, err := svc.List(context.Background(), domain.MemoryFilter{
+		MemoryType: "session",
+		Limit:      10,
+		Offset:     20,
+	})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if total != 3 || len(results) != 1 || results[0].ID != "s-1" {
+		t.Fatalf("results=%+v total=%d, want s-1 total 3", results, total)
+	}
+	if repo.listFilter.Limit != 10 || repo.listFilter.Offset != 20 {
+		t.Fatalf("repo list filter = %+v", repo.listFilter)
+	}
+}
+
+func TestSessionService_BulkDeleteDeduplicatesIDs(t *testing.T) {
+	repo := &stubSessionRepo{}
+	svc := newTestSessionService(repo)
+
+	deleted, err := svc.BulkDelete(context.Background(), []string{"s-1", "s-1", "", "s-2"}, "agent")
+	if err != nil {
+		t.Fatalf("BulkDelete: %v", err)
+	}
+	if deleted != 2 {
+		t.Fatalf("deleted = %d, want 2", deleted)
+	}
+	if len(repo.bulkDeleteIDs) != 2 || repo.bulkDeleteIDs[0] != "s-1" || repo.bulkDeleteIDs[1] != "s-2" {
+		t.Fatalf("bulk delete ids = %+v", repo.bulkDeleteIDs)
+	}
+}
+
 func TestSessionService_SearchCandidates_ExpandsAdjacentTurns(t *testing.T) {
 	now := time.Now()
 	repo := &stubSessionRepo{
@@ -368,6 +433,18 @@ func (c *capturingSessionRepo) BulkCreate(ctx context.Context, s []*domain.Sessi
 }
 func (c *capturingSessionRepo) PatchTags(ctx context.Context, sid, hash string, tags []string) error {
 	return c.stub.PatchTags(ctx, sid, hash, tags)
+}
+func (c *capturingSessionRepo) GetByID(ctx context.Context, id string) (*domain.Memory, error) {
+	return c.stub.GetByID(ctx, id)
+}
+func (c *capturingSessionRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, int, error) {
+	return c.stub.List(ctx, f)
+}
+func (c *capturingSessionRepo) SoftDelete(ctx context.Context, id, agentName string) (int64, error) {
+	return c.stub.SoftDelete(ctx, id, agentName)
+}
+func (c *capturingSessionRepo) BulkSoftDelete(ctx context.Context, ids []string, agentName string) (int64, error) {
+	return c.stub.BulkSoftDelete(ctx, ids, agentName)
 }
 func (c *capturingSessionRepo) AutoVectorSearch(ctx context.Context, q string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
 	*c.capturedFilter = f

@@ -66,7 +66,7 @@ node ./scripts/setup.mjs inspect
    Do not jump straight to `scope apply`.
    `scope apply` only runs after the user has chosen a profile and that profile already has an API key.
 4. Keep the default flow global-first.
-   Apply project scope only when the user explicitly asks for a repo-local profile or timeout override.
+   Apply project scope only when the user explicitly asks for a repo-local profile, timeout, or recall prompt-length override.
    Remote release-check settings live in user scope.
 5. When the user wants mem9 to create a new API key, run:
 
@@ -105,6 +105,7 @@ node ./scripts/setup.mjs scope apply \
   --profile <profile-id> \
   --default-timeout-ms <ms> \
   --search-timeout-ms <ms> \
+  --recall-min-prompt-length <chars> \
   --update-check enabled \
   --update-check-interval-hours <hours>
 ```
@@ -117,7 +118,8 @@ node ./scripts/setup.mjs scope apply \
   --scope project \
   --profile <profile-id> \
   --default-timeout-ms <ms> \
-  --search-timeout-ms <ms>
+  --search-timeout-ms <ms> \
+  --recall-min-prompt-length <chars>
 ```
 
 ```bash
@@ -125,7 +127,7 @@ set -euo pipefail
 node ./scripts/setup.mjs scope clear --scope project
 ```
 
-Project scope keeps `profileId`, `defaultTimeoutMs`, and `searchTimeoutMs`.
+Project scope keeps `profileId`, `defaultTimeoutMs`, `searchTimeoutMs`, and `recallMinPromptLength`.
 User scope also owns `updateCheck.enabled` and `updateCheck.intervalHours`.
 
 Common flags:
@@ -143,11 +145,13 @@ Common flags:
 - `--scope user|project`
 - `--default-timeout-ms <ms>`
 - `--search-timeout-ms <ms>`
+- `--recall-min-prompt-length <chars>`
 - `--update-check enabled|disabled`
 - `--update-check-interval-hours <hours>`
 - `--cwd <repo-root>`
 
 `--update-check` flags apply to `scope apply --scope user`.
+`--recall-min-prompt-length` defaults to `5`; use `0` to recall on every non-empty stripped user prompt.
 Most mem9 plugin releases take effect after a Codex restart. Migration releases may ask for `$mem9:setup` once after restart.
 
 `scope apply` and `scope clear` install or repair the managed mem9 runtime in `$CODEX_HOME`.

@@ -75,6 +75,7 @@ type SpaceChainRepo interface {
 
 	ListNodes(ctx context.Context, chainID string) ([]domain.SpaceChainNode, error)
 	ReplaceNodes(ctx context.Context, chainID string, nodes []domain.SpaceChainNode) error
+	UpdateNodeRoutingPolicy(ctx context.Context, chainID, nodeID string, enabled bool, prompt string) (*domain.SpaceChainNode, error)
 	RemoveNodeByExternalSpaceID(ctx context.Context, externalSpaceID string) error
 
 	KeyStatus(ctx context.Context, key string) (domain.KeyStatus, error)
@@ -104,6 +105,10 @@ type UTMRepo interface {
 type SessionRepo interface {
 	BulkCreate(ctx context.Context, sessions []*domain.Session) error
 	PatchTags(ctx context.Context, sessionID, contentHash string, tags []string) error
+	GetByID(ctx context.Context, id string) (*domain.Memory, error)
+	List(ctx context.Context, f domain.MemoryFilter) (memories []domain.Memory, total int, err error)
+	SoftDelete(ctx context.Context, id, agentName string) (int64, error)
+	BulkSoftDelete(ctx context.Context, ids []string, agentName string) (int64, error)
 	AutoVectorSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
 	VectorSearch(ctx context.Context, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error)
 	FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error)

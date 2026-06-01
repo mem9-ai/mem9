@@ -8,9 +8,11 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
@@ -70,6 +72,124 @@ func classifyConnError(blacklist map[string]struct{}, clusterID string, err erro
 		return "cluster_quota_exhausted"
 	}
 	return "connection_error"
+}
+
+type authResolutionError struct {
+	status  int
+	message string
+	err     error
+}
+
+func (e *authResolutionError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.err != nil {
+		return e.err.Error()
+	}
+	return e.message
+}
+
+func (e *authResolutionError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func resolveSpaceChainAuthNodes(
+	ctx context.Context,
+	chainID string,
+	nodes []domain.SpaceChainNode,
+	tenantRepo repository.TenantRepo,
+	pool tenantDBGetter,
+	enc encrypt.Encryptor,
+	clusterBlacklist map[string]struct{},
+) ([]domain.ChainAuthNode, time.Duration, error) {
+	resolved := make([]domain.ChainAuthNode, len(nodes))
+	var totalPoolNanos atomic.Int64
+	group, groupCtx := errgroup.WithContext(ctx)
+
+	for i, node := range nodes {
+		i, node := i, node
+		group.Go(func() error {
+			t, err := tenantRepo.GetByID(groupCtx, node.TenantID)
+			if err != nil || t == nil || t.DeletedAt != nil || t.Status != domain.TenantActive {
+				slog.ErrorContext(groupCtx, "space chain node tenant unavailable",
+					"chain_id", chainID,
+					"node_position", node.Position,
+					"tenant_id", node.TenantID,
+					"err", err)
+				return &authResolutionError{
+					status:  http.StatusServiceUnavailable,
+					message: "chain node tenant unavailable",
+					err:     err,
+				}
+			}
+
+			decryptedPassword, err := enc.Decrypt(groupCtx, t.DBPassword)
+			if err != nil {
+				return &authResolutionError{
+					status:  http.StatusInternalServerError,
+					message: "failed to decrypt tenant credentials",
+					err:     err,
+				}
+			}
+			t.DBPassword = decryptedPassword
+
+			poolStart := time.Now()
+			db, err := pool.Get(groupCtx, t.ID, t.DSNForBackend(pool.Backend()))
+			poolDuration := time.Since(poolStart)
+			totalPoolNanos.Add(int64(poolDuration))
+			if err != nil {
+				slog.ErrorContext(groupCtx, "cannot connect to space chain node database",
+					"chain_id", chainID,
+					"node_position", node.Position,
+					"tenant_id", t.ID,
+					"cluster_id", t.ClusterID,
+					"duration_ms", poolDuration.Milliseconds(),
+					"classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err),
+					"err", err)
+				switch {
+				case errors.Is(err, domain.ErrSchemaIncompatible):
+					return &authResolutionError{
+						status:  http.StatusConflict,
+						message: err.Error(),
+						err:     err,
+					}
+				case isBlacklistedSpendLimitError(clusterBlacklist, t.ClusterID, err):
+					return &authResolutionError{
+						status:  http.StatusTooManyRequests,
+						message: "cluster quota exhausted",
+						err:     err,
+					}
+				default:
+					return &authResolutionError{
+						status:  http.StatusServiceUnavailable,
+						message: "chain node tenant unavailable",
+						err:     err,
+					}
+				}
+			}
+
+			resolved[i] = domain.ChainAuthNode{
+				SpaceChainNode: node,
+				TenantDB:       db,
+				ClusterID:      t.ClusterID,
+			}
+			return nil
+		})
+	}
+
+	if err := group.Wait(); err != nil {
+		return nil, time.Duration(totalPoolNanos.Load()), err
+	}
+	return resolved, time.Duration(totalPoolNanos.Load()), nil
+}
+
+func isBlacklistedSpendLimitError(blacklist map[string]struct{}, clusterID string, err error) bool {
+	_, blocked := blacklist[clusterID]
+	return blocked && isSpendLimitError(err)
 }
 
 // ResolveTenant is middleware that extracts {tenantID} from the URL path,
@@ -259,56 +379,25 @@ func ResolveApiKey(
 					info.AgentName = agentID
 				}
 
-				var totalPoolDuration time.Duration
-				for _, node := range chain.Nodes {
-					t, err := tenantRepo.GetByID(r.Context(), node.TenantID)
-					if err != nil || t.DeletedAt != nil || t.Status != domain.TenantActive {
-						slog.ErrorContext(r.Context(), "space chain node tenant unavailable",
-							"chain_id", chain.ID,
-							"node_position", node.Position,
-							"tenant_id", node.TenantID,
-							"err", err)
+				nodes, totalPoolDuration, err := resolveSpaceChainAuthNodes(
+					r.Context(),
+					chain.ID,
+					chain.Nodes,
+					tenantRepo,
+					pool,
+					enc,
+					clusterBlacklist,
+				)
+				if err != nil {
+					var authErr *authResolutionError
+					if errors.As(err, &authErr) {
+						writeError(w, authErr.status, authErr.message)
+					} else {
 						writeError(w, http.StatusServiceUnavailable, "chain node tenant unavailable")
-						return
 					}
-
-					decryptedPassword, err := enc.Decrypt(r.Context(), t.DBPassword)
-					if err != nil {
-						writeError(w, http.StatusInternalServerError, "failed to decrypt tenant credentials")
-						return
-					}
-					t.DBPassword = decryptedPassword
-
-					poolStart := time.Now()
-					db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
-					poolDuration := time.Since(poolStart)
-					totalPoolDuration += poolDuration
-					if err != nil {
-						slog.ErrorContext(r.Context(), "cannot connect to space chain node database",
-							"chain_id", chain.ID,
-							"node_position", node.Position,
-							"tenant_id", t.ID,
-							"cluster_id", t.ClusterID,
-							"duration_ms", poolDuration.Milliseconds(),
-							"classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err),
-							"err", err)
-						if errors.Is(err, domain.ErrSchemaIncompatible) {
-							writeError(w, http.StatusConflict, err.Error())
-							return
-						}
-						if _, blocked := clusterBlacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
-							writeError(w, http.StatusTooManyRequests, "cluster quota exhausted")
-							return
-						}
-						writeError(w, http.StatusServiceUnavailable, "chain node tenant unavailable")
-						return
-					}
-					info.Chain.Nodes = append(info.Chain.Nodes, domain.ChainAuthNode{
-						SpaceChainNode: node,
-						TenantDB:       db,
-						ClusterID:      t.ClusterID,
-					})
+					return
 				}
+				info.Chain.Nodes = nodes
 
 				slog.InfoContext(r.Context(), "tenant auth resolved",
 					"auth_mode", "space_chain_key",

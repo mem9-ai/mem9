@@ -47,6 +47,7 @@ type Server struct {
 	startedAt            time.Time
 	svcCache             sync.Map
 	chainRecallStopScore float64
+	disableSessionSave   bool
 }
 
 // NewServer creates a new HTTP handler server.
@@ -74,7 +75,7 @@ func NewServer(
 		dbBackend:            dbBackend,
 		logger:               logger,
 		startedAt:            time.Now().UTC(),
-		chainRecallStopScore: 0.5,
+		chainRecallStopScore: 0.8,
 	}
 }
 
@@ -103,6 +104,11 @@ func (s *Server) WithActivityTracker(tracker *service.ActivityTracker) *Server {
 
 func (s *Server) WithExternalContextProvider(provider service.ExternalContextProvider) *Server {
 	s.externalContext = provider
+	return s
+}
+
+func (s *Server) WithDisableSessionSave(disabled bool) *Server {
+	s.disableSessionSave = disabled
 	return s
 }
 
@@ -210,6 +216,7 @@ func (s *Server) Router(
 		r.Delete("/", s.deleteSpaceChain)
 		r.Get("/nodes", s.listSpaceChainNodes)
 		r.Put("/nodes", s.replaceSpaceChainNodes)
+		r.Put("/nodes/{nodeID}/routing-policy", s.updateSpaceChainNodeRoutingPolicy)
 		r.Get("/bindings", s.listSpaceChainBindings)
 		r.Post("/bindings", s.createSpaceChainBinding)
 		r.Patch("/bindings/{bindingID}", s.disableSpaceChainBinding)

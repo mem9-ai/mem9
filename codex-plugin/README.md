@@ -7,6 +7,8 @@ After setup, it does two things automatically:
 - recalls relevant memories before each user prompt
 - saves a recent `user` / `assistant` window when Codex stops
 
+Automatic recall uses `recallMinPromptLength`, which defaults to `5`, after stripping already-injected memory context from the current prompt.
+
 The plugin exposes:
 
 - `$mem9:setup`
@@ -39,7 +41,7 @@ codex plugin marketplace add mem9-ai/mem9
    $mem9:setup
    ```
 
-5. If one repository needs a different profile or timeout, rerun `$mem9:setup` in that repository and apply project scope.
+5. If one repository needs a different profile, timeout, or recall prompt-length threshold, see [Profiles and Project Scope](#profiles-and-project-scope).
 6. When you want an on-demand recall or an explicit store, run:
 
    ```text
@@ -78,6 +80,83 @@ codex
 
 Use the same `CODEX_HOME` and `MEM9_HOME` in trusted-shell commands that save or update profile keys. `$mem9:setup` keeps API key entry out of the Codex TUI and writes the key to `$MEM9_HOME/.credentials.json`.
 
+## Profiles and Project Scope
+
+Use `$mem9:setup` for profile setup. It creates or selects mem9 profiles, saves profile keys, and applies the selected profile globally or for the current repository.
+
+### Set the default profile
+
+1. Run `$mem9:setup`.
+2. Choose `create-new` to create a mem9 API key, or choose `use-existing` to reuse a saved profile.
+3. Choose `user scope`.
+
+This selects the default profile Codex uses across repositories.
+
+### Use a different profile in one repository
+
+1. Open Codex from that repository.
+2. Run `$mem9:setup`.
+3. Choose `create-new` or `use-existing` for the repository profile.
+4. Choose `project scope`.
+
+Project scope can override:
+
+- `profileId`
+- `defaultTimeoutMs`
+- `searchTimeoutMs`
+- `recallMinPromptLength`
+
+### Return a repository to the default profile
+
+1. Open Codex from that repository.
+2. Run `$mem9:setup`.
+3. Choose `clear project scope`.
+
+The repository will use the user-scope default profile again.
+
+Use the same `CODEX_HOME` and `MEM9_HOME` when starting Codex and when saving profile keys from a trusted shell. With the defaults above, Codex reads integration files from `~/.codex` and mem9 reads shared profiles from `~/.mem9`.
+
+### What setup writes
+
+Manual edits are mainly for recovery or automation. The recommended path is still `$mem9:setup`.
+
+Saved profiles are written to `$MEM9_HOME/.credentials.json`:
+
+The keys under `profiles` are profile IDs. For example, `"profileId": "work"` selects the `profiles.work` entry.
+
+```json
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "default": {
+      "label": "Personal",
+      "baseUrl": "https://api.mem9.ai",
+      "apiKey": "..."
+    },
+    "work": {
+      "label": "Work",
+      "baseUrl": "https://api.mem9.ai",
+      "apiKey": "..."
+    }
+  }
+}
+```
+
+The user-scope default is written to `$CODEX_HOME/mem9/config.json`.
+
+A project override is written to `<project>/.codex/mem9/config.json`. It only needs the fields that differ from the user-scope default:
+
+```json
+{
+  "schemaVersion": 1,
+  "profileId": "work",
+  "searchTimeoutMs": 15000,
+  "recallMinPromptLength": 5
+}
+```
+
+Remote update-check settings stay in user scope. Project scope only controls the active profile and request tuning for that repository.
+
 ## Daily Commands
 
 ### `$mem9:setup`
@@ -92,7 +171,7 @@ What it does:
 - repairs the Codex hooks feature flag, `$CODEX_HOME/hooks.json`, and the managed hook shims
 - keeps API key entry out of the Codex TUI
 
-Project scope keeps profile and timeout overrides.
+Project scope keeps profile, timeout, and recall prompt-length overrides.
 User scope also owns `updateCheck.enabled` and `updateCheck.intervalHours`.
 
 ### `$mem9:cleanup`
@@ -217,7 +296,7 @@ Common issues:
 - If `$mem9:setup` returns `no matches` after installing from `/plugins`, restart Codex or open a fresh Codex session. Codex loads plugin skills when the session starts.
 - If `inspect` reports `missing_install_metadata` before setup finishes, continue with `$mem9:setup`. `scope apply` writes `$CODEX_HOME/mem9/install.json`.
 - If `SessionStart` says mem9 is not configured, run `$mem9:setup`.
-- If a repository needs a different profile, timeout, or a cleared local override, rerun `$mem9:setup` in that repository and apply or clear project scope.
+- If a repository needs a different profile, timeout, recall prompt-length threshold, or a cleared local override, rerun `$mem9:setup` in that repository and apply or clear project scope.
 - If you want to remove the managed Codex files before reinstalling or resetting mem9, run `$mem9:cleanup`.
 - If the selected profile is missing, run `$mem9:setup` to create or repair global profiles.
 - If the selected profile is missing an API key, run `$mem9:setup` and choose `create-new`, or add the profile manually in `$MEM9_HOME/.credentials.json` and rerun `$mem9:setup`, then choose `use-existing`.
@@ -289,6 +368,7 @@ Global default config:
   "profileId": "default",
   "defaultTimeoutMs": 8000,
   "searchTimeoutMs": 15000,
+  "recallMinPromptLength": 5,
   "updateCheck": {
     "enabled": true,
     "intervalHours": 24
@@ -301,11 +381,13 @@ Project override example:
 ```json
 {
   "schemaVersion": 1,
-  "profileId": "work"
+  "profileId": "work",
+  "recallMinPromptLength": 5
 }
 ```
 
 Remote update-check settings stay in the global config.
+Set `recallMinPromptLength` to `0` to recall on every non-empty stripped user prompt.
 
 ### Environment Overrides
 

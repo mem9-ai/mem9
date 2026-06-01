@@ -6,6 +6,7 @@ import test from "node:test";
 import { buildSessionStartMessage } from "../hooks/session-start.mjs";
 import {
   DEFAULT_AGENT_ID,
+  DEFAULT_RECALL_MIN_PROMPT_LENGTH,
   DEFAULT_REQUEST_TIMEOUT_MS,
   DEFAULT_SEARCH_TIMEOUT_MS,
   loadRuntimeFromDisk,
@@ -223,11 +224,13 @@ test("project override resolves fields by precedence", () => {
       profileId: "default",
       defaultTimeoutMs: 8_100,
       searchTimeoutMs: 15_100,
+      recallMinPromptLength: 6,
     },
     projectConfig: {
       schemaVersion: 1,
       profileId: "work",
       searchTimeoutMs: 16_200,
+      recallMinPromptLength: 3,
     },
     credentials: DEFAULT_CREDENTIALS,
     installMetadata: DEFAULT_INSTALL,
@@ -240,11 +243,13 @@ test("project override resolves fields by precedence", () => {
       profileId: "default",
       defaultTimeoutMs: 8_100,
       searchTimeoutMs: 15_100,
+      recallMinPromptLength: 6,
     },
     projectConfig: {
       schemaVersion: 1,
       profileId: "work",
       searchTimeoutMs: 16_200,
+      recallMinPromptLength: 3,
     },
     credentials: DEFAULT_CREDENTIALS,
     installMetadata: DEFAULT_INSTALL,
@@ -263,6 +268,7 @@ test("project override resolves fields by precedence", () => {
   assert.equal(runtime.apiKey, "project-key");
   assert.equal(runtime.defaultTimeoutMs, 8_100);
   assert.equal(runtime.searchTimeoutMs, 16_200);
+  assert.equal(runtime.recallMinPromptLength, 3);
   assert.equal(runtime.updateCheck.enabled, true);
   assert.equal(runtime.updateCheck.intervalHours, 24);
 });
@@ -321,6 +327,7 @@ test("a project override can be ready without a global config file", () => {
       schemaVersion: 1,
       profileId: "work",
       defaultTimeoutMs: 8_250,
+      recallMinPromptLength: 0,
     },
     credentials: DEFAULT_CREDENTIALS,
     installMetadata: DEFAULT_INSTALL,
@@ -332,6 +339,7 @@ test("a project override can be ready without a global config file", () => {
   assert.equal(runtime.profileId, "work");
   assert.equal(runtime.baseUrl, "https://work.mem9.ai");
   assert.equal(runtime.defaultTimeoutMs, 8_250);
+  assert.equal(runtime.recallMinPromptLength, 0);
 });
 
 test("plugin disabled via config.toml returns plugin_disabled", () => {
@@ -746,6 +754,7 @@ test("env overrides still replace api url and api key", () => {
   assert.equal(runtime.agentId, DEFAULT_AGENT_ID);
   assert.equal(runtime.defaultTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS);
   assert.equal(runtime.searchTimeoutMs, DEFAULT_SEARCH_TIMEOUT_MS);
+  assert.equal(runtime.recallMinPromptLength, DEFAULT_RECALL_MIN_PROMPT_LENGTH);
   assert.equal(runtime.updateCheck.enabled, true);
   assert.equal(runtime.updateCheck.intervalHours, 24);
 });

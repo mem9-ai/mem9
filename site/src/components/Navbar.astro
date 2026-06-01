@@ -91,6 +91,7 @@ const isActivePath = (path: string): boolean => currentPath === path;
           title={nav.github}
           data-i18n-attr="aria-label:nav.github;title:nav.github"
         >
+          <span class="nav-github-label">GitHub</span>
           <svg class="nav-github-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path
               fill="currentColor"
@@ -101,6 +102,14 @@ const isActivePath = (path: string): boolean => currentPath === path;
       </div>
 
       <div class="nav-actions">
+        <a
+          href="https://mem9.ai/console"
+          class="nav-login-link"
+          data-i18n="nav.login"
+        >
+          {nav.login}
+        </a>
+
         <div class="menu-shell" data-menu-shell="language" data-open="false">
           <button
             type="button"
@@ -424,6 +433,7 @@ const isActivePath = (path: string): boolean => currentPath === path;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 0.5rem;
     color: var(--text-soft);
     transition: color 0.2s ease;
   }
@@ -439,10 +449,49 @@ const isActivePath = (path: string): boolean => currentPath === path;
     display: block;
   }
 
+  .nav-github-label {
+    font-size: 0.95rem;
+    line-height: 1;
+  }
+
   .nav-actions {
     display: flex;
     align-items: center;
     gap: 0.7rem;
+  }
+
+  .nav-login-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 5.4rem;
+    height: 2.55rem;
+    padding: 0 1.15rem;
+    border: 1px solid var(--text);
+    border-radius: 999px;
+    background: var(--text);
+    color: var(--bg-deep);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+    font-size: 0.93rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    transition:
+      transform 0.2s ease,
+      background-color 0.2s ease,
+      border-color 0.2s ease,
+      box-shadow 0.2s ease,
+      color 0.2s ease;
+  }
+
+  .nav-login-link:hover,
+  .nav-login-link:focus-visible {
+    transform: translateY(-1px);
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg-deep);
+    opacity: 1;
+    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.18);
   }
 
   .menu-shell {
@@ -556,6 +605,22 @@ const isActivePath = (path: string): boolean => currentPath === path;
       font-size: 0.84rem;
     }
 
+    .nav-actions {
+      gap: 0.45rem;
+    }
+
+    .nav-login-link {
+      min-width: 0;
+      height: 2.35rem;
+      padding: 0 0.9rem;
+      font-size: 0.84rem;
+    }
+
+    .icon-button {
+      width: 2.35rem;
+      height: 2.35rem;
+    }
+
     .language-menu {
       min-width: min(18rem, calc(100vw - 2rem));
       max-height: min(50vh, 16rem);
@@ -566,6 +631,19 @@ const isActivePath = (path: string): boolean => currentPath === path;
     .language-menu .menu-option {
       min-height: 3rem;
       white-space: normal;
+    }
+  }
+
+  @media (max-width: 460px) {
+    .nav-links .nav-docs-link,
+    .nav-links .nav-api-link {
+      display: none;
+    }
+  }
+
+  @media (max-width: 360px) {
+    .nav-github-label {
+      display: none;
     }
   }
 </style>

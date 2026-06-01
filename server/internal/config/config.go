@@ -37,6 +37,10 @@ type Config struct {
 	LLMTemperature float64
 	IngestMode     string
 
+	// DisableSessionSave skips raw session row persistence for message ingest.
+	// Smart ingest still extracts and reconciles facts into insight memories.
+	DisableSessionSave bool
+
 	TiDBZeroEnabled          bool
 	TiDBZeroAPIURL           string
 	TenantPoolMaxIdle        int
@@ -187,6 +191,7 @@ func Load() (*Config, error) {
 		LLMModel:                    envOr("MNEMO_LLM_MODEL", "gpt-4o-mini"),
 		LLMTemperature:              envFloat("MNEMO_LLM_TEMPERATURE", 0.1),
 		IngestMode:                  envOr("MNEMO_INGEST_MODE", "smart"),
+		DisableSessionSave:          envBool("MNEMO_DISABLE_SESSION_SAVE", false),
 		TiDBZeroEnabled:             envBool("MNEMO_TIDB_ZERO_ENABLED", true),
 		TiDBZeroAPIURL:              envOr("MNEMO_TIDB_ZERO_API_URL", "https://zero.tidbapi.com/v1alpha1"),
 		TiDBCloudAPIURL:             envOr("MNEMO_TIDBCLOUD_API_URL", "https://serverless.tidbapi.com"),
@@ -196,7 +201,7 @@ func Load() (*Config, error) {
 		TenantPoolConnectTimeout:    envDuration("MNEMO_TENANT_POOL_CONNECT_TIMEOUT", 3*time.Second),
 		TenantPoolIdleTimeout:       envDuration("MNEMO_TENANT_POOL_IDLE_TIMEOUT", 10*time.Minute),
 		TenantPoolTotalLimit:        envInt("MNEMO_TENANT_POOL_TOTAL_LIMIT", 200),
-		ChainRecallStopScore:        envFloat("MNEMO_CHAIN_RECALL_STOP_SCORE", 0.5),
+		ChainRecallStopScore:        envFloat("MNEMO_CHAIN_RECALL_STOP_SCORE", 0.8),
 		UploadDir:                   envOr("MNEMO_UPLOAD_DIR", "./uploads"),
 		FTSEnabled:                  envBool("MNEMO_FTS_ENABLED", false),
 		DataHubMCPEnabled:           dataHubMCPEnabled,

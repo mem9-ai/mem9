@@ -13,6 +13,7 @@ import {
 export const DEFAULT_AGENT_ID = "codex";
 export const DEFAULT_REQUEST_TIMEOUT_MS = 8_000;
 export const DEFAULT_SEARCH_TIMEOUT_MS = 15_000;
+export const DEFAULT_RECALL_MIN_PROMPT_LENGTH = 5;
 
 const DEFAULT_API_URL = "https://api.mem9.ai";
 const DEFAULT_PLUGIN_ID = "mem9@mem9-ai";
@@ -84,6 +85,7 @@ const PLUGINS_CACHE_DIR = path.join("plugins", "cache");
  *   profileId?: string,
  *   defaultTimeoutMs?: number,
  *   searchTimeoutMs?: number,
+ *   recallMinPromptLength?: number,
  *   updateCheck?: UpdateCheckConfig,
  * }} ScopeConfig
  */
@@ -98,6 +100,7 @@ const PLUGINS_CACHE_DIR = path.join("plugins", "cache");
  *   agentId: string,
  *   defaultTimeoutMs: number,
  *   searchTimeoutMs: number,
+ *   recallMinPromptLength: number,
  *   updateCheck: { enabled: boolean, intervalHours: number },
  * }} RuntimeConfig
  */
@@ -310,6 +313,34 @@ function resolveScopedTimeout(projectValue, globalValue, fallback) {
   return fallback;
 }
 
+function resolveScopedNonNegativeInteger(projectValue, globalValue, fallback) {
+  if (
+    typeof projectValue === "number"
+    && Number.isFinite(projectValue)
+    && projectValue >= 0
+  ) {
+    return Math.floor(projectValue);
+  }
+
+  if (
+    typeof globalValue === "number"
+    && Number.isFinite(globalValue)
+    && globalValue >= 0
+  ) {
+    return Math.floor(globalValue);
+  }
+
+  return fallback;
+}
+
+function normalizeNonNegativeInteger(value, fallback) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return fallback;
+  }
+
+  return Math.floor(value);
+}
+
 function resolveScopedEnabled(globalConfig, projectConfig) {
   if (projectConfig != null) {
     return projectConfig.enabled !== false;
@@ -336,6 +367,11 @@ function buildEffectiveScopeConfig(globalConfig, projectConfig) {
       projectConfig?.searchTimeoutMs,
       globalConfig?.searchTimeoutMs,
       DEFAULT_SEARCH_TIMEOUT_MS,
+    ),
+    recallMinPromptLength: resolveScopedNonNegativeInteger(
+      projectConfig?.recallMinPromptLength,
+      globalConfig?.recallMinPromptLength,
+      DEFAULT_RECALL_MIN_PROMPT_LENGTH,
     ),
     updateCheck: normalizeUpdateCheckConfig(globalConfig?.updateCheck),
   };
@@ -650,6 +686,10 @@ export function resolveRuntimeConfig(input) {
     searchTimeoutMs: normalizeTimeoutMs(
       config.searchTimeoutMs,
       DEFAULT_SEARCH_TIMEOUT_MS,
+    ),
+    recallMinPromptLength: normalizeNonNegativeInteger(
+      config.recallMinPromptLength,
+      DEFAULT_RECALL_MIN_PROMPT_LENGTH,
     ),
     updateCheck: normalizeUpdateCheckConfig(config.updateCheck),
   };

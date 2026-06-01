@@ -111,6 +111,18 @@ func (stubSessionRepo) BulkCreate(_ context.Context, _ []*domain.Session) error 
 func (stubSessionRepo) PatchTags(_ context.Context, _, _ string, _ []string) error {
 	return nil
 }
+func (stubSessionRepo) GetByID(_ context.Context, _ string) (*domain.Memory, error) {
+	return nil, fmt.Errorf("session memory: %w", domain.ErrNotSupported)
+}
+func (stubSessionRepo) List(_ context.Context, _ domain.MemoryFilter) ([]domain.Memory, int, error) {
+	return nil, 0, fmt.Errorf("session memories: %w", domain.ErrNotSupported)
+}
+func (stubSessionRepo) SoftDelete(_ context.Context, _, _ string) (int64, error) {
+	return 0, fmt.Errorf("session memory delete: %w", domain.ErrNotSupported)
+}
+func (stubSessionRepo) BulkSoftDelete(_ context.Context, _ []string, _ string) (int64, error) {
+	return 0, fmt.Errorf("session memory batch delete: %w", domain.ErrNotSupported)
+}
 func (stubSessionRepo) AutoVectorSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
 	return nil, domain.ErrAutoVectorSearchSkipped
 }

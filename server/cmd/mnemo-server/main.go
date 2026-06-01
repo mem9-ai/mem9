@@ -273,7 +273,8 @@ func main() {
 		WithMetering(meteringWriter).
 		WithRuntimeUsage(runtimeUsageManager).
 		WithActivityTracker(activityTracker).
-		WithExternalContextProvider(externalContext)
+		WithExternalContextProvider(externalContext).
+		WithDisableSessionSave(cfg.DisableSessionSave)
 	router := srv.Router(tenantMW, rateMW, apiKeyMW)
 
 	httpSrv := &http.Server{

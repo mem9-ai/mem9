@@ -102,6 +102,95 @@ func (r *SessionRepo) PatchTags(ctx context.Context, sessionID, contentHash stri
 	return err
 }
 
+func (r *SessionRepo) GetByID(ctx context.Context, id string) (*domain.Memory, error) {
+	row := r.db.QueryRowContext(ctx,
+		`SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at
+		 FROM sessions WHERE id = ? AND state = 'active'`,
+		id,
+	)
+	mem, err := scanSessionMemory(row)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return mem, nil
+}
+
+func (r *SessionRepo) SoftDelete(ctx context.Context, id, agentName string) (int64, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("session soft delete begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var state sql.NullString
+	err = tx.QueryRowContext(ctx,
+		`SELECT state FROM sessions WHERE id = ? FOR UPDATE`,
+		id,
+	).Scan(&state)
+	if err == sql.ErrNoRows {
+		return 0, domain.ErrNotFound
+	}
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return 0, domain.ErrNotFound
+		}
+		return 0, fmt.Errorf("session soft delete lock row: %w", err)
+	}
+
+	if state.String == string(domain.StateDeleted) {
+		return 0, tx.Commit()
+	}
+	result, err := tx.ExecContext(ctx,
+		`UPDATE sessions SET state = 'deleted', updated_at = NOW() WHERE id = ?`,
+		id,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("session soft delete update: %w", err)
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("session soft delete rows affected: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return deleted, nil
+}
+
+func (r *SessionRepo) BulkSoftDelete(ctx context.Context, ids []string, agentName string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := `UPDATE sessions SET state = 'deleted', updated_at = NOW()
+		 WHERE id IN (` + strings.Join(placeholders, ",") + `) AND state != 'deleted'`
+
+	result, err := r.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("session bulk soft delete: %w", err)
+	}
+
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("session bulk soft delete rows affected: %w", err)
+	}
+	return deleted, nil
+}
+
 func (r *SessionRepo) buildSessionFilterConds(f domain.MemoryFilter) ([]string, []any) {
 	conds := []string{}
 	args := []any{}
@@ -139,6 +228,56 @@ func (r *SessionRepo) buildSessionFilterConds(f domain.MemoryFilter) ([]string, 
 		conds = append(conds, "1=1")
 	}
 	return conds, args
+}
+
+func (r *SessionRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, int, error) {
+	conds, args := r.buildSessionFilterConds(f)
+	if f.Query != "" {
+		conds = append(conds, "content LIKE ?")
+		args = append(args, "%"+f.Query+"%")
+	}
+	where := strings.Join(conds, " AND ")
+
+	var total int
+	countQuery := "SELECT COUNT(*) FROM sessions WHERE " + where
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, 0, nil
+		}
+		slog.Error("list session memories: count failed", "cluster_id", r.clusterID, "err", err)
+		return nil, 0, fmt.Errorf("count session memories: %w", err)
+	}
+
+	limit := f.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	dataQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at
+		FROM sessions WHERE ` + where + ` ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`
+	dataArgs := make([]any, len(args), len(args)+2)
+	copy(dataArgs, args)
+	dataArgs = append(dataArgs, limit, offset)
+
+	rows, err := r.db.QueryContext(ctx, dataQuery, dataArgs...)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, 0, nil
+		}
+		slog.Error("list session memories: query failed", "cluster_id", r.clusterID, "err", err)
+		return nil, 0, fmt.Errorf("list session memories: %w", err)
+	}
+	defer rows.Close()
+
+	memories, err := scanSessionRows(rows)
+	if err != nil {
+		return nil, 0, err
+	}
+	return memories, total, nil
 }
 
 func (r *SessionRepo) AutoVectorSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
@@ -435,7 +574,11 @@ func scanSessionRowsWithFTSScore(rows *sql.Rows) ([]domain.Memory, error) {
 	return result, rows.Err()
 }
 
-func scanSessionRowNoScore(rows *sql.Rows) (*domain.Memory, error) {
+type sessionMemoryScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanSessionMemory(scanner sessionMemoryScanner) (*domain.Memory, error) {
 	var (
 		sessionID, agentID, source, role, contentType sql.NullString
 		tagsJSON                                      []byte
@@ -444,14 +587,21 @@ func scanSessionRowNoScore(rows *sql.Rows) (*domain.Memory, error) {
 		createdAt                                     time.Time
 		m                                             domain.Memory
 	)
-	if err := rows.Scan(
+	if err := scanner.Scan(
 		&m.ID, &sessionID, &agentID, &source,
 		&seq, &role, &m.Content, &contentType,
 		&tagsJSON, &state, &createdAt,
 	); err != nil {
-		return nil, fmt.Errorf("scan session row: %w", err)
+		if err == sql.ErrNoRows {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("scan session memory: %w", err)
 	}
 	return fillSessionMemory(&m, sessionID, agentID, source, role, contentType, seq, tagsJSON, state, createdAt), nil
+}
+
+func scanSessionRowNoScore(rows *sql.Rows) (*domain.Memory, error) {
+	return scanSessionMemory(rows)
 }
 
 func scanSessionRowWithDistance(rows *sql.Rows) (*domain.Memory, error) {

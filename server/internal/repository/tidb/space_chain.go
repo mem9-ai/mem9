@@ -4,16 +4,71 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
+	"sync"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 )
 
 type SpaceChainRepoImpl struct {
-	db *sql.DB
+	db                       *sql.DB
+	schemaMu                 sync.Mutex
+	routingPolicySchemaReady bool
 }
 
 func NewSpaceChainRepo(db *sql.DB) *SpaceChainRepoImpl {
 	return &SpaceChainRepoImpl{db: db}
+}
+
+func (r *SpaceChainRepoImpl) ensureRoutingPolicyColumns(ctx context.Context) error {
+	r.schemaMu.Lock()
+	defer r.schemaMu.Unlock()
+	if r.routingPolicySchemaReady {
+		return nil
+	}
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT COLUMN_NAME
+		   FROM information_schema.COLUMNS
+		  WHERE TABLE_SCHEMA = DATABASE()
+		    AND TABLE_NAME = 'space_chain_nodes'
+		    AND COLUMN_NAME IN ('routing_policy_enabled', 'routing_policy_prompt')`,
+	)
+	if err != nil {
+		return fmt.Errorf("check space chain routing policy schema: %w", err)
+	}
+	defer rows.Close()
+
+	found := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return fmt.Errorf("scan space chain routing policy schema: %w", err)
+		}
+		found[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate space chain routing policy schema: %w", err)
+	}
+
+	if !found["routing_policy_enabled"] {
+		if _, err := r.db.ExecContext(ctx, `ALTER TABLE space_chain_nodes ADD COLUMN routing_policy_enabled TINYINT(1) NOT NULL DEFAULT 0`); err != nil && !isDuplicateColumnError(err) {
+			return fmt.Errorf("add space chain routing policy enabled column: %w", err)
+		}
+	}
+	if !found["routing_policy_prompt"] {
+		if _, err := r.db.ExecContext(ctx, `ALTER TABLE space_chain_nodes ADD COLUMN routing_policy_prompt TEXT NULL`); err != nil && !isDuplicateColumnError(err) {
+			return fmt.Errorf("add space chain routing policy prompt column: %w", err)
+		}
+	}
+
+	r.routingPolicySchemaReady = true
+	return nil
+}
+
+func isDuplicateColumnError(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "duplicate column") || strings.Contains(msg, "error 1060")
 }
 
 func (r *SpaceChainRepoImpl) Create(ctx context.Context, chain *domain.SpaceChain, binding *domain.SpaceChainBinding) error {
@@ -185,8 +240,11 @@ func (r *SpaceChainRepoImpl) DisableBinding(ctx context.Context, chainID, bindin
 }
 
 func (r *SpaceChainRepoImpl) ListNodes(ctx context.Context, chainID string) ([]domain.SpaceChainNode, error) {
+	if err := r.ensureRoutingPolicyColumns(ctx); err != nil {
+		return nil, err
+	}
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, chain_id, tenant_id, external_space_id, display_name, position, created_at, updated_at
+		`SELECT id, chain_id, tenant_id, external_space_id, display_name, position, routing_policy_enabled, routing_policy_prompt, created_at, updated_at
 		 FROM space_chain_nodes
 		 WHERE chain_id = ?
 		 ORDER BY position ASC, id ASC`,
@@ -200,6 +258,9 @@ func (r *SpaceChainRepoImpl) ListNodes(ctx context.Context, chainID string) ([]d
 }
 
 func (r *SpaceChainRepoImpl) ReplaceNodes(ctx context.Context, chainID string, nodes []domain.SpaceChainNode) error {
+	if err := r.ensureRoutingPolicyColumns(ctx); err != nil {
+		return err
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin replace space chain nodes: %w", err)
@@ -213,9 +274,9 @@ func (r *SpaceChainRepoImpl) ReplaceNodes(ctx context.Context, chainID string, n
 	_ = res
 	for _, node := range nodes {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO space_chain_nodes (id, chain_id, tenant_id, external_space_id, display_name, position, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-			node.ID, chainID, node.TenantID, nullString(node.ExternalSpaceID), nullString(node.DisplayName), node.Position,
+			`INSERT INTO space_chain_nodes (id, chain_id, tenant_id, external_space_id, display_name, position, routing_policy_enabled, routing_policy_prompt, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+			node.ID, chainID, node.TenantID, nullString(node.ExternalSpaceID), nullString(node.DisplayName), node.Position, node.RoutingPolicyEnabled, nullString(node.RoutingPolicyPrompt),
 		); err != nil {
 			return fmt.Errorf("insert space chain node: %w", err)
 		}
@@ -224,6 +285,35 @@ func (r *SpaceChainRepoImpl) ReplaceNodes(ctx context.Context, chainID string, n
 		return fmt.Errorf("commit replace space chain nodes: %w", err)
 	}
 	return nil
+}
+
+func (r *SpaceChainRepoImpl) UpdateNodeRoutingPolicy(ctx context.Context, chainID, nodeID string, enabled bool, prompt string) (*domain.SpaceChainNode, error) {
+	if err := r.ensureRoutingPolicyColumns(ctx); err != nil {
+		return nil, err
+	}
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE space_chain_nodes
+		 SET routing_policy_enabled = ?, routing_policy_prompt = ?, updated_at = NOW()
+		 WHERE chain_id = ? AND id = ?`,
+		enabled, nullString(prompt), chainID, nodeID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("update space chain node routing policy: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("update space chain node routing policy rows: %w", err)
+	}
+	if n == 0 {
+		return nil, domain.ErrNotFound
+	}
+	row := r.db.QueryRowContext(ctx,
+		`SELECT id, chain_id, tenant_id, external_space_id, display_name, position, routing_policy_enabled, routing_policy_prompt, created_at, updated_at
+		 FROM space_chain_nodes
+		 WHERE chain_id = ? AND id = ?`,
+		chainID, nodeID,
+	)
+	return scanSpaceChainNode(row)
 }
 
 func (r *SpaceChainRepoImpl) RemoveNodeByExternalSpaceID(ctx context.Context, externalSpaceID string) error {
@@ -321,17 +411,40 @@ func scanSpaceChainBindings(rows *sql.Rows) ([]domain.SpaceChainBinding, error) 
 func scanSpaceChainNodes(rows *sql.Rows) ([]domain.SpaceChainNode, error) {
 	out := []domain.SpaceChainNode{}
 	for rows.Next() {
-		var node domain.SpaceChainNode
-		var externalSpaceID, displayName sql.NullString
-		if err := rows.Scan(&node.ID, &node.ChainID, &node.TenantID, &externalSpaceID, &displayName, &node.Position, &node.CreatedAt, &node.UpdatedAt); err != nil {
+		node, err := scanSpaceChainNode(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scan space chain node: %w", err)
 		}
-		node.ExternalSpaceID = externalSpaceID.String
-		node.DisplayName = displayName.String
-		out = append(out, node)
+		out = append(out, *node)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate space chain nodes: %w", err)
 	}
 	return out, nil
+}
+
+func scanSpaceChainNode(row interface{ Scan(dest ...any) error }) (*domain.SpaceChainNode, error) {
+	var node domain.SpaceChainNode
+	var externalSpaceID, displayName, routingPolicyPrompt sql.NullString
+	if err := row.Scan(
+		&node.ID,
+		&node.ChainID,
+		&node.TenantID,
+		&externalSpaceID,
+		&displayName,
+		&node.Position,
+		&node.RoutingPolicyEnabled,
+		&routingPolicyPrompt,
+		&node.CreatedAt,
+		&node.UpdatedAt,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	node.ExternalSpaceID = externalSpaceID.String
+	node.DisplayName = displayName.String
+	node.RoutingPolicyPrompt = routingPolicyPrompt.String
+	return &node, nil
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,6 +37,7 @@ type testMemoryRepo struct {
 	lastKeywordFilter    domain.MemoryFilter
 	softDeleteCalls      []string
 	softDeleteResult     int64
+	softDeleteErr        error
 	bulkSoftDeleteCalls  [][]string
 	bulkSoftDeleteResult int64
 	countStatsTotal      int64
@@ -78,6 +81,9 @@ func (m *testMemoryRepo) SoftDelete(_ context.Context, id string, _ string) (int
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.softDeleteCalls = append(m.softDeleteCalls, id)
+	if m.softDeleteErr != nil {
+		return 0, m.softDeleteErr
+	}
 	if m.softDeleteResult != 0 {
 		return m.softDeleteResult, nil
 	}
@@ -165,6 +171,16 @@ type testSessionRepo struct {
 	sessionListResults   []*domain.Session
 	lastSessionIDs       []string
 	lastSessionLimit     int
+	getResult            *domain.Memory
+	getErr               error
+	listResults          []domain.Memory
+	listTotal            int
+	lastListFilter       domain.MemoryFilter
+	listCalls            int
+	softDeleteCalls      []string
+	softDeleteErr        error
+	bulkSoftDeleteCalls  [][]string
+	bulkSoftDeleteResult int64
 }
 
 func (s *testSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Session) error {
@@ -183,6 +199,47 @@ func (s *testSessionRepo) PatchTags(_ context.Context, sessionID, hash string, t
 	s.patchedHash = hash
 	s.patchedTags = append([]string(nil), tags...)
 	return nil
+}
+
+func (s *testSessionRepo) GetByID(_ context.Context, id string) (*domain.Memory, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
+	if s.getResult != nil && s.getResult.ID == id {
+		cp := *s.getResult
+		return &cp, nil
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (s *testSessionRepo) List(_ context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.listCalls++
+	s.lastListFilter = filter
+	return append([]domain.Memory(nil), s.listResults...), s.listTotal, nil
+}
+
+func (s *testSessionRepo) SoftDelete(_ context.Context, id, _ string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.softDeleteCalls = append(s.softDeleteCalls, id)
+	if s.softDeleteErr != nil {
+		return 0, s.softDeleteErr
+	}
+	return 1, nil
+}
+
+func (s *testSessionRepo) BulkSoftDelete(_ context.Context, ids []string, _ string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.bulkSoftDeleteCalls = append(s.bulkSoftDeleteCalls, append([]string(nil), ids...))
+	if s.bulkSoftDeleteResult != 0 {
+		return s.bulkSoftDeleteResult, nil
+	}
+	return 0, nil
 }
 
 func (s *testSessionRepo) AutoVectorSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
@@ -265,6 +322,7 @@ func (w *blockingMeteringWriter) Record(evt metering.Event) {
 func (w *blockingMeteringWriter) Close(context.Context) error { return nil }
 
 type captureRuntimeUsageManager struct {
+	mu                       sync.Mutex
 	beforeRecallCalls        int
 	afterRecallSuccessCalls  int
 	beforeCreateCalls        int
@@ -277,6 +335,7 @@ type captureRuntimeUsageManager struct {
 	afterDeleteSuccessCalls  int
 	enabled                  bool
 	afterCreateSuccessErr    error
+	beforeCreateErrByTenant  map[string]error
 	beforeRecallSubjects     []runtimeusage.Subject
 	recallResults            []runtimeusage.RecallResult
 	recallSuccessContextErrs []error
@@ -304,17 +363,28 @@ func (m *captureRuntimeUsageManager) AfterRecallSuccess(ctx context.Context, _ *
 func (m *captureRuntimeUsageManager) AfterRecallFailure(context.Context, *runtimeusage.OperationLease, error) {
 }
 func (m *captureRuntimeUsageManager) BeforeMemoryCreate(_ context.Context, subject runtimeusage.Subject, _ int64) (*runtimeusage.OperationLease, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.beforeCreateCalls++
 	m.beforeCreateSubjects = append(m.beforeCreateSubjects, subject)
+	if m.beforeCreateErrByTenant != nil {
+		if err := m.beforeCreateErrByTenant[subject.TenantID]; err != nil {
+			return nil, err
+		}
+	}
 	return &runtimeusage.OperationLease{OperationID: "op-create", Reserved: true}, nil
 }
 func (m *captureRuntimeUsageManager) AfterMemoryCreateSuccess(ctx context.Context, _ *runtimeusage.OperationLease, result runtimeusage.MemoryCreateResult) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.afterCreateSuccessCalls++
 	m.createResults = append(m.createResults, result)
 	m.createSuccessContextErrs = append(m.createSuccessContextErrs, ctx.Err())
 	return m.afterCreateSuccessErr
 }
 func (m *captureRuntimeUsageManager) AfterMemoryCreateFailure(context.Context, *runtimeusage.OperationLease, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.afterCreateFailureCalls++
 }
 func (m *captureRuntimeUsageManager) BeforeMemoryUpdate(_ context.Context, subject runtimeusage.Subject) (*runtimeusage.OperationLease, error) {
@@ -468,6 +538,355 @@ func newTestServer(memRepo *testMemoryRepo, sessRepo *testSessionRepo) *Server {
 	return srv
 }
 
+func storeTestTenantServices(srv *Server, tenantID string, memRepo *testMemoryRepo) {
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(memRepo, nil, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, nil, nil, "", service.ModeSmart),
+		session: service.NewSessionService(&testSessionRepo{}, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey(fmt.Sprintf("%s-0x0", tenantID)), svc)
+}
+
+func TestReconcileRoutedChainFactsRuntimeUsageUsesTargetSubjects(t *testing.T) {
+	targetARepo := &testMemoryRepo{}
+	targetBRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+	storeTestTenantServices(srv, "tenant-target-a", targetARepo)
+	storeTestTenantServices(srv, "tenant-target-b", targetBRepo)
+
+	auth := &domain.AuthInfo{
+		AgentName: "chain-agent",
+		Chain: &domain.ChainAuth{
+			ChainID: "chain-a",
+			APIKey:  "chain-key-a",
+			Nodes: []domain.ChainAuthNode{
+				{
+					SpaceChainNode: domain.SpaceChainNode{TenantID: "tenant-source", ExternalSpaceID: "space-source", Position: 0},
+					ClusterID:      "cluster-source",
+				},
+				{
+					SpaceChainNode: domain.SpaceChainNode{
+						TenantID:             "tenant-target-a",
+						ExternalSpaceID:      "space-target-a",
+						Position:             1,
+						RoutingPolicyEnabled: true,
+						RoutingPolicyPrompt:  "facts about mem9",
+					},
+					ClusterID: "cluster-target-a",
+				},
+				{
+					SpaceChainNode: domain.SpaceChainNode{
+						TenantID:             "tenant-target-b",
+						ExternalSpaceID:      "space-target-b",
+						Position:             2,
+						RoutingPolicyEnabled: true,
+						RoutingPolicyPrompt:  "facts about PingCAP",
+					},
+					ClusterID: "cluster-target-b",
+				},
+			},
+		},
+	}
+
+	result := srv.reconcileRoutedChainFacts(context.Background(), auth, service.IngestRequest{
+		AgentID:   "actor-agent",
+		SessionID: "session-a",
+	}, []service.ExtractedFact{
+		{Text: "mem9 uses PingCAP TiDB for this test", Tags: []string{"tech"}, RouteTargets: []string{"space-target-a", "space-target-b"}},
+	})
+
+	if result.memoriesChanged != 2 {
+		t.Fatalf("memoriesChanged = %d, want 2", result.memoriesChanged)
+	}
+	if len(targetARepo.createCalls) != 1 || len(targetBRepo.createCalls) != 1 {
+		t.Fatalf("target writes = %d/%d, want 1/1", len(targetARepo.createCalls), len(targetBRepo.createCalls))
+	}
+	if runtimeUsage.beforeCreateCalls != 2 || runtimeUsage.afterCreateSuccessCalls != 2 {
+		t.Fatalf("runtime create calls = before:%d success:%d, want 2/2", runtimeUsage.beforeCreateCalls, runtimeUsage.afterCreateSuccessCalls)
+	}
+	wantSubjects := map[string]string{
+		"tenant-target-a": "cluster-target-a",
+		"tenant-target-b": "cluster-target-b",
+	}
+	for _, subject := range runtimeUsage.beforeCreateSubjects {
+		wantCluster, ok := wantSubjects[subject.TenantID]
+		if !ok {
+			t.Fatalf("unexpected create subject: %+v", subject)
+		}
+		if subject.ClusterID != wantCluster || subject.APIKeySubject != "chain-key-a" {
+			t.Fatalf("create subject = %+v, want cluster=%s apiKey=chain-key-a", subject, wantCluster)
+		}
+		delete(wantSubjects, subject.TenantID)
+	}
+	if len(wantSubjects) != 0 {
+		t.Fatalf("missing create subjects: %+v", wantSubjects)
+	}
+	for _, createResult := range runtimeUsage.createResults {
+		if createResult.AgentName != "chain-agent" || createResult.ObjectsAffected != 1 || len(createResult.MemoryIDs) != 1 {
+			t.Fatalf("create result = %+v, want chain-agent/1 object/1 memory", createResult)
+		}
+	}
+}
+
+func TestReconcileRoutedChainFactsSkipsTargetWhenRuntimeUsageDenied(t *testing.T) {
+	targetRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{
+		enabled: true,
+		beforeCreateErrByTenant: map[string]error{
+			"tenant-target-a": &runtimeusage.QuotaDeniedError{StatusCode: http.StatusPaymentRequired},
+		},
+	}
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+	storeTestTenantServices(srv, "tenant-target-a", targetRepo)
+
+	auth := &domain.AuthInfo{
+		AgentName: "chain-agent",
+		Chain: &domain.ChainAuth{
+			ChainID: "chain-a",
+			APIKey:  "chain-key-a",
+			Nodes: []domain.ChainAuthNode{
+				{
+					SpaceChainNode: domain.SpaceChainNode{TenantID: "tenant-source", ExternalSpaceID: "space-source", Position: 0},
+					ClusterID:      "cluster-source",
+				},
+				{
+					SpaceChainNode: domain.SpaceChainNode{
+						TenantID:             "tenant-target-a",
+						ExternalSpaceID:      "space-target-a",
+						Position:             1,
+						RoutingPolicyEnabled: true,
+						RoutingPolicyPrompt:  "facts about mem9",
+					},
+					ClusterID: "cluster-target-a",
+				},
+			},
+		},
+	}
+
+	result := srv.reconcileRoutedChainFacts(context.Background(), auth, service.IngestRequest{
+		AgentID:   "actor-agent",
+		SessionID: "session-a",
+	}, []service.ExtractedFact{
+		{Text: "mem9 should not write when target quota is denied", Tags: []string{"tech"}, RouteTargets: []string{"space-target-a"}},
+	})
+
+	if result.memoriesChanged != 0 {
+		t.Fatalf("memoriesChanged = %d, want 0", result.memoriesChanged)
+	}
+	if result.warnings != 1 {
+		t.Fatalf("warnings = %d, want 1", result.warnings)
+	}
+	if len(targetRepo.createCalls) != 0 {
+		t.Fatalf("target writes = %d, want 0", len(targetRepo.createCalls))
+	}
+	if runtimeUsage.beforeCreateCalls != 1 {
+		t.Fatalf("BeforeMemoryCreate calls = %d, want 1", runtimeUsage.beforeCreateCalls)
+	}
+	if runtimeUsage.afterCreateSuccessCalls != 0 || runtimeUsage.afterCreateFailureCalls != 0 {
+		t.Fatalf("runtime finalization calls = success:%d failure:%d, want 0/0", runtimeUsage.afterCreateSuccessCalls, runtimeUsage.afterCreateFailureCalls)
+	}
+}
+
+func TestListMemories_SessionTypeListsSessionRows(t *testing.T) {
+	sessionRepo := &testSessionRepo{
+		listResults: []domain.Memory{
+			{
+				ID:         "sess-row-1",
+				Content:    "hello from a raw turn",
+				MemoryType: domain.TypeSession,
+				State:      domain.StateActive,
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
+			},
+		},
+		listTotal: 7,
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	req := makeRequest(t, http.MethodGet, "/memories?memory_type=session&limit=10&offset=20&state=active&agent_id=codex&session_id=sess-1&source=cli&tags=alpha,beta", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Total != 7 || resp.Limit != 10 || resp.Offset != 20 {
+		t.Fatalf("page = total:%d limit:%d offset:%d, want 7/10/20", resp.Total, resp.Limit, resp.Offset)
+	}
+	if len(resp.Memories) != 1 || resp.Memories[0].MemoryType != domain.TypeSession {
+		t.Fatalf("memories = %+v, want one session memory", resp.Memories)
+	}
+	if sessionRepo.lastListFilter.MemoryType != "session" ||
+		sessionRepo.lastListFilter.AgentID != "codex" ||
+		sessionRepo.lastListFilter.SessionID != "sess-1" ||
+		sessionRepo.lastListFilter.Source != "cli" ||
+		len(sessionRepo.lastListFilter.Tags) != 2 {
+		t.Fatalf("session list filter = %+v", sessionRepo.lastListFilter)
+	}
+}
+
+func TestListMemories_ChainSessionTypeListsSessionRowsWithoutQuery(t *testing.T) {
+	now := time.Now()
+	sessionRepo := &testSessionRepo{
+		listResults: []domain.Memory{
+			{
+				ID:         "sess-row-1",
+				Content:    "hello from a raw turn",
+				MemoryType: domain.TypeSession,
+				State:      domain.StateActive,
+				CreatedAt:  now,
+				UpdatedAt:  now,
+			},
+		},
+		listTotal: 1,
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	req := makeChainRequestWithNodes(t, http.MethodGet, "/memories?memory_type=session&limit=10&offset=0&state=active", nil, 2)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if sessionRepo.listCalls != 2 {
+		t.Fatalf("session list calls = %d, want one per chain node", sessionRepo.listCalls)
+	}
+	if resp.Total != 1 {
+		t.Fatalf("total = %d, want deduplicated total 1", resp.Total)
+	}
+	if len(resp.Memories) != 1 || resp.Memories[0].MemoryType != domain.TypeSession {
+		t.Fatalf("memories = %+v, want one session memory", resp.Memories)
+	}
+	if resp.Memories[0].ChainSource == nil || resp.Memories[0].ChainSource.ChainID != "chain-a" {
+		t.Fatalf("chain source = %+v, want chain-a", resp.Memories[0].ChainSource)
+	}
+	if sessionRepo.lastListFilter.MemoryType != "session" || sessionRepo.lastListFilter.State != "active" {
+		t.Fatalf("session list filter = %+v", sessionRepo.lastListFilter)
+	}
+}
+
+func TestGetMemory_FallsBackToSessionRow(t *testing.T) {
+	sessionRepo := &testSessionRepo{
+		getResult: &domain.Memory{
+			ID:         "sess-row-1",
+			Content:    "raw turn",
+			MemoryType: domain.TypeSession,
+			State:      domain.StateActive,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+		},
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	req := makeRequest(t, http.MethodGet, "/memories/sess-row-1", nil)
+	req = withURLParam(req, "id", "sess-row-1")
+	rr := httptest.NewRecorder()
+
+	srv.getMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"memory_type":"session"`) {
+		t.Fatalf("body = %s, want session memory type", rr.Body.String())
+	}
+}
+
+func TestGetMemory_SessionUnsupportedFallbackReturnsNotFound(t *testing.T) {
+	sessionRepo := &testSessionRepo{getErr: domain.ErrNotSupported}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	req := makeRequest(t, http.MethodGet, "/memories/missing-id", nil)
+	req = withURLParam(req, "id", "missing-id")
+	rr := httptest.NewRecorder()
+
+	srv.getMemory(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestGetMemory_ChainFallsBackToSessionRow(t *testing.T) {
+	sessionRepo := &testSessionRepo{
+		getResult: &domain.Memory{
+			ID:         "sess-row-1",
+			Content:    "raw turn",
+			MemoryType: domain.TypeSession,
+			State:      domain.StateActive,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+		},
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	req := withURLParam(makeChainRequest(t, http.MethodGet, "/memories/sess-row-1", nil), "id", "sess-row-1")
+	rr := httptest.NewRecorder()
+
+	srv.getMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"memory_type":"session"`) {
+		t.Fatalf("body = %s, want session memory type", rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"chain_source"`) {
+		t.Fatalf("body = %s, want chain source", rr.Body.String())
+	}
+}
+
+func TestDeleteMemory_FallsBackToSessionRow(t *testing.T) {
+	memRepo := &testMemoryRepo{softDeleteErr: domain.ErrNotFound}
+	sessionRepo := &testSessionRepo{}
+	srv := newTestServer(memRepo, sessionRepo)
+	req := makeRequest(t, http.MethodDelete, "/memories/sess-row-1", nil)
+	req = withURLParam(req, "id", "sess-row-1")
+	rr := httptest.NewRecorder()
+
+	srv.deleteMemory(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204: %s", rr.Code, rr.Body.String())
+	}
+	if len(sessionRepo.softDeleteCalls) != 1 || sessionRepo.softDeleteCalls[0] != "sess-row-1" {
+		t.Fatalf("session delete calls = %+v, want sess-row-1", sessionRepo.softDeleteCalls)
+	}
+}
+
+func TestDeleteMemory_ChainFallsBackToSessionRow(t *testing.T) {
+	memRepo := &testMemoryRepo{softDeleteErr: domain.ErrNotFound}
+	sessionRepo := &testSessionRepo{
+		getResult: &domain.Memory{
+			ID:         "sess-row-1",
+			Content:    "raw turn",
+			MemoryType: domain.TypeSession,
+			State:      domain.StateActive,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+		},
+	}
+	srv := newTestServer(memRepo, sessionRepo)
+	req := withURLParam(makeChainRequest(t, http.MethodDelete, "/memories/sess-row-1", nil), "id", "sess-row-1")
+	rr := httptest.NewRecorder()
+
+	srv.deleteMemory(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204: %s", rr.Code, rr.Body.String())
+	}
+	if len(sessionRepo.softDeleteCalls) != 1 || sessionRepo.softDeleteCalls[0] != "sess-row-1" {
+		t.Fatalf("session delete calls = %+v, want sess-row-1", sessionRepo.softDeleteCalls)
+	}
+}
+
 // makeRequest creates an HTTP request with auth context injected.
 func makeRequest(t *testing.T, method, path string, body any) *http.Request {
 	t.Helper()
@@ -499,21 +918,28 @@ func makeTenantRequest(t *testing.T, method, path string, body any) *http.Reques
 
 func makeChainRequest(t *testing.T, method, path string, body any) *http.Request {
 	t.Helper()
+	return makeChainRequestWithNodes(t, method, path, body, 1)
+}
+
+func makeChainRequestWithNodes(t *testing.T, method, path string, body any, count int) *http.Request {
+	t.Helper()
 	req := makeRequest(t, method, path, body)
+	nodes := make([]domain.ChainAuthNode, 0, count)
+	for i := 0; i < count; i++ {
+		nodes = append(nodes, domain.ChainAuthNode{
+			SpaceChainNode: domain.SpaceChainNode{
+				TenantID: "tenant-a",
+				Position: i + 1,
+			},
+			ClusterID: "10006636",
+		})
+	}
 	auth := &domain.AuthInfo{
 		AgentName: "test-agent",
 		Chain: &domain.ChainAuth{
 			ChainID: "chain-a",
 			APIKey:  "chain-key-a",
-			Nodes: []domain.ChainAuthNode{
-				{
-					SpaceChainNode: domain.SpaceChainNode{
-						TenantID: "tenant-a",
-						Position: 1,
-					},
-					ClusterID: "10006636",
-				},
-			},
+			Nodes:   nodes,
 		},
 	}
 	ctx := middleware.WithAuthContext(req.Context(), auth)
@@ -555,6 +981,126 @@ func TestCreateMemory_SyncContent_Returns200(t *testing.T) {
 	}
 	if memRepo.bulkCreateCalls != 0 {
 		t.Fatalf("expected legacy create path to skip bulk create, got %d", memRepo.bulkCreateCalls)
+	}
+}
+
+func newChainContentLLMTestServer(t *testing.T, llmCalls *atomic.Int32) (*Server, *testMemoryRepo) {
+	t.Helper()
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		llmCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":[{"text":"rewritten smart fact","tags":["smart"]}],"message_tags":[["smart"]]}`,
+				}},
+			},
+		})
+	}))
+	t.Cleanup(llmServer.Close)
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(memRepo, llmClient, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(sessRepo, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("tenant-a-0x0"), svc)
+	return srv, memRepo
+}
+
+func makeChainContentRequestWithoutRouting(t *testing.T, syncCreate bool) *http.Request {
+	t.Helper()
+	body := map[string]any{
+		"agent_id": "actor-agent",
+		"content":  "original chain content",
+	}
+	if syncCreate {
+		body["sync"] = true
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	auth := &domain.AuthInfo{
+		AgentName: "test-agent",
+		Chain: &domain.ChainAuth{
+			ChainID: "chain-a",
+			APIKey:  "chain-key-a",
+			Nodes: []domain.ChainAuthNode{
+				{
+					SpaceChainNode: domain.SpaceChainNode{
+						TenantID:        "tenant-a",
+						ExternalSpaceID: "space-source",
+						Position:        0,
+					},
+					ClusterID: "10006636",
+				},
+			},
+		},
+	}
+	ctx := middleware.WithAuthContext(req.Context(), auth)
+	return req.WithContext(ctx)
+}
+
+func TestCreateMemory_SyncChainContentWithoutRoutingPolicyUsesLegacyCreate(t *testing.T) {
+	var llmCalls atomic.Int32
+	srv, memRepo := newChainContentLLMTestServer(t, &llmCalls)
+	req := makeChainContentRequestWithoutRouting(t, true)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if got := llmCalls.Load(); got != 1 {
+		t.Fatalf("LLM calls = %d, want 1", got)
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("create calls = %d, want 1", len(memRepo.createCalls))
+	}
+	if memRepo.createCalls[0].Source != "actor-agent" {
+		t.Fatalf("created source = %q, want actor-agent", memRepo.createCalls[0].Source)
+	}
+}
+
+func TestCreateMemory_AsyncChainContentWithoutRoutingPolicyUsesLegacyCreate(t *testing.T) {
+	var llmCalls atomic.Int32
+	srv, memRepo := newChainContentLLMTestServer(t, &llmCalls)
+	req := makeChainContentRequestWithoutRouting(t, false)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202: %s", rr.Code, rr.Body.String())
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		memRepo.mu.Lock()
+		created := len(memRepo.createCalls)
+		memRepo.mu.Unlock()
+		if created > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := llmCalls.Load(); got != 1 {
+		t.Fatalf("LLM calls = %d, want 1", got)
+	}
+	memRepo.mu.Lock()
+	defer memRepo.mu.Unlock()
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("create calls = %d, want 1", len(memRepo.createCalls))
+	}
+	if memRepo.createCalls[0].Source != "actor-agent" {
+		t.Fatalf("created source = %q, want actor-agent", memRepo.createCalls[0].Source)
 	}
 }
 
@@ -885,7 +1431,8 @@ func TestCreateMemory_AsyncContent_Returns202(t *testing.T) {
 }
 
 func TestCreateMemory_SyncMessages_Returns200(t *testing.T) {
-	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
+	sessRepo := &testSessionRepo{}
+	srv := newTestServer(&testMemoryRepo{}, sessRepo)
 
 	body := map[string]any{
 		"messages": []map[string]string{
@@ -902,6 +1449,126 @@ func TestCreateMemory_SyncMessages_Returns200(t *testing.T) {
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !sessRepo.bulkCreateCalled {
+		t.Fatal("expected raw sessions to be persisted by default")
+	}
+}
+
+func TestCreateMemory_SyncMessages_DisableSessionSaveSkipsRawSessionAndStoresFacts(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":[{"text":"User prefers tea","tags":["preference"]}],"message_tags":[["preference"],[]]}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(memRepo, llmClient, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(sessRepo, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
+
+	body := map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "I prefer tea"},
+			{"role": "assistant", "content": "Noted"},
+		},
+		"session_id":         "test-session",
+		"sync":               true,
+		"disableSessionSave": true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if sessRepo.bulkCreateCalled {
+		t.Fatal("did not expect raw session BulkCreate when disableSessionSave=true")
+	}
+	if sessRepo.patchTagsCalled {
+		t.Fatal("did not expect session PatchTags when disableSessionSave=true")
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected one extracted fact memory, got %d", len(memRepo.createCalls))
+	}
+	if memRepo.createCalls[0].Content != "User prefers tea" {
+		t.Fatalf("created memory content = %q, want extracted fact", memRepo.createCalls[0].Content)
+	}
+}
+
+func TestCreateMemory_SyncMessages_ServerDisableSessionSaveSkipsRawSession(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":[{"text":"User prefers coffee","tags":["preference"]}],"message_tags":[["preference"],[]]}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default()).
+		WithDisableSessionSave(true)
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(memRepo, llmClient, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(sessRepo, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
+
+	body := map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "I prefer coffee"},
+			{"role": "assistant", "content": "Noted"},
+		},
+		"session_id": "test-session",
+		"sync":       true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if sessRepo.bulkCreateCalled {
+		t.Fatal("did not expect raw session BulkCreate when server disables session save")
+	}
+	if sessRepo.patchTagsCalled {
+		t.Fatal("did not expect session PatchTags when server disables session save")
+	}
+	if len(memRepo.createCalls) != 1 {
+		t.Fatalf("expected one extracted fact memory, got %d", len(memRepo.createCalls))
 	}
 }
 
@@ -1047,6 +1714,78 @@ func TestCreateMemory_AsyncMessages_Returns202(t *testing.T) {
 	}
 	if resp["status"] != "accepted" {
 		t.Errorf("expected status=accepted, got %q", resp["status"])
+	}
+}
+
+func TestCreateMemory_AsyncMessages_DisableSessionSaveSkipsRawSession(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":[{"text":"User likes green tea","tags":["preference"]}],"message_tags":[["preference"]]}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(memRepo, llmClient, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(sessRepo, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
+
+	body := map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "I like green tea"},
+		},
+		"session_id":         "test-session",
+		"disableSessionSave": true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	deadline := time.Now().Add(time.Second)
+	var created int
+	for time.Now().Before(deadline) {
+		memRepo.mu.Lock()
+		created = len(memRepo.createCalls)
+		memRepo.mu.Unlock()
+		if created > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if created != 1 {
+		t.Fatalf("expected one extracted fact memory, got %d", created)
+	}
+
+	sessRepo.mu.Lock()
+	bulkCreateCalled := sessRepo.bulkCreateCalled
+	patchTagsCalled := sessRepo.patchTagsCalled
+	sessRepo.mu.Unlock()
+	if bulkCreateCalled {
+		t.Fatal("did not expect raw session BulkCreate when disableSessionSave=true")
+	}
+	if patchTagsCalled {
+		t.Fatal("did not expect session PatchTags when disableSessionSave=true")
 	}
 }
 
@@ -1383,6 +2122,112 @@ func TestListMemories_ChainRuntimeUsageRecallUsesChainAPIKeySubject(t *testing.T
 	}
 	if len(runtimeUsage.beforeRecallSubjects) != 1 || runtimeUsage.beforeRecallSubjects[0].APIKeySubject != "chain-key-a" {
 		t.Fatalf("recall subject = %+v, want chain-key-a API key subject", runtimeUsage.beforeRecallSubjects)
+	}
+}
+
+func TestListMemories_ChainStopsAfterHighConfidenceByDefault(t *testing.T) {
+	now := time.Now()
+	calls := 0
+	sessionRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			calls++
+			return []domain.Memory{
+				{ID: "session-memory", Content: "Bosn's timezone is Asia/Shanghai.", MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	srv.chainRecallStopScore = 0.1
+
+	req := makeChainRequestWithNodes(t, http.MethodGet, "/memories?q=what%20timezone%20does%20Bosn%20use&memory_type=session&limit=10", nil, 2)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if calls != 1 {
+		t.Fatalf("node searches = %d, want 1", calls)
+	}
+}
+
+func TestListMemories_ChainScanAllContinuesPastHighConfidence(t *testing.T) {
+	now := time.Now()
+	var calls atomic.Int32
+	sessionRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			call := calls.Add(1)
+			id := "session-memory-a"
+			if call > 1 {
+				id = "session-memory-b"
+			}
+			return []domain.Memory{
+				{ID: id, Content: "Bosn's timezone is Asia/Shanghai.", MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	srv.chainRecallStopScore = 0.1
+
+	req := makeChainRequestWithNodes(t, http.MethodGet, "/memories?q=what%20timezone%20does%20Bosn%20use&memory_type=session&limit=10&scanAll=true", nil, 2)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("node searches = %d, want 2", got)
+	}
+}
+
+func TestListMemories_ChainScanAllSearchesNodesConcurrently(t *testing.T) {
+	now := time.Now()
+	var calls atomic.Int32
+	started := make(chan int32, 2)
+	release := make(chan struct{})
+	sessionRepo := &testSessionRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			call := calls.Add(1)
+			started <- call
+			<-release
+			return []domain.Memory{
+				{ID: fmt.Sprintf("session-memory-%d", call), Content: "Bosn's timezone is Asia/Shanghai.", MemoryType: domain.TypeSession, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+
+	req := makeChainRequestWithNodes(t, http.MethodGet, "/memories?q=what%20timezone%20does%20Bosn%20use&memory_type=session&limit=10&scanAll=true", nil, 2)
+	rr := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		srv.listMemories(rr, req)
+	}()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			close(release)
+			t.Fatalf("node search %d did not start before the first searches were released", i+1)
+		}
+	}
+	close(release)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scanAll request did not finish after releasing node searches")
+	}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("node searches = %d, want 2", got)
 	}
 }
 

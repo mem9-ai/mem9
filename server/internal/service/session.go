@@ -72,6 +72,27 @@ func (s *SessionService) CreateRawTurn(ctx context.Context, sessionID, agentID, 
 	return nil
 }
 
+func (s *SessionService) Get(ctx context.Context, id string) (*domain.Memory, error) {
+	return s.sessions.GetByID(ctx, id)
+}
+
+func (s *SessionService) List(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, int, error) {
+	return s.sessions.List(ctx, f)
+}
+
+func (s *SessionService) Delete(ctx context.Context, id, agentName string) (int64, error) {
+	return s.sessions.SoftDelete(ctx, id, agentName)
+}
+
+func (s *SessionService) BulkDelete(ctx context.Context, ids []string, agentName string) (int64, error) {
+	unique, err := ValidateBulkDeleteIDs(ids)
+	if err != nil {
+		return 0, err
+	}
+
+	return s.sessions.BulkSoftDelete(ctx, unique, agentName)
+}
+
 func (s *SessionService) Search(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, error) {
 	limit := f.Limit
 	if limit <= 0 || limit > 200 {

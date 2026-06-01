@@ -216,12 +216,18 @@ func (c *scriptedConn) Prepare(string) (driver.Stmt, error) {
 func (c *scriptedConn) Close() error { return nil }
 
 func (c *scriptedConn) Begin() (driver.Tx, error) {
-	return nil, fmt.Errorf("Begin not supported")
+	return scriptedTx{}, nil
 }
 
 func (c *scriptedConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	return c.script.query(query, args)
 }
+
+type scriptedTx struct{}
+
+func (scriptedTx) Commit() error { return nil }
+
+func (scriptedTx) Rollback() error { return nil }
 
 type scriptedRows struct {
 	columns []string
