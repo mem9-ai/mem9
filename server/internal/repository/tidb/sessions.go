@@ -384,45 +384,42 @@ func (r *SessionRepo) ftsSearchWithPostFilter(ctx context.Context, query string,
 	safeQ := ftsSafeLiteral(query)
 
 	candidateLimit := limit
+	offset := 0
+	filtered := make([]domain.Memory, 0, limit)
 	for {
-		candidates, err := r.fetchSessionFTSCandidates(ctx, safeQ, candidateLimit)
+		candidates, err := r.fetchSessionFTSCandidates(ctx, safeQ, candidateLimit, offset)
 		if err != nil {
 			return nil, err
 		}
 		if len(candidates) == 0 {
-			return nil, nil
+			return filtered, nil
 		}
 
-		filtered, err := r.fetchFilteredFTSSessions(ctx, candidates, where, args)
+		page, err := r.fetchFilteredFTSSessions(ctx, candidates, where, args)
 		if err != nil {
 			return nil, err
 		}
-		if len(filtered) >= limit || len(candidates) < candidateLimit {
-			if len(filtered) > limit {
-				filtered = filtered[:limit]
-			}
+		filtered = append(filtered, page...)
+		if len(filtered) >= limit {
+			return filtered[:limit], nil
+		}
+		if len(candidates) < candidateLimit {
 			return filtered, nil
 		}
 
-		nextLimit := nextFTSCandidateFetchLimit(candidateLimit, limit)
-		if nextLimit <= candidateLimit {
-			if len(filtered) > limit {
-				filtered = filtered[:limit]
-			}
-			return filtered, nil
-		}
-		candidateLimit = nextLimit
+		offset += len(candidates)
+		candidateLimit = nextFTSCandidatePageLimit(candidateLimit)
 	}
 }
 
-func (r *SessionRepo) fetchSessionFTSCandidates(ctx context.Context, safeQ string, limit int) ([]sessionFTSCandidate, error) {
+func (r *SessionRepo) fetchSessionFTSCandidates(ctx context.Context, safeQ string, limit, offset int) ([]sessionFTSCandidate, error) {
 	sqlQuery := `SELECT id, fts_match_word('` + safeQ + `', content) AS fts_score
 		FROM sessions
 		WHERE fts_match_word('` + safeQ + `', content)
 		ORDER BY fts_match_word('` + safeQ + `', content) DESC, id
-		LIMIT ?`
+		LIMIT ? OFFSET ?`
 
-	rows, err := r.db.QueryContext(ctx, sqlQuery, limit)
+	rows, err := r.db.QueryContext(ctx, sqlQuery, limit, offset)
 	if err != nil {
 		return nil, err
 	}

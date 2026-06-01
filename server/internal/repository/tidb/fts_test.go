@@ -16,7 +16,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/domain"
 )
 
-func TestMemoryFTSSearch_ExpandsPureFTSTopKBeforePostFilter(t *testing.T) {
+func TestMemoryFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	db := newScriptedTestDB(t, []*queryExpectation{
 		{
@@ -25,13 +25,14 @@ func TestMemoryFTSSearch_ExpandsPureFTSTopKBeforePostFilter(t *testing.T) {
 				"FROM memories",
 				"WHERE fts_match_word('golang', content)",
 				"ORDER BY fts_match_word('golang', content) DESC, id",
+				"LIMIT ? OFFSET ?",
 			},
 			mustNotContain: []string{
 				"state = ?",
 				"agent_id = ?",
 				"JSON_CONTAINS(tags, ?)",
 			},
-			wantArgs: []any{2},
+			wantArgs: []any{2, 0},
 			rows: &scriptedRows{
 				columns: []string{"id", "fts_score"},
 				values: [][]driver.Value{
@@ -60,20 +61,21 @@ func TestMemoryFTSSearch_ExpandsPureFTSTopKBeforePostFilter(t *testing.T) {
 				"FROM memories",
 				"WHERE fts_match_word('golang', content)",
 				"ORDER BY fts_match_word('golang', content) DESC, id",
+				"LIMIT ? OFFSET ?",
 			},
 			mustNotContain: []string{
 				"state = ?",
 				"agent_id = ?",
 				"JSON_CONTAINS(tags, ?)",
 			},
-			wantArgs: []any{4},
+			wantArgs: []any{4, 2},
 			rows: &scriptedRows{
 				columns: []string{"id", "fts_score"},
 				values: [][]driver.Value{
-					{"m-deleted", 9.9},
-					{"m-good-1", 8.8},
 					{"m-good-2", 7.7},
 					{"m-good-3", 6.6},
+					{"m-good-4", 5.5},
+					{"m-good-5", 4.4},
 				},
 			},
 		},
@@ -83,7 +85,7 @@ func TestMemoryFTSSearch_ExpandsPureFTSTopKBeforePostFilter(t *testing.T) {
 				"WHERE id IN (?,?,?,?) AND state = ? AND agent_id = ? AND JSON_CONTAINS(tags, ?)",
 			},
 			mustNotContain: []string{"fts_match_word("},
-			wantArgs:       []any{"m-deleted", "m-good-1", "m-good-2", "m-good-3", "active", "agent-1", `"tag-a"`},
+			wantArgs:       []any{"m-good-2", "m-good-3", "m-good-4", "m-good-5", "active", "agent-1", `"tag-a"`},
 			rows: &scriptedRows{
 				columns: memoryColumns(),
 				values: [][]driver.Value{
@@ -118,7 +120,7 @@ func TestMemoryFTSSearch_ExpandsPureFTSTopKBeforePostFilter(t *testing.T) {
 	}
 }
 
-func TestSessionFTSSearch_ExpandsPureFTSTopKBeforePostFilter(t *testing.T) {
+func TestSessionFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	db := newScriptedTestDB(t, []*queryExpectation{
 		{
@@ -127,6 +129,7 @@ func TestSessionFTSSearch_ExpandsPureFTSTopKBeforePostFilter(t *testing.T) {
 				"FROM sessions",
 				"WHERE fts_match_word('golang', content)",
 				"ORDER BY fts_match_word('golang', content) DESC, id",
+				"LIMIT ? OFFSET ?",
 			},
 			mustNotContain: []string{
 				"state = ?",
@@ -135,7 +138,7 @@ func TestSessionFTSSearch_ExpandsPureFTSTopKBeforePostFilter(t *testing.T) {
 				"source = ?",
 				"JSON_CONTAINS(tags, ?)",
 			},
-			wantArgs: []any{2},
+			wantArgs: []any{2, 0},
 			rows: &scriptedRows{
 				columns: []string{"id", "fts_score"},
 				values: [][]driver.Value{
@@ -165,6 +168,7 @@ func TestSessionFTSSearch_ExpandsPureFTSTopKBeforePostFilter(t *testing.T) {
 				"FROM sessions",
 				"WHERE fts_match_word('golang', content)",
 				"ORDER BY fts_match_word('golang', content) DESC, id",
+				"LIMIT ? OFFSET ?",
 			},
 			mustNotContain: []string{
 				"state = ?",
@@ -173,14 +177,14 @@ func TestSessionFTSSearch_ExpandsPureFTSTopKBeforePostFilter(t *testing.T) {
 				"source = ?",
 				"JSON_CONTAINS(tags, ?)",
 			},
-			wantArgs: []any{4},
+			wantArgs: []any{4, 2},
 			rows: &scriptedRows{
 				columns: []string{"id", "fts_score"},
 				values: [][]driver.Value{
-					{"s-stale", 5.5},
-					{"s-good-1", 4.4},
 					{"s-good-2", 3.3},
 					{"s-good-3", 2.2},
+					{"s-good-4", 1.1},
+					{"s-good-5", 0.9},
 				},
 			},
 		},
@@ -191,7 +195,7 @@ func TestSessionFTSSearch_ExpandsPureFTSTopKBeforePostFilter(t *testing.T) {
 				"WHERE id IN (?,?,?,?) AND state = ? AND agent_id = ? AND session_id = ? AND source = ? AND JSON_CONTAINS(tags, ?)",
 			},
 			mustNotContain: []string{"fts_match_word("},
-			wantArgs:       []any{"s-stale", "s-good-1", "s-good-2", "s-good-3", "active", "agent-1", "sess-1", "chat", `"tag-a"`},
+			wantArgs:       []any{"s-good-2", "s-good-3", "s-good-4", "s-good-5", "active", "agent-1", "sess-1", "chat", `"tag-a"`},
 			rows: &scriptedRows{
 				columns: sessionColumns(),
 				values: [][]driver.Value{

@@ -35,8 +35,8 @@ func NewMemoryRepo(db *sql.DB, autoModel string, ftsEnabled bool, clusterID stri
 func (r *MemoryRepo) FTSAvailable() bool { return r.ftsAvailable.Load() }
 
 const (
-	allColumns                = `id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at, superseded_by`
-	maxFTSCandidateFetchLimit = 1000
+	allColumns               = `id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at, superseded_by`
+	maxFTSCandidatePageLimit = 1000
 )
 
 func (r *MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
@@ -573,61 +573,54 @@ func (r *MemoryRepo) ftsSearchWithPostFilter(ctx context.Context, query string, 
 	safeQ := ftsSafeLiteral(query)
 
 	candidateLimit := limit
+	offset := 0
+	filtered := make([]domain.Memory, 0, limit)
 	for {
-		candidates, err := r.fetchMemoryFTSCandidates(ctx, safeQ, candidateLimit)
+		candidates, err := r.fetchMemoryFTSCandidates(ctx, safeQ, candidateLimit, offset)
 		if err != nil {
 			return nil, err
 		}
 		if len(candidates) == 0 {
-			return nil, nil
+			return filtered, nil
 		}
 
-		filtered, err := r.fetchFilteredFTSMemories(ctx, candidates, where, args)
+		page, err := r.fetchFilteredFTSMemories(ctx, candidates, where, args)
 		if err != nil {
 			return nil, err
 		}
-		if len(filtered) >= limit || len(candidates) < candidateLimit {
-			if len(filtered) > limit {
-				filtered = filtered[:limit]
-			}
+		filtered = append(filtered, page...)
+		if len(filtered) >= limit {
+			return filtered[:limit], nil
+		}
+		if len(candidates) < candidateLimit {
 			return filtered, nil
 		}
 
-		nextLimit := nextFTSCandidateFetchLimit(candidateLimit, limit)
-		if nextLimit <= candidateLimit {
-			if len(filtered) > limit {
-				filtered = filtered[:limit]
-			}
-			return filtered, nil
-		}
-		candidateLimit = nextLimit
+		offset += len(candidates)
+		candidateLimit = nextFTSCandidatePageLimit(candidateLimit)
 	}
 }
 
-func nextFTSCandidateFetchLimit(current, requested int) int {
-	maxLimit := requested * 8
-	if maxLimit > maxFTSCandidateFetchLimit {
-		maxLimit = maxFTSCandidateFetchLimit
-	}
-	if maxLimit < requested {
-		maxLimit = requested
+func nextFTSCandidatePageLimit(current int) int {
+	if current >= maxFTSCandidatePageLimit {
+		return current
 	}
 
 	next := current * 2
-	if next > maxLimit {
-		next = maxLimit
+	if next > maxFTSCandidatePageLimit {
+		return maxFTSCandidatePageLimit
 	}
 	return next
 }
 
-func (r *MemoryRepo) fetchMemoryFTSCandidates(ctx context.Context, safeQ string, limit int) ([]memoryFTSCandidate, error) {
+func (r *MemoryRepo) fetchMemoryFTSCandidates(ctx context.Context, safeQ string, limit, offset int) ([]memoryFTSCandidate, error) {
 	sqlQuery := `SELECT id, fts_match_word('` + safeQ + `', content) AS fts_score
 		FROM memories
 		WHERE fts_match_word('` + safeQ + `', content)
 		ORDER BY fts_match_word('` + safeQ + `', content) DESC, id
-		LIMIT ?`
+		LIMIT ? OFFSET ?`
 
-	rows, err := r.db.QueryContext(ctx, sqlQuery, limit)
+	rows, err := r.db.QueryContext(ctx, sqlQuery, limit, offset)
 	if err != nil {
 		return nil, err
 	}
