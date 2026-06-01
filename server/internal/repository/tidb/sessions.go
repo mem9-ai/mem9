@@ -382,29 +382,37 @@ func (r *SessionRepo) ftsSearchWithPostFilter(ctx context.Context, query string,
 	conds, args := r.buildSessionFilterConds(f)
 	where := strings.Join(conds, " AND ")
 	safeQ := ftsSafeLiteral(query)
-	candidates, err := r.fetchSessionFTSCandidates(ctx, safeQ, limit)
-	if err != nil {
-		return nil, err
-	}
-	if len(candidates) == 0 {
-		return nil, nil
-	}
 
-	filtered, err := r.fetchFilteredFTSSessions(ctx, candidates, where, args)
-	if err != nil {
-		return nil, err
-	}
-	if len(filtered) >= limit || len(candidates) < limit {
-		if len(filtered) > limit {
-			filtered = filtered[:limit]
+	candidateLimit := limit
+	for {
+		candidates, err := r.fetchSessionFTSCandidates(ctx, safeQ, candidateLimit)
+		if err != nil {
+			return nil, err
 		}
-		return filtered, nil
-	}
+		if len(candidates) == 0 {
+			return nil, nil
+		}
 
-	// Bound the FTS-only candidate expansion to a single TopK pass. If selective
-	// post-filters drop too many candidates, fall back to the original filtered
-	// query shape to avoid unbounded global pagination.
-	return r.filteredFTSSearch(ctx, safeQ, where, args, limit)
+		filtered, err := r.fetchFilteredFTSSessions(ctx, candidates, where, args)
+		if err != nil {
+			return nil, err
+		}
+		if len(filtered) >= limit || len(candidates) < candidateLimit {
+			if len(filtered) > limit {
+				filtered = filtered[:limit]
+			}
+			return filtered, nil
+		}
+
+		nextLimit := nextFTSCandidateFetchLimit(candidateLimit, limit)
+		if nextLimit <= candidateLimit {
+			if len(filtered) > limit {
+				filtered = filtered[:limit]
+			}
+			return filtered, nil
+		}
+		candidateLimit = nextLimit
+	}
 }
 
 func (r *SessionRepo) fetchSessionFTSCandidates(ctx context.Context, safeQ string, limit int) ([]sessionFTSCandidate, error) {
@@ -484,27 +492,6 @@ func (r *SessionRepo) fetchFilteredFTSSessions(ctx context.Context, candidates [
 	return ordered, nil
 }
 
-func (r *SessionRepo) filteredFTSSearch(ctx context.Context, safeQ, where string, args []any, limit int) ([]domain.Memory, error) {
-	sqlQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at,
-		fts_match_word('` + safeQ + `', content) AS fts_score
-		FROM sessions
-		WHERE ` + where + ` AND fts_match_word('` + safeQ + `', content)
-		ORDER BY fts_match_word('` + safeQ + `', content) DESC
-		LIMIT ?`
-
-	fullArgs := make([]any, 0, len(args)+1)
-	fullArgs = append(fullArgs, args...)
-	fullArgs = append(fullArgs, limit)
-
-	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	return scanSessionRowsWithFTSScore(rows)
-}
-
 func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
 	conds, args := r.buildSessionFilterConds(f)
 	if query != "" {
@@ -554,18 +541,6 @@ func scanSessionRowsWithDistance(rows *sql.Rows) ([]domain.Memory, error) {
 	var result []domain.Memory
 	for rows.Next() {
 		m, err := scanSessionRowWithDistance(rows)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, *m)
-	}
-	return result, rows.Err()
-}
-
-func scanSessionRowsWithFTSScore(rows *sql.Rows) ([]domain.Memory, error) {
-	var result []domain.Memory
-	for rows.Next() {
-		m, err := scanSessionRowWithFTSScore(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -625,29 +600,6 @@ func scanSessionRowWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 	m = *fillSessionMemory(&m, sessionID, agentID, source, role, contentType, seq, tagsJSON, state, createdAt)
 	sc := 1 - distance
 	m.Score = &sc
-	return &m, nil
-}
-
-func scanSessionRowWithFTSScore(rows *sql.Rows) (*domain.Memory, error) {
-	var (
-		sessionID, agentID, source, role, contentType sql.NullString
-		tagsJSON                                      []byte
-		state                                         sql.NullString
-		seq                                           int
-		createdAt                                     time.Time
-		ftsScore                                      float64
-		m                                             domain.Memory
-	)
-	if err := rows.Scan(
-		&m.ID, &sessionID, &agentID, &source,
-		&seq, &role, &m.Content, &contentType,
-		&tagsJSON, &state, &createdAt,
-		&ftsScore,
-	); err != nil {
-		return nil, fmt.Errorf("scan session row with fts score: %w", err)
-	}
-	m = *fillSessionMemory(&m, sessionID, agentID, source, role, contentType, seq, tagsJSON, state, createdAt)
-	m.Score = &ftsScore
 	return &m, nil
 }
 

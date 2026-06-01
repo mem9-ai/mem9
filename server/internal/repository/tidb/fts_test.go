@@ -16,7 +16,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/domain"
 )
 
-func TestMemoryFTSSearch_PostFiltersAfterFTSTopK(t *testing.T) {
+func TestMemoryFTSSearch_ExpandsPureFTSTopKBeforePostFilter(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	db := newScriptedTestDB(t, []*queryExpectation{
 		{
@@ -56,17 +56,39 @@ func TestMemoryFTSSearch_PostFiltersAfterFTSTopK(t *testing.T) {
 		},
 		{
 			mustContain: []string{
-				"SELECT " + allColumns + ", fts_match_word('golang', content) AS fts_score",
+				"SELECT id, fts_match_word('golang', content) AS fts_score",
 				"FROM memories",
-				"WHERE state = ? AND agent_id = ? AND JSON_CONTAINS(tags, ?) AND fts_match_word('golang', content)",
-				"ORDER BY fts_match_word('golang', content) DESC",
+				"WHERE fts_match_word('golang', content)",
+				"ORDER BY fts_match_word('golang', content) DESC, id",
 			},
-			wantArgs: []any{"active", "agent-1", `"tag-a"`, 2},
+			mustNotContain: []string{
+				"state = ?",
+				"agent_id = ?",
+				"JSON_CONTAINS(tags, ?)",
+			},
+			wantArgs: []any{4},
 			rows: &scriptedRows{
-				columns: memoryColumnsWithFTSScore(),
+				columns: []string{"id", "fts_score"},
 				values: [][]driver.Value{
-					memoryRowWithFTSScore("m-good-1", "match one", "agent-1", "session-1", "active", []byte(`["tag-a"]`), now, 8.8),
-					memoryRowWithFTSScore("m-good-2", "match two", "agent-1", "session-2", "active", []byte(`["tag-a"]`), now, 7.7),
+					{"m-deleted", 9.9},
+					{"m-good-1", 8.8},
+					{"m-good-2", 7.7},
+					{"m-good-3", 6.6},
+				},
+			},
+		},
+		{
+			mustContain: []string{
+				"SELECT " + allColumns + " FROM memories",
+				"WHERE id IN (?,?,?,?) AND state = ? AND agent_id = ? AND JSON_CONTAINS(tags, ?)",
+			},
+			mustNotContain: []string{"fts_match_word("},
+			wantArgs:       []any{"m-deleted", "m-good-1", "m-good-2", "m-good-3", "active", "agent-1", `"tag-a"`},
+			rows: &scriptedRows{
+				columns: memoryColumns(),
+				values: [][]driver.Value{
+					memoryRow("m-good-1", "match one", "agent-1", "session-1", "active", []byte(`["tag-a"]`), now),
+					memoryRow("m-good-2", "match two", "agent-1", "session-2", "active", []byte(`["tag-a"]`), now),
 				},
 			},
 		},
@@ -96,7 +118,7 @@ func TestMemoryFTSSearch_PostFiltersAfterFTSTopK(t *testing.T) {
 	}
 }
 
-func TestSessionFTSSearch_PostFiltersAfterFTSTopK(t *testing.T) {
+func TestSessionFTSSearch_ExpandsPureFTSTopKBeforePostFilter(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	db := newScriptedTestDB(t, []*queryExpectation{
 		{
@@ -139,18 +161,42 @@ func TestSessionFTSSearch_PostFiltersAfterFTSTopK(t *testing.T) {
 		},
 		{
 			mustContain: []string{
-				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at,",
-				"fts_match_word('golang', content) AS fts_score",
+				"SELECT id, fts_match_word('golang', content) AS fts_score",
 				"FROM sessions",
-				"WHERE state = ? AND agent_id = ? AND session_id = ? AND source = ? AND JSON_CONTAINS(tags, ?) AND fts_match_word('golang', content)",
-				"ORDER BY fts_match_word('golang', content) DESC",
+				"WHERE fts_match_word('golang', content)",
+				"ORDER BY fts_match_word('golang', content) DESC, id",
 			},
-			wantArgs: []any{"active", "agent-1", "sess-1", "chat", `"tag-a"`, 2},
+			mustNotContain: []string{
+				"state = ?",
+				"agent_id = ?",
+				"session_id = ?",
+				"source = ?",
+				"JSON_CONTAINS(tags, ?)",
+			},
+			wantArgs: []any{4},
 			rows: &scriptedRows{
-				columns: sessionColumnsWithFTSScore(),
+				columns: []string{"id", "fts_score"},
 				values: [][]driver.Value{
-					sessionRowWithFTSScore("s-good-1", "sess-1", "agent-1", "chat", 1, "user", "match one", []byte(`["tag-a"]`), "active", now, 4.4),
-					sessionRowWithFTSScore("s-good-2", "sess-1", "agent-1", "chat", 2, "assistant", "match two", []byte(`["tag-a"]`), "active", now, 3.3),
+					{"s-stale", 5.5},
+					{"s-good-1", 4.4},
+					{"s-good-2", 3.3},
+					{"s-good-3", 2.2},
+				},
+			},
+		},
+		{
+			mustContain: []string{
+				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at",
+				"FROM sessions",
+				"WHERE id IN (?,?,?,?) AND state = ? AND agent_id = ? AND session_id = ? AND source = ? AND JSON_CONTAINS(tags, ?)",
+			},
+			mustNotContain: []string{"fts_match_word("},
+			wantArgs:       []any{"s-stale", "s-good-1", "s-good-2", "s-good-3", "active", "agent-1", "sess-1", "chat", `"tag-a"`},
+			rows: &scriptedRows{
+				columns: sessionColumns(),
+				values: [][]driver.Value{
+					sessionRow("s-good-1", "sess-1", "agent-1", "chat", 1, "user", "match one", []byte(`["tag-a"]`), "active", now),
+					sessionRow("s-good-2", "sess-1", "agent-1", "chat", 2, "assistant", "match two", []byte(`["tag-a"]`), "active", now),
 				},
 			},
 		},
@@ -349,11 +395,6 @@ func memoryColumns() []string {
 	}
 }
 
-func memoryColumnsWithFTSScore() []string {
-	cols := append([]string{}, memoryColumns()...)
-	return append(cols, "fts_score")
-}
-
 func memoryRow(id, content, agentID, sessionID, state string, tags []byte, ts time.Time) []driver.Value {
 	return []driver.Value{
 		id,
@@ -374,20 +415,10 @@ func memoryRow(id, content, agentID, sessionID, state string, tags []byte, ts ti
 	}
 }
 
-func memoryRowWithFTSScore(id, content, agentID, sessionID, state string, tags []byte, ts time.Time, score float64) []driver.Value {
-	row := append([]driver.Value{}, memoryRow(id, content, agentID, sessionID, state, tags, ts)...)
-	return append(row, score)
-}
-
 func sessionColumns() []string {
 	return []string{
 		"id", "session_id", "agent_id", "source", "seq", "role", "content", "content_type", "tags", "state", "created_at",
 	}
-}
-
-func sessionColumnsWithFTSScore() []string {
-	cols := append([]string{}, sessionColumns()...)
-	return append(cols, "fts_score")
 }
 
 func sessionRow(id, sessionID, agentID, source string, seq int64, role, content string, tags []byte, state string, ts time.Time) []driver.Value {
@@ -404,11 +435,6 @@ func sessionRow(id, sessionID, agentID, source string, seq int64, role, content 
 		state,
 		ts,
 	}
-}
-
-func sessionRowWithFTSScore(id, sessionID, agentID, source string, seq int64, role, content string, tags []byte, state string, ts time.Time, score float64) []driver.Value {
-	row := append([]driver.Value{}, sessionRow(id, sessionID, agentID, source, seq, role, content, tags, state, ts)...)
-	return append(row, score)
 }
 
 var scriptedDriverID atomic.Uint64
