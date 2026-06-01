@@ -43,6 +43,7 @@ type Server struct {
 	metering             metering.Writer
 	runtimeUsage         runtimeusage.Manager
 	activity             *service.ActivityTracker
+	externalContext      service.ExternalContextProvider
 	startedAt            time.Time
 	svcCache             sync.Map
 	chainRecallStopScore float64
@@ -97,6 +98,11 @@ func (s *Server) WithRuntimeUsage(manager runtimeusage.Manager) *Server {
 
 func (s *Server) WithActivityTracker(tracker *service.ActivityTracker) *Server {
 	s.activity = tracker
+	return s
+}
+
+func (s *Server) WithExternalContextProvider(provider service.ExternalContextProvider) *Server {
+	s.externalContext = provider
 	return s
 }
 

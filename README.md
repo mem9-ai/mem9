@@ -194,6 +194,20 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 | `MNEMO_INGEST_MODE` | No | `smart` | Ingest mode: `smart` or `raw` |
 | `MNEMO_FTS_ENABLED` | No | `false` | Enable TiDB full-text search path. Only set this on clusters that support TiDB FTS |
 
+#### DataHub MCP Context
+
+DataHub MCP context retrieval is disabled by default. When enabled, `GET /v1alpha2/mem9s/memories?q=...` keeps returning normal mem9 memories and may also include an `external_context` array for data-asset questions such as dataset, dashboard, metric, lineage, schema, owner, freshness, or quality queries. The provider is read-only: mem9 calls DataHub MCP `search`, enriches matching URNs with `get_entities`, and fetches one-hop upstream/downstream context with `get_lineage`. If enrichment or lineage fails, mem9 falls back to the context already retrieved instead of failing recall. DataHub remains the source of truth for data assets.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `MNEMO_DATAHUB_MCP_ENABLED` | No | `false` | Enable read-only DataHub MCP context retrieval |
+| `MNEMO_DATAHUB_MCP_URL` | Yes, when enabled | — | HTTP(S) URL for the DataHub MCP endpoint |
+| `MNEMO_DATAHUB_MCP_TOKEN` | No | — | Bearer token sent to the DataHub MCP endpoint |
+| `MNEMO_DATAHUB_MCP_TIMEOUT` | No | `5s` | Per-request timeout for DataHub MCP calls |
+| `MNEMO_DATAHUB_MCP_MAX_RESULTS` | No | `5` | Maximum DataHub context items returned per search response, capped at 50 |
+
+Set `include_datahub=true` or `include_external_context=true` on a search request to force DataHub retrieval for a query. Set either parameter to `false` to suppress automatic DataHub retrieval for that request.
+
 #### Search Source Turns
 
 The `MEM9_SOURCE_TURN_*` variables control how many source turn conversations are attached to search results as contextual decorations.

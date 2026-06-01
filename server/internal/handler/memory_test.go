@@ -224,6 +224,17 @@ type captureMeteringWriter struct {
 	events []metering.Event
 }
 
+type fakeExternalContextProvider struct {
+	queries []string
+	items   []service.ExternalContextItem
+	err     error
+}
+
+func (p *fakeExternalContextProvider) Retrieve(_ context.Context, query string, _ int) ([]service.ExternalContextItem, error) {
+	p.queries = append(p.queries, query)
+	return p.items, p.err
+}
+
 func (w *captureMeteringWriter) Record(evt metering.Event) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -1259,6 +1270,91 @@ func TestListMemories_RuntimeUsageRecallFinalizationIgnoresRequestCancellation(t
 	}
 	if len(runtimeUsage.recallSuccessContextErrs) != 1 || runtimeUsage.recallSuccessContextErrs[0] != nil {
 		t.Fatalf("recall finalization context errors = %+v, want [<nil>]", runtimeUsage.recallSuccessContextErrs)
+	}
+}
+
+func TestListMemories_IncludesDataHubExternalContextForDataQuestions(t *testing.T) {
+	provider := &fakeExternalContextProvider{
+		items: []service.ExternalContextItem{
+			{
+				Provider: "datahub",
+				Type:     "DASHBOARD",
+				ID:       "urn:li:dashboard:(looker,revenue_exec)",
+				Title:    "Executive Revenue",
+				Snippet:  "Freshness check failed for the backing dataset.",
+			},
+		},
+	}
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{}).
+		WithExternalContextProvider(provider)
+
+	req := makeTenantRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("why is the revenue dashboard wrong today?")+"&limit=10", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if len(provider.queries) != 1 {
+		t.Fatalf("provider queries = %v, want one query", provider.queries)
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.ExternalContext) != 1 {
+		t.Fatalf("external context len = %d, want 1", len(resp.ExternalContext))
+	}
+	if resp.ExternalContext[0].Provider != "datahub" || resp.ExternalContext[0].Title != "Executive Revenue" {
+		t.Fatalf("unexpected external context: %+v", resp.ExternalContext[0])
+	}
+}
+
+func TestListMemories_ExternalContextFalseOverrideWins(t *testing.T) {
+	provider := &fakeExternalContextProvider{
+		items: []service.ExternalContextItem{{Provider: "datahub", Title: "Should not be returned"}},
+	}
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{}).
+		WithExternalContextProvider(provider)
+
+	req := makeTenantRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("why is the revenue dashboard wrong today?")+"&include_datahub=false&include_external_context=true", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if len(provider.queries) != 0 {
+		t.Fatalf("provider queries = %v, want none when either external context flag is false", provider.queries)
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.ExternalContext) != 0 {
+		t.Fatalf("external context len = %d, want 0", len(resp.ExternalContext))
+	}
+}
+
+func TestListMemories_ExternalContextRepeatedFalseOverrideWins(t *testing.T) {
+	provider := &fakeExternalContextProvider{
+		items: []service.ExternalContextItem{{Provider: "datahub", Title: "Should not be returned"}},
+	}
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{}).
+		WithExternalContextProvider(provider)
+
+	req := makeTenantRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("why is the revenue dashboard wrong today?")+"&include_datahub=false&include_datahub=true", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if len(provider.queries) != 0 {
+		t.Fatalf("provider queries = %v, want none when any repeated external context flag is false", provider.queries)
 	}
 }
 
