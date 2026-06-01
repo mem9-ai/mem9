@@ -368,6 +368,7 @@ def prepare_openclaw_environment(
     host_channel: str,
     model_profile_name: str,
     plugin_source: str,
+    host_ref: str | None = None,
     failure_class: str = "setup_failure",
     default_timeout_ms: int = 8000,
     search_timeout_ms: int = 15000,
@@ -392,8 +393,33 @@ def prepare_openclaw_environment(
     home_dir = module_dir / "home"
     home_dir.mkdir(parents=True, exist_ok=True)
 
+    executable = str(host_cfg.get("executable", "openclaw"))
+    if host_ref:
+        if host_ref.startswith("path:"):
+            executable = host_ref.split(":", 1)[1]
+        else:
+            package_name = str(host_cfg.get("package", "openclaw") or "openclaw")
+            host_prefix = module_dir / "host-npm"
+            host_prefix.mkdir(parents=True, exist_ok=True)
+            package_spec = f"{package_name}@{host_ref}"
+            proc = subprocess.run(
+                ["npm", "install", "--prefix", str(host_prefix), "--no-audit", "--no-fund", package_spec],
+                cwd=str(repo_root),
+                env=os.environ.copy(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=600,
+                check=False,
+            )
+            (module_dir / "host-npm-install.stdout.txt").write_text(proc.stdout, encoding="utf-8")
+            (module_dir / "host-npm-install.stderr.txt").write_text(proc.stderr, encoding="utf-8")
+            if proc.returncode != 0:
+                raise CompatFailure("install_failure", proc.stderr.strip() or f"failed to install {package_spec}")
+            executable = str(host_prefix / "node_modules" / ".bin" / str(host_cfg.get("binary", "openclaw")))
+
     host = OpenClawHost(
-        executable=str(host_cfg.get("executable", "openclaw")),
+        executable=executable,
         home_dir=home_dir,
         repo_root=repo_root,
         module_dir=module_dir,
@@ -475,6 +501,7 @@ def run_openclaw_module(
     host_channel: str,
     model_profile_name: str,
     plugin_source: str,
+    host_ref: str | None = None,
 ) -> dict[str, Any]:
     env = prepare_openclaw_environment(
         repo_root=repo_root,
@@ -484,6 +511,7 @@ def run_openclaw_module(
         host_channel=host_channel,
         model_profile_name=model_profile_name,
         plugin_source=plugin_source,
+        host_ref=host_ref,
     )
     try:
         write_json(module_dir / "probe.json", env.probe_info)
@@ -655,6 +683,7 @@ def run_openclaw_module(
                 host_channel=host_channel,
                 model_profile_name=model_profile_name,
                 plugin_source=plugin_source,
+                host_ref=host_ref,
                 search_timeout_ms=50,
             )
             env.proxy.set_fault(

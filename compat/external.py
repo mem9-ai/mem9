@@ -42,9 +42,19 @@ def _agent_config(manifest: dict[str, Any], agent: str) -> dict[str, Any]:
     return cfg
 
 
-def _repo_ref(agent_cfg: dict[str, Any], agent_ref: str | None) -> str:
-    ref = agent_ref or agent_cfg.get("default_ref") or "main"
-    return str(ref)
+def _repo_ref(agent_cfg: dict[str, Any], plugin_ref: str | None) -> tuple[str, str | None]:
+    plugin_cfg = agent_cfg.get("plugin")
+    default_ref = ""
+    if isinstance(plugin_cfg, dict):
+        default_ref = str(plugin_cfg.get("default_ref", "") or "")
+    ref = plugin_ref or default_ref or agent_cfg.get("default_ref") or "main"
+    if isinstance(ref, str) and ref.startswith("github:"):
+        spec = ref.split(":", 1)[1]
+        if "@" not in spec:
+            raise CompatFailure("setup_failure", "github plugin_ref must look like github:<owner>/<repo>@<ref>")
+        repo, parsed_ref = spec.rsplit("@", 1)
+        return parsed_ref, repo
+    return str(ref), None
 
 
 def _external_repo_path(
@@ -52,9 +62,9 @@ def _external_repo_path(
     module_dir: Path,
     agent: str,
     agent_cfg: dict[str, Any],
-    agent_ref: str | None,
+    plugin_ref: str | None,
 ) -> tuple[Path, dict[str, Any]]:
-    ref = _repo_ref(agent_cfg, agent_ref)
+    ref, repo_override = _repo_ref(agent_cfg, plugin_ref)
     if ref.startswith("path:"):
         repo_path = Path(ref.split(":", 1)[1]).expanduser().resolve()
         if not repo_path.exists():
@@ -68,7 +78,7 @@ def _external_repo_path(
             raise CompatFailure("setup_failure", f"{path_env} points at missing path: {repo_path}")
         return repo_path, {"source": "env_path", "path": str(repo_path), "ref": ref, "path_env": path_env}
 
-    repo = agent_cfg.get("repo")
+    repo = repo_override or agent_cfg.get("repo")
     if not isinstance(repo, str) or not repo:
         raise CompatFailure("setup_failure", f"missing repo for external agent {agent}")
 
@@ -200,6 +210,54 @@ def _run_hermes_hosted(repo_dir: Path, module_dir: Path) -> dict[str, Any]:
     return {"hosted": json.loads(proc.stdout.splitlines()[-1])}
 
 
+def _run_hermes_host_smoke(
+    *,
+    manifest: dict[str, Any],
+    repo_dir: Path,
+    module_dir: Path,
+    host_ref: str | None,
+) -> dict[str, Any]:
+    agent_cfg = _agent_config(manifest, "hermes")
+    host_cfg = agent_cfg.get("host")
+    if not isinstance(host_cfg, dict):
+        raise CompatFailure("setup_failure", "missing Hermes host config")
+
+    host_repo = str(host_cfg.get("repo", "") or "")
+    if not host_repo:
+        raise CompatFailure("setup_failure", "missing Hermes host repo")
+    ref = host_ref or str(host_cfg.get("default_ref", "") or "main")
+    repo_url = host_repo if host_repo.startswith(("http://", "https://", "git@")) else f"https://github.com/{host_repo}.git"
+    checkout_dir = module_dir / "checkout" / "hermes-host"
+    checkout_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    init = _run(["git", "init", str(checkout_dir)], cwd=module_dir, module_dir=module_dir, stem="host-git-init")
+    if init.returncode != 0:
+        raise CompatFailure("setup_failure", init.stderr.strip() or "Hermes host git init failed")
+    fetch = _run(
+        ["git", "fetch", "--depth", "1", repo_url, ref],
+        cwd=checkout_dir,
+        module_dir=module_dir,
+        stem="host-git-fetch",
+        timeout=300,
+    )
+    if fetch.returncode != 0:
+        raise CompatFailure("setup_failure", fetch.stderr.strip() or f"Hermes host git fetch failed for {host_repo}@{ref}")
+    checkout = _run(["git", "checkout", "--detach", "FETCH_HEAD"], cwd=checkout_dir, module_dir=module_dir, stem="host-git-checkout")
+    if checkout.returncode != 0:
+        raise CompatFailure("setup_failure", checkout.stderr.strip() or "Hermes host git checkout failed")
+    rev = _run(["git", "rev-parse", "HEAD"], cwd=checkout_dir, module_dir=module_dir, stem="host-git-rev-parse")
+    host_details = {
+        "source": "git",
+        "repo": host_repo,
+        "repo_url": repo_url,
+        "ref": ref,
+        "sha": rev.stdout.strip() if rev.returncode == 0 else "",
+        "path": str(checkout_dir),
+    }
+    hosted = _run_hermes_hosted(repo_dir, module_dir)
+    return {"host": host_details, **hosted}
+
+
 def _run_dify_script(repo_dir: Path, module_dir: Path, *, hosted: bool) -> dict[str, Any]:
     if hosted and not os.getenv("MNEMO_BASE_URL", "").rstrip("/"):
         raise CompatFailure("setup_failure", "MNEMO_BASE_URL is required for dify.hosted-contract")
@@ -322,7 +380,8 @@ def run_external_module(
     module_name: str,
     module_cfg: dict[str, Any],
     module_dir: Path,
-    agent_ref: str | None,
+    plugin_ref: str | None,
+    host_ref: str | None = None,
 ) -> dict[str, Any]:
     agent = str(module_cfg.get("agent", ""))
     agent_cfg = _agent_config(manifest, agent)
@@ -330,7 +389,7 @@ def run_external_module(
         module_dir=module_dir,
         agent=agent,
         agent_cfg=agent_cfg,
-        agent_ref=agent_ref,
+        plugin_ref=plugin_ref,
     )
 
     kind = str(module_cfg.get("kind", ""))
@@ -342,6 +401,15 @@ def run_external_module(
         details.update(_run_hermes_pytest(repo_dir, module_dir))
     elif kind == "hermes-hosted":
         details.update(_run_hermes_hosted(repo_dir, module_dir))
+    elif kind == "hermes-host-smoke":
+        details.update(
+            _run_hermes_host_smoke(
+                manifest=manifest,
+                repo_dir=repo_dir,
+                module_dir=module_dir,
+                host_ref=host_ref,
+            )
+        )
     elif kind == "dify-contract":
         details.update(_run_dify_script(repo_dir, module_dir, hosted=False))
     elif kind == "dify-hosted":

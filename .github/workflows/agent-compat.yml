@@ -16,19 +16,24 @@ on:
           - opencode
           - codex
           - dify
-      agent_ref:
-        description: Optional agent repo ref, tag, SHA, or path:<absolute-path> override
+      plugin_ref:
+        description: Optional mem9 plugin ref/version/source override
+        required: false
+        default: ""
+        type: string
+      host_ref:
+        description: Optional host agent/CLI version, tag, SHA, or path:<absolute-path> override
         required: false
         default: ""
         type: string
       lane:
         description: Compatibility lane
         required: true
-        default: contract
+        default: plugin-contract
         type: choice
         options:
-          - contract
-          - hosted-smoke
+          - plugin-contract
+          - host-smoke
           - full
       host_channel:
         description: Host channel, mainly for OpenClaw
@@ -39,7 +44,7 @@ on:
           - stable
           - next
       plugin_source:
-        description: OpenClaw plugin source: manifest, local, npm:<version>, or path:<path>
+        description: Plugin source: manifest, local, npm:<version>, path:<path>, github:<repo>@<ref>
         required: true
         default: manifest
         type: string
@@ -63,6 +68,10 @@ jobs:
       COMPAT_OPENCLAW_NEXT_VERSION: ${{ vars.COMPAT_OPENCLAW_NEXT_VERSION }}
       COMPAT_OPENCLAW_MODEL_PRIMARY: ${{ vars.COMPAT_OPENCLAW_MODEL_PRIMARY }}
       COMPAT_OPENCLAW_MODEL_SECONDARY: ${{ vars.COMPAT_OPENCLAW_MODEL_SECONDARY }}
+      COMPAT_HERMES_HOST_REF: ${{ vars.COMPAT_HERMES_HOST_REF }}
+      COMPAT_CLAUDE_HOST_REF: ${{ vars.COMPAT_CLAUDE_HOST_REF }}
+      COMPAT_OPENCODE_HOST_REF: ${{ vars.COMPAT_OPENCODE_HOST_REF }}
+      COMPAT_CODEX_HOST_REF: ${{ vars.COMPAT_CODEX_HOST_REF }}
 
     steps:
       - name: Checkout mem9
@@ -98,8 +107,12 @@ jobs:
             --plugin-source "${{ inputs.plugin_source }}"
           )
 
-          if [ -n "${{ inputs.agent_ref }}" ]; then
-            args+=(--agent-ref "${{ inputs.agent_ref }}")
+          if [ -n "${{ inputs.plugin_ref }}" ]; then
+            args+=(--plugin-ref "${{ inputs.plugin_ref }}")
+          fi
+
+          if [ -n "${{ inputs.host_ref }}" ]; then
+            args+=(--host-ref "${{ inputs.host_ref }}")
           fi
 
           python3 "${args[@]}"

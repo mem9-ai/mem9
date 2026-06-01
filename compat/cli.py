@@ -20,7 +20,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--host-channel", default="stable")
     run_parser.add_argument("--model-profile", default="primary")
     run_parser.add_argument("--plugin-source", default="local")
-    run_parser.add_argument("--agent-ref", default=None)
+    run_parser.add_argument("--plugin-ref", default=None)
+    run_parser.add_argument("--host-ref", default=None)
+    run_parser.add_argument("--agent-ref", default=None, help=argparse.SUPPRESS)
     run_parser.add_argument("--manifest", default=None)
     run_parser.add_argument("--artifacts-root", default=None)
 
@@ -30,23 +32,33 @@ def build_parser() -> argparse.ArgumentParser:
     suite_parser.add_argument("--host-channel", default="stable")
     suite_parser.add_argument("--model-profile", default="primary")
     suite_parser.add_argument("--plugin-source", default="local")
-    suite_parser.add_argument("--agent-ref", default=None)
+    suite_parser.add_argument("--plugin-ref", default=None)
+    suite_parser.add_argument("--host-ref", default=None)
+    suite_parser.add_argument("--agent-ref", default=None, help=argparse.SUPPRESS)
     suite_parser.add_argument("--manifest", default=None)
     suite_parser.add_argument("--artifacts-root", default=None)
 
     agent_parser = subparsers.add_parser("agent", help="Run one agent for a compatibility lane")
     agent_parser.add_argument("agent", choices=["openclaw", "hermes", "claude", "opencode", "codex", "dify", "all"])
-    agent_parser.add_argument("--lane", default="contract", choices=["contract", "hosted-smoke", "full"])
+    agent_parser.add_argument(
+        "--lane",
+        default="plugin-contract",
+        choices=["plugin-contract", "host-smoke", "full", "contract", "hosted-smoke"],
+    )
     agent_parser.add_argument("--host-channel", default="stable")
     agent_parser.add_argument("--model-profile", default="primary")
     agent_parser.add_argument("--plugin-source", default="manifest")
-    agent_parser.add_argument("--agent-ref", default=None)
+    agent_parser.add_argument("--plugin-ref", default=None)
+    agent_parser.add_argument("--host-ref", default=None)
+    agent_parser.add_argument("--agent-ref", default=None, help=argparse.SUPPRESS)
     agent_parser.add_argument("--manifest", default=None)
     agent_parser.add_argument("--artifacts-root", default=None)
 
     matrix_parser = subparsers.add_parser("matrix", help="Run a compat matrix lane")
     matrix_parser.add_argument("lane")
-    matrix_parser.add_argument("--agent-ref", default=None)
+    matrix_parser.add_argument("--plugin-ref", default=None)
+    matrix_parser.add_argument("--host-ref", default=None)
+    matrix_parser.add_argument("--agent-ref", default=None, help=argparse.SUPPRESS)
     matrix_parser.add_argument("--manifest", default=None)
     matrix_parser.add_argument("--artifacts-root", default=None)
 
@@ -64,6 +76,19 @@ def main(argv: list[str] | None = None) -> int:
 
         manifest = load_manifest(args.manifest)
 
+    def compat_plugin_ref() -> str | None:
+        return args.plugin_ref or args.agent_ref
+
+    def compat_host_ref() -> str | None:
+        return args.host_ref
+
+    def compat_lane(value: str) -> str:
+        if value == "contract":
+            return "plugin-contract"
+        if value == "hosted-smoke":
+            return "host-smoke"
+        return value
+
     if args.command == "run":
         result = run_module(
             repo_root=repo_root,
@@ -73,7 +98,8 @@ def main(argv: list[str] | None = None) -> int:
             host_channel=args.host_channel,
             model_profile=args.model_profile,
             plugin_source=args.plugin_source,
-            agent_ref=args.agent_ref,
+            plugin_ref=compat_plugin_ref(),
+            host_ref=compat_host_ref(),
             artifacts_root=args.artifacts_root,
         )
         print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
@@ -88,7 +114,8 @@ def main(argv: list[str] | None = None) -> int:
             host_channel=args.host_channel,
             model_profile=args.model_profile,
             plugin_source=args.plugin_source,
-            agent_ref=args.agent_ref,
+            plugin_ref=compat_plugin_ref(),
+            host_ref=compat_host_ref(),
             artifacts_root=args.artifacts_root,
         )
         print(json.dumps(summary, ensure_ascii=False, indent=2))
@@ -99,11 +126,12 @@ def main(argv: list[str] | None = None) -> int:
             repo_root=repo_root,
             manifest=manifest,
             agent=args.agent,
-            lane=args.lane,
+            lane=compat_lane(args.lane),
             host_channel=args.host_channel,
             model_profile=args.model_profile,
             plugin_source=args.plugin_source,
-            agent_ref=args.agent_ref,
+            plugin_ref=compat_plugin_ref(),
+            host_ref=compat_host_ref(),
             artifacts_root=args.artifacts_root,
         )
         print(json.dumps(summary, ensure_ascii=False, indent=2))
@@ -114,7 +142,8 @@ def main(argv: list[str] | None = None) -> int:
             repo_root=repo_root,
             manifest=manifest,
             lane_name=args.lane,
-            agent_ref=args.agent_ref,
+            plugin_ref=args.plugin_ref or args.agent_ref,
+            host_ref=args.host_ref,
             artifacts_root=args.artifacts_root,
         )
         print(json.dumps(summary, ensure_ascii=False, indent=2))

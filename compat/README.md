@@ -9,10 +9,12 @@ the checked-in command is:
 
 ```bash
 python3 compat run openclaw.install
-python3 compat run hermes.contract --agent-ref path:/Users/sx/github/mem9/mem9-hermes-plugin
-python3 compat run dify.contract --agent-ref path:/Users/sx/github/mem9/mem9-dify-plugin
-python3 compat agent hermes --lane contract --agent-ref main
-python3 compat agent openclaw --lane hosted-smoke --host-channel next
+python3 compat run hermes.contract --plugin-ref path:/Users/sx/github/mem9/mem9-hermes-plugin
+python3 compat run dify.contract --plugin-ref path:/Users/sx/github/mem9/mem9-dify-plugin
+python3 compat agent hermes --lane plugin-contract --plugin-ref main
+python3 compat agent openclaw --lane host-smoke --host-ref 2026.5.28
+python3 compat agent opencode --lane host-smoke --host-ref 1.15.13
+python3 compat agent codex --lane host-smoke --host-ref 0.135.0
 python3 compat suite openclaw-upgrade --host-channel stable --model-profile primary
 python3 compat matrix pr-core
 ```
@@ -34,10 +36,16 @@ python3 compat matrix pr-core
   - `openclaw-plugin-release`
 - Matrix orchestration for `pr-core`, `nightly-full`, and `release-gate`
 - A local recorder proxy that forwards to `mnemo-server` and records plugin traffic
-- Agent lanes for `contract`, `hosted-smoke`, and `full`
+- Agent lanes for `plugin-contract`, `host-smoke`, and `full`
 - External checkout support for:
   - `mem9-ai/mem9-hermes-plugin`
   - `mem9-ai/mem9-dify-plugin`
+- Host upgrade smoke support for:
+  - OpenClaw via `openclaw@<host_ref>`
+  - Hermes via `NousResearch/hermes-agent@<host_ref>` checkout plus provider smoke
+  - Claude Code via `@anthropic-ai/claude-code@<host_ref>`
+  - OpenCode via `opencode-ai@<host_ref>`
+  - Codex via `@openai/codex@<host_ref>`
 
 ## Agent upgrade checks
 
@@ -47,20 +55,31 @@ against a specific branch, tag, or SHA before release:
 
 ```text
 agent=hermes
-agent_ref=<branch-or-tag-or-sha>
-lane=contract
+plugin_ref=<branch-or-tag-or-sha>
+lane=plugin-contract
 ```
 
 For local development, pass `path:<absolute-path>` to use a sibling checkout:
 
 ```bash
-python3 compat agent hermes --lane contract --agent-ref path:/Users/sx/github/mem9/mem9-hermes-plugin
-python3 compat agent dify --lane contract --agent-ref path:/Users/sx/github/mem9/mem9-dify-plugin
+python3 compat agent hermes --lane plugin-contract --plugin-ref path:/Users/sx/github/mem9/mem9-hermes-plugin
+python3 compat agent dify --lane plugin-contract --plugin-ref path:/Users/sx/github/mem9/mem9-dify-plugin
 ```
 
-When `agent_ref` is omitted, the harness uses `agents.<name>.default_ref` from
-`manifest.yaml`. Stable failures are blocking. `next` host-channel failures are
-configured as alert-style checks in the workflow.
+Use `plugin_ref` for plugin upgrades and `host_ref` for host upgrades. When a
+ref is omitted, the harness uses the manifest defaults. Stable failures are
+blocking. `next` host-channel failures are configured as alert-style checks in
+the workflow.
+
+Examples:
+
+```bash
+python3 compat agent hermes --lane plugin-contract --plugin-ref release-candidate
+python3 compat agent claude --lane host-smoke --host-ref 2.1.159
+python3 compat agent opencode --lane host-smoke --host-ref 1.15.13 --plugin-source local
+python3 compat agent codex --lane host-smoke --host-ref 0.135.0
+python3 compat agent openclaw --lane host-smoke --host-ref 2026.5.28
+```
 
 ## Required environment
 

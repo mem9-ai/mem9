@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .external import run_external_module
+from .host_smoke import run_host_smoke_module
 from .manifest import load_manifest
 from .openclaw import CompatFailure, run_openclaw_module
 
@@ -23,6 +24,8 @@ class ResultRecord:
     host_channel: str
     host_version_detected: str
     plugin_source: str
+    plugin_ref: str
+    host_ref: str
     plugin_version: str
     model_profile: str
     status: str
@@ -53,6 +56,9 @@ def _read_plugin_version(repo_root: Path, agent: str) -> str:
 
 
 def _host_version_from_details(details: dict[str, Any]) -> str:
+    version_text = details.get("version_text")
+    if isinstance(version_text, str):
+        return version_text
     probe = details.get("probe")
     if isinstance(probe, dict):
         version_text = probe.get("version_text")
@@ -78,6 +84,104 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def _agent_config(manifest: dict[str, Any], agent: str) -> dict[str, Any]:
+    cfg = manifest.get("agents", {}).get(agent)
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _plugin_repo(agent_cfg: dict[str, Any]) -> str:
+    plugin_cfg = agent_cfg.get("plugin")
+    if isinstance(plugin_cfg, dict) and isinstance(plugin_cfg.get("repo"), str):
+        return str(plugin_cfg["repo"])
+    repo = agent_cfg.get("repo")
+    return str(repo) if isinstance(repo, str) else ""
+
+
+def _checkout_plugin_ref(
+    *,
+    repo_root: Path,
+    manifest: dict[str, Any],
+    agent: str,
+    plugin_ref: str,
+    module_dir: Path,
+) -> tuple[Path, dict[str, Any]]:
+    if plugin_ref.startswith("path:"):
+        path_value = Path(plugin_ref.split(":", 1)[1]).expanduser().resolve()
+        if not path_value.exists():
+            raise CompatFailure("setup_failure", f"plugin_ref path does not exist: {path_value}")
+        return path_value, {"source": "path", "path": str(path_value), "ref": plugin_ref}
+    if plugin_ref.startswith(("npm:", "pkg:")):
+        raise CompatFailure("setup_failure", f"plugin_ref {plugin_ref!r} is not supported for command contract modules")
+
+    agent_cfg = _agent_config(manifest, agent)
+    repo = _plugin_repo(agent_cfg)
+    ref = plugin_ref
+    if plugin_ref.startswith("github:"):
+        spec = plugin_ref.split(":", 1)[1]
+        if "@" not in spec:
+            raise CompatFailure("setup_failure", "github plugin_ref must look like github:<owner>/<repo>@<ref>")
+        repo, ref = spec.rsplit("@", 1)
+    if not repo:
+        return repo_root, {"source": "current_checkout", "ref": plugin_ref}
+
+    repo_url = repo if repo.startswith(("http://", "https://", "git@")) else f"https://github.com/{repo}.git"
+    checkout_dir = module_dir / "plugin-checkout" / agent
+    checkout_dir.parent.mkdir(parents=True, exist_ok=True)
+    init = subprocess.run(
+        ["git", "init", str(checkout_dir)],
+        cwd=str(repo_root),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    (module_dir / "plugin-git-init.stdout.txt").write_text(init.stdout, encoding="utf-8")
+    (module_dir / "plugin-git-init.stderr.txt").write_text(init.stderr, encoding="utf-8")
+    if init.returncode != 0:
+        raise CompatFailure("setup_failure", init.stderr.strip() or "plugin checkout git init failed")
+    fetch = subprocess.run(
+        ["git", "fetch", "--depth", "1", repo_url, ref],
+        cwd=str(checkout_dir),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    (module_dir / "plugin-git-fetch.stdout.txt").write_text(fetch.stdout, encoding="utf-8")
+    (module_dir / "plugin-git-fetch.stderr.txt").write_text(fetch.stderr, encoding="utf-8")
+    if fetch.returncode != 0:
+        raise CompatFailure("setup_failure", fetch.stderr.strip() or f"plugin checkout fetch failed for {repo}@{ref}")
+    checkout = subprocess.run(
+        ["git", "checkout", "--detach", "FETCH_HEAD"],
+        cwd=str(checkout_dir),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    (module_dir / "plugin-git-checkout.stdout.txt").write_text(checkout.stdout, encoding="utf-8")
+    (module_dir / "plugin-git-checkout.stderr.txt").write_text(checkout.stderr, encoding="utf-8")
+    if checkout.returncode != 0:
+        raise CompatFailure("setup_failure", checkout.stderr.strip() or "plugin checkout failed")
+    rev = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(checkout_dir),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    return checkout_dir, {
+        "source": "git",
+        "repo": repo,
+        "repo_url": repo_url,
+        "ref": ref,
+        "sha": rev.stdout.strip() if rev.returncode == 0 else "",
+        "path": str(checkout_dir),
+    }
+
+
 def run_module(
     *,
     repo_root: Path,
@@ -87,7 +191,8 @@ def run_module(
     host_channel: str,
     model_profile: str,
     plugin_source: str,
-    agent_ref: str | None = None,
+    plugin_ref: str | None = None,
+    host_ref: str | None = None,
     run_id: str | None = None,
     artifacts_root: str | None = None,
 ) -> ResultRecord:
@@ -121,25 +226,50 @@ def run_module(
                 host_channel=host_channel,
                 model_profile_name=model_profile,
                 plugin_source=plugin_source,
+                host_ref=host_ref,
             )
-        elif kind in {"hermes-pytest", "hermes-hosted", "dify-contract", "dify-hosted"}:
+        elif kind in {"hermes-pytest", "hermes-hosted", "hermes-host-smoke", "dify-contract", "dify-hosted"}:
             details = run_external_module(
                 manifest=manifest,
                 module_name=module_name,
                 module_cfg=module_cfg,
                 module_dir=module_dir,
-                agent_ref=agent_ref,
+                plugin_ref=plugin_ref,
+                host_ref=host_ref,
+            )
+        elif kind == "host-smoke":
+            details = run_host_smoke_module(
+                repo_root=repo_root,
+                manifest=manifest,
+                module_name=module_name,
+                module_cfg=module_cfg,
+                module_dir=module_dir,
+                plugin_source=plugin_source,
+                plugin_ref=plugin_ref,
+                host_ref=host_ref,
             )
         elif kind == "command":
             argv = module_cfg.get("argv")
             if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
                 raise CompatFailure("setup_failure", f"invalid argv for module {module_name}")
+            command_cwd = repo_root
+            plugin_checkout: dict[str, Any] | None = None
+            if plugin_ref:
+                command_cwd, plugin_checkout = _checkout_plugin_ref(
+                    repo_root=repo_root,
+                    manifest=manifest,
+                    agent=agent,
+                    plugin_ref=plugin_ref,
+                    module_dir=module_dir,
+                )
             proc = subprocess.run(
                 argv,
-                cwd=str(repo_root),
+                cwd=str(command_cwd),
                 env={
                     **os.environ.copy(),
-                    "COMPAT_AGENT_REF": agent_ref or "",
+                    "COMPAT_PLUGIN_REF": plugin_ref or "",
+                    "COMPAT_HOST_REF": host_ref or "",
+                    "COMPAT_AGENT_REF": plugin_ref or "",
                 },
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -148,7 +278,9 @@ def run_module(
             )
             (module_dir / "command.stdout.txt").write_text(proc.stdout, encoding="utf-8")
             (module_dir / "command.stderr.txt").write_text(proc.stderr, encoding="utf-8")
-            details = {"argv": argv, "returncode": proc.returncode}
+            details = {"argv": argv, "returncode": proc.returncode, "cwd": str(command_cwd)}
+            if plugin_checkout is not None:
+                details["plugin_checkout"] = plugin_checkout
             if proc.returncode != 0:
                 raise CompatFailure(str(module_cfg.get("failure_class", "host_contract_break")), proc.stderr.strip())
         else:
@@ -173,6 +305,8 @@ def run_module(
         host_channel=host_channel,
         host_version_detected=_host_version_from_details(details),
         plugin_source=plugin_source,
+        plugin_ref=plugin_ref or "",
+        host_ref=host_ref or "",
         plugin_version=_read_plugin_version(repo_root, agent),
         model_profile=model_profile,
         status=status,
@@ -193,7 +327,8 @@ def run_suite(
     host_channel: str,
     model_profile: str,
     plugin_source: str,
-    agent_ref: str | None = None,
+    plugin_ref: str | None = None,
+    host_ref: str | None = None,
     artifacts_root: str | None = None,
 ) -> dict[str, Any]:
     suites = manifest.get("suites", {})
@@ -213,7 +348,8 @@ def run_suite(
             host_channel=host_channel,
             model_profile=model_profile,
             plugin_source=plugin_source,
-            agent_ref=agent_ref,
+            plugin_ref=plugin_ref,
+            host_ref=host_ref,
             run_id=run_id,
             artifacts_root=artifacts_root,
         )
@@ -228,7 +364,9 @@ def run_suite(
         "host_channel": host_channel,
         "model_profile": model_profile,
         "plugin_source": plugin_source,
-        "agent_ref": agent_ref or "",
+        "plugin_ref": plugin_ref or "",
+        "host_ref": host_ref or "",
+        "agent_ref": plugin_ref or "",
         "results": results,
         "status": "failed" if any(item["status"] == "failed" for item in results) else "passed",
     }
@@ -247,7 +385,8 @@ def run_matrix(
     repo_root: Path,
     manifest: dict[str, Any],
     lane_name: str,
-    agent_ref: str | None = None,
+    plugin_ref: str | None = None,
+    host_ref: str | None = None,
     artifacts_root: str | None = None,
 ) -> dict[str, Any]:
     matrices = manifest.get("matrices", {})
@@ -270,7 +409,8 @@ def run_matrix(
                 host_channel=str(task.get("host_channel", "stable")),
                 model_profile=str(task.get("model_profile", "primary")),
                 plugin_source=str(task.get("plugin_source", "local")),
-                agent_ref=agent_ref,
+                plugin_ref=plugin_ref,
+                host_ref=host_ref,
                 artifacts_root=artifacts_root,
             )
             task_results.append({"name": task.get("name", task["suite"]), "kind": "suite", "summary": summary})
@@ -313,7 +453,9 @@ def run_matrix(
     summary = {
         "run_id": run_id,
         "lane": lane_name,
-        "agent_ref": agent_ref or "",
+        "plugin_ref": plugin_ref or "",
+        "host_ref": host_ref or "",
+        "agent_ref": plugin_ref or "",
         "tasks": task_results,
         "status": "failed" if any(task.get("status") == "failed" or task.get("summary", {}).get("status") == "failed" for task in task_results) else "passed",
     }
@@ -353,7 +495,8 @@ def run_agent_lane(
     host_channel: str,
     model_profile: str,
     plugin_source: str,
-    agent_ref: str | None = None,
+    plugin_ref: str | None = None,
+    host_ref: str | None = None,
     artifacts_root: str | None = None,
 ) -> dict[str, Any]:
     run_id = str(uuid.uuid4())
@@ -370,7 +513,8 @@ def run_agent_lane(
                 host_channel=str(task.get("host_channel", host_channel)),
                 model_profile=str(task.get("model_profile", model_profile)),
                 plugin_source=resolved_plugin_source,
-                agent_ref=agent_ref,
+                plugin_ref=plugin_ref,
+                host_ref=host_ref,
                 run_id=run_id,
                 artifacts_root=artifacts_root,
             )
@@ -386,7 +530,8 @@ def run_agent_lane(
                 host_channel=str(task.get("host_channel", host_channel)),
                 model_profile=str(task.get("model_profile", model_profile)),
                 plugin_source=resolved_plugin_source,
-                agent_ref=agent_ref,
+                plugin_ref=plugin_ref,
+                host_ref=host_ref,
                 artifacts_root=artifacts_root,
             )
             task_results.append({"name": task.get("name", task["suite"]), "kind": "suite", "summary": summary})
@@ -407,7 +552,9 @@ def run_agent_lane(
         "host_channel": host_channel,
         "model_profile": model_profile,
         "plugin_source": plugin_source,
-        "agent_ref": agent_ref or "",
+        "plugin_ref": plugin_ref or "",
+        "host_ref": host_ref or "",
+        "agent_ref": plugin_ref or "",
         "tasks": task_results,
         "status": status,
     }
