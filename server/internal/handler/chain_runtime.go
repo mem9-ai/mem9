@@ -376,7 +376,7 @@ func (s *Server) listChainMemories(ctx context.Context, auth *domain.AuthInfo, f
 	}
 
 	totalBeforePage := len(uniqueChainMemories(visited))
-	memories := finalizeChainMemories(visited, requestLimit, requestOffset, queryMode)
+	memories := finalizeChainMemories(visited, filter, requestLimit, requestOffset, queryMode)
 	slog.InfoContext(ctx, "space chain recall",
 		"chain_id", auth.Chain.ChainID,
 		"visited_node_count", visitedNodes,
@@ -610,9 +610,13 @@ func chainRankScore(mem domain.Memory) float64 {
 	return 0
 }
 
-func finalizeChainMemories(memories []domain.Memory, limit, offset int, queryMode bool) []domain.Memory {
+func finalizeChainMemories(memories []domain.Memory, filter domain.MemoryFilter, limit, offset int, queryMode bool) []domain.Memory {
 	memories = uniqueChainMemories(memories)
-	if queryMode {
+	if strings.TrimSpace(filter.SortBy) != "" {
+		sort.SliceStable(memories, func(i, j int) bool {
+			return compareChainMemoryForSort(memories[i], memories[j], filter)
+		})
+	} else if queryMode {
 		sort.SliceStable(memories, func(i, j int) bool {
 			leftConfidence := chainStopConfidence(memories[i])
 			rightConfidence := chainStopConfidence(memories[j])
@@ -645,6 +649,41 @@ func finalizeChainMemories(memories []domain.Memory, limit, offset int, queryMod
 		end = len(memories)
 	}
 	return memories[offset:end]
+}
+
+func compareChainMemoryForSort(left, right domain.Memory, filter domain.MemoryFilter) bool {
+	desc := !strings.EqualFold(strings.TrimSpace(filter.SortDir), "asc")
+	less := false
+	greater := false
+	switch strings.TrimSpace(filter.SortBy) {
+	case "content":
+		cmp := strings.Compare(strings.ToLower(left.Content), strings.ToLower(right.Content))
+		less = cmp < 0
+		greater = cmp > 0
+	case "memory_type":
+		cmp := strings.Compare(string(left.MemoryType), string(right.MemoryType))
+		less = cmp < 0
+		greater = cmp > 0
+	case "tags":
+		cmp := strings.Compare(strings.ToLower(strings.Join(left.Tags, ",")), strings.ToLower(strings.Join(right.Tags, ",")))
+		less = cmp < 0
+		greater = cmp > 0
+	case "updated_at":
+		fallthrough
+	default:
+		less = left.UpdatedAt.Before(right.UpdatedAt)
+		greater = left.UpdatedAt.After(right.UpdatedAt)
+	}
+	if less || greater {
+		if desc {
+			return greater
+		}
+		return less
+	}
+	if left.ChainSource != nil && right.ChainSource != nil && left.ChainSource.NodePosition != right.ChainSource.NodePosition {
+		return left.ChainSource.NodePosition < right.ChainSource.NodePosition
+	}
+	return left.ID < right.ID
 }
 
 func uniqueChainMemories(memories []domain.Memory) []domain.Memory {
