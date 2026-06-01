@@ -18,6 +18,8 @@ import (
 
 func TestMemoryFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
+	firstPageArgs := append(ftsCandidateArgs("m-page-0", maxFTSCandidatePageLimit), "active", "agent-1", `"tag-a"`)
+	secondPageArgs := append(ftsCandidateArgs("m-page-1", maxFTSCandidatePageLimit), "active", "agent-1", `"tag-a"`)
 	db := newScriptedTestDB(t, []*queryExpectation{
 		{
 			mustContain: []string{
@@ -32,26 +34,24 @@ func TestMemoryFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 				"agent_id = ?",
 				"JSON_CONTAINS(tags, ?)",
 			},
-			wantArgs: []any{2, 0},
-			rows: &scriptedRows{
-				columns: []string{"id", "fts_score"},
-				values: [][]driver.Value{
-					{"m-deleted", 9.9},
-					{"m-good-1", 8.8},
-				},
+			wantArgs: []any{maxFTSCandidatePageLimit, 0},
+			rows: &generatedFTSCandidateRows{
+				prefix: "m-page-0",
+				count:  maxFTSCandidatePageLimit,
 			},
 		},
 		{
 			mustContain: []string{
 				"SELECT " + allColumns + " FROM memories",
-				"WHERE id IN (?,?) AND state = ? AND agent_id = ? AND JSON_CONTAINS(tags, ?)",
+				"WHERE id IN (",
+				"AND state = ? AND agent_id = ? AND JSON_CONTAINS(tags, ?)",
 			},
 			mustNotContain: []string{"fts_match_word("},
-			wantArgs:       []any{"m-deleted", "m-good-1", "active", "agent-1", `"tag-a"`},
+			wantArgs:       firstPageArgs,
 			rows: &scriptedRows{
 				columns: memoryColumns(),
 				values: [][]driver.Value{
-					memoryRow("m-good-1", "match one", "agent-1", "session-1", "active", []byte(`["tag-a"]`), now),
+					memoryRow("m-page-0-0001", "match one", "agent-1", "session-1", "active", []byte(`["tag-a"]`), now),
 				},
 			},
 		},
@@ -68,29 +68,25 @@ func TestMemoryFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 				"agent_id = ?",
 				"JSON_CONTAINS(tags, ?)",
 			},
-			wantArgs: []any{4, 2},
-			rows: &scriptedRows{
-				columns: []string{"id", "fts_score"},
-				values: [][]driver.Value{
-					{"m-good-2", 7.7},
-					{"m-good-3", 6.6},
-					{"m-good-4", 5.5},
-					{"m-good-5", 4.4},
-				},
+			wantArgs: []any{maxFTSCandidatePageLimit, maxFTSCandidatePageLimit},
+			rows: &generatedFTSCandidateRows{
+				prefix: "m-page-1",
+				count:  maxFTSCandidatePageLimit,
 			},
 		},
 		{
 			mustContain: []string{
 				"SELECT " + allColumns + " FROM memories",
-				"WHERE id IN (?,?,?,?) AND state = ? AND agent_id = ? AND JSON_CONTAINS(tags, ?)",
+				"WHERE id IN (",
+				"AND state = ? AND agent_id = ? AND JSON_CONTAINS(tags, ?)",
 			},
 			mustNotContain: []string{"fts_match_word("},
-			wantArgs:       []any{"m-good-2", "m-good-3", "m-good-4", "m-good-5", "active", "agent-1", `"tag-a"`},
+			wantArgs:       secondPageArgs,
 			rows: &scriptedRows{
 				columns: memoryColumns(),
 				values: [][]driver.Value{
-					memoryRow("m-good-1", "match one", "agent-1", "session-1", "active", []byte(`["tag-a"]`), now),
-					memoryRow("m-good-2", "match two", "agent-1", "session-2", "active", []byte(`["tag-a"]`), now),
+					memoryRow("m-page-0-0001", "match one", "agent-1", "session-1", "active", []byte(`["tag-a"]`), now),
+					memoryRow("m-page-1-0000", "match two", "agent-1", "session-2", "active", []byte(`["tag-a"]`), now),
 				},
 			},
 		},
@@ -109,19 +105,21 @@ func TestMemoryFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 	if len(results) != 2 {
 		t.Fatalf("len(results) = %d, want 2", len(results))
 	}
-	if results[0].ID != "m-good-1" || results[1].ID != "m-good-2" {
-		t.Fatalf("result IDs = [%s %s], want [m-good-1 m-good-2]", results[0].ID, results[1].ID)
+	if results[0].ID != "m-page-0-0001" || results[1].ID != "m-page-1-0000" {
+		t.Fatalf("result IDs = [%s %s], want [m-page-0-0001 m-page-1-0000]", results[0].ID, results[1].ID)
 	}
-	if results[0].Score == nil || *results[0].Score != 8.8 {
-		t.Fatalf("results[0].Score = %v, want 8.8", results[0].Score)
+	if results[0].Score == nil || *results[0].Score != 9999 {
+		t.Fatalf("results[0].Score = %v, want 9999", results[0].Score)
 	}
-	if results[1].Score == nil || *results[1].Score != 7.7 {
-		t.Fatalf("results[1].Score = %v, want 7.7", results[1].Score)
+	if results[1].Score == nil || *results[1].Score != 10000 {
+		t.Fatalf("results[1].Score = %v, want 10000", results[1].Score)
 	}
 }
 
 func TestSessionFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
+	firstPageArgs := append(ftsCandidateArgs("s-page-0", maxFTSCandidatePageLimit), "active", "agent-1", "sess-1", "chat", `"tag-a"`)
+	secondPageArgs := append(ftsCandidateArgs("s-page-1", maxFTSCandidatePageLimit), "active", "agent-1", "sess-1", "chat", `"tag-a"`)
 	db := newScriptedTestDB(t, []*queryExpectation{
 		{
 			mustContain: []string{
@@ -138,27 +136,25 @@ func TestSessionFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 				"source = ?",
 				"JSON_CONTAINS(tags, ?)",
 			},
-			wantArgs: []any{2, 0},
-			rows: &scriptedRows{
-				columns: []string{"id", "fts_score"},
-				values: [][]driver.Value{
-					{"s-stale", 5.5},
-					{"s-good-1", 4.4},
-				},
+			wantArgs: []any{maxFTSCandidatePageLimit, 0},
+			rows: &generatedFTSCandidateRows{
+				prefix: "s-page-0",
+				count:  maxFTSCandidatePageLimit,
 			},
 		},
 		{
 			mustContain: []string{
 				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at",
 				"FROM sessions",
-				"WHERE id IN (?,?) AND state = ? AND agent_id = ? AND session_id = ? AND source = ? AND JSON_CONTAINS(tags, ?)",
+				"WHERE id IN (",
+				"AND state = ? AND agent_id = ? AND session_id = ? AND source = ? AND JSON_CONTAINS(tags, ?)",
 			},
 			mustNotContain: []string{"fts_match_word("},
-			wantArgs:       []any{"s-stale", "s-good-1", "active", "agent-1", "sess-1", "chat", `"tag-a"`},
+			wantArgs:       firstPageArgs,
 			rows: &scriptedRows{
 				columns: sessionColumns(),
 				values: [][]driver.Value{
-					sessionRow("s-good-1", "sess-1", "agent-1", "chat", 1, "user", "match one", []byte(`["tag-a"]`), "active", now),
+					sessionRow("s-page-0-0001", "sess-1", "agent-1", "chat", 1, "user", "match one", []byte(`["tag-a"]`), "active", now),
 				},
 			},
 		},
@@ -177,30 +173,26 @@ func TestSessionFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 				"source = ?",
 				"JSON_CONTAINS(tags, ?)",
 			},
-			wantArgs: []any{4, 2},
-			rows: &scriptedRows{
-				columns: []string{"id", "fts_score"},
-				values: [][]driver.Value{
-					{"s-good-2", 3.3},
-					{"s-good-3", 2.2},
-					{"s-good-4", 1.1},
-					{"s-good-5", 0.9},
-				},
+			wantArgs: []any{maxFTSCandidatePageLimit, maxFTSCandidatePageLimit},
+			rows: &generatedFTSCandidateRows{
+				prefix: "s-page-1",
+				count:  maxFTSCandidatePageLimit,
 			},
 		},
 		{
 			mustContain: []string{
 				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at",
 				"FROM sessions",
-				"WHERE id IN (?,?,?,?) AND state = ? AND agent_id = ? AND session_id = ? AND source = ? AND JSON_CONTAINS(tags, ?)",
+				"WHERE id IN (",
+				"AND state = ? AND agent_id = ? AND session_id = ? AND source = ? AND JSON_CONTAINS(tags, ?)",
 			},
 			mustNotContain: []string{"fts_match_word("},
-			wantArgs:       []any{"s-good-2", "s-good-3", "s-good-4", "s-good-5", "active", "agent-1", "sess-1", "chat", `"tag-a"`},
+			wantArgs:       secondPageArgs,
 			rows: &scriptedRows{
 				columns: sessionColumns(),
 				values: [][]driver.Value{
-					sessionRow("s-good-1", "sess-1", "agent-1", "chat", 1, "user", "match one", []byte(`["tag-a"]`), "active", now),
-					sessionRow("s-good-2", "sess-1", "agent-1", "chat", 2, "assistant", "match two", []byte(`["tag-a"]`), "active", now),
+					sessionRow("s-page-0-0001", "sess-1", "agent-1", "chat", 1, "user", "match one", []byte(`["tag-a"]`), "active", now),
+					sessionRow("s-page-1-0000", "sess-1", "agent-1", "chat", 2, "assistant", "match two", []byte(`["tag-a"]`), "active", now),
 				},
 			},
 		},
@@ -221,14 +213,14 @@ func TestSessionFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 	if len(results) != 2 {
 		t.Fatalf("len(results) = %d, want 2", len(results))
 	}
-	if results[0].ID != "s-good-1" || results[1].ID != "s-good-2" {
-		t.Fatalf("result IDs = [%s %s], want [s-good-1 s-good-2]", results[0].ID, results[1].ID)
+	if results[0].ID != "s-page-0-0001" || results[1].ID != "s-page-1-0000" {
+		t.Fatalf("result IDs = [%s %s], want [s-page-0-0001 s-page-1-0000]", results[0].ID, results[1].ID)
 	}
-	if results[0].Score == nil || *results[0].Score != 4.4 {
-		t.Fatalf("results[0].Score = %v, want 4.4", results[0].Score)
+	if results[0].Score == nil || *results[0].Score != 9999 {
+		t.Fatalf("results[0].Score = %v, want 9999", results[0].Score)
 	}
-	if results[1].Score == nil || *results[1].Score != 3.3 {
-		t.Fatalf("results[1].Score = %v, want 3.3", results[1].Score)
+	if results[1].Score == nil || *results[1].Score != 10000 {
+		t.Fatalf("results[1].Score = %v, want 10000", results[1].Score)
 	}
 }
 

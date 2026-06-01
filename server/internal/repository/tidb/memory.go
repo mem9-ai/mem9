@@ -575,12 +575,10 @@ func (r *MemoryRepo) ftsSearchWithPostFilter(ctx context.Context, query string, 
 	where := strings.Join(conds, " AND ")
 	safeQ := ftsSafeLiteral(query)
 
-	candidateLimit := initialFTSCandidatePageLimit(limit)
-	offset := 0
 	filtered := make([]domain.Memory, 0, min(limit, maxFTSCandidateTotalLimit))
-	for offset < maxFTSCandidateTotalLimit {
-		pageLimit := min(candidateLimit, maxFTSCandidateTotalLimit-offset)
-		candidates, err := r.fetchMemoryFTSCandidates(ctx, safeQ, pageLimit, offset)
+	for page := 0; page < maxFTSCandidatePages; page++ {
+		offset := page * maxFTSCandidatePageLimit
+		candidates, err := r.fetchMemoryFTSCandidates(ctx, safeQ, maxFTSCandidatePageLimit, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -596,30 +594,11 @@ func (r *MemoryRepo) ftsSearchWithPostFilter(ctx context.Context, query string, 
 		if len(filtered) >= limit {
 			return filtered[:limit], nil
 		}
-		if len(candidates) < pageLimit {
+		if len(candidates) < maxFTSCandidatePageLimit {
 			return filtered, nil
 		}
-
-		offset += len(candidates)
-		candidateLimit = nextFTSCandidatePageLimit(candidateLimit)
 	}
 	return filtered, nil
-}
-
-func initialFTSCandidatePageLimit(limit int) int {
-	return min(limit, maxFTSCandidatePageLimit)
-}
-
-func nextFTSCandidatePageLimit(current int) int {
-	if current >= maxFTSCandidatePageLimit {
-		return current
-	}
-
-	next := current * 2
-	if next > maxFTSCandidatePageLimit {
-		return maxFTSCandidatePageLimit
-	}
-	return next
 }
 
 func (r *MemoryRepo) fetchMemoryFTSCandidates(ctx context.Context, safeQ string, limit, offset int) ([]memoryFTSCandidate, error) {
