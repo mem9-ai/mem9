@@ -401,20 +401,44 @@ func (w *UploadWorker) recordActivity(tenantID string) {
 }
 
 func (w *UploadWorker) ensureAppIDSchema(ctx context.Context, db *sql.DB) error {
-	if w.pool != nil && w.pool.Backend() == "tidb" {
+	backend := "tidb"
+	if w.pool != nil {
+		backend = w.pool.Backend()
+	}
+	switch backend {
+	case "tidb":
 		return tenant.InitTiDBTenantSchema(ctx, db, w.autoModel, w.autoDims, w.clientDims, w.ftsEnabled)
+	case "postgres", "db9":
+		return ensurePostgresUploadAppIDSchema(ctx, db, backend)
+	default:
+		return fmt.Errorf("unsupported backend %q", backend)
 	}
-	if err := tenant.EnsureMemoryAppIDSchema(ctx, db); err != nil {
-		return fmt.Errorf("memories: %w", err)
+}
+
+func ensurePostgresUploadAppIDSchema(ctx context.Context, db *sql.DB, backend string) error {
+	if _, err := db.ExecContext(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS app_id VARCHAR(100) NOT NULL DEFAULT ''`); err != nil {
+		return fmt.Errorf("memories app_id column: %w", err)
 	}
-	sessionsExists, err := tenant.TableExists(ctx, db, "sessions")
-	if err != nil {
+	memoryIndexName := "idx_app"
+	if backend == "db9" {
+		memoryIndexName = "idx_memory_app"
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON memories(app_id)`, memoryIndexName)); err != nil {
+		return fmt.Errorf("memories app_id index: %w", err)
+	}
+
+	var sessionsExists bool
+	if err := db.QueryRowContext(ctx, `SELECT to_regclass('sessions') IS NOT NULL`).Scan(&sessionsExists); err != nil {
 		return fmt.Errorf("check sessions table: %w", err)
 	}
-	if sessionsExists {
-		if err := tenant.EnsureSessionsAppIDSchema(ctx, db); err != nil {
-			return fmt.Errorf("sessions: %w", err)
-		}
+	if !sessionsExists {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS app_id VARCHAR(100) NOT NULL DEFAULT ''`); err != nil {
+		return fmt.Errorf("sessions app_id column: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_sessions_app ON sessions(app_id)`); err != nil {
+		return fmt.Errorf("sessions app_id index: %w", err)
 	}
 	return nil
 }
