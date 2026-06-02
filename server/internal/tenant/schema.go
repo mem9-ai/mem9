@@ -313,6 +313,22 @@ func EnsureMemoryAppIDSchema(ctx context.Context, db *sql.DB) error {
 	return ensurePlainIndex(ctx, db, "memories", "idx_app", "app_id")
 }
 
+// EnsurePostgresMemoryAppIDSchema completes the app-scoped memory schema for
+// PostgreSQL-compatible tenant databases.
+func EnsurePostgresMemoryAppIDSchema(ctx context.Context, db *sql.DB, backend string) error {
+	if _, err := db.ExecContext(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS app_id VARCHAR(100) NOT NULL DEFAULT ''`); err != nil {
+		return fmt.Errorf("memories app_id column: %w", err)
+	}
+	indexName := "idx_app"
+	if backend == "db9" {
+		indexName = "idx_memory_app"
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON memories(app_id)`, indexName)); err != nil {
+		return fmt.Errorf("memories app_id index: %w", err)
+	}
+	return nil
+}
+
 // EnsureSessionsAppIDSchema completes the app-scoped raw session schema for existing tenants.
 func EnsureSessionsAppIDSchema(ctx context.Context, db *sql.DB) error {
 	if err := ensureColumn(ctx, db, "sessions", "app_id", "VARCHAR(100) NOT NULL DEFAULT ''"); err != nil {
