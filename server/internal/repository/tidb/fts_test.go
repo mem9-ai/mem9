@@ -124,7 +124,7 @@ func TestSessionFTSSearch_PostFiltersAfterFTSTopK(t *testing.T) {
 		},
 		{
 			mustContain: []string{
-				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at",
+				"SELECT id, session_id, agent_id, app_id, source, seq, role, content, content_type, tags, state, created_at",
 				"FROM sessions",
 				"WHERE id IN (?,?) AND state = ? AND agent_id = ? AND session_id = ? AND source = ? AND JSON_CONTAINS(tags, ?)",
 			},
@@ -139,7 +139,7 @@ func TestSessionFTSSearch_PostFiltersAfterFTSTopK(t *testing.T) {
 		},
 		{
 			mustContain: []string{
-				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at,",
+				"SELECT id, session_id, agent_id, app_id, source, seq, role, content, content_type, tags, state, created_at,",
 				"fts_match_word('golang', content) AS fts_score",
 				"FROM sessions",
 				"WHERE state = ? AND agent_id = ? AND session_id = ? AND source = ? AND JSON_CONTAINS(tags, ?) AND fts_match_word('golang', content)",
@@ -345,7 +345,7 @@ func normalizeDriverValue(v any) any {
 func memoryColumns() []string {
 	return []string{
 		"id", "content", "source", "tags", "metadata", "embedding", "memory_type", "agent_id",
-		"session_id", "state", "version", "updated_by", "created_at", "updated_at", "superseded_by",
+		"session_id", "app_id", "state", "version", "updated_by", "created_at", "updated_at", "superseded_by",
 	}
 }
 
@@ -365,6 +365,7 @@ func memoryRow(id, content, agentID, sessionID, state string, tags []byte, ts ti
 		string(domain.TypeInsight),
 		agentID,
 		sessionID,
+		"",
 		state,
 		int64(1),
 		"tester",
@@ -381,7 +382,7 @@ func memoryRowWithFTSScore(id, content, agentID, sessionID, state string, tags [
 
 func sessionColumns() []string {
 	return []string{
-		"id", "session_id", "agent_id", "source", "seq", "role", "content", "content_type", "tags", "state", "created_at",
+		"id", "session_id", "agent_id", "app_id", "source", "seq", "role", "content", "content_type", "tags", "state", "created_at",
 	}
 }
 
@@ -395,6 +396,7 @@ func sessionRow(id, sessionID, agentID, source string, seq int64, role, content 
 		id,
 		sessionID,
 		agentID,
+		"",
 		source,
 		seq,
 		role,

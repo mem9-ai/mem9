@@ -43,6 +43,7 @@ type IngestRequest struct {
 	Messages           []IngestMessage `json:"messages"`
 	SessionID          string          `json:"session_id"`
 	AgentID            string          `json:"agent_id"`
+	AppID              string          `json:"appId,omitempty"`
 	Mode               IngestMode      `json:"mode"`
 	DisableSessionSave bool            `json:"disableSessionSave,omitempty"`
 }
@@ -125,7 +126,7 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 	// Cap conversation size to avoid blowing LLM token limits.
 	formatted = truncateRunes(formatted, maxExtractionConversationRunes)
 
-	insightIDs, warnings, err := s.extractAndReconcile(ctx, agentName, req.AgentID, req.SessionID, formatted)
+	insightIDs, warnings, err := s.extractAndReconcile(ctx, agentName, req.AgentID, req.AppID, req.SessionID, formatted)
 	if err != nil {
 		slog.Error("insight extraction failed", "err", err)
 		return &IngestResult{Status: "failed", Warnings: warnings}, nil
@@ -387,7 +388,7 @@ func (s *IngestService) ExtractPhase1WithRouting(ctx context.Context, messages [
 
 // ReconcilePhase2 runs reconciliation of extracted facts against existing memories.
 // Equivalent to the existing reconcile() pipeline, now exported for use by the handler.
-func (s *IngestService) ReconcilePhase2(ctx context.Context, agentName, agentID, sessionID string, facts []ExtractedFact) (*IngestResult, error) {
+func (s *IngestService) ReconcilePhase2(ctx context.Context, agentName, agentID, appID, sessionID string, facts []ExtractedFact) (*IngestResult, error) {
 	if len(facts) == 0 {
 		return &IngestResult{Status: "complete"}, nil
 	}
@@ -396,7 +397,7 @@ func (s *IngestService) ReconcilePhase2(ctx context.Context, agentName, agentID,
 		slog.Warn("ReconcilePhase2: truncating facts", "count", len(facts), "max", maxFacts)
 		facts = facts[:maxFacts]
 	}
-	insightIDs, warnings, err := s.reconcile(ctx, agentName, agentID, sessionID, facts)
+	insightIDs, warnings, err := s.reconcile(ctx, agentName, agentID, appID, sessionID, facts)
 	if err != nil {
 		slog.Error("ReconcilePhase2: reconciliation failed", "err", err)
 		return &IngestResult{Status: "failed", Warnings: warnings}, nil
@@ -416,7 +417,7 @@ func (s *IngestService) ReconcilePhase2(ctx context.Context, agentName, agentID,
 // ReconcileContent runs the full ingest pipeline (extract facts + reconcile)
 // for raw content strings (as opposed to conversation messages).
 // Each content string is wrapped as a single user message for fact extraction.
-func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID, sessionID string, contents []string) (*IngestResult, error) {
+func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID, appID, sessionID string, contents []string) (*IngestResult, error) {
 	if len(contents) == 0 {
 		return nil, &domain.ValidationError{Field: "content", Message: "required"}
 	}
@@ -467,7 +468,7 @@ func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID
 		}, nil
 	}
 
-	insightIDs, warnings, err := s.reconcile(ctx, agentName, agentID, sessionID, allFacts)
+	insightIDs, warnings, err := s.reconcile(ctx, agentName, agentID, appID, sessionID, allFacts)
 	totalWarnings += warnings
 	if err != nil {
 		slog.Error("reconcile content: batched reconciliation failed", "err", err)
@@ -530,6 +531,7 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 		MemoryType: domain.TypeInsight,
 		Source:     agentName,
 		AgentID:    req.AgentID,
+		AppID:      req.AppID,
 		SessionID:  req.SessionID,
 		Embedding:  embedding,
 		State:      domain.StateActive,
@@ -553,7 +555,7 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 }
 
 // extractAndReconcile runs Phase 1a (extraction) + Phase 2 (reconciliation).
-func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agentID, sessionID, conversation string) ([]string, int, error) {
+func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agentID, appID, sessionID, conversation string) ([]string, int, error) {
 	const maxFacts = 50 // Cap extracted facts to bound reconciliation prompt size
 
 	// Phase 1a: Extract facts only — no message_tags needed here (smart-ingest / raw-ingest path).
@@ -573,7 +575,7 @@ func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agen
 	}
 
 	// Phase 2: Reconcile each fact against existing memories.
-	return s.reconcile(ctx, agentName, agentID, sessionID, facts)
+	return s.reconcile(ctx, agentName, agentID, appID, sessionID, facts)
 }
 
 // normalizeParsedFacts converts []ExtractedFact from a successful parse into a
@@ -990,7 +992,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 // all facts and all retrieved memories to the LLM in a single call for batch
 // decision-making. This gives the LLM a complete view of both the new facts and
 // the existing knowledge base, enabling better ADD/UPDATE/DELETE/NOOP decisions.
-func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessionID string, facts []ExtractedFact) ([]string, int, error) {
+func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, appID, sessionID string, facts []ExtractedFact) ([]string, int, error) {
 	start := time.Now()
 	var (
 		applyActionsDuration   time.Duration
@@ -1004,6 +1006,7 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 		slog.Info("reconcile timings",
 			"agent_id", agentID,
 			"session_id", sessionID,
+			"app_id", appID,
 			"facts", len(facts),
 			"existing", existingMemoriesCount,
 			"status", status,
@@ -1020,7 +1023,8 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 	// until the score distribution is analyzed from prod metrics.
 	// Once a threshold is validated, add: if score >= threshold { drop or annotate }
 	for i := range facts {
-		if id, score, err := s.memories.NearDupSearch(ctx, projectReconcileFactText(facts[i])); err == nil && id != "" {
+		appFilter := domain.MemoryFilter{AppID: &appID}
+		if id, score, err := s.memories.NearDupSearch(ctx, projectReconcileFactText(facts[i]), appFilter); err == nil && id != "" {
 			metrics.NearDupCosineScore.Observe(score)
 		}
 	}
@@ -1032,7 +1036,7 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 
 	// Step 1: For each fact, search for relevant existing memories and collect them.
 	gatherExistingStart := time.Now()
-	existingMemories, gatherErr := s.gatherExistingMemories(ctx, agentID, texts)
+	existingMemories, gatherErr := s.gatherExistingMemories(ctx, agentID, appID, texts)
 	gatherExistingDuration = time.Since(gatherExistingStart)
 	if gatherErr != nil {
 		status = "gather_error"
@@ -1043,7 +1047,7 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, sessi
 
 	if len(existingMemories) == 0 {
 		applyActionsStart := time.Now()
-		resultIDs, warningCount, err := s.addAllFacts(ctx, agentName, agentID, sessionID, facts)
+		resultIDs, warningCount, err := s.addAllFacts(ctx, agentName, agentID, appID, sessionID, facts)
 		applyActionsDuration = time.Since(applyActionsStart)
 		warnings = warningCount
 		if err != nil {
@@ -1229,6 +1233,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				ctx,
 				agentName,
 				agentID,
+				appID,
 				sessionID,
 				normalizedText,
 				event.Tags,
@@ -1266,7 +1271,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 			metadata := SetSourceProvenanceMetadata(MergeTemporalMetadata(existingMemories[intID].Metadata, temporal), sourceSeqs, sourceTurns)
 			if existingMemories[intID].MemoryType == domain.TypePinned {
 				slog.Warn("skipping UPDATE for pinned memory — treating as ADD", "id", realID)
-				newID, addErr := s.addInsight(ctx, agentName, agentID, sessionID, normalizedText, effectiveTags, metadata)
+				newID, addErr := s.addInsight(ctx, agentName, agentID, appID, sessionID, normalizedText, effectiveTags, metadata)
 				if addErr != nil {
 					slog.Warn("failed to add insight (pinned fallback)", "err", addErr)
 					warnings++
@@ -1275,7 +1280,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				resultIDs = append(resultIDs, newID)
 				continue
 			}
-			newID, updateErr := s.updateInsight(ctx, agentName, agentID, sessionID, realID, normalizedText, effectiveTags, metadata)
+			newID, updateErr := s.updateInsight(ctx, agentName, agentID, appID, sessionID, realID, normalizedText, effectiveTags, metadata)
 			if updateErr != nil {
 				slog.Warn("failed to update insight", "err", updateErr, "id", event.ID)
 				warnings++
@@ -1337,7 +1342,7 @@ type factSearchResult struct {
 // logged and skipped (partial recall is acceptable for the LLM reconciler).
 // However, if every single search attempt fails (total outage), an error is
 // returned to prevent silent duplicate writes via addAllFacts.
-func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID string, facts []string) ([]domain.Memory, error) {
+func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID, appID string, facts []string) ([]domain.Memory, error) {
 	const perFactLimit = 5
 	const contentMaxLen = 150
 	const maxExistingMemories = 60
@@ -1347,6 +1352,7 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID stri
 		State:      "active",
 		MemoryType: "insight,pinned",
 		AgentID:    agentID,
+		AppID:      &appID,
 	}
 	ftsAvailable := s.memories.FTSAvailable()
 
@@ -1515,11 +1521,11 @@ func (s *IngestService) searchExistingMemoriesForFact(
 
 // addAllFacts adds all facts as new insights when no existing memories are
 // found (i.e., all facts are guaranteed new). Called only when gatherExistingMemories returns empty.
-func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, sessionID string, facts []ExtractedFact) ([]string, int, error) {
+func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, appID, sessionID string, facts []ExtractedFact) ([]string, int, error) {
 	var ids []string
 	var warnings int
 	for _, fact := range facts {
-		id, err := s.addInsight(ctx, agentName, agentID, sessionID, fact.Text, fact.Tags, metadataForExtractedFact(fact))
+		id, err := s.addInsight(ctx, agentName, agentID, appID, sessionID, fact.Text, fact.Tags, metadataForExtractedFact(fact))
 		if err != nil {
 			slog.Warn("failed to add fact", "err", err, "fact_len", len(fact.Text))
 			warnings++
@@ -1531,7 +1537,7 @@ func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, ses
 }
 
 // addInsight creates a new insight memory with the given content and tags.
-func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sessionID, content string, tags []string, metadata json.RawMessage) (string, error) {
+func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, appID, sessionID, content string, tags []string, metadata json.RawMessage) (string, error) {
 	if len(tags) > maxTags {
 		tags = tags[:maxTags]
 	}
@@ -1552,6 +1558,7 @@ func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sess
 		MemoryType: domain.TypeInsight,
 		Source:     agentName,
 		AgentID:    agentID,
+		AppID:      appID,
 		SessionID:  sessionID,
 		Embedding:  embedding,
 		Tags:       tags,
@@ -1573,7 +1580,7 @@ func (s *IngestService) addInsight(ctx context.Context, agentName, agentID, sess
 }
 
 // updateInsight archives the old memory and creates a new one atomically (append-new + archive-old model).
-func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, sessionID, oldID, newContent string, tags []string, metadata json.RawMessage) (string, error) {
+func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, appID, sessionID, oldID, newContent string, tags []string, metadata json.RawMessage) (string, error) {
 	if len(tags) > maxTags {
 		tags = tags[:maxTags]
 	}
@@ -1597,6 +1604,7 @@ func (s *IngestService) updateInsight(ctx context.Context, agentName, agentID, s
 		MemoryType: domain.TypeInsight,
 		Source:     agentName,
 		AgentID:    agentID,
+		AppID:      appID,
 		SessionID:  sessionID,
 		Embedding:  embedding,
 		Tags:       tags,

@@ -475,7 +475,7 @@ func TestCreateFallsBackToRawWhenLLMUnavailable(t *testing.T) {
 	repo := &memoryRepoMock{}
 	svc := NewMemoryService(repo, nil, nil, "", ModeSmart)
 
-	mem, _, err := svc.Create(context.Background(), "agent-1", "user prefers dark mode", []string{"prefs"}, json.RawMessage(`{"source":"manual"}`))
+	mem, _, err := svc.Create(context.Background(), "agent-1", "", "user prefers dark mode", []string{"prefs"}, json.RawMessage(`{"source":"manual"}`))
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -502,6 +502,7 @@ func TestCreatePinnedUsesBulkCreateSemantics(t *testing.T) {
 	mem, written, err := svc.CreatePinned(
 		context.Background(),
 		"agent-1",
+		"",
 		"user prefers pour-over coffee",
 		[]string{"preference", "coffee"},
 		json.RawMessage(`{"source":"manual"}`),
@@ -567,7 +568,7 @@ func TestCreateRunsReconcilePipeline(t *testing.T) {
 	repo := &memoryRepoMock{}
 	svc := NewMemoryService(repo, llmClient, nil, "auto-model", ModeSmart)
 
-	mem, _, err := svc.Create(context.Background(), "agent-1", "I use Go 1.22", nil, nil)
+	mem, _, err := svc.Create(context.Background(), "agent-1", "", "I use Go 1.22", nil, nil)
 	if err != nil {
 		t.Fatalf("Create() error: %v", err)
 	}

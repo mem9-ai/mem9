@@ -38,6 +38,7 @@ type Memory struct {
 
 	AgentID      string `json:"agent_id,omitempty"`
 	SessionID    string `json:"session_id,omitempty"`
+	AppID        string `json:"appId,omitempty"`
 	UpdatedBy    string `json:"updated_by,omitempty"`
 	SupersededBy string `json:"superseded_by,omitempty"`
 
@@ -151,6 +152,7 @@ type MemoryFilter struct {
 	MemoryType string
 	AgentID    string
 	SessionID  string
+	AppID      *string
 	SortBy     string
 	SortDir    string
 	Limit      int
@@ -257,6 +259,7 @@ type Session struct {
 	ID          string      `json:"id"`
 	SessionID   string      `json:"session_id,omitempty"`
 	AgentID     string      `json:"agent_id,omitempty"`
+	AppID       string      `json:"appId,omitempty"`
 	Source      string      `json:"source,omitempty"`
 	Seq         int         `json:"seq"`
 	Role        string      `json:"role"`

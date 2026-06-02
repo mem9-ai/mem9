@@ -28,24 +28,30 @@ const defaultTaskTimeout = 30 * time.Minute
 
 // SessionFile is the expected JSON format for session file uploads.
 type SessionFile struct {
-	AgentID   string          `json:"agent_id"`
-	SessionID string          `json:"session_id"`
-	Messages  []IngestMessage `json:"messages"`
+	AgentID     string          `json:"agent_id"`
+	AppID       string          `json:"appId"`
+	AppIDLegacy string          `json:"app_id"`
+	SessionID   string          `json:"session_id"`
+	Messages    []IngestMessage `json:"messages"`
 }
 
 // MemoryFile is the expected JSON format for memory file uploads.
 type MemoryFile struct {
-	AgentID  string            `json:"agent_id"`
-	Memories []MemoryFileEntry `json:"memories"`
+	AgentID     string            `json:"agent_id"`
+	AppID       string            `json:"appId"`
+	AppIDLegacy string            `json:"app_id"`
+	Memories    []MemoryFileEntry `json:"memories"`
 }
 
 // MemoryFileEntry is a single memory entry in a memory file.
 type MemoryFileEntry struct {
-	Content    string         `json:"content"`
-	Source     string         `json:"source,omitempty"`
-	Tags       []string       `json:"tags,omitempty"`
-	Metadata   map[string]any `json:"metadata,omitempty"`
-	MemoryType string         `json:"memory_type,omitempty"`
+	Content     string         `json:"content"`
+	AppID       string         `json:"appId,omitempty"`
+	AppIDLegacy string         `json:"app_id,omitempty"`
+	Source      string         `json:"source,omitempty"`
+	Tags        []string       `json:"tags,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	MemoryType  string         `json:"memory_type,omitempty"`
 }
 
 // UploadWorker processes queued upload tasks.
@@ -218,6 +224,9 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 		if file.AgentID == "" {
 			file.AgentID = task.AgentID
 		}
+		if file.AppID == "" {
+			file.AppID = file.AppIDLegacy
+		}
 		if file.SessionID == "" {
 			file.SessionID = task.SessionID
 		}
@@ -250,6 +259,7 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 			}
 			_, err := ingestSvc.Ingest(taskCtx, agentName, IngestRequest{
 				AgentID:   file.AgentID,
+				AppID:     normalizeUploadAppID(file.AppID),
 				SessionID: file.SessionID,
 				Messages:  chunk,
 				Mode:      w.mode,
@@ -269,6 +279,9 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 		file, err := parseMemoryFile(data, task.AgentID)
 		if err != nil {
 			return w.failTask(ctx, task, fmt.Errorf("parse memory file: %w", err), logger)
+		}
+		if file.AppID == "" {
+			file.AppID = file.AppIDLegacy
 		}
 
 		// Handle empty file: mark done immediately
@@ -304,6 +317,13 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 			batch := file.Memories[i:end]
 			memories := make([]*domain.Memory, 0, len(batch))
 			for _, entry := range batch {
+				entryAppID := entry.AppID
+				if entryAppID == "" {
+					entryAppID = entry.AppIDLegacy
+				}
+				if entryAppID == "" {
+					entryAppID = file.AppID
+				}
 				metadata, err := marshalMetadata(entry.Metadata)
 				if err != nil {
 					return w.failTask(ctx, task, fmt.Errorf("marshal memory metadata: %w", err), logger)
@@ -320,6 +340,7 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 					Metadata:   metadata,
 					MemoryType: memType,
 					AgentID:    file.AgentID,
+					AppID:      normalizeUploadAppID(entryAppID),
 					State:      domain.StateActive,
 					Version:    1,
 					UpdatedBy:  agentName,
@@ -461,6 +482,14 @@ func parseMemoryFile(data []byte, fallbackAgentID string) (MemoryFile, error) {
 			{Content: content},
 		},
 	}, nil
+}
+
+func normalizeUploadAppID(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) > 100 {
+		return ""
+	}
+	return value
 }
 
 // parseSessionFile tries to parse data as a JSON SessionFile first.

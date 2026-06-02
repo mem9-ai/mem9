@@ -386,10 +386,15 @@ const createMemoryCode = `curl -sX POST "$API/memories" \\
   -H "Content-Type: application/json" \\
   -H "X-API-Key: $API_KEY" \\
   -H "X-Mnemo-Agent-Id: openclaw-main" \\
-  -d '{"content":"Project uses PostgreSQL 15","tags":["tech","database"],"metadata":{"source":"setup-note"}}'`;
-const listMemoryCode = 'curl -s -H "X-API-Key: $API_KEY" "$API/memories?q=postgres&limit=5"';
+  -d '{"appId":"docs","content":"Project uses PostgreSQL 15","tags":["tech","database"],"metadata":{"source":"setup-note"}}'`;
+const smartIngestCode = `curl -sX POST "$API/memories" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: $API_KEY" \\
+  -H "X-Mnemo-Agent-Id: openclaw-main" \\
+  -d '{"appId":"docs","session_id":"ses-001","mode":"smart","sync":true,"messages":[{"role":"user","content":"We use PostgreSQL 15"},{"role":"assistant","content":"Noted."}]}'`;
+const listMemoryCode = 'curl -s -H "X-API-Key: $API_KEY" "$API/memories?q=postgres&appId=docs&limit=5"';
 const filterMemoryCode =
-  'curl -s -H "X-API-Key: $API_KEY" "$API/memories?tags=tech&source=openclaw-main&limit=10"';
+  'curl -s -H "X-API-Key: $API_KEY" "$API/memories?tags=tech&source=openclaw-main&appId=null&limit=10"';
 const getMemoryCode = 'curl -s -H "X-API-Key: $API_KEY" "$API/memories/{id}"';
 const updateMemoryCode = `curl -sX PUT "$API/memories/{id}" \\
   -H "Content-Type: application/json" \\
@@ -405,17 +410,23 @@ const importMemoryFileCode = `curl -sX POST "$API/imports" \\
   -H "X-API-Key: $API_KEY" \\
   -F "file=@memory.json" \\
   -F "file_type=memory" \\
-  -F "agent_id=openclaw-main"`;
+  -F "agent_id=openclaw-main"
+
+# memory.json may include:
+# {"appId":"docs","memories":[{"content":"Project uses PostgreSQL 15","appId":"docs"}]}`;
 const importSessionFileCode = `curl -sX POST "$API/imports" \\
   -H "X-API-Key: $API_KEY" \\
   -F "file=@session.json" \\
   -F "file_type=session" \\
   -F "session_id=ses-001" \\
-  -F "agent_id=openclaw-main"`;
+  -F "agent_id=openclaw-main"
+
+# session.json may include:
+# {"appId":"docs","session_id":"ses-001","messages":[{"role":"user","content":"..."}]}`;
 const listImportsCode = 'curl -s -H "X-API-Key: $API_KEY" "$API/imports"';
 const getImportCode = 'curl -s -H "X-API-Key: $API_KEY" "$API/imports/{id}"';
 const sessionMessagesCode =
-  'curl -s -H "X-API-Key: $API_KEY" "$API/session-messages?session_id=ses-001&session_id=ses-002&limit_per_session=20"';
+  'curl -s -H "X-API-Key: $API_KEY" "$API/session-messages?session_id=ses-001&session_id=ses-002&appId=docs&limit_per_session=20"';
 const keyStatusCode = 'curl -s -H "X-API-Key: $API_KEY" https://api.mem9.ai/v1alpha2/status';
 const chainKeyStatusCode = 'curl -s -H "X-API-Key: $CHAIN_API_KEY" https://api.mem9.ai/v1alpha2/status';
 const createSpaceChainCode = `curl -sX POST https://api.mem9.ai/v1alpha2/space-chains \\
@@ -922,6 +933,11 @@ const chainJSONWriteHeaders: SiteApiFieldCopy[] = [
 const memoryCreateBodyFields: SiteApiFieldCopy[] = [
   { name: 'content', description: 'Plain memory content for direct writes.' },
   { name: 'messages', description: 'Conversation messages for ingest-based writes.' },
+  {
+    name: 'appId',
+    description:
+      'Optional application isolation id. Omitted, null, empty, or whitespace values write to the default/global appId.',
+  },
   { name: 'agent_id', description: 'Optional agent id to store with the write.' },
   { name: 'session_id', description: 'Optional session id for ingest or attribution.' },
   { name: 'tags', description: 'Optional string tags stored on the memory.' },
@@ -938,6 +954,11 @@ const memoryListQueryParams: SiteApiFieldCopy[] = [
   { name: 'memory_type', description: 'Filter by `insight`, `pinned`, or `session`.' },
   { name: 'agent_id', description: 'Filter by agent id.' },
   { name: 'session_id', description: 'Filter by session id.' },
+  {
+    name: 'appId',
+    description:
+      'Optional appId filter. Omit to search all appIds, pass a value for exact isolation, or use `appId=null` / `appId=` for default/global.',
+  },
   { name: 'limit', description: 'Page size. The handler caps large values.' },
   { name: 'offset', description: 'Offset for pagination.' },
   {
@@ -962,10 +983,17 @@ const importBodyFields: SiteApiFieldCopy[] = [
   { name: 'file_type', description: 'Use `memory` or `session`.', required: true },
   { name: 'agent_id', description: 'Optional agent id for attribution.' },
   { name: 'session_id', description: 'Required when uploading `session` files.' },
+  { name: 'file.appId', description: 'Optional top-level appId inside JSON memory/session files.' },
+  { name: 'file.memories[].appId', description: 'Optional per-memory appId override inside JSON memory files.' },
 ];
 
 const sessionMessagesQueryParams: SiteApiFieldCopy[] = [
   { name: 'session_id', description: 'Repeat this query param for each session to fetch.', required: true },
+  {
+    name: 'appId',
+    description:
+      'Optional appId filter. Omit to fetch matching sessions across all appIds, or use `appId=null` / `appId=` for default/global.',
+  },
   { name: 'limit_per_session', description: 'Optional per-session row limit.' },
 ];
 
@@ -997,6 +1025,7 @@ const memoryObjectResponseFields: SiteApiFieldCopy[] = [
   { name: 'id', description: 'Memory id.', required: true },
   { name: 'content', description: 'Stored memory content.', required: true },
   { name: 'memory_type', description: 'Memory type such as `insight`, `pinned`, or `session`.', required: true },
+  { name: 'appId', description: 'Application isolation id. Empty string means default/global.' },
   { name: 'state', description: 'Lifecycle state.', required: true },
   { name: 'version', description: 'Current integer version.', required: true },
   { name: 'created_at', description: 'Creation timestamp.', required: true },
@@ -1028,6 +1057,7 @@ const importTaskDetailResponseFields: SiteApiFieldCopy[] = [
 
 const sessionMessagesResponseFields: SiteApiFieldCopy[] = [
   { name: 'messages', description: 'Array of captured session message rows.', required: true },
+  { name: 'messages[].appId', description: 'Application isolation id for each raw session row.' },
   { name: 'limit_per_session', description: 'Applied per-session limit.', required: true },
 ];
 
@@ -1354,7 +1384,10 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             headers: hostedJSONWriteHeaders,
             bodyFields: memoryCreateBodyFields,
             responseFields: statusOnlyResponseFields,
-            examples: [{ label: 'Create memory', code: createMemoryCode }],
+            examples: [
+              { label: 'Create memory', code: createMemoryCode },
+              { label: 'Smart ingest', code: smartIngestCode },
+            ],
           },
           {
             method: 'GET',
@@ -1566,7 +1599,10 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             headers: hostedJSONWriteHeaders,
             bodyFields: memoryCreateBodyFields,
             responseFields: statusOnlyResponseFields,
-            examples: [{ label: '创建记忆', code: createMemoryCode }],
+            examples: [
+              { label: '创建记忆', code: createMemoryCode },
+              { label: 'Smart ingest', code: smartIngestCode },
+            ],
           },
           {
             method: 'GET',
@@ -1772,7 +1808,10 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             headers: hostedJSONWriteHeaders,
             bodyFields: memoryCreateBodyFields,
             responseFields: statusOnlyResponseFields,
-            examples: [{ label: '建立記憶', code: createMemoryCode }],
+            examples: [
+              { label: '建立記憶', code: createMemoryCode },
+              { label: 'Smart ingest', code: smartIngestCode },
+            ],
           },
           {
             method: 'GET',
@@ -1978,7 +2017,10 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             headers: hostedJSONWriteHeaders,
             bodyFields: memoryCreateBodyFields,
             responseFields: statusOnlyResponseFields,
-            examples: [{ label: 'Memory を作成', code: createMemoryCode }],
+            examples: [
+              { label: 'Memory を作成', code: createMemoryCode },
+              { label: 'Smart ingest', code: smartIngestCode },
+            ],
           },
           {
             method: 'GET',
@@ -2184,7 +2226,10 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             headers: hostedJSONWriteHeaders,
             bodyFields: memoryCreateBodyFields,
             responseFields: statusOnlyResponseFields,
-            examples: [{ label: 'Memory 생성', code: createMemoryCode }],
+            examples: [
+              { label: 'Memory 생성', code: createMemoryCode },
+              { label: 'Smart ingest', code: smartIngestCode },
+            ],
           },
           {
             method: 'GET',
@@ -2390,7 +2435,10 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             headers: hostedJSONWriteHeaders,
             bodyFields: memoryCreateBodyFields,
             responseFields: statusOnlyResponseFields,
-            examples: [{ label: 'Buat memory', code: createMemoryCode }],
+            examples: [
+              { label: 'Buat memory', code: createMemoryCode },
+              { label: 'Smart ingest', code: smartIngestCode },
+            ],
           },
           {
             method: 'GET',
@@ -2596,7 +2644,10 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             headers: hostedJSONWriteHeaders,
             bodyFields: memoryCreateBodyFields,
             responseFields: statusOnlyResponseFields,
-            examples: [{ label: 'สร้าง memory', code: createMemoryCode }],
+            examples: [
+              { label: 'สร้าง memory', code: createMemoryCode },
+              { label: 'Smart ingest', code: smartIngestCode },
+            ],
           },
           {
             method: 'GET',

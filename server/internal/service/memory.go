@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -53,7 +54,7 @@ func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, emb
 	}
 }
 
-func (s *MemoryService) Create(ctx context.Context, agentID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, int, error) {
+func (s *MemoryService) Create(ctx context.Context, agentID, appID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, int, error) {
 	if err := validateMemoryInput(content, tags); err != nil {
 		return nil, 0, err
 	}
@@ -85,6 +86,7 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 			Embedding:  embedding,
 			MemoryType: domain.TypeInsight,
 			AgentID:    agentID,
+			AppID:      appID,
 			State:      domain.StateActive,
 			Version:    1,
 			UpdatedBy:  agentID,
@@ -100,7 +102,7 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 		return mem, 1, nil
 	}
 
-	result, err := s.ingest.ReconcileContent(ctx, agentID, agentID, "", []string{content})
+	result, err := s.ingest.ReconcileContent(ctx, agentID, agentID, appID, "", []string{content})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -141,10 +143,11 @@ func (s *MemoryService) Create(ctx context.Context, agentID, content string, tag
 
 }
 
-func (s *MemoryService) CreatePinned(ctx context.Context, agentID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, int, error) {
+func (s *MemoryService) CreatePinned(ctx context.Context, agentID, appID, content string, tags []string, metadata json.RawMessage) (*domain.Memory, int, error) {
 	memories, err := s.BulkCreate(ctx, agentID, []BulkMemoryInput{
 		{
 			Content:  content,
+			AppID:    appID,
 			Tags:     tags,
 			Metadata: metadata,
 		},
@@ -916,6 +919,7 @@ func (s *MemoryService) BulkCreate(ctx context.Context, agentName string, items 
 			Metadata:   item.Metadata,
 			Embedding:  embedding,
 			MemoryType: domain.TypePinned,
+			AppID:      item.AppID,
 			State:      domain.StateActive,
 			Version:    1,
 			UpdatedBy:  agentName,
@@ -954,15 +958,26 @@ func ValidateBulkMemoryInputs(items []BulkMemoryInput) error {
 			}
 			return err
 		}
+		appID := item.AppID
+		if appID == "" {
+			appID = item.AppIDLegacy
+		}
+		appID = strings.TrimSpace(appID)
+		if len(appID) > 100 {
+			return &domain.ValidationError{Field: "memories[" + strconv.Itoa(i) + "].appId", Message: "too long (max 100)"}
+		}
+		items[i].AppID = appID
 	}
 	return nil
 }
 
 // BulkMemoryInput is the input shape for each item in a bulk create request.
 type BulkMemoryInput struct {
-	Content  string          `json:"content"`
-	Tags     []string        `json:"tags,omitempty"`
-	Metadata json.RawMessage `json:"metadata,omitempty"`
+	Content     string          `json:"content"`
+	AppID       string          `json:"appId,omitempty"`
+	AppIDLegacy string          `json:"app_id,omitempty"`
+	Tags        []string        `json:"tags,omitempty"`
+	Metadata    json.RawMessage `json:"metadata,omitempty"`
 }
 
 func validateMemoryInput(content string, tags []string) error {

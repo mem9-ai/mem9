@@ -17,6 +17,7 @@ type stubSessionRepo struct {
 
 	patchTagsCalled bool
 	patchTagsErr    error
+	patchedAppID    string
 	patchedSession  string
 	patchedHash     string
 	patchedTags     []string
@@ -31,6 +32,7 @@ type stubSessionRepo struct {
 	autoVecErr     error
 	ftsAvail       bool
 	sessionRows    []*domain.Session
+	listAppID      *string
 	listSessionIDs []string
 	listLimit      int
 	getResult      *domain.Memory
@@ -52,8 +54,9 @@ func (s *stubSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Sessi
 	return s.bulkCreateErr
 }
 
-func (s *stubSessionRepo) PatchTags(_ context.Context, sessionID, contentHash string, tags []string) error {
+func (s *stubSessionRepo) PatchTags(_ context.Context, appID, sessionID, contentHash string, tags []string) error {
 	s.patchTagsCalled = true
+	s.patchedAppID = appID
 	s.patchedSession = sessionID
 	s.patchedHash = contentHash
 	s.patchedTags = tags
@@ -97,7 +100,13 @@ func (s *stubSessionRepo) KeywordSearch(_ context.Context, _ string, _ domain.Me
 
 func (s *stubSessionRepo) FTSAvailable() bool { return s.ftsAvail }
 
-func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, ids []string, limit int) ([]*domain.Session, error) {
+func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, ids []string, appID *string, limit int) ([]*domain.Session, error) {
+	if appID != nil {
+		v := *appID
+		s.listAppID = &v
+	} else {
+		s.listAppID = nil
+	}
 	s.listSessionIDs = append([]string(nil), ids...)
 	s.listLimit = limit
 	return append([]*domain.Session(nil), s.sessionRows...), nil
@@ -114,6 +123,7 @@ func TestSessionService_BulkCreate_buildsCorrectSessions(t *testing.T) {
 	req := IngestRequest{
 		SessionID: "sess-1",
 		AgentID:   "agent-x",
+		AppID:     "chat-app",
 		Messages: []IngestMessage{
 			{Role: "user", Content: "Hello world"},
 			{Role: "assistant", Content: "Hi there"},
@@ -137,6 +147,9 @@ func TestSessionService_BulkCreate_buildsCorrectSessions(t *testing.T) {
 	}
 	if s0.AgentID != "agent-x" {
 		t.Errorf("session[0].AgentID = %q, want %q", s0.AgentID, "agent-x")
+	}
+	if s0.AppID != "chat-app" {
+		t.Errorf("session[0].AppID = %q, want %q", s0.AppID, "chat-app")
 	}
 	if s0.Role != "user" {
 		t.Errorf("session[0].Role = %q, want %q", s0.Role, "user")
@@ -224,7 +237,7 @@ func TestSessionService_PatchTags_delegates(t *testing.T) {
 	svc := newTestSessionService(repo)
 
 	tags := []string{"tech", "question"}
-	if err := svc.PatchTags(context.Background(), "sess-1", "hashval", tags); err != nil {
+	if err := svc.PatchTags(context.Background(), "chat-app", "sess-1", "hashval", tags); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -233,6 +246,9 @@ func TestSessionService_PatchTags_delegates(t *testing.T) {
 	}
 	if repo.patchedSession != "sess-1" {
 		t.Errorf("patchedSession = %q, want %q", repo.patchedSession, "sess-1")
+	}
+	if repo.patchedAppID != "chat-app" {
+		t.Errorf("patchedAppID = %q, want %q", repo.patchedAppID, "chat-app")
 	}
 	if repo.patchedHash != "hashval" {
 		t.Errorf("patchedHash = %q, want %q", repo.patchedHash, "hashval")
@@ -247,7 +263,7 @@ func TestSessionService_PatchTags_propagatesError(t *testing.T) {
 	repo := &stubSessionRepo{patchTagsErr: sentinel}
 	svc := newTestSessionService(repo)
 
-	err := svc.PatchTags(context.Background(), "s", "h", []string{"t"})
+	err := svc.PatchTags(context.Background(), "", "s", "h", []string{"t"})
 	if !errors.Is(err, sentinel) {
 		t.Errorf("expected sentinel error, got %v", err)
 	}
@@ -431,8 +447,8 @@ type capturingSessionRepo struct {
 func (c *capturingSessionRepo) BulkCreate(ctx context.Context, s []*domain.Session) error {
 	return c.stub.BulkCreate(ctx, s)
 }
-func (c *capturingSessionRepo) PatchTags(ctx context.Context, sid, hash string, tags []string) error {
-	return c.stub.PatchTags(ctx, sid, hash, tags)
+func (c *capturingSessionRepo) PatchTags(ctx context.Context, appID, sid, hash string, tags []string) error {
+	return c.stub.PatchTags(ctx, appID, sid, hash, tags)
 }
 func (c *capturingSessionRepo) GetByID(ctx context.Context, id string) (*domain.Memory, error) {
 	return c.stub.GetByID(ctx, id)
@@ -464,6 +480,6 @@ func (c *capturingSessionRepo) KeywordSearch(ctx context.Context, q string, f do
 }
 func (c *capturingSessionRepo) FTSAvailable() bool { return c.stub.FTSAvailable() }
 
-func (c *capturingSessionRepo) ListBySessionIDs(ctx context.Context, ids []string, limit int) ([]*domain.Session, error) {
-	return c.stub.ListBySessionIDs(ctx, ids, limit)
+func (c *capturingSessionRepo) ListBySessionIDs(ctx context.Context, ids []string, appID *string, limit int) ([]*domain.Session, error) {
+	return c.stub.ListBySessionIDs(ctx, ids, appID, limit)
 }

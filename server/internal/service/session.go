@@ -41,19 +41,19 @@ func NewSessionService(sessions repository.SessionRepo, embedder *embed.Embedder
 	}
 }
 
-func (s *SessionService) ListBySessionIDs(ctx context.Context, sessionIDs []string, limitPerSession int) ([]*domain.Session, error) {
-	return s.sessions.ListBySessionIDs(ctx, sessionIDs, limitPerSession)
+func (s *SessionService) ListBySessionIDs(ctx context.Context, sessionIDs []string, appID *string, limitPerSession int) ([]*domain.Session, error) {
+	return s.sessions.ListBySessionIDs(ctx, sessionIDs, appID, limitPerSession)
 }
 
-func (s *SessionService) PatchTags(ctx context.Context, sessionID, contentHash string, tags []string) error {
-	return s.sessions.PatchTags(ctx, sessionID, contentHash, tags)
+func (s *SessionService) PatchTags(ctx context.Context, appID, sessionID, contentHash string, tags []string) error {
+	return s.sessions.PatchTags(ctx, appID, sessionID, contentHash, tags)
 }
 
 func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req IngestRequest) error {
 	sessions := make([]*domain.Session, 0, len(req.Messages))
 	for i, msg := range req.Messages {
 		sess := newSessionFromIngestMessage(
-			req.SessionID, req.AgentID, agentName,
+			req.AppID, req.SessionID, req.AgentID, agentName,
 			i, msg,
 		)
 		sessions = append(sessions, sess)
@@ -64,8 +64,8 @@ func (s *SessionService) BulkCreate(ctx context.Context, agentName string, req I
 	return nil
 }
 
-func (s *SessionService) CreateRawTurn(ctx context.Context, sessionID, agentID, source string, seq int, role, content string) error {
-	sess := newSession(sessionID, agentID, source, seq, role, content, &seq)
+func (s *SessionService) CreateRawTurn(ctx context.Context, appID, sessionID, agentID, source string, seq int, role, content string) error {
+	sess := newSession(appID, sessionID, agentID, source, seq, role, content, &seq)
 	if err := s.sessions.BulkCreate(ctx, []*domain.Session{sess}); err != nil {
 		return fmt.Errorf("session raw create: %w", err)
 	}
@@ -201,7 +201,7 @@ func (s *SessionService) autoHybridCandidates(
 		return nil, err
 	}
 
-	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, kwResults, vecResults, opts)
+	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, kwResults, vecResults, f.AppID, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +271,7 @@ func (s *SessionService) hybridCandidates(
 		return nil, err
 	}
 
-	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, kwResults, vecResults, opts)
+	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, kwResults, vecResults, f.AppID, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +293,7 @@ func (s *SessionService) ftsCandidates(ctx context.Context, f domain.MemoryFilte
 	if err != nil {
 		return nil, fmt.Errorf("session fts search: %w", err)
 	}
-	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, results, nil, opts)
+	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, results, nil, f.AppID, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +314,7 @@ func (s *SessionService) keywordCandidates(ctx context.Context, f domain.MemoryF
 	if err != nil {
 		return nil, fmt.Errorf("session keyword search: %w", err)
 	}
-	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, results, nil, opts)
+	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, results, nil, f.AppID, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -340,6 +340,7 @@ func (s *SessionService) adjacentTurnResults(
 	ctx context.Context,
 	sourcePool RecallSourcePool,
 	kwResults, vecResults []domain.Memory,
+	appID *string,
 	opts RecallCandidateOptions,
 ) ([]domain.Memory, error) {
 	if !opts.EnableAdjacentTurns {
@@ -369,7 +370,7 @@ func (s *SessionService) adjacentTurnResults(
 
 	fetchLimit := adjacentTurnFetchLimit(seeds, opts.AdjacentTurnRadius)
 	start := time.Now()
-	sessions, err := s.sessions.ListBySessionIDs(ctx, sessionIDs, fetchLimit)
+	sessions, err := s.sessions.ListBySessionIDs(ctx, sessionIDs, appID, fetchLimit)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotSupported) {
 			return nil, nil
@@ -569,8 +570,8 @@ func dedupByContent(mems []domain.Memory) []domain.Memory {
 // provenance for otherwise identical message bodies within the same session.
 //
 // TODO(content-hash-migration): migrate to SHA-256(role+content) — dropping sessionID from the hash keeps
-// the same write-time dedup guarantee (the unique index is (session_id, content_hash),
-// so cross-session collisions are still impossible) while making content_hash
+// the same write-time dedup guarantee (the unique index is (app_id, session_id, content_hash),
+// so cross-session/app collisions are still impossible) while making content_hash
 // comparable across sessions. That would let the search path dedup by content_hash
 // instead of by the raw content string.
 func sessionContentHash(sessionID, role, content string, seq *int) string {
@@ -594,16 +595,17 @@ func effectiveMessageSeq(msg IngestMessage, fallback int) int {
 	return fallback
 }
 
-func newSessionFromIngestMessage(sessionID, agentID, source string, fallbackSeq int, msg IngestMessage) *domain.Session {
+func newSessionFromIngestMessage(appID, sessionID, agentID, source string, fallbackSeq int, msg IngestMessage) *domain.Session {
 	seq := effectiveMessageSeq(msg, fallbackSeq)
-	return newSession(sessionID, agentID, source, seq, msg.Role, msg.Content, msg.Seq)
+	return newSession(appID, sessionID, agentID, source, seq, msg.Role, msg.Content, msg.Seq)
 }
 
-func newSession(sessionID, agentID, source string, seq int, role, content string, explicitSeq *int) *domain.Session {
+func newSession(appID, sessionID, agentID, source string, seq int, role, content string, explicitSeq *int) *domain.Session {
 	return &domain.Session{
 		ID:          uuid.New().String(),
 		SessionID:   sessionID,
 		AgentID:     agentID,
+		AppID:       appID,
 		Source:      source,
 		Seq:         seq,
 		Role:        role,

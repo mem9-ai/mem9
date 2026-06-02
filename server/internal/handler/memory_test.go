@@ -153,7 +153,7 @@ func (m *testMemoryRepo) ListBootstrap(context.Context, int) ([]domain.Memory, e
 	return nil, nil
 }
 
-func (m *testMemoryRepo) NearDupSearch(context.Context, string) (string, float64, error) {
+func (m *testMemoryRepo) NearDupSearch(context.Context, string, domain.MemoryFilter) (string, float64, error) {
 	return "", 0, nil
 }
 
@@ -169,6 +169,7 @@ type testSessionRepo struct {
 	mu                   sync.Mutex
 	bulkCreateCalled     bool
 	patchTagsCalled      bool
+	patchedAppID         string
 	patchedHash          string
 	patchedSessionID     string
 	patchedTags          []string
@@ -177,6 +178,7 @@ type testSessionRepo struct {
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	lastKeywordFilter    domain.MemoryFilter
 	sessionListResults   []*domain.Session
+	lastSessionAppID     *string
 	lastSessionIDs       []string
 	lastSessionLimit     int
 	getResult            *domain.Memory
@@ -199,10 +201,11 @@ func (s *testSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Sessi
 	return nil
 }
 
-func (s *testSessionRepo) PatchTags(_ context.Context, sessionID, hash string, tags []string) error {
+func (s *testSessionRepo) PatchTags(_ context.Context, appID, sessionID, hash string, tags []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.patchTagsCalled = true
+	s.patchedAppID = appID
 	s.patchedSessionID = sessionID
 	s.patchedHash = hash
 	s.patchedTags = append([]string(nil), tags...)
@@ -274,7 +277,13 @@ func (s *testSessionRepo) KeywordSearch(ctx context.Context, query string, filte
 	return results, nil
 }
 func (s *testSessionRepo) FTSAvailable() bool { return false }
-func (s *testSessionRepo) ListBySessionIDs(_ context.Context, sessionIDs []string, limit int) ([]*domain.Session, error) {
+func (s *testSessionRepo) ListBySessionIDs(_ context.Context, sessionIDs []string, appID *string, limit int) ([]*domain.Session, error) {
+	if appID != nil {
+		v := *appID
+		s.lastSessionAppID = &v
+	} else {
+		s.lastSessionAppID = nil
+	}
 	s.lastSessionIDs = append([]string(nil), sessionIDs...)
 	s.lastSessionLimit = limit
 	return append([]*domain.Session(nil), s.sessionListResults...), nil

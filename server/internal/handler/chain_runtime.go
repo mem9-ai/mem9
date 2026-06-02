@@ -133,7 +133,7 @@ func (s *Server) reconcileRoutedChainFacts(ctx context.Context, auth *domain.Aut
 					return
 				}
 			}
-			result, err := targetSvc.ingest.ReconcilePhase2(ctx, nodeAuth.AgentName, req.AgentID, req.SessionID, factsForTarget)
+			result, err := targetSvc.ingest.ReconcilePhase2(ctx, nodeAuth.AgentName, req.AgentID, req.AppID, req.SessionID, factsForTarget)
 			if err != nil {
 				if s.runtimeUsageEnabled() && lease != nil {
 					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
@@ -706,7 +706,7 @@ func uniqueChainMemories(memories []domain.Memory) []domain.Memory {
 	return out
 }
 
-func (s *Server) listChainSessionMessages(ctx context.Context, auth *domain.AuthInfo, sessionIDs []string, limitPerSession int) ([]sessionMessageResponse, error) {
+func (s *Server) listChainSessionMessages(ctx context.Context, auth *domain.AuthInfo, sessionIDs []string, appID *string, limitPerSession int) ([]sessionMessageResponse, error) {
 	if auth == nil || auth.Chain == nil || len(auth.Chain.Nodes) == 0 {
 		return nil, &domain.ValidationError{Message: "Space Chain has no nodes."}
 	}
@@ -714,7 +714,7 @@ func (s *Server) listChainSessionMessages(ctx context.Context, auth *domain.Auth
 	for _, node := range auth.Chain.Nodes {
 		nodeAuth := chainNodeAuth(auth, node)
 		svc := s.resolveServices(nodeAuth)
-		sessions, err := svc.session.ListBySessionIDs(ctx, sessionIDs, limitPerSession)
+		sessions, err := svc.session.ListBySessionIDs(ctx, sessionIDs, appID, limitPerSession)
 		if err != nil {
 			return nil, err
 		}
@@ -724,6 +724,7 @@ func (s *Server) listChainSessionMessages(ctx context.Context, auth *domain.Auth
 				ID:          sess.ID,
 				SessionID:   sess.SessionID,
 				AgentID:     sess.AgentID,
+				AppID:       sess.AppID,
 				Source:      sess.Source,
 				Seq:         sess.Seq,
 				Role:        sess.Role,
