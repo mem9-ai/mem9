@@ -35,6 +35,7 @@ type stubSessionRepo struct {
 	listAppID      *string
 	listSessionIDs []string
 	listLimit      int
+	listCalls      []sessionListCall
 	getResult      *domain.Memory
 	getErr         error
 	listResults    []domain.Memory
@@ -42,6 +43,12 @@ type stubSessionRepo struct {
 	listFilter     domain.MemoryFilter
 	softDeleteID   string
 	bulkDeleteIDs  []string
+}
+
+type sessionListCall struct {
+	ids   []string
+	appID *string
+	limit int
 }
 
 func intPtr(v int) *int {
@@ -109,6 +116,15 @@ func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, ids []string, appI
 	}
 	s.listSessionIDs = append([]string(nil), ids...)
 	s.listLimit = limit
+	call := sessionListCall{
+		ids:   append([]string(nil), ids...),
+		limit: limit,
+	}
+	if appID != nil {
+		v := *appID
+		call.appID = &v
+	}
+	s.listCalls = append(s.listCalls, call)
 	return append([]*domain.Session(nil), s.sessionRows...), nil
 }
 
@@ -405,6 +421,66 @@ func TestSessionService_SearchCandidates_ExpandsAdjacentTurns(t *testing.T) {
 	}
 	if len(repo.listSessionIDs) != 1 || repo.listSessionIDs[0] != "sess-1" {
 		t.Fatalf("expected ListBySessionIDs to request sess-1, got %+v", repo.listSessionIDs)
+	}
+}
+
+func TestSessionService_SearchCandidates_AdjacentTurnsUseSeedAppID(t *testing.T) {
+	now := time.Now()
+	repo := &stubSessionRepo{
+		keywordResults: []domain.Memory{
+			{
+				ID:         "s-question",
+				SessionID:  "sess-1",
+				AppID:      "app-a",
+				Content:    "Which company do you like the most these days?",
+				MemoryType: domain.TypeSession,
+				Metadata:   json.RawMessage(`{"role":"user","seq":7,"content_type":"text"}`),
+				UpdatedAt:  now,
+				State:      domain.StateActive,
+			},
+		},
+		sessionRows: []*domain.Session{
+			{ID: "s-question", SessionID: "sess-1", AppID: "app-a", Seq: 7, Role: "user", Content: "Which company do you like the most these days?", ContentType: "text", State: domain.StateActive, CreatedAt: now.Add(-1 * time.Minute), UpdatedAt: now.Add(-1 * time.Minute)},
+			{ID: "s-answer", SessionID: "sess-1", AppID: "app-a", Seq: 8, Role: "assistant", Content: `Definitely "Under Armour" right now.`, ContentType: "text", State: domain.StateActive, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+	svc := newTestSessionService(repo)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{Query: "What company does John like?", Limit: 5}, RecallSourceSession, RecallCandidateOptions{
+		EnableAdjacentTurns: true,
+		AdjacentTurnRadius:  1,
+		AdjacentTurnTopN:    2,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 2 {
+		t.Fatalf("expected 2 candidates, got %d", len(candidates))
+	}
+	if repo.listAppID == nil || *repo.listAppID != "app-a" {
+		t.Fatalf("expected ListBySessionIDs to scope app-a, got %#v", repo.listAppID)
+	}
+}
+
+func TestAdjacentTurnMemoriesSeparatesSharedSessionIDByAppID(t *testing.T) {
+	now := time.Now()
+	seeds := []RecallCandidate{
+		{
+			Memory: domain.Memory{
+				ID:        "app-a-question",
+				SessionID: "shared-session",
+				AppID:     "app-a",
+			},
+		},
+	}
+	sessions := []*domain.Session{
+		{ID: "app-a-question", SessionID: "shared-session", AppID: "app-a", Seq: 1, Role: "user", Content: "question", ContentType: "text", State: domain.StateActive, CreatedAt: now, UpdatedAt: now},
+		{ID: "app-b-answer", SessionID: "shared-session", AppID: "app-b", Seq: 2, Role: "assistant", Content: "wrong app answer", ContentType: "text", State: domain.StateActive, CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)},
+	}
+
+	got := adjacentTurnMemories(seeds, sessions, 1)
+	if len(got) != 0 {
+		t.Fatalf("expected no adjacent memories from another app, got %+v", got)
 	}
 }
 

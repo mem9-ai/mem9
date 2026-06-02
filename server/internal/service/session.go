@@ -352,6 +352,70 @@ func (s *SessionService) adjacentTurnResults(
 		return nil, nil
 	}
 
+	fetchLimit := adjacentTurnFetchLimit(seeds, opts.AdjacentTurnRadius)
+	start := time.Now()
+	groups := adjacentTurnSeedGroups(seeds, appID)
+	adjacent := make([]domain.Memory, 0, len(seeds)*opts.AdjacentTurnRadius*2)
+	sessionIDCount := 0
+	for _, group := range groups {
+		sessionIDs := adjacentTurnSessionIDs(group.seeds)
+		if len(sessionIDs) == 0 {
+			continue
+		}
+		sessionIDCount += len(sessionIDs)
+		groupAppID := group.appID
+		sessions, err := s.sessions.ListBySessionIDs(ctx, sessionIDs, &groupAppID, fetchLimit)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotSupported) {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("session adjacent turn lookup: %w", err)
+		}
+		adjacent = append(adjacent, adjacentTurnMemories(group.seeds, sessions, opts.AdjacentTurnRadius)...)
+	}
+	if sessionIDCount == 0 {
+		return nil, nil
+	}
+	slog.InfoContext(ctx, "session adjacent turn expansion",
+		"source_pool", string(sourcePool),
+		"seed_count", len(seeds),
+		"session_count", sessionIDCount,
+		"fetch_limit", fetchLimit,
+		"adjacent_count", len(adjacent),
+		"total_ms", time.Since(start).Milliseconds(),
+	)
+	return adjacent, nil
+}
+
+type adjacentTurnSeedGroup struct {
+	appID string
+	seeds []RecallCandidate
+}
+
+func adjacentTurnSeedGroups(seeds []RecallCandidate, appID *string) []adjacentTurnSeedGroup {
+	if len(seeds) == 0 {
+		return nil
+	}
+	if appID != nil {
+		return []adjacentTurnSeedGroup{{appID: *appID, seeds: seeds}}
+	}
+
+	groups := make([]adjacentTurnSeedGroup, 0, len(seeds))
+	indexByAppID := make(map[string]int, len(seeds))
+	for _, seed := range seeds {
+		appID := seed.Memory.AppID
+		idx, ok := indexByAppID[appID]
+		if !ok {
+			idx = len(groups)
+			indexByAppID[appID] = idx
+			groups = append(groups, adjacentTurnSeedGroup{appID: appID})
+		}
+		groups[idx].seeds = append(groups[idx].seeds, seed)
+	}
+	return groups
+}
+
+func adjacentTurnSessionIDs(seeds []RecallCandidate) []string {
 	sessionIDs := make([]string, 0, len(seeds))
 	seenSessionIDs := make(map[string]struct{}, len(seeds))
 	for _, seed := range seeds {
@@ -364,29 +428,7 @@ func (s *SessionService) adjacentTurnResults(
 		seenSessionIDs[seed.Memory.SessionID] = struct{}{}
 		sessionIDs = append(sessionIDs, seed.Memory.SessionID)
 	}
-	if len(sessionIDs) == 0 {
-		return nil, nil
-	}
-
-	fetchLimit := adjacentTurnFetchLimit(seeds, opts.AdjacentTurnRadius)
-	start := time.Now()
-	sessions, err := s.sessions.ListBySessionIDs(ctx, sessionIDs, appID, fetchLimit)
-	if err != nil {
-		if errors.Is(err, domain.ErrNotSupported) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("session adjacent turn lookup: %w", err)
-	}
-	adjacent := adjacentTurnMemories(seeds, sessions, opts.AdjacentTurnRadius)
-	slog.InfoContext(ctx, "session adjacent turn expansion",
-		"source_pool", string(sourcePool),
-		"seed_count", len(seeds),
-		"session_count", len(sessionIDs),
-		"fetch_limit", fetchLimit,
-		"adjacent_count", len(adjacent),
-		"total_ms", time.Since(start).Milliseconds(),
-	)
-	return adjacent, nil
+	return sessionIDs
 }
 
 func topAdjacentTurnSeeds(candidates []RecallCandidate, topN int) []RecallCandidate {
@@ -446,7 +488,7 @@ func adjacentTurnMemories(seeds []RecallCandidate, sessions []*domain.Session, r
 		if session == nil || session.SessionID == "" {
 			continue
 		}
-		bySession[session.SessionID] = append(bySession[session.SessionID], session)
+		bySession[sessionAppSessionKey(session.AppID, session.SessionID)] = append(bySession[sessionAppSessionKey(session.AppID, session.SessionID)], session)
 	}
 
 	seen := make(map[string]struct{}, len(seeds))
@@ -456,7 +498,7 @@ func adjacentTurnMemories(seeds []RecallCandidate, sessions []*domain.Session, r
 
 	results := make([]domain.Memory, 0, len(seeds)*radius*2)
 	for _, seed := range seeds {
-		turns := bySession[seed.Memory.SessionID]
+		turns := bySession[sessionAppSessionKey(seed.Memory.AppID, seed.Memory.SessionID)]
 		if len(turns) == 0 {
 			continue
 		}
@@ -483,6 +525,10 @@ func adjacentTurnMemories(seeds []RecallCandidate, sessions []*domain.Session, r
 		}
 	}
 	return results
+}
+
+func sessionAppSessionKey(appID, sessionID string) string {
+	return appID + "\x00" + sessionID
 }
 
 func adjacentTurnIndexes(seedIndex, total, radius int) []int {

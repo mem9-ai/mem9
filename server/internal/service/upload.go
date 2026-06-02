@@ -192,6 +192,18 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 	if err != nil {
 		return w.failTask(ctx, task, fmt.Errorf("get tenant db: %w", err), logger)
 	}
+	if err := tenant.EnsureMemoryAppIDSchema(taskCtx, db); err != nil {
+		return w.failTask(ctx, task, fmt.Errorf("ensure app_id schema: memories: %w", err), logger)
+	}
+	sessionsExists, err := tenant.TableExists(taskCtx, db, "sessions")
+	if err != nil {
+		return w.failTask(ctx, task, fmt.Errorf("ensure app_id schema: check sessions table: %w", err), logger)
+	}
+	if sessionsExists {
+		if err := tenant.EnsureSessionsAppIDSchema(taskCtx, db); err != nil {
+			return w.failTask(ctx, task, fmt.Errorf("ensure app_id schema: sessions: %w", err), logger)
+		}
+	}
 
 	memRepo := repository.NewMemoryRepo(w.pool.Backend(), db, w.autoModel, w.ftsEnabled, tenantInfo.ClusterID)
 	ingestSvc := NewIngestService(memRepo, w.llmClient, w.embedder, w.autoModel, w.mode)
