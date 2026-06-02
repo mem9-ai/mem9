@@ -35,6 +35,10 @@ type testMemoryRepo struct {
 	keywordSearchResults []domain.Memory
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	lastKeywordFilter    domain.MemoryFilter
+	listResults          []domain.Memory
+	listTotal            int
+	lastListFilter       domain.MemoryFilter
+	listCalls            int
 	softDeleteCalls      []string
 	softDeleteResult     int64
 	softDeleteErr        error
@@ -103,8 +107,12 @@ func (m *testMemoryRepo) ArchiveAndCreate(_ context.Context, _, _ string, mem *d
 	return nil
 }
 func (m *testMemoryRepo) SetState(context.Context, string, domain.MemoryState) error { return nil }
-func (m *testMemoryRepo) List(context.Context, domain.MemoryFilter) ([]domain.Memory, int, error) {
-	return nil, 0, nil
+func (m *testMemoryRepo) List(_ context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.listCalls++
+	m.lastListFilter = filter
+	return append([]domain.Memory(nil), m.listResults...), m.listTotal, nil
 }
 func (m *testMemoryRepo) Count(context.Context) (int, error) { return 0, nil }
 func (m *testMemoryRepo) BulkCreate(ctx context.Context, _ []*domain.Memory) error {
@@ -715,6 +723,75 @@ func TestListMemories_SessionTypeListsSessionRows(t *testing.T) {
 		sessionRepo.lastListFilter.SessionID != "sess-1" ||
 		sessionRepo.lastListFilter.Source != "cli" ||
 		len(sessionRepo.lastListFilter.Tags) != 2 {
+		t.Fatalf("session list filter = %+v", sessionRepo.lastListFilter)
+	}
+}
+
+func TestListMemories_ScanAllListsAllLocalMemoryTypes(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		listResults: []domain.Memory{
+			{
+				ID:         "insight-1",
+				Content:    "HEARTBEAT insight",
+				MemoryType: domain.TypeInsight,
+				State:      domain.StateActive,
+				CreatedAt:  now.Add(-2 * time.Hour),
+				UpdatedAt:  now.Add(-2 * time.Hour),
+			},
+		},
+		listTotal: 1,
+	}
+	sessionRepo := &testSessionRepo{
+		listResults: []domain.Memory{
+			{
+				ID:         "session-1",
+				Content:    "HEARTBEAT session",
+				MemoryType: domain.TypeSession,
+				State:      domain.StateActive,
+				CreatedAt:  now,
+				UpdatedAt:  now,
+			},
+		},
+		listTotal: 1,
+	}
+	srv := newTestServer(memRepo, sessionRepo)
+	req := makeRequest(t, http.MethodGet, "/memories?q=HEARTBEAT&limit=50&scanAll=true&sort_by=updated_at&sort_dir=desc", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Total != 2 || resp.Limit != 50 || resp.Offset != 0 {
+		t.Fatalf("page = total:%d limit:%d offset:%d, want 2/50/0", resp.Total, resp.Limit, resp.Offset)
+	}
+	if len(resp.Memories) != 2 {
+		t.Fatalf("len(memories) = %d, want 2", len(resp.Memories))
+	}
+	if resp.Memories[0].ID != "session-1" || resp.Memories[1].ID != "insight-1" {
+		t.Fatalf("memory order = [%s %s], want [session-1 insight-1]", resp.Memories[0].ID, resp.Memories[1].ID)
+	}
+	if memRepo.listCalls != 1 || sessionRepo.listCalls != 1 {
+		t.Fatalf("list calls = memory:%d session:%d, want 1/1", memRepo.listCalls, sessionRepo.listCalls)
+	}
+	if memRepo.lastListFilter.Query != "HEARTBEAT" ||
+		!memRepo.lastListFilter.ScanAll ||
+		memRepo.lastListFilter.SortBy != "updated_at" ||
+		memRepo.lastListFilter.SortDir != "desc" ||
+		memRepo.lastListFilter.Limit != 200 {
+		t.Fatalf("memory list filter = %+v", memRepo.lastListFilter)
+	}
+	if sessionRepo.lastListFilter.Query != "HEARTBEAT" ||
+		!sessionRepo.lastListFilter.ScanAll ||
+		sessionRepo.lastListFilter.SortBy != "updated_at" ||
+		sessionRepo.lastListFilter.SortDir != "desc" ||
+		sessionRepo.lastListFilter.Limit != 200 {
 		t.Fatalf("session list filter = %+v", sessionRepo.lastListFilter)
 	}
 }

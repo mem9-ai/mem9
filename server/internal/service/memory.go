@@ -165,13 +165,17 @@ func (s *MemoryService) Get(ctx context.Context, id string) (*domain.Memory, err
 	return s.memories.GetByID(ctx, id)
 }
 
+func (s *MemoryService) List(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	mems, total, err := s.memories.List(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	return finalizeSearchResults(mems, filter.Query), total, nil
+}
+
 func (s *MemoryService) Search(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
 	if filter.Query == "" {
-		mems, total, err := s.memories.List(ctx, filter)
-		if err != nil {
-			return nil, 0, err
-		}
-		return finalizeSearchResults(mems, filter.Query), total, nil
+		return s.List(ctx, filter)
 	}
 	searchFilter := filter
 	searchFilter.SessionID = ""

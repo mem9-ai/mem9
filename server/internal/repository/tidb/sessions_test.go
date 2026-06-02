@@ -63,6 +63,49 @@ func TestSessionRepoListFiltersAndPaginates(t *testing.T) {
 	}
 }
 
+func TestSessionRepoListSortsByContent(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	db := newScriptedTestDB(t, []*queryExpectation{
+		{
+			mustContain: []string{
+				"SELECT COUNT(*) FROM sessions WHERE state = 'active'",
+			},
+			rows: &scriptedRows{
+				columns: []string{"COUNT(*)"},
+				values:  [][]driver.Value{{int64(1)}},
+			},
+		},
+		{
+			mustContain: []string{
+				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at",
+				"FROM sessions WHERE state = 'active'",
+				"ORDER BY content ASC, id ASC LIMIT ? OFFSET ?",
+			},
+			wantArgs: []any{int64(5), int64(0)},
+			rows: &scriptedRows{
+				columns: sessionColumns(),
+				values: [][]driver.Value{
+					sessionRow("s-1", "sess-1", "agent-1", "chat", 1, "assistant", "alpha", []byte(`[]`), "active", now),
+				},
+			},
+		},
+	})
+	defer db.Close()
+
+	repo := NewSessionRepo(db, "", false, "cluster-1")
+	memories, total, err := repo.List(context.Background(), domain.MemoryFilter{
+		SortBy:  "content",
+		SortDir: "asc",
+		Limit:   5,
+	})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if total != 1 || len(memories) != 1 || memories[0].ID != "s-1" {
+		t.Fatalf("page = total:%d memories:%+v, want one s-1", total, memories)
+	}
+}
+
 func TestSessionRepoGetByIDMissingTableReturnsNotFound(t *testing.T) {
 	db := newScriptedTestDB(t, []*queryExpectation{
 		{

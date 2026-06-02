@@ -258,7 +258,7 @@ func (r *SessionRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain
 	}
 
 	dataQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at
-		FROM sessions WHERE ` + where + ` ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`
+		FROM sessions WHERE ` + where + ` ORDER BY ` + sessionListOrderBy(f) + ` LIMIT ? OFFSET ?`
 	dataArgs := make([]any, len(args), len(args)+2)
 	copy(dataArgs, args)
 	dataArgs = append(dataArgs, limit, offset)
@@ -278,6 +278,25 @@ func (r *SessionRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain
 		return nil, 0, err
 	}
 	return memories, total, nil
+}
+
+func sessionListOrderBy(f domain.MemoryFilter) string {
+	column := "updated_at"
+	switch strings.TrimSpace(f.SortBy) {
+	case "content":
+		column = "content"
+	case "tags":
+		column = "tags"
+	case "updated_at", "memory_type", "":
+		column = "updated_at"
+	}
+
+	direction := "DESC"
+	if strings.EqualFold(strings.TrimSpace(f.SortDir), "asc") {
+		direction = "ASC"
+	}
+
+	return column + " " + direction + ", id " + direction
 }
 
 func (r *SessionRepo) AutoVectorSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {

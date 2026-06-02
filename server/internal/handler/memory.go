@@ -726,6 +726,8 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	} else {
 		svc := s.resolveServices(auth)
 		switch {
+		case filter.Query != "" && filter.ScanAll:
+			memories, total, err = s.listLocalMemoriesScanAll(r.Context(), svc, filter)
 		case filter.Query != "" && filter.MemoryType == "":
 			memories, total, err = s.defaultConfidenceRecallSearch(r.Context(), auth, svc, filter)
 		case filter.Query != "" && (filter.MemoryType == string(domain.TypeSession) ||
@@ -789,6 +791,61 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 func parseBoolQuery(value string) bool {
 	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
 	return err == nil && parsed
+}
+
+func (s *Server) listLocalMemoriesScanAll(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	switch strings.TrimSpace(filter.MemoryType) {
+	case string(domain.TypeSession):
+		return svc.session.List(ctx, filter)
+	case string(domain.TypePinned), string(domain.TypeInsight):
+		return svc.memory.List(ctx, filter)
+	case "":
+		return s.listLocalAllTypeMemoriesScanAll(ctx, svc, filter)
+	default:
+		return svc.memory.List(ctx, filter)
+	}
+}
+
+func (s *Server) listLocalAllTypeMemoriesScanAll(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	memoryPages, err := collectLocalListPages(ctx, filter, svc.memory.List)
+	if err != nil {
+		return nil, 0, err
+	}
+	sessionPages, err := collectLocalListPages(ctx, filter, svc.session.List)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	combined := make([]domain.Memory, 0, len(memoryPages)+len(sessionPages))
+	combined = append(combined, memoryPages...)
+	combined = append(combined, sessionPages...)
+	combined = uniqueChainMemories(combined)
+
+	total := len(combined)
+	return finalizeChainMemories(combined, filter, filter.Limit, filter.Offset, false), total, nil
+}
+
+func collectLocalListPages(
+	ctx context.Context,
+	filter domain.MemoryFilter,
+	list func(context.Context, domain.MemoryFilter) ([]domain.Memory, int, error),
+) ([]domain.Memory, error) {
+	pageFilter := filter
+	pageFilter.Limit = 200
+	pageFilter.Offset = 0
+
+	var all []domain.Memory
+	for {
+		page, pageTotal, err := list(ctx, pageFilter)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if len(page) == 0 || pageFilter.Offset+pageFilter.Limit >= pageTotal {
+			return all, nil
+		}
+		pageFilter.Offset += pageFilter.Limit
+	}
 }
 
 func normalizeRecallQuery(query string, now time.Time) string {
