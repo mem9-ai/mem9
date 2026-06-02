@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -62,6 +63,8 @@ type UploadWorker struct {
 	embedder     *embed.Embedder
 	llmClient    *llm.Client
 	autoModel    string
+	autoDims     int
+	clientDims   int
 	ftsEnabled   bool
 	mode         IngestMode
 	logger       *slog.Logger
@@ -79,6 +82,8 @@ func NewUploadWorker(
 	embedder *embed.Embedder,
 	llmClient *llm.Client,
 	autoModel string,
+	autoDims int,
+	clientDims int,
 	ftsEnabled bool,
 	mode IngestMode,
 	logger *slog.Logger,
@@ -99,6 +104,8 @@ func NewUploadWorker(
 		embedder:     embedder,
 		llmClient:    llmClient,
 		autoModel:    autoModel,
+		autoDims:     autoDims,
+		clientDims:   clientDims,
 		ftsEnabled:   ftsEnabled,
 		mode:         mode,
 		logger:       logger,
@@ -192,17 +199,8 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 	if err != nil {
 		return w.failTask(ctx, task, fmt.Errorf("get tenant db: %w", err), logger)
 	}
-	if err := tenant.EnsureMemoryAppIDSchema(taskCtx, db); err != nil {
-		return w.failTask(ctx, task, fmt.Errorf("ensure app_id schema: memories: %w", err), logger)
-	}
-	sessionsExists, err := tenant.TableExists(taskCtx, db, "sessions")
-	if err != nil {
-		return w.failTask(ctx, task, fmt.Errorf("ensure app_id schema: check sessions table: %w", err), logger)
-	}
-	if sessionsExists {
-		if err := tenant.EnsureSessionsAppIDSchema(taskCtx, db); err != nil {
-			return w.failTask(ctx, task, fmt.Errorf("ensure app_id schema: sessions: %w", err), logger)
-		}
+	if err := w.ensureAppIDSchema(taskCtx, db); err != nil {
+		return w.failTask(ctx, task, fmt.Errorf("ensure app_id schema: %w", err), logger)
 	}
 
 	memRepo := repository.NewMemoryRepo(w.pool.Backend(), db, w.autoModel, w.ftsEnabled, tenantInfo.ClusterID)
@@ -400,6 +398,25 @@ func (w *UploadWorker) recordActivity(tenantID string) {
 		return
 	}
 	w.activity.RecordMemoryActivity(tenantID, time.Now().UTC())
+}
+
+func (w *UploadWorker) ensureAppIDSchema(ctx context.Context, db *sql.DB) error {
+	if w.pool != nil && w.pool.Backend() == "tidb" {
+		return tenant.InitTiDBTenantSchema(ctx, db, w.autoModel, w.autoDims, w.clientDims, w.ftsEnabled)
+	}
+	if err := tenant.EnsureMemoryAppIDSchema(ctx, db); err != nil {
+		return fmt.Errorf("memories: %w", err)
+	}
+	sessionsExists, err := tenant.TableExists(ctx, db, "sessions")
+	if err != nil {
+		return fmt.Errorf("check sessions table: %w", err)
+	}
+	if sessionsExists {
+		if err := tenant.EnsureSessionsAppIDSchema(ctx, db); err != nil {
+			return fmt.Errorf("sessions: %w", err)
+		}
+	}
+	return nil
 }
 
 func (w *UploadWorker) recordActivityOnly(tenantID string) {
