@@ -33,6 +33,8 @@ type stubSessionRepo struct {
 	sessionRows    []*domain.Session
 	listSessionIDs []string
 	listLimit      int
+	seqWindows     []domain.SessionSeqWindow
+	seqWindowErr   error
 	getResult      *domain.Memory
 	getErr         error
 	listResults    []domain.Memory
@@ -100,6 +102,14 @@ func (s *stubSessionRepo) FTSAvailable() bool { return s.ftsAvail }
 func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, ids []string, limit int) ([]*domain.Session, error) {
 	s.listSessionIDs = append([]string(nil), ids...)
 	s.listLimit = limit
+	return append([]*domain.Session(nil), s.sessionRows...), nil
+}
+
+func (s *stubSessionRepo) ListBySessionSeqWindows(_ context.Context, windows []domain.SessionSeqWindow) ([]*domain.Session, error) {
+	s.seqWindows = append([]domain.SessionSeqWindow(nil), windows...)
+	if s.seqWindowErr != nil {
+		return nil, s.seqWindowErr
+	}
 	return append([]*domain.Session(nil), s.sessionRows...), nil
 }
 
@@ -387,8 +397,61 @@ func TestSessionService_SearchCandidates_ExpandsAdjacentTurns(t *testing.T) {
 	if candidates[1].Memory.ID != "s-answer" {
 		t.Fatalf("expected adjacent answer candidate to be appended, got %q", candidates[1].Memory.ID)
 	}
-	if len(repo.listSessionIDs) != 1 || repo.listSessionIDs[0] != "sess-1" {
-		t.Fatalf("expected ListBySessionIDs to request sess-1, got %+v", repo.listSessionIDs)
+	if len(repo.seqWindows) != 1 || repo.seqWindows[0].SessionID != "sess-1" || repo.seqWindows[0].MinSeq != 6 || repo.seqWindows[0].MaxSeq != 8 {
+		t.Fatalf("expected seq window around seed, got %+v", repo.seqWindows)
+	}
+	if len(repo.listSessionIDs) != 0 {
+		t.Fatalf("expected seq-window lookup instead of prefix lookup, got %+v", repo.listSessionIDs)
+	}
+}
+
+func TestSessionService_SearchCandidates_ExpandsLateAdjacentTurns(t *testing.T) {
+	now := time.Now()
+	repo := &stubSessionRepo{
+		keywordResults: []domain.Memory{
+			{
+				ID:         "s-seed",
+				SessionID:  "sess-late",
+				Content:    "I camped in the mountains.",
+				MemoryType: domain.TypeSession,
+				Metadata:   json.RawMessage(`{"role":"assistant","seq":80,"content_type":"text"}`),
+				UpdatedAt:  now,
+				State:      domain.StateActive,
+			},
+		},
+		sessionRows: []*domain.Session{
+			{ID: "s-prev", SessionID: "sess-late", Seq: 79, Role: "user", Content: "Where else have you camped?", ContentType: "text", State: domain.StateActive, CreatedAt: now.Add(-2 * time.Minute), UpdatedAt: now.Add(-2 * time.Minute)},
+			{ID: "s-seed", SessionID: "sess-late", Seq: 80, Role: "assistant", Content: "I camped in the mountains.", ContentType: "text", State: domain.StateActive, CreatedAt: now.Add(-1 * time.Minute), UpdatedAt: now.Add(-1 * time.Minute)},
+			{ID: "s-next", SessionID: "sess-late", Seq: 81, Role: "assistant", Content: "The beach and forest were memorable too.", ContentType: "text", State: domain.StateActive, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+	svc := newTestSessionService(repo)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{Query: "Where has Melanie camped?", Limit: 5}, RecallSourceSession, RecallCandidateOptions{
+		EnableAdjacentTurns: true,
+		AdjacentTurnRadius:  1,
+		AdjacentTurnTopN:    1,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 3 {
+		t.Fatalf("expected seed plus two adjacent candidates, got %d", len(candidates))
+	}
+	gotIDs := map[string]bool{}
+	for _, candidate := range candidates {
+		gotIDs[candidate.Memory.ID] = true
+	}
+	for _, want := range []string{"s-seed", "s-prev", "s-next"} {
+		if !gotIDs[want] {
+			t.Fatalf("expected candidate %q in %+v", want, candidates)
+		}
+	}
+	if len(repo.seqWindows) != 1 || repo.seqWindows[0].SessionID != "sess-late" || repo.seqWindows[0].MinSeq != 79 || repo.seqWindows[0].MaxSeq != 81 {
+		t.Fatalf("expected late seq window, got %+v", repo.seqWindows)
+	}
+	if len(repo.listSessionIDs) != 0 {
+		t.Fatalf("expected no prefix lookup for late seed, got %+v", repo.listSessionIDs)
 	}
 }
 
@@ -466,4 +529,8 @@ func (c *capturingSessionRepo) FTSAvailable() bool { return c.stub.FTSAvailable(
 
 func (c *capturingSessionRepo) ListBySessionIDs(ctx context.Context, ids []string, limit int) ([]*domain.Session, error) {
 	return c.stub.ListBySessionIDs(ctx, ids, limit)
+}
+
+func (c *capturingSessionRepo) ListBySessionSeqWindows(ctx context.Context, windows []domain.SessionSeqWindow) ([]*domain.Session, error) {
+	return c.stub.ListBySessionSeqWindows(ctx, windows)
 }

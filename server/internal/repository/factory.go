@@ -139,3 +139,6 @@ func (stubSessionRepo) FTSAvailable() bool { return false }
 func (stubSessionRepo) ListBySessionIDs(_ context.Context, _ []string, _ int) ([]*domain.Session, error) {
 	return nil, fmt.Errorf("session messages: %w", domain.ErrNotSupported)
 }
+func (stubSessionRepo) ListBySessionSeqWindows(_ context.Context, _ []domain.SessionSeqWindow) ([]*domain.Session, error) {
+	return nil, fmt.Errorf("session seq windows: %w", domain.ErrNotSupported)
+}

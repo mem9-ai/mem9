@@ -269,3 +269,10 @@ type Session struct {
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 }
+
+// SessionSeqWindow selects raw session turns around a known session sequence.
+type SessionSeqWindow struct {
+	SessionID string
+	MinSeq    int
+	MaxSeq    int
+}

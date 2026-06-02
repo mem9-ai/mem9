@@ -648,6 +648,44 @@ func (r *SessionRepo) ListBySessionIDs(ctx context.Context, sessionIDs []string,
 	return scanSessionDomainRows(rows)
 }
 
+func (r *SessionRepo) ListBySessionSeqWindows(ctx context.Context, windows []domain.SessionSeqWindow) ([]*domain.Session, error) {
+	clauses := make([]string, 0, len(windows))
+	args := make([]any, 0, len(windows)*3)
+	for _, window := range windows {
+		if window.SessionID == "" {
+			continue
+		}
+		minSeq, maxSeq := window.MinSeq, window.MaxSeq
+		if minSeq > maxSeq {
+			minSeq, maxSeq = maxSeq, minSeq
+		}
+		if minSeq < 0 {
+			minSeq = 0
+		}
+		clauses = append(clauses, "(session_id = ? AND seq BETWEEN ? AND ?)")
+		args = append(args, window.SessionID, minSeq, maxSeq)
+	}
+	if len(clauses) == 0 {
+		return nil, nil
+	}
+
+	sqlQuery := `SELECT id, session_id, agent_id, source, seq, role, content, content_type,
+		content_hash, tags, state, created_at, updated_at
+		FROM sessions
+		WHERE state = 'active' AND (` + strings.Join(clauses, " OR ") + `)
+		ORDER BY session_id ASC, seq ASC, created_at ASC, id ASC`
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("sessions list by seq windows: cluster_id=%s: %w", r.clusterID, err)
+	}
+	defer rows.Close()
+	return scanSessionDomainRows(rows)
+}
+
 func scanSessionDomainRows(rows *sql.Rows) ([]*domain.Session, error) {
 	var result []*domain.Session
 	for rows.Next() {
