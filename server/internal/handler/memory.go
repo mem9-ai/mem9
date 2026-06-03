@@ -679,7 +679,11 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	auth := authInfo(r)
 	q := r.URL.Query()
 	rawQuery := q.Get("q")
-	query := normalizeRecallQuery(rawQuery, time.Now())
+	contentKeywordSearch := isContentKeywordSearch(q)
+	query := strings.TrimSpace(rawQuery)
+	if !contentKeywordSearch {
+		query = normalizeRecallQuery(rawQuery, time.Now())
+	}
 
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	offset, _ := strconv.Atoi(q.Get("offset"))
@@ -721,8 +725,9 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	var total int
 	var recallLease *runtimeusage.OperationLease
 	recallFinalized := false
+	recallSearch := filter.Query != "" && !contentKeywordSearch
 
-	if s.runtimeUsageEnabled() && filter.Query != "" {
+	if s.runtimeUsageEnabled() && recallSearch {
 		recallLease, err = s.runtimeUsage.BeforeRecall(r.Context(), subjectFromAuth(auth))
 		if err != nil {
 			s.handleRuntimeUsageError(w, err)
@@ -740,6 +745,8 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	} else {
 		svc := s.resolveServices(auth)
 		switch {
+		case filter.Query != "" && contentKeywordSearch:
+			memories, total, err = s.listLocalMemoriesContentKeyword(r.Context(), svc, filter)
 		case filter.Query != "" && filter.ScanAll:
 			memories, total, err = s.listLocalMemoriesScanAll(r.Context(), svc, filter)
 		case filter.Query != "" && filter.MemoryType == "":
@@ -767,12 +774,12 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	if memories == nil {
 		memories = []domain.Memory{}
 	}
-	if rawQuery != "" && classifyRecallQueryShape(rawQuery) == recallQueryShapeTime {
+	if !contentKeywordSearch && rawQuery != "" && classifyRecallQueryShape(rawQuery) == recallQueryShapeTime {
 		for i := range memories {
 			memories[i].Content = service.TemporalRecallProjection(memories[i].Content, memories[i].Metadata)
 		}
 	}
-	if filter.Query != "" {
+	if recallSearch {
 		if s.runtimeUsageEnabled() && recallLease != nil {
 			if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
 				return s.runtimeUsage.AfterRecallSuccess(ctx, recallLease, runtimeusage.RecallResult{
@@ -800,6 +807,14 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		Limit:    limit,
 		Offset:   offset,
 	})
+}
+
+func isContentKeywordSearch(q url.Values) bool {
+	mode := strings.TrimSpace(q.Get("search_mode"))
+	if mode == "" {
+		mode = strings.TrimSpace(q.Get("searchMode"))
+	}
+	return strings.EqualFold(mode, "keyword") || strings.EqualFold(mode, "content_keyword")
 }
 
 func parseBoolQuery(value string) bool {
@@ -859,6 +874,38 @@ func (s *Server) listLocalMemoriesScanAll(ctx context.Context, svc resolvedSvc, 
 	default:
 		return svc.memory.List(ctx, filter)
 	}
+}
+
+func (s *Server) listLocalMemoriesContentKeyword(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	switch strings.TrimSpace(filter.MemoryType) {
+	case string(domain.TypeSession):
+		return svc.session.ContentKeywordSearch(ctx, filter)
+	case string(domain.TypePinned), string(domain.TypeInsight):
+		return svc.memory.ContentKeywordSearch(ctx, filter)
+	case "":
+		return s.listLocalAllTypeMemoriesContentKeyword(ctx, svc, filter)
+	default:
+		return svc.memory.ContentKeywordSearch(ctx, filter)
+	}
+}
+
+func (s *Server) listLocalAllTypeMemoriesContentKeyword(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	memoryPages, err := collectLocalListPages(ctx, filter, svc.memory.ContentKeywordSearch)
+	if err != nil {
+		return nil, 0, err
+	}
+	sessionPages, err := collectLocalListPages(ctx, filter, svc.session.ContentKeywordSearch)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	combined := make([]domain.Memory, 0, len(memoryPages)+len(sessionPages))
+	combined = append(combined, memoryPages...)
+	combined = append(combined, sessionPages...)
+	combined = uniqueChainMemories(combined)
+
+	total := len(combined)
+	return finalizeChainMemories(combined, filter, filter.Limit, filter.Offset, false), total, nil
 }
 
 func (s *Server) listLocalAllTypeMemoriesScanAll(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {

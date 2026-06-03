@@ -24,6 +24,9 @@ type stubSessionRepo struct {
 
 	keywordResults []domain.Memory
 	keywordErr     error
+	keywordQuery   string
+	keywordFilter  domain.MemoryFilter
+	keywordLimit   int
 	ftsResults     []domain.Memory
 	ftsErr         error
 	vecResults     []domain.Memory
@@ -101,7 +104,10 @@ func (s *stubSessionRepo) FTSSearch(_ context.Context, _ string, _ domain.Memory
 	return s.ftsResults, s.ftsErr
 }
 
-func (s *stubSessionRepo) KeywordSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+func (s *stubSessionRepo) KeywordSearch(_ context.Context, query string, filter domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	s.keywordQuery = query
+	s.keywordFilter = filter
+	s.keywordLimit = limit
 	return s.keywordResults, s.keywordErr
 }
 
@@ -308,6 +314,41 @@ func TestSessionService_Search_keywordPath_returnsSessionType(t *testing.T) {
 	}
 	if results[0].MemoryType != domain.TypeSession {
 		t.Errorf("memory_type = %q, want %q", results[0].MemoryType, domain.TypeSession)
+	}
+}
+
+func TestSessionService_ContentKeywordSearchBypassesFTS(t *testing.T) {
+	memories := []domain.Memory{
+		{ID: "s1", Content: "old mem9小组 session", MemoryType: domain.TypeSession, State: domain.StateActive},
+		{ID: "s2", Content: "new mem9小组 session", MemoryType: domain.TypeSession, State: domain.StateActive},
+	}
+	repo := &stubSessionRepo{
+		keywordResults: memories,
+		ftsAvail:       true,
+	}
+	svc := newTestSessionService(repo)
+
+	results, total, err := svc.ContentKeywordSearch(context.Background(), domain.MemoryFilter{
+		Query:     "mem9小组",
+		Source:    "console",
+		SessionID: "session-1",
+		Limit:     1,
+		Offset:    1,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 2 || len(results) != 1 || results[0].ID != "s2" {
+		t.Fatalf("unexpected page: total=%d results=%+v", total, results)
+	}
+	if repo.keywordQuery != "mem9小组" {
+		t.Fatalf("keyword query = %q, want mem9小组", repo.keywordQuery)
+	}
+	if repo.keywordFilter.Source != "console" || repo.keywordFilter.SessionID != "session-1" {
+		t.Fatalf("keyword filter = %+v", repo.keywordFilter)
+	}
+	if repo.keywordLimit != 3 {
+		t.Fatalf("keyword limit = %d, want 3", repo.keywordLimit)
 	}
 }
 

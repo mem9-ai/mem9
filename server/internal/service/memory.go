@@ -201,6 +201,16 @@ func (s *MemoryService) Search(ctx context.Context, filter domain.MemoryFilter) 
 	return s.keywordOnlySearch(ctx, searchFilter)
 }
 
+// ContentKeywordSearch performs direct content substring search for list filters.
+// Unlike Search(), it deliberately bypasses vector, FTS, and recall-style
+// ranking so UI list search behaves like a content filter.
+func (s *MemoryService) ContentKeywordSearch(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	if filter.Query == "" {
+		return s.List(ctx, filter)
+	}
+	return s.keywordOnlySearch(ctx, filter)
+}
+
 func (s *MemoryService) SearchCandidates(
 	ctx context.Context,
 	filter domain.MemoryFilter,

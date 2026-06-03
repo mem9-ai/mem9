@@ -123,6 +123,31 @@ func (s *SessionService) Search(ctx context.Context, f domain.MemoryFilter) ([]d
 	return dedupByContent(results), nil
 }
 
+// ContentKeywordSearch performs direct raw-session content substring search for
+// list filters, bypassing vector and FTS ranking.
+func (s *SessionService) ContentKeywordSearch(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, int, error) {
+	if f.Query == "" {
+		return s.List(ctx, f)
+	}
+
+	limit := f.Limit
+	if limit <= 0 || limit > 200 {
+		limit = DefaultSessionLimit
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	fetchLimit := limit * defaultSessionFetchMultiplier
+
+	results, err := s.sessions.KeywordSearch(ctx, f.Query, f, fetchLimit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("session keyword search: %w", err)
+	}
+	page, total := paginateResults(results, offset, limit)
+	return populateRelativeAge(page), total, nil
+}
+
 func (s *SessionService) SearchCandidates(
 	ctx context.Context,
 	f domain.MemoryFilter,

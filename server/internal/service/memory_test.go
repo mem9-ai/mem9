@@ -516,6 +516,45 @@ func TestSearchIgnoresSessionAndSourceFilters(t *testing.T) {
 	}
 }
 
+func TestContentKeywordSearchBypassesFTSAndVector(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		ftsAvail: true,
+		kwResults: []domain.Memory{
+			{ID: "kw-1", Content: "mem9小组负责验证", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+		ftsSearchHook: func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
+			t.Fatal("ContentKeywordSearch must not call FTS")
+			return nil, nil
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	results, total, err := svc.ContentKeywordSearch(context.Background(), domain.MemoryFilter{
+		Query:     "mem9小组",
+		Source:    "console",
+		SessionID: "session-1",
+		AgentID:   "agent-1",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("ContentKeywordSearch() error: %v", err)
+	}
+	if total != 1 || len(results) != 1 || results[0].ID != "kw-1" {
+		t.Fatalf("unexpected results: total=%d results=%+v", total, results)
+	}
+	if memRepo.lastKeywordFilter.Source != "console" {
+		t.Fatalf("expected Source filter preserved, got %q", memRepo.lastKeywordFilter.Source)
+	}
+	if memRepo.lastKeywordFilter.SessionID != "session-1" {
+		t.Fatalf("expected SessionID filter preserved, got %q", memRepo.lastKeywordFilter.SessionID)
+	}
+	if memRepo.lastAutoVectorFilter.Query != "" || memRepo.lastFTSFilter.Query != "" {
+		t.Fatalf("direct keyword search unexpectedly touched vector/FTS filters: auto=%+v fts=%+v", memRepo.lastAutoVectorFilter, memRepo.lastFTSFilter)
+	}
+}
+
 func TestCreateFallsBackToRawWhenLLMUnavailable(t *testing.T) {
 	t.Parallel()
 

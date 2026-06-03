@@ -282,6 +282,9 @@
             "$ref": "#/components/parameters/MemoryQuery"
           },
           {
+            "$ref": "#/components/parameters/MemorySearchMode"
+          },
+          {
             "$ref": "#/components/parameters/Limit"
           },
           {
@@ -670,6 +673,9 @@
           },
           {
             "$ref": "#/components/parameters/MemoryQuery"
+          },
+          {
+            "$ref": "#/components/parameters/MemorySearchMode"
           },
           {
             "$ref": "#/components/parameters/Limit"
@@ -1193,6 +1199,18 @@
         "description": "Natural-language search query. When omitted, the endpoint lists memories by filters.",
         "schema": {
           "type": "string"
+        }
+      },
+      "MemorySearchMode": {
+        "name": "search_mode",
+        "in": "query",
+        "required": false,
+        "description": "Set to `keyword` to search memory content by direct substring match for list filtering. Omit for the default recall-style query behavior.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "keyword"
+          ]
         }
       },
       "Limit": {

@@ -247,6 +247,26 @@ func TestBuildRecallConfidence_AllowsKeywordOnlyInsightQuestionHits(t *testing.T
 	}
 }
 
+func TestBuildRecallConfidence_AllowsKeywordOnlyPinnedIdentifierHits(t *testing.T) {
+	profile := buildRecallQueryProfile("codex-appid-e2e-20260602154502")
+	candidate := service.RecallCandidate{
+		Memory: domain.Memory{
+			ID:         "p1",
+			Content:    "codex-appid-e2e-20260602154502 isolated app B memory",
+			MemoryType: domain.TypePinned,
+			UpdatedAt:  time.Now(),
+		},
+		SourcePool: service.RecallSourcePinned,
+		RRFScore:   1.0 / 61.0,
+		InKeyword:  true,
+	}
+
+	confidence := buildRecallConfidence(profile, candidate)
+	if confidence < defaultPinnedMinConfidence {
+		t.Fatalf("keyword-only pinned identifier confidence = %d, want >= %d", confidence, defaultPinnedMinConfidence)
+	}
+}
+
 func TestRecallCandidateOptions_EnumerationExpandsAdjacentTurns(t *testing.T) {
 	opts := recallCandidateOptions(recallQueryShapeEnumeration, true)
 
