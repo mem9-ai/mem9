@@ -70,6 +70,27 @@ test("ServerBackend reports non-JSON HTTP errors clearly", async () => {
   }
 });
 
+test("ServerBackend forwards memory_type in store body", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestBody: unknown;
+
+  globalThis.fetch = async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ id: "memory-1", content: "saved" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "mk_demo", "opencode");
+    await backend.store({ content: "saved", memory_type: "pinned" });
+    assert.deepEqual(requestBody, { content: "saved", memory_type: "pinned" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("ServerBackend uses searchTimeoutMs for search and defaultTimeoutMs for writes", async () => {
   const originalFetch = globalThis.fetch;
 
