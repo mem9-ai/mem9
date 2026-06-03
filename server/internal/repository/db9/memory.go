@@ -296,13 +296,13 @@ func (r *DB9MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Me
 // scanMemoryRowsWithDistance scans a row with distance score appended.
 func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, memoryType, agentID, sessionID, appID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON []byte
 	var embeddingStr sql.NullString
 	var distance float64
 
 	err := rows.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &appID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy,
 		&distance)
 	if err != nil {
@@ -315,6 +315,7 @@ func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.AppID = appID.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive
@@ -332,13 +333,13 @@ func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 // scanMemoryRowsWithFTSScore scans a row with FTS score appended.
 func scanMemoryRowsWithFTSScore(rows *sql.Rows) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, memoryType, agentID, sessionID, appID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON []byte
 	var embeddingStr sql.NullString
 	var ftsScore float64
 
 	err := rows.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &appID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy,
 		&ftsScore)
 	if err != nil {
@@ -351,6 +352,7 @@ func scanMemoryRowsWithFTSScore(rows *sql.Rows) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.AppID = appID.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive
