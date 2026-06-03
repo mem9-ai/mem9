@@ -264,7 +264,7 @@ func main() {
 		WithRuntimeUsage(runtimeUsageManager).
 		WithActivityTracker(activityTracker).
 		WithDisableSessionSave(cfg.DisableSessionSave)
-	router := srv.Router(tenantMW, rateMW, apiKeyMW)
+	router := srv.Router(tenantMW, rateMW, apiKeyMW, middleware.CORS(cfg.CORSAllowedOrigins))
 
 	httpSrv := &http.Server{
 		Addr:         ":" + cfg.Port,

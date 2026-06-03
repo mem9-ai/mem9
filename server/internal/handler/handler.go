@@ -181,11 +181,13 @@ func (s *Server) Router(
 	tenantMW func(http.Handler) http.Handler,
 	rateLimitMW func(http.Handler) http.Handler,
 	apiKeyMW func(http.Handler) http.Handler,
+	corsMW func(http.Handler) http.Handler,
 ) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware.
 	r.Use(chimw.Recoverer)
+	r.Use(corsMW)
 	r.Use(chimw.RequestID)
 	r.Use(reqid.NewContextMiddleware)
 	r.Use(requestLogger(s.logger))

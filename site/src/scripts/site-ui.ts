@@ -1499,7 +1499,7 @@ function readApiTestTextInputs(scope: string): Array<{ name: string; value: stri
 
 function buildApiTestUrl(elements: ApiTestModalElements, endpoint: ApiTestEndpoint): URL {
   const base = elements.baseUrl.value.trim().replace(/\/+$/u, '');
-  const baseUrl = base === '' ? 'https://api.mem9.ai' : base;
+  const baseUrl = base === '' ? defaultApiTestBaseUrl() : base;
   const resolvedPath = endpoint.path.replace(/\{([^}]+)\}/g, (match, name: string) => {
     const input = Array.from(document.querySelectorAll<HTMLInputElement>('[data-api-test-scope="path"]'))
       .find((candidate) => candidate.dataset.apiTestName === name);
@@ -1517,6 +1517,12 @@ function buildApiTestUrl(elements: ApiTestModalElements, endpoint: ApiTestEndpoi
   return url;
 }
 
+function defaultApiTestBaseUrl(): string {
+  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+    ? 'http://localhost:8080'
+    : 'https://api.mem9.ai';
+}
+
 function updateApiTestUrlPreview(elements: ApiTestModalElements): void {
   if (!activeApiTestEndpoint) {
     return;
@@ -1532,12 +1538,15 @@ function updateApiTestUrlPreview(elements: ApiTestModalElements): void {
 function openApiTestModal(elements: ApiTestModalElements, endpoint: ApiTestEndpoint): void {
   const multipart = isApiTestMultipart(endpoint);
   activeApiTestEndpoint = endpoint;
+  if (elements.baseUrl.value.trim() === '') {
+    elements.baseUrl.value = defaultApiTestBaseUrl();
+  }
   elements.title.textContent = endpoint.summary;
   elements.method.textContent = `${endpoint.method} · ${endpoint.groupTitle}`;
   elements.path.textContent = endpoint.path;
-  elements.response.hidden = true;
-  elements.status.textContent = '';
-  elements.output.textContent = '';
+  elements.response.hidden = false;
+  elements.status.textContent = 'Ready';
+  elements.output.textContent = 'Run a request to inspect the response.';
   renderApiTestFields(elements.pathFields, 'path', extractApiTestPathParams(endpoint.path));
   renderApiTestFields(elements.headerFields, 'headers', endpoint.headers);
   renderApiTestFields(elements.queryFields, 'query', endpoint.queryParams);
