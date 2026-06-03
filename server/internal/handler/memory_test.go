@@ -3,6 +3,8 @@ package handler
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -528,6 +530,48 @@ func ensureNoMeteringEvents(t *testing.T, writer *captureMeteringWriter, timeout
 	}
 }
 
+var handlerErrorDBRegisterOnce sync.Once
+
+func openHandlerErrorDB(t *testing.T) *sql.DB {
+	t.Helper()
+	handlerErrorDBRegisterOnce.Do(func() {
+		sql.Register("handler-error-db", handlerErrorDriver{})
+	})
+	db, err := sql.Open("handler-error-db", "")
+	if err != nil {
+		t.Fatalf("open handler error db: %v", err)
+	}
+	return db
+}
+
+type handlerErrorDriver struct{}
+
+func (handlerErrorDriver) Open(string) (driver.Conn, error) {
+	return handlerErrorConn{}, nil
+}
+
+type handlerErrorConn struct{}
+
+func (handlerErrorConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (handlerErrorConn) Close() error {
+	return nil
+}
+
+func (handlerErrorConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (handlerErrorConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	return nil, errors.New("schema unavailable")
+}
+
+func (handlerErrorConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
+	return nil, errors.New("schema unavailable")
+}
+
 // newTestServer creates a Server with pre-populated svcCache for testing.
 func newTestServer(memRepo *testMemoryRepo, sessRepo *testSessionRepo) *Server {
 	srv := NewServer(nil, nil, "", nil, nil, "", false, service.ModeSmart, "", slog.Default())
@@ -551,6 +595,35 @@ func storeTestTenantServices(srv *Server, tenantID string, memRepo *testMemoryRe
 		session: service.NewSessionService(&testSessionRepo{}, nil, ""),
 	}
 	srv.svcCache.Store(tenantSvcKey(fmt.Sprintf("%s-0x0", tenantID)), svc)
+}
+
+func TestResolveServicesDoesNotCacheAfterAppIDSchemaMigrationFailure(t *testing.T) {
+	db := openHandlerErrorDB(t)
+	defer db.Close()
+
+	tenantSvc := service.NewTenantService(nil, nil, nil, nil, "", 0, 0, false, nil)
+	srv := NewServer(tenantSvc, nil, "", nil, nil, "", false, service.ModeSmart, "tidb", slog.Default())
+	auth := &domain.AuthInfo{
+		TenantID: "tenant-a",
+		TenantDB: db,
+	}
+	key := tenantSvcKey(fmt.Sprintf("%s-%p", auth.TenantID, auth.TenantDB))
+
+	first := srv.resolveServices(auth)
+	if first.memory == nil || first.ingest == nil || first.session == nil {
+		t.Fatal("resolveServices returned incomplete services")
+	}
+	if _, ok := srv.svcCache.Load(key); ok {
+		t.Fatal("schema migration failure must not cache services")
+	}
+
+	second := srv.resolveServices(auth)
+	if _, ok := srv.svcCache.Load(key); ok {
+		t.Fatal("schema migration retry failure must not cache services")
+	}
+	if first.memory == second.memory {
+		t.Fatal("expected uncached resolveServices call to build a fresh service bundle")
+	}
 }
 
 func TestReconcileRoutedChainFactsRuntimeUsageUsesTargetSubjects(t *testing.T) {

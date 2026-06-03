@@ -123,13 +123,16 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		if cached, ok := s.svcCache.Load(key); ok {
 			return cached.(resolvedSvc)
 		}
-		s.ensureTenantAppIDSchema(auth)
+		schemaReady := s.ensureTenantAppIDSchema(auth)
 		memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		svc := resolvedSvc{
 			memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 			ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 			session: service.NewSessionService(sessRepo, s.embedder, s.autoModel),
+		}
+		if !schemaReady {
+			return svc
 		}
 		actual, _ := s.svcCache.LoadOrStore(key, svc)
 		return actual.(resolvedSvc)
@@ -138,7 +141,7 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	if cached, ok := s.svcCache.Load(key); ok {
 		return cached.(resolvedSvc)
 	}
-	s.ensureTenantAppIDSchema(auth)
+	schemaReady := s.ensureTenantAppIDSchema(auth)
 	memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	svc := resolvedSvc{
@@ -146,13 +149,16 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
 		session: service.NewSessionService(sessRepo, s.embedder, s.autoModel),
 	}
+	if !schemaReady {
+		return svc
+	}
 	actual, _ := s.svcCache.LoadOrStore(key, svc)
 	return actual.(resolvedSvc)
 }
 
-func (s *Server) ensureTenantAppIDSchema(auth *domain.AuthInfo) {
+func (s *Server) ensureTenantAppIDSchema(auth *domain.AuthInfo) bool {
 	if s.tenant == nil || auth == nil || auth.TenantDB == nil {
-		return
+		return true
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -165,7 +171,9 @@ func (s *Server) ensureTenantAppIDSchema(auth *domain.AuthInfo) {
 			"cluster_id", auth.ClusterID,
 			"tenant", auth.TenantID,
 			"err", err)
+		return false
 	}
+	return true
 }
 
 // Router builds the chi router with all routes and middleware.
