@@ -29,6 +29,30 @@ function endpointAnchor(groupId: string, endpoint: { method: string; path: strin
   return `api-${groupId}-${endpoint.method.toLowerCase()}-${pathSlug || index}`;
 }
 
+function endpointTestPayload(
+  group: { title: string },
+  endpoint: {
+    method: string;
+    path: string;
+    summary: string;
+    description?: string;
+    headers?: SiteApiFieldCopy[];
+    queryParams?: SiteApiFieldCopy[];
+    bodyFields?: SiteApiFieldCopy[];
+  },
+): string {
+  return JSON.stringify({
+    groupTitle: group.title,
+    method: endpoint.method,
+    path: endpoint.path,
+    summary: endpoint.summary,
+    description: endpoint.description ?? "",
+    headers: endpoint.headers ?? [],
+    queryParams: endpoint.queryParams ?? [],
+    bodyFields: endpoint.bodyFields ?? [],
+  });
+}
+
 function apiSearchLabel(locale: string): string {
   return locale === "zh" ? "搜索 API" : "Search API";
 }
@@ -48,13 +72,6 @@ function apiSearchEmpty(locale: string): string {
     return (
       <div class="api-copy" data-api-copy={locale} hidden={locale !== DEFAULT_LOCALE}>
         <div class="container api-shell">
-          <section class="api-hero">
-            <p class="section-kicker">{copy.kicker}</p>
-            <h1 class="api-title">{copy.title}</h1>
-            <p class="api-intro">{copy.intro}</p>
-            <p class="api-summary">{copy.summary}</p>
-          </section>
-
           <div class="api-layout">
             <aside class="api-sidebar">
               <button class="api-toc-toggle" data-api-toc-toggle type="button">
@@ -94,12 +111,12 @@ function apiSearchEmpty(locale: string): string {
                           class="api-toc-link api-toc-group-link"
                           type="button"
                           data-api-toc-group-toggle
-                          aria-expanded="false"
+                          aria-expanded="true"
                         >
                           {group.title}
                         </button>
                       </div>
-                      <ol class="api-toc-sublist" data-api-toc-sublist hidden>
+                      <ol class="api-toc-sublist" data-api-toc-sublist>
                         {group.endpoints.map((endpoint, index) => (
                           <li
                             data-api-toc-endpoint
@@ -130,6 +147,13 @@ function apiSearchEmpty(locale: string): string {
             </aside>
 
             <div class="api-content">
+              <section class="api-hero">
+                <p class="section-kicker">{copy.kicker}</p>
+                <h1 class="api-title">{copy.title}</h1>
+                <p class="api-intro">{copy.intro}</p>
+                <p class="api-summary">{copy.summary}</p>
+              </section>
+
               <section
                 class="api-section"
                 id={locale === DEFAULT_LOCALE ? "api-auth" : undefined}
@@ -193,11 +217,21 @@ function apiSearchEmpty(locale: string): string {
                         data-api-anchor={endpointAnchor(group.id, endpoint, index)}
                       >
                         <div class="api-endpoint-head">
-                          <div class="api-endpoint-route">
-                            <span class={`api-method api-method-${endpoint.method.toLowerCase()}`}>
-                              {endpoint.method}
-                            </span>
-                            <code class="api-path">{endpoint.path}</code>
+                          <div class="api-endpoint-top">
+                            <div class="api-endpoint-route">
+                              <span class={`api-method api-method-${endpoint.method.toLowerCase()}`}>
+                                {endpoint.method}
+                              </span>
+                              <code class="api-path">{endpoint.path}</code>
+                            </div>
+                            <button
+                              class="api-test-button"
+                              type="button"
+                              data-api-test-open
+                              data-api-test-endpoint={endpointTestPayload(group, endpoint)}
+                            >
+                              Test
+                            </button>
                           </div>
                           <p class="api-endpoint-summary">{endpoint.summary}</p>
                           {endpoint.description && <p class="api-endpoint-description">{endpoint.description}</p>}
@@ -312,6 +346,65 @@ function apiSearchEmpty(locale: string): string {
       </div>
     );
   })}
+
+  <div class="api-test-modal" data-api-test-modal hidden>
+    <div class="api-test-dialog surface-card" role="dialog" aria-modal="true" aria-labelledby="api-test-title">
+      <div class="api-test-header">
+        <div>
+          <p class="api-test-kicker" data-api-test-method>GET</p>
+          <h2 id="api-test-title" data-api-test-title>Test API</h2>
+          <code class="api-test-path" data-api-test-path></code>
+        </div>
+        <button class="api-test-close" type="button" data-api-test-close aria-label="Close API test modal">Close</button>
+      </div>
+
+      <form class="api-test-form" data-api-test-form>
+        <label class="api-test-control api-test-control-wide">
+          <span>Base URL</span>
+          <input type="url" data-api-test-base-url value="https://api.mem9.ai" placeholder="https://api.mem9.ai" />
+        </label>
+
+        <div class="api-test-section" data-api-test-section="path">
+          <h3>Path params</h3>
+          <div class="api-test-fields" data-api-test-path-fields></div>
+        </div>
+
+        <div class="api-test-section" data-api-test-section="headers">
+          <h3>Headers</h3>
+          <div class="api-test-fields" data-api-test-header-fields></div>
+        </div>
+
+        <div class="api-test-section" data-api-test-section="query">
+          <h3>Query params</h3>
+          <div class="api-test-fields" data-api-test-query-fields></div>
+        </div>
+
+        <div class="api-test-section" data-api-test-section="body">
+          <h3>Body</h3>
+          <div class="api-test-fields" data-api-test-body-fields></div>
+          <label class="api-test-control api-test-json-body" data-api-test-json-wrap>
+            <span>JSON body</span>
+            <textarea data-api-test-json rows="12" spellcheck="false"></textarea>
+          </label>
+        </div>
+
+        <div class="api-test-url" data-api-test-url></div>
+
+        <div class="api-test-actions">
+          <button class="api-test-run" type="submit" data-api-test-run>Run</button>
+          <button class="api-test-secondary" type="button" data-api-test-reset>Reset</button>
+        </div>
+      </form>
+
+      <section class="api-test-response" data-api-test-response hidden>
+        <div class="api-test-response-head">
+          <h3>Response</h3>
+          <p data-api-test-status></p>
+        </div>
+        <pre class="api-test-code"><code data-api-test-output></code></pre>
+      </section>
+    </div>
+  </div>
 </section>
 
 <style>
@@ -325,14 +418,13 @@ function apiSearchEmpty(locale: string): string {
 
   .api-shell {
     display: grid;
-    gap: 1.8rem;
   }
 
   .api-hero {
     width: min(100%, 72rem);
     display: grid;
     gap: 0.8rem;
-    padding: 0;
+    padding: 0 0 0.45rem;
   }
 
   .api-title {
@@ -357,8 +449,8 @@ function apiSearchEmpty(locale: string): string {
   /* Two-column layout */
   .api-layout {
     display: grid;
-    grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr);
-    gap: 1.35rem;
+    grid-template-columns: minmax(17rem, 22rem) minmax(0, 1fr);
+    gap: clamp(2.4rem, 4vw, 4rem);
     align-items: start;
   }
 
@@ -567,7 +659,7 @@ function apiSearchEmpty(locale: string): string {
 
   .api-auth-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
   }
 
@@ -582,6 +674,13 @@ function apiSearchEmpty(locale: string): string {
   .api-auth-card {
     display: grid;
     gap: 0.55rem;
+    align-content: start;
+    min-height: 10.5rem;
+  }
+
+  .api-auth-card h3 {
+    font-size: 1rem;
+    line-height: 1.28;
   }
 
   .api-auth-card p,
@@ -687,11 +786,57 @@ function apiSearchEmpty(locale: string): string {
     box-shadow: var(--surface-inset);
   }
 
+  .api-endpoint-top {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
   .api-endpoint-route {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 0.75rem;
+    min-width: 0;
+  }
+
+  .api-test-button,
+  .api-test-run,
+  .api-test-secondary,
+  .api-test-close {
+    border: 1px solid var(--button-active-border);
+    background: var(--button-bg);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s, transform 0.2s;
+  }
+
+  .api-test-button {
+    flex: 0 0 auto;
+    min-height: 2rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--accent);
+    box-shadow: var(--surface-inset);
+  }
+
+  .api-test-button:hover,
+  .api-test-run:hover,
+  .api-test-secondary:hover,
+  .api-test-close:hover {
+    background: var(--button-hover-bg);
+    border-color: var(--border-strong);
+  }
+
+  .api-test-button:active,
+  .api-test-run:active,
+  .api-test-secondary:active,
+  .api-test-close:active {
+    transform: translateY(1px);
   }
 
   .api-method {
@@ -849,6 +994,248 @@ function apiSearchEmpty(locale: string): string {
     box-shadow: var(--surface-inset), var(--surface-shadow-soft);
   }
 
+  .api-test-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    display: grid;
+    place-items: center;
+    padding: 1.2rem;
+    background: rgba(0, 0, 0, 0.56);
+    backdrop-filter: blur(12px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .api-test-modal[hidden] {
+    display: none;
+  }
+
+  .api-test-modal.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .api-test-dialog {
+    width: min(100%, 68rem);
+    max-height: min(92dvh, 56rem);
+    overflow: auto;
+    padding: 1.15rem;
+    background: linear-gradient(180deg, var(--surface-elevated-start), var(--surface-elevated-end));
+    box-shadow: var(--surface-shadow), var(--surface-inset);
+  }
+
+  .api-test-header {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .api-test-kicker {
+    margin-bottom: 0.42rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+  }
+
+  .api-test-header h2 {
+    font-size: clamp(1.25rem, 3vw, 1.9rem);
+    line-height: 1.18;
+  }
+
+  .api-test-path {
+    display: inline-block;
+    margin-top: 0.62rem;
+    max-width: 100%;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 0.55rem;
+    background: var(--bg-terminal);
+    color: var(--accent);
+    overflow-wrap: anywhere;
+  }
+
+  .api-test-close,
+  .api-test-secondary,
+  .api-test-run {
+    min-height: 2.35rem;
+    border-radius: 999px;
+    padding: 0.45rem 0.9rem;
+    font-weight: 700;
+  }
+
+  .api-test-form {
+    display: grid;
+    gap: 1rem;
+    padding-top: 1rem;
+  }
+
+  .api-test-control {
+    display: grid;
+    gap: 0.38rem;
+    min-width: 0;
+  }
+
+  .api-test-control span,
+  .api-test-section h3,
+  .api-test-response h3 {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+  }
+
+  .api-test-control input,
+  .api-test-control textarea {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 0.72rem;
+    background: var(--button-bg);
+    color: var(--text);
+    padding: 0.58rem 0.68rem;
+    font: inherit;
+    outline: none;
+    box-shadow: var(--surface-inset);
+  }
+
+  .api-test-control textarea {
+    min-height: 11rem;
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.55;
+  }
+
+  .api-test-control input:focus,
+  .api-test-control textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent), var(--surface-inset);
+  }
+
+  .api-test-section {
+    display: grid;
+    gap: 0.7rem;
+    padding: 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 0.9rem;
+    background: color-mix(in srgb, var(--button-bg) 70%, transparent);
+    box-shadow: var(--surface-inset);
+  }
+
+  .api-test-section[hidden],
+  .api-test-response[hidden] {
+    display: none;
+  }
+
+  .api-test-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.8rem;
+  }
+
+  .api-test-help {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
+  .api-test-required {
+    color: var(--accent);
+  }
+
+  .api-test-json-body {
+    margin-top: 0.2rem;
+  }
+
+  .api-test-url {
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    background: var(--bg-terminal);
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .api-test-actions {
+    display: flex;
+    justify-content: end;
+    gap: 0.7rem;
+  }
+
+  .api-test-run {
+    background: var(--text);
+    color: var(--bg);
+  }
+
+  .api-test-run[disabled] {
+    cursor: progress;
+    opacity: 0.68;
+  }
+
+  .api-test-response {
+    display: grid;
+    gap: 0.65rem;
+    margin-top: 1rem;
+  }
+
+  .api-test-response-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .api-test-response-head p {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+  }
+
+  .api-test-code {
+    max-height: 22rem;
+    margin: 0;
+    padding: 0.95rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 0.9rem;
+    background: var(--bg-terminal);
+    overflow: auto;
+    box-shadow: var(--surface-inset), var(--surface-shadow-soft);
+  }
+
+  .api-test-code code {
+    display: block;
+    white-space: pre;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.55;
+    color: var(--text);
+  }
+
+  .api-json-key {
+    color: var(--accent);
+  }
+
+  .api-json-string {
+    color: color-mix(in srgb, var(--text) 86%, #4ade80);
+  }
+
+  .api-json-number,
+  .api-json-boolean {
+    color: color-mix(in srgb, var(--text) 78%, #60a5fa);
+  }
+
+  .api-json-null {
+    color: var(--text-muted);
+  }
+
   /* Mobile TOC toggle */
   .api-toc-toggle {
     display: none;
@@ -940,6 +1327,26 @@ function apiSearchEmpty(locale: string): string {
 
     .api-code code {
       font-size: 0.79rem;
+    }
+
+    .api-endpoint-top,
+    .api-test-header,
+    .api-test-response-head {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .api-test-fields {
+      grid-template-columns: 1fr;
+    }
+
+    .api-test-actions {
+      justify-content: stretch;
+    }
+
+    .api-test-run,
+    .api-test-secondary {
+      flex: 1;
     }
   }
 </style>

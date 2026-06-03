@@ -898,12 +898,12 @@ const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
 };
 
 const hostedReadHeaders: SiteApiFieldCopy[] = [
-  { name: 'X-API-Key', description: 'Hosted API key for your mem9 space.', required: true },
+  { name: 'X-API-Key', description: 'mem9 API key for your space.', required: true },
   { name: 'X-Mnemo-Agent-Id', description: 'Optional agent identity header for attribution.' },
 ];
 
 const hostedJSONWriteHeaders: SiteApiFieldCopy[] = [
-  { name: 'X-API-Key', description: 'Hosted API key for your mem9 space.', required: true },
+  { name: 'X-API-Key', description: 'mem9 API key for your space.', required: true },
   { name: 'Content-Type', description: 'Set to `application/json` for JSON request bodies.', required: true },
   { name: 'X-Mnemo-Agent-Id', description: 'Optional agent identity header for attribution.' },
 ];
@@ -914,7 +914,7 @@ const hostedUpdateHeaders: SiteApiFieldCopy[] = [
 ];
 
 const hostedMultipartHeaders: SiteApiFieldCopy[] = [
-  { name: 'X-API-Key', description: 'Hosted API key for your mem9 space.', required: true },
+  { name: 'X-API-Key', description: 'mem9 API key for your space.', required: true },
   {
     name: 'Content-Type',
     description: 'Your HTTP client sends this as `multipart/form-data`.',
@@ -1332,14 +1332,14 @@ const versionEndpoint: SiteApiEndpointCopy = {
 const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
   en: {
     meta: {
-      title: 'mem9 API | Hosted API Reference',
+      title: 'mem9 API | API Reference',
       description:
-        'Reference for provisioning API keys, reading and writing memories, importing files, and querying session messages on the hosted mem9 API.',
+        'Reference for provisioning API keys, reading and writing memories, importing files, appId isolation, and querying session messages with the mem9 API.',
     },
     kicker: 'API',
-    title: 'Hosted mem9 API reference',
+    title: 'mem9 API reference',
     intro:
-      'Use the hosted mem9 API to provision a space, write or search memory, isolate sub-spaces with appId, import existing files, and inspect captured session messages.',
+      'Use the mem9 API to provision a space, write or search memory, isolate sub-spaces with appId, import existing files, and inspect captured session messages. The examples use mem9.ai; self-hosted deployments use the same routes under your own base URL.',
     summary:
       'Prefer `v1alpha2` for day-to-day usage. `v1alpha1` stays available for key provisioning and tenant-scoped compatibility.',
     labels: {
@@ -1357,25 +1357,25 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     authTitle: 'Base URL & authentication',
     authCards: [
       {
-        title: 'Hosted base URL',
-        body: 'Use `https://api.mem9.ai`. For normal client traffic, send requests to `https://api.mem9.ai/v1alpha2/mem9s/...`.',
+        title: 'Base URL',
+        body: 'For mem9.ai, use `https://api.mem9.ai`. For self-hosting, replace it with your deployment origin; runtime memory calls live under `/v1alpha2/mem9s/...`.',
       },
       {
-        title: 'Primary auth header',
-        body: 'Send your mem9 API key in `X-API-Key`. This is the default hosted auth model for `v1alpha2`.',
+        title: 'API key header',
+        body: 'Send the space API key in `X-API-Key` for `v1alpha2` runtime calls. mem9.ai keys can be provisioned with `POST /v1alpha1/mem9s`; self-hosted deployments use keys from their own control plane.',
       },
       {
-        title: 'Optional agent identity',
-        body: 'Send `X-Mnemo-Agent-Id` when you want writes and imports attributed to a specific agent. Legacy tenant-scoped routes still exist under `v1alpha1`.',
+        title: 'Agent identity',
+        body: '`X-Mnemo-Agent-Id` is optional. Use it to attribute writes and imports to a specific agent; request body `agent_id` takes precedence when both are present.',
       },
       {
-        title: 'Optional appId isolation',
-        body: '`appId` partitions memories and raw sessions under the same API key. It does not change key ownership or permissions; it only changes write attribution and query filtering.',
+        title: 'appId isolation',
+        body: '`appId` partitions memories and raw sessions under the same API key. Omit `appId` to search all appIds, pass a value for exact scope, or pass `null`/empty for default global memory.',
       },
     ],
     quickstartTitle: 'Quick start',
     quickstartDescription:
-      'A minimal hosted flow is: provision a key, export it into your shell, then create and search memories.',
+      'A minimal mem9.ai flow is: provision a key, export it into your shell, then create and search memories. For self-hosting, keep the same paths and replace the base URL.',
     quickstartSteps: [
       'Provision a new API key with `POST /v1alpha1/mem9s`.',
       'Export that key as `API_KEY` and set `API=https://api.mem9.ai/v1alpha2/mem9s`.',
@@ -1392,14 +1392,14 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       {
         id: 'provisioning',
         title: 'Provisioning',
-        description: 'Create the initial key you will reuse for hosted mem9 access.',
+        description: 'Create the initial key you will reuse for mem9.ai API access.',
         endpoints: [
           {
             method: 'POST',
             path: '/v1alpha1/mem9s',
             summary: 'Provision a new mem9 API key.',
             description:
-              'No auth or request body is required. The hosted service returns `201` with an `id` field, and that `id` is the key you store and reuse.',
+              'No auth or request body is required. The mem9.ai service returns `201` with an `id` field, and that `id` is the key you store and reuse.',
             responseFields: provisionResponseFields,
             examples: [{ label: 'Provision key', code: provisionKeyCode }],
           },
@@ -1446,7 +1446,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             method: 'GET',
             path: '/v1alpha2/mem9s/memories/{id}',
             summary: 'Read one memory by id.',
-            description: 'Fetch a single stored memory object from the hosted service.',
+            description: 'Fetch a single stored memory object from the mem9 API.',
             headers: hostedReadHeaders,
             responseFields: memoryObjectResponseFields,
             examples: [{ label: 'Get memory', code: getMemoryCode }],
@@ -1534,7 +1534,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         id: 'health',
         title: 'Health & Compatibility',
         description:
-          'Use `/healthz` for liveness checks. Legacy tenant-scoped routes still exist under `/v1alpha1/mem9s/{tenantID}/...`, but hosted clients should prefer `v1alpha2` plus `X-API-Key`.',
+          'Use `/healthz` for liveness checks. Legacy tenant-scoped routes still exist under `/v1alpha1/mem9s/{tenantID}/...`, but most clients should prefer `v1alpha2` plus `X-API-Key`.',
         endpoints: [
           {
             method: 'GET',
@@ -1559,12 +1559,12 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
   },
   zh: {
     meta: {
-      title: 'mem9 API | Hosted API 文档',
-      description: '查看如何创建 API key、读写记忆、上传文件，以及查询 hosted mem9 API 的 session messages。',
+      title: 'mem9 API | API 文档',
+      description: '查看如何创建 API key、读写记忆、使用 appId 隔离子空间、上传文件，以及查询 mem9 API 的 session messages。',
     },
     kicker: 'API',
-    title: 'Hosted mem9 API 文档',
-    intro: '使用 hosted mem9 API 创建 space、写入或搜索记忆、导入已有文件，并查看捕获到的 session messages。',
+    title: 'mem9 API 文档',
+    intro: '使用 mem9 API 创建 space、写入或搜索记忆、通过 appId 隔离同一 API key 下的子空间、导入已有文件，并查看捕获到的 session messages。示例使用 mem9.ai；自托管部署可以使用自己的 base URL 调用同一组路径。',
     summary: '日常调用优先使用 `v1alpha2`。`v1alpha1` 继续保留给 key provision 和 tenant-scoped 兼容路径。',
     labels: {
       headers: '请求头',
@@ -1581,24 +1581,24 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     authTitle: 'Base URL 与认证方式',
     authCards: [
       {
-        title: 'Hosted base URL',
-        body: '使用 `https://api.mem9.ai`。正常客户端请求应发送到 `https://api.mem9.ai/v1alpha2/mem9s/...`。',
+        title: 'Base URL',
+        body: '使用 mem9.ai 时 base URL 是 `https://api.mem9.ai`；自托管时替换成自己的服务地址。runtime memory 接口路径仍是 `/v1alpha2/mem9s/...`。',
       },
       {
-        title: '主认证 header',
-        body: '把 mem9 API key 放进 `X-API-Key`。这是 `v1alpha2` 的默认 hosted 认证模型。',
+        title: 'API key header',
+        body: '`v1alpha2` 调用把 space API key 放在 `X-API-Key`。mem9.ai 可通过 `POST /v1alpha1/mem9s` 创建 key；自托管则使用自己控制面生成的 key。',
       },
       {
-        title: '可选的 agent 身份',
-        body: '当你希望写入或导入归属到某个 agent 时，再额外发送 `X-Mnemo-Agent-Id`。旧的 tenant-scoped 路由仍保留在 `v1alpha1` 下。',
+        title: 'Agent 身份',
+        body: '`X-Mnemo-Agent-Id` 可选，用来标记写入或导入来自哪个 agent；如果请求体同时传了 `agent_id`，以请求体为准。',
       },
       {
-        title: '可选的 appId 隔离',
-        body: '`appId` 用来在同一个 API key 下隔离 memory 和 raw session 子空间。它不改变 Key 的归属或权限，只影响写入归属和查询过滤。',
+        title: 'appId 隔离',
+        body: '`appId` 用来在同一个 API key 下隔离 memory 和 raw session 子空间。不传 `appId` 表示搜索全部子空间；传具体值表示精确隔离；传 `null` 或空值表示 default/global 记忆。',
       },
     ],
     quickstartTitle: 'Quick start',
-    quickstartDescription: '最小 hosted 流程是：先 provision 一个 key，把它导出到 shell，然后创建并搜索记忆。',
+    quickstartDescription: '最小 mem9.ai 流程是：先 provision 一个 key，把它导出到 shell，然后创建并搜索记忆。自托管时保留相同路径，只替换 base URL。',
     quickstartSteps: [
       '通过 `POST /v1alpha1/mem9s` 创建新的 API key。',
       '把该 key 导出成 `API_KEY`，并设置 `API=https://api.mem9.ai/v1alpha2/mem9s`。',
@@ -1615,13 +1615,13 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       {
         id: 'provisioning',
         title: 'Provisioning',
-        description: '创建你后续会重复使用的 hosted mem9 访问 key。',
+        description: '创建你后续会重复使用的 mem9.ai API 访问 key。',
         endpoints: [
           {
             method: 'POST',
             path: '/v1alpha1/mem9s',
             summary: '创建新的 mem9 API key。',
-            description: '不需要认证，也不需要请求体。hosted 服务会返回 `201` 和一个 `id` 字段，这个 `id` 就是你要保存和复用的 key。',
+            description: '不需要认证，也不需要请求体。mem9.ai 服务会返回 `201` 和一个 `id` 字段，这个 `id` 就是你要保存和复用的 key。',
             responseFields: provisionResponseFields,
             examples: [{ label: '创建 key', code: provisionKeyCode }],
           },
@@ -1665,7 +1665,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             method: 'GET',
             path: '/v1alpha2/mem9s/memories/{id}',
             summary: '按 id 读取单条记忆。',
-            description: '从 hosted 服务里拉取一条完整的记忆对象。',
+            description: '从 mem9 API 拉取一条完整的记忆对象。',
             headers: hostedReadHeaders,
             responseFields: memoryObjectResponseFields,
             examples: [{ label: '读取记忆', code: getMemoryCode }],
@@ -1749,7 +1749,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       {
         id: 'health',
         title: 'Health 与兼容性',
-        description: '用 `/healthz` 做存活检查。旧的 tenant-scoped 路由仍存在于 `/v1alpha1/mem9s/{tenantID}/...` 下，但 hosted 客户端应优先使用 `v1alpha2` + `X-API-Key`。',
+        description: '用 `/healthz` 做存活检查。旧的 tenant-scoped 路由仍存在于 `/v1alpha1/mem9s/{tenantID}/...` 下，但大多数客户端应优先使用 `v1alpha2` + `X-API-Key`。',
         endpoints: [
           {
             method: 'GET',
@@ -1773,12 +1773,12 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
   },
   'zh-Hant': {
     meta: {
-      title: 'mem9 API | Hosted API 文件',
-      description: '查看如何建立 API key、讀寫記憶、上傳檔案，以及查詢 hosted mem9 API 的 session messages。',
+      title: 'mem9 API | API 文件',
+      description: '查看如何建立 API key、讀寫記憶、上傳檔案，以及查詢 mem9 API 的 session messages。',
     },
     kicker: 'API',
-    title: 'Hosted mem9 API 文件',
-    intro: '使用 hosted mem9 API 建立 space、寫入或搜尋記憶、匯入既有檔案，並查看捕捉到的 session messages。',
+    title: 'mem9 API 文件',
+    intro: '使用 mem9 API 建立 space、寫入或搜尋記憶、匯入既有檔案，並查看捕捉到的 session messages。',
     summary: '日常呼叫優先使用 `v1alpha2`。`v1alpha1` 持續保留給 key provision 與 tenant-scoped 相容路徑。',
     labels: {
       headers: '請求頭',
@@ -1795,12 +1795,12 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     authTitle: 'Base URL 與驗證方式',
     authCards: [
       {
-        title: 'Hosted base URL',
+        title: 'Base URL',
         body: '使用 `https://api.mem9.ai`。一般客戶端請求應發送到 `https://api.mem9.ai/v1alpha2/mem9s/...`。',
       },
       {
         title: '主要驗證 header',
-        body: '把 mem9 API key 放進 `X-API-Key`。這是 `v1alpha2` 的預設 hosted 驗證模式。',
+        body: '把 mem9 API key 放進 `X-API-Key`。這是 `v1alpha2` 的預設驗證模式。',
       },
       {
         title: '可選 agent 身分',
@@ -1808,7 +1808,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       },
     ],
     quickstartTitle: 'Quick start',
-    quickstartDescription: '最小 hosted 流程是：先 provision 一個 key，把它 export 到 shell，然後建立並搜尋記憶。',
+    quickstartDescription: '最小 mem9.ai 流程是：先 provision 一個 key，把它 export 到 shell，然後建立並搜尋記憶。',
     quickstartSteps: [
       '透過 `POST /v1alpha1/mem9s` 建立新的 API key。',
       '把該 key export 成 `API_KEY`，並設定 `API=https://api.mem9.ai/v1alpha2/mem9s`。',
@@ -1982,12 +1982,12 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
   },
   ja: {
     meta: {
-      title: 'mem9 API | Hosted API リファレンス',
+      title: 'mem9 API | API リファレンス',
       description: 'API key の発行、memory の読み書き、ファイル import、session messages の取得方法を確認できます。',
     },
     kicker: 'API',
-    title: 'Hosted mem9 API リファレンス',
-    intro: 'hosted mem9 API を使って space を発行し、memory を書き込み / 検索し、既存ファイルを import し、保存済み session messages を確認できます。',
+    title: 'mem9 API リファレンス',
+    intro: 'mem9 API を使って space を発行し、memory を書き込み / 検索し、既存ファイルを import し、保存済み session messages を確認できます。',
     summary: '日常利用では `v1alpha2` を優先してください。`v1alpha1` は key の provision と tenant-scoped な互換ルート向けに残っています。',
     labels: {
       headers: 'Headers',
@@ -2004,12 +2004,12 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     authTitle: 'Base URL と認証',
     authCards: [
       {
-        title: 'Hosted base URL',
+        title: 'Base URL',
         body: '`https://api.mem9.ai` を使います。通常のクライアント通信は `https://api.mem9.ai/v1alpha2/mem9s/...` に送ってください。',
       },
       {
         title: '主要な認証 header',
-        body: 'mem9 API key は `X-API-Key` に送ります。これが `v1alpha2` の標準的な hosted 認証です。',
+        body: 'mem9 API key は `X-API-Key` に送ります。これが `v1alpha2` の標準的な認証です。',
       },
       {
         title: '任意の agent identity',
@@ -2017,7 +2017,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       },
     ],
     quickstartTitle: 'Quick start',
-    quickstartDescription: '最小の hosted フローは、key を provision して shell に export し、その後 memory を作成して検索することです。',
+    quickstartDescription: '最小の mem9.ai フローは、key を provision して shell に export し、その後 memory を作成して検索することです。',
     quickstartSteps: [
       '`POST /v1alpha1/mem9s` で新しい API key を作成する。',
       'その key を `API_KEY` として export し、`API=https://api.mem9.ai/v1alpha2/mem9s` を設定する。',
@@ -2040,7 +2040,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             method: 'POST',
             path: '/v1alpha1/mem9s',
             summary: '新しい mem9 API key を発行する。',
-            description: '認証も request body も不要です。hosted service は `201` と `id` を返し、その `id` が保存して再利用する key になります。',
+            description: '認証も request body も不要です。service は `201` と `id` を返し、その `id` が保存して再利用する key になります。',
             responseFields: provisionResponseFields,
             examples: [{ label: 'Key を発行', code: provisionKeyCode }],
           },
@@ -2083,7 +2083,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             method: 'GET',
             path: '/v1alpha2/mem9s/memories/{id}',
             summary: 'id で 1 件の memory を取得する。',
-            description: 'hosted service から単一の memory object を取得します。',
+            description: 'mem9 API から単一の memory object を取得します。',
             headers: hostedReadHeaders,
             responseFields: memoryObjectResponseFields,
             examples: [{ label: 'Memory を取得', code: getMemoryCode }],
@@ -2191,12 +2191,12 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
   },
   ko: {
     meta: {
-      title: 'mem9 API | Hosted API 레퍼런스',
+      title: 'mem9 API | API 레퍼런스',
       description: 'API key 발급, memory 읽기/쓰기, 파일 import, session messages 조회 방법을 확인할 수 있습니다.',
     },
     kicker: 'API',
-    title: 'Hosted mem9 API 레퍼런스',
-    intro: 'hosted mem9 API 로 space 를 만들고, memory 를 쓰고 검색하고, 기존 파일을 import 하고, 저장된 session messages 를 확인할 수 있습니다.',
+    title: 'mem9 API 레퍼런스',
+    intro: 'mem9 API 로 space 를 만들고, memory 를 쓰고 검색하고, 기존 파일을 import 하고, 저장된 session messages 를 확인할 수 있습니다.',
     summary: '일상적인 사용은 `v1alpha2` 를 우선하세요. `v1alpha1` 은 key provision 과 tenant-scoped 호환 경로를 위해 남아 있습니다.',
     labels: {
       headers: 'Headers',
@@ -2213,12 +2213,12 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     authTitle: 'Base URL 과 인증',
     authCards: [
       {
-        title: 'Hosted base URL',
+        title: 'Base URL',
         body: '`https://api.mem9.ai` 를 사용합니다. 일반적인 클라이언트 트래픽은 `https://api.mem9.ai/v1alpha2/mem9s/...` 로 보내세요.',
       },
       {
         title: '기본 인증 header',
-        body: 'mem9 API key 는 `X-API-Key` 로 보냅니다. 이것이 `v1alpha2` 의 기본 hosted 인증 방식입니다.',
+        body: 'mem9 API key 는 `X-API-Key` 로 보냅니다. 이것이 `v1alpha2` 의 기본 인증 방식입니다.',
       },
       {
         title: '선택적 agent identity',
@@ -2226,7 +2226,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       },
     ],
     quickstartTitle: 'Quick start',
-    quickstartDescription: '가장 작은 hosted 흐름은 key 를 provision 하고 shell 에 export 한 뒤, memory 를 생성하고 검색하는 것입니다.',
+    quickstartDescription: '가장 작은 mem9.ai 흐름은 key 를 provision 하고 shell 에 export 한 뒤, memory 를 생성하고 검색하는 것입니다.',
     quickstartSteps: [
       '`POST /v1alpha1/mem9s` 로 새 API key 를 만든다.',
       '그 key 를 `API_KEY` 로 export 하고 `API=https://api.mem9.ai/v1alpha2/mem9s` 를 설정한다.',
@@ -2249,7 +2249,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             method: 'POST',
             path: '/v1alpha1/mem9s',
             summary: '새 mem9 API key 를 발급합니다.',
-            description: '인증도 request body 도 필요 없습니다. hosted service 는 `201` 과 `id` 를 반환하며, 이 `id` 가 저장하고 재사용할 key 입니다.',
+            description: '인증도 request body 도 필요 없습니다. service 는 `201` 과 `id` 를 반환하며, 이 `id` 가 저장하고 재사용할 key 입니다.',
             responseFields: provisionResponseFields,
             examples: [{ label: 'Key 발급', code: provisionKeyCode }],
           },
@@ -2292,7 +2292,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             method: 'GET',
             path: '/v1alpha2/mem9s/memories/{id}',
             summary: 'id 로 단일 memory 를 조회합니다.',
-            description: 'hosted service 에서 하나의 memory object 를 가져옵니다.',
+            description: 'mem9 API 에서 하나의 memory object 를 가져옵니다.',
             headers: hostedReadHeaders,
             responseFields: memoryObjectResponseFields,
             examples: [{ label: 'Memory 조회', code: getMemoryCode }],
@@ -2400,12 +2400,12 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
   },
   id: {
     meta: {
-      title: 'mem9 API | Referensi Hosted API',
-      description: 'Pelajari cara membuat API key, membaca dan menulis memory, mengimpor file, dan membaca session messages di hosted mem9 API.',
+      title: 'mem9 API | Referensi API',
+      description: 'Pelajari cara membuat API key, membaca dan menulis memory, mengimpor file, dan membaca session messages di mem9 API.',
     },
     kicker: 'API',
-    title: 'Referensi hosted mem9 API',
-    intro: 'Gunakan hosted mem9 API untuk membuat space, menulis atau mencari memory, mengimpor file yang sudah ada, dan melihat session messages yang tersimpan.',
+    title: 'Referensi mem9 API',
+    intro: 'Gunakan mem9 API untuk membuat space, menulis atau mencari memory, mengimpor file yang sudah ada, dan melihat session messages yang tersimpan.',
     summary: 'Gunakan `v1alpha2` untuk pemakaian harian. `v1alpha1` tetap tersedia untuk provision key dan kompatibilitas tenant-scoped.',
     labels: {
       headers: 'Headers',
@@ -2422,12 +2422,12 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     authTitle: 'Base URL & autentikasi',
     authCards: [
       {
-        title: 'Hosted base URL',
+        title: 'Base URL',
         body: 'Gunakan `https://api.mem9.ai`. Untuk trafik client normal, kirim request ke `https://api.mem9.ai/v1alpha2/mem9s/...`.',
       },
       {
         title: 'Header autentikasi utama',
-        body: 'Kirim mem9 API key Anda di `X-API-Key`. Ini adalah model auth hosted default untuk `v1alpha2`.',
+        body: 'Kirim mem9 API key Anda di `X-API-Key`. Ini adalah model auth default untuk `v1alpha2`.',
       },
       {
         title: 'Identitas agent opsional',
@@ -2435,7 +2435,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       },
     ],
     quickstartTitle: 'Quick start',
-    quickstartDescription: 'Alur hosted paling kecil adalah: provision key, export ke shell, lalu buat dan cari memory.',
+    quickstartDescription: 'Alur mem9.ai paling kecil adalah: provision key, export ke shell, lalu buat dan cari memory.',
     quickstartSteps: [
       'Provision API key baru dengan `POST /v1alpha1/mem9s`.',
       'Export key itu sebagai `API_KEY`, lalu set `API=https://api.mem9.ai/v1alpha2/mem9s`.',
@@ -2501,7 +2501,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             method: 'GET',
             path: '/v1alpha2/mem9s/memories/{id}',
             summary: 'Baca satu memory berdasarkan id.',
-            description: 'Ambil satu memory object dari hosted service.',
+            description: 'Ambil satu memory object dari mem9 API.',
             headers: hostedReadHeaders,
             responseFields: memoryObjectResponseFields,
             examples: [{ label: 'Ambil memory', code: getMemoryCode }],
@@ -2609,12 +2609,12 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
   },
   th: {
     meta: {
-      title: 'mem9 API | เอกสาร Hosted API',
-      description: 'ดูวิธีสร้าง API key อ่านและเขียน memory อัปโหลดไฟล์ และอ่าน session messages บน hosted mem9 API',
+      title: 'mem9 API | เอกสาร API',
+      description: 'ดูวิธีสร้าง API key อ่านและเขียน memory อัปโหลดไฟล์ และอ่าน session messages บน mem9 API',
     },
     kicker: 'API',
-    title: 'เอกสาร hosted mem9 API',
-    intro: 'ใช้ hosted mem9 API เพื่อสร้าง space เขียนหรือค้นหา memory นำเข้าไฟล์เดิม และดู session messages ที่ถูกเก็บไว้',
+    title: 'เอกสาร mem9 API',
+    intro: 'ใช้ mem9 API เพื่อสร้าง space เขียนหรือค้นหา memory นำเข้าไฟล์เดิม และดู session messages ที่ถูกเก็บไว้',
     summary: 'สำหรับการใช้งานประจำวันให้ใช้ `v1alpha2` เป็นหลัก ส่วน `v1alpha1` ยังมีไว้สำหรับ provision key และเส้นทาง tenant-scoped แบบเดิม',
     labels: {
       headers: 'Headers',
@@ -2631,12 +2631,12 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     authTitle: 'Base URL และการยืนยันตัวตน',
     authCards: [
       {
-        title: 'Hosted base URL',
+        title: 'Base URL',
         body: 'ใช้ `https://api.mem9.ai` สำหรับ client ปกติให้ส่ง request ไปที่ `https://api.mem9.ai/v1alpha2/mem9s/...`',
       },
       {
         title: 'Header สำหรับ auth หลัก',
-        body: 'ส่ง mem9 API key ของคุณใน `X-API-Key` นี่คือรูปแบบ auth หลักของ hosted `v1alpha2`',
+        body: 'ส่ง mem9 API key ของคุณใน `X-API-Key` นี่คือรูปแบบ auth หลักของ `v1alpha2`',
       },
       {
         title: 'Agent identity แบบเลือกได้',
@@ -2644,7 +2644,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       },
     ],
     quickstartTitle: 'Quick start',
-    quickstartDescription: 'ลำดับ hosted ที่เล็กที่สุดคือ provision key, export เข้า shell แล้วสร้างและค้นหา memory',
+    quickstartDescription: 'ลำดับ mem9.ai ที่เล็กที่สุดคือ provision key, export เข้า shell แล้วสร้างและค้นหา memory',
     quickstartSteps: [
       'สร้าง API key ใหม่ด้วย `POST /v1alpha1/mem9s`',
       'export key นั้นเป็น `API_KEY` และตั้ง `API=https://api.mem9.ai/v1alpha2/mem9s`',
@@ -2710,7 +2710,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             method: 'GET',
             path: '/v1alpha2/mem9s/memories/{id}',
             summary: 'อ่าน memory เดียวตาม id',
-            description: 'ดึง memory object เดียวจาก hosted service',
+            description: 'ดึง memory object เดียวจาก mem9 API',
             headers: hostedReadHeaders,
             responseFields: memoryObjectResponseFields,
             examples: [{ label: 'อ่าน memory', code: getMemoryCode }],
