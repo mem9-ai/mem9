@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -31,6 +32,9 @@ func TestCORS_AllowsPreflightBeforeNext(t *testing.T) {
 	}
 	if got := rr.Header().Get("Access-Control-Allow-Headers"); got == "" {
 		t.Fatal("allow headers missing")
+	}
+	if got := rr.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, "If-Match") {
+		t.Fatalf("allow headers = %q, want If-Match", got)
 	}
 }
 
