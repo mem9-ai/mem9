@@ -34,7 +34,14 @@ func NewMemoryRepo(db *sql.DB, autoModel string, ftsEnabled bool, clusterID stri
 
 func (r *MemoryRepo) FTSAvailable() bool { return r.ftsAvailable.Load() }
 
-const allColumns = `id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, app_id, state, version, updated_by, created_at, updated_at, superseded_by`
+const (
+	allColumns               = `id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, app_id, state, version, updated_by, created_at, updated_at, superseded_by`
+	maxFTSCandidatePageLimit = 10000
+	maxFTSFallbackPages      = 30
+	// TiDB Cloud FTS is only safe with fts_match_word as the only WHERE predicate,
+	// so wider recall uses bounded pure-FTS pages followed by post-filtering.
+	maxFTSFallbackCandidateLimit = maxFTSCandidatePageLimit * maxFTSFallbackPages
+)
 
 func (r *MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
 	tagsJSON := marshalTags(m.Tags)
@@ -568,39 +575,72 @@ func (r *MemoryRepo) ftsSearchWithPostFilter(ctx context.Context, query string, 
 	conds, args := r.buildFilterConds(f)
 	where := strings.Join(conds, " AND ")
 	safeQ := ftsSafeLiteral(query)
-	candidates, err := r.fetchMemoryFTSCandidates(ctx, safeQ, limit)
-	if err != nil {
-		return nil, err
-	}
-	if len(candidates) == 0 {
-		return nil, nil
-	}
 
-	filtered, err := r.fetchFilteredFTSMemories(ctx, candidates, where, args)
+	filtered := make([]domain.Memory, 0, min(limit, maxFTSFallbackCandidateLimit))
+	initialCandidateLimit := min(limit, maxFTSCandidatePageLimit)
+	candidates, err := r.fetchMemoryFTSCandidates(ctx, safeQ, initialCandidateLimit, 0)
 	if err != nil {
 		return nil, err
 	}
-	if len(filtered) >= limit || len(candidates) < limit {
-		if len(filtered) > limit {
-			filtered = filtered[:limit]
-		}
+	exhausted, err := appendFilteredFTSPage(ctx, candidates, where, args, &filtered, r.fetchFilteredFTSMemories)
+	if err != nil {
+		return nil, err
+	}
+	if len(filtered) >= limit {
+		return filtered[:limit], nil
+	}
+	if exhausted || len(candidates) < initialCandidateLimit {
 		return filtered, nil
 	}
 
-	// Bound the FTS-only candidate expansion to a single TopK pass. If selective
-	// post-filters drop too many candidates, fall back to the original filtered
-	// query shape to preserve completeness without unbounded global pagination.
-	return r.filteredFTSSearch(ctx, safeQ, where, args, limit)
+	offset := initialCandidateLimit
+	for page := 0; page < maxFTSFallbackPages; page++ {
+		candidates, err := r.fetchMemoryFTSCandidates(ctx, safeQ, maxFTSCandidatePageLimit, offset)
+		if err != nil {
+			return nil, err
+		}
+		exhausted, err := appendFilteredFTSPage(ctx, candidates, where, args, &filtered, r.fetchFilteredFTSMemories)
+		if err != nil {
+			return nil, err
+		}
+		if len(filtered) >= limit {
+			return filtered[:limit], nil
+		}
+		if exhausted || len(candidates) < maxFTSCandidatePageLimit {
+			return filtered, nil
+		}
+		offset += maxFTSCandidatePageLimit
+	}
+	return filtered, nil
 }
 
-func (r *MemoryRepo) fetchMemoryFTSCandidates(ctx context.Context, safeQ string, limit int) ([]memoryFTSCandidate, error) {
+func appendFilteredFTSPage[T any](
+	ctx context.Context,
+	candidates []T,
+	where string,
+	args []any,
+	filtered *[]domain.Memory,
+	fetchFiltered func(context.Context, []T, string, []any) ([]domain.Memory, error),
+) (bool, error) {
+	if len(candidates) == 0 {
+		return true, nil
+	}
+	page, err := fetchFiltered(ctx, candidates, where, args)
+	if err != nil {
+		return false, err
+	}
+	*filtered = append(*filtered, page...)
+	return false, nil
+}
+
+func (r *MemoryRepo) fetchMemoryFTSCandidates(ctx context.Context, safeQ string, limit, offset int) ([]memoryFTSCandidate, error) {
 	sqlQuery := `SELECT id, fts_match_word('` + safeQ + `', content) AS fts_score
 		FROM memories
 		WHERE fts_match_word('` + safeQ + `', content)
 		ORDER BY fts_match_word('` + safeQ + `', content) DESC, id
-		LIMIT ?`
+		LIMIT ? OFFSET ?`
 
-	rows, err := r.db.QueryContext(ctx, sqlQuery, limit)
+	rows, err := r.db.QueryContext(ctx, sqlQuery, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -669,37 +709,6 @@ func (r *MemoryRepo) fetchFilteredFTSMemories(ctx context.Context, candidates []
 		ordered = append(ordered, m)
 	}
 	return ordered, nil
-}
-
-func (r *MemoryRepo) filteredFTSSearch(ctx context.Context, safeQ, where string, args []any, limit int) ([]domain.Memory, error) {
-	sqlQuery := `SELECT ` + allColumns + `, fts_match_word('` + safeQ + `', content) AS fts_score
-		FROM memories
-		WHERE ` + where + ` AND fts_match_word('` + safeQ + `', content)
-		ORDER BY fts_match_word('` + safeQ + `', content) DESC
-		LIMIT ?`
-
-	fullArgs := make([]any, 0, len(args)+1)
-	fullArgs = append(fullArgs, args...)
-	fullArgs = append(fullArgs, limit)
-
-	rows, err := r.db.QueryContext(ctx, sqlQuery, fullArgs...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	memories := make([]domain.Memory, 0, limit)
-	for rows.Next() {
-		m, err := scanMemoryRowsWithFTSScore(rows)
-		if err != nil {
-			return nil, err
-		}
-		memories = append(memories, *m)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return memories, nil
 }
 
 func (r *MemoryRepo) buildWhere(f domain.MemoryFilter) (string, []any) {
@@ -868,40 +877,6 @@ func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 	m.Embedding = parseVecString(embeddingStr)
 	score := 1 - distance
 	m.Score = &score
-	return &m, nil
-}
-
-// scanMemoryRowsWithFTSScore scans a row that includes a trailing fts_score column (used by FTSSearch).
-func scanMemoryRowsWithFTSScore(rows *sql.Rows) (*domain.Memory, error) {
-	var m domain.Memory
-	var source, memoryType, agentID, sessionID, appID, state, updatedBy, supersededBy sql.NullString
-	var tagsJSON, metadataJSON, embeddingStr []byte
-	var ftsScore float64
-
-	err := rows.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &appID, &state, &m.Version, &updatedBy,
-		&m.CreatedAt, &m.UpdatedAt, &supersededBy,
-		&ftsScore)
-	if err != nil {
-		return nil, fmt.Errorf("scan memory row with fts score: %w", err)
-	}
-	m.Source = source.String
-	m.MemoryType = domain.MemoryType(memoryType.String)
-	if m.MemoryType == "" {
-		m.MemoryType = domain.TypePinned
-	}
-	m.AgentID = agentID.String
-	m.SessionID = sessionID.String
-	m.AppID = appID.String
-	m.State = domain.MemoryState(state.String)
-	if m.State == "" {
-		m.State = domain.StateActive
-	}
-	m.UpdatedBy = updatedBy.String
-	m.SupersededBy = supersededBy.String
-	m.Tags = unmarshalTags(tagsJSON)
-	m.Metadata = unmarshalRawJSON(metadataJSON)
-	m.Score = &ftsScore
 	return &m, nil
 }
 
