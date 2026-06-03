@@ -1550,7 +1550,7 @@ function openApiTestModal(elements: ApiTestModalElements, endpoint: ApiTestEndpo
   renderApiTestFields(elements.pathFields, 'path', extractApiTestPathParams(endpoint.path));
   renderApiTestFields(elements.headerFields, 'headers', endpoint.headers);
   renderApiTestFields(elements.queryFields, 'query', endpoint.queryParams);
-  renderApiTestFields(elements.bodyFields, 'body', multipart ? endpoint.bodyFields : []);
+  renderApiTestFields(elements.bodyFields, 'body', multipart ? endpoint.bodyFields : [], multipart);
   elements.jsonWrap.hidden = multipart || endpoint.bodyFields.length === 0;
   elements.json.value = multipart || endpoint.bodyFields.length === 0 ? '' : buildApiTestJsonTemplate(endpoint.bodyFields);
   setApiTestSectionVisibility(elements.bodyFields, endpoint.bodyFields.length > 0);

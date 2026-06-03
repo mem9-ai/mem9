@@ -392,6 +392,52 @@ func (s *Server) listChainMemories(ctx context.Context, auth *domain.AuthInfo, f
 	return memories, totalBeforePage, nil
 }
 
+func (s *Server) listChainMemoriesContentKeyword(ctx context.Context, auth *domain.AuthInfo, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	if auth == nil || auth.Chain == nil || len(auth.Chain.Nodes) == 0 {
+		return nil, 0, &domain.ValidationError{Message: "Space Chain has no nodes."}
+	}
+	requestLimit := filter.Limit
+	requestOffset := filter.Offset
+	if requestLimit <= 0 {
+		requestLimit = 20
+	}
+
+	perNodeFilter := filter
+	perNodeFilter.Offset = 0
+	perNodeFilter.Limit = requestLimit + requestOffset
+	if perNodeFilter.Limit <= 0 {
+		perNodeFilter.Limit = requestLimit
+	}
+
+	results := make([][]domain.Memory, len(auth.Chain.Nodes))
+	group, groupCtx := errgroup.WithContext(ctx)
+	for i, node := range auth.Chain.Nodes {
+		i, node := i, node
+		group.Go(func() error {
+			nodeAuth := chainNodeAuth(auth, node)
+			svc := s.resolveServices(nodeAuth)
+			memories, _, err := s.listLocalMemoriesContentKeyword(groupCtx, svc, perNodeFilter)
+			if err != nil {
+				return err
+			}
+			applyChainSource(memories, chainSource(auth, node))
+			results[i] = memories
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, 0, err
+	}
+
+	combined := make([]domain.Memory, 0, perNodeFilter.Limit*len(auth.Chain.Nodes))
+	for _, page := range results {
+		combined = append(combined, page...)
+	}
+	totalBeforePage := len(uniqueChainMemories(combined))
+	memories := finalizeChainMemories(combined, filter, requestLimit, requestOffset, false)
+	return memories, totalBeforePage, nil
+}
+
 type chainNodeMemoryResult struct {
 	memories []domain.Memory
 	topScore float64

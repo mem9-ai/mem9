@@ -741,7 +741,11 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if auth.IsChain() {
-		memories, total, err = s.listChainMemories(r.Context(), auth, filter)
+		if filter.Query != "" && contentKeywordSearch {
+			memories, total, err = s.listChainMemoriesContentKeyword(r.Context(), auth, filter)
+		} else {
+			memories, total, err = s.listChainMemories(r.Context(), auth, filter)
+		}
 	} else {
 		svc := s.resolveServices(auth)
 		switch {
