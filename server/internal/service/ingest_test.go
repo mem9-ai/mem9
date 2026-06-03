@@ -507,7 +507,7 @@ func TestReconcilePhase2PersistsSourceSeqMetadata(t *testing.T) {
 	memRepo := &memoryRepoMock{}
 	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
 
-	_, err := svc.ReconcilePhase2(context.Background(), "agent-1", "agent-1", "sess-1", []ExtractedFact{
+	_, err := svc.ReconcilePhase2(context.Background(), "agent-1", "agent-1", "", "sess-1", []ExtractedFact{
 		{Text: "Jon lost his job, which motivated him to start a dance studio", Tags: []string{"work"}, SourceSeqs: []int{4, 2, 4}},
 	})
 	if err != nil {
@@ -537,7 +537,7 @@ func TestReconcilePhase2AddPersistsSourceTurnMetadata(t *testing.T) {
 	memRepo := &memoryRepoMock{}
 	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
 
-	_, err := svc.ReconcilePhase2(context.Background(), "agent-1", "agent-1", "sess-1", []ExtractedFact{
+	_, err := svc.ReconcilePhase2(context.Background(), "agent-1", "agent-1", "", "sess-1", []ExtractedFact{
 		{
 			Text:       "Jon lost his job, which motivated him to start a dance studio",
 			Tags:       []string{"work"},
@@ -1392,7 +1392,7 @@ func (m *memoryRepoMock) ListBootstrap(ctx context.Context, limit int) ([]domain
 	return nil, nil
 }
 
-func (m *memoryRepoMock) NearDupSearch(_ context.Context, _ string) (string, float64, error) {
+func (m *memoryRepoMock) NearDupSearch(_ context.Context, _ string, _ domain.MemoryFilter) (string, float64, error) {
 	return "", 0, nil
 }
 
@@ -2176,7 +2176,7 @@ func TestGatherExistingMemoriesFiltersLowScoreVectorResults(t *testing.T) {
 
 	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
 
-	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"test fact"})
+	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", "", []string{"test fact"})
 	if err != nil {
 		t.Fatalf("gatherExistingMemories() error = %v", err)
 	}
@@ -2207,7 +2207,7 @@ func TestGatherExistingMemoriesFTSOnlyMode(t *testing.T) {
 	// No embedder, no autoModel — FTS-only deployment.
 	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart)
 
-	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"Go programming", "TiDB database"})
+	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", "", []string{"Go programming", "TiDB database"})
 	if err != nil {
 		t.Fatalf("gatherExistingMemories() error = %v", err)
 	}
@@ -2246,7 +2246,7 @@ func TestGatherExistingMemoriesHybridDedup(t *testing.T) {
 
 	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
 
-	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"dark mode preference"})
+	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", "", []string{"dark mode preference"})
 	if err != nil {
 		t.Fatalf("gatherExistingMemories() error = %v", err)
 	}
@@ -2288,7 +2288,7 @@ func TestGatherExistingMemoriesParallelMergeKeepsFactOrder(t *testing.T) {
 
 	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
 
-	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"fact-1", "fact-2"})
+	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", "", []string{"fact-1", "fact-2"})
 	if err != nil {
 		t.Fatalf("gatherExistingMemories() error = %v", err)
 	}
@@ -2340,7 +2340,7 @@ func TestGatherExistingMemoriesSearchesFactsInParallel(t *testing.T) {
 
 	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
 
-	_, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{
+	_, err := svc.gatherExistingMemories(context.Background(), "agent-1", "", []string{
 		"fact-1",
 		"fact-2",
 		"fact-3",
@@ -2371,7 +2371,7 @@ func TestGatherExistingMemoriesTotalOutageReturnsError(t *testing.T) {
 
 	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
 
-	_, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"test fact"})
+	_, err := svc.gatherExistingMemories(context.Background(), "agent-1", "", []string{"test fact"})
 	if err == nil {
 		t.Fatal("expected error on total search outage, got nil")
 	}
@@ -2397,7 +2397,7 @@ func TestGatherExistingMemoriesPartialLegFailureContinues(t *testing.T) {
 
 	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
 
-	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"test fact"})
+	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", "", []string{"test fact"})
 	if err != nil {
 		t.Fatalf("expected partial success, got error: %v", err)
 	}
@@ -2423,7 +2423,7 @@ func TestGatherExistingMemoriesFTSOnlyTotalOutage(t *testing.T) {
 	// No embedder, no autoModel — FTS-only deployment.
 	svc := NewIngestService(memRepo, nil, nil, "", ModeSmart)
 
-	_, err := svc.gatherExistingMemories(context.Background(), "agent-1", []string{"test fact"})
+	_, err := svc.gatherExistingMemories(context.Background(), "agent-1", "", []string{"test fact"})
 	if err == nil {
 		t.Fatal("expected error on FTS-only total outage, got nil")
 	}
@@ -2433,7 +2433,7 @@ func TestReconcileContentRequiresLLM(t *testing.T) {
 	t.Parallel()
 
 	svc := NewIngestService(&memoryRepoMock{}, nil, nil, "", ModeSmart)
-	_, err := svc.ReconcileContent(context.Background(), "agent", "agent", "", []string{"prefers dark mode"})
+	_, err := svc.ReconcileContent(context.Background(), "agent", "agent", "", "", []string{"prefers dark mode"})
 	if err == nil {
 		t.Fatal("expected error when llm is nil")
 	}
@@ -2450,7 +2450,7 @@ func TestReconcileContentValidatesInput(t *testing.T) {
 	t.Parallel()
 
 	svc := NewIngestService(&memoryRepoMock{}, nil, nil, "", ModeSmart)
-	_, err := svc.ReconcileContent(context.Background(), "agent", "agent", "", nil)
+	_, err := svc.ReconcileContent(context.Background(), "agent", "agent", "", "", nil)
 	if err == nil {
 		t.Fatal("expected validation error for empty contents")
 	}

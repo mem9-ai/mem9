@@ -9,7 +9,12 @@ import (
 
 func TestVersionz_ReturnsStartedAt(t *testing.T) {
 	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
-	router := srv.Router(func(h http.Handler) http.Handler { return h }, func(h http.Handler) http.Handler { return h }, func(h http.Handler) http.Handler { return h })
+	router := srv.Router(
+		func(h http.Handler) http.Handler { return h },
+		func(h http.Handler) http.Handler { return h },
+		func(h http.Handler) http.Handler { return h },
+		func(h http.Handler) http.Handler { return h },
+	)
 
 	req := httptest.NewRequest(http.MethodGet, "/versionz", nil)
 	rr := httptest.NewRecorder()

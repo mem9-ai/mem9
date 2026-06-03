@@ -285,6 +285,7 @@ func TestGetKeyStatus(t *testing.T) {
 						respondError(w, http.StatusTeapot, "apiKeyMW called")
 					})
 				},
+				func(h http.Handler) http.Handler { return h },
 			)
 
 			req := httptest.NewRequest(http.MethodGet, "/v1alpha2/status", nil)

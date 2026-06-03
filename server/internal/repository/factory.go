@@ -108,7 +108,7 @@ func NewSessionRepo(backend string, db *sql.DB, autoModel string, ftsEnabled boo
 type stubSessionRepo struct{}
 
 func (stubSessionRepo) BulkCreate(_ context.Context, _ []*domain.Session) error { return nil }
-func (stubSessionRepo) PatchTags(_ context.Context, _, _ string, _ []string) error {
+func (stubSessionRepo) PatchTags(_ context.Context, _, _, _ string, _ []string) error {
 	return nil
 }
 func (stubSessionRepo) GetByID(_ context.Context, _ string) (*domain.Memory, error) {
@@ -136,6 +136,6 @@ func (stubSessionRepo) KeywordSearch(_ context.Context, _ string, _ domain.Memor
 	return nil, nil
 }
 func (stubSessionRepo) FTSAvailable() bool { return false }
-func (stubSessionRepo) ListBySessionIDs(_ context.Context, _ []string, _ int) ([]*domain.Session, error) {
+func (stubSessionRepo) ListBySessionIDs(_ context.Context, _ []string, _ *string, _ int) ([]*domain.Session, error) {
 	return nil, fmt.Errorf("session messages: %w", domain.ErrNotSupported)
 }

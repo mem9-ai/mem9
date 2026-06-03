@@ -71,6 +71,9 @@ func (c *schemaInitConn) ExecContext(_ context.Context, query string, _ []driver
 
 func (c *schemaInitConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	if strings.Contains(query, "information_schema.COLUMNS") {
+		if strings.Contains(query, "COUNT(*)") {
+			return &schemaInitRows{values: [][]driver.Value{{int64(0)}}}, nil
+		}
 		return &schemaRows{rows: c.recorder.schemaRows}, nil
 	}
 	if strings.Contains(query, "information_schema.TABLES") {
@@ -276,9 +279,11 @@ func TestTiDBCloudProvisioner_InitSchema_AutoEmbedding(t *testing.T) {
 	wantSubstrings := []string{
 		"CREATE TABLE IF NOT EXISTS memories",
 		"embedding VECTOR(1024) GENERATED ALWAYS AS (EMBED_TEXT('tidbcloud_free/amazon/titan-embed-text-v2', content, '{\"dimensions\": 1024}')) STORED",
+		"ALTER TABLE memories ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT ''",
 		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
 		"ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content",
 		"CREATE TABLE IF NOT EXISTS sessions",
+		"ALTER TABLE sessions ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT ''",
 		"embedding VECTOR(1024) GENERATED ALWAYS AS (EMBED_TEXT('tidbcloud_free/amazon/titan-embed-text-v2', content, '{\"dimensions\": 1024}')) STORED",
 		"ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine",
 		"ALTER TABLE sessions ADD FULLTEXT INDEX idx_sessions_fts",
@@ -304,8 +309,10 @@ func TestTiDBCloudProvisioner_InitSchema_ClientEmbedding(t *testing.T) {
 	wantSubstrings := []string{
 		"CREATE TABLE IF NOT EXISTS memories",
 		"embedding VECTOR(1536) NULL",
+		"ALTER TABLE memories ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT ''",
 		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
 		"CREATE TABLE IF NOT EXISTS sessions",
+		"ALTER TABLE sessions ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT ''",
 		"ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine",
 	}
 	for _, want := range wantSubstrings {
@@ -341,7 +348,9 @@ func TestTiDBCloudProvisioner_InitSchema_ExistingTablesSkipsCreate(t *testing.T)
 		t.Fatalf("existing tables should skip CREATE TABLE:\n%s", executed)
 	}
 	wantSubstrings := []string{
+		"ALTER TABLE memories ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT ''",
 		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
+		"ALTER TABLE sessions ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT ''",
 		"ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine",
 	}
 	for _, want := range wantSubstrings {

@@ -114,6 +114,7 @@ func createTables(db *sql.DB) error {
 		memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned',
 		agent_id        VARCHAR(100)    NULL,
 		session_id      VARCHAR(100)    NULL,
+		app_id          VARCHAR(100)    NOT NULL DEFAULT '',
 		state           VARCHAR(20)     NOT NULL DEFAULT 'active',
 		version         INT             DEFAULT 1,
 		updated_by      VARCHAR(100),
@@ -125,6 +126,7 @@ func createTables(db *sql.DB) error {
 		INDEX idx_state               (state),
 		INDEX idx_agent               (agent_id),
 		INDEX idx_session             (session_id),
+		INDEX idx_app                 (app_id),
 		INDEX idx_updated             (updated_at)
 	)`)
 	if err != nil {

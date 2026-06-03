@@ -282,6 +282,9 @@
             "$ref": "#/components/parameters/MemoryQuery"
           },
           {
+            "$ref": "#/components/parameters/MemorySearchMode"
+          },
+          {
             "$ref": "#/components/parameters/Limit"
           },
           {
@@ -304,6 +307,9 @@
           },
           {
             "$ref": "#/components/parameters/SessionID"
+          },
+          {
+            "$ref": "#/components/parameters/AppID"
           },
           {
             "$ref": "#/components/parameters/ScanAll"
@@ -562,6 +568,9 @@
             "$ref": "#/components/parameters/SessionIDRepeated"
           },
           {
+            "$ref": "#/components/parameters/AppID"
+          },
+          {
             "$ref": "#/components/parameters/LimitPerSession"
           }
         ],
@@ -666,6 +675,9 @@
             "$ref": "#/components/parameters/MemoryQuery"
           },
           {
+            "$ref": "#/components/parameters/MemorySearchMode"
+          },
+          {
             "$ref": "#/components/parameters/Limit"
           },
           {
@@ -688,6 +700,9 @@
           },
           {
             "$ref": "#/components/parameters/SessionID"
+          },
+          {
+            "$ref": "#/components/parameters/AppID"
           },
           {
             "$ref": "#/components/parameters/SortBy"
@@ -1088,6 +1103,9 @@
             "$ref": "#/components/parameters/SessionIDRepeated"
           },
           {
+            "$ref": "#/components/parameters/AppID"
+          },
+          {
             "$ref": "#/components/parameters/LimitPerSession"
           }
         ],
@@ -1181,6 +1199,18 @@
         "description": "Natural-language search query. When omitted, the endpoint lists memories by filters.",
         "schema": {
           "type": "string"
+        }
+      },
+      "MemorySearchMode": {
+        "name": "search_mode",
+        "in": "query",
+        "required": false,
+        "description": "Set to `keyword` to search memory content by direct substring match for list filtering. Omit for the default recall-style query behavior.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "keyword"
+          ]
         }
       },
       "Limit": {
@@ -1358,6 +1388,16 @@
         "schema": {
           "type": "string"
         }
+      },
+      "AppID": {
+        "name": "appId",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "description": "Optional application isolation filter. Omit appId to search across all appIds. Use appId=<value> for an exact appId, and appId=null or appId= to search only the default/global appId stored as an empty string."
       }
     },
     "headers": {
@@ -1734,6 +1774,12 @@
             "type": "string",
             "description": "Agent identity. Defaults from X-Mnemo-Agent-Id when omitted."
           },
+          "appId": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 100,
+            "description": "Optional application isolation id. Omitted, null, empty, or whitespace values are stored as the default/global appId; non-empty values are trimmed and stored exactly."
+          },
           "tags": {
             "type": "array",
             "items": {
@@ -1854,7 +1900,8 @@
             "type": "string",
             "description": "Optional session ID associated with session imports."
           }
-        }
+        },
+        "description": "Multipart upload for async file ingest. File size is limited to 50 MiB. For JSON memory/session import files, include top-level appId or per-memory appId fields to assign imported rows to an application isolation id."
       },
       "MemoryListResponse": {
         "type": "object",
@@ -1923,6 +1970,10 @@
           },
           "session_id": {
             "type": "string"
+          },
+          "appId": {
+            "type": "string",
+            "description": "Application isolation id. Empty string represents the default/global appId."
           },
           "updated_by": {
             "type": "string"
@@ -2055,6 +2106,10 @@
           },
           "agent_id": {
             "type": "string"
+          },
+          "appId": {
+            "type": "string",
+            "description": "Application isolation id. Empty string represents the default/global appId."
           },
           "source": {
             "type": "string"

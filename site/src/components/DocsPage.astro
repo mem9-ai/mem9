@@ -1,5 +1,5 @@
 ---
-import { docsCopy, resolveDocsLocale, type DocsLink, type DocsLocale } from '../content/docs';
+import { docsCopy, resolveDocsLocale, type DocsLink, type DocsLocale, type DocsSection } from '../content/docs';
 import { DEFAULT_LOCALE } from '../content/site';
 
 const localeOrder: DocsLocale[] = ['zh', 'en', 'ja', 'ko', 'id', 'th'];
@@ -11,6 +11,39 @@ function linkTarget(link: DocsLink): string | undefined {
 
 function linkRel(link: DocsLink): string | undefined {
   return link.external ? 'noopener noreferrer' : undefined;
+}
+
+function docsSearchLabel(locale: DocsLocale): string {
+  return locale === 'zh' ? '搜索文档' : 'Search docs';
+}
+
+function docsSearchPlaceholder(locale: DocsLocale): string {
+  return locale === 'zh' ? '搜索导航或正文内容' : 'Search navigation or content';
+}
+
+function docsSearchEmpty(locale: DocsLocale): string {
+  return locale === 'zh' ? '没有匹配的文档。' : 'No matching docs.';
+}
+
+function plainText(value: string | undefined): string {
+  return (value ?? '').replace(/<[^>]*>/g, ' ');
+}
+
+function docsSectionSearchText(section: DocsSection): string {
+  return [
+    section.label,
+    section.title,
+    section.intro,
+    ...(section.paragraphs ?? []).map(plainText),
+    ...(section.bullets ?? []),
+    ...(section.links ?? []).map((link) => link.label),
+    ...(section.subsections ?? []).flatMap((subsection) => [
+      subsection.title,
+      ...(subsection.paragraphs ?? []).map(plainText),
+      ...(subsection.bullets ?? []),
+      ...(subsection.links ?? []).map((link) => link.label),
+    ]),
+  ].join(' ');
 }
 ---
 
@@ -34,10 +67,21 @@ function linkRel(link: DocsLink): string | undefined {
               </button>
               <div class="docs-toc surface-card">
                 <p class="docs-toc-title">{copy.hero.tocTitle}</p>
+                <label class="docs-toc-search">
+                  <span class="docs-toc-search-label">{docsSearchLabel(locale)}</span>
+                  <input
+                    type="search"
+                    inputmode="search"
+                    placeholder={docsSearchPlaceholder(locale)}
+                    autocomplete="off"
+                    data-docs-toc-search
+                  />
+                </label>
+                <p class="docs-toc-empty" data-docs-toc-empty hidden>{docsSearchEmpty(locale)}</p>
                 <nav aria-label={copy.hero.tocTitle}>
                   <div class="docs-toc-groups">
                     {copy.tocGroups.map((group) => (
-                      <details class="docs-toc-group" open>
+                      <details class="docs-toc-group" open data-docs-toc-group data-docs-search={group.title}>
                         <summary class="docs-toc-group-summary">
                           <span class="docs-toc-group-title">{group.title}</span>
                           <span class="docs-toc-group-icon" aria-hidden="true"></span>
@@ -48,7 +92,13 @@ function linkRel(link: DocsLink): string | undefined {
                             if (!section) return null;
 
                             return (
-                              <li>
+                              <li
+                                data-docs-toc-section
+                                data-docs-search={[
+                                  group.title,
+                                  docsSectionSearchText(section),
+                                ].join(' ')}
+                              >
                                 <a href={`#${section.id}`} class="docs-toc-link">
                                   <span class="docs-toc-index">{section.label}</span>
                                   <span>{section.title}</span>
@@ -217,6 +267,45 @@ function linkRel(link: DocsLink): string | undefined {
     letter-spacing: 0.05em;
     color: var(--accent);
     margin-bottom: 0.9rem;
+  }
+
+  .docs-toc-search {
+    display: grid;
+    gap: 0.38rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .docs-toc-search-label {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+
+  .docs-toc-search input {
+    width: 100%;
+    min-height: 2.2rem;
+    border: 1px solid var(--border);
+    border-radius: 0.72rem;
+    background: var(--button-bg);
+    color: var(--text);
+    padding: 0.46rem 0.58rem;
+    font: inherit;
+    font-size: 0.82rem;
+    outline: none;
+    box-shadow: var(--surface-inset);
+  }
+
+  .docs-toc-search input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent), var(--surface-inset);
+  }
+
+  .docs-toc-empty {
+    margin: 0 0 0.85rem;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
   }
 
   .docs-toc-list {

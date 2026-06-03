@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS memories (
   -- Agent & session tracking
   agent_id        VARCHAR(100)    NULL     COMMENT 'Agent that created this memory',
   session_id      VARCHAR(100)    NULL     COMMENT 'Session this memory originated from',
+  app_id          VARCHAR(100)    NOT NULL DEFAULT '' COMMENT 'Application isolation ID',
 
   -- Lifecycle
   state           VARCHAR(20)     NOT NULL DEFAULT 'active'
@@ -111,6 +112,7 @@ CREATE TABLE IF NOT EXISTS memories (
   INDEX idx_state               (state),
   INDEX idx_agent               (agent_id),
   INDEX idx_session             (session_id),
+  INDEX idx_app                 (app_id),
   INDEX idx_updated             (updated_at)
 );
 
@@ -144,12 +146,14 @@ CREATE TABLE IF NOT EXISTS memories (
 --   ADD COLUMN memory_type  VARCHAR(20) NOT NULL DEFAULT 'pinned',
 --   ADD COLUMN agent_id     VARCHAR(100) NULL,
 --   ADD COLUMN session_id   VARCHAR(100) NULL,
+--   ADD COLUMN app_id       VARCHAR(100) NOT NULL DEFAULT '',
 --   ADD COLUMN state        VARCHAR(20) NOT NULL DEFAULT 'active',
 --   ADD COLUMN superseded_by VARCHAR(36) NULL;
 -- CREATE INDEX idx_memory_type ON memories(memory_type);
 -- CREATE INDEX idx_state ON memories(state);
 -- CREATE INDEX idx_agent ON memories(agent_id);
 -- CREATE INDEX idx_session ON memories(session_id);
+-- CREATE INDEX idx_app ON memories(app_id);
 -- Step 2: Migrate tombstoned records.
 -- UPDATE memories SET state = 'deleted', deleted_at = updated_at WHERE tombstone = 1;
 -- Step 3: Add constraint (AFTER code migration).

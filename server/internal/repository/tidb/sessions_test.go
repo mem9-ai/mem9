@@ -27,7 +27,7 @@ func TestSessionRepoListFiltersAndPaginates(t *testing.T) {
 		},
 		{
 			mustContain: []string{
-				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at",
+				"SELECT id, session_id, agent_id, app_id, source, seq, role, content, content_type, tags, state, created_at",
 				"FROM sessions WHERE state = ? AND agent_id = ? AND session_id = ? AND source = ? AND JSON_CONTAINS(tags, ?)",
 				"ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
 			},
@@ -77,7 +77,7 @@ func TestSessionRepoListSortsByContent(t *testing.T) {
 		},
 		{
 			mustContain: []string{
-				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at",
+				"SELECT id, session_id, agent_id, app_id, source, seq, role, content, content_type, tags, state, created_at",
 				"FROM sessions WHERE state = 'active'",
 				"ORDER BY content ASC, id ASC LIMIT ? OFFSET ?",
 			},
@@ -110,7 +110,7 @@ func TestSessionRepoGetByIDMissingTableReturnsNotFound(t *testing.T) {
 	db := newScriptedTestDB(t, []*queryExpectation{
 		{
 			mustContain: []string{
-				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at",
+				"SELECT id, session_id, agent_id, app_id, source, seq, role, content, content_type, tags, state, created_at",
 				"FROM sessions WHERE id = ? AND state = 'active'",
 			},
 			wantArgs: []any{"missing-session-row"},
@@ -154,6 +154,7 @@ func TestFillSessionMemory_SetsMemoryType(t *testing.T) {
 		&m,
 		sql.NullString{String: "sess-1", Valid: true},
 		sql.NullString{String: "agent-a", Valid: true},
+		sql.NullString{String: "", Valid: true},
 		sql.NullString{String: "src", Valid: true},
 		sql.NullString{String: "user", Valid: true},
 		sql.NullString{String: "text", Valid: true},
@@ -174,6 +175,7 @@ func TestFillSessionMemory_PopulatesFields(t *testing.T) {
 		&m,
 		sql.NullString{String: "sess-1", Valid: true},
 		sql.NullString{String: "agent-a", Valid: true},
+		sql.NullString{String: "chat-app", Valid: true},
 		sql.NullString{String: "src", Valid: true},
 		sql.NullString{String: "user", Valid: true},
 		sql.NullString{String: "text", Valid: true},
@@ -187,6 +189,9 @@ func TestFillSessionMemory_PopulatesFields(t *testing.T) {
 	}
 	if result.AgentID != "agent-a" {
 		t.Errorf("AgentID = %q, want %q", result.AgentID, "agent-a")
+	}
+	if result.AppID != "chat-app" {
+		t.Errorf("AppID = %q, want %q", result.AppID, "chat-app")
 	}
 	if result.State != domain.StateActive {
 		t.Errorf("State = %q, want %q", result.State, domain.StateActive)

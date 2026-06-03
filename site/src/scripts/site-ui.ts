@@ -14,7 +14,7 @@ import {
   type SiteThemePreference,
 } from '../content/site';
 
-type MenuName = 'language' | 'theme';
+type MenuName = 'login' | 'language' | 'theme';
 type OnboardingVersion = 'stable' | 'beta';
 type OnboardingCommandParts = {
   prefix: string;
@@ -494,6 +494,10 @@ function isApiPage(): boolean {
   return document.querySelector('[data-api-root]') !== null;
 }
 
+function isReleaseNotesPage(): boolean {
+  return document.querySelector('[data-release-notes-root]') !== null;
+}
+
 function updateDocsPage(locale: SiteLocale): void {
   const docsLocale = resolveDocsLocale(locale);
   const root = document.querySelector<HTMLElement>('[data-docs-root]');
@@ -559,6 +563,23 @@ function updateApiPage(locale: SiteLocale): void {
   });
 }
 
+function updateReleaseNotesPage(locale: SiteLocale): void {
+  const root = document.querySelector<HTMLElement>('[data-release-notes-root]');
+  const copy = siteCopy[locale].releaseNotesPage;
+
+  if (!root) {
+    return;
+  }
+
+  root.dataset.releaseNotesLocale = locale;
+  setDocumentLang(locale);
+  updateMetaElements(copy.meta.title, copy.meta.description);
+
+  document.querySelectorAll<HTMLElement>('[data-release-notes-copy]').forEach((sectionCopy) => {
+    sectionCopy.hidden = sectionCopy.dataset.releaseNotesCopy !== locale;
+  });
+}
+
 function updateFaqSection(locale: SiteLocale): void {
   const root = document.querySelector<HTMLElement>('[data-faq-root]');
 
@@ -582,6 +603,9 @@ function applyLocale(locale: SiteLocale): void {
   } else if (isApiPage()) {
     updateTranslations(dictionary);
     updateApiPage(locale);
+  } else if (isReleaseNotesPage()) {
+    updateTranslations(dictionary);
+    updateReleaseNotesPage(locale);
   } else {
     updateMeta(locale, dictionary);
     updateTranslations(dictionary);
@@ -768,6 +792,81 @@ function initOnboardingVersionControls(): void {
   });
 
   applyOnboardingVersion('stable');
+}
+
+function normalizeDocsTocQuery(value: string): string[] {
+  return value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function initDocsTocSearch(): void {
+  const root = document.querySelector<HTMLElement>('[data-docs-root]');
+  if (!root) {
+    return;
+  }
+
+  function applyFilter(sectionCopy: HTMLElement): void {
+    const input = sectionCopy.querySelector<HTMLInputElement>('[data-docs-toc-search]');
+    const empty = sectionCopy.querySelector<HTMLElement>('[data-docs-toc-empty]');
+    if (!input || !empty) {
+      return;
+    }
+
+    const tokens = normalizeDocsTocQuery(input.value);
+    const hasQuery = tokens.length > 0;
+    let visibleGroups = 0;
+
+    sectionCopy.querySelectorAll<HTMLDetailsElement>('[data-docs-toc-group]').forEach((group) => {
+      const groupHaystack = (group.dataset.docsSearch ?? '').toLowerCase();
+      const groupMatches = hasQuery && tokens.every((token) => groupHaystack.includes(token));
+      let visibleSections = 0;
+
+      group.querySelectorAll<HTMLElement>('[data-docs-toc-section]').forEach((section) => {
+        const sectionHaystack = (section.dataset.docsSearch ?? '').toLowerCase();
+        const sectionMatches = !hasQuery || groupMatches || tokens.every((token) => sectionHaystack.includes(token));
+        section.hidden = !sectionMatches;
+        if (sectionMatches) {
+          visibleSections++;
+        }
+      });
+
+      const showGroup = !hasQuery || groupMatches || visibleSections > 0;
+      group.hidden = !showGroup;
+      if (showGroup && hasQuery) {
+        group.open = true;
+      }
+      if (showGroup) {
+        visibleGroups++;
+      }
+    });
+
+    empty.hidden = !hasQuery || visibleGroups > 0;
+  }
+
+  document.querySelectorAll<HTMLElement>('[data-docs-copy]').forEach((sectionCopy) => {
+    const input = sectionCopy.querySelector<HTMLInputElement>('[data-docs-toc-search]');
+    if (!input) {
+      return;
+    }
+
+    input.addEventListener('input', () => applyFilter(sectionCopy));
+    applyFilter(sectionCopy);
+  });
+
+  const mutation = new MutationObserver(() => {
+    const activeCopy = root.querySelector<HTMLElement>('[data-docs-copy]:not([hidden])');
+    if (activeCopy) {
+      applyFilter(activeCopy);
+    }
+  });
+
+  mutation.observe(root, {
+    attributes: true,
+    attributeFilter: ['data-docs-locale'],
+  });
 }
 
 function initDocsScrollSpy(): void {
@@ -1063,6 +1162,828 @@ function initApiMobileToc(): void {
   });
 }
 
+function normalizeApiTocQuery(value: string): string[] {
+  return value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function initApiTocSearch(): void {
+  const root = document.querySelector<HTMLElement>('[data-api-root]');
+  if (!root) {
+    return;
+  }
+
+  function setGroupExpanded(group: HTMLElement, expanded: boolean): void {
+    const toggle = group.querySelector<HTMLButtonElement>('[data-api-toc-group-toggle]');
+    const sublist = group.querySelector<HTMLElement>('[data-api-toc-sublist]');
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    }
+    if (sublist) {
+      sublist.hidden = !expanded;
+    }
+  }
+
+  function applyFilter(sectionCopy: HTMLElement): void {
+    const input = sectionCopy.querySelector<HTMLInputElement>('[data-api-toc-search]');
+    const empty = sectionCopy.querySelector<HTMLElement>('[data-api-toc-empty]');
+    if (!input || !empty) {
+      return;
+    }
+
+    const tokens = normalizeApiTocQuery(input.value);
+    const hasQuery = tokens.length > 0;
+    let visibleGroups = 0;
+
+    sectionCopy.querySelectorAll<HTMLElement>('[data-api-toc-static]').forEach((item) => {
+      item.hidden = hasQuery;
+    });
+
+    sectionCopy.querySelectorAll<HTMLElement>('[data-api-toc-group]').forEach((group) => {
+      const groupHaystack = (group.dataset.apiSearch ?? '').toLowerCase();
+      const groupMatches = hasQuery && tokens.every((token) => groupHaystack.includes(token));
+      let visibleEndpoints = 0;
+      const toggle = group.querySelector<HTMLButtonElement>('[data-api-toc-group-toggle]');
+
+      group.querySelectorAll<HTMLElement>('[data-api-toc-endpoint]').forEach((endpoint) => {
+        const endpointHaystack = (endpoint.dataset.apiSearch ?? '').toLowerCase();
+        const endpointMatches = !hasQuery || groupMatches || tokens.every((token) => endpointHaystack.includes(token));
+        endpoint.hidden = !endpointMatches;
+        if (endpointMatches) {
+          visibleEndpoints++;
+        }
+      });
+
+      const showGroup = !hasQuery || groupMatches || visibleEndpoints > 0;
+      group.hidden = !showGroup;
+      setGroupExpanded(group, showGroup && (!hasQuery || visibleEndpoints > 0));
+      if (showGroup) {
+        visibleGroups++;
+      }
+    });
+
+    empty.hidden = !hasQuery || visibleGroups > 0;
+  }
+
+  document.querySelectorAll<HTMLElement>('[data-api-copy]').forEach((sectionCopy) => {
+    const input = sectionCopy.querySelector<HTMLInputElement>('[data-api-toc-search]');
+    if (!input) {
+      return;
+    }
+    input.addEventListener('input', () => applyFilter(sectionCopy));
+    applyFilter(sectionCopy);
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-api-toc-group-toggle]').forEach((toggle) => {
+    toggle.addEventListener('click', () => {
+      const group = toggle.closest<HTMLElement>('[data-api-toc-group]');
+      const sectionCopy = toggle.closest<HTMLElement>('[data-api-copy]');
+      const input = sectionCopy?.querySelector<HTMLInputElement>('[data-api-toc-search]');
+      if (!group || (input && input.value.trim() !== '')) {
+        return;
+      }
+      const expanded = toggle.getAttribute('aria-expanded') === 'true';
+      setGroupExpanded(group, !expanded);
+    });
+  });
+
+  const mutation = new MutationObserver(() => {
+    const activeCopy = root.querySelector<HTMLElement>('[data-api-copy]:not([hidden])');
+    if (activeCopy) {
+      applyFilter(activeCopy);
+    }
+  });
+
+  mutation.observe(root, {
+    attributes: true,
+    attributeFilter: ['data-api-locale'],
+  });
+}
+
+type ApiTestField = {
+  name: string;
+  description: string;
+  required: boolean;
+};
+
+type ApiTestEndpoint = {
+  groupTitle: string;
+  method: string;
+  path: string;
+  summary: string;
+  description: string;
+  headers: ApiTestField[];
+  queryParams: ApiTestField[];
+  bodyFields: ApiTestField[];
+};
+
+type ApiTestModalElements = {
+  modal: HTMLElement;
+  form: HTMLFormElement;
+  title: HTMLElement;
+  method: HTMLElement;
+  path: HTMLElement;
+  baseUrl: HTMLInputElement;
+  saveInfo: HTMLInputElement;
+  pathFields: HTMLElement;
+  headerFields: HTMLElement;
+  queryFields: HTMLElement;
+  bodyFields: HTMLElement;
+  jsonWrap: HTMLElement;
+  json: HTMLTextAreaElement;
+  url: HTMLElement;
+  response: HTMLElement;
+  status: HTMLElement;
+  output: HTMLElement;
+  run: HTMLButtonElement;
+};
+
+type ApiTestSavedForm = {
+  baseUrl: string;
+  path: Record<string, string>;
+  headers: Record<string, string>;
+  query: Record<string, string>;
+  body: Record<string, string>;
+  json: string;
+};
+
+const API_TEST_STORAGE_PREFIX = 'mem9.apiTestForm.';
+let activeApiTestEndpoint: ApiTestEndpoint | null = null;
+
+function apiTestLabels(): SiteDictionary['apiPage']['labels'] {
+  return siteCopy[currentLocale()].apiPage.labels;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseApiTestField(value: unknown): ApiTestField | null {
+  if (!isRecord(value) || typeof value.name !== 'string') {
+    return null;
+  }
+
+  return {
+    name: value.name,
+    description: typeof value.description === 'string' ? value.description : '',
+    required: value.required === true,
+  };
+}
+
+function parseApiTestFields(value: unknown): ApiTestField[] {
+  return Array.isArray(value)
+    ? value.map(parseApiTestField).filter((field): field is ApiTestField => field !== null)
+    : [];
+}
+
+function parseApiTestEndpoint(value: string | undefined): ApiTestEndpoint | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (
+      !isRecord(parsed) ||
+      typeof parsed.method !== 'string' ||
+      typeof parsed.path !== 'string' ||
+      typeof parsed.summary !== 'string'
+    ) {
+      return null;
+    }
+
+    return {
+      groupTitle: typeof parsed.groupTitle === 'string' ? parsed.groupTitle : '',
+      method: parsed.method.toUpperCase(),
+      path: parsed.path,
+      summary: parsed.summary,
+      description: typeof parsed.description === 'string' ? parsed.description : '',
+      headers: parseApiTestFields(parsed.headers),
+      queryParams: parseApiTestFields(parsed.queryParams),
+      bodyFields: parseApiTestFields(parsed.bodyFields),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getApiTestModalElements(): ApiTestModalElements | null {
+  const modal = document.querySelector<HTMLElement>('[data-api-test-modal]');
+  const form = document.querySelector<HTMLFormElement>('[data-api-test-form]');
+  const title = document.querySelector<HTMLElement>('[data-api-test-title]');
+  const method = document.querySelector<HTMLElement>('[data-api-test-method]');
+  const path = document.querySelector<HTMLElement>('[data-api-test-path]');
+  const baseUrl = document.querySelector<HTMLInputElement>('[data-api-test-base-url]');
+  const saveInfo = document.querySelector<HTMLInputElement>('[data-api-test-save-info]');
+  const pathFields = document.querySelector<HTMLElement>('[data-api-test-path-fields]');
+  const headerFields = document.querySelector<HTMLElement>('[data-api-test-header-fields]');
+  const queryFields = document.querySelector<HTMLElement>('[data-api-test-query-fields]');
+  const bodyFields = document.querySelector<HTMLElement>('[data-api-test-body-fields]');
+  const jsonWrap = document.querySelector<HTMLElement>('[data-api-test-json-wrap]');
+  const json = document.querySelector<HTMLTextAreaElement>('[data-api-test-json]');
+  const url = document.querySelector<HTMLElement>('[data-api-test-url]');
+  const response = document.querySelector<HTMLElement>('[data-api-test-response]');
+  const status = document.querySelector<HTMLElement>('[data-api-test-status]');
+  const output = document.querySelector<HTMLElement>('[data-api-test-output]');
+  const run = document.querySelector<HTMLButtonElement>('[data-api-test-run]');
+
+  if (
+    !modal ||
+    !form ||
+    !title ||
+    !method ||
+    !path ||
+    !baseUrl ||
+    !saveInfo ||
+    !pathFields ||
+    !headerFields ||
+    !queryFields ||
+    !bodyFields ||
+    !jsonWrap ||
+    !json ||
+    !url ||
+    !response ||
+    !status ||
+    !output ||
+    !run
+  ) {
+    return null;
+  }
+
+  return {
+    modal,
+    form,
+    title,
+    method,
+    path,
+    baseUrl,
+    saveInfo,
+    pathFields,
+    headerFields,
+    queryFields,
+    bodyFields,
+    jsonWrap,
+    json,
+    url,
+    response,
+    status,
+    output,
+    run,
+  };
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function highlightJson(value: string): string {
+  return value.replace(
+    /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false)\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
+    (match, stringToken: string | undefined, colon: string | undefined, booleanToken: string | undefined) => {
+      if (stringToken) {
+        const className = colon ? 'api-json-key' : 'api-json-string';
+        return `<span class="${className}">${escapeHtml(stringToken)}</span>${colon ?? ''}`;
+      }
+
+      if (booleanToken) {
+        return `<span class="api-json-boolean">${match}</span>`;
+      }
+
+      if (match === 'null') {
+        return '<span class="api-json-null">null</span>';
+      }
+
+      return `<span class="api-json-number">${match}</span>`;
+    },
+  );
+}
+
+function formatApiTestOutput(text: string): string {
+  if (text.trim() === '') {
+    return `<span class="api-json-null">(${escapeHtml(apiTestLabels().emptyResponse)})</span>`;
+  }
+
+  try {
+    return highlightJson(JSON.stringify(JSON.parse(text) as unknown, null, 2));
+  } catch {
+    return escapeHtml(text);
+  }
+}
+
+function apiTestInputValue(fieldName: string): unknown {
+  const lowerName = fieldName.toLowerCase();
+
+  if (lowerName.includes('limit')) {
+    return 10;
+  }
+
+  if (lowerName.includes('offset')) {
+    return 0;
+  }
+
+  if (lowerName.includes('scanall')) {
+    return false;
+  }
+
+  if (lowerName.includes('tags') || lowerName.includes('ids') || lowerName.includes('nodes')) {
+    return [];
+  }
+
+  if (lowerName.includes('metadata')) {
+    return {};
+  }
+
+  if (lowerName.includes('messages')) {
+    return [{ role: 'user', content: 'Hello mem9' }];
+  }
+
+  if (lowerName.includes('content')) {
+    return 'Example memory content';
+  }
+
+  if (lowerName.includes('memory_type')) {
+    return 'pinned';
+  }
+
+  if (lowerName.includes('app')) {
+    return null;
+  }
+
+  return '';
+}
+
+function buildApiTestJsonTemplate(fields: ApiTestField[]): string {
+  const body = fields.reduce<Record<string, unknown>>((current, field) => {
+    current[field.name] = apiTestInputValue(field.name);
+    return current;
+  }, {});
+
+  return JSON.stringify(body, null, 2);
+}
+
+function isApiTestMultipart(endpoint: ApiTestEndpoint): boolean {
+  return endpoint.headers.some((field) => field.name.toLowerCase() === 'content-type' && field.description.toLowerCase().includes('multipart'));
+}
+
+function extractApiTestPathParams(path: string): ApiTestField[] {
+  const labels = apiTestLabels();
+  return Array.from(path.matchAll(/\{([^}]+)\}/g)).map((match) => ({
+    name: match[1] ?? '',
+    description: labels.pathParameter,
+    required: true,
+  }));
+}
+
+function setApiTestSectionVisibility(container: HTMLElement, visible: boolean): void {
+  const section = container.closest<HTMLElement>('[data-api-test-section]');
+  if (section) {
+    section.hidden = !visible;
+  }
+}
+
+function createApiTestInput(container: HTMLElement, scope: string, field: ApiTestField, type = 'text'): HTMLInputElement {
+  const label = document.createElement('label');
+  label.className = 'api-test-control';
+
+  const labelText = document.createElement('span');
+  labelText.className = 'api-test-label-line';
+
+  const labelName = document.createElement('span');
+  labelName.className = 'api-test-label-name';
+  labelName.textContent = field.name;
+  labelText.append(labelName);
+
+  if (field.required) {
+    const labels = apiTestLabels();
+    const requiredMark = document.createElement('span');
+    requiredMark.className = 'api-test-required-mark';
+    requiredMark.textContent = '*';
+    requiredMark.setAttribute('aria-label', labels.required);
+    labelText.append(requiredMark);
+  }
+
+  const input = document.createElement('input');
+  input.type = type;
+  input.autocomplete = 'off';
+  input.dataset.apiTestScope = scope;
+  input.dataset.apiTestName = field.name;
+  if (field.required && type !== 'file') {
+    input.required = true;
+  }
+
+  if (field.name.toLowerCase() === 'content-type') {
+    input.value = field.description.toLowerCase().includes('multipart') ? 'multipart/form-data' : 'application/json';
+  }
+
+  label.append(labelText, input);
+
+  if (field.description) {
+    const help = document.createElement('p');
+    help.className = 'api-test-help';
+    help.textContent = field.description;
+    label.append(help);
+  }
+
+  container.append(label);
+  return input;
+}
+
+function renderApiTestFields(container: HTMLElement, scope: string, fields: ApiTestField[], multipart = false): void {
+  container.replaceChildren();
+  fields.forEach((field) => {
+    const type = multipart && field.name.toLowerCase() === 'file' ? 'file' : 'text';
+    createApiTestInput(container, scope, field, type);
+  });
+  setApiTestSectionVisibility(container, fields.length > 0);
+}
+
+function readApiTestTextInputs(scope: string): Array<{ name: string; value: string }> {
+  return Array.from(document.querySelectorAll<HTMLInputElement>(`[data-api-test-scope="${scope}"]`))
+    .filter((input) => input.type !== 'file')
+    .map((input) => ({
+      name: input.dataset.apiTestName ?? '',
+      value: input.value.trim(),
+    }))
+    .filter((entry) => entry.name !== '');
+}
+
+function apiTestStorageKey(endpoint: ApiTestEndpoint): string {
+  return `${API_TEST_STORAGE_PREFIX}${encodeURIComponent(`${endpoint.method}:${endpoint.path}`)}`;
+}
+
+function isApiTestApiKeyName(name: string): boolean {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, '').includes('apikey');
+}
+
+function collectApiTestSavedInputs(scope: string): Record<string, string> {
+  return Array.from(document.querySelectorAll<HTMLInputElement>(`[data-api-test-scope="${scope}"]`))
+    .filter((input) => input.type !== 'file')
+    .reduce<Record<string, string>>((saved, input) => {
+      const name = input.dataset.apiTestName ?? '';
+      if (name === '' || isApiTestApiKeyName(name)) {
+        return saved;
+      }
+
+      saved[name] = input.value;
+      return saved;
+    }, {});
+}
+
+function applyApiTestSavedInputs(scope: string, saved: Record<string, string>): void {
+  document.querySelectorAll<HTMLInputElement>(`[data-api-test-scope="${scope}"]`).forEach((input) => {
+    const name = input.dataset.apiTestName ?? '';
+    if (name === '' || isApiTestApiKeyName(name) || !(name in saved)) {
+      return;
+    }
+
+    input.value = saved[name] ?? '';
+  });
+}
+
+function sanitizeApiTestJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeApiTestJsonValue);
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  return Object.entries(value).reduce<Record<string, unknown>>((sanitized, [key, nestedValue]) => {
+    if (!isApiTestApiKeyName(key)) {
+      sanitized[key] = sanitizeApiTestJsonValue(nestedValue);
+    }
+    return sanitized;
+  }, {});
+}
+
+function sanitizeApiTestJsonText(text: string): string {
+  if (text.trim() === '') {
+    return '';
+  }
+
+  try {
+    return JSON.stringify(sanitizeApiTestJsonValue(JSON.parse(text) as unknown), null, 2);
+  } catch {
+    return '';
+  }
+}
+
+function parseApiTestStringRecord(value: unknown): Record<string, string> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.entries(value).reduce<Record<string, string>>((record, [key, nestedValue]) => {
+    if (typeof nestedValue === 'string' && !isApiTestApiKeyName(key)) {
+      record[key] = nestedValue;
+    }
+    return record;
+  }, {});
+}
+
+function readApiTestSavedForm(endpoint: ApiTestEndpoint): ApiTestSavedForm | null {
+  try {
+    const raw = localStorage.getItem(apiTestStorageKey(endpoint));
+    if (!raw) {
+      return null;
+    }
+
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) {
+      return null;
+    }
+
+    return {
+      baseUrl: typeof parsed.baseUrl === 'string' ? parsed.baseUrl : '',
+      path: parseApiTestStringRecord(parsed.path),
+      headers: parseApiTestStringRecord(parsed.headers),
+      query: parseApiTestStringRecord(parsed.query),
+      body: parseApiTestStringRecord(parsed.body),
+      json: typeof parsed.json === 'string' ? sanitizeApiTestJsonText(parsed.json) : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function collectApiTestSavedForm(elements: ApiTestModalElements): ApiTestSavedForm {
+  return {
+    baseUrl: elements.baseUrl.value,
+    path: collectApiTestSavedInputs('path'),
+    headers: collectApiTestSavedInputs('headers'),
+    query: collectApiTestSavedInputs('query'),
+    body: collectApiTestSavedInputs('body'),
+    json: elements.jsonWrap.hidden ? '' : sanitizeApiTestJsonText(elements.json.value),
+  };
+}
+
+function saveApiTestForm(elements: ApiTestModalElements): void {
+  if (!activeApiTestEndpoint || !elements.saveInfo.checked) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      apiTestStorageKey(activeApiTestEndpoint),
+      JSON.stringify(collectApiTestSavedForm(elements)),
+    );
+  } catch {
+    // Ignore storage quota or privacy-mode failures.
+  }
+}
+
+function clearApiTestSavedForm(endpoint: ApiTestEndpoint): void {
+  try {
+    localStorage.removeItem(apiTestStorageKey(endpoint));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function restoreApiTestSavedForm(elements: ApiTestModalElements, endpoint: ApiTestEndpoint): void {
+  if (!elements.saveInfo.checked) {
+    return;
+  }
+
+  const saved = readApiTestSavedForm(endpoint);
+  if (!saved) {
+    return;
+  }
+
+  if (saved.baseUrl.trim() !== '') {
+    elements.baseUrl.value = saved.baseUrl;
+  }
+
+  applyApiTestSavedInputs('path', saved.path);
+  applyApiTestSavedInputs('headers', saved.headers);
+  applyApiTestSavedInputs('query', saved.query);
+  applyApiTestSavedInputs('body', saved.body);
+  if (!elements.jsonWrap.hidden && saved.json.trim() !== '') {
+    elements.json.value = saved.json;
+  }
+}
+
+function buildApiTestUrl(elements: ApiTestModalElements, endpoint: ApiTestEndpoint): URL {
+  const base = elements.baseUrl.value.trim().replace(/\/+$/u, '');
+  const baseUrl = base === '' ? defaultApiTestBaseUrl() : base;
+  const resolvedPath = endpoint.path.replace(/\{([^}]+)\}/g, (match, name: string) => {
+    const input = Array.from(document.querySelectorAll<HTMLInputElement>('[data-api-test-scope="path"]'))
+      .find((candidate) => candidate.dataset.apiTestName === name);
+    const value = input?.value.trim() ?? '';
+    return value === '' ? match : encodeURIComponent(value);
+  });
+  const url = new URL(resolvedPath, `${baseUrl}/`);
+
+  readApiTestTextInputs('query').forEach(({ name, value }) => {
+    if (value !== '') {
+      url.searchParams.append(name, value);
+    }
+  });
+
+  return url;
+}
+
+function defaultApiTestBaseUrl(): string {
+  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+    ? 'http://localhost:8081'
+    : 'https://api.mem9.ai';
+}
+
+function updateApiTestUrlPreview(elements: ApiTestModalElements): void {
+  if (!activeApiTestEndpoint) {
+    return;
+  }
+
+  try {
+    elements.url.textContent = buildApiTestUrl(elements, activeApiTestEndpoint).toString();
+  } catch (error) {
+    elements.url.textContent = error instanceof Error ? error.message : String(error);
+  }
+}
+
+function openApiTestModal(elements: ApiTestModalElements, endpoint: ApiTestEndpoint): void {
+  const multipart = isApiTestMultipart(endpoint);
+  const labels = apiTestLabels();
+  activeApiTestEndpoint = endpoint;
+  if (elements.baseUrl.value.trim() === '') {
+    elements.baseUrl.value = defaultApiTestBaseUrl();
+  }
+  elements.title.textContent = endpoint.summary;
+  elements.method.textContent = `${endpoint.method} · ${endpoint.groupTitle}`;
+  elements.path.textContent = endpoint.path;
+  elements.response.hidden = false;
+  elements.status.textContent = labels.ready;
+  elements.output.textContent = labels.responseReady;
+  renderApiTestFields(elements.pathFields, 'path', extractApiTestPathParams(endpoint.path));
+  renderApiTestFields(elements.headerFields, 'headers', endpoint.headers);
+  renderApiTestFields(elements.queryFields, 'query', endpoint.queryParams);
+  renderApiTestFields(elements.bodyFields, 'body', multipart ? endpoint.bodyFields : [], multipart);
+  elements.jsonWrap.hidden = multipart || endpoint.bodyFields.length === 0;
+  elements.json.value = multipart || endpoint.bodyFields.length === 0 ? '' : buildApiTestJsonTemplate(endpoint.bodyFields);
+  setApiTestSectionVisibility(elements.bodyFields, endpoint.bodyFields.length > 0);
+  restoreApiTestSavedForm(elements, endpoint);
+  updateApiTestUrlPreview(elements);
+
+  elements.modal.hidden = false;
+  window.requestAnimationFrame(() => {
+    elements.modal.classList.add('is-visible');
+    elements.baseUrl.focus();
+  });
+}
+
+function closeApiTestModal(elements: ApiTestModalElements): void {
+  elements.modal.classList.remove('is-visible');
+  window.setTimeout(() => {
+    elements.modal.hidden = true;
+  }, 180);
+}
+
+async function runApiTest(elements: ApiTestModalElements): Promise<void> {
+  if (!activeApiTestEndpoint) {
+    return;
+  }
+
+  const labels = apiTestLabels();
+  const endpoint = activeApiTestEndpoint;
+  const multipart = isApiTestMultipart(endpoint);
+  const headers = new Headers();
+  readApiTestTextInputs('headers').forEach(({ name, value }) => {
+    if (value === '') {
+      return;
+    }
+    if (multipart && name.toLowerCase() === 'content-type') {
+      return;
+    }
+    headers.set(name, value);
+  });
+
+  let body: BodyInit | undefined;
+  if (multipart) {
+    const formData = new FormData();
+    document.querySelectorAll<HTMLInputElement>('[data-api-test-scope="body"]').forEach((input) => {
+      const name = input.dataset.apiTestName ?? '';
+      if (name === '') {
+        return;
+      }
+      if (input.type === 'file') {
+        const file = input.files?.[0];
+        if (file) {
+          formData.append(name, file);
+        }
+        return;
+      }
+      if (input.value.trim() !== '') {
+        formData.append(name, input.value.trim());
+      }
+    });
+    body = formData;
+  } else if (!elements.jsonWrap.hidden && elements.json.value.trim() !== '') {
+    JSON.parse(elements.json.value) as unknown;
+    body = elements.json.value;
+    if (!headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+  }
+
+  const url = buildApiTestUrl(elements, endpoint);
+  const startedAt = performance.now();
+  elements.run.disabled = true;
+  elements.run.textContent = labels.running;
+  elements.response.hidden = false;
+  elements.status.textContent = labels.runningRequest;
+  elements.output.textContent = '';
+
+  try {
+    const response = await fetch(url.toString(), {
+      method: endpoint.method,
+      headers,
+      body: ['GET', 'HEAD'].includes(endpoint.method) ? undefined : body,
+    });
+    const elapsed = Math.round(performance.now() - startedAt);
+    const text = await response.text();
+    elements.status.textContent = `${response.status} ${response.statusText} · ${elapsed}ms`;
+    elements.output.innerHTML = formatApiTestOutput(text);
+  } catch (error) {
+    const elapsed = Math.round(performance.now() - startedAt);
+    elements.status.textContent = `${labels.requestFailed} · ${elapsed}ms`;
+    elements.output.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    elements.run.disabled = false;
+    elements.run.textContent = apiTestLabels().run;
+  }
+}
+
+function initApiTestConsole(): void {
+  const elements = getApiTestModalElements();
+  if (!elements) {
+    return;
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-api-test-open]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const endpoint = parseApiTestEndpoint(button.dataset.apiTestEndpoint);
+      if (endpoint) {
+        openApiTestModal(elements, endpoint);
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-api-test-close]').forEach((button) => {
+    button.addEventListener('click', () => closeApiTestModal(elements));
+  });
+
+  const resetButton = document.querySelector<HTMLButtonElement>('[data-api-test-reset]');
+  resetButton?.addEventListener('click', () => {
+    if (activeApiTestEndpoint) {
+      clearApiTestSavedForm(activeApiTestEndpoint);
+      openApiTestModal(elements, activeApiTestEndpoint);
+    }
+  });
+
+  elements.modal.addEventListener('click', (event) => {
+    if (event.target === elements.modal) {
+      closeApiTestModal(elements);
+    }
+  });
+
+  elements.saveInfo.addEventListener('change', () => {
+    if (elements.saveInfo.checked) {
+      saveApiTestForm(elements);
+    }
+  });
+
+  elements.form.addEventListener('input', () => {
+    updateApiTestUrlPreview(elements);
+    saveApiTestForm(elements);
+  });
+  elements.form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    runApiTest(elements).catch((error: unknown) => {
+      const labels = apiTestLabels();
+      elements.response.hidden = false;
+      elements.status.textContent = labels.requestFailed;
+      elements.output.textContent = error instanceof Error ? error.message : String(error);
+      elements.run.disabled = false;
+      elements.run.textContent = labels.run;
+    });
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !elements.modal.hidden) {
+      closeApiTestModal(elements);
+    }
+  });
+}
+
 export function initSiteUI(): void {
   const locale = isSiteLocale(document.documentElement.dataset.locale)
     ? document.documentElement.dataset.locale
@@ -1085,6 +2006,7 @@ export function initSiteUI(): void {
   setOpenMenu(null);
 
   if (isDocsPage()) {
+    initDocsTocSearch();
     initDocsScrollSpy();
     initDocsProgressBar();
     initDocsBackToTop();
@@ -1093,6 +2015,8 @@ export function initSiteUI(): void {
 
   if (isApiPage()) {
     initApiScrollSpy();
+    initApiTocSearch();
     initApiMobileToc();
+    initApiTestConsole();
   }
 }

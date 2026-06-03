@@ -3,6 +3,8 @@ package handler
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,7 +36,9 @@ type testMemoryRepo struct {
 	bulkCreateHook       func(context.Context)
 	keywordSearchResults []domain.Memory
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
+	lastKeywordQuery     string
 	lastKeywordFilter    domain.MemoryFilter
+	lastKeywordLimit     int
 	listResults          []domain.Memory
 	listTotal            int
 	lastListFilter       domain.MemoryFilter
@@ -135,7 +139,9 @@ func (m *testMemoryRepo) AutoVectorSearch(context.Context, string, domain.Memory
 
 func (m *testMemoryRepo) KeywordSearch(ctx context.Context, query string, filter domain.MemoryFilter, limit int) ([]domain.Memory, error) {
 	m.mu.Lock()
+	m.lastKeywordQuery = query
 	m.lastKeywordFilter = filter
+	m.lastKeywordLimit = limit
 	hook := m.keywordSearchHook
 	results := append([]domain.Memory(nil), m.keywordSearchResults...)
 	m.mu.Unlock()
@@ -153,7 +159,7 @@ func (m *testMemoryRepo) ListBootstrap(context.Context, int) ([]domain.Memory, e
 	return nil, nil
 }
 
-func (m *testMemoryRepo) NearDupSearch(context.Context, string) (string, float64, error) {
+func (m *testMemoryRepo) NearDupSearch(context.Context, string, domain.MemoryFilter) (string, float64, error) {
 	return "", 0, nil
 }
 
@@ -169,6 +175,7 @@ type testSessionRepo struct {
 	mu                   sync.Mutex
 	bulkCreateCalled     bool
 	patchTagsCalled      bool
+	patchedAppID         string
 	patchedHash          string
 	patchedSessionID     string
 	patchedTags          []string
@@ -177,6 +184,7 @@ type testSessionRepo struct {
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	lastKeywordFilter    domain.MemoryFilter
 	sessionListResults   []*domain.Session
+	lastSessionAppID     *string
 	lastSessionIDs       []string
 	lastSessionLimit     int
 	getResult            *domain.Memory
@@ -199,10 +207,11 @@ func (s *testSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Sessi
 	return nil
 }
 
-func (s *testSessionRepo) PatchTags(_ context.Context, sessionID, hash string, tags []string) error {
+func (s *testSessionRepo) PatchTags(_ context.Context, appID, sessionID, hash string, tags []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.patchTagsCalled = true
+	s.patchedAppID = appID
 	s.patchedSessionID = sessionID
 	s.patchedHash = hash
 	s.patchedTags = append([]string(nil), tags...)
@@ -274,7 +283,13 @@ func (s *testSessionRepo) KeywordSearch(ctx context.Context, query string, filte
 	return results, nil
 }
 func (s *testSessionRepo) FTSAvailable() bool { return false }
-func (s *testSessionRepo) ListBySessionIDs(_ context.Context, sessionIDs []string, limit int) ([]*domain.Session, error) {
+func (s *testSessionRepo) ListBySessionIDs(_ context.Context, sessionIDs []string, appID *string, limit int) ([]*domain.Session, error) {
+	if appID != nil {
+		v := *appID
+		s.lastSessionAppID = &v
+	} else {
+		s.lastSessionAppID = nil
+	}
 	s.lastSessionIDs = append([]string(nil), sessionIDs...)
 	s.lastSessionLimit = limit
 	return append([]*domain.Session(nil), s.sessionListResults...), nil
@@ -519,6 +534,48 @@ func ensureNoMeteringEvents(t *testing.T, writer *captureMeteringWriter, timeout
 	}
 }
 
+var handlerErrorDBRegisterOnce sync.Once
+
+func openHandlerErrorDB(t *testing.T) *sql.DB {
+	t.Helper()
+	handlerErrorDBRegisterOnce.Do(func() {
+		sql.Register("handler-error-db", handlerErrorDriver{})
+	})
+	db, err := sql.Open("handler-error-db", "")
+	if err != nil {
+		t.Fatalf("open handler error db: %v", err)
+	}
+	return db
+}
+
+type handlerErrorDriver struct{}
+
+func (handlerErrorDriver) Open(string) (driver.Conn, error) {
+	return handlerErrorConn{}, nil
+}
+
+type handlerErrorConn struct{}
+
+func (handlerErrorConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (handlerErrorConn) Close() error {
+	return nil
+}
+
+func (handlerErrorConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (handlerErrorConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+	return nil, errors.New("schema unavailable")
+}
+
+func (handlerErrorConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
+	return nil, errors.New("schema unavailable")
+}
+
 // newTestServer creates a Server with pre-populated svcCache for testing.
 func newTestServer(memRepo *testMemoryRepo, sessRepo *testSessionRepo) *Server {
 	srv := NewServer(nil, nil, "", nil, nil, "", false, service.ModeSmart, "", slog.Default())
@@ -542,6 +599,35 @@ func storeTestTenantServices(srv *Server, tenantID string, memRepo *testMemoryRe
 		session: service.NewSessionService(&testSessionRepo{}, nil, ""),
 	}
 	srv.svcCache.Store(tenantSvcKey(fmt.Sprintf("%s-0x0", tenantID)), svc)
+}
+
+func TestResolveServicesDoesNotCacheAfterAppIDSchemaMigrationFailure(t *testing.T) {
+	db := openHandlerErrorDB(t)
+	defer db.Close()
+
+	tenantSvc := service.NewTenantService(nil, nil, nil, nil, "", 0, 0, false, nil)
+	srv := NewServer(tenantSvc, nil, "", nil, nil, "", false, service.ModeSmart, "tidb", slog.Default())
+	auth := &domain.AuthInfo{
+		TenantID: "tenant-a",
+		TenantDB: db,
+	}
+	key := tenantSvcKey(fmt.Sprintf("%s-%p", auth.TenantID, auth.TenantDB))
+
+	first := srv.resolveServices(auth)
+	if first.memory == nil || first.ingest == nil || first.session == nil {
+		t.Fatal("resolveServices returned incomplete services")
+	}
+	if _, ok := srv.svcCache.Load(key); ok {
+		t.Fatal("schema migration failure must not cache services")
+	}
+
+	second := srv.resolveServices(auth)
+	if _, ok := srv.svcCache.Load(key); ok {
+		t.Fatal("schema migration retry failure must not cache services")
+	}
+	if first.memory == second.memory {
+		t.Fatal("expected uncached resolveServices call to build a fresh service bundle")
+	}
 }
 
 func TestReconcileRoutedChainFactsRuntimeUsageUsesTargetSubjects(t *testing.T) {
@@ -793,6 +879,106 @@ func TestListMemories_ScanAllListsAllLocalMemoryTypes(t *testing.T) {
 		sessionRepo.lastListFilter.SortDir != "desc" ||
 		sessionRepo.lastListFilter.Limit != 200 {
 		t.Fatalf("session list filter = %+v", sessionRepo.lastListFilter)
+	}
+}
+
+func TestListMemories_ContentKeywordSearchBypassesRecall(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchResults: []domain.Memory{
+			{
+				ID:         "insight-zh",
+				Content:    "mem9小组负责本周的控制台验证",
+				MemoryType: domain.TypeInsight,
+				State:      domain.StateActive,
+				CreatedAt:  now,
+				UpdatedAt:  now,
+			},
+		},
+	}
+	sessionRepo := &testSessionRepo{
+		keywordSearchHook: func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
+			t.Fatal("content keyword list search must not call session recall search")
+			return nil, nil
+		},
+	}
+	srv := newTestServer(memRepo, sessionRepo)
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("mem9小组")+"&search_mode=keyword&limit=10&state=active&memory_type=insight", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Total != 1 || len(resp.Memories) != 1 || resp.Memories[0].ID != "insight-zh" {
+		t.Fatalf("unexpected response: total=%d memories=%+v", resp.Total, resp.Memories)
+	}
+	if memRepo.lastKeywordQuery != "mem9小组" {
+		t.Fatalf("keyword query = %q, want mem9小组", memRepo.lastKeywordQuery)
+	}
+	if memRepo.lastKeywordFilter.State != "active" || memRepo.lastKeywordFilter.Query != "mem9小组" || memRepo.lastKeywordFilter.MemoryType != "insight" {
+		t.Fatalf("keyword filter = %+v", memRepo.lastKeywordFilter)
+	}
+	if memRepo.lastKeywordLimit != 30 {
+		t.Fatalf("keyword limit = %d, want 30", memRepo.lastKeywordLimit)
+	}
+	if sessionRepo.listCalls != 0 {
+		t.Fatalf("session list calls = %d, want 0", sessionRepo.listCalls)
+	}
+}
+
+func TestListMemories_ContentKeywordSearchAllTypesIncludesSessions(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchResults: []domain.Memory{
+			{
+				ID:         "insight-zh",
+				Content:    "mem9小组负责本周的控制台验证",
+				MemoryType: domain.TypeInsight,
+				State:      domain.StateActive,
+				CreatedAt:  now.Add(-time.Minute),
+				UpdatedAt:  now.Add(-time.Minute),
+			},
+		},
+	}
+	sessionRepo := &testSessionRepo{
+		keywordSearchResults: []domain.Memory{
+			{
+				ID:         "session-zh",
+				Content:    "mem9小组周会会记录原始 session",
+				MemoryType: domain.TypeSession,
+				State:      domain.StateActive,
+				CreatedAt:  now,
+				UpdatedAt:  now,
+			},
+		},
+	}
+	srv := newTestServer(memRepo, sessionRepo)
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("小组")+"&search_mode=keyword&limit=10&state=active&sort_by=updated_at&sort_dir=desc", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Total != 2 || len(resp.Memories) != 2 {
+		t.Fatalf("unexpected response: total=%d memories=%+v", resp.Total, resp.Memories)
+	}
+	if resp.Memories[0].ID != "session-zh" || resp.Memories[1].ID != "insight-zh" {
+		t.Fatalf("unexpected order: %+v", resp.Memories)
+	}
+	if memRepo.lastKeywordFilter.Query != "小组" || sessionRepo.lastKeywordFilter.Query != "小组" {
+		t.Fatalf("keyword filters = memory:%+v session:%+v", memRepo.lastKeywordFilter, sessionRepo.lastKeywordFilter)
 	}
 }
 
@@ -2702,6 +2888,68 @@ func TestListMemories_DefaultRecall_PrefersSessionForExactQuery(t *testing.T) {
 	}
 	if resp.Memories[0].Confidence == nil || *resp.Memories[0].Confidence < defaultMixedMinConfidence {
 		t.Fatalf("expected confidence >= %d, got %+v", defaultMixedMinConfidence, resp.Memories[0].Confidence)
+	}
+}
+
+func TestListMemories_DefaultRecall_KeepsPinnedIdentifierSearchHits(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			switch filter.MemoryType {
+			case string(domain.TypePinned):
+				return []domain.Memory{
+					{
+						ID:         "p1",
+						Content:    "codex-appid-e2e-20260602154502 isolated app B memory",
+						MemoryType: domain.TypePinned,
+						UpdatedAt:  now,
+						State:      domain.StateActive,
+					},
+					{
+						ID:         "p2",
+						Content:    "codex-appid-e2e-20260602154502 isolated app A memory",
+						MemoryType: domain.TypePinned,
+						UpdatedAt:  now.Add(-time.Second),
+						State:      domain.StateActive,
+					},
+					{
+						ID:         "p3",
+						Content:    "codex-appid-e2e-20260602154502 global default memory",
+						MemoryType: domain.TypePinned,
+						UpdatedAt:  now.Add(-2 * time.Second),
+						State:      domain.StateActive,
+					},
+				}, nil
+			default:
+				return nil, nil
+			}
+		},
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{})
+
+	req := makeRequest(t, http.MethodGet, "/memories?q=codex-appid-e2e-20260602154502&limit=10", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Memories) != 3 {
+		t.Fatalf("expected 3 memories, got %d", len(resp.Memories))
+	}
+	if resp.Memories[0].ID != "p1" {
+		t.Fatalf("expected pinned identifier hit, got %q", resp.Memories[0].ID)
+	}
+	for _, memory := range resp.Memories {
+		if memory.Confidence == nil || *memory.Confidence < defaultPinnedMinConfidence {
+			t.Fatalf("expected pinned confidence >= %d, got %+v for %s", defaultPinnedMinConfidence, memory.Confidence, memory.ID)
+		}
 	}
 }
 

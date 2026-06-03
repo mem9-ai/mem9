@@ -34,6 +34,7 @@ cd site && npx tsc --noEmit
 
 - TypeScript config extends `astro/tsconfigs/strict`.
 - Current content model is centralized in `src/content/site.ts`; copy changes usually belong there, not inline in components.
+- Any user-facing UI copy added or changed under `site/` must go through the existing i18n/content layer and update every supported locale in the same change. Do not hardcode visible UI text in components unless it is a protocol literal, stable identifier, or code sample.
 - Output is static (`output: 'static'`).
 - Netlify should keep `site/` as the package directory with the base directory unset. `netlify.toml` still lives here, but its build paths resolve from the repo root so it can build both `site/` and `dashboard/app/`, then copy dashboard assets into `site/dist/your-memory/`.
 - Locale and theme state use typed string unions and storage keys defined in `src/content/site.ts`.

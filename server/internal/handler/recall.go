@@ -208,7 +208,7 @@ func (s *Server) defaultConfidenceRecallSearch(
 	sessionCandidates = applyRecallConfidence(profile, sessionCandidates)
 
 	selectionStart := time.Now()
-	pinned, seen := selectPinnedRecallCandidates(profile.shape, budget, pinnedCandidates)
+	pinned, seen := selectPinnedRecallCandidates(profile, budget, pinnedCandidates)
 	mixed, cutoffReason, stats := selectMixedRecallCandidates(profile, budget-len(pinned), append(insightCandidates, sessionCandidates...), seen)
 	selectionDuration := time.Since(selectionStart)
 
@@ -344,10 +344,11 @@ func buildRecallConfidence(profile recallQueryProfile, candidate service.RecallC
 	if candidate.InVector && candidate.InKeyword {
 		agreementBonus = 0.10
 	}
-
 	confidenceRaw := 0.55*rrfNorm +
 		0.20*vecNorm +
 		agreementBonus +
+		literalContentEvidenceBonus(profile, candidate) +
+		keywordContentEvidenceBonus(profile, candidate) +
 		recencyBonus(candidate.Memory.UpdatedAt) +
 		answerEvidenceBonus(profile, candidate.Memory) +
 		sourcePrior(profile.shape, candidate.SourcePool)
@@ -355,8 +356,137 @@ func buildRecallConfidence(profile recallQueryProfile, candidate service.RecallC
 	return int(clampFloat64(confidenceRaw, 0, 1)*100 + 0.5)
 }
 
+func literalContentEvidenceBonus(profile recallQueryProfile, candidate service.RecallCandidate) float64 {
+	if !candidate.InKeyword {
+		return 0
+	}
+
+	query := strings.TrimSpace(profile.lower)
+	if query == "" {
+		return 0
+	}
+
+	content, _, _ := recallContentForScoring(candidate.Memory)
+	if !strings.Contains(strings.ToLower(content), query) {
+		return 0
+	}
+
+	if isRecallIdentifierLiteral(query) {
+		return 0.35
+	}
+	if len([]rune(query)) >= 8 && !strings.ContainsAny(query, " \t\r\n?？") {
+		return 0.22
+	}
+	return 0
+}
+
+func isRecallIdentifierLiteral(query string) bool {
+	if len([]rune(query)) < 8 {
+		return false
+	}
+
+	hasLetter := false
+	hasDigit := false
+	hasSeparator := false
+	for _, r := range query {
+		switch {
+		case unicode.IsLetter(r):
+			hasLetter = true
+		case unicode.IsDigit(r):
+			hasDigit = true
+		case r == '-' || r == '_' || r == ':' || r == '.' || r == '/':
+			hasSeparator = true
+		}
+	}
+	return hasLetter && hasDigit && hasSeparator
+}
+
+func keywordContentEvidenceBonus(profile recallQueryProfile, candidate service.RecallCandidate) float64 {
+	if !candidate.InKeyword || candidate.InVector || candidate.SourcePool != service.RecallSourceInsight {
+		return 0
+	}
+	if profile.shape != recallQueryShapeGeneral {
+		return 0
+	}
+
+	queryTokens := looseRecallQueryTokens(profile.lower)
+	if len(queryTokens) == 0 {
+		return 0
+	}
+	matchCount := recallExactTokenMatchCount(candidate.Memory, queryTokens)
+	if len(queryTokens) == 1 && matchCount == 1 {
+		return 0.22
+	}
+	if len(queryTokens) > 1 && matchCount >= 2 && matchCount*2 >= len(queryTokens) {
+		return 0.22
+	}
+	return 0
+}
+
+func looseRecallQueryTokens(query string) []string {
+	var tokens []string
+	seen := make(map[string]struct{})
+	var current strings.Builder
+	flush := func() {
+		if current.Len() == 0 {
+			return
+		}
+		token := strings.ToLower(current.String())
+		current.Reset()
+		if len(token) < 2 || isRecallCoverageStopword(token) || isLooseRecallQueryStopword(token) {
+			return
+		}
+		if _, exists := seen[token]; exists {
+			return
+		}
+		seen[token] = struct{}{}
+		tokens = append(tokens, token)
+	}
+
+	for _, r := range query {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			current.WriteRune(r)
+			continue
+		}
+		flush()
+	}
+	flush()
+	return tokens
+}
+
+func isLooseRecallQueryStopword(token string) bool {
+	switch token {
+	case "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "how", "if", "in", "is", "me", "not", "of", "on", "or", "say", "says", "said", "tell", "the", "to", "was", "were", "whether", "who", "whom", "whose", "why":
+		return true
+	default:
+		return false
+	}
+}
+
+func recallExactTokenMatchCount(memory domain.Memory, queryTokens []string) int {
+	if len(queryTokens) == 0 {
+		return 0
+	}
+	content, _, _ := recallContentForScoring(memory)
+	contentTokens := make(map[string]struct{})
+	for _, match := range recallCoverageEnglishTokenRe.FindAllString(strings.ToLower(content), -1) {
+		contentTokens[match] = struct{}{}
+	}
+	for _, match := range recallCoverageCJKTokenRe.FindAllString(content, -1) {
+		contentTokens[match] = struct{}{}
+	}
+
+	matches := 0
+	for _, token := range queryTokens {
+		if _, exists := contentTokens[token]; exists {
+			matches++
+		}
+	}
+	return matches
+}
+
 func selectPinnedRecallCandidates(
-	shape recallQueryShape,
+	profile recallQueryProfile,
 	budget int,
 	candidates []service.RecallCandidate,
 ) ([]domain.Memory, map[string]struct{}) {
@@ -364,7 +494,11 @@ func selectPinnedRecallCandidates(
 		return []domain.Memory{}, map[string]struct{}{}
 	}
 
-	selected, _ := selectTopRecallCandidates(shape, minInt(pinnedKeepMax(shape), budget), defaultPinnedMinConfidence, false, candidates, nil)
+	keepMax := pinnedKeepMax(profile.shape)
+	if isRecallIdentifierLiteral(profile.lower) {
+		keepMax = budget
+	}
+	selected, _ := selectTopRecallCandidates(profile.shape, minInt(keepMax, budget), defaultPinnedMinConfidence, false, candidates, nil)
 	seen := make(map[string]struct{}, len(selected))
 	for _, mem := range selected {
 		seen[recallMemoryKey(mem)] = struct{}{}

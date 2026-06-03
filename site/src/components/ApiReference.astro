@@ -1,6 +1,7 @@
 ---
 import {
   DEFAULT_LOCALE,
+  localizeApiPageCopy,
   siteCopy,
   siteLocales,
   type SiteApiFieldCopy,
@@ -18,21 +19,50 @@ function linkRel(link: SiteLinkCopy): string | undefined {
 function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFieldCopy[] {
   return Array.isArray(fields) && fields.length > 0;
 }
+
+function endpointAnchor(groupId: string, endpoint: { method: string; path: string }, index: number): string {
+  const pathSlug = endpoint.path
+    .toLowerCase()
+    .replace(/^\/+/, "")
+    .replace(/[{}]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `api-${groupId}-${endpoint.method.toLowerCase()}-${pathSlug || index}`;
+}
+
+function endpointTestPayload(
+  group: { title: string },
+  endpoint: {
+    method: string;
+    path: string;
+    summary: string;
+    description?: string;
+    headers?: SiteApiFieldCopy[];
+    queryParams?: SiteApiFieldCopy[];
+    bodyFields?: SiteApiFieldCopy[];
+  },
+): string {
+  return JSON.stringify({
+    groupTitle: group.title,
+    method: endpoint.method,
+    path: endpoint.path,
+    summary: endpoint.summary,
+    description: endpoint.description ?? "",
+    headers: endpoint.headers ?? [],
+    queryParams: endpoint.queryParams ?? [],
+    bodyFields: endpoint.bodyFields ?? [],
+  });
+}
+
+const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 ---
 
 <section class="api-page" data-api-root data-api-locale={DEFAULT_LOCALE}>
   {siteLocales.map((locale) => {
-    const copy = siteCopy[locale].apiPage;
+    const copy = localizeApiPageCopy(locale, siteCopy[locale].apiPage);
     return (
       <div class="api-copy" data-api-copy={locale} hidden={locale !== DEFAULT_LOCALE}>
         <div class="container api-shell">
-          <section class="api-hero">
-            <p class="section-kicker">{copy.kicker}</p>
-            <h1 class="api-title">{copy.title}</h1>
-            <p class="api-intro">{copy.intro}</p>
-            <p class="api-summary">{copy.summary}</p>
-          </section>
-
           <div class="api-layout">
             <aside class="api-sidebar">
               <button class="api-toc-toggle" data-api-toc-toggle type="button">
@@ -41,16 +71,66 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
               </button>
               <nav class="api-toc surface-card">
                 <p class="api-toc-title">{copy.labels.sidebarTitle}</p>
+                <label class="api-toc-search">
+                  <span class="api-toc-search-label">{copy.labels.apiSearch}</span>
+                  <input
+                    type="search"
+                    inputmode="search"
+                    placeholder={copy.labels.apiSearchPlaceholder}
+                    autocomplete="off"
+                    data-api-toc-search
+                  />
+                </label>
+                <p class="api-toc-empty" data-api-toc-empty hidden>{copy.labels.apiSearchEmpty}</p>
                 <ol class="api-toc-list">
-                  <li>
+                  <li data-api-toc-static>
                     <a href="#api-auth" class="api-toc-link">{copy.labels.sidebarAuth}</a>
                   </li>
-                  <li>
+                  <li data-api-toc-static>
                     <a href="#api-quickstart" class="api-toc-link">{copy.labels.sidebarQuickstart}</a>
                   </li>
                   {copy.endpointGroups.map((group) => (
-                    <li>
-                      <a href={`#api-${group.id}`} class="api-toc-link">{group.title}</a>
+                    <li
+                      data-api-toc-group
+                      data-api-search={[
+                        group.title,
+                        group.description,
+                      ].join(" ")}
+                    >
+                      <div class="api-toc-group-row">
+                        <button
+                          class="api-toc-link api-toc-group-link"
+                          type="button"
+                          data-api-toc-group-toggle
+                          aria-expanded="true"
+                        >
+                          {group.title}
+                        </button>
+                      </div>
+                      <ol class="api-toc-sublist" data-api-toc-sublist>
+                        {group.endpoints.map((endpoint, index) => (
+                          <li
+                            data-api-toc-endpoint
+                            data-api-search={[
+                              group.title,
+                              endpoint.method,
+                              endpoint.path,
+                              endpoint.summary,
+                              endpoint.description ?? "",
+                            ].join(" ")}
+                          >
+                            <a href={`#${endpointAnchor(group.id, endpoint, index)}`} class="api-toc-link api-toc-sublink">
+                              <span class={`api-toc-method api-method-${endpoint.method.toLowerCase()}`}>
+                                {endpoint.method}
+                              </span>
+                              <span class="api-toc-endpoint-text">
+                                <span class="api-toc-endpoint-summary">{endpoint.summary}</span>
+                                <code class="api-toc-endpoint-path">{endpoint.path}</code>
+                              </span>
+                            </a>
+                          </li>
+                        ))}
+                      </ol>
                     </li>
                   ))}
                 </ol>
@@ -58,6 +138,13 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
             </aside>
 
             <div class="api-content">
+              <section class="api-hero">
+                <p class="section-kicker">{copy.kicker}</p>
+                <h1 class="api-title">{copy.title}</h1>
+                <p class="api-intro">{copy.intro}</p>
+                <p class="api-summary">{copy.summary}</p>
+              </section>
+
               <section
                 class="api-section"
                 id={locale === DEFAULT_LOCALE ? "api-auth" : undefined}
@@ -114,14 +201,29 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
                   </div>
 
                   <div class="api-endpoint-list">
-                    {group.endpoints.map((endpoint) => (
-                      <article class="surface-card api-endpoint-card">
+                    {group.endpoints.map((endpoint, index) => (
+                      <article
+                        class="surface-card api-endpoint-card"
+                        id={locale === DEFAULT_LOCALE ? endpointAnchor(group.id, endpoint, index) : undefined}
+                        data-api-anchor={endpointAnchor(group.id, endpoint, index)}
+                      >
                         <div class="api-endpoint-head">
-                          <div class="api-endpoint-route">
-                            <span class={`api-method api-method-${endpoint.method.toLowerCase()}`}>
-                              {endpoint.method}
-                            </span>
-                            <code class="api-path">{endpoint.path}</code>
+                          <div class="api-endpoint-top">
+                            <div class="api-endpoint-route">
+                              <span class={`api-method api-method-${endpoint.method.toLowerCase()}`}>
+                                {endpoint.method}
+                              </span>
+                              <code class="api-path">{endpoint.path}</code>
+                            </div>
+                            <button
+                              class="api-test-button"
+                              type="button"
+                              data-api-test-open
+                              data-api-test-endpoint={endpointTestPayload(group, endpoint)}
+                            >
+                              <span aria-hidden="true">▶</span>
+                              {copy.labels.testApi}
+                            </button>
                           </div>
                           <p class="api-endpoint-summary">{endpoint.summary}</p>
                           {endpoint.description && <p class="api-endpoint-description">{endpoint.description}</p>}
@@ -236,6 +338,92 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
       </div>
     );
   })}
+
+  <div class="api-test-modal" data-api-test-modal hidden>
+    <div class="api-test-dialog surface-card" role="dialog" aria-modal="true" aria-labelledby="api-test-title">
+      <div class="api-test-header">
+        <div>
+          <p class="api-test-kicker" data-api-test-method>GET</p>
+          <h2 id="api-test-title" data-api-test-title>
+            {defaultApiLabels.testTitle}
+          </h2>
+          <code class="api-test-path" data-api-test-path></code>
+        </div>
+        <button
+          class="api-test-close"
+          type="button"
+          data-api-test-close
+          data-i18n="apiPage.labels.close"
+          data-i18n-attr="aria-label:apiPage.labels.closeApiTestModal"
+          aria-label={defaultApiLabels.closeApiTestModal}
+        >
+          {defaultApiLabels.close}
+        </button>
+      </div>
+
+      <div class="api-test-action-row">
+        <label class="api-test-save-option">
+          <input type="checkbox" data-api-test-save-info checked />
+          <span data-i18n="apiPage.labels.saveFormInfo">
+            {defaultApiLabels.saveFormInfo}
+          </span>
+        </label>
+        <div class="api-test-action-buttons">
+          <button class="api-test-secondary" type="button" data-api-test-reset data-i18n="apiPage.labels.reset">
+            {defaultApiLabels.reset}
+          </button>
+          <button class="api-test-run" type="submit" form="api-test-form" data-api-test-run data-i18n="apiPage.labels.run">
+            {defaultApiLabels.run}
+          </button>
+        </div>
+      </div>
+
+      <div class="api-test-main">
+        <form id="api-test-form" class="api-test-form" data-api-test-form>
+          <label class="api-test-control api-test-control-wide">
+            <span class="api-test-field-title" data-i18n="apiPage.labels.baseUrl">{defaultApiLabels.baseUrl}</span>
+            <input type="url" data-api-test-base-url placeholder="https://api.mem9.ai" />
+          </label>
+
+          <div class="api-test-section" data-api-test-section="path">
+            <h3 data-i18n="apiPage.labels.pathParams">{defaultApiLabels.pathParams}</h3>
+            <div class="api-test-fields" data-api-test-path-fields></div>
+          </div>
+
+          <div class="api-test-section" data-api-test-section="headers">
+            <h3 data-i18n="apiPage.labels.headers">{defaultApiLabels.headers}</h3>
+            <div class="api-test-fields" data-api-test-header-fields></div>
+          </div>
+
+          <div class="api-test-section" data-api-test-section="query">
+            <h3 data-i18n="apiPage.labels.queryParams">{defaultApiLabels.queryParams}</h3>
+            <div class="api-test-fields" data-api-test-query-fields></div>
+          </div>
+
+          <div class="api-test-section" data-api-test-section="body">
+            <h3 data-i18n="apiPage.labels.body">{defaultApiLabels.body}</h3>
+            <div class="api-test-fields" data-api-test-body-fields></div>
+            <label class="api-test-control api-test-json-body" data-api-test-json-wrap>
+              <span class="api-test-field-title" data-i18n="apiPage.labels.jsonBody">{defaultApiLabels.jsonBody}</span>
+              <textarea data-api-test-json rows="12" spellcheck="false"></textarea>
+            </label>
+          </div>
+
+          <div class="api-test-url" data-api-test-url></div>
+        </form>
+
+        <section class="api-test-response" data-api-test-response>
+          <div class="api-test-response-head">
+            <div class="api-test-response-status">
+              <h3 data-i18n="apiPage.labels.response">{defaultApiLabels.response}</h3>
+              <p data-api-test-status>{defaultApiLabels.ready}</p>
+            </div>
+          </div>
+          <pre class="api-test-code"><code data-api-test-output>{defaultApiLabels.responseReady}</code></pre>
+        </section>
+      </div>
+    </div>
+  </div>
 </section>
 
 <style>
@@ -249,14 +437,13 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
 
   .api-shell {
     display: grid;
-    gap: 1.8rem;
   }
 
   .api-hero {
     width: min(100%, 72rem);
     display: grid;
     gap: 0.8rem;
-    padding: 0;
+    padding: 0 0 0.45rem;
   }
 
   .api-title {
@@ -281,8 +468,8 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
   /* Two-column layout */
   .api-layout {
     display: grid;
-    grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr);
-    gap: 1.35rem;
+    grid-template-columns: minmax(17rem, 22rem) minmax(0, 1fr);
+    gap: clamp(2.4rem, 4vw, 4rem);
     align-items: start;
   }
 
@@ -299,21 +486,8 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
     max-height: inherit;
     overflow-y: auto;
     overscroll-behavior: contain;
-    scrollbar-gutter: stable;
+    scrollbar-gutter: auto;
     -webkit-overflow-scrolling: touch;
-  }
-
-  .api-toc::-webkit-scrollbar {
-    width: 0.55rem;
-  }
-
-  .api-toc::-webkit-scrollbar-thumb {
-    background: var(--button-active-border);
-    border-radius: 999px;
-  }
-
-  .api-toc::-webkit-scrollbar-track {
-    background: transparent;
   }
 
   .api-toc-title {
@@ -324,10 +498,49 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
     margin-bottom: 0.9rem;
   }
 
+  .api-toc-search {
+    display: grid;
+    gap: 0.38rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .api-toc-search-label {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+
+  .api-toc-search input {
+    width: 100%;
+    min-height: 2.2rem;
+    border: 1px solid var(--border);
+    border-radius: 0.72rem;
+    background: var(--button-bg);
+    color: var(--text);
+    padding: 0.46rem 0.58rem;
+    font: inherit;
+    font-size: 0.82rem;
+    outline: none;
+    box-shadow: var(--surface-inset);
+  }
+
+  .api-toc-search input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent), var(--surface-inset);
+  }
+
+  .api-toc-empty {
+    margin: 0 0 0.85rem;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+
   .api-toc-list {
     list-style: none;
     display: grid;
-    gap: 0.3rem;
+    gap: 0.55rem;
   }
 
   .api-toc-link {
@@ -354,6 +567,93 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
     opacity: 1;
   }
 
+  .api-toc-group-row {
+    display: block;
+  }
+
+  .api-toc-group-link {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    padding: 0.42rem 0.6rem;
+    border: 0;
+    border-left: 2px solid transparent;
+    border-radius: 0.8rem;
+    text-align: left;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font: inherit;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .api-toc-sublist {
+    list-style: none;
+    display: grid;
+    gap: 0.22rem;
+    margin: 0.24rem 0 0.1rem 0.72rem;
+    padding-left: 0.7rem;
+    border-left: 1px solid var(--border);
+  }
+
+  .api-toc-sublist[hidden] {
+    display: none;
+  }
+
+  .api-toc-sublink {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 0.42rem;
+    padding: 0.32rem 0.46rem;
+    border-left: 0;
+    border-radius: 0.62rem;
+    font-size: 0.78rem;
+    line-height: 1.32;
+  }
+
+  .api-toc-sublink.is-active {
+    border-left: 0;
+    background: var(--button-active-bg);
+  }
+
+  .api-toc-method {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.5rem;
+    padding: 0.1rem 0.28rem;
+    border-radius: 0.42rem;
+    border: 1px solid var(--button-active-border);
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    line-height: 1.1;
+    color: var(--text);
+  }
+
+  .api-toc-endpoint-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    display: grid;
+    gap: 0.16rem;
+  }
+
+  .api-toc-endpoint-summary {
+    min-width: 0;
+  }
+
+  .api-toc-endpoint-path {
+    display: block;
+    min-width: 0;
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   /* Content area */
   .api-content {
     display: grid;
@@ -378,7 +678,7 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
 
   .api-auth-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
   }
 
@@ -393,6 +693,13 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
   .api-auth-card {
     display: grid;
     gap: 0.55rem;
+    align-content: start;
+    min-height: 10.5rem;
+  }
+
+  .api-auth-card h3 {
+    font-size: 1rem;
+    line-height: 1.28;
   }
 
   .api-auth-card p,
@@ -436,6 +743,28 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
     color: var(--accent);
   }
 
+  .api-field-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0 0 0.55rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .api-field-title::before {
+    content: '';
+    width: 0.22rem;
+    height: 0.95rem;
+    border-radius: 999px;
+    background: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+
   .api-code {
     padding: 0.95rem 1rem;
     border-radius: 0.95rem;
@@ -460,12 +789,27 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
 
   .api-endpoint-card {
     display: grid;
-    gap: 1.25rem;
+    gap: 1.15rem;
+    scroll-margin-top: 6rem;
   }
 
   .api-endpoint-head {
     display: grid;
-    gap: 0.6rem;
+    gap: 0.7rem;
+    padding: 0.95rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 0.9rem;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--button-active-bg) 72%, transparent), transparent),
+      var(--button-bg);
+    box-shadow: var(--surface-inset);
+  }
+
+  .api-endpoint-top {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 1rem;
   }
 
   .api-endpoint-route {
@@ -473,6 +817,90 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
     align-items: center;
     flex-wrap: wrap;
     gap: 0.75rem;
+    min-width: 0;
+  }
+
+  .api-test-button,
+  .api-test-run,
+  .api-test-secondary,
+  .api-test-close {
+    border: 1px solid var(--button-active-border);
+    background: var(--button-bg);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s, transform 0.2s;
+  }
+
+  .api-test-button {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.34rem;
+    min-width: 6.7rem;
+    min-height: 2.28rem;
+    padding: 0.48rem 0.86rem;
+    border-radius: 0.55rem;
+    border-color: rgba(17, 17, 17, 0.9);
+    background: linear-gradient(180deg, #202020, #0f0f0f);
+    color: #ffffff;
+    font-weight: 750;
+    font-size: 0.8rem;
+    letter-spacing: 0;
+    box-shadow:
+      0 0 0 2px rgba(17, 17, 17, 0.07),
+      0 10px 22px rgba(17, 17, 17, 0.14),
+      var(--surface-inset);
+  }
+
+  .api-test-button span {
+    font-size: 0.66rem;
+    line-height: 1;
+  }
+
+  .api-test-button:hover,
+  .api-test-run:hover,
+  .api-test-secondary:hover,
+  .api-test-close:hover {
+    background: var(--button-hover-bg);
+    border-color: var(--border-strong);
+  }
+
+  .api-test-button:hover {
+    background: linear-gradient(180deg, #303030, #111111);
+    border-color: #111111;
+  }
+
+  .api-test-button:focus-visible {
+    outline: 3px solid rgba(17, 17, 17, 0.28);
+    outline-offset: 3px;
+  }
+
+  :global(html[data-theme='dark']) .api-test-button {
+    border-color: rgba(255, 255, 255, 0.82);
+    background: linear-gradient(180deg, #ffffff, #e8e8e4);
+    color: #111111;
+    box-shadow:
+      0 0 0 2px rgba(255, 255, 255, 0.12),
+      0 10px 22px rgba(255, 255, 255, 0.12),
+      var(--surface-inset);
+  }
+
+  :global(html[data-theme='dark']) .api-test-button:hover {
+    background: linear-gradient(180deg, #ffffff, #f4f4f1);
+    border-color: #ffffff;
+  }
+
+  :global(html[data-theme='dark']) .api-test-button:focus-visible {
+    outline: 3px solid rgba(255, 255, 255, 0.35);
+  }
+
+  .api-test-button:active,
+  .api-test-run:active,
+  .api-test-secondary:active,
+  .api-test-close:active {
+    transform: translateY(1px);
   }
 
   .api-method {
@@ -486,38 +914,95 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
     font-size: 0.72rem;
     letter-spacing: 0.05em;
     border: 1px solid var(--button-active-border);
+    color: var(--text);
+    box-shadow: var(--surface-inset);
   }
 
   .api-method-get {
-    background: rgba(58, 123, 213, 0.12);
+    background: #dbeafe;
+    border-color: #93c5fd;
+    color: #1d4ed8;
   }
 
   .api-method-post {
-    background: rgba(44, 156, 104, 0.12);
+    background: #d1fae5;
+    border-color: #86efac;
+    color: #047857;
   }
 
   .api-method-put {
-    background: rgba(214, 142, 33, 0.12);
+    background: #fef3c7;
+    border-color: #fcd34d;
+    color: #92400e;
+  }
+
+  .api-method-patch {
+    background: #ede9fe;
+    border-color: #c4b5fd;
+    color: #6d28d9;
   }
 
   .api-method-delete {
-    background: rgba(198, 70, 70, 0.12);
+    background: #fee2e2;
+    border-color: #fca5a5;
+    color: #b91c1c;
+  }
+
+  :global(html[data-theme='dark']) .api-method-get {
+    background: rgba(96, 165, 250, 0.24);
+    border-color: rgba(147, 197, 253, 0.62);
+    color: #dbeafe;
+  }
+
+  :global(html[data-theme='dark']) .api-method-post {
+    background: rgba(52, 211, 153, 0.22);
+    border-color: rgba(110, 231, 183, 0.62);
+    color: #d1fae5;
+  }
+
+  :global(html[data-theme='dark']) .api-method-put {
+    background: rgba(251, 191, 36, 0.24);
+    border-color: rgba(252, 211, 77, 0.64);
+    color: #fef3c7;
+  }
+
+  :global(html[data-theme='dark']) .api-method-patch {
+    background: rgba(196, 181, 253, 0.24);
+    border-color: rgba(221, 214, 254, 0.64);
+    color: #ede9fe;
+  }
+
+  :global(html[data-theme='dark']) .api-method-delete {
+    background: rgba(248, 113, 113, 0.22);
+    border-color: rgba(252, 165, 165, 0.64);
+    color: #fee2e2;
   }
 
   .api-path {
-    font-size: 0.96rem;
-    color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    min-height: 2rem;
+    padding: 0.28rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 0.62rem;
+    background: var(--bg-terminal);
+    color: var(--accent);
+    font-size: 0.9rem;
+    line-height: 1.35;
     word-break: break-word;
+    box-shadow: var(--surface-inset);
   }
 
   .api-endpoint-summary {
-    font-size: 1.08rem;
-    font-weight: 600;
+    font-size: 1.14rem;
+    font-weight: 700;
     color: var(--text);
+    line-height: 1.35;
   }
 
   .api-endpoint-description {
-    color: var(--text-dim);
+    max-width: 82ch;
+    color: var(--text-muted);
     line-height: 1.68;
   }
 
@@ -529,17 +1014,22 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
   .api-field-block {
     display: grid;
     gap: 0.55rem;
-    padding: 0;
+    padding: 0.95rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 0.9rem;
+    background: color-mix(in srgb, var(--button-bg) 70%, transparent);
+    box-shadow: var(--surface-inset);
   }
 
   .api-field-list {
     display: grid;
-    gap: 0.8rem;
+    gap: 0.85rem;
+    margin-top: 0.1rem;
   }
 
   .api-field-row {
     display: grid;
-    gap: 0.2rem;
+    gap: 0.34rem;
     padding-top: 0.75rem;
     border-top: 1px solid var(--border);
   }
@@ -557,15 +1047,34 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
     color: var(--text);
   }
 
+  .api-field-row dt code {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 0.18rem 0.46rem;
+    border: 1px solid var(--button-active-border);
+    border-radius: 0.52rem;
+    background: var(--button-active-bg);
+    color: var(--text);
+    font-size: 0.82rem;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  .api-field-row dd {
+    color: var(--text-muted);
+    font-size: 0.94rem;
+  }
+
   .api-required {
     display: inline-flex;
     align-items: center;
     padding: 0.12rem 0.42rem;
     border-radius: 999px;
-    background: var(--button-active-bg);
-    border: 1px solid var(--button-active-border);
+    background: color-mix(in srgb, var(--accent) 13%, var(--button-active-bg));
+    border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--button-active-border));
     font-size: 0.72rem;
-    color: var(--text-dim);
+    color: var(--text);
   }
 
   .api-cta {
@@ -593,6 +1102,461 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
     box-shadow: var(--surface-inset), var(--surface-shadow-soft);
   }
 
+  .api-test-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    display: grid;
+    place-items: center;
+    padding: 1.2rem;
+    background: rgba(0, 0, 0, 0.56);
+    backdrop-filter: blur(12px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .api-test-modal[hidden] {
+    display: none;
+  }
+
+  .api-test-modal.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .api-test-dialog {
+    width: min(96vw, 90rem);
+    max-height: min(92dvh, 56rem);
+    overflow: auto;
+    padding: 1rem;
+    background: linear-gradient(180deg, var(--surface-elevated-start), var(--surface-elevated-end));
+    box-shadow: var(--surface-shadow), var(--surface-inset);
+  }
+
+  .api-test-header {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .api-test-kicker {
+    margin-bottom: 0.32rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+  }
+
+  .api-test-header h2 {
+    font-size: clamp(1.1rem, 2vw, 1.55rem);
+    line-height: 1.18;
+  }
+
+  .api-test-path {
+    display: inline-block;
+    margin-top: 0.45rem;
+    max-width: 100%;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 0.55rem;
+    background: var(--bg-terminal);
+    color: var(--accent);
+    overflow-wrap: anywhere;
+  }
+
+  .api-test-close,
+  .api-test-secondary,
+  .api-test-run {
+    min-height: 2.35rem;
+    border-radius: 999px;
+    padding: 0.45rem 0.9rem;
+    font-weight: 700;
+  }
+
+  .api-test-form {
+    display: grid;
+    gap: 0.7rem;
+  }
+
+  .api-test-action-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    padding: 0.78rem 0 0;
+  }
+
+  .api-test-save-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--text-dim);
+    font-size: 0.84rem;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .api-test-save-option input {
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .api-test-save-option:hover {
+    color: var(--text);
+  }
+
+  .api-test-action-buttons {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.65rem;
+  }
+
+  .api-test-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(24rem, 0.86fr);
+    gap: 1rem;
+    align-items: start;
+    padding-top: 0.65rem;
+  }
+
+  .api-test-control {
+    display: grid;
+    gap: 0.5rem;
+    min-width: 0;
+    align-content: start;
+  }
+
+  .api-test-field-title,
+  .api-test-label-line,
+  .api-test-section h3,
+  .api-test-response h3 {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    color: var(--text);
+    font-weight: 760;
+  }
+
+  .api-test-field-title,
+  .api-test-label-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    min-height: 1.25rem;
+    line-height: 1.25;
+  }
+
+  .api-test-label-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .api-test-required-mark {
+    color: #ff6b6b;
+    font-size: 0.98rem;
+    font-weight: 900;
+    line-height: 1;
+    text-shadow: 0 0 12px rgba(255, 107, 107, 0.52);
+  }
+
+  .api-test-control input,
+  .api-test-control textarea {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 0.72rem;
+    background: var(--button-bg);
+    color: var(--text);
+    padding: 0.58rem 0.68rem;
+    font: inherit;
+    font-size: 0.88rem;
+    outline: none;
+    box-shadow: var(--surface-inset);
+  }
+
+  .api-test-control textarea {
+    min-height: 11rem;
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.55;
+  }
+
+  .api-test-control input:focus,
+  .api-test-control textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent), var(--surface-inset);
+  }
+
+  .api-test-section {
+    display: grid;
+    gap: 0.55rem;
+    padding: 0.72rem;
+    border: 1px solid var(--border);
+    border-radius: 0.9rem;
+    background: color-mix(in srgb, var(--button-bg) 70%, transparent);
+    box-shadow: var(--surface-inset);
+  }
+
+  .api-test-section[hidden],
+  .api-test-response[hidden] {
+    display: none;
+  }
+
+  .api-test-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+  }
+
+  .api-test-help {
+    border-left: 2px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+    padding-left: 0.44rem;
+    color: var(--text-dim);
+    font-size: 0.72rem;
+    line-height: 1.45;
+    margin-top: -0.04rem;
+  }
+
+  .api-test-json-body {
+    margin-top: 0.2rem;
+  }
+
+  .api-test-url {
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    background: var(--bg-terminal);
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  :global(.api-test-control) {
+    display: grid;
+    gap: 0.36rem;
+    min-width: 0;
+    align-content: start;
+  }
+
+  :global(.api-test-label-line) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    min-height: 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.05em;
+    line-height: 1.25;
+    color: var(--text);
+    font-weight: 760;
+  }
+
+  :global(.api-test-label-name) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  :global(.api-test-required-mark) {
+    color: #ff6b6b;
+    font-size: 0.86rem;
+    font-weight: 900;
+    line-height: 1;
+    text-shadow: 0 0 12px rgba(255, 107, 107, 0.52);
+  }
+
+  :global(.api-test-control input),
+  :global(.api-test-control textarea) {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--border);
+    border-radius: 0.58rem;
+    background: var(--button-bg);
+    color: var(--text);
+    padding: 0.46rem 0.56rem;
+    font: inherit;
+    font-size: 0.78rem;
+    outline: none;
+    box-shadow: var(--surface-inset);
+  }
+
+  :global(.api-test-control textarea) {
+    min-height: 9rem;
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    line-height: 1.48;
+  }
+
+  :global(.api-test-control input:focus),
+  :global(.api-test-control textarea:focus) {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent), var(--surface-inset);
+  }
+
+  :global(.api-test-help) {
+    border-left: 2px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+    padding-left: 0.44rem;
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    line-height: 1.38;
+    margin-top: -0.02rem;
+  }
+
+  .api-test-run {
+    min-width: 7rem;
+    border-color: rgba(17, 17, 17, 0.9);
+    background: linear-gradient(180deg, #202020, #0f0f0f);
+    color: #ffffff;
+    box-shadow:
+      0 0 0 3px rgba(17, 17, 17, 0.08),
+      0 12px 26px rgba(17, 17, 17, 0.16),
+      var(--surface-inset);
+  }
+
+  .api-test-run:hover {
+    background: linear-gradient(180deg, #303030, #111111);
+    border-color: #111111;
+    color: #ffffff;
+  }
+
+  .api-test-run:focus-visible {
+    outline: 3px solid rgba(17, 17, 17, 0.28);
+    outline-offset: 3px;
+  }
+
+  :global(html[data-theme='dark']) .api-test-run {
+    border-color: rgba(255, 255, 255, 0.82);
+    background: linear-gradient(180deg, #ffffff, #e8e8e4);
+    color: #111111;
+    box-shadow:
+      0 0 0 3px rgba(255, 255, 255, 0.14),
+      0 12px 26px rgba(255, 255, 255, 0.14),
+      var(--surface-inset);
+  }
+
+  :global(html[data-theme='dark']) .api-test-run:hover {
+    background: linear-gradient(180deg, #ffffff, #f4f4f1);
+    border-color: #ffffff;
+    color: #111111;
+  }
+
+  :global(html[data-theme='dark']) .api-test-run:focus-visible {
+    outline: 3px solid rgba(255, 255, 255, 0.35);
+  }
+
+  .api-test-run[disabled] {
+    cursor: progress;
+    opacity: 0.68;
+  }
+
+  .api-test-response {
+    display: grid;
+    gap: 0.5rem;
+    min-height: 26rem;
+    align-content: start;
+    padding: 0;
+  }
+
+  .api-test-response-head {
+    display: flex;
+    align-items: center;
+    justify-content: start;
+    gap: 0.75rem;
+    min-height: 1.25rem;
+    padding-top: 0;
+  }
+
+  .api-test-response-head > div {
+    min-width: 0;
+  }
+
+  .api-test-response-status {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    min-height: 0;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .api-test-response-head p {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+  }
+
+  .api-test-code {
+    height: min(56vh, 33rem);
+    margin: 0;
+    padding: 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 0.9rem;
+    background: var(--bg-terminal);
+    overflow: auto;
+    box-shadow: var(--surface-inset), var(--surface-shadow-soft);
+  }
+
+  .api-test-code code {
+    display: block;
+    white-space: pre;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    line-height: 1.5;
+    color: var(--text);
+  }
+
+  :global(.api-json-key) {
+    color: #0f5f99;
+    font-weight: 700;
+  }
+
+  :global(.api-json-string) {
+    color: #047857;
+  }
+
+  :global(.api-json-number),
+  :global(.api-json-boolean) {
+    color: #9a4b00;
+    font-weight: 700;
+  }
+
+  :global(.api-json-null) {
+    color: #be185d;
+  }
+
+  :global(html[data-theme='dark']) :global(.api-json-key) {
+    color: #7dd3fc;
+  }
+
+  :global(html[data-theme='dark']) :global(.api-json-string) {
+    color: #86efac;
+  }
+
+  :global(html[data-theme='dark']) :global(.api-json-number),
+  :global(html[data-theme='dark']) :global(.api-json-boolean) {
+    color: #fbbf24;
+  }
+
+  :global(html[data-theme='dark']) :global(.api-json-null) {
+    color: #f472b6;
+  }
+
   /* Mobile TOC toggle */
   .api-toc-toggle {
     display: none;
@@ -601,6 +1565,14 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
   @media (max-width: 980px) {
     .api-layout {
       grid-template-columns: 1fr;
+    }
+
+    .api-test-main {
+      grid-template-columns: 1fr;
+    }
+
+    .api-test-code {
+      height: 20rem;
     }
 
     .api-sidebar {
@@ -684,6 +1656,33 @@ function hasFields(fields: SiteApiFieldCopy[] | undefined): fields is SiteApiFie
 
     .api-code code {
       font-size: 0.79rem;
+    }
+
+    .api-endpoint-top,
+    .api-test-header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .api-test-action-row,
+    .api-test-response-head {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .api-test-action-buttons {
+      display: flex;
+      align-items: stretch;
+      justify-content: stretch;
+    }
+
+    .api-test-fields {
+      grid-template-columns: 1fr;
+    }
+
+    .api-test-run,
+    .api-test-secondary {
+      flex: 1;
     }
   }
 </style>
