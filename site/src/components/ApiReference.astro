@@ -230,7 +230,8 @@ function apiSearchEmpty(locale: string): string {
                               data-api-test-open
                               data-api-test-endpoint={endpointTestPayload(group, endpoint)}
                             >
-                              Test
+                              <span aria-hidden="true">▶</span>
+                              Test API
                             </button>
                           </div>
                           <p class="api-endpoint-summary">{endpoint.summary}</p>
@@ -815,13 +816,29 @@ function apiSearchEmpty(locale: string): string {
 
   .api-test-button {
     flex: 0 0 auto;
-    min-height: 2rem;
-    padding: 0.35rem 0.75rem;
-    border-radius: 999px;
-    font-family: var(--font-mono);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.42rem;
+    min-width: 8rem;
+    min-height: 2.75rem;
+    padding: 0.62rem 1.15rem;
+    border-radius: 0.62rem;
+    border-color: rgba(17, 17, 17, 0.9);
+    background: linear-gradient(180deg, #202020, #0f0f0f);
+    color: #ffffff;
+    font-weight: 800;
+    font-size: 0.9rem;
+    letter-spacing: 0;
+    box-shadow:
+      0 0 0 3px rgba(17, 17, 17, 0.08),
+      0 14px 30px rgba(17, 17, 17, 0.16),
+      var(--surface-inset);
+  }
+
+  .api-test-button span {
     font-size: 0.75rem;
-    color: var(--accent);
-    box-shadow: var(--surface-inset);
+    line-height: 1;
   }
 
   .api-test-button:hover,
@@ -830,6 +847,35 @@ function apiSearchEmpty(locale: string): string {
   .api-test-close:hover {
     background: var(--button-hover-bg);
     border-color: var(--border-strong);
+  }
+
+  .api-test-button:hover {
+    background: linear-gradient(180deg, #303030, #111111);
+    border-color: #111111;
+  }
+
+  .api-test-button:focus-visible {
+    outline: 3px solid rgba(17, 17, 17, 0.28);
+    outline-offset: 3px;
+  }
+
+  :global(html[data-theme='dark']) .api-test-button {
+    border-color: rgba(255, 255, 255, 0.82);
+    background: linear-gradient(180deg, #ffffff, #e8e8e4);
+    color: #111111;
+    box-shadow:
+      0 0 0 3px rgba(255, 255, 255, 0.14),
+      0 14px 30px rgba(255, 255, 255, 0.14),
+      var(--surface-inset);
+  }
+
+  :global(html[data-theme='dark']) .api-test-button:hover {
+    background: linear-gradient(180deg, #ffffff, #f4f4f1);
+    border-color: #ffffff;
+  }
+
+  :global(html[data-theme='dark']) .api-test-button:focus-visible {
+    outline: 3px solid rgba(255, 255, 255, 0.35);
   }
 
   .api-test-button:active,
@@ -855,19 +901,63 @@ function apiSearchEmpty(locale: string): string {
   }
 
   .api-method-get {
-    background: rgba(58, 123, 213, 0.12);
+    background: #dbeafe;
+    border-color: #93c5fd;
+    color: #1d4ed8;
   }
 
   .api-method-post {
-    background: rgba(44, 156, 104, 0.12);
+    background: #d1fae5;
+    border-color: #86efac;
+    color: #047857;
   }
 
   .api-method-put {
-    background: rgba(214, 142, 33, 0.12);
+    background: #fef3c7;
+    border-color: #fcd34d;
+    color: #92400e;
+  }
+
+  .api-method-patch {
+    background: #ede9fe;
+    border-color: #c4b5fd;
+    color: #6d28d9;
   }
 
   .api-method-delete {
-    background: rgba(198, 70, 70, 0.12);
+    background: #fee2e2;
+    border-color: #fca5a5;
+    color: #b91c1c;
+  }
+
+  :global(html[data-theme='dark']) .api-method-get {
+    background: rgba(96, 165, 250, 0.24);
+    border-color: rgba(147, 197, 253, 0.62);
+    color: #dbeafe;
+  }
+
+  :global(html[data-theme='dark']) .api-method-post {
+    background: rgba(52, 211, 153, 0.22);
+    border-color: rgba(110, 231, 183, 0.62);
+    color: #d1fae5;
+  }
+
+  :global(html[data-theme='dark']) .api-method-put {
+    background: rgba(251, 191, 36, 0.24);
+    border-color: rgba(252, 211, 77, 0.64);
+    color: #fef3c7;
+  }
+
+  :global(html[data-theme='dark']) .api-method-patch {
+    background: rgba(196, 181, 253, 0.24);
+    border-color: rgba(221, 214, 254, 0.64);
+    color: #ede9fe;
+  }
+
+  :global(html[data-theme='dark']) .api-method-delete {
+    background: rgba(248, 113, 113, 0.22);
+    border-color: rgba(252, 165, 165, 0.64);
+    color: #fee2e2;
   }
 
   .api-path {
@@ -1077,17 +1167,39 @@ function apiSearchEmpty(locale: string): string {
 
   .api-test-control {
     display: grid;
-    gap: 0.38rem;
+    gap: 0.5rem;
     min-width: 0;
+    align-content: start;
   }
 
-  .api-test-control span,
+  .api-test-label-line,
   .api-test-section h3,
   .api-test-response h3 {
     font-family: var(--font-mono);
     font-size: 0.74rem;
     letter-spacing: 0.05em;
     color: var(--accent);
+  }
+
+  .api-test-label-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    min-height: 1.25rem;
+    line-height: 1.25;
+  }
+
+  .api-test-label-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .api-test-required-mark {
+    color: #ff6b6b;
+    font-size: 0.98rem;
+    font-weight: 900;
+    line-height: 1;
+    text-shadow: 0 0 12px rgba(255, 107, 107, 0.52);
   }
 
   .api-test-control input,
@@ -1099,6 +1211,7 @@ function apiSearchEmpty(locale: string): string {
     color: var(--text);
     padding: 0.58rem 0.68rem;
     font: inherit;
+    font-size: 0.88rem;
     outline: none;
     box-shadow: var(--surface-inset);
   }
@@ -1142,10 +1255,7 @@ function apiSearchEmpty(locale: string): string {
     color: var(--text-muted);
     font-size: 0.78rem;
     line-height: 1.45;
-  }
-
-  .api-test-required {
-    color: var(--accent);
+    margin-top: -0.12rem;
   }
 
   .api-test-json-body {
@@ -1164,6 +1274,75 @@ function apiSearchEmpty(locale: string): string {
     overflow-wrap: anywhere;
   }
 
+  :global(.api-test-control) {
+    display: grid;
+    gap: 0.5rem;
+    min-width: 0;
+    align-content: start;
+  }
+
+  :global(.api-test-label-line) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    min-height: 1.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.05em;
+    line-height: 1.25;
+    color: var(--accent);
+  }
+
+  :global(.api-test-label-name) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  :global(.api-test-required-mark) {
+    color: #ff6b6b;
+    font-size: 0.98rem;
+    font-weight: 900;
+    line-height: 1;
+    text-shadow: 0 0 12px rgba(255, 107, 107, 0.52);
+  }
+
+  :global(.api-test-control input),
+  :global(.api-test-control textarea) {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--border);
+    border-radius: 0.72rem;
+    background: var(--button-bg);
+    color: var(--text);
+    padding: 0.58rem 0.68rem;
+    font: inherit;
+    font-size: 0.88rem;
+    outline: none;
+    box-shadow: var(--surface-inset);
+  }
+
+  :global(.api-test-control textarea) {
+    min-height: 11rem;
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.55;
+  }
+
+  :global(.api-test-control input:focus),
+  :global(.api-test-control textarea:focus) {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent), var(--surface-inset);
+  }
+
+  :global(.api-test-help) {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+    margin-top: -0.12rem;
+  }
+
   .api-test-actions {
     display: flex;
     justify-content: end;
@@ -1171,8 +1350,45 @@ function apiSearchEmpty(locale: string): string {
   }
 
   .api-test-run {
-    background: var(--text);
-    color: var(--bg);
+    min-width: 7rem;
+    border-color: rgba(17, 17, 17, 0.9);
+    background: linear-gradient(180deg, #202020, #0f0f0f);
+    color: #ffffff;
+    box-shadow:
+      0 0 0 3px rgba(17, 17, 17, 0.08),
+      0 12px 26px rgba(17, 17, 17, 0.16),
+      var(--surface-inset);
+  }
+
+  .api-test-run:hover {
+    background: linear-gradient(180deg, #303030, #111111);
+    border-color: #111111;
+    color: #ffffff;
+  }
+
+  .api-test-run:focus-visible {
+    outline: 3px solid rgba(17, 17, 17, 0.28);
+    outline-offset: 3px;
+  }
+
+  :global(html[data-theme='dark']) .api-test-run {
+    border-color: rgba(255, 255, 255, 0.82);
+    background: linear-gradient(180deg, #ffffff, #e8e8e4);
+    color: #111111;
+    box-shadow:
+      0 0 0 3px rgba(255, 255, 255, 0.14),
+      0 12px 26px rgba(255, 255, 255, 0.14),
+      var(--surface-inset);
+  }
+
+  :global(html[data-theme='dark']) .api-test-run:hover {
+    background: linear-gradient(180deg, #ffffff, #f4f4f1);
+    border-color: #ffffff;
+    color: #111111;
+  }
+
+  :global(html[data-theme='dark']) .api-test-run:focus-visible {
+    outline: 3px solid rgba(255, 255, 255, 0.35);
   }
 
   .api-test-run[disabled] {

@@ -1437,9 +1437,19 @@ function createApiTestInput(container: HTMLElement, scope: string, field: ApiTes
   label.className = 'api-test-control';
 
   const labelText = document.createElement('span');
-  labelText.textContent = field.required ? `${field.name} *` : field.name;
+  labelText.className = 'api-test-label-line';
+
+  const labelName = document.createElement('span');
+  labelName.className = 'api-test-label-name';
+  labelName.textContent = field.name;
+  labelText.append(labelName);
+
   if (field.required) {
-    labelText.classList.add('api-test-required');
+    const requiredMark = document.createElement('span');
+    requiredMark.className = 'api-test-required-mark';
+    requiredMark.textContent = '*';
+    requiredMark.setAttribute('aria-label', 'Required');
+    labelText.append(requiredMark);
   }
 
   const input = document.createElement('input');
