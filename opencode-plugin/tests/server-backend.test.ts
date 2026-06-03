@@ -45,6 +45,26 @@ test("ServerBackend uses X-API-Key and v1alpha2 paths", async () => {
     await backend.search({ q: "hello" });
     assert.equal(requestURL.includes("/v1alpha2/mem9s/memories"), true);
     assert.equal(requestHeaders?.get("X-API-Key"), "mk_demo");
+    assert.equal(requestHeaders?.get("User-Agent"), "mem9-opencode-plugin/0.1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ServerBackend reports non-JSON HTTP errors clearly", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => new Response("<html>forbidden</html>", {
+    status: 403,
+    headers: { "Content-Type": "text/html" },
+  });
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "mk_demo", "opencode");
+    await assert.rejects(
+      () => backend.store({ content: "saved" }),
+      /HTTP 403: <html>forbidden<\/html>/,
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
