@@ -43,6 +43,9 @@ export interface SiteNavCopy {
   benchmark: string;
   openclaw: string;
   yourMemory: string;
+  yourMemoryDescription: string;
+  webConsole: string;
+  webConsoleDescription: string;
   login: string;
   billing: string;
   security: string;
@@ -50,6 +53,7 @@ export interface SiteNavCopy {
   github: string;
   docs: string;
   api: string;
+  releaseNotes: string;
   contact: string;
 }
 
@@ -273,6 +277,54 @@ export interface SiteApiPageCopy {
   ctaLinks: SiteLinkCopy[];
 }
 
+export interface SiteReleaseNoteSource {
+  label: string;
+  href: string;
+}
+
+export interface SiteReleaseNoteSection {
+  title: string;
+  body?: string;
+  items?: string[];
+  ordered?: boolean;
+}
+
+export interface SiteReleaseNoteItem {
+  date: string;
+  title: string;
+  summary: string;
+  sections?: SiteReleaseNoteSection[];
+  sources: SiteReleaseNoteSource[];
+}
+
+export interface SiteReleaseNoteGroup {
+  period: string;
+  items: SiteReleaseNoteItem[];
+}
+
+export interface SiteReleaseNotesPageCopy {
+  meta: SiteMeta;
+  kicker: string;
+  title: string;
+  intro: string;
+  updatedLabel: string;
+  updatedValue: string;
+  sourcesLabel: string;
+  groups: SiteReleaseNoteGroup[];
+}
+
+type SiteReleaseNoteDraftItem = Omit<SiteReleaseNoteItem, 'sources'> & {
+  sources?: SiteReleaseNoteSource[];
+};
+
+type SiteReleaseNoteDraftGroup = Omit<SiteReleaseNoteGroup, 'items'> & {
+  items: SiteReleaseNoteDraftItem[];
+};
+
+type SiteReleaseNotesPageDraft = Omit<SiteReleaseNotesPageCopy, 'groups'> & {
+  groups: SiteReleaseNoteDraftGroup[];
+};
+
 export interface SiteBenchmarkCategoryScore {
   name: string;
   f1: string;
@@ -338,6 +390,7 @@ export interface SiteDictionary {
   benchmark: SiteBenchmarkCopy;
   faq: SiteFaqCopy;
   apiPage: SiteApiPageCopy;
+  releaseNotesPage: SiteReleaseNotesPageCopy;
   securityPage: SiteSecurityPageCopy;
   billing: SiteBillingPageCopy;
   footer: SiteFooterCopy;
@@ -2818,6 +2871,682 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
   },
 };
 
+const releaseNoteSourceGroups: SiteReleaseNoteSource[][][] = [
+  [
+    [
+      { label: 'mem9 issue #347', href: 'https://github.com/mem9-ai/mem9/issues/347' },
+    ],
+    [
+      { label: 'mem9 feat/app-id', href: 'https://github.com/mem9-ai/mem9/tree/feat/app-id' },
+      { label: 'console-fe feat/app-id', href: 'https://github.com/mem9-ai/mem9-console-fe/tree/feat/app-id' },
+      { label: 'console-server feat/app-id', href: 'https://github.com/mem9-ai/mem9-console-server/tree/feat/app-id' },
+    ],
+    [
+      { label: 'mem9 4494822', href: 'https://github.com/mem9-ai/mem9/commit/4494822' },
+      { label: 'mem9 d9cc02a', href: 'https://github.com/mem9-ai/mem9/commit/d9cc02a' },
+      { label: 'mem9 cbd9b16', href: 'https://github.com/mem9-ai/mem9/commit/cbd9b16' },
+    ],
+    [
+      { label: 'console-server #72', href: 'https://github.com/mem9-ai/mem9-console-server/pull/72' },
+      { label: 'console-server #64', href: 'https://github.com/mem9-ai/mem9-console-server/pull/64' },
+      { label: 'console-fe #52', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/52' },
+    ],
+    [
+      { label: 'console-fe #53', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/53' },
+      { label: 'console-fe #34', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/34' },
+      { label: 'console-fe #28', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/28' },
+    ],
+    [
+      { label: 'mem9 #337', href: 'https://github.com/mem9-ai/mem9/pull/337' },
+      { label: 'console-server #61', href: 'https://github.com/mem9-ai/mem9-console-server/pull/61' },
+      { label: 'console-fe #56', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/56' },
+    ],
+    [
+      { label: 'mem9 #338', href: 'https://github.com/mem9-ai/mem9/pull/338' },
+      { label: 'console-fe #57', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/57' },
+    ],
+  ],
+  [
+    [
+      { label: 'mem9 #335', href: 'https://github.com/mem9-ai/mem9/pull/335' },
+      { label: 'mem9 #326', href: 'https://github.com/mem9-ai/mem9/pull/326' },
+      { label: 'console-fe #51', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/51' },
+    ],
+    [
+      { label: 'mem9 #327', href: 'https://github.com/mem9-ai/mem9/pull/327' },
+      { label: 'mem9 #332', href: 'https://github.com/mem9-ai/mem9/pull/332' },
+      { label: 'console-server #56', href: 'https://github.com/mem9-ai/mem9-console-server/pull/56' },
+      { label: 'console-fe #47', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/47' },
+    ],
+    [
+      { label: 'console-fe #49', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/49' },
+    ],
+    [
+      { label: 'mem9 #309', href: 'https://github.com/mem9-ai/mem9/pull/309' },
+      { label: 'console-server #30', href: 'https://github.com/mem9-ai/mem9-console-server/pull/30' },
+      { label: 'console-server #31', href: 'https://github.com/mem9-ai/mem9-console-server/pull/31' },
+      { label: 'console-server #33', href: 'https://github.com/mem9-ai/mem9-console-server/pull/33' },
+      { label: 'console-fe #28', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/28' },
+    ],
+    [
+      { label: 'console-server #32', href: 'https://github.com/mem9-ai/mem9-console-server/pull/32' },
+      { label: 'console-server #35', href: 'https://github.com/mem9-ai/mem9-console-server/pull/35' },
+      { label: 'console-server #37', href: 'https://github.com/mem9-ai/mem9-console-server/pull/37' },
+      { label: 'console-fe #29', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/29' },
+    ],
+    [
+      { label: 'mem9 #308', href: 'https://github.com/mem9-ai/mem9/pull/308' },
+      { label: 'console-server #37', href: 'https://github.com/mem9-ai/mem9-console-server/pull/37' },
+      { label: 'console-fe #29', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/29' },
+    ],
+    [
+      { label: 'console-server #28', href: 'https://github.com/mem9-ai/mem9-console-server/pull/28' },
+      { label: 'console-server #27', href: 'https://github.com/mem9-ai/mem9-console-server/pull/27' },
+    ],
+  ],
+];
+
+function attachReleaseNoteSources(copy: SiteReleaseNotesPageDraft): SiteReleaseNotesPageCopy {
+  return {
+    ...copy,
+    groups: copy.groups.map((group, groupIndex) => ({
+      ...group,
+      items: group.items.map((item, itemIndex) => ({
+        ...item,
+        sources: releaseNoteSourceGroups[groupIndex]?.[itemIndex] ?? [],
+      })),
+    })),
+  };
+}
+
+const releaseNotesPageCopyEn = attachReleaseNoteSources({
+    meta: {
+      title: 'Release Notes | mem9',
+      description:
+        'Customer-facing mem9 release notes covering new console, API, Space Chain, billing, and memory management features.',
+    },
+    kicker: 'Release Notes',
+    title: 'What is new in mem9',
+    intro: 'Here, the mem9 authors update recently shipped important features.',
+    updatedLabel: 'Last updated',
+    updatedValue: 'June 4, 2026',
+    sourcesLabel: 'PR sources',
+    groups: [
+    {
+      period: 'June 2026',
+      items: [
+        {
+          date: 'June 4, 2026',
+          title: 'Major performance update for mem9.ai',
+          summary:
+            'The official mem9.ai service is receiving an important performance update. Because of early deployment choices, parts of the service and database were running across regions, which added unnecessary latency. We are migrating data in two phases to bring API latency down substantially.',
+          sections: [
+            {
+              title: 'Rollout',
+              items: [
+                'Phase 1 was released at noon Beijing time on June 4 and reduced typical API latency from about 4-6 seconds on average to about 1.3 seconds.',
+                'Phase 2 is expected to finish later this week and migrates metadata, with the goal of bringing average latency down to within a few hundred milliseconds.',
+              ],
+            },
+            {
+              title: 'Feedback',
+              body: 'No client-side change is required. This update improves the hosted mem9.ai service path, and feedback on official service performance is welcome.',
+            },
+          ],
+        },
+        {
+          date: 'June 4, 2026',
+          title: 'appId isolation under one API key',
+          summary:
+            'A single mem9 API key can now hold multiple isolated application memory spaces with `appId`. Memories and raw sessions written with an appId stay associated with that app, so different products, agents, environments, or workflows can share the same key without mixing their day-to-day memory.',
+          sections: [
+            {
+              title: 'How appId scopes memory',
+              items: [
+                'When writing memory or ingesting messages, send `appId`, for example `appId: "docs"` or `appId: "support-bot"`.',
+                'When searching, omit `appId` to search across all appIds under the key, pass a non-empty appId to search one sub-space, or pass `appId=null` / `appId=` to search only default global memory.',
+                'In Console, use the appId filter, appId column, and memory creation appId field to inspect or write memories for a specific application.',
+              ],
+            },
+          ],
+        },
+        {
+          date: 'June 4, 2026',
+          title: 'API reference refresh with live API testing',
+          summary:
+            'The mem9 API reference has been refreshed with a clearer layout, updated endpoint content, and a built-in API test console. Developers can now read the docs and try requests from the same page instead of switching between documentation and separate tooling.',
+          sections: [
+            {
+              title: 'What changed',
+              items: [
+                'The API page now has a clearer sidebar and endpoint layout.',
+                'The documentation content was updated for authentication, appId isolation, memory APIs, imports, session messages, and Space Chain APIs.',
+              ],
+            },
+            {
+              title: 'Where to try it',
+              body: 'Open the API page and use the API test panel to set the base URL, API key, headers, path/query/body fields, run a request, and inspect the response directly in the documentation page.',
+            },
+          ],
+        },
+        {
+          date: 'June 3, 2026',
+          title: 'Import an existing mem9 API key into Console',
+          summary:
+            'Users who already received a mem9 API key from an agent setup or API flow can now attach that key to a Console Space. The Console keeps raw key material protected, shows masked key details, and moves claimed keys into the organization quota model.',
+          sections: [
+            {
+              title: 'Claim flow',
+              items: [
+                'Open the Console claim flow from the setup link, or go directly to `/console/claim`.',
+                'Paste the existing key, choose an organization and project, then bind it to an empty Space or create a new Space during the flow.',
+                'After binding, manage the Space from Console without exposing the raw key in normal views.',
+              ],
+            },
+          ],
+          sources: [
+            { label: 'console-server #72', href: 'https://github.com/mem9-ai/mem9-console-server/pull/72' },
+            { label: 'console-server #64', href: 'https://github.com/mem9-ai/mem9-console-server/pull/64' },
+            { label: 'console-fe #52', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/52' },
+          ],
+        },
+        {
+          date: 'June 3, 2026',
+          title: 'Embedded billing, payment methods, and invoices',
+          summary:
+            'The Console billing area now includes a fuller Stripe-backed billing experience: current plan, billing address, payment methods, plan change controls, coupons, cancel/resume actions, and invoice history.',
+          sections: [
+            {
+              title: 'Where to manage it',
+              items: [
+                'Open Console, select the organization, then go to Billing.',
+                'Use Upgrade or Change plan to enter billing details, choose a plan, and confirm payment with Stripe Elements.',
+                'Review saved payment methods and invoices from the same Billing page.',
+              ],
+            },
+          ],
+          sources: [
+            { label: 'console-fe #53', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/53' },
+            { label: 'console-fe #34', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/34' },
+            { label: 'console-fe #28', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/28' },
+          ],
+        },
+        {
+          date: 'June 1, 2026',
+          title: 'Space Chain knowledge routing',
+          summary:
+            'Space Chains can now route extracted knowledge to the right Space Chain node based on routing policy fields. This makes a chain act more like a knowledgebase: broad ingest can land in the right team, project, or topic Space while recall still works across the chain.',
+          sections: [
+            {
+              title: 'Routing setup',
+              items: [
+                'Open a Space Chain detail page and configure the knowledge extraction policy.',
+                'Use the node selector and routing diagram to decide where extracted facts should be written.',
+                'When creating memory, enable smart ingest to extract and route facts instead of writing only one raw memory item.',
+              ],
+            },
+          ],
+          sources: [
+            { label: 'mem9 #337', href: 'https://github.com/mem9-ai/mem9/pull/337' },
+            { label: 'console-server #61', href: 'https://github.com/mem9-ai/mem9-console-server/pull/61' },
+            { label: 'console-fe #56', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/56' },
+          ],
+        },
+        {
+          date: 'June 1, 2026',
+          title: 'Server-side memory sorting and search controls',
+          summary:
+            'Memory tables now sort and filter against the full server result set, not just the current page. Users can sort by content, type, tags, and updated time while combining the sort with search controls.',
+          sections: [
+            {
+              title: 'Table controls',
+              items: [
+                'Open a Space or Space Chain memory workbench.',
+                'Click a table header to sort ascending or descending.',
+                'Use the search fields for content, type, and tags; the server applies the filter and sort before pagination.',
+              ],
+            },
+          ],
+          sources: [
+            { label: 'mem9 #338', href: 'https://github.com/mem9-ai/mem9/pull/338' },
+            { label: 'console-fe #57', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/57' },
+          ],
+        },
+      ],
+    },
+    {
+      period: 'May 2026',
+      items: [
+        {
+          date: 'May 30, 2026',
+          title: 'Faster Space Chain recall with timing visibility',
+          summary:
+            'Space Chain recall now parallelizes node scans and auth resolution, then keeps global reranking behavior. The Console also shows recall timing so teams can see how long test recalls take.',
+          sections: [
+            {
+              title: 'What changed',
+              body: 'Recall work is parallelized behind the scenes, while global reranking behavior stays the same.',
+            },
+            {
+              title: 'How to validate',
+              items: [
+                'Open a Space Chain detail page and use the Recall test panel.',
+                'Enable Force scanAll when you want to test cross-chain recall behavior.',
+                'Check the elapsed time shown with the result to compare query performance.',
+              ],
+            },
+          ],
+          sources: [
+            { label: 'mem9 #335', href: 'https://github.com/mem9-ai/mem9/pull/335' },
+            { label: 'mem9 #326', href: 'https://github.com/mem9-ai/mem9/pull/326' },
+            { label: 'console-fe #51', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/51' },
+          ],
+        },
+        {
+          date: 'May 25, 2026',
+          title: 'Session memory management and batch cleanup',
+          summary:
+            'The memory workbench can now list session memory rows, filter by All, Insight, Pinned, or Session, select rows, change page size, and delete selected memories in bulk. The API also supports session-row deletion and a request-level switch to avoid saving raw session rows when only extracted facts are needed.',
+          sections: [
+            {
+              title: 'Console cleanup',
+              items: [
+                'Open a Space memory workbench and choose the memory type filter.',
+                'Select one or more rows, then delete selected memories from the toolbar.',
+              ],
+            },
+            {
+              title: 'API option',
+              body: 'For API ingest flows, set `disableSessionSave` when you want fact extraction without preserving raw session messages.',
+            },
+          ],
+          sources: [
+            { label: 'mem9 #327', href: 'https://github.com/mem9-ai/mem9/pull/327' },
+            { label: 'mem9 #332', href: 'https://github.com/mem9-ai/mem9/pull/332' },
+            { label: 'console-server #56', href: 'https://github.com/mem9-ai/mem9-console-server/pull/56' },
+            { label: 'console-fe #47', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/47' },
+          ],
+        },
+        {
+          date: 'May 26, 2026',
+          title: 'Console localization for seven languages',
+          summary:
+            'The Console now supports English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Indonesian, and Thai across the shell, auth pages, Spaces, Memories, Settings, Project, and Space Chain flows.',
+          sections: [
+            {
+              title: 'Language switcher',
+              items: [
+                'Open the language menu in the Console header or auth page.',
+                'Choose a language; the selection is saved locally and updates the document language.',
+              ],
+            },
+          ],
+          sources: [
+            { label: 'console-fe #49', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/49' },
+          ],
+        },
+        {
+          date: 'May 19, 2026',
+          title: 'Billing and usage dashboards',
+          summary:
+            'Organizations can review billing plan state, entitlements, request usage summaries, daily rollups, and detailed usage events. The runtime now has quota gates and durable metering so commercial usage can be tracked without changing self-hosted behavior.',
+          sections: [
+            {
+              title: 'Where to view it',
+              items: [
+                'Open Console and select an organization.',
+                'Go to Billing to review plan and entitlement state.',
+                'Go to Usage to inspect memory recall and memory write request totals over a selected date range.',
+              ],
+            },
+          ],
+          sources: [
+            { label: 'mem9 #309', href: 'https://github.com/mem9-ai/mem9/pull/309' },
+            { label: 'console-server #30', href: 'https://github.com/mem9-ai/mem9-console-server/pull/30' },
+            { label: 'console-server #31', href: 'https://github.com/mem9-ai/mem9-console-server/pull/31' },
+            { label: 'console-server #33', href: 'https://github.com/mem9-ai/mem9-console-server/pull/33' },
+            { label: 'console-fe #28', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/28' },
+          ],
+        },
+        {
+          date: 'May 19, 2026',
+          title: 'Space memory explorer and runtime tools',
+          summary:
+            'Spaces now have a memory workbench with summary metrics, imports, memory list/detail reads, create/edit/delete controls, and a shared recall test panel. Raw API keys stay server-side while Console proxies the authorized memory operations.',
+          sections: [
+            {
+              title: 'Workspace tools',
+              items: [
+                'Open a Space detail page in Console.',
+                'Use the Memories tab to browse, create, edit, or delete memories.',
+                'Use the Recall test panel to test what the Space would retrieve for a query.',
+              ],
+            },
+          ],
+          sources: [
+            { label: 'console-server #32', href: 'https://github.com/mem9-ai/mem9-console-server/pull/32' },
+            { label: 'console-server #35', href: 'https://github.com/mem9-ai/mem9-console-server/pull/35' },
+            { label: 'console-server #37', href: 'https://github.com/mem9-ai/mem9-console-server/pull/37' },
+            { label: 'console-fe #29', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/29' },
+          ],
+        },
+        {
+          date: 'May 15, 2026',
+          title: 'Space Chain runtime support',
+          summary:
+            'Space Chains are now available at runtime, with ordered recall and write behavior, chain key authentication, and provenance in chain responses. This lets a single chain key retrieve from multiple Spaces in a controlled order.',
+          sections: [
+            {
+              title: 'Runtime setup',
+              items: [
+                'Create or open a Space Chain in Console.',
+                'Add Space nodes in the order you want recall to search them.',
+                'Create a chain key binding, then use that key with `scanAll=true` when you want recall across the chain.',
+              ],
+            },
+          ],
+          sources: [
+            { label: 'mem9 #308', href: 'https://github.com/mem9-ai/mem9/pull/308' },
+            { label: 'console-server #37', href: 'https://github.com/mem9-ai/mem9-console-server/pull/37' },
+            { label: 'console-fe #29', href: 'https://github.com/mem9-ai/mem9-console-fe/pull/29' },
+          ],
+        },
+        {
+          date: 'May 14, 2026',
+          title: 'Safer Space API key management and organization roles',
+          summary:
+            'Space API keys are stored in an encrypted catalog with stable masked display values, explicit reveal workflows, and active binding checks. Organization roles now distinguish owner, admin, and member permissions for resource and key management.',
+          sections: [
+            {
+              title: 'Permissions',
+              items: [
+                'Owners and admins can create, bind, and reveal Space keys from the Space key management flow.',
+                'Members can continue reading allowed resources without receiving mutation permissions.',
+                'Use masked key values in normal views; reveal a key only when you need to copy it into a client.',
+              ],
+            },
+          ],
+          sources: [
+            { label: 'console-server #28', href: 'https://github.com/mem9-ai/mem9-console-server/pull/28' },
+            { label: 'console-server #27', href: 'https://github.com/mem9-ai/mem9-console-server/pull/27' },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+const releaseNotesPageCopyZh = attachReleaseNoteSources({
+  meta: {
+    title: '发布说明 | mem9',
+    description: 'mem9 面向客户的发布说明，覆盖 Console、API、Space Chain、计费和记忆管理的新功能。',
+  },
+  kicker: '发布说明',
+  title: 'mem9 最近更新了什么',
+  intro: '在这里 mem9 作者们会更新最近上线了哪些重要的功能。',
+  updatedLabel: '最后更新',
+  updatedValue: '2026 年 6 月 4 日',
+  sourcesLabel: 'PR 来源',
+  groups: [
+    {
+      period: '2026 年 6 月',
+      items: [
+        {
+          date: '2026 年 6 月 4 日',
+          title: 'mem9.ai 官方服务迎来重要性能更新',
+          summary:
+            'mem9.ai 官方服务正在进行一次重要的性能优化。由于早期部署时服务和数据库存在跨区访问，API 请求产生了额外延迟。我们正在分两个阶段迁移数据，以显著降低官方托管服务的 API 延迟。',
+          sections: [
+            {
+              title: '发布节奏',
+              items: [
+                '第一阶段已在北京时间 6 月 4 日中午发布，将普遍 API 延迟从平均约 4-6 秒降低到约 1.3 秒。',
+                '第二阶段预计在本周完成元数据迁移，目标是把平均延迟进一步降低到几百毫秒以内。',
+              ],
+            },
+            {
+              title: '反馈',
+              body: '这次更新不需要客户端改动，会直接优化 mem9.ai 官方服务链路。欢迎大家继续反馈 mem9 官方服务的性能体验。',
+            },
+          ],
+        },
+        {
+          date: '2026 年 6 月 4 日',
+          title: '同一个 API key 下的 appId 隔离',
+          summary:
+            '同一个 mem9 API key 现在可以通过 `appId` 承载多个相互隔离的应用记忆空间。写入时带 appId 的 memory 和 raw session 会归属到对应应用，适合把不同产品、Agent、环境或工作流放在同一把 key 下，同时避免日常记忆互相混在一起。',
+          sections: [
+            {
+              title: 'appId 如何隔离记忆',
+              items: [
+                '写入 memory 或 ingest messages 时传入 `appId`，例如 `appId: "docs"` 或 `appId: "support-bot"`。',
+                '搜索时，不传 `appId` 表示跨该 key 下的全部 appId 搜索；传非空 appId 表示只查一个子空间；传 `appId=null` 或 `appId=` 表示只查默认/global 记忆。',
+                '在 Console 中，可以用 appId 过滤器、appId 列和创建 memory 时的 appId 字段，查看或写入某个应用的记忆。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 6 月 4 日',
+          title: 'API 文档更新，并支持站内直接测试 API',
+          summary:
+            'mem9 API 文档完成了一次重要更新：页面布局更清晰，endpoint 内容补充得更完整，并新增了内置 API 测试控制台。开发者现在可以在同一个页面阅读文档并直接发起请求，不必在文档和外部调试工具之间来回切换。',
+          sections: [
+            {
+              title: '更新内容',
+              items: [
+                'API 页面更新了侧边栏和 endpoint 信息结构，阅读路径更清晰。',
+                '文档内容补充了鉴权、appId 隔离、memory API、imports、session messages 和 Space Chain API。',
+              ],
+            },
+            {
+              title: '在哪里体验',
+              body: '从站点导航打开 API 页面，在 API test 面板里设置 base URL、API key、headers、path/query/body 字段，运行请求，并直接在文档页查看响应。',
+            },
+          ],
+        },
+        {
+          date: '2026 年 6 月 3 日',
+          title: '把已有 mem9 API key 导入 Console',
+          summary:
+            '已经通过 Agent 安装或 API 流程拿到 mem9 API key 的用户，现在可以把 key 绑定到 Console 的 Space。Console 会保护原始 key，只展示脱敏信息，并把已认领的 key 纳入组织配额模型。',
+          sections: [
+            {
+              title: '认领流程',
+              items: [
+                '从安装流程里的认领链接进入 Console，或直接打开 `/console/claim`。',
+                '粘贴已有 key，选择组织和项目，然后绑定到一个空 Space，或在流程中创建新 Space。',
+                '绑定后即可在 Console 管理这个 Space，普通页面不会暴露原始 key。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 6 月 3 日',
+          title: '内嵌计费、支付方式和发票',
+          summary:
+            'Console 的 Billing 区域现在提供更完整的 Stripe 计费体验，包括当前套餐、账单地址、支付方式、套餐变更、优惠码、取消/恢复订阅和发票历史。',
+          sections: [
+            {
+              title: '在哪里管理',
+              items: [
+                '打开 Console，选择组织，然后进入 Billing。',
+                '点击 Upgrade 或 Change plan，填写账单信息、选择套餐，并通过 Stripe Elements 完成支付确认。',
+                '在同一个 Billing 页面查看已保存的支付方式和发票。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 6 月 1 日',
+          title: 'Space Chain 知识路由',
+          summary:
+            'Space Chain 现在可以根据路由策略把提取出的知识写入正确的链节点。这样一条链可以像知识库一样工作：宽泛输入会落到对应团队、项目或主题 Space，同时仍可跨链召回。',
+          sections: [
+            {
+              title: '路由配置',
+              items: [
+                '打开 Space Chain 详情页，配置 knowledge extraction policy。',
+                '通过节点选择器和路由图决定提取出的事实应该写到哪里。',
+                '创建 memory 时启用 smart ingest，让系统提取并路由事实，而不是只写入一条原始 memory。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 6 月 1 日',
+          title: '服务端记忆排序和搜索控件',
+          summary:
+            'Memory 表格现在会基于服务端完整结果集排序和过滤，而不是只重排当前页。用户可以按内容、类型、标签和更新时间排序，并结合搜索条件使用。',
+          sections: [
+            {
+              title: '表格控件',
+              items: [
+                '打开 Space 或 Space Chain 的 memory workbench。',
+                '点击表头切换升序或降序排序。',
+                '使用内容、类型和标签搜索框；服务端会先过滤和排序，再分页返回。',
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      period: '2026 年 5 月',
+      items: [
+        {
+          date: '2026 年 5 月 30 日',
+          title: '更快的 Space Chain 召回和耗时展示',
+          summary:
+            'Space Chain 召回现在会并行扫描节点并并行解析鉴权节点，同时保留全局 rerank 行为。Console 也会展示召回耗时，方便团队观察测试查询的速度。',
+          sections: [
+            {
+              title: '变更内容',
+              body: '召回链路在后台并行化处理，同时保留全局 rerank 行为。',
+            },
+            {
+              title: '如何验证',
+              items: [
+                '打开 Space Chain 详情页，使用 Recall test 面板。',
+                '需要测试跨链召回时启用 Force scanAll。',
+                '查看结果旁边的耗时，用来比较查询性能。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 5 月 25 日',
+          title: 'Session memory 管理和批量清理',
+          summary:
+            'Memory workbench 现在可以列出 session memory，按 All、Insight、Pinned、Session 过滤，选择行、调整页大小，并批量删除选中的 memories。API 也支持删除 session 行，并支持只提取事实、不保存原始 session 的请求级开关。',
+          sections: [
+            {
+              title: 'Console 清理',
+              items: [
+                '打开 Space memory workbench，选择 memory 类型过滤器。',
+                '选择一行或多行，然后从工具栏删除选中的 memories。',
+              ],
+            },
+            {
+              title: 'API 选项',
+              body: 'API ingest 时，如果只需要事实提取、不想保存原始会话消息，可设置 `disableSessionSave`。',
+            },
+          ],
+        },
+        {
+          date: '2026 年 5 月 26 日',
+          title: 'Console 支持七种语言',
+          summary:
+            'Console 现在支持英语、简体中文、繁体中文、日语、韩语、印尼语和泰语，覆盖 shell、登录页、Spaces、Memories、Settings、Project 和 Space Chain 流程。',
+          sections: [
+            {
+              title: '语言切换',
+              items: [
+                '在 Console header 或登录页打开语言菜单。',
+                '选择语言；选择会保存在本地，并更新页面语言属性。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 5 月 19 日',
+          title: '计费和用量看板',
+          summary:
+            '组织现在可以查看计费套餐状态、权益、请求用量汇总、每日 rollup 和详细用量事件。runtime 已支持配额闸门和持久 metering，用于商业用量跟踪，同时不改变自托管行为。',
+          sections: [
+            {
+              title: '在哪里查看',
+              items: [
+                '打开 Console 并选择组织。',
+                '进入 Billing 查看套餐和权益状态。',
+                '进入 Usage，按日期范围查看 memory recall 和 memory write 请求总量。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 5 月 19 日',
+          title: 'Space memory 浏览器和运行时工具',
+          summary:
+            'Space 现在有 memory workbench，支持汇总指标、imports、memory 列表/详情、创建/编辑/删除，以及共享 Recall test 面板。原始 API key 保持在服务端，Console 会代理已授权的 memory 操作。',
+          sections: [
+            {
+              title: '工作台能力',
+              items: [
+                '在 Console 打开 Space 详情页。',
+                '使用 Memories tab 浏览、创建、编辑或删除 memories。',
+                '使用 Recall test 面板测试这个 Space 对查询会召回什么。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 5 月 15 日',
+          title: 'Space Chain 运行时支持',
+          summary:
+            'Space Chain 现在可在运行时使用，支持有序召回和写入、chain key 鉴权，以及链响应中的来源信息。一个 chain key 可以按受控顺序从多个 Space 召回。',
+          sections: [
+            {
+              title: '运行时配置',
+              items: [
+                '在 Console 创建或打开 Space Chain。',
+                '按照希望召回搜索的顺序添加 Space 节点。',
+                '创建 chain key binding；需要跨链召回时，用这个 key 并设置 `scanAll=true`。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 5 月 14 日',
+          title: '更安全的 Space API key 管理和组织角色',
+          summary:
+            'Space API key 会存储在加密目录中，普通页面展示稳定的脱敏值，并提供显式 reveal 流程和 active binding 检查。组织角色现在区分 owner、admin 和 member 权限。',
+          sections: [
+            {
+              title: '权限变化',
+              items: [
+                'Owner 和 admin 可以在 Space key 管理流程中创建、绑定和 reveal key。',
+                'Member 可以继续读取允许访问的资源，但没有变更权限。',
+                '普通页面使用脱敏 key；只有需要复制到客户端时才 reveal。',
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+const releaseNotesPageCopyByLocale: Record<SiteLocale, SiteReleaseNotesPageCopy> = {
+  en: releaseNotesPageCopyEn,
+  zh: releaseNotesPageCopyZh,
+  'zh-Hant': releaseNotesPageCopyZh,
+  ja: releaseNotesPageCopyEn,
+  ko: releaseNotesPageCopyEn,
+  id: releaseNotesPageCopyEn,
+  th: releaseNotesPageCopyEn,
+};
+
 export const siteCopy: Record<SiteLocale, SiteDictionary> = {
   en: {
     meta: {
@@ -2832,6 +3561,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: 'Benchmark',
       openclaw: 'OpenClaw',
       yourMemory: 'Your Memory',
+      yourMemoryDescription: 'Visual memory management',
+      webConsole: 'Web Console',
+      webConsoleDescription: 'Manage your spaces, space chains, usage, and orders.',
       login: 'Log in',
       billing: 'Pricing',
       security: 'Security',
@@ -2839,6 +3571,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       github: 'GitHub',
       docs: 'Docs',
       api: 'API',
+      releaseNotes: 'Release Notes',
       contact: 'Contact Us',
     },
     hero: {
@@ -3009,6 +3742,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     faq: faqCopyByLocale.en,
     apiPage: apiPageByLocale.en,
+    releaseNotesPage: releaseNotesPageCopyByLocale.en,
     securityPage: {
       meta: {
         title: 'Security & Privacy | mem9',
@@ -3181,6 +3915,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: '基准测试',
       openclaw: 'OpenClaw',
       yourMemory: '你的记忆',
+      yourMemoryDescription: '可视化记忆管理',
+      webConsole: 'Web Console',
+      webConsoleDescription: '管理您的空间、空间链、用量和订单。',
       login: '登录',
       billing: '定价',
       security: '安全',
@@ -3188,6 +3925,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       github: 'GitHub',
       docs: '文档',
       api: 'API',
+      releaseNotes: '发布说明',
       contact: '联系我们',
     },
     hero: {
@@ -3350,6 +4088,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     faq: faqCopyByLocale.zh,
     apiPage: apiPageByLocale.zh,
+    releaseNotesPage: releaseNotesPageCopyByLocale.zh,
     securityPage: {
       meta: {
         title: '安全与隐私 | mem9',
@@ -3516,6 +4255,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: '基準測試',
       openclaw: 'OpenClaw',
       yourMemory: '你的記憶',
+      yourMemoryDescription: '可視化記憶管理',
+      webConsole: 'Web Console',
+      webConsoleDescription: '管理您的空間、空間鏈、用量和訂單。',
       login: '登入',
       billing: '定價',
       security: '安全',
@@ -3523,6 +4265,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       github: 'GitHub',
       docs: '文檔',
       api: 'API',
+      releaseNotes: '發布說明',
       contact: '聯絡我們',
     },
     hero: {
@@ -3690,6 +4433,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     faq: faqCopyByLocale['zh-Hant'],
     apiPage: apiPageByLocale['zh-Hant'],
+    releaseNotesPage: releaseNotesPageCopyByLocale['zh-Hant'],
     securityPage: {
       meta: {
         title: '安全與隱私 | mem9',
@@ -3856,6 +4600,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: 'ベンチマーク',
       openclaw: 'OpenClaw',
       yourMemory: 'あなたの記憶',
+      yourMemoryDescription: 'ビジュアルなメモリ管理',
+      webConsole: 'Web Console',
+      webConsoleDescription: 'スペース、スペースチェーン、使用量、注文を管理します。',
       login: 'ログイン',
       billing: '料金',
       security: 'セキュリティ',
@@ -3863,6 +4610,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       github: 'GitHub',
       docs: 'ドキュメント',
       api: 'API',
+      releaseNotes: 'リリースノート',
       contact: 'お問い合わせ',
     },
     hero: {
@@ -4033,6 +4781,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     faq: faqCopyByLocale.ja,
     apiPage: apiPageByLocale.ja,
+    releaseNotesPage: releaseNotesPageCopyByLocale.ja,
     securityPage: {
       meta: {
         title: 'Security & Privacy | mem9',
@@ -4201,6 +4950,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: '벤치마크',
       openclaw: 'OpenClaw',
       yourMemory: '당신의 기억',
+      yourMemoryDescription: '시각적 메모리 관리',
+      webConsole: 'Web Console',
+      webConsoleDescription: '스페이스, 스페이스 체인, 사용량, 주문을 관리합니다.',
       login: '로그인',
       billing: '요금',
       security: '보안',
@@ -4208,6 +4960,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       github: 'GitHub',
       docs: '문서',
       api: 'API',
+      releaseNotes: '릴리스 노트',
       contact: '문의하기',
     },
     hero: {
@@ -4375,6 +5128,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     faq: faqCopyByLocale.ko,
     apiPage: apiPageByLocale.ko,
+    releaseNotesPage: releaseNotesPageCopyByLocale.ko,
     securityPage: {
       meta: {
         title: 'Security & Privacy | mem9',
@@ -4543,6 +5297,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: 'Benchmark',
       openclaw: 'OpenClaw',
       yourMemory: 'Memori Anda',
+      yourMemoryDescription: 'Manajemen memori visual',
+      webConsole: 'Web Console',
+      webConsoleDescription: 'Kelola space, rantai space, penggunaan, dan pesanan Anda.',
       login: 'Masuk',
       billing: 'Harga',
       security: 'Keamanan',
@@ -4550,6 +5307,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       github: 'GitHub',
       docs: 'Dokumentasi',
       api: 'API',
+      releaseNotes: 'Catatan Rilis',
       contact: 'Hubungi Kami',
     },
     hero: {
@@ -4720,6 +5478,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     faq: faqCopyByLocale.id,
     apiPage: apiPageByLocale.id,
+    releaseNotesPage: releaseNotesPageCopyByLocale.id,
     securityPage: {
       meta: {
         title: 'Security & Privacy | mem9',
@@ -4888,6 +5647,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       benchmark: 'เบนช์มาร์ก',
       openclaw: 'OpenClaw',
       yourMemory: 'ความทรงจำของคุณ',
+      yourMemoryDescription: 'การจัดการหน่วยความจำแบบภาพ',
+      webConsole: 'Web Console',
+      webConsoleDescription: 'จัดการพื้นที่ เชนพื้นที่ การใช้งาน และคำสั่งซื้อของคุณ',
       login: 'ล็อกอิน',
       billing: 'ราคา',
       security: 'ความปลอดภัย',
@@ -4895,6 +5657,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       github: 'GitHub',
       docs: 'เอกสาร',
       api: 'API',
+      releaseNotes: 'บันทึกการเผยแพร่',
       contact: 'ติดต่อเรา',
     },
     hero: {
@@ -5065,6 +5828,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     faq: faqCopyByLocale.th,
     apiPage: apiPageByLocale.th,
+    releaseNotesPage: releaseNotesPageCopyByLocale.th,
     securityPage: {
       meta: {
         title: 'Security & Privacy | mem9',

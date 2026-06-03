@@ -1,0 +1,28 @@
+---
+import Footer from '../components/Footer.astro';
+import Navbar from '../components/Navbar.astro';
+import ReleaseNotes from '../components/ReleaseNotes.astro';
+import { DEFAULT_LOCALE, siteCopy } from '../content/site';
+import Layout from '../layouts/Layout.astro';
+
+const copy = siteCopy[DEFAULT_LOCALE];
+---
+
+<Layout
+  meta={copy.releaseNotesPage.meta}
+  locale={DEFAULT_LOCALE}
+  metaTitleKey="releaseNotesPage.meta.title"
+  metaDescriptionKey="releaseNotesPage.meta.description"
+>
+  <Navbar
+    nav={copy.nav}
+    aria={copy.aria}
+    localeNames={copy.localeNames}
+    themeOptions={copy.themeOptions}
+    currentPath="/release-notes"
+  />
+  <main>
+    <ReleaseNotes />
+  </main>
+  <Footer footer={copy.footer} />
+</Layout>

@@ -71,16 +71,16 @@ const isActivePath = (path: string): boolean => currentPath === path;
           {nav.api}
         </a>
         <a
-          href="/your-memory/"
-          class="nav-section-link nav-external-link"
-          target="_blank"
-          rel="noopener"
+          href="/release-notes"
+          class:list={[
+            'nav-section-link',
+            'nav-release-notes-link',
+            isActivePath('/release-notes') && 'is-active',
+          ]}
+          data-i18n="nav.releaseNotes"
+          aria-current={isActivePath('/release-notes') ? 'page' : undefined}
         >
-          <span data-i18n="nav.yourMemory">{nav.yourMemory}</span>
-          <svg class="external-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M6 3.5h6.5V10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M12.5 3.5L4 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+          {nav.releaseNotes}
         </a>
         <a
           href="https://github.com/mem9-ai/mem9"
@@ -102,13 +102,59 @@ const isActivePath = (path: string): boolean => currentPath === path;
       </div>
 
       <div class="nav-actions">
-        <a
-          href="https://mem9.ai/console"
-          class="nav-login-link"
-          data-i18n="nav.login"
-        >
-          {nav.login}
-        </a>
+        <div class="menu-shell login-shell" data-menu-shell="login" data-open="false">
+          <button
+            type="button"
+            class="nav-login-link"
+            data-menu-trigger="login"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-controls="login-menu"
+            aria-label={nav.login}
+            title={nav.login}
+            data-i18n-attr="aria-label:nav.login;title:nav.login"
+          >
+            <span data-i18n="nav.login">{nav.login}</span>
+            <svg class="login-caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <div
+            id="login-menu"
+            class="nav-menu login-menu surface-card"
+            data-menu="login"
+            role="menu"
+            hidden
+          >
+            <a
+              href="/your-memory/"
+              class="login-menu-item"
+              role="menuitem"
+              title={nav.yourMemoryDescription}
+              data-i18n-attr="title:nav.yourMemoryDescription"
+            >
+              <span class="login-option-content">
+                <span class="login-option-label" data-i18n="nav.yourMemory">{nav.yourMemory}</span>
+                <span class="login-option-tooltip" data-i18n="nav.yourMemoryDescription">
+                  {nav.yourMemoryDescription}
+                </span>
+              </span>
+            </a>
+            <a
+              href="https://mem9.ai/console"
+              class="login-menu-item"
+              role="menuitem"
+              title={nav.webConsoleDescription}
+              data-i18n-attr="title:nav.webConsoleDescription"
+            >
+              <span class="login-option-content">
+                <span class="login-option-label" data-i18n="nav.webConsole">{nav.webConsole}</span>
+                <span class="login-option-tooltip" data-i18n="nav.webConsoleDescription">
+                  {nav.webConsoleDescription}
+                </span>
+              </span>
+            </a>
+          </div>
+        </div>
 
         <div class="menu-shell" data-menu-shell="language" data-open="false">
           <button
@@ -406,28 +452,6 @@ const isActivePath = (path: string): boolean => currentPath === path;
     color: var(--text);
   }
 
-  /* External link icon */
-  .nav-external-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-  }
-
-  .external-icon {
-    width: 0.9rem;
-    height: 0.9rem;
-    opacity: 0.7;
-    flex-shrink: 0;
-    color: var(--text-soft);
-    transition: opacity 0.18s ease, color 0.18s ease;
-  }
-
-  .nav-external-link:hover .external-icon,
-  .nav-external-link:focus-visible .external-icon {
-    opacity: 1;
-    color: var(--text);
-  }
-
   /* GitHub icon link */
   .nav-github-link {
     display: inline-flex;
@@ -464,6 +488,7 @@ const isActivePath = (path: string): boolean => currentPath === path;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 0.35rem;
     min-width: 5.4rem;
     height: 2.55rem;
     padding: 0 1.15rem;
@@ -472,6 +497,7 @@ const isActivePath = (path: string): boolean => currentPath === path;
     background: var(--text);
     color: var(--bg-deep);
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+    cursor: pointer;
     font-size: 0.93rem;
     font-weight: 700;
     line-height: 1;
@@ -484,6 +510,17 @@ const isActivePath = (path: string): boolean => currentPath === path;
       color 0.2s ease;
   }
 
+  .login-caret {
+    width: 0.72rem;
+    height: 0.72rem;
+    transition: transform 0.2s ease;
+  }
+
+  .login-shell[data-open='true'] .login-caret {
+    transform: rotate(180deg);
+  }
+
+  .login-shell[data-open='true'] .nav-login-link,
   .nav-login-link:hover,
   .nav-login-link:focus-visible {
     transform: translateY(-1px);
@@ -492,6 +529,81 @@ const isActivePath = (path: string): boolean => currentPath === path;
     color: var(--bg-deep);
     opacity: 1;
     box-shadow: 0 16px 34px rgba(0, 0, 0, 0.18);
+  }
+
+  .login-menu {
+    min-width: 14.5rem;
+    overflow: visible;
+  }
+
+  .login-menu-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.7rem;
+    border: 1px solid transparent;
+    border-radius: 0.8rem;
+    padding: 0.65rem 0.75rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    transition:
+      background-color 0.2s ease,
+      border-color 0.2s ease,
+      color 0.2s ease;
+  }
+
+  .login-menu-item:hover,
+  .login-menu-item:focus-visible {
+    background: var(--button-active-bg);
+    border-color: var(--button-active-border);
+    color: var(--text);
+    opacity: 1;
+  }
+
+  .login-option-content {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .login-option-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .login-option-tooltip {
+    position: absolute;
+    right: calc(100% + 0.55rem);
+    top: 50%;
+    z-index: 35;
+    width: max-content;
+    max-width: min(18rem, calc(100vw - 2rem));
+    transform: translateY(-50%) translateX(0.25rem);
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 0.65rem;
+    background: var(--menu-surface);
+    color: var(--text);
+    box-shadow: var(--menu-shadow);
+    font-size: 0.78rem;
+    font-weight: 500;
+    line-height: 1.35;
+    white-space: normal;
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transition:
+      opacity 0.15s ease,
+      transform 0.15s ease,
+      visibility 0.15s ease;
+  }
+
+  .login-menu-item:hover .login-option-tooltip,
+  .login-menu-item:focus-visible .login-option-tooltip {
+    opacity: 1;
+    transform: translateY(-50%);
+    visibility: visible;
   }
 
   .menu-shell {
@@ -612,8 +724,23 @@ const isActivePath = (path: string): boolean => currentPath === path;
     .nav-login-link {
       min-width: 0;
       height: 2.35rem;
-      padding: 0 0.9rem;
+      padding: 0 0.85rem 0 0.95rem;
       font-size: 0.84rem;
+    }
+
+    .login-menu {
+      min-width: min(15rem, calc(100vw - 2rem));
+    }
+
+    .login-option-tooltip {
+      right: 0;
+      top: calc(100% + 0.35rem);
+      transform: translateY(-0.15rem);
+    }
+
+    .login-menu-item:hover .login-option-tooltip,
+    .login-menu-item:focus-visible .login-option-tooltip {
+      transform: translateY(0);
     }
 
     .icon-button {

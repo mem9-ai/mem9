@@ -14,7 +14,7 @@ import {
   type SiteThemePreference,
 } from '../content/site';
 
-type MenuName = 'language' | 'theme';
+type MenuName = 'login' | 'language' | 'theme';
 type OnboardingVersion = 'stable' | 'beta';
 type OnboardingCommandParts = {
   prefix: string;
@@ -494,6 +494,10 @@ function isApiPage(): boolean {
   return document.querySelector('[data-api-root]') !== null;
 }
 
+function isReleaseNotesPage(): boolean {
+  return document.querySelector('[data-release-notes-root]') !== null;
+}
+
 function updateDocsPage(locale: SiteLocale): void {
   const docsLocale = resolveDocsLocale(locale);
   const root = document.querySelector<HTMLElement>('[data-docs-root]');
@@ -559,6 +563,23 @@ function updateApiPage(locale: SiteLocale): void {
   });
 }
 
+function updateReleaseNotesPage(locale: SiteLocale): void {
+  const root = document.querySelector<HTMLElement>('[data-release-notes-root]');
+  const copy = siteCopy[locale].releaseNotesPage;
+
+  if (!root) {
+    return;
+  }
+
+  root.dataset.releaseNotesLocale = locale;
+  setDocumentLang(locale);
+  updateMetaElements(copy.meta.title, copy.meta.description);
+
+  document.querySelectorAll<HTMLElement>('[data-release-notes-copy]').forEach((sectionCopy) => {
+    sectionCopy.hidden = sectionCopy.dataset.releaseNotesCopy !== locale;
+  });
+}
+
 function updateFaqSection(locale: SiteLocale): void {
   const root = document.querySelector<HTMLElement>('[data-faq-root]');
 
@@ -582,6 +603,9 @@ function applyLocale(locale: SiteLocale): void {
   } else if (isApiPage()) {
     updateTranslations(dictionary);
     updateApiPage(locale);
+  } else if (isReleaseNotesPage()) {
+    updateTranslations(dictionary);
+    updateReleaseNotesPage(locale);
   } else {
     updateMeta(locale, dictionary);
     updateTranslations(dictionary);
@@ -768,6 +792,81 @@ function initOnboardingVersionControls(): void {
   });
 
   applyOnboardingVersion('stable');
+}
+
+function normalizeDocsTocQuery(value: string): string[] {
+  return value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function initDocsTocSearch(): void {
+  const root = document.querySelector<HTMLElement>('[data-docs-root]');
+  if (!root) {
+    return;
+  }
+
+  function applyFilter(sectionCopy: HTMLElement): void {
+    const input = sectionCopy.querySelector<HTMLInputElement>('[data-docs-toc-search]');
+    const empty = sectionCopy.querySelector<HTMLElement>('[data-docs-toc-empty]');
+    if (!input || !empty) {
+      return;
+    }
+
+    const tokens = normalizeDocsTocQuery(input.value);
+    const hasQuery = tokens.length > 0;
+    let visibleGroups = 0;
+
+    sectionCopy.querySelectorAll<HTMLDetailsElement>('[data-docs-toc-group]').forEach((group) => {
+      const groupHaystack = (group.dataset.docsSearch ?? '').toLowerCase();
+      const groupMatches = hasQuery && tokens.every((token) => groupHaystack.includes(token));
+      let visibleSections = 0;
+
+      group.querySelectorAll<HTMLElement>('[data-docs-toc-section]').forEach((section) => {
+        const sectionHaystack = (section.dataset.docsSearch ?? '').toLowerCase();
+        const sectionMatches = !hasQuery || groupMatches || tokens.every((token) => sectionHaystack.includes(token));
+        section.hidden = !sectionMatches;
+        if (sectionMatches) {
+          visibleSections++;
+        }
+      });
+
+      const showGroup = !hasQuery || groupMatches || visibleSections > 0;
+      group.hidden = !showGroup;
+      if (showGroup && hasQuery) {
+        group.open = true;
+      }
+      if (showGroup) {
+        visibleGroups++;
+      }
+    });
+
+    empty.hidden = !hasQuery || visibleGroups > 0;
+  }
+
+  document.querySelectorAll<HTMLElement>('[data-docs-copy]').forEach((sectionCopy) => {
+    const input = sectionCopy.querySelector<HTMLInputElement>('[data-docs-toc-search]');
+    if (!input) {
+      return;
+    }
+
+    input.addEventListener('input', () => applyFilter(sectionCopy));
+    applyFilter(sectionCopy);
+  });
+
+  const mutation = new MutationObserver(() => {
+    const activeCopy = root.querySelector<HTMLElement>('[data-docs-copy]:not([hidden])');
+    if (activeCopy) {
+      applyFilter(activeCopy);
+    }
+  });
+
+  mutation.observe(root, {
+    attributes: true,
+    attributeFilter: ['data-docs-locale'],
+  });
 }
 
 function initDocsScrollSpy(): void {
@@ -1328,13 +1427,12 @@ function escapeHtml(value: string): string {
 }
 
 function highlightJson(value: string): string {
-  const escaped = escapeHtml(value);
-  return escaped.replace(
-    /(&quot;(?:\\.|[^"\\])*&quot;)(\s*:)?|\b(true|false)\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
+  return value.replace(
+    /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false)\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
     (match, stringToken: string | undefined, colon: string | undefined, booleanToken: string | undefined) => {
       if (stringToken) {
         const className = colon ? 'api-json-key' : 'api-json-string';
-        return `<span class="${className}">${stringToken}</span>${colon ?? ''}`;
+        return `<span class="${className}">${escapeHtml(stringToken)}</span>${colon ?? ''}`;
       }
 
       if (booleanToken) {
@@ -1519,7 +1617,7 @@ function buildApiTestUrl(elements: ApiTestModalElements, endpoint: ApiTestEndpoi
 
 function defaultApiTestBaseUrl(): string {
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
-    ? 'http://localhost:8080'
+    ? 'http://localhost:8081'
     : 'https://api.mem9.ai';
 }
 
@@ -1717,6 +1815,7 @@ export function initSiteUI(): void {
   setOpenMenu(null);
 
   if (isDocsPage()) {
+    initDocsTocSearch();
     initDocsScrollSpy();
     initDocsProgressBar();
     initDocsBackToTop();

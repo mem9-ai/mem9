@@ -359,15 +359,15 @@ function apiSearchEmpty(locale: string): string {
         <button class="api-test-close" type="button" data-api-test-close aria-label="Close API test modal">Close</button>
       </div>
 
+      <div class="api-test-action-row">
+        <button class="api-test-secondary" type="button" data-api-test-reset>Reset</button>
+        <button class="api-test-run" type="submit" form="api-test-form" data-api-test-run>Run</button>
+      </div>
+
       <div class="api-test-main">
         <form id="api-test-form" class="api-test-form" data-api-test-form>
-          <div class="api-test-pane-head">
-            <span>Request</span>
-            <button class="api-test-secondary" type="button" data-api-test-reset>Reset</button>
-          </div>
-
           <label class="api-test-control api-test-control-wide">
-            <span>Base URL</span>
+            <span class="api-test-field-title">Base URL</span>
             <input type="url" data-api-test-base-url placeholder="https://api.mem9.ai" />
           </label>
 
@@ -390,7 +390,7 @@ function apiSearchEmpty(locale: string): string {
             <h3>Body</h3>
             <div class="api-test-fields" data-api-test-body-fields></div>
             <label class="api-test-control api-test-json-body" data-api-test-json-wrap>
-              <span>JSON body</span>
+              <span class="api-test-field-title">JSON body</span>
               <textarea data-api-test-json rows="12" spellcheck="false"></textarea>
             </label>
           </div>
@@ -400,8 +400,7 @@ function apiSearchEmpty(locale: string): string {
 
         <section class="api-test-response" data-api-test-response>
           <div class="api-test-response-head">
-            <button class="api-test-run" type="submit" form="api-test-form" data-api-test-run>Run</button>
-            <div>
+            <div class="api-test-response-status">
               <h3>Response</h3>
               <p data-api-test-status>Ready</p>
             </div>
@@ -1165,10 +1164,15 @@ function apiSearchEmpty(locale: string): string {
   }
 
   .api-test-form {
-    position: relative;
     display: grid;
     gap: 0.7rem;
-    padding-top: 0.9rem;
+  }
+
+  .api-test-action-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    padding: 0.78rem 0 0;
   }
 
   .api-test-main {
@@ -1176,35 +1180,7 @@ function apiSearchEmpty(locale: string): string {
     grid-template-columns: minmax(0, 1fr) minmax(24rem, 0.86fr);
     gap: 1rem;
     align-items: start;
-    padding-top: 0.9rem;
-  }
-
-  .api-test-form::before,
-  .api-test-response::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0.72rem;
-    right: 0.72rem;
-    height: 0.24rem;
-    border-radius: 999px;
-    background: linear-gradient(90deg, #ffd94f, #ffbf2f);
-    box-shadow: 0 0 18px rgba(255, 205, 64, 0.34);
-  }
-
-  .api-test-pane-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    min-height: 2.35rem;
-  }
-
-  .api-test-pane-head span {
-    font-family: var(--font-mono);
-    font-size: 0.74rem;
-    letter-spacing: 0.05em;
-    color: var(--accent);
+    padding-top: 0.65rem;
   }
 
   .api-test-control {
@@ -1214,15 +1190,18 @@ function apiSearchEmpty(locale: string): string {
     align-content: start;
   }
 
+  .api-test-field-title,
   .api-test-label-line,
   .api-test-section h3,
   .api-test-response h3 {
     font-family: var(--font-mono);
-    font-size: 0.74rem;
+    font-size: 0.72rem;
     letter-spacing: 0.05em;
-    color: var(--accent);
+    color: var(--text);
+    font-weight: 760;
   }
 
+  .api-test-field-title,
   .api-test-label-line {
     display: inline-flex;
     align-items: center;
@@ -1294,10 +1273,12 @@ function apiSearchEmpty(locale: string): string {
   }
 
   .api-test-help {
-    color: var(--text-muted);
-    font-size: 0.78rem;
+    border-left: 2px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+    padding-left: 0.44rem;
+    color: var(--text-dim);
+    font-size: 0.72rem;
     line-height: 1.45;
-    margin-top: -0.12rem;
+    margin-top: -0.04rem;
   }
 
   .api-test-json-body {
@@ -1332,7 +1313,8 @@ function apiSearchEmpty(locale: string): string {
     font-size: 0.66rem;
     letter-spacing: 0.05em;
     line-height: 1.25;
-    color: var(--accent);
+    color: var(--text);
+    font-weight: 760;
   }
 
   :global(.api-test-label-name) {
@@ -1379,10 +1361,12 @@ function apiSearchEmpty(locale: string): string {
   }
 
   :global(.api-test-help) {
-    color: var(--text-muted);
+    border-left: 2px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+    padding-left: 0.44rem;
+    color: var(--text-dim);
     font-size: 0.7rem;
     line-height: 1.38;
-    margin-top: -0.08rem;
+    margin-top: -0.02rem;
   }
 
   .api-test-run {
@@ -1433,27 +1417,35 @@ function apiSearchEmpty(locale: string): string {
   }
 
   .api-test-response {
-    position: relative;
     display: grid;
-    gap: 0.55rem;
+    gap: 0.7rem;
     min-height: 26rem;
     align-content: start;
-    padding: 0.9rem 0.72rem 0.72rem;
-    border: 1px solid var(--border);
-    border-radius: 0.9rem;
-    background: color-mix(in srgb, var(--button-bg) 70%, transparent);
-    box-shadow: var(--surface-inset);
+    padding: 0;
   }
 
   .api-test-response-head {
     display: flex;
-    align-items: start;
+    align-items: end;
     justify-content: start;
-    gap: 0.8rem;
+    gap: 0.75rem;
+    padding-top: 2rem;
   }
 
   .api-test-response-head > div {
     min-width: 0;
+  }
+
+  .api-test-response-status {
+    display: grid;
+    align-content: center;
+    min-height: 2.95rem;
+    width: 100%;
+    padding: 0.46rem 0.64rem;
+    border: 1px solid var(--border);
+    border-radius: 0.58rem;
+    background: var(--button-bg);
+    box-shadow: var(--surface-inset);
   }
 
   .api-test-response-head p {
@@ -1483,20 +1475,39 @@ function apiSearchEmpty(locale: string): string {
   }
 
   :global(.api-json-key) {
-    color: var(--accent);
+    color: #0f5f99;
+    font-weight: 700;
   }
 
   :global(.api-json-string) {
-    color: color-mix(in srgb, var(--text) 86%, #4ade80);
+    color: #047857;
   }
 
   :global(.api-json-number),
   :global(.api-json-boolean) {
-    color: color-mix(in srgb, var(--text) 78%, #60a5fa);
+    color: #9a4b00;
+    font-weight: 700;
   }
 
   :global(.api-json-null) {
-    color: var(--text-muted);
+    color: #be185d;
+  }
+
+  :global(html[data-theme='dark']) :global(.api-json-key) {
+    color: #7dd3fc;
+  }
+
+  :global(html[data-theme='dark']) :global(.api-json-string) {
+    color: #86efac;
+  }
+
+  :global(html[data-theme='dark']) :global(.api-json-number),
+  :global(html[data-theme='dark']) :global(.api-json-boolean) {
+    color: #fbbf24;
+  }
+
+  :global(html[data-theme='dark']) :global(.api-json-null) {
+    color: #f472b6;
   }
 
   /* Mobile TOC toggle */
@@ -1601,10 +1612,15 @@ function apiSearchEmpty(locale: string): string {
     }
 
     .api-endpoint-top,
-    .api-test-header,
-    .api-test-response-head {
+    .api-test-header {
       flex-direction: column;
       align-items: stretch;
+    }
+
+    .api-test-action-row,
+    .api-test-response-head {
+      align-items: stretch;
+      flex-direction: column;
     }
 
     .api-test-fields {
