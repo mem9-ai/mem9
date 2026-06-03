@@ -389,6 +389,53 @@ func TestSearchFTSOnlyWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestSearchFallsBackToLooseTokensWhenFTSQuestionHasNoRows(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	corpus := []domain.Memory{
+		{ID: "m-old", Content: "Bosn loves Flame", UpdatedAt: now.Add(-time.Minute), MemoryType: domain.TypeInsight, State: domain.StateActive},
+		{ID: "m-new", Content: "Flame loves Bosn", UpdatedAt: now, MemoryType: domain.TypeInsight, State: domain.StateActive},
+	}
+	var keywordQueries []string
+	memRepo := &memoryRepoMock{
+		ftsAvail: true,
+		ftsSearchHook: func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
+			return nil, nil
+		},
+		keywordSearchHook: func(_ context.Context, query string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			keywordQueries = append(keywordQueries, query)
+			query = strings.ToLower(query)
+			var matches []domain.Memory
+			for _, memory := range corpus {
+				if strings.Contains(strings.ToLower(memory.Content), query) {
+					matches = append(matches, memory)
+				}
+			}
+			return matches, nil
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+
+	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
+		Query: "Bosn loves Frame or not?",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+	if total != 2 || len(results) != 2 {
+		t.Fatalf("expected 2 loose-token results, got total=%d results=%d", total, len(results))
+	}
+	if results[0].ID != "m-new" || results[1].ID != "m-old" {
+		t.Fatalf("unexpected loose-token result order: %#v", results)
+	}
+	wantQueries := []string{"Bosn", "loves", "Frame"}
+	if strings.Join(keywordQueries, ",") != strings.Join(wantQueries, ",") {
+		t.Fatalf("keyword fallback queries = %#v, want %#v", keywordQueries, wantQueries)
+	}
+}
+
 // TestSearchEmptyQueryReturnsList verifies that Search() with empty query
 // delegates to List() instead of any search path.
 func TestSearchEmptyQueryReturnsList(t *testing.T) {

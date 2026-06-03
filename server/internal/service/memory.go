@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -20,11 +21,12 @@ import (
 )
 
 const (
-	maxContentLen     = 50000
-	maxTags           = 20
-	maxBulkSize       = 100
-	maxBulkDeleteSize = 1000
-	defaultMinScore   = 0.3
+	maxContentLen        = 50000
+	maxTags              = 20
+	maxBulkSize          = 100
+	maxBulkDeleteSize    = 1000
+	defaultMinScore      = 0.3
+	maxLooseSearchTokens = 5
 
 	// secondHopWeight is the RRF weight applied to second-hop vector search results.
 	// Lower than 1.0 to prevent indirect matches from outranking direct hits.
@@ -269,6 +271,12 @@ func (s *MemoryService) ftsOnlySearch(ctx context.Context, filter domain.MemoryF
 	if err != nil {
 		return nil, 0, fmt.Errorf("FTS search: %w", err)
 	}
+	if len(ftsResults) == 0 && shouldRunLooseKeywordFallback(filter.Query) {
+		ftsResults, err = s.looseTokenKeywordSearch(ctx, filter, fetchLimit)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
 	slog.Info("fts search completed", "query_len", len(filter.Query), "results", len(ftsResults))
 
 	page, total := s.paginate(ftsResults, offset, limit)
@@ -317,10 +325,124 @@ func (s *MemoryService) keywordOnlySearch(ctx context.Context, filter domain.Mem
 	if err != nil {
 		return nil, 0, fmt.Errorf("keyword search: %w", err)
 	}
+	if len(kwResults) == 0 && shouldRunLooseKeywordFallback(filter.Query) {
+		kwResults, err = s.looseTokenKeywordSearch(ctx, filter, fetchLimit)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
 	slog.Info("keyword search completed (FTS unavailable)", "query_len", len(filter.Query), "results", len(kwResults))
 
 	page, total := s.paginate(kwResults, offset, limit)
 	return finalizeSearchResults(page, filter.Query), total, nil
+}
+
+func (s *MemoryService) looseTokenKeywordSearch(ctx context.Context, filter domain.MemoryFilter, fetchLimit int) ([]domain.Memory, error) {
+	tokens := looseSearchTokens(filter.Query)
+	if len(tokens) == 0 {
+		return nil, nil
+	}
+	if fetchLimit <= 0 {
+		fetchLimit = 50
+	}
+
+	byID := make(map[string]domain.Memory)
+	for _, token := range tokens {
+		results, err := s.memories.KeywordSearch(ctx, token, filter, fetchLimit)
+		if err != nil {
+			return nil, fmt.Errorf("keyword token search: %w", err)
+		}
+		for _, memory := range results {
+			if _, ok := byID[memory.ID]; !ok {
+				byID[memory.ID] = memory
+			}
+		}
+	}
+
+	memories := make([]domain.Memory, 0, len(byID))
+	for _, memory := range byID {
+		memories = append(memories, memory)
+	}
+	sort.SliceStable(memories, func(i, j int) bool {
+		leftScore := looseSearchTokenMatchScore(memories[i].Content, tokens)
+		rightScore := looseSearchTokenMatchScore(memories[j].Content, tokens)
+		if leftScore != rightScore {
+			return leftScore > rightScore
+		}
+		if !memories[i].UpdatedAt.Equal(memories[j].UpdatedAt) {
+			return memories[i].UpdatedAt.After(memories[j].UpdatedAt)
+		}
+		return memories[i].ID < memories[j].ID
+	})
+	if len(memories) > fetchLimit {
+		memories = memories[:fetchLimit]
+	}
+	return memories, nil
+}
+
+var looseSearchStopWords = map[string]struct{}{
+	"a": {}, "an": {}, "and": {}, "are": {}, "as": {}, "at": {}, "be": {}, "by": {},
+	"did": {}, "do": {}, "does": {}, "for": {}, "from": {}, "has": {}, "have": {},
+	"how": {}, "if": {}, "in": {}, "is": {}, "not": {}, "of": {}, "on": {}, "or": {},
+	"the": {}, "to": {}, "was": {}, "were": {}, "what": {}, "when": {}, "where": {},
+	"whether": {}, "which": {}, "who": {}, "whom": {}, "whose": {}, "why": {}, "with": {},
+}
+
+func looseSearchTokens(query string) []string {
+	var tokens []string
+	seen := make(map[string]struct{})
+	var current strings.Builder
+	flush := func() {
+		if current.Len() == 0 {
+			return
+		}
+		token := current.String()
+		current.Reset()
+		key := strings.ToLower(token)
+		if len(key) < 2 {
+			return
+		}
+		if _, ok := looseSearchStopWords[key]; ok {
+			return
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		tokens = append(tokens, token)
+	}
+
+	for _, r := range query {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			current.WriteRune(r)
+			continue
+		}
+		flush()
+		if len(tokens) >= maxLooseSearchTokens {
+			return tokens
+		}
+	}
+	flush()
+	if len(tokens) > maxLooseSearchTokens {
+		return tokens[:maxLooseSearchTokens]
+	}
+	return tokens
+}
+
+func looseSearchTokenMatchScore(content string, tokens []string) int {
+	content = strings.ToLower(content)
+	score := 0
+	for _, token := range tokens {
+		if strings.Contains(content, strings.ToLower(token)) {
+			score++
+		}
+	}
+	return score
+}
+
+func shouldRunLooseKeywordFallback(query string) bool {
+	tokens := looseSearchTokens(query)
+	return len(tokens) == 1 || strings.ContainsAny(query, "?？")
 }
 
 func (s *MemoryService) ftsOnlyCandidates(ctx context.Context, filter domain.MemoryFilter, sourcePool RecallSourcePool, opts RecallCandidateOptions) ([]RecallCandidate, error) {
@@ -330,6 +452,12 @@ func (s *MemoryService) ftsOnlyCandidates(ctx context.Context, filter domain.Mem
 	ftsResults, err := s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("FTS search: %w", err)
+	}
+	if len(ftsResults) == 0 && shouldRunLooseKeywordFallback(filter.Query) {
+		ftsResults, err = s.looseTokenKeywordSearch(ctx, filter, fetchLimit)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return dedupRecallCandidatesByContent(mergeRecallCandidates(sourcePool, ftsResults, nil, nil)), nil
 }
@@ -341,6 +469,12 @@ func (s *MemoryService) keywordOnlyCandidates(ctx context.Context, filter domain
 	kwResults, err := s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("keyword search: %w", err)
+	}
+	if len(kwResults) == 0 && shouldRunLooseKeywordFallback(filter.Query) {
+		kwResults, err = s.looseTokenKeywordSearch(ctx, filter, fetchLimit)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return dedupRecallCandidatesByContent(mergeRecallCandidates(sourcePool, kwResults, nil, nil)), nil
 }
@@ -396,6 +530,14 @@ func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFi
 		}
 	}
 
+	if len(vecResults) == 0 && len(kwResults) == 0 && shouldRunLooseKeywordFallback(filter.Query) {
+		fallbackResults, fallbackErr := s.looseTokenKeywordSearch(ctx, filter, fetchLimit)
+		if fallbackErr != nil {
+			return nil, 0, fallbackErr
+		}
+		kwResults = fallbackResults
+	}
+
 	slog.Info("hybrid search completed", "query_len", len(filter.Query), "vec_results", len(vecResults), "kw_results", len(kwResults))
 
 	scores := rrfMerge(kwResults, vecResults)
@@ -433,6 +575,13 @@ func (s *MemoryService) hybridCandidates(ctx context.Context, filter domain.Memo
 		kwResults, err = s.memories.KeywordSearch(ctx, filter.Query, filter, fetchLimit)
 		if err != nil {
 			return nil, fmt.Errorf("keyword search: %w", err)
+		}
+	}
+
+	if len(vecResults) == 0 && len(kwResults) == 0 && shouldRunLooseKeywordFallback(filter.Query) {
+		kwResults, err = s.looseTokenKeywordSearch(ctx, filter, fetchLimit)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -483,6 +632,14 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 		if kwErr != nil {
 			return nil, 0, fmt.Errorf("keyword search: %w", kwErr)
 		}
+	}
+
+	if len(vecResults) == 0 && len(kwResults) == 0 && shouldRunLooseKeywordFallback(filter.Query) {
+		fallbackResults, fallbackErr := s.looseTokenKeywordSearch(ctx, filter, fetchLimit)
+		if fallbackErr != nil {
+			return nil, 0, fallbackErr
+		}
+		kwResults = fallbackResults
 	}
 
 	slog.Info("auto hybrid search completed", "query_len", len(filter.Query), "vec_results", len(vecResults), "kw_results", len(kwResults))
@@ -549,6 +706,13 @@ func (s *MemoryService) autoHybridCandidates(
 		}
 	}
 	keywordDuration := time.Since(keywordStart)
+
+	if len(vecResults) == 0 && len(kwResults) == 0 && shouldRunLooseKeywordFallback(filter.Query) {
+		kwResults, err = s.looseTokenKeywordSearch(ctx, filter, fetchLimit)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	var secondHopResults []domain.Memory
 	secondHopStart := time.Now()

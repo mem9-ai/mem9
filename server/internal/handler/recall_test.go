@@ -207,6 +207,26 @@ func TestBuildRecallConfidence_TimeFutureIntentPrefersPlannedFutureEvidence(t *t
 	}
 }
 
+func TestBuildRecallConfidence_AllowsKeywordOnlyInsightHits(t *testing.T) {
+	profile := buildRecallQueryProfile("Bosn")
+	candidate := service.RecallCandidate{
+		Memory: domain.Memory{
+			ID:         "m1",
+			Content:    "Flame loves Bosn",
+			MemoryType: domain.TypeInsight,
+			UpdatedAt:  time.Now(),
+		},
+		SourcePool: service.RecallSourceInsight,
+		RRFScore:   1.0 / 61.0,
+		InKeyword:  true,
+	}
+
+	confidence := buildRecallConfidence(profile, candidate)
+	if confidence < defaultMixedMinConfidence {
+		t.Fatalf("keyword-only insight confidence = %d, want >= %d", confidence, defaultMixedMinConfidence)
+	}
+}
+
 func TestRecallCandidateOptions_EnumerationExpandsAdjacentTurns(t *testing.T) {
 	opts := recallCandidateOptions(recallQueryShapeEnumeration, true)
 

@@ -344,15 +344,99 @@ func buildRecallConfidence(profile recallQueryProfile, candidate service.RecallC
 	if candidate.InVector && candidate.InKeyword {
 		agreementBonus = 0.10
 	}
-
 	confidenceRaw := 0.55*rrfNorm +
 		0.20*vecNorm +
 		agreementBonus +
+		keywordContentEvidenceBonus(profile, candidate) +
 		recencyBonus(candidate.Memory.UpdatedAt) +
 		answerEvidenceBonus(profile, candidate.Memory) +
 		sourcePrior(profile.shape, candidate.SourcePool)
 
 	return int(clampFloat64(confidenceRaw, 0, 1)*100 + 0.5)
+}
+
+func keywordContentEvidenceBonus(profile recallQueryProfile, candidate service.RecallCandidate) float64 {
+	if !candidate.InKeyword || candidate.InVector || candidate.SourcePool != service.RecallSourceInsight {
+		return 0
+	}
+	if profile.shape != recallQueryShapeGeneral {
+		return 0
+	}
+
+	queryTokens := looseRecallQueryTokens(profile.lower)
+	if len(queryTokens) == 0 {
+		return 0
+	}
+	matchCount := recallExactTokenMatchCount(candidate.Memory, queryTokens)
+	if len(queryTokens) == 1 && matchCount == 1 {
+		return 0.20
+	}
+	if len(queryTokens) > 1 && matchCount >= 2 && matchCount*2 >= len(queryTokens) {
+		return 0.20
+	}
+	return 0
+}
+
+func looseRecallQueryTokens(query string) []string {
+	var tokens []string
+	seen := make(map[string]struct{})
+	var current strings.Builder
+	flush := func() {
+		if current.Len() == 0 {
+			return
+		}
+		token := strings.ToLower(current.String())
+		current.Reset()
+		if len(token) < 2 || isRecallCoverageStopword(token) || isLooseRecallQueryStopword(token) {
+			return
+		}
+		if _, exists := seen[token]; exists {
+			return
+		}
+		seen[token] = struct{}{}
+		tokens = append(tokens, token)
+	}
+
+	for _, r := range query {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			current.WriteRune(r)
+			continue
+		}
+		flush()
+	}
+	flush()
+	return tokens
+}
+
+func isLooseRecallQueryStopword(token string) bool {
+	switch token {
+	case "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "how", "if", "in", "is", "me", "not", "of", "on", "or", "say", "says", "said", "tell", "the", "to", "was", "were", "whether", "who", "whom", "whose", "why":
+		return true
+	default:
+		return false
+	}
+}
+
+func recallExactTokenMatchCount(memory domain.Memory, queryTokens []string) int {
+	if len(queryTokens) == 0 {
+		return 0
+	}
+	content, _, _ := recallContentForScoring(memory)
+	contentTokens := make(map[string]struct{})
+	for _, match := range recallCoverageEnglishTokenRe.FindAllString(strings.ToLower(content), -1) {
+		contentTokens[match] = struct{}{}
+	}
+	for _, match := range recallCoverageCJKTokenRe.FindAllString(content, -1) {
+		contentTokens[match] = struct{}{}
+	}
+
+	matches := 0
+	for _, token := range queryTokens {
+		if _, exists := contentTokens[token]; exists {
+			matches++
+		}
+	}
+	return matches
 }
 
 func selectPinnedRecallCandidates(
