@@ -1063,6 +1063,110 @@ function initApiMobileToc(): void {
   });
 }
 
+function normalizeApiTocQuery(value: string): string[] {
+  return value
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function initApiTocSearch(): void {
+  const root = document.querySelector<HTMLElement>('[data-api-root]');
+  if (!root) {
+    return;
+  }
+
+  function setGroupExpanded(group: HTMLElement, expanded: boolean): void {
+    const toggle = group.querySelector<HTMLButtonElement>('[data-api-toc-group-toggle]');
+    const sublist = group.querySelector<HTMLElement>('[data-api-toc-sublist]');
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    }
+    if (sublist) {
+      sublist.hidden = !expanded;
+    }
+  }
+
+  function applyFilter(sectionCopy: HTMLElement): void {
+    const input = sectionCopy.querySelector<HTMLInputElement>('[data-api-toc-search]');
+    const empty = sectionCopy.querySelector<HTMLElement>('[data-api-toc-empty]');
+    if (!input || !empty) {
+      return;
+    }
+
+    const tokens = normalizeApiTocQuery(input.value);
+    const hasQuery = tokens.length > 0;
+    let visibleGroups = 0;
+
+    sectionCopy.querySelectorAll<HTMLElement>('[data-api-toc-static]').forEach((item) => {
+      item.hidden = hasQuery;
+    });
+
+    sectionCopy.querySelectorAll<HTMLElement>('[data-api-toc-group]').forEach((group) => {
+      const groupHaystack = (group.dataset.apiSearch ?? '').toLowerCase();
+      const groupMatches = hasQuery && tokens.every((token) => groupHaystack.includes(token));
+      let visibleEndpoints = 0;
+      const toggle = group.querySelector<HTMLButtonElement>('[data-api-toc-group-toggle]');
+
+      group.querySelectorAll<HTMLElement>('[data-api-toc-endpoint]').forEach((endpoint) => {
+        const endpointHaystack = (endpoint.dataset.apiSearch ?? '').toLowerCase();
+        const endpointMatches = !hasQuery || groupMatches || tokens.every((token) => endpointHaystack.includes(token));
+        endpoint.hidden = !endpointMatches;
+        if (endpointMatches) {
+          visibleEndpoints++;
+        }
+      });
+
+      const showGroup = !hasQuery || groupMatches || visibleEndpoints > 0;
+      group.hidden = !showGroup;
+      setGroupExpanded(group, showGroup && hasQuery && visibleEndpoints > 0);
+      if (!hasQuery && toggle) {
+        toggle.setAttribute('aria-expanded', 'false');
+      }
+      if (showGroup) {
+        visibleGroups++;
+      }
+    });
+
+    empty.hidden = !hasQuery || visibleGroups > 0;
+  }
+
+  document.querySelectorAll<HTMLElement>('[data-api-copy]').forEach((sectionCopy) => {
+    const input = sectionCopy.querySelector<HTMLInputElement>('[data-api-toc-search]');
+    if (!input) {
+      return;
+    }
+    input.addEventListener('input', () => applyFilter(sectionCopy));
+    applyFilter(sectionCopy);
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-api-toc-group-toggle]').forEach((toggle) => {
+    toggle.addEventListener('click', () => {
+      const group = toggle.closest<HTMLElement>('[data-api-toc-group]');
+      const sectionCopy = toggle.closest<HTMLElement>('[data-api-copy]');
+      const input = sectionCopy?.querySelector<HTMLInputElement>('[data-api-toc-search]');
+      if (!group || (input && input.value.trim() !== '')) {
+        return;
+      }
+      const expanded = toggle.getAttribute('aria-expanded') === 'true';
+      setGroupExpanded(group, !expanded);
+    });
+  });
+
+  const mutation = new MutationObserver(() => {
+    const activeCopy = root.querySelector<HTMLElement>('[data-api-copy]:not([hidden])');
+    if (activeCopy) {
+      applyFilter(activeCopy);
+    }
+  });
+
+  mutation.observe(root, {
+    attributes: true,
+    attributeFilter: ['data-api-locale'],
+  });
+}
+
 export function initSiteUI(): void {
   const locale = isSiteLocale(document.documentElement.dataset.locale)
     ? document.documentElement.dataset.locale
@@ -1093,6 +1197,7 @@ export function initSiteUI(): void {
 
   if (isApiPage()) {
     initApiScrollSpy();
+    initApiTocSearch();
     initApiMobileToc();
   }
 }

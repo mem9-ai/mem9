@@ -395,6 +395,8 @@ const smartIngestCode = `curl -sX POST "$API/memories" \\
 const listMemoryCode = 'curl -s -H "X-API-Key: $API_KEY" "$API/memories?q=postgres&appId=docs&limit=5"';
 const filterMemoryCode =
   'curl -s -H "X-API-Key: $API_KEY" "$API/memories?tags=tech&source=openclaw-main&appId=null&limit=10"';
+const keywordListMemoryCode =
+  'curl -s -H "X-API-Key: $API_KEY" "$API/memories?q=postgres&search_mode=keyword&appId=docs&limit=10&sort_by=updated_at&sort_dir=desc"';
 const getMemoryCode = 'curl -s -H "X-API-Key: $API_KEY" "$API/memories/{id}"';
 const updateMemoryCode = `curl -sX PUT "$API/memories/{id}" \\
   -H "Content-Type: application/json" \\
@@ -931,23 +933,30 @@ const chainJSONWriteHeaders: SiteApiFieldCopy[] = [
 ];
 
 const memoryCreateBodyFields: SiteApiFieldCopy[] = [
-  { name: 'content', description: 'Plain memory content for direct writes.' },
-  { name: 'messages', description: 'Conversation messages for ingest-based writes.' },
+  { name: 'content', description: 'Plain memory content for direct writes. Required when `messages` is absent.' },
+  { name: 'messages', description: 'Conversation messages for ingest-based writes. Required when `content` is absent.' },
   {
     name: 'appId',
     description:
-      'Optional application isolation id. Omitted, null, empty, or whitespace values write to the default/global appId.',
+      'Optional application isolation id, max 100 characters. Omitted, null, empty, or whitespace values write to the default/global appId; non-empty values are trimmed and stored exactly.',
   },
+  { name: 'memory_type', description: 'Only accepted with `content` writes. Use `insight` or `pinned`; defaults to `insight`.' },
   { name: 'agent_id', description: 'Optional agent id to store with the write.' },
   { name: 'session_id', description: 'Optional session id for ingest or attribution.' },
   { name: 'tags', description: 'Optional string tags stored on the memory.' },
   { name: 'metadata', description: 'Optional JSON metadata payload.' },
   { name: 'mode', description: 'Ingest mode such as `smart` or `raw` when using `messages`.' },
   { name: 'sync', description: 'When true, wait for completion before returning.' },
+  { name: 'disableSessionSave', description: 'Message ingest only. When true, skip raw session persistence and only extract/reconcile facts.' },
 ];
 
 const memoryListQueryParams: SiteApiFieldCopy[] = [
-  { name: 'q', description: 'Semantic / keyword search query.' },
+  { name: 'q', description: 'Search query. Omit to list memories by filters.' },
+  {
+    name: 'search_mode',
+    description:
+      'Optional search behavior. Use `keyword` for direct content substring matching in list UIs; omit it for the default recall-style search.',
+  },
   { name: 'tags', description: 'Comma-separated tag filter.' },
   { name: 'source', description: 'Filter by stored source value.' },
   { name: 'state', description: 'Filter by lifecycle state such as `active` or `archived`.' },
@@ -961,6 +970,8 @@ const memoryListQueryParams: SiteApiFieldCopy[] = [
   },
   { name: 'limit', description: 'Page size. The handler caps large values.' },
   { name: 'offset', description: 'Offset for pagination.' },
+  { name: 'sort_by', description: 'Sort field used when listing memories, such as `updated_at`.' },
+  { name: 'sort_dir', description: 'Sort direction, `asc` or `desc`.' },
   {
     name: 'scanAll',
     description:
@@ -985,6 +996,7 @@ const importBodyFields: SiteApiFieldCopy[] = [
   { name: 'session_id', description: 'Required when uploading `session` files.' },
   { name: 'file.appId', description: 'Optional top-level appId inside JSON memory/session files.' },
   { name: 'file.memories[].appId', description: 'Optional per-memory appId override inside JSON memory files.' },
+  { name: 'file.sessions[].appId', description: 'Optional per-session appId override inside JSON session files.' },
 ];
 
 const sessionMessagesQueryParams: SiteApiFieldCopy[] = [
@@ -1026,10 +1038,20 @@ const memoryObjectResponseFields: SiteApiFieldCopy[] = [
   { name: 'content', description: 'Stored memory content.', required: true },
   { name: 'memory_type', description: 'Memory type such as `insight`, `pinned`, or `session`.', required: true },
   { name: 'appId', description: 'Application isolation id. Empty string means default/global.' },
+  { name: 'source', description: 'Stored source value when present.' },
+  { name: 'tags', description: 'String tag array when present.' },
+  { name: 'metadata', description: 'Raw JSON metadata when present.' },
+  { name: 'agent_id', description: 'Agent id associated with the memory when present.' },
+  { name: 'session_id', description: 'Session id associated with the memory when present.' },
+  { name: 'updated_by', description: 'Agent or actor that last updated the memory when present.' },
+  { name: 'superseded_by', description: 'Replacement memory id when this memory has been superseded.' },
   { name: 'state', description: 'Lifecycle state.', required: true },
   { name: 'version', description: 'Current integer version.', required: true },
   { name: 'created_at', description: 'Creation timestamp.', required: true },
   { name: 'updated_at', description: 'Last update timestamp.', required: true },
+  { name: 'score', description: 'Search relevance score when returned by search endpoints.' },
+  { name: 'confidence', description: 'Recall confidence score when returned by recall-style search.' },
+  { name: 'relative_age', description: 'Human-readable recency string populated for query-time search results.' },
 ];
 
 const statusOnlyResponseFields: SiteApiFieldCopy[] = [
@@ -1057,7 +1079,18 @@ const importTaskDetailResponseFields: SiteApiFieldCopy[] = [
 
 const sessionMessagesResponseFields: SiteApiFieldCopy[] = [
   { name: 'messages', description: 'Array of captured session message rows.', required: true },
+  { name: 'messages[].id', description: 'Session message row id.', required: true },
+  { name: 'messages[].session_id', description: 'Session id for the row.' },
+  { name: 'messages[].agent_id', description: 'Agent id for the row when present.' },
   { name: 'messages[].appId', description: 'Application isolation id for each raw session row.' },
+  { name: 'messages[].seq', description: 'Sequence number within the session.', required: true },
+  { name: 'messages[].role', description: 'Message role such as `user` or `assistant`.', required: true },
+  { name: 'messages[].content', description: 'Message content.', required: true },
+  { name: 'messages[].content_type', description: 'Content type for the captured message.', required: true },
+  { name: 'messages[].tags', description: 'Captured tags for the row.', required: true },
+  { name: 'messages[].state', description: 'Lifecycle state for the row.', required: true },
+  { name: 'messages[].created_at', description: 'Creation timestamp.', required: true },
+  { name: 'messages[].updated_at', description: 'Last update timestamp.', required: true },
   { name: 'limit_per_session', description: 'Applied per-session limit.', required: true },
 ];
 
@@ -1306,7 +1339,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     kicker: 'API',
     title: 'Hosted mem9 API reference',
     intro:
-      'Use the hosted mem9 API to provision a space, write or search memory, import existing files, and inspect captured session messages.',
+      'Use the hosted mem9 API to provision a space, write or search memory, isolate sub-spaces with appId, import existing files, and inspect captured session messages.',
     summary:
       'Prefer `v1alpha2` for day-to-day usage. `v1alpha1` stays available for key provisioning and tenant-scoped compatibility.',
     labels: {
@@ -1335,6 +1368,10 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         title: 'Optional agent identity',
         body: 'Send `X-Mnemo-Agent-Id` when you want writes and imports attributed to a specific agent. Legacy tenant-scoped routes still exist under `v1alpha1`.',
       },
+      {
+        title: 'Optional appId isolation',
+        body: '`appId` partitions memories and raw sessions under the same API key. It does not change key ownership or permissions; it only changes write attribution and query filtering.',
+      },
     ],
     quickstartTitle: 'Quick start',
     quickstartDescription:
@@ -1342,8 +1379,8 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
     quickstartSteps: [
       'Provision a new API key with `POST /v1alpha1/mem9s`.',
       'Export that key as `API_KEY` and set `API=https://api.mem9.ai/v1alpha2/mem9s`.',
-      'Create a memory with `POST /memories`.',
-      'Search it back with `GET /memories?q=...`.',
+      'Create a memory with `POST /memories`. Add `appId` when one API key should hold separate app-specific memory pools.',
+      'Search it back with `GET /memories?q=...`. Omit `appId` to search all appIds, or pass one appId to isolate the result set.',
     ],
     quickstartExamples: [
       { label: 'Provision key', code: provisionKeyCode },
@@ -1373,14 +1410,15 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       {
         id: 'memories',
         title: 'Memories',
-        description: 'Create, search, read, update, and delete stored memories in your mem9 space.',
+        description:
+          'Create, search, read, update, and delete stored memories in your mem9 space. The optional `appId` field lets one API key host multiple isolated application sub-spaces.',
         endpoints: [
           {
             method: 'POST',
             path: '/v1alpha2/mem9s/memories',
             summary: 'Create a memory or ingest messages.',
             description:
-              'Use `content` for direct writes or `messages` for ingest-driven writes. Do not send both in the same request.',
+              'Use `content` for direct writes or `messages` for ingest-driven writes. Do not send both in the same request. `appId` is optional; omitted, null, empty, and whitespace values are stored as the default/global appId.',
             headers: hostedJSONWriteHeaders,
             bodyFields: memoryCreateBodyFields,
             responseFields: statusOnlyResponseFields,
@@ -1394,13 +1432,14 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             path: '/v1alpha2/mem9s/memories',
             summary: 'List or search memories.',
             description:
-              'When `q` is present, the handler runs recall search. Without `q`, the endpoint behaves like a filtered list API.',
+              'When `q` is present, the handler runs recall search by default. Use `search_mode=keyword` for direct content substring matching. `appId` has three-state query semantics: omit it to search all appIds, pass a non-empty value for exact isolation, or pass `appId=null` / `appId=` for the default/global appId.',
             headers: hostedReadHeaders,
             queryParams: memoryListQueryParams,
             responseFields: memoryListResponseFields,
             examples: [
               { label: 'Search memories', code: listMemoryCode },
               { label: 'Filter by tags / source', code: filterMemoryCode },
+              { label: 'Direct content keyword search', code: keywordListMemoryCode },
             ],
           },
           {
@@ -1437,7 +1476,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       {
         id: 'imports',
         title: 'Imports',
-        description: 'Upload memory or session files and poll their background task status.',
+        description: 'Upload memory or session files and poll their background task status. Imported memories and raw sessions can carry `appId` at the file, memory, or session level.',
         endpoints: [
           {
             method: 'POST',
@@ -1476,14 +1515,14 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       {
         id: 'session-messages',
         title: 'Session Messages',
-        description: 'Inspect raw captured conversation rows that were stored during ingest.',
+        description: 'Inspect raw captured conversation rows that were stored during ingest. `appId` uses the same omitted / exact / default-global filtering behavior as memory search.',
         endpoints: [
           {
             method: 'GET',
             path: '/v1alpha2/mem9s/session-messages',
             summary: 'List session messages by session id.',
             description:
-              'Repeat `session_id` in the query string for each session you want to fetch. Use `limit_per_session` to cap rows per session.',
+              'Repeat `session_id` in the query string for each session you want to fetch. Use `limit_per_session` to cap rows per session. If different appIds reused the same session id, pass `appId` to prevent cross-app raw session mixing.',
             headers: hostedReadHeaders,
             queryParams: sessionMessagesQueryParams,
             responseFields: sessionMessagesResponseFields,
@@ -1553,14 +1592,18 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         title: '可选的 agent 身份',
         body: '当你希望写入或导入归属到某个 agent 时，再额外发送 `X-Mnemo-Agent-Id`。旧的 tenant-scoped 路由仍保留在 `v1alpha1` 下。',
       },
+      {
+        title: '可选的 appId 隔离',
+        body: '`appId` 用来在同一个 API key 下隔离 memory 和 raw session 子空间。它不改变 Key 的归属或权限，只影响写入归属和查询过滤。',
+      },
     ],
     quickstartTitle: 'Quick start',
     quickstartDescription: '最小 hosted 流程是：先 provision 一个 key，把它导出到 shell，然后创建并搜索记忆。',
     quickstartSteps: [
       '通过 `POST /v1alpha1/mem9s` 创建新的 API key。',
       '把该 key 导出成 `API_KEY`，并设置 `API=https://api.mem9.ai/v1alpha2/mem9s`。',
-      '用 `POST /memories` 写入一条记忆。',
-      '再用 `GET /memories?q=...` 搜回来。',
+      '用 `POST /memories` 写入一条记忆；当一个 API key 需要承载多个应用场景时，传入 `appId`。',
+      '再用 `GET /memories?q=...` 搜回来；不传 `appId` 表示跨全部 appId 搜索，传入某个 `appId` 表示只查该子空间。',
     ],
     quickstartExamples: [
       { label: '创建 key', code: provisionKeyCode },
@@ -1589,13 +1632,13 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       {
         id: 'memories',
         title: 'Memories',
-        description: '在你的 mem9 space 中创建、搜索、读取、更新和删除记忆。',
+        description: '在你的 mem9 space 中创建、搜索、读取、更新和删除记忆。可选的 `appId` 让同一个 API key 拥有多个相互隔离的应用子记忆空间。',
         endpoints: [
           {
             method: 'POST',
             path: '/v1alpha2/mem9s/memories',
             summary: '创建记忆或执行 message ingest。',
-            description: '直接写入时使用 `content`；走 ingest 时使用 `messages`。同一个请求里不要同时发送这两个字段。',
+            description: '直接写入时使用 `content`；走 ingest 时使用 `messages`。同一个请求里不要同时发送这两个字段。`appId` 可选；省略、null、空字符串和纯空白都会写入默认/global appId。',
             headers: hostedJSONWriteHeaders,
             bodyFields: memoryCreateBodyFields,
             responseFields: statusOnlyResponseFields,
@@ -1608,13 +1651,14 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
             method: 'GET',
             path: '/v1alpha2/mem9s/memories',
             summary: '列出或搜索记忆。',
-            description: '带 `q` 时走 recall search；不带 `q` 时更像一个带过滤条件的列表接口。',
+            description: '带 `q` 时默认走 recall search；`search_mode=keyword` 用于直接按 content 子串搜索。`appId` 是三态语义：不传表示跨全部 appId 搜索，传非空值表示精确隔离，传 `appId=null` 或 `appId=` 表示只查默认/global appId。',
             headers: hostedReadHeaders,
             queryParams: memoryListQueryParams,
             responseFields: memoryListResponseFields,
             examples: [
               { label: '搜索记忆', code: listMemoryCode },
               { label: '按标签 / source 过滤', code: filterMemoryCode },
+              { label: '直接内容关键词搜索', code: keywordListMemoryCode },
             ],
           },
           {
@@ -1650,7 +1694,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       {
         id: 'imports',
         title: 'Imports',
-        description: '上传 memory / session 文件，并轮询后台任务状态。',
+        description: '上传 memory / session 文件，并轮询后台任务状态。导入的 memory 和 raw session 可以在文件级、memory 级或 session 级携带 `appId`。',
         endpoints: [
           {
             method: 'POST',
@@ -1688,13 +1732,13 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       {
         id: 'session-messages',
         title: 'Session Messages',
-        description: '查看在 ingest 过程中被保存下来的原始对话消息。',
+        description: '查看在 ingest 过程中被保存下来的原始对话消息。`appId` 使用和 memory 搜索一致的不传 / 精确值 / 默认 global 三态过滤。',
         endpoints: [
           {
             method: 'GET',
             path: '/v1alpha2/mem9s/session-messages',
             summary: '按 session id 读取 session messages。',
-            description: '为每个要查询的 session 重复传 `session_id` 参数；用 `limit_per_session` 控制每个 session 的返回上限。',
+            description: '为每个要查询的 session 重复传 `session_id` 参数；用 `limit_per_session` 控制每个 session 的返回上限。如果不同 appId 复用了同一个 session id，传入 `appId` 可以避免 raw session 串到其它应用。',
             headers: hostedReadHeaders,
             queryParams: sessionMessagesQueryParams,
             responseFields: sessionMessagesResponseFields,
