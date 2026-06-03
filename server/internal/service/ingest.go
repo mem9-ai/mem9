@@ -359,6 +359,84 @@ func normalizeReconciledTemporalContent(content string) (string, *TemporalMetada
 	return NormalizeStandaloneTemporalContent(content, time.Now())
 }
 
+func normalizeReconciledTemporalContentWithFacts(content string, facts []ExtractedFact) (string, *TemporalMetadata) {
+	content = StripTemporalProjection(content)
+	sourceText, sourceTemporal := sourceTemporalForReconcileText(content, facts)
+	if sourceTemporal == nil {
+		return NormalizeStandaloneTemporalContent(content, time.Now())
+	}
+
+	normalized, temporal := NormalizeStandaloneTemporalContent(content, time.Now())
+	if shouldPreferSourceTemporal(content, temporal) {
+		if sourceText != "" && temporalRelativeCueRe.MatchString(strings.ToLower(content)) {
+			return sourceText, cloneTemporalMetadata(sourceTemporal)
+		}
+		return content, cloneTemporalMetadata(sourceTemporal)
+	}
+	if temporal == nil {
+		return normalized, cloneTemporalMetadata(sourceTemporal)
+	}
+	return normalized, temporal
+}
+
+func shouldPreferSourceTemporal(content string, temporal *TemporalMetadata) bool {
+	if temporal == nil {
+		return true
+	}
+	if temporal.AnchorSource == temporalAnchorSourceNow {
+		return true
+	}
+	return temporalRelativeCueRe.MatchString(strings.ToLower(content)) || temporalCNRelativeRe.MatchString(content)
+}
+
+func sourceTemporalForReconcileText(text string, facts []ExtractedFact) (string, *TemporalMetadata) {
+	if len(facts) == 0 {
+		return "", nil
+	}
+	if len(facts) == 1 {
+		return facts[0].Text, cloneTemporalMetadata(facts[0].Temporal)
+	}
+
+	query := sourceTokenSet(text)
+	if len(query) == 0 {
+		return "", nil
+	}
+
+	bestIdx := -1
+	bestHits := 0
+	ambiguous := false
+	for i, fact := range facts {
+		if fact.Temporal == nil {
+			continue
+		}
+		hits := countTokenOverlap(query, sourceTokenSet(projectReconcileFactText(fact)))
+		if hits == 0 {
+			continue
+		}
+		if hits > bestHits {
+			bestIdx = i
+			bestHits = hits
+			ambiguous = false
+			continue
+		}
+		if hits == bestHits {
+			ambiguous = true
+		}
+	}
+	if bestIdx < 0 || ambiguous || bestHits < sourceMinHits(len(query)) {
+		return "", nil
+	}
+	return facts[bestIdx].Text, cloneTemporalMetadata(facts[bestIdx].Temporal)
+}
+
+func cloneTemporalMetadata(meta *TemporalMetadata) *TemporalMetadata {
+	if meta == nil {
+		return nil
+	}
+	cloned := *meta
+	return &cloned
+}
+
 // ExtractPhase1 runs fact extraction and per-message tagging in a single LLM call.
 // Returns an empty Phase1Result (no error) when LLM is nil or messages are empty.
 func (s *IngestService) ExtractPhase1(ctx context.Context, messages []IngestMessage) (*Phase1Result, error) {
@@ -679,6 +757,13 @@ atomic facts from a conversation.
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
+   Preserve lists, counts, named entities, and concrete examples when the user
+   mentions them. This includes family members, pets, places, books, media,
+   activities, goals, projects, tools, and repeated events.
+   - Good: "Melanie has pets named Luna, Oliver, and Bailey"
+   - Bad: "Melanie has pets"
+   If a quantity is implied but not exact, keep cautious wording such as
+   "at least two" or "a son and other children" instead of inventing a number.
 4. Preserve the user's original language.
 5. Omit pure greetings, filler, and debugging chatter with no lasting value.
 6. Do NOT extract search queries or lookup questions as facts.
@@ -829,6 +914,13 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
+   Preserve lists, counts, named entities, and concrete examples when the user
+   mentions them. This includes family members, pets, places, books, media,
+   activities, goals, projects, tools, and repeated events.
+   - Good: "Melanie has pets named Luna, Oliver, and Bailey"
+   - Bad: "Melanie has pets"
+   If a quantity is implied but not exact, keep cautious wording such as
+   "at least two" or "a son and other children" instead of inventing a number.
 4. Preserve the user's original language.
 5. Omit pure greetings, filler, and debugging chatter with no lasting value.
 6. Do NOT extract search queries or lookup questions as facts.
@@ -1219,7 +1311,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 	for _, event := range parsed.Memory {
 		switch strings.ToUpper(event.Event) {
 		case "ADD":
-			normalizedText, temporal := normalizeReconciledTemporalContent(event.Text)
+			normalizedText, temporal := normalizeReconciledTemporalContentWithFacts(event.Text, facts)
 			if normalizedText == "" {
 				continue
 			}
@@ -1252,7 +1344,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				slog.Warn("skipping UPDATE with invalid ID or empty text", "id", event.ID)
 				continue
 			}
-			normalizedText, temporal := normalizeReconciledTemporalContent(event.Text)
+			normalizedText, temporal := normalizeReconciledTemporalContentWithFacts(event.Text, facts)
 			if normalizedText == "" {
 				slog.Warn("skipping UPDATE with invalid ID or empty text", "id", event.ID)
 				continue

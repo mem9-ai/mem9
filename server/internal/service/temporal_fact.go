@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	temporalKindExplicitAbsolute    = "explicit_absolute"
-	temporalKindLocalAnchorRelative = "local_anchor_relative"
+	temporalKindExplicitAbsolute     = "explicit_absolute"
+	temporalKindLocalAnchorRelative  = "local_anchor_relative"
 	temporalKindHeaderAnchorRelative = "header_anchor_relative"
-	temporalKindDeicticRelative     = "deictic_relative"
+	temporalKindDeicticRelative      = "deictic_relative"
 )
 
 const (
@@ -58,17 +58,19 @@ var (
 	temporalAnchorDateOnRe     = regexp.MustCompile(`(?i)\bon\s+(\d{1,2}\s+[A-Za-z]+,\s+\d{4})`)
 	temporalAnchorDateTagRe    = regexp.MustCompile(`(?i)\bdate:\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4})`)
 
-	temporalLegacyAnnotationRe = regexp.MustCompile(`\(([^()|]*?(?:19|20)\d{2}[^()|]*)\|[^()]+\)`)
-	temporalProjectionSuffixRe = regexp.MustCompile(`\s*\[time:\s*[^\]]+\]\s*$`)
-	temporalISODateRe          = regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}\b`)
-	temporalISOMonthRe         = regexp.MustCompile(`\b\d{4}-\d{2}\b`)
-	temporalLongDateRe         = regexp.MustCompile(`(?i)\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b|\b[A-Za-z]+\s+\d{1,2},\s+\d{4}\b`)
-	temporalMonthYearRe        = regexp.MustCompile(`(?i)\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}\b`)
-	temporalCNFullDateRe       = regexp.MustCompile(`\b\d{4}年\d{1,2}月\d{1,2}[日号]?\b`)
-	temporalCNMonthDayRe       = regexp.MustCompile(`\b\d{1,2}月\d{1,2}[日号]?\b`)
-	temporalCNMonthRe          = regexp.MustCompile(`\b\d{4}年\d{1,2}月\b`)
-	temporalYearOnlyRe         = regexp.MustCompile(`\b(?:19|20)\d{2}\b`)
-	temporalAnchoredPeriodRe   = regexp.MustCompile(`(?i)\b(?:the\s+)?(?:week|weekend|month|year|summer|winter|spring|fall|autumn)\s+(?:before|after)\s+(?:\d{1,2}\s+[A-Za-z]+,\s+\d{4}|\d{1,2}\s+[A-Za-z]+\s+\d{4}|[A-Za-z]+\s+\d{4})\b`)
+	temporalLegacyAnnotationRe    = regexp.MustCompile(`\(([^()|]*?(?:19|20)\d{2}[^()|]*)\|[^()]+\)`)
+	temporalProjectionSuffixRe    = regexp.MustCompile(`\s*\[time:\s*[^\]]+\]\s*$`)
+	temporalISODateRe             = regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}\b`)
+	temporalISOMonthRe            = regexp.MustCompile(`\b\d{4}-\d{2}\b`)
+	temporalLongDateRe            = regexp.MustCompile(`(?i)\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b|\b[A-Za-z]+\s+\d{1,2},\s+\d{4}\b`)
+	temporalMonthYearRe           = regexp.MustCompile(`(?i)\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}\b`)
+	temporalCNFullDateRe          = regexp.MustCompile(`\b\d{4}年\d{1,2}月\d{1,2}[日号]?\b`)
+	temporalCNMonthDayRe          = regexp.MustCompile(`\b\d{1,2}月\d{1,2}[日号]?\b`)
+	temporalCNMonthRe             = regexp.MustCompile(`\b\d{4}年\d{1,2}月\b`)
+	temporalYearOnlyRe            = regexp.MustCompile(`\b(?:19|20)\d{2}\b`)
+	temporalAnchoredPeriodRe      = regexp.MustCompile(`(?i)\b(?:the\s+)?(?:week|weekend|month|year|summer|winter|spring|fall|autumn)\s+(?:before|after)\s+(?:\d{1,2}\s+[A-Za-z]+,\s+\d{4}|\d{1,2}\s+[A-Za-z]+\s+\d{4}|[A-Za-z]+\s+\d{4})\b`)
+	temporalAnchoredPeriodPartsRe = regexp.MustCompile(`(?i)\b(?:the\s+)?(week|weekend|month|year|summer|winter|spring|fall|autumn)\s+(before|after)\s+(\d{1,2}\s+[A-Za-z]+,\s+\d{4}|\d{1,2}\s+[A-Za-z]+\s+\d{4}|[A-Za-z]+\s+\d{4})\b`)
+	temporalSeasonYearRe          = regexp.MustCompile(`(?i)\b(?:in\s+)?(summer|winter|spring|fall|autumn)\s+((?:19|20)\d{2})\b`)
 
 	temporalRelativeCueRe = regexp.MustCompile(`(?i)\b(?:yesterday|today|tomorrow|last\s+(?:night|week|weekend|month|year|summer|winter|spring|fall|autumn|friday|saturday|sunday|monday|tuesday|wednesday|thursday)|next\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn|friday|saturday|sunday|monday|tuesday|wednesday|thursday)|this\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn)|the\s+(?:past\s+)?(?:week|weekend))\b`)
 	temporalCNRelativeRe  = regexp.MustCompile(`上周[一二三四五六日天]|下周[一二三四五六日天]|前天|昨天|今天|明天|后天|上周|本周|这周|下周|上个月|这个月|本月|下个月|去年|今年|明年`)
@@ -278,6 +280,12 @@ func normalizeTemporalFactContent(text string, anchors []temporalAnchorCandidate
 
 	if rewritten, meta, ok := resolveLocalAnchorRelative(cleaned); ok {
 		return rewritten, meta
+	}
+	if meta := buildAnchoredPeriodTemporalMetadata(cleaned); meta != nil {
+		return cleaned, meta
+	}
+	if meta := buildExplicitSeasonTemporalMetadata(cleaned); meta != nil {
+		return cleaned, meta
 	}
 	if hasExplicitAbsoluteTime(cleaned) {
 		return cleaned, nil
@@ -712,9 +720,9 @@ func buildRangeTemporalMetadata(kind, anchorSource, granularity string, start, e
 	start = startOfDay(start)
 	end = startOfDay(end)
 	meta := &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  granularity,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   granularity,
 		ResolvedStart: formatISODate(start),
 		ResolvedEnd:   formatISODate(end),
 	}
@@ -729,34 +737,144 @@ func buildRangeTemporalMetadata(kind, anchorSource, granularity string, start, e
 func buildMonthTemporalMetadata(kind, anchorSource string, month time.Time) *TemporalMetadata {
 	month = startOfMonth(month)
 	return &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  temporalGranularityMonth,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   temporalGranularityMonth,
 		ResolvedStart: month.Format("2006-01"),
-		Display:      month.Format("2006-01"),
+		Display:       month.Format("2006-01"),
 	}
 }
 
 func buildYearTemporalMetadata(kind, anchorSource string, year int) *TemporalMetadata {
 	display := strconv.Itoa(year)
 	return &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  temporalGranularityYear,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   temporalGranularityYear,
 		ResolvedStart: display,
-		Display:      display,
+		Display:       display,
 	}
 }
 
 func buildSeasonTemporalMetadata(kind, anchorSource, season string, year int) *TemporalMetadata {
+	season = normalizeTemporalSeason(season)
 	display := season + " " + strconv.Itoa(year)
 	return &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  temporalGranularitySeason,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   temporalGranularitySeason,
 		ResolvedStart: display,
-		Display:      display,
+		Display:       display,
 	}
+}
+
+func buildAnchoredPeriodTemporalMetadata(text string) *TemporalMetadata {
+	match := temporalAnchoredPeriodPartsRe.FindStringSubmatch(text)
+	if len(match) != 4 {
+		return nil
+	}
+	unit := normalizeTemporalSeason(strings.ToLower(match[1]))
+	direction := strings.ToLower(match[2])
+	anchor, ok := parseAnchoredPeriodAnchor(match[3])
+	if !ok {
+		return nil
+	}
+
+	switch unit {
+	case "week":
+		if direction == "before" {
+			return buildRangeTemporalMetadata(temporalKindExplicitAbsolute, temporalAnchorSourceLocal, temporalGranularityWeek, anchor.AddDate(0, 0, -7), anchor.AddDate(0, 0, -1))
+		}
+		return buildRangeTemporalMetadata(temporalKindExplicitAbsolute, temporalAnchorSourceLocal, temporalGranularityWeek, anchor.AddDate(0, 0, 1), anchor.AddDate(0, 0, 7))
+	case "weekend":
+		start := previousWeekendStart(anchor)
+		if direction == "after" {
+			start = nextWeekendStart(anchor)
+		}
+		return buildRangeTemporalMetadata(temporalKindExplicitAbsolute, temporalAnchorSourceLocal, temporalGranularityWeek, start, start.AddDate(0, 0, 1))
+	case "month":
+		month := startOfMonth(anchor)
+		if direction == "before" {
+			month = month.AddDate(0, -1, 0)
+		} else {
+			month = month.AddDate(0, 1, 0)
+		}
+		return buildMonthTemporalMetadata(temporalKindExplicitAbsolute, temporalAnchorSourceLocal, month)
+	case "year":
+		year := anchor.Year()
+		if direction == "before" {
+			year--
+		} else {
+			year++
+		}
+		return buildYearTemporalMetadata(temporalKindExplicitAbsolute, temporalAnchorSourceLocal, year)
+	case "summer", "winter", "spring", "fall":
+		year := anchor.Year()
+		if direction == "before" {
+			year--
+		} else {
+			year++
+		}
+		return buildSeasonTemporalMetadata(temporalKindExplicitAbsolute, temporalAnchorSourceLocal, unit, year)
+	default:
+		return nil
+	}
+}
+
+func buildExplicitSeasonTemporalMetadata(text string) *TemporalMetadata {
+	match := temporalSeasonYearRe.FindStringSubmatch(text)
+	if len(match) != 3 {
+		return nil
+	}
+	year, err := strconv.Atoi(match[2])
+	if err != nil {
+		return nil
+	}
+	return buildSeasonTemporalMetadata(temporalKindExplicitAbsolute, temporalAnchorSourceLocal, match[1], year)
+}
+
+func parseAnchoredPeriodAnchor(raw string) (time.Time, bool) {
+	if value, ok := parseFlexibleLongDate(raw); ok {
+		return value, true
+	}
+	if value, ok := parseFlexibleMonthYear(raw); ok {
+		return value, true
+	}
+	return time.Time{}, false
+}
+
+func parseFlexibleMonthYear(raw string) (time.Time, bool) {
+	value, err := time.ParseInLocation("January 2006", strings.TrimSpace(raw), time.UTC)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return value, true
+}
+
+func previousWeekendStart(anchor time.Time) time.Time {
+	anchor = startOfDay(anchor)
+	delta := (int(anchor.Weekday()) - int(time.Saturday) + 7) % 7
+	if delta == 0 {
+		delta = 7
+	}
+	return anchor.AddDate(0, 0, -delta)
+}
+
+func nextWeekendStart(anchor time.Time) time.Time {
+	anchor = startOfDay(anchor)
+	delta := (int(time.Saturday) - int(anchor.Weekday()) + 7) % 7
+	if delta == 0 {
+		delta = 7
+	}
+	return anchor.AddDate(0, 0, delta)
+}
+
+func normalizeTemporalSeason(season string) string {
+	season = strings.ToLower(strings.TrimSpace(season))
+	if season == "autumn" {
+		return "fall"
+	}
+	return season
 }
 
 func buildDisplayTemporalMetadata(kind, anchorSource, granularity, display string) *TemporalMetadata {
@@ -884,7 +1002,13 @@ func inferDisplayFromRewrittenText(text string) string {
 			return formatISODate(value)
 		}
 	case temporalAnchoredPeriodRe.MatchString(text):
-		return ""
+		if meta := buildAnchoredPeriodTemporalMetadata(text); meta != nil {
+			return meta.Display
+		}
+	case temporalSeasonYearRe.MatchString(text):
+		if meta := buildExplicitSeasonTemporalMetadata(text); meta != nil {
+			return meta.Display
+		}
 	}
 	return ""
 }
