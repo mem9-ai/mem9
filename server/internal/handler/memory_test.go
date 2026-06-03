@@ -171,6 +171,7 @@ type testSessionRepo struct {
 	sessionListResults   []*domain.Session
 	lastSessionIDs       []string
 	lastSessionLimit     int
+	lastSeqWindows       []domain.SessionSeqWindow
 	getResult            *domain.Memory
 	getErr               error
 	listResults          []domain.Memory
@@ -269,6 +270,11 @@ func (s *testSessionRepo) FTSAvailable() bool { return false }
 func (s *testSessionRepo) ListBySessionIDs(_ context.Context, sessionIDs []string, limit int) ([]*domain.Session, error) {
 	s.lastSessionIDs = append([]string(nil), sessionIDs...)
 	s.lastSessionLimit = limit
+	return append([]*domain.Session(nil), s.sessionListResults...), nil
+}
+
+func (s *testSessionRepo) ListBySessionSeqWindows(_ context.Context, windows []domain.SessionSeqWindow) ([]*domain.Session, error) {
+	s.lastSeqWindows = append([]domain.SessionSeqWindow(nil), windows...)
 	return append([]*domain.Session(nil), s.sessionListResults...), nil
 }
 
@@ -3031,8 +3037,8 @@ func TestListMemories_DefaultRecall_ExpandsAdjacentSessionAnswerTurn(t *testing.
 	if resp.Memories[0].Confidence == nil || *resp.Memories[0].Confidence < defaultMixedMinConfidence {
 		t.Fatalf("expected adjacent answer confidence >= %d, got %+v", defaultMixedMinConfidence, resp.Memories[0].Confidence)
 	}
-	if len(sessRepo.lastSessionIDs) != 1 || sessRepo.lastSessionIDs[0] != "sess-1" {
-		t.Fatalf("expected adjacent expansion to inspect sess-1, got %+v", sessRepo.lastSessionIDs)
+	if len(sessRepo.lastSeqWindows) != 1 || sessRepo.lastSeqWindows[0].SessionID != "sess-1" || sessRepo.lastSeqWindows[0].MinSeq != 6 || sessRepo.lastSeqWindows[0].MaxSeq != 8 {
+		t.Fatalf("expected adjacent expansion to inspect sess-1 seq 6..8, got %+v", sessRepo.lastSeqWindows)
 	}
 }
 

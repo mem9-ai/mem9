@@ -369,12 +369,19 @@ func (s *SessionService) adjacentTurnResults(
 
 	fetchLimit := adjacentTurnFetchLimit(seeds, opts.AdjacentTurnRadius)
 	start := time.Now()
-	sessions, err := s.sessions.ListBySessionIDs(ctx, sessionIDs, fetchLimit)
-	if err != nil {
-		if errors.Is(err, domain.ErrNotSupported) {
-			return nil, nil
+	windows := adjacentTurnSeqWindows(seeds, opts.AdjacentTurnRadius)
+	sessions, err := s.sessions.ListBySessionSeqWindows(ctx, windows)
+	if err != nil && !errors.Is(err, domain.ErrNotSupported) {
+		return nil, fmt.Errorf("session adjacent turn seq-window lookup: %w", err)
+	}
+	if len(windows) == 0 || errors.Is(err, domain.ErrNotSupported) {
+		sessions, err = s.sessions.ListBySessionIDs(ctx, sessionIDs, fetchLimit)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotSupported) {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("session adjacent turn lookup: %w", err)
 		}
-		return nil, fmt.Errorf("session adjacent turn lookup: %w", err)
 	}
 	adjacent := adjacentTurnMemories(seeds, sessions, opts.AdjacentTurnRadius)
 	slog.InfoContext(ctx, "session adjacent turn expansion",
@@ -386,6 +393,33 @@ func (s *SessionService) adjacentTurnResults(
 		"total_ms", time.Since(start).Milliseconds(),
 	)
 	return adjacent, nil
+}
+
+func adjacentTurnSeqWindows(seeds []RecallCandidate, radius int) []domain.SessionSeqWindow {
+	if radius <= 0 {
+		radius = defaultAdjacentTurnRadius
+	}
+
+	windows := make([]domain.SessionSeqWindow, 0, len(seeds))
+	for _, seed := range seeds {
+		if seed.Memory.SessionID == "" {
+			continue
+		}
+		seq, ok := sessionSeqFromMemory(seed.Memory)
+		if !ok {
+			continue
+		}
+		minSeq := seq - radius
+		if minSeq < 0 {
+			minSeq = 0
+		}
+		windows = append(windows, domain.SessionSeqWindow{
+			SessionID: seed.Memory.SessionID,
+			MinSeq:    minSeq,
+			MaxSeq:    seq + radius,
+		})
+	}
+	return windows
 }
 
 func topAdjacentTurnSeeds(candidates []RecallCandidate, topN int) []RecallCandidate {
@@ -459,6 +493,25 @@ func adjacentTurnMemories(seeds []RecallCandidate, sessions []*domain.Session, r
 		if len(turns) == 0 {
 			continue
 		}
+		seedSeq, hasSeq := sessionSeqFromMemory(seed.Memory)
+		if hasSeq {
+			for _, neighbor := range turns {
+				if neighbor == nil || neighbor.ID == "" {
+					continue
+				}
+				diff := absInt(neighbor.Seq - seedSeq)
+				if diff == 0 || diff > radius {
+					continue
+				}
+				if _, ok := seen[neighbor.ID]; ok {
+					continue
+				}
+				seen[neighbor.ID] = struct{}{}
+				results = append(results, sessionToMemory(neighbor))
+			}
+			continue
+		}
+
 		seedIndex := -1
 		for i, turn := range turns {
 			if turn != nil && turn.ID == seed.Memory.ID {
@@ -497,6 +550,13 @@ func adjacentTurnIndexes(seedIndex, total, radius int) []int {
 		}
 	}
 	return indexes
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func sessionSeqFromMemory(memory domain.Memory) (int, bool) {

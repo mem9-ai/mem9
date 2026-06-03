@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -21,6 +22,9 @@ func TestClassifyRecallQueryShape_Bilingual(t *testing.T) {
 		{name: "location english", query: "where is the office", want: recallQueryShapeLocation},
 		{name: "enumeration english activities", query: "What activities does Melanie partake in?", want: recallQueryShapeEnumeration},
 		{name: "enumeration english books", query: "What books has Melanie read?", want: recallQueryShapeEnumeration},
+		{name: "enumeration english cities", query: "Which US cities does John mention visiting?", want: recallQueryShapeEnumeration},
+		{name: "enumeration english foods", query: "What foods does Audrey like eating?", want: recallQueryShapeEnumeration},
+		{name: "enumeration english exercises", query: "What exercises has John done?", want: recallQueryShapeEnumeration},
 		{name: "enumeration english names", query: "What are Melanie's pets' names?", want: recallQueryShapeEnumeration},
 		{name: "exact english", query: "what company does john like", want: recallQueryShapeExact},
 		{name: "entity chinese", query: "谁负责这个项目", want: recallQueryShapeEntity},
@@ -118,6 +122,57 @@ func TestAnswerEvidenceBonus_BilingualSignals(t *testing.T) {
 	}
 }
 
+func TestRecallQuestionSpecificTokens_StripsQuestionBoilerplate(t *testing.T) {
+	profile := buildRecallQueryProfile("What did Caroline research?")
+	tokens := recallQuestionSpecificTokens(profile)
+	if len(tokens) != 1 || tokens[0] != "research" {
+		t.Fatalf("tokens = %v, want [research]", tokens)
+	}
+
+	profile = buildRecallQueryProfile("Would Melanie go on another roadtrip soon?")
+	tokens = recallQuestionSpecificTokens(profile)
+	if len(tokens) != 1 || tokens[0] != "roadtrip" {
+		t.Fatalf("tokens = %v, want [roadtrip]", tokens)
+	}
+}
+
+func TestRecallQuestionSpecificTokenMatchCount_HandlesActionInflection(t *testing.T) {
+	profile := buildRecallQueryProfile("What did Caroline research?")
+
+	direct := "[date:12 May 2023] [speaker:Caroline] Researching adoption agencies has been a dream."
+	generic := "[date:23 August 2023] [speaker:Caroline] I got help from an adoption advice group."
+	if got := recallQuestionSpecificTokenMatchCount(profile, direct, ""); got != 1 {
+		t.Fatalf("direct token matches = %d, want 1", got)
+	}
+	if got := recallQuestionSpecificTokenMatchCount(profile, generic, ""); got != 0 {
+		t.Fatalf("generic token matches = %d, want 0", got)
+	}
+}
+
+func TestBuildRecallQueryProfile_DoesNotTokenizeNonTimeTemporalQuery(t *testing.T) {
+	profile := buildRecallQueryProfile("Which country was Evan visiting in May 2023?")
+	if profile.shape != recallQueryShapeEntity {
+		t.Fatalf("shape = %v, want entity", profile.shape)
+	}
+	if len(profile.temporalTokens) != 0 {
+		t.Fatalf("temporal tokens = %v, want none for non-time shape", profile.temporalTokens)
+	}
+}
+
+func TestAnswerEvidenceBonus_QuestionSpecificOverlapPrefersDirectEvidence(t *testing.T) {
+	profile := buildRecallQueryProfile("Would Melanie go on another roadtrip soon?")
+
+	direct := domain.Memory{
+		Content: "[date:20 October 2023] [speaker:Melanie] That roadtrip this past weekend was insane; we were freaked when my son got into an accident.",
+	}
+	generic := domain.Memory{
+		Content: "[date:20 October 2023] [speaker:Melanie] I love camping trips with my family because nature helps me reset.",
+	}
+	if gotDirect, gotGeneric := answerEvidenceBonus(profile, direct), answerEvidenceBonus(profile, generic); gotDirect <= gotGeneric {
+		t.Fatalf("expected direct roadtrip evidence to outrank generic camping evidence: direct=%.2f generic=%.2f", gotDirect, gotGeneric)
+	}
+}
+
 func TestAnswerEvidenceBonus_TimePrefersNaturalDatesOverMetadataProjection(t *testing.T) {
 	profile := recallQueryProfile{shape: recallQueryShapeTime}
 
@@ -204,6 +259,48 @@ func TestBuildRecallConfidence_TimeFutureIntentPrefersPlannedFutureEvidence(t *t
 
 	if gotFuture, gotPast := buildRecallConfidence(profile, futurePlan), buildRecallConfidence(profile, pastEvent); gotFuture <= gotPast {
 		t.Fatalf("expected future-planning evidence to outrank past event for future time query: future=%d past=%d", gotFuture, gotPast)
+	}
+}
+
+func TestSourceTurnEvidenceBonus_GuardsInsightBoost(t *testing.T) {
+	profile := buildRecallQueryProfile("How does John plan to honor the memories of his beloved pet?")
+	candidate := service.RecallCandidate{
+		Memory: domain.Memory{
+			ID:         "i1",
+			MemoryType: domain.TypeInsight,
+			Content:    "John is considering adopting a rescue dog to honor Max's memory.",
+			Metadata:   json.RawMessage(`{"source_turns":[{"seq":10,"content":"[date:11:51 am on 3 June, 2023] [speaker:John] I plan to honor Max's memory by adopting a rescue dog because Max was my beloved pet."}]}`),
+		},
+		SourcePool: service.RecallSourceInsight,
+	}
+
+	if got := sourceTurnEvidenceBonus(profile, candidate, 0.75); got <= 0 {
+		t.Fatalf("sourceTurnEvidenceBonus() = %.2f, want positive boost for grounded source turn", got)
+	}
+	if got := sourceTurnEvidenceBonus(profile, candidate, 0.91); got != 0 {
+		t.Fatalf("sourceTurnEvidenceBonus() = %.2f, want no boost for already-high confidence candidate", got)
+	}
+	if got := sourceTurnEvidenceBonus(profile, candidate, 0.85); got != 0 {
+		t.Fatalf("sourceTurnEvidenceBonus() = %.2f, want no medium-score boost for high confidence candidate", got)
+	}
+
+	durationProfile := buildRecallQueryProfile("How long was Max a part of John's family?")
+	if got := sourceTurnEvidenceBonus(durationProfile, candidate, 0.76); got != 0 {
+		t.Fatalf("sourceTurnEvidenceBonus() = %.2f, want no boost for duration query", got)
+	}
+	modalProfile := buildRecallQueryProfile("What might John's degree be in?")
+	if got := sourceTurnEvidenceBonus(modalProfile, candidate, 0.76); got != 0 {
+		t.Fatalf("sourceTurnEvidenceBonus() = %.2f, want no boost for modal inference query", got)
+	}
+	locationProfile := buildRecallQueryProfile("In which state is the shelter from which James adopted the puppy?")
+	if got := sourceTurnEvidenceBonus(locationProfile, candidate, 0.76); got != 0 {
+		t.Fatalf("sourceTurnEvidenceBonus() = %.2f, want no boost for location-like query", got)
+	}
+
+	candidate.SourcePool = service.RecallSourceSession
+	candidate.Memory.MemoryType = domain.TypeSession
+	if got := sourceTurnEvidenceBonus(profile, candidate, 0.76); got != 0 {
+		t.Fatalf("sourceTurnEvidenceBonus() = %.2f, want no boost outside insight pool", got)
 	}
 }
 

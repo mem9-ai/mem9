@@ -83,6 +83,45 @@ func TestSessionRepoGetByIDMissingTableReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestSessionRepoListBySessionSeqWindows(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	db := newScriptedTestDB(t, []*queryExpectation{
+		{
+			mustContain: []string{
+				"FROM sessions",
+				"WHERE state = 'active' AND ((session_id = ? AND seq BETWEEN ? AND ?) OR (session_id = ? AND seq BETWEEN ? AND ?))",
+				"ORDER BY session_id ASC, seq ASC, created_at ASC, id ASC",
+			},
+			wantArgs: []any{"sess-1", int64(79), int64(81), "sess-2", int64(3), int64(5)},
+			rows: &scriptedRows{
+				columns: rawSessionColumns(),
+				values: [][]driver.Value{
+					rawSessionRow("s-79", "sess-1", 79, "user", "Where else?", now),
+					rawSessionRow("s-80", "sess-1", 80, "assistant", "The mountains.", now.Add(time.Second)),
+					rawSessionRow("s-81", "sess-1", 81, "assistant", "The beach too.", now.Add(2*time.Second)),
+					rawSessionRow("s-04", "sess-2", 4, "assistant", "A support group.", now.Add(3*time.Second)),
+				},
+			},
+		},
+	})
+	defer db.Close()
+
+	repo := NewSessionRepo(db, "", false, "cluster-1")
+	rows, err := repo.ListBySessionSeqWindows(context.Background(), []domain.SessionSeqWindow{
+		{SessionID: "sess-1", MinSeq: 79, MaxSeq: 81},
+		{SessionID: "sess-2", MinSeq: 3, MaxSeq: 5},
+	})
+	if err != nil {
+		t.Fatalf("ListBySessionSeqWindows: %v", err)
+	}
+	if len(rows) != 4 {
+		t.Fatalf("rows len = %d, want 4", len(rows))
+	}
+	if rows[0].ID != "s-79" || rows[2].Seq != 81 || rows[3].SessionID != "sess-2" {
+		t.Fatalf("unexpected rows: %+v", rows)
+	}
+}
+
 func TestSessionRepoSoftDeleteMissingTableReturnsNotFound(t *testing.T) {
 	db := newScriptedTestDB(t, []*queryExpectation{
 		{
@@ -153,5 +192,30 @@ func TestFillSessionMemory_PopulatesFields(t *testing.T) {
 	}
 	if result.UpdatedAt != now {
 		t.Errorf("UpdatedAt = %v, want %v", result.UpdatedAt, now)
+	}
+}
+
+func rawSessionColumns() []string {
+	return []string{
+		"id", "session_id", "agent_id", "source", "seq", "role", "content", "content_type",
+		"content_hash", "tags", "state", "created_at", "updated_at",
+	}
+}
+
+func rawSessionRow(id, sessionID string, seq int64, role, content string, ts time.Time) []driver.Value {
+	return []driver.Value{
+		id,
+		sessionID,
+		"agent-1",
+		"chat",
+		seq,
+		role,
+		content,
+		"text",
+		id + "-hash",
+		[]byte(`[]`),
+		"active",
+		ts,
+		ts,
 	}
 }

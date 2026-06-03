@@ -118,4 +118,8 @@ type SessionRepo interface {
 	// session_id ASC, created_at ASC, seq ASC, id ASC. At most limitPerSession rows are
 	// returned per session_id. Returns ErrNotSupported on non-TiDB backends.
 	ListBySessionIDs(ctx context.Context, sessionIDs []string, limitPerSession int) ([]*domain.Session, error)
+	// ListBySessionSeqWindows returns raw session rows for bounded seq windows,
+	// ordered by session_id ASC, seq ASC, created_at ASC, id ASC. Returns
+	// ErrNotSupported on non-TiDB backends.
+	ListBySessionSeqWindows(ctx context.Context, windows []domain.SessionSeqWindow) ([]*domain.Session, error)
 }
