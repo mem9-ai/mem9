@@ -1287,6 +1287,7 @@ type ApiTestModalElements = {
   method: HTMLElement;
   path: HTMLElement;
   baseUrl: HTMLInputElement;
+  saveInfo: HTMLInputElement;
   pathFields: HTMLElement;
   headerFields: HTMLElement;
   queryFields: HTMLElement;
@@ -1300,7 +1301,21 @@ type ApiTestModalElements = {
   run: HTMLButtonElement;
 };
 
+type ApiTestSavedForm = {
+  baseUrl: string;
+  path: Record<string, string>;
+  headers: Record<string, string>;
+  query: Record<string, string>;
+  body: Record<string, string>;
+  json: string;
+};
+
+const API_TEST_STORAGE_PREFIX = 'mem9.apiTestForm.';
 let activeApiTestEndpoint: ApiTestEndpoint | null = null;
+
+function apiTestLabels(): SiteDictionary['apiPage']['labels'] {
+  return siteCopy[currentLocale()].apiPage.labels;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -1362,6 +1377,7 @@ function getApiTestModalElements(): ApiTestModalElements | null {
   const method = document.querySelector<HTMLElement>('[data-api-test-method]');
   const path = document.querySelector<HTMLElement>('[data-api-test-path]');
   const baseUrl = document.querySelector<HTMLInputElement>('[data-api-test-base-url]');
+  const saveInfo = document.querySelector<HTMLInputElement>('[data-api-test-save-info]');
   const pathFields = document.querySelector<HTMLElement>('[data-api-test-path-fields]');
   const headerFields = document.querySelector<HTMLElement>('[data-api-test-header-fields]');
   const queryFields = document.querySelector<HTMLElement>('[data-api-test-query-fields]');
@@ -1381,6 +1397,7 @@ function getApiTestModalElements(): ApiTestModalElements | null {
     !method ||
     !path ||
     !baseUrl ||
+    !saveInfo ||
     !pathFields ||
     !headerFields ||
     !queryFields ||
@@ -1403,6 +1420,7 @@ function getApiTestModalElements(): ApiTestModalElements | null {
     method,
     path,
     baseUrl,
+    saveInfo,
     pathFields,
     headerFields,
     queryFields,
@@ -1450,7 +1468,7 @@ function highlightJson(value: string): string {
 
 function formatApiTestOutput(text: string): string {
   if (text.trim() === '') {
-    return '<span class="api-json-null">(empty response)</span>';
+    return `<span class="api-json-null">(${escapeHtml(apiTestLabels().emptyResponse)})</span>`;
   }
 
   try {
@@ -1516,9 +1534,10 @@ function isApiTestMultipart(endpoint: ApiTestEndpoint): boolean {
 }
 
 function extractApiTestPathParams(path: string): ApiTestField[] {
+  const labels = apiTestLabels();
   return Array.from(path.matchAll(/\{([^}]+)\}/g)).map((match) => ({
     name: match[1] ?? '',
-    description: 'Path parameter.',
+    description: labels.pathParameter,
     required: true,
   }));
 }
@@ -1543,10 +1562,11 @@ function createApiTestInput(container: HTMLElement, scope: string, field: ApiTes
   labelText.append(labelName);
 
   if (field.required) {
+    const labels = apiTestLabels();
     const requiredMark = document.createElement('span');
     requiredMark.className = 'api-test-required-mark';
     requiredMark.textContent = '*';
-    requiredMark.setAttribute('aria-label', 'Required');
+    requiredMark.setAttribute('aria-label', labels.required);
     labelText.append(requiredMark);
   }
 
@@ -1595,6 +1615,163 @@ function readApiTestTextInputs(scope: string): Array<{ name: string; value: stri
     .filter((entry) => entry.name !== '');
 }
 
+function apiTestStorageKey(endpoint: ApiTestEndpoint): string {
+  return `${API_TEST_STORAGE_PREFIX}${encodeURIComponent(`${endpoint.method}:${endpoint.path}`)}`;
+}
+
+function isApiTestApiKeyName(name: string): boolean {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, '').includes('apikey');
+}
+
+function collectApiTestSavedInputs(scope: string): Record<string, string> {
+  return Array.from(document.querySelectorAll<HTMLInputElement>(`[data-api-test-scope="${scope}"]`))
+    .filter((input) => input.type !== 'file')
+    .reduce<Record<string, string>>((saved, input) => {
+      const name = input.dataset.apiTestName ?? '';
+      if (name === '' || isApiTestApiKeyName(name)) {
+        return saved;
+      }
+
+      saved[name] = input.value;
+      return saved;
+    }, {});
+}
+
+function applyApiTestSavedInputs(scope: string, saved: Record<string, string>): void {
+  document.querySelectorAll<HTMLInputElement>(`[data-api-test-scope="${scope}"]`).forEach((input) => {
+    const name = input.dataset.apiTestName ?? '';
+    if (name === '' || isApiTestApiKeyName(name) || !(name in saved)) {
+      return;
+    }
+
+    input.value = saved[name] ?? '';
+  });
+}
+
+function sanitizeApiTestJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeApiTestJsonValue);
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  return Object.entries(value).reduce<Record<string, unknown>>((sanitized, [key, nestedValue]) => {
+    if (!isApiTestApiKeyName(key)) {
+      sanitized[key] = sanitizeApiTestJsonValue(nestedValue);
+    }
+    return sanitized;
+  }, {});
+}
+
+function sanitizeApiTestJsonText(text: string): string {
+  if (text.trim() === '') {
+    return '';
+  }
+
+  try {
+    return JSON.stringify(sanitizeApiTestJsonValue(JSON.parse(text) as unknown), null, 2);
+  } catch {
+    return '';
+  }
+}
+
+function parseApiTestStringRecord(value: unknown): Record<string, string> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.entries(value).reduce<Record<string, string>>((record, [key, nestedValue]) => {
+    if (typeof nestedValue === 'string' && !isApiTestApiKeyName(key)) {
+      record[key] = nestedValue;
+    }
+    return record;
+  }, {});
+}
+
+function readApiTestSavedForm(endpoint: ApiTestEndpoint): ApiTestSavedForm | null {
+  try {
+    const raw = localStorage.getItem(apiTestStorageKey(endpoint));
+    if (!raw) {
+      return null;
+    }
+
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) {
+      return null;
+    }
+
+    return {
+      baseUrl: typeof parsed.baseUrl === 'string' ? parsed.baseUrl : '',
+      path: parseApiTestStringRecord(parsed.path),
+      headers: parseApiTestStringRecord(parsed.headers),
+      query: parseApiTestStringRecord(parsed.query),
+      body: parseApiTestStringRecord(parsed.body),
+      json: typeof parsed.json === 'string' ? sanitizeApiTestJsonText(parsed.json) : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function collectApiTestSavedForm(elements: ApiTestModalElements): ApiTestSavedForm {
+  return {
+    baseUrl: elements.baseUrl.value,
+    path: collectApiTestSavedInputs('path'),
+    headers: collectApiTestSavedInputs('headers'),
+    query: collectApiTestSavedInputs('query'),
+    body: collectApiTestSavedInputs('body'),
+    json: elements.jsonWrap.hidden ? '' : sanitizeApiTestJsonText(elements.json.value),
+  };
+}
+
+function saveApiTestForm(elements: ApiTestModalElements): void {
+  if (!activeApiTestEndpoint || !elements.saveInfo.checked) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      apiTestStorageKey(activeApiTestEndpoint),
+      JSON.stringify(collectApiTestSavedForm(elements)),
+    );
+  } catch {
+    // Ignore storage quota or privacy-mode failures.
+  }
+}
+
+function clearApiTestSavedForm(endpoint: ApiTestEndpoint): void {
+  try {
+    localStorage.removeItem(apiTestStorageKey(endpoint));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function restoreApiTestSavedForm(elements: ApiTestModalElements, endpoint: ApiTestEndpoint): void {
+  if (!elements.saveInfo.checked) {
+    return;
+  }
+
+  const saved = readApiTestSavedForm(endpoint);
+  if (!saved) {
+    return;
+  }
+
+  if (saved.baseUrl.trim() !== '') {
+    elements.baseUrl.value = saved.baseUrl;
+  }
+
+  applyApiTestSavedInputs('path', saved.path);
+  applyApiTestSavedInputs('headers', saved.headers);
+  applyApiTestSavedInputs('query', saved.query);
+  applyApiTestSavedInputs('body', saved.body);
+  if (!elements.jsonWrap.hidden && saved.json.trim() !== '') {
+    elements.json.value = saved.json;
+  }
+}
+
 function buildApiTestUrl(elements: ApiTestModalElements, endpoint: ApiTestEndpoint): URL {
   const base = elements.baseUrl.value.trim().replace(/\/+$/u, '');
   const baseUrl = base === '' ? defaultApiTestBaseUrl() : base;
@@ -1635,6 +1812,7 @@ function updateApiTestUrlPreview(elements: ApiTestModalElements): void {
 
 function openApiTestModal(elements: ApiTestModalElements, endpoint: ApiTestEndpoint): void {
   const multipart = isApiTestMultipart(endpoint);
+  const labels = apiTestLabels();
   activeApiTestEndpoint = endpoint;
   if (elements.baseUrl.value.trim() === '') {
     elements.baseUrl.value = defaultApiTestBaseUrl();
@@ -1643,8 +1821,8 @@ function openApiTestModal(elements: ApiTestModalElements, endpoint: ApiTestEndpo
   elements.method.textContent = `${endpoint.method} · ${endpoint.groupTitle}`;
   elements.path.textContent = endpoint.path;
   elements.response.hidden = false;
-  elements.status.textContent = 'Ready';
-  elements.output.textContent = 'Run a request to inspect the response.';
+  elements.status.textContent = labels.ready;
+  elements.output.textContent = labels.responseReady;
   renderApiTestFields(elements.pathFields, 'path', extractApiTestPathParams(endpoint.path));
   renderApiTestFields(elements.headerFields, 'headers', endpoint.headers);
   renderApiTestFields(elements.queryFields, 'query', endpoint.queryParams);
@@ -1652,6 +1830,7 @@ function openApiTestModal(elements: ApiTestModalElements, endpoint: ApiTestEndpo
   elements.jsonWrap.hidden = multipart || endpoint.bodyFields.length === 0;
   elements.json.value = multipart || endpoint.bodyFields.length === 0 ? '' : buildApiTestJsonTemplate(endpoint.bodyFields);
   setApiTestSectionVisibility(elements.bodyFields, endpoint.bodyFields.length > 0);
+  restoreApiTestSavedForm(elements, endpoint);
   updateApiTestUrlPreview(elements);
 
   elements.modal.hidden = false;
@@ -1673,6 +1852,7 @@ async function runApiTest(elements: ApiTestModalElements): Promise<void> {
     return;
   }
 
+  const labels = apiTestLabels();
   const endpoint = activeApiTestEndpoint;
   const multipart = isApiTestMultipart(endpoint);
   const headers = new Headers();
@@ -1717,9 +1897,9 @@ async function runApiTest(elements: ApiTestModalElements): Promise<void> {
   const url = buildApiTestUrl(elements, endpoint);
   const startedAt = performance.now();
   elements.run.disabled = true;
-  elements.run.textContent = 'Running...';
+  elements.run.textContent = labels.running;
   elements.response.hidden = false;
-  elements.status.textContent = 'Running request...';
+  elements.status.textContent = labels.runningRequest;
   elements.output.textContent = '';
 
   try {
@@ -1734,11 +1914,11 @@ async function runApiTest(elements: ApiTestModalElements): Promise<void> {
     elements.output.innerHTML = formatApiTestOutput(text);
   } catch (error) {
     const elapsed = Math.round(performance.now() - startedAt);
-    elements.status.textContent = `Request failed · ${elapsed}ms`;
+    elements.status.textContent = `${labels.requestFailed} · ${elapsed}ms`;
     elements.output.textContent = error instanceof Error ? error.message : String(error);
   } finally {
     elements.run.disabled = false;
-    elements.run.textContent = 'Run';
+    elements.run.textContent = apiTestLabels().run;
   }
 }
 
@@ -1764,6 +1944,7 @@ function initApiTestConsole(): void {
   const resetButton = document.querySelector<HTMLButtonElement>('[data-api-test-reset]');
   resetButton?.addEventListener('click', () => {
     if (activeApiTestEndpoint) {
+      clearApiTestSavedForm(activeApiTestEndpoint);
       openApiTestModal(elements, activeApiTestEndpoint);
     }
   });
@@ -1774,15 +1955,25 @@ function initApiTestConsole(): void {
     }
   });
 
-  elements.form.addEventListener('input', () => updateApiTestUrlPreview(elements));
+  elements.saveInfo.addEventListener('change', () => {
+    if (elements.saveInfo.checked) {
+      saveApiTestForm(elements);
+    }
+  });
+
+  elements.form.addEventListener('input', () => {
+    updateApiTestUrlPreview(elements);
+    saveApiTestForm(elements);
+  });
   elements.form.addEventListener('submit', (event) => {
     event.preventDefault();
     runApiTest(elements).catch((error: unknown) => {
+      const labels = apiTestLabels();
       elements.response.hidden = false;
-      elements.status.textContent = 'Request failed';
+      elements.status.textContent = labels.requestFailed;
       elements.output.textContent = error instanceof Error ? error.message : String(error);
       elements.run.disabled = false;
-      elements.run.textContent = 'Run';
+      elements.run.textContent = labels.run;
     });
   });
 

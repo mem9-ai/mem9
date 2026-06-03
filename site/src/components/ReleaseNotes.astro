@@ -16,6 +16,16 @@ import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
             <p class="section-kicker">{releaseNotes.kicker}</p>
             <h1>{releaseNotes.title}</h1>
             <p>{releaseNotes.intro}</p>
+            <div class="release-notes-star">
+              <span>{releaseNotes.starPrompt}</span>
+              <a href={releaseNotes.starHref} target="_blank" rel="noopener">
+                <img
+                  src={releaseNotes.starBadgeSrc}
+                  alt={releaseNotes.starBadgeAlt}
+                  loading="lazy"
+                />
+              </a>
+            </div>
             <div class="release-notes-updated">
               <span>{releaseNotes.updatedLabel}</span>
               <strong>{releaseNotes.updatedValue}</strong>
@@ -71,6 +81,7 @@ import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
                             </a>
                           ))}
                         </div>
+                        <p>{releaseNotes.sourcesFeedback}</p>
                       </div>
                     </article>
                   ))}
@@ -114,6 +125,28 @@ import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
     max-width: 760px;
     color: var(--text-dim);
     font-size: clamp(1.05rem, 2vw, 1.25rem);
+  }
+
+  .release-notes-star {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    max-width: 760px;
+    color: var(--text-dim);
+    font-size: 0.96rem;
+  }
+
+  .release-notes-star a {
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+  }
+
+  .release-notes-star img {
+    display: block;
+    height: 1.25rem;
+    width: auto;
   }
 
   .release-notes-updated {
@@ -231,10 +264,10 @@ import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
   }
 
   .release-note-sources {
-    display: flex;
-    gap: 0.8rem;
-    align-items: flex-start;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 0.45rem 0.8rem;
+    align-items: center;
     color: var(--text-soft);
     font-size: 0.84rem;
   }
@@ -248,6 +281,13 @@ import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
     display: flex;
     flex-wrap: wrap;
     gap: 0.45rem;
+  }
+
+  .release-note-sources p {
+    grid-column: 2;
+    color: var(--text-soft);
+    font-size: 0.8rem;
+    line-height: 1.55;
   }
 
   .release-note-sources a {
@@ -299,7 +339,12 @@ import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
 
     .release-note-sources {
       display: grid;
+      grid-template-columns: 1fr;
       gap: 0.55rem;
+    }
+
+    .release-note-sources p {
+      grid-column: 1;
     }
   }
 </style>

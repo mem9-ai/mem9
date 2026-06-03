@@ -261,6 +261,26 @@ export interface SiteApiPageCopy {
     sidebarTitle: string;
     sidebarAuth: string;
     sidebarQuickstart: string;
+    apiSearch: string;
+    apiSearchPlaceholder: string;
+    apiSearchEmpty: string;
+    testApi: string;
+    testTitle: string;
+    close: string;
+    closeApiTestModal: string;
+    reset: string;
+    run: string;
+    baseUrl: string;
+    pathParams: string;
+    jsonBody: string;
+    ready: string;
+    responseReady: string;
+    emptyResponse: string;
+    running: string;
+    runningRequest: string;
+    requestFailed: string;
+    pathParameter: string;
+    saveFormInfo: string;
   };
   authTitle: string;
   authCards: {
@@ -307,9 +327,14 @@ export interface SiteReleaseNotesPageCopy {
   kicker: string;
   title: string;
   intro: string;
+  starPrompt: string;
+  starBadgeAlt: string;
+  starBadgeSrc: string;
+  starHref: string;
   updatedLabel: string;
   updatedValue: string;
   sourcesLabel: string;
+  sourcesFeedback: string;
   groups: SiteReleaseNoteGroup[];
 }
 
@@ -1399,13 +1424,33 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       headers: 'Headers',
       queryParams: 'Query Params',
       body: 'Body',
-      response: 'Response',
+      response: 'Response Body',
       examples: 'Examples',
       required: 'Required',
       next: 'Next',
       sidebarTitle: 'On this page',
       sidebarAuth: 'Authentication',
       sidebarQuickstart: 'Quick Start',
+      apiSearch: 'Search API',
+      apiSearchPlaceholder: 'Search path or name',
+      apiSearchEmpty: 'No matching APIs.',
+      testApi: 'Test API',
+      testTitle: 'Test API',
+      close: 'Close',
+      closeApiTestModal: 'Close API test modal',
+      reset: 'Reset',
+      run: 'Run',
+      baseUrl: 'Base URL',
+      pathParams: 'Path Params',
+      jsonBody: 'JSON body',
+      ready: 'Ready',
+      responseReady: 'Run a request to inspect the response.',
+      emptyResponse: 'empty response',
+      running: 'Running...',
+      runningRequest: 'Running request...',
+      requestFailed: 'Request failed',
+      pathParameter: 'Path parameter.',
+      saveFormInfo: 'Save form info',
     },
     authTitle: 'Base URL & authentication',
     authCards: [
@@ -1459,7 +1504,6 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       keyStatusEndpointGroup,
-      spaceChainEndpointGroup,
       {
         id: 'memories',
         title: 'Memories',
@@ -1526,6 +1570,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
           batchDeleteMemoryEndpoint,
         ],
       },
+      spaceChainEndpointGroup,
       {
         id: 'imports',
         title: 'Imports',
@@ -1623,13 +1668,33 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       headers: '请求头',
       queryParams: '查询参数',
       body: '请求体',
-      response: '响应',
+      response: '响应 Body',
       examples: '示例',
       required: '必填',
       next: '下一步',
       sidebarTitle: '本页目录',
       sidebarAuth: '认证',
       sidebarQuickstart: '快速开始',
+      apiSearch: '搜索 API',
+      apiSearchPlaceholder: '搜索 path 或名称',
+      apiSearchEmpty: '没有匹配的 API。',
+      testApi: '测试 API',
+      testTitle: '测试 API',
+      close: '关闭',
+      closeApiTestModal: '关闭 API 测试弹窗',
+      reset: '重置',
+      run: '运行',
+      baseUrl: 'Base URL',
+      pathParams: '路径参数',
+      jsonBody: 'JSON 请求体',
+      ready: '就绪',
+      responseReady: '运行请求后在这里查看响应。',
+      emptyResponse: '空响应',
+      running: '运行中...',
+      runningRequest: '正在发送请求...',
+      requestFailed: '请求失败',
+      pathParameter: '路径参数。',
+      saveFormInfo: '保存表单信息',
     },
     authTitle: 'Base URL 与认证方式',
     authCards: [
@@ -1681,7 +1746,6 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       keyStatusEndpointGroup,
-      spaceChainEndpointGroup,
       {
         id: 'memories',
         title: 'Memories',
@@ -1744,6 +1808,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
           batchDeleteMemoryEndpoint,
         ],
       },
+      spaceChainEndpointGroup,
       {
         id: 'imports',
         title: 'Imports',
@@ -1837,13 +1902,33 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       headers: '請求頭',
       queryParams: '查詢參數',
       body: '請求體',
-      response: '回應',
+      response: '回應 Body',
       examples: '範例',
       required: '必填',
       next: '下一步',
       sidebarTitle: '本頁目錄',
       sidebarAuth: '驗證',
       sidebarQuickstart: '快速開始',
+      apiSearch: '搜尋 API',
+      apiSearchPlaceholder: '搜尋 path 或名稱',
+      apiSearchEmpty: '沒有符合的 API。',
+      testApi: '測試 API',
+      testTitle: '測試 API',
+      close: '關閉',
+      closeApiTestModal: '關閉 API 測試彈窗',
+      reset: '重設',
+      run: '執行',
+      baseUrl: 'Base URL',
+      pathParams: '路徑參數',
+      jsonBody: 'JSON 請求體',
+      ready: '就緒',
+      responseReady: '執行請求後在這裡查看回應。',
+      emptyResponse: '空回應',
+      running: '執行中...',
+      runningRequest: '正在送出請求...',
+      requestFailed: '請求失敗',
+      pathParameter: '路徑參數。',
+      saveFormInfo: '儲存表單資訊',
     },
     authTitle: 'Base URL 與驗證方式',
     authCards: [
@@ -1891,7 +1976,6 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       keyStatusEndpointGroup,
-      spaceChainEndpointGroup,
       {
         id: 'memories',
         title: 'Memories',
@@ -1953,6 +2037,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
           batchDeleteMemoryEndpoint,
         ],
       },
+      spaceChainEndpointGroup,
       {
         id: 'imports',
         title: 'Imports',
@@ -2046,13 +2131,33 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       headers: 'Headers',
       queryParams: 'Query Params',
       body: 'Body',
-      response: 'Response',
+      response: 'Response Body',
       examples: 'Examples',
       required: '必須',
       next: 'Next',
       sidebarTitle: 'このページの内容',
       sidebarAuth: '認証',
       sidebarQuickstart: 'クイックスタート',
+      apiSearch: 'API を検索',
+      apiSearchPlaceholder: 'path または名前を検索',
+      apiSearchEmpty: '一致する API はありません。',
+      testApi: 'API をテスト',
+      testTitle: 'API をテスト',
+      close: '閉じる',
+      closeApiTestModal: 'API テストモーダルを閉じる',
+      reset: 'リセット',
+      run: '実行',
+      baseUrl: 'Base URL',
+      pathParams: 'パスパラメータ',
+      jsonBody: 'JSON body',
+      ready: '準備完了',
+      responseReady: 'リクエストを実行するとレスポンスを確認できます。',
+      emptyResponse: '空のレスポンス',
+      running: '実行中...',
+      runningRequest: 'リクエストを実行中...',
+      requestFailed: 'リクエストに失敗しました',
+      pathParameter: 'パスパラメータ。',
+      saveFormInfo: 'フォーム情報を保存',
     },
     authTitle: 'Base URL と認証',
     authCards: [
@@ -2100,7 +2205,6 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       keyStatusEndpointGroup,
-      spaceChainEndpointGroup,
       {
         id: 'memories',
         title: 'Memories',
@@ -2162,6 +2266,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
           batchDeleteMemoryEndpoint,
         ],
       },
+      spaceChainEndpointGroup,
       {
         id: 'imports',
         title: 'Imports',
@@ -2255,13 +2360,33 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       headers: 'Headers',
       queryParams: 'Query Params',
       body: 'Body',
-      response: 'Response',
+      response: 'Response Body',
       examples: 'Examples',
       required: '필수',
       next: '다음',
       sidebarTitle: '이 페이지 목차',
       sidebarAuth: '인증',
       sidebarQuickstart: '빠른 시작',
+      apiSearch: 'API 검색',
+      apiSearchPlaceholder: 'path 또는 이름 검색',
+      apiSearchEmpty: '일치하는 API가 없습니다.',
+      testApi: 'API 테스트',
+      testTitle: 'API 테스트',
+      close: '닫기',
+      closeApiTestModal: 'API 테스트 모달 닫기',
+      reset: '초기화',
+      run: '실행',
+      baseUrl: 'Base URL',
+      pathParams: '경로 파라미터',
+      jsonBody: 'JSON body',
+      ready: '준비됨',
+      responseReady: '요청을 실행하면 응답을 확인할 수 있습니다.',
+      emptyResponse: '빈 응답',
+      running: '실행 중...',
+      runningRequest: '요청 실행 중...',
+      requestFailed: '요청 실패',
+      pathParameter: '경로 파라미터.',
+      saveFormInfo: '폼 정보 저장',
     },
     authTitle: 'Base URL 과 인증',
     authCards: [
@@ -2309,7 +2434,6 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       keyStatusEndpointGroup,
-      spaceChainEndpointGroup,
       {
         id: 'memories',
         title: 'Memories',
@@ -2371,6 +2495,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
           batchDeleteMemoryEndpoint,
         ],
       },
+      spaceChainEndpointGroup,
       {
         id: 'imports',
         title: 'Imports',
@@ -2464,13 +2589,33 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       headers: 'Headers',
       queryParams: 'Query Params',
       body: 'Body',
-      response: 'Response',
+      response: 'Response Body',
       examples: 'Examples',
       required: 'Wajib',
       next: 'Next',
       sidebarTitle: 'Di halaman ini',
       sidebarAuth: 'Autentikasi',
       sidebarQuickstart: 'Quick Start',
+      apiSearch: 'Cari API',
+      apiSearchPlaceholder: 'Cari path atau nama',
+      apiSearchEmpty: 'Tidak ada API yang cocok.',
+      testApi: 'Uji API',
+      testTitle: 'Uji API',
+      close: 'Tutup',
+      closeApiTestModal: 'Tutup modal uji API',
+      reset: 'Reset',
+      run: 'Jalankan',
+      baseUrl: 'Base URL',
+      pathParams: 'Parameter path',
+      jsonBody: 'Body JSON',
+      ready: 'Siap',
+      responseReady: 'Jalankan request untuk melihat respons.',
+      emptyResponse: 'respons kosong',
+      running: 'Menjalankan...',
+      runningRequest: 'Menjalankan request...',
+      requestFailed: 'Request gagal',
+      pathParameter: 'Parameter path.',
+      saveFormInfo: 'Simpan info formulir',
     },
     authTitle: 'Base URL & autentikasi',
     authCards: [
@@ -2518,7 +2663,6 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       keyStatusEndpointGroup,
-      spaceChainEndpointGroup,
       {
         id: 'memories',
         title: 'Memories',
@@ -2580,6 +2724,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
           batchDeleteMemoryEndpoint,
         ],
       },
+      spaceChainEndpointGroup,
       {
         id: 'imports',
         title: 'Imports',
@@ -2673,13 +2818,33 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       headers: 'Headers',
       queryParams: 'Query Params',
       body: 'Body',
-      response: 'Response',
+      response: 'Response Body',
       examples: 'Examples',
       required: 'จำเป็น',
       next: 'ถัดไป',
       sidebarTitle: 'ในหน้านี้',
       sidebarAuth: 'การยืนยันตัวตน',
       sidebarQuickstart: 'เริ่มต้นอย่างรวดเร็ว',
+      apiSearch: 'ค้นหา API',
+      apiSearchPlaceholder: 'ค้นหา path หรือชื่อ',
+      apiSearchEmpty: 'ไม่พบ API ที่ตรงกัน',
+      testApi: 'ทดสอบ API',
+      testTitle: 'ทดสอบ API',
+      close: 'ปิด',
+      closeApiTestModal: 'ปิดหน้าต่างทดสอบ API',
+      reset: 'รีเซ็ต',
+      run: 'เรียกใช้',
+      baseUrl: 'Base URL',
+      pathParams: 'พารามิเตอร์ path',
+      jsonBody: 'JSON body',
+      ready: 'พร้อม',
+      responseReady: 'เรียกใช้ request เพื่อดู response',
+      emptyResponse: 'response ว่าง',
+      running: 'กำลังเรียกใช้...',
+      runningRequest: 'กำลังส่ง request...',
+      requestFailed: 'Request ล้มเหลว',
+      pathParameter: 'พารามิเตอร์ path',
+      saveFormInfo: 'บันทึกข้อมูลฟอร์ม',
     },
     authTitle: 'Base URL และการยืนยันตัวตน',
     authCards: [
@@ -2727,7 +2892,6 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       keyStatusEndpointGroup,
-      spaceChainEndpointGroup,
       {
         id: 'memories',
         title: 'Memories',
@@ -2789,6 +2953,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
           batchDeleteMemoryEndpoint,
         ],
       },
+      spaceChainEndpointGroup,
       {
         id: 'imports',
         title: 'Imports',
@@ -2968,9 +3133,14 @@ const releaseNotesPageCopyEn = attachReleaseNoteSources({
     kicker: 'Release Notes',
     title: 'What is new in mem9',
     intro: 'Here, the mem9 authors update recently shipped important features.',
+    starPrompt: 'Open source is not easy. Please support us by starring mem9 on GitHub.',
+    starBadgeAlt: 'GitHub stars for mem9-ai/mem9',
+    starBadgeSrc: 'https://img.shields.io/github/stars/mem9-ai/mem9?style=social',
+    starHref: 'https://github.com/mem9-ai/mem9',
     updatedLabel: 'Last updated',
     updatedValue: 'June 4, 2026',
     sourcesLabel: 'PR sources',
+    sourcesFeedback: 'You are welcome to open the PRs or issues and share your feedback.',
     groups: [
     {
       period: 'June 2026',
@@ -3284,9 +3454,14 @@ const releaseNotesPageCopyZh = attachReleaseNoteSources({
   kicker: '发布说明',
   title: 'mem9 最近更新了什么',
   intro: '在这里 mem9 作者们会更新最近上线了哪些重要的功能。',
+  starPrompt: '开源项目不容易，请大家给我们Star来支持我们。',
+  starBadgeAlt: 'mem9-ai/mem9 的 GitHub Stars',
+  starBadgeSrc: 'https://img.shields.io/github/stars/mem9-ai/mem9?style=social',
+  starHref: 'https://github.com/mem9-ai/mem9',
   updatedLabel: '最后更新',
   updatedValue: '2026 年 6 月 4 日',
   sourcesLabel: 'PR 来源',
+  sourcesFeedback: '欢迎进入PR、issue提交您的反馈。',
   groups: [
     {
       period: '2026 年 6 月',
@@ -3537,15 +3712,1536 @@ const releaseNotesPageCopyZh = attachReleaseNoteSources({
   ],
 });
 
+const releaseNotesPageCopyZhHant = attachReleaseNoteSources({
+  meta: {
+    title: '發布說明 | mem9',
+    description: 'mem9 面向客戶的發布說明，涵蓋 Console、API、Space Chain、計費和記憶管理的新功能。',
+  },
+  kicker: '發布說明',
+  title: 'mem9 最近更新了什麼',
+  intro: '在這裡 mem9 作者們會更新最近上線了哪些重要功能。',
+  starPrompt: '開源專案不容易，請大家給我們Star來支持我們。',
+  starBadgeAlt: 'mem9-ai/mem9 的 GitHub Stars',
+  starBadgeSrc: 'https://img.shields.io/github/stars/mem9-ai/mem9?style=social',
+  starHref: 'https://github.com/mem9-ai/mem9',
+  updatedLabel: '最後更新',
+  updatedValue: '2026 年 6 月 4 日',
+  sourcesLabel: 'PR 來源',
+  sourcesFeedback: '歡迎進入PR、issue提交您的回饋。',
+  groups: [
+    {
+      period: '2026 年 6 月',
+      items: [
+        {
+          date: '2026 年 6 月 4 日',
+          title: 'mem9.ai 官方服務迎來重要效能更新',
+          summary:
+            'mem9.ai 官方服務正在進行重要效能優化。由於早期部署時服務和資料庫存在跨區存取，API 請求產生了額外延遲。我們正在分兩個階段遷移資料，以大幅降低官方託管服務的 API 延遲。',
+          sections: [
+            {
+              title: '發布節奏',
+              items: [
+                '第一階段已在北京時間 6 月 4 日中午發布，將普遍 API 延遲從平均約 4-6 秒降低到約 1.3 秒。',
+                '第二階段預計在本週完成中繼資料遷移，目標是把平均延遲進一步降低到幾百毫秒以內。',
+              ],
+            },
+            {
+              title: '回饋',
+              body: '這次更新不需要客戶端改動，會直接優化 mem9.ai 官方服務鏈路。歡迎大家繼續回饋 mem9 官方服務的效能體驗。',
+            },
+          ],
+        },
+        {
+          date: '2026 年 6 月 4 日',
+          title: '同一把 API key 下的 appId 隔離',
+          summary:
+            '同一把 mem9 API key 現在可以透過 `appId` 承載多個彼此隔離的應用記憶空間。寫入時帶 appId 的 memory 和 raw session 會歸屬到對應應用，適合把不同產品、Agent、環境或工作流程放在同一把 key 下，同時避免日常記憶互相混在一起。',
+          sections: [
+            {
+              title: 'appId 如何隔離記憶',
+              items: [
+                '寫入 memory 或 ingest messages 時傳入 `appId`，例如 `appId: "docs"` 或 `appId: "support-bot"`。',
+                '搜尋時，不傳 `appId` 表示跨該 key 下的全部 appId 搜尋；傳非空 appId 表示只查一個子空間；傳 `appId=null` 或 `appId=` 表示只查預設/global 記憶。',
+                '在 Console 中，可以用 appId 篩選器、appId 欄位和建立 memory 時的 appId 欄位，查看或寫入某個應用的記憶。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 6 月 4 日',
+          title: 'API 文件更新，並支援站內直接測試 API',
+          summary:
+            'mem9 API 文件完成重要更新：頁面版面更清楚，endpoint 內容補充得更完整，並新增內建 API 測試控制台。開發者現在可以在同一個頁面閱讀文件並直接發起請求，不必在文件和外部除錯工具之間來回切換。',
+          sections: [
+            {
+              title: '更新內容',
+              items: [
+                'API 頁面更新了側邊欄和 endpoint 資訊結構，閱讀路徑更清晰。',
+                '文件內容補充了鑑權、appId 隔離、memory API、imports、session messages 和 Space Chain API。',
+              ],
+            },
+            {
+              title: '在哪裡體驗',
+              body: '從站點導覽開啟 API 頁面，在 API test 面板裡設定 base URL、API key、headers、path/query/body 欄位，執行請求，並直接在文件頁查看回應。',
+            },
+          ],
+        },
+        {
+          date: '2026 年 6 月 3 日',
+          title: '把既有 mem9 API key 匯入 Console',
+          summary:
+            '已經透過 Agent 安裝或 API 流程拿到 mem9 API key 的使用者，現在可以把 key 綁定到 Console 的 Space。Console 會保護原始 key，只顯示脫敏資訊，並把已認領的 key 納入組織配額模型。',
+          sections: [
+            {
+              title: '認領流程',
+              items: [
+                '從安裝流程裡的認領連結進入 Console，或直接開啟 `/console/claim`。',
+                '貼上既有 key，選擇組織和專案，然後綁定到一個空 Space，或在流程中建立新 Space。',
+                '綁定後即可在 Console 管理這個 Space，普通頁面不會暴露原始 key。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 6 月 3 日',
+          title: '內嵌計費、付款方式和發票',
+          summary:
+            'Console 的 Billing 區域現在提供更完整的 Stripe 計費體驗，包括目前方案、帳單地址、付款方式、方案變更、優惠碼、取消/恢復訂閱和發票歷史。',
+          sections: [
+            {
+              title: '在哪裡管理',
+              items: [
+                '開啟 Console，選擇組織，然後進入 Billing。',
+                '點擊 Upgrade 或 Change plan，填寫帳單資訊、選擇方案，並透過 Stripe Elements 完成付款確認。',
+                '在同一個 Billing 頁面查看已儲存的付款方式和發票。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 6 月 1 日',
+          title: 'Space Chain 知識路由',
+          summary:
+            'Space Chain 現在可以根據路由策略把提取出的知識寫入正確的鏈節點。這樣一條鏈可以像知識庫一樣工作：寬泛輸入會落到對應團隊、專案或主題 Space，同時仍可跨鏈召回。',
+          sections: [
+            {
+              title: '路由設定',
+              items: [
+                '開啟 Space Chain 詳情頁，設定 knowledge extraction policy。',
+                '透過節點選擇器和路由圖決定提取出的事實應該寫到哪裡。',
+                '建立 memory 時啟用 smart ingest，讓系統提取並路由事實，而不是只寫入一條原始 memory。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 6 月 1 日',
+          title: '服務端記憶排序和搜尋控制',
+          summary:
+            'Memory 表格現在會基於服務端完整結果集排序和篩選，而不是只重排目前頁面。使用者可以按內容、類型、標籤和更新時間排序，並結合搜尋條件使用。',
+          sections: [
+            {
+              title: '表格控制',
+              items: [
+                '開啟 Space 或 Space Chain 的 memory workbench。',
+                '點擊表頭切換升序或降序排序。',
+                '使用內容、類型和標籤搜尋框；服務端會先篩選和排序，再分頁返回。',
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      period: '2026 年 5 月',
+      items: [
+        {
+          date: '2026 年 5 月 30 日',
+          title: '更快的 Space Chain 召回和耗時展示',
+          summary:
+            'Space Chain 召回現在會並行掃描節點並並行解析鑑權節點，同時保留全域 rerank 行為。Console 也會展示召回耗時，方便團隊觀察測試查詢速度。',
+          sections: [
+            {
+              title: '變更內容',
+              body: '召回鏈路在後台並行化處理，同時保留全域 rerank 行為。',
+            },
+            {
+              title: '如何驗證',
+              items: [
+                '開啟 Space Chain 詳情頁，使用 Recall test 面板。',
+                '需要測試跨鏈召回時啟用 Force scanAll。',
+                '查看結果旁邊的耗時，用來比較查詢效能。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 5 月 25 日',
+          title: 'Session memory 管理和批量清理',
+          summary:
+            'Memory workbench 現在可以列出 session memory，按 All、Insight、Pinned、Session 篩選，選擇行、調整頁大小，並批量刪除選中的 memories。API 也支援刪除 session 行，並支援只提取事實、不保存原始 session 的請求級開關。',
+          sections: [
+            {
+              title: 'Console 清理',
+              items: [
+                '開啟 Space memory workbench，選擇 memory 類型篩選器。',
+                '選擇一行或多行，然後從工具列刪除選中的 memories。',
+              ],
+            },
+            {
+              title: 'API 選項',
+              body: 'API ingest 時，如果只需要事實提取、不想保存原始會話訊息，可設定 `disableSessionSave`。',
+            },
+          ],
+        },
+        {
+          date: '2026 年 5 月 26 日',
+          title: 'Console 支援七種語言',
+          summary:
+            'Console 現在支援英語、簡體中文、繁體中文、日語、韓語、印尼語和泰語，覆蓋 shell、登入頁、Spaces、Memories、Settings、Project 和 Space Chain 流程。',
+          sections: [
+            {
+              title: '語言切換',
+              items: [
+                '在 Console header 或登入頁開啟語言選單。',
+                '選擇語言；選擇會保存在本地，並更新頁面語言屬性。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 5 月 19 日',
+          title: '計費和用量看板',
+          summary:
+            '組織現在可以查看計費方案狀態、權益、請求用量彙總、每日 rollup 和詳細用量事件。runtime 已支援配額閘門和持久 metering，用於商業用量追蹤，同時不改變自託管行為。',
+          sections: [
+            {
+              title: '在哪裡查看',
+              items: [
+                '開啟 Console 並選擇組織。',
+                '進入 Billing 查看方案和權益狀態。',
+                '進入 Usage，按日期範圍查看 memory recall 和 memory write 請求總量。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 5 月 19 日',
+          title: 'Space memory 瀏覽器和執行時工具',
+          summary:
+            'Space 現在有 memory workbench，支援彙總指標、imports、memory 列表/詳情、建立/編輯/刪除，以及共用 Recall test 面板。原始 API key 保持在服務端，Console 會代理已授權的 memory 操作。',
+          sections: [
+            {
+              title: '工作台能力',
+              items: [
+                '在 Console 開啟 Space 詳情頁。',
+                '使用 Memories tab 瀏覽、建立、編輯或刪除 memories。',
+                '使用 Recall test 面板測試這個 Space 對查詢會召回什麼。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 5 月 15 日',
+          title: 'Space Chain 執行時支援',
+          summary:
+            'Space Chain 現在可在執行時使用，支援有序召回和寫入、chain key 鑑權，以及鏈回應中的來源資訊。一個 chain key 可以按受控順序從多個 Space 召回。',
+          sections: [
+            {
+              title: '執行時設定',
+              items: [
+                '在 Console 建立或開啟 Space Chain。',
+                '按照希望召回搜尋的順序新增 Space 節點。',
+                '建立 chain key binding；需要跨鏈召回時，用這個 key 並設定 `scanAll=true`。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026 年 5 月 14 日',
+          title: '更安全的 Space API key 管理和組織角色',
+          summary:
+            'Space API key 會儲存在加密目錄中，普通頁面展示穩定的脫敏值，並提供明確 reveal 流程和 active binding 檢查。組織角色現在區分 owner、admin 和 member 權限。',
+          sections: [
+            {
+              title: '權限變化',
+              items: [
+                'Owner 和 admin 可以在 Space key 管理流程中建立、綁定和 reveal key。',
+                'Member 可以繼續讀取允許存取的資源，但沒有變更權限。',
+                '普通頁面使用脫敏 key；只有需要複製到客戶端時才 reveal。',
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+const releaseNotesPageCopyJa = attachReleaseNoteSources({
+  meta: {
+    title: 'リリースノート | mem9',
+    description: 'Console、API、Space Chain、課金、メモリ管理に関する mem9 の顧客向けリリースノートです。',
+  },
+  kicker: 'リリースノート',
+  title: 'mem9 の最新アップデート',
+  intro: 'ここでは mem9 の作者が、最近リリースされた重要な機能を更新していきます。',
+  starPrompt: 'オープンソースの継続は簡単ではありません。GitHub で mem9 に Star を付けて応援してください。',
+  starBadgeAlt: 'mem9-ai/mem9 の GitHub Stars',
+  starBadgeSrc: 'https://img.shields.io/github/stars/mem9-ai/mem9?style=social',
+  starHref: 'https://github.com/mem9-ai/mem9',
+  updatedLabel: '最終更新',
+  updatedValue: '2026年6月4日',
+  sourcesLabel: 'PR ソース',
+  sourcesFeedback: 'PR や issue を開いて、ぜひフィードバックをお寄せください。',
+  groups: [
+    {
+      period: '2026年6月',
+      items: [
+        {
+          date: '2026年6月4日',
+          title: 'mem9.ai 公式サービスの重要なパフォーマンス更新',
+          summary:
+            'mem9.ai 公式サービスで重要なパフォーマンス改善を進めています。初期デプロイ時の構成により、一部のサービスとデータベースがリージョンをまたいで動作していたため、API リクエストに余分な遅延が発生していました。データ移行を 2 段階で進め、公式ホストサービスの API レイテンシを大きく下げます。',
+          sections: [
+            {
+              title: 'ロールアウト',
+              items: [
+                '第 1 段階は北京時間 6 月 4 日正午にリリースされ、一般的な API レイテンシは平均約 4-6 秒から約 1.3 秒に下がりました。',
+                '第 2 段階ではメタデータを移行し、今週中の完了を予定しています。平均レイテンシを数百ミリ秒以内に下げることを目標にしています。',
+              ],
+            },
+            {
+              title: 'フィードバック',
+              body: 'クライアント側の変更は不要です。この更新は mem9.ai 公式サービスの経路を直接改善します。公式サービスのパフォーマンスに関するフィードバックを歓迎します。',
+            },
+          ],
+        },
+        {
+          date: '2026年6月4日',
+          title: '1 つの API key で appId ごとの分離',
+          summary:
+            '1 つの mem9 API key で、`appId` によって複数の分離されたアプリケーションメモリ空間を扱えるようになりました。appId 付きで書き込まれた memory と raw session は対応するアプリに紐づくため、異なるプロダクト、Agent、環境、ワークフローを同じ key で扱いながら日常的なメモリの混在を避けられます。',
+          sections: [
+            {
+              title: 'appId によるメモリ分離',
+              items: [
+                'memory の書き込みや ingest messages では `appId` を送ります。例: `appId: "docs"` または `appId: "support-bot"`。',
+                '検索時は、`appId` を省略すると key 配下の全 appId を横断検索します。空でない appId を渡すと 1 つのサブ空間のみ、`appId=null` または `appId=` を渡すとデフォルト/global メモリのみを検索します。',
+                'Console では appId フィルター、appId 列、memory 作成時の appId フィールドを使って、特定アプリのメモリを確認または書き込みできます。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026年6月4日',
+          title: 'API ドキュメント刷新とページ内 API テスト',
+          summary:
+            'mem9 API リファレンスを刷新しました。レイアウトを整理し、endpoint の内容を更新し、組み込みの API テストコンソールを追加しています。開発者はドキュメントと別ツールを行き来せず、同じページで読みながらリクエストを試せます。',
+          sections: [
+            {
+              title: '変更点',
+              items: [
+                'API ページのサイドバーと endpoint レイアウトが読みやすくなりました。',
+                '認証、appId 分離、memory API、imports、session messages、Space Chain API の内容を更新しました。',
+              ],
+            },
+            {
+              title: '試す場所',
+              body: 'サイトナビゲーションから API ページを開き、API test パネルで base URL、API key、headers、path/query/body フィールドを設定してリクエストを実行し、レスポンスをその場で確認できます。',
+            },
+          ],
+        },
+        {
+          date: '2026年6月3日',
+          title: '既存の mem9 API key を Console にインポート',
+          summary:
+            'Agent セットアップや API フローで既に mem9 API key を受け取っているユーザーは、その key を Console の Space に紐づけられるようになりました。Console は生の key を保護し、マスク済み情報のみを表示し、認領済み key を組織のクォータモデルに移行します。',
+          sections: [
+            {
+              title: '認領フロー',
+              items: [
+                'セットアップ手順の認領リンクから Console を開くか、直接 `/console/claim` にアクセスします。',
+                '既存 key を貼り付け、組織とプロジェクトを選び、空の Space に紐づけるかフロー内で新しい Space を作成します。',
+                '紐づけ後は Console から Space を管理できます。通常画面では生の key は表示されません。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026年6月3日',
+          title: '組み込み課金、支払い方法、請求書',
+          summary:
+            'Console の Billing エリアに、Stripe ベースのより完全な課金体験が入りました。現在のプラン、請求先住所、支払い方法、プラン変更、クーポン、キャンセル/再開、請求書履歴を扱えます。',
+          sections: [
+            {
+              title: '管理場所',
+              items: [
+                'Console を開き、組織を選択して Billing に移動します。',
+                'Upgrade または Change plan から請求情報を入力し、プランを選び、Stripe Elements で支払いを確定します。',
+                '同じ Billing ページで保存済みの支払い方法と請求書を確認できます。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026年6月1日',
+          title: 'Space Chain の知識ルーティング',
+          summary:
+            'Space Chain は、ルーティングポリシーのフィールドに基づいて抽出された知識を正しいチェーンノードへ書き込めるようになりました。広い入力を適切なチーム、プロジェクト、トピックの Space に配置しつつ、チェーン全体で recall できます。',
+          sections: [
+            {
+              title: 'ルーティング設定',
+              items: [
+                'Space Chain 詳細ページを開き、knowledge extraction policy を設定します。',
+                'ノードセレクターとルーティング図で、抽出された事実を書き込む場所を決めます。',
+                'memory 作成時に smart ingest を有効にすると、単一の raw memory だけでなく事実を抽出してルーティングできます。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026年6月1日',
+          title: 'サーバー側メモリ並び替えと検索コントロール',
+          summary:
+            'Memory テーブルは現在ページだけでなく、サーバー側の完全な結果セットに対して並び替えとフィルターを適用します。内容、種類、タグ、更新日時で並び替えながら検索条件と組み合わせられます。',
+          sections: [
+            {
+              title: 'テーブル操作',
+              items: [
+                'Space または Space Chain の memory workbench を開きます。',
+                'テーブルヘッダーをクリックして昇順または降順に切り替えます。',
+                '内容、種類、タグの検索欄を使います。サーバーはページネーション前にフィルターと並び替えを適用します。',
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      period: '2026年5月',
+      items: [
+        {
+          date: '2026年5月30日',
+          title: 'タイミング表示付きの高速 Space Chain recall',
+          summary:
+            'Space Chain recall はノードスキャンと認証解決を並列化し、グローバル rerank の動作を保ったまま高速化しました。Console では recall の所要時間も表示され、テストクエリの速度を確認できます。',
+          sections: [
+            {
+              title: '変更点',
+              body: 'recall 処理はバックグラウンドで並列化され、グローバル rerank の動作は維持されます。',
+            },
+            {
+              title: '確認方法',
+              items: [
+                'Space Chain 詳細ページを開き、Recall test パネルを使います。',
+                'チェーン横断の recall をテストしたい場合は Force scanAll を有効にします。',
+                '結果に表示される経過時間を見てクエリ性能を比較できます。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026年5月25日',
+          title: 'Session memory 管理と一括クリーンアップ',
+          summary:
+            'memory workbench で session memory 行を一覧表示し、All、Insight、Pinned、Session でフィルターし、行選択、ページサイズ変更、選択した memories の一括削除ができるようになりました。API でも session 行の削除と、抽出事実だけが必要な場合に raw session を保存しないリクエスト単位のスイッチをサポートします。',
+          sections: [
+            {
+              title: 'Console での整理',
+              items: [
+                'Space memory workbench を開き、memory type フィルターを選択します。',
+                '1 行または複数行を選び、ツールバーから選択した memories を削除します。',
+              ],
+            },
+            {
+              title: 'API オプション',
+              body: 'API ingest フローでは、raw session message を保存せず事実抽出だけを行いたい場合に `disableSessionSave` を設定します。',
+            },
+          ],
+        },
+        {
+          date: '2026年5月26日',
+          title: 'Console が 7 言語に対応',
+          summary:
+            'Console は英語、簡体字中国語、繁体字中国語、日本語、韓国語、インドネシア語、タイ語に対応しました。shell、認証ページ、Spaces、Memories、Settings、Project、Space Chain フローをカバーします。',
+          sections: [
+            {
+              title: '言語切り替え',
+              items: [
+                'Console ヘッダーまたは認証ページで言語メニューを開きます。',
+                '言語を選択します。選択はローカルに保存され、ドキュメント言語も更新されます。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026年5月19日',
+          title: '課金と利用状況ダッシュボード',
+          summary:
+            '組織は課金プラン状態、権限、リクエスト利用状況のサマリー、日次 rollup、詳細な利用イベントを確認できます。runtime にはクォータゲートと永続 metering が入り、セルフホスト挙動を変えずに商用利用を追跡できます。',
+          sections: [
+            {
+              title: '確認場所',
+              items: [
+                'Console を開き、組織を選択します。',
+                'Billing でプランと権限状態を確認します。',
+                'Usage で日付範囲を選び、memory recall と memory write のリクエスト合計を確認します。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026年5月19日',
+          title: 'Space memory explorer と runtime ツール',
+          summary:
+            'Spaces に memory workbench が追加され、サマリーメトリクス、imports、memory 一覧/詳細、作成/編集/削除、共有 Recall test パネルを利用できます。生の API key はサーバー側に保持され、Console が認可済み memory 操作をプロキシします。',
+          sections: [
+            {
+              title: 'ワークベンチ機能',
+              items: [
+                'Console で Space 詳細ページを開きます。',
+                'Memories tab で memories を閲覧、作成、編集、削除します。',
+                'Recall test パネルで、その Space がクエリに対して何を取得するかをテストします。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026年5月15日',
+          title: 'Space Chain runtime 対応',
+          summary:
+            'Space Chains は runtime で利用可能になり、順序付き recall と書き込み、chain key 認証、チェーンレスポンス内の provenance をサポートします。1 つの chain key で複数 Space から制御された順序で recall できます。',
+          sections: [
+            {
+              title: 'runtime 設定',
+              items: [
+                'Console で Space Chain を作成または開きます。',
+                'recall に検索させたい順序で Space ノードを追加します。',
+                'chain key binding を作成し、チェーン横断 recall が必要な場合はその key と `scanAll=true` を使います。',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026年5月14日',
+          title: 'より安全な Space API key 管理と組織ロール',
+          summary:
+            'Space API keys は暗号化されたカタログに保存され、安定したマスク表示、明示的な reveal フロー、active binding チェックを備えます。組織ロールは owner、admin、member の権限を区別します。',
+          sections: [
+            {
+              title: '権限',
+              items: [
+                'Owner と admin は Space key 管理フローで key の作成、紐づけ、reveal ができます。',
+                'Member は許可されたリソースの読み取りを続けられますが、変更権限はありません。',
+                '通常画面ではマスク済み key を使い、クライアントにコピーする必要がある場合だけ reveal します。',
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+const releaseNotesPageCopyKo = attachReleaseNoteSources({
+  meta: {
+    title: '릴리스 노트 | mem9',
+    description: 'Console, API, Space Chain, 결제, 메모리 관리의 새로운 기능을 다루는 mem9 고객용 릴리스 노트입니다.',
+  },
+  kicker: '릴리스 노트',
+  title: 'mem9의 최신 업데이트',
+  intro: '여기에서 mem9 작성자들이 최근 출시된 중요한 기능을 업데이트합니다.',
+  starPrompt: '오픈소스 프로젝트를 지속하는 일은 쉽지 않습니다. GitHub에서 mem9에 Star를 눌러 응원해 주세요.',
+  starBadgeAlt: 'mem9-ai/mem9 GitHub Stars',
+  starBadgeSrc: 'https://img.shields.io/github/stars/mem9-ai/mem9?style=social',
+  starHref: 'https://github.com/mem9-ai/mem9',
+  updatedLabel: '마지막 업데이트',
+  updatedValue: '2026년 6월 4일',
+  sourcesLabel: 'PR 출처',
+  sourcesFeedback: 'PR 또는 issue에 들어가 피드백을 남겨 주세요.',
+  groups: [
+    {
+      period: '2026년 6월',
+      items: [
+        {
+          date: '2026년 6월 4일',
+          title: 'mem9.ai 공식 서비스의 주요 성능 업데이트',
+          summary:
+            'mem9.ai 공식 서비스에 중요한 성능 개선을 적용하고 있습니다. 초기 배포 구성 때문에 일부 서비스와 데이터베이스가 서로 다른 리전에 있어 API 요청에 불필요한 지연이 있었습니다. 데이터를 두 단계로 이전해 공식 호스팅 서비스의 API 지연 시간을 크게 낮춥니다.',
+          sections: [
+            {
+              title: '출시 일정',
+              items: [
+                '1단계는 베이징 시간 6월 4일 정오에 배포되었고, 일반적인 API 지연 시간이 평균 약 4-6초에서 약 1.3초로 줄었습니다.',
+                '2단계는 이번 주 안에 메타데이터 이전을 완료할 예정이며, 평균 지연 시간을 수백 밀리초 이내로 낮추는 것이 목표입니다.',
+              ],
+            },
+            {
+              title: '피드백',
+              body: '클라이언트 측 변경은 필요하지 않습니다. 이 업데이트는 mem9.ai 공식 서비스 경로를 직접 개선하며, 공식 서비스 성능에 대한 피드백을 환영합니다.',
+            },
+          ],
+        },
+        {
+          date: '2026년 6월 4일',
+          title: '하나의 API key 안에서 appId 격리',
+          summary:
+            '하나의 mem9 API key가 `appId`로 여러 개의 격리된 애플리케이션 메모리 공간을 담을 수 있습니다. appId와 함께 기록된 memory와 raw session은 해당 앱에 연결되므로, 서로 다른 제품, Agent, 환경, 워크플로를 같은 key로 사용하면서 일상 메모리가 섞이지 않게 할 수 있습니다.',
+          sections: [
+            {
+              title: 'appId가 메모리를 나누는 방식',
+              items: [
+                'memory를 쓰거나 ingest messages를 보낼 때 `appId`를 함께 보냅니다. 예: `appId: "docs"` 또는 `appId: "support-bot"`.',
+                '검색할 때 `appId`를 생략하면 해당 key 아래의 모든 appId를 검색합니다. 비어 있지 않은 appId를 전달하면 한 하위 공간만 검색하고, `appId=null` 또는 `appId=`는 기본/global 메모리만 검색합니다.',
+                'Console에서는 appId 필터, appId 열, memory 생성 시 appId 필드를 사용해 특정 애플리케이션의 메모리를 확인하거나 쓸 수 있습니다.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026년 6월 4일',
+          title: 'API 문서 개편 및 문서 안에서 API 테스트',
+          summary:
+            'mem9 API 레퍼런스가 더 명확한 레이아웃, 업데이트된 endpoint 설명, 내장 API 테스트 콘솔로 개편되었습니다. 개발자는 문서와 별도 도구를 오가지 않고 같은 페이지에서 문서를 읽고 요청을 시험할 수 있습니다.',
+          sections: [
+            {
+              title: '변경 내용',
+              items: [
+                'API 페이지의 사이드바와 endpoint 레이아웃이 더 명확해졌습니다.',
+                '인증, appId 격리, memory API, imports, session messages, Space Chain API 문서가 업데이트되었습니다.',
+              ],
+            },
+            {
+              title: '테스트 위치',
+              body: '사이트 내비게이션에서 API 페이지를 열고 API test 패널에서 base URL, API key, headers, path/query/body 필드를 설정한 뒤 요청을 실행하고 응답을 바로 확인할 수 있습니다.',
+            },
+          ],
+        },
+        {
+          date: '2026년 6월 3일',
+          title: '기존 mem9 API key를 Console로 가져오기',
+          summary:
+            'Agent 설치나 API 흐름에서 이미 mem9 API key를 받은 사용자는 이제 그 key를 Console의 Space에 연결할 수 있습니다. Console은 원본 key를 보호하고 마스킹된 정보만 보여 주며, claim된 key를 조직 quota 모델로 이동합니다.',
+          sections: [
+            {
+              title: 'Claim 흐름',
+              items: [
+                '설치 흐름의 claim 링크로 Console에 들어가거나 `/console/claim`을 직접 엽니다.',
+                '기존 key를 붙여넣고 조직과 프로젝트를 선택한 뒤 빈 Space에 연결하거나 흐름 안에서 새 Space를 만듭니다.',
+                '연결 후에는 원본 key를 일반 화면에 노출하지 않고 Console에서 Space를 관리할 수 있습니다.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026년 6월 3일',
+          title: '내장 결제, 결제 수단, 인보이스',
+          summary:
+            'Console의 Billing 영역에 Stripe 기반 결제 경험이 더 완성도 있게 들어갔습니다. 현재 플랜, 청구 주소, 결제 수단, 플랜 변경, 쿠폰, 구독 취소/재개, 인보이스 기록을 다룰 수 있습니다.',
+          sections: [
+            {
+              title: '관리 위치',
+              items: [
+                'Console을 열고 조직을 선택한 다음 Billing으로 이동합니다.',
+                'Upgrade 또는 Change plan에서 청구 정보를 입력하고 플랜을 선택한 뒤 Stripe Elements로 결제를 확인합니다.',
+                '같은 Billing 페이지에서 저장된 결제 수단과 인보이스를 확인합니다.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026년 6월 1일',
+          title: 'Space Chain 지식 라우팅',
+          summary:
+            'Space Chain은 이제 라우팅 정책 필드에 따라 추출된 지식을 올바른 Space Chain 노드에 쓸 수 있습니다. 넓은 범위의 입력을 적절한 팀, 프로젝트, 주제 Space에 저장하면서도 체인 전체 recall은 유지됩니다.',
+          sections: [
+            {
+              title: '라우팅 설정',
+              items: [
+                'Space Chain 상세 페이지를 열고 knowledge extraction policy를 설정합니다.',
+                '노드 선택기와 라우팅 다이어그램을 사용해 추출된 사실을 어디에 쓸지 결정합니다.',
+                'memory를 만들 때 smart ingest를 켜면 하나의 raw memory만 쓰는 대신 사실을 추출하고 라우팅합니다.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026년 6월 1일',
+          title: '서버 측 메모리 정렬과 검색 컨트롤',
+          summary:
+            'Memory 테이블은 이제 현재 페이지만이 아니라 서버의 전체 결과 집합에 대해 정렬과 필터를 적용합니다. 사용자는 내용, 유형, 태그, 업데이트 시간으로 정렬하고 검색 조건과 함께 사용할 수 있습니다.',
+          sections: [
+            {
+              title: '테이블 컨트롤',
+              items: [
+                'Space 또는 Space Chain memory workbench를 엽니다.',
+                '테이블 헤더를 클릭해 오름차순 또는 내림차순으로 정렬합니다.',
+                '내용, 유형, 태그 검색 필드를 사용하면 서버가 페이지네이션 전에 필터와 정렬을 적용합니다.',
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      period: '2026년 5월',
+      items: [
+        {
+          date: '2026년 5월 30일',
+          title: '시간 표시가 포함된 더 빠른 Space Chain recall',
+          summary:
+            'Space Chain recall은 노드 스캔과 인증 해석을 병렬화하면서 글로벌 rerank 동작을 유지합니다. Console은 recall 소요 시간도 보여 주므로 팀이 테스트 쿼리 속도를 확인할 수 있습니다.',
+          sections: [
+            {
+              title: '변경 내용',
+              body: 'recall 작업은 백그라운드에서 병렬화되며 글로벌 rerank 동작은 그대로 유지됩니다.',
+            },
+            {
+              title: '검증 방법',
+              items: [
+                'Space Chain 상세 페이지를 열고 Recall test 패널을 사용합니다.',
+                '체인 전체 recall 동작을 테스트하려면 Force scanAll을 켭니다.',
+                '결과에 표시되는 경과 시간을 확인해 쿼리 성능을 비교합니다.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026년 5월 25일',
+          title: 'Session memory 관리와 일괄 정리',
+          summary:
+            'memory workbench에서 session memory 행을 나열하고 All, Insight, Pinned, Session으로 필터링하며, 행 선택, 페이지 크기 변경, 선택한 memories 일괄 삭제를 할 수 있습니다. API도 session 행 삭제와, 추출된 사실만 필요할 때 raw session 행을 저장하지 않는 요청 단위 스위치를 지원합니다.',
+          sections: [
+            {
+              title: 'Console 정리',
+              items: [
+                'Space memory workbench를 열고 memory type 필터를 선택합니다.',
+                '하나 이상의 행을 선택한 다음 툴바에서 선택한 memories를 삭제합니다.',
+              ],
+            },
+            {
+              title: 'API 옵션',
+              body: 'API ingest 흐름에서는 원본 session messages를 보존하지 않고 사실 추출만 원할 때 `disableSessionSave`를 설정합니다.',
+            },
+          ],
+        },
+        {
+          date: '2026년 5월 26일',
+          title: 'Console의 7개 언어 지원',
+          summary:
+            'Console은 영어, 중국어 간체, 중국어 번체, 일본어, 한국어, 인도네시아어, 태국어를 지원합니다. shell, 인증 페이지, Spaces, Memories, Settings, Project, Space Chain 흐름을 포함합니다.',
+          sections: [
+            {
+              title: '언어 전환',
+              items: [
+                'Console 헤더 또는 인증 페이지에서 언어 메뉴를 엽니다.',
+                '언어를 선택합니다. 선택은 로컬에 저장되고 문서 언어도 업데이트됩니다.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026년 5월 19일',
+          title: '결제와 사용량 대시보드',
+          summary:
+            '조직은 결제 플랜 상태, 권한, 요청 사용량 요약, 일별 rollup, 상세 사용 이벤트를 확인할 수 있습니다. runtime에는 quota gate와 지속 metering이 추가되어 self-hosted 동작을 바꾸지 않고 상업적 사용량을 추적할 수 있습니다.',
+          sections: [
+            {
+              title: '확인 위치',
+              items: [
+                'Console을 열고 조직을 선택합니다.',
+                'Billing에서 플랜과 entitlement 상태를 확인합니다.',
+                'Usage에서 선택한 날짜 범위의 memory recall 및 memory write 요청 합계를 확인합니다.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026년 5월 19일',
+          title: 'Space memory explorer와 runtime 도구',
+          summary:
+            'Spaces에는 summary metrics, imports, memory 목록/상세 조회, 생성/수정/삭제, 공유 Recall test 패널을 갖춘 memory workbench가 생겼습니다. 원본 API key는 서버 측에 유지되고 Console이 승인된 memory 작업을 프록시합니다.',
+          sections: [
+            {
+              title: '워크벤치 기능',
+              items: [
+                'Console에서 Space 상세 페이지를 엽니다.',
+                'Memories tab에서 memories를 탐색, 생성, 수정, 삭제합니다.',
+                'Recall test 패널로 해당 Space가 쿼리에 대해 무엇을 검색하는지 테스트합니다.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026년 5월 15일',
+          title: 'Space Chain runtime 지원',
+          summary:
+            'Space Chains는 이제 runtime에서 사용할 수 있으며, 순서 있는 recall과 write, chain key 인증, chain 응답의 provenance를 지원합니다. 하나의 chain key로 여러 Space에서 제어된 순서로 recall할 수 있습니다.',
+          sections: [
+            {
+              title: 'runtime 설정',
+              items: [
+                'Console에서 Space Chain을 만들거나 엽니다.',
+                'recall이 검색할 순서대로 Space 노드를 추가합니다.',
+                'chain key binding을 만들고 체인 전체 recall이 필요하면 해당 key와 `scanAll=true`를 사용합니다.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '2026년 5월 14일',
+          title: '더 안전한 Space API key 관리와 조직 역할',
+          summary:
+            'Space API keys는 암호화된 카탈로그에 저장되며 안정적인 마스킹 표시, 명시적인 reveal 흐름, active binding 검사를 제공합니다. 조직 역할은 owner, admin, member 권한을 구분합니다.',
+          sections: [
+            {
+              title: '권한',
+              items: [
+                'Owner와 admin은 Space key 관리 흐름에서 key를 만들고 연결하고 reveal할 수 있습니다.',
+                'Member는 허용된 리소스를 계속 읽을 수 있지만 변경 권한은 없습니다.',
+                '일반 화면에서는 마스킹된 key를 사용하고, 클라이언트에 복사해야 할 때만 reveal합니다.',
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+const releaseNotesPageCopyId = attachReleaseNoteSources({
+  meta: {
+    title: 'Catatan Rilis | mem9',
+    description: 'Catatan rilis mem9 untuk pelanggan, mencakup Console, API, Space Chain, billing, dan manajemen memori.',
+  },
+  kicker: 'Catatan Rilis',
+  title: 'Apa yang baru di mem9',
+  intro: 'Di sini para pembuat mem9 akan memperbarui fitur penting yang baru saja dirilis.',
+  starPrompt: 'Proyek open-source tidak mudah dijalankan. Dukung kami dengan memberi Star untuk mem9 di GitHub.',
+  starBadgeAlt: 'GitHub stars untuk mem9-ai/mem9',
+  starBadgeSrc: 'https://img.shields.io/github/stars/mem9-ai/mem9?style=social',
+  starHref: 'https://github.com/mem9-ai/mem9',
+  updatedLabel: 'Terakhir diperbarui',
+  updatedValue: '4 Juni 2026',
+  sourcesLabel: 'Sumber PR',
+  sourcesFeedback: 'Silakan buka PR atau issue dan kirimkan masukan Anda.',
+  groups: [
+    {
+      period: 'Juni 2026',
+      items: [
+        {
+          date: '4 Juni 2026',
+          title: 'Pembaruan performa besar untuk mem9.ai',
+          summary:
+            'Layanan resmi mem9.ai sedang menerima pembaruan performa penting. Karena pilihan deployment awal, sebagian layanan dan database berjalan lintas region sehingga menambah latency yang tidak perlu. Kami memigrasikan data dalam dua fase untuk menurunkan latency API layanan hosted secara signifikan.',
+          sections: [
+            {
+              title: 'Rilis bertahap',
+              items: [
+                'Fase 1 dirilis pada siang hari waktu Beijing tanggal 4 Juni dan menurunkan latency API umum dari rata-rata sekitar 4-6 detik menjadi sekitar 1,3 detik.',
+                'Fase 2 ditargetkan selesai minggu ini untuk memigrasikan metadata, dengan target menurunkan latency rata-rata ke kisaran beberapa ratus milidetik.',
+              ],
+            },
+            {
+              title: 'Masukan',
+              body: 'Tidak ada perubahan sisi klien yang diperlukan. Pembaruan ini langsung memperbaiki jalur layanan hosted mem9.ai, dan masukan tentang performa layanan resmi sangat kami harapkan.',
+            },
+          ],
+        },
+        {
+          date: '4 Juni 2026',
+          title: 'Isolasi appId dalam satu API key',
+          summary:
+            'Satu mem9 API key sekarang dapat memuat beberapa ruang memori aplikasi yang terisolasi dengan `appId`. Memory dan raw session yang ditulis dengan appId akan tetap terhubung ke aplikasi tersebut, sehingga produk, Agent, environment, atau workflow berbeda dapat berbagi key yang sama tanpa mencampur memori harian.',
+          sections: [
+            {
+              title: 'Cara appId memisahkan memori',
+              items: [
+                'Saat menulis memory atau ingest messages, kirim `appId`, misalnya `appId: "docs"` atau `appId: "support-bot"`.',
+                'Saat mencari, kosongkan `appId` untuk mencari semua appId di bawah key tersebut, kirim appId non-kosong untuk mencari satu sub-ruang, atau kirim `appId=null` / `appId=` untuk mencari hanya memori default/global.',
+                'Di Console, gunakan filter appId, kolom appId, dan field appId saat membuat memory untuk melihat atau menulis memori milik aplikasi tertentu.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '4 Juni 2026',
+          title: 'Penyegaran API reference dengan uji API langsung',
+          summary:
+            'API reference mem9 diperbarui dengan layout yang lebih jelas, konten endpoint yang diperbarui, dan konsol uji API bawaan. Developer kini dapat membaca dokumentasi dan mencoba request di halaman yang sama tanpa berpindah ke tooling terpisah.',
+          sections: [
+            {
+              title: 'Yang berubah',
+              items: [
+                'Halaman API kini memiliki sidebar dan layout endpoint yang lebih jelas.',
+                'Konten dokumentasi diperbarui untuk authentication, appId isolation, memory APIs, imports, session messages, dan Space Chain APIs.',
+              ],
+            },
+            {
+              title: 'Tempat mencoba',
+              body: 'Buka halaman API dari navigasi situs, lalu gunakan panel API test untuk mengatur base URL, API key, headers, field path/query/body, menjalankan request, dan melihat response langsung di halaman dokumentasi.',
+            },
+          ],
+        },
+        {
+          date: '3 Juni 2026',
+          title: 'Impor mem9 API key yang sudah ada ke Console',
+          summary:
+            'Pengguna yang sudah menerima mem9 API key dari setup Agent atau flow API kini dapat mengaitkan key tersebut ke Space di Console. Console melindungi key mentah, hanya menampilkan detail yang disamarkan, dan memindahkan key yang sudah diklaim ke model quota organisasi.',
+          sections: [
+            {
+              title: 'Flow klaim',
+              items: [
+                'Buka flow klaim Console dari link setup, atau langsung buka `/console/claim`.',
+                'Tempel key yang sudah ada, pilih organisasi dan proyek, lalu kaitkan ke Space kosong atau buat Space baru di dalam flow.',
+                'Setelah dikaitkan, kelola Space dari Console tanpa menampilkan key mentah di tampilan biasa.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '3 Juni 2026',
+          title: 'Billing, metode pembayaran, dan invoice tertanam',
+          summary:
+            'Area Billing di Console kini memiliki pengalaman billing berbasis Stripe yang lebih lengkap: plan saat ini, alamat billing, metode pembayaran, kontrol perubahan plan, kupon, aksi cancel/resume, dan riwayat invoice.',
+          sections: [
+            {
+              title: 'Tempat mengelola',
+              items: [
+                'Buka Console, pilih organisasi, lalu masuk ke Billing.',
+                'Gunakan Upgrade atau Change plan untuk memasukkan detail billing, memilih plan, dan mengonfirmasi pembayaran dengan Stripe Elements.',
+                'Tinjau metode pembayaran tersimpan dan invoice dari halaman Billing yang sama.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '1 Juni 2026',
+          title: 'Routing knowledge di Space Chain',
+          summary:
+            'Space Chain kini dapat merutekan knowledge yang diekstrak ke node Space Chain yang tepat berdasarkan field routing policy. Chain bisa bertindak lebih seperti knowledgebase: ingest yang luas masuk ke Space tim, proyek, atau topik yang benar, sementara recall tetap bisa berjalan lintas chain.',
+          sections: [
+            {
+              title: 'Pengaturan routing',
+              items: [
+                'Buka halaman detail Space Chain dan konfigurasi knowledge extraction policy.',
+                'Gunakan node selector dan diagram routing untuk menentukan lokasi penulisan fakta yang diekstrak.',
+                'Saat membuat memory, aktifkan smart ingest agar sistem mengekstrak dan merutekan fakta, bukan hanya menulis satu item raw memory.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '1 Juni 2026',
+          title: 'Sorting memori sisi server dan kontrol pencarian',
+          summary:
+            'Tabel Memory sekarang melakukan sort dan filter terhadap seluruh hasil di server, bukan hanya halaman saat ini. Pengguna dapat sort berdasarkan content, type, tags, dan updated time sambil menggabungkannya dengan kontrol pencarian.',
+          sections: [
+            {
+              title: 'Kontrol tabel',
+              items: [
+                'Buka memory workbench untuk Space atau Space Chain.',
+                'Klik header tabel untuk mengurutkan naik atau turun.',
+                'Gunakan field pencarian untuk content, type, dan tags; server menerapkan filter dan sort sebelum pagination.',
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      period: 'Mei 2026',
+      items: [
+        {
+          date: '30 Mei 2026',
+          title: 'Recall Space Chain lebih cepat dengan visibilitas waktu',
+          summary:
+            'Recall Space Chain kini memparalelkan pemindaian node dan penyelesaian auth, sambil mempertahankan perilaku reranking global. Console juga menampilkan timing recall agar tim dapat melihat durasi test recall.',
+          sections: [
+            {
+              title: 'Yang berubah',
+              body: 'Pekerjaan recall diparalelkan di belakang layar, sementara perilaku reranking global tetap sama.',
+            },
+            {
+              title: 'Cara memvalidasi',
+              items: [
+                'Buka halaman detail Space Chain dan gunakan panel Recall test.',
+                'Aktifkan Force scanAll jika ingin menguji perilaku recall lintas chain.',
+                'Periksa waktu yang ditampilkan bersama hasil untuk membandingkan performa query.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '25 Mei 2026',
+          title: 'Manajemen session memory dan pembersihan batch',
+          summary:
+            'Memory workbench kini dapat menampilkan row session memory, memfilter All, Insight, Pinned, atau Session, memilih row, mengubah page size, dan menghapus memories terpilih secara batch. API juga mendukung penghapusan session row dan switch per request untuk tidak menyimpan raw session saat hanya fakta hasil ekstraksi yang dibutuhkan.',
+          sections: [
+            {
+              title: 'Pembersihan di Console',
+              items: [
+                'Buka Space memory workbench dan pilih filter memory type.',
+                'Pilih satu atau beberapa row, lalu hapus memories terpilih dari toolbar.',
+              ],
+            },
+            {
+              title: 'Opsi API',
+              body: 'Untuk flow API ingest, set `disableSessionSave` saat Anda ingin ekstraksi fakta tanpa menyimpan raw session messages.',
+            },
+          ],
+        },
+        {
+          date: '26 Mei 2026',
+          title: 'Console mendukung tujuh bahasa',
+          summary:
+            'Console kini mendukung bahasa Inggris, Chinese Simplified, Chinese Traditional, Jepang, Korea, Indonesia, dan Thai di shell, halaman auth, Spaces, Memories, Settings, Project, dan flow Space Chain.',
+          sections: [
+            {
+              title: 'Pengalih bahasa',
+              items: [
+                'Buka menu bahasa di header Console atau halaman auth.',
+                'Pilih bahasa; pilihan disimpan secara lokal dan memperbarui bahasa dokumen.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '19 Mei 2026',
+          title: 'Dashboard billing dan usage',
+          summary:
+            'Organisasi dapat meninjau status plan billing, entitlements, ringkasan usage request, daily rollups, dan event usage terperinci. Runtime kini memiliki quota gate dan metering durable sehingga usage komersial dapat dilacak tanpa mengubah perilaku self-hosted.',
+          sections: [
+            {
+              title: 'Tempat melihat',
+              items: [
+                'Buka Console dan pilih organisasi.',
+                'Masuk ke Billing untuk meninjau status plan dan entitlement.',
+                'Masuk ke Usage untuk memeriksa total request memory recall dan memory write pada rentang tanggal yang dipilih.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '19 Mei 2026',
+          title: 'Space memory explorer dan runtime tools',
+          summary:
+            'Spaces kini memiliki memory workbench dengan summary metrics, imports, daftar/detail memory, kontrol create/edit/delete, dan panel Recall test bersama. Raw API key tetap berada di server sementara Console mem-proxy operasi memory yang sudah diotorisasi.',
+          sections: [
+            {
+              title: 'Alat workbench',
+              items: [
+                'Buka halaman detail Space di Console.',
+                'Gunakan tab Memories untuk menelusuri, membuat, mengedit, atau menghapus memories.',
+                'Gunakan panel Recall test untuk menguji apa yang akan diambil Space untuk sebuah query.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '15 Mei 2026',
+          title: 'Dukungan runtime Space Chain',
+          summary:
+            'Space Chains kini tersedia di runtime, dengan perilaku recall dan write berurutan, autentikasi chain key, dan provenance di response chain. Satu chain key dapat mengambil dari beberapa Space dalam urutan yang terkendali.',
+          sections: [
+            {
+              title: 'Pengaturan runtime',
+              items: [
+                'Buat atau buka Space Chain di Console.',
+                'Tambahkan node Space dalam urutan yang Anda inginkan untuk pencarian recall.',
+                'Buat chain key binding, lalu gunakan key tersebut dengan `scanAll=true` saat Anda ingin recall lintas chain.',
+              ],
+            },
+          ],
+        },
+        {
+          date: '14 Mei 2026',
+          title: 'Manajemen Space API key dan role organisasi yang lebih aman',
+          summary:
+            'Space API keys disimpan dalam katalog terenkripsi dengan nilai tampilan yang stabil dan tersamarkan, workflow reveal eksplisit, dan active binding checks. Role organisasi kini membedakan permission owner, admin, dan member untuk manajemen resource dan key.',
+          sections: [
+            {
+              title: 'Izin',
+              items: [
+                'Owner dan admin dapat membuat, bind, dan reveal Space keys dari flow manajemen Space key.',
+                'Member dapat tetap membaca resource yang diizinkan tanpa menerima permission mutasi.',
+                'Gunakan nilai key yang disamarkan di tampilan biasa; reveal key hanya saat perlu menyalinnya ke client.',
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+const releaseNotesPageCopyTh = attachReleaseNoteSources({
+  meta: {
+    title: 'บันทึกการเผยแพร่ | mem9',
+    description: 'บันทึกการเผยแพร่ของ mem9 สำหรับลูกค้า ครอบคลุม Console, API, Space Chain, billing และการจัดการ memory',
+  },
+  kicker: 'บันทึกการเผยแพร่',
+  title: 'มีอะไรใหม่ใน mem9',
+  intro: 'ที่นี่ผู้สร้าง mem9 จะอัปเดตฟีเจอร์สำคัญที่เพิ่งเผยแพร่',
+  starPrompt: 'การทำโปรเจกต์ open-source ไม่ง่าย โปรดช่วยสนับสนุนเราด้วยการกด Star ให้ mem9 บน GitHub',
+  starBadgeAlt: 'GitHub stars สำหรับ mem9-ai/mem9',
+  starBadgeSrc: 'https://img.shields.io/github/stars/mem9-ai/mem9?style=social',
+  starHref: 'https://github.com/mem9-ai/mem9',
+  updatedLabel: 'อัปเดตล่าสุด',
+  updatedValue: '4 มิถุนายน 2026',
+  sourcesLabel: 'แหล่งที่มา PR',
+  sourcesFeedback: 'ยินดีให้คุณเข้าไปที่ PR หรือ issue แล้วส่งความคิดเห็นมาให้เรา',
+  groups: [
+    {
+      period: 'มิถุนายน 2026',
+      items: [
+        {
+          date: '4 มิถุนายน 2026',
+          title: 'การอัปเดตประสิทธิภาพครั้งสำคัญสำหรับ mem9.ai',
+          summary:
+            'บริการทางการของ mem9.ai กำลังได้รับการปรับปรุงประสิทธิภาพครั้งสำคัญ เนื่องจากการ deploy ช่วงแรกทำให้บางส่วนของ service และ database อยู่คนละ region จึงเกิด latency ที่ไม่จำเป็น เรากำลังย้ายข้อมูลเป็น 2 เฟสเพื่อลด API latency ของ hosted service อย่างชัดเจน',
+          sections: [
+            {
+              title: 'แผนการเผยแพร่',
+              items: [
+                'เฟส 1 เผยแพร่ตอนเที่ยงตามเวลา Beijing วันที่ 4 มิถุนายน และลด API latency ทั่วไปจากเฉลี่ยประมาณ 4-6 วินาที เหลือประมาณ 1.3 วินาที',
+                'เฟส 2 คาดว่าจะเสร็จภายในสัปดาห์นี้ โดยจะย้าย metadata และมีเป้าหมายให้ latency เฉลี่ยลดลงมาอยู่ในระดับไม่กี่ร้อยมิลลิวินาที',
+              ],
+            },
+            {
+              title: 'ข้อเสนอแนะ',
+              body: 'ไม่ต้องแก้ไขฝั่ง client การอัปเดตนี้ปรับปรุงเส้นทางของ hosted mem9.ai service โดยตรง เรายินดีรับความคิดเห็นเกี่ยวกับประสิทธิภาพของบริการทางการ',
+            },
+          ],
+        },
+        {
+          date: '4 มิถุนายน 2026',
+          title: 'แยก appId ภายใต้ API key เดียว',
+          summary:
+            'ตอนนี้ mem9 API key เดียวสามารถมีพื้นที่ memory ของหลายแอปที่แยกกันด้วย `appId` ได้ Memory และ raw session ที่เขียนพร้อม appId จะผูกกับแอปนั้น จึงเหมาะกับการใช้ key เดียวกับหลาย product, Agent, environment หรือ workflow โดยไม่ให้ memory ประจำวันปะปนกัน',
+          sections: [
+            {
+              title: 'appId แยก memory อย่างไร',
+              items: [
+                'เมื่อเขียน memory หรือ ingest messages ให้ส่ง `appId` เช่น `appId: "docs"` หรือ `appId: "support-bot"`',
+                'ตอน search ถ้าไม่ส่ง `appId` จะค้นหาข้ามทุก appId ภายใต้ key นั้น ถ้าส่ง appId ที่ไม่ว่างจะค้นหาเฉพาะ sub-space นั้น และถ้าส่ง `appId=null` หรือ `appId=` จะค้นหาเฉพาะ default/global memory',
+                'ใน Console ใช้ appId filter, appId column และ field appId ตอนสร้าง memory เพื่อดูหรือเขียน memory สำหรับแอปเฉพาะ',
+              ],
+            },
+          ],
+        },
+        {
+          date: '4 มิถุนายน 2026',
+          title: 'เอกสารอ้างอิง API ใหม่พร้อมทดสอบ API ในหน้าเอกสาร',
+          summary:
+            'mem9 API reference ได้รับการปรับปรุง layout ให้ชัดเจนขึ้น อัปเดตเนื้อหา endpoint และเพิ่ม API test console ในตัว Developer จึงอ่านเอกสารและลอง request ได้ในหน้าเดียว ไม่ต้องสลับไปใช้เครื่องมือแยกต่างหาก',
+          sections: [
+            {
+              title: 'สิ่งที่เปลี่ยน',
+              items: [
+                'หน้า API มี sidebar และ layout endpoint ที่ชัดเจนขึ้น',
+                'อัปเดตเนื้อหาสำหรับ authentication, appId isolation, memory APIs, imports, session messages และ Space Chain APIs',
+              ],
+            },
+            {
+              title: 'ลองได้ที่ไหน',
+              body: 'เปิดหน้า API จาก navigation ของ site แล้วใช้ API test panel ตั้งค่า base URL, API key, headers, field path/query/body, run request และดู response ได้ในหน้าเอกสารโดยตรง',
+            },
+          ],
+        },
+        {
+          date: '3 มิถุนายน 2026',
+          title: 'นำ mem9 API key ที่มีอยู่เข้า Console',
+          summary:
+            'ผู้ใช้ที่ได้รับ mem9 API key จากการติดตั้ง Agent หรือ flow API แล้ว ตอนนี้สามารถผูก key นั้นกับ Space ใน Console ได้ Console จะปกป้อง raw key แสดงเฉพาะข้อมูลที่ mask แล้ว และย้าย claimed key เข้า model quota ขององค์กร',
+          sections: [
+            {
+              title: 'ขั้นตอนการรับสิทธิ์',
+              items: [
+                'เปิด Console claim flow จากลิงก์ใน setup หรือเปิด `/console/claim` โดยตรง',
+                'วาง key ที่มีอยู่ เลือก organization และ project แล้วผูกกับ Space ว่าง หรือสร้าง Space ใหม่ใน flow',
+                'หลัง bind แล้วสามารถจัดการ Space จาก Console ได้โดยไม่เปิดเผย raw key ในหน้าทั่วไป',
+              ],
+            },
+          ],
+        },
+        {
+          date: '3 มิถุนายน 2026',
+          title: 'Billing, payment methods และ invoices ในตัว',
+          summary:
+            'พื้นที่ Billing ใน Console มีประสบการณ์ billing ที่ครบขึ้นบน Stripe: plan ปัจจุบัน billing address, payment methods, การเปลี่ยน plan, coupons, cancel/resume และประวัติ invoice',
+          sections: [
+            {
+              title: 'จัดการที่ไหน',
+              items: [
+                'เปิด Console เลือก organization แล้วไปที่ Billing',
+                'ใช้ Upgrade หรือ Change plan เพื่อกรอก billing details เลือก plan และยืนยัน payment ด้วย Stripe Elements',
+                'ตรวจ payment methods ที่บันทึกไว้และ invoices ได้จากหน้า Billing เดียวกัน',
+              ],
+            },
+          ],
+        },
+        {
+          date: '1 มิถุนายน 2026',
+          title: 'Knowledge routing ใน Space Chain',
+          summary:
+            'Space Chain สามารถ route knowledge ที่ extract แล้วไปยัง node ที่ถูกต้องตาม routing policy fields ได้ ทำให้ chain ทำงานเหมือน knowledgebase มากขึ้น: ingest กว้าง ๆ จะลง Space ของทีม โปรเจกต์ หรือหัวข้อที่เหมาะสม ขณะที่ recall ยังค้นข้าม chain ได้',
+          sections: [
+            {
+              title: 'ตั้งค่า routing',
+              items: [
+                'เปิดหน้า detail ของ Space Chain แล้วตั้งค่า knowledge extraction policy',
+                'ใช้ node selector และ routing diagram เพื่อกำหนดว่าข้อเท็จจริงที่ extract แล้วควรถูกเขียนไปที่ไหน',
+                'ตอนสร้าง memory ให้เปิด smart ingest เพื่อ extract และ route facts แทนการเขียน raw memory item เพียงรายการเดียว',
+              ],
+            },
+          ],
+        },
+        {
+          date: '1 มิถุนายน 2026',
+          title: 'การจัดเรียง memory และ search controls ฝั่ง server',
+          summary:
+            'ตาราง Memory ตอนนี้ sort และ filter กับ result set ทั้งหมดบน server ไม่ใช่แค่หน้าปัจจุบัน ผู้ใช้สามารถ sort ตาม content, type, tags และ updated time พร้อมใช้ร่วมกับ search controls ได้',
+          sections: [
+            {
+              title: 'ตัวควบคุมตาราง',
+              items: [
+                'เปิด memory workbench ของ Space หรือ Space Chain',
+                'คลิก header ของตารางเพื่อ sort ascending หรือ descending',
+                'ใช้ search fields สำหรับ content, type และ tags โดย server จะ filter และ sort ก่อน pagination',
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      period: 'พฤษภาคม 2026',
+      items: [
+        {
+          date: '30 พฤษภาคม 2026',
+          title: 'Space Chain recall เร็วขึ้นพร้อมการแสดงเวลา',
+          summary:
+            'Space Chain recall ตอนนี้ parallelize การ scan node และ auth resolution พร้อมคง global reranking behavior ไว้ Console ยังแสดง recall timing เพื่อให้ทีมเห็นว่า test recall ใช้เวลานานแค่ไหน',
+          sections: [
+            {
+              title: 'สิ่งที่เปลี่ยน',
+              body: 'งาน recall ถูก parallelize อยู่เบื้องหลัง โดยยังคง global reranking behavior เดิม',
+            },
+            {
+              title: 'วิธีตรวจสอบ',
+              items: [
+                'เปิดหน้า detail ของ Space Chain แล้วใช้ Recall test panel',
+                'เปิด Force scanAll เมื่ออยากทดสอบพฤติกรรม cross-chain recall',
+                'ดู elapsed time ที่แสดงพร้อม result เพื่อเปรียบเทียบ query performance',
+              ],
+            },
+          ],
+        },
+        {
+          date: '25 พฤษภาคม 2026',
+          title: 'จัดการ session memory และ batch cleanup',
+          summary:
+            'memory workbench สามารถ list session memory rows, filter ตาม All, Insight, Pinned หรือ Session, เลือก rows, เปลี่ยน page size และลบ memories ที่เลือกแบบ batch ได้ API ยังรองรับการลบ session-row และ request-level switch เพื่อไม่บันทึก raw session rows เมื่อจำเป็นต้องใช้แค่ facts ที่ extract แล้ว',
+          sections: [
+            {
+              title: 'การล้างข้อมูลใน Console',
+              items: [
+                'เปิด Space memory workbench แล้วเลือก memory type filter',
+                'เลือกหนึ่งหรือหลาย rows แล้วลบ memories ที่เลือกจาก toolbar',
+              ],
+            },
+            {
+              title: 'ตัวเลือก API',
+              body: 'สำหรับ API ingest flows ให้ตั้ง `disableSessionSave` เมื่ออยาก extract facts โดยไม่เก็บ raw session messages',
+            },
+          ],
+        },
+        {
+          date: '26 พฤษภาคม 2026',
+          title: 'Console รองรับเจ็ดภาษา',
+          summary:
+            'Console รองรับ English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Indonesian และ Thai ครอบคลุม shell, auth pages, Spaces, Memories, Settings, Project และ Space Chain flows',
+          sections: [
+            {
+              title: 'ตัวเลือกภาษา',
+              items: [
+                'เปิด language menu ใน Console header หรือ auth page',
+                'เลือกภาษา ระบบจะบันทึกไว้ในเครื่องและอัปเดต document language',
+              ],
+            },
+          ],
+        },
+        {
+          date: '19 พฤษภาคม 2026',
+          title: 'Billing และ usage dashboards',
+          summary:
+            'องค์กรสามารถดู billing plan state, entitlements, request usage summaries, daily rollups และ detailed usage events ได้ Runtime มี quota gates และ durable metering เพื่อ track commercial usage โดยไม่เปลี่ยน self-hosted behavior',
+          sections: [
+            {
+              title: 'ดูได้ที่ไหน',
+              items: [
+                'เปิด Console แล้วเลือก organization',
+                'ไปที่ Billing เพื่อดู plan และ entitlement state',
+                'ไปที่ Usage เพื่อตรวจยอด memory recall และ memory write request ในช่วงวันที่ที่เลือก',
+              ],
+            },
+          ],
+        },
+        {
+          date: '19 พฤษภาคม 2026',
+          title: 'Space memory explorer และ runtime tools',
+          summary:
+            'Spaces มี memory workbench พร้อม summary metrics, imports, memory list/detail, create/edit/delete controls และ shared Recall test panel Raw API keys ยังอยู่ฝั่ง server ขณะที่ Console proxy memory operations ที่ authorize แล้ว',
+          sections: [
+            {
+              title: 'เครื่องมือ workbench',
+              items: [
+                'เปิดหน้า detail ของ Space ใน Console',
+                'ใช้ Memories tab เพื่อ browse, create, edit หรือ delete memories',
+                'ใช้ Recall test panel เพื่อทดสอบว่า Space จะ retrieve อะไรสำหรับ query หนึ่ง',
+              ],
+            },
+          ],
+        },
+        {
+          date: '15 พฤษภาคม 2026',
+          title: 'รองรับ Space Chain runtime',
+          summary:
+            'Space Chains ใช้งานใน runtime ได้แล้ว พร้อม ordered recall/write behavior, chain key authentication และ provenance ใน chain responses ทำให้ chain key เดียว retrieve จากหลาย Space ตามลำดับที่ควบคุมได้',
+          sections: [
+            {
+              title: 'การตั้งค่า runtime',
+              items: [
+                'สร้างหรือเปิด Space Chain ใน Console',
+                'เพิ่ม Space nodes ตามลำดับที่อยากให้ recall ค้นหา',
+                'สร้าง chain key binding แล้วใช้ key นั้นพร้อม `scanAll=true` เมื่อต้องการ recall ข้าม chain',
+              ],
+            },
+          ],
+        },
+        {
+          date: '14 พฤษภาคม 2026',
+          title: 'จัดการ Space API key และ organization roles ให้ปลอดภัยขึ้น',
+          summary:
+            'Space API keys ถูกเก็บใน encrypted catalog พร้อม masked display values ที่เสถียร, explicit reveal workflows และ active binding checks Organization roles แยก owner, admin และ member permissions สำหรับ resource และ key management',
+          sections: [
+            {
+              title: 'สิทธิ์',
+              items: [
+                'Owner และ admin สามารถ create, bind และ reveal Space keys จาก Space key management flow',
+                'Member ยังอ่าน resources ที่ได้รับอนุญาตได้ แต่ไม่มี mutation permissions',
+                'ใช้ masked key values ในมุมมองทั่วไป และ reveal key เฉพาะตอนต้อง copy ไปยัง client',
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
 const releaseNotesPageCopyByLocale: Record<SiteLocale, SiteReleaseNotesPageCopy> = {
   en: releaseNotesPageCopyEn,
   zh: releaseNotesPageCopyZh,
-  'zh-Hant': releaseNotesPageCopyZh,
-  ja: releaseNotesPageCopyEn,
-  ko: releaseNotesPageCopyEn,
-  id: releaseNotesPageCopyEn,
-  th: releaseNotesPageCopyEn,
+  'zh-Hant': releaseNotesPageCopyZhHant,
+  ja: releaseNotesPageCopyJa,
+  ko: releaseNotesPageCopyKo,
+  id: releaseNotesPageCopyId,
+  th: releaseNotesPageCopyTh,
 };
+
+const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, string>>> = {
+  zh: {
+    'mem9 API key for your space.': '你的 mem9 space API key。',
+    'Optional agent identity header for attribution.': '可选的 agent 身份 header，用于归因。',
+    'Set to `application/json` for JSON request bodies.': '发送 JSON 请求体时设为 `application/json`。',
+    'Optional version guard for optimistic updates.': '可选的版本保护，用于乐观更新。',
+    'Your HTTP client sends this as `multipart/form-data`.': '由你的 HTTP 客户端以 `multipart/form-data` 发送。',
+    'Active Space Chain API key for this chain.': '这条 Space Chain 当前可用的 API key。',
+    'Plain memory content for direct writes. Required when `messages` is absent.': '直接写入的纯文本记忆内容。未提供 `messages` 时必填。',
+    'Conversation messages for ingest-based writes. Required when `content` is absent.': '用于 ingest 写入的对话消息。未提供 `content` 时必填。',
+    'Optional application isolation id, max 100 characters. Omitted, null, empty, or whitespace values write to the default/global appId; non-empty values are trimmed and stored exactly.': '可选的应用隔离 id，最多 100 个字符。省略、null、空字符串或纯空白会写入默认/global appId；非空值会 trim 后原样保存。',
+    'Only accepted with `content` writes. Use `insight` or `pinned`; defaults to `insight`.': '仅在 `content` 写入时可用。使用 `insight` 或 `pinned`；默认是 `insight`。',
+    'Optional agent id to store with the write.': '可选的 agent id，会随本次写入保存。',
+    'Optional session id for ingest or attribution.': '可选的 session id，用于 ingest 或归因。',
+    'Optional string tags stored on the memory.': '可选的字符串标签，会保存到记忆上。',
+    'Optional JSON metadata payload.': '可选的 JSON metadata 载荷。',
+    'Ingest mode such as `smart` or `raw` when using `messages`.': '使用 `messages` 时的 ingest 模式，例如 `smart` 或 `raw`。',
+    'When true, wait for completion before returning.': '为 true 时等待处理完成后再返回。',
+    'Message ingest only. When true, skip raw session persistence and only extract/reconcile facts.': '仅用于 message ingest。为 true 时跳过原始 session 持久化，只提取/合并 facts。',
+    'Search query. Omit to list memories by filters.': '搜索查询。省略时按过滤条件列出 memories。',
+    'Optional search behavior. Use `keyword` for direct content substring matching in list UIs; omit it for the default recall-style search.': '可选搜索行为。列表 UI 中使用 `keyword` 做 content 子串匹配；省略时使用默认 recall 风格搜索。',
+    'Comma-separated tag filter.': '逗号分隔的 tag 过滤器。',
+    'Filter by stored source value.': '按已保存的 source 值过滤。',
+    'Filter by lifecycle state such as `active` or `archived`.': '按生命周期状态过滤，例如 `active` 或 `archived`。',
+    'Filter by `insight`, `pinned`, or `session`.': '按 `insight`、`pinned` 或 `session` 过滤。',
+    'Filter by agent id.': '按 agent id 过滤。',
+    'Filter by session id.': '按 session id 过滤。',
+    'Optional appId filter. Omit to search all appIds, pass a value for exact isolation, or use `appId=null` / `appId=` for default/global.': '可选 appId 过滤器。省略表示搜索全部 appId，传值表示精确隔离，使用 `appId=null` / `appId=` 表示默认/global。',
+    'Page size. The handler caps large values.': '分页大小。服务端会限制过大的值。',
+    'Offset for pagination.': '分页 offset。',
+    'Sort field used when listing memories, such as `updated_at`.': '列出 memories 时使用的排序字段，例如 `updated_at`。',
+    'Sort direction, `asc` or `desc`.': '排序方向，`asc` 或 `desc`。',
+    'Space Chain keys only. When true, recall searches every node and globally reranks the merged facts.': '仅 Space Chain key 可用。为 true 时 recall 会搜索所有节点，并对合并后的 facts 做全局 rerank。',
+    'Updated memory content.': '更新后的记忆内容。',
+    'Updated tag array.': '更新后的 tag 数组。',
+    'Updated JSON metadata payload.': '更新后的 JSON metadata 载荷。',
+    'Array of memory ids to delete.': '要删除的 memory id 数组。',
+    'Uploaded file payload.': '上传的文件载荷。',
+    'Use `memory` or `session`.': '使用 `memory` 或 `session`。',
+    'Optional agent id for attribution.': '可选的 agent id，用于归因。',
+    'Required when uploading `session` files.': '上传 `session` 文件时必填。',
+    'Optional top-level appId inside JSON memory/session files.': 'JSON memory/session 文件中的可选顶层 appId。',
+    'Optional per-memory appId override inside JSON memory files.': 'JSON memory 文件中每条 memory 可选的 appId 覆盖值。',
+    'Optional per-session appId override inside JSON session files.': 'JSON session 文件中每个 session 可选的 appId 覆盖值。',
+    'Repeat this query param for each session to fetch.': '每个要获取的 session 都重复传入这个查询参数。',
+    'Optional per-session row limit.': '可选的每个 session 行数限制。',
+    'The newly provisioned mem9 API key / space identifier.': '新创建的 mem9 API key / space 标识符。',
+    'Health status string. Hosted service returns `ok`.': '健康状态字符串。托管服务返回 `ok`。',
+    'Go runtime version used by the server.': '服务端使用的 Go runtime 版本。',
+    'Server start timestamp.': '服务启动时间戳。',
+    '`active` when the key can be used, otherwise `inactive`.': 'key 可用时为 `active`，否则为 `inactive`。',
+    'Array of memory objects for the current page.': '当前页的 memory object 数组。',
+    'Total matched rows before pagination.': '分页前匹配的总行数。',
+    'Applied page size.': '实际应用的分页大小。',
+    'Applied page offset.': '实际应用的分页 offset。',
+    'Memory id.': 'Memory id。',
+    'Stored memory content.': '已保存的 memory 内容。',
+    'Memory type such as `insight`, `pinned`, or `session`.': 'Memory 类型，例如 `insight`、`pinned` 或 `session`。',
+    'Application isolation id. Empty string means default/global.': '应用隔离 id。空字符串表示默认/global。',
+    'Stored source value when present.': '存在时表示已保存的 source 值。',
+    'String tag array when present.': '存在时表示字符串 tag 数组。',
+    'Raw JSON metadata when present.': '存在时表示原始 JSON metadata。',
+    'Agent id associated with the memory when present.': '存在时表示与该 memory 关联的 agent id。',
+    'Session id associated with the memory when present.': '存在时表示与该 memory 关联的 session id。',
+    'Agent or actor that last updated the memory when present.': '存在时表示最后更新该 memory 的 agent 或 actor。',
+    'Replacement memory id when this memory has been superseded.': '当该 memory 被替代时，指向替代 memory id。',
+    'Lifecycle state.': '生命周期状态。',
+    'Current integer version.': '当前整数版本。',
+    'Creation timestamp.': '创建时间戳。',
+    'Last update timestamp.': '最后更新时间戳。',
+    'Search relevance score when returned by search endpoints.': '搜索 endpoint 返回时的相关性分数。',
+    'Recall confidence score when returned by recall-style search.': 'recall 风格搜索返回时的置信度分数。',
+    'Human-readable recency string populated for query-time search results.': '查询时搜索结果中的人类可读时间新近程度。',
+    'Handler result such as `ok` or `accepted`.': 'Handler 结果，例如 `ok` 或 `accepted`。',
+    'Task id for polling.': '用于轮询的 task id。',
+    'Initial task status such as `pending`.': '初始 task 状态，例如 `pending`。',
+    'Aggregate task status for the tenant.': 'tenant 下的聚合 task 状态。',
+    'Array of import task summaries.': 'import task 摘要数组。',
+    'Task id.': 'Task id。',
+    'Uploaded file name.': '上传文件名。',
+    'Task status.': 'Task 状态。',
+    'Total chunk count.': '总 chunk 数。',
+    'Completed chunk count.': '已完成 chunk 数。',
+    'Error message when the task fails.': 'task 失败时的错误消息。',
+    'Array of captured session message rows.': '捕获到的 session message 行数组。',
+    'Session message row id.': 'Session message 行 id。',
+    'Session id for the row.': '该行的 session id。',
+    'Agent id for the row when present.': '存在时表示该行的 agent id。',
+    'Application isolation id for each raw session row.': '每条 raw session 行的应用隔离 id。',
+    'Sequence number within the session.': 'session 内的序号。',
+    'Message role such as `user` or `assistant`.': '消息角色，例如 `user` 或 `assistant`。',
+    'Message content.': '消息内容。',
+    'Content type for the captured message.': '捕获消息的 content type。',
+    'Captured tags for the row.': '该行捕获到的 tags。',
+    'Lifecycle state for the row.': '该行的生命周期状态。',
+    'Applied per-session limit.': '实际应用的每 session 限制。',
+    'Validate whether a Space key or Space Chain key is currently usable before making runtime calls.': '在发起 runtime 调用前，验证 Space key 或 Space Chain key 当前是否可用。',
+    'Check API key status.': '检查 API key 状态。',
+    'Send either a normal mem9 Space key or a Space Chain key in `X-API-Key`. The response is `active` or `inactive`; unknown keys return `404`.': '在 `X-API-Key` 中发送普通 mem9 Space key 或 Space Chain key。响应为 `active` 或 `inactive`；未知 key 返回 `404`。',
+    'Space API key or Space Chain API key.': 'Space API key 或 Space Chain API key。',
+    'Check Space key': '检查 Space key',
+    'Check Space Chain key': '检查 Space Chain key',
+    'Delete multiple memories.': '批量删除 memories。',
+    'Deletes the provided memory ids in one request. When authenticated with a Space Chain key, the handler resolves each id to the node that owns it.': '在一个请求中删除给定的 memory ids。使用 Space Chain key 认证时，handler 会将每个 id 解析到拥有它的节点。',
+    'Batch delete memories': '批量删除 memories',
+    'Space Chains': 'Space Chains',
+    'Create and manage ordered chains of Spaces. Runtime memory endpoints accept a Space Chain key and search the chain in node order, or all nodes when `scanAll=true`.': '创建和管理有序 Space 链。Runtime memory endpoint 可接受 Space Chain key，并按节点顺序搜索 chain；`scanAll=true` 时搜索所有节点。',
+    'Create a Space Chain.': '创建 Space Chain。',
+    'Creates a Space Chain and returns its first plaintext chain key once. Store `chain_api_key` securely; later list responses only expose masked or bound key records.': '创建 Space Chain，并且只返回一次首个明文 chain key。请安全保存 `chain_api_key`；后续列表响应只会暴露脱敏或绑定记录。',
+    'Create Space Chain': '创建 Space Chain',
+    'Export Space Chain env vars': '导出 Space Chain 环境变量',
+    'Read the Space Chain for a key.': '读取某个 key 对应的 Space Chain。',
+    'Looks up the active Space Chain associated with the `X-API-Key` chain key.': '查找与 `X-API-Key` chain key 关联的 active Space Chain。',
+    'Get by key': '按 key 获取',
+    'Read one Space Chain.': '读取单个 Space Chain。',
+    'Returns chain metadata, nodes, and bindings for a chain key authorized to manage this Space Chain.': '返回该管理 key 有权管理的 Space Chain metadata、nodes 和 bindings。',
+    'Get Space Chain': '获取 Space Chain',
+    'Update Space Chain details.': '更新 Space Chain 详情。',
+    'Updates the display name and description for a Space Chain.': '更新 Space Chain 的显示名称和描述。',
+    'Update Space Chain': '更新 Space Chain',
+    'Delete a Space Chain.': '删除 Space Chain。',
+    'Soft-deletes the Space Chain. A successful delete returns `204 No Content`.': '软删除 Space Chain。删除成功时返回 `204 No Content`。',
+    'Delete Space Chain': '删除 Space Chain',
+    'List Space Chain nodes.': '列出 Space Chain 节点。',
+    'Returns the ordered node list. Node positions are zero-based and define sequential recall order.': '返回有序节点列表。节点 position 从 0 开始，并定义顺序 recall 的访问顺序。',
+    'List nodes': '列出节点',
+    'Replace Space Chain nodes.': '替换 Space Chain 节点。',
+    'Replaces the entire ordered node list. Each node must reference a normal Space key / tenant id, not another Space Chain key.': '替换整个有序节点列表。每个节点必须引用普通 Space key / tenant id，不能引用另一个 Space Chain key。',
+    'Replace nodes': '替换节点',
+    'List Space Chain key bindings.': '列出 Space Chain key bindings。',
+    'Returns all key bindings visible to the management key for this Space Chain.': '返回该 Space Chain 管理 key 可见的全部 key bindings。',
+    'List bindings': '列出 bindings',
+    'Create a Space Chain key binding.': '创建 Space Chain key binding。',
+    'Creates another chain key. Omit `chain_api_key` to let mem9 generate a key.': '创建另一个 chain key。省略 `chain_api_key` 时由 mem9 生成 key。',
+    'Create binding': '创建 binding',
+    'Disable a Space Chain key binding.': '禁用 Space Chain key binding。',
+    'Disables an active binding. The API rejects disabling the last active key for a chain.': '禁用一个 active binding。API 会拒绝禁用某条 chain 的最后一个 active key。',
+    'Disable binding': '禁用 binding',
+    'Recall across a Space Chain.': '跨 Space Chain recall。',
+    'Use the normal memory search endpoint with a Space Chain key. By default recall visits nodes in order and stops early on high confidence; pass `scanAll=true` to search every node and globally rerank.': '使用普通 memory search endpoint，但传入 Space Chain key。默认 recall 会按顺序访问节点，并在高置信结果处提前停止；传 `scanAll=true` 时搜索所有节点并全局 rerank。',
+    'Recall with scanAll': '使用 scanAll recall',
+    'Check server version metadata.': '检查 server 版本 metadata。',
+    'Returns runtime metadata that is useful for support and deployment verification.': '返回对支持和部署验证有用的 runtime metadata。',
+    'Version check': '版本检查',
+  },
+};
+
+export function localizeApiSharedText(locale: SiteLocale, text: string): string {
+  if (locale === 'en') {
+    return text;
+  }
+
+  return apiSharedTextTranslations[locale]?.[text] ?? text;
+}
+
+function localizeApiFields(locale: SiteLocale, fields: SiteApiFieldCopy[] | undefined): SiteApiFieldCopy[] | undefined {
+  return fields?.map((field) => ({
+    ...field,
+    description: localizeApiSharedText(locale, field.description),
+  }));
+}
+
+function localizeApiEndpoint(locale: SiteLocale, endpoint: SiteApiEndpointCopy): SiteApiEndpointCopy {
+  return {
+    ...endpoint,
+    summary: localizeApiSharedText(locale, endpoint.summary),
+    description: endpoint.description ? localizeApiSharedText(locale, endpoint.description) : undefined,
+    notes: endpoint.notes?.map((note) => localizeApiSharedText(locale, note)),
+    headers: localizeApiFields(locale, endpoint.headers),
+    queryParams: localizeApiFields(locale, endpoint.queryParams),
+    bodyFields: localizeApiFields(locale, endpoint.bodyFields),
+    responseFields: localizeApiFields(locale, endpoint.responseFields),
+    examples: endpoint.examples?.map((example) => ({
+      ...example,
+      label: localizeApiSharedText(locale, example.label),
+    })),
+  };
+}
+
+export function localizeApiPageCopy(locale: SiteLocale, copy: SiteApiPageCopy): SiteApiPageCopy {
+  return {
+    ...copy,
+    endpointGroups: copy.endpointGroups.map((group) => ({
+      ...group,
+      title: localizeApiSharedText(locale, group.title),
+      description: localizeApiSharedText(locale, group.description),
+      endpoints: group.endpoints.map((endpoint) => localizeApiEndpoint(locale, endpoint)),
+    })),
+  };
+}
 
 export const siteCopy: Record<SiteLocale, SiteDictionary> = {
   en: {

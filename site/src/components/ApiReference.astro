@@ -1,6 +1,7 @@
 ---
 import {
   DEFAULT_LOCALE,
+  localizeApiPageCopy,
   siteCopy,
   siteLocales,
   type SiteApiFieldCopy,
@@ -53,22 +54,12 @@ function endpointTestPayload(
   });
 }
 
-function apiSearchLabel(locale: string): string {
-  return locale === "zh" ? "搜索 API" : "Search API";
-}
-
-function apiSearchPlaceholder(locale: string): string {
-  return locale === "zh" ? "搜索 path 或名称" : "Search path or name";
-}
-
-function apiSearchEmpty(locale: string): string {
-  return locale === "zh" ? "没有匹配的 API。" : "No matching APIs.";
-}
+const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 ---
 
 <section class="api-page" data-api-root data-api-locale={DEFAULT_LOCALE}>
   {siteLocales.map((locale) => {
-    const copy = siteCopy[locale].apiPage;
+    const copy = localizeApiPageCopy(locale, siteCopy[locale].apiPage);
     return (
       <div class="api-copy" data-api-copy={locale} hidden={locale !== DEFAULT_LOCALE}>
         <div class="container api-shell">
@@ -81,16 +72,16 @@ function apiSearchEmpty(locale: string): string {
               <nav class="api-toc surface-card">
                 <p class="api-toc-title">{copy.labels.sidebarTitle}</p>
                 <label class="api-toc-search">
-                  <span class="api-toc-search-label">{apiSearchLabel(locale)}</span>
+                  <span class="api-toc-search-label">{copy.labels.apiSearch}</span>
                   <input
                     type="search"
                     inputmode="search"
-                    placeholder={apiSearchPlaceholder(locale)}
+                    placeholder={copy.labels.apiSearchPlaceholder}
                     autocomplete="off"
                     data-api-toc-search
                   />
                 </label>
-                <p class="api-toc-empty" data-api-toc-empty hidden>{apiSearchEmpty(locale)}</p>
+                <p class="api-toc-empty" data-api-toc-empty hidden>{copy.labels.apiSearchEmpty}</p>
                 <ol class="api-toc-list">
                   <li data-api-toc-static>
                     <a href="#api-auth" class="api-toc-link">{copy.labels.sidebarAuth}</a>
@@ -231,7 +222,7 @@ function apiSearchEmpty(locale: string): string {
                               data-api-test-endpoint={endpointTestPayload(group, endpoint)}
                             >
                               <span aria-hidden="true">▶</span>
-                              Test API
+                              {copy.labels.testApi}
                             </button>
                           </div>
                           <p class="api-endpoint-summary">{endpoint.summary}</p>
@@ -353,44 +344,67 @@ function apiSearchEmpty(locale: string): string {
       <div class="api-test-header">
         <div>
           <p class="api-test-kicker" data-api-test-method>GET</p>
-          <h2 id="api-test-title" data-api-test-title>Test API</h2>
+          <h2 id="api-test-title" data-api-test-title>
+            {defaultApiLabels.testTitle}
+          </h2>
           <code class="api-test-path" data-api-test-path></code>
         </div>
-        <button class="api-test-close" type="button" data-api-test-close aria-label="Close API test modal">Close</button>
+        <button
+          class="api-test-close"
+          type="button"
+          data-api-test-close
+          data-i18n="apiPage.labels.close"
+          data-i18n-attr="aria-label:apiPage.labels.closeApiTestModal"
+          aria-label={defaultApiLabels.closeApiTestModal}
+        >
+          {defaultApiLabels.close}
+        </button>
       </div>
 
       <div class="api-test-action-row">
-        <button class="api-test-secondary" type="button" data-api-test-reset>Reset</button>
-        <button class="api-test-run" type="submit" form="api-test-form" data-api-test-run>Run</button>
+        <label class="api-test-save-option">
+          <input type="checkbox" data-api-test-save-info checked />
+          <span data-i18n="apiPage.labels.saveFormInfo">
+            {defaultApiLabels.saveFormInfo}
+          </span>
+        </label>
+        <div class="api-test-action-buttons">
+          <button class="api-test-secondary" type="button" data-api-test-reset data-i18n="apiPage.labels.reset">
+            {defaultApiLabels.reset}
+          </button>
+          <button class="api-test-run" type="submit" form="api-test-form" data-api-test-run data-i18n="apiPage.labels.run">
+            {defaultApiLabels.run}
+          </button>
+        </div>
       </div>
 
       <div class="api-test-main">
         <form id="api-test-form" class="api-test-form" data-api-test-form>
           <label class="api-test-control api-test-control-wide">
-            <span class="api-test-field-title">Base URL</span>
+            <span class="api-test-field-title" data-i18n="apiPage.labels.baseUrl">{defaultApiLabels.baseUrl}</span>
             <input type="url" data-api-test-base-url placeholder="https://api.mem9.ai" />
           </label>
 
           <div class="api-test-section" data-api-test-section="path">
-            <h3>Path params</h3>
+            <h3 data-i18n="apiPage.labels.pathParams">{defaultApiLabels.pathParams}</h3>
             <div class="api-test-fields" data-api-test-path-fields></div>
           </div>
 
           <div class="api-test-section" data-api-test-section="headers">
-            <h3>Headers</h3>
+            <h3 data-i18n="apiPage.labels.headers">{defaultApiLabels.headers}</h3>
             <div class="api-test-fields" data-api-test-header-fields></div>
           </div>
 
           <div class="api-test-section" data-api-test-section="query">
-            <h3>Query params</h3>
+            <h3 data-i18n="apiPage.labels.queryParams">{defaultApiLabels.queryParams}</h3>
             <div class="api-test-fields" data-api-test-query-fields></div>
           </div>
 
           <div class="api-test-section" data-api-test-section="body">
-            <h3>Body</h3>
+            <h3 data-i18n="apiPage.labels.body">{defaultApiLabels.body}</h3>
             <div class="api-test-fields" data-api-test-body-fields></div>
             <label class="api-test-control api-test-json-body" data-api-test-json-wrap>
-              <span class="api-test-field-title">JSON body</span>
+              <span class="api-test-field-title" data-i18n="apiPage.labels.jsonBody">{defaultApiLabels.jsonBody}</span>
               <textarea data-api-test-json rows="12" spellcheck="false"></textarea>
             </label>
           </div>
@@ -401,11 +415,11 @@ function apiSearchEmpty(locale: string): string {
         <section class="api-test-response" data-api-test-response>
           <div class="api-test-response-head">
             <div class="api-test-response-status">
-              <h3>Response</h3>
-              <p data-api-test-status>Ready</p>
+              <h3 data-i18n="apiPage.labels.response">{defaultApiLabels.response}</h3>
+              <p data-api-test-status>{defaultApiLabels.ready}</p>
             </div>
           </div>
-          <pre class="api-test-code"><code data-api-test-output>Run a request to inspect the response.</code></pre>
+          <pre class="api-test-code"><code data-api-test-output>{defaultApiLabels.responseReady}</code></pre>
         </section>
       </div>
     </div>
@@ -1170,9 +1184,40 @@ function apiSearchEmpty(locale: string): string {
 
   .api-test-action-row {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
     gap: 0.65rem;
     padding: 0.78rem 0 0;
+  }
+
+  .api-test-save-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--text-dim);
+    font-size: 0.84rem;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .api-test-save-option input {
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .api-test-save-option:hover {
+    color: var(--text);
+  }
+
+  .api-test-action-buttons {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.65rem;
   }
 
   .api-test-main {
@@ -1418,7 +1463,7 @@ function apiSearchEmpty(locale: string): string {
 
   .api-test-response {
     display: grid;
-    gap: 0.7rem;
+    gap: 0.5rem;
     min-height: 26rem;
     align-content: start;
     padding: 0;
@@ -1426,10 +1471,11 @@ function apiSearchEmpty(locale: string): string {
 
   .api-test-response-head {
     display: flex;
-    align-items: end;
+    align-items: center;
     justify-content: start;
     gap: 0.75rem;
-    padding-top: 2rem;
+    min-height: 1.25rem;
+    padding-top: 0;
   }
 
   .api-test-response-head > div {
@@ -1437,21 +1483,22 @@ function apiSearchEmpty(locale: string): string {
   }
 
   .api-test-response-status {
-    display: grid;
-    align-content: center;
-    min-height: 2.95rem;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    min-height: 0;
     width: 100%;
-    padding: 0.46rem 0.64rem;
-    border: 1px solid var(--border);
-    border-radius: 0.58rem;
-    background: var(--button-bg);
-    box-shadow: var(--surface-inset);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .api-test-response-head p {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 0.78rem;
+    font-size: 0.72rem;
   }
 
   .api-test-code {
@@ -1621,6 +1668,12 @@ function apiSearchEmpty(locale: string): string {
     .api-test-response-head {
       align-items: stretch;
       flex-direction: column;
+    }
+
+    .api-test-action-buttons {
+      display: flex;
+      align-items: stretch;
+      justify-content: stretch;
     }
 
     .api-test-fields {
