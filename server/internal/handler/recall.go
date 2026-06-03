@@ -369,10 +369,10 @@ func keywordContentEvidenceBonus(profile recallQueryProfile, candidate service.R
 	}
 	matchCount := recallExactTokenMatchCount(candidate.Memory, queryTokens)
 	if len(queryTokens) == 1 && matchCount == 1 {
-		return 0.20
+		return 0.22
 	}
 	if len(queryTokens) > 1 && matchCount >= 2 && matchCount*2 >= len(queryTokens) {
-		return 0.20
+		return 0.22
 	}
 	return 0
 }
