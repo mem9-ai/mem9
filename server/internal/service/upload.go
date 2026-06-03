@@ -237,6 +237,10 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 		if file.AppID == "" {
 			file.AppID = file.AppIDLegacy
 		}
+		fileAppID, err := normalizeUploadAppID(file.AppID, "appId")
+		if err != nil {
+			return w.failTask(ctx, task, fmt.Errorf("validate session app_id: %w", err), logger)
+		}
 		if file.SessionID == "" {
 			file.SessionID = task.SessionID
 		}
@@ -269,7 +273,7 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 			}
 			_, err := ingestSvc.Ingest(taskCtx, agentName, IngestRequest{
 				AgentID:   file.AgentID,
-				AppID:     normalizeUploadAppID(file.AppID),
+				AppID:     fileAppID,
 				SessionID: file.SessionID,
 				Messages:  chunk,
 				Mode:      w.mode,
@@ -292,6 +296,10 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 		}
 		if file.AppID == "" {
 			file.AppID = file.AppIDLegacy
+		}
+		fileAppID, err := normalizeUploadAppID(file.AppID, "appId")
+		if err != nil {
+			return w.failTask(ctx, task, fmt.Errorf("validate memory app_id: %w", err), logger)
 		}
 
 		// Handle empty file: mark done immediately
@@ -326,13 +334,17 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 			}
 			batch := file.Memories[i:end]
 			memories := make([]*domain.Memory, 0, len(batch))
-			for _, entry := range batch {
+			for j, entry := range batch {
 				entryAppID := entry.AppID
 				if entryAppID == "" {
 					entryAppID = entry.AppIDLegacy
 				}
-				if entryAppID == "" {
-					entryAppID = file.AppID
+				appID := fileAppID
+				if entryAppID != "" {
+					appID, err = normalizeUploadAppID(entryAppID, fmt.Sprintf("memories[%d].appId", i+j))
+					if err != nil {
+						return w.failTask(ctx, task, fmt.Errorf("validate memory app_id: %w", err), logger)
+					}
 				}
 				metadata, err := marshalMetadata(entry.Metadata)
 				if err != nil {
@@ -350,7 +362,7 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 					Metadata:   metadata,
 					MemoryType: memType,
 					AgentID:    file.AgentID,
-					AppID:      normalizeUploadAppID(entryAppID),
+					AppID:      appID,
 					State:      domain.StateActive,
 					Version:    1,
 					UpdatedBy:  agentName,
@@ -509,12 +521,12 @@ func parseMemoryFile(data []byte, fallbackAgentID string) (MemoryFile, error) {
 	}, nil
 }
 
-func normalizeUploadAppID(value string) string {
+func normalizeUploadAppID(value string, field string) (string, error) {
 	value = strings.TrimSpace(value)
 	if len(value) > 100 {
-		return ""
+		return "", &domain.ValidationError{Field: field, Message: "too long (max 100)"}
 	}
-	return value
+	return value, nil
 }
 
 // parseSessionFile tries to parse data as a JSON SessionFile first.

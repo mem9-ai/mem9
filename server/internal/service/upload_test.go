@@ -3,7 +3,10 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
+
+	"github.com/qiffang/mnemos/server/internal/domain"
 )
 
 func TestChunkMessages(t *testing.T) {
@@ -104,6 +107,36 @@ func TestMarshalMetadata(t *testing.T) {
 			t.Errorf("unexpected empty result: %s", s)
 		}
 	})
+}
+
+func TestNormalizeUploadAppID(t *testing.T) {
+	got, err := normalizeUploadAppID("  app-a  ", "appId")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "app-a" {
+		t.Fatalf("appID = %q, want app-a", got)
+	}
+
+	got, err = normalizeUploadAppID(" \t ", "appId")
+	if err != nil {
+		t.Fatalf("unexpected error for blank appID: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("blank appID = %q, want empty", got)
+	}
+
+	_, err = normalizeUploadAppID(strings.Repeat("x", 101), "memories[0].appId")
+	if err == nil {
+		t.Fatal("expected validation error for oversized appID")
+	}
+	var ve *domain.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("error = %T, want ValidationError", err)
+	}
+	if ve.Field != "memories[0].appId" {
+		t.Fatalf("field = %q, want memories[0].appId", ve.Field)
+	}
 }
 
 func TestParseSessionFile(t *testing.T) {
