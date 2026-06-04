@@ -50,6 +50,8 @@ function docsSectionSearchText(section: DocsSection): string {
       <div
         class="docs-copy"
         data-docs-copy={locale}
+        data-docs-meta-title={copy.meta.title}
+        data-docs-meta-description={copy.meta.description}
         hidden={locale !== initialDocsLocale}
       >
         <div class="container docs-shell">

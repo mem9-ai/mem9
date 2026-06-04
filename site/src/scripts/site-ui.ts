@@ -1,5 +1,3 @@
-import { docsCopy, resolveDocsLocale } from '../content/docs';
-import { consoleDocsCopy } from '../content/console-docs';
 import {
   DEFAULT_LOCALE,
   DEFAULT_THEME_PREFERENCE,
@@ -16,6 +14,7 @@ import {
 } from '../content/site';
 
 type MenuName = 'docs' | 'login' | 'language' | 'theme';
+type DocsLocale = 'en' | 'zh' | 'ja' | 'ko' | 'id' | 'th';
 type OnboardingVersion = 'stable' | 'beta';
 type OnboardingCommandParts = {
   prefix: string;
@@ -499,6 +498,25 @@ function isReleaseNotesPage(): boolean {
   return document.querySelector('[data-release-notes-root]') !== null;
 }
 
+function resolveDocsLocale(locale: SiteLocale): DocsLocale {
+  switch (locale) {
+    case 'zh':
+    case 'zh-Hant':
+      return 'zh';
+    case 'ja':
+      return 'ja';
+    case 'ko':
+      return 'ko';
+    case 'id':
+      return 'id';
+    case 'th':
+      return 'th';
+    case 'en':
+    default:
+      return 'en';
+  }
+}
+
 function updateDocsPage(locale: SiteLocale): void {
   const docsLocale = resolveDocsLocale(locale);
   const root = document.querySelector<HTMLElement>('[data-docs-root]');
@@ -507,12 +525,8 @@ function updateDocsPage(locale: SiteLocale): void {
     return;
   }
 
-  const copySource = root.dataset.docsSource === 'console' ? consoleDocsCopy : docsCopy;
-  const copy = copySource[docsLocale];
-
   root.dataset.docsLocale = docsLocale;
   setDocumentLang(locale);
-  updateMetaElements(copy.meta.title, copy.meta.description);
 
   root.querySelectorAll<HTMLElement>('[data-docs-copy]').forEach((sectionCopy) => {
     const isActive = sectionCopy.dataset.docsCopy === docsLocale;
@@ -532,6 +546,11 @@ function updateDocsPage(locale: SiteLocale): void {
       anchor.removeAttribute('id');
     });
   });
+
+  const activeCopy = root.querySelector<HTMLElement>('[data-docs-copy]:not([hidden])');
+  if (activeCopy) {
+    updateMetaElements(activeCopy.dataset.docsMetaTitle ?? '', activeCopy.dataset.docsMetaDescription ?? '');
+  }
 }
 
 function updateApiPage(locale: SiteLocale): void {
