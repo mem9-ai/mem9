@@ -79,6 +79,12 @@ MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" make dev
 - Legacy API metering uses `MNEMO_METERING_*`; runtime usage quota and console metering use `MNEMO_RUNTIME_USAGE_*` and do not use `MNEMO_METERING_URL`.
 - Always use `make` targets for building and Docker image operations — never construct raw `go build` or `docker build` commands from scratch. Use `make build-linux` for the server binary and `REGISTRY=<ecr> COMMIT=<tag> make docker` for images.
 
+## Git workflow
+
+- Do not commit directly to `main`.
+- Before committing, create or switch to a feature branch.
+- Changes must reach `main` by opening a pull request and merging that PR.
+
 ## Versioning
 
 - `meta.json` at the repository root is the source of truth for the mem9 version.
