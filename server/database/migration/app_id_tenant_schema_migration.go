@@ -280,14 +280,14 @@ func migrateTenantSchema(ctx context.Context, db *sql.DB) error {
 	if err := requireTable(ctx, db, "memories"); err != nil {
 		return err
 	}
-	if err := requireTable(ctx, db, "sessions"); err != nil {
-		return err
-	}
 	if err := ensureColumn(ctx, db, "memories", "app_id", "VARCHAR(100) NOT NULL DEFAULT ''"); err != nil {
 		return fmt.Errorf("memories app_id column: %w", err)
 	}
 	if err := ensureIndex(ctx, db, "memories", "idx_app", "app_id"); err != nil {
 		return fmt.Errorf("memories app_id index: %w", err)
+	}
+	if err := requireTable(ctx, db, "sessions"); err != nil {
+		return err
 	}
 	if err := ensureColumn(ctx, db, "sessions", "app_id", "VARCHAR(100) NOT NULL DEFAULT ''"); err != nil {
 		return fmt.Errorf("sessions app_id column: %w", err)

@@ -18,7 +18,9 @@ when public manual setup or operations depend on them.
 ## appId Tenant Migration
 
 `migration/app_id_tenant_schema_migration.go` updates active tenant TiDB/MySQL
-databases for app-scoped memories and raw sessions.
+databases for app-scoped memories and raw sessions. It migrates `memories`
+before checking `sessions`, so older tenants that are missing the raw session
+table still receive `memories.app_id` before being recorded as failed.
 
 Run a dry-run from `server/`:
 
