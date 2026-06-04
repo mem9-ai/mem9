@@ -311,6 +311,7 @@ export interface SiteReleaseNoteSection {
 
 export interface SiteReleaseNoteItem {
   date: string;
+  version: string;
   title: string;
   summary: string;
   sections?: SiteReleaseNoteSection[];
@@ -338,8 +339,9 @@ export interface SiteReleaseNotesPageCopy {
   groups: SiteReleaseNoteGroup[];
 }
 
-type SiteReleaseNoteDraftItem = Omit<SiteReleaseNoteItem, 'sources'> & {
+type SiteReleaseNoteDraftItem = Omit<SiteReleaseNoteItem, 'sources' | 'version'> & {
   sources?: SiteReleaseNoteSource[];
+  version?: string;
 };
 
 type SiteReleaseNoteDraftGroup = Omit<SiteReleaseNoteGroup, 'items'> & {
@@ -3111,6 +3113,8 @@ const releaseNoteSourceGroups: SiteReleaseNoteSource[][][] = [
   ],
 ];
 
+const defaultReleaseNoteVersion = 'v1.0.0';
+
 function attachReleaseNoteSources(copy: SiteReleaseNotesPageDraft): SiteReleaseNotesPageCopy {
   return {
     ...copy,
@@ -3118,6 +3122,7 @@ function attachReleaseNoteSources(copy: SiteReleaseNotesPageDraft): SiteReleaseN
       ...group,
       items: group.items.map((item, itemIndex) => ({
         ...item,
+        version: item.version ?? defaultReleaseNoteVersion,
         sources: releaseNoteSourceGroups[groupIndex]?.[itemIndex] ?? [],
       })),
     })),

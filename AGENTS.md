@@ -79,6 +79,16 @@ MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" make dev
 - Legacy API metering uses `MNEMO_METERING_*`; runtime usage quota and console metering use `MNEMO_RUNTIME_USAGE_*` and do not use `MNEMO_METERING_URL`.
 - Always use `make` targets for building and Docker image operations — never construct raw `go build` or `docker build` commands from scratch. Use `make build-linux` for the server binary and `REGISTRY=<ecr> COMMIT=<tag> make docker` for images.
 
+## Versioning
+
+- `meta.json` at the repository root is the source of truth for the mem9 version.
+- Versions start at `1.0.0` and use `MAJOR.MINOR.PATCH`.
+- Small fixes and maintenance updates should bump `PATCH`.
+- Larger user-facing features should bump `MINOR`.
+- Breaking changes or product-level compatibility resets should bump `MAJOR`.
+- Release-specific version bumps are a developer decision; do not bump `meta.json` unless the task explicitly asks for a release/version update.
+- Every feature entry in `site/` release notes should carry a version tag. Legacy release note entries default to `v1.0.0`; new entries should set the version that corresponds to the feature release.
+
 ## Go style
 
 - Format with `gofmt` only.

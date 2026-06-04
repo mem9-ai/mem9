@@ -42,7 +42,10 @@ import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
                 <div class="release-note-list">
                   {group.items.map((item) => (
                     <article class="release-note-card surface-card">
-                      <div class="release-note-meta">{item.date}</div>
+                      <div class="release-note-meta-row">
+                        <div class="release-note-meta">{item.date}</div>
+                        <div class="release-note-version">{item.version}</div>
+                      </div>
                       <h3>{item.title}</h3>
                       <p class="release-note-summary">{item.summary}</p>
 
@@ -202,16 +205,31 @@ import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
     border-radius: 0.75rem;
   }
 
-  .release-note-meta {
+  .release-note-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    align-items: center;
+  }
+
+  .release-note-meta,
+  .release-note-version {
     width: fit-content;
     padding: 0.28rem 0.48rem;
     border: 1px solid var(--border);
     border-radius: 0.5rem;
-    color: var(--accent);
     background: var(--button-bg);
     font-family: var(--font-mono);
     font-size: 0.76rem;
     line-height: 1;
+  }
+
+  .release-note-meta {
+    color: var(--accent);
+  }
+
+  .release-note-version {
+    color: var(--text-dim);
   }
 
   .release-note-card h3 {
