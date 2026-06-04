@@ -19,18 +19,6 @@ function linkRel(link: DocsLink): string | undefined {
   return link.external ? 'noopener noreferrer' : undefined;
 }
 
-function docsSearchLabel(locale: DocsLocale): string {
-  return locale === 'zh' ? '搜索文档' : 'Search docs';
-}
-
-function docsSearchPlaceholder(locale: DocsLocale): string {
-  return locale === 'zh' ? '搜索导航或正文内容' : 'Search navigation or content';
-}
-
-function docsSearchEmpty(locale: DocsLocale): string {
-  return locale === 'zh' ? '没有匹配的文档。' : 'No matching docs.';
-}
-
 function plainText(value: string | undefined): string {
   return (value ?? '').replace(/<[^>]*>/g, ' ');
 }
@@ -74,16 +62,16 @@ function docsSectionSearchText(section: DocsSection): string {
               <div class="docs-toc surface-card">
                 <p class="docs-toc-title">{copy.hero.tocTitle}</p>
                 <label class="docs-toc-search">
-                  <span class="docs-toc-search-label">{docsSearchLabel(locale)}</span>
+                  <span class="docs-toc-search-label">{copy.search.label}</span>
                   <input
                     type="search"
                     inputmode="search"
-                    placeholder={docsSearchPlaceholder(locale)}
+                    placeholder={copy.search.placeholder}
                     autocomplete="off"
                     data-docs-toc-search
                   />
                 </label>
-                <p class="docs-toc-empty" data-docs-toc-empty hidden>{docsSearchEmpty(locale)}</p>
+                <p class="docs-toc-empty" data-docs-toc-empty hidden>{copy.search.empty}</p>
                 <nav aria-label={copy.hero.tocTitle}>
                   <div class="docs-toc-groups">
                     {copy.tocGroups.map((group) => (

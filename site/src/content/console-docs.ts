@@ -21,6 +21,11 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       ],
       tocTitle: 'On this page',
     },
+    search: {
+      label: 'Search docs',
+      placeholder: 'Search navigation or content',
+      empty: 'No matching docs.',
+    },
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: 'Memory Workflows', sectionIDs: ['spaces', 'space-detail', 'memories'] },
@@ -246,6 +251,11 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
         'Space Chain、用量、账单和设置在日常使用中如何配合。',
       ],
       tocTitle: '本页目录',
+    },
+    search: {
+      label: '搜索文档',
+      placeholder: '搜索导航或正文内容',
+      empty: '没有匹配的文档。',
     },
     tocGroups: [
       { title: '开始', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
@@ -473,6 +483,11 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       ],
       tocTitle: 'On this page',
     },
+    search: {
+      label: 'ドキュメントを検索',
+      placeholder: 'ナビゲーションまたは本文を検索',
+      empty: '一致するドキュメントがありません。',
+    },
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: 'Memory Workflows', sectionIDs: ['spaces', 'space-detail', 'memories'] },
@@ -601,6 +616,11 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       ],
       tocTitle: 'On this page',
     },
+    search: {
+      label: '문서 검색',
+      placeholder: '내비게이션 또는 본문 검색',
+      empty: '일치하는 문서가 없습니다.',
+    },
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: 'Memory Workflows', sectionIDs: ['spaces', 'space-detail', 'memories'] },
@@ -638,6 +658,11 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       ],
       tocTitle: 'On this page',
     },
+    search: {
+      label: 'Cari dokumentasi',
+      placeholder: 'Cari navigasi atau isi',
+      empty: 'Tidak ada dokumen yang cocok.',
+    },
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: 'Memory Workflows', sectionIDs: ['spaces', 'space-detail', 'memories'] },
@@ -674,6 +699,11 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
         'การใช้ Space Chain, usage, billing และ settings',
       ],
       tocTitle: 'On this page',
+    },
+    search: {
+      label: 'ค้นหาเอกสาร',
+      placeholder: 'ค้นหาในเมนูหรือเนื้อหา',
+      empty: 'ไม่พบเอกสารที่ตรงกัน',
     },
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },

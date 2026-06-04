@@ -40,9 +40,16 @@ export interface DocsHeroCopy {
   tocTitle: string;
 }
 
+export interface DocsSearchCopy {
+  label: string;
+  placeholder: string;
+  empty: string;
+}
+
 export interface DocsPageCopy {
   meta: SiteMeta;
   hero: DocsHeroCopy;
+  search: DocsSearchCopy;
   tocGroups: DocsSectionGroup[];
   sections: DocsSection[];
 }
@@ -290,6 +297,11 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         'Where Hook mode and Context Engine support fit into the product.',
       ],
       tocTitle: 'On this page',
+    },
+    search: {
+      label: 'Search docs',
+      placeholder: 'Search navigation or content',
+      empty: 'No matching docs.',
     },
     tocGroups: [
       {
@@ -723,6 +735,11 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         'Hook 模式与 Context Engine 支持在产品里的定位。',
       ],
       tocTitle: '目录',
+    },
+    search: {
+      label: '搜索文档',
+      placeholder: '搜索导航或正文内容',
+      empty: '没有匹配的文档。',
     },
     tocGroups: [
       {
@@ -1162,6 +1179,11 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       ],
       tocTitle: '目次',
     },
+    search: {
+      label: 'ドキュメントを検索',
+      placeholder: 'ナビゲーションまたは本文を検索',
+      empty: '一致するドキュメントがありません。',
+    },
     tocGroups: [
       {
         title: 'はじめに',
@@ -1587,6 +1609,11 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       ],
       tocTitle: '목차',
     },
+    search: {
+      label: '문서 검색',
+      placeholder: '내비게이션 또는 본문 검색',
+      empty: '일치하는 문서가 없습니다.',
+    },
     tocGroups: [
       {
         title: '시작하기',
@@ -2011,6 +2038,11 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         'Posisi Hook mode dan dukungan Context Engine.',
       ],
       tocTitle: 'Daftar isi',
+    },
+    search: {
+      label: 'Cari dokumentasi',
+      placeholder: 'Cari navigasi atau isi',
+      empty: 'Tidak ada dokumen yang cocok.',
     },
     tocGroups: [
       {
@@ -2442,6 +2474,11 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         'ตำแหน่งของ Hook mode และการรองรับ Context Engine',
       ],
       tocTitle: 'สารบัญ',
+    },
+    search: {
+      label: 'ค้นหาเอกสาร',
+      placeholder: 'ค้นหาในเมนูหรือเนื้อหา',
+      empty: 'ไม่พบเอกสารที่ตรงกัน',
     },
     tocGroups: [
       {
