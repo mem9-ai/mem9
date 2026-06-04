@@ -21,14 +21,14 @@ Keep tenant and cluster identity only in server-side aggregation, not Prometheus
 1. Metrics are `GaugeVec` with `cluster_id` in `server/internal/metrics/metrics.go:137`.
 2. HTTP writes refresh per-cluster gauges from tenant DB `CountStats` in `server/internal/handler/memory.go:689`.
 3. Upload memory imports set the same per-cluster gauges in `server/internal/service/upload.go:336`.
-4. `tenant_activity` already stores one row per tenant, but only has `last_activity_at` in `server/schema.sql:27`.
+4. `tenant_activity` already stores one row per tenant, but only has `last_activity_at` in `server/database/schema.sql:27`.
 5. `ActivityTracker` already debounces control-plane aggregate refresh for active tenant count in `server/internal/service/activity.go:41`.
 
 ## Proposed Design
 
 1. Extend `tenant_activity` in all control-plane schema files.
 
-TiDB `server/schema.sql` uses `TIMESTAMP NULL`:
+TiDB `server/database/schema.sql` uses `TIMESTAMP NULL`:
 
 ```sql
 ALTER TABLE tenant_activity
@@ -37,7 +37,7 @@ ALTER TABLE tenant_activity
   ADD COLUMN memory_stats_observed_at TIMESTAMP NULL;
 ```
 
-Postgres `server/schema_pg.sql` and db9 `server/schema_db9.sql` use the same count columns with `TIMESTAMPTZ NULL` for `memory_stats_observed_at`.
+Postgres `server/database/schema_pg.sql` and db9 `server/database/schema_db9.sql` use the same count columns with `TIMESTAMPTZ NULL` for `memory_stats_observed_at`.
 
 2. Extend `repository.TenantRepo` with memory-stat methods:
 

@@ -833,7 +833,7 @@ until the goroutine succeeds; smart ingest is never affected.
 | `service/session.go` | New file: `SessionService.BulkCreate`, `Search` (full hybrid RRF pipeline, `domain.MemoryFilter`) | ~100 |
 | `handler/handler.go` | `resolvedSvc`; `resolveServices` wiring; delegate to `s.tenant.EnsureSessionsTable(ctx, db)` | ~30 |
 | `handler/memory.go` | Parallel goroutine; `memory_type=session` routing; append sessions in search | ~40 |
-| `server/schema.sql` | Add sessions DDL (reference) | ~30 |
+| `server/database/schema.sql` | Add sessions DDL (reference) | ~30 |
 
 **Total: ~580 LoC**
 

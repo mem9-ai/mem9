@@ -39,6 +39,7 @@ vendor/
 server/bin
 server/coverage/
 server/.tmp
+server/database/migration/app_id_state/
 
 # Benchmark results
 benchmark/results/*

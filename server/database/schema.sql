@@ -116,6 +116,30 @@ CREATE TABLE IF NOT EXISTS memories (
   INDEX idx_updated             (updated_at)
 );
 
+CREATE TABLE IF NOT EXISTS sessions (
+  id              VARCHAR(36)     PRIMARY KEY,
+  session_id      VARCHAR(100)    NULL,
+  agent_id        VARCHAR(100)    NULL,
+  app_id          VARCHAR(100)    NOT NULL DEFAULT '' COMMENT 'Application isolation ID',
+  source          VARCHAR(100)    NULL,
+  seq             INT             NOT NULL,
+  role            VARCHAR(20)     NOT NULL,
+  content         MEDIUMTEXT      NOT NULL,
+  content_type    VARCHAR(20)     NOT NULL DEFAULT 'text',
+  content_hash    VARCHAR(64)     NOT NULL,
+  tags            JSON,
+  embedding       VECTOR(1536)    NULL,
+  state           VARCHAR(20)     NOT NULL DEFAULT 'active',
+  created_at      TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TIMESTAMP       DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_sessions_session    (session_id),
+  INDEX idx_sessions_agent      (agent_id),
+  INDEX idx_sessions_app        (app_id),
+  INDEX idx_sessions_state      (state),
+  INDEX idx_sessions_created    (created_at),
+  UNIQUE INDEX idx_sessions_dedup (app_id, session_id, content_hash)
+);
+
 -- Full-text search index (TiDB Cloud Serverless with MULTILINGUAL tokenizer).
 -- ADD_COLUMNAR_REPLICA_ON_DEMAND auto-provisions TiFlash on Serverless clusters.
 -- Run after the memories table is created. Safe to re-run (fails silently if index exists).
@@ -161,6 +185,16 @@ CREATE TABLE IF NOT EXISTS memories (
 -- Step 4: Drop tombstone (separate deployment).
 -- ALTER TABLE memories DROP COLUMN tombstone;
 -- DROP INDEX idx_tombstone ON memories;
+
+-- Migration: app-scoped raw sessions.
+-- Runtime tenant schema initialization completes this idempotently for existing tenants.
+-- Use these steps when applying the documented schema manually.
+-- ALTER TABLE sessions
+--   ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT '';
+-- CREATE INDEX idx_sessions_app ON sessions(app_id);
+-- ALTER TABLE sessions DROP INDEX idx_sessions_dedup;
+-- ALTER TABLE sessions
+--   ADD UNIQUE INDEX idx_sessions_dedup (app_id, session_id, content_hash);
 
 -- Marketing attribution captured at provision time (control plane).
 CREATE TABLE IF NOT EXISTS tenant_utm (

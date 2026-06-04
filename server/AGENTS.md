@@ -32,7 +32,7 @@ cd server && go test -race -count=1 -run TestFunctionName ./internal/service/
 | Metering writers | `internal/metering/` |
 | Config parsing | `internal/config/config.go` |
 | Domain types and errors | `internal/domain/` |
-| Database schema | `schema.sql` |
+| Database schema | `database/schema.sql` |
 
 ## Local conventions
 

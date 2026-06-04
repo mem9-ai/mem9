@@ -593,7 +593,7 @@ mnemo-server (same auth flow)
 ## 14. Implementation Phases
 
 ### Phase A: Control Plane Schema + Domain Types
-1. Create `tenants` and `tenant_tokens` tables in schema.sql
+1. Create `tenants` and `tenant_tokens` tables in `server/database/schema.sql`
 2. Add `Tenant`, `TenantToken`, `TenantInfo` domain types
 3. Implement `TenantRepo` and `TenantTokenRepo` (TiDB SQL)
 4. Add new config env vars

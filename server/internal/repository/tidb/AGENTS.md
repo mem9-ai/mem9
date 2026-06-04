@@ -22,7 +22,7 @@ make test-integration
 | Tenant records | `tenant.go` |
 | Upload task records | `upload_task.go` |
 | DB connection helper | `tidb.go` |
-| TiDB schema | `../../../schema.sql` |
+| TiDB schema | `../../../database/schema.sql` |
 
 ## Local conventions
 

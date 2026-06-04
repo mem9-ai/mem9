@@ -16,7 +16,7 @@ go mod download
 go build ./cmd/mnemo-server
 
 # Apply schema
-mysql -h <host> -P <port> -u <user> -p < schema.sql
+mysql -h <host> -P <port> -u <user> -p < database/schema.sql
 
 # Run
 export MNEMO_DSN="user:pass@tcp(host:port)/mnemos?parseTime=true"
