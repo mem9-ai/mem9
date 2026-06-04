@@ -108,19 +108,6 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
             </div>
           </div>
         </div>
-        <a
-          href="/pricing"
-          class:list={['nav-section-link', isActivePath('/pricing') && 'is-active']}
-          aria-current={isActivePath('/pricing') ? 'page' : undefined}
-        >
-          <span class="localized-label">
-            {navLabels('billing').map((label) => (
-              <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
-                {label.value}
-              </span>
-            ))}
-          </span>
-        </a>
         <div
           class="menu-shell nav-docs-dropdown"
           data-menu-shell="docs"
@@ -200,6 +187,19 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
           </div>
         </div>
         <a
+          href="/pricing"
+          class:list={['nav-section-link', isActivePath('/pricing') && 'is-active']}
+          aria-current={isActivePath('/pricing') ? 'page' : undefined}
+        >
+          <span class="localized-label">
+            {navLabels('billing').map((label) => (
+              <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                {label.value}
+              </span>
+            ))}
+          </span>
+        </a>
+        <a
           href="/release-notes"
           class:list={[
             'nav-section-link',
@@ -219,6 +219,222 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
       </div>
 
       <div class="nav-actions">
+        <div class="menu-shell mobile-menu-shell" data-menu-shell="mobile" data-open="false">
+          <button
+            type="button"
+            class="icon-button mobile-menu-toggle"
+            data-menu-trigger="mobile"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-controls="mobile-main-menu"
+            aria-label={aria.mainMenu}
+            title={aria.mainMenu}
+            data-i18n-attr="aria-label:aria.mainMenu;title:aria.mainMenu"
+          >
+            <svg class="mobile-menu-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                class="mobile-menu-line mobile-menu-line-top"
+                d="M5 7h14"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-width="1.8"
+              />
+              <path
+                class="mobile-menu-line mobile-menu-line-middle"
+                d="M5 12h14"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-width="1.8"
+              />
+              <path
+                class="mobile-menu-line mobile-menu-line-bottom"
+                d="M5 17h14"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-width="1.8"
+              />
+            </svg>
+          </button>
+
+          <div
+            id="mobile-main-menu"
+            class="nav-menu mobile-menu surface-card"
+            data-menu="mobile"
+            role="menu"
+            hidden
+          >
+            <div class="mobile-menu-section" role="presentation">
+              <a
+                href="/#top"
+                class:list={['mobile-menu-item', isActivePath('/') && 'is-active']}
+                role="menuitem"
+                aria-current={isActivePath('/') ? 'page' : undefined}
+              >
+                <span class="localized-label">
+                  {navLabels('home').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a href="/#features" class="mobile-menu-item" role="menuitem">
+                <span class="localized-label">
+                  {navLabels('features').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a href="/#benchmark" class="mobile-menu-item" role="menuitem">
+                <span class="localized-label">
+                  {navLabels('benchmark').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a href="/#platforms" class="mobile-menu-item" role="menuitem">
+                <span class="localized-label">
+                  {navLabels('platforms').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a href="/#security" class="mobile-menu-item" role="menuitem">
+                <span class="localized-label">
+                  {navLabels('security').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a href="/#faq" class="mobile-menu-item" role="menuitem">
+                <span class="localized-label">
+                  {navLabels('faq').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+            </div>
+
+            <div class="mobile-menu-section" role="presentation">
+              <a
+                href="/docs"
+                class:list={['mobile-menu-item', isActivePath('/docs') && 'is-active']}
+                role="menuitem"
+                aria-current={isActivePath('/docs') ? 'page' : undefined}
+              >
+                <span class="localized-label">
+                  {navLabels('mem9Docs').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a
+                href="/console-docs"
+                class:list={['mobile-menu-item', isActivePath('/console-docs') && 'is-active']}
+                role="menuitem"
+                aria-current={isActivePath('/console-docs') ? 'page' : undefined}
+              >
+                <span class="localized-label">
+                  {navLabels('consoleDocs').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a
+                href="/api"
+                class:list={['mobile-menu-item', isActivePath('/api') && 'is-active']}
+                role="menuitem"
+                aria-current={isActivePath('/api') ? 'page' : undefined}
+              >
+                <span class="localized-label">
+                  {navLabels('apiReferences').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+            </div>
+
+            <div class="mobile-menu-section" role="presentation">
+              <a
+                href="/pricing"
+                class:list={['mobile-menu-item', isActivePath('/pricing') && 'is-active']}
+                role="menuitem"
+                aria-current={isActivePath('/pricing') ? 'page' : undefined}
+              >
+                <span class="localized-label">
+                  {navLabels('billing').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a
+                href="/release-notes"
+                class:list={['mobile-menu-item', isActivePath('/release-notes') && 'is-active']}
+                role="menuitem"
+                aria-current={isActivePath('/release-notes') ? 'page' : undefined}
+              >
+                <span class="localized-label">
+                  {navLabels('releaseNotes').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a
+                href="https://github.com/mem9-ai/mem9"
+                class="mobile-menu-item"
+                target="_blank"
+                rel="noopener"
+                role="menuitem"
+              >
+                <span class="localized-label">
+                  {navLabels('github').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a
+                href="https://x.com/mem9_ai"
+                class="mobile-menu-item"
+                target="_blank"
+                rel="noopener"
+                role="menuitem"
+              >
+                <span class="localized-label">
+                  {navLabels('xcom').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+            </div>
+          </div>
+        </div>
         <a
           href="https://github.com/mem9-ai/mem9"
           class="nav-section-link nav-social-link nav-github-link"
@@ -774,6 +990,81 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
     flex: 0 0 auto;
   }
 
+  .mobile-menu-shell {
+    display: none;
+  }
+
+  .mobile-menu-icon {
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+
+  .mobile-menu-line {
+    transform-origin: center;
+    transition:
+      opacity 0.18s ease,
+      transform 0.18s ease;
+  }
+
+  .mobile-menu-shell[data-open='true'] .mobile-menu-line-top {
+    transform: translateY(5px) rotate(45deg);
+  }
+
+  .mobile-menu-shell[data-open='true'] .mobile-menu-line-middle {
+    opacity: 0;
+  }
+
+  .mobile-menu-shell[data-open='true'] .mobile-menu-line-bottom {
+    transform: translateY(-5px) rotate(-45deg);
+  }
+
+  .mobile-menu {
+    width: min(26rem, calc(100vw - 2rem));
+    max-height: min(calc(100dvh - 5rem), 34rem);
+    overflow-y: auto;
+    align-content: start;
+    gap: 0.4rem;
+    padding: 0.6rem;
+  }
+
+  .mobile-menu-section {
+    display: grid;
+    gap: 0.15rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mobile-menu-section:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+
+  .mobile-menu-item {
+    display: flex;
+    align-items: center;
+    min-height: 2.75rem;
+    border: 1px solid transparent;
+    border-radius: 0.8rem;
+    padding: 0.65rem 0.8rem;
+    color: var(--text-dim);
+    font-size: 0.96rem;
+    font-weight: 600;
+    line-height: 1.2;
+    transition:
+      background-color 0.2s ease,
+      border-color 0.2s ease,
+      color 0.2s ease;
+  }
+
+  .mobile-menu-item:hover,
+  .mobile-menu-item:focus-visible,
+  .mobile-menu-item.is-active {
+    background: var(--button-active-bg);
+    border-color: var(--button-active-border);
+    color: var(--text);
+    opacity: 1;
+  }
+
   .nav-login-link {
     display: inline-flex;
     align-items: center;
@@ -864,6 +1155,7 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
 
   .login-option-tooltip {
     position: absolute;
+    display: block;
     right: calc(100% + 0.55rem);
     top: 50%;
     z-index: 35;
@@ -880,6 +1172,7 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
     font-weight: 500;
     line-height: 1.35;
     white-space: normal;
+    overflow-wrap: anywhere;
     opacity: 0;
     pointer-events: none;
     visibility: hidden;
@@ -887,6 +1180,10 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
       opacity 0.15s ease,
       transform 0.15s ease,
       visibility 0.15s ease;
+  }
+
+  .login-option-tooltip .localized-label-option {
+    white-space: normal;
   }
 
   .login-menu-item:hover .login-option-tooltip,
@@ -949,6 +1246,19 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
     display: none;
   }
 
+  .nav-menu.mobile-menu {
+    position: fixed;
+    top: calc(56px + 0.75rem);
+    right: 1rem;
+    z-index: 40;
+    width: min(26rem, calc(100vw - 2rem));
+    max-height: min(calc(100dvh - 5rem), 34rem);
+    overflow-y: auto;
+    align-content: start;
+    gap: 0.4rem;
+    padding: 0.6rem;
+  }
+
   .language-menu {
     min-width: 11.5rem;
   }
@@ -979,37 +1289,28 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
     color: var(--text);
   }
 
-  @media (max-width: 780px) {
+  @media (max-width: 900px) {
     .nav-inner {
       min-height: 56px;
-      gap: 1.1rem;
+      gap: 0.85rem;
     }
 
     .nav-links {
-      gap: 0.9rem;
-      font-size: 0.87rem;
+      display: none;
     }
 
     .nav-actions {
       gap: 0.55rem;
+    }
+
+    .mobile-menu-shell {
+      display: block;
     }
   }
 
   @media (max-width: 560px) {
     .nav-right {
       gap: 0.7rem;
-    }
-
-    .nav-links .nav-section-link:not(.nav-docs-link):not(.nav-social-link),
-    .nav-dropdown {
-      display: none;
-    }
-
-    .nav-links .nav-docs-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-      font-size: 0.84rem;
     }
 
     .nav-actions {
@@ -1057,7 +1358,7 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
   }
 
   @media (max-width: 460px) {
-    .nav-docs-dropdown {
+    .nav-social-link {
       display: none;
     }
   }

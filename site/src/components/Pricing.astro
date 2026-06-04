@@ -92,6 +92,68 @@ const { billing } = Astro.props;
         </tbody>
       </table>
     </div>
+
+    <div class="pricing-mobile-list">
+      {billing.tiers.map((tier, tierIndex) => (
+        <article class:list={['pricing-mobile-tier', 'surface-card', tier.highlighted && 'is-highlighted']}>
+          <div class="mobile-tier-header">
+            <h3 class="tier-name" data-i18n={`billing.tiers.${tierIndex}.name`}>{tier.name}</h3>
+            <div class="tier-price-row">
+              <span
+                class:list={['tier-price', tier.promoPrice && 'is-crossed']}
+                data-i18n={`billing.tiers.${tierIndex}.price`}
+              >
+                {tier.price}
+              </span>
+              {tier.promoPrice && (
+                <span class="tier-price tier-price-promo" data-i18n={`billing.tiers.${tierIndex}.promoPrice`}>
+                  {tier.promoPrice}
+                </span>
+              )}
+              {tier.period && (
+                <span class="tier-period" data-i18n={`billing.tiers.${tierIndex}.period`}>{tier.period}</span>
+              )}
+            </div>
+            {tier.ctaAction === 'mailto' ? (
+              <button
+                type="button"
+                class="cta-button"
+                data-billing-contact
+                data-billing-track
+                data-tier={tier.name}
+                data-i18n={`billing.tiers.${tierIndex}.ctaLabel`}
+              >
+                {tier.ctaLabel}
+              </button>
+            ) : (
+              <button
+                type="button"
+                class="cta-button"
+                data-billing-alert
+                data-billing-track
+                data-tier={tier.name}
+                data-i18n={`billing.tiers.${tierIndex}.ctaLabel`}
+              >
+                {tier.ctaLabel}
+              </button>
+            )}
+          </div>
+
+          <dl class="mobile-feature-list">
+            {billing.featureLabels.map((label, featureIndex) => (
+              <div class="mobile-feature-row">
+                <dt class="feature-label" data-i18n={`billing.featureLabels.${featureIndex}`}>
+                  {label}
+                </dt>
+                <dd class="mobile-feature-value" data-i18n={`billing.tiers.${tierIndex}.features.${featureIndex}`}>
+                  {tier.features[featureIndex]}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </article>
+      ))}
+    </div>
   </div>
 
   <div
@@ -291,6 +353,10 @@ const { billing } = Astro.props;
     min-width: 920px;
     border-collapse: collapse;
     table-layout: fixed;
+  }
+
+  .pricing-mobile-list {
+    display: none;
   }
 
   .card-header {
@@ -577,22 +643,94 @@ const { billing } = Astro.props;
       padding-bottom: 4rem;
     }
 
-    .pricing-table {
-      min-width: 780px;
+    .pricing-table-wrap {
+      display: none;
+    }
+
+    .pricing-mobile-list {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .pricing-mobile-tier {
+      display: grid;
+      gap: 1.1rem;
+      overflow: hidden;
+      border-radius: 0.7rem;
+    }
+
+    .pricing-mobile-tier.is-highlighted {
+      border-color: var(--border-strong);
+      background:
+        linear-gradient(180deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 42%),
+        linear-gradient(180deg, var(--surface-gradient-start), var(--surface-gradient-end));
+      box-shadow:
+        inset 0 2px 0 var(--accent),
+        var(--surface-inset),
+        var(--surface-shadow);
+    }
+
+    .mobile-tier-header {
+      display: grid;
+      gap: 0.9rem;
+      padding: 1.15rem 1rem 0;
+    }
+
+    .pricing-mobile-tier .tier-price-row {
+      flex-wrap: wrap;
+      row-gap: 0.25rem;
+    }
+
+    .pricing-mobile-tier .cta-button {
+      width: 100%;
+      max-width: none;
     }
 
     .tier-price {
       font-size: 2rem;
     }
 
-    .card-header {
-      min-height: 10.75rem;
-      padding: 1.25rem 0.85rem 1rem;
+    .tier-price.is-crossed {
+      font-size: 1.75rem;
     }
 
-    .feature-label,
-    .pricing-table td {
-      padding: 0.85rem;
+    .mobile-feature-list {
+      display: grid;
+      margin: 0;
+    }
+
+    .mobile-feature-row {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+      gap: 0.8rem;
+      align-items: start;
+      padding: 0.95rem 1rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .pricing-mobile-tier .feature-label {
+      padding: 0;
+      border-bottom: 0;
+      background: transparent;
+      font-size: 0.72rem;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .mobile-feature-value {
+      margin: 0;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  @media (max-width: 420px) {
+    .mobile-feature-row {
+      grid-template-columns: 1fr;
+      gap: 0.35rem;
     }
   }
 </style>

@@ -13,7 +13,7 @@ import {
   type SiteThemePreference,
 } from '../content/site';
 
-type MenuName = 'docs' | 'login' | 'language' | 'theme';
+type MenuName = 'docs' | 'login' | 'language' | 'theme' | 'mobile';
 type DocsLocale = 'en' | 'zh' | 'ja' | 'ko' | 'id' | 'th';
 type OnboardingVersion = 'stable' | 'beta';
 type OnboardingCommandParts = {
@@ -693,6 +693,12 @@ function initMenuControls(): void {
 
       const isOpen = shell.dataset.open === 'true';
       setOpenMenu(isOpen ? null : menuName);
+    });
+  });
+
+  document.querySelectorAll<HTMLAnchorElement>('[data-menu="mobile"] a').forEach((link) => {
+    link.addEventListener('click', () => {
+      setOpenMenu(null);
     });
   });
 

@@ -393,6 +393,7 @@ export interface SiteFooterCopy {
 
 export interface SiteAriaCopy {
   home: string;
+  mainMenu: string;
   changeLanguage: string;
   changeTheme: string;
   themeModeLight: string;
@@ -5599,6 +5600,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     aria: {
       home: 'mem9 home',
+      mainMenu: 'Open main menu',
       changeLanguage: 'Change language',
       changeTheme: 'Change theme',
       themeModeLight: 'Theme mode: Light',
@@ -5941,6 +5943,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     aria: {
       home: 'mem9 首页',
+      mainMenu: '打开主菜单',
       changeLanguage: '切换语言',
       changeTheme: '切换主题',
       themeModeLight: '主题模式：浅色',
@@ -6288,6 +6291,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     aria: {
       home: 'mem9 首頁',
+      mainMenu: '開啟主選單',
       changeLanguage: '切換語言',
       changeTheme: '切換主題',
       themeModeLight: '主題模式：淺色',
@@ -6640,6 +6644,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     aria: {
       home: 'mem9 ホーム',
+      mainMenu: 'メインメニューを開く',
       changeLanguage: '言語を切り替える',
       changeTheme: 'テーマを切り替える',
       themeModeLight: 'テーマモード: ライト',
@@ -6989,6 +6994,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     aria: {
       home: 'mem9 홈',
+      mainMenu: '메인 메뉴 열기',
       changeLanguage: '언어 변경',
       changeTheme: '테마 변경',
       themeModeLight: '테마 모드: 라이트',
@@ -7341,6 +7347,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     aria: {
       home: 'beranda mem9',
+      mainMenu: 'Buka menu utama',
       changeLanguage: 'Ganti bahasa',
       changeTheme: 'Ganti tema',
       themeModeLight: 'Mode tema: Terang',
@@ -7693,6 +7700,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     },
     aria: {
       home: 'หน้าแรก mem9',
+      mainMenu: 'เปิดเมนูหลัก',
       changeLanguage: 'เปลี่ยนภาษา',
       changeTheme: 'เปลี่ยนธีม',
       themeModeLight: 'โหมดธีม: สว่าง',
