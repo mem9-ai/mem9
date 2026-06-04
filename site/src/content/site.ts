@@ -51,8 +51,12 @@ export interface SiteNavCopy {
   security: string;
   faq: string;
   github: string;
+  xcom: string;
   docs: string;
+  mem9Docs: string;
+  consoleDocs: string;
   api: string;
+  apiReferences: string;
   releaseNotes: string;
   contact: string;
 }
@@ -328,6 +332,7 @@ export interface SiteReleaseNotesPageCopy {
   kicker: string;
   title: string;
   intro: string;
+  heroImageAlt: string;
   starPrompt: string;
   starBadgeAlt: string;
   starBadgeSrc: string;
@@ -3137,7 +3142,8 @@ const releaseNotesPageCopyEn = attachReleaseNoteSources({
     },
     kicker: 'Release Notes',
     title: 'What is new in mem9',
-    intro: 'Here, the mem9 authors update recently shipped important features.',
+    intro: 'Recent important updates from the mem9 authors.',
+    heroImageAlt: 'mem9 release notes illustration with a memory chip and golden data streams',
     starPrompt: 'Open source is not easy. Please support us by starring mem9 on GitHub.',
     starBadgeAlt: 'GitHub stars for mem9-ai/mem9',
     starBadgeSrc: 'https://img.shields.io/github/stars/mem9-ai/mem9?style=social',
@@ -3458,7 +3464,8 @@ const releaseNotesPageCopyZh = attachReleaseNoteSources({
   },
   kicker: '发布说明',
   title: 'mem9 最近更新了什么',
-  intro: '在这里 mem9 作者们会更新最近上线了哪些重要的功能。',
+  intro: 'mem9 作者们最近发布的重要更新。',
+  heroImageAlt: 'mem9 发布说明插图，展示记忆芯片和金色数据流',
   starPrompt: '开源项目不容易，请大家给我们Star来支持我们。',
   starBadgeAlt: 'mem9-ai/mem9 的 GitHub Stars',
   starBadgeSrc: 'https://img.shields.io/github/stars/mem9-ai/mem9?style=social',
@@ -3724,7 +3731,8 @@ const releaseNotesPageCopyZhHant = attachReleaseNoteSources({
   },
   kicker: '發布說明',
   title: 'mem9 最近更新了什麼',
-  intro: '在這裡 mem9 作者們會更新最近上線了哪些重要功能。',
+  intro: 'mem9 作者們最近發布的重要更新。',
+  heroImageAlt: 'mem9 發布說明插圖，展示記憶晶片和金色資料流',
   starPrompt: '開源專案不容易，請大家給我們Star來支持我們。',
   starBadgeAlt: 'mem9-ai/mem9 的 GitHub Stars',
   starBadgeSrc: 'https://img.shields.io/github/stars/mem9-ai/mem9?style=social',
@@ -3990,7 +3998,8 @@ const releaseNotesPageCopyJa = attachReleaseNoteSources({
   },
   kicker: 'リリースノート',
   title: 'mem9 の最新アップデート',
-  intro: 'ここでは mem9 の作者が、最近リリースされた重要な機能を更新していきます。',
+  intro: 'mem9 作者による最近の重要アップデートです。',
+  heroImageAlt: 'メモリーチップと金色のデータストリームを描いた mem9 リリースノートのイラスト',
   starPrompt: 'オープンソースの継続は簡単ではありません。GitHub で mem9 に Star を付けて応援してください。',
   starBadgeAlt: 'mem9-ai/mem9 の GitHub Stars',
   starBadgeSrc: 'https://img.shields.io/github/stars/mem9-ai/mem9?style=social',
@@ -4256,7 +4265,8 @@ const releaseNotesPageCopyKo = attachReleaseNoteSources({
   },
   kicker: '릴리스 노트',
   title: 'mem9의 최신 업데이트',
-  intro: '여기에서 mem9 작성자들이 최근 출시된 중요한 기능을 업데이트합니다.',
+  intro: 'mem9 작성자들이 최근 출시한 주요 업데이트입니다.',
+  heroImageAlt: '메모리 칩과 금색 데이터 스트림을 보여 주는 mem9 릴리스 노트 일러스트',
   starPrompt: '오픈소스 프로젝트를 지속하는 일은 쉽지 않습니다. GitHub에서 mem9에 Star를 눌러 응원해 주세요.',
   starBadgeAlt: 'mem9-ai/mem9 GitHub Stars',
   starBadgeSrc: 'https://img.shields.io/github/stars/mem9-ai/mem9?style=social',
@@ -4522,7 +4532,8 @@ const releaseNotesPageCopyId = attachReleaseNoteSources({
   },
   kicker: 'Catatan Rilis',
   title: 'Apa yang baru di mem9',
-  intro: 'Di sini para pembuat mem9 akan memperbarui fitur penting yang baru saja dirilis.',
+  intro: 'Pembaruan penting terbaru dari para pembuat mem9.',
+  heroImageAlt: 'Ilustrasi catatan rilis mem9 dengan chip memori dan aliran data emas',
   starPrompt: 'Proyek open-source tidak mudah dijalankan. Dukung kami dengan memberi Star untuk mem9 di GitHub.',
   starBadgeAlt: 'GitHub stars untuk mem9-ai/mem9',
   starBadgeSrc: 'https://img.shields.io/github/stars/mem9-ai/mem9?style=social',
@@ -4788,7 +4799,8 @@ const releaseNotesPageCopyTh = attachReleaseNoteSources({
   },
   kicker: 'บันทึกการเผยแพร่',
   title: 'มีอะไรใหม่ใน mem9',
-  intro: 'ที่นี่ผู้สร้าง mem9 จะอัปเดตฟีเจอร์สำคัญที่เพิ่งเผยแพร่',
+  intro: 'อัปเดตสำคัญล่าสุดจากผู้สร้าง mem9',
+  heroImageAlt: 'ภาพประกอบบันทึกการเผยแพร่ mem9 พร้อมชิปหน่วยความจำและสตรีมข้อมูลสีทอง',
   starPrompt: 'การทำโปรเจกต์ open-source ไม่ง่าย โปรดช่วยสนับสนุนเราด้วยการกด Star ให้ mem9 บน GitHub',
   starBadgeAlt: 'GitHub stars สำหรับ mem9-ai/mem9',
   starBadgeSrc: 'https://img.shields.io/github/stars/mem9-ai/mem9?style=social',
@@ -5270,8 +5282,12 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       security: 'Security',
       faq: 'FAQ',
       github: 'GitHub',
+      xcom: 'X.com',
       docs: 'Docs',
+      mem9Docs: 'mem9 Docs',
+      consoleDocs: 'mem9 Console Docs',
       api: 'API',
+      apiReferences: 'API References',
       releaseNotes: 'Release Notes',
       contact: 'Contact Us',
     },
@@ -5525,7 +5541,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Starter',
           price: '$9',
-          promoPrice: '$0',
           period: ' / mo',
           features: [
             'Unlimited',
@@ -5539,7 +5554,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Pro',
           price: '$120',
-          promoPrice: '$0',
           period: ' / mo',
           features: [
             'Unlimited',
@@ -5624,8 +5638,12 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       security: '安全',
       faq: '常见问题',
       github: 'GitHub',
+      xcom: 'X.com',
       docs: '文档',
+      mem9Docs: 'mem9 文档',
+      consoleDocs: 'mem9 Console 文档',
       api: 'API',
+      apiReferences: 'API 参考',
       releaseNotes: '发布说明',
       contact: '联系我们',
     },
@@ -5866,7 +5884,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Starter',
           price: '$9',
-          promoPrice: '$0',
           period: ' / 月',
           features: [
             '不限',
@@ -5880,7 +5897,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Pro',
           price: '$120',
-          promoPrice: '$0',
           period: ' / 月',
           features: [
             '不限',
@@ -5964,8 +5980,12 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       security: '安全',
       faq: '常見問題',
       github: 'GitHub',
+      xcom: 'X.com',
       docs: '文檔',
+      mem9Docs: 'mem9 文檔',
+      consoleDocs: 'mem9 Console 文檔',
       api: 'API',
+      apiReferences: 'API 參考',
       releaseNotes: '發布說明',
       contact: '聯絡我們',
     },
@@ -6211,7 +6231,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Starter',
           price: '$9',
-          promoPrice: '$0',
           period: ' / 月',
           features: [
             '不限',
@@ -6225,7 +6244,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Pro',
           price: '$120',
-          promoPrice: '$0',
           period: ' / 月',
           features: [
             '不限',
@@ -6309,8 +6327,12 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       security: 'セキュリティ',
       faq: 'よくある質問',
       github: 'GitHub',
+      xcom: 'X.com',
       docs: 'ドキュメント',
+      mem9Docs: 'mem9 ドキュメント',
+      consoleDocs: 'mem9 Console ドキュメント',
       api: 'API',
+      apiReferences: 'API リファレンス',
       releaseNotes: 'リリースノート',
       contact: 'お問い合わせ',
     },
@@ -6559,7 +6581,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Starter',
           price: '$9',
-          promoPrice: '$0',
           period: ' / 月',
           features: [
             '無制限',
@@ -6573,7 +6594,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Pro',
           price: '$120',
-          promoPrice: '$0',
           period: ' / 月',
           features: [
             '無制限',
@@ -6659,8 +6679,12 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       security: '보안',
       faq: '자주 묻는 질문',
       github: 'GitHub',
+      xcom: 'X.com',
       docs: '문서',
+      mem9Docs: 'mem9 문서',
+      consoleDocs: 'mem9 Console 문서',
       api: 'API',
+      apiReferences: 'API 레퍼런스',
       releaseNotes: '릴리스 노트',
       contact: '문의하기',
     },
@@ -6906,7 +6930,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Starter',
           price: '$9',
-          promoPrice: '$0',
           period: ' / 월',
           features: [
             '무제한',
@@ -6920,7 +6943,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Pro',
           price: '$120',
-          promoPrice: '$0',
           period: ' / 월',
           features: [
             '무제한',
@@ -7006,8 +7028,12 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       security: 'Keamanan',
       faq: 'FAQ',
       github: 'GitHub',
+      xcom: 'X.com',
       docs: 'Dokumentasi',
+      mem9Docs: 'Dokumentasi mem9',
+      consoleDocs: 'Dokumentasi mem9 Console',
       api: 'API',
+      apiReferences: 'Referensi API',
       releaseNotes: 'Catatan Rilis',
       contact: 'Hubungi Kami',
     },
@@ -7256,7 +7282,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Starter',
           price: '$9',
-          promoPrice: '$0',
           period: ' / bln',
           features: [
             'Tanpa batas',
@@ -7270,7 +7295,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Pro',
           price: '$120',
-          promoPrice: '$0',
           period: ' / bln',
           features: [
             'Tanpa batas',
@@ -7356,8 +7380,12 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       security: 'ความปลอดภัย',
       faq: 'คำถามที่พบบ่อย',
       github: 'GitHub',
+      xcom: 'X.com',
       docs: 'เอกสาร',
+      mem9Docs: 'เอกสาร mem9',
+      consoleDocs: 'เอกสาร mem9 Console',
       api: 'API',
+      apiReferences: 'เอกสารอ้างอิง API',
       releaseNotes: 'บันทึกการเผยแพร่',
       contact: 'ติดต่อเรา',
     },
@@ -7606,7 +7634,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Starter',
           price: '$9',
-          promoPrice: '$0',
           period: ' / เดือน',
           features: [
             'ไม่จำกัด',
@@ -7620,7 +7647,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
         {
           name: 'Pro',
           price: '$120',
-          promoPrice: '$0',
           period: ' / เดือน',
           features: [
             'ไม่จำกัด',

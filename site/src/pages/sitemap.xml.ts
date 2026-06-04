@@ -3,7 +3,7 @@ import type { APIRoute } from 'astro';
 export const prerender = true;
 
 const fallbackSiteUrl = 'https://mem9.ai';
-const publicPages = ['/', '/api', '/docs', '/openclaw-memory', '/pricing'];
+const publicPages = ['/', '/api', '/docs', '/console-docs', '/openclaw-memory', '/pricing'];
 
 export const GET: APIRoute = ({ site }) => {
   const siteUrl = site ?? new URL(fallbackSiteUrl);

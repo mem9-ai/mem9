@@ -38,178 +38,184 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
 
 <section class="hero">
   <div class="container hero-shell">
-    <div class="hero-copy">
-      <h1 class="title">
-        <span class="title-line" data-i18n="hero.titleLead">{hero.titleLead}</span>
-        <span class="title-muted">
-          <span class="title-inline">
-            <span data-i18n="hero.titleAccent">{hero.titleAccent}</span>
-            <span class="cursor"></span>
+    <div class="hero-main">
+      <div class="hero-copy">
+        <h1 class="title">
+          <span class="title-line" data-i18n="hero.titleLead">{hero.titleLead}</span>
+          <span class="title-muted">
+            <span class="title-inline">
+              <span data-i18n="hero.titleAccent">{hero.titleAccent}</span>
+              <span class="cursor"></span>
+            </span>
           </span>
-        </span>
-      </h1>
+        </h1>
 
-      <p class="subtitle" data-i18n="hero.subtitle">
-        {hero.subtitle}
-      </p>
+        <p class="subtitle" data-i18n="hero.subtitle">
+          {hero.subtitle}
+        </p>
 
-      <div class="cta-grid" data-onboarding-shell data-onboarding-version="stable">
-        {showOnboardingVersionTabs && (
-          <div class="cta-head">
-            <div
-              class="cta-version-tabs"
-              role="tablist"
-              aria-label={hero.onboardingLabel}
-              data-i18n-attr="aria-label:hero.onboardingLabel"
-            >
+        <div class="cta-grid" data-onboarding-shell data-onboarding-version="stable">
+          {showOnboardingVersionTabs && (
+            <div class="cta-head">
+              <div
+                class="cta-version-tabs"
+                role="tablist"
+                aria-label={hero.onboardingLabel}
+                data-i18n-attr="aria-label:hero.onboardingLabel"
+              >
+                <button
+                  type="button"
+                  class="cta-version-tab is-active"
+                  role="tab"
+                  aria-selected="true"
+                  data-onboarding-version-tab="stable"
+                  data-i18n="hero.onboardingStableLabel"
+                >
+                  {hero.onboardingStableLabel}
+                </button>
+                <button
+                  type="button"
+                  class="cta-version-tab"
+                  role="tab"
+                  aria-selected="false"
+                  data-onboarding-version-tab="beta"
+                  data-i18n="hero.onboardingBetaLabel"
+                >
+                  {hero.onboardingBetaLabel}
+                </button>
+              </div>
+            </div>
+          )}
+          <div class="cta-card surface-card">
+            <div class="cta-card-head">
+              <p class="cta-label" data-i18n="hero.onboardingLabel">{hero.onboardingLabel}</p>
+              <span class="cta-badge" data-i18n="hero.onboardingBadge">{hero.onboardingBadge}</span>
+            </div>
+            <div class="cta-command">
+              <code
+                data-onboarding-command
+                data-command-stable={hero.onboardingCommandStable}
+                data-command-beta={hero.onboardingCommandBeta}
+              >
+                {onboardingCommandStable.prefix}
+                {onboardingCommandStable.url && (
+                  <a
+                    href={onboardingCommandStable.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="onboarding-command-link"
+                  >
+                    {onboardingCommandStable.url}
+                  </a>
+                )}
+                {onboardingCommandStable.suffix}
+              </code>
               <button
                 type="button"
-                class="cta-version-tab is-active"
-                role="tab"
-                aria-selected="true"
-                data-onboarding-version-tab="stable"
-                data-i18n="hero.onboardingStableLabel"
+                class="copy-button"
+                data-copy-button
+                data-copy-text={hero.onboardingCommandStable}
+                aria-label={aria.copyOnboarding}
+                title={aria.copyOnboarding}
+                data-i18n-attr="aria-label:aria.copyOnboarding;title:aria.copyOnboarding"
               >
-                {hero.onboardingStableLabel}
-              </button>
-              <button
-                type="button"
-                class="cta-version-tab"
-                role="tab"
-                aria-selected="false"
-                data-onboarding-version-tab="beta"
-                data-i18n="hero.onboardingBetaLabel"
-              >
-                {hero.onboardingBetaLabel}
+                <svg class="copy-icon copy-icon-default" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M9 9a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.7"
+                  />
+                  <path
+                    d="M15 7V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h1"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.7"
+                  />
+                </svg>
+                <svg class="copy-icon copy-icon-success" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M20 7L10 17l-5-5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                  />
+                </svg>
               </button>
             </div>
+            <p class="cta-hint" data-i18n="hero.onboardingHint" data-i18n-html set:html={hero.onboardingHint}></p>
+            <p class="sr-only" data-copy-feedback aria-live="polite"></p>
           </div>
-        )}
-        <div class="cta-card surface-card">
-          <div class="cta-card-head">
-            <p class="cta-label" data-i18n="hero.onboardingLabel">{hero.onboardingLabel}</p>
-            <span class="cta-badge" data-i18n="hero.onboardingBadge">{hero.onboardingBadge}</span>
-          </div>
-          <div class="cta-command">
-            <code
-              data-onboarding-command
-              data-command-stable={hero.onboardingCommandStable}
-              data-command-beta={hero.onboardingCommandBeta}
-            >
-              {onboardingCommandStable.prefix}
-              {onboardingCommandStable.url && (
-                <a
-                  href={onboardingCommandStable.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="onboarding-command-link"
-                >
-                  {onboardingCommandStable.url}
-                </a>
-              )}
-              {onboardingCommandStable.suffix}
-            </code>
-            <button
-              type="button"
-              class="copy-button"
-              data-copy-button
-              data-copy-text={hero.onboardingCommandStable}
-              aria-label={aria.copyOnboarding}
-              title={aria.copyOnboarding}
-              data-i18n-attr="aria-label:aria.copyOnboarding;title:aria.copyOnboarding"
-            >
-              <svg class="copy-icon copy-icon-default" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M9 9a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2z"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.7"
-                />
-                <path
-                  d="M15 7V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h1"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.7"
-                />
-              </svg>
-              <svg class="copy-icon copy-icon-success" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M20 7L10 17l-5-5"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                />
-              </svg>
-            </button>
-          </div>
-          <p class="cta-hint" data-i18n="hero.onboardingHint" data-i18n-html set:html={hero.onboardingHint}></p>
-          <p class="sr-only" data-copy-feedback aria-live="polite"></p>
+        </div>
+
+        <div class="beta-feature-wrap" data-beta-highlights hidden>
+          <article class="beta-feature-card surface-card">
+            <div class="beta-feature-head">
+              <h2 class="highlight-title beta-feature-title" data-i18n="hero.betaFeature.title">
+                {hero.betaFeature.title}
+              </h2>
+              <span class="beta-feature-badge">New</span>
+            </div>
+            <p class="highlight-description beta-feature-description" data-i18n="hero.betaFeature.description">
+              {hero.betaFeature.description}
+            </p>
+          </article>
         </div>
       </div>
 
-      {hero.guideSelector && (
-        <aside class="works-with" aria-label={hero.guideSelector.label}>
-          <p class="works-with-label" data-i18n="hero.guideSelector.label">{hero.guideSelector.label}</p>
-          <ul class="works-with-list">
-            {hero.guideSelector.items.map((item, index) => {
-              const target = agentGuideTargets[item.id];
-              return (
-                <>
-                  {index > 0 && (
-                    <li class="works-with-sep" aria-hidden="true">◆</li>
-                  )}
-                  <li>
-                    <a
-                      class="works-with-link"
-                      href={target.href}
-                      target={target.external ? "_blank" : undefined}
-                      rel={target.external ? "noopener noreferrer" : undefined}
-                    >
-                      <span class="works-with-name" data-i18n={`hero.guideSelector.items.${index}.label`}>{item.label}</span>
-                      {target.external && (
-                        <span class="works-with-arrow" aria-hidden="true">↗</span>
-                      )}
-                    </a>
-                  </li>
-                </>
-              );
-            })}
-          </ul>
-        </aside>
-      )}
+      <div class="hero-visual" aria-hidden="true">
+        <canvas class="memory-canvas" data-memory-canvas></canvas>
+      </div>
+    </div>
 
-      <div class="beta-feature-wrap" data-beta-highlights hidden>
-        <article class="beta-feature-card surface-card">
-          <div class="beta-feature-head">
-            <h2 class="highlight-title beta-feature-title" data-i18n="hero.betaFeature.title">
-              {hero.betaFeature.title}
-            </h2>
-            <span class="beta-feature-badge">New</span>
-          </div>
-          <p class="highlight-description beta-feature-description" data-i18n="hero.betaFeature.description">
-            {hero.betaFeature.description}
+    {hero.guideSelector && (
+      <aside class="works-with" aria-label={hero.guideSelector.label}>
+        <p class="works-with-label" data-i18n="hero.guideSelector.label">{hero.guideSelector.label}</p>
+        <ul class="works-with-list">
+          {hero.guideSelector.items.map((item, index) => {
+            const target = agentGuideTargets[item.id];
+            return (
+              <>
+                {index > 0 && (
+                  <li class="works-with-sep" aria-hidden="true">◆</li>
+                )}
+                <li>
+                  <a
+                    class="works-with-link"
+                    href={target.href}
+                    target={target.external ? "_blank" : undefined}
+                    rel={target.external ? "noopener noreferrer" : undefined}
+                  >
+                    <span class="works-with-name" data-i18n={`hero.guideSelector.items.${index}.label`}>{item.label}</span>
+                    {target.external && (
+                      <span class="works-with-arrow" aria-hidden="true">↗</span>
+                    )}
+                  </a>
+                </li>
+              </>
+            );
+          })}
+        </ul>
+      </aside>
+    )}
+
+    <div class="hero-highlights">
+      {hero.highlights.map((highlight, index) => (
+        <article class="highlight-card surface-card">
+          <h2 class="highlight-title" data-i18n={`hero.highlights.${index}.title`}>
+            {highlight.title}
+          </h2>
+          <p class="highlight-description" data-i18n={`hero.highlights.${index}.description`}>
+            {highlight.description}
           </p>
         </article>
-      </div>
-
-      <div class="hero-highlights">
-        {hero.highlights.map((highlight, index) => (
-          <article class="highlight-card surface-card">
-            <h2 class="highlight-title" data-i18n={`hero.highlights.${index}.title`}>
-              {highlight.title}
-            </h2>
-            <p class="highlight-description" data-i18n={`hero.highlights.${index}.description`}>
-              {highlight.description}
-            </p>
-          </article>
-        ))}
-      </div>
+      ))}
     </div>
   </div>
 </section>
@@ -217,21 +223,26 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
 <style>
   .hero {
     display: flex;
-    align-items: center;
-    min-height: calc(100dvh - 70px);
-    padding: clamp(2.25rem, 5vh, 5rem) 0 clamp(1.6rem, 3.4vh, 3rem);
+    align-items: flex-start;
+    min-height: calc(100dvh - 58px);
+    padding: clamp(7.5rem, 16.5vh, 13rem) 0 clamp(1.6rem, 3.4vh, 3rem);
   }
 
   .hero-shell {
     position: relative;
-    width: 100%;
-    display: flex;
-    justify-content: center;
+    display: block;
+  }
+
+  .hero-main {
+    display: grid;
+    grid-template-columns: minmax(0, 576px) minmax(0, 1fr);
+    align-items: stretch;
+    gap: clamp(1.5rem, 4vw, 3rem);
   }
 
   .hero-copy {
-    width: min(100%, var(--content-rail));
-    margin: 0 auto;
+    width: 100%;
+    margin: 0;
   }
 
   .eyebrow {
@@ -245,7 +256,7 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
   .title {
     font-size: clamp(3.125rem, 4.7vw, 3.75rem);
     line-height: 1.08;
-    max-width: 100%;
+    max-width: var(--content-rail);
     text-wrap: balance;
     margin-bottom: 1rem;
   }
@@ -277,8 +288,26 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
   }
 
   .cta-grid {
-    width: min(100%, var(--content-rail));
+    width: 100%;
     margin-bottom: 0.55rem;
+  }
+
+  .hero-visual {
+    position: relative;
+    min-height: 374px;
+    overflow: hidden;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .memory-canvas {
+    position: relative;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 374px;
   }
 
   .cta-grid[data-onboarding-shell] {
@@ -287,7 +316,7 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
   }
 
   .works-with {
-    width: min(100%, var(--content-rail));
+    width: 100%;
     margin: 2rem 0 0;
     display: grid;
     gap: 0.7rem;
@@ -414,7 +443,7 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 1rem;
-    width: min(100%, var(--content-rail));
+    width: 100%;
     margin-top: 2rem;
   }
 
@@ -427,7 +456,7 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
   }
 
   .beta-feature-wrap {
-    width: min(100%, var(--content-rail));
+    width: 100%;
     margin-bottom: 0.85rem;
   }
 
@@ -627,8 +656,8 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
 
   @media (min-width: 900px) and (max-height: 980px) {
     .hero {
-      min-height: calc(100dvh - 70px);
-      padding-top: 1.7rem;
+      min-height: calc(100dvh - 58px);
+      padding-top: clamp(7rem, 16vh, 8.5rem);
       padding-bottom: 1.25rem;
     }
 
@@ -659,6 +688,11 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
       padding: 0.85rem 0.95rem 0.95rem;
     }
 
+    .hero-visual,
+    .memory-canvas {
+      min-height: 348px;
+    }
+
     .cta-card-head {
       margin-bottom: 0.6rem;
     }
@@ -666,7 +700,7 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
 
   @media (min-width: 900px) and (max-height: 860px) {
     .hero {
-      padding-top: 1.2rem;
+      padding-top: clamp(6.5rem, 15vh, 8rem);
       padding-bottom: 1rem;
     }
 
@@ -687,6 +721,11 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
       margin-top: 1.5rem;
     }
 
+    .hero-visual,
+    .memory-canvas {
+      min-height: 332px;
+    }
+
     .cta-card code {
       font-size: 0.92rem;
       line-height: 1.5;
@@ -703,8 +742,20 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
   }
 
   @media (max-width: 720px) {
+    .hero-main {
+      grid-template-columns: 1fr;
+    }
+
     .hero-copy {
       width: 100%;
+    }
+
+    .hero-visual {
+      min-height: 280px;
+    }
+
+    .memory-canvas {
+      min-height: 280px;
     }
 
     .title {
@@ -780,3 +831,242 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
     }
   }
 </style>
+
+<script>
+  (() => {
+    const canvases = document.querySelectorAll('[data-memory-canvas]');
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    const toRgba = (color, alpha) => {
+      const value = color.trim();
+
+      if (value.startsWith('#')) {
+        const hex = value.slice(1);
+        const size = hex.length === 3 ? 1 : 2;
+        const parts = [0, 1, 2].map((index) => {
+          const part = hex.slice(index * size, index * size + size);
+          return parseInt(size === 1 ? part + part : part, 16);
+        });
+        return `rgba(${parts[0]}, ${parts[1]}, ${parts[2]}, ${alpha})`;
+      }
+
+      if (value.startsWith('rgba(')) {
+        return value.replace(/rgba\(([^)]+),\s*[\d.]+\)/, `rgba($1, ${alpha})`);
+      }
+
+      if (value.startsWith('rgb(')) {
+        return value.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+      }
+
+      return value;
+    };
+
+    const cubicPoint = (a, b, c, d, t) => {
+      const mt = 1 - t;
+      return {
+        x: mt ** 3 * a.x + 3 * mt ** 2 * t * b.x + 3 * mt * t ** 2 * c.x + t ** 3 * d.x,
+        y: mt ** 3 * a.y + 3 * mt ** 2 * t * b.y + 3 * mt * t ** 2 * c.y + t ** 3 * d.y,
+      };
+    };
+
+    const drawRoundedRect = (ctx, x, y, width, height, radius) => {
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + width - radius, y);
+      ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+      ctx.lineTo(x + width, y + height - radius);
+      ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+      ctx.lineTo(x + radius, y + height);
+      ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+    };
+
+    const mountCanvas = (canvas) => {
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx) {
+        return;
+      }
+
+      let width = 0;
+      let height = 0;
+      let dpr = 1;
+      let frame = 0;
+      let animationFrame = 0;
+      let last = 0;
+
+      const resize = () => {
+        const rect = canvas.getBoundingClientRect();
+        dpr = Math.min(window.devicePixelRatio || 1, 2);
+        width = Math.max(1, Math.floor(rect.width));
+        height = Math.max(1, Math.floor(rect.height));
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      };
+
+      const drawNode = (x, y, radius, pulse, colors) => {
+        const glow = 11 + pulse * 7;
+
+        ctx.beginPath();
+        ctx.arc(x, y, radius + glow, 0, Math.PI * 2);
+        ctx.fillStyle = toRgba(colors.accent, 0.035 + pulse * 0.045);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = toRgba(colors.text, 0.09 + pulse * 0.04);
+        ctx.fill();
+        ctx.strokeStyle = toRgba(colors.text, 0.3 + pulse * 0.22);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(2, radius * 0.28), 0, Math.PI * 2);
+        ctx.fillStyle = toRgba(colors.text, 0.65);
+        ctx.fill();
+      };
+
+      const draw = (time = 0) => {
+        const styles = getComputedStyle(document.documentElement);
+        const colors = {
+          accent: styles.getPropertyValue('--accent') || '#d8d8d3',
+          text: styles.getPropertyValue('--text') || '#f4f4f1',
+          dim: styles.getPropertyValue('--text-dim') || '#ababab',
+          border: styles.getPropertyValue('--border-strong') || 'rgba(255,255,255,0.2)',
+        };
+        const progress = reduceMotion.matches ? 0.38 : time / 1000;
+        const cx = width * 0.5;
+        const cy = height * 0.49;
+        const coreRadius = Math.min(width, height) * 0.17;
+        const leftNodes = [
+          { x: width * 0.13, y: height * 0.24 },
+          { x: width * 0.1, y: height * 0.52 },
+          { x: width * 0.18, y: height * 0.76 },
+        ];
+        const rightNodes = [
+          { x: width * 0.84, y: height * 0.29 },
+          { x: width * 0.9, y: height * 0.55 },
+          { x: width * 0.78, y: height * 0.75 },
+        ];
+        const paths = [
+          ...leftNodes.map((node, index) => ({
+            from: node,
+            c1: { x: width * (0.26 + index * 0.02), y: node.y - height * 0.12 },
+            c2: { x: width * 0.36, y: cy + (index - 1) * height * 0.08 },
+            to: { x: cx - coreRadius * 0.52, y: cy + (index - 1) * coreRadius * 0.46 },
+            phase: index * 0.17,
+          })),
+          ...rightNodes.map((node, index) => ({
+            from: { x: cx + coreRadius * 0.5, y: cy + (index - 1) * coreRadius * 0.42 },
+            c1: { x: width * 0.63, y: cy + (index - 1) * height * 0.08 },
+            c2: { x: width * (0.72 + index * 0.03), y: node.y + height * 0.11 },
+            to: node,
+            phase: 0.5 + index * 0.16,
+          })),
+        ];
+
+        ctx.clearRect(0, 0, width, height);
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+
+        paths.forEach((path, index) => {
+          const lineAlpha = index < 3 ? 0.28 : 0.21;
+          ctx.beginPath();
+          ctx.moveTo(path.from.x, path.from.y);
+          ctx.bezierCurveTo(path.c1.x, path.c1.y, path.c2.x, path.c2.y, path.to.x, path.to.y);
+          ctx.strokeStyle = toRgba(colors.border, lineAlpha);
+          ctx.lineWidth = 1.15;
+          ctx.stroke();
+
+          for (let particle = 0; particle < 3; particle += 1) {
+            const t = (progress * 0.17 + path.phase + particle * 0.33) % 1;
+            const point = cubicPoint(path.from, path.c1, path.c2, path.to, t);
+            const size = 2.3 + Math.sin((t + path.phase) * Math.PI) * 1.7;
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
+            ctx.fillStyle = toRgba(colors.text, 0.15 + Math.sin(t * Math.PI) * 0.55);
+            ctx.fill();
+          }
+        });
+
+        const allNodes = [...leftNodes, ...rightNodes];
+        allNodes.forEach((node, index) => {
+          const pulse = (Math.sin(progress * 2.4 + index * 1.7) + 1) / 2;
+          drawNode(node.x, node.y, 9 + (index % 2) * 2, pulse, colors);
+        });
+
+        ctx.translate(cx, cy);
+        ctx.rotate(progress * 0.24);
+
+        ctx.beginPath();
+        ctx.arc(0, 0, coreRadius * 1.18, 0, Math.PI * 2);
+        ctx.strokeStyle = toRgba(colors.text, 0.16);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(0, 0, coreRadius * 0.78, 0, Math.PI * 2);
+        ctx.strokeStyle = toRgba(colors.text, 0.22);
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+
+        for (let index = 0; index < 9; index += 1) {
+          const col = index % 3;
+          const row = Math.floor(index / 3);
+          const cell = coreRadius * 0.33;
+          const x = (col - 1) * cell * 1.18 - cell / 2;
+          const y = (row - 1) * cell * 1.18 - cell / 2;
+          const pulse = (Math.sin(progress * 2.1 + index * 0.7) + 1) / 2;
+
+          drawRoundedRect(ctx, x, y, cell, cell, 6);
+          ctx.fillStyle = toRgba(colors.text, 0.07 + pulse * 0.12);
+          ctx.fill();
+          ctx.strokeStyle = toRgba(colors.text, 0.2 + pulse * 0.22);
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+
+        for (let index = 0; index < 18; index += 1) {
+          const angle = (index / 18) * Math.PI * 2 - progress * 0.48;
+          const radius = coreRadius * (1.02 + (index % 3) * 0.13);
+          const pulse = (Math.sin(progress * 2.7 + index) + 1) / 2;
+          ctx.beginPath();
+          ctx.arc(Math.cos(angle) * radius, Math.sin(angle) * radius, 1.6 + pulse * 1.4, 0, Math.PI * 2);
+          ctx.fillStyle = toRgba(colors.dim, 0.24 + pulse * 0.38);
+          ctx.fill();
+        }
+
+        ctx.restore();
+
+        if (!reduceMotion.matches) {
+          animationFrame = window.requestAnimationFrame(draw);
+        }
+      };
+
+      const start = () => {
+        window.cancelAnimationFrame(animationFrame);
+        resize();
+        last = performance.now();
+        frame = window.requestAnimationFrame(draw);
+        animationFrame = frame;
+      };
+
+      const observer = new ResizeObserver(() => {
+        resize();
+        if (reduceMotion.matches) {
+          draw(last);
+        }
+      });
+
+      observer.observe(canvas);
+      reduceMotion.addEventListener('change', start);
+      start();
+    };
+
+    canvases.forEach(mountCanvas);
+  })();
+</script>

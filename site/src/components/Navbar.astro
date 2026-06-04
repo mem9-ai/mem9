@@ -2,9 +2,11 @@
 import type {
   SiteAriaCopy,
   SiteDictionary,
+  SiteLocale,
   SiteNavCopy,
   SiteThemeOptionsCopy,
 } from '../content/site';
+import { siteCopy, siteLocales } from '../content/site';
 
 interface Props {
   nav: SiteNavCopy;
@@ -16,6 +18,20 @@ interface Props {
 
 const { nav, aria, localeNames, themeOptions, currentPath = '/' } = Astro.props;
 const isActivePath = (path: string): boolean => currentPath === path;
+const localeToLang = (locale: SiteLocale): string => {
+  if (locale === 'zh') {
+    return 'zh-CN';
+  }
+
+  return locale;
+};
+const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; value: string }[] => (
+  siteLocales.map((locale) => ({
+    locale,
+    lang: localeToLang(locale),
+    value: siteCopy[locale].nav[key],
+  }))
+);
 ---
 
 <nav class="nav">
@@ -33,43 +49,156 @@ const isActivePath = (path: string): boolean => currentPath === path;
             class:list={['nav-section-link', isActivePath('/') && 'is-active']}
             aria-current={isActivePath('/') ? 'page' : undefined}
           >
-            <span data-i18n="nav.home">{nav.home}</span>
+            <span class="localized-label">
+              {navLabels('home').map((label) => (
+                <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                  {label.value}
+                </span>
+              ))}
+            </span>
             <svg class="nav-caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </a>
           <div class="nav-dropdown-menu">
             <div class="nav-dropdown-menu-inner surface-card">
-              <a href="/#features" class="dropdown-item" data-i18n="nav.features">{nav.features}</a>
-              <a href="/#benchmark" class="dropdown-item" data-i18n="nav.benchmark">{nav.benchmark}</a>
-              <a href="/#platforms" class="dropdown-item" data-i18n="nav.platforms">{nav.platforms}</a>
-              <a href="/#security" class="dropdown-item" data-i18n="nav.security">{nav.security}</a>
-              <a href="/#faq" class="dropdown-item" data-i18n="nav.faq">{nav.faq}</a>
+              <a href="/#features" class="dropdown-item">
+                <span class="localized-label">
+                  {navLabels('features').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a href="/#benchmark" class="dropdown-item">
+                <span class="localized-label">
+                  {navLabels('benchmark').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a href="/#platforms" class="dropdown-item">
+                <span class="localized-label">
+                  {navLabels('platforms').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a href="/#security" class="dropdown-item">
+                <span class="localized-label">
+                  {navLabels('security').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a href="/#faq" class="dropdown-item">
+                <span class="localized-label">
+                  {navLabels('faq').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
             </div>
           </div>
         </div>
         <a
           href="/pricing"
           class:list={['nav-section-link', isActivePath('/pricing') && 'is-active']}
-          data-i18n="nav.billing"
           aria-current={isActivePath('/pricing') ? 'page' : undefined}
         >
-          {nav.billing}
+          <span class="localized-label">
+            {navLabels('billing').map((label) => (
+              <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                {label.value}
+              </span>
+            ))}
+          </span>
         </a>
-        <a
-          href="/docs"
-          class:list={['nav-section-link', 'nav-docs-link', isActivePath('/docs') && 'is-active']}
-          data-i18n="nav.docs"
-          aria-current={isActivePath('/docs') ? 'page' : undefined}
+        <div
+          class="menu-shell nav-docs-dropdown"
+          data-menu-shell="docs"
+          data-open="false"
         >
-          {nav.docs}
-        </a>
-        <a
-          href="/api"
-          class:list={['nav-section-link', 'nav-api-link', isActivePath('/api') && 'is-active']}
-          data-i18n="nav.api"
-          aria-current={isActivePath('/api') ? 'page' : undefined}
-        >
-          {nav.api}
-        </a>
+          <button
+            type="button"
+            class:list={[
+              'nav-section-link',
+              'nav-docs-link',
+              (isActivePath('/docs') || isActivePath('/console-docs') || isActivePath('/api')) && 'is-active',
+            ]}
+            data-menu-trigger="docs"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-controls="docs-menu"
+          >
+            <span class="localized-label">
+              {navLabels('docs').map((label) => (
+                <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                  {label.value}
+                </span>
+              ))}
+            </span>
+            <svg class="nav-caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <div
+            id="docs-menu"
+            class="nav-menu docs-menu surface-card"
+            data-menu="docs"
+            role="menu"
+            hidden
+          >
+            <a
+              href="/docs"
+              class:list={['docs-menu-item', isActivePath('/docs') && 'is-active']}
+              role="menuitem"
+              aria-current={isActivePath('/docs') ? 'page' : undefined}
+            >
+              <span class="localized-label">
+                {navLabels('mem9Docs').map((label) => (
+                  <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                    {label.value}
+                  </span>
+                ))}
+              </span>
+            </a>
+            <a
+              href="/console-docs"
+              class:list={['docs-menu-item', isActivePath('/console-docs') && 'is-active']}
+              role="menuitem"
+              aria-current={isActivePath('/console-docs') ? 'page' : undefined}
+            >
+              <span class="localized-label">
+                {navLabels('consoleDocs').map((label) => (
+                  <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                    {label.value}
+                  </span>
+                ))}
+              </span>
+            </a>
+            <a
+              href="/api"
+              class:list={['docs-menu-item', isActivePath('/api') && 'is-active']}
+              role="menuitem"
+              aria-current={isActivePath('/api') ? 'page' : undefined}
+            >
+              <span class="localized-label">
+                {navLabels('apiReferences').map((label) => (
+                  <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                    {label.value}
+                  </span>
+                ))}
+              </span>
+            </a>
+          </div>
+        </div>
         <a
           href="/release-notes"
           class:list={[
@@ -77,31 +206,79 @@ const isActivePath = (path: string): boolean => currentPath === path;
             'nav-release-notes-link',
             isActivePath('/release-notes') && 'is-active',
           ]}
-          data-i18n="nav.releaseNotes"
           aria-current={isActivePath('/release-notes') ? 'page' : undefined}
         >
-          {nav.releaseNotes}
+          <span class="localized-label">
+            {navLabels('releaseNotes').map((label) => (
+              <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                {label.value}
+              </span>
+            ))}
+          </span>
         </a>
+      </div>
+
+      <div class="nav-actions">
         <a
           href="https://github.com/mem9-ai/mem9"
-          class="nav-section-link nav-github-link"
+          class="nav-section-link nav-social-link nav-github-link"
           target="_blank"
           rel="noopener"
           aria-label={nav.github}
           title={nav.github}
           data-i18n-attr="aria-label:nav.github;title:nav.github"
         >
-          <span class="nav-github-label">GitHub</span>
-          <svg class="nav-github-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <svg
+            class="nav-social-icon nav-github-icon"
+            viewBox="0 0 24 24"
+            width="19"
+            height="19"
+            aria-hidden="true"
+            focusable="false"
+          >
             <path
               fill="currentColor"
               d="M12 .5C5.65.5.5 5.65.5 12.02c0 5.1 3.29 9.41 7.86 10.94.57.1.78-.25.78-.55 0-.27-.01-.99-.02-1.94-3.2.69-3.87-1.54-3.87-1.54-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.69 1.25 3.34.95.1-.74.4-1.25.72-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.16 1.17.92-.25 1.9-.38 2.88-.39.98.01 1.96.14 2.88.39 2.19-1.48 3.16-1.17 3.16-1.17.62 1.58.23 2.75.11 3.04.74.8 1.18 1.82 1.18 3.08 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.13 0 1.54-.01 2.78-.01 3.16 0 .31.21.66.79.55 4.56-1.53 7.85-5.84 7.85-10.94C23.5 5.65 18.35.5 12 .5z"
             />
           </svg>
+          <span class="nav-social-label localized-label">
+            {navLabels('github').map((label) => (
+              <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                {label.value}
+              </span>
+            ))}
+          </span>
         </a>
-      </div>
-
-      <div class="nav-actions">
+        <a
+          href="https://x.com/mem9_ai"
+          class="nav-section-link nav-social-link nav-x-link"
+          target="_blank"
+          rel="noopener"
+          aria-label={nav.xcom}
+          title={nav.xcom}
+          data-i18n-attr="aria-label:nav.xcom;title:nav.xcom"
+        >
+          <svg
+            class="nav-social-icon nav-x-icon"
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              fill="currentColor"
+              d="M18.9 2.2h3.3l-7.2 8.2l8.5 11.3h-6.7l-5.2-6.8l-6 6.8H2.3l7.7-8.8L1.8 2.2h6.8l4.7 6.2l5.6-6.2Zm-1.2 17.5h1.8L7.6 4.1H5.7l12 15.6Z"
+            />
+          </svg>
+          <span class="nav-social-label localized-label">
+            {navLabels('xcom').map((label) => (
+              <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                {label.value}
+              </span>
+            ))}
+          </span>
+        </a>
         <div class="menu-shell login-shell" data-menu-shell="login" data-open="false">
           <button
             type="button"
@@ -114,7 +291,13 @@ const isActivePath = (path: string): boolean => currentPath === path;
             title={nav.login}
             data-i18n-attr="aria-label:nav.login;title:nav.login"
           >
-            <span data-i18n="nav.login">{nav.login}</span>
+            <span class="localized-label">
+              {navLabels('login').map((label) => (
+                <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                  {label.value}
+                </span>
+              ))}
+            </span>
             <svg class="login-caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
 
@@ -133,9 +316,19 @@ const isActivePath = (path: string): boolean => currentPath === path;
               data-i18n-attr="title:nav.yourMemoryDescription"
             >
               <span class="login-option-content">
-                <span class="login-option-label" data-i18n="nav.yourMemory">{nav.yourMemory}</span>
-                <span class="login-option-tooltip" data-i18n="nav.yourMemoryDescription">
-                  {nav.yourMemoryDescription}
+                <span class="login-option-label localized-label">
+                  {navLabels('yourMemory').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+                <span class="login-option-tooltip localized-label">
+                  {navLabels('yourMemoryDescription').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
                 </span>
               </span>
             </a>
@@ -147,9 +340,19 @@ const isActivePath = (path: string): boolean => currentPath === path;
               data-i18n-attr="title:nav.webConsoleDescription"
             >
               <span class="login-option-content">
-                <span class="login-option-label" data-i18n="nav.webConsole">{nav.webConsole}</span>
-                <span class="login-option-tooltip" data-i18n="nav.webConsoleDescription">
-                  {nav.webConsoleDescription}
+                <span class="login-option-label localized-label">
+                  {navLabels('webConsole').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+                <span class="login-option-tooltip localized-label">
+                  {navLabels('webConsoleDescription').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
                 </span>
               </span>
             </a>
@@ -342,11 +545,11 @@ const isActivePath = (path: string): boolean => currentPath === path;
   }
 
   .nav-inner {
-    min-height: 70px;
+    min-height: 58px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
+    justify-content: flex-start;
+    gap: 2rem;
   }
 
   .brand {
@@ -354,10 +557,11 @@ const isActivePath = (path: string): boolean => currentPath === path;
     align-items: baseline;
     gap: 0.08em;
     font-family: var(--font-display);
-    font-size: 1.35rem;
+    font-size: 1.18rem;
     font-weight: 700;
     letter-spacing: -0.04em;
     color: var(--text);
+    flex: 0 0 auto;
   }
 
   .brand-accent {
@@ -368,14 +572,54 @@ const isActivePath = (path: string): boolean => currentPath === path;
     display: flex;
     align-items: center;
     gap: 1rem;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .nav-links {
     display: flex;
     align-items: center;
-    gap: 1.6rem;
-    font-size: 0.95rem;
+    gap: clamp(1.1rem, 2vw, 1.75rem);
+    flex: 0 1 auto;
+    min-width: 0;
+    font-size: 0.9rem;
     color: var(--text-dim);
+  }
+
+  .nav-section-link {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .localized-label {
+    display: inline-block;
+    vertical-align: top;
+  }
+
+  .localized-label-option {
+    display: none;
+    white-space: nowrap;
+  }
+
+  .localized-label-option[data-locale-option='en'] {
+    display: inline;
+  }
+
+  html[data-locale] .localized-label-option[data-locale-option='en'] {
+    display: none;
+  }
+
+  html[data-locale='en'] .localized-label-option[data-locale-option='en'],
+  html[data-locale='zh'] .localized-label-option[data-locale-option='zh'],
+  html[data-locale='zh-Hant'] .localized-label-option[data-locale-option='zh-Hant'],
+  html[data-locale='ja'] .localized-label-option[data-locale-option='ja'],
+  html[data-locale='ko'] .localized-label-option[data-locale-option='ko'],
+  html[data-locale='id'] .localized-label-option[data-locale-option='id'],
+  html[data-locale='th'] .localized-label-option[data-locale-option='th'] {
+    display: inline;
   }
 
   .nav-links a {
@@ -397,13 +641,20 @@ const isActivePath = (path: string): boolean => currentPath === path;
     gap: 0.25rem;
   }
 
+  .nav-docs-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
   .nav-caret {
     width: 0.7rem;
     height: 0.7rem;
     transition: transform 0.2s ease;
   }
 
-  .nav-dropdown:hover .nav-caret {
+  .nav-dropdown:hover .nav-caret,
+  .nav-docs-dropdown[data-open='true'] .nav-caret {
     transform: rotate(180deg);
   }
 
@@ -452,36 +703,75 @@ const isActivePath = (path: string): boolean => currentPath === path;
     color: var(--text);
   }
 
-  /* GitHub icon link */
-  .nav-github-link {
+  .docs-menu {
+    min-width: 11rem;
+  }
+
+  .docs-menu-item {
+    display: block;
+    border: 1px solid transparent;
+    border-radius: 0.8rem;
+    padding: 0.6rem 0.75rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    transition:
+      background-color 0.2s ease,
+      border-color 0.2s ease,
+      color 0.2s ease;
+  }
+
+  .docs-menu-item:hover,
+  .docs-menu-item:focus-visible,
+  .docs-menu-item.is-active {
+    background: var(--button-active-bg);
+    border-color: var(--button-active-border);
+    color: var(--text);
+    opacity: 1;
+  }
+
+  /* Social links */
+  .nav-social-link {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    color: var(--text-soft);
-    transition: color 0.2s ease;
+    gap: 0.45rem;
+    min-height: 2.25rem;
+    color: var(--text);
+    opacity: 1;
+    transition: color 0.2s ease, opacity 0.2s ease;
   }
 
-  .nav-github-link:hover,
-  .nav-github-link:focus-visible {
+  .nav-social-link:hover,
+  .nav-social-link:focus-visible {
     color: var(--text);
+    opacity: 0.88;
+  }
+
+  .nav-social-icon {
+    width: 1rem;
+    height: 1rem;
+    flex: 0 0 auto;
+    display: block;
   }
 
   .nav-github-icon {
     width: 1.2rem;
     height: 1.2rem;
-    display: block;
   }
 
-  .nav-github-label {
-    font-size: 0.95rem;
+  .nav-social-label {
+    font-size: 0.94rem;
+    font-weight: 500;
     line-height: 1;
+    white-space: nowrap;
   }
 
   .nav-actions {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
+    gap: 0.75rem;
+    margin-left: auto;
+    flex: 0 0 auto;
   }
 
   .nav-login-link {
@@ -489,16 +779,16 @@ const isActivePath = (path: string): boolean => currentPath === path;
     align-items: center;
     justify-content: center;
     gap: 0.35rem;
-    min-width: 5.4rem;
-    height: 2.55rem;
-    padding: 0 1.15rem;
+    min-width: 5rem;
+    height: 2.25rem;
+    padding: 0 1rem;
     border: 1px solid var(--text);
     border-radius: 999px;
     background: var(--text);
     color: var(--bg-deep);
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
     cursor: pointer;
-    font-size: 0.93rem;
+    font-size: 0.88rem;
     font-weight: 700;
     line-height: 1;
     white-space: nowrap;
@@ -614,8 +904,8 @@ const isActivePath = (path: string): boolean => currentPath === path;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.55rem;
-    height: 2.55rem;
+    width: 2.25rem;
+    height: 2.25rem;
     padding: 0;
     border: 1px solid var(--border);
     border-radius: 999px;
@@ -691,12 +981,17 @@ const isActivePath = (path: string): boolean => currentPath === path;
 
   @media (max-width: 780px) {
     .nav-inner {
-      min-height: 62px;
+      min-height: 56px;
+      gap: 1.1rem;
     }
 
     .nav-links {
       gap: 0.9rem;
       font-size: 0.87rem;
+    }
+
+    .nav-actions {
+      gap: 0.55rem;
     }
   }
 
@@ -705,15 +1000,15 @@ const isActivePath = (path: string): boolean => currentPath === path;
       gap: 0.7rem;
     }
 
-    .nav-links .nav-section-link:not(.nav-docs-link):not(.nav-api-link):not(.nav-github-link),
+    .nav-links .nav-section-link:not(.nav-docs-link):not(.nav-social-link),
     .nav-dropdown {
       display: none;
     }
 
-    .nav-links .nav-docs-link,
-    .nav-links .nav-api-link {
+    .nav-links .nav-docs-link {
       display: inline-flex;
       align-items: center;
+      gap: 0.25rem;
       font-size: 0.84rem;
     }
 
@@ -762,14 +1057,13 @@ const isActivePath = (path: string): boolean => currentPath === path;
   }
 
   @media (max-width: 460px) {
-    .nav-links .nav-docs-link,
-    .nav-links .nav-api-link {
+    .nav-docs-dropdown {
       display: none;
     }
   }
 
-  @media (max-width: 360px) {
-    .nav-github-label {
+  @media (max-width: 560px) {
+    .nav-social-label {
       display: none;
     }
   }

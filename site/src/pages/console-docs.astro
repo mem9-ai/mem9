@@ -1,0 +1,26 @@
+---
+import ConsoleDocsPage from '../components/ConsoleDocsPage.astro';
+import Footer from '../components/Footer.astro';
+import Navbar from '../components/Navbar.astro';
+import { consoleDocsCopy } from '../content/console-docs';
+import { resolveDocsLocale } from '../content/docs';
+import { DEFAULT_LOCALE, siteCopy } from '../content/site';
+import Layout from '../layouts/Layout.astro';
+
+const copy = siteCopy[DEFAULT_LOCALE];
+const docs = consoleDocsCopy[resolveDocsLocale(DEFAULT_LOCALE)];
+---
+
+<Layout meta={docs.meta} locale={DEFAULT_LOCALE}>
+  <Navbar
+    nav={copy.nav}
+    aria={copy.aria}
+    localeNames={copy.localeNames}
+    themeOptions={copy.themeOptions}
+    currentPath="/console-docs"
+  />
+  <main>
+    <ConsoleDocsPage />
+  </main>
+  <Footer footer={copy.footer} />
+</Layout>
