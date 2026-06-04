@@ -50,6 +50,7 @@ export interface DocsPageCopy {
   meta: SiteMeta;
   hero: DocsHeroCopy;
   search: DocsSearchCopy;
+  backToTopLabel: string;
   tocGroups: DocsSectionGroup[];
   sections: DocsSection[];
 }
@@ -303,6 +304,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       placeholder: 'Search navigation or content',
       empty: 'No matching docs.',
     },
+    backToTopLabel: 'Back to top',
     tocGroups: [
       {
         title: 'Start Here',
@@ -741,6 +743,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       placeholder: '搜索导航或正文内容',
       empty: '没有匹配的文档。',
     },
+    backToTopLabel: '返回顶部',
     tocGroups: [
       {
         title: '开始使用',
@@ -1184,6 +1187,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       placeholder: 'ナビゲーションまたは本文を検索',
       empty: '一致するドキュメントがありません。',
     },
+    backToTopLabel: 'ページ上部へ戻る',
     tocGroups: [
       {
         title: 'はじめに',
@@ -1614,6 +1618,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       placeholder: '내비게이션 또는 본문 검색',
       empty: '일치하는 문서가 없습니다.',
     },
+    backToTopLabel: '맨 위로 이동',
     tocGroups: [
       {
         title: '시작하기',
@@ -2044,6 +2049,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       placeholder: 'Cari navigasi atau isi',
       empty: 'Tidak ada dokumen yang cocok.',
     },
+    backToTopLabel: 'Kembali ke atas',
     tocGroups: [
       {
         title: 'Memulai',
@@ -2480,6 +2486,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       placeholder: 'ค้นหาในเมนูหรือเนื้อหา',
       empty: 'ไม่พบเอกสารที่ตรงกัน',
     },
+    backToTopLabel: 'กลับขึ้นด้านบน',
     tocGroups: [
       {
         title: 'เริ่มต้นใช้งาน',

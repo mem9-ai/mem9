@@ -550,6 +550,11 @@ function updateDocsPage(locale: SiteLocale): void {
   const activeCopy = root.querySelector<HTMLElement>('[data-docs-copy]:not([hidden])');
   if (activeCopy) {
     updateMetaElements(activeCopy.dataset.docsMetaTitle ?? '', activeCopy.dataset.docsMetaDescription ?? '');
+
+    const backToTopButton = root.querySelector<HTMLButtonElement>('[data-docs-back-to-top]');
+    if (backToTopButton && activeCopy.dataset.docsBackToTopLabel) {
+      backToTopButton.setAttribute('aria-label', activeCopy.dataset.docsBackToTopLabel);
+    }
   }
 }
 

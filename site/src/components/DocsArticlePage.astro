@@ -52,6 +52,7 @@ function docsSectionSearchText(section: DocsSection): string {
         data-docs-copy={locale}
         data-docs-meta-title={copy.meta.title}
         data-docs-meta-description={copy.meta.description}
+        data-docs-back-to-top-label={copy.backToTopLabel}
         hidden={locale !== initialDocsLocale}
       >
         <div class="container docs-shell">
@@ -200,7 +201,7 @@ function docsSectionSearchText(section: DocsSection): string {
     );
   })}
 
-  <button class="docs-back-to-top" data-docs-back-to-top hidden type="button" aria-label="Back to top">
+  <button class="docs-back-to-top" data-docs-back-to-top hidden type="button" aria-label={copies[initialDocsLocale].backToTopLabel}>
     <svg viewBox="0 0 16 16" aria-hidden="true">
       <path d="M8 12.5V3.5M4 7l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
