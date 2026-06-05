@@ -137,7 +137,7 @@ Use these endpoints only when you need compatibility with older tenant-ID-in-pat
 
 ## Self-Hosting
 
-Before first start, apply the control-plane schema that matches your backend: `server/schema.sql`, `server/schema_pg.sql`, or `server/schema_db9.sql`.
+Before first start, apply the control-plane schema that matches your backend: `server/database/schema.sql`, `server/database/schema_pg.sql`, or `server/database/schema_db9.sql`.
 
 mem9 server supports multiple storage backends. Set `MNEMO_DB_BACKEND` to `tidb`, `postgres`, or `db9`, point `MNEMO_DSN` at that backend, and the rest of the runtime contract stays the same for your agents. TiDB supports three tenant flows: TiDB Zero auto-provisioning is enabled by default on `tidb`; TiDB Cloud Pool auto-provisioning uses `MNEMO_TIDB_ZERO_ENABLED=false` with `MNEMO_TIDBCLOUD_API_KEY` and `MNEMO_TIDBCLOUD_API_SECRET`; manual bootstrap uses pre-existing tenants mode. `postgres` and `db9` use the advanced manual-bootstrap path, which requires an active tenant row in the control-plane DB plus a live tenant database and schema behind it. In `v1alpha2`, `X-API-Key` resolves tenants by ID lookup.
 

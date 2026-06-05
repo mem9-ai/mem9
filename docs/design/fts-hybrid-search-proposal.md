@@ -312,7 +312,7 @@ generated column present):
 #### Server mode
 
 Server mode already has a `GENERATED ALWAYS AS` embedding column in
-`server/schema.sql` when `MNEMO_EMBED_AUTO_MODEL` is set. No change needed
+`server/database/schema.sql` when `MNEMO_EMBED_AUTO_MODEL` is set. No change needed
 here. The `embedding IS NOT NULL` predicate in server-mode vector queries is
 already correct.
 
@@ -494,7 +494,7 @@ Query contract: **server mode** (includes `tombstone = 0`).
 
 | File | Change |
 |---|---|
-| `server/schema.sql` | Add FULLTEXT INDEX DDL comment block; add generated embedding column DDL (auto-embed mode) |
+| `server/database/schema.sql` | Add FULLTEXT INDEX DDL comment block; add generated embedding column DDL (auto-embed mode) |
 | `server/internal/repository/repository.go` | Add `FTSSearch` in the interface; keep `KeywordSearch` as fallback; availability flag stays internal to concrete impl |
 | `server/internal/repository/tidb/memory.go` | Add `FTSSearch`; keep `KeywordSearch` fallback; startup capability check probe; new score scanner |
 | `server/internal/service/memory.go` | Add mode-matrix dispatch (vector/FTS optional); RRF in both hybrid modes; partial-failure leg skipping |
@@ -532,7 +532,7 @@ Query contract: **direct mode** (no `tombstone`).
 
 | File | LoC |
 |---|---|
-| `server/schema.sql` | ~5 |
+| `server/database/schema.sql` | ~5 |
 | `server/internal/repository/repository.go` | ~5 |
 | `server/internal/repository/tidb/memory.go` | ~35 |
 | `server/internal/service/memory.go` | ~25 |

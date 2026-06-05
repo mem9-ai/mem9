@@ -659,7 +659,8 @@ mnemos/
 │   │   ├── middleware/         # Auth + rate limiter
 │   │   ├── repository/         # Interface + TiDB implementation
 │   │   └── service/            # Business logic (upsert, LWW, search, embedding)
-│   ├── schema.sql
+│   ├── database/
+│   │   └── schema.sql
 │   └── Dockerfile
 │
 ├── openclaw-plugin/            # OpenClaw agent plugin (TypeScript)

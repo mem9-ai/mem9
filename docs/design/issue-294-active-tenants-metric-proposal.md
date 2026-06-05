@@ -29,9 +29,9 @@ Add a shared `service.ActivityTracker` that is injected into both the HTTP handl
 
 Add `tenant_activity` to:
 
-1. `server/schema.sql`
-2. `server/schema_pg.sql`
-3. `server/schema_db9.sql`
+1. `server/database/schema.sql`
+2. `server/database/schema_pg.sql`
+3. `server/database/schema_db9.sql`
 4. `server/internal/repository/tidb/testutil_test.go`
 
 Do not add activity columns to `tenants`.
