@@ -361,6 +361,10 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
         </button>
       </div>
 
+      <div class="api-test-notice" role="status" data-i18n="apiPage.labels.apiTestCorsNotice">
+        {defaultApiLabels.apiTestCorsNotice}
+      </div>
+
       <div class="api-test-action-row">
         <label class="api-test-save-option">
           <input type="checkbox" data-api-test-save-info checked />
@@ -1180,6 +1184,37 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
   .api-test-form {
     display: grid;
     gap: 0.7rem;
+  }
+
+  .api-test-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    margin: 0.8rem 0 0;
+    padding: 0.72rem 0.82rem;
+    border: 1px solid color-mix(in srgb, #f59e0b 48%, var(--border));
+    border-radius: 0.72rem;
+    background: color-mix(in srgb, #f59e0b 12%, var(--surface-elevated-start));
+    color: var(--text);
+    font-size: 0.86rem;
+    line-height: 1.46;
+  }
+
+  .api-test-notice::before {
+    content: '!';
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.05rem;
+    height: 1.05rem;
+    margin-top: 0.08rem;
+    border-radius: 999px;
+    background: #f59e0b;
+    color: #111111;
+    font-size: 0.72rem;
+    font-weight: 850;
+    line-height: 1;
   }
 
   .api-test-action-row {
