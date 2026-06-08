@@ -174,6 +174,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				finalized = true
 			}
 			s.recordIngestMetering(auth, svc)
+			s.enqueueMemoryAddedIDWebhooks(syncCtx, auth, svc, writeChainSource, chainAuth, result)
 			go s.afterSuccessfulWrite(auth, svc, written)
 			respond(w, http.StatusOK, map[string]string{"status": "ok"})
 		} else {
@@ -224,6 +225,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 				}
+				s.enqueueMemoryAddedIDWebhooks(context.Background(), auth, svc, writeChainSource, chainAuth, result)
 				s.afterSuccessfulIngest(auth, svc, written)
 			}(lease)
 			respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
@@ -310,6 +312,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			}
 			finalized = true
 		}
+		s.enqueueMemoryAddedWebhook(r.Context(), auth, writeChainSource, chainAuth, mem)
 		go s.afterSuccessfulWrite(auth, svc, int64(written))
 		respond(w, http.StatusCreated, mem)
 		return
@@ -377,6 +380,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				}
 				finalized = true
 			}
+			s.enqueueMemoryAddedIDWebhooks(r.Context(), auth, svc, writeChainSource, chainAuth, result)
 			go s.afterSuccessfulWrite(auth, svc, written)
 			respond(w, http.StatusOK, map[string]string{"status": "ok"})
 			return
@@ -415,6 +419,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			}
 			finalized = true
 		}
+		s.enqueueMemoryAddedWebhook(r.Context(), auth, writeChainSource, chainAuth, mem)
 		go s.afterSuccessfulWrite(auth, svc, int64(written))
 		respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	} else {
@@ -466,6 +471,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 				}
+				s.enqueueMemoryAddedIDWebhooks(context.Background(), auth, svc, writeChainSource, chainAuth, result)
 				s.afterSuccessfulWrite(auth, svc, written)
 				return
 			}
@@ -500,6 +506,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
+			s.enqueueMemoryAddedWebhook(context.Background(), auth, writeChainSource, chainAuth, mem)
 			s.afterSuccessfulWrite(auth, svc, int64(written))
 		}(auth, chainAuth, lease, auth.AgentName, agentID, appID, req.SessionID, content, tags, metadata, routingTargets)
 
@@ -1242,6 +1249,9 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 			}
 			finalized = true
 		}
+		if deleted > 0 {
+			s.enqueueMemoryDeletedWebhook(r.Context(), target.nodeAuth, target.source, auth, id, auth.AgentName)
+		}
 		go s.afterSuccessfulWrite(target.nodeAuth, target.svc, 0)
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -1299,6 +1309,9 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 		finalized = true
 	}
 
+	if deleted > 0 {
+		s.enqueueMemoryDeletedWebhook(r.Context(), auth, nil, nil, id, auth.AgentName)
+	}
 	go s.afterSuccessfulWrite(auth, svc, 0)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1327,6 +1340,7 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 		}
 		var deleted int64
 		for _, group := range groups {
+			webhookDeleteIDs := s.existingBatchDeleteWebhookIDs(r.Context(), group.target.svc, group.ids)
 			var lease *runtimeusage.OperationLease
 			finalized := false
 			if s.runtimeUsageEnabled() {
@@ -1378,6 +1392,9 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 				s.runtimeUsage.AfterMemoryDeleteFailure(context.Background(), lease, context.Canceled)
 			}
 			if groupDeleted > 0 {
+				for _, id := range webhookDeleteIDs {
+					s.enqueueMemoryDeletedWebhook(r.Context(), group.target.nodeAuth, group.target.source, auth, id, auth.AgentName)
+				}
 				go s.afterSuccessfulWrite(group.target.nodeAuth, group.target.svc, 0)
 			}
 			deleted += groupDeleted
@@ -1394,6 +1411,7 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 		s.handleError(r.Context(), w, err)
 		return
 	}
+	webhookDeleteIDs := s.existingBatchDeleteWebhookIDs(r.Context(), svc, deleteIDs)
 	var lease *runtimeusage.OperationLease
 	finalized := false
 	if s.runtimeUsageEnabled() {
@@ -1448,10 +1466,40 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 		finalized = true
 	}
 
+	if deleted > 0 {
+		for _, id := range webhookDeleteIDs {
+			s.enqueueMemoryDeletedWebhook(r.Context(), auth, nil, nil, id, auth.AgentName)
+		}
+	}
 	go s.afterSuccessfulWrite(auth, svc, 0)
 	respond(w, http.StatusOK, map[string]any{
 		"deleted": deleted,
 	})
+}
+
+func (s *Server) existingBatchDeleteWebhookIDs(ctx context.Context, svc resolvedSvc, ids []string) []string {
+	existing := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, err := svc.memory.Get(ctx, id); err == nil {
+			existing = append(existing, id)
+			continue
+		} else if !errors.Is(err, domain.ErrNotFound) {
+			s.logger.WarnContext(ctx, "memory delete webhook precheck failed",
+				"memory_id", id,
+				"err", err,
+			)
+		}
+
+		if _, err := svc.session.Get(ctx, id); err == nil {
+			existing = append(existing, id)
+		} else if !errors.Is(err, domain.ErrNotFound) && !errors.Is(err, domain.ErrNotSupported) {
+			s.logger.WarnContext(ctx, "session delete webhook precheck failed",
+				"memory_id", id,
+				"err", err,
+			)
+		}
+	}
+	return existing
 }
 
 type bulkCreateRequest struct {

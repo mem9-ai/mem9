@@ -22,6 +22,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 	"github.com/qiffang/mnemos/server/internal/service"
 	"github.com/qiffang/mnemos/server/internal/tenant"
+	"github.com/qiffang/mnemos/server/internal/webhook"
 )
 
 func main() {
@@ -95,6 +96,23 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("encryption configured", "type", cfg.EncryptType)
+
+	webhookStore := webhook.NewSQLStore(db, cfg.DBBackend)
+	if err := webhookStore.EnsureSchema(context.Background()); err != nil {
+		logger.Error("failed to initialize webhook tables", "err", err)
+		os.Exit(1)
+	}
+	allowLocalWebhookHTTP := cfg.Env != "prod" && cfg.Env != "production"
+	webhookSvc := webhook.NewService(webhookStore, encryptor, allowLocalWebhookHTTP)
+	webhookWorkerCtx, webhookWorkerCancel := context.WithCancel(context.Background())
+	defer webhookWorkerCancel()
+	go func() {
+		err := webhook.NewDispatcher(webhookStore, webhookSvc, webhook.DispatcherConfig{}, logger).Run(webhookWorkerCtx)
+		if err != nil && err != context.Canceled {
+			logger.Error("webhook dispatcher stopped", "err", err)
+		}
+	}()
+	logger.Info("webhook dispatcher initialized", "allow_local_http", allowLocalWebhookHTTP)
 
 	// Repositories.
 	tenantRepo := repository.NewTenantRepo(cfg.DBBackend, db)
@@ -262,6 +280,7 @@ func main() {
 		WithSpaceChainService(spaceChainSvc, cfg.ChainRecallStopScore).
 		WithMetering(meteringWriter).
 		WithRuntimeUsage(runtimeUsageManager).
+		WithWebhookService(webhookSvc).
 		WithActivityTracker(activityTracker).
 		WithDisableSessionSave(cfg.DisableSessionSave)
 	router := srv.Router(tenantMW, rateMW, apiKeyMW, middleware.CORS(cfg.CORSAllowedOrigins))
@@ -309,6 +328,7 @@ func main() {
 		if runtimeUsageWorkerCancel != nil {
 			runtimeUsageWorkerCancel()
 		}
+		webhookWorkerCancel()
 		workerCancel() // Stop upload worker first.
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

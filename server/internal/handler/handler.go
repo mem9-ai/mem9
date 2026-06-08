@@ -25,6 +25,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/reqid"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 	"github.com/qiffang/mnemos/server/internal/service"
+	"github.com/qiffang/mnemos/server/internal/webhook"
 )
 
 // Server holds the HTTP handlers and their dependencies.
@@ -42,6 +43,7 @@ type Server struct {
 	logger               *slog.Logger
 	metering             metering.Writer
 	runtimeUsage         runtimeusage.Manager
+	webhooks             *webhook.Service
 	activity             *service.ActivityTracker
 	startedAt            time.Time
 	svcCache             sync.Map
@@ -93,6 +95,11 @@ func (s *Server) WithMetering(writer metering.Writer) *Server {
 
 func (s *Server) WithRuntimeUsage(manager runtimeusage.Manager) *Server {
 	s.runtimeUsage = manager
+	return s
+}
+
+func (s *Server) WithWebhookService(service *webhook.Service) *Server {
+	s.webhooks = service
 	return s
 }
 
@@ -225,6 +232,14 @@ func (s *Server) Router(
 		r.Get("/bindings", s.listSpaceChainBindings)
 		r.Post("/bindings", s.createSpaceChainBinding)
 		r.Patch("/bindings/{bindingID}", s.disableSpaceChainBinding)
+		r.Get("/webhooks", s.listSpaceChainWebhooks)
+		r.Post("/webhooks", s.createSpaceChainWebhook)
+		r.Get("/webhooks/{webhookID}", s.getSpaceChainWebhook)
+		r.Patch("/webhooks/{webhookID}", s.updateSpaceChainWebhook)
+		r.Delete("/webhooks/{webhookID}", s.deleteSpaceChainWebhook)
+		r.Post("/webhooks/{webhookID}/test", s.testSpaceChainWebhook)
+		r.Post("/webhooks/{webhookID}/rotate-secret", s.rotateSpaceChainWebhookSecret)
+		r.Get("/webhook-deliveries", s.listSpaceChainWebhookDeliveries)
 	})
 
 	// Tenant-scoped routes — tenantMW resolves {tenantID} to DB connection.
@@ -256,6 +271,14 @@ func (s *Server) Router(
 		r.Put("/memories/{id}", s.updateMemory)
 		r.Delete("/memories/{id}", s.deleteMemory)
 		r.Post("/memories/batch-delete", s.batchDeleteMemories)
+		r.Get("/webhooks", s.listTenantWebhooks)
+		r.Post("/webhooks", s.createTenantWebhook)
+		r.Get("/webhooks/{webhookID}", s.getTenantWebhook)
+		r.Patch("/webhooks/{webhookID}", s.updateTenantWebhook)
+		r.Delete("/webhooks/{webhookID}", s.deleteTenantWebhook)
+		r.Post("/webhooks/{webhookID}/test", s.testTenantWebhook)
+		r.Post("/webhooks/{webhookID}/rotate-secret", s.rotateTenantWebhookSecret)
+		r.Get("/webhook-deliveries", s.listTenantWebhookDeliveries)
 
 		r.Post("/imports", s.createTask)
 		r.Get("/imports", s.listTasks)

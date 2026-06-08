@@ -211,3 +211,46 @@ CREATE TABLE IF NOT EXISTS runtime_usage_outbox (
   updated_at        TIMESTAMP   DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_runtime_usage_outbox_poll (status, next_attempt_at)
 );
+
+CREATE TABLE IF NOT EXISTS webhook_endpoints (
+  id                VARCHAR(36)  PRIMARY KEY,
+  scope_type        VARCHAR(20)  NOT NULL,
+  scope_id          VARCHAR(255) NOT NULL,
+  name              VARCHAR(255) NOT NULL,
+  url               TEXT         NOT NULL,
+  enabled           TINYINT(1)   NOT NULL DEFAULT 1,
+  events_json       JSON         NOT NULL,
+  secret_ciphertext TEXT         NOT NULL,
+  created_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at        TIMESTAMP    NULL,
+  INDEX idx_webhook_endpoints_scope (scope_type, scope_id, deleted_at)
+);
+
+CREATE TABLE IF NOT EXISTS webhook_events (
+  id           VARCHAR(36)  PRIMARY KEY,
+  scope_type   VARCHAR(20)  NOT NULL,
+  scope_id     VARCHAR(255) NOT NULL,
+  event_type   VARCHAR(100) NOT NULL,
+  payload_json JSON         NOT NULL,
+  created_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_webhook_events_scope (scope_type, scope_id, created_at)
+);
+
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+  id               VARCHAR(36) PRIMARY KEY,
+  event_id         VARCHAR(36) NOT NULL,
+  endpoint_id      VARCHAR(36) NOT NULL,
+  status           VARCHAR(20) NOT NULL DEFAULT 'pending',
+  attempt_count    INT         NOT NULL DEFAULT 0,
+  next_attempt_at  TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_http_status INT         NULL,
+  last_error       TEXT        NULL,
+  delivered_at     TIMESTAMP   NULL,
+  created_at       TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at       TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_webhook_deliveries_poll (status, next_attempt_at),
+  INDEX idx_webhook_deliveries_event (event_id),
+  CONSTRAINT fk_webhook_deliveries_event FOREIGN KEY (event_id) REFERENCES webhook_events(id),
+  CONSTRAINT fk_webhook_deliveries_endpoint FOREIGN KEY (endpoint_id) REFERENCES webhook_endpoints(id)
+);

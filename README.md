@@ -122,6 +122,15 @@ Prefer `v1alpha2` for all new integrations. It uses `X-API-Key` and is the prima
 | `GET` | `/v1alpha2/mem9s/memories/{id}` | Preferred get-by-id endpoint. Requires `X-API-Key` header |
 | `PUT` | `/v1alpha2/mem9s/memories/{id}` | Preferred update endpoint. Requires `X-API-Key` header |
 | `DELETE` | `/v1alpha2/mem9s/memories/{id}` | Preferred delete endpoint. Requires `X-API-Key` header |
+| `GET/POST` | `/v1alpha2/mem9s/webhooks` | Space webhook management. Requires a Space `X-API-Key` |
+| `GET/PATCH/DELETE` | `/v1alpha2/mem9s/webhooks/{webhookID}` | Get, update, or delete a Space webhook |
+| `POST` | `/v1alpha2/mem9s/webhooks/{webhookID}/test` | Queue a signed test delivery |
+| `POST` | `/v1alpha2/mem9s/webhooks/{webhookID}/rotate-secret` | Rotate the webhook signing secret. The new secret is returned once |
+| `GET` | `/v1alpha2/mem9s/webhook-deliveries` | List recent Space webhook deliveries |
+| `GET/POST` | `/v1alpha2/space-chains/{chainID}/webhooks` | Space Chain webhook management. Requires the `chain_` management key in `X-API-Key` |
+| `GET` | `/v1alpha2/space-chains/{chainID}/webhook-deliveries` | List recent Space Chain webhook deliveries |
+
+Webhook events and delivery behavior are documented in [docs/webhooks-api-design.md](docs/webhooks-api-design.md). v1 emits `memory.added`, `memory.deleted`, and `space_chain.fact_routed`.
 
 ### Legacy Tenant-Path API (`v1alpha1`)
 

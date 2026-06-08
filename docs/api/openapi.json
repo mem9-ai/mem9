@@ -55,6 +55,10 @@
     {
       "name": "Sessions v1alpha2",
       "description": "API-key raw session message API."
+    },
+    {
+      "name": "Webhooks v1alpha2",
+      "description": "API-key and Space Chain webhook management endpoints."
     }
   ],
   "paths": {
@@ -1133,6 +1137,671 @@
           }
         }
       }
+    },
+    "/v1alpha2/mem9s/webhooks": {
+      "get": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "List Space webhooks",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook endpoint list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "Create Space webhook",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created webhook endpoint and one-time signing secret.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointWithSecret"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v1alpha2/mem9s/webhooks/{webhookID}": {
+      "get": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "Get Space webhook",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpoint"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "Update Space webhook",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated webhook endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpoint"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "Delete Space webhook",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/NoContent"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WebhookID"
+        }
+      ]
+    },
+    "/v1alpha2/mem9s/webhooks/{webhookID}/test": {
+      "post": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "Test Space webhook",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Queued test delivery.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDelivery"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WebhookID"
+        }
+      ]
+    },
+    "/v1alpha2/mem9s/webhooks/{webhookID}/rotate-secret": {
+      "post": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "Rotate secret for Space webhook",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook endpoint and one-time signing secret.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointWithSecret"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WebhookID"
+        }
+      ]
+    },
+    "/v1alpha2/mem9s/webhook-deliveries": {
+      "get": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "List Space webhook deliveries",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WebhookDeliveryLimit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook delivery list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v1alpha2/space-chains/{chainID}/webhooks": {
+      "get": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "List Space Chain webhooks",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook endpoint list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "Create Space Chain webhook",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created webhook endpoint and one-time signing secret.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointWithSecret"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChainID"
+        }
+      ]
+    },
+    "/v1alpha2/space-chains/{chainID}/webhooks/{webhookID}": {
+      "get": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "Get Space Chain webhook",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpoint"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "Update Space Chain webhook",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated webhook endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpoint"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "Delete Space Chain webhook",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/components/responses/NoContent"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChainID"
+        },
+        {
+          "$ref": "#/components/parameters/WebhookID"
+        }
+      ]
+    },
+    "/v1alpha2/space-chains/{chainID}/webhooks/{webhookID}/test": {
+      "post": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "Test Space Chain webhook",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Queued test delivery.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDelivery"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChainID"
+        },
+        {
+          "$ref": "#/components/parameters/WebhookID"
+        }
+      ]
+    },
+    "/v1alpha2/space-chains/{chainID}/webhooks/{webhookID}/rotate-secret": {
+      "post": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "Rotate secret for Space Chain webhook",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook endpoint and one-time signing secret.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpointWithSecret"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChainID"
+        },
+        {
+          "$ref": "#/components/parameters/WebhookID"
+        }
+      ]
+    },
+    "/v1alpha2/space-chains/{chainID}/webhook-deliveries": {
+      "get": {
+        "tags": [
+          "Webhooks v1alpha2"
+        ],
+        "summary": "List Space Chain webhook deliveries",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WebhookDeliveryLimit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook delivery list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChainID"
+        }
+      ]
     }
   },
   "components": {
@@ -1398,6 +2067,33 @@
           "maxLength": 100
         },
         "description": "Optional application isolation filter. Omit appId to search across all appIds. Use appId=<value> for an exact appId, and appId=null or appId= to search only the default/global appId stored as an empty string."
+      },
+      "WebhookID": {
+        "name": "webhookID",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ChainID": {
+        "name": "chainID",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "WebhookDeliveryLimit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 50
+        }
       }
     },
     "headers": {
@@ -1676,6 +2372,9 @@
             }
           }
         }
+      },
+      "NoContent": {
+        "description": "No content."
       }
     },
     "schemas": {
@@ -2234,6 +2933,232 @@
           "session",
           "memory"
         ]
+      },
+      "WebhookEventType": {
+        "type": "string",
+        "enum": [
+          "memory.added",
+          "memory.deleted",
+          "space_chain.fact_routed"
+        ]
+      },
+      "WebhookEndpoint": {
+        "type": "object",
+        "required": [
+          "id",
+          "scope_type",
+          "scope_id",
+          "name",
+          "url",
+          "enabled",
+          "events",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "scope_type": {
+            "type": "string",
+            "enum": [
+              "tenant",
+              "chain"
+            ]
+          },
+          "scope_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookEventType"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WebhookEndpointWithSecret": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WebhookEndpoint"
+          },
+          {
+            "type": "object",
+            "required": [
+              "signing_secret"
+            ],
+            "properties": {
+              "signing_secret": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "WebhookListResponse": {
+        "type": "object",
+        "required": [
+          "webhooks"
+        ],
+        "properties": {
+          "webhooks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookEndpoint"
+            }
+          }
+        }
+      },
+      "WebhookCreateRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "url",
+          "events"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookEventType"
+            }
+          }
+        }
+      },
+      "WebhookUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookEventType"
+            }
+          }
+        }
+      },
+      "WebhookDelivery": {
+        "type": "object",
+        "required": [
+          "id",
+          "event_id",
+          "endpoint_id",
+          "event_type",
+          "scope_type",
+          "scope_id",
+          "status",
+          "attempt_count",
+          "next_attempt_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "endpoint_id": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "scope_type": {
+            "type": "string"
+          },
+          "scope_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "delivered",
+              "failed"
+            ]
+          },
+          "attempt_count": {
+            "type": "integer"
+          },
+          "next_attempt_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_http_status": {
+            "type": "integer",
+            "nullable": true
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "delivered_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WebhookDeliveryListResponse": {
+        "type": "object",
+        "required": [
+          "deliveries"
+        ],
+        "properties": {
+          "deliveries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookDelivery"
+            }
+          }
+        }
       }
     }
   }

@@ -156,6 +156,47 @@ CREATE TABLE IF NOT EXISTS upload_tasks (
 CREATE INDEX IF NOT EXISTS idx_upload_tenant ON upload_tasks(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_upload_poll ON upload_tasks(status, created_at);
 
+CREATE TABLE IF NOT EXISTS webhook_endpoints (
+    id                VARCHAR(36)  PRIMARY KEY,
+    scope_type        VARCHAR(20)  NOT NULL,
+    scope_id          VARCHAR(255) NOT NULL,
+    name              VARCHAR(255) NOT NULL,
+    url               TEXT         NOT NULL,
+    enabled           BOOLEAN      NOT NULL DEFAULT TRUE,
+    events_json       JSONB        NOT NULL,
+    secret_ciphertext TEXT         NOT NULL,
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    deleted_at        TIMESTAMPTZ  NULL
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_endpoints_scope ON webhook_endpoints(scope_type, scope_id, deleted_at);
+
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id           VARCHAR(36)  PRIMARY KEY,
+    scope_type   VARCHAR(20)  NOT NULL,
+    scope_id     VARCHAR(255) NOT NULL,
+    event_type   VARCHAR(100) NOT NULL,
+    payload_json JSONB        NOT NULL,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_scope ON webhook_events(scope_type, scope_id, created_at);
+
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+    id               VARCHAR(36) PRIMARY KEY,
+    event_id         VARCHAR(36) NOT NULL REFERENCES webhook_events(id),
+    endpoint_id      VARCHAR(36) NOT NULL REFERENCES webhook_endpoints(id),
+    status           VARCHAR(20) NOT NULL DEFAULT 'pending',
+    attempt_count    INT         NOT NULL DEFAULT 0,
+    next_attempt_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_http_status INT         NULL,
+    last_error       TEXT        NULL,
+    delivered_at     TIMESTAMPTZ NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_poll ON webhook_deliveries(status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_event ON webhook_deliveries(event_id);
+
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql;
 
@@ -167,6 +208,12 @@ CREATE TRIGGER trg_memories_updated BEFORE UPDATE ON memories FOR EACH ROW EXECU
 
 DROP TRIGGER IF EXISTS trg_upload_tasks_updated ON upload_tasks;
 CREATE TRIGGER trg_upload_tasks_updated BEFORE UPDATE ON upload_tasks FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS trg_webhook_endpoints_updated ON webhook_endpoints;
+CREATE TRIGGER trg_webhook_endpoints_updated BEFORE UPDATE ON webhook_endpoints FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS trg_webhook_deliveries_updated ON webhook_deliveries;
+CREATE TRIGGER trg_webhook_deliveries_updated BEFORE UPDATE ON webhook_deliveries FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 DROP TRIGGER IF EXISTS trg_space_chains_updated ON space_chains;
 CREATE TRIGGER trg_space_chains_updated BEFORE UPDATE ON space_chains FOR EACH ROW EXECUTE FUNCTION update_updated_at();

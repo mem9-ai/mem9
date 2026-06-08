@@ -57,11 +57,24 @@ type IngestMessage struct {
 
 // IngestResult is the output of the ingest pipeline.
 type IngestResult struct {
-	Status          string   `json:"status"`           // complete | partial | failed
-	MemoriesChanged int      `json:"memories_changed"` // count of ADD + UPDATE actions executed
-	InsightIDs      []string `json:"insight_ids,omitempty"`
-	Warnings        int      `json:"warnings,omitempty"`
-	Error           string   `json:"error,omitempty"`
+	Status          string         `json:"status"`           // complete | partial | failed
+	MemoriesChanged int            `json:"memories_changed"` // count of ADD + UPDATE actions executed
+	InsightIDs      []string       `json:"insight_ids,omitempty"`
+	Changes         []MemoryChange `json:"changes,omitempty"`
+	Warnings        int            `json:"warnings,omitempty"`
+	Error           string         `json:"error,omitempty"`
+}
+
+const (
+	MemoryChangeAdd    = "add"
+	MemoryChangeUpdate = "update"
+	MemoryChangeDelete = "delete"
+)
+
+type MemoryChange struct {
+	Type        string `json:"type"`
+	MemoryID    string `json:"memory_id,omitempty"`
+	OldMemoryID string `json:"old_memory_id,omitempty"`
 }
 
 // IngestService orchestrates the two-phase smart memory pipeline.
@@ -126,11 +139,12 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 	// Cap conversation size to avoid blowing LLM token limits.
 	formatted = truncateRunes(formatted, maxExtractionConversationRunes)
 
-	insightIDs, warnings, err := s.extractAndReconcile(ctx, agentName, req.AgentID, req.AppID, req.SessionID, formatted)
+	changes, warnings, err := s.extractAndReconcile(ctx, agentName, req.AgentID, req.AppID, req.SessionID, formatted)
 	if err != nil {
 		slog.Error("insight extraction failed", "err", err)
 		return &IngestResult{Status: "failed", Warnings: warnings}, nil
 	}
+	insightIDs := insightIDsFromChanges(changes)
 
 	status := "complete"
 	if warnings > 0 && len(insightIDs) == 0 {
@@ -141,6 +155,7 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 		Status:          status,
 		MemoriesChanged: len(insightIDs),
 		InsightIDs:      insightIDs,
+		Changes:         changes,
 		Warnings:        warnings,
 	}, nil
 }
@@ -397,11 +412,12 @@ func (s *IngestService) ReconcilePhase2(ctx context.Context, agentName, agentID,
 		slog.Warn("ReconcilePhase2: truncating facts", "count", len(facts), "max", maxFacts)
 		facts = facts[:maxFacts]
 	}
-	insightIDs, warnings, err := s.reconcile(ctx, agentName, agentID, appID, sessionID, facts)
+	changes, warnings, err := s.reconcile(ctx, agentName, agentID, appID, sessionID, facts)
 	if err != nil {
 		slog.Error("ReconcilePhase2: reconciliation failed", "err", err)
 		return &IngestResult{Status: "failed", Warnings: warnings}, nil
 	}
+	insightIDs := insightIDsFromChanges(changes)
 	status := "complete"
 	if warnings > 0 && len(insightIDs) == 0 {
 		status = "partial"
@@ -410,6 +426,7 @@ func (s *IngestService) ReconcilePhase2(ctx context.Context, agentName, agentID,
 		Status:          status,
 		MemoriesChanged: len(insightIDs),
 		InsightIDs:      insightIDs,
+		Changes:         changes,
 		Warnings:        warnings,
 	}, nil
 }
@@ -468,7 +485,7 @@ func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID
 		}, nil
 	}
 
-	insightIDs, warnings, err := s.reconcile(ctx, agentName, agentID, appID, sessionID, allFacts)
+	changes, warnings, err := s.reconcile(ctx, agentName, agentID, appID, sessionID, allFacts)
 	totalWarnings += warnings
 	if err != nil {
 		slog.Error("reconcile content: batched reconciliation failed", "err", err)
@@ -478,6 +495,7 @@ func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID
 			Warnings:        totalWarnings + 1,
 		}, nil
 	}
+	insightIDs := insightIDsFromChanges(changes)
 
 	status := "complete"
 	if failures > 0 && len(insightIDs) == 0 {
@@ -490,6 +508,7 @@ func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID
 		Status:          status,
 		MemoriesChanged: len(insightIDs),
 		InsightIDs:      insightIDs,
+		Changes:         changes,
 		Warnings:        totalWarnings,
 	}, nil
 }
@@ -551,11 +570,12 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 		Status:          "complete",
 		MemoriesChanged: 1,
 		InsightIDs:      []string{m.ID},
+		Changes:         []MemoryChange{{Type: MemoryChangeAdd, MemoryID: m.ID}},
 	}, nil
 }
 
 // extractAndReconcile runs Phase 1a (extraction) + Phase 2 (reconciliation).
-func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agentID, appID, sessionID, conversation string) ([]string, int, error) {
+func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agentID, appID, sessionID, conversation string) ([]MemoryChange, int, error) {
 	const maxFacts = 50 // Cap extracted facts to bound reconciliation prompt size
 
 	// Phase 1a: Extract facts only — no message_tags needed here (smart-ingest / raw-ingest path).
@@ -992,7 +1012,7 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 // all facts and all retrieved memories to the LLM in a single call for batch
 // decision-making. This gives the LLM a complete view of both the new facts and
 // the existing knowledge base, enabling better ADD/UPDATE/DELETE/NOOP decisions.
-func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, appID, sessionID string, facts []ExtractedFact) ([]string, int, error) {
+func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, appID, sessionID string, facts []ExtractedFact) ([]MemoryChange, int, error) {
 	start := time.Now()
 	var (
 		applyActionsDuration   time.Duration
@@ -1047,7 +1067,7 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, appID
 
 	if len(existingMemories) == 0 {
 		applyActionsStart := time.Now()
-		resultIDs, warningCount, err := s.addAllFacts(ctx, agentName, agentID, appID, sessionID, facts)
+		changes, warningCount, err := s.addAllFacts(ctx, agentName, agentID, appID, sessionID, facts)
 		applyActionsDuration = time.Since(applyActionsStart)
 		warnings = warningCount
 		if err != nil {
@@ -1055,7 +1075,7 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, appID
 			return nil, warningCount, err
 		}
 		status = "add_all"
-		return resultIDs, warningCount, nil
+		return changes, warningCount, nil
 	}
 
 	// Step 2: Map real UUIDs to integer IDs to prevent LLM hallucination.
@@ -1218,7 +1238,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 
 	// Step 4: Execute each action.
 	applyActionsStart := time.Now()
-	var resultIDs []string
+	var changes []MemoryChange
 
 	for _, event := range parsed.Memory {
 		switch strings.ToUpper(event.Event) {
@@ -1244,7 +1264,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				warnings++
 				continue
 			}
-			resultIDs = append(resultIDs, newID)
+			changes = append(changes, MemoryChange{Type: MemoryChangeAdd, MemoryID: newID})
 
 		case "UPDATE":
 			intID := parseIntID(event.ID)
@@ -1277,7 +1297,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 					warnings++
 					continue
 				}
-				resultIDs = append(resultIDs, newID)
+				changes = append(changes, MemoryChange{Type: MemoryChangeAdd, MemoryID: newID})
 				continue
 			}
 			newID, updateErr := s.updateInsight(ctx, agentName, agentID, appID, sessionID, realID, normalizedText, effectiveTags, metadata)
@@ -1286,7 +1306,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				warnings++
 				continue
 			}
-			resultIDs = append(resultIDs, newID)
+			changes = append(changes, MemoryChange{Type: MemoryChangeUpdate, MemoryID: newID, OldMemoryID: realID})
 
 		case "DELETE":
 			intID := parseIntID(event.ID)
@@ -1310,6 +1330,8 @@ Analyze the new facts and determine whether each should be added, updated, or de
 					slog.Warn("failed to delete memory", "err", delErr, "id", event.ID)
 					warnings++
 				}
+			} else {
+				changes = append(changes, MemoryChange{Type: MemoryChangeDelete, MemoryID: realID})
 			}
 
 		case "NOOP", "NONE":
@@ -1321,7 +1343,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 	}
 	applyActionsDuration = time.Since(applyActionsStart)
 
-	return resultIDs, warnings, nil
+	return changes, warnings, nil
 }
 
 const gatherExistingMemoriesConcurrency = 4
@@ -1521,8 +1543,8 @@ func (s *IngestService) searchExistingMemoriesForFact(
 
 // addAllFacts adds all facts as new insights when no existing memories are
 // found (i.e., all facts are guaranteed new). Called only when gatherExistingMemories returns empty.
-func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, appID, sessionID string, facts []ExtractedFact) ([]string, int, error) {
-	var ids []string
+func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, appID, sessionID string, facts []ExtractedFact) ([]MemoryChange, int, error) {
+	var changes []MemoryChange
 	var warnings int
 	for _, fact := range facts {
 		id, err := s.addInsight(ctx, agentName, agentID, appID, sessionID, fact.Text, fact.Tags, metadataForExtractedFact(fact))
@@ -1531,9 +1553,22 @@ func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, app
 			warnings++
 			continue
 		}
-		ids = append(ids, id)
+		changes = append(changes, MemoryChange{Type: MemoryChangeAdd, MemoryID: id})
 	}
-	return ids, warnings, nil
+	return changes, warnings, nil
+}
+
+func insightIDsFromChanges(changes []MemoryChange) []string {
+	ids := make([]string, 0, len(changes))
+	for _, change := range changes {
+		if change.MemoryID == "" {
+			continue
+		}
+		if change.Type == MemoryChangeAdd || change.Type == MemoryChangeUpdate {
+			ids = append(ids, change.MemoryID)
+		}
+	}
+	return ids
 }
 
 // addInsight creates a new insight memory with the given content and tags.

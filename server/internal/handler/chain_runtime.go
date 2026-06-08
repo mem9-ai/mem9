@@ -187,6 +187,24 @@ func (s *Server) reconcileRoutedChainFacts(ctx context.Context, auth *domain.Aut
 					return
 				}
 			}
+			source := chainSource(auth, node)
+			s.enqueueMemoryAddedIDWebhooks(ctx, nodeAuth, targetSvc, source, auth, result)
+			for _, change := range result.Changes {
+				if change.Type != service.MemoryChangeAdd || change.MemoryID == "" {
+					continue
+				}
+				mem, err := targetSvc.memory.Get(ctx, change.MemoryID)
+				if err != nil {
+					logger.WarnContext(ctx, "space chain routed webhook payload lookup failed",
+						"chain_id", auth.Chain.ChainID,
+						"target_space_id", targetID,
+						"memory_id", change.MemoryID,
+						"err", err,
+					)
+					continue
+				}
+				s.enqueueRoutedFactWebhook(ctx, auth, nodeAuth, node, factsForTarget, mem)
+			}
 			mu.Lock()
 			out.memoriesChanged += result.MemoriesChanged
 			out.insightIDs = append(out.insightIDs, result.InsightIDs...)
