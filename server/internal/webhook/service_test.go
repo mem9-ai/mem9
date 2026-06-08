@@ -58,6 +58,19 @@ func TestCreateEndpointAllowsLocalHTTPOnlyWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestValidateDeliveryURLRejectsPrivateDestinations(t *testing.T) {
+	ctx := context.Background()
+	if err := validateDeliveryURL(ctx, "https://127.0.0.1/hooks", false); !isValidationError(err) {
+		t.Fatalf("validateDeliveryURL(loopback, production) error = %v, want validation error", err)
+	}
+	if err := validateDeliveryURL(ctx, "http://localhost:3000/hooks", true); err != nil {
+		t.Fatalf("validateDeliveryURL(localhost, dev) error = %v", err)
+	}
+	if err := validateDeliveryURL(ctx, "http://127.0.0.1:3000/hooks", false); !isValidationError(err) {
+		t.Fatalf("validateDeliveryURL(http loopback, production) error = %v, want validation error", err)
+	}
+}
+
 func TestRotateSecretUpdatesCiphertextAndReturnsSecretOnce(t *testing.T) {
 	ctx := context.Background()
 	store := newFakeStore()

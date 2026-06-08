@@ -347,6 +347,47 @@ func validateEndpointURL(rawURL string, allowLocalHTTP bool) (string, error) {
 	return parsed.String(), nil
 }
 
+func validateDeliveryURL(ctx context.Context, rawURL string, allowLocalHTTP bool) error {
+	endpointURL, err := validateEndpointURL(rawURL, allowLocalHTTP)
+	if err != nil {
+		return err
+	}
+	parsed, err := url.Parse(endpointURL)
+	if err != nil {
+		return &domain.ValidationError{Field: "url", Message: "invalid"}
+	}
+	host := strings.Trim(parsed.Hostname(), "[]")
+	if _, err := allowedDestinationIPs(ctx, host, allowLocalHTTP); err != nil {
+		return err
+	}
+	return nil
+}
+
+func allowedDestinationIPs(ctx context.Context, host string, allowLocalHTTP bool) ([]net.IP, error) {
+	if ip := net.ParseIP(host); ip != nil {
+		if !isAllowedIP(ip, allowLocalHTTP) {
+			return nil, &domain.ValidationError{Field: "url", Message: "private IP destinations are not allowed"}
+		}
+		return []net.IP{ip}, nil
+	}
+
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve webhook destination: %w", err)
+	}
+	ips := make([]net.IP, 0, len(addrs))
+	for _, addr := range addrs {
+		if !isAllowedIP(addr.IP, allowLocalHTTP) {
+			return nil, &domain.ValidationError{Field: "url", Message: "private IP destinations are not allowed"}
+		}
+		ips = append(ips, addr.IP)
+	}
+	if len(ips) == 0 {
+		return nil, &domain.ValidationError{Field: "url", Message: "destination has no IP addresses"}
+	}
+	return ips, nil
+}
+
 func normalizeEvents(events []string) ([]string, error) {
 	seen := map[string]struct{}{}
 	out := make([]string, 0, len(events))

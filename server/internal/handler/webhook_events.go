@@ -28,15 +28,24 @@ func (s *Server) enqueueMemoryAddedIDWebhooks(ctx context.Context, auth *domain.
 		return
 	}
 	for _, change := range result.Changes {
-		if change.Type != service.MemoryChangeAdd || change.MemoryID == "" {
+		if change.MemoryID == "" {
 			continue
 		}
-		mem, err := svc.memory.Get(ctx, change.MemoryID)
-		if err != nil {
-			slog.WarnContext(ctx, "webhook memory.added payload lookup failed", "memory_id", change.MemoryID, "err", err)
-			continue
+		switch change.Type {
+		case service.MemoryChangeAdd:
+			mem, err := svc.memory.Get(ctx, change.MemoryID)
+			if err != nil {
+				slog.WarnContext(ctx, "webhook memory.added payload lookup failed", "memory_id", change.MemoryID, "err", err)
+				continue
+			}
+			s.enqueueMemoryAddedWebhook(ctx, auth, source, chainAuth, mem)
+		case service.MemoryChangeDelete:
+			agentName := ""
+			if auth != nil {
+				agentName = auth.AgentName
+			}
+			s.enqueueMemoryDeletedWebhook(ctx, auth, source, chainAuth, change.MemoryID, agentName)
 		}
-		s.enqueueMemoryAddedWebhook(ctx, auth, source, chainAuth, mem)
 	}
 }
 

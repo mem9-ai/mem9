@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 )
@@ -41,10 +42,28 @@ func NewDispatcher(store Store, svc *Service, cfg DispatcherConfig, logger *slog
 	if logger == nil {
 		logger = slog.Default()
 	}
+	transport := &http.Transport{
+		Proxy: nil,
+		DialContext: guardedDialContext(
+			&net.Dialer{
+				Timeout:   cfg.Timeout,
+				KeepAlive: 30 * time.Second,
+			},
+			svc != nil && svc.allowLocalHTTP,
+		),
+		TLSHandshakeTimeout:   cfg.Timeout,
+		ResponseHeaderTimeout: cfg.Timeout,
+	}
 	return &Dispatcher{
-		store:  store,
-		svc:    svc,
-		client: &http.Client{Timeout: cfg.Timeout},
+		store: store,
+		svc:   svc,
+		client: &http.Client{
+			Timeout:   cfg.Timeout,
+			Transport: transport,
+			CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+				return validateDeliveryURL(req.Context(), req.URL.String(), svc != nil && svc.allowLocalHTTP)
+			},
+		},
 		cfg:    cfg,
 		logger: logger,
 	}
@@ -83,6 +102,9 @@ func (d *Dispatcher) deliver(ctx context.Context, job DeliveryJob) error {
 	if err != nil {
 		return d.recordFailure(ctx, job, nil, fmt.Errorf("decrypt webhook secret: %w", err))
 	}
+	if err := validateDeliveryURL(ctx, job.URL, d.svc != nil && d.svc.allowLocalHTTP); err != nil {
+		return d.recordFailure(ctx, job, nil, err)
+	}
 	timestamp := time.Now().Unix()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, job.URL, bytes.NewReader(job.Payload))
 	if err != nil {
@@ -105,6 +127,31 @@ func (d *Dispatcher) deliver(ctx context.Context, job DeliveryJob) error {
 		return d.store.MarkDeliveryDelivered(ctx, job.ID, resp.StatusCode)
 	}
 	return d.recordFailure(ctx, job, &resp.StatusCode, fmt.Errorf("webhook returned status %d", resp.StatusCode))
+}
+
+func guardedDialContext(dialer *net.Dialer, allowLocalHTTP bool) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		ips, err := allowedDestinationIPs(ctx, host, allowLocalHTTP)
+		if err != nil {
+			return nil, err
+		}
+		var lastErr error
+		for _, ip := range ips {
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+		if lastErr != nil {
+			return nil, lastErr
+		}
+		return nil, fmt.Errorf("webhook destination has no allowed IPs")
+	}
 }
 
 func (d *Dispatcher) recordFailure(ctx context.Context, job DeliveryJob, httpStatus *int, err error) error {

@@ -19,6 +19,8 @@ type SQLStore struct {
 	backend string
 }
 
+const deliveryClaimDuration = 5 * time.Minute
+
 func NewSQLStore(db *sql.DB, backend string) *SQLStore {
 	return &SQLStore{db: db, backend: strings.TrimSpace(backend)}
 }
@@ -206,26 +208,89 @@ func (s *SQLStore) FetchDueDeliveries(ctx context.Context, limit int) ([]Deliver
 	if limit <= 0 || limit > 100 {
 		limit = 25
 	}
-	rows, err := s.db.QueryContext(ctx,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin webhook delivery claim: %w", err)
+	}
+	defer tx.Rollback()
+
+	now := time.Now().UTC()
+	rows, err := tx.QueryContext(ctx,
+		s.rebind(`SELECT d.id
+			FROM webhook_deliveries AS d
+			INNER JOIN webhook_events AS e ON e.id = d.event_id
+			INNER JOIN webhook_endpoints AS ep ON ep.id = d.endpoint_id
+			WHERE d.status = ? AND d.next_attempt_at <= ? AND ep.enabled = ? AND ep.deleted_at IS NULL
+			ORDER BY d.next_attempt_at ASC, d.created_at ASC, d.id ASC
+			LIMIT ?
+			FOR UPDATE`),
+		StatusPending,
+		now,
+		boolValue(true),
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("select due webhook deliveries: %w", err)
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan due webhook delivery id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("iterate due webhook deliveries: %w", err)
+	}
+	rows.Close()
+
+	if len(ids) == 0 {
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit empty webhook delivery claim: %w", err)
+		}
+		return nil, nil
+	}
+
+	claimUntil := now.Add(deliveryClaimDuration)
+	inClause, idArgs := placeholders(ids)
+	updateArgs := append([]any{claimUntil, now}, idArgs...)
+	updateArgs = append(updateArgs, StatusPending)
+	if _, err := tx.ExecContext(ctx,
+		s.rebind(`UPDATE webhook_deliveries
+			SET next_attempt_at = ?, updated_at = ?
+			WHERE id IN (`+inClause+`) AND status = ?`),
+		updateArgs...,
+	); err != nil {
+		return nil, fmt.Errorf("claim webhook deliveries: %w", err)
+	}
+
+	selectArgs := idArgs
+	rows, err = tx.QueryContext(ctx,
 		s.rebind(`SELECT d.id, d.event_id, d.endpoint_id, e.event_type, e.scope_type, e.scope_id,
 				d.status, d.attempt_count, d.next_attempt_at, d.last_http_status, d.last_error,
 				d.delivered_at, d.created_at, d.updated_at, ep.url, ep.secret_ciphertext, e.payload_json
 			FROM webhook_deliveries AS d
 			INNER JOIN webhook_events AS e ON e.id = d.event_id
 			INNER JOIN webhook_endpoints AS ep ON ep.id = d.endpoint_id
-			WHERE d.status = ? AND d.next_attempt_at <= ? AND ep.enabled = ? AND ep.deleted_at IS NULL
-			ORDER BY d.next_attempt_at ASC, d.created_at ASC, d.id ASC
-			LIMIT ?`),
-		StatusPending,
-		time.Now().UTC(),
-		boolValue(true),
-		limit,
+			WHERE d.id IN (`+inClause+`)
+			ORDER BY d.next_attempt_at ASC, d.created_at ASC, d.id ASC`),
+		selectArgs...,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("fetch due webhook deliveries: %w", err)
+		return nil, fmt.Errorf("fetch claimed webhook deliveries: %w", err)
 	}
-	defer rows.Close()
-	return scanDeliveryJobs(rows)
+	jobs, err := scanDeliveryJobs(rows)
+	rows.Close()
+	if err != nil {
+		return nil, fmt.Errorf("scan claimed webhook deliveries: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit webhook delivery claim: %w", err)
+	}
+	return jobs, nil
 }
 
 func (s *SQLStore) MarkDeliveryDelivered(ctx context.Context, deliveryID string, httpStatus int) error {
@@ -610,4 +675,14 @@ func truncate(value string, maxLen int) string {
 		return value
 	}
 	return value[:maxLen]
+}
+
+func placeholders(values []string) (string, []any) {
+	parts := make([]string, len(values))
+	args := make([]any, len(values))
+	for i, value := range values {
+		parts[i] = "?"
+		args[i] = value
+	}
+	return strings.Join(parts, ","), args
 }
