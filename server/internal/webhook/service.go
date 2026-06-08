@@ -32,7 +32,7 @@ type Store interface {
 	UpdateEndpointSecret(ctx context.Context, endpoint Endpoint) error
 	SoftDeleteEndpoint(ctx context.Context, scopeType, scopeID, endpointID string) error
 	EnqueueEvent(ctx context.Context, event EventRecord) error
-	EnqueueTestEvent(ctx context.Context, endpoint Endpoint, event EventRecord) error
+	EnqueueTestEvent(ctx context.Context, endpoint Endpoint, event EventRecord) (Delivery, error)
 	ListDeliveries(ctx context.Context, scopeType, scopeID string, limit int) ([]Delivery, error)
 	FetchDueDeliveries(ctx context.Context, limit int) ([]DeliveryJob, error)
 	MarkDeliveryDelivered(ctx context.Context, deliveryID string, httpStatus int) error
@@ -193,6 +193,9 @@ func (s *Service) TestEndpoint(ctx context.Context, scopeType, scopeID, endpoint
 	if err != nil {
 		return Delivery{}, err
 	}
+	if !endpoint.Enabled {
+		return Delivery{}, &domain.ValidationError{Field: "enabled", Message: "webhook endpoint is disabled"}
+	}
 	id := eventID()
 	payload, err := s.buildPayload(id, EventTest, eventScope(scopeType, scopeID, "", ""), map[string]any{
 		"message": "mem9 webhook test event",
@@ -208,17 +211,7 @@ func (s *Service) TestEndpoint(ctx context.Context, scopeType, scopeID, endpoint
 		Payload:   payload,
 		CreatedAt: time.Now().UTC(),
 	}
-	if err := s.store.EnqueueTestEvent(ctx, *endpoint, event); err != nil {
-		return Delivery{}, err
-	}
-	deliveries, err := s.store.ListDeliveries(ctx, scopeType, scopeID, 1)
-	if err != nil {
-		return Delivery{}, err
-	}
-	if len(deliveries) == 0 {
-		return Delivery{}, domain.ErrNotFound
-	}
-	return deliveries[0], nil
+	return s.store.EnqueueTestEvent(ctx, *endpoint, event)
 }
 
 func (s *Service) ListDeliveries(ctx context.Context, scopeType, scopeID string, limit int) ([]Delivery, error) {

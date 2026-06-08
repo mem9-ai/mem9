@@ -173,11 +173,19 @@ func (s *SQLStore) EnqueueEvent(ctx context.Context, event EventRecord) error {
 			matching = append(matching, endpoint)
 		}
 	}
-	return s.insertEventAndDeliveries(ctx, event, matching)
+	_, err = s.insertEventAndDeliveries(ctx, event, matching)
+	return err
 }
 
-func (s *SQLStore) EnqueueTestEvent(ctx context.Context, endpoint Endpoint, event EventRecord) error {
-	return s.insertEventAndDeliveries(ctx, event, []Endpoint{endpoint})
+func (s *SQLStore) EnqueueTestEvent(ctx context.Context, endpoint Endpoint, event EventRecord) (Delivery, error) {
+	deliveries, err := s.insertEventAndDeliveries(ctx, event, []Endpoint{endpoint})
+	if err != nil {
+		return Delivery{}, err
+	}
+	if len(deliveries) == 0 {
+		return Delivery{}, domain.ErrNotFound
+	}
+	return deliveries[0], nil
 }
 
 func (s *SQLStore) ListDeliveries(ctx context.Context, scopeType, scopeID string, limit int) ([]Delivery, error) {
@@ -335,10 +343,10 @@ func (s *SQLStore) MarkDeliveryFailedAttempt(ctx context.Context, deliveryID str
 	return nil
 }
 
-func (s *SQLStore) insertEventAndDeliveries(ctx context.Context, event EventRecord, endpoints []Endpoint) error {
+func (s *SQLStore) insertEventAndDeliveries(ctx context.Context, event EventRecord, endpoints []Endpoint) ([]Delivery, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin webhook enqueue: %w", err)
+		return nil, fmt.Errorf("begin webhook enqueue: %w", err)
 	}
 	defer tx.Rollback()
 
@@ -353,29 +361,44 @@ func (s *SQLStore) insertEventAndDeliveries(ctx context.Context, event EventReco
 		string(event.Payload),
 		event.CreatedAt,
 	); err != nil {
-		return fmt.Errorf("insert webhook event: %w", err)
+		return nil, fmt.Errorf("insert webhook event: %w", err)
 	}
+	deliveries := make([]Delivery, 0, len(endpoints))
 	for _, endpoint := range endpoints {
 		now := time.Now().UTC()
+		delivery := Delivery{
+			ID:            uuid.NewString(),
+			EventID:       event.ID,
+			EndpointID:    endpoint.ID,
+			EventType:     event.EventType,
+			ScopeType:     event.ScopeType,
+			ScopeID:       event.ScopeID,
+			Status:        StatusPending,
+			AttemptCount:  0,
+			NextAttemptAt: now,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		}
 		if _, err := tx.ExecContext(ctx,
 			s.rebind(`INSERT INTO webhook_deliveries
 				(id, event_id, endpoint_id, status, attempt_count, next_attempt_at, created_at, updated_at)
 				VALUES (?, ?, ?, ?, 0, ?, ?, ?)`),
-			uuid.NewString(),
-			event.ID,
-			endpoint.ID,
-			StatusPending,
-			now,
-			now,
-			now,
+			delivery.ID,
+			delivery.EventID,
+			delivery.EndpointID,
+			delivery.Status,
+			delivery.NextAttemptAt,
+			delivery.CreatedAt,
+			delivery.UpdatedAt,
 		); err != nil {
-			return fmt.Errorf("insert webhook delivery: %w", err)
+			return nil, fmt.Errorf("insert webhook delivery: %w", err)
 		}
+		deliveries = append(deliveries, delivery)
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit webhook enqueue: %w", err)
+		return nil, fmt.Errorf("commit webhook enqueue: %w", err)
 	}
-	return nil
+	return deliveries, nil
 }
 
 func (s *SQLStore) schemaStatements() []string {

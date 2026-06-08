@@ -100,6 +100,60 @@ func TestRotateSecretUpdatesCiphertextAndReturnsSecretOnce(t *testing.T) {
 	}
 }
 
+func TestTestEndpointRejectsDisabledEndpoint(t *testing.T) {
+	ctx := context.Background()
+	store := newFakeStore()
+	svc := NewService(store, fakeProtector{}, true)
+
+	created, err := svc.CreateEndpoint(ctx, CreateEndpointInput{
+		ScopeType: ScopeTenant,
+		ScopeID:   "tenant-1",
+		Name:      "hook",
+		URL:       "https://example.com/hooks",
+		Enabled:   false,
+		Events:    []string{EventMemoryAdded},
+	})
+	if err != nil {
+		t.Fatalf("CreateEndpoint() error = %v", err)
+	}
+
+	if _, err := svc.TestEndpoint(ctx, ScopeTenant, "tenant-1", created.ID); !isValidationError(err) {
+		t.Fatalf("TestEndpoint(disabled) error = %v, want validation error", err)
+	}
+	if store.testDelivery.ID != "" {
+		t.Fatalf("test delivery was enqueued for disabled endpoint: %#v", store.testDelivery)
+	}
+}
+
+func TestTestEndpointReturnsCreatedDelivery(t *testing.T) {
+	ctx := context.Background()
+	store := newFakeStore()
+	svc := NewService(store, fakeProtector{}, true)
+
+	created, err := svc.CreateEndpoint(ctx, CreateEndpointInput{
+		ScopeType: ScopeTenant,
+		ScopeID:   "tenant-1",
+		Name:      "hook",
+		URL:       "https://example.com/hooks",
+		Enabled:   true,
+		Events:    []string{EventMemoryAdded},
+	})
+	if err != nil {
+		t.Fatalf("CreateEndpoint() error = %v", err)
+	}
+
+	delivery, err := svc.TestEndpoint(ctx, ScopeTenant, "tenant-1", created.ID)
+	if err != nil {
+		t.Fatalf("TestEndpoint() error = %v", err)
+	}
+	if delivery.ID != "test-delivery" {
+		t.Fatalf("delivery id = %q, want store-created delivery", delivery.ID)
+	}
+	if delivery.EndpointID != created.ID || delivery.EventType != EventTest {
+		t.Fatalf("delivery = %#v, want created endpoint test delivery", delivery)
+	}
+}
+
 func isValidationError(err error) bool {
 	var validationErr *domain.ValidationError
 	return errors.As(err, &validationErr)
@@ -116,7 +170,8 @@ func (fakeProtector) Decrypt(_ context.Context, ciphertext string) (string, erro
 }
 
 type fakeStore struct {
-	endpoints map[string]Endpoint
+	endpoints    map[string]Endpoint
+	testDelivery Delivery
 }
 
 func newFakeStore() *fakeStore {
@@ -173,7 +228,23 @@ func (s *fakeStore) SoftDeleteEndpoint(_ context.Context, scopeType, scopeID, en
 
 func (s *fakeStore) EnqueueEvent(context.Context, EventRecord) error { return nil }
 
-func (s *fakeStore) EnqueueTestEvent(context.Context, Endpoint, EventRecord) error { return nil }
+func (s *fakeStore) EnqueueTestEvent(_ context.Context, endpoint Endpoint, event EventRecord) (Delivery, error) {
+	delivery := Delivery{
+		ID:            "test-delivery",
+		EventID:       event.ID,
+		EndpointID:    endpoint.ID,
+		EventType:     event.EventType,
+		ScopeType:     event.ScopeType,
+		ScopeID:       event.ScopeID,
+		Status:        StatusPending,
+		AttemptCount:  0,
+		NextAttemptAt: event.CreatedAt,
+		CreatedAt:     event.CreatedAt,
+		UpdatedAt:     event.CreatedAt,
+	}
+	s.testDelivery = delivery
+	return delivery, nil
+}
 
 func (s *fakeStore) ListDeliveries(context.Context, string, string, int) ([]Delivery, error) {
 	return nil, nil
