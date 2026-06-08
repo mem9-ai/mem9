@@ -40,9 +40,17 @@ export interface DocsHeroCopy {
   tocTitle: string;
 }
 
+export interface DocsSearchCopy {
+  label: string;
+  placeholder: string;
+  empty: string;
+}
+
 export interface DocsPageCopy {
   meta: SiteMeta;
   hero: DocsHeroCopy;
+  search: DocsSearchCopy;
+  backToTopLabel: string;
   tocGroups: DocsSectionGroup[];
   sections: DocsSection[];
 }
@@ -291,6 +299,12 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       ],
       tocTitle: 'On this page',
     },
+    search: {
+      label: 'Search docs',
+      placeholder: 'Search navigation or content',
+      empty: 'No matching docs.',
+    },
+    backToTopLabel: 'Back to top',
     tocGroups: [
       {
         title: 'Start Here',
@@ -438,6 +452,13 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
             title: 'Shared memory spaces',
             paragraphs: [
               'Multiple agents can connect to the same mem9 space and reuse the same long-term knowledge. This works well for multi-device usage, repeated automation, and shared project context.',
+            ],
+          },
+          {
+            title: 'appId sub-spaces under one API key',
+            paragraphs: [
+              '`appId` lets one MEM9_API_KEY hold several isolated memory sub-spaces for different applications, agents, environments, or product scenarios. A memory or raw session written with `appId: "docs"` is associated with that appId, while a write with omitted, null, empty, or whitespace `appId` belongs to the default/global appId.',
+              'When querying, omitting `appId` means global search across every appId under the API key. Passing a non-empty `appId` searches only that exact sub-space. Passing `appId=null` or `appId=` searches only the default/global appId. appId isolation does not change API key ownership, permissions, quota, or billing; it only scopes memory/session writes and read filters.',
             ],
           },
           {
@@ -717,6 +738,12 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       ],
       tocTitle: '目录',
     },
+    search: {
+      label: '搜索文档',
+      placeholder: '搜索导航或正文内容',
+      empty: '没有匹配的文档。',
+    },
+    backToTopLabel: '返回顶部',
     tocGroups: [
       {
         title: '开始使用',
@@ -869,6 +896,13 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
             title: '共享空间',
             paragraphs: [
               '多个 Agent 可以连接到同一个 mem9 空间，复用同一份长期知识。这对多设备使用、团队共享项目上下文，以及自动化 Agent 反复处理同类任务都很有价值。',
+            ],
+          },
+          {
+            title: '同一个 API key 下的 appId 子空间',
+            paragraphs: [
+              '`appId` 用来让一个 MEM9_API_KEY 承载多个彼此隔离的子记忆空间，例如不同应用、Agent、环境或产品场景。写入时带 `appId: "docs"` 的 memory 或 raw session 会关联到该 appId；省略、null、空字符串或纯空白 `appId` 的写入会归到默认/global appId。',
+              '查询时，不传 `appId` 表示跨该 API key 下的全部 appId 全局搜索；传非空 `appId` 表示只查这个精确子空间；传 `appId=null` 或 `appId=` 表示只查默认/global appId。appId 隔离不会改变 API key 的归属、权限、quota 或计费，只影响 memory/session 的写入归属和读取过滤。',
             ],
           },
           {
@@ -1148,6 +1182,12 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       ],
       tocTitle: '目次',
     },
+    search: {
+      label: 'ドキュメントを検索',
+      placeholder: 'ナビゲーションまたは本文を検索',
+      empty: '一致するドキュメントがありません。',
+    },
+    backToTopLabel: 'ページ上部へ戻る',
     tocGroups: [
       {
         title: 'はじめに',
@@ -1573,6 +1613,12 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       ],
       tocTitle: '목차',
     },
+    search: {
+      label: '문서 검색',
+      placeholder: '내비게이션 또는 본문 검색',
+      empty: '일치하는 문서가 없습니다.',
+    },
+    backToTopLabel: '맨 위로 이동',
     tocGroups: [
       {
         title: '시작하기',
@@ -1998,6 +2044,12 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       ],
       tocTitle: 'Daftar isi',
     },
+    search: {
+      label: 'Cari dokumentasi',
+      placeholder: 'Cari navigasi atau isi',
+      empty: 'Tidak ada dokumen yang cocok.',
+    },
+    backToTopLabel: 'Kembali ke atas',
     tocGroups: [
       {
         title: 'Memulai',
@@ -2429,6 +2481,12 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       ],
       tocTitle: 'สารบัญ',
     },
+    search: {
+      label: 'ค้นหาเอกสาร',
+      placeholder: 'ค้นหาในเมนูหรือเนื้อหา',
+      empty: 'ไม่พบเอกสารที่ตรงกัน',
+    },
+    backToTopLabel: 'กลับขึ้นด้านบน',
     tocGroups: [
       {
         title: 'เริ่มต้นใช้งาน',

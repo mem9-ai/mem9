@@ -27,7 +27,7 @@ func TestSessionRepoListFiltersAndPaginates(t *testing.T) {
 		},
 		{
 			mustContain: []string{
-				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at",
+				"SELECT id, session_id, agent_id, app_id, source, seq, role, content, content_type, tags, state, created_at",
 				"FROM sessions WHERE state = ? AND agent_id = ? AND session_id = ? AND source = ? AND JSON_CONTAINS(tags, ?)",
 				"ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
 			},
@@ -63,11 +63,54 @@ func TestSessionRepoListFiltersAndPaginates(t *testing.T) {
 	}
 }
 
+func TestSessionRepoListSortsByContent(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	db := newScriptedTestDB(t, []*queryExpectation{
+		{
+			mustContain: []string{
+				"SELECT COUNT(*) FROM sessions WHERE state = 'active'",
+			},
+			rows: &scriptedRows{
+				columns: []string{"COUNT(*)"},
+				values:  [][]driver.Value{{int64(1)}},
+			},
+		},
+		{
+			mustContain: []string{
+				"SELECT id, session_id, agent_id, app_id, source, seq, role, content, content_type, tags, state, created_at",
+				"FROM sessions WHERE state = 'active'",
+				"ORDER BY content ASC, id ASC LIMIT ? OFFSET ?",
+			},
+			wantArgs: []any{int64(5), int64(0)},
+			rows: &scriptedRows{
+				columns: sessionColumns(),
+				values: [][]driver.Value{
+					sessionRow("s-1", "sess-1", "agent-1", "chat", 1, "assistant", "alpha", []byte(`[]`), "active", now),
+				},
+			},
+		},
+	})
+	defer db.Close()
+
+	repo := NewSessionRepo(db, "", false, "cluster-1")
+	memories, total, err := repo.List(context.Background(), domain.MemoryFilter{
+		SortBy:  "content",
+		SortDir: "asc",
+		Limit:   5,
+	})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if total != 1 || len(memories) != 1 || memories[0].ID != "s-1" {
+		t.Fatalf("page = total:%d memories:%+v, want one s-1", total, memories)
+	}
+}
+
 func TestSessionRepoGetByIDMissingTableReturnsNotFound(t *testing.T) {
 	db := newScriptedTestDB(t, []*queryExpectation{
 		{
 			mustContain: []string{
-				"SELECT id, session_id, agent_id, source, seq, role, content, content_type, tags, state, created_at",
+				"SELECT id, session_id, agent_id, app_id, source, seq, role, content, content_type, tags, state, created_at",
 				"FROM sessions WHERE id = ? AND state = 'active'",
 			},
 			wantArgs: []any{"missing-session-row"},
@@ -111,6 +154,7 @@ func TestFillSessionMemory_SetsMemoryType(t *testing.T) {
 		&m,
 		sql.NullString{String: "sess-1", Valid: true},
 		sql.NullString{String: "agent-a", Valid: true},
+		sql.NullString{String: "", Valid: true},
 		sql.NullString{String: "src", Valid: true},
 		sql.NullString{String: "user", Valid: true},
 		sql.NullString{String: "text", Valid: true},
@@ -131,6 +175,7 @@ func TestFillSessionMemory_PopulatesFields(t *testing.T) {
 		&m,
 		sql.NullString{String: "sess-1", Valid: true},
 		sql.NullString{String: "agent-a", Valid: true},
+		sql.NullString{String: "chat-app", Valid: true},
 		sql.NullString{String: "src", Valid: true},
 		sql.NullString{String: "user", Valid: true},
 		sql.NullString{String: "text", Valid: true},
@@ -144,6 +189,9 @@ func TestFillSessionMemory_PopulatesFields(t *testing.T) {
 	}
 	if result.AgentID != "agent-a" {
 		t.Errorf("AgentID = %q, want %q", result.AgentID, "agent-a")
+	}
+	if result.AppID != "chat-app" {
+		t.Errorf("AppID = %q, want %q", result.AppID, "chat-app")
 	}
 	if result.State != domain.StateActive {
 		t.Errorf("State = %q, want %q", result.State, domain.StateActive)

@@ -18,6 +18,7 @@ const TenantMemorySchemaBase = `CREATE TABLE IF NOT EXISTS memories (
     memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned',
     agent_id        VARCHAR(100)    NULL,
     session_id      VARCHAR(100)    NULL,
+    app_id          VARCHAR(100)    NOT NULL DEFAULT '',
     state           VARCHAR(20)     NOT NULL DEFAULT 'active',
     version         INT             DEFAULT 1,
     updated_by      VARCHAR(100),
@@ -29,6 +30,7 @@ const TenantMemorySchemaBase = `CREATE TABLE IF NOT EXISTS memories (
     INDEX idx_state               (state),
     INDEX idx_agent               (agent_id),
     INDEX idx_session             (session_id),
+    INDEX idx_app                 (app_id),
     INDEX idx_updated             (updated_at)
 )`
 
@@ -43,6 +45,7 @@ const TenantMemorySchemaPostgres = `CREATE TABLE IF NOT EXISTS memories (
     memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned',
     agent_id        VARCHAR(100)    NULL,
     session_id      VARCHAR(100)    NULL,
+    app_id          VARCHAR(100)    NOT NULL DEFAULT '',
     state           VARCHAR(20)     NOT NULL DEFAULT 'active',
     version         INT             DEFAULT 1,
     updated_by      VARCHAR(100),
@@ -55,6 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_source ON memories(source);
 CREATE INDEX IF NOT EXISTS idx_state ON memories(state);
 CREATE INDEX IF NOT EXISTS idx_agent ON memories(agent_id);
 CREATE INDEX IF NOT EXISTS idx_session ON memories(session_id);
+CREATE INDEX IF NOT EXISTS idx_app ON memories(app_id);
 CREATE INDEX IF NOT EXISTS idx_updated ON memories(updated_at);
 CREATE OR REPLACE FUNCTION update_updated_at() RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_memories_updated ON memories;
@@ -72,6 +76,7 @@ const TenantMemorySchemaDB9Base = `CREATE TABLE IF NOT EXISTS memories (
     memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned',
     agent_id        VARCHAR(100)    NULL,
     session_id      VARCHAR(100)    NULL,
+    app_id          VARCHAR(100)    NOT NULL DEFAULT '',
     state           VARCHAR(20)     NOT NULL DEFAULT 'active',
     version         INT             DEFAULT 1,
     updated_by      VARCHAR(100),
@@ -84,6 +89,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_source ON memories(source);
 CREATE INDEX IF NOT EXISTS idx_memory_state ON memories(state);
 CREATE INDEX IF NOT EXISTS idx_memory_agent ON memories(agent_id);
 CREATE INDEX IF NOT EXISTS idx_memory_session ON memories(session_id);
+CREATE INDEX IF NOT EXISTS idx_memory_app ON memories(app_id);
 CREATE INDEX IF NOT EXISTS idx_memory_updated ON memories(updated_at);
 CREATE OR REPLACE FUNCTION update_updated_at() RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = NOW(); RETURN NEW; END; $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_memories_updated ON memories;
@@ -132,6 +138,7 @@ const TenantSessionsSchemaBase = `CREATE TABLE IF NOT EXISTS sessions (
     id           VARCHAR(36)     PRIMARY KEY,
     session_id   VARCHAR(100)    NULL,
     agent_id     VARCHAR(100)    NULL,
+    app_id       VARCHAR(100)    NOT NULL DEFAULT '',
     source       VARCHAR(100)    NULL,
     seq          INT             NOT NULL,
     role         VARCHAR(20)     NOT NULL,
@@ -145,9 +152,10 @@ const TenantSessionsSchemaBase = `CREATE TABLE IF NOT EXISTS sessions (
     updated_at   TIMESTAMP       DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX        idx_sessions_session (session_id),
     INDEX        idx_sessions_agent   (agent_id),
+    INDEX        idx_sessions_app     (app_id),
     INDEX        idx_sessions_state   (state),
     INDEX        idx_sessions_created (created_at),
-    UNIQUE INDEX idx_sessions_dedup   (session_id, content_hash)
+    UNIQUE INDEX idx_sessions_dedup   (app_id, session_id, content_hash)
 )`
 
 // BuildSessionsSchema builds the TiDB sessions schema with optional auto-embedding.
@@ -182,6 +190,12 @@ func InitTiDBTenantSchema(ctx context.Context, db *sql.DB, autoModel string, aut
 	if err := ensureTable(ctx, db, "memories", BuildMemorySchema(autoModel, autoDims, clientDims)); err != nil {
 		return fmt.Errorf("init schema: memories table: %w", err)
 	}
+	if err := ensureColumn(ctx, db, "memories", "app_id", "VARCHAR(100) NOT NULL DEFAULT ''"); err != nil {
+		return fmt.Errorf("init schema: memories app_id column: %w", err)
+	}
+	if err := ensurePlainIndex(ctx, db, "memories", "idx_app", "app_id"); err != nil {
+		return fmt.Errorf("init schema: memories app_id index: %w", err)
+	}
 	if err := ensureVectorIndex(ctx, db, "memories", "idx_cosine"); err != nil {
 		return fmt.Errorf("init schema: memories vector index: %w", err)
 	}
@@ -194,6 +208,15 @@ func InitTiDBTenantSchema(ctx context.Context, db *sql.DB, autoModel string, aut
 	if err := ensureTable(ctx, db, "sessions", BuildSessionsSchema(autoModel, autoDims, clientDims)); err != nil {
 		return fmt.Errorf("init schema: sessions table: %w", err)
 	}
+	if err := ensureColumn(ctx, db, "sessions", "app_id", "VARCHAR(100) NOT NULL DEFAULT ''"); err != nil {
+		return fmt.Errorf("init schema: sessions app_id column: %w", err)
+	}
+	if err := ensurePlainIndex(ctx, db, "sessions", "idx_sessions_app", "app_id"); err != nil {
+		return fmt.Errorf("init schema: sessions app_id index: %w", err)
+	}
+	if err := ensureSessionsDedupIndex(ctx, db); err != nil {
+		return fmt.Errorf("init schema: sessions app_id dedup index: %w", err)
+	}
 	if err := ensureVectorIndex(ctx, db, "sessions", "idx_sessions_cosine"); err != nil {
 		return fmt.Errorf("init schema: sessions vector index: %w", err)
 	}
@@ -203,6 +226,118 @@ func InitTiDBTenantSchema(ctx context.Context, db *sql.DB, autoModel string, aut
 		}
 	}
 	return nil
+}
+
+func ensureColumn(ctx context.Context, db *sql.DB, table, column, definition string) error {
+	exists, err := ColumnExists(ctx, db, table, column)
+	if err != nil {
+		return fmt.Errorf("check column: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN %s %s",
+		table, column, definition,
+	)); err != nil && !IsDuplicateColumnError(err) {
+		return fmt.Errorf("add column: %w", err)
+	}
+	return nil
+}
+
+func ensurePlainIndex(ctx context.Context, db *sql.DB, table, indexName, columns string) error {
+	exists, err := IndexExists(ctx, db, table, indexName)
+	if err != nil {
+		return fmt.Errorf("check index: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(
+		"CREATE INDEX %s ON %s(%s)",
+		indexName, table, columns,
+	)); err != nil && !IsIndexExistsError(err) {
+		return fmt.Errorf("create index: %w", err)
+	}
+	return nil
+}
+
+func ensureSessionsDedupIndex(ctx context.Context, db *sql.DB) error {
+	columns, err := indexColumns(ctx, db, "sessions", "idx_sessions_dedup")
+	if err != nil {
+		return fmt.Errorf("check dedup index columns: %w", err)
+	}
+	if strings.Join(columns, ",") == "app_id,session_id,content_hash" {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE sessions DROP INDEX idx_sessions_dedup`); err != nil && !IsIndexNotFoundError(err) {
+		return fmt.Errorf("drop old dedup index: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE sessions ADD UNIQUE INDEX idx_sessions_dedup (app_id, session_id, content_hash)`); err != nil && !IsIndexExistsError(err) {
+		return fmt.Errorf("add app scoped dedup index: %w", err)
+	}
+	return nil
+}
+
+func indexColumns(ctx context.Context, db *sql.DB, table, indexName string) ([]string, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT COLUMN_NAME
+		   FROM information_schema.STATISTICS
+		  WHERE TABLE_SCHEMA = DATABASE()
+		    AND TABLE_NAME = ?
+		    AND INDEX_NAME = ?
+		  ORDER BY SEQ_IN_INDEX`,
+		table, indexName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var columns []string
+	for rows.Next() {
+		var column string
+		if err := rows.Scan(&column); err != nil {
+			return nil, err
+		}
+		columns = append(columns, column)
+	}
+	return columns, rows.Err()
+}
+
+// EnsureMemoryAppIDSchema completes the app-scoped memory schema for existing tenants.
+func EnsureMemoryAppIDSchema(ctx context.Context, db *sql.DB) error {
+	if err := ensureColumn(ctx, db, "memories", "app_id", "VARCHAR(100) NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	return ensurePlainIndex(ctx, db, "memories", "idx_app", "app_id")
+}
+
+// EnsurePostgresMemoryAppIDSchema completes the app-scoped memory schema for
+// PostgreSQL-compatible tenant databases.
+func EnsurePostgresMemoryAppIDSchema(ctx context.Context, db *sql.DB, backend string) error {
+	if _, err := db.ExecContext(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS app_id VARCHAR(100) NOT NULL DEFAULT ''`); err != nil {
+		return fmt.Errorf("memories app_id column: %w", err)
+	}
+	indexName := "idx_app"
+	if backend == "db9" {
+		indexName = "idx_memory_app"
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON memories(app_id)`, indexName)); err != nil {
+		return fmt.Errorf("memories app_id index: %w", err)
+	}
+	return nil
+}
+
+// EnsureSessionsAppIDSchema completes the app-scoped raw session schema for existing tenants.
+func EnsureSessionsAppIDSchema(ctx context.Context, db *sql.DB) error {
+	if err := ensureColumn(ctx, db, "sessions", "app_id", "VARCHAR(100) NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensurePlainIndex(ctx, db, "sessions", "idx_sessions_app", "app_id"); err != nil {
+		return err
+	}
+	return ensureSessionsDedupIndex(ctx, db)
 }
 
 func ensureTable(ctx context.Context, db *sql.DB, table, createSQL string) error {

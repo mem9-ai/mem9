@@ -17,12 +17,16 @@ type stubSessionRepo struct {
 
 	patchTagsCalled bool
 	patchTagsErr    error
+	patchedAppID    string
 	patchedSession  string
 	patchedHash     string
 	patchedTags     []string
 
 	keywordResults []domain.Memory
 	keywordErr     error
+	keywordQuery   string
+	keywordFilter  domain.MemoryFilter
+	keywordLimit   int
 	ftsResults     []domain.Memory
 	ftsErr         error
 	vecResults     []domain.Memory
@@ -31,8 +35,10 @@ type stubSessionRepo struct {
 	autoVecErr     error
 	ftsAvail       bool
 	sessionRows    []*domain.Session
+	listAppID      *string
 	listSessionIDs []string
 	listLimit      int
+	listCalls      []sessionListCall
 	getResult      *domain.Memory
 	getErr         error
 	listResults    []domain.Memory
@@ -40,6 +46,12 @@ type stubSessionRepo struct {
 	listFilter     domain.MemoryFilter
 	softDeleteID   string
 	bulkDeleteIDs  []string
+}
+
+type sessionListCall struct {
+	ids   []string
+	appID *string
+	limit int
 }
 
 func intPtr(v int) *int {
@@ -52,8 +64,9 @@ func (s *stubSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Sessi
 	return s.bulkCreateErr
 }
 
-func (s *stubSessionRepo) PatchTags(_ context.Context, sessionID, contentHash string, tags []string) error {
+func (s *stubSessionRepo) PatchTags(_ context.Context, appID, sessionID, contentHash string, tags []string) error {
 	s.patchTagsCalled = true
+	s.patchedAppID = appID
 	s.patchedSession = sessionID
 	s.patchedHash = contentHash
 	s.patchedTags = tags
@@ -91,15 +104,33 @@ func (s *stubSessionRepo) FTSSearch(_ context.Context, _ string, _ domain.Memory
 	return s.ftsResults, s.ftsErr
 }
 
-func (s *stubSessionRepo) KeywordSearch(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+func (s *stubSessionRepo) KeywordSearch(_ context.Context, query string, filter domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+	s.keywordQuery = query
+	s.keywordFilter = filter
+	s.keywordLimit = limit
 	return s.keywordResults, s.keywordErr
 }
 
 func (s *stubSessionRepo) FTSAvailable() bool { return s.ftsAvail }
 
-func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, ids []string, limit int) ([]*domain.Session, error) {
+func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, ids []string, appID *string, limit int) ([]*domain.Session, error) {
+	if appID != nil {
+		v := *appID
+		s.listAppID = &v
+	} else {
+		s.listAppID = nil
+	}
 	s.listSessionIDs = append([]string(nil), ids...)
 	s.listLimit = limit
+	call := sessionListCall{
+		ids:   append([]string(nil), ids...),
+		limit: limit,
+	}
+	if appID != nil {
+		v := *appID
+		call.appID = &v
+	}
+	s.listCalls = append(s.listCalls, call)
 	return append([]*domain.Session(nil), s.sessionRows...), nil
 }
 
@@ -114,6 +145,7 @@ func TestSessionService_BulkCreate_buildsCorrectSessions(t *testing.T) {
 	req := IngestRequest{
 		SessionID: "sess-1",
 		AgentID:   "agent-x",
+		AppID:     "chat-app",
 		Messages: []IngestMessage{
 			{Role: "user", Content: "Hello world"},
 			{Role: "assistant", Content: "Hi there"},
@@ -137,6 +169,9 @@ func TestSessionService_BulkCreate_buildsCorrectSessions(t *testing.T) {
 	}
 	if s0.AgentID != "agent-x" {
 		t.Errorf("session[0].AgentID = %q, want %q", s0.AgentID, "agent-x")
+	}
+	if s0.AppID != "chat-app" {
+		t.Errorf("session[0].AppID = %q, want %q", s0.AppID, "chat-app")
 	}
 	if s0.Role != "user" {
 		t.Errorf("session[0].Role = %q, want %q", s0.Role, "user")
@@ -224,7 +259,7 @@ func TestSessionService_PatchTags_delegates(t *testing.T) {
 	svc := newTestSessionService(repo)
 
 	tags := []string{"tech", "question"}
-	if err := svc.PatchTags(context.Background(), "sess-1", "hashval", tags); err != nil {
+	if err := svc.PatchTags(context.Background(), "chat-app", "sess-1", "hashval", tags); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -233,6 +268,9 @@ func TestSessionService_PatchTags_delegates(t *testing.T) {
 	}
 	if repo.patchedSession != "sess-1" {
 		t.Errorf("patchedSession = %q, want %q", repo.patchedSession, "sess-1")
+	}
+	if repo.patchedAppID != "chat-app" {
+		t.Errorf("patchedAppID = %q, want %q", repo.patchedAppID, "chat-app")
 	}
 	if repo.patchedHash != "hashval" {
 		t.Errorf("patchedHash = %q, want %q", repo.patchedHash, "hashval")
@@ -247,7 +285,7 @@ func TestSessionService_PatchTags_propagatesError(t *testing.T) {
 	repo := &stubSessionRepo{patchTagsErr: sentinel}
 	svc := newTestSessionService(repo)
 
-	err := svc.PatchTags(context.Background(), "s", "h", []string{"t"})
+	err := svc.PatchTags(context.Background(), "", "s", "h", []string{"t"})
 	if !errors.Is(err, sentinel) {
 		t.Errorf("expected sentinel error, got %v", err)
 	}
@@ -276,6 +314,41 @@ func TestSessionService_Search_keywordPath_returnsSessionType(t *testing.T) {
 	}
 	if results[0].MemoryType != domain.TypeSession {
 		t.Errorf("memory_type = %q, want %q", results[0].MemoryType, domain.TypeSession)
+	}
+}
+
+func TestSessionService_ContentKeywordSearchBypassesFTS(t *testing.T) {
+	memories := []domain.Memory{
+		{ID: "s1", Content: "old mem9小组 session", MemoryType: domain.TypeSession, State: domain.StateActive},
+		{ID: "s2", Content: "new mem9小组 session", MemoryType: domain.TypeSession, State: domain.StateActive},
+	}
+	repo := &stubSessionRepo{
+		keywordResults: memories,
+		ftsAvail:       true,
+	}
+	svc := newTestSessionService(repo)
+
+	results, total, err := svc.ContentKeywordSearch(context.Background(), domain.MemoryFilter{
+		Query:     "mem9小组",
+		Source:    "console",
+		SessionID: "session-1",
+		Limit:     1,
+		Offset:    1,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 2 || len(results) != 1 || results[0].ID != "s2" {
+		t.Fatalf("unexpected page: total=%d results=%+v", total, results)
+	}
+	if repo.keywordQuery != "mem9小组" {
+		t.Fatalf("keyword query = %q, want mem9小组", repo.keywordQuery)
+	}
+	if repo.keywordFilter.Source != "console" || repo.keywordFilter.SessionID != "session-1" {
+		t.Fatalf("keyword filter = %+v", repo.keywordFilter)
+	}
+	if repo.keywordLimit != 3 {
+		t.Fatalf("keyword limit = %d, want 3", repo.keywordLimit)
 	}
 }
 
@@ -392,6 +465,66 @@ func TestSessionService_SearchCandidates_ExpandsAdjacentTurns(t *testing.T) {
 	}
 }
 
+func TestSessionService_SearchCandidates_AdjacentTurnsUseSeedAppID(t *testing.T) {
+	now := time.Now()
+	repo := &stubSessionRepo{
+		keywordResults: []domain.Memory{
+			{
+				ID:         "s-question",
+				SessionID:  "sess-1",
+				AppID:      "app-a",
+				Content:    "Which company do you like the most these days?",
+				MemoryType: domain.TypeSession,
+				Metadata:   json.RawMessage(`{"role":"user","seq":7,"content_type":"text"}`),
+				UpdatedAt:  now,
+				State:      domain.StateActive,
+			},
+		},
+		sessionRows: []*domain.Session{
+			{ID: "s-question", SessionID: "sess-1", AppID: "app-a", Seq: 7, Role: "user", Content: "Which company do you like the most these days?", ContentType: "text", State: domain.StateActive, CreatedAt: now.Add(-1 * time.Minute), UpdatedAt: now.Add(-1 * time.Minute)},
+			{ID: "s-answer", SessionID: "sess-1", AppID: "app-a", Seq: 8, Role: "assistant", Content: `Definitely "Under Armour" right now.`, ContentType: "text", State: domain.StateActive, CreatedAt: now, UpdatedAt: now},
+		},
+	}
+	svc := newTestSessionService(repo)
+
+	candidates, err := svc.SearchCandidates(context.Background(), domain.MemoryFilter{Query: "What company does John like?", Limit: 5}, RecallSourceSession, RecallCandidateOptions{
+		EnableAdjacentTurns: true,
+		AdjacentTurnRadius:  1,
+		AdjacentTurnTopN:    2,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 2 {
+		t.Fatalf("expected 2 candidates, got %d", len(candidates))
+	}
+	if repo.listAppID == nil || *repo.listAppID != "app-a" {
+		t.Fatalf("expected ListBySessionIDs to scope app-a, got %#v", repo.listAppID)
+	}
+}
+
+func TestAdjacentTurnMemoriesSeparatesSharedSessionIDByAppID(t *testing.T) {
+	now := time.Now()
+	seeds := []RecallCandidate{
+		{
+			Memory: domain.Memory{
+				ID:        "app-a-question",
+				SessionID: "shared-session",
+				AppID:     "app-a",
+			},
+		},
+	}
+	sessions := []*domain.Session{
+		{ID: "app-a-question", SessionID: "shared-session", AppID: "app-a", Seq: 1, Role: "user", Content: "question", ContentType: "text", State: domain.StateActive, CreatedAt: now, UpdatedAt: now},
+		{ID: "app-b-answer", SessionID: "shared-session", AppID: "app-b", Seq: 2, Role: "assistant", Content: "wrong app answer", ContentType: "text", State: domain.StateActive, CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second)},
+	}
+
+	got := adjacentTurnMemories(seeds, sessions, 1)
+	if len(got) != 0 {
+		t.Fatalf("expected no adjacent memories from another app, got %+v", got)
+	}
+}
+
 func TestSessionContentHash_differentInputsProduceDifferentHashes(t *testing.T) {
 	cases := [][2]string{
 		{"sess-a role-user content-x", "sess-a role-user content-y"},
@@ -431,8 +564,8 @@ type capturingSessionRepo struct {
 func (c *capturingSessionRepo) BulkCreate(ctx context.Context, s []*domain.Session) error {
 	return c.stub.BulkCreate(ctx, s)
 }
-func (c *capturingSessionRepo) PatchTags(ctx context.Context, sid, hash string, tags []string) error {
-	return c.stub.PatchTags(ctx, sid, hash, tags)
+func (c *capturingSessionRepo) PatchTags(ctx context.Context, appID, sid, hash string, tags []string) error {
+	return c.stub.PatchTags(ctx, appID, sid, hash, tags)
 }
 func (c *capturingSessionRepo) GetByID(ctx context.Context, id string) (*domain.Memory, error) {
 	return c.stub.GetByID(ctx, id)
@@ -464,6 +597,6 @@ func (c *capturingSessionRepo) KeywordSearch(ctx context.Context, q string, f do
 }
 func (c *capturingSessionRepo) FTSAvailable() bool { return c.stub.FTSAvailable() }
 
-func (c *capturingSessionRepo) ListBySessionIDs(ctx context.Context, ids []string, limit int) ([]*domain.Session, error) {
-	return c.stub.ListBySessionIDs(ctx, ids, limit)
+func (c *capturingSessionRepo) ListBySessionIDs(ctx context.Context, ids []string, appID *string, limit int) ([]*domain.Session, error) {
+	return c.stub.ListBySessionIDs(ctx, ids, appID, limit)
 }

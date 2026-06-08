@@ -338,9 +338,36 @@ func (s *TenantService) GetInfo(ctx context.Context, tenantID string) (*domain.T
 	}, nil
 }
 
+func (s *TenantService) EnsureAppIDSchema(ctx context.Context, db *sql.DB) error {
+	backend := "tidb"
+	if s.pool != nil {
+		backend = s.pool.Backend()
+	}
+	switch backend {
+	case "tidb":
+		if err := tenant.EnsureMemoryAppIDSchema(ctx, db); err != nil {
+			return fmt.Errorf("ensure app_id schema: memories: %w", err)
+		}
+		if err := s.EnsureSessionsTable(ctx, db); err != nil {
+			return fmt.Errorf("ensure app_id schema: sessions: %w", err)
+		}
+		return nil
+	case "postgres", "db9":
+		if err := tenant.EnsurePostgresMemoryAppIDSchema(ctx, db, backend); err != nil {
+			return fmt.Errorf("ensure app_id schema: memories: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("ensure app_id schema: unsupported backend %q", backend)
+	}
+}
+
 func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, tenant.BuildSessionsSchema(s.autoModel, s.autoDims, s.clientDims)); err != nil {
 		return fmt.Errorf("ensure sessions table: create: %w", err)
+	}
+	if err := tenant.EnsureSessionsAppIDSchema(ctx, db); err != nil {
+		return fmt.Errorf("ensure sessions table: app_id schema: %w", err)
 	}
 	if s.autoModel != "" {
 		exists, err := tenant.IndexExists(ctx, db, "sessions", "idx_sessions_cosine")

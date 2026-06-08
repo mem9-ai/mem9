@@ -31,7 +31,7 @@ func NewMemoryRepo(db *sql.DB, ftsEnabled bool, clusterID string) *MemoryRepo {
 
 func (r *MemoryRepo) FTSAvailable() bool { return r.ftsAvailable.Load() }
 
-const allColumns = `id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at, superseded_by`
+const allColumns = `id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, app_id, state, version, updated_by, created_at, updated_at, superseded_by`
 
 func (r *MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
 	tagsJSON := marshalTags(m.Tags)
@@ -40,10 +40,10 @@ func (r *MemoryRepo) Create(ctx context.Context, m *domain.Memory) error {
 		memoryType = string(domain.TypePinned)
 	}
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO memories (id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, NOW(), NOW())`,
+		`INSERT INTO memories (id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, app_id, state, version, updated_by, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, NOW(), NOW())`,
 		m.ID, m.Content, nullString(m.Source),
-		tagsJSON, nullJSON(m.Metadata), vecToParam(m.Embedding), memoryType, nullString(m.AgentID), nullString(m.SessionID),
+		tagsJSON, nullJSON(m.Metadata), vecToParam(m.Embedding), memoryType, nullString(m.AgentID), nullString(m.SessionID), m.AppID,
 		m.Version, nullString(m.UpdatedBy),
 	)
 	if err != nil {
@@ -183,10 +183,10 @@ func (r *MemoryRepo) ArchiveAndCreate(ctx context.Context, archiveID, superseded
 	}
 
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO memories (id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, NOW(), NOW())`,
+		`INSERT INTO memories (id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, app_id, state, version, updated_by, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, NOW(), NOW())`,
 		newMem.ID, newMem.Content, nullString(newMem.Source),
-		tagsJSON, nullJSON(newMem.Metadata), vecToParam(newMem.Embedding), memoryType, nullString(newMem.AgentID), nullString(newMem.SessionID),
+		tagsJSON, nullJSON(newMem.Metadata), vecToParam(newMem.Embedding), memoryType, nullString(newMem.AgentID), nullString(newMem.SessionID), newMem.AppID,
 		newMem.Version, nullString(newMem.UpdatedBy),
 	)
 	if err != nil {
@@ -328,10 +328,10 @@ func (r *MemoryRepo) BulkCreate(ctx context.Context, memories []*domain.Memory) 
 			memoryType = string(domain.TypePinned)
 		}
 		_, execErr := tx.ExecContext(ctx,
-			`INSERT INTO memories (id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, state, version, updated_by, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, NOW(), NOW())`,
+			`INSERT INTO memories (id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, app_id, state, version, updated_by, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, NOW(), NOW())`,
 			m.ID, m.Content, nullString(m.Source),
-			tagsJSON, nullJSON(m.Metadata), vecToParam(m.Embedding), memoryType, nullString(m.AgentID), nullString(m.SessionID),
+			tagsJSON, nullJSON(m.Metadata), vecToParam(m.Embedding), memoryType, nullString(m.AgentID), nullString(m.SessionID), m.AppID,
 			m.Version, nullString(m.UpdatedBy),
 		)
 		if execErr != nil {
@@ -514,6 +514,11 @@ func (r *MemoryRepo) BuildFilterConds(f domain.MemoryFilter) ([]string, []any) {
 		args = append(args, f.SessionID)
 		paramIdx++
 	}
+	if f.AppID != nil {
+		conds = append(conds, fmt.Sprintf("app_id = $%d", paramIdx))
+		args = append(args, *f.AppID)
+		paramIdx++
+	}
 	if f.Source != "" {
 		conds = append(conds, fmt.Sprintf("source = $%d", paramIdx))
 		args = append(args, f.Source)
@@ -538,12 +543,12 @@ func (r *MemoryRepo) BuildFilterConds(f domain.MemoryFilter) ([]string, []any) {
 
 func scanMemory(row *sql.Row) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, memoryType, agentID, sessionID, appID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON []byte
 	var embeddingStr sql.NullString
 
 	err := row.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &appID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy)
 	if err == sql.ErrNoRows {
 		return nil, domain.ErrNotFound
@@ -558,6 +563,7 @@ func scanMemory(row *sql.Row) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.AppID = appID.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive
@@ -571,12 +577,12 @@ func scanMemory(row *sql.Row) (*domain.Memory, error) {
 
 func scanMemoryRows(rows *sql.Rows) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, memoryType, agentID, sessionID, appID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON []byte
 	var embeddingStr sql.NullString
 
 	err := rows.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &appID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy)
 	if err != nil {
 		return nil, fmt.Errorf("scan memory row: %w", err)
@@ -588,6 +594,7 @@ func scanMemoryRows(rows *sql.Rows) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.AppID = appID.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive
@@ -601,13 +608,13 @@ func scanMemoryRows(rows *sql.Rows) (*domain.Memory, error) {
 
 func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, memoryType, agentID, sessionID, appID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON []byte
 	var embeddingStr sql.NullString
 	var distance float64
 
 	err := rows.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &appID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy,
 		&distance)
 	if err != nil {
@@ -620,6 +627,7 @@ func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.AppID = appID.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive
@@ -635,13 +643,13 @@ func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 
 func scanMemoryRowsWithFTSScore(rows *sql.Rows) (*domain.Memory, error) {
 	var m domain.Memory
-	var source, memoryType, agentID, sessionID, state, updatedBy, supersededBy sql.NullString
+	var source, memoryType, agentID, sessionID, appID, state, updatedBy, supersededBy sql.NullString
 	var tagsJSON, metadataJSON []byte
 	var embeddingStr sql.NullString
 	var ftsScore float64
 
 	err := rows.Scan(&m.ID, &m.Content, &source,
-		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &state, &m.Version, &updatedBy,
+		&tagsJSON, &metadataJSON, &embeddingStr, &memoryType, &agentID, &sessionID, &appID, &state, &m.Version, &updatedBy,
 		&m.CreatedAt, &m.UpdatedAt, &supersededBy,
 		&ftsScore)
 	if err != nil {
@@ -654,6 +662,7 @@ func scanMemoryRowsWithFTSScore(rows *sql.Rows) (*domain.Memory, error) {
 	}
 	m.AgentID = agentID.String
 	m.SessionID = sessionID.String
+	m.AppID = appID.String
 	m.State = domain.MemoryState(state.String)
 	if m.State == "" {
 		m.State = domain.StateActive
@@ -725,7 +734,7 @@ func isDuplicateKey(err error) bool {
 	return strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "duplicate key")
 }
 
-func (r *MemoryRepo) NearDupSearch(_ context.Context, _ string) (string, float64, error) {
+func (r *MemoryRepo) NearDupSearch(_ context.Context, _ string, _ domain.MemoryFilter) (string, float64, error) {
 	return "", 0, nil
 }
 

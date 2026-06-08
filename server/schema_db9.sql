@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS memories (
     memory_type     VARCHAR(20)     NOT NULL DEFAULT 'pinned',
     agent_id        VARCHAR(100)    NULL,
     session_id      VARCHAR(100)    NULL,
+    app_id          VARCHAR(100)    NOT NULL DEFAULT '',
     state           VARCHAR(20)     NOT NULL DEFAULT 'active',
     version         INT             DEFAULT 1,
     updated_by      VARCHAR(100),
@@ -131,6 +132,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_source ON memories(source);
 CREATE INDEX IF NOT EXISTS idx_memory_state ON memories(state);
 CREATE INDEX IF NOT EXISTS idx_memory_agent ON memories(agent_id);
 CREATE INDEX IF NOT EXISTS idx_memory_session ON memories(session_id);
+CREATE INDEX IF NOT EXISTS idx_memory_app ON memories(app_id);
 CREATE INDEX IF NOT EXISTS idx_memory_updated ON memories(updated_at);
 
 -- HNSW vector index for efficient ANN search

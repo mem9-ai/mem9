@@ -207,6 +207,66 @@ func TestBuildRecallConfidence_TimeFutureIntentPrefersPlannedFutureEvidence(t *t
 	}
 }
 
+func TestBuildRecallConfidence_AllowsKeywordOnlyInsightHits(t *testing.T) {
+	profile := buildRecallQueryProfile("Bosn")
+	candidate := service.RecallCandidate{
+		Memory: domain.Memory{
+			ID:         "m1",
+			Content:    "Flame loves Bosn",
+			MemoryType: domain.TypeInsight,
+			UpdatedAt:  time.Now(),
+		},
+		SourcePool: service.RecallSourceInsight,
+		RRFScore:   1.0 / 61.0,
+		InKeyword:  true,
+	}
+
+	confidence := buildRecallConfidence(profile, candidate)
+	if confidence < defaultMixedMinConfidence {
+		t.Fatalf("keyword-only insight confidence = %d, want >= %d", confidence, defaultMixedMinConfidence)
+	}
+}
+
+func TestBuildRecallConfidence_AllowsKeywordOnlyInsightQuestionHits(t *testing.T) {
+	profile := buildRecallQueryProfile("Does Bosn love Flame?")
+	candidate := service.RecallCandidate{
+		Memory: domain.Memory{
+			ID:         "m1",
+			Content:    "Bosn loves Flame",
+			MemoryType: domain.TypeInsight,
+			UpdatedAt:  time.Now(),
+		},
+		SourcePool: service.RecallSourceInsight,
+		RRFScore:   1.0 / 61.0,
+		InKeyword:  true,
+	}
+
+	confidence := buildRecallConfidence(profile, candidate)
+	if confidence < defaultMixedMinConfidence {
+		t.Fatalf("keyword-only insight question confidence = %d, want >= %d", confidence, defaultMixedMinConfidence)
+	}
+}
+
+func TestBuildRecallConfidence_AllowsKeywordOnlyPinnedIdentifierHits(t *testing.T) {
+	profile := buildRecallQueryProfile("codex-appid-e2e-20260602154502")
+	candidate := service.RecallCandidate{
+		Memory: domain.Memory{
+			ID:         "p1",
+			Content:    "codex-appid-e2e-20260602154502 isolated app B memory",
+			MemoryType: domain.TypePinned,
+			UpdatedAt:  time.Now(),
+		},
+		SourcePool: service.RecallSourcePinned,
+		RRFScore:   1.0 / 61.0,
+		InKeyword:  true,
+	}
+
+	confidence := buildRecallConfidence(profile, candidate)
+	if confidence < defaultPinnedMinConfidence {
+		t.Fatalf("keyword-only pinned identifier confidence = %d, want >= %d", confidence, defaultPinnedMinConfidence)
+	}
+}
+
 func TestRecallCandidateOptions_EnumerationExpandsAdjacentTurns(t *testing.T) {
 	opts := recallCandidateOptions(recallQueryShapeEnumeration, true)
 

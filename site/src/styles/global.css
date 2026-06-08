@@ -44,9 +44,10 @@
   --font-display: 'DM Sans', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
   --font-body: 'DM Sans', sans-serif;
-  --max-w: 1180px;
-  --content-rail: 768px;
-  --section-grid: 768px;
+  --page-gutter: clamp(1.5rem, 10vw, 9.75rem);
+  --max-w: 1200px;
+  --content-rail: 820px;
+  --section-grid: 100%;
 }
 
 html[data-theme='dark'] {
@@ -128,9 +129,17 @@ code {
 }
 
 .container {
-  max-width: var(--max-w);
+  width: min(var(--max-w), calc(100vw - (var(--page-gutter) * 2)));
+  max-width: none;
   margin: 0 auto;
-  padding: 0 1.5rem;
+  padding: 0;
+}
+
+@media (max-width: 900px) {
+  .container {
+    width: 100%;
+    padding: 0 1.5rem;
+  }
 }
 
 /* Section spacing */

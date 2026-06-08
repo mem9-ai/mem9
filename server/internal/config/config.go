@@ -15,6 +15,7 @@ type Config struct {
 	DSN       string
 	RateLimit float64
 	RateBurst int
+	Env       string
 
 	// DBBackend selects the database driver: "tidb" (default), "postgres", or "db9".
 	DBBackend string
@@ -130,6 +131,8 @@ type Config struct {
 	AutoSpendLimitCooldown  time.Duration
 
 	UTMEnabled bool
+
+	CORSAllowedOrigins []string
 }
 
 func Load() (*Config, error) {
@@ -174,9 +177,11 @@ func Load() (*Config, error) {
 		}
 	}
 
+	env := strings.ToLower(strings.TrimSpace(envOr("MNEMO_ENV", envOr("APP_ENV", "development"))))
 	cfg := &Config{
 		Port:                        envOr("MNEMO_PORT", "8080"),
 		DSN:                         dsn,
+		Env:                         env,
 		DBBackend:                   envOr("MNEMO_DB_BACKEND", "tidb"),
 		RateLimit:                   envFloat("MNEMO_RATE_LIMIT", 100),
 		RateBurst:                   envInt("MNEMO_RATE_BURST", 200),
@@ -231,6 +236,7 @@ func Load() (*Config, error) {
 		AutoSpendLimitMax:           envInt("MNEMO_AUTO_SPEND_LIMIT_MAX", 10000),
 		AutoSpendLimitCooldown:      envDuration("MNEMO_AUTO_SPEND_LIMIT_COOLDOWN", 1*time.Hour),
 		UTMEnabled:                  envBool("MNEMO_UTM_ENABLED", false),
+		CORSAllowedOrigins:          parseCSV(envOr("MNEMO_CORS_ALLOWED_ORIGINS", defaultCORSAllowedOrigins(env))),
 	}
 	// Validate ingest mode.
 	switch cfg.IngestMode {
@@ -270,6 +276,27 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func defaultCORSAllowedOrigins(env string) string {
+	switch env {
+	case "prod", "production":
+		return "https://mem9.ai"
+	default:
+		return "https://mem9.ai,http://localhost:4321,http://127.0.0.1:4321"
+	}
+}
+
+func parseCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func envOr(key, fallback string) string {

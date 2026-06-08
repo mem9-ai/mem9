@@ -275,7 +275,7 @@ func main() {
 		WithActivityTracker(activityTracker).
 		WithExternalContextProvider(externalContext).
 		WithDisableSessionSave(cfg.DisableSessionSave)
-	router := srv.Router(tenantMW, rateMW, apiKeyMW)
+	router := srv.Router(tenantMW, rateMW, apiKeyMW, middleware.CORS(cfg.CORSAllowedOrigins))
 
 	httpSrv := &http.Server{
 		Addr:         ":" + cfg.Port,
@@ -295,6 +295,8 @@ func main() {
 		embedder,
 		llmClient,
 		cfg.EmbedAutoModel,
+		cfg.EmbedAutoDims,
+		cfg.EmbedDims,
 		cfg.FTSEnabled,
 		service.IngestMode(cfg.IngestMode),
 		logger,

@@ -389,6 +389,53 @@ func TestSearchFTSOnlyWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestSearchFallsBackToLooseTokensWhenFTSQuestionHasNoRows(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	corpus := []domain.Memory{
+		{ID: "m-old", Content: "Bosn loves Flame", UpdatedAt: now.Add(-time.Minute), MemoryType: domain.TypeInsight, State: domain.StateActive},
+		{ID: "m-new", Content: "Flame loves Bosn", UpdatedAt: now, MemoryType: domain.TypeInsight, State: domain.StateActive},
+	}
+	var keywordQueries []string
+	memRepo := &memoryRepoMock{
+		ftsAvail: true,
+		ftsSearchHook: func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
+			return nil, nil
+		},
+		keywordSearchHook: func(_ context.Context, query string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			keywordQueries = append(keywordQueries, query)
+			query = strings.ToLower(query)
+			var matches []domain.Memory
+			for _, memory := range corpus {
+				if strings.Contains(strings.ToLower(memory.Content), query) {
+					matches = append(matches, memory)
+				}
+			}
+			return matches, nil
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "", ModeSmart)
+
+	results, total, err := svc.Search(context.Background(), domain.MemoryFilter{
+		Query: "Bosn loves Frame or not?",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+	if total != 2 || len(results) != 2 {
+		t.Fatalf("expected 2 loose-token results, got total=%d results=%d", total, len(results))
+	}
+	if results[0].ID != "m-new" || results[1].ID != "m-old" {
+		t.Fatalf("unexpected loose-token result order: %#v", results)
+	}
+	wantQueries := []string{"Bosn", "loves", "Frame"}
+	if strings.Join(keywordQueries, ",") != strings.Join(wantQueries, ",") {
+		t.Fatalf("keyword fallback queries = %#v, want %#v", keywordQueries, wantQueries)
+	}
+}
+
 // TestSearchEmptyQueryReturnsList verifies that Search() with empty query
 // delegates to List() instead of any search path.
 func TestSearchEmptyQueryReturnsList(t *testing.T) {
@@ -469,13 +516,52 @@ func TestSearchIgnoresSessionAndSourceFilters(t *testing.T) {
 	}
 }
 
+func TestContentKeywordSearchBypassesFTSAndVector(t *testing.T) {
+	t.Parallel()
+
+	memRepo := &memoryRepoMock{
+		ftsAvail: true,
+		kwResults: []domain.Memory{
+			{ID: "kw-1", Content: "mem9小组负责验证", MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+		ftsSearchHook: func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
+			t.Fatal("ContentKeywordSearch must not call FTS")
+			return nil, nil
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	results, total, err := svc.ContentKeywordSearch(context.Background(), domain.MemoryFilter{
+		Query:     "mem9小组",
+		Source:    "console",
+		SessionID: "session-1",
+		AgentID:   "agent-1",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("ContentKeywordSearch() error: %v", err)
+	}
+	if total != 1 || len(results) != 1 || results[0].ID != "kw-1" {
+		t.Fatalf("unexpected results: total=%d results=%+v", total, results)
+	}
+	if memRepo.lastKeywordFilter.Source != "console" {
+		t.Fatalf("expected Source filter preserved, got %q", memRepo.lastKeywordFilter.Source)
+	}
+	if memRepo.lastKeywordFilter.SessionID != "session-1" {
+		t.Fatalf("expected SessionID filter preserved, got %q", memRepo.lastKeywordFilter.SessionID)
+	}
+	if memRepo.lastAutoVectorFilter.Query != "" || memRepo.lastFTSFilter.Query != "" {
+		t.Fatalf("direct keyword search unexpectedly touched vector/FTS filters: auto=%+v fts=%+v", memRepo.lastAutoVectorFilter, memRepo.lastFTSFilter)
+	}
+}
+
 func TestCreateFallsBackToRawWhenLLMUnavailable(t *testing.T) {
 	t.Parallel()
 
 	repo := &memoryRepoMock{}
 	svc := NewMemoryService(repo, nil, nil, "", ModeSmart)
 
-	mem, _, err := svc.Create(context.Background(), "agent-1", "user prefers dark mode", []string{"prefs"}, json.RawMessage(`{"source":"manual"}`))
+	mem, _, err := svc.Create(context.Background(), "agent-1", "", "user prefers dark mode", []string{"prefs"}, json.RawMessage(`{"source":"manual"}`))
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -502,6 +588,7 @@ func TestCreatePinnedUsesBulkCreateSemantics(t *testing.T) {
 	mem, written, err := svc.CreatePinned(
 		context.Background(),
 		"agent-1",
+		"",
 		"user prefers pour-over coffee",
 		[]string{"preference", "coffee"},
 		json.RawMessage(`{"source":"manual"}`),
@@ -567,7 +654,7 @@ func TestCreateRunsReconcilePipeline(t *testing.T) {
 	repo := &memoryRepoMock{}
 	svc := NewMemoryService(repo, llmClient, nil, "auto-model", ModeSmart)
 
-	mem, _, err := svc.Create(context.Background(), "agent-1", "I use Go 1.22", nil, nil)
+	mem, _, err := svc.Create(context.Background(), "agent-1", "", "I use Go 1.22", nil, nil)
 	if err != nil {
 		t.Fatalf("Create() error: %v", err)
 	}

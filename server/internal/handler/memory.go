@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,6 +30,8 @@ type createMemoryRequest struct {
 	Content            string                  `json:"content,omitempty"`
 	MemoryType         string                  `json:"memory_type,omitempty"`
 	AgentID            string                  `json:"agent_id,omitempty"`
+	AppID              string                  `json:"appId,omitempty"`
+	AppIDLegacy        string                  `json:"app_id,omitempty"`
 	Tags               []string                `json:"tags,omitempty"`
 	Metadata           json.RawMessage         `json:"metadata,omitempty"`
 	Messages           []service.IngestMessage `json:"messages,omitempty"`
@@ -70,6 +73,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	if agentID == "" {
 		agentID = auth.AgentName
 	}
+	appID, err := appIDFromCreateRequest(req)
+	if err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
 
 	hasMessages := len(req.Messages) > 0
 	hasContent := strings.TrimSpace(req.Content) != ""
@@ -90,6 +98,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			Messages:           messages,
 			SessionID:          req.SessionID,
 			AgentID:            agentID,
+			AppID:              appID,
 			Mode:               req.Mode,
 			DisableSessionSave: s.disableSessionSave || req.DisableSessionSave,
 		}
@@ -261,7 +270,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			}()
 		}
 
-		mem, written, err := svc.memory.CreatePinned(r.Context(), agentID, content, tags, metadata)
+		mem, written, err := svc.memory.CreatePinned(r.Context(), agentID, appID, content, tags, metadata)
 		if err != nil {
 			if s.runtimeUsageEnabled() {
 				s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
@@ -324,7 +333,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		}
 		routingTargets := chainRoutingTargets(chainAuth)
 		if len(routingTargets) > 0 && svc.ingest.HasLLM() {
-			result, err := s.createSmartContentWithRouting(r.Context(), chainAuth, svc, routingTargets, auth.AgentName, agentID, req.SessionID, content, tags, metadata)
+			result, err := s.createSmartContentWithRouting(r.Context(), chainAuth, svc, routingTargets, auth.AgentName, agentID, appID, req.SessionID, content, tags, metadata)
 			if err != nil {
 				if s.runtimeUsageEnabled() {
 					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
@@ -373,7 +382,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
-		mem, written, err := svc.memory.Create(r.Context(), agentID, content, tags, metadata)
+		mem, written, err := svc.memory.Create(r.Context(), agentID, appID, content, tags, metadata)
 		if err != nil {
 			if s.runtimeUsageEnabled() {
 				s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
@@ -419,10 +428,10 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		routingTargets := chainRoutingTargets(chainAuth)
-		go func(auth, chainAuth *domain.AuthInfo, lease *runtimeusage.OperationLease, agentName, actorAgentID, sessionID, content string, tags []string, metadata json.RawMessage, routingTargets []service.RoutingTarget) {
+		go func(auth, chainAuth *domain.AuthInfo, lease *runtimeusage.OperationLease, agentName, actorAgentID, appID, sessionID, content string, tags []string, metadata json.RawMessage, routingTargets []service.RoutingTarget) {
 			// s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
 			if len(routingTargets) > 0 && svc.ingest.HasLLM() {
-				result, err := s.createSmartContentWithRouting(context.Background(), chainAuth, svc, routingTargets, agentName, actorAgentID, sessionID, content, tags, metadata)
+				result, err := s.createSmartContentWithRouting(context.Background(), chainAuth, svc, routingTargets, agentName, actorAgentID, appID, sessionID, content, tags, metadata)
 				if err != nil {
 					if s.runtimeUsageEnabled() {
 						s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
@@ -460,7 +469,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				s.afterSuccessfulWrite(auth, svc, written)
 				return
 			}
-			mem, written, err := svc.memory.Create(context.Background(), actorAgentID, content, tags, metadata)
+			mem, written, err := svc.memory.Create(context.Background(), actorAgentID, appID, content, tags, metadata)
 			if err != nil {
 				if s.runtimeUsageEnabled() {
 					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
@@ -492,7 +501,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			s.afterSuccessfulWrite(auth, svc, int64(written))
-		}(auth, chainAuth, lease, auth.AgentName, agentID, req.SessionID, content, tags, metadata, routingTargets)
+		}(auth, chainAuth, lease, auth.AgentName, agentID, appID, req.SessionID, content, tags, metadata, routingTargets)
 
 		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 	}
@@ -572,7 +581,7 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 					continue
 				}
 				hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content, msg.Seq)
-				if err := svc.session.PatchTags(ctx, req.SessionID, hash, tags); err != nil {
+				if err := svc.session.PatchTags(ctx, req.AppID, req.SessionID, hash, tags); err != nil {
 					slog.Warn("session tag patch failed",
 						"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
 				}
@@ -588,7 +597,7 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 			reconcileDuration = time.Since(reconcileStart)
 		}()
 		reconcileResult, reconcileErr = svc.ingest.ReconcilePhase2(
-			ctx, auth.AgentName, req.AgentID, req.SessionID, phase1.Facts)
+			ctx, auth.AgentName, req.AgentID, req.AppID, req.SessionID, phase1.Facts)
 	}()
 
 	wg.Wait()
@@ -620,7 +629,7 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	return reconcileResult, nil
 }
 
-func (s *Server) createSmartContentWithRouting(ctx context.Context, chainAuth *domain.AuthInfo, svc resolvedSvc, routingTargets []service.RoutingTarget, agentName, agentID, sessionID, content string, tags []string, metadata json.RawMessage) (*service.IngestResult, error) {
+func (s *Server) createSmartContentWithRouting(ctx context.Context, chainAuth *domain.AuthInfo, svc resolvedSvc, routingTargets []service.RoutingTarget, agentName, agentID, appID, sessionID, content string, tags []string, metadata json.RawMessage) (*service.IngestResult, error) {
 	facts, err := svc.ingest.ExtractContentWithRouting(ctx, content, routingTargets)
 	if err != nil {
 		return nil, err
@@ -628,7 +637,7 @@ func (s *Server) createSmartContentWithRouting(ctx context.Context, chainAuth *d
 	if len(facts) == 0 {
 		return &service.IngestResult{Status: "complete"}, nil
 	}
-	result, err := svc.ingest.ReconcilePhase2(ctx, agentName, agentID, sessionID, facts)
+	result, err := svc.ingest.ReconcilePhase2(ctx, agentName, agentID, appID, sessionID, facts)
 	if err != nil {
 		return nil, err
 	}
@@ -649,7 +658,7 @@ func (s *Server) createSmartContentWithRouting(ctx context.Context, chainAuth *d
 		result.MemoriesChanged += patchWrites
 	}
 
-	routed := s.reconcileRoutedChainFacts(ctx, chainAuth, service.IngestRequest{AgentID: agentID, SessionID: sessionID}, facts)
+	routed := s.reconcileRoutedChainFacts(ctx, chainAuth, service.IngestRequest{AgentID: agentID, AppID: appID, SessionID: sessionID}, facts)
 	result.MemoriesChanged += routed.memoriesChanged
 	result.InsightIDs = append(result.InsightIDs, routed.insightIDs...)
 	result.Warnings += routed.warnings
@@ -671,7 +680,11 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	auth := authInfo(r)
 	q := r.URL.Query()
 	rawQuery := q.Get("q")
-	query := normalizeRecallQuery(rawQuery, time.Now())
+	contentKeywordSearch := isContentKeywordSearch(q)
+	query := strings.TrimSpace(rawQuery)
+	if !contentKeywordSearch {
+		query = normalizeRecallQuery(rawQuery, time.Now())
+	}
 
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	offset, _ := strconv.Atoi(q.Get("offset"))
@@ -680,6 +693,11 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	}
 	if offset < 0 {
 		offset = 0
+	}
+	appIDFilter, err := parseAppIDFilter(q)
+	if err != nil {
+		s.handleError(r.Context(), w, err)
+		return
 	}
 
 	var tags []string
@@ -695,6 +713,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		MemoryType: q.Get("memory_type"),
 		AgentID:    q.Get("agent_id"),
 		SessionID:  q.Get("session_id"),
+		AppID:      appIDFilter,
 		SortBy:     q.Get("sort_by"),
 		SortDir:    q.Get("sort_dir"),
 		Limit:      limit,
@@ -705,11 +724,11 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 
 	var memories []domain.Memory
 	var total int
-	var err error
 	var recallLease *runtimeusage.OperationLease
 	recallFinalized := false
+	recallSearch := filter.Query != "" && !contentKeywordSearch
 
-	if s.runtimeUsageEnabled() && filter.Query != "" {
+	if s.runtimeUsageEnabled() && recallSearch {
 		recallLease, err = s.runtimeUsage.BeforeRecall(r.Context(), subjectFromAuth(auth))
 		if err != nil {
 			s.handleRuntimeUsageError(w, err)
@@ -723,10 +742,18 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if auth.IsChain() {
-		memories, total, err = s.listChainMemories(r.Context(), auth, filter)
+		if filter.Query != "" && contentKeywordSearch {
+			memories, total, err = s.listChainMemoriesContentKeyword(r.Context(), auth, filter)
+		} else {
+			memories, total, err = s.listChainMemories(r.Context(), auth, filter)
+		}
 	} else {
 		svc := s.resolveServices(auth)
 		switch {
+		case filter.Query != "" && contentKeywordSearch:
+			memories, total, err = s.listLocalMemoriesContentKeyword(r.Context(), svc, filter)
+		case filter.Query != "" && filter.ScanAll:
+			memories, total, err = s.listLocalMemoriesScanAll(r.Context(), svc, filter)
 		case filter.Query != "" && filter.MemoryType == "":
 			memories, total, err = s.defaultConfidenceRecallSearch(r.Context(), auth, svc, filter)
 		case filter.Query != "" && (filter.MemoryType == string(domain.TypeSession) ||
@@ -752,15 +779,14 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	if memories == nil {
 		memories = []domain.Memory{}
 	}
-	if rawQuery != "" && classifyRecallQueryShape(rawQuery) == recallQueryShapeTime {
+	if !contentKeywordSearch && rawQuery != "" && classifyRecallQueryShape(rawQuery) == recallQueryShapeTime {
 		for i := range memories {
 			memories[i].Content = service.TemporalRecallProjection(memories[i].Content, memories[i].Metadata)
 		}
 	}
-
 	externalContext := s.retrieveExternalContext(r.Context(), rawQuery, q, limit)
 
-	if filter.Query != "" {
+	if recallSearch {
 		if s.runtimeUsageEnabled() && recallLease != nil {
 			if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
 				return s.runtimeUsage.AfterRecallSuccess(ctx, recallLease, runtimeusage.RecallResult{
@@ -821,9 +847,145 @@ func (s *Server) retrieveExternalContext(ctx context.Context, rawQuery string, q
 	return items
 }
 
+func isContentKeywordSearch(q url.Values) bool {
+	mode := strings.TrimSpace(q.Get("search_mode"))
+	if mode == "" {
+		mode = strings.TrimSpace(q.Get("searchMode"))
+	}
+	return strings.EqualFold(mode, "keyword") || strings.EqualFold(mode, "content_keyword")
+}
+
 func parseBoolQuery(value string) bool {
 	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
 	return err == nil && parsed
+}
+
+const maxAppIDLen = 100
+
+func appIDFromCreateRequest(req createMemoryRequest) (string, error) {
+	raw := req.AppID
+	if raw == "" {
+		raw = req.AppIDLegacy
+	}
+	return normalizeAppIDForWrite(raw)
+}
+
+func normalizeAppIDForWrite(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if len(value) > maxAppIDLen {
+		return "", &domain.ValidationError{Field: "appId", Message: "too long (max 100)"}
+	}
+	return value, nil
+}
+
+func parseAppIDFilter(q url.Values) (*string, error) {
+	rawValues, ok := q["appId"]
+	if !ok {
+		rawValues, ok = q["app_id"]
+	}
+	if !ok {
+		return nil, nil
+	}
+	raw := ""
+	if len(rawValues) > 0 {
+		raw = rawValues[len(rawValues)-1]
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.EqualFold(raw, "null") {
+		appID := ""
+		return &appID, nil
+	}
+	if len(raw) > maxAppIDLen {
+		return nil, &domain.ValidationError{Field: "appId", Message: "too long (max 100)"}
+	}
+	return &raw, nil
+}
+
+func (s *Server) listLocalMemoriesScanAll(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	switch strings.TrimSpace(filter.MemoryType) {
+	case string(domain.TypeSession):
+		return svc.session.List(ctx, filter)
+	case string(domain.TypePinned), string(domain.TypeInsight):
+		return svc.memory.List(ctx, filter)
+	case "":
+		return s.listLocalAllTypeMemoriesScanAll(ctx, svc, filter)
+	default:
+		return svc.memory.List(ctx, filter)
+	}
+}
+
+func (s *Server) listLocalMemoriesContentKeyword(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	switch strings.TrimSpace(filter.MemoryType) {
+	case string(domain.TypeSession):
+		return svc.session.ContentKeywordSearch(ctx, filter)
+	case string(domain.TypePinned), string(domain.TypeInsight):
+		return svc.memory.ContentKeywordSearch(ctx, filter)
+	case "":
+		return s.listLocalAllTypeMemoriesContentKeyword(ctx, svc, filter)
+	default:
+		return svc.memory.ContentKeywordSearch(ctx, filter)
+	}
+}
+
+func (s *Server) listLocalAllTypeMemoriesContentKeyword(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	memoryPages, err := collectLocalListPages(ctx, filter, svc.memory.ContentKeywordSearch)
+	if err != nil {
+		return nil, 0, err
+	}
+	sessionPages, err := collectLocalListPages(ctx, filter, svc.session.ContentKeywordSearch)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	combined := make([]domain.Memory, 0, len(memoryPages)+len(sessionPages))
+	combined = append(combined, memoryPages...)
+	combined = append(combined, sessionPages...)
+	combined = uniqueChainMemories(combined)
+
+	total := len(combined)
+	return finalizeChainMemories(combined, filter, filter.Limit, filter.Offset, false), total, nil
+}
+
+func (s *Server) listLocalAllTypeMemoriesScanAll(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	memoryPages, err := collectLocalListPages(ctx, filter, svc.memory.List)
+	if err != nil {
+		return nil, 0, err
+	}
+	sessionPages, err := collectLocalListPages(ctx, filter, svc.session.List)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	combined := make([]domain.Memory, 0, len(memoryPages)+len(sessionPages))
+	combined = append(combined, memoryPages...)
+	combined = append(combined, sessionPages...)
+	combined = uniqueChainMemories(combined)
+
+	total := len(combined)
+	return finalizeChainMemories(combined, filter, filter.Limit, filter.Offset, false), total, nil
+}
+
+func collectLocalListPages(
+	ctx context.Context,
+	filter domain.MemoryFilter,
+	list func(context.Context, domain.MemoryFilter) ([]domain.Memory, int, error),
+) ([]domain.Memory, error) {
+	pageFilter := filter
+	pageFilter.Limit = 200
+	pageFilter.Offset = 0
+
+	var all []domain.Memory
+	for {
+		page, pageTotal, err := list(ctx, pageFilter)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if len(page) == 0 || pageFilter.Offset+pageFilter.Limit >= pageTotal {
+			return all, nil
+		}
+		pageFilter.Offset += pageFilter.Limit
+	}
 }
 
 func normalizeRecallQuery(query string, now time.Time) string {
@@ -1457,6 +1619,7 @@ type sessionMessageResponse struct {
 	ID          string              `json:"id"`
 	SessionID   string              `json:"session_id,omitempty"`
 	AgentID     string              `json:"agent_id,omitempty"`
+	AppID       string              `json:"appId,omitempty"`
 	Source      string              `json:"source,omitempty"`
 	Seq         int                 `json:"seq"`
 	Role        string              `json:"role"`
@@ -1486,6 +1649,11 @@ func (s *Server) handleListSessionMessages(w http.ResponseWriter, r *http.Reques
 		})
 		return
 	}
+	appIDFilter, err := parseAppIDFilter(r.URL.Query())
+	if err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
 
 	limitPerSession := maxLimitPerSession
 	if raw := r.URL.Query().Get("limit_per_session"); raw != "" {
@@ -1502,7 +1670,7 @@ func (s *Server) handleListSessionMessages(w http.ResponseWriter, r *http.Reques
 	}
 
 	if auth.IsChain() {
-		messages, err := s.listChainSessionMessages(r.Context(), auth, sessionIDs, limitPerSession)
+		messages, err := s.listChainSessionMessages(r.Context(), auth, sessionIDs, appIDFilter, limitPerSession)
 		if err != nil {
 			s.handleError(r.Context(), w, err)
 			return
@@ -1515,7 +1683,7 @@ func (s *Server) handleListSessionMessages(w http.ResponseWriter, r *http.Reques
 	}
 
 	svc := s.resolveServices(auth)
-	sessions, err := svc.session.ListBySessionIDs(r.Context(), sessionIDs, limitPerSession)
+	sessions, err := svc.session.ListBySessionIDs(r.Context(), sessionIDs, appIDFilter, limitPerSession)
 	if err != nil {
 		s.handleError(r.Context(), w, err)
 		return
@@ -1529,6 +1697,7 @@ func (s *Server) handleListSessionMessages(w http.ResponseWriter, r *http.Reques
 			ID:          sess.ID,
 			SessionID:   sess.SessionID,
 			AgentID:     sess.AgentID,
+			AppID:       sess.AppID,
 			Source:      sess.Source,
 			Seq:         sess.Seq,
 			Role:        sess.Role,

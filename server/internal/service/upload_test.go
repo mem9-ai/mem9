@@ -3,7 +3,10 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
+
+	"github.com/qiffang/mnemos/server/internal/domain"
 )
 
 func TestChunkMessages(t *testing.T) {
@@ -104,6 +107,107 @@ func TestMarshalMetadata(t *testing.T) {
 			t.Errorf("unexpected empty result: %s", s)
 		}
 	})
+}
+
+func TestNormalizeUploadAppID(t *testing.T) {
+	got, err := normalizeUploadAppID("  app-a  ", "appId")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "app-a" {
+		t.Fatalf("appID = %q, want app-a", got)
+	}
+
+	got, err = normalizeUploadAppID(" \t ", "appId")
+	if err != nil {
+		t.Fatalf("unexpected error for blank appID: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("blank appID = %q, want empty", got)
+	}
+
+	_, err = normalizeUploadAppID(strings.Repeat("x", 101), "memories[0].appId")
+	if err == nil {
+		t.Fatal("expected validation error for oversized appID")
+	}
+	var ve *domain.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("error = %T, want ValidationError", err)
+	}
+	if ve.Field != "memories[0].appId" {
+		t.Fatalf("field = %q, want memories[0].appId", ve.Field)
+	}
+}
+
+func TestParseMemoryFilePreservesEntryDefaultAppIDOverride(t *testing.T) {
+	file, err := parseMemoryFile([]byte(`{
+		"agent_id": "agent-a",
+		"appId": "file-app",
+		"memories": [
+			{"content": "inherits file app"},
+			{"content": "explicit empty app", "appId": ""},
+			{"content": "explicit null app", "appId": null},
+			{"content": "explicit legacy empty app", "app_id": ""},
+			{"content": "explicit entry app", "appId": "entry-app"}
+		]
+	}`), "fallback-agent")
+	if err != nil {
+		t.Fatalf("parse memory file: %v", err)
+	}
+	fileAppID, ok := resolveUploadAppID(file.AppID, file.appIDSet, file.AppIDLegacy, file.appIDLegacySet)
+	if !ok || fileAppID != "file-app" {
+		t.Fatalf("file appID = %q, ok = %v, want file-app/true", fileAppID, ok)
+	}
+
+	got := make([]string, 0, len(file.Memories))
+	for _, entry := range file.Memories {
+		appID := fileAppID
+		if entryAppID, ok := resolveUploadAppID(entry.AppID, entry.appIDSet, entry.AppIDLegacy, entry.appIDLegacySet); ok {
+			appID = entryAppID
+		}
+		got = append(got, appID)
+	}
+
+	want := []string{"file-app", "", "", "", "entry-app"}
+	if len(got) != len(want) {
+		t.Fatalf("got %d memories, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("memory[%d] appID = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestParseUploadFileAppIDPrefersExplicitDefaultOverLegacy(t *testing.T) {
+	memoryFile, err := parseMemoryFile([]byte(`{
+		"agent_id": "agent-a",
+		"appId": null,
+		"app_id": "legacy-app",
+		"memories": [{"content": "uses default app"}]
+	}`), "fallback-agent")
+	if err != nil {
+		t.Fatalf("parse memory file: %v", err)
+	}
+	appID, ok := resolveUploadAppID(memoryFile.AppID, memoryFile.appIDSet, memoryFile.AppIDLegacy, memoryFile.appIDLegacySet)
+	if !ok || appID != "" {
+		t.Fatalf("memory file appID = %q, ok = %v, want empty/true", appID, ok)
+	}
+
+	sessionFile, err := parseSessionFile([]byte(`{
+		"agent_id": "agent-a",
+		"session_id": "session-a",
+		"appId": "",
+		"app_id": "legacy-app",
+		"messages": [{"role": "user", "content": "hello"}]
+	}`))
+	if err != nil {
+		t.Fatalf("parse session file: %v", err)
+	}
+	appID, ok = resolveUploadAppID(sessionFile.AppID, sessionFile.appIDSet, sessionFile.AppIDLegacy, sessionFile.appIDLegacySet)
+	if !ok || appID != "" {
+		t.Fatalf("session file appID = %q, ok = %v, want empty/true", appID, ok)
+	}
 }
 
 func TestParseSessionFile(t *testing.T) {

@@ -44,15 +44,15 @@ const { features } = Astro.props;
 
   .section-head {
     width: min(100%, var(--content-rail));
-    margin: 0 auto 2.4rem;
+    margin: 0 0 2.4rem;
   }
 
   .grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1.25rem;
-    width: min(100%, var(--section-grid));
-    margin: 0 auto;
+    width: 100%;
+    margin: 0;
   }
 
   @media (max-width: 640px) {

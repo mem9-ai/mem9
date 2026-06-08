@@ -133,7 +133,7 @@ func (s *Server) reconcileRoutedChainFacts(ctx context.Context, auth *domain.Aut
 					return
 				}
 			}
-			result, err := targetSvc.ingest.ReconcilePhase2(ctx, nodeAuth.AgentName, req.AgentID, req.SessionID, factsForTarget)
+			result, err := targetSvc.ingest.ReconcilePhase2(ctx, nodeAuth.AgentName, req.AgentID, req.AppID, req.SessionID, factsForTarget)
 			if err != nil {
 				if s.runtimeUsageEnabled() && lease != nil {
 					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
@@ -389,6 +389,52 @@ func (s *Server) listChainMemories(ctx context.Context, auth *domain.AuthInfo, f
 		"scan_all", scanAll,
 		"returned", len(memories),
 	)
+	return memories, totalBeforePage, nil
+}
+
+func (s *Server) listChainMemoriesContentKeyword(ctx context.Context, auth *domain.AuthInfo, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	if auth == nil || auth.Chain == nil || len(auth.Chain.Nodes) == 0 {
+		return nil, 0, &domain.ValidationError{Message: "Space Chain has no nodes."}
+	}
+	requestLimit := filter.Limit
+	requestOffset := filter.Offset
+	if requestLimit <= 0 {
+		requestLimit = 20
+	}
+
+	perNodeFilter := filter
+	perNodeFilter.Offset = 0
+	perNodeFilter.Limit = requestLimit + requestOffset
+	if perNodeFilter.Limit <= 0 {
+		perNodeFilter.Limit = requestLimit
+	}
+
+	results := make([][]domain.Memory, len(auth.Chain.Nodes))
+	group, groupCtx := errgroup.WithContext(ctx)
+	for i, node := range auth.Chain.Nodes {
+		i, node := i, node
+		group.Go(func() error {
+			nodeAuth := chainNodeAuth(auth, node)
+			svc := s.resolveServices(nodeAuth)
+			memories, _, err := s.listLocalMemoriesContentKeyword(groupCtx, svc, perNodeFilter)
+			if err != nil {
+				return err
+			}
+			applyChainSource(memories, chainSource(auth, node))
+			results[i] = memories
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, 0, err
+	}
+
+	combined := make([]domain.Memory, 0, perNodeFilter.Limit*len(auth.Chain.Nodes))
+	for _, page := range results {
+		combined = append(combined, page...)
+	}
+	totalBeforePage := len(uniqueChainMemories(combined))
+	memories := finalizeChainMemories(combined, filter, requestLimit, requestOffset, false)
 	return memories, totalBeforePage, nil
 }
 
@@ -706,7 +752,7 @@ func uniqueChainMemories(memories []domain.Memory) []domain.Memory {
 	return out
 }
 
-func (s *Server) listChainSessionMessages(ctx context.Context, auth *domain.AuthInfo, sessionIDs []string, limitPerSession int) ([]sessionMessageResponse, error) {
+func (s *Server) listChainSessionMessages(ctx context.Context, auth *domain.AuthInfo, sessionIDs []string, appID *string, limitPerSession int) ([]sessionMessageResponse, error) {
 	if auth == nil || auth.Chain == nil || len(auth.Chain.Nodes) == 0 {
 		return nil, &domain.ValidationError{Message: "Space Chain has no nodes."}
 	}
@@ -714,7 +760,7 @@ func (s *Server) listChainSessionMessages(ctx context.Context, auth *domain.Auth
 	for _, node := range auth.Chain.Nodes {
 		nodeAuth := chainNodeAuth(auth, node)
 		svc := s.resolveServices(nodeAuth)
-		sessions, err := svc.session.ListBySessionIDs(ctx, sessionIDs, limitPerSession)
+		sessions, err := svc.session.ListBySessionIDs(ctx, sessionIDs, appID, limitPerSession)
 		if err != nil {
 			return nil, err
 		}
@@ -724,6 +770,7 @@ func (s *Server) listChainSessionMessages(ctx context.Context, auth *domain.Auth
 				ID:          sess.ID,
 				SessionID:   sess.SessionID,
 				AgentID:     sess.AgentID,
+				AppID:       sess.AppID,
 				Source:      sess.Source,
 				Seq:         sess.Seq,
 				Role:        sess.Role,
