@@ -173,6 +173,9 @@ func (s *SQLStore) EnqueueEvent(ctx context.Context, event EventRecord) error {
 			matching = append(matching, endpoint)
 		}
 	}
+	if len(matching) == 0 {
+		return nil
+	}
 	_, err = s.insertEventAndDeliveries(ctx, event, matching)
 	return err
 }
