@@ -546,6 +546,35 @@ const disableSpaceChainBindingCode = `curl -sX PATCH "$CHAIN_API/{chain_id}/bind
   -H "X-API-Key: $CHAIN_API_KEY" \\
   -d '{"disabled":true,"disabled_by_user_id":"user-123"}'`;
 const recallSpaceChainCode = 'curl -s -H "X-API-Key: $CHAIN_API_KEY" "$API/memories?q=postgres&scanAll=true&limit=10"';
+const createSpaceWebhookCode = `curl -sX POST "$API/webhooks" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: $API_KEY" \\
+  -d '{"name":"Production sync","url":"https://example.com/mem9/webhook","enabled":true,"events":["memory.added","memory.deleted"]}'`;
+const listSpaceWebhooksCode = 'curl -s -H "X-API-Key: $API_KEY" "$API/webhooks"';
+const updateSpaceWebhookCode = `curl -sX PATCH "$API/webhooks/{webhookID}" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: $API_KEY" \\
+  -d '{"enabled":false}'`;
+const testSpaceWebhookCode = `curl -sX POST "$API/webhooks/{webhookID}/test" \\
+  -H "X-API-Key: $API_KEY"`;
+const rotateSpaceWebhookSecretCode = `curl -sX POST "$API/webhooks/{webhookID}/rotate-secret" \\
+  -H "X-API-Key: $API_KEY"`;
+const listSpaceWebhookDeliveriesCode = 'curl -s -H "X-API-Key: $API_KEY" "$API/webhook-deliveries?limit=25"';
+const createSpaceChainWebhookCode = `curl -sX POST "$CHAIN_API/{chain_id}/webhooks" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: $CHAIN_API_KEY" \\
+  -d '{"name":"Routing audit","url":"https://example.com/mem9/chain-webhook","enabled":true,"events":["space_chain.fact_routed"]}'`;
+const listSpaceChainWebhooksCode = 'curl -s -H "X-API-Key: $CHAIN_API_KEY" "$CHAIN_API/{chain_id}/webhooks"';
+const updateSpaceChainWebhookCode = `curl -sX PATCH "$CHAIN_API/{chain_id}/webhooks/{webhookID}" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: $CHAIN_API_KEY" \\
+  -d '{"events":["memory.added","space_chain.fact_routed"]}'`;
+const testSpaceChainWebhookCode = `curl -sX POST "$CHAIN_API/{chain_id}/webhooks/{webhookID}/test" \\
+  -H "X-API-Key: $CHAIN_API_KEY"`;
+const rotateSpaceChainWebhookSecretCode = `curl -sX POST "$CHAIN_API/{chain_id}/webhooks/{webhookID}/rotate-secret" \\
+  -H "X-API-Key: $CHAIN_API_KEY"`;
+const listSpaceChainWebhookDeliveriesCode =
+  'curl -s -H "X-API-Key: $CHAIN_API_KEY" "$CHAIN_API/{chain_id}/webhook-deliveries?limit=25"';
 
 const faqCopyByLocale: Record<SiteLocale, SiteFaqCopy> = {
   en: {
@@ -1256,6 +1285,81 @@ const spaceChainRuntimeResponseFields: SiteApiFieldCopy[] = [
   { name: 'offset', description: 'Applied page offset.', required: true },
 ];
 
+const webhookCreateBodyFields: SiteApiFieldCopy[] = [
+  { name: 'name', description: 'Human-readable endpoint name.', required: true },
+  { name: 'url', description: 'Receiver URL. Production deployments require HTTPS.', required: true },
+  { name: 'enabled', description: 'Whether the endpoint accepts matching events. Defaults to true on create.' },
+  {
+    name: 'events',
+    description: 'Array of event types to subscribe to: `memory.added`, `memory.deleted`, or `space_chain.fact_routed`.',
+    required: true,
+  },
+];
+
+const webhookUpdateBodyFields: SiteApiFieldCopy[] = [
+  { name: 'name', description: 'Updated endpoint name.' },
+  { name: 'url', description: 'Updated receiver URL.' },
+  { name: 'enabled', description: 'Whether the endpoint accepts matching events.' },
+  {
+    name: 'events',
+    description: 'Replacement array of subscribed event types.',
+  },
+];
+
+const webhookDeliveryQueryParams: SiteApiFieldCopy[] = [
+  { name: 'limit', description: 'Maximum number of deliveries to return. Defaults to 50 and caps at 200.' },
+];
+
+const webhookEndpointResponseFields: SiteApiFieldCopy[] = [
+  { name: 'id', description: 'Webhook endpoint id.', required: true },
+  { name: 'scope_type', description: 'Scope type. Space endpoints return `tenant`; Space Chain endpoints return `chain`.', required: true },
+  { name: 'scope_id', description: 'Tenant id for Space webhooks or chain id for Space Chain webhooks.', required: true },
+  { name: 'name', description: 'Human-readable endpoint name.', required: true },
+  { name: 'url', description: 'Receiver URL.', required: true },
+  { name: 'enabled', description: 'Whether the endpoint accepts matching events.', required: true },
+  { name: 'events', description: 'Subscribed event type array.', required: true },
+  { name: 'created_at', description: 'Creation timestamp.', required: true },
+  { name: 'updated_at', description: 'Last update timestamp.', required: true },
+];
+
+const webhookEndpointListResponseFields: SiteApiFieldCopy[] = [
+  { name: 'webhooks', description: 'Array of webhook endpoints.', required: true },
+];
+
+const webhookEndpointSecretResponseFields: SiteApiFieldCopy[] = [
+  ...webhookEndpointResponseFields,
+  {
+    name: 'signing_secret',
+    description: 'One-time signing secret returned only by create and rotate-secret responses.',
+    required: true,
+  },
+];
+
+const webhookDeliveryResponseFields: SiteApiFieldCopy[] = [
+  { name: 'id', description: 'Delivery id.', required: true },
+  { name: 'event_id', description: 'Event id.', required: true },
+  { name: 'endpoint_id', description: 'Webhook endpoint id for this delivery.', required: true },
+  { name: 'event_type', description: 'Event type delivered to the receiver.', required: true },
+  { name: 'scope_type', description: 'Delivery scope type.', required: true },
+  { name: 'scope_id', description: 'Delivery scope id.', required: true },
+  { name: 'status', description: 'Delivery status: `pending`, `delivered`, or `failed`.', required: true },
+  { name: 'attempt_count', description: 'Delivery attempt count.', required: true },
+  { name: 'next_attempt_at', description: 'Next retry timestamp for pending deliveries.', required: true },
+  { name: 'last_http_status', description: 'Most recent HTTP status returned by the receiver.' },
+  { name: 'last_error', description: 'Most recent delivery error message.' },
+  { name: 'delivered_at', description: 'Timestamp when delivery reached a 2xx response.' },
+  { name: 'created_at', description: 'Creation timestamp.', required: true },
+  { name: 'updated_at', description: 'Last update timestamp.', required: true },
+];
+
+const webhookDeliveryListResponseFields: SiteApiFieldCopy[] = [
+  { name: 'deliveries', description: 'Array of webhook delivery records.', required: true },
+];
+
+const webhookTestResponseFields: SiteApiFieldCopy[] = [
+  { name: 'delivery', description: 'Queued test delivery record.', required: true },
+];
+
 const keyStatusEndpointGroup: SiteApiEndpointGroupCopy = {
   id: 'key-status',
   title: 'Key Status',
@@ -1403,6 +1507,161 @@ const spaceChainEndpointGroup: SiteApiEndpointGroupCopy = {
       queryParams: memoryListQueryParams,
       responseFields: spaceChainRuntimeResponseFields,
       examples: [{ label: 'Recall with scanAll', code: recallSpaceChainCode }],
+    },
+  ],
+};
+
+const webhookEndpointGroup: SiteApiEndpointGroupCopy = {
+  id: 'webhooks',
+  title: 'Webhooks',
+  description:
+    'Create signed event subscriptions for Spaces and Space Chains. mem9 stores endpoint state, delivery attempts, retry state, and delivery history.',
+  endpoints: [
+    {
+      method: 'GET',
+      path: '/v1alpha2/mem9s/webhooks',
+      summary: 'List Space webhooks.',
+      description: 'Lists webhook endpoints scoped to the Space API key in `X-API-Key`.',
+      headers: hostedReadHeaders,
+      responseFields: webhookEndpointListResponseFields,
+      examples: [{ label: 'List Space webhooks', code: listSpaceWebhooksCode }],
+    },
+    {
+      method: 'POST',
+      path: '/v1alpha2/mem9s/webhooks',
+      summary: 'Create a Space webhook.',
+      description:
+        'Creates a Space-scoped webhook endpoint. The response includes `signing_secret` once; store it before closing the response.',
+      headers: hostedJSONWriteHeaders,
+      bodyFields: webhookCreateBodyFields,
+      responseFields: webhookEndpointSecretResponseFields,
+      examples: [{ label: 'Create Space webhook', code: createSpaceWebhookCode }],
+    },
+    {
+      method: 'GET',
+      path: '/v1alpha2/mem9s/webhooks/{webhookID}',
+      summary: 'Read one Space webhook.',
+      description: 'Returns one Space-scoped webhook endpoint without the signing secret.',
+      headers: hostedReadHeaders,
+      responseFields: webhookEndpointResponseFields,
+    },
+    {
+      method: 'PATCH',
+      path: '/v1alpha2/mem9s/webhooks/{webhookID}',
+      summary: 'Update a Space webhook.',
+      description: 'Updates endpoint name, URL, enabled state, or subscribed events.',
+      headers: hostedJSONWriteHeaders,
+      bodyFields: webhookUpdateBodyFields,
+      responseFields: webhookEndpointResponseFields,
+      examples: [{ label: 'Disable Space webhook', code: updateSpaceWebhookCode }],
+    },
+    {
+      method: 'DELETE',
+      path: '/v1alpha2/mem9s/webhooks/{webhookID}',
+      summary: 'Delete a Space webhook.',
+      description: 'Soft-deletes the endpoint. A successful delete returns `204 No Content`.',
+      headers: hostedReadHeaders,
+    },
+    {
+      method: 'POST',
+      path: '/v1alpha2/mem9s/webhooks/{webhookID}/test',
+      summary: 'Test a Space webhook.',
+      description: 'Queues a `webhook.test` delivery to the endpoint so you can verify the receiver and signature handling.',
+      headers: hostedReadHeaders,
+      responseFields: webhookTestResponseFields,
+      examples: [{ label: 'Test Space webhook', code: testSpaceWebhookCode }],
+    },
+    {
+      method: 'POST',
+      path: '/v1alpha2/mem9s/webhooks/{webhookID}/rotate-secret',
+      summary: 'Rotate a Space webhook secret.',
+      description: 'Replaces the signing secret and returns the new `signing_secret` once.',
+      headers: hostedReadHeaders,
+      responseFields: webhookEndpointSecretResponseFields,
+      examples: [{ label: 'Rotate Space webhook secret', code: rotateSpaceWebhookSecretCode }],
+    },
+    {
+      method: 'GET',
+      path: '/v1alpha2/mem9s/webhook-deliveries',
+      summary: 'List Space webhook deliveries.',
+      description: 'Returns recent delivery records for the current Space scope.',
+      headers: hostedReadHeaders,
+      queryParams: webhookDeliveryQueryParams,
+      responseFields: webhookDeliveryListResponseFields,
+      examples: [{ label: 'List Space deliveries', code: listSpaceWebhookDeliveriesCode }],
+    },
+    {
+      method: 'GET',
+      path: '/v1alpha2/space-chains/{chain_id}/webhooks',
+      summary: 'List Space Chain webhooks.',
+      description: 'Lists webhook endpoints scoped to a Space Chain. Requires the chain management key in `X-API-Key`.',
+      headers: chainManagementHeaders,
+      responseFields: webhookEndpointListResponseFields,
+      examples: [{ label: 'List Space Chain webhooks', code: listSpaceChainWebhooksCode }],
+    },
+    {
+      method: 'POST',
+      path: '/v1alpha2/space-chains/{chain_id}/webhooks',
+      summary: 'Create a Space Chain webhook.',
+      description:
+        'Creates a chain-scoped webhook endpoint. Use it for chain-level memory events and `space_chain.fact_routed` routing events.',
+      headers: chainJSONWriteHeaders,
+      bodyFields: webhookCreateBodyFields,
+      responseFields: webhookEndpointSecretResponseFields,
+      examples: [{ label: 'Create Space Chain webhook', code: createSpaceChainWebhookCode }],
+    },
+    {
+      method: 'GET',
+      path: '/v1alpha2/space-chains/{chain_id}/webhooks/{webhookID}',
+      summary: 'Read one Space Chain webhook.',
+      description: 'Returns one chain-scoped webhook endpoint without the signing secret.',
+      headers: chainManagementHeaders,
+      responseFields: webhookEndpointResponseFields,
+    },
+    {
+      method: 'PATCH',
+      path: '/v1alpha2/space-chains/{chain_id}/webhooks/{webhookID}',
+      summary: 'Update a Space Chain webhook.',
+      description: 'Updates endpoint name, URL, enabled state, or subscribed events for a chain-scoped endpoint.',
+      headers: chainJSONWriteHeaders,
+      bodyFields: webhookUpdateBodyFields,
+      responseFields: webhookEndpointResponseFields,
+      examples: [{ label: 'Update Space Chain webhook', code: updateSpaceChainWebhookCode }],
+    },
+    {
+      method: 'DELETE',
+      path: '/v1alpha2/space-chains/{chain_id}/webhooks/{webhookID}',
+      summary: 'Delete a Space Chain webhook.',
+      description: 'Soft-deletes the chain-scoped endpoint. A successful delete returns `204 No Content`.',
+      headers: chainManagementHeaders,
+    },
+    {
+      method: 'POST',
+      path: '/v1alpha2/space-chains/{chain_id}/webhooks/{webhookID}/test',
+      summary: 'Test a Space Chain webhook.',
+      description: 'Queues a `webhook.test` delivery for a chain-scoped endpoint.',
+      headers: chainManagementHeaders,
+      responseFields: webhookTestResponseFields,
+      examples: [{ label: 'Test Space Chain webhook', code: testSpaceChainWebhookCode }],
+    },
+    {
+      method: 'POST',
+      path: '/v1alpha2/space-chains/{chain_id}/webhooks/{webhookID}/rotate-secret',
+      summary: 'Rotate a Space Chain webhook secret.',
+      description: 'Replaces the chain-scoped endpoint signing secret and returns the new `signing_secret` once.',
+      headers: chainManagementHeaders,
+      responseFields: webhookEndpointSecretResponseFields,
+      examples: [{ label: 'Rotate Space Chain webhook secret', code: rotateSpaceChainWebhookSecretCode }],
+    },
+    {
+      method: 'GET',
+      path: '/v1alpha2/space-chains/{chain_id}/webhook-deliveries',
+      summary: 'List Space Chain webhook deliveries.',
+      description: 'Returns recent delivery records for the Space Chain scope.',
+      headers: chainManagementHeaders,
+      queryParams: webhookDeliveryQueryParams,
+      responseFields: webhookDeliveryListResponseFields,
+      examples: [{ label: 'List Space Chain deliveries', code: listSpaceChainWebhookDeliveriesCode }],
     },
   ],
 };
@@ -1582,6 +1841,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       spaceChainEndpointGroup,
+      webhookEndpointGroup,
       {
         id: 'imports',
         title: 'Imports',
@@ -1821,6 +2081,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       spaceChainEndpointGroup,
+      webhookEndpointGroup,
       {
         id: 'imports',
         title: 'Imports',
@@ -2051,6 +2312,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       spaceChainEndpointGroup,
+      webhookEndpointGroup,
       {
         id: 'imports',
         title: 'Imports',
@@ -2282,6 +2544,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       spaceChainEndpointGroup,
+      webhookEndpointGroup,
       {
         id: 'imports',
         title: 'Imports',
@@ -2513,6 +2776,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       spaceChainEndpointGroup,
+      webhookEndpointGroup,
       {
         id: 'imports',
         title: 'Imports',
@@ -2744,6 +3008,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       spaceChainEndpointGroup,
+      webhookEndpointGroup,
       {
         id: 'imports',
         title: 'Imports',
@@ -2975,6 +3240,7 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
         ],
       },
       spaceChainEndpointGroup,
+      webhookEndpointGroup,
       {
         id: 'imports',
         title: 'Imports',
@@ -5230,12 +5496,553 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
   },
 };
 
+const webhookApiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, string>>> = {
+  zh: {
+    Webhooks: 'Webhooks',
+    'Create signed event subscriptions for Spaces and Space Chains. mem9 stores endpoint state, delivery attempts, retry state, and delivery history.':
+      '为 Space 和 Space Chain 创建带签名的事件订阅。mem9 会保存 endpoint 状态、delivery 尝试、重试状态和 delivery 历史。',
+    'List Space webhooks.': '列出 Space webhooks。',
+    'Lists webhook endpoints scoped to the Space API key in `X-API-Key`.': '列出 `X-API-Key` 中 Space API key 作用域下的 webhook endpoints。',
+    'List Space webhooks': '列出 Space webhooks',
+    'Create a Space webhook.': '创建 Space webhook。',
+    'Creates a Space-scoped webhook endpoint. The response includes `signing_secret` once; store it before closing the response.':
+      '创建 Space 作用域的 webhook endpoint。响应只会包含一次 `signing_secret`；请在关闭响应前保存。',
+    'Create Space webhook': '创建 Space webhook',
+    'Read one Space webhook.': '读取单个 Space webhook。',
+    'Returns one Space-scoped webhook endpoint without the signing secret.': '返回一个 Space 作用域的 webhook endpoint，不包含 signing secret。',
+    'Update a Space webhook.': '更新 Space webhook。',
+    'Updates endpoint name, URL, enabled state, or subscribed events.': '更新 endpoint 名称、URL、enabled 状态或订阅事件。',
+    'Disable Space webhook': '禁用 Space webhook',
+    'Delete a Space webhook.': '删除 Space webhook。',
+    'Soft-deletes the endpoint. A successful delete returns `204 No Content`.': '软删除 endpoint。删除成功时返回 `204 No Content`。',
+    'Test a Space webhook.': '测试 Space webhook。',
+    'Queues a `webhook.test` delivery to the endpoint so you can verify the receiver and signature handling.':
+      '向 endpoint 排队一个 `webhook.test` delivery，便于验证 receiver 和签名处理。',
+    'Test Space webhook': '测试 Space webhook',
+    'Rotate a Space webhook secret.': '轮换 Space webhook secret。',
+    'Replaces the signing secret and returns the new `signing_secret` once.': '替换 signing secret，并且只返回一次新的 `signing_secret`。',
+    'Rotate Space webhook secret': '轮换 Space webhook secret',
+    'List Space webhook deliveries.': '列出 Space webhook deliveries。',
+    'Returns recent delivery records for the current Space scope.': '返回当前 Space 作用域最近的 delivery records。',
+    'List Space deliveries': '列出 Space deliveries',
+    'List Space Chain webhooks.': '列出 Space Chain webhooks。',
+    'Lists webhook endpoints scoped to a Space Chain. Requires the chain management key in `X-API-Key`.':
+      '列出 Space Chain 作用域下的 webhook endpoints。需要在 `X-API-Key` 中提供 chain management key。',
+    'List Space Chain webhooks': '列出 Space Chain webhooks',
+    'Create a Space Chain webhook.': '创建 Space Chain webhook。',
+    'Creates a chain-scoped webhook endpoint. Use it for chain-level memory events and `space_chain.fact_routed` routing events.':
+      '创建 chain 作用域的 webhook endpoint。可用于 chain-level memory 事件和 `space_chain.fact_routed` 路由事件。',
+    'Create Space Chain webhook': '创建 Space Chain webhook',
+    'Read one Space Chain webhook.': '读取单个 Space Chain webhook。',
+    'Returns one chain-scoped webhook endpoint without the signing secret.': '返回一个 chain 作用域的 webhook endpoint，不包含 signing secret。',
+    'Update a Space Chain webhook.': '更新 Space Chain webhook。',
+    'Updates endpoint name, URL, enabled state, or subscribed events for a chain-scoped endpoint.':
+      '更新 chain 作用域 endpoint 的名称、URL、enabled 状态或订阅事件。',
+    'Update Space Chain webhook': '更新 Space Chain webhook',
+    'Delete a Space Chain webhook.': '删除 Space Chain webhook。',
+    'Soft-deletes the chain-scoped endpoint. A successful delete returns `204 No Content`.':
+      '软删除 chain 作用域 endpoint。删除成功时返回 `204 No Content`。',
+    'Test a Space Chain webhook.': '测试 Space Chain webhook。',
+    'Queues a `webhook.test` delivery for a chain-scoped endpoint.': '为 chain 作用域 endpoint 排队一个 `webhook.test` delivery。',
+    'Test Space Chain webhook': '测试 Space Chain webhook',
+    'Rotate a Space Chain webhook secret.': '轮换 Space Chain webhook secret。',
+    'Replaces the chain-scoped endpoint signing secret and returns the new `signing_secret` once.':
+      '替换 chain 作用域 endpoint 的 signing secret，并且只返回一次新的 `signing_secret`。',
+    'Rotate Space Chain webhook secret': '轮换 Space Chain webhook secret',
+    'List Space Chain webhook deliveries.': '列出 Space Chain webhook deliveries。',
+    'Returns recent delivery records for the Space Chain scope.': '返回 Space Chain 作用域最近的 delivery records。',
+    'List Space Chain deliveries': '列出 Space Chain deliveries',
+    'Human-readable endpoint name.': '人类可读的 endpoint 名称。',
+    'Receiver URL. Production deployments require HTTPS.': '接收方 URL。生产部署要求 HTTPS。',
+    'Whether the endpoint accepts matching events. Defaults to true on create.': 'endpoint 是否接收匹配事件。创建时默认是 true。',
+    'Array of event types to subscribe to: `memory.added`, `memory.deleted`, or `space_chain.fact_routed`.':
+      '要订阅的事件类型数组：`memory.added`、`memory.deleted` 或 `space_chain.fact_routed`。',
+    'Updated endpoint name.': '更新后的 endpoint 名称。',
+    'Updated receiver URL.': '更新后的接收方 URL。',
+    'Whether the endpoint accepts matching events.': 'endpoint 是否接收匹配事件。',
+    'Replacement array of subscribed event types.': '用于替换的订阅事件类型数组。',
+    'Maximum number of deliveries to return. Defaults to 50 and caps at 200.': '要返回的最大 delivery 数量。默认 50，上限 200。',
+    'Webhook endpoint id.': 'Webhook endpoint id。',
+    'Scope type. Space endpoints return `tenant`; Space Chain endpoints return `chain`.':
+      '作用域类型。Space endpoint 返回 `tenant`；Space Chain endpoint 返回 `chain`。',
+    'Tenant id for Space webhooks or chain id for Space Chain webhooks.': 'Space webhook 的 tenant id，或 Space Chain webhook 的 chain id。',
+    'Receiver URL.': '接收方 URL。',
+    'Subscribed event type array.': '已订阅的事件类型数组。',
+    'Array of webhook endpoints.': 'Webhook endpoint 数组。',
+    'One-time signing secret returned only by create and rotate-secret responses.': '一次性 signing secret，只会在 create 和 rotate-secret 响应中返回。',
+    'Delivery id.': 'Delivery id。',
+    'Event id.': 'Event id。',
+    'Webhook endpoint id for this delivery.': '本次 delivery 对应的 webhook endpoint id。',
+    'Event type delivered to the receiver.': '发送给 receiver 的事件类型。',
+    'Delivery scope type.': 'Delivery 作用域类型。',
+    'Delivery scope id.': 'Delivery 作用域 id。',
+    'Delivery status: `pending`, `delivered`, or `failed`.': 'Delivery 状态：`pending`、`delivered` 或 `failed`。',
+    'Delivery attempt count.': 'Delivery 尝试次数。',
+    'Next retry timestamp for pending deliveries.': 'pending delivery 的下一次重试时间戳。',
+    'Most recent HTTP status returned by the receiver.': 'receiver 最近返回的 HTTP 状态。',
+    'Most recent delivery error message.': '最近的 delivery 错误消息。',
+    'Timestamp when delivery reached a 2xx response.': 'delivery 收到 2xx 响应时的时间戳。',
+    'Array of webhook delivery records.': 'Webhook delivery record 数组。',
+    'Queued test delivery record.': '已排队的测试 delivery record。',
+  },
+  'zh-Hant': {
+    Webhooks: 'Webhooks',
+    'Create signed event subscriptions for Spaces and Space Chains. mem9 stores endpoint state, delivery attempts, retry state, and delivery history.':
+      '為 Space 和 Space Chain 建立帶簽名的事件訂閱。mem9 會保存 endpoint 狀態、delivery 嘗試、重試狀態和 delivery 歷史。',
+    'List Space webhooks.': '列出 Space webhooks。',
+    'Lists webhook endpoints scoped to the Space API key in `X-API-Key`.': '列出 `X-API-Key` 中 Space API key 作用域下的 webhook endpoints。',
+    'List Space webhooks': '列出 Space webhooks',
+    'Create a Space webhook.': '建立 Space webhook。',
+    'Creates a Space-scoped webhook endpoint. The response includes `signing_secret` once; store it before closing the response.':
+      '建立 Space 作用域的 webhook endpoint。回應只會包含一次 `signing_secret`；請在關閉回應前保存。',
+    'Create Space webhook': '建立 Space webhook',
+    'Read one Space webhook.': '讀取單個 Space webhook。',
+    'Returns one Space-scoped webhook endpoint without the signing secret.': '回傳一個 Space 作用域的 webhook endpoint，不包含 signing secret。',
+    'Update a Space webhook.': '更新 Space webhook。',
+    'Updates endpoint name, URL, enabled state, or subscribed events.': '更新 endpoint 名稱、URL、enabled 狀態或訂閱事件。',
+    'Disable Space webhook': '停用 Space webhook',
+    'Delete a Space webhook.': '刪除 Space webhook。',
+    'Soft-deletes the endpoint. A successful delete returns `204 No Content`.': '軟刪除 endpoint。刪除成功時回傳 `204 No Content`。',
+    'Test a Space webhook.': '測試 Space webhook。',
+    'Queues a `webhook.test` delivery to the endpoint so you can verify the receiver and signature handling.':
+      '向 endpoint 排入一筆 `webhook.test` delivery，方便驗證 receiver 和簽名處理。',
+    'Test Space webhook': '測試 Space webhook',
+    'Rotate a Space webhook secret.': '輪換 Space webhook secret。',
+    'Replaces the signing secret and returns the new `signing_secret` once.': '替換 signing secret，並且只回傳一次新的 `signing_secret`。',
+    'Rotate Space webhook secret': '輪換 Space webhook secret',
+    'List Space webhook deliveries.': '列出 Space webhook deliveries。',
+    'Returns recent delivery records for the current Space scope.': '回傳目前 Space 作用域最近的 delivery records。',
+    'List Space deliveries': '列出 Space deliveries',
+    'List Space Chain webhooks.': '列出 Space Chain webhooks。',
+    'Lists webhook endpoints scoped to a Space Chain. Requires the chain management key in `X-API-Key`.':
+      '列出 Space Chain 作用域下的 webhook endpoints。需要在 `X-API-Key` 中提供 chain management key。',
+    'List Space Chain webhooks': '列出 Space Chain webhooks',
+    'Create a Space Chain webhook.': '建立 Space Chain webhook。',
+    'Creates a chain-scoped webhook endpoint. Use it for chain-level memory events and `space_chain.fact_routed` routing events.':
+      '建立 chain 作用域的 webhook endpoint。可用於 chain-level memory 事件和 `space_chain.fact_routed` 路由事件。',
+    'Create Space Chain webhook': '建立 Space Chain webhook',
+    'Read one Space Chain webhook.': '讀取單個 Space Chain webhook。',
+    'Returns one chain-scoped webhook endpoint without the signing secret.': '回傳一個 chain 作用域的 webhook endpoint，不包含 signing secret。',
+    'Update a Space Chain webhook.': '更新 Space Chain webhook。',
+    'Updates endpoint name, URL, enabled state, or subscribed events for a chain-scoped endpoint.':
+      '更新 chain 作用域 endpoint 的名稱、URL、enabled 狀態或訂閱事件。',
+    'Update Space Chain webhook': '更新 Space Chain webhook',
+    'Delete a Space Chain webhook.': '刪除 Space Chain webhook。',
+    'Soft-deletes the chain-scoped endpoint. A successful delete returns `204 No Content`.':
+      '軟刪除 chain 作用域 endpoint。刪除成功時回傳 `204 No Content`。',
+    'Test a Space Chain webhook.': '測試 Space Chain webhook。',
+    'Queues a `webhook.test` delivery for a chain-scoped endpoint.': '為 chain 作用域 endpoint 排入一筆 `webhook.test` delivery。',
+    'Test Space Chain webhook': '測試 Space Chain webhook',
+    'Rotate a Space Chain webhook secret.': '輪換 Space Chain webhook secret。',
+    'Replaces the chain-scoped endpoint signing secret and returns the new `signing_secret` once.':
+      '替換 chain 作用域 endpoint 的 signing secret，並且只回傳一次新的 `signing_secret`。',
+    'Rotate Space Chain webhook secret': '輪換 Space Chain webhook secret',
+    'List Space Chain webhook deliveries.': '列出 Space Chain webhook deliveries。',
+    'Returns recent delivery records for the Space Chain scope.': '回傳 Space Chain 作用域最近的 delivery records。',
+    'List Space Chain deliveries': '列出 Space Chain deliveries',
+    'Human-readable endpoint name.': '人類可讀的 endpoint 名稱。',
+    'Receiver URL. Production deployments require HTTPS.': '接收方 URL。production 部署要求 HTTPS。',
+    'Whether the endpoint accepts matching events. Defaults to true on create.': 'endpoint 是否接收匹配事件。建立時預設是 true。',
+    'Array of event types to subscribe to: `memory.added`, `memory.deleted`, or `space_chain.fact_routed`.':
+      '要訂閱的事件類型陣列：`memory.added`、`memory.deleted` 或 `space_chain.fact_routed`。',
+    'Updated endpoint name.': '更新後的 endpoint 名稱。',
+    'Updated receiver URL.': '更新後的接收方 URL。',
+    'Whether the endpoint accepts matching events.': 'endpoint 是否接收匹配事件。',
+    'Replacement array of subscribed event types.': '用於替換的訂閱事件類型陣列。',
+    'Maximum number of deliveries to return. Defaults to 50 and caps at 200.': '要回傳的最大 delivery 數量。預設 50，上限 200。',
+    'Webhook endpoint id.': 'Webhook endpoint id。',
+    'Scope type. Space endpoints return `tenant`; Space Chain endpoints return `chain`.':
+      '作用域類型。Space endpoint 回傳 `tenant`；Space Chain endpoint 回傳 `chain`。',
+    'Tenant id for Space webhooks or chain id for Space Chain webhooks.': 'Space webhook 的 tenant id，或 Space Chain webhook 的 chain id。',
+    'Receiver URL.': '接收方 URL。',
+    'Subscribed event type array.': '已訂閱的事件類型陣列。',
+    'Creation timestamp.': '建立時間戳。',
+    'Last update timestamp.': '最後更新時間戳。',
+    'Array of webhook endpoints.': 'Webhook endpoint 陣列。',
+    'One-time signing secret returned only by create and rotate-secret responses.': '一次性 signing secret，只會在 create 和 rotate-secret 回應中回傳。',
+    'Delivery id.': 'Delivery id。',
+    'Event id.': 'Event id。',
+    'Webhook endpoint id for this delivery.': '本次 delivery 對應的 webhook endpoint id。',
+    'Event type delivered to the receiver.': '送給 receiver 的事件類型。',
+    'Delivery scope type.': 'Delivery 作用域類型。',
+    'Delivery scope id.': 'Delivery 作用域 id。',
+    'Delivery status: `pending`, `delivered`, or `failed`.': 'Delivery 狀態：`pending`、`delivered` 或 `failed`。',
+    'Delivery attempt count.': 'Delivery 嘗試次數。',
+    'Next retry timestamp for pending deliveries.': 'pending delivery 的下一次重試時間戳。',
+    'Most recent HTTP status returned by the receiver.': 'receiver 最近回傳的 HTTP 狀態。',
+    'Most recent delivery error message.': '最近的 delivery 錯誤訊息。',
+    'Timestamp when delivery reached a 2xx response.': 'delivery 收到 2xx 回應時的時間戳。',
+    'Array of webhook delivery records.': 'Webhook delivery record 陣列。',
+    'Queued test delivery record.': '已排入的測試 delivery record。',
+  },
+  ja: {
+    Webhooks: 'Webhooks',
+    'Create signed event subscriptions for Spaces and Space Chains. mem9 stores endpoint state, delivery attempts, retry state, and delivery history.':
+      'Space と Space Chain の署名付き event subscription を作成します。mem9 は endpoint state、delivery attempts、retry state、delivery history を保存します。',
+    'List Space webhooks.': 'Space webhooks を一覧する。',
+    'Lists webhook endpoints scoped to the Space API key in `X-API-Key`.': '`X-API-Key` の Space API key に scoped された webhook endpoints を一覧します。',
+    'List Space webhooks': 'Space webhooks を一覧',
+    'Create a Space webhook.': 'Space webhook を作成する。',
+    'Creates a Space-scoped webhook endpoint. The response includes `signing_secret` once; store it before closing the response.':
+      'Space-scoped webhook endpoint を作成します。response には `signing_secret` が一度だけ含まれるため、閉じる前に保存してください。',
+    'Create Space webhook': 'Space webhook を作成',
+    'Read one Space webhook.': 'Space webhook を 1 件取得する。',
+    'Returns one Space-scoped webhook endpoint without the signing secret.': 'signing secret を含まない Space-scoped webhook endpoint を 1 件返します。',
+    'Update a Space webhook.': 'Space webhook を更新する。',
+    'Updates endpoint name, URL, enabled state, or subscribed events.': 'endpoint name、URL、enabled state、subscribed events を更新します。',
+    'Disable Space webhook': 'Space webhook を無効化',
+    'Delete a Space webhook.': 'Space webhook を削除する。',
+    'Soft-deletes the endpoint. A successful delete returns `204 No Content`.': 'endpoint を soft delete します。成功時は `204 No Content` を返します。',
+    'Test a Space webhook.': 'Space webhook をテストする。',
+    'Queues a `webhook.test` delivery to the endpoint so you can verify the receiver and signature handling.':
+      'receiver と signature handling を検証できるよう、endpoint に `webhook.test` delivery を enqueue します。',
+    'Test Space webhook': 'Space webhook をテスト',
+    'Rotate a Space webhook secret.': 'Space webhook secret を rotate する。',
+    'Replaces the signing secret and returns the new `signing_secret` once.': 'signing secret を置き換え、新しい `signing_secret` を一度だけ返します。',
+    'Rotate Space webhook secret': 'Space webhook secret を rotate',
+    'List Space webhook deliveries.': 'Space webhook deliveries を一覧する。',
+    'Returns recent delivery records for the current Space scope.': '現在の Space scope の最近の delivery records を返します。',
+    'List Space deliveries': 'Space deliveries を一覧',
+    'List Space Chain webhooks.': 'Space Chain webhooks を一覧する。',
+    'Lists webhook endpoints scoped to a Space Chain. Requires the chain management key in `X-API-Key`.':
+      'Space Chain に scoped された webhook endpoints を一覧します。`X-API-Key` には chain management key が必要です。',
+    'List Space Chain webhooks': 'Space Chain webhooks を一覧',
+    'Create a Space Chain webhook.': 'Space Chain webhook を作成する。',
+    'Creates a chain-scoped webhook endpoint. Use it for chain-level memory events and `space_chain.fact_routed` routing events.':
+      'chain-scoped webhook endpoint を作成します。chain-level memory events と `space_chain.fact_routed` routing events に使います。',
+    'Create Space Chain webhook': 'Space Chain webhook を作成',
+    'Read one Space Chain webhook.': 'Space Chain webhook を 1 件取得する。',
+    'Returns one chain-scoped webhook endpoint without the signing secret.': 'signing secret を含まない chain-scoped webhook endpoint を 1 件返します。',
+    'Update a Space Chain webhook.': 'Space Chain webhook を更新する。',
+    'Updates endpoint name, URL, enabled state, or subscribed events for a chain-scoped endpoint.':
+      'chain-scoped endpoint の name、URL、enabled state、subscribed events を更新します。',
+    'Update Space Chain webhook': 'Space Chain webhook を更新',
+    'Delete a Space Chain webhook.': 'Space Chain webhook を削除する。',
+    'Soft-deletes the chain-scoped endpoint. A successful delete returns `204 No Content`.':
+      'chain-scoped endpoint を soft delete します。成功時は `204 No Content` を返します。',
+    'Test a Space Chain webhook.': 'Space Chain webhook をテストする。',
+    'Queues a `webhook.test` delivery for a chain-scoped endpoint.': 'chain-scoped endpoint に `webhook.test` delivery を enqueue します。',
+    'Test Space Chain webhook': 'Space Chain webhook をテスト',
+    'Rotate a Space Chain webhook secret.': 'Space Chain webhook secret を rotate する。',
+    'Replaces the chain-scoped endpoint signing secret and returns the new `signing_secret` once.':
+      'chain-scoped endpoint の signing secret を置き換え、新しい `signing_secret` を一度だけ返します。',
+    'Rotate Space Chain webhook secret': 'Space Chain webhook secret を rotate',
+    'List Space Chain webhook deliveries.': 'Space Chain webhook deliveries を一覧する。',
+    'Returns recent delivery records for the Space Chain scope.': 'Space Chain scope の最近の delivery records を返します。',
+    'List Space Chain deliveries': 'Space Chain deliveries を一覧',
+    'Human-readable endpoint name.': '人が読める endpoint name。',
+    'Receiver URL. Production deployments require HTTPS.': 'receiver URL。production deployment では HTTPS が必要です。',
+    'Whether the endpoint accepts matching events. Defaults to true on create.': 'endpoint が matching events を受け付けるかどうか。create 時の default は true です。',
+    'Array of event types to subscribe to: `memory.added`, `memory.deleted`, or `space_chain.fact_routed`.':
+      'subscribe する event type の配列: `memory.added`、`memory.deleted`、`space_chain.fact_routed`。',
+    'Updated endpoint name.': '更新後の endpoint name。',
+    'Updated receiver URL.': '更新後の receiver URL。',
+    'Whether the endpoint accepts matching events.': 'endpoint が matching events を受け付けるかどうか。',
+    'Replacement array of subscribed event types.': 'subscribed event types を置き換える配列。',
+    'Maximum number of deliveries to return. Defaults to 50 and caps at 200.': '返す delivery の最大数。default は 50、上限は 200 です。',
+    'Webhook endpoint id.': 'Webhook endpoint id。',
+    'Scope type. Space endpoints return `tenant`; Space Chain endpoints return `chain`.':
+      'scope type。Space endpoints は `tenant`、Space Chain endpoints は `chain` を返します。',
+    'Tenant id for Space webhooks or chain id for Space Chain webhooks.': 'Space webhooks の tenant id、または Space Chain webhooks の chain id。',
+    'Receiver URL.': 'receiver URL。',
+    'Subscribed event type array.': 'subscribed event type 配列。',
+    'Creation timestamp.': '作成 timestamp。',
+    'Last update timestamp.': '最終更新 timestamp。',
+    'Array of webhook endpoints.': 'webhook endpoint の配列。',
+    'One-time signing secret returned only by create and rotate-secret responses.': 'create と rotate-secret responses でのみ返る一度限りの signing secret。',
+    'Delivery id.': 'Delivery id。',
+    'Event id.': 'Event id。',
+    'Webhook endpoint id for this delivery.': 'この delivery の webhook endpoint id。',
+    'Event type delivered to the receiver.': 'receiver に送信された event type。',
+    'Delivery scope type.': 'Delivery scope type。',
+    'Delivery scope id.': 'Delivery scope id。',
+    'Delivery status: `pending`, `delivered`, or `failed`.': 'Delivery status: `pending`、`delivered`、`failed`。',
+    'Delivery attempt count.': 'Delivery attempt count。',
+    'Next retry timestamp for pending deliveries.': 'pending deliveries の次回 retry timestamp。',
+    'Most recent HTTP status returned by the receiver.': 'receiver が返した最新の HTTP status。',
+    'Most recent delivery error message.': '最新の delivery error message。',
+    'Timestamp when delivery reached a 2xx response.': 'delivery が 2xx response に到達した timestamp。',
+    'Array of webhook delivery records.': 'webhook delivery record の配列。',
+    'Queued test delivery record.': 'enqueue 済みの test delivery record。',
+  },
+  ko: {
+    Webhooks: 'Webhooks',
+    'Create signed event subscriptions for Spaces and Space Chains. mem9 stores endpoint state, delivery attempts, retry state, and delivery history.':
+      'Space 와 Space Chain 의 signed event subscription 을 생성합니다. mem9 는 endpoint state, delivery attempts, retry state, delivery history 를 저장합니다.',
+    'List Space webhooks.': 'Space webhooks 를 조회합니다.',
+    'Lists webhook endpoints scoped to the Space API key in `X-API-Key`.': '`X-API-Key` 의 Space API key scope 에 해당하는 webhook endpoints 를 조회합니다.',
+    'List Space webhooks': 'Space webhooks 조회',
+    'Create a Space webhook.': 'Space webhook 을 생성합니다.',
+    'Creates a Space-scoped webhook endpoint. The response includes `signing_secret` once; store it before closing the response.':
+      'Space-scoped webhook endpoint 를 생성합니다. response 에는 `signing_secret` 이 한 번만 포함되므로 response 를 닫기 전에 저장하세요.',
+    'Create Space webhook': 'Space webhook 생성',
+    'Read one Space webhook.': 'Space webhook 하나를 조회합니다.',
+    'Returns one Space-scoped webhook endpoint without the signing secret.': 'signing secret 없이 Space-scoped webhook endpoint 하나를 반환합니다.',
+    'Update a Space webhook.': 'Space webhook 을 업데이트합니다.',
+    'Updates endpoint name, URL, enabled state, or subscribed events.': 'endpoint name, URL, enabled state, subscribed events 를 업데이트합니다.',
+    'Disable Space webhook': 'Space webhook 비활성화',
+    'Delete a Space webhook.': 'Space webhook 을 삭제합니다.',
+    'Soft-deletes the endpoint. A successful delete returns `204 No Content`.': 'endpoint 를 soft delete 합니다. 성공하면 `204 No Content` 를 반환합니다.',
+    'Test a Space webhook.': 'Space webhook 을 테스트합니다.',
+    'Queues a `webhook.test` delivery to the endpoint so you can verify the receiver and signature handling.':
+      'receiver 와 signature handling 을 검증할 수 있도록 endpoint 에 `webhook.test` delivery 를 queue 합니다.',
+    'Test Space webhook': 'Space webhook 테스트',
+    'Rotate a Space webhook secret.': 'Space webhook secret 을 rotate 합니다.',
+    'Replaces the signing secret and returns the new `signing_secret` once.': 'signing secret 을 교체하고 새 `signing_secret` 을 한 번만 반환합니다.',
+    'Rotate Space webhook secret': 'Space webhook secret rotate',
+    'List Space webhook deliveries.': 'Space webhook deliveries 를 조회합니다.',
+    'Returns recent delivery records for the current Space scope.': '현재 Space scope 의 최근 delivery records 를 반환합니다.',
+    'List Space deliveries': 'Space deliveries 조회',
+    'List Space Chain webhooks.': 'Space Chain webhooks 를 조회합니다.',
+    'Lists webhook endpoints scoped to a Space Chain. Requires the chain management key in `X-API-Key`.':
+      'Space Chain scope 의 webhook endpoints 를 조회합니다. `X-API-Key` 에 chain management key 가 필요합니다.',
+    'List Space Chain webhooks': 'Space Chain webhooks 조회',
+    'Create a Space Chain webhook.': 'Space Chain webhook 을 생성합니다.',
+    'Creates a chain-scoped webhook endpoint. Use it for chain-level memory events and `space_chain.fact_routed` routing events.':
+      'chain-scoped webhook endpoint 를 생성합니다. chain-level memory events 와 `space_chain.fact_routed` routing events 에 사용합니다.',
+    'Create Space Chain webhook': 'Space Chain webhook 생성',
+    'Read one Space Chain webhook.': 'Space Chain webhook 하나를 조회합니다.',
+    'Returns one chain-scoped webhook endpoint without the signing secret.': 'signing secret 없이 chain-scoped webhook endpoint 하나를 반환합니다.',
+    'Update a Space Chain webhook.': 'Space Chain webhook 을 업데이트합니다.',
+    'Updates endpoint name, URL, enabled state, or subscribed events for a chain-scoped endpoint.':
+      'chain-scoped endpoint 의 name, URL, enabled state, subscribed events 를 업데이트합니다.',
+    'Update Space Chain webhook': 'Space Chain webhook 업데이트',
+    'Delete a Space Chain webhook.': 'Space Chain webhook 을 삭제합니다.',
+    'Soft-deletes the chain-scoped endpoint. A successful delete returns `204 No Content`.':
+      'chain-scoped endpoint 를 soft delete 합니다. 성공하면 `204 No Content` 를 반환합니다.',
+    'Test a Space Chain webhook.': 'Space Chain webhook 을 테스트합니다.',
+    'Queues a `webhook.test` delivery for a chain-scoped endpoint.': 'chain-scoped endpoint 에 `webhook.test` delivery 를 queue 합니다.',
+    'Test Space Chain webhook': 'Space Chain webhook 테스트',
+    'Rotate a Space Chain webhook secret.': 'Space Chain webhook secret 을 rotate 합니다.',
+    'Replaces the chain-scoped endpoint signing secret and returns the new `signing_secret` once.':
+      'chain-scoped endpoint signing secret 을 교체하고 새 `signing_secret` 을 한 번만 반환합니다.',
+    'Rotate Space Chain webhook secret': 'Space Chain webhook secret rotate',
+    'List Space Chain webhook deliveries.': 'Space Chain webhook deliveries 를 조회합니다.',
+    'Returns recent delivery records for the Space Chain scope.': 'Space Chain scope 의 최근 delivery records 를 반환합니다.',
+    'List Space Chain deliveries': 'Space Chain deliveries 조회',
+    'Human-readable endpoint name.': '사람이 읽을 수 있는 endpoint name.',
+    'Receiver URL. Production deployments require HTTPS.': 'receiver URL. production deployment 에서는 HTTPS 가 필요합니다.',
+    'Whether the endpoint accepts matching events. Defaults to true on create.': 'endpoint 가 matching events 를 받을지 여부. create 시 기본값은 true 입니다.',
+    'Array of event types to subscribe to: `memory.added`, `memory.deleted`, or `space_chain.fact_routed`.':
+      'subscribe 할 event type 배열: `memory.added`, `memory.deleted`, `space_chain.fact_routed`.',
+    'Updated endpoint name.': '업데이트된 endpoint name.',
+    'Updated receiver URL.': '업데이트된 receiver URL.',
+    'Whether the endpoint accepts matching events.': 'endpoint 가 matching events 를 받을지 여부.',
+    'Replacement array of subscribed event types.': 'subscribed event types 를 교체할 배열.',
+    'Maximum number of deliveries to return. Defaults to 50 and caps at 200.': '반환할 delivery 최대 수. 기본값은 50, 상한은 200 입니다.',
+    'Webhook endpoint id.': 'Webhook endpoint id.',
+    'Scope type. Space endpoints return `tenant`; Space Chain endpoints return `chain`.':
+      'scope type. Space endpoints 는 `tenant`, Space Chain endpoints 는 `chain` 을 반환합니다.',
+    'Tenant id for Space webhooks or chain id for Space Chain webhooks.': 'Space webhooks 의 tenant id 또는 Space Chain webhooks 의 chain id.',
+    'Receiver URL.': 'receiver URL.',
+    'Subscribed event type array.': 'subscribed event type 배열.',
+    'Creation timestamp.': '생성 timestamp.',
+    'Last update timestamp.': '마지막 업데이트 timestamp.',
+    'Array of webhook endpoints.': 'webhook endpoint 배열.',
+    'One-time signing secret returned only by create and rotate-secret responses.': 'create 와 rotate-secret responses 에서만 반환되는 one-time signing secret.',
+    'Delivery id.': 'Delivery id.',
+    'Event id.': 'Event id.',
+    'Webhook endpoint id for this delivery.': '이 delivery 의 webhook endpoint id.',
+    'Event type delivered to the receiver.': 'receiver 로 전달된 event type.',
+    'Delivery scope type.': 'Delivery scope type.',
+    'Delivery scope id.': 'Delivery scope id.',
+    'Delivery status: `pending`, `delivered`, or `failed`.': 'Delivery status: `pending`, `delivered`, `failed`.',
+    'Delivery attempt count.': 'Delivery attempt count.',
+    'Next retry timestamp for pending deliveries.': 'pending deliveries 의 다음 retry timestamp.',
+    'Most recent HTTP status returned by the receiver.': 'receiver 가 반환한 가장 최근 HTTP status.',
+    'Most recent delivery error message.': '가장 최근 delivery error message.',
+    'Timestamp when delivery reached a 2xx response.': 'delivery 가 2xx response 에 도달한 timestamp.',
+    'Array of webhook delivery records.': 'webhook delivery record 배열.',
+    'Queued test delivery record.': 'queue 된 test delivery record.',
+  },
+  id: {
+    Webhooks: 'Webhooks',
+    'Create signed event subscriptions for Spaces and Space Chains. mem9 stores endpoint state, delivery attempts, retry state, and delivery history.':
+      'Buat langganan event bertanda tangan untuk Space dan Space Chain. mem9 menyimpan endpoint state, delivery attempts, retry state, dan delivery history.',
+    'List Space webhooks.': 'List Space webhooks.',
+    'Lists webhook endpoints scoped to the Space API key in `X-API-Key`.': 'Menampilkan webhook endpoints dalam scope Space API key di `X-API-Key`.',
+    'List Space webhooks': 'List Space webhooks',
+    'Create a Space webhook.': 'Buat Space webhook.',
+    'Creates a Space-scoped webhook endpoint. The response includes `signing_secret` once; store it before closing the response.':
+      'Membuat webhook endpoint dalam scope Space. Response menyertakan `signing_secret` sekali saja; simpan sebelum response ditutup.',
+    'Create Space webhook': 'Buat Space webhook',
+    'Read one Space webhook.': 'Baca satu Space webhook.',
+    'Returns one Space-scoped webhook endpoint without the signing secret.': 'Mengembalikan satu Space-scoped webhook endpoint tanpa signing secret.',
+    'Update a Space webhook.': 'Update Space webhook.',
+    'Updates endpoint name, URL, enabled state, or subscribed events.': 'Mengupdate endpoint name, URL, enabled state, atau subscribed events.',
+    'Disable Space webhook': 'Nonaktifkan Space webhook',
+    'Delete a Space webhook.': 'Hapus Space webhook.',
+    'Soft-deletes the endpoint. A successful delete returns `204 No Content`.': 'Melakukan soft-delete endpoint. Delete yang berhasil mengembalikan `204 No Content`.',
+    'Test a Space webhook.': 'Test Space webhook.',
+    'Queues a `webhook.test` delivery to the endpoint so you can verify the receiver and signature handling.':
+      'Mengantrekan `webhook.test` delivery ke endpoint agar Anda dapat memverifikasi receiver dan signature handling.',
+    'Test Space webhook': 'Test Space webhook',
+    'Rotate a Space webhook secret.': 'Rotate Space webhook secret.',
+    'Replaces the signing secret and returns the new `signing_secret` once.': 'Mengganti signing secret dan mengembalikan `signing_secret` baru sekali saja.',
+    'Rotate Space webhook secret': 'Rotate Space webhook secret',
+    'List Space webhook deliveries.': 'List Space webhook deliveries.',
+    'Returns recent delivery records for the current Space scope.': 'Mengembalikan delivery records terbaru untuk scope Space saat ini.',
+    'List Space deliveries': 'List Space deliveries',
+    'List Space Chain webhooks.': 'List Space Chain webhooks.',
+    'Lists webhook endpoints scoped to a Space Chain. Requires the chain management key in `X-API-Key`.':
+      'Menampilkan webhook endpoints dalam scope Space Chain. Memerlukan chain management key di `X-API-Key`.',
+    'List Space Chain webhooks': 'List Space Chain webhooks',
+    'Create a Space Chain webhook.': 'Buat Space Chain webhook.',
+    'Creates a chain-scoped webhook endpoint. Use it for chain-level memory events and `space_chain.fact_routed` routing events.':
+      'Membuat chain-scoped webhook endpoint. Gunakan untuk chain-level memory events dan `space_chain.fact_routed` routing events.',
+    'Create Space Chain webhook': 'Buat Space Chain webhook',
+    'Read one Space Chain webhook.': 'Baca satu Space Chain webhook.',
+    'Returns one chain-scoped webhook endpoint without the signing secret.': 'Mengembalikan satu chain-scoped webhook endpoint tanpa signing secret.',
+    'Update a Space Chain webhook.': 'Update Space Chain webhook.',
+    'Updates endpoint name, URL, enabled state, or subscribed events for a chain-scoped endpoint.':
+      'Mengupdate endpoint name, URL, enabled state, atau subscribed events untuk chain-scoped endpoint.',
+    'Update Space Chain webhook': 'Update Space Chain webhook',
+    'Delete a Space Chain webhook.': 'Hapus Space Chain webhook.',
+    'Soft-deletes the chain-scoped endpoint. A successful delete returns `204 No Content`.':
+      'Melakukan soft-delete chain-scoped endpoint. Delete yang berhasil mengembalikan `204 No Content`.',
+    'Test a Space Chain webhook.': 'Test Space Chain webhook.',
+    'Queues a `webhook.test` delivery for a chain-scoped endpoint.': 'Mengantrekan `webhook.test` delivery untuk chain-scoped endpoint.',
+    'Test Space Chain webhook': 'Test Space Chain webhook',
+    'Rotate a Space Chain webhook secret.': 'Rotate Space Chain webhook secret.',
+    'Replaces the chain-scoped endpoint signing secret and returns the new `signing_secret` once.':
+      'Mengganti signing secret milik chain-scoped endpoint dan mengembalikan `signing_secret` baru sekali saja.',
+    'Rotate Space Chain webhook secret': 'Rotate Space Chain webhook secret',
+    'List Space Chain webhook deliveries.': 'List Space Chain webhook deliveries.',
+    'Returns recent delivery records for the Space Chain scope.': 'Mengembalikan delivery records terbaru untuk scope Space Chain.',
+    'List Space Chain deliveries': 'List Space Chain deliveries',
+    'Human-readable endpoint name.': 'endpoint name yang mudah dibaca.',
+    'Receiver URL. Production deployments require HTTPS.': 'receiver URL. Production deployment memerlukan HTTPS.',
+    'Whether the endpoint accepts matching events. Defaults to true on create.': 'Apakah endpoint menerima matching events. Default true saat create.',
+    'Array of event types to subscribe to: `memory.added`, `memory.deleted`, or `space_chain.fact_routed`.':
+      'Array event type yang disubscribe: `memory.added`, `memory.deleted`, atau `space_chain.fact_routed`.',
+    'Updated endpoint name.': 'endpoint name yang diperbarui.',
+    'Updated receiver URL.': 'receiver URL yang diperbarui.',
+    'Whether the endpoint accepts matching events.': 'Apakah endpoint menerima matching events.',
+    'Replacement array of subscribed event types.': 'Array pengganti untuk subscribed event types.',
+    'Maximum number of deliveries to return. Defaults to 50 and caps at 200.': 'Jumlah maksimum deliveries yang dikembalikan. Default 50 dan batas atas 200.',
+    'Webhook endpoint id.': 'Webhook endpoint id.',
+    'Scope type. Space endpoints return `tenant`; Space Chain endpoints return `chain`.':
+      'scope type. Space endpoints mengembalikan `tenant`; Space Chain endpoints mengembalikan `chain`.',
+    'Tenant id for Space webhooks or chain id for Space Chain webhooks.': 'tenant id untuk Space webhooks atau chain id untuk Space Chain webhooks.',
+    'Receiver URL.': 'receiver URL.',
+    'Subscribed event type array.': 'Array subscribed event type.',
+    'Creation timestamp.': 'Timestamp pembuatan.',
+    'Last update timestamp.': 'Timestamp update terakhir.',
+    'Array of webhook endpoints.': 'Array webhook endpoints.',
+    'One-time signing secret returned only by create and rotate-secret responses.': 'One-time signing secret yang hanya dikembalikan oleh response create dan rotate-secret.',
+    'Delivery id.': 'Delivery id.',
+    'Event id.': 'Event id.',
+    'Webhook endpoint id for this delivery.': 'webhook endpoint id untuk delivery ini.',
+    'Event type delivered to the receiver.': 'event type yang dikirim ke receiver.',
+    'Delivery scope type.': 'Delivery scope type.',
+    'Delivery scope id.': 'Delivery scope id.',
+    'Delivery status: `pending`, `delivered`, or `failed`.': 'Delivery status: `pending`, `delivered`, atau `failed`.',
+    'Delivery attempt count.': 'Jumlah delivery attempt.',
+    'Next retry timestamp for pending deliveries.': 'Timestamp retry berikutnya untuk pending deliveries.',
+    'Most recent HTTP status returned by the receiver.': 'HTTP status terbaru yang dikembalikan receiver.',
+    'Most recent delivery error message.': 'delivery error message terbaru.',
+    'Timestamp when delivery reached a 2xx response.': 'Timestamp saat delivery menerima response 2xx.',
+    'Array of webhook delivery records.': 'Array webhook delivery records.',
+    'Queued test delivery record.': 'test delivery record yang sudah diantrekan.',
+  },
+  th: {
+    Webhooks: 'Webhooks',
+    'Create signed event subscriptions for Spaces and Space Chains. mem9 stores endpoint state, delivery attempts, retry state, and delivery history.':
+      'สร้าง event subscriptions พร้อมลายเซ็นสำหรับ Space และ Space Chain โดย mem9 จะเก็บ endpoint state, delivery attempts, retry state และ delivery history',
+    'List Space webhooks.': 'แสดง Space webhooks',
+    'Lists webhook endpoints scoped to the Space API key in `X-API-Key`.': 'แสดง webhook endpoints ใน scope ของ Space API key ที่อยู่ใน `X-API-Key`',
+    'List Space webhooks': 'แสดง Space webhooks',
+    'Create a Space webhook.': 'สร้าง Space webhook',
+    'Creates a Space-scoped webhook endpoint. The response includes `signing_secret` once; store it before closing the response.':
+      'สร้าง webhook endpoint ใน scope ของ Space โดย response มี `signing_secret` เพียงครั้งเดียว โปรดบันทึกไว้ก่อนปิด response',
+    'Create Space webhook': 'สร้าง Space webhook',
+    'Read one Space webhook.': 'อ่าน Space webhook หนึ่งรายการ',
+    'Returns one Space-scoped webhook endpoint without the signing secret.': 'คืน webhook endpoint ใน scope ของ Space หนึ่งรายการโดยไม่มี signing secret',
+    'Update a Space webhook.': 'อัปเดต Space webhook',
+    'Updates endpoint name, URL, enabled state, or subscribed events.': 'อัปเดต endpoint name, URL, enabled state หรือ subscribed events',
+    'Disable Space webhook': 'ปิดใช้งาน Space webhook',
+    'Delete a Space webhook.': 'ลบ Space webhook',
+    'Soft-deletes the endpoint. A successful delete returns `204 No Content`.': 'soft-delete endpoint และคืน `204 No Content` เมื่อสำเร็จ',
+    'Test a Space webhook.': 'ทดสอบ Space webhook',
+    'Queues a `webhook.test` delivery to the endpoint so you can verify the receiver and signature handling.':
+      'คิว `webhook.test` delivery ไปยัง endpoint เพื่อให้ตรวจสอบ receiver และ signature handling ได้',
+    'Test Space webhook': 'ทดสอบ Space webhook',
+    'Rotate a Space webhook secret.': 'rotate Space webhook secret',
+    'Replaces the signing secret and returns the new `signing_secret` once.': 'แทนที่ signing secret และคืน `signing_secret` ใหม่เพียงครั้งเดียว',
+    'Rotate Space webhook secret': 'rotate Space webhook secret',
+    'List Space webhook deliveries.': 'แสดง Space webhook deliveries',
+    'Returns recent delivery records for the current Space scope.': 'คืน delivery records ล่าสุดสำหรับ Space scope ปัจจุบัน',
+    'List Space deliveries': 'แสดง Space deliveries',
+    'List Space Chain webhooks.': 'แสดง Space Chain webhooks',
+    'Lists webhook endpoints scoped to a Space Chain. Requires the chain management key in `X-API-Key`.':
+      'แสดง webhook endpoints ใน scope ของ Space Chain ต้องใช้ chain management key ใน `X-API-Key`',
+    'List Space Chain webhooks': 'แสดง Space Chain webhooks',
+    'Create a Space Chain webhook.': 'สร้าง Space Chain webhook',
+    'Creates a chain-scoped webhook endpoint. Use it for chain-level memory events and `space_chain.fact_routed` routing events.':
+      'สร้าง chain-scoped webhook endpoint ใช้สำหรับ chain-level memory events และ `space_chain.fact_routed` routing events',
+    'Create Space Chain webhook': 'สร้าง Space Chain webhook',
+    'Read one Space Chain webhook.': 'อ่าน Space Chain webhook หนึ่งรายการ',
+    'Returns one chain-scoped webhook endpoint without the signing secret.': 'คืน chain-scoped webhook endpoint หนึ่งรายการโดยไม่มี signing secret',
+    'Update a Space Chain webhook.': 'อัปเดต Space Chain webhook',
+    'Updates endpoint name, URL, enabled state, or subscribed events for a chain-scoped endpoint.':
+      'อัปเดต endpoint name, URL, enabled state หรือ subscribed events สำหรับ chain-scoped endpoint',
+    'Update Space Chain webhook': 'อัปเดต Space Chain webhook',
+    'Delete a Space Chain webhook.': 'ลบ Space Chain webhook',
+    'Soft-deletes the chain-scoped endpoint. A successful delete returns `204 No Content`.':
+      'soft-delete chain-scoped endpoint และคืน `204 No Content` เมื่อสำเร็จ',
+    'Test a Space Chain webhook.': 'ทดสอบ Space Chain webhook',
+    'Queues a `webhook.test` delivery for a chain-scoped endpoint.': 'คิว `webhook.test` delivery สำหรับ chain-scoped endpoint',
+    'Test Space Chain webhook': 'ทดสอบ Space Chain webhook',
+    'Rotate a Space Chain webhook secret.': 'rotate Space Chain webhook secret',
+    'Replaces the chain-scoped endpoint signing secret and returns the new `signing_secret` once.':
+      'แทนที่ signing secret ของ chain-scoped endpoint และคืน `signing_secret` ใหม่เพียงครั้งเดียว',
+    'Rotate Space Chain webhook secret': 'rotate Space Chain webhook secret',
+    'List Space Chain webhook deliveries.': 'แสดง Space Chain webhook deliveries',
+    'Returns recent delivery records for the Space Chain scope.': 'คืน delivery records ล่าสุดสำหรับ Space Chain scope',
+    'List Space Chain deliveries': 'แสดง Space Chain deliveries',
+    'Human-readable endpoint name.': 'endpoint name ที่อ่านเข้าใจง่าย',
+    'Receiver URL. Production deployments require HTTPS.': 'receiver URL โดย production deployment ต้องใช้ HTTPS',
+    'Whether the endpoint accepts matching events. Defaults to true on create.': 'endpoint รับ matching events หรือไม่ ค่าเริ่มต้นตอน create คือ true',
+    'Array of event types to subscribe to: `memory.added`, `memory.deleted`, or `space_chain.fact_routed`.':
+      'array ของ event types ที่ subscribe: `memory.added`, `memory.deleted` หรือ `space_chain.fact_routed`',
+    'Updated endpoint name.': 'endpoint name ที่อัปเดตแล้ว',
+    'Updated receiver URL.': 'receiver URL ที่อัปเดตแล้ว',
+    'Whether the endpoint accepts matching events.': 'endpoint รับ matching events หรือไม่',
+    'Replacement array of subscribed event types.': 'array ใหม่สำหรับ subscribed event types',
+    'Maximum number of deliveries to return. Defaults to 50 and caps at 200.': 'จำนวน deliveries สูงสุดที่จะคืน ค่าเริ่มต้น 50 และสูงสุด 200',
+    'Webhook endpoint id.': 'Webhook endpoint id',
+    'Scope type. Space endpoints return `tenant`; Space Chain endpoints return `chain`.':
+      'scope type โดย Space endpoints คืน `tenant` และ Space Chain endpoints คืน `chain`',
+    'Tenant id for Space webhooks or chain id for Space Chain webhooks.': 'tenant id สำหรับ Space webhooks หรือ chain id สำหรับ Space Chain webhooks',
+    'Receiver URL.': 'receiver URL',
+    'Subscribed event type array.': 'array ของ subscribed event type',
+    'Creation timestamp.': 'timestamp การสร้าง',
+    'Last update timestamp.': 'timestamp การอัปเดตล่าสุด',
+    'Array of webhook endpoints.': 'array ของ webhook endpoints',
+    'One-time signing secret returned only by create and rotate-secret responses.': 'one-time signing secret ที่คืนเฉพาะจาก response ของ create และ rotate-secret',
+    'Delivery id.': 'Delivery id',
+    'Event id.': 'Event id',
+    'Webhook endpoint id for this delivery.': 'webhook endpoint id สำหรับ delivery นี้',
+    'Event type delivered to the receiver.': 'event type ที่ส่งไปยัง receiver',
+    'Delivery scope type.': 'Delivery scope type',
+    'Delivery scope id.': 'Delivery scope id',
+    'Delivery status: `pending`, `delivered`, or `failed`.': 'Delivery status: `pending`, `delivered` หรือ `failed`',
+    'Delivery attempt count.': 'จำนวน delivery attempt',
+    'Next retry timestamp for pending deliveries.': 'timestamp retry ครั้งถัดไปสำหรับ pending deliveries',
+    'Most recent HTTP status returned by the receiver.': 'HTTP status ล่าสุดที่ receiver คืนมา',
+    'Most recent delivery error message.': 'delivery error message ล่าสุด',
+    'Timestamp when delivery reached a 2xx response.': 'timestamp เมื่อ delivery ได้รับ response 2xx',
+    'Array of webhook delivery records.': 'array ของ webhook delivery records',
+    'Queued test delivery record.': 'test delivery record ที่ถูกคิวแล้ว',
+  },
+};
+
 export function localizeApiSharedText(locale: SiteLocale, text: string): string {
   if (locale === 'en') {
     return text;
   }
 
-  return apiSharedTextTranslations[locale]?.[text] ?? text;
+  return apiSharedTextTranslations[locale]?.[text] ?? webhookApiSharedTextTranslations[locale]?.[text] ?? text;
 }
 
 function localizeApiFields(locale: SiteLocale, fields: SiteApiFieldCopy[] | undefined): SiteApiFieldCopy[] | undefined {

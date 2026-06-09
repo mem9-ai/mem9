@@ -30,7 +30,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: 'Memory Workflows', sectionIDs: ['spaces', 'space-detail', 'memories'] },
-      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'usage-billing-settings', 'safe-operations'] },
+      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'safe-operations'] },
     ],
     sections: [
       {
@@ -189,8 +189,41 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       {
-        id: 'usage-billing-settings',
+        id: 'webhooks',
         label: '08',
+        title: 'Webhooks',
+        intro: 'The Webhooks page manages event subscriptions for Spaces and Space Chains in the current project.',
+        subsections: [
+          {
+            title: 'Project view',
+            bullets: [
+              'Open Webhooks from the Activity sidebar.',
+              'Use All, Space, or Space Chain filters to narrow the project-level list.',
+              'The table shows the endpoint name, scope, URL host, enabled state, subscribed events, last delivery status, and update time.',
+              'If one Space is not usable, the project list continues to show reachable scopes instead of blocking the whole page.',
+            ],
+          },
+          {
+            title: 'Create and edit',
+            bullets: [
+              'Create Webhook opens a modal where you choose Space or Space Chain, pick the resource, enter the URL, select events, and enable or disable the endpoint.',
+              'Production endpoints should use HTTPS. Local HTTP URLs are only for local development receivers.',
+              'The signing secret is shown only after create or rotate-secret. Copy it before closing the modal.',
+            ],
+          },
+          {
+            title: 'Actions and deliveries',
+            bullets: [
+              'Use the row menu to edit, test, view deliveries, rotate the signing secret, enable or disable, or delete an endpoint.',
+              'Test queues a `webhook.test` delivery so you can verify the receiver before relying on live events.',
+              'The deliveries drawer shows event type, event id, delivery status, attempt count, HTTP status, last error, retry time, and delivered time.',
+            ],
+          },
+        ],
+      },
+      {
+        id: 'usage-billing-settings',
+        label: '09',
         title: 'Usage, Billing, and Settings',
         intro: 'These pages operate at the organization level.',
         subsections: [
@@ -220,7 +253,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'safe-operations',
-        label: '09',
+        label: '10',
         title: 'Safe Operations',
         intro: 'Console exposes powerful controls, so treat changes deliberately.',
         bullets: [
@@ -262,7 +295,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
     tocGroups: [
       { title: '开始', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: '记忆工作流', sectionIDs: ['spaces', 'space-detail', 'memories'] },
-      { title: '高级工作流', sectionIDs: ['space-chains', 'usage-billing-settings', 'safe-operations'] },
+      { title: '高级工作流', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'safe-operations'] },
     ],
     sections: [
       {
@@ -421,8 +454,41 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       {
-        id: 'usage-billing-settings',
+        id: 'webhooks',
         label: '08',
+        title: 'Webhooks',
+        intro: 'Webhooks 页面用于管理当前 project 下 Space 和 Space Chain 的事件订阅。',
+        subsections: [
+          {
+            title: 'Project 视图',
+            bullets: [
+              '从 Activity 侧边栏进入 Webhooks。',
+              '用 All、Space、Space Chain filter 缩小项目级列表。',
+              '表格会显示 endpoint 名称、scope、URL host、启用状态、订阅事件、最近投递状态和更新时间。',
+              '如果某个 Space 暂时不可用，项目列表会继续显示其它可访问 scope，而不是卡住整页。',
+            ],
+          },
+          {
+            title: '创建和编辑',
+            bullets: [
+              'Create Webhook 会打开表单，选择 Space 或 Space Chain、选择资源、填写 URL、选择事件，并设置是否启用。',
+              '生产环境 endpoint 应使用 HTTPS。本地 HTTP URL 只用于本地开发 receiver。',
+              'Signing secret 只会在 create 或 rotate-secret 后显示一次，关闭弹窗前需要复制保存。',
+            ],
+          },
+          {
+            title: '操作和投递记录',
+            bullets: [
+              '行菜单支持 edit、test、view deliveries、rotate secret、enable / disable 和 delete。',
+              'Test 会排队一个 `webhook.test` delivery，方便你在依赖真实事件之前验证 receiver。',
+              'Deliveries drawer 会显示 event type、event id、状态、尝试次数、HTTP 状态、最近错误、下次重试时间和成功投递时间。',
+            ],
+          },
+        ],
+      },
+      {
+        id: 'usage-billing-settings',
+        label: '09',
         title: 'Usage、Billing 和 Settings',
         intro: '这些页面作用在 organization 层级。',
         subsections: [
@@ -452,7 +518,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'safe-operations',
-        label: '09',
+        label: '10',
         title: '安全操作建议',
         intro: 'Console 暴露了关键控制能力，操作时要有明确意图。',
         bullets: [
@@ -494,7 +560,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: 'Memory Workflows', sectionIDs: ['spaces', 'space-detail', 'memories'] },
-      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'usage-billing-settings', 'safe-operations'] },
+      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'safe-operations'] },
     ],
     sections: [
       {
@@ -577,8 +643,18 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       {
-        id: 'usage-billing-settings',
+        id: 'webhooks',
         label: '08',
+        title: 'Webhooks',
+        subsections: [
+          { title: 'Project view', bullets: ['Activity sidebar から Webhooks を開きます。', 'All、Space、Space Chain filter で project-level list を絞り込みます。', 'table で endpoint、scope、URL host、enabled、events、last delivery を確認します。'] },
+          { title: 'Create and edit', bullets: ['Space または Space Chain、resource、URL、events、enabled state を設定します。', 'production endpoint は HTTPS を使います。local HTTP は development 用です。', 'signing secret は create / rotate-secret の後に一度だけ表示されます。'] },
+          { title: 'Actions and deliveries', bullets: ['row menu で edit、test、deliveries、rotate secret、enable / disable、delete を実行します。', 'deliveries drawer で status、attempts、HTTP status、last error、retry time を確認します。'] },
+        ],
+      },
+      {
+        id: 'usage-billing-settings',
+        label: '09',
         title: 'Usage, Billing, Settings',
         subsections: [
           { title: 'Usage', bullets: ['recall / write request usage を確認します。', 'date range、daily trend、usage events を見ます。'] },
@@ -588,7 +664,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'safe-operations',
-        label: '09',
+        label: '10',
         title: 'Safe Operations',
         bullets: [
           'API key は信頼できる client に設定する時だけ reveal します。',
@@ -628,7 +704,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: 'Memory Workflows', sectionIDs: ['spaces', 'space-detail', 'memories'] },
-      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'usage-billing-settings', 'safe-operations'] },
+      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'safe-operations'] },
     ],
     sections: [
       { id: 'quick-start', label: '01', title: 'Quick Start', bullets: ['Log in 메뉴에서 mem9 Console 에 로그인합니다.', '변경 전에 organization 과 project 를 확인합니다.', '공식 OpenClaw onboarding prompt 는 Install mem9 에서 복사합니다.', '기존 mem9 API key 는 Claim API key 로 Space 에 연결합니다.', 'Space 또는 Memories 에서 agent 가 저장한 memory 를 확인합니다.'] },
@@ -638,8 +714,9 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       { id: 'space-detail', label: '05', title: 'Space Detail', subsections: [{ title: 'Tenant key', bullets: ['memory data 를 보기 전에 key 를 설정합니다.', '필요할 때만 key 를 reveal / copy 합니다.', 'Console 은 기본적으로 masked key 를 보여줍니다.'] }, { title: 'Metrics and imports', bullets: ['total, pinned, insight memories 를 확인합니다.', 'latest import 상태를 확인합니다.', 'Space switcher 로 다른 Space 를 봅니다.'] }, { title: 'Memory workbench', bullets: ['memory 를 생성, 편집, 삭제합니다.', 'Smart ingest 는 pasted message 에서 durable facts 를 추출합니다.', 'appId 로 같은 key 안의 용도를 분리합니다.'] }] },
       { id: 'memories', label: '06', title: 'Memories', bullets: ['Space 를 선택해 memory 를 봅니다.', 'text, type, state, agent, tags, appId 로 필터합니다.', 'detail 에서 content, metadata, tags, score, confidence, session, agent, version, timestamps 를 확인합니다.', 'Space 에 key 가 없으면 key settings 를 먼저 설정합니다.'] },
       { id: 'space-chains', label: '07', title: 'Space Chains', subsections: [{ title: 'Create or import', bullets: ['새 chain 을 만들거나 기존 chain key 를 import 합니다.', 'detail 에서 key, nodes, memory tools 를 관리합니다.'] }, { title: 'Nodes and routing', bullets: ['active key 가 있는 Space 를 추가합니다.', 'node order 가 recall order 입니다.', 'routing policy prompt 로 검색 조건을 제한할 수 있습니다.'] }, { title: 'Chain keys', bullets: ['chain key 를 만들거나 bind 합니다.', '필요 없는 key 는 disable 합니다.', 'recall tools 로 single Space 와 비교합니다.'] }] },
-      { id: 'usage-billing-settings', label: '08', title: 'Usage, Billing, Settings', subsections: [{ title: 'Usage', bullets: ['recall / write request usage 를 확인합니다.', 'date range, daily trend, usage events 를 봅니다.'] }, { title: 'Billing', bullets: ['current plan, period, included access, on-demand settings 를 확인합니다.'] }, { title: 'Settings', bullets: ['account 와 organization 관리, theme, language, logout 에 사용합니다.'] }] },
-      { id: 'safe-operations', label: '09', title: 'Safe Operations', bullets: ['API key 는 trusted client 설정 시에만 reveal 합니다.', 'delete 전에 preview 와 confirmation 을 확인합니다.', '섞이면 안 되는 data 는 별도 Space 로 나눕니다.', '결과가 이상하면 org, project, Space, key, appId filter 를 확인합니다.'] },
+      { id: 'webhooks', label: '08', title: 'Webhooks', subsections: [{ title: 'Project view', bullets: ['Activity sidebar 에서 Webhooks 를 엽니다.', 'All, Space, Space Chain filter 로 project list 를 좁힙니다.', 'table 에서 endpoint, scope, URL host, enabled, events, last delivery 를 확인합니다.'] }, { title: 'Create and edit', bullets: ['Space 또는 Space Chain, resource, URL, events, enabled state 를 설정합니다.', 'production endpoint 는 HTTPS 를 사용합니다.', 'signing secret 은 create / rotate-secret 뒤 한 번만 표시됩니다.'] }, { title: 'Actions and deliveries', bullets: ['row menu 에서 edit, test, deliveries, rotate secret, enable / disable, delete 를 실행합니다.', 'deliveries drawer 에서 status, attempts, HTTP status, last error, retry time 을 확인합니다.'] }] },
+      { id: 'usage-billing-settings', label: '09', title: 'Usage, Billing, Settings', subsections: [{ title: 'Usage', bullets: ['recall / write request usage 를 확인합니다.', 'date range, daily trend, usage events 를 봅니다.'] }, { title: 'Billing', bullets: ['current plan, period, included access, on-demand settings 를 확인합니다.'] }, { title: 'Settings', bullets: ['account 와 organization 관리, theme, language, logout 에 사용합니다.'] }] },
+      { id: 'safe-operations', label: '10', title: 'Safe Operations', bullets: ['API key 는 trusted client 설정 시에만 reveal 합니다.', 'delete 전에 preview 와 confirmation 을 확인합니다.', '섞이면 안 되는 data 는 별도 Space 로 나눕니다.', '결과가 이상하면 org, project, Space, key, appId filter 를 확인합니다.'] },
     ],
   },
   id: {
@@ -671,7 +748,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: 'Memory Workflows', sectionIDs: ['spaces', 'space-detail', 'memories'] },
-      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'usage-billing-settings', 'safe-operations'] },
+      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'safe-operations'] },
     ],
     sections: [
       { id: 'quick-start', label: '01', title: 'Quick Start', bullets: ['Buka mem9 Console dari menu Log in lalu masuk.', 'Pastikan organization dan project sebelum mengubah resource.', 'Gunakan Install mem9 untuk prompt onboarding OpenClaw resmi.', 'Gunakan Claim API key untuk menautkan key lama ke Space.', 'Buka Space atau Memories untuk melihat memory yang disimpan agent.'] },
@@ -681,8 +758,9 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       { id: 'space-detail', label: '05', title: 'Space Detail', subsections: [{ title: 'Tenant key', bullets: ['Set key sebelum melihat data memory.', 'Reveal / copy key hanya saat perlu.', 'Console menampilkan masked key secara default.'] }, { title: 'Metrics and imports', bullets: ['Cek total, pinned, dan insight memories.', 'Pantau latest import.', 'Gunakan Space switcher untuk pindah Space.'] }, { title: 'Memory workbench', bullets: ['Buat, edit, dan hapus memory.', 'Smart ingest mengekstrak durable facts dari pesan.', 'Gunakan appId untuk isolasi di dalam key yang sama.'] }] },
       { id: 'memories', label: '06', title: 'Memories', bullets: ['Pilih Space untuk melihat memory.', 'Filter berdasarkan text, type, state, agent, tags, atau appId.', 'Buka detail untuk content, metadata, tags, score, confidence, session, agent, version, dan timestamps.', 'Jika Space belum punya key, konfigurasi key dulu.'] },
       { id: 'space-chains', label: '07', title: 'Space Chains', subsections: [{ title: 'Create or import', bullets: ['Buat chain baru atau import chain key yang ada.', 'Detail page mengelola key, nodes, dan memory tools.'] }, { title: 'Nodes and routing', bullets: ['Tambahkan Space yang punya active key.', 'Node order menentukan recall order.', 'Routing policy prompt membatasi kapan node dicari.'] }, { title: 'Chain keys', bullets: ['Create atau bind chain key.', 'Disable key yang tidak dipakai.', 'Bandingkan chain dengan single Space memakai recall tools.'] }] },
-      { id: 'usage-billing-settings', label: '08', title: 'Usage, Billing, Settings', subsections: [{ title: 'Usage', bullets: ['Pantau recall / write request usage.', 'Lihat date range, daily trend, dan usage events.'] }, { title: 'Billing', bullets: ['Lihat current plan, period, included access, dan on-demand settings.'] }, { title: 'Settings', bullets: ['Untuk account, organization, theme, language, dan logout.'] }] },
-      { id: 'safe-operations', label: '09', title: 'Safe Operations', bullets: ['Reveal API key hanya untuk trusted client.', 'Baca preview dan confirmation sebelum delete.', 'Pisahkan data sensitif ke Space berbeda.', 'Jika hasil aneh, cek org, project, Space, key, dan appId filter.'] },
+      { id: 'webhooks', label: '08', title: 'Webhooks', subsections: [{ title: 'Project view', bullets: ['Buka Webhooks dari Activity sidebar.', 'Gunakan filter All, Space, atau Space Chain.', 'Tabel menampilkan endpoint, scope, URL host, enabled, events, dan last delivery.'] }, { title: 'Create and edit', bullets: ['Pilih Space atau Space Chain, resource, URL, events, dan enabled state.', 'Endpoint production harus HTTPS.', 'signing secret hanya muncul sekali setelah create atau rotate-secret.'] }, { title: 'Actions and deliveries', bullets: ['Row menu mendukung edit, test, deliveries, rotate secret, enable / disable, dan delete.', 'Drawer deliveries menampilkan status, attempts, HTTP status, last error, dan retry time.'] }] },
+      { id: 'usage-billing-settings', label: '09', title: 'Usage, Billing, Settings', subsections: [{ title: 'Usage', bullets: ['Pantau recall / write request usage.', 'Lihat date range, daily trend, dan usage events.'] }, { title: 'Billing', bullets: ['Lihat current plan, period, included access, dan on-demand settings.'] }, { title: 'Settings', bullets: ['Untuk account, organization, theme, language, dan logout.'] }] },
+      { id: 'safe-operations', label: '10', title: 'Safe Operations', bullets: ['Reveal API key hanya untuk trusted client.', 'Baca preview dan confirmation sebelum delete.', 'Pisahkan data sensitif ke Space berbeda.', 'Jika hasil aneh, cek org, project, Space, key, dan appId filter.'] },
     ],
   },
   th: {
@@ -714,7 +792,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: 'Memory Workflows', sectionIDs: ['spaces', 'space-detail', 'memories'] },
-      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'usage-billing-settings', 'safe-operations'] },
+      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'safe-operations'] },
     ],
     sections: [
       { id: 'quick-start', label: '01', title: 'Quick Start', bullets: ['เปิด mem9 Console จากเมนู Log in แล้วเข้าสู่ระบบ', 'ตรวจ organization และ project ก่อนแก้ resource', 'ใช้ Install mem9 เพื่อคัดลอก OpenClaw onboarding prompt', 'ใช้ Claim API key เพื่อผูก key เดิมเข้ากับ Space', 'เปิด Space หรือ Memories เพื่อดู memory ที่ agent บันทึก'] },
@@ -724,8 +802,9 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       { id: 'space-detail', label: '05', title: 'Space Detail', subsections: [{ title: 'Tenant key', bullets: ['ตั้ง key ก่อนดู memory data', 'Reveal / copy key เฉพาะเมื่อจำเป็น', 'Console แสดง masked key เป็นค่าเริ่มต้น'] }, { title: 'Metrics and imports', bullets: ['ตรวจ total, pinned และ insight memories', 'ดูสถานะ latest import', 'ใช้ Space switcher เพื่อเปลี่ยน Space'] }, { title: 'Memory workbench', bullets: ['สร้าง แก้ไข และลบ memory', 'Smart ingest ดึง durable facts จากข้อความ', 'ใช้ appId เพื่อแยกการใช้งานใน key เดียวกัน'] }] },
       { id: 'memories', label: '06', title: 'Memories', bullets: ['เลือก Space เพื่อดู memory', 'Filter ด้วย text, type, state, agent, tags หรือ appId', 'เปิด detail เพื่อดู content, metadata, tags, score, confidence, session, agent, version และ timestamps', 'ถ้า Space ไม่มี key ให้ตั้งค่า key ก่อน'] },
       { id: 'space-chains', label: '07', title: 'Space Chains', subsections: [{ title: 'Create or import', bullets: ['สร้าง chain ใหม่หรือ import chain key เดิม', 'หน้า detail ใช้จัดการ key, nodes และ memory tools'] }, { title: 'Nodes and routing', bullets: ['เพิ่ม Space ที่มี active key', 'node order คือ recall order', 'routing policy prompt จำกัดว่า node ควรถูกค้นหาเมื่อใด'] }, { title: 'Chain keys', bullets: ['Create หรือ bind chain key', 'Disable key ที่ไม่ใช้แล้ว', 'ใช้ recall tools เปรียบเทียบ chain กับ Space เดี่ยว'] }] },
-      { id: 'usage-billing-settings', label: '08', title: 'Usage, Billing, Settings', subsections: [{ title: 'Usage', bullets: ['ดู recall / write request usage', 'ดู date range, daily trend และ usage events'] }, { title: 'Billing', bullets: ['ดู current plan, period, included access และ on-demand settings'] }, { title: 'Settings', bullets: ['สำหรับ account, organization, theme, language และ logout'] }] },
-      { id: 'safe-operations', label: '09', title: 'Safe Operations', bullets: ['Reveal API key เฉพาะ trusted client', 'อ่าน preview และ confirmation ก่อน delete', 'แยกข้อมูลที่ไม่ควรรวมกันไว้คนละ Space', 'ถ้าผลลัพธ์ผิดปกติ ให้ตรวจ org, project, Space, key และ appId filter'] },
+      { id: 'webhooks', label: '08', title: 'Webhooks', subsections: [{ title: 'Project view', bullets: ['เปิด Webhooks จาก Activity sidebar', 'ใช้ filter All, Space หรือ Space Chain', 'ตารางแสดง endpoint, scope, URL host, enabled, events และ last delivery'] }, { title: 'Create and edit', bullets: ['เลือก Space หรือ Space Chain, resource, URL, events และ enabled state', 'production endpoint ต้องใช้ HTTPS', 'signing secret แสดงเพียงครั้งเดียวหลัง create หรือ rotate-secret'] }, { title: 'Actions and deliveries', bullets: ['row menu ใช้ edit, test, deliveries, rotate secret, enable / disable และ delete', 'deliveries drawer แสดง status, attempts, HTTP status, last error และ retry time'] }] },
+      { id: 'usage-billing-settings', label: '09', title: 'Usage, Billing, Settings', subsections: [{ title: 'Usage', bullets: ['ดู recall / write request usage', 'ดู date range, daily trend และ usage events'] }, { title: 'Billing', bullets: ['ดู current plan, period, included access และ on-demand settings'] }, { title: 'Settings', bullets: ['สำหรับ account, organization, theme, language และ logout'] }] },
+      { id: 'safe-operations', label: '10', title: 'Safe Operations', bullets: ['Reveal API key เฉพาะ trusted client', 'อ่าน preview และ confirmation ก่อน delete', 'แยกข้อมูลที่ไม่ควรรวมกันไว้คนละ Space', 'ถ้าผลลัพธ์ผิดปกติ ให้ตรวจ org, project, Space, key และ appId filter'] },
     ],
   },
 };

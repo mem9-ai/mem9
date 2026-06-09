@@ -278,6 +278,297 @@ const spaceChainDocsSections: Record<DocsLocale, DocsSection> = {
   },
 };
 
+const webhookDocsSections: Record<DocsLocale, DocsSection> = {
+  en: {
+    id: 'webhooks',
+    label: '11',
+    title: 'Webhooks',
+    intro: 'Webhooks let external systems react when mem9 creates, deletes, or routes memory.',
+    paragraphs: [
+      'Use Webhooks when you need mem9 activity to update another system without polling the memory API. A webhook endpoint subscribes to events for one Space or one Space Chain, and mem9 delivers signed JSON payloads to the URL you configure.',
+      'mem9 remains the source of truth for endpoint configuration, signing secrets, event records, delivery attempts, retry state, and delivery history. Console and other products proxy or aggregate that state; they do not store webhook secrets or delivery logs separately.',
+    ],
+    bullets: [
+      'Subscribe to `memory.added`, `memory.deleted`, and `space_chain.fact_routed`.',
+      'Create Space webhooks with a normal Space API key.',
+      'Create Space Chain webhooks with the `chain_` management key for that chain.',
+      'Use deliveries to audit attempts, HTTP responses, retry timing, and terminal failures.',
+    ],
+    subsections: [
+      {
+        title: 'Event payloads',
+        bullets: [
+          '`memory.added` is emitted after direct writes, pinned writes, smart ingest ADD actions, and successful routed target writes.',
+          '`memory.deleted` is emitted after single-memory and batch delete operations succeed.',
+          '`space_chain.fact_routed` is emitted on the Space Chain scope after a routing policy writes a matched fact to a target Space.',
+          'Smart ingest UPDATE-only reconciliation does not emit `memory.added`.',
+        ],
+      },
+      {
+        title: 'Signing and delivery',
+        bullets: [
+          'Every delivery includes `X-Mem9-Event-Id`, `X-Mem9-Event-Type`, `X-Mem9-Timestamp`, and `X-Mem9-Signature`.',
+          'The signature format is `v1=<hex_hmac_sha256>` over `<timestamp>.<event_id>.<raw_body>`.',
+          'Verify the timestamp tolerance, recompute the HMAC with the current signing secret, and compare in constant time.',
+          'mem9 retries transient failures with backoff and keeps delivery history for inspection.',
+        ],
+      },
+      {
+        title: 'Managing endpoints',
+        bullets: [
+          'Create and rotate responses show `signing_secret` once. List, get, and update responses never include it.',
+          'Production endpoints must use HTTPS. Development local HTTP is allowed only for localhost-style addresses.',
+          'Rotate the signing secret when a receiver is compromised or the secret was stored incorrectly.',
+        ],
+        links: [
+          { label: 'Open API reference', href: '/api#api-webhooks' },
+          { label: 'Open Console guide', href: '/console-docs#webhooks' },
+        ],
+      },
+    ],
+  },
+  zh: {
+    id: 'webhooks',
+    label: '11',
+    title: 'Webhooks',
+    intro: 'Webhooks 让外部系统在 mem9 创建、删除或路由记忆时自动响应。',
+    paragraphs: [
+      '当你希望其它系统感知 mem9 活动，又不想轮询 memory API 时，可以使用 Webhooks。一个 webhook endpoint 订阅某个 Space 或某条 Space Chain 的事件，mem9 会把带签名的 JSON payload 投递到你配置的 URL。',
+      'mem9 是 webhook 状态的 source of truth：endpoint 配置、签名密钥、事件记录、投递 outbox、重试状态和投递历史都保存在 mem9 内。Console 只代理或聚合这些状态，不单独保存 webhook secret 或投递日志。',
+    ],
+    bullets: [
+      '支持订阅 `memory.added`、`memory.deleted` 和 `space_chain.fact_routed`。',
+      'Space webhook 使用普通 Space API key 创建和管理。',
+      'Space Chain webhook 使用该 chain 的 `chain_` management key 创建和管理。',
+      '通过 deliveries 查看投递尝试、HTTP 响应、重试时间和最终失败状态。',
+    ],
+    subsections: [
+      {
+        title: '事件 payload',
+        bullets: [
+          '`memory.added` 会在直接写入、pinned 写入、smart ingest ADD action，以及成功的 routed target 写入之后发出。',
+          '`memory.deleted` 会在单条或批量删除成功之后发出。',
+          '`space_chain.fact_routed` 会在路由策略把匹配事实写入目标 Space 成功后，在 Space Chain scope 发出。',
+          'Smart ingest 的 UPDATE-only reconcile 不会发出 `memory.added`。',
+        ],
+      },
+      {
+        title: '签名与投递',
+        bullets: [
+          '每次投递都会带上 `X-Mem9-Event-Id`、`X-Mem9-Event-Type`、`X-Mem9-Timestamp` 和 `X-Mem9-Signature`。',
+          '签名格式是 `v1=<hex_hmac_sha256>`，HMAC 输入为 `<timestamp>.<event_id>.<raw_body>`。',
+          '接收方应校验 timestamp tolerance，用当前 signing secret 重新计算 HMAC，并用 constant-time comparison 比较。',
+          'mem9 会对临时失败做 backoff retry，并保留投递历史供排查。',
+        ],
+      },
+      {
+        title: '管理 endpoint',
+        bullets: [
+          'Create 和 rotate-secret 响应只展示一次 `signing_secret`；list、get、update 响应不会包含它。',
+          '生产环境 URL 必须是 HTTPS。开发环境只允许 localhost 类地址使用本地 HTTP。',
+          '当 receiver 泄露、secret 保存错误或需要轮换时，使用 rotate-secret 生成新签名密钥。',
+        ],
+        links: [
+          { label: '查看 API 文档', href: '/api#api-webhooks' },
+          { label: '查看 Console 指南', href: '/console-docs#webhooks' },
+        ],
+      },
+    ],
+  },
+  ja: {
+    id: 'webhooks',
+    label: '11',
+    title: 'Webhooks',
+    intro: 'Webhooks は、mem9 が memory を作成・削除・ルーティングした時に外部システムへ通知します。',
+    paragraphs: [
+      'memory API をポーリングせずに mem9 の活動を別システムへ反映したい場合に使います。endpoint は 1 つの Space または Space Chain のイベントを購読し、mem9 は署名付き JSON payload を設定した URL に送信します。',
+      'endpoint 設定、署名 secret、event record、delivery attempt、retry 状態、delivery history は mem9 が保持します。Console はそれらを proxy / aggregate し、secret や delivery log を別保存しません。',
+    ],
+    bullets: [
+      '`memory.added`、`memory.deleted`、`space_chain.fact_routed` を購読できます。',
+      'Space webhook は通常の Space API key で管理します。',
+      'Space Chain webhook はその chain の `chain_` management key で管理します。',
+      'deliveries で attempt、HTTP status、retry timing、最終 failure を確認できます。',
+    ],
+    subsections: [
+      {
+        title: 'Event payload',
+        bullets: [
+          '`memory.added` は direct write、pinned write、smart ingest ADD、成功した routed target write の後に送られます。',
+          '`memory.deleted` は single / batch delete 成功後に送られます。',
+          '`space_chain.fact_routed` は routing policy が target Space へ fact を書き込んだ後、Space Chain scope に送られます。',
+          'smart ingest の UPDATE-only reconcile では `memory.added` は送られません。',
+        ],
+      },
+      {
+        title: 'Signing and delivery',
+        bullets: [
+          '各 delivery は `X-Mem9-Event-Id`、`X-Mem9-Event-Type`、`X-Mem9-Timestamp`、`X-Mem9-Signature` を含みます。',
+          'signature は `<timestamp>.<event_id>.<raw_body>` の HMAC SHA-256 で、形式は `v1=<hex_hmac_sha256>` です。',
+          'receiver は timestamp tolerance を確認し、現在の signing secret で再計算して constant time で比較してください。',
+          'mem9 は一時的な失敗を backoff 付きで retry し、delivery history を残します。',
+        ],
+      },
+      {
+        title: 'Managing endpoints',
+        bullets: [
+          '`signing_secret` は create と rotate-secret response で一度だけ表示されます。',
+          'production endpoint は HTTPS が必要です。development の local HTTP は localhost 系の address に限られます。',
+          'receiver が侵害された場合や secret を誤って保存した場合は secret を rotate してください。',
+        ],
+        links: [
+          { label: 'API reference', href: '/api#api-webhooks' },
+          { label: 'Console guide', href: '/console-docs#webhooks' },
+        ],
+      },
+    ],
+  },
+  ko: {
+    id: 'webhooks',
+    label: '11',
+    title: 'Webhooks',
+    intro: 'Webhooks 는 mem9 가 memory 를 생성, 삭제, 라우팅할 때 외부 시스템이 반응하게 합니다.',
+    paragraphs: [
+      'memory API 를 polling 하지 않고 mem9 활동을 다른 시스템에 반영하고 싶을 때 사용합니다. endpoint 는 하나의 Space 또는 Space Chain 이벤트를 구독하고, mem9 는 signed JSON payload 를 설정한 URL 로 전달합니다.',
+      'endpoint 설정, signing secret, event record, delivery attempt, retry 상태, delivery history 는 mem9 가 source of truth 로 보관합니다. Console 은 이를 proxy / aggregate 하며 secret 이나 delivery log 를 따로 저장하지 않습니다.',
+    ],
+    bullets: [
+      '`memory.added`, `memory.deleted`, `space_chain.fact_routed` 를 구독할 수 있습니다.',
+      'Space webhook 은 일반 Space API key 로 관리합니다.',
+      'Space Chain webhook 은 해당 chain 의 `chain_` management key 로 관리합니다.',
+      'deliveries 에서 attempts, HTTP status, retry timing, terminal failure 를 확인합니다.',
+    ],
+    subsections: [
+      {
+        title: 'Event payload',
+        bullets: [
+          '`memory.added` 는 direct write, pinned write, smart ingest ADD, 성공한 routed target write 뒤에 발행됩니다.',
+          '`memory.deleted` 는 single / batch delete 성공 뒤에 발행됩니다.',
+          '`space_chain.fact_routed` 는 routing policy 가 target Space 에 fact 를 쓴 뒤 Space Chain scope 에 발행됩니다.',
+          'smart ingest UPDATE-only reconcile 은 `memory.added` 를 발행하지 않습니다.',
+        ],
+      },
+      {
+        title: 'Signing and delivery',
+        bullets: [
+          '각 delivery 는 `X-Mem9-Event-Id`, `X-Mem9-Event-Type`, `X-Mem9-Timestamp`, `X-Mem9-Signature` 를 포함합니다.',
+          'signature 형식은 `v1=<hex_hmac_sha256>` 이며 입력은 `<timestamp>.<event_id>.<raw_body>` 입니다.',
+          'receiver 는 timestamp tolerance 를 확인하고 현재 signing secret 으로 HMAC 을 다시 계산한 뒤 constant time 으로 비교해야 합니다.',
+          'mem9 는 transient failure 를 backoff 로 retry 하고 delivery history 를 보관합니다.',
+        ],
+      },
+      {
+        title: 'Managing endpoints',
+        bullets: [
+          '`signing_secret` 은 create 와 rotate-secret response 에서 한 번만 표시됩니다.',
+          'production endpoint 는 HTTPS 여야 합니다. development local HTTP 는 localhost 계열 address 에만 허용됩니다.',
+          'receiver 가 침해됐거나 secret 저장이 잘못됐으면 secret 을 rotate 하세요.',
+        ],
+        links: [
+          { label: 'API reference', href: '/api#api-webhooks' },
+          { label: 'Console guide', href: '/console-docs#webhooks' },
+        ],
+      },
+    ],
+  },
+  id: {
+    id: 'webhooks',
+    label: '11',
+    title: 'Webhooks',
+    intro: 'Webhooks membuat sistem eksternal bereaksi saat mem9 membuat, menghapus, atau merutekan memory.',
+    paragraphs: [
+      'Gunakan Webhooks ketika Anda ingin aktivitas mem9 memperbarui sistem lain tanpa polling memory API. Endpoint berlangganan event dari satu Space atau satu Space Chain, lalu mem9 mengirim payload JSON bertanda tangan ke URL yang Anda atur.',
+      'mem9 tetap menjadi source of truth untuk konfigurasi endpoint, signing secret, event record, delivery attempt, retry state, dan delivery history. Console hanya mem-proxy atau mengagregasi state itu; Console tidak menyimpan secret atau log delivery secara terpisah.',
+    ],
+    bullets: [
+      'Berlangganan `memory.added`, `memory.deleted`, dan `space_chain.fact_routed`.',
+      'Kelola Space webhook dengan Space API key biasa.',
+      'Kelola Space Chain webhook dengan `chain_` management key untuk chain tersebut.',
+      'Gunakan deliveries untuk melihat attempt, HTTP response, jadwal retry, dan kegagalan final.',
+    ],
+    subsections: [
+      {
+        title: 'Event payload',
+        bullets: [
+          '`memory.added` dikirim setelah direct write, pinned write, smart ingest ADD, dan routed target write yang sukses.',
+          '`memory.deleted` dikirim setelah single atau batch delete berhasil.',
+          '`space_chain.fact_routed` dikirim pada Space Chain scope setelah routing policy menulis fact ke target Space.',
+          'Smart ingest UPDATE-only reconciliation tidak mengirim `memory.added`.',
+        ],
+      },
+      {
+        title: 'Signing and delivery',
+        bullets: [
+          'Setiap delivery menyertakan `X-Mem9-Event-Id`, `X-Mem9-Event-Type`, `X-Mem9-Timestamp`, dan `X-Mem9-Signature`.',
+          'Format signature adalah `v1=<hex_hmac_sha256>` atas `<timestamp>.<event_id>.<raw_body>`.',
+          'Receiver sebaiknya memeriksa timestamp tolerance, menghitung ulang HMAC dengan signing secret aktif, lalu membandingkan secara constant time.',
+          'mem9 melakukan retry untuk kegagalan sementara dengan backoff dan menyimpan delivery history.',
+        ],
+      },
+      {
+        title: 'Managing endpoints',
+        bullets: [
+          '`signing_secret` hanya muncul sekali pada response create dan rotate-secret.',
+          'Endpoint production harus HTTPS. HTTP lokal untuk development hanya diizinkan untuk alamat localhost.',
+          'Rotate signing secret ketika receiver bocor atau secret tersimpan dengan cara yang salah.',
+        ],
+        links: [
+          { label: 'API reference', href: '/api#api-webhooks' },
+          { label: 'Console guide', href: '/console-docs#webhooks' },
+        ],
+      },
+    ],
+  },
+  th: {
+    id: 'webhooks',
+    label: '11',
+    title: 'Webhooks',
+    intro: 'Webhooks ทำให้ระบบภายนอกตอบสนองเมื่อ mem9 สร้าง ลบ หรือ route memory',
+    paragraphs: [
+      'ใช้ Webhooks เมื่อคุณต้องการให้กิจกรรมของ mem9 อัปเดตระบบอื่นโดยไม่ต้อง polling memory API endpoint หนึ่งรายการจะ subscribe event ของ Space หรือ Space Chain หนึ่งชุด และ mem9 จะส่ง JSON payload ที่มี signature ไปยัง URL ที่ตั้งไว้',
+      'mem9 เป็น source of truth สำหรับ endpoint configuration, signing secrets, event records, delivery attempts, retry state และ delivery history ส่วน Console จะ proxy หรือ aggregate ข้อมูลเหล่านี้ และไม่เก็บ webhook secret หรือ delivery log แยกต่างหาก',
+    ],
+    bullets: [
+      'subscribe `memory.added`, `memory.deleted` และ `space_chain.fact_routed`',
+      'จัดการ Space webhook ด้วย Space API key ปกติ',
+      'จัดการ Space Chain webhook ด้วย `chain_` management key ของ chain นั้น',
+      'ใช้ deliveries เพื่อตรวจ attempts, HTTP response, เวลา retry และ failure สุดท้าย',
+    ],
+    subsections: [
+      {
+        title: 'Event payload',
+        bullets: [
+          '`memory.added` ถูกส่งหลัง direct write, pinned write, smart ingest ADD และ routed target write ที่สำเร็จ',
+          '`memory.deleted` ถูกส่งหลัง single หรือ batch delete สำเร็จ',
+          '`space_chain.fact_routed` ถูกส่งที่ Space Chain scope หลัง routing policy เขียน fact ไปยัง target Space สำเร็จ',
+          'smart ingest แบบ UPDATE-only reconciliation จะไม่ส่ง `memory.added`',
+        ],
+      },
+      {
+        title: 'Signing and delivery',
+        bullets: [
+          'ทุก delivery มี `X-Mem9-Event-Id`, `X-Mem9-Event-Type`, `X-Mem9-Timestamp` และ `X-Mem9-Signature`',
+          'signature อยู่ในรูป `v1=<hex_hmac_sha256>` โดยคำนวณจาก `<timestamp>.<event_id>.<raw_body>`',
+          'receiver ควรตรวจ timestamp tolerance คำนวณ HMAC ใหม่ด้วย signing secret ปัจจุบัน แล้วเปรียบเทียบแบบ constant time',
+          'mem9 retry ความล้มเหลวชั่วคราวด้วย backoff และเก็บ delivery history ไว้ตรวจสอบ',
+        ],
+      },
+      {
+        title: 'Managing endpoints',
+        bullets: [
+          '`signing_secret` แสดงเพียงครั้งเดียวใน response ของ create และ rotate-secret',
+          'production endpoint ต้องใช้ HTTPS ส่วน local HTTP สำหรับ development อนุญาตเฉพาะ localhost-style address',
+          'rotate signing secret เมื่อ receiver ถูก compromise หรือ secret ถูกเก็บผิดวิธี',
+        ],
+        links: [
+          { label: 'API reference', href: '/api#api-webhooks' },
+          { label: 'Console guide', href: '/console-docs#webhooks' },
+        ],
+      },
+    ],
+  },
+};
+
 export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
   en: {
     meta: {
@@ -321,6 +612,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           'what-you-get-after-setup',
           'your-memory-dashboard',
           'space-chains',
+          'webhooks',
           'daily-usage-expectations',
           'reconnect-and-recovery',
           'uninstall-behavior',
@@ -552,9 +844,10 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       spaceChainDocsSections.en,
+      webhookDocsSections.en,
       {
         id: 'daily-usage-expectations',
-        label: '11',
+        label: '12',
         title: 'Daily Usage Expectations',
         paragraphs: [
           'The most immediate day-to-day change is that users stop repeating the same project background, preferences, and working agreements every session.',
@@ -580,7 +873,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '12',
+        label: '13',
         title: 'Reconnect, New Machine, and API Key Care',
         subsections: [
           {
@@ -608,7 +901,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '13',
+        label: '14',
         title: 'Uninstall Behavior',
         intro: 'Uninstalling mem9 affects the local machine setup, not the remote cloud data.',
         subsections: [
@@ -636,7 +929,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '14',
+        label: '15',
         title: 'Security and Trust',
         paragraphs: [
           'mem9 positions itself as a production-ready memory layer, not an opaque black box. The product story emphasizes clear data handling boundaries and production-grade cloud infrastructure.',
@@ -663,7 +956,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '15',
+        label: '16',
         title: 'Product Expectations and Limits',
         subsections: [
           {
@@ -685,7 +978,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '16',
+        label: '17',
         title: 'Recommended Path and Official Links',
         intro: 'For a new user, the cleanest sequence looks like this.',
         bullets: [
@@ -760,6 +1053,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           'what-you-get-after-setup',
           'your-memory-dashboard',
           'space-chains',
+          'webhooks',
           'daily-usage-expectations',
           'reconnect-and-recovery',
           'uninstall-behavior',
@@ -996,9 +1290,10 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       spaceChainDocsSections.zh,
+      webhookDocsSections.zh,
       {
         id: 'daily-usage-expectations',
-        label: '11',
+        label: '12',
         title: '日常使用时，mem9 会怎样改变体验',
         paragraphs: [
           '最直接的变化通常是：你不需要每次重新解释项目背景，长期知识不会只留在某次聊天里，而且你还能明确要求“把这件事记下来”。',
@@ -1024,7 +1319,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '12',
+        label: '13',
         title: '恢复、重连和 API key 保管',
         subsections: [
           {
@@ -1052,7 +1347,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '13',
+        label: '14',
         title: '卸载时，会发生什么，不会发生什么',
         intro: '卸载影响的是本地配置，不会直接删除远端云数据。',
         subsections: [
@@ -1080,7 +1375,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '14',
+        label: '15',
         title: '安全和信任基础',
         paragraphs: [
           'mem9 对自己的定位是面向生产场景的长期记忆层，而不是一个不可控黑盒。官方叙述强调的是清晰的数据处理边界，以及生产级云基础设施。',
@@ -1107,7 +1402,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '15',
+        label: '16',
         title: '真实使用时，应该有什么预期',
         subsections: [
           {
@@ -1129,7 +1424,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '16',
+        label: '17',
         title: '给新用户的推荐顺序和官方入口',
         intro: '如果你第一次使用 mem9，推荐路径可以很简单。',
         bullets: [
@@ -1204,6 +1499,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           'what-you-get-after-setup',
           'your-memory-dashboard',
           'space-chains',
+          'webhooks',
           'daily-usage-expectations',
           'reconnect-and-recovery',
           'uninstall-behavior',
@@ -1427,9 +1723,10 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       spaceChainDocsSections.ja,
+      webhookDocsSections.ja,
       {
         id: 'daily-usage-expectations',
-        label: '11',
+        label: '12',
         title: '日常利用で mem9 が変えること',
         paragraphs: [
           'もっとも直接的な変化は、毎回同じプロジェクト背景や作業ルールを説明し直さなくてよくなることです。',
@@ -1455,7 +1752,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '12',
+        label: '13',
         title: 'reconnect・復元・API key の管理',
         subsections: [
           {
@@ -1483,7 +1780,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '13',
+        label: '14',
         title: 'uninstall で起きること / 起きないこと',
         intro: 'uninstall はローカル設定に影響しますが、クラウド上のデータは直接削除しません。',
         subsections: [
@@ -1511,7 +1808,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '14',
+        label: '15',
         title: 'セキュリティと信頼の基盤',
         paragraphs: [
           'mem9 は、制御不能なブラックボックスではなく、本番運用を前提とした長期記憶レイヤーとして位置づけられています。説明の中心は、明確なデータ処理境界と本番級クラウド基盤です。',
@@ -1538,7 +1835,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '15',
+        label: '16',
         title: '実運用での期待値',
         subsections: [
           {
@@ -1560,7 +1857,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '16',
+        label: '17',
         title: '新規ユーザー向けおすすめ順序と公式入口',
         intro: '初めて mem9 を使うなら、次の流れがもっともシンプルです。',
         bullets: [
@@ -1635,6 +1932,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           'what-you-get-after-setup',
           'your-memory-dashboard',
           'space-chains',
+          'webhooks',
           'daily-usage-expectations',
           'reconnect-and-recovery',
           'uninstall-behavior',
@@ -1858,9 +2156,10 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       spaceChainDocsSections.ko,
+      webhookDocsSections.ko,
       {
         id: 'daily-usage-expectations',
-        label: '11',
+        label: '12',
         title: '일상 사용에서 어떻게 달라지는가',
         paragraphs: [
           '가장 즉각적인 변화는 프로젝트 배경, 선호, 작업 규칙을 매번 다시 설명하지 않아도 된다는 점입니다.',
@@ -1886,7 +2185,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '12',
+        label: '13',
         title: '복구, reconnect, API key 관리',
         subsections: [
           {
@@ -1914,7 +2213,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '13',
+        label: '14',
         title: '제거 시 일어나는 일과 일어나지 않는 일',
         intro: 'uninstall은 로컬 설정에 영향을 주지만 원격 클라우드 데이터는 직접 삭제하지 않습니다.',
         subsections: [
@@ -1942,7 +2241,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '14',
+        label: '15',
         title: '보안과 신뢰의 기반',
         paragraphs: [
           'mem9는 통제 불가능한 블랙박스가 아니라, 프로덕션 장기 메모리 레이어로 자리매김합니다. 공식 설명의 중심은 명확한 데이터 처리 경계와 프로덕션급 클라우드 인프라입니다.',
@@ -1969,7 +2268,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '15',
+        label: '16',
         title: '실사용에서의 기대치와 한계',
         subsections: [
           {
@@ -1991,7 +2290,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '16',
+        label: '17',
         title: '신규 사용자를 위한 추천 순서와 공식 링크',
         intro: '처음 mem9를 사용하는 사용자에게는 다음 순서가 가장 단순합니다.',
         bullets: [
@@ -2066,6 +2365,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           'what-you-get-after-setup',
           'your-memory-dashboard',
           'space-chains',
+          'webhooks',
           'daily-usage-expectations',
           'reconnect-and-recovery',
           'uninstall-behavior',
@@ -2295,9 +2595,10 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       spaceChainDocsSections.id,
+      webhookDocsSections.id,
       {
         id: 'daily-usage-expectations',
-        label: '11',
+        label: '12',
         title: 'Bagaimana mem9 mengubah pengalaman harian',
         paragraphs: [
           'Perubahan paling langsung biasanya adalah Anda tidak perlu lagi menjelaskan ulang latar belakang proyek, preferensi, dan aturan kerja di setiap sesi.',
@@ -2323,7 +2624,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '12',
+        label: '13',
         title: 'Reconnect, pemulihan, dan penyimpanan API key',
         subsections: [
           {
@@ -2351,7 +2652,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '13',
+        label: '14',
         title: 'Apa yang terjadi dan tidak terjadi saat uninstall',
         intro: 'Uninstall memengaruhi konfigurasi lokal, bukan menghapus data cloud dari jarak jauh.',
         subsections: [
@@ -2379,7 +2680,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '14',
+        label: '15',
         title: 'Fondasi keamanan dan kepercayaan',
         paragraphs: [
           'mem9 memosisikan diri sebagai lapisan memori jangka panjang untuk penggunaan produksi, bukan kotak hitam yang tidak terkontrol. Narasi resminya menekankan batas penanganan data yang jelas dan infrastruktur cloud kelas produksi.',
@@ -2406,7 +2707,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '15',
+        label: '16',
         title: 'Ekspektasi nyata dan batasan produk',
         subsections: [
           {
@@ -2428,7 +2729,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '16',
+        label: '17',
         title: 'Urutan yang direkomendasikan dan tautan resmi',
         intro: 'Untuk pengguna baru, urutan paling sederhana biasanya seperti ini.',
         bullets: [
@@ -2503,6 +2804,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
           'what-you-get-after-setup',
           'your-memory-dashboard',
           'space-chains',
+          'webhooks',
           'daily-usage-expectations',
           'reconnect-and-recovery',
           'uninstall-behavior',
@@ -2732,9 +3034,10 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
         ],
       },
       spaceChainDocsSections.th,
+      webhookDocsSections.th,
       {
         id: 'daily-usage-expectations',
-        label: '11',
+        label: '12',
         title: 'mem9 เปลี่ยนประสบการณ์การใช้งานประจำวันอย่างไร',
         paragraphs: [
           'ความเปลี่ยนแปลงที่ชัดที่สุดคือคุณไม่ต้องอธิบายพื้นหลังโปรเจกต์ ความชอบ และกติกาการทำงานซ้ำในทุก session',
@@ -2760,7 +3063,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'reconnect-and-recovery',
-        label: '12',
+        label: '13',
         title: 'Reconnect การกู้คืน และการเก็บ API key',
         subsections: [
           {
@@ -2788,7 +3091,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'uninstall-behavior',
-        label: '13',
+        label: '14',
         title: 'สิ่งที่จะเกิดขึ้นและไม่เกิดขึ้นเมื่อ uninstall',
         intro: 'การ uninstall มีผลกับการตั้งค่าในเครื่อง แต่ไม่ได้ลบข้อมูลคลาวด์จากระยะไกลโดยตรง',
         subsections: [
@@ -2816,7 +3119,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'security-and-trust',
-        label: '14',
+        label: '15',
         title: 'พื้นฐานด้านความปลอดภัยและความน่าเชื่อถือ',
         paragraphs: [
           'mem9 วางตำแหน่งตัวเองเป็นเลเยอร์หน่วยความจำระยะยาวสำหรับงาน production ไม่ใช่กล่องดำที่ควบคุมไม่ได้ เรื่องราวทางการจึงเน้นขอบเขตการจัดการข้อมูลที่ชัดเจนและโครงสร้างพื้นฐานคลาวด์ระดับ production',
@@ -2843,7 +3146,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'product-expectations-and-limits',
-        label: '15',
+        label: '16',
         title: 'ความคาดหวังจริงและขอบเขตของผลิตภัณฑ์',
         subsections: [
           {
@@ -2865,7 +3168,7 @@ export const docsCopy: Record<DocsLocale, DocsPageCopy> = {
       },
       {
         id: 'recommended-path-and-links',
-        label: '16',
+        label: '17',
         title: 'ลำดับที่แนะนำและลิงก์ทางการ',
         intro: 'สำหรับผู้ใช้ใหม่ ลำดับที่เรียบง่ายที่สุดมักเป็นดังนี้',
         bullets: [
