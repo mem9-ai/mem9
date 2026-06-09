@@ -75,7 +75,7 @@ type SpaceChainRepo interface {
 
 	ListNodes(ctx context.Context, chainID string) ([]domain.SpaceChainNode, error)
 	ReplaceNodes(ctx context.Context, chainID string, nodes []domain.SpaceChainNode) error
-	UpdateNodeRoutingPolicy(ctx context.Context, chainID, nodeID string, enabled bool, prompt string) (*domain.SpaceChainNode, error)
+	UpdateNodeRoutingPolicy(ctx context.Context, chainID, nodeID string, enabled bool, prompt string, webhookOnly bool) (*domain.SpaceChainNode, error)
 	RemoveNodeByExternalSpaceID(ctx context.Context, externalSpaceID string) error
 
 	KeyStatus(ctx context.Context, key string) (domain.KeyStatus, error)

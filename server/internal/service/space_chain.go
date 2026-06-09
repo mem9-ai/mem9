@@ -59,8 +59,9 @@ type CreateSpaceChainBindingRequest struct {
 }
 
 type UpdateSpaceChainNodeRoutingPolicyRequest struct {
-	Enabled bool   `json:"enabled"`
-	Prompt  string `json:"prompt,omitempty"`
+	Enabled     bool   `json:"enabled"`
+	Prompt      string `json:"prompt,omitempty"`
+	WebhookOnly bool   `json:"webhook_only"`
 }
 
 const maxRoutingPolicyPromptRunes = 1200
@@ -283,6 +284,7 @@ func (s *SpaceChainService) ReplaceNodes(ctx context.Context, chainID string, re
 		if existing, ok := existingPolicies[stableNodePolicyKey(node)]; ok {
 			node.RoutingPolicyEnabled = existing.RoutingPolicyEnabled
 			node.RoutingPolicyPrompt = existing.RoutingPolicyPrompt
+			node.RoutingPolicyWebhookOnly = existing.RoutingPolicyWebhookOnly
 		}
 		nodes = append(nodes, node)
 	}
@@ -343,7 +345,7 @@ func (s *SpaceChainService) UpdateNodeRoutingPolicy(ctx context.Context, chainID
 		if node.Position == 0 {
 			return nil, &domain.ValidationError{Field: "node_id", Message: "routing policy cannot be configured on the first Space Chain node"}
 		}
-		return s.chains.UpdateNodeRoutingPolicy(ctx, chainID, nodeID, req.Enabled, prompt)
+		return s.chains.UpdateNodeRoutingPolicy(ctx, chainID, nodeID, req.Enabled, prompt, req.WebhookOnly)
 	}
 	return nil, domain.ErrNotFound
 }

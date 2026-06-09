@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS space_chain_nodes (
     position            INT           NOT NULL,
     routing_policy_enabled BOOLEAN    NOT NULL DEFAULT FALSE,
     routing_policy_prompt  TEXT       NULL,
+    routing_policy_webhook_only BOOLEAN NOT NULL DEFAULT FALSE,
     created_at          TIMESTAMPTZ   DEFAULT NOW(),
     updated_at          TIMESTAMPTZ   DEFAULT NOW(),
     CONSTRAINT uniq_space_chain_nodes_tenant UNIQUE (chain_id, tenant_id),

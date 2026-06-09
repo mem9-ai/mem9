@@ -67,9 +67,14 @@ func (s *Server) enqueueMemoryDeletedWebhook(ctx context.Context, auth *domain.A
 	}
 }
 
-func (s *Server) enqueueRoutedFactWebhook(ctx context.Context, chainAuth *domain.AuthInfo, targetAuth *domain.AuthInfo, node domain.ChainAuthNode, facts []service.ExtractedFact, mem *domain.Memory) {
-	if s == nil || s.webhooks == nil || chainAuth == nil || chainAuth.Chain == nil || targetAuth == nil || mem == nil {
+func (s *Server) enqueueRoutedFactWebhook(ctx context.Context, chainAuth *domain.AuthInfo, targetAuth *domain.AuthInfo, node domain.ChainAuthNode, facts []service.ExtractedFact, mem *domain.Memory, agentID, appID, sessionID string) {
+	if s == nil || s.webhooks == nil || chainAuth == nil || chainAuth.Chain == nil || targetAuth == nil || len(facts) == 0 {
 		return
+	}
+	if mem != nil {
+		agentID = mem.AgentID
+		appID = mem.AppID
+		sessionID = mem.SessionID
 	}
 	data := map[string]any{
 		"route_id":                 uuid.NewString(),
@@ -78,11 +83,12 @@ func (s *Server) enqueueRoutedFactWebhook(ctx context.Context, chainAuth *domain
 		"target_tenant_id":         targetAuth.TenantID,
 		"target_external_space_id": node.ExternalSpaceID,
 		"routing_policy_node_id":   node.ID,
+		"webhook_only":             node.RoutingPolicyWebhookOnly,
 		"source_facts":             facts,
 		"target_memory":            mem,
-		"agent_id":                 mem.AgentID,
-		"appId":                    mem.AppID,
-		"session_id":               mem.SessionID,
+		"agent_id":                 agentID,
+		"appId":                    appID,
+		"session_id":               sessionID,
 	}
 	s.enqueueWebhook(ctx, webhook.EventScope{Type: webhook.ScopeChain, ChainID: chainAuth.Chain.ChainID}, webhook.EventSpaceChainFactRouted, data)
 }

@@ -32,7 +32,7 @@ func (r *SpaceChainRepoImpl) ensureRoutingPolicyColumns(ctx context.Context) err
 		   FROM information_schema.COLUMNS
 		  WHERE TABLE_SCHEMA = DATABASE()
 		    AND TABLE_NAME = 'space_chain_nodes'
-		    AND COLUMN_NAME IN ('routing_policy_enabled', 'routing_policy_prompt')`,
+		    AND COLUMN_NAME IN ('routing_policy_enabled', 'routing_policy_prompt', 'routing_policy_webhook_only')`,
 	)
 	if err != nil {
 		return fmt.Errorf("check space chain routing policy schema: %w", err)
@@ -59,6 +59,11 @@ func (r *SpaceChainRepoImpl) ensureRoutingPolicyColumns(ctx context.Context) err
 	if !found["routing_policy_prompt"] {
 		if _, err := r.db.ExecContext(ctx, `ALTER TABLE space_chain_nodes ADD COLUMN routing_policy_prompt TEXT NULL`); err != nil && !isDuplicateColumnError(err) {
 			return fmt.Errorf("add space chain routing policy prompt column: %w", err)
+		}
+	}
+	if !found["routing_policy_webhook_only"] {
+		if _, err := r.db.ExecContext(ctx, `ALTER TABLE space_chain_nodes ADD COLUMN routing_policy_webhook_only TINYINT(1) NOT NULL DEFAULT 0`); err != nil && !isDuplicateColumnError(err) {
+			return fmt.Errorf("add space chain routing policy webhook only column: %w", err)
 		}
 	}
 
@@ -244,7 +249,7 @@ func (r *SpaceChainRepoImpl) ListNodes(ctx context.Context, chainID string) ([]d
 		return nil, err
 	}
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, chain_id, tenant_id, external_space_id, display_name, position, routing_policy_enabled, routing_policy_prompt, created_at, updated_at
+		`SELECT id, chain_id, tenant_id, external_space_id, display_name, position, routing_policy_enabled, routing_policy_prompt, routing_policy_webhook_only, created_at, updated_at
 		 FROM space_chain_nodes
 		 WHERE chain_id = ?
 		 ORDER BY position ASC, id ASC`,
@@ -274,9 +279,9 @@ func (r *SpaceChainRepoImpl) ReplaceNodes(ctx context.Context, chainID string, n
 	_ = res
 	for _, node := range nodes {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO space_chain_nodes (id, chain_id, tenant_id, external_space_id, display_name, position, routing_policy_enabled, routing_policy_prompt, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-			node.ID, chainID, node.TenantID, nullString(node.ExternalSpaceID), nullString(node.DisplayName), node.Position, node.RoutingPolicyEnabled, nullString(node.RoutingPolicyPrompt),
+			`INSERT INTO space_chain_nodes (id, chain_id, tenant_id, external_space_id, display_name, position, routing_policy_enabled, routing_policy_prompt, routing_policy_webhook_only, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+			node.ID, chainID, node.TenantID, nullString(node.ExternalSpaceID), nullString(node.DisplayName), node.Position, node.RoutingPolicyEnabled, nullString(node.RoutingPolicyPrompt), node.RoutingPolicyWebhookOnly,
 		); err != nil {
 			return fmt.Errorf("insert space chain node: %w", err)
 		}
@@ -287,15 +292,15 @@ func (r *SpaceChainRepoImpl) ReplaceNodes(ctx context.Context, chainID string, n
 	return nil
 }
 
-func (r *SpaceChainRepoImpl) UpdateNodeRoutingPolicy(ctx context.Context, chainID, nodeID string, enabled bool, prompt string) (*domain.SpaceChainNode, error) {
+func (r *SpaceChainRepoImpl) UpdateNodeRoutingPolicy(ctx context.Context, chainID, nodeID string, enabled bool, prompt string, webhookOnly bool) (*domain.SpaceChainNode, error) {
 	if err := r.ensureRoutingPolicyColumns(ctx); err != nil {
 		return nil, err
 	}
 	res, err := r.db.ExecContext(ctx,
 		`UPDATE space_chain_nodes
-		 SET routing_policy_enabled = ?, routing_policy_prompt = ?, updated_at = NOW()
+		 SET routing_policy_enabled = ?, routing_policy_prompt = ?, routing_policy_webhook_only = ?, updated_at = NOW()
 		 WHERE chain_id = ? AND id = ?`,
-		enabled, nullString(prompt), chainID, nodeID,
+		enabled, nullString(prompt), webhookOnly, chainID, nodeID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("update space chain node routing policy: %w", err)
@@ -308,7 +313,7 @@ func (r *SpaceChainRepoImpl) UpdateNodeRoutingPolicy(ctx context.Context, chainI
 		return nil, domain.ErrNotFound
 	}
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, chain_id, tenant_id, external_space_id, display_name, position, routing_policy_enabled, routing_policy_prompt, created_at, updated_at
+		`SELECT id, chain_id, tenant_id, external_space_id, display_name, position, routing_policy_enabled, routing_policy_prompt, routing_policy_webhook_only, created_at, updated_at
 		 FROM space_chain_nodes
 		 WHERE chain_id = ? AND id = ?`,
 		chainID, nodeID,
@@ -435,6 +440,7 @@ func scanSpaceChainNode(row interface{ Scan(dest ...any) error }) (*domain.Space
 		&node.Position,
 		&node.RoutingPolicyEnabled,
 		&routingPolicyPrompt,
+		&node.RoutingPolicyWebhookOnly,
 		&node.CreatedAt,
 		&node.UpdatedAt,
 	); err != nil {

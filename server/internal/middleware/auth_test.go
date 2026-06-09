@@ -788,7 +788,7 @@ func (r *stubSpaceChainRepo) ReplaceNodes(_ context.Context, _ string, nodes []d
 	return nil
 }
 
-func (r *stubSpaceChainRepo) UpdateNodeRoutingPolicy(_ context.Context, _, nodeID string, enabled bool, prompt string) (*domain.SpaceChainNode, error) {
+func (r *stubSpaceChainRepo) UpdateNodeRoutingPolicy(_ context.Context, _, nodeID string, enabled bool, prompt string, webhookOnly bool) (*domain.SpaceChainNode, error) {
 	if r.chain == nil {
 		return nil, domain.ErrNotFound
 	}
@@ -798,6 +798,7 @@ func (r *stubSpaceChainRepo) UpdateNodeRoutingPolicy(_ context.Context, _, nodeI
 		}
 		r.chain.Nodes[i].RoutingPolicyEnabled = enabled
 		r.chain.Nodes[i].RoutingPolicyPrompt = prompt
+		r.chain.Nodes[i].RoutingPolicyWebhookOnly = webhookOnly
 		return &r.chain.Nodes[i], nil
 	}
 	return nil, domain.ErrNotFound

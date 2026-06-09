@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS space_chain_nodes (
   position            INT           NOT NULL,
   routing_policy_enabled TINYINT(1) NOT NULL DEFAULT 0,
   routing_policy_prompt  TEXT       NULL,
+  routing_policy_webhook_only TINYINT(1) NOT NULL DEFAULT 0,
   created_at          TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
   updated_at          TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE INDEX idx_space_chain_nodes_tenant (chain_id, tenant_id),

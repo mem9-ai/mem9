@@ -89,13 +89,14 @@ func TestSpaceChainReplaceNodesPreservesRoutingPolicyForSameSpace(t *testing.T) 
 	repo := &fakeSpaceChainRepo{
 		nodes: []domain.SpaceChainNode{
 			{
-				ID:                   "node-1",
-				ChainID:              "chain-1",
-				TenantID:             "tenant-1",
-				ExternalSpaceID:      "space-1",
-				Position:             1,
-				RoutingPolicyEnabled: true,
-				RoutingPolicyPrompt:  "facts about mem9",
+				ID:                       "node-1",
+				ChainID:                  "chain-1",
+				TenantID:                 "tenant-1",
+				ExternalSpaceID:          "space-1",
+				Position:                 1,
+				RoutingPolicyEnabled:     true,
+				RoutingPolicyPrompt:      "facts about mem9",
+				RoutingPolicyWebhookOnly: true,
 			},
 		},
 	}
@@ -113,7 +114,7 @@ func TestSpaceChainReplaceNodesPreservesRoutingPolicyForSameSpace(t *testing.T) 
 	if len(nodes) != 2 {
 		t.Fatalf("expected 2 nodes, got %d", len(nodes))
 	}
-	if !nodes[1].RoutingPolicyEnabled || nodes[1].RoutingPolicyPrompt != "facts about mem9" {
+	if !nodes[1].RoutingPolicyEnabled || nodes[1].RoutingPolicyPrompt != "facts about mem9" || !nodes[1].RoutingPolicyWebhookOnly {
 		t.Fatalf("routing policy was not preserved: %#v", nodes[1])
 	}
 }
@@ -254,13 +255,14 @@ func (r *fakeSpaceChainRepo) ReplaceNodes(_ context.Context, _ string, nodes []d
 	return nil
 }
 
-func (r *fakeSpaceChainRepo) UpdateNodeRoutingPolicy(_ context.Context, _, nodeID string, enabled bool, prompt string) (*domain.SpaceChainNode, error) {
+func (r *fakeSpaceChainRepo) UpdateNodeRoutingPolicy(_ context.Context, _, nodeID string, enabled bool, prompt string, webhookOnly bool) (*domain.SpaceChainNode, error) {
 	for i := range r.nodes {
 		if r.nodes[i].ID != nodeID {
 			continue
 		}
 		r.nodes[i].RoutingPolicyEnabled = enabled
 		r.nodes[i].RoutingPolicyPrompt = prompt
+		r.nodes[i].RoutingPolicyWebhookOnly = webhookOnly
 		return &r.nodes[i], nil
 	}
 	return nil, domain.ErrNotFound

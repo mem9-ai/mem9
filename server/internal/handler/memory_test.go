@@ -26,6 +26,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 	"github.com/qiffang/mnemos/server/internal/service"
+	"github.com/qiffang/mnemos/server/internal/webhook"
 )
 
 // testMemoryRepo is a minimal MemoryRepo mock for handler tests.
@@ -601,6 +602,46 @@ func storeTestTenantServices(srv *Server, tenantID string, memRepo *testMemoryRe
 	srv.svcCache.Store(tenantSvcKey(fmt.Sprintf("%s-0x0", tenantID)), svc)
 }
 
+type captureWebhookStore struct {
+	mu     sync.Mutex
+	events []webhook.EventRecord
+}
+
+func (s *captureWebhookStore) EnsureSchema(context.Context) error                     { return nil }
+func (s *captureWebhookStore) CreateEndpoint(context.Context, webhook.Endpoint) error { return nil }
+func (s *captureWebhookStore) ListEndpoints(context.Context, string, string) ([]webhook.Endpoint, error) {
+	return nil, nil
+}
+func (s *captureWebhookStore) GetEndpoint(context.Context, string, string, string) (*webhook.Endpoint, error) {
+	return nil, domain.ErrNotFound
+}
+func (s *captureWebhookStore) UpdateEndpoint(context.Context, webhook.Endpoint) error { return nil }
+func (s *captureWebhookStore) UpdateEndpointSecret(context.Context, webhook.Endpoint) error {
+	return nil
+}
+func (s *captureWebhookStore) SoftDeleteEndpoint(context.Context, string, string, string) error {
+	return nil
+}
+func (s *captureWebhookStore) EnqueueEvent(_ context.Context, event webhook.EventRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, event)
+	return nil
+}
+func (s *captureWebhookStore) EnqueueTestEvent(context.Context, webhook.Endpoint, webhook.EventRecord) (webhook.Delivery, error) {
+	return webhook.Delivery{}, nil
+}
+func (s *captureWebhookStore) ListDeliveries(context.Context, string, string, int) ([]webhook.Delivery, error) {
+	return nil, nil
+}
+func (s *captureWebhookStore) FetchDueDeliveries(context.Context, int) ([]webhook.DeliveryJob, error) {
+	return nil, nil
+}
+func (s *captureWebhookStore) MarkDeliveryDelivered(context.Context, string, int) error { return nil }
+func (s *captureWebhookStore) MarkDeliveryFailedAttempt(context.Context, string, bool, time.Time, *int, string) error {
+	return nil
+}
+
 func TestResolveServicesDoesNotCacheAfterAppIDSchemaMigrationFailure(t *testing.T) {
 	db := openHandlerErrorDB(t)
 	defer db.Close()
@@ -768,6 +809,100 @@ func TestReconcileRoutedChainFactsSkipsTargetWhenRuntimeUsageDenied(t *testing.T
 	}
 	if runtimeUsage.afterCreateSuccessCalls != 0 || runtimeUsage.afterCreateFailureCalls != 0 {
 		t.Fatalf("runtime finalization calls = success:%d failure:%d, want 0/0", runtimeUsage.afterCreateSuccessCalls, runtimeUsage.afterCreateFailureCalls)
+	}
+}
+
+func TestReconcileRoutedChainFactsWebhookOnlySkipsTargetWrite(t *testing.T) {
+	targetRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	webhookStore := &captureWebhookStore{}
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{}).
+		WithRuntimeUsage(runtimeUsage).
+		WithWebhookService(webhook.NewService(webhookStore, nil, true))
+	storeTestTenantServices(srv, "tenant-target-a", targetRepo)
+
+	auth := &domain.AuthInfo{
+		AgentName: "chain-agent",
+		Chain: &domain.ChainAuth{
+			ChainID: "chain-a",
+			APIKey:  "chain-key-a",
+			Nodes: []domain.ChainAuthNode{
+				{
+					SpaceChainNode: domain.SpaceChainNode{TenantID: "tenant-source", ExternalSpaceID: "space-source", Position: 0},
+					ClusterID:      "cluster-source",
+				},
+				{
+					SpaceChainNode: domain.SpaceChainNode{
+						ID:                       "node-target-a",
+						TenantID:                 "tenant-target-a",
+						ExternalSpaceID:          "space-target-a",
+						Position:                 1,
+						RoutingPolicyEnabled:     true,
+						RoutingPolicyPrompt:      "facts about mem9",
+						RoutingPolicyWebhookOnly: true,
+					},
+					ClusterID: "cluster-target-a",
+				},
+			},
+		},
+	}
+
+	result := srv.reconcileRoutedChainFacts(context.Background(), auth, service.IngestRequest{
+		AgentID:   "actor-agent",
+		AppID:     "app-a",
+		SessionID: "session-a",
+	}, []service.ExtractedFact{
+		{Text: "mem9 uses webhooks for review", Tags: []string{"tech"}, RouteTargets: []string{"space-target-a"}},
+	})
+
+	if result.memoriesChanged != 0 || len(result.insightIDs) != 0 || result.warnings != 0 {
+		t.Fatalf("result = %+v, want no memory changes or warnings", result)
+	}
+	if len(targetRepo.createCalls) != 0 {
+		t.Fatalf("target writes = %d, want 0", len(targetRepo.createCalls))
+	}
+	if runtimeUsage.beforeCreateCalls != 0 || runtimeUsage.afterCreateSuccessCalls != 0 || runtimeUsage.afterCreateFailureCalls != 0 {
+		t.Fatalf("runtime create calls = before:%d success:%d failure:%d, want 0/0/0", runtimeUsage.beforeCreateCalls, runtimeUsage.afterCreateSuccessCalls, runtimeUsage.afterCreateFailureCalls)
+	}
+
+	webhookStore.mu.Lock()
+	events := append([]webhook.EventRecord(nil), webhookStore.events...)
+	webhookStore.mu.Unlock()
+	if len(events) != 1 {
+		t.Fatalf("webhook events = %d, want 1", len(events))
+	}
+	if events[0].ScopeType != webhook.ScopeChain || events[0].ScopeID != "chain-a" || events[0].EventType != webhook.EventSpaceChainFactRouted {
+		t.Fatalf("webhook event = %+v, want chain fact routed for chain-a", events[0])
+	}
+	var envelope webhook.EventEnvelope
+	if err := json.Unmarshal(events[0].Payload, &envelope); err != nil {
+		t.Fatalf("decode webhook envelope: %v", err)
+	}
+	var data struct {
+		WebhookOnly           bool                    `json:"webhook_only"`
+		TargetTenantID        string                  `json:"target_tenant_id"`
+		TargetExternalSpaceID string                  `json:"target_external_space_id"`
+		RoutingPolicyNodeID   string                  `json:"routing_policy_node_id"`
+		SourceFacts           []service.ExtractedFact `json:"source_facts"`
+		TargetMemory          *domain.Memory          `json:"target_memory"`
+		AgentID               string                  `json:"agent_id"`
+		AppID                 string                  `json:"appId"`
+		SessionID             string                  `json:"session_id"`
+	}
+	if err := json.Unmarshal(envelope.Data, &data); err != nil {
+		t.Fatalf("decode webhook data: %v", err)
+	}
+	if !data.WebhookOnly || data.TargetMemory != nil {
+		t.Fatalf("webhook data target memory/webhook_only = %v/%#v, want true/nil", data.WebhookOnly, data.TargetMemory)
+	}
+	if data.TargetTenantID != "tenant-target-a" || data.TargetExternalSpaceID != "space-target-a" || data.RoutingPolicyNodeID != "node-target-a" {
+		t.Fatalf("webhook target data = %+v, want target node identifiers", data)
+	}
+	if len(data.SourceFacts) != 1 || data.SourceFacts[0].Text != "mem9 uses webhooks for review" {
+		t.Fatalf("source facts = %+v, want original routed fact", data.SourceFacts)
+	}
+	if data.AgentID != "actor-agent" || data.AppID != "app-a" || data.SessionID != "session-a" {
+		t.Fatalf("actor data = %+v, want request actor fields", data)
 	}
 }
 

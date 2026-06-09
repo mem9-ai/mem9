@@ -115,6 +115,10 @@ func (s *Server) reconcileRoutedChainFacts(ctx context.Context, auth *domain.Aut
 			defer func() { <-sem }()
 
 			nodeAuth := chainNodeAuth(auth, node)
+			if node.RoutingPolicyWebhookOnly {
+				s.enqueueRoutedFactWebhook(ctx, auth, nodeAuth, node, factsForTarget, nil, req.AgentID, req.AppID, req.SessionID)
+				return
+			}
 			targetSvc := s.resolveServices(nodeAuth)
 			var lease *runtimeusage.OperationLease
 			if s.runtimeUsageEnabled() {
@@ -203,7 +207,7 @@ func (s *Server) reconcileRoutedChainFacts(ctx context.Context, auth *domain.Aut
 					)
 					continue
 				}
-				s.enqueueRoutedFactWebhook(ctx, auth, nodeAuth, node, factsForTarget, mem)
+				s.enqueueRoutedFactWebhook(ctx, auth, nodeAuth, node, factsForTarget, mem, mem.AgentID, mem.AppID, mem.SessionID)
 			}
 			mu.Lock()
 			out.memoriesChanged += result.MemoriesChanged
