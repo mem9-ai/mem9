@@ -202,7 +202,9 @@ export interface SiteBillingTier {
   period: string;
   features: string[];
   ctaLabel: string;
-  ctaAction: 'alert' | 'mailto';
+  ctaAction: 'signin' | 'mailto' | 'plan';
+  planSku?: 'starter' | 'pro';
+  interval?: 'month' | 'year';
   highlighted?: boolean;
 }
 
@@ -213,7 +215,6 @@ export interface SiteBillingPageCopy {
   description: string;
   featureLabels: string[];
   tiers: SiteBillingTier[];
-  alertMessage: string;
   contactMessage: string;
   contactCopyLabel: string;
   contactCopiedMessage: string;
@@ -6357,7 +6358,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             'Community',
           ],
           ctaLabel: 'Get Started',
-          ctaAction: 'alert',
+          ctaAction: 'signin',
         },
         {
           name: 'Starter',
@@ -6370,7 +6371,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             'Email',
           ],
           ctaLabel: 'Buy Now',
-          ctaAction: 'alert',
+          ctaAction: 'plan',
+          planSku: 'starter',
+          interval: 'month',
         },
         {
           name: 'Pro',
@@ -6383,7 +6386,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             'Priority',
           ],
           ctaLabel: 'Buy Now',
-          ctaAction: 'alert',
+          ctaAction: 'plan',
+          planSku: 'pro',
+          interval: 'month',
           highlighted: true,
         },
         {
@@ -6400,7 +6405,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           ctaAction: 'mailto',
         },
       ],
-      alertMessage: 'Stay tuned! It is completely free for now. If you reach a paid tier, we will give you enough credits. Feel free to use it!',
       contactMessage:
         'Email us for enterprise pricing, security reviews, and dedicated support.',
       contactCopyLabel: 'Copy Email',
@@ -6701,7 +6705,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             '社区',
           ],
           ctaLabel: '开始使用',
-          ctaAction: 'alert',
+          ctaAction: 'signin',
         },
         {
           name: 'Starter',
@@ -6714,7 +6718,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             '邮件',
           ],
           ctaLabel: '立即购买',
-          ctaAction: 'alert',
+          ctaAction: 'plan',
+          planSku: 'starter',
+          interval: 'month',
         },
         {
           name: 'Pro',
@@ -6727,7 +6733,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             '优先',
           ],
           ctaLabel: '立即购买',
-          ctaAction: 'alert',
+          ctaAction: 'plan',
+          planSku: 'pro',
+          interval: 'month',
           highlighted: true,
         },
         {
@@ -6744,7 +6752,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           ctaAction: 'mailto',
         },
       ],
-      alertMessage: '敬请期待，现在完全免费，如果您已经到了收费的tier，我们也会给您足够的Credits，请放心使用！',
       contactMessage: '如需企业定价、安全审查或专属支持，请发送邮件联系我们。',
       contactCopyLabel: '复制邮箱',
       contactCopiedMessage: '邮箱地址已复制。',
@@ -7049,7 +7056,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             '社群',
           ],
           ctaLabel: '開始使用',
-          ctaAction: 'alert',
+          ctaAction: 'signin',
         },
         {
           name: 'Starter',
@@ -7062,7 +7069,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             '電郵',
           ],
           ctaLabel: '立即購買',
-          ctaAction: 'alert',
+          ctaAction: 'plan',
+          planSku: 'starter',
+          interval: 'month',
         },
         {
           name: 'Pro',
@@ -7075,7 +7084,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             '優先',
           ],
           ctaLabel: '立即購買',
-          ctaAction: 'alert',
+          ctaAction: 'plan',
+          planSku: 'pro',
+          interval: 'month',
           highlighted: true,
         },
         {
@@ -7092,7 +7103,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           ctaAction: 'mailto',
         },
       ],
-      alertMessage: '敬請期待，現在完全免費，如果您已經到了收費的方案，我們也會給您足夠的 Credits，請放心使用！',
       contactMessage: '如需企業定價、安全審查或專屬支援，請發送郵件與我們聯絡。',
       contactCopyLabel: '複製信箱',
       contactCopiedMessage: '信箱地址已複製。',
@@ -7400,7 +7410,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             'コミュニティ',
           ],
           ctaLabel: '始める',
-          ctaAction: 'alert',
+          ctaAction: 'signin',
         },
         {
           name: 'Starter',
@@ -7413,7 +7423,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             'メール',
           ],
           ctaLabel: '購入する',
-          ctaAction: 'alert',
+          ctaAction: 'plan',
+          planSku: 'starter',
+          interval: 'month',
         },
         {
           name: 'Pro',
@@ -7426,7 +7438,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             '優先',
           ],
           ctaLabel: '購入する',
-          ctaAction: 'alert',
+          ctaAction: 'plan',
+          planSku: 'pro',
+          interval: 'month',
           highlighted: true,
         },
         {
@@ -7443,7 +7457,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           ctaAction: 'mailto',
         },
       ],
-      alertMessage: 'もうすぐ公開です！現在は完全無料です。有料プランに達した場合も、十分なクレジットを提供しますので、安心してご利用ください！',
       contactMessage:
         'エンタープライズ向け料金、セキュリティレビュー、専任サポートのご相談はメールでご連絡ください。',
       contactCopyLabel: 'メールアドレスをコピー',
@@ -7750,7 +7763,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             '커뮤니티',
           ],
           ctaLabel: '시작하기',
-          ctaAction: 'alert',
+          ctaAction: 'signin',
         },
         {
           name: 'Starter',
@@ -7763,7 +7776,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             '이메일',
           ],
           ctaLabel: '구매하기',
-          ctaAction: 'alert',
+          ctaAction: 'plan',
+          planSku: 'starter',
+          interval: 'month',
         },
         {
           name: 'Pro',
@@ -7776,7 +7791,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             '우선',
           ],
           ctaLabel: '구매하기',
-          ctaAction: 'alert',
+          ctaAction: 'plan',
+          planSku: 'pro',
+          interval: 'month',
           highlighted: true,
         },
         {
@@ -7793,7 +7810,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           ctaAction: 'mailto',
         },
       ],
-      alertMessage: '곧 출시됩니다! 현재 완전 무료입니다. 유료 요금제에 도달하더라도 충분한 크레딧을 드리니 안심하고 사용하세요!',
       contactMessage:
         '엔터프라이즈 요금, 보안 검토, 전담 지원이 필요하면 이메일로 문의해 주세요.',
       contactCopyLabel: '이메일 복사',
@@ -8103,7 +8119,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             'Komunitas',
           ],
           ctaLabel: 'Mulai',
-          ctaAction: 'alert',
+          ctaAction: 'signin',
         },
         {
           name: 'Starter',
@@ -8116,7 +8132,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             'Email',
           ],
           ctaLabel: 'Beli Sekarang',
-          ctaAction: 'alert',
+          ctaAction: 'plan',
+          planSku: 'starter',
+          interval: 'month',
         },
         {
           name: 'Pro',
@@ -8129,7 +8147,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             'Prioritas',
           ],
           ctaLabel: 'Beli Sekarang',
-          ctaAction: 'alert',
+          ctaAction: 'plan',
+          planSku: 'pro',
+          interval: 'month',
           highlighted: true,
         },
         {
@@ -8146,7 +8166,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           ctaAction: 'mailto',
         },
       ],
-      alertMessage: 'Nantikan! Saat ini sepenuhnya gratis. Jika Anda mencapai tier berbayar, kami akan memberikan kredit yang cukup. Silakan gunakan dengan tenang!',
       contactMessage:
         'Untuk harga enterprise, review keamanan, dan dukungan khusus, hubungi kami lewat email.',
       contactCopyLabel: 'Salin Email',
@@ -8456,7 +8475,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             'ชุมชน',
           ],
           ctaLabel: 'เริ่มใช้งาน',
-          ctaAction: 'alert',
+          ctaAction: 'signin',
         },
         {
           name: 'Starter',
@@ -8469,7 +8488,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             'อีเมล',
           ],
           ctaLabel: 'ซื้อเลย',
-          ctaAction: 'alert',
+          ctaAction: 'plan',
+          planSku: 'starter',
+          interval: 'month',
         },
         {
           name: 'Pro',
@@ -8482,7 +8503,9 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
             'เร่งด่วน',
           ],
           ctaLabel: 'ซื้อเลย',
-          ctaAction: 'alert',
+          ctaAction: 'plan',
+          planSku: 'pro',
+          interval: 'month',
           highlighted: true,
         },
         {
@@ -8499,7 +8522,6 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           ctaAction: 'mailto',
         },
       ],
-      alertMessage: 'โปรดรอติดตาม! ขณะนี้ใช้งานได้ฟรีทั้งหมด หากคุณถึงแพ็กเกจที่ต้องชำระเงิน เราจะให้เครดิตที่เพียงพอ ใช้งานได้อย่างสบายใจ!',
       contactMessage:
         'หากต้องการสอบถามราคาแบบองค์กร การตรวจสอบความปลอดภัย หรือการสนับสนุนเฉพาะ โปรดติดต่อเราทางอีเมล',
       contactCopyLabel: 'คัดลอกอีเมล',

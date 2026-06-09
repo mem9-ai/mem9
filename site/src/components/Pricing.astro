@@ -1,11 +1,18 @@
 ---
-import type { SiteBillingPageCopy } from '../content/site';
+import type { SiteBillingPageCopy, SiteBillingTier } from '../content/site';
 
 interface Props {
   billing: SiteBillingPageCopy;
 }
 
 const { billing } = Astro.props;
+
+const signinHref = `/console/signin?return_to=${encodeURIComponent('/console/')}`;
+
+function getPlanHref(tier: SiteBillingTier): string {
+  const interval = tier.interval ?? 'month';
+  return `/console/billing/plan?plan=${encodeURIComponent(tier.planSku ?? 'starter')}&interval=${encodeURIComponent(interval)}`;
+}
 ---
 
 <section id="billing" class="billing-section">
@@ -46,11 +53,35 @@ const { billing } = Astro.props;
                       <span class="tier-period" data-i18n={`billing.tiers.${index}.period`}>{tier.period}</span>
                     )}
                   </div>
-                  {tier.ctaAction === 'mailto' ? (
+                  {tier.ctaAction === 'plan' ? (
+                    <a
+                      href={getPlanHref(tier)}
+                      class="cta-button"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-billing-track
+                      data-tier={tier.name}
+                      data-i18n={`billing.tiers.${index}.ctaLabel`}
+                    >
+                      {tier.ctaLabel}
+                    </a>
+                  ) : tier.ctaAction === 'signin' ? (
+                    <a
+                      href={signinHref}
+                      class="cta-button"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-billing-track
+                      data-tier={tier.name}
+                      data-i18n={`billing.tiers.${index}.ctaLabel`}
+                    >
+                      {tier.ctaLabel}
+                    </a>
+                  ) : tier.ctaAction === 'mailto' ? (
                     <button
                       type="button"
                       class="cta-button"
-                      data-billing-contact
+                      data-contact-modal-trigger
                       data-billing-track
                       data-tier={tier.name}
                       data-i18n={`billing.tiers.${index}.ctaLabel`}
@@ -58,16 +89,7 @@ const { billing } = Astro.props;
                       {tier.ctaLabel}
                     </button>
                   ) : (
-                    <button
-                      type="button"
-                      class="cta-button"
-                      data-billing-alert
-                      data-billing-track
-                      data-tier={tier.name}
-                      data-i18n={`billing.tiers.${index}.ctaLabel`}
-                    >
-                      {tier.ctaLabel}
-                    </button>
+                    null
                   )}
                 </div>
               </th>
@@ -114,11 +136,35 @@ const { billing } = Astro.props;
                 <span class="tier-period" data-i18n={`billing.tiers.${tierIndex}.period`}>{tier.period}</span>
               )}
             </div>
-            {tier.ctaAction === 'mailto' ? (
+            {tier.ctaAction === 'plan' ? (
+              <a
+                href={getPlanHref(tier)}
+                class="cta-button"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-billing-track
+                data-tier={tier.name}
+                data-i18n={`billing.tiers.${tierIndex}.ctaLabel`}
+              >
+                {tier.ctaLabel}
+              </a>
+            ) : tier.ctaAction === 'signin' ? (
+              <a
+                href={signinHref}
+                class="cta-button"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-billing-track
+                data-tier={tier.name}
+                data-i18n={`billing.tiers.${tierIndex}.ctaLabel`}
+              >
+                {tier.ctaLabel}
+              </a>
+            ) : tier.ctaAction === 'mailto' ? (
               <button
                 type="button"
                 class="cta-button"
-                data-billing-contact
+                data-contact-modal-trigger
                 data-billing-track
                 data-tier={tier.name}
                 data-i18n={`billing.tiers.${tierIndex}.ctaLabel`}
@@ -126,16 +172,7 @@ const { billing } = Astro.props;
                 {tier.ctaLabel}
               </button>
             ) : (
-              <button
-                type="button"
-                class="cta-button"
-                data-billing-alert
-                data-billing-track
-                data-tier={tier.name}
-                data-i18n={`billing.tiers.${tierIndex}.ctaLabel`}
-              >
-                {tier.ctaLabel}
-              </button>
+              null
             )}
           </div>
 
@@ -155,72 +192,10 @@ const { billing } = Astro.props;
       ))}
     </div>
   </div>
-
-  <div
-    class="modal-overlay"
-    id="billing-modal"
-    data-billing-modal
-    hidden
-  >
-    <div class="modal-card surface-card">
-      <p
-        class="modal-message"
-        data-billing-alert-message
-        data-i18n="billing.alertMessage"
-      >
-        {billing.alertMessage}
-      </p>
-      <div class="modal-contact-panel" data-billing-contact-panel hidden>
-        <p class="modal-message" data-i18n="billing.contactMessage">
-          {billing.contactMessage}
-        </p>
-        <p class="modal-email" data-billing-contact-email>{billing.contactEmail}</p>
-        <button
-          type="button"
-          class="modal-copy-button"
-          data-billing-copy-email
-          data-i18n="billing.contactCopyLabel"
-        >
-          {billing.contactCopyLabel}
-        </button>
-        <p class="modal-feedback" data-billing-copy-feedback aria-live="polite"></p>
-        <span data-billing-copy-success hidden data-i18n="billing.contactCopiedMessage">
-          {billing.contactCopiedMessage}
-        </span>
-        <span data-billing-copy-failure hidden data-i18n="billing.contactCopyFailedMessage">
-          {billing.contactCopyFailedMessage}
-        </span>
-      </div>
-      <button type="button" class="modal-close-button" data-billing-modal-close data-i18n="billing.modalOkLabel">{billing.modalOkLabel}</button>
-    </div>
-  </div>
 </section>
 
 <script is:inline>
   (function () {
-    var modal = document.querySelector('[data-billing-modal]');
-    var closeBtn = document.querySelector('[data-billing-modal-close]');
-    var alertMessage = document.querySelector('[data-billing-alert-message]');
-    var contactPanel = document.querySelector('[data-billing-contact-panel]');
-    var contactEmail = document.querySelector('[data-billing-contact-email]');
-    var copyButton = document.querySelector('[data-billing-copy-email]');
-    var copyFeedback = document.querySelector('[data-billing-copy-feedback]');
-    var copySuccess = document.querySelector('[data-billing-copy-success]');
-    var copyFailure = document.querySelector('[data-billing-copy-failure]');
-    if (
-      !modal ||
-      !closeBtn ||
-      !alertMessage ||
-      !contactPanel ||
-      !contactEmail ||
-      !copyButton ||
-      !copyFeedback ||
-      !copySuccess ||
-      !copyFailure
-    ) {
-      return;
-    }
-
     function trackCta(tier, label) {
       if (typeof window.gtag === 'function') {
         window.gtag('event', 'billing_cta_click', {
@@ -231,90 +206,10 @@ const { billing } = Astro.props;
       }
     }
 
-    function openModal(mode) {
-      alertMessage.hidden = mode !== 'alert';
-      contactPanel.hidden = mode !== 'contact';
-      copyFeedback.textContent = '';
-      modal.hidden = false;
-      requestAnimationFrame(function () {
-        modal.classList.add('is-visible');
-      });
-    }
-
-    function closeModal() {
-      modal.classList.remove('is-visible');
-      setTimeout(function () {
-        modal.hidden = true;
-      }, 200);
-    }
-
-    async function copyContactEmail() {
-      var email = contactEmail.textContent ? contactEmail.textContent.trim() : '';
-      if (!email) {
-        return false;
-      }
-
-      try {
-        await navigator.clipboard.writeText(email);
-        return true;
-      } catch (error) {
-        var textarea = document.createElement('textarea');
-        textarea.value = email;
-        textarea.setAttribute('readonly', '');
-        textarea.style.position = 'absolute';
-        textarea.style.left = '-9999px';
-        document.body.appendChild(textarea);
-        textarea.select();
-
-        var copied = false;
-        try {
-          copied = document.execCommand('copy');
-        } catch (copyError) {
-          copied = false;
-        }
-
-        document.body.removeChild(textarea);
-        return copied;
-      }
-    }
-
-    document.querySelectorAll('[data-billing-alert]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        openModal('alert');
-      });
-    });
-
-    document.querySelectorAll('[data-billing-contact]').forEach(function (btn) {
-      btn.addEventListener('click', async function () {
-        openModal('contact');
-        var copied = await copyContactEmail();
-        copyFeedback.textContent = copied
-          ? copySuccess.textContent.trim()
-          : copyFailure.textContent.trim();
-      });
-    });
-
     document.querySelectorAll('[data-billing-track]').forEach(function (el) {
       el.addEventListener('click', function () {
         trackCta(el.dataset.tier || '', el.textContent ? el.textContent.trim() : '');
       });
-    });
-
-    copyButton.addEventListener('click', async function () {
-      var copied = await copyContactEmail();
-      copyFeedback.textContent = copied
-        ? copySuccess.textContent.trim()
-        : copyFailure.textContent.trim();
-    });
-
-    closeBtn.addEventListener('click', closeModal);
-
-    modal.addEventListener('click', function (e) {
-      if (e.target === modal) closeModal();
-    });
-
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && !modal.hidden) closeModal();
     });
   })();
 </script>
@@ -495,138 +390,6 @@ const { billing } = Astro.props;
     box-shadow:
       inset 0 1px 0 color-mix(in srgb, white 24%, transparent),
       0 14px 32px color-mix(in srgb, var(--text) 16%, transparent);
-  }
-
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(6px);
-    opacity: 0;
-    transition: opacity 0.2s ease;
-  }
-
-  .modal-overlay[hidden] {
-    display: none;
-  }
-
-  .modal-overlay.is-visible {
-    opacity: 1;
-  }
-
-  .modal-card {
-    max-width: 480px;
-    width: calc(100% - 2rem);
-    padding: 2rem;
-    text-align: center;
-    transform: translateY(12px) scale(0.97);
-    transition: transform 0.2s ease;
-  }
-
-  .modal-overlay.is-visible .modal-card {
-    transform: translateY(0) scale(1);
-  }
-
-  .modal-message {
-    font-size: 1.05rem;
-    line-height: 1.7;
-    color: var(--text);
-    margin-bottom: 1.5rem;
-  }
-
-  .modal-contact-panel {
-    display: grid;
-    gap: 0.85rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .modal-contact-panel .modal-message {
-    margin-bottom: 0;
-  }
-
-  .modal-email {
-    margin: 0;
-    padding: 0.85rem 1rem;
-    border-radius: 0.85rem;
-    border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface) 92%, black 8%);
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: 0.95rem;
-    line-height: 1.5;
-    user-select: all;
-    word-break: break-all;
-  }
-
-  .modal-copy-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 2.75rem;
-    padding: 0.65rem 1.2rem;
-    border-radius: 0.75rem;
-    border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface) 88%, white 12%);
-    color: var(--text);
-    font-family: var(--font-display);
-    font-size: 0.92rem;
-    font-weight: 700;
-    cursor: pointer;
-    transition:
-      transform 0.15s ease,
-      border-color 0.15s ease,
-      background 0.15s ease;
-  }
-
-  .modal-copy-button:hover {
-    transform: translateY(-1px);
-    border-color: var(--border-strong);
-    background: color-mix(in srgb, var(--surface) 82%, white 18%);
-  }
-
-  .modal-feedback {
-    min-height: 1.25rem;
-    margin: 0;
-    color: var(--text-dim);
-    font-size: 0.9rem;
-    line-height: 1.4;
-  }
-
-  .modal-close-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 7rem;
-    min-height: 2.75rem;
-    padding: 0.6rem 1.5rem;
-    border-radius: 0.75rem;
-    border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
-    background: linear-gradient(
-      135deg,
-      var(--text) 0%,
-      color-mix(in srgb, var(--text) 74%, var(--accent)) 100%
-    );
-    color: var(--bg-deep);
-    box-shadow:
-      inset 0 1px 0 color-mix(in srgb, white 22%, transparent),
-      0 8px 20px color-mix(in srgb, var(--text) 12%, transparent);
-    font-family: var(--font-display);
-    font-size: 0.95rem;
-    font-weight: 700;
-    cursor: pointer;
-    transition:
-      transform 0.15s ease,
-      box-shadow 0.15s ease,
-      opacity 0.15s ease;
-  }
-
-  .modal-close-button:hover {
-    transform: translateY(-1px);
-    opacity: 0.95;
   }
 
   @media (max-width: 960px) {
