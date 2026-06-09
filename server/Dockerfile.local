@@ -1,0 +1,24 @@
+# Self-contained multi-stage Dockerfile for the local dev compose stack.
+#
+# Unlike server/Dockerfile (which expects server/bin/mnemo-server to be
+# pre-built via `make build-linux` on the host and is wired into the
+# `make docker` release pipeline), this one builds the binary inside the
+# image so an operator with only Docker installed can run
+# `docker compose up --build` from a clean checkout.
+#
+# Added in #mem9-discussion:efde4126 (2026-06-09) per @Rossi / @tmgg06.
+# Kept as a separate file rather than rewriting server/Dockerfile so the
+# release pipeline's expectations don't change.
+
+FROM golang:1.24 AS builder
+WORKDIR /src/server
+COPY server/go.mod server/go.sum ./
+RUN go mod download
+COPY server/ ./
+RUN CGO_ENABLED=0 GOOS=linux go build -o /mnemo-server ./cmd/mnemo-server
+
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates
+COPY --from=builder /mnemo-server /mnemo-server
+EXPOSE 8080
+ENTRYPOINT ["/mnemo-server"]
