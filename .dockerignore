@@ -1,0 +1,5 @@
+# Keep secrets and git history out of the Docker build context. The
+# compose build sends the repo root to the builder; with a remote
+# builder/BuildKit these files would otherwise leave the machine.
+.env
+.git
