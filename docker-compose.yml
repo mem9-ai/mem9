@@ -13,9 +13,6 @@
 # TiDB to accept connections, then pipes server/schema.sql through the mysql client.
 # It exits 0 on success; the `mem9` service waits for that completion via
 # `service_completed_successfully` before starting.
-#
-# Tracked in #mem9-discussion:efde4126 (2026-06-09). Targets the v0 code memory
-# spike — single-command local mem9 for dogfooding without external TiDB Cloud.
 
 services:
   tidb:

@@ -5,10 +5,6 @@
 # `make docker` release pipeline), this one builds the binary inside the
 # image so an operator with only Docker installed can run
 # `docker compose up --build` from a clean checkout.
-#
-# Added in #mem9-discussion:efde4126 (2026-06-09) per @Rossi / @tmgg06.
-# Kept as a separate file rather than rewriting server/Dockerfile so the
-# release pipeline's expectations don't change.
 
 FROM golang:1.24 AS builder
 WORKDIR /src/server
