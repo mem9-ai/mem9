@@ -1,5 +1,8 @@
 # Keep secrets and git history out of the Docker build context. The
 # compose build sends the repo root to the builder; with a remote
 # builder/BuildKit these files would otherwise leave the machine.
-.env
+# .env* covers .env, .env.local, and .publish.env (the three secret
+# files .gitignore knows about); .env.example is also matched but the
+# build doesn't need it.
+.env*
 .git
