@@ -213,6 +213,127 @@ func InitTiDBTenantSchema(ctx context.Context, db *sql.DB, autoModel string, aut
 	return nil
 }
 
+// ValidateTiDBTenantRuntimeSchema checks the tenant schema expected after
+// provisioning or offline migration without mutating existing tables.
+func ValidateTiDBTenantRuntimeSchema(ctx context.Context, db *sql.DB, autoModel string, ftsEnabled bool) error {
+	if db == nil {
+		return fmt.Errorf("validate schema: db connection is nil")
+	}
+	if err := CheckEmbeddingSchemaCompatibility(ctx, db, autoModel); err != nil {
+		return fmt.Errorf("validate schema: embedding schema compatibility: %w", err)
+	}
+
+	if err := requireTable(ctx, db, "memories"); err != nil {
+		return fmt.Errorf("validate schema: memories table: %w", err)
+	}
+	if err := requireColumn(ctx, db, "memories", "app_id"); err != nil {
+		return fmt.Errorf("validate schema: memories app_id column: %w", err)
+	}
+	if err := requireIndex(ctx, db, "memories", "idx_app"); err != nil {
+		return fmt.Errorf("validate schema: memories app_id index: %w", err)
+	}
+	if err := requireIndex(ctx, db, "memories", "idx_cosine"); err != nil {
+		return fmt.Errorf("validate schema: memories vector index: %w", err)
+	}
+	if ftsEnabled {
+		if err := requireIndex(ctx, db, "memories", "idx_fts_content"); err != nil {
+			return fmt.Errorf("validate schema: memories fulltext index: %w", err)
+		}
+	}
+
+	if err := requireTable(ctx, db, "sessions"); err != nil {
+		return fmt.Errorf("validate schema: sessions table: %w", err)
+	}
+	if err := requireColumn(ctx, db, "sessions", "app_id"); err != nil {
+		return fmt.Errorf("validate schema: sessions app_id column: %w", err)
+	}
+	if err := requireIndex(ctx, db, "sessions", "idx_sess_app"); err != nil {
+		return fmt.Errorf("validate schema: sessions app_id index: %w", err)
+	}
+	if err := requireIndexColumns(ctx, db, "sessions", "idx_sess_dedup", []string{"app_id", "session_id", "content_hash"}); err != nil {
+		return fmt.Errorf("validate schema: sessions dedup index: %w", err)
+	}
+	if err := requireIndex(ctx, db, "sessions", "idx_sess_cosine"); err != nil {
+		return fmt.Errorf("validate schema: sessions vector index: %w", err)
+	}
+	if ftsEnabled {
+		if err := requireIndex(ctx, db, "sessions", "idx_sess_fts"); err != nil {
+			return fmt.Errorf("validate schema: sessions fulltext index: %w", err)
+		}
+	}
+	return nil
+}
+
+func requireTable(ctx context.Context, db *sql.DB, table string) error {
+	exists, err := TableExists(ctx, db, table)
+	if err != nil {
+		return fmt.Errorf("check table: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("%s table is missing", table)
+	}
+	return nil
+}
+
+func requireColumn(ctx context.Context, db *sql.DB, table, column string) error {
+	exists, err := ColumnExists(ctx, db, table, column)
+	if err != nil {
+		return fmt.Errorf("check column: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("%s.%s is missing", table, column)
+	}
+	return nil
+}
+
+func requireIndex(ctx context.Context, db *sql.DB, table, indexName string) error {
+	exists, err := IndexExists(ctx, db, table, indexName)
+	if err != nil {
+		return fmt.Errorf("check index: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("%s.%s is missing", table, indexName)
+	}
+	return nil
+}
+
+func requireIndexColumns(ctx context.Context, db *sql.DB, table, indexName string, want []string) error {
+	columns, err := indexColumns(ctx, db, table, indexName)
+	if err != nil {
+		return fmt.Errorf("check index columns: %w", err)
+	}
+	if strings.Join(columns, ",") != strings.Join(want, ",") {
+		return fmt.Errorf("%s.%s columns = %q, want %q", table, indexName, strings.Join(columns, ","), strings.Join(want, ","))
+	}
+	return nil
+}
+
+func indexColumns(ctx context.Context, db *sql.DB, table, indexName string) ([]string, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT COLUMN_NAME
+		   FROM information_schema.STATISTICS
+		  WHERE TABLE_SCHEMA = DATABASE()
+		    AND TABLE_NAME = ?
+		    AND INDEX_NAME = ?
+		  ORDER BY SEQ_IN_INDEX`,
+		table, indexName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var columns []string
+	for rows.Next() {
+		var column string
+		if err := rows.Scan(&column); err != nil {
+			return nil, err
+		}
+		columns = append(columns, column)
+	}
+	return columns, rows.Err()
+}
+
 func ensureTable(ctx context.Context, db *sql.DB, table, createSQL string) error {
 	exists, err := TableExists(ctx, db, table)
 	if err != nil {

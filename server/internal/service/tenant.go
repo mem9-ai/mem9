@@ -345,7 +345,7 @@ func (s *TenantService) EnsureRuntimeSchema(ctx context.Context, db *sql.DB) err
 	}
 	switch backend {
 	case "tidb":
-		if err := tenant.InitTiDBTenantSchema(ctx, db, s.autoModel, s.autoDims, s.clientDims, s.ftsEnabled); err != nil {
+		if err := tenant.ValidateTiDBTenantRuntimeSchema(ctx, db, s.autoModel, s.ftsEnabled); err != nil {
 			return fmt.Errorf("ensure runtime schema: tidb: %w", err)
 		}
 		return nil
@@ -354,37 +354,6 @@ func (s *TenantService) EnsureRuntimeSchema(ctx context.Context, db *sql.DB) err
 	default:
 		return fmt.Errorf("ensure runtime schema: unsupported backend %q", backend)
 	}
-}
-
-func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) error {
-	if _, err := db.ExecContext(ctx, tenant.BuildSessionsSchema(s.autoModel, s.autoDims, s.clientDims)); err != nil {
-		return fmt.Errorf("ensure sessions table: create: %w", err)
-	}
-	if s.autoModel != "" {
-		exists, err := tenant.IndexExists(ctx, db, "sessions", "idx_sess_cosine")
-		if err != nil {
-			return fmt.Errorf("ensure sessions table: check vector index: %w", err)
-		}
-		if !exists {
-			if _, err := db.ExecContext(ctx,
-				`ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !tenant.IsIndexExistsError(err) {
-				return fmt.Errorf("ensure sessions table: vector index: %w", err)
-			}
-		}
-	}
-	if s.ftsEnabled {
-		exists, err := tenant.IndexExists(ctx, db, "sessions", "idx_sess_fts")
-		if err != nil {
-			return fmt.Errorf("ensure sessions table: check fts index: %w", err)
-		}
-		if !exists {
-			if _, err := db.ExecContext(ctx,
-				`ALTER TABLE sessions ADD FULLTEXT INDEX idx_sess_fts (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !tenant.IsIndexExistsError(err) {
-				return fmt.Errorf("ensure sessions table: fts index: %w", err)
-			}
-		}
-	}
-	return nil
 }
 
 func utmFromRequest(tenantID string, raw map[string]string) *domain.TenantUTM {

@@ -33,6 +33,8 @@ func setupTiDBCloudEnv(t *testing.T) func() {
 type schemaInitConnector struct {
 	execs          []string
 	existingTables map[string]bool
+	existingCols   map[string]bool
+	indexColumns   map[string][]string
 	schemaRows     []schemaTestRow
 }
 
@@ -72,7 +74,15 @@ func (c *schemaInitConn) ExecContext(_ context.Context, query string, _ []driver
 func (c *schemaInitConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
 	if strings.Contains(query, "information_schema.COLUMNS") {
 		if strings.Contains(query, "COUNT(*)") {
-			return &schemaInitRows{values: [][]driver.Value{{int64(0)}}}, nil
+			var count int64
+			if len(args) > 1 {
+				table, _ := args[0].Value.(string)
+				column, _ := args[1].Value.(string)
+				if c.recorder.existingCols[table+"."+column] {
+					count = 1
+				}
+			}
+			return &schemaInitRows{values: [][]driver.Value{{count}}}, nil
 		}
 		return &schemaRows{rows: c.recorder.schemaRows}, nil
 	}
@@ -86,7 +96,23 @@ func (c *schemaInitConn) QueryContext(_ context.Context, query string, args []dr
 		return &schemaInitRows{values: [][]driver.Value{{count}}}, nil
 	}
 	if strings.Contains(query, "information_schema.STATISTICS") {
-		return &schemaInitRows{values: [][]driver.Value{{int64(0)}}}, nil
+		indexName := ""
+		if len(args) > 1 {
+			indexName, _ = args[1].Value.(string)
+		}
+		columns := c.recorder.indexColumns[indexName]
+		if strings.Contains(query, "COUNT(*)") {
+			var count int64
+			if len(columns) > 0 {
+				count = 1
+			}
+			return &schemaInitRows{values: [][]driver.Value{{count}}}, nil
+		}
+		values := make([][]driver.Value, 0, len(columns))
+		for _, column := range columns {
+			values = append(values, []driver.Value{column})
+		}
+		return &schemaInitRows{values: values}, nil
 	}
 	return nil, fmt.Errorf("unexpected query %q with args %v", query, args)
 }
@@ -364,6 +390,70 @@ func TestTiDBCloudProvisioner_InitSchema_ExistingTablesSkipsCreate(t *testing.T)
 		if strings.Contains(executed, unwanted) {
 			t.Fatalf("existing tables should not run online app_id schema migration %q\n%s", unwanted, executed)
 		}
+	}
+}
+
+func TestValidateTiDBTenantRuntimeSchema_SuccessDoesNotMutate(t *testing.T) {
+	recorder := &schemaInitConnector{
+		existingTables: map[string]bool{
+			"memories": true,
+			"sessions": true,
+		},
+		existingCols: map[string]bool{
+			"memories.app_id": true,
+			"sessions.app_id": true,
+		},
+		indexColumns: map[string][]string{
+			"idx_app":         {"app_id"},
+			"idx_cosine":      {"embedding"},
+			"idx_fts_content": {"content"},
+			"idx_sess_app":    {"app_id"},
+			"idx_sess_dedup":  {"app_id", "session_id", "content_hash"},
+			"idx_sess_cosine": {"embedding"},
+			"idx_sess_fts":    {"content"},
+		},
+	}
+	db := sql.OpenDB(recorder)
+	defer db.Close()
+
+	if err := ValidateTiDBTenantRuntimeSchema(context.Background(), db, "", true); err != nil {
+		t.Fatalf("ValidateTiDBTenantRuntimeSchema failed: %v", err)
+	}
+	if len(recorder.execs) != 0 {
+		t.Fatalf("runtime schema validation should not execute DDL, got %v", recorder.execs)
+	}
+}
+
+func TestValidateTiDBTenantRuntimeSchema_RejectsOldSessionsDedupIndex(t *testing.T) {
+	recorder := &schemaInitConnector{
+		existingTables: map[string]bool{
+			"memories": true,
+			"sessions": true,
+		},
+		existingCols: map[string]bool{
+			"memories.app_id": true,
+			"sessions.app_id": true,
+		},
+		indexColumns: map[string][]string{
+			"idx_app":         {"app_id"},
+			"idx_cosine":      {"embedding"},
+			"idx_sess_app":    {"app_id"},
+			"idx_sess_dedup":  {"session_id", "content_hash"},
+			"idx_sess_cosine": {"embedding"},
+		},
+	}
+	db := sql.OpenDB(recorder)
+	defer db.Close()
+
+	err := ValidateTiDBTenantRuntimeSchema(context.Background(), db, "", false)
+	if err == nil {
+		t.Fatal("expected old sessions dedup index to fail validation")
+	}
+	if !strings.Contains(err.Error(), "sessions dedup index") {
+		t.Fatalf("expected sessions dedup index error, got %v", err)
+	}
+	if len(recorder.execs) != 0 {
+		t.Fatalf("runtime schema validation should not execute DDL, got %v", recorder.execs)
 	}
 }
 
