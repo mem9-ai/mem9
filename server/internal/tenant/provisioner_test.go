@@ -31,11 +31,12 @@ func setupTiDBCloudEnv(t *testing.T) func() {
 }
 
 type schemaInitConnector struct {
-	execs          []string
-	existingTables map[string]bool
-	existingCols   map[string]bool
-	indexColumns   map[string][]string
-	schemaRows     []schemaTestRow
+	execs            []string
+	existingTables   map[string]bool
+	existingCols     map[string]bool
+	indexColumns     map[string][]string
+	nonUniqueIndexes map[string]bool
+	schemaRows       []schemaTestRow
 }
 
 func (c *schemaInitConnector) Connect(context.Context) (driver.Conn, error) {
@@ -68,6 +69,7 @@ func (c *schemaInitConn) Begin() (driver.Tx, error) {
 
 func (c *schemaInitConn) ExecContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Result, error) {
 	c.recorder.execs = append(c.recorder.execs, query)
+	c.recorder.recordDDL(query)
 	return driver.RowsAffected(0), nil
 }
 
@@ -109,21 +111,78 @@ func (c *schemaInitConn) QueryContext(_ context.Context, query string, args []dr
 			}
 			return &schemaInitRows{values: [][]driver.Value{{count}}}, nil
 		}
+		if strings.Contains(lowerQuery, "non_unique") {
+			nonUnique := int64(0)
+			if c.recorder.nonUniqueIndexes[indexName] {
+				nonUnique = 1
+			}
+			values := make([][]driver.Value, 0, len(columns))
+			for _, column := range columns {
+				values = append(values, []driver.Value{column, nonUnique})
+			}
+			return &schemaInitRows{columns: []string{"COLUMN_NAME", "NON_UNIQUE"}, values: values}, nil
+		}
 		values := make([][]driver.Value, 0, len(columns))
 		for _, column := range columns {
 			values = append(values, []driver.Value{column})
 		}
-		return &schemaInitRows{values: values}, nil
+		return &schemaInitRows{columns: []string{"COLUMN_NAME"}, values: values}, nil
 	}
 	return nil, fmt.Errorf("unexpected query %q with args %v", query, args)
 }
 
-type schemaInitRows struct {
-	values [][]driver.Value
-	idx    int
+func (c *schemaInitConnector) recordDDL(query string) {
+	c.ensureMaps()
+	lowerQuery := strings.ToLower(query)
+	switch {
+	case strings.Contains(lowerQuery, "create table if not exists memories"):
+		c.existingTables["memories"] = true
+		c.existingCols["memories.app_id"] = true
+		c.indexColumns["idx_app"] = []string{"app_id"}
+	case strings.Contains(lowerQuery, "create table if not exists sessions"):
+		c.existingTables["sessions"] = true
+		c.existingCols["sessions.app_id"] = true
+		c.indexColumns["idx_sess_app"] = []string{"app_id"}
+		c.indexColumns["idx_sess_dedup"] = []string{"app_id", "session_id", "content_hash"}
+		c.nonUniqueIndexes["idx_sess_dedup"] = false
+	case strings.Contains(lowerQuery, "alter table memories add vector index idx_cosine"):
+		c.indexColumns["idx_cosine"] = []string{"embedding"}
+	case strings.Contains(lowerQuery, "alter table memories add fulltext index idx_fts_content"):
+		c.indexColumns["idx_fts_content"] = []string{"content"}
+	case strings.Contains(lowerQuery, "alter table sessions add vector index idx_sess_cosine"):
+		c.indexColumns["idx_sess_cosine"] = []string{"embedding"}
+	case strings.Contains(lowerQuery, "alter table sessions add fulltext index idx_sess_fts"):
+		c.indexColumns["idx_sess_fts"] = []string{"content"}
+	}
 }
 
-func (*schemaInitRows) Columns() []string { return []string{"COUNT(*)"} }
+func (c *schemaInitConnector) ensureMaps() {
+	if c.existingTables == nil {
+		c.existingTables = map[string]bool{}
+	}
+	if c.existingCols == nil {
+		c.existingCols = map[string]bool{}
+	}
+	if c.indexColumns == nil {
+		c.indexColumns = map[string][]string{}
+	}
+	if c.nonUniqueIndexes == nil {
+		c.nonUniqueIndexes = map[string]bool{}
+	}
+}
+
+type schemaInitRows struct {
+	columns []string
+	values  [][]driver.Value
+	idx     int
+}
+
+func (r *schemaInitRows) Columns() []string {
+	if len(r.columns) > 0 {
+		return r.columns
+	}
+	return []string{"COUNT(*)"}
+}
 
 func (*schemaInitRows) Close() error { return nil }
 
@@ -358,6 +417,15 @@ func TestTiDBCloudProvisioner_InitSchema_ExistingTablesSkipsCreate(t *testing.T)
 			"memories": true,
 			"sessions": true,
 		},
+		existingCols: map[string]bool{
+			"memories.app_id": true,
+			"sessions.app_id": true,
+		},
+		indexColumns: map[string][]string{
+			"idx_app":        {"app_id"},
+			"idx_sess_app":   {"app_id"},
+			"idx_sess_dedup": {"app_id", "session_id", "content_hash"},
+		},
 	}
 	db := sql.OpenDB(recorder)
 	defer db.Close()
@@ -390,6 +458,91 @@ func TestTiDBCloudProvisioner_InitSchema_ExistingTablesSkipsCreate(t *testing.T)
 	for _, unwanted := range unwantedSubstrings {
 		if strings.Contains(executed, unwanted) {
 			t.Fatalf("existing tables should not run online app_id schema migration %q\n%s", unwanted, executed)
+		}
+	}
+}
+
+func TestTiDBCloudProvisioner_InitSchema_ExistingTablesRejectsStaleAppSchema(t *testing.T) {
+	p := NewTiDBCloudProvisioner("http://localhost", "pool", "", 1024, 1536, false)
+	recorder := &schemaInitConnector{
+		existingTables: map[string]bool{
+			"memories": true,
+			"sessions": true,
+		},
+		existingCols: map[string]bool{
+			"memories.app_id": true,
+			"sessions.app_id": true,
+		},
+		indexColumns: map[string][]string{
+			"idx_app":          {"app_id"},
+			"idx_sessions_app": {"app_id"},
+			"idx_sess_dedup":   {"session_id", "content_hash"},
+		},
+	}
+	db := sql.OpenDB(recorder)
+	defer db.Close()
+
+	err := p.InitSchema(context.Background(), db)
+	if err == nil {
+		t.Fatal("expected stale existing sessions schema to fail init")
+	}
+	if !strings.Contains(err.Error(), "sessions app_id index") {
+		t.Fatalf("expected sessions app_id index error, got %v", err)
+	}
+	executed := strings.Join(recorder.execs, "\n")
+	if !strings.Contains(executed, "ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine") {
+		t.Fatalf("expected search index ensure before validation failure:\n%s", executed)
+	}
+	if strings.Contains(executed, "ALTER TABLE sessions ADD COLUMN app_id") ||
+		strings.Contains(executed, "ALTER TABLE sessions ADD UNIQUE INDEX idx_sess_dedup") {
+		t.Fatalf("stale app schema should not be migrated online:\n%s", executed)
+	}
+}
+
+func TestEnsureTiDBTenantRuntimeSchema_CreatesSearchIndexesOnly(t *testing.T) {
+	recorder := &schemaInitConnector{
+		existingTables: map[string]bool{
+			"memories": true,
+			"sessions": true,
+		},
+		existingCols: map[string]bool{
+			"memories.app_id": true,
+			"sessions.app_id": true,
+		},
+		indexColumns: map[string][]string{
+			"idx_app":        {"app_id"},
+			"idx_sess_app":   {"app_id"},
+			"idx_sess_dedup": {"app_id", "session_id", "content_hash"},
+		},
+	}
+	db := sql.OpenDB(recorder)
+	defer db.Close()
+
+	if err := EnsureTiDBTenantRuntimeSchema(context.Background(), db, "", 1024, 1536, true); err != nil {
+		t.Fatalf("EnsureTiDBTenantRuntimeSchema failed: %v", err)
+	}
+	executed := strings.Join(recorder.execs, "\n")
+	wantSubstrings := []string{
+		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
+		"ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content",
+		"ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine",
+		"ALTER TABLE sessions ADD FULLTEXT INDEX idx_sess_fts",
+	}
+	for _, want := range wantSubstrings {
+		if !strings.Contains(executed, want) {
+			t.Fatalf("executed DDL missing %q\n%s", want, executed)
+		}
+	}
+	unwantedSubstrings := []string{
+		"ALTER TABLE memories ADD COLUMN app_id",
+		"CREATE INDEX idx_app",
+		"ALTER TABLE sessions ADD COLUMN app_id",
+		"CREATE INDEX idx_sess_app",
+		"ALTER TABLE sessions ADD UNIQUE INDEX idx_sess_dedup",
+	}
+	for _, unwanted := range unwantedSubstrings {
+		if strings.Contains(executed, unwanted) {
+			t.Fatalf("runtime ensure should not run app schema migration %q\n%s", unwanted, executed)
 		}
 	}
 }
@@ -452,6 +605,42 @@ func TestValidateTiDBTenantRuntimeSchema_RejectsOldSessionsDedupIndex(t *testing
 	}
 	if !strings.Contains(err.Error(), "sessions dedup index") {
 		t.Fatalf("expected sessions dedup index error, got %v", err)
+	}
+	if len(recorder.execs) != 0 {
+		t.Fatalf("runtime schema validation should not execute DDL, got %v", recorder.execs)
+	}
+}
+
+func TestValidateTiDBTenantRuntimeSchema_RejectsNonUniqueSessionsDedupIndex(t *testing.T) {
+	recorder := &schemaInitConnector{
+		existingTables: map[string]bool{
+			"memories": true,
+			"sessions": true,
+		},
+		existingCols: map[string]bool{
+			"memories.app_id": true,
+			"sessions.app_id": true,
+		},
+		indexColumns: map[string][]string{
+			"idx_app":         {"app_id"},
+			"idx_cosine":      {"embedding"},
+			"idx_sess_app":    {"app_id"},
+			"idx_sess_dedup":  {"app_id", "session_id", "content_hash"},
+			"idx_sess_cosine": {"embedding"},
+		},
+		nonUniqueIndexes: map[string]bool{
+			"idx_sess_dedup": true,
+		},
+	}
+	db := sql.OpenDB(recorder)
+	defer db.Close()
+
+	err := ValidateTiDBTenantRuntimeSchema(context.Background(), db, "", false)
+	if err == nil {
+		t.Fatal("expected non-unique sessions dedup index to fail validation")
+	}
+	if !strings.Contains(err.Error(), "is not unique") {
+		t.Fatalf("expected non-unique dedup index error, got %v", err)
 	}
 	if len(recorder.execs) != 0 {
 		t.Fatalf("runtime schema validation should not execute DDL, got %v", recorder.execs)

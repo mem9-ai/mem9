@@ -453,7 +453,7 @@ func (w *UploadWorker) ensureRuntimeSchema(ctx context.Context, db *sql.DB) erro
 	}
 	switch backend {
 	case "tidb":
-		return tenant.ValidateTiDBTenantRuntimeSchema(ctx, db, w.autoModel, w.ftsEnabled)
+		return tenant.EnsureTiDBTenantRuntimeSchema(ctx, db, w.autoModel, w.autoDims, w.clientDims, w.ftsEnabled)
 	case "postgres", "db9":
 		return tenant.ValidatePostgresMemoryRuntimeSchema(ctx, db, backend)
 	default:

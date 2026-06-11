@@ -345,7 +345,7 @@ func (s *TenantService) EnsureRuntimeSchema(ctx context.Context, db *sql.DB) err
 	}
 	switch backend {
 	case "tidb":
-		if err := tenant.ValidateTiDBTenantRuntimeSchema(ctx, db, s.autoModel, s.ftsEnabled); err != nil {
+		if err := tenant.EnsureTiDBTenantRuntimeSchema(ctx, db, s.autoModel, s.autoDims, s.clientDims, s.ftsEnabled); err != nil {
 			return fmt.Errorf("ensure runtime schema: tidb: %w", err)
 		}
 		return nil
