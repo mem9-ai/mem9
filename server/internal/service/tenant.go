@@ -366,29 +366,26 @@ func (s *TenantService) EnsureSessionsTable(ctx context.Context, db *sql.DB) err
 	if _, err := db.ExecContext(ctx, tenant.BuildSessionsSchema(s.autoModel, s.autoDims, s.clientDims)); err != nil {
 		return fmt.Errorf("ensure sessions table: create: %w", err)
 	}
-	if err := tenant.EnsureSessionsAppIDSchema(ctx, db); err != nil {
-		return fmt.Errorf("ensure sessions table: app_id schema: %w", err)
-	}
 	if s.autoModel != "" {
-		exists, err := tenant.IndexExists(ctx, db, "sessions", "idx_sessions_cosine")
+		exists, err := tenant.IndexExists(ctx, db, "sessions", "idx_sess_cosine")
 		if err != nil {
 			return fmt.Errorf("ensure sessions table: check vector index: %w", err)
 		}
 		if !exists {
 			if _, err := db.ExecContext(ctx,
-				`ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !tenant.IsIndexExistsError(err) {
+				`ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine ((VEC_COSINE_DISTANCE(embedding))) ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !tenant.IsIndexExistsError(err) {
 				return fmt.Errorf("ensure sessions table: vector index: %w", err)
 			}
 		}
 	}
 	if s.ftsEnabled {
-		exists, err := tenant.IndexExists(ctx, db, "sessions", "idx_sessions_fts")
+		exists, err := tenant.IndexExists(ctx, db, "sessions", "idx_sess_fts")
 		if err != nil {
 			return fmt.Errorf("ensure sessions table: check fts index: %w", err)
 		}
 		if !exists {
 			if _, err := db.ExecContext(ctx,
-				`ALTER TABLE sessions ADD FULLTEXT INDEX idx_sessions_fts (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !tenant.IsIndexExistsError(err) {
+				`ALTER TABLE sessions ADD FULLTEXT INDEX idx_sess_fts (content) WITH PARSER MULTILINGUAL ADD_COLUMNAR_REPLICA_ON_DEMAND`); err != nil && !tenant.IsIndexExistsError(err) {
 				return fmt.Errorf("ensure sessions table: fts index: %w", err)
 			}
 		}

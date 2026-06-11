@@ -954,7 +954,7 @@ for i, msg := range req.Messages {
 }
 ```
 
-No signature change to `BulkCreate`. `UNIQUE INDEX idx_sessions_dedup
+No signature change to `BulkCreate`. `UNIQUE INDEX idx_sess_dedup
 (session_id, content_hash)` serves as both dedup key and update key.
 
 **D6 — Tags on sessions only; memories table untouched**

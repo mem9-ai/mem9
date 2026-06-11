@@ -283,10 +283,9 @@ func TestTiDBCloudProvisioner_InitSchema_AutoEmbedding(t *testing.T) {
 		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
 		"ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content",
 		"CREATE TABLE IF NOT EXISTS sessions",
-		"ALTER TABLE sessions ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT ''",
 		"embedding VECTOR(1024) GENERATED ALWAYS AS (EMBED_TEXT('tidbcloud_free/amazon/titan-embed-text-v2', content, '{\"dimensions\": 1024}')) STORED",
-		"ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine",
-		"ALTER TABLE sessions ADD FULLTEXT INDEX idx_sessions_fts",
+		"ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine",
+		"ALTER TABLE sessions ADD FULLTEXT INDEX idx_sess_fts",
 	}
 	for _, want := range wantSubstrings {
 		if !strings.Contains(executed, want) {
@@ -312,8 +311,7 @@ func TestTiDBCloudProvisioner_InitSchema_ClientEmbedding(t *testing.T) {
 		"ALTER TABLE memories ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT ''",
 		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
 		"CREATE TABLE IF NOT EXISTS sessions",
-		"ALTER TABLE sessions ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT ''",
-		"ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine",
+		"ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine",
 	}
 	for _, want := range wantSubstrings {
 		if !strings.Contains(executed, want) {
@@ -350,12 +348,22 @@ func TestTiDBCloudProvisioner_InitSchema_ExistingTablesSkipsCreate(t *testing.T)
 	wantSubstrings := []string{
 		"ALTER TABLE memories ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT ''",
 		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
-		"ALTER TABLE sessions ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT ''",
-		"ALTER TABLE sessions ADD VECTOR INDEX idx_sessions_cosine",
+		"ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine",
 	}
 	for _, want := range wantSubstrings {
 		if !strings.Contains(executed, want) {
 			t.Fatalf("executed DDL missing %q\n%s", want, executed)
+		}
+	}
+	unwantedSubstrings := []string{
+		"ALTER TABLE sessions ADD COLUMN app_id",
+		"CREATE INDEX idx_sess_app",
+		"ALTER TABLE sessions DROP INDEX idx_sess_dedup",
+		"ALTER TABLE sessions ADD UNIQUE INDEX idx_sess_dedup",
+	}
+	for _, unwanted := range unwantedSubstrings {
+		if strings.Contains(executed, unwanted) {
+			t.Fatalf("existing sessions table should not run online app_id schema migration %q\n%s", unwanted, executed)
 		}
 	}
 }
