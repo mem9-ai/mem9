@@ -4,18 +4,37 @@ Target slot: 10-12 minutes.
 
 ## Preflight
 
+For the real EC2 demo path, use the live DataHub tenant. The local MCP fixture is only for offline or workstation-only rehearsals.
+
+Local rehearsal:
+
 ```bash
 cd /Users/dylanliu/AI_assistant/mem9/demos/datahub-context
 npm run doctor
 npm run mcp -- --port 8787
 ```
 
-Start mem9 from the PR branch with DataHub MCP enabled:
+Start mem9 from the PR branch with DataHub MCP enabled against the local fixture:
 
 ```bash
 cd /Users/dylanliu/AI_assistant/mem9
 MNEMO_DATAHUB_MCP_ENABLED=true \
 MNEMO_DATAHUB_MCP_URL=http://127.0.0.1:8787 \
+MNEMO_DATAHUB_MCP_MAX_RESULTS=5 \
+MNEMO_DSN="<demo-dsn>" \
+make run
+```
+
+Real DataHub rehearsal:
+
+```bash
+cd /Users/dylanliu/AI_assistant/mem9/demos/datahub-context
+npm run doctor
+
+cd /Users/dylanliu/AI_assistant/mem9
+MNEMO_DATAHUB_MCP_ENABLED=true \
+MNEMO_DATAHUB_MCP_URL="https://<your-datahub-domain>/integrations/ai/mcp" \
+MNEMO_DATAHUB_MCP_TOKEN="<datahub-access-token>" \
 MNEMO_DATAHUB_MCP_MAX_RESULTS=5 \
 MNEMO_DSN="<demo-dsn>" \
 make run
@@ -101,7 +120,8 @@ The current demo stack shape uses:
 - mem9 server env at `/opt/mem9-datahub-demo-stack/env/mem9-server.env`
 - demo UI env at `/opt/mem9-datahub-demo-stack/mem9-datahub-demo/.env.local`
 - Slack agent env at `/opt/mem9-datahub-demo-stack/mem9-datahub-demo/apps/slack-agent/.env`
-- systemd units `mem9-demo-tidb`, `mem9-demo-datahub-mcp`, `mem9-demo-server`, `mem9-demo-ui`, and `mem9-demo-slack-agent`
+- systemd units `mem9-demo-tidb`, `mem9-demo-server`, `mem9-demo-ui`, and `mem9-demo-slack-agent`
+- `mem9-demo-datahub-mcp` is retired from the EC2 demo path and should stay disabled unless you explicitly want local fixture behavior on the host
 
 Use the real EC2 host and SSH key from the deployment environment. Keep these commands as the shape of the operation, not as hard-coded production truth:
 

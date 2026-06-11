@@ -209,7 +209,7 @@ func FormatDataHubSearchQuery(query string) string {
 	terms := make([]string, 0, 6)
 	for _, field := range strings.Fields(q) {
 		term := normalizeDataHubSearchTerm(field)
-		if term == "" || dataHubSearchStopWords[term] {
+		if term == "" || dataHubSearchStopWords[strings.ToLower(term)] {
 			continue
 		}
 		terms = append(terms, term)
@@ -232,9 +232,9 @@ var dataHubSearchStopWords = map[string]bool{
 }
 
 func normalizeDataHubSearchTerm(term string) string {
-	term = strings.ToLower(strings.TrimFunc(term, func(r rune) bool {
+	term = strings.TrimFunc(term, func(r rune) bool {
 		return unicode.IsPunct(r) && r != '_' && r != '.' && r != ':' && r != '-' && r != '*'
-	}))
+	})
 	if term == "" {
 		return ""
 	}
@@ -813,7 +813,7 @@ func preferredDataHubLineageURN(groups ...[]ExternalContextItem) string {
 			if item.ID == "" || !strings.HasPrefix(item.ID, "urn:li:") {
 				continue
 			}
-			if strings.EqualFold(item.Type, "DATASET") {
+			if strings.EqualFold(item.Type, "DATASET") || strings.HasPrefix(item.ID, "urn:li:dataset:") {
 				return item.ID
 			}
 			if fallback == "" {

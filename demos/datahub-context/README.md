@@ -27,7 +27,7 @@ npm run doctor
 npm run dev
 ```
 
-For DataHub-enriched recall, start the fixture MCP server before starting mem9:
+For DataHub-enriched recall in local-only development, start the fixture MCP server before starting mem9:
 
 ```bash
 cd demos/datahub-context
@@ -42,9 +42,11 @@ MNEMO_DATAHUB_MCP_URL=http://127.0.0.1:8787
 MNEMO_DATAHUB_MCP_MAX_RESULTS=5
 ```
 
+For the real EC2 demo path, point `MNEMO_DATAHUB_MCP_URL` at the live DataHub tenant MCP endpoint and set `MNEMO_DATAHUB_MCP_TOKEN` instead of starting the fixture server.
+
 ## Scripts
 
-- `npm run mcp` starts a local DataHub MCP-compatible fixture server.
+- `npm run mcp` starts a local DataHub MCP-compatible fixture server for local development only.
 - `npm run reset-seed` deletes existing demo-tagged memories for the demo agent and recreates the canonical Slack memories.
 - `npm run doctor` validates fixtures and optionally checks a configured mem9 server.
 - `npm run dev` starts the browser evidence panel.

@@ -61,6 +61,11 @@ func TestFormatDataHubSearchQueryUsesStructuredKeywordSyntax(t *testing.T) {
 		t.Fatalf("FormatDataHubSearchQuery() = %q, want /q revenue+dashboard", got)
 	}
 
+	cased := FormatDataHubSearchQuery("Why is the Executive Revenue dashboard wrong today?")
+	if cased != "/q Executive+Revenue+dashboard" {
+		t.Fatalf("FormatDataHubSearchQuery() preserved query = %q, want /q Executive+Revenue+dashboard", cased)
+	}
+
 	alreadyStructured := FormatDataHubSearchQuery("/q tag:PII")
 	if alreadyStructured != "/q tag:PII" {
 		t.Fatalf("structured query changed to %q", alreadyStructured)
@@ -1150,6 +1155,17 @@ func TestCollectDataHubURNsSkipsNonDataHubIDs(t *testing.T) {
 	want := []string{"urn:li:dataset:(snowflake,mart.revenue,PROD)"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("collectDataHubURNs = %v, want %v", got, want)
+	}
+}
+
+func TestPreferredDataHubLineageURNPrefersDatasetURNWithoutExplicitType(t *testing.T) {
+	items := []ExternalContextItem{
+		{ID: "urn:li:dashboard:(looker,Executive Revenue)"},
+		{ID: "urn:li:dataset:(urn:li:dataPlatform:snowflake,mart.revenue,PROD)"},
+	}
+
+	if got := preferredDataHubLineageURN(items); got != "urn:li:dataset:(urn:li:dataPlatform:snowflake,mart.revenue,PROD)" {
+		t.Fatalf("preferredDataHubLineageURN() = %q", got)
 	}
 }
 
