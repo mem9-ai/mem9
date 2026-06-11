@@ -350,6 +350,9 @@ func (s *TenantService) EnsureRuntimeSchema(ctx context.Context, db *sql.DB) err
 		}
 		return nil
 	case "postgres", "db9":
+		if err := tenant.ValidatePostgresMemoryRuntimeSchema(ctx, db, backend); err != nil {
+			return fmt.Errorf("ensure runtime schema: %s: %w", backend, err)
+		}
 		return nil
 	default:
 		return fmt.Errorf("ensure runtime schema: unsupported backend %q", backend)

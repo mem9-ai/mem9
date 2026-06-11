@@ -242,7 +242,7 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 		return w.failTask(ctx, task, fmt.Errorf("get tenant db: %w", err), logger)
 	}
 	if err := w.ensureRuntimeSchema(taskCtx, db); err != nil {
-		return w.failTask(ctx, task, fmt.Errorf("ensure runtime schema: %w", err), logger)
+		return w.requeueTask(ctx, task, fmt.Errorf("ensure runtime schema: %w", err), logger)
 	}
 
 	memRepo := repository.NewMemoryRepo(w.pool.Backend(), db, w.autoModel, w.ftsEnabled, tenantInfo.ClusterID)
@@ -455,10 +455,22 @@ func (w *UploadWorker) ensureRuntimeSchema(ctx context.Context, db *sql.DB) erro
 	case "tidb":
 		return tenant.ValidateTiDBTenantRuntimeSchema(ctx, db, w.autoModel, w.ftsEnabled)
 	case "postgres", "db9":
-		return nil
+		return tenant.ValidatePostgresMemoryRuntimeSchema(ctx, db, backend)
 	default:
 		return fmt.Errorf("unsupported backend %q", backend)
 	}
+}
+
+func (w *UploadWorker) requeueTask(ctx context.Context, task domain.UploadTask, err error, logger *slog.Logger) error {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if updateErr := w.tasks.UpdateStatus(ctx, task.TaskID, domain.TaskPending, ""); updateErr != nil {
+		logger.Error("failed to requeue upload task", "task_id", task.TaskID, "err", updateErr)
+		return err
+	}
+	logger.Warn("upload task requeued", "task_id", task.TaskID, "err", err)
+	return err
 }
 
 func (w *UploadWorker) recordActivityOnly(tenantID string) {

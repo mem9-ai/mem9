@@ -264,6 +264,23 @@ func ValidateTiDBTenantRuntimeSchema(ctx context.Context, db *sql.DB, autoModel 
 	return nil
 }
 
+func ValidatePostgresMemoryRuntimeSchema(ctx context.Context, db *sql.DB, backend string) error {
+	if db == nil {
+		return fmt.Errorf("validate schema: db connection is nil")
+	}
+	if err := requirePostgresColumn(ctx, db, "memories", "app_id"); err != nil {
+		return fmt.Errorf("validate schema: memories app_id column: %w", err)
+	}
+	indexName := "idx_app"
+	if backend == "db9" {
+		indexName = "idx_memory_app"
+	}
+	if err := requirePostgresIndex(ctx, db, "memories", indexName); err != nil {
+		return fmt.Errorf("validate schema: memories app_id index: %w", err)
+	}
+	return nil
+}
+
 func requireTable(ctx context.Context, db *sql.DB, table string) error {
 	exists, err := TableExists(ctx, db, table)
 	if err != nil {
@@ -295,6 +312,60 @@ func requireIndex(ctx context.Context, db *sql.DB, table, indexName string) erro
 		return fmt.Errorf("%s.%s is missing", table, indexName)
 	}
 	return nil
+}
+
+func requirePostgresColumn(ctx context.Context, db *sql.DB, table, column string) error {
+	exists, err := postgresColumnExists(ctx, db, table, column)
+	if err != nil {
+		return fmt.Errorf("check column: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("%s.%s is missing", table, column)
+	}
+	return nil
+}
+
+func postgresColumnExists(ctx context.Context, db *sql.DB, table, column string) (bool, error) {
+	var count int
+	err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*)
+		   FROM information_schema.columns
+		  WHERE table_schema = current_schema()
+		    AND table_name = $1
+		    AND column_name = $2`,
+		table, column,
+	).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func requirePostgresIndex(ctx context.Context, db *sql.DB, table, indexName string) error {
+	exists, err := postgresIndexExists(ctx, db, table, indexName)
+	if err != nil {
+		return fmt.Errorf("check index: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("%s.%s is missing", table, indexName)
+	}
+	return nil
+}
+
+func postgresIndexExists(ctx context.Context, db *sql.DB, table, indexName string) (bool, error) {
+	var count int
+	err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*)
+		   FROM pg_indexes
+		  WHERE schemaname = current_schema()
+		    AND tablename = $1
+		    AND indexname = $2`,
+		table, indexName,
+	).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func requireIndexColumns(ctx context.Context, db *sql.DB, table, indexName string, want []string) error {

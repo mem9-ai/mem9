@@ -72,7 +72,8 @@ func (c *schemaInitConn) ExecContext(_ context.Context, query string, _ []driver
 }
 
 func (c *schemaInitConn) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	if strings.Contains(query, "information_schema.COLUMNS") {
+	lowerQuery := strings.ToLower(query)
+	if strings.Contains(lowerQuery, "information_schema.columns") {
 		if strings.Contains(query, "COUNT(*)") {
 			var count int64
 			if len(args) > 1 {
@@ -86,7 +87,7 @@ func (c *schemaInitConn) QueryContext(_ context.Context, query string, args []dr
 		}
 		return &schemaRows{rows: c.recorder.schemaRows}, nil
 	}
-	if strings.Contains(query, "information_schema.TABLES") {
+	if strings.Contains(lowerQuery, "information_schema.tables") {
 		var count int64
 		if len(args) > 0 {
 			if table, ok := args[0].Value.(string); ok && c.recorder.existingTables[table] {
@@ -95,7 +96,7 @@ func (c *schemaInitConn) QueryContext(_ context.Context, query string, args []dr
 		}
 		return &schemaInitRows{values: [][]driver.Value{{count}}}, nil
 	}
-	if strings.Contains(query, "information_schema.STATISTICS") {
+	if strings.Contains(lowerQuery, "information_schema.statistics") || strings.Contains(lowerQuery, "pg_indexes") {
 		indexName := ""
 		if len(args) > 1 {
 			indexName, _ = args[1].Value.(string)
@@ -454,6 +455,57 @@ func TestValidateTiDBTenantRuntimeSchema_RejectsOldSessionsDedupIndex(t *testing
 	}
 	if len(recorder.execs) != 0 {
 		t.Fatalf("runtime schema validation should not execute DDL, got %v", recorder.execs)
+	}
+}
+
+func TestValidatePostgresMemoryRuntimeSchema_IndexNames(t *testing.T) {
+	tests := []struct {
+		name      string
+		backend   string
+		indexName string
+	}{
+		{name: "postgres", backend: "postgres", indexName: "idx_app"},
+		{name: "db9", backend: "db9", indexName: "idx_memory_app"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := &schemaInitConnector{
+				existingCols: map[string]bool{
+					"memories.app_id": true,
+				},
+				indexColumns: map[string][]string{
+					tt.indexName: {"app_id"},
+				},
+			}
+			db := sql.OpenDB(recorder)
+			defer db.Close()
+
+			if err := ValidatePostgresMemoryRuntimeSchema(context.Background(), db, tt.backend); err != nil {
+				t.Fatalf("ValidatePostgresMemoryRuntimeSchema failed: %v", err)
+			}
+			if len(recorder.execs) != 0 {
+				t.Fatalf("runtime schema validation should not execute DDL, got %v", recorder.execs)
+			}
+		})
+	}
+}
+
+func TestValidatePostgresMemoryRuntimeSchema_RejectsMissingAppID(t *testing.T) {
+	recorder := &schemaInitConnector{
+		indexColumns: map[string][]string{
+			"idx_app": {"app_id"},
+		},
+	}
+	db := sql.OpenDB(recorder)
+	defer db.Close()
+
+	err := ValidatePostgresMemoryRuntimeSchema(context.Background(), db, "postgres")
+	if err == nil {
+		t.Fatal("expected missing app_id column to fail validation")
+	}
+	if !strings.Contains(err.Error(), "memories app_id column") {
+		t.Fatalf("expected memories app_id column error, got %v", err)
 	}
 }
 

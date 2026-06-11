@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 )
@@ -430,6 +431,56 @@ func TestUploadWorkerRecordMemoryStatsFallsBackToActivity(t *testing.T) {
 	repo.mu.Unlock()
 	if upsertCalls != 0 || touchCalls != 1 {
 		t.Fatalf("calls = upsert:%d touch:%d, want 0/1", upsertCalls, touchCalls)
+	}
+}
+
+type uploadTaskStatusRepo struct {
+	status   domain.TaskStatus
+	errorMsg string
+}
+
+func (r *uploadTaskStatusRepo) Create(context.Context, *domain.UploadTask) error { return nil }
+
+func (r *uploadTaskStatusRepo) GetByID(context.Context, string) (*domain.UploadTask, error) {
+	return nil, nil
+}
+
+func (r *uploadTaskStatusRepo) ListByTenant(context.Context, string) ([]domain.UploadTask, error) {
+	return nil, nil
+}
+
+func (r *uploadTaskStatusRepo) UpdateStatus(_ context.Context, _ string, status domain.TaskStatus, errorMsg string) error {
+	r.status = status
+	r.errorMsg = errorMsg
+	return nil
+}
+
+func (r *uploadTaskStatusRepo) UpdateProgress(context.Context, string, int) error { return nil }
+
+func (r *uploadTaskStatusRepo) UpdateTotalChunks(context.Context, string, int) error { return nil }
+
+func (r *uploadTaskStatusRepo) FetchPending(context.Context, int) ([]domain.UploadTask, error) {
+	return nil, nil
+}
+
+func (r *uploadTaskStatusRepo) ResetProcessing(context.Context, time.Duration) (int64, error) {
+	return 0, nil
+}
+
+func TestUploadWorkerRequeueTaskKeepsPending(t *testing.T) {
+	repo := &uploadTaskStatusRepo{}
+	worker := &UploadWorker{tasks: repo}
+	task := domain.UploadTask{TaskID: "task-a"}
+
+	err := worker.requeueTask(context.Background(), task, errors.New("schema not ready"), nil)
+	if err == nil {
+		t.Fatal("expected requeueTask to return original error")
+	}
+	if repo.status != domain.TaskPending {
+		t.Fatalf("status = %q, want pending", repo.status)
+	}
+	if repo.errorMsg != "" {
+		t.Fatalf("error message = %q, want empty", repo.errorMsg)
 	}
 }
 
