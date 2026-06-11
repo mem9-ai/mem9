@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Slack turn evidence panel</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">mem9 + DataHub MCP</p>
+          <h1>Slack turn evidence panel</h1>
+        </div>
+        <div class="status-strip" aria-live="polite">
+          <span id="mode-pill" class="status-pill">loading</span>
+          <span id="agent-pill" class="status-pill muted">agent</span>
+        </div>
+      </header>
+
+      <section class="workspace" aria-label="Slack demo evidence panel">
+        <aside class="slack-turn">
+          <div class="section-label">Slack turn</div>
+          <div class="slack-message">
+            <div class="avatar">MC</div>
+            <div>
+              <div class="slack-meta">
+                <span id="slack-user">Maya Chen</span>
+                <span id="slack-channel">#exec-revenue-war-room</span>
+              </div>
+              <p id="slack-command" class="command">/ask-data-agent Why is the Executive Revenue dashboard wrong today?</p>
+            </div>
+          </div>
+
+          <div class="control-stack">
+            <button id="run-both" type="button">Run turn</button>
+            <button id="run-mem9" type="button" class="secondary">mem9 only</button>
+            <button id="run-enriched" type="button" class="secondary">mem9 + DataHub</button>
+            <button id="reset-seed" type="button" class="ghost">reset seed</button>
+          </div>
+
+          <dl class="run-facts">
+            <div>
+              <dt>Recall query</dt>
+              <dd id="prompt-text">Why is the Executive Revenue dashboard wrong today?</dd>
+            </div>
+            <div>
+              <dt>Evidence source</dt>
+              <dd id="source-text">server-backed mem9 plus DataHub context</dd>
+            </div>
+            <div>
+              <dt>Last run</dt>
+              <dd id="last-run">not run yet</dd>
+            </div>
+          </dl>
+        </aside>
+
+        <section class="evidence-column">
+          <div class="panel-heading">
+            <span class="section-label">Evidence</span>
+            <span id="evidence-count" class="count-pill">0 items</span>
+          </div>
+          <div class="evidence-grid">
+            <section class="evidence-lane" aria-labelledby="mem9-heading">
+              <h2 id="mem9-heading">mem9 memory</h2>
+              <div id="memory-list" class="evidence-list"></div>
+            </section>
+            <section class="evidence-lane" aria-labelledby="datahub-heading">
+              <h2 id="datahub-heading">DataHub context</h2>
+              <div id="datahub-list" class="evidence-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="answer-column">
+          <div class="panel-heading">
+            <span class="section-label">Agent answer</span>
+            <span id="answer-mode" class="count-pill">waiting</span>
+          </div>
+          <div class="answer-compare">
+            <article>
+              <h2>mem9 only</h2>
+              <p id="mem9-answer">Run the turn to capture the baseline answer.</p>
+            </article>
+            <article class="highlight">
+              <h2>mem9 + DataHub</h2>
+              <p id="enriched-answer">Run the turn to capture the enriched answer.</p>
+            </article>
+          </div>
+          <details class="raw-panel" open>
+            <summary>external_context JSON</summary>
+            <pre id="raw-json">[]</pre>
+          </details>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

@@ -701,7 +701,7 @@ func TestDataHubMCPContextProviderRetrieveNormalizesStructuredLineage(t *testing
 	}
 }
 
-func TestDataHubMCPContextProviderRetrieveUsesSearchOrderForLineageTarget(t *testing.T) {
+func TestDataHubMCPContextProviderRetrievePrefersDatasetForLineageTarget(t *testing.T) {
 	var lineageURNs []string
 	mcpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -736,16 +736,16 @@ func TestDataHubMCPContextProviderRetrieveUsesSearchOrderForLineageTarget(t *tes
 					"searchResults": []map[string]any{
 						{
 							"entity": map[string]any{
-								"urn":  "urn:li:dataset:(snowflake,mart.revenue,PROD)",
-								"type": "DATASET",
-								"name": "mart.revenue",
+								"urn":  "urn:li:dashboard:(looker,revenue_exec)",
+								"type": "DASHBOARD",
+								"name": "Executive Revenue",
 							},
 						},
 						{
 							"entity": map[string]any{
-								"urn":  "urn:li:dashboard:(looker,revenue_exec)",
-								"type": "DASHBOARD",
-								"name": "Executive Revenue",
+								"urn":  "urn:li:dataset:(snowflake,mart.revenue,PROD)",
+								"type": "DATASET",
+								"name": "mart.revenue",
 							},
 						},
 					},

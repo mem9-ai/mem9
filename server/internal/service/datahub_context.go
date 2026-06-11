@@ -114,7 +114,7 @@ func (p *DataHubMCPContextProvider) Retrieve(ctx context.Context, query string, 
 	}
 	items = mergeExternalContextItems(items, entityItems)
 
-	lineageURN := firstDataHubURN(items)
+	lineageURN := preferredDataHubLineageURN(items)
 	if lineageURN == "" {
 		return trimExternalContextItems(items, limit), nil
 	}
@@ -806,15 +806,22 @@ func collectDataHubURNs(items []ExternalContextItem, limit int) []string {
 	return urns
 }
 
-func firstDataHubURN(groups ...[]ExternalContextItem) string {
+func preferredDataHubLineageURN(groups ...[]ExternalContextItem) string {
+	var fallback string
 	for _, items := range groups {
 		for _, item := range items {
-			if item.ID != "" && strings.HasPrefix(item.ID, "urn:li:") {
+			if item.ID == "" || !strings.HasPrefix(item.ID, "urn:li:") {
+				continue
+			}
+			if strings.EqualFold(item.Type, "DATASET") {
 				return item.ID
+			}
+			if fallback == "" {
+				fallback = item.ID
 			}
 		}
 	}
-	return ""
+	return fallback
 }
 
 func mergeExternalContextItems(base, updates []ExternalContextItem) []ExternalContextItem {

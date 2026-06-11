@@ -1,0 +1,17 @@
+{
+  "name": "@mem9/datahub-context-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/serve-demo.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "mcp": "node scripts/fixture-datahub-mcp.mjs",
+    "reset-seed": "node scripts/reset-seed.mjs",
+    "smoke": "node scripts/smoke-test.mjs",
+    "smoke:server": "node scripts/smoke-test.mjs --strict"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
