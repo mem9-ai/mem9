@@ -190,12 +190,6 @@ func InitTiDBTenantSchema(ctx context.Context, db *sql.DB, autoModel string, aut
 	if err := ensureTable(ctx, db, "memories", BuildMemorySchema(autoModel, autoDims, clientDims)); err != nil {
 		return fmt.Errorf("init schema: memories table: %w", err)
 	}
-	if err := ensureColumn(ctx, db, "memories", "app_id", "VARCHAR(100) NOT NULL DEFAULT ''"); err != nil {
-		return fmt.Errorf("init schema: memories app_id column: %w", err)
-	}
-	if err := ensurePlainIndex(ctx, db, "memories", "idx_app", "app_id"); err != nil {
-		return fmt.Errorf("init schema: memories app_id index: %w", err)
-	}
 	if err := ensureVectorIndex(ctx, db, "memories", "idx_cosine"); err != nil {
 		return fmt.Errorf("init schema: memories vector index: %w", err)
 	}
@@ -215,64 +209,6 @@ func InitTiDBTenantSchema(ctx context.Context, db *sql.DB, autoModel string, aut
 		if err := ensureFullTextIndex(ctx, db, "sessions", "idx_sess_fts"); err != nil {
 			return fmt.Errorf("init schema: sessions fulltext index: %w", err)
 		}
-	}
-	return nil
-}
-
-func ensureColumn(ctx context.Context, db *sql.DB, table, column, definition string) error {
-	exists, err := ColumnExists(ctx, db, table, column)
-	if err != nil {
-		return fmt.Errorf("check column: %w", err)
-	}
-	if exists {
-		return nil
-	}
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(
-		"ALTER TABLE %s ADD COLUMN %s %s",
-		table, column, definition,
-	)); err != nil && !IsDuplicateColumnError(err) {
-		return fmt.Errorf("add column: %w", err)
-	}
-	return nil
-}
-
-func ensurePlainIndex(ctx context.Context, db *sql.DB, table, indexName, columns string) error {
-	exists, err := IndexExists(ctx, db, table, indexName)
-	if err != nil {
-		return fmt.Errorf("check index: %w", err)
-	}
-	if exists {
-		return nil
-	}
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(
-		"CREATE INDEX %s ON %s(%s)",
-		indexName, table, columns,
-	)); err != nil && !IsIndexExistsError(err) {
-		return fmt.Errorf("create index: %w", err)
-	}
-	return nil
-}
-
-// EnsureMemoryAppIDSchema completes the app-scoped memory schema for existing tenants.
-func EnsureMemoryAppIDSchema(ctx context.Context, db *sql.DB) error {
-	if err := ensureColumn(ctx, db, "memories", "app_id", "VARCHAR(100) NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	return ensurePlainIndex(ctx, db, "memories", "idx_app", "app_id")
-}
-
-// EnsurePostgresMemoryAppIDSchema completes the app-scoped memory schema for
-// PostgreSQL-compatible tenant databases.
-func EnsurePostgresMemoryAppIDSchema(ctx context.Context, db *sql.DB, backend string) error {
-	if _, err := db.ExecContext(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS app_id VARCHAR(100) NOT NULL DEFAULT ''`); err != nil {
-		return fmt.Errorf("memories app_id column: %w", err)
-	}
-	indexName := "idx_app"
-	if backend == "db9" {
-		indexName = "idx_memory_app"
-	}
-	if _, err := db.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON memories(app_id)`, indexName)); err != nil {
-		return fmt.Errorf("memories app_id index: %w", err)
 	}
 	return nil
 }

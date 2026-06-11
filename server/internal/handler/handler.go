@@ -130,7 +130,7 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		if cached, ok := s.svcCache.Load(key); ok {
 			return cached.(resolvedSvc)
 		}
-		schemaReady := s.ensureTenantAppIDSchema(auth)
+		schemaReady := s.ensureTenantRuntimeSchema(auth)
 		memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		svc := resolvedSvc{
@@ -148,7 +148,7 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	if cached, ok := s.svcCache.Load(key); ok {
 		return cached.(resolvedSvc)
 	}
-	schemaReady := s.ensureTenantAppIDSchema(auth)
+	schemaReady := s.ensureTenantRuntimeSchema(auth)
 	memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	svc := resolvedSvc{
@@ -163,18 +163,18 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	return actual.(resolvedSvc)
 }
 
-func (s *Server) ensureTenantAppIDSchema(auth *domain.AuthInfo) bool {
+func (s *Server) ensureTenantRuntimeSchema(auth *domain.AuthInfo) bool {
 	if s.tenant == nil || auth == nil || auth.TenantDB == nil {
 		return true
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := s.tenant.EnsureAppIDSchema(ctx, auth.TenantDB); err != nil {
+	if err := s.tenant.EnsureRuntimeSchema(ctx, auth.TenantDB); err != nil {
 		logger := s.logger
 		if logger == nil {
 			logger = slog.Default()
 		}
-		logger.Warn("app_id schema migration failed",
+		logger.Warn("runtime schema ensure failed",
 			"cluster_id", auth.ClusterID,
 			"tenant", auth.TenantID,
 			"err", err)

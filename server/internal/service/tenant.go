@@ -338,27 +338,21 @@ func (s *TenantService) GetInfo(ctx context.Context, tenantID string) (*domain.T
 	}, nil
 }
 
-func (s *TenantService) EnsureAppIDSchema(ctx context.Context, db *sql.DB) error {
+func (s *TenantService) EnsureRuntimeSchema(ctx context.Context, db *sql.DB) error {
 	backend := "tidb"
 	if s.pool != nil {
 		backend = s.pool.Backend()
 	}
 	switch backend {
 	case "tidb":
-		if err := tenant.EnsureMemoryAppIDSchema(ctx, db); err != nil {
-			return fmt.Errorf("ensure app_id schema: memories: %w", err)
-		}
-		if err := s.EnsureSessionsTable(ctx, db); err != nil {
-			return fmt.Errorf("ensure app_id schema: sessions: %w", err)
+		if err := tenant.InitTiDBTenantSchema(ctx, db, s.autoModel, s.autoDims, s.clientDims, s.ftsEnabled); err != nil {
+			return fmt.Errorf("ensure runtime schema: tidb: %w", err)
 		}
 		return nil
 	case "postgres", "db9":
-		if err := tenant.EnsurePostgresMemoryAppIDSchema(ctx, db, backend); err != nil {
-			return fmt.Errorf("ensure app_id schema: memories: %w", err)
-		}
 		return nil
 	default:
-		return fmt.Errorf("ensure app_id schema: unsupported backend %q", backend)
+		return fmt.Errorf("ensure runtime schema: unsupported backend %q", backend)
 	}
 }
 

@@ -279,7 +279,6 @@ func TestTiDBCloudProvisioner_InitSchema_AutoEmbedding(t *testing.T) {
 	wantSubstrings := []string{
 		"CREATE TABLE IF NOT EXISTS memories",
 		"embedding VECTOR(1024) GENERATED ALWAYS AS (EMBED_TEXT('tidbcloud_free/amazon/titan-embed-text-v2', content, '{\"dimensions\": 1024}')) STORED",
-		"ALTER TABLE memories ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT ''",
 		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
 		"ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content",
 		"CREATE TABLE IF NOT EXISTS sessions",
@@ -308,7 +307,6 @@ func TestTiDBCloudProvisioner_InitSchema_ClientEmbedding(t *testing.T) {
 	wantSubstrings := []string{
 		"CREATE TABLE IF NOT EXISTS memories",
 		"embedding VECTOR(1536) NULL",
-		"ALTER TABLE memories ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT ''",
 		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
 		"CREATE TABLE IF NOT EXISTS sessions",
 		"ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine",
@@ -346,7 +344,6 @@ func TestTiDBCloudProvisioner_InitSchema_ExistingTablesSkipsCreate(t *testing.T)
 		t.Fatalf("existing tables should skip CREATE TABLE:\n%s", executed)
 	}
 	wantSubstrings := []string{
-		"ALTER TABLE memories ADD COLUMN app_id VARCHAR(100) NOT NULL DEFAULT ''",
 		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
 		"ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine",
 	}
@@ -356,6 +353,8 @@ func TestTiDBCloudProvisioner_InitSchema_ExistingTablesSkipsCreate(t *testing.T)
 		}
 	}
 	unwantedSubstrings := []string{
+		"ALTER TABLE memories ADD COLUMN app_id",
+		"CREATE INDEX idx_app",
 		"ALTER TABLE sessions ADD COLUMN app_id",
 		"CREATE INDEX idx_sess_app",
 		"ALTER TABLE sessions DROP INDEX idx_sess_dedup",
@@ -363,7 +362,7 @@ func TestTiDBCloudProvisioner_InitSchema_ExistingTablesSkipsCreate(t *testing.T)
 	}
 	for _, unwanted := range unwantedSubstrings {
 		if strings.Contains(executed, unwanted) {
-			t.Fatalf("existing sessions table should not run online app_id schema migration %q\n%s", unwanted, executed)
+			t.Fatalf("existing tables should not run online app_id schema migration %q\n%s", unwanted, executed)
 		}
 	}
 }

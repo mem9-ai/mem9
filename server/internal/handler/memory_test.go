@@ -642,7 +642,7 @@ func (s *captureWebhookStore) MarkDeliveryFailedAttempt(context.Context, string,
 	return nil
 }
 
-func TestResolveServicesDoesNotCacheAfterAppIDSchemaMigrationFailure(t *testing.T) {
+func TestResolveServicesDoesNotCacheAfterRuntimeSchemaEnsureFailure(t *testing.T) {
 	db := openHandlerErrorDB(t)
 	defer db.Close()
 
@@ -659,12 +659,12 @@ func TestResolveServicesDoesNotCacheAfterAppIDSchemaMigrationFailure(t *testing.
 		t.Fatal("resolveServices returned incomplete services")
 	}
 	if _, ok := srv.svcCache.Load(key); ok {
-		t.Fatal("schema migration failure must not cache services")
+		t.Fatal("runtime schema ensure failure must not cache services")
 	}
 
 	second := srv.resolveServices(auth)
 	if _, ok := srv.svcCache.Load(key); ok {
-		t.Fatal("schema migration retry failure must not cache services")
+		t.Fatal("runtime schema retry failure must not cache services")
 	}
 	if first.memory == second.memory {
 		t.Fatal("expected uncached resolveServices call to build a fresh service bundle")
