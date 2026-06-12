@@ -11,7 +11,12 @@ const signinHref = `/console/signin?return_to=${encodeURIComponent('/console/')}
 
 function getPlanHref(tier: SiteBillingTier): string {
   const interval = tier.interval ?? 'month';
-  return `/console/billing/plan?plan=${encodeURIComponent(tier.planSku ?? 'starter')}&interval=${encodeURIComponent(interval)}`;
+  const params = new URLSearchParams({
+    plan: tier.planSku ?? 'starter',
+    interval,
+    after_space_setup: 'stay',
+  });
+  return `/console/billing/plan?${params.toString()}`;
 }
 ---
 
