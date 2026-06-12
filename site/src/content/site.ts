@@ -286,7 +286,6 @@ export interface SiteApiPageCopy {
     requestFailed: string;
     pathParameter: string;
     saveFormInfo: string;
-    apiTestCorsNotice: string;
   };
   authTitle: string;
   authCards: {
@@ -1720,8 +1719,6 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       requestFailed: 'Request failed',
       pathParameter: 'Path parameter.',
       saveFormInfo: 'Save form info',
-      apiTestCorsNotice:
-        'The in-browser API tester is temporarily unavailable until backend CORS changes are live. This feature will be enabled after June 10.',
     },
     authTitle: 'Base URL & authentication',
     authCards: [
@@ -1967,7 +1964,6 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       requestFailed: '请求失败',
       pathParameter: '路径参数。',
       saveFormInfo: '保存表单信息',
-      apiTestCorsNotice: '后端 CORS 改动尚未上线，浏览器内 API 测试功能暂不可用，将于 6/10 之后开启。',
     },
     authTitle: 'Base URL 与认证方式',
     authCards: [
@@ -2203,7 +2199,6 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       requestFailed: '請求失敗',
       pathParameter: '路徑參數。',
       saveFormInfo: '儲存表單資訊',
-      apiTestCorsNotice: '後端 CORS 改動尚未上線，瀏覽器內 API 測試功能暫不可用，將於 6/10 之後開啟。',
     },
     authTitle: 'Base URL 與驗證方式',
     authCards: [
@@ -2434,8 +2429,6 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       requestFailed: 'リクエストに失敗しました',
       pathParameter: 'パスパラメータ。',
       saveFormInfo: 'フォーム情報を保存',
-      apiTestCorsNotice:
-        'バックエンドの CORS 変更がまだ反映されていないため、ブラウザ内 API テスト機能は一時的に利用できません。6/10 以降に有効になります。',
     },
     authTitle: 'Base URL と認証',
     authCards: [
@@ -2666,8 +2659,6 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       requestFailed: '요청 실패',
       pathParameter: '경로 파라미터.',
       saveFormInfo: '폼 정보 저장',
-      apiTestCorsNotice:
-        '백엔드 CORS 변경이 아직 배포되지 않아 브라우저 내 API 테스트 기능을 일시적으로 사용할 수 없습니다. 6/10 이후 활성화됩니다.',
     },
     authTitle: 'Base URL 과 인증',
     authCards: [
@@ -2898,8 +2889,6 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       requestFailed: 'Request gagal',
       pathParameter: 'Parameter path.',
       saveFormInfo: 'Simpan info formulir',
-      apiTestCorsNotice:
-        'Perubahan CORS backend belum aktif, jadi fitur uji API di browser untuk sementara belum bisa digunakan. Fitur ini akan aktif setelah 6/10.',
     },
     authTitle: 'Base URL & autentikasi',
     authCards: [
@@ -3130,8 +3119,6 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       requestFailed: 'Request ล้มเหลว',
       pathParameter: 'พารามิเตอร์ path',
       saveFormInfo: 'บันทึกข้อมูลฟอร์ม',
-      apiTestCorsNotice:
-        'การเปลี่ยนแปลง CORS ฝั่ง backend ยังไม่เปิดใช้งาน ฟีเจอร์ทดสอบ API ใน browser จึงยังใช้ไม่ได้ชั่วคราว และจะเปิดใช้งานหลัง 6/10',
     },
     authTitle: 'Base URL และการยืนยันตัวตน',
     authCards: [
