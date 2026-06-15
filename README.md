@@ -138,7 +138,7 @@ Space Chains let you compose ordered multi-space recall and routing pipelines. U
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/v1alpha2/space-chains` | Create a Space Chain. Requires `X-API-Key` (the management key is returned in the response) |
+| `POST` | `/v1alpha2/space-chains` | Create a Space Chain. No `X-API-Key` required — the management key (`chain_` prefix) is returned in the response body. All subsequent management endpoints require this key |
 | `GET` | `/v1alpha2/space-chains/by-key` | Look up a Space Chain by its management key. Requires the `chain_` key in `X-API-Key` |
 | `GET` | `/v1alpha2/space-chains/{chainID}` | Get Space Chain details. Requires `chain_` management key |
 | `PATCH` | `/v1alpha2/space-chains/{chainID}` | Update Space Chain name/description. Requires `chain_` management key |
@@ -220,8 +220,8 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 | `MNEMO_UPLOAD_DIR` | No | `./uploads` | Directory used for uploaded file storage |
 | `MNEMO_WORKER_CONCURRENCY` | No | `5` | Parallelism for async upload ingest workers |
 | `MNEMO_UTM_ENABLED` | No | `false` | Enable UTM campaign tracking. When enabled, `utm_*` query params on provisioning requests are stored in the control-plane DB. Requires the `tenant_utm` table to exist |
-| `MNEMO_ENV` | No | `development` | Deployment environment. `development` allows all CORS origins; `production` requires `MNEMO_CORS_ALLOWED_ORIGINS`. Also settable via `APP_ENV` |
-| `MNEMO_CORS_ALLOWED_ORIGINS` | No | all origins in `development`, none in `production` | Comma-separated allowed CORS origins. Only applies when `MNEMO_ENV=production` |
+| `MNEMO_ENV` | No | `development` | Deployment environment. Controls the default CORS origin set (`https://mem9.ai` in production; `https://mem9.ai,http://localhost:4321,http://127.0.0.1:4321` in development). Also settable via `APP_ENV` |
+| `MNEMO_CORS_ALLOWED_ORIGINS` | No | `https://mem9.ai` in production; `https://mem9.ai,http://localhost:4321,http://127.0.0.1:4321` in development | Comma-separated allowed CORS origins. Overrides the `MNEMO_ENV`-based defaults |
 
 #### Embedding And Ingest
 

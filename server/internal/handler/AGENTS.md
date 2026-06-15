@@ -35,8 +35,8 @@ The following handlers are defined in `memory.go` and `tenant.go` but are NOT re
 | Handler | File | Note |
 |---------|------|------|
 | `bulkCreateMemories` | `memory.go` | Defined, no route. Use `POST /memories` with `messages[]` array instead |
-| `bootstrapMemories` | `memory.go` | Defined, no route. Use `GET /memories?scan_all=true&limit=N&sort_by=created_at&sort_dir=desc` instead |
-| `getTenantInfo` | `tenant.go` | Defined, no route. Tenant info is available via `GET /v1alpha2/status` |
+| `bootstrapMemories` | `memory.go` | Defined, no route. No direct replacement; the scan-all path (`scanAll=true` + non-empty `q`) differs from this handler's behavior |
+| `getTenantInfo` | `tenant.go` | Defined, no route. Would return full tenant metadata (name, provider, memory_count, etc.) if wired. Not equivalent to `GET /v1alpha2/status` which only returns `{"status": "active"}` |
 
 These may be wired up or removed in a future cleanup pass.
 
@@ -46,12 +46,11 @@ These may be wired up or removed in a future cleanup pass.
 
 | Path | Trigger | Description |
 |------|---------|-------------|
-| `content-keyword` | `search_mode=keyword` or query is short/needs substring match | Direct keyword substring search against content |
-| `scan-all` | `scan_all=true`, no query | Return all memories in insertion order (paginated) |
-| `default-confidence-recall` | No `search_mode`, no special params | 3-pool confidence recall: pinned + insight + session memories scored and deduplicated |
-| `single-pool-confidence-recall` | `memory_type` filter + query | Recall from a single pool (pinned/insight/session only) |
-| `session-list` | `session_id` param present, no search query | List memories by session ID(s) |
-| `memory-search` | `search_mode=memory-search` | Standard hybrid/keyword search (bypasses confidence recall) |
+| `content-keyword` | `search_mode=keyword` or `search_mode=content_keyword` (explicit only) + non-empty `q` | Direct keyword substring search against content |
+| `scan-all` | `scanAll=true` + non-empty `q` | Fetch all memories across types with keyword filter |
+| `default-confidence-recall` | Non-empty `q` + `memory_type` not set | 3-pool confidence recall: pinned + insight + session memories scored and deduplicated |
+| `single-pool-confidence-recall` | Non-empty `q` + `memory_type` set to `pinned`, `insight`, or `session` | Recall from a single pool |
+| `session-list` | `memory_type=session` | List memories from session storage (query optional) |
 | `chain` | Chain auth context | Ordered Space Chain recall with stop-score threshold |
 
 ## Local conventions
