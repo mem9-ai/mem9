@@ -2,6 +2,8 @@
 
 Command-line tool for testing mnemo-server REST API endpoints.
 
+> **API version note**: The CLI currently uses the legacy `v1alpha1` tenant-path API (`/v1alpha1/mem9s/{tenantID}/...`) exclusively. All other integrations (plugins, dashboard, e2e) have migrated to `v1alpha2` with `X-API-Key` header auth. The CLI should be updated to support `v1alpha2` for consistency.
+
 ## Installation
 
 ```bash

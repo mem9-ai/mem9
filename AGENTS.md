@@ -138,7 +138,14 @@ MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" make dev
 | -------------------- | ------------------------------------------- |
 | Add/change route     | `server/internal/handler/handler.go`        |
 | Memory CRUD / search | `server/internal/service/memory.go`         |
+| Confidence recall    | `server/internal/handler/recall.go`         |
+| Space Chain routing  | `server/internal/handler/chain_runtime.go`  |
+| Webhook dispatch     | `server/internal/handler/webhook.go`, `server/internal/handler/webhook_events.go` |
 | Ingest pipeline      | `server/internal/service/ingest.go`         |
+| Session storage      | `server/internal/service/session.go`        |
+| Source turn decoration | `server/internal/service/search_source_turns.go` |
+| Temporal facts       | `server/internal/service/temporal_fact.go`  |
+| Activity tracking    | `server/internal/service/activity.go`       |
 | TiDB SQL             | `server/internal/repository/tidb/memory.go` |
 | Tenant provisioning  | `server/internal/service/tenant.go`         |
 | Runtime usage quota  | `server/internal/runtimeusage/`             |

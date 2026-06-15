@@ -132,6 +132,35 @@ Prefer `v1alpha2` for all new integrations. It uses `X-API-Key` and is the prima
 
 Webhook events and delivery behavior are documented in [docs/webhooks-api-design.md](docs/webhooks-api-design.md). v1 emits `memory.added`, `memory.deleted`, and `space_chain.fact_routed`.
 
+#### Space Chain Management
+
+Space Chains let you compose ordered multi-space recall and routing pipelines. Use the `chain_` management key returned at creation time as the `X-API-Key` for all management endpoints below. Read nodes via their own Space `X-API-Key`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1alpha2/space-chains` | Create a Space Chain. Requires `X-API-Key` (the management key is returned in the response) |
+| `GET` | `/v1alpha2/space-chains/by-key` | Look up a Space Chain by its management key. Requires the `chain_` key in `X-API-Key` |
+| `GET` | `/v1alpha2/space-chains/{chainID}` | Get Space Chain details. Requires `chain_` management key |
+| `PATCH` | `/v1alpha2/space-chains/{chainID}` | Update Space Chain name/description. Requires `chain_` management key |
+| `DELETE` | `/v1alpha2/space-chains/{chainID}` | Soft-delete a Space Chain. Requires `chain_` management key |
+| `GET` | `/v1alpha2/space-chains/{chainID}/nodes` | List all nodes in the chain (ordered by position). Requires `chain_` management key |
+| `PUT` | `/v1alpha2/space-chains/{chainID}/nodes` | Replace all nodes in the chain (full replacement). Requires `chain_` management key |
+| `PUT` | `/v1alpha2/space-chains/{chainID}/nodes/{nodeID}/routing-policy` | Update routing policy for a specific chain node. Requires `chain_` management key |
+| `GET` | `/v1alpha2/space-chains/{chainID}/bindings` | List all API key bindings for the chain. Requires `chain_` management key |
+| `POST` | `/v1alpha2/space-chains/{chainID}/bindings` | Create a new API key binding for the chain. Requires `chain_` management key |
+| `PATCH` | `/v1alpha2/space-chains/{chainID}/bindings/{bindingID}` | Disable an API key binding. Requires `chain_` management key |
+
+#### Additional v1alpha2 Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1alpha2/mem9s/memories/batch-delete` | Bulk soft-delete memories (max 1000). Accepts `{"ids": ["..."]}`. Requires `X-API-Key` |
+| `GET` | `/v1alpha2/mem9s/session-messages` | List persisted session messages. Requires `X-API-Key`. Query: `session_id`, `limit_per_session` |
+| `POST` | `/v1alpha2/mem9s/imports` | Upload a JSON file for async ingest (multipart, 50MB max). `file_type`: `memory` or `session`. Requires `X-API-Key` |
+| `GET` | `/v1alpha2/mem9s/imports` | List upload tasks with aggregate status. Requires `X-API-Key` |
+| `GET` | `/v1alpha2/mem9s/imports/{id}` | Get single upload task detail. Requires `X-API-Key` |
+| `GET` | `/v1alpha2/status` | Validate the `X-API-Key` header. Returns key status (`active`/`inactive`) without resolving a tenant |
+
 ### Legacy Tenant-Path API (`v1alpha1`)
 
 Use these endpoints only when you need compatibility with older tenant-ID-in-path clients.
@@ -191,6 +220,8 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 | `MNEMO_UPLOAD_DIR` | No | `./uploads` | Directory used for uploaded file storage |
 | `MNEMO_WORKER_CONCURRENCY` | No | `5` | Parallelism for async upload ingest workers |
 | `MNEMO_UTM_ENABLED` | No | `false` | Enable UTM campaign tracking. When enabled, `utm_*` query params on provisioning requests are stored in the control-plane DB. Requires the `tenant_utm` table to exist |
+| `MNEMO_ENV` | No | `development` | Deployment environment. `development` allows all CORS origins; `production` requires `MNEMO_CORS_ALLOWED_ORIGINS`. Also settable via `APP_ENV` |
+| `MNEMO_CORS_ALLOWED_ORIGINS` | No | all origins in `development`, none in `production` | Comma-separated allowed CORS origins. Only applies when `MNEMO_ENV=production` |
 
 #### Embedding And Ingest
 
