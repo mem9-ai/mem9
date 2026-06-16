@@ -1,0 +1,64 @@
+name: Deploy server to prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag (e.g. main-a1b2c3d). Leave empty to auto-generate from branch.'
+        required: false
+        type: string
+
+env:
+  AWS_REGION: us-west-2
+  ECR_REGISTRY: 401696231252.dkr.ecr.ap-southeast-1.amazonaws.com
+  ECR_REPOSITORY: mnemo-server
+  EKS_CLUSTER: prod-mem9-eks-us-west-2
+  DEPLOY_NAMESPACE: mnemos
+  K8S_DEPLOYMENT: mnemos-server
+
+jobs:
+  deploy:
+    name: Deploy to prod-mem9-eks-us-west-2
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::401696231252:role/prod-mem9-eks-us-west-2-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve image tag
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            REF_NAME=${{ github.ref_name }}
+            REF_NAME=${REF_NAME/\//-}
+            TAG="${REF_NAME}-${GITHUB_SHA::7}"
+          fi
+          echo "IMAGE_TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Deploy
+        run: |
+          kubectl set image deployment/${{ env.K8S_DEPLOYMENT }} \
+            ${{ env.K8S_DEPLOYMENT }}=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
+            -n ${{ env.DEPLOY_NAMESPACE }}
+          kubectl rollout status deployment/${{ env.K8S_DEPLOYMENT }} \
+            -n ${{ env.DEPLOY_NAMESPACE }} \
+            --timeout=120s
+
+      - name: Rollback on failed deploy
+        if: failure()
+        run: |
+          kubectl rollout undo deployment/${{ env.K8S_DEPLOYMENT }} \
+            -n ${{ env.DEPLOY_NAMESPACE }}
