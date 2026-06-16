@@ -1,17 +1,33 @@
+# LoCoMo Baseline
+
+Source: `mem9-benchmark` PR #16 corrected mem0-compatible full runs.
+
+- Preset: `--benchmark-preset mem0`
+- Scope: categories 1-4
+- Rows: 1,540/1,540 per run
+- Answer model: `qwen3.6-plus`
+- Judge model: `qwen3.6-plus`
+- mem9 ingest model: `qwen3.6-flash`
+- Run 1: `/Users/jiangxianjie/code/mem9-locomo-workspace/locomo-logs/pr16-mem0-plus-full-rerun1-20260616T110833/benchmark-results.json`
+- Run 2: `/Users/jiangxianjie/code/mem9-locomo-workspace/locomo-logs/pr16-mem0-plus-full-rerun2-20260616T120138/benchmark-results.json`
+
+```bash
 export MNEMO_LLM_MODEL="qwen3.6-flash"
-export OPENAI_JUDGE_MODEL="qwen3.6-plus"
 export OPENAI_CHAT_MODEL="qwen3.6-plus"
+export OPENAI_JUDGE_MODEL="qwen3.6-plus"
+```
 
-── Results ──────────────────────────────────
-Overall F1 (micro): 62.30%  (n=1985)
-Overall F1 (macro): 54.02%
-Overall LLM (micro): 66.28%  (n=1539)
-Overall LLM (macro): 56.98%
-Overall Evidence Recall: 68.19%
+```text
+── Results (2-run average) ──────────────────
+Overall F1 (micro): 43.66%  (n=1540 per run)
+Overall F1 (macro): 36.66%
+Overall LLM (micro): 86.85%  (n=1540 per run)
+Overall LLM (macro): 81.68%
+Overall Evidence Recall: 81.43%
 
-  Cat 1 (multi-hop   ):  F1=26.81%  LLM=37.01%  ER=43.1%  (n=281  llm_n=281)
-  Cat 2 (single-hop  ):  F1=67.62%  LLM=80.37%  ER=84.9%  (n=321  llm_n=321)
-  Cat 3 (temporal    ):  F1=21.12%  LLM=36.46%  ER=41.5%  (n=96  llm_n=96)
-  Cat 4 (open-domain ):  F1=59.46%  LLM=74.08%  ER=75.6%  (n=841  llm_n=841)
-  Cat 5 (adversarial ):  F1=95.07%  LLM=N/A  ER=63.5%  (n=446)
+  Cat 1 (multi-hop   ):  F1=17.93%  LLM=83.16%  ER=59.8%  (n=282  llm_n=282)
+  Cat 2 (temporal    ):  F1=50.36%  LLM=89.25%  ER=90.7%  (n=321  llm_n=321)
+  Cat 3 (open-domain ):  F1=26.70%  LLM=64.58%  ER=56.3%  (n=96   llm_n=96)
+  Cat 4 (single-hop  ):  F1=51.66%  LLM=89.71%  ER=87.9%  (n=841  llm_n=841)
 ──────────────────────────────────────────────
+```
