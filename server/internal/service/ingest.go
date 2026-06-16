@@ -40,12 +40,13 @@ var formattedConversationMessageRE = regexp.MustCompile(`(?:^|\n\n)([A-Za-z][A-Z
 
 // IngestRequest is the input for the ingest pipeline.
 type IngestRequest struct {
-	Messages           []IngestMessage `json:"messages"`
-	SessionID          string          `json:"session_id"`
-	AgentID            string          `json:"agent_id"`
-	AppID              string          `json:"appId,omitempty"`
-	Mode               IngestMode      `json:"mode"`
-	DisableSessionSave bool            `json:"disableSessionSave,omitempty"`
+	Messages           []IngestMessage  `json:"messages"`
+	SessionID          string           `json:"session_id"`
+	AgentID            string           `json:"agent_id"`
+	AppID              string           `json:"appId,omitempty"`
+	Mode               IngestMode       `json:"mode"`
+	DisableSessionSave bool             `json:"disableSessionSave,omitempty"`
+	Metadata           json.RawMessage  `json:"metadata,omitempty"`
 }
 
 // IngestMessage represents a single conversation message.
@@ -553,6 +554,7 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 		AppID:      req.AppID,
 		SessionID:  req.SessionID,
 		Embedding:  embedding,
+		Metadata:   req.Metadata,
 		State:      domain.StateActive,
 		Version:    1,
 		UpdatedBy:  agentName,

@@ -101,6 +101,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			AppID:              appID,
 			Mode:               req.Mode,
 			DisableSessionSave: s.disableSessionSave || req.DisableSessionSave,
+			Metadata:           append(json.RawMessage(nil), req.Metadata...),
 		}
 
 		if req.Sync {
@@ -617,6 +618,19 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 	if reconcileResult != nil {
 		status = reconcileResult.Status
 	}
+
+	// Patch user-supplied metadata onto created insight memories.
+	// ReconcilePhase2 only generates source provenance metadata; user metadata
+	// from the request body must be applied separately (same pattern as
+	// createSmartContentWithRouting).
+	if len(req.Metadata) > 0 && reconcileResult != nil {
+		for _, id := range reconcileResult.InsightIDs {
+			if _, err := svc.memory.Update(ctx, req.AgentID, id, "", nil, req.Metadata, 0); err == nil {
+				reconcileResult.MemoriesChanged++
+			}
+		}
+	}
+
 	if chainAuth != nil && len(phase1.Facts) > 0 {
 		routeStart := time.Now()
 		routed := s.reconcileRoutedChainFacts(ctx, chainAuth, req, phase1.Facts)

@@ -35,6 +35,7 @@ type testMemoryRepo struct {
 	createCalls          []*domain.Memory
 	bulkCreateCalls      int
 	bulkCreateHook       func(context.Context)
+	updateCalls          []*domain.Memory
 	keywordSearchResults []domain.Memory
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	lastKeywordQuery     string
@@ -76,6 +77,7 @@ func (m *testMemoryRepo) GetByID(_ context.Context, id string) (*domain.Memory, 
 func (m *testMemoryRepo) UpdateOptimistic(_ context.Context, mem *domain.Memory, _ int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.updateCalls = append(m.updateCalls, mem)
 	for i := range m.createCalls {
 		if m.createCalls[i].ID == mem.ID {
 			cp := *mem
@@ -1488,6 +1490,93 @@ func TestCreateMemory_AsyncChainContentWithoutRoutingPolicyUsesLegacyCreate(t *t
 	}
 	if memRepo.createCalls[0].Source != "actor-agent" {
 		t.Fatalf("created source = %q, want actor-agent", memRepo.createCalls[0].Source)
+	}
+}
+
+func TestCreateMemory_SyncMessagesWithMetadataPreservesMetadata(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts": [{"text": "Test fact with metadata", "tags": ["test"]}], "message_tags": [["test"]]}`,
+				}},
+			},
+		})
+	}))
+	t.Cleanup(llmServer.Close)
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(memRepo, llmClient, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(sessRepo, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
+
+	body := map[string]any{
+		"agent_id":   "agent-1",
+		"session_id": "sess-metadata-test",
+		"mode":       "smart",
+		"sync":       true,
+		"messages": []map[string]string{
+			{"role": "user", "content": "This is a test with metadata"},
+		},
+		"metadata": map[string]string{
+			"source": "unit-test",
+			"key":    "val",
+		},
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+
+	memRepo.mu.Lock()
+	defer memRepo.mu.Unlock()
+
+	if len(memRepo.createCalls) == 0 {
+		t.Fatal("expected at least one Create call")
+	}
+
+	created := memRepo.createCalls[0]
+	if created.Metadata == nil {
+		t.Fatal("metadata should not be nil on created memory")
+	}
+
+	var meta map[string]string
+	if err := json.Unmarshal(created.Metadata, &meta); err != nil {
+		t.Fatalf("metadata unmarshal error: %v", err)
+	}
+	if meta["source"] != "unit-test" {
+		t.Fatalf("metadata.source = %q, want unit-test", meta["source"])
+	}
+	if meta["key"] != "val" {
+		t.Fatalf("metadata.key = %q, want val", meta["key"])
+	}
+
+	if len(memRepo.updateCalls) != 1 {
+		t.Fatalf("expected 1 UpdateOptimistic call for metadata patch, got %d", len(memRepo.updateCalls))
+	}
+
+	var updatedMeta map[string]string
+	if err := json.Unmarshal(memRepo.updateCalls[0].Metadata, &updatedMeta); err != nil {
+		t.Fatalf("update metadata unmarshal error: %v", err)
+	}
+	if updatedMeta["source"] != "unit-test" {
+		t.Fatalf("updated metadata.source = %q, want unit-test", updatedMeta["source"])
 	}
 }
 

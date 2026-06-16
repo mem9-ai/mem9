@@ -39,6 +39,9 @@ MNEMO_BASE=$DEV bash e2e/api-smoke-test-utm.sh
 METADB="<user>:<pass>@tcp(<host>:4000)/<db>"
 MNEMO_BASE=$DEV MNEMO_METADB_DSN=$METADB bash e2e/api-smoke-test-utm.sh
 
+# Metadata preservation (messages ingest + content write)
+MNEMO_BASE=$DEV POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-metadata.sh
+
 # Full smoke suite
 for script in \
   "e2e/api-smoke-test.sh" \
@@ -195,6 +198,22 @@ is not set.
 | 9   | DB: non-UTM params absent  | `foo=bar` values not present in row                                                               |
 | 10  | DB: empty-value param NULL | `medium` column is NULL when `utm_medium=` was sent                                               |
 
+### Metadata preservation (`api-smoke-test-metadata.sh`)
+
+Regression test for metadata round-trip through the messages ingest path (GitHub issue #361).
+Provisions a fresh tenant, sends messages with `mode:smart` and custom `metadata`, polls until
+the insight memory materialises, and verifies the metadata is present. Also tests the content +
+pinned path as a control group.
+
+| #   | Case                                    | What is verified                                                                      |
+| --- | --------------------------------------- | ------------------------------------------------------------------------------------- |
+| 1   | Provision tenant                        | `POST /v1alpha1/mem9s` returns 201 with `id` field                                    |
+| 2   | Messages + metadata write               | `POST /memories` with `messages[]`, `mode:smart`, `sync:true`, `metadata` → 200 ok   |
+| 3   | Poll until insight materialises         | `GET /memories?memory_type=insight` polled until Nebula fact appears                  |
+| 4   | Insight metadata round-trip             | `GET /memories/{id}` returns insight with `metadata.source_kind`, `test_run`, `occurred_at` matching sent values |
+| 5   | Pinned content + metadata write         | `POST /memories` with `content`, `memory_type:pinned`, `metadata` → 201              |
+| 6   | Pinned GET metadata persisted           | `GET /memories/{id}` returns pinned memory with metadata matching sent values         |
+
 ## Commands
 
 ```bash
@@ -241,6 +260,7 @@ python3 e2e/concurrent-real-doc-test.py
 - `api-smoke-test-sessions.sh` — session storage: write, dedup, unified search, type filter, metadata, no-query session list, per-ID get/delete, batch delete, lazy migration (tests 1–17; tests 15–17 require `MNEMO_EXISTING_TENANT_ID`)
 - `api-smoke-test-existing-tenant.sh` — backward-compat: pre-existing tenant read/write/search across v1alpha1 and v1alpha2 (tests 1–12)
 - `api-smoke-test-utm.sh` — UTM attribution: param normalization, filtering, empty-value dropping (tests 1–5 always; tests 6–10 require `MNEMO_METADB_DSN` and `MNEMO_UTM_ENABLED=true` on server)
+- `api-smoke-test-metadata.sh` — metadata preservation: messages + mode:smart metadata round-trip, pinned content metadata round-trip (tests 1–6)
 - `crdt-*` and `plugin-crdt-*` use the CRDT branch `/api/users`, `/api/spaces/provision`, `/api/memories` surface.
 - Check the server branch/API shape before mixing the two sets.
 
@@ -268,6 +288,7 @@ python3 e2e/concurrent-real-doc-test.py
 | `api-smoke-test-sessions.sh`        | v1alpha1 (default) or v1alpha2 | Session storage: write, dedup, unified search, lifecycle             |
 | `api-smoke-test-existing-tenant.sh` | v1alpha1 + v1alpha2            | Backward-compat: pre-existing tenant full lifecycle, both auth modes |
 | `api-smoke-test-utm.sh`             | v1alpha1                       | UTM attribution: param normalization + optional DB row verification  |
+| `api-smoke-test-metadata.sh`         | v1alpha1                       | Metadata preservation: messages ingest + content write               |
 | `crdt-e2e-tests.sh`                 | CRDT branch                    | Core CRDT server behavior                                            |
 | `plugin-crdt-e2e.py`                | CRDT branch                    | Plugin clock propagation                                             |
 | `crdt-server-merge-e2e.py`          | CRDT branch                    | Section merge regression                                             |
@@ -279,6 +300,7 @@ python3 e2e/concurrent-real-doc-test.py
 - These scripts validate live behavior, so failures may be env/data issues rather than local code regressions.
 - `crdt-server-merge-e2e.py` is the primary regression signal for section merge logic.
 - `api-smoke-test-sessions.sh` is the primary regression signal for raw session storage.
+- `api-smoke-test-metadata.sh` is the primary regression signal for metadata round-trip through the messages ingest path.
 - `MNEMO_TEST_USER_TOKEN` is a one-time setup input for the CRDT scripts; those scripts provision spaces afterward.
 - Version checks in round2 use `>` (version advanced), not exact equality — the async ingest pipeline may bump versions concurrently.
 

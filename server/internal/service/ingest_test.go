@@ -1720,6 +1720,7 @@ func TestIngestModeRawStoresInsight(t *testing.T) {
 			Role:    "assistant",
 			Content: "world",
 		}},
+		Metadata: json.RawMessage(`{"source":"raw-test","key":"val"}`),
 	}
 
 	res, err := svc.Ingest(context.Background(), "agent-1", req)
@@ -1741,6 +1742,20 @@ func TestIngestModeRawStoresInsight(t *testing.T) {
 	if created.MemoryType != domain.TypeInsight {
 		t.Fatalf("expected memory type insight, got %q", created.MemoryType)
 	}
+
+	if created.Metadata == nil {
+		t.Fatal("ingestRaw should preserve request metadata on created memory")
+	}
+	var meta map[string]string
+	if err := json.Unmarshal(created.Metadata, &meta); err != nil {
+		t.Fatalf("metadata unmarshal error: %v", err)
+	}
+	if meta["source"] != "raw-test" {
+		t.Fatalf("metadata.source = %q, want raw-test", meta["source"])
+	}
+	if meta["key"] != "val" {
+		t.Fatalf("metadata.key = %q, want val", meta["key"])
+	}
 }
 
 func TestIngestNilLLMFallsBackToRaw(t *testing.T) {
@@ -1757,6 +1772,7 @@ func TestIngestNilLLMFallsBackToRaw(t *testing.T) {
 			Role:    "user",
 			Content: "hello",
 		}},
+		Metadata: json.RawMessage(`{"fallback":"nil-llm"}`),
 	}
 
 	res, err := svc.Ingest(context.Background(), "agent-2", req)
@@ -1771,6 +1787,9 @@ func TestIngestNilLLMFallsBackToRaw(t *testing.T) {
 	}
 	if got := memRepo.createCalls[0].Content; got != "User: hello" {
 		t.Fatalf("unexpected content: %q", got)
+	}
+	if memRepo.createCalls[0].Metadata == nil {
+		t.Fatal("nil-LLM raw fallback should preserve request metadata")
 	}
 }
 
