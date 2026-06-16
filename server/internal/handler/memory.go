@@ -619,18 +619,6 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 		status = reconcileResult.Status
 	}
 
-	// Patch user-supplied metadata onto created insight memories.
-	// ReconcilePhase2 only generates source provenance metadata; user metadata
-	// from the request body must be applied separately (same pattern as
-	// createSmartContentWithRouting).
-	if len(req.Metadata) > 0 && reconcileResult != nil {
-		for _, id := range reconcileResult.InsightIDs {
-			if _, err := svc.memory.Update(ctx, req.AgentID, id, "", nil, req.Metadata, 0); err == nil {
-				reconcileResult.MemoriesChanged++
-			}
-		}
-	}
-
 	if chainAuth != nil && len(phase1.Facts) > 0 {
 		routeStart := time.Now()
 		routed := s.reconcileRoutedChainFacts(ctx, chainAuth, req, phase1.Facts)
@@ -647,9 +635,25 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 		}
 	}
 
+	// Merge user-supplied metadata into created insight memories.
+	// ReconcilePhase2 generates source provenance metadata (source_seqs,
+	// source_turns, temporal). User keys are merged on top to preserve both.
+	// Run after chain routing so routed target insights also receive metadata.
+	if len(req.Metadata) > 0 && reconcileResult != nil {
+		for _, id := range reconcileResult.InsightIDs {
+			current, err := svc.memory.Get(ctx, id)
+			if err != nil {
+				continue
+			}
+			merged := mergeMetadata(current.Metadata, req.Metadata)
+			if _, err := svc.memory.Update(ctx, req.AgentID, id, "", nil, merged, 0); err == nil {
+				reconcileResult.MemoriesChanged++
+			}
+		}
+	}
+
 	return reconcileResult, nil
 }
-
 func (s *Server) createSmartContentWithRouting(ctx context.Context, chainAuth *domain.AuthInfo, svc resolvedSvc, routingTargets []service.RoutingTarget, agentName, agentID, appID, sessionID, content string, tags []string, metadata json.RawMessage) (*service.IngestResult, error) {
 	facts, err := svc.ingest.ExtractContentWithRouting(ctx, content, routingTargets)
 	if err != nil {
@@ -669,16 +673,6 @@ func (s *Server) createSmartContentWithRouting(ctx context.Context, chainAuth *d
 		return result, nil
 	}
 
-	patchWrites := 0
-	if len(tags) > 0 || len(metadata) > 0 {
-		for _, id := range result.InsightIDs {
-			if _, err := svc.memory.Update(ctx, agentID, id, "", tags, metadata, 0); err == nil {
-				patchWrites++
-			}
-		}
-		result.MemoriesChanged += patchWrites
-	}
-
 	routed := s.reconcileRoutedChainFacts(ctx, chainAuth, service.IngestRequest{AgentID: agentID, AppID: appID, SessionID: sessionID}, facts)
 	result.MemoriesChanged += routed.memoriesChanged
 	result.InsightIDs = append(result.InsightIDs, routed.insightIDs...)
@@ -686,7 +680,55 @@ func (s *Server) createSmartContentWithRouting(ctx context.Context, chainAuth *d
 	if result.Status == "" {
 		result.Status = "complete"
 	}
+
+	// Merge user-supplied tags and metadata into created insights. Runs after
+	// chain routing so routed target insights also receive the patch.
+	patchWrites := 0
+	if len(tags) > 0 || len(metadata) > 0 {
+		for _, id := range result.InsightIDs {
+			current, getErr := svc.memory.Get(ctx, id)
+			if getErr != nil {
+				continue
+			}
+			mergedMeta := current.Metadata
+			if len(metadata) > 0 {
+				mergedMeta = mergeMetadata(current.Metadata, metadata)
+			}
+			if _, err := svc.memory.Update(ctx, agentID, id, "", tags, mergedMeta, 0); err == nil {
+				patchWrites++
+			}
+		}
+		result.MemoriesChanged += patchWrites
+	}
+
 	return result, nil
+}
+
+// mergeMetadata shallow-merges incoming JSON keys into base. Incoming keys
+// take precedence on conflict; nil base returns incoming as-is.
+func mergeMetadata(base, incoming json.RawMessage) json.RawMessage {
+	if len(base) == 0 {
+		return incoming
+	}
+	if len(incoming) == 0 {
+		return base
+	}
+	var baseMap map[string]json.RawMessage
+	if err := json.Unmarshal(base, &baseMap); err != nil {
+		return incoming
+	}
+	var incMap map[string]json.RawMessage
+	if err := json.Unmarshal(incoming, &incMap); err != nil {
+		return base
+	}
+	for k, v := range incMap {
+		baseMap[k] = v
+	}
+	merged, err := json.Marshal(baseMap)
+	if err != nil {
+		return base
+	}
+	return merged
 }
 
 type listResponse struct {

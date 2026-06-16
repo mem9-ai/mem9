@@ -1551,32 +1551,118 @@ func TestCreateMemory_SyncMessagesWithMetadataPreservesMetadata(t *testing.T) {
 		t.Fatal("expected at least one Create call")
 	}
 
-	created := memRepo.createCalls[0]
-	if created.Metadata == nil {
-		t.Fatal("metadata should not be nil on created memory")
-	}
-
-	var meta map[string]string
-	if err := json.Unmarshal(created.Metadata, &meta); err != nil {
-		t.Fatalf("metadata unmarshal error: %v", err)
-	}
-	if meta["source"] != "unit-test" {
-		t.Fatalf("metadata.source = %q, want unit-test", meta["source"])
-	}
-	if meta["key"] != "val" {
-		t.Fatalf("metadata.key = %q, want val", meta["key"])
-	}
-
 	if len(memRepo.updateCalls) != 1 {
-		t.Fatalf("expected 1 UpdateOptimistic call for metadata patch, got %d", len(memRepo.updateCalls))
+		t.Fatalf("expected 1 UpdateOptimistic call for metadata merge, got %d", len(memRepo.updateCalls))
 	}
 
-	var updatedMeta map[string]string
+	// The update call carries the merged metadata (user keys merged on top of
+	// any provenance metadata from ReconcilePhase2).
+	var updatedMeta map[string]json.RawMessage
 	if err := json.Unmarshal(memRepo.updateCalls[0].Metadata, &updatedMeta); err != nil {
 		t.Fatalf("update metadata unmarshal error: %v", err)
 	}
-	if updatedMeta["source"] != "unit-test" {
-		t.Fatalf("updated metadata.source = %q, want unit-test", updatedMeta["source"])
+	var sourceVal string
+	if raw, ok := updatedMeta["source"]; ok {
+		json.Unmarshal(raw, &sourceVal)
+	}
+	if sourceVal != "unit-test" {
+		t.Fatalf("updated metadata.source = %q, want unit-test", sourceVal)
+	}
+	var keyVal string
+	if raw, ok := updatedMeta["key"]; ok {
+		json.Unmarshal(raw, &keyVal)
+	}
+	if keyVal != "val" {
+		t.Fatalf("updated metadata.key = %q, want val", keyVal)
+	}
+
+	// Verify mergeMetadata preserves existing keys.
+	m := mergeMetadata(
+		json.RawMessage(`{"source_seqs":[0],"temporal":{"display":"2026"}}`),
+		json.RawMessage(`{"source":"unit-test","key":"val"}`),
+	)
+	var merged map[string]json.RawMessage
+	if err := json.Unmarshal(m, &merged); err != nil {
+		t.Fatalf("mergeMetadata result unmarshal error: %v", err)
+	}
+	if _, ok := merged["source_seqs"]; !ok {
+		t.Fatal("mergeMetadata dropped source_seqs from base")
+	}
+	if _, ok := merged["temporal"]; !ok {
+		t.Fatal("mergeMetadata dropped temporal from base")
+	}
+	if _, ok := merged["source"]; !ok {
+		t.Fatal("mergeMetadata dropped source from incoming")
+	}
+	if _, ok := merged["key"]; !ok {
+		t.Fatal("mergeMetadata dropped key from incoming")
+	}
+}
+
+func TestMergeMetadata(t *testing.T) {
+	tests := []struct {
+		name     string
+		base     json.RawMessage
+		incoming json.RawMessage
+		wantKeys []string
+	}{
+		{
+			name:     "nil base returns incoming",
+			base:     nil,
+			incoming: json.RawMessage(`{"a":"1"}`),
+			wantKeys: []string{"a"},
+		},
+		{
+			name:     "nil incoming returns base",
+			base:     json.RawMessage(`{"a":"1"}`),
+			incoming: nil,
+			wantKeys: []string{"a"},
+		},
+		{
+			name:     "both nil returns nil",
+			base:     nil,
+			incoming: nil,
+			wantKeys: nil,
+		},
+		{
+			name:     "merge preserves base keys",
+			base:     json.RawMessage(`{"source_seqs":[1,2],"temporal":{"t":"2026"}}`),
+			incoming: json.RawMessage(`{"source_kind":"channel"}`),
+			wantKeys: []string{"source_seqs", "temporal", "source_kind"},
+		},
+		{
+			name:     "incoming overrides base on conflict",
+			base:     json.RawMessage(`{"key":"old"}`),
+			incoming: json.RawMessage(`{"key":"new"}`),
+			wantKeys: []string{"key"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeMetadata(tt.base, tt.incoming)
+			if tt.wantKeys == nil {
+				if len(got) != 0 {
+					t.Fatalf("expected nil/empty, got %s", got)
+				}
+				return
+			}
+			var m map[string]json.RawMessage
+			if err := json.Unmarshal(got, &m); err != nil {
+				t.Fatalf("unmarshal error: %v", err)
+			}
+			for _, k := range tt.wantKeys {
+				if _, ok := m[k]; !ok {
+					t.Fatalf("missing key %q in %s", k, got)
+				}
+			}
+			if tt.name == "incoming overrides base on conflict" {
+				var v string
+				json.Unmarshal(m["key"], &v)
+				if v != "new" {
+					t.Fatalf("key = %q, want new", v)
+				}
+			}
+		})
 	}
 }
 
