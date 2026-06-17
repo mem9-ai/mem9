@@ -228,6 +228,18 @@ func (r *SessionRepo) buildSessionFilterConds(f domain.MemoryFilter) ([]string, 
 		conds = append(conds, "JSON_CONTAINS(tags, ?)")
 		args = append(args, string(tagJSON))
 	}
+	// Closed-interval created_at window (either side optional). Applied
+	// uniformly to every session search/list path because they all build
+	// their WHERE from this helper, so vector / FTS / keyword / list stay
+	// consistent under the same time filter.
+	if f.CreatedAfter != nil {
+		conds = append(conds, "created_at >= ?")
+		args = append(args, *f.CreatedAfter)
+	}
+	if f.CreatedBefore != nil {
+		conds = append(conds, "created_at <= ?")
+		args = append(args, *f.CreatedBefore)
+	}
 	if len(conds) == 0 {
 		conds = append(conds, "1=1")
 	}

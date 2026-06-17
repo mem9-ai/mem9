@@ -160,6 +160,12 @@ type MemoryFilter struct {
 	Offset     int
 	ScanAll    bool
 	MinScore   float64 // minimum cosine similarity for vector results; 0 = use default (0.3); -1 = disabled (return all)
+	// CreatedAfter / CreatedBefore bound results to a created_at window
+	// (closed interval). nil = unbounded on that side. Currently consumed
+	// only by the raw-session search/list path (buildSessionFilterConds);
+	// other pools ignore them so normal memory search is unchanged.
+	CreatedAfter  *time.Time
+	CreatedBefore *time.Time
 }
 
 // TenantStatus represents the lifecycle status of a tenant.

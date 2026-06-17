@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -201,5 +202,54 @@ func TestFillSessionMemory_PopulatesFields(t *testing.T) {
 	}
 	if result.UpdatedAt != now {
 		t.Errorf("UpdatedAt = %v, want %v", result.UpdatedAt, now)
+	}
+}
+
+func TestBuildSessionFilterConds_CreatedAtWindow(t *testing.T) {
+	repo := &SessionRepo{}
+	after := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	before := time.Date(2026, 6, 30, 23, 59, 59, 0, time.UTC)
+
+	// No window → no created_at condition (existing behavior unchanged).
+	conds, args := repo.buildSessionFilterConds(domain.MemoryFilter{State: "all"})
+	for _, c := range conds {
+		if c == "created_at >= ?" || c == "created_at <= ?" {
+			t.Fatalf("unset window must not emit created_at cond, got %v", conds)
+		}
+	}
+	if len(args) != 0 {
+		t.Fatalf("unset window must add no args, got %v", args)
+	}
+
+	// Closed interval → both bounds, in order, with the timestamp args.
+	conds, args = repo.buildSessionFilterConds(domain.MemoryFilter{
+		State: "all", CreatedAfter: &after, CreatedBefore: &before,
+	})
+	joined := strings.Join(conds, " AND ")
+	if !strings.Contains(joined, "created_at >= ?") || !strings.Contains(joined, "created_at <= ?") {
+		t.Fatalf("closed interval must emit both bounds, got %q", joined)
+	}
+	if len(args) != 2 || args[0] != after || args[1] != before {
+		t.Fatalf("args = %v, want [after before]", args)
+	}
+
+	// Single-sided (after only).
+	conds, args = repo.buildSessionFilterConds(domain.MemoryFilter{State: "all", CreatedAfter: &after})
+	joined = strings.Join(conds, " AND ")
+	if !strings.Contains(joined, "created_at >= ?") || strings.Contains(joined, "created_at <= ?") {
+		t.Fatalf("after-only must emit only lower bound, got %q", joined)
+	}
+	if len(args) != 1 || args[0] != after {
+		t.Fatalf("after-only args = %v, want [after]", args)
+	}
+
+	// Single-sided (before only).
+	conds, args = repo.buildSessionFilterConds(domain.MemoryFilter{State: "all", CreatedBefore: &before})
+	joined = strings.Join(conds, " AND ")
+	if strings.Contains(joined, "created_at >= ?") || !strings.Contains(joined, "created_at <= ?") {
+		t.Fatalf("before-only must emit only upper bound, got %q", joined)
+	}
+	if len(args) != 1 || args[0] != before {
+		t.Fatalf("before-only args = %v, want [before]", args)
 	}
 }

@@ -4399,3 +4399,56 @@ func TestListMemories_SinglePoolRecall_NormalizesChineseRelativeQuery(t *testing
 		t.Fatalf("session filter query = %q, want %q", sessRepo.lastKeywordFilter.Query, expected)
 	}
 }
+
+func TestListMemories_TimeRangePropagatesToSessionFilter(t *testing.T) {
+	sessionRepo := &testSessionRepo{
+		listResults: []domain.Memory{{
+			ID: "sess-row-1", Content: "raw turn", MemoryType: domain.TypeSession,
+			State: domain.StateActive, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}},
+		listTotal: 1,
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	req := makeRequest(t, http.MethodGet,
+		"/memories?memory_type=session&created_after=2026-06-01T00:00:00Z&created_before=2026-06-30T23:59:59Z", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	f := sessionRepo.lastListFilter
+	if f.CreatedAfter == nil || !f.CreatedAfter.Equal(time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("CreatedAfter = %v, want 2026-06-01T00:00:00Z", f.CreatedAfter)
+	}
+	if f.CreatedBefore == nil || !f.CreatedBefore.Equal(time.Date(2026, 6, 30, 23, 59, 59, 0, time.UTC)) {
+		t.Fatalf("CreatedBefore = %v, want 2026-06-30T23:59:59Z", f.CreatedBefore)
+	}
+}
+
+func TestListMemories_TimeRangeRequiresSessionType(t *testing.T) {
+	// The window is session-only; passing it without memory_type=session
+	// must 400 rather than silently apply mixed-pool semantics.
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
+	req := makeRequest(t, http.MethodGet, "/memories?created_after=2026-06-01T00:00:00Z", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestListMemories_RejectsMalformedTimeParam(t *testing.T) {
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
+	req := makeRequest(t, http.MethodGet, "/memories?memory_type=session&created_after=2026-06-01", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 on non-RFC3339: %s", rr.Code, rr.Body.String())
+	}
+}

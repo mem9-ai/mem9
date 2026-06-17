@@ -767,20 +767,49 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		tags = strings.Split(t, ",")
 	}
 
+	createdAfter, err := parseTimeParam(q.Get("created_after"), "created_after")
+	if err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
+	createdBefore, err := parseTimeParam(q.Get("created_before"), "created_before")
+	if err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
+	if createdAfter != nil && createdBefore != nil && createdAfter.After(*createdBefore) {
+		s.handleError(r.Context(), w, &domain.ValidationError{
+			Field: "created_after", Message: "must not be after created_before",
+		})
+		return
+	}
+	// The created_at window is consumed only by the session pool. Reject
+	// it on other pools rather than silently applying mixed semantics
+	// (session filtered, pinned/insight not) — same "explicit 400, never
+	// silent" stance as the RFC3339 parse above.
+	if (createdAfter != nil || createdBefore != nil) && q.Get("memory_type") != string(domain.TypeSession) {
+		s.handleError(r.Context(), w, &domain.ValidationError{
+			Field: "created_after", Message: "time-range filter requires memory_type=session",
+		})
+		return
+	}
+
 	filter := domain.MemoryFilter{
-		Query:      query,
-		Tags:       tags,
-		Source:     q.Get("source"),
-		State:      q.Get("state"),
-		MemoryType: q.Get("memory_type"),
-		AgentID:    q.Get("agent_id"),
-		SessionID:  q.Get("session_id"),
-		AppID:      appIDFilter,
-		SortBy:     q.Get("sort_by"),
-		SortDir:    q.Get("sort_dir"),
-		Limit:      limit,
-		Offset:     offset,
-		ScanAll:    parseBoolQuery(q.Get("scanAll")),
+		Query:         query,
+		Tags:          tags,
+		Source:        q.Get("source"),
+		State:         q.Get("state"),
+		MemoryType:    q.Get("memory_type"),
+		AgentID:       q.Get("agent_id"),
+		SessionID:     q.Get("session_id"),
+		AppID:         appIDFilter,
+		SortBy:        q.Get("sort_by"),
+		SortDir:       q.Get("sort_dir"),
+		Limit:         limit,
+		Offset:        offset,
+		ScanAll:       parseBoolQuery(q.Get("scanAll")),
+		CreatedAfter:  createdAfter,
+		CreatedBefore: createdBefore,
 	}
 	onlySession := filter.MemoryType == string(domain.TypeSession)
 
@@ -928,6 +957,21 @@ func parseAppIDFilter(q url.Values) (*string, error) {
 		return nil, &domain.ValidationError{Field: "appId", Message: "too long (max 100)"}
 	}
 	return &raw, nil
+}
+
+// parseTimeParam parses an optional RFC3339 timestamp query parameter.
+// Empty/absent → nil (no bound). A malformed value is a client error,
+// not a silently-ignored param.
+func parseTimeParam(raw, field string) (*time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return nil, &domain.ValidationError{Field: field, Message: "must be an RFC3339 timestamp"}
+	}
+	return &t, nil
 }
 
 func (s *Server) listLocalMemoriesScanAll(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
