@@ -10,8 +10,6 @@
 - Scope: LoCoMo categories 1-4
 - Retrieval limit: 200
 - Context format: chronological Mem0-compatible retrieved context
-- Result JSON run 1: `/Users/jiangxianjie/code/mem9-locomo-workspace/locomo-logs/pr16-mem0-plus-full-rerun1-20260616T110833/benchmark-results.json`
-- Result JSON run 2: `/Users/jiangxianjie/code/mem9-locomo-workspace/locomo-logs/pr16-mem0-plus-full-rerun2-20260616T120138/benchmark-results.json`
 
 Both corrected runs completed cleanly with `1,540/1,540` rows. The benchmark logs had no `fetch failed`, sample-level failure, `DataInspectionFailed`, or network-disconnect matches.
 

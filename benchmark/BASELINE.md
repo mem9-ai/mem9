@@ -1,16 +1,3 @@
-# LoCoMo Baseline
-
-Source: `mem9-benchmark` PR #16 corrected mem0-compatible full runs.
-
-- Preset: `--benchmark-preset mem0`
-- Scope: categories 1-4
-- Rows: 1,540/1,540 per run
-- Answer model: `qwen3.6-plus`
-- Judge model: `qwen3.6-plus`
-- mem9 ingest model: `qwen3.6-flash`
-- Run 1: `/Users/jiangxianjie/code/mem9-locomo-workspace/locomo-logs/pr16-mem0-plus-full-rerun1-20260616T110833/benchmark-results.json`
-- Run 2: `/Users/jiangxianjie/code/mem9-locomo-workspace/locomo-logs/pr16-mem0-plus-full-rerun2-20260616T120138/benchmark-results.json`
-
 ```bash
 export MNEMO_LLM_MODEL="qwen3.6-flash"
 export OPENAI_CHAT_MODEL="qwen3.6-plus"
