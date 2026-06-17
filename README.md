@@ -203,7 +203,7 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 
 #### DataHub MCP Context
 
-DataHub MCP context retrieval is disabled by default. When enabled, `GET /v1alpha2/mem9s/memories?q=...` keeps returning normal mem9 memories and may also include an `external_context` array for data-asset questions such as dataset, dashboard, metric, lineage, schema, owner, freshness, or quality queries. The provider is read-only: mem9 calls DataHub MCP `search`, enriches matching URNs with `get_entities`, and fetches one-hop upstream/downstream context with `get_lineage`. If enrichment or lineage fails, mem9 falls back to the context already retrieved instead of failing recall. DataHub remains the source of truth for data assets.
+DataHub MCP context retrieval is disabled by default. When enabled, `GET /v1alpha2/mem9s/memories?q=...` keeps returning normal mem9 memories and may also include an `external_context` array for data-asset questions such as dataset, dashboard, metric, lineage, schema, owner, freshness, or quality queries. The provider is read-only: mem9 calls DataHub MCP `search`, enriches matching URNs with `get_entities`, and fetches one-hop upstream/downstream context with `get_lineage`. If enrichment or lineage fails, mem9 falls back to the context already retrieved instead of failing recall. DataHub remains the source of truth for data assets. Context item URLs are optional; DataHub Cloud commonly provides them, while self-hosted/OSS deployments may omit them.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|

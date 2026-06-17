@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -94,6 +96,40 @@ func TestNormalizeDataHubTextContentUsesNestedPropertiesForEntityTitle(t *testin
 	}
 	if items[0].URL != "https://datahub.example.com/dataset/mart.revenue" {
 		t.Fatalf("url = %q, want nested externalUrl", items[0].URL)
+	}
+}
+
+func TestNormalizeDataHubTextContentPrefersEditableProperties(t *testing.T) {
+	items := normalizeDataHubTextContent(`{
+		"urn": "urn:li:dataset:(snowflake,mart.revenue,PROD)",
+		"type": "DATASET",
+		"name": "raw_mart_revenue",
+		"description": "Raw ingested top-level description.",
+		"properties": {
+			"name": "mart.revenue",
+			"description": "Ingested revenue dataset description."
+		},
+		"editableProperties": {
+			"name": "Executive Revenue Dataset",
+			"description": "Curated Finance-owned revenue dataset."
+		}
+	}`)
+
+	if len(items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(items))
+	}
+	if items[0].Title != "Executive Revenue Dataset" {
+		t.Fatalf("title = %q, want editableProperties.name", items[0].Title)
+	}
+	if !strings.Contains(items[0].Snippet, "Curated Finance-owned") {
+		t.Fatalf("snippet = %q, want editableProperties.description", items[0].Snippet)
+	}
+	encoded, err := json.Marshal(items[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), `"url"`) {
+		t.Fatalf("empty DataHub URL should be omitted from JSON: %s", encoded)
 	}
 }
 
@@ -361,6 +397,118 @@ func TestDataHubMCPContextProviderRetrieveCallsSearchAndNormalizesResults(t *tes
 	}
 }
 
+func TestDataHubMCPContextProviderRetriesAfterStaleMCPSession(t *testing.T) {
+	var initializeCount int
+	var toolCallCount int
+
+	mcpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ID     any             `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		switch req.Method {
+		case "initialize":
+			initializeCount++
+			sessionID := "session-1"
+			if initializeCount == 2 {
+				sessionID = "session-2"
+			}
+			w.Header().Set("Mcp-Session-Id", sessionID)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req.ID,
+				"result":  map[string]any{"protocolVersion": "2025-03-26"},
+			})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/call":
+			toolCallCount++
+			switch toolCallCount {
+			case 1:
+				if got := r.Header.Get("Mcp-Session-Id"); got != "session-1" {
+					t.Fatalf("first tool call session = %q, want session-1", got)
+				}
+				http.NotFound(w, r)
+			case 2:
+				if got := r.Header.Get("Mcp-Session-Id"); got != "session-2" {
+					t.Fatalf("retry tool call session = %q, want session-2", got)
+				}
+				writeMCPToolTextResult(t, w, req.ID, map[string]any{"searchResults": []map[string]any{}})
+			default:
+				t.Fatalf("unexpected extra tool call %d", toolCallCount)
+			}
+		default:
+			t.Fatalf("unexpected MCP method %q", req.Method)
+		}
+	}))
+	defer mcpServer.Close()
+
+	provider := NewDataHubMCPContextProvider(DataHubMCPConfig{
+		Endpoint:   mcpServer.URL,
+		Timeout:    time.Second,
+		MaxResults: 2,
+	})
+	items, err := provider.Retrieve(context.Background(), "revenue dashboard", 2)
+	if err != nil {
+		t.Fatalf("Retrieve() error: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("items len = %d, want 0", len(items))
+	}
+	if initializeCount != 2 {
+		t.Fatalf("initialize count = %d, want 2", initializeCount)
+	}
+	if toolCallCount != 2 {
+		t.Fatalf("tool call count = %d, want 2", toolCallCount)
+	}
+}
+
+func TestDataHubMCPContextProviderReportsCloudAuthStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		want       string
+	}{
+		{
+			name:       "unauthorized",
+			statusCode: http.StatusUnauthorized,
+			want:       "MNEMO_DATAHUB_MCP_TOKEN",
+		},
+		{
+			name:       "bad request",
+			statusCode: http.StatusBadRequest,
+			want:       "OAuth2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mcpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "cloud auth rejected", tt.statusCode)
+			}))
+			defer mcpServer.Close()
+
+			provider := NewDataHubMCPContextProvider(DataHubMCPConfig{
+				Endpoint:   mcpServer.URL,
+				Timeout:    time.Second,
+				MaxResults: 1,
+			})
+			_, err := provider.Retrieve(context.Background(), "revenue dashboard", 1)
+			if err == nil {
+				t.Fatal("Retrieve() error = nil, want auth/config error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %q, want %q", err.Error(), tt.want)
+			}
+		})
+	}
+}
+
 func TestDataHubMCPContextProviderRetrieveNormalizesStructuredContent(t *testing.T) {
 	mcpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -603,6 +751,88 @@ func TestDataHubMCPContextProviderRetrieveEnrichesSearchWithEntitiesAndLineage(t
 	}
 	if item := findExternalContextItem(items, "urn:li:dataset:(snowflake,mart.revenue,PROD)#lineage:downstream", "LINEAGE_DOWNSTREAM"); item == nil || !strings.Contains(item.Snippet, "Executive Revenue") {
 		t.Fatalf("missing downstream lineage item in %+v", items)
+	}
+}
+
+func TestDataHubMCPContextProviderRetrieveLogsLineageFailure(t *testing.T) {
+	var logBuf bytes.Buffer
+	oldLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(oldLogger)
+
+	mcpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			ID     any             `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		switch req.Method {
+		case "initialize":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req.ID,
+				"result":  map[string]any{"protocolVersion": "2025-03-26"},
+			})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/call":
+			var params struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(req.Params, &params); err != nil {
+				t.Fatalf("decode tool params: %v", err)
+			}
+			switch params.Name {
+			case "search":
+				writeMCPToolTextResult(t, w, req.ID, map[string]any{
+					"searchResults": []map[string]any{
+						{
+							"entity": map[string]any{
+								"urn":  "urn:li:dataset:(snowflake,mart.revenue,PROD)",
+								"type": "DATASET",
+								"name": "mart.revenue",
+							},
+						},
+					},
+				})
+			case "get_entities":
+				writeMCPToolTextResult(t, w, req.ID, []map[string]any{
+					{
+						"urn":  "urn:li:dataset:(snowflake,mart.revenue,PROD)",
+						"type": "DATASET",
+						"name": "mart.revenue",
+					},
+				})
+			case "get_lineage":
+				http.Error(w, "lineage unavailable", http.StatusBadGateway)
+			default:
+				t.Fatalf("unexpected tool %q", params.Name)
+			}
+		default:
+			t.Fatalf("unexpected MCP method %q", req.Method)
+		}
+	}))
+	defer mcpServer.Close()
+
+	provider := NewDataHubMCPContextProvider(DataHubMCPConfig{
+		Endpoint:   mcpServer.URL,
+		Timeout:    time.Second,
+		MaxResults: 3,
+	})
+	items, err := provider.Retrieve(context.Background(), "revenue lineage", 3)
+	if err != nil {
+		t.Fatalf("Retrieve() error: %v", err)
+	}
+	if item := findExternalContextItem(items, "urn:li:dataset:(snowflake,mart.revenue,PROD)", "DATASET"); item == nil {
+		t.Fatalf("missing best-effort dataset item in %+v", items)
+	}
+	rawLog := logBuf.String()
+	if !strings.Contains(rawLog, "datahub MCP lineage retrieval failed") || !strings.Contains(rawLog, "lineage unavailable") {
+		t.Fatalf("lineage failure log = %q, want debug failure entry", rawLog)
 	}
 }
 

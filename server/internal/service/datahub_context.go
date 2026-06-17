@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -135,6 +137,7 @@ func (p *DataHubMCPContextProvider) Retrieve(ctx context.Context, query string, 
 			"offset":      0,
 		})
 		if err != nil {
+			slog.DebugContext(ctx, "datahub MCP lineage retrieval failed", "direction", direction.name, "urn", lineageURN, "err", err)
 			continue
 		}
 		items = append(items, normalizeDataHubLineageToolResult(lineageURN, direction.name, lineageResult)...)
@@ -271,6 +274,16 @@ func (c *mcpHTTPClient) CallTool(ctx context.Context, name string, arguments map
 		"name":      name,
 		"arguments": arguments,
 	}, true)
+	if isStaleMCPSessionError(err) {
+		c.resetSession()
+		if initErr := c.ensureInitialized(ctx); initErr != nil {
+			return nil, initErr
+		}
+		result, err = c.post(ctx, "tools/call", map[string]any{
+			"name":      name,
+			"arguments": arguments,
+		}, true)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -284,6 +297,18 @@ func (c *mcpHTTPClient) CallTool(ctx context.Context, name string, arguments map
 		return nil, fmt.Errorf("datahub MCP tool %s returned an error", name)
 	}
 	return &toolResult, nil
+}
+
+func isStaleMCPSessionError(err error) bool {
+	var statusErr *mcpHTTPStatusError
+	return errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound && statusErr.SessionID != ""
+}
+
+func (c *mcpHTTPClient) resetSession() {
+	c.mu.Lock()
+	c.initialized = false
+	c.sessionID = ""
+	c.mu.Unlock()
 }
 
 func (c *mcpHTTPClient) ensureInitialized(ctx context.Context) error {
@@ -353,7 +378,12 @@ func (c *mcpHTTPClient) post(ctx context.Context, method string, params any, exp
 		return nil, fmt.Errorf("read MCP response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("MCP %s returned HTTP %d: %s", method, resp.StatusCode, compactSnippet(string(responseBody), 300))
+		return nil, &mcpHTTPStatusError{
+			Method:     method,
+			StatusCode: resp.StatusCode,
+			Body:       string(responseBody),
+			SessionID:  sessionID,
+		}
 	}
 	if sid := resp.Header.Get("Mcp-Session-Id"); sid != "" {
 		c.mu.Lock()
@@ -376,6 +406,25 @@ func (c *mcpHTTPClient) post(ctx context.Context, method string, params any, exp
 		return nil, fmt.Errorf("MCP %s returned empty result", method)
 	}
 	return rpcResp.Result, nil
+}
+
+type mcpHTTPStatusError struct {
+	Method     string
+	StatusCode int
+	Body       string
+	SessionID  string
+}
+
+func (e *mcpHTTPStatusError) Error() string {
+	body := compactSnippet(e.Body, 300)
+	switch e.StatusCode {
+	case http.StatusUnauthorized:
+		return fmt.Sprintf("MCP %s authentication failed with HTTP 401; check MNEMO_DATAHUB_MCP_TOKEN: %s", e.Method, body)
+	case http.StatusBadRequest:
+		return fmt.Sprintf("MCP %s was rejected with HTTP 400; check the DataHub MCP endpoint and OAuth2 configuration: %s", e.Method, body)
+	default:
+		return fmt.Sprintf("MCP %s returned HTTP %d: %s", e.Method, e.StatusCode, body)
+	}
 }
 
 func (c *mcpHTTPClient) jsonRPCRequest(method string, params any, withID bool) map[string]any {
@@ -691,7 +740,7 @@ func cloneStringAnyMap(in map[string]any) map[string]any {
 func dataHubEntityItem(entity map[string]any) ExternalContextItem {
 	raw, _ := json.Marshal(entity)
 	title := dataHubEntityTitle(entity)
-	snippet := firstString(entity, "description", "properties.description", "editableProperties.description")
+	snippet := firstString(entity, "editableProperties.description", "properties.description", "description")
 	if snippet == "" {
 		snippet = compactSnippet(string(raw), 500)
 	}
@@ -707,7 +756,19 @@ func dataHubEntityItem(entity map[string]any) ExternalContextItem {
 }
 
 func dataHubEntityTitle(entity map[string]any) string {
-	return firstString(entity, "name", "displayName", "qualifiedName", "properties.name", "properties.displayName", "properties.qualifiedName", "urn")
+	return firstString(
+		entity,
+		"editableProperties.name",
+		"editableProperties.displayName",
+		"editableProperties.qualifiedName",
+		"properties.name",
+		"properties.displayName",
+		"properties.qualifiedName",
+		"name",
+		"displayName",
+		"qualifiedName",
+		"urn",
+	)
 }
 
 func dataHubLineageItem(urn, direction string, decoded map[string]any) ExternalContextItem {

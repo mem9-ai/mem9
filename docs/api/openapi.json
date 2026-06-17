@@ -1995,7 +1995,8 @@
           },
           "url": {
             "type": "string",
-            "format": "uri"
+            "format": "uri",
+            "description": "Optional provider URL. DataHub Cloud commonly includes this field; self-hosted/OSS DataHub deployments may omit it."
           },
           "metadata": {
             "type": "object",
