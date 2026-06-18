@@ -20,9 +20,11 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/llm"
 	"github.com/qiffang/mnemos/server/internal/metering"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 	"github.com/qiffang/mnemos/server/internal/service"
@@ -43,6 +45,7 @@ type testMemoryRepo struct {
 	lastKeywordLimit     int
 	listResults          []domain.Memory
 	listTotal            int
+	listErr              error
 	lastListFilter       domain.MemoryFilter
 	listCalls            int
 	softDeleteCalls      []string
@@ -119,6 +122,9 @@ func (m *testMemoryRepo) List(_ context.Context, filter domain.MemoryFilter) ([]
 	defer m.mu.Unlock()
 	m.listCalls++
 	m.lastListFilter = filter
+	if m.listErr != nil {
+		return nil, 0, m.listErr
+	}
 	return append([]domain.Memory(nil), m.listResults...), m.listTotal, nil
 }
 func (m *testMemoryRepo) Count(context.Context) (int, error) { return 0, nil }
@@ -1017,6 +1023,101 @@ func TestListMemories_ScanAllListsAllLocalMemoryTypes(t *testing.T) {
 		sessionRepo.lastListFilter.Limit != 200 {
 		t.Fatalf("session list filter = %+v", sessionRepo.lastListFilter)
 	}
+}
+
+func TestListMemories_RecordsMemoryRecallDuration(t *testing.T) {
+	resetMemoryRecallMetrics()
+
+	memRepo := &testMemoryRepo{
+		listResults: []domain.Memory{
+			{
+				ID:         "insight-1",
+				Content:    "HEARTBEAT insight",
+				MemoryType: domain.TypeInsight,
+				State:      domain.StateActive,
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
+			},
+		},
+		listTotal: 1,
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{})
+	req := makeRequest(t, http.MethodGet, "/memories?q=HEARTBEAT&memory_type=insight&scanAll=true", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if got := memoryRecallHistogramCount(t, "scan_all", "ok"); got != 1 {
+		t.Fatalf("memory recall histogram count = %d, want 1", got)
+	}
+}
+
+func TestListMemories_RecordsMemoryRecallTimeout(t *testing.T) {
+	resetMemoryRecallMetrics()
+
+	memRepo := &testMemoryRepo{listErr: context.DeadlineExceeded}
+	srv := newTestServer(memRepo, &testSessionRepo{})
+	req := makeRequest(t, http.MethodGet, "/memories?q=HEARTBEAT&memory_type=insight&scanAll=true", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if got := memoryRecallHistogramCount(t, "scan_all", "timeout"); got != 1 {
+		t.Fatalf("memory recall timeout histogram count = %d, want 1", got)
+	}
+	if got := memoryRecallTimeoutCounter(t, "scan_all"); got != 1 {
+		t.Fatalf("memory recall timeout counter = %v, want 1", got)
+	}
+}
+
+func resetMemoryRecallMetrics() {
+	metrics.MemoryRecallDuration.Reset()
+	metrics.MemoryRecallTimeoutsTotal.Reset()
+}
+
+func memoryRecallHistogramCount(t *testing.T, mode, status string) uint64 {
+	t.Helper()
+
+	observer, err := metrics.MemoryRecallDuration.GetMetricWithLabelValues(mode, status)
+	if err != nil {
+		t.Fatalf("get memory recall duration metric: %v", err)
+	}
+	metric, ok := observer.(interface{ Write(*dto.Metric) error })
+	if !ok {
+		t.Fatal("memory recall duration metric does not implement Write")
+	}
+	var pb dto.Metric
+	if err := metric.Write(&pb); err != nil {
+		t.Fatalf("write memory recall duration metric: %v", err)
+	}
+	if pb.Histogram == nil {
+		return 0
+	}
+	return pb.Histogram.GetSampleCount()
+}
+
+func memoryRecallTimeoutCounter(t *testing.T, mode string) float64 {
+	t.Helper()
+
+	counter, err := metrics.MemoryRecallTimeoutsTotal.GetMetricWithLabelValues(mode)
+	if err != nil {
+		t.Fatalf("get memory recall timeout metric: %v", err)
+	}
+	metric, ok := counter.(interface{ Write(*dto.Metric) error })
+	if !ok {
+		t.Fatal("memory recall timeout metric does not implement Write")
+	}
+	var pb dto.Metric
+	if err := metric.Write(&pb); err != nil {
+		t.Fatalf("write memory recall timeout metric: %v", err)
+	}
+	if pb.Counter == nil {
+		return 0
+	}
+	return pb.Counter.GetValue()
 }
 
 func TestListMemories_ContentKeywordSearchBypassesRecall(t *testing.T) {

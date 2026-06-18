@@ -132,6 +132,30 @@ var (
 		},
 		[]string{"step", "model", "status"},
 	)
+
+	// MemoryRecallDuration observes end-to-end memory recall latency.
+	// mode labels: default, single_pool, scan_all, chain, other
+	// status labels: ok, error, timeout, canceled
+	MemoryRecallDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "mnemo",
+			Name:      "memory_recall_duration_seconds",
+			Help:      "End-to-end memory recall request duration in seconds.",
+			Buckets:   []float64{0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120},
+		},
+		[]string{"mode", "status"},
+	)
+
+	// MemoryRecallTimeoutsTotal counts memory recall requests that ended in a timeout.
+	MemoryRecallTimeoutsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "memory_recall_timeouts_total",
+			Help:      "Total number of memory recall requests that ended in a timeout.",
+		},
+		[]string{"mode"},
+	)
+
 	// ActiveMemoryTotal is the current server-level total number of active memories.
 	ActiveMemoryTotal = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "mnemo",

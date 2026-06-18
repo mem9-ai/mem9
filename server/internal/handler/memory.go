@@ -738,6 +738,59 @@ type listResponse struct {
 	Offset   int             `json:"offset"`
 }
 
+type memoryRecallMetric struct {
+	mode  string
+	start time.Time
+}
+
+func newMemoryRecallMetric(auth *domain.AuthInfo, filter domain.MemoryFilter) memoryRecallMetric {
+	return memoryRecallMetric{
+		mode:  memoryRecallMode(auth, filter),
+		start: time.Now(),
+	}
+}
+
+func (m memoryRecallMetric) observe(ctx context.Context, err error) {
+	status := memoryRecallStatus(ctx, err)
+	metrics.MemoryRecallDuration.WithLabelValues(m.mode, status).Observe(time.Since(m.start).Seconds())
+	if status == "timeout" {
+		metrics.MemoryRecallTimeoutsTotal.WithLabelValues(m.mode).Inc()
+	}
+}
+
+func memoryRecallMode(auth *domain.AuthInfo, filter domain.MemoryFilter) string {
+	if auth != nil && auth.IsChain() {
+		return "chain"
+	}
+	if filter.ScanAll {
+		return "scan_all"
+	}
+	switch filter.MemoryType {
+	case "":
+		return "default"
+	case string(domain.TypeSession), string(domain.TypePinned), string(domain.TypeInsight):
+		return "single_pool"
+	default:
+		return "other"
+	}
+}
+
+func memoryRecallStatus(ctx context.Context, err error) string {
+	if err == nil && ctx != nil {
+		err = ctx.Err()
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "canceled"
+	}
+	if err != nil {
+		return "error"
+	}
+	return "ok"
+}
+
 func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	auth := authInfo(r)
 	q := r.URL.Query()
@@ -789,6 +842,14 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	var recallLease *runtimeusage.OperationLease
 	recallFinalized := false
 	recallSearch := filter.Query != "" && !contentKeywordSearch
+	var recallMetric *memoryRecallMetric
+	if recallSearch {
+		metric := newMemoryRecallMetric(auth, filter)
+		recallMetric = &metric
+		defer func() {
+			recallMetric.observe(r.Context(), err)
+		}()
+	}
 
 	if s.runtimeUsageEnabled() && recallSearch {
 		recallLease, err = s.runtimeUsage.BeforeRecall(r.Context(), subjectFromAuth(auth))
@@ -848,19 +909,20 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	}
 	if recallSearch {
 		if s.runtimeUsageEnabled() && recallLease != nil {
-			if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+			if finalizeErr := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
 				return s.runtimeUsage.AfterRecallSuccess(ctx, recallLease, runtimeusage.RecallResult{
 					MemoryIDs: memoryIDs(memories),
 					AgentName: auth.AgentName,
 				})
-			}); err != nil {
+			}); finalizeErr != nil {
 				s.logger.Error("runtime usage recall finalization failed",
 					"operation_id", recallLease.OperationID,
 					"tenant_id", auth.TenantID,
 					"cluster_id", auth.ClusterID,
-					"err", err)
+					"err", finalizeErr)
 				recallFinalized = true
-				s.handleRuntimeUsageError(w, err)
+				err = finalizeErr
+				s.handleRuntimeUsageError(w, finalizeErr)
 				return
 			}
 			recallFinalized = true
