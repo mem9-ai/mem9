@@ -158,6 +158,33 @@ const TenantSessionsSchemaBase = `CREATE TABLE IF NOT EXISTS sessions (
     UNIQUE INDEX idx_sess_dedup   (app_id, session_id, content_hash)
 )`
 
+// TenantSessionEditsSchema is the raw-session edit overlay table. It is a
+// display overlay, NOT an audit-history table: at most one row per session
+// row (PK id == sessions.id), upserted in place on re-edit. The sessions
+// table itself (content / embedding / FTS) is never modified, so the edit
+// only affects how Session Search renders an already-matched row — it does
+// not change what is searchable, and memory/fact recall is untouched.
+// No embedding column: the overlay never participates in retrieval.
+const TenantSessionEditsSchema = `CREATE TABLE IF NOT EXISTS session_edits (
+    id               VARCHAR(36)     PRIMARY KEY,
+    app_id           VARCHAR(100)    NOT NULL DEFAULT '',
+    session_id       VARCHAR(100)    NULL,
+    seq              INT             NULL,
+    agent_id         VARCHAR(100)    NULL,
+    original_content MEDIUMTEXT      NOT NULL,
+    edited_content   MEDIUMTEXT      NOT NULL,
+    edited_tags      JSON,
+    edited_by        VARCHAR(100)    NULL,
+    reason           VARCHAR(500)    NULL,
+    version          INT             NOT NULL DEFAULT 1,
+    state            VARCHAR(20)     NOT NULL DEFAULT 'active',
+    created_at       TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP       DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_sedit_session (session_id),
+    INDEX idx_sedit_app     (app_id),
+    INDEX idx_sedit_state   (state)
+)`
+
 // BuildSessionsSchema builds the TiDB sessions schema with optional auto-embedding.
 func BuildSessionsSchema(autoModel string, autoDims int, clientDims int) string {
 	var embeddingCol string
@@ -229,6 +256,12 @@ func ensureTiDBTenantTablesAndSearchIndexes(ctx context.Context, db *sql.DB, aut
 			return fmt.Errorf("sessions fulltext index: %w", err)
 		}
 	}
+
+	// Raw-session edit overlay. No vector/FTS index — it never participates
+	// in retrieval, only in Session Search response rendering.
+	if err := ensureTable(ctx, db, "session_edits", TenantSessionEditsSchema); err != nil {
+		return fmt.Errorf("session_edits table: %w", err)
+	}
 	return nil
 }
 
@@ -279,6 +312,16 @@ func ValidateTiDBTenantRuntimeSchema(ctx context.Context, db *sql.DB, autoModel 
 		if err := requireIndex(ctx, db, "sessions", "idx_sess_fts"); err != nil {
 			return fmt.Errorf("validate schema: sessions fulltext index: %w", err)
 		}
+	}
+
+	// Raw-session edit overlay table. Required because the edit endpoints
+	// depend on it, so a validate-only/offline check must not green-light a
+	// tenant schema that cannot serve them.
+	if err := requireTable(ctx, db, "session_edits"); err != nil {
+		return fmt.Errorf("validate schema: session_edits table: %w", err)
+	}
+	if err := requireColumn(ctx, db, "session_edits", "edited_content"); err != nil {
+		return fmt.Errorf("validate schema: session_edits edited_content column: %w", err)
 	}
 	return nil
 }

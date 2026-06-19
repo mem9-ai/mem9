@@ -118,4 +118,17 @@ type SessionRepo interface {
 	// session_id ASC, created_at ASC, seq ASC, id ASC. At most limitPerSession rows are
 	// returned per session_id. Returns ErrNotSupported on non-TiDB backends.
 	ListBySessionIDs(ctx context.Context, sessionIDs []string, appID *string, limitPerSession int) ([]*domain.Session, error)
+
+	// Raw-session edit overlay (display-only; never mutates `sessions`).
+	// UpsertSessionEdit creates or updates the single overlay row for
+	// edit.ID (== sessions.id); on update it bumps version and preserves
+	// the first OriginalContent snapshot. GetSessionEdit returns the
+	// active overlay or ErrNotFound. GetSessionEditsByIDs batch-loads
+	// active overlays keyed by id for Session Search rendering.
+	// DeleteSessionEdit removes the overlay (reverts to original).
+	// Returns ErrNotSupported on non-TiDB backends.
+	UpsertSessionEdit(ctx context.Context, edit *domain.SessionEdit) error
+	GetSessionEdit(ctx context.Context, id string) (*domain.SessionEdit, error)
+	GetSessionEditsByIDs(ctx context.Context, ids []string) (map[string]*domain.SessionEdit, error)
+	DeleteSessionEdit(ctx context.Context, id string) (int64, error)
 }

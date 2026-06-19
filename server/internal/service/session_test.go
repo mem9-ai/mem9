@@ -46,6 +46,7 @@ type stubSessionRepo struct {
 	listFilter     domain.MemoryFilter
 	softDeleteID   string
 	bulkDeleteIDs  []string
+	overlays       map[string]*domain.SessionEdit
 }
 
 type sessionListCall struct {
@@ -132,6 +133,55 @@ func (s *stubSessionRepo) ListBySessionIDs(_ context.Context, ids []string, appI
 	}
 	s.listCalls = append(s.listCalls, call)
 	return append([]*domain.Session(nil), s.sessionRows...), nil
+}
+
+func (s *stubSessionRepo) UpsertSessionEdit(_ context.Context, edit *domain.SessionEdit) error {
+	if s.overlays == nil {
+		s.overlays = map[string]*domain.SessionEdit{}
+	}
+	cp := *edit
+	if existing, ok := s.overlays[edit.ID]; ok {
+		cp.Version = existing.Version + 1
+		cp.OriginalContent = existing.OriginalContent
+		if !cp.EditedTagsSet {
+			cp.EditedTags = existing.EditedTags
+			cp.EditedTagsSet = existing.EditedTagsSet
+		}
+	} else {
+		cp.Version = 1
+	}
+	if cp.State == "" {
+		cp.State = domain.StateActive
+	}
+	s.overlays[edit.ID] = &cp
+	return nil
+}
+
+func (s *stubSessionRepo) GetSessionEdit(_ context.Context, id string) (*domain.SessionEdit, error) {
+	if ov, ok := s.overlays[id]; ok && ov.State == domain.StateActive {
+		cp := *ov
+		return &cp, nil
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (s *stubSessionRepo) GetSessionEditsByIDs(_ context.Context, ids []string) (map[string]*domain.SessionEdit, error) {
+	out := map[string]*domain.SessionEdit{}
+	for _, id := range ids {
+		if ov, ok := s.overlays[id]; ok && ov.State == domain.StateActive {
+			cp := *ov
+			out[id] = &cp
+		}
+	}
+	return out, nil
+}
+
+func (s *stubSessionRepo) DeleteSessionEdit(_ context.Context, id string) (int64, error) {
+	if _, ok := s.overlays[id]; ok {
+		delete(s.overlays, id)
+		return 1, nil
+	}
+	return 0, nil
 }
 
 func newTestSessionService(repo *stubSessionRepo) *SessionService {
@@ -599,4 +649,16 @@ func (c *capturingSessionRepo) FTSAvailable() bool { return c.stub.FTSAvailable(
 
 func (c *capturingSessionRepo) ListBySessionIDs(ctx context.Context, ids []string, appID *string, limit int) ([]*domain.Session, error) {
 	return c.stub.ListBySessionIDs(ctx, ids, appID, limit)
+}
+func (c *capturingSessionRepo) UpsertSessionEdit(ctx context.Context, edit *domain.SessionEdit) error {
+	return c.stub.UpsertSessionEdit(ctx, edit)
+}
+func (c *capturingSessionRepo) GetSessionEdit(ctx context.Context, id string) (*domain.SessionEdit, error) {
+	return c.stub.GetSessionEdit(ctx, id)
+}
+func (c *capturingSessionRepo) GetSessionEditsByIDs(ctx context.Context, ids []string) (map[string]*domain.SessionEdit, error) {
+	return c.stub.GetSessionEditsByIDs(ctx, ids)
+}
+func (c *capturingSessionRepo) DeleteSessionEdit(ctx context.Context, id string) (int64, error) {
+	return c.stub.DeleteSessionEdit(ctx, id)
 }

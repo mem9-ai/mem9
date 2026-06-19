@@ -139,3 +139,15 @@ func (stubSessionRepo) FTSAvailable() bool { return false }
 func (stubSessionRepo) ListBySessionIDs(_ context.Context, _ []string, _ *string, _ int) ([]*domain.Session, error) {
 	return nil, fmt.Errorf("session messages: %w", domain.ErrNotSupported)
 }
+func (stubSessionRepo) UpsertSessionEdit(_ context.Context, _ *domain.SessionEdit) error {
+	return fmt.Errorf("session edit: %w", domain.ErrNotSupported)
+}
+func (stubSessionRepo) GetSessionEdit(_ context.Context, _ string) (*domain.SessionEdit, error) {
+	return nil, fmt.Errorf("session edit: %w", domain.ErrNotSupported)
+}
+func (stubSessionRepo) GetSessionEditsByIDs(_ context.Context, _ []string) (map[string]*domain.SessionEdit, error) {
+	return nil, fmt.Errorf("session edit: %w", domain.ErrNotSupported)
+}
+func (stubSessionRepo) DeleteSessionEdit(_ context.Context, _ string) (int64, error) {
+	return 0, fmt.Errorf("session edit: %w", domain.ErrNotSupported)
+}

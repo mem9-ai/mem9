@@ -902,6 +902,13 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	if memories == nil {
 		memories = []domain.Memory{}
 	}
+	// Raw-session edit overlay (display-only): rewrite session-type results
+	// whose row has an active edit. Local/tenant path only — chain
+	// aggregation is out of scope for v0. Non-session memories are left
+	// untouched, so memory/fact recall is unaffected.
+	if !auth.IsChain() {
+		memories = s.resolveServices(auth).session.ApplySessionOverlay(r.Context(), memories)
+	}
 	if !contentKeywordSearch && rawQuery != "" && classifyRecallQueryShape(rawQuery) == recallQueryShapeTime {
 		for i := range memories {
 			memories[i].Content = service.TemporalRecallProjection(memories[i].Content, memories[i].Metadata)

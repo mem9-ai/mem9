@@ -286,6 +286,11 @@ func (s *Server) Router(
 
 		// Session messages (raw captured turns).
 		r.Get("/session-messages", s.handleListSessionMessages)
+		// Raw-session edit overlay (display-only; only affects Session Search
+		// rendering, never the sessions/memories tables or recall).
+		r.Put("/session-messages/{id}", s.editSessionMessage)
+		r.Get("/session-messages/{id}/edit", s.getSessionMessageEdit)
+		r.Delete("/session-messages/{id}/edit", s.deleteSessionMessageEdit)
 	})
 
 	return r

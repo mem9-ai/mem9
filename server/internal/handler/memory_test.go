@@ -206,6 +206,7 @@ type testSessionRepo struct {
 	softDeleteErr        error
 	bulkSoftDeleteCalls  [][]string
 	bulkSoftDeleteResult int64
+	overlays             map[string]*domain.SessionEdit
 }
 
 func (s *testSessionRepo) BulkCreate(_ context.Context, sessions []*domain.Session) error {
@@ -302,6 +303,63 @@ func (s *testSessionRepo) ListBySessionIDs(_ context.Context, sessionIDs []strin
 	s.lastSessionIDs = append([]string(nil), sessionIDs...)
 	s.lastSessionLimit = limit
 	return append([]*domain.Session(nil), s.sessionListResults...), nil
+}
+
+func (s *testSessionRepo) UpsertSessionEdit(_ context.Context, edit *domain.SessionEdit) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.overlays == nil {
+		s.overlays = map[string]*domain.SessionEdit{}
+	}
+	cp := *edit
+	if existing, ok := s.overlays[edit.ID]; ok {
+		cp.Version = existing.Version + 1
+		cp.OriginalContent = existing.OriginalContent // preserve first snapshot
+		if !cp.EditedTagsSet {                        // COALESCE: keep prior tag override
+			cp.EditedTags = existing.EditedTags
+			cp.EditedTagsSet = existing.EditedTagsSet
+		}
+	} else {
+		cp.Version = 1
+	}
+	if cp.State == "" {
+		cp.State = domain.StateActive
+	}
+	s.overlays[edit.ID] = &cp
+	return nil
+}
+
+func (s *testSessionRepo) GetSessionEdit(_ context.Context, id string) (*domain.SessionEdit, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ov, ok := s.overlays[id]; ok && ov.State == domain.StateActive {
+		cp := *ov
+		return &cp, nil
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (s *testSessionRepo) GetSessionEditsByIDs(_ context.Context, ids []string) (map[string]*domain.SessionEdit, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]*domain.SessionEdit{}
+	for _, id := range ids {
+		if ov, ok := s.overlays[id]; ok && ov.State == domain.StateActive {
+			cp := *ov
+			out[id] = &cp
+		}
+	}
+	return out, nil
+}
+
+func (s *testSessionRepo) DeleteSessionEdit(_ context.Context, id string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.overlays[id]; ok {
+		delete(s.overlays, id)
+		return 1, nil
+	}
+	return 0, nil
 }
 
 func intPtr(v int) *int {

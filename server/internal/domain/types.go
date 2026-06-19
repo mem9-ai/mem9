@@ -273,3 +273,30 @@ type Session struct {
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
 }
+
+// SessionEdit is a display overlay for a single raw session row. It is a
+// current-overlay record (at most one per session row; ID == sessions.id),
+// not an audit history: re-editing the same row upserts this one row and
+// bumps Version. The sessions table is never modified, so the overlay only
+// changes how Session Search renders an already-matched row.
+type SessionEdit struct {
+	ID              string   `json:"id"` // == sessions.id
+	AppID           string   `json:"appId,omitempty"`
+	SessionID       string   `json:"session_id,omitempty"`
+	Seq             int      `json:"seq"`
+	AgentID         string   `json:"agent_id,omitempty"`
+	OriginalContent string   `json:"original_content"`
+	EditedContent   string   `json:"edited_content"`
+	EditedTags      []string `json:"edited_tags,omitempty"`
+	// EditedTagsSet distinguishes "tags omitted (leave display tags as-is)"
+	// from "tags explicitly set (including [] to clear)". It mirrors whether
+	// the edited_tags column is non-NULL; only when true does the overlay
+	// replace a row's rendered tags.
+	EditedTagsSet bool        `json:"-"`
+	EditedBy      string      `json:"edited_by,omitempty"`
+	Reason        string      `json:"reason,omitempty"`
+	Version       int         `json:"version"`
+	State         MemoryState `json:"state"`
+	CreatedAt     time.Time   `json:"created_at"`
+	UpdatedAt     time.Time   `json:"updated_at"`
+}

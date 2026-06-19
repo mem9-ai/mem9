@@ -139,6 +139,9 @@ func (c *schemaInitConnector) recordDDL(query string) {
 		c.existingTables["memories"] = true
 		c.existingCols["memories.app_id"] = true
 		c.indexColumns["idx_app"] = []string{"app_id"}
+	case strings.Contains(lowerQuery, "create table if not exists session_edits"):
+		c.existingTables["session_edits"] = true
+		c.existingCols["session_edits.edited_content"] = true
 	case strings.Contains(lowerQuery, "create table if not exists sessions"):
 		c.existingTables["sessions"] = true
 		c.existingCols["sessions.app_id"] = true
@@ -414,12 +417,14 @@ func TestTiDBCloudProvisioner_InitSchema_ExistingTablesSkipsCreate(t *testing.T)
 	p := NewTiDBCloudProvisioner("http://localhost", "pool", "", 1024, 1536, false)
 	recorder := &schemaInitConnector{
 		existingTables: map[string]bool{
-			"memories": true,
-			"sessions": true,
+			"memories":      true,
+			"sessions":      true,
+			"session_edits": true,
 		},
 		existingCols: map[string]bool{
-			"memories.app_id": true,
-			"sessions.app_id": true,
+			"memories.app_id":              true,
+			"sessions.app_id":              true,
+			"session_edits.edited_content": true,
 		},
 		indexColumns: map[string][]string{
 			"idx_app":        {"app_id"},
@@ -466,8 +471,9 @@ func TestTiDBCloudProvisioner_InitSchema_ExistingTablesRejectsStaleAppSchema(t *
 	p := NewTiDBCloudProvisioner("http://localhost", "pool", "", 1024, 1536, false)
 	recorder := &schemaInitConnector{
 		existingTables: map[string]bool{
-			"memories": true,
-			"sessions": true,
+			"memories":      true,
+			"sessions":      true,
+			"session_edits": true,
 		},
 		existingCols: map[string]bool{
 			"memories.app_id": true,
@@ -502,12 +508,14 @@ func TestTiDBCloudProvisioner_InitSchema_ExistingTablesRejectsStaleAppSchema(t *
 func TestEnsureTiDBTenantRuntimeSchema_CreatesSearchIndexesOnly(t *testing.T) {
 	recorder := &schemaInitConnector{
 		existingTables: map[string]bool{
-			"memories": true,
-			"sessions": true,
+			"memories":      true,
+			"sessions":      true,
+			"session_edits": true,
 		},
 		existingCols: map[string]bool{
-			"memories.app_id": true,
-			"sessions.app_id": true,
+			"memories.app_id":              true,
+			"sessions.app_id":              true,
+			"session_edits.edited_content": true,
 		},
 		indexColumns: map[string][]string{
 			"idx_app":        {"app_id"},
@@ -550,12 +558,14 @@ func TestEnsureTiDBTenantRuntimeSchema_CreatesSearchIndexesOnly(t *testing.T) {
 func TestValidateTiDBTenantRuntimeSchema_SuccessDoesNotMutate(t *testing.T) {
 	recorder := &schemaInitConnector{
 		existingTables: map[string]bool{
-			"memories": true,
-			"sessions": true,
+			"memories":      true,
+			"sessions":      true,
+			"session_edits": true,
 		},
 		existingCols: map[string]bool{
-			"memories.app_id": true,
-			"sessions.app_id": true,
+			"memories.app_id":              true,
+			"sessions.app_id":              true,
+			"session_edits.edited_content": true,
 		},
 		indexColumns: map[string][]string{
 			"idx_app":         {"app_id"},
@@ -581,8 +591,9 @@ func TestValidateTiDBTenantRuntimeSchema_SuccessDoesNotMutate(t *testing.T) {
 func TestValidateTiDBTenantRuntimeSchema_RejectsOldSessionsDedupIndex(t *testing.T) {
 	recorder := &schemaInitConnector{
 		existingTables: map[string]bool{
-			"memories": true,
-			"sessions": true,
+			"memories":      true,
+			"sessions":      true,
+			"session_edits": true,
 		},
 		existingCols: map[string]bool{
 			"memories.app_id": true,
@@ -614,8 +625,9 @@ func TestValidateTiDBTenantRuntimeSchema_RejectsOldSessionsDedupIndex(t *testing
 func TestValidateTiDBTenantRuntimeSchema_RejectsNonUniqueSessionsDedupIndex(t *testing.T) {
 	recorder := &schemaInitConnector{
 		existingTables: map[string]bool{
-			"memories": true,
-			"sessions": true,
+			"memories":      true,
+			"sessions":      true,
+			"session_edits": true,
 		},
 		existingCols: map[string]bool{
 			"memories.app_id": true,
