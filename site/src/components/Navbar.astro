@@ -184,6 +184,21 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
                 ))}
               </span>
             </a>
+            <a
+              href="https://gtm.mem9.ai/main"
+              class="docs-menu-item"
+              target="_blank"
+              rel="noopener"
+              role="menuitem"
+            >
+              <span class="localized-label">
+                {navLabels('howItWork').map((label) => (
+                  <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                    {label.value}
+                  </span>
+                ))}
+              </span>
+            </a>
           </div>
         </div>
         <a
@@ -365,6 +380,21 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
               >
                 <span class="localized-label">
                   {navLabels('apiReferences').map((label) => (
+                    <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
+                      {label.value}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a
+                href="https://gtm.mem9.ai/main"
+                class="mobile-menu-item"
+                target="_blank"
+                rel="noopener"
+                role="menuitem"
+              >
+                <span class="localized-label">
+                  {navLabels('howItWork').map((label) => (
                     <span class="localized-label-option" data-locale-option={label.locale} lang={label.lang}>
                       {label.value}
                     </span>

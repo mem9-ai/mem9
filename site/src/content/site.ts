@@ -57,6 +57,7 @@ export interface SiteNavCopy {
   consoleDocs: string;
   api: string;
   apiReferences: string;
+  howItWork: string;
   releaseNotes: string;
   contact: string;
 }
@@ -6097,6 +6098,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       consoleDocs: 'mem9 Console Docs',
       api: 'API',
       apiReferences: 'API References',
+      howItWork: 'How it work',
       releaseNotes: 'Release Notes',
       contact: 'Contact Us',
     },
@@ -6456,6 +6458,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       consoleDocs: 'mem9 Console 文档',
       api: 'API',
       apiReferences: 'API 参考',
+      howItWork: 'How it work',
       releaseNotes: '发布说明',
       contact: '联系我们',
     },
@@ -6801,6 +6804,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       consoleDocs: 'mem9 Console 文檔',
       api: 'API',
       apiReferences: 'API 參考',
+      howItWork: 'How it work',
       releaseNotes: '發布說明',
       contact: '聯絡我們',
     },
@@ -7151,6 +7155,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       consoleDocs: 'mem9 Console ドキュメント',
       api: 'API',
       apiReferences: 'API リファレンス',
+      howItWork: 'How it work',
       releaseNotes: 'リリースノート',
       contact: 'お問い合わせ',
     },
@@ -7506,6 +7511,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       consoleDocs: 'mem9 Console 문서',
       api: 'API',
       apiReferences: 'API 레퍼런스',
+      howItWork: 'How it work',
       releaseNotes: '릴리스 노트',
       contact: '문의하기',
     },
@@ -7858,6 +7864,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       consoleDocs: 'Dokumentasi mem9 Console',
       api: 'API',
       apiReferences: 'Referensi API',
+      howItWork: 'How it work',
       releaseNotes: 'Catatan Rilis',
       contact: 'Hubungi Kami',
     },
@@ -8213,6 +8220,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       consoleDocs: 'เอกสาร mem9 Console',
       api: 'API',
       apiReferences: 'เอกสารอ้างอิง API',
+      howItWork: 'How it work',
       releaseNotes: 'บันทึกการเผยแพร่',
       contact: 'ติดต่อเรา',
     },
