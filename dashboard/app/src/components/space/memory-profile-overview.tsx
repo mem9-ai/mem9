@@ -1,258 +1,59 @@
-import { Brain, ShieldCheck, UserRound } from "lucide-react";
-import { useMemo } from "react";
-import type { ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { Edit3, Share2, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Memory, MemoryStats } from "@/types/memory";
 
 const CONFIDENCE_SEGMENTS = [
-  {
-    key: "confirmed",
-    value: 44,
-    className: "bg-[var(--type-pinned)]",
-    color: "var(--type-pinned)",
-  },
-  {
-    key: "high",
-    value: 38,
-    className: "bg-[var(--type-insight)]",
-    color: "var(--type-insight)",
-  },
-  {
-    key: "medium",
-    value: 14,
-    className: "bg-ring",
-    color: "var(--ring)",
-  },
-  {
-    key: "pending",
-    value: 4,
-    className: "bg-foreground/30",
-    color: "color-mix(in srgb, var(--foreground) 30%, transparent)",
-  },
+  { key: "confirmed", value: 42, color: "#3b82f6" },
+  { key: "high", value: 38, color: "#22c55e" },
+  { key: "medium", value: 20, color: "#fbbf24" },
 ] as const;
 
-export function MemoryProfileOverview({
-  stats,
-  memories,
-  loading,
-  className,
-}: {
-  stats: MemoryStats | undefined;
-  memories: Memory[];
-  loading: boolean;
-  className?: string;
-}) {
+const PROFILE_ITEMS = ["priority", "style", "constraint", "recall"] as const;
+
+export function MemoryProfileOverview({ stats, memories, loading, className }: { stats: MemoryStats | undefined; memories: Memory[]; loading: boolean; className?: string }) {
   const { t } = useTranslation();
+  const [feedback, setFeedback] = useState<"up" | "down" | null>(null);
   const companionDays = useMemo(() => {
-    const timestamps = memories
-      .map((memory) => Date.parse(memory.created_at))
-      .filter((timestamp) => Number.isFinite(timestamp));
-
-    if (timestamps.length === 0) {
-      return 0;
-    }
-
-    const earliest = Math.min(...timestamps);
-    const elapsed = Date.now() - earliest;
-    return Math.max(1, Math.ceil(elapsed / 86_400_000));
+    const values = memories.map((memory) => Date.parse(memory.created_at)).filter(Number.isFinite);
+    return values.length ? Math.max(1, Math.ceil((Date.now() - Math.min(...values)) / 86_400_000)) : 0;
   }, [memories]);
-
   const memoryCount = stats?.total ?? memories.length;
 
-  if (loading && !stats && memories.length === 0) {
-    return (
-      <section
-        data-testid="memory-profile-skeleton"
-        className={cn("mt-5 grid gap-4 xl:grid-cols-3", className)}
-      >
-        {[0, 1, 2].map((item) => (
-          <div
-            key={item}
-            className="surface-card min-h-[240px] animate-pulse rounded-2xl px-5 py-5"
-          >
-            <div className="h-4 w-24 rounded bg-foreground/10" />
-            <div className="mt-5 h-10 w-32 rounded-md bg-foreground/10" />
-            <div className="mt-5 space-y-2">
-              <div className="h-3 w-full rounded bg-foreground/8" />
-              <div className="h-3 w-4/5 rounded bg-foreground/8" />
-            </div>
-          </div>
-        ))}
-      </section>
-    );
-  }
+  if (loading && !stats && memories.length === 0) return <ProfileSkeleton className={className} />;
 
-  return (
-    <section
-      data-testid="memory-profile-overview"
-      className={cn("mt-5 grid gap-4 xl:grid-cols-3", className)}
-      style={{ animation: "slide-up 0.45s cubic-bezier(0.16,1,0.3,1)" }}
-    >
-      <ProfileCard
-        icon={<UserRound className="size-5" aria-hidden />}
-        eyebrow={t("memory_profile.personal.eyebrow")}
-        title={t("memory_profile.personal.title")}
-      >
-        <div className="mt-5 flex items-center gap-3">
-          <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-foreground/[0.04] text-lg font-semibold text-foreground">
-            {t("memory_profile.personal.avatar")}
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-xl font-semibold tracking-[-0.04em] text-foreground">
-              {t("memory_profile.personal.name")}
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t("memory_profile.personal.role")}
-            </p>
-          </div>
-        </div>
+  return <section data-testid="memory-profile-overview" className={cn("relative", className)} style={{ animation: "slide-up 0.45s cubic-bezier(0.16,1,0.3,1)" }}>
+    <header className="mb-5 flex flex-col gap-4 border-b border-foreground/7 pb-5 sm:flex-row sm:items-start sm:justify-between">
+      <div><h2 className="text-[clamp(1.55rem,2.4vw,2.15rem)] font-semibold tracking-[-0.065em]">{t("memory_profile.page_title")}</h2><p className="mt-2 text-sm text-muted-foreground">{t("memory_profile.page_subtitle", { days: companionDays, count: memoryCount })}</p></div>
+      <div className="flex items-center gap-3"><span className="text-xs text-soft-foreground">{t("memory_profile.last_updated")}</span><Button variant="outline" className="rounded-xl" onClick={() => navigator.clipboard?.writeText(t("memory_profile.share_copy"))}><Share2 className="size-4" />{t("memory_profile.share")}</Button></div>
+    </header>
 
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          <MetricTile
-            label={t("memory_profile.personal.companion_duration")}
-            value={t("memory_profile.personal.days", { count: companionDays })}
-          />
-          <MetricTile
-            label={t("memory_profile.personal.memory_count")}
-            value={t("memory_profile.personal.memories", { count: memoryCount })}
-          />
-        </div>
-      </ProfileCard>
+    <div className="grid gap-4 xl:grid-cols-[minmax(260px,.88fr)_minmax(390px,1.35fr)_minmax(260px,.74fr)]">
+      <article className="surface-card relative overflow-hidden p-5"><div className="absolute -left-8 top-16 size-44 rounded-full bg-[radial-gradient(circle,rgba(59,130,246,.15),transparent_68%)]" /><h3 className="sr-only">{t("memory_profile.personal.title")}</h3><div className="relative flex h-full items-center gap-4"><Avatar /><div className="min-w-0"><p className="truncate text-xl font-semibold tracking-[-0.045em]">{t("memory_profile.personal.name")}</p><p className="mt-1 text-sm text-muted-foreground">{t("memory_profile.personal.role")}</p><dl className="mt-7 space-y-3"><Stat label={t("memory_profile.personal.companion_duration")} value={t("memory_profile.personal.days", { count: companionDays })} /><Stat label={t("memory_profile.personal.memory_count")} value={t("memory_profile.personal.memories", { count: memoryCount })} /><Stat label={t("memory_profile.personal.confirmed")} value="42%" /></dl></div></div></article>
 
-      <ProfileCard
-        icon={<Brain className="size-5" aria-hidden />}
-        eyebrow={t("memory_profile.current_understanding.eyebrow")}
-        title={t("memory_profile.current_understanding.title")}
-        accent="insight"
-      >
-        <p className="mt-5 text-sm leading-7 text-foreground/78">
-          {t("memory_profile.current_understanding.description")}
-        </p>
-      </ProfileCard>
+      <article className="surface-card relative overflow-hidden p-5"><div className="absolute right-4 top-4 flex size-24 items-center justify-center rounded-full bg-blue-500/10"><span className="size-11 rounded-[1.1rem] bg-blue-500/80 shadow-[0_0_30px_rgba(59,130,246,.6)]" /></div><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-500">{t("memory_profile.current_understanding.eyebrow")}</p><h3 className="mt-2 text-xl font-semibold tracking-[-0.045em]">{t("memory_profile.current_understanding.title")}</h3><p className="mt-6 max-w-[80%] text-sm leading-7 text-foreground/78">{t("memory_profile.current_understanding.description")}</p><div className="mt-6 flex flex-wrap items-center gap-2"><span className="mr-2 text-sm font-semibold text-blue-500">{t("memory_profile.confidence.label", { value: 94 })}</span><span className="h-2 w-32 overflow-hidden rounded-full bg-foreground/8"><span className="block h-full w-[94%] rounded-full bg-blue-500" /></span><FeedbackButton active={feedback === "up"} onClick={() => setFeedback("up")} icon={<ThumbsUp className="size-3.5" />} label={t("memory_profile.feedback.accurate")} /><FeedbackButton active={false} onClick={() => {}} icon={<Edit3 className="size-3.5" />} label={t("memory_profile.feedback.edit")} /><FeedbackButton active={feedback === "down"} onClick={() => setFeedback("down")} icon={<ThumbsDown className="size-3.5" />} label={t("memory_profile.feedback.inaccurate")} /></div></article>
 
-      <ProfileCard
-        icon={<ShieldCheck className="size-5" aria-hidden />}
-        eyebrow={t("memory_profile.confidence.eyebrow")}
-        title={t("memory_profile.confidence.title")}
-        accent="trust"
-      >
-        <div className="mt-5 grid items-center gap-5 sm:grid-cols-[150px_minmax(0,1fr)] xl:grid-cols-1 2xl:grid-cols-[150px_minmax(0,1fr)]">
-          <ConfidencePie />
-          <div className="space-y-3">
-            {CONFIDENCE_SEGMENTS.map((segment) => (
-              <div key={segment.key} className="flex items-center justify-between gap-3">
-                <span className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
-                  <span className={cn("size-2.5 rounded-full", segment.className)} />
-                  <span className="truncate">
-                    {t(`memory_profile.confidence.segments.${segment.key}`)}
-                  </span>
-                </span>
-                <span className="text-sm font-semibold tabular-nums text-foreground">
-                  {segment.value}%
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </ProfileCard>
-    </section>
-  );
-}
-
-function ProfileCard({
-  icon,
-  eyebrow,
-  title,
-  accent = "profile",
-  children,
-}: {
-  icon: ReactNode;
-  eyebrow: string;
-  title: string;
-  accent?: "profile" | "insight" | "trust";
-  children: ReactNode;
-}) {
-  const accentBackground =
-    accent === "insight"
-      ? "radial-gradient(circle at 80% 0%, color-mix(in srgb, var(--type-insight) 14%, transparent), transparent 36%)"
-      : accent === "trust"
-        ? "radial-gradient(circle at 80% 0%, color-mix(in srgb, var(--ring) 13%, transparent), transparent 36%)"
-        : "radial-gradient(circle at 80% 0%, color-mix(in srgb, var(--type-pinned) 12%, transparent), transparent 36%)";
-
-  return (
-    <article
-      className="surface-card relative min-h-[250px] overflow-hidden rounded-2xl px-5 py-5"
-      style={{
-        background: `${accentBackground}, linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, transparent), color-mix(in srgb, var(--card) 92%, transparent))`,
-      }}
-    >
-      <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,color-mix(in_srgb,var(--foreground)_14%,transparent),transparent)]" />
-      <div className="relative">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-ring">
-              {eyebrow}
-            </p>
-            <h2 className="mt-2 text-lg font-semibold tracking-[-0.04em] text-foreground">
-              {title}
-            </h2>
-          </div>
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-foreground/8 bg-background/55 text-foreground/72">
-            {icon}
-          </span>
-        </div>
-        {children}
-      </div>
-    </article>
-  );
-}
-
-function MetricTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-foreground/8 bg-background/45 px-3 py-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-lg font-semibold tracking-[-0.04em] text-foreground">
-        {value}
-      </p>
+      <article className="surface-card p-5"><div className="flex items-center justify-between"><h3 className="text-xl font-semibold tracking-[-0.045em]">{t("memory_profile.confidence.title")}</h3><span className="text-sm text-soft-foreground">{t("memory_profile.confidence.current")}</span></div><div className="mt-5 grid grid-cols-[140px_1fr] items-center gap-4"><ConfidencePie /><div className="space-y-3">{CONFIDENCE_SEGMENTS.map((segment) => <div key={segment.key} className="flex items-center justify-between gap-2 text-xs"><span className="flex items-center gap-2 text-muted-foreground"><span className="size-2.5 rounded-full" style={{ background: segment.color }} />{t(`memory_profile.confidence.segments.${segment.key}`)}</span><span className="font-semibold">{segment.value}%</span></div>)}</div></div></article>
     </div>
-  );
-}
 
-function ConfidencePie() {
-  const { t } = useTranslation();
-  const gradientStops = CONFIDENCE_SEGMENTS.reduce<{
-    stops: string[];
-    offset: number;
-  }>(
-    (state, segment) => {
-      const nextOffset = state.offset + segment.value;
-      return {
-        stops: [
-          ...state.stops,
-          `${segment.color} ${state.offset}% ${nextOffset}%`,
-        ],
-        offset: nextOffset,
-      };
-    },
-    { stops: [], offset: 0 },
-  ).stops.join(", ");
-
-  return (
-    <div
-      className="relative mx-auto flex size-[150px] items-center justify-center rounded-full shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
-      style={{ background: `conic-gradient(${gradientStops})` }}
-      role="img"
-      aria-label={t("memory_profile.confidence.chart_label")}
-    >
-      <div className="flex size-[86px] flex-col items-center justify-center rounded-full border border-foreground/8 bg-card text-center shadow-sm">
-        <span className="text-2xl font-semibold tracking-[-0.06em] text-foreground">
-          82%
-        </span>
-        <span className="text-[11px] text-muted-foreground">
-          {t("memory_profile.confidence.trusted")}
-        </span>
-      </div>
+    <div className="mt-4 grid gap-4 xl:grid-cols-[.88fr_1.35fr_.74fr]">
+      <ProfileCard title={t("memory_profile.topics.title")} action={t("memory_profile.topics.action")}><RadarChart /></ProfileCard>
+      <ProfileCard title={t("memory_profile.composition.title")}><div className="grid items-center gap-4 sm:grid-cols-[170px_1fr]"><CompositionRing total={memoryCount} /><div className="grid gap-2 sm:grid-cols-2">{["profile", "communication", "learning", "project", "status"].map((name, index) => <span key={name} className="flex items-center justify-between rounded-full border border-foreground/8 bg-background/30 px-3 py-2 text-sm"><span className="flex items-center gap-2 truncate"><span className="size-2.5 rounded-full bg-emerald-400/75" />{t(`memory_profile.composition.items.${name}`)}</span><strong className="ml-2">{Math.max(memoryCount - index * 12, 0)}</strong></span>)}</div></div></ProfileCard>
+      <ProfileCard title={t("memory_profile.relationships.title")} action={t("memory_profile.relationships.action")}><RelationshipChart /></ProfileCard>
     </div>
-  );
+
+    <article className="surface-card mt-4 p-5"><h3 className="text-xl font-semibold tracking-[-0.045em]">{t("memory_profile.items.title")}</h3><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{PROFILE_ITEMS.map((item, index) => <div key={item} className="rounded-2xl border border-foreground/8 bg-background/25 p-4"><span className={cn("inline-block size-3 rounded-full", index === 0 ? "bg-blue-500" : index === 1 ? "bg-blue-400" : index === 2 ? "bg-emerald-400" : "bg-amber-400")} /><h4 className="mt-3 font-semibold">{t(`memory_profile.items.${item}.title`)}</h4><p className="mt-2 text-sm text-foreground/76">{t(`memory_profile.items.${item}.body`)}</p><p className="mt-2 text-xs text-soft-foreground">{t(`memory_profile.items.${item}.meta`)}</p></div>)}</div></article>
+  </section>;
 }
+
+function ProfileSkeleton({ className }: { className?: string }) { return <section data-testid="memory-profile-skeleton" className={cn("grid gap-4 xl:grid-cols-3", className)}>{[0, 1, 2].map((item) => <div key={item} className="surface-card h-64 animate-pulse" />)}</section>; }
+function Avatar() { return <div className="relative flex w-[42%] min-w-[112px] flex-col items-center"><span className="absolute top-1 size-28 rounded-full bg-[linear-gradient(145deg,#f8d3b0,#c68a62)]" /><span className="mt-20 size-36 rounded-[45%_45%_35%_35%] bg-[linear-gradient(145deg,#9b6be9,#6334bd)]" /></div>; }
+function Stat({ label, value }: { label: string; value: string }) { return <div className="flex items-baseline justify-between gap-4"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="font-semibold tabular-nums">{value}</dd></div>; }
+function FeedbackButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: ReactNode; label: string }) { return <button onClick={onClick} className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs transition-colors", active ? "border-blue-500/50 bg-blue-500/12 text-blue-500" : "border-foreground/8 text-muted-foreground hover:bg-foreground/[.04]")}>{icon}{label}</button>; }
+function ProfileCard({ title, action, children }: { title: string; action?: string; children: ReactNode }) { return <article className="surface-card min-h-[260px] p-5"><div className="flex items-center justify-between"><h3 className="text-xl font-semibold tracking-[-0.045em]">{title}</h3>{action && <button className="text-sm font-medium text-blue-500 hover:underline">{action}</button>}</div><div className="mt-4">{children}</div></article>; }
+function ConfidencePie() { const { t } = useTranslation(); return <div role="img" aria-label={t("memory_profile.confidence.chart_label")} className="relative flex size-36 items-center justify-center rounded-full" style={{ background: "conic-gradient(#3b82f6 0 42%, #22c55e 42% 80%, #fbbf24 80% 100%)" }}><div className="flex size-24 flex-col items-center justify-center rounded-full bg-card"><strong className="text-3xl tracking-[-.08em]">94%</strong><span className="text-[10px] text-soft-foreground">{t("memory_profile.confidence.trusted")}</span></div></div>; }
+function RadarChart() { return <svg viewBox="0 0 260 190" className="mx-auto h-[190px] w-full max-w-[280px]" aria-hidden><g fill="none" stroke="currentColor" className="text-foreground/10"><path d="M130 14 235 80 195 171 65 171 25 80Z" /><path d="M130 43 205 89 177 150 83 150 55 89Z" /><path d="M130 71 175 98 160 129 100 129 85 98Z" /></g><path d="M130 39 199 86 174 145 89 142 65 92Z" fill="rgba(59,130,246,.35)" stroke="#3b82f6" strokeWidth="2" />{[[130,39],[199,86],[174,145],[89,142],[65,92]].map(([x,y]) => <circle key={`${x}-${y}`} cx={x} cy={y} r="4" fill="#3b82f6" />)}</svg>; }
+function CompositionRing({ total }: { total: number }) { return <div className="relative mx-auto flex size-36 items-center justify-center rounded-full border-[14px] border-sky-400/65 before:absolute before:size-24 before:rounded-full before:border-[10px] before:border-emerald-300/60"><strong className="z-10 text-3xl tracking-[-.08em]">{total}</strong></div>; }
+function RelationshipChart() { const { t } = useTranslation(); return <div className="relative mx-auto mt-3 h-[180px] max-w-[250px]"><div className="absolute left-1/2 top-10 size-20 -translate-x-1/2 rounded-full border-2 border-blue-500/70 bg-background/60 text-center text-sm leading-[5rem]">{t("memory_profile.relationships.user")}</div>{[["daughter","left-0 top-16"],["partner","right-0 top-16"],["parents","bottom-0 left-1/2 -translate-x-1/2"]].map(([key, position]) => <div key={key} className={cn("absolute flex size-14 items-center justify-center rounded-full bg-fuchsia-500/15 text-xs text-foreground/85", position)}>{t(`memory_profile.relationships.${key}`)}</div>)}<span className="absolute left-[25%] top-[5.75rem] h-px w-[24%] bg-blue-500/65" /><span className="absolute right-[25%] top-[5.75rem] h-px w-[24%] bg-blue-500/65" /><span className="absolute bottom-[3.1rem] left-1/2 h-8 w-px bg-blue-500/65" /></div>; }

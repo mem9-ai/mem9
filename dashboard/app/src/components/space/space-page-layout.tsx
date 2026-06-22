@@ -286,7 +286,7 @@ export const SpacePageLayout = ({
               onTabChange={setActiveOverviewTab}
             />
 
-            {activeOverviewTab !== "reports" && (
+            {activeOverviewTab !== "reports" && activeOverviewTab !== "profile" && (
               <>
             <div className="relative mt-5">
               <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-soft-foreground" />

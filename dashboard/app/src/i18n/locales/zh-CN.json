@@ -217,10 +217,10 @@
   "memory_overview": {
     "tabs": {
       "pulse": "Memory Pulse",
-      "profile": "Memory Profile",
+      "profile": "记忆画像",
       "insight": "Memory Insight",
       "analysis": "Memory Analysis",
-      "reports": "Report Manage"
+      "reports": "报告模板"
     },
     "tabs_short": {
       "pulse": "节奏",
@@ -428,6 +428,11 @@
     }
   },
   "memory_profile": {
+    "page_title": "我的记忆画像",
+    "page_subtitle": "基于 {{days}} 天陪伴与 {{count}} 条记忆，展示当前 Agent 正在采用的用户画像。",
+    "last_updated": "最后更新：2 小时前",
+    "share": "分享我的档案",
+    "share_copy": "我的 mem9 记忆画像",
     "personal": {
       "eyebrow": "",
       "title": "基础档案",
@@ -436,11 +441,12 @@
       "role": "mem9 用户",
       "companion_duration": "陪伴时长",
       "memory_count": "记忆条数",
+      "confirmed": "已确认画像",
       "days": "{{count}} 天",
       "memories": "{{count}} 条"
     },
     "current_understanding": {
-      "eyebrow": "",
+      "eyebrow": "CURRENT UNDERSTANDING",
       "title": "AI 对你的当前理解",
       "description": "你是一个理性、好奇心强且具有成长驱动力的人，喜欢把目标拆成明确步。你当前关注 KET 备考、单词计划与健康习惯，并偏好直接、具体、少说教的建议。你做决策时倾向安全优先、循序就进、重视可持续。"
     },
@@ -449,12 +455,32 @@
       "title": "画像可信度",
       "chart_label": "画像可信度饼图",
       "trusted": "可信画像",
+      "current": "当前",
+      "label": "可信度 {{value}}%",
       "segments": {
         "confirmed": "用户确认",
         "high": "高置信",
         "medium": "中置信",
         "pending": "待确认"
       }
+    },
+    "feedback": {
+      "accurate": "准确",
+      "edit": "修改",
+      "inaccurate": "不准确"
+    },
+    "topics": { "title": "关注主题", "action": "查看全部" },
+    "composition": {
+      "title": "记忆组成",
+      "items": { "profile": "个人画像", "communication": "沟通偏好", "learning": "学习成长", "project": "项目", "status": "状态" }
+    },
+    "relationships": { "title": "重要关系", "action": "关系图", "user": "用户", "daughter": "女儿", "partner": "伴侣", "parents": "父母" },
+    "items": {
+      "title": "画像项",
+      "priority": { "title": "当前优先事项", "body": "KET 备考与健康管理", "meta": "profile sync · 用户确认 · 3 条证据" },
+      "style": { "title": "偏好的陪伴方式", "body": "直接、具体、少说教", "meta": "conversation · 用户确认 · 2 条证据" },
+      "constraint": { "title": "重要约束", "body": "避免含糖饮料和酒精", "meta": "insight · 高置信 · 4 条证据" },
+      "recall": { "title": "召回提示", "body": "提到 KET、60 天备考时优先召回", "meta": "agent use note · 高置信" }
     }
   },
   "memory_insight": {
@@ -557,7 +583,7 @@
   },
   "report_manage": {
     "eyebrow": "报告",
-    "title": "Report Manage",
+    "title": "报告模板",
     "subtitle": "查看内置模板、生成报告，并回看历史结果。",
     "generate": "生成报告",
     "library_title": "内置模板",

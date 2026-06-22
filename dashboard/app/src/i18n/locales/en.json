@@ -428,6 +428,11 @@
     }
   },
   "memory_profile": {
+    "page_title": "My Memory Profile",
+    "page_subtitle": "Based on {{days}} days together and {{count}} memories, this is the profile your Agent is using now.",
+    "last_updated": "Last updated: 2 hours ago",
+    "share": "Share my profile",
+    "share_copy": "My mem9 memory profile",
     "personal": {
       "eyebrow": "Personal Info",
       "title": "Basic Profile",
@@ -436,6 +441,7 @@
       "role": "mem9 user",
       "companion_duration": "Companion duration",
       "memory_count": "Memories",
+      "confirmed": "Confirmed profile",
       "days": "{{count}} days",
       "memories": "{{count}} memories"
     },
@@ -449,12 +455,28 @@
       "title": "Profile Confidence",
       "chart_label": "Profile confidence pie chart",
       "trusted": "trusted",
+      "current": "Current",
+      "label": "Confidence {{value}}%",
       "segments": {
         "confirmed": "User confirmed",
         "high": "High confidence",
         "medium": "Medium confidence",
         "pending": "Pending confirmation"
       }
+    },
+    "feedback": { "accurate": "Accurate", "edit": "Edit", "inaccurate": "Not accurate" },
+    "topics": { "title": "Focus topics", "action": "View all" },
+    "composition": {
+      "title": "Memory composition",
+      "items": { "profile": "Profile", "communication": "Communication", "learning": "Learning", "project": "Project", "status": "Status" }
+    },
+    "relationships": { "title": "Important relationships", "action": "Relationship map", "user": "You", "daughter": "Daughter", "partner": "Partner", "parents": "Parents" },
+    "items": {
+      "title": "Profile items",
+      "priority": { "title": "Current priorities", "body": "KET preparation and health management", "meta": "profile sync · user confirmed · 3 evidence" },
+      "style": { "title": "Preferred companion style", "body": "Direct, specific, and low-preach", "meta": "conversation · user confirmed · 2 evidence" },
+      "constraint": { "title": "Important constraints", "body": "Avoid sugary drinks and alcohol", "meta": "insight · high confidence · 4 evidence" },
+      "recall": { "title": "Recall cue", "body": "Prioritize recall for KET and 60-day preparation", "meta": "agent use note · high confidence" }
     }
   },
   "memory_insight": {
