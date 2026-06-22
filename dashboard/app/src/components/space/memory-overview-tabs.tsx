@@ -3,7 +3,9 @@ import { Monitor, Network } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { DeepAnalysisTab } from "@/components/space/deep-analysis-tab";
 import { MemoryInsightWorkspace } from "@/components/space/memory-insight-workspace";
+import { MemoryProfileOverview } from "@/components/space/memory-profile-overview";
 import { MemoryPulseOverview } from "@/components/space/memory-pulse-overview";
+import { ReportManageOverview } from "@/components/space/report-manage-overview";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIsLargeViewport } from "@/components/space/space-view-utils";
 import { cn } from "@/lib/utils";
@@ -19,7 +21,7 @@ import type { TimeRangePreset, TimelineSelection } from "@/types/time-range";
 
 export type OverviewMemorySelectionSource = "list" | "insight";
 
-const TAB_VALUES = ["pulse", "insight", "analysis"] as const;
+const TAB_VALUES = ["pulse", "profile", "insight", "analysis", "reports"] as const;
 
 export function MemoryOverviewTabs({
   spaceId,
@@ -42,6 +44,7 @@ export function MemoryOverviewTabs({
   onTimelineSelect,
   onTimelineClear,
   onEntitySearch,
+  onTabChange,
 }: {
   spaceId: string;
   stats: MemoryStats | undefined;
@@ -63,6 +66,7 @@ export function MemoryOverviewTabs({
   onTimelineSelect: (selection: TimelineSelection) => void;
   onTimelineClear?: () => void;
   onEntitySearch?: (query: string) => void;
+  onTabChange?: (tab: MemoryInsightTab) => void;
 }) {
   // Memory Insight only needs a wide canvas to lay out the relations bubbles
   // legibly — it doesn't depend on the full three-column desktop layout. Gating
@@ -91,6 +95,7 @@ export function MemoryOverviewTabs({
           setInsightResetToken((current) => current + 1);
         }
         setTab(next);
+        onTabChange?.(next);
       }}
       className="mt-5"
       data-testid="memory-overview-tabs"
@@ -119,6 +124,19 @@ export function MemoryOverviewTabs({
           onTimelineSelect={onTimelineSelect}
           onTimelineClear={onTimelineClear}
         />
+      </TabsContent>
+
+      <TabsContent value="profile" className="-mt-px mt-0">
+        <MemoryProfileOverview
+          stats={stats}
+          memories={pulseMemories}
+          loading={loading}
+          className="!mt-0"
+        />
+      </TabsContent>
+
+      <TabsContent value="reports" className="-mt-px mt-0">
+        <ReportManageOverview memories={pulseMemories} className="!mt-0" />
       </TabsContent>
 
       <TabsContent value="insight" className="-mt-px mt-0">
@@ -187,11 +205,11 @@ function MobileOverviewTabsList() {
 
   // Use shadcn's default segmented control look (rounded-lg muted bar + rounded-md
   // chip on the active trigger). Stretching the list to the full row width with
-  // `grid w-full grid-cols-3` keeps each trigger evenly sized and avoids the
+  // `grid w-full grid-cols-5` keeps each trigger evenly sized and avoids the
   // horizontal overflow we saw with the long "Memory ___" labels.
   return (
     <TabsList
-      className="grid w-full grid-cols-3"
+      className="grid w-full grid-cols-5"
       data-testid="memory-overview-tablist"
     >
       {TAB_VALUES.map((value) => (

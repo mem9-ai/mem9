@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import {
   Search,
   BarChart3,
@@ -37,6 +37,7 @@ import { maskSpaceId } from "@/lib/session";
 import type { Memory } from "@/types/memory";
 import type { SpaceRouteState } from "./use-space-route-state";
 import type { SpaceDataModel } from "./use-space-data-model";
+import type { MemoryInsightTab } from "@/lib/memory-insight";
 import {
   formatAnalysisCategoryLabel,
   getActiveFilterCount,
@@ -101,6 +102,7 @@ export const SpacePageLayout = ({
   onRefreshMemories,
   onHandleFarmAction,
 }: SpacePageLayoutProps) => {
+  const [activeOverviewTab, setActiveOverviewTab] = useState<MemoryInsightTab>("pulse");
   const isEmpty =
     !dataModel.isMemoryLoading &&
     dataModel.displayedMemories.length === 0 &&
@@ -281,8 +283,11 @@ export const SpacePageLayout = ({
               onEntitySearch={(query) =>
                 navigateAndScrollToMemoryList(() => routeState.handleEntitySearch(query))
               }
+              onTabChange={setActiveOverviewTab}
             />
 
+            {activeOverviewTab !== "reports" && (
+              <>
             <div className="relative mt-5">
               <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-soft-foreground" />
               <Input
@@ -542,6 +547,8 @@ export const SpacePageLayout = ({
                 </div>
               )}
             </div>
+              </>
+            )}
           </div>
 
           {features.enableAnalysis && routeState.isDesktopViewport && (

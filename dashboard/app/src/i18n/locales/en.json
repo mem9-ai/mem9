@@ -217,13 +217,17 @@
   "memory_overview": {
     "tabs": {
       "pulse": "Memory Pulse",
+      "profile": "Memory Profile",
       "insight": "Memory Insight",
-      "analysis": "Memory Analysis"
+      "analysis": "Memory Analysis",
+      "reports": "Report Manage"
     },
     "tabs_short": {
       "pulse": "Pulse",
+      "profile": "Profile",
       "insight": "Insight",
-      "analysis": "Analysis"
+      "analysis": "Analysis",
+      "reports": "Reports"
     },
     "desktop_only": {
       "title": "Memory Insight needs a wider screen",
@@ -423,6 +427,36 @@
       "count": "{{count}} mentions"
     }
   },
+  "memory_profile": {
+    "personal": {
+      "eyebrow": "Personal Info",
+      "title": "Basic Profile",
+      "avatar": "YJ",
+      "name": "YJ",
+      "role": "mem9 user",
+      "companion_duration": "Companion duration",
+      "memory_count": "Memories",
+      "days": "{{count}} days",
+      "memories": "{{count}} memories"
+    },
+    "current_understanding": {
+      "eyebrow": "Current Understanding",
+      "title": "AI's Current Understanding of You",
+      "description": "You are rational, curious, and growth-driven, and you like breaking goals into clear steps. You are currently focused on KET preparation, vocabulary planning, and health habits, and you prefer direct, specific, low-preach advice. When making decisions, you tend to prioritize safety, proceed step by step, and value sustainability."
+    },
+    "confidence": {
+      "eyebrow": "Trust",
+      "title": "Profile Confidence",
+      "chart_label": "Profile confidence pie chart",
+      "trusted": "trusted",
+      "segments": {
+        "confirmed": "User confirmed",
+        "high": "High confidence",
+        "medium": "Medium confidence",
+        "pending": "Pending confirmation"
+      }
+    }
+  },
   "memory_insight": {
     "layer_eyebrow": "Insight Layers",
     "layer_helper": "Keep the browse map for drill-down, or switch to the entity network for relationship signals.",
@@ -519,6 +553,57 @@
         "scheduled_with": "Scheduled with",
         "points_to": "Points to"
       }
+    }
+  },
+  "report_manage": {
+    "eyebrow": "Reports",
+    "title": "Report Manage",
+    "subtitle": "Browse built-in templates, generate reports, and revisit previous results.",
+    "generate": "Generate report",
+    "library_title": "Built-in templates",
+    "search_placeholder": "Search templates",
+    "status_all": "Status: all",
+    "status_enabled": "Status: enabled",
+    "enabled": "Enabled",
+    "cadence": "Cadence: {{value}}",
+    "last_generated": "Last generated: {{value}}",
+    "template_count": "{{count}} templates in total",
+    "details_title": "Template details",
+    "description_title": "About this template",
+    "goal_label": "Goal",
+    "period_label": "Cadence",
+    "input_label": "Input",
+    "output_label": "Output",
+    "evidence_label": "Evidence",
+    "input_value": "Memories, session excerpts, feedback state",
+    "output_value": "JSON / OpenAPI / insight page",
+    "evidence_value": "Memory IDs and linked excerpts",
+    "analysis_title": "Analysis areas",
+    "analysis_items": [
+      { "title": "Focus changes", "body": "What has shifted from recent focus and history." },
+      { "title": "Long-term goals", "body": "New, strengthened, or reconfirmed goals." },
+      { "title": "Relationship changes", "body": "Important people and interaction patterns." },
+      { "title": "Emotional rhythm", "body": "Stage-level emotional movement in sessions." },
+      { "title": "Growth signals", "body": "Progress in behavior, cognition, and state." },
+      { "title": "Memory structure", "body": "Distribution shifts by type, topic, and confidence." }
+    ],
+    "settings_title": "Generation settings",
+    "memory_count": "{{count}} memories",
+    "generate_template": "Generate this report",
+    "history_title": "Generation history",
+    "history_now": "Just generated",
+    "complete": "Complete",
+    "preview": "Preview",
+    "download": "Download JSON",
+    "preview_hint": "Report preview will open here once the reporting service is connected.",
+    "download_hint": "JSON export will be available once the reporting service is connected.",
+    "generate_success": "{{template}} generation has been queued.",
+    "note": "This first release uses built-in templates. Generated results will be available from the insight page, JSON, or OpenAPI.",
+    "templates": {
+      "weekly": { "name": "Weekly observation", "cadence": "Biweekly", "last_generated": "2025-06-14 09:12", "goal": "Identify meaningful changes in recent memories." },
+      "trend": { "name": "Emotional trend analysis", "cadence": "Daily", "last_generated": "2025-06-14 08:35", "goal": "Trace recurring emotional movement over time." },
+      "structure": { "name": "Memory structure analysis", "cadence": "On demand", "last_generated": "2025-06-12 18:07", "goal": "Reveal how memory types and topics are distributed." },
+      "growth": { "name": "Growth observation", "cadence": "Monthly", "last_generated": "2025-05-31 21:10", "goal": "Capture durable behavior and learning progress." }
     }
   },
   "pixel_farm": {

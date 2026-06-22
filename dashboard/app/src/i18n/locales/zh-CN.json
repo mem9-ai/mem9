@@ -217,13 +217,17 @@
   "memory_overview": {
     "tabs": {
       "pulse": "Memory Pulse",
+      "profile": "Memory Profile",
       "insight": "Memory Insight",
-      "analysis": "Memory Analysis"
+      "analysis": "Memory Analysis",
+      "reports": "Report Manage"
     },
     "tabs_short": {
       "pulse": "节奏",
+      "profile": "画像",
       "insight": "洞察",
-      "analysis": "分析"
+      "analysis": "分析",
+      "reports": "报告"
     },
     "desktop_only": {
       "title": "Memory Insight 需要更宽的屏幕",
@@ -423,6 +427,36 @@
       "count": "出现 {{count}} 次"
     }
   },
+  "memory_profile": {
+    "personal": {
+      "eyebrow": "",
+      "title": "基础档案",
+      "avatar": "YJ",
+      "name": "YJ",
+      "role": "mem9 用户",
+      "companion_duration": "陪伴时长",
+      "memory_count": "记忆条数",
+      "days": "{{count}} 天",
+      "memories": "{{count}} 条"
+    },
+    "current_understanding": {
+      "eyebrow": "",
+      "title": "AI 对你的当前理解",
+      "description": "你是一个理性、好奇心强且具有成长驱动力的人，喜欢把目标拆成明确步。你当前关注 KET 备考、单词计划与健康习惯，并偏好直接、具体、少说教的建议。你做决策时倾向安全优先、循序就进、重视可持续。"
+    },
+    "confidence": {
+      "eyebrow": "可信度",
+      "title": "画像可信度",
+      "chart_label": "画像可信度饼图",
+      "trusted": "可信画像",
+      "segments": {
+        "confirmed": "用户确认",
+        "high": "高置信",
+        "medium": "中置信",
+        "pending": "待确认"
+      }
+    }
+  },
   "memory_insight": {
     "layer_eyebrow": "双层视图",
     "layer_helper": "保留浏览层做 drill-down，同时切换到实体关系层查看更强的结构信号。",
@@ -519,6 +553,57 @@
         "scheduled_with": "调度相关",
         "points_to": "指向"
       }
+    }
+  },
+  "report_manage": {
+    "eyebrow": "报告",
+    "title": "Report Manage",
+    "subtitle": "查看内置模板、生成报告，并回看历史结果。",
+    "generate": "生成报告",
+    "library_title": "内置模板",
+    "search_placeholder": "搜索模板名称",
+    "status_all": "状态：全部",
+    "status_enabled": "状态：已启用",
+    "enabled": "已启用",
+    "cadence": "周期：{{value}}",
+    "last_generated": "最后生成：{{value}}",
+    "template_count": "共 {{count}} 个模板",
+    "details_title": "模板详情",
+    "description_title": "模板说明",
+    "goal_label": "目标",
+    "period_label": "周期",
+    "input_label": "输入",
+    "output_label": "输出",
+    "evidence_label": "证据",
+    "input_value": "记忆、对话原文节选、反馈状态",
+    "output_value": "JSON / OpenAPI / 洞察页面",
+    "evidence_value": "关联的 memory ID 与原文节选",
+    "analysis_title": "分析项",
+    "analysis_items": [
+      { "title": "关注点变化", "body": "最近关注内容与历史关注内容的变化。" },
+      { "title": "长期目标变化", "body": "新增、强化或再次确认的目标。" },
+      { "title": "关系变化", "body": "重要关系与互动重点的变化。" },
+      { "title": "情绪趋势", "body": "对话中的阶段性情绪变化。" },
+      { "title": "成长观察", "body": "行为、认知与状态上的阶段性进展。" },
+      { "title": "记忆结构变化", "body": "记忆类型、主题与可信度的分布变化。" }
+    ],
+    "settings_title": "生成设置",
+    "memory_count": "{{count}} 条记忆",
+    "generate_template": "生成该模板报告",
+    "history_title": "该模板生成记录",
+    "history_now": "刚刚生成",
+    "complete": "已完成",
+    "preview": "查看洞察",
+    "download": "下载 JSON",
+    "preview_hint": "接通报告服务后，报告预览将在这里打开。",
+    "download_hint": "接通报告服务后，可在这里下载 JSON。",
+    "generate_success": "已提交「{{template}}」生成任务。",
+    "note": "第一期仅提供内置模板；报告结果将支持在洞察页、JSON 或 OpenAPI 中查看。",
+    "templates": {
+      "weekly": { "name": "Deotaland 周期观察", "cadence": "双周", "last_generated": "2025-06-14 09:12", "goal": "识别长周期记忆中的阶段性变化与长期观察。" },
+      "trend": { "name": "情绪趋势分析", "cadence": "每日", "last_generated": "2025-06-14 08:35", "goal": "梳理情绪在对话中的持续变化。" },
+      "structure": { "name": "记忆结构分析", "cadence": "按需", "last_generated": "2025-06-12 18:07", "goal": "理解记忆类型与主题的结构分布。" },
+      "growth": { "name": "成长观察报告", "cadence": "每月", "last_generated": "2025-05-31 21:10", "goal": "记录行为、认知与状态上的长期进展。" }
     }
   },
   "pixel_farm": {

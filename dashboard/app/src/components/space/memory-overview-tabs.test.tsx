@@ -246,6 +246,45 @@ describe("MemoryOverviewTabs", () => {
     expect(screen.getByTestId("deep-analysis-tab")).toHaveTextContent("space-1:false");
   });
 
+  it("exposes the Memory Profile tab with personal info, current understanding, and confidence chart", () => {
+    setViewportWidth(1400);
+    const memory = createMemory("mem-profile-1");
+
+    render(
+      <MemoryOverviewTabs
+        spaceId="space-profile"
+        stats={{ total: 12, pinned: 3, insight: 9 }}
+        pulseMemories={[memory]}
+        insightMemories={[memory]}
+        cards={[]}
+        snapshot={null}
+        range="all"
+        loading={false}
+        compact={false}
+        matchMap={new Map()}
+        onTypeSelect={() => {}}
+        onTagSelect={() => {}}
+        onMemorySelect={() => {}}
+        onTimelineSelect={() => {}}
+      />,
+    );
+
+    const profileTab = screen.getByRole("tab", { name: "Memory Profile" });
+    profileTab.focus();
+    fireEvent.keyDown(profileTab, { key: "Enter" });
+
+    expect(screen.getByTestId("memory-profile-overview")).toBeInTheDocument();
+    expect(screen.getByText("Basic Profile")).toBeInTheDocument();
+    expect(
+      screen.getByText("AI's Current Understanding of You"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Profile Confidence")).toBeInTheDocument();
+    expect(screen.getByText("12 memories")).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Profile confidence pie chart" }),
+    ).toBeInTheDocument();
+  });
+
   it("renders short labels and replaces the insight workspace with a desktop redirect on mobile", () => {
     setViewportWidth(390);
     const memory = createMemory("mem-mobile-1");
@@ -270,6 +309,7 @@ describe("MemoryOverviewTabs", () => {
     );
 
     expect(screen.getByTestId("memory-overview-tab-pulse")).toHaveTextContent("Pulse");
+    expect(screen.getByTestId("memory-overview-tab-profile")).toHaveTextContent("Profile");
     expect(screen.getByTestId("memory-overview-tab-insight")).toHaveTextContent("Insight");
     expect(screen.getByTestId("memory-overview-tab-analysis")).toHaveTextContent("Analysis");
 
