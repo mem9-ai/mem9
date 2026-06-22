@@ -614,6 +614,9 @@
       { "title": "Memory structure", "body": "Distribution shifts by type, topic, and confidence." }
     ],
     "settings_title": "Generation settings",
+    "date_from": "Start date",
+    "date_to": "End date",
+    "apply_date": "Apply date range",
     "memory_count": "{{count}} memories",
     "generate_template": "Generate this report",
     "history_title": "Generation history",

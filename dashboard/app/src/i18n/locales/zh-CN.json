@@ -586,7 +586,7 @@
     }
   },
   "report_manage": {
-    "eyebrow": "报告",
+    "eyebrow": "",
     "title": "报告模板",
     "subtitle": "查看内置模板、生成报告，并回看历史结果。",
     "generate": "生成报告",
@@ -618,6 +618,9 @@
       { "title": "记忆结构变化", "body": "记忆类型、主题与可信度的分布变化。" }
     ],
     "settings_title": "生成设置",
+    "date_from": "开始日期",
+    "date_to": "结束日期",
+    "apply_date": "应用日期范围",
     "memory_count": "{{count}} 条记忆",
     "generate_template": "生成该模板报告",
     "history_title": "该模板生成记录",

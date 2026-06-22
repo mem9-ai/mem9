@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   BrainCircuit,
   CalendarDays,
+  ChevronLeft,
   ChevronRight,
   Download,
   Flag,
@@ -44,6 +45,22 @@ export function ReportManageOverview({
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | "enabled">("all");
   const [generationCount, setGenerationCount] = useState(0);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [dateFrom, setDateFrom] = useState("2025-06-01");
+  const [dateTo, setDateTo] = useState("2025-06-14");
+  const datePickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!datePickerOpen) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!datePickerRef.current?.contains(event.target as Node)) {
+        setDatePickerOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [datePickerOpen]);
 
   const templates = useMemo(
     () =>
@@ -116,7 +133,7 @@ export function ReportManageOverview({
               <div className="rounded-2xl border border-foreground/7 bg-foreground/[0.018] p-4"><h3 className="font-semibold">{t("report_manage.analysis_title")}</h3><div className="mt-3 grid gap-2 sm:grid-cols-2">{analysisIcons.map((Icon, index) => <div key={index} className="rounded-xl border border-foreground/7 bg-background/25 p-3"><div className="flex items-center gap-2"><Icon className="size-4 shrink-0 text-ring" /><p className="text-sm font-medium">{t(`report_manage.analysis_items.${index}.title`)}</p></div><p className="mt-2 text-xs leading-relaxed text-soft-foreground">{t(`report_manage.analysis_items.${index}.body`)}</p></div>)}</div></div>
             </div>
 
-            <div className="rounded-2xl border border-foreground/7 bg-foreground/[0.018] p-4"><h3 className="font-semibold">{t("report_manage.settings_title")}</h3><div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex flex-wrap items-center gap-2"><span className="inline-flex items-center gap-2 rounded-lg border border-foreground/8 bg-background/35 px-3 py-2 text-sm"><CalendarDays className="size-4 text-soft-foreground" />Jun 01 – Jun 14</span><span className="rounded-lg border border-foreground/8 bg-background/35 px-3 py-2 text-sm text-muted-foreground">{t("report_manage.memory_count", { count: memories.length })}</span></div><Button onClick={generate} className="rounded-xl"><Play className="size-4" />{t("report_manage.generate_template")}</Button></div></div>
+            <div className="rounded-2xl border border-foreground/7 bg-foreground/[0.018] p-4"><h3 className="font-semibold">{t("report_manage.settings_title")}</h3><div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex flex-wrap items-center gap-2"><div ref={datePickerRef} className="relative"><button type="button" onClick={() => setDatePickerOpen((open) => !open)} aria-expanded={datePickerOpen} className="inline-flex items-center gap-2 rounded-lg border border-foreground/8 bg-background/35 px-3 py-2 text-sm transition-colors hover:bg-foreground/[0.05]"><CalendarDays className="size-4 text-soft-foreground" />{dateFrom} – {dateTo}</button>{datePickerOpen && <DateRangePicker from={dateFrom} to={dateTo} onChange={(from, to) => { setDateFrom(from); setDateTo(to); }} onApply={() => setDatePickerOpen(false)} />}</div><span className="rounded-lg border border-foreground/8 bg-background/35 px-3 py-2 text-sm text-muted-foreground">{t("report_manage.memory_count", { count: memories.length })}</span></div><Button onClick={generate} className="rounded-xl"><Play className="size-4" />{t("report_manage.generate_template")}</Button></div></div>
 
             <div className="overflow-hidden rounded-2xl border border-foreground/7 bg-foreground/[0.018]"><div className="flex items-center justify-between border-b border-foreground/7 px-4 py-3"><h3 className="font-semibold">{t("report_manage.history_title")}</h3><span className="text-xs text-soft-foreground">v1.0</span></div><div className="divide-y divide-foreground/7">{[0, 1, ...(generationCount ? [2] : [])].map((row) => <div key={row} className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[1.15fr_.7fr_.8fr_auto] sm:items-center"><span className="font-medium">{row === 0 && generationCount ? t("report_manage.history_now") : row === 0 ? "Jun 01 – Jun 14" : "May 18 – May 31"}</span><span><span className="rounded-md bg-emerald-500/12 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">{t("report_manage.complete")}</span></span><span className="text-muted-foreground">{t("report_manage.memory_count", { count: Math.max(memories.length - row * 14, 0) })}</span><div className="flex gap-2"><Button variant="outline" size="xs" onClick={() => toast.info(t("report_manage.preview_hint"))}>{t("report_manage.preview")}<ArrowUpRight className="size-3" /></Button><Button variant="ghost" size="icon-xs" title={t("report_manage.download")} onClick={() => toast.info(t("report_manage.download_hint"))}><Download className="size-3.5" /></Button></div></div>)}</div></div>
             <p className="flex items-center gap-2 text-xs text-soft-foreground"><span className="flex size-4 items-center justify-center rounded-full border border-current text-[10px]">i</span>{t("report_manage.note")}</p>
@@ -130,3 +147,30 @@ export function ReportManageOverview({
 function DetailRow({ label, value }: { label: string; value: string }) {
   return <div className="grid grid-cols-[3.4rem_minmax(0,1fr)] gap-2"><dt className="text-soft-foreground">{label}</dt><dd className="min-w-0 text-muted-foreground">{value}</dd></div>;
 }
+
+function DateRangePicker({ from, to, onChange, onApply }: { from: string; to: string; onChange: (from: string, to: string) => void; onApply: () => void }) {
+  const { t, i18n } = useTranslation();
+  const [month, setMonth] = useState(() => toLocalDate(from));
+  const [selectingStart, setSelectingStart] = useState(false);
+  const firstDay = new Date(month.getFullYear(), month.getMonth(), 1);
+  const startOffset = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const weekdays = Array.from({ length: 7 }, (_, index) => new Intl.DateTimeFormat(i18n.language, { weekday: "narrow" }).format(new Date(2024, 0, index + 1)));
+  const cells = Array.from({ length: startOffset + daysInMonth }, (_, index) => index < startOffset ? null : new Date(month.getFullYear(), month.getMonth(), index - startOffset + 1));
+
+  const selectDate = (date: Date) => {
+    const value = toIsoDate(date);
+    if (selectingStart || value <= from) {
+      onChange(value, value <= to ? to : value);
+      setSelectingStart(false);
+      return;
+    }
+    onChange(from, value);
+    setSelectingStart(true);
+  };
+
+  return <div className="absolute left-0 top-[calc(100%+0.5rem)] z-20 w-[296px] rounded-2xl border border-foreground/10 bg-popover p-3 shadow-2xl"><div className="flex items-center justify-between"><button type="button" className="flex size-8 items-center justify-center rounded-lg hover:bg-foreground/[0.06]" onClick={() => setMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}><ChevronLeft className="size-4" /></button><p className="text-sm font-semibold">{new Intl.DateTimeFormat(i18n.language, { month: "long", year: "numeric" }).format(month)}</p><button type="button" className="flex size-8 items-center justify-center rounded-lg hover:bg-foreground/[0.06]" onClick={() => setMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}><ChevronRight className="size-4" /></button></div><div className="mt-3 grid grid-cols-7 text-center text-[11px] text-soft-foreground">{weekdays.map((weekday, index) => <span key={`${weekday}-${index}`} className="py-1">{weekday}</span>)}</div><div className="grid grid-cols-7 gap-y-1">{cells.map((date, index) => { if (!date) return <span key={`empty-${index}`} />; const value = toIsoDate(date); const selected = value === from || value === to; const inRange = value > from && value < to; return <button key={value} type="button" onClick={() => selectDate(date)} className={cn("mx-auto flex size-8 items-center justify-center rounded-full text-xs transition-colors", selected ? "bg-primary text-primary-foreground" : inRange ? "bg-primary/12 text-foreground" : "hover:bg-foreground/[0.07]")}>{date.getDate()}</button>; })}</div><div className="mt-3 flex items-center justify-between border-t border-foreground/8 pt-3"><span className="text-xs text-muted-foreground">{from} – {to}</span><Button size="sm" onClick={onApply}>{t("report_manage.apply_date")}</Button></div></div>;
+}
+
+function toLocalDate(value: string): Date { const [year, month, day] = value.split("-").map(Number); return new Date(year ?? 2025, (month ?? 1) - 1, day ?? 1); }
+function toIsoDate(date: Date): string { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
