@@ -163,6 +163,32 @@ CREATE TABLE IF NOT EXISTS memories (
 -- ALTER TABLE memories DROP COLUMN tombstone;
 -- DROP INDEX idx_tombstone ON memories;
 
+-- Raw-session edit overlay (tenant data plane). Display-only: an edit only
+-- changes how Session Search renders an already-matched row; the sessions
+-- table, its embedding, and its FTS index are never modified, so retrieval
+-- and memory/fact recall are unaffected. Current-overlay, not history: one
+-- row per session turn (id == sessions.id), upserted in place on re-edit.
+CREATE TABLE IF NOT EXISTS session_edits (
+  id               VARCHAR(36)     PRIMARY KEY COMMENT 'Equals sessions.id',
+  app_id           VARCHAR(100)    NOT NULL DEFAULT '',
+  session_id       VARCHAR(100)    NULL,
+  seq              INT             NULL,
+  agent_id         VARCHAR(100)    NULL,
+  original_content MEDIUMTEXT      NOT NULL COMMENT 'Pre-edit snapshot (before)',
+  edited_content   MEDIUMTEXT      NOT NULL COMMENT 'Post-edit content (after)',
+  edited_tags      JSON            NULL     COMMENT 'NULL = no tag override; non-NULL (incl. []) overrides',
+  edited_by        VARCHAR(100)    NULL,
+  reason           VARCHAR(500)    NULL,
+  version          INT             NOT NULL DEFAULT 1,
+  state            VARCHAR(20)     NOT NULL DEFAULT 'active'
+                   COMMENT 'active|reverted',
+  created_at       TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
+  updated_at       TIMESTAMP       DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_sedit_session       (session_id),
+  INDEX idx_sedit_app           (app_id),
+  INDEX idx_sedit_state         (state)
+);
+
 -- Marketing attribution captured at provision time (control plane).
 CREATE TABLE IF NOT EXISTS tenant_utm (
   tenant_id  VARCHAR(36)   NOT NULL PRIMARY KEY,
