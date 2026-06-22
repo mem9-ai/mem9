@@ -821,3 +821,54 @@ h4 {
   50% { opacity: 0.6; filter: blur(35px) hue-rotate(-20deg); }
   75% { opacity: 0.95; filter: blur(25px) hue-rotate(15deg); }
 }
+
+@keyframes profile-confidence-reveal {
+  from {
+    opacity: 0;
+    transform: scale(0.78) rotate(-105deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.profile-confidence-ring {
+  animation: profile-confidence-reveal 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes profile-radar-reveal {
+  from {
+    opacity: 0;
+    stroke-dashoffset: 520;
+  }
+  to {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+
+.profile-radar-area {
+  stroke-dasharray: 520;
+  animation: profile-radar-reveal 800ms 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.profile-radar-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: profile-confidence-reveal 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.profile-radar-node:nth-of-type(1) { animation-delay: 320ms; }
+.profile-radar-node:nth-of-type(2) { animation-delay: 380ms; }
+.profile-radar-node:nth-of-type(3) { animation-delay: 440ms; }
+.profile-radar-node:nth-of-type(4) { animation-delay: 500ms; }
+.profile-radar-node:nth-of-type(5) { animation-delay: 560ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-confidence-ring,
+  .profile-radar-area,
+  .profile-radar-node {
+    animation: none;
+  }
+}

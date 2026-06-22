@@ -465,7 +465,11 @@
       }
     },
     "feedback": { "accurate": "Accurate", "edit": "Edit", "inaccurate": "Not accurate" },
-    "topics": { "title": "Focus topics", "action": "View all" },
+    "topics": {
+      "title": "Focus topics",
+      "action": "View all",
+      "items": { "technology": "AI & tech", "education": "Family education", "health": "Healthy habits", "learning": "Learning", "product": "Product exploration" }
+    },
     "composition": {
       "title": "Memory composition",
       "items": { "profile": "Profile", "communication": "Communication", "learning": "Learning", "project": "Project", "status": "Status" }

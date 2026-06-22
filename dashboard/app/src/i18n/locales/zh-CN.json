@@ -469,7 +469,11 @@
       "edit": "修改",
       "inaccurate": "不准确"
     },
-    "topics": { "title": "关注主题", "action": "查看全部" },
+    "topics": {
+      "title": "关注主题",
+      "action": "查看全部",
+      "items": { "technology": "AI & 技术", "education": "家庭教育", "health": "健康习惯", "learning": "学习成长", "product": "产品探索" }
+    },
     "composition": {
       "title": "记忆组成",
       "items": { "profile": "个人画像", "communication": "沟通偏好", "learning": "学习成长", "project": "项目", "status": "状态" }

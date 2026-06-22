@@ -145,6 +145,7 @@ export function MemoryCompositionChart({
   innerKind,
   activeType,
   onTypeSelect,
+  showLegend = true,
 }: {
   total: number;
   outer: PulseCompositionSegment[];
@@ -152,6 +153,7 @@ export function MemoryCompositionChart({
   innerKind: "analysis" | "facet" | "none";
   activeType?: MemoryType;
   onTypeSelect: (type: MemoryType) => void;
+  showLegend?: boolean;
 }) {
   const { t } = useTranslation();
   const [activeKey, setActiveKey] = useState<string | null>(null);
@@ -271,6 +273,7 @@ export function MemoryCompositionChart({
           </div>
         </div>
 
+        {showLegend ? (
         <div className="mt-5 grid w-full gap-2 sm:grid-cols-2">
           {inner.map((segment) => {
             const isActive = activeType === segment.memoryType;
@@ -310,6 +313,7 @@ export function MemoryCompositionChart({
             );
           })}
         </div>
+        ) : null}
       </div>
     </section>
   );
