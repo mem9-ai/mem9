@@ -446,7 +446,7 @@
       "memories": "{{count}} 条"
     },
     "current_understanding": {
-      "eyebrow": "CURRENT UNDERSTANDING",
+      "eyebrow": "",
       "title": "AI 对你的当前理解",
       "description": "你是一个理性、好奇心强且具有成长驱动力的人，喜欢把目标拆成明确步。你当前关注 KET 备考、单词计划与健康习惯，并偏好直接、具体、少说教的建议。你做决策时倾向安全优先、循序就进、重视可持续。"
     },
@@ -630,7 +630,7 @@
     "generate_success": "已提交「{{template}}」生成任务。",
     "note": "第一期仅提供内置模板；报告结果将支持在洞察页、JSON 或 OpenAPI 中查看。",
     "templates": {
-      "weekly": { "name": "Deotaland 周期观察", "cadence": "双周", "last_generated": "2025-06-14 09:12", "goal": "识别长周期记忆中的阶段性变化与长期观察。" },
+      "weekly": { "name": "周期观察", "cadence": "双周", "last_generated": "2025-06-14 09:12", "goal": "识别长周期记忆中的阶段性变化与长期观察。" },
       "trend": { "name": "情绪趋势分析", "cadence": "每日", "last_generated": "2025-06-14 08:35", "goal": "梳理情绪在对话中的持续变化。" },
       "structure": { "name": "记忆结构分析", "cadence": "按需", "last_generated": "2025-06-12 18:07", "goal": "理解记忆类型与主题的结构分布。" },
       "growth": { "name": "成长观察报告", "cadence": "每月", "last_generated": "2025-05-31 21:10", "goal": "记录行为、认知与状态上的长期进展。" }

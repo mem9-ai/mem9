@@ -68,10 +68,9 @@ export function ReportManageOverview({
   };
 
   return (
-    <section className={cn("surface-card relative overflow-hidden px-4 py-5 sm:px-6", className)} data-testid="report-manage-overview">
-      <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,color-mix(in_srgb,var(--foreground)_14%,transparent),transparent)]" />
+    <section className={cn("relative overflow-hidden", className)} data-testid="report-manage-overview">
       <div className="relative">
-        <div className="flex flex-col gap-4 border-b border-foreground/7 pb-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="surface-card flex flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-ring">{t("report_manage.eyebrow")}</p>
             <h2 className="mt-2 text-[clamp(1.45rem,2vw,1.85rem)] font-semibold tracking-[-0.06em] text-foreground">{t("report_manage.title")}</h2>
@@ -114,7 +113,7 @@ export function ReportManageOverview({
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,.9fr)_minmax(0,1.45fr)]">
               <div className="rounded-2xl border border-foreground/7 bg-foreground/[0.018] p-4"><h3 className="font-semibold">{t("report_manage.description_title")}</h3><dl className="mt-3 space-y-2.5 text-sm"><DetailRow label={t("report_manage.goal_label")} value={t(`report_manage.templates.${selectedTemplate}.goal`)} /><DetailRow label={t("report_manage.period_label")} value={selected.cadence} /><DetailRow label={t("report_manage.input_label")} value={t("report_manage.input_value")} /><DetailRow label={t("report_manage.output_label")} value={t("report_manage.output_value")} /><DetailRow label={t("report_manage.evidence_label")} value={t("report_manage.evidence_value")} /></dl></div>
-              <div className="rounded-2xl border border-foreground/7 bg-foreground/[0.018] p-4"><h3 className="font-semibold">{t("report_manage.analysis_title")}</h3><div className="mt-3 grid gap-2 sm:grid-cols-2">{analysisIcons.map((Icon, index) => <div key={index} className="rounded-xl border border-foreground/7 bg-background/25 p-3"><Icon className="size-4 text-ring" /><p className="mt-2 text-sm font-medium">{t(`report_manage.analysis_items.${index}.title`)}</p><p className="mt-0.5 text-xs leading-relaxed text-soft-foreground">{t(`report_manage.analysis_items.${index}.body`)}</p></div>)}</div></div>
+              <div className="rounded-2xl border border-foreground/7 bg-foreground/[0.018] p-4"><h3 className="font-semibold">{t("report_manage.analysis_title")}</h3><div className="mt-3 grid gap-2 sm:grid-cols-2">{analysisIcons.map((Icon, index) => <div key={index} className="rounded-xl border border-foreground/7 bg-background/25 p-3"><div className="flex items-center gap-2"><Icon className="size-4 shrink-0 text-ring" /><p className="text-sm font-medium">{t(`report_manage.analysis_items.${index}.title`)}</p></div><p className="mt-2 text-xs leading-relaxed text-soft-foreground">{t(`report_manage.analysis_items.${index}.body`)}</p></div>)}</div></div>
             </div>
 
             <div className="rounded-2xl border border-foreground/7 bg-foreground/[0.018] p-4"><h3 className="font-semibold">{t("report_manage.settings_title")}</h3><div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex flex-wrap items-center gap-2"><span className="inline-flex items-center gap-2 rounded-lg border border-foreground/8 bg-background/35 px-3 py-2 text-sm"><CalendarDays className="size-4 text-soft-foreground" />Jun 01 – Jun 14</span><span className="rounded-lg border border-foreground/8 bg-background/35 px-3 py-2 text-sm text-muted-foreground">{t("report_manage.memory_count", { count: memories.length })}</span></div><Button onClick={generate} className="rounded-xl"><Play className="size-4" />{t("report_manage.generate_template")}</Button></div></div>
