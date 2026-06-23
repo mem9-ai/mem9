@@ -6,6 +6,7 @@ import { MemoryInsightWorkspace } from "@/components/space/memory-insight-worksp
 import { MemoryProfileOverview } from "@/components/space/memory-profile-overview";
 import { MemoryPulseOverview } from "@/components/space/memory-pulse-overview";
 import { ReportManageOverview } from "@/components/space/report-manage-overview";
+import { PeriodicObservationOverview } from "@/components/space/periodic-observation-overview";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIsLargeViewport } from "@/components/space/space-view-utils";
 import { cn } from "@/lib/utils";
@@ -21,7 +22,7 @@ import type { TimeRangePreset, TimelineSelection } from "@/types/time-range";
 
 export type OverviewMemorySelectionSource = "list" | "insight";
 
-const TAB_VALUES = ["pulse", "profile", "insight", "analysis", "reports"] as const;
+const TAB_VALUES = ["profile", "periodic", "reports", "pulse", "insight", "analysis"] as const;
 
 export function MemoryOverviewTabs({
   spaceId,
@@ -139,6 +140,10 @@ export function MemoryOverviewTabs({
         <ReportManageOverview memories={pulseMemories} className="!mt-0" />
       </TabsContent>
 
+      <TabsContent value="periodic" className="-mt-px mt-0">
+        <PeriodicObservationOverview stats={stats} />
+      </TabsContent>
+
       <TabsContent value="insight" className="-mt-px mt-0">
         {insightUnavailableOnDevice ? (
           <MemoryInsightDesktopOnlyHint />
@@ -205,11 +210,11 @@ function MobileOverviewTabsList() {
 
   // Use shadcn's default segmented control look (rounded-lg muted bar + rounded-md
   // chip on the active trigger). Stretching the list to the full row width with
-  // `grid w-full grid-cols-5` keeps each trigger evenly sized and avoids the
+  // `grid w-full grid-cols-6` keeps each trigger evenly sized and avoids the
   // horizontal overflow we saw with the long "Memory ___" labels.
   return (
     <TabsList
-      className="grid w-full grid-cols-5"
+      className="grid w-full grid-cols-6"
       data-testid="memory-overview-tablist"
     >
       {TAB_VALUES.map((value) => (

@@ -220,14 +220,16 @@
       "profile": "记忆画像",
       "insight": "Memory Insight",
       "analysis": "Memory Analysis",
-      "reports": "报告模板"
+      "reports": "报告模板",
+      "periodic": "周期观察"
     },
     "tabs_short": {
       "pulse": "节奏",
       "profile": "画像",
       "insight": "洞察",
       "analysis": "分析",
-      "reports": "报告"
+      "reports": "报告",
+      "periodic": "观察"
     },
     "desktop_only": {
       "title": "Memory Insight 需要更宽的屏幕",
@@ -438,7 +440,6 @@
       "title": "基础档案",
       "avatar": "YJ",
       "name": "YJ",
-      "role": "mem9 用户",
       "companion_duration": "陪伴时长",
       "memory_count": "记忆条数",
       "confirmed": "已确认画像",
@@ -583,6 +584,84 @@
         "scheduled_with": "调度相关",
         "points_to": "指向"
       }
+    }
+  },
+  "periodic_observation": {
+    "eyebrow": "",
+    "title": "周期报告与长期观察",
+    "subtitle": "基于长周期记忆生成阶段性理解结果。",
+    "generate": "生成新报告",
+    "download": "下载 PDF",
+    "range": "时间范围",
+    "memory_count": "记忆数量",
+    "memories": "{{count}} 条记忆",
+    "profile_version": "画像版本",
+    "status": { "high": "高", "confirm": "待确认", "actionable": "可执行" },
+    "key_changes": {
+      "title": "关键变化",
+      "subtitle": "本周期相对历史发生了什么变化",
+      "all": "查看全部关键变化（4）",
+      "items": {
+        "focus": { "title": "关注点变化", "body": "之前：饮食控制 / 体重管理；现在：KET 备考 / 学习计划 / 健康习惯" },
+        "goal": { "title": "长期目标变化", "body": "新增：稳定学习节奏 / 60 天单词计划" },
+        "emotion": { "title": "情绪趋势变化", "body": "焦虑 → 平稳；触发因素：KET 备考 / 学习节奏" },
+        "structure": { "title": "记忆结构变化", "body": "健康类稳定，学习类 insight 占比上升" }
+      }
+    },
+    "other_insights": {
+      "title": "其他洞察",
+      "subtitle": "非变化但值得关注的长期理解",
+      "all": "查看全部洞察（4）",
+      "items": {
+        "repeated": { "title": "重复出现的话题", "body": "KET 备考、步数目标、学习节奏" },
+        "preference": { "title": "稳定偏好", "body": "温和提醒、中文沟通、少追问" },
+        "growth": { "title": "成长观察", "body": "自我管理从健康习惯扩展到学习计划" },
+        "pending": { "title": "待治理候选", "body": "2 条低置信度理解，1 条过时健康目标" }
+      }
+    },
+    "emotion_detail": {
+      "title": "情绪趋势变化详情",
+      "summary": "本周期情绪由平稳转为轻度压力，压力集中在 6 月 6 日至 6 月 8 日，随后有所回落。",
+      "related_count": "相关记忆 12 条",
+      "timeline": "情绪时间条（按日）",
+      "legend": { "very_unhappy": "非常不愉快", "unhappy": "不愉快", "slightly_unhappy": "有点不愉快", "neutral": "不悲不喜", "slightly_happy": "有点愉快", "happy": "愉快", "very_happy": "非常愉快" },
+      "stages": "阶段总结",
+      "stage_items": { "early": { "range": "Jun 1 – Jun 5", "body": "整体平稳，偶有积极表达" }, "pressure": { "range": "Jun 6 – Jun 8", "body": "压力上升，主要围绕 KET 备考和学习节奏" }, "recovery": { "range": "Jun 9 – Jun 10", "body": "压力回落，开始讨论计划调整" } },
+      "topics": "主要触发主题",
+      "topic_items": { "ket": { "title": "KET 备考", "body": "考试准备与复习安排" }, "rhythm": { "title": "学习节奏", "body": "时间分配 / 任务堆叠" }, "health": { "title": "健康习惯并行", "body": "运动、休息与作息" } },
+      "related_items": ["用户最近多次提到 KET 备考计划", "60 天单词计划可能成为长期目标", "健康习惯是否仍为当前最高优先级"]
+    },
+    "structure_detail": {
+      "title": "记忆结构变化",
+      "subtitle": "上一周期 vs 本周期的 memory 组成变化",
+      "stats": { "learning": { "title": "学习类 insight", "detail": "较上一周期" }, "health": { "title": "健康类 memory", "value": "持平", "detail": "较上一周期" }, "diet": { "title": "饮食类 memory", "detail": "较上一周期下降" } },
+      "topic_ratio": "各主题 memory 占比变化",
+      "topics": { "health": "健康", "learning": "学习", "diet": "饮食", "emotion": "情绪", "relationship": "关系" },
+      "type_composition": "memory 类型组成",
+      "previous": "上一周期",
+      "current": "本周期",
+      "type_note": "insight 占比上升 13%，本周期 insight 增长显著，pinned 占比小幅下降。",
+      "related": ["KET 备考", "单词计划", "步数目标"]
+    },
+    "detail": {
+      "eyebrow": "",
+      "conclusion": "洞察结论",
+      "confidence": "置信度",
+      "related": "相关记忆",
+      "respond": "响应",
+      "confirm": "准确",
+      "inaccurate": "不准确",
+      "edit": "修改",
+      "edit_title": "修改相关记忆",
+      "edit_body": "更新这条记忆的描述后，会在下次报告中反映出来。",
+      "cancel": "取消",
+      "save": "保存修改",
+      "focus": { "summary": "用户关注点从「饮食控制 / 体重管理」转向「KET 备考 / 学习计划 / 健康习惯并行」。" },
+      "goal": { "summary": "学习节奏与单词计划被反复提及，长期目标出现更清晰的可执行路径。" },
+      "emotion": { "summary": "与备考相关的焦虑正在趋于平稳，当前更关注持续推进与节奏管理。" },
+      "structure": { "summary": "学习和规划相关记忆占比提升，新的结构信号已足够支持行动建议。" },
+      "tags": ["已确认", "待确认", "可能过时"],
+      "related_items": ["用户最近多次提到 KET 备考计划", "60 天单词计划是否应作为长期目标", "体重管理是否仍是主要关注点"]
     }
   },
   "report_manage": {

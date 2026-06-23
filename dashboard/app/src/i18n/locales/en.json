@@ -220,14 +220,16 @@
       "profile": "Memory Profile",
       "insight": "Memory Insight",
       "analysis": "Memory Analysis",
-      "reports": "Report Manage"
+      "reports": "Report Manage",
+      "periodic": "Periodic Observation"
     },
     "tabs_short": {
       "pulse": "Pulse",
       "profile": "Profile",
       "insight": "Insight",
       "analysis": "Analysis",
-      "reports": "Reports"
+      "reports": "Reports",
+      "periodic": "Observe"
     },
     "desktop_only": {
       "title": "Memory Insight needs a wider screen",
@@ -438,7 +440,6 @@
       "title": "Basic Profile",
       "avatar": "YJ",
       "name": "YJ",
-      "role": "mem9 user",
       "companion_duration": "Companion duration",
       "memory_count": "Memories",
       "confirmed": "Confirmed profile",
@@ -580,6 +581,23 @@
         "points_to": "Points to"
       }
     }
+  },
+  "periodic_observation": {
+    "eyebrow": "",
+    "title": "Periodic report & long-term observation",
+    "subtitle": "A phase-level understanding generated from long-horizon memories.",
+    "generate": "Generate report",
+    "download": "Download PDF",
+    "range": "Range",
+    "memory_count": "Memory count",
+    "memories": "{{count}} memories",
+    "profile_version": "Profile version",
+    "status": { "high": "high", "confirm": "needs confirm", "actionable": "actionable" },
+    "key_changes": { "title": "Key changes", "subtitle": "What changed in this period compared with history", "all": "View all key changes (4)", "items": { "focus": { "title": "Focus shift", "body": "Diet and weight management → KET, study planning, and healthy habits" }, "goal": { "title": "Long-term goal shift", "body": "A steadier study rhythm and 60-day vocabulary plan emerged" }, "emotion": { "title": "Emotional trend", "body": "Anxiety → steadier; triggered by KET preparation and study rhythm" }, "structure": { "title": "Memory structure", "body": "Health is stable; learning insights have grown" } } },
+    "other_insights": { "title": "Other insights", "subtitle": "Long-term understanding worth watching beyond change", "all": "View all insights (4)", "items": { "repeated": { "title": "Repeated topics", "body": "KET preparation, step targets, study rhythm" }, "preference": { "title": "Stable preferences", "body": "Gentle reminders, Chinese, fewer follow-up questions" }, "growth": { "title": "Growth observation", "body": "Self-management is expanding from health habits into study planning" }, "pending": { "title": "Governance candidates", "body": "Two low-confidence interpretations and one stale health goal" } } },
+    "emotion_detail": { "title": "Emotional trend detail", "summary": "This period moved from steady to light pressure, concentrated from Jun 6 to Jun 8, then eased.", "related_count": "12 related memories", "timeline": "Emotional timeline (daily)", "legend": { "very_unhappy": "Very unpleasant", "unhappy": "Unpleasant", "slightly_unhappy": "Slightly unpleasant", "neutral": "Neutral", "slightly_happy": "Slightly pleasant", "happy": "Pleasant", "very_happy": "Very pleasant" }, "stages": "Stage summary", "stage_items": { "early": { "range": "Jun 1 – Jun 5", "body": "Mostly steady with occasional positive expression" }, "pressure": { "range": "Jun 6 – Jun 8", "body": "Pressure rose around KET preparation and study rhythm" }, "recovery": { "range": "Jun 9 – Jun 10", "body": "Pressure eased and planning adjustments began" } }, "topics": "Primary triggers", "topic_items": { "ket": { "title": "KET preparation", "body": "Preparation and review planning" }, "rhythm": { "title": "Study rhythm", "body": "Time allocation and stacked tasks" }, "health": { "title": "Health habits", "body": "Exercise, rest, and routine" } }, "related_items": ["KET preparation has been mentioned repeatedly", "The 60-day vocabulary plan may be a long-term goal", "Whether health habits are still the top priority"] },
+    "structure_detail": { "title": "Memory structure change", "subtitle": "Memory composition: previous period vs this period", "stats": { "learning": { "title": "Learning insights", "detail": "vs previous period" }, "health": { "title": "Health memories", "value": "Stable", "detail": "vs previous period" }, "diet": { "title": "Diet memories", "detail": "down vs previous period" } }, "topic_ratio": "Topic memory share", "topics": { "health": "Health", "learning": "Learning", "diet": "Diet", "emotion": "Emotion", "relationship": "Relationships" }, "type_composition": "Memory type composition", "previous": "Previous period", "current": "This period", "type_note": "Insight share rose by 13%; insight growth was pronounced this period, while pinned share fell slightly.", "related": ["KET preparation", "Vocabulary plan", "Step target"] },
+    "detail": { "eyebrow": "CHANGE DETAIL", "conclusion": "Conclusion", "confidence": "Confidence", "related": "Related memories", "respond": "Respond", "confirm": "Accurate", "inaccurate": "Not accurate", "edit": "Edit", "edit_title": "Edit related memory", "edit_body": "This update will be reflected in the next report.", "cancel": "Cancel", "save": "Save changes", "focus": { "summary": "The user's focus shifted from diet and weight management toward KET preparation, study planning, and healthy habits in parallel." }, "goal": { "summary": "Study rhythm and vocabulary plans are recurring signals with a clearer executable path." }, "emotion": { "summary": "Preparation-related anxiety is becoming steadier, with focus shifting to sustainable progress." }, "structure": { "summary": "Learning and planning memories are growing enough to support actionable guidance." }, "tags": ["Confirmed", "Needs confirmation", "Possibly stale"], "related_items": ["KET preparation has been mentioned repeatedly", "Whether the 60-day vocabulary plan is a long-term goal", "Whether weight management is still a primary focus"] }
   },
   "report_manage": {
     "eyebrow": "Reports",
