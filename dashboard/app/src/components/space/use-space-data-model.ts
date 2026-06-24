@@ -139,7 +139,7 @@ export function useSpaceDataModel(input: {
   const { data: topicData } = useTopicSummary(
     spaceId,
     input.range,
-    features.enableTopicSummary && !features.enableAnalysis,
+    true,
   );
   const { data: importTaskData } = useImportTasks(spaceId, input.importStatusOpen);
 

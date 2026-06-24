@@ -53,3 +53,4 @@ benchmark/MR-NIAH/.cache/
 # Claude Code and experiment outputs
 .claude/
 .playwright-mcp/
+.env.tidb-local

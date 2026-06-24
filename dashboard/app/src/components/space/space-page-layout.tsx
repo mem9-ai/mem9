@@ -258,6 +258,7 @@ export const SpacePageLayout = ({
               spaceId={spaceId}
               stats={dataModel.stats}
               pulseMemories={dataModel.pulseMemories}
+              profileFacetData={dataModel.topicData}
               insightMemories={dataModel.analysis.sourceMemories}
               cards={dataModel.analysis.cards}
               snapshot={dataModel.analysis.state.snapshot}

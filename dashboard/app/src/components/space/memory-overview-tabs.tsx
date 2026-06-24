@@ -17,7 +17,7 @@ import type {
   AnalysisJobSnapshotResponse,
   MemoryAnalysisMatch,
 } from "@/types/analysis";
-import type { Memory, MemoryStats, MemoryType } from "@/types/memory";
+import type { Memory, MemoryStats, MemoryType, TopicSummary } from "@/types/memory";
 import type { TimeRangePreset, TimelineSelection } from "@/types/time-range";
 
 export type OverviewMemorySelectionSource = "list" | "insight";
@@ -28,6 +28,7 @@ export function MemoryOverviewTabs({
   spaceId,
   stats,
   pulseMemories,
+  profileFacetData,
   insightMemories,
   cards,
   snapshot,
@@ -50,6 +51,7 @@ export function MemoryOverviewTabs({
   spaceId: string;
   stats: MemoryStats | undefined;
   pulseMemories: Memory[];
+  profileFacetData?: TopicSummary;
   insightMemories: Memory[];
   cards: AnalysisCategoryCard[];
   snapshot: AnalysisJobSnapshotResponse | null;
@@ -131,6 +133,9 @@ export function MemoryOverviewTabs({
         <MemoryProfileOverview
           stats={stats}
           memories={pulseMemories}
+          cards={cards}
+          matchMap={matchMap}
+          facetSummary={profileFacetData}
           loading={loading}
           className="!mt-0"
         />

@@ -146,6 +146,7 @@ export function MemoryCompositionChart({
   activeType,
   onTypeSelect,
   showLegend = true,
+  legendPosition = "below",
 }: {
   total: number;
   outer: PulseCompositionSegment[];
@@ -154,6 +155,7 @@ export function MemoryCompositionChart({
   activeType?: MemoryType;
   onTypeSelect: (type: MemoryType) => void;
   showLegend?: boolean;
+  legendPosition?: "below" | "side";
 }) {
   const { t } = useTranslation();
   const [activeKey, setActiveKey] = useState<string | null>(null);
@@ -184,7 +186,7 @@ export function MemoryCompositionChart({
         </div>
       </div>
 
-      <div className="mt-5 flex flex-col items-center justify-center">
+      <div className={cn("mt-5", legendPosition === "side" ? "grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-center" : "flex flex-col items-center justify-center")}>
         <div className="relative flex h-[220px] w-[220px] items-center justify-center">
           <svg viewBox="0 0 220 220" className="h-full w-full overflow-visible">
             {outerRing.map((segment) => (
@@ -274,7 +276,7 @@ export function MemoryCompositionChart({
         </div>
 
         {showLegend ? (
-        <div className="mt-5 grid w-full gap-2 sm:grid-cols-2">
+        <div className={cn("grid w-full gap-2 sm:grid-cols-2", legendPosition === "side" ? "lg:grid-cols-1" : "mt-5")}>
           {inner.map((segment) => {
             const isActive = activeType === segment.memoryType;
             const labels = resolveLabels(segment.labelKey);

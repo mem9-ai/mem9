@@ -3,9 +3,12 @@ import { useTranslation } from "react-i18next";
 import { Edit3, Share2, ThumbsDown, ThumbsUp, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MemoryCompositionChart } from "@/components/space/memory-composition-chart";
-import type { PulseCompositionSegment } from "@/lib/memory-pulse";
+import { buildFacetComposition, buildPulseComposition } from "@/lib/memory-pulse";
+import { useBackgroundMemoryInsightGraph } from "@/lib/memory-insight-background";
 import { cn } from "@/lib/utils";
-import type { Memory, MemoryStats } from "@/types/memory";
+import type { AnalysisCategoryCard, MemoryAnalysisMatch } from "@/types/analysis";
+import type { MemoryInsightCardNode } from "@/lib/memory-insight";
+import type { Memory, MemoryStats, TopicSummary } from "@/types/memory";
 
 const CONFIDENCE_SEGMENTS = [
   { key: "confirmed", value: 42, color: "#3b82f6" },
@@ -15,7 +18,7 @@ const CONFIDENCE_SEGMENTS = [
 
 const PROFILE_ITEMS = ["priority", "style", "constraint", "recall"] as const;
 
-export function MemoryProfileOverview({ stats, memories, loading, className }: { stats: MemoryStats | undefined; memories: Memory[]; loading: boolean; className?: string }) {
+export function MemoryProfileOverview({ stats, memories, cards, matchMap, facetSummary, loading, className }: { stats: MemoryStats | undefined; memories: Memory[]; cards: AnalysisCategoryCard[]; matchMap: Map<string, MemoryAnalysisMatch>; facetSummary: TopicSummary | undefined; loading: boolean; className?: string }) {
   const { t } = useTranslation();
   const [feedback, setFeedback] = useState<"up" | "down" | null>(null);
   const companionDays = useMemo(() => {
@@ -24,29 +27,17 @@ export function MemoryProfileOverview({ stats, memories, loading, className }: {
   }, [memories]);
   const memoryCount = stats?.total ?? memories.length;
   const composition = useMemo(() => {
-    const normalize = (items: Array<Omit<PulseCompositionSegment, "ratio">>) => {
-      const total = items.reduce((sum, item) => sum + item.value, 0);
-      return items.map((item) => ({ ...item, ratio: total ? item.value / total : 0 }));
-    };
-    const pinned = stats?.pinned ?? memories.filter((memory) => memory.memory_type === "pinned").length;
-    const insight = stats?.insight ?? memories.filter((memory) => memory.memory_type === "insight").length;
-
-    return {
+    const compositionStats = stats ?? {
       total: memoryCount,
-      outer: normalize([
-        { key: "pinned", labelKey: "space.stats.pinned", value: pinned, colorToken: "--type-pinned", memoryType: "pinned" },
-        { key: "insight", labelKey: "space.stats.insight", value: insight, colorToken: "--type-insight", memoryType: "insight" },
-      ]),
-      inner: normalize([
-        { key: "profile", labelKey: "memory_profile.composition.items.profile", value: Math.max(memoryCount, 1), colorToken: "--facet-about-you" },
-        { key: "communication", labelKey: "memory_profile.composition.items.communication", value: Math.max(memoryCount - 12, 1), colorToken: "--facet-preferences" },
-        { key: "learning", labelKey: "memory_profile.composition.items.learning", value: Math.max(memoryCount - 24, 1), colorToken: "--facet-plans" },
-        { key: "project", labelKey: "memory_profile.composition.items.project", value: Math.max(memoryCount - 36, 1), colorToken: "--facet-experiences" },
-        { key: "status", labelKey: "memory_profile.composition.items.status", value: Math.max(memoryCount - 48, 1), colorToken: "--facet-other" },
-      ]),
-      innerKind: "facet" as const,
+      pinned: memories.filter((memory) => memory.memory_type === "pinned").length,
+      insight: memories.filter((memory) => memory.memory_type === "insight").length,
     };
-  }, [memories, memoryCount, stats]);
+
+    return facetSummary?.topics.length
+      ? buildFacetComposition(compositionStats, facetSummary.topics)
+      : buildPulseComposition(compositionStats, memories, cards);
+  }, [cards, facetSummary, memories, memoryCount, stats]);
+  const { data: insightGraph } = useBackgroundMemoryInsightGraph({ cards, memories, matchMap });
 
   if (loading && !stats && memories.length === 0) return <ProfileSkeleton className={className} />;
 
@@ -65,8 +56,8 @@ export function MemoryProfileOverview({ stats, memories, loading, className }: {
     </div>
 
     <div className="mt-4 grid gap-4 xl:grid-cols-[.88fr_1.35fr_.74fr]">
-      <ProfileCard title={t("memory_profile.topics.title")} action={t("memory_profile.topics.action")}><RadarChart /></ProfileCard>
-      <article className="surface-card min-h-[260px] p-5"><div className="grid items-stretch gap-5 lg:grid-cols-[minmax(220px,.88fr)_minmax(0,1fr)]"><div className="flex min-h-[250px] items-center justify-center"><MemoryCompositionChart total={composition.total} outer={composition.outer} inner={composition.inner} innerKind={composition.innerKind} onTypeSelect={() => {}} showLegend={false} /></div><div className="grid content-center gap-2 sm:grid-cols-2 lg:grid-cols-1">{["profile", "communication", "learning", "project", "status"].map((name, index) => <span key={name} className="flex items-center justify-between rounded-full border border-foreground/8 bg-background/30 px-3 py-2 text-sm"><span className="flex items-center gap-2 truncate"><span className="size-2.5 shrink-0 rounded-full bg-emerald-400/75" />{t(`memory_profile.composition.items.${name}`)}</span><strong className="ml-2 shrink-0">{Math.max(memoryCount - index * 12, 0)}</strong></span>)}</div></div></article>
+      <ProfileCard title={t("memory_profile.topics.title")} action={t("memory_profile.topics.action")}><RadarChart nodes={insightGraph.cards} /></ProfileCard>
+      <article className="surface-card min-h-[260px] p-5"><MemoryCompositionChart total={composition.total} outer={composition.outer} inner={composition.inner} innerKind={composition.innerKind} onTypeSelect={() => {}} legendPosition="side" /></article>
       <ProfileCard title={t("memory_profile.relationships.title")} action={t("memory_profile.relationships.action")}><RelationshipChart /></ProfileCard>
     </div>
 
@@ -80,21 +71,27 @@ function Stat({ label, value }: { label: string; value: string }) { return <div 
 function FeedbackButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: ReactNode; label: string }) { return <button onClick={onClick} className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs transition-colors", active ? "border-blue-500/50 bg-blue-500/12 text-blue-500" : "border-foreground/8 text-muted-foreground hover:bg-foreground/[.04]")}>{icon}{label}</button>; }
 function ProfileCard({ title, action, children }: { title: string; action?: string; children: ReactNode }) { return <article className="surface-card min-h-[260px] p-5"><div className="flex items-center justify-between"><h3 className="text-xl font-semibold tracking-[-0.045em]">{title}</h3>{action && <button className="text-sm font-medium text-blue-500 hover:underline">{action}</button>}</div><div className="mt-4">{children}</div></article>; }
 function ConfidencePie() { const { t } = useTranslation(); return <div role="img" aria-label={t("memory_profile.confidence.chart_label")} className="profile-confidence-ring relative flex size-28 items-center justify-center rounded-full transition-transform duration-300 hover:scale-[1.04]" style={{ background: "conic-gradient(#3b82f6 0 42%, #22c55e 42% 80%, #fbbf24 80% 100%)" }}><div className="flex size-[76px] flex-col items-center justify-center rounded-full bg-card"><strong className="text-2xl tracking-[-.08em]">94%</strong><span className="text-[10px] text-soft-foreground">{t("memory_profile.confidence.trusted")}</span></div></div>; }
-function RadarChart() {
-  const { t } = useTranslation();
+function RadarChart({ nodes }: { nodes: MemoryInsightCardNode[] }) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const labels = [
-    { key: "technology", x: 130, y: 29, anchor: "middle" },
-    { key: "education", x: 207, y: 83, anchor: "start" },
-    { key: "health", x: 182, y: 157, anchor: "start" },
-    { key: "learning", x: 82, y: 157, anchor: "end" },
-    { key: "product", x: 56, y: 85, anchor: "end" },
+    { x: 130, y: 14, anchor: "middle", countDy: "1em" },
+    { x: 207, y: 83, anchor: "start", countDy: "1.25em" },
+    { x: 182, y: 157, anchor: "start", countDy: "1.25em" },
+    { x: 82, y: 157, anchor: "end", countDy: "1.25em" },
+    { x: 56, y: 85, anchor: "end", countDy: "1.25em" },
   ] as const;
+  const points = [[130,39],[199,86],[174,145],[89,142],[65,92]] as const;
+  const topicNodes = [...nodes]
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label, "en"))
+    .slice(0, 5);
+  const path = topicNodes.length > 1
+    ? `${topicNodes.map((_, index) => `${index === 0 ? "M" : "L"}${points[index]![0]} ${points[index]![1]}`).join(" ")}${topicNodes.length > 2 ? " Z" : ""}`
+    : "";
 
-  return <svg viewBox="0 0 260 190" className="profile-radar mx-auto h-[190px] w-full max-w-[280px]" aria-hidden>
+  return <svg viewBox="0 0 260 190" className="profile-radar mx-auto h-[190px] w-full max-w-[280px]" aria-label="Memory Insight topics">
     <g fill="none" stroke="currentColor" className="text-foreground/10"><path d="M130 14 235 80 195 171 65 171 25 80Z" /><path d="M130 43 205 89 177 150 83 150 55 89Z" /><path d="M130 71 175 98 160 129 100 129 85 98Z" /></g>
-    {labels.map((label) => <text key={label.key} x={label.x} y={label.y} textAnchor={label.anchor} className="fill-muted-foreground text-[10px] font-medium">{t(`memory_profile.topics.items.${label.key}`)}</text>)}
-    <path className="profile-radar-area" d="M130 39 199 86 174 145 89 142 65 92Z" fill="rgba(59,130,246,.35)" stroke="#3b82f6" strokeWidth="2" />
-    {[[130,39],[199,86],[174,145],[89,142],[65,92]].map(([x,y]) => <circle className="profile-radar-node" key={`${x}-${y}`} cx={x} cy={y} r="4" fill="#3b82f6" />)}
+    {path && <path className="profile-radar-area" d={path} fill="rgba(59,130,246,.35)" stroke="#3b82f6" strokeWidth="2" />}
+    {topicNodes.map((node, index) => { const [x, y] = points[index]!; const label = labels[index]!; const active = hoveredIndex === index; return <g key={node.id} tabIndex={0} role="img" aria-label={`${node.label}: ${node.count}`} onMouseEnter={() => setHoveredIndex(index)} onMouseLeave={() => setHoveredIndex(null)} onFocus={() => setHoveredIndex(index)} onBlur={() => setHoveredIndex(null)} className="cursor-pointer"><text x={label.x} y={label.y} textAnchor={label.anchor} className={cn("text-[10px] font-medium transition-all duration-200", active ? "fill-blue-500" : "fill-muted-foreground")} style={{ transform: active ? "translateY(-2px)" : "translateY(0)" }}><tspan x={label.x}>{node.label}</tspan><tspan x={label.x} dy={label.countDy} className={cn("text-[9px] tabular-nums transition-colors duration-200", active ? "fill-blue-500/75" : "fill-foreground/60")}>{node.count}</tspan></text><circle cx={x} cy={y} r={active ? 12 : 7} fill="#3b82f6" opacity={active ? .2 : 0} className="transition-all duration-200" /><circle className="profile-radar-node transition-all duration-200" cx={x} cy={y} r={active ? 6 : 4} fill="#3b82f6" /><title>{`${node.label}: ${node.count}`}</title></g>; })}
   </svg>;
 }
 function RelationshipChart() {
