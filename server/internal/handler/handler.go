@@ -45,6 +45,7 @@ type Server struct {
 	runtimeUsage         runtimeusage.Manager
 	webhooks             *webhook.Service
 	activity             *service.ActivityTracker
+	externalContext      service.ExternalContextProvider
 	startedAt            time.Time
 	svcCache             sync.Map
 	chainRecallStopScore float64
@@ -105,6 +106,11 @@ func (s *Server) WithWebhookService(service *webhook.Service) *Server {
 
 func (s *Server) WithActivityTracker(tracker *service.ActivityTracker) *Server {
 	s.activity = tracker
+	return s
+}
+
+func (s *Server) WithExternalContextProvider(provider service.ExternalContextProvider) *Server {
+	s.externalContext = provider
 	return s
 }
 

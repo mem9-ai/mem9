@@ -138,6 +138,73 @@ func TestLoad_MeteringURLValidationErrorRedactsRawURL(t *testing.T) {
 	}
 }
 
+func TestLoad_DataHubMCPConfig(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+	t.Setenv("MNEMO_DATAHUB_MCP_ENABLED", "true")
+	t.Setenv("MNEMO_DATAHUB_MCP_URL", "https://datahub.example.com/mcp")
+	t.Setenv("MNEMO_DATAHUB_MCP_TOKEN", "secret-token")
+	t.Setenv("MNEMO_DATAHUB_MCP_TIMEOUT", "4s")
+	t.Setenv("MNEMO_DATAHUB_MCP_MAX_RESULTS", "7")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.DataHubMCPEnabled {
+		t.Fatal("DataHubMCPEnabled = false, want true")
+	}
+	if cfg.DataHubMCPURL != "https://datahub.example.com/mcp" {
+		t.Fatalf("DataHubMCPURL = %q", cfg.DataHubMCPURL)
+	}
+	if cfg.DataHubMCPToken != "secret-token" {
+		t.Fatal("DataHubMCPToken was not loaded")
+	}
+	if cfg.DataHubMCPTimeout != 4*time.Second {
+		t.Fatalf("DataHubMCPTimeout = %v, want 4s", cfg.DataHubMCPTimeout)
+	}
+	if cfg.DataHubMCPMaxResults != 7 {
+		t.Fatalf("DataHubMCPMaxResults = %d, want 7", cfg.DataHubMCPMaxResults)
+	}
+}
+
+func TestLoad_DataHubMCPRequiresHTTPURLWhenEnabled(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+	t.Setenv("MNEMO_DATAHUB_MCP_ENABLED", "true")
+	t.Setenv("MNEMO_DATAHUB_MCP_URL", "ftp://token:secret@example.com/mcp?api_key=top-secret")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load error = nil, want invalid DataHub MCP URL error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "invalid MNEMO_DATAHUB_MCP_URL") {
+		t.Fatalf("error = %q, want invalid MNEMO_DATAHUB_MCP_URL", msg)
+	}
+	for _, secret := range []string{"token:secret", "api_key=top-secret", "ftp://token:secret@example.com/mcp?api_key=top-secret"} {
+		if strings.Contains(msg, secret) {
+			t.Fatalf("validation error leaked raw DataHub MCP URL content: %q", msg)
+		}
+	}
+}
+
+func TestLoad_DataHubMCPRejectsURLUserinfo(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+	t.Setenv("MNEMO_DATAHUB_MCP_ENABLED", "true")
+	t.Setenv("MNEMO_DATAHUB_MCP_URL", "https://token:secret@datahub.example.com/mcp")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load error = nil, want invalid DataHub MCP URL error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "userinfo is not allowed") {
+		t.Fatalf("error = %q, want userinfo rejection", msg)
+	}
+	if strings.Contains(msg, "token:secret") {
+		t.Fatalf("validation error leaked raw DataHub MCP URL content: %q", msg)
+	}
+}
+
 func TestLoad_RuntimeUsageConfig(t *testing.T) {
 	t.Setenv("MNEMO_DSN", "test-dsn")
 	t.Setenv("MNEMO_RUNTIME_USAGE_ENABLED", "true")

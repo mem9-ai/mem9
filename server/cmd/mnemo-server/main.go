@@ -274,6 +274,16 @@ func main() {
 	rateMW := rl.Middleware()
 
 	activityTracker := service.NewActivityTracker(tenantRepo, logger)
+	var externalContext service.ExternalContextProvider
+	if cfg.DataHubMCPEnabled {
+		externalContext = service.NewDataHubMCPContextProvider(service.DataHubMCPConfig{
+			Endpoint:   cfg.DataHubMCPURL,
+			Token:      cfg.DataHubMCPToken,
+			Timeout:    cfg.DataHubMCPTimeout,
+			MaxResults: cfg.DataHubMCPMaxResults,
+		})
+		logger.Info("datahub MCP context provider enabled", "endpoint", cfg.DataHubMCPURL, "max_results", cfg.DataHubMCPMaxResults)
+	}
 
 	// Handler.
 	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger).
@@ -282,6 +292,7 @@ func main() {
 		WithRuntimeUsage(runtimeUsageManager).
 		WithWebhookService(webhookSvc).
 		WithActivityTracker(activityTracker).
+		WithExternalContextProvider(externalContext).
 		WithDisableSessionSave(cfg.DisableSessionSave)
 	router := srv.Router(tenantMW, rateMW, apiKeyMW, middleware.CORS(cfg.CORSAllowedOrigins))
 

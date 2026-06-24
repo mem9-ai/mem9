@@ -313,6 +313,12 @@
             "$ref": "#/components/parameters/SessionID"
           },
           {
+            "$ref": "#/components/parameters/IncludeExternalContext"
+          },
+          {
+            "$ref": "#/components/parameters/IncludeDataHub"
+          },
+          {
             "$ref": "#/components/parameters/AppID"
           },
           {
@@ -704,6 +710,12 @@
           },
           {
             "$ref": "#/components/parameters/SessionID"
+          },
+          {
+            "$ref": "#/components/parameters/IncludeExternalContext"
+          },
+          {
+            "$ref": "#/components/parameters/IncludeDataHub"
           },
           {
             "$ref": "#/components/parameters/AppID"
@@ -1958,6 +1970,24 @@
           "type": "string"
         }
       },
+      "IncludeExternalContext": {
+        "name": "include_external_context",
+        "in": "query",
+        "required": false,
+        "description": "Force or suppress external context retrieval for this search. When omitted, configured providers such as DataHub MCP are queried only for data-asset questions.",
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "IncludeDataHub": {
+        "name": "include_datahub",
+        "in": "query",
+        "required": false,
+        "description": "Alias for DataHub MCP context retrieval. Set true to force DataHub context or false to suppress it for this search.",
+        "schema": {
+          "type": "boolean"
+        }
+      },
       "SortBy": {
         "name": "sort_by",
         "in": "query",
@@ -2617,6 +2647,13 @@
               "$ref": "#/components/schemas/Memory"
             }
           },
+          "external_context": {
+            "type": "array",
+            "description": "Optional read-only context retrieved from configured external providers such as DataHub MCP. DataHub items may include search matches, entity details, and one-hop upstream/downstream lineage summaries.",
+            "items": {
+              "$ref": "#/components/schemas/ExternalContextItem"
+            }
+          },
           "total": {
             "type": "integer",
             "minimum": 0
@@ -2628,6 +2665,42 @@
           "offset": {
             "type": "integer",
             "minimum": 0
+          }
+        }
+      },
+      "ExternalContextItem": {
+        "type": "object",
+        "required": [
+          "provider"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "example": "datahub"
+          },
+          "type": {
+            "type": "string",
+            "example": "DATASET"
+          },
+          "id": {
+            "type": "string",
+            "description": "External provider identifier, such as a DataHub URN."
+          },
+          "title": {
+            "type": "string"
+          },
+          "snippet": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Optional provider URL. DataHub Cloud commonly includes this field; self-hosted/OSS DataHub deployments may omit it."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Raw provider metadata for the context item.",
+            "additionalProperties": true
           }
         }
       },

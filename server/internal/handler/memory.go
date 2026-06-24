@@ -732,10 +732,11 @@ func mergeMetadata(base, incoming json.RawMessage) json.RawMessage {
 }
 
 type listResponse struct {
-	Memories []domain.Memory `json:"memories"`
-	Total    int             `json:"total"`
-	Limit    int             `json:"limit"`
-	Offset   int             `json:"offset"`
+	Memories        []domain.Memory               `json:"memories"`
+	ExternalContext []service.ExternalContextItem `json:"external_context,omitempty"`
+	Total           int                           `json:"total"`
+	Limit           int                           `json:"limit"`
+	Offset          int                           `json:"offset"`
 }
 
 type memoryRecallMetric struct {
@@ -943,6 +944,8 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 			memories[i].Content = service.TemporalRecallProjection(memories[i].Content, memories[i].Metadata)
 		}
 	}
+	externalContext := s.retrieveExternalContext(r.Context(), rawQuery, q, limit)
+
 	if recallSearch {
 		if s.runtimeUsageEnabled() && recallLease != nil {
 			if finalizeErr := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
@@ -967,11 +970,42 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond(w, http.StatusOK, listResponse{
-		Memories: memories,
-		Total:    total,
-		Limit:    limit,
-		Offset:   offset,
+		Memories:        memories,
+		ExternalContext: externalContext,
+		Total:           total,
+		Limit:           limit,
+		Offset:          offset,
 	})
+}
+
+func (s *Server) retrieveExternalContext(ctx context.Context, rawQuery string, q map[string][]string, limit int) []service.ExternalContextItem {
+	if s.externalContext == nil || strings.TrimSpace(rawQuery) == "" {
+		return nil
+	}
+	include := service.ShouldQueryDataHubContext(rawQuery)
+	for _, key := range []string{"include_datahub", "include_external_context"} {
+		if values, ok := q[key]; ok {
+			for _, value := range values {
+				parsed, err := strconv.ParseBool(value)
+				if err != nil {
+					continue
+				}
+				if !parsed {
+					return nil
+				}
+				include = true
+			}
+		}
+	}
+	if !include {
+		return nil
+	}
+	items, err := s.externalContext.Retrieve(ctx, rawQuery, limit)
+	if err != nil {
+		s.logger.WarnContext(ctx, "external context provider failed", "err", err)
+		return nil
+	}
+	return items
 }
 
 func isContentKeywordSearch(q url.Values) bool {

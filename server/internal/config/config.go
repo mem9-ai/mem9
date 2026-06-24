@@ -61,6 +61,15 @@ type Config struct {
 	// Defaults to false (safe for all TiDB Serverless / TiDB Zero tiers).
 	FTSEnabled bool
 
+	// DataHubMCP enables read-only external data-context retrieval through a
+	// DataHub MCP server. DataHub remains the source of truth for data assets;
+	// mem9 only returns retrieved context alongside recall results.
+	DataHubMCPEnabled    bool
+	DataHubMCPURL        string
+	DataHubMCPToken      string `json:"-"`
+	DataHubMCPTimeout    time.Duration
+	DataHubMCPMaxResults int
+
 	// WorkerConcurrency controls how many upload tasks are processed in parallel.
 	// Defaults to 5.
 	WorkerConcurrency int
@@ -158,6 +167,15 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_OUTBOX_ENABLED=false requires MNEMO_RUNTIME_USAGE_FAIL_OPEN=true when runtime usage is enabled")
 		}
 	}
+	dataHubMCPEnabled := envBool("MNEMO_DATAHUB_MCP_ENABLED", false)
+	dataHubMCPURL := ""
+	if dataHubMCPEnabled {
+		var err error
+		dataHubMCPURL, err = parseDataHubMCPURL(os.Getenv("MNEMO_DATAHUB_MCP_URL"))
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	env := strings.ToLower(strings.TrimSpace(envOr("MNEMO_ENV", envOr("APP_ENV", "development"))))
 	cfg := &Config{
@@ -191,6 +209,11 @@ func Load() (*Config, error) {
 		ChainRecallStopScore:        envFloat("MNEMO_CHAIN_RECALL_STOP_SCORE", 0.8),
 		UploadDir:                   envOr("MNEMO_UPLOAD_DIR", "./uploads"),
 		FTSEnabled:                  envBool("MNEMO_FTS_ENABLED", false),
+		DataHubMCPEnabled:           dataHubMCPEnabled,
+		DataHubMCPURL:               dataHubMCPURL,
+		DataHubMCPToken:             strings.TrimSpace(os.Getenv("MNEMO_DATAHUB_MCP_TOKEN")),
+		DataHubMCPTimeout:           envDuration("MNEMO_DATAHUB_MCP_TIMEOUT", 5*time.Second),
+		DataHubMCPMaxResults:        envInt("MNEMO_DATAHUB_MCP_MAX_RESULTS", 5),
 		WorkerConcurrency:           envInt("MNEMO_WORKER_CONCURRENCY", 5),
 		MeteringEnabled:             meteringEnabled,
 		MeteringURL:                 meteringURL,
@@ -242,6 +265,14 @@ func Load() (*Config, error) {
 	}
 	if cfg.ChainRecallStopScore < 0 || cfg.ChainRecallStopScore > 1 {
 		return nil, fmt.Errorf("MNEMO_CHAIN_RECALL_STOP_SCORE must be between 0 and 1")
+	}
+	if cfg.DataHubMCPEnabled {
+		if cfg.DataHubMCPTimeout <= 0 {
+			return nil, fmt.Errorf("MNEMO_DATAHUB_MCP_TIMEOUT must be positive")
+		}
+		if cfg.DataHubMCPMaxResults <= 0 || cfg.DataHubMCPMaxResults > 50 {
+			return nil, fmt.Errorf("MNEMO_DATAHUB_MCP_MAX_RESULTS must be between 1 and 50")
+		}
 	}
 
 	return cfg, nil
@@ -379,6 +410,36 @@ func parseRuntimeUsageBaseURL(raw string) (string, error) {
 	return u.String(), nil
 }
 
+func parseDataHubMCPURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("MNEMO_DATAHUB_MCP_URL is required when MNEMO_DATAHUB_MCP_ENABLED=true")
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid MNEMO_DATAHUB_MCP_URL")
+	}
+	switch u.Scheme {
+	case "http", "https":
+		// ok
+	default:
+		return "", fmt.Errorf("invalid MNEMO_DATAHUB_MCP_URL: unsupported scheme")
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("invalid MNEMO_DATAHUB_MCP_URL: host is required")
+	}
+	if u.User != nil {
+		return "", fmt.Errorf("invalid MNEMO_DATAHUB_MCP_URL: userinfo is not allowed")
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("invalid MNEMO_DATAHUB_MCP_URL: query and fragment are not allowed")
+	}
+
+	u.Path = strings.TrimRight(u.Path, "/")
+	return u.String(), nil
+}
+
 // LogValue returns a slog.Value with sensitive fields masked.
 // Use this when logging the config to avoid leaking secrets.
 func (c *Config) LogValue() slog.Value {
@@ -389,6 +450,8 @@ func (c *Config) LogValue() slog.Value {
 		slog.Bool("EncryptKeyConfigured", c.EncryptKey != ""),
 		slog.Bool("RuntimeUsageEnabled", c.RuntimeUsageEnabled),
 		slog.Bool("RuntimeUsageInternalSecretConfigured", c.RuntimeUsageInternalSecret != ""),
+		slog.Bool("DataHubMCPEnabled", c.DataHubMCPEnabled),
+		slog.Bool("DataHubMCPTokenConfigured", c.DataHubMCPToken != ""),
 		// Add other non-sensitive fields as needed
 	)
 }
