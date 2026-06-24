@@ -131,4 +131,9 @@ type SessionRepo interface {
 	GetSessionEdit(ctx context.Context, id string) (*domain.SessionEdit, error)
 	GetSessionEditsByIDs(ctx context.Context, ids []string) (map[string]*domain.SessionEdit, error)
 	DeleteSessionEdit(ctx context.Context, id string) (int64, error)
+	// MarkSessionEdit upserts only the correctness mark (correct|incorrect),
+	// preserving any existing content/tag overlay. ClearSessionEditMark
+	// removes the mark and deletes the row if it had no content override.
+	MarkSessionEdit(ctx context.Context, edit *domain.SessionEdit) error
+	ClearSessionEditMark(ctx context.Context, id string) (bool, error)
 }

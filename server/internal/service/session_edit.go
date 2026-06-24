@@ -32,16 +32,19 @@ func (s *SessionService) EditSessionOverlay(
 	}
 
 	edit := &domain.SessionEdit{
-		ID:              id,
-		AppID:           base.AppID,
-		SessionID:       base.SessionID,
-		Seq:             sessionSeqFromMemoryMeta(base),
-		AgentID:         base.AgentID,
-		OriginalContent: base.Content,
-		EditedContent:   content,
-		EditedBy:        editedBy,
-		Reason:          reason,
-		State:           domain.StateActive,
+		ID:               id,
+		AppID:            base.AppID,
+		SessionID:        base.SessionID,
+		Seq:              sessionSeqFromMemoryMeta(base),
+		AgentID:          base.AgentID,
+		OriginalContent:  base.Content,
+		EditedContent:    content,
+		EditedContentSet: true,
+		// A content edit implies the turn has been corrected → mark correct.
+		Correctness: domain.SessionEditCorrect,
+		EditedBy:    editedBy,
+		Reason:      reason,
+		State:       domain.StateActive,
 	}
 	// nil tags = "leave display tags unchanged"; a non-nil slice (incl. an
 	// empty one) is an explicit override.
@@ -77,6 +80,50 @@ func (s *SessionService) DeleteSessionOverlay(ctx context.Context, id string) (i
 	return s.sessions.DeleteSessionEdit(ctx, id)
 }
 
+// ErrInvalidCorrectness is returned for a mark value other than
+// "correct" / "incorrect".
+var ErrInvalidCorrectness = &domain.ValidationError{
+	Field: "correctness", Message: "must be 'correct' or 'incorrect'",
+}
+
+// MarkSessionOverlay sets the correctness mark on a session row without
+// touching any content/tag overlay. It snapshots original_content and 404s
+// when the session row is missing. Returns the stored overlay.
+func (s *SessionService) MarkSessionOverlay(ctx context.Context, id, correctness, markedBy string) (*domain.SessionEdit, error) {
+	if correctness != domain.SessionEditCorrect && correctness != domain.SessionEditIncorrect {
+		return nil, ErrInvalidCorrectness
+	}
+	base, err := s.sessions.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	edit := &domain.SessionEdit{
+		ID:              id,
+		AppID:           base.AppID,
+		SessionID:       base.SessionID,
+		Seq:             sessionSeqFromMemoryMeta(base),
+		AgentID:         base.AgentID,
+		OriginalContent: base.Content,
+		Correctness:     correctness,
+		EditedBy:        markedBy,
+		State:           domain.StateActive,
+	}
+	if err := s.sessions.MarkSessionEdit(ctx, edit); err != nil {
+		return nil, err
+	}
+	return s.sessions.GetSessionEdit(ctx, id)
+}
+
+// ClearSessionOverlayMark removes the correctness mark; if the row carried
+// no content override it is deleted entirely. 404s when the session row is
+// missing. Returns whether a mark was cleared.
+func (s *SessionService) ClearSessionOverlayMark(ctx context.Context, id string) (bool, error) {
+	if _, err := s.sessions.GetByID(ctx, id); err != nil {
+		return false, err
+	}
+	return s.sessions.ClearSessionEditMark(ctx, id)
+}
+
 // ApplySessionOverlay rewrites session-type results in place: for every
 // memory whose id has an active overlay, the content/tags are replaced with
 // the edited versions and edited/edit_version/edited_at markers are merged
@@ -110,34 +157,68 @@ func (s *SessionService) ApplySessionOverlay(ctx context.Context, memories []dom
 	return memories
 }
 
-// applyOverlayToMemory returns a copy of base with the overlay's edited
-// content/tags applied and edit markers merged into metadata.
+// SessionCorrectnessByIDs returns id -> correctness mark for the given
+// session rows that have one. Used by raw-session browse to annotate turns
+// with their review mark without applying the content overlay. A repository
+// failure degrades to an empty map rather than failing the read.
+func (s *SessionService) SessionCorrectnessByIDs(ctx context.Context, ids []string) map[string]string {
+	out := map[string]string{}
+	if len(ids) == 0 {
+		return out
+	}
+	overlays, err := s.sessions.GetSessionEditsByIDs(ctx, ids)
+	if err != nil {
+		return out
+	}
+	for id, ov := range overlays {
+		if ov.Correctness != "" {
+			out[id] = ov.Correctness
+		}
+	}
+	return out
+}
+
+// applyOverlayToMemory returns a copy of base with the overlay applied: a
+// content/tag override is rendered only when present, and edit / correctness
+// markers are merged into metadata. A mark-only overlay (no content
+// override) leaves content and tags untouched but still surfaces
+// correctness.
 func applyOverlayToMemory(base domain.Memory, ov *domain.SessionEdit) domain.Memory {
 	if ov == nil {
 		return base
 	}
-	base.Content = ov.EditedContent
+	// Only override rendered content when the overlay has a content edit
+	// (mark-only rows must leave the original content visible).
+	if ov.EditedContentSet {
+		base.Content = ov.EditedContent
+	}
 	// Only override rendered tags when the edit explicitly set them; a
 	// content-only edit must leave the original session tags intact.
 	if ov.EditedTagsSet {
 		base.Tags = ov.EditedTags
 	}
-	base.Metadata = mergeEditMarkers(base.Metadata, ov)
+	base.Metadata = mergeOverlayMetadata(base.Metadata, ov)
 	return base
 }
 
-// mergeEditMarkers adds edited / edit_version / edited_at onto existing
-// session metadata without dropping role/seq/content_type.
-func mergeEditMarkers(existing json.RawMessage, ov *domain.SessionEdit) json.RawMessage {
+// mergeOverlayMetadata merges overlay markers onto existing session metadata
+// without dropping role/seq/content_type: edited / edit_version / edited_at
+// when there is a content or tag override, and correctness when marked.
+func mergeOverlayMetadata(existing json.RawMessage, ov *domain.SessionEdit) json.RawMessage {
 	payload := map[string]any{}
 	if len(existing) > 0 {
 		if err := json.Unmarshal(existing, &payload); err != nil {
 			payload = map[string]any{}
 		}
 	}
-	payload["edited"] = true
-	payload["edit_version"] = ov.Version
-	payload["edited_at"] = ov.UpdatedAt
+	if ov.EditedContentSet || ov.EditedTagsSet {
+		payload["edited"] = true
+		payload["edit_version"] = ov.Version
+		payload["edited_at"] = ov.UpdatedAt
+	}
+	if ov.Correctness != "" {
+		payload["correctness"] = ov.Correctness
+	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return existing

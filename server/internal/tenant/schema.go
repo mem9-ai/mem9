@@ -165,6 +165,11 @@ const TenantSessionsSchemaBase = `CREATE TABLE IF NOT EXISTS sessions (
 // only affects how Session Search renders an already-matched row — it does
 // not change what is searchable, and memory/fact recall is untouched.
 // No embedding column: the overlay never participates in retrieval.
+// A row can carry a content/tag edit, a correctness mark, or both:
+//   - edited_content = ” means "no content override" (real edits always
+//     have non-empty content, so ” is an unambiguous sentinel);
+//   - correctness ('correct' | 'incorrect') is a human review mark, NULL
+//     when unmarked. A content edit auto-sets it to 'correct'.
 const TenantSessionEditsSchema = `CREATE TABLE IF NOT EXISTS session_edits (
     id               VARCHAR(36)     PRIMARY KEY,
     app_id           VARCHAR(100)    NOT NULL DEFAULT '',
@@ -174,6 +179,7 @@ const TenantSessionEditsSchema = `CREATE TABLE IF NOT EXISTS session_edits (
     original_content MEDIUMTEXT      NOT NULL,
     edited_content   MEDIUMTEXT      NOT NULL,
     edited_tags      JSON,
+    correctness      VARCHAR(20)     NULL,
     edited_by        VARCHAR(100)    NULL,
     reason           VARCHAR(500)    NULL,
     version          INT             NOT NULL DEFAULT 1,
@@ -261,6 +267,12 @@ func ensureTiDBTenantTablesAndSearchIndexes(ctx context.Context, db *sql.DB, aut
 	// in retrieval, only in Session Search response rendering.
 	if err := ensureTable(ctx, db, "session_edits", TenantSessionEditsSchema); err != nil {
 		return fmt.Errorf("session_edits table: %w", err)
+	}
+	// correctness column was added after the table's first release; migrate
+	// existing tenants in place.
+	if err := ensureColumn(ctx, db, "session_edits", "correctness",
+		`ALTER TABLE session_edits ADD COLUMN correctness VARCHAR(20) NULL`); err != nil {
+		return fmt.Errorf("session_edits correctness column: %w", err)
 	}
 	return nil
 }
@@ -485,6 +497,24 @@ func ensureTable(ctx context.Context, db *sql.DB, table, createSQL string) error
 	}
 	if _, err := db.ExecContext(ctx, createSQL); err != nil {
 		return fmt.Errorf("create: %w", err)
+	}
+	return nil
+}
+
+// ensureColumn adds a column to an existing table if it is missing. Used to
+// migrate tables created by earlier releases (CREATE TABLE IF NOT EXISTS is
+// a no-op once the table exists, so new columns need an explicit ALTER).
+// alterSQL must be the full "ALTER TABLE ... ADD COLUMN ..." statement.
+func ensureColumn(ctx context.Context, db *sql.DB, table, column, alterSQL string) error {
+	exists, err := ColumnExists(ctx, db, table, column)
+	if err != nil {
+		return fmt.Errorf("check column: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, alterSQL); err != nil {
+		return fmt.Errorf("add column: %w", err)
 	}
 	return nil
 }

@@ -291,6 +291,9 @@ func (s *Server) Router(
 		r.Put("/session-messages/{id}", s.editSessionMessage)
 		r.Get("/session-messages/{id}/edit", s.getSessionMessageEdit)
 		r.Delete("/session-messages/{id}/edit", s.deleteSessionMessageEdit)
+		// Correctness review mark (correct|incorrect) on a raw session turn.
+		r.Put("/session-messages/{id}/mark", s.markSessionMessage)
+		r.Delete("/session-messages/{id}/mark", s.unmarkSessionMessage)
 	})
 
 	return r

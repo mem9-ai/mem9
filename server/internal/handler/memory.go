@@ -1813,6 +1813,10 @@ type sessionMessageResponse struct {
 	CreatedAt   time.Time           `json:"created_at"`
 	UpdatedAt   time.Time           `json:"updated_at"`
 	ChainSource *domain.ChainSource `json:"chain_source,omitempty"`
+	// Correctness review mark (correct|incorrect) if the turn has been
+	// marked. Raw browse shows the mark but never the content overlay — the
+	// content here is always the original session text.
+	Correctness string `json:"correctness,omitempty"`
 }
 
 func (s *Server) handleListSessionMessages(w http.ResponseWriter, r *http.Request) {
@@ -1875,6 +1879,13 @@ func (s *Server) handleListSessionMessages(w http.ResponseWriter, r *http.Reques
 		sessions = []*domain.Session{}
 	}
 	messages := make([]sessionMessageResponse, len(sessions))
+	ids := make([]string, 0, len(sessions))
+	for _, sess := range sessions {
+		ids = append(ids, sess.ID)
+	}
+	// Annotate raw turns with their correctness mark (if any). Content stays
+	// original — raw browse never applies the content overlay.
+	marks := svc.session.SessionCorrectnessByIDs(r.Context(), ids)
 	for i, sess := range sessions {
 		messages[i] = sessionMessageResponse{
 			ID:          sess.ID,
@@ -1890,6 +1901,7 @@ func (s *Server) handleListSessionMessages(w http.ResponseWriter, r *http.Reques
 			State:       sess.State,
 			CreatedAt:   sess.CreatedAt,
 			UpdatedAt:   sess.UpdatedAt,
+			Correctness: marks[sess.ID],
 		}
 	}
 	respond(w, http.StatusOK, map[string]any{
