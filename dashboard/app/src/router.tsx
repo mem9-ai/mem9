@@ -23,6 +23,11 @@ const PixelFarmPage = lazy(async () => {
   return { default: module.PixelFarmPage };
 });
 
+const ReportPdfPage = lazy(async () => {
+  const module = await import("@/pages/report-pdf");
+  return { default: module.ReportPdfPage };
+});
+
 function PixelFarmRoutePage() {
   const { t } = useTranslation();
 
@@ -35,6 +40,20 @@ function PixelFarmRoutePage() {
       }
     >
       <PixelFarmPage />
+    </Suspense>
+  );
+}
+
+function ReportPdfRoutePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-[#f3f7fc] text-sm font-semibold uppercase tracking-[0.2em] text-[#64748b]">
+          Loading report
+        </main>
+      }
+    >
+      <ReportPdfPage />
     </Suspense>
   );
 }
@@ -133,10 +152,16 @@ const pixelFarmRoute = createRoute({
   path: "/labs/memory-farm",
   component: PixelFarmRoutePage,
 });
+const reportPdfRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/report-pdf",
+  component: ReportPdfRoutePage,
+});
 const baseRoutes: Parameters<typeof rootRoute.addChildren>[0] = [
   connectRoute,
   spaceRoute,
   pixelFarmRoute,
+  reportPdfRoute,
 ];
 
 let devRoutes: Parameters<typeof rootRoute.addChildren>[0] = [];

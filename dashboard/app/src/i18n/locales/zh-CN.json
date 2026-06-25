@@ -668,7 +668,6 @@
     "eyebrow": "",
     "title": "报告模板",
     "subtitle": "查看内置模板、生成报告，并回看历史结果。",
-    "generate": "生成报告",
     "library_title": "内置模板",
     "search_placeholder": "搜索模板名称",
     "status_all": "状态：全部",
@@ -684,17 +683,15 @@
     "input_label": "输入",
     "output_label": "输出",
     "evidence_label": "证据",
-    "input_value": "记忆、对话原文节选、反馈状态",
-    "output_value": "JSON / OpenAPI / 洞察页面",
+    "input_value": "insight、profile projection、session evidence",
+    "output_value": "周期观察.pdf",
     "evidence_value": "关联的 memory ID 与原文节选",
-    "analysis_title": "分析项",
-    "analysis_items": [
-      { "title": "关注点变化", "body": "最近关注内容与历史关注内容的变化。" },
-      { "title": "长期目标变化", "body": "新增、强化或再次确认的目标。" },
-      { "title": "关系变化", "body": "重要关系与互动重点的变化。" },
-      { "title": "情绪趋势", "body": "对话中的阶段性情绪变化。" },
-      { "title": "成长观察", "body": "行为、认知与状态上的阶段性进展。" },
-      { "title": "记忆结构变化", "body": "记忆类型、主题与可信度的分布变化。" }
+    "handoff_title": "",
+    "handoff_body": "该模板只生成“{{template}}”相关结果，不生成左侧其他模板内容。",
+    "workflow_items": [
+      { "title": "变化结论", "body": "从旧关注点到新关注点的摘要判断" },
+      { "title": "变化解释", "body": "解释变化的根本原因" },
+      { "title": "证据链", "body": "关联 memory、session 片段和置信度" }
     ],
     "settings_title": "生成设置",
     "date_from": "开始日期",
@@ -706,16 +703,16 @@
     "history_now": "刚刚生成",
     "complete": "已完成",
     "preview": "查看洞察",
-    "download": "下载 JSON",
+    "download": "下载 PDF",
     "preview_hint": "接通报告服务后，报告预览将在这里打开。",
-    "download_hint": "接通报告服务后，可在这里下载 JSON。",
+    "download_hint": "点击后将打开 PDF 报告页面。",
     "generate_success": "已提交「{{template}}」生成任务。",
     "note": "第一期仅提供内置模板；报告结果将支持在洞察页、JSON 或 OpenAPI 中查看。",
     "templates": {
-      "weekly": { "name": "周期观察", "cadence": "双周", "last_generated": "2025-06-14 09:12", "goal": "识别长周期记忆中的阶段性变化与长期观察。" },
-      "trend": { "name": "情绪趋势分析", "cadence": "每日", "last_generated": "2025-06-14 08:35", "goal": "梳理情绪在对话中的持续变化。" },
-      "structure": { "name": "记忆结构分析", "cadence": "按需", "last_generated": "2025-06-12 18:07", "goal": "理解记忆类型与主题的结构分布。" },
-      "growth": { "name": "成长观察报告", "cadence": "每月", "last_generated": "2025-05-31 21:10", "goal": "记录行为、认知与状态上的长期进展。" }
+      "weekly": { "name": "关注点变化", "cadence": "双周", "last_generated": "2025-06-14 09:12", "goal": "识别近期关注内容与历史关注内容的变化。" },
+      "trend": { "name": "长期目标变化", "cadence": "每日", "last_generated": "2025-06-14 08:35", "goal": "梳理新增、强化或再次确认的长期目标。" },
+      "structure": { "name": "情绪趋势变化", "cadence": "按需", "last_generated": "2025-06-12 18:07", "goal": "分析对话中的阶段性情绪变化。" },
+      "growth": { "name": "记忆结构变化", "cadence": "每月", "last_generated": "2025-05-31 21:10", "goal": "理解记忆类型、主题与可信度的分布变化。" }
     }
   },
   "pixel_farm": {

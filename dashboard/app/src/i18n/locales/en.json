@@ -603,7 +603,6 @@
     "eyebrow": "Reports",
     "title": "Report Manage",
     "subtitle": "Browse built-in templates, generate reports, and revisit previous results.",
-    "generate": "Generate report",
     "library_title": "Built-in templates",
     "search_placeholder": "Search templates",
     "status_all": "Status: all",
@@ -619,17 +618,15 @@
     "input_label": "Input",
     "output_label": "Output",
     "evidence_label": "Evidence",
-    "input_value": "Memories, session excerpts, feedback state",
-    "output_value": "JSON / OpenAPI / insight page",
+    "input_value": "insight, profile projection, session evidence",
+    "output_value": "Periodic observation · JSON / OpenAPI · PDF",
     "evidence_value": "Memory IDs and linked excerpts",
-    "analysis_title": "Analysis areas",
-    "analysis_items": [
-      { "title": "Focus changes", "body": "What has shifted from recent focus and history." },
-      { "title": "Long-term goals", "body": "New, strengthened, or reconfirmed goals." },
-      { "title": "Relationship changes", "body": "Important people and interaction patterns." },
-      { "title": "Emotional rhythm", "body": "Stage-level emotional movement in sessions." },
-      { "title": "Growth signals", "body": "Progress in behavior, cognition, and state." },
-      { "title": "Memory structure", "body": "Distribution shifts by type, topic, and confidence." }
+    "handoff_title": "Open in periodic observation after generation",
+    "handoff_body": "This template only generates results for “{{template}}”; it does not generate other templates from the left panel.",
+    "workflow_items": [
+      { "title": "Change conclusion", "body": "Summary judgment from old focus to new focus." },
+      { "title": "Topic movement", "body": "Which topics rose, fell, or remained stable." },
+      { "title": "Evidence chain", "body": "Linked memories, session excerpts, and confidence." }
     ],
     "settings_title": "Generation settings",
     "date_from": "Start date",
@@ -641,16 +638,16 @@
     "history_now": "Just generated",
     "complete": "Complete",
     "preview": "Preview",
-    "download": "Download JSON",
+    "download": "Download PDF",
     "preview_hint": "Report preview will open here once the reporting service is connected.",
-    "download_hint": "JSON export will be available once the reporting service is connected.",
+    "download_hint": "Click to open the PDF report page.",
     "generate_success": "{{template}} generation has been queued.",
     "note": "This first release uses built-in templates. Generated results will be available from the insight page, JSON, or OpenAPI.",
     "templates": {
-      "weekly": { "name": "Weekly observation", "cadence": "Biweekly", "last_generated": "2025-06-14 09:12", "goal": "Identify meaningful changes in recent memories." },
-      "trend": { "name": "Emotional trend analysis", "cadence": "Daily", "last_generated": "2025-06-14 08:35", "goal": "Trace recurring emotional movement over time." },
-      "structure": { "name": "Memory structure analysis", "cadence": "On demand", "last_generated": "2025-06-12 18:07", "goal": "Reveal how memory types and topics are distributed." },
-      "growth": { "name": "Growth observation", "cadence": "Monthly", "last_generated": "2025-05-31 21:10", "goal": "Capture durable behavior and learning progress." }
+      "weekly": { "name": "Focus changes", "cadence": "Biweekly", "last_generated": "2025-06-14 09:12", "goal": "Identify changes between recent and historical areas of focus." },
+      "trend": { "name": "Long-term goal changes", "cadence": "Daily", "last_generated": "2025-06-14 08:35", "goal": "Trace newly added, strengthened, or reconfirmed long-term goals." },
+      "structure": { "name": "Emotional trend changes", "cadence": "On demand", "last_generated": "2025-06-12 18:07", "goal": "Analyze phase-by-phase emotional changes in conversations." },
+      "growth": { "name": "Memory structure changes", "cadence": "Monthly", "last_generated": "2025-05-31 21:10", "goal": "Understand changes in the distribution of memory types, topics, and confidence." }
     }
   },
   "pixel_farm": {
