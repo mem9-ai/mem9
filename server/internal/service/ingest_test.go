@@ -884,6 +884,108 @@ func TestExtractFactsAndTagsRetryRecoveryDropsFlattenedQueryIntent(t *testing.T)
 	}
 }
 
+func TestFilterLongTermFactsDropsTransientAndKeepsStableFacts(t *testing.T) {
+	t.Parallel()
+
+	input := []ExtractedFact{
+		{Text: "User wants to restart a task and restore it to normal working condition"},
+		{Text: "Is working out now"},
+		{Text: "Considering consuming protein powder tonight (2026-06-14)."},
+		{Text: "Recorded weight is 79.7kg"},
+		{Text: "Temporary workspace is /home/ec2-user/clawd-workspace/"},
+		{Text: "Usually sleeps more than 7 hours"},
+		{Text: "Default protein serving is 24g"},
+		{Text: "Uses Feishu for calendar scheduling"},
+		{Text: "Plans to shift focus from weight reduction to muscle gain, with fat loss as a secondary objective."},
+	}
+
+	got := filterLongTermFacts(input)
+	var texts []string
+	for _, fact := range got {
+		texts = append(texts, fact.Text)
+	}
+
+	want := []string{
+		"Usually sleeps more than 7 hours",
+		"Default protein serving is 24g",
+		"Uses Feishu for calendar scheduling",
+		"Plans to shift focus from weight reduction to muscle gain, with fat loss as a secondary objective.",
+	}
+	if !reflect.DeepEqual(texts, want) {
+		t.Fatalf("filtered texts = %#v, want %#v", texts, want)
+	}
+}
+
+func TestFilterLongTermFactsDropsNonLongTermFactTypes(t *testing.T) {
+	t.Parallel()
+
+	input := []ExtractedFact{
+		{Text: "keep stable preference", FactType: "fact"},
+		{Text: "query", FactType: factTypeQueryIntent},
+		{Text: "now", FactType: factTypeTransientStatus},
+		{Text: "intent", FactType: factTypeEphemeralIntent},
+		{Text: "activity", FactType: factTypeActivityLog},
+		{Text: "ops", FactType: factTypeOperationalLog},
+	}
+
+	got := filterLongTermFacts(input)
+	if len(got) != 1 || got[0].Text != "keep stable preference" {
+		t.Fatalf("filtered facts = %+v, want only stable fact", got)
+	}
+}
+
+func TestReconcilePhase2FiltersNonLongTermFactsBeforeWrite(t *testing.T) {
+	t.Parallel()
+
+	repo := &memoryRepoMock{}
+	svc := NewIngestService(repo, nil, nil, "auto-model", ModeSmart)
+
+	res, err := svc.ReconcilePhase2(context.Background(), "agent-1", "agent-1", "", "sess-1", []ExtractedFact{
+		{Text: "Is working out now"},
+		{Text: "Temporary workspace is /home/ec2-user/clawd-workspace/"},
+	})
+	if err != nil {
+		t.Fatalf("ReconcilePhase2() error = %v", err)
+	}
+	if res == nil || res.Status != "complete" || res.MemoriesChanged != 0 {
+		t.Fatalf("result = %+v, want complete with no changes", res)
+	}
+	if len(repo.createCalls) != 0 {
+		t.Fatalf("create calls = %d, want 0", len(repo.createCalls))
+	}
+}
+
+func TestExtractPhase1FiltersFactsButPreservesMessageTags(t *testing.T) {
+	t.Parallel()
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts":[{"text":"Is working out now","fact_type":"transient_status"}],"message_tags":[["fitness"],["answer"]]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	result, err := svc.ExtractPhase1(context.Background(), []IngestMessage{
+		{Role: "user", Content: "Is working out now"},
+		{Role: "assistant", Content: "Got it."},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+	if len(result.Facts) != 0 {
+		t.Fatalf("facts = %+v, want none", result.Facts)
+	}
+	if len(result.MessageTags) != 2 || len(result.MessageTags[0]) != 1 || result.MessageTags[0][0] != "fitness" {
+		t.Fatalf("message tags = %+v, want preserved tags", result.MessageTags)
+	}
+}
+
 func TestColdStartAddAllFactsSetsTags(t *testing.T) {
 	t.Parallel()
 

@@ -33,20 +33,40 @@ const (
 	maxExtractionConversationRunes = 1000000
 	factTypeQueryIntent            = "query_intent"
 	factTypeRawFallback            = "raw_fallback"
+	factTypeTransientStatus        = "transient_status"
+	factTypeEphemeralIntent        = "ephemeral_intent"
+	factTypeActivityLog            = "activity_log"
+	factTypeOperationalLog         = "operational_log"
 	rawFallbackTag                 = "raw-fallback"
 )
 
 var formattedConversationMessageRE = regexp.MustCompile(`(?:^|\n\n)([A-Za-z][A-Za-z0-9_-]*): `)
 
+const (
+	ingestFactFilterSourceLLMFactType = "llm_fact_type"
+	ingestFactFilterSourceServerGuard = "server_guard"
+)
+
+var (
+	ephemeralIntentRE = regexp.MustCompile(`(?i)\b(?:user\s+)?(?:wants?|needs?|plans?|intends?|considering|thinking about|will|might|may|should|trying)\s+(?:to\s+)?(?:restart|restore|record|continue|remove|pin|send|create|set up|fix|debug|check|confirm|eat|consume|have|train|work out|exercise)\b`)
+	shortTimeCueRE    = regexp.MustCompile(`(?i)\b(?:now|currently|today|tonight|tomorrow|yesterday|right now|this morning|this afternoon|this evening|last night|day before yesterday)\b`)
+	activityLogRE     = regexp.MustCompile(`(?i)\b(?:recorded|logged|had|ate|consumed|completed|ran|woke up|stayed up|resting|trained|training|workout|exercise|cardio|breakfast|lunch|dinner|snack|weight|protein powder|creatine|sleep|slept|hunger|hungry|cosmetic procedure|botulinum|filler)\b`)
+	operationalLogRE  = regexp.MustCompile(`(?i)\b(?:temporary workspace|temporary table|cron job|import task|upload task|planning-only turn|reported tracking event error|requires confirmation today|received service error|selected model is at capacity|eta is|eta tomorrow|due tomorrow|fixed issue|debug(?:ging)?|smoke test|functioning correctly)\b`)
+	stableSignalRE    = regexp.MustCompile(`(?i)\b(?:prefers?|preference|usually|regularly|often|default|goal|target|long-term|habit|birthday|relationship|lives in|based in|works at|uses|primary|source of truth|architecture|configured to|configuration|setting)\b`)
+	oneTimeIntentRE   = regexp.MustCompile(`(?i)\buser\s+wants?\s+to\s+(?:restart|restore|record|continue|remove|pin|send|create|set up|fix|debug|check|confirm)\b`)
+	transientStatusRE = regexp.MustCompile(`(?i)\b(?:is|am|are|was|were|feels?|experiencing|working out|training|resting|hungry|using voice input)\b`)
+	activityActionRE  = regexp.MustCompile(`(?i)\b(?:recorded|logged|had|ate|consumed|completed|ran|woke up|stayed up|today|tonight|yesterday|this morning|last night|weight is|working out now)\b`)
+)
+
 // IngestRequest is the input for the ingest pipeline.
 type IngestRequest struct {
-	Messages           []IngestMessage  `json:"messages"`
-	SessionID          string           `json:"session_id"`
-	AgentID            string           `json:"agent_id"`
-	AppID              string           `json:"appId,omitempty"`
-	Mode               IngestMode       `json:"mode"`
-	DisableSessionSave bool             `json:"disableSessionSave,omitempty"`
-	Metadata           json.RawMessage  `json:"metadata,omitempty"`
+	Messages           []IngestMessage `json:"messages"`
+	SessionID          string          `json:"session_id"`
+	AgentID            string          `json:"agent_id"`
+	AppID              string          `json:"appId,omitempty"`
+	Mode               IngestMode      `json:"mode"`
+	DisableSessionSave bool            `json:"disableSessionSave,omitempty"`
+	Metadata           json.RawMessage `json:"metadata,omitempty"`
 }
 
 // IngestMessage represents a single conversation message.
@@ -189,22 +209,76 @@ type RoutingTarget struct {
 	Rule string `json:"rule"`
 }
 
-// dropQueryIntentFacts removes facts classified as query_intent by the extraction
-// LLM. These are search queries or lookup questions ("who is X", "how do I Y",
-// "what does Z mean", "X是谁", "如何做Y", "Z是什么意思") that reflect what the
-// user asked, not what the user stated about themselves.
-// Facts with an omitted fact_type are kept — safe default on LLM non-compliance.
-// Dropped facts are logged at Info level (length only, no raw text) for observability.
-func dropQueryIntentFacts(facts []ExtractedFact) []ExtractedFact {
+// filterLongTermFacts removes extracted facts that are not suitable for long-term
+// insight memory. The raw session turn can still be stored separately; this gate
+// prevents transient state, one-off intent, activity logs, and operational logs
+// from entering reconciliation, active insight memory, or Space Chain routing.
+func filterLongTermFacts(facts []ExtractedFact) []ExtractedFact {
 	out := facts[:0]
 	for _, f := range facts {
-		if strings.EqualFold(f.FactType, factTypeQueryIntent) {
-			slog.Info("dropping query_intent fact", "len", len(f.Text))
+		reason, source := longTermFactDropReason(f)
+		if reason != "" {
+			metrics.IngestFactsFilteredTotal.WithLabelValues(reason, source).Inc()
+			slog.Info("dropping non-long-term fact", "reason", reason, "source", source, "len", len(f.Text))
 			continue
 		}
 		out = append(out, f)
 	}
 	return out
+}
+
+// dropQueryIntentFacts is kept for older tests and call sites. It now delegates
+// to the full long-term fact gate.
+func dropQueryIntentFacts(facts []ExtractedFact) []ExtractedFact {
+	return filterLongTermFacts(facts)
+}
+
+func longTermFactDropReason(f ExtractedFact) (string, string) {
+	switch strings.ToLower(strings.TrimSpace(f.FactType)) {
+	case factTypeQueryIntent,
+		factTypeTransientStatus,
+		factTypeEphemeralIntent,
+		factTypeActivityLog,
+		factTypeOperationalLog:
+		return strings.ToLower(strings.TrimSpace(f.FactType)), ingestFactFilterSourceLLMFactType
+	case "", "fact", factTypeRawFallback:
+		// Continue to server-side guardrails.
+	default:
+		// Unknown fact_type values are treated as fact for compatibility with
+		// older or experimental extractors, then passed through deterministic
+		// guardrails.
+	}
+
+	if reason := serverGuardDropReason(f.Text); reason != "" {
+		return reason, ingestFactFilterSourceServerGuard
+	}
+	return "", ""
+}
+
+func serverGuardDropReason(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+
+	if stableSignalRE.MatchString(text) {
+		return ""
+	}
+
+	switch {
+	case ephemeralIntentRE.MatchString(text) && shortTimeCueRE.MatchString(text):
+		return factTypeEphemeralIntent
+	case oneTimeIntentRE.MatchString(text):
+		return factTypeEphemeralIntent
+	case shortTimeCueRE.MatchString(text) && transientStatusRE.MatchString(text):
+		return factTypeTransientStatus
+	case activityLogRE.MatchString(text) && activityActionRE.MatchString(text):
+		return factTypeActivityLog
+	case operationalLogRE.MatchString(text):
+		return factTypeOperationalLog
+	default:
+		return ""
+	}
 }
 
 type preparedExtractionInput struct {
@@ -271,13 +345,13 @@ func parseConversationMessages(conversation string) []IngestMessage {
 }
 
 func finalizeExtractedFacts(input preparedExtractionInput, parsed []ExtractedFact, emptyReason string) []ExtractedFact {
-	facts := dropQueryIntentFacts(parsed)
+	facts := filterLongTermFacts(parsed)
 	if len(facts) > 0 {
 		return annotateFactsWithSourceSeqs(input, normalizeTemporalFacts(input, facts))
 	}
 	reason := emptyReason
 	if len(parsed) > 0 {
-		reason = "query_intent_only"
+		reason = "filtered_only"
 	}
 	slog.Info("no facts extracted", "reason", reason)
 	return nil
@@ -405,6 +479,7 @@ func (s *IngestService) ExtractPhase1WithRouting(ctx context.Context, messages [
 // ReconcilePhase2 runs reconciliation of extracted facts against existing memories.
 // Equivalent to the existing reconcile() pipeline, now exported for use by the handler.
 func (s *IngestService) ReconcilePhase2(ctx context.Context, agentName, agentID, appID, sessionID string, facts []ExtractedFact) (*IngestResult, error) {
+	facts = filterLongTermFacts(facts)
 	if len(facts) == 0 {
 		return &IngestResult{Status: "complete"}, nil
 	}
@@ -721,10 +796,21 @@ atomic facts from a conversation.
      - "Working on a project that requires SQL window functions"
      - "使用 nginx 作为生产反向代理"
      - "正在做一个需要 SQL 窗口函数的项目"
-7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
-   even if they arose in a task-specific context.
-8. Keep concerns, risks, and worries the user expresses about their work, systems, platforms, or ongoing operations,
-	 even when stated as background context for a direct action request. These signals have lasting value.
+7. Extract long-term memory facts only. Keep stable personal information, preferences,
+   habits, identities, relationships, long-term goals, long-running projects, durable
+   configuration, architecture, and source-of-truth facts even when they arose in a
+   task-specific context.
+8. Classify short-lived or one-off information with the appropriate fact_type instead of
+   treating it as a long-term fact:
+   - transient_status: current/temporary state such as "is working out now", hunger,
+     voice-input status, today's weather, or "currently doing X" when it has no durable value.
+   - ephemeral_intent: one-off intent/request such as restarting a task, recording a meal,
+     consuming something tonight, sending a handoff, or setting up temporary monitoring.
+   - activity_log: single health, diet, workout, sleep, weight, meal, or medical-aesthetic log.
+   - operational_log: runtime/task/debug/import/cron/status/error/ETA/temporary-workspace logs.
+   These items are not long-term insight memories.
+9. Keep concerns, risks, and worries the user expresses about their work, systems, platforms, or ongoing operations,
+	 when they describe an ongoing condition rather than a one-off log line. These signals can have lasting value.
    Examples to keep:
       - "小红书账号最近数据不好，担心可能被封号"
      - "The API keeps returning 500s, something might be broken upstream"
@@ -732,7 +818,7 @@ atomic facts from a conversation.
    Examples to skip:
      - "Hmm let me think"
      - "OK sounds good"
-9. Always include temporal context when mentioned. Preserve dates, times, and temporal markers faithfully.
+10. Always include temporal context when mentioned. Preserve dates, times, and temporal markers faithfully.
    If a fact already contains an explicit date, month, year, or anchored period
    ("2023年4月22日", "April 2023", "the week before 6 March 2023"), keep it natural
    and do not rewrite it.
@@ -743,19 +829,18 @@ atomic facts from a conversation.
    When a relative time expression depends on another date already present in the same
    sentence or message header, preserve that relationship naturally instead of inventing
    extra detail. Post-processing will normalize those cases later.
-10. Extract relationships between people explicitly.
-11. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
+11. Extract relationships between people explicitly.
+12. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
    fact is self-contained and retrievable without needing context from other facts.
    - Good: "Alice moved to Tokyo last year"
    - Bad: "She moved to Tokyo last year"
    - Good: "小强今天去彩排了"
    - Bad: "他今天去彩排了"
-12. Prefer returning a faithful, minimally rewritten fact over returning an empty array.
-13. Short, specific statements are still facts. A single sentence about a preference, event,
-   plan, job, location, relationship, or current status should usually become one fact.
-14. Return an empty facts array only when the user's messages contain no retrievable
-   information at all, such as pure greetings, acknowledgements, or filler.
+13. Prefer returning a faithful, minimally rewritten fact over returning an empty array
+   when the user stated durable information.
+14. Return an empty facts array when the user's messages contain no retrievable durable
+   information, such as pure greetings, acknowledgements, filler, short-lived state, or one-off logs.
 15. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
    "relationship", "event", "timeline".
@@ -765,15 +850,24 @@ atomic facts from a conversation.
 ## Examples to keep
 
 - "Prefers oat milk in coffee"
-- "Has a dentist appointment tomorrow afternoon"
-- "Planning to visit parents next weekend"
-- "Working remotely this week"
+- "Usually sleeps more than 7 hours"
+- "Default protein serving is 24g"
+- "Uses Feishu for calendar scheduling"
+- "Mem9 source of truth is the Go API"
+
+## Examples to classify as non-long-term
+
+- {"text": "User wants to restart a task and restore it to normal working condition", "fact_type": "ephemeral_intent"}
+- {"text": "Is working out now", "fact_type": "transient_status"}
+- {"text": "Considering consuming protein powder tonight (2026-06-14)", "fact_type": "ephemeral_intent"}
+- {"text": "Recorded weight is 79.7kg", "fact_type": "activity_log"}
+- {"text": "Temporary workspace is /home/ec2-user/clawd-workspace/", "fact_type": "operational_log"}
 
 ## Output Format
 
 Return ONLY valid JSON. No markdown fences, no explanation.
 
-{"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}, ...]}`
+{"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}, {"text": "Is working out now", "fact_type": "transient_status"}, ...]}`
 	systemPrompt += routingPromptSection(routingTargets)
 
 	userPrompt := fmt.Sprintf("Extract facts.\n\n%s", input.formatted)
@@ -871,10 +965,21 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
      - "Working on a project that requires SQL window functions"
      - "使用 nginx 作为生产反向代理"
      - "正在做一个需要 SQL 窗口函数的项目"
-7. Keep any stable personal information, preferences, experiences, relationships, or long-term plans
-   even if they arose in a task-specific context.
-8. Keep concerns, risks, and worries the user expresses about their work, systems, platforms, or ongoing operations,
-	 even when stated as background context for a direct action request. These signals have lasting value.
+7. Extract long-term memory facts only. Keep stable personal information, preferences,
+   habits, identities, relationships, long-term goals, long-running projects, durable
+   configuration, architecture, and source-of-truth facts even when they arose in a
+   task-specific context.
+8. Classify short-lived or one-off information with the appropriate fact_type instead of
+   treating it as a long-term fact:
+   - transient_status: current/temporary state such as "is working out now", hunger,
+     voice-input status, today's weather, or "currently doing X" when it has no durable value.
+   - ephemeral_intent: one-off intent/request such as restarting a task, recording a meal,
+     consuming something tonight, sending a handoff, or setting up temporary monitoring.
+   - activity_log: single health, diet, workout, sleep, weight, meal, or medical-aesthetic log.
+   - operational_log: runtime/task/debug/import/cron/status/error/ETA/temporary-workspace logs.
+   These items are not long-term insight memories.
+9. Keep concerns, risks, and worries the user expresses about their work, systems, platforms, or ongoing operations,
+	 when they describe an ongoing condition rather than a one-off log line. These signals can have lasting value.
    Examples to keep:
      - "小红书账号最近数据不好，担心可能被封号"
      - "The API keeps returning 500s, something might be broken upstream"
@@ -882,7 +987,7 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    Examples to skip:
      - "Hmm let me think"
      - "OK sounds good"
-9. Always include temporal context when mentioned. Preserve dates, times, and temporal markers faithfully.
+10. Always include temporal context when mentioned. Preserve dates, times, and temporal markers faithfully.
    If a fact already contains an explicit date, month, year, or anchored period
    ("2023年4月22日", "April 2023", "the week before 6 March 2023"), keep it natural
    and do not rewrite it.
@@ -893,19 +998,18 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    When a relative time expression depends on another date already present in the same
    sentence or message header, preserve that relationship naturally instead of inventing
    extra detail. Post-processing will normalize those cases later.
-10. Extract relationships between people explicitly.
-11. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
+11. Extract relationships between people explicitly.
+12. Use specific names instead of pronouns when the referent is clear. Do not guess unclear references.
    Replace pronouns (he, she, they, it, 他, 她, 他们) with the actual entity name so each
    fact is self-contained and retrievable without needing context from other facts.
    - Good: "Alice moved to Tokyo last year"
    - Bad: "She moved to Tokyo last year"
    - Good: "小强今天去彩排了"
    - Bad: "他今天去彩排了"
-12. Prefer returning a faithful, minimally rewritten fact over returning an empty array.
-13. Short, specific statements are still facts. A single sentence about a preference, event,
-   plan, job, location, relationship, or current status should usually become one fact.
-14. Return an empty facts array only when the user's messages contain no retrievable
-   information at all, such as pure greetings, acknowledgements, or filler.
+13. Prefer returning a faithful, minimally rewritten fact over returning an empty array
+   when the user stated durable information.
+14. Return an empty facts array when the user's messages contain no retrievable durable
+   information, such as pure greetings, acknowledgements, filler, short-lived state, or one-off logs.
 15. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
    "relationship", "event", "timeline".
@@ -942,13 +1046,23 @@ Output: {"facts": [{"text": "Debugging a memory leak in a Go service", "tags": [
 Input:
 User: I'm working remotely this week.
 Assistant: Noted.
-Output: {"facts": [{"text": "Working remotely this week", "tags": ["work", "timeline"]}], "message_tags": [["work", "timeline"], ["answer"]]}
+Output: {"facts": [{"text": "Working remotely this week", "tags": ["work", "timeline"], "fact_type": "transient_status"}], "message_tags": [["work", "timeline"], ["answer"]]}
+
+Input:
+User: I usually sleep more than 7 hours and my default protein serving is 24g.
+Assistant: Noted.
+Output: {"facts": [{"text": "Usually sleeps more than 7 hours", "tags": ["personal", "habit"], "fact_type": "fact"}, {"text": "Default protein serving is 24g", "tags": ["diet"], "fact_type": "fact"}], "message_tags": [["personal", "habit", "diet"], ["answer"]]}
+
+Input:
+User: Is working out now. Considering consuming protein powder tonight (2026-06-14).
+Assistant: Got it.
+Output: {"facts": [{"text": "Is working out now", "fact_type": "transient_status"}, {"text": "Considering consuming protein powder tonight (2026-06-14)", "fact_type": "ephemeral_intent"}], "message_tags": [["fitness", "diet", "timeline"], ["answer"]]}
 
 ## Output Format
 
 Return ONLY valid JSON. No markdown fences, no explanation.
 
-{"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}], "message_tags": [["tag1", "tag2"], ["tag3"], [], ...]}`
+{"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}, {"text": "Is working out now", "fact_type": "transient_status"}], "message_tags": [["tag1", "tag2"], ["tag3"], [], ...]}`
 	systemPrompt += routingPromptSection(routingTargets)
 
 	userPrompt := fmt.Sprintf("Extract facts and assign message tags.\n\n%s", input.formatted)

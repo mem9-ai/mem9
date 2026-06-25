@@ -2236,6 +2236,198 @@ func TestCreateMemory_SyncMessages_DisableSessionSaveSkipsRawSessionAndStoresFac
 	}
 }
 
+func TestCreateMemory_SyncMessages_TransientFactsSaveRawSessionButNoInsight(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":[{"text":"Is working out now","tags":["fitness"],"fact_type":"transient_status"}],"message_tags":[["fitness"],[]]}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(memRepo, llmClient, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(sessRepo, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
+
+	body := map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "Is working out now"},
+			{"role": "assistant", "content": "Got it"},
+		},
+		"session_id": "test-session",
+		"sync":       true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !sessRepo.bulkCreateCalled {
+		t.Fatal("expected raw session BulkCreate to run")
+	}
+	if len(memRepo.createCalls) != 0 {
+		t.Fatalf("created insights = %d, want 0", len(memRepo.createCalls))
+	}
+}
+
+func TestCreateMemory_SyncMessages_DisableSessionSaveTransientFactWritesNothing(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":[{"text":"Considering consuming protein powder tonight (2026-06-14).","fact_type":"ephemeral_intent"}],"message_tags":[["diet"],[]]}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	memRepo := &testMemoryRepo{}
+	sessRepo := &testSessionRepo{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	svc := resolvedSvc{
+		memory:  service.NewMemoryService(memRepo, llmClient, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(memRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(sessRepo, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("db-0x0"), svc)
+
+	body := map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "Considering consuming protein powder tonight (2026-06-14)."},
+			{"role": "assistant", "content": "Got it"},
+		},
+		"session_id":         "test-session",
+		"sync":               true,
+		"disableSessionSave": true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if sessRepo.bulkCreateCalled || sessRepo.patchTagsCalled {
+		t.Fatal("did not expect raw session writes when disableSessionSave=true")
+	}
+	if len(memRepo.createCalls) != 0 {
+		t.Fatalf("created insights = %d, want 0", len(memRepo.createCalls))
+	}
+}
+
+func TestCreateMemory_ChainTransientFactDoesNotRoute(t *testing.T) {
+	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{
+					"content": `{"facts":[{"text":"Is working out now","tags":["fitness"],"fact_type":"transient_status","route_targets":["space-target"]}],"message_tags":[["fitness"],[]]}`,
+				}},
+			},
+		})
+	}))
+	defer llmServer.Close()
+
+	llmClient := llm.New(llm.Config{
+		APIKey:  "test-key",
+		BaseURL: llmServer.URL,
+		Model:   "test-model",
+	})
+
+	sourceRepo := &testMemoryRepo{}
+	sourceSessionRepo := &testSessionRepo{}
+	targetRepo := &testMemoryRepo{}
+	srv := NewServer(nil, nil, "", nil, llmClient, "", false, service.ModeSmart, "", slog.Default())
+	sourceSvc := resolvedSvc{
+		memory:  service.NewMemoryService(sourceRepo, llmClient, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(sourceRepo, llmClient, nil, "", service.ModeSmart),
+		session: service.NewSessionService(sourceSessionRepo, nil, ""),
+	}
+	srv.svcCache.Store(tenantSvcKey("tenant-source-0x0"), sourceSvc)
+	storeTestTenantServices(srv, "tenant-target", targetRepo)
+
+	body := map[string]any{
+		"messages": []map[string]string{
+			{"role": "user", "content": "Is working out now"},
+			{"role": "assistant", "content": "Got it"},
+		},
+		"session_id": "chain-session",
+		"sync":       true,
+	}
+	req := makeRequest(t, http.MethodPost, "/memories", body)
+	auth := &domain.AuthInfo{
+		AgentName: "chain-agent",
+		Chain: &domain.ChainAuth{
+			ChainID: "chain-a",
+			APIKey:  "chain-key-a",
+			Nodes: []domain.ChainAuthNode{
+				{
+					SpaceChainNode: domain.SpaceChainNode{
+						TenantID: "tenant-source",
+						Position: 0,
+					},
+					ClusterID: "cluster-source",
+				},
+				{
+					SpaceChainNode: domain.SpaceChainNode{
+						TenantID:             "tenant-target",
+						ExternalSpaceID:      "space-target",
+						Position:             1,
+						RoutingPolicyEnabled: true,
+						RoutingPolicyPrompt:  "facts about fitness",
+					},
+					ClusterID: "cluster-target",
+				},
+			},
+		},
+	}
+	req = req.WithContext(middleware.WithAuthContext(req.Context(), auth))
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !sourceSessionRepo.bulkCreateCalled {
+		t.Fatal("expected source raw session BulkCreate to run")
+	}
+	if len(sourceRepo.createCalls) != 0 {
+		t.Fatalf("source created insights = %d, want 0", len(sourceRepo.createCalls))
+	}
+	if len(targetRepo.createCalls) != 0 {
+		t.Fatalf("target created insights = %d, want 0", len(targetRepo.createCalls))
+	}
+}
+
 func TestCreateMemory_SyncMessages_ServerDisableSessionSaveSkipsRawSession(t *testing.T) {
 	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

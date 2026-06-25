@@ -123,6 +123,16 @@ var (
 		},
 		[]string{"step", "reason"},
 	)
+	// IngestFactsFilteredTotal counts extracted facts dropped before reconciliation
+	// because they are not suitable for long-term insight memory.
+	IngestFactsFilteredTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "ingest_facts_filtered_total",
+			Help:      "Extracted facts filtered before reconciliation, split by reason and source.",
+		},
+		[]string{"reason", "source"},
+	)
 	// EmbeddingRequestsTotal counts model-backed embedding requests for recall query embedding.
 	EmbeddingRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
