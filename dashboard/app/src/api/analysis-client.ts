@@ -14,6 +14,7 @@ import type {
   TaxonomyResponse,
   UploadBatchRequest,
   UploadBatchResponse,
+  UserProfileResponse,
 } from "@/types/analysis";
 
 const ANALYSIS_API_BASE =
@@ -146,6 +147,10 @@ export const analysisApi = {
     if (version) params.set("version", version);
     const suffix = params.size > 0 ? `?${params}` : "";
     return request(spaceId, `/v1/taxonomy${suffix}`);
+  },
+
+  getUserProfile(spaceId: string): Promise<UserProfileResponse> {
+    return request(spaceId, "/v1/user-profile");
   },
 
   createDeepAnalysisReport(

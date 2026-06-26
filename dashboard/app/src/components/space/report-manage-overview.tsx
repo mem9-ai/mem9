@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -6,18 +6,18 @@ import {
   ArrowUpRight,
   BrainCircuit,
   ChevronRight,
-  Download,
   Flag,
   Play,
   Sprout,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
-  buildTemplateReportPdfPayload,
-  REPORT_PDF_STORAGE_KEY,
-} from "@/lib/report-pdf";
+  useMemoryAnalysisReports,
+  type MemoryAnalysisReport,
+  type MemoryAnalysisReportType,
+} from "@/api/memory-analysis-reports";
+import { Button } from "@/components/ui/button";
+import { REPORT_PDF_API_KEY_STORAGE_KEY } from "@/lib/report-pdf";
 import { cn } from "@/lib/utils";
-import type { Memory } from "@/types/memory";
 
 type TemplateId = "weekly" | "trend" | "structure" | "growth";
 
@@ -29,17 +29,22 @@ const templateIcons = {
 } as const;
 
 const workflowSteps = [0, 1, 2] as const;
+const reportTypeByTemplate: Record<TemplateId, MemoryAnalysisReportType | null> = {
+  weekly: "focus_area",
+  trend: "long_term_goal",
+  structure: "emotion",
+  growth: null,
+};
 
 export function ReportManageOverview({
-  memories,
+  spaceId,
   className,
 }: {
-  memories: Memory[];
+  spaceId: string;
   className?: string;
 }) {
   const { t } = useTranslation();
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateId>("weekly");
-  const [generationCount, setGenerationCount] = useState(0);
 
   const templates = useMemo(
     () =>
@@ -54,23 +59,19 @@ export function ReportManageOverview({
 
   const selected = templates.find((template) => template.id === selectedTemplate) ?? templates[0]!;
   const SelectedIcon = templateIcons[selectedTemplate];
+  const reportType = reportTypeByTemplate[selectedTemplate];
+  const reportsQuery = useMemoryAnalysisReports(spaceId, reportType);
+  const reports = reportsQuery.data?.reports ?? [];
 
   const generate = () => {
-    setGenerationCount((count) => count + 1);
     toast.success(t("report_manage.generate_success", { template: selected.name }));
   };
 
-  const openPdfReport = (reportIndex: number) => {
-    const payload = buildTemplateReportPdfPayload({
-      templateName: selected.name,
-      goal: t(`report_manage.templates.${selectedTemplate}.goal`),
-      templateId: selectedTemplate,
-      reportIndex,
-    });
-    const serializedPayload = JSON.stringify(payload);
-    window.sessionStorage.setItem(REPORT_PDF_STORAGE_KEY, serializedPayload);
-    window.localStorage.setItem(REPORT_PDF_STORAGE_KEY, serializedPayload);
-    window.open(`${import.meta.env.BASE_URL}report-pdf`, "_blank", "noopener,noreferrer");
+  const openPdfReport = (report: MemoryAnalysisReport) => {
+    window.localStorage.setItem(REPORT_PDF_API_KEY_STORAGE_KEY, spaceId);
+    const reportUrl = new URL(`${import.meta.env.BASE_URL}report-pdf`, window.location.origin);
+    reportUrl.searchParams.set("reportId", String(report.report_id));
+    window.open(reportUrl.toString(), "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -150,17 +151,32 @@ export function ReportManageOverview({
                 <Button onClick={generate} className="rounded-xl"><Play className="size-4" />{t("report_manage.generate_template")}</Button>
               </div>
               <div className="divide-y divide-foreground/7">
-                {[0, 1, ...(generationCount ? [2] : [])].map((row) => (
-                  <div key={row} className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[1.15fr_.7fr_.8fr_auto] sm:items-center">
-                    <span className="font-medium">{row === 0 && generationCount ? t("report_manage.history_now") : row === 0 ? "Jun 01 – Jun 14" : "May 18 – May 31"}</span>
-                    <span><span className="rounded-md bg-emerald-500/12 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">{t("report_manage.complete")}</span></span>
-                    <span className="text-muted-foreground">{t("report_manage.memory_count", { count: Math.max(memories.length - row * 14, 0) })}</span>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="xs" onClick={() => toast.info(t("report_manage.preview_hint"))}>{t("report_manage.preview")}<ArrowUpRight className="size-3" /></Button>
-                      <Button variant="ghost" size="icon-xs" title={t("report_manage.download")} onClick={() => openPdfReport(row)}><Download className="size-3.5" /></Button>
+                {!reportType ? (
+                  <ReportHistoryMessage>{t("report_manage.report_type_unavailable")}</ReportHistoryMessage>
+                ) : reportsQuery.isLoading ? (
+                  <ReportHistoryMessage>{t("report_manage.report_history_loading")}</ReportHistoryMessage>
+                ) : reportsQuery.isError ? (
+                  <ReportHistoryMessage>{t("report_manage.report_history_failed")}</ReportHistoryMessage>
+                ) : reports.length === 0 ? (
+                  <ReportHistoryMessage>{t("report_manage.report_history_empty")}</ReportHistoryMessage>
+                ) : (
+                  reports.map((report) => (
+                    <div key={report.report_id} className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[1.15fr_.7fr_.8fr_auto] sm:items-center">
+                      <span className="font-medium">{formatReportGeneratedAt(report.generated_at)}</span>
+                      <span>
+                        <span className={cn("rounded-md px-2 py-0.5 text-xs font-medium", report.render_status === "success" ? "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400" : "bg-red-500/12 text-red-600 dark:text-red-400")}>
+                          {report.render_status === "success" ? t("report_manage.complete") : t("report_manage.failed")}
+                        </span>
+                      </span>
+                      <span className="truncate text-muted-foreground" title={report.fail_reason || report.template_id}>
+                        {report.render_status === "fail" && report.fail_reason ? report.fail_reason : t("report_manage.memory_count", { count: report.memory_count })}
+                      </span>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="xs" disabled={report.render_status !== "success"} onClick={() => openPdfReport(report)}>{t("report_manage.view_template")}<ArrowUpRight className="size-3" /></Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 
@@ -174,4 +190,19 @@ export function ReportManageOverview({
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return <div className="grid grid-cols-[4.8rem_minmax(0,1fr)] gap-3"><dt className="text-soft-foreground">{label}</dt><dd className="min-w-0 font-medium leading-relaxed text-foreground">{value}</dd></div>;
+}
+
+function ReportHistoryMessage({ children }: { children: ReactNode }) {
+  return <p className="px-4 py-6 text-sm text-muted-foreground">{children}</p>;
+}
+
+function formatReportGeneratedAt(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return value || "-";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
 }

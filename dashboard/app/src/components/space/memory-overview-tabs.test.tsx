@@ -20,6 +20,32 @@ vi.mock("@/components/space/deep-analysis-tab", () => ({
   }) => <div data-testid="deep-analysis-tab">{`${spaceId}:${String(active)}`}</div>,
 }));
 
+vi.mock("@/api/analysis-queries", () => ({
+  useUserProfile: () => ({
+    data: {
+      generatedAt: "2026-06-26T08:00:00.000Z",
+      source: { memoryTypes: ["fact", "insight", "pinned"], memoryCount: 2 },
+      summary: {
+        text: "Interface summary from v1/user-profile.",
+        evidence: [],
+      },
+      attributes: [],
+      changes: [],
+      relationships: [
+        {
+          name: "Alice",
+          relation: "Teammate",
+          importance: 12,
+          evidenceCount: 2,
+          evidence: [{ memoryId: "mem-profile-1", quote: "Alice collaborates on dashboard work." }],
+        },
+      ],
+      items: [],
+    },
+    isLoading: false,
+  }),
+}));
+
 const ORIGINAL_INNER_WIDTH = window.innerWidth;
 
 function setViewportWidth(width: number): void {
@@ -278,6 +304,9 @@ describe("MemoryOverviewTabs", () => {
     expect(
       screen.getByText("AI's Current Understanding of You"),
     ).toBeInTheDocument();
+    expect(screen.getByText("Interface summary from v1/user-profile.")).toBeInTheDocument();
+    expect(screen.getByText("Alice")).toBeInTheDocument();
+    expect(screen.getByText("Teammate")).toBeInTheDocument();
     expect(screen.getByText("Profile Confidence")).toBeInTheDocument();
     expect(screen.getByText("12 memories")).toBeInTheDocument();
     expect(

@@ -1,48 +1,89 @@
 import { useMemo } from "react";
+import { useMemoryAnalysisReport } from "@/api/memory-analysis-reports";
 import {
+  buildReportPdfPayloadFromReportContent,
   buildTemplateReportPdfPayload,
-  REPORT_PDF_STORAGE_KEY,
+  REPORT_PDF_API_KEY_STORAGE_KEY,
   type ReportPdfPayload,
   type ReportPdfTopicBlock,
 } from "@/lib/report-pdf";
+import { getActiveApiKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
-function readReportPayload(): ReportPdfPayload {
-  if (typeof window === "undefined") {
-    return buildTemplateReportPdfPayload({
-      templateName: "关注点变化",
-      goal: "识别用户最近关注点相对历史关注点的变化",
-      templateId: "focus_change",
-      reportIndex: 0,
-    });
-  }
+const TEMPLATE_META: Record<string, { name: string; goal: string }> = {
+  focus_area: {
+    name: "关注点变化",
+    goal: "识别用户最近关注点相对历史关注点的变化",
+  },
+  long_term_goal: {
+    name: "长期目标变化",
+    goal: "梳理新增、强化或再次确认的长期目标",
+  },
+  emotion: {
+    name: "情绪趋势变化",
+    goal: "分析对话中的阶段性情绪变化",
+  },
+};
 
-  const raw =
-    window.sessionStorage.getItem(REPORT_PDF_STORAGE_KEY) ??
-    window.localStorage.getItem(REPORT_PDF_STORAGE_KEY);
-  if (!raw) {
-    return buildTemplateReportPdfPayload({
-      templateName: "关注点变化",
-      goal: "识别用户最近关注点相对历史关注点的变化",
-      templateId: "focus_change",
-      reportIndex: 0,
-    });
-  }
+function getReportIdFromUrl(): string {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get("reportId") ?? "";
+}
 
-  try {
-    return JSON.parse(raw) as ReportPdfPayload;
-  } catch {
-    return buildTemplateReportPdfPayload({
-      templateName: "关注点变化",
-      goal: "识别用户最近关注点相对历史关注点的变化",
-      templateId: "focus_change",
-      reportIndex: 0,
-    });
-  }
+function buildFallbackPayload(reportId: string): ReportPdfPayload {
+  return buildTemplateReportPdfPayload({
+    templateName: "关注点变化",
+    goal: "识别用户最近关注点相对历史关注点的变化",
+    templateId: "focus_area",
+    reportIndex: Number(reportId) || 0,
+  });
+}
+
+function getReportPdfApiKey(): string | null {
+  if (typeof window === "undefined") return null;
+  return getActiveApiKey() ?? window.localStorage.getItem(REPORT_PDF_API_KEY_STORAGE_KEY);
 }
 
 export function ReportPdfPage() {
-  const report = useMemo(() => readReportPayload(), []);
+  const reportId = useMemo(() => getReportIdFromUrl(), []);
+  const apiKey = useMemo(() => getReportPdfApiKey(), []);
+  const reportQuery = useMemoryAnalysisReport(apiKey, reportId || null);
+  const report = useMemo(() => {
+    const detail = reportQuery.data;
+    if (!detail) return buildFallbackPayload(reportId);
+
+    const meta = TEMPLATE_META[detail.template_id] ?? {
+      name: detail.template_id || "关注点变化",
+      goal: "识别用户记忆中的阶段性变化",
+    };
+    return buildReportPdfPayloadFromReportContent({
+      reportContent: detail.report_content,
+      templateName: meta.name,
+      goal: meta.goal,
+      templateId: detail.template_id || "focus_area",
+      reportId: String(detail.report_id || reportId),
+    });
+  }, [reportId, reportQuery.data]);
+
+  if (!reportId) {
+    return <ReportPdfState title="缺少 reportId" description="请从模板生成记录中点击“查看模板”进入报告页面。" />;
+  }
+
+  if (!apiKey) {
+    return <ReportPdfState title="未连接 Space" description="请先返回 MEM9 页面连接 Space，再查看报告。" />;
+  }
+
+  if (reportQuery.isLoading) {
+    return <ReportPdfState title="正在加载报告" description="正在根据 reportId 获取报告详情..." />;
+  }
+
+  if (reportQuery.isError) {
+    return <ReportPdfState title="报告加载失败" description="无法从 /v1/memory-analysis/report/:report_id 获取报告详情。" />;
+  }
+
+  if (reportQuery.data === null) {
+    return <ReportPdfState title="报告不存在" description={`未找到 reportId=${reportId} 的报告。`} />;
+  }
 
   return (
     <main className="min-h-screen bg-[#f3f7fc] px-6 py-10 text-[#111827] print:bg-white print:px-0 print:py-0">
@@ -114,6 +155,17 @@ export function ReportPdfPage() {
           <span>{report.footer.page}</span>
         </footer>
       </article>
+    </main>
+  );
+}
+
+function ReportPdfState({ title, description }: { title: string; description: string }) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#f3f7fc] px-6 text-[#111827]">
+      <section className="max-w-lg rounded-[1.5rem] border border-[#d9e2ef] bg-white p-8 text-center shadow-sm">
+        <h1 className="text-2xl font-extrabold tracking-[-0.05em]">{title}</h1>
+        <p className="mt-3 text-sm font-semibold leading-relaxed text-[#64748b]">{description}</p>
+      </section>
     </main>
   );
 }

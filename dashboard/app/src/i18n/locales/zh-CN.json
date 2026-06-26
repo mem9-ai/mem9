@@ -433,6 +433,7 @@
     "page_title": "我的记忆画像",
     "page_subtitle": "基于 {{days}} 天陪伴与 {{count}} 条记忆，展示当前 Agent 正在采用的用户画像。",
     "last_updated": "最后更新：2 小时前",
+    "last_updated_at": "最后更新：{{value}}",
     "share": "分享我的档案",
     "share_copy": "我的 mem9 记忆画像",
     "personal": {
@@ -449,6 +450,7 @@
     "current_understanding": {
       "eyebrow": "",
       "title": "AI 对你的当前理解",
+      "loading": "正在读取 AI 对你的当前理解...",
       "description": "你是一个理性、好奇心强且具有成长驱动力的人，喜欢把目标拆成明确步。你当前关注 KET 备考、单词计划与健康习惯，并偏好直接、具体、少说教的建议。你做决策时倾向安全优先、循序就进、重视可持续。"
     },
     "confidence": {
@@ -479,7 +481,7 @@
       "title": "记忆组成",
       "items": { "profile": "个人画像", "communication": "沟通偏好", "learning": "学习成长", "project": "项目", "status": "状态" }
     },
-    "relationships": { "title": "重要关系", "action": "关系图", "user": "用户", "daughter": "女儿", "partner": "伴侣", "parents": "父母" },
+    "relationships": { "title": "重要关系", "action": "关系图", "user": "用户", "daughter": "女儿", "partner": "伴侣", "parents": "父母", "empty": "暂无可展示的重要关系。", "unspecified": "关系未标注", "evidence_count": "{{count}} 条证据" },
     "items": {
       "title": "画像项",
       "priority": { "title": "当前优先事项", "body": "KET 备考与健康管理", "meta": "profile sync · 用户确认 · 3 条证据" },
@@ -702,6 +704,12 @@
     "history_title": "该模板生成记录",
     "history_now": "刚刚生成",
     "complete": "已完成",
+    "failed": "失败",
+    "report_history_loading": "正在加载生成记录...",
+    "report_history_empty": "暂无生成记录",
+    "report_history_failed": "生成记录加载失败",
+    "report_type_unavailable": "该模板的生成记录接口暂未开放",
+    "view_template": "查看模板",
     "preview": "查看洞察",
     "download": "下载 PDF",
     "preview_hint": "接通报告服务后，报告预览将在这里打开。",
@@ -709,10 +717,10 @@
     "generate_success": "已提交「{{template}}」生成任务。",
     "note": "第一期仅提供内置模板；报告结果将支持在洞察页、JSON 或 OpenAPI 中查看。",
     "templates": {
-      "weekly": { "name": "关注点变化", "cadence": "双周", "last_generated": "2025-06-14 09:12", "goal": "识别近期关注内容与历史关注内容的变化。" },
-      "trend": { "name": "长期目标变化", "cadence": "每日", "last_generated": "2025-06-14 08:35", "goal": "梳理新增、强化或再次确认的长期目标。" },
-      "structure": { "name": "情绪趋势变化", "cadence": "按需", "last_generated": "2025-06-12 18:07", "goal": "分析对话中的阶段性情绪变化。" },
-      "growth": { "name": "记忆结构变化", "cadence": "每月", "last_generated": "2025-05-31 21:10", "goal": "理解记忆类型、主题与可信度的分布变化。" }
+      "weekly": { "name": "关注点变化", "cadence": "双周", "last_generated": "2025-06-14 09:12", "goal": "识别近期关注内容与历史关注内容的变化" },
+      "trend": { "name": "长期目标变化", "cadence": "每日", "last_generated": "2025-06-14 08:35", "goal": "梳理新增、强化或再次确认的长期目标" },
+      "structure": { "name": "情绪趋势变化", "cadence": "按需", "last_generated": "2025-06-12 18:07", "goal": "分析对话中的阶段性情绪变化" },
+      "growth": { "name": "记忆结构变化", "cadence": "每月", "last_generated": "2025-05-31 21:10", "goal": "理解记忆类型、主题与可信度的分布变化" }
     }
   },
   "pixel_farm": {

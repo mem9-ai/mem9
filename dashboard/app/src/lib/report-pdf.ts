@@ -1,4 +1,5 @@
 export const REPORT_PDF_STORAGE_KEY = "mem9.reportPdfPayload";
+export const REPORT_PDF_API_KEY_STORAGE_KEY = "mem9.reportPdfApiKey";
 
 export interface ReportPdfTopicBlock {
   title: string;
@@ -101,4 +102,72 @@ export function buildTemplateReportPdfPayload({
       page: "Page 1 / 1",
     },
   };
+}
+
+export function buildReportPdfPayloadFromReportContent({
+  reportContent,
+  templateName,
+  goal,
+  templateId,
+  reportId,
+}: {
+  reportContent: string;
+  templateName: string;
+  goal: string;
+  templateId: string;
+  reportId: string;
+}): ReportPdfPayload {
+  const fallback = buildTemplateReportPdfPayload({
+    templateName,
+    goal,
+    templateId,
+    reportIndex: Number(reportId) || 0,
+  });
+
+  if (!reportContent.trim()) {
+    return {
+      ...fallback,
+      footer: { ...fallback.footer, reportId },
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(reportContent) as Partial<ReportPdfPayload>;
+    if (isReportPdfPayloadLike(parsed)) {
+      return {
+        ...fallback,
+        ...parsed,
+        footer: {
+          ...fallback.footer,
+          ...parsed.footer,
+          reportId: parsed.footer?.reportId ?? reportId,
+        },
+      };
+    }
+  } catch {
+    // Plain-text report content is rendered as the summary body below.
+  }
+
+  return {
+    ...fallback,
+    summary: {
+      ...fallback.summary,
+      body: reportContent,
+    },
+    footer: {
+      ...fallback.footer,
+      reportId,
+    },
+  };
+}
+
+function isReportPdfPayloadLike(value: Partial<ReportPdfPayload>): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof value.title === "string" &&
+    typeof value.summary === "object" &&
+    typeof value.before === "object" &&
+    typeof value.after === "object"
+  );
 }

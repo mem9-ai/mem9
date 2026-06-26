@@ -131,6 +131,7 @@ export function MemoryOverviewTabs({
 
       <TabsContent value="profile" className="-mt-px mt-0">
         <MemoryProfileOverview
+          spaceId={spaceId}
           stats={stats}
           memories={pulseMemories}
           cards={cards}
@@ -142,7 +143,7 @@ export function MemoryOverviewTabs({
       </TabsContent>
 
       <TabsContent value="reports" className="-mt-px mt-0">
-        <ReportManageOverview memories={pulseMemories} className="!mt-0" />
+        <ReportManageOverview spaceId={spaceId} className="!mt-0" />
       </TabsContent>
 
       <TabsContent value="periodic" className="-mt-px mt-0">

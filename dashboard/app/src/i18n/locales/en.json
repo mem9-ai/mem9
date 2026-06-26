@@ -433,6 +433,7 @@
     "page_title": "My Memory Profile",
     "page_subtitle": "Based on {{days}} days together and {{count}} memories, this is the profile your Agent is using now.",
     "last_updated": "Last updated: 2 hours ago",
+    "last_updated_at": "Last updated: {{value}}",
     "share": "Share my profile",
     "share_copy": "My mem9 memory profile",
     "personal": {
@@ -449,6 +450,7 @@
     "current_understanding": {
       "eyebrow": "",
       "title": "AI's Current Understanding of You",
+      "loading": "Loading AI's current understanding of you...",
       "description": "You are rational, curious, and growth-driven, and you like breaking goals into clear steps. You are currently focused on KET preparation, vocabulary planning, and health habits, and you prefer direct, specific, low-preach advice. When making decisions, you tend to prioritize safety, proceed step by step, and value sustainability."
     },
     "confidence": {
@@ -475,7 +477,7 @@
       "title": "Memory composition",
       "items": { "profile": "Profile", "communication": "Communication", "learning": "Learning", "project": "Project", "status": "Status" }
     },
-    "relationships": { "title": "Important relationships", "action": "Relationship map", "user": "You", "daughter": "Daughter", "partner": "Partner", "parents": "Parents" },
+    "relationships": { "title": "Important relationships", "action": "Relationship map", "user": "You", "daughter": "Daughter", "partner": "Partner", "parents": "Parents", "empty": "No important relationships to show yet.", "unspecified": "Relationship not labeled", "evidence_count": "{{count}} evidence" },
     "items": {
       "title": "Profile items",
       "priority": { "title": "Current priorities", "body": "KET preparation and health management", "meta": "profile sync · user confirmed · 3 evidence" },
@@ -637,6 +639,12 @@
     "history_title": "Generation history",
     "history_now": "Just generated",
     "complete": "Complete",
+    "failed": "Failed",
+    "report_history_loading": "Loading generation history...",
+    "report_history_empty": "No generated reports yet.",
+    "report_history_failed": "Failed to load generation history.",
+    "report_type_unavailable": "The generation history API for this template is not available yet.",
+    "view_template": "View template",
     "preview": "Preview",
     "download": "Download PDF",
     "preview_hint": "Report preview will open here once the reporting service is connected.",
