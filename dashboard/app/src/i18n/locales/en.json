@@ -480,10 +480,11 @@
     "relationships": { "title": "Important relationships", "action": "Relationship map", "user": "You", "daughter": "Daughter", "partner": "Partner", "parents": "Parents", "empty": "No important relationships to show yet.", "unspecified": "Relationship not labeled", "evidence_count": "{{count}} evidence" },
     "items": {
       "title": "Profile items",
-      "priority": { "title": "Current priorities", "body": "KET preparation and health management", "meta": "profile sync · user confirmed · 3 evidence" },
-      "style": { "title": "Preferred companion style", "body": "Direct, specific, and low-preach", "meta": "conversation · user confirmed · 2 evidence" },
-      "constraint": { "title": "Important constraints", "body": "Avoid sugary drinks and alcohol", "meta": "insight · high confidence · 4 evidence" },
-      "recall": { "title": "Recall cue", "body": "Prioritize recall for KET and 60-day preparation", "meta": "agent use note · high confidence" }
+      "empty": "No profile items to show yet.",
+      "evidence_count": "· {{count}} evidence",
+      "priority": { "title": "Current priorities" },
+      "style": { "title": "Preferred companion style" },
+      "constraint": { "title": "Important constraints" }
     }
   },
   "memory_insight": {

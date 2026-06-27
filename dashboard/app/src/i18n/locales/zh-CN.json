@@ -484,10 +484,11 @@
     "relationships": { "title": "重要关系", "action": "关系图", "user": "用户", "daughter": "女儿", "partner": "伴侣", "parents": "父母", "empty": "暂无可展示的重要关系。", "unspecified": "关系未标注", "evidence_count": "{{count}} 条证据" },
     "items": {
       "title": "画像项",
-      "priority": { "title": "当前优先事项", "body": "KET 备考与健康管理", "meta": "profile sync · 用户确认 · 3 条证据" },
-      "style": { "title": "偏好的陪伴方式", "body": "直接、具体、少说教", "meta": "conversation · 用户确认 · 2 条证据" },
-      "constraint": { "title": "重要约束", "body": "避免含糖饮料和酒精", "meta": "insight · 高置信 · 4 条证据" },
-      "recall": { "title": "召回提示", "body": "提到 KET、60 天备考时优先召回", "meta": "agent use note · 高置信" }
+      "empty": "暂无可展示的画像项。",
+      "evidence_count": "· {{count}} 条证据",
+      "priority": { "title": "当前优先事项" },
+      "style": { "title": "偏好的陪伴方式" },
+      "constraint": { "title": "重要约束" }
     }
   },
   "memory_insight": {

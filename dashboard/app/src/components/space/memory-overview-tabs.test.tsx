@@ -40,7 +40,56 @@ vi.mock("@/api/analysis-queries", () => ({
           evidence: [{ memoryId: "mem-profile-1", quote: "Alice collaborates on dashboard work." }],
         },
       ],
-      items: [],
+      items: [
+        {
+          kind: "current_priority",
+          title: "Prepare KET plan",
+          summary: "Keep the 60-day vocabulary schedule visible.",
+          importance: 10,
+          evidenceCount: 3,
+          evidence: [],
+        },
+        {
+          kind: "current_priority",
+          title: "Review dashboard work",
+          summary: "Focus on user profile rendering.",
+          importance: 8,
+          evidenceCount: 2,
+          evidence: [],
+        },
+        {
+          kind: "current_priority",
+          title: "Protect health rhythm",
+          summary: "Keep sleep and exercise sustainable.",
+          importance: 7,
+          evidenceCount: 1,
+          evidence: [],
+        },
+        {
+          kind: "current_priority",
+          title: "Hidden fourth priority",
+          summary: "This should not render.",
+          importance: 6,
+          evidenceCount: 1,
+          evidence: [],
+        },
+        {
+          kind: "companion_style",
+          title: "Be direct",
+          summary: "Prefer concrete suggestions without preaching.",
+          importance: 9,
+          evidenceCount: 2,
+          evidence: [],
+        },
+        {
+          kind: "robot_constraint",
+          title: "Avoid assumptions",
+          summary: "Do not change backend response data for UI requests.",
+          importance: 9,
+          evidenceCount: 4,
+          evidence: [],
+        },
+      ],
     },
     isLoading: false,
   }),
@@ -307,6 +356,12 @@ describe("MemoryOverviewTabs", () => {
     expect(screen.getByText("Interface summary from v1/user-profile.")).toBeInTheDocument();
     expect(screen.getByText("Alice")).toBeInTheDocument();
     expect(screen.getByText("Teammate")).toBeInTheDocument();
+    expect(screen.getByText("Prepare KET plan")).toBeInTheDocument();
+    expect(screen.queryByText(/Keep the 60-day vocabulary schedule visible/u)).not.toBeInTheDocument();
+    expect(screen.getByText("Be direct")).toBeInTheDocument();
+    expect(screen.getByText("Avoid assumptions")).toBeInTheDocument();
+    expect(screen.queryByText("Hidden fourth priority")).not.toBeInTheDocument();
+    expect(screen.queryByText("Recall cue")).not.toBeInTheDocument();
     expect(screen.getByText("Profile Confidence")).toBeInTheDocument();
     expect(screen.getByText("12 memories")).toBeInTheDocument();
     expect(
