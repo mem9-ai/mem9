@@ -48,14 +48,16 @@ const (
 )
 
 var (
-	ephemeralIntentRE = regexp.MustCompile(`(?i)\b(?:user\s+)?(?:wants?|needs?|plans?|intends?|considering|thinking about|will|might|may|should|trying)\s+(?:to\s+)?(?:restart|restore|record|continue|remove|pin|send|create|set up|fix|debug|check|confirm|eat|consume|have|train|work out|exercise)\b`)
-	shortTimeCueRE    = regexp.MustCompile(`(?i)\b(?:now|currently|today|tonight|tomorrow|yesterday|right now|this morning|this afternoon|this evening|last night|day before yesterday)\b`)
-	activityLogRE     = regexp.MustCompile(`(?i)\b(?:recorded|logged|had|ate|consumed|completed|ran|woke up|stayed up|resting|trained|training|workout|exercise|cardio|breakfast|lunch|dinner|snack|weight|protein powder|creatine|sleep|slept|hunger|hungry|cosmetic procedure|botulinum|filler)\b`)
-	operationalLogRE  = regexp.MustCompile(`(?i)\b(?:temporary workspace|temporary table|cron job|import task|upload task|planning-only turn|reported tracking event error|requires confirmation today|received service error|selected model is at capacity|eta is|eta tomorrow|due tomorrow|fixed issue|debug(?:ging)?|smoke test|functioning correctly)\b`)
-	stableSignalRE    = regexp.MustCompile(`(?i)\b(?:prefers?|preference|usually|regularly|often|default|goal|target|long-term|habit|birthday|relationship|lives in|based in|works at|uses|primary|source of truth|architecture|configured to|configuration|setting)\b`)
-	oneTimeIntentRE   = regexp.MustCompile(`(?i)\buser\s+wants?\s+to\s+(?:restart|restore|record|continue|remove|pin|send|create|set up|fix|debug|check|confirm)\b`)
-	transientStatusRE = regexp.MustCompile(`(?i)\b(?:is|am|are|was|were|feels?|experiencing|working out|training|resting|hungry|using voice input)\b`)
-	activityActionRE  = regexp.MustCompile(`(?i)\b(?:recorded|logged|had|ate|consumed|completed|ran|woke up|stayed up|today|tonight|yesterday|this morning|last night|weight is|working out now)\b`)
+	ephemeralIntentRE        = regexp.MustCompile(`(?i)^(?:user\s+)?(?:wants?|needs?|plans?|intends?|considering|thinking about|will|might|may|should|trying)\s+(?:to\s+)?(?:restart|restore|record|continue|remove|pin|send|create|set up|fix|debug|check|confirm|eat|eating|consume|consuming|have|having|train|training|work out|working out|exercise|exercising)\b`)
+	shortTimeCueRE           = regexp.MustCompile(`(?i)\b(?:now|currently|today|tonight|tomorrow|yesterday|right now|this morning|this afternoon|this evening|last night|day before yesterday)\b`)
+	activityLogRE            = regexp.MustCompile(`(?i)\b(?:recorded|logged|weighed|weight is|protein powder|creatine|workout log|fitness session|breakfast|lunch|dinner|snack|sleep|slept|hunger|hungry|cosmetic procedure|botulinum|filler)\b`)
+	subjectlessActivityLogRE = regexp.MustCompile(`(?i)^(?:recorded|logged|ate|had|drank|consumed|completed|ran|woke up|stayed up|trained|resting)\b`)
+	userActivityLogRE        = regexp.MustCompile(`(?i)^(?:the\s+)?user\b.*\b(?:recorded|logged|ate|had|drank|consumed|completed|ran|workout|weight|protein powder|creatine|breakfast|lunch|dinner|snack|sleep|slept|hunger|hungry)\b`)
+	quantifiedHealthLogRE    = regexp.MustCompile(`(?i)\b\d+(?:\.\d+)?\s*(?:kg|lbs?|pounds?|bpm|kcal|calories?)\b`)
+	operationalLogRE         = regexp.MustCompile(`(?i)\b(?:temporary workspace|temporary table|cron job|import task|upload task|planning-only turn|reported tracking event error|requires confirmation today|received service error|selected model is at capacity|eta is|eta tomorrow|due tomorrow|fixed issue|debug(?:ging)?|smoke test|functioning correctly)\b`)
+	stableSignalRE           = regexp.MustCompile(`(?i)\b(?:prefers?|preference|usually|regularly|often|default|goal|target|long-term|habit|birthday|relationship|lives in|based in|works at|uses|primary|source of truth|architecture|configured to|configuration|setting)\b`)
+	oneTimeIntentRE          = regexp.MustCompile(`(?i)\buser\s+wants?\s+to\s+(?:restart|restore|record|continue|remove|pin|send|create|set up|fix|debug|check|confirm)\b`)
+	transientStatusRE        = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:is|am|are)\s+(?:currently\s+)?(?:working out|training|resting|hungry|using voice input)\b|^(?:now|right now|currently)\b.*\b(?:working out|training|resting|hungry|using voice input)\b`)
 )
 
 // IngestRequest is the input for the ingest pipeline.
@@ -272,13 +274,23 @@ func serverGuardDropReason(text string) string {
 		return factTypeEphemeralIntent
 	case shortTimeCueRE.MatchString(text) && transientStatusRE.MatchString(text):
 		return factTypeTransientStatus
-	case activityLogRE.MatchString(text) && activityActionRE.MatchString(text):
+	case isActivityLogText(text):
 		return factTypeActivityLog
 	case operationalLogRE.MatchString(text):
 		return factTypeOperationalLog
 	default:
 		return ""
 	}
+}
+
+func isActivityLogText(text string) bool {
+	if !activityLogRE.MatchString(text) && !quantifiedHealthLogRE.MatchString(text) {
+		return false
+	}
+	return subjectlessActivityLogRE.MatchString(text) ||
+		userActivityLogRE.MatchString(text) ||
+		quantifiedHealthLogRE.MatchString(text) ||
+		strings.Contains(strings.ToLower(text), "recorded")
 }
 
 type preparedExtractionInput struct {
@@ -798,17 +810,25 @@ atomic facts from a conversation.
      - "正在做一个需要 SQL 窗口函数的项目"
 7. Extract long-term memory facts only. Keep stable personal information, preferences,
    habits, identities, relationships, long-term goals, long-running projects, durable
-   configuration, architecture, and source-of-truth facts even when they arose in a
-   task-specific context.
+   configuration, architecture, source-of-truth facts, and meaningful dated narrative
+   events involving people, places, relationships, projects, or commitments.
 8. Classify short-lived or one-off information with the appropriate fact_type instead of
    treating it as a long-term fact:
-   - transient_status: current/temporary state such as "is working out now", hunger,
-     voice-input status, today's weather, or "currently doing X" when it has no durable value.
-   - ephemeral_intent: one-off intent/request such as restarting a task, recording a meal,
-     consuming something tonight, sending a handoff, or setting up temporary monitoring.
-   - activity_log: single health, diet, workout, sleep, weight, meal, or medical-aesthetic log.
-   - operational_log: runtime/task/debug/import/cron/status/error/ETA/temporary-workspace logs.
+   - transient_status: the user's current/temporary state or environment such as
+     "is working out now", hunger, voice-input status, today's weather, or "currently
+     doing X" when it has no durable value.
+   - ephemeral_intent: a one-off user request to the assistant, such as restarting a
+     task, recording a meal, consuming something tonight, sending a handoff, checking
+     whether a service works, or setting up temporary monitoring.
+   - activity_log: explicit self-tracking/check-in records for the user, such as a
+     single health, diet, workout, sleep, weight, supplement, or medical-aesthetic log.
+   - operational_log: assistant/system runtime/task/debug/import/cron/status/error/ETA/
+     temporary-workspace logs.
    These items are not long-term insight memories.
+   Do NOT classify ordinary narrative events or future plans as non-long-term solely
+   because they contain today/yesterday/tomorrow, ate/had/went, or plans/will. If the
+   statement describes a person, place, relationship, project, trip, event, or commitment
+   that may be useful later, keep it as fact.
 9. Keep concerns, risks, and worries the user expresses about their work, systems, platforms, or ongoing operations,
 	 when they describe an ongoing condition rather than a one-off log line. These signals can have lasting value.
    Examples to keep:
@@ -854,6 +874,8 @@ atomic facts from a conversation.
 - "Default protein serving is 24g"
 - "Uses Feishu for calendar scheduling"
 - "Mem9 source of truth is the Go API"
+- "Melanie went camping in the mountains last week"
+- "James plans to call Samantha next month"
 
 ## Examples to classify as non-long-term
 
@@ -967,17 +989,25 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
      - "正在做一个需要 SQL 窗口函数的项目"
 7. Extract long-term memory facts only. Keep stable personal information, preferences,
    habits, identities, relationships, long-term goals, long-running projects, durable
-   configuration, architecture, and source-of-truth facts even when they arose in a
-   task-specific context.
+   configuration, architecture, source-of-truth facts, and meaningful dated narrative
+   events involving people, places, relationships, projects, or commitments.
 8. Classify short-lived or one-off information with the appropriate fact_type instead of
    treating it as a long-term fact:
-   - transient_status: current/temporary state such as "is working out now", hunger,
-     voice-input status, today's weather, or "currently doing X" when it has no durable value.
-   - ephemeral_intent: one-off intent/request such as restarting a task, recording a meal,
-     consuming something tonight, sending a handoff, or setting up temporary monitoring.
-   - activity_log: single health, diet, workout, sleep, weight, meal, or medical-aesthetic log.
-   - operational_log: runtime/task/debug/import/cron/status/error/ETA/temporary-workspace logs.
+   - transient_status: the user's current/temporary state or environment such as
+     "is working out now", hunger, voice-input status, today's weather, or "currently
+     doing X" when it has no durable value.
+   - ephemeral_intent: a one-off user request to the assistant, such as restarting a
+     task, recording a meal, consuming something tonight, sending a handoff, checking
+     whether a service works, or setting up temporary monitoring.
+   - activity_log: explicit self-tracking/check-in records for the user, such as a
+     single health, diet, workout, sleep, weight, supplement, or medical-aesthetic log.
+   - operational_log: assistant/system runtime/task/debug/import/cron/status/error/ETA/
+     temporary-workspace logs.
    These items are not long-term insight memories.
+   Do NOT classify ordinary narrative events or future plans as non-long-term solely
+   because they contain today/yesterday/tomorrow, ate/had/went, or plans/will. If the
+   statement describes a person, place, relationship, project, trip, event, or commitment
+   that may be useful later, keep it as fact.
 9. Keep concerns, risks, and worries the user expresses about their work, systems, platforms, or ongoing operations,
 	 when they describe an ongoing condition rather than a one-off log line. These signals can have lasting value.
    Examples to keep:
@@ -1047,6 +1077,11 @@ Input:
 User: I'm working remotely this week.
 Assistant: Noted.
 Output: {"facts": [{"text": "Working remotely this week", "tags": ["work", "timeline"], "fact_type": "transient_status"}], "message_tags": [["work", "timeline"], ["answer"]]}
+
+Input:
+User: Melanie went camping in the mountains last week, and James plans to call Samantha next month.
+Assistant: Sounds good.
+Output: {"facts": [{"text": "Melanie went camping in the mountains last week", "tags": ["event", "timeline"], "fact_type": "fact"}, {"text": "James plans to call Samantha next month", "tags": ["event", "timeline"], "fact_type": "fact"}], "message_tags": [["event", "timeline"], ["answer"]]}
 
 Input:
 User: I usually sleep more than 7 hours and my default protein serving is 24g.

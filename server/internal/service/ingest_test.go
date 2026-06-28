@@ -893,10 +893,16 @@ func TestFilterLongTermFactsDropsTransientAndKeepsStableFacts(t *testing.T) {
 		{Text: "Considering consuming protein powder tonight (2026-06-14)."},
 		{Text: "Recorded weight is 79.7kg"},
 		{Text: "Temporary workspace is /home/ec2-user/clawd-workspace/"},
+		{Text: "Ate a plate of Xijia De mushroom and pork dumplings for lunch"},
+		{Text: "User had Starbucks for breakfast"},
 		{Text: "Usually sleeps more than 7 hours"},
 		{Text: "Default protein serving is 24g"},
 		{Text: "Uses Feishu for calendar scheduling"},
 		{Text: "Plans to shift focus from weight reduction to muscle gain, with fat loss as a secondary objective."},
+		{Text: "Melanie went camping in the mountains last week"},
+		{Text: "James plans to call Samantha next month"},
+		{Text: "Alice had dinner with Bob yesterday"},
+		{Text: "Alice is working out now"},
 	}
 
 	got := filterLongTermFacts(input)
@@ -910,6 +916,10 @@ func TestFilterLongTermFactsDropsTransientAndKeepsStableFacts(t *testing.T) {
 		"Default protein serving is 24g",
 		"Uses Feishu for calendar scheduling",
 		"Plans to shift focus from weight reduction to muscle gain, with fat loss as a secondary objective.",
+		"Melanie went camping in the mountains last week",
+		"James plans to call Samantha next month",
+		"Alice had dinner with Bob yesterday",
+		"Alice is working out now",
 	}
 	if !reflect.DeepEqual(texts, want) {
 		t.Fatalf("filtered texts = %#v, want %#v", texts, want)
