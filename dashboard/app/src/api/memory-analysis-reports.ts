@@ -1,9 +1,26 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 const ANALYSIS_API_BASE =
   import.meta.env.VITE_ANALYSIS_API_BASE || "/your-memory/analysis-api";
 
-export type MemoryAnalysisReportType = "focus_area" | "long_term_goal" | "emotion";
+export type MemoryAnalysisReportType =
+  | "focus_area"
+  | "long_term_goal"
+  | "preference_signal"
+  | "growth_signal";
+
+const memoryAnalysisReportTypes = [
+  "focus_area",
+  "long_term_goal",
+  "preference_signal",
+  "growth_signal",
+] as const satisfies readonly MemoryAnalysisReportType[];
+export type MemorySignalDimension =
+  | "long_term_goal"
+  | "focus_area"
+  | "emotion"
+  | "preference_signal"
+  | "growth_signal";
 
 export interface MemoryAnalysisReport {
   report_id: number;
@@ -13,10 +30,86 @@ export interface MemoryAnalysisReport {
   render_status: "success" | "fail";
   fail_reason: string | null;
   memory_count: number;
+  startTime: string;
+  endTime: string;
 }
 
 export interface MemoryAnalysisReportListResponse {
   reports: MemoryAnalysisReport[];
+}
+
+export interface MemoryAnalysisChangeEvidence {
+  evidenceId: string;
+  quote: string;
+  correctness: string;
+  edited: boolean;
+  review?: Record<string, unknown> | null;
+}
+
+export interface MemoryAnalysisChangePeriod {
+  start: string;
+  end: string;
+}
+
+export interface MemoryAnalysisChange {
+  title: string;
+  summary: string;
+  period: MemoryAnalysisChangePeriod;
+  evidence: MemoryAnalysisChangeEvidence[];
+}
+
+export interface MemoryAnalysisChangeDimensionGroup {
+  dimension: MemorySignalDimension;
+  changes: MemoryAnalysisChange[];
+}
+
+export interface AnalyzeMemorySourceResponse {
+  total: number;
+  memoryCount: number;
+  model: string;
+  dimensions: MemoryAnalysisChangeDimensionGroup[];
+}
+
+export interface AnalyzeMemorySourceInput {
+  createdAfter: string;
+  createdBefore: string;
+}
+
+export interface GenerateMemoryAnalysisReportInput {
+  templateId: MemoryAnalysisReportType;
+  analysisRange: AnalyzeMemorySourceInput;
+}
+
+export interface GenerateMemoryAnalysisReportResult {
+  report: MemoryAnalysisReport;
+  analysis: AnalyzeMemorySourceResponse | null;
+  renderStatus: "success" | "fail";
+  memoryCount: number;
+  failReason: string | null;
+}
+
+export interface AnalyzeMemorySourceQueryOptions {
+  enabled?: boolean;
+}
+
+export interface EditSessionMessageInput {
+  messageId: string;
+  content: string;
+  reason?: string;
+}
+
+export interface EditSessionMessageResult {
+  content: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface MarkSessionMessageInput {
+  messageId: string;
+  correctness: "correct" | "incorrect";
+}
+
+export interface MarkSessionMessageResult {
+  metadata: Record<string, unknown> | null;
 }
 
 async function requestMemoryAnalysisReports(
@@ -39,6 +132,95 @@ async function requestMemoryAnalysisReports(
   const reports = Array.isArray(body) ? body : body.reports;
   return {
     reports: Array.isArray(reports) ? reports.map(normalizeReport) : [],
+  };
+}
+
+async function requestAnalyzeMemorySource(
+  spaceId: string,
+  input: AnalyzeMemorySourceInput,
+): Promise<AnalyzeMemorySourceResponse> {
+  const params = new URLSearchParams({
+    createdAfter: input.createdAfter,
+    createdBefore: input.createdBefore,
+  });
+  const response = await fetch(`${ANALYSIS_API_BASE}/v1/memory-analysis/analyze-source?${params}`, {
+    method: "POST",
+    headers: {
+      "x-mem9-api-key": spaceId.trim(),
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { message?: string; error?: string } | null;
+    throw new Error(body?.message || body?.error || `Memory analysis source API error ${response.status}`);
+  }
+
+  const body = await response.json() as Partial<AnalyzeMemorySourceResponse> | null;
+  return normalizeAnalyzeMemorySourceResponse(body);
+}
+
+async function requestCreateMemoryAnalysisReport(
+  spaceId: string,
+  input: {
+    template_id: MemoryAnalysisReportType;
+    report_content: string;
+    render_status: "success" | "fail";
+    fail_reason?: string;
+    memory_count: number;
+    startTime: string;
+    endTime: string;
+  },
+): Promise<MemoryAnalysisReport> {
+  const response = await fetch(`${ANALYSIS_API_BASE}/v1/memory-analysis/report`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mem9-api-key": spaceId.trim(),
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { message?: string; error?: string } | null;
+    throw new Error(body?.message || body?.error || `Memory analysis report API error ${response.status}`);
+  }
+
+  const body = await response.json() as Partial<MemoryAnalysisReport> | null;
+  return normalizeReport(body ?? {});
+}
+
+async function requestGenerateMemoryAnalysisReport(
+  spaceId: string,
+  input: GenerateMemoryAnalysisReportInput,
+): Promise<GenerateMemoryAnalysisReportResult> {
+  let analysis: AnalyzeMemorySourceResponse | null = null;
+  let renderStatus: "success" | "fail" = "success";
+  let failReason: string | null = null;
+
+  try {
+    analysis = await requestAnalyzeMemorySource(spaceId, input.analysisRange);
+  } catch (err) {
+    renderStatus = "fail";
+    failReason = err instanceof Error ? err.message : String(err);
+  }
+
+  const memoryCount = analysis?.memoryCount ?? 0;
+  const report = await requestCreateMemoryAnalysisReport(spaceId, {
+    template_id: input.templateId,
+    report_content: analysis ? JSON.stringify(analysis) : "",
+    render_status: renderStatus,
+    fail_reason: failReason ?? undefined,
+    memory_count: memoryCount,
+    startTime: input.analysisRange.createdAfter,
+    endTime: input.analysisRange.createdBefore,
+  });
+
+  return {
+    report,
+    analysis,
+    renderStatus,
+    memoryCount,
+    failReason,
   };
 }
 
@@ -65,6 +247,60 @@ async function requestMemoryAnalysisReport(
   return body ? normalizeReport(body) : null;
 }
 
+async function requestEditSessionMessage(
+  spaceId: string,
+  input: EditSessionMessageInput,
+): Promise<EditSessionMessageResult> {
+  const response = await fetch(`${ANALYSIS_API_BASE}/v1/memory-analysis/session-messages/${encodeURIComponent(input.messageId)}/edit`, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      "x-mem9-api-key": spaceId.trim(),
+    },
+    body: JSON.stringify({
+      content: input.content,
+      reason: input.reason,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { message?: string; error?: string } | null;
+    throw new Error(body?.message || body?.error || `Session message edit API error ${response.status}`);
+  }
+
+  const body = await response.json().catch(() => null) as { content?: unknown; metadata?: unknown } | null;
+  return {
+    content: typeof body?.content === "string" ? body.content : input.content,
+    metadata: toCamelCaseRecord(body?.metadata),
+  };
+}
+
+async function requestMarkSessionMessage(
+  spaceId: string,
+  input: MarkSessionMessageInput,
+): Promise<MarkSessionMessageResult> {
+  const response = await fetch(`${ANALYSIS_API_BASE}/v1/memory-analysis/session-messages/${encodeURIComponent(input.messageId)}/mark`, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      "x-mem9-api-key": spaceId.trim(),
+    },
+    body: JSON.stringify({
+      correctness: input.correctness,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { message?: string; error?: string } | null;
+    throw new Error(body?.message || body?.error || `Session message mark API error ${response.status}`);
+  }
+
+  const body = await response.json().catch(() => null) as { metadata?: unknown } | null;
+  return {
+    metadata: toCamelCaseRecord(body?.metadata) ?? { correctness: input.correctness },
+  };
+}
+
 function normalizeReport(report: Partial<MemoryAnalysisReport>): MemoryAnalysisReport {
   return {
     report_id: Number.isFinite(Number(report.report_id)) ? Number(report.report_id) : 0,
@@ -74,7 +310,106 @@ function normalizeReport(report: Partial<MemoryAnalysisReport>): MemoryAnalysisR
     render_status: report.render_status === "fail" ? "fail" : "success",
     fail_reason: typeof report.fail_reason === "string" ? report.fail_reason : null,
     memory_count: Number.isFinite(Number(report.memory_count)) ? Number(report.memory_count) : 0,
+    startTime: typeof report.startTime === "string" ? report.startTime : "",
+    endTime: typeof report.endTime === "string" ? report.endTime : "",
   };
+}
+
+function normalizeAnalyzeMemorySourceResponse(
+  response: Partial<AnalyzeMemorySourceResponse> | null,
+): AnalyzeMemorySourceResponse {
+  return {
+    total: Number.isFinite(Number(response?.total)) ? Number(response?.total) : 0,
+    memoryCount: Number.isFinite(Number(response?.memoryCount)) ? Number(response?.memoryCount) : 0,
+    model: typeof response?.model === "string" ? response.model : "",
+    dimensions: Array.isArray(response?.dimensions)
+      ? response.dimensions.map(normalizeDimensionGroup).filter((group) => group.changes.length > 0)
+      : [],
+  };
+}
+
+function normalizeDimensionGroup(
+  group: Partial<MemoryAnalysisChangeDimensionGroup>,
+): MemoryAnalysisChangeDimensionGroup {
+  return {
+    dimension: isMemorySignalDimension(group.dimension) ? group.dimension : "focus_area",
+    changes: Array.isArray(group.changes) ? group.changes.map(normalizeChange) : [],
+  };
+}
+
+function normalizeChange(change: Partial<MemoryAnalysisChange>): MemoryAnalysisChange {
+  return {
+    title: typeof change.title === "string" ? change.title : "",
+    summary: typeof change.summary === "string" ? change.summary : "",
+    period: {
+      start: typeof change.period?.start === "string" ? change.period.start : "",
+      end: typeof change.period?.end === "string" ? change.period.end : "",
+    },
+    evidence: Array.isArray(change.evidence) ? change.evidence.map(normalizeEvidence) : [],
+  };
+}
+
+function normalizeEvidence(evidence: Partial<MemoryAnalysisChangeEvidence>): MemoryAnalysisChangeEvidence {
+  return {
+    evidenceId: typeof evidence.evidenceId === "string" ? evidence.evidenceId : "",
+    quote: typeof evidence.quote === "string" ? evidence.quote : "",
+    correctness: typeof evidence.correctness === "string" ? evidence.correctness : "",
+    edited: evidence.edited === true,
+    ...(
+      Object.prototype.hasOwnProperty.call(evidence, "review")
+        ? { review: toRecordOrNull(evidence.review) }
+        : {}
+    ),
+  };
+}
+
+function toCamelCaseRecord(value: unknown): Record<string, unknown> | null {
+  const converted = camelizeKeys(value);
+  return toRecordOrNull(converted);
+}
+
+function camelizeKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(camelizeKeys);
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, nestedValue]) => [
+      snakeToCamel(key),
+      camelizeKeys(nestedValue),
+    ]),
+  );
+}
+
+function snakeToCamel(value: string): string {
+  return value.replace(/_([a-z0-9])/g, (_, character: string) => character.toUpperCase());
+}
+
+function toRecordOrNull(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function analyzeMemorySourceQueryKey(
+  spaceId: string,
+  input: AnalyzeMemorySourceInput,
+) {
+  return ["space", spaceId, "memoryAnalysisSource", input.createdAfter, input.createdBefore] as const;
+}
+
+function isMemorySignalDimension(value: unknown): value is MemorySignalDimension {
+  return value === "long_term_goal"
+    || value === "focus_area"
+    || value === "emotion"
+    || value === "preference_signal"
+    || value === "growth_signal";
 }
 
 export function useMemoryAnalysisReports(
@@ -88,6 +423,23 @@ export function useMemoryAnalysisReports(
   });
 }
 
+export function useAllMemoryAnalysisReports(spaceId: string) {
+  return useQuery({
+    queryKey: ["space", spaceId, "memoryAnalysisReports", "all"],
+    queryFn: async () => {
+      const responses = await Promise.all(
+        memoryAnalysisReportTypes.map((type) => requestMemoryAnalysisReports(spaceId, type)),
+      );
+      return {
+        reports: responses
+          .flatMap((response) => response.reports)
+          .sort((left, right) => Date.parse(right.generated_at) - Date.parse(left.generated_at)),
+      };
+    },
+    enabled: !!spaceId,
+  });
+}
+
 export function useMemoryAnalysisReport(
   spaceId: string | null,
   reportId: string | null,
@@ -96,5 +448,39 @@ export function useMemoryAnalysisReport(
     queryKey: ["space", spaceId, "memoryAnalysisReport", reportId],
     queryFn: () => requestMemoryAnalysisReport(spaceId!, reportId!),
     enabled: !!spaceId && !!reportId,
+  });
+}
+
+export function useAnalyzeMemorySource(
+  spaceId: string,
+  input: AnalyzeMemorySourceInput,
+  options: AnalyzeMemorySourceQueryOptions = {},
+) {
+  return useQuery({
+    queryKey: analyzeMemorySourceQueryKey(spaceId, input),
+    queryFn: () => requestAnalyzeMemorySource(spaceId, input),
+    enabled: (options.enabled ?? true) && !!spaceId && !!input.createdAfter && !!input.createdBefore,
+    staleTime: 5 * 60 * 1000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useGenerateMemoryAnalysisReport(spaceId: string) {
+  return useMutation({
+    mutationFn: (input: GenerateMemoryAnalysisReportInput) =>
+      requestGenerateMemoryAnalysisReport(spaceId, input),
+  });
+}
+
+export function useEditSessionMessage(spaceId: string) {
+  return useMutation({
+    mutationFn: (input: EditSessionMessageInput) => requestEditSessionMessage(spaceId, input),
+  });
+}
+
+export function useMarkSessionMessage(spaceId: string) {
+  return useMutation({
+    mutationFn: (input: MarkSessionMessageInput) => requestMarkSessionMessage(spaceId, input),
   });
 }

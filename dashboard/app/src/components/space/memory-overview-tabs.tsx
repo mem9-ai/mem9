@@ -23,6 +23,9 @@ import type { TimeRangePreset, TimelineSelection } from "@/types/time-range";
 export type OverviewMemorySelectionSource = "list" | "insight";
 
 const TAB_VALUES = ["profile", "periodic", "reports", "pulse", "insight", "analysis"] as const;
+const VISIBLE_TAB_VALUES = TAB_VALUES.filter(
+  (value) => value !== "pulse" && value !== "insight" && value !== "analysis",
+);
 
 export function MemoryOverviewTabs({
   spaceId,
@@ -77,7 +80,7 @@ export function MemoryOverviewTabs({
   // breakpoint (1280px) lets every iPad in landscape orientation render the
   // workspace, while phones and iPads in portrait still get the redirect hint.
   const isLargeViewport = useIsLargeViewport();
-  const [tab, setTab] = useState<MemoryInsightTab>("pulse");
+  const [tab, setTab] = useState<MemoryInsightTab>("profile");
   const [hasVisitedAnalysisTab, setHasVisitedAnalysisTab] = useState(false);
   const [insightResetToken, setInsightResetToken] = useState(0);
 
@@ -146,8 +149,12 @@ export function MemoryOverviewTabs({
         <ReportManageOverview spaceId={spaceId} className="!mt-0" />
       </TabsContent>
 
-      <TabsContent value="periodic" className="-mt-px mt-0">
-        <PeriodicObservationOverview stats={stats} />
+      <TabsContent
+        value="periodic"
+        className="-mt-px mt-0 data-[state=inactive]:hidden"
+        forceMount
+      >
+        <PeriodicObservationOverview spaceId={spaceId} stats={stats} />
       </TabsContent>
 
       <TabsContent value="insight" className="-mt-px mt-0">
@@ -193,7 +200,7 @@ function DesktopOverviewTabsList() {
         className="inline-flex h-auto gap-0 rounded-none border-0 bg-transparent p-0 shadow-none"
         data-testid="memory-overview-tablist"
       >
-        {TAB_VALUES.map((value) => (
+        {VISIBLE_TAB_VALUES.map((value) => (
           <TabsTrigger
             key={value}
             value={value}
@@ -216,14 +223,15 @@ function MobileOverviewTabsList() {
 
   // Use shadcn's default segmented control look (rounded-lg muted bar + rounded-md
   // chip on the active trigger). Stretching the list to the full row width with
-  // `grid w-full grid-cols-6` keeps each trigger evenly sized and avoids the
+  // `grid w-full` keeps each trigger evenly sized and avoids the
   // horizontal overflow we saw with the long "Memory ___" labels.
   return (
     <TabsList
-      className="grid w-full grid-cols-6"
+      className="grid w-full"
+      style={{ gridTemplateColumns: `repeat(${VISIBLE_TAB_VALUES.length}, minmax(0, 1fr))` }}
       data-testid="memory-overview-tablist"
     >
-      {TAB_VALUES.map((value) => (
+      {VISIBLE_TAB_VALUES.map((value) => (
         <TabsTrigger
           key={value}
           value={value}
