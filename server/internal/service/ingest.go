@@ -54,9 +54,9 @@ var (
 	subjectlessActivityLogRE = regexp.MustCompile(`(?i)^(?:recorded|logged|ate|had|drank|consumed|completed|ran|woke up|stayed up|trained|resting)\b`)
 	userActivityLogRE        = regexp.MustCompile(`(?i)^(?:the\s+)?user\b.*\b(?:recorded|logged|ate|had|drank|consumed|completed|ran|workout|weight|protein powder|creatine|breakfast|lunch|dinner|snack|sleep|slept|hunger|hungry)\b`)
 	quantifiedHealthLogRE    = regexp.MustCompile(`(?i)\b\d+(?:\.\d+)?\s*(?:kg|lbs?|pounds?|bpm|kcal|calories?)\b`)
-	operationalLogRE         = regexp.MustCompile(`(?i)\b(?:temporary workspace|temporary table|cron job|import task|upload task|planning-only turn|reported tracking event error|requires confirmation today|received service error|selected model is at capacity|eta is|eta tomorrow|due tomorrow|fixed issue|debug(?:ging)?|smoke test|functioning correctly)\b`)
+	operationalLogRE         = regexp.MustCompile(`(?i)\b(?:temporary workspace|temporary table|cron job|import task|upload task|planning-only turn|reported tracking event error|requires confirmation today|received service error|selected model is at capacity|eta is|eta tomorrow|due tomorrow|fixed issue|debug(?:ging)? (?:log|trace|session|command|output|run|task)|smoke test|functioning correctly)\b`)
 	stableSignalRE           = regexp.MustCompile(`(?i)\b(?:prefers?|preference|usually|regularly|often|default|goal|target|long-term|habit|birthday|relationship|lives in|based in|works at|uses|primary|source of truth|architecture|configured to|configuration|setting)\b`)
-	oneTimeIntentRE          = regexp.MustCompile(`(?i)\buser\s+wants?\s+to\s+(?:restart|restore|record|continue|remove|pin|send|create|set up|fix|debug|check|confirm)\b`)
+	oneTimeIntentRE          = regexp.MustCompile(`(?i)\buser\s+wants?\s+to\s+(?:(?:restart|restore)\s+(?:a\s+)?(?:task|conversation|session|workflow|working condition)|(?:remove|pin)\s+(?:a\s+)?(?:memory|fact|insight)|send\s+(?:a\s+)?handoff|(?:record|log)\s+(?:a\s+)?(?:meal|weight|workout|sleep|activity))\b`)
 	transientStatusRE        = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:is|am|are)\s+(?:currently\s+)?(?:working out|training|resting|hungry|using voice input)\b|^(?:now|right now|currently)\b.*\b(?:working out|training|resting|hungry|using voice input)\b`)
 )
 

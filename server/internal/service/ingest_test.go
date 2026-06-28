@@ -903,6 +903,9 @@ func TestFilterLongTermFactsDropsTransientAndKeepsStableFacts(t *testing.T) {
 		{Text: "James plans to call Samantha next month"},
 		{Text: "Alice had dinner with Bob yesterday"},
 		{Text: "Alice is working out now"},
+		{Text: "User wants to create a startup"},
+		{Text: "User wants to set up a nonprofit"},
+		{Text: "Debugging a memory leak in a Go service"},
 	}
 
 	got := filterLongTermFacts(input)
@@ -920,9 +923,61 @@ func TestFilterLongTermFactsDropsTransientAndKeepsStableFacts(t *testing.T) {
 		"James plans to call Samantha next month",
 		"Alice had dinner with Bob yesterday",
 		"Alice is working out now",
+		"User wants to create a startup",
+		"User wants to set up a nonprofit",
+		"Debugging a memory leak in a Go service",
 	}
 	if !reflect.DeepEqual(texts, want) {
 		t.Fatalf("filtered texts = %#v, want %#v", texts, want)
+	}
+}
+
+func TestServerGuardDropsOnlyNarrowOperationalIntentAndLogs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{
+			name: "restart task",
+			text: "User wants to restart a task and restore it to normal working condition",
+			want: factTypeEphemeralIntent,
+		},
+		{
+			name: "debug log",
+			text: "The debug log reported a transient import task error",
+			want: factTypeOperationalLog,
+		},
+		{
+			name: "durable startup goal",
+			text: "User wants to create a startup",
+			want: "",
+		},
+		{
+			name: "durable nonprofit goal",
+			text: "User wants to set up a nonprofit",
+			want: "",
+		},
+		{
+			name: "durable debugging work",
+			text: "Debugging a memory leak in a Go service",
+			want: "",
+		},
+		{
+			name: "durable completed education",
+			text: "Completed a PhD in 2015",
+			want: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := serverGuardDropReason(tc.text); got != tc.want {
+				t.Fatalf("serverGuardDropReason(%q) = %q, want %q", tc.text, got, tc.want)
+			}
+		})
 	}
 }
 
