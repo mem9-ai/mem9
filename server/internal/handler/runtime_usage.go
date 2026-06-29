@@ -57,14 +57,10 @@ func subjectFromAuth(auth *domain.AuthInfo) runtimeusage.Subject {
 func (s *Server) handleRuntimeUsageError(w http.ResponseWriter, err error) {
 	var denied *runtimeusage.QuotaDeniedError
 	if errors.As(err, &denied) {
-		body := denied.ResponseBody()
-		if body = ensureMem9QuotaDeniedCode(body); len(body) > 0 {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusPaymentRequired)
-			_, _ = w.Write(body)
-			return
-		}
-		respondError(w, http.StatusPaymentRequired, "runtime usage quota denied")
+		body := normalizeRuntimeQuotaDeniedBody(denied.ResponseBody())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusPaymentRequired)
+		_, _ = w.Write(body)
 		return
 	}
 	status := runtimeusage.HTTPStatus(err)
@@ -82,21 +78,52 @@ func isRuntimeUsageError(err error) bool {
 	return errors.As(err, &denied) || errors.As(err, &unavailable) || errors.As(err, &conflict)
 }
 
-func ensureMem9QuotaDeniedCode(body []byte) []byte {
+type runtimeQuotaDeniedEnvelope struct {
+	Code    string         `json:"code"`
+	Message string         `json:"message"`
+	Details map[string]any `json:"details"`
+}
+
+func normalizeRuntimeQuotaDeniedBody(body []byte) []byte {
 	body = bytes.TrimSpace(body)
-	if len(body) == 0 {
-		return nil
+	envelope := runtimeQuotaDeniedEnvelope{
+		Code:    "runtime_quota_denied",
+		Message: "runtime usage quota denied",
+		Details: map[string]any{
+			"retryable": false,
+			"mem9Code":  "runtime_quota_denied",
+		},
 	}
 	var parsed map[string]any
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return body
+	if len(body) > 0 && json.Unmarshal(body, &parsed) == nil {
+		if code, ok := parsed["code"].(string); ok && code != "" {
+			envelope.Code = code
+		}
+		if message, ok := parsed["message"].(string); ok && message != "" {
+			envelope.Message = message
+		}
+		if details, ok := parsed["details"].(map[string]any); ok {
+			envelope.Details = make(map[string]any, len(details)+2)
+			for key, value := range details {
+				envelope.Details[key] = value
+			}
+		}
+		if retryable, ok := parsed["retryable"].(bool); ok {
+			envelope.Details["retryable"] = retryable
+		}
+		if mem9Code, ok := parsed["mem9_code"].(string); ok && mem9Code != "" {
+			envelope.Details["mem9Code"] = mem9Code
+		}
 	}
-	if _, ok := parsed["mem9_code"]; !ok {
-		parsed["mem9_code"] = "runtime_quota_denied"
+	if _, ok := envelope.Details["retryable"]; !ok {
+		envelope.Details["retryable"] = false
 	}
-	out, err := json.Marshal(parsed)
+	if _, ok := envelope.Details["mem9Code"]; !ok {
+		envelope.Details["mem9Code"] = "runtime_quota_denied"
+	}
+	out, err := json.Marshal(envelope)
 	if err != nil {
-		return body
+		return []byte(`{"code":"runtime_quota_denied","message":"runtime usage quota denied","details":{"retryable":false,"mem9Code":"runtime_quota_denied"}}`)
 	}
 	return out
 }
