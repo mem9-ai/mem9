@@ -33,7 +33,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { DateRangePicker, buildDefaultAnalysisRange } from "@/components/space/date-range-picker";
 import { cn } from "@/lib/utils";
-import type { MemoryStats } from "@/types/memory";
 
 const dimensionOrder: MemorySignalDimension[] = [
   "long_term_goal",
@@ -63,10 +62,8 @@ let initialPeriodicAnalysisRange: AnalyzeMemorySourceInput | null = null;
 
 export function PeriodicObservationOverview({
   spaceId,
-  stats,
 }: {
   spaceId: string;
-  stats?: MemoryStats;
 }) {
   const { t } = useTranslation();
   const [pendingRange, setPendingRange] = useState(() => getInitialPeriodicAnalysisRange());
@@ -86,7 +83,7 @@ export function PeriodicObservationOverview({
     ?? dimensions[0]
     ?? null;
   const totalChanges = dimensions.reduce((count, group) => count + group.changes.length, 0);
-  const total = analysisQuery.data?.memoryCount ?? stats?.total ?? 0;
+  const total = analysisQuery.data?.memoryCount ?? 0;
   const refreshAnalysis = () => {
     if (pendingRange.createdAfter === analysisRange.createdAfter
       && pendingRange.createdBefore === analysisRange.createdBefore
@@ -270,7 +267,7 @@ function DimensionDetail({
             {t(`periodic_observation.dimensions.${group.dimension}`)}
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t("periodic_observation.detail.card_count", { count: group.changes.length })}
+            {group.summary.trim() || t("periodic_observation.detail.card_count", { count: group.changes.length })}
           </p>
         </div>
       </div>
@@ -727,7 +724,7 @@ function ObservationState({
   description?: string;
 }) {
   return (
-    <div className="surface-card mt-5 flex items-start gap-3 p-5">
+    <div className={cn("surface-card mt-5 flex gap-3 p-5", description ? "items-start" : "items-center")}>
       <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/12 text-blue-500">
         {icon}
       </span>

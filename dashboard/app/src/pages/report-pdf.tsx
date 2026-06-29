@@ -21,6 +21,10 @@ const TEMPLATE_META: Record<MemoryAnalysisReportType, { name: string; title: str
     name: "长期目标",
     title: "长期目标变化报告",
   },
+  emotion: {
+    name: "情绪趋势",
+    title: "情绪趋势变化报告",
+  },
   preference_signal: {
     name: "偏好信号",
     title: "偏好信号变化报告",
@@ -228,7 +232,11 @@ function normalizeDimensionGroup(group: unknown): MemoryAnalysisChangeDimensionG
   const dimension = normalizeDimension(record.dimension);
   const changes = Array.isArray(record.changes) ? record.changes.map(normalizeChange) : [];
 
-  return { dimension, changes };
+  return {
+    dimension,
+    summary: typeof record.summary === "string" ? record.summary : "",
+    changes,
+  };
 }
 
 function normalizeChange(change: unknown): MemoryAnalysisChange {
@@ -269,12 +277,13 @@ function normalizeDimension(value: unknown): MemorySignalDimension {
 function isReportTemplateId(value: unknown): value is MemoryAnalysisReportType {
   return value === "long_term_goal"
     || value === "focus_area"
+    || value === "emotion"
     || value === "preference_signal"
     || value === "growth_signal";
 }
 
 function isMemorySignalDimension(value: unknown): value is MemorySignalDimension {
-  return isReportTemplateId(value) || value === "emotion";
+  return isReportTemplateId(value);
 }
 
 function toRecord(value: unknown): Record<string, unknown> {

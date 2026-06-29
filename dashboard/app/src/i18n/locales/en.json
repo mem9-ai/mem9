@@ -631,7 +631,6 @@
     "enabled": "Enabled",
     "cadence": "Cadence: {{value}}",
     "last_generated": "Last generated: {{value}}",
-    "template_count": "{{count}} templates in total",
     "details_title": "Template details",
     "description_title": "About this template",
     "goal_label": "Goal",
@@ -655,7 +654,7 @@
     "date_to": "End date",
     "apply_date": "Apply date range",
     "memory_count": "{{count}} memories",
-    "generate_template": "Generate this report",
+    "generate_template": "Generate report",
     "history_title": "Generation history",
     "all_history_title": "Template records",
     "history_now": "Just generated",
@@ -676,6 +675,7 @@
     "templates": {
       "weekly": { "name": "Focus changes", "cadence": "Biweekly", "last_generated": "2025-06-14 09:12", "goal": "Identify changes between recent and historical areas of focus." },
       "trend": { "name": "Long-term goal changes", "cadence": "Daily", "last_generated": "2025-06-14 08:35", "goal": "Trace newly added, strengthened, or reconfirmed long-term goals." },
+      "emotion": { "name": "Emotional trend changes", "cadence": "Biweekly", "last_generated": "2025-06-14 08:20", "goal": "Analyze emotional phases, trend shifts, and primary triggers." },
       "structure": { "name": "Preference signal changes", "cadence": "On demand", "last_generated": "2025-06-12 18:07", "goal": "Analyze newly added, reinforced, or changed user preference signals." },
       "growth": { "name": "Growth signal changes", "cadence": "Monthly", "last_generated": "2025-05-31 21:10", "goal": "Observe growth signals in capabilities, habits, and self-understanding." }
     }

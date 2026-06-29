@@ -593,7 +593,7 @@
     "eyebrow": "",
     "title": "周期报告与长期观察",
     "subtitle": "基于长周期记忆生成阶段性理解结果。",
-    "generate": "生成新报告",
+    "generate": "刷新",
     "download": "下载 PDF",
     "range": "时间范围",
     "date_from": "开始时间",
@@ -730,7 +730,7 @@
     "date_to": "结束日期",
     "apply_date": "应用日期范围",
     "memory_count": "{{count}} 条记忆",
-    "generate_template": "生成该模板报告",
+    "generate_template": "生成报告",
     "history_title": "该模板生成记录",
     "all_history_title": "模板记录",
     "history_now": "刚刚生成",
@@ -751,6 +751,7 @@
     "templates": {
       "weekly": { "name": "关注点变化", "cadence": "14天内", "last_generated": "2025-06-14 09:12", "goal": "识别近期关注内容与历史关注内容的变化" },
       "trend": { "name": "长期目标变化", "cadence": "14天内", "last_generated": "2025-06-14 08:35", "goal": "梳理新增、强化或再次确认的长期目标" },
+      "emotion": { "name": "情绪趋势变化", "cadence": "14天内", "last_generated": "2025-06-14 08:20", "goal": "分析情绪阶段、波动趋势与主要触发因素" },
       "structure": { "name": "偏好信号变化", "cadence": "14天内", "last_generated": "2025-06-12 18:07", "goal": "分析用户偏好信号的新增、强化与变化" },
       "growth": { "name": "成长观察变化", "cadence": "14天内", "last_generated": "2025-05-31 21:10", "goal": "观察用户能力、习惯与自我认知的成长信号" }
     }

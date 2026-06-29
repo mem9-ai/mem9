@@ -6,15 +6,10 @@ const ANALYSIS_API_BASE =
 export type MemoryAnalysisReportType =
   | "focus_area"
   | "long_term_goal"
+  | "emotion"
   | "preference_signal"
   | "growth_signal";
 
-const memoryAnalysisReportTypes = [
-  "focus_area",
-  "long_term_goal",
-  "preference_signal",
-  "growth_signal",
-] as const satisfies readonly MemoryAnalysisReportType[];
 export type MemorySignalDimension =
   | "long_term_goal"
   | "focus_area"
@@ -60,6 +55,7 @@ export interface MemoryAnalysisChange {
 
 export interface MemoryAnalysisChangeDimensionGroup {
   dimension: MemorySignalDimension;
+  summary: string;
   changes: MemoryAnalysisChange[];
 }
 
@@ -76,7 +72,6 @@ export interface AnalyzeMemorySourceInput {
 }
 
 export interface GenerateMemoryAnalysisReportInput {
-  templateId: MemoryAnalysisReportType;
   analysisRange: AnalyzeMemorySourceInput;
 }
 
@@ -114,10 +109,10 @@ export interface MarkSessionMessageResult {
 
 async function requestMemoryAnalysisReports(
   spaceId: string,
-  type: MemoryAnalysisReportType,
+  type?: MemoryAnalysisReportType,
 ): Promise<MemoryAnalysisReportListResponse> {
-  const params = new URLSearchParams({ type });
-  const response = await fetch(`${ANALYSIS_API_BASE}/v1/memory-analysis/report/list?${params}`, {
+  const params = type ? `?${new URLSearchParams({ type })}` : "";
+  const response = await fetch(`${ANALYSIS_API_BASE}/v1/memory-analysis/report/list${params}`, {
     headers: {
       "x-mem9-api-key": spaceId.trim(),
     },
@@ -162,7 +157,6 @@ async function requestAnalyzeMemorySource(
 async function requestCreateMemoryAnalysisReport(
   spaceId: string,
   input: {
-    template_id: MemoryAnalysisReportType;
     report_content: string;
     render_status: "success" | "fail";
     fail_reason?: string;
@@ -206,7 +200,6 @@ async function requestGenerateMemoryAnalysisReport(
 
   const memoryCount = analysis?.memoryCount ?? 0;
   const report = await requestCreateMemoryAnalysisReport(spaceId, {
-    template_id: input.templateId,
     report_content: analysis ? JSON.stringify(analysis) : "",
     render_status: renderStatus,
     fail_reason: failReason ?? undefined,
@@ -302,6 +295,11 @@ async function requestMarkSessionMessage(
 }
 
 function normalizeReport(report: Partial<MemoryAnalysisReport>): MemoryAnalysisReport {
+  const rawReport = report as Partial<MemoryAnalysisReport> & {
+    start_time?: unknown;
+    end_time?: unknown;
+  };
+
   return {
     report_id: Number.isFinite(Number(report.report_id)) ? Number(report.report_id) : 0,
     template_id: typeof report.template_id === "string" ? report.template_id : "",
@@ -310,8 +308,12 @@ function normalizeReport(report: Partial<MemoryAnalysisReport>): MemoryAnalysisR
     render_status: report.render_status === "fail" ? "fail" : "success",
     fail_reason: typeof report.fail_reason === "string" ? report.fail_reason : null,
     memory_count: Number.isFinite(Number(report.memory_count)) ? Number(report.memory_count) : 0,
-    startTime: typeof report.startTime === "string" ? report.startTime : "",
-    endTime: typeof report.endTime === "string" ? report.endTime : "",
+    startTime: typeof report.startTime === "string"
+      ? report.startTime
+      : typeof rawReport.start_time === "string" ? rawReport.start_time : "",
+    endTime: typeof report.endTime === "string"
+      ? report.endTime
+      : typeof rawReport.end_time === "string" ? rawReport.end_time : "",
   };
 }
 
@@ -333,6 +335,7 @@ function normalizeDimensionGroup(
 ): MemoryAnalysisChangeDimensionGroup {
   return {
     dimension: isMemorySignalDimension(group.dimension) ? group.dimension : "focus_area",
+    summary: typeof group.summary === "string" ? group.summary : "",
     changes: Array.isArray(group.changes) ? group.changes.map(normalizeChange) : [],
   };
 }
@@ -426,16 +429,7 @@ export function useMemoryAnalysisReports(
 export function useAllMemoryAnalysisReports(spaceId: string) {
   return useQuery({
     queryKey: ["space", spaceId, "memoryAnalysisReports", "all"],
-    queryFn: async () => {
-      const responses = await Promise.all(
-        memoryAnalysisReportTypes.map((type) => requestMemoryAnalysisReports(spaceId, type)),
-      );
-      return {
-        reports: responses
-          .flatMap((response) => response.reports)
-          .sort((left, right) => Date.parse(right.generated_at) - Date.parse(left.generated_at)),
-      };
-    },
+    queryFn: () => requestMemoryAnalysisReports(spaceId),
     enabled: !!spaceId,
   });
 }
