@@ -299,6 +299,106 @@ func TestTiDBCloudProvisioner_Provision_Success(t *testing.T) {
 	}
 }
 
+func TestTiDBCloudProvisioner_Provision_UsesPrivateLinkWhenPreferredAndServiceAllowed(t *testing.T) {
+	cleanup := setupTiDBCloudEnv(t)
+	defer cleanup()
+
+	server := newTiDBCloudTakeoverServer(t, tidbCloudTakeoverResponse(
+		"public.cluster.tidbcloud.com",
+		4000,
+		"private.cluster.tidbcloud.com",
+		4000,
+		"com.amazonaws.vpce.us-west-2.vpce-svc-allowed",
+	))
+	defer server.Close()
+
+	p := NewTiDBCloudProvisionerWithPrivateLink(server.URL, "test-pool", "", 0, 0, false, TiDBCloudPrivateLinkConfig{
+		Prefer: true,
+		ServiceNames: map[string]struct{}{
+			"com.amazonaws.vpce.us-west-2.vpce-svc-allowed": {},
+		},
+	})
+
+	info, err := p.Provision(context.Background())
+	if err != nil {
+		t.Fatalf("Provision failed: %v", err)
+	}
+	if info.Host != "private.cluster.tidbcloud.com" {
+		t.Fatalf("Host = %q, want private.cluster.tidbcloud.com", info.Host)
+	}
+	if info.Port != 4000 {
+		t.Fatalf("Port = %d, want 4000", info.Port)
+	}
+}
+
+func TestTiDBCloudProvisioner_Provision_FallsBackToPublicWhenPrivateLinkServiceNotAllowed(t *testing.T) {
+	cleanup := setupTiDBCloudEnv(t)
+	defer cleanup()
+
+	server := newTiDBCloudTakeoverServer(t, tidbCloudTakeoverResponse(
+		"public.cluster.tidbcloud.com",
+		4000,
+		"private.cluster.tidbcloud.com",
+		4000,
+		"com.amazonaws.vpce.us-west-2.vpce-svc-unconfigured",
+	))
+	defer server.Close()
+
+	p := NewTiDBCloudProvisionerWithPrivateLink(server.URL, "test-pool", "", 0, 0, false, TiDBCloudPrivateLinkConfig{
+		Prefer: true,
+		ServiceNames: map[string]struct{}{
+			"com.amazonaws.vpce.us-west-2.vpce-svc-allowed": {},
+		},
+	})
+
+	info, err := p.Provision(context.Background())
+	if err != nil {
+		t.Fatalf("Provision failed: %v", err)
+	}
+	if info.Host != "public.cluster.tidbcloud.com" {
+		t.Fatalf("Host = %q, want public.cluster.tidbcloud.com", info.Host)
+	}
+	if info.Port != 4000 {
+		t.Fatalf("Port = %d, want 4000", info.Port)
+	}
+}
+
+func newTiDBCloudTakeoverServer(t *testing.T, response map[string]interface{}) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			w.Header().Set("WWW-Authenticate", `Digest realm="tidbcloud", nonce="abc123", qop="auth"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
+	}))
+}
+
+func tidbCloudTakeoverResponse(publicHost string, publicPort int, privateHost string, privatePort int, serviceName string) map[string]interface{} {
+	return map[string]interface{}{
+		"clusterId": "cluster-123",
+		"endpoints": map[string]interface{}{
+			"public": map[string]interface{}{
+				"host": publicHost,
+				"port": publicPort,
+			},
+			"private": map[string]interface{}{
+				"host": privateHost,
+				"port": privatePort,
+				"aws": map[string]interface{}{
+					"serviceName": serviceName,
+				},
+			},
+		},
+		"userPrefix": "test",
+	}
+}
+
 // TestTiDBCloudProvisioner_Provision_APIError tests error handling when API returns error
 func TestTiDBCloudProvisioner_Provision_APIError(t *testing.T) {
 	cleanup := setupTiDBCloudEnv(t)

@@ -52,8 +52,10 @@ type Config struct {
 	ChainRecallStopScore     float64
 
 	// TiDB Cloud Pool configuration
-	TiDBCloudAPIURL string
-	TiDBCloudPoolID string
+	TiDBCloudAPIURL                  string
+	TiDBCloudPoolID                  string
+	TiDBCloudPreferPrivateLink       bool
+	TiDBCloudPrivateLinkServiceNames map[string]struct{}
 
 	// FTSEnabled controls whether full-text search is attempted.
 	// Set MNEMO_FTS_ENABLED=true only when the TiDB cluster supports
@@ -161,59 +163,61 @@ func Load() (*Config, error) {
 
 	env := strings.ToLower(strings.TrimSpace(envOr("MNEMO_ENV", envOr("APP_ENV", "development"))))
 	cfg := &Config{
-		Port:                        envOr("MNEMO_PORT", "8080"),
-		DSN:                         dsn,
-		Env:                         env,
-		DBBackend:                   envOr("MNEMO_DB_BACKEND", "tidb"),
-		RateLimit:                   envFloat("MNEMO_RATE_LIMIT", 100),
-		RateBurst:                   envInt("MNEMO_RATE_BURST", 200),
-		EmbedAutoModel:              os.Getenv("MNEMO_EMBED_AUTO_MODEL"),
-		EmbedAutoDims:               envInt("MNEMO_EMBED_AUTO_DIMS", 1024),
-		EmbedAPIKey:                 os.Getenv("MNEMO_EMBED_API_KEY"),
-		EmbedBaseURL:                os.Getenv("MNEMO_EMBED_BASE_URL"),
-		EmbedModel:                  os.Getenv("MNEMO_EMBED_MODEL"),
-		EmbedDims:                   envInt("MNEMO_EMBED_DIMS", 1536),
-		LLMAPIKey:                   os.Getenv("MNEMO_LLM_API_KEY"),
-		LLMBaseURL:                  os.Getenv("MNEMO_LLM_BASE_URL"),
-		LLMModel:                    envOr("MNEMO_LLM_MODEL", "gpt-4o-mini"),
-		LLMTemperature:              envFloat("MNEMO_LLM_TEMPERATURE", 0.1),
-		IngestMode:                  envOr("MNEMO_INGEST_MODE", "smart"),
-		DisableSessionSave:          envBool("MNEMO_DISABLE_SESSION_SAVE", false),
-		TiDBZeroEnabled:             envBool("MNEMO_TIDB_ZERO_ENABLED", true),
-		TiDBZeroAPIURL:              envOr("MNEMO_TIDB_ZERO_API_URL", "https://zero.tidbapi.com/v1alpha1"),
-		TiDBCloudAPIURL:             envOr("MNEMO_TIDBCLOUD_API_URL", "https://serverless.tidbapi.com"),
-		TiDBCloudPoolID:             envOr("MNEMO_TIDBCLOUD_POOL_ID", "2"),
-		TenantPoolMaxIdle:           envInt("MNEMO_TENANT_POOL_MAX_IDLE", 5),
-		TenantPoolMaxOpen:           envInt("MNEMO_TENANT_POOL_MAX_OPEN", 10),
-		TenantPoolConnectTimeout:    envDuration("MNEMO_TENANT_POOL_CONNECT_TIMEOUT", 3*time.Second),
-		TenantPoolIdleTimeout:       envDuration("MNEMO_TENANT_POOL_IDLE_TIMEOUT", 10*time.Minute),
-		TenantPoolTotalLimit:        envInt("MNEMO_TENANT_POOL_TOTAL_LIMIT", 200),
-		ChainRecallStopScore:        envFloat("MNEMO_CHAIN_RECALL_STOP_SCORE", 0.8),
-		UploadDir:                   envOr("MNEMO_UPLOAD_DIR", "./uploads"),
-		FTSEnabled:                  envBool("MNEMO_FTS_ENABLED", false),
-		WorkerConcurrency:           envInt("MNEMO_WORKER_CONCURRENCY", 5),
-		MeteringEnabled:             meteringEnabled,
-		MeteringURL:                 meteringURL,
-		MeteringFlushInterval:       envDuration("MNEMO_METERING_FLUSH_INTERVAL", 10*time.Second),
-		RuntimeUsageEnabled:         runtimeUsageEnabled,
-		RuntimeUsageBaseURL:         runtimeUsageBaseURL,
-		RuntimeUsageInternalSecret:  strings.TrimSpace(os.Getenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET")),
-		RuntimeUsageTimeout:         envDuration("MNEMO_RUNTIME_USAGE_TIMEOUT", 3*time.Second),
-		RuntimeUsageMeteringTimeout: envDuration("MNEMO_RUNTIME_USAGE_METERING_TIMEOUT", 5*time.Second),
-		RuntimeUsageReservationTTL:  envDuration("MNEMO_RUNTIME_USAGE_RESERVATION_TTL", 30*time.Minute),
-		RuntimeUsageOperationTTL:    envDuration("MNEMO_RUNTIME_USAGE_OPERATION_TTL", 30*time.Minute),
-		RuntimeUsageFailOpen:        runtimeUsageFailOpen,
-		RuntimeUsageOutboxEnabled:   runtimeUsageOutboxEnabled,
-		EncryptType:                 envOr("MNEMO_ENCRYPT_TYPE", "plain"),
-		EncryptKey:                  os.Getenv("MNEMO_ENCRYPT_KEY"),
-		DebugLLM:                    envBool("MNEMO_DEBUG_LLM", false),
-		ClusterBlacklist:            parseClusterBlacklist(os.Getenv("MNEMO_CLUSTER_BLACKLIST")),
-		AutoSpendLimitEnabled:       envBool("MNEMO_AUTO_SPEND_LIMIT_ENABLED", false),
-		AutoSpendLimitIncrement:     envInt("MNEMO_AUTO_SPEND_LIMIT_INCREMENT", 500),
-		AutoSpendLimitMax:           envInt("MNEMO_AUTO_SPEND_LIMIT_MAX", 10000),
-		AutoSpendLimitCooldown:      envDuration("MNEMO_AUTO_SPEND_LIMIT_COOLDOWN", 1*time.Hour),
-		UTMEnabled:                  envBool("MNEMO_UTM_ENABLED", false),
-		CORSAllowedOrigins:          parseCSV(envOr("MNEMO_CORS_ALLOWED_ORIGINS", defaultCORSAllowedOrigins(env))),
+		Port:                             envOr("MNEMO_PORT", "8080"),
+		DSN:                              dsn,
+		Env:                              env,
+		DBBackend:                        envOr("MNEMO_DB_BACKEND", "tidb"),
+		RateLimit:                        envFloat("MNEMO_RATE_LIMIT", 100),
+		RateBurst:                        envInt("MNEMO_RATE_BURST", 200),
+		EmbedAutoModel:                   os.Getenv("MNEMO_EMBED_AUTO_MODEL"),
+		EmbedAutoDims:                    envInt("MNEMO_EMBED_AUTO_DIMS", 1024),
+		EmbedAPIKey:                      os.Getenv("MNEMO_EMBED_API_KEY"),
+		EmbedBaseURL:                     os.Getenv("MNEMO_EMBED_BASE_URL"),
+		EmbedModel:                       os.Getenv("MNEMO_EMBED_MODEL"),
+		EmbedDims:                        envInt("MNEMO_EMBED_DIMS", 1536),
+		LLMAPIKey:                        os.Getenv("MNEMO_LLM_API_KEY"),
+		LLMBaseURL:                       os.Getenv("MNEMO_LLM_BASE_URL"),
+		LLMModel:                         envOr("MNEMO_LLM_MODEL", "gpt-4o-mini"),
+		LLMTemperature:                   envFloat("MNEMO_LLM_TEMPERATURE", 0.1),
+		IngestMode:                       envOr("MNEMO_INGEST_MODE", "smart"),
+		DisableSessionSave:               envBool("MNEMO_DISABLE_SESSION_SAVE", false),
+		TiDBZeroEnabled:                  envBool("MNEMO_TIDB_ZERO_ENABLED", true),
+		TiDBZeroAPIURL:                   envOr("MNEMO_TIDB_ZERO_API_URL", "https://zero.tidbapi.com/v1alpha1"),
+		TiDBCloudAPIURL:                  envOr("MNEMO_TIDBCLOUD_API_URL", "https://serverless.tidbapi.com"),
+		TiDBCloudPoolID:                  envOr("MNEMO_TIDBCLOUD_POOL_ID", "2"),
+		TiDBCloudPreferPrivateLink:       envBool("MNEMO_TIDBCLOUD_PREFER_PRIVATELINK", false),
+		TiDBCloudPrivateLinkServiceNames: parseCSVSet(os.Getenv("MNEMO_TIDBCLOUD_PRIVATELINK_SERVICE_NAMES")),
+		TenantPoolMaxIdle:                envInt("MNEMO_TENANT_POOL_MAX_IDLE", 5),
+		TenantPoolMaxOpen:                envInt("MNEMO_TENANT_POOL_MAX_OPEN", 10),
+		TenantPoolConnectTimeout:         envDuration("MNEMO_TENANT_POOL_CONNECT_TIMEOUT", 3*time.Second),
+		TenantPoolIdleTimeout:            envDuration("MNEMO_TENANT_POOL_IDLE_TIMEOUT", 10*time.Minute),
+		TenantPoolTotalLimit:             envInt("MNEMO_TENANT_POOL_TOTAL_LIMIT", 200),
+		ChainRecallStopScore:             envFloat("MNEMO_CHAIN_RECALL_STOP_SCORE", 0.8),
+		UploadDir:                        envOr("MNEMO_UPLOAD_DIR", "./uploads"),
+		FTSEnabled:                       envBool("MNEMO_FTS_ENABLED", false),
+		WorkerConcurrency:                envInt("MNEMO_WORKER_CONCURRENCY", 5),
+		MeteringEnabled:                  meteringEnabled,
+		MeteringURL:                      meteringURL,
+		MeteringFlushInterval:            envDuration("MNEMO_METERING_FLUSH_INTERVAL", 10*time.Second),
+		RuntimeUsageEnabled:              runtimeUsageEnabled,
+		RuntimeUsageBaseURL:              runtimeUsageBaseURL,
+		RuntimeUsageInternalSecret:       strings.TrimSpace(os.Getenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET")),
+		RuntimeUsageTimeout:              envDuration("MNEMO_RUNTIME_USAGE_TIMEOUT", 3*time.Second),
+		RuntimeUsageMeteringTimeout:      envDuration("MNEMO_RUNTIME_USAGE_METERING_TIMEOUT", 5*time.Second),
+		RuntimeUsageReservationTTL:       envDuration("MNEMO_RUNTIME_USAGE_RESERVATION_TTL", 30*time.Minute),
+		RuntimeUsageOperationTTL:         envDuration("MNEMO_RUNTIME_USAGE_OPERATION_TTL", 30*time.Minute),
+		RuntimeUsageFailOpen:             runtimeUsageFailOpen,
+		RuntimeUsageOutboxEnabled:        runtimeUsageOutboxEnabled,
+		EncryptType:                      envOr("MNEMO_ENCRYPT_TYPE", "plain"),
+		EncryptKey:                       os.Getenv("MNEMO_ENCRYPT_KEY"),
+		DebugLLM:                         envBool("MNEMO_DEBUG_LLM", false),
+		ClusterBlacklist:                 parseClusterBlacklist(os.Getenv("MNEMO_CLUSTER_BLACKLIST")),
+		AutoSpendLimitEnabled:            envBool("MNEMO_AUTO_SPEND_LIMIT_ENABLED", false),
+		AutoSpendLimitIncrement:          envInt("MNEMO_AUTO_SPEND_LIMIT_INCREMENT", 500),
+		AutoSpendLimitMax:                envInt("MNEMO_AUTO_SPEND_LIMIT_MAX", 10000),
+		AutoSpendLimitCooldown:           envDuration("MNEMO_AUTO_SPEND_LIMIT_COOLDOWN", 1*time.Hour),
+		UTMEnabled:                       envBool("MNEMO_UTM_ENABLED", false),
+		CORSAllowedOrigins:               parseCSV(envOr("MNEMO_CORS_ALLOWED_ORIGINS", defaultCORSAllowedOrigins(env))),
 	}
 	// Validate ingest mode.
 	switch cfg.IngestMode {
@@ -321,6 +325,10 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 }
 
 func parseClusterBlacklist(raw string) map[string]struct{} {
+	return parseCSVSet(raw)
+}
+
+func parseCSVSet(raw string) map[string]struct{} {
 	out := make(map[string]struct{})
 	for id := range strings.SplitSeq(raw, ",") {
 		if id := strings.TrimSpace(id); id != "" {

@@ -229,8 +229,22 @@ func main() {
 	// Check for TiDB Cloud credentials (only if Zero is not enabled)
 	if provisioner == nil && cfg.DBBackend == "tidb" {
 		if os.Getenv("MNEMO_TIDBCLOUD_API_KEY") != "" && os.Getenv("MNEMO_TIDBCLOUD_API_SECRET") != "" {
-			provisioner = tenant.NewTiDBCloudProvisioner(cfg.TiDBCloudAPIURL, cfg.TiDBCloudPoolID, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled)
-			logger.Info("using TiDB Cloud Pool provisioner")
+			provisioner = tenant.NewTiDBCloudProvisionerWithPrivateLink(
+				cfg.TiDBCloudAPIURL,
+				cfg.TiDBCloudPoolID,
+				cfg.EmbedAutoModel,
+				cfg.EmbedAutoDims,
+				cfg.EmbedDims,
+				cfg.FTSEnabled,
+				tenant.TiDBCloudPrivateLinkConfig{
+					Prefer:       cfg.TiDBCloudPreferPrivateLink,
+					ServiceNames: cfg.TiDBCloudPrivateLinkServiceNames,
+				},
+			)
+			logger.Info("using TiDB Cloud Pool provisioner",
+				"prefer_privatelink", cfg.TiDBCloudPreferPrivateLink,
+				"privatelink_service_names", len(cfg.TiDBCloudPrivateLinkServiceNames),
+			)
 		}
 	}
 

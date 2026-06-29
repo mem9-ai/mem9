@@ -48,6 +48,28 @@ func TestLoad_DisableSessionSave(t *testing.T) {
 	}
 }
 
+func TestLoad_TiDBCloudPrivateLinkConfig(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+	t.Setenv("MNEMO_TIDBCLOUD_PREFER_PRIVATELINK", "true")
+	t.Setenv("MNEMO_TIDBCLOUD_PRIVATELINK_SERVICE_NAMES", "vpce-svc-a, vpce-svc-b,,vpce-svc-a")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.TiDBCloudPreferPrivateLink {
+		t.Fatal("TiDBCloudPreferPrivateLink = false, want true")
+	}
+	if len(cfg.TiDBCloudPrivateLinkServiceNames) != 2 {
+		t.Fatalf("service names len = %d, want 2", len(cfg.TiDBCloudPrivateLinkServiceNames))
+	}
+	for _, name := range []string{"vpce-svc-a", "vpce-svc-b"} {
+		if _, ok := cfg.TiDBCloudPrivateLinkServiceNames[name]; !ok {
+			t.Fatalf("service names missing %q", name)
+		}
+	}
+}
+
 func TestLoad_MeteringSupportedFields(t *testing.T) {
 	t.Setenv("MNEMO_DSN", "test-dsn")
 	t.Setenv("MNEMO_METERING_ENABLED", "true")

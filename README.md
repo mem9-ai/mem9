@@ -267,6 +267,8 @@ The `MEM9_SOURCE_TURN_*` variables control how many source turn conversations ar
 | `MNEMO_TIDBCLOUD_POOL_ID` | No | `2` | TiDB Cloud Pool ID used for cluster takeover |
 | `MNEMO_TIDBCLOUD_API_KEY` | No | — | TiDB Cloud Pool API key. Used only when `MNEMO_TIDB_ZERO_ENABLED=false`, `MNEMO_DB_BACKEND=tidb`, and pool takeover is desired |
 | `MNEMO_TIDBCLOUD_API_SECRET` | No | — | TiDB Cloud Pool API secret for digest auth. Same conditions as `MNEMO_TIDBCLOUD_API_KEY` |
+| `MNEMO_TIDBCLOUD_PREFER_PRIVATELINK` | No | `false` | Prefer the TiDB Cloud private endpoint during Pool provisioning when its AWS PrivateLink service name is configured below |
+| `MNEMO_TIDBCLOUD_PRIVATELINK_SERVICE_NAMES` | No | — | Comma-separated AWS PrivateLink service names that this mem9-server can reach. Provisioning falls back to the public endpoint when the returned service name is absent |
 | `MNEMO_TENANT_POOL_MAX_IDLE` | No | `5` | Max idle tenant database connections kept in the in-process tenant pool |
 | `MNEMO_TENANT_POOL_MAX_OPEN` | No | `10` | Max open connections per tenant database handle |
 | `MNEMO_TENANT_POOL_CONNECT_TIMEOUT` | No | `3s` | Timeout for tenant pool cold-connect ping/open attempts |

@@ -22,30 +22,74 @@ import (
 // Note: MNEMO_TIDBCLOUD_API_KEY and MNEMO_TIDBCLOUD_API_SECRET are read via os.Getenv()
 // (not Config) as these are sensitive credentials that should not be persisted.
 type TiDBCloudProvisioner struct {
-	apiURL     string
-	apiKey     string
-	apiSecret  string
-	poolID     string
-	autoModel  string
-	autoDims   int
-	clientDims int
-	ftsEnabled bool
-	client     *http.Client
+	apiURL                  string
+	apiKey                  string
+	apiSecret               string
+	poolID                  string
+	autoModel               string
+	autoDims                int
+	clientDims              int
+	ftsEnabled              bool
+	preferPrivateLink       bool
+	privateLinkServiceNames map[string]struct{}
+	client                  *http.Client
+}
+
+type TiDBCloudPrivateLinkConfig struct {
+	Prefer       bool
+	ServiceNames map[string]struct{}
+}
+
+type tidbCloudEndpoint struct {
+	Host string `json:"host"`
+	Port int    `json:"port"`
+}
+
+type tidbCloudPrivateEndpoint struct {
+	Host string `json:"host"`
+	Port int    `json:"port"`
+	AWS  struct {
+		ServiceName string `json:"serviceName"`
+	} `json:"aws"`
+}
+
+type tidbCloudProvisionResponse struct {
+	ClusterID string `json:"clusterId"`
+	Endpoints struct {
+		Public  tidbCloudEndpoint        `json:"public"`
+		Private tidbCloudPrivateEndpoint `json:"private"`
+	} `json:"endpoints"`
+	UserPrefix string `json:"userPrefix"`
 }
 
 // NewTiDBCloudProvisioner creates a provisioner for TiDB Cloud Pool API.
 func NewTiDBCloudProvisioner(apiURL, poolID, autoModel string, autoDims int, clientDims int, ftsEnabled bool) *TiDBCloudProvisioner {
+	return NewTiDBCloudProvisionerWithPrivateLink(apiURL, poolID, autoModel, autoDims, clientDims, ftsEnabled, TiDBCloudPrivateLinkConfig{})
+}
+
+// NewTiDBCloudProvisionerWithPrivateLink creates a provisioner with optional AWS PrivateLink endpoint preference.
+func NewTiDBCloudProvisionerWithPrivateLink(apiURL, poolID, autoModel string, autoDims int, clientDims int, ftsEnabled bool, privateLink TiDBCloudPrivateLinkConfig) *TiDBCloudProvisioner {
 	return &TiDBCloudProvisioner{
-		apiURL:     apiURL,
-		apiKey:     os.Getenv("MNEMO_TIDBCLOUD_API_KEY"),
-		apiSecret:  os.Getenv("MNEMO_TIDBCLOUD_API_SECRET"),
-		poolID:     poolID,
-		autoModel:  autoModel,
-		autoDims:   autoDims,
-		clientDims: clientDims,
-		ftsEnabled: ftsEnabled,
-		client:     &http.Client{Timeout: 60 * time.Second},
+		apiURL:                  apiURL,
+		apiKey:                  os.Getenv("MNEMO_TIDBCLOUD_API_KEY"),
+		apiSecret:               os.Getenv("MNEMO_TIDBCLOUD_API_SECRET"),
+		poolID:                  poolID,
+		autoModel:               autoModel,
+		autoDims:                autoDims,
+		clientDims:              clientDims,
+		ftsEnabled:              ftsEnabled,
+		preferPrivateLink:       privateLink.Prefer,
+		privateLinkServiceNames: copyStringSet(privateLink.ServiceNames),
+		client:                  &http.Client{Timeout: 60 * time.Second},
 	}
+}
+
+func copyStringSet(in map[string]struct{}) map[string]struct{} {
+	out := make(map[string]struct{}, len(in))
+	for key := range in {
+		out[key] = struct{}{}
+	}
+	return out
 }
 
 // Provision acquires a cluster from the TiDB Cloud Pool.
@@ -76,30 +120,45 @@ func (p *TiDBCloudProvisioner) Provision(ctx context.Context) (*ClusterInfo, err
 		return nil, fmt.Errorf("tidb cloud provision: status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result struct {
-		ClusterID string `json:"clusterId"`
-		Endpoints struct {
-			Public struct {
-				Host string `json:"host"`
-				Port int    `json:"port"`
-			} `json:"public"`
-		} `json:"endpoints"`
-		UserPrefix string `json:"userPrefix"`
-	}
+	var result tidbCloudProvisionResponse
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("tidb cloud provision: decode response: %w", err)
 	}
 
+	endpointInfo := p.selectConnectionEndpoint(result)
 	return &ClusterInfo{
 		ID:        uuid.New().String(),
 		ClusterID: result.ClusterID,
-		Host:      result.Endpoints.Public.Host,
-		Port:      result.Endpoints.Public.Port,
+		Host:      endpointInfo.Host,
+		Port:      endpointInfo.Port,
 		Username:  result.UserPrefix + ".root",
 		Password:  password,
 		DBName:    "test",
 	}, nil
+}
+
+func (p *TiDBCloudProvisioner) selectConnectionEndpoint(result tidbCloudProvisionResponse) tidbCloudEndpoint {
+	privateEndpoint := result.Endpoints.Private
+	if p.isPrivateLinkServiceAllowed(privateEndpoint.AWS.ServiceName) && privateEndpoint.Host != "" && privateEndpoint.Port != 0 {
+		return tidbCloudEndpoint{
+			Host: privateEndpoint.Host,
+			Port: privateEndpoint.Port,
+		}
+	}
+	return result.Endpoints.Public
+}
+
+func (p *TiDBCloudProvisioner) isPrivateLinkServiceAllowed(serviceName string) bool {
+	if !p.preferPrivateLink {
+		return false
+	}
+	serviceName = strings.TrimSpace(serviceName)
+	if serviceName == "" {
+		return false
+	}
+	_, ok := p.privateLinkServiceNames[serviceName]
+	return ok
 }
 
 const StarterProvisionerType = "tidb_cloud_starter"
