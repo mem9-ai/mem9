@@ -640,6 +640,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeQuotaDenied"
+          },
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
@@ -724,6 +727,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/RuntimeQuotaDenied"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
@@ -822,6 +828,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeQuotaDenied"
+          },
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
@@ -870,6 +879,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/RuntimeQuotaDenied"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
@@ -935,6 +947,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/RuntimeQuotaDenied"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
@@ -2375,6 +2390,48 @@
       },
       "NoContent": {
         "description": "No content."
+      },
+      "RuntimeQuotaDenied": {
+        "description": "Runtime usage quota denied. Plugins should use details.mem9Code to enter the quota UX path and details.upgradeUrl as the direct user action link when present.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RuntimeQuotaDeniedError"
+            },
+            "examples": {
+              "unclaimedQuotaExhausted": {
+                "value": {
+                  "code": "quota_exhausted",
+                  "message": "Included quota is exhausted.",
+                  "details": {
+                    "retryable": false,
+                    "meter": "memory_recall_requests",
+                    "limitType": "includedQuota",
+                    "upgradeAction": "claimApiKey",
+                    "bindingState": "unclaimed",
+                    "upgradeUrl": "https://mem9.ai/console/claim?key=mk_example",
+                    "mem9Code": "runtime_quota_denied"
+                  }
+                }
+              },
+              "spendingLimitExceeded": {
+                "value": {
+                  "code": "spending_limit_exceeded",
+                  "message": "On-demand spending limit would be exceeded.",
+                  "details": {
+                    "retryable": false,
+                    "meter": "memory_write_requests",
+                    "limitType": "spendingLimit",
+                    "upgradeAction": "increaseSpendingLimit",
+                    "bindingState": "claimed",
+                    "upgradeUrl": "https://mem9.ai/console/billing/plan",
+                    "mem9Code": "runtime_quota_denied"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "schemas": {
@@ -3159,6 +3216,84 @@
             }
           }
         }
+      },
+      "RuntimeQuotaDeniedError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Specific quota denial reason when available, or runtime_quota_denied for fallback errors.",
+            "examples": [
+              "quota_exhausted",
+              "spending_limit_exceeded",
+              "runtime_quota_denied"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "$ref": "#/components/schemas/RuntimeQuotaDeniedDetails"
+          }
+        }
+      },
+      "RuntimeQuotaDeniedDetails": {
+        "type": "object",
+        "required": [
+          "retryable",
+          "mem9Code"
+        ],
+        "properties": {
+          "retryable": {
+            "type": "boolean"
+          },
+          "meter": {
+            "type": "string",
+            "enum": [
+              "memory_recall_requests",
+              "memory_write_requests"
+            ]
+          },
+          "limitType": {
+            "type": "string",
+            "enum": [
+              "includedQuota",
+              "spendingLimit"
+            ]
+          },
+          "upgradeAction": {
+            "type": "string",
+            "enum": [
+              "claimApiKey",
+              "upgradePlan",
+              "enableOnDemand",
+              "increaseSpendingLimit"
+            ]
+          },
+          "bindingState": {
+            "type": "string",
+            "enum": [
+              "claimed",
+              "unclaimed"
+            ]
+          },
+          "upgradeUrl": {
+            "type": "string",
+            "description": "Console URL that the plugin can show directly to the user."
+          },
+          "mem9Code": {
+            "type": "string",
+            "enum": [
+              "runtime_quota_denied"
+            ]
+          }
+        },
+        "additionalProperties": true
       }
     }
   }
