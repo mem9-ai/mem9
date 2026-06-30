@@ -126,7 +126,10 @@ export function formatRuntimeQuotaNotice(value, operation = "mem9 request") {
   const action = denied.recommendedAction;
   const actionUrl = normalizeString(action?.url);
   const actionText = actionUrl
-    ? ` ${actionLabel(normalizeString(action?.type))}: ${actionUrl}`
+    ? ` User action required: ${actionLabel(normalizeString(action?.type))}: ${actionUrl}`
     : "";
-  return `[mem9] ${operation}: ${sentence(denied.message)}${actionText}`;
+  const replyInstruction = actionUrl
+    ? ` In your reply, briefly tell the user mem9 memory is paused and include this URL exactly: ${actionUrl}`
+    : " In your reply, briefly tell the user mem9 memory is paused.";
+  return `[mem9] ${operation}: ${sentence(denied.message)}${actionText}${replyInstruction}`;
 }

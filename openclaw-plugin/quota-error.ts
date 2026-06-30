@@ -134,9 +134,12 @@ export function formatRuntimeQuotaNotice(value: unknown, operation: string): str
 
   const actionUrl = normalizeString(denied.recommendedAction?.url);
   const actionText = actionUrl
-    ? ` ${actionLabel(normalizeString(denied.recommendedAction?.type))}: ${actionUrl}`
+    ? ` User action required: ${actionLabel(normalizeString(denied.recommendedAction?.type))}: ${actionUrl}`
     : "";
-  return `[mem9] ${operation}: ${sentence(denied.message)}${actionText}`;
+  const replyInstruction = actionUrl
+    ? ` In your reply, briefly tell the user mem9 memory is paused and include this URL exactly: ${actionUrl}`
+    : " In your reply, briefly tell the user mem9 memory is paused.";
+  return `[mem9] ${operation}: ${sentence(denied.message)}${actionText}${replyInstruction}`;
 }
 
 export function toolErrorPayload(error: unknown): Record<string, unknown> {

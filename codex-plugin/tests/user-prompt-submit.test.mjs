@@ -273,6 +273,7 @@ test("user prompt submit renders runtime quota denial action", async () => {
   const parsed = JSON.parse(output);
   assert.equal(parsed.hookSpecificOutput.hookEventName, "UserPromptSubmit");
   assert.match(parsed.hookSpecificOutput.additionalContext, /Included quota is exhausted/);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /include this URL exactly/);
   assert.match(parsed.hookSpecificOutput.additionalContext, /console\/claim\?key=mem9_test/);
   assert.doesNotMatch(parsed.hookSpecificOutput.additionalContext, /\.\. Claim/);
   assert.equal(debugEvents.at(-1)?.stage, "recall_quota_denied");

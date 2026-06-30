@@ -90,6 +90,9 @@ if (command === "code") {
 }
 
 const actionText = quotaDenied.actionUrl
-  ? ` ${actionLabel(quotaDenied.actionType)}: ${quotaDenied.actionUrl}`
+  ? ` User action required: ${actionLabel(quotaDenied.actionType)}: ${quotaDenied.actionUrl}`
   : "";
-process.stdout.write(`[mem9] ${operation}: ${sentence(quotaDenied.message)}${actionText}`);
+const replyInstruction = quotaDenied.actionUrl
+  ? ` In your reply, briefly tell the user mem9 memory is paused and include this URL exactly: ${quotaDenied.actionUrl}`
+  : " In your reply, briefly tell the user mem9 memory is paused.";
+process.stdout.write(`[mem9] ${operation}: ${sentence(quotaDenied.message)}${actionText}${replyInstruction}`);
