@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -62,15 +62,24 @@ let initialPeriodicAnalysisRange: AnalyzeMemorySourceInput | null = null;
 
 export function PeriodicObservationOverview({
   spaceId,
+  active = true,
 }: {
   spaceId: string;
+  active?: boolean;
 }) {
   const { t } = useTranslation();
   const [pendingRange, setPendingRange] = useState(() => getInitialPeriodicAnalysisRange());
   const [analysisRange, setAnalysisRange] = useState(pendingRange);
-  const [hasRequestedAnalysis, setHasRequestedAnalysis] = useState(true);
+  const [hasRequestedAnalysis, setHasRequestedAnalysis] = useState(active);
+
+  useEffect(() => {
+    if (active) {
+      setHasRequestedAnalysis(true);
+    }
+  }, [active]);
+
   const analysisQuery = useAnalyzeMemorySource(spaceId, analysisRange, {
-    enabled: hasRequestedAnalysis,
+    enabled: active && hasRequestedAnalysis,
   });
   const hasGenerated = hasRequestedAnalysis
     && (analysisQuery.data !== undefined || analysisQuery.isError || analysisQuery.isFetching);

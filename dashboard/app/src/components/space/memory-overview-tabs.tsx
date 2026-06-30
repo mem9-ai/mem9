@@ -154,7 +154,7 @@ export function MemoryOverviewTabs({
         className="-mt-px mt-0 data-[state=inactive]:hidden"
         forceMount
       >
-        <PeriodicObservationOverview spaceId={spaceId} />
+        <PeriodicObservationOverview spaceId={spaceId} active={tab === "periodic"} />
       </TabsContent>
 
       <TabsContent value="insight" className="-mt-px mt-0">

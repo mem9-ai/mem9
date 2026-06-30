@@ -22,12 +22,14 @@ export interface MemoryAnalysisReport {
   template_id: string;
   report_content: string;
   generated_at: string;
-  render_status: "success" | "fail";
+  render_status: MemoryAnalysisReportStatus;
   fail_reason: string | null;
   memory_count: number;
   startTime: string;
   endTime: string;
 }
+
+export type MemoryAnalysisReportStatus = "queued" | "running" | "success" | "fail";
 
 export interface MemoryAnalysisReportListResponse {
   reports: MemoryAnalysisReport[];
@@ -78,7 +80,7 @@ export interface GenerateMemoryAnalysisReportInput {
 export interface GenerateMemoryAnalysisReportResult {
   report: MemoryAnalysisReport;
   analysis: AnalyzeMemorySourceResponse | null;
-  renderStatus: "success" | "fail";
+  renderStatus: MemoryAnalysisReportStatus;
   memoryCount: number;
   failReason: string | null;
 }
@@ -138,7 +140,7 @@ async function requestAnalyzeMemorySource(
     createdAfter: input.createdAfter,
     createdBefore: input.createdBefore,
   });
-  const response = await fetch(`${ANALYSIS_API_BASE}/v1/memory-analysis/analyze-source?${params}`, {
+  const response = await fetch(`${ANALYSIS_API_BASE}/v1/memory-analysis?${params}`, {
     method: "POST",
     headers: {
       "x-mem9-api-key": spaceId.trim(),
@@ -147,7 +149,7 @@ async function requestAnalyzeMemorySource(
 
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { message?: string; error?: string } | null;
-    throw new Error(body?.message || body?.error || `Memory analysis source API error ${response.status}`);
+    throw new Error(body?.message || body?.error || `Memory analysis API error ${response.status}`);
   }
 
   const body = await response.json() as Partial<AnalyzeMemorySourceResponse> | null;
@@ -156,22 +158,17 @@ async function requestAnalyzeMemorySource(
 
 async function requestCreateMemoryAnalysisReport(
   spaceId: string,
-  input: {
-    report_content: string;
-    render_status: "success" | "fail";
-    fail_reason?: string;
-    memory_count: number;
-    startTime: string;
-    endTime: string;
-  },
+  input: AnalyzeMemorySourceInput,
 ): Promise<MemoryAnalysisReport> {
-  const response = await fetch(`${ANALYSIS_API_BASE}/v1/memory-analysis/report`, {
+  const params = new URLSearchParams({
+    createdAfter: input.createdAfter,
+    createdBefore: input.createdBefore,
+  });
+  const response = await fetch(`${ANALYSIS_API_BASE}/v1/memory-analysis/report?${params}`, {
     method: "POST",
     headers: {
-      "content-type": "application/json",
       "x-mem9-api-key": spaceId.trim(),
     },
-    body: JSON.stringify(input),
   });
 
   if (!response.ok) {
@@ -187,33 +184,15 @@ async function requestGenerateMemoryAnalysisReport(
   spaceId: string,
   input: GenerateMemoryAnalysisReportInput,
 ): Promise<GenerateMemoryAnalysisReportResult> {
-  let analysis: AnalyzeMemorySourceResponse | null = null;
-  let renderStatus: "success" | "fail" = "success";
-  let failReason: string | null = null;
-
-  try {
-    analysis = await requestAnalyzeMemorySource(spaceId, input.analysisRange);
-  } catch (err) {
-    renderStatus = "fail";
-    failReason = err instanceof Error ? err.message : String(err);
-  }
-
-  const memoryCount = analysis?.memoryCount ?? 0;
-  const report = await requestCreateMemoryAnalysisReport(spaceId, {
-    report_content: analysis ? JSON.stringify(analysis) : "",
-    render_status: renderStatus,
-    fail_reason: failReason ?? undefined,
-    memory_count: memoryCount,
-    startTime: input.analysisRange.createdAfter,
-    endTime: input.analysisRange.createdBefore,
-  });
+  const report = await requestCreateMemoryAnalysisReport(spaceId, input.analysisRange);
+  const analysis = parseAnalyzeMemorySourceReport(report);
 
   return {
     report,
     analysis,
-    renderStatus,
-    memoryCount,
-    failReason,
+    renderStatus: report.render_status,
+    memoryCount: report.memory_count,
+    failReason: report.fail_reason,
   };
 }
 
@@ -305,7 +284,7 @@ function normalizeReport(report: Partial<MemoryAnalysisReport>): MemoryAnalysisR
     template_id: typeof report.template_id === "string" ? report.template_id : "",
     report_content: typeof report.report_content === "string" ? report.report_content : "",
     generated_at: typeof report.generated_at === "string" ? report.generated_at : "",
-    render_status: report.render_status === "fail" ? "fail" : "success",
+    render_status: isMemoryAnalysisReportStatus(report.render_status) ? report.render_status : "queued",
     fail_reason: typeof report.fail_reason === "string" ? report.fail_reason : null,
     memory_count: Number.isFinite(Number(report.memory_count)) ? Number(report.memory_count) : 0,
     startTime: typeof report.startTime === "string"
@@ -315,6 +294,19 @@ function normalizeReport(report: Partial<MemoryAnalysisReport>): MemoryAnalysisR
       ? report.endTime
       : typeof rawReport.end_time === "string" ? rawReport.end_time : "",
   };
+}
+
+function parseAnalyzeMemorySourceReport(report: MemoryAnalysisReport): AnalyzeMemorySourceResponse | null {
+  if (!report.report_content) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(report.report_content) as Partial<AnalyzeMemorySourceResponse> | null;
+    return normalizeAnalyzeMemorySourceResponse(parsed);
+  } catch {
+    return null;
+  }
 }
 
 function normalizeAnalyzeMemorySourceResponse(
@@ -415,6 +407,17 @@ function isMemorySignalDimension(value: unknown): value is MemorySignalDimension
     || value === "growth_signal";
 }
 
+function isMemoryAnalysisReportStatus(value: unknown): value is MemoryAnalysisReportStatus {
+  return value === "queued"
+    || value === "running"
+    || value === "success"
+    || value === "fail";
+}
+
+function isCompletedMemoryAnalysisReportStatus(status: MemoryAnalysisReportStatus): boolean {
+  return status === "success" || status === "fail";
+}
+
 export function useMemoryAnalysisReports(
   spaceId: string,
   type: MemoryAnalysisReportType | null,
@@ -431,6 +434,10 @@ export function useAllMemoryAnalysisReports(spaceId: string) {
     queryKey: ["space", spaceId, "memoryAnalysisReports", "all"],
     queryFn: () => requestMemoryAnalysisReports(spaceId),
     enabled: !!spaceId,
+    refetchInterval: (query) => {
+      const reports = query.state.data?.reports ?? [];
+      return reports.some((report) => !isCompletedMemoryAnalysisReportStatus(report.render_status)) ? 2 * 1000 : false;
+    },
   });
 }
 

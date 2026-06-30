@@ -470,7 +470,6 @@
     "feedback": { "accurate": "Accurate", "edit": "Edit", "inaccurate": "Not accurate" },
     "topics": {
       "title": "Focus topics",
-      "action": "View all",
       "items": { "technology": "AI & tech", "education": "Family education", "health": "Healthy habits", "learning": "Learning", "product": "Product exploration" }
     },
     "composition": {
@@ -660,10 +659,25 @@
     "history_now": "Just generated",
     "complete": "Complete",
     "failed": "Failed",
+    "status": {
+      "queued": "Queued",
+      "running": "Generating",
+      "fail": "Failed",
+      "success": "Complete"
+    },
     "report_history_loading": "Loading generation history...",
     "report_history_empty": "No generated reports yet.",
     "report_history_failed": "Failed to load generation history.",
     "report_type_unavailable": "The generation history API for this template is not available yet.",
+    "history_columns": {
+      "period": "Report period",
+      "status": "Status",
+      "memory_count": "Memories",
+      "actions": "Actions"
+    },
+    "pagination_summary": "Showing {{start}}-{{end}} of {{total}} records",
+    "previous_page": "Previous",
+    "next_page": "Next",
     "view_template": "View report",
     "preview": "Preview",
     "download": "Download PDF",

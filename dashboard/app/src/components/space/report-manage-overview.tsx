@@ -1,10 +1,11 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
   Activity,
   ArrowUpRight,
   BrainCircuit,
+  ChevronLeft,
   ChevronRight,
   Flag,
   HeartPulse,
@@ -16,6 +17,7 @@ import {
   useAllMemoryAnalysisReports,
   useGenerateMemoryAnalysisReport,
   type MemoryAnalysisReport,
+  type MemoryAnalysisReportStatus,
 } from "@/api/memory-analysis-reports";
 import { Button } from "@/components/ui/button";
 import { buildDefaultAnalysisRange } from "@/components/space/date-range-picker";
@@ -33,6 +35,7 @@ const templateIcons = {
 } as const;
 
 const workflowSteps = [0, 1, 2] as const;
+const REPORT_HISTORY_PAGE_SIZE = 10;
 const REPORT_HISTORY_GRID_CLASS = "grid gap-2 sm:grid-cols-[minmax(0,1.15fr)_minmax(5.5rem,0.7fr)_minmax(6.5rem,0.8fr)_7rem] sm:items-center";
 
 export function ReportManageOverview({
@@ -219,6 +222,17 @@ function ReportHistoryRows({
   onOpen: (report: MemoryAnalysisReport) => void;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(reports.length / REPORT_HISTORY_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pageStart = (safePage - 1) * REPORT_HISTORY_PAGE_SIZE;
+  const pageReports = reports.slice(pageStart, pageStart + REPORT_HISTORY_PAGE_SIZE);
+  const pageEnd = pageStart + pageReports.length;
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, pageCount));
+  }, [pageCount]);
+
   if (unavailable) {
     return <ReportHistoryMessage>{t("report_manage.report_type_unavailable")}</ReportHistoryMessage>;
   }
@@ -235,19 +249,15 @@ function ReportHistoryRows({
   return (
     <>
       <div className={cn(REPORT_HISTORY_GRID_CLASS, "bg-foreground/[0.018] px-4 py-2.5 text-xs font-semibold text-soft-foreground")}>
-        <span>报告周期</span>
-        <span className="justify-self-start text-left">状态</span>
-        <span className="justify-self-start text-left">记忆数</span>
-        <span className="sm:text-right">操作</span>
+        <span>{t("report_manage.history_columns.period")}</span>
+        <span className="justify-self-start text-left">{t("report_manage.history_columns.status")}</span>
+        <span className="justify-self-start text-left">{t("report_manage.history_columns.memory_count")}</span>
+        <span className="sm:text-right">{t("report_manage.history_columns.actions")}</span>
       </div>
-      {reports.map((report) => (
+      {pageReports.map((report) => (
         <div key={`${report.template_id}-${report.report_id}`} className={cn(REPORT_HISTORY_GRID_CLASS, "px-4 py-3 text-sm")}>
           <span className="min-w-0 font-medium">{formatReportPeriod(report)}</span>
-          <span className="justify-self-start text-left">
-            <span className={cn("rounded-md px-2 py-0.5 text-xs font-medium", report.render_status === "success" ? "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400" : "bg-red-500/12 text-red-600 dark:text-red-400")}>
-              {report.render_status === "success" ? t("report_manage.complete") : t("report_manage.failed")}
-            </span>
-          </span>
+          <ReportStatusBadge status={report.render_status} t={t} />
           <span className="justify-self-start truncate text-left text-muted-foreground" title={report.render_status === "fail" ? report.fail_reason || undefined : undefined}>
             {report.render_status === "fail" && report.fail_reason ? report.fail_reason : t("report_manage.memory_count", { count: report.memory_count })}
           </span>
@@ -256,8 +266,73 @@ function ReportHistoryRows({
           </div>
         </div>
       ))}
+      {reports.length > REPORT_HISTORY_PAGE_SIZE ? (
+        <div className="flex flex-col gap-2 px-4 py-3 text-xs text-soft-foreground sm:flex-row sm:items-center sm:justify-between">
+          <span>
+            {t("report_manage.pagination_summary", {
+              start: pageStart + 1,
+              end: pageEnd,
+              total: reports.length,
+            })}
+          </span>
+          <div className="flex items-center gap-2 sm:justify-end">
+            <Button
+              variant="outline"
+              size="xs"
+              disabled={safePage <= 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              aria-label={t("report_manage.previous_page")}
+            >
+              <ChevronLeft className="size-3" />
+              {t("report_manage.previous_page")}
+            </Button>
+            <span className="min-w-12 text-center tabular-nums">
+              {safePage} / {pageCount}
+            </span>
+            <Button
+              variant="outline"
+              size="xs"
+              disabled={safePage >= pageCount}
+              onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+              aria-label={t("report_manage.next_page")}
+            >
+              {t("report_manage.next_page")}
+              <ChevronRight className="size-3" />
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </>
   );
+}
+
+function ReportStatusBadge({
+  status,
+  t,
+}: {
+  status: MemoryAnalysisReportStatus;
+  t: (key: string, options?: Record<string, unknown>) => string;
+}) {
+  return (
+    <span className="justify-self-start text-left">
+      <span className={cn("rounded-md px-2 py-0.5 text-xs font-medium", reportStatusClass(status))}>
+        {t(`report_manage.status.${status}`)}
+      </span>
+    </span>
+  );
+}
+
+function reportStatusClass(status: MemoryAnalysisReportStatus): string {
+  if (status === "success") {
+    return "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400";
+  }
+  if (status === "fail") {
+    return "bg-red-500/12 text-red-600 dark:text-red-400";
+  }
+  if (status === "running") {
+    return "bg-blue-500/12 text-blue-600 dark:text-blue-400";
+  }
+  return "bg-amber-500/12 text-amber-700 dark:text-amber-300";
 }
 
 function formatReportPeriod(report: MemoryAnalysisReport): string {

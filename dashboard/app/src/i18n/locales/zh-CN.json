@@ -474,14 +474,14 @@
     },
     "topics": {
       "title": "关注主题",
-      "action": "查看全部",
+      "action": "",
       "items": { "technology": "AI & 技术", "education": "家庭教育", "health": "健康习惯", "learning": "学习成长", "product": "产品探索" }
     },
     "composition": {
       "title": "记忆组成",
       "items": { "profile": "个人画像", "communication": "沟通偏好", "learning": "学习成长", "project": "项目", "status": "状态" }
     },
-    "relationships": { "title": "重要关系", "action": "关系图", "user": "用户", "daughter": "女儿", "partner": "伴侣", "parents": "父母", "empty": "暂无可展示的重要关系。", "unspecified": "关系未标注", "evidence_count": "{{count}} 条证据" },
+    "relationships": { "title": "重要关系", "user": "用户", "daughter": "女儿", "partner": "伴侣", "parents": "父母", "empty": "暂无可展示的重要关系。", "unspecified": "关系未标注", "evidence_count": "{{count}} 条证据" },
     "items": {
       "title": "画像项",
       "empty": "暂无可展示的画像项。",
@@ -730,22 +730,37 @@
     "date_to": "结束日期",
     "apply_date": "应用日期范围",
     "memory_count": "{{count}} 条记忆",
-    "generate_template": "生成报告",
+    "generate_template": "生成最新报告",
     "history_title": "该模板生成记录",
     "all_history_title": "模板记录",
     "history_now": "刚刚生成",
     "complete": "已完成",
     "failed": "失败",
+    "status": {
+      "queued": "排队中",
+      "running": "生成中",
+      "fail": "生成失败",
+      "success": "已完成"
+    },
     "report_history_loading": "正在加载生成记录...",
     "report_history_empty": "暂无生成记录",
     "report_history_failed": "生成记录加载失败",
     "report_type_unavailable": "该模板的生成记录接口暂未开放",
+    "history_columns": {
+      "period": "报告周期",
+      "status": "状态",
+      "memory_count": "记忆数",
+      "actions": "操作"
+    },
+    "pagination_summary": "当前显示第 {{start}}-{{end}} 条，共 {{total}} 条",
+    "previous_page": "上一页",
+    "next_page": "下一页",
     "view_template": "查看报告",
     "preview": "查看洞察",
     "download": "下载 PDF",
     "preview_hint": "接通报告服务后，报告预览将在这里打开。",
     "download_hint": "点击后将打开 PDF 报告页面。",
-    "generate_success": "已按所选时间生成「{{template}}」，共分析 {{count}} 条记忆。",
+    "generate_success": "生成报告中，共分析 {{count}} 条记忆。",
     "generate_failed": "报告生成失败",
     "note": "第一期仅提供内置模板；报告结果支持在线查看。",
     "templates": {

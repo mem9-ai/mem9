@@ -95,6 +95,15 @@ vi.mock("@/api/analysis-queries", () => ({
   }),
 }));
 
+vi.mock("@/api/memory-analysis-reports", () => ({
+  useAnalyzeMemorySource: () => ({
+    data: null,
+    isError: false,
+    isFetching: false,
+    isLoading: false,
+  }),
+}));
+
 const ORIGINAL_INNER_WIDTH = window.innerWidth;
 
 function setViewportWidth(width: number): void {
@@ -321,7 +330,7 @@ describe("MemoryOverviewTabs", () => {
     expect(screen.getByTestId("deep-analysis-tab")).toHaveTextContent("space-1:false");
   });
 
-  it("exposes the Memory Profile tab with personal info, current understanding, and confidence chart", () => {
+  it("exposes the Memory Profile tab with personal info and current understanding", () => {
     setViewportWidth(1400);
     const memory = createMemory("mem-profile-1");
 
@@ -362,11 +371,11 @@ describe("MemoryOverviewTabs", () => {
     expect(screen.getByText("Avoid assumptions")).toBeInTheDocument();
     expect(screen.queryByText("Hidden fourth priority")).not.toBeInTheDocument();
     expect(screen.queryByText("Recall cue")).not.toBeInTheDocument();
-    expect(screen.getByText("Profile Confidence")).toBeInTheDocument();
+    expect(screen.queryByText("Profile Confidence")).not.toBeInTheDocument();
     expect(screen.getByText("12 memories")).toBeInTheDocument();
     expect(
-      screen.getByRole("img", { name: "Profile confidence pie chart" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("img", { name: "Profile confidence pie chart" }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders short labels and replaces the insight workspace with a desktop redirect on mobile", () => {
