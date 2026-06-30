@@ -5,7 +5,7 @@ import type { Hooks } from "@opencode-ai/plugin";
 import type { MemoryBackend } from "../src/server/backend.js";
 import type { IngestInput, IngestResult } from "../src/server/backend.js";
 import { buildHooks } from "../src/server/hooks.js";
-import { Mem9HttpError } from "../src/server/quota-error.js";
+import { formatRuntimeQuotaNotice, Mem9HttpError } from "../src/server/quota-error.js";
 import { formatRecallBlock } from "../src/server/recall/format.js";
 import {
   buildRecallQuery,
@@ -547,6 +547,7 @@ test("buildHooks renders runtime quota denial action in recall context", async (
           message: "Included quota is exhausted.",
           details: {
             mem9Code: "runtime_quota_denied",
+            meter: "memory_recall_requests",
             recommendedAction: {
               bindingState: "unclaimed",
               type: "claimApiKey",
@@ -577,12 +578,84 @@ test("buildHooks renders runtime quota denial action in recall context", async (
   await onSystemTransform(createSystemTransformInput("session-quota"), output);
 
   assert.equal(output.system.length, 2);
-  assert.match(output.system[1] ?? "", /Included quota is exhausted/);
-  assert.match(output.system[1] ?? "", /include this URL exactly/);
+  assert.match(output.system[1] ?? "", /Mem9 recall is temporarily unavailable/);
+  assert.match(output.system[1] ?? "", /included usage quota for this API key has been used up/);
+  assert.match(output.system[1] ?? "", /sign in or create a mem9 account and claim this API key/);
+  assert.match(output.system[1] ?? "", /upgrade their plan or set up billing/);
+  assert.match(output.system[1] ?? "", /Include the link exactly as written/);
   assert.match(output.system[1] ?? "", /console\/claim\?key=mem9_test/);
+  assert.equal(
+    output.system[1]?.match(/https:\/\/console\.mem9\.ai\/console\/claim\?key=mem9_test/g)?.length,
+    1,
+  );
   assert.doesNotMatch(output.system[1] ?? "", /\.\. Claim/);
   assert.deepEqual(
     debugEvents.map((entry) => entry.event),
     ["recall.capture", "recall.request", "recall.quota_denied"],
+  );
+});
+
+test("formatRuntimeQuotaNotice renders spending limit guidance", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "On-demand spending limit would be exceeded.",
+      402,
+      "",
+      {
+        code: "spending_limit_exceeded",
+        message: "On-demand spending limit would be exceeded.",
+        details: {
+          mem9Code: "runtime_quota_denied",
+          meter: "memory_recall_requests",
+          recommendedAction: {
+            bindingState: "claimed",
+            type: "increaseSpendingLimit",
+            url: "https://console.mem9.ai/console/billing/plan",
+          },
+        },
+      },
+    ),
+    "recall paused",
+  );
+
+  assert.match(notice, /configured spending limit would be exceeded/);
+  assert.match(notice, /increase the mem9 spending limit or adjust billing settings/);
+  assert.match(notice, /Include the link exactly as written/);
+  assert.equal(
+    notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,
+    1,
+  );
+});
+
+test("formatRuntimeQuotaNotice renders write meter guidance", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "Included quota is exhausted.",
+      402,
+      "",
+      {
+        code: "quota_exhausted",
+        message: "Included quota is exhausted.",
+        details: {
+          mem9Code: "runtime_quota_denied",
+          meter: "memory_write_requests",
+          recommendedAction: {
+            bindingState: "claimed",
+            type: "upgradePlan",
+            url: "https://console.mem9.ai/console/billing/plan",
+          },
+        },
+      },
+    ),
+    "recall paused",
+  );
+
+  assert.match(notice, /Mem9 memory saving is temporarily unavailable/);
+  assert.match(notice, /mem9 cannot save new memories right now/);
+  assert.match(notice, /upgrade their mem9 plan and get more included usage/);
+  assert.doesNotMatch(notice, /cannot recall memories/);
+  assert.equal(
+    notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,
+    1,
   );
 });

@@ -15,6 +15,7 @@ import {
   runUserPromptSubmit,
 } from "../hooks/user-prompt-submit.mjs";
 import { Mem9HttpError } from "../lib/http.mjs";
+import { formatRuntimeQuotaNotice } from "../lib/quota-error.mjs";
 import { createTempRoot } from "./test-temp.mjs";
 
 const USER_PROMPT_SUBMIT_ENTRY = path.resolve("./hooks/user-prompt-submit.mjs");
@@ -256,6 +257,7 @@ test("user prompt submit renders runtime quota denial action", async () => {
           message: "Included quota is exhausted.",
           details: {
             mem9Code: "runtime_quota_denied",
+            meter: "memory_recall_requests",
             recommendedAction: {
               type: "claimApiKey",
               bindingState: "unclaimed",
@@ -272,9 +274,16 @@ test("user prompt submit renders runtime quota denial action", async () => {
 
   const parsed = JSON.parse(output);
   assert.equal(parsed.hookSpecificOutput.hookEventName, "UserPromptSubmit");
-  assert.match(parsed.hookSpecificOutput.additionalContext, /Included quota is exhausted/);
-  assert.match(parsed.hookSpecificOutput.additionalContext, /include this URL exactly/);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /Mem9 recall is temporarily unavailable/);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /included usage quota for this API key has been used up/);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /sign in or create a mem9 account and claim this API key/);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /upgrade their plan or set up billing/);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /Include the link exactly as written/);
   assert.match(parsed.hookSpecificOutput.additionalContext, /console\/claim\?key=mem9_test/);
+  assert.equal(
+    parsed.hookSpecificOutput.additionalContext.match(/https:\/\/console\.mem9\.ai\/console\/claim\?key=mem9_test/g)?.length,
+    1,
+  );
   assert.doesNotMatch(parsed.hookSpecificOutput.additionalContext, /\.\. Claim/);
   assert.equal(debugEvents.at(-1)?.stage, "recall_quota_denied");
   assert.deepEqual(debugEvents.at(-1)?.fields, {
@@ -282,6 +291,67 @@ test("user prompt submit renders runtime quota denial action", async () => {
     actionType: "claimApiKey",
     hasActionUrl: true,
   });
+});
+
+test("runtime quota notice renders spending limit guidance", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError("quota denied", {
+      status: 402,
+      data: {
+        code: "spending_limit_exceeded",
+        message: "On-demand spending limit would be exceeded.",
+        details: {
+          mem9Code: "runtime_quota_denied",
+          meter: "memory_recall_requests",
+          recommendedAction: {
+            type: "increaseSpendingLimit",
+            bindingState: "claimed",
+            url: "https://console.mem9.ai/console/billing/plan",
+          },
+        },
+      },
+    }),
+    "recall paused",
+  );
+
+  assert.match(notice, /configured spending limit would be exceeded/);
+  assert.match(notice, /increase the mem9 spending limit or adjust billing settings/);
+  assert.match(notice, /Include the link exactly as written/);
+  assert.equal(
+    notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,
+    1,
+  );
+});
+
+test("runtime quota notice renders write meter guidance", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError("quota denied", {
+      status: 402,
+      data: {
+        code: "quota_exhausted",
+        message: "Included quota is exhausted.",
+        details: {
+          mem9Code: "runtime_quota_denied",
+          meter: "memory_write_requests",
+          recommendedAction: {
+            type: "upgradePlan",
+            bindingState: "claimed",
+            url: "https://console.mem9.ai/console/billing/plan",
+          },
+        },
+      },
+    }),
+    "recall paused",
+  );
+
+  assert.match(notice, /Mem9 memory saving is temporarily unavailable/);
+  assert.match(notice, /mem9 cannot save new memories right now/);
+  assert.match(notice, /upgrade their mem9 plan and get more included usage/);
+  assert.doesNotMatch(notice, /cannot recall memories/);
+  assert.equal(
+    notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,
+    1,
+  );
 });
 
 test("user prompt submit skips empty queries after stripping injected memories", async () => {

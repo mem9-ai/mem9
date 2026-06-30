@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import mnemoPlugin from "./index.js";
+import { formatRuntimeQuotaNotice, Mem9HttpError } from "./quota-error.js";
 
 interface RegisteredTool {
   name: string;
@@ -293,6 +294,7 @@ test("before_prompt_build returns runtime quota denial action context", async ()
       message: "Included quota is exhausted.",
       details: {
         mem9Code: "runtime_quota_denied",
+        meter: "memory_recall_requests",
         recommendedAction: {
           bindingState: "unclaimed",
           type: "claimApiKey",
@@ -318,14 +320,86 @@ test("before_prompt_build returns runtime quota denial action context", async ()
     const beforePromptBuild = api.getHook("before_prompt_build");
     const hookResult = await beforePromptBuild({ prompt: "remember alpha" }) as { prependContext?: string } | undefined;
 
-    assert.match(hookResult?.prependContext ?? "", /Included quota is exhausted/);
-    assert.match(hookResult?.prependContext ?? "", /include this URL exactly/);
+    assert.match(hookResult?.prependContext ?? "", /Mem9 recall is temporarily unavailable/);
+    assert.match(hookResult?.prependContext ?? "", /included usage quota for this API key has been used up/);
+    assert.match(hookResult?.prependContext ?? "", /sign in or create a mem9 account and claim this API key/);
+    assert.match(hookResult?.prependContext ?? "", /upgrade their plan or set up billing/);
+    assert.match(hookResult?.prependContext ?? "", /Include the link exactly as written/);
     assert.match(hookResult?.prependContext ?? "", /console\/claim\?key=mem9_test/);
+    assert.equal(
+      hookResult?.prependContext?.match(/https:\/\/console\.mem9\.ai\/console\/claim\?key=mem9_test/g)?.length,
+      1,
+    );
     assert.doesNotMatch(hookResult?.prependContext ?? "", /\.\. Claim/);
-    assert.equal(infoLogs.some((line) => line.includes("recall paused")), true);
+    assert.equal(infoLogs.some((line) => line.includes("Mem9 recall is temporarily unavailable")), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("formatRuntimeQuotaNotice renders spending limit guidance", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "On-demand spending limit would be exceeded.",
+      402,
+      "",
+      {
+        code: "spending_limit_exceeded",
+        message: "On-demand spending limit would be exceeded.",
+        details: {
+          mem9Code: "runtime_quota_denied",
+          meter: "memory_recall_requests",
+          recommendedAction: {
+            bindingState: "claimed",
+            type: "increaseSpendingLimit",
+            url: "https://console.mem9.ai/console/billing/plan",
+          },
+        },
+      },
+    ),
+    "recall paused",
+  );
+
+  assert.match(notice, /configured spending limit would be exceeded/);
+  assert.match(notice, /increase the mem9 spending limit or adjust billing settings/);
+  assert.match(notice, /Include the link exactly as written/);
+  assert.equal(
+    notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,
+    1,
+  );
+});
+
+test("formatRuntimeQuotaNotice renders write meter guidance", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "Included quota is exhausted.",
+      402,
+      "",
+      {
+        code: "quota_exhausted",
+        message: "Included quota is exhausted.",
+        details: {
+          mem9Code: "runtime_quota_denied",
+          meter: "memory_write_requests",
+          recommendedAction: {
+            bindingState: "claimed",
+            type: "upgradePlan",
+            url: "https://console.mem9.ai/console/billing/plan",
+          },
+        },
+      },
+    ),
+    "recall paused",
+  );
+
+  assert.match(notice, /Mem9 memory saving is temporarily unavailable/);
+  assert.match(notice, /mem9 cannot save new memories right now/);
+  assert.match(notice, /upgrade their mem9 plan and get more included usage/);
+  assert.doesNotMatch(notice, /cannot recall memories/);
+  assert.equal(
+    notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,
+    1,
+  );
 });
 
 test("before_prompt_build strips OpenClaw metadata wrappers before recall search", async () => {
