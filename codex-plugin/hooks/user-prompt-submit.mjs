@@ -7,6 +7,7 @@ import { loadRuntimeStateFromDisk } from "../lib/config.mjs";
 import { appendDebugError, appendDebugLog } from "./shared/debug.mjs";
 import { formatMemoriesBlock, hookAdditionalContext, stripInjectedMemories } from "./shared/format.mjs";
 import { buildMem9Url, mem9FetchJson, mem9Headers } from "../lib/http.mjs";
+import { formatRuntimeQuotaNotice, parseRuntimeQuotaDenied } from "../lib/quota-error.mjs";
 
 const RECALL_LIMIT = 10;
 
@@ -103,10 +104,28 @@ export async function runUserPromptSubmit(input) {
     queryChars: query.length,
     timeoutMs: input.runtime.searchTimeoutMs,
   });
-  const result = await input.search(
-    buildRecallUrl(input.runtime.baseUrl, query),
-    { timeoutMs: input.runtime.searchTimeoutMs },
-  );
+  let result;
+  try {
+    result = await input.search(
+      buildRecallUrl(input.runtime.baseUrl, query),
+      { timeoutMs: input.runtime.searchTimeoutMs },
+    );
+  } catch (error) {
+    const quotaDenied = parseRuntimeQuotaDenied(error);
+    if (!quotaDenied) {
+      throw error;
+    }
+
+    debug("recall_quota_denied", {
+      code: quotaDenied.code,
+      actionType: quotaDenied.recommendedAction?.type,
+      hasActionUrl: Boolean(quotaDenied.recommendedAction?.url),
+    });
+    return hookAdditionalContext(
+      "UserPromptSubmit",
+      formatRuntimeQuotaNotice(error, "recall paused"),
+    );
+  }
   const memories = extractMemories(result).slice(0, RECALL_LIMIT);
   debug("recall_response", {
     memoryCount: memories.length,

@@ -11,6 +11,46 @@ import { DEFAULT_REQUEST_TIMEOUT_MS } from "./config.mjs";
  * }} Mem9FetchOptions
  */
 
+export class Mem9HttpError extends Error {
+  constructor(message, { status, body, data } = {}) {
+    super(message);
+    this.name = "Mem9HttpError";
+    this.status = status;
+    this.body = body ?? "";
+    this.data = data;
+  }
+}
+
+function parseJsonOrNull(text) {
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function errorMessageFromBody(status, body, data) {
+  if (data && typeof data === "object") {
+    if (typeof data.message === "string" && data.message.trim()) {
+      return data.message.trim();
+    }
+    if (typeof data.error === "string" && data.error.trim()) {
+      return data.error.trim();
+    }
+  }
+
+  const text = String(body ?? "").trim();
+  if (text) {
+    return text;
+  }
+
+  return `HTTP ${status}`;
+}
+
 export async function mem9FetchJson(url, options = {}) {
   const response = await fetch(url, {
     method: options.method ?? "GET",
@@ -23,7 +63,15 @@ export async function mem9FetchJson(url, options = {}) {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`mem9 request failed (${response.status}): ${body}`);
+    const data = parseJsonOrNull(body);
+    throw new Mem9HttpError(
+      `mem9 request failed (${response.status}): ${errorMessageFromBody(response.status, body, data)}`,
+      {
+        status: response.status,
+        body,
+        data,
+      },
+    );
   }
 
   if (response.status === 204) {

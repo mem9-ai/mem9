@@ -14,6 +14,7 @@ import {
   extractMemories,
   runUserPromptSubmit,
 } from "../hooks/user-prompt-submit.mjs";
+import { Mem9HttpError } from "../lib/http.mjs";
 import { createTempRoot } from "./test-temp.mjs";
 
 const USER_PROMPT_SUBMIT_ENTRY = path.resolve("./hooks/user-prompt-submit.mjs");
@@ -232,6 +233,53 @@ test("user prompt submit recalls memories with the search timeout bucket", async
     debugEvents.map((event) => event.stage),
     ["recall_request", "recall_response", "context_injected"],
   );
+});
+
+test("user prompt submit renders runtime quota denial action", async () => {
+  /** @type {Array<{stage: string, fields: Record<string, unknown> | undefined}>} */
+  const debugEvents = [];
+
+  const output = await runUserPromptSubmit({
+    prompt: "remember my preference",
+    runtime: {
+      baseUrl: "https://api.mem9.ai",
+      apiKey: "key-1",
+      agentId: "codex",
+      searchTimeoutMs: 15_000,
+      recallMinPromptLength: 5,
+    },
+    async search() {
+      throw new Mem9HttpError("quota denied", {
+        status: 402,
+        data: {
+          code: "quota_exhausted",
+          message: "Included quota is exhausted.",
+          details: {
+            mem9Code: "runtime_quota_denied",
+            recommendedAction: {
+              type: "claimApiKey",
+              bindingState: "unclaimed",
+              url: "https://console.mem9.ai/console/claim?key=mem9_test",
+            },
+          },
+        },
+      });
+    },
+    debug(stage, fields) {
+      debugEvents.push({ stage, fields });
+    },
+  });
+
+  const parsed = JSON.parse(output);
+  assert.equal(parsed.hookSpecificOutput.hookEventName, "UserPromptSubmit");
+  assert.match(parsed.hookSpecificOutput.additionalContext, /Included quota is exhausted/);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /console\/claim\?key=mem9_test/);
+  assert.equal(debugEvents.at(-1)?.stage, "recall_quota_denied");
+  assert.deepEqual(debugEvents.at(-1)?.fields, {
+    code: "quota_exhausted",
+    actionType: "claimApiKey",
+    hasActionUrl: true,
+  });
 });
 
 test("user prompt submit skips empty queries after stripping injected memories", async () => {

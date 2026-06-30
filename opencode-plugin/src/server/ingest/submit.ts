@@ -1,5 +1,6 @@
 import type { IngestInput, IngestResult, MemoryBackend } from "../backend.ts";
 import type { DebugLogger } from "../debug.ts";
+import { parseRuntimeQuotaDenied } from "../quota-error.ts";
 import { selectMessagesForIngest } from "./select.ts";
 
 export interface SubmitIngestOptions {
@@ -45,6 +46,18 @@ export async function submitMessagesForIngest(
     });
     return result;
   } catch (error) {
+    const quotaDenied = parseRuntimeQuotaDenied(error);
+    if (quotaDenied) {
+      await options.debugLogger?.("ingest.quota_denied", {
+        sessionID: options.sessionID,
+        agentID: options.agentID,
+        code: quotaDenied.code,
+        actionType: quotaDenied.recommendedAction?.type,
+        hasActionUrl: Boolean(quotaDenied.recommendedAction?.url),
+      });
+      return null;
+    }
+
     await options.debugLogger?.("ingest.error", {
       sessionID: options.sessionID,
       agentID: options.agentID,

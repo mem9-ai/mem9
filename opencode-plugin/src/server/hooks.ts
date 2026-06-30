@@ -3,6 +3,7 @@ import type { IngestMessage, MemoryBackend } from "./backend.ts";
 import type { DebugLogger } from "./debug.ts";
 import { selectMessagesForIngest } from "./ingest/select.ts";
 import { submitMessagesForIngest } from "./ingest/submit.ts";
+import { formatRuntimeQuotaNotice, parseRuntimeQuotaDenied } from "./quota-error.ts";
 import { formatRecallBlock } from "./recall/format.ts";
 import { buildRecallQuery } from "./recall/query.ts";
 import type { SessionTranscriptLoader } from "./session-transcript.ts";
@@ -308,6 +309,18 @@ export function buildHooks(
           output.system.push(block);
         }
       } catch (error) {
+        const quotaDenied = parseRuntimeQuotaDenied(error);
+        if (quotaDenied) {
+          await options.debugLogger?.("recall.quota_denied", {
+            sessionID: input.sessionID,
+            code: quotaDenied.code,
+            actionType: quotaDenied.recommendedAction?.type,
+            hasActionUrl: Boolean(quotaDenied.recommendedAction?.url),
+          });
+          output.system.push(formatRuntimeQuotaNotice(error, "recall paused"));
+          return;
+        }
+
         await options.debugLogger?.("recall.error", {
           sessionID: input.sessionID,
           error: error instanceof Error ? error.message : String(error),

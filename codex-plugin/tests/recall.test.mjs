@@ -8,6 +8,7 @@ import {
   main,
   runRecall,
 } from "../skills/recall/scripts/recall.mjs";
+import { Mem9HttpError } from "../lib/http.mjs";
 import { buildRuntimeIssueMessage } from "../lib/skill-runtime.mjs";
 import { createTempRoot } from "./test-temp.mjs";
 
@@ -155,6 +156,60 @@ test("runRecall accepts the query from stdin text", async () => {
   );
 
   assert.equal(result.query, "release checklist");
+});
+
+test("runRecall returns a structured runtime quota denial summary", async () => {
+  let stdoutText = "";
+
+  const result = await runRecall(
+    ["--query", "team preferences"],
+    {
+      state: {
+        configSource: "project",
+        runtime: {
+          profileId: "work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-search",
+          agentId: "codex",
+          searchTimeoutMs: 15000,
+        },
+      },
+      fetchJson: async () => {
+        throw new Mem9HttpError("quota denied", {
+          status: 402,
+          data: {
+            code: "quota_exhausted",
+            message: "Included quota is exhausted.",
+            details: {
+              mem9Code: "runtime_quota_denied",
+              recommendedAction: {
+                bindingState: "unclaimed",
+                type: "claimApiKey",
+                url: "https://console.mem9.ai/console/claim?key=mem9_test",
+              },
+            },
+          },
+        });
+      },
+      stdout: {
+        write(/** @type {string} */ chunk) {
+          stdoutText += chunk;
+        },
+      },
+    },
+  );
+  const quotaResult = /** @type {any} */ (result);
+
+  assert.equal(quotaResult.status, "quota_denied");
+  assert.equal(quotaResult.code, "quota_exhausted");
+  assert.equal(quotaResult.memoryCount, 0);
+  assert.deepEqual(quotaResult.recommendedAction, {
+    bindingState: "unclaimed",
+    type: "claimApiKey",
+    url: "https://console.mem9.ai/console/claim?key=mem9_test",
+  });
+  assert.deepEqual(JSON.parse(stdoutText), quotaResult);
+  assert.equal(stdoutText.includes("key-search"), false);
 });
 
 test("runtime helper explains how to repair a missing mem9 api key", () => {

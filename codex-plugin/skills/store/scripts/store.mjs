@@ -6,6 +6,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { buildMem9Url, mem9FetchJson, mem9Headers } from "../../../lib/http.mjs";
+import { runtimeQuotaDeniedSummary } from "../../../lib/quota-error.mjs";
 import { loadReadyRuntimeState } from "../../../lib/skill-runtime.mjs";
 
 function normalizeString(value) {
@@ -111,18 +112,35 @@ export async function runStore(argv = process.argv.slice(2), options = {}) {
     env: options.env,
   });
   const fetchJson = options.fetchJson ?? mem9FetchJson;
-  await fetchJson(
-    buildMem9Url(state.runtime.baseUrl, "v1alpha2/mem9s/memories").toString(),
-    {
-      method: "POST",
-      headers: mem9Headers(state.runtime.apiKey, state.runtime.agentId),
-      body: JSON.stringify({
-        content,
-        sync: true,
-      }),
-      timeoutMs: state.runtime.defaultTimeoutMs,
-    },
-  );
+  try {
+    await fetchJson(
+      buildMem9Url(state.runtime.baseUrl, "v1alpha2/mem9s/memories").toString(),
+      {
+        method: "POST",
+        headers: mem9Headers(state.runtime.apiKey, state.runtime.agentId),
+        body: JSON.stringify({
+          content,
+          sync: true,
+        }),
+        timeoutMs: state.runtime.defaultTimeoutMs,
+      },
+    );
+  } catch (error) {
+    const quotaSummary = runtimeQuotaDeniedSummary(error);
+    if (!quotaSummary) {
+      throw error;
+    }
+
+    const summary = {
+      ...quotaSummary,
+      profileId: state.runtime.profileId,
+      configSource: state.configSource,
+      contentChars: content.length,
+    };
+    const stdout = options.stdout ?? process.stdout;
+    stdout?.write?.(`${JSON.stringify(summary)}\n`);
+    return summary;
+  }
 
   const summary = {
     status: "ok",

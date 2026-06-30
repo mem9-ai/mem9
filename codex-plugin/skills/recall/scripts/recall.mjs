@@ -6,6 +6,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { buildMem9Url, mem9FetchJson, mem9Headers } from "../../../lib/http.mjs";
+import { runtimeQuotaDeniedSummary } from "../../../lib/quota-error.mjs";
 import { loadReadyRuntimeState } from "../../../lib/skill-runtime.mjs";
 
 const DEFAULT_LIMIT = 10;
@@ -165,18 +166,38 @@ export async function runRecall(argv = process.argv.slice(2), options = {}) {
     env: options.env,
   });
   const fetchJson = options.fetchJson ?? mem9FetchJson;
-  const payload = await fetchJson(
-    buildRecallUrl(
-      state.runtime.baseUrl,
+  let payload;
+  try {
+    payload = await fetchJson(
+      buildRecallUrl(
+        state.runtime.baseUrl,
+        query,
+        args.limit,
+      ),
+      {
+        method: "GET",
+        headers: mem9Headers(state.runtime.apiKey, state.runtime.agentId),
+        timeoutMs: state.runtime.searchTimeoutMs,
+      },
+    );
+  } catch (error) {
+    const quotaSummary = runtimeQuotaDeniedSummary(error);
+    if (!quotaSummary) {
+      throw error;
+    }
+
+    const summary = {
+      ...quotaSummary,
+      profileId: state.runtime.profileId,
+      configSource: state.configSource,
       query,
-      args.limit,
-    ),
-    {
-      method: "GET",
-      headers: mem9Headers(state.runtime.apiKey, state.runtime.agentId),
-      timeoutMs: state.runtime.searchTimeoutMs,
-    },
-  );
+      memoryCount: 0,
+      memories: [],
+    };
+    const stdout = options.stdout ?? process.stdout;
+    stdout?.write?.(`${JSON.stringify(summary)}\n`);
+    return summary;
+  }
   const memories = extractMemories(payload)
     .slice(0, args.limit)
     .map(normalizeMemorySummary)

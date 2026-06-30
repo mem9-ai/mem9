@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ServerBackend } from "./server-backend.js";
+import { Mem9HttpError, parseRuntimeQuotaDenied } from "./quota-error.js";
 
 test("register forwards only utm_* params during create-new provision", async () => {
   const originalFetch = globalThis.fetch;
@@ -76,6 +77,44 @@ test("normal memory requests do not append provision query params", async () => 
     await backend.store({ content: "remember this" });
 
     assert.equal(requestedURL, "https://api.mem9.ai/v1alpha2/mem9s/memories");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("runtime quota denial response bodies are preserved", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => {
+    return new Response(JSON.stringify({
+      code: "quota_exhausted",
+      message: "Included quota is exhausted.",
+      details: {
+        mem9Code: "runtime_quota_denied",
+        recommendedAction: {
+          bindingState: "unclaimed",
+          type: "claimApiKey",
+          url: "https://console.mem9.ai/console/claim?key=mem9_test",
+        },
+      },
+    }), {
+      status: 402,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "space-key", "agent-1");
+    await assert.rejects(
+      () => backend.search({ q: "hello" }),
+      (error: unknown) => {
+        assert.equal(error instanceof Mem9HttpError, true);
+        const denied = parseRuntimeQuotaDenied(error);
+        assert.equal(denied?.code, "quota_exhausted");
+        assert.equal(denied?.recommendedAction?.url, "https://console.mem9.ai/console/claim?key=mem9_test");
+        return true;
+      },
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

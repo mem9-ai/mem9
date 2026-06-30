@@ -12,6 +12,7 @@
  */
 
 import { isPendingProvisionError, type MemoryBackend } from "./backend.js";
+import { formatRuntimeQuotaNotice } from "./quota-error.js";
 import type { Memory, IngestMessage } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -262,6 +263,13 @@ export function registerHooks(
         if (isPendingProvisionError(err)) {
           return;
         }
+        const quotaNotice = formatRuntimeQuotaNotice(err, "recall paused");
+        if (quotaNotice) {
+          logger.info(quotaNotice);
+          return {
+            prependContext: quotaNotice,
+          };
+        }
         // Graceful degradation — never block the LLM call
         logger.error(`[mem9] before_prompt_build failed: ${String(err)}`);
       }
@@ -313,6 +321,11 @@ export function registerHooks(
       logger.info("[mem9] Session context saved before reset");
     } catch (err) {
       if (isPendingProvisionError(err)) {
+        return;
+      }
+      const quotaNotice = formatRuntimeQuotaNotice(err, "before_reset save paused");
+      if (quotaNotice) {
+        logger.info(quotaNotice);
         return;
       }
       // Best-effort — never block /reset
@@ -423,6 +436,11 @@ export function registerHooks(
       }
     } catch (err) {
       if (isPendingProvisionError(err)) {
+        return;
+      }
+      const quotaNotice = formatRuntimeQuotaNotice(err, "agent_end ingest paused");
+      if (quotaNotice) {
+        logger.info(quotaNotice);
         return;
       }
       // Best-effort — never fail the agent end phase

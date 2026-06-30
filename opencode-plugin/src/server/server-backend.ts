@@ -12,10 +12,11 @@ import type {
   SearchInput,
 } from "../shared/types.ts";
 import { DEFAULT_SCOPE_CONFIG } from "../shared/defaults.ts";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import {
+  Mem9HttpError,
+  messageFromErrorBody,
+  parseJsonOrUndefined,
+} from "./quota-error.ts";
 
 function normalizeTimeoutMs(value: number | undefined, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
@@ -82,11 +83,14 @@ export class ServerBackend implements MemoryBackend {
     if (resp.status === 204) return undefined as T;
 
     const text = await resp.text();
-    const data = text ? (JSON.parse(text) as unknown) : undefined;
+    const data = parseJsonOrUndefined(text);
     if (!resp.ok) {
-      const message =
-        isRecord(data) && typeof data.error === "string" ? data.error : `HTTP ${resp.status}`;
-      throw new Error(message);
+      throw new Mem9HttpError(
+        messageFromErrorBody(resp.status, text, data),
+        resp.status,
+        text,
+        data,
+      );
     }
     return data as T;
   }
@@ -133,7 +137,7 @@ export class ServerBackend implements MemoryBackend {
     try {
       return await this.request<Memory>("GET", this.memoryPath(`/memories/${id}`));
     } catch (err) {
-      if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
         return null;
       }
       throw err;
@@ -144,7 +148,7 @@ export class ServerBackend implements MemoryBackend {
     try {
       return await this.request<Memory>("PUT", this.memoryPath(`/memories/${id}`), input);
     } catch (err) {
-      if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
         return null;
       }
       throw err;
@@ -156,7 +160,7 @@ export class ServerBackend implements MemoryBackend {
       await this.request("DELETE", this.memoryPath(`/memories/${id}`));
       return true;
     } catch (err) {
-      if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
         return false;
       }
       throw err;

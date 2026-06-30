@@ -178,6 +178,54 @@ test("memory capability stays idle until explicit provision runs", async () => {
   }
 });
 
+test("memory tools return structured runtime quota denial payloads", async () => {
+  const originalFetch = globalThis.fetch;
+  const apiUrl = uniqueApiUrl("tool-quota");
+
+  globalThis.fetch = async () => {
+    return new Response(JSON.stringify({
+      code: "spending_limit_exceeded",
+      message: "Spending limit is exhausted.",
+      details: {
+        mem9Code: "runtime_quota_denied",
+        recommendedAction: {
+          bindingState: "claimed",
+          type: "increaseSpendingLimit",
+          url: "https://console.mem9.ai/console/billing/plan",
+        },
+      },
+    }), {
+      status: 402,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const api = createStubApi({
+      apiUrl,
+      apiKey: "space-tool-quota",
+    });
+    mnemoPlugin.register(api);
+
+    const searchTool = api.getTools().find((item) => item.name === "memory_search");
+    assert.ok(searchTool);
+
+    const output = await searchTool.execute("call-1", { q: "hello" });
+    assert.equal(typeof output, "string");
+    const parsed = JSON.parse(output as string);
+    assert.equal(parsed.ok, false);
+    assert.equal(parsed.code, "spending_limit_exceeded");
+    assert.equal(parsed.action_url, "https://console.mem9.ai/console/billing/plan");
+    assert.deepEqual(parsed.quota.recommendedAction, {
+      bindingState: "claimed",
+      type: "increaseSpendingLimit",
+      url: "https://console.mem9.ai/console/billing/plan",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("before_prompt_build forwards the prompt as q during recall search", async () => {
   const originalFetch = globalThis.fetch;
   const apiUrl = uniqueApiUrl("before-prompt-q");
@@ -229,6 +277,50 @@ test("before_prompt_build forwards the prompt as q during recall search", async 
     assert.equal(url.searchParams.get("q"), prompt);
     assert.equal(url.searchParams.get("limit"), "10");
     assert.equal(typeof hookResult?.prependContext, "string");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("before_prompt_build returns runtime quota denial action context", async () => {
+  const originalFetch = globalThis.fetch;
+  const apiUrl = uniqueApiUrl("before-prompt-quota");
+  const infoLogs: string[] = [];
+
+  globalThis.fetch = async () => {
+    return new Response(JSON.stringify({
+      code: "quota_exhausted",
+      message: "Included quota is exhausted.",
+      details: {
+        mem9Code: "runtime_quota_denied",
+        recommendedAction: {
+          bindingState: "unclaimed",
+          type: "claimApiKey",
+          url: "https://console.mem9.ai/console/claim?key=mem9_test",
+        },
+      },
+    }), {
+      status: 402,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const api = createStubApi(
+      {
+        apiUrl,
+        apiKey: "space-before-prompt-quota",
+      },
+      { infoLogs },
+    );
+    mnemoPlugin.register(api);
+
+    const beforePromptBuild = api.getHook("before_prompt_build");
+    const hookResult = await beforePromptBuild({ prompt: "remember alpha" }) as { prependContext?: string } | undefined;
+
+    assert.match(hookResult?.prependContext ?? "", /Included quota is exhausted/);
+    assert.match(hookResult?.prependContext ?? "", /console\/claim\?key=mem9_test/);
+    assert.equal(infoLogs.some((line) => line.includes("recall paused")), true);
   } finally {
     globalThis.fetch = originalFetch;
   }

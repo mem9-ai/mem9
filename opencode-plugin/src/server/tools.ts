@@ -5,6 +5,11 @@ import type {
   UpdateMemoryInput,
   SearchInput,
 } from "../shared/types.ts";
+import { toolErrorPayload } from "./quota-error.ts";
+
+function jsonToolError(error: unknown): string {
+  return JSON.stringify(toolErrorPayload(error));
+}
 
 /**
  * Build the 5 memory tools for OpenCode.
@@ -45,10 +50,7 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
           const result = await backend.store(input);
           return JSON.stringify({ ok: true, data: result });
         } catch (err) {
-          return JSON.stringify({
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
+          return jsonToolError(err);
         }
       },
     }),
@@ -97,10 +99,7 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
           const result = await backend.search(input);
           return JSON.stringify({ ok: true, ...result });
         } catch (err) {
-          return JSON.stringify({
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
+          return jsonToolError(err);
         }
       },
     }),
@@ -118,10 +117,7 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
           }
           return JSON.stringify({ ok: true, data: result });
         } catch (err) {
-          return JSON.stringify({
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
+          return jsonToolError(err);
         }
       },
     }),
@@ -157,10 +153,7 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
           }
           return JSON.stringify({ ok: true, data: result });
         } catch (err) {
-          return JSON.stringify({
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
+          return jsonToolError(err);
         }
       },
     }),
@@ -178,10 +171,7 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
           }
           return JSON.stringify({ ok: true });
         } catch (err) {
-          return JSON.stringify({
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
+          return jsonToolError(err);
         }
       },
     }),

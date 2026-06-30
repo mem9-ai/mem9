@@ -14,6 +14,7 @@ import {
   parseTranscriptText,
   selectStopWindow,
 } from "../hooks/shared/transcript.mjs";
+import { Mem9HttpError } from "../lib/http.mjs";
 import { createTempRoot } from "./test-temp.mjs";
 
 const STOP_ENTRY = path.resolve("./hooks/stop.mjs");
@@ -469,6 +470,56 @@ test("stop posts smart ingest with a recent message window", async () => {
     debugEvents.map((event) => event.stage),
     ["ingest_window_selected", "ingest_sent"],
   );
+});
+
+test("stop records runtime quota denial without failing the hook", async () => {
+  /** @type {Array<{stage: string, fields: Record<string, unknown> | undefined}>} */
+  const debugEvents = [];
+
+  const result = await runStop({
+    sessionId: "session-1",
+    runtime: {
+      baseUrl: "https://api.mem9.ai",
+      apiKey: "key-1",
+      agentId: "codex",
+      defaultTimeoutMs: 8_000,
+    },
+    transcriptMessages: [
+      { role: "user", content: "u1" },
+      { role: "assistant", content: "a1" },
+    ],
+    async post() {
+      throw new Mem9HttpError("quota denied", {
+        status: 402,
+        data: {
+          code: "spending_limit_exceeded",
+          message: "Spending limit is exhausted.",
+          details: {
+            mem9Code: "runtime_quota_denied",
+            recommendedAction: {
+              type: "increaseSpendingLimit",
+              bindingState: "claimed",
+              url: "https://console.mem9.ai/console/billing/plan",
+            },
+          },
+        },
+      });
+    },
+    debug(stage, fields) {
+      debugEvents.push({ stage, fields });
+    },
+  });
+
+  assert.equal(result, undefined);
+  assert.deepEqual(
+    debugEvents.map((event) => event.stage),
+    ["ingest_window_selected", "ingest_quota_denied"],
+  );
+  assert.deepEqual(debugEvents.at(-1)?.fields, {
+    code: "spending_limit_exceeded",
+    actionType: "increaseSpendingLimit",
+    hasActionUrl: true,
+  });
 });
 
 for (const issueCode of NON_READY_ISSUE_CODES) {

@@ -5,6 +5,7 @@ import type { Hooks } from "@opencode-ai/plugin";
 import type { MemoryBackend } from "../src/server/backend.js";
 import type { IngestInput, IngestResult } from "../src/server/backend.js";
 import { buildHooks } from "../src/server/hooks.js";
+import { Mem9HttpError } from "../src/server/quota-error.js";
 import { formatRecallBlock } from "../src/server/recall/format.js";
 import {
   buildRecallQuery,
@@ -531,4 +532,55 @@ test("buildHooks degrades gracefully when recall search fails", async () => {
     ["recall.capture", "recall.request", "recall.error"],
   );
   assert.equal(debugEvents[2]?.payload.error, "search backend unavailable");
+});
+
+test("buildHooks renders runtime quota denial action in recall context", async () => {
+  const debugEvents: Array<{ event: string; payload: Record<string, unknown> }> = [];
+  const hooks = buildHooks(
+    createBackend(async () => {
+      throw new Mem9HttpError(
+        "Included quota is exhausted.",
+        402,
+        "",
+        {
+          code: "quota_exhausted",
+          message: "Included quota is exhausted.",
+          details: {
+            mem9Code: "runtime_quota_denied",
+            recommendedAction: {
+              bindingState: "unclaimed",
+              type: "claimApiKey",
+              url: "https://console.mem9.ai/console/claim?key=mem9_test",
+            },
+          },
+        },
+      );
+    }),
+    {
+      debugLogger: async (event, payload = {}) => {
+        debugEvents.push({ event, payload });
+      },
+    },
+  );
+
+  const onChatMessage = hooks["chat.message"];
+  const onSystemTransform = hooks["experimental.chat.system.transform"];
+  assert.ok(onChatMessage);
+  assert.ok(onSystemTransform);
+
+  await onChatMessage(
+    createChatMessageInput("session-quota"),
+    createChatMessageOutput([textPart("Find relevant project context.")]),
+  );
+
+  const output = createSystemTransformOutput(["Existing system"]);
+  await onSystemTransform(createSystemTransformInput("session-quota"), output);
+
+  assert.equal(output.system.length, 2);
+  assert.match(output.system[1] ?? "", /Included quota is exhausted/);
+  assert.match(output.system[1] ?? "", /console\/claim\?key=mem9_test/);
+  assert.deepEqual(
+    debugEvents.map((entry) => entry.event),
+    ["recall.capture", "recall.request", "recall.quota_denied"],
+  );
 });

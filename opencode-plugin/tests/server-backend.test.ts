@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ServerBackend } from "../src/server/server-backend.js";
+import { Mem9HttpError, parseRuntimeQuotaDenied } from "../src/server/quota-error.js";
 
 async function withPatchedAbortSignalTimeout(
   run: (capturedTimeouts: number[]) => Promise<void>,
@@ -78,6 +79,44 @@ test("ServerBackend uses searchTimeoutMs for search and defaultTimeoutMs for wri
 
       assert.deepEqual(capturedTimeouts, [16000, 11000]);
     });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ServerBackend preserves runtime quota denial response bodies", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => {
+    return new Response(JSON.stringify({
+      code: "quota_exhausted",
+      message: "Included quota is exhausted.",
+      details: {
+        mem9Code: "runtime_quota_denied",
+        recommendedAction: {
+          bindingState: "unclaimed",
+          type: "claimApiKey",
+          url: "https://console.mem9.ai/console/claim?key=mem9_test",
+        },
+      },
+    }), {
+      status: 402,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "mk_demo", "opencode");
+    await assert.rejects(
+      () => backend.search({ q: "hello" }),
+      (error: unknown) => {
+        assert.equal(error instanceof Mem9HttpError, true);
+        const denied = parseRuntimeQuotaDenied(error);
+        assert.equal(denied?.code, "quota_exhausted");
+        assert.equal(denied?.recommendedAction?.url, "https://console.mem9.ai/console/claim?key=mem9_test");
+        return true;
+      },
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

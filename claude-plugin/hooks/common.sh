@@ -196,24 +196,58 @@ mem9_provision_auth() {
   "${MEM9_CURL_BIN}" -sf --max-time 8 -X POST "${MEM9_API_URL%/}/v1alpha1/mem9s"
 }
 
+mem9_api_request() {
+  local method="$1"
+  local path="$2"
+  local body="${3:-}"
+  local response
+  local http_code
+  local response_body
+  local curl_args=(
+    -sS
+    --max-time 8
+    -X "${method}"
+    -H "Content-Type: application/json"
+    -H "X-API-Key: ${MEM9_API_KEY}"
+    -H "X-Mnemo-Agent-Id: ${MEM9_WRITER_ID}"
+  )
+
+  if [[ -n "${body}" ]]; then
+    curl_args+=(-d "${body}")
+  fi
+
+  if ! response="$("${MEM9_CURL_BIN}" "${curl_args[@]}" -w $'\n%{http_code}' "$(mem9_memory_base)${path}")"; then
+    return 1
+  fi
+
+  http_code="${response##*$'\n'}"
+  response_body="${response%$'\n'"${http_code}"}"
+  printf '%s' "${response_body}"
+
+  case "${http_code}" in
+    2*)
+      return 0
+      ;;
+    *)
+      return 22
+      ;;
+  esac
+}
+
 mem9_api_get() {
   local path="$1"
-  "${MEM9_CURL_BIN}" -sf --max-time 8 \
-    -H "Content-Type: application/json" \
-    -H "X-API-Key: ${MEM9_API_KEY}" \
-    -H "X-Mnemo-Agent-Id: ${MEM9_WRITER_ID}" \
-    "$(mem9_memory_base)${path}"
+  mem9_api_request "GET" "${path}"
 }
 
 mem9_api_post() {
   local path="$1"
   local body="$2"
-  "${MEM9_CURL_BIN}" -sf --max-time 8 \
-    -H "Content-Type: application/json" \
-    -H "X-API-Key: ${MEM9_API_KEY}" \
-    -H "X-Mnemo-Agent-Id: ${MEM9_WRITER_ID}" \
-    -d "${body}" \
-    "$(mem9_memory_base)${path}"
+  mem9_api_request "POST" "${path}" "${body}"
+}
+
+mem9_quota_notice_from_body() {
+  local operation="$1"
+  node "${MEM9_SCRIPT_DIR}/lib/quota-error.mjs" notice "${operation}" 2>/dev/null || true
 }
 
 mem9_ingest_transcript() {
@@ -227,6 +261,8 @@ mem9_ingest_transcript() {
   local transcript_path
   local payload
   local body
+  local response
+  local quota_notice
   local stats
   local messages_count
   local user_count
@@ -275,7 +311,7 @@ mem9_ingest_transcript() {
     "assistant_count" "${assistant_count}" \
     "content_bytes" "${total_bytes}"
 
-  if mem9_api_post "/memories" "${body}" >/dev/null 2>&1; then
+  if response="$(mem9_api_post "/memories" "${body}" 2>/dev/null)"; then
     mem9_debug "${hook_name}" "ingest_sent" \
       "mode" "${mode}" \
       "session_id" "${session_id}" \
@@ -284,6 +320,15 @@ mem9_ingest_transcript() {
       "assistant_count" "${assistant_count}" \
       "content_bytes" "${total_bytes}"
     return 0
+  fi
+
+  quota_notice="$(printf '%s' "${response:-}" | mem9_quota_notice_from_body "ingest paused")"
+  if [[ -n "${quota_notice}" ]]; then
+    mem9_debug "${hook_name}" "ingest_quota_denied" \
+      "mode" "${mode}" \
+      "session_id" "${session_id}" \
+      "messages_count" "${messages_count}"
+    return 1
   fi
 
   mem9_debug "${hook_name}" "ingest_request_failed" \

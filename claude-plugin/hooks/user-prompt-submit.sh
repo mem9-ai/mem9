@@ -36,7 +36,16 @@ mem9_debug "UserPromptSubmit" "recall_request" \
   "auth_source" "${MEM9_AUTH_SOURCE:-unknown}"
 
 encoded_prompt="$(printf '%s' "${prompt}" | node -e 'const fs=require("node:fs"); const raw=fs.readFileSync(0, "utf8").trim(); process.stdout.write(encodeURIComponent(raw));')"
+response=""
 if ! response="$(mem9_api_get "/memories?q=${encoded_prompt}&limit=10" 2>/dev/null)"; then
+  quota_notice="$(printf '%s' "${response:-}" | mem9_quota_notice_from_body "recall paused")"
+  if [[ -n "${quota_notice}" ]]; then
+    mem9_debug "UserPromptSubmit" "recall_quota_denied" \
+      "prompt_length" "${#prompt}"
+    mem9_emit_context "UserPromptSubmit" "${quota_notice}"
+    exit 0
+  fi
+
   mem9_debug "UserPromptSubmit" "recall_request_failed" \
     "prompt_length" "${#prompt}"
   exit 0

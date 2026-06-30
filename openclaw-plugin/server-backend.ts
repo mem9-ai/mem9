@@ -9,6 +9,11 @@ import type {
   IngestInput,
   IngestResult,
 } from "./types.js";
+import {
+  Mem9HttpError,
+  messageFromErrorBody,
+  parseJsonOrUndefined,
+} from "./quota-error.js";
 
 type ProvisionMem9sResponse = {
   id: string;
@@ -127,16 +132,22 @@ export class ServerBackend implements MemoryBackend {
   async get(id: string): Promise<Memory | null> {
     try {
       return await this.request<Memory>("GET", this.memoryPath(`/memories/${id}`));
-    } catch {
-      return null;
+    } catch (err) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
+        return null;
+      }
+      throw err;
     }
   }
 
   async update(id: string, input: UpdateMemoryInput): Promise<Memory | null> {
     try {
       return await this.request<Memory>("PUT", this.memoryPath(`/memories/${id}`), input);
-    } catch {
-      return null;
+    } catch (err) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
+        return null;
+      }
+      throw err;
     }
   }
 
@@ -144,8 +155,11 @@ export class ServerBackend implements MemoryBackend {
     try {
       await this.request("DELETE", this.memoryPath(`/memories/${id}`));
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
+        return false;
+      }
+      throw err;
     }
   }
 
@@ -185,9 +199,15 @@ export class ServerBackend implements MemoryBackend {
       return undefined as T;
     }
 
-    const data = await resp.json();
+    const text = await resp.text();
+    const data = parseJsonOrUndefined(text);
     if (!resp.ok) {
-      throw new Error((data as { error?: string }).error || `HTTP ${resp.status}`);
+      throw new Mem9HttpError(
+        messageFromErrorBody(resp.status, text, data),
+        resp.status,
+        text,
+        data,
+      );
     }
     return data as T;
   }

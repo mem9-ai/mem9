@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { buildRuntimeIssueMessage } from "../lib/skill-runtime.mjs";
+import { Mem9HttpError } from "../lib/http.mjs";
 import { main, runStore } from "../skills/store/scripts/store.mjs";
 import { createTempRoot } from "./test-temp.mjs";
 
@@ -116,6 +117,61 @@ test("runStore accepts the content from stdin text", async () => {
   );
 
   assert.equal(result.contentChars, "Remember that release notes should stay short.".length);
+});
+
+test("runStore returns a structured runtime quota denial summary", async () => {
+  let stdoutText = "";
+
+  const result = await runStore(
+    ["--content", "The user prefers concise release notes."],
+    {
+      state: {
+        configSource: "global",
+        runtime: {
+          profileId: "default",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-save",
+          agentId: "codex",
+          defaultTimeoutMs: 8000,
+        },
+      },
+      fetchJson: async () => {
+        throw new Mem9HttpError("quota denied", {
+          status: 402,
+          data: {
+            code: "spending_limit_exceeded",
+            message: "Spending limit is exhausted.",
+            details: {
+              mem9Code: "runtime_quota_denied",
+              recommendedAction: {
+                bindingState: "claimed",
+                type: "increaseSpendingLimit",
+                url: "https://console.mem9.ai/console/billing/plan",
+              },
+            },
+          },
+        });
+      },
+      stdout: {
+        write(/** @type {string} */ chunk) {
+          stdoutText += chunk;
+        },
+      },
+    },
+  );
+  const quotaResult = /** @type {any} */ (result);
+
+  assert.equal(quotaResult.status, "quota_denied");
+  assert.equal(quotaResult.code, "spending_limit_exceeded");
+  assert.equal(quotaResult.contentChars, "The user prefers concise release notes.".length);
+  assert.deepEqual(quotaResult.recommendedAction, {
+    bindingState: "claimed",
+    type: "increaseSpendingLimit",
+    url: "https://console.mem9.ai/console/billing/plan",
+  });
+  assert.deepEqual(JSON.parse(stdoutText), quotaResult);
+  assert.equal(stdoutText.includes("key-save"), false);
+  assert.equal(stdoutText.includes("The user prefers concise release notes."), false);
 });
 
 test("runStore keeps a configured base path", async () => {

@@ -11,6 +11,7 @@ import {
   type BackendTimeouts,
 } from "./server-backend.js";
 import { registerHooks } from "./hooks.js";
+import { toolErrorPayload } from "./quota-error.js";
 import type {
   PluginConfig,
   Memory,
@@ -104,6 +105,10 @@ function jsonResult(data: unknown) {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function jsonToolError(err: unknown) {
+  return jsonResult(toolErrorPayload(err));
 }
 
 function sleep(ms: number): Promise<void> {
@@ -401,10 +406,7 @@ function buildTools(
           const result = await backend.store(input);
           return jsonResult({ ok: true, data: result });
         } catch (err) {
-          return jsonResult({
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
+          return jsonToolError(err);
         }
       },
     },
@@ -441,10 +443,7 @@ function buildTools(
           const result = await backend.search(input);
           return jsonResult({ ok: true, ...result });
         } catch (err) {
-          return jsonResult({
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
+          return jsonToolError(err);
         }
       },
     },
@@ -468,10 +467,7 @@ function buildTools(
             return jsonResult({ ok: false, error: "memory not found" });
           return jsonResult({ ok: true, data: result });
         } catch (err) {
-          return jsonResult({
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
+          return jsonToolError(err);
         }
       },
     },
@@ -504,10 +500,7 @@ function buildTools(
             return jsonResult({ ok: false, error: "memory not found" });
           return jsonResult({ ok: true, data: result });
         } catch (err) {
-          return jsonResult({
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
+          return jsonToolError(err);
         }
       },
     },
@@ -531,10 +524,7 @@ function buildTools(
             return jsonResult({ ok: false, error: "memory not found" });
           return jsonResult({ ok: true });
         } catch (err) {
-          return jsonResult({
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
+          return jsonToolError(err);
         }
       },
     },
