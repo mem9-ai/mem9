@@ -13,10 +13,15 @@ func TestNormalizeRuntimeQuotaDeniedBodyPreservesConsoleDetails(t *testing.T) {
 			"retryable":false,
 			"meter":"memory_recall_requests",
 			"limitType":"includedQuota",
-			"upgradeAction":"upgradePlan",
-			"bindingState":"claimed",
-			"upgradeUrl":"https://console.example.com/billing/plan",
-			"mem9Code":"runtime_quota_denied"
+			"recommendedAction":{
+				"bindingState":"claimed",
+				"type":"upgradePlan",
+				"url":"https://console.example.com/console/billing/plan"
+			},
+			"quotaGateResult":{
+				"outcome":"blocked",
+				"reason":"includedQuotaExhausted"
+			}
 		}
 	}`))
 
@@ -28,8 +33,21 @@ func TestNormalizeRuntimeQuotaDeniedBodyPreservesConsoleDetails(t *testing.T) {
 		t.Fatalf("mem9_code should live under details: %#v", got)
 	}
 	details := got["details"].(map[string]any)
-	if details["meter"] != "memory_recall_requests" || details["upgradeAction"] != "upgradePlan" || details["bindingState"] != "claimed" || details["upgradeUrl"] != "https://console.example.com/billing/plan" || details["mem9Code"] != "runtime_quota_denied" {
+	recommendedAction := details["recommendedAction"].(map[string]any)
+	quotaGateResult := details["quotaGateResult"].(map[string]any)
+	if details["meter"] != "memory_recall_requests" ||
+		recommendedAction["type"] != "upgradePlan" ||
+		recommendedAction["bindingState"] != "claimed" ||
+		recommendedAction["url"] != "https://console.example.com/console/billing/plan" ||
+		quotaGateResult["outcome"] != "blocked" ||
+		quotaGateResult["reason"] != "includedQuotaExhausted" ||
+		details["mem9Code"] != "runtime_quota_denied" {
 		t.Fatalf("unexpected details: %#v", details)
+	}
+	for _, key := range []string{"upgradeAction", "bindingState", "upgradeUrl"} {
+		if _, ok := details[key]; ok {
+			t.Fatalf("legacy flat action field %q should be absent: %#v", key, details)
+		}
 	}
 }
 

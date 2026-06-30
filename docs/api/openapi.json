@@ -2392,7 +2392,7 @@
         "description": "No content."
       },
       "RuntimeQuotaDenied": {
-        "description": "Runtime usage quota denied. Plugins should use details.mem9Code to enter the quota UX path and details.upgradeUrl as the direct user action link when present.",
+        "description": "Runtime usage quota denied. Plugins should use details.mem9Code to enter the quota UX path and details.recommendedAction.url as the direct user action link when present.",
         "content": {
           "application/json": {
             "schema": {
@@ -2407,9 +2407,36 @@
                     "retryable": false,
                     "meter": "memory_recall_requests",
                     "limitType": "includedQuota",
-                    "upgradeAction": "claimApiKey",
-                    "bindingState": "unclaimed",
-                    "upgradeUrl": "https://mem9.ai/console/claim?key=mk_example",
+                    "recommendedAction": {
+                      "bindingState": "unclaimed",
+                      "type": "claimApiKey",
+                      "url": "https://mem9.ai/console/claim?key=mk_example"
+                    },
+                    "quotaGateResult": {
+                      "outcome": "blocked",
+                      "reason": "includedQuotaExhausted"
+                    },
+                    "mem9Code": "runtime_quota_denied"
+                  }
+                }
+              },
+              "claimedQuotaExhausted": {
+                "value": {
+                  "code": "quota_exhausted",
+                  "message": "Included quota is exhausted.",
+                  "details": {
+                    "retryable": false,
+                    "meter": "memory_recall_requests",
+                    "limitType": "includedQuota",
+                    "recommendedAction": {
+                      "bindingState": "claimed",
+                      "type": "upgradePlan",
+                      "url": "https://mem9.ai/console/billing/plan"
+                    },
+                    "quotaGateResult": {
+                      "outcome": "blocked",
+                      "reason": "includedQuotaExhausted"
+                    },
                     "mem9Code": "runtime_quota_denied"
                   }
                 }
@@ -2422,9 +2449,15 @@
                     "retryable": false,
                     "meter": "memory_write_requests",
                     "limitType": "spendingLimit",
-                    "upgradeAction": "increaseSpendingLimit",
-                    "bindingState": "claimed",
-                    "upgradeUrl": "https://mem9.ai/console/billing/plan",
+                    "recommendedAction": {
+                      "bindingState": "claimed",
+                      "type": "increaseSpendingLimit",
+                      "url": "https://mem9.ai/console/billing/plan"
+                    },
+                    "quotaGateResult": {
+                      "outcome": "blocked",
+                      "reason": "onDemandBudgetExhausted"
+                    },
                     "mem9Code": "runtime_quota_denied"
                   }
                 }
@@ -3266,25 +3299,11 @@
               "spendingLimit"
             ]
           },
-          "upgradeAction": {
-            "type": "string",
-            "enum": [
-              "claimApiKey",
-              "upgradePlan",
-              "enableOnDemand",
-              "increaseSpendingLimit"
-            ]
+          "recommendedAction": {
+            "$ref": "#/components/schemas/RuntimeRecommendedAction"
           },
-          "bindingState": {
-            "type": "string",
-            "enum": [
-              "claimed",
-              "unclaimed"
-            ]
-          },
-          "upgradeUrl": {
-            "type": "string",
-            "description": "Console URL that the plugin can show directly to the user."
+          "quotaGateResult": {
+            "$ref": "#/components/schemas/RuntimeQuotaGateResult"
           },
           "mem9Code": {
             "type": "string",
@@ -3294,6 +3313,72 @@
           }
         },
         "additionalProperties": true
+      },
+      "RuntimeRecommendedAction": {
+        "type": "object",
+        "required": [
+          "bindingState",
+          "type",
+          "url"
+        ],
+        "properties": {
+          "bindingState": {
+            "type": "string",
+            "enum": [
+              "claimed",
+              "unclaimed"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "claimApiKey",
+              "upgradePlan",
+              "enableOnDemand",
+              "increaseSpendingLimit"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "description": "Console URL that the plugin can show directly to the user."
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeQuotaGateResult": {
+        "type": "object",
+        "required": [
+          "outcome",
+          "reason"
+        ],
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "allowed",
+              "blocked",
+              "rateLimited"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "includedQuota",
+              "onDemand",
+              "postQuota"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "includedQuotaExhausted",
+              "onDemandDisabled",
+              "onDemandUnavailable",
+              "onDemandBudgetExhausted"
+            ]
+          }
+        },
+        "additionalProperties": false
       }
     }
   }
