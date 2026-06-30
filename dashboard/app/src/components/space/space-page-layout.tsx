@@ -252,22 +252,10 @@ export const SpacePageLayout = ({
               range={routeState.range}
               loading={!dataModel.stats || dataModel.analysis.sourceLoading}
               compact={routeState.selected !== null && routeState.isDesktopViewport}
-              activeType={routeState.search.type}
               activeCategory={routeState.analysisCategory}
               activeTag={routeState.tag}
-              selectedTimeline={routeState.timelineSelection}
               matchMap={dataModel.analysis.matchMap}
-              onTypeSelect={(type) =>
-                navigateAndScrollToMemoryList(() => routeState.handleTypeClick(type))
-              }
-              onTagSelect={(tag) =>
-                navigateAndScrollToMemoryList(() => routeState.handleTagChange(tag))
-              }
               onMemorySelect={routeState.openMemoryDetail}
-              onTimelineSelect={(selection) =>
-                navigateAndScrollToMemoryList(() => routeState.handleTimelineSelect(selection))
-              }
-              onTimelineClear={routeState.handleTimelineClear}
               onEntitySearch={(query) =>
                 navigateAndScrollToMemoryList(() => routeState.handleEntitySearch(query))
               }

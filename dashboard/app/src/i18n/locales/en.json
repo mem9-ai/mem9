@@ -216,7 +216,7 @@
   },
   "memory_overview": {
     "tabs": {
-      "pulse": "Memory Pulse",
+      "pulse": "Memory List",
       "profile": "Memory Profile",
       "insight": "Memory Insight",
       "analysis": "Memory Analysis",
@@ -224,7 +224,7 @@
       "periodic": "Periodic Observation"
     },
     "tabs_short": {
-      "pulse": "Pulse",
+      "pulse": "List",
       "profile": "Profile",
       "insight": "Insight",
       "analysis": "Analysis",

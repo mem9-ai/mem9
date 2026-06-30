@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import { DeepAnalysisTab } from "@/components/space/deep-analysis-tab";
 import { MemoryInsightWorkspace } from "@/components/space/memory-insight-workspace";
 import { MemoryProfileOverview } from "@/components/space/memory-profile-overview";
-import { MemoryPulseOverview } from "@/components/space/memory-pulse-overview";
 import { ReportManageOverview } from "@/components/space/report-manage-overview";
 import { PeriodicObservationOverview } from "@/components/space/periodic-observation-overview";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -24,7 +23,7 @@ export type OverviewMemorySelectionSource = "list" | "insight";
 
 const TAB_VALUES = ["profile", "periodic", "reports", "pulse", "insight", "analysis"] as const;
 const VISIBLE_TAB_VALUES = TAB_VALUES.filter(
-  (value) => value !== "pulse" && value !== "insight" && value !== "analysis",
+  (value) => value !== "insight" && value !== "analysis",
 );
 
 export function MemoryOverviewTabs({
@@ -38,16 +37,10 @@ export function MemoryOverviewTabs({
   range,
   loading,
   compact,
-  activeType,
   activeCategory,
   activeTag,
-  selectedTimeline,
   matchMap,
-  onTypeSelect,
-  onTagSelect,
   onMemorySelect,
-  onTimelineSelect,
-  onTimelineClear,
   onEntitySearch,
   onTabChange,
 }: {
@@ -66,10 +59,10 @@ export function MemoryOverviewTabs({
   activeTag?: string;
   selectedTimeline?: TimelineSelection;
   matchMap: Map<string, MemoryAnalysisMatch>;
-  onTypeSelect: (type: MemoryType) => void;
-  onTagSelect: (tag: string | undefined) => void;
+  onTypeSelect?: (type: MemoryType) => void;
+  onTagSelect?: (tag: string | undefined) => void;
   onMemorySelect: (memory: Memory, source?: OverviewMemorySelectionSource) => void;
-  onTimelineSelect: (selection: TimelineSelection) => void;
+  onTimelineSelect?: (selection: TimelineSelection) => void;
   onTimelineClear?: () => void;
   onEntitySearch?: (query: string) => void;
   onTabChange?: (tab: MemoryInsightTab) => void;
@@ -112,25 +105,7 @@ export function MemoryOverviewTabs({
         <MobileOverviewTabsList />
       )}
 
-      <TabsContent value="pulse" className="-mt-px mt-0">
-        <MemoryPulseOverview
-          stats={stats}
-          memories={pulseMemories}
-          cards={cards}
-          snapshot={snapshot}
-          range={range}
-          loading={loading}
-          compact={compact}
-          className="!mt-0"
-          activeType={activeType}
-          activeTag={activeTag}
-          selectedTimeline={selectedTimeline}
-          onTypeSelect={onTypeSelect}
-          onTagSelect={onTagSelect}
-          onTimelineSelect={onTimelineSelect}
-          onTimelineClear={onTimelineClear}
-        />
-      </TabsContent>
+      <TabsContent value="pulse" className="mt-0" />
 
       <TabsContent value="profile" className="-mt-px mt-0">
         <MemoryProfileOverview

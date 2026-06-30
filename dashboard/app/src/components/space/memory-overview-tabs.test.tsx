@@ -1,13 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { MemoryOverviewTabs } from "./memory-overview-tabs";
-import {
-  buildInsightEntityNodeId,
-  buildInsightMemoryNodeId,
-  buildInsightTagNodeId,
-} from "@/lib/memory-insight";
-import type { MemoryAnalysisMatch } from "@/types/analysis";
 import type { Memory } from "@/types/memory";
 
 vi.mock("@/components/space/deep-analysis-tab", () => ({
@@ -153,197 +147,74 @@ function createMemory(id: string): Memory {
 }
 
 describe("MemoryOverviewTabs", () => {
-  it("defaults to Memory Pulse and resets all local insight lanes when leaving the insight tab", async () => {
+  it("shows Memory List after Report Manage without rendering the old Pulse cards", async () => {
     setViewportWidth(1400);
-    const memory = createMemory("mem-1");
-    const secondMemory = createMemory("mem-2");
-    const matchMap = new Map<string, MemoryAnalysisMatch>([
-      [
-        memory.id,
-        {
-          memoryId: memory.id,
-          categories: ["activity"],
-          categoryScores: { activity: 1 },
-        },
-      ],
-      [
-        secondMemory.id,
-        {
-          memoryId: secondMemory.id,
-          categories: ["project"],
-          categoryScores: { project: 1 },
-        },
-      ],
-    ]);
-
-    render(
-      <MemoryOverviewTabs
-        spaceId="space-1"
-        stats={{ total: 2, pinned: 0, insight: 2 }}
-        pulseMemories={[memory, secondMemory]}
-        insightMemories={[memory, secondMemory]}
-        cards={[
-          { category: "activity", count: 1, confidence: 1 },
-          { category: "project", count: 1, confidence: 1 },
-        ]}
-        snapshot={null}
-        range="all"
-        loading={false}
-        compact={false}
-        matchMap={matchMap}
-        onTypeSelect={() => {}}
-        onTagSelect={() => {}}
-        onMemorySelect={() => {}}
-        onTimelineSelect={() => {}}
-      />,
-    );
-
-    expect(screen.getByRole("tab", { name: "Memory Pulse" })).toHaveAttribute(
-      "data-state",
-      "active",
-    );
-
-    const insightTab = screen.getByRole("tab", { name: "Memory Insight" });
-    insightTab.focus();
-    fireEvent.keyDown(insightTab, { key: "Enter" });
-
-    expect(
-      await screen.findByTestId("memory-insight-overview"),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId("insight-node-card:activity"));
-    fireEvent.click(screen.getByTestId("insight-node-card:project"));
-    expect(
-      await screen.findByTestId(`insight-node-${buildInsightTagNodeId("activity", "graph")}`),
-    ).toBeInTheDocument();
-    expect(
-      await screen.findByTestId(`insight-node-${buildInsightTagNodeId("project", "graph")}`),
-    ).toBeInTheDocument();
-    expect(screen.getByTestId("memory-insight-canvas-viewport")).toBeInTheDocument();
-
-    const pulseTab = screen.getByRole("tab", { name: "Memory Pulse" });
-    pulseTab.focus();
-    fireEvent.keyDown(pulseTab, { key: "Enter" });
-
-    insightTab.focus();
-    fireEvent.keyDown(insightTab, { key: "Enter" });
-
-    expect(
-      screen.queryByTestId(`insight-node-${buildInsightTagNodeId("activity", "graph")}`),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId(`insight-node-${buildInsightTagNodeId("project", "graph")}`),
-    ).not.toBeInTheDocument();
-  });
-
-  it("forwards insight leaf clicks as insight-sourced memory selections", async () => {
-    setViewportWidth(1400);
-    const onMemorySelect = vi.fn();
-    const memory: Memory = {
-      ...createMemory("mem-insight-1"),
-      content: "Deploy `mem9-ui` with Alice Johnson",
-      tags: ["graph"],
-    };
-    const matchMap = new Map<string, MemoryAnalysisMatch>([
-      [
-        memory.id,
-        {
-          memoryId: memory.id,
-          categories: ["project"],
-          categoryScores: { project: 1 },
-        },
-      ],
-    ]);
-
+    const onTabChange = vi.fn();
     render(
       <MemoryOverviewTabs
         spaceId="space-1"
         stats={{ total: 1, pinned: 0, insight: 1 }}
-        pulseMemories={[memory]}
-        insightMemories={[memory]}
-        cards={[{ category: "project", count: 1, confidence: 1 }]}
-        snapshot={null}
-        range="all"
-        loading={false}
-        compact={false}
-        matchMap={matchMap}
-        onTypeSelect={() => {}}
-        onTagSelect={() => {}}
-        onMemorySelect={onMemorySelect}
-        onTimelineSelect={() => {}}
-      />,
-    );
-
-    const insightTab = screen.getByRole("tab", { name: "Memory Insight" });
-    insightTab.focus();
-    fireEvent.keyDown(insightTab, { key: "Enter" });
-
-    fireEvent.click(await screen.findByTestId("insight-node-card:project"));
-    fireEvent.click(
-      await screen.findByTestId(`insight-node-${buildInsightTagNodeId("project", "graph")}`),
-    );
-    fireEvent.click(
-      await screen.findByTestId(
-        `insight-node-${buildInsightEntityNodeId(
-          "project",
-          "graph",
-          "named_term",
-          "mem9-ui",
-        )}`,
-      ),
-    );
-    fireEvent.click(
-      await screen.findByTestId(
-        `insight-node-${buildInsightMemoryNodeId(
-          "project",
-          "graph",
-          "named_term",
-          "mem9-ui",
-          "mem-insight-1",
-        )}`,
-      ),
-    );
-
-    expect(onMemorySelect).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "mem-insight-1" }),
-      "insight",
-    );
-  });
-
-  it("exposes the Memory Analysis tab and mounts the analysis content on selection", () => {
-    setViewportWidth(1400);
-    render(
-      <MemoryOverviewTabs
-        spaceId="space-1"
-        stats={{ total: 0, pinned: 0, insight: 0 }}
-        pulseMemories={[]}
-        insightMemories={[]}
+        pulseMemories={[createMemory("mem-1")]}
+        insightMemories={[createMemory("mem-1")]}
         cards={[]}
         snapshot={null}
         range="all"
         loading={false}
         compact={false}
         matchMap={new Map()}
-        onTypeSelect={() => {}}
-        onTagSelect={() => {}}
         onMemorySelect={() => {}}
-        onTimelineSelect={() => {}}
+        onTabChange={onTabChange}
       />,
     );
 
-    expect(screen.queryByTestId("deep-analysis-tab")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "Memory Profile",
+      "Periodic Observation",
+      "Report Manage",
+      "Memory List",
+    ]);
+    expect(screen.queryByRole("tab", { name: "Memory Insight" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Memory Analysis" })).not.toBeInTheDocument();
 
-    const analysisTab = screen.getByRole("tab", { name: "Memory Analysis" });
-    analysisTab.focus();
-    fireEvent.keyDown(analysisTab, { key: "Enter" });
+    const listTab = screen.getByRole("tab", { name: "Memory List" });
+    listTab.focus();
+    fireEvent.keyDown(listTab, { key: "Enter" });
 
-    expect(screen.getByTestId("deep-analysis-tab")).toHaveTextContent("space-1:true");
+    await waitFor(() => expect(listTab).toHaveAttribute("data-state", "active"));
+    expect(onTabChange).toHaveBeenCalledWith("pulse");
+    expect(screen.queryByText("Memory Pulse")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Recent memory activity across the current range"),
+    ).not.toBeInTheDocument();
+  });
 
-    const pulseTab = screen.getByRole("tab", { name: "Memory Pulse" });
-    pulseTab.focus();
-    fireEvent.keyDown(pulseTab, { key: "Enter" });
+  it("renders short labels for the visible mobile tabs", () => {
+    setViewportWidth(390);
+    render(
+      <MemoryOverviewTabs
+        spaceId="space-mobile"
+        stats={{ total: 1, pinned: 0, insight: 1 }}
+        pulseMemories={[createMemory("mem-mobile-1")]}
+        insightMemories={[createMemory("mem-mobile-1")]}
+        cards={[]}
+        snapshot={null}
+        range="all"
+        loading={false}
+        compact={false}
+        matchMap={new Map()}
+        onMemorySelect={() => {}}
+      />,
+    );
 
-    expect(screen.getByTestId("deep-analysis-tab")).toHaveTextContent("space-1:false");
+    expect(screen.getByTestId("memory-overview-tab-profile")).toHaveTextContent("Profile");
+    expect(screen.getByTestId("memory-overview-tab-periodic")).toHaveTextContent("Observe");
+    expect(screen.getByTestId("memory-overview-tab-reports")).toHaveTextContent("Reports");
+    expect(screen.getByTestId("memory-overview-tab-pulse")).toHaveTextContent("List");
+    expect(screen.queryByTestId("memory-overview-tab-insight")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("memory-overview-tab-analysis")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Memory List" })).toBe(
+      screen.getByTestId("memory-overview-tab-pulse"),
+    );
   });
 
   it("exposes the Memory Profile tab with personal info and current understanding", () => {
@@ -362,10 +233,7 @@ describe("MemoryOverviewTabs", () => {
         loading={false}
         compact={false}
         matchMap={new Map()}
-        onTypeSelect={() => {}}
-        onTagSelect={() => {}}
         onMemorySelect={() => {}}
-        onTimelineSelect={() => {}}
       />,
     );
 
@@ -394,153 +262,5 @@ describe("MemoryOverviewTabs", () => {
       screen.queryByRole("img", { name: "Profile confidence pie chart" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /memories/u })).not.toBeInTheDocument();
-  });
-
-  it("renders short labels and replaces the insight workspace with a desktop redirect on mobile", () => {
-    setViewportWidth(390);
-    const memory = createMemory("mem-mobile-1");
-
-    render(
-      <MemoryOverviewTabs
-        spaceId="space-mobile"
-        stats={{ total: 1, pinned: 0, insight: 1 }}
-        pulseMemories={[memory]}
-        insightMemories={[memory]}
-        cards={[{ category: "project", count: 1, confidence: 1 }]}
-        snapshot={null}
-        range="all"
-        loading={false}
-        compact={false}
-        matchMap={new Map()}
-        onTypeSelect={() => {}}
-        onTagSelect={() => {}}
-        onMemorySelect={() => {}}
-        onTimelineSelect={() => {}}
-      />,
-    );
-
-    expect(screen.getByTestId("memory-overview-tab-pulse")).toHaveTextContent("Pulse");
-    expect(screen.getByTestId("memory-overview-tab-profile")).toHaveTextContent("Profile");
-    expect(screen.getByTestId("memory-overview-tab-insight")).toHaveTextContent("Insight");
-    expect(screen.getByTestId("memory-overview-tab-analysis")).toHaveTextContent("Analysis");
-
-    expect(screen.getByRole("tab", { name: "Memory Pulse" })).toBe(
-      screen.getByTestId("memory-overview-tab-pulse"),
-    );
-
-    const insightTab = screen.getByTestId("memory-overview-tab-insight");
-    insightTab.focus();
-    fireEvent.keyDown(insightTab, { key: "Enter" });
-
-    expect(
-      screen.getByTestId("memory-insight-desktop-only-hint"),
-    ).toBeInTheDocument();
-    expect(screen.queryByTestId("memory-insight-overview")).not.toBeInTheDocument();
-  });
-
-  it("renders the full Memory Insight workspace at iPad mini landscape width (1024px)", async () => {
-    // 1024px is the floor for `useIsLargeViewport`. iPads in landscape report
-    // exactly this width (or wider), so we expect the full workspace, the
-    // desktop tab styling, and the long "Memory ___" labels — not the mobile
-    // segmented control / redirect hint.
-    setViewportWidth(1024);
-    const memory = createMemory("mem-tablet-1");
-    const matchMap = new Map<string, MemoryAnalysisMatch>([
-      [
-        memory.id,
-        {
-          memoryId: memory.id,
-          categories: ["project"],
-          categoryScores: { project: 1 },
-        },
-      ],
-    ]);
-
-    render(
-      <MemoryOverviewTabs
-        spaceId="space-tablet"
-        stats={{ total: 1, pinned: 0, insight: 1 }}
-        pulseMemories={[memory]}
-        insightMemories={[memory]}
-        cards={[{ category: "project", count: 1, confidence: 1 }]}
-        snapshot={null}
-        range="all"
-        loading={false}
-        compact={false}
-        matchMap={matchMap}
-        onTypeSelect={() => {}}
-        onTagSelect={() => {}}
-        onMemorySelect={() => {}}
-        onTimelineSelect={() => {}}
-      />,
-    );
-
-    expect(screen.queryByTestId("memory-overview-tab-insight")).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Memory Insight" })).toBeInTheDocument();
-
-    const insightTab = screen.getByRole("tab", { name: "Memory Insight" });
-    insightTab.focus();
-    fireEvent.keyDown(insightTab, { key: "Enter" });
-
-    expect(
-      await screen.findByTestId("memory-insight-overview"),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByTestId("memory-insight-desktop-only-hint"),
-    ).not.toBeInTheDocument();
-  });
-
-  it("swaps the insight workspace for the redirect hint when the viewport shrinks below the large breakpoint", async () => {
-    setViewportWidth(1400);
-    const memory = createMemory("mem-resize-1");
-    const matchMap = new Map<string, MemoryAnalysisMatch>([
-      [
-        memory.id,
-        {
-          memoryId: memory.id,
-          categories: ["project"],
-          categoryScores: { project: 1 },
-        },
-      ],
-    ]);
-
-    render(
-      <MemoryOverviewTabs
-        spaceId="space-resize"
-        stats={{ total: 1, pinned: 0, insight: 1 }}
-        pulseMemories={[memory]}
-        insightMemories={[memory]}
-        cards={[{ category: "project", count: 1, confidence: 1 }]}
-        snapshot={null}
-        range="all"
-        loading={false}
-        compact={false}
-        matchMap={matchMap}
-        onTypeSelect={() => {}}
-        onTagSelect={() => {}}
-        onMemorySelect={() => {}}
-        onTimelineSelect={() => {}}
-      />,
-    );
-
-    const insightTab = screen.getByRole("tab", { name: "Memory Insight" });
-    insightTab.focus();
-    fireEvent.keyDown(insightTab, { key: "Enter" });
-
-    expect(
-      await screen.findByTestId("memory-insight-overview"),
-    ).toBeInTheDocument();
-
-    setViewportWidth(390);
-    fireEvent(window, new Event("resize"));
-
-    expect(
-      await screen.findByTestId("memory-insight-desktop-only-hint"),
-    ).toBeInTheDocument();
-    expect(screen.queryByTestId("memory-insight-overview")).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Memory Insight" })).toHaveAttribute(
-      "data-state",
-      "active",
-    );
   });
 });

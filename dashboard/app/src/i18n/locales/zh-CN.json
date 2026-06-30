@@ -216,7 +216,7 @@
   },
   "memory_overview": {
     "tabs": {
-      "pulse": "Memory Pulse",
+      "pulse": "记忆列表",
       "profile": "记忆画像",
       "insight": "Memory Insight",
       "analysis": "Memory Analysis",
@@ -224,7 +224,7 @@
       "periodic": "周期观察"
     },
     "tabs_short": {
-      "pulse": "节奏",
+      "pulse": "列表",
       "profile": "画像",
       "insight": "洞察",
       "analysis": "分析",
