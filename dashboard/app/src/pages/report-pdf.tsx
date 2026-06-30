@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   useMemoryAnalysisReport,
   type MemoryAnalysisChange,
@@ -7,7 +7,7 @@ import {
   type MemoryAnalysisReportType,
   type MemorySignalDimension,
 } from "@/api/memory-analysis-reports";
-import { REPORT_PDF_API_KEY_STORAGE_KEY } from "@/lib/report-pdf";
+import { requestReportPdfApiKey } from "@/lib/report-pdf";
 import { getActiveApiKey } from "@/lib/session";
 
 const WEEKLY_REPORT_DESCRIPTION = "识别近期关注内容与历史关注内容的变化";
@@ -42,12 +42,14 @@ function getReportIdFromUrl(): string {
 
 function getReportPdfApiKey(): string | null {
   if (typeof window === "undefined") return null;
-  return getActiveApiKey() ?? window.localStorage.getItem(REPORT_PDF_API_KEY_STORAGE_KEY);
+  return getActiveApiKey();
 }
 
 export function ReportPdfPage() {
   const reportId = useMemo(() => getReportIdFromUrl(), []);
-  const apiKey = useMemo(() => getReportPdfApiKey(), []);
+  const [handoffApiKey, setHandoffApiKey] = useState<string | null>(null);
+  const [isResolvingApiKey, setIsResolvingApiKey] = useState(false);
+  const apiKey = useMemo(() => getReportPdfApiKey() ?? handoffApiKey, [handoffApiKey]);
   const reportQuery = useMemoryAnalysisReport(apiKey, reportId || null);
   const reportView = useMemo(() => {
     const detail = reportQuery.data;
@@ -72,8 +74,31 @@ export function ReportPdfPage() {
     };
   }, [reportId, reportQuery.data]);
 
+  useEffect(() => {
+    if (apiKey || !reportId) {
+      return;
+    }
+
+    let cancelled = false;
+    setIsResolvingApiKey(true);
+    void requestReportPdfApiKey().then((nextApiKey) => {
+      if (!cancelled) {
+        setHandoffApiKey(nextApiKey);
+        setIsResolvingApiKey(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiKey, reportId]);
+
   if (!reportId) {
     return <ReportPdfState title="缺少 reportId" description="请从模板生成记录中点击“查看模板”进入报告页面。" />;
+  }
+
+  if (!apiKey && isResolvingApiKey) {
+    return <ReportPdfState title="正在连接 Space" description="正在从当前 MEM9 页面获取临时访问凭证..." />;
   }
 
   if (!apiKey) {

@@ -1,5 +1,126 @@
 export const REPORT_PDF_STORAGE_KEY = "mem9.reportPdfPayload";
-export const REPORT_PDF_API_KEY_STORAGE_KEY = "mem9.reportPdfApiKey";
+const REPORT_PDF_API_KEY_HANDOFF_CHANNEL = "mem9.reportPdfApiKeyHandoff";
+const REPORT_PDF_API_KEY_REQUEST = "request-report-pdf-api-key";
+const REPORT_PDF_API_KEY_RESPONSE = "report-pdf-api-key";
+const REPORT_PDF_API_KEY_REQUEST_TIMEOUT_MS = 1_500;
+
+interface ReportPdfApiKeyRequestMessage {
+  type: typeof REPORT_PDF_API_KEY_REQUEST;
+  requestId: string;
+}
+
+interface ReportPdfApiKeyResponseMessage {
+  type: typeof REPORT_PDF_API_KEY_RESPONSE;
+  requestId: string;
+  apiKey: string;
+}
+
+type ReportPdfApiKeyHandoffMessage =
+  | ReportPdfApiKeyRequestMessage
+  | ReportPdfApiKeyResponseMessage;
+
+function isReportPdfApiKeyHandoffMessage(
+  value: unknown,
+): value is ReportPdfApiKeyHandoffMessage {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const message = value as Partial<ReportPdfApiKeyHandoffMessage>;
+  if (
+    message.type === REPORT_PDF_API_KEY_REQUEST &&
+    typeof message.requestId === "string"
+  ) {
+    return true;
+  }
+
+  return (
+    message.type === REPORT_PDF_API_KEY_RESPONSE &&
+    typeof message.requestId === "string" &&
+    typeof (message as Partial<ReportPdfApiKeyResponseMessage>).apiKey === "string"
+  );
+}
+
+function createRequestId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+export function startReportPdfApiKeyHandoff(apiKey: string): () => void {
+  if (typeof BroadcastChannel === "undefined") {
+    return () => {};
+  }
+
+  const channel = new BroadcastChannel(REPORT_PDF_API_KEY_HANDOFF_CHANNEL);
+  const handleMessage = (event: MessageEvent<unknown>) => {
+    if (!isReportPdfApiKeyHandoffMessage(event.data)) {
+      return;
+    }
+
+    if (event.data.type !== REPORT_PDF_API_KEY_REQUEST) {
+      return;
+    }
+
+    channel.postMessage({
+      type: REPORT_PDF_API_KEY_RESPONSE,
+      requestId: event.data.requestId,
+      apiKey,
+    } satisfies ReportPdfApiKeyResponseMessage);
+  };
+
+  channel.addEventListener("message", handleMessage);
+
+  return () => {
+    channel.removeEventListener("message", handleMessage);
+    channel.close();
+  };
+}
+
+export function requestReportPdfApiKey(
+  timeoutMs = REPORT_PDF_API_KEY_REQUEST_TIMEOUT_MS,
+): Promise<string | null> {
+  if (typeof BroadcastChannel === "undefined") {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    const channel = new BroadcastChannel(REPORT_PDF_API_KEY_HANDOFF_CHANNEL);
+    const requestId = createRequestId();
+    const cleanup = () => {
+      channel.removeEventListener("message", handleMessage);
+      channel.close();
+    };
+    const timer = window.setTimeout(() => {
+      cleanup();
+      resolve(null);
+    }, timeoutMs);
+    const handleMessage = (event: MessageEvent<unknown>) => {
+      if (!isReportPdfApiKeyHandoffMessage(event.data)) {
+        return;
+      }
+
+      if (
+        event.data.type !== REPORT_PDF_API_KEY_RESPONSE ||
+        event.data.requestId !== requestId
+      ) {
+        return;
+      }
+
+      window.clearTimeout(timer);
+      cleanup();
+      resolve(event.data.apiKey);
+    };
+
+    channel.addEventListener("message", handleMessage);
+    channel.postMessage({
+      type: REPORT_PDF_API_KEY_REQUEST,
+      requestId,
+    } satisfies ReportPdfApiKeyRequestMessage);
+  });
+}
 
 export interface ReportPdfTopicBlock {
   title: string;

@@ -23,7 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { buildDefaultAnalysisRange } from "@/components/space/date-range-picker";
-import { REPORT_PDF_API_KEY_STORAGE_KEY } from "@/lib/report-pdf";
+import { startReportPdfApiKeyHandoff } from "@/lib/report-pdf";
 import { cn } from "@/lib/utils";
 
 type TemplateId = "weekly" | "trend" | "emotion" | "structure" | "growth";
@@ -68,6 +68,8 @@ export function ReportManageOverview({
   const [isRefreshingReports, setIsRefreshingReports] = useState(false);
   const isGenerating = generateReportMutation.isPending || isRefreshingReports;
 
+  useEffect(() => startReportPdfApiKeyHandoff(spaceId), [spaceId]);
+
   const generate = async () => {
     try {
       const result = await generateReportMutation.mutateAsync({
@@ -101,7 +103,6 @@ export function ReportManageOverview({
   };
 
   const openTemplateReport = (report: MemoryAnalysisReport) => {
-    window.localStorage.setItem(REPORT_PDF_API_KEY_STORAGE_KEY, spaceId);
     const reportUrl = new URL(`${import.meta.env.BASE_URL}template-report`, window.location.origin);
     reportUrl.searchParams.set("reportId", String(report.report_id));
     window.open(reportUrl.toString(), "_blank", "noopener,noreferrer");
