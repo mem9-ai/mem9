@@ -1,17 +1,24 @@
 export const REPORT_PDF_STORAGE_KEY = "mem9.reportPdfPayload";
+export const REPORT_PDF_API_KEY_HANDOFF_PARAM = "keyHandoff";
 const REPORT_PDF_API_KEY_HANDOFF_CHANNEL = "mem9.reportPdfApiKeyHandoff";
 const REPORT_PDF_API_KEY_REQUEST = "request-report-pdf-api-key";
 const REPORT_PDF_API_KEY_RESPONSE = "report-pdf-api-key";
 const REPORT_PDF_API_KEY_REQUEST_TIMEOUT_MS = 1_500;
+const REPORT_PDF_API_KEY_HANDOFF_TTL_MS = 30_000;
+
+const pendingReportPdfApiKeyHandoffs = new Map<string, number>();
+const pendingReportPdfApiKeyRequests = new Map<string, Promise<string | null>>();
 
 interface ReportPdfApiKeyRequestMessage {
   type: typeof REPORT_PDF_API_KEY_REQUEST;
   requestId: string;
+  nonce: string;
 }
 
 interface ReportPdfApiKeyResponseMessage {
   type: typeof REPORT_PDF_API_KEY_RESPONSE;
   requestId: string;
+  nonce: string;
   apiKey: string;
 }
 
@@ -29,7 +36,8 @@ function isReportPdfApiKeyHandoffMessage(
   const message = value as Partial<ReportPdfApiKeyHandoffMessage>;
   if (
     message.type === REPORT_PDF_API_KEY_REQUEST &&
-    typeof message.requestId === "string"
+    typeof message.requestId === "string" &&
+    typeof (message as Partial<ReportPdfApiKeyRequestMessage>).nonce === "string"
   ) {
     return true;
   }
@@ -37,6 +45,7 @@ function isReportPdfApiKeyHandoffMessage(
   return (
     message.type === REPORT_PDF_API_KEY_RESPONSE &&
     typeof message.requestId === "string" &&
+    typeof (message as Partial<ReportPdfApiKeyResponseMessage>).nonce === "string" &&
     typeof (message as Partial<ReportPdfApiKeyResponseMessage>).apiKey === "string"
   );
 }
@@ -47,6 +56,38 @@ function createRequestId(): string {
   }
 
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function cleanupExpiredReportPdfApiKeyHandoffs(now = Date.now()): void {
+  for (const [nonce, expiresAt] of pendingReportPdfApiKeyHandoffs) {
+    if (expiresAt <= now) {
+      pendingReportPdfApiKeyHandoffs.delete(nonce);
+    }
+  }
+}
+
+function consumeReportPdfApiKeyHandoffNonce(nonce: string): boolean {
+  cleanupExpiredReportPdfApiKeyHandoffs();
+  const expiresAt = pendingReportPdfApiKeyHandoffs.get(nonce);
+  if (!expiresAt) {
+    return false;
+  }
+
+  pendingReportPdfApiKeyHandoffs.delete(nonce);
+  return expiresAt > Date.now();
+}
+
+export function createReportPdfApiKeyHandoffNonce(): string {
+  const nonce = createRequestId();
+  cleanupExpiredReportPdfApiKeyHandoffs();
+  pendingReportPdfApiKeyHandoffs.set(
+    nonce,
+    Date.now() + REPORT_PDF_API_KEY_HANDOFF_TTL_MS,
+  );
+  window.setTimeout(() => {
+    pendingReportPdfApiKeyHandoffs.delete(nonce);
+  }, REPORT_PDF_API_KEY_HANDOFF_TTL_MS);
+  return nonce;
 }
 
 export function startReportPdfApiKeyHandoff(apiKey: string): () => void {
@@ -64,9 +105,14 @@ export function startReportPdfApiKeyHandoff(apiKey: string): () => void {
       return;
     }
 
+    if (!consumeReportPdfApiKeyHandoffNonce(event.data.nonce)) {
+      return;
+    }
+
     channel.postMessage({
       type: REPORT_PDF_API_KEY_RESPONSE,
       requestId: event.data.requestId,
+      nonce: event.data.nonce,
       apiKey,
     } satisfies ReportPdfApiKeyResponseMessage);
   };
@@ -80,13 +126,19 @@ export function startReportPdfApiKeyHandoff(apiKey: string): () => void {
 }
 
 export function requestReportPdfApiKey(
+  nonce: string,
   timeoutMs = REPORT_PDF_API_KEY_REQUEST_TIMEOUT_MS,
 ): Promise<string | null> {
-  if (typeof BroadcastChannel === "undefined") {
+  if (!nonce || typeof BroadcastChannel === "undefined") {
     return Promise.resolve(null);
   }
 
-  return new Promise((resolve) => {
+  const pendingRequest = pendingReportPdfApiKeyRequests.get(nonce);
+  if (pendingRequest) {
+    return pendingRequest;
+  }
+
+  const request = new Promise<string | null>((resolve) => {
     const channel = new BroadcastChannel(REPORT_PDF_API_KEY_HANDOFF_CHANNEL);
     const requestId = createRequestId();
     const cleanup = () => {
@@ -104,7 +156,8 @@ export function requestReportPdfApiKey(
 
       if (
         event.data.type !== REPORT_PDF_API_KEY_RESPONSE ||
-        event.data.requestId !== requestId
+        event.data.requestId !== requestId ||
+        event.data.nonce !== nonce
       ) {
         return;
       }
@@ -118,8 +171,15 @@ export function requestReportPdfApiKey(
     channel.postMessage({
       type: REPORT_PDF_API_KEY_REQUEST,
       requestId,
+      nonce,
     } satisfies ReportPdfApiKeyRequestMessage);
   });
+
+  pendingReportPdfApiKeyRequests.set(nonce, request);
+  void request.finally(() => {
+    pendingReportPdfApiKeyRequests.delete(nonce);
+  });
+  return request;
 }
 
 export interface ReportPdfTopicBlock {

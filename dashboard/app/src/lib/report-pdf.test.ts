@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  createReportPdfApiKeyHandoffNonce,
   requestReportPdfApiKey,
   startReportPdfApiKeyHandoff,
 } from "./report-pdf";
@@ -83,19 +84,54 @@ afterEach(() => {
 });
 
 describe("report PDF API key handoff", () => {
-  it("hands off the active api key without writing persistent storage", async () => {
+  it("hands off the active api key for a scoped nonce without writing persistent storage", async () => {
     const stopHandoff = startReportPdfApiKeyHandoff("space-1");
+    const nonce = createReportPdfApiKeyHandoffNonce();
 
-    await expect(requestReportPdfApiKey()).resolves.toBe("space-1");
+    await expect(requestReportPdfApiKey(nonce)).resolves.toBe("space-1");
 
     expect(localStorage.getItem(LEGACY_REPORT_PDF_API_KEY_STORAGE_KEY)).toBeNull();
     stopHandoff();
   });
 
+  it("does not answer requests without a registered nonce", async () => {
+    const stopHandoff = startReportPdfApiKeyHandoff("space-1");
+
+    await expect(requestReportPdfApiKey("unregistered-nonce", 1)).resolves.toBeNull();
+
+    stopHandoff();
+  });
+
+  it("consumes each nonce after one successful handoff", async () => {
+    const stopHandoff = startReportPdfApiKeyHandoff("space-1");
+    const nonce = createReportPdfApiKeyHandoffNonce();
+
+    await expect(requestReportPdfApiKey(nonce)).resolves.toBe("space-1");
+    await expect(requestReportPdfApiKey(nonce, 1)).resolves.toBeNull();
+
+    stopHandoff();
+  });
+
+  it("deduplicates concurrent requests for the same nonce", async () => {
+    const stopHandoff = startReportPdfApiKeyHandoff("space-1");
+    const nonce = createReportPdfApiKeyHandoffNonce();
+
+    await expect(
+      Promise.all([
+        requestReportPdfApiKey(nonce),
+        requestReportPdfApiKey(nonce),
+      ]),
+    ).resolves.toEqual(["space-1", "space-1"]);
+    await expect(requestReportPdfApiKey(nonce, 1)).resolves.toBeNull();
+
+    stopHandoff();
+  });
+
   it("does not resolve an api key after the source page stops responding", async () => {
     const stopHandoff = startReportPdfApiKeyHandoff("space-1");
+    const nonce = createReportPdfApiKeyHandoffNonce();
     stopHandoff();
 
-    await expect(requestReportPdfApiKey(1)).resolves.toBeNull();
+    await expect(requestReportPdfApiKey(nonce, 1)).resolves.toBeNull();
   });
 });

@@ -7,7 +7,10 @@ import {
   type MemoryAnalysisReportType,
   type MemorySignalDimension,
 } from "@/api/memory-analysis-reports";
-import { requestReportPdfApiKey } from "@/lib/report-pdf";
+import {
+  REPORT_PDF_API_KEY_HANDOFF_PARAM,
+  requestReportPdfApiKey,
+} from "@/lib/report-pdf";
 import { getActiveApiKey } from "@/lib/session";
 
 const WEEKLY_REPORT_DESCRIPTION = "识别近期关注内容与历史关注内容的变化";
@@ -40,6 +43,11 @@ function getReportIdFromUrl(): string {
   return new URLSearchParams(window.location.search).get("reportId") ?? "";
 }
 
+function getReportPdfApiKeyHandoffNonceFromUrl(): string {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get(REPORT_PDF_API_KEY_HANDOFF_PARAM) ?? "";
+}
+
 function getReportPdfApiKey(): string | null {
   if (typeof window === "undefined") return null;
   return getActiveApiKey();
@@ -47,6 +55,7 @@ function getReportPdfApiKey(): string | null {
 
 export function ReportPdfPage() {
   const reportId = useMemo(() => getReportIdFromUrl(), []);
+  const apiKeyHandoffNonce = useMemo(() => getReportPdfApiKeyHandoffNonceFromUrl(), []);
   const [handoffApiKey, setHandoffApiKey] = useState<string | null>(null);
   const [isResolvingApiKey, setIsResolvingApiKey] = useState(false);
   const apiKey = useMemo(() => getReportPdfApiKey() ?? handoffApiKey, [handoffApiKey]);
@@ -75,13 +84,13 @@ export function ReportPdfPage() {
   }, [reportId, reportQuery.data]);
 
   useEffect(() => {
-    if (apiKey || !reportId) {
+    if (apiKey || !reportId || !apiKeyHandoffNonce) {
       return;
     }
 
     let cancelled = false;
     setIsResolvingApiKey(true);
-    void requestReportPdfApiKey().then((nextApiKey) => {
+    void requestReportPdfApiKey(apiKeyHandoffNonce).then((nextApiKey) => {
       if (!cancelled) {
         setHandoffApiKey(nextApiKey);
         setIsResolvingApiKey(false);
@@ -91,7 +100,7 @@ export function ReportPdfPage() {
     return () => {
       cancelled = true;
     };
-  }, [apiKey, reportId]);
+  }, [apiKey, apiKeyHandoffNonce, reportId]);
 
   if (!reportId) {
     return <ReportPdfState title="缺少 reportId" description="请从模板生成记录中点击“查看模板”进入报告页面。" />;

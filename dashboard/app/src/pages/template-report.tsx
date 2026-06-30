@@ -7,7 +7,10 @@ import {
   type MemoryAnalysisReportType,
   type MemorySignalDimension,
 } from "@/api/memory-analysis-reports";
-import { requestReportPdfApiKey } from "@/lib/report-pdf";
+import {
+  REPORT_PDF_API_KEY_HANDOFF_PARAM,
+  requestReportPdfApiKey,
+} from "@/lib/report-pdf";
 import { getActiveApiKey } from "@/lib/session";
 
 const SECTION_ORDER: MemorySignalDimension[] = [
@@ -69,6 +72,11 @@ function getReportIdFromUrl(): string {
   return new URLSearchParams(window.location.search).get("reportId") ?? "";
 }
 
+function getReportApiKeyHandoffNonceFromUrl(): string {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get(REPORT_PDF_API_KEY_HANDOFF_PARAM) ?? "";
+}
+
 function getReportApiKey(): string | null {
   if (typeof window === "undefined") return null;
   return getActiveApiKey();
@@ -76,6 +84,7 @@ function getReportApiKey(): string | null {
 
 export function TemplateReportPage() {
   const reportId = useMemo(() => getReportIdFromUrl(), []);
+  const apiKeyHandoffNonce = useMemo(() => getReportApiKeyHandoffNonceFromUrl(), []);
   const [handoffApiKey, setHandoffApiKey] = useState<string | null>(null);
   const [isResolvingApiKey, setIsResolvingApiKey] = useState(false);
   const apiKey = useMemo(() => getReportApiKey() ?? handoffApiKey, [handoffApiKey]);
@@ -125,13 +134,13 @@ export function TemplateReportPage() {
   }, [reportId, reportQuery.data]);
 
   useEffect(() => {
-    if (apiKey || !reportId) {
+    if (apiKey || !reportId || !apiKeyHandoffNonce) {
       return;
     }
 
     let cancelled = false;
     setIsResolvingApiKey(true);
-    void requestReportPdfApiKey().then((nextApiKey) => {
+    void requestReportPdfApiKey(apiKeyHandoffNonce).then((nextApiKey) => {
       if (!cancelled) {
         setHandoffApiKey(nextApiKey);
         setIsResolvingApiKey(false);
@@ -141,7 +150,7 @@ export function TemplateReportPage() {
     return () => {
       cancelled = true;
     };
-  }, [apiKey, reportId]);
+  }, [apiKey, apiKeyHandoffNonce, reportId]);
 
   if (!reportId) {
     return <TemplateReportState title="缺少 reportId" description="请从模板生成记录中点击查看模板进入报告页面。" />;
@@ -257,9 +266,6 @@ function ReportSection({
 }) {
   const meta = SECTION_META[dimension];
   const description = summary.trim() || meta.sideNote;
-  const hasHeroCard = dimension === "long_term_goal" || dimension === "growth_signal";
-  const firstChange = changes[0] ?? null;
-  const remainingChanges = hasHeroCard ? changes.slice(1) : changes;
 
   return (
     <section className="grid gap-6 py-9 lg:grid-cols-[13.5rem_minmax(0,1fr)]">
@@ -273,9 +279,8 @@ function ReportSection({
           <EmptyDimensionCard title={`暂无${meta.title}数据`} />
         ) : (
           <div className="mt-6 space-y-5">
-            {hasHeroCard && firstChange ? <HeroChangeCard change={firstChange} dimension={dimension} /> : null}
-            <div className={dimension === "emotion" ? "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,0.92fr)]" : "grid gap-4 md:grid-cols-2"}>
-              {remainingChanges.map((change, index) => (
+            <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              {changes.map((change, index) => (
                 <ChangeCard
                   key={`${dimension}-${change.title}-${change.period.start}-${index}`}
                   change={change}
@@ -299,28 +304,6 @@ function EmptyDimensionCard({ title }: { title: string }) {
   );
 }
 
-function HeroChangeCard({
-  change,
-  dimension,
-}: {
-  change: MemoryAnalysisChange;
-  dimension: MemorySignalDimension;
-}) {
-  return (
-    <article className="rounded-[20px] border border-[#383048] bg-[linear-gradient(135deg,rgba(79,66,115,0.52),rgba(18,22,30,0.9))] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.24)]">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-sm font-black text-[#a996f6]">{formatChinesePeriod(change.period.start, change.period.end)}</p>
-          <h3 className="mt-3 text-2xl font-black tracking-[-0.04em]">{change.title || SECTION_META[dimension].title}</h3>
-        </div>
-        <StatusBadge label={SECTION_META[dimension].title} tone="stable" />
-      </div>
-      {change.summary ? <p className="mt-4 max-w-3xl text-base font-bold leading-8 text-[#d8d1e7]">{change.summary}</p> : null}
-      <EvidenceList evidence={change.evidence} />
-    </article>
-  );
-}
-
 function ChangeCard({
   change,
   compact,
@@ -331,7 +314,7 @@ function ChangeCard({
   dimension: MemorySignalDimension;
 }) {
   return (
-    <article className="rounded-[18px] border border-[#352d46] bg-[#12111b]/88 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
+    <article className="min-w-0 w-full rounded-[18px] border border-[#352d46] bg-[#12111b]/88 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
       <div className="flex items-start justify-between gap-4">
         <h3 className="min-w-0 text-xl font-black leading-tight tracking-[-0.03em]">{change.title || SECTION_META[dimension].title}</h3>
         <StatusBadge label={SECTION_META[dimension].title} tone={dimension === "emotion" ? "pending" : "stable"} />
@@ -354,7 +337,7 @@ function EvidenceList({ evidence }: { evidence: MemoryAnalysisChangeEvidence[] }
   return (
     <div className="mt-5 space-y-2">
       {evidence.map((item, index) => (
-        <div key={`${item.evidenceId}-${index}`} className="flex gap-3 rounded-xl border border-white/7 bg-white/[0.045] px-4 py-3 text-xs font-bold leading-6 text-[#bbb5c8]">
+        <div key={`${item.evidenceId}-${index}`} className="flex min-w-0 gap-3 rounded-xl border border-white/7 bg-white/[0.045] px-4 py-3 text-xs font-bold leading-6 text-[#bbb5c8]">
           <EvidenceBadge correctness={item.correctness} />
           <span className="min-w-0 flex-1">{item.quote || "无记忆摘录"}</span>
         </div>

@@ -23,7 +23,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { buildDefaultAnalysisRange } from "@/components/space/date-range-picker";
-import { startReportPdfApiKeyHandoff } from "@/lib/report-pdf";
+import {
+  REPORT_PDF_API_KEY_HANDOFF_PARAM,
+  createReportPdfApiKeyHandoffNonce,
+  startReportPdfApiKeyHandoff,
+} from "@/lib/report-pdf";
 import { cn } from "@/lib/utils";
 
 type TemplateId = "weekly" | "trend" | "emotion" | "structure" | "growth";
@@ -105,6 +109,10 @@ export function ReportManageOverview({
   const openTemplateReport = (report: MemoryAnalysisReport) => {
     const reportUrl = new URL(`${import.meta.env.BASE_URL}template-report`, window.location.origin);
     reportUrl.searchParams.set("reportId", String(report.report_id));
+    reportUrl.searchParams.set(
+      REPORT_PDF_API_KEY_HANDOFF_PARAM,
+      createReportPdfApiKeyHandoffNonce(),
+    );
     window.open(reportUrl.toString(), "_blank", "noopener,noreferrer");
   };
 
