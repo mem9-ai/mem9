@@ -100,6 +100,10 @@ function actionLabel(type: string): string {
   }
 }
 
+function sentence(message: string): string {
+  return /[.!?]$/.test(message) ? message : `${message}.`;
+}
+
 export function parseRuntimeQuotaDenied(value: unknown): RuntimeQuotaDenied | null {
   const payload = value instanceof Mem9HttpError ? value.data : value;
   if (!isRecord(payload)) {
@@ -132,7 +136,7 @@ export function formatRuntimeQuotaNotice(value: unknown, operation: string): str
   const actionText = actionUrl
     ? ` ${actionLabel(normalizeString(denied.recommendedAction?.type))}: ${actionUrl}`
     : "";
-  return `[mem9] ${operation}: ${denied.message}.${actionText}`;
+  return `[mem9] ${operation}: ${sentence(denied.message)}${actionText}`;
 }
 
 export function toolErrorPayload(error: unknown): Record<string, unknown> {

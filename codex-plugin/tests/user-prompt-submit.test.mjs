@@ -274,6 +274,7 @@ test("user prompt submit renders runtime quota denial action", async () => {
   assert.equal(parsed.hookSpecificOutput.hookEventName, "UserPromptSubmit");
   assert.match(parsed.hookSpecificOutput.additionalContext, /Included quota is exhausted/);
   assert.match(parsed.hookSpecificOutput.additionalContext, /console\/claim\?key=mem9_test/);
+  assert.doesNotMatch(parsed.hookSpecificOutput.additionalContext, /\.\. Claim/);
   assert.equal(debugEvents.at(-1)?.stage, "recall_quota_denied");
   assert.deepEqual(debugEvents.at(-1)?.fields, {
     code: "quota_exhausted",

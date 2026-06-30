@@ -76,6 +76,10 @@ function actionLabel(type) {
   }
 }
 
+function sentence(message) {
+  return /[.!?]$/.test(message) ? message : `${message}.`;
+}
+
 export function parseRuntimeQuotaDenied(value) {
   const payload = payloadFromUnknown(value);
   if (!isRecord(payload)) {
@@ -124,5 +128,5 @@ export function formatRuntimeQuotaNotice(value, operation = "mem9 request") {
   const actionText = actionUrl
     ? ` ${actionLabel(normalizeString(action?.type))}: ${actionUrl}`
     : "";
-  return `[mem9] ${operation}: ${denied.message}.${actionText}`;
+  return `[mem9] ${operation}: ${sentence(denied.message)}${actionText}`;
 }

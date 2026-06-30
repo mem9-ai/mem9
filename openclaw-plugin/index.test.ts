@@ -320,6 +320,7 @@ test("before_prompt_build returns runtime quota denial action context", async ()
 
     assert.match(hookResult?.prependContext ?? "", /Included quota is exhausted/);
     assert.match(hookResult?.prependContext ?? "", /console\/claim\?key=mem9_test/);
+    assert.doesNotMatch(hookResult?.prependContext ?? "", /\.\. Claim/);
     assert.equal(infoLogs.some((line) => line.includes("recall paused")), true);
   } finally {
     globalThis.fetch = originalFetch;

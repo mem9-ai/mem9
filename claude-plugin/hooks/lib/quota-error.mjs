@@ -34,6 +34,10 @@ function actionLabel(type) {
   }
 }
 
+function sentence(message) {
+  return /[.!?]$/.test(message) ? message : `${message}.`;
+}
+
 function parseQuotaDenied(payload) {
   if (!isRecord(payload)) {
     return null;
@@ -88,4 +92,4 @@ if (command === "code") {
 const actionText = quotaDenied.actionUrl
   ? ` ${actionLabel(quotaDenied.actionType)}: ${quotaDenied.actionUrl}`
   : "";
-process.stdout.write(`[mem9] ${operation}: ${quotaDenied.message}.${actionText}`);
+process.stdout.write(`[mem9] ${operation}: ${sentence(quotaDenied.message)}${actionText}`);

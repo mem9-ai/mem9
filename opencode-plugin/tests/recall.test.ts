@@ -579,6 +579,7 @@ test("buildHooks renders runtime quota denial action in recall context", async (
   assert.equal(output.system.length, 2);
   assert.match(output.system[1] ?? "", /Included quota is exhausted/);
   assert.match(output.system[1] ?? "", /console\/claim\?key=mem9_test/);
+  assert.doesNotMatch(output.system[1] ?? "", /\.\. Claim/);
   assert.deepEqual(
     debugEvents.map((entry) => entry.event),
     ["recall.capture", "recall.request", "recall.quota_denied"],
