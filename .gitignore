@@ -53,3 +53,6 @@ benchmark/MR-NIAH/.cache/
 # Claude Code and experiment outputs
 .claude/
 .playwright-mcp/
+
+# compat harness outputs
+compat/artifacts/

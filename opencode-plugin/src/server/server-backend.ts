@@ -69,6 +69,7 @@ export class ServerBackend implements MemoryBackend {
     const url = this.baseUrl + path;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      "User-Agent": "mem9-opencode-plugin/0.1",
       "X-Mnemo-Agent-Id": this.agentName,
       "X-API-Key": this.apiKey,
     };
@@ -82,10 +83,18 @@ export class ServerBackend implements MemoryBackend {
     if (resp.status === 204) return undefined as T;
 
     const text = await resp.text();
-    const data = text ? (JSON.parse(text) as unknown) : undefined;
+    let data: unknown;
+    if (text) {
+      try {
+        data = JSON.parse(text) as unknown;
+      } catch {
+        data = undefined;
+      }
+    }
     if (!resp.ok) {
-      const message =
-        isRecord(data) && typeof data.error === "string" ? data.error : `HTTP ${resp.status}`;
+      const message = isRecord(data) && typeof data.error === "string"
+        ? data.error
+        : `HTTP ${resp.status}${text ? `: ${text.slice(0, 200)}` : ""}`;
       throw new Error(message);
     }
     return data as T;

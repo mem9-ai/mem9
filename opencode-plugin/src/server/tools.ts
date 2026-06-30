@@ -24,6 +24,10 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
           .string()
           .optional()
           .describe("Which agent wrote this memory"),
+        memory_type: tool.schema
+          .string()
+          .optional()
+          .describe("Memory type to create, for example pinned"),
         tags: tool.schema
           .array(tool.schema.string())
           .max(20)
@@ -39,6 +43,7 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
           const input: CreateMemoryInput = {
             content: args.content,
             source: args.source,
+            memory_type: args.memory_type,
             tags: args.tags,
             metadata: args.metadata as Record<string, unknown> | undefined,
           };

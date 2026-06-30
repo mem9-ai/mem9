@@ -51,6 +51,7 @@ export interface SearchResult {
 export interface CreateMemoryInput {
   content: string;
   source?: string;
+  memory_type?: string;
   tags?: string[];
   metadata?: Record<string, unknown>;
 }
@@ -58,6 +59,7 @@ export interface CreateMemoryInput {
 export interface UpdateMemoryInput {
   content?: string;
   source?: string;
+  memory_type?: string;
   tags?: string[];
   metadata?: Record<string, unknown>;
 }
