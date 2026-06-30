@@ -18,14 +18,18 @@ import {
 } from "lucide-react";
 import {
   analyzeMemorySourceQueryKey,
+  latestCompletedMemoryAnalysisQueryKey,
   useAnalyzeMemorySource,
   useEditSessionMessage,
+  useLatestCompletedMemoryAnalysis,
   useMarkSessionMessage,
   type AnalyzeMemorySourceInput,
   type AnalyzeMemorySourceResponse,
+  type LatestCompletedMemoryAnalysisResult,
   type MemoryAnalysisChange,
   type MemoryAnalysisChangeDimensionGroup,
   type MemoryAnalysisChangeEvidence,
+  type MemoryAnalysisReport,
   type MemorySignalDimension,
 } from "@/api/memory-analysis-reports";
 import { Button } from "@/components/ui/button";
@@ -70,29 +74,57 @@ export function PeriodicObservationOverview({
   const { t } = useTranslation();
   const [pendingRange, setPendingRange] = useState(() => getInitialPeriodicAnalysisRange());
   const [analysisRange, setAnalysisRange] = useState(pendingRange);
-  const [hasRequestedAnalysis, setHasRequestedAnalysis] = useState(active);
+  const [hasRequestedAnalysis, setHasRequestedAnalysis] = useState(false);
+  const [appliedDefaultReportRangeKey, setAppliedDefaultReportRangeKey] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (active) {
-      setHasRequestedAnalysis(true);
-    }
-  }, [active]);
-
+  const latestCompletedAnalysisQuery = useLatestCompletedMemoryAnalysis(spaceId, {
+    enabled: active,
+  });
+  const latestCompletedReport = latestCompletedAnalysisQuery.data?.report ?? null;
   const analysisQuery = useAnalyzeMemorySource(spaceId, analysisRange, {
     enabled: active && hasRequestedAnalysis,
   });
+  const analysisData = analysisQuery.data ?? latestCompletedAnalysisQuery.data?.analysis;
+  const isFetching = analysisQuery.isFetching
+    || (latestCompletedAnalysisQuery.isFetching && analysisQuery.data === undefined);
+  const isError = analysisQuery.isError
+    || (analysisQuery.data === undefined && latestCompletedAnalysisQuery.isError);
+  const error = analysisQuery.isError ? analysisQuery.error : latestCompletedAnalysisQuery.error;
   const hasGenerated = hasRequestedAnalysis
-    && (analysisQuery.data !== undefined || analysisQuery.isError || analysisQuery.isFetching);
+    ? analysisQuery.data !== undefined || analysisQuery.isError || analysisQuery.isFetching
+    : latestCompletedAnalysisQuery.data !== undefined || latestCompletedAnalysisQuery.isError || latestCompletedAnalysisQuery.isFetching;
+  const isRenderingStoredReport = analysisQuery.data === undefined
+    && !!latestCompletedAnalysisQuery.data?.report
+    && !latestCompletedAnalysisQuery.isFetching;
   const dimensions = useMemo(
-    () => sortDimensions(analysisQuery.data?.dimensions ?? []),
-    [analysisQuery.data?.dimensions],
+    () => sortDimensions(analysisData?.dimensions ?? []),
+    [analysisData?.dimensions],
   );
   const [selectedDimension, setSelectedDimension] = useState<MemorySignalDimension>("long_term_goal");
   const activeDimension = dimensions.find((group) => group.dimension === selectedDimension)
     ?? dimensions[0]
     ?? null;
   const totalChanges = dimensions.reduce((count, group) => count + group.changes.length, 0);
-  const total = analysisQuery.data?.memoryCount ?? 0;
+  const total = analysisData?.memoryCount ?? 0;
+
+  useEffect(() => {
+    if (hasRequestedAnalysis || !latestCompletedReport) return;
+
+    const defaultRange = buildReportAnalysisRange(latestCompletedReport);
+    if (!defaultRange) return;
+
+    const reportRangeKey = [
+      latestCompletedReport.report_id,
+      defaultRange.createdAfter,
+      defaultRange.createdBefore,
+    ].join(":");
+    if (appliedDefaultReportRangeKey === reportRangeKey) return;
+
+    setPendingRange(defaultRange);
+    setAnalysisRange(defaultRange);
+    setAppliedDefaultReportRangeKey(reportRangeKey);
+  }, [appliedDefaultReportRangeKey, hasRequestedAnalysis, latestCompletedReport]);
+
   const refreshAnalysis = () => {
     if (pendingRange.createdAfter === analysisRange.createdAfter
       && pendingRange.createdBefore === analysisRange.createdBefore
@@ -131,21 +163,28 @@ export function PeriodicObservationOverview({
         <Metric label={t("periodic_observation.change_count")} value={t("periodic_observation.changes", { count: totalChanges })} />
         <Button
           onClick={refreshAnalysis}
-          disabled={analysisQuery.isFetching}
+          disabled={isFetching}
           className="ml-auto"
         >
-          {analysisQuery.isFetching ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
+          {isFetching ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
           {t("periodic_observation.generate")}
         </Button>
       </div>
 
-      {analysisQuery.isFetching ? (
+      {isRenderingStoredReport ? (
+        <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/8 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <p>{t("periodic_observation.stored_report_notice")}</p>
+        </div>
+      ) : null}
+
+      {isFetching ? (
         <ObservationState icon={<Loader2 className="size-5 animate-spin" />} title={t("periodic_observation.loading")} />
-      ) : analysisQuery.isError ? (
+      ) : isError ? (
         <ObservationState
           icon={<AlertTriangle className="size-5" />}
           title={t("periodic_observation.failed")}
-          description={analysisQuery.error instanceof Error ? analysisQuery.error.message : t("periodic_observation.failed_description")}
+          description={error instanceof Error ? error.message : t("periodic_observation.failed_description")}
         />
       ) : !hasGenerated ? (
         <ObservationState
@@ -368,7 +407,7 @@ function EmotionDimensionDetail({
             {t("periodic_observation.dimensions.emotion")}
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t("periodic_observation.emotion_detail.stage_count", { count: group.changes.length })}
+            {group.summary.trim() || t("periodic_observation.detail.card_count", { count: group.changes.length })}
           </p>
         </div>
       </div>
@@ -462,6 +501,10 @@ function EvidencePanel({
         analyzeMemorySourceQueryKey(spaceId, analysisRange),
         (current) => updateEvidenceReview(current, evidence.evidenceId, markResult.metadata),
       );
+      queryClient.setQueryData<LatestCompletedMemoryAnalysisResult | undefined>(
+        latestCompletedMemoryAnalysisQueryKey(spaceId),
+        (current) => updateLatestCompletedEvidenceReview(current, evidence.evidenceId, markResult.metadata),
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     }
@@ -478,6 +521,10 @@ function EvidencePanel({
       queryClient.setQueryData<AnalyzeMemorySourceResponse | undefined>(
         analyzeMemorySourceQueryKey(spaceId, analysisRange),
         (current) => updateEditedEvidence(current, activeEvidence.evidenceId, editResult.content, editResult.metadata),
+      );
+      queryClient.setQueryData<LatestCompletedMemoryAnalysisResult | undefined>(
+        latestCompletedMemoryAnalysisQueryKey(spaceId),
+        (current) => updateLatestCompletedEditedEvidence(current, activeEvidence.evidenceId, editResult.content, editResult.metadata),
       );
       setEditingEvidence(null);
     } catch (err) {
@@ -571,6 +618,18 @@ function updateEvidenceReview(
   };
 }
 
+function updateLatestCompletedEvidenceReview(
+  current: LatestCompletedMemoryAnalysisResult | undefined,
+  evidenceId: string,
+  review: Record<string, unknown> | null,
+): LatestCompletedMemoryAnalysisResult | undefined {
+  if (!current) return current;
+  return {
+    ...current,
+    analysis: updateEvidenceReview(current.analysis, evidenceId, review) ?? current.analysis,
+  };
+}
+
 function patchEvidenceReview(
   evidence: MemoryAnalysisChangeEvidence,
   evidenceId: string,
@@ -600,6 +659,19 @@ function updateEditedEvidence(
         evidence: change.evidence.map((evidence) => patchEditedEvidence(evidence, evidenceId, content, review)),
       })),
     })),
+  };
+}
+
+function updateLatestCompletedEditedEvidence(
+  current: LatestCompletedMemoryAnalysisResult | undefined,
+  evidenceId: string,
+  content: string,
+  review: Record<string, unknown> | null,
+): LatestCompletedMemoryAnalysisResult | undefined {
+  if (!current) return current;
+  return {
+    ...current,
+    analysis: updateEditedEvidence(current.analysis, evidenceId, content, review) ?? current.analysis,
   };
 }
 
@@ -764,6 +836,19 @@ function sortDimensions(groups: MemoryAnalysisChangeDimensionGroup[]): MemoryAna
 function getInitialPeriodicAnalysisRange(): AnalyzeMemorySourceInput {
   initialPeriodicAnalysisRange ??= buildDefaultAnalysisRange();
   return initialPeriodicAnalysisRange;
+}
+
+function buildReportAnalysisRange(report: MemoryAnalysisReport): AnalyzeMemorySourceInput | null {
+  if (!report.startTime || !report.endTime) return null;
+
+  const start = parseDate(report.startTime);
+  const end = parseDate(report.endTime);
+  if (!start || !end || start.getTime() > end.getTime()) return null;
+
+  return {
+    createdAfter: report.startTime,
+    createdBefore: report.endTime,
+  };
 }
 
 function formatRangeLabel(start: string, end: string): string {

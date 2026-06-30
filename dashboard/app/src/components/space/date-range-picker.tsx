@@ -48,6 +48,10 @@ export function DateRangePicker({
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, []);
 
+  useEffect(() => {
+    setVisibleMonth(startOfMonth(endDate));
+  }, [endDate]);
+
   const selectDate = (date: Date) => {
     if (editing === "end" && rangeAnchor) {
       onChange(normalizeDateRange(rangeAnchor, date, "range"));

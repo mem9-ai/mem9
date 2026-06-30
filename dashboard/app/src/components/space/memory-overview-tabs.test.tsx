@@ -96,11 +96,27 @@ vi.mock("@/api/analysis-queries", () => ({
 }));
 
 vi.mock("@/api/memory-analysis-reports", () => ({
+  analyzeMemorySourceQueryKey: () => ["memoryAnalysisSource"],
+  latestCompletedMemoryAnalysisQueryKey: () => ["memoryAnalysisLatestCompleted"],
   useAnalyzeMemorySource: () => ({
     data: null,
     isError: false,
     isFetching: false,
     isLoading: false,
+  }),
+  useLatestCompletedMemoryAnalysis: () => ({
+    data: null,
+    isError: false,
+    isFetching: false,
+    isLoading: false,
+  }),
+  useEditSessionMessage: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
+  useMarkSessionMessage: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
   }),
 }));
 
@@ -363,8 +379,9 @@ describe("MemoryOverviewTabs", () => {
       screen.getByText("AI's Current Understanding of You"),
     ).toBeInTheDocument();
     expect(screen.getByText("Interface summary from v1/user-profile.")).toBeInTheDocument();
-    expect(screen.getByText("Alice")).toBeInTheDocument();
-    expect(screen.getByText("Teammate")).toBeInTheDocument();
+    expect(screen.getAllByText("Recent memory activity across the current range").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Alice")).not.toBeInTheDocument();
+    expect(screen.queryByText("Teammate")).not.toBeInTheDocument();
     expect(screen.getByText("Prepare KET plan")).toBeInTheDocument();
     expect(screen.queryByText(/Keep the 60-day vocabulary schedule visible/u)).not.toBeInTheDocument();
     expect(screen.getByText("Be direct")).toBeInTheDocument();
@@ -376,6 +393,7 @@ describe("MemoryOverviewTabs", () => {
     expect(
       screen.queryByRole("img", { name: "Profile confidence pie chart" }),
     ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /memories/u })).not.toBeInTheDocument();
   });
 
   it("renders short labels and replaces the insight workspace with a desktop redirect on mobile", () => {

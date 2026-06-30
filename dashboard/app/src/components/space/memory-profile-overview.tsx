@@ -3,18 +3,21 @@ import { useTranslation } from "react-i18next";
 import { UserRound } from "lucide-react";
 import { useUserProfile } from "@/api/analysis-queries";
 import { MemoryCompositionChart } from "@/components/space/memory-composition-chart";
-import { buildFacetComposition, buildPulseComposition } from "@/lib/memory-pulse";
+import { MemoryRhythmChart } from "@/components/space/memory-rhythm-chart";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { buildFacetComposition, buildMemoryPulseData, buildPulseComposition } from "@/lib/memory-pulse";
 import { useBackgroundMemoryInsightGraph } from "@/lib/memory-insight-background";
 import { cn } from "@/lib/utils";
 import type {
   AnalysisCategoryCard,
+  AnalysisJobSnapshotResponse,
   MemoryAnalysisMatch,
   UserProfileImageItem,
   UserProfileItemKind,
-  UserProfileRelationshipItem,
 } from "@/types/analysis";
 import type { MemoryInsightCardNode } from "@/lib/memory-insight";
 import type { Memory, MemoryStats, TopicSummary } from "@/types/memory";
+import type { TimeRangePreset } from "@/types/time-range";
 
 const PROFILE_ITEM_SECTIONS = [
   { key: "priority", kind: "current_priority", color: "bg-blue-500" },
@@ -22,7 +25,7 @@ const PROFILE_ITEM_SECTIONS = [
   { key: "constraint", kind: "robot_constraint", color: "bg-emerald-400" },
 ] as const satisfies readonly { key: string; kind: UserProfileItemKind; color: string }[];
 
-export function MemoryProfileOverview({ spaceId, stats, memories, cards, matchMap, facetSummary, loading, className }: { spaceId: string; stats: MemoryStats | undefined; memories: Memory[]; cards: AnalysisCategoryCard[]; matchMap: Map<string, MemoryAnalysisMatch>; facetSummary: TopicSummary | undefined; loading: boolean; className?: string }) {
+export function MemoryProfileOverview({ spaceId, stats, memories, cards, snapshot, range, matchMap, facetSummary, loading, className }: { spaceId: string; stats: MemoryStats | undefined; memories: Memory[]; cards: AnalysisCategoryCard[]; snapshot: AnalysisJobSnapshotResponse | null; range: TimeRangePreset; matchMap: Map<string, MemoryAnalysisMatch>; facetSummary: TopicSummary | undefined; loading: boolean; className?: string }) {
   const { i18n, t } = useTranslation();
   const profileQuery = useUserProfile(spaceId);
   const profile = profileQuery.data;
@@ -47,6 +50,19 @@ export function MemoryProfileOverview({ spaceId, stats, memories, cards, matchMa
       ? buildFacetComposition(compositionStats, facetSummary.topics)
       : buildPulseComposition(compositionStats, memories, cards);
   }, [cards, facetSummary, memories, memoryCount, stats]);
+  const pulse = useMemo(() => {
+    if (!stats) {
+      return null;
+    }
+
+    return buildMemoryPulseData({
+      stats,
+      memories,
+      cards,
+      snapshot,
+      range,
+    });
+  }, [cards, memories, range, snapshot, stats]);
   const { data: insightGraph } = useBackgroundMemoryInsightGraph({ cards, memories, matchMap });
 
   if (loading && !stats && memories.length === 0) return <ProfileSkeleton className={className} />;
@@ -57,16 +73,16 @@ export function MemoryProfileOverview({ spaceId, stats, memories, cards, matchMa
       <div className="flex items-center gap-3"><span className="text-xs text-soft-foreground">{lastUpdated}</span></div>
     </header>
 
-    <div className="grid gap-4 xl:grid-cols-[minmax(260px,.88fr)_minmax(390px,2.09fr)]">
-      <article className="surface-card relative overflow-hidden p-5"><div className="absolute -left-8 top-16 size-44 rounded-full bg-[radial-gradient(circle,rgba(59,130,246,.15),transparent_68%)]" /><h3 className="sr-only">{t("memory_profile.personal.title")}</h3><div className="relative flex h-full items-center gap-4"><Avatar /><div className="min-w-0"><p className="truncate text-xl font-semibold tracking-[-0.045em]">{t("memory_profile.personal.name")}</p><dl className="mt-7 space-y-3"><Stat label={t("memory_profile.personal.companion_duration")} value={t("memory_profile.personal.days", { count: companionDays })} /><Stat label={t("memory_profile.personal.memory_count")} value={t("memory_profile.personal.memories", { count: memoryCount })} /><Stat label={t("memory_profile.personal.confirmed")} value="42%" /></dl></div></div></article>
+    <div className="grid gap-4 xl:grid-cols-[.88fr_.95fr_1.34fr]">
+      <article className="surface-card relative overflow-hidden p-5"><div className="absolute -left-8 top-16 size-44 rounded-full bg-[radial-gradient(circle,rgba(59,130,246,.15),transparent_68%)]" /><h3 className="sr-only">{t("memory_profile.personal.title")}</h3><div className="relative flex h-full items-center gap-4"><Avatar /><div className="min-w-0"><p className="truncate text-xl font-semibold tracking-[-0.045em]">{t("memory_profile.personal.name")}</p><dl className="mt-7 space-y-3"><Stat label={t("memory_profile.personal.companion_duration")} value={t("memory_profile.personal.days", { count: companionDays })} /><Stat label={t("memory_profile.personal.memory_count")} value={t("memory_profile.personal.memories", { count: memoryCount })} /></dl></div></div></article>
 
-      <article className="surface-card relative overflow-hidden p-5"><div className="absolute right-5 top-5 flex size-[4.5rem] items-center justify-center rounded-full bg-blue-500/10"><span className="size-8 rounded-xl bg-blue-500/80 shadow-[0_0_24px_rgba(59,130,246,.55)]" /></div><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-500">{t("memory_profile.current_understanding.eyebrow")}</p><h3 className="mt-2 text-xl font-semibold tracking-[-0.045em]">{t("memory_profile.current_understanding.title")}</h3><p className="mt-6 max-w-[88%] text-sm leading-7 text-foreground/78">{currentUnderstanding}</p>{profile?.summary.message && <p className="mt-3 max-w-[88%] text-xs leading-5 text-soft-foreground">{profile.summary.message}</p>}</article>
+      <article className="surface-card relative overflow-hidden p-5 xl:col-span-2"><div className="absolute right-5 top-5 flex size-[4.5rem] items-center justify-center rounded-full bg-blue-500/10"><span className="size-8 rounded-xl bg-blue-500/80 shadow-[0_0_24px_rgba(59,130,246,.55)]" /></div><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-500">{t("memory_profile.current_understanding.eyebrow")}</p><h3 className="mt-2 text-xl font-semibold tracking-[-0.045em]">{t("memory_profile.current_understanding.title")}</h3><p className="mt-6 max-w-[88%] text-sm leading-7 text-foreground/78">{currentUnderstanding}</p>{profile?.summary.message && <p className="mt-3 max-w-[88%] text-xs leading-5 text-soft-foreground">{profile.summary.message}</p>}</article>
     </div>
 
-    <div className="mt-4 grid gap-4 xl:grid-cols-[.88fr_1.35fr_.74fr]">
+    <div className="mt-4 grid gap-4 xl:grid-cols-[.88fr_.95fr_1.34fr]">
       <ProfileCard title={t("memory_profile.topics.title")}><RadarChart nodes={insightGraph.cards} /></ProfileCard>
-      <article className="surface-card min-h-[260px] p-5"><MemoryCompositionChart total={composition.total} outer={composition.outer} inner={composition.inner} innerKind={composition.innerKind} onTypeSelect={() => {}} legendPosition="side" /></article>
-      <ProfileCard title={t("memory_profile.relationships.title")}><RelationshipList items={profile?.relationships ?? []} loading={profileQuery.isLoading} /></ProfileCard>
+      <article className="surface-card min-h-[260px] p-5"><MemoryCompositionChart total={composition.total} outer={composition.outer} inner={composition.inner} innerKind={composition.innerKind} onTypeSelect={() => {}} legendPosition="side" chartSize={140} /></article>
+      <article className="surface-card min-h-[260px] p-5"><MemoryRhythmChart buckets={pulse?.trend.buckets ?? []} maxCount={pulse?.trend.maxCount ?? 0} locale={i18n.language} /></article>
     </div>
 
     <article className="surface-card mt-4 p-5"><h3 className="text-xl font-semibold tracking-[-0.045em]">{t("memory_profile.items.title")}</h3><ProfileItemSections items={profile?.items ?? []} loading={profileQuery.isLoading} /></article>
@@ -88,8 +104,30 @@ function ProfileItemSections({ items, loading }: { items: UserProfileImageItem[]
   return <div className="mt-4 grid gap-3 md:grid-cols-3">{PROFILE_ITEM_SECTIONS.map((section) => {
     const sectionItems = items.filter((item) => item.kind === section.kind).slice(0, 3);
 
-    return <div key={section.kind} className="rounded-2xl border border-foreground/8 bg-background/25 p-4"><div className="flex items-center gap-2"><span className={cn("inline-block size-3 shrink-0 rounded-full", section.color)} /><h4 className="font-semibold">{t(`memory_profile.items.${section.key}.title`)}</h4></div>{sectionItems.length ? <ul className="mt-3 space-y-2">{sectionItems.map((item) => <li key={`${item.kind}-${item.title}`} className="flex items-center justify-between gap-3 text-sm leading-6"><span className="min-w-0 truncate font-medium text-foreground/88" title={item.title}>{item.title}</span>{item.evidenceCount > 0 ? <span className="shrink-0 text-xs text-soft-foreground">{t("memory_profile.items.evidence_count", { count: item.evidenceCount })}</span> : null}</li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">{t("memory_profile.items.empty")}</p>}</div>;
+    return <div key={section.kind} className="rounded-2xl border border-foreground/8 bg-background/25 p-4"><div className="flex items-center gap-2"><span className={cn("inline-block size-3 shrink-0 rounded-full", section.color)} /><h4 className="font-semibold">{t(`memory_profile.items.${section.key}.title`)}</h4></div>{sectionItems.length ? <ul className="mt-3 space-y-2">{sectionItems.map((item) => <ProfileItemRow key={`${item.kind}-${item.title}`} item={item} />)}</ul> : <p className="mt-3 text-sm text-muted-foreground">{t("memory_profile.items.empty")}</p>}</div>;
   })}</div>;
+}
+
+function ProfileItemRow({ item }: { item: UserProfileImageItem }) {
+  const { t } = useTranslation();
+
+  return (
+    <li className="flex items-center justify-between gap-3 text-sm leading-6">
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span tabIndex={0} className="min-w-0 truncate rounded-sm font-medium text-foreground/88 outline-none focus-visible:ring-2 focus-visible:ring-ring/35">
+              {item.title}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-sm">
+            <p className="font-medium">{item.title}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      {item.evidenceCount > 0 ? <span className="shrink-0 text-xs text-soft-foreground">{t("memory_profile.items.evidence_count", { count: item.evidenceCount })}</span> : null}
+    </li>
+  );
 }
 
 function RadarChart({ nodes }: { nodes: MemoryInsightCardNode[] }) {
@@ -114,19 +152,6 @@ function RadarChart({ nodes }: { nodes: MemoryInsightCardNode[] }) {
     {path && <path className="profile-radar-area" d={path} fill="rgba(59,130,246,.35)" stroke="#3b82f6" strokeWidth="2" />}
     {topicNodes.map((node, index) => { const [x, y] = points[index]!; const label = labels[index]!; const active = hoveredIndex === index; return <g key={node.id} tabIndex={0} role="img" aria-label={`${node.label}: ${node.count}`} onMouseEnter={() => setHoveredIndex(index)} onMouseLeave={() => setHoveredIndex(null)} onFocus={() => setHoveredIndex(index)} onBlur={() => setHoveredIndex(null)} className="cursor-pointer"><text x={label.x} y={label.y} textAnchor={label.anchor} className={cn("text-[10px] font-medium transition-all duration-200", active ? "fill-blue-500" : "fill-muted-foreground")} style={{ transform: active ? "translateY(-2px)" : "translateY(0)" }}><tspan x={label.x}>{node.label}</tspan><tspan x={label.x} dy={label.countDy} className={cn("text-[9px] tabular-nums transition-colors duration-200", active ? "fill-blue-500/75" : "fill-foreground/60")}>{node.count}</tspan></text><circle cx={x} cy={y} r={active ? 12 : 7} fill="#3b82f6" opacity={active ? .2 : 0} className="transition-all duration-200" /><circle className="profile-radar-node transition-all duration-200" cx={x} cy={y} r={active ? 6 : 4} fill="#3b82f6" /><title>{`${node.label}: ${node.count}`}</title></g>; })}
   </svg>;
-}
-
-function RelationshipList({ items, loading }: { items: UserProfileRelationshipItem[]; loading: boolean }) {
-  const { t } = useTranslation();
-  if (loading) {
-    return <div className="space-y-3">{[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-foreground/[.045]" />)}</div>;
-  }
-
-  if (items.length === 0) {
-    return <p className="pt-8 text-center text-sm text-muted-foreground">{t("memory_profile.relationships.empty")}</p>;
-  }
-
-  return <div className="space-y-3">{items.slice(0, 4).map((item) => <article key={`${item.relation ?? "relationship"}-${item.name}`} className="rounded-xl border border-foreground/8 bg-background/25 p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-semibold">{item.name}</p><p className="mt-1 text-xs text-muted-foreground">{item.relation || t("memory_profile.relationships.unspecified")}</p></div><span className="shrink-0 rounded-full bg-blue-500/10 px-2 py-1 text-xs font-semibold text-blue-500">{item.importance}</span></div><p className="mt-2 text-[11px] text-soft-foreground">{t("memory_profile.relationships.evidence_count", { count: item.evidenceCount })}</p>{item.evidence[0]?.quote && <p className="mt-2 line-clamp-2 text-xs leading-5 text-foreground/70">{item.evidence[0].quote}</p>}</article>)}</div>;
 }
 
 function formatProfileDate(value: string, locale: string): string {

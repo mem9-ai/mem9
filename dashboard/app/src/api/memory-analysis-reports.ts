@@ -23,6 +23,7 @@ export interface MemoryAnalysisReport {
   report_content: string;
   generated_at: string;
   render_status: MemoryAnalysisReportStatus;
+  report_stage: MemoryAnalysisReportStage;
   fail_reason: string | null;
   memory_count: number;
   startTime: string;
@@ -30,6 +31,7 @@ export interface MemoryAnalysisReport {
 }
 
 export type MemoryAnalysisReportStatus = "queued" | "running" | "success" | "fail";
+export type MemoryAnalysisReportStage = "queued" | "fetch_source" | "period_summary" | "aggregation" | "save_result" | "complete" | "failed";
 
 export interface MemoryAnalysisReportListResponse {
   reports: MemoryAnalysisReport[];
@@ -89,6 +91,11 @@ export interface AnalyzeMemorySourceQueryOptions {
   enabled?: boolean;
 }
 
+export interface LatestCompletedMemoryAnalysisResult {
+  report: MemoryAnalysisReport | null;
+  analysis: AnalyzeMemorySourceResponse;
+}
+
 export interface EditSessionMessageInput {
   messageId: string;
   content: string;
@@ -135,6 +142,7 @@ async function requestMemoryAnalysisReports(
 async function requestAnalyzeMemorySource(
   spaceId: string,
   input: AnalyzeMemorySourceInput,
+  signal?: AbortSignal,
 ): Promise<AnalyzeMemorySourceResponse> {
   const params = new URLSearchParams({
     createdAfter: input.createdAfter,
@@ -142,6 +150,7 @@ async function requestAnalyzeMemorySource(
   });
   const response = await fetch(`${ANALYSIS_API_BASE}/v1/memory-analysis?${params}`, {
     method: "POST",
+    signal,
     headers: {
       "x-mem9-api-key": spaceId.trim(),
     },
@@ -152,8 +161,15 @@ async function requestAnalyzeMemorySource(
     throw new Error(body?.message || body?.error || `Memory analysis API error ${response.status}`);
   }
 
-  const body = await response.json() as Partial<AnalyzeMemorySourceResponse> | null;
-  return normalizeAnalyzeMemorySourceResponse(body);
+  const body = await response.json() as Partial<MemoryAnalysisReport> | null;
+  const initialReport = normalizeReport(body ?? {});
+  const completedReport = await waitForMemoryAnalysisReport(spaceId, initialReport, signal);
+
+  if (completedReport.render_status === "fail") {
+    throw new Error(completedReport.fail_reason || "Memory analysis generation failed");
+  }
+
+  return parseAnalyzeMemorySourceReport(completedReport) ?? normalizeAnalyzeMemorySourceResponse(null);
 }
 
 async function requestCreateMemoryAnalysisReport(
@@ -199,8 +215,10 @@ async function requestGenerateMemoryAnalysisReport(
 async function requestMemoryAnalysisReport(
   spaceId: string,
   reportId: string,
+  signal?: AbortSignal,
 ): Promise<MemoryAnalysisReport | null> {
   const response = await fetch(`${ANALYSIS_API_BASE}/v1/memory-analysis/report/${encodeURIComponent(reportId)}`, {
+    signal,
     headers: {
       "x-mem9-api-key": spaceId.trim(),
     },
@@ -217,6 +235,58 @@ async function requestMemoryAnalysisReport(
 
   const body = await response.json() as Partial<MemoryAnalysisReport> | null;
   return body ? normalizeReport(body) : null;
+}
+
+async function requestLatestCompletedMemoryAnalysis(
+  spaceId: string,
+): Promise<LatestCompletedMemoryAnalysisResult> {
+  const { reports } = await requestMemoryAnalysisReports(spaceId);
+  const report = reports.find(isDisplayableCompletedReport) ?? null;
+
+  return {
+    report,
+    analysis: report
+      ? parseAnalyzeMemorySourceReport(report) ?? normalizeAnalyzeMemorySourceResponse(null)
+      : normalizeAnalyzeMemorySourceResponse(null),
+  };
+}
+
+async function waitForMemoryAnalysisReport(
+  spaceId: string,
+  initialReport: MemoryAnalysisReport,
+  signal?: AbortSignal,
+): Promise<MemoryAnalysisReport> {
+  let report = initialReport;
+
+  while (!isCompletedMemoryAnalysisReportStatus(report.render_status)) {
+    if (!report.report_id) {
+      throw new Error("Memory analysis report did not include a report_id");
+    }
+
+    await sleep(2 * 1000, signal);
+    const nextReport = await requestMemoryAnalysisReport(spaceId, String(report.report_id), signal);
+    if (!nextReport) {
+      throw new Error(`Memory analysis report ${report.report_id} was not found`);
+    }
+    report = nextReport;
+  }
+
+  return report;
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+
+    const timeout = window.setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      window.clearTimeout(timeout);
+      reject(signal.reason);
+    }, { once: true });
+  });
 }
 
 async function requestEditSessionMessage(
@@ -285,6 +355,9 @@ function normalizeReport(report: Partial<MemoryAnalysisReport>): MemoryAnalysisR
     report_content: typeof report.report_content === "string" ? report.report_content : "",
     generated_at: typeof report.generated_at === "string" ? report.generated_at : "",
     render_status: isMemoryAnalysisReportStatus(report.render_status) ? report.render_status : "queued",
+    report_stage: isMemoryAnalysisReportStage(report.report_stage)
+      ? report.report_stage
+      : report.render_status === "success" ? "complete" : "queued",
     fail_reason: typeof report.fail_reason === "string" ? report.fail_reason : null,
     memory_count: Number.isFinite(Number(report.memory_count)) ? Number(report.memory_count) : 0,
     startTime: typeof report.startTime === "string"
@@ -399,6 +472,10 @@ export function analyzeMemorySourceQueryKey(
   return ["space", spaceId, "memoryAnalysisSource", input.createdAfter, input.createdBefore] as const;
 }
 
+export function latestCompletedMemoryAnalysisQueryKey(spaceId: string) {
+  return ["space", spaceId, "memoryAnalysisLatestCompleted"] as const;
+}
+
 function isMemorySignalDimension(value: unknown): value is MemorySignalDimension {
   return value === "long_term_goal"
     || value === "focus_area"
@@ -414,8 +491,24 @@ function isMemoryAnalysisReportStatus(value: unknown): value is MemoryAnalysisRe
     || value === "fail";
 }
 
+function isMemoryAnalysisReportStage(value: unknown): value is MemoryAnalysisReportStage {
+  return value === "queued"
+    || value === "fetch_source"
+    || value === "period_summary"
+    || value === "aggregation"
+    || value === "save_result"
+    || value === "complete"
+    || value === "failed";
+}
+
 function isCompletedMemoryAnalysisReportStatus(status: MemoryAnalysisReportStatus): boolean {
   return status === "success" || status === "fail";
+}
+
+function isDisplayableCompletedReport(report: MemoryAnalysisReport): boolean {
+  return report.render_status === "success"
+    && report.report_stage === "complete"
+    && report.report_content.trim().length > 0;
 }
 
 export function useMemoryAnalysisReports(
@@ -459,10 +552,23 @@ export function useAnalyzeMemorySource(
 ) {
   return useQuery({
     queryKey: analyzeMemorySourceQueryKey(spaceId, input),
-    queryFn: () => requestAnalyzeMemorySource(spaceId, input),
+    queryFn: ({ signal }) => requestAnalyzeMemorySource(spaceId, input, signal),
     enabled: (options.enabled ?? true) && !!spaceId && !!input.createdAfter && !!input.createdBefore,
     staleTime: 5 * 60 * 1000,
     refetchOnMount: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useLatestCompletedMemoryAnalysis(
+  spaceId: string,
+  options: AnalyzeMemorySourceQueryOptions = {},
+) {
+  return useQuery({
+    queryKey: latestCompletedMemoryAnalysisQueryKey(spaceId),
+    queryFn: () => requestLatestCompletedMemoryAnalysis(spaceId),
+    enabled: (options.enabled ?? true) && !!spaceId,
+    staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
 }

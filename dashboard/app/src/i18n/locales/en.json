@@ -597,6 +597,7 @@
     "memories": "{{count}} memories",
     "change_count": "Insight changes",
     "changes": "{{count}}",
+    "stored_report_notice": "This view is using a previously generated report, so the periodic observation below may be outdated. Click Refresh to generate it again.",
     "profile_version": "Profile version",
     "loading": "Analyzing recent memories...",
     "ready": "Choose a range, then generate the report",
@@ -685,6 +686,7 @@
     "download_hint": "Click to open the PDF report page.",
     "generate_success": "{{template}} generated for the selected range. {{count}} memories analyzed.",
     "generate_failed": "Report generation failed.",
+    "failure_reason": "Failure reason",
     "note": "This first release uses built-in templates. Report results support online viewing.",
     "templates": {
       "weekly": { "name": "Focus changes", "cadence": "Biweekly", "last_generated": "2025-06-14 09:12", "goal": "Identify changes between recent and historical areas of focus." },

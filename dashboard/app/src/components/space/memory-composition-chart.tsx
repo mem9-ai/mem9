@@ -147,6 +147,7 @@ export function MemoryCompositionChart({
   onTypeSelect,
   showLegend = true,
   legendPosition = "below",
+  chartSize = 220,
 }: {
   total: number;
   outer: PulseCompositionSegment[];
@@ -156,6 +157,7 @@ export function MemoryCompositionChart({
   onTypeSelect: (type: MemoryType) => void;
   showLegend?: boolean;
   legendPosition?: "below" | "side";
+  chartSize?: number;
 }) {
   const { t } = useTranslation();
   const [activeKey, setActiveKey] = useState<string | null>(null);
@@ -186,8 +188,11 @@ export function MemoryCompositionChart({
         </div>
       </div>
 
-      <div className={cn("mt-5", legendPosition === "side" ? "grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-center" : "flex flex-col items-center justify-center")}>
-        <div className="relative flex h-[220px] w-[220px] items-center justify-center">
+      <div
+        className={cn("mt-5", legendPosition === "side" ? "grid gap-5 lg:items-center" : "flex flex-col items-center justify-center")}
+        style={legendPosition === "side" ? { gridTemplateColumns: `${chartSize}px minmax(0, 1fr)` } : undefined}
+      >
+        <div className="relative flex items-center justify-center" style={{ width: chartSize, height: chartSize }}>
           <svg viewBox="0 0 220 220" className="h-full w-full overflow-visible">
             {outerRing.map((segment) => (
               (() => {

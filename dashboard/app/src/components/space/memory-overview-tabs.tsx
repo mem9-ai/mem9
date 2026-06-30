@@ -138,6 +138,8 @@ export function MemoryOverviewTabs({
           stats={stats}
           memories={pulseMemories}
           cards={cards}
+          snapshot={snapshot}
+          range={range}
           matchMap={matchMap}
           facetSummary={profileFacetData}
           loading={loading}

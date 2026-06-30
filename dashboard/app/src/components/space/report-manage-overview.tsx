@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   Activity,
   ArrowUpRight,
+  AlertTriangle,
   BrainCircuit,
   ChevronLeft,
   ChevronRight,
@@ -20,6 +21,7 @@ import {
   type MemoryAnalysisReportStatus,
 } from "@/api/memory-analysis-reports";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { buildDefaultAnalysisRange } from "@/components/space/date-range-picker";
 import { REPORT_PDF_API_KEY_STORAGE_KEY } from "@/lib/report-pdf";
 import { cn } from "@/lib/utils";
@@ -257,9 +259,13 @@ function ReportHistoryRows({
       {pageReports.map((report) => (
         <div key={`${report.template_id}-${report.report_id}`} className={cn(REPORT_HISTORY_GRID_CLASS, "px-4 py-3 text-sm")}>
           <span className="min-w-0 font-medium">{formatReportPeriod(report)}</span>
-          <ReportStatusBadge status={report.render_status} t={t} />
-          <span className="justify-self-start truncate text-left text-muted-foreground" title={report.render_status === "fail" ? report.fail_reason || undefined : undefined}>
-            {report.render_status === "fail" && report.fail_reason ? report.fail_reason : t("report_manage.memory_count", { count: report.memory_count })}
+          <ReportStatusBadge
+            status={report.render_status}
+            failReason={report.fail_reason}
+            t={t}
+          />
+          <span className="justify-self-start truncate text-left text-muted-foreground">
+            {t("report_manage.memory_count", { count: report.memory_count })}
           </span>
           <div className="flex gap-2 sm:justify-end">
             <Button variant="outline" size="xs" disabled={report.render_status !== "success"} onClick={() => onOpen(report)}>{t("report_manage.view_template")}<ArrowUpRight className="size-3" /></Button>
@@ -308,16 +314,38 @@ function ReportHistoryRows({
 
 function ReportStatusBadge({
   status,
+  failReason,
   t,
 }: {
   status: MemoryAnalysisReportStatus;
+  failReason?: string | null;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
+  const shouldShowFailReason = status === "fail" && !!failReason?.trim();
+
   return (
-    <span className="justify-self-start text-left">
+    <span className="flex items-center gap-1.5 justify-self-start text-left">
       <span className={cn("rounded-md px-2 py-0.5 text-xs font-medium", reportStatusClass(status))}>
         {t(`report_manage.status.${status}`)}
       </span>
+      {shouldShowFailReason ? (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex size-5 items-center justify-center rounded-md text-red-600 outline-none transition-colors hover:bg-red-500/10 focus-visible:ring-2 focus-visible:ring-red-500/35 dark:text-red-400"
+                aria-label={t("report_manage.failure_reason")}
+              >
+                <AlertTriangle className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {failReason}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : null}
     </span>
   );
 }

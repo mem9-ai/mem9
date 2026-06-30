@@ -61,6 +61,7 @@ export function MemoryRhythmChart({
 }) {
   const { t } = useTranslation();
   const chartId = useId();
+  const interactive = typeof onBucketSelect === "function";
   const defaultIndex = useMemo(() => {
     let lastActive = -1;
 
@@ -167,11 +168,13 @@ export function MemoryRhythmChart({
           <p className="mt-1 truncate text-sm text-muted-foreground">
             {t("memory_pulse.rhythm.caption")}
           </p>
-          <p className="mt-1 text-xs text-foreground/70">
-            {selectedIndex >= 0
-              ? t("memory_pulse.rhythm.selected_hint")
-              : t("memory_pulse.rhythm.helper")}
-          </p>
+          {interactive ? (
+            <p className="mt-1 text-xs text-foreground/70">
+              {selectedIndex >= 0
+                ? t("memory_pulse.rhythm.selected_hint")
+                : t("memory_pulse.rhythm.helper")}
+            </p>
+          ) : null}
         </div>
         <div className="w-[8.5rem] text-right">
           <div className="text-2xl font-semibold tracking-[-0.05em] text-foreground tabular-nums">
@@ -272,7 +275,7 @@ export function MemoryRhythmChart({
             return (
               <rect
                 key={`hover-${point.start}-${point.end}`}
-                className="cursor-pointer"
+                className={interactive ? "cursor-pointer" : undefined}
                 x={point.x}
                 y={0}
                 width={point.width}
@@ -286,16 +289,19 @@ export function MemoryRhythmChart({
                 }
                 onMouseEnter={() => setActiveIndex(index)}
                 onFocus={() => setActiveIndex(index)}
-                onClick={() => onBucketSelect?.(selection)}
+                onClick={interactive ? () => onBucketSelect(selection) : undefined}
                 onKeyDown={(event) => {
+                  if (!interactive) {
+                    return;
+                  }
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    onBucketSelect?.(selection);
+                    onBucketSelect(selection);
                   }
                 }}
-                role="button"
-                tabIndex={0}
-                aria-pressed={isSelected}
+                role={interactive ? "button" : undefined}
+                tabIndex={interactive ? 0 : undefined}
+                aria-pressed={interactive ? isSelected : undefined}
                 aria-label={t("memory_pulse.rhythm.bucket_label", {
                   range: formatBucketLabel(locale, point.start, point.end),
                   count: point.count,
