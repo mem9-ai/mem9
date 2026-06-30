@@ -28,6 +28,11 @@ function getPlanHref(tier: SiteBillingTier): string {
       <p class="section-desc" data-i18n="billing.description">
         {billing.description}
       </p>
+      {billing.docsLinkLabel && (
+        <a href="/console-docs#pricing" class="pricing-docs-link">
+          {billing.docsLinkLabel}
+        </a>
+      )}
     </div>
 
     <div class="pricing-table-wrap surface-card">
@@ -239,6 +244,31 @@ function getPlanHref(tier: SiteBillingTier): string {
   .section-head .section-desc {
     margin-left: 0;
     margin-right: 0;
+  }
+
+  .pricing-docs-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 1rem;
+    color: var(--text);
+    font-weight: 700;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--text) 45%, transparent);
+    text-underline-offset: 0.18em;
+  }
+
+  .pricing-docs-link::after {
+    content: "->";
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    color: var(--accent);
+  }
+
+  .pricing-docs-link:hover {
+    color: var(--accent);
+    opacity: 1;
+    text-decoration-color: currentColor;
   }
 
   .pricing-table-wrap {

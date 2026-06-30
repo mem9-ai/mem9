@@ -1,4 +1,94 @@
-import type { DocsLocale, DocsPageCopy } from './docs';
+import type { DocsLocale, DocsPageCopy, DocsSection } from './docs';
+
+const pricingDocsSection: DocsSection = {
+  id: 'pricing',
+  label: '10',
+  title: 'Pricing',
+  intro:
+    'mem9 pricing is based on monthly Add Request and Retrieval Request quotas. Free has fixed included usage, while paid plans can extend with on-demand usage when billing controls are configured.',
+  paragraphs: [
+    'Public pricing intentionally exposes two usage meters: Add Requests and Retrieval Requests. Core Console workflows stay consistent across plans; the main tier differences are included quota, support level, on-demand behavior, and enterprise contract options.',
+  ],
+  tables: [
+    {
+      caption: 'Plans and included usage',
+      columns: ['Plan', 'Monthly price', 'Add requests', 'Retrieval requests', 'End users', 'Support', 'On-demand'],
+      rows: [
+        ['Free', '$0', '13,000 / month', '1,300 / month', 'Unlimited', 'Community', 'Not available; fixed monthly quota'],
+        ['Starter', '$9 / month', '65,000 / month', '6,500 / month', 'Unlimited', 'Email', 'Available with payment method and spend cap'],
+        ['Pro', '$120 / month', '650,000 / month', '65,000 / month', 'Unlimited', 'Priority', 'Available with payment method and spend cap'],
+        ['Enterprise', 'Custom', 'Unlimited or custom contract terms', 'Unlimited or custom contract terms', 'Unlimited', 'Dedicated support and custom SLA', 'Custom commercial terms'],
+      ],
+    },
+    {
+      caption: 'Capability and billing differences by tier',
+      columns: ['Capability', 'Free', 'Starter', 'Pro', 'Enterprise'],
+      rows: [
+        ['Core Console workflows', 'Spaces, memory review, Space Chains, usage, billing, and settings', 'Spaces, memory review, Space Chains, usage, billing, and settings', 'Spaces, memory review, Space Chains, usage, billing, and settings', 'Core workflows plus custom enterprise support'],
+        ['Monthly quotas', 'Fixed included usage only', 'Higher included quota for small teams and early products', 'Higher included quota for production or heavier agent usage', 'Unlimited or negotiated quota'],
+        ['On-demand usage', 'No on-demand billing; upgrade or wait for the next billing cycle after limits are reached', '$0.20 / 1,000 Add Requests and $2.00 / 1,000 Retrieval Requests', '$0.20 / 1,000 Add Requests and $2.00 / 1,000 Retrieval Requests', 'Custom terms'],
+        ['Spend cap', 'Not applicable', 'Required before auto top-up can run', 'Required before auto top-up can run', 'Contracted limits or account terms'],
+        ['Support', 'Community', 'Email', 'Priority', 'Dedicated support and custom SLA'],
+        ['Enterprise options', 'Not included', 'Not included', 'Not included', 'Security review, dedicated support, custom SLA, BYOK, dedicated retention, or large-scale storage terms can be handled by contract'],
+      ],
+    },
+  ],
+  subsections: [
+    {
+      title: 'Request definitions',
+      paragraphs: [
+        'An Add Request is one memory write or memory distillation operation. It can process messages, text, events, or structured facts into durable memory.',
+        'A Retrieval Request is one memory query or recall operation scoped by user, agent, app, Space, metadata filter, or query text.',
+      ],
+      bullets: [
+        'An Add Request can include fact extraction, memory creation, memory update, deduplication, reconciliation, embedding, and storage write.',
+        'A Retrieval Request can include semantic search, keyword search, hybrid search, metadata filtering, ranking, and result assembly.',
+        'For Space Chains, one recall counts as one Retrieval Request even if the chain scans multiple Spaces.',
+        'Very large payloads, long conversation imports, very large top_k, unusually broad multi-Space recall, or abnormal high-frequency usage may be handled by fair-use policy or Enterprise pricing.',
+      ],
+    },
+    {
+      title: 'On-demand usage, auto top-up, and spend caps',
+      paragraphs: [
+        'Free does not support on-demand overage billing. When a Free account reaches its included quota, it must upgrade or wait for the next billing cycle.',
+        'Starter and Pro users can enable auto top-up after adding a valid payment method. Users should configure a monthly spend cap before relying on on-demand usage. Once the hard cap is reached, overage API calls are paused until the next billing cycle or until the cap is increased.',
+      ],
+      tables: [
+        {
+          caption: 'On-demand rates for paid self-serve plans',
+          columns: ['Usage meter', 'Rate', 'Applies to'],
+          rows: [
+            ['Add Request', '$0.20 / 1,000 requests', 'Starter and Pro'],
+            ['Retrieval Request', '$2.00 / 1,000 requests', 'Starter and Pro'],
+          ],
+        },
+      ],
+    },
+    {
+      title: 'Coupon codes',
+      paragraphs: [
+        'To use a coupon code, click Upgrade Plan from Console Billing or Subscribe from the pricing page, choose a plan, and review the Payment summary. Enter the code in the Coupon code field before completing payment.',
+        'A coupon code can be used only once per account. Startups can email a short summary of their company, product, stage, expected mem9 usage, and requested support to <a href="mailto:mem9@pingcap.com">mem9@pingcap.com</a> to apply for a coupon code.',
+      ],
+    },
+    {
+      title: 'Billing rules FAQ',
+      tables: [
+        {
+          caption: 'Common billing rules',
+          columns: ['Question', 'Answer'],
+          rows: [
+            ['Do monthly quotas roll over?', 'No. Included monthly quotas reset every billing cycle and do not roll over.'],
+            ['Do failed requests count?', 'Client-side validation errors and platform errors are not billed. Successfully processed requests may be billed even if no new memory is created.'],
+            ['Do duplicate or no-op Add Requests count?', 'Yes, if extraction, deduplication, or reconciliation has already been executed.'],
+            ['Is storage billed separately?', 'Storage is included under normal usage. Large-scale storage or dedicated retention requirements may be handled through Enterprise pricing.'],
+            ['Can customers bring their own LLM key?', 'BYOK can be supported for Enterprise customers. In that case, LLM cost may be excluded from mem9 usage pricing or handled as pass-through cost.'],
+          ],
+        },
+      ],
+    },
+  ],
+};
 
 export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
   en: {
@@ -30,7 +120,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: 'Memory Workflows', sectionIDs: ['spaces', 'space-detail', 'memories'] },
-      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'safe-operations'] },
+      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'pricing', 'safe-operations'] },
     ],
     sections: [
       {
@@ -251,9 +341,10 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
           },
         ],
       },
+      pricingDocsSection,
       {
         id: 'safe-operations',
-        label: '10',
+        label: '11',
         title: 'Safe Operations',
         intro: 'Console exposes powerful controls, so treat changes deliberately.',
         bullets: [
@@ -295,7 +386,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
     tocGroups: [
       { title: '开始', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: '记忆工作流', sectionIDs: ['spaces', 'space-detail', 'memories'] },
-      { title: '高级工作流', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'safe-operations'] },
+      { title: '高级工作流', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'pricing', 'safe-operations'] },
     ],
     sections: [
       {
@@ -516,9 +607,10 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
           },
         ],
       },
+      pricingDocsSection,
       {
         id: 'safe-operations',
-        label: '10',
+        label: '11',
         title: '安全操作建议',
         intro: 'Console 暴露了关键控制能力，操作时要有明确意图。',
         bullets: [
@@ -560,7 +652,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: 'Memory Workflows', sectionIDs: ['spaces', 'space-detail', 'memories'] },
-      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'safe-operations'] },
+      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'pricing', 'safe-operations'] },
     ],
     sections: [
       {
@@ -662,9 +754,10 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
           { title: 'Settings', bullets: ['account と organization の管理、theme、language、logout に使います。'] },
         ],
       },
+      pricingDocsSection,
       {
         id: 'safe-operations',
-        label: '10',
+        label: '11',
         title: 'Safe Operations',
         bullets: [
           'API key は信頼できる client に設定する時だけ reveal します。',
@@ -704,7 +797,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: 'Memory Workflows', sectionIDs: ['spaces', 'space-detail', 'memories'] },
-      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'safe-operations'] },
+      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'pricing', 'safe-operations'] },
     ],
     sections: [
       { id: 'quick-start', label: '01', title: 'Quick Start', bullets: ['Log in 메뉴에서 mem9 Console 에 로그인합니다.', '변경 전에 organization 과 project 를 확인합니다.', '공식 OpenClaw onboarding prompt 는 Install mem9 에서 복사합니다.', '기존 mem9 API key 는 Claim API key 로 Space 에 연결합니다.', 'Space 또는 Memories 에서 agent 가 저장한 memory 를 확인합니다.'] },
@@ -716,7 +809,8 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       { id: 'space-chains', label: '07', title: 'Space Chains', subsections: [{ title: 'Create or import', bullets: ['새 chain 을 만들거나 기존 chain key 를 import 합니다.', 'detail 에서 key, nodes, memory tools 를 관리합니다.'] }, { title: 'Nodes and routing', bullets: ['active key 가 있는 Space 를 추가합니다.', 'node order 가 recall order 입니다.', 'routing policy prompt 로 검색 조건을 제한할 수 있습니다.'] }, { title: 'Chain keys', bullets: ['chain key 를 만들거나 bind 합니다.', '필요 없는 key 는 disable 합니다.', 'recall tools 로 single Space 와 비교합니다.'] }] },
       { id: 'webhooks', label: '08', title: 'Webhooks', subsections: [{ title: 'Project view', bullets: ['Activity sidebar 에서 Webhooks 를 엽니다.', 'All, Space, Space Chain filter 로 project list 를 좁힙니다.', 'table 에서 endpoint, scope, URL host, enabled, events, last delivery 를 확인합니다.'] }, { title: 'Create and edit', bullets: ['Space 또는 Space Chain, resource, URL, events, enabled state 를 설정합니다.', 'production endpoint 는 HTTPS 를 사용합니다.', 'signing secret 은 create / rotate-secret 뒤 한 번만 표시됩니다.'] }, { title: 'Actions and deliveries', bullets: ['row menu 에서 edit, test, deliveries, rotate secret, enable / disable, delete 를 실행합니다.', 'deliveries drawer 에서 status, attempts, HTTP status, last error, retry time 을 확인합니다.'] }] },
       { id: 'usage-billing-settings', label: '09', title: 'Usage, Billing, Settings', subsections: [{ title: 'Usage', bullets: ['recall / write request usage 를 확인합니다.', 'date range, daily trend, usage events 를 봅니다.'] }, { title: 'Billing', bullets: ['current plan, period, included access, on-demand settings 를 확인합니다.'] }, { title: 'Settings', bullets: ['account 와 organization 관리, theme, language, logout 에 사용합니다.'] }] },
-      { id: 'safe-operations', label: '10', title: 'Safe Operations', bullets: ['API key 는 trusted client 설정 시에만 reveal 합니다.', 'delete 전에 preview 와 confirmation 을 확인합니다.', '섞이면 안 되는 data 는 별도 Space 로 나눕니다.', '결과가 이상하면 org, project, Space, key, appId filter 를 확인합니다.'] },
+      pricingDocsSection,
+      { id: 'safe-operations', label: '11', title: 'Safe Operations', bullets: ['API key 는 trusted client 설정 시에만 reveal 합니다.', 'delete 전에 preview 와 confirmation 을 확인합니다.', '섞이면 안 되는 data 는 별도 Space 로 나눕니다.', '결과가 이상하면 org, project, Space, key, appId filter 를 확인합니다.'] },
     ],
   },
   id: {
@@ -748,7 +842,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: 'Memory Workflows', sectionIDs: ['spaces', 'space-detail', 'memories'] },
-      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'safe-operations'] },
+      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'pricing', 'safe-operations'] },
     ],
     sections: [
       { id: 'quick-start', label: '01', title: 'Quick Start', bullets: ['Buka mem9 Console dari menu Log in lalu masuk.', 'Pastikan organization dan project sebelum mengubah resource.', 'Gunakan Install mem9 untuk prompt onboarding OpenClaw resmi.', 'Gunakan Claim API key untuk menautkan key lama ke Space.', 'Buka Space atau Memories untuk melihat memory yang disimpan agent.'] },
@@ -760,7 +854,8 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       { id: 'space-chains', label: '07', title: 'Space Chains', subsections: [{ title: 'Create or import', bullets: ['Buat chain baru atau import chain key yang ada.', 'Detail page mengelola key, nodes, dan memory tools.'] }, { title: 'Nodes and routing', bullets: ['Tambahkan Space yang punya active key.', 'Node order menentukan recall order.', 'Routing policy prompt membatasi kapan node dicari.'] }, { title: 'Chain keys', bullets: ['Create atau bind chain key.', 'Disable key yang tidak dipakai.', 'Bandingkan chain dengan single Space memakai recall tools.'] }] },
       { id: 'webhooks', label: '08', title: 'Webhooks', subsections: [{ title: 'Project view', bullets: ['Buka Webhooks dari Activity sidebar.', 'Gunakan filter All, Space, atau Space Chain.', 'Tabel menampilkan endpoint, scope, URL host, enabled, events, dan last delivery.'] }, { title: 'Create and edit', bullets: ['Pilih Space atau Space Chain, resource, URL, events, dan enabled state.', 'Endpoint production harus HTTPS.', 'signing secret hanya muncul sekali setelah create atau rotate-secret.'] }, { title: 'Actions and deliveries', bullets: ['Row menu mendukung edit, test, deliveries, rotate secret, enable / disable, dan delete.', 'Drawer deliveries menampilkan status, attempts, HTTP status, last error, dan retry time.'] }] },
       { id: 'usage-billing-settings', label: '09', title: 'Usage, Billing, Settings', subsections: [{ title: 'Usage', bullets: ['Pantau recall / write request usage.', 'Lihat date range, daily trend, dan usage events.'] }, { title: 'Billing', bullets: ['Lihat current plan, period, included access, dan on-demand settings.'] }, { title: 'Settings', bullets: ['Untuk account, organization, theme, language, dan logout.'] }] },
-      { id: 'safe-operations', label: '10', title: 'Safe Operations', bullets: ['Reveal API key hanya untuk trusted client.', 'Baca preview dan confirmation sebelum delete.', 'Pisahkan data sensitif ke Space berbeda.', 'Jika hasil aneh, cek org, project, Space, key, dan appId filter.'] },
+      pricingDocsSection,
+      { id: 'safe-operations', label: '11', title: 'Safe Operations', bullets: ['Reveal API key hanya untuk trusted client.', 'Baca preview dan confirmation sebelum delete.', 'Pisahkan data sensitif ke Space berbeda.', 'Jika hasil aneh, cek org, project, Space, key, dan appId filter.'] },
     ],
   },
   th: {
@@ -792,7 +887,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
     tocGroups: [
       { title: 'Start Here', sectionIDs: ['quick-start', 'account-model', 'install-and-claim'] },
       { title: 'Memory Workflows', sectionIDs: ['spaces', 'space-detail', 'memories'] },
-      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'safe-operations'] },
+      { title: 'Advanced Workflows', sectionIDs: ['space-chains', 'webhooks', 'usage-billing-settings', 'pricing', 'safe-operations'] },
     ],
     sections: [
       { id: 'quick-start', label: '01', title: 'Quick Start', bullets: ['เปิด mem9 Console จากเมนู Log in แล้วเข้าสู่ระบบ', 'ตรวจ organization และ project ก่อนแก้ resource', 'ใช้ Install mem9 เพื่อคัดลอก OpenClaw onboarding prompt', 'ใช้ Claim API key เพื่อผูก key เดิมเข้ากับ Space', 'เปิด Space หรือ Memories เพื่อดู memory ที่ agent บันทึก'] },
@@ -804,7 +899,8 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       { id: 'space-chains', label: '07', title: 'Space Chains', subsections: [{ title: 'Create or import', bullets: ['สร้าง chain ใหม่หรือ import chain key เดิม', 'หน้า detail ใช้จัดการ key, nodes และ memory tools'] }, { title: 'Nodes and routing', bullets: ['เพิ่ม Space ที่มี active key', 'node order คือ recall order', 'routing policy prompt จำกัดว่า node ควรถูกค้นหาเมื่อใด'] }, { title: 'Chain keys', bullets: ['Create หรือ bind chain key', 'Disable key ที่ไม่ใช้แล้ว', 'ใช้ recall tools เปรียบเทียบ chain กับ Space เดี่ยว'] }] },
       { id: 'webhooks', label: '08', title: 'Webhooks', subsections: [{ title: 'Project view', bullets: ['เปิด Webhooks จาก Activity sidebar', 'ใช้ filter All, Space หรือ Space Chain', 'ตารางแสดง endpoint, scope, URL host, enabled, events และ last delivery'] }, { title: 'Create and edit', bullets: ['เลือก Space หรือ Space Chain, resource, URL, events และ enabled state', 'production endpoint ต้องใช้ HTTPS', 'signing secret แสดงเพียงครั้งเดียวหลัง create หรือ rotate-secret'] }, { title: 'Actions and deliveries', bullets: ['row menu ใช้ edit, test, deliveries, rotate secret, enable / disable และ delete', 'deliveries drawer แสดง status, attempts, HTTP status, last error และ retry time'] }] },
       { id: 'usage-billing-settings', label: '09', title: 'Usage, Billing, Settings', subsections: [{ title: 'Usage', bullets: ['ดู recall / write request usage', 'ดู date range, daily trend และ usage events'] }, { title: 'Billing', bullets: ['ดู current plan, period, included access และ on-demand settings'] }, { title: 'Settings', bullets: ['สำหรับ account, organization, theme, language และ logout'] }] },
-      { id: 'safe-operations', label: '10', title: 'Safe Operations', bullets: ['Reveal API key เฉพาะ trusted client', 'อ่าน preview และ confirmation ก่อน delete', 'แยกข้อมูลที่ไม่ควรรวมกันไว้คนละ Space', 'ถ้าผลลัพธ์ผิดปกติ ให้ตรวจ org, project, Space, key และ appId filter'] },
+      pricingDocsSection,
+      { id: 'safe-operations', label: '11', title: 'Safe Operations', bullets: ['Reveal API key เฉพาะ trusted client', 'อ่าน preview และ confirmation ก่อน delete', 'แยกข้อมูลที่ไม่ควรรวมกันไว้คนละ Space', 'ถ้าผลลัพธ์ผิดปกติ ให้ตรวจ org, project, Space, key และ appId filter'] },
     ],
   },
 };

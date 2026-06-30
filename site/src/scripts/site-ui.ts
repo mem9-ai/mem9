@@ -517,6 +517,38 @@ function resolveDocsLocale(locale: SiteLocale): DocsLocale {
   }
 }
 
+function findActiveDocsHashTarget(root: HTMLElement): HTMLElement | null {
+  const hash = window.location.hash.slice(1);
+  if (!hash) {
+    return null;
+  }
+
+  const activeCopy = root.querySelector<HTMLElement>('[data-docs-copy]:not([hidden])');
+  return Array.from(activeCopy?.querySelectorAll<HTMLElement>('[data-docs-anchor]') ?? [])
+    .find((anchor) => anchor.dataset.docsAnchor === hash) ?? null;
+}
+
+function scheduleDocsHashScroll(root: HTMLElement): void {
+  if (!window.location.hash) {
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    findActiveDocsHashTarget(root)?.scrollIntoView({ block: 'start', behavior: 'auto' });
+    window.requestAnimationFrame(() => {
+      findActiveDocsHashTarget(root)?.scrollIntoView({ block: 'start', behavior: 'auto' });
+    });
+  });
+
+  window.setTimeout(() => {
+    findActiveDocsHashTarget(root)?.scrollIntoView({ block: 'start', behavior: 'auto' });
+  }, 120);
+
+  window.setTimeout(() => {
+    findActiveDocsHashTarget(root)?.scrollIntoView({ block: 'start', behavior: 'auto' });
+  }, 450);
+}
+
 function updateDocsPage(locale: SiteLocale): void {
   const docsLocale = resolveDocsLocale(locale);
   const root = document.querySelector<HTMLElement>('[data-docs-root]');
@@ -556,6 +588,8 @@ function updateDocsPage(locale: SiteLocale): void {
       backToTopButton.setAttribute('aria-label', activeCopy.dataset.docsBackToTopLabel);
     }
   }
+
+  scheduleDocsHashScroll(root);
 }
 
 function updateApiPage(locale: SiteLocale): void {
@@ -2082,6 +2116,11 @@ export function initSiteUI(): void {
     initDocsProgressBar();
     initDocsBackToTop();
     initDocsMobileToc();
+
+    const docsRoot = document.querySelector<HTMLElement>('[data-docs-root]');
+    if (docsRoot) {
+      scheduleDocsHashScroll(docsRoot);
+    }
   }
 
   if (isApiPage()) {

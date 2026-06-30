@@ -8,10 +8,17 @@ export interface DocsLink {
   external?: boolean;
 }
 
+export interface DocsTable {
+  caption?: string;
+  columns: string[];
+  rows: string[][];
+}
+
 export interface DocsSubsection {
   title: string;
   paragraphs?: string[];
   bullets?: string[];
+  tables?: DocsTable[];
   links?: DocsLink[];
 }
 
@@ -22,6 +29,7 @@ export interface DocsSection {
   intro?: string;
   paragraphs?: string[];
   bullets?: string[];
+  tables?: DocsTable[];
   subsections?: DocsSubsection[];
   links?: DocsLink[];
 }

@@ -214,6 +214,7 @@ export interface SiteBillingPageCopy {
   kicker: string;
   title: string;
   description: string;
+  docsLinkLabel?: string;
   featureLabels: string[];
   tiers: SiteBillingTier[];
   contactMessage: string;
@@ -6328,6 +6329,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: 'Pricing',
       title: 'Simple, transparent pricing',
       description: 'Start free. Scale when you need to.',
+      docsLinkLabel: 'Read pricing details in Console Docs',
       featureLabels: [
         'End users',
         'Add requests',

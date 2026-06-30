@@ -1,5 +1,5 @@
 ---
-import { resolveDocsLocale, type DocsLink, type DocsLocale, type DocsPageCopy, type DocsSection } from '../content/docs';
+import { resolveDocsLocale, type DocsLink, type DocsLocale, type DocsPageCopy, type DocsSection, type DocsTable } from '../content/docs';
 import { DEFAULT_LOCALE } from '../content/site';
 
 interface Props {
@@ -23,6 +23,14 @@ function plainText(value: string | undefined): string {
   return (value ?? '').replace(/<[^>]*>/g, ' ');
 }
 
+function docsTableSearchText(table: DocsTable): string {
+  return [
+    table.caption,
+    ...table.columns,
+    ...table.rows.flat(),
+  ].join(' ');
+}
+
 function docsSectionSearchText(section: DocsSection): string {
   return [
     section.label,
@@ -30,11 +38,13 @@ function docsSectionSearchText(section: DocsSection): string {
     section.intro,
     ...(section.paragraphs ?? []).map(plainText),
     ...(section.bullets ?? []),
+    ...(section.tables ?? []).map(docsTableSearchText),
     ...(section.links ?? []).map((link) => link.label),
     ...(section.subsections ?? []).flatMap((subsection) => [
       subsection.title,
       ...(subsection.paragraphs ?? []).map(plainText),
       ...(subsection.bullets ?? []),
+      ...(subsection.tables ?? []).map(docsTableSearchText),
       ...(subsection.links ?? []).map((link) => link.label),
     ]),
   ].join(' ');
@@ -136,6 +146,30 @@ function docsSectionSearchText(section: DocsSection): string {
                     </ul>
                   )}
 
+                  {section.tables?.map((table) => (
+                    <div class="docs-table-wrap" role="region" aria-label={table.caption ?? section.title} tabindex="0">
+                      <table class="docs-table">
+                        {table.caption && <caption>{table.caption}</caption>}
+                        <thead>
+                          <tr>
+                            {table.columns.map((column) => (
+                              <th scope="col">{column}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {table.rows.map((row) => (
+                            <tr>
+                              {row.map((cell, cellIndex) => (
+                                cellIndex === 0 ? <th scope="row">{cell}</th> : <td>{cell}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+
                   {section.subsections?.map((subsection) => (
                     <section class="docs-subsection surface-card">
                       <h3 class="docs-subsection-title">{subsection.title}</h3>
@@ -149,6 +183,29 @@ function docsSectionSearchText(section: DocsSection): string {
                           ))}
                         </ul>
                       )}
+                      {subsection.tables?.map((table) => (
+                        <div class="docs-table-wrap" role="region" aria-label={table.caption ?? subsection.title} tabindex="0">
+                          <table class="docs-table">
+                            {table.caption && <caption>{table.caption}</caption>}
+                            <thead>
+                              <tr>
+                                {table.columns.map((column) => (
+                                  <th scope="col">{column}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {table.rows.map((row) => (
+                                <tr>
+                                  {row.map((cell, cellIndex) => (
+                                    cellIndex === 0 ? <th scope="row">{cell}</th> : <td>{cell}</td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
                       {subsection.links && subsection.links.length > 0 && (
                         <div class="docs-link-row">
                           {subsection.links.map((link) => (
@@ -475,6 +532,60 @@ function docsSectionSearchText(section: DocsSection): string {
   .docs-bullets.is-compact {
     margin-top: 0.75rem;
     gap: 0.45rem;
+  }
+
+  .docs-table-wrap {
+    margin-top: 1rem;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 0.85rem;
+    background: linear-gradient(180deg, var(--surface-elevated-start), var(--surface-elevated-end));
+    box-shadow: var(--surface-inset);
+  }
+
+  .docs-table-wrap:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .docs-table {
+    width: 100%;
+    min-width: 42rem;
+    border-collapse: collapse;
+    color: var(--text-dim);
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+
+  .docs-table caption {
+    padding: 0.85rem 0.95rem;
+    text-align: left;
+    color: var(--text);
+    font-weight: 650;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .docs-table th,
+  .docs-table td {
+    padding: 0.75rem 0.95rem;
+    text-align: left;
+    vertical-align: top;
+    border-top: 1px solid var(--border);
+  }
+
+  .docs-table caption + thead th {
+    border-top: 0;
+  }
+
+  .docs-table thead th {
+    background: var(--button-active-bg);
+    color: var(--text);
+    font-weight: 650;
+  }
+
+  .docs-table tbody th {
+    color: var(--text);
+    font-weight: 620;
   }
 
   .docs-subsection {
