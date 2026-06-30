@@ -41,7 +41,7 @@ import type { Memory } from "@/types/memory";
 import type { TimeRangePreset } from "@/types/time-range";
 const TERMINAL_BATCH_STATUSES = new Set(["SUCCEEDED", "FAILED", "DLQ"]);
 export const ANALYSIS_AUTO_REFRESH_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
-export const MAX_STALLED_POLL_ATTEMPTS = 80;
+export const MAX_STALLED_POLL_ATTEMPTS = 4;
 
 interface PollProgressState {
   nextCursor: number;
