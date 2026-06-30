@@ -10,6 +10,7 @@ import type {
 import { redactDebugPayload } from "../src/server/debug.js";
 import { buildHooks } from "../src/server/hooks.js";
 import { selectMessagesForIngest } from "../src/server/ingest/select.js";
+import { Mem9HttpError } from "../src/server/quota-error.js";
 import type {
   CreateMemoryInput,
   Memory,
@@ -361,6 +362,63 @@ test("buildHooks retries session.idle ingest after a previous failure", async ()
   await waitForBackgroundTasks();
 
   assert.equal(ingestCalls.length, 2);
+});
+
+test("buildHooks retries session.idle ingest after quota denial", async () => {
+  let attempt = 0;
+  const ingestCalls: IngestInput[] = [];
+  const logEvents: string[] = [];
+  const hooks = buildHooks(
+    createBackend({
+      async ingestImpl(input) {
+        attempt += 1;
+        ingestCalls.push(input);
+        if (attempt === 1) {
+          throw new Mem9HttpError(
+            "Included quota is exhausted.",
+            402,
+            "",
+            {
+              code: "quota_exhausted",
+              message: "Included quota is exhausted.",
+              details: {
+                mem9Code: "runtime_quota_denied",
+                recommendedAction: {
+                  bindingState: "unclaimed",
+                  type: "claimApiKey",
+                  url: "https://console.mem9.ai/console/claim?key=mem9_test",
+                },
+              },
+            },
+          );
+        }
+        return {
+          status: "ok",
+          memories_changed: 1,
+        };
+      },
+    }),
+    {
+      debugLogger: async (event) => {
+        logEvents.push(event);
+      },
+      loadSessionTranscript: async () => [
+        { role: "user", content: "Remember quota retry behavior." },
+        { role: "assistant", content: "I will retry after quota recovers." },
+      ],
+    },
+  );
+
+  const onEvent = hooks.event;
+  assert.ok(onEvent);
+
+  await onEvent(createSessionIdleEventInput("session-quota-retry"));
+  await waitForBackgroundTasks();
+  await onEvent(createSessionIdleEventInput("session-quota-retry"));
+  await waitForBackgroundTasks();
+
+  assert.equal(ingestCalls.length, 2);
+  assert.equal(logEvents.includes("ingest.quota_denied"), true);
 });
 
 test("buildHooks skips session.idle ingest when the transcript has no assistant message", async () => {

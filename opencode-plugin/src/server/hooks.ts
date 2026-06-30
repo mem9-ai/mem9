@@ -186,14 +186,16 @@ async function ingestSessionTranscript(
           sessionID,
           messageCount: selectedMessages.length,
         });
-        await submitMessagesForIngest({
+        const result = await submitMessagesForIngest({
           backend,
           messages: transcript,
           sessionID,
           agentID: state.agentID,
           debugLogger: options.debugLogger,
         });
-        state.lastIngestFingerprint = fingerprint;
+        if (result) {
+          state.lastIngestFingerprint = fingerprint;
+        }
       } finally {
         if (state.pendingIngestFingerprint === fingerprint) {
           state.pendingIngestFingerprint = null;
