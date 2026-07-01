@@ -269,6 +269,9 @@ export interface SiteApiPageCopy {
     sidebarTitle: string;
     sidebarAuth: string;
     sidebarQuickstart: string;
+    apiProduct: string;
+    webConsole: string;
+    yourMemory: string;
     apiSearch: string;
     apiSearchPlaceholder: string;
     apiSearchEmpty: string;
@@ -1702,6 +1705,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       sidebarTitle: 'On this page',
       sidebarAuth: 'Authentication',
       sidebarQuickstart: 'Quick Start',
+      apiProduct: 'API product',
+      webConsole: 'Web Console',
+      yourMemory: 'Your Memory',
       apiSearch: 'Search API',
       apiSearchPlaceholder: 'Search path or name',
       apiSearchEmpty: 'No matching APIs.',
@@ -1947,6 +1953,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       sidebarTitle: '本页目录',
       sidebarAuth: '认证',
       sidebarQuickstart: '快速开始',
+      apiProduct: 'API 产品',
+      webConsole: 'Web Console',
+      yourMemory: 'Your Memory',
       apiSearch: '搜索 API',
       apiSearchPlaceholder: '搜索 path 或名称',
       apiSearchEmpty: '没有匹配的 API。',
@@ -2182,6 +2191,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       sidebarTitle: '本頁目錄',
       sidebarAuth: '驗證',
       sidebarQuickstart: '快速開始',
+      apiProduct: 'API 產品',
+      webConsole: 'Web Console',
+      yourMemory: 'Your Memory',
       apiSearch: '搜尋 API',
       apiSearchPlaceholder: '搜尋 path 或名稱',
       apiSearchEmpty: '沒有符合的 API。',
@@ -2412,6 +2424,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       sidebarTitle: 'このページの内容',
       sidebarAuth: '認証',
       sidebarQuickstart: 'クイックスタート',
+      apiProduct: 'API 製品',
+      webConsole: 'Web Console',
+      yourMemory: 'Your Memory',
       apiSearch: 'API を検索',
       apiSearchPlaceholder: 'path または名前を検索',
       apiSearchEmpty: '一致する API はありません。',
@@ -2642,6 +2657,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       sidebarTitle: '이 페이지 목차',
       sidebarAuth: '인증',
       sidebarQuickstart: '빠른 시작',
+      apiProduct: 'API 제품',
+      webConsole: 'Web Console',
+      yourMemory: 'Your Memory',
       apiSearch: 'API 검색',
       apiSearchPlaceholder: 'path 또는 이름 검색',
       apiSearchEmpty: '일치하는 API가 없습니다.',
@@ -2872,6 +2890,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       sidebarTitle: 'Di halaman ini',
       sidebarAuth: 'Autentikasi',
       sidebarQuickstart: 'Quick Start',
+      apiProduct: 'Produk API',
+      webConsole: 'Web Console',
+      yourMemory: 'Your Memory',
       apiSearch: 'Cari API',
       apiSearchPlaceholder: 'Cari path atau nama',
       apiSearchEmpty: 'Tidak ada API yang cocok.',
@@ -3102,6 +3123,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       sidebarTitle: 'ในหน้านี้',
       sidebarAuth: 'การยืนยันตัวตน',
       sidebarQuickstart: 'เริ่มต้นอย่างรวดเร็ว',
+      apiProduct: 'ผลิตภัณฑ์ API',
+      webConsole: 'Web Console',
+      yourMemory: 'Your Memory',
       apiSearch: 'ค้นหา API',
       apiSearchPlaceholder: 'ค้นหา path หรือชื่อ',
       apiSearchEmpty: 'ไม่พบ API ที่ตรงกัน',

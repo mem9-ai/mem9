@@ -48,7 +48,7 @@ function endpointTestPayload(
     groupTitle: group.title,
     testBaseUrl: group.id.startsWith("your-memory-")
       ? "https://napi.mem9.ai"
-      : "https://api.mem9.ai",
+      : undefined,
     requestBasePath: group.id.startsWith("your-memory-")
       ? "/your-memory/analysis-api"
       : "",
@@ -85,9 +85,9 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
               </button>
               <nav class="api-toc surface-card">
                 <p class="api-toc-title">{copy.labels.sidebarTitle}</p>
-                <div class="api-product-tabs" role="tablist" aria-label="API product">
-                  <button class="api-product-tab" type="button" role="tab" data-api-product-tab="web-console" aria-selected={catalogId === "web-console"}>Web Console</button>
-                  <button class="api-product-tab" type="button" role="tab" data-api-product-tab="your-memory" aria-selected={catalogId === "your-memory"}>Your Memory</button>
+                <div class="api-product-tabs" role="tablist" aria-label={copy.labels.apiProduct}>
+                  <button class="api-product-tab" type="button" role="tab" data-api-product-tab="web-console" aria-selected={catalogId === "web-console"}>{copy.labels.webConsole}</button>
+                  <button class="api-product-tab" type="button" role="tab" data-api-product-tab="your-memory" aria-selected={catalogId === "your-memory"}>{copy.labels.yourMemory}</button>
                 </div>
                 <label class="api-toc-search">
                   <span class="api-toc-search-label">{copy.labels.apiSearch}</span>

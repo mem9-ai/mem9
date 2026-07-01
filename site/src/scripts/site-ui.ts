@@ -1211,13 +1211,12 @@ function initApiProductTabs(): void {
   root.querySelectorAll<HTMLButtonElement>('[data-api-product-tab]').forEach((button) => {
     button.addEventListener('click', () => {
       const product = button.dataset.apiProductTab;
-      const localeCopy = button.closest<HTMLElement>('[data-api-copy]');
-      if (!product || !localeCopy) return;
+      if (!product) return;
 
-      localeCopy.querySelectorAll<HTMLElement>('[data-api-catalog]').forEach((catalog) => {
+      root.querySelectorAll<HTMLElement>('[data-api-catalog]').forEach((catalog) => {
         catalog.hidden = catalog.dataset.apiCatalog !== product;
       });
-      localeCopy.querySelectorAll<HTMLButtonElement>('[data-api-product-tab]').forEach((tab) => {
+      root.querySelectorAll<HTMLButtonElement>('[data-api-product-tab]').forEach((tab) => {
         tab.setAttribute('aria-selected', String(tab.dataset.apiProductTab === product));
       });
       root.dispatchEvent(new CustomEvent('api-product-change'));
@@ -2010,7 +2009,7 @@ function defaultApiTestBaseUrl(endpoint?: ApiTestEndpoint): string {
   if (endpoint?.testBaseUrl) {
     return endpoint.testBaseUrl;
   }
-  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+  return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(window.location.hostname)
     ? 'http://localhost:8081'
     : 'https://api.mem9.ai';
 }
