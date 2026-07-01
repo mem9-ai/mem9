@@ -1362,6 +1362,8 @@ type ApiTestField = {
 
 type ApiTestEndpoint = {
   groupTitle: string;
+  testBaseUrl: string;
+  requestBasePath: string;
   method: string;
   path: string;
   summary: string;
@@ -1449,6 +1451,8 @@ function parseApiTestEndpoint(value: string | undefined): ApiTestEndpoint | null
 
     return {
       groupTitle: typeof parsed.groupTitle === 'string' ? parsed.groupTitle : '',
+      testBaseUrl: typeof parsed.testBaseUrl === 'string' ? parsed.testBaseUrl : '',
+      requestBasePath: typeof parsed.requestBasePath === 'string' ? parsed.requestBasePath : '',
       method: parsed.method.toUpperCase(),
       path: parsed.path,
       summary: parsed.summary,
@@ -1573,6 +1577,30 @@ function formatApiTestOutput(text: string): string {
 function apiTestInputValue(fieldName: string): unknown {
   const lowerName = fieldName.toLowerCase();
 
+  if (lowerName.endsWith('daterange.start') || lowerName.endsWith('createdat')) {
+    return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  if (lowerName.endsWith('daterange.end')) {
+    return new Date().toISOString();
+  }
+
+  if (lowerName.includes('expectedtotalmemories') || lowerName.includes('expectedtotalbatches') || lowerName.endsWith('batchsize') || lowerName.endsWith('memorycount')) {
+    return 1;
+  }
+
+  if (lowerName.endsWith('llmenabled') || lowerName.endsWith('includeitems') || lowerName.endsWith('includesummary')) {
+    return true;
+  }
+
+  if (lowerName.endsWith('taxonomyversion')) {
+    return 'v3';
+  }
+
+  if (lowerName.endsWith('.lang') || lowerName === 'lang') {
+    return 'en';
+  }
+
   if (lowerName.includes('limit')) {
     return 10;
   }
@@ -1612,9 +1640,42 @@ function apiTestInputValue(fieldName: string): unknown {
   return '';
 }
 
+function setApiTestJsonValue(body: Record<string, unknown>, fieldName: string, value: unknown): void {
+  const segments = fieldName.split('.').filter(Boolean);
+  let current = body;
+
+  segments.forEach((rawSegment, index) => {
+    const isArray = rawSegment.endsWith('[]');
+    const key = isArray ? rawSegment.slice(0, -2) : rawSegment;
+    if (key === '' || ['__proto__', 'prototype', 'constructor'].includes(key)) {
+      return;
+    }
+
+    const isLast = index === segments.length - 1;
+    if (isLast) {
+      current[key] = isArray && !Array.isArray(value) ? [value] : value;
+      return;
+    }
+
+    if (isArray) {
+      const existing = current[key];
+      if (!Array.isArray(existing) || !isRecord(existing[0])) {
+        current[key] = [{}];
+      }
+      current = (current[key] as Array<Record<string, unknown>>)[0];
+      return;
+    }
+
+    if (!isRecord(current[key])) {
+      current[key] = {};
+    }
+    current = current[key] as Record<string, unknown>;
+  });
+}
+
 function buildApiTestJsonTemplate(fields: ApiTestField[]): string {
   const body = fields.reduce<Record<string, unknown>>((current, field) => {
-    current[field.name] = apiTestInputValue(field.name);
+    setApiTestJsonValue(current, field.name, apiTestInputValue(field.name));
     return current;
   }, {});
 
@@ -1882,7 +1943,11 @@ function restoreApiTestSavedForm(elements: ApiTestModalElements, endpoint: ApiTe
     return;
   }
 
-  if (saved.baseUrl.trim() !== '') {
+  const savedBaseUrl = saved.baseUrl.trim();
+  const isOldYourMemoryProxyUrl = endpoint.requestBasePath !== ''
+    && (savedBaseUrl === '/your-memory/analysis-api'
+      || savedBaseUrl === 'https://mem9.ai/your-memory/analysis-api');
+  if (savedBaseUrl !== '' && !isOldYourMemoryProxyUrl) {
     elements.baseUrl.value = saved.baseUrl;
   }
 
@@ -1897,14 +1962,22 @@ function restoreApiTestSavedForm(elements: ApiTestModalElements, endpoint: ApiTe
 
 function buildApiTestUrl(elements: ApiTestModalElements, endpoint: ApiTestEndpoint): URL {
   const base = elements.baseUrl.value.trim().replace(/\/+$/u, '');
-  const baseUrl = base === '' ? defaultApiTestBaseUrl() : base;
+  const baseUrl = base === '' ? defaultApiTestBaseUrl(endpoint) : base;
+  const enteredUrl = new URL(baseUrl, window.location.origin);
+  const absoluteBaseUrl = new URL(`${baseUrl}/`, window.location.origin);
   const resolvedPath = endpoint.path.replace(/\{([^}]+)\}/g, (match, name: string) => {
     const input = Array.from(document.querySelectorAll<HTMLInputElement>('[data-api-test-scope="path"]'))
       .find((candidate) => candidate.dataset.apiTestName === name);
     const value = input?.value.trim() ?? '';
     return value === '' ? match : encodeURIComponent(value);
   });
-  const url = new URL(resolvedPath, `${baseUrl}/`);
+  const normalizedResolvedPath = `/${resolvedPath.replace(/^\/+|\/+$/gu, '')}`;
+  const normalizedBasePath = absoluteBaseUrl.pathname.replace(/\/+$/u, '') || '/';
+  const baseAlreadyIncludesEndpoint = normalizedBasePath === normalizedResolvedPath
+    || normalizedBasePath.endsWith(normalizedResolvedPath);
+  const url = baseAlreadyIncludesEndpoint
+    ? enteredUrl
+    : new URL(resolvedPath.replace(/^\/+/, ''), absoluteBaseUrl);
 
   readApiTestTextInputs('query').forEach(({ name, value }) => {
     if (value !== '') {
@@ -1915,7 +1988,28 @@ function buildApiTestUrl(elements: ApiTestModalElements, endpoint: ApiTestEndpoi
   return url;
 }
 
-function defaultApiTestBaseUrl(): string {
+function buildApiTestRequestUrl(displayUrl: URL, endpoint: ApiTestEndpoint): URL {
+  if (endpoint.requestBasePath === '') {
+    return displayUrl;
+  }
+
+  const siteOrigin = window.location.origin.replace(/\/+$/u, '');
+  const requestBasePath = endpoint.requestBasePath.replace(/^\/+|\/+$/gu, '');
+  const displayBaseUrl = endpoint.testBaseUrl.replace(/\/+$/u, '');
+  const displayUrlText = displayUrl.toString();
+  const requestBaseUrl = `${siteOrigin}/${requestBasePath}`;
+
+  if (displayUrlText.startsWith(displayBaseUrl)) {
+    return new URL(`${requestBaseUrl}${displayUrlText.slice(displayBaseUrl.length)}`);
+  }
+
+  return displayUrl;
+}
+
+function defaultApiTestBaseUrl(endpoint?: ApiTestEndpoint): string {
+  if (endpoint?.testBaseUrl) {
+    return endpoint.testBaseUrl;
+  }
   return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
     ? 'http://localhost:8081'
     : 'https://api.mem9.ai';
@@ -1937,9 +2031,7 @@ function openApiTestModal(elements: ApiTestModalElements, endpoint: ApiTestEndpo
   const multipart = isApiTestMultipart(endpoint);
   const labels = apiTestLabels();
   activeApiTestEndpoint = endpoint;
-  if (elements.baseUrl.value.trim() === '') {
-    elements.baseUrl.value = defaultApiTestBaseUrl();
-  }
+  elements.baseUrl.value = defaultApiTestBaseUrl(endpoint);
   elements.title.textContent = endpoint.summary;
   elements.method.textContent = `${endpoint.method} · ${endpoint.groupTitle}`;
   elements.path.textContent = endpoint.path;
@@ -2018,6 +2110,7 @@ async function runApiTest(elements: ApiTestModalElements): Promise<void> {
   }
 
   const url = buildApiTestUrl(elements, endpoint);
+  const requestUrl = buildApiTestRequestUrl(url, endpoint);
   const startedAt = performance.now();
   elements.run.disabled = true;
   elements.run.textContent = labels.running;
@@ -2026,7 +2119,7 @@ async function runApiTest(elements: ApiTestModalElements): Promise<void> {
   elements.output.textContent = '';
 
   try {
-    const response = await fetch(url.toString(), {
+    const response = await fetch(requestUrl.toString(), {
       method: endpoint.method,
       headers,
       body: ['GET', 'HEAD'].includes(endpoint.method) ? undefined : body,

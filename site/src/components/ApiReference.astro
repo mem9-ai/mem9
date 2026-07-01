@@ -32,7 +32,7 @@ function endpointAnchor(groupId: string, endpoint: { method: string; path: strin
 }
 
 function endpointTestPayload(
-  group: { title: string },
+  group: { id: string; title: string },
   endpoint: {
     method: string;
     path: string;
@@ -46,6 +46,12 @@ function endpointTestPayload(
 ): string {
   return JSON.stringify({
     groupTitle: group.title,
+    testBaseUrl: group.id.startsWith("your-memory-")
+      ? "https://napi.mem9.ai"
+      : "https://api.mem9.ai",
+    requestBasePath: group.id.startsWith("your-memory-")
+      ? "/your-memory/analysis-api"
+      : "",
     method: endpoint.method,
     path: endpoint.path,
     summary: endpoint.summary,
@@ -530,38 +536,6 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
     letter-spacing: 0.05em;
     color: var(--accent);
     margin-bottom: 0.9rem;
-  }
-
-  .api-product-tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.3rem;
-    margin-bottom: 0.9rem;
-    padding: 0.25rem;
-    border: 1px solid var(--border);
-    border-radius: 0.78rem;
-    background: var(--button-bg);
-    box-shadow: var(--surface-inset);
-  }
-
-  .api-product-tab {
-    min-width: 0;
-    padding: 0.48rem 0.35rem;
-    border: 1px solid transparent;
-    border-radius: 0.58rem;
-    background: transparent;
-    color: var(--text-muted);
-    font: inherit;
-    font-size: 0.75rem;
-    font-weight: 700;
-    cursor: pointer;
-  }
-
-  .api-product-tab[aria-selected='true'] {
-    border-color: var(--border-strong);
-    background: var(--button-active-bg);
-    color: var(--text);
-    box-shadow: var(--surface-shadow-soft);
   }
 
   .api-toc-search {
