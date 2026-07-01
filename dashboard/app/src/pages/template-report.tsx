@@ -220,7 +220,7 @@ export function TemplateReportPage() {
 
         {reportView.memoryCount === 0 || !reportView.dimensions.length ? (
           <section className="mt-10 rounded-[24px] border border-[#3b334d] bg-[#12111b]/90 p-8 text-center shadow-[0_18px_70px_rgba(0,0,0,0.34)]">
-            <h2 className="text-2xl font-black">报告不可用</h2>
+            <h2 className="text-2xl font-black">暂无周期报告数据</h2>
             <p className="mt-3 text-sm font-semibold leading-7 text-[#a7a1b8]">
               选择报告中的 session 记忆不足以形成洞察。
             </p>
