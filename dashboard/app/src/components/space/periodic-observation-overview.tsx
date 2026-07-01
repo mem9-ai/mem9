@@ -820,7 +820,7 @@ function ObservationState({
 function Metric({ label, value, icon }: { label: string; value: string; icon?: ReactNode }) {
   return (
     <span className="inline-flex items-center gap-2 rounded-xl border border-foreground/8 bg-background/35 px-3 py-2 text-sm">
-      <span className="text-soft-foreground">{icon}</span>
+      {icon ? <span className="text-soft-foreground">{icon}</span> : null}
       <span className="text-muted-foreground">{label}</span>
       <strong>{value}</strong>
     </span>
