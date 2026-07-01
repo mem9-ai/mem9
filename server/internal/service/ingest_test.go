@@ -38,9 +38,13 @@ type memoryRepoMock struct {
 	lastAutoVectorFilter domain.MemoryFilter
 	lastKeywordFilter    domain.MemoryFilter
 	lastFTSFilter        domain.MemoryFilter
+	vectorSearchHook     func(context.Context, []float32, domain.MemoryFilter, int) ([]domain.Memory, error)
 	autoVectorSearchHook func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	ftsSearchHook        func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
+	embeddingLookup      map[string][]float32
+	embeddingLookupErr   error
+	embeddingLookupCalls [][]string
 	bulkSoftDeleteCalls  [][]string
 	bulkSoftDeleteAgent  string
 	bulkSoftDeleteResult int64
@@ -1313,9 +1317,13 @@ func (m *memoryRepoMock) BulkCreate(ctx context.Context, memories []*domain.Memo
 func (m *memoryRepoMock) VectorSearch(ctx context.Context, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
 	m.mu.Lock()
 	m.lastVectorFilter = f
+	hook := m.vectorSearchHook
 	vectorErr := m.vectorErr
 	vectorResults := m.vectorResults
 	m.mu.Unlock()
+	if hook != nil {
+		return hook(ctx, queryVec, f, limit)
+	}
 	if vectorErr != nil {
 		return nil, vectorErr
 	}
@@ -1481,6 +1489,27 @@ func TestDropQueryIntentFacts(t *testing.T) {
 }
 
 func (m *memoryRepoMock) CountStats(ctx context.Context) (int64, int64, error) { return 0, 0, nil }
+
+func (m *memoryRepoMock) GetEmbeddingsByID(ctx context.Context, ids []string) (map[string][]float32, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	copiedIDs := append([]string(nil), ids...)
+	m.embeddingLookupCalls = append(m.embeddingLookupCalls, copiedIDs)
+	if m.embeddingLookupErr != nil {
+		return nil, m.embeddingLookupErr
+	}
+
+	result := make(map[string][]float32, len(ids))
+	for _, id := range ids {
+		embedding := m.embeddingLookup[id]
+		if len(embedding) == 0 {
+			continue
+		}
+		result[id] = append([]float32(nil), embedding...)
+	}
+	return result, nil
+}
 
 func TestStripInjectedContext(t *testing.T) {
 	t.Parallel()

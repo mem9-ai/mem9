@@ -47,6 +47,10 @@ type MemoryService struct {
 	ingest    *IngestService
 }
 
+type memoryEmbeddingLookup interface {
+	GetEmbeddingsByID(ctx context.Context, ids []string) (map[string][]float32, error)
+}
+
 func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, embedder *embed.Embedder, autoModel string, ingestMode IngestMode) *MemoryService {
 	return &MemoryService{
 		memories:  memories,
@@ -788,6 +792,7 @@ func (s *MemoryService) secondHopAutoSearch(
 	for _, m := range seeds {
 		seedIDs[m.ID] = struct{}{}
 	}
+	s.hydrateSecondHopSeedEmbeddings(ctx, seeds)
 
 	// Launch concurrent second-hop searches using first-hop embeddings
 	// to avoid redundant embedding API calls.
@@ -850,6 +855,43 @@ func (s *MemoryService) secondHopAutoSearch(
 		return bestScore[result[i].ID] > bestScore[result[j].ID]
 	})
 	return result
+}
+
+func (s *MemoryService) hydrateSecondHopSeedEmbeddings(ctx context.Context, seeds []domain.Memory) {
+	lookup, ok := s.memories.(memoryEmbeddingLookup)
+	if !ok {
+		return
+	}
+
+	ids := make([]string, 0, len(seeds))
+	seen := make(map[string]struct{}, len(seeds))
+	for _, seed := range seeds {
+		if len(seed.Embedding) > 0 || seed.ID == "" {
+			continue
+		}
+		if _, exists := seen[seed.ID]; exists {
+			continue
+		}
+		seen[seed.ID] = struct{}{}
+		ids = append(ids, seed.ID)
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	embeddings, err := lookup.GetEmbeddingsByID(ctx, ids)
+	if err != nil {
+		slog.WarnContext(ctx, "second-hop seed embedding lookup failed", "err", err)
+		return
+	}
+	for i := range seeds {
+		if len(seeds[i].Embedding) > 0 {
+			continue
+		}
+		if embedding := embeddings[seeds[i].ID]; len(embedding) > 0 {
+			seeds[i].Embedding = embedding
+		}
+	}
 }
 
 func collectMems(kwResults, vecResults []domain.Memory) map[string]domain.Memory {
