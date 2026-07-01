@@ -7,6 +7,7 @@ import {
   type SiteApiFieldCopy,
   type SiteLinkCopy,
 } from "../content/site";
+import { yourMemoryApiPage } from "../content/your-memory-api";
 
 function linkTarget(link: SiteLinkCopy): string | undefined {
   return link.external ? "_blank" : undefined;
@@ -38,6 +39,7 @@ function endpointTestPayload(
     summary: string;
     description?: string;
     headers?: SiteApiFieldCopy[];
+    pathParams?: SiteApiFieldCopy[];
     queryParams?: SiteApiFieldCopy[];
     bodyFields?: SiteApiFieldCopy[];
   },
@@ -49,6 +51,7 @@ function endpointTestPayload(
     summary: endpoint.summary,
     description: endpoint.description ?? "",
     headers: endpoint.headers ?? [],
+    pathParams: endpoint.pathParams ?? [],
     queryParams: endpoint.queryParams ?? [],
     bodyFields: endpoint.bodyFields ?? [],
   });
@@ -59,10 +62,15 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 
 <section class="api-page" data-api-root data-api-locale={DEFAULT_LOCALE}>
   {siteLocales.map((locale) => {
-    const copy = localizeApiPageCopy(locale, siteCopy[locale].apiPage);
+    const webCopy = localizeApiPageCopy(locale, siteCopy[locale].apiPage);
+    const catalogs = [
+      { id: "web-console", copy: webCopy, authAnchor: "api-auth", quickstartAnchor: "api-quickstart" },
+      { id: "your-memory", copy: yourMemoryApiPage(locale, webCopy), authAnchor: "api-your-memory-auth", quickstartAnchor: "api-your-memory-quickstart" },
+    ];
     return (
       <div class="api-copy" data-api-copy={locale} hidden={locale !== DEFAULT_LOCALE}>
-        <div class="container api-shell">
+        {catalogs.map(({ id: catalogId, copy, authAnchor, quickstartAnchor }) => (
+        <div class="container api-shell" data-api-catalog={catalogId} hidden={catalogId !== "web-console"}>
           <div class="api-layout">
             <aside class="api-sidebar">
               <button class="api-toc-toggle" data-api-toc-toggle type="button">
@@ -71,6 +79,10 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
               </button>
               <nav class="api-toc surface-card">
                 <p class="api-toc-title">{copy.labels.sidebarTitle}</p>
+                <div class="api-product-tabs" role="tablist" aria-label="API product">
+                  <button class="api-product-tab" type="button" role="tab" data-api-product-tab="web-console" aria-selected={catalogId === "web-console"}>Web Console</button>
+                  <button class="api-product-tab" type="button" role="tab" data-api-product-tab="your-memory" aria-selected={catalogId === "your-memory"}>Your Memory</button>
+                </div>
                 <label class="api-toc-search">
                   <span class="api-toc-search-label">{copy.labels.apiSearch}</span>
                   <input
@@ -84,10 +96,10 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
                 <p class="api-toc-empty" data-api-toc-empty hidden>{copy.labels.apiSearchEmpty}</p>
                 <ol class="api-toc-list">
                   <li data-api-toc-static>
-                    <a href="#api-auth" class="api-toc-link">{copy.labels.sidebarAuth}</a>
+                    <a href={`#${authAnchor}`} class="api-toc-link">{copy.labels.sidebarAuth}</a>
                   </li>
                   <li data-api-toc-static>
-                    <a href="#api-quickstart" class="api-toc-link">{copy.labels.sidebarQuickstart}</a>
+                    <a href={`#${quickstartAnchor}`} class="api-toc-link">{copy.labels.sidebarQuickstart}</a>
                   </li>
                   {copy.endpointGroups.map((group) => (
                     <li
@@ -147,8 +159,8 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 
               <section
                 class="api-section"
-                id={locale === DEFAULT_LOCALE ? "api-auth" : undefined}
-                data-api-anchor="api-auth"
+                id={locale === DEFAULT_LOCALE ? authAnchor : undefined}
+                data-api-anchor={authAnchor}
               >
                 <div class="api-section-head">
                   <h2 class="api-section-title">{copy.authTitle}</h2>
@@ -165,8 +177,8 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 
               <section
                 class="api-section"
-                id={locale === DEFAULT_LOCALE ? "api-quickstart" : undefined}
-                data-api-anchor="api-quickstart"
+                id={locale === DEFAULT_LOCALE ? quickstartAnchor : undefined}
+                data-api-anchor={quickstartAnchor}
               >
                 <div class="api-section-head">
                   <h2 class="api-section-title">{copy.quickstartTitle}</h2>
@@ -264,6 +276,23 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
                             </section>
                           )}
 
+                          {hasFields(endpoint.pathParams) && (
+                            <section class="api-field-block">
+                              <h3 class="api-field-title">{copy.labels.pathParams}</h3>
+                              <dl class="api-field-list">
+                                {endpoint.pathParams.map((field) => (
+                                  <div class="api-field-row">
+                                    <dt>
+                                      <code>{field.name}</code>
+                                      {field.required && <span class="api-required">{copy.labels.required}</span>}
+                                    </dt>
+                                    <dd>{field.description}</dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            </section>
+                          )}
+
                           {hasFields(endpoint.bodyFields) && (
                             <section class="api-field-block">
                               <h3 class="api-field-title">{copy.labels.body}</h3>
@@ -335,6 +364,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
             </div>
           </div>
         </div>
+        ))}
       </div>
     );
   })}
@@ -439,6 +469,10 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
     display: grid;
   }
 
+  .api-shell[hidden] {
+    display: none;
+  }
+
   .api-hero {
     width: min(100%, 72rem);
     display: grid;
@@ -496,6 +530,38 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
     letter-spacing: 0.05em;
     color: var(--accent);
     margin-bottom: 0.9rem;
+  }
+
+  .api-product-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.3rem;
+    margin-bottom: 0.9rem;
+    padding: 0.25rem;
+    border: 1px solid var(--border);
+    border-radius: 0.78rem;
+    background: var(--button-bg);
+    box-shadow: var(--surface-inset);
+  }
+
+  .api-product-tab {
+    min-width: 0;
+    padding: 0.48rem 0.35rem;
+    border: 1px solid transparent;
+    border-radius: 0.58rem;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .api-product-tab[aria-selected='true'] {
+    border-color: var(--border-strong);
+    background: var(--button-active-bg);
+    color: var(--text);
+    box-shadow: var(--surface-shadow-soft);
   }
 
   .api-toc-search {

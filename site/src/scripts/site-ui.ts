@@ -1134,7 +1134,7 @@ function initApiScrollSpy(): void {
       observer.disconnect();
     }
 
-    const activeCopy = root!.querySelector<HTMLElement>('[data-api-copy]:not([hidden])');
+    const activeCopy = root!.querySelector<HTMLElement>('[data-api-copy]:not([hidden]) [data-api-catalog]:not([hidden])');
     if (!activeCopy) {
       return;
     }
@@ -1199,6 +1199,30 @@ function initApiScrollSpy(): void {
   mutation.observe(root, {
     attributes: true,
     attributeFilter: ['data-api-locale'],
+  });
+
+  root.addEventListener('api-product-change', setup);
+}
+
+function initApiProductTabs(): void {
+  const root = document.querySelector<HTMLElement>('[data-api-root]');
+  if (!root) return;
+
+  root.querySelectorAll<HTMLButtonElement>('[data-api-product-tab]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const product = button.dataset.apiProductTab;
+      const localeCopy = button.closest<HTMLElement>('[data-api-copy]');
+      if (!product || !localeCopy) return;
+
+      localeCopy.querySelectorAll<HTMLElement>('[data-api-catalog]').forEach((catalog) => {
+        catalog.hidden = catalog.dataset.apiCatalog !== product;
+      });
+      localeCopy.querySelectorAll<HTMLButtonElement>('[data-api-product-tab]').forEach((tab) => {
+        tab.setAttribute('aria-selected', String(tab.dataset.apiProductTab === product));
+      });
+      root.dispatchEvent(new CustomEvent('api-product-change'));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
   });
 }
 
@@ -1295,7 +1319,7 @@ function initApiTocSearch(): void {
     empty.hidden = !hasQuery || visibleGroups > 0;
   }
 
-  document.querySelectorAll<HTMLElement>('[data-api-copy]').forEach((sectionCopy) => {
+  document.querySelectorAll<HTMLElement>('[data-api-catalog]').forEach((sectionCopy) => {
     const input = sectionCopy.querySelector<HTMLInputElement>('[data-api-toc-search]');
     if (!input) {
       return;
@@ -1307,7 +1331,7 @@ function initApiTocSearch(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-api-toc-group-toggle]').forEach((toggle) => {
     toggle.addEventListener('click', () => {
       const group = toggle.closest<HTMLElement>('[data-api-toc-group]');
-      const sectionCopy = toggle.closest<HTMLElement>('[data-api-copy]');
+      const sectionCopy = toggle.closest<HTMLElement>('[data-api-catalog]');
       const input = sectionCopy?.querySelector<HTMLInputElement>('[data-api-toc-search]');
       if (!group || (input && input.value.trim() !== '')) {
         return;
@@ -1318,7 +1342,7 @@ function initApiTocSearch(): void {
   });
 
   const mutation = new MutationObserver(() => {
-    const activeCopy = root.querySelector<HTMLElement>('[data-api-copy]:not([hidden])');
+    const activeCopy = root.querySelector<HTMLElement>('[data-api-copy]:not([hidden]) [data-api-catalog]:not([hidden])');
     if (activeCopy) {
       applyFilter(activeCopy);
     }
@@ -2124,6 +2148,7 @@ export function initSiteUI(): void {
   }
 
   if (isApiPage()) {
+    initApiProductTabs();
     initApiScrollSpy();
     initApiTocSearch();
     initApiMobileToc();

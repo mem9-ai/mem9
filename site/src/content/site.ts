@@ -238,6 +238,7 @@ export interface SiteApiEndpointCopy {
   description?: string;
   notes?: string[];
   headers?: SiteApiFieldCopy[];
+  pathParams?: SiteApiFieldCopy[];
   queryParams?: SiteApiFieldCopy[];
   bodyFields?: SiteApiFieldCopy[];
   responseFields?: SiteApiFieldCopy[];
@@ -6049,6 +6050,7 @@ function localizeApiEndpoint(locale: SiteLocale, endpoint: SiteApiEndpointCopy):
     description: endpoint.description ? localizeApiSharedText(locale, endpoint.description) : undefined,
     notes: endpoint.notes?.map((note) => localizeApiSharedText(locale, note)),
     headers: localizeApiFields(locale, endpoint.headers),
+    pathParams: localizeApiFields(locale, endpoint.pathParams),
     queryParams: localizeApiFields(locale, endpoint.queryParams),
     bodyFields: localizeApiFields(locale, endpoint.bodyFields),
     responseFields: localizeApiFields(locale, endpoint.responseFields),
