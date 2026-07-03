@@ -703,11 +703,57 @@ test("formatRuntimeQuotaNotice renders post-quota billing action when provided",
   );
 
   assert.match(notice, /Mem9 memory saving is temporarily unavailable/);
-  assert.match(notice, /upgrade their mem9 plan or set up billing/);
+  assert.match(notice, /upgrade their mem9 plan and get more included usage/);
   assert.match(notice, /console\/billing\/plan/);
   assert.doesNotMatch(notice, /wait 1 second before trying again/);
   assert.equal(
     notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,
+    1,
+  );
+});
+
+test("formatRuntimeQuotaNotice renders post-quota claim action when provided", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "Post-quota rate limit exceeded.",
+      429,
+      "",
+      {
+        code: "post_quota_rate_limited",
+        message: "Post-quota rate limit exceeded.",
+        details: {
+          mem9Code: "runtime_quota_denied",
+          retryable: true,
+          meter: "memory_recall_requests",
+          recommendedAction: {
+            bindingState: "unclaimed",
+            type: "claimApiKey",
+            url: "https://console.mem9.ai/console/claim?key=mem9_test",
+          },
+          quotaGateResult: {
+            outcome: "rateLimited",
+            mode: "postQuota",
+            reason: "postQuotaRateLimitExceeded",
+            postQuotaRateLimit: {
+              requestsPerMinute: 4,
+              windowDurationSeconds: 60,
+              scope: "apiKeyMeter",
+              retryAfterSeconds: 23,
+            },
+          },
+        },
+      },
+    ),
+    "recall paused",
+  );
+
+  assert.match(notice, /temporary request limit/);
+  assert.match(notice, /sign in or create a mem9 account and claim this API key/);
+  assert.match(notice, /After claiming the key, they can upgrade their plan or set up billing/);
+  assert.match(notice, /console\/claim\?key=mem9_test/);
+  assert.doesNotMatch(notice, /console\/billing\/plan/);
+  assert.equal(
+    notice.match(/https:\/\/console\.mem9\.ai\/console\/claim\?key=mem9_test/g)?.length,
     1,
   );
 });

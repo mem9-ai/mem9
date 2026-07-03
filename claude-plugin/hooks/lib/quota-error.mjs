@@ -112,11 +112,11 @@ function quotaNoticeSubject(quotaDenied, operation) {
 }
 
 function actionInstruction(quotaDenied) {
-  if (isPostQuotaRateLimited(quotaDenied)) {
-    const billingUrl = quotaDenied.actionUrl || DEFAULT_BILLING_ACTION_URL;
-    return `Ask them to open this link to upgrade their mem9 plan or set up billing for higher usage limits: ${billingUrl}. Include the link exactly as written.`;
-  }
   if (!quotaDenied.actionUrl) {
+    if (isPostQuotaRateLimited(quotaDenied)) {
+      const billingUrl = quotaDenied.actionUrl || DEFAULT_BILLING_ACTION_URL;
+      return `Ask them to open this link to upgrade their mem9 plan or set up billing for higher usage limits: ${billingUrl}. Include the link exactly as written.`;
+    }
     return "Ask them to open the mem9 console to resolve the account or billing state.";
   }
 

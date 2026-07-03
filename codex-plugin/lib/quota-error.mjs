@@ -167,8 +167,9 @@ function actionUrlForDenied(denied) {
 function actionInstruction(denied) {
   const action = denied.recommendedAction;
   const actionType = normalizeString(action?.type);
+  const explicitActionUrl = normalizeString(action?.url);
   const actionUrl = actionUrlForDenied(denied);
-  if (isPostQuotaRateLimited(denied)) {
+  if (!explicitActionUrl && isPostQuotaRateLimited(denied)) {
     return `Ask them to open this link to upgrade their mem9 plan or set up billing for higher usage limits: ${actionUrl}. Include the link exactly as written.`;
   }
   if (!actionUrl) {
