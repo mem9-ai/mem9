@@ -657,8 +657,7 @@ test("formatRuntimeQuotaNotice renders post-quota rate limit retry guidance", ()
     "recall paused",
   );
 
-  assert.match(notice, /post-quota mode/);
-  assert.match(notice, /temporary rate limit/);
+  assert.match(notice, /temporary request limit/);
   assert.match(notice, /wait 23 seconds before trying again/);
   assert.doesNotMatch(notice, /open the mem9 console/);
 });
@@ -700,7 +699,7 @@ test("formatRuntimeQuotaNotice renders post-quota billing action when provided",
 
   assert.match(notice, /Mem9 memory saving is temporarily unavailable/);
   assert.match(notice, /wait 1 second before trying again/);
-  assert.match(notice, /more continuous mem9 usage/);
+  assert.match(notice, /higher mem9 usage limits/);
   assert.match(notice, /console\/billing\/plan/);
   assert.equal(
     notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,

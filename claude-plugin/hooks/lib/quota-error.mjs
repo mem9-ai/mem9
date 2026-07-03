@@ -56,7 +56,7 @@ function isPostQuotaRateLimited(quotaDenied) {
 
 function quotaReason(quotaDenied) {
   if (isPostQuotaRateLimited(quotaDenied)) {
-    return "this API key is in post-quota mode and its temporary rate limit for this memory meter has been reached";
+    return "this API key has reached the temporary request limit for this memory feature";
   }
   if (quotaDenied.actionType === "claimApiKey") {
     return "the included usage quota for this API key has been used up";
@@ -124,7 +124,7 @@ function actionInstruction(quotaDenied) {
     if (!quotaDenied.actionUrl) {
       return retry;
     }
-    return `${retry} If they need more continuous mem9 usage, ask them to open this link to adjust billing or upgrade their plan: ${quotaDenied.actionUrl}. Include the link exactly as written.`;
+    return `${retry} If they need higher mem9 usage limits, ask them to open this link to adjust billing or upgrade their plan: ${quotaDenied.actionUrl}. Include the link exactly as written.`;
   }
   if (!quotaDenied.actionUrl) {
     return "Ask them to open the mem9 console to resolve the account or billing state.";
