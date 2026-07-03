@@ -10,6 +10,7 @@ const QUOTA_CODES = new Set([
   "runtime_access_blocked",
   "runtime_quota_denied",
 ]);
+const DEFAULT_BILLING_ACTION_URL = "https://console.mem9.ai/console/billing/plan";
 
 function isRecord(value) {
   return value != null && typeof value === "object" && !Array.isArray(value);
@@ -110,21 +111,10 @@ function quotaNoticeSubject(quotaDenied, operation) {
   };
 }
 
-function retryInstruction(quotaDenied) {
-  if (quotaDenied.retryAfterSeconds != null) {
-    const unit = quotaDenied.retryAfterSeconds === 1 ? "second" : "seconds";
-    return `Ask them to wait ${quotaDenied.retryAfterSeconds} ${unit} before trying again.`;
-  }
-  return "Ask them to wait briefly before trying again.";
-}
-
 function actionInstruction(quotaDenied) {
   if (isPostQuotaRateLimited(quotaDenied)) {
-    const retry = retryInstruction(quotaDenied);
-    if (!quotaDenied.actionUrl) {
-      return retry;
-    }
-    return `${retry} If they need higher mem9 usage limits, ask them to open this link to adjust billing or upgrade their plan: ${quotaDenied.actionUrl}. Include the link exactly as written.`;
+    const billingUrl = quotaDenied.actionUrl || DEFAULT_BILLING_ACTION_URL;
+    return `Ask them to open this link to upgrade their mem9 plan or set up billing for higher usage limits: ${billingUrl}. Include the link exactly as written.`;
   }
   if (!quotaDenied.actionUrl) {
     return "Ask them to open the mem9 console to resolve the account or billing state.";

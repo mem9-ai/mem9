@@ -9,6 +9,7 @@ const QUOTA_CODES = new Set([
   "runtime_access_blocked",
   "runtime_quota_denied",
 ]);
+const DEFAULT_BILLING_ACTION_URL = "https://console.mem9.ai/console/billing/plan";
 
 function isRecord(value) {
   return value != null && typeof value === "object" && !Array.isArray(value);
@@ -155,24 +156,20 @@ function quotaNoticeSubject(denied, operation) {
   };
 }
 
-function retryInstruction(denied) {
-  if (denied.retryAfterSeconds != null) {
-    const unit = denied.retryAfterSeconds === 1 ? "second" : "seconds";
-    return `Ask them to wait ${denied.retryAfterSeconds} ${unit} before trying again.`;
+function actionUrlForDenied(denied) {
+  const actionUrl = normalizeString(denied.recommendedAction?.url);
+  if (actionUrl) {
+    return actionUrl;
   }
-  return "Ask them to wait briefly before trying again.";
+  return isPostQuotaRateLimited(denied) ? DEFAULT_BILLING_ACTION_URL : "";
 }
 
 function actionInstruction(denied) {
   const action = denied.recommendedAction;
   const actionType = normalizeString(action?.type);
-  const actionUrl = normalizeString(action?.url);
+  const actionUrl = actionUrlForDenied(denied);
   if (isPostQuotaRateLimited(denied)) {
-    const retry = retryInstruction(denied);
-    if (!actionUrl) {
-      return retry;
-    }
-    return `${retry} If they need higher mem9 usage limits, ask them to open this link to adjust billing or upgrade their plan: ${actionUrl}. Include the link exactly as written.`;
+    return `Ask them to open this link to upgrade their mem9 plan or set up billing for higher usage limits: ${actionUrl}. Include the link exactly as written.`;
   }
   if (!actionUrl) {
     return "Ask them to open the mem9 console to resolve the account or billing state.";
@@ -225,6 +222,7 @@ export function runtimeQuotaDeniedSummary(value) {
   if (!denied) {
     return null;
   }
+  const actionUrl = actionUrlForDenied(denied);
 
   return {
     status: "quota_denied",
@@ -232,6 +230,7 @@ export function runtimeQuotaDeniedSummary(value) {
     message: denied.message,
     ...(denied.retryAfterSeconds != null ? { retryAfterSeconds: denied.retryAfterSeconds } : {}),
     ...(denied.recommendedAction ? { recommendedAction: denied.recommendedAction } : {}),
+    ...(actionUrl ? { actionUrl } : {}),
   };
 }
 

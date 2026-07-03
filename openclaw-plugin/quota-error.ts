@@ -5,6 +5,7 @@ const QUOTA_CODES = new Set([
   "runtime_access_blocked",
   "runtime_quota_denied",
 ]);
+const DEFAULT_BILLING_ACTION_URL = "https://console.mem9.ai/console/billing/plan";
 
 export class Mem9HttpError extends Error {
   constructor(
@@ -172,24 +173,20 @@ function quotaNoticeSubject(denied: RuntimeQuotaDenied, operation: string): { he
   };
 }
 
-function retryInstruction(denied: RuntimeQuotaDenied): string {
-  if (denied.retryAfterSeconds !== undefined) {
-    const unit = denied.retryAfterSeconds === 1 ? "second" : "seconds";
-    return `Ask them to wait ${denied.retryAfterSeconds} ${unit} before trying again.`;
+function actionUrlForDenied(denied: RuntimeQuotaDenied): string {
+  const actionUrl = normalizeString(denied.recommendedAction?.url);
+  if (actionUrl) {
+    return actionUrl;
   }
-  return "Ask them to wait briefly before trying again.";
+  return isPostQuotaRateLimited(denied) ? DEFAULT_BILLING_ACTION_URL : "";
 }
 
 function actionInstruction(denied: RuntimeQuotaDenied): string {
   const action = denied.recommendedAction;
   const actionType = normalizeString(action?.type);
-  const actionUrl = normalizeString(action?.url);
+  const actionUrl = actionUrlForDenied(denied);
   if (isPostQuotaRateLimited(denied)) {
-    const retry = retryInstruction(denied);
-    if (!actionUrl) {
-      return retry;
-    }
-    return `${retry} If they need higher mem9 usage limits, ask them to open this link to adjust billing or upgrade their plan: ${actionUrl}. Include the link exactly as written.`;
+    return `Ask them to open this link to upgrade their mem9 plan or set up billing for higher usage limits: ${actionUrl}. Include the link exactly as written.`;
   }
   if (!actionUrl) {
     return "Ask them to open the mem9 console to resolve the account or billing state.";
@@ -251,6 +248,7 @@ export function formatRuntimeQuotaNotice(value: unknown, operation: string): str
 export function toolErrorPayload(error: unknown): Record<string, unknown> {
   const denied = parseRuntimeQuotaDenied(error);
   if (denied) {
+    const actionUrl = actionUrlForDenied(denied);
     return {
       ok: false,
       error: denied.message,
@@ -262,7 +260,7 @@ export function toolErrorPayload(error: unknown): Record<string, unknown> {
         ...(denied.retryAfterSeconds !== undefined ? { retryAfterSeconds: denied.retryAfterSeconds } : {}),
         ...(denied.recommendedAction ? { recommendedAction: denied.recommendedAction } : {}),
       },
-      ...(denied.recommendedAction?.url ? { action_url: denied.recommendedAction.url } : {}),
+      ...(actionUrl ? { action_url: actionUrl } : {}),
     };
   }
 

@@ -265,6 +265,7 @@ test("runRecall returns a structured post-quota rate limit summary", async () =>
   assert.equal(quotaResult.status, "quota_denied");
   assert.equal(quotaResult.code, "post_quota_rate_limited");
   assert.equal(quotaResult.retryAfterSeconds, 23);
+  assert.equal(quotaResult.actionUrl, "https://console.mem9.ai/console/billing/plan");
   assert.equal(quotaResult.memoryCount, 0);
   assert.deepEqual(JSON.parse(stdoutText), quotaResult);
   assert.equal(stdoutText.includes("key-search"), false);

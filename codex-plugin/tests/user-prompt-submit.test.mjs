@@ -323,7 +323,7 @@ test("runtime quota notice renders spending limit guidance", () => {
   );
 });
 
-test("runtime quota notice renders post-quota rate limit retry guidance", () => {
+test("runtime quota notice renders post-quota rate limit billing guidance", () => {
   const notice = formatRuntimeQuotaNotice(
     new Mem9HttpError("quota denied", {
       status: 429,
@@ -352,8 +352,13 @@ test("runtime quota notice renders post-quota rate limit retry guidance", () => 
   );
 
   assert.match(notice, /temporary request limit/);
-  assert.match(notice, /wait 23 seconds before trying again/);
-  assert.doesNotMatch(notice, /open the mem9 console/);
+  assert.match(notice, /upgrade their mem9 plan or set up billing/);
+  assert.match(notice, /console\/billing\/plan/);
+  assert.doesNotMatch(notice, /wait 23 seconds before trying again/);
+  assert.equal(
+    notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,
+    1,
+  );
 });
 
 test("runtime quota notice renders post-quota billing action when provided", () => {
@@ -390,9 +395,9 @@ test("runtime quota notice renders post-quota billing action when provided", () 
   );
 
   assert.match(notice, /Mem9 memory saving is temporarily unavailable/);
-  assert.match(notice, /wait 1 second before trying again/);
-  assert.match(notice, /higher mem9 usage limits/);
+  assert.match(notice, /upgrade their mem9 plan or set up billing/);
   assert.match(notice, /console\/billing\/plan/);
+  assert.doesNotMatch(notice, /wait 1 second before trying again/);
   assert.equal(
     notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,
     1,
