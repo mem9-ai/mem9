@@ -1,6 +1,8 @@
 const QUOTA_CODES = new Set([
   "quota_exhausted",
+  "post_quota_rate_limited",
   "spending_limit_exceeded",
+  "runtime_access_blocked",
   "runtime_quota_denied",
 ]);
 
@@ -27,6 +29,8 @@ export interface RuntimeQuotaDenied {
   code: string;
   message: string;
   meter?: string;
+  quotaGateReason?: string;
+  retryAfterSeconds?: number;
   recommendedAction?: RuntimeRecommendedAction;
 }
 
@@ -36,6 +40,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function normalizeString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizePositiveInteger(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
 }
 
 export function parseJsonOrUndefined(text: string): unknown {
@@ -84,7 +92,32 @@ function normalizeRecommendedAction(details: Record<string, unknown>): RuntimeRe
   };
 }
 
+function quotaGateReason(details: Record<string, unknown>): string {
+  const quotaGateResult = isRecord(details.quotaGateResult) ? details.quotaGateResult : {};
+  return normalizeString(quotaGateResult.reason);
+}
+
+function retryAfterSeconds(details: Record<string, unknown>): number | null {
+  const direct = normalizePositiveInteger(details.retryAfterSeconds);
+  if (direct !== null) {
+    return direct;
+  }
+
+  const quotaGateResult = isRecord(details.quotaGateResult) ? details.quotaGateResult : {};
+  const postQuotaRateLimit = isRecord(quotaGateResult.postQuotaRateLimit) ? quotaGateResult.postQuotaRateLimit : {};
+  return normalizePositiveInteger(postQuotaRateLimit.retryAfterSeconds);
+}
+
+function isPostQuotaRateLimited(denied: RuntimeQuotaDenied): boolean {
+  return denied.status === 429 ||
+    denied.code === "post_quota_rate_limited" ||
+    denied.quotaGateReason === "postQuotaRateLimitExceeded";
+}
+
 function quotaReason(denied: RuntimeQuotaDenied): string {
+  if (isPostQuotaRateLimited(denied)) {
+    return "this API key is in post-quota mode and its temporary rate limit for this memory meter has been reached";
+  }
   const actionType = normalizeString(denied.recommendedAction?.type);
   if (actionType === "claimApiKey") {
     return "the included usage quota for this API key has been used up";
@@ -97,6 +130,9 @@ function quotaReason(denied: RuntimeQuotaDenied): string {
   }
   if (actionType === "upgradePlan" || denied.code === "quota_exhausted") {
     return "the included usage quota for this mem9 account has been used up";
+  }
+  if (denied.code === "runtime_access_blocked") {
+    return "the current account or billing state blocks runtime memory access";
   }
   return "the runtime quota check blocked this request";
 }
@@ -136,9 +172,25 @@ function quotaNoticeSubject(denied: RuntimeQuotaDenied, operation: string): { he
   };
 }
 
-function actionInstruction(action?: RuntimeRecommendedAction): string {
+function retryInstruction(denied: RuntimeQuotaDenied): string {
+  if (denied.retryAfterSeconds !== undefined) {
+    const unit = denied.retryAfterSeconds === 1 ? "second" : "seconds";
+    return `Ask them to wait ${denied.retryAfterSeconds} ${unit} before trying again.`;
+  }
+  return "Ask them to wait briefly before trying again.";
+}
+
+function actionInstruction(denied: RuntimeQuotaDenied): string {
+  const action = denied.recommendedAction;
   const actionType = normalizeString(action?.type);
   const actionUrl = normalizeString(action?.url);
+  if (isPostQuotaRateLimited(denied)) {
+    const retry = retryInstruction(denied);
+    if (!actionUrl) {
+      return retry;
+    }
+    return `${retry} If they need more continuous mem9 usage, ask them to open this link to adjust billing or upgrade their plan: ${actionUrl}. Include the link exactly as written.`;
+  }
   if (!actionUrl) {
     return "Ask them to open the mem9 console to resolve the account or billing state.";
   }
@@ -173,11 +225,15 @@ export function parseRuntimeQuotaDenied(value: unknown): RuntimeQuotaDenied | nu
   }
 
   const recommendedAction = normalizeRecommendedAction(details);
+  const retryAfter = retryAfterSeconds(details);
+  const reason = quotaGateReason(details);
   return {
     status: value instanceof Mem9HttpError ? value.status : null,
     code: code || "runtime_quota_denied",
     message: normalizeString(payload.message) || "runtime usage quota denied",
     ...(normalizeString(details.meter) ? { meter: normalizeString(details.meter) } : {}),
+    ...(reason ? { quotaGateReason: reason } : {}),
+    ...(retryAfter !== null ? { retryAfterSeconds: retryAfter } : {}),
     ...(recommendedAction ? { recommendedAction } : {}),
   };
 }
@@ -189,7 +245,7 @@ export function formatRuntimeQuotaNotice(value: unknown, operation: string): str
   }
 
   const subject = quotaNoticeSubject(denied, operation);
-  return `${subject.headline} because ${quotaReason(denied)}. In your reply, briefly tell the user that ${subject.userState}. ${actionInstruction(denied.recommendedAction)}`;
+  return `${subject.headline} because ${quotaReason(denied)}. In your reply, briefly tell the user that ${subject.userState}. ${actionInstruction(denied)}`;
 }
 
 export function toolErrorPayload(error: unknown): Record<string, unknown> {
@@ -203,6 +259,7 @@ export function toolErrorPayload(error: unknown): Record<string, unknown> {
       quota: {
         code: denied.code,
         message: denied.message,
+        ...(denied.retryAfterSeconds !== undefined ? { retryAfterSeconds: denied.retryAfterSeconds } : {}),
         ...(denied.recommendedAction ? { recommendedAction: denied.recommendedAction } : {}),
       },
       ...(denied.recommendedAction?.url ? { action_url: denied.recommendedAction.url } : {}),

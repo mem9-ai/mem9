@@ -5,7 +5,9 @@ import { readFileSync } from "node:fs";
 
 const QUOTA_CODES = new Set([
   "quota_exhausted",
+  "post_quota_rate_limited",
   "spending_limit_exceeded",
+  "runtime_access_blocked",
   "runtime_quota_denied",
 ]);
 
@@ -17,7 +19,45 @@ function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizePositiveInteger(value) {
+  const number = typeof value === "number" ? value : Number.NaN;
+  if (!Number.isInteger(number) || number <= 0) {
+    return null;
+  }
+  return number;
+}
+
+function quotaGateReason(details) {
+  const quotaGateResult = isRecord(details.quotaGateResult)
+    ? details.quotaGateResult
+    : {};
+  return normalizeString(quotaGateResult.reason);
+}
+
+function retryAfterSeconds(details) {
+  const direct = normalizePositiveInteger(details.retryAfterSeconds);
+  if (direct != null) {
+    return direct;
+  }
+
+  const quotaGateResult = isRecord(details.quotaGateResult)
+    ? details.quotaGateResult
+    : {};
+  const postQuotaRateLimit = isRecord(quotaGateResult.postQuotaRateLimit)
+    ? quotaGateResult.postQuotaRateLimit
+    : {};
+  return normalizePositiveInteger(postQuotaRateLimit.retryAfterSeconds);
+}
+
+function isPostQuotaRateLimited(quotaDenied) {
+  return quotaDenied.code === "post_quota_rate_limited" ||
+    quotaDenied.quotaGateReason === "postQuotaRateLimitExceeded";
+}
+
 function quotaReason(quotaDenied) {
+  if (isPostQuotaRateLimited(quotaDenied)) {
+    return "this API key is in post-quota mode and its temporary rate limit for this memory meter has been reached";
+  }
   if (quotaDenied.actionType === "claimApiKey") {
     return "the included usage quota for this API key has been used up";
   }
@@ -29,6 +69,9 @@ function quotaReason(quotaDenied) {
   }
   if (quotaDenied.actionType === "upgradePlan" || quotaDenied.code === "quota_exhausted") {
     return "the included usage quota for this mem9 account has been used up";
+  }
+  if (quotaDenied.code === "runtime_access_blocked") {
+    return "the current account or billing state blocks runtime memory access";
   }
   return "the runtime quota check blocked this request";
 }
@@ -67,7 +110,22 @@ function quotaNoticeSubject(quotaDenied, operation) {
   };
 }
 
+function retryInstruction(quotaDenied) {
+  if (quotaDenied.retryAfterSeconds != null) {
+    const unit = quotaDenied.retryAfterSeconds === 1 ? "second" : "seconds";
+    return `Ask them to wait ${quotaDenied.retryAfterSeconds} ${unit} before trying again.`;
+  }
+  return "Ask them to wait briefly before trying again.";
+}
+
 function actionInstruction(quotaDenied) {
+  if (isPostQuotaRateLimited(quotaDenied)) {
+    const retry = retryInstruction(quotaDenied);
+    if (!quotaDenied.actionUrl) {
+      return retry;
+    }
+    return `${retry} If they need more continuous mem9 usage, ask them to open this link to adjust billing or upgrade their plan: ${quotaDenied.actionUrl}. Include the link exactly as written.`;
+  }
   if (!quotaDenied.actionUrl) {
     return "Ask them to open the mem9 console to resolve the account or billing state.";
   }
@@ -109,6 +167,8 @@ function parseQuotaDenied(payload) {
     code: code || "runtime_quota_denied",
     message: normalizeString(payload.message) || "runtime usage quota denied",
     meter: normalizeString(details.meter),
+    quotaGateReason: quotaGateReason(details),
+    retryAfterSeconds: retryAfterSeconds(details),
     actionType,
     actionUrl,
   };

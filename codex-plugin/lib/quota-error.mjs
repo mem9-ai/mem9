@@ -4,7 +4,9 @@ import { Mem9HttpError } from "./http.mjs";
 
 const QUOTA_CODES = new Set([
   "quota_exhausted",
+  "post_quota_rate_limited",
   "spending_limit_exceeded",
+  "runtime_access_blocked",
   "runtime_quota_denied",
 ]);
 
@@ -14,6 +16,14 @@ function isRecord(value) {
 
 function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizePositiveInteger(value) {
+  const number = typeof value === "number" ? value : Number.NaN;
+  if (!Number.isInteger(number) || number <= 0) {
+    return null;
+  }
+  return number;
 }
 
 function payloadFromUnknown(value) {
@@ -59,7 +69,38 @@ function normalizeRecommendedAction(details) {
   };
 }
 
+function quotaGateReason(details) {
+  const quotaGateResult = isRecord(details.quotaGateResult)
+    ? details.quotaGateResult
+    : {};
+  return normalizeString(quotaGateResult.reason);
+}
+
+function retryAfterSeconds(details) {
+  const direct = normalizePositiveInteger(details.retryAfterSeconds);
+  if (direct != null) {
+    return direct;
+  }
+
+  const quotaGateResult = isRecord(details.quotaGateResult)
+    ? details.quotaGateResult
+    : {};
+  const postQuotaRateLimit = isRecord(quotaGateResult.postQuotaRateLimit)
+    ? quotaGateResult.postQuotaRateLimit
+    : {};
+  return normalizePositiveInteger(postQuotaRateLimit.retryAfterSeconds);
+}
+
+function isPostQuotaRateLimited(denied) {
+  return denied.status === 429 ||
+    denied.code === "post_quota_rate_limited" ||
+    denied.quotaGateReason === "postQuotaRateLimitExceeded";
+}
+
 function quotaReason(denied) {
+  if (isPostQuotaRateLimited(denied)) {
+    return "this API key is in post-quota mode and its temporary rate limit for this memory meter has been reached";
+  }
   const actionType = normalizeString(denied.recommendedAction?.type);
   if (actionType === "claimApiKey") {
     return "the included usage quota for this API key has been used up";
@@ -72,6 +113,9 @@ function quotaReason(denied) {
   }
   if (actionType === "upgradePlan" || denied.code === "quota_exhausted") {
     return "the included usage quota for this mem9 account has been used up";
+  }
+  if (denied.code === "runtime_access_blocked") {
+    return "the current account or billing state blocks runtime memory access";
   }
   return "the runtime quota check blocked this request";
 }
@@ -111,9 +155,25 @@ function quotaNoticeSubject(denied, operation) {
   };
 }
 
-function actionInstruction(action) {
+function retryInstruction(denied) {
+  if (denied.retryAfterSeconds != null) {
+    const unit = denied.retryAfterSeconds === 1 ? "second" : "seconds";
+    return `Ask them to wait ${denied.retryAfterSeconds} ${unit} before trying again.`;
+  }
+  return "Ask them to wait briefly before trying again.";
+}
+
+function actionInstruction(denied) {
+  const action = denied.recommendedAction;
   const actionType = normalizeString(action?.type);
   const actionUrl = normalizeString(action?.url);
+  if (isPostQuotaRateLimited(denied)) {
+    const retry = retryInstruction(denied);
+    if (!actionUrl) {
+      return retry;
+    }
+    return `${retry} If they need more continuous mem9 usage, ask them to open this link to adjust billing or upgrade their plan: ${actionUrl}. Include the link exactly as written.`;
+  }
   if (!actionUrl) {
     return "Ask them to open the mem9 console to resolve the account or billing state.";
   }
@@ -154,6 +214,8 @@ export function parseRuntimeQuotaDenied(value) {
     message,
     meter: normalizeString(details.meter),
     details,
+    quotaGateReason: quotaGateReason(details),
+    retryAfterSeconds: retryAfterSeconds(details),
     recommendedAction: normalizeRecommendedAction(details),
   };
 }
@@ -168,6 +230,7 @@ export function runtimeQuotaDeniedSummary(value) {
     status: "quota_denied",
     code: denied.code,
     message: denied.message,
+    ...(denied.retryAfterSeconds != null ? { retryAfterSeconds: denied.retryAfterSeconds } : {}),
     ...(denied.recommendedAction ? { recommendedAction: denied.recommendedAction } : {}),
   };
 }
@@ -179,5 +242,5 @@ export function formatRuntimeQuotaNotice(value, operation = "mem9 request") {
   }
 
   const subject = quotaNoticeSubject(denied, operation);
-  return `${subject.headline} because ${quotaReason(denied)}. In your reply, briefly tell the user that ${subject.userState}. ${actionInstruction(denied.recommendedAction)}`;
+  return `${subject.headline} because ${quotaReason(denied)}. In your reply, briefly tell the user that ${subject.userState}. ${actionInstruction(denied)}`;
 }

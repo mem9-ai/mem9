@@ -627,6 +627,87 @@ test("formatRuntimeQuotaNotice renders spending limit guidance", () => {
   );
 });
 
+test("formatRuntimeQuotaNotice renders post-quota rate limit retry guidance", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "Post-quota rate limit exceeded.",
+      429,
+      "",
+      {
+        code: "post_quota_rate_limited",
+        message: "Post-quota rate limit exceeded.",
+        details: {
+          mem9Code: "runtime_quota_denied",
+          retryable: true,
+          meter: "memory_recall_requests",
+          quotaGateResult: {
+            outcome: "rateLimited",
+            mode: "postQuota",
+            reason: "postQuotaRateLimitExceeded",
+            postQuotaRateLimit: {
+              requestsPerMinute: 4,
+              windowDurationSeconds: 60,
+              scope: "apiKeyMeter",
+              retryAfterSeconds: 23,
+            },
+          },
+        },
+      },
+    ),
+    "recall paused",
+  );
+
+  assert.match(notice, /post-quota mode/);
+  assert.match(notice, /temporary rate limit/);
+  assert.match(notice, /wait 23 seconds before trying again/);
+  assert.doesNotMatch(notice, /open the mem9 console/);
+});
+
+test("formatRuntimeQuotaNotice renders post-quota billing action when provided", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "Post-quota rate limit exceeded.",
+      429,
+      "",
+      {
+        code: "post_quota_rate_limited",
+        message: "Post-quota rate limit exceeded.",
+        details: {
+          mem9Code: "runtime_quota_denied",
+          retryable: true,
+          meter: "memory_write_requests",
+          recommendedAction: {
+            bindingState: "claimed",
+            type: "upgradePlan",
+            url: "https://console.mem9.ai/console/billing/plan",
+          },
+          quotaGateResult: {
+            outcome: "rateLimited",
+            mode: "postQuota",
+            reason: "postQuotaRateLimitExceeded",
+            postQuotaRateLimit: {
+              requestsPerMinute: 2,
+              windowDurationSeconds: 60,
+              scope: "apiKeyMeter",
+              retryAfterSeconds: 1,
+            },
+          },
+        },
+      },
+    ),
+    "memory save paused",
+  );
+
+  assert.match(notice, /Mem9 memory saving is temporarily unavailable/);
+  assert.match(notice, /wait 1 second before trying again/);
+  assert.match(notice, /more continuous mem9 usage/);
+  assert.match(notice, /console\/billing\/plan/);
+  assert.equal(
+    notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,
+    1,
+  );
+});
+
 test("formatRuntimeQuotaNotice renders write meter guidance", () => {
   const notice = formatRuntimeQuotaNotice(
     new Mem9HttpError(

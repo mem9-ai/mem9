@@ -212,6 +212,64 @@ test("runRecall returns a structured runtime quota denial summary", async () => 
   assert.equal(stdoutText.includes("key-search"), false);
 });
 
+test("runRecall returns a structured post-quota rate limit summary", async () => {
+  let stdoutText = "";
+
+  const result = await runRecall(
+    ["--query", "team preferences"],
+    {
+      state: {
+        configSource: "project",
+        runtime: {
+          profileId: "work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-search",
+          agentId: "codex",
+          searchTimeoutMs: 15000,
+        },
+      },
+      fetchJson: async () => {
+        throw new Mem9HttpError("rate limited", {
+          status: 429,
+          data: {
+            code: "post_quota_rate_limited",
+            message: "Post-quota rate limit exceeded.",
+            details: {
+              mem9Code: "runtime_quota_denied",
+              retryable: true,
+              meter: "memory_recall_requests",
+              quotaGateResult: {
+                outcome: "rateLimited",
+                mode: "postQuota",
+                reason: "postQuotaRateLimitExceeded",
+                postQuotaRateLimit: {
+                  requestsPerMinute: 4,
+                  windowDurationSeconds: 60,
+                  scope: "apiKeyMeter",
+                  retryAfterSeconds: 23,
+                },
+              },
+            },
+          },
+        });
+      },
+      stdout: {
+        write(/** @type {string} */ chunk) {
+          stdoutText += chunk;
+        },
+      },
+    },
+  );
+  const quotaResult = /** @type {any} */ (result);
+
+  assert.equal(quotaResult.status, "quota_denied");
+  assert.equal(quotaResult.code, "post_quota_rate_limited");
+  assert.equal(quotaResult.retryAfterSeconds, 23);
+  assert.equal(quotaResult.memoryCount, 0);
+  assert.deepEqual(JSON.parse(stdoutText), quotaResult);
+  assert.equal(stdoutText.includes("key-search"), false);
+});
+
 test("runtime helper explains how to repair a missing mem9 api key", () => {
   const message = buildRuntimeIssueMessage({
     issueCode: "missing_api_key",

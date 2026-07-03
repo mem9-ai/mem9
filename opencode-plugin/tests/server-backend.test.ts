@@ -121,3 +121,49 @@ test("ServerBackend preserves runtime quota denial response bodies", async () =>
     globalThis.fetch = originalFetch;
   }
 });
+
+test("ServerBackend preserves post-quota rate limit response bodies", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => {
+    return new Response(JSON.stringify({
+      code: "post_quota_rate_limited",
+      message: "Post-quota rate limit exceeded.",
+      details: {
+        mem9Code: "runtime_quota_denied",
+        retryable: true,
+        meter: "memory_recall_requests",
+        quotaGateResult: {
+          outcome: "rateLimited",
+          mode: "postQuota",
+          reason: "postQuotaRateLimitExceeded",
+          postQuotaRateLimit: {
+            requestsPerMinute: 4,
+            windowDurationSeconds: 60,
+            scope: "apiKeyMeter",
+            retryAfterSeconds: 23,
+          },
+        },
+      },
+    }), {
+      status: 429,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "mk_demo", "opencode");
+    await assert.rejects(
+      () => backend.search({ q: "hello" }),
+      (error: unknown) => {
+        assert.equal(error instanceof Mem9HttpError, true);
+        const denied = parseRuntimeQuotaDenied(error);
+        assert.equal(denied?.code, "post_quota_rate_limited");
+        assert.equal(denied?.retryAfterSeconds, 23);
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
