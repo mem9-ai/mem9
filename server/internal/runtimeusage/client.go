@@ -34,7 +34,7 @@ func (c *HTTPClient) Reserve(ctx context.Context, subject Subject, operationID s
 		"units": op.Units,
 	}
 	var reservation Reservation
-	if err := c.doJSON(ctx, http.MethodPut, "/api/internal/quota/reservations/"+operationID, subject, body, &reservation); err != nil {
+	if err := c.doJSON(ctx, http.MethodPut, "/api/internal/quota/reservations/"+operationID, subject, body, &reservation, true); err != nil {
 		return nil, err
 	}
 	return &reservation, nil
@@ -47,10 +47,10 @@ func (c *HTTPClient) FinalizeReservation(ctx context.Context, subject Subject, o
 	if reason != "" {
 		body["reason"] = reason
 	}
-	return c.doJSON(ctx, http.MethodPatch, "/api/internal/quota/reservations/"+operationID, subject, body, nil)
+	return c.doJSON(ctx, http.MethodPatch, "/api/internal/quota/reservations/"+operationID, subject, body, nil, false)
 }
 
-func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Subject, body any, out any) error {
+func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Subject, body any, out any, classifyQuotaStatuses bool) error {
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("runtime usage marshal request: %w", err)
@@ -70,7 +70,7 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 
-	if resp.StatusCode == http.StatusPaymentRequired || resp.StatusCode == http.StatusTooManyRequests {
+	if classifyQuotaStatuses && (resp.StatusCode == http.StatusPaymentRequired || resp.StatusCode == http.StatusTooManyRequests) {
 		return &QuotaDeniedError{
 			StatusCode: resp.StatusCode,
 			Body:       respBody,

@@ -131,6 +131,29 @@ func TestHTTPClientReserveClassifiesQuotaStatuses(t *testing.T) {
 	}
 }
 
+func TestHTTPClientFinalizeReservationTreatsRateLimitAsUnavailable(t *testing.T) {
+	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+	client.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodPatch {
+			t.Fatalf("method = %s, want PATCH", req.Method)
+		}
+		if req.URL.Path != "/api/internal/quota/reservations/op-finalize" {
+			t.Fatalf("path = %s", req.URL.Path)
+		}
+		return statusJSONResponse(http.StatusTooManyRequests, `{"error":"rate limited"}`, http.Header{"Retry-After": []string{"20"}}), nil
+	})}
+
+	err := client.FinalizeReservation(context.Background(), Subject{APIKeySubject: "api-key-subject"}, "op-finalize", ReservationStatusCommitted, reservationCommitReason)
+	var denied *QuotaDeniedError
+	if errors.As(err, &denied) {
+		t.Fatalf("FinalizeReservation error = %T, want non-quota finalization failure", err)
+	}
+	var unavailable *UnavailableError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("FinalizeReservation error = %T, want UnavailableError", err)
+	}
+}
+
 func jsonResponse(body string) *http.Response {
 	return statusJSONResponse(http.StatusOK, body, http.Header{"Content-Type": []string{"application/json"}})
 }
