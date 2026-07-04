@@ -252,11 +252,17 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/PostQuotaRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -326,8 +332,14 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/PostQuotaRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -401,11 +413,17 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/PostQuotaRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -436,11 +454,17 @@
           "204": {
             "description": "Memory deleted."
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/PostQuotaRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -641,7 +665,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "402": {
-            "$ref": "#/components/responses/RuntimeQuotaDenied"
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
@@ -650,7 +674,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "$ref": "#/components/responses/PostQuotaRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -729,13 +753,13 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "402": {
-            "$ref": "#/components/responses/RuntimeQuotaDenied"
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "$ref": "#/components/responses/PostQuotaRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -829,7 +853,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "402": {
-            "$ref": "#/components/responses/RuntimeQuotaDenied"
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
@@ -841,7 +865,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "$ref": "#/components/responses/PostQuotaRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -881,7 +905,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "402": {
-            "$ref": "#/components/responses/RuntimeQuotaDenied"
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
@@ -893,7 +917,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "$ref": "#/components/responses/PostQuotaRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -949,7 +973,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "402": {
-            "$ref": "#/components/responses/RuntimeQuotaDenied"
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
@@ -958,7 +982,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "$ref": "#/components/responses/PostQuotaRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -2391,74 +2415,81 @@
       "NoContent": {
         "description": "No content."
       },
-      "RuntimeQuotaDenied": {
-        "description": "Runtime usage quota denied. Plugins should use details.mem9Code to enter the quota UX path and details.recommendedAction.url as the direct user action link when present.",
+      "RuntimeAccessBlocked": {
+        "description": "Runtime access is blocked by the configured runtime usage provider. Plugins should use details.mem9Code for quota UX routing and treat recommendedAction.providerActionCode as an opaque provider hint.",
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/RuntimeQuotaDeniedError"
+              "$ref": "#/components/schemas/RuntimeAccessBlockedError"
             },
             "examples": {
-              "unclaimedQuotaExhausted": {
+              "runtimeAccessBlocked": {
                 "value": {
-                  "code": "quota_exhausted",
-                  "message": "Included quota is exhausted.",
+                  "code": "runtime_access_blocked",
+                  "message": "Runtime access is blocked.",
                   "details": {
                     "retryable": false,
                     "meter": "memory_recall_requests",
-                    "limitType": "includedQuota",
-                    "recommendedAction": {
-                      "bindingState": "unclaimed",
-                      "type": "claimApiKey",
-                      "url": "https://mem9.ai/console/claim?key=mk_example"
-                    },
+                    "mem9Code": "runtime_quota_denied",
                     "quotaGateResult": {
                       "outcome": "blocked",
+                      "mode": "includedQuota",
                       "reason": "includedQuotaExhausted"
                     },
-                    "mem9Code": "runtime_quota_denied"
+                    "recommendedAction": {
+                      "type": "openUrl",
+                      "providerActionCode": "upgradePlan",
+                      "severity": "blocking",
+                      "url": "https://example.com/provider/action"
+                    }
                   }
                 }
-              },
-              "claimedQuotaExhausted": {
+              }
+            }
+          }
+        }
+      },
+      "PostQuotaRateLimited": {
+        "description": "Runtime usage provider returned a temporary post-quota rate limit.",
+        "headers": {
+          "Retry-After": {
+            "description": "Seconds or HTTP date after which the client can retry, forwarded from the runtime usage provider when supplied.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PostQuotaRateLimitedError"
+            },
+            "examples": {
+              "postQuotaRateLimited": {
                 "value": {
-                  "code": "quota_exhausted",
-                  "message": "Included quota is exhausted.",
+                  "code": "post_quota_rate_limited",
+                  "message": "Post-quota rate limit exceeded.",
                   "details": {
-                    "retryable": false,
+                    "retryable": true,
                     "meter": "memory_recall_requests",
-                    "limitType": "includedQuota",
-                    "recommendedAction": {
-                      "bindingState": "claimed",
-                      "type": "upgradePlan",
-                      "url": "https://mem9.ai/console/billing/plan"
-                    },
+                    "mem9Code": "runtime_quota_denied",
                     "quotaGateResult": {
-                      "outcome": "blocked",
-                      "reason": "includedQuotaExhausted"
+                      "outcome": "rateLimited",
+                      "mode": "postQuota",
+                      "reason": "postQuotaRateLimitExceeded",
+                      "postQuotaRateLimit": {
+                        "requestsPerMinute": 60,
+                        "windowDurationSeconds": 60,
+                        "scope": "providerWindow",
+                        "retryAfterSeconds": 20
+                      }
                     },
-                    "mem9Code": "runtime_quota_denied"
-                  }
-                }
-              },
-              "spendingLimitExceeded": {
-                "value": {
-                  "code": "spending_limit_exceeded",
-                  "message": "On-demand spending limit would be exceeded.",
-                  "details": {
-                    "retryable": false,
-                    "meter": "memory_write_requests",
-                    "limitType": "spendingLimit",
                     "recommendedAction": {
-                      "bindingState": "claimed",
-                      "type": "increaseSpendingLimit",
-                      "url": "https://mem9.ai/console/billing/plan"
-                    },
-                    "quotaGateResult": {
-                      "outcome": "blocked",
-                      "reason": "onDemandBudgetExhausted"
-                    },
-                    "mem9Code": "runtime_quota_denied"
+                      "type": "openUrl",
+                      "providerActionCode": "upgradePlan",
+                      "severity": "blocking",
+                      "url": "https://example.com/provider/action"
+                    }
                   }
                 }
               }
@@ -3250,97 +3281,39 @@
           }
         }
       },
-      "RuntimeQuotaDeniedError": {
-        "type": "object",
-        "required": [
-          "code",
-          "message",
-          "details"
-        ],
-        "properties": {
-          "code": {
-            "type": "string",
-            "description": "Specific quota denial reason when available, or runtime_quota_denied for fallback errors.",
-            "examples": [
-              "quota_exhausted",
-              "spending_limit_exceeded",
-              "runtime_quota_denied"
-            ]
-          },
-          "message": {
-            "type": "string"
-          },
-          "details": {
-            "$ref": "#/components/schemas/RuntimeQuotaDeniedDetails"
-          }
-        }
-      },
-      "RuntimeQuotaDeniedDetails": {
-        "type": "object",
-        "required": [
-          "retryable",
-          "mem9Code"
-        ],
-        "properties": {
-          "retryable": {
-            "type": "boolean"
-          },
-          "meter": {
-            "type": "string",
-            "enum": [
-              "memory_recall_requests",
-              "memory_write_requests"
-            ]
-          },
-          "limitType": {
-            "type": "string",
-            "enum": [
-              "includedQuota",
-              "spendingLimit"
-            ]
-          },
-          "recommendedAction": {
-            "$ref": "#/components/schemas/RuntimeRecommendedAction"
-          },
-          "quotaGateResult": {
-            "$ref": "#/components/schemas/RuntimeQuotaGateResult"
-          },
-          "mem9Code": {
-            "type": "string",
-            "enum": [
-              "runtime_quota_denied"
-            ]
-          }
-        },
-        "additionalProperties": true
-      },
       "RuntimeRecommendedAction": {
         "type": "object",
         "required": [
-          "bindingState",
-          "type",
-          "url"
+          "type"
         ],
         "properties": {
-          "bindingState": {
-            "type": "string",
-            "enum": [
-              "claimed",
-              "unclaimed"
-            ]
-          },
           "type": {
             "type": "string",
+            "description": "Generic client behavior for the action.",
             "enum": [
-              "claimApiKey",
-              "upgradePlan",
-              "enableOnDemand",
-              "increaseSpendingLimit"
+              "openUrl"
+            ]
+          },
+          "providerActionCode": {
+            "type": "string",
+            "description": "Provider-defined action code. Clients should treat unknown values as opaque hints.",
+            "minLength": 1,
+            "maxLength": 64,
+            "example": "upgradePlan"
+          },
+          "severity": {
+            "type": "string",
+            "description": "How strongly clients should surface the action.",
+            "enum": [
+              "blocking",
+              "warning",
+              "info"
             ]
           },
           "url": {
             "type": "string",
-            "description": "Console URL that the plugin can show directly to the user."
+            "format": "uri",
+            "description": "Provider URL for type=openUrl. Present only when supplied by the provider response."
           }
         },
         "additionalProperties": false
@@ -3371,11 +3344,134 @@
           "reason": {
             "type": "string",
             "enum": [
+              "includedQuotaAvailable",
               "includedQuotaExhausted",
+              "onDemandAvailable",
               "onDemandDisabled",
               "onDemandUnavailable",
-              "onDemandBudgetExhausted"
+              "onDemandBudgetExhausted",
+              "postQuotaRateLimitExceeded",
+              "accountStateBlocked"
             ]
+          },
+          "postQuotaRateLimit": {
+            "$ref": "#/components/schemas/PostQuotaRateLimit"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeAccessBlockedError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Provider error code. The canonical runtime access blocker code is runtime_access_blocked; legacy provider codes may appear during migration.",
+            "example": "runtime_access_blocked"
+          },
+          "message": {
+            "type": "string",
+            "example": "Runtime access is blocked."
+          },
+          "details": {
+            "$ref": "#/components/schemas/RuntimeQuotaErrorDetails"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PostQuotaRateLimitedError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "details"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Provider error code for a temporary runtime quota rate limit. The canonical code is post_quota_rate_limited.",
+            "example": "post_quota_rate_limited"
+          },
+          "message": {
+            "type": "string",
+            "example": "Post-quota rate limit exceeded."
+          },
+          "details": {
+            "$ref": "#/components/schemas/RuntimeQuotaErrorDetails"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeMeter": {
+        "type": "string",
+        "description": "Runtime usage meter id supplied by the provider. Clients should treat unknown values as opaque labels.",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$",
+        "example": "memory_recall_requests"
+      },
+      "RuntimeQuotaErrorDetails": {
+        "type": "object",
+        "required": [
+          "retryable",
+          "mem9Code"
+        ],
+        "properties": {
+          "retryable": {
+            "type": "boolean",
+            "description": "Whether the same request can succeed later without a provider-side action."
+          },
+          "meter": {
+            "$ref": "#/components/schemas/RuntimeMeter"
+          },
+          "recommendedAction": {
+            "$ref": "#/components/schemas/RuntimeRecommendedAction"
+          },
+          "quotaGateResult": {
+            "$ref": "#/components/schemas/RuntimeQuotaGateResult"
+          },
+          "mem9Code": {
+            "type": "string",
+            "enum": [
+              "runtime_quota_denied"
+            ],
+            "description": "Stable mem9 routing code for plugin quota UX."
+          }
+        },
+        "additionalProperties": true
+      },
+      "PostQuotaRateLimit": {
+        "type": "object",
+        "required": [
+          "requestsPerMinute",
+          "windowDurationSeconds",
+          "scope"
+        ],
+        "properties": {
+          "requestsPerMinute": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "windowDurationSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Provider-defined rate-limit window duration in seconds."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Provider-defined rate-limit scope. Clients should treat unknown values as opaque labels.",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$",
+            "example": "providerWindow"
+          },
+          "retryAfterSeconds": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "additionalProperties": false
