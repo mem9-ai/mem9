@@ -54,3 +54,6 @@ benchmark/MR-NIAH/.cache/
 .claude/
 .playwright-mcp/
 .env.tidb-local
+
+# Local superpowers workflow artifacts
+docs/superpowers/
