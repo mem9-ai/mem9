@@ -70,8 +70,12 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 
-	if resp.StatusCode == http.StatusPaymentRequired {
-		return &QuotaDeniedError{StatusCode: resp.StatusCode, Body: respBody}
+	if resp.StatusCode == http.StatusPaymentRequired || resp.StatusCode == http.StatusTooManyRequests {
+		return &QuotaDeniedError{
+			StatusCode: resp.StatusCode,
+			Body:       respBody,
+			RetryAfter: strings.TrimSpace(resp.Header.Get("Retry-After")),
+		}
 	}
 	if resp.StatusCode == http.StatusConflict {
 		return &ConflictError{StatusCode: resp.StatusCode, Body: respBody}

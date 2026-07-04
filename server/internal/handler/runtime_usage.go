@@ -57,9 +57,13 @@ func subjectFromAuth(auth *domain.AuthInfo) runtimeusage.Subject {
 func (s *Server) handleRuntimeUsageError(w http.ResponseWriter, err error) {
 	var denied *runtimeusage.QuotaDeniedError
 	if errors.As(err, &denied) {
-		body := normalizeRuntimeQuotaDeniedBody(denied.ResponseBody())
+		status := denied.Status()
+		body := normalizeRuntimeQuotaErrorBody(status, denied.ResponseBody())
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusPaymentRequired)
+		if status == http.StatusTooManyRequests && denied.RetryAfter != "" {
+			w.Header().Set("Retry-After", denied.RetryAfter)
+		}
+		w.WriteHeader(status)
 		_, _ = w.Write(body)
 		return
 	}
@@ -78,19 +82,19 @@ func isRuntimeUsageError(err error) bool {
 	return errors.As(err, &denied) || errors.As(err, &unavailable) || errors.As(err, &conflict)
 }
 
-type runtimeQuotaDeniedEnvelope struct {
+type runtimeQuotaErrorEnvelope struct {
 	Code    string         `json:"code"`
 	Message string         `json:"message"`
 	Details map[string]any `json:"details"`
 }
 
-func normalizeRuntimeQuotaDeniedBody(body []byte) []byte {
+func normalizeRuntimeQuotaErrorBody(status int, body []byte) []byte {
 	body = bytes.TrimSpace(body)
-	envelope := runtimeQuotaDeniedEnvelope{
-		Code:    "runtime_quota_denied",
-		Message: "runtime usage quota denied",
+	envelope := runtimeQuotaErrorEnvelope{
+		Code:    runtimeQuotaDefaultCode(status),
+		Message: runtimeQuotaDefaultMessage(status),
 		Details: map[string]any{
-			"retryable": false,
+			"retryable": runtimeQuotaDefaultRetryable(status),
 			"mem9Code":  "runtime_quota_denied",
 		},
 	}
@@ -114,16 +118,104 @@ func normalizeRuntimeQuotaDeniedBody(body []byte) []byte {
 		if mem9Code, ok := parsed["mem9_code"].(string); ok && mem9Code != "" {
 			envelope.Details["mem9Code"] = mem9Code
 		}
+		normalizeRuntimeQuotaRecommendedAction(envelope.Details)
 	}
 	if _, ok := envelope.Details["retryable"]; !ok {
-		envelope.Details["retryable"] = false
+		envelope.Details["retryable"] = runtimeQuotaDefaultRetryable(status)
 	}
 	if _, ok := envelope.Details["mem9Code"]; !ok {
 		envelope.Details["mem9Code"] = "runtime_quota_denied"
 	}
 	out, err := json.Marshal(envelope)
 	if err != nil {
-		return []byte(`{"code":"runtime_quota_denied","message":"runtime usage quota denied","details":{"retryable":false,"mem9Code":"runtime_quota_denied"}}`)
+		if status == http.StatusTooManyRequests {
+			return []byte(`{"code":"post_quota_rate_limited","message":"Post-quota rate limit exceeded.","details":{"retryable":true,"mem9Code":"runtime_quota_denied"}}`)
+		}
+		return []byte(`{"code":"runtime_access_blocked","message":"Runtime access is blocked.","details":{"retryable":false,"mem9Code":"runtime_quota_denied"}}`)
 	}
 	return out
+}
+
+func runtimeQuotaDefaultCode(status int) string {
+	if status == http.StatusTooManyRequests {
+		return "post_quota_rate_limited"
+	}
+	return "runtime_access_blocked"
+}
+
+func runtimeQuotaDefaultMessage(status int) string {
+	if status == http.StatusTooManyRequests {
+		return "Post-quota rate limit exceeded."
+	}
+	return "Runtime access is blocked."
+}
+
+func runtimeQuotaDefaultRetryable(status int) bool {
+	return status == http.StatusTooManyRequests
+}
+
+func normalizeRuntimeQuotaRecommendedAction(details map[string]any) {
+	if details == nil {
+		return
+	}
+	action, ok := canonicalRuntimeQuotaAction(details["recommendedAction"])
+	if !ok {
+		action = make(map[string]any)
+	}
+	if providerActionCode, ok := runtimeQuotaString(details["upgradeAction"]); ok {
+		action["type"] = "openUrl"
+		if _, exists := action["providerActionCode"]; !exists {
+			action["providerActionCode"] = providerActionCode
+		}
+	}
+	if url, ok := runtimeQuotaString(details["upgradeUrl"]); ok {
+		action["type"] = "openUrl"
+		if _, exists := action["url"]; !exists {
+			action["url"] = url
+		}
+	}
+	delete(details, "bindingState")
+	delete(details, "upgradeAction")
+	delete(details, "upgradeUrl")
+	if len(action) == 0 {
+		delete(details, "recommendedAction")
+		return
+	}
+	if _, ok := action["type"]; !ok {
+		action["type"] = "openUrl"
+	}
+	details["recommendedAction"] = action
+}
+
+func canonicalRuntimeQuotaAction(raw any) (map[string]any, bool) {
+	actionInput, ok := raw.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	action := make(map[string]any)
+	if actionType, ok := runtimeQuotaString(actionInput["type"]); ok {
+		action["type"] = "openUrl"
+		if actionType != "openUrl" {
+			action["providerActionCode"] = actionType
+		}
+	}
+	if providerActionCode, ok := runtimeQuotaString(actionInput["providerActionCode"]); ok {
+		action["type"] = "openUrl"
+		action["providerActionCode"] = providerActionCode
+	}
+	if severity, ok := runtimeQuotaString(actionInput["severity"]); ok {
+		action["severity"] = severity
+	}
+	if url, ok := runtimeQuotaString(actionInput["url"]); ok {
+		action["url"] = url
+	}
+	return action, true
+}
+
+func runtimeQuotaString(value any) (string, bool) {
+	text, ok := value.(string)
+	if !ok || text == "" {
+		return "", false
+	}
+	return text, true
 }

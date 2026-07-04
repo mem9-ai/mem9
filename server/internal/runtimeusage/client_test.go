@@ -3,6 +3,7 @@ package runtimeusage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -83,10 +84,67 @@ func TestHTTPClientReserveDecodesRemainingIncludedUnits(t *testing.T) {
 	}
 }
 
+func TestHTTPClientReserveClassifiesQuotaStatuses(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     int
+		body       string
+		retryAfter string
+	}{
+		{
+			name:   "payment required",
+			status: http.StatusPaymentRequired,
+			body:   `{"code":"runtime_access_blocked","message":"Runtime access is blocked."}`,
+		},
+		{
+			name:       "post quota rate limit",
+			status:     http.StatusTooManyRequests,
+			body:       `{"code":"post_quota_rate_limited","message":"Post-quota rate limit exceeded."}`,
+			retryAfter: "20",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+			client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return statusJSONResponse(tt.status, tt.body, http.Header{"Retry-After": []string{tt.retryAfter}}), nil
+			})}
+
+			_, err := client.Reserve(context.Background(), Subject{APIKeySubject: "api-key-subject"}, "op-denied", Operation{
+				Meter: MeterMemoryRecallRequests,
+				Units: 1,
+			})
+			var denied *QuotaDeniedError
+			if !errors.As(err, &denied) {
+				t.Fatalf("Reserve error = %T, want QuotaDeniedError", err)
+			}
+			if denied.Status() != tt.status {
+				t.Fatalf("Status() = %d, want %d", denied.Status(), tt.status)
+			}
+			if denied.RetryAfter != tt.retryAfter {
+				t.Fatalf("RetryAfter = %q, want %q", denied.RetryAfter, tt.retryAfter)
+			}
+			if string(denied.ResponseBody()) != tt.body {
+				t.Fatalf("ResponseBody() = %s, want %s", denied.ResponseBody(), tt.body)
+			}
+		})
+	}
+}
+
 func jsonResponse(body string) *http.Response {
+	return statusJSONResponse(http.StatusOK, body, http.Header{"Content-Type": []string{"application/json"}})
+}
+
+func statusJSONResponse(status int, body string, header http.Header) *http.Response {
+	if header == nil {
+		header = make(http.Header)
+	}
+	if header.Get("Content-Type") == "" {
+		header.Set("Content-Type", "application/json")
+	}
 	return &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		StatusCode: status,
+		Header:     header,
 		Body:       io.NopCloser(strings.NewReader(body)),
 	}
 }
