@@ -160,7 +160,20 @@ func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 	}
 
 	gateResult := objectValue(t, schemas, "RuntimeQuotaGateResult")
+	if got, ok := gateResult["additionalProperties"].(bool); !ok || !got {
+		t.Fatalf("RuntimeQuotaGateResult.additionalProperties = %#v, want true", gateResult["additionalProperties"])
+	}
 	gateProperties := objectValue(t, gateResult, "properties")
+	mode := objectValue(t, gateProperties, "mode")
+	if mode["type"] != "string" {
+		t.Fatalf("RuntimeQuotaGateResult.mode type = %#v, want string", mode["type"])
+	}
+	if _, ok := mode["enum"]; ok {
+		t.Fatalf("RuntimeQuotaGateResult.mode should remain provider-defined")
+	}
+	if _, ok := mode["pattern"]; ok {
+		t.Fatalf("RuntimeQuotaGateResult.mode should not constrain provider-defined values")
+	}
 	reason := objectValue(t, gateProperties, "reason")
 	if reason["type"] != "string" {
 		t.Fatalf("RuntimeQuotaGateResult.reason type = %#v, want string", reason["type"])

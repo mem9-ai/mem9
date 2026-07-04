@@ -3395,11 +3395,8 @@
           },
           "mode": {
             "type": "string",
-            "enum": [
-              "includedQuota",
-              "onDemand",
-              "postQuota"
-            ]
+            "description": "Provider-defined quota mode. Clients should treat unknown values as opaque hints.",
+            "example": "includedQuota"
           },
           "reason": {
             "type": "string",
@@ -3410,7 +3407,7 @@
             "$ref": "#/components/schemas/PostQuotaRateLimit"
           }
         },
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "RuntimeQuotaError": {
         "description": "Runtime quota error response. This follows the shared ErrorResponse shape, includes mem9 quota classification under details.mem9Category, and preserves provider-supplied metadata under details.runtimeQuota.",
