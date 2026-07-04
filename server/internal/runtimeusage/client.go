@@ -94,14 +94,15 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 func isRuntimeQuotaDenialResponse(status int, body []byte) bool {
 	switch status {
 	case http.StatusPaymentRequired:
+		return true
 	case http.StatusTooManyRequests:
 	default:
 		return false
 	}
 
 	// Reservation providers return code/message/details envelopes. Code values
-	// are provider-defined, so classification uses the required envelope plus
-	// quota detail shape rather than provider-specific code strings.
+	// are provider-defined, so 429 classification uses the required envelope
+	// plus quota detail shape rather than provider-specific code strings.
 	var envelope struct {
 		Code    string         `json:"code"`
 		Message string         `json:"message"`

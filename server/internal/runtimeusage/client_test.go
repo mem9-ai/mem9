@@ -97,6 +97,16 @@ func TestHTTPClientReserveClassifiesQuotaStatuses(t *testing.T) {
 			body:   `{"code":"provider_runtime_blocked","message":"Runtime access is blocked.","details":{"meter":"memory_recall_requests","quotaGateResult":{"outcome":"blocked","mode":"includedQuota","reason":"includedQuotaExhausted"}}}`,
 		},
 		{
+			name:   "payment required legacy body",
+			status: http.StatusPaymentRequired,
+			body:   `{"error":"quota exhausted"}`,
+		},
+		{
+			name:   "payment required empty body",
+			status: http.StatusPaymentRequired,
+			body:   ``,
+		},
+		{
 			name:       "post quota rate limit",
 			status:     http.StatusTooManyRequests,
 			body:       `{"code":"provider_post_quota_throttled","message":"Post-quota rate limit exceeded.","details":{"meter":"memory_recall_requests","quotaGateResult":{"outcome":"rateLimited","mode":"postQuota","reason":"postQuotaRateLimitExceeded"}}}`,
@@ -124,7 +134,11 @@ func TestHTTPClientReserveClassifiesQuotaStatuses(t *testing.T) {
 			if denied.RetryAfter != tt.retryAfter {
 				t.Fatalf("RetryAfter = %q, want %q", denied.RetryAfter, tt.retryAfter)
 			}
-			if string(denied.ResponseBody()) != tt.body {
+			if tt.body == "" {
+				if !strings.Contains(string(denied.ResponseBody()), "Runtime access is blocked.") {
+					t.Fatalf("ResponseBody() = %s, want fallback runtime access message", denied.ResponseBody())
+				}
+			} else if string(denied.ResponseBody()) != tt.body {
 				t.Fatalf("ResponseBody() = %s, want %s", denied.ResponseBody(), tt.body)
 			}
 		})

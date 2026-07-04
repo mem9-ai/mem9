@@ -2416,7 +2416,7 @@
         "description": "No content."
       },
       "RuntimeAccessBlocked": {
-        "description": "Runtime access is blocked by the configured runtime usage provider. The body follows ErrorResponse, includes a stable runtime quota error classification under details.errorCategory, and exposes public runtime quota fields under details.runtimeQuota.",
+        "description": "Runtime access is blocked by the configured runtime usage provider. The body follows ErrorResponse, includes a stable runtime quota error classification under details.errorCategory, and exposes public runtime quota fields under details.runtimeQuota when provider details include public quota fields.",
         "content": {
           "application/json": {
             "schema": {
@@ -3407,7 +3407,7 @@
         "additionalProperties": true
       },
       "RuntimeQuotaError": {
-        "description": "Runtime quota error response. This follows the shared ErrorResponse shape, includes a stable runtime quota error classification under details.errorCategory, and exposes public runtime quota fields under details.runtimeQuota.",
+        "description": "Runtime quota error response. This follows the shared ErrorResponse shape, includes a stable runtime quota error classification under details.errorCategory, and exposes public runtime quota fields under details.runtimeQuota when provider details include public quota fields.",
         "allOf": [
           {
             "$ref": "#/components/schemas/ErrorResponse"
