@@ -14,7 +14,6 @@ func TestNormalizeRuntimeQuotaErrorBodyCanonicalizesLegacyRecommendedAction(t *t
 			"code":"quota_exhausted",
 			"message":"Included quota is exhausted.",
 			"details":{
-				"retryable":false,
 				"meter":"memory_recall_requests",
 				"limitType":"includedQuota",
 				"recommendedAction":{
@@ -30,27 +29,30 @@ func TestNormalizeRuntimeQuotaErrorBodyCanonicalizesLegacyRecommendedAction(t *t
 		}`))
 
 	got := decodeRuntimeQuotaErrorBody(t, body)
-	if got["code"] != "quota_exhausted" || got["message"] != "Included quota is exhausted." {
+	if got["error"] != "Included quota is exhausted." {
 		t.Fatalf("unexpected envelope: %#v", got)
 	}
-	if _, ok := got["mem9_code"]; ok {
-		t.Fatalf("mem9_code should live under details: %#v", got)
+	for _, key := range []string{"code", "message", "mem9_code"} {
+		if _, ok := got[key]; ok {
+			t.Fatalf("%q should not be exposed at the top level: %#v", key, got)
+		}
 	}
-	details := got["details"].(map[string]any)
-	recommendedAction := details["recommendedAction"].(map[string]any)
-	quotaGateResult := details["quotaGateResult"].(map[string]any)
-	if details["meter"] != "memory_recall_requests" ||
+	runtimeQuota := runtimeQuotaDetails(t, got)
+	recommendedAction := runtimeQuota["recommendedAction"].(map[string]any)
+	quotaGateResult := runtimeQuota["quotaGateResult"].(map[string]any)
+	if runtimeQuota["category"] != "runtime_quota_denied" ||
+		runtimeQuota["meter"] != "memory_recall_requests" ||
+		runtimeQuota["providerReason"] != "quota_exhausted" ||
 		recommendedAction["type"] != "openUrl" ||
 		recommendedAction["providerActionCode"] != "upgradePlan" ||
 		recommendedAction["url"] != "https://example.com/provider/billing/plan" ||
 		quotaGateResult["outcome"] != "blocked" ||
-		quotaGateResult["reason"] != "includedQuotaExhausted" ||
-		details["mem9Code"] != "runtime_quota_denied" {
-		t.Fatalf("unexpected details: %#v", details)
+		quotaGateResult["reason"] != "includedQuotaExhausted" {
+		t.Fatalf("unexpected runtime quota details: %#v", runtimeQuota)
 	}
 	for _, key := range []string{"upgradeAction", "bindingState", "upgradeUrl"} {
-		if _, ok := details[key]; ok {
-			t.Fatalf("legacy flat action field %q should be absent: %#v", key, details)
+		if _, ok := runtimeQuota[key]; ok {
+			t.Fatalf("legacy flat action field %q should be absent: %#v", key, runtimeQuota)
 		}
 	}
 	if _, ok := recommendedAction["bindingState"]; ok {
@@ -63,7 +65,6 @@ func TestNormalizeRuntimeQuotaErrorBodyCanonicalizesLegacyFlatAction(t *testing.
 			"code":"spending_limit_exceeded",
 			"message":"Spending limit reached.",
 			"details":{
-				"retryable":false,
 				"meter":"memory_write_requests",
 				"upgradeAction":"increaseSpendingLimit",
 				"upgradeUrl":"https://example.com/provider/spending-limit"
@@ -71,16 +72,16 @@ func TestNormalizeRuntimeQuotaErrorBodyCanonicalizesLegacyFlatAction(t *testing.
 		}`))
 
 	got := decodeRuntimeQuotaErrorBody(t, body)
-	details := got["details"].(map[string]any)
-	recommendedAction := details["recommendedAction"].(map[string]any)
+	runtimeQuota := runtimeQuotaDetails(t, got)
+	recommendedAction := runtimeQuota["recommendedAction"].(map[string]any)
 	if recommendedAction["type"] != "openUrl" ||
 		recommendedAction["providerActionCode"] != "increaseSpendingLimit" ||
 		recommendedAction["url"] != "https://example.com/provider/spending-limit" {
 		t.Fatalf("unexpected recommended action: %#v", recommendedAction)
 	}
 	for _, key := range []string{"upgradeAction", "upgradeUrl"} {
-		if _, ok := details[key]; ok {
-			t.Fatalf("legacy flat action field %q should be absent: %#v", key, details)
+		if _, ok := runtimeQuota[key]; ok {
+			t.Fatalf("legacy flat action field %q should be absent: %#v", key, runtimeQuota)
 		}
 	}
 }
@@ -97,8 +98,8 @@ func TestNormalizeRuntimeQuotaErrorBodyDoesNotSynthesizeActionURL(t *testing.T) 
 		}`))
 
 	got := decodeRuntimeQuotaErrorBody(t, body)
-	details := got["details"].(map[string]any)
-	recommendedAction := details["recommendedAction"].(map[string]any)
+	runtimeQuota := runtimeQuotaDetails(t, got)
+	recommendedAction := runtimeQuota["recommendedAction"].(map[string]any)
 	if recommendedAction["type"] != "openUrl" || recommendedAction["providerActionCode"] != "claimApiKey" {
 		t.Fatalf("unexpected recommended action: %#v", recommendedAction)
 	}
@@ -107,47 +108,53 @@ func TestNormalizeRuntimeQuotaErrorBodyDoesNotSynthesizeActionURL(t *testing.T) 
 	}
 }
 
-func TestNormalizeRuntimeQuotaErrorBodyMovesLegacyMem9Code(t *testing.T) {
+func TestNormalizeRuntimeQuotaErrorBodyDropsLegacyMem9Code(t *testing.T) {
 	body := normalizeRuntimeQuotaErrorBody(http.StatusPaymentRequired, []byte(`{
 			"code":"quota_exhausted",
 			"message":"Included quota is exhausted.",
-			"retryable":false,
+			"details":{
+				"mem9Code":"runtime_quota_denied",
+				"mem9_code":"runtime_quota_denied",
+				"meter":"memory_recall_requests"
+			},
 		"mem9_code":"runtime_quota_denied"
 		}`))
 
 	got := decodeRuntimeQuotaErrorBody(t, body)
 	if _, ok := got["mem9_code"]; ok {
-		t.Fatalf("mem9_code should live under details: %#v", got)
+		t.Fatalf("mem9_code should not be exposed at the top level: %#v", got)
 	}
-	details := got["details"].(map[string]any)
-	if details["retryable"] != false || details["mem9Code"] != "runtime_quota_denied" {
-		t.Fatalf("unexpected details: %#v", details)
+	runtimeQuota := runtimeQuotaDetails(t, got)
+	if _, ok := runtimeQuota["mem9Code"]; ok {
+		t.Fatalf("mem9Code should not be exposed in runtimeQuota: %#v", runtimeQuota)
+	}
+	if _, ok := runtimeQuota["mem9_code"]; ok {
+		t.Fatalf("mem9_code should not be exposed in runtimeQuota: %#v", runtimeQuota)
+	}
+	if runtimeQuota["category"] != "runtime_quota_denied" ||
+		runtimeQuota["providerReason"] != "quota_exhausted" ||
+		runtimeQuota["meter"] != "memory_recall_requests" {
+		t.Fatalf("unexpected runtime quota details: %#v", runtimeQuota)
 	}
 }
 
 func TestNormalizeRuntimeQuotaErrorBodyUsesFallbackByStatus(t *testing.T) {
 	tests := []struct {
-		name      string
-		status    int
-		body      []byte
-		code      string
-		message   string
-		retryable bool
+		name    string
+		status  int
+		body    []byte
+		message string
 	}{
 		{
-			name:      "runtime access blocked",
-			status:    http.StatusPaymentRequired,
-			code:      "runtime_access_blocked",
-			message:   "Runtime access is blocked.",
-			retryable: false,
+			name:    "runtime access blocked",
+			status:  http.StatusPaymentRequired,
+			message: "Runtime access is blocked.",
 		},
 		{
-			name:      "post quota rate limited",
-			status:    http.StatusTooManyRequests,
-			body:      []byte("not-json"),
-			code:      "post_quota_rate_limited",
-			message:   "Post-quota rate limit exceeded.",
-			retryable: true,
+			name:    "post quota rate limited",
+			status:  http.StatusTooManyRequests,
+			body:    []byte("not-json"),
+			message: "Post-quota rate limit exceeded.",
 		},
 	}
 	for _, tt := range tests {
@@ -155,12 +162,17 @@ func TestNormalizeRuntimeQuotaErrorBodyUsesFallbackByStatus(t *testing.T) {
 			body := normalizeRuntimeQuotaErrorBody(tt.status, tt.body)
 
 			got := decodeRuntimeQuotaErrorBody(t, body)
-			if got["code"] != tt.code || got["message"] != tt.message {
+			if got["error"] != tt.message {
 				t.Fatalf("unexpected fallback envelope: %#v", got)
 			}
-			details := got["details"].(map[string]any)
-			if details["retryable"] != tt.retryable || details["mem9Code"] != "runtime_quota_denied" {
-				t.Fatalf("unexpected fallback details: %#v", details)
+			for _, key := range []string{"code", "message"} {
+				if _, ok := got[key]; ok {
+					t.Fatalf("%q should not be exposed at the top level: %#v", key, got)
+				}
+			}
+			runtimeQuota := runtimeQuotaDetails(t, got)
+			if runtimeQuota["category"] != "runtime_quota_denied" {
+				t.Fatalf("fallback should include stable runtime quota category: %#v", runtimeQuota)
 			}
 		})
 	}
@@ -188,14 +200,14 @@ func TestHandleRuntimeUsageErrorReturnsPostQuotaRateLimit(t *testing.T) {
 		t.Fatalf("Retry-After = %q, want 20", got)
 	}
 	got := decodeRuntimeQuotaErrorBody(t, recorder.Body.Bytes())
-	if got["code"] != "post_quota_rate_limited" || got["message"] != "Post-quota rate limit exceeded." {
+	if got["error"] != "Post-quota rate limit exceeded." {
 		t.Fatalf("unexpected envelope: %#v", got)
 	}
-	details := got["details"].(map[string]any)
-	if details["retryable"] != true ||
-		details["mem9Code"] != "runtime_quota_denied" ||
-		details["meter"] != "memory_recall_requests" {
-		t.Fatalf("unexpected details: %#v", details)
+	runtimeQuota := runtimeQuotaDetails(t, got)
+	if runtimeQuota["category"] != "runtime_quota_denied" ||
+		runtimeQuota["providerReason"] != "post_quota_rate_limited" ||
+		runtimeQuota["meter"] != "memory_recall_requests" {
+		t.Fatalf("unexpected runtime quota details: %#v", runtimeQuota)
 	}
 }
 
@@ -206,4 +218,17 @@ func decodeRuntimeQuotaErrorBody(t *testing.T, body []byte) map[string]any {
 		t.Fatalf("response is not valid JSON: %v", err)
 	}
 	return got
+}
+
+func runtimeQuotaDetails(t *testing.T, body map[string]any) map[string]any {
+	t.Helper()
+	details, ok := body["details"].(map[string]any)
+	if !ok {
+		t.Fatalf("details missing from response: %#v", body)
+	}
+	runtimeQuota, ok := details["runtimeQuota"].(map[string]any)
+	if !ok {
+		t.Fatalf("details.runtimeQuota missing from response: %#v", body)
+	}
+	return runtimeQuota
 }

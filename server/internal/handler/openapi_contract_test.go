@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	runtimeAccessBlockedRef = "#/components/responses/RuntimeAccessBlocked"
-	postQuotaRateLimitedRef = "#/components/responses/PostQuotaRateLimited"
-	genericRateLimitedRef   = "#/components/responses/RateLimited"
+	runtimeAccessBlockedRef   = "#/components/responses/RuntimeAccessBlocked"
+	memoryRouteRateLimitedRef = "#/components/responses/MemoryRouteRateLimited"
+	genericRateLimitedRef     = "#/components/responses/RateLimited"
 )
 
 func TestOpenAPIRuntimeQuotaResponses(t *testing.T) {
@@ -30,14 +30,14 @@ func TestOpenAPIRuntimeQuotaResponses(t *testing.T) {
 		for _, method := range route.methods {
 			responses := operationResponses(t, openapi, route.path, method)
 			assertResponseRef(t, responses, "402", runtimeAccessBlockedRef)
-			assertResponseRef(t, responses, "429", postQuotaRateLimitedRef)
+			assertResponseRef(t, responses, "429", memoryRouteRateLimitedRef)
 		}
 	}
 
 	getByIDResponses := operationResponses(t, openapi, "/v1alpha2/mem9s/memories/{id}", "get")
 	assertResponseRef(t, getByIDResponses, "429", genericRateLimitedRef)
 	assertNoResponseRef(t, operationResponses(t, openapi, "/v1alpha1/mem9s/{tenantID}/memories/{id}", "get"), "402", runtimeAccessBlockedRef)
-	assertNoResponseRef(t, operationResponses(t, openapi, "/v1alpha1/mem9s/{tenantID}/memories/{id}", "get"), "429", postQuotaRateLimitedRef)
+	assertNoResponseRef(t, operationResponses(t, openapi, "/v1alpha1/mem9s/{tenantID}/memories/{id}", "get"), "429", memoryRouteRateLimitedRef)
 }
 
 func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
@@ -50,6 +50,34 @@ func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 	headers := objectValue(t, postQuotaRateLimited, "headers")
 	if _, ok := headers["Retry-After"]; !ok {
 		t.Fatalf("PostQuotaRateLimited response missing Retry-After header")
+	}
+
+	memoryRouteRateLimited := objectValue(t, responses, "MemoryRouteRateLimited")
+	memoryRouteHeaders := objectValue(t, memoryRouteRateLimited, "headers")
+	if _, ok := memoryRouteHeaders["Retry-After"]; !ok {
+		t.Fatalf("MemoryRouteRateLimited response missing Retry-After header")
+	}
+	memoryRouteContent := objectValue(t, memoryRouteRateLimited, "content")
+	memoryRouteJSON := objectValue(t, memoryRouteContent, "application/json")
+	memoryRouteSchema := objectValue(t, memoryRouteJSON, "schema")
+	anyOf := objectSlice(t, memoryRouteSchema["anyOf"])
+	if !containsRef(anyOf, "#/components/schemas/RuntimeQuotaError") {
+		t.Fatalf("MemoryRouteRateLimited should include RuntimeQuotaError in anyOf: %#v", anyOf)
+	}
+	if !containsRef(anyOf, "#/components/schemas/ErrorResponse") {
+		t.Fatalf("MemoryRouteRateLimited should include generic ErrorResponse in anyOf: %#v", anyOf)
+	}
+
+	runtimeQuotaError := objectValue(t, schemas, "RuntimeQuotaError")
+	runtimeQuotaErrorAllOf := objectSlice(t, runtimeQuotaError["allOf"])
+	if !containsRef(runtimeQuotaErrorAllOf, "#/components/schemas/ErrorResponse") {
+		t.Fatalf("RuntimeQuotaError should extend ErrorResponse: %#v", runtimeQuotaErrorAllOf)
+	}
+	if !allOfRequiresProperty(runtimeQuotaErrorAllOf, "details") {
+		t.Fatalf("RuntimeQuotaError.details should be required for the runtimeQuota category: %#v", runtimeQuotaErrorAllOf)
+	}
+	if !allOfHasDetailsRef(runtimeQuotaErrorAllOf, "#/components/schemas/RuntimeQuotaErrorEnvelopeDetails") {
+		t.Fatalf("RuntimeQuotaError should add details.runtimeQuota via allOf: %#v", runtimeQuotaErrorAllOf)
 	}
 
 	recommendedAction := objectValue(t, schemas, "RuntimeRecommendedAction")
@@ -75,9 +103,45 @@ func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 		}
 	}
 
-	details := objectValue(t, schemas, "RuntimeQuotaErrorDetails")
-	if got, ok := details["additionalProperties"].(bool); !ok || !got {
-		t.Fatalf("RuntimeQuotaErrorDetails.additionalProperties = %#v, want true", details["additionalProperties"])
+	envelopeDetails := objectValue(t, schemas, "RuntimeQuotaErrorEnvelopeDetails")
+	envelopeProperties := objectValue(t, envelopeDetails, "properties")
+	if _, ok := envelopeProperties["runtimeQuota"]; !ok {
+		t.Fatalf("RuntimeQuotaErrorEnvelopeDetails should namespace quota fields under runtimeQuota")
+	}
+	if got, ok := envelopeDetails["additionalProperties"].(bool); !ok || got {
+		t.Fatalf("RuntimeQuotaErrorEnvelopeDetails.additionalProperties = %#v, want false", envelopeDetails["additionalProperties"])
+	}
+
+	runtimeQuotaDetails := objectValue(t, schemas, "RuntimeQuotaErrorDetails")
+	if got, ok := runtimeQuotaDetails["additionalProperties"].(bool); !ok || !got {
+		t.Fatalf("RuntimeQuotaErrorDetails.additionalProperties = %#v, want true", runtimeQuotaDetails["additionalProperties"])
+	}
+	if !containsString(stringSlice(t, runtimeQuotaDetails["required"]), "category") {
+		t.Fatalf("RuntimeQuotaErrorDetails.category should be required")
+	}
+	runtimeQuotaDetailProperties := objectValue(t, runtimeQuotaDetails, "properties")
+	category := objectValue(t, runtimeQuotaDetailProperties, "category")
+	if got, want := stringSlice(t, category["enum"]), []string{"runtime_quota_denied"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("RuntimeQuotaErrorDetails.category enum = %#v, want %#v", got, want)
+	}
+	providerReason := objectValue(t, runtimeQuotaDetailProperties, "providerReason")
+	if providerReason["type"] != "string" {
+		t.Fatalf("RuntimeQuotaErrorDetails should expose providerReason as an opaque quota hint")
+	}
+	if _, ok := providerReason["pattern"]; ok {
+		t.Fatalf("providerReason should remain provider-defined")
+	}
+	if _, ok := providerReason["enum"]; ok {
+		t.Fatalf("providerReason should remain provider-defined")
+	}
+	if _, ok := runtimeQuotaDetailProperties["mem9Code"]; ok {
+		t.Fatalf("RuntimeQuotaErrorDetails should not define a mem9-specific routing code")
+	}
+	if _, ok := runtimeQuotaDetailProperties["code"]; ok {
+		t.Fatalf("RuntimeQuotaErrorDetails should use category instead of a broad code field")
+	}
+	if _, ok := runtimeQuotaDetailProperties["retryable"]; ok {
+		t.Fatalf("RuntimeQuotaErrorDetails should not define retryability separately from HTTP status and Retry-After")
 	}
 
 	meter := objectValue(t, schemas, "RuntimeMeter")
@@ -197,10 +261,68 @@ func stringSlice(t *testing.T, value any) []string {
 	return out
 }
 
+func objectSlice(t *testing.T, value any) []map[string]any {
+	t.Helper()
+	values, ok := value.([]any)
+	if !ok {
+		t.Fatalf("value = %T, want array", value)
+	}
+	out := make([]map[string]any, 0, len(values))
+	for _, value := range values {
+		object, ok := value.(map[string]any)
+		if !ok {
+			t.Fatalf("array value = %T, want object", value)
+		}
+		out = append(out, object)
+	}
+	return out
+}
+
 func containsString(values []string, target string) bool {
 	for _, value := range values {
 		if value == target {
 			return true
+		}
+	}
+	return false
+}
+
+func containsRef(values []map[string]any, target string) bool {
+	for _, value := range values {
+		if value["$ref"] == target {
+			return true
+		}
+	}
+	return false
+}
+
+func allOfHasDetailsRef(values []map[string]any, target string) bool {
+	for _, value := range values {
+		properties, ok := value["properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		details, ok := properties["details"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if details["$ref"] == target {
+			return true
+		}
+	}
+	return false
+}
+
+func allOfRequiresProperty(values []map[string]any, target string) bool {
+	for _, value := range values {
+		required, ok := value["required"].([]any)
+		if !ok {
+			continue
+		}
+		for _, item := range required {
+			if item == target {
+				return true
+			}
 		}
 	}
 	return false

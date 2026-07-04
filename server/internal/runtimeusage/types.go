@@ -148,11 +148,11 @@ func (e *QuotaDeniedError) Error() string {
 func (e *QuotaDeniedError) ResponseBody() []byte {
 	if len(e.Body) == 0 {
 		body, _ := json.Marshal(map[string]any{
-			"code":    defaultQuotaDeniedCode(e.Status()),
-			"message": defaultQuotaDeniedMessage(e.Status()),
+			"error": defaultQuotaDeniedMessage(e.Status()),
 			"details": map[string]any{
-				"retryable": defaultQuotaDeniedRetryable(e.Status()),
-				"mem9Code":  "runtime_quota_denied",
+				"runtimeQuota": map[string]any{
+					"category": "runtime_quota_denied",
+				},
 			},
 		})
 		return body
@@ -167,22 +167,11 @@ func (e *QuotaDeniedError) Status() int {
 	return http.StatusPaymentRequired
 }
 
-func defaultQuotaDeniedCode(status int) string {
-	if status == http.StatusTooManyRequests {
-		return "post_quota_rate_limited"
-	}
-	return "runtime_access_blocked"
-}
-
 func defaultQuotaDeniedMessage(status int) string {
 	if status == http.StatusTooManyRequests {
 		return "Post-quota rate limit exceeded."
 	}
 	return "Runtime access is blocked."
-}
-
-func defaultQuotaDeniedRetryable(status int) bool {
-	return status == http.StatusTooManyRequests
 }
 
 type UnavailableError struct {

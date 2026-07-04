@@ -12,7 +12,10 @@ import (
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 )
 
-const runtimeUsagePostSuccessTimeout = 10 * time.Second
+const (
+	runtimeUsagePostSuccessTimeout = 10 * time.Second
+	runtimeQuotaPublicCategory     = "runtime_quota_denied"
+)
 
 func (s *Server) runtimeUsageEnabled() bool {
 	return s != nil && s.runtimeUsage != nil && s.runtimeUsage.Enabled()
@@ -83,64 +86,62 @@ func isRuntimeUsageError(err error) bool {
 }
 
 type runtimeQuotaErrorEnvelope struct {
-	Code    string         `json:"code"`
-	Message string         `json:"message"`
-	Details map[string]any `json:"details"`
+	Error   string         `json:"error"`
+	Details map[string]any `json:"details,omitempty"`
 }
 
 func normalizeRuntimeQuotaErrorBody(status int, body []byte) []byte {
 	body = bytes.TrimSpace(body)
+	runtimeQuota := map[string]any{
+		"category": runtimeQuotaPublicCategory,
+	}
 	envelope := runtimeQuotaErrorEnvelope{
-		Code:    runtimeQuotaDefaultCode(status),
-		Message: runtimeQuotaDefaultMessage(status),
-		Details: map[string]any{
-			"retryable": runtimeQuotaDefaultRetryable(status),
-			"mem9Code":  "runtime_quota_denied",
-		},
+		Error: runtimeQuotaDefaultMessage(status),
 	}
 	var parsed map[string]any
 	if len(body) > 0 && json.Unmarshal(body, &parsed) == nil {
+		hasError := false
+		if errorText, ok := parsed["error"].(string); ok && errorText != "" {
+			envelope.Error = errorText
+			hasError = true
+		}
 		if code, ok := parsed["code"].(string); ok && code != "" {
-			envelope.Code = code
+			runtimeQuota["providerReason"] = code
 		}
 		if message, ok := parsed["message"].(string); ok && message != "" {
-			envelope.Message = message
-		}
-		if details, ok := parsed["details"].(map[string]any); ok {
-			envelope.Details = make(map[string]any, len(details)+2)
-			for key, value := range details {
-				envelope.Details[key] = value
+			if !hasError {
+				envelope.Error = message
 			}
 		}
-		if retryable, ok := parsed["retryable"].(bool); ok {
-			envelope.Details["retryable"] = retryable
+		if details, ok := parsed["details"].(map[string]any); ok {
+			if nested, ok := details["runtimeQuota"].(map[string]any); ok {
+				for key, value := range nested {
+					runtimeQuota[key] = value
+				}
+			} else {
+				for key, value := range details {
+					runtimeQuota[key] = value
+				}
+			}
 		}
-		if mem9Code, ok := parsed["mem9_code"].(string); ok && mem9Code != "" {
-			envelope.Details["mem9Code"] = mem9Code
+		normalizeRuntimeQuotaRecommendedAction(runtimeQuota)
+	}
+	delete(runtimeQuota, "mem9Code")
+	delete(runtimeQuota, "mem9_code")
+	runtimeQuota["category"] = runtimeQuotaPublicCategory
+	if len(runtimeQuota) > 0 {
+		envelope.Details = map[string]any{
+			"runtimeQuota": runtimeQuota,
 		}
-		normalizeRuntimeQuotaRecommendedAction(envelope.Details)
-	}
-	if _, ok := envelope.Details["retryable"]; !ok {
-		envelope.Details["retryable"] = runtimeQuotaDefaultRetryable(status)
-	}
-	if _, ok := envelope.Details["mem9Code"]; !ok {
-		envelope.Details["mem9Code"] = "runtime_quota_denied"
 	}
 	out, err := json.Marshal(envelope)
 	if err != nil {
 		if status == http.StatusTooManyRequests {
-			return []byte(`{"code":"post_quota_rate_limited","message":"Post-quota rate limit exceeded.","details":{"retryable":true,"mem9Code":"runtime_quota_denied"}}`)
+			return []byte(`{"error":"Post-quota rate limit exceeded.","details":{"runtimeQuota":{"category":"runtime_quota_denied"}}}`)
 		}
-		return []byte(`{"code":"runtime_access_blocked","message":"Runtime access is blocked.","details":{"retryable":false,"mem9Code":"runtime_quota_denied"}}`)
+		return []byte(`{"error":"Runtime access is blocked.","details":{"runtimeQuota":{"category":"runtime_quota_denied"}}}`)
 	}
 	return out
-}
-
-func runtimeQuotaDefaultCode(status int) string {
-	if status == http.StatusTooManyRequests {
-		return "post_quota_rate_limited"
-	}
-	return "runtime_access_blocked"
 }
 
 func runtimeQuotaDefaultMessage(status int) string {
@@ -148,10 +149,6 @@ func runtimeQuotaDefaultMessage(status int) string {
 		return "Post-quota rate limit exceeded."
 	}
 	return "Runtime access is blocked."
-}
-
-func runtimeQuotaDefaultRetryable(status int) bool {
-	return status == http.StatusTooManyRequests
 }
 
 func normalizeRuntimeQuotaRecommendedAction(details map[string]any) {
