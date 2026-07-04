@@ -70,7 +70,7 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 
-	if classifyQuotaStatuses && (resp.StatusCode == http.StatusPaymentRequired || resp.StatusCode == http.StatusTooManyRequests) {
+	if classifyQuotaStatuses && isRuntimeQuotaDenialResponse(resp.StatusCode, respBody) {
 		return &QuotaDeniedError{
 			StatusCode: resp.StatusCode,
 			Body:       respBody,
@@ -89,4 +89,47 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 		}
 	}
 	return nil
+}
+
+func isRuntimeQuotaDenialResponse(status int, body []byte) bool {
+	switch status {
+	case http.StatusPaymentRequired:
+	case http.StatusTooManyRequests:
+	default:
+		return false
+	}
+
+	// Reservation providers return code/message/details envelopes. Code values
+	// are provider-defined, so classification uses the required envelope plus
+	// quota detail shape rather than provider-specific code strings.
+	var envelope struct {
+		Code    string         `json:"code"`
+		Message string         `json:"message"`
+		Details map[string]any `json:"details"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return false
+	}
+	if strings.TrimSpace(envelope.Code) == "" || strings.TrimSpace(envelope.Message) == "" {
+		return false
+	}
+	if !hasRuntimeQuotaString(envelope.Details, "meter") {
+		return false
+	}
+	gateResult, ok := envelope.Details["quotaGateResult"].(map[string]any)
+	if !ok {
+		return false
+	}
+	if !hasRuntimeQuotaString(gateResult, "outcome") {
+		return false
+	}
+	if !hasRuntimeQuotaString(gateResult, "reason") {
+		return false
+	}
+	return true
+}
+
+func hasRuntimeQuotaString(fields map[string]any, name string) bool {
+	value, ok := fields[name].(string)
+	return ok && strings.TrimSpace(value) != ""
 }

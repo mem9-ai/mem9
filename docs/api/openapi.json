@@ -2450,7 +2450,7 @@
         }
       },
       "PostQuotaRateLimited": {
-        "description": "Runtime usage provider returned a temporary post-quota rate limit.",
+        "description": "Runtime usage provider returned a temporary runtime quota rate limit, such as post-quota throttling.",
         "headers": {
           "Retry-After": {
             "description": "Seconds or HTTP date after which the client can retry, forwarded from the runtime usage provider when supplied.",
@@ -2498,7 +2498,7 @@
         }
       },
       "MemoryRouteRateLimited": {
-        "description": "Memory route rate limit. The response can be a generic API rate-limit envelope from global middleware or a runtime usage provider post-quota rate-limit envelope.",
+        "description": "Memory route rate limit. The response can be a generic API rate-limit envelope from global middleware or a runtime quota rate-limit envelope from the runtime usage provider.",
         "headers": {
           "Retry-After": {
             "description": "Seconds or HTTP date after which the client can retry, when supplied by the generic API rate limiter or runtime usage provider.",
@@ -3356,7 +3356,7 @@
           },
           "providerActionCode": {
             "type": "string",
-            "description": "Provider-defined action code. Clients should treat unknown values as opaque hints.",
+            "description": "Provider-defined action code. The official/reference runtime usage provider currently emits claimApiKey, upgradePlan, enableOnDemand, increaseSpendingLimit, and resolveAccountState; clients should treat any other value as an opaque provider hint.",
             "minLength": 1,
             "maxLength": 64,
             "example": "upgradePlan"

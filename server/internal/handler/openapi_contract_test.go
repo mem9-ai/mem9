@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -96,6 +97,12 @@ func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 	}
 	if _, ok := providerAction["pattern"]; ok {
 		t.Fatalf("providerActionCode should remain an opaque provider hint")
+	}
+	providerActionDescription, _ := providerAction["description"].(string)
+	for _, knownAction := range []string{"claimApiKey", "upgradePlan", "enableOnDemand", "increaseSpendingLimit", "resolveAccountState"} {
+		if !strings.Contains(providerActionDescription, knownAction) {
+			t.Fatalf("providerActionCode description should mention official/reference provider action %q: %q", knownAction, providerActionDescription)
+		}
 	}
 	for _, legacyAction := range []string{"claimApiKey", "upgradePlan", "enableOnDemand", "increaseSpendingLimit"} {
 		if containsString(stringSlice(t, actionType["enum"]), legacyAction) {
