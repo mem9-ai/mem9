@@ -40,9 +40,8 @@ func TestNormalizeRuntimeQuotaErrorBodyCanonicalizesLegacyRecommendedAction(t *t
 	runtimeQuota := runtimeQuotaDetails(t, got)
 	recommendedAction := runtimeQuota["recommendedAction"].(map[string]any)
 	quotaGateResult := runtimeQuota["quotaGateResult"].(map[string]any)
-	if runtimeQuota["category"] != "runtime_quota_denied" ||
+	if quotaMem9Category(t, got) != "runtime_quota_denied" ||
 		runtimeQuota["meter"] != "memory_recall_requests" ||
-		runtimeQuota["providerReason"] != "quota_exhausted" ||
 		recommendedAction["type"] != "openUrl" ||
 		recommendedAction["providerActionCode"] != "upgradePlan" ||
 		recommendedAction["url"] != "https://example.com/provider/billing/plan" ||
@@ -124,6 +123,9 @@ func TestNormalizeRuntimeQuotaErrorBodyDropsLegacyMem9Code(t *testing.T) {
 	if _, ok := got["mem9_code"]; ok {
 		t.Fatalf("mem9_code should not be exposed at the top level: %#v", got)
 	}
+	if quotaMem9Category(t, got) != "runtime_quota_denied" {
+		t.Fatalf("details.mem9Category should include stable mem9 category: %#v", got)
+	}
 	runtimeQuota := runtimeQuotaDetails(t, got)
 	if _, ok := runtimeQuota["mem9Code"]; ok {
 		t.Fatalf("mem9Code should not be exposed in runtimeQuota: %#v", runtimeQuota)
@@ -131,9 +133,13 @@ func TestNormalizeRuntimeQuotaErrorBodyDropsLegacyMem9Code(t *testing.T) {
 	if _, ok := runtimeQuota["mem9_code"]; ok {
 		t.Fatalf("mem9_code should not be exposed in runtimeQuota: %#v", runtimeQuota)
 	}
-	if runtimeQuota["category"] != "runtime_quota_denied" ||
-		runtimeQuota["providerReason"] != "quota_exhausted" ||
-		runtimeQuota["meter"] != "memory_recall_requests" {
+	if _, ok := runtimeQuota["providerReason"]; ok {
+		t.Fatalf("providerReason should not duplicate provider quotaGateResult.reason: %#v", runtimeQuota)
+	}
+	if _, ok := runtimeQuota["mem9Category"]; ok {
+		t.Fatalf("mem9Category should be owned by details, not runtimeQuota: %#v", runtimeQuota)
+	}
+	if runtimeQuota["meter"] != "memory_recall_requests" {
 		t.Fatalf("unexpected runtime quota details: %#v", runtimeQuota)
 	}
 }
@@ -170,9 +176,12 @@ func TestNormalizeRuntimeQuotaErrorBodyUsesFallbackByStatus(t *testing.T) {
 					t.Fatalf("%q should not be exposed at the top level: %#v", key, got)
 				}
 			}
-			runtimeQuota := runtimeQuotaDetails(t, got)
-			if runtimeQuota["category"] != "runtime_quota_denied" {
-				t.Fatalf("fallback should include stable runtime quota category: %#v", runtimeQuota)
+			if quotaMem9Category(t, got) != "runtime_quota_denied" {
+				t.Fatalf("fallback should include stable runtime quota mem9 category: %#v", got)
+			}
+			details := quotaEnvelopeDetails(t, got)
+			if _, ok := details["runtimeQuota"]; ok {
+				t.Fatalf("fallback without provider details should not synthesize runtimeQuota: %#v", got)
 			}
 		})
 	}
@@ -203,10 +212,14 @@ func TestHandleRuntimeUsageErrorReturnsPostQuotaRateLimit(t *testing.T) {
 	if got["error"] != "Post-quota rate limit exceeded." {
 		t.Fatalf("unexpected envelope: %#v", got)
 	}
+	if quotaMem9Category(t, got) != "runtime_quota_denied" {
+		t.Fatalf("details.mem9Category should include stable mem9 category: %#v", got)
+	}
 	runtimeQuota := runtimeQuotaDetails(t, got)
-	if runtimeQuota["category"] != "runtime_quota_denied" ||
-		runtimeQuota["providerReason"] != "post_quota_rate_limited" ||
-		runtimeQuota["meter"] != "memory_recall_requests" {
+	if _, ok := runtimeQuota["mem9Category"]; ok {
+		t.Fatalf("mem9Category should be owned by details, not runtimeQuota: %#v", runtimeQuota)
+	}
+	if runtimeQuota["meter"] != "memory_recall_requests" {
 		t.Fatalf("unexpected runtime quota details: %#v", runtimeQuota)
 	}
 }
@@ -222,13 +235,29 @@ func decodeRuntimeQuotaErrorBody(t *testing.T, body []byte) map[string]any {
 
 func runtimeQuotaDetails(t *testing.T, body map[string]any) map[string]any {
 	t.Helper()
-	details, ok := body["details"].(map[string]any)
-	if !ok {
-		t.Fatalf("details missing from response: %#v", body)
-	}
+	details := quotaEnvelopeDetails(t, body)
 	runtimeQuota, ok := details["runtimeQuota"].(map[string]any)
 	if !ok {
 		t.Fatalf("details.runtimeQuota missing from response: %#v", body)
 	}
 	return runtimeQuota
+}
+
+func quotaMem9Category(t *testing.T, body map[string]any) string {
+	t.Helper()
+	details := quotaEnvelopeDetails(t, body)
+	mem9Category, ok := details["mem9Category"].(string)
+	if !ok {
+		t.Fatalf("details.mem9Category missing from response: %#v", body)
+	}
+	return mem9Category
+}
+
+func quotaEnvelopeDetails(t *testing.T, body map[string]any) map[string]any {
+	t.Helper()
+	details, ok := body["details"].(map[string]any)
+	if !ok {
+		t.Fatalf("details missing from response: %#v", body)
+	}
+	return details
 }

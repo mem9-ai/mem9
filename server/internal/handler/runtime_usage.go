@@ -14,7 +14,7 @@ import (
 
 const (
 	runtimeUsagePostSuccessTimeout = 10 * time.Second
-	runtimeQuotaPublicCategory     = "runtime_quota_denied"
+	runtimeQuotaPublicMem9Category = "runtime_quota_denied"
 )
 
 func (s *Server) runtimeUsageEnabled() bool {
@@ -92,9 +92,7 @@ type runtimeQuotaErrorEnvelope struct {
 
 func normalizeRuntimeQuotaErrorBody(status int, body []byte) []byte {
 	body = bytes.TrimSpace(body)
-	runtimeQuota := map[string]any{
-		"category": runtimeQuotaPublicCategory,
-	}
+	runtimeQuota := map[string]any{}
 	envelope := runtimeQuotaErrorEnvelope{
 		Error: runtimeQuotaDefaultMessage(status),
 	}
@@ -104,9 +102,6 @@ func normalizeRuntimeQuotaErrorBody(status int, body []byte) []byte {
 		if errorText, ok := parsed["error"].(string); ok && errorText != "" {
 			envelope.Error = errorText
 			hasError = true
-		}
-		if code, ok := parsed["code"].(string); ok && code != "" {
-			runtimeQuota["providerReason"] = code
 		}
 		if message, ok := parsed["message"].(string); ok && message != "" {
 			if !hasError {
@@ -128,18 +123,19 @@ func normalizeRuntimeQuotaErrorBody(status int, body []byte) []byte {
 	}
 	delete(runtimeQuota, "mem9Code")
 	delete(runtimeQuota, "mem9_code")
-	runtimeQuota["category"] = runtimeQuotaPublicCategory
+	delete(runtimeQuota, "mem9Category")
+	envelope.Details = map[string]any{
+		"mem9Category": runtimeQuotaPublicMem9Category,
+	}
 	if len(runtimeQuota) > 0 {
-		envelope.Details = map[string]any{
-			"runtimeQuota": runtimeQuota,
-		}
+		envelope.Details["runtimeQuota"] = runtimeQuota
 	}
 	out, err := json.Marshal(envelope)
 	if err != nil {
 		if status == http.StatusTooManyRequests {
-			return []byte(`{"error":"Post-quota rate limit exceeded.","details":{"runtimeQuota":{"category":"runtime_quota_denied"}}}`)
+			return []byte(`{"error":"Post-quota rate limit exceeded.","details":{"mem9Category":"runtime_quota_denied"}}`)
 		}
-		return []byte(`{"error":"Runtime access is blocked.","details":{"runtimeQuota":{"category":"runtime_quota_denied"}}}`)
+		return []byte(`{"error":"Runtime access is blocked.","details":{"mem9Category":"runtime_quota_denied"}}`)
 	}
 	return out
 }

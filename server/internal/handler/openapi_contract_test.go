@@ -74,10 +74,10 @@ func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 		t.Fatalf("RuntimeQuotaError should extend ErrorResponse: %#v", runtimeQuotaErrorAllOf)
 	}
 	if !allOfRequiresProperty(runtimeQuotaErrorAllOf, "details") {
-		t.Fatalf("RuntimeQuotaError.details should be required for the runtimeQuota category: %#v", runtimeQuotaErrorAllOf)
+		t.Fatalf("RuntimeQuotaError.details should be required for the mem9 category: %#v", runtimeQuotaErrorAllOf)
 	}
 	if !allOfHasDetailsRef(runtimeQuotaErrorAllOf, "#/components/schemas/RuntimeQuotaErrorEnvelopeDetails") {
-		t.Fatalf("RuntimeQuotaError should add details.runtimeQuota via allOf: %#v", runtimeQuotaErrorAllOf)
+		t.Fatalf("RuntimeQuotaError should add quota details via allOf: %#v", runtimeQuotaErrorAllOf)
 	}
 
 	recommendedAction := objectValue(t, schemas, "RuntimeRecommendedAction")
@@ -104,9 +104,16 @@ func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 	}
 
 	envelopeDetails := objectValue(t, schemas, "RuntimeQuotaErrorEnvelopeDetails")
+	if !containsString(stringSlice(t, envelopeDetails["required"]), "mem9Category") {
+		t.Fatalf("RuntimeQuotaErrorEnvelopeDetails.mem9Category should be required")
+	}
 	envelopeProperties := objectValue(t, envelopeDetails, "properties")
+	envelopeMem9Category := objectValue(t, envelopeProperties, "mem9Category")
+	if got, want := stringSlice(t, envelopeMem9Category["enum"]), []string{"runtime_quota_denied"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("RuntimeQuotaErrorEnvelopeDetails.mem9Category enum = %#v, want %#v", got, want)
+	}
 	if _, ok := envelopeProperties["runtimeQuota"]; !ok {
-		t.Fatalf("RuntimeQuotaErrorEnvelopeDetails should namespace quota fields under runtimeQuota")
+		t.Fatalf("RuntimeQuotaErrorEnvelopeDetails should expose provider runtimeQuota details")
 	}
 	if got, ok := envelopeDetails["additionalProperties"].(bool); !ok || got {
 		t.Fatalf("RuntimeQuotaErrorEnvelopeDetails.additionalProperties = %#v, want false", envelopeDetails["additionalProperties"])
@@ -116,29 +123,26 @@ func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 	if got, ok := runtimeQuotaDetails["additionalProperties"].(bool); !ok || !got {
 		t.Fatalf("RuntimeQuotaErrorDetails.additionalProperties = %#v, want true", runtimeQuotaDetails["additionalProperties"])
 	}
-	if !containsString(stringSlice(t, runtimeQuotaDetails["required"]), "category") {
-		t.Fatalf("RuntimeQuotaErrorDetails.category should be required")
-	}
 	runtimeQuotaDetailProperties := objectValue(t, runtimeQuotaDetails, "properties")
-	category := objectValue(t, runtimeQuotaDetailProperties, "category")
-	if got, want := stringSlice(t, category["enum"]), []string{"runtime_quota_denied"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("RuntimeQuotaErrorDetails.category enum = %#v, want %#v", got, want)
+	if required, ok := runtimeQuotaDetails["required"]; ok {
+		if containsString(stringSlice(t, required), "mem9Category") {
+			t.Fatalf("RuntimeQuotaErrorDetails should not require mem9Category inside provider details")
+		}
 	}
-	providerReason := objectValue(t, runtimeQuotaDetailProperties, "providerReason")
-	if providerReason["type"] != "string" {
-		t.Fatalf("RuntimeQuotaErrorDetails should expose providerReason as an opaque quota hint")
-	}
-	if _, ok := providerReason["pattern"]; ok {
-		t.Fatalf("providerReason should remain provider-defined")
-	}
-	if _, ok := providerReason["enum"]; ok {
-		t.Fatalf("providerReason should remain provider-defined")
+	if _, ok := runtimeQuotaDetailProperties["mem9Category"]; ok {
+		t.Fatalf("RuntimeQuotaErrorDetails should keep mem9Category at the details envelope level")
 	}
 	if _, ok := runtimeQuotaDetailProperties["mem9Code"]; ok {
 		t.Fatalf("RuntimeQuotaErrorDetails should not define a mem9-specific routing code")
 	}
+	if _, ok := runtimeQuotaDetailProperties["providerReason"]; ok {
+		t.Fatalf("RuntimeQuotaErrorDetails should use quotaGateResult.reason for provider quota reasons")
+	}
+	if _, ok := runtimeQuotaDetailProperties["category"]; ok {
+		t.Fatalf("RuntimeQuotaErrorDetails should use mem9Category instead of a broad category field")
+	}
 	if _, ok := runtimeQuotaDetailProperties["code"]; ok {
-		t.Fatalf("RuntimeQuotaErrorDetails should use category instead of a broad code field")
+		t.Fatalf("RuntimeQuotaErrorDetails should use mem9Category instead of a broad code field")
 	}
 	if _, ok := runtimeQuotaDetailProperties["retryable"]; ok {
 		t.Fatalf("RuntimeQuotaErrorDetails should not define retryability separately from HTTP status and Retry-After")
@@ -158,18 +162,14 @@ func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 	gateResult := objectValue(t, schemas, "RuntimeQuotaGateResult")
 	gateProperties := objectValue(t, gateResult, "properties")
 	reason := objectValue(t, gateProperties, "reason")
-	wantReasons := []string{
-		"includedQuotaAvailable",
-		"includedQuotaExhausted",
-		"onDemandAvailable",
-		"onDemandDisabled",
-		"onDemandUnavailable",
-		"onDemandBudgetExhausted",
-		"postQuotaRateLimitExceeded",
-		"accountStateBlocked",
+	if reason["type"] != "string" {
+		t.Fatalf("RuntimeQuotaGateResult.reason type = %#v, want string", reason["type"])
 	}
-	if got := stringSlice(t, reason["enum"]); !reflect.DeepEqual(got, wantReasons) {
-		t.Fatalf("RuntimeQuotaGateResult.reason enum = %#v, want %#v", got, wantReasons)
+	if _, ok := reason["enum"]; ok {
+		t.Fatalf("RuntimeQuotaGateResult.reason should remain provider-defined")
+	}
+	if _, ok := reason["pattern"]; ok {
+		t.Fatalf("RuntimeQuotaGateResult.reason should not constrain provider-defined values")
 	}
 
 	postQuotaRateLimit := objectValue(t, schemas, "PostQuotaRateLimit")
