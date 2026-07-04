@@ -74,7 +74,7 @@ func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 		t.Fatalf("RuntimeQuotaError should extend ErrorResponse: %#v", runtimeQuotaErrorAllOf)
 	}
 	if !allOfRequiresProperty(runtimeQuotaErrorAllOf, "details") {
-		t.Fatalf("RuntimeQuotaError.details should be required for the mem9 category: %#v", runtimeQuotaErrorAllOf)
+		t.Fatalf("RuntimeQuotaError.details should be required for the error category: %#v", runtimeQuotaErrorAllOf)
 	}
 	if !allOfHasDetailsRef(runtimeQuotaErrorAllOf, "#/components/schemas/RuntimeQuotaErrorEnvelopeDetails") {
 		t.Fatalf("RuntimeQuotaError should add quota details via allOf: %#v", runtimeQuotaErrorAllOf)
@@ -102,35 +102,39 @@ func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 			t.Fatalf("RuntimeRecommendedAction.type still exposes legacy action %q", legacyAction)
 		}
 	}
+	actionSeverity := objectValue(t, actionProperties, "severity")
+	if _, ok := actionSeverity["enum"]; ok {
+		t.Fatalf("RuntimeRecommendedAction.severity should remain provider-defined")
+	}
 
 	envelopeDetails := objectValue(t, schemas, "RuntimeQuotaErrorEnvelopeDetails")
-	if !containsString(stringSlice(t, envelopeDetails["required"]), "mem9Category") {
-		t.Fatalf("RuntimeQuotaErrorEnvelopeDetails.mem9Category should be required")
+	if !containsString(stringSlice(t, envelopeDetails["required"]), "errorCategory") {
+		t.Fatalf("RuntimeQuotaErrorEnvelopeDetails.errorCategory should be required")
 	}
 	envelopeProperties := objectValue(t, envelopeDetails, "properties")
-	envelopeMem9Category := objectValue(t, envelopeProperties, "mem9Category")
-	if got, want := stringSlice(t, envelopeMem9Category["enum"]), []string{"runtime_quota_denied"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("RuntimeQuotaErrorEnvelopeDetails.mem9Category enum = %#v, want %#v", got, want)
+	envelopeErrorCategory := objectValue(t, envelopeProperties, "errorCategory")
+	if got, want := stringSlice(t, envelopeErrorCategory["enum"]), []string{"runtime_quota_denied"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("RuntimeQuotaErrorEnvelopeDetails.errorCategory enum = %#v, want %#v", got, want)
 	}
 	if _, ok := envelopeProperties["runtimeQuota"]; !ok {
-		t.Fatalf("RuntimeQuotaErrorEnvelopeDetails should expose provider runtimeQuota details")
+		t.Fatalf("RuntimeQuotaErrorEnvelopeDetails should expose public runtimeQuota details")
 	}
 	if got, ok := envelopeDetails["additionalProperties"].(bool); !ok || got {
 		t.Fatalf("RuntimeQuotaErrorEnvelopeDetails.additionalProperties = %#v, want false", envelopeDetails["additionalProperties"])
 	}
 
 	runtimeQuotaDetails := objectValue(t, schemas, "RuntimeQuotaErrorDetails")
-	if got, ok := runtimeQuotaDetails["additionalProperties"].(bool); !ok || !got {
-		t.Fatalf("RuntimeQuotaErrorDetails.additionalProperties = %#v, want true", runtimeQuotaDetails["additionalProperties"])
+	if got, ok := runtimeQuotaDetails["additionalProperties"].(bool); !ok || got {
+		t.Fatalf("RuntimeQuotaErrorDetails.additionalProperties = %#v, want false", runtimeQuotaDetails["additionalProperties"])
 	}
 	runtimeQuotaDetailProperties := objectValue(t, runtimeQuotaDetails, "properties")
 	if required, ok := runtimeQuotaDetails["required"]; ok {
-		if containsString(stringSlice(t, required), "mem9Category") {
-			t.Fatalf("RuntimeQuotaErrorDetails should not require mem9Category inside provider details")
+		if containsString(stringSlice(t, required), "errorCategory") {
+			t.Fatalf("RuntimeQuotaErrorDetails should not require errorCategory inside runtime quota details")
 		}
 	}
-	if _, ok := runtimeQuotaDetailProperties["mem9Category"]; ok {
-		t.Fatalf("RuntimeQuotaErrorDetails should keep mem9Category at the details envelope level")
+	if _, ok := runtimeQuotaDetailProperties["errorCategory"]; ok {
+		t.Fatalf("RuntimeQuotaErrorDetails should keep errorCategory at the details envelope level")
 	}
 	if _, ok := runtimeQuotaDetailProperties["mem9Code"]; ok {
 		t.Fatalf("RuntimeQuotaErrorDetails should not define a mem9-specific routing code")
@@ -139,13 +143,18 @@ func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 		t.Fatalf("RuntimeQuotaErrorDetails should use quotaGateResult.reason for provider quota reasons")
 	}
 	if _, ok := runtimeQuotaDetailProperties["category"]; ok {
-		t.Fatalf("RuntimeQuotaErrorDetails should use mem9Category instead of a broad category field")
+		t.Fatalf("RuntimeQuotaErrorDetails should use errorCategory instead of a broad category field")
 	}
 	if _, ok := runtimeQuotaDetailProperties["code"]; ok {
-		t.Fatalf("RuntimeQuotaErrorDetails should use mem9Category instead of a broad code field")
+		t.Fatalf("RuntimeQuotaErrorDetails should use errorCategory instead of a broad code field")
 	}
 	if _, ok := runtimeQuotaDetailProperties["retryable"]; ok {
 		t.Fatalf("RuntimeQuotaErrorDetails should not define retryability separately from HTTP status and Retry-After")
+	}
+	for _, property := range []string{"meter", "recommendedAction", "quotaGateResult"} {
+		if _, ok := runtimeQuotaDetailProperties[property]; !ok {
+			t.Fatalf("RuntimeQuotaErrorDetails missing public field %q", property)
+		}
 	}
 
 	meter := objectValue(t, schemas, "RuntimeMeter")

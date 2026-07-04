@@ -150,7 +150,7 @@ func (e *QuotaDeniedError) ResponseBody() []byte {
 		body, _ := json.Marshal(map[string]any{
 			"error": defaultQuotaDeniedMessage(e.Status()),
 			"details": map[string]any{
-				"mem9Category": "runtime_quota_denied",
+				"errorCategory": "runtime_quota_denied",
 			},
 		})
 		return body

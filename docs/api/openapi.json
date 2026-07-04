@@ -2416,7 +2416,7 @@
         "description": "No content."
       },
       "RuntimeAccessBlocked": {
-        "description": "Runtime access is blocked by the configured runtime usage provider. The body follows ErrorResponse, includes mem9 quota classification under details.mem9Category, and preserves provider-supplied metadata under details.runtimeQuota.",
+        "description": "Runtime access is blocked by the configured runtime usage provider. The body follows ErrorResponse, includes a stable runtime quota error classification under details.errorCategory, and exposes public runtime quota fields under details.runtimeQuota.",
         "content": {
           "application/json": {
             "schema": {
@@ -2427,7 +2427,7 @@
                 "value": {
                   "error": "Runtime access is blocked.",
                   "details": {
-                    "mem9Category": "runtime_quota_denied",
+                    "errorCategory": "runtime_quota_denied",
                     "runtimeQuota": {
                       "meter": "memory_recall_requests",
                       "quotaGateResult": {
@@ -2469,7 +2469,7 @@
                 "value": {
                   "error": "Post-quota rate limit exceeded.",
                   "details": {
-                    "mem9Category": "runtime_quota_denied",
+                    "errorCategory": "runtime_quota_denied",
                     "runtimeQuota": {
                       "meter": "memory_recall_requests",
                       "quotaGateResult": {
@@ -2524,7 +2524,7 @@
                 "value": {
                   "error": "Post-quota rate limit exceeded.",
                   "details": {
-                    "mem9Category": "runtime_quota_denied",
+                    "errorCategory": "runtime_quota_denied",
                     "runtimeQuota": {
                       "meter": "memory_recall_requests",
                       "quotaGateResult": {
@@ -3363,12 +3363,9 @@
           },
           "severity": {
             "type": "string",
-            "description": "How strongly clients should surface the action.",
-            "enum": [
-              "blocking",
-              "warning",
-              "info"
-            ]
+            "description": "Provider-defined action severity. Clients should treat unknown values as opaque hints.",
+            "minLength": 1,
+            "example": "blocking"
           },
           "url": {
             "type": "string",
@@ -3410,7 +3407,7 @@
         "additionalProperties": true
       },
       "RuntimeQuotaError": {
-        "description": "Runtime quota error response. This follows the shared ErrorResponse shape, includes mem9 quota classification under details.mem9Category, and preserves provider-supplied metadata under details.runtimeQuota.",
+        "description": "Runtime quota error response. This follows the shared ErrorResponse shape, includes a stable runtime quota error classification under details.errorCategory, and exposes public runtime quota fields under details.runtimeQuota.",
         "allOf": [
           {
             "$ref": "#/components/schemas/ErrorResponse"
@@ -3431,15 +3428,15 @@
       "RuntimeQuotaErrorEnvelopeDetails": {
         "type": "object",
         "required": [
-          "mem9Category"
+          "errorCategory"
         ],
         "properties": {
-          "mem9Category": {
+          "errorCategory": {
             "type": "string",
             "enum": [
               "runtime_quota_denied"
             ],
-            "description": "Stable mem9 runtime quota category for clients that need one routing condition."
+            "description": "Stable runtime quota error category for clients that need one routing condition."
           },
           "runtimeQuota": {
             "$ref": "#/components/schemas/RuntimeQuotaErrorDetails"
@@ -3457,7 +3454,7 @@
       },
       "RuntimeQuotaErrorDetails": {
         "type": "object",
-        "description": "Provider runtime quota details preserved by mem9 server. Specific provider quota reasons are carried by quotaGateResult.reason.",
+        "description": "Public runtime quota details assembled from provider reservation details. Specific provider quota reasons are carried by quotaGateResult.reason.",
         "properties": {
           "meter": {
             "$ref": "#/components/schemas/RuntimeMeter"
@@ -3469,7 +3466,7 @@
             "$ref": "#/components/schemas/RuntimeQuotaGateResult"
           }
         },
-        "additionalProperties": true
+        "additionalProperties": false
       },
       "PostQuotaRateLimit": {
         "type": "object",
