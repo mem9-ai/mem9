@@ -19,14 +19,16 @@ function quotaError(): Mem9HttpError {
     402,
     "",
     {
-      code: "spending_limit_exceeded",
-      message: "Spending limit is exhausted.",
+      error: "Spending limit is exhausted.",
       details: {
-        mem9Code: "runtime_quota_denied",
-        recommendedAction: {
-          bindingState: "claimed",
-          type: "increaseSpendingLimit",
-          url: "https://console.mem9.ai/console/billing/plan",
+        errorCategory: "runtime_quota_denied",
+        runtimeQuota: {
+          recommendedAction: {
+            bindingState: "claimed",
+            providerActionCode: "increaseSpendingLimit",
+            type: "openUrl",
+            url: "https://console.mem9.ai/console/billing/plan",
+          },
         },
       },
     },
@@ -69,12 +71,13 @@ test("memory tools return structured runtime quota denial payloads", async () =>
 
   const parsed = JSON.parse(output as string);
   assert.equal(parsed.ok, false);
-  assert.equal(parsed.code, "spending_limit_exceeded");
+  assert.equal(parsed.code, "runtime_quota_denied");
   assert.equal(parsed.status_code, 402);
   assert.equal(parsed.action_url, "https://console.mem9.ai/console/billing/plan");
   assert.deepEqual(parsed.quota.recommendedAction, {
     bindingState: "claimed",
-    type: "increaseSpendingLimit",
+    providerActionCode: "increaseSpendingLimit",
+    type: "openUrl",
     url: "https://console.mem9.ai/console/billing/plan",
   });
 });

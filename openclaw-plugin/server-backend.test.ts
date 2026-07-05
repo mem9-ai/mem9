@@ -87,14 +87,16 @@ test("runtime quota denial response bodies are preserved", async () => {
 
   globalThis.fetch = async () => {
     return new Response(JSON.stringify({
-      code: "quota_exhausted",
-      message: "Included quota is exhausted.",
+      error: "Included quota is exhausted.",
       details: {
-        mem9Code: "runtime_quota_denied",
-        recommendedAction: {
-          bindingState: "unclaimed",
-          type: "claimApiKey",
-          url: "https://console.mem9.ai/console/claim?key=mem9_test",
+        errorCategory: "runtime_quota_denied",
+        runtimeQuota: {
+          recommendedAction: {
+            bindingState: "unclaimed",
+            providerActionCode: "claimApiKey",
+            type: "openUrl",
+            url: "https://console.mem9.ai/console/claim?key=mem9_test",
+          },
         },
       },
     }), {
@@ -110,7 +112,7 @@ test("runtime quota denial response bodies are preserved", async () => {
       (error: unknown) => {
         assert.equal(error instanceof Mem9HttpError, true);
         const denied = parseRuntimeQuotaDenied(error);
-        assert.equal(denied?.code, "quota_exhausted");
+        assert.equal(denied?.code, "runtime_quota_denied");
         assert.equal(denied?.recommendedAction?.url, "https://console.mem9.ai/console/claim?key=mem9_test");
         return true;
       },
@@ -125,21 +127,21 @@ test("post-quota rate limit response bodies are preserved", async () => {
 
   globalThis.fetch = async () => {
     return new Response(JSON.stringify({
-      code: "post_quota_rate_limited",
-      message: "Post-quota rate limit exceeded.",
+      error: "Post-quota rate limit exceeded.",
       details: {
-        mem9Code: "runtime_quota_denied",
-        retryable: true,
-        meter: "memory_recall_requests",
-        quotaGateResult: {
-          outcome: "rateLimited",
-          mode: "postQuota",
-          reason: "postQuotaRateLimitExceeded",
-          postQuotaRateLimit: {
-            requestsPerMinute: 4,
-            windowDurationSeconds: 60,
-            scope: "apiKeyMeter",
-            retryAfterSeconds: 23,
+        errorCategory: "runtime_quota_denied",
+        runtimeQuota: {
+          meter: "memory_recall_requests",
+          quotaGateResult: {
+            outcome: "rateLimited",
+            mode: "postQuota",
+            reason: "postQuotaRateLimitExceeded",
+            postQuotaRateLimit: {
+              requestsPerMinute: 4,
+              windowDurationSeconds: 60,
+              scope: "apiKeyMeter",
+              retryAfterSeconds: 23,
+            },
           },
         },
       },
@@ -156,7 +158,7 @@ test("post-quota rate limit response bodies are preserved", async () => {
       (error: unknown) => {
         assert.equal(error instanceof Mem9HttpError, true);
         const denied = parseRuntimeQuotaDenied(error);
-        assert.equal(denied?.code, "post_quota_rate_limited");
+        assert.equal(denied?.code, "runtime_quota_denied");
         assert.equal(denied?.retryAfterSeconds, 23);
         return true;
       },

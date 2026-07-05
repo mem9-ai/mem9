@@ -15,6 +15,20 @@ interface SearchCapability {
 
 type HookHandler = (...args: unknown[]) => unknown;
 
+function runtimeQuotaPayload(error: string, runtimeQuota: Record<string, unknown> | null = {}): Record<string, unknown> {
+  const details: Record<string, unknown> = {
+    errorCategory: "runtime_quota_denied",
+  };
+  if (runtimeQuota !== null) {
+    details.runtimeQuota = runtimeQuota;
+  }
+
+  return {
+    error,
+    details,
+  };
+}
+
 interface StubApi {
   pluginConfig?: unknown;
   logger: {
@@ -185,16 +199,14 @@ test("memory tools return structured runtime quota denial payloads", async () =>
 
   globalThis.fetch = async () => {
     return new Response(JSON.stringify({
-      code: "spending_limit_exceeded",
-      message: "Spending limit is exhausted.",
-      details: {
-        mem9Code: "runtime_quota_denied",
+      ...runtimeQuotaPayload("Spending limit is exhausted.", {
         recommendedAction: {
           bindingState: "claimed",
-          type: "increaseSpendingLimit",
+          providerActionCode: "increaseSpendingLimit",
+          type: "openUrl",
           url: "https://console.mem9.ai/console/billing/plan",
         },
-      },
+      }),
     }), {
       status: 402,
       headers: { "Content-Type": "application/json" },
@@ -215,11 +227,12 @@ test("memory tools return structured runtime quota denial payloads", async () =>
     assert.equal(typeof output, "string");
     const parsed = JSON.parse(output as string);
     assert.equal(parsed.ok, false);
-    assert.equal(parsed.code, "spending_limit_exceeded");
+    assert.equal(parsed.code, "runtime_quota_denied");
     assert.equal(parsed.action_url, "https://console.mem9.ai/console/billing/plan");
     assert.deepEqual(parsed.quota.recommendedAction, {
       bindingState: "claimed",
-      type: "increaseSpendingLimit",
+      providerActionCode: "increaseSpendingLimit",
+      type: "openUrl",
       url: "https://console.mem9.ai/console/billing/plan",
     });
   } finally {
@@ -290,17 +303,15 @@ test("before_prompt_build returns runtime quota denial action context", async ()
 
   globalThis.fetch = async () => {
     return new Response(JSON.stringify({
-      code: "quota_exhausted",
-      message: "Included quota is exhausted.",
-      details: {
-        mem9Code: "runtime_quota_denied",
+      ...runtimeQuotaPayload("Included quota is exhausted.", {
         meter: "memory_recall_requests",
         recommendedAction: {
           bindingState: "unclaimed",
-          type: "claimApiKey",
+          providerActionCode: "claimApiKey",
+          type: "openUrl",
           url: "https://console.mem9.ai/console/claim?key=mem9_test",
         },
-      },
+      }),
     }), {
       status: 402,
       headers: { "Content-Type": "application/json" },
@@ -343,19 +354,15 @@ test("formatRuntimeQuotaNotice renders spending limit guidance", () => {
       "On-demand spending limit would be exceeded.",
       402,
       "",
-      {
-        code: "spending_limit_exceeded",
-        message: "On-demand spending limit would be exceeded.",
-        details: {
-          mem9Code: "runtime_quota_denied",
-          meter: "memory_recall_requests",
-          recommendedAction: {
-            bindingState: "claimed",
-            type: "increaseSpendingLimit",
-            url: "https://console.mem9.ai/console/billing/plan",
-          },
+      runtimeQuotaPayload("On-demand spending limit would be exceeded.", {
+        meter: "memory_recall_requests",
+        recommendedAction: {
+          bindingState: "claimed",
+          providerActionCode: "increaseSpendingLimit",
+          type: "openUrl",
+          url: "https://console.mem9.ai/console/billing/plan",
         },
-      },
+      }),
     ),
     "recall paused",
   );
@@ -369,32 +376,78 @@ test("formatRuntimeQuotaNotice renders spending limit guidance", () => {
   );
 });
 
+test("formatRuntimeQuotaNotice handles missing runtime quota metadata", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "Runtime access is blocked.",
+      402,
+      "",
+      runtimeQuotaPayload("Runtime access is blocked.", null),
+    ),
+    "recall paused",
+  );
+
+  assert.match(notice, /runtime quota check blocked this request/);
+  assert.match(notice, /open the mem9 console/);
+});
+
+test("formatRuntimeQuotaNotice handles unknown provider action codes", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "Custom quota action required.",
+      402,
+      "",
+      runtimeQuotaPayload("Custom quota action required.", {
+        recommendedAction: {
+          providerActionCode: "contactSupport",
+          type: "openUrl",
+          url: "https://console.mem9.ai/console/support",
+        },
+      }),
+    ),
+    "recall paused",
+  );
+
+  assert.match(notice, /open this mem9 link to resolve the account or billing state/);
+  assert.match(notice, /console\/support/);
+});
+
+test("formatRuntimeQuotaNotice ignores generic api rate limits", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "rate limit exceeded",
+      429,
+      "",
+      {
+        error: "rate limit exceeded",
+      },
+    ),
+    "recall paused",
+  );
+
+  assert.equal(notice, "");
+});
+
 test("formatRuntimeQuotaNotice renders post-quota rate limit billing guidance", () => {
   const notice = formatRuntimeQuotaNotice(
     new Mem9HttpError(
       "Post-quota rate limit exceeded.",
       429,
       "",
-      {
-        code: "post_quota_rate_limited",
-        message: "Post-quota rate limit exceeded.",
-        details: {
-          mem9Code: "runtime_quota_denied",
-          retryable: true,
-          meter: "memory_recall_requests",
-          quotaGateResult: {
-            outcome: "rateLimited",
-            mode: "postQuota",
-            reason: "postQuotaRateLimitExceeded",
-            postQuotaRateLimit: {
-              requestsPerMinute: 4,
-              windowDurationSeconds: 60,
-              scope: "apiKeyMeter",
-              retryAfterSeconds: 23,
-            },
+      runtimeQuotaPayload("Post-quota rate limit exceeded.", {
+        meter: "memory_recall_requests",
+        quotaGateResult: {
+          outcome: "rateLimited",
+          mode: "postQuota",
+          reason: "postQuotaRateLimitExceeded",
+          postQuotaRateLimit: {
+            requestsPerMinute: 4,
+            windowDurationSeconds: 60,
+            scope: "apiKeyMeter",
+            retryAfterSeconds: 23,
           },
         },
-      },
+      }),
     ),
     "recall paused",
   );
@@ -415,31 +468,26 @@ test("formatRuntimeQuotaNotice renders post-quota billing action when provided",
       "Post-quota rate limit exceeded.",
       429,
       "",
-      {
-        code: "post_quota_rate_limited",
-        message: "Post-quota rate limit exceeded.",
-        details: {
-          mem9Code: "runtime_quota_denied",
-          retryable: true,
-          meter: "memory_write_requests",
-          recommendedAction: {
-            bindingState: "claimed",
-            type: "upgradePlan",
-            url: "https://console.mem9.ai/console/billing/plan",
-          },
-          quotaGateResult: {
-            outcome: "rateLimited",
-            mode: "postQuota",
-            reason: "postQuotaRateLimitExceeded",
-            postQuotaRateLimit: {
-              requestsPerMinute: 2,
-              windowDurationSeconds: 60,
-              scope: "apiKeyMeter",
-              retryAfterSeconds: 1,
-            },
+      runtimeQuotaPayload("Post-quota rate limit exceeded.", {
+        meter: "memory_write_requests",
+        recommendedAction: {
+          bindingState: "claimed",
+          providerActionCode: "upgradePlan",
+          type: "openUrl",
+          url: "https://console.mem9.ai/console/billing/plan",
+        },
+        quotaGateResult: {
+          outcome: "rateLimited",
+          mode: "postQuota",
+          reason: "postQuotaRateLimitExceeded",
+          postQuotaRateLimit: {
+            requestsPerMinute: 2,
+            windowDurationSeconds: 60,
+            scope: "apiKeyMeter",
+            retryAfterSeconds: 1,
           },
         },
-      },
+      }),
     ),
     "memory save paused",
   );
@@ -460,31 +508,26 @@ test("formatRuntimeQuotaNotice renders post-quota claim action when provided", (
       "Post-quota rate limit exceeded.",
       429,
       "",
-      {
-        code: "post_quota_rate_limited",
-        message: "Post-quota rate limit exceeded.",
-        details: {
-          mem9Code: "runtime_quota_denied",
-          retryable: true,
-          meter: "memory_recall_requests",
-          recommendedAction: {
-            bindingState: "unclaimed",
-            type: "claimApiKey",
-            url: "https://console.mem9.ai/console/claim?key=mem9_test",
-          },
-          quotaGateResult: {
-            outcome: "rateLimited",
-            mode: "postQuota",
-            reason: "postQuotaRateLimitExceeded",
-            postQuotaRateLimit: {
-              requestsPerMinute: 4,
-              windowDurationSeconds: 60,
-              scope: "apiKeyMeter",
-              retryAfterSeconds: 23,
-            },
+      runtimeQuotaPayload("Post-quota rate limit exceeded.", {
+        meter: "memory_recall_requests",
+        recommendedAction: {
+          bindingState: "unclaimed",
+          providerActionCode: "claimApiKey",
+          type: "openUrl",
+          url: "https://console.mem9.ai/console/claim?key=mem9_test",
+        },
+        quotaGateResult: {
+          outcome: "rateLimited",
+          mode: "postQuota",
+          reason: "postQuotaRateLimitExceeded",
+          postQuotaRateLimit: {
+            requestsPerMinute: 4,
+            windowDurationSeconds: 60,
+            scope: "apiKeyMeter",
+            retryAfterSeconds: 23,
           },
         },
-      },
+      }),
     ),
     "recall paused",
   );
@@ -506,19 +549,15 @@ test("formatRuntimeQuotaNotice renders write meter guidance", () => {
       "Included quota is exhausted.",
       402,
       "",
-      {
-        code: "quota_exhausted",
-        message: "Included quota is exhausted.",
-        details: {
-          mem9Code: "runtime_quota_denied",
-          meter: "memory_write_requests",
-          recommendedAction: {
-            bindingState: "claimed",
-            type: "upgradePlan",
-            url: "https://console.mem9.ai/console/billing/plan",
-          },
+      runtimeQuotaPayload("Included quota is exhausted.", {
+        meter: "memory_write_requests",
+        recommendedAction: {
+          bindingState: "claimed",
+          providerActionCode: "upgradePlan",
+          type: "openUrl",
+          url: "https://console.mem9.ai/console/billing/plan",
         },
-      },
+      }),
     ),
     "recall paused",
   );

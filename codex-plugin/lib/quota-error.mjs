@@ -2,13 +2,6 @@
 
 import { Mem9HttpError } from "./http.mjs";
 
-const QUOTA_CODES = new Set([
-  "quota_exhausted",
-  "post_quota_rate_limited",
-  "spending_limit_exceeded",
-  "runtime_access_blocked",
-  "runtime_quota_denied",
-]);
 const DEFAULT_BILLING_ACTION_URL = "https://console.mem9.ai/console/billing/plan";
 
 function isRecord(value) {
@@ -51,40 +44,44 @@ function statusFromUnknown(value) {
   return null;
 }
 
-function normalizeRecommendedAction(details) {
-  const current = isRecord(details.recommendedAction)
-    ? details.recommendedAction
+function normalizeRecommendedAction(runtimeQuota) {
+  const current = isRecord(runtimeQuota.recommendedAction)
+    ? runtimeQuota.recommendedAction
     : {};
-  const type = normalizeString(current.type ?? details.upgradeAction);
-  const bindingState = normalizeString(current.bindingState ?? details.bindingState);
-  const url = normalizeString(current.url ?? details.upgradeUrl);
+  const bindingState = normalizeString(current.bindingState);
+  const providerActionCode = normalizeString(current.providerActionCode);
+  const severity = normalizeString(current.severity);
+  const type = normalizeString(current.type);
+  const url = normalizeString(current.url);
 
-  if (!type && !bindingState && !url) {
+  if (!type && !bindingState && !providerActionCode && !severity && !url) {
     return null;
   }
 
   return {
     ...(bindingState ? { bindingState } : {}),
+    ...(providerActionCode ? { providerActionCode } : {}),
+    ...(severity ? { severity } : {}),
     ...(type ? { type } : {}),
     ...(url ? { url } : {}),
   };
 }
 
-function quotaGateReason(details) {
-  const quotaGateResult = isRecord(details.quotaGateResult)
-    ? details.quotaGateResult
+function quotaGateReason(runtimeQuota) {
+  const quotaGateResult = isRecord(runtimeQuota.quotaGateResult)
+    ? runtimeQuota.quotaGateResult
     : {};
   return normalizeString(quotaGateResult.reason);
 }
 
-function retryAfterSeconds(details) {
-  const direct = normalizePositiveInteger(details.retryAfterSeconds);
+function retryAfterSeconds(runtimeQuota) {
+  const direct = normalizePositiveInteger(runtimeQuota.retryAfterSeconds);
   if (direct != null) {
     return direct;
   }
 
-  const quotaGateResult = isRecord(details.quotaGateResult)
-    ? details.quotaGateResult
+  const quotaGateResult = isRecord(runtimeQuota.quotaGateResult)
+    ? runtimeQuota.quotaGateResult
     : {};
   const postQuotaRateLimit = isRecord(quotaGateResult.postQuotaRateLimit)
     ? quotaGateResult.postQuotaRateLimit
@@ -94,7 +91,6 @@ function retryAfterSeconds(details) {
 
 function isPostQuotaRateLimited(denied) {
   return denied.status === 429 ||
-    denied.code === "post_quota_rate_limited" ||
     denied.quotaGateReason === "postQuotaRateLimitExceeded";
 }
 
@@ -102,20 +98,20 @@ function quotaReason(denied) {
   if (isPostQuotaRateLimited(denied)) {
     return "this API key has reached the temporary request limit for this memory feature";
   }
-  const actionType = normalizeString(denied.recommendedAction?.type);
-  if (actionType === "claimApiKey") {
+  const providerActionCode = normalizeString(denied.recommendedAction?.providerActionCode);
+  if (providerActionCode === "claimApiKey") {
     return "the included usage quota for this API key has been used up";
   }
-  if (actionType === "increaseSpendingLimit" || denied.code === "spending_limit_exceeded") {
+  if (providerActionCode === "increaseSpendingLimit") {
     return "the configured spending limit would be exceeded";
   }
-  if (actionType === "enableOnDemand") {
+  if (providerActionCode === "enableOnDemand") {
     return "the included usage quota has been used up and on-demand usage is not enabled";
   }
-  if (actionType === "upgradePlan" || denied.code === "quota_exhausted") {
+  if (providerActionCode === "upgradePlan") {
     return "the included usage quota for this mem9 account has been used up";
   }
-  if (denied.code === "runtime_access_blocked") {
+  if (providerActionCode === "resolveAccountState") {
     return "the current account or billing state blocks runtime memory access";
   }
   return "the runtime quota check blocked this request";
@@ -166,7 +162,7 @@ function actionUrlForDenied(denied) {
 
 function actionInstruction(denied) {
   const action = denied.recommendedAction;
-  const actionType = normalizeString(action?.type);
+  const providerActionCode = normalizeString(action?.providerActionCode);
   const explicitActionUrl = normalizeString(action?.url);
   const actionUrl = actionUrlForDenied(denied);
   if (!explicitActionUrl && isPostQuotaRateLimited(denied)) {
@@ -176,7 +172,7 @@ function actionInstruction(denied) {
     return "Ask them to open the mem9 console to resolve the account or billing state.";
   }
 
-  switch (actionType) {
+  switch (providerActionCode) {
     case "claimApiKey":
       return `Ask them to open this link to sign in or create a mem9 account and claim this API key: ${actionUrl}. After claiming the key, they can upgrade their plan or set up billing to get more usage. Include the link exactly as written.`;
     case "upgradePlan":
@@ -199,22 +195,21 @@ export function parseRuntimeQuotaDenied(value) {
   }
 
   const details = isRecord(payload.details) ? payload.details : {};
-  const code = normalizeString(payload.code);
-  const mem9Code = normalizeString(details.mem9Code ?? details.mem9_code ?? payload.mem9_code);
-  if (mem9Code !== "runtime_quota_denied" && !QUOTA_CODES.has(code)) {
+  if (normalizeString(details.errorCategory) !== "runtime_quota_denied") {
     return null;
   }
+  const runtimeQuota = isRecord(details.runtimeQuota) ? details.runtimeQuota : {};
 
-  const message = normalizeString(payload.message) || "runtime usage quota denied";
+  const message = normalizeString(payload.error) || "Runtime usage quota denied.";
   return {
     status: statusFromUnknown(value),
-    code: code || "runtime_quota_denied",
+    code: "runtime_quota_denied",
     message,
-    meter: normalizeString(details.meter),
+    meter: normalizeString(runtimeQuota.meter),
     details,
-    quotaGateReason: quotaGateReason(details),
-    retryAfterSeconds: retryAfterSeconds(details),
-    recommendedAction: normalizeRecommendedAction(details),
+    quotaGateReason: quotaGateReason(runtimeQuota),
+    retryAfterSeconds: retryAfterSeconds(runtimeQuota),
+    recommendedAction: normalizeRecommendedAction(runtimeQuota),
   };
 }
 

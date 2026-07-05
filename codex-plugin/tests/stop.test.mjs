@@ -21,6 +21,20 @@ const STOP_ENTRY = path.resolve("./hooks/stop.mjs");
 /** @type {Array<"plugin_disabled" | "plugin_missing" | "legacy_paused">} */
 const NON_READY_ISSUE_CODES = ["plugin_disabled", "plugin_missing", "legacy_paused"];
 
+/**
+ * @param {string} error
+ * @param {Record<string, unknown>} [runtimeQuota]
+ */
+function runtimeQuotaPayload(error, runtimeQuota = {}) {
+  return {
+    error,
+    details: {
+      errorCategory: "runtime_quota_denied",
+      runtimeQuota,
+    },
+  };
+}
+
 test("buildIngestUrl keeps a configured base path", () => {
   assert.equal(
     buildIngestUrl("https://api.mem9.ai/base"),
@@ -491,18 +505,14 @@ test("stop records runtime quota denial without failing the hook", async () => {
     async post() {
       throw new Mem9HttpError("quota denied", {
         status: 402,
-        data: {
-          code: "spending_limit_exceeded",
-          message: "Spending limit is exhausted.",
-          details: {
-            mem9Code: "runtime_quota_denied",
-            recommendedAction: {
-              type: "increaseSpendingLimit",
-              bindingState: "claimed",
-              url: "https://console.mem9.ai/console/billing/plan",
-            },
+        data: runtimeQuotaPayload("Spending limit is exhausted.", {
+          recommendedAction: {
+            bindingState: "claimed",
+            providerActionCode: "increaseSpendingLimit",
+            type: "openUrl",
+            url: "https://console.mem9.ai/console/billing/plan",
           },
-        },
+        }),
       });
     },
     debug(stage, fields) {
@@ -516,8 +526,8 @@ test("stop records runtime quota denial without failing the hook", async () => {
     ["ingest_window_selected", "ingest_quota_denied"],
   );
   assert.deepEqual(debugEvents.at(-1)?.fields, {
-    code: "spending_limit_exceeded",
-    actionType: "increaseSpendingLimit",
+    code: "runtime_quota_denied",
+    actionType: "openUrl",
     hasActionUrl: true,
   });
 });

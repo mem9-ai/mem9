@@ -379,14 +379,16 @@ test("buildHooks retries session.idle ingest after quota denial", async () => {
             402,
             "",
             {
-              code: "quota_exhausted",
-              message: "Included quota is exhausted.",
+              error: "Included quota is exhausted.",
               details: {
-                mem9Code: "runtime_quota_denied",
-                recommendedAction: {
-                  bindingState: "unclaimed",
-                  type: "claimApiKey",
-                  url: "https://console.mem9.ai/console/claim?key=mem9_test",
+                errorCategory: "runtime_quota_denied",
+                runtimeQuota: {
+                  recommendedAction: {
+                    bindingState: "unclaimed",
+                    providerActionCode: "claimApiKey",
+                    type: "openUrl",
+                    url: "https://console.mem9.ai/console/claim?key=mem9_test",
+                  },
                 },
               },
             },

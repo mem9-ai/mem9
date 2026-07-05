@@ -8,6 +8,20 @@ import { Mem9HttpError } from "../lib/http.mjs";
 import { main, runStore } from "../skills/store/scripts/store.mjs";
 import { createTempRoot } from "./test-temp.mjs";
 
+/**
+ * @param {string} error
+ * @param {Record<string, unknown>} [runtimeQuota]
+ */
+function runtimeQuotaPayload(error, runtimeQuota = {}) {
+  return {
+    error,
+    details: {
+      errorCategory: "runtime_quota_denied",
+      runtimeQuota,
+    },
+  };
+}
+
 test("main prints store help without calling mem9", async () => {
   let stdoutText = "";
 
@@ -138,18 +152,14 @@ test("runStore returns a structured runtime quota denial summary", async () => {
       fetchJson: async () => {
         throw new Mem9HttpError("quota denied", {
           status: 402,
-          data: {
-            code: "spending_limit_exceeded",
-            message: "Spending limit is exhausted.",
-            details: {
-              mem9Code: "runtime_quota_denied",
-              recommendedAction: {
-                bindingState: "claimed",
-                type: "increaseSpendingLimit",
-                url: "https://console.mem9.ai/console/billing/plan",
-              },
+          data: runtimeQuotaPayload("Spending limit is exhausted.", {
+            recommendedAction: {
+              bindingState: "claimed",
+              providerActionCode: "increaseSpendingLimit",
+              type: "openUrl",
+              url: "https://console.mem9.ai/console/billing/plan",
             },
-          },
+          }),
         });
       },
       stdout: {
@@ -162,11 +172,12 @@ test("runStore returns a structured runtime quota denial summary", async () => {
   const quotaResult = /** @type {any} */ (result);
 
   assert.equal(quotaResult.status, "quota_denied");
-  assert.equal(quotaResult.code, "spending_limit_exceeded");
+  assert.equal(quotaResult.code, "runtime_quota_denied");
   assert.equal(quotaResult.contentChars, "The user prefers concise release notes.".length);
   assert.deepEqual(quotaResult.recommendedAction, {
     bindingState: "claimed",
-    type: "increaseSpendingLimit",
+    providerActionCode: "increaseSpendingLimit",
+    type: "openUrl",
     url: "https://console.mem9.ai/console/billing/plan",
   });
   assert.deepEqual(JSON.parse(stdoutText), quotaResult);

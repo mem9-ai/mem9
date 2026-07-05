@@ -12,6 +12,20 @@ import { Mem9HttpError } from "../lib/http.mjs";
 import { buildRuntimeIssueMessage } from "../lib/skill-runtime.mjs";
 import { createTempRoot } from "./test-temp.mjs";
 
+/**
+ * @param {string} error
+ * @param {Record<string, unknown>} [runtimeQuota]
+ */
+function runtimeQuotaPayload(error, runtimeQuota = {}) {
+  return {
+    error,
+    details: {
+      errorCategory: "runtime_quota_denied",
+      runtimeQuota,
+    },
+  };
+}
+
 test("buildRecallUrl encodes q and limit", () => {
   const url = buildRecallUrl("https://api.mem9.ai/", "remember rust tips", 7);
   assert.equal(
@@ -177,18 +191,14 @@ test("runRecall returns a structured runtime quota denial summary", async () => 
       fetchJson: async () => {
         throw new Mem9HttpError("quota denied", {
           status: 402,
-          data: {
-            code: "quota_exhausted",
-            message: "Included quota is exhausted.",
-            details: {
-              mem9Code: "runtime_quota_denied",
-              recommendedAction: {
-                bindingState: "unclaimed",
-                type: "claimApiKey",
-                url: "https://console.mem9.ai/console/claim?key=mem9_test",
-              },
+          data: runtimeQuotaPayload("Included quota is exhausted.", {
+            recommendedAction: {
+              bindingState: "unclaimed",
+              providerActionCode: "claimApiKey",
+              type: "openUrl",
+              url: "https://console.mem9.ai/console/claim?key=mem9_test",
             },
-          },
+          }),
         });
       },
       stdout: {
@@ -201,11 +211,12 @@ test("runRecall returns a structured runtime quota denial summary", async () => 
   const quotaResult = /** @type {any} */ (result);
 
   assert.equal(quotaResult.status, "quota_denied");
-  assert.equal(quotaResult.code, "quota_exhausted");
+  assert.equal(quotaResult.code, "runtime_quota_denied");
   assert.equal(quotaResult.memoryCount, 0);
   assert.deepEqual(quotaResult.recommendedAction, {
     bindingState: "unclaimed",
-    type: "claimApiKey",
+    providerActionCode: "claimApiKey",
+    type: "openUrl",
     url: "https://console.mem9.ai/console/claim?key=mem9_test",
   });
   assert.deepEqual(JSON.parse(stdoutText), quotaResult);
@@ -231,26 +242,20 @@ test("runRecall returns a structured post-quota rate limit summary", async () =>
       fetchJson: async () => {
         throw new Mem9HttpError("rate limited", {
           status: 429,
-          data: {
-            code: "post_quota_rate_limited",
-            message: "Post-quota rate limit exceeded.",
-            details: {
-              mem9Code: "runtime_quota_denied",
-              retryable: true,
-              meter: "memory_recall_requests",
-              quotaGateResult: {
-                outcome: "rateLimited",
-                mode: "postQuota",
-                reason: "postQuotaRateLimitExceeded",
-                postQuotaRateLimit: {
-                  requestsPerMinute: 4,
-                  windowDurationSeconds: 60,
-                  scope: "apiKeyMeter",
-                  retryAfterSeconds: 23,
-                },
+          data: runtimeQuotaPayload("Post-quota rate limit exceeded.", {
+            meter: "memory_recall_requests",
+            quotaGateResult: {
+              outcome: "rateLimited",
+              mode: "postQuota",
+              reason: "postQuotaRateLimitExceeded",
+              postQuotaRateLimit: {
+                requestsPerMinute: 4,
+                windowDurationSeconds: 60,
+                scope: "apiKeyMeter",
+                retryAfterSeconds: 23,
               },
             },
-          },
+          }),
         });
       },
       stdout: {
@@ -263,7 +268,7 @@ test("runRecall returns a structured post-quota rate limit summary", async () =>
   const quotaResult = /** @type {any} */ (result);
 
   assert.equal(quotaResult.status, "quota_denied");
-  assert.equal(quotaResult.code, "post_quota_rate_limited");
+  assert.equal(quotaResult.code, "runtime_quota_denied");
   assert.equal(quotaResult.retryAfterSeconds, 23);
   assert.equal(quotaResult.actionUrl, "https://console.mem9.ai/console/billing/plan");
   assert.equal(quotaResult.memoryCount, 0);
