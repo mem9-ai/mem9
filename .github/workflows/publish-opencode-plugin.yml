@@ -26,9 +26,6 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Use local main branch
-        run: git switch -C main origin/main
-
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -79,7 +76,7 @@ jobs:
 
       - name: Publish
         working-directory: opencode-plugin
-        run: pnpm run publish:release current
+        run: pnpm run publish:release current --skip-branch-check
 
       - name: Clean publish token file
         if: always()
