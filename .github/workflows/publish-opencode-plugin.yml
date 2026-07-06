@@ -44,6 +44,29 @@ jobs:
           version="$(node -p "require('./package.json').version")"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
+      - name: Resolve npm dist tag
+        id: npm-tag
+        run: |
+          set -euo pipefail
+          version="${{ steps.package.outputs.version }}"
+          tag="latest"
+          case "${version}" in
+            *-alpha|*-alpha.*)
+              tag="alpha"
+              ;;
+            *-beta|*-beta.*)
+              tag="beta"
+              ;;
+            *-rc|*-rc.*)
+              tag="rc"
+              ;;
+            *-*)
+              echo "::error::Unsupported prerelease channel in ${version}; use alpha, beta, or rc."
+              exit 1
+              ;;
+          esac
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
       - name: Check npm token
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -82,4 +105,4 @@ jobs:
         working-directory: opencode-plugin
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: pnpm publish --access public --tag latest --no-git-checks
+        run: pnpm publish --access public --tag "${{ steps.npm-tag.outputs.tag }}" --no-git-checks
