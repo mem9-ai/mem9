@@ -46,26 +46,31 @@ jobs:
 
       - name: Resolve npm dist tag
         id: npm-tag
+        env:
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
         run: |
           set -euo pipefail
-          version="${{ steps.package.outputs.version }}"
-          tag="latest"
-          case "${version}" in
-            *-alpha|*-alpha.*)
-              tag="alpha"
-              ;;
-            *-beta|*-beta.*)
-              tag="beta"
-              ;;
-            *-rc|*-rc.*)
-              tag="rc"
-              ;;
-            *-*)
-              echo "::error::Unsupported prerelease channel in ${version}; use alpha, beta, or rc."
-              exit 1
-              ;;
-          esac
-          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const version = process.env.PACKAGE_VERSION ?? "";
+          const outputPath = process.env.GITHUB_OUTPUT;
+          const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+)(?:\.\d+)?)?$/.exec(version);
+
+          if (!match) {
+            console.error(`::error::Unsupported package version format: ${version}`);
+            process.exit(1);
+          }
+
+          const channel = match[4];
+          const tag = channel ?? "latest";
+          if (!["latest", "alpha", "beta", "rc"].includes(tag)) {
+            console.error(`::error::Unsupported prerelease channel in ${version}; use alpha, beta, or rc.`);
+            process.exit(1);
+          }
+
+          fs.appendFileSync(outputPath, `tag=${tag}\n`);
+          NODE
 
       - name: Check npm token
         env:
