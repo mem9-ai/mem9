@@ -50,18 +50,33 @@ func (c *HTTPClient) FinalizeReservation(ctx context.Context, subject Subject, o
 	return c.doJSON(ctx, http.MethodPatch, "/api/internal/quota/reservations/"+operationID, subject, body, nil, false)
 }
 
-func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Subject, body any, out any, classifyQuotaStatuses bool) error {
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("runtime usage marshal request: %w", err)
+func (c *HTTPClient) RuntimeState(ctx context.Context, subject Subject) (RuntimeState, error) {
+	var state RuntimeState
+	if err := c.doJSON(ctx, http.MethodGet, "/api/internal/mem9-api-key/state", subject, nil, &state, false); err != nil {
+		return RuntimeState{}, err
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(payload))
+	state.SetProviderDefaults()
+	return state, nil
+}
+
+func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Subject, body any, out any, classifyQuotaStatuses bool) error {
+	var reqBody io.Reader
+	if body != nil {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("runtime usage marshal request: %w", err)
+		}
+		reqBody = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reqBody)
 	if err != nil {
 		return fmt.Errorf("runtime usage build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.internalSecret)
 	req.Header.Set("X-API-Key", subject.APIKeySubject)
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {

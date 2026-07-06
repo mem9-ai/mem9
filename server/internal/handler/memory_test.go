@@ -428,6 +428,9 @@ type captureRuntimeUsageManager struct {
 }
 
 func (m *captureRuntimeUsageManager) Enabled() bool { return m.enabled }
+func (m *captureRuntimeUsageManager) RuntimeState(context.Context, runtimeusage.Subject) (runtimeusage.RuntimeState, error) {
+	return runtimeusage.RuntimeUsageDisabledState(), nil
+}
 func (m *captureRuntimeUsageManager) BeforeRecall(_ context.Context, subject runtimeusage.Subject) (*runtimeusage.OperationLease, error) {
 	m.beforeRecallCalls++
 	m.beforeRecallSubjects = append(m.beforeRecallSubjects, subject)

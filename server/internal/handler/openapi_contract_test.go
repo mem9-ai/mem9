@@ -219,6 +219,60 @@ func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 	}
 }
 
+func TestOpenAPIRuntimeStateContract(t *testing.T) {
+	openapi := loadOpenAPI(t)
+	responses := operationResponses(t, openapi, "/v1alpha2/mem9s/runtime-state", "get")
+	assertResponseRef(t, responses, "200", "#/components/responses/RuntimeState")
+	assertResponseRef(t, responses, "400", "#/components/responses/BadRequest")
+	assertResponseRef(t, responses, "429", "#/components/responses/RateLimited")
+	assertResponseRef(t, responses, "503", "#/components/responses/ServiceUnavailable")
+
+	components := objectValue(t, openapi, "components")
+	schemas := objectValue(t, components, "schemas")
+
+	state := objectValue(t, schemas, "RuntimeStateResponse")
+	if got, want := stringSlice(t, state["required"]), []string{"mem9ApiKey", "meters"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("RuntimeStateResponse.required = %#v, want %#v", got, want)
+	}
+	stateProperties := objectValue(t, state, "properties")
+	if _, ok := stateProperties["recommendedAction"]; !ok {
+		t.Fatalf("RuntimeStateResponse should expose recommendedAction")
+	}
+	if _, ok := stateProperties["providerData"]; !ok {
+		t.Fatalf("RuntimeStateResponse should expose optional providerData")
+	}
+	meters := objectValue(t, stateProperties, "meters")
+	if meters["minItems"] != float64(2) {
+		t.Fatalf("RuntimeStateResponse.meters.minItems = %#v, want 2", meters["minItems"])
+	}
+
+	meter := objectValue(t, schemas, "RuntimeStateMeter")
+	meterRequired := stringSlice(t, meter["required"])
+	for _, field := range []string{"meter", "budgets"} {
+		if !containsString(meterRequired, field) {
+			t.Fatalf("RuntimeStateMeter.required missing %q: %#v", field, meterRequired)
+		}
+	}
+	if containsString(meterRequired, "quotaGateResult") {
+		t.Fatalf("RuntimeStateMeter.quotaGateResult should stay optional")
+	}
+
+	budget := objectValue(t, schemas, "RuntimeStatusBudget")
+	budgetProperties := objectValue(t, budget, "properties")
+	budgetType := objectValue(t, budgetProperties, "type")
+	for _, value := range []string{"includedQuota", "spendingLimit", "credits", "notMetered", "unknown", "providerManaged"} {
+		if !containsString(stringSlice(t, budgetType["enum"]), value) {
+			t.Fatalf("RuntimeStatusBudget.type enum missing %q", value)
+		}
+	}
+	budgetState := objectValue(t, budgetProperties, "state")
+	for _, value := range []string{"ok", "warning", "exhausted", "unlimited", "unknown", "providerManaged"} {
+		if !containsString(stringSlice(t, budgetState["enum"]), value) {
+			t.Fatalf("RuntimeStatusBudget.state enum missing %q", value)
+		}
+	}
+}
+
 func loadOpenAPI(t *testing.T) map[string]any {
 	t.Helper()
 	path := filepath.Join("..", "..", "..", "docs", "api", "openapi.json")

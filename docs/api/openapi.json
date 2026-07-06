@@ -621,6 +621,52 @@
         }
       }
     },
+    "/v1alpha2/mem9s/runtime-state": {
+      "get": {
+        "tags": [
+          "Runtime State v1alpha2"
+        ],
+        "operationId": "getRuntimeState",
+        "summary": "Get plugin-visible runtime quota state",
+        "description": "Returns runtime-state facts for agent plugins. Hosted deployments read provider state through the configured runtime usage provider. Provider-disabled self-host deployments return a local fallback response with the same public shape.",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/RuntimeState"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
     "/v1alpha2/mem9s/memories": {
       "post": {
         "tags": [
@@ -2312,6 +2358,77 @@
           }
         }
       },
+      "RuntimeState": {
+        "description": "Plugin-visible runtime quota state. Provider-disabled deployments return the same shape with notMetered budgets.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RuntimeStateResponse"
+            },
+            "examples": {
+              "providerDisabled": {
+                "value": {
+                  "mem9ApiKey": {
+                    "status": "active"
+                  },
+                  "meters": [
+                    {
+                      "meter": "memory_recall_requests",
+                      "quotaGateResult": {
+                        "outcome": "allowed",
+                        "mode": "notMetered",
+                        "reason": "runtimeUsageDisabled"
+                      },
+                      "budgets": [
+                        {
+                          "type": "notMetered",
+                          "state": "unlimited",
+                          "measure": {
+                            "kind": "count",
+                            "quantity": "request",
+                            "scale": 1
+                          },
+                          "period": {
+                            "type": "none"
+                          },
+                          "capacity": {
+                            "type": "unlimited"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "meter": "memory_write_requests",
+                      "quotaGateResult": {
+                        "outcome": "allowed",
+                        "mode": "notMetered",
+                        "reason": "runtimeUsageDisabled"
+                      },
+                      "budgets": [
+                        {
+                          "type": "notMetered",
+                          "state": "unlimited",
+                          "measure": {
+                            "kind": "count",
+                            "quantity": "request",
+                            "scale": 1
+                          },
+                          "period": {
+                            "type": "none"
+                          },
+                          "capacity": {
+                            "type": "unlimited"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
       "BadRequest": {
         "description": "Invalid request. For v1alpha2 API-key routes this also includes missing, invalid, or inactive X-API-Key values returned by the authentication middleware.",
         "content": {
@@ -2612,6 +2729,221 @@
             "$ref": "#/components/schemas/KeyStatus"
           }
         }
+      },
+      "RuntimeStateResponse": {
+        "type": "object",
+        "required": [
+          "mem9ApiKey",
+          "meters"
+        ],
+        "properties": {
+          "mem9ApiKey": {
+            "$ref": "#/components/schemas/RuntimeStateAPIKey"
+          },
+          "meters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeStateMeter"
+            },
+            "minItems": 2
+          },
+          "recommendedAction": {
+            "$ref": "#/components/schemas/RuntimeRecommendedAction"
+          },
+          "providerData": {
+            "type": "object",
+            "description": "Optional hosted-provider details. Plugins can ignore this object unless they explicitly support provider-specific UI.",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeStateAPIKey": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "unknown"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeStateMeter": {
+        "type": "object",
+        "required": [
+          "meter",
+          "budgets"
+        ],
+        "properties": {
+          "meter": {
+            "$ref": "#/components/schemas/RuntimeMeter"
+          },
+          "quotaGateResult": {
+            "$ref": "#/components/schemas/RuntimeQuotaGateResult"
+          },
+          "budgets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeStatusBudget"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeStatusBudget": {
+        "type": "object",
+        "required": [
+          "type",
+          "state",
+          "measure",
+          "period",
+          "capacity"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "includedQuota",
+              "spendingLimit",
+              "credits",
+              "notMetered",
+              "unknown",
+              "providerManaged"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warning",
+              "exhausted",
+              "unlimited",
+              "unknown",
+              "providerManaged"
+            ]
+          },
+          "measure": {
+            "$ref": "#/components/schemas/RuntimeStatusMeasure"
+          },
+          "period": {
+            "$ref": "#/components/schemas/RuntimeStatusPeriod"
+          },
+          "capacity": {
+            "$ref": "#/components/schemas/RuntimeStatusCapacity"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/RuntimeStatusUsage"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeStatusMeasure": {
+        "type": "object",
+        "required": [
+          "kind",
+          "quantity",
+          "scale"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "count",
+              "currency",
+              "unknown"
+            ]
+          },
+          "quantity": {
+            "type": "string",
+            "description": "Unit quantity, such as request, USD, or a provider-defined value."
+          },
+          "scale": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Raw values are expressed in this scale. For example, request uses scale 1 and USD cents use scale 100."
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeStatusPeriod": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "calendarMonth",
+              "fixedWindow",
+              "none",
+              "unknown",
+              "providerManaged"
+            ]
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Exclusive period end when known."
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeStatusCapacity": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "limited",
+              "unlimited",
+              "unknown",
+              "providerManaged"
+            ]
+          },
+          "value": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeStatusUsage": {
+        "type": "object",
+        "properties": {
+          "used": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "remaining": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "percent": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "description": "Used percentage for limited budgets when the provider can compute it."
+          }
+        },
+        "additionalProperties": false
       },
       "StatusResponse": {
         "type": "object",

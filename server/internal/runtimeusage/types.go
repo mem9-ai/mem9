@@ -29,6 +29,36 @@ const (
 	reservationReleaseTimeout            = "timeout"
 )
 
+const (
+	RuntimeAPIKeyStatusActive  = "active"
+	RuntimeAPIKeyStatusUnknown = "unknown"
+
+	RuntimeBudgetTypeNotMetered      = "notMetered"
+	RuntimeBudgetTypeUnknown         = "unknown"
+	RuntimeBudgetTypeProviderManaged = "providerManaged"
+
+	RuntimeBudgetStateUnlimited       = "unlimited"
+	RuntimeBudgetStateUnknown         = "unknown"
+	RuntimeBudgetStateProviderManaged = "providerManaged"
+
+	RuntimeMeasureKindCount   = "count"
+	RuntimeMeasureKindUnknown = "unknown"
+
+	RuntimePeriodTypeNone            = "none"
+	RuntimePeriodTypeUnknown         = "unknown"
+	RuntimePeriodTypeProviderManaged = "providerManaged"
+
+	RuntimeCapacityTypeUnlimited       = "unlimited"
+	RuntimeCapacityTypeUnknown         = "unknown"
+	RuntimeCapacityTypeProviderManaged = "providerManaged"
+
+	RuntimeGateOutcomeAllowed = "allowed"
+
+	RuntimeGateModeNotMetered = "notMetered"
+
+	RuntimeGateReasonRuntimeUsageDisabled = "runtimeUsageDisabled"
+)
+
 type Config struct {
 	Enabled         bool
 	BaseURL         string
@@ -71,6 +101,159 @@ type Reservation struct {
 	RemainingIncludedUnits *int64    `json:"remainingIncludedUnits"`
 	ReservedUnits          int64     `json:"reservedUnits"`
 	OverageAllowed         bool      `json:"overageAllowed"`
+}
+
+type RuntimeState struct {
+	Mem9APIKey        RuntimeStateAPIKey        `json:"mem9ApiKey"`
+	Meters            []RuntimeStateMeter       `json:"meters"`
+	RecommendedAction *RuntimeRecommendedAction `json:"recommendedAction,omitempty"`
+	ProviderData      json.RawMessage           `json:"providerData,omitempty"`
+}
+
+type RuntimeStateAPIKey struct {
+	Status string `json:"status"`
+}
+
+type RuntimeStateMeter struct {
+	Meter           string                `json:"meter"`
+	QuotaGateResult map[string]any        `json:"quotaGateResult,omitempty"`
+	Budgets         []RuntimeStatusBudget `json:"budgets"`
+}
+
+type RuntimeStatusBudget struct {
+	Type     string                `json:"type"`
+	State    string                `json:"state"`
+	Measure  RuntimeStatusMeasure  `json:"measure"`
+	Period   RuntimeStatusPeriod   `json:"period"`
+	Capacity RuntimeStatusCapacity `json:"capacity"`
+	Usage    *RuntimeStatusUsage   `json:"usage,omitempty"`
+}
+
+type RuntimeStatusMeasure struct {
+	Kind     string `json:"kind"`
+	Quantity string `json:"quantity"`
+	Scale    int64  `json:"scale"`
+}
+
+type RuntimeStatusPeriod struct {
+	Type    string     `json:"type"`
+	StartAt *time.Time `json:"startAt,omitempty"`
+	EndAt   *time.Time `json:"endAt,omitempty"`
+}
+
+type RuntimeStatusCapacity struct {
+	Type  string `json:"type"`
+	Value *int64 `json:"value,omitempty"`
+}
+
+type RuntimeStatusUsage struct {
+	Used      *int64   `json:"used,omitempty"`
+	Remaining *int64   `json:"remaining,omitempty"`
+	Percent   *float64 `json:"percent,omitempty"`
+}
+
+type RuntimeRecommendedAction struct {
+	Type               string `json:"type"`
+	ProviderActionCode string `json:"providerActionCode,omitempty"`
+	Severity           string `json:"severity,omitempty"`
+	URL                string `json:"url,omitempty"`
+}
+
+func RuntimeUsageDisabledState() RuntimeState {
+	return RuntimeState{
+		Mem9APIKey: RuntimeStateAPIKey{Status: RuntimeAPIKeyStatusActive},
+		Meters: []RuntimeStateMeter{
+			notMeteredStateMeter(MeterMemoryRecallRequests),
+			notMeteredStateMeter(MeterMemoryWriteRequests),
+		},
+	}
+}
+
+func RuntimeStateProviderUnavailable() RuntimeState {
+	return RuntimeState{
+		Mem9APIKey: RuntimeStateAPIKey{Status: RuntimeAPIKeyStatusUnknown},
+		Meters: []RuntimeStateMeter{
+			unknownStateMeter(MeterMemoryRecallRequests),
+			unknownStateMeter(MeterMemoryWriteRequests),
+		},
+	}
+}
+
+func (s *RuntimeState) SetProviderDefaults() {
+	if s.Mem9APIKey.Status == "" {
+		s.Mem9APIKey.Status = RuntimeAPIKeyStatusUnknown
+	}
+	if len(s.Meters) == 0 {
+		s.Meters = []RuntimeStateMeter{
+			unknownStateMeter(MeterMemoryRecallRequests),
+			unknownStateMeter(MeterMemoryWriteRequests),
+		}
+		return
+	}
+	seenMeters := make(map[string]bool, len(s.Meters))
+	for i := range s.Meters {
+		seenMeters[s.Meters[i].Meter] = true
+		if len(s.Meters[i].Budgets) == 0 {
+			s.Meters[i].Budgets = []RuntimeStatusBudget{providerManagedBudget()}
+		}
+	}
+	if !seenMeters[MeterMemoryRecallRequests] {
+		s.Meters = append(s.Meters, unknownStateMeter(MeterMemoryRecallRequests))
+	}
+	if !seenMeters[MeterMemoryWriteRequests] {
+		s.Meters = append(s.Meters, unknownStateMeter(MeterMemoryWriteRequests))
+	}
+}
+
+func notMeteredStateMeter(meter string) RuntimeStateMeter {
+	return RuntimeStateMeter{
+		Meter: meter,
+		QuotaGateResult: map[string]any{
+			"outcome": RuntimeGateOutcomeAllowed,
+			"mode":    RuntimeGateModeNotMetered,
+			"reason":  RuntimeGateReasonRuntimeUsageDisabled,
+		},
+		Budgets: []RuntimeStatusBudget{{
+			Type:  RuntimeBudgetTypeNotMetered,
+			State: RuntimeBudgetStateUnlimited,
+			Measure: RuntimeStatusMeasure{
+				Kind:     RuntimeMeasureKindCount,
+				Quantity: "request",
+				Scale:    1,
+			},
+			Period: RuntimeStatusPeriod{
+				Type: RuntimePeriodTypeNone,
+			},
+			Capacity: RuntimeStatusCapacity{
+				Type: RuntimeCapacityTypeUnlimited,
+			},
+		}},
+	}
+}
+
+func unknownStateMeter(meter string) RuntimeStateMeter {
+	return RuntimeStateMeter{
+		Meter:   meter,
+		Budgets: []RuntimeStatusBudget{providerManagedBudget()},
+	}
+}
+
+func providerManagedBudget() RuntimeStatusBudget {
+	return RuntimeStatusBudget{
+		Type:  RuntimeBudgetTypeProviderManaged,
+		State: RuntimeBudgetStateProviderManaged,
+		Measure: RuntimeStatusMeasure{
+			Kind:     RuntimeMeasureKindUnknown,
+			Quantity: "provider-defined",
+			Scale:    1,
+		},
+		Period: RuntimeStatusPeriod{
+			Type: RuntimePeriodTypeProviderManaged,
+		},
+		Capacity: RuntimeStatusCapacity{
+			Type: RuntimeCapacityTypeProviderManaged,
+		},
+	}
 }
 
 type RecallResult struct {
@@ -116,6 +299,7 @@ type OutboxStore interface {
 
 type Manager interface {
 	Enabled() bool
+	RuntimeState(ctx context.Context, subject Subject) (RuntimeState, error)
 	BeforeRecall(ctx context.Context, subject Subject) (*OperationLease, error)
 	AfterRecallSuccess(ctx context.Context, lease *OperationLease, result RecallResult) error
 	AfterRecallFailure(ctx context.Context, lease *OperationLease, cause error)
@@ -131,6 +315,7 @@ type Manager interface {
 }
 
 type QuotaClient interface {
+	RuntimeState(ctx context.Context, subject Subject) (RuntimeState, error)
 	Reserve(ctx context.Context, subject Subject, operationID string, op Operation) (*Reservation, error)
 	FinalizeReservation(ctx context.Context, subject Subject, operationID string, status string, reason string) error
 }

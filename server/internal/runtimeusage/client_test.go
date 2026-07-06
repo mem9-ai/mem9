@@ -53,6 +53,66 @@ func TestHTTPClientReserveAllowsNullRemainingIncludedUnits(t *testing.T) {
 	}
 }
 
+func TestHTTPClientRuntimeStateCallsProviderStateEndpoint(t *testing.T) {
+	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+	client.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", req.Method)
+		}
+		if req.URL.Path != "/api/internal/mem9-api-key/state" {
+			t.Fatalf("path = %s", req.URL.Path)
+		}
+		if got := req.Header.Get("Authorization"); got != "Bearer secret" {
+			t.Fatalf("Authorization = %q, want bearer secret", got)
+		}
+		if got := req.Header.Get("X-API-Key"); got != "api-key-subject" {
+			t.Fatalf("X-API-Key = %q", got)
+		}
+		if got := req.Header.Get("Content-Type"); got != "" {
+			t.Fatalf("Content-Type = %q, want empty", got)
+		}
+		if req.Body != nil {
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatalf("ReadAll body: %v", err)
+			}
+			if len(body) != 0 {
+				t.Fatalf("body = %q, want empty", body)
+			}
+		}
+		return jsonResponse(`{
+			"mem9ApiKey": {"status": "active"},
+			"meters": [{
+				"meter": "memory_recall_requests",
+				"quotaGateResult": {"outcome": "allowed", "mode": "includedQuota", "reason": "includedQuotaAvailable"},
+				"budgets": [{
+					"type": "includedQuota",
+					"state": "ok",
+					"measure": {"kind": "count", "quantity": "request", "scale": 1},
+					"period": {"type": "calendarMonth", "startAt": "2026-07-01T00:00:00Z", "endAt": "2026-08-01T00:00:00Z"},
+					"capacity": {"type": "limited", "value": 1000},
+					"usage": {"used": 20, "remaining": 980, "percent": 2}
+				}]
+			}],
+			"providerData": {"bindingState": "claimed"}
+		}`), nil
+	})}
+
+	state, err := client.RuntimeState(context.Background(), Subject{APIKeySubject: "api-key-subject"})
+	if err != nil {
+		t.Fatalf("RuntimeState: %v", err)
+	}
+	if state.Mem9APIKey.Status != RuntimeAPIKeyStatusActive {
+		t.Fatalf("status = %q, want active", state.Mem9APIKey.Status)
+	}
+	if !hasRuntimeStateMeter(state, MeterMemoryRecallRequests) {
+		t.Fatalf("meters = %+v, want recall meter", state.Meters)
+	}
+	if !strings.Contains(string(state.ProviderData), "bindingState") || !strings.Contains(string(state.ProviderData), "claimed") {
+		t.Fatalf("ProviderData = %s, want binding state", state.ProviderData)
+	}
+}
+
 func TestHTTPClientReserveDecodesRemainingIncludedUnits(t *testing.T) {
 	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
 	client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
@@ -235,4 +295,13 @@ func statusJSONResponse(status int, body string, header http.Header) *http.Respo
 		Header:     header,
 		Body:       io.NopCloser(strings.NewReader(body)),
 	}
+}
+
+func hasRuntimeStateMeter(state RuntimeState, meter string) bool {
+	for _, item := range state.Meters {
+		if item.Meter == meter {
+			return true
+		}
+	}
+	return false
 }

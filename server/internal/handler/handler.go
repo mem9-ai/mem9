@@ -265,6 +265,7 @@ func (s *Server) Router(
 	r.Route("/v1alpha2/mem9s", func(r chi.Router) {
 		r.Use(apiKeyMW)
 
+		r.Get("/runtime-state", s.getRuntimeState)
 		r.Post("/memories", s.createMemory)
 		r.Get("/memories", s.listMemories)
 		r.Get("/memories/{id}", s.getMemory)
