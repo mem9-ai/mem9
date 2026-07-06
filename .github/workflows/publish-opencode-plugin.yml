@@ -1,0 +1,87 @@
+name: Publish OpenCode plugin
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish @mem9/opencode
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Require main branch
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_NAME}" != "main" ]; then
+            echo "::error::Run this workflow from main."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Use local main branch
+        run: git switch -C main origin/main
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Read package version
+        id: package
+        working-directory: opencode-plugin
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check npm token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "::error::Missing NPM_TOKEN repository secret."
+            exit 1
+          fi
+
+      - name: Check package version is unpublished
+        run: |
+          set -euo pipefail
+          if npm view "@mem9/opencode@${{ steps.package.outputs.version }}" version >/dev/null 2>&1; then
+            echo "::error::@mem9/opencode@${{ steps.package.outputs.version }} already exists on npm."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        working-directory: opencode-plugin
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare npm publish token
+        working-directory: opencode-plugin
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf 'NPM_ACCESSTOKEN=%s\n' "${NPM_TOKEN}" > .publish.env
+
+      - name: Publish
+        working-directory: opencode-plugin
+        run: pnpm run publish:release current
+
+      - name: Clean publish token file
+        if: always()
+        working-directory: opencode-plugin
+        run: rm -f .publish.env
