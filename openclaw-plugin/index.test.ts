@@ -201,7 +201,6 @@ test("memory tools return structured runtime quota denial payloads", async () =>
     return new Response(JSON.stringify({
       ...runtimeQuotaPayload("Spending limit is exhausted.", {
         recommendedAction: {
-          bindingState: "claimed",
           providerActionCode: "increaseSpendingLimit",
           type: "openUrl",
           url: "https://console.mem9.ai/console/billing/plan",
@@ -230,7 +229,6 @@ test("memory tools return structured runtime quota denial payloads", async () =>
     assert.equal(parsed.code, "runtime_quota_denied");
     assert.equal(parsed.action_url, "https://console.mem9.ai/console/billing/plan");
     assert.deepEqual(parsed.quota.recommendedAction, {
-      bindingState: "claimed",
       providerActionCode: "increaseSpendingLimit",
       type: "openUrl",
       url: "https://console.mem9.ai/console/billing/plan",
@@ -306,7 +304,6 @@ test("before_prompt_build returns runtime quota denial action context", async ()
       ...runtimeQuotaPayload("Included quota is exhausted.", {
         meter: "memory_recall_requests",
         recommendedAction: {
-          bindingState: "unclaimed",
           providerActionCode: "claimApiKey",
           type: "openUrl",
           url: "https://console.mem9.ai/console/claim?key=mem9_test",
@@ -357,7 +354,6 @@ test("formatRuntimeQuotaNotice renders spending limit guidance", () => {
       runtimeQuotaPayload("On-demand spending limit would be exceeded.", {
         meter: "memory_recall_requests",
         recommendedAction: {
-          bindingState: "claimed",
           providerActionCode: "increaseSpendingLimit",
           type: "openUrl",
           url: "https://console.mem9.ai/console/billing/plan",
@@ -428,7 +424,7 @@ test("formatRuntimeQuotaNotice ignores generic api rate limits", () => {
   assert.equal(notice, "");
 });
 
-test("formatRuntimeQuotaNotice renders post-quota rate limit billing guidance", () => {
+test("formatRuntimeQuotaNotice renders post-quota rate limit guidance without action URL", () => {
   const notice = formatRuntimeQuotaNotice(
     new Mem9HttpError(
       "Post-quota rate limit exceeded.",
@@ -453,13 +449,11 @@ test("formatRuntimeQuotaNotice renders post-quota rate limit billing guidance", 
   );
 
   assert.match(notice, /temporary request limit/);
-  assert.match(notice, /upgrade their mem9 plan or set up billing/);
-  assert.match(notice, /console\/billing\/plan/);
+  assert.match(notice, /quota\/rate-limit check blocked this request/);
+  assert.match(notice, /retry later or open the mem9 console/);
+  assert.doesNotMatch(notice, /console\/billing\/plan/);
   assert.doesNotMatch(notice, /wait 23 seconds before trying again/);
-  assert.equal(
-    notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,
-    1,
-  );
+  assert.equal((notice.match(/https:\/\//g) ?? []).length, 0);
 });
 
 test("formatRuntimeQuotaNotice renders post-quota billing action when provided", () => {
@@ -471,7 +465,6 @@ test("formatRuntimeQuotaNotice renders post-quota billing action when provided",
       runtimeQuotaPayload("Post-quota rate limit exceeded.", {
         meter: "memory_write_requests",
         recommendedAction: {
-          bindingState: "claimed",
           providerActionCode: "upgradePlan",
           type: "openUrl",
           url: "https://console.mem9.ai/console/billing/plan",
@@ -511,7 +504,6 @@ test("formatRuntimeQuotaNotice renders post-quota claim action when provided", (
       runtimeQuotaPayload("Post-quota rate limit exceeded.", {
         meter: "memory_recall_requests",
         recommendedAction: {
-          bindingState: "unclaimed",
           providerActionCode: "claimApiKey",
           type: "openUrl",
           url: "https://console.mem9.ai/console/claim?key=mem9_test",
@@ -552,7 +544,6 @@ test("formatRuntimeQuotaNotice renders write meter guidance", () => {
       runtimeQuotaPayload("Included quota is exhausted.", {
         meter: "memory_write_requests",
         recommendedAction: {
-          bindingState: "claimed",
           providerActionCode: "upgradePlan",
           type: "openUrl",
           url: "https://console.mem9.ai/console/billing/plan",

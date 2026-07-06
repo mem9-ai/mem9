@@ -24,7 +24,6 @@ function quotaError(): Mem9HttpError {
         errorCategory: "runtime_quota_denied",
         runtimeQuota: {
           recommendedAction: {
-            bindingState: "claimed",
             providerActionCode: "increaseSpendingLimit",
             type: "openUrl",
             url: "https://console.mem9.ai/console/billing/plan",
@@ -75,7 +74,6 @@ test("memory tools return structured runtime quota denial payloads", async () =>
   assert.equal(parsed.status_code, 402);
   assert.equal(parsed.action_url, "https://console.mem9.ai/console/billing/plan");
   assert.deepEqual(parsed.quota.recommendedAction, {
-    bindingState: "claimed",
     providerActionCode: "increaseSpendingLimit",
     type: "openUrl",
     url: "https://console.mem9.ai/console/billing/plan",

@@ -200,8 +200,8 @@ export class ServerBackend implements MemoryBackend {
     }
 
     const text = await resp.text();
-    const data = parseJsonOrUndefined(text);
     if (!resp.ok) {
+      const data = parseJsonOrUndefined(text);
       throw new Mem9HttpError(
         messageFromErrorBody(resp.status, text, data),
         resp.status,
@@ -209,6 +209,6 @@ export class ServerBackend implements MemoryBackend {
         data,
       );
     }
-    return data as T;
+    return JSON.parse(text) as T;
   }
 }

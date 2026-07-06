@@ -154,7 +154,6 @@ test("runStore returns a structured runtime quota denial summary", async () => {
           status: 402,
           data: runtimeQuotaPayload("Spending limit is exhausted.", {
             recommendedAction: {
-              bindingState: "claimed",
               providerActionCode: "increaseSpendingLimit",
               type: "openUrl",
               url: "https://console.mem9.ai/console/billing/plan",
@@ -175,7 +174,6 @@ test("runStore returns a structured runtime quota denial summary", async () => {
   assert.equal(quotaResult.code, "runtime_quota_denied");
   assert.equal(quotaResult.contentChars, "The user prefers concise release notes.".length);
   assert.deepEqual(quotaResult.recommendedAction, {
-    bindingState: "claimed",
     providerActionCode: "increaseSpendingLimit",
     type: "openUrl",
     url: "https://console.mem9.ai/console/billing/plan",

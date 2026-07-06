@@ -507,7 +507,6 @@ test("stop records runtime quota denial without failing the hook", async () => {
         status: 402,
         data: runtimeQuotaPayload("Spending limit is exhausted.", {
           recommendedAction: {
-            bindingState: "claimed",
             providerActionCode: "increaseSpendingLimit",
             type: "openUrl",
             url: "https://console.mem9.ai/console/billing/plan",

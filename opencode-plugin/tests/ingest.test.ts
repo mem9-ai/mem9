@@ -384,7 +384,6 @@ test("buildHooks retries session.idle ingest after quota denial", async () => {
                 errorCategory: "runtime_quota_denied",
                 runtimeQuota: {
                   recommendedAction: {
-                    bindingState: "unclaimed",
                     providerActionCode: "claimApiKey",
                     type: "openUrl",
                     url: "https://console.mem9.ai/console/claim?key=mem9_test",

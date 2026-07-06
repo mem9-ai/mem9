@@ -193,7 +193,6 @@ test("runRecall returns a structured runtime quota denial summary", async () => 
           status: 402,
           data: runtimeQuotaPayload("Included quota is exhausted.", {
             recommendedAction: {
-              bindingState: "unclaimed",
               providerActionCode: "claimApiKey",
               type: "openUrl",
               url: "https://console.mem9.ai/console/claim?key=mem9_test",
@@ -214,7 +213,6 @@ test("runRecall returns a structured runtime quota denial summary", async () => 
   assert.equal(quotaResult.code, "runtime_quota_denied");
   assert.equal(quotaResult.memoryCount, 0);
   assert.deepEqual(quotaResult.recommendedAction, {
-    bindingState: "unclaimed",
     providerActionCode: "claimApiKey",
     type: "openUrl",
     url: "https://console.mem9.ai/console/claim?key=mem9_test",
@@ -270,7 +268,7 @@ test("runRecall returns a structured post-quota rate limit summary", async () =>
   assert.equal(quotaResult.status, "quota_denied");
   assert.equal(quotaResult.code, "runtime_quota_denied");
   assert.equal(quotaResult.retryAfterSeconds, 23);
-  assert.equal(quotaResult.actionUrl, "https://console.mem9.ai/console/billing/plan");
+  assert.equal(quotaResult.actionUrl, undefined);
   assert.equal(quotaResult.memoryCount, 0);
   assert.deepEqual(JSON.parse(stdoutText), quotaResult);
   assert.equal(stdoutText.includes("key-search"), false);

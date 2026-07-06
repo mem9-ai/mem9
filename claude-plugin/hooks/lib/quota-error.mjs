@@ -3,8 +3,6 @@
 
 import { readFileSync } from "node:fs";
 
-const DEFAULT_BILLING_ACTION_URL = "https://console.mem9.ai/console/billing/plan";
-
 function isRecord(value) {
   return value != null && typeof value === "object" && !Array.isArray(value);
 }
@@ -106,8 +104,7 @@ function quotaNoticeSubject(quotaDenied, operation) {
 function actionInstruction(quotaDenied) {
   if (!quotaDenied.actionUrl) {
     if (isPostQuotaRateLimited(quotaDenied)) {
-      const billingUrl = quotaDenied.actionUrl || DEFAULT_BILLING_ACTION_URL;
-      return `Ask them to open this link to upgrade their mem9 plan or set up billing for higher usage limits: ${billingUrl}. Include the link exactly as written.`;
+      return "Tell them that the quota/rate-limit check blocked this request and to retry later or open the mem9 console to review account and billing settings.";
     }
     return "Ask them to open the mem9 console to resolve the account or billing state.";
   }

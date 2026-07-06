@@ -82,6 +82,24 @@ test("normal memory requests do not append provision query params", async () => 
   }
 });
 
+test("normal memory requests reject malformed success JSON", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => {
+    return new Response("{", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "space-key", "agent-1");
+    await assert.rejects(() => backend.search({ q: "hello" }), SyntaxError);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("runtime quota denial response bodies are preserved", async () => {
   const originalFetch = globalThis.fetch;
 
@@ -92,7 +110,6 @@ test("runtime quota denial response bodies are preserved", async () => {
         errorCategory: "runtime_quota_denied",
         runtimeQuota: {
           recommendedAction: {
-            bindingState: "unclaimed",
             providerActionCode: "claimApiKey",
             type: "openUrl",
             url: "https://console.mem9.ai/console/claim?key=mem9_test",

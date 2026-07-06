@@ -2,8 +2,6 @@
 
 import { Mem9HttpError } from "./http.mjs";
 
-const DEFAULT_BILLING_ACTION_URL = "https://console.mem9.ai/console/billing/plan";
-
 function isRecord(value) {
   return value != null && typeof value === "object" && !Array.isArray(value);
 }
@@ -48,18 +46,16 @@ function normalizeRecommendedAction(runtimeQuota) {
   const current = isRecord(runtimeQuota.recommendedAction)
     ? runtimeQuota.recommendedAction
     : {};
-  const bindingState = normalizeString(current.bindingState);
   const providerActionCode = normalizeString(current.providerActionCode);
   const severity = normalizeString(current.severity);
   const type = normalizeString(current.type);
   const url = normalizeString(current.url);
 
-  if (!type && !bindingState && !providerActionCode && !severity && !url) {
+  if (!type && !providerActionCode && !severity && !url) {
     return null;
   }
 
   return {
-    ...(bindingState ? { bindingState } : {}),
     ...(providerActionCode ? { providerActionCode } : {}),
     ...(severity ? { severity } : {}),
     ...(type ? { type } : {}),
@@ -153,22 +149,17 @@ function quotaNoticeSubject(denied, operation) {
 }
 
 function actionUrlForDenied(denied) {
-  const actionUrl = normalizeString(denied.recommendedAction?.url);
-  if (actionUrl) {
-    return actionUrl;
-  }
-  return isPostQuotaRateLimited(denied) ? DEFAULT_BILLING_ACTION_URL : "";
+  return normalizeString(denied.recommendedAction?.url);
 }
 
 function actionInstruction(denied) {
   const action = denied.recommendedAction;
   const providerActionCode = normalizeString(action?.providerActionCode);
-  const explicitActionUrl = normalizeString(action?.url);
   const actionUrl = actionUrlForDenied(denied);
-  if (!explicitActionUrl && isPostQuotaRateLimited(denied)) {
-    return `Ask them to open this link to upgrade their mem9 plan or set up billing for higher usage limits: ${actionUrl}. Include the link exactly as written.`;
-  }
   if (!actionUrl) {
+    if (isPostQuotaRateLimited(denied)) {
+      return "Tell them that the quota/rate-limit check blocked this request and to retry later or open the mem9 console to review account and billing settings.";
+    }
     return "Ask them to open the mem9 console to resolve the account or billing state.";
   }
 

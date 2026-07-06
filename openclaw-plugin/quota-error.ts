@@ -1,5 +1,3 @@
-const DEFAULT_BILLING_ACTION_URL = "https://console.mem9.ai/console/billing/plan";
-
 export class Mem9HttpError extends Error {
   constructor(
     message: string,
@@ -13,7 +11,6 @@ export class Mem9HttpError extends Error {
 }
 
 export interface RuntimeRecommendedAction {
-  bindingState?: string;
   providerActionCode?: string;
   severity?: string;
   type?: string;
@@ -73,18 +70,16 @@ export function messageFromErrorBody(status: number, body: string, data: unknown
 
 function normalizeRecommendedAction(runtimeQuota: Record<string, unknown>): RuntimeRecommendedAction | null {
   const nested = isRecord(runtimeQuota.recommendedAction) ? runtimeQuota.recommendedAction : {};
-  const bindingState = normalizeString(nested.bindingState);
   const providerActionCode = normalizeString(nested.providerActionCode);
   const severity = normalizeString(nested.severity);
   const type = normalizeString(nested.type);
   const url = normalizeString(nested.url);
 
-  if (!bindingState && !providerActionCode && !severity && !type && !url) {
+  if (!providerActionCode && !severity && !type && !url) {
     return null;
   }
 
   return {
-    ...(bindingState ? { bindingState } : {}),
     ...(providerActionCode ? { providerActionCode } : {}),
     ...(severity ? { severity } : {}),
     ...(type ? { type } : {}),
@@ -172,22 +167,17 @@ function quotaNoticeSubject(denied: RuntimeQuotaDenied, operation: string): { he
 }
 
 function actionUrlForDenied(denied: RuntimeQuotaDenied): string {
-  const actionUrl = normalizeString(denied.recommendedAction?.url);
-  if (actionUrl) {
-    return actionUrl;
-  }
-  return isPostQuotaRateLimited(denied) ? DEFAULT_BILLING_ACTION_URL : "";
+  return normalizeString(denied.recommendedAction?.url);
 }
 
 function actionInstruction(denied: RuntimeQuotaDenied): string {
   const action = denied.recommendedAction;
   const providerActionCode = normalizeString(action?.providerActionCode);
-  const explicitActionUrl = normalizeString(action?.url);
   const actionUrl = actionUrlForDenied(denied);
-  if (!explicitActionUrl && isPostQuotaRateLimited(denied)) {
-    return `Ask them to open this link to upgrade their mem9 plan or set up billing for higher usage limits: ${actionUrl}. Include the link exactly as written.`;
-  }
   if (!actionUrl) {
+    if (isPostQuotaRateLimited(denied)) {
+      return "Tell them that the quota/rate-limit check blocked this request and to retry later or open the mem9 console to review account and billing settings.";
+    }
     return "Ask them to open the mem9 console to resolve the account or billing state.";
   }
 

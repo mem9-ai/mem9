@@ -84,6 +84,24 @@ test("ServerBackend uses searchTimeoutMs for search and defaultTimeoutMs for wri
   }
 });
 
+test("ServerBackend rejects malformed success JSON", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => {
+    return new Response("{", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "mk_demo", "opencode");
+    await assert.rejects(() => backend.search({ q: "hello" }), SyntaxError);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("ServerBackend preserves runtime quota denial response bodies", async () => {
   const originalFetch = globalThis.fetch;
 
@@ -94,7 +112,6 @@ test("ServerBackend preserves runtime quota denial response bodies", async () =>
         errorCategory: "runtime_quota_denied",
         runtimeQuota: {
           recommendedAction: {
-            bindingState: "unclaimed",
             providerActionCode: "claimApiKey",
             type: "openUrl",
             url: "https://console.mem9.ai/console/claim?key=mem9_test",
