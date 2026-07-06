@@ -9,6 +9,7 @@ MEM9_AGENT_ID="${MEM9_AGENT_ID:-claude-code-main}"
 MEM9_WRITER_ID="${MEM9_WRITER_ID:-claude-code}"
 MEM9_CURL_BIN="${MEM9_CURL_BIN:-curl}"
 MEM9_AUTH_SOURCE="${MEM9_AUTH_SOURCE:-}"
+MEM9_HTTP_STATUS_MARKER="__MEM9_HTTP_STATUS__="
 
 mem9_require_node() {
   command -v node >/dev/null 2>&1 || return 1
@@ -222,13 +223,13 @@ mem9_api_request() {
 
   http_code="${response##*$'\n'}"
   response_body="${response%$'\n'"${http_code}"}"
-  printf '%s' "${response_body}"
-
   case "${http_code}" in
     2*)
+      printf '%s' "${response_body}"
       return 0
       ;;
     *)
+      printf '%s\n%s%s' "${response_body}" "${MEM9_HTTP_STATUS_MARKER}" "${http_code}"
       return 22
       ;;
   esac
@@ -247,7 +248,19 @@ mem9_api_post() {
 
 mem9_quota_notice_from_body() {
   local operation="$1"
-  node "${MEM9_SCRIPT_DIR}/lib/quota-error.mjs" notice "${operation}" 2>/dev/null || true
+  local input
+  local body
+  local status=""
+  local marker=$'\n'"${MEM9_HTTP_STATUS_MARKER}"
+
+  input="$(cat)"
+  body="${input}"
+  if [[ "${input}" == *"${marker}"* ]]; then
+    status="${input##*${marker}}"
+    body="${input%"${marker}${status}"}"
+  fi
+
+  printf '%s' "${body}" | node "${MEM9_SCRIPT_DIR}/lib/quota-error.mjs" notice "${operation}" "${status}" 2>/dev/null || true
 }
 
 mem9_ingest_transcript() {

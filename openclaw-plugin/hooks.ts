@@ -27,6 +27,7 @@ const MAX_CONTENT_LEN = 500; // truncate individual memory content in prompt
 // Ingest defaults — configurable via maxIngestBytes in plugin config
 const DEFAULT_MAX_INGEST_BYTES = 200_000; // ~200KB safe for most LLM context windows
 const MAX_INGEST_MESSAGES = 20; // absolute cap even if small messages
+const BACKGROUND_QUOTA_PAUSED_LOG = "[mem9] memory saving paused by runtime quota";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -325,7 +326,7 @@ export function registerHooks(
       }
       const quotaNotice = formatRuntimeQuotaNotice(err, "before_reset save paused");
       if (quotaNotice) {
-        logger.info(quotaNotice);
+        logger.info(BACKGROUND_QUOTA_PAUSED_LOG);
         return;
       }
       // Best-effort — never block /reset
@@ -440,7 +441,7 @@ export function registerHooks(
       }
       const quotaNotice = formatRuntimeQuotaNotice(err, "agent_end ingest paused");
       if (quotaNotice) {
-        logger.info(quotaNotice);
+        logger.info(BACKGROUND_QUOTA_PAUSED_LOG);
         return;
       }
       // Best-effort — never fail the agent end phase

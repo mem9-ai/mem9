@@ -829,6 +829,68 @@ test("agent_end logs conversation-access diagnostic once when messages are unava
   );
 });
 
+test("background save quota handling logs a terse status", async () => {
+  const originalFetch = globalThis.fetch;
+  const infoLogs: string[] = [];
+
+  globalThis.fetch = async () => {
+    return new Response(JSON.stringify({
+      ...runtimeQuotaPayload("Included quota is exhausted.", {
+        meter: "memory_write_requests",
+        recommendedAction: {
+          providerActionCode: "upgradePlan",
+          type: "openUrl",
+          url: "https://console.mem9.ai/console/billing/plan",
+        },
+      }),
+    }), {
+      status: 402,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const api = createStubApi(
+      {
+        apiUrl: uniqueApiUrl("background-quota"),
+        apiKey: "space-background-quota",
+      },
+      { infoLogs },
+    );
+    mnemoPlugin.register(api);
+
+    await api.getHook("before_reset")({
+      messages: [
+        {
+          role: "user",
+          content: "remember this detailed preference before reset",
+        },
+      ],
+    });
+    await api.getHook("agent_end")({
+      success: true,
+      messages: [
+        {
+          role: "user",
+          content: "remember this detailed preference at agent end",
+        },
+        {
+          role: "assistant",
+          content: "saved for later",
+        },
+      ],
+    });
+
+    assert.equal(
+      infoLogs.filter((line) => line === "[mem9] memory saving paused by runtime quota").length,
+      2,
+    );
+    assert.equal(infoLogs.some((line) => line.includes("In your reply")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("first before_prompt_build hook provisions once and unlocks memory access", async () => {
   const originalFetch = globalThis.fetch;
   const apiUrl = uniqueApiUrl("explicit-provision");

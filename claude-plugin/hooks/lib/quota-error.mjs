@@ -19,6 +19,14 @@ function normalizePositiveInteger(value) {
   return number;
 }
 
+function normalizeStatus(value) {
+  const number = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(number) || number < 100 || number > 599) {
+    return null;
+  }
+  return number;
+}
+
 function quotaGateReason(runtimeQuota) {
   const quotaGateResult = isRecord(runtimeQuota.quotaGateResult)
     ? runtimeQuota.quotaGateResult
@@ -42,7 +50,8 @@ function retryAfterSeconds(runtimeQuota) {
 }
 
 function isPostQuotaRateLimited(quotaDenied) {
-  return quotaDenied.quotaGateReason === "postQuotaRateLimitExceeded";
+  return quotaDenied.status === 429 ||
+    quotaDenied.quotaGateReason === "postQuotaRateLimitExceeded";
 }
 
 function quotaReason(quotaDenied) {
@@ -125,7 +134,7 @@ function actionInstruction(quotaDenied) {
   }
 }
 
-function parseQuotaDenied(payload) {
+function parseQuotaDenied(payload, status) {
   if (!isRecord(payload)) {
     return null;
   }
@@ -142,6 +151,7 @@ function parseQuotaDenied(payload) {
   const providerActionCode = normalizeString(recommendedAction.providerActionCode);
   const actionUrl = normalizeString(recommendedAction.url);
   return {
+    status,
     code: "runtime_quota_denied",
     message: normalizeString(payload.error) || "Runtime usage quota denied.",
     meter: normalizeString(runtimeQuota.meter),
@@ -167,7 +177,8 @@ function readPayload() {
 
 const command = process.argv[2] || "notice";
 const operation = process.argv[3] || "mem9 request";
-const quotaDenied = parseQuotaDenied(readPayload());
+const status = normalizeStatus(process.argv[4]);
+const quotaDenied = parseQuotaDenied(readPayload(), status);
 
 if (!quotaDenied) {
   process.exit(1);
