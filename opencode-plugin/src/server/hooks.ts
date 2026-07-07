@@ -6,6 +6,7 @@ import { submitMessagesForIngest } from "./ingest/submit.ts";
 import { formatRuntimeQuotaNotice, parseRuntimeQuotaDenied } from "./quota-error.ts";
 import { formatRecallBlock } from "./recall/format.ts";
 import { buildRecallQuery } from "./recall/query.ts";
+import { formatRuntimeStateNotice } from "./runtime-state.ts";
 import type { SessionTranscriptLoader } from "./session-transcript.ts";
 
 const MAX_RECALL_RESULTS = 10;
@@ -26,6 +27,7 @@ interface SessionState {
   lastIngestFingerprint: string | null;
   pendingIngestFingerprint: string | null;
   agentID: string;
+  runtimeStateNoticeShown: boolean;
   updatedAt: number;
 }
 
@@ -108,6 +110,7 @@ function ensureSessionState(
     lastIngestFingerprint: null,
     pendingIngestFingerprint: null,
     agentID: fallbackAgentID,
+    runtimeStateNoticeShown: false,
     updatedAt: now,
   };
   cache.set(sessionID, state);
@@ -273,8 +276,26 @@ export function buildHooks(
 
       pruneSessionState(sessionStateByID, Date.now());
 
-      const state = sessionStateByID.get(input.sessionID);
-      if (!state || !state.latestPrompt) {
+      const state = ensureSessionState(
+        sessionStateByID,
+        input.sessionID,
+        Date.now(),
+        fallbackAgentID,
+      );
+      if (!state.runtimeStateNoticeShown) {
+        state.runtimeStateNoticeShown = true;
+        try {
+          const runtimeState = await backend.runtimeState();
+          const notice = formatRuntimeStateNotice(runtimeState);
+          if (notice) {
+            output.system.push(notice);
+          }
+        } catch {
+          // Runtime-state warmup is advisory and must stay fail-soft.
+        }
+      }
+
+      if (!state.latestPrompt) {
         await options.debugLogger?.("recall.skip", {
           sessionID: input.sessionID,
           reason: "no_captured_prompt",

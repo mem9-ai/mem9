@@ -51,6 +51,31 @@ test("ServerBackend uses X-API-Key and v1alpha2 paths", async () => {
   }
 });
 
+test("ServerBackend fetches runtime-state through the public v1alpha2 path", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestURL = "";
+  let requestHeaders: Headers | undefined;
+
+  globalThis.fetch = async (input, init) => {
+    requestURL = String(input);
+    requestHeaders = new Headers(init?.headers);
+    return new Response(JSON.stringify({ mem9ApiKey: { status: "active" }, meters: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "mk_demo", "opencode");
+    await backend.runtimeState();
+    assert.equal(requestURL, "https://api.mem9.ai/v1alpha2/mem9s/runtime-state");
+    assert.equal(requestHeaders?.get("X-API-Key"), "mk_demo");
+    assert.equal(requestHeaders?.get("X-Mnemo-Agent-Id"), "opencode");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("ServerBackend uses searchTimeoutMs for search and defaultTimeoutMs for writes", async () => {
   const originalFetch = globalThis.fetch;
 

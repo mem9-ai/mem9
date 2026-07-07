@@ -167,6 +167,10 @@ export class ServerBackend implements MemoryBackend {
     return this.request<IngestResult>("POST", this.memoryPath("/memories"), input);
   }
 
+  async runtimeState(): Promise<unknown> {
+    return this.request<unknown>("GET", this.memoryPath("/runtime-state"));
+  }
+
   private async requestRaw(
     method: string,
     path: string,

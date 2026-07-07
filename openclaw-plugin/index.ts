@@ -795,5 +795,8 @@ class LazyServerBackend implements MemoryBackend {
   async ingest(input: IngestInput): Promise<IngestResult> {
     return (await this.resolve()).ingest(input);
   }
+  async runtimeState(): Promise<unknown> {
+    return (await this.resolve()).runtimeState();
+  }
 }
 export default mnemoPlugin;

@@ -57,6 +57,9 @@ function createBackend(): MemoryBackend {
     async ingest(_input: IngestInput): Promise<IngestResult> {
       return { status: "ok" };
     },
+    async runtimeState(): Promise<unknown> {
+      return null;
+    },
   };
 }
 

@@ -171,4 +171,8 @@ export class ServerBackend implements MemoryBackend {
     const result = await this.search({ limit, offset: 0 });
     return result.memories;
   }
+
+  async runtimeState(): Promise<unknown> {
+    return this.request<unknown>("GET", this.memoryPath("/runtime-state"));
+  }
 }

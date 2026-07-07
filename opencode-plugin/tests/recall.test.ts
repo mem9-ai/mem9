@@ -56,6 +56,7 @@ function runtimeQuotaPayload(error: string, runtimeQuota: Record<string, unknown
 
 function createBackend(
   searchImpl?: (input: SearchInput) => Promise<SearchResult>,
+  runtimeStateImpl?: () => Promise<unknown>,
 ): MemoryBackend {
   return {
     async store(_input: CreateMemoryInput): Promise<StoreResult> {
@@ -87,6 +88,9 @@ function createBackend(
     },
     async ingest(_input: IngestInput): Promise<IngestResult> {
       throw new Error("ingest should not be called in recall tests");
+    },
+    async runtimeState(): Promise<unknown> {
+      return runtimeStateImpl ? runtimeStateImpl() : null;
     },
   };
 }
@@ -602,6 +606,58 @@ test("buildHooks renders runtime quota denial action in recall context", async (
     debugEvents.map((entry) => entry.event),
     ["recall.capture", "recall.request", "recall.quota_denied"],
   );
+});
+
+test("buildHooks renders runtime-state notice once per session", async () => {
+  let runtimeStateCalls = 0;
+  const hooks = buildHooks(
+    createBackend(
+      async (input) => ({
+        memories: [],
+        total: 0,
+        limit: input.limit ?? 0,
+        offset: input.offset ?? 0,
+      }),
+      async () => {
+        runtimeStateCalls += 1;
+        return {
+          mem9ApiKey: { status: "active" },
+          meters: [
+            {
+              meter: "memory_recall_requests",
+              budgets: [
+                {
+                  type: "includedQuota",
+                  state: "warning",
+                  usage: { used: 820, remaining: 180, percent: 82 },
+                  capacity: { type: "limited", value: 1000 },
+                },
+              ],
+            },
+          ],
+        };
+      },
+    ),
+  );
+
+  const onChatMessage = hooks["chat.message"];
+  const onSystemTransform = hooks["experimental.chat.system.transform"];
+  assert.ok(onChatMessage);
+  assert.ok(onSystemTransform);
+
+  await onChatMessage(
+    createChatMessageInput("session-runtime-state"),
+    createChatMessageOutput([textPart("Find relevant project context.")]),
+  );
+
+  const firstOutput = createSystemTransformOutput([]);
+  await onSystemTransform(createSystemTransformInput("session-runtime-state"), firstOutput);
+  const secondOutput = createSystemTransformOutput([]);
+  await onSystemTransform(createSystemTransformInput("session-runtime-state"), secondOutput);
+
+  assert.equal(runtimeStateCalls, 1);
+  assert.match(firstOutput.system[0] ?? "", /mem9 recall is at 82% of its included quota/);
+  assert.equal(secondOutput.system.some((entry) => entry.includes("runtime quota")), false);
 });
 
 test("formatRuntimeQuotaNotice renders spending limit guidance", () => {

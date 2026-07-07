@@ -241,14 +241,26 @@ test("memory tools return structured runtime quota denial payloads", async () =>
 test("before_prompt_build forwards the prompt as q during recall search", async () => {
   const originalFetch = globalThis.fetch;
   const apiUrl = uniqueApiUrl("before-prompt-q");
-  let requestedURL = "";
+  let runtimeStateRequestURL = "";
+  let memoryRequestURL = "";
   let requestCount = 0;
 
   globalThis.fetch = async (input, init) => {
-    requestedURL = String(input);
+    const requestURL = String(input);
     requestCount += 1;
     assert.equal(init?.method, "GET");
 
+    if (requestURL.endsWith("/v1alpha2/mem9s/runtime-state")) {
+      runtimeStateRequestURL = requestURL;
+      return new Response(JSON.stringify({ mem9ApiKey: { status: "active" }, meters: [] }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    }
+
+    memoryRequestURL = requestURL;
     return new Response(
       JSON.stringify({
         memories: [
@@ -283,8 +295,9 @@ test("before_prompt_build forwards the prompt as q during recall search", async 
     const prompt = "remember alpha";
     const hookResult = await beforePromptBuild({ prompt }) as { prependContext?: string } | undefined;
 
-    assert.equal(requestCount, 1);
-    const url = new URL(requestedURL);
+    assert.equal(requestCount, 2);
+    assert.equal(runtimeStateRequestURL, `${apiUrl}/v1alpha2/mem9s/runtime-state`);
+    const url = new URL(memoryRequestURL);
     assert.equal(url.origin + url.pathname, `${apiUrl}/v1alpha2/mem9s/memories`);
     assert.equal(url.searchParams.get("q"), prompt);
     assert.equal(url.searchParams.get("limit"), "10");
@@ -566,14 +579,24 @@ test("formatRuntimeQuotaNotice renders write meter guidance", () => {
 test("before_prompt_build strips OpenClaw metadata wrappers before recall search", async () => {
   const originalFetch = globalThis.fetch;
   const apiUrl = uniqueApiUrl("before-prompt-sanitized-q");
-  let requestedURL = "";
+  let memoryRequestURL = "";
   let requestCount = 0;
 
   globalThis.fetch = async (input, init) => {
-    requestedURL = String(input);
+    const requestURL = String(input);
     requestCount += 1;
     assert.equal(init?.method, "GET");
 
+    if (requestURL.endsWith("/v1alpha2/mem9s/runtime-state")) {
+      return new Response(JSON.stringify({ mem9ApiKey: { status: "active" }, meters: [] }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    }
+
+    memoryRequestURL = requestURL;
     return new Response(
       JSON.stringify({
         memories: [
@@ -634,8 +657,8 @@ test("before_prompt_build strips OpenClaw metadata wrappers before recall search
 
     const hookResult = await beforePromptBuild({ prompt }) as { prependContext?: string } | undefined;
 
-    assert.equal(requestCount, 1);
-    const url = new URL(requestedURL);
+    assert.equal(requestCount, 2);
+    const url = new URL(memoryRequestURL);
     assert.equal(url.searchParams.get("q"), "经过了今天的努力，我把mem9的LoCoMo Benchmark从63%提升到了70%+");
     assert.equal(typeof hookResult?.prependContext, "string");
   } finally {

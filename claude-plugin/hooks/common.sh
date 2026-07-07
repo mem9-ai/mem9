@@ -263,6 +263,25 @@ mem9_quota_notice_from_body() {
   printf '%s' "${body}" | node "${MEM9_SCRIPT_DIR}/lib/quota-error.mjs" notice "${operation}" "${status}" 2>/dev/null || true
 }
 
+mem9_runtime_state_notice() {
+  local hook_name="${1:-SessionStart}"
+  local response
+  local notice
+
+  if ! response="$(mem9_api_get "/runtime-state" 2>/dev/null)"; then
+    mem9_debug "${hook_name}" "runtime_state_failed" \
+      "auth_source" "${MEM9_AUTH_SOURCE:-unknown}"
+    return 0
+  fi
+
+  notice="$(printf '%s' "${response}" | node "${MEM9_SCRIPT_DIR}/lib/runtime-state.mjs" 2>/dev/null || true)"
+  if [[ -n "${notice}" ]]; then
+    mem9_debug "${hook_name}" "runtime_state_notice" \
+      "auth_source" "${MEM9_AUTH_SOURCE:-unknown}"
+    printf '%s' "${notice}"
+  fi
+}
+
 mem9_ingest_transcript() {
   local hook_name="$1"
   local hook_input="$2"

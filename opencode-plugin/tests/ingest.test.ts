@@ -94,6 +94,9 @@ function createBackend(options: {
         memories_changed: input.messages.length,
       };
     },
+    async runtimeState(): Promise<unknown> {
+      return null;
+    },
   };
 }
 

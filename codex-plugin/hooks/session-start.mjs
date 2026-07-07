@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 import { loadRuntimeStateFromDisk } from "../lib/config.mjs";
+import { resolveRuntimeStateNotice } from "../lib/runtime-state.mjs";
 import { resolveUpgradeNotice } from "../lib/update-check.mjs";
 import { appendDebugError, appendDebugLog } from "./shared/debug.mjs";
 import { hookAdditionalContext } from "./shared/format.mjs";
@@ -116,16 +117,39 @@ export function appendUpgradeNotice(message, upgradeNotice) {
 }
 
 /**
- * @param {{state?: SessionStartState, setupCommand?: string, upgradeNotice?: string}} [input]
+ * @param {string} message
+ * @param {string} runtimeStateNotice
+ * @returns {string}
+ */
+export function appendRuntimeStateNotice(message, runtimeStateNotice) {
+  const base = String(message ?? "").trim();
+  const notice = String(runtimeStateNotice ?? "").trim();
+
+  if (!notice) {
+    return base;
+  }
+
+  if (!base) {
+    return notice;
+  }
+
+  return `${base} ${notice}`;
+}
+
+/**
+ * @param {{state?: SessionStartState, setupCommand?: string, upgradeNotice?: string, runtimeStateNotice?: string}} [input]
  * @returns {Promise<string>}
  */
 export async function runSessionStart(input = {}) {
-  const message = appendUpgradeNotice(
-    buildSessionStartMessage(
-      input.state ?? { configSource: "global", issueCode: "missing_config" },
-      input.setupCommand,
+  const message = appendRuntimeStateNotice(
+    appendUpgradeNotice(
+      buildSessionStartMessage(
+        input.state ?? { configSource: "global", issueCode: "missing_config" },
+        input.setupCommand,
+      ),
+      input.upgradeNotice ?? "",
     ),
-    input.upgradeNotice ?? "",
+    input.runtimeStateNotice ?? "",
   );
   return hookAdditionalContext("SessionStart", message);
 }
@@ -191,6 +215,20 @@ export async function main() {
         : "",
     },
   });
+  const shouldResolveRuntimeStateNotice = state.issueCode === "ready";
+  const runtimeStateNotice = shouldResolveRuntimeStateNotice
+    ? await resolveRuntimeStateNotice({
+      runtime: state.runtime,
+      debug(stage, fields) {
+        appendDebugLog({
+          hook: "SessionStart",
+          stage,
+          ...debugContext,
+          fields,
+        });
+      },
+    })
+    : "";
 
   return runSessionStart({
     state: {
@@ -203,6 +241,7 @@ export async function main() {
       issueCode: state.issueCode,
     },
     upgradeNotice: upgradeNotice.message,
+    runtimeStateNotice,
   });
 }
 

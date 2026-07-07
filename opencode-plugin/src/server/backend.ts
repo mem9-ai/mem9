@@ -36,4 +36,5 @@ export interface MemoryBackend {
   remove(id: string): Promise<boolean>;
   listRecent(limit: number): Promise<Memory[]>;
   ingest(input: IngestInput): Promise<IngestResult>;
+  runtimeState(): Promise<unknown>;
 }

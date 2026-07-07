@@ -82,6 +82,33 @@ test("normal memory requests do not append provision query params", async () => 
   }
 });
 
+test("runtime-state uses the public v1alpha2 path", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedURL = "";
+  let requestHeaders: Headers | undefined;
+
+  globalThis.fetch = async (input, init) => {
+    requestedURL = String(input);
+    requestHeaders = new Headers(init?.headers);
+
+    return new Response(JSON.stringify({ mem9ApiKey: { status: "active" }, meters: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "space-key", "agent-1");
+    await backend.runtimeState();
+
+    assert.equal(requestedURL, "https://api.mem9.ai/v1alpha2/mem9s/runtime-state");
+    assert.equal(requestHeaders?.get("X-API-Key"), "space-key");
+    assert.equal(requestHeaders?.get("X-Mnemo-Agent-Id"), "agent-1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("normal memory requests reject malformed success JSON", async () => {
   const originalFetch = globalThis.fetch;
 

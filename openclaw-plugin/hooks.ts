@@ -13,6 +13,7 @@
 
 import { isPendingProvisionError, type MemoryBackend } from "./backend.js";
 import { formatRuntimeQuotaNotice } from "./quota-error.js";
+import { formatRuntimeStateNotice } from "./runtime-state.js";
 import type { Memory, IngestMessage } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -215,6 +216,7 @@ export function registerHooks(
 ): void {
   const maxIngestBytes = options?.maxIngestBytes ?? DEFAULT_MAX_INGEST_BYTES;
   let loggedMissingConversationAccess = false;
+  let runtimeStateNoticeShown = false;
 
   // --------------------------------------------------------------------------
   // before_prompt_build — inject relevant memories into every LLM call
@@ -245,6 +247,16 @@ export function registerHooks(
           return;
         }
 
+        let runtimeStateNotice = "";
+        if (!runtimeStateNoticeShown) {
+          runtimeStateNoticeShown = true;
+          try {
+            runtimeStateNotice = formatRuntimeStateNotice(await backend.runtimeState());
+          } catch {
+            runtimeStateNotice = "";
+          }
+        }
+
         const result = await backend.search({ q: recallQuery, limit: MAX_INJECT });
         const memories = result.data ?? [];
         if (options?.debug) {
@@ -253,12 +265,19 @@ export function registerHooks(
           );
         }
 
-        if (memories.length === 0) return;
+        if (memories.length === 0) {
+          return runtimeStateNotice
+            ? { prependContext: runtimeStateNotice }
+            : undefined;
+        }
 
         logger.info(`[mem9] Injecting ${memories.length} memories into prompt context`);
+        const memoriesBlock = formatMemoriesBlock(memories);
 
         return {
-          prependContext: formatMemoriesBlock(memories),
+          prependContext: runtimeStateNotice
+            ? `${runtimeStateNotice}\n\n${memoriesBlock}`
+            : memoriesBlock,
         };
       } catch (err) {
         if (isPendingProvisionError(err)) {
