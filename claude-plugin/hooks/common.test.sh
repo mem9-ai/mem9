@@ -73,6 +73,18 @@ case "${runtime_notice}" in
     ;;
 esac
 
+inactive_notice="$(
+  printf '{"mem9ApiKey":{"status":"inactive"},"meters":[{"meter":"memory_recall_requests","budgets":[{"type":"includedQuota","state":"unlimited"}]}]}' \
+    | node "${SCRIPT_DIR}/lib/runtime-state.mjs"
+)"
+case "${inactive_notice}" in
+  *"Mem9 API key is inactive"*"rerun mem9 setup or create a new mem9 API key"* ) ;;
+  *)
+    printf 'expected inactive API key guidance, got: %s\n' "${inactive_notice}" >&2
+    exit 1
+    ;;
+esac
+
 SESSION_ENV_FILE="${TMP_DIR}/session.env"
 session_output="$(
   printf '{"source":"startup"}' | env -u MEM9_API_KEY \

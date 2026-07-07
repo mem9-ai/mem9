@@ -121,6 +121,33 @@ test("formatRuntimeStateNotice appends provider action guidance", () => {
   assert.match(notice, /https:\/\/console\.mem9\.ai\/console\/billing\/plan/);
 });
 
+test("formatRuntimeStateNotice renders inactive API key guidance", () => {
+  const notice = formatRuntimeStateNotice({
+    mem9ApiKey: { status: "inactive" },
+    meters: [
+      {
+        meter: "memory_recall_requests",
+        budgets: [
+          {
+            type: "includedQuota",
+            state: "unlimited",
+          },
+        ],
+      },
+    ],
+    recommendedAction: {
+      type: "openUrl",
+      providerActionCode: "claimApiKey",
+      severity: "blocking",
+      url: "https://console.mem9.ai/console/api-keys",
+    },
+  });
+
+  assert.match(notice, /Mem9 API key is inactive/);
+  assert.match(notice, /rerun mem9 setup or create a new mem9 API key/);
+  assert.match(notice, /claim this API key/);
+});
+
 test("resolveRuntimeStateNotice is fail-soft", async () => {
   /** @type {string[]} */
   const debugStages = [];

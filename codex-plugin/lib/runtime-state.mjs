@@ -182,6 +182,15 @@ export function formatRuntimeStateNotice(runtimeState) {
   const action = normalizeAction(runtimeState.recommendedAction);
   /** @type {{priority: number, message: string, action?: RuntimeRecommendedAction | null}[]} */
   const candidates = [];
+  const mem9ApiKey = isRecord(runtimeState.mem9ApiKey) ? runtimeState.mem9ApiKey : {};
+
+  if (text(mem9ApiKey.status) === "inactive") {
+    candidates.push({
+      priority: 65,
+      action,
+      message: "Mem9 API key is inactive. In your reply, briefly tell the user to rerun mem9 setup or create a new mem9 API key before memory access can continue.",
+    });
+  }
 
   if (action && (text(action.severity) || text(action.url))) {
     candidates.push({

@@ -43,3 +43,23 @@ test("formatRuntimeStateNotice prefers blocking provider actions", () => {
     1,
   );
 });
+
+test("formatRuntimeStateNotice renders inactive API key guidance", () => {
+  const notice = formatRuntimeStateNotice({
+    mem9ApiKey: { status: "inactive" },
+    meters: [
+      {
+        meter: "memory_recall_requests",
+        budgets: [
+          {
+            type: "includedQuota",
+            state: "unlimited",
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.match(notice, /Mem9 API key is inactive/);
+  assert.match(notice, /rerun mem9 setup or create a new mem9 API key/);
+});
