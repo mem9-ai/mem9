@@ -9,7 +9,7 @@ last_updated: 2026-07-06
 
 Add `GET /v1alpha2/mem9s/runtime-state` to mem9-server for agent plugins.
 The endpoint returns plugin-visible runtime quota facts using the same core
-shape as console-server's internal provider state endpoint:
+shape as the configured runtime usage provider state endpoint:
 `mem9ApiKey`, `meters`, `budgets`, optional `quotaGateResult`, optional
 `recommendedAction`, optional `providerId`, and optional `providerData`.
 
@@ -32,9 +32,9 @@ flowchart LR
     Manager --> UnknownFallback["provider unavailable fallback<br/>providerManaged / unknown"]
   end
 
-  subgraph Console["mem9-console-server"]
+  subgraph Provider["Configured runtime usage provider"]
     ProviderClient --> ProviderState["GET /api/internal/mem9-api-key/state"]
-    ProviderState --> QuotaStore["quota state store"]
+    ProviderState --> QuotaStore["runtime quota state"]
   end
 ```
 
