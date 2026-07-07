@@ -39,6 +39,12 @@ type TenantService struct {
 	encryptor   encrypt.Encryptor
 }
 
+type APIKeyStatusResult struct {
+	Status    domain.KeyStatus
+	TenantID  string
+	ClusterID string
+}
+
 func NewTenantService(
 	tenants repository.TenantRepo,
 	provisioner tenant.Provisioner,
@@ -70,20 +76,28 @@ func (s *TenantService) WithUTMRepo(r utmRepo) *TenantService {
 
 // KeyStatus validates a candidate API key against the control-plane tenant row.
 func (s *TenantService) KeyStatus(ctx context.Context, apiKey string) (domain.KeyStatus, error) {
+	result, err := s.ResolveAPIKeyStatus(ctx, apiKey)
+	if err != nil {
+		return "", err
+	}
+	return result.Status, nil
+}
+
+func (s *TenantService) ResolveAPIKeyStatus(ctx context.Context, apiKey string) (APIKeyStatusResult, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
-		return "", &domain.ValidationError{Field: "X-API-Key", Message: "missing or malformed X-API-Key"}
+		return APIKeyStatusResult{}, &domain.ValidationError{Field: "X-API-Key", Message: "missing or malformed X-API-Key"}
 	}
 	if s.tenants == nil {
-		return "", fmt.Errorf("tenant repository not configured")
+		return APIKeyStatusResult{}, fmt.Errorf("tenant repository not configured")
 	}
 
 	t, err := s.tenants.GetByID(ctx, apiKey)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return "", domain.ErrNotFound
+			return APIKeyStatusResult{}, domain.ErrNotFound
 		}
-		return "", fmt.Errorf("get tenant for key status: %w", err)
+		return APIKeyStatusResult{}, fmt.Errorf("get tenant for key status: %w", err)
 	}
 
 	if t.DeletedAt != nil {
@@ -92,24 +106,29 @@ func (s *TenantService) KeyStatus(ctx context.Context, apiKey string) (domain.Ke
 				"status", t.Status,
 			)
 		}
-		return "", domain.ErrNotFound
+		return APIKeyStatusResult{}, domain.ErrNotFound
 	}
 
+	result := APIKeyStatusResult{
+		TenantID:  t.ID,
+		ClusterID: t.ClusterID,
+	}
 	switch t.Status {
 	case domain.TenantActive:
-		return domain.KeyStatusActive, nil
+		result.Status = domain.KeyStatusActive
 	case domain.TenantProvisioning, domain.TenantSuspended:
-		return domain.KeyStatusInactive, nil
+		result.Status = domain.KeyStatusInactive
 	case domain.TenantDeleted:
-		return "", domain.ErrNotFound
+		return APIKeyStatusResult{}, domain.ErrNotFound
 	default:
 		if s.logger != nil {
 			s.logger.WarnContext(ctx, "unknown tenant status for key status",
 				"status", t.Status,
 			)
 		}
-		return domain.KeyStatusInactive, nil
+		result.Status = domain.KeyStatusInactive
 	}
+	return result, nil
 }
 
 // ProvisionResult is the output of Provision.

@@ -238,8 +238,16 @@ func TestOpenAPIRuntimeStateContract(t *testing.T) {
 	if _, ok := stateProperties["recommendedAction"]; !ok {
 		t.Fatalf("RuntimeStateResponse should expose recommendedAction")
 	}
+	if _, ok := stateProperties["providerId"]; !ok {
+		t.Fatalf("RuntimeStateResponse should expose optional providerId")
+	}
 	if _, ok := stateProperties["providerData"]; !ok {
 		t.Fatalf("RuntimeStateResponse should expose optional providerData")
+	}
+	providerData := objectValue(t, stateProperties, "providerData")
+	providerDataDescription, _ := providerData["description"].(string)
+	if !strings.Contains(providerDataDescription, "providerId") {
+		t.Fatalf("RuntimeStateResponse.providerData description should require providerId pairing: %q", providerDataDescription)
 	}
 	meters := objectValue(t, stateProperties, "meters")
 	if meters["minItems"] != float64(2) {

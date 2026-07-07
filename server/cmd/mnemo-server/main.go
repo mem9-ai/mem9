@@ -191,6 +191,7 @@ func main() {
 	runtimeUsageClient := runtimeusage.NewHTTPClient(cfg.RuntimeUsageBaseURL, cfg.RuntimeUsageInternalSecret, cfg.RuntimeUsageTimeout)
 	runtimeUsageManager := runtimeusage.NewManager(runtimeusage.Config{
 		Enabled:         cfg.RuntimeUsageEnabled,
+		ProviderID:      cfg.RuntimeUsageProviderID,
 		BaseURL:         cfg.RuntimeUsageBaseURL,
 		InternalSecret:  cfg.RuntimeUsageInternalSecret,
 		Timeout:         cfg.RuntimeUsageTimeout,

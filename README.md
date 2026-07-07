@@ -311,6 +311,7 @@ The runtime usage outbox uses the control-plane `runtime_usage_outbox` table for
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `MNEMO_RUNTIME_USAGE_ENABLED` | No | `false` | Enable runtime usage quota gating and console metering for memory recall/write operations |
+| `MNEMO_RUNTIME_USAGE_PROVIDER_ID` | No | `mem9-official` when runtime usage is enabled | Runtime usage provider discriminator returned with object-shaped `providerData` in runtime-state responses |
 | `MNEMO_RUNTIME_USAGE_BASE_URL` | Yes when enabled | — | Runtime usage service base URL. Must be `http` or `https`; query and fragment are rejected |
 | `MNEMO_RUNTIME_USAGE_INTERNAL_SECRET` | Yes when enabled | — | Bearer token for internal runtime usage service calls |
 | `MNEMO_RUNTIME_USAGE_TIMEOUT` | No | `3s` | Timeout for quota reservation and finalization requests |

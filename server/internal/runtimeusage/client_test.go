@@ -113,6 +113,23 @@ func TestHTTPClientRuntimeStateCallsProviderStateEndpoint(t *testing.T) {
 	}
 }
 
+func TestHTTPClientRuntimeStateRejectsNonObjectProviderData(t *testing.T) {
+	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+	client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return jsonResponse(`{
+			"mem9ApiKey": {"status": "active"},
+			"meters": [],
+			"providerData": ["unexpected"]
+		}`), nil
+	})}
+
+	_, err := client.RuntimeState(context.Background(), Subject{APIKeySubject: "api-key-subject"})
+	var unavailable *UnavailableError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("RuntimeState error = %T, want UnavailableError", err)
+	}
+}
+
 func TestHTTPClientReserveDecodesRemainingIncludedUnits(t *testing.T) {
 	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
 	client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {

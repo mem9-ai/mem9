@@ -75,6 +75,7 @@ type Config struct {
 	// RuntimeUsage enables commercial SaaS quota gating plus runtime usage
 	// service metering. Runtime usage metering uses RuntimeUsageBaseURL, not MeteringURL.
 	RuntimeUsageEnabled         bool
+	RuntimeUsageProviderID      string
 	RuntimeUsageBaseURL         string
 	RuntimeUsageInternalSecret  string `json:"-"`
 	RuntimeUsageTimeout         time.Duration
@@ -146,6 +147,7 @@ func Load() (*Config, error) {
 	runtimeUsageEnabled := envBool("MNEMO_RUNTIME_USAGE_ENABLED", false)
 	runtimeUsageFailOpen := envBool("MNEMO_RUNTIME_USAGE_FAIL_OPEN", false)
 	runtimeUsageOutboxEnabled, runtimeUsageOutboxSet := envBoolWithSet("MNEMO_RUNTIME_USAGE_OUTBOX_ENABLED", runtimeUsageEnabled)
+	runtimeUsageProviderID := ""
 	runtimeUsageBaseURL := ""
 	if runtimeUsageEnabled {
 		var err error
@@ -153,6 +155,7 @@ func Load() (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
+		runtimeUsageProviderID = strings.TrimSpace(envOr("MNEMO_RUNTIME_USAGE_PROVIDER_ID", "mem9-official"))
 		if strings.TrimSpace(os.Getenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET")) == "" {
 			return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET is required when MNEMO_RUNTIME_USAGE_ENABLED=true")
 		}
@@ -200,6 +203,7 @@ func Load() (*Config, error) {
 		MeteringURL:                      meteringURL,
 		MeteringFlushInterval:            envDuration("MNEMO_METERING_FLUSH_INTERVAL", 10*time.Second),
 		RuntimeUsageEnabled:              runtimeUsageEnabled,
+		RuntimeUsageProviderID:           runtimeUsageProviderID,
 		RuntimeUsageBaseURL:              runtimeUsageBaseURL,
 		RuntimeUsageInternalSecret:       strings.TrimSpace(os.Getenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET")),
 		RuntimeUsageTimeout:              envDuration("MNEMO_RUNTIME_USAGE_TIMEOUT", 3*time.Second),

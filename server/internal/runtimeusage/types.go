@@ -1,6 +1,7 @@
 package runtimeusage
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,8 +31,9 @@ const (
 )
 
 const (
-	RuntimeAPIKeyStatusActive  = "active"
-	RuntimeAPIKeyStatusUnknown = "unknown"
+	RuntimeAPIKeyStatusActive   = "active"
+	RuntimeAPIKeyStatusInactive = "inactive"
+	RuntimeAPIKeyStatusUnknown  = "unknown"
 
 	RuntimeBudgetTypeNotMetered      = "notMetered"
 	RuntimeBudgetTypeUnknown         = "unknown"
@@ -61,6 +63,7 @@ const (
 
 type Config struct {
 	Enabled         bool
+	ProviderID      string
 	BaseURL         string
 	InternalSecret  string
 	Timeout         time.Duration
@@ -76,6 +79,7 @@ type Subject struct {
 	TenantID      string
 	ClusterID     string
 	APIKeySubject string
+	APIKeyStatus  string
 	AgentName     string
 }
 
@@ -106,6 +110,7 @@ type Reservation struct {
 type RuntimeState struct {
 	Mem9APIKey        RuntimeStateAPIKey        `json:"mem9ApiKey"`
 	Meters            []RuntimeStateMeter       `json:"meters"`
+	ProviderID        string                    `json:"providerId,omitempty"`
 	RecommendedAction *RuntimeRecommendedAction `json:"recommendedAction,omitempty"`
 	ProviderData      json.RawMessage           `json:"providerData,omitempty"`
 }
@@ -159,9 +164,9 @@ type RuntimeRecommendedAction struct {
 	URL                string `json:"url,omitempty"`
 }
 
-func RuntimeUsageDisabledState() RuntimeState {
+func RuntimeUsageDisabledState(statuses ...string) RuntimeState {
 	return RuntimeState{
-		Mem9APIKey: RuntimeStateAPIKey{Status: RuntimeAPIKeyStatusActive},
+		Mem9APIKey: RuntimeStateAPIKey{Status: runtimeAPIKeyStatus(RuntimeAPIKeyStatusActive, statuses...)},
 		Meters: []RuntimeStateMeter{
 			notMeteredStateMeter(MeterMemoryRecallRequests),
 			notMeteredStateMeter(MeterMemoryWriteRequests),
@@ -169,14 +174,24 @@ func RuntimeUsageDisabledState() RuntimeState {
 	}
 }
 
-func RuntimeStateProviderUnavailable() RuntimeState {
+func RuntimeStateProviderUnavailable(statuses ...string) RuntimeState {
 	return RuntimeState{
-		Mem9APIKey: RuntimeStateAPIKey{Status: RuntimeAPIKeyStatusUnknown},
+		Mem9APIKey: RuntimeStateAPIKey{Status: runtimeAPIKeyStatus(RuntimeAPIKeyStatusUnknown, statuses...)},
 		Meters: []RuntimeStateMeter{
 			unknownStateMeter(MeterMemoryRecallRequests),
 			unknownStateMeter(MeterMemoryWriteRequests),
 		},
 	}
+}
+
+func runtimeAPIKeyStatus(defaultStatus string, statuses ...string) string {
+	for _, status := range statuses {
+		switch status {
+		case RuntimeAPIKeyStatusActive, RuntimeAPIKeyStatusInactive, RuntimeAPIKeyStatusUnknown:
+			return status
+		}
+	}
+	return defaultStatus
 }
 
 func (s *RuntimeState) SetProviderDefaults() {
@@ -203,6 +218,23 @@ func (s *RuntimeState) SetProviderDefaults() {
 	if !seenMeters[MeterMemoryWriteRequests] {
 		s.Meters = append(s.Meters, unknownStateMeter(MeterMemoryWriteRequests))
 	}
+}
+
+func (s *RuntimeState) NormalizeProviderData() error {
+	raw := bytes.TrimSpace(s.ProviderData)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		s.ProviderData = nil
+		return nil
+	}
+	if raw[0] != '{' {
+		return fmt.Errorf("runtime state providerData must be a JSON object")
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return fmt.Errorf("runtime state providerData object: %w", err)
+	}
+	s.ProviderData = append(json.RawMessage(nil), raw...)
+	return nil
 }
 
 func notMeteredStateMeter(meter string) RuntimeStateMeter {

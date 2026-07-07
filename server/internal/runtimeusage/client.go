@@ -55,6 +55,9 @@ func (c *HTTPClient) RuntimeState(ctx context.Context, subject Subject) (Runtime
 	if err := c.doJSON(ctx, http.MethodGet, "/api/internal/mem9-api-key/state", subject, nil, &state, false); err != nil {
 		return RuntimeState{}, err
 	}
+	if err := state.NormalizeProviderData(); err != nil {
+		return RuntimeState{}, &UnavailableError{Err: err}
+	}
 	state.SetProviderDefaults()
 	return state, nil
 }

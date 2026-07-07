@@ -2,6 +2,7 @@ package runtimeusage
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/qiffang/mnemos/server/internal/metering"
@@ -102,7 +103,8 @@ func (s *fakeOutboxStore) MarkUnknownAfterCrash(context.Context, string, string)
 }
 
 func TestNoopManagerRuntimeStateReturnsDisabledFallback(t *testing.T) {
-	manager := NewManager(Config{Enabled: false}, nil, nil, nil)
+	quota := &fakeQuotaClient{}
+	manager := NewManager(Config{Enabled: false}, quota, nil, nil)
 
 	state, err := manager.RuntimeState(context.Background(), Subject{APIKeySubject: "mem9_test"})
 	if err != nil {
@@ -110,11 +112,23 @@ func TestNoopManagerRuntimeStateReturnsDisabledFallback(t *testing.T) {
 	}
 	assertFallbackMeter(t, state, MeterMemoryRecallRequests, RuntimeBudgetTypeNotMetered, RuntimeBudgetStateUnlimited)
 	assertFallbackMeter(t, state, MeterMemoryWriteRequests, RuntimeBudgetTypeNotMetered, RuntimeBudgetStateUnlimited)
+
+	lease, err := manager.BeforeRecall(context.Background(), Subject{APIKeySubject: "mem9_test"})
+	if err != nil {
+		t.Fatalf("BeforeRecall: %v", err)
+	}
+	if lease != nil {
+		t.Fatalf("BeforeRecall lease = %+v, want nil", lease)
+	}
+	if len(quota.stateSubjects) != 0 || len(quota.reserveOps) != 0 || len(quota.finalized) != 0 {
+		t.Fatalf("disabled manager called provider: %+v", quota)
+	}
 }
 
 func TestManagerRuntimeStateUsesProvider(t *testing.T) {
 	quota := &fakeQuotaClient{state: RuntimeState{
-		Mem9APIKey: RuntimeStateAPIKey{Status: RuntimeAPIKeyStatusActive},
+		Mem9APIKey:   RuntimeStateAPIKey{Status: RuntimeAPIKeyStatusUnknown},
+		ProviderData: json.RawMessage(`{"bindingState":"claimed"}`),
 		Meters: []RuntimeStateMeter{{
 			Meter: MeterMemoryRecallRequests,
 			Budgets: []RuntimeStatusBudget{{
@@ -130,8 +144,8 @@ func TestManagerRuntimeStateUsesProvider(t *testing.T) {
 			}},
 		}},
 	}}
-	manager := NewManager(Config{Enabled: true}, quota, nil, nil)
-	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "mem9_test"}
+	manager := NewManager(Config{Enabled: true, ProviderID: "mem9-official"}, quota, nil, nil)
+	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "mem9_test", APIKeyStatus: RuntimeAPIKeyStatusActive}
 
 	state, err := manager.RuntimeState(context.Background(), subject)
 	if err != nil {
@@ -140,6 +154,12 @@ func TestManagerRuntimeStateUsesProvider(t *testing.T) {
 	if len(quota.stateSubjects) != 1 || quota.stateSubjects[0] != subject {
 		t.Fatalf("state subjects = %+v, want [%+v]", quota.stateSubjects, subject)
 	}
+	if state.Mem9APIKey.Status != RuntimeAPIKeyStatusActive {
+		t.Fatalf("status = %q, want local active status", state.Mem9APIKey.Status)
+	}
+	if state.ProviderID != "mem9-official" {
+		t.Fatalf("ProviderID = %q, want mem9-official", state.ProviderID)
+	}
 	assertFallbackMeter(t, state, MeterMemoryRecallRequests, RuntimeBudgetTypeNotMetered, RuntimeBudgetStateUnlimited)
 }
 
@@ -147,12 +167,12 @@ func TestManagerRuntimeStateFallsBackWhenProviderUnavailable(t *testing.T) {
 	quota := &fakeQuotaClient{stateErr: &UnavailableError{Err: errString("timeout")}}
 	manager := NewManager(Config{Enabled: true}, quota, nil, nil)
 
-	state, err := manager.RuntimeState(context.Background(), Subject{TenantID: "tenant-a", APIKeySubject: "mem9_test"})
+	state, err := manager.RuntimeState(context.Background(), Subject{TenantID: "tenant-a", APIKeySubject: "mem9_test", APIKeyStatus: RuntimeAPIKeyStatusInactive})
 	if err != nil {
 		t.Fatalf("RuntimeState: %v", err)
 	}
-	if state.Mem9APIKey.Status != RuntimeAPIKeyStatusUnknown {
-		t.Fatalf("status = %q, want unknown", state.Mem9APIKey.Status)
+	if state.Mem9APIKey.Status != RuntimeAPIKeyStatusInactive {
+		t.Fatalf("status = %q, want inactive", state.Mem9APIKey.Status)
 	}
 	assertFallbackMeter(t, state, MeterMemoryRecallRequests, RuntimeBudgetTypeProviderManaged, RuntimeBudgetStateProviderManaged)
 	assertFallbackMeter(t, state, MeterMemoryWriteRequests, RuntimeBudgetTypeProviderManaged, RuntimeBudgetStateProviderManaged)

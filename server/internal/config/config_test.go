@@ -177,6 +177,9 @@ func TestLoad_RuntimeUsageConfig(t *testing.T) {
 	if !cfg.RuntimeUsageEnabled {
 		t.Fatal("RuntimeUsageEnabled = false, want true")
 	}
+	if cfg.RuntimeUsageProviderID != "mem9-official" {
+		t.Fatalf("RuntimeUsageProviderID = %q, want mem9-official", cfg.RuntimeUsageProviderID)
+	}
 	if cfg.RuntimeUsageBaseURL != "https://runtime-usage.example.com/internal" {
 		t.Fatalf("RuntimeUsageBaseURL = %q", cfg.RuntimeUsageBaseURL)
 	}
@@ -200,6 +203,22 @@ func TestLoad_RuntimeUsageConfig(t *testing.T) {
 	}
 	if cfg.MeteringEnabled {
 		t.Fatal("MeteringEnabled = true, want false; runtime usage metering must not require MNEMO_METERING_ENABLED")
+	}
+}
+
+func TestLoad_RuntimeUsageProviderID(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+	t.Setenv("MNEMO_RUNTIME_USAGE_ENABLED", "true")
+	t.Setenv("MNEMO_RUNTIME_USAGE_PROVIDER_ID", "provider-x")
+	t.Setenv("MNEMO_RUNTIME_USAGE_BASE_URL", "https://runtime-usage.example.com")
+	t.Setenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET", "secret-value")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.RuntimeUsageProviderID != "provider-x" {
+		t.Fatalf("RuntimeUsageProviderID = %q, want provider-x", cfg.RuntimeUsageProviderID)
 	}
 }
 

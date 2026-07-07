@@ -628,7 +628,7 @@
         ],
         "operationId": "getRuntimeState",
         "summary": "Get plugin-visible runtime quota state",
-        "description": "Returns runtime-state facts for agent plugins. Hosted deployments read provider state through the configured runtime usage provider. Provider-disabled self-host deployments return a local fallback response with the same public shape.",
+        "description": "Returns runtime-state facts for agent plugins. This route uses local API-key status resolution and does not depend on tenant data DB resolution. Hosted deployments read provider state through the configured runtime usage provider. Provider-disabled self-host deployments return a local fallback response with the same public shape.",
         "security": [
           {
             "ApiKeyAuth": []
@@ -2747,12 +2747,20 @@
             },
             "minItems": 2
           },
+          "providerId": {
+            "type": "string",
+            "description": "Optional provider discriminator for providerData. Clients should interpret providerData only when they recognize this value.",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$",
+            "example": "mem9-official"
+          },
           "recommendedAction": {
             "$ref": "#/components/schemas/RuntimeRecommendedAction"
           },
           "providerData": {
             "type": "object",
-            "description": "Optional hosted-provider details. Plugins can ignore this object unless they explicitly support provider-specific UI.",
+            "description": "Optional hosted-provider details. Present only when providerId is also present. Plugins should ignore this object unless they explicitly recognize providerId.",
             "additionalProperties": true
           }
         },

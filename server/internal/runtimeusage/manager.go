@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,8 +42,8 @@ func NewManager(cfg Config, client QuotaClient, writer metering.Writer, logger *
 type noopManager struct{}
 
 func (noopManager) Enabled() bool { return false }
-func (noopManager) RuntimeState(context.Context, Subject) (RuntimeState, error) {
-	return RuntimeUsageDisabledState(), nil
+func (noopManager) RuntimeState(_ context.Context, subject Subject) (RuntimeState, error) {
+	return RuntimeUsageDisabledState(subject.APIKeyStatus), nil
 }
 func (noopManager) BeforeRecall(context.Context, Subject) (*OperationLease, error) {
 	return nil, nil
@@ -83,9 +84,20 @@ func (m *manager) RuntimeState(ctx context.Context, subject Subject) (RuntimeSta
 			"cluster_id", subject.ClusterID,
 			"err", err,
 		)
-		return RuntimeStateProviderUnavailable(), nil
+		return RuntimeStateProviderUnavailable(subject.APIKeyStatus), nil
 	}
 	state.SetProviderDefaults()
+	if subject.APIKeyStatus != "" {
+		state.Mem9APIKey.Status = subject.APIKeyStatus
+	}
+	if len(state.ProviderData) > 0 {
+		providerID := strings.TrimSpace(m.cfg.ProviderID)
+		if providerID == "" {
+			state.ProviderData = nil
+		} else {
+			state.ProviderID = providerID
+		}
+	}
 	return state, nil
 }
 
