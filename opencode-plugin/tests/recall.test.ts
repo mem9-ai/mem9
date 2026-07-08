@@ -23,6 +23,8 @@ import type {
 type ChatMessageHook = NonNullable<Hooks["chat.message"]>;
 type ChatMessageInput = Parameters<ChatMessageHook>[0];
 type ChatMessageOutput = Parameters<ChatMessageHook>[1];
+type MessagesTransformHook = NonNullable<Hooks["experimental.chat.messages.transform"]>;
+type MessagesTransformOutput = Parameters<MessagesTransformHook>[1];
 type SystemTransformHook = NonNullable<Hooks["experimental.chat.system.transform"]>;
 type SystemTransformInput = Parameters<SystemTransformHook>[0];
 type SystemTransformOutput = Parameters<SystemTransformHook>[1];
@@ -135,6 +137,27 @@ function createSystemTransformInput(sessionID: string): SystemTransformInput {
 
 function createSystemTransformOutput(system: string[] = []): SystemTransformOutput {
   return { system };
+}
+
+function createMessagesTransformOutput(
+  sessionID: string,
+  parts: ChatMessageOutput["parts"],
+): MessagesTransformOutput {
+  return {
+    messages: [
+      {
+        info: {
+          id: "msg-runtime-state",
+          sessionID,
+          role: "user",
+          time: { created: 0 },
+          agent: "build",
+          model: { providerID: "openai", modelID: "gpt-test" },
+        } as MessagesTransformOutput["messages"][number]["info"],
+        parts: parts as MessagesTransformOutput["messages"][number]["parts"],
+      },
+    ],
+  };
 }
 
 function createSessionCompactingInput(sessionID: string): SessionCompactingInput {
@@ -608,16 +631,20 @@ test("buildHooks renders runtime quota denial action in recall context", async (
   );
 });
 
-test("buildHooks renders runtime-state notice once per session", async () => {
+test("buildHooks appends runtime-state notice to latest user message once per session", async () => {
   let runtimeStateCalls = 0;
+  let searchCalls = 0;
   const hooks = buildHooks(
     createBackend(
-      async (input) => ({
-        memories: [],
-        total: 0,
-        limit: input.limit ?? 0,
-        offset: input.offset ?? 0,
-      }),
+      async (input) => {
+        searchCalls += 1;
+        return {
+          memories: [],
+          total: 0,
+          limit: input.limit ?? 0,
+          offset: input.offset ?? 0,
+        };
+      },
       async () => {
         runtimeStateCalls += 1;
         return {
@@ -640,72 +667,38 @@ test("buildHooks renders runtime-state notice once per session", async () => {
     ),
   );
 
-  const onChatMessage = hooks["chat.message"];
-  const onSystemTransform = hooks["experimental.chat.system.transform"];
-  assert.ok(onChatMessage);
-  assert.ok(onSystemTransform);
+  const onMessagesTransform = hooks["experimental.chat.messages.transform"];
+  assert.ok(onMessagesTransform);
 
-  await onChatMessage(
-    createChatMessageInput("session-runtime-state"),
-    createChatMessageOutput([textPart("Find relevant project context.")]),
+  const firstOutput = createMessagesTransformOutput(
+    "session-runtime-state",
+    [textPart("Find relevant project context.")],
   );
+  await onMessagesTransform({}, firstOutput);
 
-  const firstOutput = createSystemTransformOutput([]);
-  await onSystemTransform(createSystemTransformInput("session-runtime-state"), firstOutput);
-  const secondOutput = createSystemTransformOutput([]);
-  await onSystemTransform(createSystemTransformInput("session-runtime-state"), secondOutput);
+  const secondOutput = createMessagesTransformOutput(
+    "session-runtime-state",
+    [textPart("Check again.")],
+  );
+  await onMessagesTransform({}, secondOutput);
+
+  const injectedPart = firstOutput.messages[0]?.parts.find(
+    (part) => part.type === "text" && part.text.includes("<mem9-status-warning>"),
+  );
 
   assert.equal(runtimeStateCalls, 1);
-  assert.match(firstOutput.system[0] ?? "", /mem9 recall is at 82% of its included quota/);
-  assert.equal(secondOutput.system.some((entry) => entry.includes("runtime quota")), false);
-});
-
-test("buildHooks waits for a captured prompt before rendering runtime-state notice", async () => {
-  let runtimeStateCalls = 0;
-  let searchCalls = 0;
-  const hooks = buildHooks(
-    createBackend(
-      async (input) => {
-        searchCalls += 1;
-        return {
-          memories: [],
-          total: 0,
-          limit: input.limit ?? 0,
-          offset: input.offset ?? 0,
-        };
-      },
-      async () => {
-        runtimeStateCalls += 1;
-        return {
-          mem9ApiKey: { status: "inactive" },
-        };
-      },
-    ),
-  );
-
-  const onChatMessage = hooks["chat.message"];
-  const onSystemTransform = hooks["experimental.chat.system.transform"];
-  assert.ok(onChatMessage);
-  assert.ok(onSystemTransform);
-
-  const earlyOutput = createSystemTransformOutput([]);
-  await onSystemTransform(createSystemTransformInput("session-runtime-before-prompt"), earlyOutput);
-
-  assert.equal(runtimeStateCalls, 0);
   assert.equal(searchCalls, 0);
-  assert.deepEqual(earlyOutput.system, []);
-
-  await onChatMessage(
-    createChatMessageInput("session-runtime-before-prompt"),
-    createChatMessageOutput([textPart("Before deployment, check mem9 status.")]),
+  assert.ok(injectedPart);
+  assert.match(
+    injectedPart.type === "text" ? injectedPart.text : "",
+    /mem9 recall is at 82% of its included quota/,
   );
-
-  const promptOutput = createSystemTransformOutput([]);
-  await onSystemTransform(createSystemTransformInput("session-runtime-before-prompt"), promptOutput);
-
-  assert.equal(runtimeStateCalls, 1);
-  assert.equal(searchCalls, 1);
-  assert.match(promptOutput.system[0] ?? "", /Mem9 API key is inactive/);
+  assert.equal(
+    secondOutput.messages[0]?.parts.some(
+      (part) => part.type === "text" && part.text.includes("<mem9-status-warning>"),
+    ),
+    false,
+  );
 });
 
 test("formatRuntimeQuotaNotice renders spending limit guidance", () => {

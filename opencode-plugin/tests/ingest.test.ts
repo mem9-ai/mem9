@@ -155,6 +155,10 @@ test("selectMessagesForIngest strips injected memory blocks and keeps the latest
 1. Stale memory
 </relevant-memories>
 
+<mem9-status-warning>
+Mem9 API key is inactive.
+</mem9-status-warning>
+
 Keep this request.
 `,
     },
