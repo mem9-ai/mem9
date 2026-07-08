@@ -43,6 +43,10 @@ function modeLabel(mode: string): string {
   return "provider-managed runtime";
 }
 
+function warningMessage(detail: string): string {
+  return `${detail}. In your reply, include this exact mem9 warning detail: ${detail}.`;
+}
+
 function normalizeAction(input: unknown): RuntimeRecommendedAction | null {
   const action = isRecord(input) ? input : {};
   const providerActionCode = text(action.providerActionCode);
@@ -114,18 +118,20 @@ export function formatRuntimeStateNotice(runtimeState: unknown): string {
   const mem9ApiKey = isRecord(runtimeState.mem9ApiKey) ? runtimeState.mem9ApiKey : {};
 
   if (text(mem9ApiKey.status) === "inactive") {
+    const detail = "Mem9 API key is inactive; rerun mem9 setup or create a new mem9 API key before memory access can continue";
     candidates.push({
       priority: 65,
       action,
-      message: "Mem9 API key is inactive. In your reply, briefly tell the user to rerun mem9 setup or create a new mem9 API key before memory access can continue.",
+      message: warningMessage(detail),
     });
   }
 
   if (action && (text(action.severity) || text(action.url))) {
+    const detail = "Mem9 needs account or billing attention";
     candidates.push({
       priority: action.severity === "blocking" ? 50 : 20,
       action,
-      message: "Mem9 has a runtime account action available. In your reply, briefly tell the user that mem9 needs account or billing attention.",
+      message: warningMessage(detail),
     });
   }
 
@@ -139,22 +145,25 @@ export function formatRuntimeStateNotice(runtimeState: unknown): string {
     const mode = text(gate.mode);
 
     if (outcome === "blocked") {
+      const detail = `${feature} is blocked by runtime quota and needs attention before memory access can continue`;
       candidates.push({
         priority: 60,
         action,
-        message: `${feature} is blocked by runtime quota. In your reply, briefly tell the user that ${feature} needs attention before memory access can continue.`,
+        message: warningMessage(detail),
       });
     } else if (outcome === "rateLimited") {
+      const detail = `${feature} has reached its temporary runtime rate limit and needs a retry later`;
       candidates.push({
         priority: 55,
         action,
-        message: `${feature} has reached its temporary runtime rate limit. In your reply, briefly tell the user that ${feature} needs a retry later.`,
+        message: warningMessage(detail),
       });
     } else if (mode === "onDemand" || mode === "postQuota") {
+      const detail = `${feature} is in constrained mode and using ${modeLabel(mode)}`;
       candidates.push({
         priority: 40,
         action,
-        message: `${feature} is in constrained mode and using ${modeLabel(mode)}. In your reply, briefly tell the user that ${feature} is running in constrained mode.`,
+        message: warningMessage(detail),
       });
     }
 
@@ -170,10 +179,11 @@ export function formatRuntimeStateNotice(runtimeState: unknown): string {
         && numbers.remaining <= Math.max(5, numbers.capacity * 0.02);
 
       if (state === "exhausted") {
+        const detail = `${feature} has exhausted its ${label} and is in constrained mode`;
         candidates.push({
           priority: 45,
           action,
-          message: `${feature} has exhausted its ${label}. In your reply, briefly tell the user that ${feature} is in constrained mode.`,
+          message: warningMessage(detail),
         });
       } else if (
         (numbers.percent != null && numbers.percent >= URGENT_PERCENT)
@@ -185,7 +195,7 @@ export function formatRuntimeStateNotice(runtimeState: unknown): string {
         candidates.push({
           priority: 35,
           action,
-          message: `${feature} ${usage}. In your reply, briefly tell the user that ${feature} is almost out of runtime quota.`,
+          message: warningMessage(`${feature} ${usage} and is almost out of runtime quota`),
         });
       } else if (
         state === "warning"
@@ -197,7 +207,7 @@ export function formatRuntimeStateNotice(runtimeState: unknown): string {
         candidates.push({
           priority: 25,
           action,
-          message: `${feature} ${usage}. In your reply, briefly tell the user that ${feature} is nearing its runtime quota.`,
+          message: warningMessage(`${feature} ${usage} and is nearing its runtime quota`),
         });
       }
     }

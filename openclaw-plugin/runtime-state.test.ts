@@ -36,7 +36,7 @@ test("formatRuntimeStateNotice prefers blocking provider actions", () => {
     meters: [],
   });
 
-  assert.match(notice, /runtime account action/);
+  assert.match(notice, /account or billing attention/);
   assert.match(notice, /upgrade their mem9 plan/);
   assert.equal(
     notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,

@@ -33,7 +33,7 @@ test("formatRuntimeStateNotice renders an 80 percent warning", () => {
   });
 
   assert.match(notice, /mem9 recall is at 82% of its included quota/);
-  assert.match(notice, /briefly tell the user/);
+  assert.match(notice, /include this exact mem9 warning detail/);
 });
 
 test("formatRuntimeStateNotice renders absolute-unit urgent usage", () => {
