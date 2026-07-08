@@ -282,6 +282,14 @@ export function buildHooks(
         Date.now(),
         fallbackAgentID,
       );
+      if (!state.latestPrompt) {
+        await options.debugLogger?.("recall.skip", {
+          sessionID: input.sessionID,
+          reason: "no_captured_prompt",
+        });
+        return;
+      }
+
       if (!state.runtimeStateNoticeShown) {
         state.runtimeStateNoticeShown = true;
         try {
@@ -293,14 +301,6 @@ export function buildHooks(
         } catch {
           // Runtime-state warmup is advisory and must stay fail-soft.
         }
-      }
-
-      if (!state.latestPrompt) {
-        await options.debugLogger?.("recall.skip", {
-          sessionID: input.sessionID,
-          reason: "no_captured_prompt",
-        });
-        return;
       }
 
       const query = buildRecallQuery(state.latestPrompt);

@@ -660,6 +660,54 @@ test("buildHooks renders runtime-state notice once per session", async () => {
   assert.equal(secondOutput.system.some((entry) => entry.includes("runtime quota")), false);
 });
 
+test("buildHooks waits for a captured prompt before rendering runtime-state notice", async () => {
+  let runtimeStateCalls = 0;
+  let searchCalls = 0;
+  const hooks = buildHooks(
+    createBackend(
+      async (input) => {
+        searchCalls += 1;
+        return {
+          memories: [],
+          total: 0,
+          limit: input.limit ?? 0,
+          offset: input.offset ?? 0,
+        };
+      },
+      async () => {
+        runtimeStateCalls += 1;
+        return {
+          mem9ApiKey: { status: "inactive" },
+        };
+      },
+    ),
+  );
+
+  const onChatMessage = hooks["chat.message"];
+  const onSystemTransform = hooks["experimental.chat.system.transform"];
+  assert.ok(onChatMessage);
+  assert.ok(onSystemTransform);
+
+  const earlyOutput = createSystemTransformOutput([]);
+  await onSystemTransform(createSystemTransformInput("session-runtime-before-prompt"), earlyOutput);
+
+  assert.equal(runtimeStateCalls, 0);
+  assert.equal(searchCalls, 0);
+  assert.deepEqual(earlyOutput.system, []);
+
+  await onChatMessage(
+    createChatMessageInput("session-runtime-before-prompt"),
+    createChatMessageOutput([textPart("Before deployment, check mem9 status.")]),
+  );
+
+  const promptOutput = createSystemTransformOutput([]);
+  await onSystemTransform(createSystemTransformInput("session-runtime-before-prompt"), promptOutput);
+
+  assert.equal(runtimeStateCalls, 1);
+  assert.equal(searchCalls, 1);
+  assert.match(promptOutput.system[0] ?? "", /Mem9 API key is inactive/);
+});
+
 test("formatRuntimeQuotaNotice renders spending limit guidance", () => {
   const notice = formatRuntimeQuotaNotice(
     new Mem9HttpError(
