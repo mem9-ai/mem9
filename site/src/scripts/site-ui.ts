@@ -25,10 +25,17 @@ type OnboardingCommandParts = {
 const ONBOARDING_COMMAND_URL_PATTERN = /https:\/\/\S+/u;
 const PUBLIC_SKILL_ORIGIN = 'https://mem9.ai';
 const PUBLIC_SKILL_URLS = [
+  'https://mem9.ai/openclaw/SKILL.md',
+  'https://mem9.ai/hermes/SKILL.md',
   'https://mem9.ai/SKILL.md',
   'https://mem9.ai/beta/SKILL.md',
 ];
-const TRACKED_SKILL_PATHS = new Set(['/SKILL.md', '/beta/SKILL.md']);
+const TRACKED_SKILL_PATHS = new Set([
+  '/SKILL.md',
+  '/openclaw/SKILL.md',
+  '/hermes/SKILL.md',
+  '/beta/SKILL.md',
+]);
 
 function getValue(dictionary: SiteDictionary, path: string): unknown {
   return path.split('.').reduce<unknown>((current, segment) => {
