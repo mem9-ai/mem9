@@ -340,15 +340,24 @@ test("buildHooks captures the latest non-synthetic text parts and injects releva
 
 test("buildHooks injects success response message without memories once per session", async () => {
   const debugEvents: Array<{ event: string; payload: Record<string, unknown> }> = [];
+  let runtimeStateCalls = 0;
   const notices: string[] = [];
   const hooks = buildHooks(
-    createBackend(async (input) => ({
-      memories: [],
-      total: 0,
-      limit: input.limit ?? 0,
-      offset: input.offset ?? 0,
-      message: "mem9 recall has used 80% of included quota.",
-    })),
+    createBackend(
+      async (input) => ({
+        memories: [],
+        total: 0,
+        limit: input.limit ?? 0,
+        offset: input.offset ?? 0,
+        message: "mem9 recall has used 80% of included quota.",
+      }),
+      async () => {
+        runtimeStateCalls += 1;
+        return {
+          mem9ApiKey: { status: "inactive" },
+        };
+      },
+    ),
     {
       debugLogger: async (event, payload = {}) => {
         debugEvents.push({ event, payload });
@@ -360,13 +369,22 @@ test("buildHooks injects success response message without memories once per sess
   );
 
   const onChatMessage = hooks["chat.message"];
+  const onMessagesTransform = hooks["experimental.chat.messages.transform"];
   const onSystemTransform = hooks["experimental.chat.system.transform"];
   assert.ok(onChatMessage);
+  assert.ok(onMessagesTransform);
   assert.ok(onSystemTransform);
 
   await onChatMessage(
     createChatMessageInput("session-response-message"),
     createChatMessageOutput([textPart("Find relevant project context.")]),
+  );
+  await onMessagesTransform(
+    {},
+    createMessagesTransformOutput(
+      "session-response-message",
+      [textPart("Find relevant project context.")],
+    ),
   );
 
   const firstOutput = createSystemTransformOutput(["Existing system"]);
@@ -389,6 +407,8 @@ test("buildHooks injects success response message without memories once per sess
   );
   assert.deepEqual(secondOutput.system, ["Existing system"]);
   assert.deepEqual(notices, ["mem9 recall has used 80% of included quota."]);
+  assert.equal(runtimeStateCalls, 1);
+  assert.doesNotMatch(firstOutput.system[1] ?? "", /Mem9 API key is inactive/);
   assert.equal(debugEvents[2]?.payload.hasMessage, true);
   assert.equal(debugEvents[2]?.payload.messageLength, 43);
 });
@@ -686,7 +706,7 @@ test("buildHooks renders runtime quota denial action in recall context", async (
   );
 });
 
-test("buildHooks appends runtime-state notice to latest user message once per session", async () => {
+test("buildHooks uses pending runtime-state notice as recall fallback once per session", async () => {
   let runtimeStateCalls = 0;
   let searchCalls = 0;
   const notices: string[] = [];
@@ -729,39 +749,38 @@ test("buildHooks appends runtime-state notice to latest user message once per se
   );
 
   const onMessagesTransform = hooks["experimental.chat.messages.transform"];
+  const onSystemTransform = hooks["experimental.chat.system.transform"];
   assert.ok(onMessagesTransform);
+  assert.ok(onSystemTransform);
 
   const firstOutput = createMessagesTransformOutput(
     "session-runtime-state",
     [textPart("Find relevant project context.")],
   );
   await onMessagesTransform({}, firstOutput);
+  const firstSystemOutput = createSystemTransformOutput(["Existing system"]);
+  await onSystemTransform(createSystemTransformInput("session-runtime-state"), firstSystemOutput);
 
   const secondOutput = createMessagesTransformOutput(
     "session-runtime-state",
     [textPart("Check again.")],
   );
   await onMessagesTransform({}, secondOutput);
-
-  const injectedPart = firstOutput.messages[0]?.parts.find(
-    (part) => part.type === "text" && part.text.includes("<mem9-status-warning>"),
-  );
+  const secondSystemOutput = createSystemTransformOutput(["Existing system"]);
+  await onSystemTransform(createSystemTransformInput("session-runtime-state"), secondSystemOutput);
 
   assert.equal(runtimeStateCalls, 1);
-  assert.equal(searchCalls, 0);
+  assert.equal(searchCalls, 2);
   assert.equal(notices.length, 1);
   assert.match(notices[0] ?? "", /mem9 recall is at 82% of its included quota/);
-  assert.ok(injectedPart);
-  assert.match(
-    injectedPart.type === "text" ? injectedPart.text : "",
-    /mem9 recall is at 82% of its included quota/,
-  );
+  assert.match(firstSystemOutput.system[1] ?? "", /mem9 recall is at 82% of its included quota/);
   assert.equal(
-    secondOutput.messages[0]?.parts.some(
+    firstOutput.messages[0]?.parts.some(
       (part) => part.type === "text" && part.text.includes("<mem9-status-warning>"),
     ),
     false,
   );
+  assert.deepEqual(secondSystemOutput.system, ["Existing system"]);
 });
 
 test("formatRuntimeQuotaNotice renders spending limit guidance", () => {

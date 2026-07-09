@@ -31,6 +31,7 @@ interface SessionState {
   pendingIngestFingerprint: string | null;
   agentID: string;
   runtimeStateNoticeShown: boolean;
+  pendingRuntimeStateNotice: string | null;
   seenNoticeMessages: Set<string>;
   updatedAt: number;
 }
@@ -176,6 +177,7 @@ function ensureSessionState(
     pendingIngestFingerprint: null,
     agentID: fallbackAgentID,
     runtimeStateNoticeShown: false,
+    pendingRuntimeStateNotice: null,
     seenNoticeMessages: new Set<string>(),
     updatedAt: now,
   };
@@ -346,16 +348,7 @@ export function buildHooks(
       if (!notice) {
         return;
       }
-      options.noticeLogger?.(notice);
-
-      latestUserMessage.parts.push({
-        id: `prt_mem9_runtime_state_${latestUserMessage.info.id}`,
-        sessionID: latestUserMessage.info.sessionID,
-        messageID: latestUserMessage.info.id,
-        type: "text",
-        text: runtimeStateNoticeText(notice),
-        metadata: { source: "mem9-runtime-state" },
-      } as MessagesTransformOutput["messages"][number]["parts"][number]);
+      state.pendingRuntimeStateNotice = notice;
     },
     event: async (input) => {
       if (input.event.type !== "session.idle") {
@@ -415,7 +408,10 @@ export function buildHooks(
           limit: MAX_RECALL_RESULTS,
         });
         const result = await backend.search({ q: query, limit: MAX_RECALL_RESULTS });
-        const notice = consumeNoticeMessage(state, responseMessage(result));
+        const responseNotice = consumeNoticeMessage(state, responseMessage(result));
+        const pendingNotice = state.pendingRuntimeStateNotice;
+        state.pendingRuntimeStateNotice = null;
+        const notice = responseNotice || pendingNotice || "";
         if (notice) {
           options.noticeLogger?.(notice);
         }
