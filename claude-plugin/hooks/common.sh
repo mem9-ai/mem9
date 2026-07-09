@@ -10,6 +10,7 @@ MEM9_WRITER_ID="${MEM9_WRITER_ID:-claude-code}"
 MEM9_CURL_BIN="${MEM9_CURL_BIN:-curl}"
 MEM9_AUTH_SOURCE="${MEM9_AUTH_SOURCE:-}"
 MEM9_HTTP_STATUS_MARKER="__MEM9_HTTP_STATUS__="
+MEM9_PLUGIN_USER_AGENT=""
 
 mem9_require_node() {
   command -v node >/dev/null 2>&1 || return 1
@@ -108,6 +109,22 @@ mem9_memory_base() {
   printf '%s\n' "${MEM9_API_URL%/}/v1alpha2/mem9s"
 }
 
+mem9_plugin_user_agent() {
+  if [[ -n "${MEM9_PLUGIN_USER_AGENT}" ]]; then
+    printf '%s\n' "${MEM9_PLUGIN_USER_AGENT}"
+    return 0
+  fi
+
+  local version="0.3.3"
+  local manifest="${MEM9_SCRIPT_DIR}/../.claude-plugin/plugin.json"
+  if [[ -f "${manifest}" ]] && command -v node >/dev/null 2>&1; then
+    version="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(data.version || "0.3.3");' "${manifest}" 2>/dev/null || printf '0.3.3')"
+  fi
+
+  MEM9_PLUGIN_USER_AGENT="mem9-plugin/claude-code/${version}"
+  printf '%s\n' "${MEM9_PLUGIN_USER_AGENT}"
+}
+
 mem9_hook_get_string() {
   local hook_input="$1"
   local key="$2"
@@ -194,7 +211,9 @@ mem9_write_session_env() {
 }
 
 mem9_provision_auth() {
-  "${MEM9_CURL_BIN}" -sf --max-time 8 -X POST "${MEM9_API_URL%/}/v1alpha1/mem9s"
+  "${MEM9_CURL_BIN}" -sf --max-time 8 -X POST \
+    -H "User-Agent: $(mem9_plugin_user_agent)" \
+    "${MEM9_API_URL%/}/v1alpha1/mem9s"
 }
 
 mem9_api_request() {
@@ -211,6 +230,7 @@ mem9_api_request() {
     -H "Content-Type: application/json"
     -H "X-API-Key: ${MEM9_API_KEY}"
     -H "X-Mnemo-Agent-Id: ${MEM9_WRITER_ID}"
+    -H "User-Agent: $(mem9_plugin_user_agent)"
   )
 
   if [[ -n "${body}" ]]; then

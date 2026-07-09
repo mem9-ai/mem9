@@ -92,6 +92,7 @@ test("runStore posts a synchronous memory create and prints a safe summary", asy
         "Content-Type": "application/json",
         "X-API-Key": "key-save",
         "X-Mnemo-Agent-Id": "codex",
+        "User-Agent": "mem9-plugin/codex/0.2.5",
       },
       body: JSON.stringify({
         content: "The user prefers concise release notes.",

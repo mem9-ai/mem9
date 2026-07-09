@@ -126,6 +126,7 @@ test("runRecall calls mem9 with the current runtime and prints a safe summary", 
         "Content-Type": "application/json",
         "X-API-Key": "key-search",
         "X-Mnemo-Agent-Id": "codex",
+        "User-Agent": "mem9-plugin/codex/0.2.5",
       },
       timeoutMs: 15200,
     });

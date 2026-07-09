@@ -18,6 +18,8 @@ import {
   parseJsonOrUndefined,
 } from "./quota-error.ts";
 
+const MEM9_PLUGIN_USER_AGENT = "mem9-plugin/opencode/0.1.5";
+
 function normalizeTimeoutMs(value: number | undefined, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return fallback;
@@ -72,6 +74,7 @@ export class ServerBackend implements MemoryBackend {
       "Content-Type": "application/json",
       "X-Mnemo-Agent-Id": this.agentName,
       "X-API-Key": this.apiKey,
+      "User-Agent": MEM9_PLUGIN_USER_AGENT,
     };
     const resp = await fetch(url, {
       method,

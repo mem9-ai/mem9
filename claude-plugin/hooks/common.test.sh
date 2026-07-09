@@ -10,6 +10,14 @@ STUB_CURL="${TMP_DIR}/curl"
 cat > "${STUB_CURL}" <<'SH'
 #!/usr/bin/env bash
 case "$*" in
+  *"User-Agent: mem9-plugin/claude-code/0.3.3"* ) ;;
+  *)
+    printf 'missing mem9 plugin user agent: %s\n' "$*" >&2
+    exit 2
+    ;;
+esac
+
+case "$*" in
   *"/v1alpha1/mem9s"*)
     cat <<'EOF'
 {"id":"mem9_new"}

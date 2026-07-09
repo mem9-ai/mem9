@@ -35,7 +35,9 @@ plugin_data_dir="${CLAUDE_PLUGIN_DATA}"
 test -n "$plugin_data_dir"
 node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 18 ? 0 : 1)'
 
-response="$(curl -sf --max-time 8 -X POST https://api.mem9.ai/v1alpha1/mem9s)"
+response="$(curl -sf --max-time 8 -X POST \
+  -H "User-Agent: mem9-plugin/claude-code/0.3.3" \
+  https://api.mem9.ai/v1alpha1/mem9s)"
 api_key="$(printf '%s' "$response" | node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(0,"utf8")); process.stdout.write(data.id || "");')"
 test -n "$api_key"
 

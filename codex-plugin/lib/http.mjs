@@ -1,6 +1,25 @@
 // @ts-nocheck
 
+import { readFileSync } from "node:fs";
+
 import { DEFAULT_REQUEST_TIMEOUT_MS } from "./config.mjs";
+
+const CODEX_PLUGIN_VERSION_FALLBACK = "0.2.5";
+
+function readCodexPluginVersion() {
+  try {
+    const manifest = JSON.parse(
+      readFileSync(new URL("../.codex-plugin/plugin.json", import.meta.url), "utf8"),
+    );
+    return typeof manifest.version === "string" && manifest.version.trim()
+      ? manifest.version.trim()
+      : CODEX_PLUGIN_VERSION_FALLBACK;
+  } catch {
+    return CODEX_PLUGIN_VERSION_FALLBACK;
+  }
+}
+
+export const MEM9_PLUGIN_USER_AGENT = `mem9-plugin/codex/${readCodexPluginVersion()}`;
 
 /**
  * @typedef {{
@@ -91,6 +110,7 @@ export function mem9Headers(apiKey, agentId) {
     "Content-Type": "application/json",
     "X-API-Key": apiKey,
     "X-Mnemo-Agent-Id": agentId,
+    "User-Agent": MEM9_PLUGIN_USER_AGENT,
   };
 }
 

@@ -35,6 +35,7 @@ curl -sf --max-time 8 \
   -H "Content-Type: application/json" \
   -H "X-API-Key: ${api_key}" \
   -H "X-Mnemo-Agent-Id: claude-code" \
+  -H "User-Agent: mem9-plugin/claude-code/0.3.3" \
   "${base_url%/}/v1alpha2/mem9s/memories?q=${encoded_query}&limit=10"
 ```
 
