@@ -4,7 +4,7 @@ import { DEFAULT_LOCALE } from '../content/site';
 
 interface Props {
   copies: Record<DocsLocale, DocsPageCopy>;
-  source: string;
+  source: 'docs' | 'console';
 }
 
 const localeOrder: DocsLocale[] = ['zh', 'en', 'ja', 'ko', 'id', 'th'];
@@ -72,7 +72,7 @@ function docsSectionSearchText(section: DocsSection): string {
                 <span>{copy.hero.tocTitle}</span>
                 <span class="docs-toc-toggle-icon" aria-hidden="true"></span>
               </button>
-              <div class="docs-toc surface-card">
+              <div class:list={['docs-toc', source !== 'docs' && 'surface-card']}>
                 <p class="docs-toc-title">{copy.hero.tocTitle}</p>
                 <label class="docs-toc-search">
                   <span class="docs-toc-search-label">{copy.search.label}</span>
@@ -122,6 +122,14 @@ function docsSectionSearchText(section: DocsSection): string {
             </aside>
 
             <div class="docs-content">
+              {source === 'docs' && (
+                <header class="docs-hero">
+                  <p class="docs-hero-eyebrow">{copy.hero.eyebrow}</p>
+                  <h1 class="docs-hero-title">{copy.hero.title}</h1>
+                  <p class="docs-hero-intro">{copy.hero.intro}</p>
+                </header>
+              )}
+
               {copy.sections.map((section) => (
                 <article
                   class="docs-section"
@@ -171,7 +179,7 @@ function docsSectionSearchText(section: DocsSection): string {
                   ))}
 
                   {section.subsections?.map((subsection) => (
-                    <section class="docs-subsection surface-card">
+                    <section class:list={['docs-subsection', source !== 'docs' && 'surface-card']}>
                       <h3 class="docs-subsection-title">{subsection.title}</h3>
                       {subsection.paragraphs?.map((paragraph) => (
                         <p class="docs-paragraph" set:html={paragraph}></p>
