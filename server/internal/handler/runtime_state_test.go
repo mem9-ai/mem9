@@ -128,6 +128,60 @@ func TestGetRuntimeStateCallsProviderWhenEnabled(t *testing.T) {
 	assertRuntimeStateMeter(t, state, runtimeusage.MeterMemoryRecallRequests, runtimeusage.RuntimeBudgetTypeNotMetered, runtimeusage.RuntimeBudgetStateUnlimited)
 }
 
+func TestGetRuntimeStateKeepsProviderDataWithoutConfiguredProviderID(t *testing.T) {
+	client := &runtimeStateQuotaClient{state: runtimeusage.RuntimeState{
+		Mem9APIKey:   runtimeusage.RuntimeStateAPIKey{Status: runtimeusage.RuntimeAPIKeyStatusUnknown},
+		ProviderID:   "mem9-official",
+		ProviderData: json.RawMessage(`{"bindingState":"claimed"}`),
+		RecommendedAction: &runtimeusage.RuntimeRecommendedAction{
+			Type:               "openUrl",
+			ProviderActionCode: "upgradePlan",
+			Severity:           "warning",
+			URL:                "https://example.com/provider/billing/plan",
+		},
+		Meters: []runtimeusage.RuntimeStateMeter{{
+			Meter: runtimeusage.MeterMemoryRecallRequests,
+			Budgets: []runtimeusage.RuntimeStatusBudget{{
+				Type:     runtimeusage.RuntimeBudgetTypeNotMetered,
+				State:    runtimeusage.RuntimeBudgetStateUnlimited,
+				Measure:  runtimeusage.RuntimeStatusMeasure{Kind: runtimeusage.RuntimeMeasureKindCount, Quantity: "request", Scale: 1},
+				Period:   runtimeusage.RuntimeStatusPeriod{Type: runtimeusage.RuntimePeriodTypeNone},
+				Capacity: runtimeusage.RuntimeStatusCapacity{Type: runtimeusage.RuntimeCapacityTypeUnlimited},
+			}},
+		}},
+	}}
+	manager := runtimeusage.NewManager(runtimeusage.Config{Enabled: true}, client, nil, slog.Default())
+	router := runtimeStateRouter(t, manager, &domain.Tenant{
+		ID:        "tenant-a",
+		ClusterID: "cluster-a",
+		Status:    domain.TenantActive,
+	}, nil, nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1alpha2/mem9s/runtime-state", nil)
+	req.Header.Set("X-API-Key", "mem9_test")
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("Unmarshal body: %v", err)
+	}
+	if _, ok := body["providerId"]; ok {
+		t.Fatalf("providerId should be omitted when provider id is not configured: %s", rec.Body.String())
+	}
+	providerData, ok := body["providerData"].(map[string]any)
+	if !ok || providerData["bindingState"] != "claimed" {
+		t.Fatalf("providerData = %#v, want upstream provider data", body["providerData"])
+	}
+	action, ok := body["recommendedAction"].(map[string]any)
+	if !ok || action["providerActionCode"] != "upgradePlan" {
+		t.Fatalf("recommendedAction = %#v, want upstream action", body["recommendedAction"])
+	}
+}
+
 func TestGetRuntimeStateFallsBackWithLocalStatusWhenProviderUnavailable(t *testing.T) {
 	client := &runtimeStateQuotaClient{err: errors.New("provider timeout")}
 	manager := runtimeusage.NewManager(runtimeusage.Config{Enabled: true}, client, nil, slog.Default())

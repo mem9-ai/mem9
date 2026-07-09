@@ -246,8 +246,10 @@ func TestOpenAPIRuntimeStateContract(t *testing.T) {
 	}
 	providerData := objectValue(t, stateProperties, "providerData")
 	providerDataDescription, _ := providerData["description"].(string)
-	if !strings.Contains(providerDataDescription, "providerId") {
-		t.Fatalf("RuntimeStateResponse.providerData description should require providerId pairing: %q", providerDataDescription)
+	for _, want := range []string{"independently of providerId", "recognize providerId"} {
+		if !strings.Contains(providerDataDescription, want) {
+			t.Fatalf("RuntimeStateResponse.providerData description missing %q: %q", want, providerDataDescription)
+		}
 	}
 	meters := objectValue(t, stateProperties, "meters")
 	if meters["minItems"] != float64(2) {

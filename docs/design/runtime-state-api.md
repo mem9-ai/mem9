@@ -208,7 +208,7 @@ response and uses this fallback.
 - Provider-unavailable fallback: hosted response shape used when state lookup
   fails.
 - Provider ID: public discriminator for interpreting provider-specific
-  `providerData`.
+  `providerData` fields when recognized by the consumer.
 - Success response notice: optional top-level `message` and `runtimeState`
   data attached to successful recall and ingest responses.
 - Displayable warning or action: a runtime state condition that should reach the

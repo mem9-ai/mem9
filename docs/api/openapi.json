@@ -2749,7 +2749,7 @@
           },
           "providerId": {
             "type": "string",
-            "description": "Optional provider discriminator for providerData. Clients should interpret providerData only when they recognize this value.",
+            "description": "Optional provider discriminator. Clients can use this value to decide whether to interpret provider-specific providerData fields.",
             "minLength": 1,
             "maxLength": 128,
             "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$",
@@ -2760,7 +2760,7 @@
           },
           "providerData": {
             "type": "object",
-            "description": "Optional hosted-provider details. Present only when providerId is also present. Plugins should ignore this object unless they explicitly recognize providerId.",
+            "description": "Optional upstream provider details. Returned independently of providerId; clients should interpret provider-specific fields only when they recognize providerId.",
             "additionalProperties": true
           }
         },
