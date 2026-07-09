@@ -27,6 +27,7 @@ import {
   resolveCodexHome,
   resolveMem9Home,
 } from "../../../lib/config.mjs";
+import { MEM9_PLUGIN_USER_AGENT } from "../../../lib/http.mjs";
 import { resolveProjectRoot } from "../../../lib/project-root.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -1536,6 +1537,7 @@ async function provisionApiKey({
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "User-Agent": MEM9_PLUGIN_USER_AGENT,
       },
       signal: AbortSignal.timeout(timeoutMs),
     });

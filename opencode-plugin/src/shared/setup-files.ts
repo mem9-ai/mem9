@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Mem9ResolvedPaths } from "./platform-paths.ts";
 import { parseCredentialsFile, stringifyCredentialsFile } from "./credentials-store.ts";
 import { DEFAULT_SCOPE_CONFIG } from "./defaults.ts";
+import { MEM9_PLUGIN_USER_AGENT } from "./plugin-user-agent.ts";
 import {
   DEFAULT_API_URL,
   type Mem9ConfigFile,
@@ -472,6 +473,7 @@ export async function provisionApiKey(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "User-Agent": MEM9_PLUGIN_USER_AGENT,
       },
       signal: AbortSignal.timeout(timeoutMs),
     });
