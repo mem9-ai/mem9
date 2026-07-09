@@ -39,6 +39,7 @@ export interface BuildHooksOptions {
   agentID?: string;
   debugLogger?: DebugLogger;
   loadSessionTranscript?: SessionTranscriptLoader;
+  noticeLogger?: (notice: string) => void;
 }
 
 function runInBackground(task: Promise<unknown>): void {
@@ -345,6 +346,7 @@ export function buildHooks(
       if (!notice) {
         return;
       }
+      options.noticeLogger?.(notice);
 
       latestUserMessage.parts.push({
         id: `prt_mem9_runtime_state_${latestUserMessage.info.id}`,
@@ -414,6 +416,9 @@ export function buildHooks(
         });
         const result = await backend.search({ q: query, limit: MAX_RECALL_RESULTS });
         const notice = consumeNoticeMessage(state, responseMessage(result));
+        if (notice) {
+          options.noticeLogger?.(notice);
+        }
         const block = formatRecallBlock(result.memories);
         const statusBlock = runtimeStateNoticeText(notice);
         const context = [statusBlock, block].filter(Boolean).join("\n\n");

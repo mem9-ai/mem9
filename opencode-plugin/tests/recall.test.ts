@@ -340,6 +340,7 @@ test("buildHooks captures the latest non-synthetic text parts and injects releva
 
 test("buildHooks injects success response message without memories once per session", async () => {
   const debugEvents: Array<{ event: string; payload: Record<string, unknown> }> = [];
+  const notices: string[] = [];
   const hooks = buildHooks(
     createBackend(async (input) => ({
       memories: [],
@@ -351,6 +352,9 @@ test("buildHooks injects success response message without memories once per sess
     {
       debugLogger: async (event, payload = {}) => {
         debugEvents.push({ event, payload });
+      },
+      noticeLogger: (notice) => {
+        notices.push(notice);
       },
     },
   );
@@ -384,6 +388,7 @@ test("buildHooks injects success response message without memories once per sess
     /Start the next response with: Mem9 notice: mem9 recall has used 80% of included quota\./,
   );
   assert.deepEqual(secondOutput.system, ["Existing system"]);
+  assert.deepEqual(notices, ["mem9 recall has used 80% of included quota."]);
   assert.equal(debugEvents[2]?.payload.hasMessage, true);
   assert.equal(debugEvents[2]?.payload.messageLength, 43);
 });
@@ -684,6 +689,7 @@ test("buildHooks renders runtime quota denial action in recall context", async (
 test("buildHooks appends runtime-state notice to latest user message once per session", async () => {
   let runtimeStateCalls = 0;
   let searchCalls = 0;
+  const notices: string[] = [];
   const hooks = buildHooks(
     createBackend(
       async (input) => {
@@ -715,6 +721,11 @@ test("buildHooks appends runtime-state notice to latest user message once per se
         };
       },
     ),
+    {
+      noticeLogger: (notice) => {
+        notices.push(notice);
+      },
+    },
   );
 
   const onMessagesTransform = hooks["experimental.chat.messages.transform"];
@@ -738,6 +749,8 @@ test("buildHooks appends runtime-state notice to latest user message once per se
 
   assert.equal(runtimeStateCalls, 1);
   assert.equal(searchCalls, 0);
+  assert.equal(notices.length, 1);
+  assert.match(notices[0] ?? "", /mem9 recall is at 82% of its included quota/);
   assert.ok(injectedPart);
   assert.match(
     injectedPart.type === "text" ? injectedPart.text : "",
