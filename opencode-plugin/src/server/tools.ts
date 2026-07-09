@@ -6,6 +6,7 @@ import type {
   SearchInput,
 } from "../shared/types.ts";
 import { toolErrorPayload } from "./quota-error.ts";
+import { responseMessageFields } from "./response-message.ts";
 
 function jsonToolError(error: unknown): string {
   return JSON.stringify(toolErrorPayload(error));
@@ -48,7 +49,11 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
             metadata: args.metadata as Record<string, unknown> | undefined,
           };
           const result = await backend.store(input);
-          return JSON.stringify({ ok: true, data: result });
+          return JSON.stringify({
+            ok: true,
+            data: result,
+            ...responseMessageFields(result),
+          });
         } catch (err) {
           return jsonToolError(err);
         }
@@ -97,7 +102,12 @@ export function buildTools(backend: MemoryBackend): Record<string, ReturnType<ty
             memory_type: args.memory_type,
           };
           const result = await backend.search(input);
-          return JSON.stringify({ ok: true, ...result });
+          const { runtimeState: _runtimeState, message: _message, ...searchResult } = result;
+          return JSON.stringify({
+            ok: true,
+            ...searchResult,
+            ...responseMessageFields(result),
+          });
         } catch (err) {
           return jsonToolError(err);
         }

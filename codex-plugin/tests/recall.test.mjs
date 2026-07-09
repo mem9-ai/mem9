@@ -96,6 +96,7 @@ test("runRecall calls mem9 with the current runtime and prints a safe summary", 
           request.url = url;
           request.options = options;
           return {
+            message: "mem9 recall has used 80% of included quota.",
             memories: [
               {
                 id: "m1",
@@ -133,6 +134,7 @@ test("runRecall calls mem9 with the current runtime and prints a safe summary", 
     assert.equal(result.profileId, "work");
     assert.equal(result.configSource, "project");
     assert.equal(result.memoryCount, 1);
+    assert.equal(result.message, "mem9 recall has used 80% of included quota.");
     assert.deepEqual(result.memories, [
       {
         id: "m1",

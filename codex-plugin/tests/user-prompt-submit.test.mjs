@@ -12,6 +12,7 @@ import test from "node:test";
 import {
   buildRecallUrl,
   extractMemories,
+  extractResponseNotice,
   runUserPromptSubmit,
 } from "../hooks/user-prompt-submit.mjs";
 import { Mem9HttpError } from "../lib/http.mjs";
@@ -209,6 +210,42 @@ test("extractMemories accepts both server response shapes", () => {
   assert.deepEqual(extractMemories(null), []);
 });
 
+test("extractResponseNotice prefers success response message", () => {
+  assert.deepEqual(
+    extractResponseNotice({
+      message: "mem9 recall has used 80% of included quota.",
+      runtimeState: {
+        mem9ApiKey: { status: "active" },
+        meters: [],
+      },
+    }),
+    {
+      message: "mem9 recall has used 80% of included quota.",
+      source: "success-response",
+    },
+  );
+});
+
+test("extractResponseNotice falls back to runtimeState", () => {
+  const notice = extractResponseNotice({
+    runtimeState: {
+      mem9ApiKey: { status: "active" },
+      meters: [{
+        meter: "memory_recall_requests",
+        budgets: [{
+          type: "includedQuota",
+          state: "warning",
+          usage: { percent: 82, remaining: 18 },
+          capacity: { type: "limited", value: 100 },
+        }],
+      }],
+    },
+  });
+
+  assert.equal(notice?.source, "runtime-state");
+  assert.match(notice?.message ?? "", /mem9 recall is at 82% of its included quota/);
+});
+
 test("user prompt submit recalls memories with the search timeout bucket", async () => {
   /** @type {string | null} */
   let requestedUrl = null;
@@ -253,6 +290,74 @@ test("user prompt submit recalls memories with the search timeout bucket", async
     debugEvents.map((event) => event.stage),
     ["recall_request", "recall_response", "context_injected"],
   );
+});
+
+test("user prompt submit injects success response message without memories", async () => {
+  /** @type {Array<{stage: string, fields: Record<string, unknown> | undefined}>} */
+  const debugEvents = [];
+
+  const output = await runUserPromptSubmit({
+    prompt: "remember my preference",
+    sessionID: "session-message-1",
+    runtime: {
+      baseUrl: "https://api.mem9.ai",
+      apiKey: "key-1",
+      agentId: "codex",
+      searchTimeoutMs: 15_000,
+      recallMinPromptLength: 5,
+    },
+    async search() {
+      return {
+        memories: [],
+        message: "mem9 recall has used 80% of included quota.",
+      };
+    },
+    debug(stage, fields) {
+      debugEvents.push({ stage, fields });
+    },
+  });
+
+  const parsed = JSON.parse(output);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /<mem9-status-warning>/);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /Mem9 notice for the user: mem9 recall has used 80%/);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /Mention this mem9 notice to the user once/);
+  assert.doesNotMatch(parsed.hookSpecificOutput.additionalContext, /<relevant-memories>/);
+  assert.deepEqual(debugEvents.at(1)?.fields, {
+    memoryCount: 0,
+    hasMessage: true,
+    messageLength: 43,
+    messageHash: "sha256:2365c7aac0acad4c5300a420722fec83ac8ae4012e34c7694500334f9b4de1d6",
+    messageSource: "success-response",
+  });
+});
+
+test("user prompt submit deduplicates success response message by session", async () => {
+  const tempRoot = createTempRoot("runtime-notice-state");
+  const noticeStateFile = path.join(tempRoot, "codex-home", "mem9", "runtime-notices.json");
+  const input = {
+    prompt: "remember my preference",
+    sessionID: "session-message-1",
+    noticeStateFile,
+    runtime: {
+      baseUrl: "https://api.mem9.ai",
+      apiKey: "key-1",
+      agentId: "codex",
+      searchTimeoutMs: 15_000,
+      recallMinPromptLength: 5,
+    },
+    async search() {
+      return {
+        memories: [],
+        message: "mem9 recall has used 80% of included quota.",
+      };
+    },
+  };
+
+  const firstOutput = await runUserPromptSubmit(input);
+  const secondOutput = await runUserPromptSubmit(input);
+
+  assert.match(firstOutput, /mem9 recall has used 80%/);
+  assert.equal(secondOutput, "");
 });
 
 test("user prompt submit renders runtime quota denial action", async () => {
@@ -535,6 +640,27 @@ test("user prompt submit skips empty queries after stripping injected memories",
   assert.equal(called, false);
   assert.equal(output, "");
   assert.equal(debugEvents[0]?.stage, "prompt_empty");
+});
+
+test("user prompt submit strips injected status warnings before recall", async () => {
+  let called = false;
+  const output = await runUserPromptSubmit({
+    prompt: "<mem9-status-warning>\nMem9 notice for the user: old\n</mem9-status-warning>",
+    runtime: {
+      baseUrl: "https://api.mem9.ai",
+      apiKey: "key-1",
+      agentId: "codex",
+      searchTimeoutMs: 15_000,
+      recallMinPromptLength: 5,
+    },
+    async search() {
+      called = true;
+      return { memories: [] };
+    },
+  });
+
+  assert.equal(called, false);
+  assert.equal(output, "");
 });
 
 test("user prompt submit skips recall when the stripped query is shorter than the configured minimum", async () => {

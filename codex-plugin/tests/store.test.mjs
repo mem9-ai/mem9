@@ -75,7 +75,7 @@ test("runStore posts a synchronous memory create and prints a safe summary", asy
         ) => {
           request.url = url;
           request.options = options;
-          return { status: "ok" };
+          return { status: "ok", message: "mem9 memory saving has used 80% of included quota." };
         },
         stdout: {
           write(/** @type {string} */ chunk) {
@@ -103,6 +103,7 @@ test("runStore posts a synchronous memory create and prints a safe summary", asy
     assert.equal(result.profileId, "default");
     assert.equal(result.configSource, "global");
     assert.equal(result.contentChars, "The user prefers concise release notes.".length);
+    assert.equal(result.message, "mem9 memory saving has used 80% of included quota.");
     assert.deepEqual(JSON.parse(stdoutText), result);
     assert.equal(stdoutText.includes("key-save"), false);
     assert.equal(stdoutText.includes("The user prefers concise release notes."), false);

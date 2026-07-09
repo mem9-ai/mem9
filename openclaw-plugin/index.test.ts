@@ -307,6 +307,59 @@ test("before_prompt_build forwards the prompt as q during recall search", async 
   }
 });
 
+test("before_prompt_build injects success response message without memories once", async () => {
+  const originalFetch = globalThis.fetch;
+  const apiUrl = uniqueApiUrl("before-prompt-message");
+  let runtimeStateRequests = 0;
+
+  globalThis.fetch = async (input, init) => {
+    const requestURL = String(input);
+    assert.equal(init?.method, "GET");
+
+    if (requestURL.endsWith("/v1alpha2/mem9s/runtime-state")) {
+      runtimeStateRequests += 1;
+      return new Response(JSON.stringify({ mem9ApiKey: { status: "active" }, meters: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(
+      JSON.stringify({
+        memories: [],
+        total: 0,
+        limit: 10,
+        offset: 0,
+        message: "mem9 recall has used 80% of included quota.",
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  };
+
+  try {
+    const api = createStubApi({
+      apiUrl,
+      apiKey: "space-before-prompt-message",
+    });
+    mnemoPlugin.register(api);
+
+    const beforePromptBuild = api.getHook("before_prompt_build");
+    const firstResult = await beforePromptBuild({ prompt: "remember alpha" }) as { prependContext?: string } | undefined;
+    const secondResult = await beforePromptBuild({ prompt: "remember beta" }) as { prependContext?: string } | undefined;
+
+    assert.match(firstResult?.prependContext ?? "", /<mem9-status-warning>/);
+    assert.match(firstResult?.prependContext ?? "", /mem9 recall has used 80% of included quota\./);
+    assert.match(firstResult?.prependContext ?? "", /Mention this mem9 notice to the user once\./);
+    assert.equal(secondResult, undefined);
+    assert.equal(runtimeStateRequests, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("before_prompt_build returns runtime quota denial action context", async () => {
   const originalFetch = globalThis.fetch;
   const apiUrl = uniqueApiUrl("before-prompt-quota");
@@ -909,6 +962,56 @@ test("background save quota handling logs a terse status", async () => {
       2,
     );
     assert.equal(infoLogs.some((line) => line.includes("In your reply")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent_end strips injected status warning before ingest", async () => {
+  const originalFetch = globalThis.fetch;
+  const ingestBodies: Record<string, unknown>[] = [];
+
+  globalThis.fetch = async (input, init) => {
+    assert.equal(String(input).includes("/v1alpha2/mem9s/memories"), true);
+    assert.equal(init?.method, "POST");
+    ingestBodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+    return new Response(JSON.stringify({ status: "accepted" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const api = createStubApi({
+      apiUrl: uniqueApiUrl("agent-end-strip-status-warning"),
+      apiKey: "space-agent-end-strip",
+    });
+    mnemoPlugin.register(api);
+
+    await api.getHook("agent_end")({
+      success: true,
+      sessionId: "session-strip",
+      messages: [
+        {
+          role: "user",
+          content: [
+            "keep this preference",
+            "<mem9-status-warning>",
+            "Mem9 notice for the user: hidden",
+            "</mem9-status-warning>",
+            "<memory-context>",
+            "legacy hidden",
+            "</memory-context>",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    const messages = ingestBodies[0]?.messages as Array<{ content: string }> | undefined;
+    assert.ok(messages);
+    assert.equal(messages?.[0]?.content.includes("keep this preference"), true);
+    assert.equal(messages?.[0]?.content.includes("Mem9 notice for the user"), false);
+    assert.equal(messages?.[0]?.content.includes("legacy hidden"), false);
   } finally {
     globalThis.fetch = originalFetch;
   }

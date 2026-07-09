@@ -5,8 +5,11 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const START_TAG = "<relevant-memories>";
-const END_TAG = "</relevant-memories>";
+const INJECTED_BLOCK_TAGS = [
+  ["<relevant-memories>", "</relevant-memories>"],
+  ["<mem9-status-warning>", "</mem9-status-warning>"],
+  ["<memory-context>", "</memory-context>"],
+];
 
 /**
  * @typedef {{
@@ -29,14 +32,16 @@ const END_TAG = "</relevant-memories>";
  */
 export function stripInjectedMemories(text) {
   let result = text;
-  while (result.includes(START_TAG)) {
-    const start = result.indexOf(START_TAG);
-    const end = result.indexOf(END_TAG, start);
-    if (end === -1) {
-      result = result.slice(0, start);
-      break;
+  for (const [startTag, endTag] of INJECTED_BLOCK_TAGS) {
+    while (result.includes(startTag)) {
+      const start = result.indexOf(startTag);
+      const end = result.indexOf(endTag, start);
+      if (end === -1) {
+        result = result.slice(0, start);
+        break;
+      }
+      result = result.slice(0, start) + result.slice(end + endTag.length);
     }
-    result = result.slice(0, start) + result.slice(end + END_TAG.length);
   }
   return result.trim();
 }

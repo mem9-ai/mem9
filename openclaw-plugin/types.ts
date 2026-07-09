@@ -48,6 +48,8 @@ export interface SearchResult {
   total: number;
   limit: number;
   offset: number;
+  message?: string;
+  runtimeState?: unknown;
 }
 
 export interface CreateMemoryInput {
@@ -91,6 +93,8 @@ export interface IngestResult {
   insight_ids?: string[];
   warnings?: number;
   error?: string;
+  message?: string;
+  runtimeState?: unknown;
 }
 
 export type StoreResult = Memory | IngestResult;

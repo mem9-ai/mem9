@@ -46,6 +46,8 @@ export interface SearchResult {
   total: number;
   limit: number;
   offset: number;
+  message?: string;
+  runtimeState?: unknown;
 }
 
 export interface CreateMemoryInput {
@@ -71,4 +73,7 @@ export interface SearchInput {
   memory_type?: string;
 }
 
-export type StoreResult = Memory;
+export type StoreResult = Memory & {
+  message?: string;
+  runtimeState?: unknown;
+};

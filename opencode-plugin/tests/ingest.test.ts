@@ -159,6 +159,10 @@ test("selectMessagesForIngest strips injected memory blocks and keeps the latest
 Mem9 API key is inactive.
 </mem9-status-warning>
 
+<memory-context>
+Legacy injected context.
+</memory-context>
+
 Keep this request.
 `,
     },

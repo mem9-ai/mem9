@@ -338,6 +338,53 @@ test("buildHooks captures the latest non-synthetic text parts and injects releva
   assert.equal(debugEvents[3]?.payload.injected, true);
 });
 
+test("buildHooks injects success response message without memories once per session", async () => {
+  const debugEvents: Array<{ event: string; payload: Record<string, unknown> }> = [];
+  const hooks = buildHooks(
+    createBackend(async (input) => ({
+      memories: [],
+      total: 0,
+      limit: input.limit ?? 0,
+      offset: input.offset ?? 0,
+      message: "mem9 recall has used 80% of included quota.",
+    })),
+    {
+      debugLogger: async (event, payload = {}) => {
+        debugEvents.push({ event, payload });
+      },
+    },
+  );
+
+  const onChatMessage = hooks["chat.message"];
+  const onSystemTransform = hooks["experimental.chat.system.transform"];
+  assert.ok(onChatMessage);
+  assert.ok(onSystemTransform);
+
+  await onChatMessage(
+    createChatMessageInput("session-response-message"),
+    createChatMessageOutput([textPart("Find relevant project context.")]),
+  );
+
+  const firstOutput = createSystemTransformOutput(["Existing system"]);
+  await onSystemTransform(createSystemTransformInput("session-response-message"), firstOutput);
+
+  await onChatMessage(
+    createChatMessageInput("session-response-message"),
+    createChatMessageOutput([textPart("Find relevant project context again.")]),
+  );
+
+  const secondOutput = createSystemTransformOutput(["Existing system"]);
+  await onSystemTransform(createSystemTransformInput("session-response-message"), secondOutput);
+
+  assert.equal(firstOutput.system.length, 2);
+  assert.match(firstOutput.system[1] ?? "", /<mem9-status-warning>/);
+  assert.match(firstOutput.system[1] ?? "", /mem9 recall has used 80% of included quota\./);
+  assert.match(firstOutput.system[1] ?? "", /Mention this mem9 notice to the user once\./);
+  assert.deepEqual(secondOutput.system, ["Existing system"]);
+  assert.equal(debugEvents[2]?.payload.hasMessage, true);
+  assert.equal(debugEvents[2]?.payload.messageLength, 43);
+});
+
 test("buildHooks preserves the latest recall prompt across compaction", async () => {
   const queries: SearchInput[] = [];
   const hooks = buildHooks(

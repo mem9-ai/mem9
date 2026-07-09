@@ -6,6 +6,7 @@ import { submitMessagesForIngest } from "./ingest/submit.ts";
 import { formatRuntimeQuotaNotice, parseRuntimeQuotaDenied } from "./quota-error.ts";
 import { formatRecallBlock } from "./recall/format.ts";
 import { buildRecallQuery } from "./recall/query.ts";
+import { normalizeNoticeMessage, responseMessage } from "./response-message.ts";
 import { formatRuntimeStateNotice } from "./runtime-state.ts";
 import type { SessionTranscriptLoader } from "./session-transcript.ts";
 
@@ -30,6 +31,7 @@ interface SessionState {
   pendingIngestFingerprint: string | null;
   agentID: string;
   runtimeStateNoticeShown: boolean;
+  seenNoticeMessages: Set<string>;
   updatedAt: number;
 }
 
@@ -80,12 +82,35 @@ function findLatestUserMessage(
   return null;
 }
 
+function escapeForPrompt(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function runtimeStateNoticeText(notice: string): string {
+  const message = normalizeNoticeMessage(notice);
+  if (!message) {
+    return "";
+  }
+
   return [
     "<mem9-status-warning>",
-    notice,
+    `Mem9 notice for the user: ${escapeForPrompt(message)}`,
+    "Mention this mem9 notice to the user once.",
     "</mem9-status-warning>",
   ].join("\n");
+}
+
+function consumeNoticeMessage(state: SessionState, message: string): string {
+  const notice = normalizeNoticeMessage(message);
+  if (!notice || state.seenNoticeMessages.has(notice)) {
+    return "";
+  }
+
+  state.seenNoticeMessages.add(notice);
+  return notice;
 }
 
 async function consumeRuntimeStateNotice(
@@ -98,7 +123,7 @@ async function consumeRuntimeStateNotice(
   state.runtimeStateNoticeShown = true;
 
   try {
-    return formatRuntimeStateNotice(await backend.runtimeState());
+    return consumeNoticeMessage(state, formatRuntimeStateNotice(await backend.runtimeState()));
   } catch {
     // Runtime-state warmup is advisory and must stay fail-soft.
     return "";
@@ -150,6 +175,7 @@ function ensureSessionState(
     pendingIngestFingerprint: null,
     agentID: fallbackAgentID,
     runtimeStateNoticeShown: false,
+    seenNoticeMessages: new Set<string>(),
     updatedAt: now,
   };
   cache.set(sessionID, state);
@@ -387,14 +413,19 @@ export function buildHooks(
           limit: MAX_RECALL_RESULTS,
         });
         const result = await backend.search({ q: query, limit: MAX_RECALL_RESULTS });
+        const notice = consumeNoticeMessage(state, responseMessage(result));
         const block = formatRecallBlock(result.memories);
+        const statusBlock = runtimeStateNoticeText(notice);
+        const context = [statusBlock, block].filter(Boolean).join("\n\n");
         await options.debugLogger?.("recall.result", {
           sessionID: input.sessionID,
           memoryCount: result.memories.length,
-          injected: Boolean(block),
+          injected: Boolean(context),
+          hasMessage: Boolean(notice),
+          messageLength: notice.length,
         });
-        if (block) {
-          output.system.push(block);
+        if (context) {
+          output.system.push(context);
         }
       } catch (error) {
         const quotaDenied = parseRuntimeQuotaDenied(error);

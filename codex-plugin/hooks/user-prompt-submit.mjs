@@ -1,13 +1,25 @@
 // @ts-check
 
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { loadRuntimeStateFromDisk } from "../lib/config.mjs";
 import { appendDebugError, appendDebugLog } from "./shared/debug.mjs";
-import { formatMemoriesBlock, hookAdditionalContext, stripInjectedMemories } from "./shared/format.mjs";
+import {
+  formatMemoriesBlock,
+  formatStatusWarningBlock,
+  hookAdditionalContext,
+  normalizeNoticeMessage,
+  stripInjectedMemories,
+} from "./shared/format.mjs";
 import { buildMem9Url, mem9FetchJson, mem9Headers } from "../lib/http.mjs";
 import { formatRuntimeQuotaNotice, parseRuntimeQuotaDenied } from "../lib/quota-error.mjs";
+import { formatRuntimeStateNotice } from "../lib/runtime-state.mjs";
+import {
+  claimRuntimeNotice,
+  noticeHash,
+} from "./shared/runtime-notice-state.mjs";
 
 const RECALL_LIMIT = 10;
 
@@ -66,11 +78,36 @@ export function extractMemories(payload) {
 }
 
 /**
+ * @param {unknown} payload
+ * @returns {{message: string, source: "success-response" | "runtime-state"} | null}
+ */
+export function extractResponseNotice(payload) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const typedPayload = /** @type {{message?: unknown, runtimeState?: unknown}} */ (payload);
+  const responseMessage = normalizeNoticeMessage(typedPayload.message);
+  if (responseMessage) {
+    return { message: responseMessage, source: "success-response" };
+  }
+
+  const runtimeStateNotice = normalizeNoticeMessage(
+    formatRuntimeStateNotice(typedPayload.runtimeState),
+  );
+  return runtimeStateNotice
+    ? { message: runtimeStateNotice, source: "runtime-state" }
+    : null;
+}
+
+/**
  * @param {{
  *   prompt?: string,
  *   runtime: RecallRuntime,
  *   search: (url: string, options: {timeoutMs: number}) => Promise<unknown>,
  *   debug?: (stage: string, fields?: Record<string, string | number | boolean | null | undefined>) => void,
+ *   sessionID?: string,
+ *   noticeStateFile?: string,
  * }} input
  * @returns {Promise<string>}
  */
@@ -127,21 +164,37 @@ export async function runUserPromptSubmit(input) {
     );
   }
   const memories = extractMemories(result).slice(0, RECALL_LIMIT);
+  const notice = extractResponseNotice(result);
+  const shouldShowNotice = notice
+    ? claimRuntimeNotice({
+      stateFile: input.noticeStateFile,
+      sessionID: input.sessionID,
+      message: notice.message,
+    })
+    : false;
   debug("recall_response", {
     memoryCount: memories.length,
+    hasMessage: Boolean(notice),
+    messageLength: notice ? notice.message.length : 0,
+    messageHash: notice ? noticeHash(notice.message) : "",
+    messageSource: notice?.source ?? "",
   });
   const block = formatMemoriesBlock(memories);
+  const statusBlock = shouldShowNotice && notice
+    ? formatStatusWarningBlock(notice.message)
+    : "";
+  const context = [statusBlock, block].filter(Boolean).join("\n\n");
 
-  if (!block) {
+  if (!context) {
     debug("recall_no_context");
     return "";
   }
 
   debug("context_injected", {
     memoryCount: memories.length,
-    blockChars: block.length,
+    blockChars: context.length,
   });
-  return hookAdditionalContext("UserPromptSubmit", block);
+  return hookAdditionalContext("UserPromptSubmit", context);
 }
 
 /**
@@ -160,6 +213,10 @@ export async function main() {
   const prompt =
     stdin && typeof stdin === "object" && typeof stdin.prompt === "string"
       ? stdin.prompt
+      : "";
+  const sessionID =
+    stdin && typeof stdin === "object" && typeof stdin.session_id === "string"
+      ? stdin.session_id
       : "";
   const state = loadRuntimeStateFromDisk({ cwd });
   debugContext = {
@@ -204,6 +261,8 @@ export async function main() {
   return runUserPromptSubmit({
     prompt,
     runtime: state.runtime,
+    sessionID,
+    noticeStateFile: path.join(state.codexHome, "mem9", "runtime-notices.json"),
     debug(stage, fields) {
       appendDebugLog({
         hook: "UserPromptSubmit",

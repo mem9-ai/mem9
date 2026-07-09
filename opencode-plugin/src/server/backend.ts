@@ -22,6 +22,8 @@ export interface IngestInput {
 export interface IngestResult {
   status: string;
   memories_changed?: number;
+  message?: string;
+  runtimeState?: unknown;
 }
 
 /**

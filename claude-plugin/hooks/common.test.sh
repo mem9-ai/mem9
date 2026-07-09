@@ -95,6 +95,47 @@ case "${inactive_notice}" in
     ;;
 esac
 
+notice_state_file="${TMP_DIR}/runtime-notices.json"
+formatter_notice="$(
+  printf '%s' '{"memories":[],"message":"mem9 recall has used 80% of included quota."}' \
+    | MEM9_NOTICE_SESSION_ID="claude-session" MEM9_NOTICE_STATE_FILE="${notice_state_file}" \
+      node "${SCRIPT_DIR}/lib/memories-formatter.mjs"
+)"
+case "${formatter_notice}" in
+  *"<mem9-status-warning>"*"mem9 recall has used 80% of included quota."*"Mention this mem9 notice to the user once."* ) ;;
+  *)
+    printf 'expected response message status warning, got: %s\n' "${formatter_notice}" >&2
+    exit 1
+    ;;
+esac
+
+formatter_duplicate="$(
+  printf '%s' '{"memories":[],"message":"mem9 recall has used 80% of included quota."}' \
+    | MEM9_NOTICE_SESSION_ID="claude-session" MEM9_NOTICE_STATE_FILE="${notice_state_file}" \
+      node "${SCRIPT_DIR}/lib/memories-formatter.mjs"
+)"
+if [[ -n "${formatter_duplicate}" ]]; then
+  printf 'expected duplicate response message to be suppressed, got: %s\n' "${formatter_duplicate}" >&2
+  exit 1
+fi
+
+stripped_context="$(
+  node --input-type=module -e 'import { pathToFileURL } from "node:url"; const { stripInjectedMemories } = await import(pathToFileURL(process.argv[2])); process.stdout.write(stripInjectedMemories("keep\n<mem9-status-warning>\nhidden\n</mem9-status-warning>\n<relevant-memories>\nmemory\n</relevant-memories>\n<memory-context>\nlegacy\n</memory-context>\nend"));' \
+    _ \
+    "${SCRIPT_DIR}/lib/transcript-parser.mjs"
+)"
+case "${stripped_context}" in
+  *hidden*|*memory*|*legacy* )
+    printf 'expected injected context to be stripped, got: %s\n' "${stripped_context}" >&2
+    exit 1
+    ;;
+  *keep*end* ) ;;
+  *)
+    printf 'expected original user content to remain, got: %s\n' "${stripped_context}" >&2
+    exit 1
+    ;;
+esac
+
 SESSION_ENV_FILE="${TMP_DIR}/session.env"
 session_output="$(
   printf '{"source":"startup"}' | env -u MEM9_API_KEY \

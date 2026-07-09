@@ -58,11 +58,22 @@ if [[ -z "${response}" ]]; then
 fi
 
 memories_count="$(printf '%s' "${response}" | node -e 'const fs=require("node:fs"); const raw=fs.readFileSync(0, "utf8"); const parsed=JSON.parse(raw); const memories=Array.isArray(parsed) ? parsed : Array.isArray(parsed.memories) ? parsed.memories : []; process.stdout.write(String(memories.length));' 2>/dev/null || printf '0')"
+message_stats="$(printf '%s' "${response}" | node --input-type=module -e 'import { createHash } from "node:crypto"; import { readFileSync } from "node:fs"; import { pathToFileURL } from "node:url"; const { responseMessage } = await import(pathToFileURL(process.argv[2])); const message=responseMessage(JSON.parse(readFileSync(0, "utf8"))); const hash=message ? `sha256:${createHash("sha256").update(message).digest("hex")}` : ""; process.stdout.write([message ? "true" : "false", String(message.length), hash].join("\t"));' _ "${SCRIPT_DIR}/lib/memories-formatter.mjs" 2>/dev/null || printf 'false\t0\t')"
+IFS=$'\t' read -r has_message message_length message_hash <<< "${message_stats}"
 mem9_debug "UserPromptSubmit" "recall_response" \
   "prompt_length" "${#prompt}" \
-  "memories_count" "${memories_count}"
+  "memories_count" "${memories_count}" \
+  "has_message" "${has_message}" \
+  "message_length" "${message_length}" \
+  "message_hash" "${message_hash}"
 
-context="$(printf '%s' "${response}" | node "${SCRIPT_DIR}/lib/memories-formatter.mjs" 2>/dev/null || true)"
+session_id="$(mem9_hook_get_string "${HOOK_INPUT}" "session_id")"
+notice_state_file="$(mem9_notice_state_file || true)"
+context="$(
+  printf '%s' "${response}" \
+    | MEM9_NOTICE_SESSION_ID="${session_id}" MEM9_NOTICE_STATE_FILE="${notice_state_file}" \
+      node "${SCRIPT_DIR}/lib/memories-formatter.mjs" 2>/dev/null || true
+)"
 if [[ -z "${context}" ]]; then
   mem9_debug "UserPromptSubmit" "recall_no_context" \
     "prompt_length" "${#prompt}" \

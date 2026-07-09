@@ -2,6 +2,8 @@
 // runtime-state.mjs - Format mem9 runtime-state payloads for hooks.
 
 import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const WARNING_PERCENT = 80;
 const URGENT_PERCENT = 95;
@@ -103,7 +105,7 @@ function budgetNumbers(budget) {
   };
 }
 
-function formatRuntimeStateNotice(runtimeState) {
+export function formatRuntimeStateNotice(runtimeState) {
   if (!isRecord(runtimeState)) return "";
 
   const action = normalizeAction(runtimeState.recommendedAction);
@@ -226,7 +228,17 @@ function readPayload() {
   }
 }
 
-const notice = formatRuntimeStateNotice(readPayload());
-if (notice) {
-  process.stdout.write(notice);
+function main() {
+  const notice = formatRuntimeStateNotice(readPayload());
+  if (notice) {
+    process.stdout.write(notice);
+  }
+  return 0;
+}
+
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  process.exitCode = main();
 }

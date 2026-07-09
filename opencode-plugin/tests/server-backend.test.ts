@@ -73,6 +73,36 @@ test("ServerBackend uses X-API-Key and v1alpha2 paths", async () => {
   }
 });
 
+test("ServerBackend preserves search success response message", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => {
+    return new Response(
+      JSON.stringify({
+        memories: [],
+        total: 0,
+        limit: 10,
+        offset: 0,
+        message: "mem9 recall has used 80% of included quota.",
+        runtimeState: { mem9ApiKey: { status: "active" } },
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  };
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "mk_demo", "opencode");
+    const result = await backend.search({ q: "hello" });
+    assert.equal(result.message, "mem9 recall has used 80% of included quota.");
+    assert.deepEqual(result.runtimeState, { mem9ApiKey: { status: "active" } });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("ServerBackend fetches runtime-state through the public v1alpha2 path", async () => {
   const originalFetch = globalThis.fetch;
   let requestURL = "";

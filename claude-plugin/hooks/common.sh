@@ -105,6 +105,12 @@ mem9_auth_file() {
   printf '%s/auth.json\n' "${data_dir}"
 }
 
+mem9_notice_state_file() {
+  local data_dir
+  data_dir="$(mem9_plugin_data_dir)" || return 1
+  printf '%s/runtime-notices.json\n' "${data_dir}"
+}
+
 mem9_memory_base() {
   printf '%s\n' "${MEM9_API_URL%/}/v1alpha2/mem9s"
 }

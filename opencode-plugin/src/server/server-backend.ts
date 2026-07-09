@@ -120,6 +120,8 @@ export class ServerBackend implements MemoryBackend {
       total: number;
       limit: number;
       offset: number;
+      message?: string;
+      runtimeState?: unknown;
     }>(
       "GET",
       `${this.memoryPath("/memories")}${qs ? "?" + qs : ""}`,
@@ -132,6 +134,8 @@ export class ServerBackend implements MemoryBackend {
       total: raw.total,
       limit: raw.limit,
       offset: raw.offset,
+      ...(typeof raw.message === "string" ? { message: raw.message } : {}),
+      ...(raw.runtimeState !== undefined ? { runtimeState: raw.runtimeState } : {}),
     };
   }
 

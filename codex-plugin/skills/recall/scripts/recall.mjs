@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 
 import { buildMem9Url, mem9FetchJson, mem9Headers } from "../../../lib/http.mjs";
 import { runtimeQuotaDeniedSummary } from "../../../lib/quota-error.mjs";
+import { formatRuntimeStateNotice } from "../../../lib/runtime-state.mjs";
 import { loadReadyRuntimeState } from "../../../lib/skill-runtime.mjs";
 
 const DEFAULT_LIMIT = 10;
@@ -135,6 +136,16 @@ export function normalizeMemorySummary(memory) {
   };
 }
 
+export function responseMessage(payload) {
+  if (!payload || typeof payload !== "object") {
+    return "";
+  }
+  if (typeof payload.message === "string" && payload.message.trim()) {
+    return payload.message.trim();
+  }
+  return formatRuntimeStateNotice(payload.runtimeState).trim();
+}
+
 function readStdinText() {
   return readFileSync(0, "utf8");
 }
@@ -202,6 +213,16 @@ export async function runRecall(argv = process.argv.slice(2), options = {}) {
     .slice(0, args.limit)
     .map(normalizeMemorySummary)
     .filter((memory) => memory.content);
+  /** @type {{
+   *   status: string,
+   *   profileId: string,
+   *   configSource: string,
+   *   query: string,
+   *   memoryCount: number,
+   *   memories: Array<ReturnType<typeof normalizeMemorySummary>>,
+   *   message?: string,
+   * }}
+   */
   const summary = {
     status: "ok",
     profileId: state.runtime.profileId,
@@ -210,6 +231,10 @@ export async function runRecall(argv = process.argv.slice(2), options = {}) {
     memoryCount: memories.length,
     memories,
   };
+  const message = responseMessage(payload);
+  if (message) {
+    summary.message = message;
+  }
   const stdout = options.stdout ?? process.stdout;
   stdout?.write?.(`${JSON.stringify(summary)}\n`);
   return summary;
