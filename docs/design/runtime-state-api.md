@@ -2,7 +2,7 @@
 title: mem9-server Runtime State API
 status: draft
 created: 2026-07-06
-last_updated: 2026-07-06
+last_updated: 2026-07-09
 ---
 
 ## Summary
@@ -56,6 +56,84 @@ defaults only where required for a stable public shape, and returns configured
 `MNEMO_RUNTIME_USAGE_PROVIDER_ID` controls the public provider discriminator.
 When runtime usage is enabled and the env var is omitted, mem9-server uses
 `mem9-official`.
+
+## Success Response Notices
+
+mem9-server also attaches advisory runtime-state notices to successful memory
+route responses for plugins that only read recall or ingest responses. This is
+an additive response extension for existing response bodies.
+
+### Trigger
+
+The notice path runs only when all conditions below are true:
+
+- Runtime usage is enabled.
+- The runtime usage provider id resolves to `mem9-official`.
+- The primary recall operation has succeeded, or the memory write request has
+  been accepted or completed.
+- The runtime state contains a displayable warning or action.
+
+Runtime-state lookup happens after the primary operation succeeds. Lookup
+failure omits the advisory fields and writes a warning log, while the successful
+recall or write response continues with its normal status code.
+
+### Response Shape
+
+Successful recall responses may include the optional top-level fields below:
+
+```text
+{
+  "memories": [...],
+  "total": 1,
+  "limit": 10,
+  "offset": 0,
+  "message": "mem9 recall has used 80% of included quota. Upgrade your plan to get more included usage.",
+  "runtimeState": RuntimeStateResponse
+}
+```
+
+Successful ingest responses may include the same optional fields on top-level
+status responses:
+
+```text
+{
+  "status": "accepted",
+  "message": "Mem9 needs account or billing attention. Open https://console.example.com/console/billing/plan to upgrade your plan.",
+  "runtimeState": RuntimeStateResponse
+}
+```
+
+Successful `201 Created` memory-object responses may include the same optional
+top-level `message` and `runtimeState` fields.
+
+`runtimeState` uses the same public response shape as
+`GET /v1alpha2/mem9s/runtime-state`. mem9-server returns it as-is after the
+provider-id guard.
+
+### Message Selection
+
+The `message` field is fixed English user-facing copy. The server returns at
+most one notice per response, using this template:
+
+```text
+<feature> <state>. <action>.
+```
+
+Priority order:
+
+1. Inactive API key.
+2. Blocking recommended action or gate result.
+3. Rate-limited gate result.
+4. Constrained usage mode, such as on-demand or post-quota usage.
+5. Exhausted or urgent budget.
+6. Warning budget.
+
+Example messages:
+
+- `This API key is inactive. Run mem9 setup again or create a new API key to keep memory access available.`
+- `Mem9 needs account or billing attention. Open https://console.example.com/console/billing/plan to upgrade your plan.`
+- `mem9 recall has used 80% of included quota. Upgrade your plan to get more included usage.`
+- `mem9 memory saving is using on-demand usage. Review billing settings in the mem9 console.`
 
 ## Provider-Disabled Fallback
 
@@ -127,3 +205,7 @@ response and uses this fallback.
   fails.
 - Provider ID: public discriminator for interpreting provider-specific
   `providerData`.
+- Success response notice: optional top-level `message` and `runtimeState`
+  data attached to successful recall and ingest responses.
+- Displayable warning or action: a runtime state condition that should reach the
+  user through a response notice.
