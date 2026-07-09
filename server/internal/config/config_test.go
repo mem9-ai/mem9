@@ -222,6 +222,104 @@ func TestLoad_RuntimeUsageProviderID(t *testing.T) {
 	}
 }
 
+func TestLoad_RuntimeUsageNoticeConfigDefaults(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+	t.Setenv("MNEMO_RUNTIME_USAGE_ENABLED", "true")
+	t.Setenv("MNEMO_RUNTIME_USAGE_BASE_URL", "https://runtime-usage.example.com")
+	t.Setenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET", "secret-value")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.RuntimeUsageNoticeTimeout != time.Second {
+		t.Fatalf("RuntimeUsageNoticeTimeout = %v, want 1s", cfg.RuntimeUsageNoticeTimeout)
+	}
+	if !cfg.RuntimeUsageNoticeCacheEnabled {
+		t.Fatal("RuntimeUsageNoticeCacheEnabled = false, want true")
+	}
+	if cfg.RuntimeUsageNoticeCacheTTL != 30*time.Second {
+		t.Fatalf("RuntimeUsageNoticeCacheTTL = %v, want 30s", cfg.RuntimeUsageNoticeCacheTTL)
+	}
+	if cfg.RuntimeUsageNoticeStaleTTL != 2*time.Minute {
+		t.Fatalf("RuntimeUsageNoticeStaleTTL = %v, want 2m", cfg.RuntimeUsageNoticeStaleTTL)
+	}
+}
+
+func TestLoad_RuntimeUsageNoticeConfigOverrides(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+	t.Setenv("MNEMO_RUNTIME_USAGE_ENABLED", "true")
+	t.Setenv("MNEMO_RUNTIME_USAGE_BASE_URL", "https://runtime-usage.example.com")
+	t.Setenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET", "secret-value")
+	t.Setenv("MNEMO_RUNTIME_USAGE_NOTICE_TIMEOUT", "1500ms")
+	t.Setenv("MNEMO_RUNTIME_USAGE_NOTICE_CACHE_ENABLED", "false")
+	t.Setenv("MNEMO_RUNTIME_USAGE_NOTICE_CACHE_TTL", "45s")
+	t.Setenv("MNEMO_RUNTIME_USAGE_NOTICE_STALE_TTL", "3m")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.RuntimeUsageNoticeTimeout != 1500*time.Millisecond {
+		t.Fatalf("RuntimeUsageNoticeTimeout = %v, want 1500ms", cfg.RuntimeUsageNoticeTimeout)
+	}
+	if cfg.RuntimeUsageNoticeCacheEnabled {
+		t.Fatal("RuntimeUsageNoticeCacheEnabled = true, want false")
+	}
+	if cfg.RuntimeUsageNoticeCacheTTL != 45*time.Second {
+		t.Fatalf("RuntimeUsageNoticeCacheTTL = %v, want 45s", cfg.RuntimeUsageNoticeCacheTTL)
+	}
+	if cfg.RuntimeUsageNoticeStaleTTL != 3*time.Minute {
+		t.Fatalf("RuntimeUsageNoticeStaleTTL = %v, want 3m", cfg.RuntimeUsageNoticeStaleTTL)
+	}
+}
+
+func TestLoad_RuntimeUsageNoticeConfigValidation(t *testing.T) {
+	tests := []struct {
+		name       string
+		envKey     string
+		envValue   string
+		wantSubstr string
+	}{
+		{
+			name:       "timeout must be positive",
+			envKey:     "MNEMO_RUNTIME_USAGE_NOTICE_TIMEOUT",
+			envValue:   "0",
+			wantSubstr: "MNEMO_RUNTIME_USAGE_NOTICE_TIMEOUT must be positive",
+		},
+		{
+			name:       "cache ttl must be positive",
+			envKey:     "MNEMO_RUNTIME_USAGE_NOTICE_CACHE_TTL",
+			envValue:   "0",
+			wantSubstr: "MNEMO_RUNTIME_USAGE_NOTICE_CACHE_TTL must be positive",
+		},
+		{
+			name:       "stale ttl must not be negative",
+			envKey:     "MNEMO_RUNTIME_USAGE_NOTICE_STALE_TTL",
+			envValue:   "-1s",
+			wantSubstr: "MNEMO_RUNTIME_USAGE_NOTICE_STALE_TTL must not be negative",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MNEMO_DSN", "test-dsn")
+			t.Setenv("MNEMO_RUNTIME_USAGE_ENABLED", "true")
+			t.Setenv("MNEMO_RUNTIME_USAGE_BASE_URL", "https://runtime-usage.example.com")
+			t.Setenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET", "secret-value")
+			t.Setenv(tt.envKey, tt.envValue)
+
+			_, err := Load()
+			if err == nil {
+				t.Fatal("Load error = nil, want validation error")
+			}
+			if !strings.Contains(err.Error(), tt.wantSubstr) {
+				t.Fatalf("Load error = %v, want %q", err, tt.wantSubstr)
+			}
+		})
+	}
+}
+
 func TestLoad_RuntimeUsageRequiresBaseURLAndSecret(t *testing.T) {
 	tests := []struct {
 		name       string

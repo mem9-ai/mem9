@@ -74,16 +74,20 @@ type Config struct {
 
 	// RuntimeUsage enables commercial SaaS quota gating plus runtime usage
 	// service metering. Runtime usage metering uses RuntimeUsageBaseURL, not MeteringURL.
-	RuntimeUsageEnabled         bool
-	RuntimeUsageProviderID      string
-	RuntimeUsageBaseURL         string
-	RuntimeUsageInternalSecret  string `json:"-"`
-	RuntimeUsageTimeout         time.Duration
-	RuntimeUsageMeteringTimeout time.Duration
-	RuntimeUsageReservationTTL  time.Duration
-	RuntimeUsageOperationTTL    time.Duration
-	RuntimeUsageFailOpen        bool
-	RuntimeUsageOutboxEnabled   bool
+	RuntimeUsageEnabled            bool
+	RuntimeUsageProviderID         string
+	RuntimeUsageBaseURL            string
+	RuntimeUsageInternalSecret     string `json:"-"`
+	RuntimeUsageTimeout            time.Duration
+	RuntimeUsageMeteringTimeout    time.Duration
+	RuntimeUsageReservationTTL     time.Duration
+	RuntimeUsageOperationTTL       time.Duration
+	RuntimeUsageFailOpen           bool
+	RuntimeUsageOutboxEnabled      bool
+	RuntimeUsageNoticeTimeout      time.Duration
+	RuntimeUsageNoticeCacheEnabled bool
+	RuntimeUsageNoticeCacheTTL     time.Duration
+	RuntimeUsageNoticeStaleTTL     time.Duration
 
 	// DebugLLM enables logging of raw LLM response content, which may contain
 	// user data. Disabled by default. Enable only in dev/test environments via
@@ -212,6 +216,10 @@ func Load() (*Config, error) {
 		RuntimeUsageOperationTTL:         envDuration("MNEMO_RUNTIME_USAGE_OPERATION_TTL", 30*time.Minute),
 		RuntimeUsageFailOpen:             runtimeUsageFailOpen,
 		RuntimeUsageOutboxEnabled:        runtimeUsageOutboxEnabled,
+		RuntimeUsageNoticeTimeout:        envDuration("MNEMO_RUNTIME_USAGE_NOTICE_TIMEOUT", time.Second),
+		RuntimeUsageNoticeCacheEnabled:   envBool("MNEMO_RUNTIME_USAGE_NOTICE_CACHE_ENABLED", true),
+		RuntimeUsageNoticeCacheTTL:       envDuration("MNEMO_RUNTIME_USAGE_NOTICE_CACHE_TTL", 30*time.Second),
+		RuntimeUsageNoticeStaleTTL:       envDuration("MNEMO_RUNTIME_USAGE_NOTICE_STALE_TTL", 2*time.Minute),
 		EncryptType:                      envOr("MNEMO_ENCRYPT_TYPE", "plain"),
 		EncryptKey:                       os.Getenv("MNEMO_ENCRYPT_KEY"),
 		DebugLLM:                         envBool("MNEMO_DEBUG_LLM", false),
@@ -250,6 +258,15 @@ func Load() (*Config, error) {
 	}
 	if cfg.ChainRecallStopScore < 0 || cfg.ChainRecallStopScore > 1 {
 		return nil, fmt.Errorf("MNEMO_CHAIN_RECALL_STOP_SCORE must be between 0 and 1")
+	}
+	if cfg.RuntimeUsageNoticeTimeout <= 0 {
+		return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_NOTICE_TIMEOUT must be positive")
+	}
+	if cfg.RuntimeUsageNoticeCacheTTL <= 0 {
+		return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_NOTICE_CACHE_TTL must be positive")
+	}
+	if cfg.RuntimeUsageNoticeStaleTTL < 0 {
+		return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_NOTICE_STALE_TTL must not be negative")
 	}
 
 	return cfg, nil

@@ -320,6 +320,10 @@ The runtime usage outbox uses the control-plane `runtime_usage_outbox` table for
 | `MNEMO_RUNTIME_USAGE_OPERATION_TTL` | No | `30m` | Parsed into server config, but currently not used to expire runtime usage outbox rows; changing it does not alter outbox lifetimes |
 | `MNEMO_RUNTIME_USAGE_FAIL_OPEN` | No | `false` | Allow operations when quota reservation fails with a retryable runtime usage service error. Quota denials and operation conflicts still fail closed |
 | `MNEMO_RUNTIME_USAGE_OUTBOX_ENABLED` | No | same as `MNEMO_RUNTIME_USAGE_ENABLED` | Persist pending reservation and metering steps for retry. If explicitly set to `false` while runtime usage is enabled, `MNEMO_RUNTIME_USAGE_FAIL_OPEN` must be `true` |
+| `MNEMO_RUNTIME_USAGE_NOTICE_TIMEOUT` | No | `1s` | Timeout for best-effort runtime-state lookups used only by success response notices |
+| `MNEMO_RUNTIME_USAGE_NOTICE_CACHE_ENABLED` | No | `true` | Enable API-key-scoped caching for success response runtime-state notices |
+| `MNEMO_RUNTIME_USAGE_NOTICE_CACHE_TTL` | No | `30s` | Fresh TTL for success response runtime-state notice cache entries |
+| `MNEMO_RUNTIME_USAGE_NOTICE_STALE_TTL` | No | `2m` | Maximum stale-cache age used for success notices when the state provider is unavailable |
 
 #### Security And Debugging
 

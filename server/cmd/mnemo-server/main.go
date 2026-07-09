@@ -190,17 +190,21 @@ func main() {
 	}
 	runtimeUsageClient := runtimeusage.NewHTTPClient(cfg.RuntimeUsageBaseURL, cfg.RuntimeUsageInternalSecret, cfg.RuntimeUsageTimeout)
 	runtimeUsageManager := runtimeusage.NewManager(runtimeusage.Config{
-		Enabled:         cfg.RuntimeUsageEnabled,
-		ProviderID:      cfg.RuntimeUsageProviderID,
-		BaseURL:         cfg.RuntimeUsageBaseURL,
-		InternalSecret:  cfg.RuntimeUsageInternalSecret,
-		Timeout:         cfg.RuntimeUsageTimeout,
-		MeteringTimeout: cfg.RuntimeUsageMeteringTimeout,
-		ReservationTTL:  cfg.RuntimeUsageReservationTTL,
-		OperationTTL:    cfg.RuntimeUsageOperationTTL,
-		FailOpen:        cfg.RuntimeUsageFailOpen,
-		OutboxEnabled:   cfg.RuntimeUsageOutboxEnabled,
-		Outbox:          runtimeUsageStore,
+		Enabled:            cfg.RuntimeUsageEnabled,
+		ProviderID:         cfg.RuntimeUsageProviderID,
+		BaseURL:            cfg.RuntimeUsageBaseURL,
+		InternalSecret:     cfg.RuntimeUsageInternalSecret,
+		Timeout:            cfg.RuntimeUsageTimeout,
+		MeteringTimeout:    cfg.RuntimeUsageMeteringTimeout,
+		ReservationTTL:     cfg.RuntimeUsageReservationTTL,
+		OperationTTL:       cfg.RuntimeUsageOperationTTL,
+		FailOpen:           cfg.RuntimeUsageFailOpen,
+		OutboxEnabled:      cfg.RuntimeUsageOutboxEnabled,
+		NoticeTimeout:      cfg.RuntimeUsageNoticeTimeout,
+		NoticeCacheEnabled: cfg.RuntimeUsageNoticeCacheEnabled,
+		NoticeCacheTTL:     cfg.RuntimeUsageNoticeCacheTTL,
+		NoticeStaleTTL:     cfg.RuntimeUsageNoticeStaleTTL,
+		Outbox:             runtimeUsageStore,
 	}, runtimeUsageClient, runtimeUsageMetering, logger)
 	var runtimeUsageWorkerCancel context.CancelFunc
 	if cfg.RuntimeUsageEnabled && runtimeUsageStore != nil {
