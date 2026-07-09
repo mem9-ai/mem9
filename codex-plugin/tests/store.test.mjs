@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { buildRuntimeIssueMessage } from "../lib/skill-runtime.mjs";
-import { Mem9HttpError } from "../lib/http.mjs";
+import { MEM9_PLUGIN_USER_AGENT, Mem9HttpError } from "../lib/http.mjs";
 import { main, runStore } from "../skills/store/scripts/store.mjs";
 import { createTempRoot } from "./test-temp.mjs";
 
@@ -92,7 +92,7 @@ test("runStore posts a synchronous memory create and prints a safe summary", asy
         "Content-Type": "application/json",
         "X-API-Key": "key-save",
         "X-Mnemo-Agent-Id": "codex",
-        "User-Agent": "mem9-plugin/codex/0.2.5",
+        "User-Agent": MEM9_PLUGIN_USER_AGENT,
       },
       body: JSON.stringify({
         content: "The user prefers concise release notes.",

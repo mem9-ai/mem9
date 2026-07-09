@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 import { DEFAULT_REQUEST_TIMEOUT_MS } from "./config.mjs";
 
-const CODEX_PLUGIN_VERSION_FALLBACK = "0.2.5";
+const CODEX_PLUGIN_VERSION_FALLBACK = "unknown";
 
 function readCodexPluginVersion() {
   try {

@@ -115,10 +115,10 @@ mem9_plugin_user_agent() {
     return 0
   fi
 
-  local version="0.3.3"
+  local version="unknown"
   local manifest="${MEM9_SCRIPT_DIR}/../.claude-plugin/plugin.json"
   if [[ -f "${manifest}" ]] && command -v node >/dev/null 2>&1; then
-    version="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(data.version || "0.3.3");' "${manifest}" 2>/dev/null || printf '0.3.3')"
+    version="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(data.version || "unknown");' "${manifest}" 2>/dev/null || printf 'unknown')"
   fi
 
   MEM9_PLUGIN_USER_AGENT="mem9-plugin/claude-code/${version}"

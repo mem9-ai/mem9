@@ -8,7 +8,7 @@ import {
   main,
   runRecall,
 } from "../skills/recall/scripts/recall.mjs";
-import { Mem9HttpError } from "../lib/http.mjs";
+import { MEM9_PLUGIN_USER_AGENT, Mem9HttpError } from "../lib/http.mjs";
 import { buildRuntimeIssueMessage } from "../lib/skill-runtime.mjs";
 import { createTempRoot } from "./test-temp.mjs";
 
@@ -126,7 +126,7 @@ test("runRecall calls mem9 with the current runtime and prints a safe summary", 
         "Content-Type": "application/json",
         "X-API-Key": "key-search",
         "X-Mnemo-Agent-Id": "codex",
-        "User-Agent": "mem9-plugin/codex/0.2.5",
+        "User-Agent": MEM9_PLUGIN_USER_AGENT,
       },
       timeoutMs: 15200,
     });

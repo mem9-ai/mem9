@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import type {
   IngestInput,
   IngestResult,
@@ -18,7 +20,24 @@ import {
   parseJsonOrUndefined,
 } from "./quota-error.ts";
 
-const MEM9_PLUGIN_USER_AGENT = "mem9-plugin/opencode/0.1.5";
+const MEM9_PLUGIN_USER_AGENT = `mem9-plugin/opencode/${readPackageVersion()}`;
+
+function readPackageVersion(): string {
+  for (const relativePath of ["../../package.json", "../../../package.json"]) {
+    try {
+      const pkg = JSON.parse(
+        readFileSync(new URL(relativePath, import.meta.url), "utf8"),
+      );
+      if (typeof pkg.version === "string" && pkg.version.trim()) {
+        return pkg.version.trim();
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return "unknown";
+}
 
 function normalizeTimeoutMs(value: number | undefined, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {

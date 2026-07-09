@@ -1,8 +1,29 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { ServerBackend } from "../src/server/server-backend.js";
 import { Mem9HttpError, parseRuntimeQuotaDenied } from "../src/server/quota-error.js";
+
+function readPackageVersion(): string {
+  for (const relativePath of ["../package.json", "../../package.json"]) {
+    try {
+      const pkg = JSON.parse(
+        readFileSync(new URL(relativePath, import.meta.url), "utf8"),
+      );
+      if (typeof pkg.version === "string" && pkg.version.trim()) {
+        return pkg.version.trim();
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return "unknown";
+}
+
+const packageVersion = readPackageVersion();
+const expectedUserAgent = `mem9-plugin/opencode/${packageVersion}`;
 
 async function withPatchedAbortSignalTimeout(
   run: (capturedTimeouts: number[]) => Promise<void>,
@@ -46,7 +67,7 @@ test("ServerBackend uses X-API-Key and v1alpha2 paths", async () => {
     await backend.search({ q: "hello" });
     assert.equal(requestURL.includes("/v1alpha2/mem9s/memories"), true);
     assert.equal(requestHeaders?.get("X-API-Key"), "mk_demo");
-    assert.equal(requestHeaders?.get("User-Agent"), "mem9-plugin/opencode/0.1.5");
+    assert.equal(requestHeaders?.get("User-Agent"), expectedUserAgent);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -72,7 +93,7 @@ test("ServerBackend fetches runtime-state through the public v1alpha2 path", asy
     assert.equal(requestURL, "https://api.mem9.ai/v1alpha2/mem9s/runtime-state");
     assert.equal(requestHeaders?.get("X-API-Key"), "mk_demo");
     assert.equal(requestHeaders?.get("X-Mnemo-Agent-Id"), "opencode");
-    assert.equal(requestHeaders?.get("User-Agent"), "mem9-plugin/opencode/0.1.5");
+    assert.equal(requestHeaders?.get("User-Agent"), expectedUserAgent);
   } finally {
     globalThis.fetch = originalFetch;
   }
