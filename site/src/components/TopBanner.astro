@@ -7,12 +7,17 @@ interface Props {
 
 const { banner } = Astro.props;
 const pricingHref = '/pricing/';
+const noticeId = 'billing-launch-v1';
+const dismissTTLMS = 24 * 60 * 60 * 1000;
 ---
 
 <aside
   class="top-banner"
   aria-label={banner.ariaLabel}
   data-i18n-attr="aria-label:topBanner.ariaLabel"
+  data-top-banner
+  data-notice-id={noticeId}
+  data-dismiss-ttl-ms={dismissTTLMS}
 >
   <div class="container top-banner-inner">
     <div class="top-banner-copy">
@@ -23,6 +28,18 @@ const pricingHref = '/pricing/';
         >{banner.pricingLinkLabel}</a><span data-i18n="topBanner.bodyAfterLink">{banner.bodyAfterLink}</span>
       </p>
     </div>
+    <button
+      type="button"
+      class="top-banner-dismiss"
+      aria-label={banner.dismissLabel}
+      title={banner.dismissLabel}
+      data-top-banner-dismiss
+      data-i18n-attr="aria-label:topBanner.dismissLabel;title:topBanner.dismissLabel"
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M3.9 3.9 12.1 12.1M12.1 3.9 3.9 12.1" />
+      </svg>
+    </button>
   </div>
 </aside>
 
@@ -33,7 +50,9 @@ const pricingHref = '/pricing/';
   }
 
   .top-banner-inner {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
     align-items: center;
     min-height: 3rem;
     padding-top: 0.45rem;
@@ -65,6 +84,44 @@ const pricingHref = '/pricing/';
   .top-banner-copy a:focus-visible {
     color: var(--text);
     opacity: 1;
+  }
+
+  .top-banner-dismiss {
+    appearance: none;
+    -webkit-appearance: none;
+    display: inline-flex;
+    width: 2rem;
+    height: 2rem;
+    margin: 0;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+  }
+
+  .top-banner-dismiss:hover,
+  .top-banner-dismiss:focus-visible {
+    border-color: var(--border);
+    background: var(--button-active-bg);
+    color: var(--text);
+  }
+
+  .top-banner-dismiss:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .top-banner-dismiss svg {
+    width: 1rem;
+    height: 1rem;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
   }
 
   @media (max-width: 720px) {
