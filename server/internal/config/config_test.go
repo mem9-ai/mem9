@@ -177,8 +177,8 @@ func TestLoad_RuntimeUsageConfig(t *testing.T) {
 	if !cfg.RuntimeUsageEnabled {
 		t.Fatal("RuntimeUsageEnabled = false, want true")
 	}
-	if cfg.RuntimeUsageProviderID != "mem9-official" {
-		t.Fatalf("RuntimeUsageProviderID = %q, want mem9-official", cfg.RuntimeUsageProviderID)
+	if cfg.RuntimeUsageProviderID != "" {
+		t.Fatalf("RuntimeUsageProviderID = %q, want empty default", cfg.RuntimeUsageProviderID)
 	}
 	if cfg.RuntimeUsageBaseURL != "https://runtime-usage.example.com/internal" {
 		t.Fatalf("RuntimeUsageBaseURL = %q", cfg.RuntimeUsageBaseURL)

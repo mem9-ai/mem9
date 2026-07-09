@@ -159,7 +159,7 @@ func Load() (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
-		runtimeUsageProviderID = strings.TrimSpace(envOr("MNEMO_RUNTIME_USAGE_PROVIDER_ID", "mem9-official"))
+		runtimeUsageProviderID = strings.TrimSpace(os.Getenv("MNEMO_RUNTIME_USAGE_PROVIDER_ID"))
 		if strings.TrimSpace(os.Getenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET")) == "" {
 			return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET is required when MNEMO_RUNTIME_USAGE_ENABLED=true")
 		}
