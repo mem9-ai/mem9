@@ -447,6 +447,9 @@ func (m *captureRuntimeUsageManager) RuntimeState(_ context.Context, subject run
 	}
 	return runtimeusage.RuntimeUsageDisabledState(), nil
 }
+func (m *captureRuntimeUsageManager) RuntimeStateForNotice(ctx context.Context, subject runtimeusage.Subject) (runtimeusage.RuntimeState, error) {
+	return m.RuntimeState(ctx, subject)
+}
 func (m *captureRuntimeUsageManager) BeforeRecall(_ context.Context, subject runtimeusage.Subject) (*runtimeusage.OperationLease, error) {
 	m.beforeRecallCalls++
 	m.beforeRecallSubjects = append(m.beforeRecallSubjects, subject)

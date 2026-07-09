@@ -337,6 +337,7 @@ type Manager interface {
 	Enabled() bool
 	ProviderID() string
 	RuntimeState(ctx context.Context, subject Subject) (RuntimeState, error)
+	RuntimeStateForNotice(ctx context.Context, subject Subject) (RuntimeState, error)
 	BeforeRecall(ctx context.Context, subject Subject) (*OperationLease, error)
 	AfterRecallSuccess(ctx context.Context, lease *OperationLease, result RecallResult) error
 	AfterRecallFailure(ctx context.Context, lease *OperationLease, cause error)

@@ -20,6 +20,8 @@ type manager struct {
 	outbox   OutboxStore
 	logger   *slog.Logger
 	now      func() time.Time
+
+	noticeState *noticeStateCache
 }
 
 func NewManager(cfg Config, client QuotaClient, writer metering.Writer, logger *slog.Logger) Manager {
@@ -29,7 +31,7 @@ func NewManager(cfg Config, client QuotaClient, writer metering.Writer, logger *
 	if !cfg.Enabled {
 		return noopManager{}
 	}
-	return &manager{
+	manager := &manager{
 		cfg:      cfg,
 		client:   client,
 		metering: writer,
@@ -37,6 +39,8 @@ func NewManager(cfg Config, client QuotaClient, writer metering.Writer, logger *
 		logger:   logger,
 		now:      time.Now,
 	}
+	manager.noticeState = newNoticeStateCache(cfg, manager.runtimeStateProvider)
+	return manager
 }
 
 type noopManager struct{}
@@ -46,6 +50,9 @@ func (noopManager) ProviderID() string {
 	return ""
 }
 func (noopManager) RuntimeState(_ context.Context, subject Subject) (RuntimeState, error) {
+	return RuntimeUsageDisabledState(subject.APIKeyStatus), nil
+}
+func (noopManager) RuntimeStateForNotice(_ context.Context, subject Subject) (RuntimeState, error) {
 	return RuntimeUsageDisabledState(subject.APIKeyStatus), nil
 }
 func (noopManager) BeforeRecall(context.Context, Subject) (*OperationLease, error) {
@@ -84,7 +91,7 @@ func (m *manager) ProviderID() string {
 }
 
 func (m *manager) RuntimeState(ctx context.Context, subject Subject) (RuntimeState, error) {
-	state, err := m.client.RuntimeState(ctx, subject)
+	state, err := m.runtimeStateProvider(ctx, subject)
 	if err != nil {
 		m.logger.WarnContext(ctx, "runtime usage state provider unavailable",
 			"tenant_id", subject.TenantID,
@@ -93,10 +100,30 @@ func (m *manager) RuntimeState(ctx context.Context, subject Subject) (RuntimeSta
 		)
 		return RuntimeStateProviderUnavailable(subject.APIKeyStatus), nil
 	}
-	state.SetProviderDefaults()
-	if subject.APIKeyStatus != "" {
-		state.Mem9APIKey.Status = subject.APIKeyStatus
+	applySubjectStatus(&state, subject.APIKeyStatus)
+	return state, nil
+}
+
+func (m *manager) RuntimeStateForNotice(ctx context.Context, subject Subject) (RuntimeState, error) {
+	if m.noticeState == nil {
+		state, err := m.runtimeStateProvider(ctx, subject)
+		if err != nil {
+			return RuntimeState{}, err
+		}
+		return cloneRuntimeStateForSubject(state, subject), nil
 	}
+	return m.noticeState.runtimeState(ctx, subject)
+}
+
+func (m *manager) runtimeStateProvider(ctx context.Context, subject Subject) (RuntimeState, error) {
+	state, err := m.client.RuntimeState(ctx, subject)
+	if err != nil {
+		return RuntimeState{}, err
+	}
+	if err := state.NormalizeProviderData(); err != nil {
+		return RuntimeState{}, &UnavailableError{Err: err}
+	}
+	state.SetProviderDefaults()
 	if len(state.ProviderData) > 0 {
 		providerID := m.ProviderID()
 		if providerID == "" {
