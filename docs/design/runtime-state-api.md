@@ -54,8 +54,9 @@ defaults only where required for a stable public shape, and returns configured
 `providerId` with object-shaped `providerData`.
 
 `MNEMO_RUNTIME_USAGE_PROVIDER_ID` controls the public provider discriminator.
-When runtime usage is enabled and the env var is omitted, mem9-server uses
-`mem9-official`.
+When the env var is omitted, mem9-server uses an empty provider id and omits
+provider-specific `providerData`. Set the env var to `mem9-official` to enable
+official hosted provider notices and provider data.
 
 ## Success Response Notices
 

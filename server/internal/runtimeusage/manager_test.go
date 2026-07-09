@@ -180,6 +180,36 @@ func TestManagerRuntimeStateUsesProvider(t *testing.T) {
 	assertFallbackMeter(t, state, MeterMemoryRecallRequests, RuntimeBudgetTypeNotMetered, RuntimeBudgetStateUnlimited)
 }
 
+func TestManagerRuntimeStateClearsProviderFieldsWithoutConfiguredProvider(t *testing.T) {
+	quota := &fakeQuotaClient{state: RuntimeState{
+		Mem9APIKey:   RuntimeStateAPIKey{Status: RuntimeAPIKeyStatusUnknown},
+		ProviderID:   "mem9-official",
+		ProviderData: json.RawMessage(`{"bindingState":"claimed"}`),
+		Meters: []RuntimeStateMeter{{
+			Meter: MeterMemoryRecallRequests,
+			Budgets: []RuntimeStatusBudget{{
+				Type:     RuntimeBudgetTypeNotMetered,
+				State:    RuntimeBudgetStateUnlimited,
+				Measure:  RuntimeStatusMeasure{Kind: RuntimeMeasureKindCount, Quantity: "request", Scale: 1},
+				Period:   RuntimeStatusPeriod{Type: RuntimePeriodTypeNone},
+				Capacity: RuntimeStatusCapacity{Type: RuntimeCapacityTypeUnlimited},
+			}},
+		}},
+	}}
+	manager := NewManager(Config{Enabled: true}, quota, nil, nil)
+
+	state, err := manager.RuntimeState(context.Background(), Subject{APIKeySubject: "mem9_test"})
+	if err != nil {
+		t.Fatalf("RuntimeState: %v", err)
+	}
+	if state.ProviderID != "" {
+		t.Fatalf("ProviderID = %q, want empty when provider is not configured", state.ProviderID)
+	}
+	if len(state.ProviderData) != 0 {
+		t.Fatalf("ProviderData = %s, want omitted when provider is not configured", state.ProviderData)
+	}
+}
+
 func TestManagerRuntimeStateFallsBackWhenProviderUnavailable(t *testing.T) {
 	quota := &fakeQuotaClient{stateErr: &UnavailableError{Err: errString("timeout")}}
 	manager := NewManager(Config{Enabled: true}, quota, nil, nil)
