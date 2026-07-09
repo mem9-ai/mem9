@@ -241,7 +241,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Memory"
+                  "$ref": "#/components/schemas/MemoryCreateResponse"
                 }
               }
             }
@@ -696,7 +696,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Memory"
+                  "$ref": "#/components/schemas/MemoryCreateResponse"
                 }
               }
             }
@@ -2965,6 +2965,13 @@
               "ok",
               "accepted"
             ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional runtime-state usage notice for hosted mem9 clients."
+          },
+          "runtimeState": {
+            "$ref": "#/components/schemas/RuntimeStateResponse"
           }
         }
       },
@@ -3149,8 +3156,35 @@
           "offset": {
             "type": "integer",
             "minimum": 0
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional runtime-state usage notice for hosted mem9 clients."
+          },
+          "runtimeState": {
+            "$ref": "#/components/schemas/RuntimeStateResponse"
           }
         }
+      },
+      "MemoryCreateResponse": {
+        "description": "Created memory with optional runtime-state usage notice fields.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Memory"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string",
+                "description": "Optional runtime-state usage notice for hosted mem9 clients."
+              },
+              "runtimeState": {
+                "$ref": "#/components/schemas/RuntimeStateResponse"
+              }
+            }
+          }
+        ]
       },
       "Memory": {
         "type": "object",

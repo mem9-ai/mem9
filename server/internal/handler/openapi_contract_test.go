@@ -281,6 +281,39 @@ func TestOpenAPIRuntimeStateContract(t *testing.T) {
 	}
 }
 
+func TestOpenAPISuccessRuntimeNoticeFields(t *testing.T) {
+	openapi := loadOpenAPI(t)
+	components := objectValue(t, openapi, "components")
+	schemas := objectValue(t, components, "schemas")
+
+	status := objectValue(t, schemas, "StatusResponse")
+	assertRuntimeNoticeProperties(t, objectValue(t, status, "properties"))
+
+	list := objectValue(t, schemas, "MemoryListResponse")
+	assertRuntimeNoticeProperties(t, objectValue(t, list, "properties"))
+
+	created := objectValue(t, schemas, "MemoryCreateResponse")
+	allOf := objectSlice(t, created["allOf"])
+	if !containsRef(allOf, "#/components/schemas/Memory") {
+		t.Fatalf("MemoryCreateResponse should extend Memory: %#v", allOf)
+	}
+	if len(allOf) < 2 {
+		t.Fatalf("MemoryCreateResponse allOf = %#v, want notice extension", allOf)
+	}
+	assertRuntimeNoticeProperties(t, objectValue(t, allOf[1], "properties"))
+
+	for _, path := range []string{"/v1alpha1/mem9s/{tenantID}/memories", "/v1alpha2/mem9s/memories"} {
+		postResponses := operationResponses(t, openapi, path, "post")
+		createdResponse := objectValue(t, postResponses, "201")
+		content := objectValue(t, createdResponse, "content")
+		jsonContent := objectValue(t, content, "application/json")
+		schema := objectValue(t, jsonContent, "schema")
+		if schema["$ref"] != "#/components/schemas/MemoryCreateResponse" {
+			t.Fatalf("%s 201 schema ref = %#v, want MemoryCreateResponse", path, schema["$ref"])
+		}
+	}
+}
+
 func loadOpenAPI(t *testing.T) map[string]any {
 	t.Helper()
 	path := filepath.Join("..", "..", "..", "docs", "api", "openapi.json")
@@ -385,6 +418,18 @@ func containsRef(values []map[string]any, target string) bool {
 		}
 	}
 	return false
+}
+
+func assertRuntimeNoticeProperties(t *testing.T, properties map[string]any) {
+	t.Helper()
+	message := objectValue(t, properties, "message")
+	if message["type"] != "string" {
+		t.Fatalf("message.type = %#v, want string", message["type"])
+	}
+	runtimeState := objectValue(t, properties, "runtimeState")
+	if runtimeState["$ref"] != "#/components/schemas/RuntimeStateResponse" {
+		t.Fatalf("runtimeState ref = %#v, want RuntimeStateResponse", runtimeState["$ref"])
+	}
 }
 
 func allOfHasDetailsRef(values []map[string]any, target string) bool {
