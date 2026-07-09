@@ -413,6 +413,11 @@ type captureRuntimeUsageManager struct {
 	beforeDeleteCalls        int
 	afterDeleteSuccessCalls  int
 	enabled                  bool
+	providerID               string
+	runtimeState             runtimeusage.RuntimeState
+	runtimeStateErr          error
+	runtimeStateCalls        int
+	runtimeStateSubjects     []runtimeusage.Subject
 	afterCreateSuccessErr    error
 	beforeCreateErrByTenant  map[string]error
 	beforeRecallSubjects     []runtimeusage.Subject
@@ -427,8 +432,19 @@ type captureRuntimeUsageManager struct {
 	deleteResults            []runtimeusage.MemoryDeleteResult
 }
 
-func (m *captureRuntimeUsageManager) Enabled() bool { return m.enabled }
-func (m *captureRuntimeUsageManager) RuntimeState(context.Context, runtimeusage.Subject) (runtimeusage.RuntimeState, error) {
+func (m *captureRuntimeUsageManager) Enabled() bool      { return m.enabled }
+func (m *captureRuntimeUsageManager) ProviderID() string { return m.providerID }
+func (m *captureRuntimeUsageManager) RuntimeState(_ context.Context, subject runtimeusage.Subject) (runtimeusage.RuntimeState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.runtimeStateCalls++
+	m.runtimeStateSubjects = append(m.runtimeStateSubjects, subject)
+	if m.runtimeStateErr != nil {
+		return runtimeusage.RuntimeState{}, m.runtimeStateErr
+	}
+	if len(m.runtimeState.Meters) > 0 || m.runtimeState.Mem9APIKey.Status != "" || m.runtimeState.RecommendedAction != nil {
+		return m.runtimeState, nil
+	}
 	return runtimeusage.RuntimeUsageDisabledState(), nil
 }
 func (m *captureRuntimeUsageManager) BeforeRecall(_ context.Context, subject runtimeusage.Subject) (*runtimeusage.OperationLease, error) {
@@ -493,6 +509,40 @@ func (m *captureRuntimeUsageManager) AfterMemoryDeleteSuccess(_ context.Context,
 	return nil
 }
 func (m *captureRuntimeUsageManager) AfterMemoryDeleteFailure(context.Context, *runtimeusage.OperationLease, error) {
+}
+
+func runtimeNoticeTestState(meter string) runtimeusage.RuntimeState {
+	percent := 82.0
+	remaining := int64(18)
+	capacity := int64(100)
+	return runtimeusage.RuntimeState{
+		Mem9APIKey: runtimeusage.RuntimeStateAPIKey{Status: runtimeusage.RuntimeAPIKeyStatusActive},
+		ProviderID: runtimeNoticeProviderID,
+		Meters: []runtimeusage.RuntimeStateMeter{{
+			Meter: meter,
+			Budgets: []runtimeusage.RuntimeStatusBudget{{
+				Type:  "includedQuota",
+				State: "warning",
+				Measure: runtimeusage.RuntimeStatusMeasure{
+					Kind:     runtimeusage.RuntimeMeasureKindCount,
+					Quantity: "request",
+					Scale:    1,
+				},
+				Period: runtimeusage.RuntimeStatusPeriod{
+					Type: "calendarMonth",
+				},
+				Capacity: runtimeusage.RuntimeStatusCapacity{
+					Type:  "limited",
+					Value: &capacity,
+				},
+				Usage: &runtimeusage.RuntimeStatusUsage{
+					Used:      nil,
+					Remaining: &remaining,
+					Percent:   &percent,
+				},
+			}},
+		}},
+	}
 }
 
 type handlerActivityTenantRepo struct {
@@ -1878,6 +1928,52 @@ func TestCreateMemory_RuntimeUsageAllowsPinnedKnownDelta(t *testing.T) {
 	}
 }
 
+func TestCreateMemory_RuntimeUsageNoticeAddsTopLevelFieldsToCreatedMemory(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{
+		enabled:      true,
+		providerID:   runtimeNoticeProviderID,
+		runtimeState: runtimeNoticeTestState(runtimeusage.MeterMemoryWriteRequests),
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	body := map[string]any{
+		"content":     "test memory content",
+		"memory_type": "pinned",
+	}
+	req := makeTenantRequest(t, http.MethodPost, "/memories", body)
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201: %s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		ID           string                     `json:"id"`
+		Message      string                     `json:"message"`
+		RuntimeState *runtimeusage.RuntimeState `json:"runtimeState"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.ID == "" {
+		t.Fatal("id is empty")
+	}
+	if !strings.Contains(resp.Message, "mem9 memory saving has used 82% of included quota") {
+		t.Fatalf("message = %q, want memory saving quota warning", resp.Message)
+	}
+	if resp.RuntimeState == nil || resp.RuntimeState.ProviderID != runtimeNoticeProviderID {
+		t.Fatalf("runtimeState = %+v, want provider id", resp.RuntimeState)
+	}
+	if runtimeUsage.runtimeStateCalls != 1 {
+		t.Fatalf("RuntimeState calls = %d, want 1", runtimeUsage.runtimeStateCalls)
+	}
+	if len(runtimeUsage.runtimeStateSubjects) != 1 || runtimeUsage.runtimeStateSubjects[0].APIKeySubject != "tenant-a" {
+		t.Fatalf("runtime state subjects = %+v, want tenant-a subject", runtimeUsage.runtimeStateSubjects)
+	}
+}
+
 func TestCreateMemory_RuntimeUsageFinalizationFailureFailsClosed(t *testing.T) {
 	memRepo := &testMemoryRepo{}
 	runtimeUsage := &captureRuntimeUsageManager{
@@ -2733,6 +2829,84 @@ func TestListMemories_RuntimeUsageRecallFinalizationIgnoresRequestCancellation(t
 	}
 	if len(runtimeUsage.recallSuccessContextErrs) != 1 || runtimeUsage.recallSuccessContextErrs[0] != nil {
 		t.Fatalf("recall finalization context errors = %+v, want [<nil>]", runtimeUsage.recallSuccessContextErrs)
+	}
+}
+
+func TestListMemories_RuntimeUsageNoticeAddsTopLevelFields(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `"Under Armour"`, MemoryType: domain.TypePinned, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	runtimeUsage := &captureRuntimeUsageManager{
+		enabled:      true,
+		providerID:   runtimeNoticeProviderID,
+		runtimeState: runtimeNoticeTestState(runtimeusage.MeterMemoryRecallRequests),
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	req := makeTenantRequest(t, http.MethodGet, "/memories?q=what%20company%20does%20john%20like&memory_type=pinned&limit=10", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !strings.Contains(resp.Message, "mem9 recall has used 82% of included quota") {
+		t.Fatalf("message = %q, want recall quota warning", resp.Message)
+	}
+	if resp.RuntimeState == nil || resp.RuntimeState.ProviderID != runtimeNoticeProviderID {
+		t.Fatalf("runtimeState = %+v, want provider id", resp.RuntimeState)
+	}
+	if runtimeUsage.runtimeStateCalls != 1 {
+		t.Fatalf("RuntimeState calls = %d, want 1", runtimeUsage.runtimeStateCalls)
+	}
+	if len(runtimeUsage.runtimeStateSubjects) != 1 || runtimeUsage.runtimeStateSubjects[0].APIKeySubject != "tenant-a" {
+		t.Fatalf("runtime state subjects = %+v, want tenant-a subject", runtimeUsage.runtimeStateSubjects)
+	}
+}
+
+func TestListMemories_RuntimeUsageNoticeSkipsUnofficialProvider(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return []domain.Memory{
+				{ID: "m1", Content: `"Under Armour"`, MemoryType: domain.TypePinned, UpdatedAt: now, State: domain.StateActive},
+			}, nil
+		},
+	}
+	runtimeUsage := &captureRuntimeUsageManager{
+		enabled:      true,
+		providerID:   "provider-x",
+		runtimeState: runtimeNoticeTestState(runtimeusage.MeterMemoryRecallRequests),
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+
+	req := makeTenantRequest(t, http.MethodGet, "/memories?q=what%20company%20does%20john%20like&memory_type=pinned&limit=10", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Message != "" || resp.RuntimeState != nil {
+		t.Fatalf("notice = message:%q state:%+v, want omitted", resp.Message, resp.RuntimeState)
+	}
+	if runtimeUsage.runtimeStateCalls != 0 {
+		t.Fatalf("RuntimeState calls = %d, want 0", runtimeUsage.runtimeStateCalls)
 	}
 }
 

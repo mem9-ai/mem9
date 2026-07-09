@@ -42,6 +42,9 @@ func NewManager(cfg Config, client QuotaClient, writer metering.Writer, logger *
 type noopManager struct{}
 
 func (noopManager) Enabled() bool { return false }
+func (noopManager) ProviderID() string {
+	return ""
+}
 func (noopManager) RuntimeState(_ context.Context, subject Subject) (RuntimeState, error) {
 	return RuntimeUsageDisabledState(subject.APIKeyStatus), nil
 }
@@ -76,6 +79,10 @@ func (noopManager) AfterMemoryDeleteFailure(context.Context, *OperationLease, er
 
 func (m *manager) Enabled() bool { return true }
 
+func (m *manager) ProviderID() string {
+	return strings.TrimSpace(m.cfg.ProviderID)
+}
+
 func (m *manager) RuntimeState(ctx context.Context, subject Subject) (RuntimeState, error) {
 	state, err := m.client.RuntimeState(ctx, subject)
 	if err != nil {
@@ -91,7 +98,7 @@ func (m *manager) RuntimeState(ctx context.Context, subject Subject) (RuntimeSta
 		state.Mem9APIKey.Status = subject.APIKeyStatus
 	}
 	if len(state.ProviderData) > 0 {
-		providerID := strings.TrimSpace(m.cfg.ProviderID)
+		providerID := m.ProviderID()
 		if providerID == "" {
 			state.ProviderData = nil
 		} else {

@@ -331,6 +331,7 @@ type OutboxStore interface {
 
 type Manager interface {
 	Enabled() bool
+	ProviderID() string
 	RuntimeState(ctx context.Context, subject Subject) (RuntimeState, error)
 	BeforeRecall(ctx context.Context, subject Subject) (*OperationLease, error)
 	AfterRecallSuccess(ctx context.Context, lease *OperationLease, result RecallResult) error
