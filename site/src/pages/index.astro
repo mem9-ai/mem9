@@ -1,5 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import TopBanner from '../components/TopBanner.astro';
 import Navbar from '../components/Navbar.astro';
 import Hero from '../components/Hero.astro';
 import Features from '../components/Features.astro';
@@ -15,6 +16,7 @@ const copy = siteCopy[DEFAULT_LOCALE];
 ---
 
 <Layout meta={copy.meta} locale={DEFAULT_LOCALE}>
+  <TopBanner banner={copy.topBanner} />
   <Navbar
     nav={copy.nav}
     aria={copy.aria}

@@ -62,6 +62,13 @@ export interface SiteNavCopy {
   contact: string;
 }
 
+export interface SiteTopBannerCopy {
+  bodyBeforeLink: string;
+  pricingLinkLabel: string;
+  bodyAfterLink: string;
+  ariaLabel: string;
+}
+
 export interface SiteHeroHighlight {
   title: string;
   description: string;
@@ -423,6 +430,7 @@ export interface SiteCopyFeedback {
 export interface SiteDictionary {
   meta: SiteMeta;
   nav: SiteNavCopy;
+  topBanner: SiteTopBannerCopy;
   hero: SiteHeroCopy;
   trust: SiteTrustCopy;
   features: SiteFeaturesCopy;
@@ -6129,6 +6137,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       releaseNotes: 'Release Notes',
       contact: 'Contact Us',
     },
+    topBanner: {
+      bodyBeforeLink: '',
+      pricingLinkLabel: 'mem9 Billing',
+      bodyAfterLink:
+        ' is coming soon. Unclaimed trial API keys will be rate-limited after the free quota. Sign in and claim your API key to upgrade your plan for more usage.',
+      ariaLabel: 'Hosted API key migration notice',
+    },
     hero: {
       eyebrow: 'MEM9.AI',
       titleLead: 'Unlimited memory',
@@ -6490,6 +6505,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       releaseNotes: '发布说明',
       contact: '联系我们',
     },
+    topBanner: {
+      bodyBeforeLink: '',
+      pricingLinkLabel: 'mem9 Billing',
+      bodyAfterLink:
+        ' 即将上线。未绑定的试用期 API Key 超出免费额度后将受到 Rate Limit 限制。请登录并绑定您的 API Key，升级 Plan 以获得更多用量。',
+      ariaLabel: '托管 API Key 迁移公告',
+    },
     hero: {
       eyebrow: 'MEM9.AI',
       titleLead: '无限记忆',
@@ -6836,6 +6858,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       howItWork: 'How it work',
       releaseNotes: '發布說明',
       contact: '聯絡我們',
+    },
+    topBanner: {
+      bodyBeforeLink: '',
+      pricingLinkLabel: 'mem9 Billing',
+      bodyAfterLink:
+        ' 即將上線。未綁定的試用期 API Key 超出免費額度後將受到 Rate Limit 限制。請登入並綁定您的 API Key，升級 Plan 以取得更多用量。',
+      ariaLabel: '託管 API Key 遷移公告',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -7188,6 +7217,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       howItWork: 'How it work',
       releaseNotes: 'リリースノート',
       contact: 'お問い合わせ',
+    },
+    topBanner: {
+      bodyBeforeLink: '',
+      pricingLinkLabel: 'mem9 Billing',
+      bodyAfterLink:
+        ' はまもなく開始されます。未請求の試用 API Key は、無料枠を超えると Rate Limit の対象になります。サインインして API Key を請求し、Plan をアップグレードすると利用量を増やせます。',
+      ariaLabel: 'ホスト型 API Key 移行のお知らせ',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -7546,6 +7582,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       releaseNotes: '릴리스 노트',
       contact: '문의하기',
     },
+    topBanner: {
+      bodyBeforeLink: '',
+      pricingLinkLabel: 'mem9 Billing',
+      bodyAfterLink:
+        '이 곧 시작됩니다. 연결되지 않은 평가판 API Key는 무료 한도를 초과하면 Rate Limit이 적용됩니다. 로그인해 API Key를 연결하고 Plan을 업그레이드하면 더 많이 사용할 수 있습니다.',
+      ariaLabel: '호스팅 API Key 이전 안내',
+    },
     hero: {
       eyebrow: 'MEM9.AI',
       titleLead: '무제한 메모리',
@@ -7899,6 +7942,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       howItWork: 'How it work',
       releaseNotes: 'Catatan Rilis',
       contact: 'Hubungi Kami',
+    },
+    topBanner: {
+      bodyBeforeLink: '',
+      pricingLinkLabel: 'mem9 Billing',
+      bodyAfterLink:
+        ' akan segera diluncurkan. Trial API Key yang belum diklaim akan terkena Rate Limit setelah melewati kuota gratis. Masuk dan klaim API Key Anda untuk upgrade Plan agar mendapat kuota lebih besar.',
+      ariaLabel: 'Pemberitahuan migrasi API Key terkelola',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -8256,6 +8306,13 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       howItWork: 'How it work',
       releaseNotes: 'บันทึกการเผยแพร่',
       contact: 'ติดต่อเรา',
+    },
+    topBanner: {
+      bodyBeforeLink: '',
+      pricingLinkLabel: 'mem9 Billing',
+      bodyAfterLink:
+        ' กำลังจะเปิดใช้งาน Trial API Key ที่ยังไม่ได้ claim จะถูก Rate Limit เมื่อเกินโควต้าฟรี เข้าสู่ระบบและ claim API Key เพื่ออัปเกรด Plan และเพิ่มปริมาณการใช้งาน',
+      ariaLabel: 'ประกาศการย้าย API Key ที่โฮสต์อยู่',
     },
     hero: {
       eyebrow: 'MEM9.AI',

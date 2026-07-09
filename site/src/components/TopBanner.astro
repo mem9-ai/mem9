@@ -1,0 +1,85 @@
+---
+import type { SiteTopBannerCopy } from '../content/site';
+
+interface Props {
+  banner: SiteTopBannerCopy;
+}
+
+const { banner } = Astro.props;
+const pricingHref = '/pricing/';
+---
+
+<aside
+  class="top-banner"
+  aria-label={banner.ariaLabel}
+  data-i18n-attr="aria-label:topBanner.ariaLabel"
+>
+  <div class="container top-banner-inner">
+    <div class="top-banner-copy">
+      <p>
+        <span data-i18n="topBanner.bodyBeforeLink">{banner.bodyBeforeLink}</span><a
+          href={pricingHref}
+          data-i18n="topBanner.pricingLinkLabel"
+        >{banner.pricingLinkLabel}</a><span data-i18n="topBanner.bodyAfterLink">{banner.bodyAfterLink}</span>
+      </p>
+    </div>
+  </div>
+</aside>
+
+<style>
+  .top-banner {
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-elevated) 92%, var(--text) 8%);
+  }
+
+  .top-banner-inner {
+    display: flex;
+    align-items: center;
+    min-height: 3rem;
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
+  }
+
+  .top-banner-copy {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+  }
+
+  .top-banner-copy p {
+    min-width: 0;
+    color: var(--text-dim);
+    font-size: 0.92rem;
+    line-height: 1.4;
+  }
+
+  .top-banner-copy a {
+    color: var(--text);
+    font-weight: 700;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+  }
+
+  .top-banner-copy a:hover,
+  .top-banner-copy a:focus-visible {
+    color: var(--text);
+    opacity: 1;
+  }
+
+  @media (max-width: 720px) {
+    .top-banner-inner {
+      align-items: start;
+      padding-top: 0.75rem;
+      padding-bottom: 0.75rem;
+    }
+
+    .top-banner-copy {
+      align-items: flex-start;
+    }
+
+    .top-banner-copy p {
+      font-size: 0.9rem;
+    }
+  }
+</style>
