@@ -126,9 +126,6 @@ func (m *manager) runtimeStateProvider(ctx context.Context, subject Subject) (Ru
 	state.SetProviderDefaults()
 	providerID := m.ProviderID()
 	state.ProviderID = providerID
-	if providerID == "" {
-		state.ProviderData = nil
-	}
 	return state, nil
 }
 
