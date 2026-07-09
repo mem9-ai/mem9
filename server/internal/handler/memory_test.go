@@ -418,6 +418,8 @@ type captureRuntimeUsageManager struct {
 	runtimeStateErr          error
 	runtimeStateCalls        int
 	runtimeStateSubjects     []runtimeusage.Subject
+	noticeStateCalls         int
+	noticeStateSubjects      []runtimeusage.Subject
 	afterCreateSuccessErr    error
 	beforeCreateErrByTenant  map[string]error
 	beforeRecallSubjects     []runtimeusage.Subject
@@ -447,8 +449,18 @@ func (m *captureRuntimeUsageManager) RuntimeState(_ context.Context, subject run
 	}
 	return runtimeusage.RuntimeUsageDisabledState(), nil
 }
-func (m *captureRuntimeUsageManager) RuntimeStateForNotice(ctx context.Context, subject runtimeusage.Subject) (runtimeusage.RuntimeState, error) {
-	return m.RuntimeState(ctx, subject)
+func (m *captureRuntimeUsageManager) RuntimeStateForNotice(_ context.Context, subject runtimeusage.Subject) (runtimeusage.RuntimeState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.noticeStateCalls++
+	m.noticeStateSubjects = append(m.noticeStateSubjects, subject)
+	if m.runtimeStateErr != nil {
+		return runtimeusage.RuntimeState{}, m.runtimeStateErr
+	}
+	if len(m.runtimeState.Meters) > 0 || m.runtimeState.Mem9APIKey.Status != "" || m.runtimeState.RecommendedAction != nil {
+		return m.runtimeState, nil
+	}
+	return runtimeusage.RuntimeUsageDisabledState(), nil
 }
 func (m *captureRuntimeUsageManager) BeforeRecall(_ context.Context, subject runtimeusage.Subject) (*runtimeusage.OperationLease, error) {
 	m.beforeRecallCalls++
@@ -1969,11 +1981,14 @@ func TestCreateMemory_RuntimeUsageNoticeAddsTopLevelFieldsToCreatedMemory(t *tes
 	if resp.RuntimeState == nil || resp.RuntimeState.ProviderID != runtimeNoticeProviderID {
 		t.Fatalf("runtimeState = %+v, want provider id", resp.RuntimeState)
 	}
-	if runtimeUsage.runtimeStateCalls != 1 {
-		t.Fatalf("RuntimeState calls = %d, want 1", runtimeUsage.runtimeStateCalls)
+	if runtimeUsage.runtimeStateCalls != 0 {
+		t.Fatalf("RuntimeState calls = %d, want 0", runtimeUsage.runtimeStateCalls)
 	}
-	if len(runtimeUsage.runtimeStateSubjects) != 1 || runtimeUsage.runtimeStateSubjects[0].APIKeySubject != "tenant-a" {
-		t.Fatalf("runtime state subjects = %+v, want tenant-a subject", runtimeUsage.runtimeStateSubjects)
+	if runtimeUsage.noticeStateCalls != 1 {
+		t.Fatalf("RuntimeStateForNotice calls = %d, want 1", runtimeUsage.noticeStateCalls)
+	}
+	if len(runtimeUsage.noticeStateSubjects) != 1 || runtimeUsage.noticeStateSubjects[0].APIKeySubject != "tenant-a" {
+		t.Fatalf("notice state subjects = %+v, want tenant-a subject", runtimeUsage.noticeStateSubjects)
 	}
 }
 
@@ -2869,11 +2884,14 @@ func TestListMemories_RuntimeUsageNoticeAddsTopLevelFields(t *testing.T) {
 	if resp.RuntimeState == nil || resp.RuntimeState.ProviderID != runtimeNoticeProviderID {
 		t.Fatalf("runtimeState = %+v, want provider id", resp.RuntimeState)
 	}
-	if runtimeUsage.runtimeStateCalls != 1 {
-		t.Fatalf("RuntimeState calls = %d, want 1", runtimeUsage.runtimeStateCalls)
+	if runtimeUsage.runtimeStateCalls != 0 {
+		t.Fatalf("RuntimeState calls = %d, want 0", runtimeUsage.runtimeStateCalls)
 	}
-	if len(runtimeUsage.runtimeStateSubjects) != 1 || runtimeUsage.runtimeStateSubjects[0].APIKeySubject != "tenant-a" {
-		t.Fatalf("runtime state subjects = %+v, want tenant-a subject", runtimeUsage.runtimeStateSubjects)
+	if runtimeUsage.noticeStateCalls != 1 {
+		t.Fatalf("RuntimeStateForNotice calls = %d, want 1", runtimeUsage.noticeStateCalls)
+	}
+	if len(runtimeUsage.noticeStateSubjects) != 1 || runtimeUsage.noticeStateSubjects[0].APIKeySubject != "tenant-a" {
+		t.Fatalf("notice state subjects = %+v, want tenant-a subject", runtimeUsage.noticeStateSubjects)
 	}
 }
 
@@ -2910,6 +2928,9 @@ func TestListMemories_RuntimeUsageNoticeSkipsUnofficialProvider(t *testing.T) {
 	}
 	if runtimeUsage.runtimeStateCalls != 0 {
 		t.Fatalf("RuntimeState calls = %d, want 0", runtimeUsage.runtimeStateCalls)
+	}
+	if runtimeUsage.noticeStateCalls != 0 {
+		t.Fatalf("RuntimeStateForNotice calls = %d, want 0", runtimeUsage.noticeStateCalls)
 	}
 }
 

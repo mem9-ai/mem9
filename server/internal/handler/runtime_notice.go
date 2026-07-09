@@ -44,7 +44,7 @@ func (s *Server) runtimeResponseNotice(ctx context.Context, auth *domain.AuthInf
 	if !s.runtimeUsageEnabled() || strings.TrimSpace(s.runtimeUsage.ProviderID()) != runtimeNoticeProviderID {
 		return runtimeResponseNotice{}
 	}
-	state, err := s.runtimeUsage.RuntimeState(ctx, subjectFromAuth(auth))
+	state, err := s.runtimeUsage.RuntimeStateForNotice(ctx, subjectFromAuth(auth))
 	if err != nil {
 		logger := s.logger
 		if logger == nil {
