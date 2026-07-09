@@ -98,7 +98,7 @@ function runtimeStateNoticeText(notice: string): string {
   return [
     "<mem9-status-warning>",
     `Mem9 notice for the user: ${escapeForPrompt(message)}`,
-    "Mention this mem9 notice to the user once.",
+    `Start the next response with: Mem9 notice: ${escapeForPrompt(message)}`,
     "</mem9-status-warning>",
   ].join("\n");
 }

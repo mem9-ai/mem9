@@ -379,7 +379,10 @@ test("buildHooks injects success response message without memories once per sess
   assert.equal(firstOutput.system.length, 2);
   assert.match(firstOutput.system[1] ?? "", /<mem9-status-warning>/);
   assert.match(firstOutput.system[1] ?? "", /mem9 recall has used 80% of included quota\./);
-  assert.match(firstOutput.system[1] ?? "", /Mention this mem9 notice to the user once\./);
+  assert.match(
+    firstOutput.system[1] ?? "",
+    /Start the next response with: Mem9 notice: mem9 recall has used 80% of included quota\./,
+  );
   assert.deepEqual(secondOutput.system, ["Existing system"]);
   assert.equal(debugEvents[2]?.payload.hasMessage, true);
   assert.equal(debugEvents[2]?.payload.messageLength, 43);
