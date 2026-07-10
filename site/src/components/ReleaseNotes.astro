@@ -1,5 +1,6 @@
 ---
 import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
+import PageMarkdownAction from './PageMarkdownAction.astro';
 ---
 
 <section class="release-notes" data-release-notes-root data-release-notes-locale={DEFAULT_LOCALE}>
@@ -17,6 +18,7 @@ import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
               <p class="section-kicker">{releaseNotes.kicker}</p>
               <h1>{releaseNotes.title}</h1>
               <p>{releaseNotes.intro}</p>
+              <PageMarkdownAction />
               <div class="release-notes-star">
                 <span>{releaseNotes.starPrompt}</span>
                 <a href={releaseNotes.starHref} target="_blank" rel="noopener">

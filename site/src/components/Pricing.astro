@@ -1,5 +1,6 @@
 ---
 import type { SiteBillingPageCopy, SiteBillingTier } from '../content/site';
+import PageMarkdownAction from './PageMarkdownAction.astro';
 
 interface Props {
   billing: SiteBillingPageCopy;
@@ -33,6 +34,7 @@ function getPlanHref(tier: SiteBillingTier): string {
           {billing.docsLinkLabel}
         </a>
       )}
+      <PageMarkdownAction />
     </div>
 
     <div class="pricing-table-wrap surface-card">

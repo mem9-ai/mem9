@@ -1,6 +1,7 @@
 ---
 import { agentGuideTargets } from '../content/site';
 import type { SiteAriaCopy, SiteHeroCopy } from '../content/site';
+import PageMarkdownAction from './PageMarkdownAction.astro';
 
 interface Props {
   hero: SiteHeroCopy;
@@ -53,6 +54,8 @@ const onboardingCommandStable = splitOnboardingCommand(hero.onboardingCommandSta
         <p class="subtitle" data-i18n="hero.subtitle">
           {hero.subtitle}
         </p>
+
+        <PageMarkdownAction />
 
         <div class="cta-grid" data-onboarding-shell data-onboarding-version="stable">
           {showOnboardingVersionTabs && (
