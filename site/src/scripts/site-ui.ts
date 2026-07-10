@@ -12,6 +12,7 @@ import {
   type SiteResolvedTheme,
   type SiteThemePreference,
 } from '../content/site';
+import { copyText } from './clipboard';
 
 type MenuName = 'docs' | 'login' | 'language' | 'theme' | 'mobile';
 type DocsLocale = 'en' | 'zh' | 'ja' | 'ko' | 'id' | 'th';
@@ -423,6 +424,10 @@ function updateTranslations(dictionary: SiteDictionary): void {
     element.dataset.copyText = textFor(dictionary, copyKey);
   });
 
+  document.querySelectorAll<HTMLElement>('[data-page-markdown-copy]').forEach((button) => {
+    button.classList.remove('is-copied', 'is-error');
+  });
+
   document.querySelectorAll<HTMLButtonElement>('[data-set-locale]').forEach((button) => {
     const isActive = button.dataset.setLocale === document.documentElement.dataset.locale;
     button.classList.toggle('is-active', isActive);
@@ -692,31 +697,6 @@ function applyLocale(locale: SiteLocale): void {
   const feedback = document.querySelector<HTMLElement>('[data-copy-feedback]');
   if (feedback) {
     feedback.textContent = '';
-  }
-}
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.setAttribute('readonly', '');
-    textarea.style.position = 'absolute';
-    textarea.style.left = '-9999px';
-    document.body.appendChild(textarea);
-    textarea.select();
-
-    let copied = false;
-    try {
-      copied = document.execCommand('copy');
-    } catch {
-      copied = false;
-    }
-
-    document.body.removeChild(textarea);
-    return copied;
   }
 }
 

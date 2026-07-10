@@ -155,7 +155,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
               </nav>
             </aside>
 
-            <div class="api-content">
+            <div class="api-content" data-markdown-root data-markdown-lang={locale}>
               <section class="api-hero">
                 <p class="section-kicker">{copy.kicker}</p>
                 <h1 class="api-title">{copy.title}</h1>
@@ -227,7 +227,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
                       >
                         <div class="api-endpoint-head">
                           <div class="api-endpoint-top">
-                            <div class="api-endpoint-route">
+                            <div class="api-endpoint-route" data-markdown-heading="3">
                               <span class={`api-method api-method-${endpoint.method.toLowerCase()}`}>
                                 {endpoint.method}
                               </span>
@@ -250,7 +250,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
                         <div class="api-endpoint-body">
                           {hasFields(endpoint.headers) && (
                             <section class="api-field-block">
-                              <h3 class="api-field-title">{copy.labels.headers}</h3>
+                              <h3 class="api-field-title" data-markdown-heading="4">{copy.labels.headers}</h3>
                               <dl class="api-field-list">
                                 {endpoint.headers.map((field) => (
                                   <div class="api-field-row">
@@ -267,7 +267,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 
                           {hasFields(endpoint.queryParams) && (
                             <section class="api-field-block">
-                              <h3 class="api-field-title">{copy.labels.queryParams}</h3>
+                              <h3 class="api-field-title" data-markdown-heading="4">{copy.labels.queryParams}</h3>
                               <dl class="api-field-list">
                                 {endpoint.queryParams.map((field) => (
                                   <div class="api-field-row">
@@ -284,7 +284,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 
                           {hasFields(endpoint.pathParams) && (
                             <section class="api-field-block">
-                              <h3 class="api-field-title">{copy.labels.pathParams}</h3>
+                              <h3 class="api-field-title" data-markdown-heading="4">{copy.labels.pathParams}</h3>
                               <dl class="api-field-list">
                                 {endpoint.pathParams.map((field) => (
                                   <div class="api-field-row">
@@ -301,7 +301,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 
                           {hasFields(endpoint.bodyFields) && (
                             <section class="api-field-block">
-                              <h3 class="api-field-title">{copy.labels.body}</h3>
+                              <h3 class="api-field-title" data-markdown-heading="4">{copy.labels.body}</h3>
                               <dl class="api-field-list">
                                 {endpoint.bodyFields.map((field) => (
                                   <div class="api-field-row">
@@ -318,7 +318,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 
                           {hasFields(endpoint.responseFields) && (
                             <section class="api-field-block">
-                              <h3 class="api-field-title">{copy.labels.response}</h3>
+                              <h3 class="api-field-title" data-markdown-heading="4">{copy.labels.response}</h3>
                               <dl class="api-field-list">
                                 {endpoint.responseFields.map((field) => (
                                   <div class="api-field-row">
@@ -335,7 +335,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 
                           {endpoint.examples && endpoint.examples.length > 0 && (
                             <section class="api-field-block">
-                              <h3 class="api-field-title">{copy.labels.examples}</h3>
+                              <h3 class="api-field-title" data-markdown-heading="4">{copy.labels.examples}</h3>
                               <div class="api-code-grid">
                                 {endpoint.examples.map((example) => (
                                   <div class="api-example">

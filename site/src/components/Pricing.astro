@@ -21,7 +21,7 @@ function getPlanHref(tier: SiteBillingTier): string {
 ---
 
 <section id="billing" class="billing-section">
-  <div class="container billing-stack">
+  <div class="container billing-stack" data-markdown-root>
     <div class="section-head">
       <p class="section-kicker" data-i18n="billing.kicker">{billing.kicker}</p>
       <h2 class="section-title" data-i18n="billing.title">{billing.title}</h2>
@@ -90,6 +90,7 @@ function getPlanHref(tier: SiteBillingTier): string {
                   ) : tier.ctaAction === 'mailto' ? (
                     <button
                       type="button"
+                      data-markdown-include
                       class="cta-button"
                       data-contact-modal-trigger
                       data-billing-track
@@ -125,7 +126,7 @@ function getPlanHref(tier: SiteBillingTier): string {
       </table>
     </div>
 
-    <div class="pricing-mobile-list">
+    <div class="pricing-mobile-list" data-markdown-exclude>
       {billing.tiers.map((tier, tierIndex) => (
         <article class:list={['pricing-mobile-tier', 'surface-card', tier.highlighted && 'is-highlighted']}>
           <div class="mobile-tier-header">
@@ -173,6 +174,7 @@ function getPlanHref(tier: SiteBillingTier): string {
             ) : tier.ctaAction === 'mailto' ? (
               <button
                 type="button"
+                data-markdown-include
                 class="cta-button"
                 data-contact-modal-trigger
                 data-billing-track

@@ -428,6 +428,12 @@ export interface SiteCopyFeedback {
   copyFailed: string;
 }
 
+export interface SitePageToolsCopy {
+  copyMarkdown: string;
+  copiedMarkdown: string;
+  copyMarkdownFailed: string;
+}
+
 export interface SiteDictionary {
   meta: SiteMeta;
   nav: SiteNavCopy;
@@ -446,6 +452,7 @@ export interface SiteDictionary {
   aria: SiteAriaCopy;
   themeOptions: SiteThemeOptionsCopy;
   copyFeedback: SiteCopyFeedback;
+  pageTools: SitePageToolsCopy;
   localeNames: Record<SiteLocale, string>;
 }
 
@@ -6474,6 +6481,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       copied: 'Onboarding instructions copied.',
       copyFailed: 'Copy failed. Please copy the command manually.',
     },
+    pageTools: {
+      copyMarkdown: 'Copy as Markdown',
+      copiedMarkdown: 'Markdown copied',
+      copyMarkdownFailed: 'Copy failed. Please try again.',
+    },
     localeNames,
   },
   zh: {
@@ -6828,6 +6840,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     copyFeedback: {
       copied: '已复制接入说明。',
       copyFailed: '复制失败，请手动复制命令。',
+    },
+    pageTools: {
+      copyMarkdown: '复制为 Markdown',
+      copiedMarkdown: 'Markdown 已复制',
+      copyMarkdownFailed: '复制失败，请重试。',
     },
     localeNames,
   },
@@ -7188,6 +7205,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     copyFeedback: {
       copied: '已複製接入說明。',
       copyFailed: '複製失敗，請手動複製命令。',
+    },
+    pageTools: {
+      copyMarkdown: '複製為 Markdown',
+      copiedMarkdown: 'Markdown 已複製',
+      copyMarkdownFailed: '複製失敗，請重試。',
     },
     localeNames,
   },
@@ -7554,6 +7576,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       copied: '導入手順をコピーしました。',
       copyFailed: 'コピーに失敗しました。手動でコピーしてください。',
     },
+    pageTools: {
+      copyMarkdown: 'Markdown としてコピー',
+      copiedMarkdown: 'Markdown をコピーしました',
+      copyMarkdownFailed: 'コピーに失敗しました。もう一度お試しください。',
+    },
     localeNames,
   },
   ko: {
@@ -7915,6 +7942,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     copyFeedback: {
       copied: '온보딩 안내를 복사했습니다.',
       copyFailed: '복사에 실패했습니다. 직접 복사해 주세요.',
+    },
+    pageTools: {
+      copyMarkdown: 'Markdown으로 복사',
+      copiedMarkdown: 'Markdown을 복사했습니다',
+      copyMarkdownFailed: '복사에 실패했습니다. 다시 시도해 주세요.',
     },
     localeNames,
   },
@@ -8281,6 +8313,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       copied: 'Instruksi onboarding disalin.',
       copyFailed: 'Gagal menyalin. Silakan salin manual.',
     },
+    pageTools: {
+      copyMarkdown: 'Salin sebagai Markdown',
+      copiedMarkdown: 'Markdown disalin',
+      copyMarkdownFailed: 'Gagal menyalin. Silakan coba lagi.',
+    },
     localeNames,
   },
   th: {
@@ -8645,6 +8682,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     copyFeedback: {
       copied: 'คัดลอกคำแนะนำการตั้งค่าแล้ว',
       copyFailed: 'คัดลอกไม่สำเร็จ กรุณาคัดลอกด้วยตนเอง',
+    },
+    pageTools: {
+      copyMarkdown: 'คัดลอกเป็น Markdown',
+      copiedMarkdown: 'คัดลอก Markdown แล้ว',
+      copyMarkdownFailed: 'คัดลอกไม่สำเร็จ โปรดลองอีกครั้ง',
     },
     localeNames,
   },

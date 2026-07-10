@@ -11,7 +11,7 @@ import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
         data-release-notes-copy={locale}
         hidden={locale !== DEFAULT_LOCALE}
       >
-        <div class="container release-notes-shell">
+        <div class="container release-notes-shell" data-markdown-root data-markdown-lang={locale}>
           <div class="release-notes-hero">
             <header class="release-notes-header">
               <p class="section-kicker">{releaseNotes.kicker}</p>
@@ -33,7 +33,7 @@ import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
               </div>
             </header>
 
-            <div class="release-notes-art">
+            <div class="release-notes-art" data-markdown-exclude>
               <img
                 src="/release-notes-hero.jpg"
                 alt={releaseNotes.heroImageAlt}
