@@ -1,5 +1,5 @@
 ---
-import { DEFAULT_LOCALE, siteCopy } from '../content/site';
+import { DEFAULT_LOCALE, siteCopy } from "../content/site";
 
 const pageTools = siteCopy[DEFAULT_LOCALE].pageTools;
 ---
@@ -11,14 +11,14 @@ const pageTools = siteCopy[DEFAULT_LOCALE].pageTools;
     data-page-markdown-copy
     aria-label={pageTools.copyMarkdown}
     title={pageTools.copyMarkdown}
-    data-i18n-attr="aria-label:pageTools.copyMarkdown;title:pageTools.copyMarkdown"
-  >
+    data-i18n-attr="aria-label:pageTools.copyMarkdown;title:pageTools.copyMarkdown">
     <svg class="page-markdown-icon page-markdown-icon-copy" viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M7.5 5.5h7a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 6 15V7a1.5 1.5 0 0 1 1.5-1.5Z" />
-      <path d="M13.5 5.5V5A1.5 1.5 0 0 0 12 3.5H5A1.5 1.5 0 0 0 3.5 5v8A1.5 1.5 0 0 0 5 14.5h1" />
+      <path d="M7.5 5.5h7a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 6 15V7a1.5 1.5 0 0 1 1.5-1.5Z"
+      ></path>
+      <path d="M13.5 5.5V5A1.5 1.5 0 0 0 12 3.5H5A1.5 1.5 0 0 0 3.5 5v8A1.5 1.5 0 0 0 5 14.5h1"></path>
     </svg>
     <svg class="page-markdown-icon page-markdown-icon-check" viewBox="0 0 20 20" aria-hidden="true">
-      <path d="m4.5 10.5 3.25 3.25 7.75-8" />
+      <path d="m4.5 10.5 3.25 3.25 7.75-8"></path>
     </svg>
     <span data-page-markdown-label data-i18n="pageTools.copyMarkdown" aria-live="polite">
       {pageTools.copyMarkdown}
@@ -29,9 +29,9 @@ const pageTools = siteCopy[DEFAULT_LOCALE].pageTools;
 <style>
   .page-markdown-action {
     display: flex;
-    justify-content: flex-end;
+    justify-content: flex-start;
     width: 100%;
-    margin-bottom: 0.3rem;
+    margin-top: 1rem;
   }
 
   .page-markdown-action[hidden] {
@@ -53,7 +53,10 @@ const pageTools = siteCopy[DEFAULT_LOCALE].pageTools;
     font-size: 0.82rem;
     font-weight: 650;
     cursor: pointer;
-    transition: border-color 0.16s ease, color 0.16s ease, background-color 0.16s ease;
+    transition:
+      border-color 0.16s ease,
+      color 0.16s ease,
+      background-color 0.16s ease;
   }
 
   .page-markdown-copy:hover,
@@ -63,7 +66,7 @@ const pageTools = siteCopy[DEFAULT_LOCALE].pageTools;
     color: var(--text);
   }
 
-  .page-markdown-copy[aria-busy='true'] {
+  .page-markdown-copy[aria-busy="true"] {
     cursor: progress;
     opacity: 0.7;
   }
@@ -96,16 +99,8 @@ const pageTools = siteCopy[DEFAULT_LOCALE].pageTools;
     color: #b42318;
   }
 
-  :global(html[data-theme='dark']) .page-markdown-copy.is-error {
+  :global(html[data-theme="dark"]) .page-markdown-copy.is-error {
     border-color: color-mix(in srgb, #ff8a80 60%, var(--border));
     color: #ff8a80;
-  }
-
-  @media (max-width: 720px) {
-    .page-markdown-action {
-      justify-content: flex-start;
-      margin-top: 0.35rem;
-      margin-bottom: 0.5rem;
-    }
   }
 </style>
