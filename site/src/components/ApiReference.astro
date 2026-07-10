@@ -8,6 +8,7 @@ import {
   type SiteLinkCopy,
 } from "../content/site";
 import { yourMemoryApiPage } from "../content/your-memory-api";
+import PageMarkdownAction from "./PageMarkdownAction.astro";
 
 function linkTarget(link: SiteLinkCopy): string | undefined {
   return link.external ? "_blank" : undefined;
@@ -83,7 +84,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
                 <span>{copy.labels.sidebarTitle}</span>
                 <span class="api-toc-toggle-icon" aria-hidden="true"></span>
               </button>
-              <nav class="api-toc surface-card">
+              <nav class="api-toc">
                 <p class="api-toc-title">{copy.labels.sidebarTitle}</p>
                 <div class="api-product-tabs" role="tablist" aria-label={copy.labels.apiProduct}>
                   <button class="api-product-tab" type="button" role="tab" data-api-product-tab="web-console" aria-selected={catalogId === "web-console"}>{copy.labels.webConsole}</button>
@@ -161,6 +162,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
                 <h1 class="api-title">{copy.title}</h1>
                 <p class="api-intro">{copy.intro}</p>
                 <p class="api-summary">{copy.summary}</p>
+                <PageMarkdownAction />
               </section>
 
               <section
@@ -173,7 +175,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
                 </div>
                 <div class="api-auth-grid">
                   {copy.authCards.map((card) => (
-                    <article class="surface-card api-auth-card">
+                    <article class="api-auth-card">
                       <h3>{card.title}</h3>
                       <p>{card.body}</p>
                     </article>
@@ -190,7 +192,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
                   <h2 class="api-section-title">{copy.quickstartTitle}</h2>
                   <p class="api-section-desc">{copy.quickstartDescription}</p>
                 </div>
-                <div class="api-quickstart surface-card">
+                <div class="api-quickstart">
                   <ol class="api-steps">
                     {copy.quickstartSteps.map((step) => (
                       <li>{step}</li>
@@ -221,7 +223,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
                   <div class="api-endpoint-list">
                     {group.endpoints.map((endpoint, index) => (
                       <article
-                        class="surface-card api-endpoint-card"
+                        class="api-endpoint-card"
                         id={locale === DEFAULT_LOCALE ? endpointAnchor(group.id, endpoint, index) : undefined}
                         data-api-anchor={endpointAnchor(group.id, endpoint, index)}
                       >
@@ -353,7 +355,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
                 </section>
               ))}
 
-              <section class="api-cta surface-card">
+              <section class="api-cta">
                 <div>
                   <p class="section-kicker">{copy.labels.next}</p>
                   <h2 class="api-section-title">{copy.ctaTitle}</h2>
@@ -464,7 +466,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 
 <style>
   .api-page {
-    padding: 1.6rem 0 4.8rem;
+    padding: 2.2rem 0 4.8rem;
   }
 
   .api-copy[hidden] {
@@ -480,10 +482,22 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
   }
 
   .api-hero {
+    position: relative;
     width: min(100%, 72rem);
     display: grid;
     gap: 0.8rem;
-    padding: 0 0 0.45rem;
+    padding: 0 0 2.8rem;
+  }
+
+  .api-hero > :global(.page-markdown-action) {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: auto;
+  }
+
+  .api-hero > .section-kicker {
+    padding-right: 12rem;
   }
 
   .api-title {
@@ -508,8 +522,8 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
   /* Two-column layout */
   .api-layout {
     display: grid;
-    grid-template-columns: minmax(17rem, 22rem) minmax(0, 1fr);
-    gap: clamp(2.4rem, 4vw, 4rem);
+    grid-template-columns: minmax(14rem, 16rem) minmax(0, 1fr);
+    gap: clamp(2rem, 4vw, 4rem);
     align-items: start;
   }
 
@@ -522,7 +536,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
   }
 
   .api-toc {
-    padding: 0.95rem;
+    padding: 0 0.75rem 0 0;
     max-height: inherit;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -530,18 +544,32 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
     -webkit-overflow-scrolling: touch;
   }
 
+  .api-toc::-webkit-scrollbar {
+    width: 0.25rem;
+  }
+
+  .api-toc::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+
+  .api-toc:hover::-webkit-scrollbar-thumb {
+    background: var(--button-active-border);
+  }
+
   .api-toc-title {
     font-family: var(--font-mono);
-    font-size: 0.75rem;
-    letter-spacing: 0.05em;
-    color: var(--accent);
-    margin-bottom: 0.9rem;
+    font-size: 0.68rem;
+    font-weight: 650;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--text-soft);
+    margin-bottom: 1rem;
   }
 
   .api-toc-search {
     display: grid;
     gap: 0.38rem;
-    margin-bottom: 0.85rem;
+    margin-bottom: 1.15rem;
   }
 
   .api-toc-search-label {
@@ -553,21 +581,21 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 
   .api-toc-search input {
     width: 100%;
-    min-height: 2.2rem;
+    min-height: 2.35rem;
     border: 1px solid var(--border);
-    border-radius: 0.72rem;
-    background: var(--button-bg);
+    border-radius: 0.55rem;
+    background: transparent;
     color: var(--text);
     padding: 0.46rem 0.58rem;
     font: inherit;
     font-size: 0.82rem;
     outline: none;
-    box-shadow: var(--surface-inset);
+    box-shadow: none;
   }
 
   .api-toc-search input:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent), var(--surface-inset);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
 
   .api-toc-empty {
@@ -585,9 +613,9 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 
   .api-toc-link {
     display: block;
-    padding: 0.42rem 0.6rem;
-    border-radius: 0.8rem;
-    border-left: 2px solid transparent;
+    padding: 0.48rem 0.55rem;
+    border-radius: 0.5rem;
+    border-left: 0;
     color: var(--text-dim);
     font-size: 0.88rem;
     line-height: 1.35;
@@ -603,7 +631,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
   .api-toc-link.is-active {
     background: var(--button-active-bg);
     color: var(--text);
-    border-left-color: var(--accent);
+    font-weight: 650;
     opacity: 1;
   }
 
@@ -615,10 +643,9 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
     display: block;
     width: 100%;
     min-width: 0;
-    padding: 0.42rem 0.6rem;
+    padding: 0.48rem 0.55rem;
     border: 0;
-    border-left: 2px solid transparent;
-    border-radius: 0.8rem;
+    border-radius: 0.5rem;
     text-align: left;
     background: transparent;
     color: var(--text-dim);
@@ -632,9 +659,9 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
     list-style: none;
     display: grid;
     gap: 0.22rem;
-    margin: 0.24rem 0 0.1rem 0.72rem;
-    padding-left: 0.7rem;
-    border-left: 1px solid var(--border);
+    margin: 0.24rem 0 0.1rem 0.45rem;
+    padding-left: 0;
+    border-left: 0;
   }
 
   .api-toc-sublist[hidden] {
@@ -697,13 +724,15 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
   /* Content area */
   .api-content {
     display: grid;
-    gap: 1.8rem;
+    gap: 0;
+    min-width: 0;
   }
 
   .api-section {
     display: grid;
     gap: 1rem;
-    padding: 0;
+    padding: 2.5rem 0 2.8rem;
+    border-top: 1px solid var(--border);
     scroll-margin-top: 6rem;
   }
 
@@ -719,22 +748,24 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
   .api-auth-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1rem;
+    gap: 0 2rem;
   }
 
   .api-auth-card,
   .api-quickstart,
   .api-endpoint-card,
   .api-cta {
-    padding: 1.3rem;
-    background: linear-gradient(180deg, var(--surface-elevated-start), var(--surface-elevated-end));
+    padding: 0;
+    background: transparent;
   }
 
   .api-auth-card {
     display: grid;
     gap: 0.55rem;
     align-content: start;
-    min-height: 10.5rem;
+    min-height: 0;
+    padding: 1rem 0;
+    border-top: 1px solid var(--border);
   }
 
   .api-auth-card h3 {
@@ -797,21 +828,16 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
   }
 
   .api-field-title::before {
-    content: '';
-    width: 0.22rem;
-    height: 0.95rem;
-    border-radius: 999px;
-    background: var(--accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+    content: none;
   }
 
   .api-code {
     padding: 0.95rem 1rem;
-    border-radius: 0.95rem;
+    border-radius: 0.65rem;
     background: var(--bg-terminal);
     border: 1px solid var(--border);
     overflow-x: auto;
-    box-shadow: var(--surface-inset), var(--surface-shadow-soft);
+    box-shadow: none;
   }
 
   .api-code code {
@@ -824,25 +850,32 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 
   .api-endpoint-list {
     display: grid;
-    gap: 1rem;
+    gap: 0;
   }
 
   .api-endpoint-card {
     display: grid;
     gap: 1.15rem;
+    padding: 1.75rem 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    box-shadow: none;
     scroll-margin-top: 6rem;
+  }
+
+  .api-endpoint-card:first-child {
+    padding-top: 0.5rem;
+    border-top: 0;
   }
 
   .api-endpoint-head {
     display: grid;
     gap: 0.7rem;
-    padding: 0.95rem 1rem;
-    border: 1px solid var(--border);
-    border-radius: 0.9rem;
-    background:
-      linear-gradient(180deg, color-mix(in srgb, var(--button-active-bg) 72%, transparent), transparent),
-      var(--button-bg);
-    box-shadow: var(--surface-inset);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .api-endpoint-top {
@@ -882,16 +915,13 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
     min-height: 2.28rem;
     padding: 0.48rem 0.86rem;
     border-radius: 0.55rem;
-    border-color: rgba(17, 17, 17, 0.9);
-    background: linear-gradient(180deg, #202020, #0f0f0f);
+    border-color: #111111;
+    background: #111111;
     color: #ffffff;
     font-weight: 750;
     font-size: 0.8rem;
     letter-spacing: 0;
-    box-shadow:
-      0 0 0 2px rgba(17, 17, 17, 0.07),
-      0 10px 22px rgba(17, 17, 17, 0.14),
-      var(--surface-inset);
+    box-shadow: none;
   }
 
   .api-test-button span {
@@ -908,8 +938,8 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
   }
 
   .api-test-button:hover {
-    background: linear-gradient(180deg, #303030, #111111);
-    border-color: #111111;
+    background: #2b2b2b;
+    border-color: #2b2b2b;
   }
 
   .api-test-button:focus-visible {
@@ -918,18 +948,14 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
   }
 
   :global(html[data-theme='dark']) .api-test-button {
-    border-color: rgba(255, 255, 255, 0.82);
-    background: linear-gradient(180deg, #ffffff, #e8e8e4);
+    border-color: #ffffff;
+    background: #ffffff;
     color: #111111;
-    box-shadow:
-      0 0 0 2px rgba(255, 255, 255, 0.12),
-      0 10px 22px rgba(255, 255, 255, 0.12),
-      var(--surface-inset);
   }
 
   :global(html[data-theme='dark']) .api-test-button:hover {
-    background: linear-gradient(180deg, #ffffff, #f4f4f1);
-    border-color: #ffffff;
+    border-color: #e8e8e4;
+    background: #e8e8e4;
   }
 
   :global(html[data-theme='dark']) .api-test-button:focus-visible {
@@ -949,13 +975,13 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
     justify-content: center;
     min-width: 4.7rem;
     padding: 0.38rem 0.7rem;
-    border-radius: 999px;
+    border-radius: 0.45rem;
     font-family: var(--font-mono);
     font-size: 0.72rem;
     letter-spacing: 0.05em;
     border: 1px solid var(--button-active-border);
     color: var(--text);
-    box-shadow: var(--surface-inset);
+    box-shadow: none;
   }
 
   .api-method-get {
@@ -1030,7 +1056,7 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
     font-size: 0.9rem;
     line-height: 1.35;
     word-break: break-word;
-    box-shadow: var(--surface-inset);
+    box-shadow: none;
   }
 
   .api-endpoint-summary {
@@ -1054,11 +1080,12 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
   .api-field-block {
     display: grid;
     gap: 0.55rem;
-    padding: 0.95rem 1rem;
-    border: 1px solid var(--border);
-    border-radius: 0.9rem;
-    background: color-mix(in srgb, var(--button-bg) 70%, transparent);
-    box-shadow: var(--surface-inset);
+    padding: 1rem 0 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .api-field-list {
@@ -1122,6 +1149,9 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
     align-items: end;
     justify-content: space-between;
     gap: 1rem;
+    margin-top: 0.4rem;
+    padding: 2.5rem 0 0;
+    border-top: 1px solid var(--border);
   }
 
   .api-cta-links {
@@ -1134,12 +1164,19 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.72rem 1rem;
-    border-radius: 999px;
-    border: 1px solid var(--button-active-border);
-    background: var(--button-bg);
+    padding: 0.2rem 0;
+    border: 0;
+    border-bottom: 1px solid var(--border-strong);
+    border-radius: 0;
+    background: transparent;
     color: var(--text);
-    box-shadow: var(--surface-inset), var(--surface-shadow-soft);
+    box-shadow: none;
+    font-weight: 650;
+  }
+
+  .api-cta-link:hover {
+    border-bottom-color: var(--text);
+    opacity: 1;
   }
 
   .api-test-modal {
@@ -1627,9 +1664,9 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
       width: 100%;
       padding: 0.75rem 1rem;
       border: 1px solid var(--border);
-      border-radius: 1rem;
-      background: linear-gradient(180deg, var(--surface-gradient-start), var(--surface-gradient-end));
-      box-shadow: var(--surface-inset), var(--surface-shadow-soft);
+      border-radius: 0.7rem;
+      background: var(--bg-elevated);
+      box-shadow: none;
       color: var(--text);
       font-family: var(--font-mono);
       font-size: 0.8rem;
@@ -1659,8 +1696,9 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
     .api-toc {
       max-height: 0;
       overflow: hidden;
-      padding: 0 0.95rem;
+      padding: 0;
       margin-top: 0.5rem;
+      border-radius: 0.7rem;
       transition: max-height 0.3s ease, padding 0.3s ease;
     }
 
@@ -1668,6 +1706,8 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
       max-height: 80vh;
       overflow-y: auto;
       padding: 0.95rem;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
     }
   }
 
@@ -1684,14 +1724,16 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
 
   @media (max-width: 720px) {
     .api-page {
-      padding-top: 1rem;
+      padding-top: 1.3rem;
     }
 
-    .api-auth-card,
-    .api-quickstart,
-    .api-endpoint-card,
-    .api-cta {
-      padding: 1rem;
+    .api-hero > :global(.page-markdown-action) {
+      position: static;
+      width: 100%;
+    }
+
+    .api-hero > .section-kicker {
+      padding-right: 0;
     }
 
     .api-code code {

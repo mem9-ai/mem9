@@ -6,7 +6,7 @@ import type {
   SiteNavCopy,
   SiteThemeOptionsCopy,
 } from '../content/site';
-import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
+import { siteCopy, siteLocales } from '../content/site';
 
 interface Props {
   nav: SiteNavCopy;
@@ -17,7 +17,6 @@ interface Props {
 }
 
 const { nav, aria, localeNames, themeOptions, currentPath = '/' } = Astro.props;
-const pageTools = siteCopy[DEFAULT_LOCALE].pageTools;
 const isActivePath = (path: string): boolean => currentPath === path;
 const localeToLang = (locale: SiteLocale): string => {
   if (locale === 'zh') {
@@ -200,29 +199,6 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
                 ))}
               </span>
             </a>
-            <div class="page-markdown-action" data-page-markdown-action role="none" hidden>
-              <div class="docs-menu-separator" role="separator"></div>
-              <button
-                type="button"
-                class="docs-menu-item page-markdown-copy"
-                role="menuitem"
-                data-page-markdown-copy
-                aria-label={pageTools.copyMarkdown}
-                title={pageTools.copyMarkdown}
-                data-i18n-attr="aria-label:pageTools.copyMarkdown;title:pageTools.copyMarkdown"
-              >
-                <svg class="page-markdown-icon page-markdown-icon-copy" viewBox="0 0 20 20" aria-hidden="true">
-                  <path d="M7.5 5.5h7a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 6 15V7a1.5 1.5 0 0 1 1.5-1.5Z" />
-                  <path d="M13.5 5.5V5A1.5 1.5 0 0 0 12 3.5H5A1.5 1.5 0 0 0 3.5 5v8A1.5 1.5 0 0 0 5 14.5h1" />
-                </svg>
-                <svg class="page-markdown-icon page-markdown-icon-check" viewBox="0 0 20 20" aria-hidden="true">
-                  <path d="m4.5 10.5 3.25 3.25 7.75-8" />
-                </svg>
-                <span data-page-markdown-label data-i18n="pageTools.copyMarkdown" aria-live="polite">
-                  {pageTools.copyMarkdown}
-                </span>
-              </button>
-            </div>
           </div>
         </div>
         <a
@@ -425,28 +401,6 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
                   ))}
                 </span>
               </a>
-              <div class="page-markdown-action" data-page-markdown-action role="none" hidden>
-                <button
-                  type="button"
-                  class="mobile-menu-item page-markdown-copy"
-                  role="menuitem"
-                  data-page-markdown-copy
-                  aria-label={pageTools.copyMarkdown}
-                  title={pageTools.copyMarkdown}
-                  data-i18n-attr="aria-label:pageTools.copyMarkdown;title:pageTools.copyMarkdown"
-                >
-                  <svg class="page-markdown-icon page-markdown-icon-copy" viewBox="0 0 20 20" aria-hidden="true">
-                    <path d="M7.5 5.5h7a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 6 15V7a1.5 1.5 0 0 1 1.5-1.5Z" />
-                    <path d="M13.5 5.5V5A1.5 1.5 0 0 0 12 3.5H5A1.5 1.5 0 0 0 3.5 5v8A1.5 1.5 0 0 0 5 14.5h1" />
-                  </svg>
-                  <svg class="page-markdown-icon page-markdown-icon-check" viewBox="0 0 20 20" aria-hidden="true">
-                    <path d="m4.5 10.5 3.25 3.25 7.75-8" />
-                  </svg>
-                  <span data-page-markdown-label data-i18n="pageTools.copyMarkdown" aria-live="polite">
-                    {pageTools.copyMarkdown}
-                  </span>
-                </button>
-              </div>
             </div>
 
             <div class="mobile-menu-section" role="presentation">
@@ -1019,55 +973,6 @@ const navLabels = (key: keyof SiteNavCopy): { locale: SiteLocale; lang: string; 
     border-color: var(--button-active-border);
     color: var(--text);
     opacity: 1;
-  }
-
-  .page-markdown-action[hidden] {
-    display: none;
-  }
-
-  .docs-menu-separator {
-    height: 1px;
-    margin: 0.35rem 0.75rem;
-    background: var(--border);
-  }
-
-  .page-markdown-copy {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    width: 100%;
-    background: transparent;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .page-markdown-copy[aria-busy='true'] {
-    cursor: progress;
-    opacity: 0.7;
-  }
-
-  .page-markdown-icon {
-    width: 1rem;
-    height: 1rem;
-    flex: 0 0 auto;
-    fill: none;
-    stroke: currentColor;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 1.5;
-  }
-
-  .page-markdown-icon-check {
-    display: none;
-  }
-
-  .page-markdown-copy.is-copied .page-markdown-icon-copy {
-    display: none;
-  }
-
-  .page-markdown-copy.is-copied .page-markdown-icon-check {
-    display: block;
   }
 
   /* Social links */

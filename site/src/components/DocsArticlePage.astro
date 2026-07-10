@@ -1,6 +1,7 @@
 ---
 import { resolveDocsLocale, type DocsLink, type DocsLocale, type DocsPageCopy, type DocsSection, type DocsTable } from '../content/docs';
 import { DEFAULT_LOCALE } from '../content/site';
+import PageMarkdownAction from './PageMarkdownAction.astro';
 
 interface Props {
   copies: Record<DocsLocale, DocsPageCopy>;
@@ -72,7 +73,7 @@ function docsSectionSearchText(section: DocsSection): string {
                 <span>{copy.hero.tocTitle}</span>
                 <span class="docs-toc-toggle-icon" aria-hidden="true"></span>
               </button>
-              <div class:list={['docs-toc', source !== 'docs' && 'surface-card']}>
+              <div class="docs-toc">
                 <p class="docs-toc-title">{copy.hero.tocTitle}</p>
                 <label class="docs-toc-search">
                   <span class="docs-toc-search-label">{copy.search.label}</span>
@@ -122,13 +123,12 @@ function docsSectionSearchText(section: DocsSection): string {
             </aside>
 
             <div class="docs-content" data-markdown-root data-markdown-lang={locale}>
-              {source === 'docs' && (
-                <header class="docs-hero">
-                  <p class="docs-hero-eyebrow">{copy.hero.eyebrow}</p>
-                  <h1 class="docs-hero-title">{copy.hero.title}</h1>
-                  <p class="docs-hero-intro">{copy.hero.intro}</p>
-                </header>
-              )}
+              <header class="docs-hero">
+                <p class="docs-hero-eyebrow">{copy.hero.eyebrow}</p>
+                <h1 class="docs-hero-title">{copy.hero.title}</h1>
+                <p class="docs-hero-intro">{copy.hero.intro}</p>
+                <PageMarkdownAction />
+              </header>
 
               {copy.sections.map((section) => (
                 <article
@@ -179,7 +179,7 @@ function docsSectionSearchText(section: DocsSection): string {
                   ))}
 
                   {section.subsections?.map((subsection) => (
-                    <section class:list={['docs-subsection', source !== 'docs' && 'surface-card']}>
+                    <section class="docs-subsection">
                       <h3 class="docs-subsection-title">{subsection.title}</h3>
                       {subsection.paragraphs?.map((paragraph) => (
                         <p class="docs-paragraph" set:html={paragraph}></p>
@@ -640,12 +640,21 @@ function docsSectionSearchText(section: DocsSection): string {
   }
 
   .docs-hero {
+    position: relative;
     padding: 0.2rem 0 2.8rem;
     max-width: 52rem;
   }
 
+  .docs-hero > :global(.page-markdown-action) {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: auto;
+  }
+
   .docs-hero-eyebrow {
     margin: 0 0 0.8rem;
+    padding-right: 12rem;
     color: var(--accent);
     font-family: var(--font-mono);
     font-size: 0.72rem;
@@ -668,33 +677,33 @@ function docsSectionSearchText(section: DocsSection): string {
     line-height: 1.75;
   }
 
-  .docs-page[data-docs-source='docs'] {
+  .docs-page {
     padding-top: 2.2rem;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-layout {
+  .docs-page .docs-layout {
     grid-template-columns: minmax(14rem, 16rem) minmax(0, 1fr);
     gap: clamp(2rem, 4vw, 4rem);
   }
 
-  .docs-page[data-docs-source='docs'] .docs-toc {
+  .docs-page .docs-toc {
     padding: 0 0.75rem 0 0;
     scrollbar-gutter: auto;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-toc::-webkit-scrollbar {
+  .docs-page .docs-toc::-webkit-scrollbar {
     width: 0.25rem;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-toc::-webkit-scrollbar-thumb {
+  .docs-page .docs-toc::-webkit-scrollbar-thumb {
     background: transparent;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-toc:hover::-webkit-scrollbar-thumb {
+  .docs-page .docs-toc:hover::-webkit-scrollbar-thumb {
     background: var(--button-active-border);
   }
 
-  .docs-page[data-docs-source='docs'] .docs-toc-title {
+  .docs-page .docs-toc-title {
     margin-bottom: 1rem;
     color: var(--text-soft);
     font-size: 0.68rem;
@@ -703,43 +712,44 @@ function docsSectionSearchText(section: DocsSection): string {
     text-transform: uppercase;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-toc-search {
+  .docs-page .docs-toc-search {
     margin-bottom: 1.15rem;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-toc-search input {
+  .docs-page .docs-toc-search input {
     min-height: 2.35rem;
     border-radius: 0.55rem;
     background: transparent;
     box-shadow: none;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-toc-group {
+  .docs-page .docs-toc-group {
     padding-top: 0.75rem;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-toc-group-summary {
+  .docs-page .docs-toc-group-summary {
     padding: 0.3rem 0.55rem;
     border-radius: 0.5rem;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-toc-link {
+  .docs-page .docs-toc-link {
     padding: 0.48rem 0.55rem;
     border-left: 0;
     border-radius: 0.5rem;
     transition: background-color 0.16s, color 0.16s;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-toc-link.is-active {
+  .docs-page .docs-toc-link.is-active {
     font-weight: 650;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-content {
+  .docs-page .docs-content {
     gap: 0;
     min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .docs-page[data-docs-source='docs'] .docs-section {
+  .docs-page .docs-section {
     padding: 2.5rem 0 2.8rem;
     border: 0;
     border-top: 1px solid var(--border);
@@ -748,13 +758,13 @@ function docsSectionSearchText(section: DocsSection): string {
     box-shadow: none;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-section-head {
+  .docs-page .docs-section-head {
     margin-bottom: 1rem;
     padding-bottom: 0;
     border-bottom: 0;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-section-label {
+  .docs-page .docs-section-label {
     display: block;
     margin-bottom: 0.65rem;
     padding: 0;
@@ -765,34 +775,34 @@ function docsSectionSearchText(section: DocsSection): string {
     letter-spacing: 0.1em;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-section-title {
+  .docs-page .docs-section-title {
     margin-bottom: 0.55rem;
     font-size: clamp(1.65rem, 2.6vw, 2.2rem);
   }
 
-  .docs-page[data-docs-source='docs'] .docs-section-intro,
-  .docs-page[data-docs-source='docs'] .docs-paragraph,
-  .docs-page[data-docs-source='docs'] .docs-bullets {
+  .docs-page .docs-section-intro,
+  .docs-page .docs-paragraph,
+  .docs-page .docs-bullets {
     max-width: 52rem;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-subsection {
+  .docs-page .docs-subsection {
     margin-top: 1.75rem;
     padding: 1.75rem 0 0;
     border: 0;
     border-top: 1px solid var(--border);
   }
 
-  .docs-page[data-docs-source='docs'] .docs-subsection-title {
+  .docs-page .docs-subsection-title {
     font-size: 1.12rem;
     letter-spacing: -0.02em;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-link-row {
+  .docs-page .docs-link-row {
     gap: 1.25rem;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-inline-link {
+  .docs-page .docs-inline-link {
     padding: 0.2rem 0;
     border: 0;
     border-bottom: 1px solid var(--border-strong);
@@ -801,12 +811,12 @@ function docsSectionSearchText(section: DocsSection): string {
     font-weight: 650;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-inline-link:hover {
+  .docs-page .docs-inline-link:hover {
     border-bottom-color: var(--text);
     transform: none;
   }
 
-  .docs-page[data-docs-source='docs'] .docs-table-wrap {
+  .docs-page .docs-table-wrap {
     border-radius: 0.65rem;
     background: transparent;
     box-shadow: none;
@@ -931,27 +941,27 @@ function docsSectionSearchText(section: DocsSection): string {
       padding: 0.95rem;
     }
 
-    .docs-page[data-docs-source='docs'] {
+    .docs-page {
       padding-top: 1.3rem;
     }
 
-    .docs-page[data-docs-source='docs'] .docs-layout {
+    .docs-page .docs-layout {
       gap: 1.25rem;
       grid-template-columns: minmax(0, 1fr);
     }
 
-    .docs-page[data-docs-source='docs'] .docs-toc-toggle {
+    .docs-page .docs-toc-toggle {
       border-radius: 0.7rem;
       background: var(--bg-elevated);
       box-shadow: none;
     }
 
-    .docs-page[data-docs-source='docs'] .docs-toc {
+    .docs-page .docs-toc {
       padding: 0;
       border-radius: 0.7rem;
     }
 
-    .docs-page[data-docs-source='docs'] .docs-sidebar.is-toc-open .docs-toc {
+    .docs-page .docs-sidebar.is-toc-open .docs-toc {
       padding: 0.95rem;
       border: 1px solid var(--border);
       background: var(--bg-elevated);
@@ -976,15 +986,24 @@ function docsSectionSearchText(section: DocsSection): string {
       padding: 1rem;
     }
 
-    .docs-page[data-docs-source='docs'] .docs-hero {
+    .docs-page .docs-hero {
       padding: 0.25rem 0 2.2rem;
     }
 
-    .docs-page[data-docs-source='docs'] .docs-hero-title {
+    .docs-page .docs-hero > :global(.page-markdown-action) {
+      position: static;
+      width: 100%;
+    }
+
+    .docs-page .docs-hero-eyebrow {
+      padding-right: 0;
+    }
+
+    .docs-page .docs-hero-title {
       font-size: clamp(2.35rem, 13vw, 3.25rem);
     }
 
-    .docs-page[data-docs-source='docs'] .docs-section {
+    .docs-page .docs-section {
       padding: 2rem 0 2.25rem;
     }
 
