@@ -482,22 +482,10 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
   }
 
   .api-hero {
-    position: relative;
     width: min(100%, 72rem);
     display: grid;
     gap: 0.8rem;
     padding: 0 0 2.8rem;
-  }
-
-  .api-hero > :global(.page-markdown-action) {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: auto;
-  }
-
-  .api-hero > .section-kicker {
-    padding-right: 12rem;
   }
 
   .api-title {
@@ -1725,15 +1713,6 @@ const defaultApiLabels = siteCopy[DEFAULT_LOCALE].apiPage.labels;
   @media (max-width: 720px) {
     .api-page {
       padding-top: 1.3rem;
-    }
-
-    .api-hero > :global(.page-markdown-action) {
-      position: static;
-      width: 100%;
-    }
-
-    .api-hero > .section-kicker {
-      padding-right: 0;
     }
 
     .api-code code {

@@ -640,21 +640,12 @@ function docsSectionSearchText(section: DocsSection): string {
   }
 
   .docs-hero {
-    position: relative;
     padding: 0.2rem 0 2.8rem;
     max-width: 52rem;
   }
 
-  .docs-hero > :global(.page-markdown-action) {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: auto;
-  }
-
   .docs-hero-eyebrow {
     margin: 0 0 0.8rem;
-    padding-right: 12rem;
     color: var(--accent);
     font-family: var(--font-mono);
     font-size: 0.72rem;
@@ -988,15 +979,6 @@ function docsSectionSearchText(section: DocsSection): string {
 
     .docs-page .docs-hero {
       padding: 0.25rem 0 2.2rem;
-    }
-
-    .docs-page .docs-hero > :global(.page-markdown-action) {
-      position: static;
-      width: 100%;
-    }
-
-    .docs-page .docs-hero-eyebrow {
-      padding-right: 0;
     }
 
     .docs-page .docs-hero-title {
