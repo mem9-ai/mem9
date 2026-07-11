@@ -1082,6 +1082,61 @@ func TestListMemories_SessionTypeListsSessionRows(t *testing.T) {
 	}
 }
 
+func TestListMemories_DefaultAllTypesIncludesSessions(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		listResults: []domain.Memory{
+			{
+				ID:         "insight-1",
+				Content:    "stable preference",
+				MemoryType: domain.TypeInsight,
+				State:      domain.StateActive,
+				CreatedAt:  now.Add(-time.Hour),
+				UpdatedAt:  now.Add(-time.Hour),
+			},
+		},
+		listTotal: 1,
+	}
+	sessionRepo := &testSessionRepo{
+		listResults: []domain.Memory{
+			{
+				ID:         "session-1",
+				Content:    "raw conversation turn",
+				MemoryType: domain.TypeSession,
+				State:      domain.StateActive,
+				CreatedAt:  now,
+				UpdatedAt:  now,
+			},
+		},
+		listTotal: 1,
+	}
+	srv := newTestServer(memRepo, sessionRepo)
+	req := makeRequest(t, http.MethodGet, "/memories?limit=10&offset=0&state=active", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var resp listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Total != 2 || resp.Limit != 10 || resp.Offset != 0 {
+		t.Fatalf("page = total:%d limit:%d offset:%d, want 2/10/0", resp.Total, resp.Limit, resp.Offset)
+	}
+	if len(resp.Memories) != 2 {
+		t.Fatalf("len(memories) = %d, want 2", len(resp.Memories))
+	}
+	if resp.Memories[0].ID != "session-1" || resp.Memories[1].ID != "insight-1" {
+		t.Fatalf("memory order = [%s %s], want [session-1 insight-1]", resp.Memories[0].ID, resp.Memories[1].ID)
+	}
+	if memRepo.listCalls != 1 || sessionRepo.listCalls != 1 {
+		t.Fatalf("list calls = memory:%d session:%d, want 1/1", memRepo.listCalls, sessionRepo.listCalls)
+	}
+}
+
 func TestListMemories_ScanAllListsAllLocalMemoryTypes(t *testing.T) {
 	now := time.Now()
 	memRepo := &testMemoryRepo{
