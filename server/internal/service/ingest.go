@@ -50,6 +50,7 @@ const (
 var (
 	ephemeralIntentRE        = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:is\s+)?(?:wants?|needs?|plans?|intends?|considering|thinking about|will|might|may|should|trying)\s+(?:to\s+)?(?:(?:eat|eating|consume|consuming|work out|working out|exercise|exercising)\b|(?:have|having)\s+(?:breakfast|lunch|dinner|a meal|a snack|protein powder|creatine)\b)`)
 	shortTimeCueRE           = regexp.MustCompile(`(?i)\b(?:now|currently|today|tonight|tomorrow|yesterday|right now|this morning|this afternoon|this evening|last night|day before yesterday)\b`)
+	currentTimeCueRE         = regexp.MustCompile(`(?i)\b(?:now|currently|today|right now|this morning|this afternoon|this evening)\b`)
 	activityLogRE            = regexp.MustCompile(`(?i)\b(?:recorded|logged|weighed|weight is|protein powder|creatine|workout log|fitness session|breakfast|lunch|dinner|snack|sleep|slept|hunger|hungry|cosmetic procedure|botulinum|filler)\b`)
 	explicitActivityLogRE    = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:recorded|logged|weighed)\b`)
 	subjectlessActivityLogRE = regexp.MustCompile(`(?i)^(?:ate|had|drank|consumed|completed|ran|woke up|stayed up|trained|resting)\b`)
@@ -59,9 +60,9 @@ var (
 	socialNarrativeCueRE     = regexp.MustCompile(`(?i)\bwith\s+(?:(?:my|his|her|their|our|your|the|a|an)\s+)?(?:friend|friends|family|partner|wife|husband|mother|father|mom|dad|colleague|coworker|team)\b|(?:和|跟|与).{1,40}(?:一起|见面|吃|喝)`)
 	operationalLogRE         = regexp.MustCompile(`(?i)\b(?:temporary workspace|temporary table|temporary monitoring|planning-only turn|reported tracking event error|received service error|selected model is at capacity|(?:assistant|system) (?:eta is|eta tomorrow|is due tomorrow|requires confirmation today)|(?:import|upload) task (?:started|completed|failed|queued|running)|debug(?:ging)? (?:log|trace|session|command|output|run|task)|smoke test (?:passed|failed|completed)|functioning correctly (?:now|today))\b`)
 	oneTimeIntentRE          = regexp.MustCompile(`(?i)\buser\s+wants?\s+to\s+(?:(?:restart|restore)\s+(?:a\s+)?(?:task|conversation|session|workflow|working condition)|(?:remove|pin)\s+(?:a\s+)?(?:memory|fact|insight)|send\s+(?:a\s+)?handoff|(?:record|log)\s+(?:a\s+)?(?:meal|weight|workout|sleep|activity)|(?:create|set up)\s+(?:temporary\s+)?(?:monitoring|alert|reminder))\b`)
-	transientStatusRE        = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:is|am|are)\s+(?:currently\s+)?(?:working out|training|resting|hungry|using voice input)\b|^(?:now|right now|currently)\b.*\b(?:working out|training|resting|hungry|using voice input)\b`)
+	transientStatusRE        = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:is|am|are)\s+(?:currently\s+)?(?:working out|resting|hungry|using voice input)\b|^(?:now|right now|currently)\b.*\b(?:working out|resting|hungry|using voice input)\b`)
 	chineseEphemeralIntentRE = regexp.MustCompile(`^(?:用户)?(?:想|想要|准备|打算|考虑)(?:(?:去|要)?(?:重启|恢复)(?:任务|会话|工作流)|(?:记录|删除|移除|置顶)(?:记忆|事实|洞察|饮食|体重|训练|睡眠|活动)|发送(?:交接|handoff)|(?:创建|设置)(?:临时)?(?:监控|提醒)|(?:今晚|今天|现在)?(?:吃|喝|服用|健身|训练|锻炼))`)
-	chineseTransientStatusRE = regexp.MustCompile(`^(?:用户)?(?:现在|当前|正在)(?:健身|训练|锻炼|休息|挨饿|使用语音输入)`)
+	chineseTransientStatusRE = regexp.MustCompile(`^(?:用户)?(?:现在|当前|正在)(?:健身|锻炼|休息|挨饿|使用语音输入)`)
 	chineseActivityLogRE     = regexp.MustCompile(`^(?:用户)?(?:记录了?|打卡了?|称重|记下了?)(?:体重|饮食|早餐|午餐|晚餐|训练|锻炼|睡眠|活动)`)
 	chineseOperationalLogRE  = regexp.MustCompile(`(?:临时工作区|临时表|临时监控|(?:导入|上传)任务(?:已)?(?:开始|完成|失败|排队|运行中)|调试(?:日志|跟踪|会话|命令|输出|任务)|冒烟测试(?:通过|失败|完成)|模型容量已满)`)
 )
@@ -274,7 +275,7 @@ func serverGuardDropReason(text string) string {
 		return factTypeEphemeralIntent
 	case ephemeralIntentRE.MatchString(text) && shortTimeCueRE.MatchString(text) && !hasSocialNarrativeCue(text):
 		return factTypeEphemeralIntent
-	case shortTimeCueRE.MatchString(text) && transientStatusRE.MatchString(text), chineseTransientStatusRE.MatchString(text):
+	case currentTimeCueRE.MatchString(text) && transientStatusRE.MatchString(text), chineseTransientStatusRE.MatchString(text):
 		return factTypeTransientStatus
 	case isActivityLogText(text), chineseActivityLogRE.MatchString(text):
 		return factTypeActivityLog
@@ -286,11 +287,11 @@ func serverGuardDropReason(text string) string {
 }
 
 func isActivityLogText(text string) bool {
-	if activityNarrativeCueRE.MatchString(text) {
-		return false
-	}
 	if explicitActivityLogRE.MatchString(text) {
 		return true
+	}
+	if activityNarrativeCueRE.MatchString(text) {
+		return false
 	}
 	return activityLogRE.MatchString(text) &&
 		(subjectlessActivityLogRE.MatchString(text) || userActivityLogRE.MatchString(text))

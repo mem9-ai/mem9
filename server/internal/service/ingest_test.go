@@ -1083,6 +1083,16 @@ func TestServerGuardDropsOnlyNarrowOperationalIntentAndLogs(t *testing.T) {
 			want: "",
 		},
 		{
+			name: "durable active employee training",
+			text: "User is training a new employee tomorrow",
+			want: "",
+		},
+		{
+			name: "durable future workout commitment",
+			text: "User is working out tomorrow",
+			want: "",
+		},
+		{
 			name: "debug log",
 			text: "The debug log reported a transient import task error",
 			want: factTypeOperationalLog,
@@ -1148,6 +1158,16 @@ func TestServerGuardDropsOnlyNarrowOperationalIntentAndLogs(t *testing.T) {
 			want: "",
 		},
 		{
+			name: "explicit weight log with instrument",
+			text: "User recorded weight with a Withings scale",
+			want: factTypeActivityLog,
+		},
+		{
+			name: "explicit sleep log with instrument",
+			text: "User logged sleep with Apple Watch",
+			want: factTypeActivityLog,
+		},
+		{
 			name: "durable historical health event",
 			text: "Lost 20kg after cancer treatment in 2015",
 			want: "",
@@ -1203,6 +1223,7 @@ func TestServerGuardHandlesChineseNonLongTermContent(t *testing.T) {
 		{name: "temporary workspace", text: "临时工作区是 /tmp/mem9", want: factTypeOperationalLog},
 		{name: "completed import task", text: "导入任务已完成", want: factTypeOperationalLog},
 		{name: "durable company plan", text: "用户计划明年创办一家公司", want: ""},
+		{name: "durable employee training", text: "用户正在训练新员工", want: ""},
 		{name: "durable import configuration", text: "导入任务使用批处理架构", want: ""},
 		{name: "durable social event", text: "昨天和 Alice 一起吃了晚饭", want: ""},
 	}
